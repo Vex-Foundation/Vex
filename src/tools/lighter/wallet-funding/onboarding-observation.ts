@@ -44,7 +44,7 @@ export interface DeriveOnboardingObservationInput {
 /**
  * Derive the planner observation from live reads. Free collateral uses
  * `available_balance` (falling back to `collateral`), floored to settlement
- * precision so it never OVERstates spendable collateral — an understatement
+ * precision so it never OVERstates spendable collateral - an understatement
  * only risks an unnecessary top-up, never an under-funded position.
  */
 export function deriveLighterOnboardingObservation(

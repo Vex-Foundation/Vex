@@ -5,7 +5,7 @@
  * (deposits-transfers-and-withdrawals, api-keys, get-started) and the vendored
  * Go SDK `github.com/elliottech/lighter-go@v1.0.7`. See
  * `.context/lighter_wallet_funding_plan.md` §7. Values that are NOT yet verified
- * are intentionally absent rather than guessed — a wrong deposit constant loses
+ * are intentionally absent rather than guessed - a wrong deposit constant loses
  * user funds irreversibly.
  */
 
@@ -81,7 +81,7 @@ export const LIGHTER_SETTLEMENT_ASSET_DECIMALS = CORE_FUNDING_DEPLOYMENT.settlem
 /**
  * Usable API-key index bounds for Vex-registered trading keys are the existing
  * `LIGHTER_TRADING_API_KEY_INDEX_MIN`/`MAX` (4..254) in `trading-credentials.ts`
- * — the conservative floor that satisfies both doc readings and matches the
+ * - the conservative floor that satisfies both doc readings and matches the
  * live-proven key 4. This module deliberately does not redefine them.
  */
 

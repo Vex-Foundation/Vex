@@ -14,6 +14,7 @@ export type LighterOrderLifecycleAction =
   | "close_position";
 
 export type LighterOrderLifecycleState =
+  | "expired_unsubmitted"
   | "approval_pending"
   | "approved"
   | "pre_submit_revalidated"
@@ -29,6 +30,7 @@ export type LighterOrderLifecycleState =
 
 export interface LighterOrderLifecycleIntentRow {
   readonly integratorFees?: LighterIntegratorFees | null;
+  readonly sendAttemptStartedAt?: string | null;
   readonly intentId: string;
   readonly sessionId: string;
   readonly protocolExecutionId: number | null;
@@ -90,7 +92,7 @@ export interface CreateLighterOrderLifecycleIntentInput {
 }
 
 const COLUMNS = `
-  intent_id, session_id, protocol_execution_id, approval_id, match_hash,
+  intent_id, send_attempt_started_at, session_id, protocol_execution_id, approval_id, match_hash,
   environment, account_index, api_key_index, action_type, market_index,
   provider_order_id, requested_base_amount_integer, requested_price_integer,
   requested_side, reduce_only, provider_snapshot_json, credential_ref_json,
@@ -175,7 +177,7 @@ export async function findLiveTarget(input: {
       WHERE environment = $1 AND account_index = $2 AND action_type = $3
         AND market_index IS NOT DISTINCT FROM $4
         AND provider_order_id IS NOT DISTINCT FROM $5
-        AND execution_state NOT IN ('completed','rejected','expired')
+        AND execution_state NOT IN ('completed','rejected','expired','expired_unsubmitted')
       ORDER BY created_at DESC LIMIT 1`,
     [input.environment, input.accountIndex, input.actionType, input.marketIndex, input.providerOrderId],
   );
@@ -194,7 +196,7 @@ export async function findLiveOrderTarget(input: {
       WHERE environment = $1 AND account_index = $2
         AND action_type IN ('cancel_one','modify')
         AND market_index = $3 AND provider_order_id = $4
-        AND execution_state NOT IN ('completed','rejected','expired')
+        AND execution_state NOT IN ('completed','rejected','expired','expired_unsubmitted')
       ORDER BY created_at DESC LIMIT 1`,
     [input.environment, input.accountIndex, input.marketIndex, input.providerOrderId],
   );
@@ -208,7 +210,7 @@ export async function findLiveAccountWideCancel(input: {
   const row = await queryOne<Record<string, unknown>>(
     `SELECT ${COLUMNS} FROM lighter_order_lifecycle_intents
       WHERE environment = $1 AND account_index = $2 AND action_type = 'cancel_all'
-        AND execution_state NOT IN ('completed','rejected','expired')
+        AND execution_state NOT IN ('completed','rejected','expired','expired_unsubmitted')
       ORDER BY created_at DESC LIMIT 1`,
     [input.environment, input.accountIndex],
   );
@@ -223,7 +225,7 @@ export async function findAnyLiveOrderMutation(input: {
     `SELECT ${COLUMNS} FROM lighter_order_lifecycle_intents
       WHERE environment = $1 AND account_index = $2
         AND action_type IN ('cancel_one','modify','cancel_all','close_position')
-        AND execution_state NOT IN ('completed','rejected','expired')
+        AND execution_state NOT IN ('completed','rejected','expired','expired_unsubmitted')
       ORDER BY created_at ASC LIMIT 1`,
     [input.environment, input.accountIndex],
   );
@@ -478,7 +480,8 @@ export async function markSigned(input: {
 }): Promise<LighterOrderLifecycleIntentRow | null> {
   return transition(
     `UPDATE lighter_order_lifecycle_intents
-      SET execution_state = 'signed', signer_tx_hash = $4,
+      SET pre_submit_revalidation_json = COALESCE(pre_submit_revalidation_json, '{}'::jsonb) || jsonb_build_object('signedAt', clock_timestamp()),
+      execution_state = 'signed', signer_tx_hash = $4,
           signer_expiry_ms = $5, updated_at = NOW()
       WHERE intent_id = $1 AND session_id = $2 AND execution_state = 'nonce_reserved'
         AND nonce_reservation_id = $3 AND signer_tx_hash IS NULL
@@ -497,7 +500,8 @@ export async function markSubmissionStaged(input: {
       SET execution_state = 'submission_staged', updated_at = NOW()
       WHERE intent_id = $1 AND session_id = $2 AND execution_state = 'signed'
         AND signer_tx_hash = $3
-      RETURNING ${COLUMNS}`,
+      AND expires_at > clock_timestamp()
+ RETURNING ${COLUMNS}`,
     [input.intentId, input.sessionId, input.signerTxHash],
   );
 }
@@ -705,6 +709,7 @@ function requireDecimal(field: string, value: string, allowZero: boolean): void 
 
 function mapRow(row: Record<string, unknown>): LighterOrderLifecycleIntentRow {
   return {
+    sendAttemptStartedAt: row.send_attempt_started_at == null ? null : new Date(row.send_attempt_started_at as string | Date).toISOString(),
     integratorFees: readLighterOrderFeeTerms((row.provider_snapshot_json as Record<string, unknown> | undefined)?.integratorFees),
     intentId: String(row.intent_id), sessionId: String(row.session_id),
     protocolExecutionId: nullableNumber(row.protocol_execution_id), approvalId: nullableString(row.approval_id),
@@ -738,4 +743,60 @@ function nullableNumber(value: unknown): number | null { return value == null ? 
 function iso(value: unknown): string | null {
   if (value == null) return null;
   return value instanceof Date ? value.toISOString() : new Date(String(value)).toISOString();
+}
+
+
+export async function markSendAttemptStarted(input: {
+  readonly intentId: string; readonly sessionId: string; readonly signerTxHash: string;
+}): Promise<boolean> {
+  const row = await queryOne<{ intent_id: string }>(
+    `UPDATE lighter_order_lifecycle_intents SET send_attempt_started_at=clock_timestamp(), updated_at=clock_timestamp()
+     WHERE intent_id=$1 AND session_id=$2 AND approval_status='approved'
+       AND execution_state='submission_staged' AND signer_tx_hash=$3
+       AND send_attempt_started_at IS NULL AND expires_at > clock_timestamp()
+     RETURNING intent_id`, [input.intentId, input.sessionId, input.signerTxHash]);
+  return row !== null;
+}
+
+/** Signed evidence is retained; a possible send can never take this transition. */
+export async function markExpiredUnsubmitted(input: {
+  readonly intentId: string; readonly sessionId: string;
+  readonly reservationId: string; readonly signerTxHash: string; readonly reason: string;
+}): Promise<boolean> {
+  const row = await queryOne<{ intent_id: string }>(
+    `WITH refused AS (UPDATE lighter_order_lifecycle_intents SET execution_state='expired_unsubmitted',
+       ambiguous_reason=$5, updated_at=clock_timestamp()
+     WHERE intent_id=$1 AND session_id=$2 AND approval_status='approved'
+       AND nonce_reservation_id=$3 AND signer_tx_hash=$4
+       AND (execution_state='signed' OR execution_state='submission_staged')
+       AND send_attempt_started_at IS NULL
+     RETURNING intent_id, environment, account_index, api_key_index, nonce_reservation_id, nonce_value),
+     released AS (
+       UPDATE lighter_nonce_state n SET status='observed', reserved_nonce=NULL, reservation_id=NULL, updated_at=clock_timestamp()
+       FROM refused r WHERE n.environment=r.environment AND n.account_index=r.account_index AND n.api_key_index=r.api_key_index
+         AND n.status='reserved' AND n.reservation_id=r.nonce_reservation_id AND n.reserved_nonce=r.nonce_value
+       RETURNING n.environment)
+     SELECT intent_id FROM refused`,
+    [input.intentId, input.sessionId, input.reservationId, input.signerTxHash, input.reason]);
+  return row !== null;
+}
+
+export async function markUnsubmittedRefused(input: {
+  readonly intentId: string; readonly sessionId: string;
+  readonly reservationId: string; readonly reason: string;
+}): Promise<boolean> {
+  const row = await queryOne<{ intent_id: string }>(
+    `WITH refused AS (UPDATE lighter_order_lifecycle_intents SET execution_state='rejected', ambiguous_reason=$4,
+       updated_at=clock_timestamp()
+     WHERE intent_id=$1 AND session_id=$2 AND approval_status='approved'
+       AND nonce_reservation_id=$3 AND signer_tx_hash IS NULL
+       AND execution_state='nonce_reserved' AND send_attempt_started_at IS NULL
+     RETURNING intent_id, environment, account_index, api_key_index, nonce_reservation_id, nonce_value),
+     released AS (
+       UPDATE lighter_nonce_state n SET status='observed', reserved_nonce=NULL, reservation_id=NULL, updated_at=clock_timestamp()
+       FROM refused r WHERE n.environment=r.environment AND n.account_index=r.account_index AND n.api_key_index=r.api_key_index
+         AND n.status='reserved' AND n.reservation_id=r.nonce_reservation_id AND n.reserved_nonce=r.nonce_value
+       RETURNING n.environment)
+     SELECT intent_id FROM refused`, [input.intentId, input.sessionId, input.reservationId, input.reason]);
+  return row !== null;
 }

@@ -2,6 +2,8 @@ import type { LighterOnboardingIntentRow } from "@vex-agent/db/repos/lighter-onb
 import type { LighterWithdrawalIntentRow } from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
 import type { LighterWithdrawalClaimAttemptRow } from "@vex-agent/db/repos/lighter-withdrawal-claims.js";
 import type { LighterOrderLifecycleIntentRow } from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
+import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
+import type { LighterOcoExecutionIntentRow } from "@vex-agent/db/repos/lighter-oco-execution-intents.js";
 const WALLET = "0x1111111111111111111111111111111111111111";
 const GATEWAY = "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7";
 const NOW = "2030-01-01T00:00:00.000Z";
@@ -141,6 +143,65 @@ export function onboardingIntent(
     createdAt: new Date("2030-01-01T00:00:00.000Z"),
     updatedAt: new Date("2030-01-01T00:01:00.000Z"),
     expiresAt: new Date("2030-01-01T00:15:00.000Z"),
+    ...overrides,
+  };
+}
+
+const RHC_CREDENTIAL_REF = {
+  kind: "encrypted_vault_reference", environment: "rhc", accountIndex: 42, apiKeyIndex: 7,
+  vaultCredentialId: "lighter/rhc/account-42/api-key-7",
+} as const;
+
+export function orderExecutionIntent(
+  overrides: Partial<LighterOrderExecutionIntentRow> = {},
+): LighterOrderExecutionIntentRow {
+  return {
+    intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
+    sessionId: "session-1", previewId: "lighter-preview-1", protocolExecutionId: null,
+    approvalId: "approval-1", matchHash: "a".repeat(64), environment: "rhc",
+    accountIndex: 42, apiKeyIndex: 7, marketIndex: 0, side: "buy",
+    baseAmountInteger: "10000", priceInteger: "300000", orderType: "limit",
+    timeInForce: "good-till-time", reduceOnly: false, triggerPriceInteger: null,
+    orderExpiryMs: Date.parse("2030-01-01T00:10:00.000Z"),
+    clientOrderIndexPolicy: "vex_assigned_uint48", providerVersion: "lighter-order-preview-v1",
+    credentialRefJson: RHC_CREDENTIAL_REF, integratorFees: null,
+    approvalStatus: "approved", executionState: "submitted",
+    decisionReason: null, decidedAt: null, nonceReservationId: null, nonceValue: null,
+    clientOrderIndex: null, signerTxHash: null, submittedTxHash: null, submitCode: null,
+    submitMessage: null, predictedExecutionTimeMs: null, volumeQuotaRemaining: null,
+    ambiguousReason: null, signedAt: null, submittedAt: null, apiAcceptedAt: null,
+    ambiguousAt: null, providerOrderId: null, providerOrderStatus: null,
+    providerOutcomeSource: null, providerOutcomeJson: null, providerOutcomeCheckedAt: null,
+    preSubmitRevalidationJson: null, preSubmitRevalidatedAt: null,
+    createdAt: NOW, updatedAt: NOW, expiresAt: "2030-01-01T00:05:00.000Z",
+    ...overrides,
+  };
+}
+
+export function ocoExecutionIntent(
+  overrides: Partial<LighterOcoExecutionIntentRow> = {},
+): LighterOcoExecutionIntentRow {
+  return {
+    intentId: "lighter-oco-00000000-0000-4000-8000-000000000001",
+    sessionId: "session-1", approvalId: "approval-1", matchHash: "a".repeat(64),
+    environment: "rhc", accountIndex: 42, apiKeyIndex: 7, marketIndex: 0, side: "sell",
+    baseAmountInteger: "10000",
+    stopLossPreviewId: "sl", stopLossMatchHash: "b".repeat(64),
+    stopLossPriceInteger: "285000", stopLossTriggerPriceInteger: "290000",
+    takeProfitPreviewId: "tp", takeProfitMatchHash: "c".repeat(64),
+    takeProfitPriceInteger: "325000", takeProfitTriggerPriceInteger: "330000",
+    orderExpiryMs: Date.parse("2030-01-01T00:10:00.000Z"),
+    clientOrderIndexPolicy: "vex_assigned_uint48", providerVersion: "lighter-oco-preview-v1",
+    previewJson: {}, liveSourceJson: {}, credentialRefJson: RHC_CREDENTIAL_REF,
+    integratorFees: null, approvalStatus: "approved", executionState: "submitted",
+    decisionReason: null, decidedAt: null,
+    preSubmitRevalidationJson: null, preSubmitRevalidatedAt: null,
+    nonceReservationId: null, nonceValue: null,
+    stopLossClientOrderIndex: null, takeProfitClientOrderIndex: null,
+    signerTxHash: null, submittedTxHash: null, submitCode: null, submitMessage: null,
+    predictedExecutionTimeMs: null, volumeQuotaRemaining: null,
+    providerOutcomeJson: null, providerOutcomeCheckedAt: null, ambiguousReason: null,
+    createdAt: NOW, updatedAt: NOW, expiresAt: "2030-01-01T00:05:00.000Z",
     ...overrides,
   };
 }

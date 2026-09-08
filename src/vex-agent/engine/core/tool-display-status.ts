@@ -1,17 +1,17 @@
 /**
- * Tool DISPLAY status — derive the renderer-facing status of an ambiguous tool
+ * Tool DISPLAY status - derive the renderer-facing status of an ambiguous tool
  * result from its structured `data` at transcript-persistence time, BEFORE
  * `result.data` is dropped from the transcript. Sibling of `explorer-refs.ts`
  * and persisted the same way: under the tool-result message metadata payload,
  * surfacing as `metadata -> 'displayStatus'` for the desktop app.
  *
  * WHY THIS EXISTS. A broadcast whose receipt never came back is persisted
- * `success: false` ON PURPOSE — the model must not read ambiguity as success,
+ * `success: false` ON PURPOSE - the model must not read ambiguity as success,
  * and the remaining legs of a batch must abort. That is the correct
  * MODEL-facing semantic and this module does not change it. But the chat UI
  * derived its chip from `success` alone, so it printed a red FAILED directly
  * above the handler's own "recorded as pending and will resolve automatically"
- * prose — a contradiction the user can see. This is the second, DISPLAY-only
+ * prose - a contradiction the user can see. This is the second, DISPLAY-only
  * axis that lets the renderer say "Pending" for exactly that case.
  *
  * THE CONTRACT is the ambiguous-broadcast shape the swap handlers already
@@ -19,7 +19,7 @@
  * alongside the `txHash` that was broadcast. Lighter order creation has a
  * source-scoped variant because its `ambiguous` / `sequencer_pending` statuses
  * are order-specific and too broad to admit globally. Nothing is normalized and
- * nothing is inferred — `data` is untrusted (provider/model-derived), so only
+ * nothing is inferred - `data` is untrusted (provider/model-derived), so only
  * an exact string literal on a plain object counts. Every other shape yields
  * `null`, which reads as "no
  * display status" and leaves the row rendering off `success` exactly as
@@ -43,15 +43,15 @@ const PENDING_STATUS = "pending";
  * yet known" and therefore display as Pending. Each entry is admitted with its
  * emitting site, because each one is a claim about money in motion:
  *
- *  - `pending`            — the ambiguous-broadcast marker the swap/bridge
+ *  - `pending`            - the ambiguous-broadcast marker the swap/bridge
  *                           handlers set when a receipt never came back.
- *  - `filled_unverified`  — `protocols/khalani/handlers/bridge-poll.ts:66`: the
+ *  - `filled_unverified`  - `protocols/khalani/handlers/bridge-poll.ts:66`: the
  *                           provider reports `filled`, but the destination fill
  *                           is NOT verified, so the handler refuses to claim it.
- *  - `in_flight`          — `protocols/relay/handlers/bridge.ts:415`: the
+ *  - `in_flight`          - `protocols/relay/handlers/bridge.ts:415`: the
  *                           deposit is broadcast and the relay leg is running.
  *
- * NOT admitted, deliberately: khalani's terminal `failed` / `refunded` — the
+ * NOT admitted, deliberately: khalani's terminal `failed` / `refunded` - the
  * destination never received funds, so a red FAILED row is the honest display.
  * Any unknown string fails closed to `null`; a new in-progress literal must be
  * added here on purpose, with its source, rather than inferred.

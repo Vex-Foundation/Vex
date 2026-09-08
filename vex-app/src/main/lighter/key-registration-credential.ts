@@ -1,3 +1,4 @@
+import { app } from "electron";
 import {
   createLighterApiKeyGeneratorBinary,
   type LighterApiKeyGenerator,
@@ -171,7 +172,7 @@ export function installLighterKeyRegistrationCredentialPreparer(): () => void {
 function defaultDeps(): PrepareLighterRegistrationCredentialDeps {
   return {
     readIntent: findLighterKeyRegistrationIntent,
-    generator: createLighterApiKeyGeneratorBinary(),
+    generator: createLighterApiKeyGeneratorBinary({ allowBinaryPathOverride: !app.isPackaged }),
     readVaultPrivateKey: readUnlockedLighterTradingApiPrivateKey,
     readVaultRegistrationState: getUnlockedLighterTradingCredentialRegistrationState,
     writePendingVaultPrivateKey: writeUnlockedPendingLighterTradingApiPrivateKey,

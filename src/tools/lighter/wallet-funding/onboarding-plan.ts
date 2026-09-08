@@ -5,7 +5,7 @@
  * account, it computes the MINIMAL ordered set of legs needed to reach "able to
  * open the intended position". Every leg is included only if state requires it,
  * so a re-run after a partial failure re-computes the delta and resumes. This
- * module performs no I/O, holds no keys, and moves no funds — it only decides
+ * module performs no I/O, holds no keys, and moves no funds - it only decides
  * what must happen. Execution of each leg is gated separately (M-C..M-F).
  *
  * See `.context/lighter_wallet_funding_plan.md`.

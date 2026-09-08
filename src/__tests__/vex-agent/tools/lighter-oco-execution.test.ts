@@ -1,3 +1,5 @@
+import { requireValue } from "../../helpers/require-value.js";
+import type { PoolClient } from "pg";
 import { describe, expect, it, vi } from "vitest";
 
 import { buildLighterOcoPreview, buildLighterUnsignedOcoRequest } from "@tools/lighter/oco-order.js";
@@ -45,6 +47,7 @@ const PREVIEW = buildLighterOcoPreview({
   orderExpiry: EXPIRY, nowMs: NOW,
 }, { market: MARKET, orderBook: BOOK, account: ACCOUNT });
 const PLAN: LighterOcoExecutionPlan = {
+  expiresAt: new Date(NOW + 3_600_000).toISOString(),
   intentId: "lighter-oco-1", sessionId: "session-1",
   stopLossPreviewId: PREVIEW.stopLoss.previewId,
   takeProfitPreviewId: PREVIEW.takeProfit.previewId,
@@ -84,13 +87,12 @@ function active(index: 0 | 1): LighterAccountOrder {
   };
 }
 
-describe("approved Lighter native OCO execution", () => {
-  it("revalidates both legs, submits exactly once, and proves both children before active", async () => {
+function ocoDeps(): LighterOcoExecutionDeps {
     const sendTx = vi.fn(async () => ({ code: 200, tx_hash: TX_HASH, predicted_execution_time_ms: 1 }));
     const getActive = vi.fn()
       .mockResolvedValueOnce({ code: 200, orders: [] })
       .mockResolvedValueOnce({ code: 200, orders: [active(0), active(1)] });
-    const dependencies: LighterOcoExecutionDeps = {
+    return {
       secretReader: { readTradingApiPrivateKey: vi.fn(async () => `0x${"1".repeat(80)}`) },
       authSigner: { source: "official_lighter_signer", createAccountAuth: vi.fn<LighterOcoExecutionDeps["authSigner"]["createAccountAuth"]>(async (input) => ({
         kind: "lighter_account_auth_signer_result", environment: input.environment,
@@ -100,6 +102,7 @@ describe("approved Lighter native OCO execution", () => {
         publicKey: PUBLIC_KEY,
       })), signCreateOrder: vi.fn() },
       groupedSigner: { source: "official_lighter_signer", signCreateGroupedOrders: vi.fn<LighterOcoExecutionDeps["groupedSigner"]["signCreateGroupedOrders"]>(async (input) => ({
+        childState: "exited",
         kind: "lighter_create_grouped_orders_signer_result", environment: input.environment,
         accountIndex: input.accountIndex, apiKeyIndex: input.apiKeyIndex, nonce: input.nonce,
         clientOrderIndexes: [input.group.orders[0].clientOrderIndex, input.group.orders[1].clientOrderIndex],
@@ -115,6 +118,9 @@ describe("approved Lighter native OCO execution", () => {
         getAccountTrades: vi.fn(async () => ({ code: 200, trades: [] })),
       },
       intents: {
+      markSendAttemptStarted: vi.fn(async () => true),
+      markExpiredUnsubmitted: vi.fn(async () => true),
+      markUnsubmittedRefused: vi.fn(async () => true),
         markPreSubmitRevalidated: vi.fn(async () => ({})),
         attachNonceReservationWith: vi.fn(async () => ({})),
         markSigned: vi.fn(async () => ({})), markSubmitted: vi.fn(async () => ({})),
@@ -123,14 +129,55 @@ describe("approved Lighter native OCO execution", () => {
       },
       previews: { findFreshById: vi.fn(async (_session, _environment, id) => id === PREVIEW.stopLoss.previewId ? row(PREVIEW.stopLoss) : row(PREVIEW.takeProfit)) },
       nonceState: {
+      releaseUnsubmittedReservation: vi.fn(async () => null),
         recordExecutionObserved: vi.fn(async () => ({})),
         reserveObservedWith: vi.fn(async () => ({ reservationId: `lighter-oco:${PLAN.intentId}`, reservedNonce: "0" })),
       },
-      transaction: vi.fn(async (fn) => fn({})), now: () => NOW, wait: vi.fn(async () => undefined),
+      transaction: vi.fn(async (fn) => fn({} as PoolClient)), now: () => NOW, wait: vi.fn(async () => undefined),
     };
+}
+
+describe("approved Lighter native OCO execution", () => {
+  it("revalidates both legs, submits exactly once, and proves both children before active", async () => {
+    const dependencies = ocoDeps();
     const result = await executeApprovedLighterOco({ plan: PLAN, group: GROUP, deps: dependencies });
     expect(result.status).toBe("active");
-    expect(sendTx).toHaveBeenCalledTimes(1);
-    expect(sendTx).toHaveBeenCalledWith("rhc", expect.objectContaining({ txType: 28 }));
+    expect(dependencies.client.sendTx).toHaveBeenCalledTimes(1);
+    expect(dependencies.client.sendTx).toHaveBeenCalledWith("rhc", expect.objectContaining({ txType: 28 }));
   });
+});
+
+describe("OCO authority races", () => {
+  for (const kind of ["expiry", "cancellation"] as const) {
+    it.each(["reservation", "signing", "staging", "send-admission"] as const)(`${kind} at %s refuses both children`, async (phase) => {
+      const d = ocoDeps(), controller = new AbortController();
+      let nowMs = NOW, entered!: () => void, finish!: () => void;
+      Object.assign(d, { now: () => nowMs });
+      const reached = new Promise<void>((resolve) => { entered = resolve; });
+      const pending = new Promise<void>((resolve) => { finish = resolve; });
+      const pause = async () => { entered(); await pending; };
+      if (phase === "reservation") {
+        const original = requireValue(vi.mocked(d.transaction).getMockImplementation());
+        vi.mocked(d.transaction).mockImplementation(async (...args) => { const reserved = await original(...args); await pause(); return reserved; });
+      } else if (phase === "signing") {
+        const original = requireValue(vi.mocked(d.groupedSigner.signCreateGroupedOrders).getMockImplementation());
+        vi.mocked(d.groupedSigner.signCreateGroupedOrders).mockImplementation(async (...args) => { const signed = await original(...args); await pause(); return signed; });
+      } else if (phase === "staging") {
+        const original = requireValue(vi.mocked(d.intents.markSubmitted).getMockImplementation());
+        vi.mocked(d.intents.markSubmitted).mockImplementation(async (...args) => { const row = await original(...args); await pause(); return row; });
+      } else {
+        vi.mocked(d.intents.markSendAttemptStarted).mockImplementation(async () => { await pause(); return true; });
+      }
+      const execution = executeApprovedLighterOco({ plan: PLAN, group: GROUP, deps: d, abortSignal: controller.signal });
+      const rejected = expect(execution).rejects.toMatchObject({ reason: expect.stringMatching(kind === "expiry" ? /^consent_expired_/ : /^cancelled_/) });
+      await reached;
+      if (kind === "expiry") nowMs = Date.parse(PLAN.expiresAt); else controller.abort("lock");
+      finish(); await rejected;
+      expect(d.client.sendTx).not.toHaveBeenCalled();
+      expect(d.groupedSigner.signCreateGroupedOrders).toHaveBeenCalledTimes(phase === "reservation" ? 0 : 1);
+      if (phase !== "reservation") expect(d.intents.markSigned).toHaveBeenCalledOnce();
+      if (phase === "send-admission") expect(d.nonceState.releaseUnsubmittedReservation).not.toHaveBeenCalled();
+      else expect(d.nonceState.releaseUnsubmittedReservation).toHaveBeenCalledOnce();
+    });
+  }
 });

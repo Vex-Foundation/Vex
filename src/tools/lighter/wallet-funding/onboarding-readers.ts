@@ -4,7 +4,7 @@
  * This is the I/O layer: Ethereum L1 mainnet balance reads (via the existing
  * Uniswap chain-1 public client) and Lighter public account/API-key reads. It
  * is address-only and holds no keys. The trading-key check is a public
- * heuristic — a registered key in the trading index range — and never asserts
+ * heuristic - a registered key in the trading index range - and never asserts
  * Vex control on its own; the execution path confirms vault control precisely.
  */
 
@@ -60,7 +60,7 @@ export function buildLighterOnboardingReaders(): LighterOnboardingReaders {
         });
       } catch (err) {
         // Lighter returns HTTP 400 "account not found" for an L1 address that
-        // owns no account yet — the normal pre-onboarding state, not an error.
+        // owns no account yet - the normal pre-onboarding state, not an error.
         if (isLighterAccountNotFound(err)) return null;
         throw err;
       }

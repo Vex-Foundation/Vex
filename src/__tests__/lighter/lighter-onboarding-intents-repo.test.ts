@@ -193,7 +193,7 @@ describe("isSafelyExpirableDepositApprovalPending", () => {
     )).toBe(false);
   });
 
-  it.each([
+  it.each<[string, Partial<repo.LighterOnboardingIntentRow>]>([
     ["non-deposit capability", { capability: "key_registration" }],
     ["approved approval state", { approvalStatus: "approved" }],
     ["approved execution state", { executionState: "approved" }],
@@ -205,7 +205,7 @@ describe("isSafelyExpirableDepositApprovalPending", () => {
     )).toBe(false);
   });
 
-  it.each([
+  it.each<[string, Partial<repo.LighterOnboardingIntentRow>]>([
     ["approval id", { approvalId: "approval-1" }],
     ["protocol execution", { protocolExecutionId: 1 }],
     ["decision", { decisionReason: "decided" }],
@@ -862,9 +862,31 @@ d("lighter_onboarding_intents repo", () => {
       repo.markFailedWith(client, done.intentId, "test failed"));
 
     const unresolved = await repo.listUnresolved("core");
-    const ids = unresolved.map((r) => r.intentId);
+    const ids = unresolved.rows.map((r) => r.intentId);
     expect(ids).toContain(live.intentId);
     expect(ids).not.toContain(done.intentId);
+    expect(unresolved.hasMore).toBe(false);
+  });
+
+  it("bounds an unresolved page, reports hasMore, and rotates by offset", async () => {
+    const first = await newDepositIntent(await newSession());
+    const second = await newDepositIntent(await newSession());
+    const third = await newDepositIntent(await newSession());
+    const created = new Set([first.intentId, second.intentId, third.intentId]);
+
+    const page = await repo.listUnresolved("core", { limit: 1 });
+    expect(page.rows).toHaveLength(1);
+    expect(page.hasMore).toBe(true);
+
+    const next = await repo.listUnresolved("core", { limit: 1, offset: 1 });
+    expect(next.rows).toHaveLength(1);
+    expect(next.rows[0]?.intentId).not.toBe(page.rows[0]?.intentId);
+
+    const all = await repo.listUnresolved("core", { limit: 200 });
+    for (const intentId of created) {
+      expect(all.rows.map((row) => row.intentId)).toContain(intentId);
+    }
+    await expect(repo.listUnresolved("core", { limit: 0 })).rejects.toThrow(/positive integer/);
   });
 
   it("markApprovalDecision only acts on approval_pending", async () => {

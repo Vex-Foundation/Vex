@@ -1,3 +1,5 @@
+import { persistLighterSigningEvidence, type LighterEvidenceWritePorts } from "./execution-boundary.js";
+import { assertIntentAuthority, LighterIntentRefusal, lighterSignerExited, lighterSignerResolutionExited } from "./intent-expiry.js";
 import { revalidateLighterOrderFees, readLighterOrderAccountFeeTicks, type LighterOrderFeeClient } from "./order-fees.js";
 import { lighterIntegratorFeesEqual } from "@tools/lighter/fee-policy.js";
 import type { LighterClient } from "@tools/lighter/client.js";
@@ -119,21 +121,15 @@ export interface ExecuteApprovedLighterCreateOrderDeps {
     | "getAccountInactiveOrders"
     | "getAccountTrades"
   >;
-  readonly nonceState: Pick<typeof lighterNonceStateRepo, "recordExecutionObserved">;
+  readonly nonceState: LighterEvidenceWritePorts<Pick<typeof lighterNonceStateRepo, "recordExecutionObserved">>
+    & Pick<typeof lighterNonceStateRepo, "releaseUnsubmittedReservation">;
   readonly previews: Pick<typeof lighterOrderPreviewsRepo, "findFreshById">;
   readonly now: () => number;
   readonly wait: (delayMs: number) => Promise<void>;
-  readonly intents: Pick<
-    typeof lighterOrderExecutionIntentsRepo,
-    | "markSigned"
-    | "markPreSubmitRevalidated"
-    | "markSubmitted"
-    | "markApiAccepted"
-    | "markSequencerPending"
-    | "markProviderOutcome"
-    | "findByIntentIdAnySession"
-    | "markAmbiguous"
-  >;
+  readonly intents: LighterEvidenceWritePorts<Pick<typeof lighterOrderExecutionIntentsRepo,
+    "markSigned" | "markPreSubmitRevalidated" | "markSubmitted" | "markSequencerPending" | "markProviderOutcome" | "markAmbiguous">>
+    & Pick<typeof lighterOrderExecutionIntentsRepo, "markSendAttemptStarted" | "markExpiredUnsubmitted" | "markUnsubmittedRefused" | "findByIntentIdAnySession">
+    & { readonly markApiAccepted: (...args: Parameters<typeof lighterOrderExecutionIntentsRepo.markApiAccepted>) => Promise<{ readonly volumeQuotaRemaining: string | null } | null> };
 }
 
 let configuredDeps: ExecuteApprovedLighterCreateOrderDeps | null = null;
@@ -155,8 +151,12 @@ export async function executeApprovedLighterCreateOrder(input: {
   readonly plan: LighterOrderReadyForSignerPlan;
   readonly unsignedOrder?: LighterUnsignedCreateOrderRequest;
   readonly deps: ExecuteApprovedLighterCreateOrderDeps;
+  readonly abortSignal?: AbortSignal;
 }): Promise<ExecuteApprovedLighterCreateOrderResult> {
   const { plan, deps } = input;
+  const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
+    assertIntentAuthority(plan.expiresAt, deps.now(), phase, input.abortSignal);
+  assertAuthority("before_reservation");
   const unsignedOrder = buildLighterUnsignedCreateOrderRequest(plan);
   if (input.unsignedOrder !== undefined) {
     assertUnsignedOrderMatchesApprovedPlan(input.unsignedOrder, unsignedOrder);
@@ -179,6 +179,7 @@ export async function executeApprovedLighterCreateOrder(input: {
     plan.credentialReference,
     deps.secretReader,
   );
+  assertAuthority("before_reservation");
   const auth = await createLighterAccountAuthWithAdapter(
     buildLighterAccountAuthSigningInput({
       order: unsignedOrder,
@@ -206,19 +207,28 @@ export async function executeApprovedLighterCreateOrder(input: {
     );
   }
   assertWireOrderExpiryBeforeSigning(unsignedOrder, deps.now());
+  assertAuthority("before_reservation");
   const nonce = await deps.reserveNonce(plan);
   let signerTxHash: string | null = null;
+  let signingStarted = false;
+  let signerExited = false;
+  let sendAdmissionStarted = false;
 
   try {
+    assertAuthority("after_reservation");
+    assertAuthority("before_signing");
+    assertWireOrderExpiryBeforeSigning(unsignedOrder, deps.now());
+    signingStarted = true;
     const signingInput = buildLighterCreateOrderSigningInput({
       order: unsignedOrder,
       secret,
       nonce: nonce.nonceValue,
     });
     const signed = await signLighterCreateOrderWithAdapter(signingInput, deps.signer);
+    signerExited = lighterSignerResolutionExited(signed);
     signerTxHash = signed.txHash;
 
-    const signedIntent = await deps.intents.markSigned({
+    const signedIntent = await persistLighterSigningEvidence(() => deps.intents.markSigned({
       intentId: plan.intentId,
       sessionId: plan.sessionId,
       environment: plan.environment,
@@ -226,7 +236,7 @@ export async function executeApprovedLighterCreateOrder(input: {
       nonceValue: nonce.nonceValue,
       clientOrderIndex: unsignedOrder.clientOrderIndex,
       signerTxHash: signed.txHash,
-    });
+    }));
     if (signedIntent === null) {
       await markAmbiguous(deps, plan, SIGNED_PERSIST_AMBIGUOUS_REASON);
       throw blockedBeforeSubmit(
@@ -238,6 +248,7 @@ export async function executeApprovedLighterCreateOrder(input: {
     // revalidation. Recheck the provider's five-minute minimum immediately
     // before the durable pre-send transition; an expired signed transaction is
     // left in `signed` for evidence-based nonce repair and is never submitted.
+    assertAuthority("after_signing");
     assertWireOrderExpiryBeforeSubmission(unsignedOrder, deps.now());
 
     const submitted = await deps.intents.markSubmitted({
@@ -247,11 +258,21 @@ export async function executeApprovedLighterCreateOrder(input: {
       signerTxHash: signed.txHash,
     });
     if (submitted === null) {
-      await markAmbiguous(deps, plan, SUBMITTED_PERSIST_AMBIGUOUS_REASON);
-      throw blockedBeforeSubmit(
-        `Lighter order execution intent ${plan.intentId} could not persist submitted state before provider submission.`,
-      );
+      assertAuthority("before_submission");
+      throw new LighterIntentRefusal("submission_admission_refused");
     }
+
+    assertAuthority("before_submission");
+    sendAdmissionStarted = true;
+    const admitted = await deps.intents.markSendAttemptStarted({
+      intentId: plan.intentId, sessionId: plan.sessionId, signerTxHash: signed.txHash,
+    });
+    if (!admitted) {
+      sendAdmissionStarted = false;
+      throw new LighterIntentRefusal("submission_admission_refused");
+    }
+    assertAuthority("before_submission");
+    assertWireOrderExpiryBeforeSubmission(unsignedOrder, deps.now());
 
     let response: Awaited<ReturnType<LighterClient["sendTx"]>>;
     try {
@@ -274,7 +295,7 @@ export async function executeApprovedLighterCreateOrder(input: {
       return ambiguous(plan, PROVIDER_HASH_MISMATCH_AMBIGUOUS_REASON, signed.txHash);
     }
 
-    let accepted: Awaited<ReturnType<typeof lighterOrderExecutionIntentsRepo.markApiAccepted>>;
+    let accepted: Awaited<ReturnType<ExecuteApprovedLighterCreateOrderDeps["intents"]["markApiAccepted"]>>;
     try {
       accepted = await deps.intents.markApiAccepted({
         intentId: plan.intentId,
@@ -321,8 +342,22 @@ export async function executeApprovedLighterCreateOrder(input: {
       accountAuthToken: auth.authToken,
     });
   } catch (error) {
-    if (nonce !== null && signerTxHash === null) {
-      await markAmbiguous(deps, plan, SIGNING_AMBIGUOUS_REASON);
+    signerExited ||= lighterSignerExited(error);
+    if (!sendAdmissionStarted && (!signingStarted || (error instanceof LighterIntentRefusal && signerExited))) {
+      const refused = signerTxHash === null
+        ? await deps.intents.markUnsubmittedRefused({
+          intentId: plan.intentId, sessionId: plan.sessionId, reservationId: nonce.reservationId, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
+        })
+        : await deps.intents.markExpiredUnsubmitted({
+          intentId: plan.intentId, sessionId: plan.sessionId, reservationId: nonce.reservationId,
+          signerTxHash, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
+        });
+      if (refused) await deps.nonceState.releaseUnsubmittedReservation({
+        environment: plan.environment, accountIndex: plan.accountIndex, apiKeyIndex: plan.apiKeyIndex,
+        reservationId: nonce.reservationId, nonceValue: nonce.nonceValue,
+      });
+    } else if (signerTxHash === null || error instanceof LighterIntentRefusal) {
+      await markAmbiguous(deps, plan, error instanceof LighterIntentRefusal ? error.reason : SIGNING_AMBIGUOUS_REASON);
     }
     throw error;
   }
@@ -599,6 +634,7 @@ async function reconcileProviderOutcome(input: {
   readonly evidenceScope: LighterOrderEvidenceScope;
   readonly unsignedOrder: LighterUnsignedCreateOrderRequest;
   readonly deps: ExecuteApprovedLighterCreateOrderDeps;
+  readonly abortSignal?: AbortSignal;
   readonly signerTxHash: string;
   readonly submittedTxHash: string;
   readonly submitCode: number;
@@ -787,6 +823,7 @@ async function persistProviderOutcome(input: {
   readonly plan: LighterOrderReadyForSignerPlan;
   readonly unsignedOrder: LighterUnsignedCreateOrderRequest;
   readonly deps: ExecuteApprovedLighterCreateOrderDeps;
+  readonly abortSignal?: AbortSignal;
   readonly signerTxHash: string;
   readonly submittedTxHash: string;
   readonly source: "active_order" | "inactive_order" | "account_trade";
@@ -909,7 +946,7 @@ function ambiguous(
 }
 
 // Builds the ambiguous reason for a failed `sendTx`. Only the VexError code and
-// numeric HTTP status are appended — never the error message, which could echo
+// numeric HTTP status are appended - never the error message, which could echo
 // provider-returned signed payload material. Non-VexError throws fall back to the
 // bare reason so nothing untrusted is ever persisted or returned.
 function sendTxAmbiguousReason(error: unknown): string {

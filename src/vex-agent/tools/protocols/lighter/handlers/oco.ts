@@ -128,6 +128,7 @@ function executionGuidance(result: ExecuteApprovedLighterOcoResult): string {
 export async function executePreparedLighterOco(
   intent: LighterOcoExecutionIntentRow,
   approvalId: string,
+  abortSignal?: AbortSignal,
 ) {
   const [stopLoss, takeProfit] = await Promise.all([
     previewsRepo.findById(intent.sessionId, intent.environment, intent.stopLossPreviewId),
@@ -166,6 +167,7 @@ export async function executePreparedLighterOco(
   try {
     const plan = buildLighterOcoExecutionPlan(approved);
     const result = await executeApprovedLighterOco({
+        abortSignal,
       plan,
       group: buildLighterUnsignedOcoRequest(plan),
       deps,

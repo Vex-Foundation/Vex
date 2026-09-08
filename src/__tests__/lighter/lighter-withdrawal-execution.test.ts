@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { requireValue } from "../helpers/require-value.js";
+
 import { materialFromSecret } from "@tools/lighter/trading-secret.js";
 import type { LighterCoreWithdrawalPreflightSnapshot } from "@tools/lighter/withdrawal/core-preflight.js";
 import type { LighterRhcWithdrawalPreflightSnapshot } from "@tools/lighter/withdrawal/rhc-preflight.js";
@@ -17,6 +19,7 @@ const PRIVATE_KEY = `0x${"1".repeat(80)}`;
 
 function plan(): LighterCoreWithdrawalReadyForSignerPlan {
   return {
+    expiresAt: new Date(NOW + 300_000).toISOString(),
     intentId: "lighter-withdrawal-1",
     previewId: "lwp_preview",
     sessionId: "session-1",
@@ -159,6 +162,7 @@ function deps(events: string[], sendTx?: ExecuteApprovedLighterCoreWithdrawalDep
       return preflight();
     }),
     nonceState: {
+      releaseUnsubmittedReservation: vi.fn(async () => null),
       recordExecutionObserved: vi.fn(async () => {
         events.push("nonce_observed");
         return {};
@@ -169,6 +173,9 @@ function deps(events: string[], sendTx?: ExecuteApprovedLighterCoreWithdrawalDep
       return { reservationId: "lighter-withdrawal:lighter-withdrawal-1", nonceValue: "9" };
     }),
     intents: {
+      markSendAttemptStarted: vi.fn(async () => true),
+      markExpiredUnsubmitted: vi.fn(async () => true),
+      markUnsubmittedRefused: vi.fn(async () => true),
       markPreSubmitRevalidated: vi.fn(async () => {
         events.push("preflight_persisted");
         return {};
@@ -351,4 +358,38 @@ describe("approved RHC withdrawal execution", () => {
     expect(result).toMatchObject({ status: "submitted", executionState: "api_accepted" });
     expect(result.message).toContain("RHC USDG");
   });
+});
+
+describe("withdrawal consent races", () => {
+  for (const kind of ["expiry", "cancellation"] as const) {
+    it.each(["reservation", "signing", "staging", "send-admission"] as const)(`${kind} at %s cannot send`, async (phase) => {
+      const d = deps([]), controller = new AbortController();
+      let nowMs = NOW, entered!: () => void, finish!: () => void;
+      Object.assign(d, { now: () => nowMs });
+      const reached = new Promise<void>((resolve) => { entered = resolve; });
+      const pending = new Promise<void>((resolve) => { finish = resolve; });
+      const pause = async () => { entered(); await pending; };
+      if (phase === "reservation") {
+        const original = requireValue(vi.mocked(d.reserveNonce).getMockImplementation());
+        vi.mocked(d.reserveNonce).mockImplementation(async (...args) => { const row = await original(...args); await pause(); return row; });
+      } else if (phase === "signing") {
+        const original = requireValue(vi.mocked(d.withdrawalSigner.signWithdraw).getMockImplementation());
+        vi.mocked(d.withdrawalSigner.signWithdraw).mockImplementation(async (...args) => { const signed = await original(...args); await pause(); return Object.assign(signed, { childState: "exited" }); });
+      } else if (phase === "staging") {
+        const original = requireValue(vi.mocked(d.intents.markSubmissionStaged).getMockImplementation());
+        vi.mocked(d.intents.markSubmissionStaged).mockImplementation(async (...args) => { const row = await original(...args); await pause(); return row; });
+      } else {
+        vi.mocked(d.intents.markSendAttemptStarted).mockImplementation(async () => { await pause(); return true; });
+      }
+      const execution = executeApprovedLighterWithdrawal({ plan: plan(), deps: d, abortSignal: controller.signal });
+      const rejected = expect(execution).rejects.toMatchObject({ reason: expect.stringMatching(kind === "expiry" ? /^consent_expired_/ : /^cancelled_/) });
+      await reached;
+      if (kind === "expiry") nowMs = Date.parse(plan().expiresAt); else controller.abort("lock");
+      finish(); await rejected;
+      expect(d.client.sendTx).not.toHaveBeenCalled();
+      expect(d.withdrawalSigner.signWithdraw).toHaveBeenCalledTimes(phase === "reservation" ? 0 : 1);
+      if (phase !== "reservation") expect(d.intents.markSigned).toHaveBeenCalledOnce();
+      if (phase === "send-admission") expect(d.nonceState.releaseUnsubmittedReservation).not.toHaveBeenCalled();
+    });
+  }
 });

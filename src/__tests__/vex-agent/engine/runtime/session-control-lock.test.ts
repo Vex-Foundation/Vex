@@ -1,11 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { testPoolClient } from "../../../helpers/db-client.js";
+
 const mocks = vi.hoisted(() => ({
   executeWith: vi.fn(),
   withTransaction: vi.fn(),
 }));
 
-const CLIENT = { marker: "transaction-client" };
+/**
+ * The lock helpers only hand this client to the mocked `executeWith` and
+ * `withTransaction`, so its IDENTITY is the whole contract under test. It is a
+ * real client whose query and connect are replaced, so no test can reach a
+ * database through it.
+ */
+const CLIENT = testPoolClient();
 
 vi.mock("@vex-agent/db/client.js", () => ({
   executeWith: mocks.executeWith,

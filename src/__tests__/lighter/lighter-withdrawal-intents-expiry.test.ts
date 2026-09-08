@@ -1,6 +1,12 @@
+import { testPoolClient, testQueryResult } from "../helpers/db-client.js";
 import { requireValue } from "../helpers/require-value.js";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
+import type { LighterRhcWithdrawalPreflightSnapshot } from "@tools/lighter/withdrawal/rhc-preflight.js";
+import {
+  buildLighterRhcWithdrawalPreview,
+  type LighterRhcWithdrawalPreview,
+} from "@tools/lighter/withdrawal/rhc-preview.js";
 import {
   expireStaleApprovalPendingWith,
   findByIntentIdForWalletWith,
@@ -101,33 +107,52 @@ function reemittableIntent(
   });
 }
 
-function freshPreview() {
-  return {
-    identity: { sessionId: "session-1" },
-    snapshot: {
-      environment: "rhc",
-      endpoint: "https://api.rh.lighter.xyz",
-      signingChainId: 466324,
-      settlementChainId: 4663,
-      settlementNetworkName: "Robinhood Chain mainnet",
-      accountIndex: 10_231,
-      apiKeyIndex: 7,
-      walletAddress: "0x1111111111111111111111111111111111111111",
-      destinationAddress: "0x1111111111111111111111111111111111111111",
-      assetIndex: 3,
-      assetSymbol: "USDG",
-      assetDecimals: 6,
-      settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
-      routeType: 0,
-      amountUnits: "1000000",
-      minimumWithdrawalUnits: "1000000",
-      withdrawalDelaySeconds: 1200,
-      gatewayAddress: "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d",
-      gatewayImplementationAddress: "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90",
-      gatewayCodeHash: `0x${"1".repeat(64)}`,
-      settlementTokenCodeHash: `0x${"2".repeat(64)}`,
-    },
-  };
+const RHC_SNAPSHOT: LighterRhcWithdrawalPreflightSnapshot = {
+  observedAt: "2030-01-01T00:00:00.000Z",
+  expiresAt: "2030-01-01T00:05:00.000Z",
+  environment: "rhc",
+  operationClass: "secure_l2_withdrawal",
+  endpoint: "https://api.rh.lighter.xyz",
+  signingChainId: 466324,
+  settlementChainId: 4663,
+  settlementNetworkName: "Robinhood Chain mainnet",
+  accountIndex: 10_231,
+  apiKeyIndex: 7,
+  walletAddress: "0x1111111111111111111111111111111111111111",
+  destinationAddress: "0x1111111111111111111111111111111111111111",
+  assetIndex: 3,
+  assetSymbol: "USDG",
+  assetDecimals: 6,
+  settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+  routeType: 0,
+  amountUnits: "1000000",
+  minimumWithdrawalUnits: "1000000",
+  availableBalanceUnits: "8000000",
+  collateralUnits: "10000000",
+  initialMarginRequirementUnits: "1000000",
+  maintenanceMarginRequirementUnits: "500000",
+  pendingOrderCount: 0,
+  openPositionCount: 0,
+  activeOrderCount: 0,
+  nextNonce: "1",
+  registeredPublicKey: "b".repeat(80),
+  keyTransactionTime: "2030-01-01T00:00:00.000Z",
+  withdrawalDelaySeconds: 1200,
+  delayObservedAt: "2030-01-01T00:00:00.000Z",
+  gatewayAddress: "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d",
+  gatewayImplementationAddress: "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90",
+  gatewayCodeHash: `0x${"1".repeat(64)}`,
+  settlementTokenCodeHash: `0x${"2".repeat(64)}`,
+  settlementBlockNumber: "100",
+  pendingBalanceUnits: "0",
+  legacyPendingBalanceUnits: "0",
+  withdrawalHistoryCount: 0,
+  nonterminalWithdrawalCount: 0,
+};
+
+/** The preview the production builder would produce for the re-emittable intent above. */
+function freshPreview(): LighterRhcWithdrawalPreview {
+  return buildLighterRhcWithdrawalPreview({ sessionId: "session-1", snapshot: RHC_SNAPSHOT });
 }
 
 describe("Lighter withdrawal approval-pending expiry", () => {
@@ -182,9 +207,8 @@ describe("Lighter withdrawal approval-pending expiry", () => {
   });
 
   it("uses an exact evidence-free compare-and-set before releasing the account scope", async () => {
-    const client = {
-      query: vi.fn(async (_sql: string, _params: readonly unknown[]) => ({ rows: [], rowCount: 0 })),
-    };
+    const client = testPoolClient();
+    client.query.mockImplementation(async () => testQueryResult());
     await expect(expireStaleApprovalPendingWith(client, {
       intentId: "lighter-withdrawal-00000000-0000-4000-8000-000000000001",
       sessionId: "session-old",
@@ -250,12 +274,8 @@ describe("Lighter withdrawal approval-pending expiry", () => {
   });
 
   it("detects an already-live exact withdrawal approval before re-emission", async () => {
-    const client = {
-      query: vi.fn(async (_sql: string, _params: readonly unknown[]) => ({
-        rows: [{ present: true }],
-        rowCount: 1,
-      })),
-    };
+    const client = testPoolClient();
+    client.query.mockImplementation(async () => testQueryResult([{ present: true }]));
     await expect(hasPendingApprovalForIntentWith(
       client,
       "session-1",
@@ -272,9 +292,8 @@ describe("Lighter withdrawal approval-pending expiry", () => {
   });
 
   it("recovers an exact earlier-session intent only within the selected wallet scope", async () => {
-    const client = {
-      query: vi.fn(async (_sql: string, _params: readonly unknown[]) => ({ rows: [], rowCount: 0 })),
-    };
+    const client = testPoolClient();
+    client.query.mockImplementation(async () => testQueryResult());
     await expect(findByIntentIdForWalletWith(
       client,
       "lighter-withdrawal-00000000-0000-4000-8000-000000000001",
@@ -291,9 +310,8 @@ describe("Lighter withdrawal approval-pending expiry", () => {
   });
 
   it("recovers the latest wallet-scoped intent when a new session has no local row", async () => {
-    const client = {
-      query: vi.fn(async (_sql: string, _params: readonly unknown[]) => ({ rows: [], rowCount: 0 })),
-    };
+    const client = testPoolClient();
+    client.query.mockImplementation(async () => testQueryResult());
     await expect(findLatestForWalletWith(
       client,
       "0x1111111111111111111111111111111111111111",

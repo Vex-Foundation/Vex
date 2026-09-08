@@ -171,12 +171,12 @@ export function proveLighterRhcWithdrawalPreflight(
   }
   // No `account.status !== 1` gate here: live-verified 2026-08-22 against a
   // real, funded, correctly-owned RHC account (collateral present, trading
-  // key registered and active) — its `status` was `0`, not `1`. Nothing else
+  // key registered and active) - its `status` was `0`, not `1`. Nothing else
   // in this integration treats `status` as a meaningful account-health signal
   // (see `projectors.ts`, which only ever passes it through as opaque
   // metadata), and this check had no test coverage. Account health for a
   // withdrawal is already established below by ownership uniqueness, balance
-  // sufficiency, and margin-requirement checks — real signals, unlike this
+  // sufficiency, and margin-requirement checks - real signals, unlike this
   // one, whose actual value space Lighter does not document.
   const availableBalanceUnits = readAccountAmount(account.available_balance, "available balance");
   const collateralUnits = readAccountAmount(account.collateral, "collateral");
@@ -307,7 +307,7 @@ export async function readAllRhcWithdrawalHistory(
     if (cursors.has(next)) {
       // A stable cursor with no new rows this page is how the provider signals
       // "nothing more" for an account with no (or exhausted) withdrawal
-      // history — it does not always hand back an empty cursor string. Only
+      // history - it does not always hand back an empty cursor string. Only
       // treat a repeat as a genuine pagination fault when it keeps handing
       // back new rows, which is the actual infinite-loop/duplication risk
       // this guard exists to catch.

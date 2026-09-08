@@ -1,4 +1,5 @@
 import { getLighterClient } from "@tools/lighter/client.js";
+import { app } from "electron";
 import {
   buildLighterAccountAuthSigningInputForScope,
   createLighterAccountAuthWithAdapter,
@@ -93,8 +94,8 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
   const secretReader = createUnlockedVaultLighterTradingSecretReader();
   const signer = createLighterSignerBinaryAdapter();
   const groupedSigner = createLighterGroupedOrderSignerBinaryAdapter();
-  const withdrawalSigner = createLighterWithdrawalSignerBinary();
-  const lifecycleSigner = createLighterOrderLifecycleSignerBinary();
+  const withdrawalSigner = createLighterWithdrawalSignerBinary({ allowBinaryPathOverride: !app.isPackaged });
+  const lifecycleSigner = createLighterOrderLifecycleSignerBinary({ allowBinaryPathOverride: !app.isPackaged });
   const lighterClient = getLighterClient();
   const uninstallExecutionDeps = configureLighterCreateOrderExecutionDeps(
     defaultLighterCreateOrderExecutionDeps({
@@ -174,7 +175,7 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
   // Lets the authenticated account reads (open orders, order history, trades)
   // work on a single-key setup by deriving a short-lived read-only token from
   // the saved trading key, instead of failing over to inference. Always
-  // derives fresh from the vault — there is no standalone pasted-token
+  // derives fresh from the vault - there is no standalone pasted-token
   // shortcut any more (it silently blocked withdrawal/order-read auth
   // whenever the pasted token went stale, e.g. after a key re-registration).
   const uninstallReadAuth = configureLighterReadOnlyAccountAuthResolver(
@@ -183,7 +184,7 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
       const scope = unlockedScopes.find((candidate) => candidate.accountIndex === accountIndex);
       if (scope === undefined) {
         // Distinguishes a genuinely locked/empty vault (unlockedScopes.length === 0)
-        // from an accountIndex that simply isn't present among the unlocked scopes —
+        // from an accountIndex that simply isn't present among the unlocked scopes -
         // both currently surface upstream as "the vault is locked", which is only
         // true for the first case.
         log.warn("[lighter] read-only auth resolver: no matching unlocked scope", {

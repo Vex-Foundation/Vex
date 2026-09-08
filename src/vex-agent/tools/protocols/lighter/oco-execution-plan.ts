@@ -1,3 +1,4 @@
+import { assertIntentUnexpired } from "./intent-expiry.js";
 import type { LighterOcoSignerPlan } from "@tools/lighter/oco-order.js";
 import type { LighterTradingCredentialVaultReference } from "@tools/lighter/trading-credentials.js";
 import type { LighterOcoExecutionIntentRow } from "@vex-agent/db/repos/lighter-oco-execution-intents.js";
@@ -5,6 +6,7 @@ import { ErrorCodes, VexError } from "../../../../errors.js";
 import type { LighterOrderReadyForSignerPlan } from "./execution-plan.js";
 
 export interface LighterOcoExecutionPlan extends LighterOcoSignerPlan {
+  readonly expiresAt: string;
   readonly intentId: string;
   readonly sessionId: string;
   readonly stopLossPreviewId: string;
@@ -26,9 +28,7 @@ export function buildLighterOcoExecutionPlan(
   if (intent.approvalStatus !== "approved" || intent.executionState !== "approval_pending") {
     throw invalidRequest(`Lighter OCO intent ${intent.intentId} is not ready for signing.`);
   }
-  if (Date.parse(intent.expiresAt) <= nowMs) {
-    throw invalidRequest(`Lighter OCO intent ${intent.intentId} expired before signing.`);
-  }
+  assertIntentUnexpired(intent.expiresAt, nowMs, "consent_expired_before_plan");
   if (intent.nonceReservationId !== null || intent.nonceValue !== null) {
     throw invalidRequest(`Lighter OCO intent ${intent.intentId} already has a nonce reservation.`);
   }
@@ -44,6 +44,7 @@ export function buildLighterOcoExecutionPlan(
   }
   return {
     integratorFees: intent.integratorFees ?? null,
+    expiresAt: intent.expiresAt,
     intentId: intent.intentId,
     sessionId: intent.sessionId,
     stopLossPreviewId: intent.stopLossPreviewId,
@@ -84,6 +85,7 @@ export function ocoLegRevalidationPlan(
   const leg = kind === "stop-loss" ? plan.stopLoss : plan.takeProfit;
   return {
     integratorFees: plan.integratorFees ?? null,
+    expiresAt: plan.expiresAt,
     intentId: plan.intentId,
     sessionId: plan.sessionId,
     previewId: kind === "stop-loss" ? plan.stopLossPreviewId : plan.takeProfitPreviewId,

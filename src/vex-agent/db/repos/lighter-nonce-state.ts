@@ -180,7 +180,7 @@ export interface ReleaseReservedLighterNonceInput {
 /**
  * Release a stuck reservation back to `observed`. Callers must first prove the
  * reserved nonce was never consumed (live nextNonce still equals it) and that
- * the signed transaction can no longer execute — this method only enforces the
+ * the signed transaction can no longer execute - this method only enforces the
  * exact reservation identity so an unrelated reservation can never be freed.
  */
 export async function releaseReservation(
@@ -245,4 +245,24 @@ function mapRow(row: Record<string, unknown>): LighterNonceStateRow {
 
 function toIso(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : value;
+}
+
+
+/** Release only an exact reservation whose execution owner proved no send. */
+export async function releaseUnsubmittedReservation(input: {
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly apiKeyIndex: number;
+  readonly reservationId: string;
+  readonly nonceValue: string;
+}): Promise<LighterNonceStateRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE lighter_nonce_state SET status='observed', reserved_nonce=NULL,
+      reservation_id=NULL, updated_at=clock_timestamp()
+     WHERE environment=$1 AND account_index=$2 AND api_key_index=$3
+       AND status='reserved' AND reservation_id=$4 AND reserved_nonce=$5
+     RETURNING ${SELECT_COLUMNS}`,
+    [input.environment, input.accountIndex, input.apiKeyIndex, input.reservationId, input.nonceValue],
+  );
+  return row ? mapRow(row) : null;
 }

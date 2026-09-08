@@ -10,7 +10,7 @@ import {
   defaultLighterTradingVaultCredentialId,
   type LighterTradingCredentialVaultReference,
 } from "@tools/lighter/trading-credentials.js";
-import { queryOne } from "../client.js";
+import { queryOne, withTransaction } from "../client.js";
 import {
   generateOnboardingIntentId,
   type LighterOnboardingApprovalStatus,
@@ -24,6 +24,7 @@ export const LIGHTER_KEY_SLOT_OBSERVATION_MAX_AGE_MS = 60_000;
 const LIGHTER_KEY_SLOT_OBSERVATION_FUTURE_TOLERANCE_MS = 5_000;
 
 export interface LighterKeyRegistrationReservationRow {
+  readonly sendAttemptStartedAt?: string | null;
   readonly intentId: string;
   readonly sessionId: string;
   readonly environment: LighterEnvironment;
@@ -35,6 +36,7 @@ export interface LighterKeyRegistrationReservationRow {
   readonly slotObservationHash: string;
   readonly approvalStatus: LighterOnboardingApprovalStatus;
   readonly executionState:
+    | "failed"
     | "slot_reserved"
     | "key_generated_encrypted"
     | "approval_pending"
@@ -104,7 +106,7 @@ const RETURNING = `
   registration_key_verified_at, registration_client_checked_at,
   post_registration_nonce, registration_nonce_synchronized_at,
   registration_activated_at,
-  created_at, updated_at, expires_at
+  send_attempt_started_at, created_at, updated_at, expires_at
 `;
 
 export async function findLighterKeyRegistrationIntent(
@@ -895,6 +897,7 @@ function mapRow(row: Record<string, unknown>): LighterKeyRegistrationReservation
     throw new Error("Lighter key registration row has an unexpected execution state.");
   }
   return {
+    sendAttemptStartedAt: row.send_attempt_started_at == null ? null : new Date(row.send_attempt_started_at as string | Date).toISOString(),
     intentId: String(row.intent_id),
     sessionId: String(row.session_id),
     environment: row.environment as LighterEnvironment,
@@ -1002,4 +1005,55 @@ function nullableNumber(value: unknown): number | null {
 
 function nullableDate(value: unknown): Date | null {
   return value === null || value === undefined ? null : value as Date;
+}
+
+
+/** Claim the single signing attempt without changing the approved signing shape. */
+export async function claimRegistrationSigning(input: {
+  readonly intentId: string; readonly sessionId: string;
+}): Promise<boolean> {
+  const row = await queryOne<{ intent_id: string }>(
+    `UPDATE lighter_onboarding_intents SET registration_ambiguity_reason='signing_started', updated_at=clock_timestamp()
+     WHERE intent_id=$1 AND session_id=$2 AND capability='key_registration'
+       AND approval_status='approved' AND execution_state='approved'
+       AND registration_ambiguity_reason IS NULL AND expires_at > clock_timestamp()
+     RETURNING intent_id`, [input.intentId, input.sessionId]);
+  return row !== null;
+}
+
+export async function markRegistrationSendAttemptStarted(input: {
+  readonly intentId: string; readonly sessionId: string; readonly txHash: string;
+}): Promise<boolean> {
+  const row = await queryOne<{ intent_id: string }>(
+    `UPDATE lighter_onboarding_intents SET send_attempt_started_at=clock_timestamp(), updated_at=clock_timestamp()
+     WHERE intent_id=$1 AND session_id=$2 AND capability='key_registration'
+       AND approval_status='approved' AND execution_state='key_registration_tx_staged'
+       AND registration_tx_hash=$3 AND send_attempt_started_at IS NULL
+       AND expires_at > clock_timestamp()
+     RETURNING intent_id`, [input.intentId, input.sessionId, input.txHash]);
+  return row !== null;
+}
+
+/** Retains public signing evidence and prevents another signing attempt. */
+export async function markRegistrationUnsubmitted(input: {
+  readonly intentId: string; readonly sessionId: string; readonly reason: string;
+}): Promise<boolean> {
+  return withTransaction(async (client) => {
+    const result = await client.query<Record<string, unknown>>(
+      `UPDATE lighter_onboarding_intents SET execution_state='failed', registration_ambiguity_reason=$3, updated_at=clock_timestamp()
+       WHERE intent_id=$1 AND session_id=$2 AND capability='key_registration'
+         AND approval_status='approved' AND execution_state IN ('approved','key_registration_tx_staged')
+         AND send_attempt_started_at IS NULL
+       RETURNING ${RETURNING}`, [input.intentId, input.sessionId, input.reason]);
+    const row = result.rows[0];
+    if (row === undefined) return false;
+    const intent = mapRow(row);
+    const workflow = await transitionLighterOnboardingWorkflowWith(client, {
+      environment: intent.environment, walletAddress: intent.walletAddress,
+      expectedStates: ["key_registration_approval_pending"], nextState: "failed",
+      apiKeyIndex: intent.apiKeyIndex, publicKeyFingerprint: intent.publicKeyFingerprint, failureCode: input.reason,
+    });
+    if (workflow === null) throw new Error("Refused key registration could not settle its workflow.");
+    return true;
+  });
 }

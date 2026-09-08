@@ -1,4 +1,5 @@
 import { getAddress } from "viem";
+import { app } from "electron";
 import type { EvmWallet } from "@tools/wallet/multi-auth.js";
 import {
   buildLighterApproveIntegratorSignatureBody,
@@ -42,7 +43,7 @@ export async function signApprovedLighterFeeAuthorization(
     readVaultPrivateKey: readUnlockedLighterTradingApiPrivateKey,
     readVaultRegistrationState:
       getUnlockedLighterTradingCredentialRegistrationState,
-    keyGenerator: createLighterApiKeyGeneratorBinary(),
+    keyGenerator: createLighterApiKeyGeneratorBinary({ allowBinaryPathOverride: !app.isPackaged }),
     signer: createLighterSignerBinaryApproveIntegratorAdapter(),
     signWalletMessage: signLighterRegistrationWalletMessage,
   },

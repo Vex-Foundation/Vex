@@ -144,6 +144,7 @@ function approvedFixture(overrides: Partial<LighterOrderPreviewInput> = {}) {
   if (row.apiKeyIndex === null) throw new Error("test preview must bind an API key");
   const plan: LighterOrderReadyForSignerPlan = {
     intentId: "lighter-exec-1",
+    expiresAt: "2099-01-01T00:00:00.000Z",
     sessionId: row.sessionId,
     previewId: row.previewId,
     matchHash: row.matchHash,

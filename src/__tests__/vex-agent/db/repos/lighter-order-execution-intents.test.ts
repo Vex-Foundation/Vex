@@ -1,3 +1,4 @@
+import { Client } from "pg";
 import { requireValue } from "../../../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
@@ -366,7 +367,7 @@ describe("lighter order execution intents repo", () => {
   });
 
   it("attaches a nonce reservation inside an existing transaction client", async () => {
-    const txClient = { tx: true };
+    const txClient = Object.assign(new Client(), { tx: true, release: vi.fn() });
     mockQueryOneWith.mockResolvedValueOnce(dbRow({
       approval_status: "approved",
       nonce_reservation_id: "reservation-tx",
@@ -922,4 +923,47 @@ describe("lighter order execution intents repo", () => {
     expect(requireValue(mockQueryOne.mock.calls[1])[0]).toContain("approval_status IN ('approval_pending','approved')");
     expect(requireValue(mockQueryOne.mock.calls[1])[1]).toEqual(["session-1", "lighter-preview-1"]);
   });
+});
+
+describe("Lighter durable send admission guards", () => {
+  const scope = { intentId: "intent-1", sessionId: "session-1", signerTxHash: "public-hash", reservationId: "reservation-1", reason: "consent_expired_after_signing" };
+  const owners = [
+    ["order", () => import("@vex-agent/db/repos/lighter-order-execution-intents.js"), "submitted"],
+    ["oco", () => import("@vex-agent/db/repos/lighter-oco-execution-intents.js"), "submitted"],
+    ["lifecycle", () => import("@vex-agent/db/repos/lighter-order-lifecycle-intents.js"), "submission_staged"],
+    ["withdrawal", () => import("@vex-agent/db/repos/lighter-withdrawal-intents.js"), "submission_staged"],
+  ] as const;
+  for (const [name, load, staged] of owners) {
+    it(`${name} admits only an unexpired exact staged hash with no previous send attempt`, async () => {
+      const owner = await load();
+      mockQueryOne.mockResolvedValueOnce({ intent_id: scope.intentId });
+      expect(await owner.markSendAttemptStarted(scope)).toBe(true);
+      const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
+      expect(sql).toContain("send_attempt_started_at=clock_timestamp()");
+      expect(sql).toContain("send_attempt_started_at IS NULL");
+      expect(sql).toContain("expires_at > clock_timestamp()");
+      expect(sql).toContain(`execution_state='${staged}'`);
+      expect(sql).toContain("signer_tx_hash=$3");
+      expect(params).toEqual([scope.intentId, scope.sessionId, scope.signerTxHash]);
+    });
+    it(`${name} retains signing evidence and forbids expiry after a possible send`, async () => {
+      const owner = await load();
+      expect(await owner.markExpiredUnsubmitted(scope)).toBe(false);
+      const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
+      expect(sql).toContain("execution_state='expired_unsubmitted'");
+      expect(sql).toContain("send_attempt_started_at IS NULL");
+      expect(sql).toContain("execution_state='signed'");
+      expect(sql).toContain(`execution_state='${staged}'`);
+      expect(sql).toContain("nonce_reservation_id=$3 AND signer_tx_hash=$4");
+      expect(sql).not.toContain("signer_tx_hash=NULL");
+      expect(params).toEqual([scope.intentId, scope.sessionId, scope.reservationId, scope.signerTxHash, scope.reason]);
+    });
+    it(`${name} rejects an unsigned reservation only by exact identity`, async () => {
+      const owner = await load();
+      expect(await owner.markUnsubmittedRefused(scope)).toBe(false);
+      const [sql] = requireValue(mockQueryOne.mock.calls[0]);
+      expect(sql).toContain("nonce_reservation_id=$3 AND signer_tx_hash IS NULL");
+      expect(sql).toContain("send_attempt_started_at IS NULL");
+    });
+  }
 });

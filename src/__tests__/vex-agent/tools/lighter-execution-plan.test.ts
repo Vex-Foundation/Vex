@@ -124,7 +124,7 @@ describe("Lighter order execution plan", () => {
         intent({ expiresAt: "2026-08-12T00:00:00.000Z" }),
         Date.parse("2026-08-12T00:01:00.000Z"),
       )
-    ).toThrow("expired before signer preparation");
+    ).toThrow("consent_expired_before_plan");
     expect(() =>
       buildLighterOrderReadyForSignerPlan(intent({
         nonceReservationId: "nonce-reservation-1",

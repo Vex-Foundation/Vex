@@ -1,16 +1,16 @@
 /**
- * Approval runtime — approved-tool dispatch: the single resumed-dispatch path.
+ * Approval runtime - approved-tool dispatch: the single resumed-dispatch path.
  *
  * `applyApproveSideEffects` is the ONLY path that dispatches a tool from the
  * approval runtime. This file owns the ORDER; the steps it orders live in the
  * sibling `dispatch-approved/` folder, one responsibility each:
  *
- *   `operator-stop.ts`       — what a user Stop does to this dispatch, before
+ *   `operator-stop.ts`       - what a user Stop does to this dispatch, before
  *                              it leaves the runtime and after.
- *   `dispatch-slot-gate.ts`  — the ONE pre-dispatch transaction: stop gate and
+ *   `dispatch-slot-gate.ts`  - the ONE pre-dispatch transaction: stop gate and
  *                              dispatch-slot claim, committed together.
- *   `dispatch-failure.ts`    — making an unhandled dispatch throw durable.
- *   `resumed-tool-context.ts`— the wallet scope an approved tool resumes under.
+ *   `dispatch-failure.ts`    - making an unhandled dispatch throw durable.
+ *   `resumed-tool-context.ts`- the wallet scope an approved tool resumes under.
  *
  * The ORDER is the safety property:
  *
@@ -27,14 +27,14 @@
  * Step 3 is the boundary that stops an approved MUTATING tool from executing
  * after the user pressed Stop. It sits IMMEDIATELY BEFORE `dispatchTool`,
  * because any await between the gate and the call is a window in which a Stop
- * can commit while the tool has still not started — a not-yet-started call is
+ * can commit while the tool has still not started - a not-yet-started call is
  * exactly the one the gate exists to refuse. Context construction therefore
  * runs before it; that step only hydrates the session, so nothing has happened
  * yet when the gate lands.
  *
  * The slot CAS is INSIDE that same transaction. The two used to commit
  * separately, with the CAS first, on the reasoning that the CAS commit is the
- * moment this dispatch becomes publicly committed-to — so any stop inserted
+ * moment this dispatch becomes publicly committed-to - so any stop inserted
  * later necessarily sees `execution_status = 'dispatching'` and is a stop
  * against a call already in flight, which must be allowed to finish since we
  * cannot know whether it already moved funds. That reasoning is unchanged and
@@ -43,7 +43,7 @@
  * strictly after the claim. There is no third interleaving: the gate, the CAS
  * and `enqueueOperatorStopRequest` all pass through the same session advisory
  * lock. Merging them is also what makes this writer a participant in the
- * compaction safe-moment gate — see `dispatch-slot-gate.ts`.
+ * compaction safe-moment gate - see `dispatch-slot-gate.ts`.
  *
  * That transaction COMMITS BEFORE `dispatchTool` runs. Holding a lock
  * across a provider/wallet call would let a stuck HTTP request block the
@@ -52,7 +52,7 @@
  * the in-flight rule already requires. `applyQueuedOperatorStop` is what
  * honours it: it LANDS the queued stop durably instead of merely logging it.
  *
- * TERMINAL-STOP PRECEDENCE — the second safety property of this module.
+ * TERMINAL-STOP PRECEDENCE - the second safety property of this module.
  * A terminal user stop outranks every other terminal state, and that has to
  * hold on the failure exits, not only when everything works. Two rules:
  *
@@ -62,7 +62,7 @@
  *   b. the stop is applied BEFORE any `paused_error` parking decision, and
  *      every parking write here goes through `flipRunToPausedError`, whose
  *      repo CAS refuses to write a terminal row. So once the stop lands, no
- *      failure arm can reopen the run — the ordering and the CAS are two
+ *      failure arm can reopen the run - the ordering and the CAS are two
  *      halves of the same invariant, not two independent guards.
  *
  * Nothing is ever re-dispatched: applying a stop only settles state that
@@ -98,11 +98,11 @@
  *                                               NO `paused_error` flip.
  *   - run left the resumable statuses         → `paused_error` +
  *                                               `ApprovalPostDecisionError`
- *                                               (not transient — retrying
+ *                                               (not transient - retrying
  *                                               would loop forever).
  *
  * Transcript content for dispatch failures is structural-only (errorKind +
- * errorHash). Raw / redacted error message text is intentionally absent —
+ * errorHash). Raw / redacted error message text is intentionally absent -
  * tool/protocol/wallet errors can carry secrets the agent should not see.
  */
 
@@ -179,7 +179,7 @@ export function deriveApprovedDispatchExecutionStatus(input: {
 }
 
 /**
- * Side effects after `approved_in_tx` snapshot — claim the continuation, take
+ * Side effects after `approved_in_tx` snapshot - claim the continuation, take
  * the dispatch slot, dispatch the tool, commit the result, return the
  * IPC-facing outcome.
  */
@@ -204,6 +204,7 @@ export async function applyApproveSideEffects(
 
   const toolCall = extractToolCall(row.queue_tool_call, fallbackToolCallId);
 
+  let disposeDispatch: (() => void) | undefined;
   let continuation: PreparedContinuation | null = null;
   try {
     // ── 1. Claim BEFORE dispatch ────────────────────────────────────────
@@ -245,8 +246,8 @@ export async function applyApproveSideEffects(
     // ── 2. Build the resumed tool context ───────────────────────────────
     // Context construction first, gate second: everything between the gate and
     // `dispatchTool` is a window in which a committed Stop would still permit a
-    // call that has not started. Hydrating the session is a read — it moves no
-    // funds — so building it BEFORE the gate costs nothing and leaves the gate
+    // call that has not started. Hydrating the session is a read - it moves no
+    // funds - so building it BEFORE the gate costs nothing and leaves the gate
     // adjacent to the dispatch.
     const toolContext = await buildResumedApprovalToolContext({
       sessionId,
@@ -267,6 +268,8 @@ export async function applyApproveSideEffects(
       approvedPrequoteAuthority: readApprovalPrequoteAuthority(row.queue_tool_call),
     });
 
+    disposeDispatch = toolContext.disposeDispatch;
+
     // ── 3. Operator-Stop gate + dispatch slot, ONE transaction ──────────
     // See `dispatch-approved/dispatch-slot-gate.ts` for why these two writes
     // share a transaction and why the CAS runs even on the stopped path. The
@@ -279,7 +282,7 @@ export async function applyApproveSideEffects(
 
     if (!slotGate.tookSlot) {
       // Another writer already owns this dispatch. We must NOT run the tool a
-      // second time — hand the lease back and let the owner finish.
+      // second time - hand the lease back and let the owner finish.
       logger.warn("engine.approval_runtime.dispatch_slot_taken", {
         approvalId,
         sessionId,
@@ -305,7 +308,7 @@ export async function applyApproveSideEffects(
     // `stop_terminal` became a real row that reasoning inverted into a
     // money-path hole: the gate legitimately reported `stopped` for a chat
     // session, the second half of the condition was false, and control fell
-    // through to `dispatchTool` — an approved swap or transfer executing after
+    // through to `dispatchTool` - an approved swap or transfer executing after
     // the operator pressed Stop. Nothing downstream would have caught it: the
     // intent is already `dispatching`, and a session stop only rejects PENDING
     // approvals.
@@ -333,7 +336,7 @@ export async function applyApproveSideEffects(
       success: boolean;
       output: string;
       data?: Record<string, unknown>;
-      // POST-approval dispatch wall clock (ToolResult.durationMs) — the
+      // POST-approval dispatch wall clock (ToolResult.durationMs) - the
       // narrow local type must not silently drop it (C1: null is never 0).
       durationMs?: number;
     };
@@ -397,7 +400,7 @@ export async function applyApproveSideEffects(
           toolCall.toolCallId,
           cause,
         );
-        // unreachable — onDispatchThrow always throws ApprovalDispatchError
+        // unreachable - onDispatchThrow always throws ApprovalDispatchError
         throw new Error("unreachable");
       }
     }
@@ -422,7 +425,7 @@ export async function applyApproveSideEffects(
 
     // ── 6. A Stop that landed during the dispatch now takes effect ──────
     // The executed call is NOT undone (the in-flight rule) and nothing is
-    // re-dispatched — but the operator's Stop is applied durably here rather
+    // re-dispatched - but the operator's Stop is applied durably here rather
     // than left queued for a resumed turn that this very stop means we must
     // not start. Suppressing the continuation is the point: handing it back
     // would resume the agent on a run the user just stopped.
@@ -468,20 +471,20 @@ export async function applyApproveSideEffects(
     };
   } catch (cause) {
     // Any escape from the block above means no caller will consume the
-    // continuation. Release it rather than leak the lease until TTL — but only
+    // continuation. Release it rather than leak the lease until TTL - but only
     // AFTER the terminal status is written, because the release emits the run's
     // current status to the renderer and would otherwise publish a stale
     // `running` right before we flip it to `paused_error`.
     const held = continuation;
     continuation = null;
     try {
-      // TERMINAL-STOP PRECEDENCE — one funnel, every failure exit.
+      // TERMINAL-STOP PRECEDENCE - one funnel, every failure exit.
       // Whatever went wrong above, the dispatch's own outcome (a committed
       // result, or the structural failure row `onDispatchThrow` wrote) is
       // already durable, so it is now safe to land the operator's queued Stop.
       // It runs BEFORE any parking decision below: those all go through
       // `flipRunToPausedError`, whose CAS then refuses to reopen the terminal
-      // row this call just produced. Never throws — see the helper.
+      // row this call just produced. Never throws - see the helper.
       const stopOnFailure = await applyQueuedOperatorStop({
         approvalId,
         sessionId,
@@ -521,7 +524,7 @@ export async function applyApproveSideEffects(
         // this dispatch `indeterminate`, wrote the honest tool result, and
         // resumed the agent. The result transaction rolled back, so nothing was
         // overwritten and no second tool result exists. Deliberately NOT a
-        // `paused_error` flip — the run has already been recovered, and
+        // `paused_error` flip - the run has already been recovered, and
         // knocking it back down would undo that recovery.
         logger.warn("engine.approval_runtime.result_superseded", {
           approvalId,
@@ -574,5 +577,7 @@ export async function applyApproveSideEffects(
     } finally {
       if (held !== null) await discardContinuation(held);
     }
+  } finally {
+    disposeDispatch?.();
   }
 }

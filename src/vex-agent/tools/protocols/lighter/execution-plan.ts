@@ -1,3 +1,4 @@
+import { assertIntentUnexpired } from "./intent-expiry.js";
 import type { LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import type { LighterTradingCredentialVaultReference } from "@tools/lighter/trading-credentials.js";
@@ -7,6 +8,7 @@ import { assertLighterPhaseOneOrderPolicy } from "@tools/lighter/order-policy.js
 
 export interface LighterOrderReadyForSignerPlan {
   readonly integratorFees?: LighterIntegratorFees | null;
+  readonly expiresAt: string;
   readonly intentId: string;
   readonly sessionId: string;
   readonly previewId: string;
@@ -47,11 +49,7 @@ export function buildLighterOrderReadyForSignerPlan(
       `Lighter order execution intent ${intent.intentId} is already ${intent.executionState}.`,
     );
   }
-  if (Date.parse(intent.expiresAt) <= nowMs) {
-    throw invalidRequest(
-      `Lighter order execution intent ${intent.intentId} expired before signer preparation.`,
-    );
-  }
+  assertIntentUnexpired(intent.expiresAt, nowMs, "consent_expired_before_plan");
   if (intent.nonceReservationId !== null || intent.nonceValue !== null) {
     throw invalidRequest(
       `Lighter order execution intent ${intent.intentId} already has a nonce reservation.`,
@@ -65,6 +63,7 @@ export function buildLighterOrderReadyForSignerPlan(
 
   return {
     integratorFees: intent.integratorFees ?? null,
+    expiresAt: intent.expiresAt,
     intentId: intent.intentId,
     sessionId: intent.sessionId,
     previewId: intent.previewId,

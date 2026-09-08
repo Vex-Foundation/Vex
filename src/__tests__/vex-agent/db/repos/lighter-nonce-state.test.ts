@@ -1,3 +1,4 @@
+import { Client } from "pg";
 import { requireValue } from "../../../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
@@ -192,7 +193,7 @@ describe("lighter nonce state repo", () => {
   });
 
   it("reserves inside an existing transaction client", async () => {
-    const txClient = { tx: true };
+    const txClient = Object.assign(new Client(), { tx: true, release: vi.fn() });
     mockQueryOneWith.mockResolvedValueOnce(row({ reservation_id: "reservation-tx" }));
 
     const reserved = await repo.reserveObservedWith(txClient, {
@@ -228,5 +229,17 @@ describe("lighter nonce state repo", () => {
       reservedNonce: null,
       reservationId: null,
     });
+  });
+});
+
+describe("proven unsubmitted nonce release", () => {
+  it("uses the complete scope, exact reservation, and exact nonce in one CAS", async () => {
+    const input = { environment: "core" as const, accountIndex: 42, apiKeyIndex: 4, reservationId: "owned-reservation", nonceValue: "7" };
+    expect(await repo.releaseUnsubmittedReservation(input)).toBeNull();
+    const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
+    expect(sql).toContain("environment=$1 AND account_index=$2 AND api_key_index=$3");
+    expect(sql).toContain("status='reserved' AND reservation_id=$4 AND reserved_nonce=$5");
+    expect(sql).toContain("reserved_nonce=NULL");
+    expect(params).toEqual(["core", 42, 4, "owned-reservation", "7"]);
   });
 });

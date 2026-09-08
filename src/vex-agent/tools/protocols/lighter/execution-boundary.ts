@@ -17,6 +17,7 @@ export const LIGHTER_ORDER_WRITE_TOOL_IDS = [
 export type LighterOrderWriteToolId = (typeof LIGHTER_ORDER_WRITE_TOOL_IDS)[number];
 
 export const LIGHTER_ORDER_EXECUTION_STATES = [
+  "expired_unsubmitted",
   "previewed",
   "approval_pending",
   "signed",
@@ -34,6 +35,7 @@ export const LIGHTER_ORDER_EXECUTION_STATES = [
 export type LighterOrderExecutionState = (typeof LIGHTER_ORDER_EXECUTION_STATES)[number];
 
 export const LIGHTER_ORDER_TERMINAL_EXECUTION_STATES = [
+  "expired_unsubmitted",
   "filled",
   "canceled",
   "rejected",
@@ -72,3 +74,21 @@ export const LIGHTER_ORDER_EXECUTION_BOUNDARY = {
   terminalStates: LIGHTER_ORDER_TERMINAL_EXECUTION_STATES,
   liveSubmitMilestone: "approval-gated order create",
 } as const;
+
+
+/** Retry a public evidence write once. This callback must never sign or send. */
+export async function persistLighterSigningEvidence<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch {
+    return await write();
+  }
+}
+
+
+/** Execution owners need write acknowledgement, not unrelated database columns. */
+export type LighterEvidenceWritePorts<T> = {
+  readonly [K in keyof T]: T[K] extends (...args: infer A) => Promise<unknown>
+    ? (...args: A) => Promise<object | null>
+    : never;
+};

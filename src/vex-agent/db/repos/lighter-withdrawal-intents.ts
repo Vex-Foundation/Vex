@@ -18,6 +18,7 @@ export type LighterWithdrawalApprovalStatus =
   | "expired";
 
 export type LighterWithdrawalExecutionState =
+  | "expired_unsubmitted"
   | "approval_pending"
   | "approved"
   | "nonce_reserved"
@@ -41,6 +42,7 @@ export type LighterWithdrawalExecutionState =
   | "ambiguous";
 
 export interface LighterWithdrawalIntentRow {
+  readonly sendAttemptStartedAt?: string | null;
   readonly intentId: string;
   readonly previewId: string;
   readonly sessionId: string;
@@ -138,7 +140,7 @@ export type CreateLighterWithdrawalIntentOutcome =
   | { readonly outcome: "live_conflict"; readonly intent: LighterWithdrawalIntentRow };
 
 const SELECT_COLUMNS = `
-  intent_id, preview_id, session_id, protocol_execution_id, approval_id, match_hash,
+  intent_id, send_attempt_started_at, preview_id, session_id, protocol_execution_id, approval_id, match_hash,
   environment, operation_class, endpoint, signing_chain_id, settlement_chain_id,
   settlement_network_name, account_index, api_key_index, wallet_address,
   destination_address, credential_ref_json, asset_index, asset_symbol, asset_decimals,
@@ -214,7 +216,7 @@ export async function createOrFindLiveApprovalPendingWith(
         AND account_index = $2
         AND asset_index = 3
         AND route_type = 0
-        AND execution_state NOT IN ('destination_confirmed','rejected','failed','refunded','expired')
+        AND execution_state NOT IN ('destination_confirmed','rejected','failed','refunded','expired','expired_unsubmitted')
       ORDER BY created_at DESC
       LIMIT 1`,
     [snapshot.environment, snapshot.accountIndex],
@@ -236,7 +238,7 @@ export async function findNonterminalForScope(
         AND account_index = $2
         AND asset_index = 3
         AND route_type = 0
-        AND execution_state NOT IN ('destination_confirmed','rejected','failed','refunded','expired')
+        AND execution_state NOT IN ('destination_confirmed','rejected','failed','refunded','expired','expired_unsubmitted')
       ORDER BY created_at DESC
       LIMIT 1`,
     [environment, safeNonNegativeInteger(accountIndex, "account index")],
@@ -552,7 +554,7 @@ export async function findLatestForWallet(
       WHERE LOWER(wallet_address) = LOWER($1)
         AND LOWER(destination_address) = LOWER($1)
       ORDER BY (
-        execution_state NOT IN ('destination_confirmed','rejected','failed','refunded','expired')
+        execution_state NOT IN ('destination_confirmed','rejected','failed','refunded','expired','expired_unsubmitted')
       ) DESC, created_at DESC
       LIMIT 1`,
     [safeText(walletAddress, "wallet address")],
@@ -571,7 +573,7 @@ export async function findLatestForWalletWith(
       WHERE LOWER(wallet_address) = LOWER($1)
         AND LOWER(destination_address) = LOWER($1)
       ORDER BY (
-        execution_state NOT IN ('destination_confirmed','rejected','failed','refunded','expired')
+        execution_state NOT IN ('destination_confirmed','rejected','failed','refunded','expired','expired_unsubmitted')
       ) DESC, created_at DESC
       LIMIT 1`,
     [safeText(walletAddress, "wallet address")],
@@ -588,7 +590,7 @@ export async function listReconciliationCandidates(limit = 5): Promise<LighterWi
        FROM lighter_withdrawal_intents
       WHERE signer_tx_hash IS NOT NULL
         AND submission_staged_at IS NOT NULL
-        AND execution_state NOT IN ('destination_confirmed','rejected','failed','refunded','expired')
+        AND execution_state NOT IN ('destination_confirmed','rejected','failed','refunded','expired','expired_unsubmitted')
       ORDER BY COALESCE(last_checked_at, updated_at) ASC, created_at ASC
       LIMIT $1`, [limit]);
   return result.map(mapRow);
@@ -727,7 +729,8 @@ export async function markSubmissionStaged(input: {
         AND session_id = $2
         AND execution_state = 'signed'
         AND signer_tx_hash = $3
-      RETURNING ${SELECT_COLUMNS}`,
+      AND expires_at > clock_timestamp()
+ RETURNING ${SELECT_COLUMNS}`,
     [input.intentId, input.sessionId, safeText(input.signerTxHash, "signer transaction hash")],
   );
   return row === null ? null : mapRow(row);
@@ -1024,6 +1027,7 @@ function mapRow(row: Record<string, unknown>): LighterWithdrawalIntentRow {
     throw new Error(`Lighter ${environment} withdrawal row crossed an environment identity boundary.`);
   }
   return {
+    sendAttemptStartedAt: row.send_attempt_started_at == null ? null : new Date(row.send_attempt_started_at as string | Date).toISOString(),
     intentId: String(row.intent_id),
     previewId: String(row.preview_id),
     sessionId: String(row.session_id),
@@ -1159,4 +1163,60 @@ function assertPublicEvidence(value: Record<string, unknown>): Record<string, un
     throw new Error("Lighter withdrawal revalidation evidence is unsafe or too large.");
   }
   return value;
+}
+
+
+export async function markSendAttemptStarted(input: {
+  readonly intentId: string; readonly sessionId: string; readonly signerTxHash: string;
+}): Promise<boolean> {
+  const row = await queryOne<{ intent_id: string }>(
+    `UPDATE lighter_withdrawal_intents SET send_attempt_started_at=clock_timestamp(), updated_at=clock_timestamp()
+     WHERE intent_id=$1 AND session_id=$2 AND approval_status='approved'
+       AND execution_state='submission_staged' AND signer_tx_hash=$3
+       AND send_attempt_started_at IS NULL AND expires_at > clock_timestamp()
+     RETURNING intent_id`, [input.intentId, input.sessionId, input.signerTxHash]);
+  return row !== null;
+}
+
+/** Signed evidence is retained; a possible send can never take this transition. */
+export async function markExpiredUnsubmitted(input: {
+  readonly intentId: string; readonly sessionId: string;
+  readonly reservationId: string; readonly signerTxHash: string; readonly reason: string;
+}): Promise<boolean> {
+  const row = await queryOne<{ intent_id: string }>(
+    `WITH refused AS (UPDATE lighter_withdrawal_intents SET execution_state='expired_unsubmitted',
+       ambiguous_reason=$5, updated_at=clock_timestamp()
+     WHERE intent_id=$1 AND session_id=$2 AND approval_status='approved'
+       AND nonce_reservation_id=$3 AND signer_tx_hash=$4
+       AND (execution_state='signed' OR execution_state='submission_staged')
+       AND send_attempt_started_at IS NULL
+     RETURNING intent_id, environment, account_index, api_key_index, nonce_reservation_id, nonce_value),
+     released AS (
+       UPDATE lighter_nonce_state n SET status='observed', reserved_nonce=NULL, reservation_id=NULL, updated_at=clock_timestamp()
+       FROM refused r WHERE n.environment=r.environment AND n.account_index=r.account_index AND n.api_key_index=r.api_key_index
+         AND n.status='reserved' AND n.reservation_id=r.nonce_reservation_id AND n.reserved_nonce=r.nonce_value
+       RETURNING n.environment)
+     SELECT intent_id FROM refused`,
+    [input.intentId, input.sessionId, input.reservationId, input.signerTxHash, input.reason]);
+  return row !== null;
+}
+
+export async function markUnsubmittedRefused(input: {
+  readonly intentId: string; readonly sessionId: string;
+  readonly reservationId: string; readonly reason: string;
+}): Promise<boolean> {
+  const row = await queryOne<{ intent_id: string }>(
+    `WITH refused AS (UPDATE lighter_withdrawal_intents SET execution_state='rejected', ambiguous_reason=$4,
+       updated_at=clock_timestamp()
+     WHERE intent_id=$1 AND session_id=$2 AND approval_status='approved'
+       AND nonce_reservation_id=$3 AND signer_tx_hash IS NULL
+       AND execution_state='nonce_reserved' AND send_attempt_started_at IS NULL
+     RETURNING intent_id, environment, account_index, api_key_index, nonce_reservation_id, nonce_value),
+     released AS (
+       UPDATE lighter_nonce_state n SET status='observed', reserved_nonce=NULL, reservation_id=NULL, updated_at=clock_timestamp()
+       FROM refused r WHERE n.environment=r.environment AND n.account_index=r.account_index AND n.api_key_index=r.api_key_index
+         AND n.status='reserved' AND n.reservation_id=r.nonce_reservation_id AND n.reserved_nonce=r.nonce_value
+       RETURNING n.environment)
+     SELECT intent_id FROM refused`, [input.intentId, input.sessionId, input.reservationId, input.reason]);
+  return row !== null;
 }

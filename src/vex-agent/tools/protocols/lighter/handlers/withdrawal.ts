@@ -1,3 +1,5 @@
+import { persistLighterSigningEvidence } from "../execution-boundary.js";
+import { assertIntentAuthority, LighterIntentRefusal } from "../intent-expiry.js";
 import { randomUUID } from "node:crypto";
 import { formatUnits, getAddress, type Hex, type TransactionReceipt } from "viem";
 
@@ -196,6 +198,13 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
       reason: `user approved exact ${profile.settlementNetworkName} ${profile.sourceName} ${profile.assetSymbol} claim`,
     }));
     if (approved === null) return fail(`Manual ${profile.sourceName} claim ${claimId} has already left prepared state.`);
+    const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
+      assertIntentAuthority(approved.expiresAt, Date.now(), phase, context.abortSignal);
+    assertAuthority("before_reservation");
+    const nonceState: { reservation: LegacyEvmNonceReservation | null } = { reservation: null };
+    let signingStarted = false;
+    let signingFinished = false;
+    let sendAdmissionStarted = false;
     const lease = await acquireLighterDepositExecutionLease({ chainId: profile.settlementChainId, walletAddress: approved.walletAddress, intentId: approved.withdrawalIntentId }).catch(() => null);
     if (lease === null || !lease.acquired) return fail(`Could not acquire the Lighter ${profile.settlementNetworkName} wallet execution slot. Nothing was signed.`);
     try {
@@ -225,28 +234,52 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
       });
       assertLighterWithdrawalClaimPreflightWithinApproval(approved.preflightJson, fresh);
       await lease.handle.assertOwned();
-      const nonceState: { reservation: LegacyEvmNonceReservation | null } = { reservation: null };
+      assertAuthority("before_reservation");
+      const submissionClient: typeof clients.publicClient = {
+        ...clients.publicClient,
+        sendRawTransaction: (request) => {
+          assertAuthority("before_submission");
+          return clients.publicClient.sendRawTransaction(request);
+        },
+      };
       const outcome = await signStageBroadcast(
-        clients.publicClient,
-        clients.walletClient,
+        submissionClient,
+        {
+          kind: "deferred", address: getAddress(approved.walletAddress), chain: clients.walletClient.chain,
+          onBeforeSign: async () => { assertAuthority("before_signing"); },
+          createSigner: async () => clients.walletClient,
+        },
         { to: getAddress(approved.gatewayAddress), data: approved.calldata as Hex, value: 0n },
         {
+          onBeforeSign: async () => { assertAuthority("before_signing"); signingStarted = true; },
           onNonceReserved: async (request) => {
+            assertAuthority("before_reservation");
             if (nonceState.reservation !== null) {
               throw new Error("Lighter withdrawal claim nonce was reserved more than once.");
             }
             nonceState.reservation = await reserveLegacyEvmNonce(request, "lighter_withdrawal_claim");
+            assertAuthority("after_reservation");
             return nonceState.reservation.nonce;
           },
           onHashStaged: async (handles) => {
-            const staged = await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markStagedWith(client, {
+            signingFinished = true;
+            const staged = await persistLighterSigningEvidence(() => withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markStagedWith(client, {
               claimId, sessionId, txHash: handles.txHash, fromAddress: handles.fromAddress, nonce: handles.nonce,
-            }));
+            })));
             if (staged === null) throw new Error("Manual claim hash could not be staged durably before broadcast.");
             if (nonceState.reservation === null) {
               throw new Error("Lighter withdrawal claim hash reached staging without a nonce reservation.");
             }
             await stageLegacyEvmNonce(nonceState.reservation.id, handles);
+            assertAuthority("after_signing");
+            sendAdmissionStarted = true;
+            const admitted = await withSessionControlLock(sessionId, (client) =>
+              withdrawalClaimsRepo.markSendAttemptStartedWith(client, { claimId, sessionId, txHash: handles.txHash }));
+            if (!admitted) {
+              sendAdmissionStarted = false;
+              throw new LighterIntentRefusal("submission_admission_refused");
+            }
+            assertAuthority("before_submission");
           },
           onAccepted: async () => {
             await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markSubmittedWith(client, claimId, sessionId));
@@ -314,13 +347,26 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
               userGuidance: `Reply briefly: "The ${amountDisplay} claim transaction reverted." Do not say the funds arrived or add unrelated account details.`,
             }) });
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = error instanceof LighterIntentRefusal ? error.reason : "manual_claim_execution_interrupted";
       const current = await withdrawalClaimsRepo.findByClaimId(sessionId, claimId).catch(() => null);
-      if (current?.txHash === null) {
+      if (current !== null && current.txHash !== null && nonceState.reservation !== null && signingFinished && !sendAdmissionStarted && error instanceof LighterIntentRefusal) {
+        const refused = await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markExpiredUnsubmittedWith(client, {
+          claimId, sessionId, txHash: current.txHash!, reason, nonceReservationId: nonceState.reservation!.id,
+        }));
+        if (!refused) throw new Error("The expired claim did not commit its nonce release.");
+        return fail(reason);
+      }
+      if (current?.txHash === null && !signingStarted) {
         await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markUnsubmittedFailureWith(client, {
           claimId, sessionId, reason: "manual claim failed before durable transaction staging",
+          ...(nonceState.reservation === null ? {} : { nonceReservationId: nonceState.reservation.id, nonceValue: nonceState.reservation.nonce }),
         })).catch(() => false);
         return fail(reason);
+      }
+      if (current !== null && (current.state === "submitted" || current.state === "confirmed" || current.state === "reverted" || current.state === "confirming")) {
+        return ok({ source: `vex_lighter_${profile.environment}_manual_claim`, status: current.state,
+          claimId, txHash: current.replacementTxHash ?? current.txHash,
+          userGuidance: "Report the durable provider outcome. Do not submit this claim again." });
       }
       if (current !== null) {
         await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markOutcomeWith(client, {
@@ -632,6 +678,7 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
     if (deps === null) return fail(`Privileged ${profile.sourceName} withdrawal execution is unavailable. Nothing was signed or submitted.`);
     try {
       const result = await executeApprovedLighterWithdrawal({
+        abortSignal: context?.abortSignal,
         plan: buildLighterWithdrawalReadyForSignerPlan(approved),
         deps,
       });

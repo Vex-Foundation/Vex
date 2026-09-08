@@ -12,6 +12,7 @@ import { query, queryOne, queryOneWith } from "../client.js";
 import { jsonb } from "../params.js";
 
 export type LighterOcoExecutionState =
+  | "expired_unsubmitted"
   | "approval_pending"
   | "signed"
   | "submitted"
@@ -24,6 +25,7 @@ export type LighterOcoExecutionState =
 
 export interface LighterOcoExecutionIntentRow {
   readonly integratorFees?: LighterIntegratorFees | null;
+  readonly sendAttemptStartedAt?: string | null;
   readonly intentId: string;
   readonly sessionId: string;
   readonly approvalId: string | null;
@@ -73,7 +75,7 @@ export interface LighterOcoExecutionIntentRow {
 }
 
 const COLUMNS = `
-  intent_id, session_id, approval_id, match_hash, environment, account_index,
+  intent_id, send_attempt_started_at, session_id, approval_id, match_hash, environment, account_index,
   api_key_index, market_index, side, base_amount_integer,
   stop_loss_preview_id, stop_loss_match_hash, stop_loss_price_integer,
   stop_loss_trigger_price_integer, take_profit_preview_id, take_profit_match_hash,
@@ -224,7 +226,8 @@ export async function markSigned(input: {
   readonly takeProfitClientOrderIndex: string;
   readonly signerTxHash: string;
 }): Promise<LighterOcoExecutionIntentRow | null> {
-  return transition(`UPDATE lighter_oco_execution_intents SET execution_state='signed',
+  return transition(`UPDATE lighter_oco_execution_intents SET pre_submit_revalidation_json = COALESCE(pre_submit_revalidation_json, '{}'::jsonb) || jsonb_build_object('signedAt', clock_timestamp()),
+      execution_state='signed',
       stop_loss_client_order_index=$6, take_profit_client_order_index=$7,
       signer_tx_hash=$8, updated_at=NOW()
       WHERE intent_id=$1 AND session_id=$2 AND environment=$3 AND approval_status='approved'
@@ -241,7 +244,8 @@ export async function markSubmitted(input: {
 }): Promise<LighterOcoExecutionIntentRow | null> {
   return transition(`UPDATE lighter_oco_execution_intents SET execution_state='submitted', updated_at=NOW()
     WHERE intent_id=$1 AND session_id=$2 AND environment=$3 AND execution_state='signed'
-      AND signer_tx_hash=$4 RETURNING ${COLUMNS}`,
+      AND signer_tx_hash=$4 AND expires_at > clock_timestamp()
+ RETURNING ${COLUMNS}`,
   [input.intentId, input.sessionId, input.environment, input.signerTxHash]);
 }
 
@@ -294,7 +298,7 @@ export async function markAmbiguous(input: {
   return transition(`UPDATE lighter_oco_execution_intents SET execution_state='ambiguous',
       ambiguous_reason=$4, updated_at=NOW()
     WHERE intent_id=$1 AND session_id=$2 AND environment=$3
-      AND execution_state NOT IN ('active','resolved','rejected') RETURNING ${COLUMNS}`,
+      AND execution_state NOT IN ('active','resolved','rejected','expired_unsubmitted') RETURNING ${COLUMNS}`,
   [input.intentId, input.sessionId, input.environment, input.reason]);
 }
 
@@ -329,6 +333,7 @@ function mapRow(row: Record<string, unknown>): LighterOcoExecutionIntentRow {
     ? null
     : value instanceof Date ? value.toISOString() : String(value);
   return {
+    sendAttemptStartedAt: row.send_attempt_started_at == null ? null : new Date(row.send_attempt_started_at as string | Date).toISOString(),
     integratorFees: readLighterOrderFeeTerms((row.preview_json as Record<string, unknown> | undefined)?.integratorFees),
     intentId: String(row.intent_id), sessionId: String(row.session_id),
     approvalId: row.approval_id == null ? null : String(row.approval_id),
@@ -365,4 +370,60 @@ function mapRow(row: Record<string, unknown>): LighterOcoExecutionIntentRow {
     ambiguousReason: row.ambiguous_reason == null ? null : String(row.ambiguous_reason),
     createdAt: iso(row.created_at)!, updatedAt: iso(row.updated_at)!, expiresAt: iso(row.expires_at)!,
   };
+}
+
+
+export async function markSendAttemptStarted(input: {
+  readonly intentId: string; readonly sessionId: string; readonly signerTxHash: string;
+}): Promise<boolean> {
+  const row = await queryOne<{ intent_id: string }>(
+    `UPDATE lighter_oco_execution_intents SET send_attempt_started_at=clock_timestamp(), updated_at=clock_timestamp()
+     WHERE intent_id=$1 AND session_id=$2 AND approval_status='approved'
+       AND execution_state='submitted' AND signer_tx_hash=$3
+       AND send_attempt_started_at IS NULL AND expires_at > clock_timestamp()
+     RETURNING intent_id`, [input.intentId, input.sessionId, input.signerTxHash]);
+  return row !== null;
+}
+
+/** Signed evidence is retained; a possible send can never take this transition. */
+export async function markExpiredUnsubmitted(input: {
+  readonly intentId: string; readonly sessionId: string;
+  readonly reservationId: string; readonly signerTxHash: string; readonly reason: string;
+}): Promise<boolean> {
+  const row = await queryOne<{ intent_id: string }>(
+    `WITH refused AS (UPDATE lighter_oco_execution_intents SET execution_state='expired_unsubmitted',
+       ambiguous_reason=$5, updated_at=clock_timestamp()
+     WHERE intent_id=$1 AND session_id=$2 AND approval_status='approved'
+       AND nonce_reservation_id=$3 AND signer_tx_hash=$4
+       AND (execution_state='signed' OR execution_state='submitted')
+       AND send_attempt_started_at IS NULL
+     RETURNING intent_id, environment, account_index, api_key_index, nonce_reservation_id, nonce_value),
+     released AS (
+       UPDATE lighter_nonce_state n SET status='observed', reserved_nonce=NULL, reservation_id=NULL, updated_at=clock_timestamp()
+       FROM refused r WHERE n.environment=r.environment AND n.account_index=r.account_index AND n.api_key_index=r.api_key_index
+         AND n.status='reserved' AND n.reservation_id=r.nonce_reservation_id AND n.reserved_nonce=r.nonce_value
+       RETURNING n.environment)
+     SELECT intent_id FROM refused`,
+    [input.intentId, input.sessionId, input.reservationId, input.signerTxHash, input.reason]);
+  return row !== null;
+}
+
+export async function markUnsubmittedRefused(input: {
+  readonly intentId: string; readonly sessionId: string;
+  readonly reservationId: string; readonly reason: string;
+}): Promise<boolean> {
+  const row = await queryOne<{ intent_id: string }>(
+    `WITH refused AS (UPDATE lighter_oco_execution_intents SET execution_state='rejected', ambiguous_reason=$4,
+       updated_at=clock_timestamp()
+     WHERE intent_id=$1 AND session_id=$2 AND approval_status='approved'
+       AND nonce_reservation_id=$3 AND signer_tx_hash IS NULL
+       AND execution_state='approval_pending' AND send_attempt_started_at IS NULL
+     RETURNING intent_id, environment, account_index, api_key_index, nonce_reservation_id, nonce_value),
+     released AS (
+       UPDATE lighter_nonce_state n SET status='observed', reserved_nonce=NULL, reservation_id=NULL, updated_at=clock_timestamp()
+       FROM refused r WHERE n.environment=r.environment AND n.account_index=r.account_index AND n.api_key_index=r.api_key_index
+         AND n.status='reserved' AND n.reservation_id=r.nonce_reservation_id AND n.reserved_nonce=r.nonce_value
+       RETURNING n.environment)
+     SELECT intent_id FROM refused`, [input.intentId, input.sessionId, input.reservationId, input.reason]);
+  return row !== null;
 }

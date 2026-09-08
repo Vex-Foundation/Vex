@@ -158,7 +158,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     const deps = getConfiguredLighterOrderLifecycleExecutionDeps();
     if (deps === null) return fail("Privileged Lighter cancellation dependencies are unavailable. Nothing was signed or submitted.");
     try {
-      const result = await executeApprovedLighterCancelOne(approved, deps);
+      const result = await executeApprovedLighterCancelOne(approved, deps, context?.abortSignal);
       return ok({
         source: "vex_lighter_order_cancel",
         ...result,
@@ -309,7 +309,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     const deps = getConfiguredLighterOrderLifecycleExecutionDeps();
     if (deps === null) return fail("Privileged Lighter modification dependencies are unavailable. Nothing was signed or submitted.");
     try {
-      const result = await executeApprovedLighterModifyOrder(approved, deps);
+      const result = await executeApprovedLighterModifyOrder(approved, deps, context?.abortSignal);
       return ok({
         source: "vex_lighter_order_modify",
         ...result,
@@ -427,7 +427,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     const deps = getConfiguredLighterOrderLifecycleExecutionDeps();
     if (deps === null) return fail("Privileged Lighter cancel-all dependencies are unavailable. Nothing was signed or submitted.");
     try {
-      const result = await executeApprovedLighterCancelAll(approved, deps);
+      const result = await executeApprovedLighterCancelAll(approved, deps, context?.abortSignal);
       return ok({
         source: "vex_lighter_order_cancel_all",
         ...result,
@@ -594,7 +594,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     const deps = getConfiguredLighterOrderLifecycleExecutionDeps();
     if (deps === null) return fail("Privileged Lighter close-position dependencies are unavailable. Nothing was signed or submitted.");
     try {
-      const result = await executeApprovedLighterClosePosition(approved, deps);
+      const result = await executeApprovedLighterClosePosition(approved, deps, context?.abortSignal);
       return ok({
         source: "vex_lighter_position_close",
         approval: { status: "approved_in_vex", approvalId: context.approvalId },

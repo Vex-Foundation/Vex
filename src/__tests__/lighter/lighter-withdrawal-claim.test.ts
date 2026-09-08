@@ -1,4 +1,7 @@
-import { keccak256 } from "viem";
+import { keccak256, type Chain } from "viem";
+import { mainnet } from "viem/chains";
+
+import { testPublicClient } from "../helpers/viem-public-client.js";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -22,25 +25,52 @@ const RHC_GATEWAY = "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d";
 const RHC_IMPLEMENTATION = "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90";
 const USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
 
-function publicClient(overrides?: { pending?: bigint; balance?: bigint; maxFee?: bigint }) {
+const RHC_CHAIN = {
+  id: 4663,
+  name: "Robinhood Chain mainnet",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: { default: { http: ["http://127.0.0.1:1/unused"] } },
+} as const satisfies Chain;
+
+/** The reads both claim preflights share, with the amounts the case under test needs. */
+function claimReads(overrides?: { balance?: bigint; maxFee?: bigint }) {
   return {
-    chain: { id: 1 },
-    getChainId: vi.fn(async () => 1),
     getBlock: vi.fn(async () => ({
       number: 100n,
       hash: `0x${"b".repeat(64)}`,
       timestamp: BigInt(Math.floor(NOW.getTime() / 1_000)),
     })),
-    readContract: vi.fn(async (request: { functionName: string }) => request.functionName === "getPendingBalance"
-      ? overrides?.pending ?? 2_000_000n
-      : [USDC, 1, 1n, 1n, 1n, 1n]),
     getBalance: vi.fn(async () => overrides?.balance ?? 10n ** 18n),
-    getBytecode: vi.fn(async ({ address }: { address: string }) => address.toLowerCase() === GATEWAY.toLowerCase() ? GATEWAY_CODE : TOKEN_CODE),
-    getStorageAt: vi.fn(async () => `0x${"0".repeat(24)}${IMPLEMENTATION.slice(2)}`),
     estimateFeesPerGas: vi.fn(async () => ({ maxFeePerGas: overrides?.maxFee ?? 10n, maxPriorityFeePerGas: 2n })),
     simulateContract: vi.fn(async () => ({ result: undefined })),
     estimateGas: vi.fn(async () => 100_000n),
   };
+}
+
+function publicClient(overrides?: { pending?: bigint; balance?: bigint; maxFee?: bigint }) {
+  return testPublicClient(mainnet, {
+    ...claimReads(overrides),
+    getChainId: vi.fn(async () => 1),
+    // The parameters are DECLARED so each stub answers the exact production call
+    // it stands in for, without casting the request back into existence.
+    readContract: vi.fn(async (request: { functionName: string }) => request.functionName === "getPendingBalance"
+      ? overrides?.pending ?? 2_000_000n
+      : [USDC, 1, 1n, 1n, 1n, 1n]),
+    getBytecode: vi.fn(async ({ address }: { address: string }) => address.toLowerCase() === GATEWAY.toLowerCase() ? GATEWAY_CODE : TOKEN_CODE),
+    getStorageAt: vi.fn(async () => `0x${"0".repeat(24)}${IMPLEMENTATION.slice(2)}`),
+  });
+}
+
+function rhcPublicClient(maxFee: bigint) {
+  return testPublicClient(RHC_CHAIN, {
+    ...claimReads({ maxFee }),
+    getChainId: vi.fn(async () => 4663),
+    readContract: vi.fn(async (request: { functionName: string }) => request.functionName === "getPendingBalance"
+      ? 2_000_000n
+      : [USDG, 1, 1n, 1n, 1n, 1n]),
+    getBytecode: vi.fn(async ({ address }: { address: string }) => address.toLowerCase() === RHC_GATEWAY.toLowerCase() ? GATEWAY_CODE : TOKEN_CODE),
+    getStorageAt: vi.fn(async () => `0x${"0".repeat(24)}${RHC_IMPLEMENTATION.slice(2)}`),
+  });
 }
 
 async function snapshot(overrides?: { pending?: bigint; balance?: bigint; maxFee?: bigint }) {
@@ -94,17 +124,8 @@ describe("Core manual withdrawal claim", () => {
 
 describe("RHC manual withdrawal claim", () => {
   async function rhcSnapshot(maxFee = 10n) {
-    const client = {
-      ...publicClient({ maxFee }),
-      chain: { id: 4663 },
-      getChainId: vi.fn(async () => 4663),
-      readContract: vi.fn(async (request: { functionName: string }) => request.functionName === "getPendingBalance"
-        ? 2_000_000n : [USDG, 1, 1n, 1n, 1n, 1n]),
-      getBytecode: vi.fn(async ({ address }: { address: string }) => address.toLowerCase() === RHC_GATEWAY.toLowerCase() ? GATEWAY_CODE : TOKEN_CODE),
-      getStorageAt: vi.fn(async () => `0x${"0".repeat(24)}${RHC_IMPLEMENTATION.slice(2)}`),
-    };
     return readLighterWithdrawalClaimPreflight({
-      profile: getLighterSecureWithdrawalProfile("rhc"), publicClient: client,
+      profile: getLighterSecureWithdrawalProfile("rhc"), publicClient: rhcPublicClient(maxFee),
       walletAddress: OWNER, gatewayAddress: RHC_GATEWAY,
       expectedGatewayImplementation: RHC_IMPLEMENTATION,
       expectedGatewayCodeHash: keccak256(GATEWAY_CODE), settlementTokenAddress: USDG,

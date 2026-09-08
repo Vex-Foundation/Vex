@@ -1,3 +1,4 @@
+import { Client } from "pg";
 import { requireValue } from "../../../helpers/require-value.js";
 import { describe, expect, it, vi } from "vitest";
 
@@ -5,7 +6,8 @@ import { getUnresolvedMoneyStateForSession } from "@vex-agent/db/repos/approval-
 
 describe("Lighter onboarding money-state participation", () => {
   it("maps an unresolved Lighter lifecycle row into a fail-closed reason", async () => {
-    const client = {
+    const client = Object.assign(new Client(), {
+      release: vi.fn(),
       query: vi.fn().mockResolvedValue({
         rows: [{
           kind: "lighter_onboarding_unresolved",
@@ -13,7 +15,7 @@ describe("Lighter onboarding money-state participation", () => {
           detail: "deposit_confirmed",
         }],
       }),
-    };
+    });
 
     await expect(
       getUnresolvedMoneyStateForSession(client, "session-1"),

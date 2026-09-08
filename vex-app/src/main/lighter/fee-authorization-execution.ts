@@ -1,3 +1,4 @@
+import { assertIntentAuthority, LighterIntentRefusal, lighterSignerExited } from "@vex-agent/tools/protocols/lighter/intent-expiry.js";
 import { getAddress } from "viem";
 import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
 import type { LighterTxFromL1Response } from "@tools/lighter/types.js";
@@ -37,6 +38,8 @@ export interface LighterFeeAuthorizationExecutionDeps {
   readonly reserveSigning: typeof reserveSigning;
   readonly recordNonce: typeof nonceState.recordExecutionObserved;
   readonly releaseNonce: typeof nonceState.releaseReservation;
+  readonly releaseUnsubmittedNonce: typeof nonceState.releaseUnsubmittedReservation;
+  readonly admitSend: typeof intents.markSendAttemptStarted;
   readonly resolveWallet: typeof resolveSigningWallet;
   readonly selectedAddress: typeof resolveSelectedAddress;
   readonly sign: typeof signApprovedLighterFeeAuthorization;
@@ -54,6 +57,8 @@ function defaultDeps(): LighterFeeAuthorizationExecutionDeps {
     reserveSigning,
     recordNonce: nonceState.recordExecutionObserved,
     releaseNonce: nonceState.releaseReservation,
+    releaseUnsubmittedNonce: nonceState.releaseUnsubmittedReservation,
+    admitSend: intents.markSendAttemptStarted,
     resolveWallet: resolveSigningWallet,
     selectedAddress: resolveSelectedAddress,
     sign: signApprovedLighterFeeAuthorization,
@@ -207,10 +212,15 @@ export async function executeApprovedLighterFeeAuthorization(
   let intent = await readOwnedIntent(input, deps);
   if (!["approved", "tier_ready"].includes(intent.executionState))
     return reconcileLighterFeeAuthorization(input, deps);
-  if (intent.expiresAt.getTime() <= deps.now())
-    throw new Error(
-      "The fee approval expired before execution. Prepare a new authorization.",
-    );
+  const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
+    assertIntentAuthority(intent.expiresAt, deps.now(), phase, input.abortSignal);
+  let tierChanged = intent.executionState === "tier_ready" && intent.terms.targetTier !== null;
+  let signingStarted = false;
+  let signerExited = false;
+  let sendAdmissionStarted = false;
+  let signedHash: string | null = null;
+  try {
+  assertAuthority("before_reservation");
   let observed = await deps.readSetup(
     {
       ...input,
@@ -220,7 +230,7 @@ export async function executeApprovedLighterFeeAuthorization(
     intent.terms.revoke ? intent : undefined,
   );
   assertObservedIntent(intent, observed);
-  assertNotAborted(input);
+  assertAuthority("before_reservation");
   const target = intent.terms.targetTier;
   if (target && observed.limits.user_tier.toLowerCase() !== target) {
     if (
@@ -233,12 +243,7 @@ export async function executeApprovedLighterFeeAuthorization(
     }
     intent = await deps.transition(intent, "tier_change_staged");
     try {
-      if (input.abortSignal?.aborted) {
-        intent = await deps.transition(intent, "failed", {
-          failureReason: "aborted_before_tier_change",
-        });
-        return result(intent, "failed");
-      }
+      assertAuthority("before_reservation");
       const changed = await deps.client.changeAccountTier(
         intent.environment,
         { accountIndex: intent.accountIndex, newTier: target },
@@ -250,6 +255,7 @@ export async function executeApprovedLighterFeeAuthorization(
         });
         return result(intent, "failed");
       }
+      tierChanged = true;
       observed = await deps.readSetup({
         ...input,
         environment: intent.environment,
@@ -258,6 +264,11 @@ export async function executeApprovedLighterFeeAuthorization(
       assertLighterApprovedFeeTier(intent, observed);
       intent = await deps.transition(intent, "tier_ready");
     } catch (error) {
+      if (error instanceof LighterIntentRefusal) throw error;
+      if (tierChanged) {
+        intent = await deps.transition(intent, "failed", { failureReason: "tier_changed_fee_authorization_not_submitted" });
+        return { ...result(intent, "failed"), message: "Tier changed, fee authorization not submitted. The tier change remains in effect." };
+      }
       if (intent.executionState === "tier_change_staged") {
         const status =
           typeof error === "object" && error !== null && "httpStatus" in error
@@ -291,11 +302,7 @@ export async function executeApprovedLighterFeeAuthorization(
       "Lighter did not return fee-authorization evidence. Nothing was signed.",
     );
   }
-  if (intent.expiresAt.getTime() <= deps.now())
-    throw new Error(
-      "The fee approval expired during verification. Review a fresh approval.",
-    );
-  assertNotAborted(input);
+  assertAuthority("before_reservation");
   const next = await deps.client.getNextNonce(intent.environment, {
     accountIndex: intent.accountIndex,
     apiKeyIndex: intent.apiKeyIndex,
@@ -320,33 +327,33 @@ export async function executeApprovedLighterFeeAuthorization(
     );
   // Committing this state before signing makes an interrupted attempt strictly
   // reconciliation-only, including crashes before a signed hash is persisted.
-  assertNotAborted(input);
+  assertAuthority("before_reservation");
   intent = await deps.reserveSigning(intent, deps.now() + SIGNED_TX_TTL_MS);
-  let signed: Awaited<ReturnType<typeof signApprovedLighterFeeAuthorization>>;
+  assertAuthority("after_reservation");
+  const wallet = deps.resolveWallet(input.walletResolution, input.walletPolicy, "eip155");
+  if (wallet.family !== "eip155") throw new Error("An EVM wallet is required.");
+  assertAuthority("before_signing");
+  signingStarted = true;
+  const signed = await deps.sign({ intent, wallet });
+  signerExited = lighterSignerExited(signed);
+  signedHash = signed.txHash;
+  // Record the hash independently of send admission, even if consent expired.
   try {
-    const wallet = deps.resolveWallet(
-      input.walletResolution,
-      input.walletPolicy,
-      "eip155",
-    );
-    if (wallet.family !== "eip155")
-      throw new Error("An EVM wallet is required.");
-    assertNotAborted(input);
-    signed = await deps.sign({ intent, wallet });
+    intent = await deps.transition(intent, "signing", { txHash: signed.txHash });
   } catch {
-    intent = await deps.transition(intent, "ambiguous", {
-      failureReason: "signing_outcome_unknown",
-    });
-    return result(intent, "pending_verification");
+    intent = await deps.transition(intent, "signing", { txHash: signed.txHash });
   }
-  intent = await deps.transition(intent, "submission_staged", {
-    txHash: signed.txHash,
-  });
-  if (input.abortSignal?.aborted) {
-    intent = await deps.transition(intent, "ambiguous", {
-      failureReason: "aborted_before_submission",
-    });
-    return result(intent, "pending_verification");
+  assertAuthority("after_signing");
+  intent = await deps.transition(intent, "submission_staged");
+  assertAuthority("before_submission");
+  sendAdmissionStarted = true;
+  if (!await deps.admitSend({ intentId: intent.intentId, sessionId: intent.sessionId, txHash: signed.txHash })) {
+    sendAdmissionStarted = false;
+    throw new LighterIntentRefusal("submission_admission_refused");
+  }
+  assertAuthority("before_submission");
+  if (intent.txExpiryMs === null || deps.now() >= intent.txExpiryMs) {
+    throw new Error("The signed fee transaction wire expiry elapsed before send.");
   }
   try {
     const response = await deps.client.sendTx(intent.environment, {
@@ -369,6 +376,32 @@ export async function executeApprovedLighterFeeAuthorization(
     });
   }
   return reconcileLighterFeeAuthorization(input, deps);
+  } catch (error) {
+    signerExited ||= lighterSignerExited(error);
+    const reason = error instanceof LighterIntentRefusal ? error.reason : "fee_execution_interrupted";
+    if (intent.nonceValue !== null && !sendAdmissionStarted && (!signingStarted || signerExited)) {
+      intent = await deps.transition(intent, signedHash === null ? "failed" : "expired_unsubmitted", {
+        ...(signedHash === null ? {} : { txHash: signedHash }), failureReason: tierChanged && !sendAdmissionStarted ? "tier_changed_fee_authorization_not_submitted" : reason,
+      });
+      await deps.releaseUnsubmittedNonce({
+        environment: intent.environment, accountIndex: intent.accountIndex, apiKeyIndex: intent.apiKeyIndex,
+        reservationId: `lighter-fees:${intent.intentId}`, nonceValue: intent.nonceValue!,
+      });
+    } else if (signingStarted || sendAdmissionStarted) {
+      intent = await deps.transition(intent, "ambiguous", {
+        ...(signedHash === null ? {} : { txHash: signedHash }), failureReason: tierChanged && !sendAdmissionStarted ? "tier_changed_fee_authorization_not_submitted" : reason,
+      });
+    } else if (tierChanged) {
+      intent = await deps.transition(intent, "failed", { failureReason: "tier_changed_fee_authorization_not_submitted" });
+    } else {
+      throw error;
+    }
+    const outcome = result(intent, intent.executionState === "ambiguous" ? "pending_verification" : "failed");
+    return tierChanged && !sendAdmissionStarted
+      ? { ...outcome, message: "Tier changed, fee authorization not submitted. The tier change remains in effect. Review a fresh approval for fee authorization." }
+      : outcome;
+  }
+
 }
 
 async function readOwnedIntent(
@@ -401,11 +434,10 @@ export async function reconcileLighterFeeAuthorization(
   deps: LighterFeeAuthorizationExecutionDeps = defaultDeps(),
 ): Promise<LighterFeeAuthorizationResult> {
   let intent = await readOwnedIntent(input, deps);
-  if (intent.executionState === "failed") return result(intent, "failed");
+  if (intent.executionState === "failed" || intent.executionState === "expired_unsubmitted") return result(intent, "failed");
   if (["approved", "tier_ready"].includes(intent.executionState))
     return result(intent, "pending_verification");
   for (let attempt = 0; attempt < deps.attempts; attempt++) {
-    if (input.abortSignal?.aborted) break;
     const observed = await deps.readSetup(
       {
         ...input,
@@ -526,7 +558,9 @@ function result(
       ? "Lighter confirmed VEX's spot and perpetual fee authorization. Future trades keep their normal approval requirement."
       : status === "revoked"
         ? "Lighter confirmed revocation of VEX's fee authorization."
-        : status === "failed"
+        : intent.failureReason === "tier_changed_fee_authorization_not_submitted"
+          ? "Tier changed, fee authorization not submitted. The tier change remains in effect."
+          : status === "failed"
           ? "Fee setup did not establish the approved authorization. Prepare a fresh approval to continue; VEX did not retry the transaction."
           : intent.executionState === "tier_ready"
             ? "Lighter confirmed the account tier. Prepare fee setup again to approve its remaining authorization."
@@ -539,11 +573,6 @@ function result(
     txHash: intent.txHash,
     message,
   };
-}
-
-function assertNotAborted(input: LighterFeeAuthorizationExecutionInput): void {
-  if (input.abortSignal?.aborted)
-    throw new Error("Fee setup was stopped before the next action.");
 }
 
 export function exactExecutedFeeTransaction(

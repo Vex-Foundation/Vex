@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { app } from "electron";
 import { getAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
@@ -152,8 +153,8 @@ function defaultDeps(): SignApprovedLighterKeyRegistrationDeps {
   return {
     readVaultPrivateKey: readUnlockedLighterTradingApiPrivateKey,
     readVaultRegistrationState: getUnlockedLighterTradingCredentialRegistrationState,
-    keyGenerator: createLighterApiKeyGeneratorBinary(),
-    signer: createLighterChangePubKeySignerBinary(),
+    keyGenerator: createLighterApiKeyGeneratorBinary({ allowBinaryPathOverride: !app.isPackaged }),
+    signer: createLighterChangePubKeySignerBinary({ allowBinaryPathOverride: !app.isPackaged }),
     signWalletMessage: signLighterRegistrationWalletMessage,
     now: () => new Date(),
   };

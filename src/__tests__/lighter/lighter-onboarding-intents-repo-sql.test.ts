@@ -556,6 +556,34 @@ describe("lighter onboarding intent creation SQL", () => {
     expect(sql).toContain("execution_state = 'approval_pending'");
   });
 
+  it("returns one bounded, oldest-first unresolved page and reports that more exist", async () => {
+    // The repository fetches limit + 1 rows so the page can report hasMore
+    // without a second count query.
+    dbMocks.query.mockResolvedValueOnce([ROW, { ...ROW, intent_id: `${ROW.intent_id}-2` }]);
+
+    const page = await repo.listUnresolved("core", { limit: 1, offset: 3 });
+
+    expect(page.rows).toHaveLength(1);
+    expect(page.hasMore).toBe(true);
+    const [sql, params] = requireValue(dbMocks.query.mock.calls[0]);
+    expect(sql).toContain("execution_state NOT IN ('credited','failed')");
+    expect(sql).toContain("ORDER BY updated_at ASC, intent_id ASC");
+    expect(sql).toContain("LIMIT $2 OFFSET $3");
+    expect(params).toEqual(["core", 2, 3]);
+  });
+
+  it("defaults the unresolved page to its declared bound and rejects an invalid page", async () => {
+    dbMocks.query.mockResolvedValueOnce([ROW]);
+
+    const page = await repo.listUnresolved("core");
+
+    expect(page.hasMore).toBe(false);
+    const [, params] = requireValue(dbMocks.query.mock.calls[0]);
+    expect(params).toEqual(["core", repo.LIGHTER_ONBOARDING_UNRESOLVED_PAGE_LIMIT + 1, 0]);
+    await expect(repo.listUnresolved("core", { limit: 0 })).rejects.toThrow(/positive integer/);
+    await expect(repo.listUnresolved("core", { offset: -1 })).rejects.toThrow(/non-negative integer/);
+  });
+
   it("scopes unresolved deposit status reads to capability and wallet", async () => {
     dbMocks.query.mockResolvedValueOnce([ROW]);
 

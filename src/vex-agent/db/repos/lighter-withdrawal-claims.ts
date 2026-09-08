@@ -14,6 +14,7 @@ export type LighterWithdrawalClaimState =
   | "reverted" | "rejected" | "expired" | "ambiguous";
 
 export interface LighterWithdrawalClaimAttemptRow {
+  readonly sendAttemptStartedAt?: string | null;
   readonly claimId: string;
   readonly withdrawalIntentId: string;
   readonly sessionId: string;
@@ -75,7 +76,7 @@ const COLUMNS = `
   fee_ceiling_per_gas_wei, priority_fee_ceiling_wei, network_fee_ceiling_wei,
   state, decision_reason, decided_at, tx_hash, replacement_tx_hash, from_address,
   nonce, receipt_json, ambiguous_reason, staged_at, submitted_at, confirmed_at,
-  created_at, updated_at, expires_at`;
+  send_attempt_started_at, created_at, updated_at, expires_at`;
 
 export async function createManualClaimAttemptWith(
   client: PoolClient,
@@ -244,6 +245,7 @@ export async function markDecisionWith(client: PoolClient, input: {
 
 export async function markUnsubmittedFailureWith(client: PoolClient, input: {
   readonly claimId: string; readonly sessionId: string; readonly reason: string;
+  readonly nonceReservationId?: number; readonly nonceValue?: number;
 }): Promise<boolean> {
   const row = await queryOneWith<{ withdrawal_intent_id: string }>(client,
     `UPDATE lighter_withdrawal_claim_attempts
@@ -256,6 +258,16 @@ export async function markUnsubmittedFailureWith(client: PoolClient, input: {
       WHERE intent_id = $1 AND execution_state = 'manual_claim_approved'
       RETURNING intent_id`, [row.withdrawal_intent_id]);
   if (parent === null) throw new Error("Unsubmitted manual claim failure could not restore its parent withdrawal.");
+  if (input.nonceReservationId !== undefined) {
+    const released = await queryOneWith(client,
+      `UPDATE evm_nonce_reservations n SET status='abandoned', terminal_at=clock_timestamp(), updated_at=clock_timestamp()
+       FROM lighter_withdrawal_claim_attempts c
+       WHERE c.claim_id=$1 AND c.session_id=$2 AND n.id=$3 AND n.nonce=$4
+         AND n.chain_id=c.settlement_chain_id AND lower(n.from_address)=lower(c.wallet_address)
+         AND n.purpose='lighter_withdrawal_claim' AND n.status='reserved' AND n.tx_hash IS NULL
+       RETURNING n.id`, [input.claimId, input.sessionId, input.nonceReservationId, input.nonceValue]);
+    if (released === null) throw new Error("Unsigned manual claim could not release its exact nonce.");
+  }
   return true;
 }
 
@@ -399,6 +411,7 @@ function mapRow(row: Record<string, unknown>): LighterWithdrawalClaimAttemptRow 
     || preflight.settlementTokenAddress.toLowerCase() !== String(row.settlement_token_address).toLowerCase()
   ) throw new Error("Persisted manual claim contains crossed Lighter environment identity.");
   return {
+    sendAttemptStartedAt: row.send_attempt_started_at == null ? null : new Date(row.send_attempt_started_at as string | Date).toISOString(),
     claimId: String(row.claim_id), withdrawalIntentId: String(row.withdrawal_intent_id),
     sessionId: String(row.session_id), previewId: String(row.preview_id),
     approvalId: nullable(row.approval_id), matchHash: String(row.match_hash),
@@ -442,3 +455,42 @@ function safeText(value: string): string {
 function nullable(value: unknown): string | null { return value === null || value === undefined ? null : String(value); }
 function iso(value: unknown): string { return value instanceof Date ? value.toISOString() : String(value); }
 function nullableIso(value: unknown): string | null { return value === null || value === undefined ? null : iso(value); }
+
+
+export async function markSendAttemptStartedWith(client: PoolClient, input: {
+  readonly claimId: string; readonly sessionId: string; readonly txHash: string;
+}): Promise<boolean> {
+  const row = await queryOneWith<{ claim_id: string }>(client,
+    `UPDATE lighter_withdrawal_claim_attempts SET send_attempt_started_at=clock_timestamp(), updated_at=clock_timestamp()
+     WHERE claim_id=$1 AND session_id=$2 AND state='staged' AND tx_hash=$3
+       AND send_attempt_started_at IS NULL AND expires_at > clock_timestamp()
+     RETURNING claim_id`, [input.claimId, input.sessionId, input.txHash]);
+  return row !== null;
+}
+
+export async function markExpiredUnsubmittedWith(client: PoolClient, input: {
+  readonly claimId: string; readonly sessionId: string; readonly txHash: string; readonly reason: string;
+  readonly nonceReservationId: number;
+}): Promise<boolean> {
+  const row = await queryOneWith<{ withdrawal_intent_id: string }>(client,
+    `UPDATE lighter_withdrawal_claim_attempts SET state='expired', decision_reason=$4, updated_at=clock_timestamp()
+     WHERE claim_id=$1 AND session_id=$2 AND state='staged' AND tx_hash=$3
+       AND send_attempt_started_at IS NULL
+     RETURNING withdrawal_intent_id`, [input.claimId, input.sessionId, input.txHash, input.reason]);
+  if (row === null) return false;
+  const parent = await queryOneWith(client,
+    `UPDATE lighter_withdrawal_intents SET execution_state='claimable', updated_at=clock_timestamp()
+     WHERE intent_id=$1 AND execution_state='manual_claim_staged' RETURNING intent_id`, [row.withdrawal_intent_id]);
+  if (parent === null) throw new Error("Expired unsubmitted claim could not restore its parent.");
+  const released = await queryOneWith(client,
+    `UPDATE evm_nonce_reservations n SET status='terminal', tx_hash=$3, terminal_at=clock_timestamp(), updated_at=clock_timestamp(),
+       repair_claim_until=NULL, repair_claim_token=NULL
+     FROM lighter_withdrawal_claim_attempts c
+     WHERE c.claim_id=$1 AND c.session_id=$2 AND n.id=$4 AND n.nonce=c.nonce
+       AND n.chain_id=c.settlement_chain_id AND lower(n.from_address)=lower(c.from_address)
+       AND n.purpose='lighter_withdrawal_claim' AND n.status IN ('reserved','staged')
+       AND (n.tx_hash IS NULL OR n.tx_hash=$3)
+     RETURNING n.id`, [input.claimId, input.sessionId, input.txHash, input.nonceReservationId]);
+  if (released === null) throw new Error("Unsubmitted signed claim could not release its exact nonce.");
+  return true;
+}

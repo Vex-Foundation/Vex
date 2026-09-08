@@ -84,6 +84,7 @@ describe("Lighter execution boundary", () => {
 
   it("keeps API acceptance distinct from terminal provider outcomes", () => {
     expect(LIGHTER_ORDER_EXECUTION_STATES).toEqual([
+      "expired_unsubmitted",
       "previewed",
       "approval_pending",
       "signed",
@@ -98,6 +99,7 @@ describe("Lighter execution boundary", () => {
       "ambiguous",
     ]);
     expect(LIGHTER_ORDER_TERMINAL_EXECUTION_STATES).toEqual([
+      "expired_unsubmitted",
       "filled",
       "canceled",
       "rejected",

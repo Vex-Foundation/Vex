@@ -2,6 +2,7 @@ import type { WalletResolution } from "@tools/wallet/multi-auth.js";
 import type { WalletPolicy } from "@vex-agent/engine/types.js";
 
 export type LighterKeyRegistrationExecutionStatus =
+  | "expired_unsubmitted"
   | "active"
   | "submitted_pending_verification"
   | "ambiguity_unresolved"

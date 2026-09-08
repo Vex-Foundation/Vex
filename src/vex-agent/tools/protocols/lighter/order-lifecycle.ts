@@ -1,3 +1,5 @@
+import { persistLighterSigningEvidence, type LighterEvidenceWritePorts } from "./execution-boundary.js";
+import { assertIntentAuthority, assertIntentUnexpired, LighterIntentRefusal, lighterSignerExited, lighterSignerResolutionExited } from "./intent-expiry.js";
 import type { LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
 import { resolveLighterOrderFees, revalidateLighterOrderFees, type LighterOrderFeeClient } from "./order-fees.js";
 import { confirmedLighterCloseDisposition } from "./close-position-confirmation.js";
@@ -220,18 +222,11 @@ export interface LighterOrderLifecycleExecutionDeps {
     | "getOrderBookOrders"
     | "sendTx"
   >;
-  readonly intents: Pick<
-    typeof intentsRepo,
-    | "markPreSubmitRevalidated"
-    | "attachNonceReservationWith"
-    | "markSigned"
-    | "markSubmissionStaged"
-    | "markApiAccepted"
-    | "markProviderOutcome"
-    | "markAmbiguous"
-    | "markClosePositionChangedBeforeSubmissionWith"
-  >;
-  readonly nonceState: Pick<typeof nonceRepo, "recordExecutionObserved" | "reserveObservedWith">;
+  readonly intents: LighterEvidenceWritePorts<Pick<typeof intentsRepo,
+    "markPreSubmitRevalidated" | "attachNonceReservationWith" | "markSigned" | "markSubmissionStaged" | "markApiAccepted" | "markProviderOutcome" | "markAmbiguous" | "markClosePositionChangedBeforeSubmissionWith">>
+    & Pick<typeof intentsRepo, "markSendAttemptStarted" | "markExpiredUnsubmitted" | "markUnsubmittedRefused">;
+  readonly nonceState: LighterEvidenceWritePorts<Pick<typeof nonceRepo, "recordExecutionObserved">>
+    & Pick<typeof nonceRepo, "reserveObservedWith" | "releaseUnsubmittedReservation">;
   readonly transaction: typeof withTransaction;
   readonly acquireSessionControlLock: typeof acquireSessionControlLock;
   readonly now: () => number;
@@ -541,9 +536,14 @@ export async function prepareLighterClosePosition(input: {
 export async function executeApprovedLighterCancelOne(
   intent: LighterOrderLifecycleIntentRow,
   deps: LighterOrderLifecycleExecutionDeps,
+  abortSignal?: AbortSignal,
 ): Promise<ExecuteApprovedLighterCancelOneResult> {
+  const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
+    assertIntentAuthority(intent.expiresAt, deps.now(), phase, abortSignal);
+  assertAuthority("before_reservation");
   assertCancelableIntent(intent, deps.now());
   const secret = await loadLighterTradingSecretMaterial(intent.credentialRefJson, deps.secretReader);
+  assertAuthority("before_reservation");
   const authResult = await createLighterAccountAuthWithAdapter(
     buildLighterAccountAuthSigningInputForScope({
       environment: intent.environment,
@@ -612,6 +612,7 @@ export async function executeApprovedLighterCancelOne(
   if (observed === null) throw blocked("A previous Lighter nonce remains unresolved.");
 
   const reservationId = `lighter-lifecycle:${intent.intentId}`;
+  assertAuthority("before_reservation");
   const reserved = await deps.transaction(async (client) => {
     const nonce = await deps.nonceState.reserveObservedWith(client, {
       environment: intent.environment,
@@ -633,7 +634,13 @@ export async function executeApprovedLighterCancelOne(
   });
 
   let signerTxHash: string | null = null;
+  let signingStarted = false;
+  let signerExited = false;
+  let sendAdmissionStarted = false;
   try {
+    assertAuthority("after_reservation");
+    assertAuthority("before_signing");
+    signingStarted = true;
     const signerExpiryMs = deps.now() + SIGNER_EXPIRY_MS;
     const signed = await deps.lifecycleSigner.signCancelOrder(buildLighterCancelOrderSigningInput({
       environment: intent.environment,
@@ -645,22 +652,35 @@ export async function executeApprovedLighterCancelOne(
       providerOrderId: intent.providerOrderId!,
       secret,
     }));
+    signerExited = lighterSignerResolutionExited(signed);
     signerTxHash = signed.txHash;
-    const signedRow = await deps.intents.markSigned({
+    const signedRow = await persistLighterSigningEvidence(() => deps.intents.markSigned({
       intentId: intent.intentId,
       sessionId: intent.sessionId,
       reservationId,
       signerTxHash: signed.txHash,
       signerExpiryMs,
-    });
+    }));
     if (signedRow === null) return markAndReturnAmbiguous(deps, intent, "signed_state_persist_failed", signed.txHash);
+    assertAuthority("after_signing");
     const staged = await deps.intents.markSubmissionStaged({
       intentId: intent.intentId,
       sessionId: intent.sessionId,
       signerTxHash: signed.txHash,
     });
-    if (staged === null) return markAndReturnAmbiguous(deps, intent, "submission_stage_persist_failed", signed.txHash);
+    if (staged === null) throw new LighterIntentRefusal("submission_admission_refused");
 
+    assertAuthority("before_submission");
+    sendAdmissionStarted = true;
+    const admitted = await deps.intents.markSendAttemptStarted({
+      intentId: intent.intentId, sessionId: intent.sessionId, signerTxHash: signed.txHash,
+    });
+    if (!admitted) {
+      sendAdmissionStarted = false;
+      throw new LighterIntentRefusal("submission_admission_refused");
+    }
+    assertAuthority("before_submission");
+    if (deps.now() >= signerExpiryMs) throw blocked("The signed lifecycle wire expiry elapsed before send.");
     let response;
     try {
       response = await deps.client.sendTx(intent.environment, { txType: signed.txType, txInfo: signed.txInfo });
@@ -724,7 +744,23 @@ export async function executeApprovedLighterCancelOne(
       reason: "Provider accepted the cancel transaction; exact inactive-order evidence is pending.",
     };
   } catch (error) {
-    if (signerTxHash === null) await deps.intents.markAmbiguous({ intentId: intent.intentId, reason: "signing_failed_after_nonce_reservation" });
+    signerExited ||= lighterSignerExited(error);
+    if (!sendAdmissionStarted && (!signingStarted || (error instanceof LighterIntentRefusal && signerExited))) {
+      const refused = signerTxHash === null
+        ? await deps.intents.markUnsubmittedRefused({
+          intentId: intent.intentId, sessionId: intent.sessionId, reservationId, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
+        })
+        : await deps.intents.markExpiredUnsubmitted({
+          intentId: intent.intentId, sessionId: intent.sessionId, reservationId, signerTxHash, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
+        });
+      if (refused) await deps.nonceState.releaseUnsubmittedReservation({
+        environment: intent.environment, accountIndex: intent.accountIndex, apiKeyIndex: intent.apiKeyIndex,
+        reservationId, nonceValue: reserved,
+      });
+    } else if (signerTxHash === null || error instanceof LighterIntentRefusal) {
+      await deps.intents.markAmbiguous({ intentId: intent.intentId,
+        reason: error instanceof LighterIntentRefusal ? error.reason : "signing_failed_after_nonce_reservation" });
+    }
     throw error;
   }
 }
@@ -732,9 +768,14 @@ export async function executeApprovedLighterCancelOne(
 export async function executeApprovedLighterModifyOrder(
   intent: LighterOrderLifecycleIntentRow,
   deps: LighterOrderLifecycleExecutionDeps,
+  abortSignal?: AbortSignal,
 ): Promise<ExecuteApprovedLighterModifyOrderResult> {
+  const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
+    assertIntentAuthority(intent.expiresAt, deps.now(), phase, abortSignal);
+  assertAuthority("before_reservation");
   assertModifyIntent(intent, deps.now());
   const secret = await loadLighterTradingSecretMaterial(intent.credentialRefJson, deps.secretReader);
+  assertAuthority("before_reservation");
   const authResult = await createLighterAccountAuthWithAdapter(
     buildLighterAccountAuthSigningInputForScope({
       environment: intent.environment,
@@ -816,6 +857,7 @@ export async function executeApprovedLighterModifyOrder(
   if (observed === null) throw blocked("A previous Lighter nonce remains unresolved.");
 
   const reservationId = `lighter-lifecycle:${intent.intentId}`;
+  assertAuthority("before_reservation");
   const reserved = await deps.transaction(async (client) => {
     const nonce = await deps.nonceState.reserveObservedWith(client, {
       environment: intent.environment,
@@ -837,7 +879,13 @@ export async function executeApprovedLighterModifyOrder(
   });
 
   let signerTxHash: string | null = null;
+  let signingStarted = false;
+  let signerExited = false;
+  let sendAdmissionStarted = false;
   try {
+    assertAuthority("after_reservation");
+    assertAuthority("before_signing");
+    signingStarted = true;
     const signerExpiryMs = deps.now() + SIGNER_EXPIRY_MS;
     const signed = await deps.lifecycleSigner.signModifyOrder(buildLighterModifyOrderSigningInput({
       integratorFees: intent.integratorFees ?? null,
@@ -853,22 +901,35 @@ export async function executeApprovedLighterModifyOrder(
       triggerPriceInteger: "0",
       secret,
     }));
+    signerExited = lighterSignerResolutionExited(signed);
     signerTxHash = signed.txHash;
-    const signedRow = await deps.intents.markSigned({
+    const signedRow = await persistLighterSigningEvidence(() => deps.intents.markSigned({
       intentId: intent.intentId,
       sessionId: intent.sessionId,
       reservationId,
       signerTxHash: signed.txHash,
       signerExpiryMs,
-    });
+    }));
     if (signedRow === null) return markAndReturnAmbiguous(deps, intent, "signed_state_persist_failed", signed.txHash);
+    assertAuthority("after_signing");
     const staged = await deps.intents.markSubmissionStaged({
       intentId: intent.intentId,
       sessionId: intent.sessionId,
       signerTxHash: signed.txHash,
     });
-    if (staged === null) return markAndReturnAmbiguous(deps, intent, "submission_stage_persist_failed", signed.txHash);
+    if (staged === null) throw new LighterIntentRefusal("submission_admission_refused");
 
+    assertAuthority("before_submission");
+    sendAdmissionStarted = true;
+    const admitted = await deps.intents.markSendAttemptStarted({
+      intentId: intent.intentId, sessionId: intent.sessionId, signerTxHash: signed.txHash,
+    });
+    if (!admitted) {
+      sendAdmissionStarted = false;
+      throw new LighterIntentRefusal("submission_admission_refused");
+    }
+    assertAuthority("before_submission");
+    if (deps.now() >= signerExpiryMs) throw blocked("The signed lifecycle wire expiry elapsed before send.");
     let response;
     try {
       response = await deps.client.sendTx(intent.environment, { txType: signed.txType, txInfo: signed.txInfo });
@@ -936,7 +997,23 @@ export async function executeApprovedLighterModifyOrder(
       reason: "Provider accepted the modify transaction; exact updated-order evidence is pending.",
     };
   } catch (error) {
-    if (signerTxHash === null) await deps.intents.markAmbiguous({ intentId: intent.intentId, reason: "signing_failed_after_nonce_reservation" });
+    signerExited ||= lighterSignerExited(error);
+    if (!sendAdmissionStarted && (!signingStarted || (error instanceof LighterIntentRefusal && signerExited))) {
+      const refused = signerTxHash === null
+        ? await deps.intents.markUnsubmittedRefused({
+          intentId: intent.intentId, sessionId: intent.sessionId, reservationId, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
+        })
+        : await deps.intents.markExpiredUnsubmitted({
+          intentId: intent.intentId, sessionId: intent.sessionId, reservationId, signerTxHash, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
+        });
+      if (refused) await deps.nonceState.releaseUnsubmittedReservation({
+        environment: intent.environment, accountIndex: intent.accountIndex, apiKeyIndex: intent.apiKeyIndex,
+        reservationId, nonceValue: reserved,
+      });
+    } else if (signerTxHash === null || error instanceof LighterIntentRefusal) {
+      await deps.intents.markAmbiguous({ intentId: intent.intentId,
+        reason: error instanceof LighterIntentRefusal ? error.reason : "signing_failed_after_nonce_reservation" });
+    }
     throw error;
   }
 }
@@ -944,10 +1021,15 @@ export async function executeApprovedLighterModifyOrder(
 export async function executeApprovedLighterCancelAll(
   intent: LighterOrderLifecycleIntentRow,
   deps: LighterOrderLifecycleExecutionDeps,
+  abortSignal?: AbortSignal,
 ): Promise<ExecuteApprovedLighterCancelAllResult> {
+  const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
+    assertIntentAuthority(intent.expiresAt, deps.now(), phase, abortSignal);
+  assertAuthority("before_reservation");
   assertCancelAllIntent(intent, deps.now());
   const approvedOrders = readStoredCancelAllOrders(intent.providerSnapshotJson);
   const secret = await loadLighterTradingSecretMaterial(intent.credentialRefJson, deps.secretReader);
+  assertAuthority("before_reservation");
   const authResult = await createLighterAccountAuthWithAdapter(
     buildLighterAccountAuthSigningInputForScope({
       environment: intent.environment,
@@ -1009,6 +1091,7 @@ export async function executeApprovedLighterCancelAll(
   if (observed === null) throw blocked("A previous Lighter nonce remains unresolved.");
 
   const reservationId = `lighter-lifecycle:${intent.intentId}`;
+  assertAuthority("before_reservation");
   const reserved = await deps.transaction(async (client) => {
     const nonce = await deps.nonceState.reserveObservedWith(client, {
       environment: intent.environment,
@@ -1030,7 +1113,13 @@ export async function executeApprovedLighterCancelAll(
   });
 
   let signerTxHash: string | null = null;
+  let signingStarted = false;
+  let signerExited = false;
+  let sendAdmissionStarted = false;
   try {
+    assertAuthority("after_reservation");
+    assertAuthority("before_signing");
+    signingStarted = true;
     const signerExpiryMs = deps.now() + SIGNER_EXPIRY_MS;
     const signed = await deps.lifecycleSigner.signCancelAllOrders(buildLighterCancelAllOrdersSigningInput({
       environment: intent.environment,
@@ -1040,21 +1129,34 @@ export async function executeApprovedLighterCancelAll(
       expiredAt: String(signerExpiryMs),
       secret,
     }));
+    signerExited = lighterSignerResolutionExited(signed);
     signerTxHash = signed.txHash;
-    const signedRow = await deps.intents.markSigned({
+    const signedRow = await persistLighterSigningEvidence(() => deps.intents.markSigned({
       intentId: intent.intentId,
       sessionId: intent.sessionId,
       reservationId,
       signerTxHash: signed.txHash,
       signerExpiryMs,
-    });
+    }));
     if (signedRow === null) return markAndReturnAmbiguous(deps, intent, "signed_state_persist_failed", signed.txHash);
+    assertAuthority("after_signing");
     const staged = await deps.intents.markSubmissionStaged({
       intentId: intent.intentId,
       sessionId: intent.sessionId,
       signerTxHash: signed.txHash,
     });
-    if (staged === null) return markAndReturnAmbiguous(deps, intent, "submission_stage_persist_failed", signed.txHash);
+    if (staged === null) throw new LighterIntentRefusal("submission_admission_refused");
+    assertAuthority("before_submission");
+    sendAdmissionStarted = true;
+    const admitted = await deps.intents.markSendAttemptStarted({
+      intentId: intent.intentId, sessionId: intent.sessionId, signerTxHash: signed.txHash,
+    });
+    if (!admitted) {
+      sendAdmissionStarted = false;
+      throw new LighterIntentRefusal("submission_admission_refused");
+    }
+    assertAuthority("before_submission");
+    if (deps.now() >= signerExpiryMs) throw blocked("The signed lifecycle wire expiry elapsed before send.");
     let response;
     try {
       response = await deps.client.sendTx(intent.environment, { txType: signed.txType, txInfo: signed.txInfo });
@@ -1125,7 +1227,23 @@ export async function executeApprovedLighterCancelAll(
       reason: "Provider accepted cancel-all; proof that the exact approved order set is terminal is pending.",
     };
   } catch (error) {
-    if (signerTxHash === null) await deps.intents.markAmbiguous({ intentId: intent.intentId, reason: "signing_failed_after_nonce_reservation" });
+    signerExited ||= lighterSignerExited(error);
+    if (!sendAdmissionStarted && (!signingStarted || (error instanceof LighterIntentRefusal && signerExited))) {
+      const refused = signerTxHash === null
+        ? await deps.intents.markUnsubmittedRefused({
+          intentId: intent.intentId, sessionId: intent.sessionId, reservationId, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
+        })
+        : await deps.intents.markExpiredUnsubmitted({
+          intentId: intent.intentId, sessionId: intent.sessionId, reservationId, signerTxHash, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
+        });
+      if (refused) await deps.nonceState.releaseUnsubmittedReservation({
+        environment: intent.environment, accountIndex: intent.accountIndex, apiKeyIndex: intent.apiKeyIndex,
+        reservationId, nonceValue: reserved,
+      });
+    } else if (signerTxHash === null || error instanceof LighterIntentRefusal) {
+      await deps.intents.markAmbiguous({ intentId: intent.intentId,
+        reason: error instanceof LighterIntentRefusal ? error.reason : "signing_failed_after_nonce_reservation" });
+    }
     throw error;
   }
 }
@@ -1133,10 +1251,15 @@ export async function executeApprovedLighterCancelAll(
 export async function executeApprovedLighterClosePosition(
   intent: LighterOrderLifecycleIntentRow,
   deps: LighterOrderLifecycleExecutionDeps,
+  abortSignal?: AbortSignal,
 ): Promise<ExecuteApprovedLighterClosePositionResult> {
+  const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
+    assertIntentAuthority(intent.expiresAt, deps.now(), phase, abortSignal);
+  assertAuthority("before_reservation");
   assertClosePositionIntent(intent, deps.now());
   const context = readStoredCloseContext(intent);
   const secret = await loadLighterTradingSecretMaterial(intent.credentialRefJson, deps.secretReader);
+  assertAuthority("before_reservation");
   const authResult = await createLighterAccountAuthWithAdapter(
     buildLighterAccountAuthSigningInputForScope({
       environment: intent.environment,
@@ -1256,6 +1379,7 @@ export async function executeApprovedLighterClosePosition(
   });
   if (observed === null) throw blocked("A previous Lighter nonce remains unresolved.");
   const reservationId = `lighter-lifecycle:${intent.intentId}`;
+  assertAuthority("before_reservation");
   const reserved = await deps.transaction(async (client) => {
     const nonce = await deps.nonceState.reserveObservedWith(client, {
       environment: intent.environment,
@@ -1277,13 +1401,20 @@ export async function executeApprovedLighterClosePosition(
   });
 
   let signerTxHash: string | null = null;
+  let signingStarted = false;
+  let signerExited = false;
+  let sendAdmissionStarted = false;
   try {
+    assertAuthority("after_reservation");
+    assertAuthority("before_signing");
+    signingStarted = true;
     const signed = await signLighterCreateOrderWithAdapter(
       buildLighterCreateOrderSigningInput({ order: unsignedOrder, secret, nonce: reserved }),
       deps.authSigner,
     );
+    signerExited = lighterSignerResolutionExited(signed);
     signerTxHash = signed.txHash;
-    const signedRow = await deps.intents.markSigned({
+    const signedRow = await persistLighterSigningEvidence(() => deps.intents.markSigned({
       intentId: intent.intentId,
       sessionId: intent.sessionId,
       reservationId,
@@ -1293,14 +1424,25 @@ export async function executeApprovedLighterClosePosition(
       // so there is no signed expiry that repair may safely use to release an
       // ambiguous nonce reservation.
       signerExpiryMs: null,
-    });
+    }));
     if (signedRow === null) return markAndReturnAmbiguous(deps, intent, "signed_state_persist_failed", signed.txHash);
+    assertAuthority("after_signing");
     const staged = await deps.intents.markSubmissionStaged({
       intentId: intent.intentId,
       sessionId: intent.sessionId,
       signerTxHash: signed.txHash,
     });
-    if (staged === null) return markAndReturnAmbiguous(deps, intent, "submission_stage_persist_failed", signed.txHash);
+    if (staged === null) throw new LighterIntentRefusal("submission_admission_refused");
+    assertAuthority("before_submission");
+    sendAdmissionStarted = true;
+    const admitted = await deps.intents.markSendAttemptStarted({
+      intentId: intent.intentId, sessionId: intent.sessionId, signerTxHash: signed.txHash,
+    });
+    if (!admitted) {
+      sendAdmissionStarted = false;
+      throw new LighterIntentRefusal("submission_admission_refused");
+    }
+    assertAuthority("before_submission");
     let response;
     try {
       response = await deps.client.sendTx(intent.environment, { txType: signed.txType, txInfo: signed.txInfo });
@@ -1393,7 +1535,23 @@ export async function executeApprovedLighterClosePosition(
         : "The close order has terminal fill evidence, but the position update is not yet consistent with it. Report the observed fill; position confirmation is pending. Do not call it partially closed or resubmit.",
     };
   } catch (error) {
-    if (signerTxHash === null) await deps.intents.markAmbiguous({ intentId: intent.intentId, reason: "signing_failed_after_nonce_reservation" });
+    signerExited ||= lighterSignerExited(error);
+    if (!sendAdmissionStarted && (!signingStarted || (error instanceof LighterIntentRefusal && signerExited))) {
+      const refused = signerTxHash === null
+        ? await deps.intents.markUnsubmittedRefused({
+          intentId: intent.intentId, sessionId: intent.sessionId, reservationId, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
+        })
+        : await deps.intents.markExpiredUnsubmitted({
+          intentId: intent.intentId, sessionId: intent.sessionId, reservationId, signerTxHash, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
+        });
+      if (refused) await deps.nonceState.releaseUnsubmittedReservation({
+        environment: intent.environment, accountIndex: intent.accountIndex, apiKeyIndex: intent.apiKeyIndex,
+        reservationId, nonceValue: reserved,
+      });
+    } else if (signerTxHash === null || error instanceof LighterIntentRefusal) {
+      await deps.intents.markAmbiguous({ intentId: intent.intentId,
+        reason: error instanceof LighterIntentRefusal ? error.reason : "signing_failed_after_nonce_reservation" });
+    }
     throw error;
   }
 }
@@ -1409,37 +1567,37 @@ async function markAndReturnAmbiguous(
 }
 
 function assertCancelableIntent(intent: LighterOrderLifecycleIntentRow, nowMs: number): void {
+  assertIntentUnexpired(intent.expiresAt, nowMs, "consent_expired_before_plan");
   if (
     intent.actionType !== "cancel_one" || intent.approvalStatus !== "approved"
     || intent.executionState !== "approved" || intent.marketIndex === null || intent.providerOrderId === null
-    || Date.parse(intent.expiresAt) <= nowMs
   ) throw blocked("The Lighter cancel intent is not approved, fresh, and exact.");
 }
 
 function assertModifyIntent(intent: LighterOrderLifecycleIntentRow, nowMs: number): void {
+  assertIntentUnexpired(intent.expiresAt, nowMs, "consent_expired_before_plan");
   if (
     intent.actionType !== "modify" || intent.approvalStatus !== "approved"
     || intent.executionState !== "approved" || intent.marketIndex === null || intent.providerOrderId === null
     || intent.requestedBaseAmountInteger === null || intent.requestedPriceInteger === null
-    || Date.parse(intent.expiresAt) <= nowMs
   ) throw blocked("The Lighter modify intent is not approved, fresh, and exact.");
 }
 
 function assertCancelAllIntent(intent: LighterOrderLifecycleIntentRow, nowMs: number): void {
+  assertIntentUnexpired(intent.expiresAt, nowMs, "consent_expired_before_plan");
   if (
     intent.actionType !== "cancel_all" || intent.approvalStatus !== "approved"
     || intent.executionState !== "approved" || intent.marketIndex !== null || intent.providerOrderId !== null
-    || Date.parse(intent.expiresAt) <= nowMs
   ) throw blocked("The Lighter cancel-all intent is not approved, fresh, and account-wide.");
 }
 
 function assertClosePositionIntent(intent: LighterOrderLifecycleIntentRow, nowMs: number): void {
+  assertIntentUnexpired(intent.expiresAt, nowMs, "consent_expired_before_plan");
   if (
     intent.actionType !== "close_position" || intent.approvalStatus !== "approved"
     || intent.executionState !== "approved" || intent.marketIndex === null || intent.providerOrderId !== null
     || intent.requestedBaseAmountInteger === null || intent.requestedPriceInteger === null
     || (intent.requestedSide !== "buy" && intent.requestedSide !== "sell") || intent.reduceOnly !== true
-    || Date.parse(intent.expiresAt) <= nowMs
   ) throw blocked("The Lighter close-position intent is not approved, fresh, reduce-only, and exact.");
 }
 

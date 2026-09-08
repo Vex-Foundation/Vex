@@ -1,3 +1,4 @@
+import { requireValue } from "../../../../../src/__tests__/helpers/require-value.js";
 import { describe, expect, it, vi } from "vitest";
 
 import { mapLighterError } from "@tools/lighter/errors.js";
@@ -200,6 +201,9 @@ function makeDeps(options: {
     readVaultPrivateKey: vi.fn(() => LIGHTER_PRIVATE_KEY),
     readVaultRegistrationState: vi.fn(() => "key_generated_pending_registration" as const),
     activateVaultCredential,
+    claimSigning: vi.fn(async () => true),
+    admitSend: vi.fn(async () => true),
+    refuseUnsubmitted: vi.fn(async () => true),
     markStaged: vi.fn(async (_sessionId, _intentId, input) => {
       events.push("stage");
       current = {
@@ -443,4 +447,65 @@ describe("Lighter key registration execution", () => {
     expect(setup.deps.sign).not.toHaveBeenCalled();
     expect(setup.deps.client.sendTx).not.toHaveBeenCalled();
   });
+});
+
+function controlledSigningGate() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => { release = resolve; });
+  return { promise, release };
+}
+describe("key registration consent races", () => {
+  for (const kind of ["expiry", "cancellation"] as const) {
+    it.each(["reservation", "signing", "staging", "send-admission"] as const)(`${kind} at %s refuses submission`, async (phase) => {
+      const { deps } = makeDeps(), controller = new AbortController();
+      const entered = controlledSigningGate(), finish = controlledSigningGate();
+      const pause = async () => { entered.release(); await finish.promise; };
+      if (phase === "reservation") {
+        vi.mocked(deps.claimSigning).mockImplementation(async () => { await pause(); return true; });
+      } else if (phase === "signing") {
+        vi.mocked(deps.sign).mockImplementation(async () => { await pause(); return Object.assign(signedResult(), { childState: "exited" }); });
+      } else if (phase === "staging") {
+        const original = requireValue(vi.mocked(deps.markStaged).getMockImplementation());
+        vi.mocked(deps.markStaged).mockImplementation(async (...args) => { const row = await original(...args); await pause(); return row; });
+      } else {
+        vi.mocked(deps.admitSend).mockImplementation(async () => { await pause(); return true; });
+      }
+      const execution = executeApprovedLighterKeyRegistration({ ...EXECUTION_INPUT, abortSignal: controller.signal }, deps);
+      const rejected = expect(execution).rejects.toMatchObject({ reason: expect.stringMatching(kind === "expiry" ? /^consent_expired_/ : /^cancelled_/) });
+      await entered.promise;
+      if (kind === "expiry") vi.mocked(deps.now).mockReturnValue(intent().expiresAt); else controller.abort("lock");
+      finish.release();
+      await rejected;
+      expect(deps.client.sendTx).not.toHaveBeenCalled();
+      expect(deps.sign).toHaveBeenCalledTimes(phase === "reservation" ? 0 : 1);
+      if (phase !== "reservation") expect(deps.markStaged).toHaveBeenCalledOnce();
+      if (phase === "signing") expect(deps.refuseUnsubmitted).toHaveBeenCalledWith(expect.objectContaining({ intentId: EXECUTION_INPUT.intentId }));
+      if (phase === "send-admission") expect(deps.refuseUnsubmitted).not.toHaveBeenCalled();
+    });
+  }
+  it("does not sign again after the durable signing claim was lost", async () => {
+    const { deps } = makeDeps();
+    vi.mocked(deps.claimSigning).mockResolvedValue(false);
+    await expect(executeApprovedLighterKeyRegistration(EXECUTION_INPUT, deps)).rejects.toThrow("already claimed or expired");
+    expect(deps.sign).not.toHaveBeenCalled();
+    expect(deps.client.sendTx).not.toHaveBeenCalled();
+  });
+  it("persists a returned hash after a transient staging write failure without signing twice", async () => {
+    const { deps } = makeDeps(), controller = new AbortController();
+    vi.mocked(deps.sign).mockImplementation(async () => { controller.abort("lock"); return Object.assign(signedResult(), { childState: "exited" }); });
+    vi.mocked(deps.markStaged).mockRejectedValueOnce(new Error("storage temporarily unavailable"));
+    await expect(executeApprovedLighterKeyRegistration({ ...EXECUTION_INPUT, abortSignal: controller.signal }, deps))
+      .rejects.toMatchObject({ reason: "cancelled_after_signing" });
+    expect(deps.markStaged).toHaveBeenCalledTimes(2);
+    expect(deps.markStaged).toHaveBeenLastCalledWith(EXECUTION_INPUT.sessionId, EXECUTION_INPUT.intentId, expect.objectContaining({ txHash: TX_HASH }));
+    expect(deps.sign).toHaveBeenCalledOnce();
+    expect(deps.client.sendTx).not.toHaveBeenCalled();
+  });
+});
+
+it("does not relabel an unrelated failed registration as expired consent", async () => {
+  const { deps } = makeDeps({ initialExecutionState: "failed" });
+  await expect(executeApprovedLighterKeyRegistration(EXECUTION_INPUT, deps)).rejects.toThrow("failed without an unsubmitted consent refusal");
+  expect(deps.sign).not.toHaveBeenCalled();
+  expect(deps.client.sendTx).not.toHaveBeenCalled();
 });

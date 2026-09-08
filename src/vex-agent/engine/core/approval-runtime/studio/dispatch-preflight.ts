@@ -58,3 +58,32 @@ export function setStudioDispatchPreflight(
 export function readStudioDispatchPreflight(): StudioDispatchPreflight | null {
   return registered;
 }
+
+
+export type ApprovedDispatchRevocation =
+  | { readonly reason: "lock" | "vex_quit" }
+  | { readonly reason: "scope_changed" | "project_deleted"; readonly projectId: string };
+
+const revocationListeners = new Set<(event: ApprovedDispatchRevocation) => void>();
+
+/** Authority events only. A client disconnect never enters this registry. */
+export function revokeApprovedDispatches(event: ApprovedDispatchRevocation): void {
+  for (const listener of revocationListeners) listener(event);
+}
+
+export function createApprovedDispatchAbortOwner(projectId: string | null): {
+  readonly signal: AbortSignal;
+  readonly dispose: () => void;
+} {
+  const controller = new AbortController();
+  const listener = (event: ApprovedDispatchRevocation): void => {
+    if (!("projectId" in event) || event.projectId === projectId) controller.abort(event.reason);
+  };
+  revocationListeners.add(listener);
+  try {
+    if (registered !== null && !registered()) controller.abort("lock");
+  } catch {
+    controller.abort("lock");
+  }
+  return { signal: controller.signal, dispose: () => { revocationListeners.delete(listener); } };
+}

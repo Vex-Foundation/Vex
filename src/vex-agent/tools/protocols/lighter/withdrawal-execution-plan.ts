@@ -1,9 +1,11 @@
+import { assertIntentUnexpired } from "./intent-expiry.js";
 import type { LighterTradingCredentialVaultReference } from "@tools/lighter/trading-credentials.js";
 import { getLighterSecureWithdrawalProfile } from "@tools/lighter/withdrawal/profiles.js";
 import type { LighterWithdrawalIntentRow } from "@vex-agent/db/repos/lighter-withdrawal-intents.js";
 import { ErrorCodes, VexError } from "../../../../errors.js";
 
 export interface LighterWithdrawalReadyForSignerPlan {
+  readonly expiresAt: string;
   readonly intentId: string;
   readonly previewId: string;
   readonly sessionId: string;
@@ -42,15 +44,18 @@ export type LighterCoreWithdrawalReadyForSignerPlan = LighterWithdrawalReadyForS
 
 export function buildLighterCoreWithdrawalReadyForSignerPlan(
   intent: LighterWithdrawalIntentRow,
+  nowMs = Date.now(),
 ): LighterCoreWithdrawalReadyForSignerPlan {
-  const plan = buildLighterWithdrawalReadyForSignerPlan(intent);
+  const plan = buildLighterWithdrawalReadyForSignerPlan(intent, nowMs);
   if (plan.environment !== "core") throw invalid("The withdrawal intent is not a Core withdrawal.");
   return plan as LighterCoreWithdrawalReadyForSignerPlan;
 }
 
 export function buildLighterWithdrawalReadyForSignerPlan(
   intent: LighterWithdrawalIntentRow,
+  nowMs = Date.now(),
 ): LighterWithdrawalReadyForSignerPlan {
+  assertIntentUnexpired(intent.expiresAt, nowMs, "consent_expired_before_plan");
   const credential = intent.credentialRefJson;
   const profile = getLighterSecureWithdrawalProfile(intent.environment);
   if (
@@ -79,6 +84,7 @@ export function buildLighterWithdrawalReadyForSignerPlan(
     throw invalid(`The ${profile.sourceName} withdrawal intent has no verified settlement scan start block.`);
   }
   return {
+    expiresAt: intent.expiresAt,
     intentId: intent.intentId,
     previewId: intent.previewId,
     sessionId: intent.sessionId,

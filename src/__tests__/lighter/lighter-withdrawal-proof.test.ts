@@ -1,4 +1,5 @@
 import { withdrawalIntent } from "../helpers/lighter-intents.js";
+import { testPublicClient } from "../helpers/viem-public-client.js";
 import { requireValue } from "../helpers/require-value.js";
 import {
   encodeAbiParameters,
@@ -6,6 +7,7 @@ import {
   type Hex,
   type TransactionReceipt,
 } from "viem";
+import { mainnet } from "viem/chains";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -199,14 +201,14 @@ function reconciliationDeps(input?: {
       getTx: vi.fn(async () => l2Tx(input?.l2Status ?? 3)),
       getWithdrawHistory: vi.fn(async () => ({ code: 200, withdraws: [history()], cursor: "" })),
     },
-    privilegedAuth: { accountIndex: 737810 },
-    publicClient: {
+    privilegedAuth: { token: "bounded-read-auth", accountIndex: 737810 },
+    publicClient: testPublicClient(mainnet, {
       readContract: vi.fn(async () => input?.pendingBalance ?? 2_000_000n),
       getBlockNumber: vi.fn(async () => 111n),
       getLogs: vi.fn(async () => settlementLog),
       getTransactionReceipt: vi.fn(async () => receipt()),
       getBlock: vi.fn(async () => ({ hash: BLOCK_HASH })),
-    },
+    }),
     intents: { recordReconciliation },
     recordReconciliation,
   };
@@ -342,7 +344,7 @@ describe("Core withdrawal exact L2 and Ethereum proof", () => {
   it("uses the historical evidence client for settlement logs and receipts", async () => {
     const d = reconciliationDeps({ pendingBalance: 0n });
     d.publicClient.getLogs.mockRejectedValue(new Error("archive requests require a personal token"));
-    const historicalPublicClient = {
+    const historicalPublicClient = testPublicClient(mainnet, {
       getBlockNumber: vi.fn(async () => 111n),
       getLogs: vi.fn(async () => [{
         args: { owner: OWNER, assetIndex: 3, baseAmount: 2_000_000n },
@@ -350,7 +352,7 @@ describe("Core withdrawal exact L2 and Ethereum proof", () => {
       }]),
       getTransactionReceipt: vi.fn(async () => receipt()),
       getBlock: vi.fn(async () => ({ hash: BLOCK_HASH })),
-    };
+    });
 
     const reconciled = await reconcileLighterCoreWithdrawal({
       ...d,
@@ -405,10 +407,9 @@ describe("Core withdrawal exact L2 and Ethereum proof", () => {
         claimTxHash: TX_HASH,
         destinationTxHash: TX_HASH,
       },
-      publicClient: {
-        ...d.publicClient,
+      publicClient: Object.assign(d.publicClient, {
         getTransactionReceipt: vi.fn(async () => reverted),
-      },
+      }),
       claims: { markReconciledOutcome },
     };
     const reconciled = await reconcileLighterCoreWithdrawal(input);
@@ -460,12 +461,12 @@ describe("RHC withdrawal exact settlement isolation", () => {
       intent: current,
       client: { getTx, getWithdrawHistory },
       privilegedAuth: { token: "bounded-read-auth", accountIndex: 737810 },
-      publicClient: {
+      publicClient: testPublicClient(mainnet, {
         readContract: vi.fn(async () => 0n), getBlockNumber: vi.fn(async () => 111n),
         getLogs: vi.fn(async () => [{ args: { owner: OWNER, assetIndex: 3, baseAmount: 2_000_000n }, transactionHash: TX_HASH }]),
         getTransactionReceipt: vi.fn(async () => rhcReceipt),
         getBlock: vi.fn(async () => ({ hash: BLOCK_HASH })),
-      },
+      }),
       intents: { recordReconciliation },
     });
     expect(reconciled.executionState).toBe("destination_confirmed");

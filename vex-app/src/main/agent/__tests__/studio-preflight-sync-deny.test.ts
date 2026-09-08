@@ -22,16 +22,31 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
+import type { SecretSessionLifecycleListener } from "../../secrets/session.js";
+
 vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 vi.mock("../../studio/approval-refusals.js", () => ({
   repairPendingStudioRefusal: vi.fn().mockResolvedValue(true),
 }));
+/**
+ * The bridge subscribes to the session lifecycle synchronously at setup, so the
+ * fake holds the listener the way the real module does and hands back the
+ * disposer its teardown calls.
+ */
+const secretSessionLifecycleListeners =
+  new Set<SecretSessionLifecycleListener>();
 vi.mock("../../secrets/session.js", () => ({
   isSecretSessionUnlocked: () => true,
   isStudioSessionTransitionInProgress: () => false,
   isStudioDispatchPoisoned: () => false,
+  onSecretSessionLifecycle: (listener: SecretSessionLifecycleListener) => {
+    secretSessionLifecycleListeners.add(listener);
+    return () => {
+      secretSessionLifecycleListeners.delete(listener);
+    };
+  },
 }));
 
 /**

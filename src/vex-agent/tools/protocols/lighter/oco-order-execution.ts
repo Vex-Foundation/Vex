@@ -1,3 +1,5 @@
+import { persistLighterSigningEvidence, type LighterEvidenceWritePorts } from "./execution-boundary.js";
+import { assertIntentAuthority, LighterIntentRefusal, lighterSignerExited, lighterSignerResolutionExited } from "./intent-expiry.js";
 import { revalidateLighterOrderFees, type LighterOrderFeeClient } from "./order-fees.js";
 import { LIGHTER_ENDPOINTS, type LighterEnvironment } from "@tools/lighter/constants.js";
 import type { LighterClient } from "@tools/lighter/client.js";
@@ -77,12 +79,15 @@ export interface LighterOcoExecutionDeps {
     | "sendTx" | "getApiKeys" | "getNextNonce" | "getMarketDetails"
     | "getOrderBookOrders" | "getAccount" | "getAccountActiveOrders"
     | "getAccountInactiveOrders" | "getAccountTrades">;
-  readonly intents: Pick<typeof intentsRepo,
-    | "markPreSubmitRevalidated" | "attachNonceReservationWith" | "markSigned"
-    | "markSubmitted" | "markApiAccepted" | "markSequencerPending"
-    | "markProviderOutcome" | "markAmbiguous">;
+  readonly intents: LighterEvidenceWritePorts<Pick<typeof intentsRepo,
+    "markPreSubmitRevalidated" | "attachNonceReservationWith" | "markSigned" | "markSubmitted" | "markApiAccepted" | "markSequencerPending" | "markProviderOutcome" | "markAmbiguous">>
+    & Pick<typeof intentsRepo, "markSendAttemptStarted" | "markExpiredUnsubmitted" | "markUnsubmittedRefused">;
   readonly previews: Pick<typeof previewsRepo, "findFreshById">;
-  readonly nonceState: Pick<typeof nonceRepo, "recordExecutionObserved" | "reserveObservedWith">;
+  readonly nonceState: LighterEvidenceWritePorts<Pick<typeof nonceRepo, "recordExecutionObserved">>
+    & Pick<typeof nonceRepo, "releaseUnsubmittedReservation">
+    & { readonly reserveObservedWith: (...args: Parameters<typeof nonceRepo.reserveObservedWith>) => Promise<{
+      readonly reservedNonce: string | null; readonly reservationId: string | null;
+    } | null> };
   readonly transaction: typeof withTransaction;
   readonly now: () => number;
   readonly wait: (delayMs: number) => Promise<void>;
@@ -120,11 +125,16 @@ export async function executeApprovedLighterOco(input: {
   readonly plan: LighterOcoExecutionPlan;
   readonly group: LighterUnsignedOcoRequest;
   readonly deps: LighterOcoExecutionDeps;
+  readonly abortSignal?: AbortSignal;
 }): Promise<ExecuteApprovedLighterOcoResult> {
   const { plan, group, deps } = input;
+  const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
+    assertIntentAuthority(plan.expiresAt, deps.now(), phase, input.abortSignal);
+  assertAuthority("before_reservation");
   await revalidate(plan, deps);
   const credential = await readCredential(plan, deps);
   const secret = await loadLighterTradingSecretMaterial(plan.credentialReference, deps.secretReader);
+  assertAuthority("before_reservation");
   const auth = await createLighterAccountAuthWithAdapter(
     buildLighterAccountAuthSigningInput({
       order: group.orders[0],
@@ -148,9 +158,17 @@ export async function executeApprovedLighterOco(input: {
   if (observed === null) {
     throw blocked("The live Lighter nonce is blocked by an unresolved local reservation.");
   }
+  assertAuthority("before_reservation");
   const reservation = await reserveNonce(plan, deps);
   let signerTxHash: string | null = null;
+  let signingStarted = false;
+  let signerExited = false;
+  let sendAdmissionStarted = false;
   try {
+    assertAuthority("after_reservation");
+    assertAuthority("before_signing");
+    assertOcoWireExpiry(group, deps.now());
+    signingStarted = true;
     const signed = await signLighterCreateGroupedOrdersWithAdapter(
       buildLighterCreateGroupedOrdersSigningInput({
         group,
@@ -160,10 +178,11 @@ export async function executeApprovedLighterOco(input: {
       }),
       deps.groupedSigner,
     );
+    signerExited = lighterSignerResolutionExited(signed);
     signerTxHash = signed.txHash;
     let persistedSigned;
     try {
-      persistedSigned = await deps.intents.markSigned({
+      persistedSigned = await persistLighterSigningEvidence(() => deps.intents.markSigned({
         intentId: plan.intentId,
         sessionId: plan.sessionId,
         environment: plan.environment,
@@ -172,7 +191,7 @@ export async function executeApprovedLighterOco(input: {
         stopLossClientOrderIndex: group.orders[0].clientOrderIndex,
         takeProfitClientOrderIndex: group.orders[1].clientOrderIndex,
         signerTxHash: signed.txHash,
-      });
+      }));
     } catch {
       await markAmbiguous(plan, deps, "oco_signed_state_persist_failed");
       throw blocked("The signed OCO state could not be persisted before submission.");
@@ -181,6 +200,8 @@ export async function executeApprovedLighterOco(input: {
       await markAmbiguous(plan, deps, "oco_signed_state_persist_failed");
       throw blocked("The signed OCO state could not be persisted before submission.");
     }
+    assertAuthority("after_signing");
+    assertOcoWireExpiry(group, deps.now());
     let staged;
     try {
       staged = await deps.intents.markSubmitted({
@@ -191,10 +212,20 @@ export async function executeApprovedLighterOco(input: {
       await markAmbiguous(plan, deps, "oco_submitted_state_persist_failed");
       throw blocked("The OCO submission stage could not be persisted before sendTx.");
     }
-    if (staged === null) {
-      await markAmbiguous(plan, deps, "oco_submitted_state_persist_failed");
-      throw blocked("The OCO submission stage could not be persisted before sendTx.");
+    if (staged === null) throw new LighterIntentRefusal("submission_admission_refused");
+
+    assertAuthority("before_submission");
+    sendAdmissionStarted = true;
+    const admitted = await deps.intents.markSendAttemptStarted({
+      intentId: plan.intentId, sessionId: plan.sessionId, signerTxHash: signed.txHash,
+    });
+    if (!admitted) {
+      sendAdmissionStarted = false;
+      throw new LighterIntentRefusal("submission_admission_refused");
     }
+    assertAuthority("before_submission");
+    assertOcoWireExpiry(group, deps.now());
+
     let response: Awaited<ReturnType<LighterClient["sendTx"]>>;
     try {
       response = await deps.client.sendTx(plan.environment, {
@@ -247,7 +278,23 @@ export async function executeApprovedLighterOco(input: {
       predictedExecutionTimeMs: response.predicted_execution_time_ms,
     });
   } catch (error) {
-    if (signerTxHash === null) await markAmbiguous(plan, deps, "oco_signing_failed_after_nonce_reservation");
+    signerExited ||= lighterSignerExited(error);
+    if (!sendAdmissionStarted && (!signingStarted || (error instanceof LighterIntentRefusal && signerExited))) {
+      const refused = signerTxHash === null
+        ? await deps.intents.markUnsubmittedRefused({
+          intentId: plan.intentId, sessionId: plan.sessionId, reservationId: reservation.reservationId, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
+        })
+        : await deps.intents.markExpiredUnsubmitted({
+          intentId: plan.intentId, sessionId: plan.sessionId, reservationId: reservation.reservationId,
+          signerTxHash, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
+        });
+      if (refused) await deps.nonceState.releaseUnsubmittedReservation({
+        environment: plan.environment, accountIndex: plan.accountIndex, apiKeyIndex: plan.apiKeyIndex,
+        reservationId: reservation.reservationId, nonceValue: reservation.nonceValue,
+      });
+    } else if (signerTxHash === null || error instanceof LighterIntentRefusal) {
+      await markAmbiguous(plan, deps, error instanceof LighterIntentRefusal ? error.reason : "oco_signing_failed_after_nonce_reservation");
+    }
     throw error;
   }
 }
@@ -370,7 +417,8 @@ async function reserveNonce(plan: LighterOcoExecutionPlan, deps: LighterOcoExecu
 
 async function reconcileOco(input: {
   readonly plan: LighterOcoExecutionPlan; readonly group: LighterUnsignedOcoRequest;
-  readonly deps: LighterOcoExecutionDeps; readonly authToken: string;
+  readonly deps: LighterOcoExecutionDeps;
+  readonly abortSignal?: AbortSignal; readonly authToken: string;
   readonly signerTxHash: string; readonly submittedTxHash: string;
   readonly predictedExecutionTimeMs: number;
 }): Promise<ExecuteApprovedLighterOcoResult> {
@@ -505,4 +553,11 @@ function blocked(reason: string): VexError {
     `${reason} No grouped order was submitted.`,
     "Run lighter.order.status for unresolved state, or restart from a fresh OCO preview when safe.",
   );
+}
+
+
+function assertOcoWireExpiry(group: LighterUnsignedOcoRequest, nowMs: number): void {
+  if (group.orders.some((order) => order.orderExpiryMs !== 0 && order.orderExpiryMs < nowMs + 300_000)) {
+    throw blocked("The approved OCO wire expiry is below the provider minimum. No submission is authorized.");
+  }
 }

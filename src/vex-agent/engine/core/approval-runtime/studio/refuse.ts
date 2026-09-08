@@ -1,3 +1,4 @@
+import { revokeApprovedDispatches } from "./dispatch-preflight.js";
 /**
  * The ONE primitive that terminally refuses PENDING Vex Studio intents.
  *
@@ -102,6 +103,12 @@ export async function refusePendingStudioIntents(
   target: StudioRefusalTarget,
   reason: StudioPendingRefusalReason,
 ): Promise<readonly RefusedStudioIntent[]> {
+  // Revocation is conservative from the refusal decision, including when no
+  // pending cards remain. It never asserts that a provider mutation was undone.
+  if (reason === "lock" || reason === "vex_quit") revokeApprovedDispatches({ reason });
+  if ((reason === "scope_changed" || reason === "project_deleted") && "projectId" in target) {
+    revokeApprovedDispatches({ reason, projectId: target.projectId });
+  }
   const ids = await lockTargets(client, target);
   const refused: RefusedStudioIntent[] = [];
   for (const id of ids) {

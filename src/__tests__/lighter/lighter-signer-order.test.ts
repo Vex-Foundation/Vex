@@ -9,6 +9,7 @@ import type { LighterOrderReadyForSignerPlan } from "@vex-agent/tools/protocols/
 function plan(overrides: Partial<LighterOrderReadyForSignerPlan> = {}): LighterOrderReadyForSignerPlan {
   return {
     intentId: "lighter-exec-1",
+    expiresAt: "2099-01-01T00:00:00.000Z",
     sessionId: "session-1",
     previewId: "lighter-preview-1",
     matchHash: `${"a".repeat(12)}${"b".repeat(52)}`,

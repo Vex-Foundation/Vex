@@ -126,6 +126,7 @@ const APPROVED_PREVIEW_ROW = {
 };
 
 const PLAN: LighterOrderReadyForSignerPlan = {
+  expiresAt: new Date(NOW + 3_600_000).toISOString(),
   intentId: "lighter-exec-1",
   sessionId: "session-1",
   previewId: APPROVED_PREVIEW.previewId,
@@ -347,6 +348,7 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
         publicKey: PUBLIC_KEY,
       })),
       signCreateOrder: vi.fn<ExecuteApprovedLighterCreateOrderDeps["signer"]["signCreateOrder"]>(async (input) => ({
+        childState: "exited",
         kind: "lighter_create_order_signer_result",
         environment: input.environment,
         accountIndex: input.accountIndex,
@@ -399,6 +401,7 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
       })),
     },
     nonceState: {
+      releaseUnsubmittedReservation: vi.fn(async () => null),
       recordExecutionObserved: vi.fn(async () => ({ status: "observed" })),
     },
     previews: {
@@ -407,6 +410,9 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
     now: vi.fn(() => NOW),
     wait: vi.fn(async () => undefined),
     intents: {
+      markSendAttemptStarted: vi.fn(async () => true),
+      markExpiredUnsubmitted: vi.fn(async () => true),
+      markUnsubmittedRefused: vi.fn(async () => true),
       findByIntentIdAnySession: vi.fn(async () => null),
       markPreSubmitRevalidated: vi.fn(async () => APPROVED_INTENT_ROW),
       markSigned: vi.fn(async () => ({ ok: true })),
@@ -539,13 +545,16 @@ describe("Lighter approved create execution pipeline", () => {
 
   it("rechecks a non-nil expiry after provider/auth work and refuses before nonce reservation", async () => {
     const fixture = restingLimitFixture();
-    const now = vi.fn()
-      .mockReturnValueOnce(NOW)
-      .mockReturnValueOnce(NOW)
-      .mockReturnValueOnce(NOW + 5 * 60 * 1_000 + 1);
+    let nowMs = NOW;
+    const now = () => nowMs;
     const d = deps({
       previews: { findFreshById: vi.fn(async () => fixture.previewRow) },
       now,
+    });
+    vi.mocked(d.signer.createAccountAuth).mockImplementation(async (input) => {
+      const result = await deps().signer.createAccountAuth(input);
+      nowMs = NOW + 5 * 60_000 + 1;
+      return result;
     });
 
     await expect(executeApprovedLighterCreateOrder({
@@ -560,14 +569,16 @@ describe("Lighter approved create execution pipeline", () => {
 
   it("never submits when a non-nil expiry crosses the minimum during signing", async () => {
     const fixture = restingLimitFixture();
-    const now = vi.fn()
-      .mockReturnValueOnce(NOW)
-      .mockReturnValueOnce(NOW)
-      .mockReturnValueOnce(NOW)
-      .mockReturnValueOnce(NOW + 5 * 60 * 1_000 + 1);
+    let nowMs = NOW;
+    const now = () => nowMs;
     const d = deps({
       previews: { findFreshById: vi.fn(async () => fixture.previewRow) },
       now,
+    });
+    vi.mocked(d.signer.signCreateOrder).mockImplementation(async (input) => {
+      const result = await deps().signer.signCreateOrder(input);
+      nowMs = NOW + 5 * 60_000 + 1;
+      return result;
     });
 
     await expect(executeApprovedLighterCreateOrder({
@@ -953,7 +964,8 @@ describe("Lighter approved create execution pipeline", () => {
         ...base.client,
         getAccountActiveOrders,
       },
-      nonceState: { recordExecutionObserved },
+      nonceState: {
+      releaseUnsubmittedReservation: vi.fn(async () => null), recordExecutionObserved },
     });
 
     const execution = executeApprovedLighterCreateOrder({
@@ -1871,5 +1883,112 @@ describe("Lighter approved create execution pipeline", () => {
       reason: "provider_outcome_read_failed",
     });
     expect(JSON.stringify(result)).not.toContain(TX_INFO);
+  });
+});
+
+describe("Lighter consent and cancellation races", () => {
+  it.each(["expiry", "cancellation"] as const)("refuses %s before reservation", async (kind) => {
+    const controller = new AbortController();
+    const d = deps();
+    if (kind === "cancellation") controller.abort("lock");
+    const plan = kind === "expiry" ? { ...PLAN, expiresAt: new Date(NOW).toISOString() } : PLAN;
+    await expect(executeApprovedLighterCreateOrder({ plan, deps: d, abortSignal: controller.signal }))
+      .rejects.toMatchObject({ reason: kind === "expiry" ? "consent_expired_before_reservation" : "cancelled_before_reservation" });
+    expect(d.reserveNonce).not.toHaveBeenCalled();
+    expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  for (const kind of ["expiry", "cancellation"] as const) {
+    it.each(["acquisition", "signing", "staging", "send-admission"] as const)(`${kind} during %s cannot submit`, async (phase) => {
+      let nowMs = NOW;
+      const controller = new AbortController();
+      const d = deps({ now: () => nowMs });
+      const entered = createGate(), finish = createGate();
+      const pause = async (): Promise<void> => { entered.release(); await finish.promise; };
+      if (phase === "acquisition") {
+        const original = deps().reserveNonce;
+        vi.mocked(d.reserveNonce).mockImplementation(async (plan) => { const row = await original(plan); await pause(); return row; });
+      } else if (phase === "signing") {
+        const original = deps().signer.signCreateOrder;
+        vi.mocked(d.signer.signCreateOrder).mockImplementation(async (input) => { const signed = await original(input); await pause(); return signed; });
+      } else if (phase === "staging") {
+        const original = deps().intents.markSubmitted;
+        vi.mocked(d.intents.markSubmitted).mockImplementation(async (input) => { const row = await original(input); await pause(); return row; });
+      } else {
+        vi.mocked(d.intents.markSendAttemptStarted).mockImplementation(async () => { await pause(); return true; });
+      }
+      const execution = executeApprovedLighterCreateOrder({ plan: PLAN, deps: d, abortSignal: controller.signal });
+      const rejected = expect(execution).rejects.toMatchObject({ reason: expect.stringMatching(kind === "expiry" ? /^consent_expired_/ : /^cancelled_/) });
+      await entered.promise;
+      if (kind === "expiry") nowMs = Date.parse(PLAN.expiresAt);
+      else controller.abort("lock");
+      expect(d.nonceState.releaseUnsubmittedReservation).not.toHaveBeenCalled();
+      finish.release();
+      await rejected;
+      expect(d.client.sendTx).not.toHaveBeenCalled();
+      expect(d.signer.signCreateOrder).toHaveBeenCalledTimes(phase === "acquisition" ? 0 : 1);
+      if (phase !== "acquisition") expect(d.intents.markSigned).toHaveBeenCalledOnce();
+      if (phase === "send-admission") {
+        expect(d.intents.markExpiredUnsubmitted).not.toHaveBeenCalled();
+        expect(d.nonceState.releaseUnsubmittedReservation).not.toHaveBeenCalled();
+        expect(d.intents.markAmbiguous).toHaveBeenCalledOnce();
+      } else {
+        expect(d.nonceState.releaseUnsubmittedReservation).toHaveBeenCalledWith({
+          environment: PLAN.environment, accountIndex: PLAN.accountIndex, apiKeyIndex: PLAN.apiKeyIndex,
+          reservationId: `lighter-order:${PLAN.intentId}`, nonceValue: "0",
+        });
+      }
+      const publicEvidence = JSON.stringify(vi.mocked(d.intents.markSigned).mock.calls);
+      expect(publicEvidence).not.toContain(TX_INFO);
+      expect(publicEvidence).not.toContain(PRIVATE_KEY);
+    });
+  }
+
+  it("keeps an unknown signer child reserved after cancellation", async () => {
+    const d = deps(), controller = new AbortController();
+    vi.mocked(d.signer.signCreateOrder).mockImplementation(async (input) => {
+      controller.abort("lock");
+      return Object.assign(await deps().signer.signCreateOrder(input), { childState: "unknown" });
+    });
+    await expect(executeApprovedLighterCreateOrder({ plan: PLAN, deps: d, abortSignal: controller.signal }))
+      .rejects.toMatchObject({ reason: "cancelled_after_signing" });
+    expect(d.intents.markSigned).toHaveBeenCalledOnce();
+    expect(d.intents.markAmbiguous).toHaveBeenCalledOnce();
+    expect(d.nonceState.releaseUnsubmittedReservation).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("retains signed evidence across a failed evidence write without signing again", async () => {
+    const d = deps(), controller = new AbortController();
+    vi.mocked(d.intents.markSigned).mockRejectedValueOnce(new Error("database unavailable"));
+    vi.mocked(d.signer.signCreateOrder).mockImplementation(async (input) => {
+      controller.abort("lock");
+      return deps().signer.signCreateOrder(input);
+    });
+    await expect(executeApprovedLighterCreateOrder({ plan: PLAN, deps: d, abortSignal: controller.signal }))
+      .rejects.toMatchObject({ reason: "cancelled_after_signing" });
+    expect(d.intents.markSigned).toHaveBeenCalledTimes(2);
+    expect(d.intents.markSigned).toHaveBeenLastCalledWith(expect.objectContaining({ signerTxHash: TX_HASH }));
+    expect(d.signer.signCreateOrder).toHaveBeenCalledOnce();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("reports known provider evidence even if consent is revoked during send", async () => {
+    let nowMs = NOW;
+    const d = deps({ now: () => nowMs }), controller = new AbortController();
+    vi.mocked(d.client.sendTx).mockImplementation(async () => {
+      controller.abort("lock");
+      nowMs = Date.parse(PLAN.expiresAt);
+      return { code: 200, tx_hash: TX_HASH, predicted_execution_time_ms: 1 };
+    });
+    vi.mocked(d.client.getAccountActiveOrders)
+      .mockResolvedValueOnce({ code: 200, orders: [] })
+      .mockResolvedValueOnce({ code: 200, orders: [accountOrder()] });
+    const result = await executeApprovedLighterCreateOrder({ plan: PLAN, deps: d, abortSignal: controller.signal });
+    expect(result).toMatchObject({ status: "provider_confirmed", executionState: "open" });
+    expect(d.intents.markExpiredUnsubmitted).not.toHaveBeenCalled();
+    expect(d.intents.markAmbiguous).not.toHaveBeenCalled();
+    expect(d.client.sendTx).toHaveBeenCalledOnce();
   });
 });

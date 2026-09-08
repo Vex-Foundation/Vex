@@ -17,6 +17,7 @@ const PRIVATE_KEY = `0x${"1".repeat(80)}`;
 function plan(overrides: Partial<LighterOrderReadyForSignerPlan> = {}): LighterOrderReadyForSignerPlan {
   return {
     intentId: "lighter-exec-1",
+    expiresAt: "2099-01-01T00:00:00.000Z",
     sessionId: "session-1",
     previewId: "lighter-preview-1",
     matchHash: `${"a".repeat(12)}${"b".repeat(52)}`,

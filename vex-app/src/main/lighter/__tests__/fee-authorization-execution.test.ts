@@ -63,8 +63,8 @@ function setup(
       targetTier: tier === "standard" && !options.revoke ? "plus" : null,
       exchangeMakerFeeTick: 50,
       exchangeTakerFeeTick: 50,
-      currentExchangeMakerFeeTick: null,
-      currentExchangeTakerFeeTick: null,
+      currentExchangeMakerFeeTick: 50,
+      currentExchangeTakerFeeTick: 50,
     },
     approvalId: "approval-1",
     approvalStatus: "approved",
@@ -173,6 +173,8 @@ function setup(
       return current;
     }),
     recordNonce: vi.fn(async () => nonce),
+    admitSend: vi.fn(async () => true),
+    releaseUnsubmittedNonce: vi.fn(async () => null),
     releaseNonce: vi.fn(async () => nonce),
     resolveWallet: vi.fn(() => wallet),
     selectedAddress: vi.fn(() => wallet.address),
@@ -198,7 +200,7 @@ function setup(
         txHash: HASH,
       } satisfies LighterApproveIntegratorSignerResult;
     }),
-    now: () => options.now ?? NOW,
+    now: vi.fn(() => options.now ?? NOW),
     sleep: vi.fn(async () => {}),
     attempts: 1,
   };
@@ -226,6 +228,7 @@ describe("Lighter fee authorization lifecycle", () => {
     expect(h.events).toEqual([
       "reserve",
       "sign",
+      "signing",
       "submission_staged",
       "send",
       "submitted",
@@ -309,7 +312,7 @@ describe("Lighter fee authorization lifecycle", () => {
         { ...input, abortSignal: abort.signal },
         h.deps,
       ),
-    ).rejects.toThrow("stopped");
+    ).rejects.toThrow("cancelled_before_reservation");
     expect(h.deps.client.changeAccountTier).not.toHaveBeenCalled();
     expect(h.deps.sign).not.toHaveBeenCalled();
   });
@@ -418,8 +421,8 @@ describe("Lighter fee authorization lifecycle", () => {
       targetTier: "plus",
       exchangeMakerFeeTick: 50,
       exchangeTakerFeeTick: 50,
-      currentExchangeMakerFeeTick: null,
-      currentExchangeTakerFeeTick: null,
+      currentExchangeMakerFeeTick: 50,
+      currentExchangeTakerFeeTick: 50,
     });
     const rhc = buildLighterFeeAuthorizationTerms(
       {
@@ -433,8 +436,70 @@ describe("Lighter fee authorization lifecycle", () => {
       targetTier: "premium",
       exchangeMakerFeeTick: 120,
       exchangeTakerFeeTick: 350,
-      currentExchangeMakerFeeTick: null,
-      currentExchangeTakerFeeTick: null,
+      currentExchangeMakerFeeTick: 50,
+      currentExchangeTakerFeeTick: 50,
     });
   });
+});
+
+function controlledGate() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => { release = resolve; });
+  return { promise, release };
+}
+describe("fee consent races", () => {
+  for (const kind of ["expiry", "cancellation"] as const) {
+    it.each(["reservation", "signing", "staging", "send-admission"] as const)(`${kind} at %s refuses a new fee submission`, async (phase) => {
+      const h = setup(), entered = controlledGate(), finish = controlledGate(), controller = new AbortController();
+      let nowMs = NOW;
+      vi.mocked(h.deps.now).mockImplementation(() => nowMs);
+      const pause = async () => { entered.release(); await finish.promise; };
+      if (phase === "reservation") {
+        const original = h.deps.reserveSigning;
+        const implementation = requireValue(vi.mocked(original).getMockImplementation());
+        vi.mocked(original).mockImplementation(async (...args) => { const row = await implementation(...args); await pause(); return row; });
+      } else if (phase === "signing") {
+        const implementation = requireValue(vi.mocked(h.deps.sign).getMockImplementation());
+        vi.mocked(h.deps.sign).mockImplementation(async (...args) => { const signed = await implementation(...args); await pause(); return Object.assign(signed, { childState: "exited" }); });
+      } else if (phase === "staging") {
+        const implementation = requireValue(vi.mocked(h.deps.transition).getMockImplementation());
+        vi.mocked(h.deps.transition).mockImplementation(async (...args) => { const row = await implementation(...args); if (args[1] === "submission_staged") await pause(); return row; });
+      } else {
+        vi.mocked(h.deps.admitSend).mockImplementation(async () => { await pause(); return true; });
+      }
+      const execution = executeApprovedLighterFeeAuthorization({ ...input, abortSignal: controller.signal }, h.deps);
+      await entered.promise;
+      if (kind === "expiry") nowMs = h.current().expiresAt.getTime(); else controller.abort("lock");
+      expect(h.deps.releaseUnsubmittedNonce).not.toHaveBeenCalled();
+      finish.release();
+      await execution;
+      expect(h.deps.client.sendTx).not.toHaveBeenCalled();
+      expect(h.deps.sign).toHaveBeenCalledTimes(phase === "reservation" ? 0 : 1);
+      if (phase === "signing") expect(h.current()).toMatchObject({ txHash: HASH, executionState: "expired_unsubmitted" });
+      if (phase === "send-admission") expect(h.deps.releaseUnsubmittedNonce).not.toHaveBeenCalled();
+    });
+  }
+  it("reports a successful tier change when consent expires before fee signing", async () => {
+    const h = setup({ tier: "standard" });
+    const original = requireValue(vi.mocked(h.deps.client.changeAccountTier).getMockImplementation());
+    vi.mocked(h.deps.client.changeAccountTier).mockImplementation(async (...args) => {
+      const response = await original(...args);
+      vi.mocked(h.deps.now).mockReturnValue(h.current().expiresAt.getTime());
+      return response;
+    });
+    const result = await executeApprovedLighterFeeAuthorization(input, h.deps);
+    expect(result.message).toContain("Tier changed, fee authorization not submitted");
+    expect(h.deps.sign).not.toHaveBeenCalled();
+    expect(h.deps.client.sendTx).not.toHaveBeenCalled();
+    expect(h.deps.client.changeAccountTier).toHaveBeenCalledOnce();
+  });
+});
+
+it("reports known provider authorization ahead of an earlier partial-effect reason", async () => {
+  const h = setup({ state: "submitted", confirmed: true, consumed: true });
+  h.setCurrent({ failureReason: "tier_changed_fee_authorization_not_submitted" });
+  const result = await reconcileLighterFeeAuthorization(input, h.deps);
+  expect(result.status).toBe("active");
+  expect(result.message).toContain("Lighter confirmed");
+  expect(h.deps.client.sendTx).not.toHaveBeenCalled();
 });

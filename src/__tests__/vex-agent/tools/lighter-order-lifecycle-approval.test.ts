@@ -1,3 +1,4 @@
+import type { LighterOrderLifecycleIntentRow } from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
 import { requireValue } from "../../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -29,15 +30,51 @@ const snapshot = {
   remainingBaseAmount: "0.5",
   filledBaseAmount: "0.5",
 };
-const intent = {
-  intentId,
-  environment: "rhc",
-  accountIndex: 42,
-  apiKeyIndex: 7,
-  marketIndex: 0,
-  providerOrderId: "1152921504606846975",
-  matchHash: "b".repeat(64),
-  providerSnapshotJson: snapshot,
+const intent: LighterOrderLifecycleIntentRow = {
+    intentId,
+    sessionId: "session-1",
+    protocolExecutionId: null,
+    approvalId: "approval-1",
+    matchHash: "b".repeat(64),
+    environment: "rhc",
+    accountIndex: 42,
+    apiKeyIndex: 7,
+    actionType: "cancel_one",
+    marketIndex: 0,
+    providerOrderId: "1152921504606846975",
+    requestedBaseAmountInteger: null,
+    requestedPriceInteger: null,
+    requestedSide: null,
+    reduceOnly: false,
+    providerSnapshotJson: snapshot,
+    credentialRefJson: {
+      kind: "encrypted_vault_reference",
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      vaultCredentialId: "lighter/rhc/account-42/api-key-7",
+    },
+    approvalStatus: "approved",
+    executionState: "approved",
+    decisionReason: "approved",
+    decidedAt: "2026-08-19T19:59:00.000Z",
+    preSubmitRevalidationJson: null,
+    preSubmitRevalidatedAt: null,
+    nonceReservationId: null,
+    nonceValue: null,
+    signerExpiryMs: null,
+    signerTxHash: null,
+    submittedTxHash: null,
+    submitCode: null,
+    submitMessage: null,
+    predictedExecutionTimeMs: null,
+    volumeQuotaRemaining: null,
+    providerOutcomeJson: null,
+    providerOutcomeCheckedAt: null,
+    ambiguousReason: null,
+    createdAt: "2026-08-19T19:58:00.000Z",
+    updatedAt: "2026-08-19T19:59:00.000Z",
+    expiresAt: "2026-08-19T20:05:00.000Z",
 };
 const criticalArgs = {
   toolId: "lighter.order.cancel",
@@ -78,7 +115,7 @@ beforeEach(() => {
 });
 
 describe("Lighter modify-order approval binding", () => {
-  const modifyIntent = {
+  const modifyIntent: LighterOrderLifecycleIntentRow = {
     ...intent,
     actionType: "modify",
     requestedBaseAmountInteger: "7500",
@@ -152,7 +189,7 @@ describe("Lighter modify-order approval binding", () => {
   it("keeps direct modify calls behind the host approval gate", async () => {
     const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.modify"])(
       { intentId },
-      { sessionId: "session-1" },
+      { sessionId: "session-1", sessionPermission: "full", approved: false, walletResolution: { source: "default" }, walletPolicy: { kind: "none" } },
     );
     expect(result).toMatchObject({ success: false, pendingApproval: true });
   });
@@ -163,7 +200,7 @@ describe("Lighter cancel-all approval binding", () => {
     { marketIndex: 0, orderId: "1152921504606846975" },
     { marketIndex: 1, orderId: "281474976710657" },
   ];
-  const cancelAllIntent = {
+  const cancelAllIntent: LighterOrderLifecycleIntentRow = {
     ...intent,
     actionType: "cancel_all",
     marketIndex: null,
@@ -224,14 +261,14 @@ describe("Lighter cancel-all approval binding", () => {
   it("keeps direct cancel-all calls behind the host approval gate", async () => {
     const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.cancelAll"])(
       { intentId },
-      { sessionId: "session-1" },
+      { sessionId: "session-1", sessionPermission: "full", approved: false, walletResolution: { source: "default" }, walletPolicy: { kind: "none" } },
     );
     expect(result).toMatchObject({ success: false, pendingApproval: true });
   });
 });
 
 describe("Lighter close-position approval binding", () => {
-  const closeIntent = {
+  const closeIntent: LighterOrderLifecycleIntentRow = {
     ...intent,
     actionType: "close_position",
     providerOrderId: null,
@@ -317,7 +354,7 @@ describe("Lighter close-position approval binding", () => {
   it("keeps direct close calls behind the host approval gate", async () => {
     const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.position.close"])(
       { intentId },
-      { sessionId: "session-1" },
+      { sessionId: "session-1", sessionPermission: "full", approved: false, walletResolution: { source: "default" }, walletPolicy: { kind: "none" } },
     );
     expect(result).toMatchObject({ success: false, pendingApproval: true });
   });
@@ -354,7 +391,7 @@ describe("Lighter cancel-one approval binding", () => {
   it("keeps direct calls behind the host approval gate", async () => {
     const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.cancel"])(
       { intentId },
-      { sessionId: "session-1" },
+      { sessionId: "session-1", sessionPermission: "full", approved: false, walletResolution: { source: "default" }, walletPolicy: { kind: "none" } },
     );
     expect(result).toMatchObject({ success: false, pendingApproval: true });
     expect(getApproval).not.toHaveBeenCalled();

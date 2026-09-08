@@ -1,3 +1,4 @@
+import { createApprovedDispatchAbortOwner } from "../../studio/dispatch-preflight.js";
 /**
  * The Vex Studio approved-dispatch path - sibling of `../dispatch-approved.ts`,
  * with the same ordering and none of the agent-session machinery.
@@ -144,10 +145,12 @@ export async function applyStudioApproveSideEffects(
   approvalId: string,
   snapshot: Extract<ApproveSnapshot, { type: "approved_in_tx" }>,
 ): Promise<ApprovePrepareOutcome> {
+  const abortOwner = createApprovedDispatchAbortOwner(snapshot.row.project_id);
   const lease = acquireStudioDispatchLease(snapshot.row.project_id);
   try {
-    return await dispatchApprovedStudioAction(approvalId, snapshot);
+    return await dispatchApprovedStudioAction(approvalId, snapshot, abortOwner.signal);
   } finally {
+    abortOwner.dispose();
     lease?.release();
   }
 }
@@ -155,6 +158,7 @@ export async function applyStudioApproveSideEffects(
 async function dispatchApprovedStudioAction(
   approvalId: string,
   snapshot: Extract<ApproveSnapshot, { type: "approved_in_tx" }>,
+  abortSignal: AbortSignal,
 ): Promise<ApprovePrepareOutcome> {
   const row = snapshot.row;
   const sessionId = row.session_id;
@@ -361,6 +365,7 @@ async function dispatchApprovedStudioAction(
   //    approval this time. `executeProtocolTool` re-runs the prequote gate.
   const context = buildProjectToolContext(scope, {
     approved: true,
+    abortSignal,
     approvalId,
     // WHICH QUOTE this card authorized, from the envelope the authority digest
     // above has just proven unchanged. The card rebuild already refuses a

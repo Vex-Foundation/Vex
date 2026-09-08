@@ -1,3 +1,6 @@
+import { persistLighterSigningEvidence } from "@vex-agent/tools/protocols/lighter/execution-boundary.js";
+import { app } from "electron";
+import { assertIntentAuthority, LighterIntentRefusal, lighterSignerExited } from "@vex-agent/tools/protocols/lighter/intent-expiry.js";
 import { getAddress } from "viem";
 
 import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
@@ -54,6 +57,9 @@ export interface LighterKeyRegistrationExecutionDeps {
   readonly readVaultRegistrationState:
     typeof getUnlockedLighterTradingCredentialRegistrationState;
   readonly activateVaultCredential: typeof activateUnlockedLighterTradingCredential;
+  readonly claimSigning: typeof keyIntentsRepo.claimRegistrationSigning;
+  readonly admitSend: typeof keyIntentsRepo.markRegistrationSendAttemptStarted;
+  readonly refuseUnsubmitted: typeof keyIntentsRepo.markRegistrationUnsubmitted;
   readonly markStaged: typeof markStaged;
   readonly markSubmitted: typeof markSubmitted;
   readonly markAmbiguous: typeof markAmbiguous;
@@ -88,6 +94,20 @@ async function runLighterKeyRegistration(
   if (intent === null || intent.sessionId !== input.sessionId) {
     throw executionError("the approved registration intent is unavailable in this session");
   }
+  const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
+    assertIntentAuthority(intent!.expiresAt, deps.now().getTime(), phase, input.abortSignal);
+  if (allowSubmission && intent.executionState === "approved") assertAuthority("before_reservation");
+  if (intent.executionState === "failed" && !(intent.approvalStatus === "approved"
+    && intent.registrationAmbiguityReason !== null
+    && /^(consent_expired_|cancelled_|submission_admission_refused$)/.test(intent.registrationAmbiguityReason))) {
+    throw executionError("the registration failed without an unsubmitted consent refusal");
+  }
+  if (intent.executionState === "failed") return {
+    source: "vex_lighter_key_registration", status: "expired_unsubmitted", intentId: intent.intentId,
+    executionState: intent.executionState, accountIndex: intent.accountIndex, apiKeyIndex: intent.apiKeyIndex,
+    txHash: intent.registrationTxHash, postRegistrationNonce: intent.postRegistrationNonce,
+    message: "The registration was refused before submission. Any signing evidence was retained. Request fresh approval.",
+  };
   assertLighterTradingApiKeyIndexAllowed(intent.environment, intent.apiKeyIndex);
   assertIntentShape(intent);
   if (intent.approvalStatus !== "approved") {
@@ -109,9 +129,6 @@ async function runLighterKeyRegistration(
   await assertOwnedMasterAccount(deps.client, intent);
 
   if (intent.executionState === "approved") {
-    if (intent.expiresAt <= deps.now()) {
-      throw executionError("the approved registration intent expired before signing");
-    }
     const slot = await readExactApiKeySlot(deps.client, intent);
     if (slot !== null) {
       throw executionError("the approved API-key slot is no longer empty");
@@ -128,22 +145,45 @@ async function runLighterKeyRegistration(
     if (wallet.family !== "eip155") {
       throw executionError("the selected wallet is not an EVM signing wallet");
     }
+    assertAuthority("before_reservation");
+    if (!await deps.claimSigning({ intentId: intent.intentId, sessionId: intent.sessionId })) {
+      throw executionError("the registration signing attempt is already claimed or expired");
+    }
+    let signingStarted = false;
+    let signerExited = false;
+    let sendAdmissionStarted = false;
+    try {
+    assertAuthority("after_reservation");
+    assertAuthority("before_signing");
+    signingStarted = true;
     const signed = await deps.sign({
       sessionId: input.sessionId,
       intent,
       wallet,
       revalidatedNonce: String(nonce.nonce),
     });
-    const staged = await deps.markStaged(input.sessionId, intent.intentId, {
+    signerExited = lighterSignerExited(signed);
+    const signingIntentId = intent.intentId;
+    const staged = await persistLighterSigningEvidence(() => deps.markStaged(input.sessionId, signingIntentId, {
       txType: signed.txType,
       txHash: signed.txHash,
       expiredAt: signed.expiredAt,
       stagedAt: deps.now(),
-    });
+    }));
     if (staged === null) {
       throw executionError("the signed registration lost its pre-submission lifecycle transition");
     }
     intent = staged;
+
+    assertAuthority("after_signing");
+    assertAuthority("before_submission");
+    sendAdmissionStarted = true;
+    if (!await deps.admitSend({ intentId: intent.intentId, sessionId: intent.sessionId, txHash: signed.txHash })) {
+      sendAdmissionStarted = false;
+      throw new LighterIntentRefusal("submission_admission_refused");
+    }
+    assertAuthority("before_submission");
+    if (BigInt(signed.expiredAt) <= BigInt(deps.now().getTime())) throw executionError("the signed registration wire expiry elapsed");
 
     let response: Awaited<ReturnType<LighterClient["sendTx"]>>;
     try {
@@ -180,6 +220,15 @@ async function runLighterKeyRegistration(
     } catch {
       intent = await recordAmbiguous(deps, intent, "submit_acceptance_persistence_failed");
     }
+    } catch (error) {
+      signerExited ||= lighterSignerExited(error);
+      if (error instanceof LighterIntentRefusal && !sendAdmissionStarted && (!signingStarted || signerExited)) {
+        await deps.refuseUnsubmitted({ intentId: intent.intentId, sessionId: intent.sessionId, reason: error.reason });
+      } else if (intent.registrationTxHash !== null) {
+        await recordAmbiguous(deps, intent, error instanceof LighterIntentRefusal ? error.reason : "signing_or_admission_interrupted");
+      }
+      throw error;
+    }
   } else if (intent.executionState === "key_registration_tx_staged") {
     intent = await recordAmbiguous(deps, intent, "staged_tx_requires_reconciliation");
   }
@@ -193,7 +242,7 @@ async function reconcileRegistration(
   deps: LighterKeyRegistrationExecutionDeps,
 ): Promise<LighterKeyRegistrationExecutionResult> {
   let intent = initialIntent;
-  const slot = await waitForExactApiKeySlot(deps, intent, input.abortSignal);
+  const slot = await waitForExactApiKeySlot(deps, intent);
   if (slot === null) {
     return result(intent, intent.executionState === "ambiguous"
       ? "ambiguity_unresolved"
@@ -434,6 +483,8 @@ function result(
       "The reserved slot contains a different public key. The local credential remains inactive and Vex will not resubmit.",
     key_verified_pending_nonce:
       "The exact public key and official client check passed, but the next nonce is not the approved nonce plus one. The local credential remains inactive.",
+    expired_unsubmitted:
+      "The registration consent expired or the dispatch was cancelled before Vex attempted the submission. Nothing was sent to Lighter; the signing evidence is retained and the local credential remains inactive.",
   };
   return {
     source: "vex_lighter_key_registration",
@@ -539,11 +590,14 @@ function defaultDeps(): LighterKeyRegistrationExecutionDeps {
     integrationEnabled: isLighterIntegrationEnabled,
     resolveWallet: resolveSigningWallet,
     sign: signApprovedLighterKeyRegistration,
-    keyGenerator: createLighterApiKeyGeneratorBinary(),
-    keyChecker: createLighterRegisteredKeyCheckerBinary(),
+    keyGenerator: createLighterApiKeyGeneratorBinary({ allowBinaryPathOverride: !app.isPackaged }),
+    keyChecker: createLighterRegisteredKeyCheckerBinary({ allowBinaryPathOverride: !app.isPackaged }),
     readVaultPrivateKey: readUnlockedLighterTradingApiPrivateKey,
     readVaultRegistrationState: getUnlockedLighterTradingCredentialRegistrationState,
     activateVaultCredential: activateUnlockedLighterTradingCredential,
+    claimSigning: keyIntentsRepo.claimRegistrationSigning,
+    admitSend: keyIntentsRepo.markRegistrationSendAttemptStarted,
+    refuseUnsubmitted: keyIntentsRepo.markRegistrationUnsubmitted,
     markStaged,
     markSubmitted,
     markAmbiguous,

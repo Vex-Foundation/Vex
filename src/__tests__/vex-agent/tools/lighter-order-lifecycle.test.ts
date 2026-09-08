@@ -16,6 +16,7 @@ import {
 import type { LighterOrderLifecycleIntentRow } from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
 import type { LighterAccountOrder, LighterAccountPosition } from "@tools/lighter/types.js";
 import { deriveVexAssignedClientOrderIndex } from "@tools/lighter/signer-order.js";
+import type { LighterOrderLifecycleSignerResult } from "@tools/lighter/signer-order-lifecycle.js";
 
 // These lifecycle fixtures represent orders approved while collection is disabled.
 // Enabled-policy refusal is exercised separately below and fee terms have their own suite.
@@ -113,6 +114,30 @@ function intent(overrides: Partial<LighterOrderLifecycleIntentRow> = {}): Lighte
   };
 }
 
+/**
+ * What the helper returns for each lifecycle action. Built per call, so a test
+ * that stamps a child state onto one result cannot reach another test's deps.
+ */
+const LIFECYCLE_SIGNER_TX = {
+  cancel_one: { operation: "cancel_order", txType: 15, txInfo: "signed-cancel", txHash: "hash-15" },
+  modify: { operation: "modify_order", txType: 17, txInfo: "signed-modify", txHash: "hash-17" },
+  cancel_all: { operation: "cancel_all_orders", txType: 16, txInfo: "signed-cancel-all", txHash: "hash-16" },
+} as const;
+
+function lifecycleSignerResult(
+  action: keyof typeof LIFECYCLE_SIGNER_TX,
+): LighterOrderLifecycleSignerResult {
+  return {
+    kind: "lighter_order_lifecycle_signer_result",
+    environment: "rhc",
+    accountIndex: 42,
+    apiKeyIndex: 7,
+    nonce: "9",
+    expiredAt: String(NOW + 60_000),
+    ...LIFECYCLE_SIGNER_TX[action],
+  };
+}
+
 function deps(overrides: Partial<LighterOrderLifecycleExecutionDeps> = {}): LighterOrderLifecycleExecutionDeps {
   const active = vi.fn()
     .mockResolvedValueOnce({ code: 200, orders: [openOrder] })
@@ -135,42 +160,9 @@ function deps(overrides: Partial<LighterOrderLifecycleExecutionDeps> = {}): Ligh
     },
     lifecycleSigner: {
       source: "official_lighter_signer",
-      signCancelOrder: vi.fn().mockResolvedValue({
-        kind: "lighter_order_lifecycle_signer_result",
-        operation: "cancel_order",
-        environment: "rhc",
-        accountIndex: 42,
-        apiKeyIndex: 7,
-        nonce: "9",
-        expiredAt: String(NOW + 60_000),
-        txType: 15,
-        txInfo: "signed-cancel",
-        txHash: "hash-15",
-      }),
-      signModifyOrder: vi.fn().mockResolvedValue({
-        kind: "lighter_order_lifecycle_signer_result",
-        operation: "modify_order",
-        environment: "rhc",
-        accountIndex: 42,
-        apiKeyIndex: 7,
-        nonce: "9",
-        expiredAt: String(NOW + 60_000),
-        txType: 17,
-        txInfo: "signed-modify",
-        txHash: "hash-17",
-      }),
-      signCancelAllOrders: vi.fn().mockResolvedValue({
-        kind: "lighter_order_lifecycle_signer_result",
-        operation: "cancel_all_orders",
-        environment: "rhc",
-        accountIndex: 42,
-        apiKeyIndex: 7,
-        nonce: "9",
-        expiredAt: String(NOW + 60_000),
-        txType: 16,
-        txInfo: "signed-cancel-all",
-        txHash: "hash-16",
-      }),
+      signCancelOrder: vi.fn().mockResolvedValue(lifecycleSignerResult("cancel_one")),
+      signModifyOrder: vi.fn().mockResolvedValue(lifecycleSignerResult("modify")),
+      signCancelAllOrders: vi.fn().mockResolvedValue(lifecycleSignerResult("cancel_all")),
     },
     client: {
       getAccountActiveOrders: active,
@@ -188,6 +180,9 @@ function deps(overrides: Partial<LighterOrderLifecycleExecutionDeps> = {}): Ligh
       }),
     },
     intents: {
+      markSendAttemptStarted: vi.fn(async () => true),
+      markExpiredUnsubmitted: vi.fn(async () => true),
+      markUnsubmittedRefused: vi.fn(async () => true),
       markPreSubmitRevalidated: vi.fn().mockResolvedValue(intent({ executionState: "pre_submit_revalidated" })),
       attachNonceReservationWith: vi.fn().mockResolvedValue(intent({ executionState: "nonce_reserved" })),
       markSigned: vi.fn().mockResolvedValue(intent({ executionState: "signed" })),
@@ -198,6 +193,7 @@ function deps(overrides: Partial<LighterOrderLifecycleExecutionDeps> = {}): Ligh
       markClosePositionChangedBeforeSubmissionWith: vi.fn().mockResolvedValue(intent({ executionState: "rejected" })),
     },
     nonceState: {
+      releaseUnsubmittedReservation: vi.fn(async () => null),
       recordExecutionObserved: vi.fn().mockResolvedValue({ status: "observed" }),
       reserveObservedWith: vi.fn().mockResolvedValue({ reservedNonce: "9", reservationId: `lighter-lifecycle:${intent().intentId}` }),
     },
@@ -580,7 +576,8 @@ describe("Lighter reduce-only position close lifecycle", () => {
       code: 200, tx_hash: "hash-14", predicted_execution_time_ms: 100, volume_quota_remaining: 99,
     });
     vi.mocked(dependencies.authSigner.signCreateOrder).mockImplementation(async (input) => ({
-      kind: "lighter_create_order_signer_result",
+      childState: "exited",
+        kind: "lighter_create_order_signer_result",
       environment: "rhc",
       accountIndex: 42,
       apiKeyIndex: 7,
@@ -696,4 +693,118 @@ describe("Lighter reduce-only position close lifecycle", () => {
     expect(dependencies.authSigner.signCreateOrder).not.toHaveBeenCalled();
     expect(dependencies.client.sendTx).not.toHaveBeenCalled();
   });
+  for (const kind of ["expiry", "cancellation"] as const) {
+    it.each(["signing", "staging", "send-admission"] as const)(`close refuses ${kind} during %s`, async (phase) => {
+      const dependencies = deps(), controller = new AbortController(), matchHash = "d".repeat(64);
+      let nowMs = NOW, entered!: () => void, finish!: () => void;
+      Object.assign(dependencies, { now: () => nowMs });
+      const reached = new Promise<void>((resolve) => { entered = resolve; });
+      const pending = new Promise<void>((resolve) => { finish = resolve; });
+      const pause = async () => { entered(); await pending; };
+      Object.assign(dependencies.client, {
+        getAccount: vi.fn(async () => ({ code: 200, accounts: [{ index: 42, positions: [longPosition] }] })),
+        getMarkets: vi.fn(async () => ({ code: 200, order_books: [market] })),
+        getOrderBookOrders: vi.fn(async () => ({ code: 200, total_asks: 0, asks: [], total_bids: 1, bids: [bid] })),
+        getAccountActiveOrders: vi.fn(async () => ({ code: 200, orders: [] })),
+        getAccountInactiveOrders: vi.fn(async () => ({ code: 200, orders: [] })),
+        getAccountTrades: vi.fn(async () => ({ code: 200, trades: [] })),
+      });
+    vi.mocked(dependencies.authSigner.signCreateOrder).mockImplementation(async (input) => {
+      if (phase === "signing") await pause();
+      return {
+      childState: "exited",
+        kind: "lighter_create_order_signer_result",
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      nonce: "9",
+      clientOrderIndex: input.order.clientOrderIndex,
+      matchHash: input.order.matchHash,
+      txType: 14,
+      txInfo: "signed-close",
+      txHash: "hash-14",
+      };
+    });
+    const closeIntent = intent({
+      actionType: "close_position",
+      matchHash,
+      marketIndex: 0,
+      providerOrderId: null,
+      requestedBaseAmountInteger: "10000",
+      requestedPriceInteger: "4950",
+      requestedSide: "sell",
+      reduceOnly: true,
+      providerSnapshotJson: {
+        position: {
+          marketIndex: 0, symbol: "ETH", sign: 1, side: "long", position: "1.0000",
+          averageEntryPrice: "45.00", positionValue: "50.000000", unrealizedPnl: "5.000000",
+          liquidationPrice: "30.00",
+        },
+        marketSizeDecimals: 4,
+        marketPriceDecimals: 2,
+        maxSlippageBps: 100,
+      },
+    });
+      if (phase === "staging") vi.mocked(dependencies.intents.markSubmissionStaged).mockImplementation(async () => { await pause(); return {}; });
+      if (phase === "send-admission") vi.mocked(dependencies.intents.markSendAttemptStarted).mockImplementation(async () => { await pause(); return true; });
+      const execution = executeApprovedLighterClosePosition(closeIntent, dependencies, controller.signal);
+      const rejected = expect(execution).rejects.toMatchObject({ reason: expect.stringMatching(kind === "expiry" ? /^consent_expired_/ : /^cancelled_/) });
+      await reached;
+      if (kind === "expiry") nowMs = Date.parse(closeIntent.expiresAt); else controller.abort("lock");
+      finish(); await rejected;
+      expect(dependencies.client.sendTx).not.toHaveBeenCalled();
+      expect(dependencies.authSigner.signCreateOrder).toHaveBeenCalledOnce();
+      expect(dependencies.intents.markSigned).toHaveBeenCalledOnce();
+      if (phase === "send-admission") expect(dependencies.intents.markExpiredUnsubmitted).not.toHaveBeenCalled();
+      else expect(dependencies.intents.markExpiredUnsubmitted).toHaveBeenCalledOnce();
+    });
+  }
+
+});
+
+describe("lifecycle consent boundaries", () => {
+  const executors = [executeApprovedLighterCancelOne, executeApprovedLighterModifyOrder, executeApprovedLighterCancelAll, executeApprovedLighterClosePosition];
+  it.each(executors)("refuses an already cancelled dispatch before reserving", async (execute) => {
+    const d = deps(), controller = new AbortController(); controller.abort("lock");
+    await expect(execute(intent(), d, controller.signal)).rejects.toMatchObject({ reason: "cancelled_before_reservation" });
+    expect(d.nonceState.reserveObservedWith).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+  for (const action of ["cancel_one", "modify", "cancel_all"] as const) {
+    it.each(["signing", "staging", "send-admission"] as const)(`${action} refuses cancellation at %s`, async (phase) => {
+      const d = deps(), controller = new AbortController();
+      let entered!: () => void, finish!: () => void;
+      const reached = new Promise<void>((resolve) => { entered = resolve; });
+      const pending = new Promise<void>((resolve) => { finish = resolve; });
+      const pause = async () => { entered(); await pending; };
+      const approved = intent(action === "modify" ? {
+        actionType: action, requestedBaseAmountInteger: "7500", requestedPriceInteger: "5125",
+        providerSnapshotJson: { ...lifecycleSnapshot(openOrder), marketSizeDecimals: 4, marketPriceDecimals: 2 },
+      } : action === "cancel_all" ? {
+        actionType: action, marketIndex: null, providerOrderId: null,
+        providerSnapshotJson: { orders: [lifecycleSnapshot(openOrder)], orderCount: 1 },
+      } : {});
+      const execute = action === "modify" ? executeApprovedLighterModifyOrder : action === "cancel_all" ? executeApprovedLighterCancelAll : executeApprovedLighterCancelOne;
+      const method = action === "modify" ? "signModifyOrder" : action === "cancel_all" ? "signCancelAllOrders" : "signCancelOrder";
+      const original = d.lifecycleSigner[method];
+      const signed = lifecycleSignerResult(action);
+      vi.mocked(original).mockClear();
+      vi.mocked(original).mockImplementation(async () => { if (phase === "signing") await pause(); return Object.assign(signed, { childState: "exited" }); });
+      if (phase === "staging") {
+        vi.mocked(d.intents.markSubmissionStaged).mockImplementation(async () => { await pause(); return intent({ executionState: "submission_staged" }); });
+      } else if (phase === "send-admission") {
+        vi.mocked(d.intents.markSendAttemptStarted).mockImplementation(async () => { await pause(); return true; });
+      }
+      const execution = execute(approved, d, controller.signal);
+      const rejected = expect(execution).rejects.toMatchObject({ reason: expect.stringMatching(/^cancelled_/) });
+      await reached; controller.abort("lock"); finish(); await rejected;
+      expect(d.client.sendTx).not.toHaveBeenCalled();
+      expect(original).toHaveBeenCalledOnce();
+      expect(d.intents.markSigned).toHaveBeenCalledOnce();
+      if (phase === "send-admission") {
+        expect(d.nonceState.releaseUnsubmittedReservation).not.toHaveBeenCalled();
+        expect(d.intents.markExpiredUnsubmitted).not.toHaveBeenCalled();
+      } else expect(d.nonceState.releaseUnsubmittedReservation).toHaveBeenCalledOnce();
+    });
+  }
 });

@@ -179,6 +179,114 @@ describe("Lighter fee approval", () => {
       validateLighterFeeAuthorizationCriticalArgs(disclosure, intent.intentId),
     ).toBe(true);
   });
+  it("shows today's exchange fees beside the ones the tier change targets", () => {
+    const withCurrent = {
+      ...intent,
+      terms: {
+        ...intent.terms,
+        currentExchangeMakerFeeTick: 0,
+        currentExchangeTakerFeeTick: 0,
+      },
+    };
+    const disclosure = buildLighterFeeAuthorizationDisclosure(withCurrent);
+    expect(disclosure.currentAccountTier).toBe("Standard");
+    expect(disclosure.exchangeFeeChange).toBe(
+      "today: 0% / 0%, after the change: up to 0.005% / 0.005% (maker / taker)",
+    );
+    expect(disclosure.currentExchangeMakerFeeTick).toBe(0);
+    expect(disclosure.currentExchangeTakerFeeTick).toBe(0);
+    expect(
+      validateLighterFeeAuthorizationCriticalArgs(disclosure, intent.intentId),
+    ).toBe(true);
+  });
+  it("refuses a rebuilt card that drops or alters today's exchange fees", () => {
+    const withCurrent = {
+      ...intent,
+      terms: {
+        ...intent.terms,
+        currentExchangeMakerFeeTick: 0,
+        currentExchangeTakerFeeTick: 0,
+      },
+    };
+    const disclosure = buildLighterFeeAuthorizationDisclosure(withCurrent);
+    for (const patch of [
+      { currentExchangeMakerFeeTick: null },
+      { currentExchangeTakerFeeTick: null },
+      { currentExchangeMakerFeeTick: 50 },
+      { currentExchangeMakerFeeTick: -1 },
+      { currentExchangeMakerFeeTick: 1_000_001 },
+      { currentExchangeMakerFeeTick: "0" },
+      {
+        exchangeFeeChange:
+          "today: 0.005% / 0.005%, after the change: up to 0.005% / 0.005% (maker / taker)",
+      },
+      { currentAccountTier: "Plus" },
+      { currentAccountTier: "" },
+    ]) {
+      expect(
+        validateLighterFeeAuthorizationCriticalArgs(
+          { ...disclosure, ...patch },
+          intent.intentId,
+        ),
+      ).toBe(false);
+    }
+  });
+  it("says so when Lighter did not report today's exchange fees", () => {
+    const disclosure = buildLighterFeeAuthorizationDisclosure(intent);
+    expect(disclosure.exchangeFeeChange).toBe(
+      "today: not reported by Lighter, after the change: up to 0.005% / 0.005% (maker / taker)",
+    );
+    expect(
+      validateLighterFeeAuthorizationCriticalArgs(disclosure, intent.intentId),
+    ).toBe(true);
+  });
+  it("states the reason for the tier change, its reversibility and the duration", () => {
+    const disclosure = buildLighterFeeAuthorizationDisclosure(intent);
+    expect(disclosure.tierChangeReason).toBe(
+      "Lighter rejects integrator-attributed trades from Standard accounts from 2026-09-14, so fee-bearing trading through Vex needs the Plus tier on Core and the Premium tier on Robinhood Chain",
+    );
+    expect(disclosure.tierReversibility).toBe(
+      "Vex does not switch the tier back; you can change the account type in the Lighter app. Upgrades apply immediately; a downgrade is allowed once 24 hours have passed since the last tier change.",
+    );
+    expect(disclosure.authorizationDuration).toBe(
+      "valid for 10 years, revocable at any time with lighter__fees_approve_prepare revoke. Fee-bearing authorization is required to open positions; without it, orders that only reduce an existing position stay available and are sent without a Vex fee.",
+    );
+    for (const patch of [
+      { tierChangeReason: "Lighter asked for it" },
+      { tierReversibility: "Vex switches the tier back afterwards." },
+      { authorizationDuration: "valid for 10 years" },
+      { tierChangeReason: null },
+    ]) {
+      expect(
+        validateLighterFeeAuthorizationCriticalArgs(
+          { ...disclosure, ...patch },
+          intent.intentId,
+        ),
+      ).toBe(false);
+    }
+  });
+  it("omits the tier-change sentences when no tier changes", () => {
+    const keep = {
+      ...intent,
+      terms: {
+        ...intent.terms,
+        currentTier: "plus",
+        targetTier: null,
+        currentExchangeMakerFeeTick: 50,
+        currentExchangeTakerFeeTick: 50,
+      },
+    };
+    const disclosure = buildLighterFeeAuthorizationDisclosure(keep);
+    expect(disclosure.currentAccountTier).toBe("Plus");
+    expect(disclosure.tierChangeReason).toBeNull();
+    expect(disclosure.tierReversibility).toBeNull();
+    expect(disclosure.exchangeFeeChange).toBe(
+      "today: 0.005% / 0.005%, unchanged by this authorization (maker / taker)",
+    );
+    expect(
+      validateLighterFeeAuthorizationCriticalArgs(disclosure, intent.intentId),
+    ).toBe(true);
+  });
   it("revokes all four caps and expiry together", () => {
     const revoked = {
       ...intent,
@@ -195,6 +303,10 @@ describe("Lighter fee approval", () => {
     };
     const disclosure = buildLighterFeeAuthorizationDisclosure(revoked);
     expect(disclosure.authorizationValidUntil).toBe("Revoked");
+    expect(disclosure.authorizationDuration).toBe(
+      "Revoked now. Authorizing again later is a fresh approval, valid for 10 years from that approval.",
+    );
+    expect(disclosure.tierChangeReason).toBeNull();
     expect(
       validateLighterFeeAuthorizationCriticalArgs(disclosure, intent.intentId),
     ).toBe(true);

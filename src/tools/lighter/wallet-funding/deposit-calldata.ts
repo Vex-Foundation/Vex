@@ -4,7 +4,7 @@
  * Produces the exact `{ to, data, value }` for a deposit that credits the
  * caller's own L1 address (sender-credit; the first deposit creates the
  * account). Every parameter is validated against verified bounds before
- * encoding — a wrong recipient, asset index, or amount would lose funds
+ * encoding - a wrong recipient, asset index, or amount would lose funds
  * irreversibly. This module signs nothing and broadcasts nothing; it only
  * builds calldata for the gated executor to sign under the privileged boundary.
  */
@@ -25,7 +25,7 @@ export type LighterDepositRoute = keyof typeof LIGHTER_DEPOSIT_ROUTE_TYPE;
 export interface LighterDepositCalldataInput {
   /** Funding deployment to encode for. Defaults to Core for existing callers. */
   readonly environment?: LighterEnvironment;
-  /** L1 address to credit — MUST be the depositing (Vex) wallet's own address. */
+  /** L1 address to credit - MUST be the depositing (Vex) wallet's own address. */
   readonly to: string;
   /** Settlement amount in integer base units (6-decimal USDC or USDG). */
   readonly amountUnits: bigint;

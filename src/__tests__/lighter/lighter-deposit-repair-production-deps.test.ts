@@ -51,8 +51,10 @@ function rhcIntent(): LighterOnboardingIntentRow {
 describe("production Lighter deposit repair dependencies", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.listUnresolved.mockImplementation(async (environment: string) =>
-      environment === "rhc" ? [rhcIntent()] : []);
+    mocks.listUnresolved.mockImplementation(async (environment: string) => ({
+      rows: environment === "rhc" ? [rhcIntent()] : [],
+      hasMore: false,
+    }));
     mocks.getUniswapDeployment.mockImplementation((chainId: number) => ({ chainId }));
     mocks.getUniswapPublicClient.mockReturnValue({
       getTransactionReceipt: mocks.getTransactionReceipt,
@@ -76,15 +78,17 @@ describe("production Lighter deposit repair dependencies", () => {
 
   it("discovers both environments and routes RHC evidence reads to chain 4663 and RHC APIs", async () => {
     const deps = buildProductionLighterDepositRepairDeps();
-    const [row] = await deps.listUnresolved();
+    const page = await deps.listUnresolved({ limit: 25, offset: 0 });
+    const [row] = page.rows;
     if (row === undefined) throw new Error("missing RHC fixture");
+    expect(page.hasMore).toBe(false);
 
     await deps.readReceipt(row, TX_HASH);
     await deps.readLighterTx(row, TX_HASH);
     await deps.readOwnedAccounts(row, WALLET);
 
-    expect(mocks.listUnresolved).toHaveBeenCalledWith("core");
-    expect(mocks.listUnresolved).toHaveBeenCalledWith("rhc");
+    expect(mocks.listUnresolved).toHaveBeenCalledWith("core", { limit: 25, offset: 0 });
+    expect(mocks.listUnresolved).toHaveBeenCalledWith("rhc", { limit: 25, offset: 0 });
     expect(mocks.getUniswapDeployment).toHaveBeenCalledWith(4663);
     expect(mocks.getTxFromL1).toHaveBeenCalledWith("rhc", { hash: TX_HASH });
     expect(mocks.getAccountsByL1Address).toHaveBeenCalledWith("rhc", {

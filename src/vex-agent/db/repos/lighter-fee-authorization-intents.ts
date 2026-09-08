@@ -29,6 +29,7 @@ export interface LighterFeeAuthorizationTerms {
 }
 
 export type LighterFeeAuthorizationState =
+  | "expired_unsubmitted"
   | "approval_pending"
   | "approved"
   | "tier_change_staged"
@@ -43,6 +44,8 @@ export type LighterFeeAuthorizationState =
   | "expired";
 
 export interface LighterFeeAuthorizationIntentRow {
+  readonly sendAttemptStartedAt?: string | null;
+  readonly signedAt?: string | null;
   readonly intentId: string;
   readonly sessionId: string;
   readonly environment: LighterEnvironment;
@@ -67,6 +70,8 @@ export interface LighterFeeAuthorizationIntentRow {
 
 function map(row: Record<string, unknown>): LighterFeeAuthorizationIntentRow {
   return {
+    signedAt: row.signed_at == null ? null : new Date(row.signed_at as string | Date).toISOString(),
+    sendAttemptStartedAt: row.send_attempt_started_at == null ? null : new Date(row.send_attempt_started_at as string | Date).toISOString(),
     intentId: String(row.intent_id),
     sessionId: String(row.session_id),
     environment: row.environment as LighterEnvironment,
@@ -106,7 +111,7 @@ export async function findLiveLighterFeeAuthorizationIntent(
 ): Promise<LighterFeeAuthorizationIntentRow | null> {
   const row = await queryOne<Record<string, unknown>>(
     `SELECT * FROM lighter_fee_authorization_intents WHERE environment=$1 AND account_index=$2
-     AND execution_state NOT IN ('active','failed','rejected','expired')`,
+     AND execution_state NOT IN ('active','failed','rejected','expired','expired_unsubmitted')`,
     [environment, accountIndex],
   );
   return row ? map(row) : null;
@@ -219,12 +224,24 @@ export async function transitionLighterFeeAuthorizationWith(
 ): Promise<LighterFeeAuthorizationIntentRow | null> {
   const row = await queryOneWith<Record<string, unknown>>(
     client,
-    `UPDATE lighter_fee_authorization_intents SET execution_state=$4,
+    `WITH updated AS (UPDATE lighter_fee_authorization_intents SET execution_state=$4,
+     signed_at=CASE WHEN $6::text IS NOT NULL THEN COALESCE(signed_at,clock_timestamp()) ELSE signed_at END,
      nonce_value=COALESCE($5,nonce_value),tx_hash=COALESCE($6,tx_hash),
      tx_expiry_ms=COALESCE($7,tx_expiry_ms),failure_reason=COALESCE($8,failure_reason),
      verified_at=CASE WHEN $4='active' THEN NOW() ELSE verified_at END,updated_at=NOW()
      WHERE intent_id=$1 AND session_id=$2 AND execution_state=ANY($3::text[])
-     AND approval_status='approved' RETURNING *`,
+     AND approval_status='approved'
+     AND ($4 NOT IN ('signing','submission_staged') OR $4=execution_state OR expires_at > clock_timestamp())
+     AND ($4 <> 'expired_unsubmitted' OR
+       (execution_state IN ('signing','submission_staged') AND tx_hash IS NOT NULL AND send_attempt_started_at IS NULL))
+     AND (execution_state <> 'expired_unsubmitted')
+     RETURNING *), released AS (
+       UPDATE lighter_nonce_state n SET status='observed', reserved_nonce=NULL, reservation_id=NULL, updated_at=clock_timestamp()
+       FROM updated r WHERE r.execution_state IN ('failed','expired_unsubmitted') AND r.send_attempt_started_at IS NULL
+         AND n.environment=r.environment AND n.account_index=r.account_index AND n.api_key_index=r.api_key_index
+         AND n.status='reserved' AND n.reservation_id='lighter-fees:' || r.intent_id AND n.reserved_nonce=r.nonce_value
+       RETURNING n.environment)
+     SELECT * FROM updated`,
     [
       input.intentId,
       input.sessionId,
@@ -237,4 +254,17 @@ export async function transitionLighterFeeAuthorizationWith(
     ],
   );
   return row ? map(row) : null;
+}
+
+
+export async function markSendAttemptStarted(input: {
+  readonly intentId: string; readonly sessionId: string; readonly txHash: string;
+}): Promise<boolean> {
+  const row = await queryOne<{ intent_id: string }>(
+    `UPDATE lighter_fee_authorization_intents SET send_attempt_started_at=clock_timestamp(), updated_at=clock_timestamp()
+     WHERE intent_id=$1 AND session_id=$2 AND execution_state='submission_staged'
+       AND approval_status='approved' AND tx_hash=$3
+       AND send_attempt_started_at IS NULL AND expires_at > clock_timestamp()
+     RETURNING intent_id`, [input.intentId, input.sessionId, input.txHash]);
+  return row !== null;
 }

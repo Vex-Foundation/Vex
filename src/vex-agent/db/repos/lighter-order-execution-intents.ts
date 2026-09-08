@@ -18,6 +18,7 @@ export type LighterOrderApprovalStatus =
   | "expired";
 
 export type LighterOrderExecutionIntentState =
+  | "expired_unsubmitted"
   | "previewed"
   | "approval_pending"
   | "signed"
@@ -33,6 +34,7 @@ export type LighterOrderExecutionIntentState =
 
 export interface LighterOrderExecutionIntentRow {
   readonly integratorFees?: LighterIntegratorFees | null;
+  readonly sendAttemptStartedAt?: string | null;
   readonly intentId: string;
   readonly sessionId: string;
   readonly previewId: string;
@@ -203,7 +205,7 @@ export interface MarkLighterOrderEvidenceConflictInput {
 }
 
 const SELECT_COLUMNS =
-  "intent_id, session_id, preview_id, protocol_execution_id, approval_id, match_hash, environment, " +
+  "intent_id, session_id, preview_id, send_attempt_started_at, protocol_execution_id, approval_id, match_hash, environment, " +
   "account_index, api_key_index, market_index, side, base_amount_integer, price_integer, " +
   "order_type, time_in_force, reduce_only, trigger_price_integer, order_expiry_ms, " +
   "client_order_index_policy, provider_version, credential_ref_json, approval_status, " +
@@ -293,6 +295,7 @@ const MARK_SUBMITTED_SQL = `UPDATE lighter_order_execution_intents
    AND execution_state = 'signed'
    AND signer_tx_hash = $4
    AND submitted_at IS NULL
+ AND expires_at > clock_timestamp()
  RETURNING ${SELECT_COLUMNS}`;
 
 const MARK_API_ACCEPTED_SQL = `UPDATE lighter_order_execution_intents
@@ -701,8 +704,8 @@ const MARK_REPAIR_RESOLVED_SQL = `UPDATE lighter_order_execution_intents
 
 /**
  * Repair-only transition from an unresolved state to an evidence-backed one.
- * Unlike markProviderOutcome it may start from signed/submitted/ambiguous —
- * exactly the states a crash or lost response strands an intent in — and it
+ * Unlike markProviderOutcome it may start from signed/submitted/ambiguous -
+ * exactly the states a crash or lost response strands an intent in - and it
  * also refreshes open/partial evidence without downgrading progress. It never
  * touches a terminal or pre-signing row.
  */
@@ -998,6 +1001,7 @@ function assertCredentialMatchesPreview(
 
 function mapRow(row: Record<string, unknown>): LighterOrderExecutionIntentRow {
   return {
+    sendAttemptStartedAt: row.send_attempt_started_at == null ? null : new Date(row.send_attempt_started_at as string | Date).toISOString(),
     integratorFees: readLighterOrderFeeTerms(row.integrator_fees_json),
     intentId: row.intent_id as string,
     sessionId: row.session_id as string,
@@ -1070,4 +1074,60 @@ function toIso(value: string | Date): string {
 function toIsoOrNull(value: string | Date | null | undefined): string | null {
   if (value === null || value === undefined) return null;
   return toIso(value);
+}
+
+
+export async function markSendAttemptStarted(input: {
+  readonly intentId: string; readonly sessionId: string; readonly signerTxHash: string;
+}): Promise<boolean> {
+  const row = await queryOne<{ intent_id: string }>(
+    `UPDATE lighter_order_execution_intents SET send_attempt_started_at=clock_timestamp(), updated_at=clock_timestamp()
+     WHERE intent_id=$1 AND session_id=$2 AND approval_status='approved'
+       AND execution_state='submitted' AND signer_tx_hash=$3
+       AND send_attempt_started_at IS NULL AND expires_at > clock_timestamp()
+     RETURNING intent_id`, [input.intentId, input.sessionId, input.signerTxHash]);
+  return row !== null;
+}
+
+/** Signed evidence is retained; a possible send can never take this transition. */
+export async function markExpiredUnsubmitted(input: {
+  readonly intentId: string; readonly sessionId: string;
+  readonly reservationId: string; readonly signerTxHash: string; readonly reason: string;
+}): Promise<boolean> {
+  const row = await queryOne<{ intent_id: string }>(
+    `WITH refused AS (UPDATE lighter_order_execution_intents SET execution_state='expired_unsubmitted',
+       ambiguous_reason=$5, updated_at=clock_timestamp()
+     WHERE intent_id=$1 AND session_id=$2 AND approval_status='approved'
+       AND nonce_reservation_id=$3 AND signer_tx_hash=$4
+       AND (execution_state='signed' OR execution_state='submitted')
+       AND send_attempt_started_at IS NULL
+     RETURNING intent_id, environment, account_index, api_key_index, nonce_reservation_id, nonce_value),
+     released AS (
+       UPDATE lighter_nonce_state n SET status='observed', reserved_nonce=NULL, reservation_id=NULL, updated_at=clock_timestamp()
+       FROM refused r WHERE n.environment=r.environment AND n.account_index=r.account_index AND n.api_key_index=r.api_key_index
+         AND n.status='reserved' AND n.reservation_id=r.nonce_reservation_id AND n.reserved_nonce=r.nonce_value
+       RETURNING n.environment)
+     SELECT intent_id FROM refused`,
+    [input.intentId, input.sessionId, input.reservationId, input.signerTxHash, input.reason]);
+  return row !== null;
+}
+
+export async function markUnsubmittedRefused(input: {
+  readonly intentId: string; readonly sessionId: string;
+  readonly reservationId: string; readonly reason: string;
+}): Promise<boolean> {
+  const row = await queryOne<{ intent_id: string }>(
+    `WITH refused AS (UPDATE lighter_order_execution_intents SET execution_state='rejected', ambiguous_reason=$4,
+       updated_at=clock_timestamp()
+     WHERE intent_id=$1 AND session_id=$2 AND approval_status='approved'
+       AND nonce_reservation_id=$3 AND signer_tx_hash IS NULL
+       AND execution_state='approval_pending' AND send_attempt_started_at IS NULL
+     RETURNING intent_id, environment, account_index, api_key_index, nonce_reservation_id, nonce_value),
+     released AS (
+       UPDATE lighter_nonce_state n SET status='observed', reserved_nonce=NULL, reservation_id=NULL, updated_at=clock_timestamp()
+       FROM refused r WHERE n.environment=r.environment AND n.account_index=r.account_index AND n.api_key_index=r.api_key_index
+         AND n.status='reserved' AND n.reservation_id=r.nonce_reservation_id AND n.reserved_nonce=r.nonce_value
+       RETURNING n.environment)
+     SELECT intent_id FROM refused`, [input.intentId, input.sessionId, input.reservationId, input.reason]);
+  return row !== null;
 }

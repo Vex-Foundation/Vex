@@ -1,5 +1,6 @@
 import { requireValue } from "../../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
 const OWNER = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
 
@@ -121,11 +122,20 @@ beforeEach(() => {
   ) => fn({}));
 });
 
+/** The read/prepare paths under test: no approval, no session wallet scope. */
+const CONTEXT: ProtocolExecutionContext = {
+  sessionPermission: "restricted",
+  approved: false,
+  walletResolution: { source: "default" },
+  walletPolicy: { kind: "none" },
+  sessionId: "session-new",
+};
+
 describe("cross-session Lighter withdrawal claim continuation", () => {
   it("keeps the original withdrawal audit but prepares a new session-scoped claim approval", async () => {
     const result = await requireValue(LIGHTER_WITHDRAWAL_HANDLERS["lighter.withdraw.claim.prepare"])(
       { intentId: recoveredIntent.intentId },
-      { sessionId: "session-new", walletResolution: {}, walletPolicy: {} },
+      CONTEXT,
     );
 
     expect(mocks.findCurrent).toHaveBeenCalledWith("session-new", recoveredIntent.intentId);
@@ -177,7 +187,7 @@ describe("cross-session Lighter withdrawal claim continuation", () => {
 
     const result = await requireValue(LIGHTER_WITHDRAWAL_HANDLERS["lighter.withdraw.status"])(
       {},
-      { sessionId: "session-new", walletResolution: {}, walletPolicy: {} },
+      CONTEXT,
     );
 
     expect(result.success, result.output).toBe(true);

@@ -4,8 +4,8 @@
  * Each fund-moving leg is INJECTED as a runner that signs, stages its tx hash
  * BEFORE broadcast (via the `onHashStaged` callback this orchestration supplies,
  * so the durable mark lands before the send), broadcasts, and returns the
- * confirmed/reverted/ambiguous outcome. That keeps the orchestration — approval
- * binding, leg ordering, lifecycle marks, ambiguity handling — fully unit-testable
+ * confirmed/reverted/ambiguous outcome. That keeps the orchestration - approval
+ * binding, leg ordering, lifecycle marks, ambiguity handling - fully unit-testable
  * without funds, while the live EVM signing remains approval-gated. It holds
  * no keys and never retries a broadcast: an unconfirmed leg becomes `ambiguous`
  * and stops for explicit reconciliation.

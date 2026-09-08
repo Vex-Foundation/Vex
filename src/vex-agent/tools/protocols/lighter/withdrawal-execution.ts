@@ -1,3 +1,5 @@
+import { persistLighterSigningEvidence, type LighterEvidenceWritePorts } from "./execution-boundary.js";
+import { assertIntentAuthority, LighterIntentRefusal, lighterSignerExited, lighterSignerResolutionExited } from "./intent-expiry.js";
 import type { LighterClient } from "@tools/lighter/client.js";
 import {
   buildLighterAccountAuthSigningInputForScope,
@@ -39,18 +41,14 @@ export interface ExecuteApprovedLighterCoreWithdrawalDeps {
   readonly readPreflight: (
     plan: LighterWithdrawalReadyForSignerPlan,
   ) => Promise<LighterCoreWithdrawalPreflightSnapshot | LighterRhcWithdrawalPreflightSnapshot>;
-  readonly nonceState: Pick<typeof nonceStateRepo, "recordExecutionObserved">;
+  readonly nonceState: LighterEvidenceWritePorts<Pick<typeof nonceStateRepo, "recordExecutionObserved">>
+    & Pick<typeof nonceStateRepo, "releaseUnsubmittedReservation">;
   readonly reserveNonce: (
     plan: LighterWithdrawalReadyForSignerPlan,
-  ) => Promise<LighterWithdrawalNonceReservation>;
-  readonly intents: Pick<
-    typeof withdrawalIntentsRepo,
-    | "markPreSubmitRevalidated"
-    | "markSigned"
-    | "markSubmissionStaged"
-    | "markApiAccepted"
-    | "markAmbiguous"
-  >;
+  ) => Promise<Pick<LighterWithdrawalNonceReservation, "reservationId" | "nonceValue">>;
+  readonly intents: LighterEvidenceWritePorts<Pick<typeof withdrawalIntentsRepo,
+    "markPreSubmitRevalidated" | "markSigned" | "markSubmissionStaged" | "markApiAccepted" | "markAmbiguous">>
+    & Pick<typeof withdrawalIntentsRepo, "markSendAttemptStarted" | "markExpiredUnsubmitted" | "markUnsubmittedRefused">;
   readonly now: () => number;
 }
 
@@ -109,6 +107,7 @@ export function defaultLighterCoreWithdrawalExecutionDeps(input: {
 export async function executeApprovedLighterCoreWithdrawal(input: {
   readonly plan: LighterCoreWithdrawalReadyForSignerPlan;
   readonly deps: ExecuteApprovedLighterCoreWithdrawalDeps;
+  readonly abortSignal?: AbortSignal;
 }): Promise<ExecuteApprovedLighterCoreWithdrawalResult> {
   return executeApprovedLighterWithdrawal(input);
 }
@@ -116,8 +115,12 @@ export async function executeApprovedLighterCoreWithdrawal(input: {
 export async function executeApprovedLighterWithdrawal(input: {
   readonly plan: LighterWithdrawalReadyForSignerPlan;
   readonly deps: ExecuteApprovedLighterCoreWithdrawalDeps;
+  readonly abortSignal?: AbortSignal;
 }): Promise<ExecuteApprovedLighterCoreWithdrawalResult> {
   const { plan, deps } = input;
+  const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
+    assertIntentAuthority(plan.expiresAt, deps.now(), phase, input.abortSignal);
+  assertAuthority("before_reservation");
   const profile = getLighterSecureWithdrawalProfile(plan.environment);
   const fresh = await deps.readPreflight(plan);
   assertFreshPreflightMatchesApprovedPlan(plan, fresh);
@@ -129,6 +132,7 @@ export async function executeApprovedLighterWithdrawal(input: {
   if (revalidated === null) throw blocked(`The approved ${profile.sourceName} withdrawal could not persist fresh pre-submit evidence.`);
 
   const secret = await loadLighterTradingSecretMaterial(plan.credentialReference, deps.secretReader);
+  assertAuthority("before_reservation");
   const auth = await createLighterAccountAuthWithAdapter(
     buildLighterAccountAuthSigningInputForScope({
       environment: plan.environment,
@@ -154,9 +158,16 @@ export async function executeApprovedLighterWithdrawal(input: {
     throw blocked(`The live ${profile.sourceName} nonce cannot advance past an unresolved local transaction reservation.`);
   }
 
+  assertAuthority("before_reservation");
   const reservation = await deps.reserveNonce(plan);
   let signerTxHash: string | null = null;
+  let signingStarted = false;
+  let signerExited = false;
+  let sendAdmissionStarted = false;
   try {
+    assertAuthority("after_reservation");
+    assertAuthority("before_signing");
+    signingStarted = true;
     const signerExpiryMs = deps.now() + SIGNER_EXPIRY_LEAD_MS;
     const signed = await signLighterWithdrawalWithAdapter(
       buildLighterWithdrawalSigningInput({
@@ -172,23 +183,37 @@ export async function executeApprovedLighterWithdrawal(input: {
       }),
       deps.withdrawalSigner,
     );
+    signerExited = lighterSignerResolutionExited(signed);
     signerTxHash = signed.txHash;
-    const persistedSigned = await deps.intents.markSigned({
+    const persistedSigned = await persistLighterSigningEvidence(() => deps.intents.markSigned({
       intentId: plan.intentId,
       sessionId: plan.sessionId,
       reservationId: reservation.reservationId,
       nonceValue: reservation.nonceValue,
       signerTxHash: signed.txHash,
       signerExpiryMs,
-    });
+    }));
     if (persistedSigned === null) return await ambiguous(deps, plan, "signed_state_persist_failed", signed.txHash);
 
+    assertAuthority("after_signing");
     const staged = await deps.intents.markSubmissionStaged({
       intentId: plan.intentId,
       sessionId: plan.sessionId,
       signerTxHash: signed.txHash,
     });
-    if (staged === null) return await ambiguous(deps, plan, "submission_stage_persist_failed", signed.txHash);
+    if (staged === null) throw new LighterIntentRefusal("submission_admission_refused");
+
+    assertAuthority("before_submission");
+    sendAdmissionStarted = true;
+    const admitted = await deps.intents.markSendAttemptStarted({
+      intentId: plan.intentId, sessionId: plan.sessionId, signerTxHash: signed.txHash,
+    });
+    if (!admitted) {
+      sendAdmissionStarted = false;
+      throw new LighterIntentRefusal("submission_admission_refused");
+    }
+    assertAuthority("before_submission");
+    if (deps.now() >= signerExpiryMs) throw blocked("The signed withdrawal wire expiry elapsed before send.");
 
     let response: Awaited<ReturnType<LighterClient["sendTx"]>>;
     try {
@@ -199,7 +224,7 @@ export async function executeApprovedLighterWithdrawal(input: {
     if (response.code !== 200) return await ambiguous(deps, plan, "provider_non_acceptance_code", signed.txHash);
     if (response.tx_hash !== signed.txHash) return await ambiguous(deps, plan, "provider_tx_hash_mismatch", signed.txHash);
 
-    let accepted: Awaited<ReturnType<typeof withdrawalIntentsRepo.markApiAccepted>>;
+    let accepted: Awaited<ReturnType<ExecuteApprovedLighterCoreWithdrawalDeps["intents"]["markApiAccepted"]>>;
     try {
       accepted = await deps.intents.markApiAccepted({
         intentId: plan.intentId,
@@ -230,7 +255,23 @@ export async function executeApprovedLighterWithdrawal(input: {
       message: `The exact ${profile.sourceName} ${profile.assetSymbol} secure withdrawal was accepted by Lighter and is awaiting L2 and ${profile.settlementNetworkName} settlement proof.`,
     };
   } catch (error) {
-    await ambiguous(deps, plan, "failure_after_nonce_reservation", signerTxHash);
+    signerExited ||= lighterSignerExited(error);
+    if (!sendAdmissionStarted && (!signingStarted || (error instanceof LighterIntentRefusal && signerExited))) {
+      const refused = signerTxHash === null
+        ? await deps.intents.markUnsubmittedRefused({
+          intentId: plan.intentId, sessionId: plan.sessionId, reservationId: reservation.reservationId, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
+        })
+        : await deps.intents.markExpiredUnsubmitted({
+          intentId: plan.intentId, sessionId: plan.sessionId, reservationId: reservation.reservationId,
+          signerTxHash, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
+        });
+      if (refused) await deps.nonceState.releaseUnsubmittedReservation({
+        environment: plan.environment, accountIndex: plan.accountIndex, apiKeyIndex: plan.apiKeyIndex,
+        reservationId: reservation.reservationId, nonceValue: reservation.nonceValue,
+      });
+    } else if (signerTxHash === null || error instanceof LighterIntentRefusal) {
+      await ambiguous(deps, plan, error instanceof LighterIntentRefusal ? error.reason : "failure_after_nonce_reservation", signerTxHash);
+    }
     throw error;
   }
 }
