@@ -41,6 +41,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -201,6 +202,16 @@ function fakeBuiltDir(root: string, overrides: Record<string, Buffer> = {}): str
   return dir;
 }
 
+/**
+ * An absolute path as an ESM import specifier for the driver script. A bare
+ * absolute path is accepted by the loader on POSIX and refused on Windows
+ * (`D:\...` parses as a URL with protocol `d:`), so the specifier is always
+ * the file URL.
+ */
+function moduleSpecifier(filePath: string): string {
+  return JSON.stringify(pathToFileURL(filePath).href);
+}
+
 /** Run one expression against the real modules in a real node process. */
 function runDriver(root: string, body: string): { ok: boolean; value?: unknown; message?: string } {
   const driver = path.join(root, "driver.mjs");
@@ -230,7 +241,7 @@ function stage(root: string, platform: string): { ok: boolean; value?: unknown; 
     writeFileSync(path.join(scriptsDir, name), readFileSync(path.join(APP_SCRIPTS, name), "utf8"));
   }
   return runDriver(root, `
-    import { stageLighterSigner } from ${JSON.stringify(path.join(scriptsDir, "stage-lighter-signer.mjs"))};
+    import { stageLighterSigner } from ${moduleSpecifier(path.join(scriptsDir, "stage-lighter-signer.mjs"))};
     try {
       const staged = stageLighterSigner(${JSON.stringify(platform)});
       console.log(JSON.stringify({ ok: true, value: staged.map((entry) => entry.name) }));
@@ -296,7 +307,7 @@ function verifyPackaged(
   inspectSignature: string = SIGNATURE_TOOL_MUST_NOT_BE_CONSULTED,
 ): { ok: boolean; value?: unknown; message?: string } {
   return runDriver(root, `
-    import { verifyPackagedLighterSigner } from ${JSON.stringify(AFTER_PACK)};
+    import { verifyPackagedLighterSigner } from ${moduleSpecifier(AFTER_PACK)};
     try {
       const accepted = verifyPackagedLighterSigner(
         ${JSON.stringify(context)},
@@ -654,7 +665,7 @@ describe("the post-signing gate over the packaged Lighter signer", () => {
       options.builtDir === undefined ? undefined : `builtDir: ${JSON.stringify(options.builtDir)}`,
     ].filter((entry) => entry !== undefined);
     const result = runDriver(root, `
-      import { verifyPackagedLighterSignerSignature } from ${JSON.stringify(CHECK_PAYLOAD)};
+      import { verifyPackagedLighterSignerSignature } from ${moduleSpecifier(CHECK_PAYLOAD)};
       const payload = {
         target: { platform: ${JSON.stringify(platform)}, arch: "x64" },
         resources: ${JSON.stringify(resources)},

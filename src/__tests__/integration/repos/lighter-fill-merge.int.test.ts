@@ -29,6 +29,7 @@ import * as reportingRepo from "@vex-agent/db/repos/agentscan-reporting.js";
 import {
   attachLighterFillToIntent,
   lighterFillIdentity,
+  recordedLighterFillBaseSizeForIntent,
   recordLighterFillActivity,
   type LighterFillRecord,
 } from "@vex-agent/tools/protocols/lighter/agentscan-activity.js";
@@ -410,5 +411,37 @@ describe("knowledge that arrives after delivery", () => {
       ["lighter_fill", 0],
       ["lighter_fill_enrichment", 1],
     ]);
+  });
+});
+
+describe("the base size an intent has recorded", () => {
+  /** A second, distinct fill of the same order: its own trade id, its own identity. */
+  function siblingRow(providerTradeId: string, baseSize: string, executionIntentId: string | null): LighterFillRecord {
+    return publicRow({
+      providerTradeId,
+      baseSize,
+      executionIntentId,
+      canonicalIdentity: lighterFillIdentity({
+        environment: ENVIRONMENT,
+        accountIndex: ACCOUNT,
+        marketIndex: MARKET,
+        providerTradeId,
+      }),
+    });
+  }
+
+  it("is the exact decimal sum over the intent's fills, and zero for an intent with none", async () => {
+    // The self-healing follow-up read is gated on this sum against the
+    // quantity the venue reports as filled; an exact Postgres numeric sum is
+    // what makes "the ledger is level" a statement about the database and
+    // not about floating point.
+    await recordLighterFillActivity(publicRow({ baseSize: "0.4" }));
+    await recordLighterFillActivity(siblingRow("100", "0.25", "intent-1"));
+    await recordLighterFillActivity(siblingRow("101", "0.9", null));
+    await recordLighterFillActivity(siblingRow("102", "5", "intent-2"));
+
+    expect(await recordedLighterFillBaseSizeForIntent("intent-1")).toBe("0.65");
+    expect(await recordedLighterFillBaseSizeForIntent("intent-2")).toBe("5");
+    expect(await recordedLighterFillBaseSizeForIntent("intent-none")).toBe("0");
   });
 });

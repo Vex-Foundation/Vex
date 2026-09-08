@@ -1,5 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import * as streamConsumer from "@vex-agent/inference/stream-consumer.js";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
@@ -454,18 +453,6 @@ describe("turn-loop", () => {
   // `for` loop simply asked the model the identical question again - fifty
   // times, then apologised about a "tool-use budget" that was never spent.
   describe("a model that returns nothing stops the turn early", () => {
-    // Exercise the loop's defensive bound at its inference-result boundary.
-    // The real stream consumer now rejects empty provider completions earlier;
-    // its own suite verifies that rejection and the absence of a retry.
-    beforeEach(() => {
-      vi.spyOn(streamConsumer, "runStreamingInference").mockImplementation(async (provider, messages, tools, config, options) => ({
-        response: await provider.chatCompletion(messages, tools, config, options?.context, options?.signal),
-        aborted: false,
-        usageObserved: true,
-      }));
-    });
-    afterEach(() => vi.restoreAllMocks());
-
     it.each([
       ["empty string", ""],
       ["null content", null],
