@@ -191,7 +191,7 @@ export function buildActivityHalf(
   // losses. The vocabulary-lockstep test beside this file now fails the build
   // when a migration adds a kind these feeds do not know.
   activityConds.push(
-    "(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'wrap' OR kind = 'yield' OR kind = 'launch' OR kind = 'claim' OR kind = 'transfer' OR kind = 'transaction' OR event_role = 'bridge_fill_expected')",
+    "(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'wrap' OR kind = 'yield' OR kind = 'launch' OR kind = 'claim' OR kind = 'transfer' OR kind = 'exchange' OR kind = 'transaction' OR event_role = 'bridge_fill_expected')",
   );
   // LEG roles are not feed rows. The kind↔role CHECK (migrations 050/063/066)
   // admits approval legs on the swap/yield/launch arms and Vex fee legs
@@ -228,6 +228,7 @@ export function buildActivityHalf(
   else if (productType === "launch") activityConds.push("kind = 'launch'");
   else if (productType === "claim") activityConds.push("kind = 'claim'");
   else if (productType === "transfer") activityConds.push("kind = 'transfer'");
+  else if (productType === "exchange") activityConds.push("kind = 'exchange'");
   else if (productType === "transaction") activityConds.push("kind = 'transaction'");
   else if (productType !== undefined) activityConds.push("FALSE");
   const activityKeyset = keysetPredicate(0, cursor, tsParam, rankParam, idParam);
@@ -255,6 +256,7 @@ export function buildActivityHalf(
         -- render it as a spot trade, stating a route, a price and a
         -- counterparty that moving your own funds to an address never had.
         WHEN kind = 'transfer' THEN 'transfer'
+        WHEN kind = 'exchange' THEN 'exchange'
         -- A GENERIC SIGNED TRANSACTION is its own product (migration 087). The
         -- ELSE arm would render an approval or an arbitrary contract call as a
         -- spot trade; the transfer arm would claim one asset leg left the

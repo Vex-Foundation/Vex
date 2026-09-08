@@ -262,6 +262,11 @@ export async function syncTick(): Promise<void> {
           },
           repairResult.advanced,
         );
+      } else if (job.syncType === "lighter_position_snapshot") {
+        const { snapshotLighterPositions } = await import("./lighter-position-snapshot.js");
+        const snapshotResult = await snapshotLighterPositions();
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(runId, { ...snapshotResult, periodic: true }, snapshotResult.observed);
       } else if (job.syncType === "bridge_activity_repair") {
         // C1 fix (Batch 4 closure) — this periodic job was seeded (seed.ts)
         // and dispatched on-demand (worker.ts's drainPendingRuns/processNextRun)

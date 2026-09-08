@@ -139,6 +139,11 @@ export async function drainPendingRuns(): Promise<DrainResult> {
           errors: repairResult.errors,
         };
         rowsAffected = repairResult.advanced;
+      } else if (syncType === "lighter_position_snapshot") {
+        const { snapshotLighterPositions } = await import("./lighter-position-snapshot.js");
+        const snapshotResult = await snapshotLighterPositions();
+        result = { ...snapshotResult };
+        rowsAffected = snapshotResult.observed;
       } else if (syncType === "bridge_activity_repair") {
         const { repairPendingBridges, buildProductionBridgeRepairDeps } = await import("./bridge-activity-repair.js");
         const bridgeResult = await repairPendingBridges(buildProductionBridgeRepairDeps());
@@ -301,6 +306,10 @@ export async function processNextRun(): Promise<boolean> {
         },
         repairResult.advanced,
       );
+    } else if (job.syncType === "lighter_position_snapshot") {
+      const { snapshotLighterPositions } = await import("./lighter-position-snapshot.js");
+      const snapshotResult = await snapshotLighterPositions();
+      await syncRepo.completeRun(run.id, { ...snapshotResult }, snapshotResult.observed);
     } else if (job.syncType === "bridge_activity_repair") {
       const { repairPendingBridges, buildProductionBridgeRepairDeps } = await import("./bridge-activity-repair.js");
       const bridgeResult = await repairPendingBridges(buildProductionBridgeRepairDeps());

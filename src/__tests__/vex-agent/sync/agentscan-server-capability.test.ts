@@ -80,9 +80,12 @@ function claimedRow(input: {
 }): ClaimedOutboxEvent {
   return {
     outboxId: input.outboxId,
+    sourceKind: "agent_activity",
     activityId: input.outboxId * 10,
     status: "confirmed",
     backfill: false,
+    fillId: null,
+    fill: null,
     activity: {
       id: input.outboxId * 10,
       protocol_execution_id: 5,

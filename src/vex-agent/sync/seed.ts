@@ -9,45 +9,54 @@ import { execute } from "@vex-agent/db/client.js";
 import logger from "@utils/logger.js";
 
 const SYNC_JOBS = [
-  // Canonical periodic full refresh — every 5 minutes
+  // Canonical periodic full refresh - every 5 minutes
   { namespace: "_global", syncType: "balances", readToolId: "khalani.tokens.balances", strategy: "periodic", intervalSeconds: 300 },
 
-  // Prediction settlement reconciliation — every 5 minutes
+  // Prediction settlement reconciliation - every 5 minutes
   { namespace: "_global", syncType: "prediction_settlement", readToolId: null, strategy: "periodic", intervalSeconds: 300 },
 
-  // Agent Scan repair sweep (plan §4.1/§11.1) — re-checks pending
+  // Agent Scan repair sweep (plan §4.1/§11.1) - re-checks pending
   // agent_activity rows by persisted tx_hash. Lookup-only; see
   // sync/agent-activity-repair.ts.
   { namespace: "_global", syncType: "agent_activity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
 
-  // Lighter deposit crash-recovery sweep — reads receipts for already-staged
+  // Lighter deposit crash-recovery sweep - reads receipts for already-staged
   // Ethereum hashes and public Lighter account state, then performs guarded
   // local CAS updates. It never signs, sends, retries, or replaces a tx.
   { namespace: "_global", syncType: "lighter_deposit_repair", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
 
-  // Core withdrawal repair — five oldest staged intents per minute. It derives
+  // Core withdrawal repair - five oldest staged intents per minute. It derives
   // bounded read authorization only when the local vault is already unlocked,
   // reads exact L2/history/Ethereum evidence, and can never sign or submit.
   { namespace: "_global", syncType: "lighter_withdrawal_repair", readToolId: null, strategy: "periodic", intervalSeconds: 60 },
 
-  // Lighter order nonce recovery — bounded public nextNonce reads only. The
+  // Lighter order nonce recovery - bounded public nextNonce reads only. The
   // worker never derives account auth, unlocks the vault, signs, submits, or
   // retries an order. Five rows per five-minute run stay within the documented
   // request-weight budget; expensive account history remains user-driven.
   { namespace: "_global", syncType: "lighter_order_repair", readToolId: null, strategy: "periodic", intervalSeconds: 300 },
 
-  // Phase-2 bridge order-status sweep — re-checks pending bridge logical rows by
+  // Lighter POSITION SNAPSHOT sweep - the account-wide observation AgentScan
+  // displays beside Vex-authored fills. Bounded (five scopes per sweep, the
+  // remainder reported), credential-gated (a scope is observed only while this
+  // install can still resolve its read-only account credential), and read-only:
+  // it never signs, submits or retries. 300s, the non-urgent cadence: a
+  // position is a state a user checks, not a transaction they are waiting on.
+  // See sync/lighter-position-snapshot.ts.
+  { namespace: "_global", syncType: "lighter_position_snapshot", readToolId: null, strategy: "periodic", intervalSeconds: 300 },
+
+  // Phase-2 bridge order-status sweep - re-checks pending bridge logical rows by
   // provider_order_id (Khalani/Relay), independently verifies fills before
   // confirming, never ages pending→failed. Lookup-only; see
   // sync/bridge-activity-repair.ts. Cadence mirrors the Phase-1 repair sweep.
   { namespace: "_global", syncType: "bridge_activity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 120 },
 
-  // W5 (agent-scan-phase3 migration 049) — re-checks pending Solana-family
+  // W5 (agent-scan-phase3 migration 049) - re-checks pending Solana-family
   // agent_activity rows (Jupiter swap/lend/prediction + Solana bridge legs)
   // by persisted signature, family-disjoint from the EVM repair sweep and
   // the bridge order-status sweep. Lookup-only; see
   // sync/solana-activity-repair.ts (K3). ON CONFLICT DO NOTHING makes this
-  // safe to seed now even though the worker branch does not exist yet —
+  // safe to seed now even though the worker branch does not exist yet -
   // worker.ts logs "Unknown sync type" and skips until K3 lands.
   { namespace: "_global", syncType: "solana_activity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
 
@@ -57,7 +66,7 @@ const SYNC_JOBS = [
   // and decodes nothing, so it would confirm the activity row and still leave
   // `launched_tokens` empty. Lookup-only, never signs; see
   // sync/launch-identity-repair.ts. Cadence mirrors the other two per-tx repair
-  // sweeps (30s) — a user staring at a launch with no address is the wait this
+  // sweeps (30s) - a user staring at a launch with no address is the wait this
   // ends, so it is not slowed to the bridge sweep's 120s provider cadence.
   { namespace: "_global", syncType: "launch_identity_repair", readToolId: null, strategy: "periodic", intervalSeconds: 30 },
 
@@ -94,7 +103,7 @@ const SYNC_JOBS = [
   // long, so a sub-minute cadence would only add lock traffic.
   { namespace: "_global", syncType: "launch_form_expiry", readToolId: null, strategy: "periodic", intervalSeconds: 60 },
 
-  // AgentScan reporting lane — diff-scans agent_activity into agentscan_outbox
+  // AgentScan reporting lane - diff-scans agent_activity into agentscan_outbox
   // and drains due rows to the AgentScan ingest API (pseudonymous; dark until
   // services.agentscanApiUrl is configured). Never signs, never blocks the
   // money path; offline just accumulates outbox rows. 30s mirrors the per-tx
@@ -109,16 +118,16 @@ const SYNC_JOBS = [
   // dark until services.agentscanApiUrl is configured. Never signs, never
   // blocks the money path. 300s: an attestation badge is not latency-critical
   // (unlike the 30s per-tx repair sweeps), so 5 minutes is politeness rather
-  // than urgency — matching the reporting lane's own non-urgent cadences.
+  // than urgency - matching the reporting lane's own non-urgent cadences.
   // See sync/agentscan-attest.ts.
   { namespace: "_global", syncType: "agentscan_attest", readToolId: null, strategy: "periodic", intervalSeconds: 300 },
 
-  // Wave P — post-terminalization portfolio snapshot. ENQUEUED, never timed
+  // Wave P - post-terminalization portfolio snapshot. ENQUEUED, never timed
   // (`intervalSeconds: null`, `post_mutation`): the fast lane and the repair
   // sweeps enqueue it the moment a transaction terminalizes, so the portfolio
   // takes a fresh, settled snapshot immediately instead of waiting up to 300s
   // for the periodic `balances` job. It re-checks the group-wide no-pending
-  // guard when it runs and re-defers if another transaction is still in flight —
+  // guard when it runs and re-defers if another transaction is still in flight -
   // a partial snapshot group is never emitted. See sync/balance-sync.ts.
   { namespace: "_global", syncType: "balances_snapshot", readToolId: null, strategy: "post_mutation", intervalSeconds: null },
 
@@ -138,7 +147,7 @@ const SYNC_JOBS = [
 ];
 
 /**
- * Seed sync jobs. Idempotent — ON CONFLICT DO NOTHING.
+ * Seed sync jobs. Idempotent - ON CONFLICT DO NOTHING.
  */
 export async function seedSyncJobs(): Promise<void> {
   let seeded = 0;

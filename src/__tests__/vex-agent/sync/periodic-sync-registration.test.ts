@@ -1,5 +1,5 @@
 /**
- * SEED ↔ TICK ↔ WORKER LOCKSTEP — the C1 defect class, pinned once for all.
+ * SEED ↔ TICK ↔ WORKER LOCKSTEP - the C1 defect class, pinned once for all.
  *
  * It has now happened twice. `bridge_activity_repair` was seeded as a periodic
  * job and dispatched by `worker.ts`, but `syncTick()` had no branch for it, so
@@ -9,14 +9,14 @@
  *
  * A periodic sweep needs all THREE registrations to actually run:
  *
- *   1. a seeded job row (`seed.ts`) — without it no run is ever created;
- *   2. a `syncTick()` branch (`index.ts`) — without it the job's own timer is
+ *   1. a seeded job row (`seed.ts`) - without it no run is ever created;
+ *   2. a `syncTick()` branch (`index.ts`) - without it the job's own timer is
  *      inert, which is the failure mode nobody notices;
  *   3. a `worker.ts` dispatch arm in BOTH paths (`drainPendingRuns` and
- *      `processNextRun`) — without it an enqueued run completes as skipped.
+ *      `processNextRun`) - without it an enqueued run completes as skipped.
  *
  * The seeded list is read from `seed.ts` ITSELF (by running the seeder against
- * a mocked pool), not restated here — a pin that carried its own copy of the
+ * a mocked pool), not restated here - a pin that carried its own copy of the
  * list would pass while the real list drifted.
  */
 
@@ -49,7 +49,7 @@ async function seededPeriodicSyncTypes(): Promise<string[]> {
 }
 
 describe("every seeded periodic sync type is reachable", () => {
-  it("has a syncTick() branch — the registration whose absence is silent", async () => {
+  it("has a syncTick() branch - the registration whose absence is silent", async () => {
     const types = await seededPeriodicSyncTypes();
     expect(types.length).toBeGreaterThan(0);
     const tick = await source("index.ts");
@@ -87,6 +87,10 @@ describe("every seeded periodic sync type is reachable", () => {
 
   it("includes the bounded public Lighter order repair sweep", async () => {
     expect(await seededPeriodicSyncTypes()).toContain("lighter_order_repair");
+  });
+
+  it("includes the bounded, credential-gated Lighter position snapshot sweep", async () => {
+    expect(await seededPeriodicSyncTypes()).toContain("lighter_position_snapshot");
   });
 
   /**
