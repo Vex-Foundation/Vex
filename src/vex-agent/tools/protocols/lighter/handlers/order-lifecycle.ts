@@ -82,6 +82,20 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (accountWide !== null) {
       return fail(`An account-wide Lighter cancellation already exists in state ${accountWide.executionState}.`);
     }
+    const createInput: intentsRepo.CreateLighterOrderLifecycleIntentInput = {
+      intentId: `lighter-lifecycle-${randomUUID()}`,
+      sessionId: context.sessionId,
+      matchHash: prepared.matchHash,
+      environment: prepared.environment,
+      accountIndex: prepared.accountIndex,
+      apiKeyIndex: prepared.apiKeyIndex,
+      actionType: "cancel_one",
+      marketIndex: prepared.marketIndex,
+      providerOrderId: prepared.providerOrderId,
+      providerSnapshotJson: { ...prepared.snapshot },
+      credentialRefJson: readiness.reference,
+      expiresAt: new Date(Date.now() + PREPARE_TTL_MS).toISOString(),
+    };
     const existing = await intentsRepo.findLiveOrderTarget({
       environment: environment.value,
       accountIndex: scope.value.accountIndex,
@@ -89,30 +103,18 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
       providerOrderId: orderId.value,
     });
     if (existing !== null) {
-      if (existing.actionType === "cancel_one" && existing.approvalStatus === "approval_pending" && existing.matchHash === prepared.matchHash) {
-        return {
-          ...ok(preparedPayload(existing, "approval_prepared_existing")),
-          preparedActionFollowUp: cancelFollowUp(existing),
-        };
-      }
-      return fail(`A live Lighter cancellation already exists for provider order ${orderId.value} in state ${existing.executionState}.`);
-    }
-    const expiresAt = new Date(Date.now() + PREPARE_TTL_MS).toISOString();
-    const created = await withSessionControlLock(context.sessionId, (client) =>
-      intentsRepo.createApprovalPendingWith(client, {
-        intentId: `lighter-lifecycle-${randomUUID()}`,
-        sessionId: context.sessionId!,
-        matchHash: prepared.matchHash,
-        environment: prepared.environment,
-        accountIndex: prepared.accountIndex,
-        apiKeyIndex: prepared.apiKeyIndex,
+      return settleExistingLifecyclePreparation({
+        existing,
         actionType: "cancel_one",
-        marketIndex: prepared.marketIndex,
-        providerOrderId: prepared.providerOrderId,
-        providerSnapshotJson: { ...prepared.snapshot },
-        credentialRefJson: readiness.reference,
-        expiresAt,
-      }),
+        matchHash: prepared.matchHash,
+        sessionId: context.sessionId,
+        createInput,
+        followUp: cancelFollowUp,
+        target: `provider order ${orderId.value}`,
+      });
+    }
+    const created = await withSessionControlLock(context.sessionId, (client) =>
+      intentsRepo.createApprovalPendingWith(client, createInput),
     );
     if (created === null) return fail("The exact Lighter cancellation intent could not be persisted.");
     return {
@@ -224,6 +226,29 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (accountWide !== null) {
       return fail(`An account-wide Lighter cancellation already exists in state ${accountWide.executionState}.`);
     }
+    const createInput: intentsRepo.CreateLighterOrderLifecycleIntentInput = {
+      intentId: `lighter-lifecycle-${randomUUID()}`,
+      sessionId: context.sessionId,
+      matchHash: prepared.matchHash,
+      environment: prepared.environment,
+      accountIndex: prepared.accountIndex,
+      apiKeyIndex: prepared.apiKeyIndex,
+      actionType: "modify",
+      marketIndex: prepared.marketIndex,
+      providerOrderId: prepared.providerOrderId,
+      requestedBaseAmountInteger: prepared.requestedBaseAmountInteger,
+      requestedPriceInteger: prepared.requestedPriceInteger,
+      providerSnapshotJson: {
+        ...prepared.snapshot,
+        integratorFees: prepared.integratorFees ?? null,
+        marketSizeDecimals: prepared.sizeDecimals,
+        marketPriceDecimals: prepared.priceDecimals,
+        requestedBaseAmount: prepared.requestedBaseAmount,
+        requestedPrice: prepared.requestedPrice,
+      },
+      credentialRefJson: readiness.reference,
+      expiresAt: new Date(Date.now() + PREPARE_TTL_MS).toISOString(),
+    };
     const existing = await intentsRepo.findLiveOrderTarget({
       environment: environment.value,
       accountIndex: scope.value.accountIndex,
@@ -231,39 +256,18 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
       providerOrderId: orderId.value,
     });
     if (existing !== null) {
-      if (existing.actionType === "modify" && existing.approvalStatus === "approval_pending" && existing.matchHash === prepared.matchHash) {
-        return {
-          ...ok(preparedPayload(existing, "approval_prepared_existing")),
-          preparedActionFollowUp: modifyFollowUp(existing),
-        };
-      }
-      return fail(`A live Lighter ${existing.actionType} action already exists for provider order ${orderId.value} in state ${existing.executionState}.`);
-    }
-    const expiresAt = new Date(Date.now() + PREPARE_TTL_MS).toISOString();
-    const created = await withSessionControlLock(context.sessionId, (dbClient) =>
-      intentsRepo.createApprovalPendingWith(dbClient, {
-        intentId: `lighter-lifecycle-${randomUUID()}`,
-        sessionId: context.sessionId!,
-        matchHash: prepared.matchHash,
-        environment: prepared.environment,
-        accountIndex: prepared.accountIndex,
-        apiKeyIndex: prepared.apiKeyIndex,
+      return settleExistingLifecyclePreparation({
+        existing,
         actionType: "modify",
-        marketIndex: prepared.marketIndex,
-        providerOrderId: prepared.providerOrderId,
-        requestedBaseAmountInteger: prepared.requestedBaseAmountInteger,
-        requestedPriceInteger: prepared.requestedPriceInteger,
-        providerSnapshotJson: {
-          ...prepared.snapshot,
-          integratorFees: prepared.integratorFees ?? null,
-          marketSizeDecimals: prepared.sizeDecimals,
-          marketPriceDecimals: prepared.priceDecimals,
-          requestedBaseAmount: prepared.requestedBaseAmount,
-          requestedPrice: prepared.requestedPrice,
-        },
-        credentialRefJson: readiness.reference,
-        expiresAt,
-      }),
+        matchHash: prepared.matchHash,
+        sessionId: context.sessionId,
+        createInput,
+        followUp: modifyFollowUp,
+        target: `provider order ${orderId.value}`,
+      });
+    }
+    const created = await withSessionControlLock(context.sessionId, (dbClient) =>
+      intentsRepo.createApprovalPendingWith(dbClient, createInput),
     );
     if (created === null) return fail("The exact Lighter modification intent could not be persisted.");
     return {
@@ -348,40 +352,42 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));
     }
+    const createInput: intentsRepo.CreateLighterOrderLifecycleIntentInput = {
+      intentId: `lighter-lifecycle-${randomUUID()}`,
+      sessionId: context.sessionId,
+      matchHash: prepared.matchHash,
+      environment: prepared.environment,
+      accountIndex: prepared.accountIndex,
+      apiKeyIndex: prepared.apiKeyIndex,
+      actionType: "cancel_all",
+      marketIndex: null,
+      providerOrderId: null,
+      providerSnapshotJson: {
+        orders: prepared.orders,
+        orderCount: prepared.orders.length,
+        timeInForce: 0,
+        cancelAtMs: "0",
+      },
+      credentialRefJson: readiness.reference,
+      expiresAt: new Date(Date.now() + PREPARE_TTL_MS).toISOString(),
+    };
     const existing = await intentsRepo.findAnyLiveOrderMutation({
       environment: environment.value,
       accountIndex: scope.value.accountIndex,
     });
     if (existing !== null) {
-      if (existing.actionType === "cancel_all" && existing.approvalStatus === "approval_pending" && existing.matchHash === prepared.matchHash) {
-        return {
-          ...ok(preparedPayload(existing, "approval_prepared_existing")),
-          preparedActionFollowUp: cancelAllFollowUp(existing),
-        };
-      }
-      return fail(`A live Lighter ${existing.actionType} action already exists for this account in state ${existing.executionState}.`);
-    }
-    const expiresAt = new Date(Date.now() + PREPARE_TTL_MS).toISOString();
-    const created = await withSessionControlLock(context.sessionId, (dbClient) =>
-      intentsRepo.createApprovalPendingWith(dbClient, {
-        intentId: `lighter-lifecycle-${randomUUID()}`,
-        sessionId: context.sessionId!,
-        matchHash: prepared.matchHash,
-        environment: prepared.environment,
-        accountIndex: prepared.accountIndex,
-        apiKeyIndex: prepared.apiKeyIndex,
+      return settleExistingLifecyclePreparation({
+        existing,
         actionType: "cancel_all",
-        marketIndex: null,
-        providerOrderId: null,
-        providerSnapshotJson: {
-          orders: prepared.orders,
-          orderCount: prepared.orders.length,
-          timeInForce: 0,
-          cancelAtMs: "0",
-        },
-        credentialRefJson: readiness.reference,
-        expiresAt,
-      }),
+        matchHash: prepared.matchHash,
+        sessionId: context.sessionId,
+        createInput,
+        followUp: cancelAllFollowUp,
+        target: "this account",
+      });
+    }
+    const created = await withSessionControlLock(context.sessionId, (dbClient) =>
+      intentsRepo.createApprovalPendingWith(dbClient, createInput),
     );
     if (created === null) return fail("The exact Lighter cancel-all intent could not be persisted.");
     return {
@@ -506,41 +512,15 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
       accountIndex: scope.value.accountIndex,
     });
     if (existing !== null) {
-      if (existing.actionType === "close_position" && existing.approvalStatus === "approval_pending" && existing.matchHash === prepared.matchHash) {
-        return {
-          ...ok(preparedPayload(existing, "approval_prepared_existing")),
-          preparedActionFollowUp: closePositionFollowUp(existing),
-        };
-      }
-      if (intentsRepo.isSafelyExpirablePreSubmit(existing)) {
-        try {
-          const replacement = await withSessionControlLocks(
-            [existing.sessionId, context.sessionId],
-            async (dbClient) => {
-              const retired = await intentsRepo.expireStalePreSubmitWith(
-                dbClient,
-                lifecycleIdentity(existing),
-              );
-              if (retired === null) return null;
-              const created = await intentsRepo.createApprovalPendingWith(dbClient, createInput);
-              if (created === null) throw new Error("Replacement close intent was not created.");
-              return created;
-            },
-          );
-          if (replacement !== null) {
-            return {
-              ...ok(preparedPayload(replacement, "approval_prepared")),
-              preparedActionFollowUp: closePositionFollowUp(replacement),
-            };
-          }
-        } catch {
-          return fail(
-            "The expired Lighter lifecycle action could not be safely retired. "
-            + "Nothing was signed or submitted; check its exact status before retrying.",
-          );
-        }
-      }
-      return fail(`A live Lighter ${existing.actionType} action already exists for this account in state ${existing.executionState}.`);
+      return settleExistingLifecyclePreparation({
+        existing,
+        actionType: "close_position",
+        matchHash: prepared.matchHash,
+        sessionId: context.sessionId,
+        createInput,
+        followUp: closePositionFollowUp,
+        target: "this account",
+      });
     }
     const created = await withSessionControlLock(context.sessionId, (dbClient) =>
       intentsRepo.createApprovalPendingWith(dbClient, createInput),
@@ -609,6 +589,77 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     }
   },
 };
+
+/**
+ * What a prepare does with a LIVE action that already exists for its target.
+ *
+ * It is REUSED only while its consent is unexpired. The card a prepare hands
+ * back inherits the intent's `expires_at`, so handing back an expired intent
+ * produces a card the runtime rejects as `expired_ttl` the moment the user
+ * approves it - and every later prepare hands back the same intent, so the
+ * order can never be cancelled from the app. Measured live on 2026-09-08 on a
+ * cancel prepared five minutes after its first card.
+ *
+ * An EXPIRED row that never reached a nonce, a signature or a submission is
+ * retired and replaced in one transaction under both sessions' locks
+ * (`expireStalePreSubmitWith` refuses anything that went further, and its
+ * `expires_at <= NOW()` predicate is what keeps an unexpired row of another
+ * hash alive). A row that went further is reported by name and never touched:
+ * money may be in flight behind it.
+ */
+async function settleExistingLifecyclePreparation(input: {
+  readonly existing: LighterOrderLifecycleIntentRow;
+  readonly actionType: LighterOrderLifecycleIntentRow["actionType"];
+  readonly matchHash: string;
+  readonly sessionId: string;
+  readonly createInput: intentsRepo.CreateLighterOrderLifecycleIntentInput;
+  readonly followUp: (intent: LighterOrderLifecycleIntentRow) => PreparedActionFollowUp;
+  readonly target: string;
+}): Promise<Awaited<ReturnType<ProtocolHandler>>> {
+  const { existing } = input;
+  const nowMs = Date.now();
+  const expiresAtMs = Date.parse(existing.expiresAt);
+  const unexpired = Number.isFinite(expiresAtMs) && expiresAtMs > nowMs;
+  if (
+    existing.actionType === input.actionType
+    && existing.approvalStatus === "approval_pending"
+    && existing.matchHash === input.matchHash
+    && unexpired
+  ) {
+    return {
+      ...ok(preparedPayload(existing, "approval_prepared_existing")),
+      preparedActionFollowUp: input.followUp(existing),
+    };
+  }
+  if (intentsRepo.isSafelyExpirablePreSubmit(existing, nowMs)) {
+    try {
+      const replacement = await withSessionControlLocks(
+        [existing.sessionId, input.sessionId],
+        async (dbClient) => {
+          const retired = await intentsRepo.expireStalePreSubmitWith(dbClient, lifecycleIdentity(existing));
+          if (retired === null) return null;
+          const created = await intentsRepo.createApprovalPendingWith(dbClient, input.createInput);
+          if (created === null) throw new Error(`Replacement ${input.actionType} intent was not created.`);
+          return created;
+        },
+      );
+      if (replacement !== null) {
+        return {
+          ...ok(preparedPayload(replacement, "approval_prepared")),
+          preparedActionFollowUp: input.followUp(replacement),
+        };
+      }
+    } catch {
+      return fail(
+        "The expired Lighter lifecycle action could not be safely retired. "
+        + "Nothing was signed or submitted; check its exact status before retrying.",
+      );
+    }
+  }
+  return fail(
+    `A live Lighter ${existing.actionType} action already exists for ${input.target} in state ${existing.executionState}.`,
+  );
+}
 
 function lifecycleIdentity(intent: LighterOrderLifecycleIntentRow): {
   readonly intentId: string;

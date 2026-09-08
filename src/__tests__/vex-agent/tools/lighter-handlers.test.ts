@@ -1657,7 +1657,7 @@ describe("Lighter agent read handlers", () => {
       total_bids: 1,
       bids: [{ ...order(1, "3000"), remaining_base_amount: "2" }],
     });
-    const stale = {
+    const stale: Record<string, unknown> = {
       intentId: `lighter-lifecycle-${"a".repeat(32)}`,
       sessionId: "old-session",
       approvalId: "old-approval",
@@ -3521,5 +3521,104 @@ describe("Lighter agent read handlers", () => {
       "lighter.handler.error",
       expect.objectContaining({ toolId: "lighter.markets" }),
     );
+  });
+});
+
+describe("Lighter lifecycle prepare: a live action already exists for the same target", () => {
+  // MEASURED LIVE 2026-09-08: a cancel prepared again five minutes after its
+  // first card was handed the SAME intent, whose two-minute consent had
+  // expired, and the runtime rejected every later approval as expired_ttl.
+  // The prepare must reuse only an unexpired intent and retire an expired
+  // pre-submit one, the way the position-close prepare already does.
+  function readyScope(): void {
+    configureLighterTradingCredentialScopeResolver({
+      findSavedScope: (environment, accountIndex) => ({ environment, accountIndex, apiKeyIndex: 7 }),
+      listScopes: (environment) => [{ environment, accountIndex: 42, apiKeyIndex: 7 }],
+    });
+  }
+
+  async function prepareCancel(providerOrderId: string) {
+    return executeProtocolTool({
+      toolId: "lighter.order.cancel.prepare",
+      params: { environment: "rhc", accountIndex: 42, marketId: 0, orderId: providerOrderId },
+    }, READ_CTX);
+  }
+
+  /** The exact row the first prepare would have written, as the repo hands it back. */
+  async function firstPreparation(providerOrder: Record<string, unknown>): Promise<Record<string, unknown>> {
+    mocks.lifecycleIntentsRepo.findLiveAccountWideCancel.mockResolvedValue(null);
+    mocks.lifecycleIntentsRepo.findLiveOrderTarget.mockResolvedValueOnce(null);
+    mocks.lifecycleIntentsRepo.createApprovalPendingWith.mockImplementationOnce(async (_db, input) => ({
+      ...input, approvalStatus: "approval_pending", executionState: "approval_pending",
+    }));
+    const first = await prepareCancel(String(providerOrder["order_id"]));
+    expect(first.success, first.output).toBe(true);
+    const written = mocks.lifecycleIntentsRepo.createApprovalPendingWith.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+    return { ...written, approvalId: null, decidedAt: null, approvalStatus: "approval_pending", executionState: "approval_pending" };
+  }
+
+  it("reuses an UNEXPIRED pending cancel with the same match hash and writes nothing", async () => {
+    readyScope();
+    const providerOrder = { ...accountOrder(), type: "limit", time_in_force: "good-till-time" };
+    mocks.client.getAccountActiveOrders.mockResolvedValue({ code: 200, orders: [providerOrder] });
+    const existing: Record<string, unknown> = { ...(await firstPreparation(providerOrder)), expiresAt: new Date(Date.now() + 60_000).toISOString() };
+    mocks.lifecycleIntentsRepo.findLiveOrderTarget.mockResolvedValueOnce(existing);
+
+    const second = await prepareCancel(String(providerOrder["order_id"]));
+
+    expect(second.success, second.output).toBe(true);
+    expect(JSON.parse(second.output)).toMatchObject({ status: "approval_prepared_existing", intentId: existing["intentId"] });
+    expect(mocks.lifecycleIntentsRepo.createApprovalPendingWith).toHaveBeenCalledOnce();
+    expect(mocks.lifecycleIntentsRepo.expireStalePreSubmitWith).not.toHaveBeenCalled();
+  });
+
+  it("retires an EXPIRED pending cancel and prepares a fresh one under both sessions' locks", async () => {
+    readyScope();
+    const providerOrder = { ...accountOrder(), type: "limit", time_in_force: "good-till-time" };
+    mocks.client.getAccountActiveOrders.mockResolvedValue({ code: 200, orders: [providerOrder] });
+    const stale: Record<string, unknown> = {
+      ...(await firstPreparation(providerOrder)),
+      sessionId: "old-session",
+      expiresAt: new Date(Date.now() - 1_000).toISOString(),
+    };
+    mocks.lifecycleIntentsRepo.findLiveOrderTarget.mockResolvedValueOnce(stale);
+    mocks.lifecycleIntentsRepo.isSafelyExpirablePreSubmit.mockReturnValueOnce(true);
+    mocks.lifecycleIntentsRepo.expireStalePreSubmitWith.mockResolvedValueOnce({ ...stale, executionState: "expired" });
+    mocks.lifecycleIntentsRepo.createApprovalPendingWith.mockImplementationOnce(async (_db, input) => ({
+      ...input, approvalStatus: "approval_pending", executionState: "approval_pending",
+    }));
+
+    const second = await prepareCancel(String(providerOrder["order_id"]));
+
+    expect(second.success, second.output).toBe(true);
+    const payload = JSON.parse(second.output) as Record<string, unknown>;
+    expect(payload["status"]).toBe("approval_prepared");
+    expect(payload["intentId"]).not.toBe(stale["intentId"]);
+    expect(mocks.sessionLock.withSessionControlLocks).toHaveBeenCalledWith(["old-session", READ_CTX.sessionId], expect.any(Function));
+    expect(mocks.lifecycleIntentsRepo.expireStalePreSubmitWith).toHaveBeenCalledOnce();
+    // The fresh intent carries a fresh consent, never the expired one.
+    const fresh = mocks.lifecycleIntentsRepo.createApprovalPendingWith.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+    expect(Date.parse(String(fresh["expiresAt"]))).toBeGreaterThan(Date.now());
+  });
+
+  it("refuses to touch an expired cancel that went past pre-submit", async () => {
+    readyScope();
+    const providerOrder = { ...accountOrder(), type: "limit", time_in_force: "good-till-time" };
+    mocks.client.getAccountActiveOrders.mockResolvedValue({ code: 200, orders: [providerOrder] });
+    const signed: Record<string, unknown> = {
+      ...(await firstPreparation(providerOrder)),
+      approvalStatus: "approved",
+      executionState: "signed",
+      expiresAt: new Date(Date.now() - 1_000).toISOString(),
+    };
+    mocks.lifecycleIntentsRepo.findLiveOrderTarget.mockResolvedValueOnce(signed);
+    mocks.lifecycleIntentsRepo.isSafelyExpirablePreSubmit.mockReturnValueOnce(false);
+
+    const second = await prepareCancel(String(providerOrder["order_id"]));
+
+    expect(second.success).toBe(false);
+    expect(second.output).toMatch(/already exists .* in state signed/);
+    expect(mocks.lifecycleIntentsRepo.expireStalePreSubmitWith).not.toHaveBeenCalled();
+    expect(mocks.lifecycleIntentsRepo.createApprovalPendingWith).toHaveBeenCalledOnce();
   });
 });
