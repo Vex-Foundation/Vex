@@ -24,15 +24,16 @@ import { flipFuses, FuseVersion, FuseV1Options } from "@electron/fuses";
 import { artifactBinaryName, artifactsFor, assertBridgeArtifact, goTargetFor, PACKAGED_BRIDGE_SUBPATH } from "../scripts/bridge-artifact.mjs";
 import { checkPayload, inspectPlatformSignature } from "../scripts/check-packaged-payload.mjs";
 import {
-  assertLighterSignerArtifact,
   assertLighterSignerBytes,
+  assertPackagedWindowsSignerBytes,
   builtLighterSignerDir,
+  LIGHTER_SIGNER_AUTHENTICODE_FILE,
   LIGHTER_SIGNER_DIGEST_FILE,
   lighterSignerBinaryName,
   lighterSignerTargetsForPlatform,
   PACKAGED_LIGHTER_SIGNER_SUBPATH,
   readLighterSignerDigests,
-  sha256OfFile,
+  stagedLighterSignerDir,
 } from "../scripts/lighter-signer-artifact.mjs";
 
 /**
@@ -100,51 +101,77 @@ export async function verifyPackagedBridge(context) {
  * ONE packaged helper: right format, right machine, and provenance proven the
  * way this platform's packaging order allows.
  *
- * Returns the header inspection plus `digest` and `provenance`, which is
- * `"build-digest"` when the packaged bytes are still the ones SHA256SUMS
- * records and `"staged-digest+authenticode"` when Windows signing changed them.
- * Throws with the mismatch named. See `verifyPackagedLighterSigner` for why the
- * two platforms differ.
+ * Returns the header inspection plus `digest` and `provenance`, the sentence
+ * the log prints about HOW these bytes were tied to this build. Throws with the
+ * mismatch named. See `verifyPackagedLighterSigner` for why the platforms
+ * differ.
  */
-function verifyOnePackagedHelper(packaged, target, digests, electronPlatformName, inspectSignature) {
+function verifyOnePackagedHelper(packaged, target, digests, electronPlatformName, options) {
+  const { builtDir, stagedDir, inspectSignature } = options;
   if (electronPlatformName !== "win32") {
-    return { ...assertLighterSignerBytes(packaged, target, digests), provenance: "build-digest" };
+    return { ...assertLighterSignerBytes(packaged, target, digests), provenance: "build digest" };
   }
 
-  const found = assertLighterSignerArtifact(packaged, target);
+  // Header, machine, and the binding between this file and the helper this
+  // build produced. `assertPackagedWindowsSignerBytes` owns that rule; both
+  // this hook and `check:package` ask it the same question.
   const name = lighterSignerBinaryName(target);
-  const expected = digests.get(name);
-  if (expected === undefined) {
-    throw new Error(`${name} is not listed in ${LIGHTER_SIGNER_DIGEST_FILE}; it was not built here`);
-  }
-  const digest = sha256OfFile(packaged);
-  if (digest === expected) {
-    // Unsigned Windows build: nothing rewrote the file on its way in.
-    return { ...found, digest, provenance: "build-digest" };
+  const found = assertPackagedWindowsSignerBytes(packaged, target, digests, builtDir);
+  if (!found.transformed) {
+    // Unsigned Windows build: nothing rewrote the file on its way in, so the
+    // build digest answers by itself and no signature tool is consulted.
+    return { ...found, provenance: "build digest (this build is unsigned)" };
   }
 
+  const stagedRecord = readStagedAuthenticodeDigests(stagedDir);
+  const stagedContent = stagedRecord?.get(name);
+  if (stagedContent !== undefined && stagedContent !== found.content) {
+    throw new Error(
+      `${path.join(stagedDir, LIGHTER_SIGNER_AUTHENTICODE_FILE)} records ${stagedContent} for ${name}, `
+        + `but the packaged helper's Authenticode content digest is ${found.content}. The staging `
+        + "preflight and the packaged file disagree about which helper this is; nothing may be "
+        + "signed on that."
+    );
+  }
+
+  // The second fact, and only the second: the packaged bytes carry a signature
+  // the platform accepts. Provenance is already settled above.
   let signature;
   try {
     signature = inspectSignature(packaged, "win32");
   } catch (error) {
     throw new Error(
-      `${packaged} has sha256 ${digest}, but ${LIGHTER_SIGNER_DIGEST_FILE} records ${expected} for `
-        + `${name}. On Windows that is expected AFTER electron-builder signs the helper while `
-        + `copying it into resources, so the signature is what has to prove it - and the signature `
-        + `tool could not be run: ${error.message}`
+      `${packaged} is this build's ${name} (Authenticode content ${found.content}) but its signature `
+        + `could not be checked: ${error.message}. A gate that cannot look must not report "fine".`
     );
   }
   if (!signature.verified) {
     throw new Error(
-      `${packaged} has sha256 ${digest}, but ${LIGHTER_SIGNER_DIGEST_FILE} records ${expected} for `
-        + `${name}, and the packaged file carries NO valid Authenticode signature `
-        + `(${signature.detail || "no detail reported"}).\n`
-        + "    Signed-during-copy is the only reason these bytes may differ from the build "
-        + "manifest; without a valid signature the helper is simply not the one this repository "
-        + "built, and a Vex that spawns an unverified signer must never be signed."
+      `${packaged} has sha256 ${found.digest}, not the ${digests.get(name)} `
+        + `${LIGHTER_SIGNER_DIGEST_FILE} records for ${name}, and it carries NO valid Authenticode `
+        + `signature (${signature.detail || "no detail reported"}).\n`
+        + "    Signing during the copy is the only sanctioned reason for these bytes to differ. "
+        + "Without a valid signature something else rewrote the helper, and a Vex that spawns an "
+        + "unverified signer must never itself be signed."
     );
   }
-  return { ...found, digest, provenance: "staged-digest+authenticode" };
+  return { ...found, provenance: `Authenticode content ${found.content} + valid signature` };
+}
+
+/**
+ * The pre-sign content digests `scripts/stage-lighter-signer.mjs` recorded for
+ * the staged Windows helpers, or `undefined` when that directory carries no
+ * such manifest.
+ *
+ * ABSENCE IS NOT A FAILURE and presence is not the proof: the authority is the
+ * build output plus `SHA256SUMS`, which the caller has already checked. This
+ * manifest is the preflight's own account of the same bytes, so a disagreement
+ * means the staging directory changed between the preflight and the package -
+ * which is worth refusing even though no path should produce it.
+ */
+function readStagedAuthenticodeDigests(stagedDir) {
+  if (!existsSync(path.join(stagedDir, LIGHTER_SIGNER_AUTHENTICODE_FILE))) return undefined;
+  return readLighterSignerDigests(stagedDir, LIGHTER_SIGNER_AUTHENTICODE_FILE);
 }
 
 /**
@@ -189,38 +216,45 @@ function verifyOnePackagedHelper(packaged, target, digests, electronPlatformName
  *   3. PROVENANCE, proven differently where the bytes differ:
  *        - darwin and linux: sha256 equals `SHA256SUMS`, the manifest the
  *          pinned Go toolchain wrote at build time.
- *        - win32: if the bytes still match SHA256SUMS this is an unsigned build
- *          (no certificate configured, `signFile` logs "signing is skipped" and
- *          leaves the file alone) and the digest proves provenance directly. If
- *          they do not match, the helper must carry a VALID Authenticode
- *          signature; provenance then rests on `stage-lighter-signer.mjs`, which
- *          verified header, machine and digest on these same bytes minutes
- *          earlier, and integrity on the signature, which the signing authority
- *          computed over the file electron-builder copied and which no later
- *          edit can survive.
+ *        - win32, bytes unchanged: an unsigned build (no certificate
+ *          configured, `signFile` logs "signing is skipped" and leaves the file
+ *          alone), so the same digest proves provenance directly.
+ *        - win32, bytes changed: the packaged file's AUTHENTICODE CONTENT
+ *          DIGEST must equal the one computed over this build's own helper -
+ *          every byte a signature is allowed to rewrite excluded, and nothing
+ *          else. Then, as a SECOND fact, the signature over those bytes must
+ *          verify.
  *
- * A byte-for-byte content comparison of the signed file against the staged one
- * is deliberately NOT attempted: stripping an Authenticode signature back out
- * of a PE requires parsing the certificate table and the checksum, that is,
- * a second PE writer in this repository whose bugs would be indistinguishable
- * from a tampered helper. "Staged bytes were verified" plus "the signature over
- * the packaged bytes verifies" is the correct pair of facts, and both are
- * evidence someone else computed.
+ * WHY THE CONTENT DIGEST AND NOT THE SIGNATURE ALONE. "Signed by us" is not
+ * "built by this build": our own certificate signs whatever it is handed, so a
+ * helper from an OLDER RELEASE - or from another branch, or a substitution made
+ * between staging and packaging - carries a signature that verifies perfectly.
+ * That was a real hole in this gate (Codex review, round 1, finding A1). The
+ * Authenticode content digest is exactly the byte range the signing authority
+ * itself hashes, so it is stable across signing, dual signing and timestamping,
+ * and it is recomputable by anyone from the build output. It is a READER over
+ * the PE, never a writer: an unparsable file throws instead of passing.
  *
- * The post-signing gate for macOS lives in the `check:package` CLI
+ * The post-signing gate lives in the `check:package` CLI
  * (`scripts/check-packaged-payload.mjs`), which the release workflow runs after
- * electron-builder finishes, on the Windows job as well.
+ * electron-builder finishes, on the macOS and Windows jobs alike; it asserts
+ * the same content binding over the shipped payload.
  *
  * Exported so a test can drive THIS function over a synthetic packaged tree,
- * for the same reason `verifyPackagedBridge` is; `builtDir` names where the
- * digest manifest lives and defaults to this repository's build output, and
- * `inspectSignature` is the platform signature tool, faked by tests that have
- * neither a Windows host nor a signing identity. Returns the helper names it
- * accepted.
+ * for the same reason `verifyPackagedBridge` is. `builtDir` names where the
+ * build output and its digest manifest live and defaults to this repository's;
+ * `stagedDir` follows it (the staging directory is its sibling, by
+ * `stagedLighterSignerDir`), and `inspectSignature` is the platform signature
+ * tool, faked by tests that have neither a Windows host nor a signing identity.
+ * Returns the helper names it accepted.
  */
 export function verifyPackagedLighterSigner(
   context,
-  { builtDir = builtLighterSignerDir(APP_ROOT), inspectSignature = inspectPlatformSignature } = {}
+  {
+    builtDir = builtLighterSignerDir(APP_ROOT),
+    stagedDir = stagedLighterSignerDir(path.resolve(builtDir, "..", "..")),
+    inspectSignature = inspectPlatformSignature,
+  } = {}
 ) {
   const { electronPlatformName, appOutDir, packager } = context;
   const targets = lighterSignerTargetsForPlatform(electronPlatformName);
@@ -259,7 +293,11 @@ export function verifyPackagedLighterSigner(
     const name = lighterSignerBinaryName(target);
     const packaged = path.join(packagedDir, name);
     try {
-      const found = verifyOnePackagedHelper(packaged, target, digests, electronPlatformName, inspectSignature);
+      const found = verifyOnePackagedHelper(packaged, target, digests, electronPlatformName, {
+        builtDir,
+        stagedDir,
+        inspectSignature,
+      });
       console.log(
         `afterPack: Lighter signer ${name} OK at ${packaged} `
           + `(${found.format} ${found.goos}/${found.arch} sha256 ${found.digest}, `

@@ -26,6 +26,17 @@
  * it: a leftover helper from the previous platform is the exact failure this
  * script exists to make impossible.
  *
+ * ON WINDOWS it also writes `AUTHENTICODE-SHA256SUMS`, the pre-sign content
+ * digest of each staged helper. electron-builder Authenticode-signs these files
+ * WHILE COPYING them into resources, so their sha256 no longer matches the
+ * build manifest by the time any later gate looks, and a valid signature proves
+ * only that our certificate signed something - an older release's helper
+ * included. The content digest is the part of a PE a signature may not touch,
+ * so it is what binds the signed output back to this build. Computing it here,
+ * while the bytes are still provably the build's, means a PE this repository
+ * cannot parse fails in the PREFLIGHT rather than halfway through a signed
+ * release.
+ *
  * Usage:
  *   node scripts/stage-lighter-signer.mjs --platform mac
  *   node scripts/stage-lighter-signer.mjs            # defaults to this host
@@ -38,10 +49,13 @@ import { fileURLToPath } from "node:url";
 import {
   assertLighterSignerArtifact,
   assertLighterSignerBytes,
+  authenticodeContentSha256,
   builtLighterSignerDir,
+  LIGHTER_SIGNER_AUTHENTICODE_FILE,
   lighterSignerBinaryName,
   lighterSignerTargetsForPlatform,
   readLighterSignerDigests,
+  renderLighterSignerDigests,
   stagedLighterSignerDir,
 } from "./lighter-signer-artifact.mjs";
 
@@ -99,7 +113,7 @@ export function stageLighterSigner(platform) {
   // the repository root that a future rename would silently outdate.
   writeFileSync(path.join(destinationDir, ".gitignore"), "*\n");
 
-  return verified.map(({ target, source, inspection }) => {
+  const staged = verified.map(({ target, source, inspection }) => {
     const destination = path.join(destinationDir, lighterSignerBinaryName(target));
     copyFileSync(source, destination);
     // Executable for everyone, writable only by the owner. electron-builder
@@ -109,8 +123,43 @@ export function stageLighterSigner(platform) {
 
     // Re-read the STAGED file: this is the byte sequence that gets packaged.
     assertLighterSignerArtifact(destination, target);
-    return { name: lighterSignerBinaryName(target), source, destination, inspection };
+    return {
+      name: lighterSignerBinaryName(target),
+      target,
+      source,
+      destination,
+      inspection,
+      // The one digest that survives what happens next on Windows. Undefined
+      // everywhere else: nothing rewrites a Mach-O or an ELF on its way into
+      // the package, so their build digest still answers the same question.
+      authenticode: target.platform === "win32" ? authenticodeContentSha256(destination) : undefined,
+    };
   });
+
+  // THE PRE-SIGN RECORD, written before electron-builder is invoked and while
+  // these bytes are still provably the build's (their sha256 was checked
+  // against SHA256SUMS above).
+  //
+  // electron-builder Authenticode-signs each helper WHILE COPYING it into
+  // resources (winPackager `createTransformerForExtraFiles`), so the packaged
+  // bytes differ from the build manifest and the packaged sha256 can prove
+  // nothing. A valid signature cannot replace that proof either: an OLD
+  // release's helper, signed by the same publisher, verifies perfectly. This
+  // manifest is what binds the signed output back to this build - the gates
+  // recompute the same value over the packaged file and compare.
+  //
+  // Computing it here rather than only in the gates is deliberate: a PE this
+  // repository cannot hash must fail in the PREFLIGHT, with the file named,
+  // not halfway through a signed release.
+  if (targets[0].platform === "win32") {
+    writeFileSync(
+      path.join(destinationDir, LIGHTER_SIGNER_AUTHENTICODE_FILE),
+      renderLighterSignerDigests(
+        staged.map((entry) => ({ name: entry.name, digest: entry.authenticode }))
+      )
+    );
+  }
+  return staged;
 }
 
 function main() {
@@ -120,7 +169,8 @@ function main() {
       `lighter-signer: staged ${path.relative(REPO_ROOT, staged.source)} -> `
         + `${path.relative(REPO_ROOT, staged.destination)} `
         + `(${staged.inspection.format} ${staged.inspection.goos}/${staged.inspection.arch} `
-        + `sha256 ${staged.inspection.digest})`
+        + `sha256 ${staged.inspection.digest}`
+        + `${staged.authenticode === undefined ? "" : `, authenticode content ${staged.authenticode}`})`
     );
   }
 }

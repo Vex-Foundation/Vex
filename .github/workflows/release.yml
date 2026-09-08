@@ -557,9 +557,12 @@ jobs:
       # Post-sign evidence for the Lighter signer helper. On Windows the helper
       # is Authenticode-signed while electron-builder COPIES it into resources
       # (app-builder-lib winPackager createTransformerForExtraFiles), so the
-      # afterPack hook already sees signed bytes and proves provenance from the
-      # staging digest plus a valid signature; this step re-checks the shipped
-      # helper's signature against the signed app and refuses an unsigned one.
+      # afterPack hook already sees signed bytes; it binds them back to this
+      # build through the Authenticode CONTENT digest, which signing cannot
+      # change, and only then asks whether the signature verifies. This step
+      # re-asserts both over the shipped payload: an older release's helper,
+      # signed by the same publisher, fails here even though its signature is
+      # valid.
       - name: Verify packaged Lighter signer signatures
         working-directory: vex-app
         run: pnpm run check:package

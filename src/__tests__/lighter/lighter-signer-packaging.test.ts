@@ -1,16 +1,24 @@
 /**
- * THE THREE GATES BETWEEN A BUILT SIGNER HELPER AND A SIGNED PACKAGE, over
- * synthetic trees.
+ * THE GATES A REPOSITORY-ROOT RUNNER CAN PROVE, over synthetic trees.
  *
  * The Lighter signer helper is the process that holds a trading private key, so
- * the packaging chain around it is a money-path contract:
+ * the packaging chain around it is a money-path contract. This file owns the
+ * parts of it that depend on nothing outside the Node standard library:
  *
  *   1. `vex-app/scripts/stage-lighter-signer.mjs` selects the helpers for the
- *      ONE platform being packaged and verifies their build-time digests;
- *   2. `vex-app/build/afterPack.mjs` re-inspects what electron-builder actually
- *      packaged, BEFORE codesigning, and refuses a foreign or altered helper;
- *   3. `vex-app/scripts/lighter-signer-artifact.mjs` is what
- *      `check-build-artifacts.mjs` asks whether the build output is complete.
+ *      ONE platform being packaged, verifies their build-time digests, and on
+ *      Windows records their pre-sign Authenticode content digests;
+ *   2. `vex-app/scripts/lighter-signer-artifact.mjs` is what
+ *      `check-build-artifacts.mjs` asks whether the build output is complete;
+ *   3. the release workflow's step order, and the pinned Go toolchain check.
+ *
+ * THE PACKAGE-TIME GATES LIVE ELSEWHERE, in
+ * `vex-app/src/main/lighter/__tests__/signer-packaging.test.ts`:
+ * `build/afterPack.mjs` and `scripts/check-packaged-payload.mjs` import
+ * `vex-app/node_modules` packages (`@electron/fuses`, `@electron/asar`,
+ * `app-builder-lib`) that the repository-root CI job does not install, so
+ * driving them from here fails with ERR_MODULE_NOT_FOUND in CI while passing on
+ * a developer machine. That split is the same one the bridge's suites use.
  *
  * The binaries here are FAKE - real Mach-O, PE and ELF headers over a few bytes
  * of payload - exactly as in the bridge's own packaging suite
@@ -24,8 +32,7 @@
  * The modules are ESM scripts under `vex-app/`, so they are driven through a
  * real `node` child process rather than imported here: that is how they run in
  * production (electron-builder hooks and package scripts), and it keeps their
- * `import.meta.url`-relative resolution and their `vex-app/node_modules`
- * dependencies honest.
+ * `import.meta.url`-relative resolution honest.
  */
 
 import { execFileSync } from "node:child_process";
@@ -37,7 +44,6 @@ import { afterEach, describe, expect, it } from "vitest";
 
 const REPO_ROOT = process.cwd();
 const APP_SCRIPTS = path.join(REPO_ROOT, "vex-app", "scripts");
-const AFTER_PACK = path.join(REPO_ROOT, "vex-app", "build", "afterPack.mjs");
 
 const temporaryRoots: string[] = [];
 
@@ -81,13 +87,47 @@ function elf(payload: string, machine: number): Buffer {
   return Buffer.concat([head, Buffer.from(payload, "utf8")]);
 }
 
+/**
+ * A STRUCTURALLY REAL PE32+ over a few bytes of payload: DOS stub, PE
+ * signature, COFF header, a full 240-byte optional header with its sixteen data
+ * directories, and one section.
+ *
+ * Real headers rather than the four fields the machine check reads, because
+ * `authenticodeContentSha256` walks the same structure signtool does -
+ * SizeOfHeaders, the CheckSum field, the certificate table directory entry, the
+ * section table - and a stub PE would let the gate under test parse nothing.
+ * The layout follows the real helpers, which this suite cannot use: they are
+ * build output, git-ignored, and only exist on a machine with the pinned Go
+ * toolchain.
+ */
 function pe(payload: string, machine: number): Buffer {
-  const head = Buffer.alloc(128, 0);
-  head.write("MZ", 0, "ascii");
-  head.writeUInt32LE(0x40, 0x3c);
-  head.write("PE\0\0", 0x40, "ascii");
-  head.writeUInt16LE(machine, 0x44);
-  return Buffer.concat([head, Buffer.from(payload, "utf8")]);
+  const SIZE_OF_HEADERS = 0x200;
+  const body = Buffer.from(payload, "utf8");
+  const rawSize = Math.ceil(Math.max(body.length, 1) / 0x200) * 0x200;
+  const file = Buffer.alloc(SIZE_OF_HEADERS + rawSize, 0);
+
+  file.write("MZ", 0, "ascii");
+  file.writeUInt32LE(0x40, 0x3c);
+  file.write("PE\0\0", 0x40, "ascii");
+  const coff = 0x44;
+  file.writeUInt16LE(machine, coff);
+  file.writeUInt16LE(1, coff + 2); // NumberOfSections
+  file.writeUInt16LE(240, coff + 16); // SizeOfOptionalHeader
+  file.writeUInt16LE(0x22, coff + 18); // Characteristics: EXECUTABLE_IMAGE | LARGE_ADDRESS_AWARE
+
+  const optional = coff + 20;
+  file.writeUInt16LE(0x20b, optional); // PE32+
+  file.writeUInt32LE(SIZE_OF_HEADERS + rawSize, optional + 56); // SizeOfImage
+  file.writeUInt32LE(SIZE_OF_HEADERS, optional + 60);
+  file.writeUInt32LE(0, optional + 64); // CheckSum, which signing rewrites
+  file.writeUInt32LE(16, optional + 108); // NumberOfRvaAndSizes
+
+  const sectionTable = optional + 240;
+  file.write(".text\0\0\0", sectionTable, "ascii");
+  file.writeUInt32LE(rawSize, sectionTable + 16); // SizeOfRawData
+  file.writeUInt32LE(SIZE_OF_HEADERS, sectionTable + 20); // PointerToRawData
+  body.copy(file, SIZE_OF_HEADERS);
+  return file;
 }
 
 /** Every helper the table knows, as fake but structurally real executables. */
@@ -174,6 +214,8 @@ describe("staging the Lighter signer helpers for one platform", () => {
       ok: true,
       value: ["vex-lighter-signer-darwin-arm64", "vex-lighter-signer-darwin-x64"],
     });
+    // No content manifest: nothing rewrites a Mach-O on its way into the
+    // package, so its build digest still answers the provenance question.
     expect(readdirSync(stagedDir(root)).filter((name) => name !== ".gitignore").sort()).toEqual([
       "vex-lighter-signer-darwin-arm64",
       "vex-lighter-signer-darwin-x64",
@@ -190,7 +232,12 @@ describe("staging the Lighter signer helpers for one platform", () => {
     // A Windows package that still carried the two Mach-O helpers would ship
     // two executables it can never run, and on macOS the mirror image of that
     // mistake is two unsigned binaries inside a notarized bundle.
+    //
+    // The pre-sign content manifest sits beside them, and only on Windows;
+    // `extraResources` copies `vex-lighter-signer-*` only, so it stays in the
+    // workspace rather than shipping.
     expect(readdirSync(stagedDir(root)).filter((name) => name !== ".gitignore").sort()).toEqual([
+      "AUTHENTICODE-SHA256SUMS",
       "vex-lighter-signer-win32-arm64.exe",
       "vex-lighter-signer-win32-x64.exe",
     ]);
@@ -218,257 +265,6 @@ describe("staging the Lighter signer helpers for one platform", () => {
     const result = stage(root, "freebsd");
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/unknown packaging platform "freebsd"/);
-  });
-});
-
-/** electron-builder's own numeric Arch enum, as afterPack receives it. */
-const ARCH = { x64: 1, arm64: 3 } as const;
-
-/** A packaged tree in the shape electron-builder produces. */
-function fakePackage(
-  root: string,
-  platform: "darwin" | "win32" | "linux",
-  helpers: ReadonlyArray<readonly [string, Buffer]>,
-): { appOutDir: string; context: Record<string, unknown> } {
-  const appOutDir = path.join(root, "dist-electron", `${platform}-unpacked`);
-  const resources = platform === "darwin"
-    ? path.join(appOutDir, "Vex.app", "Contents", "Resources")
-    : path.join(appOutDir, "resources");
-  for (const [name, bytes] of helpers) {
-    writeBinary(path.join(resources, "lighter-signer", name), bytes);
-  }
-  return {
-    appOutDir,
-    context: {
-      electronPlatformName: platform,
-      appOutDir,
-      arch: ARCH.arm64,
-      packager: { appInfo: { productFilename: "Vex" } },
-    },
-  };
-}
-
-/**
- * The platform signature tool, faked at the seam `verifyPackagedLighterSigner`
- * exposes for exactly this reason: a Linux runner has neither `codesign` nor
- * `Get-AuthenticodeSignature`, and no test may hold a signing identity.
- *
- * The DEFAULT throws. Every call site that does not pass its own fake is
- * therefore asserting that the gate never consulted a signature tool at all,
- * which is the contract on macOS, on Linux, and on an unsigned Windows build.
- */
-const SIGNATURE_TOOL_MUST_NOT_BE_CONSULTED =
-  '(file) => { throw new Error("the signature tool was consulted for " + file); }';
-
-/** A fake that answers `Valid` for every file, as a signed Windows build would. */
-const SIGNATURE_VALID = '() => ({ verified: true, detail: "Valid" })';
-
-/** A fake that answers `NotSigned`, as an unsigned helper in a signed build would. */
-const SIGNATURE_NOT_SIGNED = '() => ({ verified: false, detail: "NotSigned" })';
-
-function verifyPackaged(
-  root: string,
-  context: Record<string, unknown>,
-  builtDir: string,
-  inspectSignature: string = SIGNATURE_TOOL_MUST_NOT_BE_CONSULTED,
-): { ok: boolean; value?: unknown; message?: string } {
-  return runDriver(root, `
-    import { verifyPackagedLighterSigner } from ${JSON.stringify(AFTER_PACK)};
-    try {
-      const accepted = verifyPackagedLighterSigner(
-        ${JSON.stringify(context)},
-        { builtDir: ${JSON.stringify(builtDir)}, inspectSignature: ${inspectSignature} },
-      );
-      console.log(JSON.stringify({ ok: true, value: accepted }));
-    } catch (error) {
-      console.log(JSON.stringify({ ok: false, message: error.message }));
-    }
-  `);
-}
-
-describe("verifying the packaged Lighter signer in the afterPack hook", () => {
-  const darwinHelpers = FAKE_HELPERS.filter(([name]) => name.includes("darwin"));
-  const windowsHelpers = FAKE_HELPERS.filter(([name]) => name.includes("win32"));
-
-  it("accepts exactly this platform's helpers with the digests the build recorded", () => {
-    const root = temporaryRoot("vex-lighter-pack-ok-");
-    const builtDir = fakeBuiltDir(root);
-    const { context } = fakePackage(root, "darwin", darwinHelpers);
-
-    expect(verifyPackaged(root, context, builtDir)).toMatchObject({
-      ok: true,
-      value: ["vex-lighter-signer-darwin-arm64", "vex-lighter-signer-darwin-x64"],
-    });
-  });
-
-  it("refuses a package that also carries another platform's helper", () => {
-    const root = temporaryRoot("vex-lighter-pack-foreign-");
-    const builtDir = fakeBuiltDir(root);
-    const { context } = fakePackage(root, "darwin", [
-      ...darwinHelpers,
-      ...FAKE_HELPERS.filter(([name]) => name.includes("win32")),
-    ]);
-
-    const result = verifyPackaged(root, context, builtDir);
-    expect(result.ok).toBe(false);
-    expect(result.message).toMatch(/signer helpers for other platforms/);
-    expect(result.message).toMatch(/vex-lighter-signer-win32-x64\.exe/);
-  });
-
-  it("refuses a helper that was replaced after the build recorded its digest", () => {
-    const root = temporaryRoot("vex-lighter-pack-swapped-");
-    const builtDir = fakeBuiltDir(root);
-    const { context } = fakePackage(root, "darwin", [
-      ["vex-lighter-signer-darwin-arm64", machoArm64("a-different-signer-entirely")],
-      darwinHelpers[1],
-    ]);
-
-    const result = verifyPackaged(root, context, builtDir);
-    expect(result.ok).toBe(false);
-    expect(result.message).toMatch(/has sha256 .* but SHA256SUMS records/);
-  });
-
-  it("refuses a helper built for the wrong machine", () => {
-    const root = temporaryRoot("vex-lighter-pack-arch-");
-    const builtDir = fakeBuiltDir(root);
-    const { context } = fakePackage(root, "darwin", [
-      // The x64 Mach-O under the arm64 name: the same mistake a stale copy or a
-      // crossed staging directory produces.
-      ["vex-lighter-signer-darwin-arm64", machoAmd64("darwin-x64")],
-      darwinHelpers[1],
-    ]);
-
-    const result = verifyPackaged(root, context, builtDir);
-    expect(result.ok).toBe(false);
-    expect(result.message).toMatch(/executable for amd64; this target needs arm64/);
-  });
-
-  /**
-   * WHAT THE PACKAGED BYTES ARE WHEN THIS HOOK RUNS, per platform, read out of
-   * the installed app-builder-lib 26 rather than assumed: `copyFiles` over the
-   * extraResource matchers runs BEFORE `emitAfterPack` (platformPackager.js
-   * `doPack`), and on Windows that copy goes through
-   * `createTransformerForExtraFiles`, which Authenticode-signs every `.exe` it
-   * accepts (winPackager.js). So macOS and Linux see the unsigned build output
-   * and Windows may not.
-   *
-   * When nothing rewrote the file, EVERY platform proves provenance by digest
-   * and none of them consults a signature tool - which the default fake
-   * asserts by throwing if it is called.
-   */
-  const UNCHANGED_BYTES_PER_PLATFORM = [
-    ["darwin", darwinHelpers],
-    ["linux", FAKE_HELPERS.filter(([name]) => name.includes("linux"))],
-    ["win32", windowsHelpers],
-  ] as const;
-
-  for (const [platform, helpers] of UNCHANGED_BYTES_PER_PLATFORM) {
-    it(`accepts unchanged ${platform} bytes by digest alone, asking no signature tool`, () => {
-      const root = temporaryRoot(`vex-lighter-pack-plain-${platform}-`);
-      const builtDir = fakeBuiltDir(root);
-      const { context } = fakePackage(root, platform, helpers);
-
-      expect(verifyPackaged(root, context, builtDir)).toMatchObject({
-        ok: true,
-        value: helpers.map(([name]) => name),
-      });
-    });
-  }
-
-  /**
-   * THE REGRESSION THIS GATE WAS BLIND TO. On Windows the helper is signed
-   * while it is copied into `resources`, so by the time afterPack looks the
-   * bytes no longer match SHA256SUMS. The old gate compared digests on every
-   * platform, which passed every unsigned local package and would have failed
-   * every signed release - the shape of defect that only ever appears in
-   * production.
-   */
-  it("accepts a Windows helper signed during the copy, under a valid signature", () => {
-    const root = temporaryRoot("vex-lighter-pack-win-signed-");
-    const builtDir = fakeBuiltDir(root);
-    const { context } = fakePackage(root, "win32", [
-      ["vex-lighter-signer-win32-arm64.exe", pe("win32-arm64-plus-a-certificate-table", 0xaa64)],
-      ["vex-lighter-signer-win32-x64.exe", pe("win32-x64-plus-a-certificate-table", 0x8664)],
-    ]);
-
-    expect(verifyPackaged(root, context, builtDir, SIGNATURE_VALID)).toMatchObject({
-      ok: true,
-      value: ["vex-lighter-signer-win32-arm64.exe", "vex-lighter-signer-win32-x64.exe"],
-    });
-  });
-
-  it("refuses Windows bytes that differ from the build AND carry no valid signature", () => {
-    const root = temporaryRoot("vex-lighter-pack-win-unsigned-");
-    const builtDir = fakeBuiltDir(root);
-    const { context } = fakePackage(root, "win32", [
-      ["vex-lighter-signer-win32-arm64.exe", pe("a-different-signer-entirely", 0xaa64)],
-      windowsHelpers[1],
-    ]);
-
-    const result = verifyPackaged(root, context, builtDir, SIGNATURE_NOT_SIGNED);
-    expect(result.ok).toBe(false);
-    expect(result.message).toMatch(/NO valid Authenticode signature/);
-    expect(result.message).toMatch(/NotSigned/);
-  });
-
-  it("refuses a Windows helper for the wrong machine, however valid its signature", () => {
-    const root = temporaryRoot("vex-lighter-pack-win-arch-");
-    const builtDir = fakeBuiltDir(root);
-    const { context } = fakePackage(root, "win32", [
-      // The x64 PE under the arm64 name. A signature says who vouched for the
-      // bytes, never which machine they run on, so the header check has to
-      // stand in front of the signature escape hatch.
-      ["vex-lighter-signer-win32-arm64.exe", pe("win32-x64", 0x8664)],
-      windowsHelpers[1],
-    ]);
-
-    const result = verifyPackaged(root, context, builtDir, SIGNATURE_VALID);
-    expect(result.ok).toBe(false);
-    expect(result.message).toMatch(/executable for amd64; this target needs arm64/);
-  });
-
-  it("refuses a Windows helper that the build never recorded, signature or not", () => {
-    const root = temporaryRoot("vex-lighter-pack-win-unlisted-");
-    const builtDir = fakeBuiltDir(root);
-    rmSync(path.join(builtDir, "SHA256SUMS"));
-    writeFileSync(
-      path.join(builtDir, "SHA256SUMS"),
-      `${createHash("sha256").update(pe("win32-x64", 0x8664)).digest("hex")}  vex-lighter-signer-win32-x64.exe\n`
-    );
-    const { context } = fakePackage(root, "win32", windowsHelpers);
-
-    const result = verifyPackaged(root, context, builtDir, SIGNATURE_VALID);
-    expect(result.ok).toBe(false);
-    expect(result.message).toMatch(/vex-lighter-signer-win32-arm64\.exe is not listed in SHA256SUMS/);
-  });
-
-  /**
-   * The signature escape hatch is WINDOWS-ONLY on purpose: on macOS the helper
-   * reaches this hook before @electron/osx-sign touches anything, so altered
-   * bytes there mean altered bytes, and a valid signature would prove only that
-   * someone signed the wrong file.
-   */
-  it("keeps the digest as the only macOS provenance, whatever a signature would say", () => {
-    const root = temporaryRoot("vex-lighter-pack-mac-signed-");
-    const builtDir = fakeBuiltDir(root);
-    const { context } = fakePackage(root, "darwin", [
-      ["vex-lighter-signer-darwin-arm64", machoArm64("signed-somewhere-else")],
-      darwinHelpers[1],
-    ]);
-
-    const result = verifyPackaged(root, context, builtDir, SIGNATURE_VALID);
-    expect(result.ok).toBe(false);
-    expect(result.message).toMatch(/has sha256 .* but SHA256SUMS records/);
-  });
-
-  it("refuses a package with no signer directory at all", () => {
-    const root = temporaryRoot("vex-lighter-pack-missing-");
-    const builtDir = fakeBuiltDir(root);
-    const { context } = fakePackage(root, "linux", []);
-
-    const result = verifyPackaged(root, context, builtDir);
-    expect(result.ok).toBe(false);
-    expect(result.message).toMatch(/packaged Lighter signer directory is missing/);
   });
 });
 
@@ -518,181 +314,17 @@ describe("the build-output check over the signer helpers", () => {
   });
 });
 
-describe("the post-signing gate over the packaged Lighter signer", () => {
-  const CHECK_PAYLOAD = path.join(REPO_ROOT, "vex-app", "scripts", "check-packaged-payload.mjs");
-
-  /**
-   * `host` and `inspectSignature` are the module's own test seam. Left out,
-   * the gate runs against the real host and the real platform tool, which is
-   * what the first three cases below assert; given, a Linux runner can drive
-   * the Windows branch that only a signed release build otherwise reaches.
-   */
-  function verifySignature(
-    root: string,
-    platform: string,
-    resources: string,
-    options: { host?: string; inspectSignature?: string } = {},
-  ): { issues: string[]; notes: string[] } {
-    const overrides = [
-      options.host === undefined ? undefined : `host: ${JSON.stringify(options.host)}`,
-      options.inspectSignature === undefined ? undefined : `inspectSignature: ${options.inspectSignature}`,
-    ].filter((entry) => entry !== undefined);
-    const result = runDriver(root, `
-      import { verifyPackagedLighterSignerSignature } from ${JSON.stringify(CHECK_PAYLOAD)};
-      const payload = {
-        target: { platform: ${JSON.stringify(platform)}, arch: "x64" },
-        resources: ${JSON.stringify(resources)},
-      };
-      console.log(JSON.stringify({
-        ok: true,
-        value: verifyPackagedLighterSignerSignature(payload, { ${overrides.join(", ")} }),
-      }));
-    `);
-    return result.value as { issues: string[]; notes: string[] };
-  }
-
-  /** A packaged Windows app executable beside `resources/`, as the gate looks for. */
-  function fakeWindowsApp(appOutDir: string): void {
-    writeBinary(path.join(appOutDir, "Vex.exe"), pe("the-app-itself", 0x8664));
-  }
-
-  it("fails when a packaged helper is absent, before it ever asks about signatures", () => {
-    const root = temporaryRoot("vex-lighter-sig-missing-");
-    const { appOutDir } = fakePackage(root, "linux", [FAKE_HELPERS[2]]);
-
-    const { issues } = verifySignature(root, "linux", path.join(appOutDir, "resources"));
-    expect(issues).toHaveLength(1);
-    expect(issues[0]).toMatch(/vex-lighter-signer-linux-x64/);
-    expect(issues[0]).toMatch(/MISSING from the payload/);
-  });
-
-  it("states plainly that a Linux package carries no platform signature", () => {
-    const root = temporaryRoot("vex-lighter-sig-linux-");
-    const { appOutDir } = fakePackage(
-      root,
-      "linux",
-      FAKE_HELPERS.filter(([name]) => name.includes("linux")),
-    );
-
-    const { issues, notes } = verifySignature(root, "linux", path.join(appOutDir, "resources"));
-    expect(issues).toEqual([]);
-    // Reported, never silently skipped: a gate that says nothing when it cannot
-    // look is indistinguishable from one that passed.
-    expect(notes).toEqual([
-      "Linux packages carry no platform code signature; the helper is verified by digest only",
-    ]);
-  });
-
-  it("says which host the macOS evidence has to come from, rather than passing", () => {
-    const root = temporaryRoot("vex-lighter-sig-darwin-");
-    const { appOutDir } = fakePackage(
-      root,
-      "darwin",
-      FAKE_HELPERS.filter(([name]) => name.includes("darwin")),
-    );
-
-    const { issues, notes } = verifySignature(
-      root,
-      "darwin",
-      path.join(appOutDir, "Vex.app", "Contents", "Resources"),
-    );
-    expect(issues).toEqual([]);
-    expect(notes.join(" ")).toMatch(
-      process.platform === "darwin"
-        ? /carries no valid signature/
-        : /cannot be verified from a \w+ host/,
-    );
-  });
-
-  /**
-   * THE POST-SIGNING WINDOWS EVIDENCE. The release workflow runs
-   * `pnpm run check:package` on the Windows job after electron-builder has
-   * signed and published, and this is the branch it takes there. It cannot be
-   * reached from a Linux runner without the seam, and it is precisely the
-   * branch that decides whether a shipped Vex can spawn a signer the OS trusts.
-   */
-  it("passes a signed Windows app whose helpers are signed too", () => {
-    const root = temporaryRoot("vex-lighter-sig-win-ok-");
-    const { appOutDir } = fakePackage(
-      root,
-      "win32",
-      FAKE_HELPERS.filter(([name]) => name.includes("win32")),
-    );
-    fakeWindowsApp(appOutDir);
-
-    const { issues, notes } = verifySignature(root, "win32", path.join(appOutDir, "resources"), {
-      host: "win32",
-      inspectSignature: SIGNATURE_VALID,
-    });
-    expect(issues).toEqual([]);
-    expect(notes).toEqual([]);
-  });
-
-  it("fails a SIGNED Windows app carrying an unsigned helper, and names the helper", () => {
-    const root = temporaryRoot("vex-lighter-sig-win-bad-");
-    const { appOutDir } = fakePackage(
-      root,
-      "win32",
-      FAKE_HELPERS.filter(([name]) => name.includes("win32")),
-    );
-    fakeWindowsApp(appOutDir);
-
-    // Everything is `Valid` except the helpers: the app vouches for itself, so
-    // an unsigned helper beside it is a failure rather than an unsigned build.
-    const { issues } = verifySignature(root, "win32", path.join(appOutDir, "resources"), {
-      host: "win32",
-      inspectSignature:
-        '(file) => ({ verified: !file.includes("vex-lighter-signer"), detail: "NotSigned" })',
-    });
-    expect(issues).toHaveLength(2);
-    expect(issues[0]).toMatch(/vex-lighter-signer-win32-arm64\.exe is NOT signed/);
-    expect(issues[1]).toMatch(/vex-lighter-signer-win32-x64\.exe is NOT signed/);
-  });
-
-  it("asserts nothing about helpers in an UNSIGNED Windows build, and says so", () => {
-    const root = temporaryRoot("vex-lighter-sig-win-local-");
-    const { appOutDir } = fakePackage(
-      root,
-      "win32",
-      FAKE_HELPERS.filter(([name]) => name.includes("win32")),
-    );
-    fakeWindowsApp(appOutDir);
-
-    const { issues, notes } = verifySignature(root, "win32", path.join(appOutDir, "resources"), {
-      host: "win32",
-      inspectSignature: SIGNATURE_NOT_SIGNED,
-    });
-    expect(issues).toEqual([]);
-    expect(notes.join(" ")).toMatch(/Vex\.exe itself carries no valid signature/);
-  });
-
-  it("fails closed when the Windows signature tool cannot be run at all", () => {
-    const root = temporaryRoot("vex-lighter-sig-win-notool-");
-    const { appOutDir } = fakePackage(
-      root,
-      "win32",
-      FAKE_HELPERS.filter(([name]) => name.includes("win32")),
-    );
-    fakeWindowsApp(appOutDir);
-
-    const { issues } = verifySignature(root, "win32", path.join(appOutDir, "resources"), {
-      host: "win32",
-      inspectSignature: '() => { throw new Error("powershell is not on PATH"); }',
-    });
-    // A gate that reports "fine" when it could not look is worse than no gate.
-    expect(issues).toHaveLength(1);
-    expect(issues[0]).toMatch(/the signing tool for win32 is unavailable: powershell is not on PATH/);
-  });
-});
-
 /**
  * THE RELEASE ORDER ITSELF, read out of the workflow rather than restated.
  *
- * The two gates above are only correct in one order: stage (provenance on
- * unsigned bytes), package (afterPack, where Windows bytes are already signed),
- * then `check:package` (the signature over the shipped bytes). If a future edit
- * moved `check:package` before packaging, or dropped the staging step, every
- * assertion in this file would still pass while the release proved nothing.
+ * The gates are only correct in one order: stage (provenance and the pre-sign
+ * content record on unsigned bytes), package (afterPack, where Windows bytes
+ * are already signed), then `check:package` (the shipped bytes). If a future
+ * edit moved `check:package` before packaging, or dropped the staging step,
+ * every assertion in this file and in
+ * `vex-app/src/main/lighter/__tests__/signer-packaging.test.ts` would still
+ * pass while the release proved nothing. This test lives at the root because it
+ * reads a YAML file and needs nothing installed.
  */
 describe("the release workflow's Lighter signer step order", () => {
   const WORKFLOW = path.join(REPO_ROOT, ".github", "workflows", "release.yml");

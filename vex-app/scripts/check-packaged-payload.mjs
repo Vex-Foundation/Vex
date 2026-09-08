@@ -52,7 +52,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, statSync, constants } from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import asar from "@electron/asar";
 
@@ -74,10 +74,16 @@ import {
   wsAcceleratorPrebuildDir,
 } from "./native-payload-contract.mjs";
 import {
+  assertPackagedWindowsSignerBytes,
+  builtLighterSignerDir,
   lighterSignerBinaryName,
   lighterSignerTargetsForPlatform,
   PACKAGED_LIGHTER_SIGNER_SUBPATH,
+  readLighterSignerDigests,
 } from "./lighter-signer-artifact.mjs";
+
+/** This repository's `vex-app/`, resolved from this file rather than the CWD. */
+const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const RED = "\x1b[31m";
 const GREEN = "\x1b[32m";
@@ -334,16 +340,29 @@ export function inspectPlatformSignature(file, platform) {
  * `Get-AuthenticodeSignature`. The release workflow runs this step after
  * electron-builder has signed, on the macOS job and on the Windows job alike.
  *
- * `inspectSignature` and `host` are the test seam and nothing else:
+ * ON WINDOWS THERE IS A SECOND, EARLIER ASSERTION, and it is the important one:
+ * the shipped helper is bound back to this build's own output through the
+ * Authenticode content digest, BEFORE any signature is discussed and without
+ * consulting a platform tool. "Signed by our certificate" is not "built by this
+ * build" - a helper from an older release carries a signature that verifies
+ * perfectly - so a gate that stopped at signature status could be satisfied by
+ * a stale binary (Codex review, round 1, finding A1).
+ *
+ * `inspectSignature`, `host` and `builtDir` are the test seam and nothing else:
  * `inspectSignature` is the platform signature tool (defaulting to the real
- * one) and `host` is the platform this process runs on, so a Linux test can
- * drive the Windows branch without a signing identity or a Windows runner.
+ * one), `host` is the platform this process runs on, so a Linux test can
+ * drive the Windows branch without a signing identity or a Windows runner, and
+ * `builtDir` is where this build's helpers and their `SHA256SUMS` live.
  *
  * Returns `{ issues, notes }`.
  */
 export function verifyPackagedLighterSignerSignature(
   payload,
-  { inspectSignature = inspectPlatformSignature, host = process.platform } = {}
+  {
+    inspectSignature = inspectPlatformSignature,
+    host = process.platform,
+    builtDir = builtLighterSignerDir(APP_ROOT),
+  } = {}
 ) {
   const { target, resources } = payload;
   const issues = [];
@@ -359,6 +378,18 @@ export function verifyPackagedLighterSignerSignature(
     }
   }
   if (issues.length > 0) return { issues, notes };
+
+  if (target.platform === "win32") {
+    // PROVENANCE, BEFORE ANY QUESTION ABOUT SIGNATURES, and independent of the
+    // host: the shipped helper must be the one this build produced, bound
+    // through the Authenticode content digest that signing cannot change (see
+    // `assertPackagedWindowsSignerBytes`). A signature check alone would accept
+    // an OLD RELEASE's helper, signed by the same publisher - that gap is what
+    // this block closes, and a Linux runner can prove it because no platform
+    // tool is involved.
+    issues.push(...bindWindowsHelpersToBuild(signerDir, target, builtDir));
+    if (issues.length > 0) return { issues, notes };
+  }
 
   if (target.platform === "linux") {
     notes.push("Linux packages carry no platform code signature; the helper is verified by digest only");
@@ -414,6 +445,38 @@ export function verifyPackagedLighterSignerSignature(
     }
   }
   return { issues, notes };
+}
+
+/**
+ * Every shipped Windows helper bound back to this build's output, as a list of
+ * issues (empty when all of them are).
+ *
+ * `assertPackagedWindowsSignerBytes` is the rule and `build/afterPack.mjs` asks
+ * it the same question during packaging; this is the POST-BUILD reading of it,
+ * over the payload as shipped. Collecting rather than throwing is this file's
+ * convention: one run reports every helper, not the first.
+ */
+function bindWindowsHelpersToBuild(signerDir, target, builtDir) {
+  const issues = [];
+  let digests;
+  try {
+    digests = readLighterSignerDigests(builtDir);
+  } catch (error) {
+    return [
+      `the Windows helpers cannot be bound to a build: ${error.message}\n`
+        + "      This gate compares the shipped helper against the build output it came from, so "
+        + "it must run in the workspace that produced the package.",
+    ];
+  }
+  for (const entry of lighterSignerTargetsForPlatform(target.platform)) {
+    const helper = path.join(signerDir, lighterSignerBinaryName(entry));
+    try {
+      assertPackagedWindowsSignerBytes(helper, entry, digests, builtDir);
+    } catch (error) {
+      issues.push(error.message);
+    }
+  }
+  return issues;
 }
 
 /** The packaged Windows application executable beside `resources/`. */
