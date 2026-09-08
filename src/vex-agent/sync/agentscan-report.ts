@@ -75,7 +75,7 @@
 import { randomBytes } from "node:crypto";
 
 import * as reportingRepo from "@vex-agent/db/repos/agentscan-reporting.js";
-import type { AgentscanClient } from "../agentscan/client.js";
+import { buildAgentscanClient, type AgentscanClient } from "../agentscan/client.js";
 import type { AgentscanSessionClient } from "../agentscan/session-client.js";
 import type {
   SignAgentscanChallengeInput,
@@ -84,6 +84,11 @@ import type {
 import logger from "@utils/logger.js";
 import { handshakeOnce, computeWalletsFingerprint } from "./agentscan-report/handshake-lane.js";
 import { drainIncremental, drainOutbox } from "./agentscan-report/drain.js";
+import {
+  agentscanServerFingerprint,
+  configureLighterCapabilitySource,
+  LIGHTER_SERVER_CAPABILITY,
+} from "./agentscan-report/lighter-capability.js";
 
 export { AGENTSCAN_BATCH_LIMIT, AGENTSCAN_MAX_BATCHES_PER_TICK } from "./agentscan-report/drain.js";
 export {
@@ -115,6 +120,14 @@ export interface AgentscanReportResult {
   readonly rejected: number;
   /** Claimed rows left for retry after a batch-level failure. */
   readonly deferred: number;
+  /**
+   * Rows this run held because the DEPLOYED AgentScan server does not carry
+   * their role yet - neither sent nor rejected, waiting with the reason in
+   * `agentscan_outbox.last_error`. Distinct from `deferred`, which is weather:
+   * an owed row is waiting on someone else's deployment, and the count is what
+   * makes that visible without reading the table.
+   */
+  readonly owed: number;
 }
 
 const NOTHING: Omit<AgentscanReportResult, "skipped"> = {
@@ -123,10 +136,11 @@ const NOTHING: Omit<AgentscanReportResult, "skipped"> = {
   sent: 0,
   rejected: 0,
   deferred: 0,
+  owed: 0,
 };
 
 /** The drain half of `NOTHING` - nothing was claimed, so nothing was sent. */
-const NOTHING_DRAIN = { sent: 0, rejected: 0, deferred: 0 } as const;
+const NOTHING_DRAIN = { sent: 0, rejected: 0, deferred: 0, owed: 0 } as const;
 
 /**
  * Is the one-time controlled backfill still owed?
@@ -154,11 +168,70 @@ export function generateAgentscanIdentity(): { agentHash: string; ingestToken: s
   };
 }
 
+/**
+ * Wire (or unwire) the Lighter capability gate's transport for this tick.
+ *
+ * The gate owns the POLICY - when to ask, how long a yes stands, what a
+ * missing answer means - and holds no transport of its own, so it is dark
+ * until the lane hands it one. It is re-wired on every tick because both
+ * halves can change under it: the configured base URL, and the ingest token
+ * the endpoint authenticates with (a handshake rotates it). Clearing it when
+ * the lane is disabled is what makes "no source" mean "nobody has asked"
+ * rather than a stale reading of a server this install no longer reports to.
+ */
+function wireLighterCapabilitySource(baseUrl: string | null, ingestToken: string | null): void {
+  if (baseUrl === null) {
+    configureLighterCapabilitySource(null);
+    return;
+  }
+  const client = buildCapabilityClient(baseUrl);
+  configureLighterCapabilitySource({
+    baseUrl,
+    fetchCapabilities: () => client.fetchCapabilities({ ingestToken }),
+  });
+}
+
+/** Injected for tests; production builds the ordinary ingest client. */
+let buildCapabilityClient: (baseUrl: string) => Pick<AgentscanClient, "fetchCapabilities"> =
+  (baseUrl) => buildAgentscanClient(baseUrl);
+
+/** Test seam: replace the capability transport builder, and restore it. */
+export function configureAgentscanCapabilityClientBuilder(
+  build: ((baseUrl: string) => Pick<AgentscanClient, "fetchCapabilities">) | null,
+): void {
+  buildCapabilityClient = build ?? ((baseUrl) => buildAgentscanClient(baseUrl));
+}
+
+/**
+ * Record what the HANDSHAKE said about this deployment.
+ *
+ * The handshake answer is the earliest and cheapest capability reading there
+ * is - the server has just told us, on a request the lane had to make anyway -
+ * so it is written durably at once rather than waiting for the drain's first
+ * `GET /capabilities`. An ABSENT field is an old server and a real negative
+ * answer; it is not silence, and it is recorded as `present = false`.
+ */
+async function recordHandshakeCapabilities(
+  baseUrl: string,
+  capabilities: readonly string[] | null,
+  registrationGeneration: number,
+): Promise<void> {
+  await reportingRepo.recordServerCapabilityObservation({
+    serverFingerprint: agentscanServerFingerprint(baseUrl),
+    capability: LIGHTER_SERVER_CAPABILITY,
+    present: capabilities !== null && capabilities.includes(LIGHTER_SERVER_CAPABILITY),
+    registrationGeneration,
+  });
+}
+
 export async function runAgentscanReport(
   deps: AgentscanReporterDeps,
 ): Promise<AgentscanReportResult> {
   const baseUrl = deps.baseUrl();
-  if (baseUrl === null) return { skipped: "disabled", ...NOTHING };
+  if (baseUrl === null) {
+    wireLighterCapabilitySource(null, null);
+    return { skipped: "disabled", ...NOTHING };
+  }
 
   let state = await reportingRepo.getReportingState();
   if (state.stoppedReason !== null) return { skipped: "stopped", ...NOTHING };
@@ -178,9 +251,17 @@ export async function runAgentscanReport(
   const handshakeNeeded = state.registeredAt === null || fingerprint !== state.boundWalletsFingerprint;
   if (handshakeNeeded) {
     const attempt = await handshakeOnce(deps, baseUrl, state, agentHash, ingestToken, fingerprint);
-    if (attempt.kind !== "handshaken") return { skipped: attempt.reason, ...NOTHING };
+    if (attempt.kind !== "handshaken") {
+      wireLighterCapabilitySource(baseUrl, ingestToken);
+      return { skipped: attempt.reason, ...NOTHING };
+    }
     ingestToken = attempt.ingestToken;
+    // The handshake generation is the one the reset would have bumped; read it
+    // fresh so the observation belongs to the registration it was made under.
+    const bound = await reportingRepo.getReportingState();
+    await recordHandshakeCapabilities(baseUrl, attempt.capabilities, bound.registrationGeneration);
   }
+  wireLighterCapabilitySource(baseUrl, ingestToken);
 
   const client = deps.buildClient(baseUrl);
 
@@ -240,7 +321,10 @@ export async function runAgentscanIncremental(
   deps: AgentscanReporterDeps,
 ): Promise<AgentscanReportResult> {
   const baseUrl = deps.baseUrl();
-  if (baseUrl === null) return { skipped: "unregistered", ...NOTHING };
+  if (baseUrl === null) {
+    wireLighterCapabilitySource(null, null);
+    return { skipped: "unregistered", ...NOTHING };
+  }
 
   const state = await reportingRepo.getReportingState();
   if (state.stoppedReason !== null) return { skipped: "unregistered", ...NOTHING };
@@ -249,6 +333,8 @@ export async function runAgentscanIncremental(
   }
   if (state.registeredAt === null) return { skipped: "unregistered", ...NOTHING };
   if (backfillOwed(state)) return { skipped: "unregistered", ...NOTHING };
+
+  wireLighterCapabilitySource(baseUrl, state.ingestToken);
 
   const client = deps.buildClient(baseUrl);
   // The generation comes from the SAME read as the credentials above, so the

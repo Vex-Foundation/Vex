@@ -7,6 +7,22 @@
  * own hash, so the picture the user approved is the picture the world sees.
  * A retriever that learns only "upload" cannot separate this from the locker
  * listing next door.
+ *
+ * BOTH SURFACES ARE NAMED (2026-09-07). The tool gained a Studio arm - the same
+ * consent question about a file in the agent's own project - and the passage
+ * said "from the user's image locker", which would have kept an agent working
+ * in a codebase from ever retrieving it. The surface words are the retrieval
+ * cue there, so `imageId` and `imagePath` appear in the text a retriever reads.
+ *
+ * IT STAYS IN ITS LENGTH CLASS. The style linter caps a passage at 110 words
+ * and this one already sat at 110, so the two parameter names were paid for by
+ * TRIMMING rather than by growing: the idempotence sentence lost its "returns
+ * the same address" half, which the sha256 sentence above it already implies,
+ * and "until the user withdraws them" became "until withdrawn". Everything the
+ * namespace declaration lists as a retrieval term - image locker, public image
+ * host, content-addressed host, staged picture - and the "Use this when" anchor
+ * the shape linter requires are untouched, because those are the words a
+ * retriever actually keys on.
  */
 
 import type { ToolDiscoveryMetadata } from "../../types.js";
@@ -16,7 +32,7 @@ import { LAUNCHPADS_CHAINS } from "../../launchpads/discovery-text.js";
 export const LAUNCHPADS_IMAGE_PUBLISH_DISCOVERY = {
   "launchpads.image_publish": {
     embeddingText: embeddingText(
-      `Submit one staged picture from the user's image locker to Vex's content-addressed public image host so a token launch can put its address on chain. Use this when a launch needs a public image link. The bytes become PUBLIC: anyone with the link can fetch them until the user withdraws them. The address is the sha256 hash of the exact bytes, so it can never point at a different picture later. Publishing the same picture twice returns the same address and uploads nothing. This launches nothing and spends no gas. Example queries: publish my launch image, get a public link for the token picture, host the image for the launch.`,
+      `Submit one picture - imageId for a staged picture in the app's image locker, imagePath for a project file in Vex Studio - to Vex's public image host, a content-addressed host, so a token launch can put its address on chain. Use this when a launch needs a public link. The bytes become PUBLIC: anyone with the link can fetch them until withdrawn. The address is the sha256 hash of the exact bytes, so it can never point at another picture. Publishing twice uploads nothing. This launches nothing and spends no gas. Example queries: publish my launch image, get a public link for the token picture, host the launch image.`,
     ),
     aliases: [
       "publish launch image",

@@ -38,7 +38,7 @@ import type { PoolsLaunchPlan } from "./plan.js";
 /**
  * How long the authorization stands before it must be redone.
  *
- * The same five minutes Trench uses, and for a stronger reason here: a pools.fun
+ * Five minutes, and the reason is a strong one here: a pools.fun
  * quote carries the gateway's dynamic deployment fee and a mined salt, both of
  * which go stale.
  */
@@ -157,6 +157,10 @@ async function authorizeInTransaction(
         predictedTokenAddress: binding.predictedTokenAddress,
         gatewayAddress: binding.gateway,
         deploymentFeeWei: binding.deploymentFeeWei,
+        // The holders INTENT, exactly as it was verified and is about to be
+        // signed. The distributor it resolves to is stamped by the settlement,
+        // because it does not exist until this launch has been mined.
+        holderRewards: binding.holderRewards,
       },
     });
 

@@ -1,0 +1,156 @@
+import { keccak256, type Chain } from "viem";
+import { mainnet } from "viem/chains";
+
+import { testPublicClient } from "../helpers/viem-public-client.js";
+import { describe, expect, it, vi } from "vitest";
+
+import {
+  assertLighterCoreClaimPreflightWithinApproval,
+  assertLighterWithdrawalClaimPreflightWithinApproval,
+  buildLighterCoreClaimPreview,
+  buildLighterWithdrawalClaimPreview,
+  readLighterCoreClaimPreflight,
+  readLighterWithdrawalClaimPreflight,
+} from "@tools/lighter/withdrawal/core-claim.js";
+import { getLighterSecureWithdrawalProfile } from "@tools/lighter/withdrawal/profiles.js";
+
+const NOW = new Date("2030-01-01T00:00:00.000Z");
+const OWNER = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
+const GATEWAY = "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7";
+const IMPLEMENTATION = "0x8D692294a4824d868e35B3CEcd734aCf41B2342e";
+const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+const GATEWAY_CODE = "0x6001600055" as const;
+const TOKEN_CODE = "0x6002600055" as const;
+const RHC_GATEWAY = "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d";
+const RHC_IMPLEMENTATION = "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90";
+const USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
+
+const RHC_CHAIN = {
+  id: 4663,
+  name: "Robinhood Chain mainnet",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: { default: { http: ["http://127.0.0.1:1/unused"] } },
+} as const satisfies Chain;
+
+/** The reads both claim preflights share, with the amounts the case under test needs. */
+function claimReads(overrides?: { balance?: bigint; maxFee?: bigint }) {
+  return {
+    getBlock: vi.fn(async () => ({
+      number: 100n,
+      hash: `0x${"b".repeat(64)}`,
+      timestamp: BigInt(Math.floor(NOW.getTime() / 1_000)),
+    })),
+    getBalance: vi.fn(async () => overrides?.balance ?? 10n ** 18n),
+    estimateFeesPerGas: vi.fn(async () => ({ maxFeePerGas: overrides?.maxFee ?? 10n, maxPriorityFeePerGas: 2n })),
+    simulateContract: vi.fn(async () => ({ result: undefined })),
+    estimateGas: vi.fn(async () => 100_000n),
+  };
+}
+
+function publicClient(overrides?: { pending?: bigint; balance?: bigint; maxFee?: bigint }) {
+  return testPublicClient(mainnet, {
+    ...claimReads(overrides),
+    getChainId: vi.fn(async () => 1),
+    // The parameters are DECLARED so each stub answers the exact production call
+    // it stands in for, without casting the request back into existence.
+    readContract: vi.fn(async (request: { functionName: string }) => request.functionName === "getPendingBalance"
+      ? overrides?.pending ?? 2_000_000n
+      : [USDC, 1, 1n, 1n, 1n, 1n]),
+    getBytecode: vi.fn(async ({ address }: { address: string }) => address.toLowerCase() === GATEWAY.toLowerCase() ? GATEWAY_CODE : TOKEN_CODE),
+    getStorageAt: vi.fn(async () => `0x${"0".repeat(24)}${IMPLEMENTATION.slice(2)}`),
+  });
+}
+
+function rhcPublicClient(maxFee: bigint) {
+  return testPublicClient(RHC_CHAIN, {
+    ...claimReads({ maxFee }),
+    getChainId: vi.fn(async () => 4663),
+    readContract: vi.fn(async (request: { functionName: string }) => request.functionName === "getPendingBalance"
+      ? 2_000_000n
+      : [USDG, 1, 1n, 1n, 1n, 1n]),
+    getBytecode: vi.fn(async ({ address }: { address: string }) => address.toLowerCase() === RHC_GATEWAY.toLowerCase() ? GATEWAY_CODE : TOKEN_CODE),
+    getStorageAt: vi.fn(async () => `0x${"0".repeat(24)}${RHC_IMPLEMENTATION.slice(2)}`),
+  });
+}
+
+async function snapshot(overrides?: { pending?: bigint; balance?: bigint; maxFee?: bigint }) {
+  return readLighterCoreClaimPreflight({
+    publicClient: publicClient(overrides),
+    walletAddress: OWNER,
+    gatewayAddress: GATEWAY,
+    expectedGatewayImplementation: IMPLEMENTATION,
+    expectedGatewayCodeHash: keccak256(GATEWAY_CODE),
+    settlementTokenAddress: USDC,
+    expectedSettlementTokenCodeHash: keccak256(TOKEN_CODE),
+    amountUnits: 2_000_000n,
+    now: NOW,
+  });
+}
+
+describe("Core manual withdrawal claim", () => {
+  it("builds exact typed zero-value calldata and a bounded fee approval", async () => {
+    const s = await snapshot();
+    expect(s).toMatchObject({
+      settlementChainId: 1,
+      assetIndex: 3,
+      amountUnits: "2000000",
+      pendingBalanceUnits: "2000000",
+      valueWei: "0",
+      gasEstimate: "100000",
+      gasLimit: "200000",
+      feeCeilingPerGasWei: "40",
+      networkFeeCeilingWei: "8000000",
+    });
+    expect(s.calldata).toMatch(/^0x[0-9a-f]+$/);
+    const preview = buildLighterCoreClaimPreview({ sessionId: "session-1", withdrawalIntentId: "withdrawal-1", snapshot: s });
+    expect(preview.previewId).toMatch(/^lwcp_[0-9a-f]{24}$/);
+    expect(preview.matchHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("refuses an aggregate or changed gateway pending balance", async () => {
+    await expect(snapshot({ pending: 3_000_000n })).rejects.toThrow("no longer equals");
+  });
+
+  it("refuses a wallet that cannot cover the disclosed fee ceiling", async () => {
+    await expect(snapshot({ balance: 7_999_999n })).rejects.toThrow("enough ETH");
+  });
+
+  it("refuses signer-adjacent fees above the approved ceiling", async () => {
+    const approved = await snapshot();
+    const fresh = await snapshot({ maxFee: 50n });
+    expect(() => assertLighterCoreClaimPreflightWithinApproval(approved, fresh)).toThrow("exceed");
+  });
+});
+
+describe("RHC manual withdrawal claim", () => {
+  async function rhcSnapshot(maxFee = 10n) {
+    return readLighterWithdrawalClaimPreflight({
+      profile: getLighterSecureWithdrawalProfile("rhc"), publicClient: rhcPublicClient(maxFee),
+      walletAddress: OWNER, gatewayAddress: RHC_GATEWAY,
+      expectedGatewayImplementation: RHC_IMPLEMENTATION,
+      expectedGatewayCodeHash: keccak256(GATEWAY_CODE), settlementTokenAddress: USDG,
+      expectedSettlementTokenCodeHash: keccak256(TOKEN_CODE), amountUnits: 2_000_000n, now: NOW,
+    });
+  }
+
+  it("binds the reviewed chain 4663 USDG gateway claim into a distinct identity", async () => {
+    const s = await rhcSnapshot();
+    expect(s).toMatchObject({ settlementChainId: 4663, settlementNetworkName: "Robinhood Chain mainnet", assetSymbol: "USDG" });
+    const preview = buildLighterWithdrawalClaimPreview({
+      profile: getLighterSecureWithdrawalProfile("rhc"), sessionId: "session-rhc",
+      withdrawalIntentId: "withdrawal-rhc", snapshot: s,
+    });
+    expect(preview.identity).toMatchObject({
+      kind: "lighter_rhc_manual_usdg_claim", version: "lighter-rhc-manual-claim-v1", settlementChainId: "4663",
+    });
+  });
+
+  it("refuses changed RHC fees and a crossed Core profile", async () => {
+    const approved = await rhcSnapshot();
+    expect(() => assertLighterWithdrawalClaimPreflightWithinApproval(approved, { ...approved, quotedMaxFeePerGasWei: "50" })).toThrow("exceed");
+    expect(() => buildLighterWithdrawalClaimPreview({
+      profile: getLighterSecureWithdrawalProfile("core"), sessionId: "session-rhc",
+      withdrawalIntentId: "withdrawal-rhc", snapshot: approved,
+    })).toThrow("does not match");
+  });
+});

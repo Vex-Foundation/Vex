@@ -41,10 +41,11 @@ export type BookSectionId =
   | "activity"
   | "session"
   | "project"
-  | "trench";
+  | "launchpads";
 
 /**
- * Default order = the rail's decreed render order (Trench = the merged card).
+ * Default order = the rail's decreed render order (`launchpads` = the merged
+ * image-locker + launch card).
  * `session` and `project` share ONE slot: they are the same "what am I
  * looking at" card for the two scopes, and no rail ever renders both.
  */
@@ -55,7 +56,7 @@ export const DEFAULT_BOOK_SECTIONS: readonly BookSectionId[] = [
   "activity",
   "session",
   "project",
-  "trench",
+  "launchpads",
 ];
 
 /** Name used by the drag handle's accessible label and the live announcement. */
@@ -66,7 +67,7 @@ export const BOOK_SECTION_LABEL: Readonly<Record<BookSectionId, string>> = {
   activity: "Activity",
   session: "Session",
   project: "Project",
-  trench: "Trench Express",
+  launchpads: "Launchpad",
 };
 
 export function isBookSectionId(value: string): value is BookSectionId {
@@ -104,7 +105,7 @@ export type BookRailScopeKind = "session" | "project";
  *   project   project ONLY       the project-scoped counterpart of `session`:
  *                                the card IS the project object (access,
  *                                path, created). A session has none.
- *   trench    session + project  the image locker is GLOBAL (`useLockerImages`
+ *   launchpads session + project the image locker is GLOBAL (`useLockerImages`
  *                                takes no scope), so the card browses it for
  *                                either. Only the LAUNCH is keyed by session
  *                                id on the signing path, and the card renders
@@ -120,7 +121,7 @@ export const BOOK_SECTION_SCOPES: Readonly<
   activity: ["session", "project"],
   session: ["session"],
   project: ["project"],
-  trench: ["session", "project"],
+  launchpads: ["session", "project"],
 };
 
 /** Does this section have a real read for `kind`? */

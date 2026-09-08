@@ -545,8 +545,9 @@ export function resolveSolanaProbeReason(observations: readonly SolanaProbeOutco
  * date).
  *
  * ORDER (deduplicated downstream, first occurrence wins the slot):
- *   (a) the user's own overrides for this chain id (`@config/chain-rpc-overrides.js`);
- *   (b) the local chain registry (`@tools/evm-chains/registry.js`);
+ *   (a) and (b) the shared RPC owner's resolved list for this chain id
+ *       (`@tools/evm-chains/rpc-endpoints.js`): the user's own overrides first,
+ *       then every measured bundled endpoint for the chain;
  *   (c) the Khalani chain registry, whatever this row's protocol is;
  *   (d) the Relay chain registry, whatever this row's protocol is;
  *   (e) viem's bundled canonical default for the chain - shipped data from a
@@ -571,17 +572,17 @@ async function resolveVerificationRpcs(
 
   const curated: string[] = [];
   try {
-    const { getUserRpcOverridesForChain } = await import("@config/chain-rpc-overrides.js");
-    curated.push(...getUserRpcOverridesForChain(chainId));
+    // ONE call replaces the two private lookups this function used to do. The
+    // shared owner already puts the user's own endpoints first and follows them
+    // with the measured bundled list for the chain, so 42161 - the chain whose
+    // one-candidate list stranded a row for 31 days - now arrives here with
+    // `arb1.arbitrum.io/rpc` in it without this module knowing that url. Both
+    // tiers are the app's own configuration, so neither is SSRF-filtered; the
+    // provider tiers below still are.
+    const { resolveRpcEndpoints } = await import("@tools/evm-chains/rpc-endpoints.js");
+    for (const endpoint of resolveRpcEndpoints(chainId)) curated.push(endpoint.url);
   } catch (err) {
-    logger.debug("bridge.repair.user_rpc_lookup_failed", { chainId, error: summarizeProtocolError(err).message });
-  }
-  try {
-    const { getLocalChain, getLocalChainRpcUrl } = await import("@tools/evm-chains/registry.js");
-    const local = getLocalChain(chainId);
-    if (local) curated.push(getLocalChainRpcUrl(local));
-  } catch (err) {
-    logger.debug("bridge.repair.local_rpc_lookup_failed", { chainId, error: summarizeProtocolError(err).message });
+    logger.debug("bridge.repair.curated_rpc_lookup_failed", { chainId, error: summarizeProtocolError(err).message });
   }
 
   const providerRegistry: string[] = [];

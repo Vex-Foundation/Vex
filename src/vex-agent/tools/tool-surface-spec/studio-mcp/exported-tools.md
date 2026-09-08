@@ -43,12 +43,12 @@ free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 172
-- internal: 27
-- protocol: 145 across 11 namespaces
-- always loaded: 27
-- read-only: 114
-- destructive: 50
+- exported tools: 213
+- internal: 29
+- protocol: 184 across 12 namespaces
+- always loaded: 29
+- read-only: 129
+- destructive: 63
 
 ## Internal tools
 
@@ -63,8 +63,8 @@ free. Both texts live on the tool
 | ChainRead | Read raw EVM chain data | internal | yes | no | yes | - | 1326 | yes | none |
 | SwapExecute | Execute a token swap | internal | no | yes | yes | - | 2047 | yes | 25 bps |
 | SwapExecuteUniswap | Execute a Uniswap swap | internal | no | yes | yes | - | 2046 | yes | 25 bps |
-| SwapQuote | Quote a token swap | internal | yes | no | yes | - | 2047 | yes | none |
-| SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 2017 | yes | none |
+| SwapQuote | Quote a token swap | internal | yes | no | yes | - | 2046 | yes | none |
+| SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 1959 | yes | none |
 | TokenCheck | Check an EVM token for honeypot and tax | internal | yes | no | yes | - | 953 | yes | none |
 | TokenFind | Find a token's address and decimals | internal | yes | no | yes | - | 1956 | yes | none |
 | TwitterAccount | Read Twitter accounts and posts | internal | yes | no | yes | RETTIWT_API_KEY | 2039 | yes | none |
@@ -79,6 +79,8 @@ free. Both texts live on the tool
 | WalletTrackToken | Track a token in the local wallet view | internal | no | no | yes | - | 1044 | yes | none |
 | WalletWrapConfirm | Broadcast a prepared wrap or unwrap | internal | no | yes | yes | - | 2023 | yes | none |
 | WalletWrapPrepare | Prepare a native / wrapped-native conversion | internal | no | no | yes | - | 2022 | yes | none |
+| lighter_core_onboarding_status | Check Lighter Core onboarding readiness | internal | yes | no | yes | - | 1135 | yes | none (read) |
+| lighter_rhc_onboarding_status | Check Robinhood Chain Lighter readiness | internal | yes | no | yes | - | 1134 | yes | none (read) |
 | vex_ToolDescribe | Read one tool's whole contract | internal | yes | no | yes | - | 1812 | yes | none |
 | vex_ToolSearch | Search the protocol tool catalog | internal | yes | no | yes | - | 1500 | yes | none |
 
@@ -126,9 +128,60 @@ free. Both texts live on the tool
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | kyberswap__chains_list | List KyberSwap chains | protocol | yes | no | no | - | 776 | - | none (read) |
-| kyberswap__swap_execute | Execute a KyberSwap swap | protocol | no | yes | no | - | 3718 | yes | 25 bps |
-| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 3591 | - | none (read) |
+| kyberswap__swap_execute | Execute a KyberSwap swap | protocol | no | yes | no | - | 3776 | yes | 25 bps |
+| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 3654 | - | none (read) |
 | kyberswap__token_safety_check | Audit an EVM token with KyberSwap | protocol | yes | no | no | - | 1138 | - | none (read) |
+
+### launchpads
+
+| name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| launchpads__image_publish | Publish a launch picture publicly | protocol | no | no | no | - | 1742 | yes | - |
+
+### lighter
+
+| name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| lighter__account_get | Read a Lighter account | protocol | yes | no | no | - | 536 | - | none (read) |
+| lighter__account_onboarding_status | Check Lighter account onboarding readiness | protocol | yes | no | no | - | 1366 | - | none (read) |
+| lighter__api_keys_inspect | Inspect Lighter API-key registrations | protocol | yes | no | no | - | 518 | - | none (read) |
+| lighter__candles_list | Read Lighter market candles | protocol | yes | no | no | - | 483 | - | none (read) |
+| lighter__deposit | Execute an approved Lighter deposit | protocol | no | yes | no | - | 817 | - | - |
+| lighter__deposit_prepare | Prepare a Lighter deposit approval | protocol | no | no | no | - | 1005 | - | - |
+| lighter__deposit_status | Check a Lighter deposit's status | protocol | yes | no | no | - | 919 | - | none (read) |
+| lighter__fees_approve | Authorize approved Lighter trading fees | protocol | no | yes | no | - | 698 | - | - |
+| lighter__fees_approve_prepare | Prepare Lighter trading-fee approval | protocol | no | no | no | - | 752 | - | - |
+| lighter__fees_status | Check Lighter trading-fee authorization | protocol | yes | no | no | - | 560 | - | none (read) |
+| lighter__key_register | Register an approved Lighter trading key | protocol | no | yes | no | - | 724 | - | - |
+| lighter__key_register_prepare | Prepare a Lighter trading-key approval | protocol | no | no | no | - | 1016 | - | - |
+| lighter__key_register_status | Check a Lighter key registration's status | protocol | yes | no | no | - | 773 | - | none (read) |
+| lighter__market_get | Read one Lighter market | protocol | yes | no | no | - | 594 | - | none (read) |
+| lighter__markets_list | List Lighter markets | protocol | yes | no | no | - | 549 | - | none (read) |
+| lighter__open_orders_list | List open Lighter orders | protocol | yes | no | no | - | 503 | - | none (read) |
+| lighter__order_cancel | Cancel an approved Lighter order | protocol | no | yes | no | - | 636 | - | - |
+| lighter__order_cancel_all | Cancel all approved Lighter orders | protocol | no | yes | no | - | 665 | - | - |
+| lighter__order_cancel_all_prepare | Prepare approval to cancel all Lighter orders | protocol | no | no | no | - | 533 | - | - |
+| lighter__order_cancel_prepare | Prepare a Lighter order-cancellation approval | protocol | no | no | no | - | 503 | - | - |
+| lighter__order_create | Submit an approved Lighter order | protocol | no | yes | no | - | 691 | - | - |
+| lighter__order_create_prepare | Prepare a Lighter order approval | protocol | no | no | no | - | 667 | - | - |
+| lighter__order_history_list | Read Lighter order history | protocol | yes | no | no | - | 483 | - | none (read) |
+| lighter__order_modify | Modify an approved Lighter limit order | protocol | no | yes | no | - | 613 | - | - |
+| lighter__order_modify_prepare | Prepare a Lighter order-modification approval | protocol | no | no | no | - | 552 | - | - |
+| lighter__order_preview | Preview a Lighter order | protocol | no | no | no | - | 1870 | - | - |
+| lighter__order_status | Check a Lighter order action's status | protocol | yes | no | no | - | 936 | - | none (read) |
+| lighter__orderbook_get | Read a Lighter order book | protocol | yes | no | no | - | 537 | - | none (read) |
+| lighter__position_close | Close an approved Lighter position | protocol | no | yes | no | - | 631 | - | - |
+| lighter__position_close_prepare | Prepare a Lighter position-close approval | protocol | no | no | no | - | 602 | - | - |
+| lighter__position_protect | Preview Lighter position protection | protocol | no | no | no | - | 1108 | - | - |
+| lighter__positions_list | List Lighter positions | protocol | yes | no | no | - | 529 | - | none (read) |
+| lighter__recent_trades_list | Read recent public Lighter trades | protocol | yes | no | no | - | 472 | - | none (read) |
+| lighter__system_get | Read Lighter system status | protocol | yes | no | no | - | 462 | - | none (read) |
+| lighter__trades_list | Read Lighter account trades | protocol | yes | no | no | - | 522 | - | none (read) |
+| lighter__withdraw | Submit an approved Lighter withdrawal | protocol | no | yes | no | - | 787 | - | - |
+| lighter__withdraw_claim | Broadcast an approved Lighter withdrawal claim | protocol | no | yes | no | - | 685 | - | - |
+| lighter__withdraw_claim_prepare | Prepare a Lighter withdrawal-claim approval | protocol | no | no | no | - | 586 | - | - |
+| lighter__withdraw_prepare | Prepare a Lighter withdrawal approval | protocol | no | no | no | - | 668 | - | - |
+| lighter__withdraw_status | Check a Lighter withdrawal's status | protocol | yes | no | no | - | 851 | - | none (read) |
 
 ### morpho
 
@@ -193,11 +246,13 @@ free. Both texts live on the tool
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | pools__fees_claim | Claim pools.fun creator fees | protocol | no | yes | no | - | 1619 | - | - |
+| pools__holder_rewards_claim | Claim pools.fun holder rewards | protocol | no | yes | no | - | 4767 | - | - |
+| pools__holder_rewards_distribute | Distribute pools.fun holder rewards | protocol | no | yes | no | - | 3726 | - | - |
 | pools__holder_rewards_get | Read pools.fun holder rewards | protocol | yes | no | no | - | 2102 | - | none (read) |
-| pools__launch_assets_list | List pools.fun launchable stocks | protocol | yes | no | no | - | 1698 | - | none (read) |
-| pools__launch_execute | Launch a token on pools.fun | protocol | no | yes | no | - | 2805 | - | - |
-| pools__launch_preview | Price a pools.fun launch | protocol | no | no | no | - | 998 | - | - |
-| pools__launch_request_form | Ask the user to confirm a pools.fun launch | protocol | no | no | no | - | 902 | - | - |
+| pools__launch_assets_list | List pools.fun launchable stocks | protocol | yes | no | no | - | 1793 | - | none (read) |
+| pools__launch_execute | Launch a token on pools.fun | protocol | no | yes | no | - | 3834 | - | - |
+| pools__launch_preview | Price a pools.fun launch | protocol | no | no | no | - | 1257 | - | - |
+| pools__launch_request_form | Ask the user to confirm a pools.fun launch | protocol | no | no | no | - | 1253 | - | - |
 | pools__my_launches_list | List this wallet's pools.fun launches | protocol | yes | no | no | - | 1371 | - | none (read) |
 | pools__token_candles_list | Read pools.fun token candles | protocol | yes | no | no | - | 1006 | - | none (read) |
 | pools__token_get | Read one pools.fun token | protocol | yes | no | no | - | 1411 | - | none (read) |
@@ -250,34 +305,25 @@ free. Both texts live on the tool
 | solana__tokens_discover | Discover new and trending Solana tokens | protocol | yes | no | no | JUPITER_API_KEY | 1123 | - | none (read) |
 | solana__tokens_search | Search Solana tokens by name | protocol | yes | no | no | JUPITER_API_KEY | 835 | - | none (read) |
 
-### trench
-
-| name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| trench__images_list | List Trench image-locker images | protocol | yes | no | no | - | 1034 | - | none (read) |
-| trench__launch_execute | Launch a token on Trench Express | protocol | no | yes | no | - | 2400 | - | - |
-| trench__launch_preview | Dry-run a Trench Express launch | protocol | yes | no | no | - | 1704 | - | none (read) |
-| trench__launch_request_form | Ask the user to confirm a Trench launch | protocol | no | no | no | - | 959 | - | - |
-| trench__my_launches_list | List this wallet's Trench launches | protocol | yes | no | no | - | 884 | - | none (read) |
-| trench__token_trades_list | Read a Trench Express token's trade tape | protocol | yes | no | no | - | 950 | - | none (read) |
-| trench__tokens_discover | Screen Trench Express tokens | protocol | yes | no | no | - | 2293 | - | none (read) |
-| trench__tokens_search | Search Trench Express tokens | protocol | yes | no | no | - | 729 | - | none (read) |
-| trench__trade_execute | Trade a Trench Express token | protocol | no | yes | no | - | 1593 | - | - |
-| trench__trade_quote | Quote a Trench Express trade | protocol | yes | no | no | - | 659 | - | none (read) |
-
 ### uniswap
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| uniswap__swap_execute | Execute a Uniswap V2/V3 swap | protocol | no | yes | no | - | 1442 | yes | 25 bps |
-| uniswap__swap_quote | Quote a Uniswap V2/V3 route | protocol | yes | no | no | - | 1790 | - | none (read) |
+| uniswap__swap_execute | Execute a Uniswap V2/V3 swap | protocol | no | yes | no | - | 3258 | yes | 25 bps |
+| uniswap__swap_quote | Quote a Uniswap V2/V3 route | protocol | yes | no | no | - | 4260 | - | none (read) |
 
 ### virtuals
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| virtuals__agent_candles_list | Read a Virtuals agent's price candles | protocol | yes | no | no | - | 1611 | - | none (read) |
+| virtuals__agent_candles_list | Read a Virtuals agent's price candles | protocol | yes | no | no | - | 2973 | - | none (read) |
 | virtuals__agent_get | Read one Virtuals agent token | protocol | yes | no | no | - | 1365 | - | none (read) |
+| virtuals__agent_launch_cancel | Cancel a Virtuals agent launch | protocol | no | yes | no | - | 1677 | - | - |
+| virtuals__agent_launch_execute | Launch a Virtuals agent | protocol | no | yes | no | - | 2674 | - | - |
+| virtuals__agent_launch_preview | Plan a Virtuals agent launch | protocol | no | no | no | - | 2257 | - | - |
+| virtuals__agent_launch_status | Check a Virtuals agent launch | protocol | yes | no | no | - | 1889 | - | none (read) |
+| virtuals__agent_trade_execute | Trade a Virtuals agent on its bonding curve | protocol | no | yes | no | - | 1971 | - | - |
+| virtuals__agent_trade_quote | Price a Virtuals bonding-curve trade | protocol | yes | no | no | - | 1576 | - | none (read) |
 | virtuals__agent_trades_list | Read a Virtuals agent's curve trade tape | protocol | yes | no | no | - | 1331 | - | none (read) |
 | virtuals__agents_discover | Screen Virtuals agent tokens | protocol | yes | no | no | - | 2039 | - | none (read) |
 | virtuals__creator_fees_get | Read a Virtuals agent creator's fee status | protocol | yes | no | no | - | 2347 | - | none (read) |

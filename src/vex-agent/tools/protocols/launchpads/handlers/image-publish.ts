@@ -25,18 +25,55 @@
  * retries on its own: a retry loop around an upload is the caller's decision,
  * not this handler's.
  *
- * SURFACE. This tool is not exported to the Studio MCP surface (see
- * `mcp/export-scope.ts`): an external coding agent has no locker to publish
- * from and supplies a path from its own project instead. The check below is the
- * privileged executor's own recheck of that decision (rule 04) - admission
- * refuses first, and this refuses again rather than trusting that it did.
+ * TWO SURFACES, ONE CONSENT QUESTION. The picture is named the way each
+ * surface can name it - `imageId` in the Vex app, where the user staged it in
+ * the image locker, and `imagePath` over the Vex Studio MCP surface, where an
+ * external coding agent has no locker and only its own project files. The
+ * shared per-surface table (`protocols/shared/launch-image-input.ts`) owns that
+ * routing, and the wrong surface's parameter is refused BY NAME rather than
+ * dropped. Everything downstream of the parameter is identical: the same
+ * approval card, the same disclosure sentence, the same content-addressed
+ * upload, the same recorded row.
+ *
+ * WHY THE STUDIO ARM EXISTS AT ALL. It used to refuse, and the refusal closed a
+ * product path: a launch writes the picture's URL on chain, a launch will not
+ * publish as a side effect (that decision belongs to a human), and with no
+ * publish tool on Studio an agent working in a codebase could never launch
+ * anything with a picture. The answer is not a quieter launch; it is this tool,
+ * asking the same question about the same bytes on the surface the agent is
+ * actually on.
+ *
+ * WHAT THE STUDIO ARM MAY READ is decided by the no-follow reader
+ * (`studio/files/no-follow-open.ts`), not here: inside the project root, no
+ * symbolic links, a regular file, a byte ceiling, and a format sniffed from
+ * magic bytes rather than from the extension. This module supplies no path
+ * logic of its own, because a second containment boundary is a second place to
+ * get it wrong.
+ *
+ * WHERE STUDIO BYTES LIVE. There is no second store. The bytes stay in the
+ * user's own project file, and the copy Vex creates is the one on the
+ * content-addressed host - which is what the locker row records. The row
+ * carries the cid as its digest, so `findLaunchImageByPublicCid` can answer
+ * "these exact bytes are already published" for a later call or a later launch
+ * without uploading anything again. It carries no locker byte file, because
+ * only the desktop app's locker writes those and this handler is not the
+ * locker.
  */
 
-import type { ProtocolExecutionContext } from "../../types.js";
-import { ok, fail, str } from "../../handler-helpers.js";
+import { randomBytes } from "node:crypto";
+
+import type { ApprovalSurface, ProtocolExecutionContext } from "../../types.js";
+import { ok, fail } from "../../handler-helpers.js";
 import { launchpadsFailureDetail } from "./failure.js";
-import { getLaunchImage, recordPublicAsset } from "../../../../db/repos/launch-images.js";
 import {
+  findLaunchImageByPublicCid,
+  getLaunchImage,
+  insertLaunchImage,
+  recordPublicAsset,
+  type LaunchImageMime,
+} from "../../../../db/repos/launch-images.js";
+import {
+  deriveAssetContentId,
   resolveLaunchAssetsPublisher,
   type UploadOutcome,
 } from "../../../../agentscan/assets-client.js";
@@ -44,8 +81,21 @@ import {
   resolveLaunchImageBytes,
   LaunchImageResolverUnavailableError,
 } from "../../shared/launch-image-byte-resolver.js";
+import {
+  readLaunchImageSelection,
+  resolveProjectFileLaunchImage,
+  type LaunchImageSelection,
+  type ResolvedLaunchImageBytes,
+} from "../../shared/launch-image-input.js";
 
 const TOOL_ID = "launchpads__image_publish";
+
+/**
+ * What did NOT happen when this tool refuses. Handed to the shared per-surface
+ * reader so its refusals speak about publishing rather than about launching:
+ * an agent told "Nothing was launched" would go looking for a launch to retry.
+ */
+const NOTHING_WAS_UPLOADED = "Nothing was uploaded.";
 
 /**
  * The sentence the agent must pass on. It states the consequence in the words a
@@ -73,22 +123,47 @@ export async function launchpadsImagePublishHandler(
   p: Record<string, unknown>,
   context: ProtocolExecutionContext,
 ) {
-  if (context.approvalSurface === "studio_mcp") {
-    return fail(
-      "launchpads__image_publish is not available over the Vex Studio MCP surface: there is no image "
-        + "locker there to publish from. Pass the launch tool an `imagePath` inside this project "
-        + "instead, and it will publish those bytes itself.",
-    );
-  }
+  const surface: ApprovalSurface = context.approvalSurface ?? "in_app_form";
+  const selection = readLaunchImageSelection(p, context, {
+    // Not `required`: the shared reader's missing-picture sentence is a
+    // LAUNCH's ("a token launched without a picture renders blank forever"),
+    // and nothing is being launched here. This tool states its own.
+    required: false,
+    lockerListTool: "launchpads__images_list",
+    toolName: TOOL_ID,
+    nothingHappened: NOTHING_WAS_UPLOADED,
+  });
+  if (!selection.ok) return fail(selection.reason);
+  if (selection.selection === null) return fail(missingPictureReason(surface));
 
-  const imageId = str(p, "imageId").trim();
-  if (imageId === "") {
-    return fail(
+  return selection.selection.kind === "locker"
+    ? await publishLockerImage(selection.selection.imageId)
+    : await publishProjectFile(selection.selection, context);
+}
+
+/** The parameter this surface needed and did not get, named as the surface names it. */
+function missingPictureReason(surface: ApprovalSurface): string {
+  if (surface === "in_app_form") {
+    return (
       `"imageId" is required: pass the id of a picture already in the locker, as listed by `
-        + `launchpads__images_list. You can never supply image bytes or a URL yourself.`,
+      + `launchpads__images_list. You can never supply image bytes or a URL yourself. ${NOTHING_WAS_UPLOADED}`
     );
   }
+  return (
+    `"imagePath" is required: pass the path of an image file inside this project, and Vex will read `
+    + `those bytes itself and publish them. You can never supply image bytes or a URL yourself. `
+    + `${NOTHING_WAS_UPLOADED}`
+  );
+}
 
+/**
+ * The in-app arm: a picture the USER staged, named by its locker id.
+ *
+ * Unchanged in every respect by the Studio arm below it. The bytes come from
+ * the locker's own byte seam, which is the one place that can prove which bytes
+ * an id stands for.
+ */
+async function publishLockerImage(imageId: string) {
   let row;
   try {
     row = await getLaunchImage(imageId);
@@ -185,6 +260,177 @@ export async function launchpadsImagePublishHandler(
     mime: outcome.type,
     disclosure: PUBLIC_DISCLOSURE,
   });
+}
+
+/**
+ * The Studio arm: a picture that is a FILE in the agent's own project.
+ *
+ * The order of the steps is the contract, and each step exists because of what
+ * would otherwise happen:
+ *
+ *  1. CONTAINMENT FIRST. The path came from a model, so the no-follow reader
+ *     decides what may be opened at all, before anything else runs.
+ *  2. THE LOCKER'S OWN FORMAT RULE. A published picture is recorded as a locker
+ *     row, and that table accepts PNG, JPEG and WebP. A GIF is refused BY NAME
+ *     here, before the upload, rather than uploaded and then found unfilable.
+ *  3. THE CONTENT ID IS DERIVED LOCALLY, so "already published" is answered
+ *     from our own record without spending a request, a quota slot or a second
+ *     copy of the user's bytes in flight.
+ *  4. THE ROW IS WRITTEN AFTER THE HOST ANSWERS (rule 05). Publication is the
+ *     commit point; a row written before it would claim a publication that may
+ *     never have happened.
+ */
+async function publishProjectFile(
+  selection: Extract<LaunchImageSelection, { kind: "project_file" }>,
+  context: ProtocolExecutionContext,
+) {
+  const resolved = await resolveProjectFileLaunchImage(selection, context, {
+    nothingHappened: NOTHING_WAS_UPLOADED,
+  });
+  if (!resolved.ok) return fail(resolved.reason);
+  const image = resolved.image;
+
+  const mime = lockerMimeOf(image.mime);
+  if (mime === null) {
+    return fail(
+      `"${image.displayLabel}" is a GIF, and Vex records a published picture as a PNG, JPEG or WebP. `
+        + `${NOTHING_WAS_UPLOADED} Convert the picture to one of those three and pass that file instead.`,
+    );
+  }
+
+  // The host addresses every asset by the sha256 of its bytes, so this is the
+  // SAME id the upload would come back with - derivable before any request.
+  // Derived through the client's own definition, because a launch later asks
+  // the same question of a file on disk and both sides must agree byte for byte.
+  const cid = deriveAssetContentId(image.bytes);
+
+  let published;
+  try {
+    published = await findLaunchImageByPublicCid(cid);
+  } catch (err) {
+    return fail(
+      `Vex could not check whether this picture is already published `
+        + `(${launchpadsFailureDetail(TOOL_ID, err)}). ${NOTHING_WAS_UPLOADED} This is worth trying again.`,
+    );
+  }
+  if (published !== null && published.publicUrl !== null && published.publicCid !== null) {
+    // ALREADY PUBLIC, by content. Answered from our own record: no request, no
+    // second copy of the user's bytes in flight, and the same URL as before,
+    // because the URL is the hash of these exact bytes.
+    return ok({
+      imageId: published.imageId,
+      imagePath: image.displayLabel,
+      imageUrl: published.publicUrl,
+      contentId: published.publicCid,
+      alreadyPublished: true,
+      byteLength: image.bytes.byteLength,
+      mime: image.mime,
+      disclosure: PUBLIC_DISCLOSURE,
+    });
+  }
+
+  const publisher = await resolveLaunchAssetsPublisher();
+  if (publisher.kind === "agentscan_unconfigured") return fail(UNCONFIGURED_REASON);
+  if (publisher.kind === "install_unregistered") return fail(UNREGISTERED_REASON);
+
+  const outcome = await publisher.client.uploadAsset({
+    ingestToken: publisher.ingestToken,
+    bytes: image.bytes,
+  });
+  if (outcome.kind !== "ok") return fail(describeUploadFailure(outcome));
+  if (outcome.cid !== cid) {
+    // The client already refuses a host whose answer does not address the bytes
+    // it sent; this is the same invariant asserted against the id THIS arm
+    // derived, so a future divergence between the two derivations cannot pass
+    // an unverifiable URL to a launch.
+    return fail(
+      "The image host answered with an address that does not match the bytes Vex read from this file, "
+        + "so the URL was REFUSED and nothing was recorded. A launch must never point at an address Vex "
+        + "cannot prove holds the approved picture. Do not retry; report this.",
+    );
+  }
+
+  const answer = {
+    imagePath: image.displayLabel,
+    imageUrl: outcome.url,
+    contentId: outcome.cid,
+    alreadyPublished: outcome.alreadyPublished,
+    byteLength: outcome.bytes,
+    mime: outcome.type,
+    disclosure: PUBLIC_DISCLOSURE,
+  };
+
+  // THE BYTES ARE PUBLIC FROM HERE ON. Every failure below is reported as a
+  // success carrying a warning, never as a failure: telling the agent nothing
+  // happened would be false and would invite a second upload of bytes the host
+  // already holds.
+  const imageId = newPublishedImageId();
+  try {
+    await insertLaunchImage({
+      imageId,
+      label: image.displayLabel,
+      byteLength: image.bytes.byteLength,
+      mime,
+      width: outcome.width,
+      height: outcome.height,
+      // The digest of the bytes that were published, which for a
+      // content-addressed host IS the content id.
+      digest: cid,
+      // No derived on-chain copy: that variant belonged to a retired launchpad
+      // and the desktop ladder is the only thing that ever made one.
+      onchainByteLength: null,
+      onchainDigest: null,
+    });
+  } catch (err) {
+    return ok({
+      ...answer,
+      imageId: null,
+      warning:
+        "The picture was published successfully, but Vex could not record it against this install "
+        + `(${launchpadsFailureDetail(TOOL_ID, err)}). Use the URL above; publishing the same file `
+        + "again would return the same one.",
+    });
+  }
+
+  try {
+    await recordPublicAsset(imageId, { cid: outcome.cid, url: outcome.url });
+  } catch (err) {
+    return ok({
+      ...answer,
+      imageId,
+      warning:
+        "The picture was published successfully, but Vex could not file the address against the "
+        + `record it created (${launchpadsFailureDetail(TOOL_ID, err)}). Use the URL above; publishing `
+        + "the same file again would return the same one.",
+    });
+  }
+
+  return ok({ ...answer, imageId });
+}
+
+/**
+ * The locker's MIME allowlist, as the table's CHECK states it.
+ *
+ * `null` is the honest answer for a GIF: the no-follow reader sniffs one
+ * (it is a real image and the host accepts it), and this table does not hold
+ * one. Widening the reader or the table is a separate, deliberate change; a
+ * cast here would produce a raw Postgres constraint violation with nothing the
+ * caller could act on.
+ */
+function lockerMimeOf(mime: ResolvedLaunchImageBytes["mime"]): LaunchImageMime | null {
+  switch (mime) {
+    case "image/png":
+    case "image/jpeg":
+    case "image/webp":
+      return mime;
+    default:
+      return null;
+  }
+}
+
+/** A fresh opaque id, in the shape the locker's own byte store recognises. */
+function newPublishedImageId(): string {
+  return `img_${randomBytes(16).toString("hex")}`;
 }
 
 /**

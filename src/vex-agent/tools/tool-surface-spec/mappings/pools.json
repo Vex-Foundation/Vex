@@ -55,6 +55,16 @@
       "toolId": "pools.holder_rewards",
       "publicName": "pools__holder_rewards_get",
       "rationale": "Existing snake words preserved, canonical by-id verb appended. The read answers for ONE token and ONE wallet against the distributor the suite deployer emitted (manifests/holder-rewards.ts), which is a `get`, not a list; the fund-moving claim is a separate tool so the read keeps the neutral verb."
+    },
+    {
+      "toolId": "pools.holder_rewards_claim",
+      "publicName": "pools__holder_rewards_claim",
+      "rationale": "Mechanical: resource then the fund-moving verb last, as pools__fees_claim already does. The two are deliberately parallel and deliberately distinct - fees_claim pays whoever LAUNCHED the token, holder_rewards_claim pays whoever HOLDS it - so the resource carries the whole difference. actionKind user_wallet_broadcast (manifests/holder-rewards-claim.ts)."
+    },
+    {
+      "toolId": "pools.holder_rewards_distribute",
+      "publicName": "pools__holder_rewards_distribute",
+      "rationale": "Mechanical: resource then verb. `distribute` rather than a claim word on purpose - the call is permissionless and pays the token's HOLDERS, not its caller, and the durable role is reward_distribution rather than a claim role. actionKind user_wallet_broadcast (manifests/holder-rewards-distribute.ts)."
     }
   ]
 }

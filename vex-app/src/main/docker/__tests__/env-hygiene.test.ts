@@ -24,6 +24,8 @@ describe("withoutManagedSecrets", () => {
       openrouter_api_key: "leaked-lower",
       Openrouter_Api_Key: "leaked-mixed",
       TAVILY_API_KEY: "leaked-upper",
+      lighter_core_read_only_auth_token: "retired-core-token",
+      Lighter_Rhc_Read_Only_Auth_Token: "retired-rhc-token",
       vex_keystore_password: "leaked-password-lower",
     };
 

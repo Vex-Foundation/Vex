@@ -145,6 +145,7 @@ import { VEX_DEFAULT_SLIPPAGE_BPS } from "@vex-agent/tools/protocols/slippage-po
 import { KYBERSWAP_HANDLERS } from "../../../../vex-agent/tools/protocols/kyberswap/handlers.js";
 import { DependentLegGasEstimateError } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import { compliantSwapCalldata, compliantRoutePaths } from "../../../kyberswap/fixtures/route-build/compliant-swap-build.js";
+import { SWAP_VENUE_PEER_NUDGE_SUFFIX } from "@vex-agent/tools/registry/swap-venue-guidance.js";
 
 function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
   return {
@@ -335,7 +336,14 @@ describe("kyberswap.swap.execute — pre-sign estimate revert (no prior leg)", (
  * pre-sign refusal of the same calldata.
  */
 describe("kyberswap.swap.execute — a pre-sign refusal of the SWAP leg unlocks the fallback venue", () => {
-  const FALLBACK_SENTENCE = "Uniswap is an alternative venue for this trade: quote it with SwapQuoteUniswap, then execute with SwapExecuteUniswap.";
+  /**
+ * Read off the owner module rather than retyped: the sentence is the swap-venue
+ * standing's (`registry/swap-venue-guidance.ts`), and a copy here would let the
+ * failure message and the tool descriptions describe the two venues
+ * differently, which is the drift that module exists to prevent. `.trim()`
+ * drops its leading space - it is authored as an appendable suffix.
+ */
+const FALLBACK_SENTENCE = SWAP_VENUE_PEER_NUDGE_SUFFIX.trim();
 
   beforeEach(() => {
     vi.clearAllMocks();

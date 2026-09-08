@@ -37,15 +37,24 @@ let testDir = "";
 beforeEach(() => {
   vi.clearAllMocks();
   testDir = mkdtempSync(join(tmpdir(), "vex-migrate-"));
-  // Default client.query: every call returns `undefined` except the
-  // current-version SELECT, which returns `{rows: [{version: 0}]}` so
-  // the shared runner treats every file as pending.
+  // Default client.query: every call returns `undefined` except the ledger
+  // SELECT, which returns an EMPTY row set - a fresh database - so the shared
+  // runner treats every file as pending. The runner reads the whole ledger
+  // rather than its maximum because a maximum cannot distinguish a version that
+  // was never applied from one that does not exist yet (see its
+  // `MigrationLedgerGapError`).
   mockClientQuery.mockImplementation(async (sql: unknown) => {
     if (
       typeof sql === "string" &&
-      /SELECT COALESCE\(MAX\(version\)/i.test(sql)
+      /SELECT version\s+FROM schema_version/i.test(sql)
     ) {
-      return { rows: [{ version: 0 }] };
+      return { rows: [] };
+    }
+    // The branch-era discriminator, which runs before the ledger read: no
+    // `lighter_%` table and no pre-release lineage ledger table, i.e. a fresh
+    // database the runner may migrate.
+    if (typeof sql === "string" && /FROM pg_class/i.test(sql)) {
+      return { rows: [] };
     }
     return undefined;
   });
@@ -66,7 +75,7 @@ describe("vex-agent/db/migrate", () => {
     await runMigrations();
 
     expect(mockGetVexAgentMigrationsDir).toHaveBeenCalledTimes(1);
-    // Shared runner now drives the session — verify the migration SQL
+    // Shared runner now drives the session - verify the migration SQL
     // and the surrounding transaction shape are issued through client.query.
     expect(mockClientQuery).toHaveBeenCalledWith("BEGIN");
     expect(mockClientQuery).toHaveBeenCalledWith(

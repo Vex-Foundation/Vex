@@ -49,6 +49,9 @@ const { resetDraftsForTest } = await import("../../../lib/composer-drafts.js");
 const { resetComposerQueueForTest, readQueue } = await import(
   "../../../lib/composer-queue.js"
 );
+const { subscribeLighterWorkspaceOpen } = await import(
+  "../lighterTrading/workspace-command.js"
+);
 
 const SESSION_A = "00000000-0000-4000-8000-00000000000a";
 const SESSION_B = "00000000-0000-4000-8000-00000000000b";
@@ -134,6 +137,21 @@ afterEach(() => {
 });
 
 describe("resident composer - a turn belongs to ONE session", () => {
+  it("consumes Light it up as UI-only and never submits it as a user turn", async () => {
+    const openListener = vi.fn();
+    const unsubscribe = subscribeLighterWorkspaceOpen(openListener);
+    const view = renderComposer(SESSION_A);
+
+    await typeAndSubmit(view.result, "Light it up");
+
+    expect(openListener).toHaveBeenCalledTimes(1);
+    expect(submitMock).not.toHaveBeenCalled();
+    expect(mockTrySteerLiveTurn).not.toHaveBeenCalled();
+    expect(readQueue(SESSION_A)).toHaveLength(0);
+    expect(view.result.current.draft).toBe("");
+    unsubscribe();
+  });
+
   it("does not report session B pending while session A's turn runs", async () => {
     const view = renderComposer(SESSION_A);
     await typeAndSubmit(view.result, "run for A");

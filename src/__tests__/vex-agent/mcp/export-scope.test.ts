@@ -68,6 +68,8 @@ const DOC_NAME_TO_LIVE_NAME: Readonly<Record<string, string>> = {
   web_research: "WebResearch",
   twitter_account: "TwitterAccount",
   units_convert: "UnitsConvert",
+  lighter_rhc_onboarding_status: "lighter_rhc_onboarding_status",
+  lighter_core_onboarding_status: "lighter_core_onboarding_status",
   session_memory_search: "SessionMemorySearch",
   session_memory_resolve_item: "SessionMemoryResolve",
   long_memory_suggest: "MemorySuggest",
@@ -148,6 +150,24 @@ describe("Studio MCP export scope - predicate versus the live registry", () => {
       .filter((toolId) => !NON_EXPORTED_PROTOCOL_TOOLS.has(toolId));
     expect(unexpected).toEqual([]);
     expect(isExportedProtocolTool("khalani.not.a.real.tool")).toBe(false);
+  });
+
+  // The publish tool WAS excluded, and the exclusion closed the only approved
+  // way to make bytes public from Studio - so a coding agent could never give a
+  // launched token a picture at all. It is exported by name here, in both the
+  // predicate and the listing, so re-excluding it is a decision that has to be
+  // taken deliberately rather than by editing a set.
+  it("exports launchpads.image_publish, the approved way bytes become public", () => {
+    expect(NON_EXPORTED_PROTOCOL_TOOLS.has("launchpads.image_publish")).toBe(false);
+    expect(isExportedProtocolTool("launchpads.image_publish")).toBe(true);
+    const listed = listExportedTools().flatMap((entry) =>
+      entry.kind === "protocol" ? [entry.publicName] : [],
+    );
+    expect(listed).toContain("launchpads__image_publish");
+  });
+
+  it("still withholds launchpads.images, the locker listing an agent cannot fill", () => {
+    expect(isExportedProtocolTool("launchpads.images")).toBe(false);
   });
 
   it("answers false for every id on the protocol exclusion set", () => {

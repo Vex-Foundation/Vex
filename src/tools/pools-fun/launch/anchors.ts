@@ -3,7 +3,8 @@
  *
  * ONE BLOCK, EVERY READ. The gateway's fee moves (measured 4x inside a day), the
  * factory's start tick tracks a price feed, an allowlist is a live setting, and
- * a signed stock quote is valid for between 30 and 120 seconds; reading them at
+ * a signed stock quote is valid only for its pair's own window (`maxQuoteAge`,
+ * which an owner may configure between 30 and 120 s); reading them at
  * whatever block each call happened to land on would produce a verdict about no
  * single state of the chain. So the block is pinned first and every read is made
  * `at` it, exactly the way `evm/token-registration.ts` pins the token snapshot.

@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "OHLCV price history for one Virtuals agent's pool, by numeric agent id. Use this when the user wants a price chart, a trend, or the high and low over a period for a Virtuals agent; call virtuals__agents_discover first if you do not have the id, and expect a typed refusal rather than an empty chart wherever the history does not exist. Returns candles oldest-bucket-first with open, high, low, close and volume as decimal strings, plus the network and pool the data came from and the exact `beforeTimestampSeconds` value that walks further back. Choose `timeframe` (minute, hour, day), `aggregate` (per timeframe: minute 1/5/15, hour 1/4/12, day 1 only) and `limit` (max 1000, also the provider's own ceiling), and `currency` usd or token. WHICH POOL, AND WHERE THE HISTORY DOES NOT EXIST, both measured: a GRADUATED agent charts from its AMM pool and works on base, robinhood and solana; a BONDING agent has only its curve pair, which is indexed on solana (a Meteora dynamic-bonding-curve pool) but NOT on any EVM chain - a live base curve pair answered 404 - so that cell returns `supported: false` naming the reason and pointing at virtuals__agent_trades_list and at the 24h price samples virtuals__agents_discover can attach with includePriceSeries. Virtuals' own klines endpoint is NOT used: it returned an empty series to every combination probed, including for an agent whose trade tape was live in the same session. The upstream chart provider rate-limits hard, so a 429 is reported as a retryable failure and never as an empty chart. Prices here are display-grade market data, never a quote. Read-only.",
+      "description": "OHLCV price history for one Virtuals agent, by numeric agent id, from whichever source actually has it. Use this when the user wants a price chart, a trend, or the high and low over a period for a Virtuals agent; call virtuals__agents_discover first if you do not have the id. Returns candles oldest-bucket-first with open, high, low, close and volume as decimal strings, the `source` and `denomination` the bars came from, a `coverage` block, and the exact `beforeTimestampSeconds` value that walks further back. A BONDING AGENT NOW CHARTS ON EVERY CHAIN THAT HAS A CURVE, which is the change here: the public chart provider indexes AMM pools, so it answered 404 for a base or robinhood bonding pair, and those bars are now BUILT instead. Source per lifecycle and chain, every cell measured: a GRADUATED agent charts from its AMM pool through the chart provider on base, robinhood and solana; a BONDING agent on solana also charts there, because its curve is an indexed Meteora dynamic-bonding-curve pool; a BONDING agent on base is built from the provider's own curve trade feed; a BONDING agent on robinhood is built from the curve pair's own on-chain Swap logs, which is the only source that exists there because that chain has no trade feed at all. Ethereum has no Virtuals curve. `source` overrides that choice and is refused by name when the requested source cannot serve the agent, so `onchain` gives the exact on-chain series on base too and `tape` gives the fast one. THE TWO CURVE SOURCES PRICE IN VIRTUAL PER AGENT TOKEN, exactly, as the ratio of the two token amounts each swap moved; `currency` applies only to the chart provider and is refused with the curve sources rather than answered in a unit you did not ask for. COVERAGE IS REPORTED, NEVER GUESSED, because each source stops for a different reason. The curve trade feed has no cursor of any kind (offset, page, skip and four spellings of a timestamp bound were each sent live and each silently ignored) and the provider caps it at 1000 trades, so when it comes back full that is a ceiling and not the start of the curve: `coverage.stopReason` says `tape_ceiling` and the answer points at the on-chain source, which has no such ceiling. A log scan reports the block range it covered, the windows it spent and whether a work budget stopped it early. Buckets with no trades are ABSENT rather than zero-filled: a curve that did not trade has no price, and a zero bar would assert one. Choose `timeframe` (minute, hour, day), `aggregate` (per timeframe: minute 1, 5 or 15; hour 1, 4 or 12; day 1 only) and `limit` (max 1000). An illegal timeframe and aggregate pairing is refused by name before any call is made, and the same sets apply whichever source answers, so one parameter contract holds across all three. For the individual trades behind a bar call virtuals__agent_trades_list. Prices are display-grade market data, never a quote: price a trade with the venue tool that would execute it. Read-only.",
       "name": "virtuals__agent_candles_list",
       "parameters": {
         "additionalProperties": false,
@@ -11,11 +11,11 @@
             "type": "number"
           },
           "beforeTimestampSeconds": {
-            "description": "Walk backwards: return buckets strictly before this unix-seconds mark. The reply hands you the value to use for the next page.",
+            "description": "Walk backwards: return buckets strictly before this unix-seconds mark. The reply hands you the value to use for the next page, and pages neither skip nor overlap.",
             "type": "number"
           },
           "currency": {
-            "description": "Denominate the candles in usd (default) or in the pool's quote token.",
+            "description": "Denominate the candles in usd (default) or in the pool's quote token. Applies to the chart provider only; the curve sources price in VIRTUAL and refuse this by name.",
             "enum": [
               "usd",
               "token"
@@ -27,11 +27,21 @@
             "type": "number"
           },
           "limit": {
-            "description": "Candles to return (default 100, max 1000 - the provider's own stated ceiling).",
+            "description": "Candles to return (default 100, max 1000). Out of range is rejected by name, never clamped.",
             "type": "number"
           },
+          "source": {
+            "description": "Which history to read: auto (default) picks by lifecycle and chain, geckoterminal reads the indexed pool, tape reads the provider's curve trade feed, onchain reads the curve pair's own Swap logs. A source that cannot serve the agent is refused by name.",
+            "enum": [
+              "auto",
+              "geckoterminal",
+              "tape",
+              "onchain"
+            ],
+            "type": "string"
+          },
           "timeframe": {
-            "description": "Bucket size: minute, hour (default) or day. The provider names these itself and rejects anything else.",
+            "description": "Bucket size: minute, hour (default) or day. The same three values whichever source answers.",
             "enum": [
               "minute",
               "hour",

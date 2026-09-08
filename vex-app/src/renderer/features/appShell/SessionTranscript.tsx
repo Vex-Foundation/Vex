@@ -69,6 +69,7 @@ import { TurnStatsLine } from "./SessionTranscript/TurnStatsLine.js";
 import { useMessageForkActions } from "./SessionTranscript/useMessageForkActions.js";
 import { useTranscriptScroll } from "./SessionTranscript/useTranscriptScroll.js";
 import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
+import type { TranscriptEntry } from "./transcriptRowModel.js";
 
 // Same cadence as ApprovalsRegion — both observers share one query, so this
 // adds no IPC load; it only keeps the act-ledger stamps as fresh as the cards.
@@ -125,7 +126,6 @@ export function SessionTranscript({
     pendingQuery.data !== undefined &&
     pendingQuery.data.ok &&
     pendingQuery.data.data.length > 0;
-
   // Render-time bookkeeping (not an effect): the settle class must be present
   // on a live row's FIRST paint or the animation start is visibly late.
   const settledRef = useRef<SettledIdsTracker | null>(null);

@@ -52,7 +52,7 @@ describe("resolveToolIdentity - dotted protocol toolIds (the canonicalized lane)
     ["relay.quote.get", "relay", "Relay · Bridge quote", "bridge"],
     ["relay.bridge", "relay", "Relay · Bridge", "bridge"],
     ["khalani.quote.get", "khalani", "Khalani · Bridge quote", "bridge"],
-    ["trench.launch_execute", "trench", "Trench Express · Launch", "tool"],
+    ["trench.launch_execute", "trench", "Trench Express (legacy) · Launch", "tool"],
     ["pendle.markets", "pendle", "Pendle · Markets", "tool"],
     ["virtuals.agents.list", "virtuals", "Virtuals · Agents list", "tool"],
   ])("resolves %s to the %s mark", (toolId, protocol, title, category) => {
@@ -246,16 +246,16 @@ describe("resolveToolIdentity - generic wrappers", () => {
   );
 
   it.each([
-    ["trench.tokens", "Trench Express · Token list", "market"],
-    ["trench.search", "Trench Express · Token search", "market"],
-    ["trench.trades", "Trench Express · Trade tape", "market"],
-    ["trench.trade_quote", "Trench Express · Trade quote", "swap"],
-    ["trench.trade_execute", "Trench Express · Trade", "swap"],
-    ["trench.launch_preview", "Trench Express · Launch preview", "tool"],
-    ["trench.launch_request_form", "Trench Express · Launch form", "tool"],
-    ["trench.launch_execute", "Trench Express · Launch", "tool"],
-    ["trench.my_launches", "Trench Express · My launches", "tool"],
-    ["trench.images", "Trench Express · Image locker", "tool"],
+    ["trench.tokens", "Trench Express (legacy) · Token list", "market"],
+    ["trench.search", "Trench Express (legacy) · Token search", "market"],
+    ["trench.trades", "Trench Express (legacy) · Trade tape", "market"],
+    ["trench.trade_quote", "Trench Express (legacy) · Trade quote", "swap"],
+    ["trench.trade_execute", "Trench Express (legacy) · Trade", "swap"],
+    ["trench.launch_preview", "Trench Express (legacy) · Launch preview", "tool"],
+    ["trench.launch_request_form", "Trench Express (legacy) · Launch form", "tool"],
+    ["trench.launch_execute", "Trench Express (legacy) · Launch", "tool"],
+    ["trench.my_launches", "Trench Express (legacy) · My launches", "tool"],
+    ["trench.images", "Trench Express (legacy) · Image locker", "tool"],
   ])("titles the Trench act %s as %s", (toolId, title, category) => {
     expect(resolveToolIdentity("execute_tool", `{"toolId":"${toolId}"}`)).toEqual({
       protocol: "trench",
@@ -336,7 +336,7 @@ describe("resolveToolIdentity - generic wrappers", () => {
   it("falls back to the humanizer for an unmirrored trench id - venue proven, action not curated", () => {
     expect(resolveToolIdentity("execute_tool", '{"toolId":"trench.new_thing"}')).toEqual({
       protocol: "trench",
-      title: "Trench Express · New thing",
+      title: "Trench Express (legacy) · New thing",
       category: "tool",
     });
   });

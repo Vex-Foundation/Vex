@@ -205,6 +205,13 @@ export function coerceBookTab(value: unknown): BookTab {
 //       for the same reason. Seed `{}` - no remembered tabs, which is what a
 //       fresh install has. Expand-only like every hop above, and a reader from
 //       before it simply ignores a key it does not whitelist.
+//   v19: the BOOK rail's `trench` section id RENAMED to `launchpads`. Migration
+//       108 retired Trench Express; the card it names is the image locker plus
+//       the launch action, which survives on pools.fun. The stored arrays are
+//       rewritten rather than left to `resolveBookSectionOrder`'s
+//       drop-unrecognised rule, which would have silently discarded the user's
+//       own arrangement of a card that is still there. The FIRST hop that
+//       rewrites rather than seeds, which is why it is spelled out.
 //   v16: `studioRailExplorerShare` added (the Studio rail's vertical split
 //       between the PROJECTS list and the EXPLORER pane, which used to be a
 //       fixed 256px box). Seed the default so an upgrading install hydrates
@@ -264,7 +271,31 @@ export function migrateUiState(persisted: unknown, version: number): unknown {
   if (version < 18 && !("studioFileTabs" in next)) {
     next = { ...next, studioFileTabs: {} };
   }
+  if (version < 19) {
+    next = {
+      ...next,
+      bookSectionOrder: renameRetiredTrenchSection(next["bookSectionOrder"]),
+      studioBookSectionOrder: renameRetiredTrenchSection(
+        next["studioBookSectionOrder"],
+      ),
+    };
+  }
   return next;
+}
+
+/**
+ * v19's rename, applied to one stored order.
+ *
+ * A RENAME, not a drop. `resolveBookSectionOrder` discards ids it does not
+ * recognise, so leaving `"trench"` in a stored array would silently delete that
+ * user's arrangement of the card - the card itself did not go anywhere, only
+ * its name did. A non-array or a non-string member degrades to being left
+ * alone here and is coerced by `coerceSectionOrder` on the way in, so this hop
+ * never has to be the input validator as well.
+ */
+function renameRetiredTrenchSection(stored: unknown): unknown {
+  if (!Array.isArray(stored)) return stored;
+  return stored.map((id) => (id === "trench" ? "launchpads" : id));
 }
 
 // localStorage is user-writable (untrusted input), and `migrate` only runs on

@@ -67,11 +67,16 @@ Every call example in this prompt is written as \`tool_name(param="value")\`. Th
 
 The curated shortcuts below keep one stable name while routing through the protocol or chain capability that owns the request. PREFER the shortcut: it is one call instead of a discovery round trip plus the protocol call, and its schema is already in front of you.
 
+One exception: an explicit Lighter deposit or funding amount is an exact transfer, not an onboarding collateral target. Skip the onboarding shortcuts and \`WalletBalances\`; call \`ToolSearch\` once for \`lighter.deposit.prepare\`, then pass the user's amount unchanged. Deposit preparation owns its live balance and readiness preflight.
+
 | Shortcut | Runs |
 | --- | --- |
+| \`lighter_rhc_onboarding_status\` | \`lighter.account.onboarding.status\` fixed to Robinhood Chain; setup and named-trade collateral readiness only, never direct deposit sizing |
+| \`lighter_core_onboarding_status\` | \`lighter.account.onboarding.status\` fixed to Core; setup and named-trade collateral readiness only, never direct deposit sizing |
 | \`TokenFind\` | EVM token identity router: Khalani search on Khalani-covered chains, local search plus contract validation on Robinhood Chain |
 | \`TokenCheck\` | \`kyberswap__token_safety_check\` (EVM honeypot / fee-on-transfer) |
 | \`SwapQuote\` / \`SwapExecute\` | the chain's swap venue (EVM → \`kyberswap__swap_*\`, \`chain="solana"\` → \`solana__swap_*\`) |
+| \`SwapQuoteUniswap\` / \`SwapExecuteUniswap\` | \`uniswap__swap_*\` - the equal-standing EVM venue, priced straight off V2 and V3 pools |
 | \`BridgeQuote\` / \`BridgeExecute\` | the route's bridge provider, auto-selected (Khalani, or Relay to/from Robinhood Chain) |
 | \`BridgeStatus\` | \`khalani__order_get\` (with \`orderId\`) / \`khalani__orders_list\` |
 

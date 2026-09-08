@@ -37,7 +37,6 @@ import { resolveKyberSlippageBps } from "@vex-agent/tools/protocols/kyberswap/ha
 import { resolveUniswapSlippageBps } from "@vex-agent/tools/protocols/uniswap/handlers/swap/slippage.js";
 import { resolveJupiterSwapKnobs } from "@vex-agent/tools/protocols/solana-jupiter/handlers/core/swap-policy.js";
 import { resolvePendleSlippage } from "@vex-agent/tools/protocols/pendle/handlers/shared.js";
-import { resolveTradeInputs } from "@vex-agent/tools/protocols/trench/handlers/trade/shared.js";
 import { canonSlippageBpsWithDefault } from "@vex-agent/tools/protocols/prequote/slippage.js";
 import { buildRelayBridgeIdentity } from "@vex-agent/tools/protocols/prequote/identity/relay-bridge.js";
 import { computePrequoteMatchHash } from "@vex-agent/tools/protocols/prequote/identity/hash.js";
@@ -79,17 +78,6 @@ describe("an omitted slippageBps resolves to the ONE default on every venue", ()
 
   it("pendle", () => {
     expect(resolvePendleSlippage("pendle.pt.buy", undefined).bps).toBe(VEX_DEFAULT_SLIPPAGE_BPS);
-  });
-
-  it("trench express", () => {
-    const resolved = resolveTradeInputs({
-      chain: "robinhood",
-      tokenIn: "ETH",
-      tokenOut: "0x58659Ef9Be57216632BFD341FC57736a429EFB91",
-      amountIn: "0.01",
-    });
-    expect(resolved.ok).toBe(true);
-    if (resolved.ok) expect(resolved.value.slippageBps).toBe(VEX_DEFAULT_SLIPPAGE_BPS);
   });
 
   it("an explicitly supplied value is never replaced by the default", () => {

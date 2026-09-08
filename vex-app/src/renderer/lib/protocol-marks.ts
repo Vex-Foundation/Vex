@@ -20,9 +20,11 @@
  * `uniswap`, `jupiter`, `dexscreener`, `polymarket`, `solana`, `virtuals` (the
  * last two are protocol `toolId` namespaces surfaced by the transcript's tool
  * cards).
- * `polymarket` and `solana` are listed with no asset on purpose: they keep an
- * honest display label while taking the monogram until artwork lands, which is
- * a one-line change here.
+ * `polymarket`, `solana` and `trench` are listed with no asset on purpose: they
+ * keep an honest display label while taking the monogram. For `solana` that is
+ * until artwork lands; for the two RETIRED venues it is permanent - their marks
+ * were deleted with them, and the row survives only so historical rows render
+ * with their real name.
  */
 
 /** Hard bound on a venue string reaching a label or a monogram. */
@@ -59,7 +61,6 @@ const CURATED: Readonly<Record<string, CuratedProtocol>> = {
   pendle: { label: "Pendle", src: "/protocols/pendle.jpg" },
   pools: { label: "pools.fun", src: "/protocols/pools.jpg" },
   relay: { label: "Relay", src: "/protocols/relay.png" },
-  trench: { label: "Trench Express", src: "/protocols/trench.jpg" },
   uniswap: { label: "Uniswap", src: "/protocols/uniswap.png" },
   // Known venue, no bundled artwork — an honest label + the monogram.
   // Polymarket was removed from the product in Phase 1 and nothing writes it
@@ -67,6 +68,12 @@ const CURATED: Readonly<Record<string, CuratedProtocol>> = {
   // its real name instead of a bare monogram. It is deliberately NOT a feed
   // filter option (see `agent-scan/agent-scan-protocols.ts`).
   polymarket: { label: "Polymarket", src: null },
+  // Trench Express was RETIRED by migration 108 and nothing writes `trench` any
+  // more, but historical `agent_activity` rows still carry it and must keep
+  // rendering as what they are. The label says "(legacy)" so a user reading old
+  // history is not sent looking for a launchpad that is gone, and the bundled
+  // artwork went with the protocol - exactly the Polymarket shape above.
+  trench: { label: "Trench Express (legacy)", src: null },
   // `solana` is a protocol toolId NAMESPACE (solana.swap.quote …), not a venue
   // with bundled artwork. `/protocols/jupiter.jpg` is Jupiter's mark, NOT
   // Solana's — lending it here would be exactly the provenance lie this file

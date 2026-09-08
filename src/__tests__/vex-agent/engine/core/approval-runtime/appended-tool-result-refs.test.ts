@@ -204,6 +204,21 @@ describe("commitApprovedToolResult — atomicity", () => {
       expect.objectContaining({ status: "failed", resultMessageId: 4242 }),
     );
   });
+
+  it("honors an indeterminate execution-status override for unresolved money paths", async () => {
+    await commitApprovedToolResult({
+      approvalId: "appr-1",
+      sessionId: "s1",
+      toolCallId: "tc-1",
+      dispatchResult: { success: true, output: "{}" },
+      executionStatus: "indeterminate",
+    });
+
+    expect(mockCommitExecutionResultWith).toHaveBeenCalledWith(
+      txClient,
+      expect.objectContaining({ status: "indeterminate", resultMessageId: 4242 }),
+    );
+  });
 });
 
 describe("commitApprovedToolResult — late-completion fence", () => {

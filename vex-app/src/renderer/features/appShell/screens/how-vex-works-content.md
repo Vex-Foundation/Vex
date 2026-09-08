@@ -42,11 +42,13 @@ Three separate costs, and they are genuinely separate. None of them is refundabl
 
 **"Tokens" on the Runtime & Cost card are not crypto tokens.** They are the model's unit of text - roughly, words in and words out. That card is your AI bill, in dollars, on your own key.
 
-**The Vex fee, stated plainly.** Vex charges 0.25% on the operations it executes for you: token swaps on any chain (whichever venue it routed through), cross-chain bridges, Trench Express launches and trades, and pools.fun launches. **Pendle trades carry no Vex fee.** Three rules govern it:
+**The Vex fee, stated plainly.** Vex charges 0.25% on the operations it executes for you: token swaps on any chain (whichever venue it routed through), cross-chain bridges, and pools.fun launches. **Pendle trades carry no Vex fee.** Three rules govern it:
 
-- It is taken on the **input** - the asset you spend, not the one you receive. (The one exception: selling a Trench token, where the fee comes off the ETH you receive.)
+- It is taken on the **input** - the asset you spend, not the one you receive.
 - It is charged **only after the operation succeeds**. A failed, reverted, or never-broadcast attempt is never charged. At very small sizes it rounds to zero and no fee is taken at all.
 - It is **Vex's own fee**, separate from network gas, from the venue's own protocol fee, and from bridge relayer costs.
+
+**Lighter is the one venue where the fee works differently**, because it is an exchange rather than a pool. There Vex does not send itself a transfer; the exchange deducts Vex's fee from your fill: **0.1% on perpetuals and 0.25% on spot**, on both the maker and the taker side. It only applies to trades that actually fill, and it needs a one-time authorization you approve before your first Lighter order. That authorization is described under Lighter below, and you can revoke it at any time.
 
 The fee goes to the Vex treasury, which the project uses to buy back and burn $VEX - which is why that token's price sits in a small card in your left rail. You do not need to hold $VEX to use Vex, and Vex will never ask you to.
 
@@ -166,9 +168,9 @@ Three columns on one screen. Both side columns fold away to a thin strip when yo
 
 **Left rail - your sessions.** "New session" starts a fresh conversation. ALL / AGENT / MISSION tabs filter the list, and a magnifier filters it by title. Rows can be pinned or deleted (deletion is blocked while a mission runs or an approval waits - the app says which). A slim $VEX card shows the live token price. The footer avatar opens a menu: Personalize, Memory, Sessions, Agent Scan, How Vex works (this page), Settings - and the runtime status row at the bottom.
 
-**Center - the conversation.** With no session open you see the Vex mark with its PREVIEW badge, the message box below it, and three quick-action chips: "Hunt trending memecoins", "Scout Pendle yields", "Explore Trench launchpad". A chip only fills the message box and vanishes while you type; nothing sends until you press send. In a session this column is the transcript: replies stream live, every tool call is a collapsible row, and approval cards appear between the transcript and the message box.
+**Center - the conversation.** With no session open you see the Vex mark with its PREVIEW badge, the message box below it, and three quick-action chips: "Hunt trending memecoins", "Scout Pendle yields", "Explore pools.fun launchpad". A chip only fills the message box and vanishes while you type; nothing sends until you press send. In a session this column is the transcript: replies stream live, every tool call is a collapsible row, and approval cards appear between the transcript and the message box.
 
-**Right - the BOOK panel.** The instruments dashboard. With a session open it stacks: Position, Wallets, Balances, Activity, Runtime & Cost, Session, and Trench Express. Drag any card by its handle - or focus the handle and press Up or Down - to reorder them; the app remembers your order. With no session open, BOOK shows your whole Portfolio.
+**Right - the BOOK panel.** The instruments dashboard. With a session open it stacks: Position, Wallets, Balances, Activity, Runtime & Cost, Session, and Launchpad. Drag any card by its handle - or focus the handle and press Up or Down - to reorder them; the app remembers your order. With no session open, BOOK shows your whole Portfolio.
 
 ### What the states on screen mean
 
@@ -189,6 +191,28 @@ Three columns on one screen. Both side columns fold away to a thin strip when yo
 | **FAILED** | The attempt failed. Amounts are deliberately not shown, because they did not happen. |
 | **in flight - no token address yet** (My Launches) | Your launch was broadcast and no token address is proven yet. Vex will not invent one. |
 
+## Vex Studio
+
+Studio is the second shell inside Vex, for people who already work with a coding agent such as Claude Code, Codex CLI, Gemini CLI or Cursor. Flip the **Agent | Studio** switch at the top of the app (or press `Ctrl+Shift+A`) and Vex becomes a workspace: a project rail with a file explorer on the left, a terminal running real shells in tabs, a file viewer with syntax colouring, and one search box that finds projects and files together. Up to four projects stay open at once, each keeping its terminal and its expanded tree; a fifth asks you to close one first. Close Vex and reopen it and you land back on the same project, the same file tab and the same terminal.
+
+**What a project is.** A folder under `~/Vex/projects` (you can move that root in Settings before the first project exists), plus a scope you control: a **permission**, `restricted` or `full`, and one EVM wallet and one Solana wallet, or none. Restricted means every read runs freely and every fund-moving call stops at an approval card in Vex. Full means those calls run without a card, the same deliberate autonomy a Full Autonomous session has. No wallet selected means no wallet at all; nothing falls back to your primary one.
+
+**How your agent connects.** When you add a project, Vex writes one small config entry into the repository for each coding agent you tick, pointing at `vex-mcp`, a tiny bridge program that ships with Vex. It also writes four project files: `AGENTS.md` and `.vex/vex-guide.md` (the instructions every agent reads), `CLAUDE.md` (two import lines) and `.vex/protocols.md` (the tool reference). Vex verifies each file before it writes, never deletes one, and reports a file you edited as drift instead of overwriting it. Thirteen of the fifteen agents on the roster get a working setup today; Cline and Warp are named as unsupported because they only read a machine-wide file Vex will not touch.
+
+**What the agent can do.** The same 213 tools the Vex agent uses, over MCP on your own machine: balances, research, quotes, swaps on KyberSwap and Uniswap, bridges, Pendle, Morpho, Jupiter, Virtuals, pools.fun launches, Lighter perpetuals and spot trading, and plain transaction signing. Twenty-nine load at once; the rest are found by a read-only search. The Vex fee is the same 0.25% and it is printed on the card you approve. What never leaves the app: your keys, your memory, missions and the session-only tools.
+
+**Approvals from Studio.** A restricted project's fund-moving call waits for you on the ordinary approval card, for up to one hour, while the agent is told every two seconds that a person is deciding. Approve, reject or let it expire; the agent hears exactly one of seven named outcomes, each saying whether anything moved. What you approve is bound to the card you read: change the project's wallet or permission while a card waits and the card is refused; even an already-approved action is re-checked at the last moment and refused if the scope moved. Locking Vex closes the door for every connected agent and cancels what was waiting.
+
+**When it does not connect.** Studio only works while Vex is open and unlocked. If your agent says the Vex tools are unavailable, unlock Vex and try again. The bridge never retries and never guesses: it prints one sentence and exits with a code that names the problem (locked, unknown project, at capacity, wrong version, nothing listening). Copy the connection command Vex shows for the project rather than typing one.
+
+| Studio limits | |
+|---|---|
+| Connected agents | 16 at once, 4 more mid-handshake |
+| Calls waiting on a card | 32 |
+| Approval window | 1 hour, shorter if the action itself expires sooner |
+| Projects kept open | 4 |
+| Roster | 15 agents, 13 wired |
+
 ## What Vex can do
 
 Vex reaches real venues under their real names. Read-only calls run freely; anything that moves funds goes through the approval system above unless the session is Full Autonomous.
@@ -198,19 +222,19 @@ Vex reaches real venues under their real names. Read-only calls run freely; anyt
 | Where | What Vex can do there |
 | --- | --- |
 | Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Linea, Mantle, Sonic, Berachain, Ronin, Unichain, HyperEVM, Plasma, Monad, MegaETH, Robinhood Chain | Swap, via KyberSwap (18 chains) |
-| Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Robinhood Chain | Swap directly on Uniswap, as the backup route (7 chains) |
+| Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Robinhood Chain | Swap directly on Uniswap pools, an equal-standing venue next to KyberSwap (7 chains) |
 | Ethereum, Optimism, BSC, Base, Arbitrum, Mantle, Sonic, HyperEVM, Berachain, Monad, Plasma | Pendle yield trading (11 chains) |
 | Ethereum, Optimism, Unichain, Polygon, Monad, HyperEVM, Robinhood Chain, Base, Arbitrum | Morpho variable-rate lending (9 chains) |
 | Solana | Swap, lend, borrow, prediction markets, via Jupiter |
-| Robinhood Chain | Trench Express launches and curve trading |
 | Robinhood Chain | pools.fun launches, fee claims and launchpad research |
+| Ethereum (Lighter Core), Robinhood Chain (Lighter) | Perpetuals and spot trading on the Lighter exchange, funded from your own wallet |
 | More than forty chains, list fetched live from the bridge's own registry | See balances; bridge between them |
 
 ### ![Uniswap](/protocols/uniswap.png) Uniswap
-One of the oldest token-swap exchanges on Ethereum-style ("EVM") chains. Vex quotes and executes swaps directly on-chain, on Uniswap V2 and V3. It stays hidden from the agent until a KyberSwap attempt fails for a routing reason - no route, an unknown token, a refused build, or the swap itself reverting - and only then is it offered as the backup, with its own fresh quote and its own approval. Example: "Swap 0.1 ETH for USDC" - if KyberSwap has no route, Uniswap catches it.
+One of the oldest token-swap exchanges on Ethereum-style ("EVM") chains. Vex quotes and executes swaps directly on-chain, on Uniswap V2 and V3, with no aggregator in between. It is an equal-standing swap venue next to KyberSwap: KyberSwap is usually the better first choice because it aggregates many exchanges, and Uniswap is the pool itself, for when the aggregator cannot serve a pair, its quote fails, or you ask for Uniswap. Each venue gets its own fresh quote and its own approval. Example: "Swap 0.1 ETH for USDC on Uniswap."
 
 ### ![KyberSwap](/protocols/kyberswap.svg) KyberSwap
-An aggregator: it shops 18 EVM chains for the best swap price. This is Vex's primary swap venue - quotes, execution, and basic token-safety checks. Every attempt, pending or confirmed or failed, is recorded with its transaction hash (the receipt id you can look up on a block explorer). Example: "Swap 250 USDC for ETH on Base."
+An aggregator: it shops 18 EVM chains for the best swap price, so it is usually the better first choice for a swap - quotes, execution, and basic token-safety checks. Uniswap is Vex's equal-standing on-chain swap venue for when the aggregator cannot serve a pair or you want the pool itself. Every attempt, pending or confirmed or failed, is recorded with its transaction hash (the receipt id you can look up on a block explorer). Example: "Swap 250 USDC for ETH on Base."
 
 ### ![Jupiter](/protocols/jupiter.jpg) Jupiter
 The main swap router on Solana. Vex swaps Solana tokens, looks up prices, searches tokens, deposits into and withdraws from Jupiter Lend - it can even borrow against a position - and it can both browse **and trade** Jupiter Predict prediction markets, buying, selling, claiming and closing. Everything except the reads moves real money and goes through approval. Example: "Put half my SOL into USDC."
@@ -230,16 +254,8 @@ An intent bridge: you say what should move where, and Khalani works out the rout
 ### ![Virtuals](/logo/virtuals.svg) Virtuals
 A launchpad (a site where new tokens are first offered) for AI-agent tokens. Vex uses it read-only, to discover new launches. Example: "Any interesting new agent tokens on Virtuals this week?"
 
-### ![Trench Express](/protocols/trench.jpg) Trench Express
-A bonding-curve launchpad on Robinhood Chain, where a token's price is set by a formula that moves as people buy and sell. Vex can browse and search new tokens, read their trade tape, buy and sell them on the curve, and launch a token of your own. All three spend real money. On curve trades two separate fees apply: the launchpad's own 1% curve fee (charged by Trench itself, like any venue's protocol fee) and Vex's 0.25% on the ETH side - the quote you approve shows both.
-
-- **Launching** goes: you (or Vex) open the launch form → a preview card shows the exact amount, the Vex fee and the estimated gas → you deploy. **The form is the approval** - there is no second card afterwards, so read it before you submit.
-- The picture is stored inside the launch transaction, so its size is gas you pay. Vex optimizes and square-crops every image you add to the **Trench Photos** locker (the Trench Express card in the BOOK panel, which is also where "Launch a token" lives) and tells you the resulting size.
-- **My Launches**, inside the launch dialog, lists what you have launched. A launch that has been broadcast but not yet confirmed says "in flight - no token address yet" rather than pretending a token exists.
-- Trades on the curve go through the ordinary approval card and the ordinary price check. On a sell, if Vex cannot decode what you actually received, it takes **no fee at all** rather than charging a percentage of a guess.
-
 ### ![pools.fun](/protocols/pools.jpg) pools.fun
-A second launchpad on Robinhood Chain, built a different way from Trench: there is no bonding curve and no graduation moment. At launch the whole token supply goes straight into a SushiSwap V3 pool and the position is locked there permanently, so the token trades in a real pool from its first block. Every pool charges a 1% fee of its own. Two launchers share this chain, so Vex always says which one a token came from, and it identifies tokens by address - symbols are not unique and copycats are common.
+The launchpad on Robinhood Chain. There is no bonding curve and no graduation moment. At launch the whole token supply goes straight into a SushiSwap V3 pool and the position is locked there permanently, so the token trades in a real pool from its first block. Every pool charges a 1% fee of its own. Two launchers share this chain, so Vex always says which one a token came from, and it identifies tokens by address - symbols are not unique and copycats are common.
 
 - **Research** costs nothing: Vex browses and screens the launchpad, searches by name or symbol, pulls price candles, deep-reads a single token, and lists the launches made from your own wallet.
 - **Launching** uses the pools.fun gateway, and Vex never signs what the gateway hands it on trust. It decodes the transaction first and checks it line by line against what you asked for: the name and symbol, the paired asset, the deployment fee against the contract's own current bounds, the prebuy amount, and the destination. Anything that does not match is refused rather than signed.
@@ -249,6 +265,21 @@ A second launchpad on Robinhood Chain, built a different way from Trench: there 
 - **Claiming** collects the trading fees your locked position has earned. They arrive as two amounts, your own token and the asset it is paired with, and Vex simulates the claim first so the approval card shows both before you agree to it.
 - **Trading a pools.fun token needs no new venue.** Because the token sits in an ordinary Sushi V3 pool, Vex quotes and trades it through **KyberSwap** with the usual approval card, and researches the pool itself on **DexScreener**.
 - Prices, market caps and volumes from the launchpad's own feed are for reading, not for deciding - the number you approve always comes from the trading venue's quote.
+
+### ![Lighter](/protocols/lighter.svg) Lighter
+An order-book exchange for **perpetuals** (a contract that tracks an asset's price with no expiry date) and spot, running as two separate venues: **Lighter Core**, which settles in USDC on Ethereum, and **Lighter on Robinhood Chain**, which settles in USDG. They are two different accounts with two different balances, and Vex never mixes them up or moves money between them on its own.
+
+**What you can do.** Read markets, order books, recent trades, candles and your own positions and order history; preview an order before committing to it; place market, limit and reduce-only protective orders; attach one stop-loss and one take-profit to an existing position as a single linked pair; cancel one order, change one order, cancel everything at once, or close a position fully. On the account side Vex can deposit from your wallet, withdraw, and claim a completed withdrawal. Example: "Show me my Lighter positions and what a 0.1 ETH long would cost."
+
+**Getting set up takes three approvals, once.** Trading on Lighter needs a funded exchange account, a trading key, and a fee authorization. Vex walks you through all three, and each one is its own approval card you read and accept: a **deposit** from your own wallet into your own Lighter account, a **trading key** that Vex generates locally so it can sign your orders, and the **fee authorization** below. Nothing is done in the background and no step is bundled into another.
+
+**Vex never holds your exchange key outside the vault.** The Lighter trading key is generated on your machine and stored in your encrypted vault, exactly like your wallet key. It is decrypted only inside Vex's privileged process at the moment it signs an order you already approved. It never appears in a tool result, in a log, in the database, or in anything the model can read.
+
+**Every order needs your approval, every time.** The fee authorization is not permission to trade. Each order, each cancel, each change, each close, each deposit and each withdrawal raises its own approval card with the exact market, side, size, price and account on it, and Vex re-reads the live market and your live position immediately before signing. If anything moved, it refuses rather than sending a different order than the one you agreed to.
+
+**The fee authorization also changes your account tier, and here is why.** Lighter charges Vex's fee itself rather than letting Vex send a transfer, so it needs a standing authorization naming the rate: 0.1% on perpetuals and 0.25% on spot, maker and taker. From September 14, 2026, Lighter refuses trades carrying an integrator fee from a **Standard** account, so the same approval also upgrades your account: to **Plus** on Lighter Core, and to **Premium** on Robinhood Chain, which has no Plus tier. The card shows the exchange's own fees before and after the change next to Vex's, and states that the change applies to that wallet's Lighter account and its subaccounts. This is a real change on Lighter's side, not a Vex setting: Vex does not switch it back, you can change the account type yourself in the Lighter app, an upgrade takes effect immediately, and a downgrade is allowed once 24 hours have passed since the last change. The authorization runs for ten years and **you can revoke it at any time**; revoking stops future fee-bearing orders and cannot change an order already submitted.
+
+**What Vex will not do here.** TWAP orders, one-triggers-the-other and one-triggers-one-cancels-other brackets, and opening a position with protection attached in the same step are not supported and are not faked. Vex says so instead of approximating them. A deposit is also never treated as done from the settlement-chain receipt alone: Vex waits for Lighter's own evidence that the exact transaction was credited.
 
 ### ![Relay](/protocols/relay.png) Relay bridge
 A bridge that needs no account or key of its own - that is all "keyless" means here. It still moves your money with your wallet's signature, and it still asks for your approval. Used for certain cross-chain moves.

@@ -200,9 +200,10 @@ export async function poolsLaunchAssetsHandler(
     note:
       "pricingMode is read from the launch factory itself and decides how a launch on this pair must be "
       + "prepared: CHAINLINK_STOCK and CORE_CHAINLINK launches carry an EMPTY price attestation, while "
-      + "SIGNED_STOCK requires a backend-signed quote the factory accepts only 30 to 120 seconds after it "
-      + "was observed, so a launch on one of those must be prepared, verified and broadcast inside that "
-      + "window. These rows carry no decimals: read them on-chain when an amount has to be rendered.",
+      + "SIGNED_STOCK requires a backend-signed quote that is valid only for its pair's own quote window, "
+      + "which the factory allows to be configured between 30 and 120 seconds (there is no minimum age: a "
+      + "fresh quote is usable at once), so a launch on one of those must be prepared, verified and broadcast "
+      + "inside that window. These rows carry no decimals: read them on-chain when an amount has to be rendered.",
   });
 }
 

@@ -2,7 +2,7 @@
 
 > All protocol-specific SDK wrappers, API clients, and on-chain utilities. Each subfolder is a self-contained integration with its own types, validation, and client layer. vex-agent tools (`src/vex-agent/tools/protocols/`) consume these clients.
 >
-> **Last updated: 2026-07-22 (Agent Scan Phase 1)**
+> **Last updated: 2026-09-07 (Lighter row rewritten for the full trading surface; other rows predate this pass)**
 >
 > **LLM maintainers:** If you add/remove a protocol or change a module's scope, update this file AND the subfolder's own .md doc.
 
@@ -13,7 +13,7 @@
 | Folder | Protocol / Service | Chain | Files | Docs |
 |--------|--------------------|-------|-------|------|
 | `dexscreener/` | DexScreener analytics (REST + WS) | Multi-chain | 5 | [DexScreener.md](dexscreener/DexScreener.md) |
-| `trench-express/` | Trench Express launchpad — P1 read client (tokens/token/search/trades/stats) | RBC 4663 | 8 | [TrenchExpress.md](trench-express/TrenchExpress.md) |
+| `lighter/` | Lighter perpetuals venue, full trading surface: public market data (REST + WebSocket), authenticated account reads, order preview/create/modify/cancel/cancel-all, native OCO protection and full-position close, managed onboarding and approval-gated deposits, local trading-credential key registration, Vex fee authorization, and secure withdrawals with settlement claims. Includes the packaged Go signer runtime (`signer-runtime/`) that holds every signing path out of Node. | Core + RHC | 58 | [Lighter.md](lighter/Lighter.md) |
 | `khalani/` | Khalani cross-chain bridge (40+ chains) | Multi-chain | 7 | [Khalani.md](khalani/Khalani.md) |
 | `kyberswap/` | KyberSwap aggregator swaps (limit orders + ZaaS deleted, Agent Scan Phase 1) | 19 EVM chains | 23 | [KyberSwap.md](kyberswap/KyberSwap.md) |
 | `uniswap/` | Direct on-chain swap quote/execute — hidden pair, reveal-gated behind KyberSwap | EVM | 12 | (no dedicated doc yet) |
@@ -72,6 +72,8 @@ extension shape.)
 | Khalani | https://khalani.gitbook.io/khalani-docs |
 | KyberSwap | https://docs.kyberswap.com/ |
 | DexScreener | https://docs.dexscreener.com/api/reference |
+| Lighter Core | https://apidocs.lighter.xyz/ |
+| Lighter RHC | https://apidocs.rh.lighter.xyz/ |
 
 ---
 

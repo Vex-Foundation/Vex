@@ -22,7 +22,7 @@
 
 import { defineChain, type Chain } from "viem";
 import type { QuoteAssetPolicy } from "../dexscreener/best-liquidity-price.js";
-import { loadConfig } from "../../config/store.js";
+import { resolveRpcEndpoints } from "./rpc-endpoints.js";
 
 /** Only EVM (eip155) chains live here today. Kept explicit for future families. */
 export type LocalChainFamily = "eip155";
@@ -46,8 +46,6 @@ export interface LocalChainConfig {
   /** Lowercase alias tokens accepted by the inclusive resolver (never fed to Khalani). */
   aliases: readonly string[];
   nativeCurrency: { name: string; symbol: string; decimals: number };
-  /** Bundled default public RPC. A user override may replace it (see `getLocalChainRpcUrl`). */
-  defaultRpcUrl: string;
   explorerUrl: string;
   /** Canonical Multicall3 (same deterministic-deploy address on every EVM chain). */
   multicall3: `0x${string}`;
@@ -99,7 +97,6 @@ const ROBINHOOD_CHAIN: LocalChainConfig = {
   family: "eip155",
   aliases: ["robinhood", "robinhoodchain", "rhc"],
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  defaultRpcUrl: "https://rpc.mainnet.chain.robinhood.com",
   explorerUrl: "https://robinhoodchain.blockscout.com",
   // Canonical Multicall3 (Deterministic Deployment Proxy address, present on
   // 4663 — verified 2026-07-05 via balanceOf/decimals/symbol batch). NOT the
@@ -162,17 +159,24 @@ export function resolveLocalChainId(input: string): number | undefined {
 }
 
 /**
- * Resolve the RPC URL for a local chain: an optional user override from config
- * wins, otherwise the bundled default. The override is user-supplied and
- * validated as a plain http(s) URL — never a bundled key, never trusted blindly.
+ * The FIRST endpoint the shared RPC owner resolves for a local chain: the user's
+ * own override when they configured one, otherwise the leading bundled entry.
+ *
+ * This is the chain's `rpcUrls.default.http[0]` METADATA, not the transport. A
+ * client built here reaches every endpoint on the chain through
+ * `buildEvmTransport`; this single url exists because viem's `Chain` type wants
+ * one and because a caller that needs a plain url (the bridge verifier's
+ * candidate list) needs the same answer the transport would start with.
  */
 export function getLocalChainRpcUrl(config: LocalChainConfig): string {
-  const override = loadConfig().localChainRpcUrls?.[String(config.id)];
-  if (typeof override === "string") {
-    const trimmed = override.trim();
-    if (/^https?:\/\/\S+$/i.test(trimmed)) return trimmed;
+  const endpoints = resolveRpcEndpoints(config.id);
+  const first = endpoints[0];
+  if (first === undefined) {
+    throw new Error(
+      `No RPC endpoint is bundled or configured for local chain ${config.id} (${config.name}).`,
+    );
   }
-  return config.defaultRpcUrl;
+  return first.url;
 }
 
 /**

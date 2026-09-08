@@ -23,7 +23,7 @@ const CURSOR_TS_EXPR = `to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH2
  *
  * The problem it fixes: on the venues that charge the fee as its own on-chain
  * transfer (relay/khalani bridges, Uniswap, Trench trade and launch, and since
- * migration 102 the venue-independent `vex_fee` leg) the fee lives on a SIBLING
+ * migration 107 the venue-independent `vex_fee` leg) the fee lives on a SIBLING
  * leg row, and that leg is not a feed row - so the logical row the user and the
  * agent actually read reported no fee at all.
  *
@@ -160,7 +160,7 @@ export function buildActivityHalf(
     // its own feed row) OR — for a bridge logical row only — when ANY sibling
     // leg of the same execution carries the hash, so `AgentScan txHash=` finds
     // a bridge by a deposit / refund / extra-fill hash and returns the logical
-    // row with its legs (Codex FIX-ROUND-1 m7). The EXISTS is gated on the
+    // row with its legs (fix round 1, m7). The EXISTS is gated on the
     // logical role so it never widens a swap leg's own-hash match.
     const txHashParam = push(txHash);
     activityConds.push(
@@ -191,7 +191,7 @@ export function buildActivityHalf(
   // losses. The vocabulary-lockstep test beside this file now fails the build
   // when a migration adds a kind these feeds do not know.
   activityConds.push(
-    "(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'wrap' OR kind = 'yield' OR kind = 'launch' OR kind = 'claim' OR kind = 'transfer' OR kind = 'transaction' OR event_role = 'bridge_fill_expected')",
+    "(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'wrap' OR kind = 'yield' OR kind = 'launch' OR kind = 'claim' OR kind = 'transfer' OR kind = 'exchange' OR kind = 'transaction' OR event_role = 'bridge_fill_expected')",
   );
   // LEG roles are not feed rows. The kind↔role CHECK (migrations 050/063/066)
   // admits approval legs on the swap/yield/launch arms and Vex fee legs
@@ -204,7 +204,7 @@ export function buildActivityHalf(
   // above, so without this exclusion the generic lane's fee transfer would
   // render as a standalone signed transaction beside the one it charges for.
   // The parent still reports the charge, through the fee lateral above.
-  // `vex_fee` (migration 102) is the venue-independent name for that same leg on
+  // `vex_fee` (migration 107) is the venue-independent name for that same leg on
   // the swap, bridge and launch arms, so it is excluded here and folded there
   // for exactly the same reason. Adding it to only ONE of the two lists is the
   // failure mode this pairing exists to prevent: excluded but not folded hides a
@@ -228,6 +228,7 @@ export function buildActivityHalf(
   else if (productType === "launch") activityConds.push("kind = 'launch'");
   else if (productType === "claim") activityConds.push("kind = 'claim'");
   else if (productType === "transfer") activityConds.push("kind = 'transfer'");
+  else if (productType === "exchange") activityConds.push("kind = 'exchange'");
   else if (productType === "transaction") activityConds.push("kind = 'transaction'");
   else if (productType !== undefined) activityConds.push("FALSE");
   const activityKeyset = keysetPredicate(0, cursor, tsParam, rankParam, idParam);
@@ -255,6 +256,7 @@ export function buildActivityHalf(
         -- render it as a spot trade, stating a route, a price and a
         -- counterparty that moving your own funds to an address never had.
         WHEN kind = 'transfer' THEN 'transfer'
+        WHEN kind = 'exchange' THEN 'exchange'
         -- A GENERIC SIGNED TRANSACTION is its own product (migration 087). The
         -- ELSE arm would render an approval or an arbitrary contract call as a
         -- spot trade; the transfer arm would claim one asset leg left the

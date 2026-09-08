@@ -20,7 +20,7 @@ export const POOLS_NAVIGATION: ProtocolNamespaceNavigation = {
   whenToUse:
     "Use when the user names pools.fun, asks what just launched on Robinhood Chain, or wants to vet, launch, or collect fees on one: screen or search the launchpad, read one token against the chain, read its candles, review their own launches, claim the creator fees a launch earned, or launch a token. Only the claim and the launch spend; everything else is read-only.",
   preferInstead:
-    "Use `kyberswap` to QUOTE AND TRADE these tokens - they trade in ordinary SushiSwap V3 pools on Robinhood Chain that KyberSwap routes, so this namespace deliberately has no swap tool. Use `dexscreener` for pair-level liquidity research (these pools are indexed there as dexId sushiswap, label v3, chain robinhood). `trench` is a DIFFERENT launchpad on the same chain: it has a bonding curve and a graduation step, while pools.fun has neither, so their tokens never overlap.",
+    "Use `kyberswap` to QUOTE AND TRADE these tokens - they trade in ordinary SushiSwap V3 pools on Robinhood Chain that KyberSwap routes, so this namespace deliberately has no swap tool. Use `dexscreener` for pair-level liquidity research (these pools are indexed there as dexId sushiswap, label v3, chain robinhood).",
   declaration: {
     identity: "pools.fun is a no-curve launchpad whose tokens open directly in a real SushiSwap V3 pool with no graduation step.",
     read: "Browse the pools.fun launchpad and new pools fun launches, search by name or symbol, read price history and full detail for one token, inspect my launches on the Robinhood launchpad, and read creator-fee state.",
@@ -141,17 +141,27 @@ export const POOLS_NAVIGATION: ProtocolNamespaceNavigation = {
     {
       label: "Fees to holders",
       summary:
-        "Read what a fees-to-holders token owes ONE wallet: the distributor the suite's own deployer emitted, "
-        + "the reward mode, and the wallet's earned balance per reward leg at a pinned block, with the "
-        + "launchpad's own figures shown beside them. Earned by HOLDING, not by launching and not by staking; "
-        + "the claim is a separate tool and this one signs nothing.",
-      toolPrefixes: ["pools.holder_rewards"],
+        "Read, claim and push the fees a pools.fun token streams to the wallets that HOLD it. The read answers "
+        + "for ONE wallet: the distributor the suite's own deployer emitted, the reward mode, and the wallet's "
+        + "earned balance per reward leg at a pinned block, with the launchpad's own figures shown beside them, "
+        + "and it signs nothing. Earned by HOLDING, not by launching and not by staking - a different person's "
+        + "money from the creator fees above. The claim pays the wallet that signs it and Vex charges nothing "
+        + "for it; the distribute is permissionless, pays the token's holders rather than its caller, and is "
+        + "how a stalled reward stream is restarted.",
+      toolPrefixes: [
+        "pools.holder_rewards",
+        "pools.holder_rewards_claim",
+        "pools.holder_rewards_distribute",
+      ],
       hints: [
         "fees to holders",
         "what have I earned holding this coin",
         "does this coin pay its holders",
         "holder rewards distributor",
         "what the distributor owes my wallet",
+        "claim my holder rewards",
+        "push this token's fees to its holders",
+        "trigger the reward distribution",
       ],
     },
   ],

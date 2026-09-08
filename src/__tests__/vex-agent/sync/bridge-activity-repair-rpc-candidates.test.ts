@@ -18,6 +18,17 @@
  * SSRF owner); only the registries and the RPC client are scripted, so what is
  * asserted is the candidate SET, its ORDER, and that a refusing endpoint no
  * longer ends the search.
+ *
+ * CONTRACT CHANGE, 2026-09-05. The verifier's two private curated lookups (the
+ * user override map and the local chain registry) were replaced by ONE call to
+ * the shared RPC owner, `@tools/evm-chains/rpc-endpoints.js`. The curated tier
+ * is therefore no longer "the user's endpoints plus 4663" but "the user's
+ * endpoints plus every measured bundled endpoint for this chain id", which is
+ * why the defect above cannot recur: 42161 now arrives here carrying
+ * `arb1.arbitrum.io/rpc` without this module knowing that url. The mock below
+ * scripts that ONE source, in place of the two it replaced; everything else -
+ * the order, the SSRF split, the chain-id echo, the deduplication - is
+ * unchanged and still asserted.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -46,17 +57,13 @@ vi.mock("viem", () => ({
   },
 }));
 
-let userOverrides: string[] = [];
-let localChainUrl: string | null = null;
+/** What the shared RPC owner resolves for the chain under test: user tier then bundled. */
+let curatedUrls: string[] = [];
 let khalaniUrl: string | null = null;
 let relayUrl: string | null = null;
 
-vi.mock("@config/chain-rpc-overrides.js", () => ({
-  getUserRpcOverridesForChain: () => userOverrides,
-}));
-vi.mock("@tools/evm-chains/registry.js", () => ({
-  getLocalChain: () => (localChainUrl === null ? null : { id: 4663 }),
-  getLocalChainRpcUrl: () => localChainUrl ?? "",
+vi.mock("@tools/evm-chains/rpc-endpoints.js", () => ({
+  resolveRpcEndpoints: () => curatedUrls.map((url) => ({ url, tier: "bundled" })),
 }));
 vi.mock("@tools/khalani/chains.js", () => ({
   getCachedKhalaniChains: async () =>
@@ -99,8 +106,7 @@ function input(overrides: Partial<{ expectedChainId: number; protocol: string }>
 beforeEach(() => {
   probed.length = 0;
   byUrl.clear();
-  userOverrides = [];
-  localChainUrl = null;
+  curatedUrls = [];
   khalaniUrl = null;
   relayUrl = null;
 });
@@ -126,9 +132,10 @@ describe("the destination chain is looked up in EVERY registry the app trusts", 
     expect(probed).toEqual(["https://khalani.example/arb"]);
   });
 
-  it("the full order is user override, local registry, Khalani, Relay, viem - deduplicated", async () => {
-    userOverrides = ["https://mine.example"];
-    localChainUrl = "https://local.example";
+  it("the full order is the shared owner's list, then Khalani, Relay, viem - deduplicated", async () => {
+    // The first two are what `resolveRpcEndpoints` returns: the user's own
+    // endpoint at index 0, then the bundled entry for the chain.
+    curatedUrls = ["https://mine.example", "https://local.example"];
     khalaniUrl = VIEM_ARBITRUM_DEFAULT; // the same endpoint viem ships; probed once, not twice.
     relayUrl = PUBLICNODE;
     for (const url of ["https://mine.example", "https://local.example", VIEM_ARBITRUM_DEFAULT, PUBLICNODE]) {
@@ -145,7 +152,9 @@ describe("the destination chain is looked up in EVERY registry the app trusts", 
   });
 
   it("a user override is used AS CONFIGURED - a private local archive node is a supported setup", async () => {
-    userOverrides = ["http://127.0.0.1:8545"]; // would fail the SSRF filter; it is the app's own config.
+    // The shared resolver puts the user's endpoint first and does not
+    // SSRF-filter it: it is the app's own config, not provider input.
+    curatedUrls = ["http://127.0.0.1:8545"];
     byUrl.set("http://127.0.0.1:8545", { chainId: 42161, receiptStatus: "success" });
 
     expect(await verifyBridgeLegOnChain(input())).toEqual({ verified: true });
@@ -162,8 +171,11 @@ describe("the destination chain is looked up in EVERY registry the app trusts", 
   });
 
   it("viem's bundled list is looked up BY ID: 4663 is not in it, so that source contributes nothing", async () => {
-    // The local registry owns 4663 (Robinhood Chain) and viem has never heard of
-    // it - the bundled source is a bonus for public chains, never a requirement.
+    // With no curated entry and no provider registry entry for 4663, viem's
+    // bundled definition is the last source, and it has never heard of the
+    // chain - the bundled source is a bonus for public chains, never a
+    // requirement. (In production the shared owner DOES carry 4663; this case
+    // isolates the viem source by scripting the curated tier empty.)
     expect(await verifyBridgeLegOnChain(input({ expectedChainId: 4663 }))).toEqual({
       verified: false,
       reason: "no_safe_rpc",

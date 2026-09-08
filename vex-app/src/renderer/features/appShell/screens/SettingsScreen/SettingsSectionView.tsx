@@ -2,7 +2,8 @@
  * One section's calm full-page view: the wizard step form in back-edit
  * mode (saving returns to the register via `onAdvance`). The Wallets
  * section appends the ONLY surface in the app offering per-chain
- * private-key export.
+ * private-key export. Sections without a wizard step render their own
+ * integration view instead of a step form.
  */
 
 import { useState, type JSX } from "react";
@@ -18,6 +19,7 @@ import {
   WalletsStep,
 } from "../../../wizard/index.js";
 import { ExportPrivateKeyModal } from "../../../wallets/ExportPrivateKeyModal.js";
+import { LighterPointsSection } from "./LighterPointsSection.js";
 import type { SectionMeta } from "./settings-sections.js";
 import { SuperboardKeySection } from "./SuperboardKeySection.js";
 
@@ -44,25 +46,29 @@ export function SettingsSectionView({
       className="mx-auto flex w-full max-w-[680px] flex-col gap-4"
       data-vex-settings-section={meta.id}
     >
-      {meta.id === "superboardKey" ? (
-        <SuperboardKeySection />
-      ) : meta.stepId !== undefined ? (
-        renderSectionForm(meta.stepId, stepProps)
-      ) : null}
+      {renderSectionContent(meta, stepProps)}
       {meta.id === "wallets" ? <ExportPrivateKeySection env={env} /> : null}
     </div>
   );
 }
 
-function renderSectionForm(
-  stepId: Exclude<SectionMeta["stepId"], undefined>,
+function renderSectionContent(
+  meta: SectionMeta,
   props: {
     readonly completedSteps: ReadonlyArray<WizardStepId>;
     readonly onAdvance: (next: WizardStepId) => void;
     readonly flowMode: "back-edit";
   },
-): JSX.Element {
-  switch (stepId) {
+): JSX.Element | null {
+  switch (meta.id) {
+    case "superboardKey":
+      return <SuperboardKeySection />;
+    case "lighterPoints":
+      return <LighterPointsSection />;
+  }
+  switch (meta.stepId) {
+    case undefined:
+      return null;
     case "keystore":
       return <KeystoreStep {...props} />;
     case "wallets":

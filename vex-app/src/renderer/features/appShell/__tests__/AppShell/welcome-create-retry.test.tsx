@@ -32,6 +32,10 @@ vi.mock("../../screens/SettingsScreen.js", () => ({
   SettingsScreen: () => null,
 }));
 
+vi.mock("../../lighterTrading/LighterTradingDialog.js", () => ({
+  LighterTradingDialog: () => null,
+}));
+
 // Every brand mark stubs to null, whatever its name: the marks are
 // presentation-only here, and a hand-listed mock breaks the whole suite
 // file each time a component references a new mark.

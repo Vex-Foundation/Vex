@@ -41,6 +41,7 @@ const SALT = `0x${"7a".repeat(32)}` as Hex;
 const CALLDATA = `0x${"cd".repeat(64)}` as Hex;
 const FINGERPRINT = `0x${"ef".repeat(32)}` as Hex;
 const TX_HASH = `0x${"ab".repeat(32)}` as Hex;
+const METADATA_URI = "ipfs://meta";
 
 const SESSION = { sessionId: "sess-1", walletAddress: WALLET };
 const OTHER_SESSION = { sessionId: "sess-2", walletAddress: WALLET };
@@ -54,27 +55,73 @@ const INPUTS: PoolsLaunchInputs = {
   feeRecipient: { kind: "session_wallet" },
 };
 
+/**
+ * A decoded launch tuple with NO signed price quote - the WETH shape.
+ *
+ * All-zero is a real value here rather than an absence: the gateway takes the
+ * attestation struct by value, so a pair that needs no signed quote carries six
+ * zeroes and an empty signature. The fingerprint window reads these fields to
+ * decide how long a prepared launch may sit (a signed quote lives for seconds,
+ * not minutes), so a fixture that omitted them would exercise a different code
+ * path from every real launch.
+ */
+function launchTuple(
+  over: Partial<planModule.PoolsLaunchPlan["tuple"]> = {},
+): planModule.PoolsLaunchPlan["tuple"] {
+  return {
+    name: "Vex Flamingo",
+    symbol: "VEXFLAM",
+    metadataUri: METADATA_URI,
+    userSalt: SALT,
+    pairedAsset: WETH,
+    expectedStartTick: -207_240,
+    // Twenty minutes out, so the gateway's own deadline is never the tightest
+    // clock in a test that is not about deadlines.
+    deadline: BigInt(Math.floor(Date.now() / 1000) + 20 * 60),
+    feeRecipient: WALLET,
+    nativeDevBuyAmount: 10_000_000_000_000_000n,
+    erc20DevBuyAmountIn: 0n,
+    devBuyMinOut: 1n,
+    expectedFeeWei: 1_051_674_002_092_832n,
+    priceAttestation: {
+      asset: WETH,
+      underlyingPriceUsdE18: 0n,
+      expectedUiMultiplier: 0n,
+      observedAt: 0n,
+      expiresAt: 0n,
+      pricingEpoch: 0n,
+    },
+    priceSignature: "0x" as Hex,
+    ...over,
+  };
+}
+
 function plan(): planModule.PoolsLaunchPlan {
   return {
     call: { chainId: POOLS_CHAIN_ID, to: GATEWAY, data: CALLDATA, valueWei: 1_061_674_002_092_832n, fingerprint: FINGERPRINT },
-    tuple: {} as never,
+    tuple: launchTuple(),
     feeLeg: null,
     anchors: {} as never,
     predictedPoolAddress: POOL,
-    metadataUri: "ipfs://meta",
+    metadataUri: METADATA_URI,
     imageLanded: true,
     gas: { limit: 0n, priceWei: 0n, boundWei: 0n },
     simulateOnly: false,
     binding: {
       name: "Vex Flamingo",
       symbol: "VEXFLAM",
-      metadataUri: "ipfs://meta",
+      metadataUri: METADATA_URI,
       imageUrl: "https://example.test/f.png",
       imageId: "img-1",
       chainId: POOLS_CHAIN_ID,
       gateway: GATEWAY,
       pairedAsset: "weth",
       pairedAssetAddress: WETH,
+      // A WETH launch keeps its own fee stream, so there is no holders intent
+      // to record. Present as null rather than absent: the binding is what the
+      // audit reads, and a missing field there cannot be told from an unwritten
+      // one.
+      holderRewards: null,
       predictedTokenAddress: TOKEN,
       userSalt: SALT,
       deploymentFeeWei: "1051674002092832",
@@ -299,5 +346,75 @@ describe("cancel drops the handle", () => {
     const cancelled = await cancelPoolsLaunch(OTHER_SESSION, { fingerprintId });
     expect(cancelled.ok && cancelled.value.cancelled).toBe(false);
     expect(preparedLaunchCount()).toBe(1);
+  });
+});
+
+/**
+ * THE HOLDERS SHAPE, end to end through the desktop lane.
+ *
+ * A fees-to-holders launch is the one case where the address that was SIGNED and
+ * the address the fees actually reach are different, by construction: the tuple
+ * carries the gateway's `FEES_TO_HOLDERS*` sentinel and the gateway resolves it
+ * to the distributor it deploys inside the same transaction. Both halves of the
+ * lane have to respect that - the confirmation screen must not present a
+ * sentinel as somebody's wallet, and the deployed result must report the address
+ * the receipt proved rather than the constant that was signed.
+ */
+describe("a fees-to-holders launch names the sentinel before, and the distributor after", () => {
+  /** `gateway.FEES_TO_HOLDERS_BOTH()`, measured on the V3 gateway 2026-09-04. */
+  const SENTINEL_BOTH = getAddress("0x968b0c1e896fb1ddb2042957fc0614c67ab7ffc4");
+  const DISTRIBUTOR = getAddress("0xbcD65C71dff8c71B199013dc9E5eAEBf86A4fF73");
+
+  function holdersPlan(): planModule.PoolsLaunchPlan {
+    const base = plan();
+    return {
+      ...base,
+      tuple: launchTuple({ feeRecipient: SENTINEL_BOTH }),
+      binding: {
+        ...base.binding,
+        feeRecipient: SENTINEL_BOTH,
+        holderRewards: { mode: "both", sentinel: SENTINEL_BOTH },
+      },
+    };
+  }
+
+  it("stage 1 hands the confirmation the MODE and the sentinel, not a wallet", async () => {
+    vi.spyOn(planModule, "buildPoolsLaunchPlan").mockResolvedValue({ ok: true, plan: holdersPlan() });
+    const prepared = await preparePoolsLaunch(SESSION, {
+      ...INPUTS,
+      feeRecipient: { kind: "holders", mode: "both" },
+    });
+    if (!prepared.ok) throw new Error(`stage 1 refused: ${prepared.refusal.message}`);
+    expect(prepared.value.holderRewards).toEqual({ mode: "both", sentinel: SENTINEL_BOTH });
+    // The sentinel IS what the calldata carries, so it is reported as the
+    // resolved recipient of the signed bytes - and the screen renders the mode
+    // beside it rather than presenting it as a wallet.
+    expect(prepared.value.resolvedFeeRecipient).toBe(SENTINEL_BOTH);
+  });
+
+  it("stage 2 reports the DISTRIBUTOR the receipt proved, never the sentinel that was signed", async () => {
+    vi.spyOn(planModule, "buildPoolsLaunchPlan").mockResolvedValue({ ok: true, plan: holdersPlan() });
+    vi.spyOn(broadcastModule, "broadcastPoolsLaunch").mockResolvedValue({
+      success: true,
+      output: "launched",
+      data: {
+        status: "confirmed",
+        txHash: TX_HASH,
+        tokenAddress: TOKEN,
+        poolAddress: POOL,
+        // What the gateway actually emitted, after resolving the sentinel.
+        feeRecipient: DISTRIBUTOR,
+        _executionId: 9,
+      },
+    });
+    const prepared = await preparePoolsLaunch(SESSION, {
+      ...INPUTS,
+      feeRecipient: { kind: "holders", mode: "both" },
+    });
+    if (!prepared.ok) throw new Error(`stage 1 refused: ${prepared.refusal.message}`);
+    const deployed = await deployPoolsLaunch(SESSION, { fingerprintId: prepared.value.fingerprintId });
+    if (!deployed.ok) throw new Error(`deploy refused: ${deployed.refusal.message}`);
+    expect(deployed.value.resolvedFeeRecipient).toBe(DISTRIBUTOR);
+    expect(deployed.value.resolvedFeeRecipient).not.toBe(SENTINEL_BOTH);
   });
 });

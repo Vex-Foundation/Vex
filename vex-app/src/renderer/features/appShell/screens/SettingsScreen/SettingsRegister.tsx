@@ -40,8 +40,9 @@ export function SettingsRegister({
   return (
     <div className="mx-auto w-full max-w-[680px]">
       <p className="mb-6 text-[13px] leading-[20px] text-ink-secondary">
-        Everything Vex runs on lives in these sections - keys, wallets,
-        and the model. Changes save to this machine only.
+        Everything Vex runs on lives in these sections - keys, wallets, the
+        model, the Superboard key, and Lighter points. Changes save to this
+        machine only.
       </p>
       <ul className="flex flex-col" data-vex-settings-register>
         {SETTINGS_SECTIONS.map((meta) => {

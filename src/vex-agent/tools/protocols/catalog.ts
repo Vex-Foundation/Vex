@@ -35,14 +35,14 @@ import { RELAY_TOOLS } from "./relay/manifest.js";
 import { RELAY_HANDLERS } from "./relay/handlers.js";
 import { DEXSCREENER_TOOLS } from "./dexscreener/manifest.js";
 import { DEXSCREENER_HANDLERS } from "./dexscreener/handlers.js";
+import { LIGHTER_TOOLS } from "./lighter/manifest.js";
+import { LIGHTER_HANDLERS } from "./lighter/handlers.js";
 import { VIRTUALS_TOOLS } from "./virtuals/manifest.js";
 import { VIRTUALS_HANDLERS } from "./virtuals/handlers.js";
 import { PENDLE_TOOLS } from "./pendle/manifest.js";
 import { PENDLE_HANDLERS } from "./pendle/handlers.js";
 import { MORPHO_TOOLS } from "./morpho/manifest.js";
 import { MORPHO_HANDLERS } from "./morpho/handlers.js";
-import { TRENCH_TOOLS } from "./trench/manifest.js";
-import { TRENCH_HANDLERS } from "./trench/handlers.js";
 import { POOLS_TOOLS } from "./pools/manifest.js";
 import { POOLS_HANDLERS } from "./pools/handlers.js";
 import { LAUNCHPADS_TOOLS } from "./launchpads/manifest.js";
@@ -57,10 +57,10 @@ export const PROTOCOL_NAMESPACE_ALLOWLIST: readonly ProtocolNamespace[] = [
   "relay",
   "solana",
   "dexscreener",
+  "lighter",
   "virtuals",
   "pendle",
   "morpho",
-  "trench",
   "pools",
   "launchpads",
 ] as const;
@@ -94,10 +94,10 @@ export const NAMESPACE_MODULES: readonly NamespaceModule[] = [
   { namespace: "uniswap", manifests: UNISWAP_TOOLS, handlers: UNISWAP_HANDLERS },
   { namespace: "relay", manifests: RELAY_TOOLS, handlers: RELAY_HANDLERS },
   { namespace: "dexscreener", manifests: DEXSCREENER_TOOLS, handlers: DEXSCREENER_HANDLERS },
+  { namespace: "lighter", manifests: LIGHTER_TOOLS, handlers: LIGHTER_HANDLERS },
   { namespace: "virtuals", manifests: VIRTUALS_TOOLS, handlers: VIRTUALS_HANDLERS },
   { namespace: "pendle", manifests: PENDLE_TOOLS, handlers: PENDLE_HANDLERS },
   { namespace: "morpho", manifests: MORPHO_TOOLS, handlers: MORPHO_HANDLERS },
-  { namespace: "trench", manifests: TRENCH_TOOLS, handlers: TRENCH_HANDLERS },
   { namespace: "pools", manifests: POOLS_TOOLS, handlers: POOLS_HANDLERS },
   { namespace: "launchpads", manifests: LAUNCHPADS_TOOLS, handlers: LAUNCHPADS_HANDLERS },
 ];
@@ -203,8 +203,8 @@ export const NAMESPACE_DEFAULTS: Record<ProtocolNamespace, NamespaceDefault> = {
   khalani: "bridge",
   relay: "bridge",
   dexscreener: "non_portfolio",
+  lighter: "non_portfolio",
   virtuals: "non_portfolio",
-  trench: "non_portfolio",
   // Read-only launchpad intelligence; no tool here holds, moves, or reports a
   // position, so nothing it returns belongs in portfolio capture.
   pools: "non_portfolio",

@@ -42,9 +42,14 @@ function fingerprint(over: Partial<PoolsPreparedLaunch> = {}): PoolsPreparedLaun
       gasBound: AMOUNT,
       transactionValue: AMOUNT,
     },
+    // The identity of the exact bytes a Deploy click would sign.
+    callFingerprint: `0x${"ef".repeat(32)}`,
     metadataUri: "https://example.test/meta.json",
     imageLanded: true,
     expiresAt: "2026-08-18T12:00:00.000Z",
+    // WHICH clock ends this confirmation. `vex_window` is the ordinary one; a
+    // signed stock quote would be `quote_window` and last seconds instead.
+    expiryReason: "vex_window",
     ...over,
   };
 }

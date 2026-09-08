@@ -136,7 +136,7 @@
         "uniswap",
         "robinhood swap",
         "v2 v3 swap",
-        "uniswap fallback"
+        "spot pool swap"
       ],
       "discoveryHints": [
         "swap on robinhood",
@@ -849,6 +849,180 @@
         }
       ]
     },
+    "lighter": {
+      "aliases": [
+        "lighter",
+        "rhc lighter",
+        "lighter core",
+        "lighter market data",
+        "lighter order book"
+      ],
+      "discoveryHints": [
+        "lighter markets",
+        "lighter market id",
+        "rhc order book",
+        "lighter recent trades",
+        "lighter candles",
+        "lighter system status",
+        "set up my lighter account",
+        "get me ready for lighter perps",
+        "withdraw from lighter"
+      ],
+      "exampleQueries": [
+        "ToolSearch(query=\"set up my lighter account\", namespace=\"lighter\")",
+        "ToolSearch(query=\"I want to trade perps on lighter\", namespace=\"lighter\")",
+        "ToolSearch(query=\"withdraw USDG from lighter rhc\", namespace=\"lighter\")",
+        "ToolSearch(query=\"rhc order book depth\", namespace=\"lighter\")"
+      ],
+      "facets": [
+        {
+          "label": "Get ready to trade",
+          "summary": "Inspect the selected wallet, ask only for the desired USDC deposit, then prepare the approval-gated deposit and managed local trading credential setup.",
+          "toolPrefixes": [
+            "lighter.account.onboarding",
+            "lighter.deposit",
+            "lighter.key.register"
+          ],
+          "hints": [
+            "set up my lighter account",
+            "get me ready to trade on lighter",
+            "I want to trade perps on lighter",
+            "fund my lighter account",
+            "finish lighter setup"
+          ]
+        },
+        {
+          "label": "Markets and system",
+          "summary": "Check Lighter environment status/config and list or inspect public markets.",
+          "toolPrefixes": [
+            "lighter.system",
+            "lighter.markets",
+            "lighter.market"
+          ],
+          "hints": [
+            "lighter status",
+            "lighter markets",
+            "market id",
+            "core config",
+            "rhc config"
+          ]
+        },
+        {
+          "label": "Depth and trade tape",
+          "summary": "Read public order book depth and recent trades for one Lighter market.",
+          "toolPrefixes": [
+            "lighter.orderbook",
+            "lighter.recentTrades"
+          ],
+          "hints": [
+            "order book",
+            "bid ask depth",
+            "recent trades",
+            "latest fills",
+            "trade tape"
+          ]
+        },
+        {
+          "label": "Candles",
+          "summary": "Read OHLCV candle history for one Lighter market using epoch-millisecond windows.",
+          "toolPrefixes": [
+            "lighter.candles"
+          ],
+          "hints": [
+            "candles",
+            "ohlcv",
+            "price history",
+            "chart",
+            "volatility"
+          ]
+        },
+        {
+          "label": "Accounts and positions",
+          "summary": "Read public Lighter account state, positions, and API-key metadata by account index or owning wallet address.",
+          "toolPrefixes": [
+            "lighter.account",
+            "lighter.positions",
+            "lighter.apiKeys"
+          ],
+          "hints": [
+            "lighter account",
+            "lighter positions",
+            "account collateral",
+            "account by wallet address",
+            "api key metadata"
+          ]
+        },
+        {
+          "label": "My orders and fills",
+          "summary": "Read authenticated open orders, order history, and account trade fills using the configured read-only token.",
+          "toolPrefixes": [
+            "lighter.openOrders",
+            "lighter.orderHistory",
+            "lighter.trades"
+          ],
+          "hints": [
+            "my open orders",
+            "lighter order history",
+            "my fills",
+            "account trades",
+            "resting orders"
+          ]
+        },
+        {
+          "label": "Order preview and approval-gated create",
+          "summary": "Preview an exact Lighter order from live data, then prepare and place it only through the user-approved card.",
+          "toolPrefixes": [
+            "lighter.order"
+          ],
+          "hints": [
+            "preview lighter order",
+            "limit buy on lighter",
+            "place lighter order",
+            "prepare trade approval",
+            "approval gated order"
+          ]
+        },
+        {
+          "label": "Position protection and close",
+          "summary": "Prepare approval-gated stop-loss and take-profit protection or a full close of an existing Lighter position.",
+          "toolPrefixes": [
+            "lighter.position"
+          ],
+          "hints": [
+            "protect my position",
+            "stop loss and take profit",
+            "close my lighter position"
+          ]
+        },
+        {
+          "label": "Trading-fee authorization",
+          "summary": "Prepare and confirm the selected wallet's spot and perpetual Vex fee authorization during managed onboarding, check its status, or prepare an explicitly requested revocation.",
+          "toolPrefixes": [
+            "lighter.fees"
+          ],
+          "hints": [
+            "approve trading fees",
+            "lighter fee setup",
+            "check fee authorization",
+            "revoke vex fees"
+          ]
+        },
+        {
+          "label": "Secure withdrawals and claims",
+          "summary": "Prepare, execute, and reconcile approval-gated Core USDC or RHC USDG withdrawals, including a separately approved gateway claim only when required.",
+          "toolPrefixes": [
+            "lighter.withdraw"
+          ],
+          "hints": [
+            "withdraw from lighter",
+            "cash out lighter collateral",
+            "withdraw rhc usdg",
+            "check lighter withdrawal",
+            "claim pending lighter withdrawal"
+          ]
+        }
+      ]
+    },
     "virtuals": {
       "aliases": [
         "virtuals",
@@ -928,93 +1102,37 @@
             "claim my virtuals creator fees",
             "creator fee split"
           ]
-        }
-      ]
-    },
-    "trench": {
-      "aliases": [
-        "trench",
-        "trench express",
-        "trench launchpad",
-        "trench token launches",
-        "trench curve trading",
-        "buy trench token"
-      ],
-      "discoveryHints": [
-        "buy a trench bonding curve token",
-        "sell a trench launchpad token for eth",
-        "new token launches on trench",
-        "trench bonding curve tokens",
-        "trench launchpad trade tape",
-        "robinhood launchpad tokens"
-      ],
-      "exampleQueries": [
-        "ToolSearch(query=\"buy a trench bonding curve token with ETH\", namespace=\"trench\")",
-        "ToolSearch(query=\"new token launches on trench\", namespace=\"trench\")",
-        "ToolSearch(query=\"preview a token launch cost\", namespace=\"trench\")"
-      ],
-      "facets": [
+        },
         {
-          "label": "Trench curve trading (buy/sell)",
-          "summary": "Quote then buy a Trench bonding-curve token with ETH, or sell it back for ETH, with a Vex-derived minimum-output floor.",
+          "label": "Bonding-curve trading (buy/sell)",
+          "summary": "Trade a Virtuals agent token that is still on its BondingV5 curve, on Base or Robinhood: price it, then trade it against that price with the anti-sniper tax bound the caller accepted. An agent that already graduated is refused by name, with the venue to use instead.",
           "toolPrefixes": [
-            "trench.trade_quote",
-            "trench.trade_execute"
+            "virtuals.trade.quote",
+            "virtuals.trade.execute"
           ],
           "hints": [
-            "buy trench token with eth",
-            "sell trench token for eth",
-            "quote a trench curve trade",
-            "trench bonding curve buy",
-            "trench bonding curve sell"
+            "buy this virtuals agent token",
+            "sell agent tokens back to the curve",
+            "quote a virtuals bonding curve trade",
+            "ape into this virtuals launch",
+            "anti-sniper tax before buying"
           ]
         },
         {
-          "label": "Trench launchpad token browsing and search",
-          "summary": "List and screen Trench Express bonding-curve and graduated tokens, or look one up by name or symbol.",
+          "label": "Launching an agent",
+          "summary": "Launch your own Virtuals agent on Base or Robinhood: plan it, launch it, check whether the venue's keeper has made it live, or cancel one it has not and take the initial purchase back.",
           "toolPrefixes": [
-            "trench.tokens",
-            "trench.search"
+            "virtuals.launch.preview",
+            "virtuals.launch.execute",
+            "virtuals.launch.status",
+            "virtuals.launch.cancel"
           ],
           "hints": [
-            "trench launchpad tokens",
-            "new trench launches",
-            "trench bonding curve",
-            "trench token lookup",
-            "trench token by symbol"
-          ]
-        },
-        {
-          "label": "Trench trade tape and launch preview",
-          "summary": "Read a Trench token's recent trade tape and dry-run a Trench token launch to preview address, fee, and gas cost.",
-          "toolPrefixes": [
-            "trench.trades",
-            "trench.launch_preview"
-          ],
-          "hints": [
-            "trench trade tape",
-            "recent trench trades",
-            "trench launch preview",
-            "create trench token cost",
-            "dry run trench launch"
-          ]
-        },
-        {
-          "label": "Launching a token on Trench",
-          "summary": "Create a token on the Trench bonding curve, and review the ones already launched. A launch REQUIRES an image the user pre-staged in the app; the agent cannot supply one.",
-          "toolPrefixes": [
-            "trench.launch_request_form",
-            "trench.launch_execute",
-            "trench.my_launches",
-            "trench.images"
-          ],
-          "hints": [
-            "launch a token on trench",
-            "create a memecoin",
-            "deploy a token",
-            "my launched tokens",
-            "trench launch images",
-            "pick a launch image"
+            "launch my own virtuals agent",
+            "create an ai agent token",
+            "what would it cost to launch an agent",
+            "is my agent live yet",
+            "cancel my agent launch and refund me"
           ]
         }
       ]
@@ -1120,16 +1238,21 @@
         },
         {
           "label": "Fees to holders",
-          "summary": "Read what a fees-to-holders token owes ONE wallet: the distributor the suite's own deployer emitted, the reward mode, and the wallet's earned balance per reward leg at a pinned block, with the launchpad's own figures shown beside them. Earned by HOLDING, not by launching and not by staking; the claim is a separate tool and this one signs nothing.",
+          "summary": "Read, claim and push the fees a pools.fun token streams to the wallets that HOLD it. The read answers for ONE wallet: the distributor the suite's own deployer emitted, the reward mode, and the wallet's earned balance per reward leg at a pinned block, with the launchpad's own figures shown beside them, and it signs nothing. Earned by HOLDING, not by launching and not by staking - a different person's money from the creator fees above. The claim pays the wallet that signs it and Vex charges nothing for it; the distribute is permissionless, pays the token's holders rather than its caller, and is how a stalled reward stream is restarted.",
           "toolPrefixes": [
-            "pools.holder_rewards"
+            "pools.holder_rewards",
+            "pools.holder_rewards_claim",
+            "pools.holder_rewards_distribute"
           ],
           "hints": [
             "fees to holders",
             "what have I earned holding this coin",
             "does this coin pay its holders",
             "holder rewards distributor",
-            "what the distributor owes my wallet"
+            "what the distributor owes my wallet",
+            "claim my holder rewards",
+            "push this token's fees to its holders",
+            "trigger the reward distribution"
           ]
         }
       ]
@@ -1232,8 +1355,8 @@
     "kyberswap.tokens.check": "e4b877b701a4dd3a51100f64a1efb26b5691a1ba04a2c619ab35bd86253b54b8",
     "kyberswap.swap.quote": "621b1eda12d7584f6933d74820dff9004aa83833dc09c56b33d25df15b7979b2",
     "kyberswap.swap.execute": "02fb625fd092112c214e680283647d55b5cd30e119e775e874a48ff465c05abc",
-    "uniswap.swap.quote": "15c95162e9e6d643d154e660f21614e87bafc63831bad2159ad8d99427fa3050",
-    "uniswap.swap.execute": "b9aaeffe942500693a216840b7e45a0fd861c9981a308624a6ed5733ade21e80",
+    "uniswap.swap.quote": "f1e2c76707a851155bab85038317bcaff29efa4ed3ea5bf5cdb67c42062eed67",
+    "uniswap.swap.execute": "7ca6d584d6f74fad14762431e43e4e28e9e664e556901ca378612ddab1e1e09e",
     "relay.quote.get": "9951bb1aedf1b72b5a4f0f694a7dd25e211faaf0f313843580d26fd263665897",
     "relay.bridge": "7d9d19e3caa79f0c8be40b1fe57f66932196b8b8bd6dca4c047b1fe0d7e0cfd4",
     "dexscreener.pairs.trending": "2f7ba9621112c6910269ccdd73581de5b904d883125a61721010be75375e56db",
@@ -1254,13 +1377,59 @@
     "dexscreener.candles": "ec4208a537b585fbbe9fe738762e0c19e8acda5aef87535a108ba8944d26633d",
     "dexscreener.trades": "4c2b77b44fac2cd2611b2d022ffa98282ed8d84b8925bae6836ad402bd2218fd",
     "dexscreener.top.traders": "9f1027005be3b748c1e1a8b2fcfda5bb57b1e9db11ac07e54a4e7ce7fb202c17",
+    "lighter.account.onboarding.status": "483ac5c242ea2d55b0fb7b4acff02fa3761e8427e907869b979639694028b31d",
+    "lighter.system": "9db026c6e755f444cfaf6ee7a26a7c8452a75147ca1414932309c8be07899f6f",
+    "lighter.markets": "c55bb0dcb87152305d6ab01b061c38508b2f5c3b635199832bc1eba994a36662",
+    "lighter.market.get": "6beb628842e21b06d4e5aa29b5d901f711ecc5129a43b63f2192bae9d3f61bf1",
+    "lighter.account.get": "90ddbb680c0ffba71309c5d28f705a7ad58fde0cd283823cddd27696c2b3b172",
+    "lighter.positions": "727ea5a686665ff718768f776396fd8ed0873345866ab3254c29e561a16131af",
+    "lighter.openOrders": "3de8362c3a7d3d9cf76dcb916b2e9fd4642bb599963ac44552221ae1fbccf0c3",
+    "lighter.orderHistory": "1df80f8020ffbf90af7ba877e1740a68451dd22c7a41fa11ab988dff080391d5",
+    "lighter.trades": "796ca25ee93cfc39000412178fc4ee2a4884d55330e5eefe5893f2186bb13919",
+    "lighter.apiKeys.inspect": "c08be5fd04cd1d3b051bdad16482828d3e09a3c79e8b61c6ff8cb851ad4f731a",
+    "lighter.order.preview": "ec6159eaffda546902c9a1dc0e4d363e607311314de4e2d07013af729a9935af",
+    "lighter.position.protect": "71bbe9e074b390cc914466298ef825c5da2cd25b820bba6c59214eb0b7348d83",
+    "lighter.deposit.status": "8c5b7081db1c859962c7e629603a5aca3ecc1d8ff39530255fab4fb1b7942999",
+    "lighter.withdraw.status": "48a40afb3e5fc089601055005ada88146652ff369f074440f3b89254a75f0301",
+    "lighter.fees.status": "00693a2f1ca032783d098476fa04d7cfc1b68d31e7dda2ba6b95694ae9b0d5ea",
+    "lighter.key.register.status": "0d1746fa920592d4e1a071e5adb5ba95b5f3ea3bcb19d779ab0465d03973aa6f",
+    "lighter.order.status": "3d7f430c22717e0861e808d3e2bcee0c8a4b9d04b659ef30fbfcd12aa39419dc",
+    "lighter.orderbook": "b638f5afcbd92ec0b8804e9ec69d097a0f377c3324bf0e8db2f6516348c9cacf",
+    "lighter.recentTrades": "10d74d77a13bc63941b3e51621a3d701b4039070cb3b29abf25c50fe90b97031",
+    "lighter.candles": "46e3c0bd2fc589109b7be5aec77cdb1c4bd17ac4001d057c17712bbc2fe3cb2d",
+    "lighter.fees.approve.prepare": "fe0fbb997e02de9e012a2ca6e5c0b807521f7de63f40043634c397dbc0f89d95",
+    "lighter.fees.approve": "0e5ed4eafc6edf47c59aa28e1c56e070d8e7b4d1167a2a06e2ad246c9d6d15c5",
+    "lighter.order.cancel.prepare": "fbbc0c74e4af388f2c4d6be70bbfecc532c84b21989b5310fe4703ba09d8a8ec",
+    "lighter.order.cancel": "00b5cf1c903debb40034420551e10c8d7d4fea09024b61df9f4ff62737c11846",
+    "lighter.order.modify.prepare": "13fe34a83924642429ad418489a70282f707a617bec2adcb9063d173243d73a2",
+    "lighter.order.modify": "1821351b475b50d631da5dc1baaff01eed8f58656b33b1c2195cfeb30d63379a",
+    "lighter.order.cancelAll.prepare": "9c3936f3f444ed9b85309210af3b8b011946208542903cdead636349f4cdc314",
+    "lighter.order.cancelAll": "728971ef0121c496b7b0ef052f35f2225f0fd8d9f54082dc31d1db4ee3f74944",
+    "lighter.position.close.prepare": "8bfa26df72a4566d79956241b76e99170e0440914a9a9129f5b7b1e35d48da0e",
+    "lighter.position.close": "1b18f3838f1649a496d827c11610dd8ff2633d8dcc18ed6347905159271f273a",
+    "lighter.withdraw.claim.prepare": "428cfd0f4fbab441dc543a0f5862c97e228a4d17ffa234165edc4f92b060bb55",
+    "lighter.withdraw.claim": "30f7678c563bd4c12d5e097cda6c3df92dd23d2bfbd134f27c5f942cb17a229f",
+    "lighter.withdraw.prepare": "0fa0e50b97a1ebcb6f352bba3be2618883915a28842d06f7ea1994710eab9ec4",
+    "lighter.withdraw": "6026e43005ef53a5c842713cb0f76664e294fa08ba697e4dfa43109c5bf59095",
+    "lighter.key.register.prepare": "1eb2d6f703d50d3b1d357e08f761a338054ef3ecfa1139be3dab50fba2a8a665",
+    "lighter.key.register": "2dacb59168fde681fd673dc17dcd4751ae1b2e2f22e530d302b58339fcbb7ab7",
+    "lighter.deposit.prepare": "753b47639833b0a12185d9e8634bc5fbae3ad6fc38f7080c1cf470251270e340",
+    "lighter.deposit": "bcda9d97610d91df739b29215fbdac2b548088c92a8575eca6e880102cd39ccf",
+    "lighter.order.create.prepare": "e712ac9814b996867844d84472e7bb0bb80439f2f4f4824cc8d2a5af30f64170",
+    "lighter.order.create": "d705f138b96a4f302fa269a7269e19cffa8197dbec91858554c4930c2b232388",
     "virtuals.list": "827651cdcace4fd40b8c3cf05147d61e3eba6bb2ea962257482952c78f113e90",
     "virtuals.get": "26bcb6d71aa60b679becb0bbce98a0b0a75da9dd19dd84cce43f0616252c765c",
     "virtuals.graduations": "bc197ab90815817bc775c07adfa43fba73fa25894d9432039475b2e539ed0c36",
     "virtuals.geneses": "7a54634df55374059206cae91d2ac6ee5487e3e63e0ee7290a241a3c210460a3",
     "virtuals.trades": "95398d631a02a0d9b3116cf7a28228b96455ff01a57f969eaa6eac997a42a64e",
-    "virtuals.candles": "754389b1f925e55008d1d76131bb107d908eaf1363adbc3eed2af5817d8e9388",
+    "virtuals.candles": "53db082d51bce88be1ef69b8b8e8d98e3c429c883fb55c5c4d065e31d5078d1e",
     "virtuals.creator_fees": "7efc62c33d201b8c7c074c6a9c2e673d374ab62548180fb503b548cac09abad3",
+    "virtuals.trade.quote": "cd95c5d76cf509c891455ac5d3366b7949edf314c54a8b93d616a3489d668070",
+    "virtuals.trade.execute": "5b7fca7d2dc6442da6297ea657c16e7949bcb46fb070b55a3bd748c4bdb0729b",
+    "virtuals.launch.preview": "d11dcee1b9a9a5cb9e3c4a9832e97df5024d49c95c6926330a9d6d2cf917939b",
+    "virtuals.launch.execute": "31e33de79a7fd1d76d5ec89816d33dc03972122b382cc939a7e7e960811e933d",
+    "virtuals.launch.status": "0a15f03c324d1fe1013f25a1c874b12ea8d1c42d7567e42981091b3e073b2af2",
+    "virtuals.launch.cancel": "2b86e9f5d486e27d9bb8296fd54123aee724d4fdeca0ef0ffb07685914b5acc7",
     "pendle.yields": "9681172f6045d1b721f4ab636069ae9767322c1a55291c93ff48250958295d27",
     "pendle.position.value": "014a5b81cc8d6321564e454bd6ca9d9f987da6d59a9d628555d92e13c4d4f1f2",
     "pendle.market.get": "853b5c4a9927984549d7c95eea7502af64a863af575d4c6c8ea412187ca7b00d",
@@ -1309,16 +1478,6 @@
     "morpho.market.supply": "d1ded1635e4627820dbfcec9ffc810585c7edd6e029521b8bc319e108fb5de9f",
     "morpho.market.withdraw": "5f6810c796570c2bed062f00bcab1551a1f3a6760514d4bd1e0ab4a629b3382b",
     "morpho.rewards.claim": "8e94e20971b2803f6321585cb306b764dc7834917cae627d87b51772a806988c",
-    "trench.tokens": "221c38e83cbb0a9aff4c27d3136d230c0969a95c6fd06112e7ef479c859f747f",
-    "trench.search": "084e28f482c2b5dda680a973e273d805532e0594720ca64dd10e921a78471b36",
-    "trench.trades": "f39ac7fd397c923937e16c506ea67fde455756e3471cce3d3a7216303a332794",
-    "trench.launch_preview": "bb50a96f8624c5f6e13efb669cea86ab58dd80996d6089f59d796a4e1179e240",
-    "trench.trade_quote": "25e71b425269ec470e2e00920163ccb07492033c6277a10d21115a7c3ad9d139",
-    "trench.trade_execute": "505da5a6d0f8de91298f5843f5eabc66e20a3642ec60dd44fb4bab5b8f499d04",
-    "trench.images": "0a86bd81920dc3f09e29d1bc604c6720ca02e8c495e424a54516f7c7bcd4a79f",
-    "trench.my_launches": "341aedbe05fe1b5b6dd4ff6e56e003ac72d6b557bcad4576a02df6de9a0419dc",
-    "trench.launch_request_form": "feab5717b43a3aaaef3070170b6645c42149c364c75107c483f4f576c8df7209",
-    "trench.launch_execute": "2ad9733abd159dc7fa886196e6fcd97dbde1e11fbdff9933e4fe50f0a29a190b",
     "pools.tokens": "e9bdeb67dc75a5f03158ece0daf27ea8b8e7aef9a702beacfe23a6e841e26ad1",
     "pools.search": "6b3b50c93ad60dda20f04cbf86b92863abb1f62e97511505f690b998356fd4dd",
     "pools.candles": "886a4df8db7f765977458e8d0bb16d9e9e9f01759b2f9a4c40389a5eeee0823c",
@@ -1330,7 +1489,9 @@
     "pools.claim_fees": "274475a9f9ffd37aec741fddab2d47a129dcf8922986237604b98d9ef866dd48",
     "pools.launch_assets": "297db7a1a74de25944891a479f00f4112553f63d44c9fff610ac5e12caef2c4d",
     "pools.holder_rewards": "b7b709f64aedc5e9f8d40c8cd1fb3ff1e7e5818b0b9d91dd3a05e08ea270c2fc",
-    "launchpads.images": "f7f02a267d0e6f53148e9e9185993c1829fc7e2fda7ace9dcd394bcc7a4d6e99",
-    "launchpads.image_publish": "e06e4ed9409bbcd3f332860c9361d3118d374f1b9437531ab0026bf6a2bbcf9f"
+    "pools.holder_rewards_claim": "03f5ef9a6e436ef7c79ed98e5a53bd7e2e0cadb1630e3286838001fcd7e05cce",
+    "pools.holder_rewards_distribute": "5ba185df48bacf69007b23f613e193de0e3f7775b6ac9d5ed6b9b251942441bb",
+    "launchpads.images": "526bef0dceed2e6b7dad0889fce6a3c5e8405c1d0c3acdb775f4cb11aec8382a",
+    "launchpads.image_publish": "37705e0ed567a3f9cf2e91e1301a8611a471c875edef3b5667c4e1c3bd8e6b88"
   }
 }

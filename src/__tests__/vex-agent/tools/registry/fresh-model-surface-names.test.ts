@@ -122,8 +122,13 @@ interface EnvPosture {
   readonly slug: string;
   readonly jupiter: boolean;
   /**
-   * PRE-EXISTING INVENTORY FOR THIS POSTURE, measured 2026-08-26, NOT a
-   * whitelist. See the ratchet contract below the postures.
+   * PRE-EXISTING INVENTORY FOR THIS POSTURE, measured 2026-08-26 and
+   * remeasured 2026-09-05 when the launchpads namespace took the image locker
+   * over from Trench: `mission-setup.ts` / `mission-run.ts` now name
+   * `launchpads__images_list`, no longer name `trench__images_list` or
+   * `trench__launch_preview`, and print the two surviving Trench launch names
+   * twice less often. NOT a whitelist. See the ratchet contract below the
+   * postures.
    */
   readonly occurrences: Readonly<Record<string, number>>;
 }
@@ -161,13 +166,10 @@ const ENV_POSTURES: readonly EnvPosture[] = [
     khalani__token_balances_get: 6,
     kyberswap__swap_quote: 18,
     kyberswap__token_safety_check: 6,
+    launchpads__images_list: 4,
     pools__launch_execute: 6,
     pools__launch_request_form: 6,
     solana__tokens_search: 6,
-    trench__images_list: 4,
-    trench__launch_execute: 8,
-    trench__launch_preview: 2,
-    trench__launch_request_form: 8,
     virtuals__agent_get: 6,
     },
   },
@@ -186,13 +188,10 @@ const ENV_POSTURES: readonly EnvPosture[] = [
     khalani__token_balances_get: 6,
     kyberswap__swap_quote: 18,
     kyberswap__token_safety_check: 6,
+    launchpads__images_list: 4,
     pools__launch_execute: 6,
     pools__launch_request_form: 6,
     solana__tokens_search: 6,
-    trench__images_list: 4,
-    trench__launch_execute: 8,
-    trench__launch_preview: 2,
-    trench__launch_request_form: 8,
     virtuals__agent_get: 6,
     },
   },

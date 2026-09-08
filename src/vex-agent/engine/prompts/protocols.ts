@@ -5,5 +5,4 @@ export {
   protocolAvailabilityFingerprint,
   resetProtocolsPromptCache,
 } from "./protocol-capabilities.js";
-
 export { buildBridgeCapabilityPrompt } from "./bridge-capability.js";

@@ -1,4 +1,5 @@
 import type { ProtocolNamespaceNavigation } from "../types.js";
+import { SWAP_VENUE_STANDING } from "@vex-agent/tools/registry/swap-venue-guidance.js";
 import { getKyberChains } from "@tools/kyberswap/chains.js";
 
 /**
@@ -8,11 +9,11 @@ import { getKyberChains } from "@tools/kyberswap/chains.js";
  * flows into the built protocols prompt automatically. Filtered to
  * `aggregator: true` (the feature `kyberswap.swap.execute` actually needs),
  * not just "every registry entry," so a hypothetical future chain added for a
- * different feature without aggregator support is correctly excluded. Kept
- * reveal-consistent (Agent Scan plan v3 §11.2 / C30): this line names ONLY
- * KyberSwap chains - it must never mention Uniswap; the existing "if
- * KyberSwap cannot route, a backup venue is offered automatically in the
- * failure message" wording already covers the off-registry case.
+ * different feature without aggregator support is correctly excluded. This line
+ * names ONLY KyberSwap chains: it is this venue's own coverage, and the other
+ * venue's coverage is stated by that venue. The standing between the two is
+ * owned by `registry/swap-venue-guidance.ts` and imported below, never
+ * restated here.
  */
 const KYBER_SWAP_EXECUTE_CHAIN_SLUGS: readonly string[] = getKyberChains()
   .filter((chain) => chain.aggregator)
@@ -27,7 +28,7 @@ export const KYBERSWAP_NAVIGATION: ProtocolNamespaceNavigation = {
   whenToUse:
     "Use when the user wants to buy, sell, swap or exit a token on an EVM chain, wants the rate, route, gas cost or price impact before trading, or wants a token checked for honeypot or fee-on-transfer behaviour. Quote first, then execute with the same params.",
   preferInstead:
-    "KyberSwap is the PRIMARY EVM swap route: use `uniswap` when KyberSwap has no aggregator support for the chain or cannot route the pair, `khalani` to resolve token addresses across chains or to bridge between them, `solana` for Solana trading, and `dexscreener` for read-only research.",
+    `${SWAP_VENUE_STANDING} Reach for \`khalani\` to resolve token addresses across chains or to bridge between them, \`solana\` for Solana trading, and \`dexscreener\` for read-only research.`,
   declaration: {
     identity: "KyberSwap is an EVM swap aggregator that routes exact-input trades across more than 400 decentralized exchanges.",
     read: "Read supported EVM chains and networks, the feature matrix, live chain status, token metadata, and a safety check that reports honeypot and fee-on-transfer signals.",

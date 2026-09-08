@@ -184,7 +184,10 @@ export function buildStudioInventory(): readonly StudioTool[] {
       // runs, so a schema looser than `validateProtocolParams` would promise an
       // admission the runtime then denies. See `strict-schema.ts`.
       inputSchema: strictProtocolToolInputSchema(manifest),
-      annotations: studioToolAnnotations(manifest.actionKind),
+      // The manifest is passed WHOLE so the one annotation table can read the
+      // O7-amendment `destructive` declaration; the internal branch above has
+      // no manifest and none to declare.
+      annotations: studioToolAnnotations(manifest.actionKind, manifest),
       alwaysLoad: false,
       ...(manifest.requiresEnv === undefined ? {} : { requiresEnv: manifest.requiresEnv }),
     });

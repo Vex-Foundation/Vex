@@ -39,6 +39,8 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { sendOnlyAgentscanClient } from "../../helpers/agentscan-client.js";
+
 import { seedIntent, cleanupSeeded } from "../agent-scan/_fixtures.js";
 import type { AgentscanClient, SendOutcome } from "@vex-agent/agentscan/client.js";
 import { enqueueAtCurrentGeneration, claimAtCurrentGeneration } from "./_reporting-tick.js";
@@ -361,7 +363,7 @@ describe("the incremental scan is fenced by the generation the lane read its cre
         detail: "unavailable",
       }),
     );
-    const client: AgentscanClient = { sendEvents };
+    const client: AgentscanClient = sendOnlyAgentscanClient(sendEvents);
     const { drainIncremental } = await import("@vex-agent/sync/agentscan-report/drain.js");
 
     const result = await drainIncremental(
@@ -371,7 +373,9 @@ describe("the incremental scan is fenced by the generation the lane read its cre
       staleGeneration,
     );
 
-    expect(result).toEqual({ enqueued: 0, sent: 0, rejected: 0, deferred: 0 });
+    // `owed` is the capability gate's counter (rows the deployed server cannot
+    // take yet); a stale tick that never reached the wire owes nothing either.
+    expect(result).toEqual({ enqueued: 0, sent: 0, rejected: 0, deferred: 0, owed: 0 });
     // No row at all, so no `backfill = false` row - and nothing was sent under
     // the credentials the reset replaced.
     expect(await outboxRowsFor(activityId)).toEqual([]);

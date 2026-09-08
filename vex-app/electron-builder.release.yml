@@ -114,6 +114,20 @@ extraResources:
   - from: resources/migrations
     to: migrations
     filter: ["**/*.sql"]
+  # The Lighter signer helpers for the ONE platform being packaged, staged by
+  # `scripts/stage-lighter-signer.mjs` before electron-builder runs. Staged
+  # rather than copied from the build directory because that directory holds all
+  # SIX helpers: a macOS bundle used to ship two Windows PE files and two Linux
+  # ELF files it can never execute, each an unsigned binary inside a notarized
+  # app. Both ARCHES of the platform are staged on purpose - `mac.binaries`
+  # below names the arm64 and x64 helper paths and codesign fails on a listed
+  # path that does not exist, while the macOS job packages both arches in ONE
+  # invocation. The staging preflight and the afterPack re-inspection
+  # (verifyPackagedLighterSigner, digests against SHA256SUMS) are what make this
+  # fail closed; electron-builder 26 only WARNS on a missing source.
+  - from: resources/lighter-signer-staged
+    to: lighter-signer
+    filter: ["vex-lighter-signer-*"]
   # The Vex Studio MCP bridge, staged for THIS platform/arch by
   # `scripts/stage-bridge.mjs` before electron-builder runs. Staged rather than
   # read straight from `bridge/dist/<goos>-<goarch>/` because electron-builder's
@@ -138,6 +152,16 @@ mac:
   # is resolved by app-builder-lib against the bundle root.
   binaries:
     - Contents/Resources/bridge/vex-mcp
+    # The Lighter signer helpers are Mach-O executables with NO file extension,
+    # so @electron/osx-sign's nested-binary walker does not pick them up. The
+    # same rule as the bridge applies and the consequence is worse: unsigned,
+    # the hardened runtime refuses to exec the helper and notarization rejects
+    # the bundle, which means no Lighter order can be signed at all. Both
+    # arches are listed because both are staged into every macOS bundle (see
+    # extraResources above) and electron-builder packages x64 and arm64 in ONE
+    # invocation.
+    - Contents/Resources/lighter-signer/vex-lighter-signer-darwin-arm64
+    - Contents/Resources/lighter-signer/vex-lighter-signer-darwin-x64
     # node-pty's `spawn-helper` is a Mach-O executable with NO file extension,
     # so @electron/osx-sign's default nested-binary walker does not pick it up
     # (it does sign the `.node` files). Unsigned, the hardened runtime refuses

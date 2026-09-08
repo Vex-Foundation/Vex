@@ -35,7 +35,6 @@ import {
   createPublicClient,
   createWalletClient,
   defineChain,
-  http,
   type Account,
   type Chain,
   type Hex,
@@ -47,11 +46,9 @@ import { privateKeyToAccount } from "viem/accounts";
 import { z } from "zod";
 
 import { VexError, ErrorCodes } from "../../errors.js";
+import { buildEvmTransport, buildPinnedEvmTransport } from "../evm-chains/rpc-transport.js";
 import type { RelayChain } from "./types.js";
 import type { RelayStepClients } from "./execute.js";
-
-const EVM_RPC_TIMEOUT_MS = 30_000;
-const EVM_RPC_RETRY_COUNT = 2;
 
 /** The RPC-relevant subfields Relay's `/chains` entry carries on the passthrough schema. */
 const RelayChainRpcSchema = z
@@ -191,9 +188,15 @@ export function resolveRelayOnlyPublicClient(
   relayChains: readonly RelayChain[],
 ): PublicClient<Transport, Chain> {
   const resolved = resolveRelayOnlyChain(chainId, relayChains);
+  // The Relay url goes in as a PROVIDER-tier entry, so the user's own endpoint
+  // for this chain (if they configured one) and any bundled entry the table
+  // carries come first, and Relay's registry is the tail rather than the only
+  // opinion. The SSRF gate above still owns whether the provider url is
+  // admissible at all - that check is what makes it safe to consult a registry
+  // Vex does not run.
   return createPublicClient({
     chain: resolved.viemChain,
-    transport: http(resolved.rpcUrl, { timeout: EVM_RPC_TIMEOUT_MS, retryCount: EVM_RPC_RETRY_COUNT }),
+    transport: buildEvmTransport(chainId, { providerUrls: [resolved.rpcUrl] }),
   }) as PublicClient<Transport, Chain>;
 }
 
@@ -209,14 +212,17 @@ export function resolveRelayOnlyStepClients(
   privateKey: Hex,
 ): RelayStepClients {
   const resolved = resolveRelayOnlyChain(chainId, relayChains);
+  // ONE pinned transport for both clients: the approve, the deposit, the nonce
+  // and the broadcast all land on the same node.
+  const transport = buildPinnedEvmTransport(chainId, { providerUrls: [resolved.rpcUrl] });
   const publicClient = createPublicClient({
     chain: resolved.viemChain,
-    transport: http(resolved.rpcUrl, { timeout: EVM_RPC_TIMEOUT_MS, retryCount: EVM_RPC_RETRY_COUNT }),
+    transport,
   }) as PublicClient<Transport, Chain>;
   const walletClient = createWalletClient({
     account: privateKeyToAccount(privateKey),
     chain: resolved.viemChain,
-    transport: http(resolved.rpcUrl, { timeout: EVM_RPC_TIMEOUT_MS, retryCount: EVM_RPC_RETRY_COUNT }),
+    transport,
   }) as WalletClient<Transport, Chain, Account>;
   return { publicClient, walletClient };
 }

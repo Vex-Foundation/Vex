@@ -7,6 +7,10 @@ import { getKyberChains } from "@tools/kyberswap/chains.js";
 import { getProtocolNamespaceCoverage } from "@vex-agent/engine/prompts/chain-coverage.js";
 import { buildPromptStack } from "@vex-agent/engine/prompts/index.js";
 import { makeContext } from "./_prompt-stack-helpers.js";
+import {
+  SWAP_VENUE_STANDING,
+  SWAP_VENUE_UNISWAP_OCCASIONS,
+} from "@vex-agent/tools/registry/swap-venue-guidance.js";
 
 describe("buildProtocolsPrompt", () => {
   it("advertises real active namespaces", () => {
@@ -16,40 +20,37 @@ describe("buildProtocolsPrompt", () => {
     expect(prompt).toContain("### kyberswap");
   });
 
-  // Agent Scan plan v3 §11.2 (FIX3-W7, Codex final-review round 2 finding 2 /
-  // C30): the hidden Uniswap fallback must not be statically advertised in
-  // the BUILT system prompt for an unrevealed session — no per-namespace
-  // section (that would come from a navigation entry's `advertised: true`),
-  // and no imperative instruction telling the agent to proactively "fall
-  // back" or "switch" to it. Only a specific KyberSwap route-not-found-class
-  // failure output (checked at dispatch time, not documented here as a
-  // manual trigger) may surface it — this static, always-rendered layer must
-  // stay reveal-agnostic. The cross-venue safety sentence ("a uniswap quote
-  // only authorizes a uniswap execute") is intentionally kept — it is a
-  // conditional invariant for the rare revealed case, not an instruction to
-  // go use the venue, so it does not violate the hidden-by-default posture.
-  // INVERTED by owner decision D4: uniswap is an advertised namespace now, and
-  // the prompt states the PREFERENCE rather than hiding the alternative.
-  it("advertises the uniswap namespace and states the venue preference", () => {
+  // Owner decision D4 made `uniswap` an advertised namespace; the owner
+  // decision of 2026-09-07 made the two EVM swap venues PEERS. What the always
+  // rendered protocols layer must therefore carry is the STANDING, in the one
+  // wording `registry/swap-venue-guidance.ts` owns, and never a claim that a
+  // venue is locked or has to be unlocked by a failure.
+  it("advertises the uniswap namespace and states the venue standing", () => {
     resetProtocolsPromptCache();
     const prompt = buildProtocolsPrompt();
     expect(prompt).toContain("### uniswap");
-    // Wave 2 migration rows T531-T534.
-    expect(prompt).toContain("KyberSwap is the primary EVM swap venue");
-    // The preference must never be phrased as a lock.
+    expect(prompt).toContain(SWAP_VENUE_STANDING);
+    // The standing must never be phrased as a lock, or as a ranking.
     expect(prompt).not.toContain("backup venue is now available");
     expect(prompt).not.toMatch(/unlocks? it/i);
+    expect(prompt).not.toMatch(/primary swap (route|venue)|fallback venue/i);
   });
 
   // The routing line describes the failure CLASS rather than enumerating
   // codes, because the enumeration went stale twice - most recently when a
   // geo-blocked user's 403 matched nothing it listed.
-  it("names the availability class and the conditions that are NOT reasons to switch", () => {
+  it("names the occasions Uniswap serves, positively", () => {
     resetProtocolsPromptCache();
     const prompt = buildProtocolsPrompt();
-    // Wave 2 migration rows T535 and T536.
-    expect(prompt).toContain("or is unavailable");
-    expect(prompt).toContain("Do not switch for a bad price alone or for slippage, balance, allowance, or deadline failures");
+    // Replaces the old "or is unavailable" availability-class assertion: after
+    // the 2026-09-07 decision the layer states WHEN each venue serves rather
+    // than what makes the other one fail. "Do not switch for a bad price
+    // alone" is deliberately gone with it - that clause forbade exactly the
+    // quote comparison the owner now wants - while the rule it used to travel
+    // with, that slippage/balance/allowance/deadline failures are not venue
+    // failures, lives on in the swap task shape and is asserted there.
+    expect(prompt).toContain(SWAP_VENUE_UNISWAP_OCCASIONS);
+    expect(prompt).not.toContain("Do not switch for a bad price alone");
   });
 
   it("the venue-routing lines carry no em dash (owner decree 2026-08-05)", () => {
@@ -64,6 +65,33 @@ describe("buildProtocolsPrompt", () => {
       .filter((line) => line.startsWith("Default procedure: Resolve the exact token"));
     expect(routingLines.length).toBeGreaterThan(0);
     for (const line of routingLines) expect(line).not.toContain("—");
+  });
+
+  it("tells the model that Lighter previews prepare approval rather than execute", () => {
+    resetProtocolsPromptCache();
+    const prompt = buildProtocolsPrompt();
+    const section = prompt.split("### lighter")[1]?.split("\n### ")[0] ?? "";
+    expect(section).toContain("Preview exact Lighter orders from live market and account data before any approval");
+    expect(section).toContain("approval-gated deposits, orders, withdrawals, and claims");
+    expect(section).toContain("previews are read-only");
+    expect(section).toContain("every fund-moving or exchange-state-changing action remains approval-gated");
+    expect(section).toContain("normal users never paste trading keys");
+    expect(section).not.toContain("Settings/API keys");
+  });
+
+  it("routes plain-language Lighter setup without exposing internal identifiers", () => {
+    resetProtocolsPromptCache();
+    const prompt = buildProtocolsPrompt();
+    const section = prompt.split("### lighter")[1]?.split("\n### ")[0] ?? "";
+    expect(section).toContain("set up Lighter");
+    expect(section).toContain("trade perps on Lighter");
+    expect(section).toContain("managed wallet-funded onboarding");
+    expect(section).toContain("account/API-key indexes are resolved internally");
+    expect(section).toContain("environment-specific settlement assets");
+    expect(section).toContain("Ethereum USDC for Core");
+    expect(section).toContain("Robinhood Chain USDG for RHC");
+    expect(section).not.toContain("ask the user for their account index");
+    expect(section).not.toContain("Ask the user to paste an API key");
   });
 
   // pools.fun doctrine (P4). The integration shipped every layer except the
@@ -82,16 +110,22 @@ describe("buildProtocolsPrompt", () => {
       expect(prompt).toContain("13 of 13 sampled tokens");
     });
 
-    // The two Robinhood launchpads must be distinguishable AT THE VENUE
-    // QUESTION: the Trench curve exception alone reads as "launchpad tokens on
-    // 4663 do not route", which is wrong for every pools.fun token.
-    it("contrasts the no-curve pools token against the Trench curve exception", () => {
+    // The launchpads must be distinguishable AT THE VENUE QUESTION. This used
+    // to be a CONTRAST between the two Robinhood launchpads, because a bare
+    // "curve tokens do not route" exception read as true of every token on 4663
+    // and was wrong for every pools.fun one. Migration 108 retired the curve
+    // launchpad; what remains to state is that a pools.fun token is a real pool
+    // from its first block and is acquired through an ordinary swap - the half
+    // of the contrast that was never about the retired venue.
+    it("states that a pools.fun token has no curve and routes like any other", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
       // Wave 2 migration rows T541-T544.
       expect(prompt).toContain("pools.fun has no curve");
-      expect(prompt).toContain("Trench token still on its curve trades only against ETH");
-      expect(prompt).toContain("separate standard swap quote from its first block");
+      expect(prompt).toContain("SushiSwap V3 pool immediately");
+      expect(prompt).toContain("separate standard swap");
+      // ...and no longer teaches a venue that cannot be reached.
+      expect(prompt).not.toContain("Trench");
     });
 
     it("names the research gap: no holder count, no liquidity, dexscreener instead", () => {
@@ -103,18 +137,15 @@ describe("buildProtocolsPrompt", () => {
       expect(prompt).toContain("my launches on the Robinhood launchpad");
     });
 
-    // The address is NOT knowable at preview time (image -> metadata link ->
-    // salt -> address) and the deployment fee moves; a model that promises
-    // either from a preview is stating a money fact it cannot support.
-    // Post-PPV (2026-08-19): the doctrine must state the REQUIREMENT and the
-    // refusal, not merely warn about a blank token. A model reading only a
-    // consequence launched one anyway.
     it("states that the agent path requires an image and that execute refuses without one", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();
       // Wave 2 migration rows T548-T551.
       expect(prompt).toContain("agent path requires a staged image");
-      expect(prompt).toContain("Both agent paths start from a user-staged image");
+      // "BOTH agent paths" was the two launchpads' shared requirement. One
+      // launchpad remains, so the sentence names one path and the requirement
+      // is unchanged - what would be wrong is to keep implying a second.
+      expect(prompt).toContain("The agent path starts from a user-staged image");
       // The blank-token outcome survives only as the user's own manual choice,
       // never as something the agent may elect.
       expect(prompt).toContain("Only the user's own launch form may choose to launch without one");
@@ -129,8 +160,6 @@ describe("buildProtocolsPrompt", () => {
       expect(prompt).toContain("The deployment cost is dynamic");
     });
 
-    // Fee basis and destination are the two facts rule 90 says must never be
-    // model-chosen: 25 bps on the NATIVE value only, recipient pinned.
     it("states the 25 bps native-only fee basis and the pinned fee recipient", () => {
       resetProtocolsPromptCache();
       const full = buildPromptStack(makeContext()).staticLayers.join("\n");
@@ -151,8 +180,6 @@ describe("buildProtocolsPrompt", () => {
       expect(prompt).toContain("HOST-authored launch ceilings");
     });
 
-    // `alreadyCollected` is NOT the claimable total - the simulation is. That
-    // inversion is the one way this tool misreports money.
     it("states dryRun claim semantics: both legs, and alreadyCollected is not the total", () => {
       resetProtocolsPromptCache();
       const prompt = buildProtocolsPrompt();

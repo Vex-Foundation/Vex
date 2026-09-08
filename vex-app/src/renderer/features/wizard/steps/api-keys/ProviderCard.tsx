@@ -28,7 +28,13 @@ import {
 } from "../../../../components/icons/index.js";
 import { cn } from "../../../../lib/utils.js";
 
-export type ProviderCardSlug = "jupiter" | "tavily" | "rettiwt" | "relay";
+export type ProviderCardSlug =
+  | "jupiter"
+  | "tavily"
+  | "rettiwt"
+  | "relay"
+  | "lighter-core-trading"
+  | "lighter-rhc-trading";
 
 export type ProviderCardStatusTone = "set" | "partial" | "unset";
 

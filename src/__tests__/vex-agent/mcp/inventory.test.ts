@@ -87,7 +87,7 @@ describe("the exported inventory covers exactly the export scope", () => {
   });
 
   it("pins the exported surface size the owner decided (O20)", () => {
-    // 165 is a REVIEWED number: 25 internal tools plus 140 protocol tools. It
+    // 206 is a REVIEWED number: 29 internal tools plus 177 protocol tools. It
     // is pinned literally because a change to it is always a decision about
     // what external agents may call, never an incidental refactor.
     // 155 -> 159: stage A4b exported the four generic transaction signing
@@ -96,9 +96,11 @@ describe("the exported inventory covers exactly the export scope", () => {
     // with the 18-tool website-API surface (S10).
     // 165 -> 167: the native <-> wrapped-native pair, exported by default like
     // every other wallet tool and recorded in `mcp-export-scope.md`.
-    // 167 -> 168: `vex_ToolDescribe`, the MCP-only whole-contract reader that
+    // 167 -> 206: Lighter added two fixed-environment onboarding shortcuts
+    // and its reviewed 37-tool protocol surface.
+    // 206 -> 207: `vex_ToolDescribe`, the MCP-only whole-contract reader that
     // exists because a client truncates a description and never a result.
-    // 168 -> 167: `WebResearch` left the export (owner decision 2026-09-03).
+    // 207 -> 206: `WebResearch` left the export (owner decision 2026-09-03).
     // Every client that connects has its own web search, so the exported copy
     // was a duplicate that cost a provider key and 2 KB of context.
     // 167 -> 171 on the integration of the launchpads arc: the two pools.fun
@@ -106,9 +108,47 @@ describe("the exported inventory covers exactly the export scope", () => {
     // `pools__holder_rewards_get`) and the two Virtuals market-history reads
     // (`virtuals__agent_trades_list`, `virtuals__agent_candles_list`). All four
     // are read-only and none signs.
-    expect(inventory).toHaveLength(172);
-    expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(27);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(145);
+    // 172 -> 174 on the PR-C2 merge: the Virtuals bonding-curve trade pair
+    // (`virtuals__agent_trade_quote`, `virtuals__agent_trade_execute`). The
+    // quote is read-only; the execute is the FIRST signing tool this namespace
+    // has ever exported, which is why the internal count is unmoved and the
+    // protocol count carries both.
+    // 174 -> 176 on the holder-rewards merge: the two pools.fun MUTATIONS
+    // `pools__holder_rewards_claim` (the holder's own claim, which pays
+    // whoever signs it and carries no Vex fee) and
+    // `pools__holder_rewards_distribute` (the permissionless push, which pays
+    // the token's holders rather than its caller). Both sign, so unlike the
+    // two pools reads above neither is read-only; the internal count is
+    // unmoved and the protocol count carries both (147 -> 149).
+    // 176 -> 180 on the Virtuals AGENT-LAUNCH family
+    // (`virtuals__agent_launch_preview`, `_execute`, `_status`, `_cancel`).
+    // All four ARE exported to the Studio surface, unlike the two locker tools
+    // in `NON_EXPORTED_PROTOCOL_TOOLS`: an external agent has no image locker,
+    // but it does have its own project, and the launch family takes `imagePath`
+    // there and publishes those bytes to the same content-addressed host. Only
+    // one of the four is read-only (`_status`); the internal count was unmoved
+    // and the protocol count carried all four (149 -> 153).
+    // 180 -> 170 on the Trench Express retirement (migration 108): the ten
+    // `trench__*` tools were deleted with the protocol. All ten were protocol
+    // tools, so the internal count is unmoved again and the protocol count
+    // carries the whole drop (153 -> 143).
+    // 170 -> 171 on the image-publish Studio arm (2026-09-06):
+    // `launchpads__image_publish` left `NON_EXPORTED_PROTOCOL_TOOLS`. Excluding
+    // it withheld not a locker but the only APPROVED way to make bytes public,
+    // and a launch will not publish as a side effect - so a coding agent could
+    // never give a launched token a picture. It takes an `imagePath` on this
+    // surface, read through the same contained no-follow reader a Studio launch
+    // uses, and raises the same approval card. `launchpads__images_list`, the
+    // listing of a locker that is always empty here, stays withheld. It is a
+    // protocol tool, so the internal count is unmoved (143 -> 144).
+    // 171 -> 213 on the Lighter integration (2026-09-07): the 40 Lighter
+    // protocol tools (Core and Robinhood Chain reads, order previews and
+    // executions, funding, withdrawals, key registration, fee authorization)
+    // plus the two always-loaded onboarding shortcuts, which are INTERNAL
+    // registry tools (27 -> 29) rather than protocol manifests (144 -> 184).
+    expect(inventory).toHaveLength(213);
+    expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(29);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(184);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {
@@ -230,9 +270,57 @@ describe("annotations are pinned to O7, literally", () => {
           : getProtocolManifest(tool.toolId ?? "")?.actionKind;
       expect(actionKind).toBeDefined();
       expect(tool.annotations.readOnlyHint).toBe(actionKind === "read");
+      // O7 AMENDMENT, 2026-09-07 (owner-decisions.md D20): the hint is the
+      // action-kind table OR the manifest's own `destructive: true`
+      // declaration. The declaration can only ADD the hint, which is why it is
+      // an `||` here and not a second table.
+      const declared = tool.kind === "protocol"
+        && getProtocolManifest(tool.toolId ?? "")?.destructive === true;
       expect(tool.annotations.destructiveHint).toBe(
-        actionKind !== undefined && DESTRUCTIVE_ACTION_KINDS.has(actionKind),
+        (actionKind !== undefined && DESTRUCTIVE_ACTION_KINDS.has(actionKind)) || declared,
       );
+    }
+  });
+
+  /**
+   * THE AMENDMENT ITSELF, enumerated. The list is the point: it says which
+   * `external_post` tools Vex has decided are irreversible, so adding a
+   * seventh is a visible diff in a reviewed test rather than a quiet `true` in
+   * a manifest.
+   */
+  it("marks the six Lighter venue executions destructive by declaration", () => {
+    const declared = ["lighter.order.create", "lighter.order.cancel", "lighter.order.modify",
+      "lighter.order.cancelAll", "lighter.position.close", "lighter.withdraw"];
+    for (const toolId of declared) {
+      const manifest = getProtocolManifest(toolId);
+      // The declaration exists BECAUSE the action kind does not imply it: a
+      // Lighter order is signed by the local trading credential, not by the
+      // user's wallet, so `user_wallet_broadcast` would have been a lie.
+      expect(manifest?.actionKind, toolId).toBe("external_post");
+      expect(manifest?.destructive, toolId).toBe(true);
+      const tool = inventory.find((row) => row.toolId === toolId);
+      expect(tool?.annotations.destructiveHint, toolId).toBe(true);
+      expect(tool?.annotations.readOnlyHint, toolId).toBe(false);
+    }
+    // And no OTHER `external_post` tool in the whole surface acquired the hint
+    // by accident: the amendment is per tool, never per action kind.
+    const unexpected = inventory
+      .filter((row) => row.kind === "protocol" && !declared.includes(row.toolId ?? ""))
+      .filter((row) => getProtocolManifest(row.toolId ?? "")?.actionKind === "external_post")
+      .filter((row) => row.annotations.destructiveHint)
+      .map((row) => row.toolId);
+    expect(unexpected).toEqual([]);
+  });
+
+  it("keeps the two Lighter order previews out of the read-only filter", () => {
+    // They write a durable preview row and prepare an approval; a read-only
+    // client that called one would be handed an approval card by a tool its
+    // filter admitted as side-effect free.
+    for (const toolId of ["lighter.order.preview", "lighter.position.protect"]) {
+      expect(getProtocolManifest(toolId)?.actionKind, toolId).toBe("approval_prepare");
+      const tool = inventory.find((row) => row.toolId === toolId);
+      expect(tool?.annotations.readOnlyHint, toolId).toBe(false);
+      expect(tool?.annotations.destructiveHint, toolId).toBe(false);
     }
   });
 
@@ -273,7 +361,7 @@ describe("annotations are pinned to O7, literally", () => {
     // nothing and broadcasts nothing). A `mutating`-derived hint would fire a
     // client's irreversible-action prompt on it, and on the two launch-request
     // forms that only ask the user a question.
-    const diverging = ["pools__launch_preview", "pools__launch_request_form", "trench__launch_request_form"];
+    const diverging = ["pools__launch_preview", "pools__launch_request_form"];
     for (const name of diverging) {
       const manifest = getProtocolManifest(
         inventory.find((t) => t.publicName === name)?.toolId ?? "",

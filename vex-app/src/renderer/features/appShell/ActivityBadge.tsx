@@ -169,6 +169,10 @@ const KIND_LABEL: Record<FeedActivityKind, string> = {
   // `TRANSACTION`: the badge is a two-segment chip and the role segment beside
   // it carries the decoded effect (`TX·APPROVE`, `TX·CALL`).
   transaction: "TX",
+  // Migration 152 - money moved between the wallet and a venue account
+  // (Lighter deposits and withdrawals). Fills never reach this feed: they live
+  // in the venue's own fill ledger.
+  exchange: "EXCHANGE",
   activity: "ACTIVITY",
 };
 
@@ -193,6 +197,8 @@ const ROLE_LABEL: Record<AgentActivityEventRole, string | null> = {
   bridge_refund: "REFUND",
   lend_deposit: "DEPOSIT",
   lend_withdraw: "WITHDRAW",
+  exchange_deposit: "DEPOSIT",
+  exchange_withdrawal: "WITHDRAW",
   lend_borrow_operate: "BORROW",
   predict_buy: "BUY",
   predict_sell: "SELL",

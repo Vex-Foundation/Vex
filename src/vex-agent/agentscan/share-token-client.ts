@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { fetchWithTimeout, readJson } from "@utils/http.js";
 import { readRetryAfterSeconds } from "@utils/http/retry-after.js";
 
@@ -39,7 +41,9 @@ async function registerShareToken(
         "Content-Type": "application/json",
         Authorization: `Bearer ${input.ingestToken}`,
       },
-      body: JSON.stringify({ shareToken: input.shareToken }),
+      body: JSON.stringify({
+        shareTokenHash: createHash("sha256").update(input.shareToken, "utf8").digest("hex"),
+      }),
     });
   } catch (err) {
     return { kind: "retryable", status: null, retryAfterSeconds: null, detail: safeDetail(err) };

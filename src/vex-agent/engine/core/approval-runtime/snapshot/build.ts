@@ -41,6 +41,31 @@ import type {
 } from "./types.js";
 import type { ApprovalRefusalReason } from "../../../../db/repos/approval-intents.js";
 
+/** Release only the exact fee setup rejected by this locked host decision. */
+async function settleLighterFeeRejection(
+  client: ClientBase,
+  row: IntentSnapshotRow,
+  approvalId: string,
+  status: "rejected" | "expired",
+): Promise<void> {
+  const call = row.queue_tool_call;
+  if (call.command !== "execute_tool") return;
+  const args = call.args;
+  if (!args || typeof args !== "object" || Array.isArray(args)) return;
+  const envelope = args as Record<string, unknown>;
+  if (envelope.toolId !== "lighter.fees.approve") return;
+  const params = envelope.params;
+  if (!params || typeof params !== "object" || Array.isArray(params)) return;
+  const record = params as Record<string, unknown>;
+  if (Object.keys(record).join(",") !== "intentId" || typeof record.intentId !== "string") return;
+  const { markLighterFeeAuthorizationDecisionWith } = await import(
+    "../../../../db/repos/lighter-fee-authorization-intents.js"
+  );
+  await markLighterFeeAuthorizationDecisionWith(client, {
+    intentId: record.intentId, sessionId: row.session_id, approvalId, status,
+  });
+}
+
 export async function buildApproveSnapshot(
   client: ClientBase,
   approvalId: string,
@@ -190,6 +215,7 @@ async function autoRejectInTx(
       "expired-in-tx intent CAS missed despite decision=null",
     );
   }
+  await settleLighterFeeRejection(client, row, approvalId, "expired");
   return {
     type: "expired_in_tx",
     row,
@@ -306,6 +332,7 @@ async function policyDriftRejectInTx(
       "policy-drift intent CAS missed despite decision=null",
     );
   }
+  await settleLighterFeeRejection(client, row, approvalId, "rejected");
   return {
     type: "policy_drift_blocked",
     row,
@@ -369,6 +396,8 @@ export async function buildRejectSnapshot(
       "reject intent CAS missed despite decision=null",
     );
   }
+  await settleLighterFeeRejection(client, row, approvalId,
+    reason === TOOL_RESULT_EXPIRED_REASON ? "expired" : "rejected");
   return {
     type: "rejected_in_tx",
     row,

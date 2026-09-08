@@ -7,13 +7,36 @@ describe("apiKeysSetInputSchema", () => {
     expect(parsed.success).toBe(true);
   });
 
-  it("accepts a payload with jupiter/tavily/rettiwt keys", () => {
+  it("accepts a payload with supported key fields", () => {
     const parsed = apiKeysSetInputSchema.safeParse({
       jupiterApiKey: "j",
       tavilyApiKey: "t",
       rettiwtApiKey: "r",
+      relayApiKey: "relay",
+      lighterCoreTradingAccountIndex: 42,
+      lighterCoreTradingApiKeyIndex: 7,
+      lighterCoreTradingApiPrivateKey: `0x${"1".repeat(80)}`,
+      lighterRhcTradingAccountIndex: 1171,
+      lighterRhcTradingApiKeyIndex: 9,
+      lighterRhcTradingApiPrivateKey: `0x${"2".repeat(80)}`,
     });
     expect(parsed.success).toBe(true);
+  });
+
+  it("rejects reserved Lighter trading API-key indexes before IPC", () => {
+    const parsed = apiKeysSetInputSchema.safeParse({
+      lighterRhcTradingAccountIndex: 1171,
+      lighterRhcTradingApiKeyIndex: 3,
+      lighterRhcTradingApiPrivateKey: `0x${"2".repeat(80)}`,
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("rejects separate Lighter read-only token fields in the normal API-key setup path", () => {
+    const parsed = apiKeysSetInputSchema.safeParse({
+      lighterRhcReadOnlyToken: "ro:1:single:2000000000:abcdef",
+    });
+    expect(parsed.success).toBe(false);
   });
 
   it("rejects a payload carrying an unrecognized key (.strict())", () => {

@@ -59,7 +59,6 @@ Static prefix 104,433 B (102.0 KB) across 11 layers; 104,503 B joined with separ
 | --- | ---: |
 | Runtime Clock | 599 |
 | Safety Re-anchor | 488 |
-
 ## mission setup / restricted
 
 Static prefix 110,155 B (107.6 KB) across 11 layers; 110,225 B joined with separators. Turn-state floor 633 B.
@@ -155,4 +154,3 @@ Static prefix 108,584 B (106.0 KB) across 11 layers; 108,654 B joined with separ
 | --- | ---: |
 | Runtime Clock | 599 |
 | Safety Re-anchor | 488 |
-

@@ -2,17 +2,17 @@
  * Request/response channel name constants (ipcMain.handle / ipcRenderer.invoke).
  *
  * Naming per skill §6:
- *   vex:<domain>:<action>          — request/response
- *   vex:cancel                     — renderer → main cancellation by requestId
+ *   vex:<domain>:<action>          - request/response
+ *   vex:cancel                     - renderer → main cancellation by requestId
  */
 
 export const CH = {
-  // Capabilities — feature flags, phase, onboarding completion
+  // Capabilities - feature flags, phase, onboarding completion
   capabilities: {
     get: "vex:capabilities:get",
   },
 
-  // System — health, OS info, network probe
+  // System - health, OS info, network probe
   system: {
     health: "vex:system:health",
     osInfo: "vex:system:osInfo",
@@ -21,7 +21,7 @@ export const CH = {
     notifyTurnComplete: "vex:system:notifyTurnComplete",
   },
 
-  // Docker — detection + lifecycle (M4)
+  // Docker - detection + lifecycle (M4)
   docker: {
     detect: "vex:docker:detect",
     install: "vex:docker:install",
@@ -31,7 +31,7 @@ export const CH = {
     stopPreviousInstallStacks: "vex:docker:stopPreviousInstallStacks",
   },
 
-  // Database — migrations + status (M6)
+  // Database - migrations + status (M6)
   database: {
     migrate: "vex:database:migrate",
     status: "vex:database:status",
@@ -44,12 +44,12 @@ export const CH = {
     resetToFreshVault: "vex:secrets:resetToFreshVault",
   },
 
-  // Wallet — sudo-style ops on existing keystores (Phase 2 feature #6)
+  // Wallet - sudo-style ops on existing keystores (Phase 2 feature #6)
   wallet: {
     exportPrivateKey: "vex:wallet:exportPrivateKey",
   },
 
-  // Onboarding — wizard step actions (M7–M11)
+  // Onboarding - wizard step actions (M7–M11)
   onboarding: {
     getEnvState: "vex:onboarding:getEnvState",
     getWizardState: "vex:onboarding:getWizardState",
@@ -78,7 +78,7 @@ export const CH = {
     completeSetup: "vex:onboarding:completeSetup",
   },
 
-  // Sessions — multi-session shell (M12, Phase 2)
+  // Sessions - multi-session shell (M12, Phase 2)
   sessions: {
     create: "vex:sessions:create",
     list: "vex:sessions:list",
@@ -95,14 +95,14 @@ export const CH = {
     /**
      * Native, path-private Markdown transcript export. Main owns the save
      * dialog and the destination path; the renderer receives only
-     * `saved | cancelled` (or a redacted error) — never the path.
+     * `saved | cancelled` (or a redacted error) - never the path.
      */
     exportMarkdown: "vex:sessions:exportMarkdown",
     /**
      * Global runtime model resolution for a session. `getModel` is
      * read-only and reports the model the engine resolves from
      * `AGENT_PROVIDER`/`AGENT_MODEL` (source: global default vs.
-     * unconfigured). Vex uses one global model for every session — there
+     * unconfigured). Vex uses one global model for every session - there
      * is no per-session model write.
      */
     getModel: "vex:sessions:getModel",
@@ -113,7 +113,7 @@ export const CH = {
     planAccept: "vex:sessions:planAccept",
   },
 
-  // Chat — operator text routed to agent or mission setup/run.
+  // Chat - operator text routed to agent or mission setup/run.
   chat: {
     submit: "vex:chat:submit",
     /**
@@ -129,10 +129,10 @@ export const CH = {
   // Each namespace is a new VexDomain with paired Zod shared schemas.
   // Read-only and mutating handlers are all DB-backed (the puzzle-1
   // `*.feature_unavailable` fail-closed stubs are retired). Renderer
-  // never sees raw DB JSONB — every mapper is allowlist + Zod validated
+  // never sees raw DB JSONB - every mapper is allowlist + Zod validated
   // in main.
 
-  // Messages — paginated transcript reads. Live transcript only; archive
+  // Messages - paginated transcript reads. Live transcript only; archive
   // rows are not exposed to the renderer.
   messages: {
     list: "vex:messages:list",
@@ -140,7 +140,7 @@ export const CH = {
     getAround: "vex:messages:getAround",
   },
 
-  // Runtime — durable control plane for an active mission run. `getState`
+  // Runtime - durable control plane for an active mission run. `getState`
   // resolves the active run row for the session; control mutations are
   // DB-backed pause/stop/resume + leases (puzzle 03).
   runtime: {
@@ -151,7 +151,7 @@ export const CH = {
     cancelWake: "vex:runtime:cancelWake",
   },
 
-  // Mission — draft/contract/command surface. `getDraft` is read-only;
+  // Mission - draft/contract/command surface. `getDraft` is read-only;
   // host-only acceptance + lifecycle commands drive the rest. Mission
   // control is button-driven (the slash-command layer was removed).
   mission: {
@@ -180,15 +180,15 @@ export const CH = {
     restartWithInstruction: "vex:mission:restartWithInstruction",
   },
 
-  // Approvals — queue browsing + decisions. Pending/get/history are
-  // read-only (renderer never receives raw `tool_call` JSONB — mapper
+  // Approvals - queue browsing + decisions. Pending/get/history are
+  // read-only (renderer never receives raw `tool_call` JSONB - mapper
   // extracts toolName/permissionAtEnqueue/reasoningPreview only).
   // approve/reject run the durable decision tx + background runtime
   // continuation (puzzle 05 phase 3).
   approvals: {
     listPending: "vex:approvals:listPending",
     // App-wide pending-approvals read (no sessionId) for the DESK RULE
-    // global inbox — returns the same sanitized DTO plus the joined session
+    // global inbox - returns the same sanitized DTO plus the joined session
     // title. Session-scoped `listPending` stays the inline-card source.
     listPendingAll: "vex:approvals:listPendingAll",
     get: "vex:approvals:get",
@@ -197,7 +197,7 @@ export const CH = {
     getHistory: "vex:approvals:getHistory",
   },
 
-  // Wallets — per-session wallet scope contract. `listSessionWallets`
+  // Wallets - per-session wallet scope contract. `listSessionWallets`
   // returns the DB-backed per-session scope (phase 5C).
   // setSessionWalletScope resolves wallet ids server-side and fails
   // closed on unknown ids (`wallets.invalid_selection`); prepared-intent
@@ -212,7 +212,7 @@ export const CH = {
     cancelPreparedIntent: "vex:wallets:cancelPreparedIntent",
   },
 
-  // Models — global model resolution. Returns a single "configured
+  // Models - global model resolution. Returns a single "configured
   // global default" derived from `AGENT_PROVIDER`/`AGENT_MODEL` in env.
   // No network call and no pricing/context claims; a future OpenRouter
   // `/models` catalogue fetch could enrich the option metadata.
@@ -220,7 +220,7 @@ export const CH = {
     listAvailable: "vex:models:listAvailable",
   },
 
-  // Usage — last-turn + session totals from `usage_log`. Currency
+  // Usage - last-turn + session totals from `usage_log`. Currency
   // defaults to USD; provider/model columns from the DB row pass through
   // as `nullable` for older sessions. `getContextWindow` projects the
   // session's `token_count` against the global `AGENT_CONTEXT_LIMIT` for
@@ -231,14 +231,14 @@ export const CH = {
     getContextWindow: "vex:usage:getContextWindow",
   },
 
-  // Compaction — Track-2 status + history (stages 7-1, 7-2a) + retry (8-5).
+  // Compaction - Track-2 status + history (stages 7-1, 7-2a) + retry (8-5).
   // `getStatus` = latest job + active count for the runtime-bar chip;
   // `listHistory` = the session's compaction-generation timeline for the
   // memory panel (both app-scoped; null for missing/foreign sessions).
   // `retry` re-enqueues a permanently-failed generation for another attempt.
   //
   // `getPreparation` / `requestApply` (compaction v2) belong to the SECOND
-  // compaction track — the `compaction_preparations` FSM behind the apply
+  // compaction track - the `compaction_preparations` FSM behind the apply
   // button. `getPreparation` is a bounded progress projection (no corpus, no
   // summary, no error prose); `requestApply` performs exactly ONE compare-and-
   // swap `summary_ready → apply_requested` and never a cutover.
@@ -250,7 +250,7 @@ export const CH = {
     requestApply: "vex:compaction:requestApply",
   },
 
-  // Long-term memory — read-only list of the GLOBAL long-term memory store
+  // Long-term memory - read-only list of the GLOBAL long-term memory store
   // (memory-system S9 rewire). Sanitized metadata only (no content_md /
   // source_refs / embeddings). Deliberately NO mutation channel: the
   // lifecycle is owned by the agent's memory manager.
@@ -258,7 +258,7 @@ export const CH = {
     list: "vex:longMemory:list",
   },
 
-  // Memory-manager inspector (memory-system S10) — read-only window into the
+  // Memory-manager inspector (memory-system S10) - read-only window into the
   // manager's pipeline: pending candidates, decision audit, and job queue
   // status. Sanitized DTOs only (no content_md / evidence_refs / decision_hash
   // / embeddings / last_error). ZERO mutation channels by doctrine: the memory
@@ -269,7 +269,7 @@ export const CH = {
     jobsSummary: "vex:memoryInspector:jobsSummary",
   },
 
-  // Memory — read-only per-session memory list + stats (stage 7-2a).
+  // Memory - read-only per-session memory list + stats (stage 7-2a).
   // Sanitized HARD (no narrative bodies / raw outstanding items / embeddings);
   // outstanding work is exposed as counts. App-scoped; null for missing sessions.
   memory: {
@@ -277,7 +277,7 @@ export const CH = {
     getStats: "vex:memory:getStats",
   },
 
-  // Portfolio — read-only wallet-scoped reads (stage 3). `read` resolves a
+  // Portfolio - read-only wallet-scoped reads (stage 3). `read` resolves a
   // server-side wallet address allow-list (global inventory or a session's
   // wallet scope) and aggregates `proj_balances` /
   // `proj_portfolio_snapshots` into a renderer-safe DTO. Renderer sends only
@@ -286,28 +286,28 @@ export const CH = {
   // which is the single source of executed-activity truth.)
   portfolio: {
     read: "vex:portfolio:read",
-    // Chronos-shell — read-only, global-scope per-token TX history (the
+    // Chronos-shell - read-only, global-scope per-token TX history (the
     // click-through screen from a Balances/Assets token row). Server resolves
     // the GLOBAL configured wallet inventory (same allow-list as `read`'s
     // `scope: "global"`); the renderer supplies only `{chainId, tokenAddress,
     // cursor}`, never an address.
     listTokenHistory: "vex:portfolio:listTokenHistory",
-    // Agent Scan — read-only, global-scope FULL-HISTORY activity feed, built on
+    // Agent Scan - read-only, global-scope FULL-HISTORY activity feed, built on
     // the canonical `agent_activity` vocabulary alone (no legacy arm). Server
     // resolves the GLOBAL configured wallet inventory; the renderer supplies
     // only `{cursor, filters}`, never an address, and its optional
     // `filters.sessionId` can only NARROW that scope.
     listAgentScan: "vex:portfolio:listAgentScan",
-    // Wave P — user-initiated portfolio refresh (the sidebar refresh button).
+    // Wave P - user-initiated portfolio refresh (the sidebar refresh button).
     // Runs a full balance sync + authoritative snapshot in the engine. The
     // engine holds a single-flight mutex (`fullBalanceSync` is NOT
     // concurrency-safe) and this handler rate-limits to one call per 30s,
     // returning a `throttled` DTO rather than an error. Public-address network
-    // reads only — no keystore, no signing.
+    // reads only - no keystore, no signing.
     refresh: "vex:portfolio:refresh",
   },
 
-  // Market — read-only live VEX token metrics for the welcome-screen price
+  // Market - read-only live VEX token metrics for the welcome-screen price
   // widget (T1). `getVexSnapshot` returns main's in-memory cache (no network
   // call from the handler); the live poll + `EV.market.vex` broadcast are owned
   // by the main-process market service. Renderer never fetches external APIs.
@@ -315,12 +315,40 @@ export const CH = {
     getVexSnapshot: "vex:market:getVexSnapshot",
   },
 
-  // Settings — read-only Phase 1 (Phase 2 dodaje setters)
+  // Light it up - bounded Lighter reads. Main owns every provider request;
+  // renderer inputs select only environment, market and candle resolution.
+  // The account snapshot derives short-lived read authorization in main; no
+  // auth token, signer, nonce or submission capability crosses this boundary.
+  lighterTrading: {
+    listMarkets: "vex:lighterTrading:listMarkets",
+    getSnapshot: "vex:lighterTrading:getSnapshot",
+    // Authenticated account panel read. Main resolves the owning account from
+    // the unlocked trading scope; renderer supplies only the environment and
+    // never receives auth tokens. Positions/balances are public account-index
+    // reads; open orders use a short-lived read-only auth derived in main.
+    getAccount: "vex:lighterTrading:getAccount",
+    startCandleSubscription: "vex:lighterTrading:startCandleSubscription",
+    stopCandleSubscription: "vex:lighterTrading:stopCandleSubscription",
+    startPublicMarketSubscription: "vex:lighterTrading:startPublicMarketSubscription",
+    stopPublicMarketSubscription: "vex:lighterTrading:stopPublicMarketSubscription",
+  },
+
+  // Settings - read-only Phase 1 (Phase 2 dodaje setters)
   settings: {
     getPreferences: "vex:settings:getPreferences",
     setTelemetryConsent: "vex:settings:setTelemetryConsent",
+    getLighterIntegration: "vex:settings:getLighterIntegration",
+    setLighterIntegration: "vex:settings:setLighterIntegration",
+    inspectLighterCredentialConnections:
+      "vex:settings:inspectLighterCredentialConnections",
+    forgetLighterCredentialConnection:
+      "vex:settings:forgetLighterCredentialConnection",
+    // The Robinhood Chain points campaign, read on demand for every wallet
+    // with a Lighter account registered through the app. Cancellable: the
+    // renderer aborts it on navigation and on a second Refresh.
+    lighterPoints: "vex:settings:lighterPoints",
     // "Vex setup" user profile (display name, instructions, work
-    // description) — DB-backed (soul singleton), replaces persona.md.
+    // description) - DB-backed (soul singleton), replaces persona.md.
     getUserProfile: "vex:settings:getUserProfile",
     setUserProfile: "vex:settings:setUserProfile",
     getSuperboardKey: "vex:settings:getSuperboardKey",
@@ -346,11 +374,11 @@ export const CH = {
     read: "vex:shellBackdrop:read",
   },
 
-  // Updater — user-triggered in-app update flow (M13). `check` may run on
+  // Updater - user-triggered in-app update flow (M13). `check` may run on
   // app start/focus or manually; download + restart happen ONLY after an
   // explicit user action (skill vex-user-triggered-updates §"Non-negotiable
   // rules": no silent download/install). Renderer never receives installer
-  // paths, artifact URLs, tokens, or raw metadata — only sanitized status.
+  // paths, artifact URLs, tokens, or raw metadata - only sanitized status.
   updater: {
     check: "vex:updater:check",
     getStatus: "vex:updater:getStatus",
@@ -360,12 +388,12 @@ export const CH = {
     openReleaseNotes: "vex:updater:openReleaseNotes",
   },
 
-  // Telemetry — renderer-side error reporting (Sentry, opt-in only)
+  // Telemetry - renderer-side error reporting (Sentry, opt-in only)
   telemetry: {
     reportRendererError: "vex:telemetry:reportRendererError",
   },
 
-  // Support — local-first bug report sink (Phase 1: persist; Phase 3: upload)
+  // Support - local-first bug report sink (Phase 1: persist; Phase 3: upload)
   // + "Open logs folder" (error-diagnostics phase D-FOLDER): main opens the
   // electron-log directory via shell.openPath; no in-app log viewer.
   support: {
@@ -374,17 +402,17 @@ export const CH = {
   },
 
   /**
-   * Trench image locker — GLOBAL and persistent, NOT session-scoped, so a
+   * Trench image locker - GLOBAL and persistent, NOT session-scoped, so a
    * mission started tomorrow can use an image uploaded today.
    *
    * Bytes live main-side under userData keyed by an OPAQUE `imageId`; no
    * filesystem path ever crosses to the renderer, and `upload` opens the
    * main-owned picker itself (the renderer sends neither a path nor bytes).
-   * A launch REQUIRES an image — that is a Vex product rule, not a contract
+   * A launch REQUIRES an image - that is a Vex product rule, not a contract
    * one: the Diamond accepts empty image bytes, we do not.
    *
    * `readThumb` returns a `data:` URL of the ALREADY-VALIDATED stored bytes
-   * (≤20 KB) so the sidebar card can render without a path — `index.html`
+   * (≤20 KB) so the sidebar card can render without a path - `index.html`
    * pins `img-src 'self' data:`, so this stays CSP-clean. It is deliberately
    * separate from `list` so the metadata read stays cheap.
    */
@@ -494,29 +522,6 @@ export const CH = {
   },
 
   /**
-   * Trench Express token launch — the host-mediated form path.
-   *
-   * `preview` is the AUTHORITATIVE main-side cost read: the creation fee comes
-   * from Diamond storage at an anchored block, and the reply carries the wei
-   * figures SEPARATELY (creation fee, prebuy, msg.value, Vex fee, and the gas
-   * estimate as its own field). There is deliberately no merged "total": the
-   * consented amount is exactly `msg.value`, gas is an estimate, and summing
-   * them would present an estimate as a commitment.
-   *
-   * `submit` is the Deploy click. MAIN — never the renderer — reconstructs and
-   * binds the authorization record, and the renderer sends parameters only.
-   * A preview whose anchored values have moved is refused by name so the UI
-   * can re-review rather than silently spend a stale figure.
-   */
-  tokenLaunch: {
-    preview: "vex:tokenLaunch:preview",
-    submit: "vex:tokenLaunch:submit",
-    cancel: "vex:tokenLaunch:cancel",
-    myLaunches: "vex:tokenLaunch:myLaunches",
-    getAwaiting: "vex:tokenLaunch:getAwaiting",
-  },
-
-  /**
    * pools.fun launches and creator-fee claims (domain `poolsLaunch`).
    *
    * TWO STAGES, and the split is the contract. `prepare` uploads the image,
@@ -525,15 +530,23 @@ export const CH = {
    * user must read. `deploy` takes ONLY that id, re-verifies, and authorizes
    * exactly the calldata and value the fingerprint names. The renderer therefore
    * cannot alter a launch between the screen the user approved and the signature
-   * — it has no field with which to try.
+   * - it has no field with which to try.
    *
    * `claimPreview` simulates `collectAndClaim` and reports BOTH payout legs;
    * `claim` executes it as one activity carrying two output legs.
+   *
+   * TWO CANCELS, TWO OBJECTS. `cancel` ends a PREPARED launch by its verified
+   * `fingerprintId`. `cancelAwaitingForm` ends the DRAFT an agent asked the
+   * human to fill, by the `intentId` the awaiting read handed the renderer, and
+   * wakes the agent turn parked on it - which is why dismissing that dialog
+   * answers the agent at once instead of leaving it to the expiry sweep.
+   * Neither reaches a signer.
    */
   poolsLaunch: {
     prepare: "vex:poolsLaunch:prepare",
     deploy: "vex:poolsLaunch:deploy",
     cancel: "vex:poolsLaunch:cancel",
+    cancelAwaitingForm: "vex:poolsLaunch:cancelAwaitingForm",
     myLaunches: "vex:poolsLaunch:myLaunches",
     getAwaiting: "vex:poolsLaunch:getAwaiting",
     claimPreview: "vex:poolsLaunch:claimPreview",

@@ -207,7 +207,7 @@ function isResponseSchemaFailure(err: unknown): boolean {
  * The two phrasings the money paths actually produce for "the account cannot
  * pay", both captured live in this repo: viem's EVM wording ("The total cost
  * (gas * gas fee + value) of executing this transaction exceeds the balance of
- * the account", pinned in `trench-failure-detail.test.ts`) and the node/Solana
+ * the account", pinned in the launchpad failure-detail tests) and the node/Solana
  * wording ("insufficient funds for gas * price + value" / "…for rent", pinned
  * in `solana-program-error-reason.test.ts`). Deliberately narrow: a broader
  * "balance" scan would swallow ordinary prose that merely mentions balances.

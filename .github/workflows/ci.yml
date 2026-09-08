@@ -30,8 +30,26 @@ jobs:
 
       - run: corepack enable
 
+      # The toolchain check refuses a Go that differs from the signer pin, and
+      # the runner image ships its own Go: install the pinned one first.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          cache: false
+
+      - name: Verify pinned toolchain
+        run: pnpm run verify:toolchain
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # The production graph gate. It runs BEFORE the build so a vulnerable
+      # transitive dependency fails the job in seconds rather than after a full
+      # build and test cycle, and it runs once per lockfile: here for the root
+      # workspace, and in vex-app-build-and-test for the desktop lockfile.
+      - name: Audit production dependencies
+        run: pnpm run audit:deps
 
       - name: Build
         run: pnpm run build
@@ -44,6 +62,14 @@ jobs:
       # event rather than pull requests only.
       - name: Reject binary source files
         run: pnpm check:no-binary-sources
+
+      # Repo-wide and every event, for the reason above and one more: this gate
+      # asserts a property of the WHOLE tree (nothing outside a measured
+      # allowlist still names the retired Trench Express protocol), so scoping
+      # it to a pull request's diff would let residue arrive on a trunk push and
+      # never be seen again.
+      - name: Reject Trench Express residue
+        run: pnpm check:trench-residue
 
       - name: Reject unsafe test escapes
         # PULL REQUESTS ONLY, by design. The deleted-test allowlist's lifecycle
@@ -92,6 +118,23 @@ jobs:
         with:
           node-version: 22
 
+      # The Lighter signer helper is built from a PINNED Go (the go.mod toolchain
+      # directive and scripts/verify-runtime-toolchain.mjs refuse any other), so
+      # the exact patch is stated here rather than read from a version file.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          cache-dependency-path: src/tools/lighter/signer-runtime/go.sum
+
+      # The TypeScript wire codes for Lighter order types and time-in-force are
+      # table-tested against this artifact; it must be exactly what the pinned
+      # lighter-go module says, never a hand edit.
+      - name: Verify the Lighter wire-constants artifact
+        working-directory: src/tools/lighter/signer-runtime
+        run: |
+          go run ./cmd/wire-constants > "$RUNNER_TEMP/wire-constants.json"
+          diff -u wire-constants.json "$RUNNER_TEMP/wire-constants.json"
+
       - run: corepack enable
 
       # The Studio bridge conformance test spawns the BUILT binary against the
@@ -107,12 +150,19 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: bash bridge/build.sh linux amd64
 
+      - name: Verify pinned toolchain
+        working-directory: ${{ github.workspace }}
+        run: pnpm run verify:toolchain
+
       - name: Install root dependencies (monorepo - @vex-lib/@vex-agent aliases bundle root agent/shared code into vex-app's main process, so root node_modules must exist at build time)
         working-directory: ${{ github.workspace }}
         run: pnpm install --frozen-lockfile
 
       - name: Install vex-app dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Audit vex-app production dependencies
+        run: pnpm run audit:deps
 
       # pnpm does not run the `electron` package's install script here, and
       # electron 42's index.js downloads the binary ON IMPORT
@@ -503,7 +553,17 @@ jobs:
         with:
           node-version: 22
 
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          cache: false
+
       - run: corepack enable
+
+      - name: Verify pinned toolchain
+        working-directory: ${{ github.workspace }}
+        run: pnpm run verify:toolchain
 
       - name: Install root dependencies (monorepo - same reason as the build-and-test job)
         working-directory: ${{ github.workspace }}
@@ -511,6 +571,9 @@ jobs:
 
       - name: Install vex-app dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Audit vex-app production dependencies
+        run: pnpm run audit:deps
 
       # The Studio journey spec creates a real project, and since the batch-1
       # contract change project creation renders agent config files through the
@@ -656,8 +719,31 @@ jobs:
       - name: Materialize the Electron binary
         run: node node_modules/electron/install.js
 
-      - name: Test (vitest, darwin)
-        run: pnpm test
+      # Two steps, not one, since 2026-09-07. The only suite in the repository
+      # that has ever flaked on this runner is the one that drives a REAL
+      # native watcher over FSEvents: run 33956745474 lost its SUSPEND test,
+      # and run 34113589611 - with that test armed and passing - lost
+      # "SUPPRESSES child deletes under a deleted directory" in the same file
+      # after waiting 8112 ms for a directory-delete event the stream never
+      # delivered while it was delivering the child delete. Both were a fully
+      # contended runner: 796 files under vitest's default worker fan-out,
+      # 638 s wall with 449 s of it in import. So the machine is quiet when
+      # that file runs. `test:except-native-fs` sets VEX_SKIP_NATIVE_FS_SUITE=1,
+      # which vex-app/vitest.config.ts reads (a CLI --exclude cannot express
+      # this: the node project's own test.exclude overrides it on vitest
+      # 4.1.5); `test:native-fs` then runs the file by path, alone. Together
+      # they cover exactly what `pnpm test` covers, and no assertion is
+      # weakened, skipped or retried. Linux and Windows keep `pnpm test`.
+      #
+      # If the isolated step goes red, load is no longer the explanation and
+      # the finding is FSEvents delivery itself on darwin: that is evidence for
+      # a product-level darwin fallback in the watcher, not for widening a
+      # timeout budget here.
+      - name: Test (vitest, darwin, all but the native watcher suite)
+        run: pnpm run test:except-native-fs
+
+      - name: Test (vitest, darwin, native watcher suite alone)
+        run: pnpm run test:native-fs
 
       # The same golden vectors the Linux and Windows bridge jobs run, on the
       # third shipped kernel. `bridge` is addressed absolutely because this

@@ -53,10 +53,10 @@ whether its provider key is configured on this machine.
 
 ## Totals
 
-- tools: 172
-- Vex tools: 27
-- protocol tools: 145 across 11 protocols
-- destructive: 50
+- tools: 213
+- Vex tools: 29
+- protocol tools: 184 across 12 protocols
+- destructive: 63
 
 ## Vex tools
 
@@ -87,6 +87,8 @@ whether its provider key is configured on this machine.
 | WalletTrackToken | Track a token in the local wallet view | mutating | no | - |
 | WalletWrapConfirm | Broadcast a prepared wrap or unwrap | mutating | yes | - |
 | WalletWrapPrepare | Prepare a native / wrapped-native conversion | mutating | no | - |
+| lighter_core_onboarding_status | Check Lighter Core onboarding readiness | read-only | no | - |
+| lighter_rhc_onboarding_status | Check Robinhood Chain Lighter readiness | read-only | no | - |
 | vex_ToolDescribe | Read one tool's whole contract | read-only | no | - |
 | vex_ToolSearch | Search the protocol tool catalog | read-only | no | - |
 
@@ -137,6 +139,57 @@ whether its provider key is configured on this machine.
 | kyberswap__swap_execute | Execute a KyberSwap swap | mutating | yes | - |
 | kyberswap__swap_quote | Quote a KyberSwap swap | read-only | no | - |
 | kyberswap__token_safety_check | Audit an EVM token with KyberSwap | read-only | no | - |
+
+### launchpads
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| launchpads__image_publish | Publish a launch picture publicly | mutating | no | - |
+
+### lighter
+
+| tool | title | access | destructive | requires env |
+| --- | --- | --- | --- | --- |
+| lighter__account_get | Read a Lighter account | read-only | no | - |
+| lighter__account_onboarding_status | Check Lighter account onboarding readiness | read-only | no | - |
+| lighter__api_keys_inspect | Inspect Lighter API-key registrations | read-only | no | - |
+| lighter__candles_list | Read Lighter market candles | read-only | no | - |
+| lighter__deposit | Execute an approved Lighter deposit | mutating | yes | - |
+| lighter__deposit_prepare | Prepare a Lighter deposit approval | mutating | no | - |
+| lighter__deposit_status | Check a Lighter deposit's status | read-only | no | - |
+| lighter__fees_approve | Authorize approved Lighter trading fees | mutating | yes | - |
+| lighter__fees_approve_prepare | Prepare Lighter trading-fee approval | mutating | no | - |
+| lighter__fees_status | Check Lighter trading-fee authorization | read-only | no | - |
+| lighter__key_register | Register an approved Lighter trading key | mutating | yes | - |
+| lighter__key_register_prepare | Prepare a Lighter trading-key approval | mutating | no | - |
+| lighter__key_register_status | Check a Lighter key registration's status | read-only | no | - |
+| lighter__market_get | Read one Lighter market | read-only | no | - |
+| lighter__markets_list | List Lighter markets | read-only | no | - |
+| lighter__open_orders_list | List open Lighter orders | read-only | no | - |
+| lighter__order_cancel | Cancel an approved Lighter order | mutating | yes | - |
+| lighter__order_cancel_all | Cancel all approved Lighter orders | mutating | yes | - |
+| lighter__order_cancel_all_prepare | Prepare approval to cancel all Lighter orders | mutating | no | - |
+| lighter__order_cancel_prepare | Prepare a Lighter order-cancellation approval | mutating | no | - |
+| lighter__order_create | Submit an approved Lighter order | mutating | yes | - |
+| lighter__order_create_prepare | Prepare a Lighter order approval | mutating | no | - |
+| lighter__order_history_list | Read Lighter order history | read-only | no | - |
+| lighter__order_modify | Modify an approved Lighter limit order | mutating | yes | - |
+| lighter__order_modify_prepare | Prepare a Lighter order-modification approval | mutating | no | - |
+| lighter__order_preview | Preview a Lighter order | mutating | no | - |
+| lighter__order_status | Check a Lighter order action's status | read-only | no | - |
+| lighter__orderbook_get | Read a Lighter order book | read-only | no | - |
+| lighter__position_close | Close an approved Lighter position | mutating | yes | - |
+| lighter__position_close_prepare | Prepare a Lighter position-close approval | mutating | no | - |
+| lighter__position_protect | Preview Lighter position protection | mutating | no | - |
+| lighter__positions_list | List Lighter positions | read-only | no | - |
+| lighter__recent_trades_list | Read recent public Lighter trades | read-only | no | - |
+| lighter__system_get | Read Lighter system status | read-only | no | - |
+| lighter__trades_list | Read Lighter account trades | read-only | no | - |
+| lighter__withdraw | Submit an approved Lighter withdrawal | mutating | yes | - |
+| lighter__withdraw_claim | Broadcast an approved Lighter withdrawal claim | mutating | yes | - |
+| lighter__withdraw_claim_prepare | Prepare a Lighter withdrawal-claim approval | mutating | no | - |
+| lighter__withdraw_prepare | Prepare a Lighter withdrawal approval | mutating | no | - |
+| lighter__withdraw_status | Check a Lighter withdrawal's status | read-only | no | - |
 
 ### morpho
 
@@ -201,6 +254,8 @@ whether its provider key is configured on this machine.
 | tool | title | access | destructive | requires env |
 | --- | --- | --- | --- | --- |
 | pools__fees_claim | Claim pools.fun creator fees | mutating | yes | - |
+| pools__holder_rewards_claim | Claim pools.fun holder rewards | mutating | yes | - |
+| pools__holder_rewards_distribute | Distribute pools.fun holder rewards | mutating | yes | - |
 | pools__holder_rewards_get | Read pools.fun holder rewards | read-only | no | - |
 | pools__launch_assets_list | List pools.fun launchable stocks | read-only | no | - |
 | pools__launch_execute | Launch a token on pools.fun | mutating | yes | - |
@@ -258,21 +313,6 @@ whether its provider key is configured on this machine.
 | solana__tokens_discover | Discover new and trending Solana tokens | read-only | no | JUPITER_API_KEY |
 | solana__tokens_search | Search Solana tokens by name | read-only | no | JUPITER_API_KEY |
 
-### trench
-
-| tool | title | access | destructive | requires env |
-| --- | --- | --- | --- | --- |
-| trench__images_list | List Trench image-locker images | read-only | no | - |
-| trench__launch_execute | Launch a token on Trench Express | mutating | yes | - |
-| trench__launch_preview | Dry-run a Trench Express launch | read-only | no | - |
-| trench__launch_request_form | Ask the user to confirm a Trench launch | mutating | no | - |
-| trench__my_launches_list | List this wallet's Trench launches | read-only | no | - |
-| trench__token_trades_list | Read a Trench Express token's trade tape | read-only | no | - |
-| trench__tokens_discover | Screen Trench Express tokens | read-only | no | - |
-| trench__tokens_search | Search Trench Express tokens | read-only | no | - |
-| trench__trade_execute | Trade a Trench Express token | mutating | yes | - |
-| trench__trade_quote | Quote a Trench Express trade | read-only | no | - |
-
 ### uniswap
 
 | tool | title | access | destructive | requires env |
@@ -286,6 +326,12 @@ whether its provider key is configured on this machine.
 | --- | --- | --- | --- | --- |
 | virtuals__agent_candles_list | Read a Virtuals agent's price candles | read-only | no | - |
 | virtuals__agent_get | Read one Virtuals agent token | read-only | no | - |
+| virtuals__agent_launch_cancel | Cancel a Virtuals agent launch | mutating | yes | - |
+| virtuals__agent_launch_execute | Launch a Virtuals agent | mutating | yes | - |
+| virtuals__agent_launch_preview | Plan a Virtuals agent launch | mutating | no | - |
+| virtuals__agent_launch_status | Check a Virtuals agent launch | read-only | no | - |
+| virtuals__agent_trade_execute | Trade a Virtuals agent on its bonding curve | mutating | yes | - |
+| virtuals__agent_trade_quote | Price a Virtuals bonding-curve trade | read-only | no | - |
 | virtuals__agent_trades_list | Read a Virtuals agent's curve trade tape | read-only | no | - |
 | virtuals__agents_discover | Screen Virtuals agent tokens | read-only | no | - |
 | virtuals__creator_fees_get | Read a Virtuals agent creator's fee status | read-only | no | - |

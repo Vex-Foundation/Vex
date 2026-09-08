@@ -46,6 +46,10 @@ import { log } from "../logger/index.js";
 import { probeEmbeddings } from "./embedding-state.js";
 import { probeProvider } from "./provider-state.js";
 import { getUnlockedSecretPresence } from "../secrets/session.js";
+import {
+  hasUnlockedLighterTradingCredential,
+  listUnlockedManagedLighterTradingCredentialScopes,
+} from "../secrets/lighter-trading-credential.js";
 
 // Fixed-keystore filenames for legacy (pre multi-wallet) primary entries.
 // Non-legacy inventory entries use `wallet-<id>.json` (see primaryKeystoreFile).
@@ -235,6 +239,18 @@ export async function gatherEnvState(): Promise<EnvState> {
   const hasTavily = secretPresence.secrets.TAVILY_API_KEY === true;
   const hasRettiwt = secretPresence.secrets.RETTIWT_API_KEY === true;
   const hasRelay = secretPresence.secrets.RELAY_API_KEY === true;
+  const hasLighterCoreTrading = hasUnlockedLighterTradingCredential("core");
+  const hasLighterRhcTrading = hasUnlockedLighterTradingCredential("rhc");
+  const lighterCoreManagedTradingScopes =
+    listUnlockedManagedLighterTradingCredentialScopes("core").map((scope) => ({
+      accountIndex: scope.accountIndex,
+      apiKeyIndex: scope.apiKeyIndex,
+    }));
+  const lighterRhcManagedTradingScopes =
+    listUnlockedManagedLighterTradingCredentialScopes("rhc").map((scope) => ({
+      accountIndex: scope.accountIndex,
+      apiKeyIndex: scope.apiKeyIndex,
+    }));
 
   return {
     hasKeystorePassword: hasPwd,
@@ -244,6 +260,10 @@ export async function gatherEnvState(): Promise<EnvState> {
       tavilyConfigured: hasTavily,
       rettiwtConfigured: hasRettiwt,
       relayConfigured: hasRelay,
+      lighterCoreTradingConfigured: hasLighterCoreTrading,
+      lighterRhcTradingConfigured: hasLighterRhcTrading,
+      lighterCoreManagedTradingScopes,
+      lighterRhcManagedTradingScopes,
     },
     secrets: {
       vaultConfigured: secretPresence.vaultConfigured,

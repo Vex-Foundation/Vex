@@ -116,6 +116,34 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         result = { ...repairResult };
         rowsAffected = repairResult.confirmed + repairResult.failed
           + (repairResult.nonceReservations?.terminalized ?? 0);
+      } else if (syncType === "lighter_deposit_repair") {
+        const { repairUnresolvedLighterDeposits } = await import("./lighter-deposit-repair.js");
+        const repairResult = await repairUnresolvedLighterDeposits();
+        result = { ...repairResult };
+        rowsAffected = repairResult.advanced;
+      } else if (syncType === "lighter_withdrawal_repair") {
+        const { repairUnresolvedLighterWithdrawals } = await import("./lighter-withdrawal-repair.js");
+        const repairResult = await repairUnresolvedLighterWithdrawals();
+        result = { ...repairResult };
+        rowsAffected = repairResult.advanced;
+      } else if (syncType === "lighter_order_repair") {
+        const { repairUnresolvedLighterOrdersInBackground } = await import(
+          "@vex-agent/tools/protocols/lighter/order-repair.js"
+        );
+        const repairResult = await repairUnresolvedLighterOrdersInBackground();
+        result = {
+          examined: repairResult.examined,
+          advanced: repairResult.advanced,
+          awaiting: repairResult.awaiting,
+          degraded: repairResult.degraded,
+          errors: repairResult.errors,
+        };
+        rowsAffected = repairResult.advanced;
+      } else if (syncType === "lighter_position_snapshot") {
+        const { snapshotLighterPositions } = await import("./lighter-position-snapshot.js");
+        const snapshotResult = await snapshotLighterPositions();
+        result = { ...snapshotResult };
+        rowsAffected = snapshotResult.observed;
       } else if (syncType === "bridge_activity_repair") {
         const { repairPendingBridges, buildProductionBridgeRepairDeps } = await import("./bridge-activity-repair.js");
         const bridgeResult = await repairPendingBridges(buildProductionBridgeRepairDeps());
@@ -127,7 +155,7 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         result = { ...solanaResult };
         rowsAffected = solanaResult.confirmed + solanaResult.failed;
       } else if (syncType === "launch_identity_repair") {
-        // Trench launch crash recovery — completes the token IDENTITY of a
+        // Launch crash recovery - completes the token IDENTITY of a
         // create that mined after the handler died, and terminalizes one that
         // is later proven to have reverted. The generic activity sweep cannot
         // do this: it is status-only and decodes nothing, so it would leave
@@ -135,14 +163,7 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const { repairLaunchIdentities, buildProductionLaunchRepairDeps } = await import("./launch-identity-repair.js");
         const launchResult = await repairLaunchIdentities(buildProductionLaunchRepairDeps());
         result = { ...launchResult };
-        rowsAffected = launchResult.repaired + launchResult.failed;
-      } else if (syncType === "launch_attribution") {
-        // Trench attribution retry lane — see sync/launch-attribution.ts. Keyless
-        // POST only; holds no signer.
-        const { attributeLaunchedTokens, buildProductionLaunchAttributionDeps } = await import("./launch-attribution.js");
-        const attributionResult = await attributeLaunchedTokens(buildProductionLaunchAttributionDeps());
-        result = { ...attributionResult };
-        rowsAffected = attributionResult.attributed;
+        rowsAffected = launchResult.repaired + launchResult.failed + launchResult.awaitingKeeper;
       } else if (syncType === "pools_attribution") {
         // pools.fun attribution retry lane - see sync/pools-attribution.ts.
         // Keyless POST only; holds no signer.
@@ -151,6 +172,15 @@ export async function drainPendingRuns(): Promise<DrainResult> {
         const poolsAttributionResult = await attributePoolsLaunches(buildProductionPoolsAttributionDeps());
         result = { ...poolsAttributionResult };
         rowsAffected = poolsAttributionResult.attributed;
+      } else if (syncType === "virtuals_keeper_launch") {
+        // Virtuals keeper-launch reconciliation - BOTH dispatchers need this
+        // branch. Read-only on chain; never calls launch(), never signs, never
+        // takes a fee (owner F3 waived it at awaiting_keeper).
+        const { reconcileVirtualsKeeperLaunches } = await import("./virtuals-keeper-launch.js");
+        const { buildProductionVirtualsKeeperSweepDeps } = await import("./virtuals-keeper-launch-production-deps.js");
+        const keeperResult = await reconcileVirtualsKeeperLaunches(buildProductionVirtualsKeeperSweepDeps());
+        result = { ...keeperResult };
+        rowsAffected = keeperResult.launched + keeperResult.cancelled;
       } else if (syncType === "launch_form_expiry") {
         const { expireOverdueLaunchForms } = await import("./launch-form-expiry.js");
         const expiryResult = await expireOverdueLaunchForms();
@@ -252,6 +282,34 @@ export async function processNextRun(): Promise<boolean> {
         repairResult.confirmed + repairResult.failed
           + (repairResult.nonceReservations?.terminalized ?? 0),
       );
+    } else if (job.syncType === "lighter_deposit_repair") {
+      const { repairUnresolvedLighterDeposits } = await import("./lighter-deposit-repair.js");
+      const repairResult = await repairUnresolvedLighterDeposits();
+      await syncRepo.completeRun(run.id, { ...repairResult }, repairResult.advanced);
+    } else if (job.syncType === "lighter_withdrawal_repair") {
+      const { repairUnresolvedLighterWithdrawals } = await import("./lighter-withdrawal-repair.js");
+      const repairResult = await repairUnresolvedLighterWithdrawals();
+      await syncRepo.completeRun(run.id, { ...repairResult }, repairResult.advanced);
+    } else if (job.syncType === "lighter_order_repair") {
+      const { repairUnresolvedLighterOrdersInBackground } = await import(
+        "@vex-agent/tools/protocols/lighter/order-repair.js"
+      );
+      const repairResult = await repairUnresolvedLighterOrdersInBackground();
+      await syncRepo.completeRun(
+        run.id,
+        {
+          examined: repairResult.examined,
+          advanced: repairResult.advanced,
+          awaiting: repairResult.awaiting,
+          degraded: repairResult.degraded,
+          errors: repairResult.errors,
+        },
+        repairResult.advanced,
+      );
+    } else if (job.syncType === "lighter_position_snapshot") {
+      const { snapshotLighterPositions } = await import("./lighter-position-snapshot.js");
+      const snapshotResult = await snapshotLighterPositions();
+      await syncRepo.completeRun(run.id, { ...snapshotResult }, snapshotResult.observed);
     } else if (job.syncType === "bridge_activity_repair") {
       const { repairPendingBridges, buildProductionBridgeRepairDeps } = await import("./bridge-activity-repair.js");
       const bridgeResult = await repairPendingBridges(buildProductionBridgeRepairDeps());
@@ -263,11 +321,11 @@ export async function processNextRun(): Promise<boolean> {
     } else if (job.syncType === "launch_identity_repair") {
       const { repairLaunchIdentities, buildProductionLaunchRepairDeps } = await import("./launch-identity-repair.js");
       const launchResult = await repairLaunchIdentities(buildProductionLaunchRepairDeps());
-      await syncRepo.completeRun(run.id, { ...launchResult }, launchResult.repaired + launchResult.failed);
-    } else if (job.syncType === "launch_attribution") {
-      const { attributeLaunchedTokens, buildProductionLaunchAttributionDeps } = await import("./launch-attribution.js");
-      const attributionResult = await attributeLaunchedTokens(buildProductionLaunchAttributionDeps());
-      await syncRepo.completeRun(run.id, { ...attributionResult }, attributionResult.attributed);
+      await syncRepo.completeRun(
+        run.id,
+        { ...launchResult },
+        launchResult.repaired + launchResult.failed + launchResult.awaitingKeeper,
+      );
     } else if (job.syncType === "pools_attribution") {
       // pools.fun attribution retry lane - BOTH dispatchers need this branch;
       // the bridge job shipped with one missing and its timer silently fired
@@ -276,6 +334,14 @@ export async function processNextRun(): Promise<boolean> {
       const { buildProductionPoolsAttributionDeps } = await import("./pools-attribution-production-deps.js");
       const poolsAttributionResult = await attributePoolsLaunches(buildProductionPoolsAttributionDeps());
       await syncRepo.completeRun(run.id, { ...poolsAttributionResult }, poolsAttributionResult.attributed);
+    } else if (job.syncType === "virtuals_keeper_launch") {
+      // Virtuals keeper-launch reconciliation - BOTH dispatchers need this
+      // branch; the bridge job shipped with one missing and its timer silently
+      // fired nothing for weeks. See sync/virtuals-keeper-launch.ts.
+      const { reconcileVirtualsKeeperLaunches } = await import("./virtuals-keeper-launch.js");
+      const { buildProductionVirtualsKeeperSweepDeps } = await import("./virtuals-keeper-launch-production-deps.js");
+      const keeperResult = await reconcileVirtualsKeeperLaunches(buildProductionVirtualsKeeperSweepDeps());
+      await syncRepo.completeRun(run.id, { ...keeperResult }, keeperResult.launched + keeperResult.cancelled);
     } else if (job.syncType === "launch_form_expiry") {
       const { expireOverdueLaunchForms } = await import("./launch-form-expiry.js");
       const expiryResult = await expireOverdueLaunchForms();

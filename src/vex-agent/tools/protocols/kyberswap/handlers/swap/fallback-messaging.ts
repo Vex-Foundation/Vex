@@ -24,6 +24,7 @@
 import type { AgentActivityEventRole } from "@vex-agent/db/repos/agent-activity.js";
 import logger from "@utils/logger.js";
 import { isVenueFallbackWorthwhile } from "../../../../registry/venue-fallback-eligibility.js";
+import { SWAP_VENUE_PEER_NUDGE_SUFFIX } from "../../../../registry/swap-venue-guidance.js";
 import type { KyberVenueUnavailableReason } from "../../../../registry/venue-fallback-eligibility.js";
 import type { EvmRouterRevertFailureCode } from "@tools/evm-chains/router-revert-reason.js";
 import {
@@ -32,9 +33,13 @@ import {
   deriveKyberPreSignRevertFallbackSignal,
 } from "../../failure-mapping.js";
 
-/** The ONE sentence naming the alternative venue - shared so a second copy cannot drift from the tool names it must name exactly. */
-const FALLBACK_VENUE_AVAILABLE_SUFFIX =
-  " Uniswap is an alternative venue for this trade: quote it with SwapQuoteUniswap, then execute with SwapExecuteUniswap.";
+/**
+ * The ONE sentence naming the other venue. It lives with the swap-venue
+ * standing (`registry/swap-venue-guidance.ts`) rather than here, so a failure
+ * message and a tool description cannot end up describing the same two venues
+ * differently; this module decides WHEN it is appended, never what it says.
+ */
+const FALLBACK_VENUE_AVAILABLE_SUFFIX = SWAP_VENUE_PEER_NUDGE_SUFFIX;
 
 /**
  * Appended whenever the availability class points at Uniswap. A KyberSwap edge
@@ -129,5 +134,5 @@ export function venueFallbackNoteOnPreSignRevert(input: {
 export function venueFallbackNoteOnMinedRevert(eventRole: AgentActivityEventRole, _sessionId: string): string {
   const signal = deriveKyberMinedRevertFallbackSignal(eventRole);
   if (!signal || !isVenueFallbackWorthwhile(signal)) return "";
-  return " The gas for this attempt was spent and nothing was swapped. A mined revert on a swap is most often the price guard: the pool moved past the minimum output written into the calldata after the pre-sign estimate passed. FIRST re-quote the SAME Kyber route with a higher slippageBps (Vex caps it at 1000) - switching venue does not fix a price-guard revert, another venue at the same tolerance reverts the same way. If a fresh Kyber quote is then refused for a ROUTING reason rather than price, Uniswap is the alternative venue: SwapQuoteUniswap.";
+  return " The gas for this attempt was spent and nothing was swapped. A mined revert on a swap is most often the price guard: the pool moved past the minimum output written into the calldata after the pre-sign estimate passed. FIRST re-quote the SAME Kyber route with a higher slippageBps (Vex caps it at 1000) - switching venue does not fix a price-guard revert, another venue at the same tolerance reverts the same way. If a fresh Kyber quote is then refused for a ROUTING reason rather than price, quote the same trade on Uniswap instead: SwapQuoteUniswap.";
 }

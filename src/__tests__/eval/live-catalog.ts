@@ -17,6 +17,7 @@
 import { buildDiscoveryCandidates } from "./lexical-retrieval.js";
 import { liveProtocolManifests } from "./retrieval-eval-harness.js";
 
+
 /** Active manifests in advertised namespaces. Independent of process env. */
 export function liveCatalogToolCount(): number {
   return liveProtocolManifests().length;
@@ -25,10 +26,28 @@ export function liveCatalogToolCount(): number {
 /**
  * The number of active advertised protocol tools every stored baseline was
  * captured against. 145 after the launchpads waves 1-2 integration (#161);
- * 147 with the two in-app launchpads tools of this change
- * (`launchpads.images`, `launchpads.image_publish`).
+ * 147 with the two in-app launchpads tools (`launchpads.images`,
+ * `launchpads.image_publish`); 149 with the Virtuals bonding-curve trade pair
+ * (`virtuals__agent_trade_quote` / `_execute`), two new identities on a
+ * namespace that previously advertised reads only, so this is a pure +2 and
+ * every affected baseline was recaptured in the same change; 151 with the
+ * pools.fun holder-rewards MUTATIONS (`pools.holder_rewards_claim`,
+ * `pools.holder_rewards_distribute`), again two new identities on an existing
+ * namespace, so a pure +2 and every affected baseline recaptured here; 155 with
+ * the Virtuals AGENT-LAUNCH family (`virtuals.launch.preview` / `.execute` /
+ * `.status` / `.cancel`) - four rather than two because the venue's launch
+ * takes two transactions and only the first is Vex's, so the state between
+ * them needs its own read and its own exit. Four new identities on an existing
+ * namespace, a pure +4, and every affected baseline recaptured in this change.
+ * 145 after the Trench Express retirement (migration 108) DELETED the ten
+ * `trench.*` manifests, the first movement in this ledger that is a retirement
+ * rather than a widening, so every baseline was recaptured again at the fold.
+ * 185 with the Lighter integration (2026-09-07): the 40 Lighter tools (Core and
+ * Robinhood Chain reads, order previews and executions, funding, withdrawals,
+ * key registration, fee authorization), a pure +40 on a new namespace, and
+ * every affected baseline recaptured in the same change.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 147;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 185;
 
 /**
  * The candidate count every dense and lexical measurement must have seen.

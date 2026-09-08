@@ -68,6 +68,7 @@ import {
 } from "../../../components/ui/tabs.js";
 import { ActiveBoardModule } from "./board/ActiveBoardModule.js";
 import { useBoardSurfaceStore } from "../Board/board-surface-store.js";
+import { requestLighterWorkspaceOpen } from "../lighterTrading/workspace-command.js";
 import { BookInspectPanel } from "./inspect/BookInspectPanel.js";
 import { useToolInspectStore } from "./inspect/inspect-store.js";
 import { ImageLockerCard } from "./ImageLockerCard.js";
@@ -142,8 +143,8 @@ function renderBookSection(
       return scope.kind === "project" ? (
         <ProjectBlock projectId={scope.projectId} />
       ) : null;
-    case "trench":
-      // Trench Photos + Launch a Token are ONE card: a launch REQUIRES an
+    case "launchpads":
+      // The image locker + Launch a Token are ONE card: a launch REQUIRES an
       // image from that locker, so separating them sent the user hunting for
       // the reason a launch refused. BOTH scopes: the locker is global; the
       // card itself decides that only a session renders the launch.
@@ -310,27 +311,42 @@ function SessionBookInstruments({
       keepMounted
       className="min-h-0 flex-1"
     >
-      <TabsList className="self-start">
-        <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
-        <TabsTrigger value="board">
-          Board
-          {/* The unseen dot. Set by a LIVE board arrival only, and
-              spoken as words beside it, because a 6px dot is not
-              information a screen-reader user can reach. */}
-          {boardUnseen ? (
-            <span
-              data-vex-area="book-board-unseen"
-              className="ml-1.5 inline-flex items-center"
-            >
+      <div
+        role="group"
+        aria-label="Book instruments"
+        className="inline-flex h-9 self-start items-center justify-center gap-1 rounded-lg border border-line-3 bg-transparent p-1 text-ink-tertiary"
+      >
+        <TabsList className="h-auto justify-start rounded-none border-0 p-0">
+          <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
+          <TabsTrigger value="board">
+            Board
+            {/* The unseen dot. Set by a LIVE board arrival only, and
+                spoken as words beside it, because a 6px dot is not
+                information a screen-reader user can reach. */}
+            {boardUnseen ? (
               <span
-                aria-hidden
-                className="h-[6px] w-[6px] rounded-full bg-accent-primary"
-              />
-              <span className="sr-only">, new board</span>
-            </span>
-          ) : null}
-        </TabsTrigger>
-      </TabsList>
+                data-vex-area="book-board-unseen"
+                className="ml-1.5 inline-flex items-center"
+              >
+                <span
+                  aria-hidden
+                  className="h-[6px] w-[6px] rounded-full bg-accent-primary"
+                />
+                <span className="sr-only">, new board</span>
+              </span>
+            ) : null}
+          </TabsTrigger>
+        </TabsList>
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          data-vex-area="book-lighter-launch"
+          onClick={requestLighterWorkspaceOpen}
+          className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-[13px] font-medium leading-5 text-ink-tertiary hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Lighter
+        </button>
+      </div>
       {/* KEEP-MOUNTED: the Portfolio stack owns scroll offsets, running
           queries and card state that a tab switch must not throw
           away. */}

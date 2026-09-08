@@ -10,7 +10,7 @@
  *
  * THE ORDER THIS EXISTS TO PROTECT is: verify -> authorize this fingerprint ->
  * broadcast this fingerprint. On the pools.fun path the fingerprint IS the gate,
- * because the trench-style "re-derive the plan and compare" is unavailable: a
+ * because a "re-derive the plan and compare" gate is unavailable: a
  * second `prepare` pins a second persistent IPFS object and mines a DIFFERENT
  * salt, so the re-derivation would describe a different token at a different
  * address. What replaces it is that the verifier runs immediately before the

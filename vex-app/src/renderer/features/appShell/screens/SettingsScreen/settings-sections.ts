@@ -9,6 +9,7 @@ import type { ComponentType } from "react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
+import { IconLighter } from "../../../../components/icons/brand/IconLighter.js";
 import { IconSuperboard } from "../../../../components/icons/brand/IconSuperboard.js";
 import type { GlyphProps } from "../../../../components/icons/index.js";
 import type { SettingsSection } from "../../../../stores/uiStore.js";
@@ -69,6 +70,13 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     stepId: "agentCore",
     name: "Tuning",
     hint: "Context, output, and sampling limits",
+  },
+  {
+    id: "lighterPoints",
+    icon: IconLighter,
+    iconSize: 24,
+    name: "Lighter Points",
+    hint: "Robinhood Chain campaign points and leaderboard position per wallet",
   },
 ];
 
@@ -144,5 +152,10 @@ export function settingsSectionStatus(
     }
     case "tuning":
       return { word: "Saved", tone: "neutral" };
+    case "lighterPoints":
+      // envState says nothing about the campaign, and the points read is the
+      // section's own on-demand work. A guessed word here would be a claim
+      // about a live provider nobody asked yet.
+      return { word: "Open", tone: "neutral" };
   }
 }

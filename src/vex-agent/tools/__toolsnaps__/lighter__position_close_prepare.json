@@ -1,0 +1,49 @@
+{
+  "definition": {
+    "function": {
+      "description": "Prepare one explicit approval to close the entire current position in one active Lighter perpetual market. Use when the user wants to close the full current position, not place a separate directional order. It reads the exact live account position, market precision, and up to 100 order-book levels; requires a user-specified slippage ceiling; refuses insufficient visible depth; and binds a full-size reduce-only market IOC order with a worst acceptable price. Returns the durable intent, exact close terms, and trusted approval card; it never loads a private key, reserves a nonce, signs, or submits.",
+      "name": "lighter__position_close_prepare",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Optional saved Lighter account index. Omit when exactly one managed account exists in the selected environment.",
+            "type": "number"
+          },
+          "environment": {
+            "description": "Optional Lighter environment for the persisted preview: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Exact Lighter market index of the active provider order.",
+            "type": "number"
+          },
+          "slippageBps": {
+            "description": "Explicit maximum slippage in basis points from 1 through 500. Vex refuses the close unless visible live depth can fill the entire position inside this bound.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "marketId",
+          "slippageBps"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "approval_prepare",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.position.close.prepare"
+  }
+}

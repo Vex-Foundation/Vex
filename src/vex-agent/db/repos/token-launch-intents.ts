@@ -103,6 +103,7 @@ export type {
   TokenLaunchIntentProtocol,
   TokenLaunchIntentStatus,
   UserFormContinuationCloseReason,
+  VirtualsLaunchIntentFields,
 } from "./token-launch-intents/types.js";
 
 export {
@@ -112,7 +113,13 @@ export {
 
 export {
   authorizeWith,
+  // The Virtuals two-transaction terminals (migration 110): our `preLaunch`
+  // confirmed, the keeper's `launch()` is observed later, and the creator may
+  // cancel in between.
+  cancelAfterPreLaunchWith,
   cancelIfAwaitingWith,
+  claimPreviewWith,
+  confirmAfterKeeperWith,
   // Retire a continuation that can NEVER complete, with its reason (A2).
   casCloseUserFormContinuationWith,
   casMarkUserFormResumeConsumedWith,
@@ -121,11 +128,13 @@ export {
   createWith,
   expireIfAwaitingWith,
   failWith,
+  markAwaitingKeeperWith,
   markBroadcastPendingWith,
   // Mirror the pending lane's `superseded_unproven` verdict onto the intent, so
   // a launch whose hash is no longer tracked can leave `broadcast_pending`.
   markSupersededUnprovenWith,
   stampResultMessageWith,
+  stampVirtualsBlockWith,
 } from "./token-launch-intents/writers.js";
 
 export {
@@ -144,4 +153,7 @@ export {
 // scheduling stamp — see the module for the starvation it fixes).
 export { listPreviewedForSession } from "./token-launch-intents/reads.js";
 
-export { claimBroadcastPendingForSweep } from "./token-launch-intents/sweep-claim.js";
+export {
+  claimAwaitingKeeperForSweep,
+  claimBroadcastPendingForSweep,
+} from "./token-launch-intents/sweep-claim.js";

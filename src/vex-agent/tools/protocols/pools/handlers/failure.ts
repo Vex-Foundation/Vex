@@ -9,7 +9,7 @@
  * log the failure scrubbed and hand the agent the code plus that hint.
  *
  * The scrubbing is NOT owned here: it routes through `summarizeProtocolError`,
- * the runtime's canonical provider-safe summarizer, exactly as the trench
+ * the runtime's canonical provider-safe summarizer, exactly as the sibling
  * handlers do. A per-namespace clone of those regexes is how one lane ends up
  * knowing about JSON bodies and long hex blobs while another does not.
  */

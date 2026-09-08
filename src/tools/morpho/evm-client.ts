@@ -1,10 +1,15 @@
 /**
  * The viem public client the Morpho on-chain reads use.
  *
- * Structurally the same as `src/tools/pendle/evm-client.ts`, and it exists
- * separately for the same reason Pendle's does: the chain table, the RPC choice
- * and the Multicall3 wiring are venue decisions, and a shared client that
- * guessed them would be wrong for somebody.
+ * THE RPC CHOICE IS NO LONGER A VENUE DECISION. Endpoint order, per-endpoint
+ * method scope, the user's override and the failover policy now live in
+ * `@tools/evm-chains/rpc-endpoints.ts` for every venue at once; this module
+ * keeps what genuinely is a Morpho decision - which chains are supported, the
+ * Multicall3 address, the native symbol - and asks the owner for a transport.
+ * The private `MORPHO_RPC_FALLBACKS` list that used to make Base a fallback
+ * chain here is retired: it was the only failover in the repository, and its
+ * first alternate (`1rpc.io/base`) answers `eth_feeHistory` with "This endpoint
+ * has been discontinued".
  *
  * `contracts.multicall3` IS WIRED UNCONDITIONALLY, which is the one thing that
  * must not be copied from `src/tools/kyberswap/evm/config.ts`. That module wires
@@ -21,8 +26,6 @@
 import {
   createPublicClient,
   createWalletClient,
-  fallback,
-  http,
   type Account,
   type Chain,
   type Hex,
@@ -33,26 +36,16 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 
 import { VexError, ErrorCodes } from "../../errors.js";
-import {
-  MORPHO_DEFAULT_RPC,
-  MORPHO_MULTICALL3,
-  MORPHO_NATIVE_SYMBOL,
-  MORPHO_RPC_FALLBACKS,
-} from "./constants.js";
-import { getLocalChain, getLocalChainRpcUrl } from "../evm-chains/registry.js";
+import { MORPHO_MULTICALL3, MORPHO_NATIVE_SYMBOL } from "./constants.js";
+import { resolveRpcEndpoints } from "../evm-chains/rpc-endpoints.js";
+import { buildEvmTransport, buildPinnedEvmTransport } from "../evm-chains/rpc-transport.js";
 import { MORPHO_CHAINS, describeUnsupportedChain } from "./chains.js";
-
-const RPC_TIMEOUT_MS = 30_000;
-const RPC_RETRY_COUNT = 2;
 
 const BY_ID = new Map(MORPHO_CHAINS.map((chain) => [chain.chainId, chain]));
 
+/** The first endpoint the shared owner resolves. Chain METADATA, not the transport. */
 function resolveMorphoRpcUrl(chainId: number): string | undefined {
-  // Robinhood defers to the shared evm-chains registry, which honours the
-  // user's RPC override - the same resolution KyberSwap documents for 4663.
-  const local = getLocalChain(chainId);
-  if (local !== undefined) return getLocalChainRpcUrl(local);
-  return MORPHO_DEFAULT_RPC[chainId];
+  return resolveRpcEndpoints(chainId)[0]?.url;
 }
 
 function buildViemChain(chainId: number): { chain: Chain; rpcUrl: string } {
@@ -78,31 +71,12 @@ function buildViemChain(chainId: number): { chain: Chain; rpcUrl: string } {
   };
 }
 
-/**
- * The transport for a supported Morpho chain: plain HTTP when one verified
- * endpoint exists, a viem `fallback` chain when `MORPHO_RPC_FALLBACKS` lists
- * alternates. Every free Base endpoint meters something (funded probe reruns,
- * 2026-08-17: one refuses receipts, one exhausts a compute budget, one 429s),
- * so a provider that starts refusing hands the call to the next verified one
- * instead of turning a money-path read into an ambiguity. `rank: false` keeps
- * the measured order deliberate.
- */
-function buildMorphoTransport(chainId: number, primaryUrl: string): Transport {
-  const httpOptions = { timeout: RPC_TIMEOUT_MS, retryCount: RPC_RETRY_COUNT };
-  const alternates = MORPHO_RPC_FALLBACKS[chainId];
-  if (alternates === undefined || alternates.length === 0) return http(primaryUrl, httpOptions);
-  return fallback(
-    [primaryUrl, ...alternates].map((url) => http(url, httpOptions)),
-    { rank: false },
-  );
-}
-
 /** A budgeted, Multicall3-wired public client for a supported Morpho chain. */
 export function getMorphoPublicClient(chainId: number): PublicClient<Transport, Chain> {
-  const { chain, rpcUrl } = buildViemChain(chainId);
+  const { chain } = buildViemChain(chainId);
   return createPublicClient({
     chain,
-    transport: buildMorphoTransport(chainId, rpcUrl),
+    transport: buildEvmTransport(chainId),
   }) as PublicClient<Transport, Chain>;
 }
 
@@ -126,8 +100,13 @@ export interface MorphoEvmClients {
  * read, cached or logged here.
  */
 export function getMorphoEvmClients(chainId: number, privateKey: Hex): MorphoEvmClients {
-  const { chain, rpcUrl } = buildViemChain(chainId);
-  const transport = buildMorphoTransport(chainId, rpcUrl);
+  const { chain } = buildViemChain(chainId);
+  // PINNED, not the failover list. The old code handed the SAME fallback
+  // transport to both clients, so a timeout on `eth_getTransactionCount` at one
+  // endpoint followed by `eth_sendRawTransaction` at another meant the nonce was
+  // read from a different node than the one that accepted the transaction, with
+  // nothing recording that it had happened.
+  const transport = buildPinnedEvmTransport(chainId);
   return {
     publicClient: createPublicClient({ chain, transport }) as PublicClient<Transport, Chain>,
     walletClient: createWalletClient({

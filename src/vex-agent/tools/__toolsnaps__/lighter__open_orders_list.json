@@ -1,0 +1,54 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read authenticated open Lighter orders using short-lived read-only authorization derived locally from the saved Core or Robinhood Chain trading credential. Use when the user asks for their active/resting orders, open bids/asks, or order exposure. Defaults to the saved credential's account when accountIndex is omitted and refuses account mismatches. Returns exact provider string order identifiers for future safety. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.",
+      "name": "lighter__open_orders_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "accountIndex": {
+            "description": "Optional account index. Omit to use the account bound to the default saved Vex-managed Lighter trading credential. Derived read-only authorization refuses account mismatches.",
+            "type": "number"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "filter": {
+            "description": "Optional market-type filter accepted by Lighter: all, spot, or perp. The value is exact and unsupported values are rejected.",
+            "enum": [
+              "all",
+              "spot",
+              "perp"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max account order/trade rows to return (default 25, max 50). Out-of-range values are rejected.",
+            "type": "number"
+          },
+          "marketId": {
+            "description": "Optional numeric Lighter market id from lighter__markets_list. When omitted, the market list reads the environment's visible markets.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.openOrders"
+  }
+}

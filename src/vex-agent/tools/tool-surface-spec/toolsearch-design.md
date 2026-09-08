@@ -272,7 +272,7 @@ it.
 
 | Content | Current location | Target |
 | --- | --- | --- |
-| How to read a `params` schema: `required: true` semantics, optional-by-absence, `unit` and bps, raw versus human amounts, literal types, never invent a param | `protocol.ts:47` (roughly 1.6 KB, the single largest block) | `engine/prompts/tool-model.ts` | 
+| How to read a `params` schema: `required: true` semantics, optional-by-absence, `unit` and bps, raw versus human amounts, literal types, never invent a param | `protocol.ts:47` (roughly 1.6 KB, the single largest block) | `engine/prompts/tool-model.ts` |
 | The dot-to-double-underscore name mapping and "call it directly by name in the same session" | `protocol.ts:46` | already stated in `engine/prompts/tool-model.ts`; delete the duplicate |
 | "Do not invent dotted toolIds; execute only ids this response returned" | `protocol.ts:42` | `engine/prompts/tool-model.ts` |
 | Pressure advisory: what `unavailable_at_pressure` means and what to do at barrier or critical | `protocol.ts:48` | `engine/prompts/context-pressure.ts` |

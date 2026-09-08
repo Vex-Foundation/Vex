@@ -166,8 +166,8 @@ const PARITY = [
     why: "the card IS the project object - the session card's counterpart",
   },
   {
-    id: "trench",
-    label: "Trench Express",
+    id: "launchpads",
+    label: "Launchpad",
     testid: "card-images",
     agent: true,
     // TURNED TRUE by the parity decree: the locker is GLOBAL, so the card
@@ -430,7 +430,7 @@ describe("Studio rail - its own persisted order", () => {
   });
 
   it("a keyboard reorder writes the STUDIO key and leaves the agent order alone", () => {
-    useUiStore.setState({ bookSectionOrder: ["trench", "wallets"] });
+    useUiStore.setState({ bookSectionOrder: ["launchpads", "wallets"] });
     mountStudio(PROJECT);
     const handle = screen.getByRole("button", {
       name: new RegExp(`Reorder Position - position 1 of ${STUDIO_ROWS.length}`),
@@ -442,7 +442,7 @@ describe("Studio rail - its own persisted order", () => {
       ["wallets", "position", ...STUDIO_ROWS.slice(2).map((row) => row.id)],
     );
     expect([...useUiStore.getState().bookSectionOrder]).toEqual([
-      "trench",
+      "launchpads",
       "wallets",
     ]);
   });

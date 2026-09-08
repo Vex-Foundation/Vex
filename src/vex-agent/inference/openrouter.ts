@@ -53,6 +53,7 @@ import { extractUsage, parseNonStreamingResponse } from "./openrouter/mappers.js
 import { buildOpenRouterParams } from "./openrouter/params.js";
 import { computeRequestCost } from "./openrouter/cost.js";
 import { consumeOpenRouterStream } from "./openrouter/stream.js";
+import { requireNonEmptyOpenRouterStream } from "./openrouter/non-empty-stream.js";
 import { asChatResult, asEventStream } from "./openrouter/chat-send.js";
 import {
   fetchModelInferenceConfig,
@@ -401,11 +402,28 @@ export class OpenRouterProvider implements InferenceProvider {
     signal?: AbortSignal,
     context?: InferenceRequestContext,
   ): AsyncGenerator<StreamChunk> {
-    // Only the SEND is wrapped by the failover. A mid-stream failure is
-    // deliberately outside it: bytes have already reached the user, so
-    // replaying the request would duplicate content.
-    const stream: EventStream<ChatStreamChunk> = await sendWithEndpointFailover(
-      async (attemptConfig) => this.openStream(messages, tools, attemptConfig, signal, context),
+    // The SEND plus the wait for the FIRST meaningful model delta is wrapped by
+    // the failover. Once that delta exists, the rest of the stream stays
+    // outside it: bytes can then reach the user, so replaying a later failure
+    // would duplicate content.
+    const stream = await sendWithEndpointFailover(
+      async (attemptConfig) => {
+        const opened = await this.openStream(
+          messages,
+          tools,
+          attemptConfig,
+          signal,
+          context,
+        );
+        // Do not mark an endpoint healthy merely because it returned an HTTP
+        // stream handle. It must produce model output first, and an empty
+        // stream is safe to retry because no user-visible delta was emitted.
+        // The wait itself is bounded (see `non-empty-stream.ts`).
+        return requireNonEmptyOpenRouterStream(
+          consumeOpenRouterStream(opened),
+          signal,
+        );
+      },
       config,
       context,
       this.failoverDeps(),
@@ -421,7 +439,7 @@ export class OpenRouterProvider implements InferenceProvider {
       // the classifier's own-property signals and the redactor both apply
       // (a raw SDK rejection would otherwise bypass classification metadata
       // AND message redaction).
-      yield* consumeOpenRouterStream(stream);
+      yield* stream;
     } catch (err) {
       throw normalizeOpenRouterError(err, "streaming chat completion (mid-stream)");
     }

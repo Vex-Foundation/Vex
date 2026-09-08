@@ -311,7 +311,7 @@ describe("filters", () => {
     // Bridges collapse to the logical row; swaps/lend/prediction/launch still
     // emit every row (one role per on-chain tx — no logical/leg split, R5).
     expect(activityHalf).toContain(
-      "(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'wrap' OR kind = 'yield' OR kind = 'launch' OR kind = 'claim' OR kind = 'transfer' OR kind = 'transaction' OR event_role = 'bridge_fill_expected')",
+      "(kind = 'swap' OR kind = 'lend' OR kind = 'prediction' OR kind = 'wrap' OR kind = 'yield' OR kind = 'launch' OR kind = 'claim' OR kind = 'transfer' OR kind = 'exchange' OR kind = 'transaction' OR event_role = 'bridge_fill_expected')",
     );
   });
 
@@ -347,7 +347,7 @@ describe("filters", () => {
   });
 
   it("txHash lookup is LEG-AWARE on the agent_activity half — a bridge matches by ANY sibling leg hash (m7)", async () => {
-    // Codex FIX-ROUND-1 m7: `agent_scan txHash=<deposit|refund|extra-fill>` must
+    // fix round 1, m7: `agent_scan txHash=<deposit|refund|extra-fill>` must
     // return the bridge's LOGICAL row (legs included), not miss it because the
     // logical row's own tx_hash is only the FILL hash. The half matches the
     // logical row when ANY leg of the same execution carries the hash, gated on

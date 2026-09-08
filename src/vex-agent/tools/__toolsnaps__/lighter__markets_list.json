@@ -1,0 +1,54 @@
+{
+  "definition": {
+    "function": {
+      "description": "List Lighter public markets/order books on Core or Robinhood Chain. Use when the user needs symbols, market ids, active/inactive status, spot versus perp coverage, fee strings, minimum order amounts, quote limits, or decimal metadata before requesting detail, depth, trades, or candles. Returns deterministically ordered, bounded market rows plus provider row count, page, nextPage, and truncation disclosure so broad market lists are walkable instead of silently shortened. Read-only: no account, key, signing, order, deposit, or withdrawal access.",
+      "name": "lighter__markets_list",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "filter": {
+            "description": "Optional market-type filter accepted by Lighter: all, spot, or perp. The value is exact and unsupported values are rejected.",
+            "enum": [
+              "all",
+              "spot",
+              "perp"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max market rows to return after the provider response is read (default 25, max 50). Out-of-range values are rejected.",
+            "type": "number"
+          },
+          "marketId": {
+            "description": "Optional numeric Lighter market id from lighter__markets_list. When omitted, the market list reads the environment's visible markets.",
+            "type": "number"
+          },
+          "page": {
+            "description": "1-based page over Vex's deterministic market ordering (default 1, max 1000). Pair it with nextPage to continue broad lists.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.markets"
+  }
+}

@@ -1,0 +1,62 @@
+.lit-order-type-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.7fr);
+  flex: 0 0 auto;
+  gap: 4px;
+  min-width: 0;
+  border-bottom: 1px solid var(--lit-line);
+  padding-bottom: 10px;
+}
+
+.lit-order-type-controls > button,
+.lit-order-type-controls > select {
+  min-width: 0;
+  min-height: 34px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--lit-ink-muted);
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.lit-order-type-controls > select {
+  width: 100%;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+
+.lit-order-type-controls > select option {
+  background: var(--lit-panel-raised);
+  color: var(--lit-ink);
+}
+
+.lit-order-type-controls > button:hover,
+.lit-order-type-controls > select:not(:disabled):hover {
+  background: var(--lit-hover);
+  color: var(--lit-ink);
+}
+
+.lit-order-type-controls > button[aria-pressed="true"],
+.lit-order-type-controls > select[data-active] {
+  background: var(--lit-panel-raised);
+  color: var(--lit-ink);
+}
+
+.lit-order-type-controls > select:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.lit-order-type-controls > button:focus-visible,
+.lit-order-type-controls > select:focus-visible {
+  outline: 2px solid var(--lit-focus);
+  outline-offset: 2px;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .lit-order-type-controls > button,
+  .lit-order-type-controls > select { min-height: 44px; }
+}

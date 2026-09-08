@@ -41,6 +41,9 @@
  *      that demanded the chunk today would fail every build while a gate that
  *      merely skipped it would still be off when B4 lands. This one ARMS
  *      ITSELF the moment the port enters the module graph.
+ *   12. Lighter signer helper resources exist for every supported packaged
+ *      Electron platform/arch pair, so live order signing cannot ship without
+ *      its privileged helper.
  *
  * Exit non-zero on any violation.
  */
@@ -54,6 +57,10 @@ import {
   privilegedBundleChecks,
 } from "./check-privileged-bundles.mjs";
 import { nativeArtifactChecks } from "./check-native-artifacts.mjs";
+import {
+  builtLighterSignerDir,
+  evaluateBuiltLighterSigners,
+} from "./lighter-signer-artifact.mjs";
 
 const root = path.resolve(process.cwd());
 const distRendererHtml = path.join(root, "dist", "renderer", "index.html");
@@ -572,6 +579,24 @@ check("migration resources — mirror canonical vex-agent migrations", () => {
       `packaged migration content differs for: ${mismatches.join(", ")}.\n` +
         `Run \`node scripts/copy-migrations.mjs\` from vex-app/ before building.`
     );
+  }
+});
+
+// 12. Lighter signer helper resources are built for every packaged target, and
+//     are byte-for-byte the ones the pinned Go toolchain recorded.
+check("lighter signer helpers - built, correct machine, digests match SHA256SUMS", () => {
+  const { issues, verified } = evaluateBuiltLighterSigners(builtLighterSignerDir(root));
+  if (issues.length > 0) {
+    throw new Error(
+      `Lighter signer helper issues:\n    ${issues.join("\n    ")}\n` +
+        "Run `node ../scripts/build-lighter-signer-runtime.mjs` from vex-app/ with the pinned Go toolchain."
+    );
+  }
+  // Printed, not just counted: the digests are the evidence that the shipped
+  // signing helper came from the reviewed compiler and the committed module
+  // graph, and a build log nobody can compare proves nothing later.
+  for (const helper of verified) {
+    console.log(`    ${helper.name} ${helper.format} sha256 ${helper.digest}`);
   }
 });
 

@@ -158,6 +158,225 @@ describe("ApprovalCard", () => {
     );
   });
 
+  it("labels Lighter create approvals as approve-and-execute trades", () => {
+    renderCard(
+      makeSummary({
+        riskLevel: "info",
+        actionKind: "external_post",
+        toolName: "execute_tool",
+        preview: {
+          toolName: "order.create",
+          namespace: "lighter",
+          criticalArgs: {
+            toolId: "lighter.order.create",
+            intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
+            environment: "rhc",
+            side: "buy",
+          },
+        },
+      }),
+      false,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /^approve and execute trade$/i }),
+    );
+
+    expect(screen.getByText("lighter:order.create")).toBeTruthy();
+    expect(mockApproveMutate).toHaveBeenCalledWith(
+      { id: "appr-1" },
+      expect.any(Object),
+    );
+  });
+
+  it.each(["market", "limit"] as const)(
+    "labels an ordinary Lighter %s IOC timestamp as unsent with signed expiry zero",
+    (orderType) => {
+    renderCard(
+      makeSummary({
+        preview: {
+          toolName: "order.create",
+          namespace: "lighter",
+          criticalArgs: {
+            toolId: "lighter.order.create",
+            orderType,
+            timeInForce: "immediate-or-cancel",
+            orderExpiryIso: "2030-01-01T00:00:00.000Z",
+          },
+        },
+      }),
+      false,
+    );
+
+    const args = screen.getByTestId("critical-args");
+    expect(args.textContent).toContain("Unsent expiry reference (signed expiry 0)");
+    expect(args.textContent).toContain("2030-01-01T00:00:00.000Z");
+    expect(args.textContent).not.toContain("orderExpiryIso");
+    },
+  );
+
+  it.each([
+    ["immediate-or-cancel", "Immediate only"],
+    ["good-till-time", "Keep open"],
+    ["post-only", "Maker only"],
+  ] as const)("shows %s as the plain-language order behavior", (timeInForce, behaviorLabel) => {
+    renderCard(
+      makeSummary({
+        preview: {
+          toolName: "order.create",
+          namespace: "lighter",
+          criticalArgs: {
+            toolId: "lighter.order.create",
+            orderType: "limit",
+            timeInForce,
+          },
+        },
+      }),
+      false,
+    );
+
+    const args = screen.getByTestId("critical-args");
+    expect(args.textContent).toContain("Order behavior");
+    expect(args.textContent).toContain(behaviorLabel);
+    expect(args.textContent).not.toContain(timeInForce);
+  });
+
+  it("does not relabel an unrelated numeric timeInForce field", () => {
+    renderCard(
+      makeSummary({
+        preview: {
+          toolName: "order.cancelAll",
+          namespace: "lighter",
+          criticalArgs: {
+            toolId: "lighter.order.cancelAll",
+            timeInForce: 0,
+          },
+        },
+      }),
+      false,
+    );
+
+    const args = screen.getByTestId("critical-args");
+    expect(args.textContent).toContain("timeInForce");
+    expect(args.textContent).toContain("0");
+    expect(args.textContent).not.toContain("Order behavior");
+  });
+
+  it.each([
+    "stop-loss",
+    "stop-loss-limit",
+    "take-profit",
+    "take-profit-limit",
+  ] as const)("labels protective Lighter %s IOC expiry as a signed trigger-order expiry", (orderType) => {
+    renderCard(
+      makeSummary({
+        preview: {
+          toolName: "order.create",
+          namespace: "lighter",
+          criticalArgs: {
+            toolId: "lighter.order.create",
+            orderType,
+            timeInForce: "immediate-or-cancel",
+            orderExpiryIso: "2030-01-01T00:00:00.000Z",
+          },
+        },
+      }),
+      false,
+    );
+
+    expect(screen.getByTestId("critical-args").textContent).toContain(
+      "Signed trigger-order expiry",
+    );
+  });
+
+  it("keeps the two-click guard on high-risk Lighter create approvals", () => {
+    renderCard(
+      makeSummary({
+        riskLevel: "high",
+        actionKind: "external_post",
+        toolName: "execute_tool",
+        preview: {
+          toolName: "order.create",
+          namespace: "lighter",
+          criticalArgs: {
+            toolId: "lighter.order.create",
+            intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
+          },
+        },
+      }),
+      false,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /^approve and execute trade$/i }),
+    );
+    expect(mockApproveMutate).not.toHaveBeenCalled();
+    const confirm = screen.getByRole("button", { name: /confirm approve/i });
+    expect(confirm.textContent).toContain(
+      "Click again to approve and execute trade",
+    );
+    fireEvent.click(confirm);
+    expect(mockApproveMutate).toHaveBeenCalledWith(
+      { id: "appr-1" },
+      expect.any(Object),
+    );
+  });
+
+  it("labels Lighter deposits explicitly and requires the high-risk two-click guard", () => {
+    renderCard(
+      makeSummary({
+        riskLevel: "high",
+        actionKind: "user_wallet_broadcast",
+        toolName: "execute_tool",
+        preview: {
+          toolName: "deposit",
+          namespace: "lighter",
+          criticalArgs: {
+            toolId: "lighter.deposit",
+            intentId: "lighter-onboard-00000000-0000-4000-8000-000000000001",
+            amountDisplay: "11",
+            depositTo: "0x1111111111111111111111111111111111111111",
+          },
+        },
+      }),
+      false,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /^approve and deposit$/i }),
+    );
+    expect(mockApproveMutate).not.toHaveBeenCalled();
+    const confirm = screen.getByRole("button", { name: /confirm approve/i });
+    expect(confirm.textContent).toContain("Click again to approve and deposit");
+
+    fireEvent.click(confirm);
+    expect(mockApproveMutate).toHaveBeenCalledWith(
+      { id: "appr-1" },
+      expect.any(Object),
+    );
+  });
+
+  it.each([false,true])("shows both Lighter fee rates and preserves two-click consent (revoke=%s)", (revoke) => {
+    renderCard(makeSummary({ toolName:"execute_tool",expiresAt:"2030-01-01T00:15:00.000Z",
+      preview:{ namespace:"lighter",toolName:"fees.approve",criticalArgs:{ toolId:"lighter.fees.approve",revoke,
+        summary:revoke?"Revoke VEX trading fees":"Authorize VEX trading fees",
+        perpetualFee:"0.1% maker / 0.1% taker of executed trade value",
+        spotFee:"0.25% maker / 0.25% taker of executed trade value",recipient:"VEX · Lighter account 99",
+        authorizationValidUntil:revoke?"Revoked":"2040-01-01T00:00:00.000Z",
+        exchangeFees:"Up to 0.005% maker / 0.005% taker; separate from VEX fees",publicKey:"ab".repeat(40),
+      } } }),true);
+    expect(screen.getByText("Perpetual fee")).toBeTruthy();expect(screen.getByText("Spot fee")).toBeTruthy();
+    expect(screen.getByText("Authorization valid until")).toBeTruthy();
+    expect(screen.getByText("2030-01-01T00:15:00.000Z")).toBeTruthy();
+    expect(screen.queryByText("ab".repeat(40))).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button",{ name:/^reject$/i }));
+    fireEvent.click(screen.getByRole("button",{ name:revoke?"Revoke trading fees":"Approve trading fees" }));
+    expect(mockApproveMutate).not.toHaveBeenCalled();
+    const confirm=screen.getByRole("button",{ name:"Confirm approve" });
+    expect(confirm.textContent).toContain(revoke?"Click again to revoke trading fees":"Click again to approve trading fees");
+    fireEvent.click(confirm);expect(mockApproveMutate).toHaveBeenCalledTimes(1);
+  });
+
   it("low-risk: single click on Reject fires mutate", () => {
     renderCard(
       makeSummary({ riskLevel: "low", actionKind: "local_write" }),

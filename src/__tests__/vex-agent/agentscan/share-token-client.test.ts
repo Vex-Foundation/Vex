@@ -36,7 +36,7 @@ describe("generateShareToken", () => {
 });
 
 describe("buildShareTokenClient.register", () => {
-  it("POSTs shareToken to /v1/agents/share-token with Bearer ingest token", async () => {
+  it("POSTs only the lowercase SHA-256 shareTokenHash with Bearer ingest token", async () => {
     const mock = stubFetch(jsonResponse(200, { status: "registered" }));
     const client = buildShareTokenClient("http://localhost");
     const outcome = await client.register({ ingestToken: INGEST, shareToken: SHARE });
@@ -46,7 +46,12 @@ describe("buildShareTokenClient.register", () => {
     const [url, init] = mock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://localhost/v1/agents/share-token");
     expect((init.headers as Record<string, string>)["Authorization"]).toBe(`Bearer ${INGEST}`);
-    expect(JSON.parse(init.body as string)).toEqual({ shareToken: SHARE });
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({
+      shareTokenHash: "b0679324228c35931acdfa8a487f94873c05094138a477994a5bdba6d6c24a56",
+    });
+    expect(init.body).not.toContain(SHARE);
+    expect(JSON.stringify(init.headers)).not.toContain(SHARE);
   });
 
   it("preserves a base-URL subpath", async () => {

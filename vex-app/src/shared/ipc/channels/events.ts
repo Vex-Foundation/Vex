@@ -27,6 +27,15 @@ export const EV = {
   market: {
     vex: "vex:event:market:vex",
   },
+  lighterTrading: {
+    candleSnapshot: "vex:event:lighter:candleSnapshot",
+    candleUpdate: "vex:event:lighter:candleUpdate",
+    candleStatus: "vex:event:lighter:candleStatus",
+    publicBook: "vex:event:lighter:publicBook",
+    publicTrades: "vex:event:lighter:publicTrades",
+    publicStats: "vex:event:lighter:publicStats",
+    publicMarketStatus: "vex:event:lighter:publicMarketStatus",
+  },
 
   /**
    * Vex Studio MCP host status (stage B0). Main's host publishes a
@@ -105,9 +114,9 @@ export const EV = {
   /**
    * The agent asked the user to launch a token (§C3b).
    *
-   * `formRequested` fires after `trench.launch_request_form` has COMMITTED an
+   * `formRequested` fires after `pools.launch_request_form` has COMMITTED an
    * `awaiting_user_form` intent and parked the turn. Payload is IDS ONLY — the
-   * renderer opens the modal by re-reading `tokenLaunch.getAwaiting`, so no
+   * renderer opens the modal by re-reading `poolsLaunch.getAwaiting`, so no
    * token name, symbol or amount rides this channel.
    *
    * It is a SEPARATE channel from `EV.engine.controlState` on purpose: a chat

@@ -1,167 +1,329 @@
 {
-  "version": "kyberswap-v1",
+  "version": "kyberswap-v2",
   "namespace": "kyberswap",
-  "description": "Per-namespace retrieval-verification dataset for the kyberswap namespace (4 live tools). Every live tool has blind rows (no brand word) and protocol-aware rows (brand named). Queries were written from the manifests and the navigation entry only, phrased the way a model would type them into tool search on the user's behalf. Generic swap-pricing rows are deliberately worded like the sibling uniswap dataset's rows so the venue-pair behaviour (D11: both venues' quote tools returning close together for a plain swap query) is observable.",
+  "description": "Per-namespace retrieval-verification dataset for the kyberswap namespace (4 live tools). Every live tool has blind rows (no brand word) and protocol-aware rows (brand named). Queries were written from the manifests and the navigation entry only, phrased the way a model would type them into tool search on the user's behalf. THE THREE CO-RETRIEVAL ROWS - \"swap tokens on Base, what would I get\", \"swap 100 USDC into ETH on Arbitrum, price it first\" and \"best price for a token swap on an EVM chain\" - appear VERBATIM in the sibling uniswap dataset, each expecting its OWN namespace's quote tool. That pairing is how co-retrieval is asserted: the validator refuses an expectation outside the declared namespace (`namespace-dataset.ts`), so a single row naming both venues is not expressible, and two rows over one query are. Together they say a blind swap query must return BOTH venues' quote tools in the top 5, which is what the 2026-09-07 equal-standing decision means for discovery.",
   "queries": [
     {
       "query": "price 2 ETH into USDC on Arbitrum before trading, show the rate and price impact",
       "awareness": "blind",
       "scenario": "evm_swap",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.swap.quote"],
-      "expectedCoverageGroups": [["kyberswap.swap.quote"]]
+      "expectedToolIds": [
+        "kyberswap.swap.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.quote"
+        ]
+      ]
     },
     {
       "query": "how much WETH would I get for 500 USDC on Base right now, no signing",
       "awareness": "blind",
       "scenario": "evm_swap",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.swap.quote"],
-      "expectedCoverageGroups": [["kyberswap.swap.quote"]]
+      "expectedToolIds": [
+        "kyberswap.swap.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.quote"
+        ]
+      ]
     },
     {
       "query": "best routed price across many DEXes for an exact-input trade on Optimism, including gas cost and which pools the route crosses",
       "awareness": "blind",
       "scenario": "evm_swap",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.swap.quote"],
-      "expectedCoverageGroups": [["kyberswap.swap.quote"]]
+      "expectedToolIds": [
+        "kyberswap.swap.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.quote"
+        ]
+      ]
     },
     {
       "query": "KyberSwap aggregator quote for 0.75 ETH to DAI on Ethereum with 50 bps tolerance",
       "awareness": "protocol-aware",
       "scenario": "evm_swap",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.swap.quote"],
-      "expectedCoverageGroups": [["kyberswap.swap.quote"]]
+      "expectedToolIds": [
+        "kyberswap.swap.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.quote"
+        ]
+      ]
     },
     {
       "query": "what would KyberSwap return on a 10000 USDT sell into WBTC on Polygon, and what is the price impact",
       "awareness": "protocol-aware",
       "scenario": "evm_swap",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.swap.quote"],
-      "expectedCoverageGroups": [["kyberswap.swap.quote"]]
+      "expectedToolIds": [
+        "kyberswap.swap.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.quote"
+        ]
+      ]
     },
     {
       "query": "sell 1200 USDC for ETH on Base for real now, sign and broadcast it from my wallet",
       "awareness": "blind",
       "scenario": "evm_swap",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.swap.execute"],
-      "expectedCoverageGroups": [["kyberswap.swap.execute"]]
+      "expectedToolIds": [
+        "kyberswap.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.execute"
+        ]
+      ]
     },
     {
       "query": "go ahead and do the trade we just priced, swap 3 ETH into USDC on Arbitrum and give me the tx hash",
       "awareness": "blind",
       "scenario": "evm_swap",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.swap.execute"],
-      "expectedCoverageGroups": [["kyberswap.swap.execute"]]
+      "expectedToolIds": [
+        "kyberswap.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.execute"
+        ]
+      ]
     },
     {
       "query": "exit my whole ARB position into USDC on Arbitrum, submit the transaction",
       "awareness": "blind",
       "scenario": "evm_swap",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.swap.execute"],
-      "expectedCoverageGroups": [["kyberswap.swap.execute"]]
+      "expectedToolIds": [
+        "kyberswap.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.execute"
+        ]
+      ]
     },
     {
       "query": "execute the KyberSwap trade with the same slippage as the quote, 0.4 ETH into USDC on Base",
       "awareness": "protocol-aware",
       "scenario": "evm_swap",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.swap.execute"],
-      "expectedCoverageGroups": [["kyberswap.swap.execute"]]
+      "expectedToolIds": [
+        "kyberswap.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.execute"
+        ]
+      ]
     },
     {
       "query": "buy WETH with 250 DAI on Ethereum through KyberSwap and broadcast it",
       "awareness": "protocol-aware",
       "scenario": "evm_swap",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.swap.execute"],
-      "expectedCoverageGroups": [["kyberswap.swap.execute"]]
+      "expectedToolIds": [
+        "kyberswap.swap.execute"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.execute"
+        ]
+      ]
     },
     {
       "query": "is this newly launched ERC-20 on Base a honeypot, can it actually be sold",
       "awareness": "blind",
       "scenario": "token_safety",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.tokens.check"],
-      "expectedCoverageGroups": [["kyberswap.tokens.check"]]
+      "expectedToolIds": [
+        "kyberswap.tokens.check"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.tokens.check"
+        ]
+      ]
     },
     {
       "query": "does this token contract on Ethereum charge a transfer tax or sell tax before I buy it",
       "awareness": "blind",
       "scenario": "token_safety",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.tokens.check"],
-      "expectedCoverageGroups": [["kyberswap.tokens.check"]]
+      "expectedToolIds": [
+        "kyberswap.tokens.check"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.tokens.check"
+        ]
+      ]
     },
     {
       "query": "audit one contract address on Polygon for scam behaviour and fee-on-transfer",
       "awareness": "blind",
       "scenario": "token_safety",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.tokens.check"],
-      "expectedCoverageGroups": [["kyberswap.tokens.check"]]
+      "expectedToolIds": [
+        "kyberswap.tokens.check"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.tokens.check"
+        ]
+      ]
     },
     {
       "query": "run the KyberSwap safety verdict on this Base token address, honeypot and tax",
       "awareness": "protocol-aware",
       "scenario": "token_safety",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.tokens.check"],
-      "expectedCoverageGroups": [["kyberswap.tokens.check"]]
+      "expectedToolIds": [
+        "kyberswap.tokens.check"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.tokens.check"
+        ]
+      ]
     },
     {
       "query": "ask KyberSwap whether this unfamiliar coin on Arbitrum is safe to trade",
       "awareness": "protocol-aware",
       "scenario": "token_safety",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.tokens.check"],
-      "expectedCoverageGroups": [["kyberswap.tokens.check"]]
+      "expectedToolIds": [
+        "kyberswap.tokens.check"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.tokens.check"
+        ]
+      ]
     },
     {
       "query": "which EVM networks can the aggregator trade on, and what slug do I spell each one as",
       "awareness": "blind",
       "scenario": "evm_swap",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.chains"],
-      "expectedCoverageGroups": [["kyberswap.chains"]]
+      "expectedToolIds": [
+        "kyberswap.chains"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.chains"
+        ]
+      ]
     },
     {
       "query": "list supported EVM chains with their chain IDs and whether each is live right now",
       "awareness": "blind",
       "scenario": "evm_swap",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.chains"],
-      "expectedCoverageGroups": [["kyberswap.chains"]]
+      "expectedToolIds": [
+        "kyberswap.chains"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.chains"
+        ]
+      ]
     },
     {
       "query": "is Scroll one of the chains routed swaps work on here",
       "awareness": "blind",
       "scenario": "evm_swap",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.chains"],
-      "expectedCoverageGroups": [["kyberswap.chains"]]
+      "expectedToolIds": [
+        "kyberswap.chains"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.chains"
+        ]
+      ]
     },
     {
       "query": "what networks does KyberSwap cover for swapping, with live per-chain status",
       "awareness": "protocol-aware",
       "scenario": "evm_swap",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.chains"],
-      "expectedCoverageGroups": [["kyberswap.chains"]]
+      "expectedToolIds": [
+        "kyberswap.chains"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.chains"
+        ]
+      ]
     },
     {
       "query": "KyberSwap network registry, I need the exact chain slug for Avalanche",
       "awareness": "protocol-aware",
       "scenario": "evm_swap",
       "intentShape": "single",
-      "expectedToolIds": ["kyberswap.chains"],
-      "expectedCoverageGroups": [["kyberswap.chains"]]
+      "expectedToolIds": [
+        "kyberswap.chains"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.chains"
+        ]
+      ]
+    },
+    {
+      "query": "swap tokens on Base, what would I get",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "kyberswap.swap.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.quote"
+        ]
+      ]
+    },
+    {
+      "query": "swap 100 USDC into ETH on Arbitrum, price it first",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "kyberswap.swap.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.quote"
+        ]
+      ]
+    },
+    {
+      "query": "best price for a token swap on an EVM chain",
+      "awareness": "blind",
+      "scenario": "evm_swap",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "kyberswap.swap.quote"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "kyberswap.swap.quote"
+        ]
+      ]
     }
   ]
 }

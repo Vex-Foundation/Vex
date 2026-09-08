@@ -53,6 +53,50 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   WalletWrapPrepare: "Prepare a native / wrapped-native conversion",
   WalletWrapConfirm: "Broadcast a prepared wrap or unwrap",
   UnitsConvert: "Convert token amounts and units",
+  lighter_rhc_onboarding_status: "Check Robinhood Chain Lighter readiness",
+  lighter_core_onboarding_status: "Check Lighter Core onboarding readiness",
+
+  // ── lighter ──────────────────────────────────────────────────────────────
+  lighter__account_get: "Read a Lighter account",
+  lighter__account_onboarding_status: "Check Lighter account onboarding readiness",
+  lighter__api_keys_inspect: "Inspect Lighter API-key registrations",
+  lighter__candles_list: "Read Lighter market candles",
+  lighter__deposit: "Execute an approved Lighter deposit",
+  lighter__deposit_prepare: "Prepare a Lighter deposit approval",
+  lighter__deposit_status: "Check a Lighter deposit's status",
+  lighter__fees_approve: "Authorize approved Lighter trading fees",
+  lighter__fees_approve_prepare: "Prepare Lighter trading-fee approval",
+  lighter__fees_status: "Check Lighter trading-fee authorization",
+  lighter__key_register: "Register an approved Lighter trading key",
+  lighter__key_register_prepare: "Prepare a Lighter trading-key approval",
+  lighter__key_register_status: "Check a Lighter key registration's status",
+  lighter__market_get: "Read one Lighter market",
+  lighter__markets_list: "List Lighter markets",
+  lighter__open_orders_list: "List open Lighter orders",
+  lighter__order_cancel: "Cancel an approved Lighter order",
+  lighter__order_cancel_all: "Cancel all approved Lighter orders",
+  lighter__order_cancel_all_prepare: "Prepare approval to cancel all Lighter orders",
+  lighter__order_cancel_prepare: "Prepare a Lighter order-cancellation approval",
+  lighter__order_create: "Submit an approved Lighter order",
+  lighter__order_create_prepare: "Prepare a Lighter order approval",
+  lighter__order_history_list: "Read Lighter order history",
+  lighter__order_modify: "Modify an approved Lighter limit order",
+  lighter__order_modify_prepare: "Prepare a Lighter order-modification approval",
+  lighter__order_preview: "Preview a Lighter order",
+  lighter__order_status: "Check a Lighter order action's status",
+  lighter__orderbook_get: "Read a Lighter order book",
+  lighter__position_close: "Close an approved Lighter position",
+  lighter__position_close_prepare: "Prepare a Lighter position-close approval",
+  lighter__position_protect: "Preview Lighter position protection",
+  lighter__positions_list: "List Lighter positions",
+  lighter__recent_trades_list: "Read recent public Lighter trades",
+  lighter__system_get: "Read Lighter system status",
+  lighter__trades_list: "Read Lighter account trades",
+  lighter__withdraw: "Submit an approved Lighter withdrawal",
+  lighter__withdraw_claim: "Broadcast an approved Lighter withdrawal claim",
+  lighter__withdraw_claim_prepare: "Prepare a Lighter withdrawal-claim approval",
+  lighter__withdraw_prepare: "Prepare a Lighter withdrawal approval",
+  lighter__withdraw_status: "Check a Lighter withdrawal's status",
 
   // ── khalani ───────────────────────────────────────────────────────────────
   khalani__chains_list: "List Khalani bridge chains",
@@ -143,6 +187,12 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   virtuals__agent_trades_list: "Read a Virtuals agent's curve trade tape",
   virtuals__agent_candles_list: "Read a Virtuals agent's price candles",
   virtuals__creator_fees_get: "Read a Virtuals agent creator's fee status",
+  virtuals__agent_trade_quote: "Price a Virtuals bonding-curve trade",
+  virtuals__agent_trade_execute: "Trade a Virtuals agent on its bonding curve",
+  virtuals__agent_launch_preview: "Plan a Virtuals agent launch",
+  virtuals__agent_launch_execute: "Launch a Virtuals agent",
+  virtuals__agent_launch_status: "Check a Virtuals agent launch",
+  virtuals__agent_launch_cancel: "Cancel a Virtuals agent launch",
 
   // ── pendle ────────────────────────────────────────────────────────────────
   pendle__markets_discover: "Screen Pendle yield markets",
@@ -196,17 +246,12 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   morpho__market_withdraw: "Withdraw a supply from a Morpho market",
   morpho__rewards_claim: "Claim earned Morpho rewards",
 
-  // ── trench ────────────────────────────────────────────────────────────────
-  trench__tokens_discover: "Screen Trench Express tokens",
-  trench__tokens_search: "Search Trench Express tokens",
-  trench__token_trades_list: "Read a Trench Express token's trade tape",
-  trench__launch_preview: "Dry-run a Trench Express launch",
-  trench__trade_quote: "Quote a Trench Express trade",
-  trench__trade_execute: "Trade a Trench Express token",
-  trench__images_list: "List Trench image-locker images",
-  trench__my_launches_list: "List this wallet's Trench launches",
-  trench__launch_request_form: "Ask the user to confirm a Trench launch",
-  trench__launch_execute: "Launch a token on Trench Express",
+
+  // ── launchpads ────────────────────────────────────────────────────────────
+  // The locker LISTING is not exported (there is no locker on this surface);
+  // publishing is, because it is the one approved way bytes become public and a
+  // launch will not do it as a side effect.
+  launchpads__image_publish: "Publish a launch picture publicly",
 
   // ── pools ─────────────────────────────────────────────────────────────────
   pools__tokens_discover: "Screen pools.fun tokens",
@@ -220,4 +265,6 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   pools__fees_claim: "Claim pools.fun creator fees",
   pools__launch_assets_list: "List pools.fun launchable stocks",
   pools__holder_rewards_get: "Read pools.fun holder rewards",
+  pools__holder_rewards_claim: "Claim pools.fun holder rewards",
+  pools__holder_rewards_distribute: "Distribute pools.fun holder rewards",
 };

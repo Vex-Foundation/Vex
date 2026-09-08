@@ -72,14 +72,20 @@ async function seedForm(
 ): Promise<string> {
   const intentId = overrides.intentId ?? INTENT;
   await execute(
+    // `protocol` and `paired_asset` are STATED, not defaulted: migration 108
+    // dropped the `trench` DEFAULT along with the launchpad, and
+    // `token_launch_intents_pools_has_pair` requires the pair on a pools.fun row.
+    // The continuation machinery under test is launchpad-agnostic, so this is
+    // fixture furniture on the venue that still launches.
     `INSERT INTO token_launch_intents
        (intent_id, session_id, origin, status, chain_id, wallet_address,
         name, symbol, tool_call_id, result_message_id, expires_at,
-        resume_consumed_at, tx_hash, authorization_id, authorization_kind)
+        resume_consumed_at, tx_hash, authorization_id, authorization_kind,
+        protocol, paired_asset)
      VALUES ($1, $2, 'agent_requested_form', $3, 8453,
              '0x0000000000000000000000000000000000000001',
              'Vex Coin', 'VEX', 'call_abc', $4, NOW() + interval '1 hour', $5,
-             $6, $7, $8)`,
+             $6, $7, $8, 'pools_fun', 'weth')`,
     [
       intentId,
       sessionId,

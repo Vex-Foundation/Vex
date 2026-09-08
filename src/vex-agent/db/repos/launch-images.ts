@@ -275,6 +275,42 @@ export async function getLaunchImage(imageId: string): Promise<LaunchImageRow | 
 }
 
 /**
+ * The locker row that already carries this PUBLIC CONTENT ID, if one does.
+ *
+ * The publication record, looked up by the only name the outside world has for
+ * a picture: the sha256 of its bytes. Two callers need exactly this question.
+ * `launchpads.image_publish` on the Vex Studio surface reads an image out of
+ * the agent's own project and must not upload, insert or ask for approval a
+ * second time for bytes this install already published - the cid is derivable
+ * locally, so the answer is available before any network call. And a launch
+ * that is handed a project FILE must prove those bytes are already public
+ * before it writes a URL into contract storage; it hashes what it read and asks
+ * here, rather than publishing as a side effect of launching.
+ *
+ * NOT UNIQUE in the table, by design: the host is content-addressed, so two
+ * locker rows holding byte-identical pictures share one cid and one URL. The
+ * OLDEST publication is returned, which is the row whose `public_uploaded_at`
+ * records when these bytes actually became public - the fact a caller is asking
+ * about. `image_id` breaks a tie so the answer is deterministic.
+ *
+ * `null` means NOT PUBLISHED BY THIS INSTALL. It is never a claim about the
+ * host: bytes another install published are public too, and this table cannot
+ * see that.
+ */
+export async function findLaunchImageByPublicCid(
+  cid: string,
+): Promise<LaunchImageRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT ${SELECT_COLUMNS} FROM launch_images
+      WHERE public_cid = $1
+      ORDER BY public_uploaded_at ASC, image_id ASC
+      LIMIT 1`,
+    [cid],
+  );
+  return row ? mapRow(row) : null;
+}
+
+/**
  * Record that this locker image's bytes were published to the content-addressed
  * public host, and return the updated row. `null` means NO SUCH IMAGE.
  *

@@ -1,0 +1,22 @@
+{
+  "reviewBy": null,
+  "decision": "Every exception below was proposed by the Lighter integration author on 2026-09-06 and approved by the owner on 2026-09-07 without an expiry date, on the condition that its reachability verifier keeps passing; a verifier failure or a changed dependency path reopens the decision.",
+  "exceptions": [
+    {
+      "url": "https://github.com/advisories/GHSA-w5hq-g745-h8pq",
+      "package": "uuid",
+      "severity": "moderate",
+      "version": "8.3.2",
+      "path": ".>@solana/web3.js>jayson>uuid",
+      "rationale": "Exception proposed by the Lighter integration author on 2026-09-06 and approved by the owner on 2026-09-07 with no expiry date; the standing condition is the reachability verifier registered for this package, which fails the audit the moment the vulnerable path becomes reachable. Re-review when the dependency path or the advisory changes. The advisory affects uuid v3, v5, and v6 with caller-provided output buffers. Jayson imports and invokes uuid v4 only, without a caller-provided buffer. The audit verifies that binding and every call site in the installed Jayson sources and exercises the reachable entry point. Re-review when Jayson or Solana accepts uuid 11.1.1 or newer."
+    },
+    {
+      "url": "https://github.com/advisories/GHSA-528h-pc64-c93x",
+      "package": "stream-json",
+      "severity": "moderate",
+      "version": "1.9.1",
+      "path": ".>@solana/web3.js>jayson>stream-json",
+      "rationale": "Exception proposed by the Lighter integration author on 2026-09-06 and approved by the owner on 2026-09-07 with no expiry date; the standing condition is the reachability verifier registered for this package, which fails the audit the moment the vulnerable path becomes reachable. Re-review when the dependency path or the advisory changes. The advisory affects pick/ignore/filter/replace path filters and explicitly excludes StreamValues. Jayson 4.3.0 imports only StreamValues and Verifier. The audit verifies those installed imports, rejects loaded filter modules, and exercises chunked and malformed JSON parsing. The patched 3.5.0 changes module exports and cannot replace 1.9.1 compatibly. Re-review when Jayson accepts a patched release or reachable imports change."
+    }
+  ]
+}

@@ -48,6 +48,10 @@ import {
   submitFailureNotice,
   submitSuccessText,
 } from "./composer-helpers.js";
+import {
+  isLighterWorkspaceCommand,
+  requestLighterWorkspaceOpen,
+} from "./lighterTrading/workspace-command.js";
 
 export type ComposerNotice =
   | {
@@ -457,6 +461,16 @@ export function useComposerSubmit(
       event.preventDefault();
       const message = draft.trim();
       if (message.length === 0) return;
+      // `Light it up` is a renderer-local workspace command, not an agent
+      // prompt. Consume it before session creation, steering, queueing, mission
+      // gates, or chat submission so it can never enter the transcript or
+      // receive an out-of-context model response.
+      if (isLighterWorkspaceCommand(message)) {
+        setDraft("");
+        setNotice(null);
+        requestLighterWorkspaceOpen();
+        return;
+      }
       // Welcome state (no session yet): Send opens the new-session modal
       // seeded with this draft PLUS the reasoning effort SNAPSHOTTED right
       // now (E3/D5) — unresolved capability at this instant → null → a
@@ -632,4 +646,3 @@ export function useComposerSubmit(
     sendQueuedNow,
   };
 }
-

@@ -83,7 +83,8 @@ export interface ProjectToolContextOptions {
    */
   readonly approvedPrequoteAuthority?: ApprovedPrequoteAuthority | null;
   /**
-   * Cancellation for the MCP call that owns this dispatch. ABSENT means "no
+   * Cancellation supplied by the caller. Approved dispatches supply their own
+   * authority signal, independent of an MCP connection. ABSENT means "no
    * cancellation", never "cancelled" - same contract as every other producer of
    * `InternalToolContext.abortSignal`.
    */

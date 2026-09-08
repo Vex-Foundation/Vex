@@ -6,7 +6,7 @@
  *
  * Owned by `evm-chains/` alongside the guards it composes
  * (`gas-limit-headroom`, `dependent-leg-gas-estimate`). Consumers are every EVM
- * venue: kyberswap, relay, pendle, uniswap (twin), and trench-express. The
+ * venue: kyberswap, relay, pendle and uniswap (twin). The
  * historical `@tools/kyberswap/evm/staged-broadcast.js` path re-exports this
  * module for import stability.
  *
@@ -45,7 +45,9 @@ import {
   type EvmNonceOwnerLease,
 } from "@tools/evm-chains/nonce-owner.js";
 import {
+  waitForReceiptWithReplacementEvidence,
   waitForReceiptWithRetry,
+  type ReceiptReplacementEvidence,
   type ReceiptWaitRetryOptions,
 } from "@tools/evm-chains/receipt-guard.js";
 import {
@@ -58,6 +60,14 @@ export interface StagedTxParams {
   readonly to: Address;
   readonly data: Hex;
   readonly value?: bigint;
+}
+
+/** Approval-visible hard ceilings enforced on the transaction being signed. */
+export interface StagedFeeExposureLimit {
+  readonly gasLimit: bigint;
+  readonly maxFeePerGas: bigint;
+  readonly maxPriorityFeePerGas: bigint;
+  readonly maxNetworkFeeWei: bigint;
 }
 
 /**
@@ -115,8 +125,18 @@ export interface StagedSendHandles {
 }
 
 export type StagedBroadcastOutcome =
-  | { readonly kind: "confirmed"; readonly txHash: Hex; readonly receipt: TransactionReceipt }
-  | { readonly kind: "reverted"; readonly txHash: Hex; readonly receipt: TransactionReceipt }
+  | {
+      readonly kind: "confirmed";
+      readonly txHash: Hex;
+      readonly receipt: TransactionReceipt;
+      readonly replacement?: ReceiptReplacementEvidence;
+    }
+  | {
+      readonly kind: "reverted";
+      readonly txHash: Hex;
+      readonly receipt: TransactionReceipt;
+      readonly replacement?: ReceiptReplacementEvidence;
+    }
   | {
       readonly kind: "ambiguous";
       readonly txHash: Hex;
@@ -157,6 +177,12 @@ export type StagedFeeBounds =
       readonly gasLimit: bigint;
       readonly gasPriceWei: bigint;
     };
+
+export type StagedFeePolicy = StagedFeeBounds | StagedFeeExposureLimit;
+
+function isFeeExposureLimit(policy: StagedFeePolicy): policy is StagedFeeExposureLimit {
+  return !("mode" in policy);
+}
 
 /**
  * A prepared request exceeded the approved ceiling, so NOTHING was signed.
@@ -419,7 +445,7 @@ export async function signStageBroadcast(
   hooks: StagedBroadcastHooks,
   priorLeg?: ConfirmedPriorLeg,
   receiptWaitRetry?: ReceiptWaitRetryOptions,
-  bounds?: StagedFeeBounds,
+  feePolicy?: StagedFeePolicy,
 ): Promise<StagedBroadcastOutcome> {
   // One owner covers both signer arms. The durable reservation performed below
   // makes the allocation survive restart; this live owner prevents concurrent
@@ -429,7 +455,7 @@ export async function signStageBroadcast(
   const nonceOwner = await acquireEvmNonceOwner(ownerAddress, ownerChainId);
   try {
     return await runStagedBroadcast(
-      publicClient, signer, txParams, hooks, nonceOwner, priorLeg, receiptWaitRetry, bounds,
+      publicClient, signer, txParams, hooks, nonceOwner, priorLeg, receiptWaitRetry, feePolicy,
     );
   } finally {
     nonceOwner.release();
@@ -449,7 +475,7 @@ async function runStagedBroadcast(
   nonceOwner: EvmNonceOwnerLease,
   priorLeg?: ConfirmedPriorLeg,
   receiptWaitRetry?: ReceiptWaitRetryOptions,
-  bounds?: StagedFeeBounds,
+  feePolicy?: StagedFeePolicy,
 ): Promise<StagedBroadcastOutcome> {
   const deferred = isDeferred(signer) ? signer : null;
   const eager: WalletClient<Transport, Chain, Account> | null =
@@ -481,6 +507,31 @@ async function runStagedBroadcast(
   // that needs more gas than was approved is a transaction nobody approved.
   const gasLimit = gasLimitWithHeadroom(gasEstimate);
 
+  const feeExposureLimit = feePolicy !== undefined && isFeeExposureLimit(feePolicy)
+    ? feePolicy
+    : undefined;
+  const bounds = feePolicy !== undefined && !isFeeExposureLimit(feePolicy)
+    ? feePolicy
+    : undefined;
+  let exposureFees: { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } | undefined;
+  if (feeExposureLimit !== undefined) {
+    const estimatedFees = await publicClient.estimateFeesPerGas({
+      chain: publicClient.chain,
+      type: "eip1559",
+    });
+    if (
+      gasLimit > feeExposureLimit.gasLimit
+      || estimatedFees.maxFeePerGas > feeExposureLimit.maxFeePerGas
+      || estimatedFees.maxPriorityFeePerGas > feeExposureLimit.maxPriorityFeePerGas
+      || gasLimit * estimatedFees.maxFeePerGas > feeExposureLimit.maxNetworkFeeWei
+    ) {
+      throw new Error(
+        "Refusing to sign: live gas or EIP-1559 fees exceed the approved transaction ceiling.",
+      );
+    }
+    exposureFees = estimatedFees;
+  }
+
   // The fee fields are supplied EXPLICITLY when bounds exist, so
   // `prepareTransactionRequest` cannot fill them from the node's own suggestion:
   // the signed bytes must commit the user to the ceiling they approved and
@@ -497,14 +548,16 @@ async function runStagedBroadcast(
     data: txParams.data,
     value,
     gas: gasLimit,
-    ...(bounds === undefined
-      ? {}
-      : bounds.mode === "eip1559"
-        ? {
-            maxFeePerGas: bounds.maxFeePerGasWei,
-            maxPriorityFeePerGas: bounds.maxPriorityFeePerGasWei,
-          }
-        : { gasPrice: bounds.gasPriceWei }),
+    ...(exposureFees !== undefined
+      ? exposureFees
+      : bounds === undefined
+        ? {}
+        : bounds.mode === "eip1559"
+          ? {
+              maxFeePerGas: bounds.maxFeePerGasWei,
+              maxPriorityFeePerGas: bounds.maxPriorityFeePerGasWei,
+            }
+          : { gasPrice: bounds.gasPriceWei }),
   } as const;
   const request = eager === null
     ? await publicClient.prepareTransactionRequest(prepareArgs)
@@ -548,6 +601,17 @@ async function runStagedBroadcast(
   // `wallet_fillTransaction`, whose reply overwrites `gas` with the node's own
   // unbuffered figure. The signed bytes are what the chain enforces, so the
   // headroom has to survive to exactly here.
+  if (feeExposureLimit !== undefined && (
+    signedRequest.maxFeePerGas === undefined
+    || signedRequest.maxPriorityFeePerGas === undefined
+    || signedRequest.maxFeePerGas > feeExposureLimit.maxFeePerGas
+    || signedRequest.maxPriorityFeePerGas > feeExposureLimit.maxPriorityFeePerGas
+    || gasLimit * signedRequest.maxFeePerGas > feeExposureLimit.maxNetworkFeeWei
+  )) {
+    throw new Error(
+      "Refusing to sign: prepared EIP-1559 fees exceed the approved transaction ceiling.",
+    );
+  }
   // THE PRE-SIGN GATE, then the key, then the signature - with nothing awaited
   // in between that could reach a provider. See `DeferredEvmSigner`.
   const walletClient = eager ?? await resolveDeferredSigner(
@@ -605,10 +669,49 @@ async function runStagedBroadcast(
   // transient wait failure left an already-mined swap recorded `pending`.
   // The broadcast above is never re-sent — only this read repeats.
   try {
-    const receipt = await waitForReceiptWithRetry(publicClient, txHash, receiptWaitRetry);
+    if (feeExposureLimit === undefined) {
+      const receipt = await waitForReceiptWithRetry(publicClient, txHash, receiptWaitRetry);
+      return receipt.status === "success"
+        ? { kind: "confirmed", txHash, receipt }
+        : { kind: "reverted", txHash, receipt };
+    }
+    const waited = await waitForReceiptWithReplacementEvidence(
+      publicClient,
+      txHash,
+      receiptWaitRetry,
+    );
+    const { receipt, replacement } = waited;
+    if (
+      replacement !== null
+      && (
+        replacement.reason !== "repriced"
+        || replacement.replacedTxHash.toLowerCase() !== txHash.toLowerCase()
+        || replacement.fromAddress.toLowerCase() !== account.address.toLowerCase()
+        || replacement.nonce !== nonce
+        || replacement.to === null
+        || replacement.to.toLowerCase() !== txParams.to.toLowerCase()
+        || replacement.data.toLowerCase() !== txParams.data.toLowerCase()
+        || replacement.value !== value
+        || replacement.maxFeePerGas === null
+        || replacement.maxPriorityFeePerGas === null
+        || replacement.gas > feeExposureLimit.gasLimit
+        || replacement.maxFeePerGas > feeExposureLimit.maxFeePerGas
+        || replacement.maxPriorityFeePerGas > feeExposureLimit.maxPriorityFeePerGas
+        || replacement.gas * replacement.maxFeePerGas
+          > feeExposureLimit.maxNetworkFeeWei
+      )
+    ) {
+      return {
+        kind: "ambiguous",
+        txHash,
+        stage: "confirm",
+        reason: "Ethereum reported a replacement that does not match the staged identity, calldata, or approved fee ceiling.",
+      };
+    }
+    const replacementField = replacement === null ? {} : { replacement };
     return receipt.status === "success"
-      ? { kind: "confirmed", txHash, receipt }
-      : { kind: "reverted", txHash, receipt };
+      ? { kind: "confirmed", txHash, receipt, ...replacementField }
+      : { kind: "reverted", txHash, receipt, ...replacementField };
   } catch (err) {
     return { kind: "ambiguous", txHash, stage: "confirm", reason: describeFailureForLog(err) };
   }

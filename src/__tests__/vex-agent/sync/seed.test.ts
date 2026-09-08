@@ -1,3 +1,4 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockExecute = vi.fn().mockResolvedValue(1);
@@ -16,7 +17,7 @@ describe("seedSyncJobs", () => {
     vi.clearAllMocks();
   });
 
-  it("inserts 17 sync jobs (11 global + 6 per-namespace)", async () => {
+  it("inserts 20 sync jobs", async () => {
     // Agent Scan added the _global/agent_activity_repair periodic job and
     // removed the polymarket/balances post_mutation job (polymarket removed).
     // Phase-2 bridge (W4) added the _global/bridge_activity_repair periodic sweep
@@ -24,21 +25,37 @@ describe("seedSyncJobs", () => {
     // Phase 3 removed both Hyperliquid reconciliation rows (namespace
     // "_global" periodic + namespace "hyperliquid" post_mutation). W5 (K1,
     // migration 049) added the _global/solana_activity_repair periodic
-    // sweep seed — net 10. The Trench fix wave added the
-    // _global/launch_identity_repair periodic sweep seed — net 11. Its
+    // sweep seed - net 10. The Trench fix wave added the
+    // _global/launch_identity_repair periodic sweep seed - net 11. Its
     // seed↔tick↔worker lockstep is pinned in
     // `periodic-sync-registration.test.ts`; this count is only the row total.
     // The form-expiry sweep (`launch_form_expiry`) makes 12. Wave P added the
     // _global/balances_snapshot post_mutation job (enqueued on terminalization,
-    // never timed) — net 13. The Trench attribution retry lane
+    // never timed) - net 13. The Trench attribution retry lane
     // (`launch_attribution`, periodic 120s) makes 14. The AgentScan reporting
     // lane (`agentscan_report`, periodic 30s) makes 15. The AgentScan
     // token-attestation sweep (`agentscan_attest`, periodic 300s) makes 16.
     // The pools.fun attribution retry lane (`pools_attribution`, periodic
     // 120s) makes 17 - a SECOND badge sweep, against a different partner and
-    // a different attest string, not a widening of the trench one.
+    // a different attest string, not a widening of the trench one. The
+    // Virtuals keeper-launch reconciliation (`virtuals_keeper_launch`, periodic
+    // 30s) made 18 - the only sweep in the tree that waits on SOMEBODY ELSE'S
+    // transaction, the venue keeper's `launch()`, and the reason a Virtuals
+    // launch has a durable `awaiting_keeper` state at all (migration 110).
+    // Migration 108 then retired Trench Express and UNSEEDED its attribution
+    // retry lane, taking the total to 17. The seed row is only removed for
+    // FRESH databases; 108 disables the already-installed one, because deleting
+    // a definition never reaches a database that already has it.
+    // The Lighter integration (2026-09-07) adds three global sweeps:
+    // `lighter_deposit_repair` (evidence-only deposit crash recovery),
+    // `lighter_withdrawal_repair` (bounded withdrawal recovery) and
+    // `lighter_order_repair` (bounded public order repair), taking the total to 20.
+    // The Lighter AgentScan reporting lane then adds `lighter_position_snapshot`
+    // (periodic 300s), the account-wide position observation AgentScan shows
+    // beside Vex-authored fills - a projection, not activity, which is why it is
+    // its own sweep rather than another arm of a repair - taking the total to 21.
     await seedSyncJobs();
-    expect(mockExecute).toHaveBeenCalledTimes(17);
+    expect(mockExecute).toHaveBeenCalledTimes(21);
   });
 
   it("uses ON CONFLICT DO NOTHING (idempotent)", async () => {
@@ -140,6 +157,42 @@ describe("seedSyncJobs", () => {
     expect((repairCall![1] as unknown[])[2]).toBeNull(); // no readToolId
     expect((repairCall![1] as unknown[])[3]).toBe("periodic");
     expect((repairCall![1] as unknown[])[4]).toBe(30);
+  });
+
+  it("seeds evidence-only Lighter deposit repair every 30 seconds", async () => {
+    await seedSyncJobs();
+    const repairCall = mockExecute.mock.calls.find(
+      (call: unknown[]) => (call[1] as unknown[])[1] === "lighter_deposit_repair",
+    );
+    expect(repairCall).toBeDefined();
+    expect((requireValue(repairCall)[1] as unknown[])[0]).toBe("_global");
+    expect((requireValue(repairCall)[1] as unknown[])[2]).toBeNull();
+    expect((requireValue(repairCall)[1] as unknown[])[3]).toBe("periodic");
+    expect((requireValue(repairCall)[1] as unknown[])[4]).toBe(30);
+  });
+
+  it("seeds evidence-only Lighter withdrawal repair every minute", async () => {
+    await seedSyncJobs();
+    const repairCall = mockExecute.mock.calls.find(
+      (call: unknown[]) => (call[1] as unknown[])[1] === "lighter_withdrawal_repair",
+    );
+    expect(repairCall).toBeDefined();
+    expect((requireValue(repairCall)[1] as unknown[])[0]).toBe("_global");
+    expect((requireValue(repairCall)[1] as unknown[])[2]).toBeNull();
+    expect((requireValue(repairCall)[1] as unknown[])[3]).toBe("periodic");
+    expect((requireValue(repairCall)[1] as unknown[])[4]).toBe(60);
+  });
+
+  it("seeds bounded public Lighter order repair every five minutes", async () => {
+    await seedSyncJobs();
+    const repairCall = mockExecute.mock.calls.find(
+      (call: unknown[]) => (call[1] as unknown[])[1] === "lighter_order_repair",
+    );
+    expect(repairCall).toBeDefined();
+    expect((requireValue(repairCall)[1] as unknown[])[0]).toBe("_global");
+    expect((requireValue(repairCall)[1] as unknown[])[2]).toBeNull();
+    expect((requireValue(repairCall)[1] as unknown[])[3]).toBe("periodic");
+    expect((requireValue(repairCall)[1] as unknown[])[4]).toBe(300);
   });
 
   it("seeds solana_activity_repair periodic job with 30s interval (status-only sweep, migration 061)", async () => {

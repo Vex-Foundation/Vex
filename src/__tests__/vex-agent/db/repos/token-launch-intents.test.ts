@@ -140,6 +140,11 @@ describe("createWith — the entry state is explicit per path", () => {
       symbol: "TEST",
       toolCallId: "call_abc123",
       expiresAt: EXPIRES_AT,
+      // The venue, stated. Migration 108 dropped the `trench` DEFAULT with the
+      // protocol, so every writer names its launchpad; pools.fun is the live one
+      // and the database requires its paired asset.
+      protocol: "pools_fun",
+      pools: { pairedAsset: "weth" },
     });
     expect(created.status).toBe("awaiting_user_form");
     expect(created.authorizationId).toBeNull();
@@ -154,6 +159,7 @@ describe("createWith — the entry state is explicit per path", () => {
       status: "awaiting_user_form", chainId: 4663, walletAddress: WALLET,
       name: "Test Coin", symbol: "TEST",
       toolCallId: "call_abc123", missionRunId: "run-1", expiresAt: EXPIRES_AT,
+      protocol: "pools_fun", pools: { pairedAsset: "weth" },
     });
     expect(created.toolCallId).toBe("call_abc123");
     // SQL `$17`/`$18` are 1-indexed placeholders; the bound array is 0-indexed,
@@ -186,6 +192,8 @@ describe("createWith — the entry state is explicit per path", () => {
       authorizationId: "auth-1",
       authorizationKind: "full_autonomy",
       expiresAt: EXPIRES_AT,
+      protocol: "pools_fun",
+      pools: { pairedAsset: "weth" },
     });
     expect(created.status).toBe("authorized");
     expect(created.authorizationKind).toBe("full_autonomy");
@@ -201,6 +209,7 @@ describe("createWith — the entry state is explicit per path", () => {
       intentId: INTENT_ID, sessionId: SESSION_ID, origin: "user",
       status: "awaiting_user_form", chainId: 4663, walletAddress: WALLET,
       name: "Test Coin", symbol: "TEST", expiresAt: EXPIRES_AT,
+      protocol: "pools_fun", pools: { pairedAsset: "weth" },
     });
     expect(created.chainId).toBe(4663);
   });

@@ -179,3 +179,74 @@ export function lintSlippageDefaultHome(files: readonly SourceFile[]): ManifestL
   }
   return issues;
 }
+
+/**
+ * The retired swap-venue precedence phrasings.
+ *
+ * Owner decision 2026-09-07 made Uniswap an EQUAL-STANDING swap venue beside
+ * KyberSwap. Before it, five surfaces each wrote the ranking in their own
+ * words - the two venues' manifests, the always-loaded alias descriptions, the
+ * Tool Map labels, the swap task shape, and a `preferInstead` field nothing
+ * rendered. Two of those in one context window gave the model two different
+ * rankings, and the retrieval passage still called Uniswap a "HIDDEN fallback"
+ * months after the reveal that hid it was deleted.
+ *
+ * So the standing now has ONE owner, `registry/swap-venue-guidance.ts`, whose
+ * atoms every surface imports, and these five phrasings are retired outright.
+ * The rule lands at ZERO with no allowlist row, like the dotted-toolId and
+ * output-cap rules: a re-occurrence is a second writer of the policy, which is
+ * the exact defect the owner module exists to prevent, so it may not be
+ * recorded as debt.
+ *
+ * SCOPE, and why the bridge lane is excluded rather than overlooked. The same
+ * decision left the BRIDGE lane alone: `BridgeQuote` does not state a
+ * preference, it ROUTES, picking Khalani or Relay from Khalani's live registry
+ * (`src/tools/relay/bridge-venue.ts`). "Fallback venue" in a Khalani or Relay
+ * file describes that mechanism truthfully, so those two namespaces are out of
+ * scope here. Widening this rule to them would be a change to bridge routing
+ * wording, which is a separate owner decision, not a lint fix.
+ *
+ * THE FIX, when this fires: import the atom that says it from
+ * `registry/swap-venue-guidance.ts` rather than re-wording the policy locally.
+ */
+const RETIRED_VENUE_PRECEDENCE_PHRASES: readonly string[] = [
+  "primary swap route",
+  "primary swap venue",
+  "hidden fallback",
+  "fallback venue",
+  "uniswap fallback",
+];
+
+/**
+ * Path fragments of the bridge lane, whose venue wording this rule does not
+ * govern. Matched on the directory, so a file added to either namespace later
+ * inherits the same exclusion without an edit here.
+ */
+const BRIDGE_LANE_PATH_FRAGMENTS: readonly string[] = ["/khalani/", "/relay/"];
+
+function isBridgeLaneSource(path: string): boolean {
+  return BRIDGE_LANE_PATH_FRAGMENTS.some((fragment) => path.includes(fragment));
+}
+
+export function lintRetiredVenuePrecedence(files: readonly SourceFile[]): ManifestLintIssue[] {
+  const issues: ManifestLintIssue[] = [];
+  for (const file of files) {
+    if (isBridgeLaneSource(file.path)) continue;
+    for (const [index, line] of file.text.split("\n").entries()) {
+      const lowered = line.toLowerCase();
+      for (const phrase of RETIRED_VENUE_PRECEDENCE_PHRASES) {
+        if (!lowered.includes(phrase)) continue;
+        issues.push({
+          subject: file.path,
+          rule: "retired-venue-precedence",
+          detail: phrase,
+          message:
+            `line ${index + 1} still ranks the EVM swap venues in its own words ("${phrase}"). `
+            + "KyberSwap and Uniswap have equal standing (owner decision 2026-09-07); import the "
+            + "sentence from `registry/swap-venue-guidance.ts` instead of re-wording the policy here.",
+        });
+      }
+    }
+  }
+  return issues;
+}

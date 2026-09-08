@@ -65,6 +65,12 @@ import { setupMemoryManagerWorker } from "./agent/memory-manager-worker.js";
 import { setupRegimeWorker } from "./agent/regime-worker.js";
 import { setupToolEmbeddingReconcileWorker } from "./agent/tool-embedding-reconcile-worker.js";
 import { setupVexMarketService } from "./market/vex-market-service.js";
+import { installLighterOrderCreateExecutionDeps } from "./lighter/order-create-execution.js";
+import { installLighterKeyRegistrationCredentialPreparer } from "./lighter/key-registration-credential.js";
+import { installLighterKeyRegistrationExecutor } from "./lighter/key-registration-execution.js";
+import { installLighterFeeAuthorizationService } from "./lighter/fee-authorization-execution.js";
+import { shutdownLighterPublicMarkets } from "./lighter/public-market-stream.js";
+import { shutdownLighterCandleStreams } from "./lighter/candle-stream.js";
 import { setupStudioHostStatusBridge } from "./studio/host-status-bridge.js";
 import { setupBoardLiveService } from "./market/board-live-owner.js";
 import { lockSecretSession, reopenStudioHostIfSafe } from "./secrets/session.js";
@@ -252,6 +258,35 @@ async function initializeMainRuntime(): Promise<void> {
   installAppProtocolHandler(rendererRoot);
 
   // 7. IPC surface
+  const uninstallLighterOrderCreateExecutionDeps = installLighterOrderCreateExecutionDeps();
+  globalCleanup.add(() => {
+    uninstallLighterOrderCreateExecutionDeps();
+  }, "lighter-order-create-execution-deps");
+  const uninstallLighterKeyRegistrationCredentialPreparer =
+    installLighterKeyRegistrationCredentialPreparer();
+  globalCleanup.add(() => {
+    uninstallLighterKeyRegistrationCredentialPreparer();
+  }, "lighter-key-registration-credential-preparer");
+  const uninstallLighterKeyRegistrationExecutor = installLighterKeyRegistrationExecutor();
+  globalCleanup.add(() => {
+    uninstallLighterKeyRegistrationExecutor();
+  }, "lighter-key-registration-executor");
+  const uninstallLighterFeeAuthorizationService = installLighterFeeAuthorizationService();
+  globalCleanup.add(() => {
+    uninstallLighterFeeAuthorizationService();
+  }, "lighter-fee-authorization-service");
+
+  // The two public Lighter market supervisors are process-wide singletons owned
+  // by their modules. Shutting them down here closes their sockets and their
+  // timers, and closes ADMISSION: a subscribe that races teardown is refused
+  // instead of opening a socket nothing will ever close.
+  globalCleanup.add(() => {
+    shutdownLighterPublicMarkets();
+  }, "lighter-public-market-streams");
+  globalCleanup.add(() => {
+    shutdownLighterCandleStreams();
+  }, "lighter-candle-streams");
+
   // The agent-bridge disposer is handed back rather than self-registered: it
   // drains the board read caches and the DexScreener transport, so it belongs
   // to the ORDERED quit task below, not to a concurrent globalCleanup task.

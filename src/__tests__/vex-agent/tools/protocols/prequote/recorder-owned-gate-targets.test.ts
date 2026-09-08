@@ -62,6 +62,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import type { PrequoteGateTarget } from "@vex-agent/tools/protocols/prequote/registry.js";
+import type { MorphoBorrowMatchInput } from "@vex-agent/tools/protocols/prequote/identity/hash/morpho-borrow.js";
 import { VexError, ErrorCodes } from "../../../../../errors.js";
 
 import { definedValue, mutableRecord } from "../../../../_test-value-guards.js";
@@ -337,7 +338,6 @@ const SWAP_AND_BRIDGE: readonly DirectionCase[] = [
     losesAuthorization: [
       "kyberswap.swap.execute",
       "uniswap.swap.execute",
-      "trench.trade_execute",
       "solana.swap.execute",
     ],
     // Pendle's swap executes read the Pendle table, which did not move.
@@ -607,6 +607,22 @@ describe("the market row's KIND is asked for, not restated", () => {
   });
 });
 
+/**
+ * The lane a built identity carries, or a loud failure when the direction under
+ * test stopped producing a lane-bearing kind. Only the two MARKET-lane kinds
+ * (`lend_deposit` / `lend_withdraw`) carry `lane`; reading it off the whole
+ * `MorphoBorrowMatchInput` union would silently pass on a builder that started
+ * returning a collateral kind, which is the regression this suite exists for.
+ * The return type is `string` because the substitution under test replaces the
+ * market lane's value, so the literal type is not what is being asserted.
+ */
+function laneOf(identity: MorphoBorrowMatchInput): string {
+  if (identity.kind !== "lend_deposit" && identity.kind !== "lend_withdraw") {
+    throw new Error(`the built identity has kind "${identity.kind}", which carries no lane`);
+  }
+  return identity.lane;
+}
+
 describe("the lend lane has one owner, and the identity reads it too", () => {
   /**
    * THE SUBSTITUTION. The Blue market lane is really "market"; here its one
@@ -628,7 +644,7 @@ describe("the lend lane has one owner, and the identity reads it too", () => {
       chain: "base",
       supplyAmountRaw: AMOUNT,
     }, ctx());
-    expect(built.lane).toBe("vault");
+    expect(laneOf(built)).toBe("vault");
 
     // Half two: the published contract. With both lend lanes now spelled the
     // same, the market supply execute is authorized by the vault quote as well -

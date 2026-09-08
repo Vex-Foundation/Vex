@@ -27,7 +27,7 @@ const ICON_CIRCLE_CHROME = cn(
 function statusFromQuery(
   query: ReturnType<typeof useSuperboardKey>,
 ): SuperboardKeyStatus | null {
-  if (query.data?.ok === true) return query.data.data;
+  if (!query.isError && query.data?.ok === true) return query.data.data;
   return null;
 }
 
@@ -42,7 +42,11 @@ export function SuperboardKeySection(): JSX.Element {
     setRevealed(false);
   }, [shareToken]);
   const { copied, onCopy } = useCopyFeedback(shareToken);
-  const kind = status?.kind ?? "not_ready";
+  const readError = query.data?.ok === false ? query.data.error : null;
+  const readFailed = query.isError || readError !== null;
+  const generationError = generate.data?.ok === false ? generate.data.error : null;
+  const generationFailed = generate.isError || generationError !== null;
+  const kind = readFailed ? "read_error" : (status?.kind ?? "loading");
   const pendingError = status?.kind === "pending" ? status.lastError : null;
   const busy = generate.isPending || query.isFetching;
   const copyEnabled = kind === "registered" && shareToken.length > 0 && !busy;
@@ -52,6 +56,7 @@ export function SuperboardKeySection(): JSX.Element {
       className="flex w-full flex-col"
       data-vex-superboard-key=""
       data-vex-superboard-kind={kind}
+      aria-busy={busy || undefined}
     >
       <header className="vex-step-header flex items-start gap-4">
         <span aria-hidden className={ICON_CIRCLE_CHROME}>
@@ -62,20 +67,44 @@ export function SuperboardKeySection(): JSX.Element {
             Superboard key
           </h1>
           <p className="vex-step-lede text-sm leading-relaxed text-ink-secondary">
-            One code, generated once. Paste it in Superboard — it cannot be
+            One code, generated once. Paste it in Superboard - it cannot be
             rotated.
           </p>
         </div>
       </header>
 
       <div className="mt-7 flex flex-col gap-4">
+        {status === null && query.isFetching ? (
+          <p role="status" className="text-sm leading-relaxed text-ink-secondary">
+            Loading Superboard key…
+          </p>
+        ) : null}
+        {readFailed ? (
+          <p role="alert" className="text-sm leading-relaxed text-danger">
+            Couldn't load the Superboard key.{" "}
+            {readError?.message ?? "Try loading it again."}
+            {readError?.correlationId ? (
+              <span className="text-ink-tertiary"> (ref {readError.correlationId})</span>
+            ) : null}
+          </p>
+        ) : null}
+        {generationFailed ? (
+          <p role="alert" className="text-sm leading-relaxed text-danger">
+            Couldn't confirm key generation.{" "}
+            {generationError !== null ? `${generationError.message} ` : ""}
+            Reload status to check whether a key was created.
+            {generationError?.correlationId ? (
+              <span className="text-ink-tertiary"> (ref {generationError.correlationId})</span>
+            ) : null}
+          </p>
+        ) : null}
         {kind === "not_ready" ? (
           <p className="text-sm leading-relaxed text-ink-secondary">
             Connect AgentScan first. The Superboard key is minted against that
             identity.
           </p>
         ) : null}
-        {kind === "missing" ? (
+        {kind === "missing" && !generationFailed ? (
           <p className="text-sm leading-relaxed text-ink-secondary">
             Generate the code, then paste it in Superboard. This install mints
             only one.
@@ -95,11 +124,22 @@ export function SuperboardKeySection(): JSX.Element {
         ) : null}
       </div>
 
-      {kind === "missing" || shareToken.length > 0 ? (
+      {readFailed || generationFailed || kind === "missing" || shareToken.length > 0 ? (
         <div className="vex-step-actions mt-8 flex items-center justify-end gap-3">
-          {kind === "missing" ? (
+          {readFailed || generationFailed ? (
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                generate.reset();
+                void query.refetch();
+              }}
+            >
+              {readFailed ? "Retry" : "Reload status"}
+            </Button>
+          ) : kind === "missing" ? (
             <Button disabled={busy} onClick={() => generate.mutate()}>
-              Generate
+              {generate.isPending ? "Generating…" : "Generate"}
             </Button>
           ) : (
             <>

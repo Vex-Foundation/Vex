@@ -455,7 +455,7 @@ export function registerRailParityScenarios(
     await expect(railCards.nth(2)).toHaveAttribute("data-vex-book-section", "balances");
     await expect(railCards.nth(3)).toHaveAttribute("data-vex-book-section", "activity");
     await expect(railCards.nth(4)).toHaveAttribute("data-vex-book-section", "project");
-    await expect(railCards.nth(5)).toHaveAttribute("data-vex-book-section", "trench");
+    await expect(railCards.nth(5)).toHaveAttribute("data-vex-book-section", "launchpads");
     await expect(book.getByRole("region", { name: "Position", exact: true })).toBeVisible();
     await expect(book.getByRole("region", { name: "Wallets", exact: true })).toBeVisible();
 

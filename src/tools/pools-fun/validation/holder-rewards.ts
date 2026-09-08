@@ -17,6 +17,7 @@
 import { z } from "zod";
 import type {
   PoolsHolderRewards,
+  PoolsHolderRewardsPrepare,
   PoolsLaunchAssets,
 } from "../types.js";
 import { address, displayNumber, displayRawString, displayString, parseOrThrow } from "./_shared.js";
@@ -92,4 +93,33 @@ const holderRewardsSchema: z.ZodType<PoolsHolderRewards> = z.object({
 /** Validate a `/pools-fun/holder-rewards` response. */
 export function validateHolderRewards(raw: unknown): PoolsHolderRewards {
   return parseOrThrow(holderRewardsSchema, raw);
+}
+
+/**
+ * The holder-rewards CALLDATA response.
+ *
+ * `to` and `data` are STRICT and everything else is display-tolerant, which is
+ * the opposite of the usual split here and is deliberate: these two fields are
+ * the ONLY reason this endpoint is called at all. They are compared byte for
+ * byte against calldata Vex built itself, so a malformed one must fail the parse
+ * rather than arrive as `null` and quietly turn the comparison into "the
+ * provider said nothing, carry on".
+ *
+ * `data` is held to a 0x-prefixed even-length hex string for the same reason: a
+ * value that is not calldata cannot be compared to calldata.
+ */
+const holderRewardsPrepareSchema: z.ZodType<PoolsHolderRewardsPrepare> = z.object({
+  to: address,
+  data: z
+    .string()
+    .regex(/^0x([0-9a-fA-F]{2})+$/, { error: "expected 0x-prefixed calldata" }),
+  value: displayString,
+  action: displayString,
+  token: displayString,
+  distributor: displayString,
+});
+
+/** Validate a `POST /pools-fun/holder-rewards/prepare` response. */
+export function validateHolderRewardsPrepare(raw: unknown): PoolsHolderRewardsPrepare {
+  return parseOrThrow(holderRewardsPrepareSchema, raw);
 }

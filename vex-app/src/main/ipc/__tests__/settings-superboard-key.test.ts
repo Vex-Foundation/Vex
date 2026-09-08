@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { defaultPreferences, type Preferences } from "@shared/schemas/preferences.js";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
@@ -33,8 +33,9 @@ vi.mock("../../preferences/store.js", () => ({
   preferencesStore: {
     load: async () => state.preferences,
     update: async (patch: Partial<Preferences>) => {
+      if (state.preferences === null) throw new Error("Preferences were not initialized");
       state.preferences = {
-        ...state.preferences!,
+        ...state.preferences,
         ...patch,
       };
       return state.preferences;
@@ -102,6 +103,7 @@ async function call(channel: string, payload: unknown): Promise<CallResult> {
 function reportingState(overrides: Record<string, unknown> = {}) {
   return {
     agentHash: "a".repeat(64),
+    registrationGeneration: 0,
     ingestToken: INGEST,
     shareToken: null,
     shareTokenRegisteredAt: null,
@@ -194,6 +196,25 @@ describe("settings.getSuperboardKey", () => {
     await call(CH.settings.getSuperboardKey, {});
     expect(mocks.registerPersistedShareToken).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
+  });
+
+  it("retries the same pending token after server recovery advances the identity generation", async () => {
+    mocks.getReportingState.mockResolvedValue(reportingState({ shareToken: SHARE }));
+    mocks.registerPersistedShareToken.mockResolvedValueOnce({ kind: "auth_lost" });
+    await call(CH.settings.getSuperboardKey, {});
+
+    mocks.getReportingState
+      .mockResolvedValueOnce(reportingState({ shareToken: SHARE, registrationGeneration: 1 }))
+      .mockResolvedValueOnce(reportingState({
+        shareToken: SHARE,
+        registrationGeneration: 1,
+        shareTokenRegisteredAt: "2026-09-08T00:00:00.000Z",
+      }));
+    mocks.registerPersistedShareToken.mockResolvedValueOnce({ kind: "registered" });
+
+    const result = await call(CH.settings.getSuperboardKey, {});
+    expect(result.data).toEqual({ kind: "registered", shareToken: SHARE });
+    expect(mocks.registerPersistedShareToken).toHaveBeenCalledTimes(2);
   });
 });
 

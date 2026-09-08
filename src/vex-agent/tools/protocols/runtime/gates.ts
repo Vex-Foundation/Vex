@@ -264,22 +264,20 @@ export async function evaluatePrequoteGateDecision(
  * Mutating tools that must NOT become a generic approval card under restricted
  * permission, because they own a richer consent surface.
  *
- * `trench.launch_execute` (owner ruling 2026-08-02): in restricted mode the
- * launch FORM replaces the approval card - a launch must never produce both.
- * The card would show tool arguments; the form shows the token, the image, the
- * anchored creation fee, the prebuy, the Vex fee and the total, and its Deploy
- * click is what authorizes the spend (the `user_submit` C0 variant). So the
- * dispatch is allowed through to the handler, which refuses BY NAME and points
- * at `trench.launch_request_form` instead of enqueueing a second, weaker
+ * Owner ruling 2026-08-02: in restricted mode the launch FORM replaces the
+ * approval card - a launch must never produce both. The card would show tool
+ * arguments; the form shows the token, the image, the anchored creation fee,
+ * the prebuy, the Vex fee and the total, and its Deploy click is what
+ * authorizes the spend (the `user_submit` C0 variant). So the dispatch is
+ * allowed through to the handler, which refuses BY NAME and points at the
+ * launchpad's own `launch_request_form` instead of enqueueing a second, weaker
  * consent surface for the same money.
  */
 const FORM_IS_THE_APPROVAL_TOOLS: ReadonlySet<string> = new Set([
-  "trench.launch_execute",
-  // `pools.launch_execute` follows the same ruling on the same surface: the
-  // pools.fun launch form (`pools.launch_request_form`) is its consent surface,
-  // and the handler refuses a restricted session BY NAME with that remedy. The
-  // entry is here, next to Trench's, because the policy is the tool's and must
-  // not depend on which change registers the tool.
+  // `pools.launch_execute`: the pools.fun launch form
+  // (`pools.launch_request_form`) is its consent surface, and the handler
+  // refuses a restricted session BY NAME with that remedy. The policy is the
+  // tool's and must not depend on which change registers the tool.
   "pools.launch_execute",
 ]);
 

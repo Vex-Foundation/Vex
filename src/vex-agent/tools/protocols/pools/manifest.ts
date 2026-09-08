@@ -21,6 +21,8 @@ import { POOLS_LAUNCH_TOOLS } from "./manifests/launch.js";
 import { POOLS_CLAIM_TOOLS } from "./manifests/claim.js";
 import { POOLS_LAUNCH_ASSETS_TOOLS } from "./manifests/launch-assets.js";
 import { POOLS_HOLDER_REWARDS_TOOLS } from "./manifests/holder-rewards.js";
+import { POOLS_HOLDER_REWARDS_CLAIM_TOOLS } from "./manifests/holder-rewards-claim.js";
+import { POOLS_HOLDER_REWARDS_DISTRIBUTE_TOOLS } from "./manifests/holder-rewards-distribute.js";
 
 export const POOLS_TOOLS: readonly ProtocolToolManifest[] = [
   ...POOLS_TOKENS_TOOLS,
@@ -32,4 +34,6 @@ export const POOLS_TOOLS: readonly ProtocolToolManifest[] = [
   ...POOLS_CLAIM_TOOLS,
   ...POOLS_LAUNCH_ASSETS_TOOLS,
   ...POOLS_HOLDER_REWARDS_TOOLS,
+  ...POOLS_HOLDER_REWARDS_CLAIM_TOOLS,
+  ...POOLS_HOLDER_REWARDS_DISTRIBUTE_TOOLS,
 ];

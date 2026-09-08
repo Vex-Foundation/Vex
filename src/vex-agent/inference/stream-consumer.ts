@@ -379,5 +379,12 @@ export async function runStreamingInference(
           servingProvider,
         };
 
+  // A completion with no final text and no valid tool call is returned AS a
+  // completion, never as an error. Whether the engine may ask the same
+  // question again is the turn loop's decision, and it already owns one: the
+  // consecutive-blank detector (`engine/core/runner/unproductive-rounds.ts`)
+  // counts this round as blank and stops the turn with `no_progress` on the
+  // third in a row. Rejecting here would pre-empt that bound with a hard
+  // error, which is why this layer stays a transport.
   return { response, aborted, usageObserved };
 }

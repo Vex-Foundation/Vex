@@ -1,0 +1,43 @@
+{
+  "definition": {
+    "function": {
+      "description": "Check where one Virtuals agent launch actually stands. Use this when the user asks whether their agent launched, whether it is live, why it is not listed on the Virtuals site, or what happened to a launch that is still waiting - and after virtuals__agent_launch_execute answered awaiting_keeper. Read-only: it signs nothing, calls no contract function and never triggers the keeper. It answers the question the venue's two-transaction shape creates - \"my pre-launch confirmed, so is my agent live?\" - by scanning BondingV5 for this token's Launched or CancelledLaunch event, and it reports THREE distinguishable states with different remedies: awaiting_keeper (the pre-launch is on chain, the keeper has not run launch(), the launch is still cancellable), launched (the keeper ran it, the curve is live, the anti-sniper window has started, a cancel would now revert), and cancelled (the initial purchase was returned). It SEPARATELY reports whether api.virtuals.io lists the agent yet, labelled as a different question and never used to contradict the chain: an agent can be launched on chain and never indexed, which is exactly what happens when launch() is called by someone other than the keeper. Pass intentId (the id virtuals__agent_launch_execute returned) for the full record, or token with its chain for a chain-and-index read of any agent. IT CHANGES NOTHING, including Vex's own records: a launch the keeper has just executed can read as launched while `recordedStatus` still says awaiting_keeper, and the reply says so - the chain is the authority and the background reconciliation catches the record up. An unreadable chain answers UNKNOWN, never \"not launched\". It returns `launched`, `recordedStatus`, `chain`, `chainId`, `token`, `txHash`, `keeper` (with `launchTxHash` and the initial purchase when observed), `indexing`, `cancellable` and, on a cancelled launch, `refund`.",
+      "name": "virtuals__agent_launch_status",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "description": "Required together with token - Vex must know which BondingV5 to read. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`).",
+            "enum": [
+              "base",
+              "solana",
+              "robinhood",
+              "ethereum"
+            ],
+            "type": "string"
+          },
+          "intentId": {
+            "description": "The launch to check, as returned by virtuals__agent_launch_execute. Gives the fullest answer: Vex's own record plus a fresh chain observation, and the scan is narrowed to the block the pre-launch landed in. Pass this OR token.",
+            "type": "string"
+          },
+          "token": {
+            "description": "The agent's ERC-20 contract address, for a launch Vex has no record of. Requires chain. The scan is then bounded by what the node will serve, so a very old launch may answer UNKNOWN rather than a state.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "virtuals",
+    "requiresEnv": null,
+    "toolId": "virtuals.launch.status"
+  }
+}

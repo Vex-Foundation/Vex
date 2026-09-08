@@ -20,8 +20,14 @@
  *  3. A FAILED FILING DOES NOT LOSE THE URL. The bytes are public the instant
  *     the host answers; reporting a failure there would tell the agent nothing
  *     happened, which is false and invites a second upload.
- *  4. THE SURFACE GUARD IS THE PRIVILEGED EXECUTOR'S OWN RECHECK. Over Studio
- *     MCP the handler refuses before it reads the locker or touches a network.
+ *  4. THE SURFACE DECIDES WHICH PARAMETER NAMES THE PICTURE, and the wrong
+ *     one is refused BY NAME before the locker or any network is touched.
+ *     CONTRACT CHANGE (2026-09-06): this tool used to refuse the Studio MCP
+ *     surface outright. It no longer does - the refusal withheld the only
+ *     approved way to make bytes public, so a coding agent could never give a
+ *     launched token a picture. The Studio arm has its own suite
+ *     (`image-publish-studio-handler.test.ts`); what is pinned HERE is that the
+ *     locker arm is unchanged and that an `imageId` is still refused there.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -48,9 +54,13 @@ vi.mock("@vex-agent/db/repos/launch-images.js", async (importOriginal) => {
 
 const resolveLaunchAssetsPublisher = vi.fn();
 
-vi.mock("@vex-agent/agentscan/assets-client.js", () => ({
-  resolveLaunchAssetsPublisher: () => resolveLaunchAssetsPublisher(),
-}));
+vi.mock("@vex-agent/agentscan/assets-client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@vex-agent/agentscan/assets-client.js")>();
+  // The content-address derivation stays REAL. It is the binding between what
+  // this tool records and what a launch later asks for, and a fake one would
+  // make the suite agree with itself rather than with the host's addressing.
+  return { ...actual, resolveLaunchAssetsPublisher: () => resolveLaunchAssetsPublisher() };
+});
 
 const { PublicAssetConflictError } = await import("@vex-agent/db/repos/launch-images.js");
 const { launchpadsImagePublishHandler } = await import(
@@ -238,7 +248,7 @@ describe("a fresh picture", () => {
 // ── the surface guard ──────────────────────────────────────────────────────
 
 describe("the Studio MCP surface", () => {
-  it("refuses BY NAME and performs no repo read, no byte read and no upload", async () => {
+  it("refuses an imageId BY NAME and performs no repo read, no byte read and no upload", async () => {
     mountResolver();
     const result = await launchpadsImagePublishHandler(
       { imageId: IMAGE_ID },
@@ -246,11 +256,20 @@ describe("the Studio MCP surface", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("launchpads__image_publish");
+    expect(result.output).toContain('"imageId" is not accepted here');
     expect(result.output).toMatch(/imagePath/);
+    expect(result.output).toContain("Nothing was uploaded");
     expect(getLaunchImage).not.toHaveBeenCalled();
     expect(resolveBytes).not.toHaveBeenCalled();
     expect(resolveLaunchAssetsPublisher).not.toHaveBeenCalled();
+    expectNothingUploaded();
+  });
+
+  it("never reaches the locker's byte seam for a Studio call, whatever it passed", async () => {
+    mountResolver();
+    await launchpadsImagePublishHandler({}, context({ approvalSurface: "studio_mcp" }));
+
+    expect(resolveBytes).not.toHaveBeenCalled();
     expectNothingUploaded();
   });
 

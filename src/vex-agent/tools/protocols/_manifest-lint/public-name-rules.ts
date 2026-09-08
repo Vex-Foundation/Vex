@@ -27,8 +27,9 @@
  *     `.ts` sources only, so fixtures and captures are never scanned.
  *
  * ALLOWLIST, and why it holds EXACT tokens. Five model-facing strings name a
- * FAMILY of tools with a trailing `*` (`kyberswap__swap_*` on the shortcut
- * table at `engine/prompts/tool-model.ts:74`, `solana__swap_*`,
+ * FAMILY of tools with a trailing `*` (`kyberswap__swap_*` and
+ * `uniswap__swap_*` on the shortcut table at `engine/prompts/tool-model.ts`,
+ * `solana__swap_*`,
  * `solana__lend_*`). Those are deliberate: the sentence is about a pair of
  * tools, not one. They are listed by their exact spelling rather than as a
  * prefix rule, so a NEW wildcard family is a human decision instead of
@@ -55,6 +56,10 @@ const PUBLIC_NAME_TOKEN = /(?<![\w.$-])[a-z][a-z0-9]*__[a-z][A-Za-z0-9_]*\*?(?![
  */
 export const PUBLIC_NAME_WILDCARD_ALLOWLIST: readonly string[] = [
   "kyberswap__swap_*",
+  // Added 2026-09-07 with the swap-venue standing decision: the shortcut table
+  // gained a Uniswap row beside the KyberSwap one, and it names the same
+  // quote+execute pair in the same family notation.
+  "uniswap__swap_*",
   "solana__swap_*",
   "solana__lend_*",
 ];

@@ -1,4 +1,4 @@
-<!-- vex:studio:begin vex=0.2.6 hash=dc6fabaa4a08de31 -->
+<!-- vex:studio:begin vex=0.2.6 hash=63e5856ab50cb449 -->
 # Vex Studio - project "acme-trading"
 
 This repository is connected to Vex, a self-custodial crypto agent. The Vex
@@ -187,13 +187,11 @@ attempt.
 - Bridges (`BridgeQuote`/`BridgeExecute` and the Relay pair): a SEPARATE
   transfer that runs only after the deposit lands, so a bridge that does not
   happen is never charged.
-- Trench curve trades: a SEPARATE transfer after the trade confirms, 25 bps
-  of the ETH sent on a buy or of the ETH received on a sale.
 - The generic EVM pair: 25 bps of that transaction's own native `valueWei`,
   as a separate transfer after it confirms. A zero-value transaction - every
   ERC-20 transfer and every approve - pays NOTHING, and nothing is charged
   when the fee would cost more to collect than it is worth.
-- Trench and pools.fun launches: 25 bps of the native value the launch sends.
+- pools.fun launches: 25 bps of the native value the launch sends.
 
 FREE: every read, quote, preview and research call; `WalletSendPrepare` and
 `WalletSendConfirm`; the wrap pair, which is exactly 1:1; every Pendle and
@@ -238,12 +236,15 @@ silently dropping them, and convert with `UnitsConvert`, never in your head.
 
 `TokenFind` resolves each token to a CONTRACT ADDRESS on the exact chain, then
 `SwapQuote`, then `SwapExecute` with identical parameters including the same
-slippage. That pair is the one you normally need: it routes EVM trades to
-KyberSwap and Solana to Jupiter itself. The Uniswap pair forces Uniswap, for a
-chain with a verified Vex deployment where KyberSwap cannot route. Restate the
-quote's expected output, price impact, gas and safety verdicts before
-executing. Slippage binds the quote you were SHOWN: the execute writes that
-floor into the calldata and refuses BY NAME rather than filling worse. So
+slippage. That pair routes EVM trades to KyberSwap and Solana to Jupiter
+itself; `SwapQuoteUniswap` then `SwapExecuteUniswap` is the Uniswap pair, on a
+chain with a verified Vex deployment.
+
+KyberSwap is usually the better first choice because it aggregates routes across many DEXes; Uniswap is an equal-standing venue that prices V2 and V3 pools directly. Reach for Uniswap when KyberSwap has no coverage for the chain or no route for the pair, when its quote fails or looks off, or when the user asks for it. Quote both when unsure. Execute on the venue you quoted.
+
+Restate the quote's expected output, price impact, gas and safety verdicts
+before executing. Slippage binds the quote you were SHOWN: the execute writes
+that floor into the calldata and refuses BY NAME rather than filling worse. So
 RE-QUOTE AT THE SAME SLIPPAGE FIRST. Raise `slippageBps` only when the
 refusal names that parameter, raise it in steps, and say the new worst-case
 price to the user before executing - a wider bound is the user's choice, made

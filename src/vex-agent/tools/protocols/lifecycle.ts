@@ -38,10 +38,10 @@ export const NAMESPACE_LIFECYCLE: Record<ProtocolNamespace, NamespaceLifecycle> 
   relay: "active",
   solana: "active",
   dexscreener: "active",
+  lighter: "active",
   virtuals: "active",
   pendle: "active",
   morpho: "active",
-  trench: "active",
   pools: "active",
   launchpads: "active",
 };

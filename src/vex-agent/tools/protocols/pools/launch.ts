@@ -7,11 +7,11 @@
  * handler, a store or a plan builder - those are implementation details of this
  * lane and are free to move without a boundary negotiation.
  *
- * ALL SEVEN CONTRACT METHODS LIVE HERE: `prepare`, `deploy`, `cancel`,
- * `previewClaim`, `claim`, `myLaunches` and `getAwaiting`. The desktop lane can
- * therefore swap its `null` runtime for this one in a single change - which was
- * the point of waiting: a half-wired domain must never be reachable from the
- * app.
+ * ALL EIGHT CONTRACT METHODS LIVE HERE: `prepare`, `deploy`, `cancel`,
+ * `previewClaim`, `claim`, `myLaunches`, `getAwaiting` and `cancelAwaitingForm`.
+ * The desktop lane can therefore swap its `null` runtime for this one in a
+ * single change - which was the point of waiting: a half-wired domain must
+ * never be reachable from the app.
  */
 
 export {
@@ -19,6 +19,14 @@ export {
   deployPoolsLaunch,
   preparePoolsLaunch,
 } from "./launch/desktop-launch.js";
+
+/**
+ * The DISMISSAL of an agent-requested form. Not one of the original seven, and
+ * deliberately separate from `cancelPoolsLaunch` above: that one cancels a
+ * PREPARED launch by its verified fingerprint, this one cancels a DRAFT by its
+ * intent id and wakes the turn parked on it. Neither reaches a signer.
+ */
+export { cancelAwaitingPoolsLaunchForm } from "./launch/desktop-form-cancel.js";
 
 export {
   claimPoolsFees,
@@ -29,7 +37,7 @@ export {
 
 /**
  * The `previewed` intents Agent Scan surfaces as considered-but-not-launched.
- * Not one of the seven contract methods - it feeds a FEED, not a money path -
+ * Not one of the contract methods - it feeds a FEED, not a money path -
  * but it lives behind this same gate so main still reaches the lane through one
  * door.
  */

@@ -23,8 +23,8 @@ export const QUICK_ACTIONS: readonly QuickAction[] = [
       "Scout the highest-APY Pendle markets across chains, pick the best fit for my holdings, and walk me through a PT quote - ask me for the amount before quoting.",
   },
   {
-    label: "Explore Trench launchpad",
+    label: "Explore pools.fun launchpad",
     prompt:
-      "Show me what's launching on the Trench Express bonding-curve launchpad on Robinhood Chain - which tokens are fresh and which are close to graduating - and preview what it would cost me to launch my own token there.",
+      "Show me what's launching on the pools.fun launchpad on Robinhood Chain - which tokens are fresh, which are trading heaviest right now, and what a launch of my own would cost me there.",
   },
 ];

@@ -45,7 +45,6 @@
 
 import type { Address } from "viem";
 
-import { DEFAULT_RPC as KYBERSWAP_DEFAULT_RPC } from "../kyberswap/evm/config.js";
 
 /** The Morpho contracts whose allowance a wallet read reports, in role order. */
 export const MORPHO_SPENDER_ROLES = ["morphoBlue", "bundler3", "generalAdapter1", "permit2"] as const;
@@ -332,78 +331,22 @@ export const UINT256_MAX = (2n ** 256n - 1n).toString();
 export const EFFECTIVELY_UNLIMITED_THRESHOLD = 2n ** 255n;
 
 /**
- * Keyless default RPC per Morpho chain, DERIVED from the shared per-slug table
- * in `src/tools/kyberswap/evm/config.ts` (owner ruling 2026-08-17: reuse the
- * shared table, never fork a copy - an endpoint fixed there is fixed for every
- * venue at once). Robinhood (4663) is deliberately absent here: the client
- * resolves it through `src/tools/evm-chains/registry.ts` at build time, which
- * honours the user's RPC override exactly as KyberSwap does. Khalani was
- * considered and measured as a source too: its registry serves the official
- * `mainnet.base.org` for Base, which 429s after ~5 requests under our heavy
- * simulation load, and its metadata is fetched per run from a remote service -
- * neither property suits a confirm-critical money path.
+ * MORPHO NO LONGER OWNS AN RPC TABLE. `MORPHO_DEFAULT_RPC` and
+ * `MORPHO_RPC_FALLBACKS` lived here and have been deleted: endpoint order,
+ * per-endpoint method scope, the user's own override and the failover policy
+ * are chain properties with one owner,
+ * `src/tools/evm-chains/rpc-endpoints.ts`, which `./evm-client.ts` asks for a
+ * transport. The header this file used to carry stated the right rule ("reuse
+ * the shared table, never fork a copy") against a table that five other files
+ * ignored; the rule is now mechanical instead of documented.
  *
- * BASE AND ARBITRUM ARE NOT PUBLICNODE, AND THAT IS THE POINT (funded live
- * probe, 2026-08-17). `base-rpc.publicnode.com` and
- * `arbitrum-one-rpc.publicnode.com` REFUSE `eth_getTransactionReceipt` at the
- * METHOD level with -32602 "Archive requests require a personal token", for a
- * transaction in the CURRENT HEAD BLOCK, while answering `eth_call`,
- * `eth_estimateGas` and `eth_getTransactionByHash` normally. A money path pinned
- * to such a node can broadcast but can never CONFIRM: the probe's real approval
- * landed in block 50090123 and still ended `unproven`. The publicnode endpoints
- * for Ethereum, Optimism and Polygon answered normally on the same day and are
- * left alone.
- *
- * WHY BASE IS A FALLBACK CHAIN AND NOT ONE PINNED URL. The funded probe reruns
- * (2026-08-17) proved that every keyless Base endpoint meters SOMETHING and
- * each meters it differently: `mainnet.base.org` serves receipts but 429s after
- * ~5 requests; `base.drpc.org` serves receipts and took 30 consecutive light
- * requests, then refused the deposit bundle's HEAVY `eth_call` simulation
- * ("Request timeout on the free plan") after 5 in a row - a COMPUTE budget,
- * not a request count, and once spent even a trivial `allowance()` read was
- * refused. The same-day battery with the real 804-byte deposit bundle measured:
- * `base-mainnet.public.blastapi.io` 8/8 heavy + receipt OK,
- * `1rpc.io/base` 8/8 heavy + receipt OK, drpc 0/8 (budget spent by earlier
- * runs), official 5/8 then 429. No single free endpoint deserves the money
- * path's trust alone, so Base rides a viem `fallback` transport across the
- * verified set (see `MORPHO_RPC_FALLBACKS`); a provider that starts refusing
- * hands the call to the next instead of turning it into an ambiguity.
- * `arb1.arbitrum.io/rpc` was measured serving receipts and sustained load, so
- * Arbitrum stays official and single.
+ * WHAT WAS LOST AND WHY THAT IS RIGHT. `MORPHO_RPC_FALLBACKS[8453]` was the
+ * only failover list in the repository, and it was measurably stale: its first
+ * alternate `1rpc.io/base` answers `eth_feeHistory` with "This endpoint has
+ * been discontinued", and its second `base.drpc.org` answers every `eth_call`
+ * with a free-plan timeout. The shared owner's Base list is the measured
+ * replacement, and every venue gets it, not just this one.
  */
-function sharedRpc(slug: string): string {
-  const url = KYBERSWAP_DEFAULT_RPC[slug];
-  if (url === undefined) {
-    throw new Error(
-      `Morpho chain table expects slug "${slug}" in the shared kyberswap DEFAULT_RPC table; `
-      + "it was removed or renamed there. Fix the shared table, do not fork a copy here.",
-    );
-  }
-  return url;
-}
-
-export const MORPHO_DEFAULT_RPC: Readonly<Record<number, string>> = {
-  1: sharedRpc("ethereum"),
-  10: sharedRpc("optimism"),
-  130: sharedRpc("unichain"),
-  137: sharedRpc("polygon"),
-  143: sharedRpc("monad"),
-  999: sharedRpc("hyperevm"),
-  8453: sharedRpc("base"),
-  42161: sharedRpc("arbitrum"),
-};
-
-/**
- * Additional receipt-verified endpoints the transport may fall back to, in
- * order, after `MORPHO_DEFAULT_RPC`. Every entry here was measured on
- * 2026-08-17 with the real deposit bundle's `eth_call` and the probe's real
- * transaction receipt (see the header above for the numbers). The official
- * `mainnet.base.org` is deliberately LAST: it throttles hardest but is the
- * endpoint most likely to still exist unchanged in a year.
- */
-export const MORPHO_RPC_FALLBACKS: Readonly<Record<number, readonly string[]>> = {
-  8453: ["https://1rpc.io/base", "https://base.drpc.org", "https://mainnet.base.org"],
-};
 
 /**
  * Multicall3, live-verified by `eth_getCode` on 2026-08-14 at this canonical

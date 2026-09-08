@@ -32,6 +32,9 @@ describe("local-secret-vault façade surface", () => {
       "stripManagedSecretsFromDotenvFile",
       "unlockSecretVault",
       "verifySecretVaultPassword",
+      // Lighter trading-credential boundary: non-env extra secrets stored in
+      // the same encrypted vault file, never mirrored into process env.
+      "writeSecretVaultExtraSecrets",
       "writeSecretVaultSecrets",
     ]);
 
@@ -43,6 +46,7 @@ describe("local-secret-vault façade surface", () => {
     expect(typeof vaultMod.verifySecretVaultPassword).toBe("function");
     expect(typeof vaultMod.unlockSecretVault).toBe("function");
     expect(typeof vaultMod.writeSecretVaultSecrets).toBe("function");
+    expect(typeof vaultMod.writeSecretVaultExtraSecrets).toBe("function");
     expect(typeof vaultMod.applySecretVaultToProcessEnv).toBe("function");
     expect(typeof vaultMod.stripManagedSecretsFromDotenvFile).toBe("function");
 

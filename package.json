@@ -16,7 +16,9 @@
     "typecheck:test:ratchet": "node scripts/check-test-type-baseline.mjs",
     "typecheck:test:baseline-diff": "node scripts/check-test-type-baseline-change.mjs",
     "test:unsafe-escapes": "node scripts/check-test-unsafe-escapes.mjs",
+    "audit:deps": "node scripts/audit-production-dependencies.mjs",
     "check:em-dash": "node scripts/check-no-em-dash.mjs",
+    "check:trench-residue": "node scripts/check-trench-residue.mjs",
     "check:no-binary-sources": "node scripts/check-no-binary-sources.mjs",
     "generate:studio-tools-doc": "tsx src/vex-agent/scripts/studio-exported-tools-doc.ts",
     "generate:studio-protocols-doc": "tsx src/vex-agent/scripts/studio-protocols-doc.ts",
@@ -48,7 +50,15 @@
     "vex:test": "pnpm --dir vex-app test",
     "vex:test:e2e": "pnpm --dir vex-app test:e2e",
     "build:bridge": "bash bridge/build.sh",
-    "test:bridge": "cd bridge && GOTOOLCHAIN=local go test ./..."
+    "test:bridge": "cd bridge && GOTOOLCHAIN=local go test ./...",
+    "test:lighter:live": "VEX_LIGHTER_LIVE=1 vitest run src/__tests__/lighter/lighter-live-market-data.test.ts",
+    "test:lighter:live:apikeys": "VEX_LIGHTER_API_KEYS_LIVE=1 vitest run src/__tests__/lighter/lighter-live-api-keys.test.ts",
+    "test:lighter:live:accounts": "VEX_LIGHTER_ACCOUNT_READS_LIVE=1 vitest run src/__tests__/lighter/lighter-live-account-reads.test.ts",
+    "test:lighter:live:preview": "VEX_LIGHTER_PREVIEW_LIVE=1 vitest run src/__tests__/lighter/lighter-live-order-preview.test.ts",
+    "test:lighter:live:deposit-evidence": "VEX_LIGHTER_DEPOSIT_EVIDENCE_LIVE=1 vitest run src/__tests__/lighter/lighter-live-deposit-evidence.test.ts",
+    "test:lighter:live:deposit-preflight": "VEX_LIGHTER_DEPOSIT_PREFLIGHT_LIVE=1 vitest run src/__tests__/lighter/lighter-live-deposit-preflight.test.ts",
+    "lighter:deposit:canary-readiness": "tsx src/tools/lighter/scripts/run-live-deposit-canary-readiness.ts",
+    "verify:toolchain": "node scripts/verify-runtime-toolchain.mjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",
@@ -67,7 +77,7 @@
     "smol-toml": "1.8.0",
     "socket.io-client": "^4.8.3",
     "tweetnacl": "1.0.3",
-    "undici": "7.25.0",
+    "undici": "7.29.0",
     "viem": "2.54.3",
     "winston": "^3.17.0",
     "zod": "^4.4.3"
@@ -97,5 +107,31 @@
   "bugs": {
     "url": "https://github.com/Vex-Foundation/Vex/issues"
   },
-  "packageManager": "pnpm@10.32.1"
+  "packageManager": "pnpm@10.32.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ],
+    "ignoredBuiltDependencies": [
+      "@openrouter/sdk",
+      "bigint-buffer",
+      "bufferutil",
+      "cpu-features",
+      "protobufjs",
+      "ssh2",
+      "utf-8-validate"
+    ],
+    "overrides": {
+      "axios": "1.18.0",
+      "follow-redirects": "1.16.0",
+      "form-data": "4.0.6",
+      "ip-address": "10.3.1",
+      "socket.io-parser": "4.2.7",
+      "uuid@>=11.0.0 <12": "11.1.1",
+      "jayson>ws": "7.5.11",
+      "ethers>ws": "8.21.0",
+      "engine.io-client>ws": "8.21.0",
+      "rpc-websockets>ws": "8.21.0"
+    }
+  }
 }
