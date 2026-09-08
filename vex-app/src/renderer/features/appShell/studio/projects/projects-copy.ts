@@ -68,12 +68,12 @@ import type {
 /* --- the grant: Full access, in the creator and in the settings editor --- */
 
 export const FULL_ACCESS_CONSEQUENCE_WHAT =
-  "Agents in this project will be able to act outside its folder and to use its wallets.";
+  "Agents can execute supported Vex wallet actions without per-call approval. Tool-specific approval requirements still apply. Your coding client controls its own filesystem permissions.";
 
 /**
- * Which folder the grant is about. The creator has no path yet - the directory
- * is claimed by the create itself - and says so rather than printing an empty
- * line or guessing at a path Vex has not derived.
+ * Which project folder the grant belongs to. The creator has no path yet -
+ * the directory is claimed by the create itself - and says so rather than
+ * printing an empty line or guessing at a path Vex has not derived.
  */
 export function fullAccessFolderLine(displayPath: string | null): string {
   return displayPath === null
@@ -100,7 +100,7 @@ export function fullAccessWalletsLine(
 }
 
 export const FULL_ACCESS_CONSEQUENCE_UNDO =
-  "This can be undone: change the permission back in this project's settings at any time.";
+  "You can revoke this permission in project settings. Completed transactions cannot be undone.";
 
 /**
  * THE ACKNOWLEDGEMENT, and it is required rather than decorative.
@@ -112,7 +112,7 @@ export const FULL_ACCESS_CONSEQUENCE_UNDO =
  * project says nothing about the next one.
  */
 export const FULL_ACCESS_ACKNOWLEDGEMENT =
-  "I understand that agents in this project can act outside its folder and can use its wallets.";
+  "I understand that agents in this project can execute supported Vex wallet actions without per-call approval.";
 
 /* --------------------------------- delete -------------------------------- */
 
@@ -171,7 +171,7 @@ export const PROJECT_PERMISSION_OPTIONS = [
     index: "01",
     title: "Restricted",
     description:
-      "Agents in this project may act inside the project folder and the wallets you select below.",
+      "Vex asks for approval before executing wallet actions with the wallets you select below. Your coding client controls its own filesystem permissions.",
     caution: false,
   },
   {
@@ -179,7 +179,7 @@ export const PROJECT_PERMISSION_OPTIONS = [
     index: "02",
     title: "Full access",
     description:
-      "Agents in this project may act outside the project folder. Grant this only when you know why you need it.",
+      "Agents can execute supported Vex wallet actions without per-call approval. Tool-specific approval requirements still apply.",
     caution: true,
   },
 ] as const;
@@ -643,6 +643,7 @@ export const REFUSAL_REASON_SENTENCES: Readonly<
   malformed_toml: "The existing file is not valid TOML, so Vex would have had to guess what to keep.",
   toml_multiline_string:
     "The existing TOML uses multi-line strings, which Vex cannot edit section by section without risking the rest of the file.",
+  malformed_markdown_fence: "Close the Markdown code fence in CLAUDE.md, then retry.",
   malformed_managed_block:
     "The Vex block in this file has a start marker without an end, or the reverse, so Vex cannot tell where its own content stops.",
   provenance_collision:

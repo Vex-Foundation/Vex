@@ -43,17 +43,17 @@ export const STUDIO_SAFETY_LEAD =
   "Vex moves REAL funds. Nothing here is a sandbox or testnet.";
 
 export const STUDIO_RULE_APPROVAL =
-  "1. APPROVAL: in a restricted project a destructive call BLOCKS until the "
-  + "user answers the card in Vex; the result IS the settled outcome. Never "
-  + "call again while one is unanswered, and never retry an UNKNOWN outcome.";
+  "1. APPROVAL: a restricted destructive call BLOCKS until the user answers "
+  + "Vex's card; the result IS the settled outcome. Never call again while one "
+  + "is unanswered or retry an UNKNOWN outcome.";
 
 export const STUDIO_RULE_QUOTE_FIRST =
-  "2. QUOTE FIRST: quote before any swap, bridge, trade or lend, then restate "
-  + "amounts, fees, impact and ETA.";
+  "2. QUOTE FIRST: use quotes/previews if offered; else read current market/position "
+  + "state. Disclose effects, amounts, costs, impact and ETA before acting.";
 
 export const STUDIO_RULE_AMOUNTS =
   "3. AMOUNTS: units are PER FIELD - human decimals or raw smallest units. "
-  + "Read the field description; never guess.";
+  + "Read field descriptions; never guess.";
 
 /** The lead plus the three rules, in the order both consumers render them. */
 export const STUDIO_SAFETY_RULES = [
@@ -208,7 +208,7 @@ export const STUDIO_OUTCOME_WORDS: readonly StudioOutcomeWord[] = [
     word: "expired",
     bucket: "nothing",
     meaning: "nobody decided the card in time",
-    retry: "stop and report; quote and call again only when the user asks",
+    retry: "report expiry; if the user still wants it, obtain a fresh quote or intent and call again to create a new approval",
     emitter: "src/vex-agent/mcp/server-result.ts",
     literal: "This action EXPIRED before anyone decided it in Vex.",
   },
@@ -407,7 +407,11 @@ export function renderStudioOutcomeVocabulary(): string {
     "`executed` and no `unknown` on the wire, and a word that stops being",
     "emitted is removed from this table rather than left here to be looked for.",
     "",
-    "An unknown outcome is resolved by READING, never by calling again:",
+    "If a mutating call times out, disconnects or returns an unresolved outcome,",
+    "do not submit the action again. Preserve its transaction hash, signature,",
+    "order or request id or approval reference and use read-only reconciliation.",
+    "An absent receipt is not proof that nothing was broadcast.",
+    "Resolve an unknown outcome by READING:",
     "`ChainRead` action `tx_receipt` for an EVM hash, `BridgeStatus` for a",
     "KHALANI orderId, `AgentScan` view `transactions` for a Relay requestId, a",
     "Solana signature, or anything else Vex recorded.",
@@ -421,39 +425,46 @@ export function renderStudioOutcomeVocabulary(): string {
  * EVERY CLAIM IS CROSS-CHECKED against the constants by
  * `__tests__/vex-agent/studio/instructions-fee-note.test.ts`: the rate against
  * `KYBERSWAP_FEE_BPS`, `UNISWAP_FEE_BPS`, `JUPITER_SWAP_FEE_BPS`,
- * `BRIDGE_FEE_BPS`, `POOLS_FEE_BPS` and `WALLET_TX_FEE_BPS`,
+ * `BRIDGE_FEE_BPS`, `POOLS_FEE_BPS`, `WALLET_TX_FEE_BPS`, the Lighter
+ * fee ticks and the Virtuals curve rate and proven-proceeds calculation,
  * and the free paths against the modules that keep them free (neither the wrap
  * lane nor the send lane imports a fee module at all). The clarity review found
  * the fee described per tool, contradicted between tools, and mentioned NOWHERE
  * in the instructions, so an agent guessed at it in every measured session.
  */
 export const STUDIO_FEE_NOTE = [
-  "Vex charges 25 bps (0.25%) of the INPUT asset at the moment the operation",
-  "succeeds - inside the route for a swap, or as a separate transfer once the",
-  "operation confirms - and never on a failed, reverted or never-broadcast",
-  "attempt.",
+  "Vex fees depend on the operation. Consult its quote and fee disclosure;",
+  "network and venue fees are separate. A refused, reverted or never-broadcast",
+  "operation has no Vex execution fee. Collection follows the successful swap,",
+  "origin deposit, transaction or fill described below.",
   "",
-  "- Swaps (`SwapQuote`/`SwapExecute` on KyberSwap and Solana):",
-  "  EMBEDDED IN THE QUOTE, so the quoted output is already net of it and you",
+  "- Swaps (`SwapQuote`/`SwapExecute` on KyberSwap and Solana): 25 bps (0.25%)",
+  "  of the input, taken inside the route for a swap and EMBEDDED IN THE QUOTE,",
+  "  so the quoted output is already net of it and you",
   "  never add it on top when reporting what was spent. The Uniswap pair takes",
   "  the same 25 bps from the input, but Uniswap's routers carry no fee field,",
   "  so it is Vex's own transfer leg after the swap confirms: the swap spends",
   "  `amountIn` minus 25 bps and that 25 bps is transferred to Vex, and the two",
   "  together are exactly `amountIn`, which is what the user is debited.",
-  "- Bridges (`BridgeQuote`/`BridgeExecute` and the Relay pair): a SEPARATE",
-  "  transfer that runs only after the deposit lands, so a bridge that does not",
-  "  happen is never charged.",
+  "- Bridges (`BridgeQuote`/`BridgeExecute` and the Relay pair): 25 bps of the",
+  "  origin input as a SEPARATE transfer only after the deposit lands. The fee",
+  "  follows the origin deposit's success; destination delivery is a separate outcome.",
   "- The generic EVM pair: 25 bps of that transaction's own native `valueWei`,",
   "  as a separate transfer after it confirms. A zero-value transaction - every",
   "  ERC-20 transfer and every approve - pays NOTHING, and nothing is charged",
   "  when the fee would cost more to collect than it is worth.",
   "- pools.fun launches: 25 bps of the native value the launch sends.",
+  "- Lighter: 10 bps perpetual and 25 bps spot fees on fills, maker and taker,",
+  "  separate from exchange fees; fee authorization is required before trading.",
+  "- Virtuals curve buys: 25 bps of committed VIRTUAL, deducted before the curve",
+  "  and transferred after confirmation. Sells: 25 bps of proven VIRTUAL proceeds",
+  "  after settlement; a quote's sell fee is an estimate. No proven proceeds, no fee.",
   "",
   "FREE: every read, quote, preview and research call; `WalletSendPrepare` and",
   "`WalletSendConfirm`; the wrap pair, which is exactly 1:1; every Pendle and",
   "Morpho action; and the Solana lend, borrow and prediction actions, which",
-  "carry no Vex fee either. Each protocol block below repeats its own fee in",
-  "one line, so a namespace is never left to be guessed at. Network gas,",
+  "carry no Vex fee either. Each protocol section in `.vex/vex-guide.md` states",
+  "its own fee. Network gas,",
   "the venue's own protocol fee and bridge relayer costs are NOT Vex's fee -",
   "never conflate them when the user asks what something cost.",
 ].join("\n");

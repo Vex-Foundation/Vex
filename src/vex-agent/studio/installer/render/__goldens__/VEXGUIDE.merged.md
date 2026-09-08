@@ -2,14 +2,14 @@
 
 Kept outside the markers.
 
-<!-- vex:studio:begin vex=0.2.6 hash=d1a3e94a5b9f4be4 -->
+<!-- vex:studio:begin vex=0.2.6 hash=a4483e9fde0cf64e -->
 # Vex guide - project "acme-trading"
 
 The companion to this project's `AGENTS.md`, which carries the authority:
 the permission level in force, the selected wallets, how to call the tools,
-what a result means and the task shapes. READ THIS FILE AT THE START OF A
-SESSION - `AGENTS.md` says so in its first section, and everything here is
-part of the same protocol.
+what a result means and the task shapes. Read the relevant protocol section
+before using that protocol unless it is already in context. The inline map
+in `AGENTS.md` is the starting point; this file supplies the details.
 
 ## What's new in Vex 0.2.6
 
@@ -38,8 +38,8 @@ Vex update or a settings edit is visible rather than a silent rewrite.
 
 THIS SECTION STAYS BOUNDED. A Vex update rewrites the whole managed block IN
 PLACE - it is never appended to - and the change log below keeps at most
-8 entries. The file as a whole grows only through text the user adds
-OUTSIDE the markers, which Vex never touches.
+8 entries. Generated content can change size within its stated bounds.
+Text OUTSIDE the markers belongs to the user; Vex preserves it.
 
 - 2026-08-25 · Vex 0.9.4 · updated the wallet selection
 - 2026-08-12 · Vex 0.9.3 · added the codex config
@@ -191,16 +191,17 @@ NO separate REST endpoint. Do not put an HTTP wrapper in front of the bridge:
 it would expose the user's wallet to whoever can reach the wrapper, and every
 call would still arrive through this same door anyway.
 
-Spawn the same `vex-mcp` bridge command `.mcp.json` invokes - read the path
-from that file rather than hard-coding it, because Vex may relocate the binary
-- or point an MCP client SDK at it, and call tools by their `publicName`.
+Read the configured `vex-mcp` bridge command from `.mcp.json`, `.codex/config.toml`.
+Spawn that command or use it with an MCP client SDK. Read the path from the
+configuration because Vex may relocate the binary; use tools' `publicName`.
 
 Your app INHERITS EVERY RESTRICTION automatically, because there is no other
 door: the same per-call scope snapshot, the same approval card on a destructive
 call in a restricted project (your app blocks on the user's decision exactly as
 you do), the same vault-locked signing, the same fee caps, the same digest
 binding between what was shown and what is signed, and the same local
-registration of every action.
+registration of every action. Prepared protocol actions can require their own
+approval card under either permission level.
 
 ## Reporting Vex bugs (bounty)
 
@@ -215,9 +216,9 @@ ASK FIRST, ALWAYS. Never open a report, never send a diagnostic anywhere, and
 never publish anything about this project on your own initiative: no
 diagnostic, log, wallet address or project detail goes anywhere the task
 itself does not require - an issue tracker, a forum, a chat, a gist - without
-the user's word. Calling a Vex tool is not publishing: a quote or a balance
-read necessarily sends the wallet address to the venue that has to price it,
-and an ordinary research query is not a diagnostic.
+the user's word. Ordinary quotes and research send necessary inputs to their
+providers. Publication tools, including `launchpads__image_publish`, make
+content public and require a corresponding user request.
 
 ---
 

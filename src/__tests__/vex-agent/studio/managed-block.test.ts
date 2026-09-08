@@ -14,6 +14,8 @@ import { resolve } from "node:path";
 
 import { describe, it, expect } from "vitest";
 
+import { studioDeclaredEnvironmentKeys } from "@vex-agent/studio/instructions/installation-environment.js";
+import { buildStudioInventory } from "@vex-agent/mcp/inventory/index.js";
 import { STUDIO_SAFETY_PREFIX } from "@vex-agent/mcp/instructions.js";
 import {
   STUDIO_PROTOCOLS_DOC_PATH,
@@ -60,6 +62,8 @@ import {
 } from "./render-fixtures.js";
 
 const REPO_ROOT = resolve(__dirname, "..", "..", "..", "..");
+
+const MAXIMUM_ENVIRONMENT = { configuredKeys: studioDeclaredEnvironmentKeys(), missingKeys: [] };
 
 const USER_TEXT_BEFORE = "# Contributing\n\nRun the tests before you push.\n";
 const USER_TEXT_AFTER = "\n## House style\n\nNo em dashes.\n";
@@ -112,15 +116,30 @@ describe("the managed block's content", () => {
     // every agent in the registry selected, eight selected wallets (four per
     // family), and STUDIO_CHANGE_NOTE_LIMIT notes each at the 400-character
     // summary bound the durable row enforces (`project_change_notes.summary`
-    // CHECK, migration 089). Nothing enforces the bound at runtime, so a render
-    // that only fits the fixture would ship an oversized block to exactly the
-    // user with the most in the project - and their client would silently cut
-    // it.
+    // CHECK, migration 089). The runtime also refuses by the named byte bound;
+    // this guard makes sure valid maximum inputs can still render.
     const bytes = Buffer.byteLength(
-      renderStudioManagedBody(longestStudioBrief()),
+      renderStudioManagedBody(longestStudioBrief(), MAXIMUM_ENVIRONMENT),
       "utf8",
     );
     expect(bytes).toBeLessThanOrEqual(STUDIO_MANAGED_BLOCK_MAX_BYTES);
+  });
+
+  it("fits maximum display-escaping expansion without cutting any project text", () => {
+    const longest = { ...longestStudioBrief(), projectName: "&".repeat(PROJECT_NAME_MAX_LENGTH) };
+    const body = renderStudioManagedBody(longest, MAXIMUM_ENVIRONMENT);
+    expect(body).toContain("&amp;".repeat(PROJECT_NAME_MAX_LENGTH));
+    expect(Buffer.byteLength(body, "utf8")).toBeLessThanOrEqual(STUDIO_MANAGED_BLOCK_MAX_BYTES);
+  });
+
+  it("measures the current live inventory in its maximum-input budget fixture", () => {
+    const longest = longestStudioBrief();
+    const live = buildStudioInventory();
+    expect(longest.inventory.alwaysLoadedNames)
+      .toEqual(live.filter((tool) => tool.alwaysLoad).map((tool) => tool.publicName));
+    expect(longest.inventory.searchableCount).toBe(live.filter((tool) => !tool.alwaysLoad).length);
+    expect(longest.inventory.protocols.map((protocol) => protocol.name))
+      .toEqual([...new Set(live.filter((tool) => tool.kind === "protocol").map((tool) => tool.namespace))]);
   });
 
   it("keeps the whole authority core inside the bound, not merely the fixture", () => {
@@ -130,7 +149,10 @@ describe("the managed block's content", () => {
     const longest = longestStudioBrief();
     expect(longest.projectName).toHaveLength(PROJECT_NAME_MAX_LENGTH);
     expect(longest.changeNotes).toHaveLength(STUDIO_CHANGE_NOTE_LIMIT);
-    expect(longest.changeNotes[0]?.summary).toHaveLength(400);
+    expect([...(longest.changeNotes[0]?.summary ?? "")]).toHaveLength(400);
+    expect(Buffer.byteLength(longest.changeNotes[0]?.summary ?? "", "utf8")).toBe(1600);
+    expect(Buffer.byteLength(longest.projectName, "utf8")).toBe(PROJECT_NAME_MAX_LENGTH * 3);
+
     expect(longest.wallets).toHaveLength(8);
     expect(longest.agentNames).toHaveLength(STUDIO_AGENT_LIST.length);
     // And it really is longer than the fixture the goldens use.
@@ -166,7 +188,9 @@ describe("the managed block's content", () => {
 
     expect(body).toContain(STUDIO_VEX_GUIDE_PATH);
     expect(body).toContain(STUDIO_PROTOCOLS_DOC_PATH);
-    expect(body).toContain("READ IT AT THE START OF A SESSION");
+    expect(body).toContain("Read the relevant protocol section before using it unless already in context");
+    expect(body).toContain("Other clients do not load");
+    expect(body).toContain("it automatically; the map above is what they have until they open the guide");
     expect(body).toContain("READ IT ON DEMAND");
     // And it says WHO already has it, so a Claude Code session does not go
     // looking for a file its import already loaded.
@@ -354,7 +378,9 @@ describe("the project-dependent half of the block", () => {
     expect(body).toContain("registered");
     // t1 #7: `.mcp.json` can point at a path that no longer exists, and "start
     // Vex" was then the only diagnosis the agent had, which was wrong.
-    expect(body).toContain("`vex-mcp` path in `.mcp.json` no longer exists");
+    expect(body).toContain("Diagnose connection failures from the actual error");
+    expect(body).toContain("configured bridge command, path and");
+    expect(body).toContain("Do not assume a predetermined cause");
     // A15: what a locked vault looks like from the agent's side.
     expect(body).toContain("locked vault refuses BY NAME");
   });
@@ -471,7 +497,9 @@ describe("the project-dependent half of the block", () => {
     // I-6a, p1.txt lines 7-9. The block forbade what SwapQuote/SwapExecute
     // instruct ("re-quote with a higher slippageBps", "raise it in steps").
     expect(body).toContain("RE-QUOTE AT THE SAME SLIPPAGE FIRST");
-    expect(body).toContain("Raise `slippageBps` only when the");
+    expect(body).toContain("Increase `slippageBps` only within the");
+    expect(body).toContain("user's stated limit or after the user authorizes the new worst-case amount");
+    expect(body).toContain("Announcing a larger bound does not authorize it");
     expect(body).not.toContain("never raise slippage to force a trade through");
     // p1.txt lines 43-45: a literal reading refused every Solana quote.
     expect(body).toContain("on Solana there are no USD figures at all");
@@ -482,12 +510,12 @@ describe("the project-dependent half of the block", () => {
     expect(body).not.toContain("a receipt, a token balance, a raw call");
 
     // I-6h, p1.txt lines 92-94. The card's wait was stated nowhere.
-    expect(body).toContain("for up to 60 minutes");
+    expect(body).toContain("to 60 minutes");
 
     // I-6l, p1.txt lines 124-126. protocols.md is not in the agent's context.
-    expect(body).toContain("READ ON DEMAND, not loaded into your");
-    expect(body).toContain("every Execute,");
-    expect(body).toContain("Confirm, deposit, withdraw, borrow, repay, claim and launch tool");
+    expect(body).toContain("read it on demand");
+    expect(body).toContain("usually Execute,");
+    expect(body).toContain("Confirm, deposit, withdraw, borrow, repay, claim and launch tools");
 
     // I-6n, p1.txt lines 81-82. "refuses BY NAME" appeared about ten times and
     // was never defined.
@@ -497,7 +525,7 @@ describe("the project-dependent half of the block", () => {
     // A-8, live test pass 2 section 2. The interactive session hesitated
     // because its own harness demands a confirmation the card already is.
     expect(body).toContain(
-      "card satisfies any confirm-before-irreversible-action rule your client",
+      "Vex's permission controls Vex's own execution gate. Follow additional binding",
     );
 
     // I-1's block half: over MCP nothing dispatches WalletSendConfirm for you.
@@ -530,7 +558,7 @@ describe("the project-dependent half of the block", () => {
     expect(match, "APPROVAL_TTL_MS moved; the block states its value").not.toBeNull();
     // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
     const minutes = Math.round(Number(new Function(`return ${String(match?.[1])}`)()) / 60_000);
-    expect(body).toContain(`for up to ${String(minutes)} minutes`);
+    expect(body).toContain(`to ${String(minutes)} minutes`);
   });
 
   it("states the permission AND the wallets AND the dates", () => {
@@ -538,9 +566,11 @@ describe("the project-dependent half of the block", () => {
     // card", which is false - the gate fires at risk >= high only, and a local
     // write such as WalletTrackToken was measured running with no card.
     expect(body).toContain("Permission: RESTRICTED");
-    expect(body).toContain("Every call marked destructive blocks until the");
-    expect(body).toContain("user answers the approval card in Vex");
-    expect(body).toContain("Reads, quotes, Prepare tools and local writes raise no card");
+    expect(body).toContain("A destructive call that passes its preconditions");
+    expect(body).toContain("blocks until the user answers the approval card in Vex");
+    expect(body).toContain("Ordinary reads, quotes and local writes require no card");
+    expect(body).toContain("return an intent for a separate Confirm call; some protocol Prepare tools");
+    expect(body).toContain("automatically hand off to an approval card, including Lighter flows");
     expect(body).not.toContain("Every mutation waits");
     expect(body).toContain("0x1111111111111111111111111111111111111111");
     expect(body).toContain("So11111111111111111111111111111111111111112");
@@ -571,14 +601,15 @@ describe("the project-dependent half of the block", () => {
       { ...STUDIO_TEST_BRIEF, permission: "full" },
     );
     expect(full).toContain("Permission: FULL ACCESS");
-    expect(full).toContain("chose full access knowingly");
-    expect(full).toContain("do not add a confirmation step of your own");
+    expect(full).toContain("The user chose full access in Vex's project");
+    expect(full).toContain("avoid duplicate confirmation where that policy already accepts");
     // The block is hard-wrapped, so this sentence spans two lines. It used to
     // be asserted as "with no approval card", which the file happened to
     // satisfy through a CHANGELOG entry quoting it - and the changelog moved
     // to the guide on 2026-09-04, which is how the accident showed up.
-    expect(full).toContain("a destructive call executes directly with");
-    expect(full).toContain("no approval card.");
+    expect(full).toContain("Supported direct Vex actions within the user's task execute");
+    expect(full).toContain("without per-call approval. Prepared-action flows, including Lighter");
+    expect(full).toContain("approvals, can still require their own Vex card");
     // What is true under BOTH levels, and the reason the owner insisted on it.
     expect(full).toContain("Not asking is not the same as not telling");
     expect(full).toContain("no tool widens it");
@@ -634,9 +665,8 @@ describe("the CLAUDE.md import", () => {
     if (fresh.status === "rendered") {
       expect(claudeMdMissingStudioImports(fresh.text)).toEqual([]);
       expect(fresh.text).toContain(STUDIO_CLAUDE_MD_IMPORT);
-      // The guide is imported too: without it Claude Code would read the
-      // authority core and none of the protocol blocks, while every other
-      // client reads both because AGENTS.md tells it to.
+      // The guide is imported too: the core carries the compact map and the
+      // guide carries the complete protocol sections.
       expect(fresh.text).toContain(STUDIO_VEX_GUIDE_IMPORT);
     }
   });

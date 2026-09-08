@@ -68,7 +68,7 @@ export const STUDIO_CLAUDE_MD_IMPORTS: readonly string[] = [
  * one would make Vex report a working project as configured when it is not.
  */
 export function claudeMdMissingStudioImports(existing: string): readonly string[] {
-  const lines = new Set(existing.split("\n").map((line) => line.trim()));
+  const lines = new Set(scanStudioImportLines(existing).imports.map((line) => line.text.trim()));
   return STUDIO_CLAUDE_MD_IMPORTS.filter((line) => !lines.has(line));
 }
 
@@ -142,6 +142,13 @@ export function renderFreshClaudeMd(): StudioRenderResult {
  */
 export function mergeClaudeMdImports(existing: string): StudioRenderResult {
   const missing = claudeMdMissingStudioImports(existing);
+  if (missing.length > 0 && scanStudioImportLines(existing).unclosedFence) {
+    return {
+      status: "refused",
+      reason: "malformed_markdown_fence",
+      detail: "Close the Markdown code fence before Vex can append active imports.",
+    };
+  }
   if (missing.length === 0) return { status: "unchanged" };
 
   const separator = existing === ""
@@ -160,21 +167,54 @@ export function mergeClaudeMdImports(existing: string): StudioRenderResult {
  * content. A5 NEVER deletes the file itself, whatever is left in it.
  */
 export function removeClaudeMdImports(existing: string): StudioRenderResult {
-  if (claudeMdMissingStudioImports(existing).length === STUDIO_CLAUDE_MD_IMPORTS.length) {
-    return { status: "unchanged" };
+  const { imports } = scanStudioImportLines(existing);
+  if (imports.length === 0) return { status: "unchanged" };
+  let next = existing;
+  for (const line of [...imports].reverse()) {
+    const prefix = next.slice(0, line.start);
+    const removeStart = prefix.endsWith("\r\n\r\n") ? line.start - 2
+      : prefix.endsWith("\n\n") ? line.start - 1 : line.start;
+    next = next.slice(0, removeStart) + next.slice(line.end);
   }
+  return rendered(next);
+}
 
+interface ActiveImportLine {
+  readonly text: string;
+  readonly start: number;
+  readonly end: number;
+}
+
+/** Track Markdown fences so examples neither satisfy imports nor belong to Vex. */
+function scanStudioImportLines(existing: string): {
+  readonly imports: readonly ActiveImportLine[];
+  readonly unclosedFence: boolean;
+} {
+  const imports: ActiveImportLine[] = [];
   const ours = new Set<string>(STUDIO_CLAUDE_MD_IMPORTS);
-  const kept: string[] = [];
-  for (const line of existing.split("\n")) {
-    if (ours.has(line.trim())) {
-      // Reclaim the one blank line the append put in front of the imports. The
-      // second import sits directly under the first, so only the blank line
-      // above the pair is ever reclaimed.
-      if (kept.length >= 2 && kept[kept.length - 1] === "") kept.pop();
+  let fence: { readonly marker: string; readonly length: number } | undefined;
+  for (const match of existing.matchAll(/[^\n]*(?:\n|$)/g)) {
+    const text = match[0];
+    const content = text.replace(/\r?\n$/, "");
+    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(content);
+    if (marker?.[1] !== undefined) {
+      const run = marker[1];
+      if (fence === undefined) {
+        // Backticks in a backtick fence's info string invalidate that opener.
+        if (!run.startsWith("`") || !marker[2]?.includes("`")) {
+          fence = { marker: run.charAt(0), length: run.length };
+        }
+      } else if (run.charAt(0) === fence.marker && run.length >= fence.length
+        && marker[2]?.trim() === "") {
+        fence = undefined;
+      }
       continue;
     }
-    kept.push(line);
+    // Four-space and tab indentation denotes code at the document level and
+    // also protects examples nested under a list from becoming owned imports.
+    if (fence === undefined && /^ {0,3}@/.test(content) && ours.has(content.trim())) {
+      imports.push({ text: content, start: match.index, end: match.index + text.length });
+    }
   }
-  return rendered(kept.join("\n"));
+  return { imports, unclosedFence: fence !== undefined };
 }

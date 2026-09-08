@@ -16,6 +16,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { buildStudioInventory } from "@vex-agent/mcp/inventory/index.js";
 import { STUDIO_AGENT_LIST, type StudioWritableAgent } from "@vex-agent/studio/agents.js";
 import { STUDIO_CHANGE_NOTE_LIMIT } from "@vex-agent/studio/instructions/project-brief.js";
 import type {
@@ -45,6 +46,7 @@ export const STUDIO_TEST_BRIEF: StudioProjectBrief = {
   createdOn: "2026-08-01",
   scopeUpdatedOn: "2026-08-25",
   agentNames: ["Claude Code", "Codex CLI"],
+  agentConfigPaths: [".mcp.json", ".codex/config.toml"],
   inventory: {
     alwaysLoadedCount: 4,
     // Named, not counted. Held to a short deterministic list so the goldens
@@ -178,9 +180,24 @@ function tomlFixture(agent: StudioWritableAgent): string {
  *     `project_change_notes.summary` CHECK (migration 089).
  */
 export function longestStudioBrief(): StudioProjectBrief {
+  const live = buildStudioInventory();
+  const core = live.filter((tool) => tool.alwaysLoad);
+  const protocol = live.filter((tool) => tool.kind === "protocol");
+  const namespaces = new Map<string, number>();
+  for (const tool of protocol) {
+    if (tool.namespace === undefined) throw new Error("protocol namespace missing in live inventory");
+    namespaces.set(tool.namespace, (namespaces.get(tool.namespace) ?? 0) + 1);
+  }
   return {
     ...STUDIO_TEST_BRIEF,
-    projectName: "p".repeat(PROJECT_NAME_MAX_LENGTH),
+    // The name schema counts UTF-16 code units; three UTF-8 bytes per unit is maximal.
+    projectName: "界".repeat(PROJECT_NAME_MAX_LENGTH),
+    inventory: {
+      alwaysLoadedCount: core.length,
+      alwaysLoadedNames: core.map((tool) => tool.publicName),
+      searchableCount: protocol.length,
+      protocols: [...namespaces].map(([name, toolCount]) => ({ name, toolCount })),
+    },
     agentNames: STUDIO_AGENT_LIST.map((agent) => agent.displayName),
     wallets: [
       ...Array.from({ length: 4 }, (_, index) => ({
@@ -189,13 +206,14 @@ export function longestStudioBrief(): StudioProjectBrief {
       })),
       ...Array.from({ length: 4 }, (_, index) => ({
         family: "solana" as const,
-        address: `So${String(index + 1).repeat(40)}`,
+        address: `So${String(index + 1).repeat(42)}`,
       })),
     ],
     changeNotes: Array.from({ length: STUDIO_CHANGE_NOTE_LIMIT }, (_, index) => ({
       version: `0.9.${String(9 - index)}`,
       date: `2026-08-${String(28 - index).padStart(2, "0")}`,
-      summary: "s".repeat(400),
+      // PostgreSQL char_length counts code points, allowing four UTF-8 bytes each.
+      summary: "😀".repeat(400),
     })),
   };
 }

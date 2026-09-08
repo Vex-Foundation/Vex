@@ -317,6 +317,7 @@ function briefFor(projectId: string): StudioProjectBrief {
     createdOn: "2026-08-01",
     scopeUpdatedOn: "2026-08-02",
     agentNames: [CLAUDE_CODE.displayName],
+    agentConfigPaths: [CLAUDE_CODE.configPath],
     inventory: {
       alwaysLoadedCount: 1,
       alwaysLoadedNames: ["vex_ToolSearch"],

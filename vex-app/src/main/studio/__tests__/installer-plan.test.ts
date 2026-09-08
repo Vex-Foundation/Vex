@@ -11,6 +11,8 @@
 import { describe, expect, it } from "vitest";
 
 import { STUDIO_AGENTS, isWritableStudioAgent } from "@vex-agent/studio/agents.js";
+import { renderStudioBuildingAppsNote } from "@vex-agent/studio/instructions/project-brief.js";
+import { STUDIO_TEST_BRIEF } from "../../../../../src/__tests__/vex-agent/studio/render-fixtures.js";
 import { STUDIO_AGENT_IDS, type StudioAgentId } from "@shared/schemas/projects.js";
 import {
   STUDIO_GENERATOR_REVISION,
@@ -22,6 +24,16 @@ import {
 const ALL_IDS = [...STUDIO_AGENT_IDS] as StudioAgentId[];
 
 describe("plan coverage", () => {
+  it("a Codex-only plan tells builders to read the TOML file it actually writes", () => {
+    const plan = buildStudioPlan({ selectedAgentIds: ["codex"], previouslyWritten: new Set() });
+    const agentConfigPaths = plan.artifacts.filter((artifact) => artifact.kind === "agent-config")
+      .map((artifact) => artifact.relativePath);
+    expect(agentConfigPaths).toEqual([".codex/config.toml"]);
+    expect(plan.artifacts.map((artifact) => artifact.relativePath)).not.toContain(".mcp.json");
+    const guide = renderStudioBuildingAppsNote({ ...STUDIO_TEST_BRIEF, agentConfigPaths });
+    expect(guide).toContain("`.codex/config.toml`");
+    expect(guide).not.toContain(".mcp.json");
+  });
   it.each(ALL_IDS)("%s produces an artifact or an explicit unsupported entry", (id) => {
     const plan = buildStudioPlan({ selectedAgentIds: [id], previouslyWritten: new Set() });
     const agent = STUDIO_AGENTS[id];

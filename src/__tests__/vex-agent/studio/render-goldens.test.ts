@@ -521,10 +521,10 @@ describe("AGENTS.md, .vex/vex-guide.md and CLAUDE.md", () => {
   const USER_GUIDE = "# My notes\n\nKept outside the markers.\n";
 
   it("renders the committed AGENTS.md goldens", () => {
-    compareGolden("AGENTS.fresh.md", renderStudioManagedBlock(STUDIO_TEST_BRIEF));
+    compareGolden("AGENTS.fresh.md", renderStudioManagedBlock(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT));
     compareGolden("AGENTS.existing.md", USER_AGENTS);
     const merged = textOf(
-      mergeStudioManagedBlock(USER_AGENTS, STUDIO_TEST_BRIEF, { overwriteDrift: false }),
+      mergeStudioManagedBlock(USER_AGENTS, STUDIO_TEST_BRIEF, { overwriteDrift: false, environment: STUDIO_TEST_ENVIRONMENT }),
       "AGENTS.md merge",
     );
     compareGolden("AGENTS.merged.md", merged);
@@ -572,7 +572,7 @@ describe("AGENTS.md, .vex/vex-guide.md and CLAUDE.md", () => {
 
   it("returns each file to the user's original bytes after merge then remove", () => {
     const merged = textOf(
-      mergeStudioManagedBlock(USER_AGENTS, STUDIO_TEST_BRIEF, { overwriteDrift: false }),
+      mergeStudioManagedBlock(USER_AGENTS, STUDIO_TEST_BRIEF, { overwriteDrift: false, environment: STUDIO_TEST_ENVIRONMENT }),
       "AGENTS.md merge",
     );
     expect(textOf(removeStudioManagedBlock(merged), "AGENTS.md remove")).toBe(USER_AGENTS);

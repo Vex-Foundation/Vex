@@ -676,6 +676,11 @@ function buildProjectBrief(
     createdOn: isoDate(scope.createdAt),
     scopeUpdatedOn: isoDate(scope.updatedAt),
     agentNames: scope.agents.map((id) => STUDIO_AGENTS[id].displayName),
+    agentConfigPaths: [...new Set(buildStudioPlan({
+      selectedAgentIds: scope.agents,
+      previouslyWritten: new Set(),
+    }).artifacts.filter((artifact) => artifact.kind === "agent-config")
+      .map((artifact) => artifact.relativePath))],
     inventory: {
       alwaysLoadedCount: internal.length,
       // NAMED, not described. The block used to call this set "the core wallet

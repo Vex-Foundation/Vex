@@ -52,6 +52,8 @@ import { isStudioEnvironmentKeyConfigured } from "./installation-environment.js"
  * own fee paragraph.
  */
 interface StudioNamespaceFee {
+  /** Compact operation-specific disclosure for the inline protocol map. */
+  readonly map: string;
   /** Rendered after "- Vex fee: ". One sentence, no rate arithmetic. */
   readonly line: string;
   /**
@@ -68,43 +70,52 @@ interface StudioNamespaceFee {
 
 export const STUDIO_NAMESPACE_FEES: Readonly<Record<string, StudioNamespaceFee>> = {
   dexscreener: {
+    map: "none",
     line: "none; every tool here is a read.",
     freeLanes: ["src/vex-agent/tools/protocols/dexscreener", "src/tools/dexscreener"],
   },
   khalani: {
+    map: "25 bps origin input",
     line: "25 bps of the input on a bridge execute; reads and quotes free.",
     charged: { symbol: "BRIDGE_FEE_BPS", lane: "src/tools/bridge-fee" },
     freeLanes: [],
   },
   kyberswap: {
+    map: "25 bps swap input",
     line: "25 bps of the input on a swap execute, embedded in the quote.",
     charged: { symbol: "KYBERSWAP_FEE_BPS", lane: "src/tools/kyberswap" },
     freeLanes: [],
   },
   lighter: {
+    map: "10 bps perps; 25 bps spot",
     line: "0.10% maker/taker on perpetual trades and 0.25% on spot trades, through the approved native integrator allowance; reads are free. Exchange fees are separate, and authorizing the Vex fees moves the account to Lighter's Premium tier when it is not already on Plus or Premium (Lighter attaches integrator fees only to those tiers), which changes the exchange's own fee schedule; the fee-authorization card states both changes before anything is signed.",
     charged: { symbol: "LIGHTER_PERPS_FEE", lane: "src/tools/lighter" },
     freeLanes: [],
   },
   morpho: {
+    map: "none",
     line: "none on any action, rewards claims included; gas is still yours.",
     freeLanes: ["src/vex-agent/tools/protocols/morpho", "src/tools/morpho"],
   },
   pendle: {
+    map: "none",
     line: "none on any action; gas is still yours.",
     freeLanes: ["src/vex-agent/tools/protocols/pendle", "src/tools/pendle"],
   },
   pools: {
+    map: "25 bps native value",
     line: "25 bps of the native value a launch or trade sends; reads are free.",
     charged: { symbol: "POOLS_FEE_BPS", lane: "src/tools/pools-fun" },
     freeLanes: [],
   },
   relay: {
+    map: "25 bps origin input",
     line: "25 bps of the input on a bridge execute; reads and quotes free.",
     charged: { symbol: "BRIDGE_FEE_BPS", lane: "src/vex-agent/tools/protocols/relay" },
     freeLanes: [],
   },
   solana: {
+    map: "25 bps swap input; lend/predict free",
     line:
       "25 bps of the input on a SWAP, embedded in the quote; the lend, borrow "
       + "and prediction actions none.",
@@ -118,6 +129,7 @@ export const STUDIO_NAMESPACE_FEES: Readonly<Record<string, StudioNamespaceFee>>
     ],
   },
   launchpads: {
+    map: "none",
     // Nothing in this namespace moves value. Listing the locker is a database
     // read, and publishing a picture is an upload to a host Vex runs: there is
     // no swap, no transfer and no launch here to take a cut of, so the honest
@@ -128,6 +140,7 @@ export const STUDIO_NAMESPACE_FEES: Readonly<Record<string, StudioNamespaceFee>>
     freeLanes: ["src/vex-agent/tools/protocols/launchpads"],
   },
   uniswap: {
+    map: "25 bps swap input",
     line:
       "25 bps of the input on a swap execute, as a separate transfer leg, not "
       + "in the quote.",
@@ -135,6 +148,7 @@ export const STUDIO_NAMESPACE_FEES: Readonly<Record<string, StudioNamespaceFee>>
     freeLanes: [],
   },
   virtuals: {
+    map: "25 bps VIRTUAL buy/launch input or proven sell proceeds; late launch waived",
     // Both halves are shipped now (PR-C2 curve trades, PR-C3 launches), so the
     // line states charges a user can incur TODAY. The launch half carries its
     // WAIVER, because a fee the user will not be charged is as much a fact

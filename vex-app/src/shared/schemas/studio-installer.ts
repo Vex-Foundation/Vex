@@ -69,6 +69,7 @@ export const studioRefusalReasonSchema = z.enum([
   "toml_multiline_string",
   /** `AGENTS.md` has a begin marker with no end, or the reverse. */
   "malformed_managed_block",
+  "malformed_markdown_fence",
   // ── from the confined filesystem contract ──────────────────────────────
   /** An entry already sits at the Vex path and provenance does not prove it is ours. */
   "provenance_collision",

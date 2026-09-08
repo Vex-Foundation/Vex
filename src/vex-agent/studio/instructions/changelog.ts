@@ -179,14 +179,15 @@ export function studioChangelogWindow(
  * The version tag for one section or protocol block, or `null`.
  *
  * The NEWEST entry naming that subject wins, so a block changed twice carries
- * the later label. "removed" does not tag a heading: the thing it names is gone,
+ * the later label, within the same version window as the visible history.
+ * "removed" does not tag a heading: the thing it names is gone,
  * and there is nothing left to put a label beside.
  */
 export function studioChangelogTag(
   subject: string,
   entries: readonly StudioChangelogEntry[] = STUDIO_CHANGELOG,
 ): string | null {
-  const entry = entries.find(
+  const entry = studioChangelogWindow(entries).find(
     (candidate) => candidate.subject === subject && candidate.kind !== "removed",
   );
   if (entry === undefined) return null;

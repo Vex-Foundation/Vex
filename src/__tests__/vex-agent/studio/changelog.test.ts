@@ -79,6 +79,15 @@ describe("the shipped change log", () => {
     expect(studioChangelogTag("Thing", entries)).toBe("Changed in Vex 2.0");
   });
 
+  it("removes heading tags once their version leaves the visible history", () => {
+    const entries = Array.from({ length: STUDIO_CHANGELOG_VERSION_LIMIT + 1 }, (_, index) =>
+      entry({ version: `9.${index}`, subject: `Subject ${index}` }));
+    const agedSubject = `Subject ${STUDIO_CHANGELOG_VERSION_LIMIT}`;
+    expect(studioChangelogWindow(entries).some((note) => note.subject === agedSubject)).toBe(false);
+    expect(studioChangelogTag(agedSubject, entries)).toBeNull();
+    expect(studioChangelogTag("Subject 0", entries)).toBe("Added in Vex 9.0");
+  });
+
   it("does NOT tag a heading from a `removed` entry", () => {
     // The thing it names is gone; there is no heading left to label.
     const entries = [entry({ kind: "removed", subject: "GoneTool" })];
