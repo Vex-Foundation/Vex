@@ -5,7 +5,7 @@
  * this build's migration runner, and the exact outcome each one must get:
  *
  *   fresh install                 -> applies everything, marker present
- *   populated current main (111)  -> applies 112..end, audit records untouched
+ *   populated pre-Lighter main (111) -> applies 112..end, audit records untouched
  *   older supported main (036)    -> same, from the oldest shipped release
  *   older supported main (094)    -> same, from the latest shipped release
  *   interrupted before 112        -> resumes at 112
@@ -319,13 +319,28 @@ describe("main baseline fixture gate", () => {
     expect(listing(BASELINE.pinnedCommit)).toEqual([...BASELINE.files]);
   });
 
-  it.skipIf(!hasCommit("origin/main"))("main has not moved underneath the pinned baseline", () => {
+  it.skipIf(!hasCommit("origin/main"))("main still carries the pinned baseline, byte for byte", () => {
+    // Since the Lighter range landed on main (b3ff96641), main is a SUPERSET of
+    // the baseline: the pre-Lighter release set plus 112 and up. Equality with
+    // the fixture was the tripwire for the period the branch lived beside
+    // main; what may never change now is the baseline itself - a pinned file
+    // rewritten or removed, or a stranger occupying main's own numbering -
+    // because that set is the database a released build hands this runner.
+    const onMain = new Map(listing("origin/main").map(({ file, sha256: hash }) => [file, hash]));
+    const drifted = BASELINE.files
+      .filter(({ file, sha256: pinned }) => onMain.get(file) !== pinned)
+      .map(({ file }) => file);
     expect(
-      listing("origin/main"),
-      "origin/main's migrations no longer match the pinned baseline; refresh it deliberately with " +
-        "node src/__tests__/integration/migrations/fixtures/generate-main-migrations-fixture.mjs " +
+      drifted,
+      "origin/main rewrote or dropped a pinned baseline migration; if that was deliberate, refresh " +
+        "the fixture with node src/__tests__/integration/migrations/fixtures/generate-main-migrations-fixture.mjs " +
         "and update PINNED_COMMIT"
-    ).toEqual([...BASELINE.files]);
+    ).toEqual([]);
+    const pinnedNames = new Set(MAIN_FILES);
+    const intruders = [...onMain.keys()]
+      .filter((file) => version(file) <= MAIN_HIGH_WATER && !pinnedNames.has(file))
+      .sort();
+    expect(intruders).toEqual([]);
   });
 });
 
