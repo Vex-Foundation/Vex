@@ -1235,42 +1235,84 @@ export async function findByIntentId(intentId: string): Promise<LighterOnboardin
   return row ? mapRow(row) : null;
 }
 
-/** Rows one unresolved-intent page returns when the caller states no bound. */
+/** Rows one unresolved-deposit page returns when the caller states no bound. */
 export const LIGHTER_ONBOARDING_UNRESOLVED_PAGE_LIMIT = 25;
 
-export interface LighterOnboardingUnresolvedPage {
+/**
+ * Position in the global unresolved-deposit order: the sort key itself,
+ * `(updated_at, intent_id)`, so a page can be continued exactly where the
+ * previous one ended even after rows in front of it were advanced or removed.
+ *
+ * MEASURED (real Postgres, not assumed): `timestamptz` keeps microseconds while
+ * the driver hands JavaScript a millisecond `Date`, so a cursor built from a
+ * returned row is strictly SMALLER than the row's stored timestamp and a plain
+ * `>` comparison returns that same row forever. Both the comparison and the
+ * order therefore run on `date_trunc('milliseconds', updated_at)`, the exact
+ * value a caller can hold. The pair stays unique because `intent_id` is the
+ * primary key, so the order is still total and no row is skipped or repeated.
+ */
+export interface LighterUnresolvedDepositCursor {
+  readonly updatedAt: Date;
+  readonly intentId: string;
+}
+
+export interface LighterUnresolvedDepositPage {
   readonly rows: LighterOnboardingIntentRow[];
-  /** More unresolved rows exist beyond this page's limit and offset. */
+  /** More unresolved deposit rows exist after this page's last row. */
   readonly hasMore: boolean;
+  /**
+   * The position after the last returned row, or null when the page is empty.
+   * Passing it back returns the next page; nothing between the two pages is
+   * skipped and nothing is returned twice.
+   */
+  readonly nextCursor: LighterUnresolvedDepositCursor | null;
 }
 
 /**
- * One bounded page of unresolved intents, least recently updated first.
+ * One bounded page of unresolved deposit intents across BOTH environments,
+ * least recently updated first, walked by keyset rather than by offset.
  *
- * The order is what makes an unattended sweep fair: every row the sweep
- * advances gets a fresh updated_at and moves to the back of the queue. The
- * offset lets a caller rotate past rows that no evidence can move yet, so a
- * permanently pending row cannot hold the first page forever. The page never
- * pretends to be the whole set: `hasMore` says when it is not.
+ * Both properties are load-bearing for the unattended repair sweep. Reading
+ * the environments together in one globally ordered query is what stops a
+ * backlog in one environment from hiding every row of the other: with two
+ * separately limited pages merged and sliced, the rows the slice discarded
+ * were unreachable by any later page. Keyset paging is what makes the walk
+ * total: an offset shifts under concurrent writes (an advanced row leaves the
+ * front of the order and pulls every later row one position forward, past the
+ * offset the next page starts at), while `(updated_at, intent_id) > cursor`
+ * cannot skip a row that was never returned.
+ *
+ * The order is also what makes the sweep fair over time: every row the sweep
+ * advances gets a fresh updated_at and moves to the back of the queue.
  */
-export async function listUnresolved(
-  environment: LighterEnvironment,
-  options: { readonly limit?: number; readonly offset?: number } = {},
-): Promise<LighterOnboardingUnresolvedPage> {
+export async function listUnresolvedDeposits(
+  options: {
+    readonly limit?: number;
+    readonly cursor?: LighterUnresolvedDepositCursor | null;
+  } = {},
+): Promise<LighterUnresolvedDepositPage> {
   const limit = boundedPageLimit(options.limit);
-  const offset = boundedPageOffset(options.offset);
+  const cursor = boundedCursor(options.cursor);
   const rows = await query<Record<string, unknown>>(
     `SELECT ${RETURNING} FROM lighter_onboarding_intents
-      WHERE environment = $1
+      WHERE capability = 'deposit'
         AND execution_state NOT IN ('credited','failed')
         AND approval_status <> 'rejected'
-      ORDER BY updated_at ASC, intent_id ASC
-      LIMIT $2 OFFSET $3`,
-    [environment, limit + 1, offset],
+        AND ($2::timestamptz IS NULL
+             OR (date_trunc('milliseconds', updated_at), intent_id)
+                > ($2::timestamptz, $3::text))
+      ORDER BY date_trunc('milliseconds', updated_at) ASC, intent_id ASC
+      LIMIT $1`,
+    [limit + 1, cursor?.updatedAt ?? null, cursor?.intentId ?? null],
   );
+  const page = rows.slice(0, limit).map(mapRow);
+  const last = page.at(-1);
   return {
-    rows: rows.slice(0, limit).map(mapRow),
+    rows: page,
     hasMore: rows.length > limit,
+    nextCursor: last === undefined
+      ? null
+      : { updatedAt: last.updatedAt, intentId: last.intentId },
   };
 }
 
@@ -1282,12 +1324,17 @@ function boundedPageLimit(limit: number | undefined): number {
   return Math.min(limit, 200);
 }
 
-function boundedPageOffset(offset: number | undefined): number {
-  if (offset === undefined) return 0;
-  if (!Number.isInteger(offset) || offset < 0) {
-    throw new Error("Lighter unresolved-intent page offset must be a non-negative integer.");
+function boundedCursor(
+  cursor: LighterUnresolvedDepositCursor | null | undefined,
+): LighterUnresolvedDepositCursor | null {
+  if (cursor === undefined || cursor === null) return null;
+  if (!(cursor.updatedAt instanceof Date) || Number.isNaN(cursor.updatedAt.getTime())) {
+    throw new Error("Lighter unresolved-deposit cursor needs a valid updatedAt timestamp.");
   }
-  return offset;
+  if (typeof cursor.intentId !== "string" || cursor.intentId.length === 0) {
+    throw new Error("Lighter unresolved-deposit cursor needs a non-empty intent id.");
+  }
+  return cursor;
 }
 
 export async function listUnresolvedDepositsForWallet(

@@ -853,7 +853,7 @@ d("lighter_onboarding_intents repo", () => {
     },
   );
 
-  it("lists unresolved intents and excludes credited/failed", async () => {
+  it("lists unresolved deposits and excludes credited/failed", async () => {
     const sessionId = await newSession();
     const live = await newDepositIntent(sessionId);
     const doneSessionId = await newSession();
@@ -861,32 +861,72 @@ d("lighter_onboarding_intents repo", () => {
     await withSessionControlLock(doneSessionId, (client) =>
       repo.markFailedWith(client, done.intentId, "test failed"));
 
-    const unresolved = await repo.listUnresolved("core");
+    const unresolved = await repo.listUnresolvedDeposits({ limit: 200 });
     const ids = unresolved.rows.map((r) => r.intentId);
     expect(ids).toContain(live.intentId);
     expect(ids).not.toContain(done.intentId);
-    expect(unresolved.hasMore).toBe(false);
   });
 
-  it("bounds an unresolved page, reports hasMore, and rotates by offset", async () => {
+  it("walks both environments in one keyset order without skipping or repeating a row", async () => {
+    // The starvation defect this order replaces: two separately limited pages
+    // merged and sliced discarded rows that no later page could reach, so a
+    // backlog of core deposits hid every rhc deposit forever.
+    const coreSession = await newSession();
+    const core = await newDepositIntent(coreSession);
+    const rhcSession = await newSession();
+    const rhcCreated = await createDepositOutcome(
+      rhcSession,
+      walletForSession(rhcSession),
+      "rhc",
+    );
+    const rhc = requireValue(rhcCreated.intent);
+
+    const single = await repo.listUnresolvedDeposits({ limit: 200 });
+    expect(single.hasMore).toBe(false);
+
+    // The same set, walked one row at a time: the keyset must reach every row
+    // the single bounded read returns, in the same order, with no repeats.
+    const walked: string[] = [];
+    let cursor: repo.LighterUnresolvedDepositCursor | null = null;
+    for (let page = 0; page < single.rows.length + 1; page += 1) {
+      const read: repo.LighterUnresolvedDepositPage = await repo.listUnresolvedDeposits({
+        limit: 1,
+        cursor,
+      });
+      walked.push(...read.rows.map((row) => row.intentId));
+      if (!read.hasMore || read.nextCursor === null) break;
+      cursor = read.nextCursor;
+    }
+
+    expect(walked).toContain(core.intentId);
+    expect(walked).toContain(rhc.intentId);
+    expect(new Set(walked).size).toBe(walked.length);
+    expect(walked).toEqual(single.rows.map((row) => row.intentId));
+  });
+
+  it("bounds an unresolved-deposit page, reports hasMore, and rejects an invalid page", async () => {
     const first = await newDepositIntent(await newSession());
     const second = await newDepositIntent(await newSession());
     const third = await newDepositIntent(await newSession());
     const created = new Set([first.intentId, second.intentId, third.intentId]);
 
-    const page = await repo.listUnresolved("core", { limit: 1 });
+    const page = await repo.listUnresolvedDeposits({ limit: 1 });
     expect(page.rows).toHaveLength(1);
     expect(page.hasMore).toBe(true);
+    expect(page.nextCursor).toEqual({
+      updatedAt: requireValue(page.rows[0]).updatedAt,
+      intentId: requireValue(page.rows[0]).intentId,
+    });
 
-    const next = await repo.listUnresolved("core", { limit: 1, offset: 1 });
+    const next = await repo.listUnresolvedDeposits({ limit: 1, cursor: page.nextCursor });
     expect(next.rows).toHaveLength(1);
     expect(next.rows[0]?.intentId).not.toBe(page.rows[0]?.intentId);
 
-    const all = await repo.listUnresolved("core", { limit: 200 });
+    const all = await repo.listUnresolvedDeposits({ limit: 200 });
     for (const intentId of created) {
       expect(all.rows.map((row) => row.intentId)).toContain(intentId);
     }
-    await expect(repo.listUnresolved("core", { limit: 0 })).rejects.toThrow(/positive integer/);
+    await expect(repo.listUnresolvedDeposits({ limit: 0 })).rejects.toThrow(/positive integer/);
   });
 
   it("markApprovalDecision only acts on approval_pending", async () => {

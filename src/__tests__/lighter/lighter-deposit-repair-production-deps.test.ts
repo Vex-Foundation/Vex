@@ -7,7 +7,7 @@ const RHC_GATEWAY = "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d";
 const TX_HASH = `0x${"a".repeat(64)}` as const;
 
 const mocks = vi.hoisted(() => ({
-  listUnresolved: vi.fn(),
+  listUnresolvedDeposits: vi.fn(),
   getTxFromL1: vi.fn(),
   getAccountsByL1Address: vi.fn(),
   getUniswapDeployment: vi.fn(),
@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
-  listUnresolved: mocks.listUnresolved,
+  listUnresolvedDeposits: mocks.listUnresolvedDeposits,
 }));
 vi.mock("@tools/lighter/client.js", () => ({
   LighterClient: class {
@@ -36,6 +36,7 @@ const { buildProductionLighterDepositRepairDeps } = await import(
 
 function rhcIntent(): LighterOnboardingIntentRow {
   return {
+    intentId: "lighter-onboard-rhc-1",
     environment: "rhc",
     capability: "deposit",
     chainId: 4663,
@@ -51,9 +52,10 @@ function rhcIntent(): LighterOnboardingIntentRow {
 describe("production Lighter deposit repair dependencies", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.listUnresolved.mockImplementation(async (environment: string) => ({
-      rows: environment === "rhc" ? [rhcIntent()] : [],
+    mocks.listUnresolvedDeposits.mockImplementation(async () => ({
+      rows: [rhcIntent()],
       hasMore: false,
+      nextCursor: { updatedAt: new Date("2030-01-01T00:00:00.000Z"), intentId: "lighter-onboard-rhc-1" },
     }));
     mocks.getUniswapDeployment.mockImplementation((chainId: number) => ({ chainId }));
     mocks.getUniswapPublicClient.mockReturnValue({
@@ -76,9 +78,9 @@ describe("production Lighter deposit repair dependencies", () => {
     });
   });
 
-  it("discovers both environments and routes RHC evidence reads to chain 4663 and RHC APIs", async () => {
+  it("reads both environments in one order and routes RHC evidence to chain 4663 and RHC APIs", async () => {
     const deps = buildProductionLighterDepositRepairDeps();
-    const page = await deps.listUnresolved({ limit: 25, offset: 0 });
+    const page = await deps.listUnresolvedDeposits({ limit: 25, cursor: null });
     const [row] = page.rows;
     if (row === undefined) throw new Error("missing RHC fixture");
     expect(page.hasMore).toBe(false);
@@ -87,8 +89,10 @@ describe("production Lighter deposit repair dependencies", () => {
     await deps.readLighterTx(row, TX_HASH);
     await deps.readOwnedAccounts(row, WALLET);
 
-    expect(mocks.listUnresolved).toHaveBeenCalledWith("core", { limit: 25, offset: 0 });
-    expect(mocks.listUnresolved).toHaveBeenCalledWith("rhc", { limit: 25, offset: 0 });
+    // One globally ordered query, not one page per environment: a page that
+    // one environment fills cannot hide the other environment's rows.
+    expect(mocks.listUnresolvedDeposits).toHaveBeenCalledTimes(1);
+    expect(mocks.listUnresolvedDeposits).toHaveBeenCalledWith({ limit: 25, cursor: null });
     expect(mocks.getUniswapDeployment).toHaveBeenCalledWith(4663);
     expect(mocks.getTxFromL1).toHaveBeenCalledWith("rhc", { hash: TX_HASH });
     expect(mocks.getAccountsByL1Address).toHaveBeenCalledWith("rhc", {

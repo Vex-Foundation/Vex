@@ -19,6 +19,8 @@ import {
   effectiveDepositTxHash,
   type LighterOnboardingIntentRow,
   type LighterReplacementTransaction,
+  type LighterUnresolvedDepositCursor,
+  type LighterUnresolvedDepositPage,
 } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
@@ -76,6 +78,15 @@ export interface LighterDepositRepairSweepReport {
   readonly hasMore: boolean;
   /** The sweep stopped on its own deadline rather than on an empty page. */
   readonly stoppedAtDeadline: boolean;
+  /**
+   * Where an interrupted sweep stopped, so the next one can resume there
+   * instead of re-examining the rows this one already paid for. It is set only
+   * when the deadline cut the page short; a sweep that finished its page
+   * returns null and the next sweep rotates normally.
+   */
+  readonly resumeCursor: LighterUnresolvedDepositCursor | null;
+  /** Rows the rotation window held, of which `examined` were examined. */
+  readonly candidates: number;
   /** One report per examined row; bounded by the page limit above. */
   readonly reports: readonly LighterDepositRepairReport[];
 }
@@ -97,13 +108,18 @@ export const LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT = 25;
 export const LIGHTER_DEPOSIT_REPAIR_ROTATION_PERIOD_MS = 5 * 60_000;
 
 /**
- * How many pages the rotation walks before wrapping. The rotation offset is
- * clock-derived and therefore unbounded, so it is taken modulo this count: the
- * sweep covers the first
+ * How many pages of the global keyset the rotation window holds. The window is
+ * read page by page with the repository cursor, so it is exactly the first
  * LIGHTER_DEPOSIT_REPAIR_ROTATION_PAGES * LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT
- * unresolved rows. A larger backlog than that is not silently ignored: the
- * sweep report says `hasMore`, and the least-recently-updated ordering keeps
- * pulling advanced rows out of the window.
+ * unresolved deposit rows, in one order across both environments. The rotation
+ * picks one page of that window per sweep, taken modulo the pages that are
+ * actually there, so with P pages present every row is examined within P
+ * consecutive sweeps and P is never larger than this bound. A larger backlog
+ * is not silently ignored: the report says `hasMore`, and the
+ * least-recently-updated ordering keeps pulling advanced rows out of the
+ * window. Reading the window costs local SQL pages only; the provider budget
+ * is unchanged, because only the selected page performs chain and Lighter
+ * reads.
  */
 export const LIGHTER_DEPOSIT_REPAIR_ROTATION_PAGES = 8;
 
@@ -115,9 +131,12 @@ export const LIGHTER_DEPOSIT_REPAIR_ROTATION_PAGES = 8;
 export const LIGHTER_DEPOSIT_REPAIR_SWEEP_DEADLINE_MS = 60_000;
 
 export interface LighterDepositRepairDeps {
-  readonly listUnresolved: (
-    page: { readonly limit: number; readonly offset: number },
-  ) => Promise<{ readonly rows: LighterOnboardingIntentRow[]; readonly hasMore: boolean }>;
+  readonly listUnresolvedDeposits: (
+    page: {
+      readonly limit: number;
+      readonly cursor: LighterUnresolvedDepositCursor | null;
+    },
+  ) => Promise<LighterUnresolvedDepositPage>;
   readonly now?: () => number;
   readonly readReceipt: (intent: LighterOnboardingIntentRow, txHash: string) => Promise<{
     readonly receipt: LighterDepositReceipt;
@@ -182,20 +201,12 @@ export function buildProductionLighterDepositRepairDeps(): LighterDepositRepairD
   }
 
   return {
-    async listUnresolved(page) {
-      // Both environments are read with the same bound, so one busy
-      // environment cannot consume the whole sweep.
-      const [core, rhc] = await Promise.all([
-        intentsRepo.listUnresolved("core", { limit: page.limit, offset: page.offset }),
-        intentsRepo.listUnresolved("rhc", { limit: page.limit, offset: page.offset }),
-      ]);
-      const merged = [...core.rows, ...rhc.rows]
-        .filter((intent) => intent.capability === "deposit")
-        .sort((left, right) => left.updatedAt.getTime() - right.updatedAt.getTime());
-      return {
-        rows: merged.slice(0, page.limit),
-        hasMore: core.hasMore || rhc.hasMore || merged.length > page.limit,
-      };
+    listUnresolvedDeposits(page) {
+      // One globally ordered query over both environments. Two separately
+      // limited pages merged and sliced would drop rows that no later page
+      // could reach, which is how a backlog in one environment used to hide
+      // every unresolved deposit of the other.
+      return intentsRepo.listUnresolvedDeposits({ limit: page.limit, cursor: page.cursor });
     },
     async readReceipt(intent, txHash) {
       assertTxHash(txHash);
@@ -332,28 +343,49 @@ export async function repairLighterDepositIntent(
     "No transaction hash was staged. Do not broadcast from repair; inspect the approved intent before deciding whether a fresh preparation is safe.");
 }
 
+/**
+ * One unattended sweep over the unresolved deposit set of BOTH environments.
+ *
+ * Progress is deterministic rather than durable, because the sync framework has
+ * no per-job state row to persist a cursor in: the rotation slot is derived
+ * from the wall clock, so it survives a restart, and it selects one page of the
+ * global keyset window modulo the pages that are actually present. With P pages
+ * present every unresolved row is examined within P consecutive sweeps, and a
+ * row nothing can move is examined, reported, and left behind instead of
+ * holding the first page forever.
+ *
+ * A caller that receives `resumeCursor` from a deadline-interrupted sweep may
+ * pass it back as `input.cursor`. That is the one case where the rotation is
+ * skipped: the caller has said exactly where the previous sweep stopped, and
+ * re-rotating would re-examine rows it already paid for.
+ */
 export async function repairUnresolvedLighterDeposits(
   deps: LighterDepositRepairDeps = buildProductionLighterDepositRepairDeps(),
-  input: { readonly limit?: number } = {},
+  input: {
+    readonly limit?: number;
+    readonly cursor?: LighterUnresolvedDepositCursor | null;
+  } = {},
 ): Promise<LighterDepositRepairSweepReport> {
   const now = deps.now ?? Date.now;
   const limit = Math.max(1, Math.min(input.limit ?? LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT, 100));
   const startedAt = now();
-  const rotation = Math.floor(startedAt / LIGHTER_DEPOSIT_REPAIR_ROTATION_PERIOD_MS);
-  let page = await deps.listUnresolved({
+  const resuming = input.cursor !== undefined && input.cursor !== null;
+  // A resuming sweep already knows which page it owes: the one after the
+  // cursor. It reads that page and nothing more.
+  const window = await readRotationWindow(
+    deps,
     limit,
-    offset: (rotation % LIGHTER_DEPOSIT_REPAIR_ROTATION_PAGES) * limit,
-  });
-  if (page.rows.length === 0 && page.hasMore === false) {
-    // The rotation walked past the end of the set. Wrap so the sweep still
-    // examines the rows that are there.
-    page = await deps.listUnresolved({ limit, offset: 0 });
-  }
-  const intents = page.rows;
+    input.cursor ?? null,
+    resuming ? 1 : LIGHTER_DEPOSIT_REPAIR_ROTATION_PAGES,
+  );
+  const intents = resuming
+    ? window.rows
+    : selectRotatingPage(window.rows, limit, startedAt);
   const reports: LighterDepositRepairReport[] = [];
   let errors = 0;
   let examined = 0;
   let stoppedAtDeadline = false;
+  let resumeCursor: LighterUnresolvedDepositCursor | null = null;
 
   for (const intent of intents) {
     if (now() - startedAt > LIGHTER_DEPOSIT_REPAIR_SWEEP_DEADLINE_MS) {
@@ -366,6 +398,9 @@ export async function repairUnresolvedLighterDeposits(
     } catch {
       errors += 1;
     }
+    // The page is a contiguous slice of the keyset order, so the last examined
+    // row is the exact position a following sweep should continue from.
+    resumeCursor = { updatedAt: intent.updatedAt, intentId: intent.intentId };
   }
 
   const advancedResolutions = new Set<LighterDepositRepairResolution>([
@@ -386,10 +421,59 @@ export async function repairUnresolvedLighterDeposits(
     awaiting: reports.filter((item) => awaitingResolutions.has(item.resolution)).length,
     failed: reports.filter((item) => item.resolution === "failed").length,
     errors,
-    hasMore: page.hasMore || stoppedAtDeadline || examined < intents.length,
+    hasMore: window.hasMore || stoppedAtDeadline || examined < window.rows.length,
     stoppedAtDeadline,
+    resumeCursor: stoppedAtDeadline ? resumeCursor : null,
+    candidates: window.rows.length,
     reports,
   };
+}
+
+/**
+ * The bounded rotation window: at most
+ * LIGHTER_DEPOSIT_REPAIR_ROTATION_PAGES pages of the global keyset order,
+ * walked with the repository cursor so no row between two pages is skipped.
+ * `hasMore` reports rows past the window instead of pretending the window was
+ * the whole set.
+ */
+async function readRotationWindow(
+  deps: LighterDepositRepairDeps,
+  limit: number,
+  startCursor: LighterUnresolvedDepositCursor | null,
+  pages: number,
+): Promise<{ readonly rows: LighterOnboardingIntentRow[]; readonly hasMore: boolean }> {
+  const rows: LighterOnboardingIntentRow[] = [];
+  let cursor = startCursor;
+  let hasMore = false;
+  for (let page = 0; page < pages; page += 1) {
+    const read = await deps.listUnresolvedDeposits({ limit, cursor });
+    rows.push(...read.rows);
+    hasMore = read.hasMore;
+    if (!read.hasMore || read.nextCursor === null) break;
+    cursor = read.nextCursor;
+  }
+  return { rows, hasMore };
+}
+
+/**
+ * The page of the window this sweep examines. The slot is derived from the
+ * wall clock rather than from process memory, so the rotation survives the
+ * restart path that also runs this sweep from `initSync`, and it is taken
+ * modulo the pages actually present rather than modulo a fixed page count:
+ * with P pages present the slot walks 0, 1, ... P-1 over P consecutive sweeps,
+ * so every row in the window is examined within P sweeps and a short window
+ * never rotates onto an empty page.
+ */
+export function selectRotatingPage<T>(
+  rows: readonly T[],
+  limit: number,
+  nowMs: number,
+): readonly T[] {
+  if (rows.length <= limit) return rows;
+  const pages = Math.ceil(rows.length / limit);
+  const slot = Math.floor(nowMs / LIGHTER_DEPOSIT_REPAIR_ROTATION_PERIOD_MS);
+  const page = ((slot % pages) + pages) % pages;
+  return rows.slice(page * limit, page * limit + limit);
 }
 
 async function repairApproveLeg(

@@ -556,32 +556,64 @@ describe("lighter onboarding intent creation SQL", () => {
     expect(sql).toContain("execution_state = 'approval_pending'");
   });
 
-  it("returns one bounded, oldest-first unresolved page and reports that more exist", async () => {
+  it("walks unresolved deposits of both environments by keyset and reports that more exist", async () => {
     // The repository fetches limit + 1 rows so the page can report hasMore
     // without a second count query.
     dbMocks.query.mockResolvedValueOnce([ROW, { ...ROW, intent_id: `${ROW.intent_id}-2` }]);
 
-    const page = await repo.listUnresolved("core", { limit: 1, offset: 3 });
+    const page = await repo.listUnresolvedDeposits({ limit: 1 });
 
     expect(page.rows).toHaveLength(1);
     expect(page.hasMore).toBe(true);
+    expect(page.nextCursor).toEqual({
+      updatedAt: ROW.updated_at,
+      intentId: ROW.intent_id,
+    });
     const [sql, params] = requireValue(dbMocks.query.mock.calls[0]);
+    // No environment predicate: one order over both environments is what stops
+    // a backlog in one from hiding every row of the other.
+    expect(sql).not.toContain("environment = ");
+    expect(sql).toContain("capability = 'deposit'");
     expect(sql).toContain("execution_state NOT IN ('credited','failed')");
-    expect(sql).toContain("ORDER BY updated_at ASC, intent_id ASC");
-    expect(sql).toContain("LIMIT $2 OFFSET $3");
-    expect(params).toEqual(["core", 2, 3]);
+    // The comparison and the order run on the same millisecond-truncated
+    // expression, because the driver hands JavaScript a millisecond Date while
+    // the column keeps microseconds; comparing raw would return the cursor row
+    // forever.
+    expect(sql).toContain("(date_trunc('milliseconds', updated_at), intent_id)");
+    expect(sql).toContain("ORDER BY date_trunc('milliseconds', updated_at) ASC, intent_id ASC");
+    expect(sql).toContain("LIMIT $1");
+    expect(sql).not.toContain("OFFSET");
+    expect(params).toEqual([2, null, null]);
   });
 
-  it("defaults the unresolved page to its declared bound and rejects an invalid page", async () => {
+  it("continues an unresolved-deposit page from the cursor it was given", async () => {
+    dbMocks.query.mockResolvedValueOnce([]);
+    const cursor = { updatedAt: new Date("2030-02-02T03:04:05.000Z"), intentId: "lighter-onboard-7" };
+
+    const page = await repo.listUnresolvedDeposits({ limit: 3, cursor });
+
+    expect(page.rows).toEqual([]);
+    expect(page.hasMore).toBe(false);
+    expect(page.nextCursor).toBeNull();
+    const [, params] = requireValue(dbMocks.query.mock.calls[0]);
+    expect(params).toEqual([4, cursor.updatedAt, cursor.intentId]);
+  });
+
+  it("defaults the unresolved-deposit page to its declared bound and rejects an invalid page", async () => {
     dbMocks.query.mockResolvedValueOnce([ROW]);
 
-    const page = await repo.listUnresolved("core");
+    const page = await repo.listUnresolvedDeposits();
 
     expect(page.hasMore).toBe(false);
     const [, params] = requireValue(dbMocks.query.mock.calls[0]);
-    expect(params).toEqual(["core", repo.LIGHTER_ONBOARDING_UNRESOLVED_PAGE_LIMIT + 1, 0]);
-    await expect(repo.listUnresolved("core", { limit: 0 })).rejects.toThrow(/positive integer/);
-    await expect(repo.listUnresolved("core", { offset: -1 })).rejects.toThrow(/non-negative integer/);
+    expect(params).toEqual([repo.LIGHTER_ONBOARDING_UNRESOLVED_PAGE_LIMIT + 1, null, null]);
+    await expect(repo.listUnresolvedDeposits({ limit: 0 })).rejects.toThrow(/positive integer/);
+    await expect(
+      repo.listUnresolvedDeposits({ cursor: { updatedAt: new Date("nope"), intentId: "x" } }),
+    ).rejects.toThrow(/valid updatedAt/);
+    await expect(
+      repo.listUnresolvedDeposits({ cursor: { updatedAt: new Date(0), intentId: "" } }),
+    ).rejects.toThrow(/non-empty intent id/);
   });
 
   it("scopes unresolved deposit status reads to capability and wallet", async () => {

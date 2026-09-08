@@ -205,7 +205,11 @@ function intent(
 
 function deps() {
   return {
-    listUnresolved: vi.fn().mockResolvedValue({ rows: [], hasMore: false }),
+    listUnresolvedDeposits: vi.fn().mockResolvedValue({
+      rows: [],
+      hasMore: false,
+      nextCursor: null,
+    }),
     readReceipt: vi.fn().mockResolvedValue({
       receipt: depositReceipt(),
       replacement: null,
@@ -220,6 +224,11 @@ function deps() {
     markAmbiguous: vi.fn<LighterDepositRepairDeps["markAmbiguous"]>().mockResolvedValue(null),
     markCredited: vi.fn<LighterDepositRepairDeps["markCredited"]>().mockResolvedValue(null),
   } satisfies LighterDepositRepairDeps;
+}
+
+function cursorOf(row: LighterOnboardingIntentRow | undefined) {
+  if (row === undefined) throw new Error("missing fixture row");
+  return { updatedAt: row.updatedAt, intentId: row.intentId };
 }
 
 function confirmedIntent(): LighterOnboardingIntentRow {
@@ -702,7 +711,7 @@ describe("Lighter deposit evidence-only repair", () => {
 
   it("isolates per-intent provider errors during a sweep", async () => {
     const d = deps();
-    d.listUnresolved.mockResolvedValueOnce({
+    d.listUnresolvedDeposits.mockResolvedValueOnce({
       rows: [
         intent({ intentId: "lighter-onboard-first", depositTxHash: DEPOSIT_HASH }),
         intent({
@@ -712,6 +721,7 @@ describe("Lighter deposit evidence-only repair", () => {
         }),
       ],
       hasMore: false,
+      nextCursor: null,
     });
     d.readReceipt.mockRejectedValueOnce(new Error("RPC unavailable"));
 
@@ -734,51 +744,70 @@ describe("Lighter deposit evidence-only repair", () => {
         approvalStatus: "approval_pending",
         executionState: "approval_pending",
       }));
-    d.listUnresolved.mockResolvedValue({ rows, hasMore: true });
+    const second = Array.from({ length: 4 }, (_value, index) =>
+      intent({
+        intentId: `lighter-onboard-tail-${index}`,
+        approvalStatus: "approval_pending",
+        executionState: "approval_pending",
+      }));
+    d.listUnresolvedDeposits.mockImplementation(async (page: {
+      readonly cursor: { readonly intentId: string } | null;
+    }) => (page.cursor === null
+      ? { rows, hasMore: true, nextCursor: cursorOf(rows[rows.length - 1]) }
+      : { rows: second, hasMore: false, nextCursor: cursorOf(second[second.length - 1]) }));
     const at = (nowMs: number) => ({ ...d, now: () => nowMs });
 
     const first = await repairUnresolvedLighterDeposits(at(0));
-    const second = await repairUnresolvedLighterDeposits(
-      at(3 * LIGHTER_DEPOSIT_REPAIR_ROTATION_PERIOD_MS),
+    const next = await repairUnresolvedLighterDeposits(
+      at(LIGHTER_DEPOSIT_REPAIR_ROTATION_PERIOD_MS),
     );
 
     expect(first).toMatchObject({
       examined: LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT,
       hasMore: true,
       stoppedAtDeadline: false,
+      resumeCursor: null,
+      candidates: LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT + second.length,
     });
     expect(first.reports).toHaveLength(LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT);
-    expect(d.listUnresolved).toHaveBeenNthCalledWith(1, {
+    // The window is walked by cursor, so the second page continues exactly
+    // after the first page's last row instead of re-reading by offset.
+    expect(d.listUnresolvedDeposits).toHaveBeenNthCalledWith(1, {
       limit: LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT,
-      offset: 0,
+      cursor: null,
     });
-    // A row the sweep cannot advance may not hold the first page forever.
-    expect(d.listUnresolved).toHaveBeenNthCalledWith(2, {
+    expect(d.listUnresolvedDeposits).toHaveBeenNthCalledWith(2, {
       limit: LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT,
-      offset: 3 * LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT,
+      cursor: cursorOf(rows[rows.length - 1]),
     });
-    expect(second.examined).toBe(LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT);
+    // A row the sweep cannot advance may not hold the first page forever: the
+    // next slot examines the rest of the window.
+    expect(next.reports.map((entry) => entry.intentId))
+      .toEqual(second.map((row) => row.intentId));
   });
 
-  it("wraps to the first page when the rotation walks past the end of the set", async () => {
+  it("rotates modulo the pages that exist instead of onto an empty page", async () => {
     const d = deps();
     const rows = [intent({
       intentId: "lighter-onboard-only",
       approvalStatus: "approval_pending",
       executionState: "approval_pending",
     })];
-    d.listUnresolved
-      .mockResolvedValueOnce({ rows: [], hasMore: false })
-      .mockResolvedValueOnce({ rows, hasMore: false });
+    d.listUnresolvedDeposits.mockResolvedValue({
+      rows,
+      hasMore: false,
+      nextCursor: cursorOf(rows[0]),
+    });
 
     const sweep = await repairUnresolvedLighterDeposits({
       ...d,
       now: () => 2 * LIGHTER_DEPOSIT_REPAIR_ROTATION_PERIOD_MS,
     });
 
-    expect(d.listUnresolved).toHaveBeenLastCalledWith({
+    expect(d.listUnresolvedDeposits).toHaveBeenCalledTimes(1);
+    expect(d.listUnresolvedDeposits).toHaveBeenLastCalledWith({
       limit: LIGHTER_DEPOSIT_REPAIR_SWEEP_LIMIT,
-      offset: 0,
+      cursor: null,
     });
     expect(sweep).toMatchObject({ examined: 1, hasMore: false });
   });
@@ -791,7 +820,11 @@ describe("Lighter deposit evidence-only repair", () => {
         approvalStatus: "approval_pending",
         executionState: "approval_pending",
       }));
-    d.listUnresolved.mockResolvedValue({ rows, hasMore: false });
+    d.listUnresolvedDeposits.mockResolvedValue({
+      rows,
+      hasMore: false,
+      nextCursor: cursorOf(rows[rows.length - 1]),
+    });
     let clock = 0;
     // The second row pushes the sweep past its budget.
     const now = () => {
@@ -805,5 +838,8 @@ describe("Lighter deposit evidence-only repair", () => {
     expect(sweep.stoppedAtDeadline).toBe(true);
     expect(sweep.hasMore).toBe(true);
     expect(sweep.reports.length).toBe(sweep.examined);
+    // The interrupted sweep says exactly where it stopped, so the next one
+    // resumes there instead of paying for the same rows again.
+    expect(sweep.resumeCursor).toEqual(cursorOf(rows[sweep.examined - 1]));
   });
 });
