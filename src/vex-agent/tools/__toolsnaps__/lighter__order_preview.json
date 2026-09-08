@@ -103,7 +103,7 @@
     "type": "function"
   },
   "metadata": {
-    "actionKind": "read",
+    "actionKind": "approval_prepare",
     "advertised": true,
     "kind": "protocol",
     "lifecycle": "active",

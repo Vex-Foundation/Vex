@@ -56,7 +56,7 @@ whether its provider key is configured on this machine.
 - tools: 213
 - Vex tools: 29
 - protocol tools: 184 across 12 protocols
-- destructive: 57
+- destructive: 63
 
 ## Vex tools
 
@@ -166,26 +166,26 @@ whether its provider key is configured on this machine.
 | lighter__market_get | Read one Lighter market | read-only | no | - |
 | lighter__markets_list | List Lighter markets | read-only | no | - |
 | lighter__open_orders_list | List open Lighter orders | read-only | no | - |
-| lighter__order_cancel | Cancel an approved Lighter order | mutating | no | - |
-| lighter__order_cancel_all | Cancel all approved Lighter orders | mutating | no | - |
+| lighter__order_cancel | Cancel an approved Lighter order | mutating | yes | - |
+| lighter__order_cancel_all | Cancel all approved Lighter orders | mutating | yes | - |
 | lighter__order_cancel_all_prepare | Prepare approval to cancel all Lighter orders | mutating | no | - |
 | lighter__order_cancel_prepare | Prepare a Lighter order-cancellation approval | mutating | no | - |
-| lighter__order_create | Submit an approved Lighter order | mutating | no | - |
+| lighter__order_create | Submit an approved Lighter order | mutating | yes | - |
 | lighter__order_create_prepare | Prepare a Lighter order approval | mutating | no | - |
 | lighter__order_history_list | Read Lighter order history | read-only | no | - |
-| lighter__order_modify | Modify an approved Lighter limit order | mutating | no | - |
+| lighter__order_modify | Modify an approved Lighter limit order | mutating | yes | - |
 | lighter__order_modify_prepare | Prepare a Lighter order-modification approval | mutating | no | - |
-| lighter__order_preview | Preview a Lighter order | read-only | no | - |
+| lighter__order_preview | Preview a Lighter order | mutating | no | - |
 | lighter__order_status | Check a Lighter order action's status | read-only | no | - |
 | lighter__orderbook_get | Read a Lighter order book | read-only | no | - |
-| lighter__position_close | Close an approved Lighter position | mutating | no | - |
+| lighter__position_close | Close an approved Lighter position | mutating | yes | - |
 | lighter__position_close_prepare | Prepare a Lighter position-close approval | mutating | no | - |
-| lighter__position_protect | Preview Lighter position protection | read-only | no | - |
+| lighter__position_protect | Preview Lighter position protection | mutating | no | - |
 | lighter__positions_list | List Lighter positions | read-only | no | - |
 | lighter__recent_trades_list | Read recent public Lighter trades | read-only | no | - |
 | lighter__system_get | Read Lighter system status | read-only | no | - |
 | lighter__trades_list | Read Lighter account trades | read-only | no | - |
-| lighter__withdraw | Submit an approved Lighter withdrawal | mutating | no | - |
+| lighter__withdraw | Submit an approved Lighter withdrawal | mutating | yes | - |
 | lighter__withdraw_claim | Broadcast an approved Lighter withdrawal claim | mutating | yes | - |
 | lighter__withdraw_claim_prepare | Prepare a Lighter withdrawal-claim approval | mutating | no | - |
 | lighter__withdraw_prepare | Prepare a Lighter withdrawal approval | mutating | no | - |

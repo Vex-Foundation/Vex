@@ -275,14 +275,30 @@ function approvalCardFor(tool: StudioTool): { raised: boolean; note: string } {
   }
   const manifest = getProtocolManifest(tool.toolId ?? "");
   const raised = manifest?.mutating === true && manifest.actionKind !== "local_write";
+  // A PREPARED-ACTION TARGET IS THE EXCEPTION, and getting it wrong here is a
+  // money-path lie: "in a full project it executes directly" would tell an
+  // external agent that raising project permission is a way to place a Lighter
+  // order without a card. It is not. Two independent facts make the card
+  // unavoidable, and both are read from code rather than intent: `executor.ts`
+  // dispatches the validated follow-up hop with `permission: "restricted"`
+  // whatever the project holds, and every one of these handlers refuses a call
+  // that arrives without `approved` and an `approvalId`, returning
+  // `pendingApproval` instead of executing.
+  const prepared = manifest?.studioPreparedAction === true;
   return {
     raised,
-    note: raised
-      ? "In a restricted project the call waits on the user's approval card in Vex and returns the "
-        + "settled outcome. In a full project it executes directly."
-      : manifest?.mutating === true
-        ? "No approval card: this tool only writes a local Vex record, which is not a spend."
-        : "No approval card: this tool is read-only.",
+    note: prepared
+      ? "The approval card is raised in BOTH permission modes and cannot be skipped: Vex Studio "
+        + "dispatches this tool's prepared follow-up under restricted permission whatever the "
+        + "project holds, and the tool itself refuses any call that does not carry an approved "
+        + "Vex approval card for a prepared intent. Raising project permission does not execute "
+        + "it directly."
+      : raised
+        ? "In a restricted project the call waits on the user's approval card in Vex and returns the "
+          + "settled outcome. In a full project it executes directly."
+        : manifest?.mutating === true
+          ? "No approval card: this tool only writes a local Vex record, which is not a spend."
+          : "No approval card: this tool is read-only.",
   };
 }
 

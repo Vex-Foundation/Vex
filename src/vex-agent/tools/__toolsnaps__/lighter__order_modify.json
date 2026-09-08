@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Execute one exact approved Lighter limit-order modification. Direct calls are refused. The privileged runtime revalidates the unchanged order, active market precision, registered key, and nonce; atomically reserves the nonce; signs TxType 17 locally; stages identity before one sendTx; and never retries ambiguity. Returns completion only from exact provider evidence carrying the requested total size and price, including terminal fill outcomes; otherwise returns a pending or ambiguous state.",
+      "description": "Execute one exact approved Lighter limit-order modification. Direct calls are refused. The privileged runtime revalidates the unchanged order, active market precision, registered key, and nonce; atomically reserves the nonce; signs TxType 17 locally; stages identity before one sendTx; and never retries ambiguity. A submitted modification is irreversible: the previous size and price are gone and the order loses its queue position. Returns completion only from exact provider evidence carrying the requested total size and price, including terminal fill outcomes; otherwise returns a pending or ambiguous state.",
       "name": "lighter__order_modify",
       "parameters": {
         "additionalProperties": false,

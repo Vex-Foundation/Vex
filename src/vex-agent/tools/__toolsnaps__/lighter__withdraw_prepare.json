@@ -11,7 +11,7 @@
             "type": "string"
           },
           "environment": {
-            "description": "Optional Lighter environment for the persisted preview: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc. Any other value is rejected.",
+            "description": "Required Lighter environment for this withdrawal: core withdraws USDC to the same wallet on Ethereum mainnet, rhc withdraws USDG to the same wallet on Robinhood Chain. It is never defaulted and never inferred from the destination address; ask the user which one they mean. Any other value is rejected.",
             "enum": [
               "core",
               "rhc"
@@ -20,6 +20,7 @@
           }
         },
         "required": [
+          "environment",
           "amountIn"
         ],
         "type": "object"

@@ -55,6 +55,25 @@ describe("vex_ToolDescribe returns one tool's whole contract", () => {
     expect(contractOf("SwapExecute").approvalCard.note).toContain("waits");
   });
 
+  it("does not tell a caller that full permission executes a prepared action directly", () => {
+    // THE DEFECT THIS PINS. Every mutating protocol row used to carry the same
+    // note, ending "In a full project it executes directly." For a Lighter
+    // prepared action that sentence is a money-path lie in the one direction
+    // that matters: it reads as "raise project permission and the order goes
+    // through without a card". Two independent facts say otherwise, and both
+    // are code, not intent - `executor.ts` dispatches the validated follow-up
+    // hop under `permission: "restricted"` whatever the project holds, and the
+    // handler itself refuses a call with no `approved`/`approvalId` and answers
+    // `pendingApproval`.
+    const contract = contractOf("lighter__order_create");
+    expect(contract.approvalCard.raisedInRestrictedProject).toBe(true);
+    expect(contract.approvalCard.note).toContain("BOTH permission modes");
+    expect(contract.approvalCard.note).not.toContain("executes directly.");
+    // The ordinary mutating protocol tool keeps the ordinary answer, so this is
+    // a per-capability correction and not a blanket rewrite.
+    expect(contractOf("kyberswap__swap_execute").approvalCard.note).toContain("executes directly.");
+  });
+
   it("says a read and a local write raise no card", () => {
     // `WalletTrackToken` writes a Vex-local bookmark and signs nothing: the
     // in-app gate keys on `ToolDef.mutating`, which is false for it.

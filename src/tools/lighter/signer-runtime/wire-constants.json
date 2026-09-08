@@ -1,0 +1,20 @@
+{
+  "source": "github.com/elliottech/lighter-go/types/txtypes (version pinned in ../../go.mod)",
+  "generator": "src/tools/lighter/signer-runtime/cmd/wire-constants",
+  "regenerate": "cd src/tools/lighter/signer-runtime && go run ./cmd/wire-constants > wire-constants.json",
+  "orderTypes": {
+    "LimitOrder": 0,
+    "MarketOrder": 1,
+    "StopLossLimitOrder": 3,
+    "StopLossOrder": 2,
+    "TWAPOrder": 6,
+    "TakeProfitLimitOrder": 5,
+    "TakeProfitOrder": 4
+  },
+  "timeInForce": {
+    "GoodTillTime": 1,
+    "ImmediateOrCancel": 0,
+    "PostOnly": 2
+  },
+  "apiMaxOrderType": 6
+}

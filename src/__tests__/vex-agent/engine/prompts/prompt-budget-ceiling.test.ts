@@ -194,7 +194,7 @@ describe("static prompt byte ceilings", () => {
       // static addition: Lighter's advertised namespace declaration. It gives
       // the model enough identity/read/preview/action/limit guidance to route a
       // request through ToolSearch while preserving explicit environment,
-      // local-key, and approval-gate constraints. The 37 Lighter tool schemas
+      // local-key, and approval-gate constraints. The 40 Lighter tool schemas
       // remain discovery-injected and do not enter this static prefix. Keeping
       // those safety and routing clauses together was preferred to hiding the
       // new integration or silently charging another namespace's guidance.

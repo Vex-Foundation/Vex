@@ -11,6 +11,11 @@ import { discoverProtocolCapabilities } from "@vex-agent/tools/protocols/runtime
 import { validateProtocolParams } from "@vex-agent/tools/protocols/runtime/params.js";
 import { LIGHTER_HANDLERS } from "@vex-agent/tools/protocols/lighter/handlers.js";
 import { LIGHTER_TOOLS } from "@vex-agent/tools/protocols/lighter/manifest.js";
+import {
+  buildDiscoverNamespaceDescription,
+  getGroupedAdvertisedProtocolNavigation,
+  getProtocolNamespaceNavigation,
+} from "@vex-agent/tools/protocols/descriptions.js";
 
 const LIGHTER_TOOL_IDS = [
   "lighter.account.onboarding.status",
@@ -159,19 +164,72 @@ describe("Lighter agent discovery surface", () => {
     });
   });
 
+  it("is navigable as a trading venue, not as a research surface", () => {
+    // THE DEFECT THIS PINS: the namespace shipped under `market-research`, so
+    // the group listing an agent reads when it looks for somewhere to place a
+    // trade did not contain the only perpetuals venue Vex has. The group id is
+    // rendered into ToolSearch's own `namespace` parameter description, which
+    // is why this is a routing fact and not a label. See owner-decisions D21.
+    const navigation = getProtocolNamespaceNavigation("lighter");
+    expect(navigation.groupId).toBe("evm-trading");
+    expect(navigation.advertised).toBe(true);
+
+    // Same group as the venues it competes with for the model's attention, and
+    // the label comes from the group's first member, never re-typed here.
+    const group = requireValue(
+      getGroupedAdvertisedProtocolNavigation().find((row) => row.groupId === "evm-trading"),
+    );
+    expect(group.namespaces.map((row) => row.namespace)).toContain("lighter");
+    expect(navigation.groupLabel).toBe(group.groupLabel);
+    expect(
+      requireValue(getGroupedAdvertisedProtocolNavigation()
+        .find((row) => row.groupId === "market-research")).namespaces
+        .map((row) => row.namespace),
+    ).not.toContain("lighter");
+
+    // And the string the model actually reads.
+    const description = buildDiscoverNamespaceDescription();
+    expect(description).toMatch(new RegExp(`${group.groupLabel}:[^;]*\\blighter\\b`));
+  });
+
   it("accepts core or rhc environment on environment-scoped tools", () => {
     for (const tool of LIGHTER_TOOLS.filter((candidate) =>
       candidate.params.some((param) => param.key === "environment"),
     )) {
       const environment = tool.params.find((param) => param.key === "environment");
       expect(environment, `${tool.toolId} environment param`).toBeDefined();
-      expect(environment?.required, `${tool.toolId} environment optional`).not.toBe(true);
+      // OPTIONAL EVERYWHERE EXCEPT THE WITHDRAWAL PREPARE. The default (`rhc`)
+      // is right for a preview or a status read and wrong for a money movement
+      // whose two lanes are different assets on different chains, so the
+      // withdrawal names its environment or is refused at the boundary. The
+      // manifest description has always said the environment is mandatory;
+      // before 2026-09-07 the schema defaulted it anyway.
+      expect(environment?.required, `${tool.toolId} environment requirement`)
+        .toBe(tool.toolId === "lighter.withdraw.prepare" ? true : undefined);
       expect(environment?.enum, `${tool.toolId} environment enum`).toEqual(LIGHTER_ENVIRONMENTS);
 
       const rejected = validateProtocolParams(tool, { ...tool.exampleParams, environment: "mainnet" });
       expect(rejected.ok, `${tool.toolId} rejects unsupported env`).toBe(false);
       if (!rejected.ok) expect(rejected.reason).toContain("Allowed values");
     }
+  });
+
+  it("refuses a withdrawal preparation that does not name its environment", () => {
+    // The manifest description has always said "The environment is mandatory
+    // and cannot be inferred from the address", while the schema defaulted it
+    // to `rhc`. A default here picks the destination CHAIN and the ASSET of a
+    // money movement the user never named, so the prose is now the schema.
+    const withdrawPrepare = requireValue(getProtocolManifest("lighter.withdraw.prepare"));
+    expect(withdrawPrepare.description).toContain("environment is mandatory");
+    const missing = validateProtocolParams(withdrawPrepare, { amountIn: "2" });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.reason).toContain("environment");
+    expect(validateProtocolParams(withdrawPrepare, { environment: "core", amountIn: "2" }).ok).toBe(true);
+
+    // The sibling preparations still default it: this is the withdrawal lane's
+    // rule, not a namespace-wide tightening.
+    const depositPrepare = requireValue(getProtocolManifest("lighter.deposit.prepare"));
+    expect(validateProtocolParams(depositPrepare, { amountIn: "1" }).ok).toBe(true);
   });
 
   it("publishes product, native order-family, and plain-language order-behavior defaults", () => {
@@ -274,6 +332,17 @@ describe("Lighter agent discovery surface", () => {
         || tool.toolId === "lighter.key.register.prepare"
         || tool.toolId === "lighter.fees.approve.prepare"
       ) {
+        expect(tool.mutating).toBe(false);
+        expect(tool.actionKind).toBe("approval_prepare");
+      } else if (
+        tool.toolId === "lighter.order.preview"
+        || tool.toolId === "lighter.position.protect"
+      ) {
+        // NOT `read`, though both live in the read manifest file: each writes a
+        // durable preview row and, when managed trading is ready, prepares the
+        // `lighter.order.create` approval. `approval_prepare` is what stops a
+        // read-only-filtered MCP client from being handed an approval card by a
+        // tool its filter admitted as side-effect free (annotations.ts, O7).
         expect(tool.mutating).toBe(false);
         expect(tool.actionKind).toBe("approval_prepare");
       } else {

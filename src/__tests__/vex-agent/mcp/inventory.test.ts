@@ -270,9 +270,57 @@ describe("annotations are pinned to O7, literally", () => {
           : getProtocolManifest(tool.toolId ?? "")?.actionKind;
       expect(actionKind).toBeDefined();
       expect(tool.annotations.readOnlyHint).toBe(actionKind === "read");
+      // O7 AMENDMENT, 2026-09-07 (owner-decisions.md D20): the hint is the
+      // action-kind table OR the manifest's own `destructive: true`
+      // declaration. The declaration can only ADD the hint, which is why it is
+      // an `||` here and not a second table.
+      const declared = tool.kind === "protocol"
+        && getProtocolManifest(tool.toolId ?? "")?.destructive === true;
       expect(tool.annotations.destructiveHint).toBe(
-        actionKind !== undefined && DESTRUCTIVE_ACTION_KINDS.has(actionKind),
+        (actionKind !== undefined && DESTRUCTIVE_ACTION_KINDS.has(actionKind)) || declared,
       );
+    }
+  });
+
+  /**
+   * THE AMENDMENT ITSELF, enumerated. The list is the point: it says which
+   * `external_post` tools Vex has decided are irreversible, so adding a
+   * seventh is a visible diff in a reviewed test rather than a quiet `true` in
+   * a manifest.
+   */
+  it("marks the six Lighter venue executions destructive by declaration", () => {
+    const declared = ["lighter.order.create", "lighter.order.cancel", "lighter.order.modify",
+      "lighter.order.cancelAll", "lighter.position.close", "lighter.withdraw"];
+    for (const toolId of declared) {
+      const manifest = getProtocolManifest(toolId);
+      // The declaration exists BECAUSE the action kind does not imply it: a
+      // Lighter order is signed by the local trading credential, not by the
+      // user's wallet, so `user_wallet_broadcast` would have been a lie.
+      expect(manifest?.actionKind, toolId).toBe("external_post");
+      expect(manifest?.destructive, toolId).toBe(true);
+      const tool = inventory.find((row) => row.toolId === toolId);
+      expect(tool?.annotations.destructiveHint, toolId).toBe(true);
+      expect(tool?.annotations.readOnlyHint, toolId).toBe(false);
+    }
+    // And no OTHER `external_post` tool in the whole surface acquired the hint
+    // by accident: the amendment is per tool, never per action kind.
+    const unexpected = inventory
+      .filter((row) => row.kind === "protocol" && !declared.includes(row.toolId ?? ""))
+      .filter((row) => getProtocolManifest(row.toolId ?? "")?.actionKind === "external_post")
+      .filter((row) => row.annotations.destructiveHint)
+      .map((row) => row.toolId);
+    expect(unexpected).toEqual([]);
+  });
+
+  it("keeps the two Lighter order previews out of the read-only filter", () => {
+    // They write a durable preview row and prepare an approval; a read-only
+    // client that called one would be handed an approval card by a tool its
+    // filter admitted as side-effect free.
+    for (const toolId of ["lighter.order.preview", "lighter.position.protect"]) {
+      expect(getProtocolManifest(toolId)?.actionKind, toolId).toBe("approval_prepare");
+      const tool = inventory.find((row) => row.toolId === toolId);
+      expect(tool?.annotations.readOnlyHint, toolId).toBe(false);
+      expect(tool?.annotations.destructiveHint, toolId).toBe(false);
     }
   });
 

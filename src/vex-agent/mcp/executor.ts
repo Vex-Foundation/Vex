@@ -14,7 +14,7 @@
  */
 
 import type { ToolResult } from "../tools/types.js";
-import { admitStudioCall, type StudioToolCall } from "./admission.js";
+import { admitStudioCall, isStudioPreparedActionToolId, type StudioToolCall } from "./admission.js";
 import { buildProjectToolContext } from "./project-context.js";
 import type { ProjectScope } from "./project-scope.js";
 import { resolveInjectedProtocolTool, toInjectedToolName } from "../tools/registry/injected-protocol-tools.js";
@@ -53,8 +53,12 @@ export async function executeStudioTool(
   if (candidate !== undefined) {
     const source = resolveInjectedProtocolTool(call.name)?.toolId ?? call.name;
     const validated = admission.result.success ? validatePreparedActionFollowUp(source, candidate) : null;
+    // THE HOP'S TARGET MUST DECLARE THE CAPABILITY, not merely be named after a
+    // protocol: `studioPreparedAction` is set on the approval-resume target
+    // whose card admission rebuilds from durable rows, so the two gates agree by
+    // reading one manifest field instead of two copies of a name prefix.
     if (!validated?.ok || validated.followUp.toolName !== "execute_tool"
-      || !validated.followUp.args.toolId.startsWith("lighter.")) {
+      || !isStudioPreparedActionToolId(validated.followUp.args.toolId)) {
       admission = { dispatched: admission.dispatched, result: { success: false, output: "This prepared action could not be handed to Studio approval. No approval card was created and nothing was executed." } };
     } else if (signal?.aborted) {
       admission = { dispatched: true, result: { success: false, output: "The request was canceled before approval. Nothing was executed." } };

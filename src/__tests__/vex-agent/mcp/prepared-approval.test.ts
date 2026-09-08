@@ -170,7 +170,12 @@ const snapshot = { clientOrderId: "123", side: "buy", type: "limit", timeInForce
   position: { symbol: "ETH", side: "long", position: "1", averageEntryPrice: "50" },
   baseAmount: "1", worstAcceptablePrice: "49.5", maxSlippageBps: 100 };
 function lifecycle(actionType: LighterOrderLifecycleIntentRow["actionType"]): LighterOrderLifecycleIntentRow {
-  return lifecycleIntent({ ...pendingIntent(), intentId: "lighter-lifecycle-00000000-0000-4000-8000-000000000001",
+  // NOT spread from `pendingIntent()`: that is an ORDER-EXECUTION row and its
+  // `executionState` union is a different one (it carries `filled`, which no
+  // lifecycle row can hold). `lifecycleIntent` already defaults the pending
+  // approval state and a future expiry, so the overrides below are only what
+  // this fixture actually varies.
+  return lifecycleIntent({ intentId: "lighter-lifecycle-00000000-0000-4000-8000-000000000001",
     actionType, providerOrderId: "123", requestedSide: "sell", requestedBaseAmountInteger: "10000",
     requestedPriceInteger: "4950", providerSnapshotJson: snapshot });
 }
@@ -214,7 +219,10 @@ function prepareFamily(family: typeof families[number]) {
     "lighter.deposit.prepare": { amountIn: "1" },
     "lighter.key.register.prepare": {},
     "lighter.fees.approve.prepare": {},
-    "lighter.withdraw.prepare": { amountIn: "2" },
+    // `environment` is REQUIRED on this one tool (2026-09-07): the withdrawal
+    // lane refuses the `rhc` default because its two lanes are different assets
+    // on different chains. Every other prepare here still defaults it.
+    "lighter.withdraw.prepare": { environment: "rhc", amountIn: "2" },
     "lighter.withdraw.claim.prepare": { intentId: withdrawal.intentId },
     "lighter.position.protect": { marketId: 0, orderExpiryOffsetMinutes: 10, side: "sell", baseAmountIn: "1", stopLossTriggerPrice: "2900", stopLossPrice: "2850", takeProfitTriggerPrice: "3300", takeProfitPrice: "3250" },
   };
@@ -246,6 +254,61 @@ describe.each(families)("Studio handoff: $source", (family) => {
       ...family.candidate, expiresAt: "2030-01-01T01:00:00.000Z",
     } });
     expect((await executeStudioTool(scope, input)).result.pendingApproval).not.toBe(true);
+  });
+});
+
+describe("the prepared-action gate is a manifest capability, not a name prefix", () => {
+  it("declares `studioPreparedAction` on exactly the approval-resume targets", async () => {
+    const { LIGHTER_WRITE_TOOLS } = await import("@vex-agent/tools/protocols/lighter/manifests/write.js");
+    const { LIGHTER_READ_TOOLS } = await import("@vex-agent/tools/protocols/lighter/manifests/read.js");
+    const declared = [...LIGHTER_READ_TOOLS, ...LIGHTER_WRITE_TOOLS]
+      .filter((tool) => tool.studioPreparedAction === true).map((tool) => tool.toolId).sort();
+    const targets = LIGHTER_WRITE_TOOLS
+      .filter((tool) => tool.actionKind !== "approval_prepare").map((tool) => tool.toolId).sort();
+    // Exactly the tools whose card `readStudioPreparedApproval` rebuilds. A
+    // `*.prepare` half must NOT declare it: both gates read the target.
+    expect(declared).toEqual(targets);
+  });
+
+  it("claims no tool outside the namespace, and no Lighter tool that prepares nothing", async () => {
+    const { isStudioPreparedActionToolId } = await import("@vex-agent/mcp/admission.js");
+    expect(isStudioPreparedActionToolId("lighter.order.create")).toBe(true);
+    // The exact regressions the `toolId.startsWith("lighter.")` policy caused:
+    // a Lighter read and a Lighter prepare were both claimed by the prefix.
+    expect(isStudioPreparedActionToolId("lighter.markets")).toBe(false);
+    expect(isStudioPreparedActionToolId("lighter.order.create.prepare")).toBe(false);
+    // And a mutating tool of another protocol is still not claimed, which the
+    // prefix got right by accident and the flag gets right by construction.
+    expect(isStudioPreparedActionToolId("kyberswap.swap.execute")).toBe(false);
+    expect(isStudioPreparedActionToolId("nothing.at.all")).toBe(false);
+  });
+});
+
+describe("a prepared action that cannot be reopened answers with a typed reason", () => {
+  it("tells the caller which of the two things went wrong, in different words", async () => {
+    const { preparedApprovalRefusalOutput } = await import("@vex-agent/mcp/admission.js");
+    const unavailable = preparedApprovalRefusalOutput("card_unavailable");
+    const noReader = preparedApprovalRefusalOutput("no_reader");
+    expect(unavailable).not.toEqual(noReader);
+    // The one the caller can fix says how; the one it cannot says so.
+    expect(unavailable).toContain("Prepare the action again");
+    expect(noReader).toContain("Vex wiring gap");
+    for (const output of [unavailable, noReader]) {
+      expect(output).toContain("nothing was signed");
+      // No internals: the old bare catch could not tell a repository error from
+      // an expired row, and a driver message may carry a query or a path.
+      expect(output).not.toMatch(/select |postgres|Error:|\/home\//i);
+    }
+  });
+
+  it("answers a missing durable row with the recoverable reason, not a collapsed sentence", async () => {
+    const family = requireValue(families.find((f) => f.source === "lighter.withdraw.prepare"));
+    const input = prepareFamily(family);
+    family.repo.mockResolvedValue(null);
+    const result = await executeStudioTool(scope, input);
+    expect(result.result.pendingApproval).not.toBe(true);
+    expect(result.result.output).toContain("Prepare the action again");
+    expect(result.result.output).not.toContain("missing, expired, or inconsistent");
   });
 });
 

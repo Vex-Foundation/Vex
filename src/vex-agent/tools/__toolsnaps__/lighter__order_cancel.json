@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Execute one exact approved Lighter order cancellation. Direct calls are refused. After approval, the privileged runtime revalidates the unchanged active order, registered key, and nonce; atomically reserves the nonce; signs TxType 15 locally; persists transaction identity before one sendTx; and never retries ambiguity. Returns canceled only from exact provider inactive-order evidence, with executed, remaining, and average-fill amounts; otherwise returns a pending or ambiguous state.",
+      "description": "Execute one exact approved Lighter order cancellation. Direct calls are refused. After approval, the privileged runtime revalidates the unchanged active order, registered key, and nonce; atomically reserves the nonce; signs TxType 15 locally; persists transaction identity before one sendTx; and never retries ambiguity. A submitted cancellation is irreversible: the order leaves the book and its queue position cannot be restored, only replaced by placing a new order. Returns canceled only from exact provider inactive-order evidence, with executed, remaining, and average-fill amounts; otherwise returns a pending or ambiguous state.",
       "name": "lighter__order_cancel",
       "parameters": {
         "additionalProperties": false,

@@ -1,5 +1,5 @@
 import { lighterOrderFeeCriticalArgs } from "@tools/lighter/order-fee-terms.js";
-import type { PreparedActionFollowUp } from "@vex-agent/tools/types.js";
+import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "@vex-agent/tools/types.js";
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { validatePreparedActionFollowUp } from "../../../vex-agent/tools/registry/prepared-action-follow-ups.js";
@@ -1012,7 +1012,17 @@ describe("Lighter fee terms through prepared-action validation", () => {
       Reflect.deleteProperty(criticalArgs, key);
       expect(validatePreparedActionFollowUp(source, { ...base, approvalPreview: { ...base.approvalPreview, criticalArgs } }).ok).toBe(false);
     }
-    for (const patch of [{ integratorAccountIndex: 98 }, { integratorMakerFee: 999 }, { integratorTakerFee: 999 }, { vexFeeSummary: "No VEX fee" }, { integratorMakerFee: null }]) {
+    // Annotated so each patch is a preview-scalar map: an unannotated literal
+    // array infers a union whose absent keys are `undefined`, which is not a
+    // preview scalar and is not what any of these patches mean.
+    const patches: readonly Record<string, ApprovalPreviewScalar>[] = [
+      { integratorAccountIndex: 98 },
+      { integratorMakerFee: 999 },
+      { integratorTakerFee: 999 },
+      { vexFeeSummary: "No VEX fee" },
+      { integratorMakerFee: null },
+    ];
+    for (const patch of patches) {
       expect(validatePreparedActionFollowUp(source, { ...base, approvalPreview: { ...base.approvalPreview, criticalArgs: { ...base.approvalPreview.criticalArgs, ...fees, ...patch } } }).ok).toBe(false);
     }
   });

@@ -1,10 +1,27 @@
 import type { ProtocolNamespaceNavigation } from "../types.js";
 
+/**
+ * Lighter sits in the TRADING group, not in market research.
+ *
+ * The group a namespace declares is what `ToolSearch`'s own `namespace`
+ * parameter description lists, so it is the line an agent reads when it is
+ * looking for somewhere to place a trade. Lighter's read half (markets, depth,
+ * candles, trades) is real but it is the smaller half: the namespace exists to
+ * onboard a wallet, place, protect and close approval-gated perpetual orders,
+ * and withdraw collateral. Filed under "Market Research" it was invisible to
+ * exactly the query it should answer.
+ *
+ * `evm-trading` rather than a new perps group: both environments are EVM
+ * chains (Lighter Core is an Ethereum L2, Robinhood Chain is EVM), the group
+ * already holds every other venue Vex can trade through, and a one-member
+ * group would cost a line in every ToolSearch parameter description to say
+ * nothing the namespace card does not already say.
+ */
 export const LIGHTER_NAVIGATION: ProtocolNamespaceNavigation = {
   namespace: "lighter",
   advertised: true,
-  groupId: "market-research",
-  groupLabel: "Market Research",
+  groupId: "evm-trading",
+  groupLabel: "EVM Trading",
   summary:
     "Managed Lighter onboarding, trading, and secure withdrawals for everyday users, plus Core and Robinhood Chain market data and account reads.",
   whenToUse:

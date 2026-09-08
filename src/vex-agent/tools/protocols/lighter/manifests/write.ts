@@ -98,6 +98,27 @@ const KEY_REGISTRATION_INTENT_ID_PARAM: ProtocolParamDef = {
     "Session-scoped Lighter key-registration intent id produced by lighter__key_register_prepare.",
 };
 
+/**
+ * The withdrawal lane's OWN environment param: REQUIRED, with no default.
+ *
+ * `ENVIRONMENT_PARAM` above defaults to `rhc`, which is right for a preview or
+ * a status read and wrong here. The withdrawal description states that the
+ * environment is mandatory and cannot be inferred from the address, and the
+ * two settlement lanes are different assets on different chains (Core USDC on
+ * Ethereum mainnet, RHC USDG on Robinhood Chain), so a silent default would
+ * pick the destination network of a money movement the user never named. It is
+ * a schema fact rather than prose so the boundary refuses the omission before
+ * any handler runs.
+ */
+const WITHDRAW_ENVIRONMENT_PARAM: ProtocolParamDef = {
+  key: "environment",
+  type: "string",
+  required: true,
+  enum: LIGHTER_ENVIRONMENTS,
+  description:
+    "Required Lighter environment for this withdrawal: core withdraws USDC to the same wallet on Ethereum mainnet, rhc withdraws USDG to the same wallet on Robinhood Chain. It is never defaulted and never inferred from the destination address; ask the user which one they mean. Any other value is rejected.",
+};
+
 const WITHDRAW_AMOUNT_PARAM: ProtocolParamDef = {
   key: "amountIn",
   type: "string",
@@ -161,6 +182,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
       "Approval-gated: authorize future VEX trading fees by submitting one exact Lighter fee-authorization intent only when resumed by its approved Vex card. Main verifies the approved wallet, trader, collector, rate caps, expiry and any tier change; signs locally through the existing wallet and trading-key boundary; submits native ApproveIntegrator once; and verifies provider state before reporting active. Revocation sets all four caps and authorization expiry to zero. Returns the resulting authorization state (active, pending, or revoked) with its submission evidence; an uncertain submission remains pending for lighter__fees_status, never an automatic retry. Direct unapproved calls are refused.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
+    studioPreparedAction: true,
     params: [{
       key: "intentId",
       type: "string",
@@ -196,9 +218,11 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Execute one exact approved Lighter order cancellation. Direct calls are refused. After approval, the privileged runtime revalidates the unchanged active order, registered key, and nonce; atomically reserves the nonce; signs TxType 15 locally; persists transaction identity before one sendTx; and never retries ambiguity. Returns canceled only from exact provider inactive-order evidence, with executed, remaining, and average-fill amounts; otherwise returns a pending or ambiguous state.",
+      "Execute one exact approved Lighter order cancellation. Direct calls are refused. After approval, the privileged runtime revalidates the unchanged active order, registered key, and nonce; atomically reserves the nonce; signs TxType 15 locally; persists transaction identity before one sendTx; and never retries ambiguity. A submitted cancellation is irreversible: the order leaves the book and its queue position cannot be restored, only replaced by placing a new order. Returns canceled only from exact provider inactive-order evidence, with executed, remaining, and average-fill amounts; otherwise returns a pending or ambiguous state.",
     mutating: true,
     actionKind: "external_post",
+    destructive: true,
+    studioPreparedAction: true,
     params: [LIFECYCLE_INTENT_ID_PARAM],
     exampleParams: { intentId: "lighter-lifecycle-example" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.cancel"],
@@ -222,9 +246,11 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Execute one exact approved Lighter limit-order modification. Direct calls are refused. The privileged runtime revalidates the unchanged order, active market precision, registered key, and nonce; atomically reserves the nonce; signs TxType 17 locally; stages identity before one sendTx; and never retries ambiguity. Returns completion only from exact provider evidence carrying the requested total size and price, including terminal fill outcomes; otherwise returns a pending or ambiguous state.",
+      "Execute one exact approved Lighter limit-order modification. Direct calls are refused. The privileged runtime revalidates the unchanged order, active market precision, registered key, and nonce; atomically reserves the nonce; signs TxType 17 locally; stages identity before one sendTx; and never retries ambiguity. A submitted modification is irreversible: the previous size and price are gone and the order loses its queue position. Returns completion only from exact provider evidence carrying the requested total size and price, including terminal fill outcomes; otherwise returns a pending or ambiguous state.",
     mutating: true,
     actionKind: "external_post",
+    destructive: true,
+    studioPreparedAction: true,
     params: [LIFECYCLE_INTENT_ID_PARAM],
     exampleParams: { intentId: "lighter-lifecycle-example" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.modify"],
@@ -248,9 +274,11 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Execute one exact approved immediate account-wide Lighter cancellation. Direct calls are refused. The privileged runtime requires the entire active-order set to remain unchanged, revalidates key and nonce, reserves the nonce atomically, signs TxType 16 with time_in_force 0 and time 0, stages identity before one submission, and never retries ambiguity. Returns completion only after zero active orders plus exact terminal evidence for every approved order, with fills reported separately; otherwise returns a pending or ambiguous state.",
+      "Execute one exact approved immediate account-wide Lighter cancellation. Direct calls are refused. The privileged runtime requires the entire active-order set to remain unchanged, revalidates key and nonce, reserves the nonce atomically, signs TxType 16 with time_in_force 0 and time 0, stages identity before one submission, and never retries ambiguity. A submitted account-wide cancellation is irreversible: every resting order leaves the book and each one has to be placed again. Returns completion only after zero active orders plus exact terminal evidence for every approved order, with fills reported separately; otherwise returns a pending or ambiguous state.",
     mutating: true,
     actionKind: "external_post",
+    destructive: true,
+    studioPreparedAction: true,
     params: [LIFECYCLE_INTENT_ID_PARAM],
     exampleParams: { intentId: "lighter-lifecycle-example" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.cancelAll"],
@@ -274,9 +302,11 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Execute one exact approved full-position close using a reduce-only Lighter market IOC order. Direct calls are refused. The privileged runtime revalidates the unchanged position, market precision, full visible depth at the approved worst price, registered key, and nonce; signs TxType 14 locally; stages identity before one submission; and never retries ambiguity. Returns the exact fill and resulting position, including partial closes without automatic resubmission, or a pending or ambiguous state when final evidence is unavailable.",
+      "Execute one exact approved full-position close using a reduce-only Lighter market IOC order. Direct calls are refused. The privileged runtime revalidates the unchanged position, market precision, full visible depth at the approved worst price, registered key, and nonce; signs TxType 14 locally; stages identity before one submission; and never retries ambiguity. An executed close is irreversible: it realises the position's profit or loss at the fill price. Returns the exact fill and resulting position, including partial closes without automatic resubmission, or a pending or ambiguous state when final evidence is unavailable.",
     mutating: true,
     actionKind: "external_post",
+    destructive: true,
+    studioPreparedAction: true,
     params: [LIFECYCLE_INTENT_ID_PARAM],
     exampleParams: { intentId: "lighter-lifecycle-example" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.position.close"],
@@ -303,6 +333,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
       "Execute one exact separately approved Lighter manual settlement claim for Core USDC or RHC USDG. Use when the trusted host approval from lighter__withdraw_claim_prepare resumes. It refuses direct, cross-session, stale, changed-amount, changed-contract, insufficient-ETH, or over-ceiling execution. The local wallet signs only the fixed-owner asset-3 claim with value zero; Vex persists hash, sender, and nonce before one broadcast, accepts only exact fee-only replacements, and never retries ambiguity. Returns the claim id, transaction hash, confirming or ambiguous state, receipt status when known, and reconciliation guidance. Real funds move only to the fixed owner after approval.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
+    studioPreparedAction: true,
     params: [WITHDRAW_CLAIM_ID_PARAM],
     exampleParams: { claimId: "lighter-withdrawal-claim-example" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.withdraw.claim"],
@@ -316,7 +347,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
       "Prepare one exact approval-gated secure withdrawal from the selected wallet's uniquely owned Lighter account: Core USDC to the same wallet on Ethereum mainnet, or RHC USDG to the same wallet on Robinhood Chain mainnet. Use when the user asks to withdraw or cash out Lighter collateral. The environment is mandatory and cannot be inferred from the address. It uses only the matching saved local credential and refuses destination, route, chain, nonce, ownership, margin, gateway, or unresolved-state ambiguity. Returns a durable intent id, exact amount and destination, settlement network, withdrawal delay, expiry, and trusted approval card. It never signs or submits.",
     mutating: false,
     actionKind: "approval_prepare",
-    params: [ENVIRONMENT_PARAM, WITHDRAW_AMOUNT_PARAM],
+    params: [WITHDRAW_ENVIRONMENT_PARAM, WITHDRAW_AMOUNT_PARAM],
     exampleParams: { environment: "rhc", amountIn: "2" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.withdraw.prepare"],
   },
@@ -326,9 +357,11 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Execute one exact prepared Core-USDC or RHC-USDG secure withdrawal. Use when the trusted approval from lighter__withdraw_prepare resumes; direct calls, crossed environments, and mismatched approvals are refused. Vex reruns environment-specific live preflight, matches the encrypted local credential to its registered public key, reserves the shared nonce, signs only TxType 13 asset 3 route 0 in the reviewed domain, persists structural identity before one provider submission, and never blindly retries ambiguity. Returns the durable intent id, signer and submitted hashes, provider acceptance details or an ambiguous state, and reconciliation guidance. Real funds move only after approval; API acceptance is not final delivery.",
+      "Execute one exact prepared Core-USDC or RHC-USDG secure withdrawal. Use when the trusted approval from lighter__withdraw_prepare resumes; direct calls, crossed environments, and mismatched approvals are refused. Vex reruns environment-specific live preflight, matches the encrypted local credential to its registered public key, reserves the shared nonce, signs only TxType 13 asset 3 route 0 in the reviewed domain, persists structural identity before one provider submission, and never blindly retries ambiguity. Returns the durable intent id, signer and submitted hashes, provider acceptance details or an ambiguous state, and reconciliation guidance. Real funds move only after approval, the transfer is irreversible once Lighter accepts it, and API acceptance is not final delivery.",
     mutating: true,
     actionKind: "external_post",
+    destructive: true,
+    studioPreparedAction: true,
     params: [WITHDRAW_INTENT_ID_PARAM],
     exampleParams: { intentId: "lighter-withdrawal-example" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.withdraw"],
@@ -355,6 +388,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
       "Approval-resume target for one exact prepared Lighter key registration. Direct calls without the matching host approval are refused. After approval, Electron main signs and broadcasts the exact registration transaction; it revalidates wallet ownership, slot vacancy, nonce, vault-derived public key, and workflow state, signs Lighter's human-readable EIP-191 ownership message locally, persists TxType 8 structural identity before sendTx, and never returns or stores signatures or the signed payload. It activates the encrypted trading credential only after exact live public-key match, official CheckClient success, and nonce +1 synchronization. Ambiguous outcomes are reconciliation-only and are never blindly resubmitted.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
+    studioPreparedAction: true,
     params: [KEY_REGISTRATION_INTENT_ID_PARAM],
     exampleParams: { intentId: "lighter-onboard-example" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.key.register"],
@@ -381,6 +415,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
       "Approval-gated Lighter deposit resume target for one exact prepared intent. Call only through the matching host approval card; direct or cross-session calls are refused. After a fresh exact preflight, the privileged local wallet path may approve the environment-specific gateway and deposit Ethereum USDC for Core or Robinhood Chain USDG for RHC, so real funds move on-chain and network fees are spent. Transaction hashes are durably recorded before broadcast, ambiguous sends are reconciliation-only, and any replacement is fee-only with identical calldata, destination, value, and nonce. Returns the durable execution state and exact settlement evidence; credit is final only after the matching on-chain receipt, Deposit event, Lighter type-1 status-3 transaction, and wallet-owned account balance are all verified.",
     mutating: true,
     actionKind: "user_wallet_broadcast",
+    studioPreparedAction: true,
     params: [DEPOSIT_INTENT_ID_PARAM],
     exampleParams: { intentId: "lighter-onboard-example" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.deposit"],
@@ -406,9 +441,11 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Approval-gated Lighter order create resume target for a prepared execution intent. Call this only through the approval card that lighter__order_create_prepare enqueues; no direct call should be made without a prepared intent and approval-resume context. An approved call signs the exact prepared order with the local trading key and submits it to Lighter, so real funds move on the exchange. Returns the recorded approval decision plus the execution state: sequencer_pending, provider-confirmed order state, or an ambiguous outcome that must be reconciled before any retry.",
+      "Approval-gated Lighter order create resume target for a prepared execution intent. Call this only through the approval card that lighter__order_create_prepare enqueues; no direct call should be made without a prepared intent and approval-resume context. An approved call signs the exact prepared order with the local trading key and submits it to Lighter, so real funds move on the exchange. A submitted order is irreversible: it can only be canceled while it is still resting unfilled, and any fill is final. Returns the recorded approval decision plus the execution state: sequencer_pending, provider-confirmed order state, or an ambiguous outcome that must be reconciled before any retry.",
     mutating: true,
     actionKind: "external_post",
+    destructive: true,
+    studioPreparedAction: true,
     params: [INTENT_ID_PARAM],
     exampleParams: { intentId: "lighter-exec-example" },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.order.create"],

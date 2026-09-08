@@ -5733,8 +5733,8 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 487,
-      "destructiveHint": false,
+      "descriptionBytes": 636,
+      "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -5763,8 +5763,8 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 537,
-      "destructiveHint": false,
+      "descriptionBytes": 665,
+      "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -5874,8 +5874,8 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 573,
-      "destructiveHint": false,
+      "descriptionBytes": 691,
+      "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -5989,8 +5989,8 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 494,
-      "destructiveHint": false,
+      "descriptionBytes": 613,
+      "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -6185,7 +6185,7 @@
       "kind": "protocol",
       "namespace": "lighter",
       "publicName": "lighter__order_preview",
-      "readOnlyHint": true,
+      "readOnlyHint": false,
       "requiresEnv": null,
       "title": "Preview a Lighter order",
       "toolId": "lighter.order.preview"
@@ -6267,8 +6267,8 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 535,
-      "destructiveHint": false,
+      "descriptionBytes": 631,
+      "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -6432,7 +6432,7 @@
       "kind": "protocol",
       "namespace": "lighter",
       "publicName": "lighter__position_protect",
-      "readOnlyHint": true,
+      "readOnlyHint": false,
       "requiresEnv": null,
       "title": "Preview Lighter position protection",
       "toolId": "lighter.position.protect"
@@ -6590,8 +6590,8 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 729,
-      "destructiveHint": false,
+      "descriptionBytes": 787,
+      "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -6695,7 +6695,7 @@
             "type": "boolean"
           },
           "environment": {
-            "description": "Optional Lighter environment for the persisted preview: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc. Any other value is rejected.",
+            "description": "Required Lighter environment for this withdrawal: core withdraws USDC to the same wallet on Ethereum mainnet, rhc withdraws USDG to the same wallet on Robinhood Chain. It is never defaulted and never inferred from the destination address; ask the user which one they mean. Any other value is rejected.",
             "enum": [
               "core",
               "rhc"
@@ -6704,6 +6704,7 @@
           }
         },
         "required": [
+          "environment",
           "amountIn"
         ],
         "type": "object"

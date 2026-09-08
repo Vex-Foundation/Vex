@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Approval-gated Lighter order create resume target for a prepared execution intent. Call this only through the approval card that lighter__order_create_prepare enqueues; no direct call should be made without a prepared intent and approval-resume context. An approved call signs the exact prepared order with the local trading key and submits it to Lighter, so real funds move on the exchange. Returns the recorded approval decision plus the execution state: sequencer_pending, provider-confirmed order state, or an ambiguous outcome that must be reconciled before any retry.",
+      "description": "Approval-gated Lighter order create resume target for a prepared execution intent. Call this only through the approval card that lighter__order_create_prepare enqueues; no direct call should be made without a prepared intent and approval-resume context. An approved call signs the exact prepared order with the local trading key and submits it to Lighter, so real funds move on the exchange. A submitted order is irreversible: it can only be canceled while it is still resting unfilled, and any fill is final. Returns the recorded approval decision plus the execution state: sequencer_pending, provider-confirmed order state, or an ambiguous outcome that must be reconciled before any retry.",
       "name": "lighter__order_create",
       "parameters": {
         "additionalProperties": false,
