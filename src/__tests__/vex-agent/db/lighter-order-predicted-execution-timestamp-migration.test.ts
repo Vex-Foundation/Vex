@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const sql = readFileSync(
   new URL(
-    "../../../vex-agent/db/migrations/112_lighter_order_predicted_execution_timestamp.sql",
+    "../../../vex-agent/db/migrations/144_lighter_order_predicted_execution_timestamp.sql",
     import.meta.url,
   ),
   "utf8",

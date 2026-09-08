@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const sql = readFileSync(
-  resolve(process.cwd(), "src/vex-agent/db/migrations/114_lighter_stop_loss_orders.sql"),
+  resolve(process.cwd(), "src/vex-agent/db/migrations/146_lighter_stop_loss_orders.sql"),
   "utf8",
 );
 

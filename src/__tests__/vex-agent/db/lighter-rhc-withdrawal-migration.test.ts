@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const sql = readFileSync(
-  new URL("../../../vex-agent/db/migrations/105_lighter_rhc_withdrawals.sql", import.meta.url),
+  new URL("../../../vex-agent/db/migrations/138_lighter_rhc_withdrawals.sql", import.meta.url),
   "utf8",
 );
 

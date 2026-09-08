@@ -50,6 +50,12 @@ beforeEach(() => {
     ) {
       return { rows: [] };
     }
+    // The branch-era discriminator, which runs before the ledger read: no
+    // `lighter_%` table and no pre-release lineage ledger table, i.e. a fresh
+    // database the runner may migrate.
+    if (typeof sql === "string" && /FROM pg_class/i.test(sql)) {
+      return { rows: [] };
+    }
     return undefined;
   });
 });
@@ -69,7 +75,7 @@ describe("vex-agent/db/migrate", () => {
     await runMigrations();
 
     expect(mockGetVexAgentMigrationsDir).toHaveBeenCalledTimes(1);
-    // Shared runner now drives the session — verify the migration SQL
+    // Shared runner now drives the session - verify the migration SQL
     // and the surrounding transaction shape are issued through client.query.
     expect(mockClientQuery).toHaveBeenCalledWith("BEGIN");
     expect(mockClientQuery).toHaveBeenCalledWith(

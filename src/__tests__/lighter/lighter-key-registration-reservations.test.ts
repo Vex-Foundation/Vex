@@ -566,7 +566,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
 
   it("migration adds only structural key-registration evidence and uniqueness guards", async () => {
     const sql = await readFile(new URL(
-      "../../vex-agent/db/migrations/097_lighter_key_registration_slots.sql",
+      "../../vex-agent/db/migrations/130_lighter_key_registration_slots.sql",
       import.meta.url,
     ), "utf8");
 
@@ -579,7 +579,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
 
   it("metadata migration excludes private credential material", async () => {
     const sql = await readFile(new URL(
-      "../../vex-agent/db/migrations/098_lighter_key_registration_metadata.sql",
+      "../../vex-agent/db/migrations/131_lighter_key_registration_metadata.sql",
       import.meta.url,
     ), "utf8");
 
@@ -591,7 +591,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
 
   it("approval migration persists only the public nonce contract", async () => {
     const sql = await readFile(new URL(
-      "../../vex-agent/db/migrations/099_lighter_key_registration_approval.sql",
+      "../../vex-agent/db/migrations/132_lighter_key_registration_approval.sql",
       import.meta.url,
     ), "utf8");
 
@@ -602,7 +602,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
 
   it("transaction-identity migration forbids storing any signature or signed payload", async () => {
     const sql = await readFile(new URL(
-      "../../vex-agent/db/migrations/100_lighter_key_registration_transaction_identity.sql",
+      "../../vex-agent/db/migrations/133_lighter_key_registration_transaction_identity.sql",
       import.meta.url,
     ), "utf8");
 

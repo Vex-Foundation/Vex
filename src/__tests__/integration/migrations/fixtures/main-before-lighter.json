@@ -1,101 +1,418 @@
-[
-  "001_initial.sql",
-  "002_engine_missions.sql",
-  "003_w4_pnl.sql",
-  "004_w4_full.sql",
-  "005_lp_economics.sql",
-  "006_knowledge_lifecycle.sql",
-  "009_maintenance_leases.sql",
-  "010_tool_embeddings.sql",
-  "011_loop_wake_requests.sql",
-  "013_tool_output_blobs.sql",
-  "014_proj_balances_chain_id_bigint.sql",
-  "015_operator_interrupts_and_recovery.sql",
-  "016_session_memories.sql",
-  "017_compact_jobs.sql",
-  "018_knowledge_source.sql",
-  "019_bug_reports.sql",
-  "020_sessions_app_metadata.sql",
-  "021_sessions_deleted_at.sql",
-  "022_runtime_control.sql",
-  "023_mission_acceptance_and_checkpoints.sql",
-  "024_approval_intents.sql",
-  "025_wallet_intents.sql",
-  "026_sessions_wallet_selection.sql",
-  "027_per_wallet_snapshots.sql",
-  "028_mission_auto_retry.sql",
-  "029_swap_prequotes.sql",
-  "030_transactions_indexes.sql",
-  "031_session_plans.sql",
-  "032_usage_cache_savings.sql",
-  "033_drop_recall_cache.sql",
-  "034_swap_prequotes_redeem_kind.sql",
-  "035_swap_prequotes_py_lp_kinds.sql",
-  "036_tracked_tokens.sql",
-  "038_hyperliquid_session_policies.sql",
-  "039_hyperliquid_execution_intents.sql",
-  "040_hyperliquid_candles.sql",
-  "041_mission_results.sql",
-  "042_soul_user_profile.sql",
-  "043_soul_personalization.sql",
-  "044_agent_activity.sql",
-  "045_bridge_activity.sql",
-  "046_bridge_balance_enqueue_dedup.sql",
-  "047_drop_legacy_pnl.sql",
-  "048_drop_hyperliquid.sql",
-  "049_agent_activity_solana_vocabulary.sql",
-  "050_agent_activity_cost_breakdown.sql",
-  "051_agent_activity_wrap_vocabulary.sql",
-  "052_drop_tool_output_blobs.sql",
-  "053_agent_activity_yield_vocabulary.sql",
-  "054_swap_prequotes_r5d_kinds.sql",
-  "055_usage_generation_finish_reason.sql",
-  "056_approval_lifecycle.sql",
-  "057_loop_wake_agent_sessions.sql",
-  "058_compaction_preparations.sql",
-  "059_endpoint_failover.sql",
-  "061_agent_activity_status_only_repair.sql",
-  "062_trench_launch.sql",
-  "063_trench_fee.sql",
-  "064_launch_session_full.sql",
-  "065_agent_activity_verification_attempts.sql",
-  "066_swap_fee.sql",
-  "067_agent_activity_confirmation_provenance.sql",
-  "068_agent_activity_pending_fallback.sql",
-  "069_token_launch_intent_resume_consumed.sql",
-  "070_token_launch_intent_resume_closed_reason.sql",
-  "071_launched_token_attribution.sql",
-  "072_token_launch_intent_superseded_unproven.sql",
-  "073_agentscan_reporting.sql",
-  "074_launched_token_agentscan_attest.sql",
-  "075_agentscan_handshake_state.sql",
-  "076_agent_activity_venue_unavailable.sql",
-  "077_mission_run_baseline.sql",
-  "078_agentscan_superseded_and_settled_block_time.sql",
-  "079_agent_activity_evm_lend.sql",
-  "080_swap_prequotes_lend_kinds.sql",
-  "081_swap_prequotes_borrow_kinds.sql",
-  "082_pools_fun_launch.sql",
-  "083_launch_image_onchain_variant.sql",
-  "084_agent_activity_wallet_transfer.sql",
-  "085_projects.sql",
-  "086_studio_approvals.sql",
-  "087_wallet_transaction_intents.sql",
-  "088_wallet_tx_vex_fee.sql",
-  "089_studio_installer_provenance.sql",
-  "090_wallet_transaction_intents_activity_unique.sql",
-  "091_evm_nonce_reservations.sql",
-  "092_studio_pending_refusal_repair.sql",
-  "093_wallet_transfer_unconfirmed_repair.sql",
-  "094_pools_launch_attribution.sql",
-  "095_swap_prequotes_claim.sql",
-  "096_wallet_wrap_intents.sql",
-  "097_project_soft_delete.sql",
-  "098_project_file_provenance_origin.sql",
-  "099_swap_prequotes_balance_eligibility.sql",
-  "100_wallet_intent_wallet_indexes.sql",
-  "101_portfolio_snapshot_groups.sql",
-  "102_launchpad_family_roles.sql",
-  "102_portfolio_snapshot_group_wallets.sql",
-  "106_launch_image_public_asset.sql"
-]
+{
+  "pinnedCommit": "c01f1a4eb2a85bdc0415d2e0f81ac3676e4f8f81",
+  "migrationsPath": "src/vex-agent/db/migrations",
+  "files": [
+    {
+      "file": "001_initial.sql",
+      "sha256": "646bfc0ac5a66c5e94d294d980eea7696d9bd1ecdea02ad18cb65e32de3edca2"
+    },
+    {
+      "file": "002_engine_missions.sql",
+      "sha256": "aa6a44164612893dd6eaa0135e18e615d695c68b064ea99cfddcdf353d596f2a"
+    },
+    {
+      "file": "003_w4_pnl.sql",
+      "sha256": "3c72c2f4102c9d99a46db5924ecf15bb7d1338cb75316e3616e564d9d267a678"
+    },
+    {
+      "file": "004_w4_full.sql",
+      "sha256": "90a7bd83730dba6669f19d6fa6f22e3623b4c87f934eaeed5b79ba3c2c6c9034"
+    },
+    {
+      "file": "005_lp_economics.sql",
+      "sha256": "b01b774b0c511371d3989fa332d28fa890877d21e2785521499c88ab027b5b58"
+    },
+    {
+      "file": "006_knowledge_lifecycle.sql",
+      "sha256": "de1788d2ac01a1c6cd1ed821fd4ee60a5e6bde3aaf1d54d4837e24690fe65a9a"
+    },
+    {
+      "file": "009_maintenance_leases.sql",
+      "sha256": "7196dbd9f326a0ddb9d80375929bbba736bfd4df11b425c1577bdf05b6eefa5d"
+    },
+    {
+      "file": "010_tool_embeddings.sql",
+      "sha256": "7783efcbba40a5f2311c51155e77061232298cb7744ee1f3fe70222653568454"
+    },
+    {
+      "file": "011_loop_wake_requests.sql",
+      "sha256": "9b7ce6b6d57f0cb4dd86f555e51ee2eea449e5e57466847ab0f5097f262901c2"
+    },
+    {
+      "file": "013_tool_output_blobs.sql",
+      "sha256": "346c109cb353a7d5acb0491afdc4896248784ef03348c30b70c49a76784445aa"
+    },
+    {
+      "file": "014_proj_balances_chain_id_bigint.sql",
+      "sha256": "02c97f0191192e21060ead2ecbc88e0d665d37f5be6efa37ffbe96e9d4af2d40"
+    },
+    {
+      "file": "015_operator_interrupts_and_recovery.sql",
+      "sha256": "de6e167ed54e50ed5f849156fae595656b312b074d726a898d9c95e1af1d60f7"
+    },
+    {
+      "file": "016_session_memories.sql",
+      "sha256": "60e4b2cb3296f8468c196ee0f1b8c73437266ca3b33c46c7b158d45efaea13ad"
+    },
+    {
+      "file": "017_compact_jobs.sql",
+      "sha256": "0056b5ac2eb5becffaaedb1f84a5fa476c26df846476a66fef632bf3c9a46791"
+    },
+    {
+      "file": "018_knowledge_source.sql",
+      "sha256": "1a76ee0ff68c75a99ad5a5022fa8c89424fc45d05e38c0a9f8032d1a257458a8"
+    },
+    {
+      "file": "019_bug_reports.sql",
+      "sha256": "51824ea5ecd971dd086fec7c2247202e3ebebc496c9725431cc157028cbf861f"
+    },
+    {
+      "file": "020_sessions_app_metadata.sql",
+      "sha256": "94d479ffa41c03ad30be2f42d894bd02a91d4533775e5d2d4fc88db6213201ea"
+    },
+    {
+      "file": "021_sessions_deleted_at.sql",
+      "sha256": "c268fb543967d24148a763af3b693c1a12697587eb6e89d91c4ed5feee11fc2f"
+    },
+    {
+      "file": "022_runtime_control.sql",
+      "sha256": "d108e9278ef67a7fb581cffd83b06312f08d719c74641dc53c9570160c6afcf5"
+    },
+    {
+      "file": "023_mission_acceptance_and_checkpoints.sql",
+      "sha256": "e7ee696407a08d4dc1b6e81f76d264c7a098407d480cbf085c041ab26c05a6a6"
+    },
+    {
+      "file": "024_approval_intents.sql",
+      "sha256": "9a1e0bcd9543f15bca231d86e608a2d9613462b4cf6a7090f15a720338231b00"
+    },
+    {
+      "file": "025_wallet_intents.sql",
+      "sha256": "31a271e3a022e8f79ace380c428c0d31b43fca685e18ec9c4add6832734f5c0e"
+    },
+    {
+      "file": "026_sessions_wallet_selection.sql",
+      "sha256": "6ec26ec40b651fd4a70c44a7117fd5ce2af0ea6e19687cacfcc8626b07961fbe"
+    },
+    {
+      "file": "027_per_wallet_snapshots.sql",
+      "sha256": "0329a3f1886b2dfe6e8792856a5c75fbbfb5975d6c845dffe07215305c2e15dd"
+    },
+    {
+      "file": "028_mission_auto_retry.sql",
+      "sha256": "9c0afe0184f34e52fe5fd1e591b8e3c78e4cdcce2fa6e5bc58425ed3d18f9080"
+    },
+    {
+      "file": "029_swap_prequotes.sql",
+      "sha256": "8b81f154f4dd74924569adb5aa248348bc07906cac4b835a7090d59a9e66e8f8"
+    },
+    {
+      "file": "030_transactions_indexes.sql",
+      "sha256": "04d4b956a7b9723ca5b54880a00ed3b4d5aaccb5389f9283185b22cbb60c1fe7"
+    },
+    {
+      "file": "031_session_plans.sql",
+      "sha256": "426671f76bd0d4be604441ab6992c3d4ea8d3db4229c66955b8046f768bbba44"
+    },
+    {
+      "file": "032_usage_cache_savings.sql",
+      "sha256": "8ff466f2fc0816f93416f4cb459bcf8161716f3eba04725b1bd941aef821ed09"
+    },
+    {
+      "file": "033_drop_recall_cache.sql",
+      "sha256": "da3622981ce99af230d57dd33d56259a6eb82d7749d2a705655cb292df94c788"
+    },
+    {
+      "file": "034_swap_prequotes_redeem_kind.sql",
+      "sha256": "21d75182a1c664773ec6b51b4eb3147f59b79c9eaa9506da65b26e00e72249ab"
+    },
+    {
+      "file": "035_swap_prequotes_py_lp_kinds.sql",
+      "sha256": "fd5f402537f1f7c297b4adf21e275e9504054371a0a9b21b7f460bacd0d097e1"
+    },
+    {
+      "file": "036_tracked_tokens.sql",
+      "sha256": "78934f5a8aeff462c1a991552957d6a428b924aa2fb27e6d8d420c4085314d83"
+    },
+    {
+      "file": "038_hyperliquid_session_policies.sql",
+      "sha256": "e02277989834ae54316e7ad68bb93474595cce03ce5fdd92beb77ee6ec92920a"
+    },
+    {
+      "file": "039_hyperliquid_execution_intents.sql",
+      "sha256": "b1f52a49f5b64dd22d51efd2cc01cacb5f73189266655164a54bae9fb3430ea1"
+    },
+    {
+      "file": "040_hyperliquid_candles.sql",
+      "sha256": "eb6ee819b3ea687318bed6aac0c0633d943c5d5eb4b4fd83f9f66e640198bf95"
+    },
+    {
+      "file": "041_mission_results.sql",
+      "sha256": "7691dfa27dec1addcc85503621310bc47b370138041c9921603ddf1cf7a66cc7"
+    },
+    {
+      "file": "042_soul_user_profile.sql",
+      "sha256": "808837a0b7435004531fc55074556212587ac33b2357701a48d35659759c7536"
+    },
+    {
+      "file": "043_soul_personalization.sql",
+      "sha256": "8739b4f54a85c8959a60a8904b44a6c8a7d75c55f6ecdf66a3a573aaa0a855d8"
+    },
+    {
+      "file": "044_agent_activity.sql",
+      "sha256": "250c5480ee19e3e62706f3936aee8cfc85e3da62bcf506e60895e49a74bed8e6"
+    },
+    {
+      "file": "045_bridge_activity.sql",
+      "sha256": "274285c344da7a5ff2ad747437b3c9ed483bcf2e06f94e2eb597e5070a37fe4a"
+    },
+    {
+      "file": "046_bridge_balance_enqueue_dedup.sql",
+      "sha256": "068c9af52855cf0dabb3f6bba10bd7567b0b760c824319702c31cf29f00b1143"
+    },
+    {
+      "file": "047_drop_legacy_pnl.sql",
+      "sha256": "2cc504bd446a1ccfb97e938d5dac135125e275c679de6bd5dfe29fd488294c87"
+    },
+    {
+      "file": "048_drop_hyperliquid.sql",
+      "sha256": "d8fb0e54826850ce90ed3d856364694fff06876bebcf700cea1a70f24540fa82"
+    },
+    {
+      "file": "049_agent_activity_solana_vocabulary.sql",
+      "sha256": "7e3c7a21808001db5a0fd32596c7d691c993ea35a95833f47f022c7082664236"
+    },
+    {
+      "file": "050_agent_activity_cost_breakdown.sql",
+      "sha256": "598df4644ae6d06ca5469d6684166a093c8b5d0587ee4a0449fc3aa58cb03d39"
+    },
+    {
+      "file": "051_agent_activity_wrap_vocabulary.sql",
+      "sha256": "f78e22b560e3d72ae3f00ef118e792fbfdb19a8d2ee72b8b0a174751b1df42b1"
+    },
+    {
+      "file": "052_drop_tool_output_blobs.sql",
+      "sha256": "ac50b29095985ad692e14385b4d06148d7731dea0f939ebcdf43f1dc58da13fa"
+    },
+    {
+      "file": "053_agent_activity_yield_vocabulary.sql",
+      "sha256": "3450256b895c81f80fb9bcb651ef7fac217eb7bd039e6416fbf26cd2fdf63d39"
+    },
+    {
+      "file": "054_swap_prequotes_r5d_kinds.sql",
+      "sha256": "3bbbe7f6a696f46a8fcb74718398e54144683cc172bec7bd26b66db6164d38a2"
+    },
+    {
+      "file": "055_usage_generation_finish_reason.sql",
+      "sha256": "30dddfc97f90915363cdc2e04f1b3f2808b08f7b9358f9fd0e19937f01caf48c"
+    },
+    {
+      "file": "056_approval_lifecycle.sql",
+      "sha256": "d75b9089849f0e1605edc93f455c9c631707c56675f23a56aa837ee5b60cfae1"
+    },
+    {
+      "file": "057_loop_wake_agent_sessions.sql",
+      "sha256": "4a3c82b5f220307c2e2686252dce637b509c5af79a07c5053438a37478537bd2"
+    },
+    {
+      "file": "058_compaction_preparations.sql",
+      "sha256": "545829253a16036c5121c878d76917cfc4d11b512c3a52edade451393a535359"
+    },
+    {
+      "file": "059_endpoint_failover.sql",
+      "sha256": "1df268730dbf657e0babc51a64fbb94deb0ccf708456b990ff619ac78e3bd161"
+    },
+    {
+      "file": "061_agent_activity_status_only_repair.sql",
+      "sha256": "220f14a26e929a5b4551e95007534995827912f81fa03629decc5a7ce4e7ae91"
+    },
+    {
+      "file": "062_trench_launch.sql",
+      "sha256": "7d52de83f4b4f0cf25d1482306ab9ca85a6a6157a8ec082e92c8007857c284c6"
+    },
+    {
+      "file": "063_trench_fee.sql",
+      "sha256": "66258b22aea6a3ec41b8f0170eddc4826791a40ae63a6ed37f315cf6f69001b2"
+    },
+    {
+      "file": "064_launch_session_full.sql",
+      "sha256": "a591b8fc2bc05d7d08c38c82ef36a0c222de794adbb9108804edf7ae4f3f320d"
+    },
+    {
+      "file": "065_agent_activity_verification_attempts.sql",
+      "sha256": "692c1210b3be7436e4eef94385b48931cf014abaac9327c8f65fc09538ecf1f6"
+    },
+    {
+      "file": "066_swap_fee.sql",
+      "sha256": "b85fc5b7d38216f150f3b5a02c33c466329702e79717a76046a1459f632e8552"
+    },
+    {
+      "file": "067_agent_activity_confirmation_provenance.sql",
+      "sha256": "e6f10f2821e6f6ace4473bb32af20951766183898bef17e5b2519f195466bd33"
+    },
+    {
+      "file": "068_agent_activity_pending_fallback.sql",
+      "sha256": "2fd5b8b7d09c076a7bf4544ea0e18ebd587d7dfddbdf80e634ecb0a4021b51f5"
+    },
+    {
+      "file": "069_token_launch_intent_resume_consumed.sql",
+      "sha256": "28ea7d846ce0e54f314a5c3e1d0ca6922a0b25ec7beddc44ae7d7e6b9e70110d"
+    },
+    {
+      "file": "070_token_launch_intent_resume_closed_reason.sql",
+      "sha256": "042551e11503f2b786258240530682613bb27b601eb0808d047beba5aa645e12"
+    },
+    {
+      "file": "071_launched_token_attribution.sql",
+      "sha256": "9422d0b948928bf84f89b5ba2e00be73f8c16489bb8ad60bbb18d2ed1de24759"
+    },
+    {
+      "file": "072_token_launch_intent_superseded_unproven.sql",
+      "sha256": "ddaff4edc398da912e47e7b459bb01686e665dfa29dc05e1f96b7e6c6551b4bd"
+    },
+    {
+      "file": "073_agentscan_reporting.sql",
+      "sha256": "c6eee6ac322d18a4212519bec52f8a52f860e21954eedebb78825f5a5953285f"
+    },
+    {
+      "file": "074_launched_token_agentscan_attest.sql",
+      "sha256": "31623ff375cad0541d08bd0cbf806eb6969dac203bd90646576456b069e8f07f"
+    },
+    {
+      "file": "075_agentscan_handshake_state.sql",
+      "sha256": "a30f7f3f53df995de7746fedb9aca3864c8de2032f85f3649e5c4fbdaaf9721b"
+    },
+    {
+      "file": "076_agent_activity_venue_unavailable.sql",
+      "sha256": "0f9ca4d5c0e1054265c2b6c48bc3ce74de1c62b541406742a5984845f2fe39be"
+    },
+    {
+      "file": "077_mission_run_baseline.sql",
+      "sha256": "44733fe921b339be6ab212baebc10e23d83444b33b02ede4f288375b8651297a"
+    },
+    {
+      "file": "078_agentscan_superseded_and_settled_block_time.sql",
+      "sha256": "0eee510e9ee6c3df57fbf3fd4a391dffe4e3f5ecff2491e2a018a429ca69eeed"
+    },
+    {
+      "file": "079_agent_activity_evm_lend.sql",
+      "sha256": "161858a73ebadb8cd0fb39d776201b2401dce68367c8a037005c6ec24b2e90b6"
+    },
+    {
+      "file": "080_swap_prequotes_lend_kinds.sql",
+      "sha256": "c767c55e54831774792be1d9dd11983e6b1232a40d25c873e030636ee16288e5"
+    },
+    {
+      "file": "081_swap_prequotes_borrow_kinds.sql",
+      "sha256": "2455d3b7bd53968b11251cb0ae2fa72c64b80aacf1deabab22d112adee6dbc3a"
+    },
+    {
+      "file": "082_pools_fun_launch.sql",
+      "sha256": "83b01780ad7cd426dcb6fa797685f9d0087a6d3d292d1058fc0e673d9dbc5f84"
+    },
+    {
+      "file": "083_launch_image_onchain_variant.sql",
+      "sha256": "bf8564d6764fde1428261f83aacf5156c0e95ae48dd8be2d248c82c4aebbec17"
+    },
+    {
+      "file": "084_agent_activity_wallet_transfer.sql",
+      "sha256": "7ac6e3ae12f25e25b4aa651555b7d8ca3b7e50816555b3f9dcecedb40580f5c6"
+    },
+    {
+      "file": "085_projects.sql",
+      "sha256": "beddc0b40e00e5db8024c5189c907170f99d409b94a3f4da0d893e47eb617987"
+    },
+    {
+      "file": "086_studio_approvals.sql",
+      "sha256": "4e684d5c3750fff7debac2defb11ce269784f9450bef302b3603264bff496ab9"
+    },
+    {
+      "file": "087_wallet_transaction_intents.sql",
+      "sha256": "bdaeaabbef9204ef39df1f4636fb98c5bc648ef42091313eab4291e1781ed589"
+    },
+    {
+      "file": "088_wallet_tx_vex_fee.sql",
+      "sha256": "2000f02c0c1340d792a55fecad6b2059f8b50848f80e3fa0d9ab1a2bf02127ff"
+    },
+    {
+      "file": "089_studio_installer_provenance.sql",
+      "sha256": "c8d00f5ede67cadbe1ae40458defeea375e864f26f8075ef0747f39637700a5b"
+    },
+    {
+      "file": "090_wallet_transaction_intents_activity_unique.sql",
+      "sha256": "dda86f30bd611c79e94f9b0717b7de23cf7030f5d4a61a97645f7542d2538f8d"
+    },
+    {
+      "file": "091_evm_nonce_reservations.sql",
+      "sha256": "0ec2b4c98c2f5b36f6657d7e8e25acb6ad5ee44601e0a5bae7c8665c820f5ebc"
+    },
+    {
+      "file": "092_studio_pending_refusal_repair.sql",
+      "sha256": "bbc9ea79bee46c721e15f19a5c98f3c611c680c692614a9cab54e1279a9e6b7c"
+    },
+    {
+      "file": "093_wallet_transfer_unconfirmed_repair.sql",
+      "sha256": "261c3eae3ea64bab03089b9970268954b7b6d159888299d07069a530d0ac721a"
+    },
+    {
+      "file": "094_pools_launch_attribution.sql",
+      "sha256": "2895f42fee816a7d18b46df64e0be05942f862bd380e8f403db73461d4efe4aa"
+    },
+    {
+      "file": "095_swap_prequotes_claim.sql",
+      "sha256": "0a8782ba337085bd0b1e77cb13e8ed9763380d12fd59b72af54b63ac7d769b88"
+    },
+    {
+      "file": "096_wallet_wrap_intents.sql",
+      "sha256": "8b8716112b01213f1dcb7296f9c8aff227551b20475a5a53b41d91a485a4ccc8"
+    },
+    {
+      "file": "097_project_soft_delete.sql",
+      "sha256": "9b08c4f7acdd01b3f0719439da68c27cf2d29a7e7d8f9307f8fdc4cf92e00afd"
+    },
+    {
+      "file": "098_project_file_provenance_origin.sql",
+      "sha256": "33e6c262637b40dce5f76a41006806d6079823ddb032db6e7bf66b271afffc38"
+    },
+    {
+      "file": "099_swap_prequotes_balance_eligibility.sql",
+      "sha256": "64dca70134cd01b56453b65a18c577740d4fe845fdd980adc9a46f1cc76dcaf2"
+    },
+    {
+      "file": "100_wallet_intent_wallet_indexes.sql",
+      "sha256": "99352eb31f2ec89084114bf0afa41fbdbf409e69a2dd384a76d81d9b971aec50"
+    },
+    {
+      "file": "101_portfolio_snapshot_groups.sql",
+      "sha256": "141054df2ad57096431d1bf5e4f21d5fc3483528da2c2f312a8944b21f43c758"
+    },
+    {
+      "file": "102_portfolio_snapshot_group_wallets.sql",
+      "sha256": "1de47fd7f443833ee7fa1de38fc7f6af5306b6830438ed39555f94abc4c396fc"
+    },
+    {
+      "file": "106_launch_image_public_asset.sql",
+      "sha256": "0a129ba0e0724af3ebce5f0298ee2a1ff118a713ecaad3eb33bddd8bef950e7a"
+    },
+    {
+      "file": "107_launchpad_family_roles.sql",
+      "sha256": "31e5cc30cec49d19d76e2f901c79b95b150a338b8eb6402773e4af4c6c5ca3bf"
+    },
+    {
+      "file": "108_trench_express_retirement.sql",
+      "sha256": "b2f823da4cfbf75e4aca19fcefa234612aaf40e02ac1c1adbff009e5f64fbcb8"
+    },
+    {
+      "file": "109_pools_launch_v3_fields.sql",
+      "sha256": "b7f2d0a80b7697a0d9269ef6ffe3db0765e04ff31cfb20278fade8a84d9185a9"
+    },
+    {
+      "file": "110_virtuals_launch_intents.sql",
+      "sha256": "b11e0afa8220dcd1100abe6544d08f8c9e5e5f05bb634184fea1193179dad3ae"
+    },
+    {
+      "file": "111_agentscan_pools_fee_coverage.sql",
+      "sha256": "216b03e61bac74dd23b28eb0c622fa0b150a6b9692220670b73354a433bb7409"
+    }
+  ]
+}

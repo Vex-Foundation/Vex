@@ -279,7 +279,7 @@ describe("Lighter onboarding workflow foundation", () => {
   it("migration keys one public workflow by environment and wallet", async () => {
     const sql = await readFile(
       new URL(
-        "../../vex-agent/db/migrations/091_lighter_onboarding_workflows.sql",
+        "../../vex-agent/db/migrations/124_lighter_onboarding_workflows.sql",
         import.meta.url,
       ),
       "utf8",
@@ -295,7 +295,7 @@ describe("Lighter onboarding workflow foundation", () => {
   it("backfills upgraded deposit workflows from durable public evidence", async () => {
     const sql = await readFile(
       new URL(
-        "../../vex-agent/db/migrations/092_lighter_workflow_deposit_backfill.sql",
+        "../../vex-agent/db/migrations/125_lighter_workflow_deposit_backfill.sql",
         import.meta.url,
       ),
       "utf8",
@@ -313,7 +313,7 @@ describe("Lighter onboarding workflow foundation", () => {
   it("persists complete public L1 and L2 evidence without credential material", async () => {
     const sql = await readFile(
       new URL(
-        "../../vex-agent/db/migrations/093_lighter_deposit_evidence.sql",
+        "../../vex-agent/db/migrations/126_lighter_deposit_evidence.sql",
         import.meta.url,
       ),
       "utf8",
@@ -330,7 +330,7 @@ describe("Lighter onboarding workflow foundation", () => {
   it("persists a complete public live deposit preflight without credential material", async () => {
     const sql = await readFile(
       new URL(
-        "../../vex-agent/db/migrations/094_lighter_deposit_preflight.sql",
+        "../../vex-agent/db/migrations/127_lighter_deposit_preflight.sql",
         import.meta.url,
       ),
       "utf8",

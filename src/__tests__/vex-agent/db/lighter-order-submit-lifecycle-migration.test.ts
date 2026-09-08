@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const migration = readFileSync(
-  resolve(process.cwd(), "src/vex-agent/db/migrations/082_lighter_order_submit_lifecycle.sql"),
+  resolve(process.cwd(), "src/vex-agent/db/migrations/116_lighter_order_submit_lifecycle.sql"),
   "utf-8",
 );
 
@@ -30,6 +30,19 @@ describe("Lighter order submit lifecycle migration", () => {
     expect(migration).toContain("execution_state = 'ambiguous'");
     expect(migration).not.toContain("filled");
     expect(migration).not.toContain("canceled");
+  });
+
+  /**
+   * The consent-expiry state. `expired_unsubmitted` means signed or staged,
+   * then consent expired or the approved dispatch was aborted, with no
+   * submission attempt started. Without it the execution path would have to
+   * record such a row as submitted, claiming an order was sent that never was.
+   */
+  it("records a possible send attempt and forbids a dishonest expired_unsubmitted row", () => {
+    expect(migration).toMatch(/ADD COLUMN IF NOT EXISTS send_attempt_started_at TIMESTAMPTZ/i);
+    // The state may not be claimed once a send attempt was started.
+    expect(migration).toContain("execution_state = 'expired_unsubmitted'");
+    expect(migration).toContain("send_attempt_started_at IS NULL");
   });
 
   it("does not add storage for secrets, signatures, or submit bodies", () => {

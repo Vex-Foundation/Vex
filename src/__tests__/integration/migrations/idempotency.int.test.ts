@@ -1,9 +1,10 @@
 /**
- * Integration: repeated migration runs preserve both the numeric version
- * history and the exact filename ledger, including colliding prefixes.
+ * Integration: repeated migration runs are a no-op, and the ledger records
+ * exactly one row per migration file.
  *
  * globalSetup already ran the migrations once before this suite loads, so the
- * test effectively asserts a second run is a no-op.
+ * test effectively asserts a second run changes nothing. A migration's identity
+ * is its numeric prefix: one file, one version, one `schema_version` row.
  */
 
 import { describe, it, expect } from "vitest";
@@ -20,28 +21,31 @@ function migrationFiles(): string[] {
 }
 
 describe("runMigrations idempotency (integration)", () => {
-  it("second run preserves every exact filename and distinct numeric version", async () => {
+  it("second run preserves every applied version and adds nothing", async () => {
     const files = migrationFiles();
-    const versions = [...new Set(files.map((file) => Number.parseInt(file.slice(0, 3), 10)))].sort((a, b) => a - b);
+    const versions = files.map((file) => Number.parseInt(file.slice(0, 3), 10));
+    // No duplicate prefixes: every file has its own ledger row.
+    expect(new Set(versions).size).toBe(files.length);
+
     const readVersions = () => query<{ version: number; applied_at: Date }>(
       "SELECT version, applied_at FROM schema_version ORDER BY version",
     );
-    const readFiles = () => query<{ file: string; version: number; applied_at: Date }>(
-      "SELECT file, version, applied_at FROM schema_migration_files ORDER BY file",
-    );
 
-    const beforeVersions = await readVersions();
-    const beforeFiles = await readFiles();
-    expect(beforeVersions.map(({ version }) => version)).toEqual(versions);
-    expect(beforeFiles.map(({ file }) => file)).toEqual(files);
-    expect(beforeFiles.map(({ file, version }) => ({ file, version }))).toEqual(
-      files.map((file) => ({ file, version: Number.parseInt(file.slice(0, 3), 10) })),
-    );
+    const before = await readVersions();
+    expect(before.map(({ version }) => version)).toEqual(versions);
 
     await expect(runMigrations()).resolves.toBeUndefined();
 
-    expect(await readVersions()).toEqual(beforeVersions);
-    expect(await readFiles()).toEqual(beforeFiles);
-    expect(await query("SELECT file FROM schema_migration_recovery_files")).toEqual([]);
+    expect(await readVersions()).toEqual(before);
+  });
+
+  it("keeps exactly one schema marker row, which is what admits the next run", async () => {
+    // The runner refuses a database whose Lighter tables exist without exactly
+    // one `main-2026-09` marker row (MigrationBranchEraDatabaseError). The
+    // second run above proves the marker survived this suite's resets; assert
+    // its contents so a truncation that silently empties it is caught here and
+    // not as an unexplained refusal in a later suite.
+    expect(await query<{ lineage: string }>("SELECT lineage FROM lighter_schema_marker"))
+      .toEqual([{ lineage: "main-2026-09" }]);
   });
 });

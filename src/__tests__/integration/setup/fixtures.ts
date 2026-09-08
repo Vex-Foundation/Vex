@@ -1,10 +1,10 @@
 /**
- * Integration test fixtures — helpers that hit the real Postgres instance
+ * Integration test fixtures - helpers that hit the real Postgres instance
  * started by `globalSetup.ts`.
  *
  * Scope: table reset, session/message/memory seeding, deterministic vector
  * generation, and a live `embedQuery` delegate. Nothing here is safe against
- * concurrent tests — the integration suite runs single-threaded by design.
+ * concurrent tests - the integration suite runs single-threaded by design.
  */
 
 import { createHash, randomUUID } from "node:crypto";
@@ -15,14 +15,19 @@ import type { Message, MessageMetadata } from "@vex-agent/db/repos/messages.js";
 import { embedQuery } from "@vex-agent/embeddings/client.js";
 
 /**
- * Wipe every non-schema table + reset identity sequences. Keeps
- * migration ledgers so migrations don't re-run per test.
+ * Wipe every non-schema table + reset identity sequences. Keeps the migration
+ * ledger so migrations don't re-run per test, and keeps
+ * `lighter_schema_marker`: the marker is schema identity, not test data, and
+ * the migration runner refuses a database whose Lighter tables exist without
+ * exactly one marker row (src/lib/db/migrate-runner.ts,
+ * MigrationBranchEraDatabaseError). Truncating it would refuse every later run
+ * against this database.
  */
 export async function resetDb(): Promise<void> {
   const rows = await query<{ tablename: string }>(
     `SELECT tablename FROM pg_tables
        WHERE schemaname = 'public'
-         AND tablename NOT IN ('schema_version', 'schema_migration_files', 'schema_migration_recovery_files', 'schema_migration_baseline')`,
+         AND tablename NOT IN ('schema_version', 'lighter_schema_marker')`,
   );
   if (rows.length === 0) return;
   const list = rows.map((r) => `"${r.tablename}"`).join(", ");
@@ -43,7 +48,7 @@ export interface InsertMessageOptions {
   toolCallId?: string;
   toolCalls?: Message["toolCalls"];
   metadata?: MessageMetadata;
-  /** Deterministic timestamp override — ISO string. Defaults to `new Date().toISOString()`. */
+  /** Deterministic timestamp override - ISO string. Defaults to `new Date().toISOString()`. */
   timestamp?: string;
 }
 
@@ -115,7 +120,7 @@ export function episodeHash(kind: string, summaryText: string): string {
   return createHash("sha256").update(kind).update("\n").update(summaryText).digest("hex");
 }
 
-/** Live embedding call — fails loudly if the endpoint is down. */
+/** Live embedding call - fails loudly if the endpoint is down. */
 export async function embedText(
   text: string,
 ): Promise<{ embedding: number[]; providerModel: string }> {

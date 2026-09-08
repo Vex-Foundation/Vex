@@ -37,19 +37,20 @@ async function decision(intentId: string, status: "approved" | "rejected" | "exp
 beforeEach(async () => {
   // This lane's global setup creates the database; refuse any other target.
   expect(await queryOne<{ name: string }>("SELECT current_database() AS name")).toEqual({ name: "vex_test" });
-  // Preserve both migration ledgers while clearing these session-owned rows.
+  // Preserve the migration ledger while clearing these session-owned rows.
   await query("TRUNCATE sessions RESTART IDENTITY CASCADE");
   sessionId = await makeSession();
 });
 
 describe("Lighter fee persistence against isolated PostgreSQL", () => {
-  it("applies migrations 118/119 and preserves one version row on rerun", async () => {
-    const readVersions = () => query<{ version: number }>("SELECT version FROM schema_version WHERE version IN (118,119) ORDER BY version");
-    expect(await readVersions()).toEqual([{ version: 118 }, { version: 119 }]);
+  it("applies migrations 150/151 and preserves one version row on rerun", async () => {
+    // A migration's identity is its numeric prefix and nothing else: the
+    // filename-keyed ledger this suite used to read is gone with the
+    // pre-release numbering.
+    const readVersions = () => query<{ version: number }>("SELECT version FROM schema_version WHERE version IN (150,151) ORDER BY version");
+    expect(await readVersions()).toEqual([{ version: 150 }, { version: 151 }]);
     await runMigrations();
-    expect(await readVersions()).toEqual([{ version: 118 }, { version: 119 }]);
-    expect(await query<{ file: string }>("SELECT file FROM schema_migration_files WHERE version IN (118,119) ORDER BY file"))
-      .toEqual([{ file: "118_lighter_order_integrator_fees.sql" }, { file: "119_lighter_fee_authorization_intents.sql" }]);
+    expect(await readVersions()).toEqual([{ version: 150 }, { version: 151 }]);
     expect(await queryOne<{ data_type: string }>("SELECT data_type FROM information_schema.columns WHERE table_name='lighter_order_execution_intents' AND column_name='integrator_fees_json'"))
       .toEqual({ data_type: "jsonb" });
   });

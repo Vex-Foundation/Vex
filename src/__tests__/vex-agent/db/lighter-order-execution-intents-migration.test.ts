@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const migration = readFileSync(
-  resolve(process.cwd(), "src/vex-agent/db/migrations/081_lighter_order_execution_intents.sql"),
+  resolve(process.cwd(), "src/vex-agent/db/migrations/115_lighter_order_execution_intents.sql"),
   "utf-8",
 );
 
@@ -22,6 +22,16 @@ describe("Lighter order execution intents migration", () => {
     expect(migration).toContain("'api_accepted'");
     expect(migration).toContain("'sequencer_pending'");
     expect(migration).toContain("'ambiguous'");
+  });
+
+  /**
+   * The consent-expiry state. `expired_unsubmitted` means signed or staged,
+   * then consent expired or the approved dispatch was aborted, with no
+   * submission attempt started. Without it the execution path would have to
+   * record such a row as submitted, claiming an order was sent that never was.
+   */
+  it("admits the consent-expiry state in the execution_state vocabulary", () => {
+    expect(migration).toContain("'expired_unsubmitted'");
   });
 
   it("records only opaque credential references and not secrets or payloads", () => {

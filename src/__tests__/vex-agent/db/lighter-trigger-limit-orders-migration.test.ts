@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const sourcePath = resolve(
   process.cwd(),
-  "src/vex-agent/db/migrations/117_lighter_trigger_limit_orders.sql",
+  "src/vex-agent/db/migrations/149_lighter_trigger_limit_orders.sql",
 );
 const sql = readFileSync(sourcePath, "utf8");
 

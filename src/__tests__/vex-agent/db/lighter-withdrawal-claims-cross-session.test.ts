@@ -1,3 +1,11 @@
+import { testPoolClient } from "../../helpers/db-client.js";
+import {
+  buildLighterWithdrawalClaimPreview,
+  type LighterWithdrawalClaimPreflightSnapshot,
+  type LighterWithdrawalClaimPreview,
+} from "@tools/lighter/withdrawal/core-claim.js";
+import { getLighterSecureWithdrawalProfile } from "@tools/lighter/withdrawal/profiles.js";
+import type { Hex } from "viem";
 import { requireValue } from "../../helpers/require-value.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -23,7 +31,7 @@ describe("cross-session withdrawal claim repository boundaries", () => {
       .mockResolvedValueOnce({ intent_id: "withdrawal-old" })
       .mockResolvedValueOnce(claimRow());
 
-    const created = await claims.createManualClaimAttemptWith({}, {
+    const created = await claims.createManualClaimAttemptWith(testPoolClient(), {
       claimId: "claim-new",
       preview: claimPreview(),
     });
@@ -51,7 +59,7 @@ describe("cross-session withdrawal claim repository boundaries", () => {
       .mockResolvedValueOnce({ withdrawal_intent_id: "withdrawal-old" })
       .mockResolvedValueOnce({ intent_id: "withdrawal-old" });
 
-    await expect(claims.expirePreparedWith({}, "claim-new", "session-new"))
+    await expect(claims.expirePreparedWith(testPoolClient(), "claim-new", "session-new"))
       .resolves.toBe(true);
 
     const [parentSql, parentParams] = requireValue(mocks.queryOneWith.mock.calls[1]).slice(1);
@@ -83,12 +91,12 @@ const OWNER = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
 const GATEWAY = "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d";
 const IMPLEMENTATION = "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90";
 const TOKEN = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
-const GATEWAY_HASH = `0x${"1".repeat(64)}`;
-const TOKEN_HASH = `0x${"2".repeat(64)}`;
+const GATEWAY_HASH: Hex = `0x${"1".repeat(64)}`;
+const TOKEN_HASH: Hex = `0x${"2".repeat(64)}`;
 const NOW = "2030-01-01T00:00:00.000Z";
 const EXPIRES = "2030-01-01T00:03:00.000Z";
 
-function claimSnapshot() {
+function claimSnapshot(): LighterWithdrawalClaimPreflightSnapshot {
   return {
     observedAt: NOW, expiresAt: EXPIRES, settlementChainId: 4663,
     settlementNetworkName: "Robinhood Chain mainnet", blockNumber: "100",
@@ -104,17 +112,14 @@ function claimSnapshot() {
   };
 }
 
-function claimPreview() {
-  const snapshot = claimSnapshot();
-  return {
-    previewId: "lwcp_aaaaaaaaaaaaaaaaaaaaaaaa",
-    matchHash: "a".repeat(64),
-    identity: {
-      sessionId: "session-new",
-      withdrawalIntentId: "withdrawal-old",
-    },
-    snapshot,
-  };
+/** The preview the production builder produces for the RHC claim under test. */
+function claimPreview(): LighterWithdrawalClaimPreview {
+  return buildLighterWithdrawalClaimPreview({
+    profile: getLighterSecureWithdrawalProfile("rhc"),
+    sessionId: "session-new",
+    withdrawalIntentId: "withdrawal-old",
+    snapshot: claimSnapshot(),
+  });
 }
 
 function claimRow() {

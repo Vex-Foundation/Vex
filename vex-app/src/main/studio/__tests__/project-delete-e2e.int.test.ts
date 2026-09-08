@@ -236,7 +236,7 @@ async function resetDatabase(): Promise<void> {
   const tables = await sql<{ tablename: string }>(
     `SELECT tablename FROM pg_tables
       WHERE schemaname = 'public'
-        AND tablename NOT IN ('schema_version', 'schema_migration_files', 'schema_migration_recovery_files', 'schema_migration_baseline')`,
+        AND tablename NOT IN ('schema_version', 'lighter_schema_marker')`,
   );
   if (tables.length === 0) return;
   const list = tables.map((row) => `"${row.tablename}"`).join(", ");
