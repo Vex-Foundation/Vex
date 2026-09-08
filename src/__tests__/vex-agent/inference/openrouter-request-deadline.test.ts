@@ -213,7 +213,12 @@ describe("conversational sends stay bounded by the configured deadline", () => {
   });
 
   it("chatCompletionStream: a caller signal does not disable the ceiling", async () => {
-    sendMock.mockResolvedValueOnce(eventStream([]));
+    sendMock.mockResolvedValueOnce(eventStream([
+      {
+        id: "gen-stream-1",
+        choices: [{ index: 0, delta: { content: "ok" }, finishReason: "stop" }],
+      },
+    ]));
     const controller = new AbortController();
 
     await drain(
