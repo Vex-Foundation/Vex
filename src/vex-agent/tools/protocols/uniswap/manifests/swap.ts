@@ -6,6 +6,7 @@ import { UNISWAP_SWAP_VEX_FEE } from "../../../vex-fee-notes.js";
 import {
   SWAP_VENUE_GUIDANCE,
   UNISWAP_BEST_FOR,
+  UNISWAP_REGIONAL_GUIDANCE,
 } from "@vex-agent/tools/registry/swap-venue-guidance.js";
 import { UNISWAP_CHAINS } from "../discovery-text.js";
 
@@ -35,6 +36,7 @@ export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
       + "from the on-chain quoter with no aggregator in the path, and the better of the two pool "
       + `versions wins. Chains with a verified Vex deployment: ${UNISWAP_CHAINS.join(", ")}. `
       + `${UNISWAP_BEST_FOR} `
+      + `${UNISWAP_REGIONAL_GUIDANCE} `
       + "Use this before every Uniswap execute, and whenever the user asks what a trade would return, "
       + "what the rate or the price impact is, or which pools the route would cross. "
       + `${SWAP_VENUE_GUIDANCE} `
@@ -98,6 +100,7 @@ export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
       + "requires approval before it runs. The route is read from the on-chain quoter with no "
       + `aggregator in the path. Chains with a verified Vex deployment: ${UNISWAP_CHAINS.join(", ")}. `
       + `${UNISWAP_BEST_FOR} `
+      + `${UNISWAP_REGIONAL_GUIDANCE} `
       + "Use this once the user has agreed to a trade you already priced here. "
       + `${SWAP_VENUE_GUIDANCE} `
       + "PRECONDITIONS, each refused BY NAME rather than worked around: a fresh `uniswap__swap_quote` "

@@ -16,15 +16,15 @@
  * every failure.
  *
  * Each entry point pairs ONE failure shape with ONE agent-facing suffix. The
- * availability class is the only one that picks between two: "the venue is
- * throttling us" and "the venue's edge refuses this client" call for opposite
- * first moves.
+ * availability class distinguishes regional edge refusals from a missing
+ * endpoint and temporary failures: an edge block needs a different venue,
+ * while throttling can warrant a backed-off retry.
  */
 
 import type { AgentActivityEventRole } from "@vex-agent/db/repos/agent-activity.js";
 import logger from "@utils/logger.js";
 import { isVenueFallbackWorthwhile } from "../../../../registry/venue-fallback-eligibility.js";
-import { SWAP_VENUE_PEER_NUDGE_SUFFIX } from "../../../../registry/swap-venue-guidance.js";
+import { KYBERSWAP_EDGE_BLOCK_REMEDY, SWAP_VENUE_PEER_NUDGE_SUFFIX } from "../../../../registry/swap-venue-guidance.js";
 import type { KyberVenueUnavailableReason } from "../../../../registry/venue-fallback-eligibility.js";
 import type { EvmRouterRevertFailureCode } from "@tools/evm-chains/router-revert-reason.js";
 import {
@@ -87,6 +87,9 @@ export function venueFallbackNoteOnFailure(
   if (!signal || !isVenueFallbackWorthwhile(signal)) return "";
   if (signal.kind === "venue_unavailable") {
     logger.info("kyberswap.fallback.venue_unavailable", { reason: signal.reason });
+    if (signal.reason === "edge_refused") {
+      return `${VENUE_UNAVAILABLE_TERMINAL_LEAD}${KYBERSWAP_EDGE_BLOCK_REMEDY}${UNISWAP_COVERAGE_CAVEAT}`;
+    }
     const lead = RETRY_KYBER_FIRST_REASONS.has(signal.reason)
       ? VENUE_UNAVAILABLE_RETRY_FIRST_LEAD
       : VENUE_UNAVAILABLE_TERMINAL_LEAD;
