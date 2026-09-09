@@ -15,11 +15,13 @@
  * disk.
  */
 
+import { resolveTrashHolders } from "./project-trash-holders.js";
 import { removeTerminalSnapshot } from "./pty-host-starter.js";
 import { trashItemToOsTrash } from "./os-trash.js";
 import type { ProjectDeleteDeps } from "./project-delete.js";
 
 export const projectDeleteRuntimeDeps: ProjectDeleteDeps = {
   trashItem: trashItemToOsTrash,
+  resolveTrashHolders,
   removeTerminalSnapshot,
 };

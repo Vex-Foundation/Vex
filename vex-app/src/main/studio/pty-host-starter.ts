@@ -48,6 +48,7 @@
  * open the lid.
  */
 
+import { PTY_HOST_MARKER, PTY_PARENT_ARG } from "@shared/schemas/pty-lifetime.js";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -65,6 +66,7 @@ import {
   ptyHostEnvironment,
   terminalSnapshotFileName,
   terminalHostMessageSchema,
+  terminalHostRequestSchema,
   type TerminalHostAvailability,
   type TerminalHostMessage,
   type TerminalHostRequest,
@@ -336,6 +338,7 @@ export class PtyHostStarter implements PtyHost {
     request: TerminalHostRequest,
     transfer: MessagePortMain[] = [],
   ): Promise<TerminalOutcome<unknown>> {
+    if (!terminalHostRequestSchema.safeParse(request).success) return { ok: false, code: "invalid_packet" };
     if (!this.ensureStarted()) return { ok: false, code: "host_unavailable" };
     const child = this.child;
     if (child === null) return { ok: false, code: "host_unavailable" };
@@ -548,7 +551,10 @@ function deadlineFor(request: TerminalHostRequest): number {
 }
 
 function defaultFork(entry: string, env: Record<string, string>): UtilityProcess {
-  return utilityProcess.fork(entry, [], {
+  const identityArgs = [PTY_HOST_MARKER, `${PTY_PARENT_ARG}${process.pid}`];
+  return utilityProcess.fork(entry, identityArgs, {
+    // Electron sends args over Mojo; only execArgv reaches the OS process list.
+    execArgv: identityArgs,
     serviceName: "vex-studio-pty-host",
     // The host's own configuration rides the environment and is DELETED by the
     // child before it captures the base every shell inherits (`config.ts`).

@@ -889,8 +889,8 @@ describe("diagnosed OS trash refusal", () => {
     } });
     const harness = renderDialog();
     await confirmDelete();
-    await screen.findByText(/The OS aborted the trash operation/);
-    expect(screen.getByText(/Close programs and retry/)).toBeDefined();
+    await screen.findByText(/The OS could not recycle this folder/);
+    expect(screen.getByText(/Move the folder yourself, or retry cleanup/)).toBeDefined();
     expect(confirmButton().disabled).toBe(false);
     expect(harness.onClose).not.toHaveBeenCalled();
   });

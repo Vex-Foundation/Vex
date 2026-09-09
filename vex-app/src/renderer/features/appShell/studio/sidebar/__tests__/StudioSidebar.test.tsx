@@ -135,7 +135,7 @@ beforeEach(() => {
   Object.defineProperty(window, "vex", {
     configurable: true,
     value: {
-      projects: { list: projectsListMock },
+      projects: { list: projectsListMock, pendingCleanups: async () => ({ ok: true, data: { items: [], nextOffset: null } }) },
       files: {
         list: () => Promise.resolve({ ok: true, data: null }),
         watch: () => Promise.resolve({ ok: true, data: null }),

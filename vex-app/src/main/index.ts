@@ -15,6 +15,7 @@
  *   8. Open main window.
  */
 
+import { reapOrphanedPtyHosts } from "./studio/pty-host-reaper.js";
 import { app } from "electron";
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -557,6 +558,8 @@ let bootRuntimeInitialized = false;
 
 app.whenReady().then(async () => {
   log.info("[main] app.whenReady — initializing");
+
+  await reapOrphanedPtyHosts();
 
   const disposition = await runProductionEarlyBoot(
     () => {

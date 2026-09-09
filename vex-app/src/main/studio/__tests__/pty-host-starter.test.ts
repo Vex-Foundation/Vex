@@ -17,12 +17,14 @@ import { EventEmitter } from "node:events";
 import type { UtilityProcess } from "electron";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const defaultForkMock = vi.hoisted(() => vi.fn());
+
 vi.mock("electron", () => ({
   app: {
     getPath: () => "/tmp/vex-userdata",
     getAppPath: () => "/tmp/vex-app",
   },
-  utilityProcess: { fork: () => { throw new Error("not used: fork is injected"); } },
+  utilityProcess: { fork: defaultForkMock },
   MessageChannelMain: class {
     port1 = { close: () => {} };
     port2 = { close: () => {} };
@@ -314,4 +316,21 @@ describe("message routing", () => {
 
     expect(seen).toEqual({ terminalId: "t1", exitCode: 0 });
   });
+});
+
+
+it("places host identity in both child argv and the OS command line", async () => {
+  vi.useFakeTimers();
+  try {
+    const child = new FakeChild();
+    defaultForkMock.mockReturnValue(child);
+    const starter = new PtyHostStarter({ onTerminalExit: vi.fn(), onNotice: vi.fn(),
+      onAvailabilityChanged: vi.fn(), onHostTerminated: vi.fn() });
+    expect(starter.ensureStarted()).toBe(true);
+    const identity = ["--vex-pty-host", `--vex-parent-pid=${process.pid}`];
+    expect(defaultForkMock).toHaveBeenCalledWith(expect.any(String), identity, expect.objectContaining({ execArgv: identity }));
+    const disposal = starter.dispose();
+    child.emit("exit", 0);
+    await disposal;
+  } finally { vi.useRealTimers(); }
 });

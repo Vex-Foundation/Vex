@@ -66,6 +66,8 @@
  * the two stays pending, because the transient half still needs doing.
  */
 
+import path from "node:path";
+import type { ResolveTrashHolders } from "./project-trash-holders.js";
 import type { ProjectTrashFailure } from "@shared/schemas/project-cleanup.js";
 import { trashProjectFolder } from "./trash-project-folder.js";
 import { realpath } from "node:fs/promises";
@@ -125,6 +127,7 @@ import { resolveProjectDirectory, resolveProjectsRoot } from "./projects-root.js
 export interface ProjectDeleteDeps {
   /** Move an absolute path to the OS trash. Rejects when the platform refuses. */
   readonly trashItem: TrashItem;
+  readonly resolveTrashHolders?: ResolveTrashHolders;
   /**
    * Delete this project's terminal revive snapshot. Resolves `true` when the
    * file is gone, INCLUDING when it was never there.
@@ -209,6 +212,18 @@ export async function deleteProject(
     // The RESUME honours the TOMBSTONE's recorded trash intent and ignores this
     // request's checkbox: the durable decision was made at deletion time, and a
     // retry is not a second chance to change it.
+    if (input.closeHolders === true && tombstoneRequestedTrash(outcome.cleanupState)) {
+      const root = await resolveProjectsRoot(correlationId);
+      const directory = root.ok ? resolveProjectDirectory(root.data, outcome.slug) : null;
+      if (directory !== null && deps.resolveTrashHolders) {
+        const resolved = await realpathOrSelf(directory);
+        const resolvedRoot = root.ok ? await realpathOrSelf(root.data) : null;
+        if (resolvedRoot !== null && path.dirname(resolved) === resolvedRoot) {
+          signal?.throwIfAborted();
+          await deps.resolveTrashHolders(resolved, true, signal);
+        }
+      }
+    }
     await closeProjectResources(projectId);
     const resumed = await runCleanup(
       projectId,
@@ -497,6 +512,7 @@ async function runCleanupJob(
         directory,
         correlationId,
         deps.trashItem,
+        deps.resolveTrashHolders,
       );
       trash = report.trash;
       trashFailure = report.trashFailure;
@@ -509,7 +525,7 @@ async function runCleanupJob(
       return await failCleanup(
         projectId,
         trash === "failed"
-          ? `trash:${trashFailure ?? "io_error"}`
+          ? `trash:${typeof trashFailure === "object" ? JSON.stringify(trashFailure) : trashFailure ?? "io_error"}`
           : "Some of the entries Vex wrote could not be removed.",
         artifacts,
         trash,

@@ -28,9 +28,11 @@
  */
 
 import {
-  TERMINAL_HOST_BEAT_INTERVAL_MS,
   type TerminalHostMessage,
 } from "@shared/schemas/terminal.js";
+import { ptyParentPid } from "@shared/schemas/pty-lifetime.js";
+import { processExists } from "../platform/process-lifetime.js";
+import { watchParent } from "./parent-lifetime.js";
 import { readAndClearPtyHostConfig } from "./config.js";
 import { PtyHostService, type HostPort } from "./host-service.js";
 import { filesystemLaunchProbe } from "./launch-probe.js";
@@ -58,7 +60,6 @@ interface UtilityProcessMessageEvent {
 interface UtilityProcessParentPort {
   on(event: "message", listener: (event: UtilityProcessMessageEvent) => void): void;
   postMessage(value: unknown): void;
-  start?(): void;
 }
 
 function parentPortOf(target: NodeJS.Process): UtilityProcessParentPort | undefined {
@@ -98,6 +99,12 @@ function main(): void {
     return;
   }
 
+  const parentPid = ptyParentPid(process.argv);
+  if (parentPid === null) {
+    console.error("[pty-host] missing or invalid parent identity");
+    process.exit(1);
+    return;
+  }
   const baseEnv = scrubEnvironment(process.env);
 
   const sendToMain = (message: TerminalHostMessage): void => {
@@ -134,9 +141,10 @@ function main(): void {
    * for. `unref` is deliberately NOT called - the beat is this process's reason
    * to stay alive when it holds no other handle.
    */
-  setInterval(() => sendToMain({ kind: "heartbeat" }), TERMINAL_HOST_BEAT_INTERVAL_MS);
-
-  parentPort.start?.();
+  watchParent({
+    parentPid, exists: processExists, shutdown: () => service.shutdownAfterParentLoss(),
+    exit: () => process.exit(0), heartbeat: () => sendToMain({ kind: "heartbeat" }), log,
+  });
 
   console.log(
     `vex-studio pty host: ready (pid=${String(process.pid)}, `

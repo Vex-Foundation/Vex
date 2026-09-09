@@ -53,6 +53,7 @@
  * when the answer was collected and that reopening the search picks it up.
  */
 
+import { ProjectCleanupNotices } from "../projects/ProjectCleanupNotices.js";
 import {
   useCallback,
   useEffect,
@@ -518,6 +519,8 @@ export function StudioSidebar({
           onShowAllChange={setShowAllProjects}
         />
       )}
+
+      <ProjectCleanupNotices collapsed={!wide} onExpand={onToggleSidebar} />
 
       <div className="mt-2">
         <RailRow

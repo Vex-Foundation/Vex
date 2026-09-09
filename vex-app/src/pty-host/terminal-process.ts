@@ -52,6 +52,8 @@ import {
   type TerminalLaunch,
   type TerminalProperty,
 } from "@shared/schemas/terminal.js";
+import { terminateTerminal } from "../platform/process-lifetime.js";
+import path from "node:path";
 import { TerminalDataBufferer } from "./data-bufferer.js";
 import { deriveDisplayCwd } from "./display-cwd.js";
 import { TerminalMirror } from "./mirror.js";
@@ -91,6 +93,7 @@ export interface TerminalProcessDeps {
   readonly baseEnv: IProcessEnvironment;
   readonly scrollbackRows: number;
   readonly platform?: NodeJS.Platform;
+  readonly killTree?: (pid: number) => void;
 }
 
 export type TerminalStartResult =
@@ -185,6 +188,7 @@ export class TerminalProcess {
    */
   private pidDeferral: PtyDisposable | null = null;
 
+  private nativeExited = false;
   private exitCode: number | null = null;
   private exitSignal: number | null = null;
   private closeTimer: NodeJS.Timeout | null = null;
@@ -333,6 +337,7 @@ export class TerminalProcess {
     this.subscriptions.push(pty.onData((data) => this.handlePtyData(data)));
     this.subscriptions.push(
       pty.onExit((event) => {
+        this.nativeExited = true;
         this.exitCode = event.exitCode;
         this.exitSignal = event.signal ?? null;
         // THE PROCESS IS GONE, as the OS sees it. `kill` waits for this before
@@ -749,13 +754,17 @@ export class TerminalProcess {
     return { cols: this.cols, rows: this.rows };
   }
 
-  /**
-   * The shell's directory AS A LABEL.
-   *
-   * There is deliberately no accessor for `currentCwd`. The raw path is an
-   * implementation detail of change detection, and an accessor for it is how it
-   * would eventually find its way into a message.
-   */
+  /** Match a folder inside the host without exporting the raw cwd. */
+  holderUnder(directory: string): { pid: number; project: string } | null {
+    if (!this.alive || this.pty === null || this.pty.pid <= 0) return null;
+    const paths = (this.deps.platform ?? process.platform) === "win32" ? path.win32 : path.posix;
+    const relative = paths.relative(directory, this.currentCwd);
+    if (relative === "" || (!paths.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${paths.sep}`))) {
+      return { pid: this.pty.pid, project: this.launch.projectLabel };
+    }
+    return null;
+  }
+
   get displayCwd(): string {
     return deriveDisplayCwd(
       { projectRoot: this.launch.cwd, projectLabel: this.launch.projectLabel },
@@ -915,7 +924,10 @@ export class TerminalProcess {
     if (this.killIssued) return;
     this.killIssued = true;
     try {
-      this.pty?.kill();
+      if (this.pty !== null) {
+        if (this.nativeExited) this.pty.kill();
+        else terminateTerminal(this.pty, this.deps.platform ?? process.platform, this.deps.killTree);
+      }
     } catch {
       // Already dead. The exit is still owed to the consumer.
     }

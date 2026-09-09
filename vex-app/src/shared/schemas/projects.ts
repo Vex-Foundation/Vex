@@ -348,6 +348,7 @@ export const projectDeleteInputSchema = z
   .object({
     projectId: z.string().uuid(),
     alsoTrashFolder: z.boolean(),
+    closeHolders: z.boolean().optional(),
     expectedName: z.string().min(1).max(80),
   })
   .strict();

@@ -1,3 +1,4 @@
+import type { AbortableInvocation } from "../common.js";
 import type { ProjectPendingCleanups, ProjectPendingCleanupsInput } from "../../../schemas/project-cleanup.js";
 import type { Result } from "../../../ipc/result.js";
 import type {
@@ -79,6 +80,8 @@ export interface ProjectsBridge {
    * `cleanup_pending` means the authority commit stands and the file work is
    * still owed, and `already_removed` means there was nothing left to do.
    */
+  /** Same validated delete operation, with cancellation before holder termination. */
+  readonly deleteAbortable: (input: ProjectDeleteInput) => AbortableInvocation<ProjectDeleteResult>;
   readonly delete: (
     input: ProjectDeleteInput
   ) => Promise<Result<ProjectDeleteResult>>;

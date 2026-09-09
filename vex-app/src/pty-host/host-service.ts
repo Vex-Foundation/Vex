@@ -1,3 +1,4 @@
+import { terminalFolderHoldersSchema, type TerminalFolderHolder } from "@shared/schemas/terminal-holders.js";
 /**
  * THE PTY HOST SERVICE: the one owner of every terminal in this process.
  *
@@ -78,6 +79,7 @@ export interface HostServiceDeps {
   /** Everything the host tells main. Replies and unsolicited events both. */
   readonly sendToMain: (message: TerminalHostMessage) => void;
   readonly platform?: NodeJS.Platform;
+  readonly killTree?: (pid: number) => void;
   readonly log?: (line: string) => void;
 }
 
@@ -322,6 +324,16 @@ export class PtyHostService {
     ports: readonly HostPort[],
   ): Promise<TerminalOutcome<unknown>> {
     switch (request.kind) {
+      case "folderHolders": {
+        const holders: TerminalFolderHolder[] = [];
+        for (const terminal of this.terminals.values()) {
+          const holder = terminal.process.holderUnder(request.directory);
+          if (holder === null) continue;
+          holders.push({ ...holder, kind: "vex_terminal", projectId: terminal.options.projectId });
+          if (request.close) await terminal.process.shutdown(true);
+        }
+        return accept(terminalFolderHoldersSchema.parse(holders));
+      }
       case "attachWindow":
         return this.attachWindow(request.windowId, request.nonce, ports[0] ?? null);
       case "create":
@@ -463,6 +475,7 @@ export class PtyHostService {
       options.launch,
       {
         spawn: this.deps.spawn,
+        killTree: this.deps.killTree,
         probe: this.deps.probe,
         baseEnv: this.deps.baseEnv,
         scrollbackRows: this.deps.scrollbackRows,
@@ -483,6 +496,10 @@ export class PtyHostService {
       return refuse(started.code);
     }
 
+    if (!this.admitting) {
+      process.dispose();
+      return refuse("host_unavailable");
+    }
     const persistent = new PersistentTerminal(
       {
         terminalId: options.terminalId,
@@ -1311,6 +1328,16 @@ export class PtyHostService {
     return this.shutdownPromise;
   }
 
+  async shutdownAfterParentLoss(): Promise<void> {
+    this.admitting = false;
+    // No snapshot commit on hard parent loss: kill immediately, including detached shells.
+    for (const terminal of this.terminals.values()) {
+      try { terminal.dispose(); } catch { this.log("[pty-host] parent-loss terminal disposal failed"); }
+    }
+    this.terminals.clear();
+    this.closeWindows();
+  }
+
   private async runShutdown(): Promise<void> {
     // 1. Close admission.
     this.admitting = false;
@@ -1362,6 +1389,10 @@ export class PtyHostService {
       }
     }
     this.terminals.clear();
+    this.closeWindows();
+  }
+
+  private closeWindows(): void {
     for (const entry of this.windows.values()) {
       try {
         entry.port.close();

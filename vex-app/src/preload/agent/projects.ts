@@ -15,7 +15,7 @@ import type {
   ProjectUpdateScopeInput,
 } from "../../shared/schemas/projects.js";
 import type { ProjectsBridge } from "../../shared/types/bridge/agent/projects.js";
-import { invokeWithSchema } from "../_dispatch.js";
+import { abortableInvoke, invokeWithSchema } from "../_dispatch.js";
 
 export const projects = {
   create(input: ProjectCreateInput) {
@@ -47,6 +47,9 @@ export const projects = {
   // Validated at the GATE like every sibling: `projectDeleteInputSchema` is
   // strict, so a caller-supplied extra field is rejected by name here rather
   // than travelling to a handler that destroys authority.
+  deleteAbortable(input: ProjectDeleteInput) {
+    return abortableInvoke(CH.projects.delete, input, projectDeleteInputSchema);
+  },
   delete(input: ProjectDeleteInput) {
     return invokeWithSchema(CH.projects.delete, input, projectDeleteInputSchema);
   },
