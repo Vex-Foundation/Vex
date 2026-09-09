@@ -40,9 +40,6 @@ import {
 } from "../studio-agent-catalogue.js";
 import {
   ARTIFACT_STATE_SENTENCES,
-  FULL_ACCESS_ACKNOWLEDGEMENT,
-  FULL_ACCESS_CONSEQUENCE_UNDO,
-  FULL_ACCESS_CONSEQUENCE_WHAT,
   fullAccessFolderLine,
   fullAccessWalletsLine,
   PROJECT_FILES_REPAIR_ACTION,
@@ -608,18 +605,20 @@ describe("the Full-access consent gate", () => {
     renderCreator();
     typeName("atlas");
     expect(consentCheckbox()).toBeNull();
+    expect(screen.getByText("Vex asks for approval before executing wallet actions with the wallets you select below. Your coding client controls its own filesystem permissions.")).not.toBeNull();
+    expect(screen.getByText("Agents can execute supported Vex wallet actions without per-call approval. Tool-specific approval requirements still apply.")).not.toBeNull();
 
     pickFullAccess();
     const strip = document.querySelector('[data-vex-consent="full-access"]');
     expect(strip).not.toBeNull();
     const text = strip?.textContent ?? "";
-    expect(text).toContain(FULL_ACCESS_CONSEQUENCE_WHAT);
+    expect(text).toContain("Agents can execute supported Vex wallet actions without per-call approval. Tool-specific approval requirements still apply. Your coding client controls its own filesystem permissions.");
     // TO WHAT. The creator has no path yet - the directory is claimed by the
     // create itself - so it says that rather than printing nothing.
     expect(text).toContain(fullAccessFolderLine(null));
     expect(text).toContain(fullAccessWalletsLine([]));
-    expect(text).toContain(FULL_ACCESS_CONSEQUENCE_UNDO);
-    expect(text).toContain(FULL_ACCESS_ACKNOWLEDGEMENT);
+    expect(text).toContain("You can revoke this permission in project settings. Completed transactions cannot be undone.");
+    expect(text).toContain("I understand that agents in this project can execute supported Vex wallet actions without per-call approval.");
   });
 
   it("keeps Create disabled with a valid name until the grant is acknowledged", () => {

@@ -36,7 +36,8 @@ import { resolveStudioInstallationEnvironment } from "../../instructions/install
 import type { StudioProjectBrief } from "../../instructions/project-brief.js";
 import {
   STUDIO_BUG_REPORT_NOTE,
-  STUDIO_BUILDING_APPS_NOTE,
+  renderStudioBuildingAppsNote,
+  escapeStudioDisplayText,
   renderStudioThisFileLog,
   renderStudioWhatsNewInVex,
 } from "../../instructions/project-brief.js";
@@ -55,7 +56,7 @@ export const STUDIO_VEX_GUIDE_PATH = ".vex/vex-guide.md";
 /**
  * The guide's body, without the markers.
  *
- * INSTALLATION-DEPENDENT, unlike the `AGENTS.md` block: the protocol blocks
+ * INSTALLATION-DEPENDENT, like the inline map in `AGENTS.md`: the protocol blocks
  * report which provider keys THIS machine has, which is a real fact an agent
  * needs before its first call to a gated tool and a real reason for the file to
  * change. The caller states the environment in tests so the goldens do not
@@ -66,13 +67,13 @@ export function renderStudioVexGuideBody(
   environment: StudioInstallationEnvironment = resolveStudioInstallationEnvironment(),
 ): string {
   return [
-    `# Vex guide - project "${brief.projectName}"`,
+    `# Vex guide - project "${escapeStudioDisplayText(brief.projectName)}"`,
     "",
     "The companion to this project's `AGENTS.md`, which carries the authority:",
     "the permission level in force, the selected wallets, how to call the tools,",
-    "what a result means and the task shapes. READ THIS FILE AT THE START OF A",
-    "SESSION - `AGENTS.md` says so in its first section, and everything here is",
-    "part of the same protocol.",
+    "what a result means and the task shapes. Read the relevant protocol section",
+    "before using that protocol unless it is already in context. The inline map",
+    "in `AGENTS.md` is the starting point; this file supplies the details.",
     "",
     // 1. What changed, FIRST (Next.js style): in Vex, then in this project.
     //    Two axes under one heading, exactly as they were composed before the
@@ -85,7 +86,7 @@ export function renderStudioVexGuideBody(
     renderStudioProtocolBlocks(environment),
     "",
     // 3. Building on the tools.
-    STUDIO_BUILDING_APPS_NOTE,
+    renderStudioBuildingAppsNote(brief),
     "",
     // 4. Reporting a Vex bug.
     STUDIO_BUG_REPORT_NOTE,

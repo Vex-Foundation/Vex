@@ -69,7 +69,9 @@ describe("the outcome vocabulary", () => {
     // This is the sentence that stops the one mistake that costs money twice.
     const rendered = renderStudioOutcomeVocabulary();
     expect(rendered).toContain("NEVER resend");
-    expect(rendered).toContain("resolved by READING, never by calling again");
+    expect(rendered).toContain("Resolve an unknown outcome by READING");
+    expect(rendered).toContain("do not submit the action again");
+    expect(rendered).toContain("An absent receipt is not proof that nothing was broadcast.");
     expect(rendered).toContain("`ChainRead` action `tx_receipt`");
     expect(rendered).toContain("`BridgeStatus`");
     expect(rendered).toContain("`AgentScan`");

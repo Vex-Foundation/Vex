@@ -34,9 +34,6 @@ import {
 } from "../../__tests__/studio-fixtures.js";
 import { ProjectSettingsDialog } from "../ProjectSettingsDialog.js";
 import {
-  FULL_ACCESS_ACKNOWLEDGEMENT,
-  FULL_ACCESS_CONSEQUENCE_UNDO,
-  FULL_ACCESS_CONSEQUENCE_WHAT,
   fullAccessWalletsLine,
   PROJECT_SCOPE_CONFLICT_RELOAD,
   PROJECT_SCOPE_CONFLICT_RELOADING,
@@ -327,11 +324,11 @@ describe("the Full-access consent gate", () => {
     fireEvent.click(screen.getByRole("radio", { name: /Full access/ }));
     const strip = document.querySelector('[data-vex-consent="full-access"]');
     expect(strip).not.toBeNull();
-    expect(strip?.textContent).toContain(FULL_ACCESS_CONSEQUENCE_WHAT);
-    expect(strip?.textContent).toContain(FULL_ACCESS_ACKNOWLEDGEMENT);
+    expect(strip?.textContent).toContain("Agents can execute supported Vex wallet actions without per-call approval. Tool-specific approval requirements still apply. Your coding client controls its own filesystem permissions.");
+    expect(strip?.textContent).toContain("I understand that agents in this project can execute supported Vex wallet actions without per-call approval.");
     // WHAT, TO WHAT, and whether it can be undone: all three, always.
     expect(strip?.textContent).toContain(STORED.displayPath);
-    expect(strip?.textContent).toContain(FULL_ACCESS_CONSEQUENCE_UNDO);
+    expect(strip?.textContent).toContain("You can revoke this permission in project settings. Completed transactions cannot be undone.");
   });
 
   it("keeps Save disabled until the grant is acknowledged", async () => {

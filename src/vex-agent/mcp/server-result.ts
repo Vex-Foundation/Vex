@@ -137,8 +137,9 @@ export function studioOutcomeToCallToolResult(
     case "expired":
       return textResult(
         "This action EXPIRED before anyone decided it in Vex. Nothing was "
-        + "executed and no funds moved. Ask the user to approve it in Vex if it "
-        + "is still wanted, then call the tool again.",
+        + "executed and no funds moved. Report the expiry; if the user still wants "
+        + "the action, obtain a fresh quote or intent and call again to create "
+        + "a new approval.",
         true,
       );
 

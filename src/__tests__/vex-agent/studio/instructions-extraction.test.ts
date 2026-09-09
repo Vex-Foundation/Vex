@@ -59,6 +59,11 @@
  *       - A19: the SAME SOURCE sentence tells the reader which other copy exists
  *         and that neither overrides the other.
  *
+ *  4. The 2026-09-08 review replaces the universal quote rule with quotes or
+ *     previews where offered, otherwise current market and position reads.
+ *     Effects and costs are disclosed before acting. APPROVAL is reworded
+ *     without changing its requirements to retain the 512-character bound.
+ *
  * The budget lints in `mcp/instructions.test.ts` continue to own the
  * 512-character prefix and the 2000-byte whole-string bounds.
  */
@@ -77,14 +82,13 @@ import {
 /** Written out by hand. An edit that lands here is an authored decision. */
 const PINNED_INSTRUCTIONS =
   "Vex moves REAL funds. Nothing here is a sandbox or testnet.\n"
-  + "1. APPROVAL: in a restricted project a destructive call BLOCKS "
-  + "until the user answers the card in Vex; the result IS the settled "
-  + "outcome. Never call again while one is unanswered, and never retry "
-  + "an UNKNOWN outcome.\n"
-  + "2. QUOTE FIRST: quote before any swap, bridge, trade or lend, then"
-  + " restate amounts, fees, impact and ETA.\n"
+  + "1. APPROVAL: a restricted destructive call BLOCKS until the user answers "
+  + "Vex's card; the result IS the settled outcome. Never call again while one "
+  + "is unanswered or retry an UNKNOWN outcome.\n"
+  + "2. QUOTE FIRST: use quotes/previews if offered; else read current market/position "
+  + "state. Disclose effects, amounts, costs, impact and ETA before acting.\n"
   + "3. AMOUNTS: units are PER FIELD - human decimals or raw smallest "
-  + "units. Read the field description; never guess.\n"
+  + "units. Read field descriptions; never guess.\n"
   + "\n"
   + "FINDING TOOLS: every tool is in tools/list. vex_ToolSearch (read-"
   + "only) finds one by intent; vex_ToolDescribe returns a tool's whole"

@@ -1,12 +1,11 @@
 /**
  * THE FULL-ACCESS GRANT STRIP: the one place Studio asks for this consent.
  *
- * `Full access` means agents in a project may act OUTSIDE its folder and with
- * its wallets, and it was granted by pressing a radio card whose only
- * distinguishing mark was one sentence of caution in the same register as the
- * option beside it (audit finding B2). Nothing separated granting it from
- * picking Restricted, on a self-custodial product where the grant reaches the
- * user's disk and their keys.
+ * `Full access` controls Vex MCP's execution gate: supported wallet actions
+ * can execute without per-call approval, while tool-specific approval
+ * requirements still apply. The coding client controls its own filesystem
+ * permissions. The grant can be revoked; completed transactions cannot be
+ * undone.
  *
  * Owner decision, 2026-09-02: the grant is CONFIRMED, not merely picked. This
  * component is the confirmation, and both surfaces that can make the grant - the

@@ -29,6 +29,8 @@ import { UNISWAP_FEE_BPS } from "@tools/uniswap/fee/constants.js";
 import { BRIDGE_FEE_BPS } from "@tools/bridge-fee/constants.js";
 import { POOLS_FEE_BPS } from "@tools/pools-fun/fee/venue.js";
 import { JUPITER_SWAP_FEE_BPS } from "@tools/solana-ecosystem/jupiter/jupiter-swaps/constants.js";
+import { LIGHTER_FEE_TICK, LIGHTER_PERPS_FEE, LIGHTER_SPOT_FEE } from "@tools/lighter/fee-policy.js";
+import { VIRTUALS_CURVE_FEE_BPS, virtualsCurveSellFeeFromProceeds } from "@tools/virtuals/curve/fee.js";
 import { WALLET_TX_FEE_BPS } from "@vex-agent/tools/internal/wallet/transaction/vex-fee.js";
 
 const REPO_ROOT = resolve(__dirname, "..", "..", "..", "..");
@@ -55,7 +57,7 @@ function importsAFeeModule(directory: string): boolean {
 }
 
 describe("the Vex fee note in the managed block", () => {
-  it("states the ONE rate every charging venue actually uses", () => {
+  it("states the 25 bps rate for each input-fee operation", () => {
     const rates = [
       KYBERSWAP_FEE_BPS,
       UNISWAP_FEE_BPS,
@@ -64,9 +66,8 @@ describe("the Vex fee note in the managed block", () => {
       POOLS_FEE_BPS,
       WALLET_TX_FEE_BPS,
     ];
-    // The note says one number because the code has one number. The day a venue
-    // charges something else, this fails and the note has to name the venue
-    // rather than keep implying they agree.
+    // These input-fee operations share a rate; Lighter and Virtuals sells
+    // have separate checks below for their rate and fee basis.
     expect(new Set(rates).size, `rates disagree: ${rates.join(", ")}`).toBe(1);
     expect(STUDIO_FEE_NOTE).toContain(`${String(rates[0])} bps`);
     expect(STUDIO_FEE_NOTE).toContain("0.25%");
@@ -139,8 +140,10 @@ describe("the Vex fee note in the managed block", () => {
   });
 
   it("says a failed attempt is never charged, and does not conflate gas with the fee", () => {
-    expect(STUDIO_FEE_NOTE).toContain("at the moment the operation");
-    expect(STUDIO_FEE_NOTE).toContain("never on a failed, reverted or never-broadcast");
+    expect(STUDIO_FEE_NOTE).toContain("A refused, reverted or never-broadcast");
+    expect(STUDIO_FEE_NOTE).toContain("operation has no Vex execution fee");
+    expect(STUDIO_FEE_NOTE).toContain("destination delivery is a separate outcome");
+    expect(STUDIO_FEE_NOTE).not.toContain("a bridge that does not");
     expect(STUDIO_FEE_NOTE).toContain("Network gas");
     expect(STUDIO_FEE_NOTE).toContain("NOT Vex's fee");
   });
@@ -153,6 +156,23 @@ describe("the Vex fee note in the managed block", () => {
     // the ordering.
     expect(STUDIO_FEE_NOTE).not.toContain("and only after the operation");
     expect(STUDIO_FEE_NOTE).toContain("inside the route for a swap");
+  });
+
+  it("separates Lighter perpetual and spot rates from exchange fees", () => {
+    const perpsBps = LIGHTER_PERPS_FEE * 10_000 / LIGHTER_FEE_TICK;
+    const spotBps = LIGHTER_SPOT_FEE * 10_000 / LIGHTER_FEE_TICK;
+    expect(STUDIO_FEE_NOTE).toContain(`Lighter: ${perpsBps} bps perpetual and ${spotBps} bps spot`);
+    expect(STUDIO_FEE_NOTE).toContain("on fills, maker and taker");
+    expect(STUDIO_FEE_NOTE).toContain("separate from exchange fees");
+    expect(STUDIO_FEE_NOTE).not.toContain("Vex charges 25 bps (0.25%) of the INPUT asset");
+  });
+
+  it("charges Virtuals sells on proven proceeds, not the sold input", () => {
+    expect(STUDIO_FEE_NOTE).toContain(`Sells: ${VIRTUALS_CURVE_FEE_BPS} bps of proven VIRTUAL proceeds`);
+    expect(STUDIO_FEE_NOTE).toContain("after settlement; a quote's sell fee is an estimate");
+    expect(STUDIO_FEE_NOTE).toContain("No proven proceeds, no fee");
+    expect(virtualsCurveSellFeeFromProceeds(1_000_000n)).toBe(2_500n);
+    expect(virtualsCurveSellFeeFromProceeds(0n)).toBe(0n);
   });
 
   it("makes the Uniswap sentence add up (I-6d)", () => {

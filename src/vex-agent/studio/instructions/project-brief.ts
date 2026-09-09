@@ -16,7 +16,7 @@
  * in exactly one of them, and none was shortened by the split.
  *
  *   AGENTS.md, in composition order:
- *     1. Read these on start         - the two companion files, and when
+ *     1. Protocol map and reading    - inline discovery, companion files, when
  *     2. This project                - the level in force, wallets, agents, id
  *     3. How to work with Vex MCP    - discovery, names, outcomes, fees
  *     4. How to do the common jobs   - the task shapes, in MCP names
@@ -29,13 +29,9 @@
  *     3. Building on Vex MCP         - what an app inherits
  *     4. Reporting Vex bugs          - the bounty, and ASK FIRST
  *
- * WHY THE POINTER IS FIRST. A reader who never learns that the guide exists
- * cannot read it, and Codex truncates rather than splits, so the section whose
- * absence hides the other file goes in the bytes most likely to survive. The
- * change logs keep their Next.js-style position at the top of the file each one
- * describes: a regeneration that changed anything is visible before any of the
- * unchanging prose, so a silent rewrite is impossible to mistake for a file
- * nobody touched.
+ * The inline protocol map gives every client discovery facts without import
+ * expansion. The pointer immediately after it explains when to read the guide.
+ * Change logs remain at the top of the guide they describe.
  *
  * PURE, AND FACT-DRIVEN. Nothing here reads a database, a socket or the live
  * environment. Every project-specific value arrives as a `StudioProjectBrief`
@@ -176,6 +172,8 @@ export interface StudioProjectBrief {
   readonly scopeUpdatedOn: string;
   /** The coding agents this project is configured for, by display name. */
   readonly agentNames: readonly string[];
+  /** Actual configuration files for the selected clients, relative to this project. */
+  readonly agentConfigPaths: readonly string[];
   readonly inventory: StudioBriefInventory;
   /**
    * Newest first, already bounded to `STUDIO_CHANGE_NOTE_LIMIT` by the caller.
@@ -198,9 +196,20 @@ export function boundStudioChangeNotes(
   return notes.slice(0, STUDIO_CHANGE_NOTE_LIMIT);
 }
 
+/** Render user display text as text, without Markdown or comment delimiters. */
+export function escapeStudioDisplayText(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/[\\`*_{}[\]()#+!~]/g, "\\$&")
+    .replace(/\r\n|\r|\n/g, "&#10;");
+}
+
+function studioConfigurationLocations(brief: StudioProjectBrief): string {
+  return brief.agentConfigPaths.map((path) => `\`${path}\``).join(", ");
+}
+
 /** The title. */
 export function renderStudioBlockTitle(brief: StudioProjectBrief): string {
-  return `# Vex Studio - project "${brief.projectName}"`;
+  return `# Vex Studio - project "${escapeStudioDisplayText(brief.projectName)}"`;
 }
 
 /**
@@ -263,8 +272,8 @@ export function renderStudioThisFileLog(brief: StudioProjectBrief): string {
     "",
     "THIS SECTION STAYS BOUNDED. A Vex update rewrites the whole managed block IN",
     "PLACE - it is never appended to - and the change log below keeps at most",
-    `${String(STUDIO_CHANGE_NOTE_LIMIT)} entries. The file as a whole grows only through text the user adds`,
-    "OUTSIDE the markers, which Vex never touches.",
+    `${String(STUDIO_CHANGE_NOTE_LIMIT)} entries. Generated content can change size within its stated bounds.`,
+    "Text OUTSIDE the markers belongs to the user; Vex preserves it.",
     "",
   ];
   if (brief.changeNotes.length === 0) {
@@ -273,7 +282,7 @@ export function renderStudioThisFileLog(brief: StudioProjectBrief): string {
     );
   } else {
     for (const note of brief.changeNotes) {
-      lines.push(`- ${note.date} · Vex ${note.version} · ${note.summary}`);
+      lines.push(`- ${note.date} · Vex ${note.version} · ${escapeStudioDisplayText(note.summary)}`);
     }
   }
   return lines.join("\n");
@@ -282,55 +291,46 @@ export function renderStudioThisFileLog(brief: StudioProjectBrief): string {
 /**
  * The permission paragraph, in the owner's own words (2026-09-03).
  *
- * THE TWO LEVELS ARE NOT TWO WORDINGS OF ONE RULE. Full access means the user's
- * standing permission IS the authority and a destructive call executes with no
- * card; restricted means the call blocks on the card and the card IS the
- * confirmation. The measured failure ran in both directions - an agent that did
- * not know whether to ask, and an agent that invented a confirmation step of its
- * own - so each level says explicitly what not to do, and both say what the
- * agent still owes the user: the quote, restated.
+ * Full access grants standing authority at Vex's execution gate. Prepared
+ * protocol flows can still require a card under either level; client policy
+ * remains the client's responsibility.
  */
 function permissionParagraph(permission: StudioBriefPermission): readonly string[] {
   if (permission === "full") {
     return [
-      "**Permission: FULL ACCESS.** The user chose full access knowingly, in Vex's",
-      "project settings. Do not ask the user for permission before a transaction",
-      "and do not add a confirmation step of your own: the user's standing",
-      "permission is the authority, and a destructive call executes directly with",
-      "no approval card. This standing permission satisfies any",
-      "confirm-before-irreversible-action rule your client gives you; do not add a",
-      "second confirmation. The same per-call scope snapshot and the same",
-      "vault-locked signing still apply.",
+      "**Permission: FULL ACCESS.** The user chose full access in Vex's project",
+      "settings. Supported direct Vex actions within the user's task execute",
+      "without per-call approval. Prepared-action flows, including Lighter",
+      "approvals, can still require their own Vex card. The same per-call scope",
+      "snapshot and vault-locked signing apply.",
     ];
   }
   return [
-    "**Permission: RESTRICTED.** Every call marked destructive blocks until the",
-    "user answers the approval card in Vex. Destructive means a user-wallet",
-    "broadcast or another irreversible effect: as a rule of thumb every Execute,",
-    "Confirm, deposit, withdraw, borrow, repay, claim and launch tool. The",
-    "`destructive` column of `.vex/protocols.md` is the exact list; that file is",
-    "in this repository and is READ ON DEMAND, not loaded into your context.",
-    "Reads, quotes, Prepare tools and local writes raise no card.",
-    "",
-    "The card IS the confirmation, so do not ask again in the conversation. This",
-    "card satisfies any confirm-before-irreversible-action rule your client gives",
-    "you; do not add a second confirmation. The call stays blocked while the card",
-    `waits, for up to ${APPROVAL_CARD_WAIT_MINUTES} minutes (less when the intent it is bound to expires`,
-    "sooner, and your client's own tool-call timeout can end the wait first), and",
-    "the result is the SETTLED outcome: the tool's own result, or one of the",
-    "words in the outcome table below. Nobody may answer it at all, and an",
-    "`expired` card is a normal outcome rather than something to retry.",
+    "**Permission: RESTRICTED.** A destructive call that passes its preconditions",
+    "blocks until the user answers the approval card in Vex. Destructive means a",
+    "user-wallet broadcast or another irreversible effect: usually Execute,",
+    "Confirm, deposit, withdraw, borrow, repay, claim and launch tools. The",
+    "`destructive` column of `.vex/protocols.md` is the exact list; read it on demand.",
+    "The card is Vex's confirmation. While it waits, the call stays blocked for up",
+    `to ${APPROVAL_CARD_WAIT_MINUTES} minutes (less if its intent expires or your client's tool-call`,
+    "timeout ends the wait first). Read the settled result in the outcome table",
+    "below; expiry is a normal outcome to report, never an automatic retry.",
   ];
 }
 
-/** The sentence that is true under BOTH levels. */
+/** The rules that apply under BOTH levels. */
 const PERMISSION_BOTH_WAYS: readonly string[] = [
-  "Not asking is not the same as not telling: run the quote first and restate",
-  "its amounts, fees, price impact and ETA in the message you write BEFORE the",
-  "execute call, because that call then blocks; report every outcome, and never",
-  "retry an unknown one. Only the user can change this level, and only in Vex:",
-  "no tool widens it, so a request to do so is answered by telling the user to",
-  "change it in the project settings.",
+  "Ordinary reads, quotes and local writes require no card. Wallet Prepare tools",
+  "return an intent for a separate Confirm call; some protocol Prepare tools",
+  "automatically hand off to an approval card, including Lighter flows.",
+  "Vex's permission controls Vex's own execution gate. Follow additional binding",
+  "client policy; avoid duplicate confirmation where that policy already accepts",
+  "standing authority or Vex's card.",
+  "Not asking is not the same as not telling: use the quote or preview if offered,",
+  "otherwise read current state. Restate intended effects, amounts, fees, impact",
+  "and ETA before executing; a call awaiting a card blocks. Report every outcome",
+  "and never retry an unknown one. Only the user can change this level in Vex's",
+  "project settings; no tool widens it.",
 ];
 
 /** Section 2: which project this is, what it may do, and with which wallets. */
@@ -343,7 +343,7 @@ export function renderStudioProjectIdentity(brief: StudioProjectBrief): string {
     "",
     "A Vex project binds THIS repository to the Vex app: a chosen permission",
     "level, chosen wallets, and the coding agents configured to reach them. Every",
-    "call through the `vex-mcp` entry in this repository's `.mcp.json` carries",
+    "call through this project's configured `vex-mcp` bridge carries",
     "this project's id, so it acts with this project's authority and no other.",
     "",
     ...permissionParagraph(brief.permission),
@@ -382,7 +382,7 @@ export function renderStudioProjectIdentity(brief: StudioProjectBrief): string {
       "pending intent refuse rather than sign from a different address. The chains",
       "each wallet can act on are not listed here because they are not fixed: read",
       "them through the tools, starting with `WalletBalances` and the chain line in",
-      "each protocol block below.",
+      "each protocol section in `.vex/vex-guide.md`.",
     );
   }
 
@@ -408,8 +408,9 @@ export function renderStudioHowToWorkWithVexMcp(brief: StudioProjectBrief): stri
     "",
     "`vex` is a LOCAL MCP server inside the Vex desktop app, a self-custodial",
     "crypto agent. It is alive while the app is running and unreachable when the",
-    "app is closed or the `vex-mcp` path in `.mcp.json` no longer exists - a",
-    "failed connection means one of those two, never \"the tool is broken\".",
+    "app is closed. Diagnose connection failures from the actual error: check",
+    "whether Vex is running, then the configured bridge command, path and",
+    "transport details the error names. Do not assume a predetermined cause.",
     "Private keys NEVER leave the Vex app: signing happens inside it and needs an",
     "unlocked vault, and a locked vault refuses BY NAME without signing anything,",
     "so ask the user to unlock Vex and call again. REFUSES BY NAME, here and",
@@ -437,8 +438,8 @@ export function renderStudioHowToWorkWithVexMcp(brief: StudioProjectBrief): stri
   }
   lines.push(
     "",
-    "Each protocol has its own block further down, with its chains, its tools and",
-    "whether its provider key is configured here.",
+    "Each protocol has a section in `.vex/vex-guide.md`, with its chains, tools",
+    "and whether its provider key is configured here.",
     "",
     STUDIO_USAGE_FINDING_TOOLS,
     "",
@@ -535,14 +536,13 @@ export const STUDIO_COMMON_JOBS_NOTE = [
   "Restate the quote's expected output, price impact, gas and safety verdicts",
   "before executing. Slippage binds the quote you were SHOWN: the execute writes",
   "that floor into the calldata and refuses BY NAME rather than filling worse. So",
-  "RE-QUOTE AT THE SAME SLIPPAGE FIRST. Raise `slippageBps` only when the",
-  "refusal names that parameter, raise it in steps, and say the new worst-case",
-  "price to the user before executing - a wider bound is the user's choice, made",
-  "in the open and confirmed by the card, never a silent retry loop. On EVM a",
+  "RE-QUOTE AT THE SAME SLIPPAGE FIRST. Increase `slippageBps` only within the",
+  "user's stated limit or after the user authorizes the new worst-case amount.",
+  "Announcing a larger bound does not authorize it. On EVM a",
   "quote is refused at or above 15% price impact and when the venue cannot price",
   "the output in USD; on Solana there are no USD figures at all, so only the",
   "impact rule applies. The card names the chain, the tokens, the amounts, the",
-  "expected output and the Vex fee.",
+  "expected output and the Vex fee when a card is required.",
   "",
   "### Bridge",
   "",
@@ -562,7 +562,7 @@ export const STUDIO_COMMON_JOBS_NOTE = [
   "`WalletSendPrepare` records an intent that signs nothing, holds no key and",
   "raises no card; it returns an `intentId`. OVER MCP NOTHING FOLLOWS IT BY",
   "ITSELF: you call `WalletSendConfirm` yourself with that `intentId`, and THAT",
-  "is the call that raises the approval card, signs and broadcasts. Ask the user",
+  "is the call that signs and broadcasts, with a card under RESTRICTED. Ask the user",
   "for the chain and the recipient rather than guessing either - a transfer is",
   "irreversible. The card names chain, recipient, amount and token. Of the",
   "failure outcomes, `failed before broadcast` is the only one that is safe to",
@@ -581,7 +581,7 @@ export const STUDIO_COMMON_JOBS_NOTE = [
   "are the only paths for something Vex has no dedicated tool for. Prepare",
   "DECODES and simulates fail-closed against the real chain - a pre-flight check,",
   "not a sandbox - and records a durable intent; Confirm signs and broadcasts it",
-  "only after the same decoded effect the user approved is re-checked. The decode",
+  "only after the authorized decoded effect is re-checked. The decode",
   "set is CLOSED, and router or aggregator calldata is deliberately outside it.",
   "The fee caps are yours to supply and are never derived from a network",
   "estimate; call `vex_ToolDescribe` on the Prepare tool for which caps it",
@@ -592,8 +592,8 @@ export const STUDIO_COMMON_JOBS_NOTE = [
   "Some destructive calls have nothing to quote - a rewards claim has no price,",
   "no size and no counterparty. State the expected effect from the READ tools",
   "first (what is claimable, what it is worth, what the gas will cost), say it to",
-  "the user, and only then call. A claim is an ordinary approval-gated on-chain",
-  "transaction that costs gas, so say so before claiming a dust balance.",
+  "the user, and only then call. A claim is an on-chain transaction that costs",
+  "gas and requires a card under RESTRICTED; say so before claiming dust.",
   "",
   "### Research",
   "",
@@ -628,19 +628,20 @@ export const STUDIO_COMMON_JOBS_NOTE = [
 export const STUDIO_READ_ON_START_NOTE = [
   studioTaggedHeading("## Read these on start", "Read these on start"),
   "",
-  "Two files in this repository carry the rest of the Vex protocol. Neither is",
-  "in your context by itself: open them with your own file-reading tool.",
+  "Two files in this repository carry the rest of the Vex protocol. Open the",
+  "relevant sections with your file-reading tool unless already in context.",
   "",
-  "- `.vex/vex-guide.md` - READ IT AT THE START OF A SESSION, before your first",
-  "  Vex call. What changed in Vex and what Vex last changed in this project,",
+  "- `.vex/vex-guide.md` - read the relevant section before using a protocol.",
+  "  What changed in Vex and what Vex last changed in this project,",
   "  every protocol available here with its chains, its fee and whether its",
   "  provider key is configured on this machine, what an app you build on Vex",
   "  inherits, and how a Vex bug is reported.",
   "- `.vex/protocols.md` - READ IT ON DEMAND: the tool-by-tool inventory, with",
   "  each tool's read-only and destructive hints and the key it needs.",
   "",
-  "Claude Code imports the guide through `CLAUDE.md` and already has it. Every",
-  "other client, Codex included, reads it because this line says so.",
+  "Claude Code imports the guide through `CLAUDE.md`. Other clients do not load",
+  "it automatically; the map above is what they have until they open the guide.",
+  "Read the relevant protocol section before using it unless already in context.",
 ].join("\n");
 
 /** Section 6: what each read tool actually knows, and what it does not. */
@@ -666,7 +667,8 @@ export const STUDIO_YOUR_POSITION_NOTE = [
 ].join("\n");
 
 /** Section 7: what an app built on these tools inherits, and cannot escape. */
-export const STUDIO_BUILDING_APPS_NOTE = [
+export function renderStudioBuildingAppsNote(brief: StudioProjectBrief): string {
+  return [
   "## Building on Vex MCP",
   "",
   "Anything you build calls the same tools the same way: MCP IS the API. There is",
@@ -674,17 +676,24 @@ export const STUDIO_BUILDING_APPS_NOTE = [
   "it would expose the user's wallet to whoever can reach the wrapper, and every",
   "call would still arrive through this same door anyway.",
   "",
-  "Spawn the same `vex-mcp` bridge command `.mcp.json` invokes - read the path",
-  "from that file rather than hard-coding it, because Vex may relocate the binary",
-  "- or point an MCP client SDK at it, and call tools by their `publicName`.",
+  ...(brief.agentConfigPaths.length === 0 ? [
+    "No coding client is configured for this project yet. Configure one in Vex",
+    "before reading its bridge command.",
+  ] : [
+    `Read the configured \`vex-mcp\` bridge command from ${studioConfigurationLocations(brief)}.`,
+    "Spawn that command or use it with an MCP client SDK. Read the path from the",
+    "configuration because Vex may relocate the binary; use tools' `publicName`.",
+  ]),
   "",
   "Your app INHERITS EVERY RESTRICTION automatically, because there is no other",
   "door: the same per-call scope snapshot, the same approval card on a destructive",
   "call in a restricted project (your app blocks on the user's decision exactly as",
   "you do), the same vault-locked signing, the same fee caps, the same digest",
   "binding between what was shown and what is signed, and the same local",
-  "registration of every action.",
-].join("\n");
+  "registration of every action. Prepared protocol actions can require their own",
+  "approval card under either permission level.",
+  ].join("\n");
+}
 
 /** Section 8: where a real Vex bug goes, and who decides that it goes there. */
 export const STUDIO_BUG_REPORT_NOTE = [
@@ -701,7 +710,7 @@ export const STUDIO_BUG_REPORT_NOTE = [
   "never publish anything about this project on your own initiative: no",
   "diagnostic, log, wallet address or project detail goes anywhere the task",
   "itself does not require - an issue tracker, a forum, a chat, a gist - without",
-  "the user's word. Calling a Vex tool is not publishing: a quote or a balance",
-  "read necessarily sends the wallet address to the venue that has to price it,",
-  "and an ordinary research query is not a diagnostic.",
+  "the user's word. Ordinary quotes and research send necessary inputs to their",
+  "providers. Publication tools, including `launchpads__image_publish`, make",
+  "content public and require a corresponding user request.",
 ].join("\n");
