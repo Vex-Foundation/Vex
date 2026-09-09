@@ -12,7 +12,7 @@
  * WHAT THE POLICY IS. The two venues have EQUAL STANDING. KyberSwap is usually
  * the better first choice for a reason the model can check (it aggregates
  * routes across many DEXes, so it usually prices better), not because Uniswap
- * is a lesser tool: Uniswap prices V2 and V3 pools on-chain with no aggregator
+ * is a lesser tool: Uniswap prices V2, V3 and v4 pools on-chain with no aggregator
  * in the path, which is exactly what serves a pair the aggregator does not
  * cover or whose indexed reserves are stale. When neither is obviously right,
  * quote both. Whichever is used, the execute runs against that venue's own
@@ -47,8 +47,9 @@
  * ranking the model cannot check is a ranking it cannot correct.
  */
 export const SWAP_VENUE_STANDING =
-  "KyberSwap is usually the better first choice because it aggregates routes across many DEXes; "
-  + "Uniswap is an equal-standing venue that prices V2 and V3 pools directly.";
+  "KyberSwap is usually tried first: it aggregates DEXes; "
+  + "Uniswap is an equal-standing venue pricing V2, V3 and v4 pools on seven chains. "
+  + "Other DEX liquidity may be unavailable there.";
 
 /**
  * The same standing in the fewest words that still say "equal", for the
@@ -74,8 +75,26 @@ export const SWAP_VENUE_EXECUTE_RULE = "Execute on the venue you quoted.";
  * than as failures of the other venue.
  */
 export const SWAP_VENUE_UNISWAP_OCCASIONS =
-  "Reach for Uniswap when KyberSwap has no coverage for the chain or no route for the pair, "
-  + "when its quote fails or looks off, or when the user asks for it.";
+  "Use Uniswap when KyberSwap is region/edge-blocked, lacks chain/pair coverage, "
+  + "its quote fails or looks off, or the user asks.";
+
+/** Regional refusal remedy shared by both KyberSwap tool descriptions. */
+export const KYBERSWAP_EDGE_BLOCK_GUIDANCE =
+  "When KyberSwap refuses with a regional or edge block, switch to `uniswap__swap_quote` "
+  + "then `uniswap__swap_execute` on the same chain.";
+
+/** The direct venue's regional role and current pool-version limit. */
+export const UNISWAP_REGIONAL_GUIDANCE =
+  "Use this venue when KyberSwap is unavailable in the user's region; it prices Uniswap V2, V3 "
+  + "and v4 pools on seven chains. Liquidity only on other DEXes may be unavailable here.";
+
+/** Appended only to the closed 401/403/451 edge-refusal outcome. */
+export const KYBERSWAP_EDGE_BLOCK_REMEDY =
+  " KyberSwap is not reachable from this network or region; retry this trade with "
+  + "`uniswap__swap_quote` then `uniswap__swap_execute` on the same chain. "
+  + "That venue prices Uniswap V2, V3 and v4 pools directly on seven chains; liquidity only on "
+  + "other DEXes may be unavailable there. If its quote finds no route, explain the coverage "
+  + "limit instead of retrying blocked KyberSwap.";
 
 /** The doctrine as one sentence pair, for a surface with room for it. */
 export const SWAP_VENUE_GUIDANCE =

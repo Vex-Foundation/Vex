@@ -317,8 +317,8 @@ whether its provider key is configured on this machine.
 
 | tool | title | access | destructive | requires env |
 | --- | --- | --- | --- | --- |
-| uniswap__swap_execute | Execute a Uniswap V2/V3 swap | mutating | yes | - |
-| uniswap__swap_quote | Quote a Uniswap V2/V3 route | read-only | no | - |
+| uniswap__swap_execute | Execute a Uniswap V2/V3/v4 swap | mutating | yes | - |
+| uniswap__swap_quote | Quote a Uniswap V2/V3/v4 route | read-only | no | - |
 
 ### virtuals
 

@@ -34,6 +34,19 @@ feature.
 
 All EVM-only. No Solana support in KyberSwap.
 
+KyberSwap may be unavailable from the user's network or region, including the
+owner-observed block in Vietnam: its edge can return HTTP 403 or 451 before any
+KyberSwap response body. Vex treats HTTP 401, 403 and 451 as terminal edge refusals;
+do not repeat the request unchanged on this venue. Retry the trade with
+`uniswap__swap_quote` then `uniswap__swap_execute` on the same chain, subject to
+the verified deployments in [Uniswap's registry](../uniswap/deployments.ts) and a
+fresh Uniswap quote and applicable approval. The direct venue prices Uniswap V2,
+V3 and v4 pools on its seven verified chains. A token can still be unavailable
+there when its liquidity sits on another DEX or outside direct discovery.
+Explain that gap instead of retrying blocked KyberSwap. Hookless v4 discovery
+probes the standard fee/tick-spacing combinations; hooked pools still depend on
+DexScreener indexing. KyberSwap aggregates other DEXes as well.
+
 ---
 
 ## Base URLs & Auth

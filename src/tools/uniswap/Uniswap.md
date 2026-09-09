@@ -16,10 +16,23 @@ The authoritative addresses and their verification comments live in [deployments
 
 Quotes compare eligible V2/V3/v4 candidates. A known wallet enables V2 gas estimation; missing gas or conversion data produces an explicit gross-output ranking label. The approved minimum remains the output floor. Fees follow the existing fixed Vex policy and separate post-success transfer.
 
+
+## Regional fallback
+
+Use the direct Uniswap venue as the same-chain fallback when KyberSwap is
+unavailable in the user's region or refuses at its edge. A fresh Uniswap quote
+with matching parameters and the applicable approval is required; a KyberSwap
+quote cannot authorize Uniswap execution. The direct venue prices V2, V3 and v4
+pools on its seven verified chains. A token can still have no usable route when
+its liquidity sits on another DEX or outside the supported discovery paths.
+Explain that limitation instead of retrying region-blocked KyberSwap unchanged.
+This also covers v4 liquidity on Robinhood Chain and Base, which KyberSwap was
+measured routing on 2026-09-09; v4 is now part of the direct venue too.
+
 ## V4 discovery limitation
 
-Deployment coverage does not imply that every pool is discoverable. The production adapter uses DexScreener's `token-pairs/v1/{chain}/{token}` endpoint, filters Uniswap v4 pools for the requested pair and considers the deepest three. Every selected pool must pass a PositionManager PoolKey lookup and full keccak pool-ID check before quoting.
+Deployment coverage does not imply that every pool is discoverable. For the requested pair, the venue probes hookless PoolKeys at fee/tick-spacing pairs 100/1, 500/10, 3000/60 and 10000/200. Native currency is address zero. StateView must show a nonzero initialized price, and the existing PositionManager key/hash binding must pass before a candidate is quoted.
 
-On 2026-09-09, the four new chains' supplied native/USDC samples quoted successfully on-chain, but token-pairs returned 30 entries with none of these samples, and direct pool lookup returned null. Thus the production handler selected existing V2/V3 routes for those pairs. A pool missing only from public search may be found by token-pairs; a pool missing from token-pairs and direct lookup needs provider indexing or an explicitly authorized additional discovery source. Fixed fallback seeds have not been added under the existing DexScreener-only rule.
+DexScreener's token-pairs endpoint supplies additional pools, including hooked pools. Its deepest three matching pools are considered alongside the four canonical probes, deduplicated by pool ID. Hooked pools remain DexScreener-discovered only. Unindexed hooked pools and nonstandard hookless keys outside those four combinations can still be missed. A DexScreener failure does not prevent the canonical on-chain probes.
 
 [V4.md](V4.md) contains the binding and settlement invariants, chain verification evidence, live results and known limitations. The latest seven-chain deployment fixture and its test pin code lengths, poolManager identities, router domains, spender registration and native wrapping. No live execute was run for the four new chains.

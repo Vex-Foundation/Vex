@@ -126,7 +126,17 @@ const TOKEN_B = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 const FALLBACK_SENTENCE = SWAP_VENUE_PEER_NUDGE_SUFFIX.trim();
 const TERMINAL_LEAD = "KyberSwap did not price the route at all";
 const RETRY_FIRST_LEAD = "retry the same KyberSwap request once after a short backoff";
-const COVERAGE_CAVEAT = "Uniswap covers only the EVM chains with a verified Vex deployment";
+const COVERAGE_CAVEAT = "Uniswap covers seven EVM chains with verified Vex deployments";
+
+function expectRegionalRemedy(output: string): void {
+  expect(output).toContain("KyberSwap is not reachable from this network or region");
+  expect(output).toContain("uniswap__swap_quote` then `uniswap__swap_execute` on the same chain");
+  expect(output).toContain("Uniswap V2, V3 and v4 pools directly on seven chains");
+  expect(output).toContain("liquidity only on other DEXes may be unavailable there");
+  expect(output).toContain("explain the coverage limit instead of retrying blocked KyberSwap");
+  expect(output).toContain("do not repeat it unchanged on this venue");
+  expect(output).not.toContain(RETRY_FIRST_LEAD);
+}
 
 function ctx(over: Partial<ProtocolExecutionContext> = {}): ProtocolExecutionContext {
   return {
@@ -170,12 +180,12 @@ function resetScaffold(): void {
 describe("kyberswap.swap.quote - a venue-availability failure names the alternative venue", () => {
   beforeEach(resetScaffold);
 
-  it("the EXACT live shape - a geo-block 403 from the edge - names Uniswap and says why", async () => {
-    mockGetRoute.mockRejectedValueOnce(mapAggregatorError(403, null, "HTTP 403: (html)"));
+  it.each([401, 403, 451])("an HTTP %i edge refusal names the same-chain remedy and v4 gap", async (status) => {
+    mockGetRoute.mockRejectedValueOnce(mapAggregatorError(status, null, `HTTP ${status}: (html)`));
 
     const result = await quote();
 
-    expect(result.output).toContain(FALLBACK_SENTENCE);
+    expectRegionalRemedy(result.output);
     expect(result.output).toContain(TERMINAL_LEAD);
     // An edge refusal is terminal for this client: telling the agent to retry
     // it would be false advice.
@@ -183,7 +193,7 @@ describe("kyberswap.swap.quote - a venue-availability failure names the alternat
     expect(result.output).toContain(COVERAGE_CAVEAT);
     // The original failure text survives - the suffix is appended, never a
     // replacement for what the venue actually said.
-    expect(result.output).toContain("refused the request (HTTP 403)");
+    expect(result.output).toContain(`refused the request (HTTP ${status})`);
   });
 
   it("a transport failure that never reached the venue names Uniswap, and says to retry Kyber once first", async () => {
@@ -239,7 +249,7 @@ describe("kyberswap.swap.quote - a venue-availability failure names the alternat
 
     const result = await quote({ sessionId: undefined });
 
-    expect(result.output).toContain(FALLBACK_SENTENCE);
+    expectRegionalRemedy(result.output);
     expect(result.output).toContain("refused the request (HTTP 403)");
   });
 });
@@ -247,19 +257,19 @@ describe("kyberswap.swap.quote - a venue-availability failure names the alternat
 describe("kyberswap.swap.execute - a venue-availability failure names the alternative AND is recorded", () => {
   beforeEach(resetScaffold);
 
-  it("records failure_code venue_unavailable instead of hiding a geo-block as unknown", async () => {
+  it.each([401, 403, 451])("records HTTP %i as venue_unavailable and names the regional remedy", async (status) => {
     // The execute reaches the venue at `/route/build` only: it claims the
     // quote it was given rather than fetching a route, so the geo-block
     // arrives from the build call.
     mockClaim.mockResolvedValue(APPROVED_CLAIM);
-    mockBuildRoute.mockRejectedValueOnce(mapAggregatorError(403, null, "HTTP 403: (html)"));
+    mockBuildRoute.mockRejectedValueOnce(mapAggregatorError(status, null, `HTTP ${status}: (html)`));
 
     const result = await KYBERSWAP_HANDLERS["kyberswap.swap.execute"]!(
       { chain: "ethereum", tokenIn: TOKEN_A, tokenOut: TOKEN_B, amountIn: "1" },
       ctx(),
     );
 
-    expect(result.output).toContain(FALLBACK_SENTENCE);
+    expectRegionalRemedy(result.output);
     expect(mockCreateAgentActivityPreBroadcastFailure).toHaveBeenCalledWith(
       expect.objectContaining({
         event: expect.objectContaining({ failureCode: "venue_unavailable" }),

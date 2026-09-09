@@ -2,7 +2,7 @@
 
 Kept outside the markers.
 
-<!-- vex:studio:begin vex=0.2.6 hash=a4483e9fde0cf64e -->
+<!-- vex:studio:begin vex=0.2.6 hash=8a51422266edd449 -->
 # Vex guide - project "acme-trading"
 
 The companion to this project's `AGENTS.md`, which carries the authority:
@@ -88,7 +88,7 @@ KyberSwap is an EVM swap aggregator that routes exact-input trades across more t
 
 ### uniswap
 
-Uniswap is an on-chain spot-swap venue that compares V2 and V3 pools for an exact-input trade.
+Uniswap is an on-chain spot-swap venue that compares V2, V3 and v4 pools for an exact-input trade.
 
 - Chains: Robinhood Chain (4663), Ethereum (1), Base (8453), Arbitrum One (42161), Optimism (10), Polygon (137), BNB Chain (56).
 - Read: Read a route preview's pool path, expected output, price impact, gas estimate, and token-safety signals. Token identity must already be resolved because this venue has no symbol search.

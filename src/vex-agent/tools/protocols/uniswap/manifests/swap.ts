@@ -6,6 +6,7 @@ import { UNISWAP_SWAP_VEX_FEE } from "../../../vex-fee-notes.js";
 import {
   SWAP_VENUE_GUIDANCE,
   UNISWAP_BEST_FOR,
+  UNISWAP_REGIONAL_GUIDANCE,
 } from "@vex-agent/tools/registry/swap-venue-guidance.js";
 import { UNISWAP_CHAINS } from "../discovery-text.js";
 
@@ -35,6 +36,7 @@ export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
       + "from the on-chain quoter with no aggregator in the path, and the best of the available pool "
       + `versions wins. Chains with a verified Vex deployment: ${UNISWAP_CHAINS.join(", ")}. `
       + `${UNISWAP_BEST_FOR} `
+      + `${UNISWAP_REGIONAL_GUIDANCE} `
       + "Use this before every Uniswap execute, and whenever the user asks what a trade would return, "
       + "what the rate or the price impact is, or which pools the route would cross. "
       + `${SWAP_VENUE_GUIDANCE} `
@@ -59,7 +61,7 @@ export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
       + "prequote gate re-validates it and is where a fail verdict refuses the execute. This venue "
       + "reports a router-factory allowlist check, an output-liquidity read and a fee-on-transfer "
       + "signal; it has no honeypot verdict of its own. "
-      + "V4 uses single-hop pools discovered on DexScreener, cryptographically bound through PositionManager. "
+      + "V4 probes standard hookless PoolKeys on-chain and discovers additional pools through DexScreener; hooked pools remain DexScreener-discovered only. Every candidate is cryptographically bound through PositionManager. "
       + "Hooked pools are disclosed explicitly: their quote is not a guarantee because hooks can distinguish the quoter from the router. "
       + "`selectionBasis` states whether gas costs were comparable; V2 has no quoter gas estimate. "
       + "READ `eligibility` BEFORE PROPOSING THE TRADE: only `executable` authorizes an execute, and it "
@@ -101,6 +103,7 @@ export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
       + "requires approval before it runs. The route is read from the on-chain quoter with no "
       + `aggregator in the path. Chains with a verified Vex deployment: ${UNISWAP_CHAINS.join(", ")}. `
       + `${UNISWAP_BEST_FOR} `
+      + `${UNISWAP_REGIONAL_GUIDANCE} `
       + "Use this once the user has agreed to a trade you already priced here. "
       + `${SWAP_VENUE_GUIDANCE} `
       + "PRECONDITIONS, each refused BY NAME rather than worked around: a fresh `uniswap__swap_quote` "

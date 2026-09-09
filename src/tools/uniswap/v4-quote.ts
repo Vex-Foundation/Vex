@@ -3,11 +3,22 @@ import { readTokenPools } from "../dexscreener/price-read.js";
 import type { UniswapDeployment } from "./deployments.js";
 import type { UniswapRoute, UniswapToken } from "./types.js";
 import type { V4RouteBinding } from "./v4-types.js";
-import { V4_QUOTER_ABI } from "./v4-abis.js";
-import { assertV4Binding, bindV4Pool, v4Refusal } from "./v4-pool.js";
+import { canonicalV4PoolKeys } from "./v4-canonical-pools.js";
+import { V4_QUOTER_ABI, V4_STATE_VIEW_ABI } from "./v4-abis.js";
+import { assertV4Binding, bindV4Pool, v4Refusal, v4PoolId } from "./v4-pool.js";
 
-export const V4_MAX_CANDIDATES = 3;
-export interface V4DiscoveryStats { readonly unavailable?: boolean; readonly indexed: number; readonly matching: number; readonly considered: number; readonly refused: number }
+const V4_MAX_DEXSCREENER_CANDIDATES = 3;
+export interface V4DiscoveryStats {
+  readonly canonical?: { readonly probed: number; readonly initialized: number; readonly failed: number };
+  readonly dexscreenerUnavailable?: boolean;
+  readonly unavailable?: boolean;
+  readonly indexed: number;
+  /** Matching DexScreener entries before its three-candidate cap. */
+  readonly matching: number;
+  /** Binding/quote attempts across both sources, after pool-ID deduplication. */
+  readonly considered: number;
+  readonly refused: number;
+}
 export interface V4QuoteCandidates { readonly routes: readonly UniswapRoute[]; readonly discovery: V4DiscoveryStats }
 
 function currencyMatches(token: UniswapToken, currency: string | null, weth: Address): boolean {
@@ -46,7 +57,11 @@ export async function quoteV4Candidates(
   const { deployment, tokenIn, tokenOut, amountIn } = args;
   if (!deployment.v4) return { routes: [], discovery: { indexed: 0, matching: 0, considered: 0, refused: 0 } };
   const discoveryToken = tokenOut.isNative ? tokenIn.address : tokenOut.address;
-  const pairs = await readTokenPools(deployment.key, discoveryToken);
+  let pairs: Awaited<ReturnType<typeof readTokenPools>> = [];
+  let dexscreenerUnavailable = false;
+  try { pairs = await readTokenPools(deployment.key, discoveryToken); }
+  catch { dexscreenerUnavailable = true; }
+
   const seen = new Set<string>();
   const matching = pairs.filter((pair) => {
     if (pair.chainId !== deployment.key || pair.dexId !== "uniswap" || !pair.labels?.includes("v4") || !/^0x[\da-fA-F]{64}$/.test(pair.pairAddress)) return false;
@@ -58,10 +73,12 @@ export async function quoteV4Candidates(
     return true;
   }).sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0));
   const routes: UniswapRoute[] = [];
+  const attempted = new Set<string>();
   let considered = 0, refused = 0;
   for (const pair of matching) {
-    if (considered === V4_MAX_CANDIDATES) break;
+    if (considered === V4_MAX_DEXSCREENER_CANDIDATES) break;
     considered++;
+    attempted.add(pair.pairAddress.toLowerCase());
     try {
       const input = currencyMatches(tokenIn, pair.baseToken.address, deployment.weth) ? pair.baseToken.address : pair.quoteToken.address;
       const output = input === pair.baseToken.address ? pair.quoteToken.address : pair.baseToken.address;
@@ -69,5 +86,30 @@ export async function quoteV4Candidates(
       routes.push(await quoteV4WithBinding(client, deployment, bound, amountIn));
     } catch { refused++; }
   }
-  return { routes, discovery: { indexed: pairs.length, matching: matching.length, considered, refused } };
+  const canonical = { probed: 0, initialized: 0, failed: 0 };
+  const currencyIn = tokenIn.isNative ? zeroAddress : tokenIn.address;
+  const currencyOut = tokenOut.isNative ? zeroAddress : tokenOut.address;
+  // Independent of the DexScreener cap and availability, bounded to four reads.
+  // The existing PositionManager hash binding still applies to every quote.
+  for (const key of canonicalV4PoolKeys(tokenIn, tokenOut)) {
+    const poolId = v4PoolId(key);
+    if (attempted.has(poolId)) continue;
+    canonical.probed++;
+    let initialized: boolean;
+    try {
+      const slot = await client.readContract({ address: deployment.v4.stateView, abi: V4_STATE_VIEW_ABI, functionName: "getSlot0", args: [poolId] });
+      initialized = slot[0] !== 0n;
+    } catch { canonical.failed++; continue; }
+    if (!initialized) continue;
+    canonical.initialized++;
+    attempted.add(poolId);
+    considered++;
+    try {
+      const bound = await bindV4Pool(client, deployment, poolId, currencyIn, currencyOut);
+      routes.push(await quoteV4WithBinding(client, deployment, bound, amountIn));
+    } catch { refused++; }
+  }
+  return { routes, discovery: { indexed: pairs.length, matching: matching.length, considered, refused,
+    canonical, ...(dexscreenerUnavailable ? { dexscreenerUnavailable: true } : {}) } };
+
 }

@@ -34,7 +34,10 @@ function rpc(k = key, amountOut = 1000n) {
     if (method !== "eth_call") throw new Error("unsupported read");
     const tx = (params as [{ to: string; data: Hex }])[0];
     if (tx.to.toLowerCase() === router.positionManager.toLowerCase()) return encodeFunctionResult({ abi: V4_POSITION_MANAGER_ABI, functionName: "poolKeys", result: [k.currency0, k.currency1, k.fee, k.tickSpacing, k.hooks] });
-    if (tx.to.toLowerCase() === router.stateView.toLowerCase()) return encodeFunctionResult({ abi: V4_STATE_VIEW_ABI, functionName: "getSlot0", result: [1n << 96n, 0, 0, 3000] });
+    if (tx.to.toLowerCase() === router.stateView.toLowerCase()) {
+      const { args } = decodeFunctionData({ abi: V4_STATE_VIEW_ABI, data: tx.data });
+      return encodeFunctionResult({ abi: V4_STATE_VIEW_ABI, functionName: "getSlot0", result: [args[0] === v4PoolId(k) ? 1n << 96n : 0n, 0, 0, 3000] });
+    }
     if (tx.to.toLowerCase() === router.quoter.toLowerCase()) return encodeFunctionResult({ abi: V4_QUOTER_ABI, functionName: "quoteExactInputSingle", result: [amountOut, 80000n] });
     throw new Error("pool unavailable");
   } }) });
@@ -67,7 +70,7 @@ describe("v4 binding and quote", () => {
     const { client } = rpc();
     const result = await quoteBestRoute(client, { deployment: { ...deployment, v2: undefined, v3: undefined }, tokenIn: { address: deployment.weth, isNative: true, symbol: "ETH", decimals: 18 }, tokenOut: { address: key.currency1, isNative: false, symbol: "USDC", decimals: 6 }, amountIn: 100n });
     expect(result?.route.version).toBe("v4");
-    expect(result?.v4Discovery).toEqual({ indexed: 1, matching: 1, considered: 1, refused: 0 });
+    expect(result?.v4Discovery).toEqual({ indexed: 1, matching: 1, considered: 1, refused: 0, canonical: { probed: 4, initialized: 0, failed: 0 } });
   });
 });
 
