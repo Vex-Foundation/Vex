@@ -22,6 +22,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import logger from "@utils/logger.js";
 
 import type { ClaimedOutboxEvent } from "@vex-agent/db/repos/agentscan-reporting.js";
 import type { AgentscanClient, SendEventsInput, SendOutcome } from "@vex-agent/agentscan/client.js";
@@ -359,6 +360,52 @@ describe("what the stored observation means", () => {
 });
 
 describe("refreshing the observation", () => {
+  it("keeps the refresh cadence when the reporting tick rewires the same server", async () => {
+    sourceAdvertising([]);
+    expect(await gate.refreshLighterCapabilityIfDue(GENERATION, 1_000_000)).toBe(true);
+    sourceAdvertising([]);
+    expect(await gate.refreshLighterCapabilityIfDue(GENERATION, 1_030_000)).toBe(false);
+    expect(mockRecordServerCapabilityObservation).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes immediately when the registration or configured server changes", async () => {
+    sourceAdvertising([]);
+    await gate.refreshLighterCapabilityIfDue(GENERATION, 1_000_000);
+    expect(await gate.refreshLighterCapabilityIfDue(GENERATION + 1, 1_030_000)).toBe(true);
+    gate.configureLighterCapabilitySource({
+      baseUrl: "https://new-agentscan.example",
+      fetchCapabilities: async () => ({ kind: "absent" }),
+    });
+    expect(await gate.refreshLighterCapabilityIfDue(GENERATION + 1, 1_060_000)).toBe(true);
+    expect(mockRecordServerCapabilityObservation).toHaveBeenCalledTimes(3);
+  });
+
+  it("suppresses unchanged observations and emits changes and bounded reminders", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    try {
+      sourceAdvertising([]);
+      await gate.refreshLighterCapabilityIfDue(GENERATION, 1_000_000);
+      // Advance the provider cadence independently to isolate logging policy.
+      await gate.refreshLighterCapabilityIfDue(GENERATION, 2_000_000);
+      expect(logger.info).toHaveBeenCalledTimes(1);
+      sourceAdvertising(["lighter_v1"]);
+      await gate.refreshLighterCapabilityIfDue(GENERATION, 3_000_000);
+      expect(logger.info).toHaveBeenLastCalledWith("agentscan.report.lighter_capability_observed", {
+        present: true, suppressedCount: 1,
+      });
+      await gate.refreshLighterCapabilityIfDue(GENERATION, 4_000_000);
+      vi.advanceTimersByTime(300_000);
+      await gate.refreshLighterCapabilityIfDue(GENERATION, 5_000_000);
+      expect(logger.info).toHaveBeenLastCalledWith("agentscan.report.lighter_capability_observed", {
+        present: true, suppressedCount: 1,
+      });
+      expect(logger.info).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("records the capability when the server advertises it", async () => {
     sourceAdvertising(["lighter_v1", "something_else"]);
     expect(await gate.refreshLighterCapabilityIfDue(GENERATION, 1_000_000)).toBe(true);

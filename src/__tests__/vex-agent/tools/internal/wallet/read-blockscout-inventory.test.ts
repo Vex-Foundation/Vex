@@ -350,7 +350,7 @@ describe("WalletBalances on 4663 - the indexer could not answer", () => {
       // C3.5: a read that observed nothing is never stamped fresh.
       observedAt: null,
       failureImpact: "enumeration_breadth",
-      failureReason: "unavailable",
+      failureReason: "http_403",
     });
     expect(sourceOf(snapshot, "local_chain_seed_and_pins").exhaustive).toBe(false);
   });

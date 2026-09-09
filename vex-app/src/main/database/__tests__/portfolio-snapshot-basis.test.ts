@@ -113,7 +113,8 @@ function scriptSnapshot(
     .mockResolvedValueOnce({ rows: [{ live: "0" }] })
     .mockResolvedValueOnce({ rows: [] })
     .mockResolvedValueOnce({ rows: [] })
-    .mockResolvedValueOnce({ rows });
+    .mockResolvedValueOnce({ rows })
+    .mockResolvedValueOnce({ rows: [] });
 }
 
 /** The snapshot query is the fourth. */
@@ -297,9 +298,9 @@ describe("the PnL basis", () => {
 
     await readGlobalPortfolio();
 
-    // Still four SELECTs: the group's accounting is correlated subqueries in
-    // the snapshot query, so a group with no record cannot drop out of it.
-    expect(mocks.query).toHaveBeenCalledTimes(4);
+    // Four portfolio SELECTs plus the independent chain read status query:
+    // group accounting stays correlated, so an absent group record cannot drop it.
+    expect(mocks.query).toHaveBeenCalledTimes(5);
     const sql = String(snapshotCall()?.[0] ?? "");
     expect(sql).toContain("proj_portfolio_snapshot_group_wallets");
     expect(sql).toContain("LIMIT 2");
@@ -681,4 +682,21 @@ describe("the in-flight kind vocabulary", () => {
         .toBe(true);
     }
   });
+});
+
+
+describe("partial snapshot certainty", () => {
+  it.each([[true, false], [false, true], [true, true]])(
+    "shows latest totals but no delta with partial latest=%s or previous=%s",
+    async (partial, previousPartial) => {
+      scriptSnapshot(snapshotRow({ total: 150, partial, unresolved_chain_count: partial ? 1 : 0 }),
+        snapshotRow({ total: 100, partial: previousPartial, unresolved_chain_count: previousPartial ? 1 : 0 }));
+      const data = await readGlobalPortfolio();
+      expect(data.snapshotTotalUsd).toBe(150);
+      expect(data.snapshotPartial).toBe(partial);
+      expect(data.snapshotUnresolvedChainCount).toBe(partial ? 1 : 0);
+      expect(data.pnlVsPrev).toBeNull();
+      expect(String(snapshotCall()?.[0])).toContain("BOOL_OR(s.partial)");
+    },
+  );
 });

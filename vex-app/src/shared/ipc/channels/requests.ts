@@ -335,6 +335,8 @@ export const CH = {
 
   // Settings - read-only Phase 1 (Phase 2 dodaje setters)
   settings: {
+    getChainEndpoints: "vex:settings:getChainEndpoints",
+    setChainEndpoints: "vex:settings:setChainEndpoints",
     getPreferences: "vex:settings:getPreferences",
     setTelemetryConsent: "vex:settings:setTelemetryConsent",
     getLighterIntegration: "vex:settings:getLighterIntegration",
@@ -603,6 +605,7 @@ export const CH = {
     create: "vex:projects:create",
     get: "vex:projects:get",
     list: "vex:projects:list",
+    pendingCleanups: "vex:projects:pendingCleanups",
     updateScope: "vex:projects:updateScope",
     repairFiles: "vex:projects:repairFiles",
     delete: "vex:projects:delete",

@@ -22,6 +22,8 @@
  * migration `085_projects.sql`.
  */
 
+import { projectTrashFailureSchema } from "./project-cleanup.js";
+
 import { z } from "zod";
 import { studioArtifactOutcomeSchema as artifactOutcomeSchema } from "./studio-installer.js";
 import { STUDIO_AGENT_IDS } from "./studio-agent-ids.js";
@@ -370,6 +372,8 @@ const cleanupReportShape = {
   /** Per-artifact outcomes, from the installer's own vocabulary. */
   cleanup: z.array(artifactOutcomeSchema).max(64),
   trash: projectTrashOutcomeSchema,
+  /** Present when this attempt diagnosed a trash refusal. */
+  trashFailure: projectTrashFailureSchema.optional(),
 };
 
 /**

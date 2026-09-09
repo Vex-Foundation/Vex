@@ -56,6 +56,8 @@ export default defineConfig({
   },
   test: {
     include: [
+      "src/__tests__/integration/repos/balance-chain-read-status.int.test.ts",
+      "src/__tests__/integration/repos/partial-portfolio-snapshots.int.test.ts",
       "src/__tests__/integration/migrations/idempotency.int.test.ts",
       // Every database shape the migration runner can meet, plus the gate
       // that keeps the pinned main baseline honest.

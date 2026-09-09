@@ -1,3 +1,4 @@
+vi.mock("../../../vex-agent/sync/balance-sync/read-failure-deferral.js", () => ({ shouldDeferFailedChainReads: vi.fn().mockResolvedValue(false) }));
 /**
  * WP8 at the `fullBalanceSync` level - the two properties that only the whole
  * cycle can show:
@@ -33,7 +34,7 @@ vi.mock("@tools/khalani/chains.js", () => ({
   resolveChainId: () => 8453,
 }));
 vi.mock("../../../vex-agent/sync/local-chain-balance-sync.js", () => ({
-  syncLocalChainForWallet: () => ({ chainId: 0, tokensUpdated: 0, skipped: true }),
+  syncLocalChainForWallet: () => ({ chainId: 4663, tokensUpdated: 0, skipped: false }),
 }));
 vi.mock("../../../vex-agent/sync/pendle-enrichment.js", () => ({
   enrichPendleBalances: (_f: string, _a: string, _c: number, rows: unknown) => rows,

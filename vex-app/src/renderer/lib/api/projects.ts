@@ -14,6 +14,8 @@
  * re-apply a stale intent.
  */
 
+import type { ProjectPendingCleanups } from "@shared/schemas/project-cleanup.js";
+
 import {
   queryOptions,
   useMutation,
@@ -40,6 +42,7 @@ import type {
 export const projectKeys = {
   all: ["projects"] as const,
   list: () => ["projects", "list"] as const,
+  pendingCleanups: () => ["projects", "pendingCleanups"] as const,
   detail: (id: string) => ["projects", "detail", id] as const,
 };
 
@@ -209,7 +212,17 @@ export function useDeleteProject(): UseMutationResult<
     onSuccess: (result, input) => {
       if (!result.ok) return;
       queryClient.removeQueries({ queryKey: projectKeys.detail(input.projectId) });
+      void queryClient.invalidateQueries({ queryKey: projectKeys.pendingCleanups() });
       void queryClient.invalidateQueries({ queryKey: projectKeys.list() });
     },
+  });
+}
+
+export function usePendingProjectCleanups(offset: number): UseQueryResult<Result<ProjectPendingCleanups>> {
+  return useQuery({
+    queryKey: [...projectKeys.pendingCleanups(), offset],
+    queryFn: () => window.vex.projects.pendingCleanups({ offset }),
+    staleTime: 5_000,
+    refetchInterval: 30_000,
   });
 }

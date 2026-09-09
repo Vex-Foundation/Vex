@@ -14,7 +14,7 @@
  *
  * NO GUARD LIVES HERE. The realpath-under-the-projects-root check that makes
  * trashing safe belongs to the caller that knows what the projects root is, and
- * it stays in `project-delete.ts`. This is the mechanism only.
+ * it stays in `trash-project-folder.ts`. This is the mechanism only.
  */
 
 import { shell } from "electron";

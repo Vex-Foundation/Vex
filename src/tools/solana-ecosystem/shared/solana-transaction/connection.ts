@@ -9,26 +9,11 @@
  * reader owns a deadline and must be able to CANCEL its HTTP request) build
  * their own through the factory instead of mutating the singleton.
  *
- * WHY SOLANA'S ENDPOINT TABLE LIVES HERE AND NOT BESIDE THE EVM ONE. It is the
- * same idea and a different mechanism: `@solana/web3.js`'s `Connection` takes
- * ONE url and exposes no transport list, so there is no failover to express -
- * only a choice, per role, made once. Building a failover on top of its `fetch`
- * hook was considered and rejected: `Connection` sends every method through that
- * one hook, so a url-switching fetch would re-send `sendTransaction` to a second
- * node, which is precisely the automatic re-broadcast rule 90 forbids and which
- * `staged.ts` was written to make impossible.
- *
- * TWO ROLES, MEASURED (2026-09-05). `solana-rpc.publicnode.com` answered every
- * method the repository issues - `getGenesisHash`, `getVersion`, `getHealth`,
- * `getSlot`, `getLatestBlockhash`, `getSignatureStatuses` with
- * `searchTransactionHistory`, `getBalance` and a malformed `simulateTransaction`
- * - about three times faster than `api.mainnet-beta.solana.com` on every one,
- * and both echo the mainnet-beta genesis hash `confirmSolanaMainnetGenesis`
- * already checks. `sendTransaction` was NOT probed, because probing it means
- * broadcasting, so BROADCAST STAYS on the endpoint this repository has always
- * broadcast through. The same evidence bar the EVM table's `broadcastSafe` flag
- * applies: capability measured on reads is not evidence a node will accept and
- * propagate a signed transaction.
+ * Read and broadcast remain separate roles. Live balance probes on 2026-09-08
+ * found the previously bundled publicnode endpoint refused getBalance and
+ * both token-account reads with HTTP 403. The canonical mainnet endpoint
+ * answered all three with HTTP 200, including both token programs. Bundled
+ * installs now use that measured working endpoint; custom URLs still win.
  */
 
 import { Connection, type Commitment, type FetchFn } from "@solana/web3.js";
@@ -39,8 +24,8 @@ import { loadConfig } from "../../../../config/store.js";
 /** What a connection is for. Decides which bundled endpoint it gets. */
 export type SolanaRpcRole = "read" | "broadcast";
 
-/** Fastest measured keyless endpoint that serves the whole read method set. */
-const SOLANA_READ_URL = "https://solana-rpc.publicnode.com";
+/** Keyless endpoint verified for native, SPL and Token-2022 balance reads. */
+const SOLANA_READ_URL = "https://api.mainnet-beta.solana.com";
 
 /**
  * The endpoint this repository has always broadcast through, kept for broadcast
@@ -60,6 +45,7 @@ const SOLANA_BROADCAST_URL = "https://api.mainnet-beta.solana.com";
  */
 const SUPERSEDED_BUNDLED_URLS: ReadonlySet<string> = new Set([
   "https://api.mainnet-beta.solana.com",
+  "https://solana-rpc.publicnode.com",
 ]);
 
 /**
@@ -81,7 +67,7 @@ export interface SolanaConnectionOptions {
   readonly rpcUrl?: string;
   /**
    * What this connection is for. `"broadcast"` pins the endpoint a signature
-   * reaches; `"read"` (the default) takes the faster measured one. Ignored when
+   * reaches; `"read"` (the default) takes the endpoint verified for balance reads. Ignored when
    * the user configured their own endpoint, which serves both roles.
    */
   readonly role?: SolanaRpcRole;

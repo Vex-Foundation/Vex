@@ -56,6 +56,7 @@ import { createHash } from "node:crypto";
 
 import * as reportingRepo from "@vex-agent/db/repos/agentscan-reporting.js";
 import logger from "@utils/logger.js";
+import { createTransitionLog } from "@utils/transition-log.js";
 
 /**
  * The capability string the deployed AgentScan server must advertise before a
@@ -124,17 +125,18 @@ export interface LighterCapabilitySource {
   fetchCapabilities(): Promise<ServerCapabilityAnswer>;
 }
 
+let capabilityLog = createTransitionLog();
 let source: LighterCapabilitySource | null = null;
 let lastRefreshAtMs: number | null = null;
+let lastRefreshGeneration: number | null = null;
 
 /**
- * Wire the lane's capability source. Called once by the reporting lane with
- * the configured base URL; `null` clears it (the lane is dark, or a test is
- * cleaning up).
+ * Rewire credentials each reporting tick without resetting the server's
+ * refresh cadence. A changed base URL or disabling the lane resets cadence.
  */
 export function configureLighterCapabilitySource(next: LighterCapabilitySource | null): void {
+  if (source?.baseUrl !== next?.baseUrl) lastRefreshAtMs = null;
   source = next;
-  lastRefreshAtMs = null;
 }
 
 /** sha256 of the base URL. The URL itself is never stored - the fingerprint is all the gate needs to notice the server changed. */
@@ -203,8 +205,10 @@ export async function refreshLighterCapabilityIfDue(
   nowMs: number,
 ): Promise<boolean> {
   if (source === null) return false;
-  if (lastRefreshAtMs !== null && nowMs - lastRefreshAtMs < LIGHTER_CAPABILITY_REFRESH_MS) return false;
+  if (lastRefreshGeneration === registrationGeneration && lastRefreshAtMs !== null
+    && nowMs - lastRefreshAtMs < LIGHTER_CAPABILITY_REFRESH_MS) return false;
   lastRefreshAtMs = nowMs;
+  lastRefreshGeneration = registrationGeneration;
   const answer = await source.fetchCapabilities();
   if (answer.kind === "unreachable") {
     logger.info("agentscan.report.lighter_capability_unreachable", { reason: answer.reason });
@@ -217,7 +221,13 @@ export async function refreshLighterCapabilityIfDue(
     present,
     registrationGeneration,
   });
-  logger.info("agentscan.report.lighter_capability_observed", { present });
+  const observation = capabilityLog.observe(
+    `${agentscanServerFingerprint(source.baseUrl)}:${registrationGeneration}`,
+    String(present),
+  );
+  if (observation) {
+    logger.info("agentscan.report.lighter_capability_observed", { present, ...observation });
+  }
   return true;
 }
 
@@ -245,4 +255,6 @@ export async function noteLighterCapabilityRefused(registrationGeneration: numbe
 export function resetLighterCapabilityGate(): void {
   source = null;
   lastRefreshAtMs = null;
+  lastRefreshGeneration = null;
+  capabilityLog = createTransitionLog();
 }

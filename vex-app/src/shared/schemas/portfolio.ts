@@ -352,12 +352,25 @@ export type SnapshotInFlightEntryDto = z.infer<typeof snapshotInFlightEntryDtoSc
  * no entries - the same conservative reading migration 101 already specified
  * for groups published before IT.
  */
+export const portfolioChainReadIssueSchema = z.object({
+  status: z.enum(["read_failed", "inventory_incomplete"]).default("read_failed"),
+  chainId: z.number().int().positive(),
+  staleSince: z.string().datetime({ offset: true }),
+  lastSuccessAt: z.string().datetime({ offset: true }).nullable(),
+  reason: z.string().regex(/^(?:rate_limited|dns|tls|timeout|http_[1-5][0-9]{2}|rpc_-?[0-9]{1,10}|invalid_response|rpc_failed|read_failed|read_incomplete|unsupported_chain|enumeration_not_exhaustive|connection_failed|page_limit|cursor_cycle|invalid_row|invalid_page|unavailable|transport_unavailable|transport_failed|redirect_refused|over_cap|cloudflare_challenge)$/),
+}).strict();
+export type PortfolioChainReadIssue = z.infer<typeof portfolioChainReadIssueSchema>;
+
 export const portfolioDtoSchema = z
   .object({
     scope: z.enum(["global", "session", "project"]),
     walletCount: z.number().int().nonnegative(),
     liveTotalUsd: z.number(),
+    /** Failed reads are independent of in-flight transaction uncertainty. */
+    chainReadIssues: z.array(portfolioChainReadIssueSchema).optional(),
     snapshotTotalUsd: z.number().nullable(),
+    snapshotPartial: z.boolean().nullable().optional(),
+    snapshotUnresolvedChainCount: z.number().int().nonnegative().nullable().optional(),
     snapshotSettledUsd: z.number().nullable().optional(),
     snapshotInTransitUsd: z.number().nullable().optional(),
     snapshotInFlight: z.array(snapshotInFlightEntryDtoSchema).max(50).nullable().optional(),

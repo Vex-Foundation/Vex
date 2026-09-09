@@ -31,13 +31,12 @@
  *
  * The raw provider error NEVER reaches the log: an RPC error can carry the
  * configured RPC URL (with its API key) and HTML bodies. Only the error's
- * class name is recorded.
+ * classified transport cause and endpoint host are recorded.
  */
 
 import { SOLANA_SYNTHETIC_CHAIN_ID } from "../../constants/solana-chain.js";
 import {
   readSolanaWalletBalances,
-  SolanaRpcRateLimitedError,
   type SolanaBalanceRpc,
   type SolanaWalletBalancesRead,
 } from "@tools/solana-ecosystem/balances/read-wallet-balances.js";
@@ -49,6 +48,10 @@ import { solanaAssetIdentity } from "@tools/solana-ecosystem/shared/solana-asset
 import * as balancesRepo from "@vex-agent/db/repos/balances.js";
 import type { BalanceRow } from "@vex-agent/db/repos/balances.js";
 import logger from "@utils/logger.js";
+import { createTransitionLog } from "@utils/transition-log.js";
+import { classifySolanaRpcFailure, type SolanaRpcFailureReason } from "@tools/solana-ecosystem/balances/rpc-failure.js";
+
+const failureLog = createTransitionLog();
 
 /** Solana rows are always written under this family (`familyForChainId` parity). */
 const SOLANA_WALLET_FAMILY = "solana";
@@ -56,7 +59,7 @@ const SOLANA_WALLET_FAMILY = "solana";
 export interface SolanaSyncOptions {
   /**
    * Injected RPC seam, forwarded to the reader. Production callers omit it and
-   * get the shared `getSolanaConnection()` singleton; a test drives a scripted
+   * get a connection owned by the read deadline; a test drives a scripted
    * object through the same code path instead of patching a global.
    */
   readonly rpc?: SolanaBalanceRpc;
@@ -70,11 +73,12 @@ export interface SolanaSyncOptions {
  *    skip whose remedy is pacing rather than diagnosis, and the reader stopped
  *    at the FIRST 429 rather than spending its budget inside web3.js's own
  *    retry (see `createDeadlineBoundSolanaRpc`). Nothing retries it here.
- *  - `rpc_failed`: any other transport, deadline or response failure.
+ *  - transport and response errors carry classified reasons; `rpc_failed`
+ *    is reserved for causes with no recognized runtime code.
  *  - `read_incomplete`: the read succeeded but some token account would not
  *    project, so writing the survivors would DELETE real holdings.
  */
-export type SolanaSyncSkipReason = "rate_limited" | "rpc_failed" | "read_incomplete";
+export type SolanaSyncSkipReason = SolanaRpcFailureReason | "read_incomplete";
 
 export interface SolanaSyncResult {
   chainId: number;
@@ -106,15 +110,14 @@ export async function syncSolanaWalletBalances(
   try {
     read = await readSolanaWalletBalances(walletAddress, { rpc: options.rpc });
   } catch (err) {
-    // A RATE LIMIT IS NOT A FAILURE OF THE ENDPOINT, and the caller is told so
-    // rather than left to infer it from an error class name in a log.
-    const reason: SolanaSyncSkipReason =
-      err instanceof SolanaRpcRateLimitedError ? "rate_limited" : "rpc_failed";
-    logger.warn("sync.solana_chain.failed", {
+    const { reason, endpointHost } = classifySolanaRpcFailure(err);
+    const signal = failureLog.observe(walletAddress, `${reason}:${endpointHost}`);
+    if (signal !== undefined) logger.warn("sync.solana_chain.failed", {
       chainId: SOLANA_SYNTHETIC_CHAIN_ID,
       address: redactedAddress,
       reason,
-      error: err instanceof Error ? err.name : "unknown",
+      endpointHost,
+      ...signal,
     });
     return { chainId: SOLANA_SYNTHETIC_CHAIN_ID, tokensUpdated: 0, skipped: true, reason };
   }
@@ -143,6 +146,8 @@ export async function syncSolanaWalletBalances(
     SOLANA_SYNTHETIC_CHAIN_ID,
     rows,
   );
+  const recovered = failureLog.clear(walletAddress);
+  if (recovered) logger.info("sync.solana_chain.recovered", { chainId: SOLANA_SYNTHETIC_CHAIN_ID, ...recovered });
   logger.info("sync.solana_chain.completed", {
     chainId: SOLANA_SYNTHETIC_CHAIN_ID,
     address: redactedAddress,

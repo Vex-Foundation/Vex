@@ -21,6 +21,60 @@ function withPoisonedPrepareStackTrace(body: () => void): void {
 }
 
 describe("redact", () => {
+  it.each([
+    ["seeded", 5],
+    ["tokens", 4],
+    ["wallets", 4],
+    ["droppedAddresses", 0],
+    ["walletsWithMoneyInFlight", 0],
+    ["tokenCount", 12],
+    ["seedCount", 2],
+  ])("preserves the numeric count %s", (key, value) => {
+    expect(redact({ [key]: value })).toEqual({ [key]: value });
+  });
+
+  it.each(["password", "seed", "private_key", "api-key", "token", "authorization"])(
+    "still redacts numeric credentials under %s", (key) => {
+      expect(redact({ [key]: 123456 })).toEqual({ [key]: "[REDACTED]" });
+    },
+  );
+
+  it("scrubs sensitive value shapes even under count-like keys", () => {
+    const address = `0x${"a".repeat(40)}`;
+    const base58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijk";
+    expect(redact({ seeded: address, tokens: [base58], wallets: { personal: "hidden" } })).toEqual({
+      seeded: "[REDACTED]", tokens: "[REDACTED]", wallets: "[REDACTED]",
+    });
+    expect(redact({ reason: "timeout https://rpc.example/credential?key=hidden" })).toEqual({
+      reason: "timeout [REDACTED]",
+    });
+  });
+
+  it.each([
+    ["https://api.example.com/items", "https://api.example.com/items"],
+    ["https://api.example.com/items?page=2#results", "https://api.example.com/items"],
+    ["https://api.example.com/items#results", "https://api.example.com/items"],
+    ["http://127.0.0.1:4000/items?page=2", "http://127.0.0.1:4000/items"],
+    ["wss://api.example.com/stream?channel=prices#latest", "wss://api.example.com/stream"],
+    ["https://user:pass@api.example.com/items?page=2", "[REDACTED]"],
+    ["https://user@api.example.com/items", "[REDACTED]"],
+    ["https://api.example.com/users?token=hunter2&id=1", "[REDACTED]"],
+    ["https://api.example.com/items?api_key=secret", "[REDACTED]"],
+    ["https://api.example.com/items?%61pi%5Fkey=secret", "[REDACTED]"],
+    ["https://api.example.com/items?ACCESS-TOKEN=secret", "[REDACTED]"],
+    ["https://api.example.com/items?key=secret", "[REDACTED]"],
+    ["https://api.example.com/items?X-Amz-Credential=secret", "[REDACTED]"],
+    ["https://api.example.com/items?sig=secret", "[REDACTED]"],
+  ])("scrubs diagnostic URL %s", (url, expected) => {
+    expect(redact(url)).toBe(expected);
+    expect(redact(`Network error fetching ${url}`)).toBe(`Network error fetching ${expected}`);
+  });
+
+  it.each(["\n", "\r\n"])("applies the same URL policy with line separator %j", (newline) => {
+    const input = `https://api.example.com/items?page=2#results${newline}https://user:pass@api.example.com/items${newline}https://api.example.com/users?token=hunter2`;
+    expect(redact(input)).toBe(`https://api.example.com/items${newline}[REDACTED]${newline}[REDACTED]`);
+  });
+
   it("redacts sensitive object keys regardless of value", () => {
     const input = {
       password: "hunter2",

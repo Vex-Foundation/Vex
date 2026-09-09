@@ -10,6 +10,10 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+vi.mock("@vex-agent/db/repos/balance-chain-read-status.js", () => ({
+  recordChainReadObservations: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("@utils/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));

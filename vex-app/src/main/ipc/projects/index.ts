@@ -7,6 +7,8 @@
  * to the five handler modules.
  */
 
+import { registerProjectsPendingCleanupsHandler } from "./pending-cleanups.js";
+
 import { registerProjectsCreateHandler } from "./create.js";
 import { registerProjectsDeleteHandler } from "./delete.js";
 import { registerProjectsGetHandler, registerProjectsListHandler } from "./read.js";
@@ -19,6 +21,7 @@ export function registerProjectsHandlers(): Array<() => void> {
     registerProjectsDeleteHandler(),
     registerProjectsGetHandler(),
     registerProjectsListHandler(),
+    registerProjectsPendingCleanupsHandler(),
     registerProjectsUpdateScopeHandler(),
     registerProjectsRepairFilesHandler(),
   ];

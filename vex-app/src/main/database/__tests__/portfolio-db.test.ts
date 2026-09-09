@@ -118,9 +118,7 @@ afterEach(() => {
 });
 
 /**
- * Script the four queries (live total, token lines, per-chain breakdown,
- * snapshot) in order. The portfolio-db issues exactly these four when the
- * allow-list is non-empty.
+ * Script live totals, tokens, chain breakdown, snapshots and read health.
  */
 function scriptPortfolioQueries(opts: {
   live: unknown;
@@ -130,6 +128,7 @@ function scriptPortfolioQueries(opts: {
   previousSnapshot?: Record<string, unknown> | null;
   /** Flat breakdown rows (chain totals repeated per top-token line). */
   breakdown?: ReadonlyArray<Record<string, unknown>>;
+  readIssues?: ReadonlyArray<Record<string, unknown>>;
 }): void {
   const snapshotRows = [opts.snapshot, opts.previousSnapshot ?? null].filter(
     (r): r is Record<string, unknown> => r != null,
@@ -138,7 +137,8 @@ function scriptPortfolioQueries(opts: {
     .mockResolvedValueOnce({ rows: [{ live: opts.live }] })
     .mockResolvedValueOnce({ rows: opts.tokens })
     .mockResolvedValueOnce({ rows: opts.breakdown ?? [] })
-    .mockResolvedValueOnce({ rows: snapshotRows });
+    .mockResolvedValueOnce({ rows: snapshotRows })
+    .mockResolvedValueOnce({ rows: opts.readIssues ?? [] });
 }
 
 describe("portfolio-db getPortfolio - global scope", () => {
@@ -151,7 +151,10 @@ describe("portfolio-db getPortfolio - global scope", () => {
       scope: "global",
       walletCount: 0,
       liveTotalUsd: 0,
+      chainReadIssues: [],
       snapshotTotalUsd: null,
+      snapshotPartial: null,
+      snapshotUnresolvedChainCount: null,
       snapshotSettledUsd: null,
       snapshotInTransitUsd: null,
       snapshotInFlight: null,
@@ -217,7 +220,7 @@ describe("portfolio-db getPortfolio - global scope", () => {
       const p = c[1];
       return Array.isArray(p) ? p[0] : undefined;
     });
-    expect(addressParams).toHaveLength(4);
+    expect(addressParams).toHaveLength(5);
     for (const p of addressParams) {
       expect(p).toEqual([WALLET_A, WALLET_B, SOL_ADDR]);
     }
@@ -1190,5 +1193,24 @@ describe("portfolio-db getPortfolio - project scope (B0)", () => {
       ...mocks.log.error.mock.calls,
     ]);
     expect(logged).not.toContain(EVM);
+  });
+});
+
+
+describe("portfolio chain read health", () => {
+  it("returns a scoped stale chain even when no holding row has ever existed", async () => {
+    mocks.listWallets.mockImplementation((family: string) => family === "solana"
+      ? [{ id: "sol-1", address: SOL_ADDR, label: "", createdAt: "" }] : []);
+    scriptPortfolioQueries({ live: 0, tokens: [], snapshot: null, readIssues: [{
+      chain_id: "20011000000", stale_since: new Date("2026-09-08T20:37:00Z"),
+      last_success_at: null, failure_reason: "http_403", read_status: "ok",
+    }] });
+    const result = await getPortfolio({ scope: "global" });
+    expect(result).toMatchObject({ ok: true, data: { chainReadIssues: [{
+      chainId: 20011000000, staleSince: "2026-09-08T20:37:00.000Z",
+      lastSuccessAt: null, reason: "http_403",
+    }] } });
+    const healthRead = mocks.query.mock.calls.find(([sql]) => sql.includes("proj_balance_chain_read_status"));
+    expect(healthRead?.[1]).toEqual([[SOL_ADDR]]);
   });
 });

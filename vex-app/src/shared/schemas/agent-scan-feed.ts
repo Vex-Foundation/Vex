@@ -530,7 +530,7 @@ export const portfolioRefreshInputSchema = z.object({}).strict();
  */
 export const portfolioRefreshOutputSchema = z
   .object({
-    status: z.enum(["refreshed", "throttled", "unavailable"]),
+    status: z.enum(["refreshed", "partial", "throttled", "unavailable"]),
     /** Present on `refreshed`. Decimal string — never a float across IPC. */
     totalUsd: z.string().max(40).optional(),
     walletCount: z.number().int().nonnegative().optional(),

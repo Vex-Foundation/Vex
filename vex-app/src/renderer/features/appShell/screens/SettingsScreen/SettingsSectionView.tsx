@@ -22,6 +22,7 @@ import { ExportPrivateKeyModal } from "../../../wallets/ExportPrivateKeyModal.js
 import { LighterPointsSection } from "./LighterPointsSection.js";
 import type { SectionMeta } from "./settings-sections.js";
 import { SuperboardKeySection } from "./SuperboardKeySection.js";
+import { ChainEndpointsSection } from "./ChainEndpointsSection.js";
 
 export function SettingsSectionView({
   meta,
@@ -47,6 +48,7 @@ export function SettingsSectionView({
       data-vex-settings-section={meta.id}
     >
       {renderSectionContent(meta, stepProps)}
+      {meta.id === "apiKeys" ? <ChainEndpointsSection /> : null}
       {meta.id === "wallets" ? <ExportPrivateKeySection env={env} /> : null}
     </div>
   );

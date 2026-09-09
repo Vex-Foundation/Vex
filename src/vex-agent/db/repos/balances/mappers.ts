@@ -25,6 +25,8 @@ export function mapSnapshotRow(r: Record<string, unknown>): PortfolioSnapshot {
     walletFamily: r.wallet_family as string,
     walletAddress: r.wallet_address as string,
     snapshotGroupId: r.snapshot_group_id as string,
+    partial: r.partial === true,
+    unresolvedChainCount: Number(r.unresolved_chain_count ?? 0),
     totalUsd: Number(r.total_usd),
     positions: r.positions as Record<string, unknown>,
     activeChains: r.active_chains as string[],

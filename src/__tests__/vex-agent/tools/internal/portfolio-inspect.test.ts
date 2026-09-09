@@ -157,6 +157,20 @@ describe("agent_scan tool", () => {
   });
 
   describe("snapshots", () => {
+    it("preserves partial history metadata and unknown delta in the tool result", async () => {
+      mockGetAggregateSnapshots.mockResolvedValueOnce([{
+        snapshotGroupId: "g1", totalUsd: 16.8, pnlVsPrev: null, pnlPctVsPrev: null,
+        activeChains: ["20011000000"], at: "2026-09-08T20:00:00.000Z",
+        partial: true, unresolvedChainCount: 1,
+      }]);
+      const result = await handleAgentScan({ view: "snapshots" }, ctx);
+      expect(result.success).toBe(true);
+      expect(dataOf(result)).toMatchObject({ count: 1, snapshots: [{
+        totalUsd: 16.8, partial: true, unresolvedChainCount: 1, pnlVsPrev: null, pnlPctVsPrev: null,
+      }] });
+      expect(JSON.parse(result.output)).toEqual(dataOf(result));
+    });
+
     it("calls getAggregateSnapshots with the wallet set + 7d", async () => {
       await handleAgentScan({ view: "snapshots" }, ctx);
       expect(mockGetAggregateSnapshots).toHaveBeenCalledWith(["0xEVM", "SOL"], "7d");
@@ -168,14 +182,14 @@ describe("agent_scan tool", () => {
       mockGetTotalUsd.mockResolvedValueOnce(5000);
       mockGetOpen.mockResolvedValueOnce([{ id: 1 }, { id: 2 }]);
       mockGetLatestAggregateSnapshot.mockResolvedValueOnce({
-        totalUsd: 4900, pnlVsPrev: 100, pnlPctVsPrev: 2.08,
+        totalUsd: 4900, pnlVsPrev: 100, pnlPctVsPrev: 2.08, partial: false, unresolvedChainCount: 0,
         activeChains: ["1"], at: "2026-03-29",
       });
       const r = await handleAgentScan({ view: "summary" }, ctx);
       expect(r.data!.totalBalanceUsd).toBe(5000);
       expect(r.data!.openPositionCount).toBe(2);
       expect(r.data!.latestSnapshot).toEqual({
-        totalUsd: 4900, pnlVsPrev: 100, activeChains: ["1"], at: "2026-03-29",
+        totalUsd: 4900, pnlVsPrev: 100, activeChains: ["1"], at: "2026-03-29", partial: false, unresolvedChainCount: 0,
       });
       // No realized/unrealized PnL surface survives the teardown.
       expect(r.data).not.toHaveProperty("realizedPnlUsd");
@@ -183,6 +197,20 @@ describe("agent_scan tool", () => {
       expect(r.data).not.toHaveProperty("openSpotLotCount");
       // Never queries the deleted PnL repos/tables.
       expect(mockGetTotalUsd).toHaveBeenCalledTimes(1);
+    });
+
+    it("preserves partial summary metadata and unknown delta in the tool result", async () => {
+      mockGetLatestAggregateSnapshot.mockResolvedValueOnce({
+        snapshotGroupId: "g1", totalUsd: 16.8, pnlVsPrev: null, pnlPctVsPrev: null,
+        activeChains: ["20011000000"], at: "2026-09-08T20:00:00.000Z",
+        partial: true, unresolvedChainCount: 1,
+      });
+      const result = await handleAgentScan({ view: "summary" }, ctx);
+      expect(result.success).toBe(true);
+      expect(dataOf(result).latestSnapshot).toMatchObject({
+        totalUsd: 16.8, partial: true, unresolvedChainCount: 1, pnlVsPrev: null,
+      });
+      expect(JSON.parse(result.output)).toEqual(dataOf(result));
     });
 
     it("null latestSnapshot when none exists yet", async () => {

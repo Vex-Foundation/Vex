@@ -1,9 +1,17 @@
+import { getUserBlockscoutOverrideForChain } from "../../config/chain-blockscout-overrides.js";
 import { BlockscoutErrorCodes, blockscoutError } from "./errors.js";
 
 export const ROBINHOOD_CHAIN_ID = 4663;
 export const ROBINHOOD_BLOCKSCOUT_HOST = "robinhoodchain.blockscout.com";
 export const ROBINHOOD_BLOCKSCOUT_ORIGIN =
   `https://${ROBINHOOD_BLOCKSCOUT_HOST}`;
+
+export function getBlockscoutBaseUrlForChain(chainId: number): string {
+  const override = getUserBlockscoutOverrideForChain(chainId);
+  if (override !== undefined) return override;
+  if (chainId === ROBINHOOD_CHAIN_ID) return ROBINHOOD_BLOCKSCOUT_ORIGIN;
+  throw new Error("No Blockscout base URL is configured for this chain");
+}
 
 const EVM_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 
@@ -27,8 +35,8 @@ export function validateBlockscoutAddress(address: string): string {
 export function buildRobinhoodTokenBalancesUrl(address: string): URL {
   const validated = validateBlockscoutAddress(address);
   return new URL(
-    `/api/v2/addresses/${validated}/token-balances`,
-    ROBINHOOD_BLOCKSCOUT_ORIGIN,
+    `api/v2/addresses/${validated}/token-balances`,
+    `${getBlockscoutBaseUrlForChain(ROBINHOOD_CHAIN_ID)}/`,
   );
 }
 
@@ -44,8 +52,8 @@ export function isExactRobinhoodTokenBalancesUrl(
     return false;
   }
   return (
-    parsed.protocol === "https:" &&
-    parsed.host === ROBINHOOD_BLOCKSCOUT_HOST &&
+    parsed.protocol === requestedUrl.protocol &&
+    parsed.host === requestedUrl.host &&
     parsed.username === "" &&
     parsed.password === "" &&
     parsed.pathname === requestedUrl.pathname &&

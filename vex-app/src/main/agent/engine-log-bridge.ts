@@ -1,31 +1,8 @@
 /**
- * Engine winston → electron-log bridge (error-diagnostics plan D-SINK).
- *
- * The engine logger (`src/utils/logger.ts`) writes ONLY to stderr, so in a
- * packaged app every runtime log line (inference, sync, regime, memory
- * manager, …) vanishes — the AVG/TLS incident was undebuggable from disk.
- * This bridge adds ONE extra winston transport to the in-process engine
- * logger instance that forwards error/warn/info lines into the existing
- * redacting electron-log wrapper (`main/logger/index.ts`), which owns the
- * on-disk file sink.
- *
- * Direction of data is strictly one-way (plan §1 D-SINK, Codex R1):
- *   - winston KEEPS its stderr transport untouched and merely GAINS this
- *     forwarding transport;
- *   - electron-log never writes through winston (zero imports in that
- *     direction), and its console transport is disabled in packaged builds,
- *     so there is no cycle and no doubled stderr in production;
- *   - a hard re-entrancy guard additionally pins "forwarding never re-enters
- *     winston" even if a future electron-log hook misbehaves.
- *
- * Levels: error→log.error, warn→log.warn, info→log.info; debug and below are
- * intentionally NOT forwarded (transport level "info"). The electron-log FILE
- * level stays as-is (packaged: warn+), so runtime errors/warnings land on
- * disk while info stays dev-only — a deliberate noise/size trade-off.
- *
- * Redaction: the engine logger has its own zero-secret policy; forwarding
- * still routes message + meta through the wrapper's `redactArgs`
- * (defense-in-depth — key-based and pattern-based scrubbing).
+ * The app wrapper owns engine info/warn/error output in both its dev console
+ * and file log. The bridge suppresses those levels in the engine stderr sink;
+ * standalone runs and unforwarded debug levels keep their stderr output.
+ * Forwarding is one-way and redacted before either app transport sees it.
  */
 
 // winston-transport is the documented base class for custom transports and
@@ -33,7 +10,7 @@
 // guarantees flat resolution from the root tree (same tree winston bundles
 // from — see rules/80-edge-cases.md §4).
 import TransportStream from "winston-transport";
-import { logger as engineLogger } from "@utils/logger.js";
+import { logger as engineLogger, setForwardedLogLevels } from "@utils/logger.js";
 import { log } from "../logger/index.js";
 
 /** Raw (un-colorized) level — winston stores it under this well-known symbol. */
@@ -124,11 +101,13 @@ export function installEngineLogBridge(): void {
     level: ENGINE_FORWARD_LEVEL,
   });
   engineLogger.add(installedTransport);
+  setForwardedLogLevels(["error", "warn", "info"]);
 }
 
 /** Test-only teardown — removes the transport and re-arms the install guard. */
 export function __resetEngineLogBridgeForTests(): void {
   if (installedTransport === null) return;
+  setForwardedLogLevels([]);
   engineLogger.remove(installedTransport);
   installedTransport = null;
 }

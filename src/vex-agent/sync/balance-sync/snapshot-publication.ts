@@ -49,6 +49,7 @@
  */
 
 import { withTransaction } from "@vex-agent/db/client.js";
+import { jsonb } from "@vex-agent/db/params.js";
 import { insertSnapshot } from "@vex-agent/db/repos/balances.js";
 import { describeFailureForLog } from "@utils/error-summary.js";
 import logger from "@utils/logger.js";
@@ -80,6 +81,8 @@ export interface SnapshotDraft {
   readonly totalUsd: number;
   readonly positions: Record<string, unknown>;
   readonly activeChains: readonly string[];
+  readonly partial?: boolean;
+  readonly unresolvedChainCount?: number;
 }
 
 export interface PublishedSnapshot {
@@ -88,6 +91,8 @@ export interface PublishedSnapshot {
   readonly snapshotId: number;
   readonly totalUsd: number;
   readonly pnlVsPrev: number | null;
+  readonly partial: boolean;
+  readonly unresolvedChainCount: number;
 }
 
 /**
@@ -98,6 +103,8 @@ export interface PublishedSnapshot {
 export interface SnapshotGroupLedger {
   /** Sum of the per-wallet `total_usd` rows: balances actually read. */
   readonly settledUsd: number;
+  readonly partial: boolean;
+  readonly unresolvedChainCount: number;
   /**
    * Sum of the `in_transit` USD estimates across EVERY in-flight row of every
    * wallet in the group. Estimates only, and never the sum of the bounded
@@ -122,6 +129,8 @@ export interface SnapshotGroupLedger {
 }
 
 export type PublicationSkipReason =
+  /** Transient failed reads receive at most three cycles to recover. */
+  | "chain_reads_unresolved"
   /** A transaction began and settled during the scan - the group would mix reads. */
   | "activity_transition"
   /** The activity table lock could not be taken within the bounded wait. */
@@ -157,8 +166,8 @@ export interface PublishSnapshotGroupInput {
 const INSERT_GROUP_SQL = `
   INSERT INTO proj_portfolio_snapshot_groups
     (snapshot_group_id, settled_usd, in_transit_usd, unresolved_count, in_flight,
-     in_flight_total_count)
-  VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6)`;
+     in_flight_total_count, partial, unresolved_chain_count)
+  VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6, $7, $8)`;
 
 /**
  * One row per wallet that has anything in flight (migration 102). A wallet with
@@ -204,6 +213,8 @@ export async function publishSnapshotGroup(
             totalUsd: draft.totalUsd,
             positions: draft.positions,
             activeChains: [...draft.activeChains],
+            partial: draft.partial ?? false,
+            unresolvedChainCount: draft.unresolvedChainCount ?? 0,
           },
           client,
         );
@@ -213,6 +224,8 @@ export async function publishSnapshotGroup(
           snapshotId,
           totalUsd: draft.totalUsd,
           pnlVsPrev,
+          partial: draft.partial ?? false,
+          unresolvedChainCount: draft.unresolvedChainCount ?? 0,
         });
       }
 
@@ -222,8 +235,10 @@ export async function publishSnapshotGroup(
         ledger.settledUsd,
         ledger.inTransitUsd,
         ledger.unresolvedCount,
-        JSON.stringify(ledger.entries),
+        jsonb(ledger.entries),
         ledger.totalCount,
+        ledger.partial,
+        ledger.unresolvedChainCount,
       ]);
       await client.query(INSERT_GROUP_WALLETS_SQL, [
         input.snapshotGroupId,
@@ -244,7 +259,7 @@ export async function publishSnapshotGroup(
  * the domain type to please a SQL function.
  */
 function toWalletRowsJson(perWallet: readonly WalletInFlightTotals[]): string {
-  return JSON.stringify(
+  return jsonb(
     perWallet.map((wallet) => ({
       wallet_address: wallet.walletAddress,
       entry_count: wallet.entryCount,
@@ -280,6 +295,8 @@ function summarizeLedger(
   }
   return {
     settledUsd,
+    partial: rows.some((row) => row.partial),
+    unresolvedChainCount: rows.reduce((sum, row) => sum + row.unresolvedChainCount, 0),
     inTransitUsd,
     unresolvedCount,
     perWallet: inFlight.perWallet,
@@ -317,6 +334,8 @@ export function logPublicationOutcome(
       inFlightShown: ledger.entries.length,
       walletsWithMoneyInFlight: ledger.perWallet.length,
       unresolvedCount: ledger.unresolvedCount,
+      partial: ledger.partial,
+      unresolvedChainCount: ledger.unresolvedChainCount,
       inFlightTruncated: ledger.truncated,
     });
     if (ledger.unresolvedCount > 0) {
@@ -335,7 +354,9 @@ export function logPublicationOutcome(
   const fields = {
     snapshotGroupId,
     reason: outcome.reason,
-    hint: "balances still refreshed; the next cycle takes the snapshot",
+    hint: outcome.reason === "chain_reads_unresolved"
+      ? "some chains could not refresh; last good balances remain visible with read status"
+      : "balances still refreshed; the next cycle takes the snapshot",
   };
   if (outcome.reason === "publish_failed") {
     logger.error("sync.balance.snapshot_publish_failed", fields);

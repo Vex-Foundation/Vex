@@ -21,23 +21,13 @@
  * feed it. The indexer is authoritative for IDENTITY ONLY - every balance,
  * scale and symbol below is re-read from RPC.
  *
- * REPLACEMENT REQUIRES AN EXHAUSTIVE ENUMERATION. `replaceBalancesForChain`
- * replaces the chain's whole snapshot, so it may only run when the scan set was
- * every holding: an indexer outage means a token this wallet holds may be
- * outside the set, and writing that set would DELETE its last-good row and
- * report the deletion to the agent as "you hold none of it". The last-good rows
- * and their original timestamps stay untouched instead (C3.5).
- *
- * Failure semantics (Codex final-review fix): fail-soft (return skipped, keep
- * the last-good rows) applies ONLY to on-chain/RPC/transport failures —
- * multicall reads, RPC connect, DexScreener pricing. DB failures — the
- * pinned-token read (`getTrackedTokenAddressesForChain`) and the transactional
- * write (`replaceBalancesForChain`) — PROPAGATE so the sync run fails visibly
- * and retries per existing worker semantics, exactly like DB errors on the
- * Khalani sync path.
+ * Whole-chain replacement requires exhaustive discovery. When discovery is
+ * unavailable, known identities (including cached holdings) still read from
+ * RPC and only those identities are replaced. An RPC failure preserves their
+ * last good rows; database failures propagate.
  */
 
-import { formatUnits } from "viem";
+import { formatUnits, getAddress } from "viem";
 
 import { NATIVE_TOKEN_ADDRESS } from "@tools/kyberswap/constants.js";
 import {
@@ -49,7 +39,7 @@ import type { ChainFamily } from "@tools/khalani/types.js";
 import * as balancesRepo from "@vex-agent/db/repos/balances.js";
 import * as trackedTokensRepo from "@vex-agent/db/repos/tracked-tokens.js";
 import { readRobinhoodErc20IdentityCandidates } from "@tools/blockscout/client.js";
-import { ROBINHOOD_CHAIN_ID } from "@tools/blockscout/operation.js";
+import { ROBINHOOD_CHAIN_ID, getBlockscoutBaseUrlForChain } from "@tools/blockscout/operation.js";
 import {
   buildLocalChainScanSet,
   fromBlockscoutInventory,
@@ -58,12 +48,18 @@ import {
 } from "@vex-agent/wallet-inventory/local-chain.js";
 import type { BalanceRow } from "@vex-agent/db/repos/balances.js";
 import logger from "@utils/logger.js";
+import { createTransitionLog } from "@utils/transition-log.js";
+
+const enumerationLog = createTransitionLog();
 
 export interface LocalChainSyncResult {
   chainId: number;
   tokensUpdated: number;
   /** True when the chain was skipped (unknown/ non-EVM) or a soft failure. */
   skipped: boolean;
+  readStatus?: "ok" | "inventory_incomplete" | "read_failed";
+  /** Classified failure of either the balance read or inventory discovery. */
+  reason?: string | null;
 }
 
 /**
@@ -76,9 +72,9 @@ export interface LocalChainSyncResult {
  * worker marks the run failed (matching the Khalani path). Only the on-chain /
  * pricing reads in between are fail-soft.
  *
- * The write happens only when BOTH completeness conditions hold: the scan set
- * was exhaustive (the indexer answered completely) and every token in it read
- * successfully. Either gap keeps the last-good rows.
+ * A successful read refreshes every known holding even if discovery failed.
+ * A failed balance read writes nothing. Only an exhaustive inventory permits
+ * whole-chain replacement.
  */
 export async function syncLocalChainForWallet(
   family: ChainFamily,
@@ -87,32 +83,45 @@ export async function syncLocalChainForWallet(
 ): Promise<LocalChainSyncResult> {
   const config = getLocalChain(chainId);
   if (!config || family !== "eip155") {
-    return { chainId, tokensUpdated: 0, skipped: true };
+    return { chainId, tokensUpdated: 0, skipped: true, readStatus: "read_failed", reason: "unsupported_chain" };
   }
 
   // DB READ — propagates. A failing pinned-token query is a local-DB fault the
   // operator must see, not a condition to paper over with a skipped chain. The
   // indexer read inside is fail-soft and reports itself through `exhaustive`.
   const inventory = await buildLocalChainInventory(config, walletAddress);
-  const tokenAddrs = inventory.addresses;
+  const cached = await balancesRepo.getBalances(walletAddress, chainId);
+  const knownAddresses = new Set(inventory.addresses);
+  try {
+    for (const row of cached) {
+      if (row.tokenAddress.toLowerCase() !== NATIVE_TOKEN_ADDRESS.toLowerCase()) {
+        knownAddresses.add(getAddress(row.tokenAddress));
+      }
+    }
+  } catch {
+    return { chainId, tokensUpdated: 0, skipped: true, readStatus: "read_failed", reason: "invalid_response" };
+  }
+  const tokenAddrs = [...knownAddresses];
 
-  // ENUMERATION GATE - a non-exhaustive scan set can never REPLACE the chain's
-  // snapshot: a held token outside the set would be deleted and read back as
-  // "you hold none of it". Same rule as the per-token failure below, one step
-  // earlier in the pipeline. No write happens, so the last-good rows and their
-  // original timestamps survive (C3.5).
+  // Discovery completeness and a successful balance read are independent facts.
+  const logKey = `${walletAddress}:${chainId}`;
   if (!inventory.exhaustive) {
-    logger.warn("sync.local_chain.enumeration_not_exhaustive", {
+    const reason = inventory.indexer?.incompleteReason ?? "enumeration_not_exhaustive";
+    const signal = enumerationLog.observe(logKey, `${reason}:${tokenAddrs.length}:${inventory.droppedAddresses.length}`);
+    if (signal !== undefined) logger.warn("sync.local_chain.enumeration_not_exhaustive", {
       chainId,
       address: walletAddress.slice(0, 10) + "...",
       indexerSource: inventory.indexer?.source ?? null,
-      indexerReason: inventory.indexer?.incompleteReason ?? null,
+      indexerReason: reason,
+      endpointHost: chainId === ROBINHOOD_CHAIN_ID ? new URL(getBlockscoutBaseUrlForChain(chainId)).hostname : null,
+      ...signal,
       unprocessedContracts: inventory.indexer?.unprocessedContractAddresses.length ?? 0,
       droppedAddresses: inventory.droppedAddresses.length,
       scanned: tokenAddrs.length,
     });
-    return { chainId, tokensUpdated: 0, skipped: true };
   }
+  const recovered = inventory.exhaustive ? enumerationLog.clear(logKey) : undefined;
+  if (recovered) logger.info("sync.local_chain.enumeration_recovered", { chainId, ...recovered });
 
   // RPC/TRANSPORT — fail-soft. No write happens on this path, so cached rows
   // for this chain survive a transient RPC outage (mirrors the Khalani native
@@ -128,7 +137,7 @@ export async function syncLocalChainForWallet(
       address: walletAddress.slice(0, 10) + "...",
       error: err instanceof Error ? err.name : "unknown",
     });
-    return { chainId, tokensUpdated: 0, skipped: true };
+    return { chainId, tokensUpdated: 0, skipped: true, readStatus: "read_failed", reason: "rpc_failed" };
   }
 
   // A4: `replaceBalancesForChain` replaces the chain's WHOLE snapshot, so it
@@ -144,14 +153,18 @@ export async function syncLocalChainForWallet(
       scanned: tokenAddrs.length,
       reasons: [...new Set(read.tokenFailures.map((failure) => failure.reason))],
     });
-    return { chainId, tokensUpdated: 0, skipped: true };
+    return { chainId, tokensUpdated: 0, skipped: true, readStatus: "read_failed", reason: "read_incomplete" };
   }
 
   const rows = buildBalanceRows(family, walletAddress, config, read);
 
   // DB WRITE — propagates. A failed transactional replace must fail the sync
   // run visibly (worker retry semantics), never masquerade as a skipped chain.
-  const count = await balancesRepo.replaceBalancesForChain(walletAddress, chainId, rows);
+  const count = inventory.exhaustive
+    ? await balancesRepo.replaceBalancesForChain(walletAddress, chainId, rows)
+    : await balancesRepo.replaceKnownEvmBalancesForChain(
+        walletAddress, chainId, [...tokenAddrs, NATIVE_TOKEN_ADDRESS], rows,
+      );
   logger.info("sync.local_chain.completed", {
     chainId,
     address: walletAddress.slice(0, 10) + "...",
@@ -162,7 +175,11 @@ export async function syncLocalChainForWallet(
     // rule refused rather than guessed at.
     priceTiers: read.priceTiers,
   });
-  return { chainId, tokensUpdated: count, skipped: false };
+  return {
+    chainId, tokensUpdated: count, skipped: false,
+    readStatus: inventory.exhaustive ? "ok" : "inventory_incomplete",
+    reason: inventory.exhaustive ? null : (inventory.indexer?.incompleteReason ?? "enumeration_not_exhaustive"),
+  };
 }
 
 // ── Token scan set ──────────────────────────────────────────────────

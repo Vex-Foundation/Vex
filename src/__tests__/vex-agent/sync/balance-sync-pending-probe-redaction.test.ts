@@ -1,3 +1,4 @@
+vi.mock("../../../vex-agent/sync/balance-sync/read-failure-deferral.js", () => ({ shouldDeferFailedChainReads: vi.fn().mockResolvedValue(false) }));
 /**
  * CANARY - the snapshot's cycle-start probe must never log a raw throw.
  *

@@ -14,6 +14,8 @@ export interface BlockscoutTransportResponse {
   readonly finalUrl: string;
   readonly status: number;
   readonly contentType: string | null;
+  /** Only the known cf-mitigated value crosses this seam, never raw headers. */
+  readonly cfMitigatedChallenge?: boolean;
   /** Complete body bytes. A transport never returns a truncated prefix. */
   readonly body: Uint8Array;
 }

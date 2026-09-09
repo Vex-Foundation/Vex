@@ -5,16 +5,15 @@
  * `main/logger/redact.ts` (already running on every electron-log call,
  * production-tested) and adds two on-wire telemetry-specific rules:
  *
- *   1. URL query strings stripped from event.request.url + exception
- *      values + breadcrumb data — anything after `?` is dropped, not
- *      just redacted, because we can't tell secret-bearing params
- *      from pagination at parse time.
- *   2. Breadcrumb category allowlist — only `navigation`, `vex.ipc`,
+ *   1. The shared redactor keeps diagnostic URL origins and paths, strips
+ *      query strings and fragments, and redacts credential-bearing URLs whole.
+ *      Every event lane passes original values to that same policy.
+ *   2. Breadcrumb category allowlist - only `navigation`, `vex.ipc`,
  *      and `vex.wizard` survive. Console, fetch/xhr, dom, history,
  *      sentry.event, ui.click, etc. are all dropped. Plan §L: "no
  *      message text, no payload, no PII".
  *
- * Types come from `@sentry/electron/main` via `import type` — no
+ * Types come from `@sentry/electron/main` via `import type` - no
  * runtime SDK reference, so this module can be loaded by tests
  * without pulling Sentry into memory.
  */
@@ -27,38 +26,6 @@ const ALLOWED_BREADCRUMB_CATEGORIES = new Set([
   "vex.ipc",
   "vex.wizard",
 ]);
-
-function stripUrlQuery(url: string | undefined): string | undefined {
-  if (!url) return url;
-  const queryIdx = url.indexOf("?");
-  return queryIdx === -1 ? url : url.slice(0, queryIdx);
-}
-
-/**
- * Strip the `?...` portion of any URL embedded inside a free-form
- * string. `redact()` covers field names + 0x-hex / base64 / jwt
- * secret patterns, but a URL like `https://example/?token=abc` survives
- * both and would leak the query string. Run this AFTER `redact()` so
- * the redactor's hex/JWT patterns get a clean view first.
- */
-function scrubUrlsInString(value: string): string {
-  return value.replace(
-    /(https?:\/\/[^\s]+?)(\?[^\s]*)/gi,
-    (_match, base: string) => base,
-  );
-}
-
-function scrubMessage(value: string): string {
-  return scrubUrlsInString(value);
-}
-
-function scrubExceptions(event: Event): void {
-  const values = event.exception?.values;
-  if (!values) return;
-  for (const v of values) {
-    if (v.value) v.value = stripUrlQuery(v.value) ?? "";
-  }
-}
 
 function scrubBreadcrumbs(event: Event): void {
   if (!event.breadcrumbs) return;
@@ -83,28 +50,16 @@ export function makeBeforeSendHook(): (
 ) => Event | null {
   return (event) => {
     if (event.request) {
-      event.request.url = stripUrlQuery(event.request.url);
+      event.request.url = redact(event.request.url);
       event.request.query_string = undefined;
       event.request.cookies = undefined;
       event.request.headers = undefined;
       event.request.data = undefined;
     }
-    scrubExceptions(event);
+    if (event.exception) event.exception = redact(event.exception);
     scrubBreadcrumbs(event);
-    if (event.message) {
-      event.message =
-        typeof event.message === "string"
-          ? scrubMessage(redact(event.message))
-          : event.message;
-    }
-    if (event.extra) {
-      event.extra = redact(event.extra) as typeof event.extra;
-      for (const [k, v] of Object.entries(event.extra ?? {})) {
-        if (typeof v === "string") {
-          event.extra[k] = scrubUrlsInString(v);
-        }
-      }
-    }
+    if (event.message) event.message = redact(event.message);
+    if (event.extra) event.extra = redact(event.extra);
     if (event.contexts) event.contexts = redact(event.contexts);
     if (event.tags) event.tags = redact(event.tags);
     if (event.user) event.user = { id: event.user.id ?? undefined };

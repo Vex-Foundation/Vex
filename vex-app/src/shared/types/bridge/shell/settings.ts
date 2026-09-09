@@ -1,3 +1,4 @@
+import type { ChainEndpoints } from "../../../schemas/chain-endpoints.js";
 import type { Result } from "../../../ipc/result.js";
 import type { AbortableInvocation } from "../common.js";
 import type { Preferences } from "../../../schemas/preferences.js";
@@ -15,6 +16,8 @@ import type {
 import type { LighterPointsResult } from "../../../schemas/lighter-points.js";
 
 export interface SettingsBridge {
+  readonly getChainEndpoints: (input: { chainId: number }) => Promise<Result<ChainEndpoints>>;
+  readonly setChainEndpoints: (input: ChainEndpoints) => Promise<Result<ChainEndpoints>>;
   readonly getPreferences: () => Promise<Result<Preferences>>;
   readonly setTelemetryConsent: (input: {
     readonly enabled: boolean;

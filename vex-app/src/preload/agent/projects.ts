@@ -1,3 +1,4 @@
+import { projectPendingCleanupsInputSchema, type ProjectPendingCleanupsInput } from "../../shared/schemas/project-cleanup.js";
 import { CH } from "../../shared/ipc/channels.js";
 import {
   projectCreateInputSchema,
@@ -25,6 +26,9 @@ export const projects = {
   },
   list() {
     return invokeWithSchema(CH.projects.list, {});
+  },
+  pendingCleanups(input: ProjectPendingCleanupsInput) {
+    return invokeWithSchema(CH.projects.pendingCleanups, input, projectPendingCleanupsInputSchema);
   },
   updateScope(input: ProjectUpdateScopeInput) {
     return invokeWithSchema(

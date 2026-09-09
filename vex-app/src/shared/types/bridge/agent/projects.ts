@@ -1,3 +1,4 @@
+import type { ProjectPendingCleanups, ProjectPendingCleanupsInput } from "../../../schemas/project-cleanup.js";
 import type { Result } from "../../../ipc/result.js";
 import type {
   ProjectCreateInput,
@@ -36,6 +37,8 @@ export interface ProjectsBridge {
   readonly get: (input: ProjectGetInput) => Promise<Result<ProjectGetResult>>;
   /** Every project, newest first. */
   readonly list: () => Promise<Result<ProjectList>>;
+  /** Durable unfinished deletes, paged independently from live projects. */
+  readonly pendingCleanups: (input: ProjectPendingCleanupsInput) => Promise<Result<ProjectPendingCleanups>>;
   /**
    * Edit permission, wallet selection and agent roster under optimistic
    * concurrency. `expectedScopeVersion` must match the project's current

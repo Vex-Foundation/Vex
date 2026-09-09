@@ -68,6 +68,7 @@ import { solanaRouteMintFromPersistedAddress } from "@tools/solana-ecosystem/sha
 import { listInventoryWalletEntries } from "./inventory-wallets.js";
 import { getSessionWalletScope } from "./sessions-db.js";
 import { readProjectPortfolioScope } from "./projects/portfolio-scope.js";
+import { readChainReadIssues } from "./portfolio/chain-read-status.js";
 import { readSnapshotBases } from "./portfolio/snapshot-basis.js";
 import { buildPoolConfig } from "./db-config.js";
 import { log } from "../logger/index.js";
@@ -345,7 +346,10 @@ function emptyPortfolio(scope: PortfolioReadInput["scope"]): PortfolioDto {
     scope,
     walletCount: 0,
     liveTotalUsd: 0,
+    chainReadIssues: [],
     snapshotTotalUsd: null,
+    snapshotPartial: null,
+    snapshotUnresolvedChainCount: null,
     snapshotSettledUsd: null,
     snapshotInTransitUsd: null,
     snapshotInFlight: null,
@@ -639,9 +643,11 @@ export async function getPortfolio(
       // baselines don't compose into a correct set total (and miss wallets with
       // no prior row). snapshot/PnL are null when the cycle(s) are absent.
       const { latest, previous } = await readSnapshotBases(client, addresses);
+      const chainReadIssues = await readChainReadIssues(client, addresses);
       const snapshotTotalUsd = latest?.totalUsd ?? null;
       const pnlVsPrev =
         latest?.totalUsd !== undefined && latest.totalUsd !== null
+        && !latest?.partial && !previous?.partial
         && previous?.totalUsd !== undefined && previous.totalUsd !== null
           ? latest.totalUsd - previous.totalUsd
           : null;
@@ -657,7 +663,10 @@ export async function getPortfolio(
         scope: input.scope,
         walletCount: addresses.length,
         liveTotalUsd,
+        chainReadIssues,
         snapshotTotalUsd,
+        snapshotPartial: latest?.partial ?? null,
+        snapshotUnresolvedChainCount: latest?.unresolvedChainCount ?? null,
         snapshotSettledUsd: latest?.settledUsd ?? null,
         snapshotInTransitUsd: latest?.inTransitUsd ?? null,
         snapshotInFlight: latest?.inFlight ?? null,

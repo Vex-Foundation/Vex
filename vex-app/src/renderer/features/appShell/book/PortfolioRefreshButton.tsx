@@ -27,7 +27,8 @@ import { usePortfolioRefresh } from "../../../lib/api/portfolio.js";
 type RefreshFeedback =
   | { readonly kind: "idle" }
   | { readonly kind: "throttled"; readonly retryAfterSeconds: number }
-  | { readonly kind: "unavailable" };
+  | { readonly kind: "unavailable" }
+  | { readonly kind: "partial" };
 
 export function PortfolioRefreshButton(): JSX.Element {
   const { refresh } = usePortfolioRefresh();
@@ -47,6 +48,7 @@ export function PortfolioRefreshButton(): JSX.Element {
         });
         return;
       }
+      if (outcome.status === "partial") setFeedback({ kind: "partial" });
       if (outcome.status === "unavailable") setFeedback({ kind: "unavailable" });
     } finally {
       setInFlight(false);
@@ -68,6 +70,11 @@ export function PortfolioRefreshButton(): JSX.Element {
       {feedback.kind === "throttled" ? (
         <span className="text-[10px] tabular-nums text-ink-tertiary">
           just refreshed - retry in {feedback.retryAfterSeconds}s
+        </span>
+      ) : null}
+      {feedback.kind === "partial" ? (
+        <span role="status" className="text-[10px] text-warning-label">
+          some chains could not refresh - showing last known balances
         </span>
       ) : null}
       {feedback.kind === "unavailable" ? (
