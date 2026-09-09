@@ -53,6 +53,7 @@ import {
   UNISWAP_V3_SWAP_ROUTER_02_ABI,
 } from "./abis.js";
 import type { UniswapDeployment } from "./deployments.js";
+import { buildV4SwapTx } from "./v4-execute.js";
 import type { UniswapRoute } from "./types.js";
 
 /** Native EVM token sentinel (same across all EVM chains; shared with kyberswap). */
@@ -198,6 +199,7 @@ export function buildV3SwapTx(args: BuildSwapArgs): BuiltSwapTx {
 
 /** Build the swap tx for a route (dispatches V2/V3). */
 export function buildSwapTx(args: BuildSwapArgs): BuiltSwapTx {
+  if (args.route.version === "v4") return buildV4SwapTx(args);
   return args.route.version === "v2" ? buildV2SwapTx(args) : buildV3SwapTx(args);
 }
 

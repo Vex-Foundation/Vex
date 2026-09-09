@@ -66,7 +66,7 @@ const MAX_ATOMIC_DIGITS = 80;
  * fee transfer. A bound, not a cut - a longer list is refused as unreadable
  * rather than silently shortened.
  */
-export const MAX_BOUND_DEBIT_LEGS = 4;
+export const MAX_BOUND_DEBIT_LEGS = 5;
 
 const atomicString = z.string().regex(ATOMIC_INTEGER).max(MAX_ATOMIC_DIGITS);
 
@@ -149,7 +149,7 @@ export interface BoundDebitPlan {
   readonly reserve: BoundDebitReserve;
 }
 
-const legRoleSchema = z.enum(["allowance_reset", "allowance", "swap", "swap_fee"]);
+const legRoleSchema = z.enum(["allowance_reset", "allowance", "permit2_allowance", "swap", "swap_fee"]);
 const legGasPricingSchema = z.enum(["measured", "conservative"]);
 
 /**

@@ -16,7 +16,7 @@ import type { Address, Chain, PublicClient, Transport } from "viem";
 import { VexError, ErrorCodes } from "../../errors.js";
 import logger from "../../utils/logger.js";
 import { UNISWAP_ERC20_ABI } from "./abis.js";
-import { UNISWAP_KNOWN_SPENDERS } from "./deployments.js";
+import { getUniswapDeployment, UNISWAP_KNOWN_SPENDERS } from "./deployments.js";
 
 export interface UniswapErc20Metadata {
   address: Address;
@@ -50,12 +50,14 @@ export async function readUniswapErc20Metadata(
 }
 
 /** Verify a spender is an allowlisted Uniswap router. Throws otherwise. */
-export function validateUniswapSpender(address: Address): void {
-  if (!UNISWAP_KNOWN_SPENDERS.has(address.toLowerCase())) {
+export function validateUniswapSpender(address: Address, chainId?: number): void {
+  const d = chainId === undefined ? undefined : getUniswapDeployment(chainId);
+  const chainMatches = chainId === undefined || [d?.v2?.router02, d?.v3?.swapRouter02, d?.v4?.permit2, d?.v4?.universalRouter].some(a => a?.toLowerCase() === address.toLowerCase());
+  if (!chainMatches || !UNISWAP_KNOWN_SPENDERS.has(address.toLowerCase())) {
     throw new VexError(
       ErrorCodes.INVALID_SPENDER,
       `Spender ${address} is not a known Uniswap router`,
-      "Approvals may only target a registered Uniswap V2 Router02 or V3 SwapRouter02.",
+      "Approvals may only target the registered router or Permit2 on this chain.",
     );
   }
 }

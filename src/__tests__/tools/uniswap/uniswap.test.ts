@@ -7,7 +7,7 @@
  * are pure and decoded with viem; the extractor is pure over result shapes.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { decodeFunctionData, type Address } from "viem";
 
 import {
@@ -23,6 +23,8 @@ import { validateUniswapSpender } from "@tools/uniswap/erc20.js";
 import { UNISWAP_V2_ROUTER_ABI, UNISWAP_V3_SWAP_ROUTER_02_ABI } from "@tools/uniswap/abis.js";
 import type { UniswapRoute, UniswapToken } from "@tools/uniswap/types.js";
 import { extractQuote } from "@vex-agent/tools/protocols/prequote/safety/extract.js";
+
+vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokenPools: vi.fn(async () => []) }));
 
 const ROBINHOOD = getUniswapDeployment(4663)!;
 const TOKEN_A: Address = "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b"; // VEX

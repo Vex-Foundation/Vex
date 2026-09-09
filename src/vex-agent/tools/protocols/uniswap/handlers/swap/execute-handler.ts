@@ -11,7 +11,12 @@
  * `postIntentFailureResult`, which never opens a second execution (C18).
  */
 
-import { parseUnits, formatUnits, getAddress, type Hex } from "viem";
+import { UNIVERSAL_ROUTER_ABI } from "@tools/uniswap/v4-abis.js";
+import { readV4Allowance, tokenSpender, type V4AllowanceState } from "@tools/uniswap/v4-allowance.js";
+import { revalidateV4Quote } from "./v4-revalidation.js";
+import { getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
+import { v4Refusal } from "@tools/uniswap/v4-pool.js";
+import { decodeFunctionData, parseUnits, formatUnits, getAddress, type Hex } from "viem";
 
 import { getUniswapEvmClients } from "@tools/uniswap/evm-client.js";
 import { validateUniswapSpender, readUniswapAllowance } from "@tools/uniswap/erc20.js";
@@ -170,7 +175,9 @@ export async function executeUniswapSwap(
     // the router actually receives (`amountIn − fee`), and whether a fee
     // applies at all depends on a token fact the eligibility check owns.
     feeCharge = await resolveUniswapFeeCharge({ chainId: deployment.chainId, tokenIn, amountInRaw: amountIn });
-    quoted = await computeQuote(deployment, tokenIn, tokenOut, feeCharge.swapAmountRaw, slippageBps);
+    quoted = approved.v4
+      ? await revalidateV4Quote({ client: getUniswapPublicClient(deployment), deployment, approved, wallet: getAddress(walletAddress), ...(context.abortSignal ? { signal: context.abortSignal } : {}) })
+      : await computeQuote(deployment, tokenIn, tokenOut, feeCharge.swapAmountRaw, slippageBps, false);
   } catch (err) {
     return failPreBroadcast(
       p,
@@ -288,10 +295,13 @@ export async function executeUniswapSwap(
   }
   if (signer.family !== "eip155") return fail("Resolved wallet family mismatch.");
 
+  if (signer.address.toLowerCase() !== walletAddress.toLowerCase()) return fail("Executing signer differs from the selected wallet.");
+  context.abortSignal?.throwIfAborted();
   const clients = getUniswapEvmClients(deployment, signer.privateKey as Hex);
   const router = routerFor(deployment, quoted.route);
 
   let currentAllowance = 0n;
+  let permit2Allowance: V4AllowanceState | undefined;
   try {
     if (!tokenIn.isNative) {
       // The FULL requested amount, not the net: the user is debited the swap
@@ -311,8 +321,10 @@ export async function executeUniswapSwap(
         chainId: deployment.chainId,
         blockTag: "pending",
       });
-      validateUniswapSpender(router);
-      currentAllowance = await readUniswapAllowance(clients.publicClient, tokenIn.address, getAddress(signer.address), router);
+      const spender = tokenSpender(deployment, quoted.route, router);
+      validateUniswapSpender(spender, deployment.chainId);
+      currentAllowance = await readUniswapAllowance(clients.publicClient, tokenIn.address, getAddress(signer.address), spender);
+      if (quoted.route.version === "v4") permit2Allowance = await readV4Allowance(clients.publicClient, deployment, tokenIn.address, getAddress(signer.address));
     }
   } catch (err) {
     return failPreBroadcast(
@@ -347,6 +359,7 @@ export async function executeUniswapSwap(
       quoted,
       charge: feeCharge,
       currentAllowance,
+      ...(permit2Allowance ? { permit2Allowance } : {}),
     });
   } catch (err) {
     return failPreBroadcast(
@@ -424,6 +437,7 @@ export async function executeUniswapSwap(
     amountInHuman: formatUnits(swapAmount, tokenIn.decimals),
     quoted,
     currentAllowance,
+    ...(permit2Allowance ? { permit2Allowance } : {}),
     approvedMinOutRaw: approved.approvedMinOutRaw,
   });
   const swapLegCount = events.length;
@@ -441,7 +455,7 @@ export async function executeUniswapSwap(
   // different leg set is a debit for a different swap, and signing under it
   // would authorize a cost nobody totalled.
   const plannedRoles = debitLegs.map((leg): string => leg.role).join(",");
-  const recordedRoles = events.map((event) => event.eventRole).join(",");
+  const recordedRoles = events.map((event) => event.routeProvenance?.allowanceKind === "permit2" ? "permit2_allowance" : event.eventRole).join(",");
   if (plannedRoles !== recordedRoles) {
     return failPreBroadcast(
       p,
@@ -482,6 +496,7 @@ export async function executeUniswapSwap(
         event.eventRole === "swap"
           ? {
               expectedRouter: router,
+              ...(quoted.route.version === "v4" ? { universalRouterVersion: quoted.route.v4.universalRouterVersion } : {}),
               approvedMinOutRaw: approved.approvedMinOutRaw,
               expectedValueRaw: tokenIn.isNative ? approved.swapAmountRaw : "0",
             }
@@ -492,7 +507,23 @@ export async function executeUniswapSwap(
         // the DEBIT PLAN, whose order the equality check above proved identical
         // to the recorded events - so the leg being signed and the leg being
         // priced are the same one by construction, not by a widened cast.
-        debitGateFor(debitLegs[i]!.role),
+        async (request) => {
+          if (approved.v4) {
+            quoted = await revalidateV4Quote({ client: clients.publicClient, deployment, approved, wallet: getAddress(signer.address), ...(context.abortSignal ? { signal: context.abortSignal } : {}) });
+            if (event.eventRole === "swap") {
+              const deadline = decodeFunctionData({ abi: UNIVERSAL_ROUTER_ABI, data: tx.data }).args[2];
+              if (deadline <= BigInt(Math.floor(Date.now() / 1000))) throw v4Refusal("transaction deadline expired before signing");
+              if (!tokenIn.isNative) {
+                const tokenAllowance = await readUniswapAllowance(clients.publicClient, tokenIn.address, getAddress(signer.address), approved.v4.route.permit2);
+                const allowance = await readV4Allowance(clients.publicClient, deployment, tokenIn.address, getAddress(signer.address));
+                if (tokenAllowance < swapAmount || allowance.amount < swapAmount || allowance.expiration <= Math.floor(Date.now() / 1000)) throw v4Refusal("allowance became insufficient or expired before signing");
+              }
+            }
+            if (request.to?.toLowerCase() !== tx.to.toLowerCase() || request.data?.toLowerCase() !== tx.data.toLowerCase() || request.value !== tx.value) throw v4Refusal("prepared leg differs from the approved transaction plan");
+          }
+          await debitGateFor(debitLegs[i]!.role)(request);
+          context.abortSignal?.throwIfAborted();
+        },
         { cap: legFeeCap },
       );
 
@@ -553,6 +584,7 @@ export async function executeUniswapSwap(
         tokenOut,
         quoted,
         approvedMinOutRaw: approved.approvedMinOutRaw,
+        approvedSnapshot: approved,
         receipt: outcome.receipt,
         txHash: outcome.txHash,
         publicClient: clients.publicClient,

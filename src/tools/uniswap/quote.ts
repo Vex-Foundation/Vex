@@ -13,6 +13,7 @@
  * Native legs route as WETH (the router wraps/unwraps); `path` carries WETH.
  */
 
+import { outputGasPrice, selectUniswapRoute } from "./route-ranking.js";
 import {
   encodePacked,
   getAddress,
@@ -28,6 +29,7 @@ import {
   UNISWAP_V2_PAIR_ABI,
   UNISWAP_V3_QUOTER_V2_ABI,
 } from "./abis.js";
+import { quoteV4Candidates, type V4DiscoveryStats } from "./v4-quote.js";
 import type { UniswapDeployment } from "./deployments.js";
 import type { UniswapRoute, UniswapToken } from "./types.js";
 import { VexError, ErrorCodes } from "../../errors.js";
@@ -188,6 +190,7 @@ export interface QuoteRouteArgs {
   readonly tokenIn: UniswapToken;
   readonly tokenOut: UniswapToken;
   readonly amountIn: bigint;
+  readonly allowV4?: boolean;
 }
 
 /**
@@ -198,7 +201,7 @@ export interface QuoteRouteArgs {
 export async function quoteBestRoute(
   client: PublicClient<Transport, Chain>,
   args: QuoteRouteArgs,
-): Promise<{ route: UniswapRoute; priceImpact?: number } | null> {
+): Promise<{ route: UniswapRoute; priceImpact?: number; v4Discovery?: V4DiscoveryStats; selectionBasis?: string } | null> {
   const { deployment, tokenIn, tokenOut, amountIn } = args;
   const inAddr = tokenIn.address;
   const outAddr = tokenOut.address;
@@ -232,19 +235,32 @@ export async function quoteBestRoute(
   }
 
   const settled = await Promise.allSettled(candidates);
-  let best: UniswapRoute | null = null;
-  for (const s of settled) {
-    if (s.status !== "fulfilled" || s.value === null) continue;
-    if (best === null || s.value.amountOut > best.amountOut) best = s.value;
+  let v4Discovery: V4DiscoveryStats | undefined;
+  if (deployment.v4 && args.allowV4 !== false) {
+    try {
+      const v4 = await quoteV4Candidates(client, args);
+      v4Discovery = v4.discovery;
+      for (const route of v4.routes) settled.push({ status: "fulfilled", value: route });
+    } catch {
+      v4Discovery = { unavailable: true, indexed: 0, matching: 0, considered: 0, refused: 0 };
+    }
   }
-  if (best === null) return null;
+  const routes = settled.flatMap(s => s.status === "fulfilled" && s.value ? [s.value] : []);
+  let gasPrice = null;
+  if (routes.length > 1 && routes.every(r => r.gasEstimate !== undefined)) {
+    try { gasPrice = await outputGasPrice(deployment, tokenOut, await client.getGasPrice()); } catch { /* Exposed as unpriced below. */ }
+  }
+  const selection = selectUniswapRoute(routes, gasPrice);
+  if (!selection) return null;
+  const best = selection.route;
 
   const priceImpact =
     best.version === "v2" && best.path.length === 2
       ? await computeV2DirectPriceImpact(client, deployment, inAddr, outAddr, amountIn, best.amountOut)
       : undefined;
 
-  return priceImpact !== undefined ? { route: best, priceImpact } : { route: best };
+  return { route: best, selectionBasis: routes.length === 1 ? "only_successful_candidate" : selection.selectionBasis, ...(priceImpact === undefined ? {} : { priceImpact }),
+    ...(v4Discovery === undefined ? {} : { v4Discovery }) };
 }
 
 /**

@@ -35,6 +35,9 @@
  * never for a user surface; the stored fact is the named reason.
  */
 
+import { readV4NativeDelta } from "@tools/uniswap/v4-native-settlement.js";
+import { getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
+import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
 import { decodeKyberSwapSettlement } from "@tools/kyberswap/evm-utils.js";
 import {
   decodeUniswapExecutedLegs,
@@ -222,7 +225,7 @@ function decodeKyberRow(input: VenueDecodeInput): VenueDecodeResult {
  * Takes no chain read, so it never DEFERS. A deployment this build does not
  * know, or a receipt that proves only one leg, declines by name.
  */
-function decodeUniswapRow(input: VenueDecodeInput): VenueDecodeResult {
+async function decodeUniswapRow(input: VenueDecodeInput): Promise<VenueDecodeResult> {
   const { row } = input;
   const tokenInAddress = row.tokenInAddress;
   const tokenOutAddress = row.tokenOutAddress;
@@ -235,12 +238,18 @@ function decodeUniswapRow(input: VenueDecodeInput): VenueDecodeResult {
     };
   }
 
+  const deployment = getUniswapDeployment(row.chainId);
+  const isV4 = input.hint?.decoder === "uniswap" && input.hint.v4 !== undefined;
+  const nativeDelta = isV4 && deployment && row.txHash && (isNativeAddress(tokenInAddress) || isNativeAddress(tokenOutAddress))
+    ? await readV4NativeDelta(getUniswapPublicClient(deployment), deployment, row.txHash as `0x${string}`, getAddress(walletAddress))
+    : undefined;
   let decoded: DecodedUniswapLegs;
   try {
     decoded = decodeUniswapExecutedLegs({
       receipt: { logs: input.logs },
       chainId: row.chainId,
       walletAddress,
+      ...(isV4 ? { version: "v4", v4NativeDelta: nativeDelta } as const : {}),
       tokenInAddress: isNativeAddress(tokenInAddress) ? null : tokenInAddress,
       tokenOutAddress: isNativeAddress(tokenOutAddress) ? null : tokenOutAddress,
     });

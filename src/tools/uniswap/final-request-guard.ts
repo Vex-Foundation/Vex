@@ -59,12 +59,14 @@ import { decodeFunctionData, getAddress, type Address, type Hex } from "viem";
 
 import type { FinalSignedRequest } from "@tools/evm-chains/staged-broadcast.js";
 
+import { decodeV4SwapFloor } from "./v4-execute.js";
 import { UNISWAP_V2_ROUTER_ABI, UNISWAP_V3_SWAP_ROUTER_02_ABI } from "./abis.js";
 
 /** What the approved quote authorizes about the transaction that will be signed. */
 export interface ApprovedFinalRequest {
   /** The router this route kind must call - `routerFor(deployment, route)`. */
   readonly expectedRouter: Address;
+  readonly universalRouterVersion?: "2.0" | "2.1.1";
   /** `approvedMinOutRaw` from the claimed snapshot, in raw atomic units. */
   readonly approvedMinOutRaw: string;
   /** The native value the approval covers: the router input, or `0` for an ERC-20 input. */
@@ -281,7 +283,9 @@ export function verifyFinalUniswapSwapRequest(
     };
   }
 
-  const encodedFloor = decodeUniswapSwapFloor(request.data);
+  const encodedFloor = approved.universalRouterVersion
+    ? decodeV4SwapFloor(request.data, approved.universalRouterVersion)
+    : decodeUniswapSwapFloor(request.data);
   if (encodedFloor === null) {
     return {
       ok: false,

@@ -7,6 +7,7 @@
  * confirmation NEVER does.
  */
 
+import { UniswapV4Refusal } from "@tools/uniswap/v4-pool.js";
 import type { Hex } from "viem";
 
 import type { FinalSignedRequest } from "@tools/evm-chains/staged-broadcast.js";
@@ -149,7 +150,7 @@ export async function runStagedBroadcast(
     // `allowance_or_balance`) would assert exactly the conclusion we cannot
     // support, so it goes to the outer C18 handler, which finalizes the
     // never-signed rows as "not attempted" and says so honestly.
-    if (err instanceof DependentLegGasEstimateError) throw err;
+    if (err instanceof DependentLegGasEstimateError || err instanceof UniswapV4Refusal) throw err;
     // A PRE-SIGN AUTHORITY REFUSAL is not a router revert and must never be
     // classified as one: `classifyUniswapRevertError` would flatten it to
     // `unknown` and the canned guidance would replace the only sentence that

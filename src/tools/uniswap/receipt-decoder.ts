@@ -35,7 +35,7 @@
  * from memory.
  */
 
-import { getAddress, hexToBigInt, type Address, type Hex } from "viem";
+import { getAddress, hexToBigInt, keccak256, toHex, type Address, type Hex } from "viem";
 
 import { getUniswapDeployment } from "./deployments.js";
 
@@ -55,6 +55,8 @@ export const V2_POOL_SWAP_TOPIC0: Hex =
 export const V3_POOL_SWAP_TOPIC0: Hex =
   "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67";
 
+export const V4_POOL_SWAP_TOPIC0: Hex = keccak256(toHex("Swap(bytes32,address,int128,int128,uint160,uint128,int24,uint24)"));
+
 /** Minimal receipt-log shape this module needs — matches viem's `TransactionReceipt['logs'][number]` structurally. */
 export interface UniswapDecodableLog {
   readonly address: string;
@@ -71,6 +73,9 @@ export interface DecodeUniswapLegsInput {
   readonly receipt: UniswapDecodableReceipt;
   readonly chainId: number;
   readonly walletAddress: string;
+  /** Transaction-specific native wallet delta from a validated v4 call trace. */
+  readonly v4NativeDelta?: bigint;
+  readonly version?: "v2" | "v3" | "v4";
   /** Non-native tokenIn contract address, or `null`/`undefined` for a native input leg. */
   readonly tokenInAddress?: string | null;
   /** Non-native tokenOut contract address, or `null`/`undefined` for a native output leg. */
@@ -191,6 +196,7 @@ function sumWethEvent(
 function routerAddressesFor(deployment: ReturnType<typeof getUniswapDeployment>): ReadonlySet<string> {
   const routers = new Set<string>();
   if (deployment?.v2) routers.add(deployment.v2.router02.toLowerCase());
+  if (deployment?.v4) routers.add(deployment.v4.universalRouter.toLowerCase());
   if (deployment?.v3) routers.add(deployment.v3.swapRouter02.toLowerCase());
   return routers;
 }
@@ -203,13 +209,17 @@ export function decodeUniswapExecutedLegs(input: DecodeUniswapLegsInput): Decode
 
   const executedAmountInRaw = input.tokenInAddress
     ? nonZeroOrUndefined(netTransferDelta(logs, getAddress(input.tokenInAddress), wallet) * -1n)
-    : deployment && routers.size > 0
+    : input.version === "v4"
+      ? input.v4NativeDelta === undefined ? undefined : nonZeroOrUndefined(-input.v4NativeDelta)
+      : deployment && routers.size > 0
       ? sumWethEvent(logs, getAddress(deployment.weth), WETH_DEPOSIT_TOPIC0, routers)
       : undefined;
 
   const executedAmountOutRaw = input.tokenOutAddress
     ? nonZeroOrUndefined(netTransferDelta(logs, getAddress(input.tokenOutAddress), wallet))
-    : deployment && routers.size > 0
+    : input.version === "v4"
+      ? input.v4NativeDelta === undefined ? undefined : nonZeroOrUndefined(input.v4NativeDelta)
+      : deployment && routers.size > 0
       ? sumWethEvent(logs, getAddress(deployment.weth), WETH_WITHDRAWAL_TOPIC0, routers)
       : undefined;
 
@@ -233,6 +243,6 @@ function nonZeroOrUndefined(value: bigint): bigint | undefined {
  */
 export function receiptTouchesUniswapPool(receipt: UniswapDecodableReceipt): boolean {
   return receipt.logs.some(
-    (log) => log.topics[0] === V2_POOL_SWAP_TOPIC0 || log.topics[0] === V3_POOL_SWAP_TOPIC0,
+    (log) => log.topics[0] === V2_POOL_SWAP_TOPIC0 || log.topics[0] === V3_POOL_SWAP_TOPIC0 || log.topics[0] === V4_POOL_SWAP_TOPIC0,
   );
 }

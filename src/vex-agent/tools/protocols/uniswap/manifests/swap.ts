@@ -30,9 +30,9 @@ export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "uniswap",
     lifecycle: "active",
     description:
-      "Price an exact-input EVM swap straight against Uniswap V2 and V3 pools without signing "
+      "Price an exact-input EVM swap straight against Uniswap V2, V3 and verified V4 pools without signing "
       + "anything, and seed the prequote `uniswap__swap_execute` is matched against. The route is read "
-      + "from the on-chain quoter with no aggregator in the path, and the better of the two pool "
+      + "from the on-chain quoter with no aggregator in the path, and the best of the available pool "
       + `versions wins. Chains with a verified Vex deployment: ${UNISWAP_CHAINS.join(", ")}. `
       + `${UNISWAP_BEST_FOR} `
       + "Use this before every Uniswap execute, and whenever the user asks what a trade would return, "
@@ -47,7 +47,7 @@ export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
       + "`amountIn` stays the total the wallet is debited. The rate and the receiver are fixed - `fee`, "
       + "`feeBps`, `feeReceiver` and `feeAmount` are rejected BY NAME rather than ignored. "
       + "RETURNS `chain`, `chainId`, `tokenIn` and `tokenOut` each with address, symbol, decimals and a "
-      + "native marker, `route` (`version` V2 or V3, the pool `path`, and the V3 fee tiers or null), "
+      + "native marker, `route` (`version` V2, V3 or V4, the pool `path`, V3 fee tiers or null, and bound V4 PoolKey, pool ID and hook when applicable), "
       + "`amountIn`/`amountInRaw` (the total debited), `swapAmount`/`swapAmountRaw` (what the route was "
       + "priced for), `amountOut`/`amountOutRaw`, `minAmountOut`/`minAmountOutRaw` (the floor the "
       + "execute writes into its calldata), `slippageBps`, `priceImpact` as a fraction where 0.0015 is "
@@ -59,6 +59,9 @@ export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
       + "prequote gate re-validates it and is where a fail verdict refuses the execute. This venue "
       + "reports a router-factory allowlist check, an output-liquidity read and a fee-on-transfer "
       + "signal; it has no honeypot verdict of its own. "
+      + "V4 uses single-hop pools discovered on DexScreener, cryptographically bound through PositionManager. "
+      + "Hooked pools are disclosed explicitly: their quote is not a guarantee because hooks can distinguish the quoter from the router. "
+      + "`selectionBasis` states whether gas costs were comparable; V2 has no quoter gas estimate. "
       + "READ `eligibility` BEFORE PROPOSING THE TRADE: only `executable` authorizes an execute, and it "
       + "authorizes exactly ONE - the execute consumes this quote, and a newer quote for the same trade "
       + "replaces it. `impactMeasured` false means the impact was never measured rather than measured "
@@ -93,7 +96,7 @@ export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "uniswap",
     lifecycle: "active",
     description:
-      "Swap tokens FOR REAL straight against Uniswap V2 and V3 pools: signs and broadcasts an "
+      "Swap tokens FOR REAL straight against Uniswap V2, V3 and verified V4 pools: signs and broadcasts an "
       + "exact-input trade with the session's wallet. SPENDS REAL FUNDS AND IS IRREVERSIBLE, and it "
       + "requires approval before it runs. The route is read from the on-chain quoter with no "
       + `aggregator in the path. Chains with a verified Vex deployment: ${UNISWAP_CHAINS.join(", ")}. `
@@ -107,7 +110,9 @@ export const UNISWAP_SWAP_TOOLS: readonly ProtocolToolManifest[] = [
       + "no symbol search; a `slippageBps` above 1000 (10%) is rejected rather than clamped. "
       + "The ERC-20 allowance is handled automatically - an exact-amount approve to the allowlisted "
       + "router, with a reset-to-zero first for the tokens that require it, and none at all on a native "
-      + "input - so there is NO separate approve tool and none is needed. Vex charges 25 bps (0.25%) on "
+      + "input. V4 uses an exact ERC-20 allowance to Permit2 and an exact, expiring Permit2 allowance to the verified UniversalRouter. "
+      + "The approved V4 pool and hook cannot be silently replaced; the same pool is revalidated immediately before signing. "
+      + "There is NO separate approve tool and none is needed. Vex charges 25 bps (0.25%) on "
       + "the input token; Uniswap's routers carry no fee field, so it is Vex's OWN transfer leg, signed "
       + "only AFTER the swap confirms, and a swap that fails is therefore never charged: the router "
       + "swaps `amountIn` MINUS the fee while the wallet is debited `amountIn` in total, and the "

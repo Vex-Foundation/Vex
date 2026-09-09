@@ -20,6 +20,7 @@
  * `src/tools/**` still never depends on `src/vex-agent/**`.
  */
 
+import { classifyV4Revert } from "./v4-revert.js";
 import {
   ExecutionRevertedError,
   FeeCapTooHighError,
@@ -111,6 +112,8 @@ const BROADCAST_REJECTION_CLASSES = [
  * see `db/repos/agent-activity.ts`'s write protocol).
  */
 export function classifyUniswapRevertError(err: unknown): UniswapRevertClassification {
+  const v4 = classifyV4Revert(err);
+  if (v4) return v4;
   const reason = extractDecodedRevertReason(err);
   if (reason !== undefined) {
     const mapped = classifyRouterRevertReason(reason);

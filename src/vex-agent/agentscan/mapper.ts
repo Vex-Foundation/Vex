@@ -31,6 +31,7 @@
  * and which makes it anchor its pricing on the block time it verified itself.
  */
 
+import { activityV4Route, type AgentscanV4Route } from "./uniswap-route.js";
 const RAW_AMOUNT = /^\d+$/;
 const USD_STRING = /^\d+(\.\d+)?$/;
 
@@ -139,6 +140,7 @@ export interface AgentscanTokenRef {
 
 /** Ingest-contract event (§4.2) — chain ids as decimal strings (the server coerces bigint). */
 export interface AgentscanEvent {
+  readonly route?: AgentscanV4Route;
   readonly sourceRowId: string;
   readonly sourceExecutionId: string;
   readonly eventIndex: number;
@@ -200,8 +202,10 @@ export function mapActivityToEvent(
     : null;
 
   const executed = executedAmountReporter(activity, confirmed);
+  const route = activityV4Route(activity);
 
   return {
+    ...(route ? { route } : {}),
     sourceRowId: String(activity.id),
     sourceExecutionId: String(activity.protocol_execution_id),
     eventIndex: Number(activity.event_index),
@@ -261,6 +265,10 @@ function executedAmountReporter(
   return (value, legTokenAddress, slot) => {
     if (!confirmed || disputed) return null;
     if (isEvmNativeAlias(legTokenAddress) && !NATIVE_VERIFIED_EXECUTED_SLOTS.has(slot)) return null;
+    // The server checks native input against tx.value. A v4 refund is real
+    // wallet movement, but a net-of-refund amount is not that gross value.
+    if (isEvmNativeAlias(legTokenAddress) && slot === "primary_input" && activityV4Route(activity)
+      && value !== activity.amount_in_raw) return null;
     return guarded(value, RAW_AMOUNT);
   };
 }

@@ -1,0 +1,492 @@
+[
+  {
+    "chainId": 4663,
+    "chain": "robinhood",
+    "url": "https://rpc.mainnet.chain.robinhood.com",
+    "observedAt": "2026-09-09T14:34:10.562Z",
+    "contracts": [
+      {
+        "name": "poolManager",
+        "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+        "codeBytes": 24009,
+        "codeHash": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626"
+      },
+      {
+        "name": "quoter",
+        "address": "0x8dc178efb8111bb0973dd9d722ebeff267c98f94",
+        "codeBytes": 6118,
+        "codeHash": "0xd707b1da8cb165e5ea35a3b4450d971eb562ec171e23492aa117036b78a868f6",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951"
+      },
+      {
+        "name": "stateView",
+        "address": "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b",
+        "codeBytes": 3531,
+        "codeHash": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951"
+      },
+      {
+        "name": "positionManager",
+        "address": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+        "codeBytes": 23877,
+        "codeHash": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951"
+      },
+      {
+        "name": "router",
+        "address": "0x8876789976decbfcbbbe364623c63652db8c0904",
+        "codeBytes": 24546,
+        "codeHash": "0x2ce6aaaf9f4151f5e1cbf774668772f17f532ae11b15e9284fd0a072a8b0fbde",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951"
+      },
+      {
+        "name": "permit2",
+        "address": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "codeBytes": 9152,
+        "codeHash": "0x5208783f52488f7d3493e5e38311ab707c1d75457fe472a19b0b4d57d66a7fca"
+      }
+    ],
+    "routerDomain": {
+      "name": "UniversalRouter",
+      "version": "2",
+      "chainId": "4663",
+      "verifyingContract": "0x8876789976dEcBfCbBbe364623C63652db8C0904"
+    },
+    "discoveryCount": 5,
+    "pools": [
+      {
+        "id": "0x7f8271c1a7a6a434f33b0babc15bf2980a0dcb4196848b4f7e789a7fd73a5350",
+        "key": [
+          "0x0000000000000000000000000000000000000000",
+          "0x008Df4b3E857D06c4603Aeb11F267ccD32ce2005",
+          0,
+          200,
+          "0xE5e702641Ea86F4ae6cC3cDaeD2B886f976Be044"
+        ],
+        "boundHash": "0x7f8271c1a7a6a434f33b0babc15bf2980a0dcb4196848b4f7e789a7fd73a5350",
+        "lpFee": 0,
+        "amountIn": "100000000000000",
+        "amountOut": "258924029937521950097",
+        "gasEstimate": "79543",
+        "pair": {
+          "chainId": "robinhood",
+          "dexId": "uniswap",
+          "url": "https://dexscreener.com/robinhood/0x7f8271c1a7a6a434f33b0babc15bf2980a0dcb4196848b4f7e789a7fd73a5350",
+          "pairAddress": "0x7f8271c1a7a6a434f33b0babc15bf2980a0dcb4196848b4f7e789a7fd73a5350",
+          "labels": [
+            "v4"
+          ],
+          "baseToken": {
+            "address": "0x008Df4b3E857D06c4603Aeb11F267ccD32ce2005",
+            "name": "Robinhood",
+            "symbol": "ROBINHOOD"
+          },
+          "quoteToken": {
+            "address": "0x0000000000000000000000000000000000000000",
+            "name": "Ether",
+            "symbol": "ETH"
+          },
+          "priceNative": "0.0000003786",
+          "priceUsd": "0.0009504",
+          "txns": {
+            "m5": {
+              "buys": 14,
+              "sells": 13
+            },
+            "h1": {
+              "buys": 192,
+              "sells": 106
+            },
+            "h6": {
+              "buys": 763,
+              "sells": 648
+            },
+            "h24": {
+              "buys": 763,
+              "sells": 648
+            }
+          },
+          "volume": {
+            "h24": 319764.48,
+            "h6": 319764.48,
+            "h1": 65835.5,
+            "m5": 7160.46
+          },
+          "priceChange": {
+            "m5": 11.28,
+            "h1": 55.67,
+            "h6": 1734,
+            "h24": 1734
+          },
+          "liquidity": {
+            "usd": 90438.4,
+            "base": 47578141,
+            "quote": 18.01547
+          },
+          "fdv": 950420,
+          "marketCap": 950420,
+          "pairCreatedAt": 1788954251000,
+          "info": {
+            "imageUrl": "https://cdn.dexscreener.com/cms/images/XL_eouvCqLrb3iI3?width=800&height=800&quality=95&format=auto",
+            "header": "https://cdn.dexscreener.com/cms/images/or26BiPH2hO_MubO?width=1500&height=500&quality=95&format=auto",
+            "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0x008df4b3e857d06c4603aeb11f267ccd32ce2005?timestamp=1788964500000",
+            "websites": [
+              {
+                "url": "https://robinhood.win/",
+                "label": "Website"
+              }
+            ],
+            "socials": [
+              {
+                "url": "https://x.com/therobinhood_rh",
+                "type": "twitter"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "0xc3006f13a13a210012e05b355c612b0d6f8f1524d462da2d5a415263dac484ef",
+        "key": [
+          "0x008Df4b3E857D06c4603Aeb11F267ccD32ce2005",
+          "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+          800000,
+          60,
+          "0x0000000000000000000000000000000000000000"
+        ],
+        "boundHash": "0xc3006f13a13a210012e05b355c612b0d6f8f1524d462da2d5a415263dac484ef",
+        "lpFee": 800000,
+        "amountIn": "100000000000000",
+        "amountOut": "0",
+        "gasEstimate": "57928",
+        "pair": {
+          "chainId": "robinhood",
+          "dexId": "uniswap",
+          "url": "https://dexscreener.com/robinhood/0xc3006f13a13a210012e05b355c612b0d6f8f1524d462da2d5a415263dac484ef",
+          "pairAddress": "0xc3006f13a13a210012e05b355c612b0d6f8f1524d462da2d5a415263dac484ef",
+          "labels": [
+            "v4"
+          ],
+          "baseToken": {
+            "address": "0x008Df4b3E857D06c4603Aeb11F267ccD32ce2005",
+            "name": "Robinhood",
+            "symbol": "ROBINHOOD"
+          },
+          "quoteToken": {
+            "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+            "name": "Global Dollar",
+            "symbol": "USDG"
+          },
+          "priceNative": "0.001071",
+          "priceUsd": "0.001070",
+          "txns": {
+            "m5": {
+              "buys": 1,
+              "sells": 0
+            },
+            "h1": {
+              "buys": 1,
+              "sells": 0
+            },
+            "h6": {
+              "buys": 8,
+              "sells": 0
+            },
+            "h24": {
+              "buys": 8,
+              "sells": 0
+            }
+          },
+          "volume": {
+            "h24": 90.38,
+            "h6": 90.38,
+            "h1": 69.37,
+            "m5": 69.37
+          },
+          "priceChange": {
+            "m5": 423,
+            "h1": 423,
+            "h6": 1670,
+            "h24": 1670
+          },
+          "liquidity": {
+            "usd": 46.01,
+            "base": 19167,
+            "quote": 25.5401
+          },
+          "fdv": 1070121,
+          "marketCap": 1070121,
+          "pairCreatedAt": 1788954279000,
+          "info": {
+            "imageUrl": "https://cdn.dexscreener.com/cms/images/XL_eouvCqLrb3iI3?width=800&height=800&quality=95&format=auto",
+            "header": "https://cdn.dexscreener.com/cms/images/or26BiPH2hO_MubO?width=1500&height=500&quality=95&format=auto",
+            "openGraph": "https://cdn.dexscreener.com/token-images/og/robinhood/0x008df4b3e857d06c4603aeb11f267ccd32ce2005?timestamp=1788964500000",
+            "websites": [
+              {
+                "url": "https://robinhood.win/",
+                "label": "Website"
+              }
+            ],
+            "socials": [
+              {
+                "url": "https://x.com/therobinhood_rh",
+                "type": "twitter"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "chainId": 1,
+    "chain": "ethereum",
+    "url": "https://mainnet.gateway.tenderly.co",
+    "observedAt": "2026-09-09T14:34:13.549Z",
+    "contracts": [
+      {
+        "name": "poolManager",
+        "address": "0x000000000004444c5dc75cB358380D2e3dE08A90",
+        "codeBytes": 24009,
+        "codeHash": "0x785f1014552b7ce7d5fb7d0c970ca60edee94fd00425d7ca21609acac7ce1293"
+      },
+      {
+        "name": "quoter",
+        "address": "0x52f0e24d1c21c8a0cb1e5a5dd6198556bd9e1203",
+        "codeBytes": 5820,
+        "codeHash": "0x06de58fa119c5deaa7a667fb92d3894e25d9160e62fb82c8d86d43b47eefe441",
+        "poolManager": "0x000000000004444c5dc75cB358380D2e3dE08A90"
+      },
+      {
+        "name": "stateView",
+        "address": "0x7ffe42c4a5deea5b0fec41c94c136cf115597227",
+        "codeBytes": 3531,
+        "codeHash": "0xd7947778589cf4aac9a092a4451292a2056380941635ab7006d3c691d8dfd878",
+        "poolManager": "0x000000000004444c5dc75cB358380D2e3dE08A90"
+      },
+      {
+        "name": "positionManager",
+        "address": "0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e",
+        "codeBytes": 23877,
+        "codeHash": "0x77e36c08b19959a30dde46dec9abe6208e371ff2f56884a56fe1e1a53615528b",
+        "poolManager": "0x000000000004444c5dc75cB358380D2e3dE08A90"
+      },
+      {
+        "name": "router",
+        "address": "0x4C82D1fBFe28C977cBB58D8C7FF8FCF9F70a2cCA",
+        "codeBytes": 24546,
+        "codeHash": "0x70c9ea2b275087aea3d57ae48e2d30e272a07ff5b6c7974bd47c21478b37face",
+        "poolManager": "0x000000000004444c5dc75cB358380D2e3dE08A90"
+      },
+      {
+        "name": "permit2",
+        "address": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "codeBytes": 9152,
+        "codeHash": "0xc67d1657868aa5146eaf24fb879fb1fdec3d2d493b3683a61c9c2f4fb2851131"
+      }
+    ],
+    "routerDomain": {
+      "name": "UniversalRouter",
+      "version": "2",
+      "chainId": "1",
+      "verifyingContract": "0x4C82D1fBFe28C977cBB58D8C7FF8FCF9F70a2cCA"
+    }
+  },
+  {
+    "chainId": 8453,
+    "chain": "base",
+    "url": "https://base.gateway.tenderly.co",
+    "observedAt": "2026-09-09T14:34:46.725Z",
+    "contracts": [
+      {
+        "name": "poolManager",
+        "address": "0x498581ff718922c3f8e6a244956af099b2652b2b",
+        "codeBytes": 24009,
+        "codeHash": "0x83b2af6e9f3158defc2811cbcb0db71ecf8b2ba2abea39c39e370ac5c6f43eb6"
+      },
+      {
+        "name": "quoter",
+        "address": "0x0d5e0f971ed27fbff6c2837bf31316121532048d",
+        "codeBytes": 5820,
+        "codeHash": "0x9a5c0cdd56325bef0e48cdab071a4b6a7f877e1271c2e08510998d724a038bb3",
+        "poolManager": "0x498581fF718922c3f8e6A244956aF099B2652b2b"
+      },
+      {
+        "name": "stateView",
+        "address": "0xa3c0c9b65bad0b08107aa264b0f3db444b867a71",
+        "codeBytes": 3531,
+        "codeHash": "0xbbd5859677ef5491143133e8ed2b8faa0272f6fc2cbae94c53e79cc8c0538545",
+        "poolManager": "0x498581fF718922c3f8e6A244956aF099B2652b2b"
+      },
+      {
+        "name": "positionManager",
+        "address": "0x7c5f5a4bbd8fd63184577525326123b519429bdc",
+        "codeBytes": 23877,
+        "codeHash": "0x243f9e091ddf11c7c04e28059fdbbf1bab82b72d414fafb8e096c097aaeb622a",
+        "poolManager": "0x498581fF718922c3f8e6A244956aF099B2652b2b"
+      },
+      {
+        "name": "router",
+        "address": "0xfdf682f51fe81aa4898f0ae2163d8a55c127fbc7",
+        "codeBytes": 24546,
+        "codeHash": "0x4436f45787722467059726381c27a999d0725a7a8b6ae2c4217223987275e3ef",
+        "poolManager": "0x498581fF718922c3f8e6A244956aF099B2652b2b"
+      },
+      {
+        "name": "permit2",
+        "address": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "codeBytes": 9152,
+        "codeHash": "0xa67739abc3ede9dbdc0491636c67d6a14ac07fab9030c3f509b1eb7b11dff8ed"
+      }
+    ],
+    "routerDomain": {
+      "name": "UniversalRouter",
+      "version": "2",
+      "chainId": "8453",
+      "verifyingContract": "0xFdf682F51FE81Aa4898F0AE2163d8A55c127fbC7"
+    },
+    "discoveryCount": 2,
+    "pools": [
+      {
+        "id": "0x08c2222ab55c9ddebebe6a9a6a24e882e4a6f764b8246e2f9f93520edc27dca1",
+        "key": [
+          "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "0xC9750053FE947E0961eab0f3E29325F0311DCb07",
+          8388608,
+          200,
+          "0xb429d62f8f3bFFb98CdB9569533eA23bF0Ba28CC"
+        ],
+        "boundHash": "0x08c2222ab55c9ddebebe6a9a6a24e882e4a6f764b8246e2f9f93520edc27dca1",
+        "lpFee": 10000,
+        "refused": "not native input pair",
+        "pair": {
+          "chainId": "base",
+          "dexId": "uniswap",
+          "url": "https://dexscreener.com/base/0x08c2222ab55c9ddebebe6a9a6a24e882e4a6f764b8246e2f9f93520edc27dca1",
+          "pairAddress": "0x08c2222ab55c9ddebebe6a9a6a24e882e4a6f764b8246e2f9f93520edc27dca1",
+          "labels": [
+            "v4"
+          ],
+          "baseToken": {
+            "address": "0xC9750053FE947E0961eab0f3E29325F0311DCb07",
+            "name": "C",
+            "symbol": "CLANKER"
+          },
+          "quoteToken": {
+            "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+            "name": "USD Coin",
+            "symbol": "USDC"
+          },
+          "priceNative": "0.0000003396",
+          "priceUsd": "0.0000003396",
+          "txns": {
+            "m5": {
+              "buys": 0,
+              "sells": 0
+            },
+            "h1": {
+              "buys": 0,
+              "sells": 2
+            },
+            "h6": {
+              "buys": 0,
+              "sells": 4
+            },
+            "h24": {
+              "buys": 1,
+              "sells": 7
+            }
+          },
+          "volume": {
+            "h24": 87.72,
+            "h6": 53.38,
+            "h1": 3.74,
+            "m5": 0
+          },
+          "priceChange": {
+            "h1": -0.16,
+            "h6": -2.28,
+            "h24": -3.7
+          },
+          "liquidity": {
+            "usd": 33732.18,
+            "base": 96569039039,
+            "quote": 934.3155
+          },
+          "fdv": 33963,
+          "marketCap": 33963,
+          "pairCreatedAt": 1788643603000
+        }
+      },
+      {
+        "id": "0x4f7e88a5183a5e034dd1e2e6b4277e8ca820a310a0fba6d5b0dd3db374ad256a",
+        "key": [
+          "0x0000000000000000000000000000000000000000",
+          "0xC9750053FE947E0961eab0f3E29325F0311DCb07",
+          910000,
+          9100,
+          "0x0000000000000000000000000000000000000000"
+        ],
+        "boundHash": "0x4f7e88a5183a5e034dd1e2e6b4277e8ca820a310a0fba6d5b0dd3db374ad256a",
+        "lpFee": 910000,
+        "amountIn": "100000000000000",
+        "amountOut": "5442931746430587134677",
+        "gasEstimate": "59739",
+        "pair": {
+          "chainId": "base",
+          "dexId": "uniswap",
+          "url": "https://dexscreener.com/base/0x4f7e88a5183a5e034dd1e2e6b4277e8ca820a310a0fba6d5b0dd3db374ad256a",
+          "pairAddress": "0x4f7e88a5183a5e034dd1e2e6b4277e8ca820a310a0fba6d5b0dd3db374ad256a",
+          "labels": [
+            "v4"
+          ],
+          "baseToken": {
+            "address": "0xC9750053FE947E0961eab0f3E29325F0311DCb07",
+            "name": "C",
+            "symbol": "CLANKER"
+          },
+          "quoteToken": {
+            "address": "0x0000000000000000000000000000000000000000",
+            "name": "Ether",
+            "symbol": "ETH"
+          },
+          "priceNative": "0.000000001588",
+          "priceUsd": "0.000003971",
+          "txns": {
+            "m5": {
+              "buys": 0,
+              "sells": 0
+            },
+            "h1": {
+              "buys": 0,
+              "sells": 0
+            },
+            "h6": {
+              "buys": 0,
+              "sells": 0
+            },
+            "h24": {
+              "buys": 0,
+              "sells": 1
+            }
+          },
+          "volume": {
+            "h24": 0.07,
+            "h6": 0,
+            "h1": 0,
+            "m5": 0
+          },
+          "priceChange": {},
+          "liquidity": {
+            "usd": 0.87,
+            "base": 80824,
+            "quote": 0.0002231
+          },
+          "fdv": 397142,
+          "marketCap": 397142,
+          "pairCreatedAt": 1788682523000
+        }
+      }
+    ]
+  }
+]

@@ -24,6 +24,7 @@
  */
 
 import { z } from "zod";
+import { v4RouteBindingSchema } from "@tools/uniswap/v4-types.js";
 
 /** Bumped only when a variant's MEANING changes; readers reject what they do not know. */
 export const SETTLEMENT_DECODE_VERSION = 1;
@@ -75,7 +76,7 @@ export const settlementDecodeSchema = z.discriminatedUnion("decoder", [
   routedVariant.extend({ decoder: z.literal("kyberswap") }),
   bridgeDepositVariant.extend({ decoder: z.literal("relay_bridge_deposit") }),
   bridgeDepositVariant.extend({ decoder: z.literal("khalani_bridge_deposit") }),
-  routedVariant.extend({ decoder: z.literal("uniswap") }),
+  routedVariant.extend({ decoder: z.literal("uniswap"), v4: v4RouteBindingSchema.optional() }),
   routedVariant.extend({ decoder: z.literal("pendle") }),
   routedVariant.extend({ decoder: z.literal("trench_trade") }),
   // Morpho vault lend (E3b-2). `routerAddress` is the target the HANDLER itself

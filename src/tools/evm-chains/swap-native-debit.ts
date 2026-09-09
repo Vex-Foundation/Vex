@@ -73,6 +73,7 @@ export function boundGasPriceWei(cap: LegFeeCap): bigint {
 export type NativeDebitLegRole =
   | "allowance_reset"
   | "allowance"
+  | "permit2_allowance"
   | "swap"
   | "swap_fee";
 

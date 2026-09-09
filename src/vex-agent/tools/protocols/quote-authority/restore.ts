@@ -11,6 +11,8 @@
  * approved: consumed, superseded, expired, or byte-different.
  */
 
+import { describeV4Route, v4QuoteWarning } from "@tools/uniswap/v4-pool.js";
+import { formatUnits } from "viem";
 import { z } from "zod";
 
 import { boundDebitPlanSchema } from "./debit-plan.js";
@@ -249,6 +251,13 @@ export function readQuoteBindingPreview(
       approvedAmountOutHuman: u.approvedAmountOutHuman,
       approvedMinOutHuman: u.approvedMinOutHuman,
       approvedMinOutRaw: u.approvedMinOutRaw,
+      ...(u.v4 ? { extraFacts: [
+        `Chain ${u.chainId}; input ${formatUnits(BigInt(u.totalInRaw), u.tokenIn.decimals)} ${u.tokenIn.symbol}, ${u.totalInRaw} raw units, decimals ${u.tokenIn.decimals}; output decimals ${u.tokenOut.decimals}`,
+        describeV4Route(u.v4.route), v4QuoteWarning(u.v4.route),
+        `Spender Permit2 ${u.v4.route.permit2} and Uniswap UniversalRouter ${u.v4.route.universalRouterVersion} ${u.v4.route.universalRouter}`,
+        `Recipient ${u.v4.recipient}; transaction deadline 600 seconds from signing`,
+        u.fee.disclosureText, "Spends real funds irreversibly after confirmation",
+      ] } : {}),
       tokenOutSymbol: u.tokenOut.symbol,
       effectiveSlippageBps: u.slippageBps,
       expiresAt,

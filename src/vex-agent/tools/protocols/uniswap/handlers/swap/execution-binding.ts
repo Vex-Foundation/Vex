@@ -94,8 +94,10 @@ export function buildUniswapQuoteSnapshot(input: {
    * binding exists to close.
    */
   readonly debitPlan: BoundDebitPlan;
+  readonly recipient?: string;
 }): UniswapExecutionSnapshot {
   const { tokenOut, quoted } = input;
+  if (quoted.route.version === "v4" && !input.recipient) throw new Error("A v4 quote snapshot requires the executing recipient");
   const inputs = executionInputsFrom(input);
   return sealUniswapSnapshot({
     v: UNISWAP_SNAPSHOT_VERSION,
@@ -113,5 +115,6 @@ export function buildUniswapQuoteSnapshot(input: {
     slippageBps: quoted.slippageBps,
     expiresAt: input.expiresAt,
     debitPlan: input.debitPlan,
+    ...(quoted.route.version === "v4" && input.recipient ? { v4: { route: quoted.route.v4, recipient: input.recipient } } : {}),
   });
 }

@@ -54,6 +54,16 @@ export interface UniswapV3Deployment {
   readonly feeTiers: readonly number[];
 }
 
+export interface UniswapV4Deployment {
+  readonly poolManager: Address;
+  readonly quoter: Address;
+  readonly stateView: Address;
+  readonly positionManager: Address;
+  readonly universalRouter: Address;
+  readonly universalRouterVersion: "2.0" | "2.1.1";
+  readonly permit2: Address;
+}
+
 export interface UniswapDeployment {
   readonly chainId: number;
   /** Stable lowercase key used for logs, tests, and dexscreener slug alignment. */
@@ -69,6 +79,7 @@ export interface UniswapDeployment {
   readonly connectors: readonly Address[];
   readonly v2?: UniswapV2Deployment;
   readonly v3?: UniswapV3Deployment;
+  readonly v4?: UniswapV4Deployment;
   /**
    * Optional read-only RPC proven to serve historical receipts and event logs.
    * This is deliberately separate from the normal quote/broadcast transport so
@@ -94,6 +105,19 @@ const ROBINHOOD: UniswapDeployment = {
     "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31", // VIRTUAL (base pair for $VEX & Virtuals agent tokens)
     "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168", // USDG (6 decimals)
   ],
+  // Re-verified 2026-09-09 via https://rpc.mainnet.chain.robinhood.com
+  // eth_getCode for all six; quoter/stateView/positionManager/router.poolManager()
+  // matched poolManager. Router eip712Domain() = UniversalRouter / 2, chain and
+  // verifyingContract matched. SDK constants.ts pins this address to 2.1.1.
+  v4: {
+    poolManager: "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+    quoter: "0x8dc178efb8111bb0973dd9d722ebeff267c98f94",
+    stateView: "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b",
+    positionManager: "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+    permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    universalRouter: "0x8876789976decbfcbbbe364623c63652db8c0904",
+    universalRouterVersion: "2.1.1",
+  },
   v2: {
     factory: "0x8bceaa40b9acdfaedf85adf4ff01f5ad6517937f",
     router02: "0x89e5db8b5aa49aa85ac63f691524311aeb649eba",
@@ -116,6 +140,19 @@ const ETHEREUM: UniswapDeployment = {
     "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", // USDC
     "0xdAC17F958D2ee523a2206206994597C13D831ec7", // USDT
   ],
+  // Re-verified 2026-09-09 via https://mainnet.gateway.tenderly.co
+  // eth_getCode for all six; quoter/stateView/positionManager/router.poolManager()
+  // matched poolManager. Router eip712Domain() = UniversalRouter / 2, chain and
+  // verifyingContract matched. SDK constants.ts pins this address to 2.1.1.
+  v4: {
+    poolManager: "0x000000000004444c5dc75cB358380D2e3dE08A90",
+    quoter: "0x52f0e24d1c21c8a0cb1e5a5dd6198556bd9e1203",
+    stateView: "0x7ffe42c4a5deea5b0fec41c94c136cf115597227",
+    positionManager: "0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e",
+    permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    universalRouter: "0x4C82D1fBFe28C977cBB58D8C7FF8FCF9F70a2cCA",
+    universalRouterVersion: "2.1.1",
+  },
   v2: {
     factory: "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
     router02: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
@@ -140,6 +177,19 @@ const BASE: UniswapDeployment = {
   connectors: [
     "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC
   ],
+  // Re-verified 2026-09-09 via https://base.gateway.tenderly.co
+  // eth_getCode for all six; quoter/stateView/positionManager/router.poolManager()
+  // matched poolManager. Router eip712Domain() = UniversalRouter / 2, chain and
+  // verifyingContract matched. SDK constants.ts pins this address to 2.1.1.
+  v4: {
+    poolManager: "0x498581ff718922c3f8e6a244956af099b2652b2b",
+    quoter: "0x0d5e0f971ed27fbff6c2837bf31316121532048d",
+    stateView: "0xa3c0c9b65bad0b08107aa264b0f3db444b867a71",
+    positionManager: "0x7c5f5a4bbd8fd63184577525326123b519429bdc",
+    permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    universalRouter: "0xfdf682f51fe81aa4898f0ae2163d8a55c127fbc7",
+    universalRouterVersion: "2.1.1",
+  },
   v2: {
     factory: "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6",
     router02: "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24",
@@ -288,6 +338,10 @@ export const UNISWAP_KNOWN_SPENDERS: ReadonlySet<string> = (() => {
   for (const d of DEPLOYMENTS) {
     if (d.v2) set.add(d.v2.router02.toLowerCase());
     if (d.v3) set.add(d.v3.swapRouter02.toLowerCase());
+    if (d.v4) {
+      set.add(d.v4.permit2.toLowerCase());
+      set.add(d.v4.universalRouter.toLowerCase());
+    }
   }
   return set;
 })();

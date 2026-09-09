@@ -3,11 +3,12 @@
  * SAFETY block the prequote extractor re-validates.
  */
 
+import { readSwapAllowances, tokenSpender } from "@tools/uniswap/v4-allowance.js";
+import { describeV4Route, v4QuoteWarning } from "@tools/uniswap/v4-pool.js";
 import { getAddress, parseUnits, formatUnits, type Address } from "viem";
 
 import { getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
 import { checkRouteFactories, probeFotSignal } from "@tools/uniswap/safety.js";
-import { readUniswapAllowance } from "@tools/uniswap/erc20.js";
 import { resolveSelectedAddress } from "@vex-agent/tools/internal/wallet/resolve.js";
 import logger from "@utils/logger.js";
 
@@ -198,6 +199,7 @@ export async function uniswapSwapQuote(
     charge: feeCharge,
     quoted,
     debitPlan: spendability.debitPlan,
+    ...(spendability.recipient ? { recipient: spendability.recipient } : {}),
     // Display/audit copy of the row's own TTL. `swap_prequotes.expires_at`,
     // written by the recorder, is the AUTHORITY the claim reads; these two
     // differ by the recorder's own latency and nothing decides on this one.
@@ -209,7 +211,10 @@ export async function uniswapSwapQuote(
     chainId: deployment.chainId,
     tokenIn: { address: tokenIn.address, symbol: tokenIn.symbol, decimals: tokenIn.decimals, isNative: tokenIn.isNative },
     tokenOut: { address: tokenOut.address, symbol: tokenOut.symbol, decimals: tokenOut.decimals, isNative: tokenOut.isNative },
-    route: { version: quoted.route.version, path: quoted.route.path, fees: quoted.route.fees ?? null },
+    route: { version: quoted.route.version, path: quoted.route.path, fees: quoted.route.fees ?? null,
+      ...(quoted.route.version === "v4" ? { ...quoted.route.v4, description: describeV4Route(quoted.route.v4), quoteWarning: v4QuoteWarning(quoted.route.v4) } : {}) },
+    ...(quoted.v4Discovery ? { v4Discovery: quoted.v4Discovery } : {}),
+    ...(quoted.route.version === "v4" ? { spenderDescription: `Permit2 and Uniswap UniversalRouter ${quoted.route.v4.universalRouterVersion}`, deadline: "600 seconds from signing", consequence: "Spends real funds irreversibly after confirmation" } : {}),
     // What the user is debited in total, and what the route was priced for -
     // they differ by the Vex fee, and stating only one of them is how an agent
     // ends up reporting a number the wallet never saw.
@@ -223,9 +228,10 @@ export async function uniswapSwapQuote(
     minAmountOutRaw: quoted.minAmountOut.toString(),
     slippageBps,
     priceImpact: quoted.priceImpact ?? null,
+    selectionBasis: quoted.selectionBasis ?? "gross_output_gas_comparison_unavailable",
     gasEstimate: quoted.route.gasEstimate?.toString() ?? null,
     router: routerFor(deployment, quoted.route),
-    spender: tokenIn.isNative ? null : routerFor(deployment, quoted.route),
+    spender: tokenIn.isNative ? null : tokenSpender(deployment, quoted.route, routerFor(deployment, quoted.route)),
     safety,
     vexFee: feeCharge.disclosure,
     // The agent sees WHY, in the same object as the route. `impactMeasured`
@@ -273,6 +279,7 @@ export async function uniswapSwapQuote(
 }
 
 interface SpendabilityOutcome {
+  readonly recipient?: string;
   readonly eligibility: QuoteEligibility;
   readonly preview: SpendabilityPreview | undefined;
   readonly note: string;
@@ -343,9 +350,7 @@ async function measureSpendability(input: {
 
   const spendabilityClient: UniswapSpendabilityClient = input.client;
   try {
-    const currentAllowance = input.tokenIn.isNative
-      ? 0n
-      : await readUniswapAllowance(input.client, input.tokenIn.address, wallet, input.router);
+    const allowances = await readSwapAllowances(input.client, { deployment: input.deployment, route: input.quoted.route, router: input.router, token: input.tokenIn.address, owner: wallet, native: input.tokenIn.isNative });
     const planned = planUniswapDebitLegs({
       deployment: input.deployment,
       router: input.router,
@@ -354,7 +359,7 @@ async function measureSpendability(input: {
       tokenOut: input.tokenOut,
       quoted: input.quoted,
       charge: input.charge,
-      currentAllowance,
+      ...allowances,
     });
     const legs = await estimateUniswapPlanGas({
       client: spendabilityClient,
@@ -399,6 +404,7 @@ async function measureSpendability(input: {
       : undefined;
     const judged = judgeUniswapSpendability(observation, routeEligibility, debitPlan);
     return {
+      recipient: wallet,
       eligibility: judged.eligibility,
       preview: judged.preview,
       checked: true,

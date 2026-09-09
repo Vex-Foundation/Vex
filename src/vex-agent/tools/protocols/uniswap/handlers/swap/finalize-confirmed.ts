@@ -8,6 +8,10 @@
  * through `status`, never through `success`.
  */
 
+import { readV4NativeDelta } from "@tools/uniswap/v4-native-settlement.js";
+import { getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
+import { describeV4Route, v4QuoteWarning } from "@tools/uniswap/v4-pool.js";
+import type { UniswapExecutionSnapshot } from "../../../quote-authority/uniswap.js";
 import { formatUnits, getAddress, type Hex } from "viem";
 
 import { getLocalChain } from "@tools/evm-chains/registry.js";
@@ -37,6 +41,7 @@ export interface FinalizeConfirmedSwapInput {
   readonly quoted: QuotedRoute;
   /** The floor the approved quote authorized, for the post-settlement assessment. */
   readonly approvedMinOutRaw: string;
+  readonly approvedSnapshot?: UniswapExecutionSnapshot;
   readonly receipt: UniswapDecodableReceipt;
   readonly txHash: Hex;
   /** Read-only client for the post-buy delivery check. */
@@ -103,6 +108,9 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
       receipt: x.receipt,
       chainId: deployment.chainId,
       walletAddress: x.walletAddress,
+      version: x.quoted.route.version,
+      ...(x.quoted.route.version === "v4" && (tokenIn.isNative || tokenOut.isNative)
+        ? { v4NativeDelta: await readV4NativeDelta(getUniswapPublicClient(deployment), deployment, txHash, getAddress(x.walletAddress)) } : {}),
       tokenInAddress: tokenIn.isNative ? null : tokenIn.address,
       tokenOutAddress: tokenOut.isNative ? null : tokenOut.address,
     });
@@ -119,6 +127,24 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
     // never saw the receipt", and the distinction is what lets the fallback
     // route work instead of guessing which job this row needs.
     await noteHandlerPendingReason("uniswap.swap.execute", x.eventId, "settlement_undecodable");
+    if (x.quoted.route.version === "v4") {
+      const outputPayload = {
+        txHash, chain: deployment.key, chainId: deployment.chainId,
+        status: "confirmed_pending_amounts",
+        settlementNote: "Swap confirmed; native movement or token Transfer evidence is not yet available. No executed amount was guessed.",
+        route: { version: "v4", path: x.quoted.route.path, ...x.quoted.route.v4,
+          description: describeV4Route(x.quoted.route.v4), quoteWarning: v4QuoteWarning(x.quoted.route.v4) },
+        tokenIn: { symbol: tokenIn.symbol, decimals: tokenIn.decimals },
+        tokenOut: { symbol: tokenOut.symbol, decimals: tokenOut.decimals },
+        approvedAmountInRaw: x.approvedSnapshot?.totalInRaw,
+        quotedAmountOut: x.approvedSnapshot?.approvedAmountOutHuman,
+        minAmountOut: x.approvedSnapshot?.approvedMinOutHuman,
+        slippageBps: x.quoted.slippageBps, recipient: x.walletAddress,
+        spenderDescription: `Permit2 and Uniswap UniversalRouter ${x.quoted.route.v4.universalRouterVersion}`,
+        deadline: "600 seconds from signing", consequence: "Spends real funds irreversibly after confirmation",
+      };
+      return { outputPayload, result: { success: true, output: JSON.stringify(outputPayload, null, 2), data: { txHash, _executionId: executionId, status: "confirmed_pending_amounts" } } };
+    }
     return {
       outputPayload: null,
       result: {
@@ -167,7 +193,16 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
     txHash, chain: deployment.key,
     tokenIn: tokenIn.symbol, tokenOut: tokenOut.symbol,
     amountIn: amountInHuman, amountOut: amountOutHuman,
-    route: { version: x.quoted.route.version, path: x.quoted.route.path },
+    route: { version: x.quoted.route.version, path: x.quoted.route.path,
+      ...(x.quoted.route.version === "v4" ? { ...x.quoted.route.v4, description: describeV4Route(x.quoted.route.v4), quoteWarning: v4QuoteWarning(x.quoted.route.v4) } : {}) },
+    ...(x.approvedSnapshot?.v4 ? {
+      chainId: deployment.chainId, inputDecimals: tokenIn.decimals, outputDecimals: tokenOut.decimals,
+      approvedAmountInRaw: x.approvedSnapshot.totalInRaw, approvedAmountIn: formatUnits(BigInt(x.approvedSnapshot.totalInRaw), tokenIn.decimals),
+      quotedAmountOut: x.approvedSnapshot.approvedAmountOutHuman, minAmountOut: x.approvedSnapshot.approvedMinOutHuman,
+      slippageBps: x.approvedSnapshot.slippageBps, recipient: x.approvedSnapshot.v4.recipient,
+      spenderDescription: `Permit2 and Uniswap UniversalRouter ${x.approvedSnapshot.v4.route.universalRouterVersion}`,
+      deadline: "600 seconds from signing", consequence: "Spends real funds irreversibly after confirmation",
+    } : {}),
     ...(deliveryVerdict ? { deliveryCheck: deliveryVerdict } : {}),
     ...(floorAssessment.kind === "materially_short"
       ? { approvedFloorCheck: floorAssessment.verdict }
