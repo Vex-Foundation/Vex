@@ -113,6 +113,18 @@ export interface LighterOnboardingResolvedAccount {
   readonly environment: LighterEnvironment;
   readonly walletAddress: string;
   readonly accountIndex: number;
+  readonly apiKeyIndex: number | null;
+  readonly tradingKeyRegistered: boolean;
+}
+
+/** Generated key metadata alone does not prove that registration completed. */
+export function hasRecordedLighterTradingKeyRegistration(
+  workflow: Pick<LighterOnboardingWorkflowRow,
+    "apiKeyIndex" | "publicKeyFingerprint" | "workflowState" | "lastStableState">,
+): boolean {
+  return workflow.apiKeyIndex !== null && Boolean(workflow.publicKeyFingerprint)
+    && [workflow.workflowState, workflow.lastStableState].some((state) =>
+      state === "key_verified" || state === "nonce_synchronized" || state === "ready_to_trade");
 }
 
 /** Default page for the resolved-account listing; also its documented bound. */
@@ -141,11 +153,19 @@ export async function listLighterOnboardingResolvedAccounts(
     readonly environment: LighterEnvironment;
     readonly wallet_address: string;
     readonly resolved_account_index: string | number;
+    readonly api_key_index: number | null;
+    readonly public_key_fingerprint: string | null;
+    readonly workflow_state: LighterOnboardingWorkflowState;
+    readonly last_stable_state: LighterOnboardingWorkflowState | null;
     readonly total_count: string | number;
   }>(
     `SELECT environment,
             wallet_address,
             resolved_account_index,
+            api_key_index,
+            public_key_fingerprint,
+            workflow_state,
+            last_stable_state,
             COUNT(*) OVER () AS total_count
        FROM lighter_onboarding_workflows
       WHERE resolved_account_index IS NOT NULL
@@ -159,6 +179,13 @@ export async function listLighterOnboardingResolvedAccounts(
       environment: row.environment,
       walletAddress: row.wallet_address,
       accountIndex: readSafeInteger(row.resolved_account_index, "resolved_account_index", 0),
+      apiKeyIndex: readNullableSafeInteger(row.api_key_index, "api_key_index", 4, 254),
+      tradingKeyRegistered: hasRecordedLighterTradingKeyRegistration({
+        apiKeyIndex: row.api_key_index,
+        publicKeyFingerprint: row.public_key_fingerprint,
+        workflowState: row.workflow_state,
+        lastStableState: row.last_stable_state,
+      }),
     })),
     totalCount: first === undefined
       ? 0

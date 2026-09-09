@@ -19,7 +19,6 @@ const lighterPointsWalletAddressSchema = z
 
 /** Why the read-only authorization for one wallet could not be minted. */
 const lighterPointsAuthUnavailableReasonSchema = z.enum([
-  "no_credential",
   "vault_locked",
   "signer_failed",
   "unknown",
@@ -78,6 +77,17 @@ const lighterPointsReferralSchema = z.discriminatedUnion("kind", [
 ]);
 
 const lighterPointsRowSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("credential_missing_here"),
+    walletAddress: lighterPointsWalletAddressSchema,
+    environment: lighterIntegrationEnvironmentSchema,
+    accountIndex: z.number().int().nonnegative(),
+    apiKeyIndex: z.number().int().min(4).max(254).nullable(),
+    tradingKeyRegistered: z.boolean(),
+    observedAt: z.string().datetime(),
+  }).strict().refine((row) => !row.tradingKeyRegistered || row.apiKeyIndex !== null, {
+    message: "A recorded trading key requires its API-key index.",
+  }),
   z
     .object({
       kind: z.literal("points"),

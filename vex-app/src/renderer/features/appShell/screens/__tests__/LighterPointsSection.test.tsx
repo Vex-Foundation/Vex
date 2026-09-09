@@ -170,6 +170,32 @@ describe("LighterPointsSection", () => {
     expect(screen.getByText(/Vex is locked, so the saved credential/)).not.toBeNull();
   });
 
+  it("shows an account registered elsewhere with its local-key remedy beside healthy points", async () => {
+    render(<LighterPointsSection />);
+    await settle(0, result([
+      { kind: "credential_missing_here", walletAddress: OTHER, environment: "rhc",
+        accountIndex: 123, apiKeyIndex: 4, tradingKeyRegistered: true, observedAt: OBSERVED_AT },
+      healthyRow(),
+    ]));
+    const card = screen.getByText(OTHER).closest("li");
+    expect(card?.textContent).toContain("account 123");
+    expect(card?.textContent).toContain("The trading key was registered from another Vex installation (or an earlier vault). Points need a trading key on this machine.");
+    expect(card?.textContent).toContain("Register a trading key on this machine in the Lighter panel; the key registered elsewhere stays valid");
+    expect(screen.queryByText(/No wallet has a Lighter account registered/)).toBeNull();
+    expect(screen.getByText(/rank 22,146/)).not.toBeNull();
+  });
+
+  it("does not claim registration elsewhere when the account has no recorded key", async () => {
+    render(<LighterPointsSection />);
+    await settle(0, result([{ kind: "credential_missing_here", walletAddress: OTHER,
+      environment: "rhc", accountIndex: 123, apiKeyIndex: null,
+      tradingKeyRegistered: false, observedAt: OBSERVED_AT }]));
+    expect(screen.getByText(/account 123/)).not.toBeNull();
+    expect(screen.getByText(/Points need a trading key on this machine/)).not.toBeNull();
+    expect(screen.queryByText(/was registered from another Vex installation/)).toBeNull();
+    expect(screen.queryByText(/No wallet has a Lighter account registered/)).toBeNull();
+  });
+
   it("points a user with no registered wallet at the Lighter setup", async () => {
     render(<LighterPointsSection />);
     await settle(0, result([]));

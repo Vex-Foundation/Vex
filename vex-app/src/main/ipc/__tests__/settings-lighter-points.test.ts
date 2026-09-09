@@ -14,7 +14,7 @@
  *    `internal.cancelled`, not as a failure.
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { defaultPreferences, type Preferences } from "@shared/schemas/preferences.js";
 import type { LighterPointsResult } from "@shared/schemas/lighter-points.js";
@@ -75,6 +75,8 @@ vi.mock("@vex-agent/tools/protocols/lighter/points.js", () => ({
 }));
 
 const { registerSettingsHandlers } = await import("../settings.js");
+const { registerCancelHandler } = await import("../cancel.js");
+const disposers: Array<() => void> = [];
 const { CH } = await import("@shared/ipc/channels.js");
 
 const HEALTHY = "0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA";
@@ -144,7 +146,11 @@ beforeEach(() => {
   mocks.ensureEngineDbUrl.mockResolvedValue({ ok: true, data: undefined });
   mocks.getPrimaryEvmAddress.mockReturnValue(HEALTHY);
   mocks.readLighterPointsForWallets.mockResolvedValue(report());
-  registerSettingsHandlers();
+  disposers.push(...registerSettingsHandlers(), registerCancelHandler());
+});
+
+afterEach(() => {
+  for (const dispose of disposers.splice(0)) dispose();
 });
 
 describe("vex:settings:lighterPoints", () => {
@@ -153,6 +159,57 @@ describe("vex:settings:lighterPoints", () => {
 
     expect(result.ok).toBe(true);
     expect(result.data).toEqual(report());
+  });
+
+  it("returns a registered wallet missing here beside healthy points", async () => {
+    const expected = report();
+    const rows = [...expected.rows, {
+      kind: "credential_missing_here", walletAddress: "0x1111111111111111111111111111111111111111",
+      environment: "rhc", accountIndex: 123, apiKeyIndex: 4,
+      tradingKeyRegistered: true, observedAt: OBSERVED_AT,
+    }];
+    mocks.readLighterPointsForWallets.mockResolvedValue({ ...expected, rows, walletCount: 3 });
+    expect(await call({})).toMatchObject({ ok: true, data: { rows, walletCount: 3 } });
+  });
+
+  it.each([
+    { apiKeyIndex: -1 }, { apiKeyIndex: 255 }, { apiKeyIndex: null },
+    { apiKeyIndex: 4.5 }, { unexpected: "field" }, { tradingKeyRegistered: "yes" },
+  ])("rejects invalid missing-credential metadata %j", async (invalid) => {
+    mocks.readLighterPointsForWallets.mockResolvedValue({
+      rows: [{ kind: "credential_missing_here", walletAddress: REFUSED, environment: "rhc",
+        accountIndex: 123, apiKeyIndex: 4, tradingKeyRegistered: true,
+        observedAt: OBSERVED_AT, ...invalid }], walletCount: 1, observedAt: OBSERVED_AT,
+    });
+    expect(await call({})).toMatchObject({ ok: false, error: { code: "internal.contract_violation" } });
+  });
+
+  it("refuses a trusted-origin subframe before reading wallets", async () => {
+    const frame = sender.senderFrame;
+    const result = await call({}, { ...sender,
+      senderFrame: { url: frame.url, parent: frame, top: frame } });
+    expect(result).toMatchObject({ ok: false, error: { code: "validation.invalid_sender" } });
+    expect(mocks.readLighterPointsForWallets).not.toHaveBeenCalled();
+  });
+
+  it("cancels an in-flight read through the registered cancellation channel", async () => {
+    const started = Promise.withResolvers<AbortSignal>();
+    mocks.readLighterPointsForWallets.mockImplementation(({ signal }: { signal: AbortSignal }) => {
+      started.resolve(signal);
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    });
+    const reading = call({});
+    const signal = await started.promise;
+    const cancel = handlers.get(CH.cancel);
+    if (cancel === undefined) throw new Error("Cancel handler not registered.");
+    expect(await cancel(sender, {
+      requestId: "00000000-0000-4000-8000-000000000902",
+      payload: { correlationId: "00000000-0000-4000-8000-000000000901" },
+    })).toMatchObject({ ok: true, data: { cancelled: true } });
+    expect(signal.aborted).toBe(true);
+    expect(await reading).toMatchObject({ ok: false, error: { code: "internal.cancelled" } });
   });
 
   it("refuses an untrusted sender before doing any provider work", async () => {

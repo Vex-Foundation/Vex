@@ -218,6 +218,7 @@ export function registerSettingsHandlers(): Array<() => void> {
         const dbUrlOutcome = await ensureEngineDbUrl(ctx.requestId);
         if (!dbUrlOutcome.ok) return dbUrlOutcome;
         try {
+          ctx.signal.throwIfAborted();
           const { readLighterPointsForWallets } = await import(
             "@vex-agent/tools/protocols/lighter/points.js"
           );

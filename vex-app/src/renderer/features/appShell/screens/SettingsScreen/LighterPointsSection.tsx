@@ -27,7 +27,6 @@ const ENVIRONMENT_LABEL: Readonly<Record<"core" | "rhc", string>> = {
 };
 
 const AUTH_REASON_COPY: Readonly<Record<string, string>> = {
-  no_credential: "No Lighter trading credential is saved for this account on this machine.",
   vault_locked: "Vex is locked, so the saved credential could not be read.",
   signer_failed: "Vex could not derive a read-only authorization from the saved credential.",
   unknown: "Vex could not derive a read-only authorization and was not told why.",
@@ -153,7 +152,20 @@ function WalletCard({ row }: { readonly row: LighterPointsRow }): JSX.Element {
           {ENVIRONMENT_LABEL[row.environment]} - account {row.accountIndex}
         </span>
       </div>
-      {row.kind === "unavailable" ? (
+      {row.kind === "credential_missing_here" ? (
+        <div className="mt-3 text-[13px] leading-[20px] text-warning">
+          <p>
+            {row.tradingKeyRegistered
+              ? "The trading key was registered from another Vex installation (or an earlier vault). Points need a trading key on this machine."
+              : "This wallet has a Lighter account. Points need a trading key on this machine."}
+          </p>
+          <p className="mt-2">
+            {row.tradingKeyRegistered
+              ? "Register a trading key on this machine in the Lighter panel; the key registered elsewhere stays valid"
+              : "Register a trading key on this machine in the Lighter panel."}
+          </p>
+        </div>
+      ) : row.kind === "unavailable" ? (
         <p
           className="mt-3 text-[13px] leading-[20px] text-warning"
           data-vex-lighter-points-unavailable={row.reason}

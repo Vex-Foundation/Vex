@@ -77,9 +77,15 @@ export interface LighterPointsWallet {
   readonly walletAddress: string;
   readonly environment: LighterEnvironment;
   readonly accountIndex: number;
+  readonly apiKeyIndex: number | null;
+  readonly tradingKeyRegistered: boolean;
 }
 
 export type LighterPointsRow =
+  | (LighterPointsWallet & {
+      readonly kind: "credential_missing_here";
+      readonly observedAt: string;
+    })
   | {
       readonly kind: "points";
       readonly walletAddress: string;
@@ -96,7 +102,7 @@ export type LighterPointsRow =
       readonly walletAddress: string;
       readonly environment: LighterEnvironment;
       readonly accountIndex: number;
-      readonly reason: LighterReadOnlyAccountAuthUnavailableReason;
+      readonly reason: Exclude<LighterReadOnlyAccountAuthUnavailableReason, "no_credential">;
       readonly detail: string;
       readonly observedAt: string;
     };
@@ -148,6 +154,8 @@ function defaultLighterPointsDeps(): LighterPointsDeps {
           walletAddress: row.walletAddress,
           environment: row.environment,
           accountIndex: row.accountIndex,
+          apiKeyIndex: row.apiKeyIndex,
+          tradingKeyRegistered: row.tradingKeyRegistered,
         })),
         totalCount: listed.totalCount,
       };
@@ -318,12 +326,28 @@ export async function readLighterPointsForWallets(
   request.signal.throwIfAborted();
 
   const listed = await deps.listWallets(maxWallets);
+  request.signal.throwIfAborted();
   const rows: LighterPointsRow[] = [];
   for (const wallet of listed.rows) {
     request.signal.throwIfAborted();
     const observedAt = deps.now().toISOString();
     const outcome = await deps.resolveAuth(wallet.environment, wallet.accountIndex);
+    request.signal.throwIfAborted();
     if (outcome.kind === "unavailable") {
+      // The privileged resolver checks vault lock before looking up this exact
+      // environment/account scope. Only an unlocked, absent scope means missing here.
+      if (outcome.reason === "no_credential") {
+        rows.push({
+          kind: "credential_missing_here",
+          walletAddress: wallet.walletAddress,
+          environment: wallet.environment,
+          accountIndex: wallet.accountIndex,
+          apiKeyIndex: wallet.apiKeyIndex,
+          tradingKeyRegistered: wallet.tradingKeyRegistered,
+          observedAt,
+        });
+        continue;
+      }
       rows.push({
         kind: "unavailable",
         walletAddress: wallet.walletAddress,

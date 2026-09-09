@@ -37,6 +37,11 @@ import {
 } from "@tools/lighter/wallet-funding/onboarding-status.js";
 import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
 import * as lighterOrderPreviewsRepo from "@vex-agent/db/repos/lighter-order-previews.js";
+import {
+  getLighterOnboardingWorkflow,
+  hasRecordedLighterTradingKeyRegistration,
+  type LighterOnboardingWorkflowRow,
+} from "@vex-agent/db/repos/lighter-onboarding-workflows.js";
 import { describeFailureForAgent, describeFailureForLog } from "../../runtime/errors.js";
 import {
   defaultLighterOrderRepairDeps,
@@ -530,11 +535,14 @@ export async function resolvePreviewApiKeyIndex(
 
 function managedReadinessRecoveryLeg(
   readiness: LighterManagedTradingReadiness,
+  workflow: LighterOnboardingWorkflowRow | null,
 ): { readonly kind: string; readonly reason: string } {
   if (readiness.reason === "active_managed_credential_missing") {
     return {
       kind: "register_trading_key",
-      reason: "Create and register locally encrypted Vex trading access before any order can be signed.",
+      reason: workflow !== null && hasRecordedLighterTradingKeyRegistration(workflow)
+        ? "This account has a registered trading key from another Vex installation (or an earlier vault), but this machine holds no credential for it. Registering a new trading key here uses another unused key slot without invalidating the existing key."
+        : "Create and register locally encrypted Vex trading access before any order can be signed.",
     };
   }
   if (
@@ -663,16 +671,23 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         : await readLighterManagedTradingReadiness(environment.value, status.accountIndex);
       const managedTradingAccessActive = status.tradingKeyRegistered
         && managedTradingReadiness?.ready === true;
+      const workflow = managedTradingReadiness?.reason === "active_managed_credential_missing"
+        ? await getLighterOnboardingWorkflow(environment.value, walletAddress)
+        : null;
       const readinessRecoveryLeg = managedTradingReadiness?.ready === false
-        ? managedReadinessRecoveryLeg(managedTradingReadiness)
+        ? managedReadinessRecoveryLeg(
+            managedTradingReadiness,
+            workflow?.resolvedAccountIndex === status.accountIndex ? workflow : null,
+          )
         : null;
       const plan = !managedTradingAccessActive
-        && !status.plan.legs.some((leg) => leg.kind === "register_trading_key")
+        && (managedTradingReadiness?.reason === "active_managed_credential_missing"
+          || !status.plan.legs.some((leg) => leg.kind === "register_trading_key"))
         ? {
             ...status.plan,
             ready: false,
             legs: [
-              ...status.plan.legs,
+              ...status.plan.legs.filter((leg) => leg.kind !== "register_trading_key"),
               readinessRecoveryLeg ?? {
                 kind: "register_trading_key",
                 reason: "Create and register locally encrypted Vex trading access before any order can be signed.",
@@ -774,7 +789,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
             : fundingAssessment.decision === "below_lighter_deposit_minimum"
               ? `Do not prepare a deposit and do not round the top-up upward. The current Lighter collateral is not enough for the requested trade, but the exact required top-up ${fundingAssessment.collateralShortfallDisplay} is below Lighter's live minimum deposit ${fundingAssessment.minimumDepositDisplay}. Show the user these live values in a compact table: requested collateral ${fundingAssessment.requiredCollateralDisplay}; current Lighter collateral ${fundingAssessment.lighterCollateralDisplay}; Vex wallet ${settlementAsset} ${fundingAssessment.walletSettlementDisplay}; combined ${settlementAsset} ${fundingAssessment.combinedSettlementDisplay}; required top-up ${fundingAssessment.collateralShortfallDisplay}; Lighter minimum deposit ${fundingAssessment.minimumDepositDisplay}. Explain that Vex will not move extra funds beyond the requested top-up; the user must choose a trade or funding amount whose required deposit meets the live minimum.`
             : tradingAccessRoute.kind === "prepare_key_registration_approval"
-              ? `Funding and wallet-owned account creation are proven on ${fundingDeployment.settlementNetworkName}, but secure Vex trading access is not active yet. Immediately call lighter.key.register.prepare in this same turn with environment "${environment.value}" so Vex generates and encrypts the credential locally and the host shows a separate key-registration approval card. Do not ask whether to prepare it and do not ask for another chat confirmation; the approval card is the user's consent. Never call lighter.key.register directly and never ask the user for a key, account index, API-key index, nonce, or fingerprint.`
+              ? `Funding and wallet-owned account creation are proven on ${fundingDeployment.settlementNetworkName}, but secure Vex trading access is not active yet. ${readinessRecoveryLeg?.reason ?? ""} Immediately call lighter.key.register.prepare in this same turn with environment "${environment.value}" so Vex generates and encrypts the credential locally and the host shows a separate key-registration approval card. Do not ask whether to prepare it and do not ask for another chat confirmation; the approval card is the user's consent. Never call lighter.key.register directly and never ask the user for a key, account index, API-key index, nonce, or fingerprint.`
             : feeAuthorizationReadiness?.status === "needs_approval"
               ? `The account is funded and its local trading key is active. Immediately call lighter.fees.approve.prepare with environment "${environment.value}" to show the VEX trading-fee approval in this chat. VEX supplies the recipient, 0.10% perpetual fee, 0.25% spot fee and any disclosed account-tier change. The host card is consent; do not ask for another chat confirmation or technical account details. Continue the requested trade only after provider state confirms the authorization. If the user rejects it, stop fee setup until they request it again.`
             : feeAuthorizationReadiness?.status === "blocked"

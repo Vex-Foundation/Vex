@@ -85,6 +85,7 @@ const mocks = vi.hoisted(() => ({
     withSessionControlLocks: vi.fn(),
   },
   onboarding: {
+    getWorkflow: vi.fn(),
     buildReaders: vi.fn(),
     resolveStatus: vi.fn(),
   },
@@ -172,6 +173,11 @@ vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
   withSessionControlLock: mocks.sessionLock.withSessionControlLock,
   withSessionControlLocks: mocks.sessionLock.withSessionControlLocks,
+}));
+
+vi.mock("@vex-agent/db/repos/lighter-onboarding-workflows.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/db/repos/lighter-onboarding-workflows.js")>()),
+  getLighterOnboardingWorkflow: mocks.onboarding.getWorkflow,
 }));
 
 vi.mock("@tools/lighter/wallet-funding/onboarding-readers.js", () => ({
@@ -567,6 +573,7 @@ beforeEach(() => {
   mocks.ocoIntentsRepo.listUnresolved.mockResolvedValue([]);
   mocks.approvalsRepo.getByIdForSession.mockResolvedValue(approvalQueueRow());
   mocks.approvalIntentsRepo.getByApprovalId.mockResolvedValue(approvalIntentAuditRow());
+  mocks.onboarding.getWorkflow.mockResolvedValue(null);
   mocks.onboarding.buildReaders.mockReturnValue({ marker: "onboarding-readers" });
   mocks.lifecycleIntentsRepo.listStreamWatchable.mockResolvedValue([]);
   mocks.lifecycleIntentsRepo.listStatusCandidates.mockResolvedValue([]);
@@ -1139,6 +1146,73 @@ describe("Lighter agent read handlers", () => {
     });
 
     expect(readManagedReadiness).toHaveBeenCalledWith("rhc", 42);
+    expect(data.managedTradingAccessActive).toBe(false);
+    expect(data.tradingAccessRoute).toEqual({
+      kind: "prepare_key_registration_approval",
+      toolId: "lighter.key.register.prepare",
+      params: { environment: "rhc" },
+    });
+    expect(data.userGuidance).toContain("Immediately call lighter.key.register.prepare");
+    expect(data.userGuidance).toContain('environment "rhc"');
+    expect(data.userGuidance).toContain("generates and encrypts the credential locally");
+    expect(data.userGuidance).toContain("Never call lighter.key.register directly");
+  });
+
+  it.each([
+    { tradingKeyRegistered: true, workflowAccount: 42, apiKeyIndex: 4, fingerprint: "test-public-fingerprint", recorded: true },
+    { tradingKeyRegistered: false, workflowAccount: 42, apiKeyIndex: 4, fingerprint: "test-public-fingerprint", recorded: true },
+    { tradingKeyRegistered: false, workflowAccount: 43, apiKeyIndex: 4, fingerprint: "test-public-fingerprint", recorded: false },
+    { tradingKeyRegistered: false, workflowAccount: 42, apiKeyIndex: null, fingerprint: "test-public-fingerprint", recorded: false },
+    { tradingKeyRegistered: false, workflowAccount: 42, apiKeyIndex: 4, fingerprint: null, recorded: false },
+  ])("explains only matching, recorded registration metadata: %j", async ({ tradingKeyRegistered, workflowAccount, apiKeyIndex, fingerprint, recorded }) => {
+    const readManagedReadiness = vi.fn(async () => ({
+      ready: false,
+      reason: "active_managed_credential_missing" as const,
+      activeManagedCredential: false,
+      durableActivation: false,
+      exactPublicKeyMatch: false,
+      clientCheckPassed: false,
+      nonceSynchronized: false,
+      nonceReservable: false,
+    }));
+    configureLighterManagedTradingReadinessResolver({ read: readManagedReadiness });
+    mocks.onboarding.resolveStatus.mockResolvedValue({
+      environment: "rhc",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+      walletSettlementUnits: "948401",
+      walletCanAcquireSettlement: false,
+      accountExists: true,
+      accountIndex: 42,
+      accountCollateralUnits: "1000000",
+      tradingKeyRegistered,
+      requiredCollateralUnits: "1000000",
+      minimumDepositUnits: "1000000",
+      plan: {
+        legs: tradingKeyRegistered ? [] : [{ kind: "register_trading_key", reason: "secure setup" }],
+        ready: false,
+        blocked: null,
+        depositUnits: null,
+        acquireUnits: null,
+      },
+    });
+
+    mocks.onboarding.getWorkflow.mockResolvedValue({
+      environment: "rhc", walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+      workflowState: "ready_to_trade", lastStableState: "ready_to_trade", resolvedAccountIndex: workflowAccount,
+      apiKeyIndex, publicKeyFingerprint: fingerprint,
+    });
+    const data = await callJson("lighter.account.onboarding.status", {
+      environment: "rhc",
+      walletAddress: "0xacee6141f6171491d34699c9266cb06a41faa43c",
+    });
+
+    expect(mocks.onboarding.getWorkflow).toHaveBeenCalledWith("rhc", "0xacee6141f6171491d34699c9266cb06a41faa43c");
+    expect(data.plan).toMatchObject({ ready: false, legs: [{ kind: "register_trading_key",
+      reason: recorded
+        ? "This account has a registered trading key from another Vex installation (or an earlier vault), but this machine holds no credential for it. Registering a new trading key here uses another unused key slot without invalidating the existing key."
+        : "Create and register locally encrypted Vex trading access before any order can be signed.",
+    }] });
+    expect(data.userGuidance.includes("this machine holds no credential")).toBe(recorded);
     expect(data.managedTradingAccessActive).toBe(false);
     expect(data.tradingAccessRoute).toEqual({
       kind: "prepare_key_registration_approval",

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   LIGHTER_ONBOARDING_WORKFLOW_STATES,
+  hasRecordedLighterTradingKeyRegistration,
   ensureLighterOnboardingWorkflowEnabledWith,
   transitionLighterOnboardingWorkflowWith,
   type LighterOnboardingWorkflowState,
@@ -101,6 +102,20 @@ describe("Lighter onboarding workflow foundation", () => {
       "ambiguous",
       "failed",
     ]);
+  });
+
+  it.each(LIGHTER_ONBOARDING_WORKFLOW_STATES)("distinguishes generated from verified registration in %s", (workflowState) => {
+    expect(hasRecordedLighterTradingKeyRegistration({
+      workflowState, lastStableState: workflowState, apiKeyIndex: 4,
+      publicKeyFingerprint: "test-public-fingerprint",
+    })).toBe(["key_verified", "nonce_synchronized", "ready_to_trade"].includes(workflowState));
+  });
+
+  it("retains verified registration evidence through an ambiguous workflow", () => {
+    expect(hasRecordedLighterTradingKeyRegistration({
+      workflowState: "ambiguous", lastStableState: "key_verified", apiKeyIndex: 4,
+      publicKeyFingerprint: "test-public-fingerprint",
+    })).toBe(true);
   });
 
   it("creates one lower-cased wallet workflow at activation", async () => {

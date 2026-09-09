@@ -43,6 +43,8 @@ const WALLET_ROW: LighterPointsWallet = {
   walletAddress: WALLET,
   environment: "rhc",
   accountIndex: ACCOUNT_INDEX,
+  apiKeyIndex: 4,
+  tradingKeyRegistered: true,
 };
 
 /**
@@ -254,6 +256,30 @@ describe("reading the campaign for every registered wallet", () => {
     expect(row.observedAt).toBe(OBSERVED_AT);
   });
 
+  it("keeps a registered account missing its local key beside a readable sibling", async () => {
+    const missing = { ...WALLET_ROW, accountIndex: 123, walletAddress: "0x1111111111111111111111111111111111111111" };
+    const { deps: mixed, signals } = deps({
+      wallets: [missing, WALLET_ROW],
+      auth: async (_environment, accountIndex) => accountIndex === missing.accountIndex
+        ? { kind: "unavailable", reason: "no_credential", detail: "No local credential." }
+        : { kind: "auth", auth: { token: "test-read-authorization", accountIndex } },
+    });
+    const report = await readLighterPointsForWallets({ signal: new AbortController().signal, deps: mixed });
+    expect(report.walletCount).toBe(2);
+    expect(report.rows[0]).toEqual({ ...missing, kind: "credential_missing_here", observedAt: OBSERVED_AT });
+    expect(report.rows[1]).toMatchObject({ kind: "points", accountIndex: ACCOUNT_INDEX });
+    expect(signals).toHaveLength(4);
+  });
+
+  it("does not invent a registered key for an account still awaiting registration", async () => {
+    const wallet = { ...WALLET_ROW, apiKeyIndex: null, tradingKeyRegistered: false };
+    const { deps: missing } = deps({ wallets: [wallet], auth: async () => ({
+      kind: "unavailable", reason: "no_credential", detail: "No local credential.",
+    }) });
+    const report = await readLighterPointsForWallets({ signal: new AbortController().signal, deps: missing });
+    expect(report.rows).toEqual([{ ...wallet, kind: "credential_missing_here", observedAt: OBSERVED_AT }]);
+  });
+
   it("lists a wallet whose vault is locked, with the reason, instead of dropping it", async () => {
     const { deps: locked } = deps({
       auth: async () => ({
@@ -373,6 +399,8 @@ describe("reading the campaign for every registered wallet", () => {
       walletAddress: "0x1111111111111111111111111111111111111111",
       environment: "core",
       accountIndex: 7,
+      apiKeyIndex: null,
+      tradingKeyRegistered: false,
     };
     const { deps: two } = deps({ script, wallets: [WALLET_ROW, second] });
     const report = await readLighterPointsForWallets({
@@ -427,6 +455,17 @@ describe("reading the campaign for every registered wallet", () => {
       }),
     ).rejects.toMatchObject({ name: "AbortError" });
     expect(listWallets).not.toHaveBeenCalled();
+  });
+
+  it("keeps cancellation during local authorization from publishing a missing row", async () => {
+    const controller = new AbortController();
+    const { deps: cancelling, signals } = deps({ auth: async () => {
+      controller.abort();
+      return { kind: "unavailable", reason: "no_credential", detail: "No local credential." };
+    } });
+    await expect(readLighterPointsForWallets({ signal: controller.signal, deps: cancelling }))
+      .rejects.toMatchObject({ name: "AbortError" });
+    expect(signals).toHaveLength(0);
   });
 
   it("hands every provider read a signal that carries both the caller and the deadline", async () => {

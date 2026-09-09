@@ -226,6 +226,20 @@ The privileged execution sequence is intentionally ordered:
    the database lifecycle ready and promote the vault marker to
    `key_registered_active`.
 
+Two Vex installations can share Postgres while keeping separate encrypted vaults,
+for example WSL development and the Windows app. The onboarding workflow records
+account and key registration, including `ready_to_trade`, but does not transfer
+credentials between those vaults. Settings lists every database workflow with a
+resolved account, joined to the current vault by environment and account: no
+resolved account shows the existing setup message; an absent local credential
+shows `credential_missing_here` with the recorded account and API-key index;
+a locally available credential reads points normally. Locked vaults and failed
+reads keep their own unavailable reasons, and a missing key never hides sibling
+wallets. Onboarding status explains an already recorded key missing here as
+registration from another installation or an earlier vault. Lighter supports
+multiple indexed keys: registration into another proven unused slot leaves the
+existing slot valid, subject to the normal registration approval and preflight.
+
 Pending keys use `key_generated_pending_registration` and are excluded from
 trading credential listing and order-signing reads.
 
