@@ -113,7 +113,7 @@
  * choice), which the disabled confirm reinforces on first open.
  */
 
-import { PROJECT_TRASH_REMEDIATION } from "@shared/schemas/project-cleanup.js";
+import { trashRemediation } from "@shared/schemas/project-cleanup.js";
 
 import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
 import type {
@@ -669,7 +669,7 @@ function DeleteOutcome({
             data-vex-delete-trash={outcome.trash}
           >
             {PROJECT_TRASH_SENTENCES[outcome.trash]}
-            {outcome.trashFailure ? ` ${PROJECT_TRASH_REMEDIATION[outcome.trashFailure]}` : ""}
+            {outcome.trashFailure ? ` ${trashRemediation(outcome.trashFailure)}` : ""}
           </p>
           {outcome.cleanup.length > 0 ? (
             <div className="flex flex-col gap-1.5">

@@ -211,6 +211,7 @@ const CHANNELS = [
       projectId: PROJECT_ID,
       alsoTrashFolder: false,
       expectedName: "My App",
+      closeHolders: true,
     },
   },
 ] as const;
@@ -252,6 +253,7 @@ describe("vex:projects:* - registration and the shared boundary paths", () => {
     // The origin never appears in the public error payload.
     expect(JSON.stringify(r.error)).not.toContain("evil.example");
     // And nothing reached the DB owner.
+    expect(mocks.deleteProject).not.toHaveBeenCalled();
     expect(mocks.createProject).not.toHaveBeenCalled();
     expect(mocks.updateProjectScope).not.toHaveBeenCalled();
     expect(mocks.getProject).not.toHaveBeenCalled();
@@ -605,4 +607,17 @@ describe("pending cleanup IPC", () => {
     expect(result.ok).toBe(false);
     expect(JSON.stringify(result)).not.toContain("native uncontrolled");
   });
+});
+
+
+it("accepts close-and-retry intent without accepting renderer-selected process identities", async () => {
+  mocks.deleteProject.mockResolvedValue({ ok: true, data: { outcome: "already_removed" } });
+  const input = { projectId: PROJECT_ID, expectedName: "My App", alsoTrashFolder: true, closeHolders: true };
+  expect(await call(CH.projects.delete, input)).toMatchObject({ ok: true });
+  expect(mocks.deleteProject).toHaveBeenCalledWith(input, REQUEST_ID, expect.anything(), expect.any(AbortSignal));
+  mocks.deleteProject.mockClear();
+  for (const invalid of [{ ...input, pid: 6484 }, { ...input, directory: "C:\\outside" }, { ...input, closeHolders: "yes" }]) {
+    expect(await call(CH.projects.delete, invalid)).toMatchObject({ ok: false, error: { code: "validation.invalid_input" } });
+  }
+  expect(mocks.deleteProject).not.toHaveBeenCalled();
 });

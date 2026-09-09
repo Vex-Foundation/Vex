@@ -1,9 +1,11 @@
-import { realpath } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import type { ResolveTrashHolders } from "./project-trash-holders.js";
+import { realpath, rename, readdir } from "node:fs/promises";
 import path from "node:path";
-import { PROJECT_TRASH_REMEDIATION, type ProjectTrashFailure } from "@shared/schemas/project-cleanup.js";
+import { trashReason, type ProjectTrashFailure } from "@shared/schemas/project-cleanup.js";
 import type { ProjectTrashOutcome } from "@shared/schemas/projects.js";
 import type { TrashItem } from "./os-trash.js";
-import { classifyTrashFailure } from "./trash-failure.js";
+import { classifyTrashFailure, probeAbortedTrash } from "./trash-failure.js";
 import { log } from "../logger/index.js";
 
 /**
@@ -26,11 +28,17 @@ export async function trashProjectFolder(
   directory: string,
   correlationId: string,
   trashItem: TrashItem,
+  holders?: ResolveTrashHolders,
 ): Promise<{ trash: ProjectTrashOutcome; trashFailure?: ProjectTrashFailure }> {
   let resolvedDirectory: string;
   let resolvedRoot: string;
   try {
     resolvedRoot = await realpath(configuredRoot);
+    const recoveryPrefix = `${path.basename(directory)}.vex-trash-probe-`;
+    const recovery = (await readdir(resolvedRoot)).find((name) => name.startsWith(recoveryPrefix));
+    if (recovery !== undefined) return { trash: "failed", trashFailure: {
+      reason: "restore_failed", folder: directory, recoveryPath: path.join(resolvedRoot, recovery),
+    } };
     resolvedDirectory = await realpath(directory);
   } catch (cause) {
     // A folder that is already gone is not a failure: the obligation was to
@@ -61,10 +69,20 @@ export async function trashProjectFolder(
     await trashItem(resolvedDirectory);
     return { trash: "trashed" };
   } catch (cause) {
-    const trashFailure = classifyTrashFailure(cause, resolvedDirectory);
+    let trashFailure: ProjectTrashFailure = classifyTrashFailure(cause, resolvedDirectory);
+    if (process.platform === "win32" && trashReason(trashFailure) === "aborted") {
+      trashFailure = await probeAbortedTrash(resolvedDirectory, rename,
+        path.join(path.dirname(resolvedDirectory), `${path.basename(resolvedDirectory)}.vex-trash-probe-${randomUUID()}`));
+    }
+    if (trashReason(trashFailure) === "busy") {
+      let found: import("@shared/schemas/project-cleanup.js").ProjectTrashHolder[] | undefined = [{ kind: "external" }];
+      try { if (holders) found = await holders(resolvedDirectory, false); }
+      catch { found = undefined; log.warn("[studio:delete] holder identification failed"); }
+      trashFailure = { reason: "busy", folder: resolvedDirectory, holders: found };
+    }
     log.warn(
       `[studio:delete] trash refused correlationId=${correlationId}`,
-      { reason: trashFailure, remediation: PROJECT_TRASH_REMEDIATION[trashFailure] },
+      { reason: trashReason(trashFailure) },
     );
     return { trash: "failed", trashFailure };
   }

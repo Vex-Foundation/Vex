@@ -35,6 +35,7 @@ beforeEach(async () => {
     shortGraceMs: 6_000,
     sendToMain: (message) => messages.push(message),
     platform: "win32",
+    killTree: vi.fn(),
   });
 });
 

@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, access, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, access, symlink, realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -32,15 +32,18 @@ describe("OS trash refusal", () => {
     roots.push(root);
     const folder = path.join(root, "example");
     await mkdir(folder);
+    const resolvedFolder = await realpath(folder);
     const trash = vi.fn().mockRejectedValueOnce(new Error("Operation was aborted"))
       .mockImplementationOnce(async (target: string) => { await rm(target, { recursive: true }); });
     const first = await trashProjectFolder(root, folder, "test-correlation", trash);
-    expect(first).toEqual({ trash: "failed", trashFailure: "aborted" });
+    // Only Windows performs the rename probe and returns its resolved folder.
+    expect(first).toEqual({ trash: "failed", trashFailure: process.platform === "win32" ? { reason: "aborted", folder: resolvedFolder } : "aborted" });
     await expect(access(folder)).resolves.toBeUndefined();
     expect(trash).toHaveBeenCalledTimes(1);
+    expect(trash).toHaveBeenCalledWith(resolvedFolder);
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(root);
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("test-correlation"),
-      expect.objectContaining({ reason: "aborted", remediation: expect.stringContaining("retry") }));
+      expect.objectContaining({ reason: "aborted" }));
     expect(await trashProjectFolder(root, folder, "retry-correlation", trash)).toEqual({ trash: "trashed" });
     await expect(access(folder)).rejects.toMatchObject({ code: "ENOENT" });
   });
@@ -60,4 +63,20 @@ describe("OS trash refusal", () => {
     expect(trash).not.toHaveBeenCalled();
     await expect(access(outside)).resolves.toBeUndefined();
   });
+});
+
+it("keeps the obligation pending when a failed restore left only the recovery folder", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "vex-trash-restore-"));
+  roots.push(root);
+  // The original no longer exists, so resolve its parent before deriving it.
+  const original = path.join(await realpath(root), "example");
+  const recovery = path.join(root, "example.vex-trash-probe-test");
+  await mkdir(recovery);
+  const recoveryPath = await realpath(recovery);
+  const trash = vi.fn();
+  expect(await trashProjectFolder(root, original, "restore", trash)).toEqual({
+    trash: "failed", trashFailure: { reason: "restore_failed", folder: original, recoveryPath },
+  });
+  expect(trash).not.toHaveBeenCalled();
+  await expect(access(recovery)).resolves.toBeUndefined();
 });

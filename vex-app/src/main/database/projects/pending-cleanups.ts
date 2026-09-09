@@ -1,5 +1,5 @@
 import { ok, type Result } from "@shared/ipc/result.js";
-import { projectTrashFailureSchema, type ProjectPendingCleanups } from "@shared/schemas/project-cleanup.js";
+import { parseStoredTrashFailure, type ProjectPendingCleanups } from "@shared/schemas/project-cleanup.js";
 import { dbError, withClient } from "../sessions/connection.js";
 
 /** Read durable obligations, including old rows whose cause was not classified. */
@@ -17,14 +17,11 @@ export async function readPendingProjectCleanups(offset: number): Promise<Result
       return ok({
         items: page.map((row) => {
           // No legacy native error text crosses IPC, even if a prior writer stored it.
-          const parsed = projectTrashFailureSchema.safeParse(
-            row.cleanup_last_error?.startsWith("trash:") ? row.cleanup_last_error.slice(6) : null,
-          );
           return {
             projectId: row.id, name: row.name, folder: row.slug,
             trashRequested: row.cleanup_state === "trash_pending",
             attempts: row.cleanup_attempts,
-            trashFailure: parsed.success ? parsed.data : null,
+            trashFailure: parseStoredTrashFailure(row.cleanup_last_error),
           };
         }),
         nextOffset: result.rows.length > 50 ? offset + 50 : null,

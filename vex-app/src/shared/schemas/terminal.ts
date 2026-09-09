@@ -55,6 +55,7 @@
  * and a refused write is refused by name rather than truncated.
  */
 
+import { terminalFolderRequestSchema } from "./terminal-holders.js";
 import { z } from "zod";
 
 /* ------------------------------------------------------------------ *
@@ -717,6 +718,7 @@ export const terminalLaunchSchema = z
 export type TerminalLaunch = z.infer<typeof terminalLaunchSchema>;
 
 export const terminalHostRequestSchema = z.discriminatedUnion("kind", [
+  terminalFolderRequestSchema,
   /** Associate a freshly transferred port with a window. Sent with the transfer. */
   z
     .object({

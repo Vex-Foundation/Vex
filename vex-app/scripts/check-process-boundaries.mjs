@@ -164,6 +164,7 @@ function checkRendererFile(file) {
       (resolved !== null &&
         (isInside(resolved, path.join(srcRoot, "main")) ||
           isInside(resolved, path.join(srcRoot, "preload")) ||
+          isInside(resolved, path.join(srcRoot, "platform")) ||
           isInside(resolved, rootLibDir) ||
           isInside(resolved, rootAgentDir)));
     if (forbidden) {
@@ -189,6 +190,7 @@ function checkSharedFile(file) {
       (resolved !== null &&
         (isInside(resolved, path.join(srcRoot, "main")) ||
           isInside(resolved, path.join(srcRoot, "preload")) ||
+          isInside(resolved, path.join(srcRoot, "platform")) ||
           isInside(resolved, path.join(srcRoot, "renderer")) ||
           isInside(resolved, rootLibDir) ||
           isInside(resolved, rootAgentDir)));

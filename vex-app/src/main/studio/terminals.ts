@@ -36,6 +36,7 @@
  * conduit into the pty host.
  */
 
+import { terminalFolderHoldersSchema, type TerminalFolderHolder } from "@shared/schemas/terminal-holders.js";
 import { randomUUID } from "node:crypto";
 import type { MessagePortMain } from "electron";
 import {
@@ -375,6 +376,13 @@ export class TerminalDomain {
     this.unregisterCloseHook = registerProjectCloseHook((projectId) =>
       this.closeProject(projectId),
     );
+  }
+
+  async folderHolders(directory: string, close: boolean): Promise<TerminalFolderHolder[]> {
+    if (this.starter.availability.state !== "running") return [];
+    const outcome = await this.starter.send({ kind: "folderHolders", directory, close });
+    if (!outcome.ok) throw new Error("Terminal holder query failed");
+    return terminalFolderHoldersSchema.parse(outcome.value);
   }
 
   get availability(): TerminalHostAvailability {

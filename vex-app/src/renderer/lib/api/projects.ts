@@ -14,6 +14,7 @@
  * re-apply a stale intent.
  */
 
+import { useEffect, useRef } from "react";
 import type { ProjectPendingCleanups } from "@shared/schemas/project-cleanup.js";
 
 import {
@@ -200,14 +201,22 @@ export function useRepairProjectFiles(): UseMutationResult<
  * flight, the other says the row is not what the cache thinks it is - so the
  * next read comes from main either way.
  */
-export function useDeleteProject(): UseMutationResult<
+export function useDeleteProject(cancellable = false): UseMutationResult<
   Result<ProjectDeleteResult>,
   Error,
   ProjectDeleteInput
-> {
+> & { readonly cancel: () => void } {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: ProjectDeleteInput) => window.vex.projects.delete(input),
+  const cancelRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => cancelRef.current?.(), []);
+  const mutation = useMutation({
+    mutationFn: async (input: ProjectDeleteInput) => {
+      if (!cancellable) return window.vex.projects.delete(input);
+      const invocation = window.vex.projects.deleteAbortable(input);
+      cancelRef.current = invocation.cancel;
+      try { return await invocation.promise; }
+      finally { if (cancelRef.current === invocation.cancel) cancelRef.current = null; }
+    },
     retry: false,
     onSuccess: (result, input) => {
       if (!result.ok) return;
@@ -216,6 +225,7 @@ export function useDeleteProject(): UseMutationResult<
       void queryClient.invalidateQueries({ queryKey: projectKeys.list() });
     },
   });
+  return { ...mutation, cancel: () => cancelRef.current?.() };
 }
 
 export function usePendingProjectCleanups(offset: number): UseQueryResult<Result<ProjectPendingCleanups>> {

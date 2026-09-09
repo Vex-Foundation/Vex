@@ -1,11 +1,11 @@
-import type { ProjectTrashFailure } from "@shared/schemas/project-cleanup.js";
+import type { ProjectTrashReason } from "@shared/schemas/project-cleanup.js";
 
 /** Electron's aborted flag does not distinguish a lock from a non-recyclable item. */
 export function classifyTrashFailure(
   cause: unknown,
   absolutePath: string,
   platform: NodeJS.Platform = process.platform,
-): ProjectTrashFailure {
+): ProjectTrashReason {
   const error = typeof cause === "object" && cause !== null ? cause : {};
   const code = "code" in error ? error.code : undefined;
   const message = "message" in error && typeof error.message === "string" ? error.message : "";
@@ -20,4 +20,21 @@ export function classifyTrashFailure(
     return "aborted";
   }
   return "io_error";
+}
+
+
+export async function probeAbortedTrash(
+  absolutePath: string,
+  rename: (from: string, to: string) => Promise<void>,
+  temporaryPath: string,
+): Promise<import("@shared/schemas/project-cleanup.js").ProjectTrashFailure> {
+  try { await rename(absolutePath, temporaryPath); }
+  catch (cause) {
+    return { reason: classifyTrashFailure(cause, absolutePath, "win32"), folder: absolutePath };
+  }
+  try { await rename(temporaryPath, absolutePath); }
+  catch {
+    return { reason: "restore_failed", folder: absolutePath, recoveryPath: temporaryPath };
+  }
+  return { reason: "aborted", folder: absolutePath };
 }

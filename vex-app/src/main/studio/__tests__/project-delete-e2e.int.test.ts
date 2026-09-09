@@ -912,7 +912,8 @@ describe("deleteProject: the trash step", () => {
     expect(result.outcome).toBe("cleanup_pending");
     if (result.outcome !== "cleanup_pending") return;
     expect(result.trash).toBe("failed");
-    expect(result.trashFailure).toBe(failure);
+    const expectedFailure = process.platform === "win32" && failure === "aborted" ? { reason: failure, folder: project.directory } : failure;
+    expect(result.trashFailure).toEqual(expectedFailure);
     // The failure must come from the TRASH CALL, not from a guard that ran
     // before it: an unasserted call count is how this test previously passed
     // while `shell` was undefined and nothing was ever attempted.
@@ -931,7 +932,7 @@ describe("deleteProject: the trash step", () => {
       [project.projectId],
     );
     expect(reason[0]?.cleanup_last_error).toBe(
-      `trash:${failure}`,
+      `trash:${typeof expectedFailure === "object" ? JSON.stringify(expectedFailure) : expectedFailure}`,
     );
     expect(reason[0]?.cleanup_last_error).not.toMatch(/EPERM/);
     expect(await exists(project.directory)).toBe(true);
@@ -939,7 +940,7 @@ describe("deleteProject: the trash step", () => {
     expect(pending.ok).toBe(true);
     if (!pending.ok) return;
     expect(pending.data.items).toEqual(expect.arrayContaining([expect.objectContaining({
-      projectId: project.projectId, trashFailure: failure, trashRequested: true, attempts: 1,
+      projectId: project.projectId, trashFailure: expectedFailure, trashRequested: true, attempts: 1,
     })]));
   });
 
