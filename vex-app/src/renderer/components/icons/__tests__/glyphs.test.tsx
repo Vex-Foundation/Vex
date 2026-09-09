@@ -1,6 +1,6 @@
 /**
  * Smoke test for the rebrand glyph set: every exported glyph renders an SVG
- * honoring the shared contract (24 viewBox, size prop on width/height,
+ * honoring the shared contract (native viewBox, size prop on width/height,
  * className passthrough, currentColor paint - no hardcoded fills, and
  * `aria-hidden` so a glyph never enters an accessible name).
  */
@@ -20,6 +20,11 @@ const entries = Object.entries(glyphs).filter(
     pair[0].startsWith("Icon") && typeof pair[1] === "function",
 );
 
+const SETTINGS_GLYPHS = new Set([
+  "IconVaultOutline16", "IconWalletOutline16", "IconKeyOutline16",
+  "IconModelOutline16", "IconMemoryOutline16", "IconTuningOutline16",
+]);
+
 describe("icon glyphs", () => {
   it("covers the whole shell vocabulary", () => {
     // The set is the renderer's ONLY icon source since the vendor gate was
@@ -35,7 +40,9 @@ describe("icon glyphs", () => {
     // IconSplitVertical joined for the Studio terminal's split affordances.
     // 81 -> 82 (B4a, 2026-08-31): IconHome joined for the Studio sidebar's
     // WELCOME row, which the owner's mockup marks with a house.
-    expect(entries.length).toBeGreaterThanOrEqual(82);
+    // Six native 16-point settings outlines extend the vocabulary to 88.
+    expect(entries.length).toBeGreaterThanOrEqual(88);
+    for (const name of SETTINGS_GLYPHS) expect(entries.some(([entry]) => entry === name), name).toBe(true);
   });
 
   /**
@@ -84,7 +91,7 @@ describe("icon glyphs", () => {
     const { container } = render(<Glyph size={20} className="probe" />);
     const svg = container.querySelector("svg");
     expect(svg).not.toBeNull();
-    expect(svg!.getAttribute("viewBox")).toBe("0 0 24 24");
+    expect(svg?.getAttribute("viewBox")).toBe(SETTINGS_GLYPHS.has(name) ? "0 0 16 16" : "0 0 24 24");
     expect(svg!.getAttribute("width")).toBe("20");
     expect(svg!.getAttribute("height")).toBe("20");
     expect(svg!.classList.contains("probe")).toBe(true);
@@ -92,6 +99,19 @@ describe("icon glyphs", () => {
     // Paint rides currentColor: no hex/rgb literals anywhere in the glyph.
     expect(svg!.outerHTML).not.toMatch(/#[0-9a-fA-F]{3,8}|rgb\(/);
   });
+
+  it.each(entries.filter(([name]) => SETTINGS_GLYPHS.has(name)))(
+    "%s has a native 16px size and no document-global paint references",
+    (_name, Glyph) => {
+      const { container } = render(<><Glyph /><Glyph /></>);
+      expect(container.querySelector("[id], [mask], [clip-path], [style]")).toBeNull();
+      for (const svg of container.querySelectorAll("svg")) {
+        expect(svg.getAttribute("width")).toBe("16");
+        expect(svg.getAttribute("height")).toBe("16");
+        expect(svg.querySelector('[fill="currentColor"]')).not.toBeNull();
+      }
+    },
+  );
 
   it("defaults to 16px when no size is given", () => {
     const { container } = render(<glyphs.IconPlus />);

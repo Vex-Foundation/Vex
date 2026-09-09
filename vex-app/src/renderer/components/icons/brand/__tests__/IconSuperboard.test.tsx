@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
-import { IconSuperboard } from "../IconSuperboard.js";
+import { IconSuperboard } from "../../index.js";
 
 describe("IconSuperboard", () => {
   it("renders the Superboard wordmark with brand fills", () => {

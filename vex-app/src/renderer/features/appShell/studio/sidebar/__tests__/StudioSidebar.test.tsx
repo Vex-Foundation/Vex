@@ -185,7 +185,7 @@ describe("the project rows", () => {
     expect(otherRow?.querySelector(".vex-state-dot")).toBeNull();
   });
 
-  it("shows the permission tag on EVERY row, always", async () => {
+  it("shows full access and keeps restricted as an accessible description", async () => {
     projectsListMock.mockResolvedValue({
       ok: true,
       data: [
@@ -195,8 +195,9 @@ describe("the project rows", () => {
     });
     renderSidebar();
     await screen.findByText("restricted-one");
-    expect(screen.getByText("restricted")).not.toBeNull();
-    expect(screen.getByText("full")).not.toBeNull();
+    expect(screen.queryByText("restricted")).toBeNull();
+    expect(screen.getByText("restricted-one").closest("button")?.getAttribute("aria-description")).toBe("Restricted");
+    expect(screen.getByText("FULL ACCESS")).not.toBeNull();
   });
 
   it.each([
@@ -472,7 +473,7 @@ describe("the other sections", () => {
     // by `aria-label` alone), so its presence is the wide form's proof.
     const row = (await screen.findByText("vex-core")).closest("button");
     expect(row).not.toBeNull();
-    expect(row?.textContent).toContain("restricted");
+    expect(row?.getAttribute("aria-description")).toBe("Restricted");
     const header = screen.getByText("Projects").closest(".vex-disclosure-row");
     expect(header).not.toBeNull();
     expect(header?.getAttribute("aria-expanded")).toBe("true");

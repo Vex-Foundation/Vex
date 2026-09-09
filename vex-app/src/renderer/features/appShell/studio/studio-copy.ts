@@ -414,9 +414,13 @@ export function studioThemeToggleLabel(nextTheme: "dark" | "light"): string {
   return nextTheme === "dark" ? "Switch to the dark theme" : "Switch to the light theme";
 }
 
-/** The row's permission tag. Always visible, never hover-revealed. */
-export function projectPermissionTag(permission: "restricted" | "full"): string {
-  return permission === "full" ? "full" : "restricted";
+export const STUDIO_FULL_ACCESS_LABEL = "FULL ACCESS";
+
+/** Standing project authority, also available when the rail is icon-only. */
+export function projectPermissionDescription(permission: "restricted" | "full"): string {
+  return permission === "full"
+    ? "Full access permits supported wallet actions without per-call approval. Some prepared actions still require a Vex card. Change this in project settings."
+    : "Restricted";
 }
 
 export function projectRowMenuLabel(projectName: string): string {

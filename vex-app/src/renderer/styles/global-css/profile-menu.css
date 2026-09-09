@@ -1,0 +1,35 @@
+.vex-profile-menu {
+  transform-origin: bottom left;
+  animation: vex-profile-menu-enter var(--vex-duration-base) var(--vex-ease-out) both;
+}
+
+.vex-profile-menu[data-state="closing"] {
+  pointer-events: none;
+  animation: vex-profile-menu-exit var(--vex-duration-base) var(--vex-ease-standard) both;
+}
+
+.vex-profile-chevron {
+  transition: transform var(--vex-duration-base) var(--vex-ease-standard);
+}
+
+@keyframes vex-profile-menu-enter {
+  from { opacity: 0; transform: translateY(4px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes vex-profile-menu-exit {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(4px) scale(0.97); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-profile-chevron {
+    transition: none;
+  }
+
+  .vex-profile-menu,
+  .vex-profile-menu[data-state="closing"] {
+    animation: none;
+    transform: none;
+  }
+}

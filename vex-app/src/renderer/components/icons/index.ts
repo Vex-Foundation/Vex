@@ -8,3 +8,5 @@
  */
 
 export * from "./glyphs.js";
+export { IconLighter } from "./brand/IconLighter.js";
+export { IconSuperboard } from "./brand/IconSuperboard.js";

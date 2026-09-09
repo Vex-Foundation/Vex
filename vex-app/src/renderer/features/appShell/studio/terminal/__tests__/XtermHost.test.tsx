@@ -310,13 +310,10 @@ describe("XtermHost lifecycle", () => {
     expect(bridge.resizes).toContainEqual({ terminalId: "t1", cols: 120, rows: 40 });
   });
 
-  it("layers the brand watermark under the terminal on the shared mark", () => {
+  it("keeps decorative marks outside the terminal glyph background", () => {
     const { container } = render(<XtermHost terminalId="t1" visible registry={registry} />);
-    // The vendorless mark, painted through the brand-mark token - not a second
-    // drawing and not a raw colour.
     const mark = container.querySelector("svg.text-brand-mark");
-    expect(mark).not.toBeNull();
-    expect(mark?.getAttribute("aria-hidden")).toBe("true");
+    expect(mark).toBeNull();
   });
 });
 

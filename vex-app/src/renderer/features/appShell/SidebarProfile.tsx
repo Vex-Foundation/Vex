@@ -15,6 +15,7 @@
 
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type JSX,
@@ -35,6 +36,7 @@ import type { Result } from "@shared/ipc/result.js";
 import type { HealthReport } from "@shared/schemas/system.js";
 import type { UserProfile } from "@shared/schemas/user-profile.js";
 import { cn } from "../../lib/utils.js";
+import { useReducedMotion } from "../../lib/motion/index.js";
 import { Menu, type MenuEntry } from "../../components/ui/menu.js";
 import { useSystemHealth } from "../../lib/api/system.js";
 import { useMemoryFeatureEnabled } from "../../lib/api/capabilities.js";
@@ -127,7 +129,16 @@ export function SidebarProfile({
     result: profileQuery.data,
   });
 
-  const [open, setOpen] = useState(false);
+  const reducedMotion = useReducedMotion();
+  const [menuPhase, setMenuPhase] = useState<"closed" | "open" | "closing">("closed");
+  const open = menuPhase === "open";
+  const closeMenu = useCallback((): void => {
+    setMenuPhase((phase) => phase === "closed" || reducedMotion ? "closed" : "closing");
+  }, [reducedMotion]);
+  // A preference change during exit removes the retained node immediately.
+  useEffect(() => {
+    if (reducedMotion && menuPhase === "closing") setMenuPhase("closed");
+  }, [reducedMotion, menuPhase]);
   const [setupOpen, setSetupOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -227,7 +238,7 @@ export function SidebarProfile({
 
   const onSelect = useCallback(
     (id: string): void => {
-      setOpen(false);
+      closeMenu();
       if (id === "personalize") {
         setSetupOpen(true);
         return;
@@ -245,7 +256,7 @@ export function SidebarProfile({
         openScreen(id);
       }
     },
-    [openScreen, openSettings],
+    [closeMenu, openScreen, openSettings],
   );
 
   const trigger = (
@@ -258,7 +269,7 @@ export function SidebarProfile({
       // The collapsed spine renders no subtitle, so the tooltip is the only
       // carrier of the reason there: it speaks the sentence, not the word.
       title={sidebarOpen ? undefined : runtime.sentence}
-      onClick={() => setOpen((prev) => !prev)}
+      onClick={() => open ? closeMenu() : setMenuPhase("open")}
       className={cn(
         "flex w-full items-center transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-primary",
         sidebarOpen ? "h-14 gap-2.5 px-4 text-left" : "h-12 justify-center px-0",
@@ -308,7 +319,7 @@ export function SidebarProfile({
           <IconChevronUp
             size={15}
             className={cn(
-              "shrink-0 text-ink-tertiary transition-transform duration-200",
+              "vex-profile-chevron shrink-0 text-ink-tertiary",
               open && "rotate-180",
             )}
           />
@@ -328,7 +339,16 @@ export function SidebarProfile({
         items={items}
         footer={footer}
         onSelect={onSelect}
-        onClose={() => setOpen(false)}
+        onClose={closeMenu}
+        listPresentation={{
+          state: menuPhase === "closing" && !reducedMotion ? "closing" : "open",
+          className: "vex-profile-menu",
+          onAnimationEnd: (event) => {
+            if (event.target !== event.currentTarget || event.animationName !== "vex-profile-menu-exit") return;
+            // An interrupted exit must not close a menu the user reopened.
+            setMenuPhase((phase) => phase === "closing" ? "closed" : phase);
+          },
+        }}
         portal
         side="top"
         align="start"
