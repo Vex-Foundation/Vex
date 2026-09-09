@@ -61,6 +61,7 @@ const BRIEF: StudioProjectBrief = {
   createdOn: "2026-08-01",
   scopeUpdatedOn: "2026-08-25",
   agentNames: ["Claude Code"],
+  agentConfigPaths: [".mcp.json"],
   inventory: {
     alwaysLoadedCount: 2,
     alwaysLoadedNames: ["vex_ToolSearch", "WalletBalances"],

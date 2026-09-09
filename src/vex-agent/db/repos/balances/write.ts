@@ -59,6 +59,30 @@ export async function replaceBalancesForChain(
   });
 }
 
+/**
+ * Refresh only EVM identities that were actually read. Discovery may be down:
+ * a known zero removes its old row, while an unscanned holding is untouched.
+ */
+export async function replaceKnownEvmBalancesForChain(
+  walletAddress: string,
+  chainId: number,
+  scannedTokenAddresses: readonly string[],
+  newRows: BalanceRow[],
+): Promise<number> {
+  return withTransaction(async (client) => {
+    await client.query(
+      `DELETE FROM proj_balances WHERE wallet_address = $1 AND chain_id = $2
+        AND lower(token_address) = ANY($3::text[])`,
+      [walletAddress, chainId, scannedTokenAddresses.map((address) => address.toLowerCase())],
+    );
+    for (let offset = 0; offset < newRows.length; offset += ROWS_PER_STATEMENT) {
+      const chunk = newRows.slice(offset, offset + ROWS_PER_STATEMENT);
+      await executeWith(client, insertStatement(chunk.length), bindParams(chunk));
+    }
+    return newRows.length;
+  });
+}
+
 /** `VALUES ($1,…,$10,NOW()), ($11,…)` for `rowCount` rows. */
 function insertStatement(rowCount: number): string {
   const tuples: string[] = [];

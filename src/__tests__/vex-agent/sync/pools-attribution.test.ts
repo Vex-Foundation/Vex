@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as launchedTokens from "@vex-agent/db/repos/launched-tokens.js";
 import type { PoolsAttributionCandidate } from "@vex-agent/db/repos/launched-tokens.js";
 import type { PoolsAttributionOutcome } from "@tools/pools-fun/attribution.js";
+import logger from "@utils/logger.js";
 import {
   attributePoolsLaunches,
   POOLS_ATTRIBUTION_BATCH_LIMIT,
@@ -218,6 +219,40 @@ describe("per-row containment - one bad row never aborts the batch", () => {
 });
 
 describe("the sweep never signs", () => {
+  it("logs persistent unsigned gaps on change and five-minute reminders, then rearms on recovery", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const info = vi.spyOn(logger, "info");
+    const run = () => attributePoolsLaunches(deps(answering({ kind: "attributed" })));
+    try {
+      await run(); // Zero clears any earlier incident.
+      vi.mocked(launchedTokens.countPoolsUnsignedAttributionGap).mockResolvedValue(2);
+      await run();
+      vi.advanceTimersByTime(120_000);
+      await run();
+      vi.advanceTimersByTime(120_000);
+      await run();
+      expect(info.mock.calls.filter(([event]) => event === "pools.attribution.unsigned_gap")).toHaveLength(1);
+      vi.advanceTimersByTime(60_000);
+      await run();
+      expect(info).toHaveBeenLastCalledWith("pools.attribution.unsigned_gap", expect.objectContaining({
+        count: 2, suppressedCount: 2,
+      }));
+      vi.mocked(launchedTokens.countPoolsUnsignedAttributionGap).mockResolvedValue(3);
+      await run();
+      expect(info).toHaveBeenLastCalledWith("pools.attribution.unsigned_gap", expect.objectContaining({ count: 3 }));
+      await run(); // One repeated observation is accounted for on recovery.
+      vi.mocked(launchedTokens.countPoolsUnsignedAttributionGap).mockResolvedValue(0);
+      await run();
+      expect(info).toHaveBeenLastCalledWith("pools.attribution.unsigned_gap", { count: 0, suppressedCount: 1 });
+      vi.mocked(launchedTokens.countPoolsUnsignedAttributionGap).mockResolvedValue(3);
+      await run();
+      expect(info.mock.calls.filter(([event]) => event === "pools.attribution.unsigned_gap")).toHaveLength(5);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("has no signer and never asks for one", async () => {
     // The dependency surface IS the proof: `baseUrl` and `attribute`, nothing
     // that could produce a signature. A candidate arrives with its signature

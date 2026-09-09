@@ -114,6 +114,8 @@ export interface VexConfig {
   // chainId string (e.g. "4663"). User-supplied endpoint URL only — never a
   // bundled key. Absent by default; consumed by src/tools/evm-chains/registry.ts.
   localChainRpcUrls?: Record<string, string> | undefined;
+  // User-owned Blockscout reverse proxies, keyed by chain ID. Absent by default.
+  blockscoutBaseUrls?: Record<string, string> | undefined;
   // Optional user RPC overrides for Pendle chains, keyed by chainId string
   // (e.g. "42161"). User-supplied endpoint URL only — never a bundled key.
   // Absent by default; the bundled default RPC (per the Pendle chain registry)

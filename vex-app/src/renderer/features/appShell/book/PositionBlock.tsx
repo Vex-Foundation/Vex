@@ -37,6 +37,7 @@
  * `tabular-nums` on every figure.
  */
 
+import { ChainReadWarning } from "./portfolio/ChainReadWarning.js";
 import type { JSX } from "react";
 import type { PortfolioDto } from "@shared/schemas/portfolio.js";
 import {
@@ -243,6 +244,7 @@ function TotalFigure({
       <span className="font-display text-[30px] font-semibold leading-none tracking-[-0.01em] tabular-nums text-ink-primary">
         {formatUsd(liveTotalUsd)}
       </span>
+      <ChainReadWarning portfolio={portfolio} />
       {snapshotTotalUsd !== null ? (
         <span
           data-vex-area="position-snapshot"

@@ -1,3 +1,4 @@
+import { chainEndpointsSchema, getChainEndpointsInputSchema, setChainEndpointsInputSchema, type ChainEndpoints } from "../../shared/schemas/chain-endpoints.js";
 import { z } from "zod";
 import { CH } from "../../shared/ipc/channels.js";
 import {
@@ -23,6 +24,14 @@ const setTelemetryConsentInputSchema = z
   .strict();
 
 export const settings = {
+  async getChainEndpoints(input: { chainId: number }) {
+    const result = await invokeWithSchema<ChainEndpoints>(CH.settings.getChainEndpoints, input, getChainEndpointsInputSchema);
+    return result.ok ? { ...result, data: chainEndpointsSchema.parse(result.data) } : result;
+  },
+  async setChainEndpoints(input: ChainEndpoints) {
+    const result = await invokeWithSchema<ChainEndpoints>(CH.settings.setChainEndpoints, input, setChainEndpointsInputSchema);
+    return result.ok ? { ...result, data: chainEndpointsSchema.parse(result.data) } : result;
+  },
   getPreferences() {
     return invokeWithSchema(CH.settings.getPreferences, {});
   },

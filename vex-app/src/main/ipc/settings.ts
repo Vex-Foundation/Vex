@@ -56,6 +56,8 @@ import {
 } from "../database/engine-db-readiness.js";
 import type { RegisterShareTokenOutcome } from "@vex-agent/agentscan/share-token-client.js";
 
+import { registerChainEndpointSettingsHandlers } from "./settings-chain-endpoints.js";
+
 const empty = z.object({}).strict();
 
 type ShareMintHold =
@@ -109,7 +111,7 @@ const setTelemetryConsentInput = z
 
 export function registerSettingsHandlers(): Array<() => void> {
   resetShareMintHold();
-  const handlers: Array<() => void> = [];
+  const handlers: Array<() => void> = registerChainEndpointSettingsHandlers();
 
   handlers.push(
     registerHandler({

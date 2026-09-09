@@ -45,6 +45,11 @@ vi.mock("../../../vex-agent/sync/pendle-enrichment.js", () => ({
   }),
 }));
 
+const mockSolanaSync = vi.fn();
+vi.mock("../../../vex-agent/sync/solana-balance-sync.js", () => ({
+  syncSolanaWalletBalances: (...args: unknown[]) => mockSolanaSync(...args),
+}));
+
 const mockReplaceBalances = vi.fn().mockResolvedValue(0);
 const mockGetBalances = vi.fn().mockResolvedValue([]);
 const mockGetBalancesByChain = vi.fn().mockResolvedValue([]);
@@ -68,8 +73,13 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
  * `ledgerRows` lets a single case say otherwise.
  */
 let ledgerRows: Record<string, unknown>[] = [];
-const mockDbQuery = vi.fn(async (sql: string) => {
+let consecutiveFailures = 0;
+const mockDbQuery = vi.fn(async (sql: string, params?: unknown[]) => {
   const text = String(sql);
+  if (text.includes("proj_snapshot_read_deferrals")) {
+    consecutiveFailures = params?.[1] ? Math.min(consecutiveFailures + 1, 4) : 0;
+    return { rows: [{ consecutive_failure_cycles: consecutiveFailures }], rowCount: 1 };
+  }
   if (text.includes("MAX(id)")) {
     return {
       rows: [{ max_id: "0", row_count: "0", pending_count: "0", confirmed_count: "0" }],
@@ -101,8 +111,11 @@ function emptyScan(scannedChainIds: number[] = []) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  consecutiveFailures = 0;
   mockScan.mockResolvedValue(emptyScan());
-  mockLocalSync.mockResolvedValue({ chainId: 4663, tokensUpdated: 0, skipped: true });
+  // Publication tests require successful reads; outages have explicit cases below.
+  mockLocalSync.mockResolvedValue({ chainId: 4663, tokensUpdated: 0, skipped: false });
+  mockSolanaSync.mockResolvedValue({ chainId: 20011000000, tokensUpdated: 0, skipped: false, reason: null });
   // Khalani registry WITHOUT 4663 (the real-world state today).
   mockGetCachedKhalaniChains.mockResolvedValue([
     { id: 1, name: "Ethereum", type: "eip155" },
@@ -247,6 +260,8 @@ describe("fullBalanceSync - in-flight money is accounted for, not a veto", () =>
         ];
 
   const pendingBridge = {
+    row_type: "entry",
+    wallet_address: EVM_A,
     kind: "agent_activity_pending",
     ref: "132",
     detail: "bridge_fill_expected",
@@ -257,6 +272,99 @@ describe("fullBalanceSync - in-flight money is accounted for, not a veto", () =>
     symbol: "USDC",
     usd_est: "150",
   };
+
+  it("does not turn a failed Solana read and empty fallback into settled money", async () => {
+    mockSolanaSync.mockResolvedValue({ chainId: 20011000000, tokensUpdated: 0, skipped: true, reason: "http_403" });
+    mockScan.mockResolvedValue(emptyScan([20011000000]));
+    mockGetBalances.mockImplementation(async (_address: string, chainId?: number) =>
+      chainId === undefined || chainId === 20011000000 ? [{ balanceUsd: 16.8 }] : []);
+    mockGetBalancesByChain.mockResolvedValue([{ chainId: 20011000000, totalUsd: 16.8 }]);
+
+    const result = await fullBalanceSync();
+
+    expect(result.snapshotSkippedReason).toBe("chain_reads_unresolved");
+    expect(result.wallets.find((wallet) => wallet.walletFamily === "solana")).toMatchObject({
+      totalUsd: 16.8,
+      unresolvedChains: [{ chainId: 20011000000, status: "read_failed", reason: "http_403" }],
+    });
+    expect(result.snapshots).toEqual([]);
+    expect(mockInsertSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("publishes inventory-incomplete known holdings on the first cycle and clears on recovery", async () => {
+    mockLocalSync.mockResolvedValue({ chainId: 4663, tokensUpdated: 4, skipped: false, readStatus: "inventory_incomplete", reason: "http_403" });
+    const first = await fullBalanceSync();
+    expect(first.snapshotSkippedReason).toBeUndefined();
+    expect(first.snapshots).toHaveLength(2);
+    expect(first.snapshots.every((row) => !row.partial && row.unresolvedChainCount === 0)).toBe(true);
+    expect(first.wallets[0].chainsUpdated).toBeGreaterThan(0);
+    const observations = mockDbQuery.mock.calls.filter(([sql]) => String(sql).includes("proj_balance_chain_read_status"))
+      .flatMap((call) => JSON.parse(String(call[1]?.[1])));
+    expect(observations).toContainEqual({ chain_id: 4663, status: "inventory_incomplete", reason: "http_403" });
+    mockLocalSync.mockResolvedValue({ chainId: 4663, tokensUpdated: 0, skipped: false });
+    expect((await fullBalanceSync()).snapshots).toHaveLength(2);
+  });
+
+  it("does not publish cached Pendle holdings after a skipped seed read", async () => {
+    mockListWallets.mockImplementation((family: string) => family === "evm" ? [{ address: EVM_A }] : []);
+    mockGetBalances.mockImplementation(async (_address: string, chainId?: number) =>
+      chainId === undefined || chainId === 42161 ? [{ balanceUsd: 12 }] : []);
+    const result = await fullBalanceSync();
+    expect(result.snapshotSkippedReason).toBe("chain_reads_unresolved");
+    expect(result.wallets[0]?.unresolvedChains).toContainEqual({ chainId: 42161, status: "read_failed", reason: "read_incomplete" });
+    expect(mockInsertSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("records cached Khalani chains as stale and preserves values after a total scan failure", async () => {
+    mockGetBalancesByChain.mockResolvedValue([{ chainId: 1, totalUsd: 10 }, { chainId: 4663, totalUsd: 2 }]);
+    const failure = new Error("provider failed");
+    mockScan.mockRejectedValueOnce(failure);
+    expect(await syncWalletBalances("eip155", EVM_A)).toMatchObject({ readFailed: true, tokensUpdated: 0,
+      unresolvedChains: expect.arrayContaining([{ chainId: 1, status: "read_failed", reason: "rpc_failed" }]) });
+    const writes = mockDbQuery.mock.calls.filter(([sql]) => String(sql).includes("proj_balance_chain_read_status"));
+    expect(JSON.parse(String(writes.at(-1)?.[1]?.[1]))).toEqual(expect.arrayContaining([{ chain_id: 1, status: "read_failed", reason: "rpc_failed" }]));
+  });
+
+
+  it("defers failed reads three cycles, publishes partial fourth and later, resets after recovery", async () => {
+    mockSolanaSync.mockResolvedValue({ chainId: 20011000000, tokensUpdated: 0, skipped: true, reason: "http_403" });
+    mockScan.mockResolvedValue(emptyScan([20011000000]));
+    mockGetBalances.mockImplementation(async (_address: string, chainId?: number) =>
+      chainId === undefined || chainId === 20011000000 ? [{ balanceUsd: 16.8 }] : []);
+    mockGetBalancesByChain.mockResolvedValue([{ chainId: 20011000000, totalUsd: 16.8 }]);
+    for (let cycle = 1; cycle <= 3; cycle++) {
+      expect((await fullBalanceSync()).snapshotSkippedReason).toBe("chain_reads_unresolved");
+      expect(mockInsertSnapshot).not.toHaveBeenCalled();
+    }
+    for (let cycle = 4; cycle <= 5; cycle++) {
+      const result = await fullBalanceSync();
+      expect(result.snapshotSkippedReason).toBeUndefined();
+      expect(result.snapshots.find((row) => row.walletFamily === "solana")).toMatchObject({
+        totalUsd: 16.8, partial: true, unresolvedChainCount: 1,
+      });
+    }
+    mockSolanaSync.mockResolvedValue({ chainId: 20011000000, tokensUpdated: 1, skipped: false, reason: null });
+    const recovered = await fullBalanceSync();
+    expect(recovered.snapshots.every((row) => !row.partial && row.unresolvedChainCount === 0)).toBe(true);
+    expect(recovered.wallets.every((wallet) => wallet.unresolvedChains?.length === 0)).toBe(true);
+    mockSolanaSync.mockResolvedValue({ chainId: 20011000000, tokensUpdated: 0, skipped: true, reason: "timeout" });
+    expect((await fullBalanceSync()).snapshotSkippedReason).toBe("chain_reads_unresolved");
+  });
+
+  it("publishes partial after total Khalani provider failures without aborting the cycle", async () => {
+    mockListWallets.mockImplementation((family: string) => family === "evm" ? [{ address: EVM_A }] : []);
+    mockScan.mockRejectedValue(new Error("provider refused"));
+    for (let cycle = 1; cycle <= 3; cycle++) expect((await fullBalanceSync()).snapshotSkippedReason).toBe("chain_reads_unresolved");
+    const fourth = await fullBalanceSync();
+    expect(fourth.snapshots).toMatchObject([{ partial: true, unresolvedChainCount: 2 }]);
+  });
+
+  it("propagates database failures when preserving a failed provider read", async () => {
+    mockScan.mockRejectedValue(new Error("provider refused"));
+    const dbFailure = new Error("database unavailable");
+    mockGetBalancesByChain.mockRejectedValueOnce(dbFailure);
+    await expect(syncWalletBalances("eip155", EVM_A)).rejects.toBe(dbFailure);
+  });
 
   it("publishes the WHOLE group while a bridge leg is still in flight", async () => {
     mockListWallets.mockImplementation(threeWallets);

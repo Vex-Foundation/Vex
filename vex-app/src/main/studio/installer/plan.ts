@@ -49,7 +49,7 @@ export const STUDIO_AGENTS_MD_RELATIVE_PATH = "AGENTS.md";
  * machine as owing a regeneration, which is noise, not safety. The Vex version
  * is the other half of the fingerprint and moves on every release anyway.
  */
-export const STUDIO_GENERATOR_REVISION = "a5b.1";
+export const STUDIO_GENERATOR_REVISION = "a5b.2";
 
 /** Vex version plus renderer revision. Files whose fingerprint differs are stale. */
 export function studioGeneratorFingerprint(appVersion: string): string {

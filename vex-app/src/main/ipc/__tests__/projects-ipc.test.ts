@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   createProject: vi.fn(),
   getProject: vi.fn(),
   listProjects: vi.fn(),
+  readPendingProjectCleanups: vi.fn(),
   updateProjectScope: vi.fn(),
   renderProjectFiles: vi.fn(),
   enrichProjectFiles: vi.fn(),
@@ -57,6 +58,9 @@ vi.mock("../../database/projects/create.js", () => ({
 vi.mock("../../database/projects/read.js", () => ({
   getProject: mocks.getProject,
   listProjects: mocks.listProjects,
+}));
+vi.mock("../../database/projects/pending-cleanups.js", () => ({
+  readPendingProjectCleanups: mocks.readPendingProjectCleanups,
 }));
 vi.mock("../../database/projects/scope.js", () => ({
   updateProjectScope: mocks.updateProjectScope,
@@ -168,6 +172,7 @@ beforeEach(() => {
   mocks.resolveWalletRef.mockReturnValue(null);
   mocks.createProject.mockResolvedValue({ ok: true, data: DTO });
   mocks.getProject.mockResolvedValue({ ok: true, data: DTO });
+  mocks.readPendingProjectCleanups.mockResolvedValue({ ok: true, data: { items: [], nextOffset: null } });
   mocks.listProjects.mockResolvedValue({ ok: true, data: [DTO] });
   mocks.updateProjectScope.mockResolvedValue({
     ok: true,
@@ -190,6 +195,7 @@ const CHANNELS = [
   { channel: CH.projects.create, payload: { name: "My App", permission: "restricted" } },
   { channel: CH.projects.get, payload: { projectId: PROJECT_ID } },
   { channel: CH.projects.list, payload: {} },
+  { channel: CH.projects.pendingCleanups, payload: { offset: 0 } },
   {
     channel: CH.projects.updateScope,
     payload: {
@@ -210,12 +216,13 @@ const CHANNELS = [
 ] as const;
 
 describe("vex:projects:* - registration and the shared boundary paths", () => {
-  it("registers exactly the six declared channels", () => {
+  it("registers exactly the seven declared channels", () => {
     expect([...handlers.keys()].sort()).toEqual(
       [
         CH.projects.create,
         CH.projects.get,
         CH.projects.list,
+        CH.projects.pendingCleanups,
         CH.projects.updateScope,
         CH.projects.repairFiles,
         CH.projects.delete,
@@ -258,6 +265,7 @@ describe("vex:projects:* - registration and the shared boundary paths", () => {
         mocks.createProject,
         mocks.getProject,
         mocks.listProjects,
+        mocks.readPendingProjectCleanups,
         mocks.updateProjectScope,
         mocks.renderProjectFiles,
         mocks.deleteProject,
@@ -576,5 +584,25 @@ describe("vex:projects:updateScope", () => {
     });
     expect(r.ok).toBe(false);
     expect(r.error?.code).toBe("projects.scope_conflict");
+  });
+});
+
+describe("pending cleanup IPC", () => {
+  it("returns a bounded page and rejects a caller-supplied path", async () => {
+    expect(await call(CH.projects.pendingCleanups, { offset: 0 })).toMatchObject({
+      ok: true, data: { items: [], nextOffset: null },
+    });
+    expect(await call(CH.projects.pendingCleanups, { path: "/outside" })).toMatchObject({
+      ok: false, error: { code: "validation.invalid_input" },
+    });
+  });
+  it("rejects an unclassified native failure at the output boundary", async () => {
+    mocks.readPendingProjectCleanups.mockResolvedValue({ ok: true, data: { items: [{
+      projectId: PROJECT_ID, name: "Example", folder: "example", trashRequested: true,
+      attempts: 1, trashFailure: "native uncontrolled error",
+    }], nextOffset: null } });
+    const result = await call(CH.projects.pendingCleanups, {});
+    expect(result.ok).toBe(false);
+    expect(JSON.stringify(result)).not.toContain("native uncontrolled");
   });
 });

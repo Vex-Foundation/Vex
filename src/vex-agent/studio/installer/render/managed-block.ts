@@ -29,6 +29,9 @@
  */
 
 import { createHash } from "node:crypto";
+import type { StudioInstallationEnvironment } from "../../instructions/installation-environment.js";
+import { resolveStudioInstallationEnvironment } from "../../instructions/installation-environment.js";
+import { renderStudioProtocolMap } from "../../instructions/protocol-map.js";
 
 import type { StudioProjectBrief } from "../../instructions/project-brief.js";
 import {
@@ -82,28 +85,25 @@ export const STUDIO_PROTOCOLS_DOC_PATH = ".vex/protocols.md";
  * moved WHOLE into `.vex/vex-guide.md` (`renderStudioVexGuideBody`), which the
  * first section here tells it to open.
  *
- * DETERMINISTIC IN ITS INPUTS, and project-only. The generic half (safety
- * prefix, usage notes) is the same words every client gets at handshake; the
- * project half (what the server is, how large the surface is, which authority
- * was granted and when, what changed for this project) comes from the `brief`
- * the privileged caller resolved. Nothing here depends on the INSTALLATION any
- * more - which provider keys this machine has is a fact about the protocol
- * blocks, and they live in the guide - so this body is the same bytes on every
- * machine for the same project. Everything is INSIDE the hash, so a stale
- * count, an edited change note or a tampered authority line is drift like any
- * other byte.
+ * DETERMINISTIC IN ITS INPUTS. Project scope arrives in the brief and provider
+ * key status arrives in the resolved installation environment. Both are inside
+ * the hash: changing the configured keys updates the inline protocol map.
  */
-export function renderStudioManagedBody(brief: StudioProjectBrief): string {
-  return [
+export function renderStudioManagedBody(
+  brief: StudioProjectBrief,
+  environment: StudioInstallationEnvironment = resolveStudioInstallationEnvironment(),
+): string {
+  const body = [
     renderStudioBlockTitle(brief),
     "",
-    "This repository is connected to Vex, a self-custodial crypto agent. The Vex",
-    "tools reach REAL wallets on REAL chains. This section is the authority: what",
-    "this project may do, how to call the tools, what a result means, how to do",
-    "the usual jobs, and what you actually know. The two files named below carry",
-    "the rest, and this section is not complete without the first of them.",
+    "This repository is connected to Vex, a self-custodial crypto agent whose tools",
+    "reach REAL wallets on REAL chains. This section covers project scope, tool",
+    "use, outcomes and common jobs. The map gives discovery facts; read the",
+    "companion guide for protocol details before acting.",
     "",
-    // 1. The pointer, FIRST: the sections that are not here, and when to read them.
+    renderStudioProtocolMap(environment),
+    "",
+    // The detailed guide stays on demand, after the inline protocol map.
     STUDIO_READ_ON_START_NOTE,
     "",
     // 2. This project: the level in force, the wallets, the binding.
@@ -125,6 +125,11 @@ export function renderStudioManagedBody(brief: StudioProjectBrief): string {
     "Vex reports the edit as drift and stops regenerating the section until the",
     "user asks Vex for a repair. Text outside the markers belongs to the user.",
   ].join("\n");
+  const bytes = Buffer.byteLength(body, "utf8");
+  if (bytes > STUDIO_MANAGED_BLOCK_MAX_BYTES) {
+    throw new Error(`STUDIO_MANAGED_BLOCK_MAX_BYTES: ${bytes} exceeds ${STUDIO_MANAGED_BLOCK_MAX_BYTES}; move a whole section to the guide, never cut instructions.`);
+  }
+  return body;
 }
 
 /**
@@ -157,9 +162,14 @@ export function renderStudioManagedBody(brief: StudioProjectBrief): string {
  */
 export const STUDIO_MANAGED_BLOCK_MAX_BYTES = 24_576;
 
+/** Managed bodies use LF for rendering, hashing and comparison; user bytes stay untouched. */
+function normalizeManagedNewlines(body: string): string {
+  return body.replace(/\r\n/g, "\n");
+}
+
 /** The digest recorded in the opening marker. */
 export function studioManagedBodyHash(body: string): string {
-  return createHash("sha256").update(body, "utf8").digest("hex").slice(0, HASH_CHARS);
+  return createHash("sha256").update(normalizeManagedNewlines(body), "utf8").digest("hex").slice(0, HASH_CHARS);
 }
 
 /**
@@ -171,12 +181,16 @@ export function studioManagedBodyHash(body: string): string {
  * fence is caught by the same rule and repaired by the same explicit action.
  */
 export function renderStudioFencedDocument(body: string, vexVersion: string): string {
-  return `${beginMarker(vexVersion, studioManagedBodyHash(body))}\n${body}\n${END_MARKER}\n`;
+  const canonical = normalizeManagedNewlines(body);
+  return `${beginMarker(vexVersion, studioManagedBodyHash(canonical))}\n${canonical}\n${END_MARKER}\n`;
 }
 
 /** The complete `AGENTS.md` managed block, markers included, newline-terminated. */
-export function renderStudioManagedBlock(brief: StudioProjectBrief): string {
-  return renderStudioFencedDocument(renderStudioManagedBody(brief), brief.vexVersion);
+export function renderStudioManagedBlock(
+  brief: StudioProjectBrief,
+  environment?: StudioInstallationEnvironment,
+): string {
+  return renderStudioFencedDocument(renderStudioManagedBody(brief, environment), brief.vexVersion);
 }
 
 /** What an existing `AGENTS.md` currently holds in the Vex fence. */
@@ -244,14 +258,15 @@ export function inspectStudioFencedDocument(
   // The one question that needs the desired text.
   const found = locateManagedBlock(existing);
   const body = typeof found === "object" && found !== undefined ? found.body : "";
-  return { kind: "intact", upToDate: body === desiredBody };
+  return { kind: "intact", upToDate: normalizeManagedNewlines(body) === normalizeManagedNewlines(desiredBody) };
 }
 
 export function inspectStudioManagedBlock(
   existing: string,
   brief: StudioProjectBrief,
+  environment?: StudioInstallationEnvironment,
 ): StudioManagedBlockState {
-  return inspectStudioFencedDocument(existing, renderStudioManagedBody(brief));
+  return inspectStudioFencedDocument(existing, renderStudioManagedBody(brief, environment));
 }
 
 /**
@@ -293,6 +308,8 @@ export function mergeStudioFencedDocument(
     return { status: "unchanged" };
   }
 
+  const existingBlock = existing.slice(found.start, found.end);
+  if (normalizeManagedNewlines(existingBlock) === block) return { status: "unchanged" };
   const next = `${existing.slice(0, found.start)}${block}${existing.slice(found.end)}`;
   return next === existing ? { status: "unchanged" } : rendered(next);
 }
@@ -301,11 +318,14 @@ export function mergeStudioFencedDocument(
 export function mergeStudioManagedBlock(
   existing: string,
   brief: StudioProjectBrief,
-  options: { readonly overwriteDrift: boolean },
+  options: {
+    readonly overwriteDrift: boolean;
+    readonly environment?: StudioInstallationEnvironment;
+  },
 ): StudioRenderResult {
   return mergeStudioFencedDocument(
     existing,
-    renderStudioManagedBody(brief),
+    renderStudioManagedBody(brief, options.environment),
     brief.vexVersion,
     options,
   );
@@ -346,36 +366,38 @@ interface LocatedBlock {
 
 /** The block, `undefined` when absent, or a string naming why it is malformed. */
 function locateManagedBlock(existing: string): LocatedBlock | undefined | string {
-  const start = existing.indexOf(BEGIN_PREFIX);
-  if (start === -1) {
-    return existing.includes(END_MARKER)
-      ? "a vex:studio:end marker with no matching begin marker"
-      : undefined;
+  // A delimiter owns a complete line. Inline prose and display text never do.
+  // The line match excludes CR explicitly, so accept the CRLF terminator here.
+  const beginLines = [...existing.matchAll(/^<!-- vex:studio:begin [^\r\n]*(?=\r?$)/gm)];
+  const ends = [...existing.matchAll(/^<!-- vex:studio:end -->(?=\r?$)/gm)];
+  if (beginLines.length > 1 || ends.length > 1) {
+    return "duplicate_managed_block: expected exactly one begin and one end delimiter line";
   }
-
-  const markerEnd = existing.indexOf(BEGIN_SUFFIX, start + BEGIN_PREFIX.length);
-  if (markerEnd === -1) return "the vex:studio:begin marker is not terminated";
-
-  const recordedHash = hashFromMarker(
-    existing.slice(start + BEGIN_PREFIX.length, markerEnd),
-  );
-  if (recordedHash === null) {
-    return "the vex:studio:begin marker carries no hash= attribute";
+  const begin = beginLines[0];
+  const closing = ends[0];
+  if (begin === undefined) {
+    return closing === undefined ? undefined : "a vex:studio:end marker with no matching begin marker";
   }
-  const bodyStart = markerEnd + BEGIN_SUFFIX.length + 1; // skip the newline
-  const endMarker = existing.indexOf(END_MARKER, bodyStart);
-  if (endMarker === -1) return "a vex:studio:begin marker with no matching end marker";
-
+  if (!begin[0].endsWith(BEGIN_SUFFIX)) return "the vex:studio:begin marker is not terminated";
+  if (closing === undefined) return "a vex:studio:begin marker with no matching end marker";
+  const start = begin.index;
+  const endMarker = closing.index;
+  if (endMarker < start) return "the vex:studio:end marker precedes its begin marker";
+  const recordedHash = hashFromMarker(begin[0].slice(BEGIN_PREFIX.length, -BEGIN_SUFFIX.length));
+  if (recordedHash === null) return "the vex:studio:begin marker carries no hash= attribute";
+  const afterBegin = start + begin[0].length;
+  const bodyStart = afterBegin + (existing.startsWith("\r\n", afterBegin) ? 2 : 1);
   const afterEnd = endMarker + END_MARKER.length;
-  const end = existing.charAt(afterEnd) === "\n" ? afterEnd + 1 : afterEnd;
-
+  const end = afterEnd + (existing.startsWith("\r\n", afterEnd) ? 2
+    : existing.startsWith("\n", afterEnd) ? 1 : 0);
+  const bodyEnd = endMarker - (existing.slice(0, endMarker).endsWith("\r\n") ? 2 : 1);
+  const prefix = existing.slice(0, start);
   return {
     start,
-    // Reclaim the blank separator line an append inserted before the marker.
-    removeStart: existing.slice(0, start).endsWith("\n\n") ? start - 1 : start,
+    removeStart: prefix.endsWith("\r\n\r\n") ? start - 2
+      : prefix.endsWith("\n\n") ? start - 1 : start,
     end,
     recordedHash,
-    // The body excludes the newline that precedes the closing marker.
-    body: existing.slice(bodyStart, Math.max(bodyStart, endMarker - 1)),
+    body: existing.slice(bodyStart, Math.max(bodyStart, bodyEnd)),
   };
 }

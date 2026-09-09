@@ -25,6 +25,7 @@
  * component's own body, session-style).
  */
 
+import { ChainReadWarning } from "./portfolio/ChainReadWarning.js";
 import { useState, type JSX } from "react";
 import type { AvailableWalletDto } from "@shared/schemas/wallets.js";
 import type { PortfolioDto, PositionTokenDto } from "@shared/schemas/portfolio.js";
@@ -297,6 +298,7 @@ function WalletScopedHoldings({
           {formatUsd(portfolio.liveTotalUsd)}
         </span>
       </div>
+      <ChainReadWarning portfolio={portfolio} />
       <PositionChains
         chains={portfolio.chains}
         hasEvmWallet={wallet.family === "evm"}

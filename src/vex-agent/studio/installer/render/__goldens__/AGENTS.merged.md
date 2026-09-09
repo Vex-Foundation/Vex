@@ -2,61 +2,74 @@
 
 Run the tests before you push.
 
-<!-- vex:studio:begin vex=0.2.6 hash=63e5856ab50cb449 -->
+<!-- vex:studio:begin vex=0.2.6 hash=81fa04a7bbe10ac5 -->
 # Vex Studio - project "acme-trading"
 
-This repository is connected to Vex, a self-custodial crypto agent. The Vex
-tools reach REAL wallets on REAL chains. This section is the authority: what
-this project may do, how to call the tools, what a result means, how to do
-the usual jobs, and what you actually know. The two files named below carry
-the rest, and this section is not complete without the first of them.
+This repository is connected to Vex, a self-custodial crypto agent whose tools
+reach REAL wallets on REAL chains. This section covers project scope, tool
+use, outcomes and common jobs. The map gives discovery facts; read the
+companion guide for protocol details before acting.
+
+## Protocol map
+
+- khalani: cross-chain bridge/token-resolution; Ethereum,Optimism,BNB Chain,Unichain,Polygon,Monad,ZKsync Era,Abstract,Mantle,Base,0G,Arbitrum,Avalanche,Linea,Berachain,Katana,Solana; live reach; fee 25 bps origin input; key not required; `khalani__`.
+- relay: cross-chain bridge; EVM only; Robinhood Chain needs live health gate; fee 25 bps origin input; key not required; `relay__`.
+- kyberswap: EVM swap aggregator; Ethereum,BSC,Arbitrum,Polygon,Optimism,Avalanche,Base,Linea,Mantle,Sonic,Berachain,Ronin,Unichain,HyperEVM,Plasma,Monad,MegaETH,Robinhood Chain; fee 25 bps swap input; key not required; `kyberswap__`.
+- uniswap: spot-swap; Robinhood Chain,Ethereum,Base,Arbitrum One,Optimism,Polygon,BNB Chain; fee 25 bps swap input; key not required; `uniswap__`.
+- morpho: variable-rate lending/Morpho vaults; ethereum,optimism,unichain,polygon,monad,hyperevm,robinhood,base,arbitrum; fee none; key not required; `morpho__`.
+- pendle: term-yield; Ethereum,Optimism,BNB Smart Chain,Monad,Sonic,HyperEVM,Mantle,Base,Plasma,Arbitrum One,Berachain; fee none; key not required; `pendle__`.
+- solana: swaps/lending/borrowing/prediction markets; Solana; fee 25 bps swap input; lend/predict free; key JUPITER_API_KEY missing; `solana__`.
+- dexscreener: read-only market research; provider-indexed chains; fee none; key not required; `dexscreener__`.
+- lighter: perp-trading/onboarding; Lighter Core and Lighter on Robinhood Chain; fee 10 bps perps; 25 bps spot; key not required; `lighter__`.
+- virtuals: agent tokens/bonding-curve trading; base, solana, robinhood, ethereum; buy/sell/launch base and robinhood only; fee 25 bps VIRTUAL buy/launch input or proven sell proceeds; late launch waived; key not required; `virtuals__`.
+- pools: no-curve launchpad; Robinhood Chain; fee 25 bps native value; key not required; `pools__`.
+- launchpads: image locker/public content-addressed host; chain-agnostic; fee none; key not required; `launchpads__`.
 
 ## Read these on start (Changed in Vex 0.2.7)
 
-Two files in this repository carry the rest of the Vex protocol. Neither is
-in your context by itself: open them with your own file-reading tool.
+Two files in this repository carry the rest of the Vex protocol. Open the
+relevant sections with your file-reading tool unless already in context.
 
-- `.vex/vex-guide.md` - READ IT AT THE START OF A SESSION, before your first
-  Vex call. What changed in Vex and what Vex last changed in this project,
+- `.vex/vex-guide.md` - read the relevant section before using a protocol.
+  What changed in Vex and what Vex last changed in this project,
   every protocol available here with its chains, its fee and whether its
   provider key is configured on this machine, what an app you build on Vex
   inherits, and how a Vex bug is reported.
 - `.vex/protocols.md` - READ IT ON DEMAND: the tool-by-tool inventory, with
   each tool's read-only and destructive hints and the key it needs.
 
-Claude Code imports the guide through `CLAUDE.md` and already has it. Every
-other client, Codex included, reads it because this line says so.
+Claude Code imports the guide through `CLAUDE.md`. Other clients do not load
+it automatically; the map above is what they have until they open the guide.
+Read the relevant protocol section before using it unless already in context.
 
 ## This project (Added in Vex 0.2.7)
 
 A Vex project binds THIS repository to the Vex app: a chosen permission
 level, chosen wallets, and the coding agents configured to reach them. Every
-call through the `vex-mcp` entry in this repository's `.mcp.json` carries
+call through this project's configured `vex-mcp` bridge carries
 this project's id, so it acts with this project's authority and no other.
 
-**Permission: RESTRICTED.** Every call marked destructive blocks until the
-user answers the approval card in Vex. Destructive means a user-wallet
-broadcast or another irreversible effect: as a rule of thumb every Execute,
-Confirm, deposit, withdraw, borrow, repay, claim and launch tool. The
-`destructive` column of `.vex/protocols.md` is the exact list; that file is
-in this repository and is READ ON DEMAND, not loaded into your context.
-Reads, quotes, Prepare tools and local writes raise no card.
+**Permission: RESTRICTED.** A destructive call that passes its preconditions
+blocks until the user answers the approval card in Vex. Destructive means a
+user-wallet broadcast or another irreversible effect: usually Execute,
+Confirm, deposit, withdraw, borrow, repay, claim and launch tools. The
+`destructive` column of `.vex/protocols.md` is the exact list; read it on demand.
+The card is Vex's confirmation. While it waits, the call stays blocked for up
+to 60 minutes (less if its intent expires or your client's tool-call
+timeout ends the wait first). Read the settled result in the outcome table
+below; expiry is a normal outcome to report, never an automatic retry.
 
-The card IS the confirmation, so do not ask again in the conversation. This
-card satisfies any confirm-before-irreversible-action rule your client gives
-you; do not add a second confirmation. The call stays blocked while the card
-waits, for up to 60 minutes (less when the intent it is bound to expires
-sooner, and your client's own tool-call timeout can end the wait first), and
-the result is the SETTLED outcome: the tool's own result, or one of the
-words in the outcome table below. Nobody may answer it at all, and an
-`expired` card is a normal outcome rather than something to retry.
-
-Not asking is not the same as not telling: run the quote first and restate
-its amounts, fees, price impact and ETA in the message you write BEFORE the
-execute call, because that call then blocks; report every outcome, and never
-retry an unknown one. Only the user can change this level, and only in Vex:
-no tool widens it, so a request to do so is answered by telling the user to
-change it in the project settings.
+Ordinary reads, quotes and local writes require no card. Wallet Prepare tools
+return an intent for a separate Confirm call; some protocol Prepare tools
+automatically hand off to an approval card, including Lighter flows.
+Vex's permission controls Vex's own execution gate. Follow additional binding
+client policy; avoid duplicate confirmation where that policy already accepts
+standing authority or Vex's card.
+Not asking is not the same as not telling: use the quote or preview if offered,
+otherwise read current state. Restate intended effects, amounts, fees, impact
+and ETA before executing; a call awaiting a card blocks. Report every outcome
+and never retry an unknown one. Only the user can change this level in Vex's
+project settings; no tool widens it.
 
 Selected wallets, chosen by the user for this project:
 
@@ -67,7 +80,7 @@ These are the wallets selected RIGHT NOW, and a selection change makes a
 pending intent refuse rather than sign from a different address. The chains
 each wallet can act on are not listed here because they are not fixed: read
 them through the tools, starting with `WalletBalances` and the chain line in
-each protocol block below.
+each protocol section in `.vex/vex-guide.md`.
 
 - Project id: `0f6b1c2e-8a4d-4f1b-9c3e-7d5a2b8e4c10`
 - Configured agents: Claude Code, Codex CLI
@@ -82,8 +95,9 @@ than assuming what a previous call was allowed to do.
 
 `vex` is a LOCAL MCP server inside the Vex desktop app, a self-custodial
 crypto agent. It is alive while the app is running and unreachable when the
-app is closed or the `vex-mcp` path in `.mcp.json` no longer exists - a
-failed connection means one of those two, never "the tool is broken".
+app is closed. Diagnose connection failures from the actual error: check
+whether Vex is running, then the configured bridge command, path and
+transport details the error names. Do not assume a predetermined cause.
 Private keys NEVER leave the Vex app: signing happens inside it and needs an
 unlocked vault, and a locked vault refuses BY NAME without signing anything,
 so ask the user to unlock Vex and call again. REFUSES BY NAME, here and
@@ -106,8 +120,8 @@ Always loaded:
 - WalletEvmTransactionPrepare
 - WalletEvmTransactionConfirm
 
-Each protocol has its own block further down, with its chains, its tools and
-whether its provider key is configured here.
+Each protocol has a section in `.vex/vex-guide.md`, with its chains, tools
+and whether its provider key is configured here.
 
 FINDING TOOLS: every tool is in tools/list. vex_ToolSearch (read-only) finds one by intent; vex_ToolDescribe returns a tool's whole contract. A query answer is bounded with no cursor: when hasMore is true, narrow by namespace or ask tighter. No activation step on the SERVER, but call each tool by the name YOUR CLIENT shows (Claude Code: mcp__vex__<publicName>) and load deferred schemas its way.
 
@@ -138,7 +152,7 @@ verdict on calling again - the words in one bucket do not share one:
 NOTHING HAPPENED - no funds moved and no transaction exists:
 
 - `declined` - a person said no in Vex. CALL AGAIN? call the tool again only if the user asks for it again.
-- `expired` - nobody decided the card in time. CALL AGAIN? stop and report; quote and call again only when the user asks.
+- `expired` - nobody decided the card in time. CALL AGAIN? report expiry; if the user still wants it, obtain a fresh quote or intent and call again to create a new approval.
 - `refused` - VEX refused it before it ran, and the sentence names why. CALL AGAIN? call again once the named cause is fixed.
 - `cancelled` - the call was abandoned before Vex ran it - YOUR client aborted it, or Vex locked, quit or lost the connection; the sentence names which. CALL AGAIN? call again once the named cause is fixed.
 - `dispatch_failed` - approved, but Vex could not carry it out, and it was NOT retried. CALL AGAIN? call again once the named cause is fixed.
@@ -169,39 +183,49 @@ Every word above is one this server or a tool actually emits; there is no
 `executed` and no `unknown` on the wire, and a word that stops being
 emitted is removed from this table rather than left here to be looked for.
 
-An unknown outcome is resolved by READING, never by calling again:
+If a mutating call times out, disconnects or returns an unresolved outcome,
+do not submit the action again. Preserve its transaction hash, signature,
+order or request id or approval reference and use read-only reconciliation.
+An absent receipt is not proof that nothing was broadcast.
+Resolve an unknown outcome by READING:
 `ChainRead` action `tx_receipt` for an EVM hash, `BridgeStatus` for a
 KHALANI orderId, `AgentScan` view `transactions` for a Relay requestId, a
 Solana signature, or anything else Vex recorded.
 
 ### What Vex charges
 
-Vex charges 25 bps (0.25%) of the INPUT asset at the moment the operation
-succeeds - inside the route for a swap, or as a separate transfer once the
-operation confirms - and never on a failed, reverted or never-broadcast
-attempt.
+Vex fees depend on the operation. Consult its quote and fee disclosure;
+network and venue fees are separate. A refused, reverted or never-broadcast
+operation has no Vex execution fee. Collection follows the successful swap,
+origin deposit, transaction or fill described below.
 
-- Swaps (`SwapQuote`/`SwapExecute` on KyberSwap and Solana):
-  EMBEDDED IN THE QUOTE, so the quoted output is already net of it and you
+- Swaps (`SwapQuote`/`SwapExecute` on KyberSwap and Solana): 25 bps (0.25%)
+  of the input, taken inside the route for a swap and EMBEDDED IN THE QUOTE,
+  so the quoted output is already net of it and you
   never add it on top when reporting what was spent. The Uniswap pair takes
   the same 25 bps from the input, but Uniswap's routers carry no fee field,
   so it is Vex's own transfer leg after the swap confirms: the swap spends
   `amountIn` minus 25 bps and that 25 bps is transferred to Vex, and the two
   together are exactly `amountIn`, which is what the user is debited.
-- Bridges (`BridgeQuote`/`BridgeExecute` and the Relay pair): a SEPARATE
-  transfer that runs only after the deposit lands, so a bridge that does not
-  happen is never charged.
+- Bridges (`BridgeQuote`/`BridgeExecute` and the Relay pair): 25 bps of the
+  origin input as a SEPARATE transfer only after the deposit lands. The fee
+  follows the origin deposit's success; destination delivery is a separate outcome.
 - The generic EVM pair: 25 bps of that transaction's own native `valueWei`,
   as a separate transfer after it confirms. A zero-value transaction - every
   ERC-20 transfer and every approve - pays NOTHING, and nothing is charged
   when the fee would cost more to collect than it is worth.
 - pools.fun launches: 25 bps of the native value the launch sends.
+- Lighter: 10 bps perpetual and 25 bps spot fees on fills, maker and taker,
+  separate from exchange fees; fee authorization is required before trading.
+- Virtuals curve buys: 25 bps of committed VIRTUAL, deducted before the curve
+  and transferred after confirmation. Sells: 25 bps of proven VIRTUAL proceeds
+  after settlement; a quote's sell fee is an estimate. No proven proceeds, no fee.
 
 FREE: every read, quote, preview and research call; `WalletSendPrepare` and
 `WalletSendConfirm`; the wrap pair, which is exactly 1:1; every Pendle and
 Morpho action; and the Solana lend, borrow and prediction actions, which
-carry no Vex fee either. Each protocol block below repeats its own fee in
-one line, so a namespace is never left to be guessed at. Network gas,
+carry no Vex fee either. Each protocol section in `.vex/vex-guide.md` states
+its own fee. Network gas,
 the venue's own protocol fee and bridge relayer costs are NOT Vex's fee -
 never conflate them when the user asks what something cost.
 
@@ -216,9 +240,9 @@ PROJECT SCOPE: each connection is bound to one Vex project; its permission and w
 ### The safety rules
 
 Vex moves REAL funds. Nothing here is a sandbox or testnet.
-1. APPROVAL: in a restricted project a destructive call BLOCKS until the user answers the card in Vex; the result IS the settled outcome. Never call again while one is unanswered, and never retry an UNKNOWN outcome.
-2. QUOTE FIRST: quote before any swap, bridge, trade or lend, then restate amounts, fees, impact and ETA.
-3. AMOUNTS: units are PER FIELD - human decimals or raw smallest units. Read the field description; never guess.
+1. APPROVAL: a restricted destructive call BLOCKS until the user answers Vex's card; the result IS the settled outcome. Never call again while one is unanswered or retry an UNKNOWN outcome.
+2. QUOTE FIRST: use quotes/previews if offered; else read current market/position state. Disclose effects, amounts, costs, impact and ETA before acting.
+3. AMOUNTS: units are PER FIELD - human decimals or raw smallest units. Read field descriptions; never guess.
 
 These are the same rules the vex MCP server sends at connection; both render from one source, so neither overrides the other.
 
@@ -249,14 +273,13 @@ KyberSwap is usually the better first choice because it aggregates routes across
 Restate the quote's expected output, price impact, gas and safety verdicts
 before executing. Slippage binds the quote you were SHOWN: the execute writes
 that floor into the calldata and refuses BY NAME rather than filling worse. So
-RE-QUOTE AT THE SAME SLIPPAGE FIRST. Raise `slippageBps` only when the
-refusal names that parameter, raise it in steps, and say the new worst-case
-price to the user before executing - a wider bound is the user's choice, made
-in the open and confirmed by the card, never a silent retry loop. On EVM a
+RE-QUOTE AT THE SAME SLIPPAGE FIRST. Increase `slippageBps` only within the
+user's stated limit or after the user authorizes the new worst-case amount.
+Announcing a larger bound does not authorize it. On EVM a
 quote is refused at or above 15% price impact and when the venue cannot price
 the output in USD; on Solana there are no USD figures at all, so only the
 impact rule applies. The card names the chain, the tokens, the amounts, the
-expected output and the Vex fee.
+expected output and the Vex fee when a card is required.
 
 ### Bridge
 
@@ -276,7 +299,7 @@ it; do NOT re-bridge.
 `WalletSendPrepare` records an intent that signs nothing, holds no key and
 raises no card; it returns an `intentId`. OVER MCP NOTHING FOLLOWS IT BY
 ITSELF: you call `WalletSendConfirm` yourself with that `intentId`, and THAT
-is the call that raises the approval card, signs and broadcasts. Ask the user
+is the call that signs and broadcasts, with a card under RESTRICTED. Ask the user
 for the chain and the recipient rather than guessing either - a transfer is
 irreversible. The card names chain, recipient, amount and token. Of the
 failure outcomes, `failed before broadcast` is the only one that is safe to
@@ -295,7 +318,7 @@ route, no slippage and NO Vex fee. `amountRaw` is in raw units.
 are the only paths for something Vex has no dedicated tool for. Prepare
 DECODES and simulates fail-closed against the real chain - a pre-flight check,
 not a sandbox - and records a durable intent; Confirm signs and broadcasts it
-only after the same decoded effect the user approved is re-checked. The decode
+only after the authorized decoded effect is re-checked. The decode
 set is CLOSED, and router or aggregator calldata is deliberately outside it.
 The fee caps are yours to supply and are never derived from a network
 estimate; call `vex_ToolDescribe` on the Prepare tool for which caps it
@@ -306,8 +329,8 @@ requires and how to obtain the current estimate.
 Some destructive calls have nothing to quote - a rewards claim has no price,
 no size and no counterparty. State the expected effect from the READ tools
 first (what is claimable, what it is worth, what the gas will cost), say it to
-the user, and only then call. A claim is an ordinary approval-gated on-chain
-transaction that costs gas, so say so before claiming a dust balance.
+the user, and only then call. A claim is an on-chain transaction that costs
+gas and requires a card under RESTRICTED; say so before claiming dust.
 
 ### Research
 

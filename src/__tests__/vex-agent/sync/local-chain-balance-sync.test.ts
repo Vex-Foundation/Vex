@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createPublicClient, http, type Chain, type PublicClient, type Transport } from "viem";
 import { mainnet } from "viem/chains";
+import logger from "@utils/logger.js";
 
 type EvmClientModule = typeof import("@tools/evm-chains/evm-client.js");
 
@@ -42,8 +43,12 @@ vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({
 }));
 
 const mockReplace = vi.fn().mockResolvedValue(0);
+const mockReplaceKnown = vi.fn();
+const mockCached = vi.fn();
 vi.mock("@vex-agent/db/repos/balances.js", () => ({
   replaceBalancesForChain: (...a: unknown[]) => mockReplace(...a),
+  replaceKnownEvmBalancesForChain: (...a: unknown[]) => mockReplaceKnown(...a),
+  getBalances: (...a: unknown[]) => mockCached(...a),
 }));
 
 import { buildRobinhoodTokenBalancesUrl } from "@tools/blockscout/operation.js";
@@ -163,6 +168,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetLocalChainMetadataCache();
   mockReplace.mockResolvedValue(3);
+  mockReplaceKnown.mockImplementation(async (_wallet, _chain, _scanned, rows) => rows.length);
+  mockCached.mockResolvedValue([]);
   fakeClient.multicall.mockImplementation(defaultMulticall as never);
   fakeClient.getBalance.mockResolvedValue(500000000000000000n); // 0.5 ETH
   // DexScreener — LIVE robinhood index shape (verified 2026-07-06): WETH
@@ -390,6 +397,35 @@ describe("syncLocalChainForWallet", () => {
     expect(discovered?.balanceRaw).toBe("2000000000000000000");
   });
 
+  it("logs inventory refusal on changes and reminders, then resets after recovery", async () => {
+    vi.useFakeTimers();
+    try {
+      await syncLocalChainForWallet("eip155", WALLET, 4663);
+      vi.mocked(logger.warn).mockClear();
+      let status = 403;
+      mountBlockscout(async () => ({ finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(), status, contentType: "text/html", body: encoder.encode("refused") }));
+      const warnings = () => vi.mocked(logger.warn).mock.calls.filter(([event]) => event === "sync.local_chain.enumeration_not_exhaustive");
+      await syncLocalChainForWallet("eip155", WALLET, 4663);
+      await syncLocalChainForWallet("eip155", WALLET, 4663);
+      expect(warnings()).toHaveLength(1);
+      expect(warnings()[0]).toEqual(["sync.local_chain.enumeration_not_exhaustive", expect.objectContaining({ indexerReason: "http_403", endpointHost: "robinhoodchain.blockscout.com", suppressedCount: 0 })]);
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      await syncLocalChainForWallet("eip155", WALLET, 4663);
+      expect(warnings()).toHaveLength(2);
+      expect(warnings()[1]?.[1]).toMatchObject({ suppressedCount: 1 });
+      status = 503;
+      await syncLocalChainForWallet("eip155", WALLET, 4663);
+      expect(warnings()).toHaveLength(3);
+      mountInventory([]);
+      await syncLocalChainForWallet("eip155", WALLET, 4663);
+      mountBlockscout(async () => ({ finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(), status, contentType: "text/html", body: encoder.encode("refused") }));
+      await syncLocalChainForWallet("eip155", WALLET, 4663);
+      expect(warnings()).toHaveLength(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("BLOCKS the whole-chain replacement when the indexer is unavailable", async () => {
     mountBlockscout(async () => ({
       finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(),
@@ -400,10 +436,12 @@ describe("syncLocalChainForWallet", () => {
 
     const res = await syncLocalChainForWallet("eip155", WALLET, 4663);
 
-    // The last-good rows and their original timestamps survive: an outage must
-    // never be able to delete a holding and read back as "you hold none".
-    expect(res.skipped).toBe(true);
-    expect(res.tokensUpdated).toBe(0);
+    // Discovery failure cannot block fresh known balances or delete unscanned holdings.
+    expect(res.skipped).toBe(false);
+    expect(res.readStatus).toBe("inventory_incomplete");
+    expect(res.tokensUpdated).toBe(2);
+    expect(mockReplaceKnown).toHaveBeenCalledWith(WALLET, 4663, expect.arrayContaining([expect.any(String)]), expect.arrayContaining([expect.objectContaining({ tokenSymbol: "VEX", balanceRaw: "1000000000000000000" })]));
+    expect(res.reason).toBe("http_403");
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
@@ -417,7 +455,9 @@ describe("syncLocalChainForWallet", () => {
 
     const res = await syncLocalChainForWallet("eip155", WALLET, 4663);
 
-    expect(res.skipped).toBe(true);
+    expect(res.skipped).toBe(false);
+    expect(res.readStatus).toBe("inventory_incomplete");
+    expect(mockReplaceKnown).toHaveBeenCalledTimes(1);
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
@@ -431,7 +471,9 @@ describe("syncLocalChainForWallet", () => {
 
     const res = await syncLocalChainForWallet("eip155", WALLET, 4663);
 
-    expect(res.skipped).toBe(true);
+    expect(res.skipped).toBe(false);
+    expect(res.readStatus).toBe("inventory_incomplete");
+    expect(mockReplaceKnown).toHaveBeenCalledTimes(1);
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
@@ -452,7 +494,32 @@ describe("syncLocalChainForWallet", () => {
 
     const res = await syncLocalChainForWallet("eip155", WALLET, 4663);
 
-    expect(res.skipped).toBe(true);
+    expect(res.skipped).toBe(false);
+    expect(res.readStatus).toBe("inventory_incomplete");
+    expect(mockReplaceKnown).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("refreshes a cached holding outside seeds and pins when discovery is refused", async () => {
+    mockCached.mockResolvedValue([{ tokenAddress: NEW_TOKEN }]);
+    mountBlockscout(async () => ({ finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(),
+      status: 403, contentType: "text/html", body: encoder.encode("refused") }));
+    const result = await syncLocalChainForWallet("eip155", WALLET, 4663);
+    expect(result).toMatchObject({ skipped: false, readStatus: "inventory_incomplete", reason: "http_403" });
+    expect(balanceOfMulticallContracts()?.map((entry) => entry.address.toLowerCase())).toContain(NEW_TOKEN);
+    expect(mockReplaceKnown).toHaveBeenCalledWith(WALLET, 4663, expect.arrayContaining([NEW_TOKEN]),
+      expect.arrayContaining([expect.objectContaining({ tokenAddress: NEW_TOKEN, balanceRaw: "2000000000000000000" })]));
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("reports an RPC error as read_failed even when discovery was also refused", async () => {
+    mountBlockscout(async () => ({ finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(),
+      status: 403, contentType: "text/html", body: encoder.encode("refused") }));
+    fakeClient.getBalance.mockRejectedValueOnce(new Error("RPC refused"));
+    expect(await syncLocalChainForWallet("eip155", WALLET, 4663)).toMatchObject({
+      skipped: true, readStatus: "read_failed", reason: "rpc_failed",
+    });
+    expect(mockReplaceKnown).not.toHaveBeenCalled();
     expect(mockReplace).not.toHaveBeenCalled();
   });
 

@@ -130,7 +130,7 @@ test("UX-4 consent grammar: the strip, the grant, and the outcome rows", async (
   const creator = page.getByRole("dialog", { name: "New project" });
   await expect(creator).toBeVisible();
   const strip = creator.locator("[data-vex-dialog-consequence]");
-  // Restricted grants nothing outside the folder, so there is no strip. A
+  // Restricted keeps per-call Vex approval, so there is no standing grant strip. A
   // consequence strip that is always present is chrome, and chrome is not read.
   await expect(strip).toHaveCount(0);
   await shot(page, "02-creator-empty");
@@ -160,9 +160,19 @@ test("UX-4 consent grammar: the strip, the grant, and the outcome rows", async (
   // scrolled away from the button that acts on it, and only a browser can say
   // whether it is on screen.
   await expect(strip).toBeVisible();
-  await expect(strip).toContainText("act outside its folder");
+  await expect(strip).toContainText(
+    "Agents can execute supported Vex wallet actions without per-call approval. " +
+      "Tool-specific approval requirements still apply. " +
+      "Your coding client controls its own filesystem permissions.",
+  );
+  await expect(strip).toContainText(
+    "You can revoke this permission in project settings. Completed transactions cannot be undone.",
+  );
   const acknowledge = creator.locator("[data-vex-consent-acknowledge]");
   await expect(acknowledge).toBeVisible();
+  await expect(acknowledge).toHaveAccessibleName(
+    "I understand that agents in this project can execute supported Vex wallet actions without per-call approval.",
+  );
   await expect(acknowledge).not.toBeChecked();
   // The grant is CONFIRMED, not merely picked.
   await expect(create).toBeDisabled();
@@ -237,7 +247,21 @@ test("UX-4 consent grammar: the strip, the grant, and the outcome rows", async (
   await settings.getByText("Full access", { exact: true }).click();
   const settingsStrip = settings.locator("[data-vex-dialog-consequence]");
   await expect(settingsStrip).toBeVisible();
-  // TO WHAT: the folder this grant is about, by path, not "this project".
+  await expect(settingsStrip).toContainText(
+    "Agents can execute supported Vex wallet actions without per-call approval. " +
+      "Tool-specific approval requirements still apply. " +
+      "Your coding client controls its own filesystem permissions.",
+  );
+  await expect(settingsStrip).toContainText(
+    "You can revoke this permission in project settings. Completed transactions cannot be undone.",
+  );
+  const settingsAcknowledge = settings.locator("[data-vex-consent-acknowledge]");
+  await expect(settingsAcknowledge).toBeVisible();
+  await expect(settingsAcknowledge).toHaveAccessibleName(
+    "I understand that agents in this project can execute supported Vex wallet actions without per-call approval.",
+  );
+  await expect(settingsAcknowledge).not.toBeChecked();
+  // TO WHAT: the folder identifies the project receiving this wallet grant.
   await expect(settingsStrip).toContainText(projectName);
   await expect(save).toBeDisabled();
   await shot(page, "09-project-settings");
@@ -250,7 +274,7 @@ test("UX-4 consent grammar: the strip, the grant, and the outcome rows", async (
   // save, and the report must stand without it; then hand the grant back so
   // the states after this one see the Restricted project they were written
   // against, which is a second save and a second report to check.
-  await settings.locator("[data-vex-consent-acknowledge]").check();
+  await settingsAcknowledge.check();
   await expect(save).toBeEnabled();
   await save.click();
   await expect(settings.getByRole("heading", { name: "What Vex did" })).toBeVisible();
@@ -859,11 +883,21 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
     "aria-selected",
     "true",
   );
+  // Creation lands focus in xterm asynchronously. Wait for that landing before
+  // establishing the tab-strip focus this part of the keyboard walk exercises.
+  await expect(
+    centre.locator('[role="tabpanel"]:not([hidden])')
+      .locator('textarea[aria-label="Terminal input"]').first(),
+  ).toBeFocused({ timeout: 60_000 });
+  await tabs.getByRole("tab", { name: /Terminal 3/ }).focus();
+  await expect(tabs.getByRole("tab", { name: /Terminal 3/ })).toBeFocused();
   await page.keyboard.press("Control+Tab");
   await expect(tabs.getByRole("tab", { name: /Terminal 1/ })).toHaveAttribute(
     "aria-selected",
     "true",
   );
+  await tabs.getByRole("tab", { name: /Terminal 1/ }).focus();
+  await expect(tabs.getByRole("tab", { name: /Terminal 1/ })).toBeFocused();
   await page.keyboard.press("Control+Shift+Tab");
   await expect(tabs.getByRole("tab", { name: /Terminal 3/ })).toHaveAttribute(
     "aria-selected",

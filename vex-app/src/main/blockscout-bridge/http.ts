@@ -17,6 +17,21 @@ export type BlockscoutNetFetch = (
   init: RequestInit,
 ) => Promise<Response>;
 
+/**
+ * Measured 2026-09-09: Accept alone got a 403 challenge; these fetch-context
+ * headers plus a same-origin Referer got 200 JSON. Electron 42 also requires
+ * Origin for cors mode: without it net.fetch fails with ERR_INVALID_ARGUMENT;
+ * with it the measured wire context is cors / same-origin. No custom UA,
+ * client hints or language header is needed. Origin and Referer are derived
+ * below from the selected operation, including user proxies.
+ */
+const BLOCKSCOUT_PAGE_REQUEST_HEADERS = Object.freeze({
+  Accept: "application/json",
+  "Sec-Fetch-Dest": "empty",
+  "Sec-Fetch-Mode": "cors",
+  "Sec-Fetch-Site": "same-origin",
+});
+
 function isAborted(signal: AbortSignal | undefined): boolean {
   return signal?.aborted === true;
 }
@@ -100,7 +115,11 @@ export async function fetchBlockscoutAddressTokenBalances(
       redirect: "error",
       credentials: "omit",
       signal: controller.signal,
-      headers: { accept: "application/json" },
+      headers: {
+        ...BLOCKSCOUT_PAGE_REQUEST_HEADERS,
+        Origin: requestedUrl.origin,
+        Referer: `${requestedUrl.origin}/`,
+      },
     });
     const finalUrl = response.url === "" ? requestedUrl.toString() : response.url;
     if (
@@ -118,6 +137,7 @@ export async function fetchBlockscoutAddressTokenBalances(
       finalUrl,
       status: response.status,
       contentType: response.headers.get("content-type"),
+      cfMitigatedChallenge: response.headers.get("cf-mitigated")?.trim().toLowerCase() === "challenge",
       body,
     };
   } catch (error) {

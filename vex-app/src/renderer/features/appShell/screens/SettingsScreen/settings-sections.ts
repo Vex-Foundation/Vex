@@ -55,7 +55,7 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     stepId: "apiKeys",
     icon: IconKeyOutline16,
     name: "API keys",
-    hint: "Jupiter, Tavily, and Rettiwt integrations",
+    hint: "Jupiter, Tavily, Rettiwt, and chain endpoint overrides",
   },
   {
     id: "model",

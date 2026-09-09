@@ -100,6 +100,11 @@ vi.mock("../../../wallets/ExportPrivateKeyModal.js", () => ({
 }));
 
 const mockUseEnvState = vi.hoisted(() => vi.fn());
+const mockGetChainEndpoints = vi.hoisted(() => vi.fn());
+vi.mock("../../../../lib/api/chain-endpoints.js", () => ({
+  getChainEndpoints: mockGetChainEndpoints,
+  setChainEndpoints: vi.fn(),
+}));
 vi.mock("../../../../lib/api/onboarding.js", () => ({
   useEnvState: mockUseEnvState,
 }));
@@ -182,6 +187,11 @@ function openSettings(
 }
 
 beforeEach(() => {
+  mockGetChainEndpoints.mockReset();
+  mockGetChainEndpoints.mockResolvedValue({
+    ok: true,
+    data: { chainId: 4663, rpcUrl: null, blockscoutBaseUrl: null },
+  });
   setEnv(envFixture());
   mockUseSuperboardKey.mockReturnValue({
     isLoading: false,
@@ -256,6 +266,7 @@ describe("SettingsScreen", () => {
         expect(icon?.querySelector("[stroke]")).toBeNull();
       }
     }
+    expect(mockGetChainEndpoints).not.toHaveBeenCalled();
     expect(screen.getByText(/the Superboard key, and Lighter points/)).not.toBeNull();
 
     const superboard = screen.getByRole("button", { name: /Superboard key/ });
@@ -269,6 +280,32 @@ describe("SettingsScreen", () => {
     expect(superboardIcon?.parentElement?.className).toBe(lighterIcon?.parentElement?.className);
     expect(lighter.querySelector("img")).toBeNull();
     expect(screen.queryByRole("switch", { name: /Lighter integration/i })).toBeNull();
+  });
+
+  it("opens chain endpoint overrides inside API keys without another register row", async () => {
+    render(<ShellScreens />);
+    openSettings();
+
+    fireEvent.click(await screen.findByRole("button", { name: /API keys/ }));
+    await screen.findByText("Save apiKeys (stub)");
+    expect(screen.getByRole("region", { name: "Chain endpoints" })).not.toBeNull();
+    expect(screen.getByLabelText("EVM RPC URL")).not.toBeNull();
+    expect(screen.getByLabelText("Blockscout base URL")).not.toBeNull();
+    await waitFor(() => expect(mockGetChainEndpoints).toHaveBeenCalledWith(4663));
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await screen.findByRole("button", { name: /API keys/ });
+    expect(document.querySelectorAll("[data-vex-settings-row]")).toHaveLength(8);
+    expect(screen.queryByRole("region", { name: "Chain endpoints" })).toBeNull();
+  });
+
+  it("deep-links API keys into its chain endpoint overrides", async () => {
+    render(<ShellScreens />);
+    openSettings("apiKeys");
+    await screen.findByText("Save apiKeys (stub)");
+    expect(screen.getByRole("region", { name: "Chain endpoints" })).not.toBeNull();
+    expect(document.querySelector('[data-vex-settings-section="apiKeys"]')).not.toBeNull();
+    await waitFor(() => expect(mockGetChainEndpoints).toHaveBeenCalledWith(4663));
   });
 
   it.each([

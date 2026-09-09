@@ -1,3 +1,4 @@
+import { renderStudioProtocolMap } from "@vex-agent/studio/instructions/protocol-map.js";
 /**
  * `.vex/vex-guide.md`: NOTHING WAS LOST IN THE SPLIT, and the guide is managed
  * exactly as the block is.
@@ -22,7 +23,7 @@ import { describe, it, expect } from "vitest";
 
 import {
   STUDIO_BUG_REPORT_NOTE,
-  STUDIO_BUILDING_APPS_NOTE,
+  renderStudioBuildingAppsNote,
   STUDIO_CHANGE_NOTE_LIMIT,
   STUDIO_COMMON_JOBS_NOTE,
   STUDIO_READ_ON_START_NOTE,
@@ -50,7 +51,7 @@ import { removeStudioManagedBlock } from "@vex-agent/studio/installer/render/man
 
 import { STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT } from "./render-fixtures.js";
 
-const block = renderStudioManagedBody(STUDIO_TEST_BRIEF);
+const block = renderStudioManagedBody(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT);
 const guide = renderStudioVexGuideBody(STUDIO_TEST_BRIEF, STUDIO_TEST_ENVIRONMENT);
 
 function textOf(result: ReturnType<typeof mergeStudioVexGuide>): string {
@@ -96,7 +97,7 @@ describe("the split moved every section WHOLE", () => {
     STUDIO_COMMON_JOBS_NOTE,
     renderStudioProtocolBlocks(STUDIO_TEST_ENVIRONMENT),
     STUDIO_YOUR_POSITION_NOTE,
-    STUDIO_BUILDING_APPS_NOTE,
+    renderStudioBuildingAppsNote(STUDIO_TEST_BRIEF),
     STUDIO_BUG_REPORT_NOTE,
   ].join("\n\n");
 
@@ -128,12 +129,13 @@ describe("the split moved every section WHOLE", () => {
     ).toEqual([]);
   });
 
-  it("adds nothing but the connective text the split itself needed", () => {
+  it("adds only the connective text and the declared inline protocol map", () => {
     // The other direction, so a green run cannot be bought by pasting new prose
     // into the documents: everything in them is either a paragraph the single
     // block already had, or one of the four texts the split introduced.
     const introduced = new Set([
       ...paragraphs(STUDIO_READ_ON_START_NOTE),
+      ...paragraphs(renderStudioProtocolMap(STUDIO_TEST_ENVIRONMENT)),
       // The two documents' own opening paragraphs and their generated-file
       // footers, which name each file and point at the other.
       ...paragraphs(block).filter((paragraph) =>
@@ -179,7 +181,8 @@ describe("what the guide carries", () => {
 
   it("says WHERE the authority is, so the guide is never read as the whole protocol", () => {
     expect(guide).toContain("`AGENTS.md`");
-    expect(guide).toContain("READ THIS FILE AT THE START OF A");
+    expect(guide).toContain("Read the relevant protocol section");
+    expect(guide).toContain("this file supplies the details");
   });
 
   it("tells the agent an app it builds speaks MCP to the SAME server", () => {
@@ -210,7 +213,9 @@ describe("what the guide carries", () => {
     expect(guide).toContain("Never open a report");
     // I-6j, p1.txt lines 71-73. The privacy sentence forbade what every quote
     // necessarily does.
-    expect(guide).toContain("Calling a Vex tool is not publishing");
+    expect(guide).toContain("Publication tools");
+    expect(guide).toContain("launchpads__image_publish");
+    expect(guide).not.toContain("Calling a Vex tool is not publishing");
     expect(guide).not.toContain("leaves this machine without");
   });
 
@@ -235,13 +240,14 @@ describe("what the guide carries", () => {
     expect(older).toBeGreaterThan(newest);
   });
 
-  it("tells the reader the file does NOT grow across Vex updates", () => {
+  it("states the rolling-log bound and preserves surrounding user text", () => {
     // t1 #1 and #2: "nothing else is hidden" had no referent, and the entries
     // sat BELOW a sentence that called them "above".
     expect(guide).toContain("THIS SECTION STAYS BOUNDED");
     expect(guide).toContain("only change-log entries are ever dropped");
     expect(guide).toContain("the change log below");
-    expect(guide).toContain("OUTSIDE the markers, which Vex never touches");
+    expect(guide).toContain("Generated content can change size within its stated bounds.");
+    expect(guide).toContain("Text OUTSIDE the markers belongs to the user; Vex preserves it.");
     expect(guide).not.toContain("nothing else is hidden");
   });
 

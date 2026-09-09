@@ -72,6 +72,8 @@ const SNAPSHOT_BASIS_SQL = `
   SELECT s.snapshot_group_id,
          SUM(s.total_usd)::float8 AS total,
          MAX(s.created_at)        AS at,
+         BOOL_OR(s.partial)       AS partial,
+         SUM(s.unresolved_chain_count) AS unresolved_chain_count,
          (SELECT COALESCE(SUM(w.in_transit_usd), 0)::float8
             FROM proj_portfolio_snapshot_group_wallets w
            WHERE w.snapshot_group_id = s.snapshot_group_id
@@ -95,6 +97,8 @@ const SNAPSHOT_BASIS_SQL = `
    LIMIT 2`;
 
 interface SnapshotRow {
+  readonly partial: boolean;
+  readonly unresolved_chain_count: number | string | null;
   readonly total: number | string | null;
   readonly at: string | Date | null;
   /** Summed over the RESOLVED addresses only; 0 for a group written before 102. */
@@ -107,6 +111,8 @@ interface SnapshotRow {
 
 /** One snapshot group, read as the facts the Position card needs. */
 export interface SnapshotBasis {
+  readonly partial: boolean;
+  readonly unresolvedChainCount: number;
   /** SETTLED + IN TRANSIT. `null` only when the group's settled sum is absent. */
   readonly totalUsd: number | null;
   readonly settledUsd: number | null;
@@ -164,6 +170,8 @@ function readSnapshotBasis(
   const inFlight = scopedInFlight(row.in_flight, scope);
   const inFlightTotalCount = toCount(row.in_flight_total_count);
   return {
+    partial: row.partial === true,
+    unresolvedChainCount: toCount(row.unresolved_chain_count),
     totalUsd: settledUsd === null ? null : settledUsd + inTransitUsd,
     settledUsd,
     inTransitUsd,

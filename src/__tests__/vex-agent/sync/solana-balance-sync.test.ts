@@ -14,6 +14,8 @@ import { z } from "zod";
 
 import type { SolanaBalanceRpc } from "@tools/solana-ecosystem/balances/read-wallet-balances.js";
 import { SOLANA_NATIVE_PERSISTED_ADDRESS } from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
+import logger from "@utils/logger.js";
+import { SolanaRpcTransportError } from "@tools/solana-ecosystem/balances/rpc-failure.js";
 import type { BalanceRow } from "@vex-agent/db/repos/balances.js";
 
 import splResponse from "../../fixtures/solana/spl-response.json" with { type: "json" };
@@ -202,6 +204,31 @@ describe("syncSolanaWalletBalances", () => {
     // The Khalani leg is a PRICE map only: its own balance never becomes a row.
     expect(row?.balanceRaw).toBe("478930624197716");
     expect(rows).toHaveLength(9);
+  });
+
+  it("logs classified failures on transitions and five-minute reminders, then resets on recovery", async () => {
+    vi.useFakeTimers();
+    try {
+      await syncSolanaWalletBalances(WALLET, { rpc: scriptedRpc() });
+      vi.mocked(logger.warn).mockClear();
+      mockReplaceBalancesForChain.mockClear();
+      const rpc = scriptedRpc({ lamports: async () => { throw new SolanaRpcTransportError({ reason: "http_403", endpointHost: "rpc.example.test" }, new Error("fixture-secret")); } });
+      await expect(syncSolanaWalletBalances(WALLET, { rpc })).resolves.toMatchObject({ skipped: true, reason: "http_403" });
+      await syncSolanaWalletBalances(WALLET, { rpc });
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenLastCalledWith("sync.solana_chain.failed", expect.objectContaining({ reason: "http_403", endpointHost: "rpc.example.test", suppressedCount: 0 }));
+      expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toContain("fixture-secret");
+      expect(mockReplaceBalancesForChain).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      await syncSolanaWalletBalances(WALLET, { rpc });
+      expect(logger.warn).toHaveBeenCalledTimes(2);
+      expect(logger.warn).toHaveBeenLastCalledWith("sync.solana_chain.failed", expect.objectContaining({ suppressedCount: 1 }));
+      await syncSolanaWalletBalances(WALLET, { rpc: scriptedRpc() });
+      await syncSolanaWalletBalances(WALLET, { rpc });
+      expect(vi.mocked(logger.warn).mock.calls.filter(([event]) => event === "sync.solana_chain.failed")).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("writes NOTHING when getBalance fails (last-good rows survive)", async () => {

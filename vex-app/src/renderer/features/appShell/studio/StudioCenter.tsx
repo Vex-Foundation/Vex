@@ -39,6 +39,8 @@
  * therefore never reaches zero, and one that leaves does.
  */
 
+import { ProjectCleanupNotices } from "./projects/ProjectCleanupNotices.js";
+
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import type { ProjectDto } from "@shared/schemas/projects.js";
 import { cn } from "../../../lib/utils.js";
@@ -478,6 +480,7 @@ export function StudioCenter({
       data-vex-area="studio-center"
       className="relative flex h-full min-h-0 w-full min-w-0 flex-col"
     >
+      <ProjectCleanupNotices />
       {welcomeShown ? (
         <StudioWelcome
           onCreateProject={onCreateProject}

@@ -24,6 +24,8 @@ export interface ChainSummary {
 }
 
 export interface PortfolioSnapshot {
+  partial: boolean;
+  unresolvedChainCount: number;
   id: number;
   walletFamily: string;
   walletAddress: string;
@@ -44,6 +46,8 @@ export interface SnapshotWalletFilter {
 }
 
 export interface InsertSnapshotArgs {
+  partial?: boolean;
+  unresolvedChainCount?: number;
   walletFamily: string;
   walletAddress: string;
   /** Shared across every wallet row written in one fullBalanceSync cycle. */
@@ -68,6 +72,8 @@ export interface InsertSnapshotResult {
 
 /** One full-sync CYCLE aggregated across a wallet set (puzzle 5 phase 5E-2). */
 export interface AggregateSnapshot {
+  partial: boolean;
+  unresolvedChainCount: number;
   snapshotGroupId: string;
   totalUsd: number;
   pnlVsPrev: number | null;

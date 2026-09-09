@@ -90,12 +90,13 @@ export function registerPortfolioRefreshHandler(): () => void {
         // `sync-worker.ts` uses for this module.
         const { refreshPortfolioNow } = await import("@vex-agent/sync/index.js");
         const result = await refreshPortfolioNow();
+        const partial = result.wallets.some((wallet) => (wallet.unresolvedChains?.length ?? 0) > 0 || wallet.readFailed === true);
         log.info(
-          `[ipc:vex:portfolio:refresh] ok wallets=${result.wallets.length} ` +
+          `[ipc:vex:portfolio:refresh] ${partial ? "partial" : "ok"} wallets=${result.wallets.length} ` +
             `snapshots=${result.snapshots.length} correlationId=${ctx.requestId}`,
         );
         return ok({
-          status: "refreshed",
+          status: partial ? "partial" : "refreshed",
           totalUsd: result.totalUsd.toFixed(2),
           walletCount: result.wallets.length,
         });

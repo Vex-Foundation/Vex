@@ -12,12 +12,9 @@
  *    (`lib/index.d.ts:3180`, `FetchFn` at :3158), so the signal the transport
  *    received must actually be ABORTED when the deadline fires. A deadline that
  *    rejects while the socket stays open is the defect this catches;
- *  - a JSON-RPC error is an ANSWER from the node, and must propagate exactly as
- *    the SDK produced it: not retried, not reclassified into a deadline error.
- *    MEASURED, because it differs per method: `getTokenAccountsByOwner` throws
- *    `SolanaJSONRPCError` (`lib/index.cjs.js:6299`), while `getBalance` catches
- *    and re-wraps it in a plain `Error` (`lib/index.cjs.js:6156`). Both are
- *    asserted for what they actually are, not for what convention suggests.
+ *  - JSON-RPC failures preserve the node code and original cause behind a
+ *    sanitized error, distinct from a transport status or deadline. The reader
+ *    uses getBalanceAndContext to avoid getBalance discarding those facts.
  *
  * The transport is driven with a scripted `fetch`, so no network is involved
  * and nothing global is patched.
@@ -37,6 +34,8 @@ vi.mock("../../../../config/store.js", () => ({
 const { createDeadlineBoundSolanaRpc } = await import(
   "@tools/solana-ecosystem/balances/read-wallet-balances.js"
 );
+
+const { classifySolanaRpcFailure } = await import("@tools/solana-ecosystem/balances/rpc-failure.js");
 
 const OWNER = new PublicKey("BfvP43eVzM7xAu6Pm7yYbqp8RVkbP8R8dCfTvgPp64Pg");
 const SPL_TOKEN_PROGRAM = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
@@ -74,6 +73,38 @@ afterEach(() => {
 });
 
 describe("createDeadlineBoundSolanaRpc", () => {
+  it.each([403, 503])("retains HTTP %i and host after getBalance wraps the error", async (status) => {
+    const rpc = createDeadlineBoundSolanaRpc({
+      rpcUrl: "https://rpc.example.test/private-key?api-key=fixture-secret",
+      fetch: async () => new Response("private provider body fixture-secret", { status }),
+    });
+    expect(rpc.endpointHost).toBe("rpc.example.test");
+    const error: unknown = await rpc.getBalance(OWNER).catch((caught: unknown) => caught);
+    expect(classifySolanaRpcFailure(error)).toEqual({ reason: `http_${status}`, endpointHost: "rpc.example.test" });
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).not.toContain("fixture-secret");
+    expect(String(error)).not.toContain("private provider body");
+  });
+
+  it.each([
+    ["ENOTFOUND", "dns"], ["EAI_AGAIN", "dns"], ["CERT_HAS_EXPIRED", "tls"],
+    ["ERR_TLS_CERT_ALTNAME_INVALID", "tls"], ["UNABLE_TO_GET_ISSUER_CERT_LOCALLY", "tls"], ["EPROTO", "tls"], ["UND_ERR_CONNECT_TIMEOUT", "timeout"],
+    ["ECONNRESET", "connection_failed"],
+  ])("preserves nested %s before the SDK discards the cause", async (code, reason) => {
+    const rpc = createDeadlineBoundSolanaRpc({
+      fetch: async () => { throw new TypeError("fetch failed", { cause: Object.assign(new Error("private upstream data"), { code }) }); },
+    });
+    const error: unknown = await rpc.getBalance(OWNER).catch((caught: unknown) => caught);
+    expect(classifySolanaRpcFailure(error)).toEqual({ reason, endpointHost: "rpc.invalid.test" });
+    expect(String(error)).not.toContain("private upstream data");
+  });
+
+  it("classifies a malformed JSON document as invalid_response with host", async () => {
+    const rpc = createDeadlineBoundSolanaRpc({ fetch: async () => new Response("not JSON", { status: 200 }) });
+    const error: unknown = await rpc.getBalance(OWNER).catch((caught: unknown) => caught);
+    expect(classifySolanaRpcFailure(error)).toEqual({ reason: "invalid_response", endpointHost: "rpc.invalid.test" });
+  });
+
   it("aborts the in-flight fetch when the deadline fires, and issues no second request", async () => {
     const signals: AbortSignal[] = [];
     let requests = 0;
@@ -136,7 +167,7 @@ describe("createDeadlineBoundSolanaRpc", () => {
     expect(requests).toBe(1);
   });
 
-  it("propagates the node's JSON-RPC error from getTokenAccountsByOwner untouched", async () => {
+  it("preserves the node JSON-RPC code and cause behind a safe token-account error", async () => {
     let requests = 0;
     const rpc = createDeadlineBoundSolanaRpc({
       fetch: (_input, init) => {
@@ -155,15 +186,16 @@ describe("createDeadlineBoundSolanaRpc", () => {
       .getParsedTokenAccountsByOwner(OWNER, { programId: SPL_TOKEN_PROGRAM })
       .catch((caught: unknown) => caught);
     expect(err).toBeInstanceOf(Error);
-    expect((err as Error).name).toBe("SolanaJSONRPCError");
+    expect(classifySolanaRpcFailure(err)).toEqual({ reason: "rpc_-32602", endpointHost: "rpc.invalid.test" });
+    expect((err as Error).cause).toMatchObject({ name: "SolanaJSONRPCError", code: -32602, message: expect.stringContaining("Invalid param: WrongSize") });
+    expect(String(err)).not.toContain("Invalid param: WrongSize");
     // Not reclassified as a deadline, and issued once: no outer retry exists.
     expect(requests).toBe(1);
   });
 
   it("does not reclassify getBalance's own wrapped JSON-RPC error as a deadline", async () => {
-    // `Connection.getBalance` re-wraps every failure in a plain `Error`
-    // (`lib/index.cjs.js:6156`). The reader must not paper over that with its
-    // own name: only a real deadline produces SolanaRpcDeadlineExceeded.
+    // The same RPC now uses getBalanceAndContext so its code and cause survive.
+    // Only a real deadline produces SolanaRpcDeadlineExceeded.
     let requests = 0;
     const rpc = createDeadlineBoundSolanaRpc({
       fetch: (_input, init) => {
@@ -181,7 +213,9 @@ describe("createDeadlineBoundSolanaRpc", () => {
     const err = await rpc.getBalance(OWNER).catch((caught: unknown) => caught);
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).name).not.toBe("SolanaRpcDeadlineExceeded");
-    expect((err as Error).message).toContain("Invalid param: WrongSize");
+    expect(classifySolanaRpcFailure(err)).toEqual({ reason: "rpc_-32602", endpointHost: "rpc.invalid.test" });
+    expect((err as Error).cause).toMatchObject({ code: -32602, message: expect.stringContaining("Invalid param: WrongSize") });
+    expect(String(err)).not.toContain("Invalid param: WrongSize");
     expect(requests).toBe(1);
   });
 

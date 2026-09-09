@@ -66,7 +66,9 @@ export type StudioRenderRefusal =
    * `AGENTS.md` has a half-open Vex fence (a begin without an end, or the
    * reverse). Vex cannot tell where its own region stops, so it edits nothing.
    */
-  | "malformed_managed_block";
+  | "malformed_managed_block"
+  /** Appending imports would leave them inside an unclosed Markdown example. */
+  | "malformed_markdown_fence";
 
 export function rendered(text: string): StudioRenderResult {
   return { status: "rendered", text };

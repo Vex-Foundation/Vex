@@ -5,7 +5,7 @@
  * - so the whole decision is which url, per role, and whether the user's own
  * endpoint wins. Three properties matter enough to assert:
  *
- *  1. a read connection takes the measured-faster endpoint;
+ *  1. a read connection takes the endpoint verified for all balance methods;
  *  2. a BROADCAST connection stays on the endpoint this repository has always
  *     broadcast through, because `sendTransaction` was never probed on the
  *     other one and a read measurement is not broadcast evidence;
@@ -22,7 +22,7 @@ const { resolveSolanaRpcUrl } = await import(
   "@tools/solana-ecosystem/shared/solana-transaction/connection.js"
 );
 
-const READ = "https://solana-rpc.publicnode.com";
+const READ = "https://api.mainnet-beta.solana.com";
 const BROADCAST = "https://api.mainnet-beta.solana.com";
 
 beforeEach(() => {
@@ -30,9 +30,15 @@ beforeEach(() => {
 });
 
 describe("resolveSolanaRpcUrl", () => {
-  it("reads from the faster measured endpoint and broadcasts from the proven one", () => {
+  it("reads from the endpoint verified for all balance reads and broadcasts from the proven one", () => {
     mockLoadConfig.mockReturnValue({ solana: { rpcUrl: BROADCAST } });
     expect(resolveSolanaRpcUrl("read")).toBe(READ);
+    expect(resolveSolanaRpcUrl("broadcast")).toBe(BROADCAST);
+  });
+
+  it("repairs stored publicnode defaults that refuse all balance methods with HTTP 403", () => {
+    mockLoadConfig.mockReturnValue({ solana: { rpcUrl: "https://solana-rpc.publicnode.com" } });
+    expect(resolveSolanaRpcUrl("read")).toBe("https://api.mainnet-beta.solana.com");
     expect(resolveSolanaRpcUrl("broadcast")).toBe(BROADCAST);
   });
 

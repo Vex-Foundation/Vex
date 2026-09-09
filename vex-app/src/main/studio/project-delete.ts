@@ -66,8 +66,9 @@
  * the two stays pending, because the transient half still needs doing.
  */
 
+import type { ProjectTrashFailure } from "@shared/schemas/project-cleanup.js";
+import { trashProjectFolder } from "./trash-project-folder.js";
 import { realpath } from "node:fs/promises";
-import path from "node:path";
 
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import type {
@@ -144,7 +145,7 @@ export interface ProjectDeleteDeps {
  */
 export const PROJECT_DELETE_DRAIN_DEADLINE_MS = 10_000;
 
-/** Attempts after which the tombstone becomes a durable, user-visible notice. */
+/** Escalate repeated failures in the log; the UI shows every unfinished cleanup. */
 export const PROJECT_CLEANUP_STICKY_ATTEMPTS = 5;
 
 /**
@@ -208,6 +209,7 @@ export async function deleteProject(
     // The RESUME honours the TOMBSTONE's recorded trash intent and ignores this
     // request's checkbox: the durable decision was made at deletion time, and a
     // retry is not a second chance to change it.
+    await closeProjectResources(projectId);
     const resumed = await runCleanup(
       projectId,
       outcome.slug,
@@ -228,12 +230,14 @@ export async function deleteProject(
             outcome: "cleanup_resumed",
             cleanup: resumed.cleanup,
             trash: resumed.trash,
+            ...(resumed.trashFailure ? { trashFailure: resumed.trashFailure } : {}),
             trashRequested,
           }
         : {
             outcome: "cleanup_pending",
             cleanup: resumed.cleanup,
             trash: resumed.trash,
+            ...(resumed.trashFailure ? { trashFailure: resumed.trashFailure } : {}),
             trashRequested,
             attempts: resumed.attempts,
           },
@@ -262,6 +266,7 @@ export async function deleteProject(
           outcome: "cleanup_pending",
           cleanup: cleanup.cleanup,
           trash: cleanup.trash,
+          ...(cleanup.trashFailure ? { trashFailure: cleanup.trashFailure } : {}),
           // Read from the state the transaction WROTE, not from the input that
           // produced it, so both `cleanup_pending` returns speak with one voice.
           trashRequested: tombstoneRequestedTrash(outcome.cleanupState),
@@ -274,6 +279,7 @@ interface CleanupReport {
   readonly finished: boolean;
   readonly cleanup: StudioArtifactOutcome[];
   readonly trash: ProjectTrashOutcome;
+  readonly trashFailure?: ProjectTrashFailure;
   readonly attempts: number;
 }
 
@@ -484,13 +490,16 @@ async function runCleanupJob(
     const removalsCompleted = blocked === 0 && snapshotRemoved;
 
     let trash: ProjectTrashOutcome = "not_requested";
+    let trashFailure: ProjectTrashFailure | undefined;
     if (cleanupState === "trash_pending") {
-      trash = await trashProjectFolder(
+      const report = await trashProjectFolder(
         rootOutcome.data,
         directory,
         correlationId,
         deps.trashItem,
       );
+      trash = report.trash;
+      trashFailure = report.trashFailure;
     }
 
     // The folder is only "clean" when both halves are. A failed trash keeps the
@@ -500,10 +509,11 @@ async function runCleanupJob(
       return await failCleanup(
         projectId,
         trash === "failed"
-          ? "The project folder could not be moved to the trash."
+          ? `trash:${trashFailure ?? "io_error"}`
           : "Some of the entries Vex wrote could not be removed.",
         artifacts,
         trash,
+        trashFailure,
       );
     }
 
@@ -571,82 +581,18 @@ async function failCleanup(
   reason: string,
   artifacts: StudioArtifactOutcome[],
   trash: ProjectTrashOutcome,
+  trashFailure?: ProjectTrashFailure,
 ): Promise<CleanupReport> {
   const recorded = await recordProjectCleanupFailure(projectId, reason);
   const attempts = recorded.ok ? recorded.data : 0;
   if (attempts >= PROJECT_CLEANUP_STICKY_ATTEMPTS) {
-    // The durable sticky notice: the fact lives on the row (state, attempts,
-    // last error), so the surface that renders it in B4 reads it rather than
-    // being told by an event it might have missed.
+    // The Studio notice reads this durable row from the first failed attempt.
     log.error(
       `[studio:delete] cleanup has failed ${String(attempts)} times and needs `
         + `attention projectId=${projectId}`,
     );
   }
-  return { finished: false, cleanup: artifacts, trash, attempts };
-}
-
-/**
- * Move the project folder to the OS trash.
- *
- * FIRST use of an OS trash in this app, on a destructive path, so the guard is
- * explicit: the directory's REALPATH must still resolve to a direct child of
- * the projects root's realpath. That is what stops a symlinked slug directory -
- * or a root that moved between the tombstone and this call - from turning
- * "trash the project" into "trash something else". THE GUARD LIVES HERE, with
- * the caller that knows the root, and never travels with the injected
- * capability.
- *
- * It is the TRASH, never an unlink: the user can get their files back.
- * A failure here NEVER rolls back the authority commit; the project is deleted
- * either way, and the folder is simply still on disk.
- */
-async function trashProjectFolder(
-  configuredRoot: string,
-  directory: string,
-  correlationId: string,
-  trashItem: TrashItem,
-): Promise<ProjectTrashOutcome> {
-  let resolvedDirectory: string;
-  let resolvedRoot: string;
-  try {
-    resolvedRoot = await realpath(configuredRoot);
-    resolvedDirectory = await realpath(directory);
-  } catch (cause) {
-    // A folder that is already gone is not a failure: the obligation was to
-    // ensure it is not there, and it is not there.
-    if (isMissing(cause)) return "trashed";
-    log.warn(
-      `[studio:delete] the project folder could not be resolved for trashing `
-        + `correlationId=${correlationId}`,
-    );
-    return "failed";
-  }
-
-  const prefix = resolvedRoot.endsWith(path.sep)
-    ? resolvedRoot
-    : `${resolvedRoot}${path.sep}`;
-  if (
-    !resolvedDirectory.startsWith(prefix)
-    || path.dirname(resolvedDirectory) !== resolvedRoot
-  ) {
-    log.error(
-      `[studio:delete] REFUSED to trash a path outside the projects root `
-        + `correlationId=${correlationId}`,
-    );
-    return "failed";
-  }
-
-  try {
-    await trashItem(resolvedDirectory);
-    return "trashed";
-  } catch (cause) {
-    log.warn(
-      `[studio:delete] trashItem failed correlationId=${correlationId}`,
-      cause,
-    );
-    return "failed";
-  }
+  return { finished: false, cleanup: artifacts, trash, attempts, ...(trashFailure ? { trashFailure } : {}) };
 }
 
 async function realpathOrSelf(directory: string): Promise<string> {
@@ -655,14 +601,6 @@ async function realpathOrSelf(directory: string): Promise<string> {
   } catch {
     return directory;
   }
-}
-
-function isMissing(cause: unknown): boolean {
-  return (
-    typeof cause === "object"
-    && cause !== null
-    && (cause as { code?: unknown }).code === "ENOENT"
-  );
 }
 
 /**

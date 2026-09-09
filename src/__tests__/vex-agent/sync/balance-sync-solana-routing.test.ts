@@ -14,6 +14,11 @@ vi.mock("@utils/logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
 
+const recordObservations = vi.fn().mockResolvedValue(undefined);
+vi.mock("@vex-agent/db/repos/balance-chain-read-status.js", () => ({
+  recordChainReadObservations: (...args: unknown[]) => recordObservations(...args),
+}));
+
 const mockListWallets = vi.fn();
 vi.mock("@tools/wallet/inventory.js", () => ({
   listWallets: (family: string) => mockListWallets(family),
@@ -148,8 +153,10 @@ describe("solana routing in syncWalletBalances", () => {
       { chainId: SOLANA_SYNTHETIC_CHAIN_ID, totalUsd: 1234.5 },
     ]);
 
-    await syncWalletBalances("solana", SOL_WALLET);
+    const result = await syncWalletBalances("solana", SOL_WALLET);
 
+    expect(result.unresolvedChains).toEqual([{ chainId: SOLANA_SYNTHETIC_CHAIN_ID, status: "read_failed", reason: "rpc_failed" }]);
+    expect(recordObservations).toHaveBeenCalledWith(SOL_WALLET, [{ chainId: SOLANA_SYNTHETIC_CHAIN_ID, status: "read_failed", reason: "rpc_failed" }]);
     expect(mockKhalaniScan).toHaveBeenCalledTimes(1);
     // THE ABSENCE ASSERTION: no replace at all for the Solana chain, so the
     // last-good rows survive the cycle untouched.
@@ -189,6 +196,8 @@ describe("solana routing in syncWalletBalances", () => {
     expect(chainId).toBe(SOLANA_SYNTHETIC_CHAIN_ID);
     expect(rows).toHaveLength(1);
     expect(result.tokensUpdated).toBe(1);
+    expect(result.unresolvedChains).toEqual([]);
+    expect(recordObservations).toHaveBeenLastCalledWith(SOL_WALLET, [{ chainId: SOLANA_SYNTHETIC_CHAIN_ID, status: "ok", reason: null }]);
   });
 
   it("still cleans an EMPTY non-protected chain on the same fallback cycle", async () => {

@@ -57,14 +57,11 @@
  *
  * ## Retry and cancellation ownership
  *
- * This module owns NO retry. `Connection`'s own transport already retries HTTP
- * 429 with exponential backoff (`@solana/web3.js@1.98.4`
- * `lib/index.esm.js:5024-5046`), and it is the single retry owner on this path;
- * a second outer retry only doubles the load on the provider and can leave two
- * requests in flight at once. What this module DOES own is the deadline, and
- * the deadline CANCELS: the reader's transport is built with a custom `fetch`
- * that forwards the reader's `AbortSignal` to the HTTP request, so an expired
- * deadline aborts the request instead of abandoning it.
+ * This module owns no retry and disables web3.js's HTTP 429 retry for this
+ * reader. Each call has one 10-second deadline that cancels the HTTP request;
+ * a rate limit is surfaced immediately. The transport captures status and
+ * runtime error codes before the SDK wraps them, exposing a safe reason and
+ * host while retaining the original cause behind the infrastructure error.
  *
  * A CALLER may also pass its own signal (`options.signal`, an operator Stop
  * threaded from a tool context). It is COMPOSED with the deadline, not
@@ -108,7 +105,8 @@ import { getJupiterTokensByMint } from "../jupiter/jupiter-tokens/service.js";
 import { resolveJupiterApiKey } from "../shared/jupiter-auth.js";
 import { jupiterMintInformationToMetadata } from "../jupiter/jupiter-tokens/types.js";
 import { solanaPubkey } from "../shared/schemas.js";
-import { createSolanaConnection } from "../shared/solana-transaction/connection.js";
+import { classifySolanaRpcFailure, SolanaRpcTransportError, type SolanaRpcFailure } from "./rpc-failure.js";
+import { createSolanaConnection, resolveSolanaRpcUrl } from "../shared/solana-transaction/connection.js";
 import {
   SOL_MINT,
   SOLANA_QUOTE_ASSET_POLICY,
@@ -138,6 +136,8 @@ const SOLANA_DEXSCREENER_SLUG = "solana";
  * with a scripted object instead of patching globals.
  */
 export interface SolanaBalanceRpc {
+  /** Safe provenance for validation failures after the transport returned. */
+  readonly endpointHost?: string;
   getBalance(publicKey: PublicKey): Promise<number>;
   getParsedTokenAccountsByOwner(
     owner: PublicKey,
@@ -388,6 +388,7 @@ export async function readSolanaWalletBalances(
     throw new SolanaRpcResponseInvalidError(
       "getBalance",
       parsedLamports.error.issues.map((issue) => issue.message).join("; "),
+      rpc.endpointHost ?? null,
     );
   }
   const lamports = parsedLamports.data;
@@ -495,6 +496,7 @@ export class SolanaRpcResponseInvalidError extends Error {
     /** Which call produced it. Never carries the response body or the RPC URL. */
     readonly call: string,
     detail: string,
+    readonly endpointHost: string | null = null,
   ) {
     super(`invalid ${call} response: ${detail}`);
   }
@@ -503,7 +505,7 @@ export class SolanaRpcResponseInvalidError extends Error {
 /** The deadline this reader owns fired and the HTTP request was aborted. */
 export class SolanaRpcDeadlineExceededError extends Error {
   override readonly name = "SolanaRpcDeadlineExceeded";
-  constructor(readonly call: string) {
+  constructor(readonly call: string, readonly endpointHost: string | null = null) {
     super(`${call} exceeded the ${RPC_DEADLINE_MS}ms reader deadline`);
   }
 }
@@ -521,7 +523,7 @@ export class SolanaRpcDeadlineExceededError extends Error {
  */
 export class SolanaRpcRateLimitedError extends Error {
   override readonly name = "SolanaRpcRateLimited";
-  constructor(readonly call: string) {
+  constructor(readonly call: string, readonly endpointHost: string | null = null) {
     super(`${call} was rate limited by the RPC provider (HTTP 429)`);
   }
 }
@@ -577,12 +579,22 @@ export function createDeadlineBoundSolanaRpc(
    * the transport is single-call by contract, which is what makes this safe.
    */
   let rateLimited = false;
+  let transportFailure: SolanaRpcFailure | null = null;
+  const rpcUrl = options.rpcUrl ?? resolveSolanaRpcUrl("read");
+  const endpointHost = new URL(rpcUrl).hostname;
 
   const connection = createSolanaConnection({
-    rpcUrl: options.rpcUrl,
+    rpcUrl,
     commitment: options.commitment,
     fetch: async (input, init) => {
-      const response = await baseFetch(input, { ...init, signal: inFlight?.signal });
+      let response: Response;
+      try {
+        response = await baseFetch(input, { ...init, signal: inFlight?.signal });
+      } catch (error) {
+        transportFailure = { ...classifySolanaRpcFailure(error), endpointHost };
+        throw error;
+      }
+      if (!response.ok) transportFailure = { reason: response.status === 429 ? "rate_limited" : `http_${response.status}`, endpointHost };
       // Recorded here because this is the only place the STATUS is visible:
       // web3.js turns a non-ok response into `Error("429 Too Many Requests:
       // <body>")`, and matching on that message would be matching on provider
@@ -611,6 +623,7 @@ export function createDeadlineBoundSolanaRpc(
     const controller = new AbortController();
     inFlight = controller;
     rateLimited = false;
+    transportFailure = null;
     const timer = setTimeout(() => controller.abort(), RPC_DEADLINE_MS);
     // The caller's abort cancels the HTTP request through the SAME controller
     // the deadline uses, so a Stop aborts the socket instead of abandoning it.
@@ -636,10 +649,12 @@ export function createDeadlineBoundSolanaRpc(
       //     own reason (an `AbortError`). An abort with no response is the
       //     operator stopping us, never the provider hanging or refusing.
       //  3. Otherwise the deadline fired: our own budget ran out.
-      if (rateLimited) throw new SolanaRpcRateLimitedError(label);
+      if (rateLimited) throw new SolanaRpcRateLimitedError(label, endpointHost);
       if (callerSignal?.aborted === true) throw callerSignal.reason;
-      if (controller.signal.aborted) throw new SolanaRpcDeadlineExceededError(label);
-      throw err;
+      if (controller.signal.aborted) throw new SolanaRpcDeadlineExceededError(label, endpointHost);
+      if (transportFailure !== null) throw new SolanaRpcTransportError(transportFailure, err);
+      const failure = classifySolanaRpcFailure(err);
+      throw new SolanaRpcTransportError({ ...failure, endpointHost }, err);
     } finally {
       clearTimeout(timer);
       callerSignal?.removeEventListener("abort", forwardCallerAbort);
@@ -649,7 +664,10 @@ export function createDeadlineBoundSolanaRpc(
   }
 
   return {
-    getBalance: (publicKey) => callRpc("getBalance", () => connection.getBalance(publicKey)),
+    endpointHost,
+    // getBalance() catches and replaces every cause with a plain Error. Read the
+    // same RPC through getBalanceAndContext(), then unwrap only the value.
+    getBalance: (publicKey) => callRpc("getBalance", async () => (await connection.getBalanceAndContext(publicKey)).value),
     getParsedTokenAccountsByOwner: (owner, filter) =>
       callRpc(`getTokenAccountsByOwner:${filter.programId.toBase58()}`, () =>
         connection.getParsedTokenAccountsByOwner(owner, filter),

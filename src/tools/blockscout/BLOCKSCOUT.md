@@ -1,9 +1,9 @@
 # Blockscout REST v2 on Robinhood Chain (4663)
 
-Reference document, live-probed. Every statement below that describes provider
-behavior was measured against the running instance on 2026-08-31; nothing here
-is copied from Blockscout documentation or inferred from another instance.
-Anything not measured is named as such in "Not verified" at the end.
+Reference document, live-probed. The endpoint inventory below was measured on
+2026-08-31. Later dated sections record changes in access behavior; the latest
+request-context measurement supersedes earlier transport conclusions. Anything
+not measured is named as such.
 
 - Host: `https://robinhoodchain.blockscout.com`
 - Base path: `/api/v2`
@@ -49,27 +49,142 @@ that regex is the authority for the `type` parameter).
 
 ## Cloudflare and transport
 
-Plain `curl` cannot reach this host at all. Measured 2026-08-31 on two
-different paths:
+The initial bare `curl` probes on 2026-08-31 returned HTTP 403 with
+`cf-mitigated: challenge`, a Cloudflare server header and a `Just a moment...`
+page. Both the backend-version and address-inventory paths were affected.
+At that time Electron 42 `net.fetch` returned real API responses with only
+`Accept: application/json` explicitly set.
 
-```
-HTTP/2 403
-content-type: text/html; charset=UTF-8
-cf-mitigated: challenge
-server: cloudflare
-```
+Those observations did not establish a TLS fingerprint gate or a changed API.
+The September 9 request-context measurements below show that curl can pass with
+the right page context. The shipped client continues through the existing main
+process Electron transport; that is its ownership boundary, not evidence that
+other HTTP stacks cannot reach the provider. A challenge response never means
+address-not-found or an empty balance.
 
-with a 5.5 KB `Just a moment...` interstitial as the body. This is a blanket
-challenge on the host, not a per-endpoint rule: `/api/v2/config/backend-version`
-(5507 B) and `/api/v2/addresses/{address}/token-balances` (5706 B) both 403.
+## Runtime verification 2026-09-08
 
-Electron 42 `net.fetch` (Chromium's own network stack, which is what the app
-uses) passes with no special headers: `accept: application/json` was the only
-header set, and every one of the 30 probes returned the real API response.
-Consequence for the implementation: this client must go through the main
-process `net.fetch`, and a Node `fetch`/`undici`/`axios` path is not an option.
-A 403 whose `content-type` is `text/html` must be classified as a transport or
-bot-gate failure, never as an address-not-found or empty-balance result.
+A bounded, sequential recheck of the inventory operation returned HTTP 403
+from `robinhoodchain.blockscout.com` through both the ordinary HTTP client and
+Electron `net.fetch`. The previously observed Chromium access is therefore not
+a permanent capability. No successful response or redirect established a new
+path or an API-key requirement, so the configured operation remains unchanged.
+The client now carries `http_403` to the chain sync instead of `unavailable`.
+A refusal keeps the last successful rows and cannot establish an empty wallet.
+
+Transport absence, deadline, transport failure and redirect refusal similarly
+carry `transport_unavailable`, `timeout`, `transport_failed` and
+`redirect_refused`; malformed JSON and schema failures carry `invalid_response`.
+Provider non-success responses carry their actual `http_<status>`.
+
+## Cloudflare challenge verification 2026-09-09
+
+The public host returned HTTP 403 with `cf-mitigated: challenge`, a Cloudflare
+server header, and the challenge title plus `/cdn-cgi/challenge-platform/`
+marker. The changed client and Electron transport, including an independent
+probe, classify this as `cloudflare_challenge`. The transport passes only the
+known header fact; no raw response headers or HTML reach the diagnostic.
+The adapter also recognizes the measured page markers if a proxy omits the
+header. A generic 403 HTML response remains `http_403`.
+
+Discovery stays incomplete while known balance reads can continue. The
+Portfolio warning explains the automated-read refusal and points to
+Settings > API keys > Chain endpoints for a Blockscout base URL override.
+
+## Explorer request-context measurement, 2026-09-09
+
+The owner supplied this sequential curl ablation, with requests 1.5 seconds
+apart, against the unchanged address `token-balances` operation. This is the
+owner's measurement table; the implementation pass repeated only the bare and
+chosen-header cases, then tested the actual app bridge to stay within the
+handful-of-requests budget.
+
+| Request headers | Result |
+| --- | --- |
+| `Accept: application/json` only | 403, `cf-mitigated: challenge` |
+| Chrome UA only | 403 challenge |
+| Chrome UA + Sec-Fetch-Dest/Mode/Site only | 403 challenge |
+| Chrome UA + Accept-Language only | 403 challenge |
+| Electron UA (`vex/0.2.7`, Chrome/140, Electron/38) + Referer + Origin + sec-ch-ua trio + Sec-Fetch trio + Accept-Language | 200 JSON |
+| curl default UA + the same browser-context headers | 200 JSON |
+| Chrome UA + same-site Referer only | 200 JSON |
+| Chrome UA + Referer + Origin | 200 JSON |
+| Chrome UA + sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform only | 200 JSON |
+
+The owner also verified the address page returns 200 to bare curl and
+`/assets/envs.js` names `NEXT_PUBLIC_API_HOST: robinhoodchain.blockscout.com`
+and `NEXT_PUBLIC_API_BASE_PATH: /`. The API path is the explorer frontend's
+existing operation. A changed API or TLS identity is not the cause of the
+observed refusal.
+
+Our sequential pre-edit probes reproduced bare Accept -> 403 and Accept plus
+same-origin Referer and the Sec-Fetch trio -> 200 JSON, 37 rows, with curl's
+default user agent. No custom Chrome user agent is retained.
+
+Electron 42 needs one additional explicit header: Origin. Its
+[net-fetch implementation](https://github.com/electron/electron/blob/v42.0.0/lib/browser/api/net-fetch.ts)
+derives the request origin from the Origin header and cannot use cors mode
+without it. A local loopback server measured the proposed five-header set
+failing with `net::ERR_INVALID_ARGUMENT` before network delivery. Supplying
+Origin let the server receive `Sec-Fetch-Mode: cors` and
+`Sec-Fetch-Site: same-origin`. RequestInit mode/referrer options alone did not.
+This is an Electron request-construction requirement, not a TLS/provider gate.
+The owner's Referer-plus-Origin combination also returned 200.
+
+The application-owned header set in `main/blockscout-bridge/http.ts` is:
+
+| Header | Value | Evidence and purpose |
+| --- | --- | --- |
+| Accept | `application/json` | Preserve the existing JSON response contract |
+| Referer | selected operation URL's origin plus `/` | Same-site Referer released the measured request; proxy origins and ports are preserved |
+| Sec-Fetch-Dest | `empty` | Explorer fetch context; captured on the local wire |
+| Sec-Fetch-Mode | `cors` | Requested explorer fetch mode; captured on the local wire |
+| Sec-Fetch-Site | `same-origin` | Selected explorer/API origin context; captured on the local wire |
+| Origin | selected operation URL's origin | Required by Electron 42 to construct that cors request; measured locally and accepted live |
+
+The four fixed values form `BLOCKSCOUT_PAGE_REQUEST_HEADERS`; Origin and
+Referer come from the URL returned by the existing operation builder. No public
+host is hard-coded in the bridge. An override's path prefix remains in the
+request URL while its own origin supplies both context headers. No custom UA,
+client-hint trio or Accept-Language is added; Chromium retains its ordinary
+transport defaults.
+
+The changed real app bridge and client returned host
+`robinhoodchain.blockscout.com`, HTTP 200, complete inventory, 37 candidates.
+One independent run repeated HTTP 200 / complete / 37. Public requests were
+sequential and bounded; loopback diagnostics added no public traffic. The
+fixture address was reused from the existing local harness and was not copied
+from chat or placed in any new committed file.
+
+The `cloudflare_challenge` classification and existing Portfolio remedy remain
+unchanged as the fallback if the provider tightens its rule. Its refusal
+sentence renders only after an actual challenge response, so it remains true
+for a request that was refused. A successful inventory does not show it.
+
+The existing live harness is adapter-only. A complete local-chain sync would
+add endpoint identity probes, balance/metadata multicalls and pricing requests,
+including possible parallel calls and up to 12 pricing rescues. It was not run
+against a database under this sequential/handful budget. Existing real-Postgres
+recovery coverage is separate evidence, not a claim of live full-sync recovery.
+
+## User-owned base URL overrides
+
+Settings > API keys > Chain endpoints exposes EVM RPC and Blockscout overrides together.
+The local config key `blockscoutBaseUrls` maps chain ID strings to base URLs;
+for example, chain `4663` can use an owner-controlled reverse proxy. HTTPS is
+accepted, including private hosts; HTTP is accepted on loopback only. URL
+credentials, query parameters, fragments and malformed URLs are refused by
+name (`BLOCKSCOUT_OVERRIDE_INVALID`) without echoing the URL. Path prefixes
+are preserved before `/api/v2`. The operation still accepts only an address,
+and redirects away from the exact configured operation are refused. Removing
+an override restores the public default on the next read. Diagnostic logs
+show only the resolved host. This setting does not enable additional chain
+inventory adapters.
+
+The September 8 recheck still returned HTTP 403 from the public host. A real
+loopback HTTP test returned 200 through a configured path prefix and exercised
+the complete bridge/client response validation. The owner's private proxy
+was not available to this environment.
 
 ## Rate limiting
 
@@ -418,8 +533,9 @@ them.
 
 WP6a exposes one operation-specific transport method for
 `GET /api/v2/addresses/{address}/token-balances`. The shared contract accepts
-an address, not a URL. The Electron implementation composes the exact HTTPS
-host and path, refuses redirects, applies caller and lifecycle cancellation,
+an address, not a URL. The Electron implementation resolves the user-owned
+base URL (or the unchanged public default), composes the exact operation path,
+refuses redirects, applies caller and lifecycle cancellation,
 and rejects the complete response when it passes 512 KiB. The client rejects
 an unpaginated array above 500 rows. Neither limit returns a prefix that looks
 complete.
@@ -429,7 +545,9 @@ The client result has `inventoryScope: "erc20"` and one of these states:
 | state | `inventoryComplete` | candidates retained | meaning |
 | --- | --- | --- | --- |
 | `complete` | `true` | every validated ERC-20 identity | the whole bounded response validated; non-ERC-20 rows are reported by count and type census |
-| `incomplete / unavailable` | `false` | none | no usable provider response arrived, including a 403 HTML challenge |
+| `incomplete / cloudflare_challenge` | `false` | none | 403 with Cloudflare mitigation header or measured challenge page markers |
+| `incomplete / http_<status>` | `false` | none | other provider HTTP refusal |
+| `incomplete / transport_unavailable, transport_failed, timeout, redirect_refused` | `false` | none | named transport, deadline or redirect failure |
 | `incomplete / over_cap` | `false` | none | the byte or row ceiling was exceeded; the response was rejected whole |
 | `incomplete / invalid_response` | `false` | every independently valid ERC-20 row | at least one row or the response document was invalid; invalid counts and any recoverable unprocessed contract addresses are reported |
 

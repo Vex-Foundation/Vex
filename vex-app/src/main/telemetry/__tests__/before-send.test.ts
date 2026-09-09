@@ -26,7 +26,7 @@ describe("makeBeforeSendHook", () => {
   it("strips query string from event.request.url", () => {
     const event: Event = {
       request: {
-        url: "https://example/vex?password=secret&token=abc",
+        url: "https://example/vex?page=2#results",
       },
     };
     const result = beforeSend(event, fakeHint);
@@ -87,7 +87,7 @@ describe("makeBeforeSendHook", () => {
   it("strips URL query strings embedded in event.message", () => {
     const event: Event = {
       message:
-        "Network error fetching https://api.example.com/users?token=hunter2&id=1",
+        "Network error fetching https://api.example.com/users?page=2&id=1#results",
     };
     const result = beforeSend(event, fakeHint);
     expect(result?.message).toBe(
@@ -98,11 +98,45 @@ describe("makeBeforeSendHook", () => {
   it("strips URL query strings embedded in extra string values", () => {
     const event: Event = {
       extra: {
-        endpoint: "https://api.example.com/items?api_key=secret",
+        endpoint: "https://api.example.com/items?page=2#results",
       },
     };
     const result = beforeSend(event, fakeHint);
     expect(result?.extra?.endpoint).toBe("https://api.example.com/items");
+  });
+
+  it.each([
+    ["https://api.example.com/items?page=2#results", "https://api.example.com/items"],
+    ["https://api.example.com/items#results", "https://api.example.com/items"],
+    ["https://api.example.com/users?token=hunter2&id=1", "[REDACTED]"],
+    ["https://api.example.com/items?api_key=secret", "[REDACTED]"],
+    ["https://example/vex?password=secret&token=abc", "[REDACTED]"],
+    ["https://user:pass@api.example.com/items", "[REDACTED]"],
+  ])("uses the same original-URL policy in every event lane for %s", (url, expected) => {
+    const message = `Network error fetching ${url} after retry`;
+    const result = beforeSend({
+      request: { url, query_string: "page=2" },
+      message,
+      exception: { values: [{ value: message }] },
+      extra: { endpoint: url, nested: { endpoints: [url] } },
+      contexts: { provider: { endpoint: url } },
+      tags: { endpoint: url },
+    }, fakeHint);
+    expect(result?.request?.url).toBe(expected);
+    expect(result?.request?.query_string).toBeUndefined();
+    expect(result?.message).toBe(`Network error fetching ${expected} after retry`);
+    expect(result?.exception?.values?.[0]?.value).toBe(`Network error fetching ${expected} after retry`);
+    expect(result?.extra).toEqual({ endpoint: expected, nested: { endpoints: [expected] } });
+    expect(result?.contexts?.provider?.endpoint).toBe(expected);
+    expect(result?.tags?.endpoint).toBe(expected);
+  });
+
+  it.each(["\n", "\r\n"])("preserves line boundaries and text after exception URLs with %j", (newline) => {
+    const input = `Failed https://api.example.com/items?page=2#results${newline}Retry https://api.example.com/items?api_key=secret${newline}done`;
+    const result = beforeSend({ message: input, exception: { values: [{ value: input }] } }, fakeHint);
+    const expected = `Failed https://api.example.com/items${newline}Retry [REDACTED]${newline}done`;
+    expect(result?.message).toBe(expected);
+    expect(result?.exception?.values?.[0]?.value).toBe(expected);
   });
 
   it("filters breadcrumbs not in allowlist", () => {
