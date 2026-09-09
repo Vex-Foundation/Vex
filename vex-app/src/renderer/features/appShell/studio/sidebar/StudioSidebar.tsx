@@ -54,6 +54,7 @@
  */
 
 import { ProjectCleanupNotices } from "../projects/ProjectCleanupNotices.js";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useCallback,
   useEffect,
@@ -83,7 +84,7 @@ import { useCollapseChoreography } from "../../../../lib/useCollapseChoreography
 import { useQuietScrollbars } from "../../../../lib/useQuietScrollbars.js";
 import { useScrollbarVisibility } from "../../../../lib/useScrollbarVisibility.js";
 import { cn } from "../../../../lib/utils.js";
-import { useProjects } from "../../../../lib/api/projects.js";
+import { projectKeys, useProjects } from "../../../../lib/api/projects.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import { SidebarHomeSigil } from "../../SidebarHomeSigil.js";
 import { SidebarProfile } from "../../SidebarProfile.js";
@@ -223,6 +224,7 @@ export function StudioSidebar({
   explorerRegistry,
 }: StudioSidebarProps): JSX.Element {
   const query = useProjects();
+  const queryClient = useQueryClient();
 
   const { wide, fading, railIn, frozenWidth } = useCollapseChoreography(
     collapsed,
@@ -417,7 +419,8 @@ export function StudioSidebar({
 
   const retry = useCallback((): void => {
     void query.refetch();
-  }, [query]);
+    void queryClient.invalidateQueries({ queryKey: projectKeys.pendingCleanups() });
+  }, [query, queryClient]);
 
   // The header's actions act on the session the TREE holds. `peek` reads it
   // without taking a reference, which is what keeps the header a sibling of the
@@ -520,7 +523,7 @@ export function StudioSidebar({
         />
       )}
 
-      <ProjectCleanupNotices collapsed={!wide} onExpand={onToggleSidebar} />
+      <ProjectCleanupNotices collapsed={!wide} onExpand={onToggleSidebar} showReadError={!query.isPending && !readFailed} />
 
       <div className="mt-2">
         <RailRow

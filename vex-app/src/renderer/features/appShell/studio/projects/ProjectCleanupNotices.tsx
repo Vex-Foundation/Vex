@@ -7,11 +7,17 @@ import { Button } from "../../../../components/ui/button.js";
 import { useDeleteProject, usePendingProjectCleanups } from "../../../../lib/api/projects.js";
 
 /** Reads tombstones so closing a dialog or restarting cannot hide an unfinished delete. */
-export function ProjectCleanupNotices({ collapsed = false, onExpand }: { readonly collapsed?: boolean; readonly onExpand?: () => void }): JSX.Element | null {
+export function ProjectCleanupNotices({ collapsed = false, onExpand, showReadError = true }: {
+  readonly collapsed?: boolean;
+  readonly onExpand?: () => void;
+  /** The rail shows this error only after projects loaded successfully. */
+  readonly showReadError?: boolean;
+}): JSX.Element | null {
   const [offset, setOffset] = useState(0);
   const query = usePendingProjectCleanups(offset);
   if (query.isPending) return null;
   if (query.isError || (query.data !== undefined && !query.data.ok)) {
+    if (!showReadError) return null;
     if (collapsed) return <section role="status" aria-label="Unfinished project cleanups could not be loaded.">
       <button type="button" aria-label="Show unfinished project cleanup error" onClick={onExpand} className="flex h-6 w-full items-center justify-center">
         <StateDot state="warning" size={8} />

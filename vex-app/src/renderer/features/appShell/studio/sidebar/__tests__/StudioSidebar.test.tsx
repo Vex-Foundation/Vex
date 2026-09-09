@@ -13,6 +13,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { StrictMode } from "react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Result } from "@shared/ipc/result.js";
+import type { ProjectPendingCleanups } from "@shared/schemas/project-cleanup.js";
 import type { ProjectList } from "@shared/schemas/projects.js";
 import { ExplorerRegistry } from "../../explorer/index.js";
 import {
@@ -23,6 +24,7 @@ import {
 } from "../../__tests__/studio-fixtures.js";
 
 const projectsListMock = vi.fn<() => Promise<Result<ProjectList>>>();
+const pendingCleanupsMock = vi.fn<() => Promise<Result<ProjectPendingCleanups>>>();
 /** The two request shapes the rail sends, so the mocks type their calls. */
 interface SearchQueryInput {
   readonly projectId: string;
@@ -123,6 +125,8 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  pendingCleanupsMock.mockReset();
+  pendingCleanupsMock.mockResolvedValue({ ok: true, data: { items: [], nextOffset: null } });
   projectsListMock.mockReset();
   projectsListMock.mockResolvedValue({ ok: true, data: [] });
   searchFileNamesMock.mockReset();
@@ -135,7 +139,7 @@ beforeEach(() => {
   Object.defineProperty(window, "vex", {
     configurable: true,
     value: {
-      projects: { list: projectsListMock, pendingCleanups: async () => ({ ok: true, data: { items: [], nextOffset: null } }) },
+      projects: { list: projectsListMock, pendingCleanups: pendingCleanupsMock },
       files: {
         list: () => Promise.resolve({ ok: true, data: null }),
         watch: () => Promise.resolve({ ok: true, data: null }),
@@ -719,7 +723,8 @@ describe("list states", () => {
     expect(await screen.findByText("No projects yet.")).not.toBeNull();
   });
 
-  it("shows a status line with Retry on a failed read, never a blank rail", async () => {
+  it("shows one error and retries both reads when projects and cleanup reads fail", async () => {
+    pendingCleanupsMock.mockResolvedValue({ ok: false, error: makeError("db down") });
     projectsListMock.mockResolvedValue({
       ok: false,
       error: makeError("db down"),
@@ -728,13 +733,36 @@ describe("list states", () => {
     const status = await screen.findByRole("status");
     expect(status.textContent).toContain("Vex could not read your projects.");
 
+    await waitFor(() => expect(pendingCleanupsMock).toHaveBeenCalledOnce());
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: /Retry/ })).toHaveLength(1);
+    expect(screen.queryByText("Unfinished project cleanups could not be loaded.")).toBeNull();
     const retry = screen.getByRole("button", { name: "Retry" });
+    pendingCleanupsMock.mockResolvedValue({ ok: true, data: { items: [], nextOffset: null } });
     projectsListMock.mockResolvedValue({
       ok: true,
       data: [makeProject({ name: "vex-core" })],
     });
     fireEvent.click(retry);
     await screen.findByText("vex-core");
+    await waitFor(() => expect(pendingCleanupsMock).toHaveBeenCalledTimes(2));
+    expect(projectsListMock).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("Unfinished project cleanups could not be loaded.")).toBeNull();
+  });
+
+  it("keeps an independent cleanup error and retries only that read", async () => {
+    projectsListMock.mockResolvedValue({ ok: true, data: [makeProject({ name: "vex-core" })] });
+    pendingCleanupsMock.mockResolvedValue({ ok: false, error: makeError("cleanup read failed") });
+    renderSidebar();
+    await screen.findByText("vex-core");
+    await screen.findByText("Unfinished project cleanups could not be loaded.");
+    expect(screen.queryByText("Vex could not read your projects.")).toBeNull();
+    expect(screen.getAllByRole("button", { name: /Retry/ })).toHaveLength(1);
+    pendingCleanupsMock.mockResolvedValue({ ok: true, data: { items: [], nextOffset: null } });
+    fireEvent.click(screen.getByRole("button", { name: "Retry loading cleanups" }));
+    await waitFor(() => expect(screen.queryByText("Unfinished project cleanups could not be loaded.")).toBeNull());
+    expect(pendingCleanupsMock).toHaveBeenCalledTimes(2);
+    expect(projectsListMock).toHaveBeenCalledOnce();
   });
 
   it("a REJECTED read is a failure, not an empty list", async () => {

@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -27,6 +27,8 @@ beforeEach(async () => {
 });
 afterEach(async () => { resetProjectLifecycleGateForTests(); await rm(state.root, { recursive: true, force: true }); });
 it("preserves the fifth failure and resolves the tombstone after close and one retry", async () => {
+  // Capture the canonical identity before the successful retry removes it.
+  const resolvedDirectory = await realpath(path.join(state.root, "example"));
   let closed = false;
   const holders = vi.fn(async (_directory: string, close: boolean) => {
     if (close) closed = true;
@@ -45,7 +47,7 @@ it("preserves the fifth failure and resolves the tombstone after close and one r
   expect(await deleteProject({ ...input, closeHolders: true }, "retry", deps)).toMatchObject({ ok: true, data: {
     outcome: "cleanup_resumed", trash: "trashed", trashRequested: true,
   } });
-  expect(holders).toHaveBeenCalledWith(path.join(state.root, "example"), true, undefined);
+  expect(holders).toHaveBeenCalledWith(resolvedDirectory, true, undefined);
   expect(trash).toHaveBeenCalledTimes(2);
   expect(state.done).toHaveBeenCalledOnce();
   expect(state.failed).toHaveBeenCalledOnce();

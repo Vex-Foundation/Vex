@@ -74,3 +74,28 @@ it("names the own orphan, sends only project intent, and exposes cancellation", 
   view.unmount();
   finish({ ok: true, data: { outcome: "already_removed" } });
 });
+
+
+it.each(["result", "transport"] as const)("leaves a shared %s failure to the projects error surface", async (failureKind) => {
+  const failure = { ok: false, error: { message: "No database" } };
+  const list = vi.fn(async () => {
+    if (failureKind === "transport") throw new Error("Bridge unavailable");
+    return failure;
+  });
+  Object.defineProperty(window, "vex", { configurable: true, value: { projects: { pendingCleanups: list } } });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const tree = (projectsReadFailed: boolean) => <QueryClientProvider client={client}>
+    <ProjectCleanupNotices showReadError={!projectsReadFailed} />
+  </QueryClientProvider>;
+  const view = render(tree(true));
+  await waitFor(() => expect(list).toHaveBeenCalledOnce());
+  await waitFor(() => expect(client.isFetching()).toBe(0));
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Retry loading cleanups" })).toBeNull();
+
+  // The cleanup read still failed after projects recovered, so it now owns its error.
+  view.rerender(tree(false));
+  await screen.findByText("Unfinished project cleanups could not be loaded.");
+  expect(screen.getByRole("button", { name: "Retry loading cleanups" })).toBeDefined();
+  expect(list).toHaveBeenCalledOnce();
+});
