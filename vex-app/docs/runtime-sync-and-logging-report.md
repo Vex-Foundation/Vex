@@ -466,3 +466,81 @@ Evidence files: `/tmp/runtime-v3-ci-linux.log`, `runtime-v3-ci-windows.log`,
 The local checks and deterministic platform-independent fixes do not substitute
 for a new Windows CI execution. The owner's private proxy and native Windows
 Recycle Bin checks retain the previously stated limitations.
+
+
+## Explorer request headers, 2026-09-09 (turn 4)
+
+Started from the clean accepted tree at `2349d4d39`. Runtime changes are limited
+to `vex-app/src/main/blockscout-bridge/http.ts`. The other changed files are its
+`__tests__/http.test.ts`, `src/tools/blockscout/BLOCKSCOUT.md`, and this report.
+No package manifest, lockfile or scripts directory was modified. No commits
+or history changes were made.
+
+The owner-provided header matrix is recorded in the dated request-context
+section of `BLOCKSCOUT.md`. Our two pre-edit curl probes confirmed the key
+contrast: Accept alone -> HTTP 403 challenge; Accept + same-origin Referer +
+Sec-Fetch trio -> HTTP 200 JSON with 37 rows. They ran sequentially, 1.5 seconds
+apart. The operation and API remained unchanged; the user agent was irrelevant
+in the supplied ablation.
+
+Final explicit headers:
+
+| Header | Value and justification |
+| --- | --- |
+| Accept | `application/json`, preserving the JSON operation |
+| Referer | selected operation origin plus `/`; measured same-site context releases the request |
+| Sec-Fetch-Dest | `empty`, matching the explorer's fetch context |
+| Sec-Fetch-Mode | `cors`, matching that context |
+| Sec-Fetch-Site | `same-origin`, matching that context |
+| Origin | selected operation origin; required by Electron 42 to send cors mode |
+
+Origin is the necessary addition to the initially proposed five headers. The
+real Electron bridge rejected five headers with `net::ERR_INVALID_ARGUMENT`
+before receiving an HTTP response. Local loopback tests and Electron's
+[net-fetch source](https://github.com/electron/electron/blob/v42.0.0/lib/browser/api/net-fetch.ts)
+show why: its request origin comes from the Origin header, and cors mode
+requires that origin. With Origin, the actual local wire carries the required
+cors/same-origin values. This avoids adding a session hook or extra lifecycle
+owner. The owner's Referer-plus-Origin probe also passed. No custom Chrome UA,
+client hints or language header is added.
+
+The final real app bridge call returned HTTP 200, complete inventory and
+37 candidates. Independent verification repeated 200 / complete / 37. Logs
+record only host/status/class/completeness/count. The header tests assert the
+exact application-owned set for the default and for HTTPS and loopback HTTP
+proxies, preserving their ports and request path prefixes. The existing
+challenge classification and conditional Portfolio refusal/remedy sentence
+remain truthful and unchanged.
+
+Verification:
+
+| Command or measurement | Result |
+| --- | --- |
+| Root `pnpm exec vitest run src/__tests__/blockscout --maxWorkers=4` | 2 files, 48 tests passed |
+| App `pnpm exec vitest run src/main/blockscout-bridge src/renderer/features/appShell/book/portfolio --maxWorkers=4` | 5 files, 34 tests passed |
+| App `pnpm run lint` | Passed: strict projects, unchanged type baseline with 312 existing errors, process boundaries |
+| Root `pnpm run check:em-dash` | Passed |
+| Root `pnpm run test:unsafe-escapes` | Passed |
+| `git diff --check` | Passed |
+| New captured-header tests against the original bridge | 3 failed, 6 passed; original code omitted required page/proxy context |
+| Local Electron five-header experiment | ERR_INVALID_ARGUMENT before network delivery |
+| Local Electron final six-header experiment | HTTP 200 with cors/same-origin received |
+| Real app bridge, fixture wallet | HTTP 200, complete, 37 candidates |
+| Independent real app bridge | HTTP 200, complete, 37 candidates |
+
+The pre-existing live harness covers the adapter and Electron transport only.
+The optional complete local-chain database sync was not run: its default path
+adds three endpoint identity probes, metadata/balance/native RPC calls and
+pricing, with possible parallel multicalls and up to twelve rescue requests.
+That exceeds the requested handful of sequential public requests. The existing
+real-Postgres recovery test separately covers production
+`recordChainReadObservations` and `readChainReadIssues` clearing
+`inventory_incomplete` and its timestamp after an `ok` observation; that is not
+reported as a live full-sync recovery. No user's database was modified here.
+
+Evidence: `/tmp/runtime-v4-prewrite-probes.json`,
+`/tmp/runtime-v4-headers-red.log`, `/tmp/runtime-v4-origin-local.log`,
+`/tmp/runtime-v4-blockscout-live-final.log`,
+`/tmp/runtime-v4-independent-final.log`, `/tmp/runtime-v4-final-review.md`,
+`/tmp/runtime-v4-root-tests.log`, `/tmp/runtime-v4-app-tests-final.log`, and
+`/tmp/runtime-v4-app-lint-final.log`.
