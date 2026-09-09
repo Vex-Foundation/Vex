@@ -19,6 +19,8 @@
 import { describe, it, expect } from "vitest";
 
 import { ACTION_ALIAS_TOOLS } from "@vex-agent/tools/registry/action-aliases.js";
+import { SWAP_TOOLS } from "@vex-agent/tools/protocols/kyberswap/manifests/swap.js";
+import { UNISWAP_SWAP_TOOLS } from "@vex-agent/tools/protocols/uniswap/manifests/swap.js";
 import {
   SWAP_VENUE_GUIDANCE_COMPACT,
   SWAP_VENUE_GUIDANCE_COMPACT_ROUTER,
@@ -39,6 +41,16 @@ function toolByName(name: string) {
 }
 
 describe("venue tools are always visible (owner decision D4)", () => {
+  it.each(SWAP_TOOLS)("$publicName names the same-chain tools for an edge block", (tool) => {
+    expect(tool.description).toContain("When KyberSwap refuses with a regional or edge block");
+    expect(tool.description).toContain("switch to `uniswap__swap_quote` then `uniswap__swap_execute` on the same chain");
+  });
+
+  it.each(UNISWAP_SWAP_TOOLS)("$publicName states its regional role and pool-version limit", (tool) => {
+    expect(tool.description).toContain("when KyberSwap is unavailable in the user's region");
+    expect(tool.description).toContain("Uniswap V2 and V3 pools only, with no v4 support yet");
+  });
+
   it("carries NO visibility gate on any of the four venue tools", () => {
     for (const name of VENUE_TOOLS) {
       const tool = toolByName(name);

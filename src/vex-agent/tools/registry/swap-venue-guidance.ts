@@ -74,8 +74,26 @@ export const SWAP_VENUE_EXECUTE_RULE = "Execute on the venue you quoted.";
  * than as failures of the other venue.
  */
 export const SWAP_VENUE_UNISWAP_OCCASIONS =
-  "Reach for Uniswap when KyberSwap has no coverage for the chain or no route for the pair, "
-  + "when its quote fails or looks off, or when the user asks for it.";
+  "Use Uniswap when KyberSwap is region/edge-blocked, lacks chain/pair coverage, "
+  + "its quote fails or looks off, or the user asks.";
+
+/** Regional refusal remedy shared by both KyberSwap tool descriptions. */
+export const KYBERSWAP_EDGE_BLOCK_GUIDANCE =
+  "When KyberSwap refuses with a regional or edge block, switch to `uniswap__swap_quote` "
+  + "then `uniswap__swap_execute` on the same chain.";
+
+/** The direct venue's regional role and current pool-version limit. */
+export const UNISWAP_REGIONAL_GUIDANCE =
+  "Use this venue when KyberSwap is unavailable in the user's region; it covers Uniswap V2 "
+  + "and V3 pools only, with no v4 support yet.";
+
+/** Appended only to the closed 401/403/451 edge-refusal outcome. */
+export const KYBERSWAP_EDGE_BLOCK_REMEDY =
+  " KyberSwap is not reachable from this network or region; retry this trade with "
+  + "`uniswap__swap_quote` then `uniswap__swap_execute` on the same chain. "
+  + "That venue prices Uniswap V2 and V3 pools directly, so a token whose only liquidity is in "
+  + "Uniswap v4 pools cannot be traded there yet. Tell the user about that limitation instead "
+  + "of retrying KyberSwap.";
 
 /** The doctrine as one sentence pair, for a surface with room for it. */
 export const SWAP_VENUE_GUIDANCE =
