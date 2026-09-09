@@ -49,7 +49,7 @@ export function SuperboardKeySection(): JSX.Element {
   const kind = readFailed ? "read_error" : (status?.kind ?? "loading");
   const pendingError = status?.kind === "pending" ? status.lastError : null;
   const busy = generate.isPending || query.isFetching;
-  const copyEnabled = kind === "registered" && shareToken.length > 0 && !busy;
+  const copyEnabled = shareToken.length > 0;
 
   return (
     <div

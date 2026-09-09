@@ -128,7 +128,7 @@ describe("SuperboardKeySection", () => {
     expect(getSuperboardKey).toHaveBeenCalledTimes(2);
   });
 
-  it("disables generation until its result arrives and keeps a pending key uncopyable", async () => {
+  it("disables generation until its result arrives and then copies the pending key", async () => {
     getSuperboardKey.mockResolvedValue(ok({ kind: "missing" }));
     const { promise, resolve: resolveGenerate } = Promise.withResolvers<Result<SuperboardKeyStatus>>();
     generateSuperboardKey.mockReturnValue(promise);
@@ -140,9 +140,10 @@ describe("SuperboardKeySection", () => {
     expect(generateSuperboardKey).toHaveBeenCalledTimes(1);
     resolveGenerate(ok({ kind: "pending", shareToken: SHARE, lastError: null }));
     const copy = await screen.findByRole("button", { name: "Copy" });
-    expect(copy).toHaveProperty("disabled", true);
+    expect(copy).toHaveProperty("disabled", false);
     fireEvent.click(copy);
-    expect(writeText).not.toHaveBeenCalled();
+    await waitFor(() => expect(writeText).toHaveBeenCalledExactlyOnceWith(SHARE));
+    expect(screen.getByText("Not linked yet.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Generate" })).toBeNull();
     expect(getSuperboardKey).toHaveBeenCalledTimes(1);
   });
@@ -171,12 +172,21 @@ describe("SuperboardKeySection", () => {
     expect(screen.getByText("Your data stays yours")).toBeTruthy();
   });
 
-  it("disables Copy when pending", async () => {
-    getSuperboardKey.mockResolvedValue(ok({ kind: "pending", shareToken: SHARE, lastError: null }));
+  it.each([
+    { lastError: null, message: "Not linked yet." },
+    { lastError: "HTTP 400 validation_failed", message: "Couldn't link this key yet. Try again later." },
+    { lastError: "HTTP 429 rate_limited", message: "Too many attempts. Wait a moment and try again." },
+  ])("copies a pending key while keeping the honest status: $message", async ({ lastError, message }) => {
+    getSuperboardKey.mockResolvedValue(ok({ kind: "pending", shareToken: SHARE, lastError }));
     renderSection();
-    const copy = (await screen.findByRole("button", { name: "Copy" })) as HTMLButtonElement;
-    expect(copy.disabled).toBe(true);
+    const copy = await screen.findByRole("button", { name: "Copy" });
+    expect(copy).toHaveProperty("disabled", false);
+    fireEvent.click(copy);
+    await waitFor(() => expect(writeText).toHaveBeenCalledExactlyOnceWith(SHARE));
+    expect(screen.getByText(message)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Generate" })).toBeNull();
+    expect(generateSuperboardKey).not.toHaveBeenCalled();
   });
 
   it("shows a human pending line instead of HTTP 404 not_found", async () => {

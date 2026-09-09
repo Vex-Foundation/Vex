@@ -1,4 +1,10 @@
-import { createHash } from "node:crypto";
+/**
+ * Bind the locally persisted Superboard token to this AgentScan identity.
+ * The plaintext crosses TLS once per registration attempt to AgentScan, the
+ * party that verifies it and stores only its SHA-256 hash. The local copy stays
+ * in this install's database. Retries reuse the same token; never log it or
+ * include it in returned details. See share-token.md for the deployed contract.
+ */
 
 import { fetchWithTimeout, readJson } from "@utils/http.js";
 import { readRetryAfterSeconds } from "@utils/http/retry-after.js";
@@ -36,14 +42,13 @@ async function registerShareToken(
   try {
     response = await fetchWithTimeout(joinUrl(baseUrl, "v1/agents/share-token"), {
       method: "POST",
+      redirect: "error",
       timeoutMs: REQUEST_TIMEOUT_MS,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${input.ingestToken}`,
       },
-      body: JSON.stringify({
-        shareTokenHash: createHash("sha256").update(input.shareToken, "utf8").digest("hex"),
-      }),
+      body: JSON.stringify({ shareToken: input.shareToken }),
     });
   } catch (err) {
     return { kind: "retryable", status: null, retryAfterSeconds: null, detail: safeDetail(err) };
@@ -95,14 +100,14 @@ function errorCode(body: unknown): string | null {
 
 function describeError(status: number, body: unknown): string {
   const code = errorCode(body);
-  return sanitize(code === null ? `HTTP ${status}` : `HTTP ${status} ${code}`);
+  return sanitize(code === null ? `HTTP ${status}` : `HTTP ${status} ${code}`, `HTTP ${status}`);
 }
 
 function safeDetail(err: unknown): string {
-  return sanitize(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
+  return sanitize(err instanceof Error ? `${err.name}: ${err.message}` : String(err), "request failed");
 }
 
-function sanitize(text: string): string {
+function sanitize(text: string, fallback: string): string {
   const scrubbed = text
     .replace(/\bhttps?:\/\/\S+/gi, "<url>")
     .replace(/\b0x[0-9a-fA-F]{16,}\b/g, "<hex>")
@@ -110,5 +115,7 @@ function sanitize(text: string): string {
     .replace(/\s+/g, " ")
     .trim();
   if (scrubbed.length === 0) return "no detail";
-  return scrubbed.length > MAX_DETAIL_LEN ? `${scrubbed.slice(0, MAX_DETAIL_LEN)}…` : scrubbed;
+  return scrubbed.length > MAX_DETAIL_LEN
+    ? `${fallback}; detail omitted (exceeds ${MAX_DETAIL_LEN} characters)`
+    : scrubbed;
 }
