@@ -86,9 +86,23 @@ carry `transport_unavailable`, `timeout`, `transport_failed` and
 `redirect_refused`; malformed JSON and schema failures carry `invalid_response`.
 Provider non-success responses carry their actual `http_<status>`.
 
+## Cloudflare challenge verification 2026-09-09
+
+The public host returned HTTP 403 with `cf-mitigated: challenge`, a Cloudflare
+server header, and the challenge title plus `/cdn-cgi/challenge-platform/`
+marker. The changed client and Electron transport, including an independent
+probe, classify this as `cloudflare_challenge`. The transport passes only the
+known header fact; no raw response headers or HTML reach the diagnostic.
+The adapter also recognizes the measured page markers if a proxy omits the
+header. A generic 403 HTML response remains `http_403`.
+
+Discovery stays incomplete while known balance reads can continue. The
+Portfolio warning explains the automated-read refusal and points to
+Settings > API keys > Chain endpoints for a Blockscout base URL override.
+
 ## User-owned base URL overrides
 
-Settings > Chain endpoints exposes EVM RPC and Blockscout overrides together.
+Settings > API keys > Chain endpoints exposes EVM RPC and Blockscout overrides together.
 The local config key `blockscoutBaseUrls` maps chain ID strings to base URLs;
 for example, chain `4663` can use an owner-controlled reverse proxy. HTTPS is
 accepted, including private hosts; HTTP is accepted on loopback only. URL
@@ -464,7 +478,8 @@ The client result has `inventoryScope: "erc20"` and one of these states:
 | state | `inventoryComplete` | candidates retained | meaning |
 | --- | --- | --- | --- |
 | `complete` | `true` | every validated ERC-20 identity | the whole bounded response validated; non-ERC-20 rows are reported by count and type census |
-| `incomplete / http_<status>` | `false` | none | provider HTTP refusal, including a 403 HTML challenge |
+| `incomplete / cloudflare_challenge` | `false` | none | 403 with Cloudflare mitigation header or measured challenge page markers |
+| `incomplete / http_<status>` | `false` | none | other provider HTTP refusal |
 | `incomplete / transport_unavailable, transport_failed, timeout, redirect_refused` | `false` | none | named transport, deadline or redirect failure |
 | `incomplete / over_cap` | `false` | none | the byte or row ceiling was exceeded; the response was rejected whole |
 | `incomplete / invalid_response` | `false` | every independently valid ERC-20 row | at least one row or the response document was invalid; invalid counts and any recoverable unprocessed contract addresses are reported |

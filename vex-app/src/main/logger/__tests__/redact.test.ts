@@ -50,6 +50,31 @@ describe("redact", () => {
     });
   });
 
+  it.each([
+    ["https://api.example.com/items", "https://api.example.com/items"],
+    ["https://api.example.com/items?page=2#results", "https://api.example.com/items"],
+    ["https://api.example.com/items#results", "https://api.example.com/items"],
+    ["http://127.0.0.1:4000/items?page=2", "http://127.0.0.1:4000/items"],
+    ["wss://api.example.com/stream?channel=prices#latest", "wss://api.example.com/stream"],
+    ["https://user:pass@api.example.com/items?page=2", "[REDACTED]"],
+    ["https://user@api.example.com/items", "[REDACTED]"],
+    ["https://api.example.com/users?token=hunter2&id=1", "[REDACTED]"],
+    ["https://api.example.com/items?api_key=secret", "[REDACTED]"],
+    ["https://api.example.com/items?%61pi%5Fkey=secret", "[REDACTED]"],
+    ["https://api.example.com/items?ACCESS-TOKEN=secret", "[REDACTED]"],
+    ["https://api.example.com/items?key=secret", "[REDACTED]"],
+    ["https://api.example.com/items?X-Amz-Credential=secret", "[REDACTED]"],
+    ["https://api.example.com/items?sig=secret", "[REDACTED]"],
+  ])("scrubs diagnostic URL %s", (url, expected) => {
+    expect(redact(url)).toBe(expected);
+    expect(redact(`Network error fetching ${url}`)).toBe(`Network error fetching ${expected}`);
+  });
+
+  it.each(["\n", "\r\n"])("applies the same URL policy with line separator %j", (newline) => {
+    const input = `https://api.example.com/items?page=2#results${newline}https://user:pass@api.example.com/items${newline}https://api.example.com/users?token=hunter2`;
+    expect(redact(input)).toBe(`https://api.example.com/items${newline}[REDACTED]${newline}[REDACTED]`);
+  });
+
   it("redacts sensitive object keys regardless of value", () => {
     const input = {
       password: "hunter2",

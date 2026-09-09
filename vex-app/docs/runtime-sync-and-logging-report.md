@@ -149,7 +149,7 @@ only the configured hostname. Clearing the override restores the default; the
 next request observes a saved change.
 
 Repository searches found the EVM override maps had no app settings controls.
-`Settings > Chain endpoints` now groups the existing local-chain RPC and new
+`Settings > API keys > Chain endpoints` now groups the existing local-chain RPC and new
 Blockscout overrides, using strict shared schemas, validated main handlers,
 typed preload methods and the existing settings layout. Other chain entries
 are preserved. URL fields are masked, failed reads cannot submit empty defaults,
@@ -206,7 +206,9 @@ explicit sensitive names and value-shape scrubbing. Exact numeric counters
 `seeded`, `tokens`, `wallets`, `droppedAddresses`, and
 `walletsWithMoneyInFlight` survive. Numeric credentials remain redacted.
 Tests also cover sensitive arrays, objects, addresses, key material, auth values
-and credential-bearing URLs.
+and credential-bearing URLs. Safe URLs retain scheme, host and path with queries
+and fragments stripped; URL credentials or credential-bearing queries redact
+the entire URL before the other value-shape scrubbers run.
 
 The engine had a stderr transport while the embedding bridge forwarded the
 same event to Electron's console. `src/utils/logger.ts:8` and
@@ -369,3 +371,98 @@ handoffs without separating a lifecycle. The large IPC channel table remains
 a single cohesive registry. The existing deletion integration suite retains
 its real lifecycle assertions. Moved private trash helpers were removed after
 repository-wide reference checks; no compatibility shim or dead owner remains.
+
+
+## CI contract repairs, 2026-09-09
+
+Work began on the clean coordinator tree at `872cba392`. No commits or history
+changes were made in this repair pass.
+
+The [PR 179 CI run](https://github.com/Vex-Foundation/Vex/actions/runs/34283027894)
+shows the same two telemetry failures and Settings failure on every platform:
+Linux job `102252377235`, Windows `102252377367`, and macOS `102252377187`.
+Their respective test summaries were 3 failed / 12,000 passed / 28 skipped,
+3 failed / 11,930 passed / 98 skipped, and 3 failed / 11,897 passed / 48 skipped.
+The preceding branch run `34282994145` was cancelled 21 seconds earlier;
+no passing Linux run exists in the retrieved branch history. Both symptoms
+also reproduced in isolated Linux tests. No OS-dependent branch or line-ending
+cause exists here, and the Settings failure was deterministic.
+
+- JSONB: the unchanged architecture test identified
+  `src/vex-agent/db/repos/balance-chain-read-status.ts:31` as its sole offender.
+  The writer now uses `db/params.jsonb`, as do the snapshot publisher's ledger
+  and wallet-row JSONB parameters. JSON used as the deferral counter's hash
+  preimage remains ordinary serialization because it is not a JSONB parameter.
+- URL handling: `main/logger/redact.ts` parses original URLs first. Benign
+  queries/fragments are removed while the diagnostic scheme/host/path remain.
+  Userinfo or credential query keys, including encoded keys, redact the URL
+  whole. `main/telemetry/before-send.ts` applies that same policy to original
+  request URLs, exception values, messages, nested extra/context values and tags.
+  Redundant private URL helpers were removed after checking their consumers.
+  The original failing fixtures used credential queries; their values remain
+  explicitly tested for whole redaction under the latest requested policy.
+  Keep-path cases use benign pagination queries and retain exact assertions.
+  LF and CRLF cases prove matching behavior without altering line endings.
+- Settings: the endpoint feature added a ninth register row with a second
+  `Open` status. That broke the existing singular-text and eight-row assertions
+  before any endpoint query ran. Endpoint controls now live inside the existing
+  API keys section. All original register assertions remain; new tests cover
+  navigation, the API keys deep-link and no endpoint query on the landing page.
+  The unused private `chainEndpoints` route was deleted after a reference search
+  confirmed no callers and no persisted shell route.
+- Cloudflare: the fresh bounded public probe and the changed real Electron
+  client both returned host `robinhoodchain.blockscout.com`, HTTP 403,
+  `cloudflare_challenge`, incomplete inventory and zero candidates. A separate
+  verification repeated that result. A narrow header fact or the measured
+  HTML title/platform markers distinguish it from ordinary `http_403`.
+  The Portfolio reason allow-list preserves the new class and explains that
+  the public explorer refuses automated reads, with the Blockscout override at
+  Settings > API keys > Chain endpoints as remediation. No raw HTML, challenge
+  token, URL credentials or request URL is included in the diagnostic.
+
+Regression evidence:
+
+| Experiment against the previous implementation | Observed result |
+| --- | --- |
+| Unchanged JSONB architecture gate | 1 failure, named the read-status writer |
+| Updated/new URL contract tests before implementation | 17 failed, 47 passed |
+| Original isolated Settings screen suite | 1 failed, 15 passed, duplicate `Open` |
+| Restore old Settings register/view with final tests | 3 failed, 15 passed |
+| Restore old Blockscout client with challenge tests | 2 failed, 1 passed; unrelated cases excluded by test-name filter |
+| Restore old header bridge and Portfolio warning | 2 failed; unrelated cases excluded by test-name filter |
+
+Every temporary red-on-revert mutation restored the exact edited bytes in a
+finally block. No tests, compiler settings or CI baselines were weakened.
+The strict JSONB helper also exposed a pre-existing incomplete pending-bridge
+fixture in the sync suite. It now includes the wallet address and entry kind
+that the real SQL returns, preserving every publication assertion.
+
+Current repair verification:
+
+| Command | Result |
+| --- | --- |
+| Root command below: JSONB boundary, sync suites and Blockscout | 96 files, 1,382 tests passed |
+| App command below: telemetry/logger/Settings and affected consumers | 10 files, 162 tests passed |
+| Root `pnpm exec tsc --noEmit -p tsconfig.json` | Passed |
+| App `pnpm run lint` | Passed; 312 existing errors remain within the unchanged type baseline, process boundaries passed |
+| Root `pnpm run check:em-dash` | Passed |
+| Root `pnpm run test:unsafe-escapes` | Passed |
+| `git diff --check` | Passed |
+
+```sh
+# Root
+pnpm exec vitest run src/__tests__/vex-agent/db/jsonb-boundary.test.ts src/__tests__/vex-agent/sync src/__tests__/blockscout --maxWorkers=4
+
+# vex-app/
+pnpm exec vitest run src/main/telemetry src/main/logger src/renderer/features/appShell/screens/__tests__/SettingsScreen.test.tsx src/renderer/features/appShell/screens/SettingsScreen/__tests__/ChainEndpointsSection.test.tsx src/main/blockscout-bridge src/renderer/features/appShell/book/portfolio/__tests__/portfolio-scope-cards.test.tsx src/main/database/__tests__/portfolio-db.test.ts --maxWorkers=4
+```
+
+Evidence files: `/tmp/runtime-v3-ci-linux.log`, `runtime-v3-ci-windows.log`,
+`runtime-v3-ci-macos.log`, `runtime-v3-jsonb-red.log`,
+`runtime-v3-telemetry-report.md`, `runtime-v3-settings-report.md`,
+`runtime-v3-review.md`, `runtime-v3-blockscout-probe.json`,
+`runtime-v3-blockscout-live.log`, `runtime-v3-root-tests-final.log`,
+`runtime-v3-app-tests.log` and `runtime-v3-app-lint.log`, all under `/tmp`.
+The local checks and deterministic platform-independent fixes do not substitute
+for a new Windows CI execution. The owner's private proxy and native Windows
+Recycle Bin checks retain the previously stated limitations.

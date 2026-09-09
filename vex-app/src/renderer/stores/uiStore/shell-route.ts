@@ -98,8 +98,7 @@ export type SettingsSection =
   | "memory"
   | "tuning"
   /** The Lighter points campaign; the one section with no wizard step behind it. */
-  | "lighterPoints"
-  | "chainEndpoints";
+  | "lighterPoints";
 
 /**
  * Full-app overlay screen route (Chronos screens redesign, 2026-07-20;

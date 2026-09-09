@@ -1,5 +1,5 @@
 /**
- * Log redaction — sanitize values before they hit electron-log files / Sentry.
+ * Log redaction - sanitize values before they hit electron-log files / Sentry.
  *
  * Phase 1 covers structured fields by name; M11 will add Sentry's beforeSend
  * with the same redactor so on-wire telemetry uses identical rules.
@@ -9,7 +9,7 @@
  * scrubbed for inline secret patterns (0x-hex 64-char, base58 64-char, JWT-like).
  * Errors are unwrapped to {name, message, stack} with each component scrubbed.
  *
- * NEVER call this on the secret itself thinking the redactor will save you —
+ * NEVER call this on the secret itself thinking the redactor will save you -
  * call sites must avoid logging raw secrets in the first place. This is
  * defense-in-depth, not the first line.
  */
@@ -47,22 +47,47 @@ const SECRET_PATTERNS: ReadonlyArray<RegExp> = [
   /\b[A-Za-z0-9+/]{86}={0,2}\b/g, // 64-byte base64 (Solana secret etc.)
   /\b[1-9A-HJ-NP-Za-km-z]{32,88}\b/g, // Solana addresses and base58 key material
   /\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+\/-]+=*/gi,
-  /\b(?:https?|wss?):\/\/[^\s<>"']+/gi, // RPC URLs may carry credentials in any segment
 ];
 
 const REDACTED = "[REDACTED]";
 const MAX_STRING_LEN = 4000;
 
+const URL_PATTERN = /\b(?:https?|wss?):\/\/[^\s<>"']+/gi;
+const URL_CREDENTIAL_KEYS: ReadonlySet<string> = new Set([
+  "password", "pass", "passphrase", "secret", "clientsecret", "apisecret",
+  "key", "apikey", "accesskey", "accesskeyid", "privatekey", "secretkey",
+  "token", "accesstoken", "refreshtoken", "authtoken", "sessiontoken",
+  "auth", "authorization", "credential", "credentials", "jwt",
+  "signature", "sig", "xamzcredential", "xamzsignature", "xamzsecuritytoken",
+  "xgoogcredential", "xgoogsignature",
+]);
+
+function scrubUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    if (url.username || url.password) return REDACTED;
+    for (const key of url.searchParams.keys()) {
+      if (URL_CREDENTIAL_KEYS.has(key.replace(/[_-]/g, "").toLowerCase())) return REDACTED;
+    }
+    // Preserve the diagnostic scheme, host and path without query or fragment.
+    // Inspect credentials first so no caller can erase evidence before classifying.
+    const suffixStart = value.search(/[?#]/);
+    return suffixStart === -1 ? value : value.slice(0, suffixStart);
+  } catch {
+    return REDACTED;
+  }
+}
+
 /**
  * Stands in for a stack we could not read. Keeping the field (rather than
  * dropping it silently) tells whoever reads the log that a stack existed and
- * the read failed — otherwise a poisoned process looks identical to errors
+ * the read failed - otherwise a poisoned process looks identical to errors
  * that legitimately carry no stack.
  */
 const STACK_UNAVAILABLE = "<stack unavailable>";
 
 function scrubString(value: string): string {
-  let out = value;
+  let out = value.replace(URL_PATTERN, scrubUrl);
   for (const re of SECRET_PATTERNS) {
     out = out.replace(re, REDACTED);
   }
@@ -76,8 +101,8 @@ function scrubString(value: string): string {
  * Reading `error.stack` CAN THROW: V8 computes it lazily through
  * `Error.prepareStackTrace`, so any dependency that installs a broken hook and
  * fails to restore it poisons that read for the whole process. That happened in
- * production — a CJS `bindings` shim inlined into the ESM main bundle read bare
- * `__filename` inside its hook — and because this redactor sits on the logging
+ * production - a CJS `bindings` shim inlined into the ESM main bundle read bare
+ * `__filename` inside its hook - and because this redactor sits on the logging
  * path, the throw turned every HANDLED error into an unhandled rejection and
  * hid the real failure behind "[ReferenceError: __filename is not defined]".
  * A logger must never do that, so the read is fail-safe regardless of what a

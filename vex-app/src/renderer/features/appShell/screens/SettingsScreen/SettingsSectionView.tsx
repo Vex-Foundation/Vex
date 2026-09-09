@@ -1,4 +1,3 @@
-import { ChainEndpointsSection } from "./ChainEndpointsSection.js";
 /**
  * One section's calm full-page view: the wizard step form in back-edit
  * mode (saving returns to the register via `onAdvance`). The Wallets
@@ -23,6 +22,7 @@ import { ExportPrivateKeyModal } from "../../../wallets/ExportPrivateKeyModal.js
 import { LighterPointsSection } from "./LighterPointsSection.js";
 import type { SectionMeta } from "./settings-sections.js";
 import { SuperboardKeySection } from "./SuperboardKeySection.js";
+import { ChainEndpointsSection } from "./ChainEndpointsSection.js";
 
 export function SettingsSectionView({
   meta,
@@ -48,6 +48,7 @@ export function SettingsSectionView({
       data-vex-settings-section={meta.id}
     >
       {renderSectionContent(meta, stepProps)}
+      {meta.id === "apiKeys" ? <ChainEndpointsSection /> : null}
       {meta.id === "wallets" ? <ExportPrivateKeySection env={env} /> : null}
     </div>
   );
@@ -62,8 +63,6 @@ function renderSectionContent(
   },
 ): JSX.Element | null {
   switch (meta.id) {
-    case "chainEndpoints":
-      return <ChainEndpointsSection />;
     case "superboardKey":
       return <SuperboardKeySection />;
     case "lighterPoints":

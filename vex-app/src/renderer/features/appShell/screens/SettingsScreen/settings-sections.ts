@@ -44,7 +44,7 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     id: "apiKeys",
     stepId: "apiKeys",
     name: "API keys",
-    hint: "Jupiter, Tavily, and Rettiwt integrations",
+    hint: "Jupiter, Tavily, Rettiwt, and chain endpoint overrides",
   },
   {
     id: "superboardKey",
@@ -71,7 +71,6 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     name: "Tuning",
     hint: "Context, output, and sampling limits",
   },
-  { id: "chainEndpoints", name: "Chain endpoints", hint: "Your EVM RPC and Blockscout reverse proxy overrides" },
   {
     id: "lighterPoints",
     icon: IconLighter,
@@ -153,8 +152,6 @@ export function settingsSectionStatus(
     }
     case "tuning":
       return { word: "Saved", tone: "neutral" };
-    case "chainEndpoints":
-      return { word: "Open", tone: "neutral" };
     case "lighterPoints":
       // envState says nothing about the campaign, and the points read is the
       // section's own on-demand work. A guessed word here would be a claim

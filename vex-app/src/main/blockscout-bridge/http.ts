@@ -118,6 +118,7 @@ export async function fetchBlockscoutAddressTokenBalances(
       finalUrl,
       status: response.status,
       contentType: response.headers.get("content-type"),
+      cfMitigatedChallenge: response.headers.get("cf-mitigated")?.trim().toLowerCase() === "challenge",
       body,
     };
   } catch (error) {

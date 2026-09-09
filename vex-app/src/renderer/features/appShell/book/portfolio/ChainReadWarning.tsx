@@ -22,7 +22,9 @@ export function ChainReadWarning({ portfolio }: { readonly portfolio: PortfolioD
           <time dateTime={issue.staleSince}>{new Date(issue.staleSince).toLocaleString()}</time>.
           {issue.lastSuccessAt === null ? " No successful read recorded." : <> Known balances last updated{" "}
             <time dateTime={issue.lastSuccessAt}>{new Date(issue.lastSuccessAt).toLocaleString()}</time>.</>}
-          {" "}Reason: {issue.reason}. Retry refresh after checking the connection or provider settings.
+          {" "}Reason: {issue.reason}. {issue.reason === "cloudflare_challenge"
+            ? "The public explorer refuses automated reads. Set a Blockscout base URL override in Settings > API keys > Chain endpoints."
+            : "Retry refresh after checking the connection or provider settings."}
         </p>
       ))}
     </div>

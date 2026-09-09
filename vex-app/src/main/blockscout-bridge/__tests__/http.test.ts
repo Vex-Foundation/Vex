@@ -70,6 +70,15 @@ describe("fetchBlockscoutAddressTokenBalances", () => {
     expect(new TextDecoder().decode(result.body)).toBe("[]");
   });
 
+  it("preserves only the Cloudflare challenge header fact for the adapter", async () => {
+    const result = await fetchBlockscoutAddressTokenBalances(async () => new Response("refused", {
+      status: 403, headers: { "cf-mitigated": "challenge", "server": "cloudflare", "x-provider-secret": "fixture-private-header" },
+    }), PUBLIC_ADDRESS, { timeoutMs: 5_000, maxBytes: 1_000 });
+    expect(result.cfMitigatedChallenge).toBe(true);
+    expect(JSON.stringify(result)).not.toContain("fixture-private-header");
+    expect(result).not.toHaveProperty("headers");
+  });
+
   it("rejects an invalid address before the fetch capability is invoked", async () => {
     let invoked = false;
     await expect(

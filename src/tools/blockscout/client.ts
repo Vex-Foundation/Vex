@@ -27,6 +27,7 @@ export const BLOCKSCOUT_TOKEN_BALANCES_MAX_BYTES = 512 * 1024;
 export const BLOCKSCOUT_TOKEN_BALANCES_TIMEOUT_MS = 15_000;
 
 export type BlockscoutInventoryIncompleteReason =
+  | "cloudflare_challenge"
   | "unavailable"
   | "transport_unavailable"
   | "transport_failed"
@@ -117,6 +118,15 @@ function assertResponseContract(response: BlockscoutTransportResponse): void {
     );
   }
 
+  if (response.status === 403 && isCloudflareChallenge(response)) {
+    throw blockscoutError(
+      BlockscoutErrorCodes.CLOUDFLARE_CHALLENGE,
+      "The Blockscout explorer refuses automated reads with a Cloudflare challenge",
+      "Set a Blockscout base URL override in Settings > API keys > Chain endpoints.",
+      { retryable: false, httpStatus: 403 },
+    );
+  }
+
   if (response.status === 403 || response.status === 429 || response.status >= 500) {
     throw blockscoutError(
       BlockscoutErrorCodes.PROVIDER_UNAVAILABLE,
@@ -146,6 +156,15 @@ function assertResponseContract(response: BlockscoutTransportResponse): void {
   }
 }
 
+function isCloudflareChallenge(response: BlockscoutTransportResponse): boolean {
+  if (response.cfMitigatedChallenge) return true;
+  // The bounded body provides evidence when a proxy omits cf-mitigated.
+  // A generic 403 HTML page alone does not establish Cloudflare involvement.
+  const text = new TextDecoder().decode(response.body);
+  return /<title>\s*Just a moment(?:\.{3}|…)\s*<\/title>/i.test(text)
+    && text.includes("/cdn-cgi/challenge-platform/");
+}
+
 function parseJsonBody(body: Uint8Array): unknown {
   let text: string;
   try {
@@ -173,6 +192,8 @@ function mapTypedFailure(
   transport: BlockscoutTransport["name"] | null,
 ): BlockscoutInventoryResult {
   switch (error.code) {
+    case BlockscoutErrorCodes.CLOUDFLARE_CHALLENGE:
+      return noRowsIncomplete("cloudflare_challenge", error.code, transport);
     case BlockscoutErrorCodes.RESPONSE_OVER_CAP:
       return noRowsIncomplete("over_cap", error.code, transport);
     case BlockscoutErrorCodes.TRANSPORT_UNAVAILABLE:

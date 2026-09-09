@@ -49,6 +49,7 @@
  */
 
 import { withTransaction } from "@vex-agent/db/client.js";
+import { jsonb } from "@vex-agent/db/params.js";
 import { insertSnapshot } from "@vex-agent/db/repos/balances.js";
 import { describeFailureForLog } from "@utils/error-summary.js";
 import logger from "@utils/logger.js";
@@ -234,7 +235,7 @@ export async function publishSnapshotGroup(
         ledger.settledUsd,
         ledger.inTransitUsd,
         ledger.unresolvedCount,
-        JSON.stringify(ledger.entries),
+        jsonb(ledger.entries),
         ledger.totalCount,
         ledger.partial,
         ledger.unresolvedChainCount,
@@ -258,7 +259,7 @@ export async function publishSnapshotGroup(
  * the domain type to please a SQL function.
  */
 function toWalletRowsJson(perWallet: readonly WalletInFlightTotals[]): string {
-  return JSON.stringify(
+  return jsonb(
     perWallet.map((wallet) => ({
       wallet_address: wallet.walletAddress,
       entry_count: wallet.entryCount,

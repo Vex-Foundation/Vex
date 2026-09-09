@@ -369,6 +369,28 @@ describe("readRobinhoodErc20IdentityCandidates", () => {
     });
   });
 
+  it.each([
+    { cfMitigatedChallenge: true, body: "refused" },
+    { cfMitigatedChallenge: false, body: '<html><title>Just a moment...</title><script src="/cdn-cgi/challenge-platform/test"></script></html>' },
+  ])("names a Cloudflare challenge from its header or page markers", async ({ cfMitigatedChallenge, body }) => {
+    unregister = registerBlockscoutTransport(transportFor(async () => response(encoder.encode(body), {
+      status: 403, contentType: "text/html", cfMitigatedChallenge,
+    })));
+    const result = await readRobinhoodErc20IdentityCandidates(PUBLIC_ADDRESS);
+    expect(result).toMatchObject({ status: "incomplete", inventoryComplete: false,
+      incompleteReason: "cloudflare_challenge", errorCode: BlockscoutErrorCodes.CLOUDFLARE_CHALLENGE,
+      candidates: [], providerRowCount: null,
+    });
+    expect(JSON.stringify(result)).not.toContain(body);
+  });
+
+  it("does not classify a generic waiting page as Cloudflare", async () => {
+    unregister = registerBlockscoutTransport(transportFor(async () => response(
+      encoder.encode("<html><title>Just a moment...</title><p>Please wait</p></html>"), { status: 403, contentType: "text/html" },
+    )));
+    expect(await readRobinhoodErc20IdentityCandidates(PUBLIC_ADDRESS)).toMatchObject({ incompleteReason: "http_403" });
+  });
+
   it("names a 403 HTML refusal, never as empty success", async () => {
     unregister = registerBlockscoutTransport(
       transportFor(async () =>

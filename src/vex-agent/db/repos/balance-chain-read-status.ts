@@ -1,5 +1,6 @@
 /** Balance read failure and incomplete discovery are independent of cached value. */
 import { getPool } from "../client.js";
+import { jsonb } from "../params.js";
 
 export interface ChainReadObservation {
   readonly chainId: number;
@@ -28,7 +29,7 @@ export async function recordChainReadObservations(
          WHEN EXCLUDED.read_status != proj_balance_chain_read_status.read_status THEN EXCLUDED.stale_since
          ELSE COALESCE(proj_balance_chain_read_status.stale_since, EXCLUDED.stale_since) END,
        failure_reason = EXCLUDED.failure_reason, read_status = EXCLUDED.read_status`,
-    [walletAddress, JSON.stringify(observations.map(({ chainId, reason, status }) => ({
+    [walletAddress, jsonb(observations.map(({ chainId, reason, status }) => ({
       chain_id: chainId, reason, status,
     })))],
   );

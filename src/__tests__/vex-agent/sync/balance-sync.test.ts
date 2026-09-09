@@ -260,6 +260,8 @@ describe("fullBalanceSync - in-flight money is accounted for, not a veto", () =>
         ];
 
   const pendingBridge = {
+    row_type: "entry",
+    wallet_address: EVM_A,
     kind: "agent_activity_pending",
     ref: "132",
     detail: "bridge_fill_expected",

@@ -346,6 +346,18 @@ describe("partial snapshots and incomplete discovery", () => {
     expect(warning.textContent).not.toContain("Some balances are stale");
   });
 
+  it("explains a Cloudflare challenge and points to the Blockscout override", async () => {
+    readMock.mockResolvedValue({ ok: true, data: portfolio({ chainReadIssues: [{
+      chainId: 4663, status: "inventory_incomplete", reason: "cloudflare_challenge",
+      staleSince: "2026-09-09T07:00:00.000Z", lastSuccessAt: "2026-09-09T07:10:00.000Z",
+    }] }) });
+    renderWith(<PortfolioOverviewCard scope={GLOBAL_PORTFOLIO_SCOPE} />);
+    const warning = await screen.findByRole("status");
+    expect(warning.textContent).toContain("public explorer refuses automated reads");
+    expect(warning.textContent).toContain("Blockscout base URL override in Settings > API keys > Chain endpoints");
+    expect(warning.textContent).not.toContain("Some balances are stale");
+  });
+
   it("labels a partial snapshot and explains that its P&L is unavailable", async () => {
     readMock.mockResolvedValue({ ok: true, data: portfolio({ snapshotPartial: true,
       snapshotUnresolvedChainCount: 1, pnlVsPrev: null,
