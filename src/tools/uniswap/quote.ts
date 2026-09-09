@@ -13,7 +13,7 @@
  * Native legs route as WETH (the router wraps/unwraps); `path` carries WETH.
  */
 
-import { outputGasPrice, selectUniswapRoute } from "./route-ranking.js";
+import { estimateV2RouteGas, outputGasPrice, selectUniswapRoute } from "./route-ranking.js";
 import {
   encodePacked,
   getAddress,
@@ -191,6 +191,9 @@ export interface QuoteRouteArgs {
   readonly tokenOut: UniswapToken;
   readonly amountIn: bigint;
   readonly allowV4?: boolean;
+  /** Address-only quote context. No key is resolved for gas estimation. */
+  readonly wallet?: Address;
+  readonly slippageBps?: number;
 }
 
 /**
@@ -245,7 +248,16 @@ export async function quoteBestRoute(
       v4Discovery = { unavailable: true, indexed: 0, matching: 0, considered: 0, refused: 0 };
     }
   }
-  const routes = settled.flatMap(s => s.status === "fulfilled" && s.value ? [s.value] : []);
+  const routes: UniswapRoute[] = [];
+  for (const result of settled) {
+    if (result.status !== "fulfilled" || !result.value) continue;
+    const route = result.value;
+    routes.push(route.version === "v2" && args.wallet
+      ? await estimateV2RouteGas(client, { deployment, route, wallet: args.wallet,
+          amountIn, minAmountOut: applySlippage(route.amountOut, args.slippageBps ?? 0),
+          tokenInIsNative: tokenIn.isNative, tokenOutIsNative: tokenOut.isNative })
+      : route);
+  }
   let gasPrice = null;
   if (routes.length > 1 && routes.every(r => r.gasEstimate !== undefined)) {
     try { gasPrice = await outputGasPrice(deployment, tokenOut, await client.getGasPrice()); } catch { /* Exposed as unpriced below. */ }

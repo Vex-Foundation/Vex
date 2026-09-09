@@ -12,7 +12,6 @@ import { buildIntentPreview } from "@vex-agent/engine/core/approval-intent-previ
 import { planSwapEvents } from "@vex-agent/tools/protocols/uniswap/handlers/swap/execute-plan.js";
 import { mapActivityToEvent } from "@vex-agent/agentscan/mapper.js";
 import { decodeUniswapExecutedLegs, TRANSFER_TOPIC0 } from "@tools/uniswap/receipt-decoder.js";
-import { decodeV4NativeDelta } from "@tools/uniswap/v4-native-settlement.js";
 
 const deployment = required(getUniswapDeployment(1));
 const d = required(deployment.v4);
@@ -91,14 +90,8 @@ describe("v4 planned and settled activity", () => {
     ] } });
     expect(result).toEqual({ executedAmountInRaw: 100n, executedAmountOutRaw: 999n });
   });
-  it("native trace subtracts actual refunds and excludes reverted/delegatecall transfers", () => {
-    const delta = decodeV4NativeDelta({ type: "CALL", from: wallet, to: d.universalRouter, value: "0x64", calls: [
-      { type: "CALL", from: d.universalRouter, to: wallet, value: "0xa" },
-      { type: "DELEGATECALL", from: wallet, to: token, value: "0x64" },
-      { type: "CALL", from: d.universalRouter, to: wallet, value: "0xff", error: "execution reverted" },
-    ] }, wallet, d.universalRouter);
-    expect(delta).toBe(-90n);
-    expect(decodeUniswapExecutedLegs({ version: "v4", chainId: 1, walletAddress: wallet, receipt: { logs: [] } })).toEqual({});
+  it("names missing native receipt authority without guessing an amount", () => {
+    expect(decodeUniswapExecutedLegs({ version: "v4", chainId: 1, walletAddress: wallet, receipt: { logs: [] } })).toEqual({ v4Settlement: { pendingReason: "v4_binding_missing_or_invalid" } });
   });
 });
 

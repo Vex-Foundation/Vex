@@ -1,5 +1,6 @@
 /** Rank comparable quote candidates with integer gas conversion and explicit gaps. */
-import { parseUnits } from "viem";
+import { parseUnits, type Address, type PublicClient, type Chain, type Transport } from "viem";
+import { buildV2SwapTx } from "./execute.js";
 import type { UniswapRoute, UniswapToken } from "./types.js";
 import type { UniswapDeployment } from "./deployments.js";
 import { readTokenPools } from "../dexscreener/price-read.js";
@@ -25,4 +26,25 @@ export async function outputGasPrice(deployment: UniswapDeployment, tokenOut: Un
   if (!pair?.priceNative) return null;
   const nativeWei = parseUnits(pair.priceNative, 18);
   return nativeWei > 0n ? { gasPriceWei, nativeWei, outputUnits: 10n ** BigInt(tokenOut.decimals) } : null;
+}
+
+/** Estimate each successful V2 candidate from the actual executing wallet. */
+export async function estimateV2RouteGas(client: PublicClient<Transport, Chain>, input: {
+  readonly deployment: UniswapDeployment;
+  readonly route: UniswapRoute;
+  readonly wallet: Address;
+  readonly amountIn: bigint;
+  readonly minAmountOut: bigint;
+  readonly tokenInIsNative: boolean;
+  readonly tokenOutIsNative: boolean;
+}): Promise<UniswapRoute> {
+  const tx = buildV2SwapTx({ ...input, recipient: input.wallet, deadline: BigInt(Math.floor(Date.now() / 1000) + 600) });
+  try {
+    const gasEstimate = await client.estimateGas({ account: input.wallet, ...tx });
+    return gasEstimate > 0n ? { ...input.route, gasEstimate } : input.route;
+  } catch {
+    // An absent allowance, insufficient balance or an unavailable estimate is
+    // not a gas figure. The ranking labels its gross-output fallback explicitly.
+    return input.route;
+  }
 }

@@ -142,7 +142,10 @@ export async function uniswapSwapQuote(
   // quote): the route must be priced for the amount the router actually
   // receives, or the quote would advertise an output the execute cannot deliver.
   const feeCharge = await resolveUniswapFeeCharge({ chainId: deployment.chainId, tokenIn, amountInRaw: amountIn });
-  const quoted = await computeQuote(deployment, tokenIn, tokenOut, feeCharge.swapAmountRaw, slippageBps);
+  let wallet: Address | undefined;
+  try { wallet = getAddress(resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155")); }
+  catch { /* A quote without a selected wallet remains informational. */ }
+  const quoted = await computeQuote(deployment, tokenIn, tokenOut, feeCharge.swapAmountRaw, slippageBps, true, wallet);
 
   // Safety signals (LOCKED #5): factory allowlist + min-liquidity + FoT - never gate here.
   const client = getUniswapPublicClient(deployment);
@@ -172,7 +175,7 @@ export async function uniswapSwapQuote(
   // cannot make safe.
   const spendability = await measureSpendability({
     routeEligibility: impact ?? UNMEASURED_ROUTE_EXECUTABLE,
-    context,
+    wallet,
     client,
     deployment,
     router: routerFor(deployment, quoted.route),
@@ -311,7 +314,7 @@ interface SpendabilityOutcome {
  */
 async function measureSpendability(input: {
   readonly routeEligibility: QuoteEligibility;
-  readonly context: ProtocolExecutionContext;
+  readonly wallet: Address | undefined;
   readonly client: ReturnType<typeof getUniswapPublicClient>;
   readonly deployment: ReturnType<typeof requireDeployment>;
   readonly router: Address;
@@ -332,12 +335,8 @@ async function measureSpendability(input: {
     };
   }
 
-  let wallet: Address;
-  try {
-    wallet = getAddress(
-      resolveSelectedAddress(input.context.walletResolution, input.context.walletPolicy, "eip155"),
-    );
-  } catch {
+  const wallet = input.wallet;
+  if (!wallet) {
     return {
       eligibility: routeEligibility,
       preview: undefined,

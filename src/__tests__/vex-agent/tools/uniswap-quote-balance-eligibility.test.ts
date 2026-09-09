@@ -404,3 +404,18 @@ describe("uniswap.swap.quote reads no balance when it would decide nothing", () 
     expect(String(data.eligibilityNote)).toContain("No EVM wallet is selected");
   });
 });
+
+describe("quote wallet used for V2 route gas estimates", () => {
+  it.each(["restricted", "full"] as const)("passes the selected address without a signer in %s mode", async permission => {
+    await quote({ chain: "robinhood", tokenIn: TOKEN_IN, tokenOut: TOKEN_OUT, amountIn: AMOUNT_IN, slippageBps: 500 }, { ...context, sessionPermission: permission });
+    expect(quoteBestRoute).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ wallet: WALLET, slippageBps: 500 }));
+    expect(resolveSelectedAddress).toHaveBeenCalledTimes(1);
+  });
+  it("omits the estimation wallet when none can be selected", async () => {
+    resolveSelectedAddress.mockImplementationOnce(() => { throw new Error("no selected wallet"); });
+    const { result } = await run();
+    expect(result.success).toBe(true);
+    expect(quoteBestRoute).toHaveBeenCalledWith(expect.anything(), expect.not.objectContaining({ wallet: expect.anything() }));
+    expect(resolveSelectedAddress).toHaveBeenCalledTimes(1);
+  });
+});

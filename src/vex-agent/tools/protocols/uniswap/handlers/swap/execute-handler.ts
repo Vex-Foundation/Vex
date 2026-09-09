@@ -177,7 +177,7 @@ export async function executeUniswapSwap(
     feeCharge = await resolveUniswapFeeCharge({ chainId: deployment.chainId, tokenIn, amountInRaw: amountIn });
     quoted = approved.v4
       ? await revalidateV4Quote({ client: getUniswapPublicClient(deployment), deployment, approved, wallet: getAddress(walletAddress), ...(context.abortSignal ? { signal: context.abortSignal } : {}) })
-      : await computeQuote(deployment, tokenIn, tokenOut, feeCharge.swapAmountRaw, slippageBps, false);
+      : await computeQuote(deployment, tokenIn, tokenOut, feeCharge.swapAmountRaw, slippageBps, false, getAddress(walletAddress));
   } catch (err) {
     return failPreBroadcast(
       p,

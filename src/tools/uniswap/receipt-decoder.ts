@@ -35,8 +35,10 @@
  * from memory.
  */
 
-import { getAddress, hexToBigInt, keccak256, toHex, type Address, type Hex } from "viem";
+import { getAddress, hexToBigInt, type Address, type Hex } from "viem";
 
+import { decodeV4Settlement, V4_POOL_SWAP_TOPIC0, type V4SettlementEvidence, type V4SettlementTransaction } from "./v4-settlement.js";
+import type { V4RouteBinding } from "./v4-types.js";
 import { getUniswapDeployment } from "./deployments.js";
 
 /** `Transfer(address,address,uint256)` — shared by every ERC-20 (and WETH itself). */
@@ -55,7 +57,7 @@ export const V2_POOL_SWAP_TOPIC0: Hex =
 export const V3_POOL_SWAP_TOPIC0: Hex =
   "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67";
 
-export const V4_POOL_SWAP_TOPIC0: Hex = keccak256(toHex("Swap(bytes32,address,int128,int128,uint160,uint128,int24,uint24)"));
+export { V4_POOL_SWAP_TOPIC0 };
 
 /** Minimal receipt-log shape this module needs — matches viem's `TransactionReceipt['logs'][number]` structurally. */
 export interface UniswapDecodableLog {
@@ -73,8 +75,8 @@ export interface DecodeUniswapLegsInput {
   readonly receipt: UniswapDecodableReceipt;
   readonly chainId: number;
   readonly walletAddress: string;
-  /** Transaction-specific native wallet delta from a validated v4 call trace. */
-  readonly v4NativeDelta?: bigint;
+  readonly v4Binding?: V4RouteBinding;
+  readonly v4Transaction?: V4SettlementTransaction;
   readonly version?: "v2" | "v3" | "v4";
   /** Non-native tokenIn contract address, or `null`/`undefined` for a native input leg. */
   readonly tokenInAddress?: string | null;
@@ -83,6 +85,7 @@ export interface DecodeUniswapLegsInput {
 }
 
 export interface DecodedUniswapLegs {
+  readonly v4Settlement?: V4SettlementEvidence;
   readonly executedAmountInRaw?: bigint;
   readonly executedAmountOutRaw?: bigint;
 }
@@ -205,25 +208,31 @@ export function decodeUniswapExecutedLegs(input: DecodeUniswapLegsInput): Decode
   const deployment = getUniswapDeployment(input.chainId);
   const wallet = getAddress(input.walletAddress);
   const logs = input.receipt.logs;
-  const routers = routerAddressesFor(deployment);
+  const routers = input.version === "v4"
+    ? new Set(deployment?.v4 ? [deployment.v4.universalRouter.toLowerCase()] : [])
+    : routerAddressesFor(deployment);
 
-  const executedAmountInRaw = input.tokenInAddress
-    ? nonZeroOrUndefined(netTransferDelta(logs, getAddress(input.tokenInAddress), wallet) * -1n)
-    : input.version === "v4"
-      ? input.v4NativeDelta === undefined ? undefined : nonZeroOrUndefined(-input.v4NativeDelta)
-      : deployment && routers.size > 0
-      ? sumWethEvent(logs, getAddress(deployment.weth), WETH_DEPOSIT_TOPIC0, routers)
-      : undefined;
-
-  const executedAmountOutRaw = input.tokenOutAddress
-    ? nonZeroOrUndefined(netTransferDelta(logs, getAddress(input.tokenOutAddress), wallet))
-    : input.version === "v4"
-      ? input.v4NativeDelta === undefined ? undefined : nonZeroOrUndefined(input.v4NativeDelta)
-      : deployment && routers.size > 0
-      ? sumWethEvent(logs, getAddress(deployment.weth), WETH_WITHDRAWAL_TOPIC0, routers)
-      : undefined;
+  const transferIn = input.tokenInAddress
+    ? nonZeroOrUndefined(-netTransferDelta(logs, getAddress(input.tokenInAddress), wallet)) : undefined;
+  const transferOut = input.tokenOutAddress
+    ? nonZeroOrUndefined(netTransferDelta(logs, getAddress(input.tokenOutAddress), wallet)) : undefined;
+  const deposits = deployment ? sumWethEvent(logs, getAddress(deployment.weth), WETH_DEPOSIT_TOPIC0, routers) : undefined;
+  const withdrawals = deployment ? sumWethEvent(logs, getAddress(deployment.weth), WETH_WITHDRAWAL_TOPIC0, routers) : undefined;
+  const v4 = input.version === "v4" && (!input.tokenInAddress || !input.tokenOutAddress || input.v4Binding)
+    ? decodeV4Settlement({ deployment, binding: input.v4Binding, logs, wallet,
+        transaction: input.v4Transaction, nativeIn: !input.tokenInAddress, nativeOut: !input.tokenOutAddress,
+        transferIn, transferOut,
+        wrappedDepositRaw: deposits,
+        wrappedInput: deposits === undefined ? undefined : nonZeroOrUndefined(deposits - (withdrawals ?? 0n)),
+        wrappedOutput: withdrawals,
+      }) : undefined;
+  const executedAmountInRaw = input.tokenInAddress ? transferIn
+    : input.version === "v4" ? v4?.nativeAmountInRaw : deposits;
+  const executedAmountOutRaw = input.tokenOutAddress ? transferOut
+    : input.version === "v4" ? v4?.nativeAmountOutRaw : withdrawals;
 
   return {
+    ...(v4 ? { v4Settlement: v4.evidence } : {}),
     ...(executedAmountInRaw !== undefined ? { executedAmountInRaw } : {}),
     ...(executedAmountOutRaw !== undefined ? { executedAmountOutRaw } : {}),
   };

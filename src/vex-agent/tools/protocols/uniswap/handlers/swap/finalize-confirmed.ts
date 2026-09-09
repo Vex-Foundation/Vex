@@ -8,7 +8,7 @@
  * through `status`, never through `success`.
  */
 
-import { readV4NativeDelta } from "@tools/uniswap/v4-native-settlement.js";
+import { readV4SettlementTransaction } from "@tools/uniswap/v4-settlement.js";
 import { getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
 import { describeV4Route, v4QuoteWarning } from "@tools/uniswap/v4-pool.js";
 import type { UniswapExecutionSnapshot } from "../../../quote-authority/uniswap.js";
@@ -109,8 +109,9 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
       chainId: deployment.chainId,
       walletAddress: x.walletAddress,
       version: x.quoted.route.version,
-      ...(x.quoted.route.version === "v4" && (tokenIn.isNative || tokenOut.isNative)
-        ? { v4NativeDelta: await readV4NativeDelta(getUniswapPublicClient(deployment), deployment, txHash, getAddress(x.walletAddress)) } : {}),
+      ...(x.quoted.route.version === "v4" ? { v4Binding: x.quoted.route.v4,
+        ...((tokenIn.isNative || tokenOut.isNative) ? { v4Transaction: await readV4SettlementTransaction(getUniswapPublicClient(deployment), txHash) } : {}),
+      } : {}),
       tokenInAddress: tokenIn.isNative ? null : tokenIn.address,
       tokenOutAddress: tokenOut.isNative ? null : tokenOut.address,
     });
@@ -131,7 +132,8 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
       const outputPayload = {
         txHash, chain: deployment.key, chainId: deployment.chainId,
         status: "confirmed_pending_amounts",
-        settlementNote: "Swap confirmed; native movement or token Transfer evidence is not yet available. No executed amount was guessed.",
+        settlementNote: "Swap confirmed; the receipt does not prove both executed amounts. No executed amount was guessed.",
+        settlementEvidence: decoded.v4Settlement,
         route: { version: "v4", path: x.quoted.route.path, ...x.quoted.route.v4,
           description: describeV4Route(x.quoted.route.v4), quoteWarning: v4QuoteWarning(x.quoted.route.v4) },
         tokenIn: { symbol: tokenIn.symbol, decimals: tokenIn.decimals },
@@ -191,6 +193,7 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
 
   const outputPayload = {
     txHash, chain: deployment.key,
+    ...(decoded.v4Settlement ? { settlementEvidence: decoded.v4Settlement } : {}),
     tokenIn: tokenIn.symbol, tokenOut: tokenOut.symbol,
     amountIn: amountInHuman, amountOut: amountOutHuman,
     route: { version: x.quoted.route.version, path: x.quoted.route.path,

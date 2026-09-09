@@ -6,6 +6,7 @@
  * the pair cannot disagree about the route or the guard price.
  */
 
+import type { Address } from "viem";
 import { quoteBestRoute, applySlippage } from "@tools/uniswap/quote.js";
 import { getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
 import type { UniswapDeployment } from "@tools/uniswap/deployments.js";
@@ -30,9 +31,10 @@ export async function computeQuote(
   amountIn: bigint,
   slippageBps: number,
   allowV4 = true,
+  wallet?: Address,
 ): Promise<QuotedRoute> {
   const client = getUniswapPublicClient(deployment);
-  const best = await quoteBestRoute(client, { deployment, tokenIn, tokenOut, amountIn, allowV4 });
+  const best = await quoteBestRoute(client, { deployment, tokenIn, tokenOut, amountIn, allowV4, slippageBps, ...(wallet ? { wallet } : {}) });
   if (!best) {
     // State which route families this request actually admitted.
     const probed = [

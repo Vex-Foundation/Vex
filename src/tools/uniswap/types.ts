@@ -25,7 +25,7 @@ interface UniswapRouteAmounts {
   readonly path: readonly Address[];
   readonly fees?: readonly number[];
   readonly amountOut: bigint;
-  /** QuoterV2 gas estimate (V3 only; V2 quotes carry no gas estimate). */
+  /** V3/V4 quoter gas units, or a V2 eth_estimateGas result from the selected wallet. */
   readonly gasEstimate?: bigint;
 }
 
