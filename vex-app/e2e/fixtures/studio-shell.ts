@@ -121,15 +121,9 @@ export async function enterStudio(page: Page): Promise<boolean> {
  * which is how one of them ended up clicking a locator the other had already
  * measured as wrong. The two facts that copy has to carry:
  *
- *  - THE ROW'S ACCESSIBLE NAME IS NOT THE PROJECT NAME. An expanded
- *    `RailRow` sets no `aria-label` (`components/ui/rail-list.tsx:75` labels
- *    only the collapsed rail), so the name is computed from the button's
- *    contents: the title plus the permission pill that `ProjectRailRow`
- *    renders in its trailing slot, i.e. `"<name> restricted"`. An anchored
- *    `^<name>$` therefore matches nothing and times out. The prefix is what
- *    the row and only the row starts with: the sibling menu button is
- *    `"Actions for <name>"` (`studio-copy.ts:423`), which starts with
- *    "Actions".
+ *  - THE ROW'S NAME STARTS WITH THE PROJECT NAME. Permission is exposed as an
+ *    accessible description; a drift warning can contribute to the name.
+ *    The prefix excludes the sibling menu button, named "Actions for <name>".
  *  - A LOGIN SHELL MAY NOT BE AT A PROMPT YET. A `sudo` in the developer's
  *    `.bashrc` blocks on a password read, and every keystroke a spec types
  *    would go to that read instead of to the shell. One interrupt hands the

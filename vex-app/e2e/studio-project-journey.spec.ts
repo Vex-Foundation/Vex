@@ -315,13 +315,14 @@ test("Studio journey: create a project, see its report, open it and get a termin
 
   /* ---- 5. open it, and get a terminal -------------------------------- */
 
-  // The ROW, not the row's action menu: both carry the project name in their
-  // accessible name, and the row's is its whole content, so it also carries the
-  // permission pill.
+  // The selection button is named by the project; its separate action button
+  // is named "Actions for ...". Permission lives in the accessible description.
   const row = sidebar.getByRole("button", {
-    name: `${projectName} restricted`,
+    name: projectName,
+    exact: true,
   });
   await expect(row).toBeVisible();
+  await expect(row).toHaveAccessibleDescription("Restricted");
   await row.click();
 
   const center = page.locator('[data-vex-area="studio-center"]');
