@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { formatWithOptions } from "node:util";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildShareTokenClient } from "../../../vex-agent/agentscan/share-token-client.js";
 import { generateShareToken } from "../../../vex-agent/agentscan/share-token.js";
@@ -23,8 +24,31 @@ function stubFetch(response: Response | Error): ReturnType<typeof vi.fn> {
   return mock;
 }
 
+const logSpies = () => [
+  vi.spyOn(console, "log").mockImplementation(() => undefined),
+  vi.spyOn(console, "info").mockImplementation(() => undefined),
+  vi.spyOn(console, "warn").mockImplementation(() => undefined),
+  vi.spyOn(console, "error").mockImplementation(() => undefined),
+  vi.spyOn(console, "debug").mockImplementation(() => undefined),
+  vi.spyOn(process.stdout, "write").mockImplementation(() => true),
+  vi.spyOn(process.stderr, "write").mockImplementation(() => true),
+];
+let logs: ReturnType<typeof logSpies>;
+
+beforeEach(() => {
+  logs = logSpies();
+});
+
 afterEach(() => {
+  const lines = logs.flatMap((spy) => spy.mock.calls.map((args) => formatWithOptions(
+    { depth: null, maxArrayLength: null, maxStringLength: null }, ...args,
+  )));
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  for (const line of lines) {
+    expect(line).not.toContain(SHARE);
+    expect(line).not.toContain(INGEST);
+  }
 });
 
 describe("generateShareToken", () => {
@@ -36,22 +60,25 @@ describe("generateShareToken", () => {
 });
 
 describe("buildShareTokenClient.register", () => {
-  it("POSTs only the lowercase SHA-256 shareTokenHash with Bearer ingest token", async () => {
+  it("POSTs the plaintext shareToken only in the body to the configured URL with Bearer ingest token", async () => {
     const mock = stubFetch(jsonResponse(200, { status: "registered" }));
-    const client = buildShareTokenClient("http://localhost");
+    const client = buildShareTokenClient("https://agentscan.example");
     const outcome = await client.register({ ingestToken: INGEST, shareToken: SHARE });
 
     expect(outcome).toEqual({ kind: "registered" });
     expect(mock).toHaveBeenCalledTimes(1);
     const [url, init] = mock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://localhost/v1/agents/share-token");
+    expect(url).toBe("https://agentscan.example/v1/agents/share-token");
     expect((init.headers as Record<string, string>)["Authorization"]).toBe(`Bearer ${INGEST}`);
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body as string)).toEqual({
-      shareTokenHash: "b0679324228c35931acdfa8a487f94873c05094138a477994a5bdba6d6c24a56",
+      shareToken: SHARE,
     });
-    expect(init.body).not.toContain(SHARE);
-    expect(JSON.stringify(init.headers)).not.toContain(SHARE);
+    const { body, ...requestMetadata } = init;
+    expect(body).not.toContain(INGEST);
+    expect(JSON.stringify({ url, ...requestMetadata })).not.toContain(SHARE);
+    expect(init.redirect).toBe("error");
+    expect(JSON.stringify(outcome)).not.toContain(SHARE);
   });
 
   it("preserves a base-URL subpath", async () => {
@@ -96,7 +123,7 @@ describe("buildShareTokenClient.register", () => {
     stubFetch(jsonResponse(400, { error: { code: "validation_failed" } }));
     const client = buildShareTokenClient("http://localhost");
     const outcome = await client.register({ ingestToken: INGEST, shareToken: SHARE });
-    expect(outcome.kind).toBe("invalid");
+    expect(outcome).toEqual({ kind: "invalid", detail: "HTTP 400 validation_failed" });
   });
 
   it("maps 429/500 and network failure to retryable", async () => {
@@ -108,10 +135,11 @@ describe("buildShareTokenClient.register", () => {
       retryAfterSeconds: 30,
     });
 
-    stubFetch(jsonResponse(500, { error: { code: "internal" } }));
+    stubFetch(jsonResponse(500, { error: { code: "internal" } }, { "retry-after": "15" }));
     expect(await client.register({ ingestToken: INGEST, shareToken: SHARE })).toMatchObject({
       kind: "retryable",
       status: 500,
+      retryAfterSeconds: 15,
     });
 
     stubFetch(new Error("fetch failed"));
@@ -121,16 +149,32 @@ describe("buildShareTokenClient.register", () => {
     });
   });
 
-  it("never leaks the share token into a retryable or invalid detail", async () => {
-    stubFetch(jsonResponse(500, { error: { code: `internal ${SHARE}` } }));
+  it.each([400, 429, 500])("never leaks credentials from a %i response into details or logs", async (status) => {
+    stubFetch(jsonResponse(status, { error: { code: `internal ${SHARE} ${INGEST}`, message: SHARE } }));
     const client = buildShareTokenClient("http://localhost");
     const server = await client.register({ ingestToken: INGEST, shareToken: SHARE });
+    expect(server.kind).toBe(status === 400 ? "invalid" : "retryable");
     expect(JSON.stringify(server)).not.toContain(SHARE);
+    expect(JSON.stringify(server)).not.toContain(INGEST);
+  });
 
-    stubFetch(new Error(`connect ECONNREFUSED near ${SHARE}`));
+  it("never leaks credentials from a network error into details or logs", async () => {
+    stubFetch(new Error(`connect ECONNREFUSED near ${SHARE} ${INGEST}`));
+    const client = buildShareTokenClient("http://localhost");
     const network = await client.register({ ingestToken: INGEST, shareToken: SHARE });
     expect(JSON.stringify(network)).not.toContain(SHARE);
+    expect(JSON.stringify(network)).not.toContain(INGEST);
     expect(network.kind).toBe("retryable");
+  });
+
+  it("reports an oversized provider detail explicitly without returning a cut-off message", async () => {
+    stubFetch(jsonResponse(400, { error: { code: "invalid field ".repeat(30) } }));
+    const outcome = await buildShareTokenClient("https://agentscan.example")
+      .register({ ingestToken: INGEST, shareToken: SHARE });
+    expect(outcome).toEqual({
+      kind: "invalid",
+      detail: "HTTP 400; detail omitted (exceeds 120 characters)",
+    });
   });
 
   it("maps a malformed 200 body to invalid rather than throwing", async () => {
