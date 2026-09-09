@@ -1,0 +1,138 @@
+{
+  "observedAt": "2026-09-09T16:03Z",
+  "executeStageRun": false,
+  "events": [
+    {
+      "event": "uniswap.v4.live_quote",
+      "chainId": 4663,
+      "poolId": "0x7f8271c1a7a6a434f33b0babc15bf2980a0dcb4196848b4f7e789a7fd73a5350",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x008Df4b3E857D06c4603Aeb11F267ccD32ce2005",
+        "fee": 0,
+        "tickSpacing": 200,
+        "hooks": "0xE5e702641Ea86F4ae6cC3cDaeD2B886f976Be044"
+      },
+      "amountIn": "0.0001",
+      "amountOutRaw": "211784595775006917032",
+      "minAmountOutRaw": "209666749817256847861",
+      "gasEstimate": "79611"
+    },
+    {
+      "event": "uniswap.v4.live_quote",
+      "chainId": 8453,
+      "poolId": "0x4f7e88a5183a5e034dd1e2e6b4277e8ca820a310a0fba6d5b0dd3db374ad256a",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xC9750053FE947E0961eab0f3E29325F0311DCb07",
+        "fee": 910000,
+        "tickSpacing": 9100,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "amountIn": "0.0001",
+      "amountOutRaw": "5429846364271211987111",
+      "minAmountOutRaw": "5375547900628499867239",
+      "gasEstimate": "59743"
+    },
+    {
+      "event": "uniswap.v4.live_added_chain",
+      "chainId": 42161,
+      "nativeSymbol": "ETH",
+      "handlerSelectedVersion": "v3",
+      "handlerAmountOutRaw": "248842",
+      "v4Discovery": {
+        "indexed": 30,
+        "matching": 0,
+        "considered": 0,
+        "refused": 0
+      },
+      "sampleProbeSource": "owner_supplied_pool_id_direct_quoter",
+      "poolId": "0x864abca0a6202dba5b8868772308da953ff125b0f95015adbf89aaf579e903a8",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+        "fee": 500,
+        "tickSpacing": 10,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "amountInRaw": "99750000000000",
+      "sampleAmountOutRaw": "248629",
+      "gasEstimate": "42695"
+    },
+    {
+      "event": "uniswap.v4.live_added_chain",
+      "chainId": 10,
+      "nativeSymbol": "ETH",
+      "handlerSelectedVersion": "v3",
+      "handlerAmountOutRaw": "248698",
+      "v4Discovery": {
+        "indexed": 30,
+        "matching": 0,
+        "considered": 0,
+        "refused": 0
+      },
+      "sampleProbeSource": "owner_supplied_pool_id_direct_quoter",
+      "poolId": "0x51bf4cc5b8d9f7f759e41f572fe2a25bc2aeb42432bf12544a350595e5c8bb43",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+        "fee": 500,
+        "tickSpacing": 10,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "amountInRaw": "99750000000000",
+      "sampleAmountOutRaw": "248618",
+      "gasEstimate": "42659"
+    },
+    {
+      "event": "uniswap.v4.live_added_chain",
+      "chainId": 137,
+      "nativeSymbol": "POL",
+      "handlerSelectedVersion": "v2",
+      "handlerAmountOutRaw": "9",
+      "v4Discovery": {
+        "indexed": 30,
+        "matching": 0,
+        "considered": 0,
+        "refused": 0
+      },
+      "sampleProbeSource": "owner_supplied_pool_id_direct_quoter",
+      "poolId": "0x37f372fc7c59fb54a7797addeb6c03670537eacd62d4bed81dfffa61876cd775",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+        "fee": 500,
+        "tickSpacing": 10,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "amountInRaw": "99750000000000",
+      "sampleAmountOutRaw": "9",
+      "gasEstimate": "56885"
+    },
+    {
+      "event": "uniswap.v4.live_added_chain",
+      "chainId": 56,
+      "nativeSymbol": "BNB",
+      "handlerSelectedVersion": "v3",
+      "handlerAmountOutRaw": "73880311293381702",
+      "v4Discovery": {
+        "indexed": 30,
+        "matching": 0,
+        "considered": 0,
+        "refused": 0
+      },
+      "sampleProbeSource": "owner_supplied_pool_id_direct_quoter",
+      "poolId": "0x963f416c93cc57e6a5711a22ac976c4990165d3f99b8fa3ee26c4ef7b53ed752",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+        "fee": 500,
+        "tickSpacing": 10,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "amountInRaw": "99750000000000",
+      "sampleAmountOutRaw": "73825948379658232",
+      "gasEstimate": "42886"
+    }
+  ]
+}

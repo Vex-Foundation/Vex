@@ -28,6 +28,8 @@ export function buildV4SwapTx(args: BuildSwapArgs): BuiltSwapTx {
   let commands = "0x";
   const inputs: Hex[] = [];
   const add = (command: string, data: Hex): void => { commands += command; inputs.push(data); };
+  // WRAP_ETH/UNWRAP_WETH are protocol opcode names on every chain. The
+  // wrapper identity is deployment.weth, including WPOL and WBNB.
   if (wrapsInput) add("0b", encodeAbiParameters(payment, [ROUTER, amountIn]));
   if (unwrapsInput) {
     add("02", encodeAbiParameters(transfer, [deployment.weth, ROUTER, amountIn]));

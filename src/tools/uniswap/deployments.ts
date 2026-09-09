@@ -215,6 +215,21 @@ const ARBITRUM: UniswapDeployment = {
   connectors: [
     "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", // USDC
   ],
+  // Re-verified 2026-09-09 via https://arb1.arbitrum.io/rpc
+  // Code bytes: manager 24009, quoter 5820, StateView 3531, PositionManager
+  // 23877, router 24546, Permit2 9152. All four poolManager() reads matched.
+  // Router eip712Domain() = UniversalRouter / 2; chain and contract matched.
+  // The page's unversioned router is 2.0 (domain read reverts); use the SDK
+  // constants.ts 2.1.1 entry. The current page also lists explicit 2.1.1.
+  v4: {
+    poolManager: "0x360e68faccca8ca495c1b759fd9eee466db9fb32",
+    quoter: "0x3972c00f7ed4885e145823eb7c655375d275a1c5",
+    stateView: "0x76fd297e2d437cd7f76d50f01afe6160f86e9990",
+    positionManager: "0xd88f38f930b7952f2db2432cb002e7abbf3dd869",
+    permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    universalRouter: "0x8b844f885672f333bc0042cb669255f93a4c1e6b",
+    universalRouterVersion: "2.1.1",
+  },
   v2: {
     factory: "0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9",
     router02: "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24",
@@ -240,6 +255,21 @@ const OPTIMISM: UniswapDeployment = {
   connectors: [
     "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", // USDC
   ],
+  // Re-verified 2026-09-09 via https://mainnet.optimism.io
+  // Code bytes: manager 24009, quoter 5820, StateView 3531, PositionManager
+  // 23877, router 24546, Permit2 9152. All four poolManager() reads matched.
+  // Router eip712Domain() = UniversalRouter / 2; chain and contract matched.
+  // The page's unversioned router is 2.0 (domain read reverts); use the SDK
+  // constants.ts 2.1.1 entry. The current page also lists explicit 2.1.1.
+  v4: {
+    poolManager: "0x9a13f98cb987694c9f086b1f5eb990eea8264ec3",
+    quoter: "0x1f3131a13296fb91c90870043742c3cdbff1a8d7",
+    stateView: "0xc18a3169788f4f75a170290584eca6395c75ecdb",
+    positionManager: "0x3c3ea4b57a46241e54610e5f022e5c45859a1017",
+    permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    universalRouter: "0x8b844f885672f333bc0042cb669255f93a4c1e6b",
+    universalRouterVersion: "2.1.1",
+  },
   v2: {
     factory: "0x0c3c1c532F1e39EdF36BE9Fe0bE1410313E074Bf",
     router02: "0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2",
@@ -263,6 +293,21 @@ const POLYGON: UniswapDeployment = {
     "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", // USDC (native)
     "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619", // WETH (bridged)
   ],
+  // Re-verified 2026-09-09 via https://polygon-bor-rpc.publicnode.com
+  // Code bytes: manager 24009, quoter 5820, StateView 3531, PositionManager
+  // 23877, router 24546, Permit2 9152. All four poolManager() reads matched.
+  // Router eip712Domain() = UniversalRouter / 2; chain and contract matched.
+  // The page's unversioned router is 2.0 (domain read reverts); use the SDK
+  // constants.ts 2.1.1 entry. The current page also lists explicit 2.1.1.
+  v4: {
+    poolManager: "0x67366782805870060151383f4bbff9dab53e5cd6",
+    quoter: "0xb3d5c3dfc3a7aebff71895a7191796bffc2c81b9",
+    stateView: "0x5ea1bd7974c8a611cbab0bdcafcb1d9cc9b3ba5a",
+    positionManager: "0x1ec2ebf4f37e7363fdfe3551602425af0b3ceef9",
+    permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    universalRouter: "0x8b844f885672f333bc0042cb669255f93a4c1e6b",
+    universalRouterVersion: "2.1.1",
+  },
   v2: {
     factory: "0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C",
     router02: "0xedf6066a2b290C185783862C7F4776A2C8077AD1",
@@ -286,6 +331,21 @@ const BSC: UniswapDeployment = {
     "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", // USDC
     "0x55d398326f99059fF775485246999027B3197955", // USDT
   ],
+  // Re-verified 2026-09-09 via https://bsc-dataseed1.bnbchain.org
+  // Code bytes: manager 24009, quoter 5820, StateView 3531, PositionManager
+  // 23877, router 24546, Permit2 9152. All four poolManager() reads matched.
+  // Router eip712Domain() = UniversalRouter / 2; chain and contract matched.
+  // The page's unversioned router is 2.0 (domain read reverts); use the SDK
+  // constants.ts 2.1.1 entry. The current page also lists explicit 2.1.1.
+  v4: {
+    poolManager: "0x28e2ea090877bf75740558f6bfb36a5ffee9e9df",
+    quoter: "0x9f75dd27d6664c475b90e105573e550ff69437b0",
+    stateView: "0xd13dd3d6e93f276fafc9db9e6bb47c1180aee0c4",
+    positionManager: "0x7a4a5c919ae2541aed11041a1aeee68f1287f95b",
+    permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    universalRouter: "0x8b844f885672f333bc0042cb669255f93a4c1e6b",
+    universalRouterVersion: "2.1.1",
+  },
   v2: {
     factory: "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6",
     router02: "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24",
@@ -330,7 +390,7 @@ export function listUniswapDeployments(): readonly UniswapDeployment[] {
 /**
  * Router spender allowlist (security: validate BEFORE any ERC-20 approve).
  * Mirrors `KYBER_KNOWN_SPENDERS` — an approval may ONLY target a Uniswap V2
- * Router02 or V3 SwapRouter02 that is registered above. Built once from the
+ * Router02, V3 SwapRouter02, Permit2 or UniversalRouter registered above. Built once from the
  * verified registry so it can never drift from the addresses actually routed.
  */
 export const UNISWAP_KNOWN_SPENDERS: ReadonlySet<string> = (() => {
