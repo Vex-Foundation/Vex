@@ -162,3 +162,22 @@ it("both handlers reject model-authored v4 authority fields by name before provi
     }
   }
 });
+
+
+it("seals v4 identity and independent prices without inventing a V2/V3 route hint", async () => {
+  const { buildUniswapQuoteSnapshot } = await import("@vex-agent/tools/protocols/uniswap/handlers/swap/execution-binding.js");
+  const { buildUniswapFeeSkippedDisclosure } = await import("@tools/uniswap/fee/disclosure.js");
+  const approved = sealUniswapSnapshot(fields());
+  const quoted = await revalidateV4Quote({ client: client(), deployment, approved, wallet });
+  const priceReference = { source: "dexscreener" as const, chainId: 1, tokenIn: deployment.weth, tokenOut: token,
+    inputPriceUsd: "100", outputPriceUsd: "10", inputPair: "input-pool", outputPair: "output-pool" };
+  const snapshot = buildUniswapQuoteSnapshot({ chainId: 1, tokenIn: approved.tokenIn, tokenOut: approved.tokenOut,
+    recipient: wallet, expiresAt: approved.expiresAt, debitPlan: approved.debitPlan,
+    charge: { totalRaw: 100n, swapAmountRaw: 100n, feeRaw: null, feeTokenAddress: null,
+      disclosure: buildUniswapFeeSkippedDisclosure({ reason: "dust", totalRaw: 100n }) },
+    quoted: { ...quoted, priceReference } });
+  expect(snapshot.routeHint).toBeUndefined();
+  expect(snapshot.v4).toEqual(approved.v4);
+  expect(snapshot.priceReference).toEqual(priceReference);
+  expect(snapshot.approvedMinOutRaw).toBe("990");
+});

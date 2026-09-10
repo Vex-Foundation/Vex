@@ -14,6 +14,7 @@
 import { describeV4Route, v4QuoteWarning } from "@tools/uniswap/v4-pool.js";
 import { formatUnits } from "viem";
 import { z } from "zod";
+import { swapPriceReferenceSchema } from "@tools/evm-chains/swap-price-reference.js";
 
 import { boundDebitPlanSchema } from "./debit-plan.js";
 import {
@@ -52,6 +53,7 @@ const RouteSnapshotSchema = z.object({
   expiresAt: z.string().min(1),
   eligibility: z.object({ kind: z.string() }).passthrough(),
   debitPlan: boundDebitPlanSchema,
+  priceReference: swapPriceReferenceSchema.optional(),
 });
 
 /**

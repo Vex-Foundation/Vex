@@ -330,11 +330,13 @@ function renderPlan(plan: BoundDebitPlan): string {
     : ` (${conservative.join(" and ")} gas could not be simulated yet, so it is priced`
       + " CONSERVATIVELY from the quoter's own estimate plus headroom, not measured)";
   return `will send ${plan.legs.map((leg) => leg.role).join(" -> ")}, ${capText},`
+    + (plan.feeHeadroomBps === undefined ? "" : ` including ${plan.feeHeadroomBps / 100}% headroom over the observed fee,`)
     + ` plus a reserved ${plan.reserve.kind}${conservativeText}`
     // Consent, not just disclosure: the ceiling above is ENFORCED, so the
     // stated price is the most this swap may pay per gas - a higher
     // requirement at signing is refused by name instead of paid.
-    + "; this ceiling is enforced - a higher gas price at signing is refused, never paid";
+    + "; this ceiling is enforced - a gas price above it at signing is refused, never paid"
+    + "; gas units are freshly estimated, so this is a per-gas ceiling, not a fixed total gas bill";
 }
 
 /**

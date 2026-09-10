@@ -1,0 +1,58 @@
+[
+  {
+    "chainId": "base",
+    "dexId": "quickswap",
+    "url": "https://dexscreener.com/base/0x5d0bc342178c8fe2c2f9a9fcc9d52555c99936db",
+    "pairAddress": "0x5D0bC342178C8Fe2c2f9A9fcC9D52555C99936db",
+    "labels": [
+      "v4"
+    ],
+    "baseToken": {
+      "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "name": "USD Coin",
+      "symbol": "USDC"
+    },
+    "quoteToken": {
+      "address": "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA",
+      "name": "USD Base Coin",
+      "symbol": "USDbC"
+    },
+    "priceNative": "0.9999",
+    "priceUsd": "0.9999",
+    "txns": {
+      "m5": {
+        "buys": 2,
+        "sells": 0
+      },
+      "h1": {
+        "buys": 45,
+        "sells": 7
+      },
+      "h6": {
+        "buys": 85,
+        "sells": 100
+      },
+      "h24": {
+        "buys": 184,
+        "sells": 251
+      }
+    },
+    "volume": {
+      "h24": 250443.29,
+      "h6": 66527.45,
+      "h1": 33272.14,
+      "m5": 581.67
+    },
+    "priceChange": {},
+    "liquidity": {
+      "usd": 103176.86,
+      "base": 44591,
+      "quote": 58585
+    },
+    "fdv": 3697349797,
+    "marketCap": 60900317339,
+    "pairCreatedAt": 1752584457000,
+    "info": null,
+    "boosts": null
+  }
+]

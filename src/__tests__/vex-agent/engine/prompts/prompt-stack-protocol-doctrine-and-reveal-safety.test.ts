@@ -8,7 +8,7 @@ import {
 } from "../../../../vex-agent/engine/prompts/index.js";
 import { defaultVisibilityContext, getOpenAITools } from "../../../../vex-agent/tools/registry.js";
 import { makeContext } from "./_prompt-stack-helpers.js";
-import { SWAP_VENUE_STANDING } from "@vex-agent/tools/registry/swap-venue-guidance.js";
+import { SWAP_VENUE_GUIDANCE_FULL } from "@vex-agent/tools/registry/swap-venue-guidance.js";
 
 describe("prompt-stack — protocol doctrine & reveal safety", () => {
   beforeEach(() => {
@@ -165,8 +165,8 @@ describe("prompt-stack — protocol doctrine & reveal safety", () => {
       // the owner module's. The "exactly once" half is the load-bearing one -
       // the defect this replaces was FOUR surfaces each stating their own
       // version of the standing in one context window.
-      expect(full).toContain(SWAP_VENUE_STANDING);
-      expect(full.split(SWAP_VENUE_STANDING)).toHaveLength(2);
+      expect(full).toContain(SWAP_VENUE_GUIDANCE_FULL);
+      expect(full.split(SWAP_VENUE_GUIDANCE_FULL)).toHaveLength(2);
       expect(full).not.toMatch(/primary swap (route|venue)|fallback venue|hidden fallback/i);
       // The preference is guidance, never a gate: the prompt must not claim the
       // alternative is locked, unavailable, or has to be unlocked by a failure.

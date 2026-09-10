@@ -1,5 +1,11 @@
 # Uniswap direct venue
 
+KyberSwap is the usual first choice. On Robinhood Chain, quote both venues when
+both price the pair and prefer direct Uniswap when it has a route. KyberSwap's
+index drops quiet pools there and its USD reference can lag. Direct Uniswap
+covers V2, V3 and v4 on verified deployments; other DEX liquidity can be absent.
+Each execution requires that venue's matching approved quote.
+
 The same tool pair, `uniswap__swap_quote` and `uniswap__swap_execute`, covers all seven verified chains below. V2 uses Router02, V3 uses SwapRouter02, and v4 uses UniversalRouter 2.1.1 plus transaction-based Permit2 allowances. Execution remains exact input and approval-bound. V4 routes are single hop; versions are not mixed in one call.
 
 | Chain | ID | Registered versions | Native asset | Wrapped native |

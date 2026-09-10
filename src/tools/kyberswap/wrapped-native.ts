@@ -2,7 +2,8 @@
  * KyberSwap wrapped-native token registry — the wrapped-native ERC-20 address
  * per aggregator chain, keyed by chain slug.
  *
- * Used ONLY to classify a swap leg as economically native for RECORDING
+ * Used as the independent-price identity and to classify a swap leg as
+ * economically native for recording
  * (trade side, benchmark/settlement asset keys) when the caller passes the
  * wrapped contract address directly instead of the native sentinel/keyword —
  * never for routing, allowance, or execution, where a wrapped token remains

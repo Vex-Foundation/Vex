@@ -170,7 +170,7 @@ describe("what the guide carries", () => {
   it("states the default router and the explicit Robinhood preference", () => {
     expect(guide).toContain(SWAP_VENUE_STANDING);
     expect(guide).toContain("KyberSwap is the default");
-    expect(guide).toContain("On Robinhood Chain, native Uniswap is the more stable choice.");
+    expect(guide).toContain("On Robinhood Chain, quote both venues when both price the pair; prefer direct Uniswap when it has a route");
   });
   it("renders the four sections in order, under its own title", () => {
     const order = [

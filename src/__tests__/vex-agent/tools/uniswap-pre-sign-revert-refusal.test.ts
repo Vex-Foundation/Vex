@@ -119,7 +119,7 @@ vi.mock("@tools/uniswap/receipt-decoder.js", () => ({
 // seam. An empty pool list keeps this suite's prior behaviour: the check
 // finds no liquidity and the suite's subject is elsewhere.
 vi.mock("@tools/dexscreener/price-read.js", () => ({
-  readTokensPairs: vi.fn(async () => []),
+  readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []),
 }));
 vi.mock("@tools/evm-chains/registry.js", () => ({ getLocalChain: (...args: unknown[]) => getLocalChain(...args) }));
 vi.mock("@tools/evm-chains/erc20-balance-guard.js", () => ({
@@ -522,5 +522,23 @@ describe("uniswap.swap.execute — a broadcast of unknown outcome still says do 
     expect(result.output).toMatch(/do not retry/i);
     expect(result.output).not.toMatch(/nothing was signed/i);
     expect(failActivityEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe("fee-bound refusals retain a typed ledger cause", () => {
+  it.each(["prepared", "live", "mode", "unreadable"] as const)("records %s refusal without a signature or broadcast", async (kind) => {
+    const fees = await import("@tools/uniswap/fee-cap-gate.js");
+    const error = kind === "prepared" ? new fees.UniswapFeeCapExceededError("gasPrice", "1151", "1150")
+      : kind === "live" ? new fees.UniswapApprovedGasPriceExceededError("gasPrice", "1151", "1150")
+      : kind === "mode" ? new fees.UniswapApprovedGasPricingModeChangedError("legacy", "eip1559")
+      : new fees.UniswapLiveFeeRequirementUnreadableError(new Error("provider payload must stay private"));
+    signUniswapTransaction.mockRejectedValueOnce(error);
+    const result = await execute(SWAP_ONLY_PARAMS, context);
+    expect(result.data).toMatchObject({ status: "not_attempted", failureCode: "fee_bound_refused", retryable: kind === "unreadable" });
+    expect(failActivityEvent).toHaveBeenCalledWith(100, expect.objectContaining({ failureCode: "fee_bound_refused", failureReason: error.message }));
+    expect(failActivityEvent.mock.invocationCallOrder[0]).toBeLessThan(abortPlannedEvents.mock.invocationCallOrder[0] ?? Infinity);
+    expect(result.output).not.toContain("provider payload");
+    expect(markActivityBroadcast).not.toHaveBeenCalled();
+    expect(broadcastUniswapTransaction).not.toHaveBeenCalled();
   });
 });

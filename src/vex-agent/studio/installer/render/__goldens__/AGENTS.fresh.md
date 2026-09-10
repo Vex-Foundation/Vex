@@ -1,4 +1,4 @@
-<!-- vex:studio:begin vex=0.2.6 hash=b0fcc9fd1fdecef5 -->
+<!-- vex:studio:begin vex=0.2.6 hash=cd730b5819da49cc -->
 # Vex Studio - project "acme-trading"
 
 This repository is connected to Vex, a self-custodial crypto agent whose tools
@@ -258,24 +258,21 @@ silently dropping them, and convert with `UnitsConvert`, never in your head.
 
 ### Swap
 
-`TokenFind` resolves each token to a CONTRACT ADDRESS on the exact chain, then
-`SwapQuote`, then `SwapExecute` with identical parameters including the same
-slippage. That pair routes EVM trades to KyberSwap and Solana to Jupiter
-itself; `SwapQuoteUniswap` then `SwapExecuteUniswap` is the Uniswap pair, on a
-chain with a verified Vex deployment.
+Resolve token CONTRACT ADDRESSES on the exact chain with `TokenFind`.
+`SwapQuote`/`SwapExecute` route EVM to KyberSwap and Solana to Jupiter;
+`SwapQuoteUniswap`/`SwapExecuteUniswap` use verified Uniswap deployments.
+Execute with identical quote parameters, including slippage.
 
-KyberSwap is the default; Uniswap prices V2, V3 and v4 pools on seven chains. Other DEX liquidity may be unavailable there. On Robinhood Chain, native Uniswap is the more stable choice. Use Uniswap when KyberSwap is region/edge-blocked, lacks chain/pair coverage, its quote fails or looks off, or the user asks. Quote both when unsure. Execute on the venue you quoted.
+KyberSwap is the default; Uniswap prices V2, V3 and v4 pools on seven chains. Other DEX liquidity may be unavailable there. On Robinhood Chain, quote both venues when both price the pair; prefer direct Uniswap when it has a route (V2/V3/v4). KyberSwap drops quiet pools; its USD reference lags. Elsewhere, KyberSwap is the usual first choice. Use Uniswap when KyberSwap is region/edge-blocked, unavailable, mispriced, or on request. Quote both when unsure. Execute on the venue you quoted.
 
-Restate the quote's expected output, price impact, gas and safety verdicts
-before executing. Slippage binds the quote you were SHOWN: the execute writes
-that floor into the calldata and refuses BY NAME rather than filling worse. So
+Restate expected output, price impact, gas and safety verdicts before executing.
+Execution writes the approved floor into calldata and refuses by name below it.
 RE-QUOTE AT THE SAME SLIPPAGE FIRST. Increase `slippageBps` only within the
 user's stated limit or after the user authorizes the new worst-case amount.
-Announcing a larger bound does not authorize it. On EVM a
-quote is refused at or above 15% price impact and when the venue cannot price
-the output in USD; on Solana there are no USD figures at all, so only the
-impact rule applies. The card names the chain, the tokens, the amounts, the
-expected output and the Vex fee when a card is required.
+Announcing a larger bound does not authorize it. EVM quotes refuse at 15%
+impact or above, or without output USD pricing; on Solana there are no USD figures at all;
+only its impact rule applies. Required cards name chain, tokens, amounts,
+expected output and Vex fee.
 
 ### Bridge
 

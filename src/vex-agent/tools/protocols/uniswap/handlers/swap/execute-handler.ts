@@ -41,7 +41,7 @@ import { TOOL_ID, QUOTE_TOOL_ID, PROTOCOL } from "./protocol-id.js";
 import { requireDeployment, routerFor } from "./deployment.js";
 import { resolveUniswapToken } from "./token-resolution.js";
 import { resolveUniswapSlippageBps } from "./slippage.js";
-import { computeQuote, type QuotedRoute } from "./route-quote.js";
+import { refreshApprovedQuote, type QuotedRoute } from "./route-quote.js";
 import { uniswapFailureMessage } from "./error-output.js";
 import { failPreBroadcast, abortRemainingPlans } from "./activity-recording.js";
 import { buildTxForEvent, describeEventRole, planSwapEvents } from "./execute-plan.js";
@@ -70,6 +70,8 @@ import {
   type UniswapSpendabilityClient,
 } from "./native-debit-plan.js";
 import { createUniswapPreSignDebitGate } from "./quote-spendability.js";
+import { createSwapExecutionTiming } from "@tools/evm-chains/swap-execution-timing.js";
+import { withApprovedGasFees } from "../../../quote-authority/fee-ceiling-disclosure.js";
 import {
   ambiguousBroadcastResult,
   preSignRefusalResult,
@@ -80,6 +82,14 @@ import {
 export async function executeUniswapSwap(
   p: Record<string, unknown>,
   context: ProtocolExecutionContext,
+): Promise<ToolResult> {
+  const timing = createSwapExecutionTiming("uniswap.swap.execute");
+  return timing.run("execute", () => executeWithTiming(p, context, timing));
+}
+
+async function executeWithTiming(
+  p: Record<string, unknown>, context: ProtocolExecutionContext,
+  timing: ReturnType<typeof createSwapExecutionTiming>,
 ): Promise<ToolResult> {
   // C24 (Codex final-review round 1, finding 8): the manifest declares no
   // `dryRun` param (five-field contract is final) - a caller that still
@@ -127,8 +137,14 @@ export async function executeUniswapSwap(
   let tokenIn: UniswapToken;
   let tokenOut: UniswapToken;
   try {
-    tokenIn = await resolveUniswapToken(deployment, tokenInRaw);
-    tokenOut = await resolveUniswapToken(deployment, tokenOutRaw);
+    [tokenIn, tokenOut] = await timing.run("token_metadata", async () => {
+      const [input, output] = await Promise.allSettled([
+        resolveUniswapToken(deployment, tokenInRaw), resolveUniswapToken(deployment, tokenOutRaw),
+      ]);
+      if (input.status === "rejected") throw input.reason;
+      if (output.status === "rejected") throw output.reason;
+      return [input.value, output.value] as const;
+    });
   } catch (err) {
     return failPreBroadcast(p, { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress, sessionId }, err);
   }
@@ -151,7 +167,7 @@ export async function executeUniswapSwap(
   // make has passed (review finding, 2026-09-04). Claiming here burnt the approved quote
   // on the way out of a correct refusal: the retry the refusal instructed the
   // agent to make got `already_claimed`.
-  const claimed = await readUniswapExecutionSnapshot(TOOL_ID, sessionId, p, context);
+  const claimed = await timing.run("approved_quote", () => readUniswapExecutionSnapshot(TOOL_ID, sessionId, p, context));
   if (!claimed.ok) {
     return failPreBroadcast(
       p,
@@ -169,10 +185,11 @@ export async function executeUniswapSwap(
     // BEFORE the quote, and deliberately: the route is priced for the amount
     // the router actually receives (`amountIn − fee`), and whether a fee
     // applies at all depends on a token fact the eligibility check owns.
-    feeCharge = await resolveUniswapFeeCharge({ chainId: deployment.chainId, tokenIn, amountInRaw: amountIn });
-    quoted = approved.v4
-      ? await revalidateV4Quote({ client: getUniswapPublicClient(deployment), deployment, approved, resolvedTokens: [tokenIn, tokenOut], wallet: getAddress(walletAddress), ...(context.abortSignal ? { signal: context.abortSignal } : {}) })
-      : await computeQuote(deployment, tokenIn, tokenOut, feeCharge.swapAmountRaw, slippageBps, false, getAddress(walletAddress));
+    feeCharge = await timing.run("fee_policy", () => resolveUniswapFeeCharge({ chainId: deployment.chainId, tokenIn, amountInRaw: amountIn }));
+    quoted = await timing.run("route_quote", () => approved.v4
+      ? revalidateV4Quote({ client: getUniswapPublicClient(deployment), deployment, approved, resolvedTokens: [tokenIn, tokenOut], wallet: getAddress(walletAddress), ...(context.abortSignal ? { signal: context.abortSignal } : {}) })
+      : refreshApprovedQuote(deployment, tokenIn, tokenOut, feeCharge.swapAmountRaw, slippageBps, approved, getAddress(walletAddress)));
+    if (approved.priceReference) quoted = { ...quoted, priceReference: approved.priceReference };
   } catch (err) {
     return failPreBroadcast(
       p,
@@ -255,6 +272,9 @@ export async function executeUniswapSwap(
       p,
       { chainId: deployment.chainId, chainSlug: deployment.key, walletAddress, sessionId, tokenIn, tokenOut },
       new VexError(ErrorCodes.KYBER_PRICE_FLOOR_VIOLATED, refusal.message, refusal.hint),
+      { outputObservation: { quotedOutputRaw: approved.approvedAmountOutRaw,
+        approvedMinimumOutputRaw: approved.approvedMinOutRaw, refreshedOutputRaw: quoted.amountOut.toString(),
+        shortfallRaw: (BigInt(approved.approvedAmountOutRaw) - quoted.amountOut).toString(), reference: "fresh_route_quote" } },
     );
   }
   quoted = { ...quoted, minAmountOut: approvedMinOut };
@@ -536,9 +556,9 @@ export async function executeUniswapSwap(
         // inclusion" (see `execute-broadcast.ts`'s ambiguity mapping), so the
         // named reason is the confirm-side one, never the send-side one.
         await noteHandlerPendingReason(TOOL_ID, event.id, "broadcast_ambiguous_confirm");
-        return ambiguousBroadcastResult({
+        return withApprovedGasFees(ambiguousBroadcastResult({
           eventRole: event.eventRole, txHash: outcome.txHash, executionId, chainId: deployment.chainId,
-        });
+        }), approved.debitPlan);
       }
 
       if (outcome.kind === "failed") {
@@ -549,11 +569,13 @@ export async function executeUniswapSwap(
             `earlier ${event.eventRole} reverted (${outcome.classification.failureCode})`,
           );
         }
-        return outcome.stage === "pre_broadcast"
+        return withApprovedGasFees(outcome.stage === "pre_broadcast"
           ? preSignRefusalResult({
               eventRole: event.eventRole, classification: outcome.classification, slippageBps, executionId,
+              outputObservation: { quotedOutputRaw: approved.approvedAmountOutRaw, approvedMinimumOutputRaw: approved.approvedMinOutRaw,
+                ...(outcome.classification.simulatedOutputRaw === undefined ? {} : { simulatedOutputRaw: outcome.classification.simulatedOutputRaw }) },
             })
-          : minedRevertResult({ eventRole: event.eventRole, classification: outcome.classification, executionId });
+          : minedRevertResult({ eventRole: event.eventRole, classification: outcome.classification, executionId }), approved.debitPlan);
       }
 
       // confirmed on-chain
@@ -588,7 +610,7 @@ export async function executeUniswapSwap(
       });
 
       // ── The fee leg, LAST, and only now that the swap is CONFIRMED ──
-      return await attachConfirmedUniswapFee({
+      return withApprovedGasFees(await attachConfirmedUniswapFee({
         finalized, feeCharge, feePlan, feeRowId, executionId, swapLegCount,
         chainId: deployment.chainId, tokenDecimals: tokenIn.decimals, clients,
         priorLeg, feeCap: legFeeCap,
@@ -598,13 +620,13 @@ export async function executeUniswapSwap(
         // CONFIRMED swap untouched - `runUniswapFeeLeg` never throws and never
         // rewrites the parent row.
         debitGate: debitGateFor("swap_fee"),
-      });
+      }), approved.debitPlan);
     }
 
     // Unreachable - `createdEvents` always has at least the swap entry, and
     // the loop above returns on every branch. Kept for exhaustiveness.
     throw new Error("uniswap__swap_execute: staged broadcast loop exited without a result");
   } catch (err) {
-    return postIntentFailureResult({ executionId, refusedRole, slippageBps, error: err });
+    return withApprovedGasFees(await postIntentFailureResult({ executionId, refusedRole, slippageBps, error: err }), approved.debitPlan);
   }
 }

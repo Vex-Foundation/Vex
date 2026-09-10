@@ -153,7 +153,7 @@ vi.mock("@tools/uniswap/revert-mapping.js", () => ({
   classifyUniswapRevertError: vi.fn(() => ({ failureCode: "unknown", failureReason: "unused" })),
   classifyPreBroadcastFailure: vi.fn(() => ({ failureCode: "unknown", failureReason: "unused" })),
 }));
-vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokensPairs: vi.fn(async () => []) }));
+vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []) }));
 vi.mock("@tools/evm-chains/registry.js", () => ({ getLocalChain: vi.fn(() => ({ chainId: CHAIN_ID })) }));
 vi.mock("@tools/evm-chains/receipt-guard.js", () => ({
   waitForSuccessfulReceipt: (...args: unknown[]) => waitForSuccessfulReceipt(...args),

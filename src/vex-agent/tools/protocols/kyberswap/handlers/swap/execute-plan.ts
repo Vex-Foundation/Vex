@@ -9,6 +9,7 @@
  */
 
 import { getKyberAggregatorClient } from "@tools/kyberswap/aggregator/client.js";
+import { valueSwapAtReference, type SwapPriceReference } from "@tools/evm-chains/swap-price-reference.js";
 import {
   getKyberEvmClients,
   verifyRouterAddress,
@@ -62,6 +63,9 @@ export interface SwapEventPlan {
 }
 
 export interface PreparedSwapExecution {
+  readonly priceReference?: SwapPriceReference;
+  readonly usdValues: { readonly amountInUsd: string; readonly amountOutUsd: string };
+  readonly approvedOutput: { readonly quotedOutputRaw: string; readonly approvedMinimumOutputRaw: string };
   readonly executionId: number;
   readonly events: readonly AgentActivityEvent[];
   readonly plans: readonly SwapEventPlan[];
@@ -283,10 +287,16 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
   // calldata guard above accepted the build - so "25 bps of the input, on
   // the source token" is a proven property of the payload about to be
   // signed rather than an assumption.
+  const usdValues = approvedSnapshot.priceReference === undefined
+    ? { amountInUsd: buildResp.data.amountInUsd, amountOutUsd: buildResp.data.amountOutUsd }
+    : valueSwapAtReference(approvedSnapshot.priceReference, {
+        amountInRaw: amountIn.toString(), amountOutRaw: buildResp.data.amountOut,
+        inputDecimals: tokenIn.decimals, outputDecimals: tokenOut.decimals,
+      });
   const swapCosts = estimateKyberSwapCostsUsd({
     gasUsd: buildResp.data.gasUsd,
     l1FeeUsd: approvedSummary.l1FeeUsd,
-    amountInUsd: buildResp.data.amountInUsd,
+    amountInUsd: usdValues.amountInUsd,
   });
   // The same fee as a FACT rather than a USD estimate (migration 050
   // Part 2). `amountIn` is the very bigint the guard just pinned to
@@ -382,8 +392,8 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
       chainId, chainSlug: slug, walletAddress, sessionId,
       tokenIn: { tokenAddress: tokenIn.address, tokenSymbol: tokenIn.symbol, tokenDecimals: tokenIn.decimals, amountHuman: tokenInAmountHuman, amountRaw: tokenInAmountRaw },
       tokenOut: { tokenAddress: tokenOut.address, tokenSymbol: tokenOut.symbol, tokenDecimals: tokenOut.decimals, amountHuman: formatUnits(BigInt(buildResp.data.amountOut), tokenOut.decimals), amountRaw: buildResp.data.amountOut },
-      usdInEst: buildResp.data.amountInUsd,
-      usdOutEst: buildResp.data.amountOutUsd,
+      usdInEst: usdValues.amountInUsd,
+      usdOutEst: usdValues.amountOutUsd,
       // `usd_fee_est` is FROZEN for the migration-050 dual-write window:
       // it keeps receiving `gasUsd` alone, byte-identical to its
       // pre-050 behavior, so old readers are unaffected. The honest gas -
@@ -406,8 +416,9 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
         amountRaw: vexFeeRaw.toString(),
         amountHuman: formatUnits(vexFeeRaw, tokenIn.decimals),
       },
-      usdSource: "kyberswap_quote",
+      usdSource: approvedSnapshot.priceReference?.source ?? "kyberswap_quote",
       routeProvenance: {
+        ...(approvedSnapshot.priceReference === undefined ? {} : { swapPriceReference: approvedSnapshot.priceReference }),
         routeID: approvedSummary.routeID, checksum: approvedSummary.checksum,
         // The approved floor, duplicated here so a post-crash settlement sweep
         // can assess the executed fill against what was authorized without
@@ -496,9 +507,12 @@ export async function prepareSwapExecution(input: PrepareSwapExecutionInput): Pr
   });
   return {
     executionId: created.executionId,
+    approvedOutput: { quotedOutputRaw: approvedSnapshot.approvedAmountOutRaw, approvedMinimumOutputRaw: approvedSnapshot.approvedMinOutRaw },
     events: created.events,
     plans: builtPlans,
     buildResp,
+    usdValues,
+    ...(approvedSnapshot.priceReference === undefined ? {} : { priceReference: approvedSnapshot.priceReference }),
     swapGuard,
     debitPlan,
   };

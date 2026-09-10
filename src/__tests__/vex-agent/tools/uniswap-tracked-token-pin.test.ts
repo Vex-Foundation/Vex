@@ -105,7 +105,7 @@ vi.mock("@tools/uniswap/revert-mapping.js", () => ({
 // seam. An empty pool list keeps this suite's prior behaviour: the check
 // finds no liquidity and the suite's subject is elsewhere.
 vi.mock("@tools/dexscreener/price-read.js", () => ({
-  readTokensPairs: vi.fn(async () => []),
+  readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []),
 }));
 vi.mock("@tools/evm-chains/registry.js", () => ({ getLocalChain: (...args: unknown[]) => getLocalChain(...args) }));
 vi.mock("@tools/evm-chains/erc20-balance-guard.js", () => ({

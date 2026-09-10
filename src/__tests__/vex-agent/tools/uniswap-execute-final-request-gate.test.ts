@@ -89,7 +89,7 @@ vi.mock("@tools/uniswap/safety.js", () => ({
 vi.mock("@tools/uniswap/receipt-decoder.js", () => ({
   decodeUniswapExecutedLegs: vi.fn(() => ({ executedAmountInRaw: 1n, executedAmountOutRaw: 1n })),
 }));
-vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokensPairs: vi.fn(async () => []) }));
+vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []) }));
 vi.mock("@tools/evm-chains/registry.js", () => ({ getLocalChain: vi.fn(() => ({ chainId: CHAIN_ID })) }));
 vi.mock("@tools/evm-chains/erc20-balance-guard.js", () => ({ ensureErc20Balance: vi.fn() }));
 vi.mock("@tools/kyberswap/token-api/client.js", () => ({

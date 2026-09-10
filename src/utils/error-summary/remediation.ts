@@ -95,37 +95,22 @@ export interface SlippageRemediationInput {
 }
 
 /**
- * The ONE authored remedy for a slippage-class refusal, shared by every venue
- * that has one (EVM pre-sign revert, Jupiter pre-broadcast rejection) so the
- * five surfaces cannot drift apart. Each venue keeps its own preceding sentence
- * — what exactly refused it, and which embedded minimum moved — because that
- * part is genuinely venue-specific; this part is not.
- *
- * OWNER DECREE 2026-08-03, the INFORM side: a slippage failure informs, it never
- * auto-escalates. Vex makes exactly ONE attempt at the tolerance the caller
- * passed and no code path raises it — so the remedy has to say, in the agent's
- * own vocabulary, that the next tolerance is ITS explicit choice, that this is
- * the market moving rather than the venue failing, and that a retry unchanged is
- * refused identically. Silently widening what a mission accepts is a money
- * decision, and money decisions are not made by a retry loop.
- *
- * The final sentence is the one shipped caution this must never contradict
- * (`engine/prompts/protocols.ts`): on a chain whose indexed reserves are stale,
- * a strongly negative priceImpact means the QUOTE is wrong, and more tolerance
- * buys a worse fill rather than a fill. It is venue-gated by
- * `staleReserveCaution` because the sign it depends on is not universal — see
- * that field.
+ * One remedy across venues: re-quote at the same tolerance first. A changed
+ * quote may fill without widening the approved worst case. Raising tolerance
+ * requires the user's stated limit or new authority, never an agent's
+ * announcement. A negative cost-positive impact calls the reference into
+ * question and must not encourage buying a worse fill.
  */
 export function slippageRemediation(input: SlippageRemediationInput): string {
-  return `Re-quote and retry with a higher slippageBps that YOU choose explicitly - `
+  return `Re-quote at the same slippageBps first; the market moved past the approved floor. `
     + `${appliedTolerancePhrase(input.appliedBps)}, and Vex rejects anything above ${input.maxBps} rather than clamping it. `
     + `Vex never raises it for you: exactly one attempt was made, at the tolerance this call passed. `
     + observedImpactPhrase(input)
-    + `Raise it in steps; every increase widens the worst-case price you accept. `
-    + `This is the market moving, not the venue failing - retrying unchanged will be refused the same way.`
+    + `Only raise slippageBps within the user's stated limit or after the user authorizes the new worst-case amount. `
+    + `Announcing a larger bound does not authorize it. Every increase widens the worst-case price you accept.`
     + (input.staleReserveCaution
       ? ` One exception: if the fresh quote's priceImpact is strongly negative (output supposedly worth more than input), `
-        + `the venue is pricing off stale reserves and more tolerance would only buy a worse fill - re-quote or switch venue instead.`
+        + `its reference is unreliable; verify an independent price and re-quote or switch venue instead of raising tolerance.`
       : "");
 }
 

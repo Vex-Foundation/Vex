@@ -283,20 +283,20 @@ Contains mutating tools (may require approval).
 
 ### kyberswap
 KyberSwap is an EVM swap aggregator that routes exact-input trades across more than 400 decentralized exchanges.
-Read: Read supported EVM chains and networks, the feature matrix, live chain status, token metadata, and a safety check that reports honeypot and fee-on-transfer signals.
-Quote: Preview a token swap without signing and inspect the best price, route, output, gas estimate, price impact, slippage, and safety results for both token legs.
-Act: Buy, sell, swap, or exit a position after a fresh quote with identical economic parameters. Execution signs and broadcasts from the wallet and can confirm, revert after spending gas, be refused before signing, or remain pending.
-When it applies: Use it for EVM chain discovery, token-contract safety, a requested buy or sell, an exact-input token swap, route inspection, or position exit.
-Characteristics and limits: Quotes and live chain state can become stale, route availability is not guaranteed, and raw route amounts use different units from human summaries. Token safety signals are evidence, not a guarantee. Robinhood support is provisional and provider rate limits are not quantified.
+Read: Read EVM chains, the feature matrix, live chain status, token metadata and a honeypot/fee-on-transfer safety check.
+Quote: Preview a token swap: best price, route, output, gas estimate, price impact, slippage and both tokens' safety results; no signing.
+Act: Buy, sell, swap or exit a position after a fresh quote with identical parameters. The wallet signs and broadcasts; it can confirm, spend gas and revert, refuse before signing, or stay pending.
+When it applies: On Robinhood Chain, quote both venues when both price the pair; prefer direct Uniswap when it has a route (V2/V3/v4). KyberSwap drops quiet pools; its USD reference lags. Elsewhere, KyberSwap is the usual first choice.
+Characteristics and limits: Quotes and chain state can go stale; routes are not guaranteed. Raw amounts are base units; summaries use human units. Safety signals are evidence, not guarantees. Robinhood support is provisional; rate limits are unquantified.
 Coverage: Ethereum (1), BSC (56), Arbitrum (42161), Polygon (137), Optimism (10), Avalanche (43114), Base (8453), Linea (59144), Mantle (5000), Sonic (146), Berachain (80094), Ronin (2020), Unichain (130), HyperEVM (999), Plasma (9745), Monad (143), MegaETH (4326), Robinhood Chain (4663).
 Contains mutating tools (may require approval).
 
 ### uniswap
 Uniswap is an on-chain spot-swap venue that compares V2, V3 and v4 pools for an exact-input trade.
-Read: Read a route preview's pool path, expected output, price impact, gas estimate, and token-safety signals. Token identity must already be resolved because this venue has no symbol search.
-Quote: Create a read-only route preview with the best route before funds move.
+Read: Read a route preview's pool path, expected output, price impact, gas estimate, and token-safety signals. Resolve exact token addresses first; no symbol search.
+Quote: Preview the best route read-only, including VIRTUAL pairs, before funds move.
 Act: Execute a buy, sell, or swap after a fresh matching quote. A token approval may be required before the wallet signs and broadcasts the trade.
-When it applies: Use Uniswap for a V2, V3 and v4 pools swap on a verified deployment, including a Robinhood Chain trade against VIRTUAL, after resolving exact token addresses.
+When it applies: On Robinhood Chain, quote both venues when both price the pair; prefer direct Uniswap when it has a route (V2/V3/v4). KyberSwap drops quiet pools; its USD reference lags. Elsewhere, KyberSwap is the usual first choice.
 Characteristics and limits: Availability is limited to verified deployments. Quotes are point-in-time and execution is exact-input, so re-quote when conditions change. It cannot search by ticker, guarantee output, or prove token safety from a route alone.
 Coverage: Robinhood Chain (4663), Ethereum (1), Base (8453), Arbitrum One (42161), Optimism (10), Polygon (137), BNB Chain (56).
 Contains mutating tools (may require approval).
@@ -391,7 +391,7 @@ Report: Name the exact chain and contract identity, source freshness, observed l
 
 ### Swap
 Trigger: The user wants to buy, sell, swap, exit, or acquire a token after discovery.
-Default procedure: Resolve the exact token and chain, check safety where available, then quote before execution. KyberSwap is the default; Uniswap prices V2, V3 and v4 pools on seven chains. Other DEX liquidity may be unavailable there. On Robinhood Chain, native Uniswap is the more stable choice. Use Uniswap when KyberSwap is region/edge-blocked, lacks chain/pair coverage, its quote fails or looks off, or the user asks. Quote both when unsure. Execute on the venue you quoted. Slippage, balance, allowance and deadline failures are NOT venue failures: correct the amount or take a fresh quote on the same venue rather than switching. Whichever venue you use, quote it first and never reuse a failed route. Use Jupiter for Solana. A pools.fun token has no curve and needs a separate standard swap quote from its first block; measured routing found 13 of 13 sampled tokens. A Virtuals agent still on its bonding curve trades on that curve through the virtuals curve tools; after graduation acquisition continues on the venue named by its route.
+Default procedure: Resolve the exact token and chain, check safety where available, then quote before execution. KyberSwap is the default; Uniswap prices V2, V3 and v4 pools on seven chains. Other DEX liquidity may be unavailable there. On Robinhood Chain, quote both venues when both price the pair; prefer direct Uniswap when it has a route (V2/V3/v4). KyberSwap drops quiet pools; its USD reference lags. Elsewhere, KyberSwap is the usual first choice. Use Uniswap when KyberSwap is region/edge-blocked, unavailable, mispriced, or on request. Quote both when unsure. Execute on the venue you quoted. Slippage, balance, allowance and deadline failures are NOT venue failures: correct the amount or take a fresh quote on the same venue rather than switching. Whichever venue you use, quote it first and never reuse a failed route. Use Jupiter for Solana. A pools.fun token has no curve and needs a separate standard swap quote from its first block; measured routing found 13 of 13 sampled tokens. A Virtuals agent still on its bonding curve trades on that curve through the virtuals curve tools; after graduation acquisition continues on the venue named by its route.
 Quote and execute on the SAME venue: a swap execute runs only against a fresh quote from the exact venue it will broadcast on. The runtime enforces this.
 Price protection: slippage binds the quote you were SHOWN. The execute claims that exact quote, writes its floor into the calldata, and refuses by name if it cannot honour it - one quote, one attempt. Every refusal is recoverable by re-quoting; none is fixed by raising slippage.
 Refused quotes: impact at or above 15% of the input's reference value, and an output the venue cannot price in USD (no reference to size the trade against). Trade smaller, use a deeper pair, or price the token with a market read. A strongly NEGATIVE priceImpact, or a revert with 'Return amount is not enough', means the quote overestimated the pool: re-quote.

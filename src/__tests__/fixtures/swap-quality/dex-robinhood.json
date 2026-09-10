@@ -1,0 +1,67 @@
+[
+  {
+    "chainId": "robinhood",
+    "dexId": "uniswap",
+    "url": "https://dexscreener.com/robinhood/0x9cc8c4f6118419a27f113723f1dea646685be55f",
+    "pairAddress": "0x9cc8c4F6118419A27f113723F1DeA646685Be55F",
+    "labels": [
+      "v3"
+    ],
+    "baseToken": {
+      "address": "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31",
+      "name": "Virtuals Protocol",
+      "symbol": "VIRTUAL"
+    },
+    "quoteToken": {
+      "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      "name": "WETH",
+      "symbol": "WETH"
+    },
+    "priceNative": "0.0002769",
+    "priceUsd": "0.6851",
+    "txns": {
+      "m5": {
+        "buys": 10,
+        "sells": 10
+      },
+      "h1": {
+        "buys": 162,
+        "sells": 175
+      },
+      "h6": {
+        "buys": 668,
+        "sells": 792
+      },
+      "h24": {
+        "buys": 1732,
+        "sells": 1999
+      }
+    },
+    "volume": {
+      "h24": 1109680.67,
+      "h6": 543353.76,
+      "h1": 84450.89,
+      "m5": 3092.58
+    },
+    "priceChange": {
+      "m5": -0.11,
+      "h1": -3.32,
+      "h6": -4.55,
+      "h24": -5.32
+    },
+    "liquidity": {
+      "usd": 153535.8,
+      "base": 191118,
+      "quote": 9.1334
+    },
+    "fdv": 5568171,
+    "marketCap": 5568171,
+    "pairCreatedAt": 1783155036000,
+    "info": {
+      "imageUrl": "https://cdn.dexscreener.com/cms/images/bkl7Ue-EfiCazhHg?width=800&height=800&quality=95&format=auto",
+      "websites": [],
+      "socials": []
+    },
+    "boosts": null
+  }
+]

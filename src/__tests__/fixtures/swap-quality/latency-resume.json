@@ -1,0 +1,764 @@
+[
+  {
+    "venue": "kyberswap",
+    "chain": "base",
+    "quoteMs": 7739,
+    "executeMs": 6162,
+    "signerReached": true,
+    "success": false,
+    "phases": [
+      {
+        "toolId": "kyberswap.swap.execute",
+        "phase": "token_metadata",
+        "outcome": "completed",
+        "elapsedMs": 901,
+        "suppressedCount": 0
+      },
+      {
+        "toolId": "kyberswap.swap.execute",
+        "phase": "token_safety",
+        "outcome": "completed",
+        "elapsedMs": 685,
+        "suppressedCount": 0
+      },
+      {
+        "toolId": "kyberswap.swap.execute",
+        "phase": "approved_quote",
+        "outcome": "completed",
+        "elapsedMs": 0,
+        "suppressedCount": 0
+      },
+      {
+        "toolId": "kyberswap.swap.execute",
+        "phase": "execution_plan",
+        "outcome": "completed",
+        "elapsedMs": 920,
+        "suppressedCount": 0
+      },
+      {
+        "toolId": "kyberswap.swap.execute",
+        "phase": "execute",
+        "outcome": "completed",
+        "elapsedMs": 6159,
+        "suppressedCount": 0
+      }
+    ],
+    "quoteCalls": [
+      {
+        "method": "eth_chainId",
+        "elapsedMs": 235
+      },
+      {
+        "method": "eth_chainId",
+        "elapsedMs": 216
+      },
+      {
+        "method": "eth_chainId",
+        "elapsedMs": 234
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 47
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 46
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 50
+      },
+      {
+        "method": "provider_read",
+        "elapsedMs": 276
+      },
+      {
+        "method": "provider_read",
+        "elapsedMs": 461
+      },
+      {
+        "method": "provider_read",
+        "elapsedMs": 261
+      },
+      {
+        "method": "provider_read",
+        "elapsedMs": 38
+      },
+      {
+        "method": "provider_read",
+        "elapsedMs": 170
+      },
+      {
+        "method": "eth_getBlockByNumber",
+        "elapsedMs": 50
+      },
+      {
+        "method": "eth_maxPriorityFeePerGas",
+        "elapsedMs": 46
+      },
+      {
+        "method": "eth_getTransactionCount",
+        "elapsedMs": 48
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 48
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 51
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 54
+      },
+      {
+        "method": "eth_getBalance",
+        "elapsedMs": 44
+      },
+      {
+        "method": "eth_getBalance",
+        "elapsedMs": 43
+      }
+    ],
+    "executeCalls": [
+      {
+        "method": "eth_call",
+        "elapsedMs": 45
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 49
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 51
+      },
+      {
+        "method": "provider_read",
+        "elapsedMs": 434
+      },
+      {
+        "method": "provider_read",
+        "elapsedMs": 233
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 175
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 147
+      },
+      {
+        "method": "eth_getTransactionCount",
+        "elapsedMs": 150
+      },
+      {
+        "method": "eth_getBlockByNumber",
+        "elapsedMs": 147
+      },
+      {
+        "method": "eth_maxPriorityFeePerGas",
+        "elapsedMs": 146
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 340
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 143
+      },
+      {
+        "method": "eth_getBalance",
+        "elapsedMs": 144
+      },
+      {
+        "method": "eth_getBalance",
+        "elapsedMs": 139
+      }
+    ]
+  },
+  {
+    "venue": "uniswap",
+    "chain": "base",
+    "quoteMs": 6630,
+    "executeMs": 6551,
+    "signerReached": true,
+    "success": false,
+    "failureCode": "unknown",
+    "phases": [
+      {
+        "toolId": "uniswap.swap.execute",
+        "phase": "token_metadata",
+        "outcome": "completed",
+        "elapsedMs": 595,
+        "suppressedCount": 0
+      },
+      {
+        "toolId": "uniswap.swap.execute",
+        "phase": "approved_quote",
+        "outcome": "completed",
+        "elapsedMs": 0,
+        "suppressedCount": 0
+      },
+      {
+        "toolId": "uniswap.swap.execute",
+        "phase": "fee_policy",
+        "outcome": "completed",
+        "elapsedMs": 0,
+        "suppressedCount": 0
+      },
+      {
+        "toolId": "uniswap.swap.execute",
+        "phase": "route_quote",
+        "outcome": "completed",
+        "elapsedMs": 295,
+        "suppressedCount": 0
+      },
+      {
+        "toolId": "uniswap.swap.execute",
+        "phase": "execute",
+        "outcome": "completed",
+        "elapsedMs": 6550,
+        "suppressedCount": 0
+      }
+    ],
+    "quoteCalls": [
+      {
+        "method": "eth_call",
+        "elapsedMs": 114
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 44
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 49
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 47
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 47
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 46
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 47
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 50
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 45
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 49
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 45
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 43
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 42
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 43
+      },
+      {
+        "method": "eth_getBlockByNumber",
+        "elapsedMs": 48
+      },
+      {
+        "method": "eth_maxPriorityFeePerGas",
+        "elapsedMs": 45
+      },
+      {
+        "method": "eth_getTransactionCount",
+        "elapsedMs": 46
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 43
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 46
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 51
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 47
+      },
+      {
+        "method": "eth_getBalance",
+        "elapsedMs": 54
+      }
+    ],
+    "executeCalls": [
+      {
+        "method": "eth_call",
+        "elapsedMs": 45
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 46
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 43
+      },
+      {
+        "method": "eth_getTransactionCount",
+        "elapsedMs": 193
+      },
+      {
+        "method": "eth_getBlockByNumber",
+        "elapsedMs": 142
+      },
+      {
+        "method": "eth_maxPriorityFeePerGas",
+        "elapsedMs": 138
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 145
+      },
+      {
+        "method": "eth_getTransactionCount",
+        "elapsedMs": 138
+      },
+      {
+        "method": "eth_getBlockByNumber",
+        "elapsedMs": 146
+      },
+      {
+        "method": "eth_maxPriorityFeePerGas",
+        "elapsedMs": 142
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 144
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 138
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 141
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 138
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 138
+      },
+      {
+        "method": "eth_getBalance",
+        "elapsedMs": 136
+      }
+    ]
+  },
+  {
+    "venue": "kyberswap",
+    "chain": "robinhood",
+    "quoteMs": 7671,
+    "executeMs": 5543,
+    "signerReached": true,
+    "success": false,
+    "phases": [
+      {
+        "toolId": "kyberswap.swap.execute",
+        "phase": "token_metadata",
+        "outcome": "completed",
+        "elapsedMs": 1211,
+        "suppressedCount": 0
+      },
+      {
+        "toolId": "kyberswap.swap.execute",
+        "phase": "token_safety",
+        "outcome": "completed",
+        "elapsedMs": 665,
+        "suppressedCount": 0
+      },
+      {
+        "toolId": "kyberswap.swap.execute",
+        "phase": "approved_quote",
+        "outcome": "completed",
+        "elapsedMs": 0,
+        "suppressedCount": 0
+      },
+      {
+        "toolId": "kyberswap.swap.execute",
+        "phase": "execution_plan",
+        "outcome": "completed",
+        "elapsedMs": 1089,
+        "suppressedCount": 0
+      },
+      {
+        "toolId": "kyberswap.swap.execute",
+        "phase": "execute",
+        "outcome": "completed",
+        "elapsedMs": 5542,
+        "suppressedCount": 0
+      }
+    ],
+    "quoteCalls": [
+      {
+        "method": "eth_chainId",
+        "elapsedMs": 241
+      },
+      {
+        "method": "eth_chainId",
+        "elapsedMs": 127
+      },
+      {
+        "method": "eth_chainId",
+        "elapsedMs": 276
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 152
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 150
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 166
+      },
+      {
+        "method": "provider_read",
+        "elapsedMs": 432
+      },
+      {
+        "method": "provider_read",
+        "elapsedMs": 433
+      },
+      {
+        "method": "provider_read",
+        "elapsedMs": 228
+      },
+      {
+        "method": "provider_read",
+        "elapsedMs": 387
+      },
+      {
+        "method": "eth_getBlockByNumber",
+        "elapsedMs": 152
+      },
+      {
+        "method": "eth_maxPriorityFeePerGas",
+        "elapsedMs": 148
+      },
+      {
+        "method": "eth_getTransactionCount",
+        "elapsedMs": 149
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 157
+      },
+      {
+        "method": "eth_getBalance",
+        "elapsedMs": 152
+      },
+      {
+        "method": "eth_getBalance",
+        "elapsedMs": 148
+      }
+    ],
+    "executeCalls": [
+      {
+        "method": "eth_call",
+        "elapsedMs": 150
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 151
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 155
+      },
+      {
+        "method": "provider_read",
+        "elapsedMs": 413
+      },
+      {
+        "method": "provider_read",
+        "elapsedMs": 429
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 154
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 157
+      },
+      {
+        "method": "eth_getTransactionCount",
+        "elapsedMs": 151
+      },
+      {
+        "method": "eth_getBlockByNumber",
+        "elapsedMs": 150
+      },
+      {
+        "method": "eth_maxPriorityFeePerGas",
+        "elapsedMs": 150
+      },
+      {
+        "method": "eth_getBalance",
+        "elapsedMs": 151
+      },
+      {
+        "method": "eth_getBalance",
+        "elapsedMs": 157
+      }
+    ]
+  },
+  {
+    "venue": "uniswap",
+    "chain": "robinhood",
+    "quoteMs": 12058,
+    "executeMs": 5576,
+    "signerReached": true,
+    "success": false,
+    "failureCode": "unknown",
+    "phases": [
+      {
+        "toolId": "uniswap.swap.execute",
+        "phase": "token_metadata",
+        "outcome": "completed",
+        "elapsedMs": 813,
+        "suppressedCount": 0
+      },
+      {
+        "toolId": "uniswap.swap.execute",
+        "phase": "approved_quote",
+        "outcome": "completed",
+        "elapsedMs": 0,
+        "suppressedCount": 0
+      },
+      {
+        "toolId": "uniswap.swap.execute",
+        "phase": "fee_policy",
+        "outcome": "completed",
+        "elapsedMs": 0,
+        "suppressedCount": 0
+      },
+      {
+        "toolId": "uniswap.swap.execute",
+        "phase": "route_quote",
+        "outcome": "completed",
+        "elapsedMs": 405,
+        "suppressedCount": 0
+      },
+      {
+        "toolId": "uniswap.swap.execute",
+        "phase": "execute",
+        "outcome": "completed",
+        "elapsedMs": 5575,
+        "suppressedCount": 0
+      }
+    ],
+    "quoteCalls": [
+      {
+        "method": "eth_call",
+        "elapsedMs": 152
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 149
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 150
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 152
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 151
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 392
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 151
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 160
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 158
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 151
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 151
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 166
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 151
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 151
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 167
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 153
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 152
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 152
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 152
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 239
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 152
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 153
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 153
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 161
+      },
+      {
+        "method": "eth_getBlockByNumber",
+        "elapsedMs": 149
+      },
+      {
+        "method": "eth_maxPriorityFeePerGas",
+        "elapsedMs": 151
+      },
+      {
+        "method": "eth_getTransactionCount",
+        "elapsedMs": 151
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 153
+      },
+      {
+        "method": "eth_getBalance",
+        "elapsedMs": 150
+      }
+    ],
+    "executeCalls": [
+      {
+        "method": "eth_call",
+        "elapsedMs": 152
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 157
+      },
+      {
+        "method": "eth_call",
+        "elapsedMs": 153
+      },
+      {
+        "method": "eth_getTransactionCount",
+        "elapsedMs": 152
+      },
+      {
+        "method": "eth_getBlockByNumber",
+        "elapsedMs": 156
+      },
+      {
+        "method": "eth_maxPriorityFeePerGas",
+        "elapsedMs": 153
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 157
+      },
+      {
+        "method": "eth_getTransactionCount",
+        "elapsedMs": 152
+      },
+      {
+        "method": "eth_getBlockByNumber",
+        "elapsedMs": 156
+      },
+      {
+        "method": "eth_maxPriorityFeePerGas",
+        "elapsedMs": 152
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 152
+      },
+      {
+        "method": "eth_estimateGas",
+        "elapsedMs": 155
+      },
+      {
+        "method": "eth_getBalance",
+        "elapsedMs": 152
+      }
+    ]
+  }
+]

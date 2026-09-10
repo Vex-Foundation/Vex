@@ -29,6 +29,8 @@ const mockReadErc20Metadata = vi.fn(async (_slug: string, address: string) => ({
 
 const mockPlanKyberAllowance = vi.fn().mockResolvedValue({ needsReset: false, needsApprove: true });
 
+vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []) }));
+
 vi.mock("@tools/kyberswap/evm-utils.js", async () => ({
   ...(await import("./evm-client.test-fixtures.js")).kyberEvmClientMocks(),
   readErc20Metadata: (...args: [string, string]) => mockReadErc20Metadata(...args),
@@ -269,6 +271,17 @@ describe("a balance that could not be read", () => {
 });
 
 describe("a wallet that can pay", () => {
+  it("seals and discloses 15% fee headroom before approval", async () => {
+    setEvmFake({ maxFeePerGas: 1_000_000n, maxPriorityFeePerGas: 1_000n });
+    const result = await quote();
+    expect(result.quoteAuthority?.routeSnapshot).toMatchObject({
+      debitPlan: { feeHeadroomBps: 1500, legs: [
+        { role: "allowance", feeCap: { maxFeePerGasWei: "1150000", maxPriorityFeePerGasWei: "1150" } },
+        { role: "swap", feeCap: { maxFeePerGasWei: "1150000", maxPriorityFeePerGasWei: "1150" } },
+      ] },
+    });
+    expect(JSON.parse(result.output).gasFeeCeiling.feeHeadroomBps).toBe(1500);
+  });
   it("stays executable and hands the recorder the quote-time observation", async () => {
     const result = await quote();
 

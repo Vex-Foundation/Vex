@@ -15,12 +15,19 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getAddress } from "viem";
+import { readTokenPools } from "@tools/dexscreener/price-read.js";
+import { getKyberChains } from "@tools/kyberswap/chains.js";
+import { getKyberWrappedNativeAddress } from "@tools/kyberswap/wrapped-native.js";
+import { validateTokensPairsResponse } from "@tools/dexscreener/validation/pairs.js";
+import dexFixture from "../../../fixtures/swap-quality/dex-base.json" with { type: "json" };
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
 const mockReadErc20Metadata = vi.fn(async (_slug: string, address: string) => ({
   address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
 }));
+
+vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []) }));
 
 vi.mock("@tools/kyberswap/evm-utils.js", async () => ({
   ...(await import("./evm-client.test-fixtures.js")).kyberEvmClientMocks(),
@@ -142,9 +149,56 @@ function quote(params: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(readTokenPools).mockResolvedValue([]);
   mockReadErc20Metadata.mockImplementation(async (_slug: string, address: string) => ({
     address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
   }));
+});
+
+describe("independent price-impact reference", () => {
+  it.each(getKyberChains().filter((chain) => chain.aggregator))(
+    "uses the venue's native pricing identity on $slug even when no independent pool is indexed",
+    async ({ slug }) => {
+      mockGetRoute.mockResolvedValue(routeWith({ amountInUsd: "0", amountOutUsd: "0" }));
+      const result = await quote({ chain: slug, tokenIn: NATIVE });
+      expect(readTokenPools).toHaveBeenNthCalledWith(1, slug, getAddress(TOKEN_OUT));
+      expect(readTokenPools).toHaveBeenNthCalledWith(2, slug, getKyberWrappedNativeAddress(slug));
+      expect(readTokenPools).toHaveBeenCalledTimes(2);
+      expect(result.quoteAuthority?.routeSnapshot).toBeNull();
+    },
+  );
+  it("refuses exactly 15% independent impact without a floating-point USD round trip", async () => {
+    const pair = required(validateTokensPairsResponse(dexFixture)[0], "live pair fixture");
+    vi.mocked(readTokenPools).mockResolvedValue([{ ...pair, chainId: "base",
+      baseToken: { address: TOKEN_OUT, symbol: "OUT", name: "Output" },
+      quoteToken: { address: TOKEN_IN, symbol: "IN", name: "Input" },
+      priceUsd: "0.03", priceNative: "1" }]);
+    mockGetRoute.mockResolvedValue(routeWith({ amountInUsd: "10", amountOutUsd: "9.9" },
+      { amountOut: "8500000000000000000" }));
+    const result = await quote();
+    expect(result.quoteAuthority?.eligibilityKind).toBe("excessive_impact");
+    expect(JSON.parse(result.output).routeSummary.priceImpact).toBe(0.15);
+  });
+  it.each([
+    { providerOut: "5.3", amountOut: "9.9", verdict: "executable", impact: 0.01 },
+    { providerOut: "5.3", amountOut: "5.3", verdict: "excessive_impact", impact: 0.47 },
+    { providerOut: "47", amountOut: "9.9", verdict: "executable", impact: 0.01 },
+  ])("uses pair prices for provider output $providerOut and actual output $amountOut", async ({ providerOut, amountOut, verdict, impact }) => {
+    const pair = required(validateTokensPairsResponse(dexFixture)[0], "live pair fixture");
+    vi.mocked(readTokenPools).mockResolvedValue([{ ...pair, chainId: "base",
+      baseToken: { address: TOKEN_OUT, symbol: "OUT", name: "Output" },
+      quoteToken: { address: TOKEN_IN, symbol: "IN", name: "Input" },
+      priceUsd: "1", priceNative: "1" }]);
+    const raw = BigInt(amountOut.replace(".", "")) * 10n ** 17n;
+    mockGetRoute.mockResolvedValue(routeWith({ amountInUsd: "10", amountOutUsd: providerOut }, { amountOut: raw.toString() }));
+    const result = await quote();
+    expect(result.quoteAuthority?.eligibilityKind).toBe(verdict);
+    const data = JSON.parse(result.output);
+    expect(data.routeSummary.priceImpact).toBeCloseTo(impact);
+    expect(data.priceImpactReference.source).toBe("dexscreener");
+    if (verdict === "executable") expect(data.priceImpactReference.providerReliability).toBe("unreliable");
+    expect(data.routeSummary.amountOutUsd).toBe(amountOut);
+  });
 });
 
 describe("an executable quote", () => {

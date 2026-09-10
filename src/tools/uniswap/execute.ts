@@ -43,9 +43,16 @@ import {
   type ConfirmedPriorLeg,
 } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import type { FinalSignedRequest } from "@tools/evm-chains/staged-broadcast.js";
-import { assertWithinLegFeeBounds, assertApprovedCapStillSuffices, type UniswapLegFeeBounds } from "./fee-cap-gate.js";
-export type { UniswapLegFeeBounds, UniswapLiveFeeMarketRefusalKind } from "./fee-cap-gate.js";
-export { UniswapLiveFeeMarketRefusal, UniswapApprovedGasPriceExceededError, UniswapLiveFeeRequirementUnreadableError, UniswapApprovedGasPricingModeChangedError, UniswapFeeCapExceededError } from "./fee-cap-gate.js";
+import { resolveUniswapSigningFees, type UniswapLegFeeBounds } from "./fee-cap-gate.js";
+export {
+  UniswapLiveFeeMarketRefusal,
+  UniswapApprovedGasPriceExceededError,
+  UniswapLiveFeeRequirementUnreadableError,
+  UniswapApprovedGasPricingModeChangedError,
+  UniswapFeeCapExceededError,
+  type UniswapLiveFeeMarketRefusalKind,
+  type UniswapLegFeeBounds,
+} from "./fee-cap-gate.js";
 import {
   UNISWAP_ERC20_ABI,
   UNISWAP_V2_ROUTER_ABI,
@@ -365,15 +372,10 @@ export async function signUniswapTransaction(
   // `wallet_fillTransaction`, whose reply overwrites `gas` with the node's own
   // unbuffered figure. The signed bytes are what the chain enforces, so the
   // headroom has to survive to exactly here.
-  const finalRequest = { ...prepared, gas: gasLimit, nonce };
-  if (bounds !== undefined) {
-    assertWithinLegFeeBounds(finalRequest, bounds);
-    // THE OTHER DIRECTION. The line above proves the bytes are not priced above
-    // the ceiling; this proves the ceiling is still enough for the chain. Read
-    // here rather than inside the fence because it IS a provider call and
-    // nothing may reach the network after `onBeforeSign` resolves.
-    await assertApprovedCapStillSuffices(publicClient, bounds);
-  }
+  const signingFees = bounds === undefined
+    ? {}
+    : await resolveUniswapSigningFees(publicClient, prepared, bounds);
+  const finalRequest = { ...prepared, ...signingFees, gas: gasLimit, nonce };
   // THE FENCE. Every field below is read off the object on the next line, so a
   // guard cannot pass on a value the signer does not receive.
   await assertReservedNonceMatchesPending(publicClient, account.address, walletClient.chain.id, nonce);

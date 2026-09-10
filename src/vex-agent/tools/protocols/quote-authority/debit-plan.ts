@@ -147,6 +147,8 @@ export interface BoundDebitReserve {
 
 /** The whole executable artifact of one quote. */
 export interface BoundDebitPlan {
+  /** Absent on older quotes, whose ceilings must remain unchanged. */
+  readonly feeHeadroomBps?: number;
   /** In BROADCAST order. The order is part of what was approved. */
   readonly legs: readonly BoundDebitLeg[];
   readonly reserve: BoundDebitReserve;
@@ -163,6 +165,7 @@ const legGasPricingSchema = z.enum(["measured", "conservative"]);
  * worse than requiring a fresh quote.
  */
 export const boundDebitPlanSchema = z.object({
+  feeHeadroomBps: z.number().int().min(0).max(10_000).optional(),
   legs: z
     .array(
       z.object({
@@ -214,11 +217,13 @@ export function toLegFeeCap(cap: BoundFeeCap): LegFeeCap {
  * ceiling today's executors take.
  */
 export function buildBoundDebitPlan(input: {
+  readonly feeHeadroomBps?: number;
   readonly legs: readonly { readonly role: NativeDebitLegRole; readonly pricing: LegGasPricing }[];
   readonly feeCap: LegFeeCap;
 }): BoundDebitPlan {
   const feeCap = boundFeeCapFrom(input.feeCap);
   return {
+    ...(input.feeHeadroomBps === undefined ? {} : { feeHeadroomBps: input.feeHeadroomBps }),
     legs: input.legs.map((leg) => ({ role: leg.role, feeCap, pricing: leg.pricing })),
     reserve: { kind: "zero_value_self_transfer", feeCap },
   };
@@ -283,7 +288,8 @@ export function canonicalizeDebitPlan(plan: BoundDebitPlan): string {
   const legs = plan.legs
     .map((leg) => `${leg.role}@${cap(leg.feeCap)}@${leg.pricing}`)
     .join(";");
-  return `legs[${legs}]|reserve[${plan.reserve.kind}@${cap(plan.reserve.feeCap)}]`;
+  return `legs[${legs}]|reserve[${plan.reserve.kind}@${cap(plan.reserve.feeCap)}]`
+    + (plan.feeHeadroomBps === undefined ? "" : `|feeHeadroomBps[${plan.feeHeadroomBps}]`);
 }
 
 // ── Execute-time enforcement ────────────────────────────────────────────

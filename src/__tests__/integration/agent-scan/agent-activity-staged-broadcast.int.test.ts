@@ -204,3 +204,17 @@ describe("staged broadcast durability", () => {
     ).rejects.toThrow();
   });
 });
+
+it("preserves a typed fee-bound refusal when remaining unsigned plans are aborted", async () => {
+  const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
+  const { protocolExecutionId, sessionId, walletAddress } = await seedIntent();
+  const swap = await repo.createPendingActivityEvent({ protocolExecutionId, eventIndex: 0,
+    eventRole: "swap", kind: "swap", protocol: "uniswap", chainId: 8453, walletAddress, sessionId });
+  const fee = await repo.createPendingActivityEvent({ protocolExecutionId, eventIndex: 1,
+    eventRole: "swap_fee", kind: "swap", protocol: "uniswap", chainId: 8453, walletAddress, sessionId });
+  const reason = "Refused before signing: current gas price exceeds the approved ceiling. Re-quote.";
+  await repo.failActivityEvent(swap.id, { failureCode: "fee_bound_refused", failureReason: reason });
+  await repo.abortPlannedEvents(protocolExecutionId, 0, reason);
+  expect(await repo.getActivityEventById(swap.id)).toMatchObject({ status: "definitively_failed", failureCode: "fee_bound_refused", failureReason: reason, txHash: null });
+  expect(await repo.getActivityEventById(fee.id)).toMatchObject({ status: "definitively_failed", failureCode: "unknown", txHash: null });
+});
