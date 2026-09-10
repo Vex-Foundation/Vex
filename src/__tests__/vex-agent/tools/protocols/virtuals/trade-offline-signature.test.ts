@@ -138,6 +138,7 @@ function recordingTransport(state: {
 function stubbedPublicClient(sent: { serialized: SerializedTransaction | null }) {
   return publicClientDouble(
     {
+      getTransactionCount: vi.fn(async () => 11),
       estimateGas: vi.fn(async () => 250_000n),
       prepareTransactionRequest: vi.fn(async () => preparedRequest()),
       sendRawTransaction: vi.fn(async (args: { serializedTransaction: SerializedTransaction }) => {

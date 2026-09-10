@@ -27,5 +27,5 @@ it("estimates from the same address without auto-preparing a second nonce and fe
     async request => request.nodePendingNonce, undefined,
     { cap: { mode: "eip1559", maxFeePerGasWei: 10n, maxPriorityFeePerGasWei: 1n } })).rejects.toThrow("disabled signer");
   expect(signer).toHaveBeenCalledOnce();
-  expect(methods).toEqual(["eth_estimateGas", "eth_getTransactionCount", "eth_getBlockByNumber", "eth_maxPriorityFeePerGas"]);
+  expect(methods).toEqual(["eth_estimateGas", "eth_getTransactionCount", "eth_getBlockByNumber", "eth_maxPriorityFeePerGas", "eth_getTransactionCount"]);
 });

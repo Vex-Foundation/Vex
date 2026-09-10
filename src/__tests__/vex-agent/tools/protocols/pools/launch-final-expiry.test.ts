@@ -371,6 +371,7 @@ function harness(prepareStallMs: number) {
   const publicClient = Object.assign(
     createPublicClient({ chain: CHAIN, transport: http("http://127.0.0.1:1") as Transport }),
     {
+      getTransactionCount: vi.fn(async () => 11),
       estimateGas: vi.fn(async () => 2_000_000n),
       prepareTransactionRequest: prepare,
       sendRawTransaction,
@@ -561,6 +562,7 @@ function offlineSigningHarness(chainIdStallMs: number) {
   const publicClient = Object.assign(
     createPublicClient({ chain: CHAIN, transport: http("http://127.0.0.1:1") as Transport }),
     {
+      getTransactionCount: vi.fn(async () => 11),
       estimateGas: vi.fn(async () => 2_000_000n),
       prepareTransactionRequest: prepare,
       sendRawTransaction,

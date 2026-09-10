@@ -385,7 +385,7 @@ describe("the Vex fee leg is counted first and checked again", () => {
     expect(result.success).toBe(true);
     const data = result.data as { vexFee?: { collection?: string; collectionNote?: string } };
     expect(data.vexFee?.collection).toBe("not_attempted");
-    expect(String(data.vexFee?.collectionNote)).toContain("swap is unaffected");
+    expect(String(data.vexFee?.collectionNote)).toContain("Your swap succeeded");
     // The swap's own row was confirmed and never failed by the fee's refusal.
     expect(failActivityEvent).not.toHaveBeenCalled();
   });

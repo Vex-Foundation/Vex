@@ -1,3 +1,4 @@
+import { assertReservedNonceMatchesPending } from "@tools/evm-chains/nonce-signing-guard.js";
 /**
  * Uniswap execution — calldata builders (V2 Router02 / V3 SwapRouter02) + a
  * STAGED sign/broadcast pair (plan §11.1's durability contract).
@@ -356,7 +357,7 @@ export async function signUniswapTransaction(
     chainId: walletClient.chain.id,
     nodePendingNonce,
   });
-  if (!Number.isSafeInteger(nonce) || nonce < nodePendingNonce) {
+  if (!Number.isSafeInteger(nonce) || nonce < 0) {
     throw new VexError(ErrorCodes.SWAP_FAILED, "Uniswap durable nonce reservation is invalid.");
   }
   // Re-asserted on the request that is actually serialized: when fees/nonce
@@ -375,6 +376,7 @@ export async function signUniswapTransaction(
   }
   // THE FENCE. Every field below is read off the object on the next line, so a
   // guard cannot pass on a value the signer does not receive.
+  await assertReservedNonceMatchesPending(publicClient, account.address, walletClient.chain.id, nonce);
   if (onBeforeSign) {
     await onBeforeSign({
       to: finalRequest.to,

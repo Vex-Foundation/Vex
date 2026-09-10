@@ -219,6 +219,7 @@ export async function recoverStaleHashlessIntents(
     `SELECT id, session_id, event_role
        FROM agent_activity
       WHERE status = 'pending' AND tx_hash IS NULL
+        AND (nonce_reservation_until IS NULL OR nonce_reservation_until <= NOW())
         AND event_role = ANY($3::text[])
         AND created_at < NOW() - make_interval(secs => $1::float8)
       ORDER BY created_at ASC
@@ -244,7 +245,7 @@ export async function recoverStaleHashlessIntents(
         failureReason: fee
           ? "Fee not collected: no transaction hash was staged within the recovery lease. No fee retry happens automatically; the swap outcome is separate."
           : "not attempted: stale hashless intent - never signed within the recovery lease",
-      }),
+      }, true),
     });
     if (result.applied) finalized.push(result.row);
   }

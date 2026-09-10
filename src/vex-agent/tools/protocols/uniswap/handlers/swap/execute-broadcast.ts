@@ -1,3 +1,4 @@
+import { withNonceReservationScope } from "@tools/evm-chains/nonce-reservation-scope.js";
 /**
  * One stage of the staged broadcast: sign → persist hash → broadcast → mark
  * accepted → wait for the receipt.
@@ -82,7 +83,7 @@ export type StageOutcome =
   | { readonly kind: "failed"; readonly stage: "mined_revert"; readonly classification: Classification }
   | { readonly kind: "ambiguous"; readonly txHash: Hex };
 
-export async function runStagedBroadcast(
+async function runStagedBroadcastWithinScope(
   event: AgentActivityEvent,
   tx: BuiltSwapTx,
   clients: ReturnType<typeof getUniswapEvmClients>,
@@ -286,4 +287,9 @@ export async function runStagedBroadcast(
     // repair sweep, which retries the SAME lookup later.
     return { kind: "ambiguous", txHash: signed.txHash };
   }
+}
+
+/** Keeps unsigned reservations scoped to this whole sign/stage/publish attempt. */
+export function runStagedBroadcast(...args: Parameters<typeof runStagedBroadcastWithinScope>): Promise<StageOutcome> {
+  return withNonceReservationScope(() => runStagedBroadcastWithinScope(...args));
 }

@@ -1,3 +1,4 @@
+import { assertReservedNonceMatchesPending } from "./nonce-signing-guard.js";
 /**
  * Staged EVM transaction primitive (venue-agnostic) — sign locally and hand the
  * caller the computed hash BEFORE broadcasting, so a DB-backed caller can
@@ -25,6 +26,8 @@
  * as a definitive failure: leave the durable row `pending` for the sweep, never
  * re-broadcast (ambiguity never terminalizes — plan §11.1 / FIX-SPINE C1).
  */
+
+import { withNonceReservationScope } from "./nonce-reservation-scope.js";
 
 import type {
   Account,
@@ -352,9 +355,9 @@ export async function signStageBroadcast(
   const ownerChainId = isDeferred(signer) ? signer.chain.id : signer.chain.id;
   const nonceOwner = await acquireEvmNonceOwner(ownerAddress, ownerChainId);
   try {
-    return await runStagedBroadcast(
+    return await withNonceReservationScope(() => runStagedBroadcast(
       publicClient, signer, txParams, hooks, nonceOwner, priorLeg, receiptWaitRetry, feePolicy,
-    );
+    ));
   } finally {
     nonceOwner.release();
   }
@@ -472,7 +475,7 @@ async function runStagedBroadcast(
     chainId: chain.id,
     nodePendingNonce,
   });
-  if (!Number.isSafeInteger(nonce) || nonce < nodePendingNonce) {
+  if (!Number.isSafeInteger(nonce) || nonce < 0) {
     throw new Error("signStageBroadcast: durable nonce reservation returned an invalid nonce");
   }
   // THE OBJECT THAT IS SIGNED, built once and used for the fee assertion, the
@@ -527,6 +530,7 @@ async function runStagedBroadcast(
   // itself may read the chain (that is where the authoritative debit read
   // lives); what must not happen is a read AFTER it. It is given the request
   // that is about to be serialized, never the caller's inputs.
+  await assertReservedNonceMatchesPending(publicClient, account.address, chain.id, nonce);
   await hooks.onBeforeSign?.(finalRequest);
 
   // THE SIGNATURE. The eager arm keeps viem's wallet action verbatim; the

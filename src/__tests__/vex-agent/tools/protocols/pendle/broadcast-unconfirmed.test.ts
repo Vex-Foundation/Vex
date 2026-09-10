@@ -90,6 +90,7 @@ vi.mock("@tools/pendle/evm-client.js", () => ({
   getPendlePublicClient: () => ({ readContract: async () => 6 }),
   getPendleEvmClients: () => ({
     publicClient: {
+      getTransactionCount: async () => 11,
       readContract: async () => 6,
       estimateGas: async () => 1_000_000n,
       sendRawTransaction: (...a: unknown[]) => mockSendRawTransaction(...a),
@@ -395,7 +396,7 @@ describe("a PRE-broadcast refusal never mentions a broadcast", () => {
       // The joiner is a U+2014 produced by `utils/error-summary/render.ts:160`,
       // which is outside this change's file set. Pinned as the code actually
       // emits it; when that renderer is swept, this line follows it.
-      + ` — Pendle asset catalogue for chain 1 is unreadable.)`,
+      + ` - Pendle asset catalogue for chain 1 is unreadable.)`,
     );
   });
 
@@ -415,7 +416,7 @@ describe("a PRE-broadcast refusal never mentions a broadcast", () => {
       // The joiner is a U+2014 produced by `utils/error-summary/render.ts:160`,
       // which is outside this change's file set. Pinned as the code actually
       // emits it; when that renderer is swept, this line follows it.
-      + ` — Pendle asset catalogue for chain 1 is unreadable.)`,
+      + ` - Pendle asset catalogue for chain 1 is unreadable.)`,
     );
   });
 

@@ -1,3 +1,5 @@
+import logger from "@utils/logger.js";
+import { hasConfirmedEvmNonceSibling } from "@vex-agent/db/repos/agent-activity/nonce-sibling.js";
 /**
  * WHERE A READ-ONLY RPC COMES FROM, and the production observation dep built on
  * it — the sweep's WIRING, split out from its POLICY.
@@ -53,6 +55,12 @@ export function buildProductionRepairDeps(): RepairDeps {
 
   return {
     observeTransaction: async (input): Promise<EvmObservation> => {
+      try {
+        if (await hasConfirmedEvmNonceSibling(input)) return { kind: "nonce_superseded" };
+      } catch {
+        // The chain can still prove inclusion even if local sibling lookup failed.
+        logger.warn("evm.nonce.sibling_lookup_failed", { chainId: input.chainId });
+      }
       const client = asJsonRpcClient(await resolveClient(input.chainId));
       if (!client) {
         return { kind: "rpc_error", reason: `no read-only RPC is configured for chain ${input.chainId}` };

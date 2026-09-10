@@ -1,3 +1,5 @@
+import { EvmNonceReservationExpiredError } from "../evm-chains/nonce-reservation-scope.js";
+import { EvmNonceMismatchError } from "../evm-chains/nonce-signing-guard.js";
 /**
  * Uniswap revert/error → failure-code mapping (plan §8.2), captured from the
  * SIGN-time path only (never the broadcast/send stage — C29, see
@@ -125,6 +127,7 @@ const BROADCAST_REJECTION_CLASSES = [
  * see `db/repos/agent-activity.ts`'s write protocol).
  */
 export function classifyUniswapRevertError(err: unknown): UniswapRevertClassification {
+  if (err instanceof EvmNonceMismatchError || err instanceof EvmNonceReservationExpiredError) return { failureCode: err.failureCode, failureReason: err.message, onChainRevert: false };
   const rpc = rpcReadFailureOf(err);
   // An unclassified node response may still carry a known contract error.
   // Preserve that stronger evidence without overriding a proven quota failure.

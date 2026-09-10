@@ -9,8 +9,11 @@
  */
 
 import type pg from "pg";
+import { onNonceReservationScopeExit, EvmNonceReservationExpiredError } from "@tools/evm-chains/nonce-reservation-scope.js";
 
 import { query, queryOne, queryOneWith, withTransaction } from "../client.js";
+
+export const EVM_NONCE_SIGNING_LEASE_MS = 60_000;
 
 export const LEGACY_EVM_NONCE_RESERVATION_STALE_MS = 15 * 60 * 1000;
 export const EVM_NONCE_REPAIR_LIMIT = 25;
@@ -70,6 +73,7 @@ interface ActivityReservationRow extends pg.QueryResultRow {
   readonly from_address: string | null;
   readonly nonce: string | null;
   readonly evidence_source: string | null;
+  readonly nonce_reservation_token: string | null;
 }
 
 interface HighestNonceRow extends pg.QueryResultRow {
@@ -130,7 +134,7 @@ async function abandonStaleLegacyReservations(
   );
 }
 
-async function highestUnresolvedNonce(
+async function highestOwnedOrConsumedNonce(
   client: pg.PoolClient,
   input: EvmNonceReservationRequest,
   normalizedAddress: string,
@@ -143,14 +147,18 @@ async function highestUnresolvedNonce(
          SELECT MAX(nonce)
            FROM agent_activity
           WHERE chain_family = 'eip155' AND chain_id = $1
-            AND lower(from_address) = $2 AND status = 'pending'
-            AND nonce IS NOT NULL AND ($3::bigint IS NULL OR id <> $3::bigint)
+            AND lower(from_address) = $2 AND nonce IS NOT NULL
+            AND ((status = 'pending' AND (tx_hash IS NOT NULL OR nonce_reservation_until > NOW()))
+              OR (tx_hash IS NOT NULL AND (status = 'confirmed'
+                OR (status = 'definitively_failed' AND failure_code = 'mined_revert'))))
+            AND ($3::bigint IS NULL OR id <> $3::bigint)
        ), -1),
        COALESCE((
          SELECT MAX(nonce)
            FROM evm_nonce_reservations
           WHERE chain_id = $1 AND lower(from_address) = $2
-            AND status IN ('reserved', 'staged', 'accepted')
+            AND (status IN ('reserved', 'staged', 'accepted')
+              OR (status = 'terminal' AND tx_hash IS NOT NULL))
        ), -1)
      )::text AS highest_nonce`,
     [input.chainId, normalizedAddress, excludedActivityId],
@@ -182,14 +190,14 @@ export async function reserveActivityEvmNonce(
     throw new Error("evm nonce reservation: activityId must be a positive safe integer");
   }
   const normalizedAddress = validateRequest(input);
-  return withTransaction(async (client) => {
+  const reserved = await withTransaction(async (client) => {
     await lockWallet(client, input.chainId, normalizedAddress);
     await abandonStaleLegacyReservations(client, input, normalizedAddress);
 
     const activity = await queryOneWith<ActivityReservationRow>(
       client,
       `SELECT id::text, chain_id::text, chain_family, wallet_address, status,
-              tx_hash, from_address, nonce::text, evidence_source
+              tx_hash, from_address, nonce::text, evidence_source, nonce_reservation_token
          FROM agent_activity
         WHERE id = $1
         FOR UPDATE`,
@@ -210,26 +218,48 @@ export async function reserveActivityEvmNonce(
       throw new Error("evm nonce reservation: activity row is not an eligible local EVM signing intent");
     }
 
+    if (activity.nonce_reservation_token !== null || activity.nonce !== null) {
+      throw new Error("evm nonce reservation: this intent was already reserved; create a new intent");
+    }
     const existing = activity.nonce === null ? null : Number(activity.nonce);
     if (existing !== null && (!Number.isSafeInteger(existing) || existing < 0)) {
       throw new Error("evm nonce reservation: existing activity nonce is outside the safe-integer range");
     }
-    const highest = await highestUnresolvedNonce(client, input, normalizedAddress, activityId);
+    const highest = await highestOwnedOrConsumedNonce(client, input, normalizedAddress, activityId);
     const nonce = nextNonce(input.nodePendingNonce, highest, existing);
-    const updated = await queryOneWith<{ readonly nonce: string }>(
+    const updated = await queryOneWith<{ readonly nonce: string; readonly token: string }>(
       client,
       `UPDATE agent_activity
-          SET from_address = $2, nonce = $3, updated_at = NOW()
+          SET from_address = $2, nonce = $3, updated_at = NOW(),
+              nonce_reservation_until = NOW() + make_interval(secs => $4::float8),
+              nonce_reservation_token = gen_random_uuid()
         WHERE id = $1 AND status = 'pending' AND tx_hash IS NULL
           AND chain_family = 'eip155' AND evidence_source IS NULL
-        RETURNING nonce::text`,
-      [activityId, normalizedAddress, nonce],
+        RETURNING nonce::text, nonce_reservation_token::text AS token`,
+      [activityId, normalizedAddress, nonce, EVM_NONCE_SIGNING_LEASE_MS / 1000],
     );
     if (updated === null || Number(updated.nonce) !== nonce) {
       throw new Error("evm nonce reservation: activity reservation CAS missed");
     }
-    return nonce;
+    return { nonce, token: updated.token };
   });
+  onNonceReservationScopeExit(() => releaseActivityEvmNonce(activityId, reserved.token), async () => {
+    const active = await queryOne<{ active: boolean }>(
+      `SELECT EXISTS (SELECT 1 FROM agent_activity WHERE id = $1 AND status = 'pending'
+        AND tx_hash IS NULL AND nonce_reservation_token = $2::uuid
+        AND nonce_reservation_until > NOW()) AS active`, [activityId, reserved.token]);
+    if (!active?.active) throw new EvmNonceReservationExpiredError();
+  });
+  return reserved.nonce;
+}
+
+/** Refusals release only their own unsigned lease, never a staged hash. */
+export async function releaseActivityEvmNonce(activityId: number, token: string): Promise<void> {
+  await query(
+    `UPDATE agent_activity SET nonce_reservation_until = NULL
+      WHERE id = $1 AND tx_hash IS NULL AND nonce_reservation_token = $2::uuid`,
+    [activityId, token],
+  );
 }
 
 /** Reserve for the one active local signer seam that has no activity row. */
@@ -238,10 +268,10 @@ export async function reserveLegacyEvmNonce(
   purpose: LegacyEvmNoncePurpose,
 ): Promise<LegacyEvmNonceReservation> {
   const normalizedAddress = validateRequest(input);
-  return withTransaction(async (client) => {
+  const reserved = await withTransaction(async (client) => {
     await lockWallet(client, input.chainId, normalizedAddress);
     await abandonStaleLegacyReservations(client, input, normalizedAddress);
-    const highest = await highestUnresolvedNonce(client, input, normalizedAddress, null);
+    const highest = await highestOwnedOrConsumedNonce(client, input, normalizedAddress, null);
     const nonce = nextNonce(input.nodePendingNonce, highest);
     const row = await queryOneWith<LegacyReservationRow>(
       client,
@@ -256,6 +286,11 @@ export async function reserveLegacyEvmNonce(
     }
     return { id: Number(row.id), nonce: Number(row.nonce) };
   });
+  onNonceReservationScopeExit(async () => {
+    await query(`UPDATE evm_nonce_reservations SET status = 'abandoned', terminal_at = NOW(), updated_at = NOW()
+      WHERE id = $1 AND status = 'reserved' AND tx_hash IS NULL`, [reserved.id]);
+  });
+  return reserved;
 }
 
 export async function stageLegacyEvmNonce(

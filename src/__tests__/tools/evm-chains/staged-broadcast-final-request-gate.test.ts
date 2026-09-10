@@ -90,6 +90,7 @@ function harness() {
   const publicClient = Object.assign(
     createPublicClient({ chain: CHAIN, transport: testTransport() }),
     {
+      getTransactionCount: vi.fn(async () => 7),
       estimateGas: vi.fn(async () => 21_000n),
       prepareTransactionRequest: vi.fn(async () => prepared),
       sendRawTransaction: vi.fn(async () => "0xhash" as Hex),

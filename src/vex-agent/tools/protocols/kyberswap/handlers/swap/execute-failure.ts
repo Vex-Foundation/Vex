@@ -1,3 +1,5 @@
+import { EvmNonceReservationExpiredError } from "@tools/evm-chains/nonce-reservation-scope.js";
+import { EvmNonceMismatchError } from "@tools/evm-chains/nonce-signing-guard.js";
 /**
  * What `kyberswap.swap.execute` tells the agent - and writes to
  * `agent_activity` - when the staged broadcast loop throws AFTER the intent
@@ -58,6 +60,12 @@ export interface PostIntentFailureInput {
 
 export async function buildPostIntentFailureResult(input: PostIntentFailureInput): Promise<ToolResult> {
   const { err, toolId, sessionId, executionId, currentIndex, legBroadcastAttempted, plans, events, slippage } = input;
+  if (!legBroadcastAttempted && (err instanceof EvmNonceMismatchError || err instanceof EvmNonceReservationExpiredError)) {
+    await failRefusedLeg(events[currentIndex], err.failureCode, err.message);
+    await abortRemainingPlans(executionId, currentIndex, err.message);
+    return { success: false, output: err.message,
+      data: { _executionId: executionId, status: err.status, retryable: true, failureCode: err.failureCode, reason: err instanceof EvmNonceMismatchError ? err.reason : "nonce_signing_lease_expired" } };
+  }
   const rpc = legBroadcastAttempted ? undefined : rpcReadFailureOf(err);
   if (rpc) {
     const failureReason = preSignRpcRefusal(rpc);

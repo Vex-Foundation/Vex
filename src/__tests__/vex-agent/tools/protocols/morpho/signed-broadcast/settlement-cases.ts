@@ -25,6 +25,7 @@ import {
 
 export function registerSettlementCases(ctx: SignedBroadcastContext): void {
   beforeEach(() => {
+    getBlockMock.mockReset().mockResolvedValue({ timestamp: 1_760_000_000n });
     ctx.signStageBroadcast
       .mockResolvedValueOnce(confirmedOutcome([], "0xapproval"))
       .mockResolvedValueOnce(confirmedOutcome([

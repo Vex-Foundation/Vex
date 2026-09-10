@@ -1,3 +1,4 @@
+import { EvmNonceMismatchError } from "@tools/evm-chains/nonce-signing-guard.js";
 /**
  * Wallet send - shared types + helpers for prepare/confirm.
  *
@@ -40,6 +41,7 @@ export type ExecuteOutcome =
     }
   | {
       readonly kind: "pre_broadcast_failed";
+      readonly nonceRefusal?: { readonly message: string; readonly status: "not_attempted"; readonly retryable: true; readonly failureCode: "broadcast_error" };
       readonly errorKind: string;
       readonly errorHash: string;
     };
@@ -65,6 +67,7 @@ export function preBroadcastFailed(cause: unknown): ExecuteOutcome {
   const sum = summarizeWalletError(cause);
   return {
     kind: "pre_broadcast_failed",
+    ...(cause instanceof EvmNonceMismatchError ? { nonceRefusal: { message: cause.message, status: cause.status, retryable: cause.retryable, failureCode: cause.failureCode } } : {}),
     errorKind: sum.errorKind,
     errorHash: sum.errorHash,
   };

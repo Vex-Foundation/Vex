@@ -83,6 +83,7 @@ function harness(fill: Record<string, unknown>) {
     chain: TEST_CHAIN,
     transport: testTransport(),
   }), {
+    getTransactionCount: async () => 7,
     sendRawTransaction: async () => {
       trace.sent += 1;
       return "0xhash";

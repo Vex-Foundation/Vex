@@ -30,3 +30,15 @@ describe("Uniswap refusal protocol_executions capture", () => {
     expect(db.record).not.toHaveBeenCalled();
   });
 });
+
+import { EvmNonceMismatchError } from "@tools/evm-chains/nonce-signing-guard.js";
+
+it.each([[2, 1, "ahead of"], [1, 2, "behind"]] as const)("records a typed nonce refusal for reserved %s and pending %s", async (reserved, pending, direction) => {
+  const classification = classifyUniswapRevertError(new EvmNonceMismatchError(8453, reserved, pending));
+  const result = preSignRefusalResult({ eventRole: "swap", classification, slippageBps: 100, executionId: 86 });
+  expect(result.data).toMatchObject({ status: "not_attempted", retryable: true, failureCode: "broadcast_error" });
+  expect(result.output).toContain(`local nonce ledger is ${direction} the network`);
+  await captureExecution("uniswap.swap.execute", "uniswap", null, {}, result, 10);
+  expect(db.complete).toHaveBeenCalledWith({}, expect.objectContaining({ executionId: 86,
+    result: expect.objectContaining({ status: "not_attempted", retryable: true, failureCode: "broadcast_error" }) }));
+});

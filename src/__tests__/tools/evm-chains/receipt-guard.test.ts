@@ -112,3 +112,16 @@ describe("waitForReceiptWithReplacementEvidence", () => {
     });
   });
 });
+
+it("bounds the whole receipt wait even when the client never settles its promise", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+  try {
+    const wait = vi.fn(() => new Promise<never>(() => {}));
+    const pending = waitForReceiptWithReplacementEvidence(receiptClient(wait), HASH, { timeoutMs: 50 });
+    const refused = expect(pending).rejects.toMatchObject({ name: "ReceiptWaitDeadlineError", message: expect.stringContaining("awaiting inclusion") });
+    await vi.advanceTimersByTimeAsync(50);
+    await refused;
+    expect(wait).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally { vi.useRealTimers(); }
+});

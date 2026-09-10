@@ -1,3 +1,5 @@
+import { EvmNonceReservationExpiredError } from "@tools/evm-chains/nonce-reservation-scope.js";
+import { EvmNonceMismatchError } from "@tools/evm-chains/nonce-signing-guard.js";
 /**
  * Running the Vex fee leg - AFTER the swap confirmed, and never before.
  *
@@ -233,7 +235,11 @@ export async function runUniswapFeeLeg(input: RunUniswapFeeLegInput): Promise<Un
     const classified = classifyUniswapRevertError(err);
     const failureCode = classified.failureCode === "unknown" ? "broadcast_error" : classified.failureCode;
     // Fee failure must never recommend repeating the already successful swap.
-    const detail = !classified.rpcFailure && err instanceof UniswapLiveFeeMarketRefusal
+    const detail = err instanceof EvmNonceMismatchError
+      ? `The fee leg's local nonce ledger is ${err.reason === "local_nonce_ledger_ahead" ? "ahead of" : "behind"} the network on chain ${err.chainId}; nonce reconciliation is required`
+      : err instanceof EvmNonceReservationExpiredError
+        ? "The fee signing lease expired before the fee could be submitted"
+      : !classified.rpcFailure && err instanceof UniswapLiveFeeMarketRefusal
       ? {
           approved_gas_price_exceeded: "The current gas price exceeds this fee leg's approved cap",
           live_fee_market_unreadable: "The current gas market could not be read for the fee leg",

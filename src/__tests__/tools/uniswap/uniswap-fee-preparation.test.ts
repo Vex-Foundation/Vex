@@ -1,3 +1,4 @@
+import { EvmNonceReservationExpiredError } from "@tools/evm-chains/nonce-reservation-scope.js";
 import { beforeEach, expect, it, vi } from "vitest";
 import { createPublicClient, createWalletClient, custom, defineChain } from "viem";
 import { runUniswapFeeLeg } from "@vex-agent/tools/protocols/uniswap/handlers/swap/fee/run.js";
@@ -14,7 +15,7 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   failHashlessActivityEvent: vi.fn(async () => ({ applied: true })),
 }));
 
-it.each([[137, false, false], [4663, false, false], [137, true, false], [4663, true, false], [137, false, true]] as const)("prepares chain %s fee at the approved cap, debit refusal=%s, price drift=%s", async (chainId, refused, priceDrift) => {
+it.each([[137, false, false], [4663, false, false], [137, true, false], [4663, true, false], [137, false, true], [137, "expired", false]] as const)("prepares chain %s fee at the approved cap, debit refusal=%s, price drift=%s", async (chainId, refused, priceDrift) => {
   const address = "0x1111111111111111111111111111111111111111";
   const methods: string[] = [];
   const signer = vi.fn(async (): Promise<never> => { throw new Error("disabled signer"); });
@@ -32,6 +33,7 @@ it.each([[137, false, false], [4663, false, false], [137, true, false], [4663, t
   const publicClient = createPublicClient({ chain, transport });
   const walletClient = createWalletClient({ chain, transport, account: { address, type: "local", source: "custom", publicKey: "0x", signTransaction: signer, signMessage: signer, signTypedData: signer } });
   const debitGate = vi.fn(async (r: { maxFeePerGas?: bigint }) => { expect(r.maxFeePerGas).toBe(121n);
+    if (refused === "expired") throw new EvmNonceReservationExpiredError();
     if (refused) throw new UniswapPreSignDebitRefusal(ErrorCodes.INSUFFICIENT_BALANCE, "Refusing to sign: remaining native balance is insufficient.", "Top up the native balance.", false);
   });
   const result = await runUniswapFeeLeg({ chainId, tokenDecimals: 18, feeRowId: 1, publicClient, walletClient, debitGate,
@@ -49,9 +51,9 @@ it.each([[137, false, false], [4663, false, false], [137, true, false], [4663, t
   }
   if (refused) {
     expect(signer).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ collection: "not_attempted", txHash: null, collectionNote: expect.stringContaining("remaining native balance is insufficient") });
+    expect(result).toMatchObject({ collection: "not_attempted", txHash: null, collectionNote: expect.stringContaining(refused === "expired" ? "fee signing lease expired" : "remaining native balance is insufficient") });
     expect(result.collectionNote).toContain("No fee retry happens automatically");
-    expect(failHashlessActivityEvent).toHaveBeenCalledWith(1, { failureCode: "allowance_or_balance", failureReason: result.collectionNote });
+    expect(failHashlessActivityEvent).toHaveBeenCalledWith(1, { failureCode: refused === "expired" ? "broadcast_error" : "allowance_or_balance", failureReason: result.collectionNote });
   } else if (!priceDrift) expect(signer).toHaveBeenCalledOnce();
   expect(methods).not.toContain("eth_fillTransaction");
 });
