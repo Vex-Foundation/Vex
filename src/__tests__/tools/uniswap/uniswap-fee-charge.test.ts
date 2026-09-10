@@ -80,6 +80,9 @@ describe("resolveUniswapFeeCharge", () => {
       totalDebitedRaw: "1000000",
       receiver: UNISWAP_FEE_RECEIVER_EVM,
     });
+    expect(charge.disclosure.note).toContain("planned amounts, not proof of collection");
+    expect(charge.disclosure.note).toContain("output remains an estimate");
+    expect(charge.disclosure.note).toContain("Native input bounds can reduce the fee");
   });
 
   it("a NATIVE input is identified by the shared sentinel, never by the deployment's WETH", async () => {

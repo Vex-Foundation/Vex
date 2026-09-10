@@ -30,6 +30,7 @@ const { inspectTransactions } = await import(
 );
 
 import type { TransactionRow } from "../../../../vex-agent/db/repos/transactions.js";
+import { mapRow as mapTransactionRow } from "../../../../vex-agent/db/repos/transactions-mappers.js";
 
 function row(overrides: Partial<TransactionRow>): TransactionRow {
   return {
@@ -63,6 +64,19 @@ beforeEach(() => {
 });
 
 describe("transactions history — native leg annotation", () => {
+  it("preserves a native lower bound through the row mapper and agent summary", async () => {
+    const mapped = mapTransactionRow({ source: "agent_activity", id: "1", namespace: "uniswap", protocol: "uniswap",
+      product_type: "swap", status: "confirmed", chain: "base", chain_id: 8453, created_at: new Date(0),
+      input_token: "ETH", output_token: "TOK", token_in_decimals: 18, token_out_decimals: 18,
+      executed_amount_in_raw: "1999999999999999999", executed_amount_out_raw: "1000000000000000000",
+      last_verification_reason: "native_balance_delta_bound" });
+    expect(mapped.inputAmountBasis).toBe("lower_bound");
+    expect(await summaryOf(mapped)).toContain("at least 1.999999999999999999 ETH (lower bound)");
+  });
+  it("keeps confirmed native output explicitly unproven", async () => {
+    expect(await summaryOf(row({ protocol: "uniswap", inputAmount: "1", inputToken: "TOK",
+      outputAmount: null, lastVerificationReason: "native_output_unproven_hooked" }))).toContain("native output unproven");
+  });
   it("annotates a native OUTPUT leg with the chain's real symbol", async () => {
     const summary = await summaryOf(
       row({

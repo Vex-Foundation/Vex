@@ -2,7 +2,7 @@
 
 Run the tests before you push.
 
-<!-- vex:studio:begin vex=0.2.6 hash=b7c15e658a81b27a -->
+<!-- vex:studio:begin vex=0.2.6 hash=b0fcc9fd1fdecef5 -->
 # Vex Studio - project "acme-trading"
 
 This repository is connected to Vex, a self-custodial crypto agent whose tools
@@ -204,9 +204,9 @@ origin deposit, transaction or fill described below.
   so the quoted output is already net of it and you
   never add it on top when reporting what was spent. The Uniswap pair takes
   the same 25 bps from the input, but Uniswap's routers carry no fee field,
-  so it is Vex's own transfer leg after the swap confirms: the swap spends
-  `amountIn` minus 25 bps and that 25 bps is transferred to Vex, and the two
-  together are exactly `amountIn`, which is what the user is debited.
+  so it is Vex's own transfer leg after the swap confirms. The quoted swap is
+  `amountIn` minus 25 bps; swap and fee plans
+  together are exactly `amountIn`, a ceiling. Native bounds can lower the fee.
 - Bridges (`BridgeQuote`/`BridgeExecute` and the Relay pair): 25 bps of the
   origin input as a SEPARATE transfer only after the deposit lands. The fee
   follows the origin deposit's success; destination delivery is a separate outcome.

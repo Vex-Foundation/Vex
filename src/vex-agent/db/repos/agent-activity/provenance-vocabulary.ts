@@ -57,6 +57,8 @@ export type ConfirmationSource = (typeof CONFIRMATION_SOURCES)[number];
  * disputed.
  */
 export const SETTLEMENT_SOURCES = [
+  "native_balance_delta_bound",
+  "native_output_unproven_hooked",
   /** Decoded by the venue handler from its own receipt, at return time. */
   "tool_response",
   /** Decoded later, by the pending fallback, from the same receipt. */
@@ -125,6 +127,8 @@ export type SettlementDeclineReason = (typeof SETTLEMENT_DECLINE_REASONS)[number
  * they produced an identical final row — so the fallback had to guess.
  */
 export const PENDING_REASONS = [
+  /** Confirmed status, but the native output has no per-transaction proof. */
+  "native_output_unproven_hooked",
   /** The submit itself returned ambiguously — we do not know the tx was accepted. */
   "broadcast_ambiguous_send",
   /** Submitted, but the receipt wait never concluded — inclusion unknown. */

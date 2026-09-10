@@ -11,6 +11,7 @@
  * `postIntentFailureResult`, which never opens a second execution (C18).
  */
 
+import { attachConfirmedUniswapFee } from "./fee/attach-confirmed.js";
 import { UNIVERSAL_ROUTER_ABI } from "@tools/uniswap/v4-abis.js";
 import { readV4Allowance, tokenSpender, type V4AllowanceState } from "@tools/uniswap/v4-allowance.js";
 import { revalidateV4Quote } from "./v4-revalidation.js";
@@ -45,18 +46,11 @@ import { uniswapFailureMessage } from "./error-output.js";
 import { failPreBroadcast, abortRemainingPlans } from "./activity-recording.js";
 import { buildTxForEvent, describeEventRole, planSwapEvents } from "./execute-plan.js";
 import { runStagedBroadcast } from "./execute-broadcast.js";
-import { finalizeConfirmedSwap, type FinalizeConfirmedSwapOutcome } from "./finalize-confirmed.js";
+import { finalizeConfirmedSwap } from "./finalize-confirmed.js";
 import { checkForbiddenFeeParams } from "./forbidden-params.js";
 import { resolveUniswapFeeCharge, type UniswapFeeCharge } from "@tools/uniswap/fee/index.js";
 import {
   planUniswapFeeLeg,
-  runUniswapFeeLeg,
-  recordUniswapFeeNotCollected,
-  uniswapFeeNotAttempted,
-  uniswapFeeNotCharged,
-  withFeeDisclosure,
-  type UniswapFeeCollection,
-  type UniswapFeeLegDebitGate,
   type UniswapFeeLegPlan,
 } from "./fee/index.js";
 import { VexError, ErrorCodes } from "../../../../../../errors.js";
@@ -594,7 +588,7 @@ export async function executeUniswapSwap(
       });
 
       // ── The fee leg, LAST, and only now that the swap is CONFIRMED ──
-      return await attachVexFee({
+      return await attachConfirmedUniswapFee({
         finalized, feeCharge, feePlan, feeRowId, executionId, swapLegCount,
         chainId: deployment.chainId, tokenDecimals: tokenIn.decimals, clients,
         priorLeg, feeCap: legFeeCap,
@@ -613,82 +607,4 @@ export async function executeUniswapSwap(
   } catch (err) {
     return postIntentFailureResult({ executionId, refusedRole, slippageBps, error: err });
   }
-}
-
-/**
- * Run the Vex fee leg after a CONFIRMED swap and attach its disclosure.
- * Nothing here can change whether the swap succeeded.
- *
- * TOTAL BY CONSTRUCTION - this function NEVER throws, and that is what keeps
- * the guarantee true rather than merely intended: the swap is already confirmed
- * on-chain by the time it is called, so an escape into the orchestrator's outer
- * catch would report a settled swap as failed. Both of its awaits are
- * non-throwing by contract (`abortRemainingPlans` is best-effort and returns
- * whether it applied; `runUniswapFeeLeg` documents "Never throws. Every path
- * returns a report."). Do not add a throwing call here.
- *
- * A mined swap with unproven amounts does not authorize fee collection.
- * Repair can prove amounts later but never schedules another fee transfer.
- */
-async function attachVexFee(x: {
-  readonly finalized: FinalizeConfirmedSwapOutcome;
-  readonly feeCharge: UniswapFeeCharge;
-  readonly feePlan: UniswapFeeLegPlan | null;
-  readonly feeRowId: number | null;
-  readonly executionId: number;
-  readonly swapLegCount: number;
-  readonly chainId: number;
-  readonly tokenDecimals: number;
-  readonly clients: ReturnType<typeof getUniswapEvmClients>;
-  readonly priorLeg: ConfirmedPriorLeg | undefined;
-  readonly debitGate: UniswapFeeLegDebitGate;
-  readonly feeCap: import("@tools/evm-chains/swap-native-debit.js").LegFeeCap;
-}): Promise<ToolResult> {
-  const disclosure = x.feeCharge.disclosure;
-  const attach = (collection: UniswapFeeCollection): ToolResult =>
-    withFeeDisclosure({
-      result: x.finalized.result,
-      outputPayload: x.finalized.outputPayload,
-      collection,
-      disclosure,
-    });
-
-  // No fee applied at all - dust, or a token Vex declines to skim. There is no
-  // row to finalize either, because none was ever planned.
-  if (x.feePlan === null) {
-    return attach(uniswapFeeNotCharged(disclosure.charged ? "no fee applies" : disclosure.reason));
-  }
-  // A fee DID apply but has no row to record it under. A different truth from
-  // the line above, and the audit surface must tell them apart.
-  if (x.feeRowId === null) {
-    // Post-confirmation audit cleanup is BEST-EFFORT and never throws: the swap
-    // is already confirmed on-chain, so a repository failure here is a
-    // bookkeeping gap to DISCLOSE, never a reason to report it as failed.
-    const cleanedUp = await abortRemainingPlans(x.executionId, x.swapLegCount, "the fee leg had no recorded row");
-    return attach(
-      uniswapFeeNotAttempted(
-        cleanedUp
-          ? "the fee leg had no recorded row, so nothing was signed"
-          : "the fee leg had no recorded row, so nothing was signed; its audit rows could not be finalized either",
-      ),
-    );
-  }
-
-  if (x.finalized.result.data?.status === "confirmed_pending_amounts") {
-    const reason = "the confirmed swap's executed amounts are not yet proven; no fee retry happens automatically";
-    return attach(await recordUniswapFeeNotCollected(x.feeRowId, `No Vex fee was collected: ${reason}. The swap confirmed on-chain.`));
-  }
-
-  const collection = await runUniswapFeeLeg({
-    plan: x.feePlan,
-    feeRowId: x.feeRowId,
-    chainId: x.chainId,
-    tokenDecimals: x.tokenDecimals,
-    publicClient: x.clients.publicClient,
-    walletClient: x.clients.walletClient,
-    priorLeg: x.priorLeg,
-    debitGate: x.debitGate,
-    feeCap: x.feeCap,
-  });
-  return attach(collection);
 }

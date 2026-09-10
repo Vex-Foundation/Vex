@@ -21,10 +21,12 @@
  * receipt bumps `last_checked_at` and stays `pending` FOREVER —
  * `confirmation_timeout` is reserved and never auto-set by this sweep.
  */
-import { afterEach, describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { seedIntent, cleanupSeeded, backdateSubmitAttempt } from "./_fixtures.js";
+import { resetDb } from "../setup/fixtures.js";
 import { REPAIR_CANDIDATE_AGE_MS } from "../../../vex-agent/sync/agent-activity-repair.js";
 
+beforeEach(resetDb);
 afterEach(async () => {
   await cleanupSeeded();
 });
@@ -171,6 +173,69 @@ import { repairMissingExecutedAmounts } from "@vex-agent/sync/executed-amount-fa
 import { execute as sql } from "@vex-agent/db/client.js";
 import * as activity from "@vex-agent/db/repos/agent-activity.js";
 import { repairPendingActivity } from "@vex-agent/sync/agent-activity-repair.js";
+import { nativeBinding, nativeLogs, nativeWallet, nativeToken, nativeHash, nativeRpcFixture } from "../../tools/uniswap/native-balance.fixture.js";
+import { readV4NativeBalanceEvidence, V4_NATIVE_DECODER_VERSION } from "@tools/uniswap/v4-native-balance.js";
+
+describe("native v4 interpretation upgrades", () => {
+  async function oldRow(nativeInput: boolean, nullAddress = true) {
+    const seeded = await seedIntent("uniswap.swap.execute");
+    const binding = nativeBinding(true, nativeInput);
+    const native = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+    const swap = await activity.createPendingActivityEvent({ ...seeded, walletAddress: nativeWallet,
+      eventIndex: 0, eventRole: "swap", kind: "swap", protocol: "uniswap", chainId: 4663,
+      tokenIn: { tokenAddress: nativeInput ? (nullAddress ? undefined : native) : nativeToken, tokenDecimals: 18, tokenSymbol: nativeInput ? "ETH" : "TOK", amountRaw: "100" },
+      tokenOut: { tokenAddress: nativeInput ? nativeToken : (nullAddress ? undefined : native), tokenDecimals: 18, tokenSymbol: nativeInput ? "TOK" : "ETH", amountRaw: "1000" },
+      routeProvenance: { version: "v4", ...activity.settlementDecodeProvenance({ decoder: "uniswap", chainId: 4663,
+        routerAddress: binding.universalRouter, v4: binding,
+        ...(nativeInput ? { declaredValueRaw: "100" } : { wrappedNativeAddress: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" }) }) },
+    });
+    await activity.markActivityBroadcast(swap.id, { txHash: nativeHash, fromAddress: nativeWallet, nonce: 1 });
+    await activity.confirmActivityEvent(swap.id, { executedAmountInRaw: "100", executedAmountOutRaw: "1000" });
+    await activity.noteSettlementDecodeVersion(swap.id, "2026-09-10.uniswap-v4-router-sender");
+    const fee = await activity.createPendingActivityEvent({ ...seeded, walletAddress: nativeWallet,
+      eventIndex: 1, eventRole: "swap_fee", kind: "swap", protocol: "uniswap", chainId: 4663 });
+    const fixture = nativeRpcFixture();
+    const deps = { fetchReceiptLogs: async () => nativeLogs(binding), fetchReceiptStatus: async () => "success" as const,
+      fetchTransaction: async () => ({ from: nativeWallet, to: binding.universalRouter, valueRaw: nativeInput ? "100" : "0", input: "0x" }),
+      fetchNativeBalanceEvidence: () => readV4NativeBalanceEvidence(fixture.rpc, fixture.input) };
+    return { swap, fee, deps, binding };
+  }
+  it.each([true, false])("corrects event input 100 down to bound 90 (native address NULL=%s)", async nullAddress => {
+    const { swap, fee, deps, binding } = await oldRow(true, nullAddress);
+    const feeBefore = await activity.getActivityEventById(fee.id);
+    expect((await repairMissingExecutedAmounts(deps)).filled).toBe(1);
+    expect(await activity.getActivityEventById(swap.id)).toMatchObject({ status: "confirmed", nonce: 1,
+      executedAmountInRaw: "90", executedAmountOutRaw: "1000", evidenceSource: "native_balance_delta_bound",
+      settlementDecodeVersion: V4_NATIVE_DECODER_VERSION });
+    await activity.recordV4NativeSettlement({ id: swap.id, chainId: 4663, txHash: nativeHash, poolId: binding.poolId,
+      amountInRaw: "95", amountOutRaw: "1000", inputIsBound: true, outputUnproven: false });
+    expect((await activity.getActivityEventById(swap.id))?.executedAmountInRaw).toBe("90");
+    await expect(sql("UPDATE agent_activity SET nonce = NULL WHERE id = $1", [swap.id])).rejects.toMatchObject({ code: "23514" });
+    await expect(sql("UPDATE agent_activity SET event_role = 'swap_fee' WHERE id = $1", [swap.id])).rejects.toMatchObject({ code: "23514" });
+    await expect(sql("UPDATE agent_activity SET evidence_source = 'provider-observation' WHERE id = $1", [swap.id])).rejects.toMatchObject({ code: "23514" });
+    expect(await activity.getActivityEventById(fee.id)).toEqual(feeBefore);
+    expect((await repairMissingExecutedAmounts(deps)).checked).toBe(0);
+  });
+  it("clears hooked native output without changing confirmation or the fee row", async () => {
+    const { swap, fee, deps } = await oldRow(false);
+    const before = await activity.getActivityEventById(swap.id);
+    const feeBefore = await activity.getActivityEventById(fee.id);
+    expect((await repairMissingExecutedAmounts(deps)).filled).toBe(1);
+    expect(await activity.getActivityEventById(swap.id)).toMatchObject({ status: "confirmed", executedAmountInRaw: "100",
+      executedAmountOutRaw: null, amountOutRaw: "1000", pendingReason: "native_output_unproven_hooked",
+      confirmedAt: before?.confirmedAt, confirmationSource: before?.confirmationSource });
+    expect(await activity.getActivityEventById(fee.id)).toEqual(feeBefore);
+  });
+  it("withdraws the superseded input claim on unavailable evidence without burning repair eligibility", async () => {
+    const { swap, deps } = await oldRow(true);
+    const unavailable = { ...deps, fetchNativeBalanceEvidence: async () => ({ kind: "unavailable" as const, reason: "native_balance_archive_gated" }) };
+    expect((await repairMissingExecutedAmounts(unavailable)).deferred).toBe(1);
+    expect(await activity.getActivityEventById(swap.id)).toMatchObject({ status: "confirmed", executedAmountInRaw: null,
+      settlementSource: "amounts_incomplete", settlementDecodeVersion: "2026-09-10.uniswap-v4-router-sender" });
+    expect((await repairMissingExecutedAmounts(deps)).filled).toBe(1);
+    expect((await activity.getActivityEventById(swap.id))?.executedAmountInRaw).toBe("90");
+  });
+});
 
 describe("v4 settlement and dependent fee recovery", () => {
   it("repairs the real Doppler receipt and terminalizes its unattempted fee without collecting it", async () => {
@@ -192,7 +257,8 @@ describe("v4 settlement and dependent fee recovery", () => {
     // An old decoder's completed decline must become eligible again after this fix.
     await activity.noteSettlementDecodeVersion(swap.id, "2026-09-09.uniswap-v4-receipt");
     const amounts = await repairMissingExecutedAmounts({ fetchReceiptLogs: async () => doppler.logs, fetchReceiptStatus: async () => "success",
-      fetchTransaction: async () => ({ from: doppler.from, to: doppler.to, valueRaw: doppler.value, input: doppler.inputSelector }) });
+      fetchTransaction: async () => ({ from: doppler.from, to: doppler.to, valueRaw: doppler.value, input: doppler.inputSelector }),
+      fetchNativeBalanceEvidence: async () => ({ kind: "bound", inputLowerBound: BigInt(doppler.value), outputCredit: -BigInt(doppler.value), gasCost: 0n, blockHash: "fixture", blockNumber: 1n }) });
     expect(amounts.filled).toBe(1);
     expect(await activity.getActivityEventById(swap.id)).toMatchObject({ status: "confirmed", executedAmountInRaw: doppler.value, executedAmountOutRaw: "9876476984743216817150" });
     await sql("UPDATE agent_activity SET created_at = NOW() - interval '1 day' WHERE id = $1", [fee.id]);

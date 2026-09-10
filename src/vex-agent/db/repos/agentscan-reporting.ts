@@ -512,7 +512,7 @@ const SETTLEMENT_NOT_STILL_OWED_SQL =
  * amount is coming, so holding the row longer would only delay the activity.
  */
 const SETTLEMENT_CONCLUDED_WITHOUT_AMOUNTS_SQL =
-  `a.settlement_source IN ('amounts_incomplete','amounts_undecodable','conflict_quarantined')`;
+  `a.settlement_source IN ('amounts_incomplete','amounts_undecodable','conflict_quarantined','native_output_unproven_hooked')`;
 
 /**
  * HOLD A CONFIRMED ROW UNTIL ITS MONEY IS KNOWN - the readiness gate, applied

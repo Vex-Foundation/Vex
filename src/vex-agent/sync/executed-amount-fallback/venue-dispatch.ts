@@ -81,6 +81,9 @@ export interface VenueDecodeInput {
 }
 
 export type VenueDecodeResult =
+  | { readonly kind: "v4_native"; readonly poolId: string; readonly amountInRaw: string;
+      readonly amountOutRaw?: string; readonly inputIsBound: boolean; readonly outputUnproven: boolean;
+      readonly poolOutputEstimateRaw?: string }
   | { readonly kind: "decoded"; readonly amounts: ConfirmActivityEventInput }
   | {
     readonly kind: "declined";
@@ -220,8 +223,12 @@ function decodeKyberRow(input: VenueDecodeInput): VenueDecodeResult {
  */
 async function decodeUniswapRow(input: VenueDecodeInput): Promise<VenueDecodeResult> {
   const { row } = input;
-  const tokenInAddress = row.tokenInAddress;
-  const tokenOutAddress = row.tokenOutAddress;
+  const hint = input.hint?.decoder === "uniswap" ? input.hint : null;
+  const v4Binding = hint?.v4;
+  const tokenInAddress = row.tokenInAddress ?? (v4Binding && hint?.declaredValueRaw !== undefined
+    && row.tokenInDecimals === 18 ? "0x0000000000000000000000000000000000000000" : null);
+  const tokenOutAddress = row.tokenOutAddress ?? (v4Binding && hint?.wrappedNativeAddress !== undefined
+    && row.tokenOutDecimals === 18 ? "0x0000000000000000000000000000000000000000" : null);
   const walletAddress = row.walletAddress;
   if (!tokenInAddress || !tokenOutAddress || !walletAddress) {
     return {
@@ -231,19 +238,24 @@ async function decodeUniswapRow(input: VenueDecodeInput): Promise<VenueDecodeRes
     };
   }
 
-  const v4Binding = input.hint?.decoder === "uniswap" ? input.hint.v4 : undefined;
-  const transaction = v4Binding && row.txHash && (isNativeAddress(tokenInAddress) || isNativeAddress(tokenOutAddress))
+  const needsNativeTransaction = isNativeAddress(tokenInAddress)
+    || (isNativeAddress(tokenOutAddress) && v4Binding?.poolKey.hooks.toLowerCase() === "0x0000000000000000000000000000000000000000");
+  const transaction = v4Binding && row.txHash && needsNativeTransaction
     ? await input.deps.fetchTransaction({ chainId: row.chainId, txHash: row.txHash }) : null;
-  if (v4Binding && (isNativeAddress(tokenInAddress) || isNativeAddress(tokenOutAddress)) && transaction === null) {
+  if (v4Binding && needsNativeTransaction && transaction === null) {
     return { kind: "deferred", detail: "v4_transaction_unavailable" };
   }
   let decoded: DecodedUniswapLegs;
   try {
+    const nativeBalance = v4Binding && row.txHash && needsNativeTransaction
+      ? await input.deps.fetchNativeBalanceEvidence?.({ chainId: row.chainId, txHash: row.txHash,
+          wallet: walletAddress, router: v4Binding.universalRouter }) : undefined;
     decoded = decodeUniswapExecutedLegs({
       receipt: { logs: input.logs },
       chainId: row.chainId,
       walletAddress,
       ...(v4Binding ? { version: "v4", v4Binding, v4Transaction: transaction ?? undefined } as const : {}),
+      nativeBalance,
       tokenInAddress: isNativeAddress(tokenInAddress) ? null : tokenInAddress,
       tokenOutAddress: isNativeAddress(tokenOutAddress) ? null : tokenOutAddress,
     });
@@ -258,6 +270,17 @@ async function decodeUniswapRow(input: VenueDecodeInput): Promise<VenueDecodeRes
     };
   }
 
+  if (decoded.v4Settlement?.pendingReason === "native_balance_unproven") {
+    return { kind: "deferred", detail: decoded.v4Settlement.nativeBalanceReason ?? "native_balance_unproven" };
+  }
+  const inputIsBound = decoded.v4Settlement?.evidenceSource === "native_balance_delta_bound";
+  const outputUnproven = decoded.v4Settlement?.pendingReason === "native_output_unproven_hooked";
+  if (v4Binding && decoded.executedAmountInRaw !== undefined && (inputIsBound || outputUnproven)
+    && (outputUnproven || decoded.executedAmountOutRaw !== undefined)) {
+    return { kind: "v4_native", poolId: v4Binding.poolId, amountInRaw: decoded.executedAmountInRaw.toString(),
+      amountOutRaw: decoded.executedAmountOutRaw?.toString(), inputIsBound, outputUnproven,
+      poolOutputEstimateRaw: decoded.v4Settlement?.poolAmountOutRaw };
+  }
   if (decoded.executedAmountInRaw === undefined || decoded.executedAmountOutRaw === undefined) {
     return {
       kind: "declined",

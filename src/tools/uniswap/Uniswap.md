@@ -36,3 +36,9 @@ Deployment coverage does not imply that every pool is discoverable. For the requ
 DexScreener's token-pairs endpoint supplies additional pools, including hooked pools. Its deepest three matching pools are considered alongside the four canonical probes, deduplicated by pool ID. Hooked pools remain DexScreener-discovered only. Unindexed hooked pools and nonstandard hookless keys outside those four combinations can still be missed. A DexScreener failure does not prevent the canonical on-chain probes.
 
 [V4.md](V4.md) contains the binding and settlement invariants, chain verification evidence, live results and known limitations. The latest seven-chain deployment fixture and its test pin code lengths, poolManager identities, router domains, spender registration and native wrapping. The coordinator executed v4 swaps on Polygon, BNB Chain, Optimism and Arbitrum on 2026-09-10; V4.md records their hashes and separate fee outcomes.
+
+## Native settlement evidence
+
+V4 native input can be recorded as `native_balance_delta_bound`: the wallet's isolated-block balance decrease after subtracting this transaction's gas and OP-stack L1 fee. It is a lower bound because unrelated internal credits in the same block may reduce it. The quote's Vex fee is a ceiling; the final native fee uses at most the lesser of the requested input and this bound, at the disclosed bps. Missing required evidence withholds that fee. Hookless event proof remains available and is cross-checked when balance evidence is available.
+
+For hooked native output, the swap status can be confirmed with proven ERC-20 input while the received native amount stays unknown. The output column is NULL with `native_output_unproven_hooked`; the pool's Swap amount is an estimate only. The existing ERC-20 input fee may still be collected. Historical amount repair does not collect, retry or modify fee rows. History views label lower bounds explicitly and do not round them upward.

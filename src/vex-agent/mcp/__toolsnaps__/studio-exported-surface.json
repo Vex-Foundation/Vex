@@ -12100,7 +12100,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 3699,
+      "descriptionBytes": 3912,
       "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
@@ -12161,7 +12161,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 4959,
+      "descriptionBytes": 5133,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,

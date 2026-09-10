@@ -39,6 +39,7 @@ import { getAddress, hexToBigInt, type Address, type Hex } from "viem";
 
 import { decodeV4Settlement, V4_POOL_SWAP_TOPIC0, type V4SettlementEvidence, type V4SettlementTransaction } from "./v4-settlement.js";
 import type { V4RouteBinding } from "./v4-types.js";
+import type { NativeBalanceEvidence } from "./v4-native-balance.js";
 import { getUniswapDeployment } from "./deployments.js";
 
 /** `Transfer(address,address,uint256)` — shared by every ERC-20 (and WETH itself). */
@@ -77,6 +78,7 @@ export interface DecodeUniswapLegsInput {
   readonly walletAddress: string;
   readonly v4Binding?: V4RouteBinding;
   readonly v4Transaction?: V4SettlementTransaction;
+  readonly nativeBalance?: NativeBalanceEvidence;
   readonly version?: "v2" | "v3" | "v4";
   /** Non-native tokenIn contract address, or `null`/`undefined` for a native input leg. */
   readonly tokenInAddress?: string | null;
@@ -225,6 +227,7 @@ export function decodeUniswapExecutedLegs(input: DecodeUniswapLegsInput): Decode
         wrappedDepositRaw: deposits,
         wrappedInput: deposits === undefined ? undefined : nonZeroOrUndefined(deposits - (withdrawals ?? 0n)),
         wrappedOutput: withdrawals,
+        nativeBalance: input.nativeBalance,
       }) : undefined;
   const executedAmountInRaw = input.tokenInAddress ? transferIn
     : input.version === "v4" ? v4?.nativeAmountInRaw : deposits;

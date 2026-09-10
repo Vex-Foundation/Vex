@@ -257,6 +257,8 @@ export function readQuoteBindingPreview(
         `Spender Permit2 ${u.v4.route.permit2} and Uniswap UniversalRouter ${u.v4.route.universalRouterVersion} ${u.v4.route.universalRouter}`,
         `Recipient ${u.v4.recipient}; transaction deadline 600 seconds from signing`,
         u.fee.disclosureText, "Spends real funds irreversibly after confirmation",
+        ...(u.tokenIn.isNative ? ["Native input can be a labelled lower bound. The quoted fee is a ceiling and can decrease using that bound; missing required evidence means no fee."] : []),
+        ...(u.tokenOut.isNative ? ["Unproven native output remains unknown on a confirmed swap. Proven ERC-20 input can still incur the disclosed fee."] : []),
       ] } : {}),
       tokenOutSymbol: u.tokenOut.symbol,
       effectiveSlippageBps: u.slippageBps,

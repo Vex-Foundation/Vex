@@ -218,6 +218,7 @@ export async function uniswapSwapQuote(
       ...(quoted.route.version === "v4" ? { ...quoted.route.v4, description: describeV4Route(quoted.route.v4), quoteWarning: v4QuoteWarning(quoted.route.v4) } : {}) },
     ...(quoted.v4Discovery ? { v4Discovery: quoted.v4Discovery } : {}),
     ...(quoted.route.version === "v4" ? { spenderDescription: `Permit2 and Uniswap UniversalRouter ${quoted.route.v4.universalRouterVersion}`, deadline: "600 seconds from signing", consequence: "Spends real funds irreversibly after confirmation" } : {}),
+    ...(quoted.route.version === "v4" && (tokenIn.isNative || tokenOut.isNative) ? { nativeSettlementPolicy: "Native input may be a labelled lower bound, which caps the Vex fee downward. Required evidence unavailable: fee withheld. Unproven native output stays unknown on a confirmed swap; proven ERC-20 input can still incur the fee." } : {}),
     // What the user is debited in total, and what the route was priced for -
     // they differ by the Vex fee, and stating only one of them is how an agent
     // ends up reporting a number the wallet never saw.

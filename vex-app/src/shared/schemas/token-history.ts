@@ -151,6 +151,7 @@ const amountFieldSchema = z
   .object({
     value: z.string().max(AMOUNT_MAX_LENGTH).nullable(),
     unitProvenance: z.enum(["human", "unknown"]),
+    basis: z.literal("lower_bound").optional(),
   })
   .strict();
 export type AmountField = z.infer<typeof amountFieldSchema>;

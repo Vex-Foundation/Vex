@@ -49,6 +49,7 @@ export function legSymbolText(leg: AgentScanTokenLeg): string {
  */
 export function legAmountText(leg: AgentScanTokenLeg): string | null {
   if (leg.displayAmount === null) return null;
+  if (leg.amountBasis === "lower_bound") return `at least ${leg.displayAmount}`;
   return amountDisplay(leg.displayAmount, true);
 }
 

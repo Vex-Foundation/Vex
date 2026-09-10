@@ -998,6 +998,10 @@ export function classifyRpcFailure(error: unknown): RpcFailureClass {
   if (codes.includes(3) || text.includes("execution reverted")) return "execution_reverted";
 
   if (text.includes("archive request")) return "archive_gated";
+  // Robinhood's official RPC refuses historical state this way while its
+  // bundled read fallbacks answer the same canonical block-hash request.
+  if (/metadata is not found,\s*\d+/.test(text)) return "archive_gated";
+  if (/historical state .* is not available/.test(text)) return "archive_gated";
 
   // The drpc free-plan compute allowance: `{"code":30,"message":"Request
   // timeout on the free plan, please upgrade to paid plan"}`. Named apart from

@@ -41,6 +41,7 @@
  */
 
 import {
+  recordV4NativeSettlement, needsV4NativeRevalidation, invalidateOldHookedNativeInput,
   fillExecutedAmountsOnConfirmed,
   listAmountCorrectionCandidates,
   noteSettlementDecodeVersion,
@@ -78,7 +79,8 @@ import type {
  * thing that makes a row eligible again — a timestamp could only re-run the same
  * decode against the same immutable receipt forever.
  */
-export const SETTLEMENT_DECODER_SET_VERSION = "2026-09-10.uniswap-v4-router-sender";
+export { V4_NATIVE_DECODER_VERSION as SETTLEMENT_DECODER_SET_VERSION } from "@tools/uniswap/v4-native-balance.js";
+import { V4_NATIVE_DECODER_VERSION as SETTLEMENT_DECODER_SET_VERSION, readV4NativeBalanceEvidence } from "@tools/uniswap/v4-native-balance.js";
 
 /** Bounded per pass — this shares the sync worker with the balance and bridge sweeps. */
 export const AMOUNT_CORRECTION_BATCH_LIMIT = 10;
@@ -137,7 +139,7 @@ export async function repairMissingExecutedAmounts(
   for (const row of candidates) {
     // THE AUTHORITATIVE completeness decision, imported: the SQL above is only
     // a prefilter, and a `yield_claim` with no input leg is COMPLETE.
-    if (!roleLegsIncomplete(row)) {
+    if (!roleLegsIncomplete(row) && !needsV4NativeRevalidation(row, SETTLEMENT_DECODER_SET_VERSION)) {
       // It still has to ROTATE. The prefilter keeps selecting rows the role
       // contract calls complete (a bridge deposit legitimately has no output
       // leg), and a row that is skipped without touching the ordering column
@@ -200,6 +202,11 @@ export function buildProductionAmountFallbackDeps(): AmountFallbackDeps {
   };
 
   return {
+    fetchNativeBalanceEvidence: async input => {
+      const client = await clientFor(input.chainId);
+      return client ? readV4NativeBalanceEvidence(client, input)
+        : { kind: "unavailable", reason: "native_balance_evidence_unavailable" };
+    },
     fetchReceiptStatus: async ({ chainId, txHash }) => {
       const client = await clientFor(chainId);
       if (!client) return null;
@@ -323,6 +330,7 @@ async function repairOneRow(
 
   const txHash = row.txHash;
   if (txHash === null) return "deferred";
+  if (needsV4NativeRevalidation(row, SETTLEMENT_DECODER_SET_VERSION)) await invalidateOldHookedNativeInput(row);
 
   const logs = await deps.fetchReceiptLogs({ chainId: row.chainId, txHash });
   if (logs === null) {
@@ -373,6 +381,15 @@ async function repairOneRow(
     return "declined";
   }
 
+  if (decoded.kind === "v4_native") {
+    try {
+      await recordV4NativeSettlement({ ...decoded, id: row.id, chainId: row.chainId, txHash });
+      return "filled";
+    } catch (error) {
+      logger.warn("sync.native_settlement.not_recorded", { id: row.id, error: error instanceof Error ? error.name : "unknown" });
+      return "deferred";
+    }
+  }
   const result = await fillExecutedAmountsOnConfirmed({
     id: row.id,
     // The decode is bound to the row's OWN hash and chain, so a decode of the
@@ -415,5 +432,6 @@ async function repairOneRow(
     return "conflicted";
   }
   // `already_complete` / `not_eligible`: someone else finished the row first.
+  if (result.outcome === "already_complete" && needsV4NativeRevalidation(row, SETTLEMENT_DECODER_SET_VERSION)) return "filled";
   return "deferred";
 }

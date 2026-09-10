@@ -80,6 +80,15 @@ function row(overrides: Partial<AgentScanRow> = {}): AgentScanRow {
   };
 }
 
+it("carries a native input lower-bound basis through the IPC schema without changing the output basis", () => {
+  const entry = agentScanEntrySchema.parse(mapAgentScanRow(row({ protocol: "uniswap", token_in_address: null,
+    token_in_symbol: "ETH", token_in_decimals: 18, executed_amount_in_raw: "1999999999999999999",
+    evidence_source: "native_balance_delta_bound" })));
+  expect(entry.input.amountBasis).toBe("lower_bound");
+  expect(entry.input.displayAmount).toBe("1.999999999999999999");
+  expect(entry.output.amountBasis).toBeUndefined();
+});
+
 /** Map, then prove the result survives the IPC output schema. */
 function mapValid(source: AgentScanRow) {
   const entry = mapAgentScanRow(source);

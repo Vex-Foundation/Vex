@@ -27,9 +27,9 @@ function swap(b: V4RouteBinding, amount0 = -100n, amount1 = 1000n): UniswapDecod
 function transfer(amount: bigint, incoming = true): UniswapDecodableLog {
   return { address: token, topics: [TRANSFER_TOPIC0, topic(incoming ? d.poolManager : wallet), topic(incoming ? wallet : d.poolManager)], data: word(amount) };
 }
-function decode(b: V4RouteBinding, logs: readonly UniswapDecodableLog[], value = b.zeroForOne ? "100" : "0") {
+function decode(b: V4RouteBinding, logs: readonly UniswapDecodableLog[], value = b.zeroForOne ? "100" : "0", nativeBalance?: import("@tools/uniswap/v4-native-balance.js").NativeBalanceEvidence) {
   return decodeUniswapExecutedLegs({ version: "v4", chainId: 4663, walletAddress: wallet, v4Binding: b,
-    v4Transaction: { from: wallet, to: d.universalRouter, valueRaw: value },
+    v4Transaction: { from: wallet, to: d.universalRouter, valueRaw: value }, nativeBalance,
     tokenInAddress: b.zeroForOne ? null : token, tokenOutAddress: b.zeroForOne ? token : null, receipt: { logs } });
 }
 
@@ -57,7 +57,7 @@ describe("PoolManager caller-delta sign convention", () => {
 describe("native receipt evidence without call tracing", () => {
   it("settles a native-input exact fill and prefers hooked ERC-20 output Transfer truth", () => {
     const b = bound(68);
-    const result = decode(b, [swap(b), transfer(980n)]);
+    const result = decode(b, [swap(b), transfer(980n)], "100", { kind: "bound", inputLowerBound: 100n, outputCredit: -100n, gasCost: 10n, blockHash: "fixture", blockNumber: 1n });
     expect(result.executedAmountInRaw).toBe(100n);
     expect(result.executedAmountOutRaw).toBe(980n);
     expect(result.v4Settlement?.outputTransferMatchesPool).toBe(false);
@@ -71,12 +71,12 @@ describe("native receipt evidence without call tracing", () => {
     const b = bound(mask, false);
     const result = decode(b, [swap(b, 1000n, -100n), transfer(100n, false)]);
     expect(result.executedAmountOutRaw).toBeUndefined();
-    expect(result.v4Settlement?.pendingReason).toBe("v4_native_output_hook_delta_unobservable");
+    expect(result.v4Settlement?.pendingReason).toBe("native_output_unproven_hooked");
   });
   it.each([
     ["refund", "110", 0, "v4_native_value_difference_unobservable"],
     ["short value", "99", 0, "v4_native_value_mismatch"],
-    ["before hook", "100", 136, "v4_native_input_hook_delta_unobservable"],
+    ["before hook", "100", 136, "native_balance_unproven"],
   ] as const)("names %s without guessing the native amount", (_label, value, mask, reason) => {
     const b = bound(mask);
     const result = decode(b, [swap(b), transfer(1000n)], value);
@@ -106,15 +106,15 @@ describe("native receipt evidence without call tracing", () => {
       receipt: { logs: [swap(b, -100n, 1000n), transfer(1000n), weth(WETH_DEPOSIT_TOPIC0, 110n), weth(WETH_WITHDRAWAL_TOPIC0, 10n), weth(WETH_WITHDRAWAL_TOPIC0, 99n, wallet)] } });
     expect(result.executedAmountInRaw).toBe(100n);
   });
-  it("uses a router WETH withdrawal to prove a hook-adjusted native output", () => {
+  it("does not use a router withdrawal as proof of hooked native output", () => {
     const poolKey: V4PoolKey = { ...key, currency0: deployment.weth, currency1: token, hooks: bound(68).poolKey.hooks };
     const b = { ...bound(68, false), poolKey, poolId: v4PoolId(poolKey) };
     const result = decode(b, [swap(b, 1000n, -100n), transfer(100n, false),
       { address: deployment.weth, topics: [WETH_WITHDRAWAL_TOPIC0, topic(d.universalRouter)], data: word(980n) },
     ]);
-    expect(result.executedAmountOutRaw).toBe(980n);
+    expect(result.executedAmountOutRaw).toBeUndefined();
     expect(result.v4Settlement?.poolAmountOutRaw).toBe("1000");
-    expect(result.v4Settlement?.pendingReason).toBeUndefined();
+    expect(result.v4Settlement?.pendingReason).toBe("native_output_unproven_hooked");
   });
   it("characterizes a real hooked-pool receipt with unobservable native spending", () => {
     const poolKey = { ...fixture.poolKey, currency0: getAddress(fixture.poolKey.currency0), currency1: getAddress(fixture.poolKey.currency1), hooks: getAddress(fixture.poolKey.hooks) };
@@ -122,7 +122,7 @@ describe("native receipt evidence without call tracing", () => {
     const result = decodeUniswapExecutedLegs({ version: "v4", chainId: 4663, walletAddress: fixture.transaction.from, v4Binding: b,
       v4Transaction: { from: fixture.transaction.from, to: fixture.transaction.to, valueRaw: fixture.transaction.value }, tokenOutAddress: poolKey.currency1, receipt: fixture.receipt });
     expect(result.executedAmountInRaw).toBeUndefined();
-    expect(result.v4Settlement?.pendingReason).toBe("v4_native_value_difference_unobservable");
+    expect(result.v4Settlement?.pendingReason).toBe("native_balance_unproven");
     expect(result.executedAmountOutRaw).toBeGreaterThan(0n);
     expect(result.v4Settlement?.outputTransferMatchesPool).toBe(true);
     expect(result.executedAmountOutRaw).toBe(300000000000000000000000n);
@@ -150,7 +150,9 @@ describe("Doppler receipt attribution", () => {
     });
     const result = decodeUniswapExecutedLegs({ chainId: 8453, version: "v4", walletAddress: baseReceipt.from,
       tokenOutAddress: poolKey.currency1, v4Binding: binding, receipt: { logs },
-      v4Transaction: { from: baseReceipt.from, to: baseReceipt.to, valueRaw: baseReceipt.value } });
+      v4Transaction: { from: baseReceipt.from, to: baseReceipt.to, valueRaw: baseReceipt.value },
+      // This test isolates log attribution; the balance reader has its own real fixtures.
+      nativeBalance: { kind: "bound", inputLowerBound: 99750000000000n, outputCredit: -99750000000000n, gasCost: 0n, blockHash: "fixture", blockNumber: 1n } });
     if (variant === "missing recipient" || variant === "foreign recipient payer") {
       expect(result.executedAmountInRaw).toBeUndefined();
       expect(result.v4Settlement?.pendingReason).toBe("v4_token_transfer_missing");

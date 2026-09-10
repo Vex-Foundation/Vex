@@ -187,9 +187,9 @@ export function mapActivityToEvent(
   const evm = str(activity.chain_family) === "eip155";
 
   const tokenIn = inputLegAllowed
-    ? tokenRef(activity.token_in_address, activity.token_in_symbol, activity.token_in_decimals, evm)
+    ? tokenRef(activity.token_in_address ?? (activity.evidence_source === "native_balance_delta_bound" ? EVM_NATIVE_SENTINEL : null), activity.token_in_symbol, activity.token_in_decimals, evm)
     : null;
-  const tokenOut = tokenRef(activity.token_out_address, activity.token_out_symbol, activity.token_out_decimals, evm);
+  const tokenOut = tokenRef(activity.token_out_address ?? (activity.pending_reason === "native_output_unproven_hooked" ? EVM_NATIVE_SENTINEL : null), activity.token_out_symbol, activity.token_out_decimals, evm);
   // BOTH gates, not just the second-leg one: a role that spends nothing spends
   // nothing on either side, and the three claim roles are on both lists. The
   // database already forbids these columns on those roles (migrations 082/102),
@@ -264,6 +264,8 @@ function executedAmountReporter(
   const disputed = str(activity.settlement_source) === DISPUTED_SETTLEMENT_SOURCE;
   return (value, legTokenAddress, slot) => {
     if (!confirmed || disputed) return null;
+    if (slot === "primary_input" && activity.evidence_source === "native_balance_delta_bound") return null;
+    if (slot === "primary_output" && activity.pending_reason === "native_output_unproven_hooked") return null;
     if (isEvmNativeAlias(legTokenAddress) && !NATIVE_VERIFIED_EXECUTED_SLOTS.has(slot)) return null;
     // The server checks native input against tx.value. A v4 refund is real
     // wallet movement, but a net-of-refund amount is not that gross value.

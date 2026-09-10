@@ -298,6 +298,35 @@ describe("the approval card's spendability line", () => {
     expect(restoreUniswapSnapshot(invalid)).toMatchObject({ ok: false, refusal: { kind: "snapshot_unreadable" } });
   });
 
+  it.each([true, false])("keeps the native settlement policy on the real card (native input=%s)", nativeIn => {
+    const deployment = getUniswapDeployment(8453);
+    if (!deployment?.v4) throw new Error("missing Base v4 deployment");
+    const native = { address: "0x0000000000000000000000000000000000000000", isNative: true, symbol: "ETH", decimals: 18 } as const;
+    const token = { address: TOKEN_OUT, isNative: false, symbol: "S".repeat(64), decimals: 36 };
+    const raw = ((1n << 127n) - 1n).toString();
+    const key = { currency0: native.address, currency1: TOKEN_OUT, fee: 0x800000, tickSpacing: 32767,
+      hooks: "0xffffffffffffffffffffffffffffffffffffffff" } as const;
+    const snapshot = sealUniswapSnapshot({ v: 2, provider: "uniswap", chainId: 8453,
+      tokenIn: nativeIn ? native : token, tokenOut: nativeIn ? token : native,
+      totalInRaw: raw, swapAmountRaw: raw, approvedAmountOutRaw: raw, approvedMinOutRaw: raw,
+      approvedAmountOutHuman: formatUnits(BigInt(raw), nativeIn ? 36 : 18),
+      approvedMinOutHuman: formatUnits(BigInt(raw), nativeIn ? 36 : 18), slippageBps: 0,
+      fee: { disposition: "charged", amountRaw: "1", disclosureText: "Vex fee 25 bps, capped by approval" },
+      expiresAt: OBSERVED_AT, debitPlan: buildBoundDebitPlan({ feeCap: FEE_CAP,
+        legs: [{ role: "swap", pricing: "conservative" }, { role: "swap_fee", pricing: "measured" }] }),
+      v4: { recipient: TOKEN_IN, route: { poolId: v4PoolId(key), poolKey: key,
+        zeroForOne: nativeIn, hookPermissions: 0x3fff, dynamicFee: true, observedLpFee: 1000000,
+        universalRouter: deployment.v4.universalRouter, universalRouterVersion: "2.1.1", permit2: deployment.v4.permit2 } } });
+    const binding = readQuoteBindingPreview("9999999999999999", snapshot, snapshot.expiresAt);
+    expect(binding).toBeDefined();
+    const card = cardFor(SPENDABILITY_DETAIL, binding, "uniswap.swap.execute");
+    for (const fact of [v4PoolId(key), key.hooks, deployment.v4.universalRouter, snapshot.approvedMinOutHuman,
+      nativeIn ? "Native input can be a labelled lower bound" : "Unproven native output remains unknown",
+      nativeIn ? "missing required evidence means no fee" : "Proven ERC-20 input can still incur the disclosed fee"]) {
+      expect(card.quoteBinding).toContain(fact);
+    }
+  });
+
   it("grows no line at all when the row carries no spendability observation", () => {
     // The absent case: a venue that measures no balances, or a row written
     // before the lane existed. The card must state nothing rather than a

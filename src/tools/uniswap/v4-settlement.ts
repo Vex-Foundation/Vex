@@ -5,6 +5,7 @@ import type { getUniswapPublicClient } from "./evm-client.js";
 import type { UniswapDecodableLog } from "./receipt-decoder.js";
 import type { V4RouteBinding } from "./v4-types.js";
 import { assertV4Binding } from "./v4-pool.js";
+import { NATIVE_BALANCE_BOUND_SOURCE, type NativeBalanceEvidence } from "./v4-native-types.js";
 
 // v4-core 59d3ecf, IPoolManager.sol:91-100. tick precedes fee.
 export const V4_SWAP_EVENT = parseAbiItem("event Swap(bytes32 indexed id,address indexed sender,int128 amount0,int128 amount1,uint160 sqrtPriceX96,uint128 liquidity,int24 tick,uint24 fee)");
@@ -19,9 +20,13 @@ export type V4NativePendingReason =
   | "v4_binding_missing_or_invalid" | "v4_swap_missing_or_ambiguous"
   | "v4_swap_malformed_or_wrong_direction" | "v4_transaction_unavailable_or_mismatched"
   | "v4_token_transfer_missing"
+  | "native_balance_unproven" | "native_output_unproven_hooked"
   | "v4_native_input_hook_delta_unobservable" | "v4_native_output_hook_delta_unobservable"
   | "v4_native_value_difference_unobservable" | "v4_native_value_mismatch";
 export interface V4SettlementEvidence {
+  readonly evidenceSource?: typeof NATIVE_BALANCE_BOUND_SOURCE;
+  readonly nativeInputBoundRaw?: string;
+  readonly nativeBalanceReason?: string;
   readonly poolAmountInRaw?: string;
   readonly poolAmountOutRaw?: string;
   readonly inputTransferMatchesPool?: boolean;
@@ -58,12 +63,14 @@ export function decodeV4Settlement(input: {
   readonly wrappedDepositRaw?: bigint;
   readonly wrappedInput?: bigint;
   readonly wrappedOutput?: bigint;
+  readonly nativeBalance?: NativeBalanceEvidence;
 }): SettlementResult {
   let evidence: V4SettlementEvidence = {};
   const pending = (pendingReason: V4NativePendingReason): SettlementResult => ({ evidence: { ...evidence, pendingReason } });
   const { deployment, binding } = input;
   if (!deployment?.v4 || !binding) return pending("v4_binding_missing_or_invalid");
   try { assertV4Binding(deployment, binding); } catch { return pending("v4_binding_missing_or_invalid"); }
+  const hooked = binding.poolKey.hooks.toLowerCase() !== zeroAddress;
   const matches = input.logs.filter(log => log.address.toLowerCase() === deployment.v4?.poolManager.toLowerCase()
     && log.topics[0]?.toLowerCase() === V4_POOL_SWAP_TOPIC0
     && log.topics[1]?.toLowerCase() === binding.poolId.toLowerCase()
@@ -77,6 +84,11 @@ export function decodeV4Settlement(input: {
     const decoded = decodeEventLog({ abi: [V4_SWAP_EVENT], data: log.data as Hex, topics: log.topics as [Hex, Hex, Hex], strict: true });
     if (decoded.args.sender.toLowerCase() !== binding.universalRouter.toLowerCase()) return pending("v4_swap_malformed_or_wrong_direction");
     amounts = orientV4SwapAmounts(decoded.args.amount0, decoded.args.amount1, binding.zeroForOne);
+    // A hook may supply the entire trade while the core pool emits zero deltas.
+    // These remain hints; native input still needs the independent balance bound.
+    const poolIn = binding.zeroForOne ? decoded.args.amount0 : decoded.args.amount1;
+    const poolOut = binding.zeroForOne ? decoded.args.amount1 : decoded.args.amount0;
+    if (!amounts && hooked && poolIn <= 0n && poolOut >= 0n) amounts = { amountIn: -poolIn, amountOut: poolOut };
   } catch { return pending("v4_swap_malformed_or_wrong_direction"); }
   if (!amounts) return pending("v4_swap_malformed_or_wrong_direction");
   evidence = {
@@ -85,6 +97,16 @@ export function decodeV4Settlement(input: {
     ...(input.transferOut === undefined ? {} : { outputTransferMatchesPool: input.transferOut === amounts.amountOut }),
   };
   if (!input.nativeIn && !input.nativeOut) return { evidence };
+  if (input.nativeOut) {
+    const tokenIn = binding.zeroForOne ? binding.poolKey.currency0 : binding.poolKey.currency1;
+    const paid = input.logs.some(log => log.address.toLowerCase() === tokenIn.toLowerCase()
+      && log.topics[0] === "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+      && log.topics[1]?.toLowerCase() === `0x${input.wallet.slice(2).toLowerCase().padStart(64, "0")}`
+      && log.topics[2]?.toLowerCase() === `0x${deployment.v4!.poolManager.slice(2).toLowerCase().padStart(64, "0")}`
+      && /^0x[0-9a-fA-F]{64}$/.test(log.data) && BigInt(log.data) > 0n);
+    if (!paid || input.transferIn === undefined) return pending("v4_token_transfer_missing");
+    if (hooked) return pending("native_output_unproven_hooked");
+  }
   const tx = input.transaction;
   if (!tx || !/^\d+$/.test(tx.valueRaw) || tx.from.toLowerCase() !== input.wallet.toLowerCase()
     || tx.to?.toLowerCase() !== binding.universalRouter.toLowerCase()) return pending("v4_transaction_unavailable_or_mismatched");
@@ -102,15 +124,25 @@ export function decodeV4Settlement(input: {
   const currencyIn = binding.zeroForOne ? binding.poolKey.currency0 : binding.poolKey.currency1;
   const currencyOut = binding.zeroForOne ? binding.poolKey.currency1 : binding.poolKey.currency0;
   const value = BigInt(tx.valueRaw);
+  const balance = input.nativeBalance;
+  if (input.nativeIn && (hooked || balance?.kind === "bound")) {
+    if (balance?.kind !== "bound") {
+      evidence = { ...evidence, nativeBalanceReason: balance?.reason ?? "native_balance_evidence_unavailable" };
+      return pending("native_balance_unproven");
+    }
+    const bound = hooked || balance.inputLowerBound < amounts.amountIn ? balance.inputLowerBound : amounts.amountIn;
+    return { nativeAmountInRaw: bound, evidence: { ...evidence,
+      evidenceSource: NATIVE_BALANCE_BOUND_SOURCE, nativeInputBoundRaw: bound.toString() } };
+  }
+  if (input.nativeOut && (hooked || (balance?.kind === "bound" && amounts.amountOut > balance.outputCredit))) {
+    return pending("native_output_unproven_hooked");
+  }
   if (input.nativeIn) {
     if (currencyIn.toLowerCase() === deployment.weth.toLowerCase() && input.wrappedInput !== undefined) {
       if (input.wrappedDepositRaw !== value || input.wrappedInput > value) return pending("v4_native_value_mismatch");
       return { nativeAmountInRaw: input.wrappedInput, evidence };
     }
     if (currencyIn !== zeroAddress) return pending("v4_binding_missing_or_invalid");
-    // For exact input, AFTER_SWAP_RETURNS_DELTA changes the unspecified OUTPUT
-    // only (Hooks.sol:296-313). BEFORE_SWAP_RETURNS_DELTA can change both legs.
-    if ((binding.hookPermissions & 8) !== 0) return pending("v4_native_input_hook_delta_unobservable");
     if (value < amounts.amountIn) return pending("v4_native_value_mismatch");
     if (value > amounts.amountIn) return pending("v4_native_value_difference_unobservable");
     return { nativeAmountInRaw: amounts.amountIn, evidence };
@@ -122,7 +154,6 @@ export function decodeV4Settlement(input: {
   if (currencyOut !== zeroAddress) return pending("v4_binding_missing_or_invalid");
   // TAKE/TAKE_ALL pay the caller credit. take() and native Currency.transfer()
   // emit no payment event. ERC-6909 Transfer logs cannot prove native delivery.
-  if ((binding.hookPermissions & 12) !== 0) return pending("v4_native_output_hook_delta_unobservable");
   return { nativeAmountOutRaw: amounts.amountOut, evidence };
 }
 
