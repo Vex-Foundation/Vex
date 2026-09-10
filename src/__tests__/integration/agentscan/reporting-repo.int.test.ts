@@ -274,6 +274,11 @@ describe("agentscan_outbox — diff scan", () => {
       protocolExecutionId, eventIndex: 0, eventRole: "allowance", kind: "swap",
       protocol: "kyberswap", chainId: 8453, walletAddress, sessionId,
     });
+    await agentActivity.createPendingActivityEvent({
+      protocolExecutionId, eventIndex: 3, eventRole: "allowance", kind: "swap",
+      protocol: "uniswap", chainId: 8453, walletAddress, sessionId,
+      routeProvenance: { allowanceKind: "permit2" },
+    });
     // `wrap` is in the server's vocabulary but has no producer here yet.
     await agentActivity.createPendingActivityEvent({
       protocolExecutionId, eventIndex: 1, eventRole: "wrap", kind: "wrap",

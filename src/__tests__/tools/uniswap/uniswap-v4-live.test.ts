@@ -17,9 +17,15 @@ const executeLive = live && process.env.VEX_UNISWAP_V4_LIVE_EXECUTE === "1";
 const d = live ? describe : describe.skip;
 const dx = executeLive ? describe : describe.skip;
 const context: ProtocolExecutionContext = { sessionPermission: "restricted", approved: false, walletResolution: { source: "session", evm: null, solana: null }, walletPolicy: { kind: "none" } };
+// Pinned honest cases: tokens whose only native-quoted liquidity is a v4 pool,
+// so the handler's own ranking selects v4 and the strict schema below is never
+// relaxed. Provenance (DexScreener token-pairs plus on-chain PoolKey binding)
+// is recorded in `src/tools/uniswap/V4.md`. Base 2026-09-10: 1F916, twelve
+// pools, all v4; WETH pool 0x24ecedb2...c7fccb, dynamic fee (lpFee 7000),
+// DopplerHookInitializer hook with after-swap return delta, 539k USD liquidity.
 const cases = [
   { chain: "4663", tokenOut: "0x008Df4b3E857D06c4603Aeb11F267ccD32ce2005", amountIn: "0.0001" },
-  { chain: "8453", tokenOut: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", amountIn: "0.0001" },
+  { chain: "8453", tokenOut: "0x9E00FC92493451EBA1c63DD3880D68b622037bA3", amountIn: "0.0001" },
 ];
 const canonicalChains = [
   { chain: "1", symbol: "ETH", tokenOut: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", poolId: "0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27" },
