@@ -257,9 +257,9 @@ export function scrubProviderText(text: string, maxLength: number): string | und
 }
 
 /** Whitespace collapse + the hard cap, applied to message and hint JOINTLY. */
-export function collapseAndCap(combined: string): string {
+export function collapseAndCap(combined: string, maxLength = MAX_SAFE_ERROR_MESSAGE): string {
   const cleaned = combined.replace(/\s+/g, " ").trim();
-  return cleaned.length > MAX_SAFE_ERROR_MESSAGE
-    ? `${cleaned.slice(0, MAX_SAFE_ERROR_MESSAGE)}…`
+  return cleaned.length > maxLength
+    ? `${cleaned.slice(0, maxLength)}…`
     : cleaned;
 }

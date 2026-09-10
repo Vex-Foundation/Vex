@@ -12,6 +12,6 @@
 
 import { summarizeProtocolError } from "@vex-agent/tools/protocols/runtime/errors.js";
 
-export function uniswapFailureMessage(err: unknown): string {
-  return summarizeProtocolError(err).message;
+export function uniswapFailureMessage(err: unknown, options?: { readonly preserveLength?: boolean }): string {
+  return summarizeProtocolError(err, options).message;
 }

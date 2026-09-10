@@ -20,7 +20,7 @@
  * `src/tools/**` still never depends on `src/vex-agent/**`.
  */
 
-import { classifyV4Revert } from "./v4-revert.js";
+import { classifyV4Revert, type UniswapRevertEvidence } from "./v4-revert.js";
 import {
   ExecutionRevertedError,
   FeeCapTooHighError,
@@ -48,6 +48,9 @@ export type UniswapRevertFailureCode = EvmRouterRevertFailureCode;
 export interface UniswapRevertClassification {
   readonly failureCode: UniswapRevertFailureCode;
   readonly failureReason: string;
+  readonly onChainRevert?: boolean;
+  readonly revert?: UniswapRevertEvidence;
+  readonly remedy?: string;
 }
 
 /**
@@ -117,9 +120,9 @@ export function classifyUniswapRevertError(err: unknown): UniswapRevertClassific
   const reason = extractDecodedRevertReason(err);
   if (reason !== undefined) {
     const mapped = classifyRouterRevertReason(reason);
-    if (mapped) return { failureCode: mapped, failureReason: reason };
+    if (mapped) return { failureCode: mapped, failureReason: reason, onChainRevert: true };
     // A genuine, decoded on-chain revert we do not have a specific bucket for.
-    return { failureCode: "simulation_reverted", failureReason: reason };
+    return { failureCode: "simulation_reverted", failureReason: reason, onChainRevert: true };
   }
 
   if (chainIncludesInstanceOf(err, [InsufficientFundsError])) {
@@ -138,8 +141,15 @@ export function classifyUniswapRevertError(err: unknown): UniswapRevertClassific
 
   if (chainIncludesInstanceOf(err, [ExecutionRevertedError])) {
     // Reverted, but the node gave no decodable reason at all.
-    return { failureCode: "unknown", failureReason: "reverted with no reason available" };
+    return { failureCode: "unknown", failureReason: "reverted with no reason available", onChainRevert: true };
   }
+
+  if (err instanceof VexError) return {
+    failureCode: PRE_BROADCAST_CODE_TABLE.get(err.code) ?? "unknown",
+    failureReason: redact(err.message).text,
+    ...(err.hint ? { remedy: redact(err.hint).text } : {}),
+    onChainRevert: false,
+  };
 
   return {
     failureCode: "unknown",

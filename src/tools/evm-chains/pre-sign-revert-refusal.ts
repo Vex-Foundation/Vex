@@ -179,10 +179,12 @@ export function preSignRefusalGuidance(input: {
   readonly revertReason: string;
   readonly failureCode: EvmRouterRevertFailureCode;
   readonly slippage: PreSignSlippageBounds;
+  /** Venue-decoded custom errors may have a more specific, source-verified remedy. */
+  readonly remedy?: string;
 }): string {
   return `Nothing was signed or broadcast for this step, so it moved no funds and re-running cannot duplicate it. `
     + `The pre-sign gas estimate was refused on-chain: ${input.revertReason}. `
-    + remedyFor(input.failureCode, input.slippage);
+    + (input.remedy ?? remedyFor(input.failureCode, input.slippage));
 }
 
 /**

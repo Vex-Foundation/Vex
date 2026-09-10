@@ -30,7 +30,7 @@ import {
 import { DependentLegGasEstimateError } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import { waitForSuccessfulReceipt } from "@tools/evm-chains/receipt-guard.js";
 import type { UniswapDecodableReceipt } from "@tools/uniswap/receipt-decoder.js";
-import { classifyUniswapRevertError, type UniswapRevertFailureCode } from "@tools/uniswap/revert-mapping.js";
+import { classifyUniswapRevertError, type UniswapRevertFailureCode, type UniswapRevertClassification } from "@tools/uniswap/revert-mapping.js";
 import {
   markActivityBroadcast,
   reserveActivityEvmNonce,
@@ -63,7 +63,7 @@ export interface Classification {
  * broadcast-only code such as `mined_revert` into the "nothing was signed"
  * message.
  */
-export interface PreBroadcastClassification extends Classification {
+export interface PreBroadcastClassification extends Classification, UniswapRevertClassification {
   readonly failureCode: UniswapRevertFailureCode;
 }
 
@@ -187,7 +187,8 @@ export async function runStagedBroadcast(
     // DB row (`failActivityEvent`, below) or the ToolResult output (the
     // "failed" branch in the main loop reads this same object's
     // `failureReason`).
-    const classification: PreBroadcastClassification = { failureCode: raw.failureCode, failureReason: uniswapFailureMessage(raw.failureReason) };
+    const classification: PreBroadcastClassification = { ...raw, failureReason: uniswapFailureMessage(raw.failureReason, { preserveLength: true }),
+      ...(raw.remedy ? { remedy: uniswapFailureMessage(raw.remedy, { preserveLength: true }) } : {}) };
     await failActivityEvent(event.id, classification);
     return { kind: "failed", stage: "pre_broadcast", classification };
   }

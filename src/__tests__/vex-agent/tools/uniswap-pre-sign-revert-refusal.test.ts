@@ -50,6 +50,8 @@ const decodeUniswapExecutedLegs = vi.fn();
 const clearUniswapPairReveal = vi.fn();
 const waitForSuccessfulReceipt = vi.fn();
 
+const LIVE_FLOOR_REVERT = "0x8b063d7300000000000000000000000000000000000000000000000000000000000788b8000000000000000000000000000000000000000000000000000000000003c45c";
+
 // The fee-eligibility oracle (migration 066's `swap_fee` leg) is a token fact,
 // never a live network call in a unit test.
 vi.mock("@tools/kyberswap/token-api/client.js", () => ({
@@ -215,6 +217,55 @@ beforeEach(() => {
   abortPlannedEvents.mockResolvedValue(undefined);
   pinTrackedToken.mockResolvedValue({ inserted: true });
   getLocalChain.mockReturnValue({ chainId: 4663 });
+});
+
+describe("Uniswap pre-sign diagnostic evidence", () => {
+  it("keeps a real Base custom revert in the output, activity failure and execution result", async () => {
+    signUniswapTransaction.mockRejectedValueOnce(new Error("estimate refused", { cause: { code: 3, data: LIVE_FLOOR_REVERT } }));
+    const result = await execute(SWAP_ONLY_PARAMS, context);
+    expect(result.output).toContain("V4TooLittleReceived");
+    expect(result.output).toContain("0x8b063d73");
+    expect(result.output).toContain("slippageBps");
+    expect(result.data).toMatchObject({ status: "not_attempted", failureCode: "slippage",
+      revert: { data: LIVE_FLOOR_REVERT, selector: "0x8b063d73", errorName: "V4TooLittleReceived" } });
+    expect(failActivityEvent).toHaveBeenCalledWith(100, expect.objectContaining({
+      failureCode: "slippage", failureReason: expect.stringContaining("V4TooLittleReceived") }));
+    expect(broadcastUniswapTransaction).not.toHaveBeenCalled();
+    expect(markActivityBroadcast).not.toHaveBeenCalled();
+  });
+
+  it("keeps unknown revert data in full and does not advise widening slippage", async () => {
+    const data = `0x12345678${"ab".repeat(300)}`;
+    signUniswapTransaction.mockRejectedValueOnce({ cause: { code: 3, data } });
+    const result = await execute(SWAP_ONLY_PARAMS, context);
+    expect(result.output).toContain(data);
+    expect(result.data).toMatchObject({ failureCode: "simulation_reverted", revert: { data, selector: "0x12345678" } });
+    expect(result.output).toContain("different route");
+    expect(result.output).not.toContain("slippageBps");
+    expect(broadcastUniswapTransaction).not.toHaveBeenCalled();
+  });
+
+  it("renders a local VexError reason without falsely calling it an on-chain estimate revert", async () => {
+    signUniswapTransaction.mockRejectedValueOnce(new VexError(ErrorCodes.SWAP_FAILED,
+      "Transaction preparation did not resolve a nonce", "Check the pinned RPC nonce response"));
+    const result = await execute(SWAP_ONLY_PARAMS, context);
+    expect(result.output).toContain("Transaction preparation did not resolve a nonce");
+    expect(result.output).toContain("Check the pinned RPC nonce response");
+    expect(result.output).not.toContain("VexError");
+    expect(result.output).not.toContain("refused on-chain");
+    expect(result.data).toMatchObject({ status: "not_attempted", failureReason: "Transaction preparation did not resolve a nonce" });
+    expect(broadcastUniswapTransaction).not.toHaveBeenCalled();
+  });
+
+  it("retains the complete scrubbed diagnostic beyond the ordinary error-summary display cap", async () => {
+    const reason = "The node could not resolve transaction preparation. ".repeat(12) + "Final diagnostic retained";
+    signUniswapTransaction.mockRejectedValueOnce(new VexError(ErrorCodes.SWAP_FAILED, reason));
+    const result = await execute(SWAP_ONLY_PARAMS, context);
+    expect(result.output).toContain(reason);
+    expect(result.data?.failureReason).toBe(reason);
+    expect(result.output).not.toContain("…");
+    expect(broadcastUniswapTransaction).not.toHaveBeenCalled();
+  });
 });
 
 describe("uniswap.swap.execute — a sign-time revert is a refusal, not a failed trade", () => {
