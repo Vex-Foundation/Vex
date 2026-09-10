@@ -134,6 +134,7 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
         status: "confirmed_pending_amounts",
         settlementNote: "Swap confirmed; the receipt does not prove both executed amounts. No executed amount was guessed.",
         settlementEvidence: decoded.v4Settlement,
+        preSignFee: x.quoted.v4FeeObservation,
         route: { version: "v4", path: x.quoted.route.path, ...x.quoted.route.v4,
           description: describeV4Route(x.quoted.route.v4), quoteWarning: v4QuoteWarning(x.quoted.route.v4) },
         tokenIn: { symbol: tokenIn.symbol, decimals: tokenIn.decimals },
@@ -194,6 +195,7 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
   const outputPayload = {
     txHash, chain: deployment.key,
     ...(decoded.v4Settlement ? { settlementEvidence: decoded.v4Settlement } : {}),
+    ...(x.quoted.v4FeeObservation ? { preSignFee: x.quoted.v4FeeObservation } : {}),
     tokenIn: tokenIn.symbol, tokenOut: tokenOut.symbol,
     amountIn: amountInHuman, amountOut: amountOutHuman,
     route: { version: x.quoted.route.version, path: x.quoted.route.path,

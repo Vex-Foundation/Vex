@@ -22,6 +22,11 @@ export interface QuotedRoute {
   slippageBps: number;
   selectionBasis?: string;
   v4Discovery?: import("@tools/uniswap/v4-quote.js").V4DiscoveryStats;
+  v4FeeObservation?: {
+    readonly approvedLpFee: number;
+    readonly currentLpFee: number;
+    readonly protection: string;
+  };
 }
 
 export async function computeQuote(

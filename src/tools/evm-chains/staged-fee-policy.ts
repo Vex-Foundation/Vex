@@ -107,4 +107,3 @@ export function assertWithinFeeBounds(
     throw new StagedFeeBoundsExceededError("gasPrice", gasPrice ?? 0n, bounds.gasPriceWei);
   }
 }
-

@@ -3,6 +3,7 @@ import { createPublicClient, custom, decodeFunctionData, encodeAbiParameters, en
 import { mainnet } from "viem/chains";
 import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
 import { v4PoolId } from "@tools/uniswap/v4-pool.js";
+import type { V4PoolKey } from "@tools/uniswap/v4-types.js";
 import { V4_POSITION_MANAGER_ABI, V4_QUOTER_ABI, V4_STATE_VIEW_ABI } from "@tools/uniswap/v4-abis.js";
 import { revalidateV4Quote } from "@vex-agent/tools/protocols/uniswap/handlers/swap/v4-revalidation.js";
 import { sealUniswapSnapshot, restoreUniswapSnapshot, type UniswapSnapshotFields } from "@vex-agent/tools/protocols/quote-authority/uniswap.js";
@@ -28,12 +29,12 @@ function fields(): UniswapSnapshotFields {
     debitPlan: buildBoundDebitPlan({ legs: [{ role: "swap", pricing: "measured" }], feeCap: { mode: "legacy", gasPriceWei: 1n } }),
     v4: { route: bound, recipient: wallet } };
 }
-function client(output = 1000n, decimals = 18, cancel?: () => void) {
+function client(output = 1000n, decimals = 18, cancel?: () => void, poolKey: V4PoolKey = key, lpFee = () => 0) {
   return createPublicClient({ chain: mainnet, transport: custom({ request: async ({ method, params }) => {
     if (method !== "eth_call") throw new Error("unexpected method");
     const tx = (params as [{ to: string; data: `0x${string}` }])[0];
-    if (tx.to.toLowerCase() === d.positionManager.toLowerCase()) return encodeFunctionResult({ abi: V4_POSITION_MANAGER_ABI, functionName: "poolKeys", result: [key.currency0, key.currency1, key.fee, key.tickSpacing, key.hooks] });
-    if (tx.to.toLowerCase() === d.stateView.toLowerCase()) return encodeFunctionResult({ abi: V4_STATE_VIEW_ABI, functionName: "getSlot0", result: [1n << 96n, 0, 0, 0] });
+    if (tx.to.toLowerCase() === d.positionManager.toLowerCase()) return encodeFunctionResult({ abi: V4_POSITION_MANAGER_ABI, functionName: "poolKeys", result: [poolKey.currency0, poolKey.currency1, poolKey.fee, poolKey.tickSpacing, poolKey.hooks] });
+    if (tx.to.toLowerCase() === d.stateView.toLowerCase()) return encodeFunctionResult({ abi: V4_STATE_VIEW_ABI, functionName: "getSlot0", result: [1n << 96n, 0, 0, lpFee()] });
     if (tx.to.toLowerCase() === d.quoter.toLowerCase()) {
       cancel?.();
       return encodeFunctionResult({ abi: V4_QUOTER_ABI, functionName: "quoteExactInputSingle", result: [output, 80000n] });
@@ -47,6 +48,24 @@ function client(output = 1000n, decimals = 18, cancel?: () => void) {
 }
 
 describe("v4 approved route and last-sign revalidation", () => {
+  it.each([989n, 990n, 1000n])("refreshes a dynamic fee after allowance confirmation and keeps the 990 floor (output %s)", async output => {
+    const dynamicKey = { ...key, fee: 0x800000 };
+    const approved = sealUniswapSnapshot({ ...fields(), v4: { recipient: wallet, route: {
+      ...bound, poolKey: dynamicKey, poolId: v4PoolId(dynamicKey), dynamicFee: true, observedLpFee: 500,
+    } } });
+    const first = await revalidateV4Quote({ client: client(1000n, 18, undefined, dynamicKey, () => 500), deployment, approved, wallet });
+    if (first.route.version !== "v4") throw new Error("Expected v4 binding");
+    // The next chain observation is after an allowance transaction has mined.
+    const next = revalidateV4Quote({ client: client(output, 18, undefined, dynamicKey, () => 7000),
+      deployment, approved, wallet, freshBinding: first.route.v4 });
+    if (output < 990n) await expect(next).rejects.toThrow(/below the approved minimum/);
+    else {
+      const checked = await next;
+      expect(checked.minAmountOut).toBe(990n);
+      expect(checked.v4FeeObservation).toMatchObject({ approvedLpFee: 500, currentLpFee: 7000 });
+      expect(checked.v4FeeObservation?.protection).toContain("unchanged approved output floor");
+    }
+  });
   it("reuses this execute's binding while re-reading decimals and simulating the final floor", async () => {
     const c = client();
     const reads = vi.spyOn(c, "readContract");
@@ -56,7 +75,7 @@ describe("v4 approved route and last-sign revalidation", () => {
     await revalidateV4Quote({ client: c, deployment, approved, wallet, freshBinding: first.route.v4 });
     const names = reads.mock.calls.map(([call]) => call.functionName);
     expect(names.filter(n => n === "poolKeys")).toHaveLength(1);
-    expect(names.filter(n => n === "getSlot0")).toHaveLength(1);
+    expect(names.filter(n => n === "getSlot0")).toHaveLength(2);
     expect(names.filter(n => n === "decimals")).toHaveLength(2);
     await expect(revalidateV4Quote({ client: c, deployment, approved, wallet,
       freshBinding: { ...first.route.v4, hookPermissions: 0 } })).rejects.toThrow(/PoolKey|hook/);

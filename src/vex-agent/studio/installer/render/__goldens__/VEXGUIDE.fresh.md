@@ -1,4 +1,4 @@
-<!-- vex:studio:begin vex=0.2.6 hash=8a51422266edd449 -->
+<!-- vex:studio:begin vex=0.2.6 hash=6b1e5f29d0f49518 -->
 # Vex guide - project "acme-trading"
 
 The companion to this project's `AGENTS.md`, which carries the authority:
@@ -39,6 +39,8 @@ Text OUTSIDE the markers belongs to the user; Vex preserves it.
 
 - 2026-08-25 · Vex 0.9.4 · updated the wallet selection
 - 2026-08-12 · Vex 0.9.3 · added the codex config
+
+KyberSwap is the default; Uniswap prices V2, V3 and v4 pools on seven chains. Other DEX liquidity may be unavailable there. On Robinhood Chain, native Uniswap is the more stable choice.
 
 ## Protocols available to this project (Added in Vex 0.2.7)
 

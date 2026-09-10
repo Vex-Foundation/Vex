@@ -51,6 +51,7 @@ import { fallback, http, createTransport, type EIP1193RequestFn, type Transport 
 
 import logger from "../../utils/logger.js";
 import { exhaustedRpcRead } from "./rpc-read-failure.js";
+import { RpcRequestPacer } from "./rpc-request-pacing.js";
 import {
   classifyRpcFailure,
   resolveRpcEndpoints,
@@ -133,10 +134,10 @@ interface VerifiedEndpoints {
  * bad minute permanently remove an endpoint for the rest of the process.
  */
 async function readChainIdEcho(endpoint: RpcEndpoint, timeoutMs: number): Promise<number | null> {
-  if (endpoint.minRequestSpacingMs) await paceEndpoint(pacingKey(endpoint), endpoint.minRequestSpacingMs);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    if (endpoint.minRequestSpacingMs) await paceEndpoint(pacingKey(endpoint), endpoint.minRequestSpacingMs, controller.signal);
     const response = await fetch(endpoint.url, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -276,7 +277,7 @@ function refuseWhenNoEndpointRemains(chainId: number, verified: VerifiedEndpoint
 export function resetRpcVerification(): void {
   echoVerdicts.clear();
   disqualified.clear();
-  paceTail.clear();
+  requestPacer.reset();
 }
 
 // ── Pacing ──────────────────────────────────────────────────────────
@@ -288,17 +289,14 @@ export function resetRpcVerification(): void {
  * policy. This bounds request starts, not response time, and never coalesces
  * distinct reads or retries a failed operation.
  */
-const paceTail = new Map<string, Promise<void>>();
+const requestPacer = new RpcRequestPacer();
 
 function pacingKey(endpoint: RpcEndpoint): string {
   return endpoint.requestPacingGroup ? `group:${endpoint.requestPacingGroup}` : endpoint.url;
 }
 
-function paceEndpoint(url: string, spacingMs: number): Promise<void> {
-  const previous = paceTail.get(url) ?? Promise.resolve();
-  const next = previous.then(() => new Promise<void>((resolve) => setTimeout(resolve, spacingMs)));
-  paceTail.set(url, next);
-  return previous;
+function paceEndpoint(url: string, spacingMs: number, signal?: AbortSignal): Promise<void> {
+  return requestPacer.wait(url, spacingMs, signal);
 }
 
 /**
@@ -310,7 +308,7 @@ function paceEndpoint(url: string, spacingMs: number): Promise<void> {
  */
 function pacedFetch(key: string, spacingMs: number): typeof fetch {
   return async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-    await paceEndpoint(key, spacingMs);
+    await paceEndpoint(key, spacingMs, init?.signal ?? undefined);
     init?.signal?.throwIfAborted();
     return fetch(input, init);
   };

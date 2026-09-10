@@ -1,6 +1,6 @@
 /** Durable EVM nonce allocation across activity-backed and legacy signer arms. */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { execute, queryOne } from "@vex-agent/db/client.js";
 import {
@@ -22,6 +22,9 @@ import { makeSession, resetDb } from "../setup/fixtures.js";
 
 const WALLET = "0x1111111111111111111111111111111111111111";
 const CHAIN_ID = 8453;
+
+// Global scans in the next file must not inherit our same-nonce siblings.
+afterEach(resetDb);
 
 async function pendingActivity(sessionId: string, marker: string): Promise<number> {
   const created = await createAgentActivityIntent({

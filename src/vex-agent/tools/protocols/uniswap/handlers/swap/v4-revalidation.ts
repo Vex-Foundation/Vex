@@ -47,5 +47,11 @@ export async function revalidateV4Quote(input: {
   }
   if (route.amountOut < minAmountOut) throw v4Refusal("fresh quote is below the approved minimum output");
   input.signal?.throwIfAborted();
-  return { route, amountOut: route.amountOut, minAmountOut, slippageBps: approved.slippageBps };
+  return { route, amountOut: route.amountOut, minAmountOut, slippageBps: approved.slippageBps,
+    v4FeeObservation: {
+      approvedLpFee: approved.v4.route.observedLpFee,
+      currentLpFee: route.v4.observedLpFee,
+      protection: "A dynamic fee may increase only within the unchanged approved output floor: the fresh quote must meet it and the router enforces it on-chain.",
+    },
+  };
 }

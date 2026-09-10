@@ -1,65 +1,17 @@
 /**
- * THE ONE OWNER of what Vex tells the model about choosing between its two EVM
- * swap venues (owner decision, 2026-09-07).
- *
- * Before this module the policy had FIVE writers - the two venues' manifests,
- * the always-loaded alias descriptions, the Tool Map category labels,
- * `engine/prompts/task-shapes.ts`, and `navigation/*.preferInstead` - each with
- * its own wording. Four of them said Uniswap was a fallback; the fifth was not
- * rendered anywhere. A model could read two of those in one context window and
- * get two different rankings.
- *
- * WHAT THE POLICY IS. The two venues have EQUAL STANDING. KyberSwap is usually
- * the better first choice for a reason the model can check (it aggregates
- * routes across many DEXes, so it usually prices better), not because Uniswap
- * is a lesser tool: Uniswap prices V2, V3 and v4 pools on-chain with no aggregator
- * in the path, which is exactly what serves a pair the aggregator does not
- * cover or whose indexed reserves are stale. When neither is obviously right,
- * quote both. Whichever is used, the execute runs against that venue's own
- * quote - the runtime enforces it, and this text only states it.
- *
- * WHAT THIS MODULE DOES NOT OWN. The BRIDGE lane (Khalani and Relay) is
- * untouched by that decision and keeps its own wording, which is a routing
- * fact rather than a preference: `BridgeQuote` picks the venue itself from
- * Khalani's live registry (`src/tools/relay/bridge-venue.ts`).
- *
- * WHY THERE ARE SEVERAL FORMS RATHER THAN ONE STRING. The always-loaded
- * descriptions are bound at `ALWAYS_LOADED_DESCRIPTION_MAX_CHARACTERS` (2048,
- * the measured point a client cuts), and two of them sit within three
- * characters of it. A single long sentence would not fit without deleting a
- * money-path fact from the same description, so the doctrine is composed from
- * ATOMS here and each surface carries the longest form its budget allows. The
- * atoms are the single source: a surface never re-words the policy locally.
- *
- * Consumers: `registry/action-aliases.ts`, `registry/tool-map.ts`,
- * `protocols/{uniswap,kyberswap}/manifests/swap.ts`,
- * `protocols/navigation/entries-market/{uniswap,kyberswap}.ts`,
- * `protocols/kyberswap/handlers/swap/fallback-messaging.ts`,
- * `engine/prompts/{task-shapes,tool-model}.ts`,
- * `studio/instructions/project-brief.ts`. The lint rule
- * `retired-venue-precedence` (`protocols/_manifest-lint/source-rules.ts`) keeps
- * the retired phrasings from coming back anywhere else.
- */
-
-/**
- * The comparison, stated symmetrically: each venue's own capability, and the
- * reason one is usually tried first. Never "primary" and "alternative" - a
- * ranking the model cannot check is a ranking it cannot correct.
+ * One owner for EVM venue guidance. KyberSwap is the operational default;
+ * direct Uniswap is the fallback and the more stable choice on Robinhood.
+ * Consumers import these atoms so descriptions, prompts and Studio agree.
+ * Each execute remains bound to its own venue's fresh approved quote.
  */
 export const SWAP_VENUE_STANDING =
-  "KyberSwap is usually tried first: it aggregates DEXes; "
-  + "Uniswap is an equal-standing venue pricing V2, V3 and v4 pools on seven chains. "
-  + "Other DEX liquidity may be unavailable there.";
+  "KyberSwap is the default; Uniswap prices V2, V3 and v4 pools on seven chains. "
+  + "Other DEX liquidity may be unavailable there. "
+  + "On Robinhood Chain, native Uniswap is the more stable choice.";
 
-/**
- * The same standing in the fewest words that still say "equal", for the
- * always-loaded descriptions that have no room for {@link SWAP_VENUE_STANDING}.
- * The REASON KyberSwap is usually tried first is dropped here and carried by
- * the Tool Map label and the swap task shape, which are in the same context
- * window and are not budget-bound.
- */
+/** Compact default policy for bounded always-loaded descriptions. */
 export const SWAP_VENUE_STANDING_COMPACT =
-  "KyberSwap and Uniswap are equal-standing swap venues";
+  "KyberSwap is default; Uniswap is the direct fallback";
 
 /** What resolves the choice when neither venue is obviously the right one. */
 export const SWAP_VENUE_QUOTE_BOTH = "Quote both when unsure.";
@@ -127,7 +79,7 @@ export const SWAP_VENUE_GUIDANCE_COMPACT_ROUTER =
  * WHEN; this is WHAT it says). Leading space: it is appended to a message.
  */
 export const SWAP_VENUE_PEER_NUDGE_SUFFIX =
-  " Uniswap is an equal-standing venue for this trade: quote it with SwapQuoteUniswap, "
+  " Try direct Uniswap for this trade: quote it with SwapQuoteUniswap, "
   + "then execute with SwapExecuteUniswap.";
 
 /**

@@ -2,7 +2,7 @@
 
 Run the tests before you push.
 
-<!-- vex:studio:begin vex=0.2.6 hash=964e97930e217022 -->
+<!-- vex:studio:begin vex=0.2.6 hash=b7c15e658a81b27a -->
 # Vex Studio - project "acme-trading"
 
 This repository is connected to Vex, a self-custodial crypto agent whose tools
@@ -268,7 +268,7 @@ slippage. That pair routes EVM trades to KyberSwap and Solana to Jupiter
 itself; `SwapQuoteUniswap` then `SwapExecuteUniswap` is the Uniswap pair, on a
 chain with a verified Vex deployment.
 
-KyberSwap is usually tried first: it aggregates DEXes; Uniswap is an equal-standing venue pricing V2, V3 and v4 pools on seven chains. Other DEX liquidity may be unavailable there. Use Uniswap when KyberSwap is region/edge-blocked, lacks chain/pair coverage, its quote fails or looks off, or the user asks. Quote both when unsure. Execute on the venue you quoted.
+KyberSwap is the default; Uniswap prices V2, V3 and v4 pools on seven chains. Other DEX liquidity may be unavailable there. On Robinhood Chain, native Uniswap is the more stable choice. Use Uniswap when KyberSwap is region/edge-blocked, lacks chain/pair coverage, its quote fails or looks off, or the user asks. Quote both when unsure. Execute on the venue you quoted.
 
 Restate the quote's expected output, price impact, gas and safety verdicts
 before executing. Slippage binds the quote you were SHOWN: the execute writes

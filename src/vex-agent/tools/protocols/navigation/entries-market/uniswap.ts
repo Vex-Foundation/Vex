@@ -17,10 +17,8 @@ export const UNISWAP_NAVIGATION: ProtocolNamespaceNavigation = {
   // `# Available Protocol Namespaces` prompt section - so these tools discover
   // normally instead of only through the internal aliases.
   //
-  // The owner decision of 2026-09-07 finished the job the visibility change
-  // started: the two EVM swap venues now have EQUAL STANDING, and the text
-  // below states it by importing it. `registry/swap-venue-guidance.ts` is the
-  // one owner of that wording; nothing here re-words it.
+  // Visibility is independent of preference. The shared guidance owns the
+  // default router and the Robinhood exception; this declaration imports it.
   namespace: "uniswap",
   advertised: true,
   groupId: "evm-trading",

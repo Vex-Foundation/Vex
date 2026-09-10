@@ -2,7 +2,6 @@
 * The execute facade re-exports the existing refusal classes. No RPC follows its final signing fence.
 */
 import type { PublicClient, Transport, Chain } from "viem";
-import { VexError, ErrorCodes } from "../../errors.js";
 import { boundGasPriceWei, checkFeeCap, type LegFeeCap } from "@tools/evm-chains/swap-native-debit.js";
 
 export interface UniswapLegFeeBounds {

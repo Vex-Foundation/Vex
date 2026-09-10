@@ -36,6 +36,37 @@ it("exhausts each bundled endpoint once instead of retrying the whole failover c
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); resetRpcVerification(); });
 
+it("does not reserve expired HTTP waiters ahead of a fresh client on the same quota", async () => {
+  const dispatched: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body)) as { id: number; method: string };
+    dispatched.push(body.method);
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id,
+      result: body.method === "eth_chainId" ? "0x2105" : "0x1" }));
+  }));
+  state.endpoints = [{ url: "http://rpc-one.invalid", tier: "bundled", retryCount: 0,
+    timeoutMs: 50, minRequestSpacingMs: 250, requestPacingGroup: "test-shared-quota" }];
+  const short = createPublicClient({ chain, transport: buildEvmTransport(8453) });
+  let completed = 0;
+  const expired = Promise.all(Array.from({ length: 40 }, (_, index) => short.request({
+    method: "eth_getBalance", params: [`0x${index.toString(16).padStart(40, "0")}`, "latest"],
+  }).then(() => "answered", () => "expired").finally(() => { completed++; })));
+  await vi.advanceTimersByTimeAsync(100);
+  expect(completed).toBe(40);
+  expect(await expired).toEqual(Array(40).fill("expired"));
+  const endpoint = state.endpoints[0];
+  if (!endpoint) throw new Error("Expected the short-timeout fixture endpoint");
+  state.endpoints = [{ ...endpoint, timeoutMs: 30000 }];
+  const fresh = createPublicClient({ chain, transport: buildEvmTransport(8453) });
+  let answered = false;
+  const result = fresh.getBlockNumber().then(value => { answered = true; return value; });
+  await vi.advanceTimersByTimeAsync(150);
+  expect(answered).toBe(true);
+  expect(await result).toBe(1n);
+  expect(dispatched).toEqual(["eth_chainId", "eth_blockNumber"]);
+  await vi.runAllTimersAsync();
+});
+
 it("paces probes, independent clients and failover attempts through one shared quota", async () => {
   const calls: { method: string; host: string; at: number }[] = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {

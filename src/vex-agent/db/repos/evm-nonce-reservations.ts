@@ -173,8 +173,8 @@ async function highestOwnedOrConsumedNonce(
   return highest;
 }
 
-function nextNonce(nodePendingNonce: number, highest: number, existing: number | null = null): number {
-  const next = Math.max(nodePendingNonce, highest + 1, existing ?? -1);
+function nextNonce(nodePendingNonce: number, highest: number): number {
+  const next = Math.max(nodePendingNonce, highest + 1);
   if (!Number.isSafeInteger(next) || next < 0) {
     throw new Error("evm nonce reservation: allocated nonce exceeds the supported safe-integer range");
   }
@@ -221,12 +221,8 @@ export async function reserveActivityEvmNonce(
     if (activity.nonce_reservation_token !== null || activity.nonce !== null) {
       throw new Error("evm nonce reservation: this intent was already reserved; create a new intent");
     }
-    const existing = activity.nonce === null ? null : Number(activity.nonce);
-    if (existing !== null && (!Number.isSafeInteger(existing) || existing < 0)) {
-      throw new Error("evm nonce reservation: existing activity nonce is outside the safe-integer range");
-    }
     const highest = await highestOwnedOrConsumedNonce(client, input, normalizedAddress, activityId);
-    const nonce = nextNonce(input.nodePendingNonce, highest, existing);
+    const nonce = nextNonce(input.nodePendingNonce, highest);
     const updated = await queryOneWith<{ readonly nonce: string; readonly token: string }>(
       client,
       `UPDATE agent_activity

@@ -19,9 +19,14 @@
  * Rows are seeded through the REAL agent-activity repo (same FK/CHECK gauntlet
  * production writes face) via the shared `_fixtures.ts` intent seeder.
  */
-import { afterEach, describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect } from "vitest";
+import { resetDb } from "../setup/fixtures.js";
 import { seedIntent, cleanupSeeded } from "../agent-scan/_fixtures.js";
 import { enqueueAtCurrentGeneration, claimAtCurrentGeneration, claimTickAtCurrentGeneration } from "./_reporting-tick.js";
+
+// The scan reads every activity, so its fixture owns the whole input ledger.
+// Deleting only this file's seeded IDs cannot isolate it from preceding files.
+beforeEach(resetDb);
 
 async function resetAgentscanTables(): Promise<void> {
   const { execute } = await import("@vex-agent/db/client.js");

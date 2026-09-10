@@ -36,7 +36,8 @@ export async function quoteBoundV4Pool(
   const currencyIn = bound.zeroForOne ? bound.poolKey.currency0 : bound.poolKey.currency1;
   const currencyOut = bound.zeroForOne ? bound.poolKey.currency1 : bound.poolKey.currency0;
   const fresh = await bindV4Pool(client, deployment, bound.poolId, currencyIn, currencyOut);
-  return quoteFreshV4Pool(client, deployment, bound, fresh, amountIn);
+  assertSameV4Pool(deployment, bound, fresh);
+  return quoteV4WithBinding(client, deployment, fresh, amountIn);
 }
 
 /** Reuse only a binding read within this execute, never the stored approval. */
@@ -44,13 +45,22 @@ export async function quoteFreshV4Pool(
   client: PublicClient<Transport, Chain>, deployment: UniswapDeployment,
   approved: V4RouteBinding, fresh: V4RouteBinding, amountIn: bigint,
 ): Promise<Extract<UniswapRoute, { version: "v4" }>> {
+  assertSameV4Pool(deployment, approved, fresh);
+  // The key is immutable; the LP fee can change while an allowance mines.
+  const slot = await client.readContract({ address: deployment.v4!.stateView,
+    abi: V4_STATE_VIEW_ABI, functionName: "getSlot0", args: [fresh.poolId] });
+  if (slot[0] === 0n) throw v4Refusal("pool is not initialized");
+  const current = { ...fresh, observedLpFee: slot[3] };
+  assertV4Binding(deployment, current);
+  return quoteV4WithBinding(client, deployment, current, amountIn);
+}
+function assertSameV4Pool(deployment: UniswapDeployment, approved: V4RouteBinding, fresh: V4RouteBinding): void {
   assertV4Binding(deployment, approved);
   assertV4Binding(deployment, fresh);
   if (fresh.poolId.toLowerCase() !== approved.poolId.toLowerCase()
     || v4PoolId(fresh.poolKey) !== v4PoolId(approved.poolKey)
     || fresh.zeroForOne !== approved.zeroForOne
     || fresh.hookPermissions !== approved.hookPermissions) throw v4Refusal("PoolKey or hook permissions changed");
-  return quoteV4WithBinding(client, deployment, fresh, amountIn);
 }
 async function quoteV4WithBinding(client: PublicClient<Transport, Chain>, deployment: UniswapDeployment, fresh: V4RouteBinding, amountIn: bigint): Promise<Extract<UniswapRoute, { version: "v4" }>> {
   if (amountIn <= 0n || amountIn >= 1n << 127n) throw v4Refusal("input is outside the quoter domain");
