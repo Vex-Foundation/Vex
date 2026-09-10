@@ -61,6 +61,8 @@ export interface TransactionRow {
    * quote (never settlement); any other status → `null` (no display value).
    */
   inputAmount?: string | null;
+  /** Overrides the input leg only; the output may still be exact. */
+  inputAmountBasis?: "lower_bound";
   outputToken?: string | null;
   outputAmount?: string | null;
   /**

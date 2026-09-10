@@ -1,3 +1,4 @@
+import { EvmNonceMismatchError } from "@tools/evm-chains/nonce-signing-guard.js";
 /**
  * `WalletEvmTransactionConfirm` - the call that signs and broadcasts.
  *
@@ -457,6 +458,7 @@ async function executeEvmTransaction(args: {
         + "user will see and approve the new ceiling.",
       );
     }
+    if (cause instanceof EvmNonceMismatchError) return preBroadcast(cause, cause.message);
     if (stagingFailed) {
       return {
         ...preBroadcast(

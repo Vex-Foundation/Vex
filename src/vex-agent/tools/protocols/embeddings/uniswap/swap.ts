@@ -13,7 +13,7 @@ import { UNISWAP_CHAINS } from "../../uniswap/discovery-text.js";
 export const UNISWAP_SWAP_DISCOVERY = {
   "uniswap.swap.quote": {
     embeddingText: embeddingText(
-      `Preview a token swap on Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain and Robinhood Chain, priced straight against Uniswap V2 and V3 pools - get the expected output, the best route across the two pool versions, price impact, gas and token-safety signals. ` +
+      `Preview a token swap on Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain and Robinhood Chain, priced straight against Uniswap V2, V3 and v4 pools - get the expected output, the best route across the pool versions, price impact, gas and token-safety signals. ` +
       `Use this when the user wants the price, the rate before swapping, what a trade would return, or a pair an aggregator does not cover, including Robinhood Chain where $VEX and Virtuals agent tokens trade against VIRTUAL. ` +
       `Example queries: how much usdc do I get for 1 eth on base, best price for a swap, route preview, quote swap on robinhood chain. ` +
       `Read-only - does not execute.`,
@@ -25,7 +25,7 @@ export const UNISWAP_SWAP_DISCOVERY = {
 
   "uniswap.swap.execute": {
     embeddingText: embeddingText(
-      `Execute a real on-chain swap on Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain and Robinhood Chain - exact-input, priced straight against Uniswap V2 and V3 pools, with the token approval handled automatically. ` +
+      `Execute a real on-chain swap on Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain and Robinhood Chain - exact-input, priced straight against Uniswap V2, V3 and v4 pools, with the token approval handled automatically. ` +
       `Use this when the user wants to buy or sell a coin, ape into a memecoin, exit a position, dump a holding, or trade a pair an aggregator does not cover, including $VEX or a Virtuals agent token against VIRTUAL/ETH on Robinhood Chain. ` +
       `Example queries: swap eth for usdc on base, buy this token with usdc, sell my position, exit a holding, swap vex for virtual on robinhood. ` +
       `Requires a fresh matching uniswap swap quote first.`,

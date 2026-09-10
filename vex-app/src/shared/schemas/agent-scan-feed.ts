@@ -300,6 +300,7 @@ export const agentScanTokenLegSchema = z
     executedAmountRaw: z.string().max(AMOUNT_MAX_LENGTH).nullable(),
     /** THE honest, renderable amount for this leg's status (C20). `null` = show nothing. */
     displayAmount: z.string().max(AMOUNT_MAX_LENGTH).nullable(),
+    amountBasis: z.literal("lower_bound").optional(),
     /**
      * QUOTE-TIME USD estimate (`usd_in/out_est`) as a decimal string; `null`
      * when unpriced (never a fabricated 0). There is no settlement-time USD

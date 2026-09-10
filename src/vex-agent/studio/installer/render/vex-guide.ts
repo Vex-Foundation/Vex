@@ -42,6 +42,7 @@ import {
   renderStudioWhatsNewInVex,
 } from "../../instructions/project-brief.js";
 import { renderStudioProtocolBlocks } from "../../instructions/protocol-blocks.js";
+import { SWAP_VENUE_STANDING } from "../../../tools/registry/swap-venue-guidance.js";
 import type { StudioRenderResult } from "./facts.js";
 import type { StudioManagedBlockState } from "./managed-block.js";
 import {
@@ -83,6 +84,8 @@ export function renderStudioVexGuideBody(
     renderStudioThisFileLog(brief),
     "",
     // 2. One block per protocol, with THIS installation's availability.
+    SWAP_VENUE_STANDING,
+    "",
     renderStudioProtocolBlocks(environment),
     "",
     // 3. Building on the tools.

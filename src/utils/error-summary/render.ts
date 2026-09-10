@@ -36,9 +36,9 @@ export interface SafeErrorSummary {
 
 /**
  * Reduce any thrown value to a `{ category, message }` summary that is safe to
- * log, return to the agent, and forward to the renderer. Bounded + redacted.
+ * log, return to the agent, and forward to the renderer. Redacted and display-bounded by default.
  */
-export function summarizeProtocolError(err: unknown): SafeErrorSummary {
+export function summarizeProtocolError(err: unknown, options?: { readonly preserveLength?: boolean }): SafeErrorSummary {
   const raw = err instanceof Error ? err.message : String(err);
   const category = classifyError(raw, err);
 
@@ -51,12 +51,14 @@ export function summarizeProtocolError(err: unknown): SafeErrorSummary {
   const hint = err instanceof VexError ? err.hint?.trim() : undefined;
   const scrubbedMessage = scrub(raw, redactEveryUrl);
   const scrubbedHint = hint ? scrub(hint, redactUnlessCredentialFreeLink) : undefined;
-  const combined = scrubbedHint ? `${scrubbedMessage} — ${scrubbedHint}` : scrubbedMessage;
+  const combined = scrubbedHint ? `${scrubbedMessage} - ${scrubbedHint}` : scrubbedMessage;
 
   // Whitespace collapse + hard cap run on the JOINED text (UNCHANGED cap
   // semantics): the bound covers message and hint together, so a long hint can
   // never smuggle text past the limit.
-  const bounded = collapseAndCap(combined);
+  // Full diagnostic evidence can opt out of shortening while retaining the
+  // identical scrub boundary. Existing prompt/display budgets keep the default.
+  const bounded = collapseAndCap(combined, options?.preserveLength ? Infinity : undefined);
 
   // The remedy is appended AFTER the cap, and it is the ONE thing that may be:
   // it is a fixed first-party literal, not provider text, so it can neither
@@ -76,7 +78,7 @@ export function summarizeProtocolError(err: unknown): SafeErrorSummary {
     err instanceof VexError ? err.retryAfterSeconds : undefined,
   );
   const withRemedy = category === "insufficient_funds" && remediation
-    ? `${bounded} — ${remediation}`
+    ? `${bounded} - ${remediation}`
     : bounded;
 
   const summary: SafeErrorSummary = {
@@ -104,7 +106,7 @@ export function renderProtocolFailureOutput(toolId: string, summary: SafeErrorSu
   const status = summary.httpStatus === undefined ? "" : `, HTTP ${summary.httpStatus}`;
   const retryable = summary.retryable === true ? " (retryable)" : "";
   const remediation = summary.remediation !== undefined && !summary.message.includes(summary.remediation)
-    ? ` — ${summary.remediation}`
+    ? ` - ${summary.remediation}`
     : "";
   return `${toolId} failed [${summary.code}/${summary.category}${status}]: ${summary.message}${remediation}${retryable}`;
 }
@@ -157,7 +159,7 @@ export function describeFailureForAgent(err: unknown): string {
   const detail = causeChainText(err);
   if (detail.length === 0 || detail === err.hint?.trim()) return label;
   const scrubbed = summarizeProtocolError(new Error(detail)).message;
-  return scrubbed.length === 0 ? label : `${label} — ${scrubbed}`;
+  return scrubbed.length === 0 ? label : `${label} - ${scrubbed}`;
 }
 
 /**

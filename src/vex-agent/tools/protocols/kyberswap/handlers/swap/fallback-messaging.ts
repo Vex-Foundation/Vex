@@ -48,7 +48,7 @@ const FALLBACK_VENUE_AVAILABLE_SUFFIX = SWAP_VENUE_PEER_NUDGE_SUFFIX;
  * agent discover it as a second failure.
  */
 const UNISWAP_COVERAGE_CAVEAT =
-  " Uniswap covers only the EVM chains with a verified Vex deployment, so quote there first and act on what that quote says.";
+  " Uniswap covers seven EVM chains with verified Vex deployments, so quote there first and act on its route and discovery limits.";
 
 /** Availability class, terminal: repeating the same KyberSwap request cannot clear it. */
 const VENUE_UNAVAILABLE_TERMINAL_LEAD =

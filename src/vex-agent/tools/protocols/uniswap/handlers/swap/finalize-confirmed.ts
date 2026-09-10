@@ -8,7 +8,13 @@
  * through `status`, never through `success`.
  */
 
-import { formatUnits, getAddress, type Hex } from "viem";
+import { readV4SettlementTransaction } from "@tools/uniswap/v4-settlement.js";
+import { nativeBalanceRpc, readV4NativeBalanceEvidence, NATIVE_BALANCE_BOUND_SOURCE } from "@tools/uniswap/v4-native-balance.js";
+import { recordV4NativeSettlement } from "@vex-agent/db/repos/agent-activity.js";
+import { getUniswapPublicClient } from "@tools/uniswap/evm-client.js";
+import { describeV4Route, v4QuoteWarning } from "@tools/uniswap/v4-pool.js";
+import type { UniswapExecutionSnapshot } from "../../../quote-authority/uniswap.js";
+import { formatUnits, getAddress, zeroAddress, type Hex } from "viem";
 
 import { getLocalChain } from "@tools/evm-chains/registry.js";
 import { assessApprovedFloor, verifyPostBuyDelivery } from "@tools/evm-chains/post-buy-delivery.js";
@@ -37,6 +43,7 @@ export interface FinalizeConfirmedSwapInput {
   readonly quoted: QuotedRoute;
   /** The floor the approved quote authorized, for the post-settlement assessment. */
   readonly approvedMinOutRaw: string;
+  readonly approvedSnapshot?: UniswapExecutionSnapshot;
   readonly receipt: UniswapDecodableReceipt;
   readonly txHash: Hex;
   /** Read-only client for the post-buy delivery check. */
@@ -44,6 +51,7 @@ export interface FinalizeConfirmedSwapInput {
 }
 
 export interface FinalizeConfirmedSwapOutcome {
+  readonly feeInputBoundRaw?: string;
   readonly result: ToolResult;
   /**
    * The object behind `result.output` when the settlement decoded, so the fee
@@ -103,6 +111,13 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
       receipt: x.receipt,
       chainId: deployment.chainId,
       walletAddress: x.walletAddress,
+      version: x.quoted.route.version,
+      ...(x.quoted.route.version === "v4" ? { v4Binding: x.quoted.route.v4,
+        ...((tokenIn.isNative || tokenOut.isNative) ? { v4Transaction: await readV4SettlementTransaction(getUniswapPublicClient(deployment), txHash) } : {}),
+        ...((tokenIn.isNative || (tokenOut.isNative && x.quoted.route.v4.poolKey.hooks.toLowerCase() === zeroAddress)) ? { nativeBalance: await readV4NativeBalanceEvidence(
+          nativeBalanceRpc(getUniswapPublicClient(deployment)), { chainId: deployment.chainId,
+            wallet: x.walletAddress, txHash, router: x.quoted.route.v4.universalRouter }) } : {}),
+      } : {}),
       tokenInAddress: tokenIn.isNative ? null : tokenIn.address,
       tokenOutAddress: tokenOut.isNative ? null : tokenOut.address,
     });
@@ -114,11 +129,56 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
   }
 
   if (decoded.executedAmountInRaw === undefined || decoded.executedAmountOutRaw === undefined) {
+    if (decoded.executedAmountInRaw !== undefined && decoded.v4Settlement?.pendingReason === "native_output_unproven_hooked"
+      && x.quoted.route.version === "v4") {
+      let status = "confirmed";
+      try {
+        await recordV4NativeSettlement({ id: x.eventId, chainId: deployment.chainId, txHash,
+          poolId: x.quoted.route.v4.poolId, amountInRaw: decoded.executedAmountInRaw.toString(),
+          inputIsBound: false, outputUnproven: true, poolOutputEstimateRaw: decoded.v4Settlement.poolAmountOutRaw });
+      } catch { status = "confirmed_unrecorded"; }
+      const outputPayload = { txHash, chain: deployment.key, chainId: deployment.chainId, status,
+        pendingReason: "native_output_unproven_hooked", amountOut: null,
+        amountIn: formatUnits(decoded.executedAmountInRaw, tokenIn.decimals),
+        tokenIn: tokenIn.symbol, tokenOut: tokenOut.symbol,
+        outputEstimateRaw: decoded.v4Settlement.poolAmountOutRaw ?? null,
+        settlementNote: "The swap confirmed and its ERC-20 input is proven. Native output is unproven; the pool output is an estimate, not a received amount.",
+        route: { version: "v4", path: x.quoted.route.path, ...x.quoted.route.v4,
+          description: describeV4Route(x.quoted.route.v4), quoteWarning: v4QuoteWarning(x.quoted.route.v4) },
+        quotedAmountOut: x.approvedSnapshot?.approvedAmountOutHuman, minAmountOut: x.approvedSnapshot?.approvedMinOutHuman,
+        slippageBps: x.quoted.slippageBps, recipient: x.walletAddress, preSignFee: x.quoted.v4FeeObservation,
+        inputDecimals: tokenIn.decimals, outputDecimals: tokenOut.decimals,
+        approvedAmountInRaw: x.approvedSnapshot?.totalInRaw,
+        spenderDescription: `Permit2 and Uniswap UniversalRouter ${x.quoted.route.v4.universalRouterVersion}`,
+        deadline: "600 seconds from signing", consequence: "Spends real funds irreversibly after confirmation" };
+      return { outputPayload, result: { success: true, output: JSON.stringify(outputPayload, null, 2),
+        data: { txHash, _executionId: executionId, status } } };
+    }
     logger.warn("uniswap.swap.execute.settlement_undecodable", { id: x.eventId, txHash });
     // Migration 067: mined SUCCESSFULLY, amounts unreadable. Distinct from "we
     // never saw the receipt", and the distinction is what lets the fallback
     // route work instead of guessing which job this row needs.
     await noteHandlerPendingReason("uniswap.swap.execute", x.eventId, "settlement_undecodable");
+    if (x.quoted.route.version === "v4") {
+      const outputPayload = {
+        txHash, chain: deployment.key, chainId: deployment.chainId,
+        status: "confirmed_pending_amounts",
+        settlementNote: "Swap confirmed; the receipt does not prove both executed amounts. No executed amount was guessed.",
+        settlementEvidence: decoded.v4Settlement,
+        preSignFee: x.quoted.v4FeeObservation,
+        route: { version: "v4", path: x.quoted.route.path, ...x.quoted.route.v4,
+          description: describeV4Route(x.quoted.route.v4), quoteWarning: v4QuoteWarning(x.quoted.route.v4) },
+        tokenIn: { symbol: tokenIn.symbol, decimals: tokenIn.decimals },
+        tokenOut: { symbol: tokenOut.symbol, decimals: tokenOut.decimals },
+        approvedAmountInRaw: x.approvedSnapshot?.totalInRaw,
+        quotedAmountOut: x.approvedSnapshot?.approvedAmountOutHuman,
+        minAmountOut: x.approvedSnapshot?.approvedMinOutHuman,
+        slippageBps: x.quoted.slippageBps, recipient: x.walletAddress,
+        spenderDescription: `Permit2 and Uniswap UniversalRouter ${x.quoted.route.v4.universalRouterVersion}`,
+        deadline: "600 seconds from signing", consequence: "Spends real funds irreversibly after confirmation",
+      };
+      return { outputPayload, result: { success: true, output: JSON.stringify(outputPayload, null, 2), data: { txHash, _executionId: executionId, status: "confirmed_pending_amounts" } } };
+    }
     return {
       outputPayload: null,
       result: {
@@ -135,9 +195,20 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
   // make the executed input differ from what was requested, and the
   // success message must never contradict the persisted `agent_activity`
   // truth.
-  const amountInHuman = formatUnits(decoded.executedAmountInRaw, tokenIn.decimals);
+  let amountInHuman = formatUnits(decoded.executedAmountInRaw, tokenIn.decimals);
   const amountOutHuman = formatUnits(decoded.executedAmountOutRaw, tokenOut.decimals);
-  const status = await recordExecutedAmounts(x.eventId, {
+  const inputIsBound = decoded.v4Settlement?.evidenceSource === NATIVE_BALANCE_BOUND_SOURCE;
+  let status: "confirmed" | "confirmed_unrecorded";
+  if (inputIsBound && x.quoted.route.version === "v4") {
+    try {
+      const row = await recordV4NativeSettlement({ id: x.eventId, chainId: deployment.chainId, txHash,
+        poolId: x.quoted.route.v4.poolId, amountInRaw: decoded.executedAmountInRaw.toString(),
+        amountOutRaw: decoded.executedAmountOutRaw.toString(), inputIsBound: true, outputUnproven: false });
+      if (row.executedAmountInRaw !== null) decoded = { ...decoded, executedAmountInRaw: BigInt(row.executedAmountInRaw) };
+      amountInHuman = row.executedAmountInHuman ?? amountInHuman;
+      status = "confirmed";
+    } catch { status = "confirmed_unrecorded"; }
+  } else status = await recordExecutedAmounts(x.eventId, {
     executedAmountInHuman: amountInHuman,
     executedAmountInRaw: decoded.executedAmountInRaw.toString(),
     executedAmountOutHuman: amountOutHuman,
@@ -165,9 +236,22 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
 
   const outputPayload = {
     txHash, chain: deployment.key,
+    ...(decoded.v4Settlement ? { settlementEvidence: decoded.v4Settlement } : {}),
+    ...(x.quoted.v4FeeObservation ? { preSignFee: x.quoted.v4FeeObservation } : {}),
     tokenIn: tokenIn.symbol, tokenOut: tokenOut.symbol,
     amountIn: amountInHuman, amountOut: amountOutHuman,
-    route: { version: x.quoted.route.version, path: x.quoted.route.path },
+    ...(inputIsBound ? { amountInBasis: "lower_bound", evidenceSource: NATIVE_BALANCE_BOUND_SOURCE,
+      settlementNote: "Native input is a lower bound after gas and isolated-block checks. Same-block credits may make the actual spend higher." } : {}),
+    route: { version: x.quoted.route.version, path: x.quoted.route.path,
+      ...(x.quoted.route.version === "v4" ? { ...x.quoted.route.v4, description: describeV4Route(x.quoted.route.v4), quoteWarning: v4QuoteWarning(x.quoted.route.v4) } : {}) },
+    ...(x.approvedSnapshot?.v4 ? {
+      chainId: deployment.chainId, inputDecimals: tokenIn.decimals, outputDecimals: tokenOut.decimals,
+      approvedAmountInRaw: x.approvedSnapshot.totalInRaw, approvedAmountIn: formatUnits(BigInt(x.approvedSnapshot.totalInRaw), tokenIn.decimals),
+      quotedAmountOut: x.approvedSnapshot.approvedAmountOutHuman, minAmountOut: x.approvedSnapshot.approvedMinOutHuman,
+      slippageBps: x.approvedSnapshot.slippageBps, recipient: x.approvedSnapshot.v4.recipient,
+      spenderDescription: `Permit2 and Uniswap UniversalRouter ${x.approvedSnapshot.v4.route.universalRouterVersion}`,
+      deadline: "600 seconds from signing", consequence: "Spends real funds irreversibly after confirmation",
+    } : {}),
     ...(deliveryVerdict ? { deliveryCheck: deliveryVerdict } : {}),
     ...(floorAssessment.kind === "materially_short"
       ? { approvedFloorCheck: floorAssessment.verdict }
@@ -176,6 +260,7 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
 
   return {
     outputPayload,
+    ...(inputIsBound ? { feeInputBoundRaw: decoded.executedAmountInRaw?.toString() } : {}),
     result: {
       success: true,
       output: JSON.stringify(outputPayload, null, 2),

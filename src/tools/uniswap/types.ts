@@ -4,7 +4,7 @@
 
 import type { Address } from "viem";
 
-export type UniswapVersion = "v2" | "v3";
+export type UniswapVersion = "v2" | "v3" | "v4";
 
 /** Resolved token leg for a swap (native input/output wraps to WETH for routing). */
 export interface UniswapToken {
@@ -21,14 +21,18 @@ export interface UniswapToken {
  * addresses (routed form — WETH for native legs). `fees` (V3 only) is the
  * per-hop fee tier, aligned with the hops in `path`.
  */
-export interface UniswapRoute {
-  readonly version: UniswapVersion;
+interface UniswapRouteAmounts {
   readonly path: readonly Address[];
   readonly fees?: readonly number[];
   readonly amountOut: bigint;
-  /** QuoterV2 gas estimate (V3 only; V2 quotes carry no gas estimate). */
+  /** V3/V4 quoter gas units, or a V2 eth_estimateGas result from the selected wallet. */
   readonly gasEstimate?: bigint;
 }
+
+export type UniswapRoute = UniswapRouteAmounts & (
+  | { readonly version: "v2" | "v3" }
+  | { readonly version: "v4"; readonly v4: import("./v4-types.js").V4RouteBinding }
+);
 
 /** Full quote payload returned by the quote engine + handler. */
 export interface UniswapQuote {

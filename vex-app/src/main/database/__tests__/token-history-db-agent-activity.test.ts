@@ -342,6 +342,16 @@ describe("getTokenHistory - agent_activity arm (Agent Scan §4.7)", () => {
     }
   });
 
+  it("carries the native bound separately from the output's executed quantity", async () => {
+    scriptTransaction({ page: [agentActivityRow({ namespace: "uniswap", evidence_source: "native_balance_delta_bound" })] });
+    const result = await getTokenHistory({ chainId: BASE_CHAIN_ID, tokenAddress: TOKEN_ADDR_LOWER, cursor: null });
+    if (!result.ok || result.data.status !== "available") throw new Error("Expected available token history");
+    const entry = result.data.entries[0];
+    if (entry?.kind !== "swap") throw new Error("Expected the native-bound swap");
+    expect(entry.input.amount.basis).toBe("lower_bound");
+    expect(entry.output.amount.basis).toBeUndefined();
+  });
+
   it("computes a confirmed 18-decimal wei-scale executed amount BigInt-safely (never via Number/parseFloat, which would lose precision)", async () => {
     scriptTransaction({
       page: [

@@ -1,3 +1,4 @@
+import { withNonceReservationScope } from "@tools/evm-chains/nonce-reservation-scope.js";
 /**
  * One stage of the staged broadcast: sign → persist hash → broadcast → mark
  * accepted → wait for the receipt.
@@ -7,6 +8,8 @@
  * confirmation NEVER does.
  */
 
+import { UniswapV4Refusal } from "@tools/uniswap/v4-pool.js";
+import { rpcReadFailureOf } from "@tools/evm-chains/rpc-read-failure.js";
 import type { Hex } from "viem";
 
 import type { FinalSignedRequest } from "@tools/evm-chains/staged-broadcast.js";
@@ -29,7 +32,7 @@ import {
 import { DependentLegGasEstimateError } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import { waitForSuccessfulReceipt } from "@tools/evm-chains/receipt-guard.js";
 import type { UniswapDecodableReceipt } from "@tools/uniswap/receipt-decoder.js";
-import { classifyUniswapRevertError, type UniswapRevertFailureCode } from "@tools/uniswap/revert-mapping.js";
+import { classifyUniswapRevertError, type UniswapRevertClassification } from "@tools/uniswap/revert-mapping.js";
 import {
   markActivityBroadcast,
   reserveActivityEvmNonce,
@@ -56,15 +59,13 @@ export interface Classification {
 }
 
 /**
- * A refusal that never reached the network. Its code is narrowed to the shared
- * router-revert subset (`classifyUniswapRevertError`'s own return type), which
+ * A refusal before transaction broadcast. Its code is narrowed to router
+ * reverts or exhausted RPC reads (`classifyUniswapRevertError`'s return type), which
  * is what makes it a TYPE error - not a review question - to route a
  * broadcast-only code such as `mined_revert` into the "nothing was signed"
  * message.
  */
-export interface PreBroadcastClassification extends Classification {
-  readonly failureCode: UniswapRevertFailureCode;
-}
+export type PreBroadcastClassification = Classification & UniswapRevertClassification;
 
 /**
  * `settledAtBlock` on a confirmed stage is the receipt block the caller threads
@@ -82,7 +83,7 @@ export type StageOutcome =
   | { readonly kind: "failed"; readonly stage: "mined_revert"; readonly classification: Classification }
   | { readonly kind: "ambiguous"; readonly txHash: Hex };
 
-export async function runStagedBroadcast(
+async function runStagedBroadcastWithinScope(
   event: AgentActivityEvent,
   tx: BuiltSwapTx,
   clients: ReturnType<typeof getUniswapEvmClients>,
@@ -142,6 +143,7 @@ export async function runStagedBroadcast(
       bounds,
     );
   } catch (err) {
+    const exhaustedRead = rpcReadFailureOf(err);
     // A leg whose estimate never succeeded after an approval THIS execute
     // confirmed is not a classifiable revert - the whole point of
     // `DependentLegGasEstimateError` is that we could not obtain an answer we
@@ -149,22 +151,22 @@ export async function runStagedBroadcast(
     // `allowance_or_balance`) would assert exactly the conclusion we cannot
     // support, so it goes to the outer C18 handler, which finalizes the
     // never-signed rows as "not attempted" and says so honestly.
-    if (err instanceof DependentLegGasEstimateError) throw err;
+    if (!exhaustedRead && (err instanceof DependentLegGasEstimateError || err instanceof UniswapV4Refusal)) throw err;
     // A PRE-SIGN AUTHORITY REFUSAL is not a router revert and must never be
     // classified as one: `classifyUniswapRevertError` would flatten it to
     // `unknown` and the canned guidance would replace the only sentence that
     // says what was actually wrong. It leaves this loop intact, the same way
     // the estimate refusal does, and the orchestrator's outer handler
     // finalizes the never-signed rows and renders the refusal verbatim.
-    if (err instanceof UniswapFinalRequestRefusal) throw err;
+    if (!exhaustedRead && err instanceof UniswapFinalRequestRefusal) throw err;
     // A SPENDABILITY refusal and a FEE-CEILING refusal are not router reverts
     // either: nothing reverted, nothing was estimated wrong, and
     // `classifyUniswapRevertError` would flatten both to `unknown` and replace
     // the only sentence that says what was actually wrong. They leave this loop
     // intact exactly as the estimate refusal does, and the orchestrator's outer
     // handler finalizes the never-signed rows and renders the refusal verbatim.
-    if (err instanceof UniswapPreSignDebitRefusal) throw err;
-    if (err instanceof UniswapFeeCapExceededError) throw err;
+    if (!exhaustedRead && err instanceof UniswapPreSignDebitRefusal) throw err;
+    if (!exhaustedRead && err instanceof UniswapFeeCapExceededError) throw err;
     // A LIVE FEE-MARKET refusal is the same shape: the pre-sign window could
     // not show the approved ceiling still covers what the chain requires -
     // because it is higher, because the market could not be read, or because
@@ -172,7 +174,7 @@ export async function runStagedBroadcast(
     // none is a router revert, and `classifyUniswapRevertError` would flatten
     // every one of them to `unknown` - collapsing an unreadable provider into
     // an unexpected failure is exactly what rule 90 forbids.
-    if (err instanceof UniswapLiveFeeMarketRefusal) throw err;
+    if (!exhaustedRead && err instanceof UniswapLiveFeeMarketRefusal) throw err;
     // Sign-time only (prepare/estimate/local signing) - no `sendRawTransaction`
     // call has happened yet, so nothing was ever submitted to the network.
     // Unlike a broadcast failure (C15), a sign-time failure is UNAMBIGUOUSLY
@@ -186,7 +188,10 @@ export async function runStagedBroadcast(
     // DB row (`failActivityEvent`, below) or the ToolResult output (the
     // "failed" branch in the main loop reads this same object's
     // `failureReason`).
-    const classification: PreBroadcastClassification = { failureCode: raw.failureCode, failureReason: uniswapFailureMessage(raw.failureReason) };
+    const failureReason = uniswapFailureMessage(raw.failureReason, { preserveLength: true });
+    const classification: PreBroadcastClassification = raw.rpcFailure
+      ? { ...raw, failureReason }
+      : { ...raw, failureReason, ...(raw.remedy ? { remedy: uniswapFailureMessage(raw.remedy, { preserveLength: true }) } : {}) };
     await failActivityEvent(event.id, classification);
     return { kind: "failed", stage: "pre_broadcast", classification };
   }
@@ -282,4 +287,9 @@ export async function runStagedBroadcast(
     // repair sweep, which retries the SAME lookup later.
     return { kind: "ambiguous", txHash: signed.txHash };
   }
+}
+
+/** Keeps unsigned reservations scoped to this whole sign/stage/publish attempt. */
+export function runStagedBroadcast(...args: Parameters<typeof runStagedBroadcastWithinScope>): Promise<StageOutcome> {
+  return withNonceReservationScope(() => runStagedBroadcastWithinScope(...args));
 }

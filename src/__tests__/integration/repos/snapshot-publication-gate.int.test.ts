@@ -23,7 +23,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { PoolClient } from "pg";
 
 import { execute, getPool, queryOne, query } from "@vex-agent/db/client.js";
@@ -237,6 +237,12 @@ let sessionId: string;
 beforeEach(async () => {
   await resetDb();
   sessionId = await makeSession();
+});
+
+// This file shares the lane's database with AgentScan's global diff scan.
+// Its final confirmed-activity fixture must not become that next suite's input.
+afterEach(async () => {
+  await resetDb();
 });
 
 // ── 1. The UNION parses, and every predicate matches a production row ────

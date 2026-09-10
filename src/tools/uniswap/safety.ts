@@ -28,6 +28,7 @@ import {
   type Transport,
 } from "viem";
 
+import { assertV4Binding } from "./v4-pool.js";
 import {
   UNISWAP_V2_FACTORY_ABI,
   UNISWAP_V2_PAIR_ABI,
@@ -57,6 +58,10 @@ export async function checkRouteFactories(
   deployment: UniswapDeployment,
   route: UniswapRoute,
 ): Promise<{ checked: true; allowlisted: boolean } | { checkFailed: true }> {
+  if (route.version === "v4") {
+    try { assertV4Binding(deployment, route.v4); return { checked: true, allowlisted: true }; }
+    catch { return { checked: true, allowlisted: false }; }
+  }
   const allowed = new Set<string>();
   if (deployment.v2) allowed.add(deployment.v2.factory.toLowerCase());
   if (deployment.v3) allowed.add(deployment.v3.factory.toLowerCase());

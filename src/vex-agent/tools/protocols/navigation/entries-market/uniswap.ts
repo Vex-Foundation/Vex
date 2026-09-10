@@ -17,29 +17,27 @@ export const UNISWAP_NAVIGATION: ProtocolNamespaceNavigation = {
   // `# Available Protocol Namespaces` prompt section - so these tools discover
   // normally instead of only through the internal aliases.
   //
-  // The owner decision of 2026-09-07 finished the job the visibility change
-  // started: the two EVM swap venues now have EQUAL STANDING, and the text
-  // below states it by importing it. `registry/swap-venue-guidance.ts` is the
-  // one owner of that wording; nothing here re-words it.
+  // Visibility is independent of preference. The shared guidance owns the
+  // default router and the Robinhood exception; this declaration imports it.
   namespace: "uniswap",
   advertised: true,
   groupId: "evm-trading",
   groupLabel: "EVM Trading",
-  summary: `Uniswap is on-chain spot swapping straight against V2 and V3 pools, routed for the best of the two and quoted before it is executed. It is one of Vex's two EVM swap venues, and the venue that covers Robinhood Chain (4663), where $VEX and Virtuals agent tokens trade against VIRTUAL. ${UNISWAP_BEST_FOR} It takes token contract ADDRESSES; there is no symbol search.`,
+  summary: `Uniswap is on-chain spot swapping straight against V2, V3 and v4 pools, routed for the best route and quoted before it is executed. It is one of Vex's two EVM swap venues, and the venue that covers Robinhood Chain (4663), where $VEX and Virtuals agent tokens trade against VIRTUAL. ${UNISWAP_BEST_FOR} It takes token contract ADDRESSES; there is no symbol search.`,
   whenToUse:
-    `Use it to quote or execute an EVM swap priced directly off V2 and V3 pools, including Robinhood Chain (quote/execute against VIRTUAL/ETH). ${SWAP_VENUE_GUIDANCE_FULL} Pass token contract ADDRESSES (no symbol search).`,
+    `Use it to quote or execute an EVM swap priced directly off V2, V3 and v4 pools, including Robinhood Chain (quote/execute against VIRTUAL/ETH). ${SWAP_VENUE_GUIDANCE_FULL} Pass token contract ADDRESSES (no symbol search).`,
   preferInstead:
     `${SWAP_VENUE_STANDING} Reach for \`khalani\` to resolve token addresses across chains or to bridge between them, \`solana\` for Solana trading, and \`dexscreener\` for read-only research.`,
   declaration: {
-    identity: "Uniswap is an on-chain spot-swap venue that compares V2 and V3 pools for an exact-input trade.",
+    identity: "Uniswap is an on-chain spot-swap venue that compares V2, V3 and v4 pools for an exact-input trade.",
     read: "Read a route preview's pool path, expected output, price impact, gas estimate, and token-safety signals. Token identity must already be resolved because this venue has no symbol search.",
     quote: "Create a read-only route preview with the best route before funds move.",
     act: "Execute a buy, sell, or swap after a fresh matching quote. A token approval may be required before the wallet signs and broadcasts the trade.",
-    whenItApplies: "Use Uniswap for a V2 and V3 pools swap on a verified deployment, including a Robinhood Chain trade against VIRTUAL, after resolving exact token addresses.",
+    whenItApplies: "Use Uniswap for a V2, V3 and v4 pools swap on a verified deployment, including a Robinhood Chain trade against VIRTUAL, after resolving exact token addresses.",
     characteristicAndLimits: "Availability is limited to verified deployments. Quotes are point-in-time and execution is exact-input, so re-quote when conditions change. It cannot search by ticker, guarantee output, or prove token safety from a route alone.",
     retrievalTerms: [
       "Uniswap",
-      "V2 and V3 pools",
+      "V2, V3 and v4 pools",
       "best route",
       "expected output",
       "price impact",
@@ -63,7 +61,7 @@ export const UNISWAP_NAVIGATION: ProtocolNamespaceNavigation = {
   facets: [
     {
       label: "Swaps",
-      summary: "Quote or execute best-route V2/V3 swaps after resolving token addresses.",
+      summary: "Quote or execute best-route V2/V3/v4 swaps after resolving token addresses.",
       toolPrefixes: ["uniswap.swap"],
       hints: ["swap quote", "sell token", "buy token", "robinhood swap", "best route v2 v3"],
     },

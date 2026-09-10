@@ -1,0 +1,30 @@
+[
+  {
+    "chain": 4663,
+    "url": "https://robinhood-rpc.publicnode.com",
+    "hash": "0xfe959671e9da60503148ccaf1923bfd00b7052906c09163b64b9305b395e79d8",
+    "result": "MethodNotFoundRpcError",
+    "summary": "The method \"debug_traceTransaction\" does not exist / is not available."
+  },
+  {
+    "chain": 4663,
+    "url": "https://rpc.ordofi.network",
+    "hash": "0xfe959671e9da60503148ccaf1923bfd00b7052906c09163b64b9305b395e79d8",
+    "result": "CALL",
+    "calls": 2
+  },
+  {
+    "chain": 8453,
+    "url": "https://base.gateway.tenderly.co",
+    "hash": "0xbd481b6bbe18e33ad48100228be8428944ad55b3b3bb4bfada478af789308d7a",
+    "result": "LimitExceededRpcError",
+    "summary": "Request exceeds defined limit."
+  },
+  {
+    "chain": 8453,
+    "url": "https://developer-access-mainnet.base.org",
+    "hash": "0xbd481b6bbe18e33ad48100228be8428944ad55b3b3bb4bfada478af789308d7a",
+    "result": "MethodNotFoundRpcError",
+    "summary": "The method \"debug_traceTransaction\" does not exist / is not available."
+  }
+]

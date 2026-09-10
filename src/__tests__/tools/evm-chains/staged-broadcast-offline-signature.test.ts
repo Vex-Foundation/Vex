@@ -95,6 +95,7 @@ function throwingTransport(state: { armed: boolean; methods: string[] }): Transp
 
 function fakePublicClient() {
   return Object.assign(createPublicClient({ chain: TEST_CHAIN, transport: throwingTransport({ armed: false, methods: [] }) }), {
+    getTransactionCount: vi.fn(async () => 7),
     estimateGas: vi.fn(async () => 21_000n),
     prepareTransactionRequest: vi.fn(async () => preparedRequest()),
     // The parameter is DECLARED so the assertion below can read the exact bytes

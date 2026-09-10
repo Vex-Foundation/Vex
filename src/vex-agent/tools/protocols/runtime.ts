@@ -327,10 +327,10 @@ export async function executeProtocolTool(
   const shouldCapture = manifest.mutating && !isPreview;
 
   // Execute + capture
-  const startTime = Date.now();
+  const startTime = performance.now();
   try {
     const result = await handler(params, handlerContext);
-    const durationMs = Date.now() - startTime;
+    const durationMs = Math.round(performance.now() - startTime);
 
     logger.info("protocol.execute.completed", {
       toolId: request.toolId,
@@ -387,7 +387,7 @@ export async function executeProtocolTool(
 
     return withActionKind(result, effectiveActionKind);
   } catch (err) {
-    const durationMs = Date.now() - startTime;
+    const durationMs = Math.round(performance.now() - startTime);
 
     // Operator Stop - RETHROW, before provider-failure logging and before
     // failure capture. A protocol handler that was interrupted mid-wait did not

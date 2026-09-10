@@ -2,7 +2,7 @@
 
 Kept outside the markers.
 
-<!-- vex:studio:begin vex=0.2.6 hash=a4483e9fde0cf64e -->
+<!-- vex:studio:begin vex=0.2.6 hash=6b1e5f29d0f49518 -->
 # Vex guide - project "acme-trading"
 
 The companion to this project's `AGENTS.md`, which carries the authority:
@@ -43,6 +43,8 @@ Text OUTSIDE the markers belongs to the user; Vex preserves it.
 
 - 2026-08-25 · Vex 0.9.4 · updated the wallet selection
 - 2026-08-12 · Vex 0.9.3 · added the codex config
+
+KyberSwap is the default; Uniswap prices V2, V3 and v4 pools on seven chains. Other DEX liquidity may be unavailable there. On Robinhood Chain, native Uniswap is the more stable choice.
 
 ## Protocols available to this project (Added in Vex 0.2.7)
 
@@ -88,7 +90,7 @@ KyberSwap is an EVM swap aggregator that routes exact-input trades across more t
 
 ### uniswap
 
-Uniswap is an on-chain spot-swap venue that compares V2 and V3 pools for an exact-input trade.
+Uniswap is an on-chain spot-swap venue that compares V2, V3 and v4 pools for an exact-input trade.
 
 - Chains: Robinhood Chain (4663), Ethereum (1), Base (8453), Arbitrum One (42161), Optimism (10), Polygon (137), BNB Chain (56).
 - Read: Read a route preview's pool path, expected output, price impact, gas estimate, and token-safety signals. Token identity must already be resolved because this venue has no symbol search.

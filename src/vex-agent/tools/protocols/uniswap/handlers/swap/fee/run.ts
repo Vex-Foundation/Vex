@@ -1,3 +1,7 @@
+import { UniswapPreSignDebitRefusal } from "../quote-spendability.js";
+import { redact } from "../../../../../../../lib/diagnostics/text-redaction.js";
+import { EvmNonceReservationExpiredError } from "@tools/evm-chains/nonce-reservation-scope.js";
+import { EvmNonceMismatchError } from "@tools/evm-chains/nonce-signing-guard.js";
 /**
  * Running the Vex fee leg - AFTER the swap confirmed, and never before.
  *
@@ -43,6 +47,8 @@ import {
   type DeferredEvmSigner,
   type StagedBroadcastOutcome,
 } from "@tools/evm-chains/staged-broadcast.js";
+import type { LegFeeCap } from "@tools/evm-chains/swap-native-debit.js";
+import { assertApprovedCapStillSuffices, UniswapLiveFeeMarketRefusal } from "@tools/uniswap/fee-cap-gate.js";
 import type { ConfirmedPriorLeg } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import {
   classifyNativeValue,
@@ -54,11 +60,13 @@ import {
   markBroadcastAccepted,
   confirmActivityEvent,
   failActivityEvent,
+  failHashlessActivityEvent,
 } from "@vex-agent/db/repos/agent-activity.js";
 import logger from "@utils/logger.js";
 import { noteHandlerPendingReason } from "@vex-agent/tools/protocols/runtime/pending-provenance.js";
 
 import { VexError, ErrorCodes } from "../../../../../../../errors.js";
+import { classifyUniswapRevertError } from "@tools/uniswap/revert-mapping.js";
 import type { UniswapFeeLegPlan } from "./plan.js";
 
 /**
@@ -105,6 +113,7 @@ export interface RunUniswapFeeLegInput {
    * `not_attempted`, no fee, and the CONFIRMED swap untouched.
    */
   readonly debitGate?: UniswapFeeLegDebitGate | undefined;
+  readonly feeCap: LegFeeCap;
 }
 
 /**
@@ -112,11 +121,9 @@ export interface RunUniswapFeeLegInput {
  * serialized.
  *
  * It carries the FEE PRICES as well as the gas, because gas units times an
- * unknown price is not money: the gate both prices this leg's real cost and
- * refuses a price above the ceiling the execution's debit total was computed
- * under. No separate `StagedFeeBounds` is passed for this leg - a units ceiling
- * frozen before the swap ran would refuse a transfer for a warm-storage
- * difference rather than for a money fact.
+ * unknown price is not money. The shared signer binds the approved per-gas
+ * prices; this gate checks the resulting cost against the fresh balance.
+ * Gas units are measured after the swap, not frozen from a pre-swap estimate.
  */
 export type UniswapFeeLegDebitGate = (request: {
   readonly gas: bigint;
@@ -148,6 +155,7 @@ export type UniswapFeeLegDebitGate = (request: {
  */
 export async function runUniswapFeeLeg(input: RunUniswapFeeLegInput): Promise<UniswapFeeCollection> {
   const { plan, feeRowId } = input;
+  let stagedHash: string | null = null;
   try {
     assertFeeValueAuthorized(input.chainId, plan);
 
@@ -165,19 +173,17 @@ export async function runUniswapFeeLeg(input: RunUniswapFeeLegInput): Promise<Un
       deferredSigner,
       plan.txParams,
       {
-        ...(input.debitGate === undefined
-          ? {}
-          : {
-              onBeforeSign: async (request) => {
-                await input.debitGate?.(request);
-              },
-            }),
+        onBeforeSign: async (request) => {
+          await assertApprovedCapStillSuffices(input.publicClient, { cap: input.feeCap });
+          await input.debitGate?.(request);
+        },
         onNonceReserved: (request) => reserveActivityEvmNonce(feeRowId, request),
         onHashStaged: async (handles) => {
           const res = await markActivityBroadcast(feeRowId, handles);
           if (!res.applied) {
             throw new Error(`agent_activity: markActivityBroadcast CAS miss for fee event ${feeRowId} - refusing to broadcast untracked`);
           }
+          stagedHash = handles.txHash;
         },
         onAccepted: async () => {
           const res = await markBroadcastAccepted(feeRowId);
@@ -185,6 +191,8 @@ export async function runUniswapFeeLeg(input: RunUniswapFeeLegInput): Promise<Un
         },
       },
       input.priorLeg,
+      undefined,
+      input.feeCap,
     );
 
     if (outcome.kind === "reverted") {
@@ -221,14 +229,31 @@ export async function runUniswapFeeLeg(input: RunUniswapFeeLegInput): Promise<Un
       txHash: outcome.txHash,
     };
   } catch (err) {
-    // Includes a native-value refusal, a gas-estimate refusal, and a staging CAS
-    // miss. None of them may touch the parent row.
-    logger.warn("uniswap.fee.leg_failed", { id: feeRowId, error: err instanceof Error ? err.name : "unknown" });
-    return {
-      collection: "not_attempted",
-      collectionNote: "The Vex fee transfer was refused before signing, so no fee was collected - your swap is unaffected.",
-      txHash: null,
-    };
+    if (stagedHash !== null) {
+      await noteHandlerPendingReason("uniswap.fee", feeRowId, "fee_broadcast_ambiguous");
+      return { collection: "unconfirmed", txHash: stagedHash,
+        collectionNote: "The fee outcome is unconfirmed and will be reconciled. No fee retry happens automatically. Your swap succeeded." };
+    }
+    const classified = classifyUniswapRevertError(err);
+    const failureCode = classified.failureCode === "unknown" ? "broadcast_error" : classified.failureCode;
+    // Fee failure must never recommend repeating the already successful swap.
+    const detail = err instanceof UniswapPreSignDebitRefusal
+      ? err.message.trim() || "The fee leg's pre-sign debit check refused the remaining cost"
+      : err instanceof EvmNonceMismatchError
+      ? `The fee leg's local nonce ledger is ${err.reason === "local_nonce_ledger_ahead" ? "ahead of" : "behind"} the network on chain ${err.chainId}; nonce reconciliation is required`
+      : err instanceof EvmNonceReservationExpiredError
+        ? "The fee signing lease expired before the fee could be submitted"
+      : !classified.rpcFailure && err instanceof UniswapLiveFeeMarketRefusal
+      ? {
+          approved_gas_price_exceeded: "The current gas price exceeds this fee leg's approved cap",
+          live_fee_market_unreadable: "The current gas market could not be read for the fee leg",
+          pricing_mode_changed: "The fee leg's live pricing mode differs from its approved cap",
+        }[err.kind]
+      : classified.failureReason;
+    const reason = redact(detail.trim() || "Fee transaction preparation was refused before signing; no further reason was supplied").text.replace(/0x[0-9a-fA-F]{40,}/g, "[address or payload]");
+    const collectionNote = `Your swap succeeded. The Vex fee was not collected: ${reason}. The swap is unaffected. No fee retry happens automatically.`;
+    logger.warn("uniswap.fee.leg_failed", { id: feeRowId, failureCode, reason });
+    return recordUniswapFeeNotCollected(feeRowId, collectionNote, failureCode);
   }
 }
 
@@ -321,4 +346,20 @@ export function uniswapFeeNotCharged(reason: string): UniswapFeeCollection {
     collectionNote: `No Vex fee applies to this swap: ${reason}.`,
     txHash: null,
   };
+}
+
+/** A fee without a staged hash cannot remain a pending charge. Never retries it. */
+export async function recordUniswapFeeNotCollected(
+  feeRowId: number, reason: string,
+  failureCode: Parameters<typeof failHashlessActivityEvent>[1]["failureCode"] = "broadcast_error",
+): Promise<UniswapFeeCollection> {
+  let note = reason;
+  try {
+    const result = await failHashlessActivityEvent(feeRowId, { failureCode, failureReason: reason });
+    if (!result.applied) note += " Its audit row was already changed; reconciliation owns that record.";
+  } catch {
+    logger.warn("uniswap.fee.refusal_record_failed", { id: feeRowId });
+    note += " The fee refusal could not be recorded in the activity ledger.";
+  }
+  return { collection: "not_attempted", collectionNote: note, txHash: null };
 }

@@ -34,6 +34,7 @@ import { createHash } from "node:crypto";
 
 import { formatUnits } from "viem";
 import { z } from "zod";
+import { v4RouteBindingSchema, type V4RouteBinding } from "@tools/uniswap/v4-types.js";
 
 import {
   boundDebitPlanSchema,
@@ -125,6 +126,7 @@ export interface UniswapExecutionSnapshot {
    * rather than reading a fresh one, and refuses a leg set that is not this one.
    */
   readonly debitPlan: BoundDebitPlan;
+  readonly v4?: { readonly route: V4RouteBinding; readonly recipient: string };
   readonly digest: string;
 }
 
@@ -175,6 +177,11 @@ function canonicalizeSnapshotFields(f: UniswapSnapshotFields): string {
     // Contains no U+0000 by construction (`canonicalizeDebitPlan` states why),
     // so it occupies exactly one field of this serialization.
     canonicalizeDebitPlan(f.debitPlan),
+    ...(f.v4 ? [JSON.stringify([f.v4.route.poolId.toLowerCase(),
+      f.v4.route.poolKey.currency0.toLowerCase(), f.v4.route.poolKey.currency1.toLowerCase(),
+      f.v4.route.poolKey.fee, f.v4.route.poolKey.tickSpacing, f.v4.route.poolKey.hooks.toLowerCase(),
+      f.v4.route.zeroForOne, f.v4.route.hookPermissions, f.v4.route.dynamicFee, f.v4.route.observedLpFee,
+      f.v4.route.universalRouter.toLowerCase(), f.v4.route.universalRouterVersion, f.v4.route.permit2.toLowerCase(), f.v4.recipient.toLowerCase()])] : []),
   ].join(FIELD_SEPARATOR);
 }
 
@@ -215,6 +222,7 @@ const UniswapSnapshotSchema = z.object({
   slippageBps: z.number().int().min(0).max(10_000),
   expiresAt: z.string().min(1),
   debitPlan: boundDebitPlanSchema,
+  v4: z.object({ route: v4RouteBindingSchema, recipient: z.string().regex(/^0x[\da-fA-F]{40}$/) }).strict().optional(),
   digest: z.string().regex(/^[0-9a-f]{64}$/),
 });
 

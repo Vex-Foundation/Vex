@@ -19,9 +19,14 @@
  * Rows are seeded through the REAL agent-activity repo (same FK/CHECK gauntlet
  * production writes face) via the shared `_fixtures.ts` intent seeder.
  */
-import { afterEach, describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect } from "vitest";
+import { resetDb } from "../setup/fixtures.js";
 import { seedIntent, cleanupSeeded } from "../agent-scan/_fixtures.js";
 import { enqueueAtCurrentGeneration, claimAtCurrentGeneration, claimTickAtCurrentGeneration } from "./_reporting-tick.js";
+
+// The scan reads every activity, so its fixture owns the whole input ledger.
+// Deleting only this file's seeded IDs cannot isolate it from preceding files.
+beforeEach(resetDb);
 
 async function resetAgentscanTables(): Promise<void> {
   const { execute } = await import("@vex-agent/db/client.js");
@@ -273,6 +278,11 @@ describe("agentscan_outbox — diff scan", () => {
     await agentActivity.createPendingActivityEvent({
       protocolExecutionId, eventIndex: 0, eventRole: "allowance", kind: "swap",
       protocol: "kyberswap", chainId: 8453, walletAddress, sessionId,
+    });
+    await agentActivity.createPendingActivityEvent({
+      protocolExecutionId, eventIndex: 3, eventRole: "allowance", kind: "swap",
+      protocol: "uniswap", chainId: 8453, walletAddress, sessionId,
+      routeProvenance: { allowanceKind: "permit2" },
     });
     // `wrap` is in the server's vocabulary but has no producer here yet.
     await agentActivity.createPendingActivityEvent({
@@ -602,5 +612,66 @@ describe("agentscan_reporting_state - Superboard share token", () => {
     state = await repo.getReportingState();
     expect(state.shareToken).toBe("A".repeat(43));
     expect(state.shareTokenRegisteredAt).not.toBeNull();
+  });
+});
+
+describe("Uniswap v4 confirmed settlement reporting", () => {
+  it("persists an exhausted RPC class only on a hashless refusal and keeps the wire code supported", async () => {
+    const repo = await import("@vex-agent/db/repos/agent-activity.js");
+    const { queryOne } = await import("@vex-agent/db/client.js");
+    const { mapActivityToEvent } = await import("@vex-agent/agentscan/mapper.js");
+    const { RpcReadExhaustedError, preSignRpcRefusal } = await import("@tools/evm-chains/rpc-read-failure.js");
+    const id = await seedEligibleSwap();
+    const reason = preSignRpcRefusal(new RpcReadExhaustedError(8453, "rate_limited", "eth_call", new Error("fixture")));
+    expect((await repo.failActivityEvent(id, { failureCode: "rate_limited", failureReason: reason })).applied).toBe(true);
+    const row = await queryOne<Record<string, unknown>>("SELECT * FROM agent_activity WHERE id = $1", [id]);
+    expect(row).toMatchObject({ status: "definitively_failed", failure_code: "rate_limited", failure_reason: reason, tx_hash: null });
+    if (!row) throw new Error("Missing refusal row");
+    expect(mapActivityToEvent(row, { status: "definitively_failed" }).failureCode).toBe("venue_unavailable");
+    const stagedId = await seedEligibleSwap();
+    await repo.markActivityBroadcast(stagedId, { txHash: `0x${stagedId.toString(16).padStart(64, "0")}`, fromAddress: "0x" + "3".repeat(40), nonce: 1 });
+    await expect(repo.failActivityEvent(stagedId, { failureCode: "rate_limited", failureReason: reason })).rejects.toThrow(/rpc_failure_before_sign/);
+    expect(await queryOne("SELECT status FROM agent_activity WHERE id = $1", [stagedId])).toMatchObject({ status: "pending" });
+  });
+  it("finalizes one real activity row and enqueues its bound v4 route exactly once", async () => {
+    const { getUniswapDeployment } = await import("@tools/uniswap/deployments.js");
+    const { v4PoolId } = await import("@tools/uniswap/v4-pool.js");
+    const { planSwapEvents } = await import("@vex-agent/tools/protocols/uniswap/handlers/swap/execute-plan.js");
+    const { finalizeConfirmedSwap } = await import("@vex-agent/tools/protocols/uniswap/handlers/swap/finalize-confirmed.js");
+    const { mapActivityToEvent } = await import("@vex-agent/agentscan/mapper.js");
+    const { encodeAbiParameters, zeroAddress } = await import("viem");
+    const { TRANSFER_TOPIC0 } = await import("@tools/uniswap/receipt-decoder.js");
+    const { query } = await import("@vex-agent/db/client.js");
+    const repo = await import("@vex-agent/db/repos/agent-activity.js");
+    const deployment = getUniswapDeployment(1);
+    if (!deployment?.v4) throw new Error("v4 fixture deployment missing");
+    const seed = await seedIntent("uniswap.swap.execute");
+    const tokenIn = { address: "0x1111111111111111111111111111111111111111", symbol: "IN", decimals: 18, isNative: false } as const;
+    const tokenOut = { address: "0x2222222222222222222222222222222222222222", symbol: "OUT", decimals: 18, isNative: false } as const;
+    const key = { currency0: tokenIn.address, currency1: tokenOut.address, fee: 3000, tickSpacing: 60, hooks: zeroAddress };
+    const bound = { poolId: v4PoolId(key), poolKey: key, zeroForOne: true, hookPermissions: 0, dynamicFee: false, observedLpFee: 3000, universalRouter: deployment.v4.universalRouter, universalRouterVersion: deployment.v4.universalRouterVersion, permit2: deployment.v4.permit2 };
+    const quoted = { route: { version: "v4" as const, path: [tokenIn.address, tokenOut.address], v4: bound, amountOut: 1000n }, amountOut: 1000n, minAmountOut: 990n, slippageBps: 100 };
+    const planned = planSwapEvents({ deployment, ...seed, tokenIn, tokenOut, amountIn: 100n, amountInHuman: "0.0000000000000001", quoted, currentAllowance: 100n, permit2Allowance: { amount: 100n, expiration: Math.floor(Date.now() / 1000) + 3600, nonce: 0 }, approvedMinOutRaw: "990" });
+    expect(planned).toHaveLength(1);
+    const event = await repo.createPendingActivityEvent({ ...at(planned, 0), protocolExecutionId: seed.protocolExecutionId });
+    const txHash = `0x${event.id.toString(16).padStart(64, "0")}` as const;
+    expect((await repo.markActivityBroadcast(event.id, { txHash, fromAddress: seed.walletAddress, nonce: 1 })).applied).toBe(true);
+    const topic = (address: string): string => `0x${address.slice(2).padStart(64, "0")}`;
+    const finalized = await finalizeConfirmedSwap({ eventId: event.id, executionId: seed.protocolExecutionId, sessionId: seed.sessionId, deployment, walletAddress: seed.walletAddress, tokenIn, tokenOut, quoted, approvedMinOutRaw: "990", txHash,
+      publicClient: { readContract: async () => 1000n },
+      receipt: { logs: [
+        { address: tokenIn.address, topics: [TRANSFER_TOPIC0, topic(seed.walletAddress), topic(deployment.v4.poolManager)], data: encodeAbiParameters([{ type: "uint256" }], [100n]) },
+        { address: tokenOut.address, topics: [TRANSFER_TOPIC0, topic(deployment.v4.poolManager), topic(seed.walletAddress)], data: encodeAbiParameters([{ type: "uint256" }], [999n]) },
+      ] },
+    });
+    expect(finalized.result.data?.status).toBe("confirmed");
+    expect(await enqueueAtCurrentGeneration(false)).toBe(1);
+    expect(await enqueueAtCurrentGeneration(false)).toBe(0);
+    const rows = await query<Record<string, unknown>>("SELECT * FROM agent_activity WHERE protocol_execution_id = $1 AND event_role = 'swap'", [seed.protocolExecutionId]);
+    expect(rows).toHaveLength(1);
+    expect(mapActivityToEvent(at(rows, 0), { status: "confirmed" }).route).toEqual({ version: "v4", path: [tokenIn.address, tokenOut.address], poolId: bound.poolId, poolKey: key });
+    const outbox = await claimAtCurrentGeneration();
+    expect(outbox).toHaveLength(1);
+    expect(at(outbox, 0).activityId).toBe(event.id);
   });
 });

@@ -335,8 +335,10 @@ describe("pinned signing transport", () => {
       chain: TEST_CHAIN,
       transport: buildPinnedEvmTransport(TEST_CHAIN_ID, { providerUrls: [pinned.url, other.url] }),
     });
-    await client.getTransactionCount({ address: "0x0000000000000000000000000000000000000001" });
-    await client.getBlockNumber();
+    await Promise.all([
+      client.getTransactionCount({ address: "0x0000000000000000000000000000000000000001" }),
+      client.getBlockNumber(),
+    ]);
 
     expect(pinned.seen).toContain("eth_getTransactionCount");
     expect(pinned.seen).toContain("eth_blockNumber");

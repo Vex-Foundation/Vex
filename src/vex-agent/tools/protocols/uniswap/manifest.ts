@@ -1,7 +1,7 @@
 /**
  * Uniswap protocol manifest - swap module (quote + sell + buy).
  *
- * Keyless on-chain V2/V3 routing: one of Vex's two EVM swap venues, covering
+ * Keyless on-chain V2/V3/v4 routing: one of Vex's two EVM swap venues, covering
  * every chain with a verified Vex deployment (incl. Robinhood Chain 4663). The
  * standing between it and KyberSwap is owned by
  * `registry/swap-venue-guidance.ts`. No LP / positions / V4 surfaces.

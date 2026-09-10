@@ -156,7 +156,14 @@ async function auditRecords(pool: pg.Pool, highWater: number): Promise<unknown> 
     activity:
       highWater < 44
         ? null
-        : (await pool.query("SELECT * FROM agent_activity ORDER BY id")).rows,
+        : (await pool.query("SELECT * FROM agent_activity ORDER BY id")).rows.map((row) => ({
+            // Migration 157 extends historical rows with NULL lease fields.
+            // Defaults apply only when the old schema lacks the columns; any
+            // migrated non-NULL value still overrides them and fails equality.
+            nonce_reservation_until: null,
+            nonce_reservation_token: null,
+            ...row,
+          })),
   };
 }
 
@@ -184,6 +191,17 @@ async function tableExists(pool: pg.Pool, table: string): Promise<boolean> {
  */
 async function assertFullyUpgraded(pool: pg.Pool, staging: string): Promise<void> {
   expect(await appliedVersions(pool)).toEqual(ALL_FILES.map(version));
+
+  expect((await pool.query(
+    `SELECT column_name, data_type, is_nullable, column_default
+       FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'agent_activity'
+        AND column_name IN ('nonce_reservation_until', 'nonce_reservation_token')
+      ORDER BY column_name`,
+  )).rows).toEqual([
+    { column_name: "nonce_reservation_token", data_type: "uuid", is_nullable: "YES", column_default: null },
+    { column_name: "nonce_reservation_until", data_type: "timestamp with time zone", is_nullable: "YES", column_default: null },
+  ]);
 
   expect((await pool.query("SELECT lineage FROM lighter_schema_marker")).rows).toEqual([
     { lineage: "main-2026-09" },

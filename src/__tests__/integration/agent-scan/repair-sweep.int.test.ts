@@ -21,10 +21,12 @@
  * receipt bumps `last_checked_at` and stays `pending` FOREVER —
  * `confirmation_timeout` is reserved and never auto-set by this sweep.
  */
-import { afterEach, describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { seedIntent, cleanupSeeded, backdateSubmitAttempt } from "./_fixtures.js";
+import { resetDb } from "../setup/fixtures.js";
 import { REPAIR_CANDIDATE_AGE_MS } from "../../../vex-agent/sync/agent-activity-repair.js";
 
+beforeEach(resetDb);
 afterEach(async () => {
   await cleanupSeeded();
 });
@@ -159,5 +161,137 @@ describe("agent_activity repair sweep — lookup-only", () => {
     expect(row?.status).toBe("pending");
     expect(row?.failureCode).toBeNull();
     expect(row?.lastCheckedAt).not.toBeNull();
+  });
+});
+
+// Real coordinator receipt, replayed through the existing status and amount owners.
+import doppler from "../../tools/uniswap/fixtures/v4-base-doppler-receipt.json" with { type: "json" };
+import { getAddress } from "viem";
+import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
+import { v4PoolId } from "@tools/uniswap/v4-pool.js";
+import { repairMissingExecutedAmounts } from "@vex-agent/sync/executed-amount-fallback.js";
+import { execute as sql } from "@vex-agent/db/client.js";
+import * as activity from "@vex-agent/db/repos/agent-activity.js";
+import { repairPendingActivity } from "@vex-agent/sync/agent-activity-repair.js";
+import { nativeBinding, nativeLogs, nativeWallet, nativeToken, nativeHash, nativeRpcFixture } from "../../tools/uniswap/native-balance.fixture.js";
+import { readV4NativeBalanceEvidence, V4_NATIVE_DECODER_VERSION } from "@tools/uniswap/v4-native-balance.js";
+
+describe("native v4 interpretation upgrades", () => {
+  async function oldRow(nativeInput: boolean, nullAddress = true) {
+    const seeded = await seedIntent("uniswap.swap.execute");
+    const binding = nativeBinding(true, nativeInput);
+    const native = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+    const swap = await activity.createPendingActivityEvent({ ...seeded, walletAddress: nativeWallet,
+      eventIndex: 0, eventRole: "swap", kind: "swap", protocol: "uniswap", chainId: 4663,
+      tokenIn: { tokenAddress: nativeInput ? (nullAddress ? undefined : native) : nativeToken, tokenDecimals: 18, tokenSymbol: nativeInput ? "ETH" : "TOK", amountRaw: "100" },
+      tokenOut: { tokenAddress: nativeInput ? nativeToken : (nullAddress ? undefined : native), tokenDecimals: 18, tokenSymbol: nativeInput ? "TOK" : "ETH", amountRaw: "1000" },
+      routeProvenance: { version: "v4", ...activity.settlementDecodeProvenance({ decoder: "uniswap", chainId: 4663,
+        routerAddress: binding.universalRouter, v4: binding,
+        ...(nativeInput ? { declaredValueRaw: "100" } : { wrappedNativeAddress: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" }) }) },
+    });
+    await activity.markActivityBroadcast(swap.id, { txHash: nativeHash, fromAddress: nativeWallet, nonce: 1 });
+    await activity.confirmActivityEvent(swap.id, { executedAmountInRaw: "100", executedAmountOutRaw: "1000" });
+    await activity.noteSettlementDecodeVersion(swap.id, "2026-09-10.uniswap-v4-router-sender");
+    const fee = await activity.createPendingActivityEvent({ ...seeded, walletAddress: nativeWallet,
+      eventIndex: 1, eventRole: "swap_fee", kind: "swap", protocol: "uniswap", chainId: 4663 });
+    const fixture = nativeRpcFixture();
+    const deps = { fetchReceiptLogs: async () => nativeLogs(binding), fetchReceiptStatus: async () => "success" as const,
+      fetchTransaction: async () => ({ from: nativeWallet, to: binding.universalRouter, valueRaw: nativeInput ? "100" : "0", input: "0x" }),
+      fetchNativeBalanceEvidence: () => readV4NativeBalanceEvidence(fixture.rpc, fixture.input) };
+    return { swap, fee, deps, binding };
+  }
+  it.each([true, false])("corrects event input 100 down to bound 90 (native address NULL=%s)", async nullAddress => {
+    const { swap, fee, deps, binding } = await oldRow(true, nullAddress);
+    const feeBefore = await activity.getActivityEventById(fee.id);
+    expect((await repairMissingExecutedAmounts(deps)).filled).toBe(1);
+    expect(await activity.getActivityEventById(swap.id)).toMatchObject({ status: "confirmed", nonce: 1,
+      executedAmountInRaw: "90", executedAmountOutRaw: "1000", evidenceSource: "native_balance_delta_bound",
+      settlementDecodeVersion: V4_NATIVE_DECODER_VERSION });
+    await activity.recordV4NativeSettlement({ id: swap.id, chainId: 4663, txHash: nativeHash, poolId: binding.poolId,
+      amountInRaw: "95", amountOutRaw: "1000", inputIsBound: true, outputUnproven: false });
+    expect((await activity.getActivityEventById(swap.id))?.executedAmountInRaw).toBe("90");
+    await expect(sql("UPDATE agent_activity SET nonce = NULL WHERE id = $1", [swap.id])).rejects.toMatchObject({ code: "23514" });
+    await expect(sql("UPDATE agent_activity SET event_role = 'swap_fee' WHERE id = $1", [swap.id])).rejects.toMatchObject({ code: "23514" });
+    await expect(sql("UPDATE agent_activity SET evidence_source = 'provider-observation' WHERE id = $1", [swap.id])).rejects.toMatchObject({ code: "23514" });
+    expect(await activity.getActivityEventById(fee.id)).toEqual(feeBefore);
+    expect((await repairMissingExecutedAmounts(deps)).checked).toBe(0);
+  });
+  it("clears hooked native output without changing confirmation or the fee row", async () => {
+    const { swap, fee, deps } = await oldRow(false);
+    const before = await activity.getActivityEventById(swap.id);
+    const feeBefore = await activity.getActivityEventById(fee.id);
+    expect((await repairMissingExecutedAmounts(deps)).filled).toBe(1);
+    expect(await activity.getActivityEventById(swap.id)).toMatchObject({ status: "confirmed", executedAmountInRaw: "100",
+      executedAmountOutRaw: null, amountOutRaw: "1000", pendingReason: "native_output_unproven_hooked",
+      confirmedAt: before?.confirmedAt, confirmationSource: before?.confirmationSource });
+    expect(await activity.getActivityEventById(fee.id)).toEqual(feeBefore);
+  });
+  it("withdraws the superseded input claim on unavailable evidence without burning repair eligibility", async () => {
+    const { swap, deps } = await oldRow(true);
+    const unavailable = { ...deps, fetchNativeBalanceEvidence: async () => ({ kind: "unavailable" as const, reason: "native_balance_archive_gated" }) };
+    expect((await repairMissingExecutedAmounts(unavailable)).deferred).toBe(1);
+    expect(await activity.getActivityEventById(swap.id)).toMatchObject({ status: "confirmed", executedAmountInRaw: null,
+      settlementSource: "amounts_incomplete", settlementDecodeVersion: "2026-09-10.uniswap-v4-router-sender" });
+    expect((await repairMissingExecutedAmounts(deps)).filled).toBe(1);
+    expect((await activity.getActivityEventById(swap.id))?.executedAmountInRaw).toBe("90");
+  });
+});
+
+describe("v4 settlement and dependent fee recovery", () => {
+  it("repairs the real Doppler receipt and terminalizes its unattempted fee without collecting it", async () => {
+    const seeded = await seedIntent("uniswap.swap.execute");
+    const d = getUniswapDeployment(8453)?.v4;
+    if (!d) throw new Error("Base v4 fixture requires its deployment");
+    const poolKey = { currency0: getAddress("0x4200000000000000000000000000000000000006"), currency1: getAddress("0x9e00fc92493451eba1c63dd3880d68b622037ba3"), fee: 8388608, tickSpacing: 200, hooks: getAddress("0xbdf938149ac6a781f94faa0ed45e6a0e984c6544") };
+    const swap = await activity.createPendingActivityEvent({ ...seeded, eventIndex: 0, eventRole: "swap", kind: "swap", protocol: "uniswap", chainId: 8453, walletAddress: doppler.from,
+      tokenIn: { tokenAddress: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", tokenDecimals: 18, tokenSymbol: "ETH", amountRaw: doppler.value, amountHuman: "0.00009975" },
+      tokenOut: { tokenAddress: poolKey.currency1, tokenDecimals: 18, tokenSymbol: "1F916", amountRaw: "9876476984743216817150", amountHuman: "9876.47698474321681715" },
+      routeProvenance: activity.settlementDecodeProvenance({ decoder: "uniswap", chainId: 8453, routerAddress: d.universalRouter, declaredValueRaw: doppler.value, wrappedNativeAddress: poolKey.currency0,
+        v4: { poolKey, poolId: v4PoolId(poolKey), zeroForOne: true, hookPermissions: 9540, dynamicFee: true, observedLpFee: 7000, universalRouter: d.universalRouter, universalRouterVersion: "2.1.1", permit2: d.permit2 } }),
+    });
+    const fee = await activity.createPendingActivityEvent({ ...seeded, eventIndex: 1, eventRole: "swap_fee", kind: "swap", protocol: "uniswap", chainId: 8453, walletAddress: doppler.from });
+    await activity.markActivityBroadcast(swap.id, { txHash: doppler.hash, fromAddress: doppler.from, nonce: 1 });
+    await activity.notePendingReason(swap.id, "settlement_undecodable", { kind: "handler_return" });
+    await backdateSubmitAttempt(swap.id, REPAIR_CANDIDATE_AGE_MS + 1000);
+    await repairPendingActivity({ observeTransaction: async () => ({ kind: "mined", status: "success", blockTimeIso: null }) });
+    // An old decoder's completed decline must become eligible again after this fix.
+    await activity.noteSettlementDecodeVersion(swap.id, "2026-09-09.uniswap-v4-receipt");
+    const amounts = await repairMissingExecutedAmounts({ fetchReceiptLogs: async () => doppler.logs, fetchReceiptStatus: async () => "success",
+      fetchTransaction: async () => ({ from: doppler.from, to: doppler.to, valueRaw: doppler.value, input: doppler.inputSelector }),
+      fetchNativeBalanceEvidence: async () => ({ kind: "bound", inputLowerBound: BigInt(doppler.value), outputCredit: -BigInt(doppler.value), gasCost: 0n, blockHash: "fixture", blockNumber: 1n }) });
+    expect(amounts.filled).toBe(1);
+    expect(await activity.getActivityEventById(swap.id)).toMatchObject({ status: "confirmed", executedAmountInRaw: doppler.value, executedAmountOutRaw: "9876476984743216817150" });
+    await sql("UPDATE agent_activity SET created_at = NOW() - interval '1 day' WHERE id = $1", [fee.id]);
+    await activity.recoverStaleHashlessIntents(90_000, 10);
+    expect(await activity.getActivityEventById(fee.id)).toMatchObject({ status: "definitively_failed", txHash: null, failureCode: "broadcast_error", failureReason: expect.stringContaining("No fee retry happens automatically") });
+  });
+
+  it.each(["mined", "dropped"] as const)("reconciles a %s fee hash after the handler exits", async outcome => {
+    const seeded = await seedIntent("uniswap.swap.execute");
+    const fee = await activity.createPendingActivityEvent({ ...seeded, eventIndex: 0, eventRole: "swap_fee", kind: "swap", protocol: "uniswap", chainId: 56 });
+    await activity.markActivityBroadcast(fee.id, { txHash: "0xed1ed926793204b5c299421916c9986197120ceb3e4adb877184fe35efc135d3", fromAddress: seeded.walletAddress, nonce: 1 });
+    await backdateSubmitAttempt(fee.id, REPAIR_CANDIDATE_AGE_MS + 1000);
+    const observeTransaction = async () => outcome === "mined"
+      ? { kind: "mined" as const, status: "success" as const, blockTimeIso: null }
+      : { kind: "unknown_to_node" as const };
+    await repairPendingActivity({ observeTransaction });
+    expect((await activity.getActivityEventById(fee.id))?.status).toBe(outcome === "mined" ? "confirmed" : "pending");
+    if (outcome === "dropped") {
+      await sql("UPDATE agent_activity SET first_noninclusion_observed_at = NOW() - interval '1 day', last_checked_at = NOW() - interval '1 day' WHERE id = $1", [fee.id]);
+      await repairPendingActivity({ observeTransaction });
+      expect((await activity.getActivityEventById(fee.id))?.status).toBe("superseded_unproven");
+    }
+  });
+
+  it("records a fee refusal hashlessly and cannot terminalize a staged fee as unattempted", async () => {
+    const seeded = await seedIntent("uniswap.swap.execute");
+    const fee = await activity.createPendingActivityEvent({ ...seeded, eventIndex: 0, eventRole: "swap_fee", kind: "swap", protocol: "uniswap", chainId: 137 });
+    const failure = { failureCode: "broadcast_error" as const, failureReason: "Fee price above approval. No fee retry happens automatically." };
+    expect((await activity.failHashlessActivityEvent(fee.id, failure)).applied).toBe(true);
+    expect(await activity.getActivityEventById(fee.id)).toMatchObject({ status: "definitively_failed", txHash: null, ...failure });
+    const staged = await activity.createPendingActivityEvent({ ...seeded, eventIndex: 1, eventRole: "swap_fee", kind: "swap", protocol: "uniswap", chainId: 137 });
+    await activity.markActivityBroadcast(staged.id, { txHash: "0x" + "a".repeat(64), fromAddress: seeded.walletAddress, nonce: 1 });
+    expect((await activity.failHashlessActivityEvent(staged.id, failure)).applied).toBe(false);
+    expect((await activity.getActivityEventById(staged.id))?.status).toBe("pending");
   });
 });

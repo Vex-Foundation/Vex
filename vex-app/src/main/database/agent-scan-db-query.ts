@@ -463,6 +463,7 @@ export function buildAgentScanPageQuery(args: AgentScanQueryArgs): AgentScanQuer
         aa.amount_in_raw,
         aa.executed_amount_in_human,
         aa.executed_amount_in_raw,
+        aa.evidence_source,
         aa.usd_in_est,
         LEFT(aa.token_out_address, ${AGENT_SCAN_TEXT_BOUNDS.tokenAddress}) AS token_out_address,
         LEFT(aa.token_out_symbol, ${TOKEN_SYMBOL_MAX_LENGTH}) AS token_out_symbol,

@@ -77,6 +77,7 @@ function fakeNode() {
   const state = { pendingCount: 7, sends: 0 };
   const preparedNonces: number[] = [];
   const publicClient = Object.assign(createPublicClient({ chain: CHAIN, transport: testTransport() }), {
+    getTransactionCount: async () => state.pendingCount,
     estimateGas: async () => 21_000n,
     prepareTransactionRequest: async (request: Record<string, unknown>) => {
       const nonce = state.pendingCount;
@@ -201,7 +202,7 @@ describe("two concurrent DEFERRED confirms for one wallet cannot sign the same n
 
     // Completes while the first is still parked: different key, different turn.
     const otherOutcome = await signStageBroadcast(
-      node.publicClient,
+      fakeNode().publicClient,
       deferredSigner(OTHER_WALLET),
       { to: TO, data: "0x" },
       passiveHooks(),

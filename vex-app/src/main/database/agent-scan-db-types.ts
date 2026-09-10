@@ -48,6 +48,7 @@ export interface AgentScanRow {
   readonly amount_in_raw: string | null;
   readonly executed_amount_in_human: string | null;
   readonly executed_amount_in_raw: string | null;
+  readonly evidence_source?: string | null;
   readonly usd_in_est: number | string | null;
 
   readonly token_out_address: string | null;
