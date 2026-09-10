@@ -69,14 +69,6 @@ export const SWAP_VENUE_QUOTE_BOTH = "Quote both when unsure.";
  */
 export const SWAP_VENUE_EXECUTE_RULE = "Execute on the venue you quoted.";
 
-/**
- * When Uniswap is the one to reach for, phrased as occasions it serves rather
- * than as failures of the other venue.
- */
-export const SWAP_VENUE_UNISWAP_OCCASIONS =
-  "Use Uniswap when KyberSwap is region/edge-blocked, lacks chain/pair coverage, "
-  + "its quote fails or looks off, or the user asks.";
-
 /** Regional refusal remedy shared by both KyberSwap tool descriptions. */
 export const KYBERSWAP_EDGE_BLOCK_GUIDANCE =
   "When KyberSwap refuses with a regional or edge block, switch to `uniswap__swap_quote` "
@@ -99,10 +91,15 @@ export const KYBERSWAP_EDGE_BLOCK_REMEDY =
 export const SWAP_VENUE_GUIDANCE =
   `${SWAP_VENUE_STANDING} ${SWAP_VENUE_QUOTE_BOTH} ${SWAP_VENUE_EXECUTE_RULE}`;
 
+export const ROBINHOOD_SWAP_VENUE_GUIDANCE =
+  "On Robinhood Chain, quote both venues when both price the pair; prefer direct Uniswap when it has a route "
+  + "(V2/V3 only, no v4). KyberSwap drops quiet pools; its USD reference lags. "
+  + "Elsewhere, KyberSwap is the usual first choice.";
+
 /** The whole doctrine, for the system prompt, the Tool Map and the Studio brief. */
 export const SWAP_VENUE_GUIDANCE_FULL =
-  `${SWAP_VENUE_STANDING} ${SWAP_VENUE_UNISWAP_OCCASIONS} `
-  + `${SWAP_VENUE_QUOTE_BOTH} ${SWAP_VENUE_EXECUTE_RULE}`;
+  `${ROBINHOOD_SWAP_VENUE_GUIDANCE} Use Uniswap when KyberSwap is region/edge-blocked, `
+  + `unavailable, mispriced, or on request. ${SWAP_VENUE_QUOTE_BOTH} ${SWAP_VENUE_EXECUTE_RULE}`;
 
 /** The compact form, for an always-loaded quote description at the 2048 bound. */
 export const SWAP_VENUE_GUIDANCE_COMPACT =

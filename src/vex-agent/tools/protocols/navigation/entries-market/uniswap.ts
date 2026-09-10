@@ -1,5 +1,6 @@
 import type { ProtocolNamespaceNavigation } from "../types.js";
 import {
+  ROBINHOOD_SWAP_VENUE_GUIDANCE,
   SWAP_VENUE_GUIDANCE_FULL,
   SWAP_VENUE_STANDING,
   UNISWAP_BEST_FOR,
@@ -32,10 +33,10 @@ export const UNISWAP_NAVIGATION: ProtocolNamespaceNavigation = {
     `${SWAP_VENUE_STANDING} Reach for \`khalani\` to resolve token addresses across chains or to bridge between them, \`solana\` for Solana trading, and \`dexscreener\` for read-only research.`,
   declaration: {
     identity: "Uniswap is an on-chain spot-swap venue that compares V2 and V3 pools for an exact-input trade.",
-    read: "Read a route preview's pool path, expected output, price impact, gas estimate, and token-safety signals. Token identity must already be resolved because this venue has no symbol search.",
-    quote: "Create a read-only route preview with the best route before funds move.",
+    read: "Read a route preview's pool path, expected output, price impact, gas estimate, and token-safety signals. Resolve exact token addresses first; no symbol search.",
+    quote: "Create a read-only route preview, including VIRTUAL pairs, with the best route before funds move.",
     act: "Execute a buy, sell, or swap after a fresh matching quote. A token approval may be required before the wallet signs and broadcasts the trade.",
-    whenItApplies: "Use Uniswap for a V2 and V3 pools swap on a verified deployment, including a Robinhood Chain trade against VIRTUAL, after resolving exact token addresses.",
+    whenItApplies: ROBINHOOD_SWAP_VENUE_GUIDANCE,
     characteristicAndLimits: "Availability is limited to verified deployments. Quotes are point-in-time and execution is exact-input, so re-quote when conditions change. It cannot search by ticker, guarantee output, or prove token safety from a route alone.",
     retrievalTerms: [
       "Uniswap",

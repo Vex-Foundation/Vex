@@ -48,6 +48,7 @@ import logger from "@utils/logger.js";
 import { VexError, ErrorCodes } from "../../../../../../errors.js";
 import { uniswapFailureMessage } from "./error-output.js";
 import { UniswapPreSignDebitRefusal } from "./quote-spendability.js";
+import { observeRefusedUniswapOutput } from "@tools/uniswap/observe-refused-output.js";
 
 /** A revert-mapping-shaped classification, widened to the full closed enum for repo assignment. */
 export interface Classification {
@@ -63,6 +64,7 @@ export interface Classification {
  * message.
  */
 export interface PreBroadcastClassification extends Classification {
+  readonly simulatedOutputRaw?: string;
   readonly failureCode: UniswapRevertFailureCode;
 }
 
@@ -186,7 +188,11 @@ export async function runStagedBroadcast(
     // DB row (`failActivityEvent`, below) or the ToolResult output (the
     // "failed" branch in the main loop reads this same object's
     // `failureReason`).
-    const classification: PreBroadcastClassification = { failureCode: raw.failureCode, failureReason: uniswapFailureMessage(raw.failureReason) };
+    const signerAddress = clients.walletClient.account?.address;
+    const observed = raw.failureCode === "slippage" && event.eventRole === "swap" && signerAddress !== undefined
+      ? await observeRefusedUniswapOutput(clients.publicClient, signerAddress, tx) : null;
+    const classification: PreBroadcastClassification = { failureCode: raw.failureCode, failureReason: uniswapFailureMessage(raw.failureReason),
+      ...(observed === null ? {} : { simulatedOutputRaw: observed }) };
     await failActivityEvent(event.id, classification);
     return { kind: "failed", stage: "pre_broadcast", classification };
   }

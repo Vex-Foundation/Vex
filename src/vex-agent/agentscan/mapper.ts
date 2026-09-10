@@ -31,6 +31,8 @@
  * and which makes it anchor its pricing on the block time it verified itself.
  */
 
+import { swapReferenceEstimates } from "./swap-reference-estimates.js";
+
 const RAW_AMOUNT = /^\d+$/;
 const USD_STRING = /^\d+(\.\d+)?$/;
 
@@ -177,6 +179,7 @@ export function mapActivityToEvent(
   activity: Record<string, unknown>,
   snapshot: { readonly status: string },
 ): AgentscanEvent {
+  const referenceEstimates = swapReferenceEstimates(activity);
   const confirmed = snapshot.status === "confirmed";
   const failed = snapshot.status === "definitively_failed";
   const role = str(activity.event_role) ?? "";
@@ -234,10 +237,10 @@ export function mapActivityToEvent(
     executedOut2Raw: tokenOut2 === null
       ? null
       : executed(activity.executed_amount_out2_raw, activity.token_out2_address, "second_output"),
-    usdInEst: guarded(activity.usd_in_est, USD_STRING),
-    usdOutEst: guarded(activity.usd_out_est, USD_STRING),
+    usdInEst: referenceEstimates === undefined ? guarded(activity.usd_in_est, USD_STRING) : referenceEstimates.usdInEst,
+    usdOutEst: referenceEstimates === undefined ? guarded(activity.usd_out_est, USD_STRING) : referenceEstimates.usdOutEst,
     usdFeeEst: guarded(activity.usd_fee_est, USD_STRING),
-    usdSource: clamp(str(activity.usd_source), 32),
+    usdSource: referenceEstimates === undefined ? clamp(str(activity.usd_source), 32) : "dexscreener",
     txHash: str(activity.tx_hash),
     failureCode: failed ? mapFailureCode(activity.failure_code) : null,
     createdAt: iso(activity.created_at) ?? new Date(0).toISOString(),

@@ -6,6 +6,7 @@
  * revert, and an AMBIGUOUS broadcast must never invite a retry.
  */
 
+import { swapOutputEvidence, type SwapOutputObservation } from "@tools/evm-chains/swap-output-shortfall.js";
 import { DependentLegGasEstimateError, dependentLegEstimateGuidance } from "@tools/evm-chains/dependent-leg-gas-estimate.js";
 import {
   classifyDependentLegPoolStateRevert,
@@ -49,6 +50,7 @@ export function ambiguousBroadcastResult(input: {
  * named (`evm-chains/pre-sign-revert-refusal.ts` carries the incident).
  */
 export function preSignRefusalResult(input: {
+  readonly outputObservation?: SwapOutputObservation;
   readonly eventRole: AgentActivityEvent["eventRole"];
   readonly classification: PreBroadcastClassification;
   readonly slippageBps: number;
@@ -60,11 +62,13 @@ export function preSignRefusalResult(input: {
       // Already through this venue's single scrub boundary (C37).
       revertReason: input.classification.failureReason,
       failureCode: input.classification.failureCode,
-      slippage: { appliedBps: input.slippageBps, maxBps: effectiveMaxSlippageBps() },
+      slippage: { appliedBps: input.slippageBps, maxBps: effectiveMaxSlippageBps(), outputObservation: input.outputObservation },
     })} Recorded as execution ${input.executionId}.`,
     data: {
       _executionId: input.executionId, status: "not_attempted", retryable: true,
       failureCode: input.classification.failureCode,
+      ...(input.classification.failureCode === "slippage" && input.outputObservation
+        ? { outputObservation: swapOutputEvidence(input.outputObservation) } : {}),
     },
   };
 }

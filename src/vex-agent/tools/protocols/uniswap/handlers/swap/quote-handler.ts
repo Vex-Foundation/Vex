@@ -10,6 +10,9 @@ import { checkRouteFactories, probeFotSignal } from "@tools/uniswap/safety.js";
 import { readUniswapAllowance } from "@tools/uniswap/erc20.js";
 import { resolveSelectedAddress } from "@vex-agent/tools/internal/wallet/resolve.js";
 import logger from "@utils/logger.js";
+import { swapFeeCeiling, SWAP_FEE_HEADROOM_BPS } from "@tools/evm-chains/swap-fee-ceiling.js";
+import { readSwapPriceReference } from "@tools/evm-chains/swap-price-reference-read.js";
+import { valueSwapAtReference } from "@tools/evm-chains/swap-price-reference.js";
 
 import type { ToolResult } from "../../../../types.js";
 import type { ProtocolExecutionContext } from "../../../types.js";
@@ -60,8 +63,8 @@ type ImpactVerdict = QuoteEligibility | null;
  */
 function impactNoteFor(verdict: ImpactVerdict): string {
   if (verdict === null) {
-    return "Price impact was NOT measurable for this route: this venue derives impact only from a direct V2 pair's reserves,"
-      + " and this route is not one. The quote is still executable; size the trade against a market read before committing to it.";
+    return "Price impact was NOT measurable for this route: neither direct V2 reserves nor an independent pair-price reference was available."
+      + " The quote is still executable; size the trade against a market read before committing to it.";
   }
   switch (verdict.kind) {
     case "executable":
@@ -151,6 +154,14 @@ export async function uniswapSwapQuote(
     tokenOut.isNative ? Promise.resolve(false) : probeFotSignal(client, deployment, tokenOut.address),
   ]);
   const safety: UniswapSafetyBlock = { factory, liquidity, fot: { suspected: fotSuspected } };
+  const priceReference = quoted.priceImpact !== undefined ? null
+    : await readSwapPriceReference({ chainId: deployment.chainId, chainSlug: deployment.key, tokenIn, tokenOut });
+  const independent = priceReference === null ? null : valueSwapAtReference(priceReference, {
+    amountInRaw: feeCharge.swapAmountRaw.toString(), amountOutRaw: quoted.amountOut.toString(),
+    inputDecimals: tokenIn.decimals, outputDecimals: tokenOut.decimals,
+  });
+  if (priceReference !== null) quoted.priceReference = priceReference;
+  const measuredImpact = independent?.priceImpactFraction ?? quoted.priceImpact;
 
   // What this quote AUTHORIZES, sealed here and nowhere else: the router input
   // after the fee, the fee disposition as disclosed, and the floor the execute
@@ -161,9 +172,9 @@ export async function uniswapSwapQuote(
   // both venues, so the 15% refusal the agent's task shape promises is one
   // constant, not a per-venue habit. An unmeasured route stays executable and
   // says so - honest, never silent.
-  const impact: ImpactVerdict = quoted.priceImpact === undefined
+  const impact: ImpactVerdict = measuredImpact === undefined
     ? null
-    : classifyMeasuredImpact(quoted.priceImpact);
+    : classifyMeasuredImpact(measuredImpact);
 
   // SPENDABILITY, and only for a route that is otherwise executable (the order
   // `spendability.ts` states): an agent told the wallet is short before it is
@@ -222,12 +233,14 @@ export async function uniswapSwapQuote(
     minAmountOut: formatUnits(quoted.minAmountOut, tokenOut.decimals),
     minAmountOutRaw: quoted.minAmountOut.toString(),
     slippageBps,
-    priceImpact: quoted.priceImpact ?? null,
+    priceImpact: measuredImpact ?? null,
+    priceImpactReference: priceReference?.source ?? (quoted.priceImpact !== undefined ? "uniswap_v2_reserves" : "unavailable"),
     gasEstimate: quoted.route.gasEstimate?.toString() ?? null,
     router: routerFor(deployment, quoted.route),
     spender: tokenIn.isNative ? null : routerFor(deployment, quoted.route),
     safety,
     vexFee: feeCharge.disclosure,
+    gasFeeCeiling: spendability.debitPlan ?? null,
     // The agent sees WHY, in the same object as the route. `impactMeasured`
     // distinguishes "measured and fine" from "never measured" - a bare
     // `executable: true` cannot carry that difference.
@@ -362,7 +375,7 @@ async function measureSpendability(input: {
       legs: planned,
       quotedSwapGas: input.quoted.route.gasEstimate,
     });
-    const feeCap = await resolveUniswapLegFeeCap(spendabilityClient);
+    const feeCap = swapFeeCeiling(await resolveUniswapLegFeeCap(spendabilityClient));
     const nonce = await spendabilityClient.getTransactionCount({ address: wallet, blockTag: "pending" });
     const debit = await priceUniswapNativeDebit({
       client: spendabilityClient,
@@ -395,7 +408,7 @@ async function measureSpendability(input: {
       leg.gas === null ? [] : [{ role: leg.role, pricing: leg.gas.pricing }],
     );
     const debitPlan = debit.ok && boundLegs.length === legs.length
-      ? buildBoundDebitPlan({ legs: boundLegs, feeCap })
+      ? buildBoundDebitPlan({ legs: boundLegs, feeCap, feeHeadroomBps: SWAP_FEE_HEADROOM_BPS })
       : undefined;
     const judged = judgeUniswapSpendability(observation, routeEligibility, debitPlan);
     return {

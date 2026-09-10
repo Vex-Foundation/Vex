@@ -8,6 +8,7 @@
  */
 
 import { formatUnits, type Address } from "viem";
+import { valueSwapAtReference } from "@tools/evm-chains/swap-price-reference.js";
 
 import { buildSwapTx, buildApproveTx, type BuiltSwapTx } from "@tools/uniswap/execute.js";
 import type { UniswapDeployment } from "@tools/uniswap/deployments.js";
@@ -77,6 +78,10 @@ export interface PlanSwapEventsInput {
 
 export function planSwapEvents(input: PlanSwapEventsInput): PlannedEvent[] {
   const { deployment, tokenIn, tokenOut, amountIn, quoted } = input;
+  const usdValues = quoted.priceReference === undefined ? undefined : valueSwapAtReference(quoted.priceReference, {
+    amountInRaw: amountIn.toString(), amountOutRaw: quoted.amountOut.toString(),
+    inputDecimals: tokenIn.decimals, outputDecimals: tokenOut.decimals,
+  });
   const needsAllowance = !tokenIn.isNative && input.currentAllowance < amountIn;
   const needsReset = needsAllowance && input.currentAllowance > 0n;
   const common = {
@@ -101,9 +106,11 @@ export function planSwapEvents(input: PlanSwapEventsInput): PlannedEvent[] {
   }
   events.push({
     eventIndex, eventRole: "swap", ...common,
+    ...(usdValues === undefined ? {} : { usdInEst: usdValues.amountInUsd, usdOutEst: usdValues.amountOutUsd, usdSource: "dexscreener" }),
     tokenIn: { ...legFor(tokenIn), amountHuman: input.amountInHuman, amountRaw: amountIn.toString() },
     tokenOut: { ...legFor(tokenOut), amountHuman: formatUnits(quoted.amountOut, tokenOut.decimals), amountRaw: quoted.amountOut.toString() },
     routeProvenance: {
+      ...(quoted.priceReference === undefined ? {} : { swapPriceReference: quoted.priceReference }),
       version: quoted.route.version, path: quoted.route.path, fees: quoted.route.fees ?? null,
       // The approved floor, non-attested: the AgentScan mapper does not read it
       // and `amount_out_raw` keeps its meaning (the executed output).

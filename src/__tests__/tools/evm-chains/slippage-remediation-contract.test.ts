@@ -56,18 +56,19 @@ describe("slippageRemediation — the numbers an autonomous agent has to act on"
   });
 
   it("says the next tolerance is the agent's explicit choice, and that Vex made ONE attempt", () => {
-    expect(text).toMatch(/higher slippageBps that YOU choose explicitly/);
+    expect(text).toContain("Re-quote at the same slippageBps first");
+    expect(text).toContain("user's stated limit");
     expect(text).toMatch(/exactly one attempt was made, at the tolerance this call passed/i);
   });
 
-  it("attributes the failure to the market, not to the venue, and rules out an unchanged retry", () => {
-    expect(text).toMatch(/market moving, not the venue failing/i);
-    expect(text).toMatch(/retrying unchanged will be refused the same way/i);
+  it("names the market movement and permits a fresh quote at the same tolerance", () => {
+    expect(text).toContain("market moved past the approved floor");
+    expect(text).not.toMatch(/retrying unchanged will be refused the same way/i);
   });
 
   it("keeps the shipped strongly-negative-impact caution, which the new sentence must not contradict", () => {
     expect(text).toMatch(/priceImpact is strongly negative/i);
-    expect(text).toMatch(/more tolerance would only buy a worse fill/i);
+    expect(text).toContain("verify an independent price");
   });
 
   it("still carries the caution when the observed impact IS negative — the case it exists for", () => {
@@ -117,7 +118,7 @@ describe("every venue's slippage refusal carries the same remedy", () => {
     expect(text).not.toMatch(/priceImpact/i);
     expect(text).not.toMatch(/observed price impact/i);
     // The rest of the remedy still reaches it — only the caution is venue-gated.
-    expect(text).toMatch(/higher slippageBps that YOU choose explicitly/);
+    expect(text).toContain("Re-quote at the same slippageBps first");
     expect(text).toMatch(/exactly one attempt was made/i);
   });
 
@@ -152,7 +153,7 @@ describe("a calldata price-floor refusal is NOT a market-slippage refusal", () =
 
   it("the two remedies stay textually distinguishable — no agent can read one as the other", () => {
     const marketSlippage = slippageRemediation(EVM_REMEDY);
-    expect(marketSlippage).toMatch(/higher slippageBps/);
+    expect(marketSlippage).toContain("Re-quote at the same slippageBps first");
     expect(PENDLE_PRICE_FLOOR_REMEDY).not.toMatch(/higher slippageBps/);
     expect(marketSlippage).not.toContain(PENDLE_PRICE_FLOOR_REMEDY);
   });

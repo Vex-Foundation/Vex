@@ -27,6 +27,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { uniswapSpendabilityFake } from "./_uniswap-spendability-fake.js";
 import { getAddress, parseUnits } from "viem";
+import { readTokensPairs } from "@tools/dexscreener/price-read.js";
+import { validateTokensPairsResponse } from "@tools/dexscreener/validation/pairs.js";
+import dexFixture from "../../fixtures/swap-quality/dex-robinhood.json" with { type: "json" };
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
@@ -133,9 +136,42 @@ function run() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(readTokensPairs).mockResolvedValue([]);
+});
+
+describe("Uniswap routes without a pool-reserve impact", () => {
+  it.each([
+    { output: "997.5", kind: "executable", impact: 0 },
+    { output: "528.675", kind: "excessive_impact", impact: 0.47 },
+  ])("uses the independent pair reference for output $output", async ({ output, kind, impact }) => {
+    const pair = validateTokensPairsResponse(dexFixture)[0];
+    if (pair === undefined) throw new Error("Live reference fixture is empty");
+    vi.mocked(readTokensPairs).mockResolvedValue([{ ...pair,
+      baseToken: { address: TOKEN_OUT, symbol: "OUT", name: "Output" },
+      quoteToken: { address: TOKEN_IN, symbol: "IN", name: "Input" },
+      priceUsd: "1", priceNative: "0.001" }]);
+    quoteBestRoute.mockResolvedValue({ route: { ...unmeasured().route, amountOut: parseUnits(output, 18) } });
+    const result = await run();
+    expect(result.quoteAuthority?.eligibilityKind).toBe(kind);
+    const data = JSON.parse(result.output);
+    expect(data.priceImpactReference).toBe("dexscreener");
+    expect(data.priceImpact).toBeCloseTo(impact);
+    expect(data.eligibility.impactMeasured).toBe(true);
+  });
 });
 
 describe("uniswap.swap.quote eligibility over MEASURED impact", () => {
+  it("seals a gas ceiling with 15% headroom over the quote observation", async () => {
+    quoteBestRoute.mockResolvedValue(measured(0.001));
+    const result = await run();
+    expect(result.quoteAuthority?.routeSnapshot).toMatchObject({
+      debitPlan: {
+        feeHeadroomBps: 1500,
+        legs: [{ role: "swap", feeCap: { mode: "legacy", gasPriceWei: "1150" } },
+          { role: "swap_fee", feeCap: { mode: "legacy", gasPriceWei: "1150" } }],
+      },
+    });
+  });
   it("refuses to authorize an execute at or above the shared ceiling, and says why", async () => {
     // Above the ceiling by a whole point, so the assertion cannot be an
     // artefact of a boundary rounding.

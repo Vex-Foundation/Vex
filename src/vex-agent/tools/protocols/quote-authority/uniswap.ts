@@ -34,6 +34,8 @@ import { createHash } from "node:crypto";
 
 import { formatUnits } from "viem";
 import { z } from "zod";
+import { uniswapRouteHintSchema, canonicalizeUniswapRouteHint, type UniswapRouteHint } from "./uniswap-route-hint.js";
+import { swapPriceReferenceSchema, canonicalizeSwapPriceReference, type SwapPriceReference } from "@tools/evm-chains/swap-price-reference.js";
 
 import {
   boundDebitPlanSchema,
@@ -100,6 +102,8 @@ export interface UniswapSnapshotToken {
  * fails to restore rather than authorizing a different trade.
  */
 export interface UniswapExecutionSnapshot {
+  readonly priceReference?: SwapPriceReference;
+  readonly routeHint?: UniswapRouteHint;
   readonly v: typeof UNISWAP_SNAPSHOT_VERSION;
   readonly provider: "uniswap";
   readonly chainId: number;
@@ -175,6 +179,8 @@ function canonicalizeSnapshotFields(f: UniswapSnapshotFields): string {
     // Contains no U+0000 by construction (`canonicalizeDebitPlan` states why),
     // so it occupies exactly one field of this serialization.
     canonicalizeDebitPlan(f.debitPlan),
+    ...(f.routeHint === undefined ? [] : [canonicalizeUniswapRouteHint(f.routeHint)]),
+    ...(f.priceReference === undefined ? [] : [canonicalizeSwapPriceReference(f.priceReference)]),
   ].join(FIELD_SEPARATOR);
 }
 
@@ -196,6 +202,8 @@ const TokenSchema = z.object({
 });
 
 const UniswapSnapshotSchema = z.object({
+  priceReference: swapPriceReferenceSchema.optional(),
+  routeHint: uniswapRouteHintSchema.optional(),
   v: z.literal(UNISWAP_SNAPSHOT_VERSION),
   provider: z.literal("uniswap"),
   chainId: z.number().int().positive(),
@@ -375,11 +383,11 @@ export function floorUnreachableRefusal(
     // integer costs ~25 of them to restate what the human figure already says.
     // The raw pair is on the durable failure row.
     message:
-      `Refused before signing: no current Uniswap route reaches the approved floor of `
-      + `${snapshot.approvedMinOutHuman} ${snapshot.tokenOut.symbol}; the best is worth about `
+      `Refused before signing: ${snapshot.routeHint === undefined ? "no current Uniswap route reaches" : "the approved Uniswap path no longer reaches"} the approved floor of `
+      + `${snapshot.approvedMinOutHuman} ${snapshot.tokenOut.symbol}; the fresh quote is worth about `
       + `${formatUnits(freshAmountOutRaw, snapshot.tokenOut.decimals)}.`,
     hint:
-      `The market moved past the ${snapshot.slippageBps} bps you approved. Nothing was signed and the floor `
-      + `was not lowered. Get a fresh ${UNISWAP_FRESH_QUOTE_TOOL}.`,
+      `The market moved past ${snapshot.slippageBps} bps. Nothing was signed; the floor was not lowered. `
+      + `Re-quote ${UNISWAP_FRESH_QUOTE_TOOL} at the same slippage; raise only within the user's stated limit.`,
   };
 }

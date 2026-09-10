@@ -98,6 +98,9 @@ export function buildUniswapQuoteSnapshot(input: {
   const { tokenOut, quoted } = input;
   const inputs = executionInputsFrom(input);
   return sealUniswapSnapshot({
+    ...(quoted.priceReference === undefined ? {} : { priceReference: quoted.priceReference }),
+    routeHint: { version: quoted.route.version, path: [...quoted.route.path],
+      ...(quoted.route.fees === undefined ? {} : { fees: [...quoted.route.fees] }) },
     v: UNISWAP_SNAPSHOT_VERSION,
     provider: "uniswap",
     chainId: inputs.chainId,

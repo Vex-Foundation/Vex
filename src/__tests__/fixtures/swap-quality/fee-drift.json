@@ -1,0 +1,112 @@
+[
+  {
+    "sample": 0,
+    "chainId": 4663,
+    "at": "2026-09-09T15:15:29.034Z",
+    "tier": "bundled",
+    "status": 200,
+    "elapsedMs": 291,
+    "block": "0x37ede16",
+    "baseFeePerGasWei": "187086000",
+    "blockTimestamp": "0x6aa1780e"
+  },
+  {
+    "sample": 0,
+    "chainId": 8453,
+    "at": "2026-09-09T15:15:29.320Z",
+    "tier": "bundled",
+    "status": 200,
+    "elapsedMs": 286,
+    "block": "0x30b8d96",
+    "baseFeePerGasWei": "10675860",
+    "blockTimestamp": "0x6aa1780f"
+  },
+  {
+    "sample": 1,
+    "chainId": 4663,
+    "at": "2026-09-09T15:16:10.310Z",
+    "tier": "bundled",
+    "status": 200,
+    "elapsedMs": 208,
+    "block": "0x37edfba",
+    "baseFeePerGasWei": "181368000",
+    "blockTimestamp": "0x6aa17839"
+  },
+  {
+    "sample": 1,
+    "chainId": 8453,
+    "at": "2026-09-09T15:16:10.637Z",
+    "tier": "bundled",
+    "status": 200,
+    "elapsedMs": 326,
+    "block": "0x30b8dab",
+    "baseFeePerGasWei": "10437554",
+    "blockTimestamp": "0x6aa17839"
+  },
+  {
+    "sample": 2,
+    "chainId": 4663,
+    "at": "2026-09-09T15:16:53.715Z",
+    "tier": "bundled",
+    "status": 200,
+    "elapsedMs": 203,
+    "block": "0x37ee158",
+    "baseFeePerGasWei": "182406000",
+    "blockTimestamp": "0x6aa17863"
+  },
+  {
+    "sample": 2,
+    "chainId": 8453,
+    "at": "2026-09-09T15:16:53.921Z",
+    "tier": "bundled",
+    "status": 200,
+    "elapsedMs": 205,
+    "block": "0x30b8dc0",
+    "baseFeePerGasWei": "10056967",
+    "blockTimestamp": "0x6aa17863"
+  },
+  {
+    "sample": 3,
+    "chainId": 4663,
+    "at": "2026-09-09T15:17:34.956Z",
+    "tier": "bundled",
+    "status": 200,
+    "elapsedMs": 256,
+    "block": "0x37ee2fb",
+    "baseFeePerGasWei": "184606000",
+    "blockTimestamp": "0x6aa1788d"
+  },
+  {
+    "sample": 3,
+    "chainId": 8453,
+    "at": "2026-09-09T15:17:35.172Z",
+    "tier": "bundled",
+    "status": 200,
+    "elapsedMs": 216,
+    "block": "0x30b8dd5",
+    "baseFeePerGasWei": "9754633",
+    "blockTimestamp": "0x6aa1788d"
+  },
+  {
+    "sample": 4,
+    "chainId": 4663,
+    "at": "2026-09-09T15:18:18.286Z",
+    "tier": "bundled",
+    "status": 200,
+    "elapsedMs": 215,
+    "block": "0x37ee49e",
+    "baseFeePerGasWei": "180578000",
+    "blockTimestamp": "0x6aa178b8"
+  },
+  {
+    "sample": 4,
+    "chainId": 8453,
+    "at": "2026-09-09T15:18:18.526Z",
+    "tier": "bundled",
+    "status": 200,
+    "elapsedMs": 239,
+    "block": "0x30b8dea",
+    "baseFeePerGasWei": "9248015",
+    "blockTimestamp": "0x6aa178b7"
+  }
+]

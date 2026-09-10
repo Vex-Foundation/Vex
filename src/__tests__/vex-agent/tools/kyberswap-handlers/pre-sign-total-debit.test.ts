@@ -44,6 +44,8 @@ const SESSION_EVM = {
   privateKey: ("0x" + "ab".repeat(32)) as `0x${string}`,
 };
 
+vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokensPairs: vi.fn(async () => []) }));
+
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddress: () => SESSION_EVM.address,
   resolveSelectedAddressForRead: () => SESSION_EVM.address,
@@ -129,6 +131,7 @@ import {
   sealRouteSnapshot,
 } from "@vex-agent/tools/protocols/quote-authority/snapshot.js";
 import { buildBoundDebitPlan } from "@vex-agent/tools/protocols/quote-authority/debit-plan.js";
+import { swapFeeCeiling } from "@tools/evm-chains/swap-fee-ceiling.js";
 
 /**
  * The transaction set this suite's quote bound, matching the allowance plan its
@@ -399,6 +402,19 @@ describe("the read is fresh, and the quote-time preview is not the authority", (
 });
 
 describe("the approved TRANSACTION SET and its ceiling are bound quote-to-execute", () => {
+  it("admits a 0.05% fee rise inside the quote's headroom on both allowance and swap legs", async () => {
+    mockClaim.mockResolvedValue(claimedSnapshot(buildBoundDebitPlan({
+      legs: [{ role: "allowance", pricing: "measured" }, { role: "swap", pricing: "measured" }],
+      feeHeadroomBps: 1500,
+      feeCap: swapFeeCeiling({ mode: "eip1559", maxFeePerGasWei: 20_000_000n, maxPriorityFeePerGasWei: 1_210_000n }),
+    })));
+    await execute();
+    for (const index of [0, 1]) {
+      await expect(preSignGate(index)(preparedRequest(index, { maxFeePerGas: 20_010_000n }))).resolves.toBeUndefined();
+      await expect(preSignGate(index)(preparedRequest(index, { maxFeePerGas: 23_000_001n })))
+        .rejects.toMatchObject({ name: "SwapApprovedGasPriceExceededError", approvedRaw: "23000000" });
+    }
+  });
   it("refuses when this execute would broadcast a leg the approved quote never disclosed", async () => {
     // A USDT-style reset appears between the quote and the click: three
     // transactions where the card named two. A wallet that happens to be
@@ -445,7 +461,8 @@ describe("the approved TRANSACTION SET and its ceiling are bound quote-to-execut
     const result = await execute();
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("above the 11209999");
+    expect(result.output).toContain("above the approved ceiling of 11209999");
+    expect(result.data).toMatchObject({ failureCode: "approved_gas_price_exceeded", approvedRaw: "11209999" });
     expect(result.output).toContain("kyberswap__swap_quote");
   });
 
