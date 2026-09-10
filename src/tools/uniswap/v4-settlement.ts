@@ -66,8 +66,9 @@ export function decodeV4Settlement(input: {
   try { assertV4Binding(deployment, binding); } catch { return pending("v4_binding_missing_or_invalid"); }
   const matches = input.logs.filter(log => log.address.toLowerCase() === deployment.v4?.poolManager.toLowerCase()
     && log.topics[0]?.toLowerCase() === V4_POOL_SWAP_TOPIC0
-    && log.topics[1]?.toLowerCase() === binding.poolId.toLowerCase());
-  // A hook reentering the same pool is ambiguous even if its sender differs.
+    && log.topics[1]?.toLowerCase() === binding.poolId.toLowerCase()
+    && log.topics[2]?.toLowerCase() === `0x${binding.universalRouter.slice(2).toLowerCase().padStart(64, "0")}`);
+  // Internal hook swaps have a different sender. Two router swaps remain ambiguous.
   if (matches.length !== 1) return pending("v4_swap_missing_or_ambiguous");
   const log = matches[0];
   if (!log || log.topics.length !== 3 || !/^0x[\da-fA-F]{384}$/.test(log.data)) return pending("v4_swap_malformed_or_wrong_direction");
@@ -87,6 +88,13 @@ export function decodeV4Settlement(input: {
   const tx = input.transaction;
   if (!tx || !/^\d+$/.test(tx.valueRaw) || tx.from.toLowerCase() !== input.wallet.toLowerCase()
     || tx.to?.toLowerCase() !== binding.universalRouter.toLowerCase()) return pending("v4_transaction_unavailable_or_mismatched");
+  const currencyOutForTransfer = binding.zeroForOne ? binding.poolKey.currency1 : binding.poolKey.currency0;
+  const takeProven = input.logs.some(log => log.address.toLowerCase() === currencyOutForTransfer.toLowerCase()
+    && log.topics[0] === "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+    && log.topics[1]?.toLowerCase() === `0x${deployment.v4!.poolManager.slice(2).toLowerCase().padStart(64, "0")}`
+    && log.topics[2]?.toLowerCase() === `0x${input.wallet.slice(2).toLowerCase().padStart(64, "0")}`
+    && /^0x[0-9a-fA-F]{64}$/.test(log.data) && BigInt(log.data) > 0n);
+  if (input.nativeIn && !takeProven) return pending("v4_token_transfer_missing");
   if ((input.nativeIn && input.transferOut === undefined) || (input.nativeOut && input.transferIn === undefined)) return pending("v4_token_transfer_missing");
   // A token transfer tax or hook adjustment can differ from the pool amount.
   // Report that cross-check and keep the wallet Transfer delta as token truth;

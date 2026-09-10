@@ -51,6 +51,7 @@ import { resolveUniswapFeeCharge, type UniswapFeeCharge } from "@tools/uniswap/f
 import {
   planUniswapFeeLeg,
   runUniswapFeeLeg,
+  recordUniswapFeeNotCollected,
   uniswapFeeNotAttempted,
   uniswapFeeNotCharged,
   withFeeDisclosure,
@@ -596,7 +597,7 @@ export async function executeUniswapSwap(
       return await attachVexFee({
         finalized, feeCharge, feePlan, feeRowId, executionId, swapLegCount,
         chainId: deployment.chainId, tokenDecimals: tokenIn.decimals, clients,
-        priorLeg,
+        priorLeg, feeCap: legFeeCap,
         // CHECKED AGAIN, after the swap: the fee leg was counted in the plan
         // above, and now that the swap has actually taken its money the wallet
         // is re-read before this transfer is signed. A refusal here leaves the
@@ -626,9 +627,8 @@ export async function executeUniswapSwap(
  * whether it applied; `runUniswapFeeLeg` documents "Never throws. Every path
  * returns a report."). Do not add a throwing call here.
  *
- * The fee base is the amount the user ASKED to spend - known exactly before the
- * swap ran and unaffected by what the settlement decoded - so a swap whose
- * amounts could not be decoded is still charged correctly.
+ * A mined swap with unproven amounts does not authorize fee collection.
+ * Repair can prove amounts later but never schedules another fee transfer.
  */
 async function attachVexFee(x: {
   readonly finalized: FinalizeConfirmedSwapOutcome;
@@ -642,6 +642,7 @@ async function attachVexFee(x: {
   readonly clients: ReturnType<typeof getUniswapEvmClients>;
   readonly priorLeg: ConfirmedPriorLeg | undefined;
   readonly debitGate: UniswapFeeLegDebitGate;
+  readonly feeCap: import("@tools/evm-chains/swap-native-debit.js").LegFeeCap;
 }): Promise<ToolResult> {
   const disclosure = x.feeCharge.disclosure;
   const attach = (collection: UniswapFeeCollection): ToolResult =>
@@ -673,6 +674,11 @@ async function attachVexFee(x: {
     );
   }
 
+  if (x.finalized.result.data?.status === "confirmed_pending_amounts") {
+    const reason = "the confirmed swap's executed amounts are not yet proven; no fee retry happens automatically";
+    return attach(await recordUniswapFeeNotCollected(x.feeRowId, `No Vex fee was collected: ${reason}. The swap confirmed on-chain.`));
+  }
+
   const collection = await runUniswapFeeLeg({
     plan: x.feePlan,
     feeRowId: x.feeRowId,
@@ -682,6 +688,7 @@ async function attachVexFee(x: {
     walletClient: x.clients.walletClient,
     priorLeg: x.priorLeg,
     debitGate: x.debitGate,
+    feeCap: x.feeCap,
   });
   return attach(collection);
 }

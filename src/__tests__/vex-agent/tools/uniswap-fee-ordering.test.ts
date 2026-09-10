@@ -52,6 +52,7 @@ const abortPlannedEvents = vi.fn();
 const waitForSuccessfulReceipt = vi.fn();
 const getHoneypotFotInfo = vi.fn();
 const signStageBroadcast = vi.fn();
+const decodeUniswapExecutedLegs = vi.fn();
 
 /** Every `agent_activity` event the handler planned, in intent order. */
 let plannedEvents: Array<{ eventRole: string; eventIndex: number; amountRaw?: string; tokenAddress?: string }> = [];
@@ -136,7 +137,7 @@ vi.mock("@tools/uniswap/safety.js", () => ({
   UNISWAP_MIN_LIQUIDITY_USD: 5000,
 }));
 vi.mock("@tools/uniswap/receipt-decoder.js", () => ({
-  decodeUniswapExecutedLegs: vi.fn(() => ({ executedAmountInRaw: NET, executedAmountOutRaw: 10n })),
+  decodeUniswapExecutedLegs: (...args: unknown[]) => decodeUniswapExecutedLegs(...args),
 }));
 vi.mock("@tools/uniswap/revert-mapping.js", () => ({
   classifyUniswapRevertError: vi.fn(() => ({ failureCode: "broadcast_error", failureReason: "boom" })),
@@ -166,6 +167,7 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   markBroadcastAccepted: (...a: unknown[]) => markBroadcastAccepted(...a),
   confirmActivityEvent: (...a: unknown[]) => confirmActivityEvent(...a),
   failActivityEvent: (...a: unknown[]) => failActivityEvent(...a),
+  failHashlessActivityEvent: (...a: unknown[]) => failActivityEvent(...a),
   abortPlannedEvents: (...a: unknown[]) => abortPlannedEvents(...a),
 }));
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
@@ -283,6 +285,7 @@ beforeEach(() => {
   markBroadcastAccepted.mockResolvedValue({ applied: true, row: {} });
   confirmActivityEvent.mockResolvedValue({ applied: true, row: {} });
   failActivityEvent.mockResolvedValue({ applied: true, row: {} });
+  decodeUniswapExecutedLegs.mockReturnValue({ executedAmountInRaw: NET, executedAmountOutRaw: 10n });
   abortPlannedEvents.mockResolvedValue(undefined);
   signStageBroadcast.mockImplementation(
     async (_p: unknown, _w: unknown, tx: { to: string; data: Hex; value: bigint }, hooks: { onHashStaged: (h: unknown) => Promise<void>; onAccepted: () => Promise<void> }) => {
@@ -402,6 +405,16 @@ describe("a fee that fails NEVER touches the swap", () => {
     expect(confirmActivityEvent).toHaveBeenCalledWith(100, expect.anything());
   });
 
+  it("does not collect a fee while a confirmed swap's amounts remain unproven", async () => {
+    decodeUniswapExecutedLegs.mockReturnValueOnce({});
+    const result = await execute(ERC20_PARAMS, context);
+    expect(result.success).toBe(true);
+    expect(result.data?.status).toBe("confirmed_pending_amounts");
+    expect(signStageBroadcast).not.toHaveBeenCalled();
+    expect(feeOf(result).collection).toBe("not_attempted");
+    expect(failActivityEvent).toHaveBeenCalledWith(101, expect.objectContaining({ failureCode: "broadcast_error", failureReason: expect.stringContaining("not yet proven") }));
+  });
+
   it("a REFUSED fee (nothing signed) leaves the swap successful and reports not_attempted", async () => {
     signStageBroadcast.mockRejectedValueOnce(new Error("gas estimate failed"));
 
@@ -409,7 +422,7 @@ describe("a fee that fails NEVER touches the swap", () => {
 
     expect(result.success).toBe(true);
     expect(feeOf(result).collection).toBe("not_attempted");
-    expect(failActivityEvent).not.toHaveBeenCalled();
+    expect(failActivityEvent).toHaveBeenCalledWith(101, expect.objectContaining({ failureCode: "broadcast_error", failureReason: expect.stringContaining("No fee retry happens automatically") }));
   });
 
   it("an AMBIGUOUS fee is left pending and NEVER retried — a blind resend could charge twice", async () => {

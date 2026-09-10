@@ -78,7 +78,7 @@ import type {
  * thing that makes a row eligible again — a timestamp could only re-run the same
  * decode against the same immutable receipt forever.
  */
-export const SETTLEMENT_DECODER_SET_VERSION = "2026-09-09.uniswap-v4-receipt";
+export const SETTLEMENT_DECODER_SET_VERSION = "2026-09-10.uniswap-v4-router-sender";
 
 /** Bounded per pass — this shares the sync worker with the balance and bridge sweeps. */
 export const AMOUNT_CORRECTION_BATCH_LIMIT = 10;

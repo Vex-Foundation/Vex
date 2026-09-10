@@ -215,8 +215,8 @@ export async function recoverStaleHashlessIntents(
   leaseMs: number,
   limit: number,
 ): Promise<AgentActivityEvent[]> {
-  const candidates = await query<{ id: string | number; session_id: string | null }>(
-    `SELECT id, session_id
+  const candidates = await query<{ id: string | number; session_id: string | null; event_role: string }>(
+    `SELECT id, session_id, event_role
        FROM agent_activity
       WHERE status = 'pending' AND tx_hash IS NULL
         AND event_role = ANY($3::text[])
@@ -232,14 +232,18 @@ export async function recoverStaleHashlessIntents(
     if (!Number.isSafeInteger(activityId)) {
       throw new Error("agent_activity: stale hashless candidate id is not a safe integer");
     }
+    const fee = candidate.event_role === "swap_fee";
+    const failureCode = fee ? "broadcast_error" : "unknown";
     const result = await settleLinkedActivityRows({
       activityId,
       sessionId: candidate.session_id,
       intentOutcome: "crashed_before_broadcast",
-      activityTarget: { status: "definitively_failed", failureCode: "unknown" },
+      activityTarget: { status: "definitively_failed", failureCode },
       activityWrite: (client) => failHashlessActivityEventWith(client, activityId, {
-        failureCode: "unknown",
-        failureReason: "not attempted: stale hashless intent - never signed within the recovery lease",
+        failureCode,
+        failureReason: fee
+          ? "Fee not collected: no transaction hash was staged within the recovery lease. No fee retry happens automatically; the swap outcome is separate."
+          : "not attempted: stale hashless intent - never signed within the recovery lease",
       }),
     });
     if (result.applied) finalized.push(result.row);

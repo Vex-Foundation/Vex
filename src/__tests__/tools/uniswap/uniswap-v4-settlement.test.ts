@@ -7,6 +7,8 @@ import { v4PoolId } from "@tools/uniswap/v4-pool.js";
 import type { V4PoolKey, V4RouteBinding } from "@tools/uniswap/v4-types.js";
 import fixture from "./fixtures/v4-robinhood-refund-receipt.json" with { type: "json" };
 
+import baseReceipt from "./fixtures/v4-base-doppler-receipt.json" with { type: "json" };
+
 const deployment = getUniswapDeployment(4663);
 if (!deployment?.v4) throw new Error("missing test deployment");
 const d = deployment.v4;
@@ -124,5 +126,38 @@ describe("native receipt evidence without call tracing", () => {
     expect(result.executedAmountOutRaw).toBeGreaterThan(0n);
     expect(result.v4Settlement?.outputTransferMatchesPool).toBe(true);
     expect(result.executedAmountOutRaw).toBe(300000000000000000000000n);
+  });
+});
+
+
+describe("Doppler receipt attribution", () => {
+  const base = getUniswapDeployment(8453);
+  if (!base?.v4) throw new Error("Base v4 fixture requires its deployment");
+  const baseV4 = base.v4;
+  const poolKey: V4PoolKey = { currency0: getAddress(base.weth), currency1: getAddress("0x9e00fc92493451eba1c63dd3880d68b622037ba3"), fee: 0x800000, tickSpacing: 200, hooks: getAddress("0xbdf938149ac6a781f94faa0ed45e6a0e984c6544") };
+  const binding: V4RouteBinding = { poolKey, poolId: v4PoolId(poolKey), zeroForOne: true, hookPermissions: 9540, dynamicFee: true, observedLpFee: 7000, universalRouter: baseV4.universalRouter, universalRouterVersion: "2.1.1", permit2: baseV4.permit2 };
+  const ownSwap = (l: UniswapDecodableLog) => l.topics[0] === V4_POOL_SWAP_TOPIC0 && l.topics[2] === topic(binding.universalRouter);
+  it.each(["wrapped single", "hook own first", "hook own last", "missing recipient", "foreign recipient payer"])("%s", variant => {
+    let logs = [...baseReceipt.logs];
+    if (variant === "wrapped single") logs = logs.filter(l => l.topics[0] !== V4_POOL_SWAP_TOPIC0 || ownSwap(l));
+    if (variant === "hook own last") logs = [...logs.filter(l => !ownSwap(l)), ...logs.filter(ownSwap)];
+    if (variant === "missing recipient") logs = logs.filter(l => l.topics[2] !== topic(baseReceipt.from));
+    if (variant === "foreign recipient payer") logs = logs.map(l => {
+      const [selector, , recipient] = l.topics;
+      if (recipient !== topic(baseReceipt.from)) return l;
+      if (!selector || !recipient) throw new Error("Recipient transfer fixture must carry its topics");
+      return { ...l, topics: [selector, topic(wallet), recipient] };
+    });
+    const result = decodeUniswapExecutedLegs({ chainId: 8453, version: "v4", walletAddress: baseReceipt.from,
+      tokenOutAddress: poolKey.currency1, v4Binding: binding, receipt: { logs },
+      v4Transaction: { from: baseReceipt.from, to: baseReceipt.to, valueRaw: baseReceipt.value } });
+    if (variant === "missing recipient" || variant === "foreign recipient payer") {
+      expect(result.executedAmountInRaw).toBeUndefined();
+      expect(result.v4Settlement?.pendingReason).toBe("v4_token_transfer_missing");
+    } else {
+      expect(result.executedAmountInRaw).toBe(99750000000000n);
+      expect(result.executedAmountOutRaw).toBe(9876476984743216817150n);
+      expect(result.v4Settlement?.pendingReason).toBeUndefined();
+    }
   });
 });

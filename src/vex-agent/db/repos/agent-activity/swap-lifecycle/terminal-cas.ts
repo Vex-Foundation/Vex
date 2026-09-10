@@ -496,6 +496,10 @@ export async function failActivityEventWith(
  * so a signer that stages concurrently makes this write miss and keeps the
  * row pending for chain observation.
  */
+export async function failHashlessActivityEvent(id: number, input: FailActivityEventInput): Promise<TerminalCasResult> {
+  return runFailActivityEvent(null, id, input, HANDLER_RETURN, true);
+}
+
 export async function failHashlessActivityEventWith(
   client: PoolClient,
   id: number,

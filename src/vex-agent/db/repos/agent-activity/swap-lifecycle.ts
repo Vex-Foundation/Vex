@@ -297,6 +297,7 @@ export {
   failActivityEvent,
   failActivityEventWith,
   failHashlessActivityEventWith,
+  failHashlessActivityEvent,
 } from "./swap-lifecycle/terminal-cas.js";
 
 // ── Reads ─────────────────────────────────────────────────────────

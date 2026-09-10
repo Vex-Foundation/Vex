@@ -209,6 +209,7 @@ export {
   failActivityEvent,
   failActivityEventWith,
   failHashlessActivityEventWith,
+  failHashlessActivityEvent,
   abortPlannedEvents,
   touchLastChecked,
   clearVerificationStall,
