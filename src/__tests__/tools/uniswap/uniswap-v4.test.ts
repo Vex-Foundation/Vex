@@ -68,7 +68,7 @@ describe("v4 binding and quote", () => {
   it("selects a discovered v4 pool when V2 and V3 have no route", async () => {
     pools.mockResolvedValue([{ chainId: "ethereum", dexId: "uniswap", labels: ["v4"], pairAddress: v4PoolId(key), baseToken: { address: key.currency1 }, quoteToken: { address: zeroAddress }, liquidity: { usd: 10000 } }]);
     const { client } = rpc();
-    const result = await quoteBestRoute(client, { deployment: { ...deployment, v2: undefined, v3: undefined }, tokenIn: { address: deployment.weth, isNative: true, symbol: "ETH", decimals: 18 }, tokenOut: { address: key.currency1, isNative: false, symbol: "USDC", decimals: 6 }, amountIn: 100n });
+    const result = await quoteBestRoute(client, { deployment: { ...deployment, v2: undefined, v3: undefined }, slippageBps: 100, tokenIn: { address: deployment.weth, isNative: true, symbol: "ETH", decimals: 18 }, tokenOut: { address: key.currency1, isNative: false, symbol: "USDC", decimals: 6 }, amountIn: 100n });
     expect(result?.route.version).toBe("v4");
     expect(result?.v4Discovery).toEqual({ indexed: 1, matching: 1, considered: 1, refused: 0, canonical: { probed: 4, initialized: 0, failed: 0 } });
   });

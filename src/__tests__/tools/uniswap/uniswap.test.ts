@@ -122,7 +122,7 @@ describe("quoteBestRoute", () => {
       }
       return undefined;
     });
-    const best = await quoteBestRoute(client, { deployment: ROBINHOOD, tokenIn: tok(TOKEN_A), tokenOut: tok(TOKEN_B), amountIn: 1000n });
+    const best = await quoteBestRoute(client, { deployment: ROBINHOOD, tokenIn: tok(TOKEN_A), tokenOut: tok(TOKEN_B), amountIn: 1000n, slippageBps: 100 });
     expect(best?.route.version).toBe("v3");
     expect(best?.route.fees).toEqual([3000]);
     expect(best?.route.amountOut).toBe(200n);
@@ -130,7 +130,7 @@ describe("quoteBestRoute", () => {
 
   it("returns null when every candidate reverts (no pool)", async () => {
     const best = await quoteBestRoute(mockClient(() => undefined), {
-      deployment: ROBINHOOD, tokenIn: tok(TOKEN_A), tokenOut: tok(TOKEN_B), amountIn: 1000n,
+      deployment: ROBINHOOD, tokenIn: tok(TOKEN_A), tokenOut: tok(TOKEN_B), amountIn: 1000n, slippageBps: 100,
     });
     expect(best).toBeNull();
   });

@@ -19,7 +19,7 @@ const dx = executeLive ? describe : describe.skip;
 const context: ProtocolExecutionContext = { sessionPermission: "restricted", approved: false, walletResolution: { source: "session", evm: null, solana: null }, walletPolicy: { kind: "none" } };
 const cases = [
   { chain: "4663", tokenOut: "0x008Df4b3E857D06c4603Aeb11F267ccD32ce2005", amountIn: "0.0001" },
-  { chain: "8453", tokenOut: "0xC9750053FE947E0961eab0f3E29325F0311DCb07", amountIn: "0.0001" },
+  { chain: "8453", tokenOut: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", amountIn: "0.0001" },
 ];
 const canonicalChains = [
   { chain: "1", symbol: "ETH", tokenOut: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", poolId: "0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27" },

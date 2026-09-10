@@ -51,7 +51,7 @@ describe("wallet-aware V2 net-of-gas ranking", () => {
   });
   it.each(["no_wallet", "estimate_failed"] as const)("%s keeps the explicit gross-output fallback", async scenario => {
     const { c, estimates } = client(scenario === "estimate_failed");
-    const result = await quoteBestRoute(c, { deployment, tokenIn, tokenOut, amountIn: 100n, ...(scenario === "no_wallet" ? {} : { wallet }) });
+    const result = await quoteBestRoute(c, { deployment, tokenIn, tokenOut, amountIn: 100n, slippageBps: 100, ...(scenario === "no_wallet" ? {} : { wallet }) });
     expect(result?.route.version).toBe("v3");
     expect(result?.selectionBasis).toBe("gross_output_gas_comparison_unavailable");
     expect(estimates).toHaveLength(scenario === "no_wallet" ? 0 : 1);

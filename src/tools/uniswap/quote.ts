@@ -195,7 +195,7 @@ export interface QuoteRouteArgs {
   readonly allowV4?: boolean;
   /** Address-only quote context. No key is resolved for gas estimation. */
   readonly wallet?: Address;
-  readonly slippageBps?: number;
+  readonly slippageBps: number;
 }
 
 /**
@@ -256,7 +256,7 @@ export async function quoteBestRoute(
     const route = result.value;
     routes.push(route.version === "v2" && args.wallet
       ? await estimateV2RouteGas(client, { deployment, route, wallet: args.wallet,
-          amountIn, minAmountOut: applySlippage(route.amountOut, args.slippageBps ?? 0),
+          amountIn, minAmountOut: applySlippage(route.amountOut, args.slippageBps),
           tokenInIsNative: tokenIn.isNative, tokenOutIsNative: tokenOut.isNative })
       : route);
   }
