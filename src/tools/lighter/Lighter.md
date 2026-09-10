@@ -695,7 +695,7 @@ unreadable before this arc and why exactly one module parses any of them.
 | Market detail (`orderBookDetails`) | 10000-scale INTEGER | RHC BTC `default_initial_margin_fraction: 5000`, `min_initial_margin_fraction: 200` |
 | Account position row (`account`) | PERCENT STRING | RHC account 24226 ETH row `initial_margin_fraction: "50.00"` |
 | Trade rows | 10000-scale INTEGER | `*_initial_margin_fraction_before` |
-| Account WebSocket frame | UNMEASURED | `"0.05"` appears only in a hand-written fixture; no consumer parses it until the live harness records a real frame |
+| Account WebSocket frame (`account_all_positions`) | PERCENT STRING, same as REST | measured 2026-09-10 (`leverage-BTC-2026-09-10T20-32-06-390Z/07-ws-frame.json`): `"50.00"` for ETH, `"2.00"` for BTC after the 50x change; the hand-written `"0.05"` fixture in `order-stream.test.ts` was wrong and one converter serves both sources |
 
 `src/tools/lighter/margin-fraction.ts` is the ONLY parser and the only place a
 scale changes. 5000 is 50 percent, which is 2.00x. 200 is 2 percent, which is
@@ -820,20 +820,40 @@ it is read LIVE from the account at the agent's next admission, inside
 `cross_initial_margin_requirement` and isolated `allocated_margin`, so it
 reduces the remaining budget the agent sees without any ledger row of its own.
 
-### Live answers the first run must record
+### Live answers, measured on 2026-09-10 (RHC, account 24226)
 
-These are open and MUST be filled from the first live run, not guessed:
+Evidence under `agents-colab/agents_dm/lighter-live-evidence/` (git-ignored; the
+durable rows in the owner's database are the second half of the evidence):
 
-- whether a position row appears for a market that had none when leverage is set
-  on it;
-- the `getTx` executed-status semantics for a type-20 transaction (the
-  withdrawal proof uses `status === 3`; type 20 is unpinned);
-- the unit of `initial_margin_fraction` in the `account_all_positions` WebSocket
-  frame;
-- whether the provider's `cross_initial_margin_requirement` ALREADY includes
-  resting orders. Until it is measured, Vex counts resting-order margin
-  separately, which may double count. That tightens the ceiling, which is the
-  safe direction, and is stated here rather than hidden.
+- **A position row appears for a market that had none.** Before the change the
+  account carried no BTC row; after `UpdateLeverage` to IMF 200 the public account
+  read carried `BTC: initial_margin_fraction "2.00", margin_mode 0, margin_set_flag 1,
+  position "0.00000"`. Reading with `activeOnly: false` is what makes that row
+  visible (`leverage-BTC-2026-09-10T20-32-06-390Z/05-observed.json`).
+- **`getTx` for a type-20 transaction reports `status: 2` once executed.** Hash
+  `2ed160fc...19ee9d6` came back with `status: 2`, `block_height: 20413971`,
+  `executed_at: 0`, `committed_at: 0`, `verified_at: 0`, while the account already
+  held the new terms. So 2 is "executed in an L2 block, not yet committed to L1";
+  3 is the later committed/verified status the Core withdrawal proof waits for.
+  The leverage executor accepts both (`EXECUTED_TX_STATUSES = [2, 3]` in
+  `vex-app/src/main/lighter/leverage-execution.ts`). No failed status was
+  observed; `LIGHTER_LEVERAGE_FAILED_TX_STATUSES` stays empty and an unproven
+  outcome stays reconcilable.
+- **The WebSocket `account_all_positions` frame carries `initial_margin_fraction`
+  as the same percent string REST does** (`"50.00"`, `"2.00"`), so
+  `positionInitialMarginFractionToProviderScale` serves both sources.
+- **`cross_initial_margin_requirement` does NOT include resting orders.** With
+  the two positions open the account read `3.699600`; after a resting GTT buy of
+  0.0164 ETH at 1231.70 (about 2.02 USDG of margin at 10x) it read `3.699580`
+  (`cancel-2026-09-10T20-46-24-920Z/03-imr-before.json`, `07-imr-after.json`).
+  Vex's capital arithmetic therefore adds resting-order margin on top of the
+  provider figure without double counting.
+- **A leverage change on an open position is accepted by the provider.** BTC
+  went from 50x to 25x with 0.00040 BTC open (`leverage-BTC-2026-09-10T20-4...`);
+  the account read `initial_margin_fraction "4.00"` afterwards and
+  `cross_initial_margin_requirement` moved to the sum of the two positions'
+  notional times their fractions. Isolated mode was exercised on SOL (5x,
+  `margin_mode 1`, `"20.00"`) and reverted to 2x cross without a position.
 
 ### Named omissions, with reasons
 

@@ -128,7 +128,7 @@ function deps(options: {
           {
             account_index: ACCOUNT,
             l1_address: WALLET,
-            positions: options.positions ?? [],
+            positions: [...(options.positions ?? [])],
           },
         ],
       })),
@@ -150,7 +150,7 @@ function deps(options: {
     derivePublicKey: vi.fn(),
     vaultUnlocked: () => true,
     now: () => Date.parse("2030-01-01T00:00:00Z"),
-  } as unknown as LighterLeveragePreparationDeps;
+  } satisfies LighterLeveragePreparationDeps;
 }
 
 const input = { environment: "rhc" as const, walletAddress: WALLET };

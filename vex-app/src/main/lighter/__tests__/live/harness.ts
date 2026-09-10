@@ -1300,33 +1300,58 @@ export interface TopOfBookDepth {
  * measurement is a bound, not a guarantee: the book can move between this read
  * and the fill, which is why the order also carries its own limit price.
  */
+/**
+ * The IOC's own price band: a buy is priced at best ask x this, a sell at best
+ * bid / this, so every level inside the band is a level the order may fill at.
+ * ONE owner for the number, shared with `ioc-order.test.ts`.
+ */
+export const LIVE_IOC_CROSSING_BUFFER = 1.005;
+
 export function assertTopOfBookDepth(input: {
   readonly book: unknown;
   readonly side: "asks" | "bids";
   readonly baseAmount: string;
   readonly marketId: number;
   readonly depthMultiple?: number;
+  /** The price band the order itself crosses; defaults to the IOC buffer. */
+  readonly crossingBuffer?: number;
 }): TopOfBookDepth {
   const multiple = input.depthMultiple ?? LIVE_TOP_OF_BOOK_DEPTH_MULTIPLE;
+  const buffer = input.crossingBuffer ?? LIVE_IOC_CROSSING_BUFFER;
   const container = input.book as Record<string, unknown> | null;
   const levels = container?.[input.side];
-  const top = Array.isArray(levels) && levels[0] !== null && typeof levels[0] === "object"
-    ? levels[0] as Record<string, unknown>
-    : null;
+  const rows = Array.isArray(levels)
+    ? levels.filter((level): level is Record<string, unknown> => level !== null && typeof level === "object")
+    : [];
+  const top = rows[0] ?? null;
   if (top === null) {
     throw new LiveHarnessRefusal(
       `Lighter's order book for market ${input.marketId} has no ${input.side} level to cross, so the `
       + "depth this order needs cannot be measured. Nothing was prepared, signed or submitted.",
     );
   }
-  const remainingBaseAmount = requireNumeric(top["remainingBaseAmount"], `top ${input.side} remainingBaseAmount`);
+  // CUMULATIVE depth inside the band the IOC is priced for (measured live on
+  // 2026-09-10: the RHC BTC best ask held 0.00025 while the next levels inside
+  // 0.5% held far more; the order's limit price already admits those levels, so
+  // counting only the top level refused a fill the order could take safely).
+  const topPrice = requireNumeric(top["price"], `top ${input.side} price`);
+  const bandEdge = input.side === "asks" ? topPrice * buffer : topPrice / buffer;
+  let remainingBaseAmount = 0;
+  let levelsInBand = 0;
+  for (const level of rows) {
+    const price = requireNumeric(level["price"], `${input.side} price`);
+    const inside = input.side === "asks" ? price <= bandEdge : price >= bandEdge;
+    if (!inside) break;
+    remainingBaseAmount += requireNumeric(level["remainingBaseAmount"], `${input.side} remainingBaseAmount`);
+    levelsInBand += 1;
+  }
   const requiredBaseAmount = Number(input.baseAmount) * multiple;
   if (remainingBaseAmount < requiredBaseAmount) {
     throw new LiveHarnessRefusal(
-      `Refusing to prepare the order: the best ${input.side === "asks" ? "ask" : "bid"} on market `
-      + `${input.marketId} holds ${remainingBaseAmount} base units, and this run requires at least `
-      + `${requiredBaseAmount} (${multiple}x the order size of ${input.baseAmount}) so the IOC does not walk `
-      + "the book past the price it was sized for. Nothing was prepared, signed or submitted.",
+      `Refusing to prepare the order: the ${input.side} on market ${input.marketId} hold `
+      + `${remainingBaseAmount} base units across ${levelsInBand} level(s) inside the ${buffer}x crossing band, `
+      + `and this run requires at least ${requiredBaseAmount} (${multiple}x the order size of ${input.baseAmount}) `
+      + "so the IOC does not walk the book past the price it was sized for. Nothing was prepared, signed or submitted.",
     );
   }
   return {

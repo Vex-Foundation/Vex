@@ -36,6 +36,16 @@ const scope = {
 };
 const leverage = { marketIndex: 1, initialMarginFraction: 200, marginMode: 0 as const };
 
+/**
+ * The builder reached as an UNTYPED WIRE CALLER. Values that arrive from a
+ * durable row or an IPC edge were never type-checked, and the runtime guards
+ * exist for exactly those; one cast on the FUNCTION type reaches them without
+ * pretending an out-of-set value has the type it violates.
+ */
+const buildFromUncheckedWire = buildLighterUpdateLeverageSigningInput as (
+  input: Record<string, unknown>,
+) => ReturnType<typeof buildLighterUpdateLeverageSigningInput>;
+
 function signedResponse(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return { ok: true, txType: 20, txInfo: "{}", txHash: "0xleverage", ...overrides };
 }
@@ -120,13 +130,12 @@ describe("Lighter leverage signing input bounds", () => {
   });
 
   it("refuses a margin mode outside the closed provider set", () => {
-    expect(() => buildLighterUpdateLeverageSigningInput({
+    // The type already forbids this; the point is that a value arriving from a
+    // durable row or an IPC edge is refused at runtime rather than signed.
+    expect(() => buildFromUncheckedWire({
       ...scope,
       ...leverage,
-      // Cast at the test boundary only: the type already forbids this, and the
-      // point is that a value arriving from a durable row or an IPC edge is
-      // refused at runtime rather than signed.
-      marginMode: 2 as unknown as 0 | 1,
+      marginMode: 2,
     })).toThrow(VexError);
   });
 

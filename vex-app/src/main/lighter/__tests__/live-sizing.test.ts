@@ -230,16 +230,45 @@ describe("the top-of-book depth gate", () => {
     bids: [{ price: "77240.0", remainingBaseAmount: "0.00090" }],
   };
 
-  it("passes when the best opposite level holds at least three times the order size", () => {
+  it("sums every level inside the IOC's own crossing band, not only the best one", () => {
+    // 77260 is inside 77250 x 1.005 = 77636.25, so the order may fill there too.
     const depth = assertTopOfBookDepth({ book, side: "asks", baseAmount: "0.00040", marketId: 1 });
     expect(depth.price).toBe("77250.0");
-    expect(depth.remainingBaseAmount).toBe(0.005);
+    expect(depth.remainingBaseAmount).toBeCloseTo(1.005, 9);
     expect(depth.requiredBaseAmount).toBeCloseTo(0.0004 * LIVE_TOP_OF_BOOK_DEPTH_MULTIPLE, 9);
   });
 
-  it("refuses a thin level rather than letting the order walk the book", () => {
+  it("passes the measured RHC case: a thin best ask backed by deeper levels inside the band", () => {
+    // Measured live 2026-09-10 on BTC (market 1): best ask 0.00025, the order was
+    // 0.00040 at 3x, and the top-level-only gate refused a fill the limit price
+    // already admitted.
+    const thinTop = {
+      asks: [
+        { price: "77240.8", remainingBaseAmount: "0.00025" },
+        { price: "77241.0", remainingBaseAmount: "0.00100" },
+        { price: "77245.0", remainingBaseAmount: "0.00200" },
+      ],
+      bids: [],
+    };
+    const depth = assertTopOfBookDepth({ book: thinTop, side: "asks", baseAmount: "0.00040", marketId: 1 });
+    expect(depth.remainingBaseAmount).toBeCloseTo(0.00325, 9);
+  });
+
+  it("stops summing at the band edge, so depth past the limit price never counts", () => {
+    const farLevel = {
+      asks: [
+        { price: "77250.0", remainingBaseAmount: "0.00050" },
+        { price: "78000.0", remainingBaseAmount: "5.0" },
+      ],
+      bids: [],
+    };
+    expect(() => assertTopOfBookDepth({ book: farLevel, side: "asks", baseAmount: "0.00040", marketId: 1 }))
+      .toThrow(/hold 0\.0005 base units across 1 level\(s\)/);
+  });
+
+  it("refuses a thin side rather than letting the order walk the book", () => {
     expect(() => assertTopOfBookDepth({ book, side: "bids", baseAmount: "0.00040", marketId: 1 }))
-      .toThrow(/holds 0\.0009 base units, and this run requires at least 0\.0012/);
+      .toThrow(/hold 0\.0009 base units across 1 level\(s\) inside the 1\.005x crossing band, and this run requires at least 0\.0012/);
   });
 
   it("refuses an empty side rather than treating an unmeasurable book as deep enough", () => {

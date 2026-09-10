@@ -76,8 +76,20 @@ type Intent = intents.LighterLeverageIntentRow;
 const SIGNED_TX_TTL_MS = 4 * 60_000;
 /** Slack past the wire expiry before non-consumption is treated as proven. */
 const EXPIRY_SAFETY_MS = 60_000;
-/** The provider's executed status, as the Core withdrawal proof pins it. */
-const EXECUTED_TX_STATUS = 3;
+/**
+ * Provider statuses that PROVE a type-20 transaction executed.
+ *
+ * MEASURED LIVE on Robinhood Chain, 2026-09-10 (evidence
+ * `agents_dm/lighter-live-evidence/leverage-BTC-2026-09-10T20-32-06-390Z/06-tx-proof.json`):
+ * the BTC leverage change, hash `2ed160fc...19ee9d6`, came back from `getTx`
+ * with `status: 2`, `block_height: 20413971`, `executed_at: 0`, `committed_at: 0`,
+ * `verified_at: 0`, and the public account read ALREADY carried the new terms
+ * (`initial_margin_fraction: "2.00"`, a fresh BTC row). So 2 is "executed in an
+ * L2 block, not yet committed to L1", which is the operative truth for an
+ * account setting; 3 is the later committed/verified status the Core withdrawal
+ * proof waits for because money leaves the L2 there. Both prove execution here.
+ */
+const EXECUTED_TX_STATUSES: readonly number[] = [2, 3];
 
 /**
  * Provider statuses that PROVE a terminal failure for TxType 20.
@@ -757,7 +769,7 @@ export function proveLighterUpdateLeverageTransaction(input: {
   return {
     hash: intent.signerTxHash,
     status: tx.status,
-    executed: tx.status === EXECUTED_TX_STATUS,
+    executed: EXECUTED_TX_STATUSES.includes(tx.status),
     marketIndex: intent.marketIndex,
     initialMarginFraction: intent.requestedInitialMarginFraction,
     marginMode: intent.requestedMarginMode,

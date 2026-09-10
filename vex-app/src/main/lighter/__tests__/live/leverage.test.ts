@@ -294,8 +294,43 @@ function requireSession(): LiveSession {
   return session;
 }
 
+/**
+ * Reconcile mode: `VEX_LIGHTER_LIVE_LEVERAGE_RECONCILE_INTENT=<intent id>` drives
+ * `reconcileLighterLeverage` for a change this account already submitted (the
+ * Settings card's Reconcile button, with the harness as the human). Nothing is
+ * signed or sent; the outcome is proven from `getTx` and the intent row.
+ */
+const RECONCILE_INTENT_ENV = "VEX_LIGHTER_LIVE_LEVERAGE_RECONCILE_INTENT";
+const reconcileIntentId = process.env[RECONCILE_INTENT_ENV]?.trim() ?? "";
+
 describeLive("a leverage change on the owner's Lighter account, through the Settings executor", () => {
-  it("prepares a proposal, confirms it as the human would, and proves the transaction", { timeout: 900_000 }, async () => {
+  it.runIf(reconcileIntentId.length > 0)(
+    "reconciles a previously submitted change by intent id without signing again",
+    { timeout: 600_000 },
+    async () => {
+      const record = requireEvidence();
+      const live = requireTarget();
+      const { reconcileLighterLeverage } = await import("../../leverage-execution.js");
+      record.record("target", {
+        environment: LIVE_ENVIRONMENT,
+        accountIndex: live.accountIndex,
+        walletAddress: live.walletAddress,
+        reconcileIntentId,
+        consent: "THE HARNESS IS THE HUMAN pressing Reconcile in Settings -> Lighter.",
+      });
+      const result: ApplyLighterLeverageResult = await reconcileLighterLeverage({
+        proposalId: reconcileIntentId,
+      });
+      record.record("reconciled", { intentId: reconcileIntentId, result });
+      const intents = await import("@vex-agent/db/repos/lighter-leverage-intents.js");
+      const row = await intents.find(reconcileIntentId);
+      record.record("intent-row", { row });
+      expect(result.status, JSON.stringify(result)).toBe("completed");
+      expect(row?.executionState, JSON.stringify(row)).toBe("completed");
+    },
+  );
+
+  it.skipIf(reconcileIntentId.length > 0)("prepares a proposal, confirms it as the human would, and proves the transaction", { timeout: 900_000 }, async () => {
     const record = requireEvidence();
     const live = requireTarget();
     const chatSession = requireSession();

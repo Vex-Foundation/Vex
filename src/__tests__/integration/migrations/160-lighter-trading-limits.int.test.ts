@@ -1,5 +1,5 @@
 /**
- * Migration 156 against real PostgreSQL: the constraints, the one-live-market
+ * Migration 160 against real PostgreSQL: the constraints, the one-live-market
  * index, the revision compare-and-set, and concurrent capital admission.
  *
  * WHY THESE BELONG HERE and not in a unit suite. Every assertion below asks a
@@ -36,6 +36,18 @@ const WALLET = "0x00000000000000000000000000000000000f0156";
 const ACCOUNT = 900_156;
 
 const SESSION = "session-156-capital";
+
+/**
+ * The one row a preceding length expectation just proved exists. It THROWS a
+ * named error rather than asserting the absence away, so a regression that
+ * empties the ledger fails on the missing row instead of on an unreadable
+ * property access.
+ */
+function onlyRow<T>(rows: readonly T[], what: string): T {
+  const [row] = rows;
+  if (row === undefined) throw new Error(`expected exactly one ${what}, found none`);
+  return row;
+}
 
 async function clean(): Promise<void> {
   const pool = getPool();
@@ -107,7 +119,7 @@ async function createIntent(input: {
 
 /** Push a live commitment past the observation lag without waiting it out. */
 async function backdateCommitment(intentId: string): Promise<void> {
-  // Migration 157 measures the observation lag from `settled_at`, not from
+  // Migration 161 measures the observation lag from `settled_at`, not from
   // `admitted_at`, and forbids a settlement older than its admission, so both
   // clocks age together: admitted two minutes before the lag, settled one.
   await getPool().query(
@@ -688,7 +700,7 @@ describe("atomic capital admission", () => {
     expect([a.admitted, b.admitted].filter(Boolean)).toHaveLength(1);
     const live = await listLiveLighterCapitalCommitments("rhc", ACCOUNT);
     expect(live).toHaveLength(1);
-    expect(live[0]!.requiredUnits).toBe("700000");
+    expect(onlyRow(live, "live capital commitment").requiredUnits).toBe("700000");
   });
 
   it("excludes an intent's own commitment when it revalidates", async () => {

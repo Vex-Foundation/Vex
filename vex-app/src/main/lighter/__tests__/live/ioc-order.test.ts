@@ -55,6 +55,7 @@ import {
   isDryRun,
   LIVE_ENVIRONMENT,
   LIVE_FLAGS,
+  LIVE_IOC_CROSSING_BUFFER,
   LIVE_ORDER_SIZE_MULTIPLE,
   LIVE_TOP_OF_BOOK_DEPTH_MULTIPLE,
   LiveHarnessRefusal,
@@ -87,7 +88,7 @@ import {
 const describeLive = flagEnabled(LIVE_FLAGS.iocOrder) ? describe : describe.skip;
 
 /** Bounded protection buffer: over the best ask for a buy, under the best bid for a sell, so the IOC can cross. */
-const CROSSING_BUFFER = 1.005;
+const CROSSING_BUFFER = LIVE_IOC_CROSSING_BUFFER;
 
 /**
  * `VEX_LIGHTER_LIVE_IOC_SIDE=sell` turns this step into the reduce-only CLOSE

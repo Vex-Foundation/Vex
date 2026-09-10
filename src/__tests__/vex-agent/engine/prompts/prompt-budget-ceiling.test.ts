@@ -33,8 +33,10 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  * change it, which produced the "max is 2x" answer the owner reported. The
  * dynamic numbers stay in the tool result, not in the prefix; this is the one
  * static clause the owner asked for ("minimal orientation"). Measured on the
- * merged tree: 60_648 -> 60_894, 61_349 -> 61_595, 67_125 -> 67_371,
- * 67_144 -> 67_390, 65_849 -> 66_095, 65_664 -> 65_910.
+ * tree merged with origin/main at 215478d07 (the 0.2.8 release branch, whose
+ * own prompt edits account for a further 20 bytes per mode): 60_648 -> 60_914,
+ * 61_349 -> 61_615, 67_125 -> 67_391, 67_144 -> 67_410, 65_849 -> 66_115,
+ * 65_664 -> 65_930.
  *
  * REVIEWED CEILING MOVE, launchpads arc integration. TWO additions share this
  * raise, and both were measured on this merged tree rather than estimated.
@@ -124,12 +126,12 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  * The coordinator reviews this raise.
  */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 60_894 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 61_595 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 67_371 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 67_390 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 66_095 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 65_910 },
+  { name: "agent / restricted", context: context({}), ceiling: 60_914 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 61_615 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 67_391 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 67_410 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 66_115 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 65_930 },
 ] as const;
 
 beforeAll(() => {

@@ -1,5 +1,5 @@
 /**
- * Migration 157 and the capital ledger's two money races, against real
+ * Migration 161 and the capital ledger's two money races, against real
  * PostgreSQL.
  *
  * WHY ONLY A DATABASE CAN ANSWER THESE. Every assertion below is about what
@@ -151,7 +151,7 @@ async function createIntent(input: {
   );
 }
 
-describe("migration 157: the settlement stamp", () => {
+describe("migration 161: the settlement stamp", () => {
   it("adds settled_at, defaulting to NULL for a commitment that has not settled", async () => {
     await admit("s-new", "1000");
     expect(await commitmentState("s-new")).toMatchObject({ state: "live", settled: false });

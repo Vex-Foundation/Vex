@@ -1,7 +1,7 @@
 -- When a Lighter capital commitment SETTLED at the provider, so the observation
 -- lag can be measured from settlement instead of from admission.
 --
--- WHY THIS COLUMN EXISTS. Migration 156 gave the ledger `admitted_at` only, and
+-- WHY THIS COLUMN EXISTS. Migration 160 gave the ledger `admitted_at` only, and
 -- the self-healing sweep measured its grace window from it. That is the wrong
 -- clock: a limit order that rests for an hour and then fills was admitted long
 -- ago, so its commitment would have been eligible for retirement the instant it
@@ -38,7 +38,7 @@ ALTER TABLE lighter_capital_commitments
   CHECK (settled_at IS NULL OR settled_at >= admitted_at);
 
 -- The sweep's second phase asks for live rows of one account whose settlement
--- stamp has aged past the lag; the live partial index from 156 already narrows
+-- stamp has aged past the lag; the live partial index from 160 already narrows
 -- the account, and this one narrows it to the settled ones.
 CREATE INDEX IF NOT EXISTS lighter_capital_commitments_settled_live
   ON lighter_capital_commitments(environment, account_index, settled_at)

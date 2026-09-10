@@ -125,13 +125,16 @@ function deriveShares(input: {
   const budgetFor = (percent: number): number => (collateralUsdg * percent) / 100;
   const remainingFor = (percent: number): number => budgetFor(percent) - committedUsdg;
 
-  let passingPercent = 0;
-  for (let percent = 1; percent <= 100; percent += 1) {
-    if (remainingFor(percent) >= requiredUsdg * (1 + SHARE_HEADROOM)) {
-      passingPercent = percent;
-      break;
-    }
-  }
+  // THE PASSING HALF IS THE FULL SHARE, not the smallest share that clears the
+  // requirement. Measured live 2026-09-10: the policy's committed margin is a
+  // conservative SUPERSET of `cross_initial_margin_requirement` (it adds the
+  // margin reserved by resting orders, which the provider's own figure was
+  // measured NOT to include), so a "smallest passing percent" derived from the
+  // provider figure alone was refused by the policy (15 percent: budget 4.77,
+  // committed 3.70 + a resting order's 2.02). The full share proves acceptance
+  // whenever the order fits the account at all; the exact boundary belongs to
+  // the unit tests, not to a live experiment with the owner's money.
+  const passingPercent = remainingFor(100) >= requiredUsdg * (1 + SHARE_HEADROOM) ? 100 : 0;
   if (passingPercent === 0) {
     throw new LiveHarnessRefusal(
       `Even a 100 percent share leaves ${remainingFor(100).toFixed(6)} USDG against a requirement of `

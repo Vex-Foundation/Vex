@@ -18,6 +18,16 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { LighterPrivilegedAccountAuth } from "@tools/lighter/client.js";
+import type {
+  LighterAccount,
+  LighterAccountLimitsResponse,
+  LighterAccountOrdersResponse,
+  LighterAccountPosition,
+  LighterMarketDetail,
+} from "@tools/lighter/types.js";
+import type { LighterCapitalShareEvidenceClient } from "@vex-agent/tools/protocols/lighter/capital-share-policy.js";
+
 const limitsRows = new Map<string, number | null>();
 const readLighterTradingLimits = vi.fn(async (environment: string, walletAddress: string) => {
   const key = `${environment}:${walletAddress}`;
@@ -113,17 +123,50 @@ const BTC_MARKET = {
   market_id: 1,
   market_type: "perp",
   status: "active",
+  base_asset_id: 1,
+  quote_asset_id: 0,
   taker_fee: "0.0000",
   maker_fee: "0.0000",
+  liquidation_fee: "0.0000",
+  min_base_amount: "0.00010",
+  min_quote_amount: "10.000000",
+  order_quote_limit: "1000000.000000",
+  is_maker_fee_enabled: false,
+  is_taker_fee_enabled: false,
   supported_size_decimals: 5,
   supported_price_decimals: 1,
   supported_quote_decimals: 6,
   default_initial_margin_fraction: 5000,
   min_initial_margin_fraction: 200,
   mark_price: "77329.8",
-} as never;
+} satisfies LighterMarketDetail;
 
-function account(overrides: Record<string, unknown> = {}) {
+/**
+ * A complete position row. Only the fields a test names carry meaning; the rest
+ * exist because the provider always sends them and the wire type requires them.
+ */
+function position(overrides: Partial<LighterAccountPosition> = {}): LighterAccountPosition {
+  return {
+    market_id: 1,
+    symbol: "BTC",
+    initial_margin_fraction: "50.00",
+    open_order_count: 0,
+    pending_order_count: 0,
+    position_tied_order_count: 0,
+    sign: 0,
+    position: "0.00000",
+    avg_entry_price: "0.0",
+    position_value: "0.000000",
+    unrealized_pnl: "0.000000",
+    realized_pnl: "0.000000",
+    liquidation_price: "0.0",
+    margin_mode: 0,
+    allocated_margin: "0.000000",
+    ...overrides,
+  };
+}
+
+function account(overrides: Partial<LighterAccount> = {}): LighterAccount {
   return {
     account_index: 24226,
     l1_address: WALLET_A_CHECKSUMMED,
@@ -133,7 +176,7 @@ function account(overrides: Record<string, unknown> = {}) {
     total_order_count: 0,
     positions: [],
     ...overrides,
-  } as never;
+  };
 }
 
 function order(overrides: Record<string, unknown> = {}) {
@@ -155,15 +198,26 @@ function order(overrides: Record<string, unknown> = {}) {
  * the account's own exchange fee tier through it, so a test without one proves
  * the refusal, not the arithmetic.
  */
-const AUTH = { accountIndex: 24226, token: "read-only-token" } as never;
+const AUTH: LighterPrivilegedAccountAuth = { accountIndex: 24226, token: "read-only-token" };
 
 /** THIS ACCOUNT's exchange taker-fee tier, in hundredths of a basis point. */
 let accountTakerFeeTicks = 0;
-const getAccountLimits = vi.fn(async () => ({
+const getAccountLimits = vi.fn(async (): Promise<LighterAccountLimitsResponse> => ({
   code: 200,
+  user_tier: "0",
+  user_tier_name: "standard",
+  current_maker_fee_tick: 0,
   current_taker_fee_tick: accountTakerFeeTicks,
 }));
-const client = { getAccountActiveOrders: vi.fn(), getAccountLimits } as never;
+/**
+ * No scenario here leaves the account with resting orders Vex is allowed to
+ * read, so a call is a defect and must surface as one rather than as an empty
+ * commitment that would silently widen the ceiling.
+ */
+const getAccountActiveOrders = vi.fn(async (): Promise<LighterAccountOrdersResponse> => {
+  throw new Error("getAccountActiveOrders must not be called in this suite");
+});
+const client: LighterCapitalShareEvidenceClient = { getAccountActiveOrders, getAccountLimits };
 
 beforeEach(() => {
   limitsRows.clear();
@@ -407,17 +461,7 @@ describe("admitLighterOrderCapitalCommitment: unbounded commitments fail closed"
       accountIndex: 24226,
       account: account({
         total_order_count: 2,
-        positions: [{
-          market_id: 1,
-          symbol: "BTC",
-          initial_margin_fraction: "50.00",
-          open_order_count: 2,
-          pending_order_count: 0,
-          margin_mode: 0,
-          allocated_margin: "0.000000",
-          position: "0.00000",
-          sign: 0,
-        }],
+        positions: [position({ open_order_count: 2 })],
       }),
       intentId: "intent-a",
       kind: "create",
@@ -487,17 +531,14 @@ describe("admitLighterOrderCapitalCommitment: unbounded commitments fail closed"
       environment: "rhc",
       accountIndex: 24226,
       account: account({
-        positions: [{
+        positions: [position({
           market_id: 2,
           symbol: "ETH",
-          initial_margin_fraction: "50.00",
-          open_order_count: 0,
-          pending_order_count: 0,
           margin_mode: 7,
           allocated_margin: "5.000000",
           position: "1.00000",
           sign: 1,
-        }],
+        })],
       }),
       intentId: "intent-a",
       kind: "create",

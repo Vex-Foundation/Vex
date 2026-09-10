@@ -81,6 +81,7 @@ import {
   readAccountRow,
   readApprovalRecord,
   readCleanupMarkers,
+  readRawAccount,
   readRawMarketDetail,
   requireLiveEvidenceDirectory,
   requireLiveTarget,
@@ -220,6 +221,46 @@ describeLive("close every position this run's live steps left open", () => {
       explicitMarketIdsVariable: CLEANUP_MARKET_IDS_ENV,
       targets,
     });
+
+    // RESTING ORDERS FIRST. "Leave the account flat" includes orders that never
+    // filled: a cancel step that died between placing and cancelling (measured
+    // 2026-09-10, the approval's post-decision hook threw after the GTT rested)
+    // leaves an open order that reserves margin and can fill later. One
+    // account-wide cancellation through the production chain, then the closes.
+    const accountBefore = await readRawAccount(EXPECTED_ACCOUNT_INDEX);
+    const restingBefore = Number(accountBefore["total_order_count"] ?? 0);
+    record.record("resting-orders-before", {
+      totalOrderCount: restingBefore,
+      pendingOrderCount: accountBefore["pending_order_count"] ?? null,
+    });
+    if (restingBefore > 0 && !isDryRun()) {
+      const cancelAll = await prepareAndEnqueueApproval({
+        sessionId: live.sessionId,
+        publicName: "lighter__order_cancel_all_prepare",
+        params: { environment: LIVE_ENVIRONMENT, accountIndex: EXPECTED_ACCOUNT_INDEX },
+      });
+      approvalIds.push(cancelAll.approvalId);
+      expect(cancelAll.followUpToolId).toBe("lighter.order.cancelAll");
+      const cancelAllCard = await readApprovalRecord(cancelAll.approvalId);
+      record.record("cancel-all-prepared", {
+        approvalId: cancelAll.approvalId,
+        criticalArgs: cardCriticalArgs(cancelAllCard),
+      });
+      const cancelled = await approveAndResume(cancelAll.approvalId);
+      record.record("cancel-all-decided", { result: cancelled });
+      const flatOrders = await pollUntil(
+        { attempts: 15, intervalMs: 4_000, what: "every resting order cancelled" },
+        () => readRawAccount(EXPECTED_ACCOUNT_INDEX),
+        (after) => Number(after["total_order_count"] ?? 0) === 0,
+      );
+      const lastRead = flatOrders.attempts[flatOrders.attempts.length - 1];
+      record.record("resting-orders-after", {
+        settled: flatOrders.settled,
+        attempts: flatOrders.attempts.length,
+        totalOrderCount: lastRead === undefined ? null : Number(lastRead["total_order_count"] ?? 0),
+      });
+      expect(flatOrders.settled, "resting orders were not all cancelled").toBe(true);
+    }
 
     const outcomes: CleanupOutcome[] = [];
 

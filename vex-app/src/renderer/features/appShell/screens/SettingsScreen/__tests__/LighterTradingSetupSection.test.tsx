@@ -35,6 +35,10 @@ import type {
 import { LighterTradingSetupSection } from "../LighterTradingSetupSection.js";
 import { UNRESOLVED_TITLE } from "../lighter-trading-setup-copy.js";
 
+/** The exact row shapes the overview contract carries, never a stand-in. */
+type LeverageMarketRow = LighterLeverageOverview["markets"][number];
+type UnresolvedRow = LighterLeverageOverview["unresolved"][number];
+
 const WALLET = "0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA";
 
 const getLighterTradingLimits = vi.fn();
@@ -45,7 +49,7 @@ const confirmLighterLeverage = vi.fn();
 const reconcileLighterLeverage = vi.fn();
 
 /** The account's own market: ETH has terms and an open position. */
-const ETH_ROW = {
+const ETH_ROW: LeverageMarketRow = {
   marketId: 0,
   symbol: "ETH",
   current: {
@@ -56,10 +60,10 @@ const ETH_ROW = {
   },
   max: { initialMarginFraction: 200, leverageDisplay: "50.00" },
   openPosition: { size: "0.0050", side: "long" },
-} as const;
+};
 
 /** An active market this account has never touched: no row, market default. */
-const BTC_ROW = {
+const BTC_ROW: LeverageMarketRow = {
   marketId: 1,
   symbol: "BTC",
   current: {
@@ -70,15 +74,7 @@ const BTC_ROW = {
   },
   max: { initialMarginFraction: 200, leverageDisplay: "50.00" },
   openPosition: null,
-} as const;
-
-interface UnresolvedRow {
-  readonly intentId: string;
-  readonly marketId: number;
-  readonly symbol: string;
-  readonly executionState: string;
-  readonly updatedAt: string;
-}
+};
 
 function overview(unresolved: readonly UnresolvedRow[] = []): Result<LighterLeverageOverview> {
   return {
@@ -92,7 +88,7 @@ function overview(unresolved: readonly UnresolvedRow[] = []): Result<LighterLeve
       omitted: { count: 0, reason: "none" },
       unresolved,
     },
-  } as unknown as Result<LighterLeverageOverview>;
+  };
 }
 
 function limits(): Result<LighterTradingLimits> {
@@ -252,7 +248,7 @@ it("offers Reconcile for an unanswered confirmation before the overview is read 
       observations: { liquidationPrice: null, openOrders: { count: 0 } },
       expiresAt: "2026-09-10T12:05:00.000Z",
     },
-  } as unknown as Result<LighterLeverageProposal>;
+  };
   prepareLighterLeverage.mockResolvedValue(proposal);
   // The invocation never answers: main may still have signed, so the card must
   // offer the recorded id rather than invite a second attempt.

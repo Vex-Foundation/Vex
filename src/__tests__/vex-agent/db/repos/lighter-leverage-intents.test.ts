@@ -7,7 +7,7 @@
  *
  * The database's own enforcement (the CHECK constraints, the one-live-market
  * index, and concurrent admission) is proved against real Postgres in
- * `src/__tests__/integration/migrations/156-lighter-trading-limits.int.test.ts`.
+ * `src/__tests__/integration/migrations/160-lighter-trading-limits.int.test.ts`.
  * This file proves the SQL the repo actually sends.
  */
 
@@ -27,6 +27,17 @@ vi.mock("@vex-agent/db/client.js", () => ({
 const intents = await import("@vex-agent/db/repos/lighter-leverage-intents.js");
 
 const INTENT_ID = "lighter-leverage-1";
+
+/**
+ * `reserveSigningWith` only FORWARDS its transaction handle to `queryOneWith`,
+ * which this suite mocks, so the pg `PoolClient` is inert here. The single cast
+ * sits on the FUNCTION type and says exactly that, rather than forging a handle
+ * whose hundred unused methods would prove nothing about the SQL under test.
+ */
+const reserveSigningWithAnyClient = intents.reserveSigningWith as (
+  client: unknown,
+  input: Parameters<typeof intents.reserveSigningWith>[1],
+) => ReturnType<typeof intents.reserveSigningWith>;
 
 function lastSql(): string {
   return String(queryOne.mock.calls.at(-1)?.[0] ?? "");
@@ -125,11 +136,11 @@ describe("the send-admission latch", () => {
 
 describe("consent and reservation guards", () => {
   it("records consent, the revalidation and the reservation in ONE statement", async () => {
-    // Migration 156 forbids a `proposed` row that carries consent, so a
+    // Migration 160 forbids a `proposed` row that carries consent, so a
     // separate consent write is a transition PostgreSQL refuses. Consent, the
     // revalidation, the nonce and the wire expiry move together or not at all.
     expect(
-      await intents.reserveSigningWith({} as never, {
+      await reserveSigningWithAnyClient({}, {
         intentId: INTENT_ID,
         nonceValue: "7",
         txExpiryMs: 1,

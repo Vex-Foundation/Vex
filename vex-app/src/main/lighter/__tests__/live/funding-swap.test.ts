@@ -322,7 +322,12 @@ describeLive("one live ETH to USDG swap on Robinhood Chain, through Vex's Uniswa
     const quoteJson = quote.json as Record<string, unknown> | null;
     record.record("quote", { params: swapParams, quote: quote.output });
 
-    const eligibility = (quoteJson?.["eligibility"] as Record<string, unknown> | undefined)?.["status"]
+    // Measured live 2026-09-10 (after the 0.2.8 swap-quality merge): the quote's
+    // `eligibility` is an object whose discriminant is `kind`; older shapes carried
+    // `status` or a bare string. Every form must read "executable" to proceed.
+    const eligibilityObject = quoteJson?.["eligibility"] as Record<string, unknown> | undefined;
+    const eligibility = eligibilityObject?.["kind"]
+      ?? eligibilityObject?.["status"]
       ?? quoteJson?.["eligibility"];
     if (String(eligibility) !== "executable") {
       throw new LiveHarnessRefusal(

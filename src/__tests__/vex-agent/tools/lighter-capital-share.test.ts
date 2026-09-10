@@ -234,7 +234,9 @@ describe("computeLighterOrderRequiredCapital", () => {
   });
 
   it("refuses an absent account fee tier instead of pricing the order at zero", () => {
-    expect(() => required({ exchangeAccountTakerFeeTicks: undefined as unknown as number }))
+    // The override is spread in, so the key IS present and carries `undefined`:
+    // exactly what a caller that forgot to read the tier hands the arithmetic.
+    expect(() => required({ exchangeAccountTakerFeeTicks: undefined }))
       .toThrow(/exchangeAccountTakerFeeTicks is undefined/);
   });
 

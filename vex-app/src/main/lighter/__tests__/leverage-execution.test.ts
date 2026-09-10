@@ -14,8 +14,14 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LighterLeverageIntentRow } from "@vex-agent/db/repos/lighter-leverage-intents.js";
+import type { LighterNonceStateRow } from "@vex-agent/db/repos/lighter-nonce-state.js";
 import type { LighterUpdateLeverageSignerResult } from "@tools/lighter/signer-leverage.js";
-import type { LighterAccountResponse, LighterMarketDetail } from "@tools/lighter/types.js";
+import type {
+  LighterAccount,
+  LighterAccountResponse,
+  LighterMarketDetail,
+  LighterTxFromL1Response,
+} from "@tools/lighter/types.js";
 import {
   confirmLighterLeverage,
   installLighterLeverageService,
@@ -134,6 +140,37 @@ function accountResponse(fraction: number | null): LighterAccountResponse {
   };
 }
 
+/**
+ * The wallet's account row out of the fixture response. A fixture that lost its
+ * account row must say so: a test built on a missing row would assert against
+ * whatever `undefined` happens to do downstream.
+ */
+function accountRow(fraction: number | null): LighterAccount {
+  const [account] = accountResponse(fraction).accounts;
+  if (!account) {
+    throw new Error("the account fixture must carry exactly the wallet's account row");
+  }
+  return account;
+}
+
+/** A durable nonce-state row as the repo returns it after an observation. */
+function nonceStateRow(): LighterNonceStateRow {
+  return {
+    environment: "rhc",
+    accountIndex: 24226,
+    apiKeyIndex: 4,
+    providerNonce: "7",
+    publicKey: KEY,
+    providerTransactionTime: null,
+    status: "observed",
+    reservedNonce: null,
+    reservationId: null,
+    source: "next_nonce",
+    observedAt: new Date(NOW).toISOString(),
+    updatedAt: new Date(NOW).toISOString(),
+  };
+}
+
 function setup(
   options: {
     readonly intent?: Partial<LighterLeverageIntentRow>;
@@ -155,7 +192,7 @@ function setup(
   /**
    * THE FAKES ENFORCE THE REAL GUARDS. Every repo transition is a guarded
    * `UPDATE` that returns `null` when the row does not satisfy its expected
-   * states and row-level predicates, and migration 156's CHECKs make several of
+   * states and row-level predicates, and migration 160's CHECKs make several of
    * those predicates mandatory rather than defensive. A fake that always
    * succeeded would prove the executor handles the happy path only, which is
    * exactly how a `submission_staged` row came back reported as `completed`.
@@ -183,20 +220,22 @@ function setup(
     accountIndex: 24226,
     apiKeyIndex: 4,
     publicKey: KEY,
-    account: accountResponse(options.livePositionFraction ?? null).accounts[0]!,
+    account: accountRow(options.livePositionFraction ?? null),
+  };
+
+  const client: LighterLeverageExecutionDeps["client"] = {
+    getNextNonce: vi.fn(async () => ({ code: 200, nonce: options.nextNonce ?? 7 })),
+    sendTx: vi.fn(async () =>
+      record("send", { code: 200, tx_hash: HASH, predicted_execution_time_ms: 0 }),
+    ),
+    getTx: vi.fn(async (): Promise<LighterTxFromL1Response> => {
+      throw new Error("not visible yet");
+    }),
+    getAccount: vi.fn(async () => accountResponse(400)),
   };
 
   const deps: LighterLeverageExecutionDeps = {
-    client: {
-      getNextNonce: vi.fn(async () => ({ code: 200, nonce: options.nextNonce ?? 7 })),
-      sendTx: vi.fn(async () =>
-        record("send", { code: 200, tx_hash: HASH, predicted_execution_time_ms: 0 }),
-      ),
-      getTx: vi.fn(async () => {
-        throw new Error("not visible yet");
-      }),
-      getAccount: vi.fn(async () => accountResponse(400)),
-    } as unknown as LighterLeverageExecutionDeps["client"],
+    client,
     preparation: {} as LighterLeverageExecutionDeps["preparation"],
     readIntent: vi.fn(async () => current),
     readSetup: vi.fn(async () => setupResult),
@@ -289,7 +328,7 @@ function setup(
         }),
       ),
     ),
-    recordNonce: vi.fn(async () => ({}) as never),
+    recordNonce: vi.fn(async () => nonceStateRow()),
     releaseNonce: vi.fn(async () => null),
     releaseUnsubmittedNonce: vi.fn(async () => null),
     sign: vi.fn(async () => {
@@ -320,7 +359,9 @@ function setup(
   return { deps, events, current: () => current, patch };
 }
 
-function executedTx(overrides: Record<string, unknown> = {}) {
+function executedTx(
+  overrides: Partial<LighterTxFromL1Response> = {},
+): LighterTxFromL1Response {
   return {
     code: 200,
     hash: HASH,
@@ -362,7 +403,7 @@ beforeEach(() => {
 describe("confirmLighterLeverage", () => {
   it("reserves durably, signs once, stages, sends once and completes on proof", async () => {
     const h = setup();
-    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx() as never);
+    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx());
     const result = await confirmLighterLeverage({ proposalId: INTENT_ID }, undefined, h.deps);
 
     expect(result).toMatchObject({ status: "completed", intentId: INTENT_ID });
@@ -384,7 +425,7 @@ describe("confirmLighterLeverage", () => {
 
   it("reports the live account as the observation, not as the proof", async () => {
     const h = setup();
-    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx() as never);
+    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx());
     // Superseded after success: Lighter now says 20x, the proof still stands.
     vi.mocked(h.deps.client.getAccount).mockResolvedValue(accountResponse(500));
 
@@ -481,7 +522,8 @@ describe("confirmLighterLeverage", () => {
     vi.mocked(h.deps.client.sendTx).mockResolvedValue({
       code: 200,
       tx_hash: "ff".repeat(20),
-    } as never);
+      predicted_execution_time_ms: 0,
+    });
 
     const result = await confirmLighterLeverage({ proposalId: INTENT_ID }, undefined, h.deps);
 
@@ -511,7 +553,7 @@ describe("confirmLighterLeverage", () => {
     // A separate consent write is the transition that failed every ordinary
     // confirmation against real PostgreSQL.
     const h = setup();
-    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx() as never);
+    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx());
     vi.mocked(h.deps.reserveSigning).mockImplementation(async (intent) => {
       expect(intent.consentedAt).toBeNull();
       expect(intent.executionState).toBe("proposed");
@@ -633,7 +675,7 @@ describe("confirmLighterLeverage", () => {
       accountIndex: 24226,
       apiKeyIndex: 4,
       publicKey: "99".repeat(20),
-      account: accountResponse(null).accounts[0]!,
+      account: accountRow(null),
     });
 
     const result = await confirmLighterLeverage({ proposalId: INTENT_ID }, undefined, h.deps);
@@ -688,7 +730,7 @@ describe("confirmLighterLeverage", () => {
 
   it("reconciles instead of signing again when the same proposal is confirmed twice", async () => {
     const h = setup({ intent: { executionState: "submitted", nonceValue: "7", txExpiryMs: TX_EXPIRY, signerTxHash: HASH, consentedAt: new Date(NOW), sendAttemptStartedAt: new Date(NOW) } });
-    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx() as never);
+    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx());
 
     const result = await confirmLighterLeverage({ proposalId: INTENT_ID }, undefined, h.deps);
 
@@ -738,7 +780,7 @@ describe("reconcileLighterLeverage", () => {
 
   it("completes on an exact proof and frees the nonce state", async () => {
     const h = unresolved("ambiguous");
-    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx() as never);
+    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx());
     const result = await reconcileLighterLeverage({ proposalId: INTENT_ID }, h.deps);
     expect(result.status).toBe("completed");
     expect(h.deps.recordNonce).toHaveBeenCalled();
@@ -747,7 +789,7 @@ describe("reconcileLighterLeverage", () => {
   it("rejects only on a status the failed set names, with the raw status reported", async () => {
     const h = unresolved("submitted");
     const deps = { ...h.deps, failedTxStatuses: [9] };
-    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx({ status: 9 }) as never);
+    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx({ status: 9 }));
 
     const result = await reconcileLighterLeverage({ proposalId: INTENT_ID }, deps);
 
@@ -757,7 +799,7 @@ describe("reconcileLighterLeverage", () => {
 
   it("keeps an unnamed non-executed status pending rather than calling it a rejection", async () => {
     const h = unresolved("submitted");
-    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx({ status: 9 }) as never);
+    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx({ status: 9 }));
     const result = await reconcileLighterLeverage({ proposalId: INTENT_ID }, h.deps);
     expect(result.status).toBe("ambiguous");
   });
@@ -854,7 +896,7 @@ describe("reconcileLighterLeverage", () => {
 
   it("keeps a proven outcome when the account read afterwards fails", async () => {
     const h = unresolved("submitted");
-    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx() as never);
+    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx());
     vi.mocked(h.deps.client.getAccount).mockRejectedValue(new Error("provider unavailable"));
 
     const result = await reconcileLighterLeverage({ proposalId: INTENT_ID }, h.deps);
@@ -870,7 +912,7 @@ describe("reconcileLighterLeverage", () => {
     // under this attempt so `completed` never applied. Returning "completed"
     // for a write that did not happen is the defect.
     const h = unresolved("submission_staged");
-    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx() as never);
+    vi.mocked(h.deps.client.getTx).mockResolvedValue(executedTx());
     vi.mocked(h.deps.markCompleted).mockResolvedValue(null);
 
     const result = await reconcileLighterLeverage({ proposalId: INTENT_ID }, h.deps);
@@ -892,13 +934,13 @@ describe("proveLighterUpdateLeverageTransaction", () => {
 
   it("accepts an exact match and reports the executed status", () => {
     expect(
-      proveLighterUpdateLeverageTransaction({ tx: executedTx() as never, intent }),
+      proveLighterUpdateLeverageTransaction({ tx: executedTx(), intent }),
     ).toMatchObject({ executed: true, status: 3, initialMarginFraction: 400 });
   });
 
   it("refuses a transaction of another type", () => {
     expect(() =>
-      proveLighterUpdateLeverageTransaction({ tx: executedTx({ type: 15 }) as never, intent }),
+      proveLighterUpdateLeverageTransaction({ tx: executedTx({ type: 15 }), intent }),
     ).toThrow("does not match");
   });
 
@@ -915,7 +957,7 @@ describe("proveLighterUpdateLeverageTransaction", () => {
       }),
     });
     expect(() =>
-      proveLighterUpdateLeverageTransaction({ tx: tx as never, intent }),
+      proveLighterUpdateLeverageTransaction({ tx, intent }),
     ).toThrow("does not preserve");
   });
 
@@ -925,7 +967,7 @@ describe("proveLighterUpdateLeverageTransaction", () => {
         + `${TX_EXPIRY}}`,
     });
     expect(() =>
-      proveLighterUpdateLeverageTransaction({ tx: tx as never, intent }),
+      proveLighterUpdateLeverageTransaction({ tx, intent }),
     ).toThrow("exactly one integer");
   });
 });

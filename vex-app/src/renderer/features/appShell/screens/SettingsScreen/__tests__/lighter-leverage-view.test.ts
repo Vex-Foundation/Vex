@@ -13,6 +13,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { lighterLeverageOverviewSchema } from "@shared/schemas/lighter-trading-limits.js";
 import type {
   ApplyLighterLeverageResult,
   LighterLeverageOverview,
@@ -202,9 +203,25 @@ describe("which rows the table shows", () => {
 });
 
 describe("unresolved changes", () => {
+  /**
+   * A COMPLETE, schema-valid overview with the one field this parse owns
+   * replaced by whatever main might actually have put there: an older build
+   * that omits it, or a row this build cannot read. Everything else is parsed
+   * through the shared schema, so the fixture cannot drift from the contract.
+   */
+  const VALID_OVERVIEW: LighterLeverageOverview = lighterLeverageOverviewSchema.parse({
+    environment: "rhc",
+    walletAddress: "0x33eF6673BD80cB11fcC41b82Bc2181E65cC4d2fA",
+    accountIndex: 24226,
+    vaultState: "unlocked",
+    markets: [],
+    omitted: { count: 0, reason: "none" },
+    unresolved: [],
+  });
+
   function overviewWith(unresolved: unknown): LighterLeverageOverview {
-    return { markets: [], omitted: { count: 0, reason: "none" }, unresolved } as unknown as
-      LighterLeverageOverview;
+    const carried: Record<string, unknown> = { ...VALID_OVERVIEW, unresolved };
+    return carried as LighterLeverageOverview;
   }
 
   const INTENT: UnresolvedLeverageIntent = {
@@ -361,12 +378,12 @@ describe("small predicates", () => {
 
 describe("a proven change whose account read failed", () => {
   it("still reads as applied, carries the note, and never invites a second change", () => {
-    const result = {
+    const result: ApplyLighterLeverageResult = {
       status: "completed",
       intentId: "intent-1",
       observed: null,
       note: "the account read timed out",
-    } as unknown as ApplyLighterLeverageResult;
+    };
     const view = describeApplyOutcome("BTC", result);
     expect(view.tone).toBe("success");
     expect(view.message).toContain("Applied.");
