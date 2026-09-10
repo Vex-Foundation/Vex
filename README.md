@@ -32,6 +32,7 @@ off with the bag."
 - **Encrypted at rest.** Vault secured with AES-256-GCM + scrypt; the master password lives only in memory and is never written to disk.
 - **Local memory.** Conversation, knowledge, and embeddings in a local Postgres + pgvector store. Your context stays on your box.
 - **Hardened desktop.** Sandboxed renderer, strict CSP, locked IPC boundary between the UI and anything that touches keys.
+- **Perpetuals on your terms.** Perpetual and spot trading on Lighter Core and Robinhood Chain. Leverage per market and the share of the account's capital the agent may commit are set by you in Settings; the agent only reads them, and Vex enforces the share before any order the agent prepares is signed.
 - **Cross-platform.** macOS (Apple Silicon + Intel) and Linux at launch; Windows to follow.
 
 ## Download
