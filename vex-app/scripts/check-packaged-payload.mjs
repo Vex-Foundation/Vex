@@ -303,16 +303,54 @@ export function inspectPlatformSignature(file, platform) {
   // `HashMismatch`, `UnknownError` or `Valid`; only `Valid` is a signature that
   // both exists and verifies against the file's current bytes.
   const literal = file.replace(/'/g, "''");
-  const result = spawnSync(
-    "powershell",
-    ["-NoProfile", "-NonInteractive", "-Command", `(Get-AuthenticodeSignature -LiteralPath '${literal}').Status`],
-    { encoding: "utf8" }
-  );
-  if (result.error !== undefined) {
-    throw new Error(`powershell Get-AuthenticodeSignature could not be run: ${result.error.message}`);
-  }
+  const result = runPowerShell(`(Get-AuthenticodeSignature -LiteralPath '${literal}').Status`);
   const detail = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
   return { verified: detail.split(/\r?\n/)[0]?.trim() === "Valid", detail };
+}
+
+/**
+ * The environment a PowerShell child gets: the parent's, minus `PSModulePath`.
+ *
+ * MEASURED on the windows-2025 release runner (2026-09-10): the packaging step
+ * runs under pwsh 7, which exports a PSModulePath whose first roots are its
+ * own. Windows PowerShell 5.1 spawned with that variable resolved
+ * `Microsoft.PowerShell.Security` to the 7.x copy, could not load it, and the
+ * gate died with "command was found in the module ... but the module could not
+ * be loaded" over a helper Azure Trusted Signing had just signed. Every
+ * PowerShell computes a coherent PSModulePath for itself when the variable is
+ * absent, so the child never inherits one. Windows environment names are
+ * case-insensitive, so the match is too.
+ */
+export function powerShellChildEnvironment(env) {
+  const child = {};
+  for (const [name, value] of Object.entries(env)) {
+    if (name.toUpperCase() === "PSMODULEPATH") continue;
+    child[name] = value;
+  }
+  return child;
+}
+
+/**
+ * pwsh first because it is the shell the runner and the signing step already
+ * use; Windows PowerShell is the fallback on a machine without it. Only a shell
+ * that is absent moves on to the next one: any other launch failure is the
+ * gate's failure and is reported as such.
+ */
+const POWERSHELL_CANDIDATES = ["pwsh", "powershell"];
+
+function runPowerShell(command) {
+  const args = ["-NoProfile", "-NonInteractive", "-Command", command];
+  const env = powerShellChildEnvironment(process.env);
+  for (const shell of POWERSHELL_CANDIDATES) {
+    const result = spawnSync(shell, args, { encoding: "utf8", env });
+    if (result.error === undefined) return result;
+    if (result.error.code !== "ENOENT") {
+      throw new Error(`${shell} Get-AuthenticodeSignature could not be run: ${result.error.message}`);
+    }
+  }
+  throw new Error(
+    `Get-AuthenticodeSignature could not be run: none of ${POWERSHELL_CANDIDATES.join(", ")} is on PATH`
+  );
 }
 
 /**
