@@ -6,7 +6,7 @@ import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.
 // either fails on required-param validation (before any network/chain call) or
 // reads the REAL static chain registry — no external dependency to stub.
 const mockGetSupportedChains = vi.fn();
-vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokensPairs: vi.fn(async () => []) }));
+vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []) }));
 
 vi.mock("@tools/kyberswap/common/client.js", () => ({
   getKyberCommonClient: () => ({ getSupportedChains: () => mockGetSupportedChains() }),

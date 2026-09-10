@@ -6,6 +6,7 @@
 
 import { getKyberAggregatorClient } from "@tools/kyberswap/aggregator/client.js";
 import { readSwapPriceReference } from "@tools/evm-chains/swap-price-reference-read.js";
+import { getKyberWrappedNativeAddress } from "@tools/kyberswap/wrapped-native.js";
 import { valueSwapAtReference, providerUsdDisagrees } from "@tools/evm-chains/swap-price-reference.js";
 import { resolveChainSlug, slugToChainId } from "@tools/kyberswap/chains.js";
 import { KYBERSWAP_FEE_RECEIVER, META_AGGREGATION_ROUTER_V2 } from "@tools/kyberswap/constants.js";
@@ -169,7 +170,8 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
   const safety: QuoteSafety = { tokenIn: safetyIn, tokenOut: safetyOut };
   const summaryRaw = response.data.routeSummary;
   const providerRoute = formatRouteSummary(summaryRaw);
-  const priceReference = await readSwapPriceReference({ chainId, chainSlug: slug, tokenIn, tokenOut });
+  const priceReference = await readSwapPriceReference({ chainId, chainSlug: slug, tokenIn, tokenOut,
+    wrappedNativeAddress: getKyberWrappedNativeAddress(slug) });
   const independent = priceReference === null ? null : valueSwapAtReference(priceReference, {
     amountInRaw: amountIn, amountOutRaw: summaryRaw.amountOut,
     inputDecimals: tokenIn.decimals, outputDecimals: tokenOut.decimals,

@@ -196,8 +196,9 @@ path using its pool reserves; V3 and multihop paths had no measured impact.
 KyberSwap now prefers an independent DexScreener reference when available.
 The existing public price reader and normalized, outlier-screened pool selector
 supply prices for the exact chain and assets, including quote-side inversion
-and wrapped-native resolution. A pair containing both assets can supply both
-prices in one read. Token amounts remain integers through valuation. A
+and wrapped-native resolution. The final-review fix below requires a full pool population per pricing
+asset; a population is reused between assets only when their pricing addresses
+are identical. Token amounts remain integers through valuation. A
 negative provider impact, an unusable USD leg, or an absolute discrepancy above
 one dollar marks the provider reference unreliable; the chosen independent
 reference still decides even for smaller discrepancies. Its source is explicit
@@ -422,4 +423,223 @@ limit; this pass did not certify a production database or spend funds.
 - `src/vex-agent/tools/protocols/uniswap/handlers/swap/quote-handler.ts`
 - `src/vex-agent/tools/protocols/uniswap/handlers/swap/route-quote.ts`
 - `src/vex-agent/tools/registry/swap-venue-guidance.ts`
+- `src/vex-agent/tools/tool-surface-spec/balance-reads/swap-quality-2026-09-09.md`
+
+## Final review fixes
+
+Scope: the three findings from review of `30c4348b5`, without v4 wording,
+fee-policy, slippage-cap, dependency, signing or wrap-permission changes.
+This section supersedes the initial representative-pool selection and claimed
+signal-only diagnostic timeout above. Earlier latency captures remain historical.
+
+### 1. Full price populations and the read budget
+
+`swap-price-reference-read.ts` now calls `readTokenPools` (`/token-pairs/v1`)
+for each pricing asset before using the existing outlier selector. Membership
+in an output token's pair list cannot establish completeness for the input
+asset. Reuse between input and output is allowed only when the resolved
+pricing addresses are identical. The helper never uses representative rows.
+
+Uniswap shares the exact full-output-population promise between its liquidity
+check and independent-price read, so a slow safety check cannot cause an extra
+HTTP request after cache expiration. The liquidity threshold and selection
+predicate are unchanged; it can see the full population instead of a single
+representative when pricing needs that population. Existing consumers that
+only ask for liquidity retain their existing reader.
+
+Worst case per quote: **two DexScreener token HTTP reads**, one full population
+per distinct pricing address, with the existing 30-second cache and request
+deduplication. Cache hits cost zero HTTP reads. A direct V2 quote that already
+has pool-reserve impact needs at most its existing one liquidity read. Compared
+with the former one-population shortcut this adds at most one price request;
+Uniswap no longer adds a third, separate liquidity request. RPC route, balance,
+fee, and safety-provider calls are unchanged by this budget statement.
+
+Regression evidence: the old reader failed three cases, including a stale
+representative output price of 20 against multiple consistent prices of 1.
+The real selector, exact valuation, eligibility owner and AgentScan mapper now
+produce 10 USD input / 5.3 USD output and refuse 47% impact instead of calling
+106 USD output executable. Other cases prohibit inferring input coverage from
+an output pool and permit reuse for identical pricing identities. The one-dollar
+absolute discrepancy flag and shared 15% cap are untouched.
+
+### 2. Complete diagnostic deadline and cancellation ownership
+
+Both RPC facades forward per-request options. Installed viem 2.54.3's fallback
+also drops those options, so read requests with options bind them into each
+endpoint transport for that request. This retains viem's endpoint ordering,
+method scopes and existing retry policy instead of implementing a second
+failover loop. An aborted signal stops the fallback and does not emit an
+endpoint-failure transition. A pinned transport still never advances.
+
+`swap-output-deadline.ts` owns a three-second timer and AbortController. It
+races the complete call, including body reading, against a rejecting deadline;
+timeout aborts the underlying read, and both venue diagnostic helpers map it
+to unavailable. The timer is cleared on success or failure, and Promise.race
+observes late rejections. The original transaction is unchanged and no signer
+is accepted by this helper. A non-cooperating client may finish later, but
+cannot delay the refusal or publish a late diagnostic amount.
+
+Regression evidence: six cases failed against the old implementation. Real
+public clients and RPC forwarding use a fake HTTP endpoint that never answers
+or returns headers then stalls its body. At 2999 ms the diagnostic remains
+pending; at 3000 ms it is unavailable, and amount/shortfall remain null. The
+abort reaches the endpoint and does not advance to a second endpoint. Ordinary
+503 failover with a live signal and already-aborted callers are also tested.
+The live verification harness now combines its own timeout with the incoming
+signal instead of replacing the incoming cancellation.
+
+Reference reading, patterns only:
+
+- `agents-colab/metamask-core/packages/network-controller/src/rpc-service/rpc-service.ts`,
+  especially `isConnectionError` and `retryFilterPolicy`, plus its
+  `rpc-service.test.ts` service-failure and non-retriable-error cases. Adopted:
+  classify actual connection/server failures before changing endpoint health.
+  The checkout has no dedicated AbortSignal case in these two files; an
+  AbortError is not a recognized connection error. Vex therefore checks the
+  caller signal explicitly, rather than assuming every fetch error is an
+  endpoint failure. Rejected: copying its circuit breaker or retry policy,
+  because Vex already owns method-specific failover and forbids signing retries.
+- `agents-colab/vscode/src/vs/base/common/async.ts` (`raceCancellation`,
+  `raceCancellationError`, `raceTimeout`) and
+  `src/vs/base/test/common/async.test.ts` cancellation and both timeout-race
+  outcomes. Adopted: independent caller deadline and cleanup whichever outcome
+  wins. Rejected: returning an ambiguous undefined value inside the primitive;
+  the deadline rejects, and the existing diagnostic boundary returns null.
+  Also abort the underlying operation, rather than only abandon the wait.
+
+### 3. Native pricing coverage without wrap authority
+
+KyberSwap passes `getKyberWrappedNativeAddress(slug)` as an optional, explicitly
+pricing-only identity to the shared reader. This registry already covers every
+aggregator chain. No entries or permissions in `evm-chains/wrapped-native.ts`
+were changed. Uniswap retains its existing verified deployment identities.
+
+The quote-handler table test enumerates all 18 aggregator chains and asserts
+that the second full-pool read names the venue's wrapped-native address.
+Restoring the old lookup caused exactly ten failures and eight passes. Empty
+populations return no independent reference and never crash the quote.
+
+Live probe, 2026-09-10 10:03:38-10:03:45 UTC: one sequential full-pool request
+per chain, spaced by 300 ms. No wallet, key or transaction was accessed. Evidence:
+`src/__tests__/fixtures/swap-quality/native-reference-coverage.json`. Reproduce:
+
+```sh
+pnpm exec tsx src/vex-agent/scripts/measure-swap-native-reference.ts
+```
+
+| Chain key | Returned rows matching chain | Usable native price |
+| --- | --- | --- |
+| ethereum | 30 | yes |
+| bsc | 30 | yes |
+| arbitrum | 30 | yes |
+| polygon | 30 | yes |
+| optimism | 30 | yes |
+| avalanche | 30 | yes |
+| base | 30 | yes |
+| linea | 30 | yes |
+| mantle | 30 | yes |
+| sonic | 30 | yes |
+| berachain | 30 | yes |
+| ronin | 0 | no |
+| unichain | 30 | yes |
+| hyperevm | 30 | yes |
+| plasma | 30 | yes |
+| monad | 30 | yes |
+| megaeth | 20 | yes |
+| robinhood | 30 | yes |
+
+This is point-in-time indexing evidence, not a freshness guarantee. Ronin
+answered with an empty array, so it correctly has no independent reference.
+
+### Scope and file-size decisions
+
+No file edited in this fix round was already 750 lines long. New deadline and
+request-option mechanics are named sibling modules; existing facades stay
+stable. Test changes outside the new regressions add the full-pool method to
+existing provider fakes so quote tests remain isolated from live HTTP.
+
+Before each Vitest or TypeScript process, `pgrep -f "vitest|tsc --noEmit"
+--ignore-ancestors` must report no matches. The ancestor exclusion removes the
+execution wrapper whose command itself contains that pattern, not another
+verifier. All test runs use `--maxWorkers=3`; no two verifiers run together.
+
+### Final review fix gates
+
+All commands below completed with exit 0, after the process-presence checks
+above. These results are for the uncommitted review fixes on `30c4348b5`.
+
+| Gate | Result |
+| --- | --- |
+| Affected suites below | 10 files, 129 tests passed |
+| Requested broad Vitest gate below | 618 files passed, 4 skipped; 10698 tests passed, 5 skipped |
+| `pnpm exec tsc --noEmit -p tsconfig.json` | No diagnostics |
+| `pnpm run check:em-dash` | No added em dashes |
+| `pnpm run test:unsafe-escapes` | No unsafe escapes, focused tests, deletions or baseline edits |
+| `git diff --check` | Clean |
+
+```sh
+pnpm exec vitest run --maxWorkers=3 src/__tests__/tools/evm-chains/rpc-diagnostic-deadline.test.ts src/__tests__/tools/evm-chains/rpc-transport-behaviour.test.ts src/__tests__/tools/evm-chains/swap-price-reference-read.test.ts src/__tests__/tools/evm-chains/refused-swap-output.test.ts src/__tests__/tools/evm-chains/swap-output-shortfall.test.ts src/__tests__/vex-agent/tools/kyberswap-handlers/quote-eligibility.test.ts src/__tests__/vex-agent/tools/uniswap-quote-eligibility.test.ts src/__tests__/vex-agent/tools/swap-reference-estimates.test.ts src/__tests__/vex-agent/agentscan/mapper.test.ts src/__tests__/dexscreener/s11a-consumer-characterization.test.ts
+pnpm exec vitest run --maxWorkers=3 src/__tests__/tools src/__tests__/vex-agent/tools src/__tests__/vex-agent/agentscan src/__tests__/vex-agent/engine/prompts
+pnpm exec tsc --noEmit -p tsconfig.json
+pnpm run check:em-dash
+pnpm run test:unsafe-escapes
+git diff --check
+```
+
+The expected red-on-old runs were: three price-population failures; six
+cancellation/deadline failures; ten native-chain failures (eight covered
+chains still passed). The broad gate's opt-in tests remain skipped; the
+explicit native-reference probe above covers the live HTTP change in this
+round. No signatures, broadcasts or database mutations were performed.
+
+Remaining limits: the provider's full-pool endpoint still returns its own
+bounded window (30 rows on most measured chains), and the 30-second local
+cache cannot prove upstream freshness. Ronin supplied no independent native
+price. Existing no-reference behavior remains. An adapter that ignores abort
+can retain its own pending work, but the diagnostic race returns unavailable
+at its deadline and ignores late completion. The only related scope expansion
+was sharing Uniswap liquidity's full-pool request to preserve the two-request
+budget; thresholds and signing checks were not changed.
+
+Changed files in this review-fix round:
+
+- `src/__tests__/fixtures/swap-quality/native-reference-coverage.json`
+- `src/__tests__/tools/evm-chains/rpc-diagnostic-deadline.test.ts`
+- `src/__tests__/tools/evm-chains/swap-price-reference-read.test.ts`
+- `src/__tests__/tools/evm-chains/swap-quality-live.test.ts`
+- `src/__tests__/vex-agent/tools/kyberswap-handlers/negative-price-impact-note.test.ts`
+- `src/__tests__/vex-agent/tools/kyberswap-handlers/pre-sign-total-debit.test.ts`
+- `src/__tests__/vex-agent/tools/kyberswap-handlers/price-floor-gate.test.ts`
+- `src/__tests__/vex-agent/tools/kyberswap-handlers/quote-balance-eligibility.test.ts`
+- `src/__tests__/vex-agent/tools/kyberswap-handlers/quote-bound-execute.test.ts`
+- `src/__tests__/vex-agent/tools/kyberswap-handlers/quote-eligibility.test.ts`
+- `src/__tests__/vex-agent/tools/kyberswap-handlers/quote-safety.test.ts`
+- `src/__tests__/vex-agent/tools/kyberswap-handlers/registry-validation.test.ts`
+- `src/__tests__/vex-agent/tools/kyberswap-handlers/swap-fee.test.ts`
+- `src/__tests__/vex-agent/tools/kyberswap-handlers/venue-unavailable-fallback.test.ts`
+- `src/__tests__/vex-agent/tools/kyberswap-handlers/vex-fee-record.test.ts`
+- `src/__tests__/vex-agent/tools/uniswap-balance-preflight-handler.test.ts`
+- `src/__tests__/vex-agent/tools/uniswap-debit-plan-binding.test.ts`
+- `src/__tests__/vex-agent/tools/uniswap-execute-final-request-gate.test.ts`
+- `src/__tests__/vex-agent/tools/uniswap-execute-staged-broadcast.test.ts`
+- `src/__tests__/vex-agent/tools/uniswap-fee-ordering.test.ts`
+- `src/__tests__/vex-agent/tools/uniswap-post-buy-delivery.test.ts`
+- `src/__tests__/vex-agent/tools/uniswap-pre-sign-revert-refusal.test.ts`
+- `src/__tests__/vex-agent/tools/uniswap-pre-sign-total-debit.test.ts`
+- `src/__tests__/vex-agent/tools/uniswap-quote-balance-eligibility.test.ts`
+- `src/__tests__/vex-agent/tools/uniswap-quote-bound-execute.test.ts`
+- `src/__tests__/vex-agent/tools/uniswap-quote-eligibility.test.ts`
+- `src/__tests__/vex-agent/tools/uniswap-tracked-token-pin.test.ts`
+- `src/__tests__/vex-agent/tools/uniswap-vex-fee-presign-binding.test.ts`
+- `src/tools/evm-chains/rpc-request-options.ts`
+- `src/tools/evm-chains/rpc-transport.ts`
+- `src/tools/evm-chains/swap-output-deadline.ts`
+- `src/tools/evm-chains/swap-price-reference-read.ts`
+- `src/tools/kyberswap/evm/observe-refused-output.ts`
+- `src/tools/uniswap/observe-refused-output.ts`
+- `src/vex-agent/scripts/measure-swap-native-reference.ts`
+- `src/vex-agent/tools/protocols/kyberswap/handlers/swap/quote-handler.ts`
+- `src/vex-agent/tools/protocols/uniswap/handlers/swap/quote-handler.ts`
+- `src/vex-agent/tools/protocols/uniswap/handlers/swap/quote-safety.ts`
 - `src/vex-agent/tools/tool-surface-spec/balance-reads/swap-quality-2026-09-09.md`

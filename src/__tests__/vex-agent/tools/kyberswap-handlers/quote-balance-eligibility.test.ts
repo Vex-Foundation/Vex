@@ -29,7 +29,7 @@ const mockReadErc20Metadata = vi.fn(async (_slug: string, address: string) => ({
 
 const mockPlanKyberAllowance = vi.fn().mockResolvedValue({ needsReset: false, needsApprove: true });
 
-vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokensPairs: vi.fn(async () => []) }));
+vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []) }));
 
 vi.mock("@tools/kyberswap/evm-utils.js", async () => ({
   ...(await import("./evm-client.test-fixtures.js")).kyberEvmClientMocks(),

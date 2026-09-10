@@ -97,7 +97,9 @@ describe.skipIf(process.env.VEX_SWAP_QUALITY_LIVE !== "1")("read-only live swap 
           throw new Error("Read-only probe blocked a non-read RPC method");
         }
         const start = performance.now();
-        const response = await originalFetch(input, { ...init, signal: AbortSignal.timeout(12_000) });
+        const timeout = AbortSignal.timeout(12_000);
+        const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
+        const response = await originalFetch(input, { ...init, signal });
         calls.push({ method, elapsedMs: Math.round(performance.now() - start) });
         await new Promise((resolve) => setTimeout(resolve, 250));
         return response;

@@ -47,9 +47,10 @@
  *   in each endpoint's `methods` scope, never a hostname test here.
  */
 
-import { fallback, http, createTransport, type EIP1193RequestFn, type Transport } from "viem";
+import { fallback, http, createTransport, type EIP1193RequestFn, type EIP1193RequestOptions, type Transport } from "viem";
 
 import logger from "../../utils/logger.js";
+import { bindRpcRequestOptions } from "./rpc-request-options.js";
 import {
   classifyRpcFailure,
   resolveRpcEndpoints,
@@ -381,22 +382,15 @@ export function buildEvmTransport(chainId: number, options: EvmTransportOptions 
     let inner: ReturnType<Transport> | undefined;
     let endpoints: readonly RpcEndpoint[] = [];
 
-    const build = async (): Promise<ReturnType<Transport>> => {
-      if (inner !== undefined) return inner;
-      const verified = await verifiedEndpointsFor(chainId, options);
-      refuseWhenNoEndpointRemains(chainId, verified);
-      endpoints = verified.kept;
-      if (endpoints.length === 0) {
-        throw new Error(`No RPC endpoint is configured or bundled for chain ${chainId}.`);
-      }
-      const transports = endpoints.map((endpoint) => toHttpTransport(endpoint, options));
+    const instantiate = (requestOptions?: EIP1193RequestOptions): ReturnType<Transport> => {
+      const transports = endpoints.map((endpoint) => bindRpcRequestOptions(toHttpTransport(endpoint, options), requestOptions));
       const [only] = transports;
       // A list of one is a plain `http` transport: `fallback` over a single
       // entry would add a layer that can never fail over, and would swallow the
       // endpoint's own key in the observability hook below.
       const built = transports.length === 1 && only !== undefined
         ? only(config)
-        : fallback(transports, { rank: false, shouldThrow: stopOnError })(config);
+        : fallback(transports, { rank: false, shouldThrow: (error) => requestOptions?.signal?.aborted === true || stopOnError(error) })(config);
 
       // Failover observability. `onResponse` fires for every response, so the
       // event is emitted only on the ERROR branch and only when the class is one
@@ -406,7 +400,7 @@ export function buildEvmTransport(chainId: number, options: EvmTransportOptions 
       if (typeof onResponse === "function") {
         onResponse((data: unknown) => {
           const event = data as { status?: string; error?: unknown; method?: string; transport?: { config?: { key?: string } } };
-          if (event.status !== "error") return;
+          if (event.status !== "error" || requestOptions?.signal?.aborted) return;
           const failure: RpcFailureClass = classifyRpcFailure(event.error);
           if (!shouldFailoverOn(failure)) return;
           const fromHost = event.transport?.config?.key ?? "unknown";
@@ -421,8 +415,19 @@ export function buildEvmTransport(chainId: number, options: EvmTransportOptions 
           });
         });
       }
-      inner = built;
       return built;
+    };
+
+    const build = async (): Promise<ReturnType<Transport>> => {
+      if (inner !== undefined) return inner;
+      const verified = await verifiedEndpointsFor(chainId, options);
+      refuseWhenNoEndpointRemains(chainId, verified);
+      endpoints = verified.kept;
+      if (endpoints.length === 0) {
+        throw new Error(`No RPC endpoint is configured or bundled for chain ${chainId}.`);
+      }
+      inner = instantiate();
+      return inner;
     };
 
     return createTransport(
@@ -434,9 +439,11 @@ export function buildEvmTransport(chainId: number, options: EvmTransportOptions 
         // table, and a second layer would multiply attempts invisibly.
         retryCount: 0,
         timeout: config.timeout,
-        request: (async (args) => {
+        request: (async (args, requestOptions) => {
           const transport = await build();
-          return transport.request(args);
+          requestOptions?.signal?.throwIfAborted();
+          // Request-local endpoint bindings carry options through viem fallback.
+          return (requestOptions === undefined ? transport : instantiate(requestOptions)).request(args, requestOptions);
         }) as EIP1193RequestFn,
       },
       { chainId },
@@ -563,9 +570,10 @@ export function buildPinnedEvmTransport(
         type: "vex-evm-pinned",
         retryCount: 0,
         timeout: config.timeout,
-        request: (async (args) => {
+        request: (async (args, requestOptions) => {
           const transport = await build();
-          return transport.request(args);
+          requestOptions?.signal?.throwIfAborted();
+          return transport.request(args, requestOptions);
         }) as EIP1193RequestFn,
       },
       { chainId },

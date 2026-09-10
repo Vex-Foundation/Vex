@@ -27,7 +27,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { uniswapSpendabilityFake } from "./_uniswap-spendability-fake.js";
 import { getAddress, parseUnits } from "viem";
-import { readTokensPairs } from "@tools/dexscreener/price-read.js";
+import { readTokenPools } from "@tools/dexscreener/price-read.js";
 import { validateTokensPairsResponse } from "@tools/dexscreener/validation/pairs.js";
 import dexFixture from "../../fixtures/swap-quality/dex-robinhood.json" with { type: "json" };
 
@@ -83,7 +83,7 @@ vi.mock("@tools/uniswap/safety.js", () => ({
   probeFotSignal: vi.fn(async () => false),
   UNISWAP_MIN_LIQUIDITY_USD: 5000,
 }));
-vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokensPairs: vi.fn(async () => []) }));
+vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []) }));
 vi.mock("@tools/evm-chains/registry.js", () => ({ getLocalChain: vi.fn(() => ({ chainId: CHAIN_ID })) }));
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddress: vi.fn(() => WALLET),
@@ -136,7 +136,7 @@ function run() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(readTokensPairs).mockResolvedValue([]);
+  vi.mocked(readTokenPools).mockResolvedValue([]);
 });
 
 describe("Uniswap routes without a pool-reserve impact", () => {
@@ -146,7 +146,7 @@ describe("Uniswap routes without a pool-reserve impact", () => {
   ])("uses the independent pair reference for output $output", async ({ output, kind, impact }) => {
     const pair = validateTokensPairsResponse(dexFixture)[0];
     if (pair === undefined) throw new Error("Live reference fixture is empty");
-    vi.mocked(readTokensPairs).mockResolvedValue([{ ...pair,
+    vi.mocked(readTokenPools).mockResolvedValue([{ ...pair,
       baseToken: { address: TOKEN_OUT, symbol: "OUT", name: "Output" },
       quoteToken: { address: TOKEN_IN, symbol: "IN", name: "Input" },
       priceUsd: "1", priceNative: "0.001" }]);
@@ -157,6 +157,8 @@ describe("Uniswap routes without a pool-reserve impact", () => {
     expect(data.priceImpactReference).toBe("dexscreener");
     expect(data.priceImpact).toBeCloseTo(impact);
     expect(data.eligibility.impactMeasured).toBe(true);
+    // The output population is shared with liquidity; no third token request.
+    expect(readTokenPools).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -44,7 +44,7 @@ const SESSION_EVM = {
   privateKey: ("0x" + "ab".repeat(32)) as `0x${string}`,
 };
 
-vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokensPairs: vi.fn(async () => []) }));
+vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []) }));
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddress: () => SESSION_EVM.address,

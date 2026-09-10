@@ -143,7 +143,7 @@ vi.mock("@tools/uniswap/revert-mapping.js", () => ({
   classifyPreBroadcastFailure: vi.fn(() => ({ failureCode: "unknown", failureReason: "unused" })),
 }));
 vi.mock("@tools/dexscreener/price-read.js", () => ({
-  readTokensPairs: vi.fn(async () => []),
+  readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []),
 }));
 vi.mock("@tools/kyberswap/token-api/client.js", () => ({
   getKyberTokenApiClient: vi.fn(() => ({ getHoneypotFotInfo: (...a: unknown[]) => getHoneypotFotInfo(...a) })),

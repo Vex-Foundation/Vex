@@ -1,14 +1,14 @@
 import { decodeFunctionData, decodeFunctionResult, decodeAbiParameters, encodeFunctionData, type Address, type Hex } from "viem";
 import { UNISWAP_V2_ROUTER_ABI as v2, UNISWAP_V3_SWAP_ROUTER_02_ABI as v3 } from "./abis.js";
 import type { SwapOutputCallClient } from "@tools/evm-chains/swap-output-shortfall.js";
+import { readSwapOutputWithinDeadline } from "@tools/evm-chains/swap-output-deadline.js";
 
 /** Read-only post-refusal observation. The diagnostic calldata cannot leave this function. */
 export async function observeRefusedUniswapOutput(client: SwapOutputCallClient, account: Address,
   tx: { readonly to: Address; readonly data: Hex; readonly value: bigint }): Promise<string | null> {
   try {
     const decoded = decodeFunctionData({ abi: [...v2, ...v3], data: tx.data });
-    const call = async (data: Hex) => client.call({ account, to: tx.to, data, value: tx.value,
-      requestOptions: { signal: AbortSignal.timeout(3000) } });
+    const call = async (data: Hex) => readSwapOutputWithinDeadline(client, { account, to: tx.to, data, value: tx.value });
     if (decoded.functionName === "swapExactETHForTokens") {
       const result = await call(encodeFunctionData({ abi: v2, functionName: decoded.functionName,
         args: [1n, decoded.args[1], decoded.args[2], decoded.args[3]] }));

@@ -12,6 +12,7 @@ import { resolveSelectedAddress } from "@vex-agent/tools/internal/wallet/resolve
 import logger from "@utils/logger.js";
 import { swapFeeCeiling, SWAP_FEE_HEADROOM_BPS } from "@tools/evm-chains/swap-fee-ceiling.js";
 import { readSwapPriceReference } from "@tools/evm-chains/swap-price-reference-read.js";
+import { readTokenPools } from "@tools/dexscreener/price-read.js";
 import { valueSwapAtReference } from "@tools/evm-chains/swap-price-reference.js";
 
 import type { ToolResult } from "../../../../types.js";
@@ -148,14 +149,18 @@ export async function uniswapSwapQuote(
 
   // Safety signals (LOCKED #5): factory allowlist + min-liquidity + FoT - never gate here.
   const client = getUniswapPublicClient(deployment);
+  // One output request serves liquidity and independent pricing, even if the
+  // other safety checks take longer than the price reader's cache lifetime.
+  const outputPools = quoted.priceImpact === undefined && !tokenOut.isNative
+    ? readTokenPools(deployment.key, tokenOut.address) : undefined;
   const [factory, liquidity, fotSuspected] = await Promise.all([
     checkRouteFactories(client, deployment, quoted.route),
-    checkOutputLiquidity(deployment, tokenOut),
+    checkOutputLiquidity(deployment, tokenOut, outputPools),
     tokenOut.isNative ? Promise.resolve(false) : probeFotSignal(client, deployment, tokenOut.address),
   ]);
   const safety: UniswapSafetyBlock = { factory, liquidity, fot: { suspected: fotSuspected } };
   const priceReference = quoted.priceImpact !== undefined ? null
-    : await readSwapPriceReference({ chainId: deployment.chainId, chainSlug: deployment.key, tokenIn, tokenOut });
+    : await readSwapPriceReference({ chainId: deployment.chainId, chainSlug: deployment.key, tokenIn, tokenOut, outputPools });
   const independent = priceReference === null ? null : valueSwapAtReference(priceReference, {
     amountInRaw: feeCharge.swapAmountRaw.toString(), amountOutRaw: quoted.amountOut.toString(),
     inputDecimals: tokenIn.decimals, outputDecimals: tokenOut.decimals,

@@ -7,6 +7,7 @@
  */
 
 import { readTokensPairs } from "@tools/dexscreener/price-read.js";
+import type { DexPair } from "@tools/dexscreener/types.js";
 import { UNISWAP_MIN_LIQUIDITY_USD } from "@tools/uniswap/safety.js";
 import type { UniswapDeployment } from "@tools/uniswap/deployments.js";
 import type { UniswapToken } from "@tools/uniswap/types.js";
@@ -22,11 +23,13 @@ export type UniswapSafetyBlock = {
 export async function checkOutputLiquidity(
   deployment: UniswapDeployment,
   tokenOut: UniswapToken,
+  /** Share the quote's full pool request when it also needs independent pricing. */
+  fullPools?: Promise<readonly DexPair[]>,
 ): Promise<UniswapSafetyBlock["liquidity"]> {
   // Native output → WETH: liquidity is not a scam signal for the native wrapper.
   if (tokenOut.isNative) return { checked: true, usd: null, aboveThreshold: true };
   try {
-    const pairs = await readTokensPairs(deployment.key, tokenOut.address);
+    const pairs = await (fullPools ?? readTokensPairs(deployment.key, tokenOut.address));
     let bestUsd: number | null = null;
     for (const pair of pairs) {
       if (pair.baseToken?.address?.toLowerCase() !== tokenOut.address.toLowerCase()) continue;

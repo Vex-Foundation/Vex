@@ -108,7 +108,7 @@ vi.mock("@tools/uniswap/safety.js", () => ({
   probeFotSignal: vi.fn(async () => false),
   UNISWAP_MIN_LIQUIDITY_USD: 5000,
 }));
-vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokensPairs: vi.fn(async () => []) }));
+vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []) }));
 vi.mock("@tools/evm-chains/registry.js", () => ({ getLocalChain: vi.fn(() => ({ chainId: CHAIN_ID })) }));
 // The fee-eligibility oracle is a token fact, never a network call in a unit test.
 vi.mock("@tools/kyberswap/token-api/client.js", () => ({

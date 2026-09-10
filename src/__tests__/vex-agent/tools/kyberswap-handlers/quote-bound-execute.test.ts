@@ -47,7 +47,7 @@ const SESSION_EVM = {
 const mockResolveSelectedAddress = vi.fn((..._args: unknown[]) => SESSION_EVM.address);
 const mockResolveSigningWallet = vi.fn((..._args: unknown[]) => SESSION_EVM);
 
-vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokensPairs: vi.fn(async () => []) }));
+vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []) }));
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddress: (...args: unknown[]) => mockResolveSelectedAddress(...args),
