@@ -20,7 +20,9 @@ export async function observeRefusedUniswapOutput(client: SwapOutputCallClient, 
     if (decoded.functionName !== "multicall") return null;
     const [deadline, calls] = decoded.args;
     if (calls.length < 1 || calls.length > 2) return null;
-    const first = decodeFunctionData({ abi: v3, data: calls[0] });
+    const head = calls[0];
+    if (head === undefined) return null;
+    const first = decodeFunctionData({ abi: v3, data: head });
     if (first.functionName !== "exactInputSingle" && first.functionName !== "exactInput") return null;
     const body: Hex[] = [first.functionName === "exactInputSingle"
       ? encodeFunctionData({ abi: v3, functionName: first.functionName, args: [{ ...first.args[0], amountOutMinimum: 1n }] })
