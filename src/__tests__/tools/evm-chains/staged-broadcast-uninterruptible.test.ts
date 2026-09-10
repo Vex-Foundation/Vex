@@ -53,6 +53,7 @@ describe("signStageBroadcast — the never-interrupt window", () => {
     const publicClient = Object.assign(
       createPublicClient({ chain: mainnet, transport: DEAD_TRANSPORT }),
       {
+        getTransactionCount: async () => 7,
         estimateGas: async () => 21_000n,
         sendRawTransaction,
         waitForTransactionReceipt,

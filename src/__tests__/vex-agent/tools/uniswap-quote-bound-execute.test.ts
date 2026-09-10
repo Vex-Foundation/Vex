@@ -84,6 +84,7 @@ vi.mock("@tools/uniswap/safety.js", () => ({
   probeFotSignal: vi.fn(async () => false),
   UNISWAP_MIN_LIQUIDITY_USD: 5000,
 }));
+vi.mock("@tools/uniswap/refresh-route.js", () => ({ refreshUniswapRoute: vi.fn() }));
 vi.mock("@tools/uniswap/receipt-decoder.js", () => ({
   decodeUniswapExecutedLegs: vi.fn(() => ({ executedAmountInRaw: 1n, executedAmountOutRaw: 1n })),
 }));
@@ -91,7 +92,7 @@ vi.mock("@tools/uniswap/revert-mapping.js", () => ({
   classifyUniswapRevertError: vi.fn(() => ({ failureCode: "unknown", failureReason: "unused" })),
   classifyPreBroadcastFailure: vi.fn(() => ({ failureCode: "unknown", failureReason: "unused" })),
 }));
-vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokensPairs: vi.fn(async () => []) }));
+vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []) }));
 vi.mock("@tools/evm-chains/registry.js", () => ({ getLocalChain: vi.fn(() => ({ chainId: CHAIN_ID })) }));
 vi.mock("@tools/evm-chains/erc20-balance-guard.js", () => ({ ensureErc20Balance: vi.fn() }));
 vi.mock("@tools/evm-chains/staged-broadcast.js", () => ({
@@ -145,6 +146,8 @@ const { applySlippage } = await import("@tools/uniswap/quote.js");
 const { UNISWAP_V2_ROUTER_ABI } = await import("@tools/uniswap/abis.js");
 const { approvedUniswapSnapshot, approvedUniswapVexFee } = await import("./_uniswap-approved-snapshot.js");
 const { snapshotRefusal } = await import("@vex-agent/tools/protocols/quote-authority/refusal.js");
+const { refreshUniswapRoute } = await import("@tools/uniswap/refresh-route.js");
+const { sealUniswapSnapshot, restoreUniswapSnapshot } = await import("@vex-agent/tools/protocols/quote-authority/uniswap.js");
 
 const execute = UNISWAP_SWAP_HANDLERS["uniswap.swap.execute"];
 if (execute === undefined) throw new Error("uniswap.swap.execute is not registered");
@@ -241,6 +244,60 @@ beforeEach(async () => {
 });
 
 describe("the 2026-08-27 incident shape", () => {
+  it.each(["slippage", "pending"])("echoes the approved fee ceiling on a %s outcome", async (outcome) => {
+    runStagedBroadcast.mockResolvedValue(outcome === "pending"
+      ? { kind: "ambiguous", txHash: "0xswap" }
+      : { kind: "failed", stage: "pre_broadcast", classification: { failureCode: "slippage", failureReason: "Too little received" } });
+    const result = await run();
+    expect(result.data?.approvedGasFees).toMatchObject({ unit: "wei/gas",
+      legs: expect.arrayContaining([expect.objectContaining({ role: "swap" })]) });
+    expect(result.output).toContain("Approved gas fee ceilings");
+  });
+  it("preserves the chosen USD reference when an older snapshot needs full route discovery", async () => {
+    const reference = { source: "dexscreener" as const, chainId: CHAIN_ID,
+      tokenIn: TOKEN_IN, tokenOut: TOKEN_OUT, inputPriceUsd: "1", outputPriceUsd: "0.000003",
+      inputPair: "input-pair", outputPair: "output-pair" };
+    const snapshot = sealUniswapSnapshot({ ...await approved(), priceReference: reference });
+    readUniswapExecutionSnapshot.mockResolvedValue({ ok: true, prequoteId: "priced-old-path", snapshot,
+      vexFee: await approvedUniswapVexFee({ chainId: CHAIN_ID, tokenIn: TOKEN_IN_LEG, tokenOut: TOKEN_OUT_LEG,
+        amountInRaw: AMOUNT_IN_RAW, approvedAmountOutRaw: QUOTED_OUT, approvedMinOutRaw: QUOTED_OUT }) });
+    await run();
+    expect(createAgentActivityIntent).toHaveBeenCalledWith(expect.objectContaining({
+      events: expect.arrayContaining([expect.objectContaining({ eventRole: "swap", usdSource: "dexscreener",
+        routeProvenance: expect.objectContaining({ swapPriceReference: reference }) })]),
+    }));
+  });
+  it("starts independent token reads together and waits for both before any staged action", async () => {
+    const { readUniswapErc20Metadata } = await import("@tools/uniswap/erc20.js");
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    vi.mocked(readUniswapErc20Metadata).mockImplementationOnce(async (_client, address) => {
+      await gate;
+      return { address, symbol: "TKN", decimals: 18, isNative: false };
+    });
+    const running = run();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    try {
+      expect(readUniswapErc20Metadata).toHaveBeenCalledTimes(2);
+      expect(runStagedBroadcast).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await running;
+    }
+  });
+  it("refreshes the sealed path without repeating route discovery, preserving the approved floor", async () => {
+    const snapshot = sealUniswapSnapshot({ ...await approved(), routeHint: { version: "v2", path: [TOKEN_IN, TOKEN_OUT] } });
+    readUniswapExecutionSnapshot.mockResolvedValue({ ok: true, prequoteId: "fresh-path", snapshot,
+      vexFee: await approvedUniswapVexFee({ chainId: CHAIN_ID, tokenIn: TOKEN_IN_LEG, tokenOut: TOKEN_OUT_LEG,
+        amountInRaw: AMOUNT_IN_RAW, approvedAmountOutRaw: QUOTED_OUT, approvedMinOutRaw: QUOTED_OUT }) });
+    vi.mocked(refreshUniswapRoute).mockResolvedValue(freshRoute(QUOTED_OUT).route);
+    const result = await run();
+    expect(result.success).toBe(true);
+    expect(refreshUniswapRoute).toHaveBeenCalledTimes(1);
+    expect(quoteBestRoute).not.toHaveBeenCalled();
+    expect(signedFloor()).toBe(BigInt(snapshot.approvedMinOutRaw));
+    expect(restoreUniswapSnapshot({ ...snapshot, routeHint: { version: "v2", path: [TOKEN_OUT, TOKEN_IN] } })).toMatchObject({ ok: false });
+  });
   it("refuses when the market collapsed 263x below the approved floor, and nothing is signed", async () => {
     const snapshot = await approved();
     quoteBestRoute.mockResolvedValue(freshRoute(COLLAPSED_OUT));
@@ -277,6 +334,7 @@ describe("the 2026-08-27 incident shape", () => {
     expect(result.success).toBe(true);
     const floor = signedFloor();
     expect(floor.toString()).toBe(snapshot.approvedMinOutRaw);
+    expect(quoteBestRoute).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ allowV4: false, wallet: WALLET }));
     // The old derivation would have written a LOWER number into the calldata.
     expect(applySlippage(movedWithinTolerance, SLIPPAGE_BPS)).toBeLessThan(floor);
   });

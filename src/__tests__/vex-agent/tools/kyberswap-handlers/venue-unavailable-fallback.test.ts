@@ -27,6 +27,8 @@ const SESSION_EVM = {
 const mockResolveSelectedAddress = vi.fn<WalletResolveModule["resolveSelectedAddress"]>(() => SESSION_EVM.address);
 const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => SESSION_EVM);
 
+vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []) }));
+
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddress: (...args: Parameters<WalletResolveModule["resolveSelectedAddress"]>) => mockResolveSelectedAddress(...args),
   resolveSigningWallet: (...args: Parameters<WalletResolveModule["resolveSigningWallet"]>) => mockResolveSigningWallet(...args),
@@ -126,14 +128,14 @@ const TOKEN_B = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 const FALLBACK_SENTENCE = SWAP_VENUE_PEER_NUDGE_SUFFIX.trim();
 const TERMINAL_LEAD = "KyberSwap did not price the route at all";
 const RETRY_FIRST_LEAD = "retry the same KyberSwap request once after a short backoff";
-const COVERAGE_CAVEAT = "Uniswap covers only the EVM chains with a verified Vex deployment";
+const COVERAGE_CAVEAT = "Uniswap covers seven EVM chains with verified Vex deployments";
 
 function expectRegionalRemedy(output: string): void {
   expect(output).toContain("KyberSwap is not reachable from this network or region");
   expect(output).toContain("uniswap__swap_quote` then `uniswap__swap_execute` on the same chain");
-  expect(output).toContain("Uniswap V2 and V3 pools directly");
-  expect(output).toContain("only liquidity is in Uniswap v4 pools cannot be traded there yet");
-  expect(output).toContain("Tell the user about that limitation instead of retrying KyberSwap");
+  expect(output).toContain("Uniswap V2, V3 and v4 pools directly on seven chains");
+  expect(output).toContain("liquidity only on other DEXes may be unavailable there");
+  expect(output).toContain("explain the coverage limit instead of retrying blocked KyberSwap");
   expect(output).toContain("do not repeat it unchanged on this venue");
   expect(output).not.toContain(RETRY_FIRST_LEAD);
 }

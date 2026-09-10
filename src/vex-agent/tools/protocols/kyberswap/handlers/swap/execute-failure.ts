@@ -1,3 +1,5 @@
+import { EvmNonceReservationExpiredError } from "@tools/evm-chains/nonce-reservation-scope.js";
+import { EvmNonceMismatchError } from "@tools/evm-chains/nonce-signing-guard.js";
 /**
  * What `kyberswap.swap.execute` tells the agent - and writes to
  * `agent_activity` - when the staged broadcast loop throws AFTER the intent
@@ -26,9 +28,12 @@ import {
   preSignRefusalGuidance,
 } from "@tools/evm-chains/pre-sign-revert-refusal.js";
 import { KYBERSWAP_MAX_SLIPPAGE_BPS } from "@tools/kyberswap/constants.js";
+import { SwapApprovedGasPriceExceededError } from "@tools/evm-chains/swap-fee-ceiling.js";
+import { swapOutputEvidence, type SwapOutputObservation } from "@tools/evm-chains/swap-output-shortfall.js";
 import { effectiveMaxSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
 import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
 import logger from "@utils/logger.js";
+import { rpcReadFailureOf, preSignRpcRefusal } from "@tools/evm-chains/rpc-read-failure.js";
 import type { ToolResult } from "../../../../types.js";
 import { abortRemainingPlans, failRefusedLeg } from "./activity-recording.js";
 import { kyberFailureMessage } from "./error-output.js";
@@ -36,6 +41,8 @@ import type { SwapEventPlan } from "./execute-plan.js";
 import { venueFallbackNoteOnPreSignRevert } from "./fallback-messaging.js";
 
 export interface PostIntentFailureInput {
+  readonly observeOutput?: () => Promise<string | null>;
+  readonly outputObservation?: SwapOutputObservation;
   readonly err: unknown;
   readonly toolId: string;
   readonly sessionId: string;
@@ -57,7 +64,22 @@ export interface PostIntentFailureInput {
 
 export async function buildPostIntentFailureResult(input: PostIntentFailureInput): Promise<ToolResult> {
   const { err, toolId, sessionId, executionId, currentIndex, legBroadcastAttempted, plans, events, slippage } = input;
+  if (!legBroadcastAttempted && (err instanceof EvmNonceMismatchError || err instanceof EvmNonceReservationExpiredError)) {
+    await failRefusedLeg(events[currentIndex], err.failureCode, err.message);
+    await abortRemainingPlans(executionId, currentIndex, err.message);
+    return { success: false, output: err.message,
+      data: { _executionId: executionId, status: err.status, retryable: true, failureCode: err.failureCode, reason: err instanceof EvmNonceMismatchError ? err.reason : "nonce_signing_lease_expired" } };
+  }
+  const rpc = legBroadcastAttempted ? undefined : rpcReadFailureOf(err);
+  if (rpc) {
+    const failureReason = preSignRpcRefusal(rpc);
+    await failRefusedLeg(events[currentIndex], rpc.failureClass, failureReason);
+    await abortRemainingPlans(executionId, currentIndex, failureReason);
+    return { success: false, output: `${toolId}: ${failureReason} Recorded as execution ${executionId}.`,
+      data: { _executionId: executionId, status: "not_attempted", retryable: true, failureCode: rpc.failureClass, failureReason } };
+  }
   const slippageBounds = {
+    outputObservation: input.outputObservation,
     appliedBps: slippage,
     maxBps: effectiveMaxSlippageBps(KYBERSWAP_MAX_SLIPPAGE_BPS),
     observedPriceImpactFraction: input.observedPriceImpactFraction,
@@ -78,6 +100,15 @@ export async function buildPostIntentFailureResult(input: PostIntentFailureInput
   // row can keep its real code; `null` for a `DependentLegGasEstimateError`
   // (its own branch below) and for any error we cannot place.
   const preSignRevert = legBroadcastAttempted ? null : classifyPreSignRevert(err);
+  const dependentPool = !legBroadcastAttempted && err instanceof DependentLegGasEstimateError
+    ? classifyDependentLegPoolStateRevert(err) : null;
+  if (refusedRole === "swap" && slippageBounds.outputObservation !== undefined
+    && (preSignRevert?.failureCode === "slippage" || dependentPool?.failureCode === "slippage")) {
+    const simulatedOutputRaw = await input.observeOutput?.().catch(() => null);
+    if (simulatedOutputRaw != null) slippageBounds.outputObservation = {
+      ...slippageBounds.outputObservation, simulatedOutputRaw,
+    };
+  }
   // The DECODED reason, not viem's verbose message - but still through
   // this venue's single scrub boundary (C37), because the string is chosen
   // by the contract, not by us. Same treatment `uniswap.swap.execute`
@@ -90,6 +121,15 @@ export async function buildPostIntentFailureResult(input: PostIntentFailureInput
   }
   await abortRemainingPlans(executionId, currentIndex, safeMessage);
   logger.warn("kyberswap.swap.execute.post_intent_failure", { executionId, index: currentIndex, error: safeMessage });
+  if (!legBroadcastAttempted && err instanceof SwapApprovedGasPriceExceededError) {
+    return {
+      success: false,
+      output: err.message,
+      data: { _executionId: executionId, status: "not_attempted", retryable: false,
+        failureCode: err.kind, field: err.field,
+        requiredRaw: err.requiredRaw, approvedRaw: err.approvedRaw },
+    };
+  }
   // A leg refused because its estimate never succeeded after an allowance
   // this same execute confirmed is NOT the same event as an internal
   // interruption of unknown scope: nothing was signed for it, the planned
@@ -104,7 +144,7 @@ export async function buildPostIntentFailureResult(input: PostIntentFailureInput
     // that survived every retry is admissible evidence (the narrowing and
     // its two arguments live in `pre-sign-revert-refusal.ts`); every other
     // reason keeps the branch below, unchanged.
-    const poolState = classifyDependentLegPoolStateRevert(err);
+    const poolState = dependentPool;
     if (poolState) {
       return {
         success: false,
@@ -115,7 +155,8 @@ export async function buildPostIntentFailureResult(input: PostIntentFailureInput
           failureCode: poolState.failureCode,
           slippage: slippageBounds,
         })} Recorded as execution ${executionId}.`,
-        data: { _executionId: executionId, status: "not_attempted", retryable: true, failureCode: poolState.failureCode },
+        data: { _executionId: executionId, status: "not_attempted", retryable: true, failureCode: poolState.failureCode,
+          outputObservation: slippageBounds.outputObservation === undefined ? undefined : swapOutputEvidence(slippageBounds.outputObservation) },
       };
     }
     return {
@@ -142,7 +183,9 @@ export async function buildPostIntentFailureResult(input: PostIntentFailureInput
         failureCode: preSignRevert.failureCode,
         slippage: slippageBounds,
       })} Recorded as execution ${executionId}.${fallbackNote}`,
-      data: { _executionId: executionId, status: "not_attempted", retryable: true, failureCode: preSignRevert.failureCode },
+      data: { _executionId: executionId, status: "not_attempted", retryable: true, failureCode: preSignRevert.failureCode,
+        ...(preSignRevert.failureCode === "slippage" && slippageBounds.outputObservation
+          ? { outputObservation: swapOutputEvidence(slippageBounds.outputObservation) } : {}) },
     };
   }
   return {

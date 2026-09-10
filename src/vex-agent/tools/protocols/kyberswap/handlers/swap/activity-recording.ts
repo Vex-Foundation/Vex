@@ -6,6 +6,7 @@
  */
 
 import logger from "@utils/logger.js";
+import { rpcReadFailureOf, preSignRpcRefusal } from "@tools/evm-chains/rpc-read-failure.js";
 import {
   createAgentActivityPreBroadcastFailure,
   failActivityEvent,
@@ -35,8 +36,9 @@ export async function failPreBroadcast(
   err: unknown,
   tokenInputsValidated: boolean,
 ): Promise<ToolResult> {
-  const failureCode = mapKyberFailureToActivityCode(err);
-  const failureReason = kyberFailureMessage(toolId, err);
+  const rpc = rpcReadFailureOf(err);
+  const failureCode = rpc?.failureClass ?? mapKyberFailureToActivityCode(err);
+  const failureReason = rpc ? preSignRpcRefusal(rpc) : kyberFailureMessage(toolId, err);
   const { executionId } = await createAgentActivityPreBroadcastFailure({
     toolId,
     namespace: PROTOCOL,
@@ -66,6 +68,7 @@ export async function failPreBroadcast(
     output: `${toolId} failed: ${failureReason}.${fallbackNote}`,
     data: {
       _executionId: executionId,
+      ...(rpc ? { status: "not_attempted", retryable: true, failureCode, failureReason } : {}),
       ...(feeRefusal ? vexFeeRefusalData(feeRefusal) : {}),
     },
   };

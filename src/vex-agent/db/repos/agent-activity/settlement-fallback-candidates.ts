@@ -69,7 +69,12 @@ export async function listAmountCorrectionCandidates(
         AND settlement_source IS DISTINCT FROM 'keeper_purchase_pending'
         AND settlement_decode_version IS DISTINCT FROM $2
         -- The loose prefilter. roleLegsIncomplete makes the real decision.
-        AND (executed_amount_in_raw IS NULL
+        AND ((protocol = 'uniswap' AND event_role = 'swap'
+              AND route_provenance->'settlementDecode'->'v4' IS NOT NULL
+              AND (token_in_address IS NULL OR token_out_address IS NULL
+                OR lower(token_in_address) IN ('0x0000000000000000000000000000000000000000','0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')
+                OR lower(token_out_address) IN ('0x0000000000000000000000000000000000000000','0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')))
+             OR executed_amount_in_raw IS NULL
              OR executed_amount_out_raw IS NULL
              OR (token_in2_address IS NOT NULL AND executed_amount_in2_raw IS NULL)
              OR (token_out2_address IS NOT NULL AND executed_amount_out2_raw IS NULL))

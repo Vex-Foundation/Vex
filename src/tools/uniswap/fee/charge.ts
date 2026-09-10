@@ -28,7 +28,7 @@ export interface UniswapFeeCharge {
   readonly feeRaw: bigint | null;
   /** The amount the route is quoted for and the router is called with. */
   readonly swapAmountRaw: bigint;
-  /** What the user is debited in total — always the requested `amountIn`. */
+  /** Requested debit ceiling. Native settlement can reduce the approved fee. */
   readonly totalRaw: bigint;
   /**
    * The address the fee leg transfers. The native sentinel for a native input

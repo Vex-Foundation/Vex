@@ -34,6 +34,9 @@ import { createHash } from "node:crypto";
 
 import { formatUnits } from "viem";
 import { z } from "zod";
+import { uniswapRouteHintSchema, canonicalizeUniswapRouteHint, type UniswapRouteHint } from "./uniswap-route-hint.js";
+import { swapPriceReferenceSchema, canonicalizeSwapPriceReference, type SwapPriceReference } from "@tools/evm-chains/swap-price-reference.js";
+import { v4RouteBindingSchema, type V4RouteBinding } from "@tools/uniswap/v4-types.js";
 
 import {
   boundDebitPlanSchema,
@@ -100,6 +103,8 @@ export interface UniswapSnapshotToken {
  * fails to restore rather than authorizing a different trade.
  */
 export interface UniswapExecutionSnapshot {
+  readonly priceReference?: SwapPriceReference;
+  readonly routeHint?: UniswapRouteHint;
   readonly v: typeof UNISWAP_SNAPSHOT_VERSION;
   readonly provider: "uniswap";
   readonly chainId: number;
@@ -125,6 +130,7 @@ export interface UniswapExecutionSnapshot {
    * rather than reading a fresh one, and refuses a leg set that is not this one.
    */
   readonly debitPlan: BoundDebitPlan;
+  readonly v4?: { readonly route: V4RouteBinding; readonly recipient: string };
   readonly digest: string;
 }
 
@@ -175,6 +181,13 @@ function canonicalizeSnapshotFields(f: UniswapSnapshotFields): string {
     // Contains no U+0000 by construction (`canonicalizeDebitPlan` states why),
     // so it occupies exactly one field of this serialization.
     canonicalizeDebitPlan(f.debitPlan),
+    ...(f.routeHint === undefined ? [] : [canonicalizeUniswapRouteHint(f.routeHint)]),
+    ...(f.priceReference === undefined ? [] : [canonicalizeSwapPriceReference(f.priceReference)]),
+    ...(f.v4 ? [JSON.stringify([f.v4.route.poolId.toLowerCase(),
+      f.v4.route.poolKey.currency0.toLowerCase(), f.v4.route.poolKey.currency1.toLowerCase(),
+      f.v4.route.poolKey.fee, f.v4.route.poolKey.tickSpacing, f.v4.route.poolKey.hooks.toLowerCase(),
+      f.v4.route.zeroForOne, f.v4.route.hookPermissions, f.v4.route.dynamicFee, f.v4.route.observedLpFee,
+      f.v4.route.universalRouter.toLowerCase(), f.v4.route.universalRouterVersion, f.v4.route.permit2.toLowerCase(), f.v4.recipient.toLowerCase()])] : []),
   ].join(FIELD_SEPARATOR);
 }
 
@@ -196,6 +209,8 @@ const TokenSchema = z.object({
 });
 
 const UniswapSnapshotSchema = z.object({
+  priceReference: swapPriceReferenceSchema.optional(),
+  routeHint: uniswapRouteHintSchema.optional(),
   v: z.literal(UNISWAP_SNAPSHOT_VERSION),
   provider: z.literal("uniswap"),
   chainId: z.number().int().positive(),
@@ -215,6 +230,7 @@ const UniswapSnapshotSchema = z.object({
   slippageBps: z.number().int().min(0).max(10_000),
   expiresAt: z.string().min(1),
   debitPlan: boundDebitPlanSchema,
+  v4: z.object({ route: v4RouteBindingSchema, recipient: z.string().regex(/^0x[\da-fA-F]{40}$/) }).strict().optional(),
   digest: z.string().regex(/^[0-9a-f]{64}$/),
 });
 
@@ -375,11 +391,11 @@ export function floorUnreachableRefusal(
     // integer costs ~25 of them to restate what the human figure already says.
     // The raw pair is on the durable failure row.
     message:
-      `Refused before signing: no current Uniswap route reaches the approved floor of `
-      + `${snapshot.approvedMinOutHuman} ${snapshot.tokenOut.symbol}; the best is worth about `
+      `Refused before signing: ${snapshot.routeHint === undefined ? "no current Uniswap route reaches" : "the approved Uniswap path no longer reaches"} the approved floor of `
+      + `${snapshot.approvedMinOutHuman} ${snapshot.tokenOut.symbol}; the fresh quote is worth about `
       + `${formatUnits(freshAmountOutRaw, snapshot.tokenOut.decimals)}.`,
     hint:
-      `The market moved past the ${snapshot.slippageBps} bps you approved. Nothing was signed and the floor `
-      + `was not lowered. Get a fresh ${UNISWAP_FRESH_QUOTE_TOOL}.`,
+      `The market moved past ${snapshot.slippageBps} bps. Nothing was signed; the floor was not lowered. `
+      + `Re-quote ${UNISWAP_FRESH_QUOTE_TOOL} at the same slippage; raise only within the user's stated limit.`,
   };
 }

@@ -387,6 +387,8 @@ export function buildActivityHalf(
       -- after ten receipt_unavailable checks a bridge must say so, not repeat
       -- the provider_fill_unverified the handler wrote at t=0.
       CASE
+        WHEN settlement_source = 'native_balance_delta_bound' THEN 'native_balance_delta_bound'
+        WHEN settlement_source = 'native_output_unproven_hooked' THEN 'native_output_unproven_hooked'
         WHEN settlement_source = 'conflict_quarantined' THEN 'amount_evidence_conflict'
         WHEN settlement_source = 'amounts_undecodable'  THEN 'amounts_undecodable'
         WHEN settlement_source = 'amounts_incomplete'   THEN 'amounts_incomplete'

@@ -65,6 +65,119 @@ export const STUDIO_CHANGELOG_VERSION_LIMIT = 8;
  */
 export const STUDIO_CHANGELOG: readonly StudioChangelogEntry[] = [
   {
+    version: "0.2.8",
+    kind: "added",
+    target: "protocol",
+    subject: "lighter",
+    text:
+      "Lighter is a new protocol here: perpetual and spot trading on Lighter "
+      + "Core and on Robinhood Chain, with public market, order-book, trade and "
+      + "candle reads, managed onboarding, deposits, trading-key registration, "
+      + "orders including stop loss, take profit and OCO, position close, "
+      + "withdrawals and manual claims. Every order, deposit and withdrawal "
+      + "runs through its own approval card, and the Vex fee is 0.10% on "
+      + "perpetual trades and 0.25% on spot, authorized once on a card that "
+      + "also states what the tier change does to Lighter's own fees.",
+  },
+  {
+    version: "0.2.8",
+    kind: "changed",
+    target: "protocol",
+    subject: "virtuals",
+    text:
+      "Virtuals is no longer read-only. An agent token still on its BondingV5 "
+      + "curve can now be quoted and then bought or sold on Base and Robinhood "
+      + "Chain, an agent can be launched on those two chains and a launch the "
+      + "keeper has not made live yet can be cancelled, and the reads gained a "
+      + "bonding-curve trade tape, candles for every lifecycle stage and "
+      + "creator-fee state. A GRADUATED agent is still a separate swap on the "
+      + "venue the research names; the Vex fee is 25 bps and a trade that "
+      + "reverts or cannot be proven is never charged.",
+  },
+  {
+    version: "0.2.8",
+    kind: "changed",
+    target: "protocol",
+    subject: "pools",
+    text:
+      "pools.fun gained holder rewards and the stock pairing table: read what a "
+      + "token's fee stream owes the wallets that hold it, claim your share "
+      + "(run it with `dryRun` first, which simulates the distributor's own "
+      + "claim), distribute as the deployer, and list which tokenised stocks a "
+      + "launch can be paired against and how each one is priced. Vex charges "
+      + "nothing on rewards; a launch still pays 25 bps of the native value it "
+      + "sends.",
+  },
+  {
+    version: "0.2.8",
+    kind: "added",
+    target: "protocol",
+    subject: "launchpads",
+    text:
+      "The launchpads namespace holds the half of a token launch that belongs "
+      + "to no single launchpad: the image locker that both pools.fun and "
+      + "Virtuals launches draw from. List what is staged, publish one picture "
+      + "to Vex's public content-addressed host under the ordinary approval "
+      + "card, and reuse the permanent URL it returns on any chain. Listing and "
+      + "publishing are free; the launch itself is charged by its own launchpad.",
+  },
+  {
+    version: "0.2.8",
+    kind: "changed",
+    target: "protocol",
+    subject: "uniswap",
+    text:
+      "The direct Uniswap venue now prices and executes v4 pools alongside V2 "
+      + "and V3 on Ethereum, Base, Robinhood Chain, Arbitrum, OP Mainnet, "
+      + "Polygon and BNB Chain, single hop, never mixing versions in one call. "
+      + "It is the named fallback when KyberSwap is unavailable and the more "
+      + "stable choice on Robinhood Chain. v4 discovery probes four canonical "
+      + "hookless pool keys plus DexScreener's indexed pools, so an unindexed "
+      + "hooked pool can still be missed and the answer says so rather than "
+      + "reporting no liquidity.",
+  },
+  {
+    version: "0.2.8",
+    kind: "changed",
+    target: "protocol",
+    subject: "kyberswap",
+    text:
+      "KyberSwap remains the default router for EVM swaps. When its edge "
+      + "refuses the user's region it answers before any KyberSwap body "
+      + "exists, and repeating the same request is always wrong: take a fresh "
+      + "`uniswap__swap_quote` on the same chain and execute there under its "
+      + "own approval, because a KyberSwap quote never authorizes a Uniswap "
+      + "execution. A token whose liquidity sits on neither venue is explained, "
+      + "not retried.",
+  },
+  {
+    version: "0.2.8",
+    kind: "added",
+    target: "tool",
+    subject: "WalletWrapPrepare",
+    text:
+      "`WalletWrapPrepare` then `WalletWrapConfirm` wrap and unwrap the native "
+      + "gas token exactly 1:1 on eight verified chains, with no route, no "
+      + "slippage and no Vex fee by construction. Unwrapping wrapped native "
+      + "used to mean bridging out and back.",
+  },
+  {
+    version: "0.2.8",
+    kind: "changed",
+    target: "tool",
+    subject: "SwapExecute",
+    text:
+      "Three honesty changes on both swap pairs, `SwapQuote`/`SwapExecute` and "
+      + "`SwapQuoteUniswap`/`SwapExecuteUniswap`: the approved per-gas ceiling "
+      + "now carries 15% headroom over the fee estimate measured at quote time "
+      + "and sealed into the approval, so ordinary gas-price drift between "
+      + "quote and execute no longer refuses the trade, while a larger rise "
+      + "still needs a fresh quote and an old quote gets no new headroom; a "
+      + "slippage refusal states the measured shortfall instead of refusing "
+      + "flatly; and the USD figures beside a route are read from an "
+      + "independent reference rather than the aggregator's lagging field.",
+  },
+  {
     version: "0.2.7",
     kind: "changed",
     target: "rule",

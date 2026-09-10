@@ -11,7 +11,10 @@
  * approved: consumed, superseded, expired, or byte-different.
  */
 
+import { describeV4Route, v4QuoteWarning } from "@tools/uniswap/v4-pool.js";
+import { formatUnits } from "viem";
 import { z } from "zod";
+import { swapPriceReferenceSchema } from "@tools/evm-chains/swap-price-reference.js";
 
 import { boundDebitPlanSchema } from "./debit-plan.js";
 import {
@@ -50,6 +53,7 @@ const RouteSnapshotSchema = z.object({
   expiresAt: z.string().min(1),
   eligibility: z.object({ kind: z.string() }).passthrough(),
   debitPlan: boundDebitPlanSchema,
+  priceReference: swapPriceReferenceSchema.optional(),
 });
 
 /**
@@ -249,6 +253,15 @@ export function readQuoteBindingPreview(
       approvedAmountOutHuman: u.approvedAmountOutHuman,
       approvedMinOutHuman: u.approvedMinOutHuman,
       approvedMinOutRaw: u.approvedMinOutRaw,
+      ...(u.v4 ? { extraFacts: [
+        `Chain ${u.chainId}; input ${formatUnits(BigInt(u.totalInRaw), u.tokenIn.decimals)} ${u.tokenIn.symbol}, ${u.totalInRaw} raw units, decimals ${u.tokenIn.decimals}; output decimals ${u.tokenOut.decimals}`,
+        describeV4Route(u.v4.route), v4QuoteWarning(u.v4.route),
+        `Spender Permit2 ${u.v4.route.permit2} and Uniswap UniversalRouter ${u.v4.route.universalRouterVersion} ${u.v4.route.universalRouter}`,
+        `Recipient ${u.v4.recipient}; transaction deadline 600 seconds from signing`,
+        u.fee.disclosureText, "Spends real funds irreversibly after confirmation",
+        ...(u.tokenIn.isNative ? ["Native input can be a labelled lower bound. The quoted fee is a ceiling and can decrease using that bound; missing required evidence means no fee."] : []),
+        ...(u.tokenOut.isNative ? ["Unproven native output remains unknown on a confirmed swap. Proven ERC-20 input can still incur the disclosed fee."] : []),
+      ] } : {}),
       tokenOutSymbol: u.tokenOut.symbol,
       effectiveSlippageBps: u.slippageBps,
       expiresAt,

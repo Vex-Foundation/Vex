@@ -57,6 +57,7 @@ const markActivityBroadcast = vi.fn();
 const markBroadcastAccepted = vi.fn();
 const confirmActivityEvent = vi.fn();
 const failActivityEvent = vi.fn();
+const failHashlessActivityEvent = vi.fn(async () => ({ applied: true }));
 const abortPlannedEvents = vi.fn();
 const createAgentActivityPreBroadcastFailure = vi.fn();
 const waitForSuccessfulReceipt = vi.fn();
@@ -152,7 +153,7 @@ vi.mock("@tools/uniswap/revert-mapping.js", () => ({
   classifyUniswapRevertError: vi.fn(() => ({ failureCode: "unknown", failureReason: "unused" })),
   classifyPreBroadcastFailure: vi.fn(() => ({ failureCode: "unknown", failureReason: "unused" })),
 }));
-vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokensPairs: vi.fn(async () => []) }));
+vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []) }));
 vi.mock("@tools/evm-chains/registry.js", () => ({ getLocalChain: vi.fn(() => ({ chainId: CHAIN_ID })) }));
 vi.mock("@tools/evm-chains/receipt-guard.js", () => ({
   waitForSuccessfulReceipt: (...args: unknown[]) => waitForSuccessfulReceipt(...args),
@@ -175,6 +176,7 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   markBroadcastAccepted: (...args: unknown[]) => markBroadcastAccepted(...args),
   confirmActivityEvent: (...args: unknown[]) => confirmActivityEvent(...args),
   failActivityEvent: (...args: unknown[]) => failActivityEvent(...args),
+  failHashlessActivityEvent,
   abortPlannedEvents: (...args: unknown[]) => abortPlannedEvents(...args),
 }));
 vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({ pinTrackedToken: vi.fn() }));
@@ -386,6 +388,9 @@ describe("the Vex fee leg is counted first and checked again", () => {
     const data = result.data as { vexFee?: { collection?: string; collectionNote?: string } };
     expect(data.vexFee?.collection).toBe("not_attempted");
     expect(String(data.vexFee?.collectionNote)).toContain("swap is unaffected");
+    expect(String(data.vexFee?.collectionNote)).toContain("pricing mode");
+    expect(String(data.vexFee?.collectionNote)).not.toContain("unused");
+    expect(failHashlessActivityEvent).toHaveBeenCalled();
     // The swap's own row was confirmed and never failed by the fee's refusal.
     expect(failActivityEvent).not.toHaveBeenCalled();
   });

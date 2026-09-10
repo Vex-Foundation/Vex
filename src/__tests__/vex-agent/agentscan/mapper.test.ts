@@ -458,6 +458,24 @@ describe("mapActivityToEvent — native legs: one address, one verified slot", (
     return { ...confirmedSwapRow(), token_in_address: address, token_in_symbol: "ETH" };
   }
 
+  it("never exports a native input bound as an exact verified amount, even when it equals the request", () => {
+    const row = { ...nativeInRow(SENTINEL), evidence_source: "native_balance_delta_bound",
+      executed_amount_in_raw: "1000000000000000000", amount_in_raw: "1000000000000000000" };
+    const event = mapActivityToEvent(row, { status: "confirmed" });
+    expect(event.executedInRaw).toBeNull();
+    expect(event.amountInRaw).toBe("1000000000000000000");
+    expect(serverEventSchema.safeParse(event).success).toBe(true);
+    expect(mapActivityToEvent({ ...row, token_in_address: null }, { status: "confirmed" }).tokenIn?.address).toBe(SENTINEL);
+  });
+  it("keeps unproven native output only in the estimate slot", () => {
+    const row = { ...confirmedSwapRow(), token_out_address: null, token_out_symbol: "ETH", token_out_decimals: 18,
+      pending_reason: "native_output_unproven_hooked", executed_amount_out_raw: null, amount_out_raw: "1000" };
+    const event = mapActivityToEvent(row, { status: "confirmed" });
+    expect(event.executedOutRaw).toBeNull();
+    expect(event.amountOutRaw).toBe("1000");
+    expect(event.tokenOut?.address).toBe(SENTINEL);
+  });
+
   it("emits every native alias as the SENTINEL, because that is the only address its verifier calls native", () => {
     // A native leg declared with the zero address is cross-checked as an ERC-20
     // token, finds no Transfer log, and takes a strike.
@@ -805,4 +823,10 @@ describe("mapActivityToEvent: the launchpad family", () => {
       expect(serverEventSchema.safeParse(event).success).toBe(false);
     }
   });
+});
+
+it.each(["archive_gated", "range_capped", "rate_limited", "compute_budget", "method_unsupported", "transport"])("maps local RPC class %s into the accepted server vocabulary", failure_code => {
+  const event = mapActivityToEvent({ ...confirmedSwapRow(), status: "definitively_failed", tx_hash: null, failure_code }, { status: "definitively_failed" });
+  expect(event.failureCode).toBe("venue_unavailable");
+  expect(serverEventSchema.safeParse(event).success).toBe(true);
 });

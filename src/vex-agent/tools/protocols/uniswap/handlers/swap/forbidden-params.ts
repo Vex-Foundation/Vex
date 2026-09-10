@@ -22,5 +22,8 @@ export function checkForbiddenFeeParams(params: Readonly<Record<string, unknown>
       return `Parameter "${key}" is not accepted - Vex's swap fee rate and receiver are fixed product constants; remove it and retry.`;
     }
   }
+  for (const key of ["poolId", "poolKey", "hooks", "hookData", "zeroForOne", "recipient", "spender", "router", "universalRouter", "universalRouterVersion", "amountOutMinimum", "minHopPriceX36", "deadline", "value"]) {
+    if (Object.prototype.hasOwnProperty.call(params, key)) return `Parameter "${key}" is not accepted - pool identity, recipients, spenders and execution bounds are derived by Vex; remove it and retry.`;
+  }
   return null;
 }

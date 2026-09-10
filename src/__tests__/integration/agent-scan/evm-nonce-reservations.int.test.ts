@@ -1,6 +1,6 @@
 /** Durable EVM nonce allocation across activity-backed and legacy signer arms. */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { execute, queryOne } from "@vex-agent/db/client.js";
 import {
@@ -22,6 +22,9 @@ import { makeSession, resetDb } from "../setup/fixtures.js";
 
 const WALLET = "0x1111111111111111111111111111111111111111";
 const CHAIN_ID = 8453;
+
+// Global scans in the next file must not inherit our same-nonce siblings.
+afterEach(resetDb);
 
 async function pendingActivity(sessionId: string, marker: string): Promise<number> {
   const created = await createAgentActivityIntent({
@@ -288,4 +291,97 @@ describe("durable EVM nonce reservations", () => {
     expect(observeTransaction).toHaveBeenCalledTimes(1);
   });
 
+});
+
+import { withNonceReservationScope } from "@tools/evm-chains/nonce-reservation-scope.js";
+import { repairEvmNonceState } from "@vex-agent/sync/repair-evm-nonce-state.js";
+import { buildProductionRepairDeps } from "@vex-agent/sync/agent-activity-repair/chain-sources.js";
+import { confirmActivityEventStatusOnly, getActivityEventById, failActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
+
+describe("unsigned nonce leases and coordinator recovery", () => {
+  beforeEach(async () => { await resetDb(); });
+
+  it("reuses the network nonce after a refused fee without waiting for row recovery", async () => {
+    const session = await makeSession();
+    const fee = await pendingActivity(session, "refused-fee");
+    await execute("UPDATE agent_activity SET event_role = 'swap_fee' WHERE id = $1", [fee]);
+    await expect(withNonceReservationScope(async () => {
+      expect(await reserveActivityEvmNonce(fee, request)).toBe(7);
+      throw new Error("pre-sign fee refusal");
+    })).rejects.toThrow("pre-sign fee refusal");
+    const next = await pendingActivity(session, "next-swap");
+    expect(await reserveActivityEvmNonce(next, request)).toBe(7);
+    expect((await markActivityBroadcast(fee, { txHash: `0x${"dd".repeat(32)}`, fromAddress: WALLET, nonce: 7 })).applied).toBe(false);
+  });
+
+  it.each(["success", "reverted"] as const)("keeps a mined %s nonce consumed even if the next RPC read lags", async status => {
+    const session = await makeSession();
+    const mined = await pendingActivity(session, "confirmed-floor");
+    await markActivityBroadcast(mined, { txHash: `0x${"d1".repeat(32)}`, fromAddress: WALLET, nonce: 7 });
+    if (status === "success") await confirmActivityEventStatusOnly(mined, "receipt_status_only_evm");
+    else await failActivityEvent(mined, { failureCode: "mined_revert", failureReason: "Receipt-proven revert" });
+    expect(await reserveActivityEvmNonce(await pendingActivity(session, "lagging-node"), request)).toBe(8);
+  });
+
+  it("does not count a historical hashless nonce, or permit it to stage", async () => {
+    const session = await makeSession();
+    const old = await pendingActivity(session, "old-hashless");
+    await execute("UPDATE agent_activity SET nonce = 99, from_address = $2 WHERE id = $1", [old, WALLET]);
+    expect(await reserveActivityEvmNonce(await pendingActivity(session, "after-old"), { ...request, nodePendingNonce: 99 })).toBe(99);
+    expect((await markActivityBroadcast(old, { txHash: `0x${"de".repeat(32)}`, fromAddress: WALLET, nonce: 99 })).applied).toBe(false);
+  });
+
+  it("does not reap an active signing lease even when its intent is old", async () => {
+    const session = await makeSession();
+    const id = await pendingActivity(session, "old-intent-live-signer");
+    await execute("UPDATE agent_activity SET created_at = NOW() - interval '1 day' WHERE id = $1", [id]);
+    await withNonceReservationScope(async () => {
+      await reserveActivityEvmNonce(id, request);
+      expect((await repairEvmNonceState({ observeTransaction: async () => ({ kind: "unknown_to_node" }) })).hashlessRecovered).toBe(0);
+      expect((await getActivityEventById(id))?.status).toBe("pending");
+    });
+  });
+
+  it("expires crashed unsigned owners without allowing late staging", async () => {
+    const session = await makeSession();
+    const crashed = await pendingActivity(session, "expired");
+    await reserveActivityEvmNonce(crashed, request);
+    await execute("UPDATE agent_activity SET nonce_reservation_until = NOW() - interval '1 second' WHERE id = $1", [crashed]);
+    expect(await reserveActivityEvmNonce(await pendingActivity(session, "after-expired"), request)).toBe(7);
+    expect((await markActivityBroadcast(crashed, { txHash: `0x${"df".repeat(32)}`, fromAddress: WALLET, nonce: 7 })).applied).toBe(false);
+  });
+
+  it("runs coordinator repair through the normal leases and continuous non-inclusion window", async () => {
+    const session = await makeSession();
+    const fee = await pendingActivity(session, "coordinator-fee");
+    const staged = await pendingActivity(session, "coordinator-gap");
+    await execute("UPDATE agent_activity SET event_role = 'swap_fee', nonce = 7, from_address = $2, created_at = NOW() - interval '1 day' WHERE id = $1", [fee, WALLET]);
+    await markActivityBroadcast(staged, { txHash: `0x${"ee".repeat(32)}`, fromAddress: WALLET, nonce: 8 });
+    await execute("UPDATE agent_activity SET submit_attempted_at = NOW() - interval '1 day' WHERE id = $1", [staged]);
+    const deps = { observeTransaction: vi.fn(async () => ({ kind: "unknown_to_node" as const })) };
+    const first = await repairEvmNonceState(deps);
+    expect(first.hashlessRecovered).toBe(1);
+    expect((await getActivityEventById(fee))?.status).toBe("definitively_failed");
+    expect((await getActivityEventById(staged))?.status).toBe("pending");
+    await withNonceReservationScope(async () => {
+      expect(await reserveActivityEvmNonce(await pendingActivity(session, "still-blocked"), request)).toBe(9);
+    });
+    await execute("UPDATE agent_activity SET first_noninclusion_observed_at = NOW() - interval '11 minutes', last_checked_at = NOW() - interval '1 minute' WHERE id = $1", [staged]);
+    await repairEvmNonceState(deps);
+    expect((await getActivityEventById(staged))?.status).toBe("superseded_unproven");
+    expect(await reserveActivityEvmNonce(await pendingActivity(session, "repaired"), request)).toBe(7);
+  });
+
+  it("uses a confirmed same-nonce sibling as conclusive evidence without the ten-minute wait", async () => {
+    const session = await makeSession();
+    const old = await pendingActivity(session, "old-staged");
+    const confirmed = await pendingActivity(session, "replacement");
+    const hash = `0x${"ab".repeat(32)}`;
+    await markActivityBroadcast(old, { txHash: hash, fromAddress: WALLET, nonce: 7 });
+    await markActivityBroadcast(confirmed, { txHash: `0x${"ac".repeat(32)}`, fromAddress: WALLET, nonce: 7 });
+    await confirmActivityEventStatusOnly(confirmed, "receipt_status_only_evm");
+    await execute("UPDATE agent_activity SET submit_attempted_at = NOW() - interval '2 minutes' WHERE id = $1", [old]);
+    await repairPendingActivity(buildProductionRepairDeps());
+    expect((await getActivityEventById(old))?.status).toBe("superseded_unproven");
+  });
 });

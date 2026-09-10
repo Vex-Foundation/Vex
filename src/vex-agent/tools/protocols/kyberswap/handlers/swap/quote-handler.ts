@@ -5,6 +5,9 @@
  */
 
 import { getKyberAggregatorClient } from "@tools/kyberswap/aggregator/client.js";
+import { readSwapPriceReference } from "@tools/evm-chains/swap-price-reference-read.js";
+import { getKyberWrappedNativeAddress } from "@tools/kyberswap/wrapped-native.js";
+import { valueSwapAtReference, providerUsdDisagrees } from "@tools/evm-chains/swap-price-reference.js";
 import { resolveChainSlug, slugToChainId } from "@tools/kyberswap/chains.js";
 import { KYBERSWAP_FEE_RECEIVER, META_AGGREGATION_ROUTER_V2 } from "@tools/kyberswap/constants.js";
 import { buildKyberFeeDisclosure } from "@tools/kyberswap/fee-disclosure.js";
@@ -38,6 +41,7 @@ import { evmQuoteSafetyVerdict } from "../../../prequote/safety/extract/kyberswa
 import { formatShortfall } from "../../../quote-authority/spendability.js";
 import {
   classifyQuoteEligibility,
+  classifyMeasuredImpact,
   type QuoteEligibility,
 } from "../../../quote-authority/eligibility.js";
 import {
@@ -165,16 +169,30 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
   }
   const safety: QuoteSafety = { tokenIn: safetyIn, tokenOut: safetyOut };
   const summaryRaw = response.data.routeSummary;
-  const route = formatRouteSummary(summaryRaw);
+  const providerRoute = formatRouteSummary(summaryRaw);
+  const priceReference = await readSwapPriceReference({ chainId, chainSlug: slug, tokenIn, tokenOut,
+    wrappedNativeAddress: getKyberWrappedNativeAddress(slug) });
+  const independent = priceReference === null ? null : valueSwapAtReference(priceReference, {
+    amountInRaw: amountIn, amountOutRaw: summaryRaw.amountOut,
+    inputDecimals: tokenIn.decimals, outputDecimals: tokenOut.decimals,
+  });
+  const route = independent === null ? providerRoute : { ...providerRoute,
+    amountInUsd: independent.amountInUsd, amountOutUsd: independent.amountOutUsd,
+    priceImpact: independent.priceImpactFraction };
+  const providerUnreliable = (providerRoute.priceImpact !== null && providerRoute.priceImpact < 0)
+    || (independent !== null && (providerUsdDisagrees(summaryRaw.amountInUsd, independent.amountInUsd)
+      || providerUsdDisagrees(summaryRaw.amountOutUsd, independent.amountOutUsd)));
 
   // The snapshot is encoded BEFORE eligibility is classified, because a route
   // we cannot store verbatim cannot authorize an execute whatever its price
   // says - `encodeRouteSnapshotRaw` never throws, so an unstorable route still
   // answers the agent with the full route it fetched.
   const encoded = encodeRouteSnapshotRaw(summaryRaw);
-  const routeEligibility = classifyQuoteEligibility({
-    amountInUsd: summaryRaw.amountInUsd,
-    amountOutUsd: summaryRaw.amountOutUsd,
+  const routeEligibility = independent !== null && encoded.ok
+    ? classifyMeasuredImpact(independent.priceImpactFraction)
+    : classifyQuoteEligibility({
+    amountInUsd: route.amountInUsd,
+    amountOutUsd: route.amountOutUsd,
     ...(encoded.ok
       ? {}
       : { snapshotOversize: { measuredBytes: encoded.measuredBytes, limitBytes: encoded.limitBytes } }),
@@ -229,6 +247,7 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
         expiresAt: new Date(Date.now() + PREQUOTE_MAX_AGE_MS).toISOString(),
         eligibility,
         debitPlan: spendability.debitPlan,
+        ...(priceReference === null ? {} : { priceReference }),
       })
     : null;
 
@@ -328,9 +347,16 @@ export const quoteHandler: ProtocolHandler = async (p, context) => {
       tokenIn: { address: tokenIn.address, symbol: tokenInLabel, decimals: tokenIn.decimals },
       tokenOut: { address: tokenOut.address, symbol: tokenOutLabel, decimals: tokenOut.decimals },
       routeSummary: route,
+      priceImpactReference: {
+        source: priceReference?.source ?? "provider",
+        providerReliability: providerUnreliable ? "unreliable" : "not_disproved",
+        providerPriceImpactFraction: providerRoute.priceImpact,
+        independentReferenceAvailable: priceReference !== null,
+      },
       routerAddress: response.data.routerAddress,
       safety,
       vexFee,
+      gasFeeCeiling: spendability.debitPlan ?? null,
       // The agent sees WHY, in the same object as the route. The snapshot
       // itself never appears here: it rides the private `quoteAuthority`
       // channel to the recorder and nowhere else.

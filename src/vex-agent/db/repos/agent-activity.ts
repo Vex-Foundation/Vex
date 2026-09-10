@@ -209,6 +209,7 @@ export {
   failActivityEvent,
   failActivityEventWith,
   failHashlessActivityEventWith,
+  failHashlessActivityEvent,
   abortPlannedEvents,
   touchLastChecked,
   clearVerificationStall,
@@ -297,3 +298,4 @@ export {
   markBridgeLegObserved,
   checkBridgeInFlight,
 } from "./agent-activity/bridge-lifecycle.js";
+export { recordV4NativeSettlement, needsV4NativeRevalidation, reduceUniswapNativeFee, invalidateOldHookedNativeInput } from "./agent-activity/v4-native-settlement.js";

@@ -496,12 +496,17 @@ export async function failActivityEventWith(
  * so a signer that stages concurrently makes this write miss and keeps the
  * row pending for chain observation.
  */
+export async function failHashlessActivityEvent(id: number, input: FailActivityEventInput): Promise<TerminalCasResult> {
+  return runFailActivityEvent(null, id, input, HANDLER_RETURN, true);
+}
+
 export async function failHashlessActivityEventWith(
   client: PoolClient,
   id: number,
   input: FailActivityEventInput,
+  requireInactiveNonceLease = false,
 ): Promise<TerminalCasResult> {
-  return runFailActivityEvent(client, id, input, HANDLER_RETURN, true);
+  return runFailActivityEvent(client, id, input, HANDLER_RETURN, true, requireInactiveNonceLease);
 }
 
 async function runFailActivityEvent(
@@ -510,6 +515,7 @@ async function runFailActivityEvent(
   input: FailActivityEventInput,
   context: TerminalWriteContext,
   requireHashless: boolean = false,
+  requireInactiveNonceLease = false,
 ): Promise<TerminalCasResult> {
   assertFailureCode(input.failureCode);
   // Under the session control lock - see `./session-lock.ts`. DB-only.
@@ -528,7 +534,8 @@ async function runFailActivityEvent(
             -- and that a late worker could still try to act on.
             evm_claim_lease_until = NULL, evm_claim_token = NULL
       WHERE id = $1 AND status = 'pending'
-        ${requireHashless ? "AND tx_hash IS NULL" : ""}${fence.clause}
+        ${requireHashless ? "AND tx_hash IS NULL" : ""}
+        ${requireInactiveNonceLease ? "AND (nonce_reservation_until IS NULL OR nonce_reservation_until <= NOW())" : ""}${fence.clause}
       RETURNING *`,
       [id, input.failureCode, sanitizeFailureReason(input.failureReason), ...fence.params],
   );

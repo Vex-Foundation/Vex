@@ -1,0 +1,259 @@
+{
+  "capturedAt": "2026-09-09T16:17:37.503184+00:00",
+  "method": "StateView.getSlot0 for four canonical hookless keys before implementation",
+  "source": "RPCs recorded in v4-deployment-provenance.json",
+  "pools": [
+    {
+      "chainId": 4663,
+      "token": "0x008Df4b3E857D06c4603Aeb11F267ccD32ce2005",
+      "fee": 100,
+      "tickSpacing": 1,
+      "id": "0xe4e9e4c95dfa5e2df7fd0fe8e7538a15ffe4d6edadf6f8dcb4373767affa582a",
+      "sqrtPriceX96": "0",
+      "lpFee": 0
+    },
+    {
+      "chainId": 4663,
+      "token": "0x008Df4b3E857D06c4603Aeb11F267ccD32ce2005",
+      "fee": 500,
+      "tickSpacing": 10,
+      "id": "0x8b13bc2908f40da3b74994da138413c251aeeb852883952681a1d16881b04c6b",
+      "sqrtPriceX96": "0",
+      "lpFee": 0
+    },
+    {
+      "chainId": 4663,
+      "token": "0x008Df4b3E857D06c4603Aeb11F267ccD32ce2005",
+      "fee": 3000,
+      "tickSpacing": 60,
+      "id": "0x32ea62cc067921222e4bbdd8fae50ecfbab371781248de59e2cadad19c647715",
+      "sqrtPriceX96": "0",
+      "lpFee": 0
+    },
+    {
+      "chainId": 4663,
+      "token": "0x008Df4b3E857D06c4603Aeb11F267ccD32ce2005",
+      "fee": 10000,
+      "tickSpacing": 200,
+      "id": "0x3e2bb3914f616ab95d53e0d543b903553a6294535e2d126de3fbd5d1b1c3eddb",
+      "sqrtPriceX96": "0",
+      "lpFee": 0
+    },
+    {
+      "chainId": 1,
+      "token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "fee": 100,
+      "tickSpacing": 1,
+      "id": "0x00b9edc1583bf6ef09ff3a09f6c23ecb57fd7d0bb75625717ec81eed181e22d7",
+      "sqrtPriceX96": "3951404322512098091635958",
+      "lpFee": 100
+    },
+    {
+      "chainId": 1,
+      "token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "fee": 500,
+      "tickSpacing": 10,
+      "id": "0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27",
+      "sqrtPriceX96": "3952140312949884538391017",
+      "lpFee": 500
+    },
+    {
+      "chainId": 1,
+      "token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "fee": 3000,
+      "tickSpacing": 60,
+      "id": "0xdce6394339af00981949f5f3baf27e3610c76326a700af57e4b3e3ae4977f78d",
+      "sqrtPriceX96": "3951917374106887331512320",
+      "lpFee": 3000
+    },
+    {
+      "chainId": 1,
+      "token": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "fee": 10000,
+      "tickSpacing": 200,
+      "id": "0xd934712639fede326a3ff8d2a9c2f73749bac510c23fb33443cea7f3c9aca6f3",
+      "sqrtPriceX96": "3954780665039546739257547",
+      "lpFee": 10000
+    },
+    {
+      "chainId": 8453,
+      "token": "0xC9750053FE947E0961eab0f3E29325F0311DCb07",
+      "fee": 100,
+      "tickSpacing": 1,
+      "id": "0x5551b7f19d83b18f962b7513f6c05b318aff25aa8e1144892dee580bcbe3ffc8",
+      "sqrtPriceX96": "0",
+      "lpFee": 0
+    },
+    {
+      "chainId": 8453,
+      "token": "0xC9750053FE947E0961eab0f3E29325F0311DCb07",
+      "fee": 500,
+      "tickSpacing": 10,
+      "id": "0xa7420ef0afcdd6cd750664fc7169b26548e137936de4b2bc94457074f68fe940",
+      "sqrtPriceX96": "0",
+      "lpFee": 0
+    },
+    {
+      "chainId": 8453,
+      "token": "0xC9750053FE947E0961eab0f3E29325F0311DCb07",
+      "fee": 3000,
+      "tickSpacing": 60,
+      "id": "0xa8cdb787448235ad5706719a4027d083fabc0c9ea57c62c0fbbf4a7878434278",
+      "sqrtPriceX96": "0",
+      "lpFee": 0
+    },
+    {
+      "chainId": 8453,
+      "token": "0xC9750053FE947E0961eab0f3E29325F0311DCb07",
+      "fee": 10000,
+      "tickSpacing": 200,
+      "id": "0xb038a9eacbbf780ed8669d667f2e0bc2682010a57de016eb26eda80895a17160",
+      "sqrtPriceX96": "0",
+      "lpFee": 0
+    },
+    {
+      "chainId": 42161,
+      "token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "fee": 100,
+      "tickSpacing": 1,
+      "id": "0x19235486bda85a935bed1024abfc40ed02cd3fb14b43ced1f644b74c9398451a",
+      "sqrtPriceX96": "3955586370446536767555317",
+      "lpFee": 100
+    },
+    {
+      "chainId": 42161,
+      "token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "fee": 500,
+      "tickSpacing": 10,
+      "id": "0x864abca0a6202dba5b8868772308da953ff125b0f95015adbf89aaf579e903a8",
+      "sqrtPriceX96": "3952095735330207989353574",
+      "lpFee": 500
+    },
+    {
+      "chainId": 42161,
+      "token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "fee": 3000,
+      "tickSpacing": 60,
+      "id": "0x03df2300e83353309c1069ae3ea89c31b361a009f9c36a1de5c8f0afcc45bde8",
+      "sqrtPriceX96": "3952362558981581507188641",
+      "lpFee": 3000
+    },
+    {
+      "chainId": 42161,
+      "token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "fee": 10000,
+      "tickSpacing": 200,
+      "id": "0xec71296a7e90eab1c659c93b5ed332747396f7d73ac5fec8c5559755ebdc63d4",
+      "sqrtPriceX96": "3952585968997658174627799",
+      "lpFee": 10000
+    },
+    {
+      "chainId": 10,
+      "token": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+      "fee": 100,
+      "tickSpacing": 1,
+      "id": "0x214deb252ad8aa6ab87ad404fbc0530b21704135a32f2cfa690dd4ae0e4d1f86",
+      "sqrtPriceX96": "3205441552493126270349691",
+      "lpFee": 100
+    },
+    {
+      "chainId": 10,
+      "token": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+      "fee": 500,
+      "tickSpacing": 10,
+      "id": "0x51bf4cc5b8d9f7f759e41f572fe2a25bc2aeb42432bf12544a350595e5c8bb43",
+      "sqrtPriceX96": "3952325438147207750063228",
+      "lpFee": 500
+    },
+    {
+      "chainId": 10,
+      "token": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+      "fee": 3000,
+      "tickSpacing": 60,
+      "id": "0xdb67e87b43804197a3a62c6d5066587d649782ce2dcada9586d6a35d57f02f2e",
+      "sqrtPriceX96": "3952387421341747883093727",
+      "lpFee": 3000
+    },
+    {
+      "chainId": 10,
+      "token": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+      "fee": 10000,
+      "tickSpacing": 200,
+      "id": "0x7ecc49f61e5c082ccd8d242dae2ffe8eb0b3b833c870b1f291753b37299db901",
+      "sqrtPriceX96": "3628615231199232028343588",
+      "lpFee": 10000
+    },
+    {
+      "chainId": 137,
+      "token": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      "fee": 100,
+      "tickSpacing": 1,
+      "id": "0x45a759aa4609ac5a7ba56e8f6481a202f30b31564adb802f767768da97d12e69",
+      "sqrtPriceX96": "24856815821500880083759",
+      "lpFee": 100
+    },
+    {
+      "chainId": 137,
+      "token": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      "fee": 500,
+      "tickSpacing": 10,
+      "id": "0x37f372fc7c59fb54a7797addeb6c03670537eacd62d4bed81dfffa61876cd775",
+      "sqrtPriceX96": "24494402103497999921127",
+      "lpFee": 500
+    },
+    {
+      "chainId": 137,
+      "token": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      "fee": 3000,
+      "tickSpacing": 60,
+      "id": "0x81d3c57932bb451b60029c9e60832e00a220af4a14c15f829b9090b3fd5717f2",
+      "sqrtPriceX96": "24488841878399119565911",
+      "lpFee": 3000
+    },
+    {
+      "chainId": 137,
+      "token": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      "fee": 10000,
+      "tickSpacing": 200,
+      "id": "0xa27a9586ac8ac9056c9fa2927a82dbb37dd45d4719bbc50b6f7331ffe4dae0b3",
+      "sqrtPriceX96": "24569927771859159846932",
+      "lpFee": 10000
+    },
+    {
+      "chainId": 56,
+      "token": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+      "fee": 100,
+      "tickSpacing": 1,
+      "id": "0xba3d225310dc3a65ea1237ffe877e6e285d5f53cb419f53a68c1dab482c2c27f",
+      "sqrtPriceX96": "2153859321170875357110551953979",
+      "lpFee": 100
+    },
+    {
+      "chainId": 56,
+      "token": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+      "fee": 500,
+      "tickSpacing": 10,
+      "id": "0x963f416c93cc57e6a5711a22ac976c4990165d3f99b8fa3ee26c4ef7b53ed752",
+      "sqrtPriceX96": "2154012531123787643934788652508",
+      "lpFee": 500
+    },
+    {
+      "chainId": 56,
+      "token": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+      "fee": 3000,
+      "tickSpacing": 60,
+      "id": "0x54e5f6e39402cab83b84187a3ec868800f422ae7a8e7eed1a88737646f2d8386",
+      "sqrtPriceX96": "2153866702146510792015035050066",
+      "lpFee": 3000
+    },
+    {
+      "chainId": 56,
+      "token": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+      "fee": 10000,
+      "tickSpacing": 200,
+      "id": "0x2f4abd2229805ea089a5e0d3590fbe325e4953f8e12115dbf00a95e661b14840",
+      "sqrtPriceX96": "2209204743626402916277096198312",
+      "lpFee": 10000
+    }
+  ]
+}

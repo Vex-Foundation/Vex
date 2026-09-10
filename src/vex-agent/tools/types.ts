@@ -336,7 +336,7 @@ export interface ToolSpendabilityPreview {
  */
 export interface ToolDebitPlan {
   readonly legs: readonly {
-    readonly role: "allowance_reset" | "allowance" | "swap" | "swap_fee";
+    readonly role: "allowance_reset" | "allowance" | "permit2_allowance" | "swap" | "swap_fee";
     readonly feeCap: ToolLegFeeCap;
     /**
      * How the leg's gas units were reached: `measured` from a live estimate of

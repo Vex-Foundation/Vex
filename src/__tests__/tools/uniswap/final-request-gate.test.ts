@@ -29,6 +29,7 @@ import {
   getAddress,
   http,
   parseUnits,
+  parseTransaction,
   type Address,
   type Chain,
   type Hex,
@@ -38,6 +39,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 
 import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
+import { swapFeeCeiling } from "@tools/evm-chains/swap-fee-ceiling.js";
 import {
   buildSwapTx,
   signUniswapTransaction,
@@ -110,7 +112,8 @@ function builtWith(args: {
 const built = builtWith;
 
 function request(over: Partial<FinalSignedRequest> & { to?: Address }): FinalSignedRequest {
-  return { to: V2_ROUTER, data: "0x" as Hex, value: 0n, gas: 300_000n, nonce: 3, ...over };
+  return { to: V2_ROUTER, data: "0x" as Hex, value: 0n, gas: 300_000n, nonce: 3,
+    gasPrice: undefined, maxFeePerGas: undefined, maxPriorityFeePerGas: undefined, ...over };
 }
 
 /**
@@ -348,6 +351,7 @@ function harness(preparedFees: PreparedFees = { maxFeePerGas: 1_000_000n, maxPri
   const publicClient = Object.assign(
     createPublicClient({ chain: CHAIN, transport: transport() }),
     {
+      getTransactionCount: vi.fn(async () => 7),
       estimateGas: vi.fn(async () => 21_000n),
       // The chain's CURRENT suggestion. Read in the same order and from the
       // same actions the quote's ceiling was established with
@@ -487,6 +491,26 @@ describe("the approved gas-price ceiling is checked against the LIVE requirement
     liveFeeSuggestion = { maxFeePerGas: 1_000_000n, maxPriorityFeePerGas: 1_000n };
   });
 
+  it("signs a 0.05% rise inside the quote's disclosed headroom at the current fee", async () => {
+    const cap = swapFeeCeiling(APPROVED_CAP);
+    liveFeeSuggestion = { maxFeePerGas: 1_000_500n, maxPriorityFeePerGas: 1_000n };
+    const h = harness();
+    const signed = await signUniswapTransaction(
+      h.publicClient, h.walletClient, REQUESTED, undefined, reserveNonce, undefined, { cap },
+    );
+    expect(parseTransaction(signed.serializedTransaction).maxFeePerGas).toBe(1_000_500n);
+  });
+
+  it("never widens a stale approved cap to accommodate a 0.05% rise", async () => {
+    liveFeeSuggestion = { maxFeePerGas: 1_000_500n, maxPriorityFeePerGas: 1_000n };
+    const h = harness();
+    const fence = vi.fn();
+    await expect(signUniswapTransaction(
+      h.publicClient, h.walletClient, REQUESTED, undefined, reserveNonce, fence, { cap: APPROVED_CAP },
+    )).rejects.toMatchObject({ name: "UniswapApprovedGasPriceExceededError" });
+    expect(fence).not.toHaveBeenCalled();
+  });
+
   it("signs when the chain still wants no more than the approved ceiling", async () => {
     liveFeeSuggestion = { maxFeePerGas: 900_000n, maxPriorityFeePerGas: 900n };
     const h = harness();
@@ -497,6 +521,8 @@ describe("the approved gas-price ceiling is checked against the LIVE requirement
     );
 
     expect(signed.txHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(parseTransaction(signed.serializedTransaction).maxFeePerGas).toBe(900_000n);
+    expect(parseTransaction(signed.serializedTransaction).maxPriorityFeePerGas).toBe(900n);
   });
 
   it("refuses BY NAME, before the fence, when the base fee moved past the ceiling", async () => {

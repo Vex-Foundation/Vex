@@ -136,6 +136,11 @@ describe("the managed block's content", () => {
     const longest = { ...longestStudioBrief(), projectName: "&".repeat(PROJECT_NAME_MAX_LENGTH) };
     const body = renderStudioManagedBody(longest, MAXIMUM_ENVIRONMENT);
     expect(body).toContain("Use Uniswap when KyberSwap is region/edge-blocked");
+    expect(body).toContain("On Robinhood Chain, quote both venues when both price the pair");
+    expect(body).toContain("prefer direct Uniswap when it has a route");
+    expect(body).toContain("V2, V3 and v4 pools on seven chains");
+    expect(body).toContain("Other DEX liquidity may be unavailable there");
+    expect(body).toContain("KyberSwap is the default");
     // Before the regional remedy, this fixture used 24,539 of 24,576 bytes.
     expect(Buffer.byteLength(body, "utf8")).toBeLessThanOrEqual(24_539);
   });

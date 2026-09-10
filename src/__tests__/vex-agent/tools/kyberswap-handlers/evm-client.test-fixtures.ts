@@ -102,6 +102,9 @@ interface ReadContractParameters {
  * client the handler actually holds.
  */
 export const evmClientFake = {
+  async call(_parameters: { account: Address; to: Address; data: Hex; value: bigint }): Promise<{ data?: Hex }> {
+    return {};
+  },
   async readContract(parameters: ReadContractParameters): Promise<unknown> {
     switch (parameters.functionName) {
       case "balanceOf":

@@ -1,0 +1,343 @@
+{
+  "capturedAt": "2026-09-09T17:40:06.157236+00:00",
+  "executeStageRun": false,
+  "command": "VEX_UNISWAP_V4_LIVE=1 VEX_UNISWAP_V4_LIVE_EXECUTE=0 pnpm exec vitest run --maxWorkers=4 src/__tests__/tools/uniswap/uniswap-v4-live.test.ts",
+  "quoteContext": "no selected wallet; gas comparison falls back explicitly where V2 gas is unavailable",
+  "events": [
+    {
+      "event": "uniswap.v4.live_quote",
+      "chainId": 4663,
+      "poolId": "0x7f8271c1a7a6a434f33b0babc15bf2980a0dcb4196848b4f7e789a7fd73a5350",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x008Df4b3E857D06c4603Aeb11F267ccD32ce2005",
+        "fee": 0,
+        "tickSpacing": 200,
+        "hooks": "0xE5e702641Ea86F4ae6cC3cDaeD2B886f976Be044"
+      },
+      "handlerSelectedVersion": "v4",
+      "selectionBasis": "output_net_of_quoted_gas",
+      "v4Discovery": {
+        "indexed": 6,
+        "matching": 4,
+        "considered": 3,
+        "refused": 1,
+        "canonical": {
+          "probed": 4,
+          "initialized": 0,
+          "failed": 0
+        }
+      },
+      "amountIn": "0.0001",
+      "amountOutRaw": "125819442706487785699",
+      "minAmountOutRaw": "124561248279422907842",
+      "gasEstimate": "79611"
+    },
+    {
+      "event": "uniswap.v4.live_quote",
+      "chainId": 8453,
+      "poolId": "0x4f7e88a5183a5e034dd1e2e6b4277e8ca820a310a0fba6d5b0dd3db374ad256a",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xC9750053FE947E0961eab0f3E29325F0311DCb07",
+        "fee": 910000,
+        "tickSpacing": 9100,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "handlerSelectedVersion": "v4",
+      "selectionBasis": "only_successful_candidate",
+      "v4Discovery": {
+        "indexed": 2,
+        "matching": 1,
+        "considered": 1,
+        "refused": 0,
+        "canonical": {
+          "probed": 4,
+          "initialized": 0,
+          "failed": 0
+        }
+      },
+      "amountIn": "0.0001",
+      "amountOutRaw": "5429846364271211987111",
+      "minAmountOutRaw": "5375547900628499867239",
+      "gasEstimate": "59743"
+    },
+    {
+      "event": "uniswap.v4.live_canonical_chain",
+      "chainId": 1,
+      "nativeSymbol": "ETH",
+      "handlerSelectedVersion": "v4",
+      "selectedPoolId": "0x00b9edc1583bf6ef09ff3a09f6c23ecb57fd7d0bb75625717ec81eed181e22d7",
+      "selectionBasis": "gross_output_gas_comparison_unavailable",
+      "handlerAmountOutRaw": "248623",
+      "v4Discovery": {
+        "indexed": 30,
+        "matching": 0,
+        "considered": 4,
+        "refused": 0,
+        "canonical": {
+          "probed": 4,
+          "initialized": 4,
+          "failed": 0
+        }
+      },
+      "sampleProbeSource": "real_handler_candidate",
+      "poolId": "0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "fee": 500,
+        "tickSpacing": 10,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "amountInRaw": "99750000000000",
+      "sampleAmountOutRaw": "248535",
+      "gasEstimate": "42695",
+      "v4Candidates": [
+        {
+          "poolId": "0x00b9edc1583bf6ef09ff3a09f6c23ecb57fd7d0bb75625717ec81eed181e22d7",
+          "fee": 100,
+          "amountOutRaw": "248623",
+          "gasEstimate": "42308"
+        },
+        {
+          "poolId": "0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27",
+          "fee": 500,
+          "amountOutRaw": "248535",
+          "gasEstimate": "42695"
+        },
+        {
+          "poolId": "0xdce6394339af00981949f5f3baf27e3610c76326a700af57e4b3e3ae4977f78d",
+          "fee": 3000,
+          "amountOutRaw": "247573",
+          "gasEstimate": "42599"
+        },
+        {
+          "poolId": "0xd934712639fede326a3ff8d2a9c2f73749bac510c23fb33443cea7f3c9aca6f3",
+          "fee": 10000,
+          "amountOutRaw": "245803",
+          "gasEstimate": "42563"
+        }
+      ]
+    },
+    {
+      "event": "uniswap.v4.live_canonical_chain",
+      "chainId": 42161,
+      "nativeSymbol": "ETH",
+      "handlerSelectedVersion": "v4",
+      "selectedPoolId": "0x19235486bda85a935bed1024abfc40ed02cd3fb14b43ced1f644b74c9398451a",
+      "selectionBasis": "gross_output_gas_comparison_unavailable",
+      "handlerAmountOutRaw": "248607",
+      "v4Discovery": {
+        "indexed": 30,
+        "matching": 0,
+        "considered": 4,
+        "refused": 0,
+        "canonical": {
+          "probed": 4,
+          "initialized": 4,
+          "failed": 0
+        }
+      },
+      "sampleProbeSource": "real_handler_candidate",
+      "poolId": "0x864abca0a6202dba5b8868772308da953ff125b0f95015adbf89aaf579e903a8",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+        "fee": 500,
+        "tickSpacing": 10,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "amountInRaw": "99750000000000",
+      "sampleAmountOutRaw": "248529",
+      "gasEstimate": "42695",
+      "v4Candidates": [
+        {
+          "poolId": "0x19235486bda85a935bed1024abfc40ed02cd3fb14b43ced1f644b74c9398451a",
+          "fee": 100,
+          "amountOutRaw": "248607",
+          "gasEstimate": "42276"
+        },
+        {
+          "poolId": "0x864abca0a6202dba5b8868772308da953ff125b0f95015adbf89aaf579e903a8",
+          "fee": 500,
+          "amountOutRaw": "248529",
+          "gasEstimate": "42695"
+        },
+        {
+          "poolId": "0x03df2300e83353309c1069ae3ea89c31b361a009f9c36a1de5c8f0afcc45bde8",
+          "fee": 3000,
+          "amountOutRaw": "247592",
+          "gasEstimate": "41734"
+        },
+        {
+          "poolId": "0xec71296a7e90eab1c659c93b5ed332747396f7d73ac5fec8c5559755ebdc63d4",
+          "fee": 10000,
+          "amountOutRaw": "245533",
+          "gasEstimate": "42535"
+        }
+      ]
+    },
+    {
+      "event": "uniswap.v4.live_canonical_chain",
+      "chainId": 10,
+      "nativeSymbol": "ETH",
+      "handlerSelectedVersion": "v4",
+      "selectedPoolId": "0x51bf4cc5b8d9f7f759e41f572fe2a25bc2aeb42432bf12544a350595e5c8bb43",
+      "selectionBasis": "gross_output_gas_comparison_unavailable",
+      "handlerAmountOutRaw": "248552",
+      "v4Discovery": {
+        "indexed": 30,
+        "matching": 0,
+        "considered": 4,
+        "refused": 2,
+        "canonical": {
+          "probed": 4,
+          "initialized": 4,
+          "failed": 0
+        }
+      },
+      "sampleProbeSource": "real_handler_candidate",
+      "poolId": "0x51bf4cc5b8d9f7f759e41f572fe2a25bc2aeb42432bf12544a350595e5c8bb43",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+        "fee": 500,
+        "tickSpacing": 10,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "amountInRaw": "99750000000000",
+      "sampleAmountOutRaw": "248552",
+      "gasEstimate": "42695",
+      "v4Candidates": [
+        {
+          "poolId": "0x51bf4cc5b8d9f7f759e41f572fe2a25bc2aeb42432bf12544a350595e5c8bb43",
+          "fee": 500,
+          "amountOutRaw": "248552",
+          "gasEstimate": "42695"
+        },
+        {
+          "poolId": "0xdb67e87b43804197a3a62c6d5066587d649782ce2dcada9586d6a35d57f02f2e",
+          "fee": 3000,
+          "amountOutRaw": "247584",
+          "gasEstimate": "41734"
+        }
+      ]
+    },
+    {
+      "event": "uniswap.v4.live_canonical_chain",
+      "chainId": 137,
+      "nativeSymbol": "POL",
+      "handlerSelectedVersion": "v4",
+      "selectedPoolId": "0x45a759aa4609ac5a7ba56e8f6481a202f30b31564adb802f767768da97d12e69",
+      "selectionBasis": "gross_output_gas_comparison_unavailable",
+      "handlerAmountOutRaw": "981",
+      "v4Discovery": {
+        "indexed": 30,
+        "matching": 0,
+        "considered": 4,
+        "refused": 0,
+        "canonical": {
+          "probed": 4,
+          "initialized": 4,
+          "failed": 0
+        }
+      },
+      "sampleProbeSource": "real_handler_candidate",
+      "poolId": "0x37f372fc7c59fb54a7797addeb6c03670537eacd62d4bed81dfffa61876cd775",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+        "fee": 500,
+        "tickSpacing": 10,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "amountInRaw": "9975000000000000",
+      "sampleAmountOutRaw": "962",
+      "gasEstimate": "56977",
+      "v4Candidates": [
+        {
+          "poolId": "0x45a759aa4609ac5a7ba56e8f6481a202f30b31564adb802f767768da97d12e69",
+          "fee": 100,
+          "amountOutRaw": "981",
+          "gasEstimate": "56630"
+        },
+        {
+          "poolId": "0x37f372fc7c59fb54a7797addeb6c03670537eacd62d4bed81dfffa61876cd775",
+          "fee": 500,
+          "amountOutRaw": "962",
+          "gasEstimate": "56977"
+        },
+        {
+          "poolId": "0x81d3c57932bb451b60029c9e60832e00a220af4a14c15f829b9090b3fd5717f2",
+          "fee": 3000,
+          "amountOutRaw": "957",
+          "gasEstimate": "56881"
+        },
+        {
+          "poolId": "0xa27a9586ac8ac9056c9fa2927a82dbb37dd45d4719bbc50b6f7331ffe4dae0b3",
+          "fee": 10000,
+          "amountOutRaw": "948",
+          "gasEstimate": "55985"
+        }
+      ]
+    },
+    {
+      "event": "uniswap.v4.live_canonical_chain",
+      "chainId": 56,
+      "nativeSymbol": "BNB",
+      "handlerSelectedVersion": "v3",
+      "selectionBasis": "gross_output_gas_comparison_unavailable",
+      "handlerAmountOutRaw": "73898983842876470",
+      "v4Discovery": {
+        "indexed": 30,
+        "matching": 0,
+        "considered": 4,
+        "refused": 0,
+        "canonical": {
+          "probed": 4,
+          "initialized": 4,
+          "failed": 0
+        }
+      },
+      "sampleProbeSource": "real_handler_candidate",
+      "poolId": "0x963f416c93cc57e6a5711a22ac976c4990165d3f99b8fa3ee26c4ef7b53ed752",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+        "fee": 500,
+        "tickSpacing": 10,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "amountInRaw": "99750000000000",
+      "sampleAmountOutRaw": "73878289975680857",
+      "gasEstimate": "42065",
+      "v4Candidates": [
+        {
+          "poolId": "0xba3d225310dc3a65ea1237ffe877e6e285d5f53cb419f53a68c1dab482c2c27f",
+          "fee": 100,
+          "amountOutRaw": "71902314392019368",
+          "gasEstimate": "59033"
+        },
+        {
+          "poolId": "0x963f416c93cc57e6a5711a22ac976c4990165d3f99b8fa3ee26c4ef7b53ed752",
+          "fee": 500,
+          "amountOutRaw": "73878289975680857",
+          "gasEstimate": "42065"
+        },
+        {
+          "poolId": "0x54e5f6e39402cab83b84187a3ec868800f422ae7a8e7eed1a88737646f2d8386",
+          "fee": 3000,
+          "amountOutRaw": "73555392309858650",
+          "gasEstimate": "43042"
+        },
+        {
+          "poolId": "0x2f4abd2229805ea089a5e0d3590fbe325e4953f8e12115dbf00a95e661b14840",
+          "fee": 10000,
+          "amountOutRaw": "4983432776804",
+          "gasEstimate": "64372"
+        }
+      ]
+    }
+  ]
+}

@@ -54,6 +54,8 @@ export interface MinedTransaction {
 export type ReceiptStatus = "success" | "reverted" | "unreadable" | "absent";
 
 export interface DepositEvidenceDeps {
+  readonly fetchNativeBalanceEvidence?: (input: { chainId: number; txHash: string; wallet: string; router: string })
+    => Promise<import("@tools/uniswap/v4-native-balance.js").NativeBalanceEvidence>;
   /**
    * The mined receipt's STATUS. `null` when the receipt could not be read at
    * all, which is a deferral and never a revert.

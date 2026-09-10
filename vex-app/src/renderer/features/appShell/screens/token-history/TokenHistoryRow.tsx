@@ -105,7 +105,7 @@ function LegText({
       {display.iconSymbol !== null ? (
         <TokenIcon symbol={display.iconSymbol} size={12} />
       ) : null}
-      <span className="truncate">
+      <span className={amount.basis === "lower_bound" ? "min-w-0 whitespace-normal break-all" : "truncate"}>
         {shown} {display.text}
       </span>
     </span>
@@ -210,6 +210,7 @@ export function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.
   // verified fill) marks both legs `~…` + a single trailing "est." tag, so a
   // quoted bridge amount never reads as an executed quantity.
   const bridgeEstimated = entry.kind === "bridge" && entry.amountBasis === "estimated";
+  const hasNativeBound = entry.kind === "swap" && entry.input.amount.basis === "lower_bound";
 
   return (
     <li className="border-b border-line-2 py-2 last:border-b-0">
@@ -238,7 +239,7 @@ export function EntryRow({ entry }: { readonly entry: TokenHistoryEntry }): JSX.
             title={bridgeChip.title}
           />
         ) : null}
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap font-mono text-[11.5px] leading-none text-ink-primary">
+        <span className={`flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[11.5px] text-ink-primary ${hasNativeBound ? "flex-wrap whitespace-normal leading-relaxed" : "overflow-hidden whitespace-nowrap leading-none"}`}>
           {entry.kind === "transfer" ? (
             <>
               <span className="truncate">{quantityText(entry.amount)}</span>

@@ -2,7 +2,7 @@
 
 Kept outside the markers.
 
-<!-- vex:studio:begin vex=0.2.6 hash=bcd7579865924042 -->
+<!-- vex:studio:begin vex=0.2.6 hash=ffc5bf428a101162 -->
 # Vex guide - project "acme-trading"
 
 The companion to this project's `AGENTS.md`, which carries the authority:
@@ -20,6 +20,14 @@ its version beside its own heading.
 A note whose subject is a section of `AGENTS.md` names a heading in THAT
 file; the sections below are this one's.
 
+- **Vex 0.2.8, added** `lighter`: Lighter is a new protocol here: perpetual and spot trading on Lighter Core and on Robinhood Chain, with public market, order-book, trade and candle reads, managed onboarding, deposits, trading-key registration, orders including stop loss, take profit and OCO, position close, withdrawals and manual claims. Every order, deposit and withdrawal runs through its own approval card, and the Vex fee is 0.10% on perpetual trades and 0.25% on spot, authorized once on a card that also states what the tier change does to Lighter's own fees.
+- **Vex 0.2.8, changed** `virtuals`: Virtuals is no longer read-only. An agent token still on its BondingV5 curve can now be quoted and then bought or sold on Base and Robinhood Chain, an agent can be launched on those two chains and a launch the keeper has not made live yet can be cancelled, and the reads gained a bonding-curve trade tape, candles for every lifecycle stage and creator-fee state. A GRADUATED agent is still a separate swap on the venue the research names; the Vex fee is 25 bps and a trade that reverts or cannot be proven is never charged.
+- **Vex 0.2.8, changed** `pools`: pools.fun gained holder rewards and the stock pairing table: read what a token's fee stream owes the wallets that hold it, claim your share (run it with `dryRun` first, which simulates the distributor's own claim), distribute as the deployer, and list which tokenised stocks a launch can be paired against and how each one is priced. Vex charges nothing on rewards; a launch still pays 25 bps of the native value it sends.
+- **Vex 0.2.8, added** `launchpads`: The launchpads namespace holds the half of a token launch that belongs to no single launchpad: the image locker that both pools.fun and Virtuals launches draw from. List what is staged, publish one picture to Vex's public content-addressed host under the ordinary approval card, and reuse the permanent URL it returns on any chain. Listing and publishing are free; the launch itself is charged by its own launchpad.
+- **Vex 0.2.8, changed** `uniswap`: The direct Uniswap venue now prices and executes v4 pools alongside V2 and V3 on Ethereum, Base, Robinhood Chain, Arbitrum, OP Mainnet, Polygon and BNB Chain, single hop, never mixing versions in one call. It is the named fallback when KyberSwap is unavailable and the more stable choice on Robinhood Chain. v4 discovery probes four canonical hookless pool keys plus DexScreener's indexed pools, so an unindexed hooked pool can still be missed and the answer says so rather than reporting no liquidity.
+- **Vex 0.2.8, changed** `kyberswap`: KyberSwap remains the default router for EVM swaps. When its edge refuses the user's region it answers before any KyberSwap body exists, and repeating the same request is always wrong: take a fresh `uniswap__swap_quote` on the same chain and execute there under its own approval, because a KyberSwap quote never authorizes a Uniswap execution. A token whose liquidity sits on neither venue is explained, not retried.
+- **Vex 0.2.8, added** `WalletWrapPrepare`: `WalletWrapPrepare` then `WalletWrapConfirm` wrap and unwrap the native gas token exactly 1:1 on eight verified chains, with no route, no slippage and no Vex fee by construction. Unwrapping wrapped native used to mean bridging out and back.
+- **Vex 0.2.8, changed** `SwapExecute`: Three honesty changes on both swap pairs, `SwapQuote`/`SwapExecute` and `SwapQuoteUniswap`/`SwapExecuteUniswap`: the approved per-gas ceiling now carries 15% headroom over the fee estimate measured at quote time and sealed into the approval, so ordinary gas-price drift between quote and execute no longer refuses the trade, while a larger rise still needs a fresh quote and an old quote gets no new headroom; a slippage refusal states the measured shortfall instead of refusing flatly; and the USD figures beside a route are read from an independent reference rather than the aggregator's lagging field.
 - **Vex 0.2.7, changed** `Read these on start`: AGENTS.md now carries the authority alone - this project's permission level, its wallets, how to call the tools, what a result means and the task shapes - and the rest moved WHOLE into `.vex/vex-guide.md`: what's new in Vex, the protocol blocks, building on Vex MCP and the bug bounty. Nothing was shortened. Codex loads AGENTS.md under a 32 KiB total budget and truncates the file rather than splitting it, so what must be in context on every turn is kept short; read the guide at the start of a session, as the first section of AGENTS.md says.
 - **Vex 0.2.7, added** `vex_ToolDescribe`: vex_ToolDescribe returns one tool's whole contract - full description, input schema, risk class, whether it raises the approval card, the Vex fee and what it returns - so a description your client truncated is one call away rather than lost.
 - **Vex 0.2.7, changed** `BridgeExecute`: BridgeExecute is unchanged except for one parameter: the `recipient` override is gone. The destination is derived from the source wallet, which is what the description already claimed; the parameter that contradicted it was removed.
@@ -43,6 +51,8 @@ Text OUTSIDE the markers belongs to the user; Vex preserves it.
 
 - 2026-08-25 · Vex 0.9.4 · updated the wallet selection
 - 2026-08-12 · Vex 0.9.3 · added the codex config
+
+KyberSwap is the default; Uniswap prices V2, V3 and v4 pools on seven chains. Other DEX liquidity may be unavailable there. On Robinhood Chain, quote both venues when both price the pair; prefer direct Uniswap when it has a route (V2/V3/v4). KyberSwap drops quiet pools; its USD reference lags. Elsewhere, KyberSwap is the usual first choice.
 
 ## Protocols available to this project (Added in Vex 0.2.7)
 
@@ -76,23 +86,23 @@ Relay is a keyless cross-chain bridge for moving a token from one EVM chain to a
 - Act: Move funds into Robinhood Chain or bridge ETH back out after a fresh matching quote, then swap on-chain when the task also requires a trade.
 - Vex fee: 25 bps of the input on a bridge execute; reads and quotes free.
 
-### kyberswap
+### kyberswap (Changed in Vex 0.2.8)
 
 KyberSwap is an EVM swap aggregator that routes exact-input trades across more than 400 decentralized exchanges.
 
 - Chains: Ethereum (1), BSC (56), Arbitrum (42161), Polygon (137), Optimism (10), Avalanche (43114), Base (8453), Linea (59144), Mantle (5000), Sonic (146), Berachain (80094), Ronin (2020), Unichain (130), HyperEVM (999), Plasma (9745), Monad (143), MegaETH (4326), Robinhood Chain (4663).
-- Read: Read supported EVM chains and networks, the feature matrix, live chain status, token metadata, and a safety check that reports honeypot and fee-on-transfer signals.
-- Quote: Preview a token swap without signing and inspect the best price, route, output, gas estimate, price impact, slippage, and safety results for both token legs.
-- Act: Buy, sell, swap, or exit a position after a fresh quote with identical economic parameters. Execution signs and broadcasts from the wallet and can confirm, revert after spending gas, be refused before signing, or remain pending.
+- Read: Read EVM chains, the feature matrix, live chain status, token metadata and a honeypot/fee-on-transfer safety check.
+- Quote: Preview a token swap: best price, route, output, gas estimate, price impact, slippage and both tokens' safety results; no signing.
+- Act: Buy, sell, swap or exit a position after a fresh quote with identical parameters. The wallet signs and broadcasts; it can confirm, spend gas and revert, refuse before signing, or stay pending.
 - Vex fee: 25 bps of the input on a swap execute, embedded in the quote.
 
-### uniswap
+### uniswap (Changed in Vex 0.2.8)
 
-Uniswap is an on-chain spot-swap venue that compares V2 and V3 pools for an exact-input trade.
+Uniswap is an on-chain spot-swap venue that compares V2, V3 and v4 pools for an exact-input trade.
 
 - Chains: Robinhood Chain (4663), Ethereum (1), Base (8453), Arbitrum One (42161), Optimism (10), Polygon (137), BNB Chain (56).
-- Read: Read a route preview's pool path, expected output, price impact, gas estimate, and token-safety signals. Token identity must already be resolved because this venue has no symbol search.
-- Quote: Create a read-only route preview with the best route before funds move.
+- Read: Read a route preview's pool path, expected output, price impact, gas estimate, and token-safety signals. Resolve exact token addresses first; no symbol search.
+- Quote: Preview the best route read-only, including VIRTUAL pairs, before funds move.
 - Act: Execute a buy, sell, or swap after a fresh matching quote. A token approval may be required before the wallet signs and broadcasts the trade.
 - Vex fee: 25 bps of the input on a swap execute, as a separate transfer leg, not in the quote.
 
@@ -137,17 +147,17 @@ DexScreener is read-only market research for indexed automated-market-maker pair
 - Act: No action capability is available. This namespace never signs, broadcasts, buys, sells, or changes provider data.
 - Vex fee: none; every tool here is a read.
 
-### lighter
+### lighter (Added in Vex 0.2.8)
 
 Lighter is a perp-trading venue with Core and Robinhood Chain environments, managed wallet-funded onboarding, local encrypted trading credentials, and approval-gated deposits, orders, withdrawals, and claims.
 
 - Chains: Covers Lighter Core and Lighter on Robinhood Chain with environment-specific settlement assets: Ethereum USDC for Core and Robinhood Chain USDG for RHC.
-- Read: Read public environment status, markets, market detail, order books, recent trades, candles, public account state, authenticated account orders and fills, managed onboarding readiness, and durable deposit, withdrawal, key-registration, and order status. Per-market leverage and the agent's capital share are user settings from Settings -> Lighter -> Trading setup; call lighter_rhc_onboarding_status (or the core twin) and read tradingLimits for the live values; Vex exposes no tool to change them, direct the user to Settings.
+- Read: Read public environment status, markets, market detail, order books, recent trades, candles, public account state, authenticated account orders and fills, managed onboarding readiness, and durable deposit, withdrawal, key-registration, and order status.
 - Quote: Preview exact Lighter orders from live market and account data before any approval; a Lighter order preview reviews exact terms. Managed onboarding also computes the exact settlement-asset top-up needed before a deposit is prepared.
 - Act: Prepare trade approval for order create/cancel/modify/cancel-all, plus approvals for deposits, key registration, full-position close, secure withdrawals, and manual settlement claims; execute only through the matching user-approved card.
 - Vex fee: 0.10% maker/taker on perpetual trades and 0.25% on spot trades, through the approved native integrator allowance; reads are free. Exchange fees are separate, and authorizing the Vex fees moves the account to Lighter's Premium tier when it is not already on Plus or Premium (Lighter attaches integrator fees only to those tiers), which changes the exchange's own fee schedule; the fee-authorization card states both changes before anything is signed.
 
-### virtuals
+### virtuals (Changed in Vex 0.2.8)
 
 Virtuals is intelligence for Virtuals agents and agent tokens across the chains indexed by the provider, and the bonding-curve trading venue for the agents that have not graduated on Base and Robinhood.
 
@@ -157,7 +167,7 @@ Virtuals is intelligence for Virtuals agents and agent tokens across the chains 
 - Act: Execute a bonding-curve buy or sell against a quote already taken, spending real funds under approval, or launch your own agent on Base or Robinhood and cancel a launch the venue keeper has not made live yet. Acquiring a GRADUATED agent token is still a separate swap task on the venue identified by the research result.
 - Vex fee: 25 bps of the VIRTUAL you commit on a bonding-curve buy, taken off the input before the curve, and 25 bps of the VIRTUAL a receipt proves you received on a sell, taken as a separate leg after the sale settles; a trade that reverts or cannot be proven is never charged. On an agent LAUNCH, 25 bps of the VIRTUAL you commit, taken off the input, and charged ONLY when Vex has seen the Virtuals keeper launch your agent while it still held your approval - if the keeper is slower than that the launch is recorded awaiting_keeper and the fee is WAIVED PERMANENTLY, never collected later. Cancelling a launch is free. Every Virtuals read is free, a graduated agent trades under its venue's own fee with no second one, and genesis participation is not a path Vex executes at all.
 
-### pools
+### pools (Changed in Vex 0.2.8)
 
 pools.fun is a no-curve launchpad whose tokens open directly in a real SushiSwap V3 pool with no graduation step.
 
@@ -167,7 +177,7 @@ pools.fun is a no-curve launchpad whose tokens open directly in a real SushiSwap
 - Act: Open the launch form for a pools fun coin, launch the coin on pools fun now under the applicable authority, or claim my creator fees after a dry-run simulation. It has no buy or sell action.
 - Vex fee: 25 bps of the native value a launch or trade sends; reads are free.
 
-### launchpads
+### launchpads (Added in Vex 0.2.8)
 
 The launchpad-neutral half of a token launch: the shared image locker, and the public content-addressed host a launch's image URL points at.
 

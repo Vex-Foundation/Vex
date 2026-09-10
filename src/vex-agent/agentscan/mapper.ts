@@ -31,6 +31,9 @@
  * and which makes it anchor its pricing on the block time it verified itself.
  */
 
+import { swapReferenceEstimates } from "./swap-reference-estimates.js";
+
+import { activityV4Route, type AgentscanV4Route } from "./uniswap-route.js";
 const RAW_AMOUNT = /^\d+$/;
 const USD_STRING = /^\d+(\.\d+)?$/;
 
@@ -139,6 +142,7 @@ export interface AgentscanTokenRef {
 
 /** Ingest-contract event (§4.2) — chain ids as decimal strings (the server coerces bigint). */
 export interface AgentscanEvent {
+  readonly route?: AgentscanV4Route;
   readonly sourceRowId: string;
   readonly sourceExecutionId: string;
   readonly eventIndex: number;
@@ -177,6 +181,7 @@ export function mapActivityToEvent(
   activity: Record<string, unknown>,
   snapshot: { readonly status: string },
 ): AgentscanEvent {
+  const referenceEstimates = swapReferenceEstimates(activity);
   const confirmed = snapshot.status === "confirmed";
   const failed = snapshot.status === "definitively_failed";
   const role = str(activity.event_role) ?? "";
@@ -185,9 +190,9 @@ export function mapActivityToEvent(
   const evm = str(activity.chain_family) === "eip155";
 
   const tokenIn = inputLegAllowed
-    ? tokenRef(activity.token_in_address, activity.token_in_symbol, activity.token_in_decimals, evm)
+    ? tokenRef(activity.token_in_address ?? (activity.evidence_source === "native_balance_delta_bound" ? EVM_NATIVE_SENTINEL : null), activity.token_in_symbol, activity.token_in_decimals, evm)
     : null;
-  const tokenOut = tokenRef(activity.token_out_address, activity.token_out_symbol, activity.token_out_decimals, evm);
+  const tokenOut = tokenRef(activity.token_out_address ?? (activity.pending_reason === "native_output_unproven_hooked" ? EVM_NATIVE_SENTINEL : null), activity.token_out_symbol, activity.token_out_decimals, evm);
   // BOTH gates, not just the second-leg one: a role that spends nothing spends
   // nothing on either side, and the three claim roles are on both lists. The
   // database already forbids these columns on those roles (migrations 082/102),
@@ -200,8 +205,10 @@ export function mapActivityToEvent(
     : null;
 
   const executed = executedAmountReporter(activity, confirmed);
+  const route = activityV4Route(activity);
 
   return {
+    ...(route ? { route } : {}),
     sourceRowId: String(activity.id),
     sourceExecutionId: String(activity.protocol_execution_id),
     eventIndex: Number(activity.event_index),
@@ -234,10 +241,10 @@ export function mapActivityToEvent(
     executedOut2Raw: tokenOut2 === null
       ? null
       : executed(activity.executed_amount_out2_raw, activity.token_out2_address, "second_output"),
-    usdInEst: guarded(activity.usd_in_est, USD_STRING),
-    usdOutEst: guarded(activity.usd_out_est, USD_STRING),
+    usdInEst: referenceEstimates === undefined ? guarded(activity.usd_in_est, USD_STRING) : referenceEstimates.usdInEst,
+    usdOutEst: referenceEstimates === undefined ? guarded(activity.usd_out_est, USD_STRING) : referenceEstimates.usdOutEst,
     usdFeeEst: guarded(activity.usd_fee_est, USD_STRING),
-    usdSource: clamp(str(activity.usd_source), 32),
+    usdSource: referenceEstimates === undefined ? clamp(str(activity.usd_source), 32) : "dexscreener",
     txHash: str(activity.tx_hash),
     failureCode: failed ? mapFailureCode(activity.failure_code) : null,
     createdAt: iso(activity.created_at) ?? new Date(0).toISOString(),
@@ -260,7 +267,13 @@ function executedAmountReporter(
   const disputed = str(activity.settlement_source) === DISPUTED_SETTLEMENT_SOURCE;
   return (value, legTokenAddress, slot) => {
     if (!confirmed || disputed) return null;
+    if (slot === "primary_input" && activity.evidence_source === "native_balance_delta_bound") return null;
+    if (slot === "primary_output" && activity.pending_reason === "native_output_unproven_hooked") return null;
     if (isEvmNativeAlias(legTokenAddress) && !NATIVE_VERIFIED_EXECUTED_SLOTS.has(slot)) return null;
+    // The server checks native input against tx.value. A v4 refund is real
+    // wallet movement, but a net-of-refund amount is not that gross value.
+    if (isEvmNativeAlias(legTokenAddress) && slot === "primary_input" && activityV4Route(activity)
+      && value !== activity.amount_in_raw) return null;
     return guarded(value, RAW_AMOUNT);
   };
 }
@@ -320,6 +333,9 @@ function mapFailureCode(value: unknown): string | null {
   const code = str(value);
   if (code === null) return null;
   if (code === "solana_signature_expired") return "confirmation_timeout";
+  // Keep the server's current wire enum; the local ledger retains the exact
+  // RPC class and its reason. Endpoint exhaustion is venue unavailability.
+  if (["archive_gated", "range_capped", "rate_limited", "compute_budget", "method_unsupported", "transport"].includes(code)) return "venue_unavailable";
   return SERVER_FAILURE_CODES.has(code) ? code : "unknown";
 }
 

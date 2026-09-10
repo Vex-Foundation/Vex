@@ -27,6 +27,7 @@ function makeClients(currentAllowance: bigint, gasEstimate = 46_312n) {
   });
   const estimateGas = vi.fn().mockResolvedValue(gasEstimate);
   const publicClient = {
+    getTransactionCount: async () => nodePendingNonce,
     readContract: vi.fn().mockResolvedValue(currentAllowance),
     estimateGas,
     sendRawTransaction: vi.fn(async () => {

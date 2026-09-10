@@ -102,6 +102,15 @@ beforeEach(() => {
 });
 
 describe("ApprovalCard", () => {
+  it("renders the full v4 quote binding, including hook, limits and consequence", () => {
+    const binding = "Uniswap v4 pool 0x" + "ab".repeat(32)
+      + ", fee dynamic, currently 10000 (millionths), tick spacing 200, hook 0x0000000000000000000000000000000000000044 : this hook can change the output after the swap"
+      + " | quoted 100 TEST | will not fill below 99 TEST | input 0.0001 ETH, decimals 18 | Permit2 and Uniswap UniversalRouter 2.1.1"
+      + " | The quote is not a guarantee | transaction deadline 600 seconds from signing | Vex fee 25 bps after success | Spends real funds irreversibly after confirmation";
+    renderCard(makeSummary({ toolName: "uniswap.swap.execute", preview: { toolName: "uniswap.swap.execute", namespace: "uniswap", criticalArgs: { quoteBinding: binding } } }), false);
+    expect(screen.getByTestId("critical-args").textContent).toContain(binding);
+  });
+
   it("renders toolName, namespace, risk + action chips, and criticalArgs", () => {
     renderCard(makeSummary(), false);
     expect(screen.getByText(/Approval needed:/)).toBeTruthy();

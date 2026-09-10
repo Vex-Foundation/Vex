@@ -25,8 +25,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ExecutionRevertedError } from "viem";
+import { ExecutionRevertedError, encodeAbiParameters } from "viem";
+import { evmClientFake } from "./evm-client.test-fixtures.js";
+import { META_AGGREGATION_ROUTER_V2_SWAP_ABI } from "@tools/kyberswap/evm/swap-calldata-guard.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { rpcExhaustionFixture } from "../../../tools/evm-chains/rpc-exhaustion.fixture.js";
 
 type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resolve.js");
 
@@ -236,7 +239,27 @@ describe("kyberswap.swap.execute — pre-sign estimate revert (no prior leg)", (
     mockFailActivityEvent.mockResolvedValue({ applied: true, row: {} });
   });
 
-  it("reports not_attempted + retryable — never an interruption 'after it was already recorded'", async () => {
+  it("records exhausted metadata reads without entering the signer", async () => {
+    const fixture = await rpcExhaustionFixture(1);
+    try {
+      mockReadErc20Metadata.mockImplementationOnce(async () => {
+        await fixture.client.getBalance({ address: SESSION_EVM.address });
+        throw new Error("Refusing RPC unexpectedly answered");
+      });
+      const result = await execute();
+      expect(result.data).toMatchObject({ status: "not_attempted", retryable: true, failureCode: "rate_limited" });
+      expect(result.output).toContain("chain 1");
+      expect(result.output).toContain("EVM RPC URL");
+      expect(result.output).not.toMatch(/Request body|viem@|\[url\]|\[body\]/);
+      expect(mockCreateAgentActivityPreBroadcastFailure).toHaveBeenCalledWith(expect.objectContaining({
+        event: expect.objectContaining({ failureCode: "rate_limited", failureReason: expect.stringContaining("Nothing was signed") }),
+      }));
+      expect(mockSignStageBroadcast).not.toHaveBeenCalled();
+      for (const methods of fixture.seen) expect(methods.filter(m => m !== "eth_chainId")).toEqual(Array(3).fill("eth_getBalance"));
+    } finally { await fixture.close(); }
+  });
+
+  it("reports not_attempted + retryable - never an interruption after it was recorded", async () => {
     mockSignStageBroadcast.mockRejectedValueOnce(revertedWith(KYBER_SLIPPAGE_REVERT));
 
     const result = await execute();
@@ -249,6 +272,23 @@ describe("kyberswap.swap.execute — pre-sign estimate revert (no prior leg)", (
     expect(result.output).not.toMatch(/already recorded/i);
     expect(result.output).not.toMatch(/before taking any further action/i);
     expect(result.output).not.toMatch(/internal error/i);
+  });
+
+  it("records the observed output shortfall without staging or signing the diagnostic", async () => {
+    const call = vi.spyOn(evmClientFake, "call").mockResolvedValue({
+      data: encodeAbiParameters(META_AGGREGATION_ROUTER_V2_SWAP_ABI[0].outputs, [850000n, 200000n]),
+    });
+    try {
+      mockSignStageBroadcast.mockRejectedValueOnce(revertedWith(KYBER_SLIPPAGE_REVERT));
+      const result = await execute({ slippageBps: 50 });
+      expect(result.data).toMatchObject({ failureCode: "slippage", outputObservation: {
+        quotedOutputRaw: "999000", approvedMinimumOutputRaw: "994005", simulatedOutputRaw: "850000", shortfallRaw: "149000",
+      } });
+      expect(result.output).toContain("shortfall 149000 raw output-token units");
+      expect(call).toHaveBeenCalledTimes(1);
+      expect(mockSignStageBroadcast).toHaveBeenCalledTimes(1);
+      expect(mockMarkActivityBroadcast).not.toHaveBeenCalled();
+    } finally { call.mockRestore(); }
   });
 
   it("states plainly that nothing was signed, so re-running cannot duplicate it", async () => {

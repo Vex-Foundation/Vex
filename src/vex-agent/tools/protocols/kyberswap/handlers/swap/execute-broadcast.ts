@@ -48,6 +48,7 @@ import { buildPostIntentFailureResult } from "./execute-failure.js";
 import type { PreparedSwapExecution } from "./execute-plan.js";
 import { venueFallbackNoteOnMinedRevert } from "./fallback-messaging.js";
 import { assertKyberPreSignSpendability } from "./quote-spendability.js";
+import { observeRefusedKyberOutput } from "@tools/kyberswap/evm/observe-refused-output.js";
 import { safetyDisclosureSentence, type SafetyCheckUnavailable } from "./safety-disclosure.js";
 
 export interface SwapBroadcastInput {
@@ -448,7 +449,7 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
       // convention note).
       const summary =
         `Swapped ${amountInHuman} ${tokenInLabel} → ${amountOutHuman} ${tokenOutLabel} on ${slug}. `
-        + `Tx: ${outcome.txHash}` + (buildResp.data.amountInUsd ? ` (~$${buildResp.data.amountInUsd} in / ~$${buildResp.data.amountOutUsd} out, estimated).` : ".")
+        + `Tx: ${outcome.txHash}` + (prepared.usdValues.amountInUsd ? ` (~$${prepared.usdValues.amountInUsd} in / ~$${prepared.usdValues.amountOutUsd} out, estimated).` : ".")
         // W2b: a swap that ran without honeypot protection says so in the
         // FIRST line the agent reads, not only in a machine field.
         + (safetyDisclosure ? ` ${safetyDisclosure}` : "")
@@ -465,6 +466,7 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
       // truncated) before it reaches model context.
       const additionalCostMessage = sanitizeProviderNote(buildResp.data.additionalCostMessage);
       const successData = {
+        priceImpactReference: prepared.priceReference?.source ?? "provider",
         summary,
         chain: slug, chainId,
         txHash: outcome.txHash,
@@ -509,9 +511,15 @@ export async function runStagedSwapBroadcast(input: SwapBroadcastInput): Promise
       // report what the pool actually did next to the tolerance it was given.
       // Same fraction convention `helpers.ts` publishes on every quote.
       observedPriceImpactFraction: derivePriceImpact(
-        buildResp.data.amountInUsd,
-        buildResp.data.amountOutUsd,
+        prepared.usdValues.amountInUsd,
+        prepared.usdValues.amountOutUsd,
       ),
+      outputObservation: prepared.approvedOutput,
+      observeOutput: async () => {
+        const refused = plans[currentIndex];
+        return refused?.eventRole === "swap"
+          ? observeRefusedKyberOutput(publicClient, walletAddress, refused.txParams) : null;
+      },
     });
   }
 }

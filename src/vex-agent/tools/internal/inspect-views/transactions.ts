@@ -301,12 +301,14 @@ function summarize(row: TransactionRow): string {
   // executed-looking quantity for an attempt the decoder couldn't prove.
   const estimated = row.amountBasis === "estimated";
   // Single-chain row: both legs settled on the row's own chain.
-  const inLeg = formatLeg(row.inputAmount, row.inputToken, estimated, row.chainId);
+  const inputLeg = formatLeg(row.inputAmount, row.inputToken, estimated, row.chainId);
+  const inLeg = inputLeg && row.inputAmountBasis === "lower_bound" ? `at least ${inputLeg} (lower bound)` : inputLeg;
   const outLeg = formatLeg(row.outputAmount, row.outputToken, estimated, row.chainId);
   const route = inLeg && outLeg ? `${inLeg} → ${outLeg}` : (inLeg ?? outLeg ?? venue);
   const status = row.status ?? "confirmed";
 
   const parts = [`${route} via ${venue} on ${chain} - ${status}`];
+  if (row.lastVerificationReason === "native_output_unproven_hooked") parts.push("native output unproven");
   const usd = usdEstimate(row.valueUsd ?? null);
   if (usd) parts.push(usd);
   if (status === "definitively_failed" && row.failureCode) parts.push(`(${row.failureCode})`);

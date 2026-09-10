@@ -47,7 +47,7 @@ function publicClient(reads: Partial<BroadcastReads>): PublicClient<Transport, C
     chain: mainnet,
     transport: http("http://127.0.0.1:1"),
   });
-  return Object.assign(client, reads);
+  return Object.assign(client, { getTransactionCount: async () => 7 }, reads);
 }
 
 function walletClient(): WalletClient<Transport, Chain, Account> {
