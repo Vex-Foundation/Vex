@@ -7,7 +7,7 @@
 A self-custodial, autonomous on-chain crypto agent for the desktop. It holds
 *your* keys locally and acts on-chain on your terms, not a custodian's.
 
-[Website](https://www.projectvex.ai/) | [X / Twitter](https://x.com/ProjectVEXai) | [Releases](https://github.com/Vex-Foundation/Vex/releases)
+[Website](https://www.projectvex.ai/) | [Studio docs](https://www.projectvex.ai/docs/studio) | [X / Twitter](https://x.com/ProjectVEXai) | [Releases](https://github.com/Vex-Foundation/Vex/releases)
 
 </div>
 
