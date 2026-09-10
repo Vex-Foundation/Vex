@@ -47,6 +47,7 @@
  * alternative cost the user an allowance and a stranded position.
  */
 
+import { rpcReadFailureOf } from "@tools/evm-chains/rpc-read-failure.js";
 import { tokenSpender, needsV4Allowance, buildV4ApproveTx, type V4AllowanceState } from "@tools/uniswap/v4-allowance.js";
 import { type Address, type Hex } from "viem";
 
@@ -271,7 +272,8 @@ async function estimateLegGas(
       value: leg.valueWei,
     });
     return gasLimitWithHeadroom(estimate);
-  } catch {
+  } catch (error) {
+    if (rpcReadFailureOf(error)) throw error;
     return null;
   }
 }
@@ -298,7 +300,8 @@ export async function resolveUniswapLegFeeCap(
       };
     }
     if (fees.gasPrice !== undefined) return { mode: "legacy", gasPriceWei: fees.gasPrice };
-  } catch {
+  } catch (error) {
+    if (rpcReadFailureOf(error)) throw error;
     // Fall through to the legacy read: a chain that cannot answer the 1559
     // question can still state a gas price, and the alternative is refusing a
     // swap for a fee-market shape rather than for a money fact.

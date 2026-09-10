@@ -50,6 +50,7 @@
 import { fallback, http, createTransport, type EIP1193RequestFn, type Transport } from "viem";
 
 import logger from "../../utils/logger.js";
+import { exhaustedRpcRead } from "./rpc-read-failure.js";
 import {
   classifyRpcFailure,
   resolveRpcEndpoints,
@@ -131,11 +132,12 @@ interface VerifiedEndpoints {
  * failure the failover already handles, and disqualifying on it would let one
  * bad minute permanently remove an endpoint for the rest of the process.
  */
-async function readChainIdEcho(url: string, timeoutMs: number): Promise<number | null> {
+async function readChainIdEcho(endpoint: RpcEndpoint, timeoutMs: number): Promise<number | null> {
+  if (endpoint.minRequestSpacingMs) await paceEndpoint(pacingKey(endpoint), endpoint.minRequestSpacingMs);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, {
+    const response = await fetch(endpoint.url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }),
@@ -155,25 +157,25 @@ async function readChainIdEcho(url: string, timeoutMs: number): Promise<number |
 }
 
 /**
- * The memoized echo verdict for one url on one chain, and whether THIS call is
- * the one that issued the request. The caller uses the second value to pay the
- * endpoint's request spacing only for a probe it actually sent.
+ * The memoized echo verdict for one URL on one chain. Only the function that
+ * dispatches the probe consumes a pacing slot; readers share its promise.
  */
 function echoVerdictFor(
   chainId: number,
-  url: string,
+  endpoint: RpcEndpoint,
   timeoutMs: number,
-): { readonly verdict: Promise<number | null>; readonly issued: boolean } {
+): Promise<number | null> {
+  const url = endpoint.url;
   let perChain = echoVerdicts.get(chainId);
   if (perChain === undefined) {
     perChain = new Map<string, Promise<number | null>>();
     echoVerdicts.set(chainId, perChain);
   }
   const known = perChain.get(url);
-  if (known !== undefined) return { verdict: known, issued: false };
-  const pending = readChainIdEcho(url, timeoutMs);
+  if (known !== undefined) return known;
+  const pending = readChainIdEcho(endpoint, timeoutMs);
   perChain.set(url, pending);
-  return { verdict: pending, issued: true };
+  return pending;
 }
 
 /**
@@ -216,12 +218,11 @@ async function verifiedEndpointsFor(
       mismatchedHosts.push(rpcHostOf(endpoint.url));
       continue;
     }
-    const { verdict, issued } = echoVerdictFor(
+    const echo = await echoVerdictFor(
       chainId,
-      endpoint.url,
+      endpoint,
       Math.min(endpoint.timeoutMs, 8_000),
     );
-    const echo = await verdict;
     if (echo !== null && echo !== chainId) {
       const set = disqualified.get(chainId) ?? new Set<string>();
       // The removal is recorded and reported exactly ONCE per url per process,
@@ -243,8 +244,6 @@ async function verifiedEndpointsFor(
       continue;
     }
     kept.push(endpoint);
-    const spacingMs = endpoint.minRequestSpacingMs ?? 0;
-    if (issued && spacingMs > 0) await new Promise((resolve) => setTimeout(resolve, spacingMs));
   }
   return { kept, mismatchedHosts };
 }
@@ -283,21 +282,17 @@ export function resetRpcVerification(): void {
 // ── Pacing ──────────────────────────────────────────────────────────
 
 /**
- * The tail of the paced request queue per ENDPOINT URL.
- *
- * An endpoint that declares `minRequestSpacingMs` has measurably shed load and
- * its table entry says how. Pacing belongs to the endpoint, not the chain,
- * because the endpoints on one chain shed load at wildly different rates: on
- * Base the Tenderly gateway took twelve of twelve `eth_call` at full speed while
- * both `*.base.org` hosts answered five and then 429. Pacing the chain would
- * have slowed the fast endpoint to protect the slow one.
- *
- * The gate is a QUEUE, not a token bucket: requests to a paced endpoint are
- * serialized and spaced, so the cost is bounded and visible (n requests take at
- * least n * spacing) instead of arriving as a random 429 the caller must
- * interpret. Endpoints without the field pay nothing - not even a promise.
+ * Shared admission queue per endpoint URL or explicitly declared quota group.
+ * Base's three bundled entries share the conservative fallback envelope after
+ * real execute bursts exhausted the lane. Other endpoints retain their own
+ * policy. This bounds request starts, not response time, and never coalesces
+ * distinct reads or retries a failed operation.
  */
 const paceTail = new Map<string, Promise<void>>();
+
+function pacingKey(endpoint: RpcEndpoint): string {
+  return endpoint.requestPacingGroup ? `group:${endpoint.requestPacingGroup}` : endpoint.url;
+}
 
 function paceEndpoint(url: string, spacingMs: number): Promise<void> {
   const previous = paceTail.get(url) ?? Promise.resolve();
@@ -313,11 +308,18 @@ function paceEndpoint(url: string, spacingMs: number): Promise<void> {
  * endpoint inside a `fallback` - the fallback itself picks the endpoint and
  * offers no per-endpoint hook.
  */
-function pacedFetch(url: string, spacingMs: number): typeof fetch {
+function pacedFetch(key: string, spacingMs: number): typeof fetch {
   return async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-    await paceEndpoint(url, spacingMs);
+    await paceEndpoint(key, spacingMs);
+    init?.signal?.throwIfAborted();
     return fetch(input, init);
   };
+}
+
+/** Concurrent first reads must share one verification and one endpoint choice. */
+function transportBuilder(factory: () => Promise<ReturnType<Transport>>): () => Promise<ReturnType<Transport>> {
+  let pending: Promise<ReturnType<Transport>> | undefined;
+  return () => pending ??= factory();
 }
 
 // ── Failure policy ──────────────────────────────────────────────────
@@ -349,7 +351,7 @@ function toHttpTransport(endpoint: RpcEndpoint, options: EvmTransportOptions): T
     timeout: endpoint.timeoutMs,
     retryCount: endpoint.retryCount,
     ...(endpoint.minRequestSpacingMs !== undefined && endpoint.minRequestSpacingMs > 0
-      ? { fetchFn: pacedFetch(endpoint.url, endpoint.minRequestSpacingMs) }
+      ? { fetchFn: pacedFetch(pacingKey(endpoint), endpoint.minRequestSpacingMs) }
       : {}),
     // viem's `methods` option is typed as a mutable `OneOf<{include}|{exclude}>`,
     // so the table's readonly arrays are copied rather than the table being made
@@ -381,7 +383,7 @@ export function buildEvmTransport(chainId: number, options: EvmTransportOptions 
     let inner: ReturnType<Transport> | undefined;
     let endpoints: readonly RpcEndpoint[] = [];
 
-    const build = async (): Promise<ReturnType<Transport>> => {
+    const build = transportBuilder(async (): Promise<ReturnType<Transport>> => {
       if (inner !== undefined) return inner;
       const verified = await verifiedEndpointsFor(chainId, options);
       refuseWhenNoEndpointRemains(chainId, verified);
@@ -396,7 +398,7 @@ export function buildEvmTransport(chainId: number, options: EvmTransportOptions 
       // endpoint's own key in the observability hook below.
       const built = transports.length === 1 && only !== undefined
         ? only(config)
-        : fallback(transports, { rank: false, shouldThrow: stopOnError })(config);
+        : fallback(transports, { rank: false, retryCount: 0, shouldThrow: stopOnError })(config);
 
       // Failover observability. `onResponse` fires for every response, so the
       // event is emitted only on the ERROR branch and only when the class is one
@@ -423,7 +425,7 @@ export function buildEvmTransport(chainId: number, options: EvmTransportOptions 
       }
       inner = built;
       return built;
-    };
+    });
 
     return createTransport(
       {
@@ -436,7 +438,8 @@ export function buildEvmTransport(chainId: number, options: EvmTransportOptions 
         timeout: config.timeout,
         request: (async (args) => {
           const transport = await build();
-          return transport.request(args);
+          try { return await transport.request(args); }
+          catch (error) { throw exhaustedRpcRead(chainId, args.method, error); }
         }) as EIP1193RequestFn,
       },
       { chainId },
@@ -535,7 +538,7 @@ export function buildPinnedEvmTransport(
   return (config) => {
     let inner: ReturnType<Transport> | undefined;
 
-    const build = async (): Promise<ReturnType<Transport>> => {
+    const build = transportBuilder(async (): Promise<ReturnType<Transport>> => {
       if (inner !== undefined) return inner;
       const chosen = await resolvePinnedRpcEndpoint(chainId, options);
       // HOST ONLY, never the full url: a user override may carry a path or a
@@ -550,11 +553,11 @@ export function buildPinnedEvmTransport(
         timeout: chosen.timeoutMs,
         retryCount: 0,
         ...(chosen.minRequestSpacingMs !== undefined && chosen.minRequestSpacingMs > 0
-          ? { fetchFn: pacedFetch(chosen.url, chosen.minRequestSpacingMs) }
+          ? { fetchFn: pacedFetch(pacingKey(chosen), chosen.minRequestSpacingMs) }
           : {}),
       })(config);
       return inner;
-    };
+    });
 
     return createTransport(
       {
@@ -565,7 +568,8 @@ export function buildPinnedEvmTransport(
         timeout: config.timeout,
         request: (async (args) => {
           const transport = await build();
-          return transport.request(args);
+          try { return await transport.request(args); }
+          catch (error) { throw exhaustedRpcRead(chainId, args.method, error); }
         }) as EIP1193RequestFn,
       },
       { chainId },

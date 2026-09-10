@@ -611,6 +611,23 @@ describe("agentscan_reporting_state - Superboard share token", () => {
 });
 
 describe("Uniswap v4 confirmed settlement reporting", () => {
+  it("persists an exhausted RPC class only on a hashless refusal and keeps the wire code supported", async () => {
+    const repo = await import("@vex-agent/db/repos/agent-activity.js");
+    const { queryOne } = await import("@vex-agent/db/client.js");
+    const { mapActivityToEvent } = await import("@vex-agent/agentscan/mapper.js");
+    const { RpcReadExhaustedError, preSignRpcRefusal } = await import("@tools/evm-chains/rpc-read-failure.js");
+    const id = await seedEligibleSwap();
+    const reason = preSignRpcRefusal(new RpcReadExhaustedError(8453, "rate_limited", "eth_call", new Error("fixture")));
+    expect((await repo.failActivityEvent(id, { failureCode: "rate_limited", failureReason: reason })).applied).toBe(true);
+    const row = await queryOne<Record<string, unknown>>("SELECT * FROM agent_activity WHERE id = $1", [id]);
+    expect(row).toMatchObject({ status: "definitively_failed", failure_code: "rate_limited", failure_reason: reason, tx_hash: null });
+    if (!row) throw new Error("Missing refusal row");
+    expect(mapActivityToEvent(row, { status: "definitively_failed" }).failureCode).toBe("venue_unavailable");
+    const stagedId = await seedEligibleSwap();
+    await repo.markActivityBroadcast(stagedId, { txHash: `0x${stagedId.toString(16).padStart(64, "0")}`, fromAddress: "0x" + "3".repeat(40), nonce: 1 });
+    await expect(repo.failActivityEvent(stagedId, { failureCode: "rate_limited", failureReason: reason })).rejects.toThrow(/rpc_failure_before_sign/);
+    expect(await queryOne("SELECT status FROM agent_activity WHERE id = $1", [stagedId])).toMatchObject({ status: "pending" });
+  });
   it("finalizes one real activity row and enqueues its bound v4 route exactly once", async () => {
     const { getUniswapDeployment } = await import("@tools/uniswap/deployments.js");
     const { v4PoolId } = await import("@tools/uniswap/v4-pool.js");

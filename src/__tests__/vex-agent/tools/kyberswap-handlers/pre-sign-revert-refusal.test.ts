@@ -27,6 +27,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ExecutionRevertedError } from "viem";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { rpcExhaustionFixture } from "../../../tools/evm-chains/rpc-exhaustion.fixture.js";
 
 type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resolve.js");
 
@@ -236,7 +237,27 @@ describe("kyberswap.swap.execute — pre-sign estimate revert (no prior leg)", (
     mockFailActivityEvent.mockResolvedValue({ applied: true, row: {} });
   });
 
-  it("reports not_attempted + retryable — never an interruption 'after it was already recorded'", async () => {
+  it("records exhausted metadata reads without entering the signer", async () => {
+    const fixture = await rpcExhaustionFixture(1);
+    try {
+      mockReadErc20Metadata.mockImplementationOnce(async () => {
+        await fixture.client.getBalance({ address: SESSION_EVM.address });
+        throw new Error("Refusing RPC unexpectedly answered");
+      });
+      const result = await execute();
+      expect(result.data).toMatchObject({ status: "not_attempted", retryable: true, failureCode: "rate_limited" });
+      expect(result.output).toContain("chain 1");
+      expect(result.output).toContain("EVM RPC URL");
+      expect(result.output).not.toMatch(/Request body|viem@|\[url\]|\[body\]/);
+      expect(mockCreateAgentActivityPreBroadcastFailure).toHaveBeenCalledWith(expect.objectContaining({
+        event: expect.objectContaining({ failureCode: "rate_limited", failureReason: expect.stringContaining("Nothing was signed") }),
+      }));
+      expect(mockSignStageBroadcast).not.toHaveBeenCalled();
+      for (const methods of fixture.seen) expect(methods.filter(m => m !== "eth_chainId")).toEqual(Array(3).fill("eth_getBalance"));
+    } finally { await fixture.close(); }
+  });
+
+  it("reports not_attempted + retryable - never an interruption after it was recorded", async () => {
     mockSignStageBroadcast.mockRejectedValueOnce(revertedWith(KYBER_SLIPPAGE_REVERT));
 
     const result = await execute();

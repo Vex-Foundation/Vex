@@ -29,6 +29,7 @@ import { KYBERSWAP_MAX_SLIPPAGE_BPS } from "@tools/kyberswap/constants.js";
 import { effectiveMaxSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
 import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
 import logger from "@utils/logger.js";
+import { rpcReadFailureOf, preSignRpcRefusal } from "@tools/evm-chains/rpc-read-failure.js";
 import type { ToolResult } from "../../../../types.js";
 import { abortRemainingPlans, failRefusedLeg } from "./activity-recording.js";
 import { kyberFailureMessage } from "./error-output.js";
@@ -57,6 +58,14 @@ export interface PostIntentFailureInput {
 
 export async function buildPostIntentFailureResult(input: PostIntentFailureInput): Promise<ToolResult> {
   const { err, toolId, sessionId, executionId, currentIndex, legBroadcastAttempted, plans, events, slippage } = input;
+  const rpc = legBroadcastAttempted ? undefined : rpcReadFailureOf(err);
+  if (rpc) {
+    const failureReason = preSignRpcRefusal(rpc);
+    await failRefusedLeg(events[currentIndex], rpc.failureClass, failureReason);
+    await abortRemainingPlans(executionId, currentIndex, failureReason);
+    return { success: false, output: `${toolId}: ${failureReason} Recorded as execution ${executionId}.`,
+      data: { _executionId: executionId, status: "not_attempted", retryable: true, failureCode: rpc.failureClass, failureReason } };
+  }
   const slippageBounds = {
     appliedBps: slippage,
     maxBps: effectiveMaxSlippageBps(KYBERSWAP_MAX_SLIPPAGE_BPS),

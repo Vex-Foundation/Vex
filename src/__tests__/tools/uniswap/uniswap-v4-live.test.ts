@@ -23,9 +23,25 @@ const context: ProtocolExecutionContext = { sessionPermission: "restricted", app
 // is recorded in `src/tools/uniswap/V4.md`. Base 2026-09-10: 1F916, twelve
 // pools, all v4; WETH pool 0x24ecedb2...c7fccb, dynamic fee (lpFee 7000),
 // DopplerHookInitializer hook with after-swap return delta, 539k USD liquidity.
+// Chains 137 and 56 (recon 2026-09-10, `v4-chain-candidates.md`): DexScreener
+// indexes no v4 native pools there, so every reachable v4 route is a canonical
+// hookless key (fee 100, tick spacing 1); the handler selected v4 for these
+// pairs on gross output and net of gas alike.
 const cases = [
   { chain: "4663", tokenOut: "0x008Df4b3E857D06c4603Aeb11F267ccD32ce2005", amountIn: "0.0001" },
   { chain: "8453", tokenOut: "0x9E00FC92493451EBA1c63DD3880D68b622037bA3", amountIn: "0.0001" },
+  { chain: "137", tokenOut: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619", amountIn: "1" },
+  { chain: "56", tokenOut: "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c", amountIn: "0.0005" },
+];
+// Wallet-ranked cases: native -> wstETH on Optimism and Arbitrum. Without a
+// wallet the gross ranking picks V3 (measured 2026-09-10: 80238070295931 V3
+// vs a lower v4 gross output on chain 10); with a wallet the net-of-gas
+// ranking may prefer the 100-fee v4 pool (42646 vs 84146 gas). The execute
+// stage records an honest non-v4 selection and stops; it never relaxes the
+// v4 schema for a route that did execute.
+const walletRankedCases = [
+  { chain: "10", tokenOut: "0x1F32b1c2345538c0c6f582fCB022739c4A194Ebb", amountIn: "0.0001" },
+  { chain: "42161", tokenOut: "0x5979D7b546E38E414F7E9822514be443A4800529", amountIn: "0.0001" },
 ];
 const canonicalChains = [
   { chain: "1", symbol: "ETH", tokenOut: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", poolId: "0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27" },
@@ -39,7 +55,7 @@ const quoteSchema = z.object({ chainId: z.number(), route: v4RouteBindingSchema.
 
 d("Uniswap v4 live quotes through the real protocol runtime", () => {
   for (const c of cases) it(`binds and quotes chain ${c.chain}`, { timeout: 120000 }, async () => {
-    const params = { ...c, tokenIn: "ETH", slippageBps: 100 };
+    const params = { ...c, tokenIn: "native", slippageBps: 100 };
     const result = await executeProtocolTool({ toolId: "uniswap.swap.quote", params }, context);
     expect(result.success, result.output).toBe(true);
     const quote = quoteSchema.parse(JSON.parse(result.output));
@@ -91,7 +107,7 @@ d("Uniswap canonical native/USDC discovery through the real handler", () => {
 
 dx("Uniswap v4 live execution with owner credentials", () => {
   afterAll(async () => { await closePool(); });
-  for (const c of cases) it(`settles a tiny chain ${c.chain} swap once`, { timeout: 240000 }, async () => {
+  for (const c of [...cases, ...walletRankedCases]) it(`settles a tiny chain ${c.chain} swap once`, { timeout: 240000 }, async () => {
     // Inventory's loadEvmKey uses requireKeystorePassword, which reads this env.
     // Never capture, print, interpolate, persist or assert on the secret itself.
     if (!process.env.VEX_KEYSTORE_PASSWORD) throw new Error("VEX_KEYSTORE_PASSWORD is required for coordinator execution");
@@ -99,9 +115,16 @@ dx("Uniswap v4 live execution with owner credentials", () => {
     const sessionId = `uniswap-v4-live-${randomUUID()}`;
     await execute("INSERT INTO sessions (id, permission) VALUES ($1, 'restricted')", [sessionId]);
     const ctx: ProtocolExecutionContext = { ...context, sessionId, walletResolution: { source: "default" }, walletPolicy: { kind: "none" } };
-    const params = { ...c, tokenIn: "ETH", slippageBps: 100 };
+    const params = { ...c, tokenIn: "native", slippageBps: 100 };
     const quoted = await executeProtocolTool({ toolId: "uniswap.swap.quote", params }, ctx);
     expect(quoted.success, quoted.output).toBe(true);
+    const selected = nativeQuoteSchema.parse(JSON.parse(quoted.output));
+    if (selected.route.version !== "v4") {
+      if (!walletRankedCases.some(w => w.chain === c.chain)) throw new Error(`chain ${c.chain}: the handler selected ${selected.route.version} for a deterministic v4 case`);
+      process.stdout.write(JSON.stringify({ event: "uniswap.v4.live_wallet_ranked_non_v4", chainId: selected.chainId, handlerSelectedVersion: selected.route.version,
+        selectionBasis: selected.selectionBasis, amountOutRaw: selected.amountOutRaw, liveExecutionVerified: false }) + "\n");
+      return;
+    }
     quoteSchema.parse(JSON.parse(quoted.output));
     const approval = await executeProtocolTool({ toolId: "uniswap.swap.execute", params }, ctx);
     expect(approval.pendingApproval, approval.output).toBe(true);

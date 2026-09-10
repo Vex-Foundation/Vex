@@ -51,7 +51,7 @@ export function summarizeProtocolError(err: unknown, options?: { readonly preser
   const hint = err instanceof VexError ? err.hint?.trim() : undefined;
   const scrubbedMessage = scrub(raw, redactEveryUrl);
   const scrubbedHint = hint ? scrub(hint, redactUnlessCredentialFreeLink) : undefined;
-  const combined = scrubbedHint ? `${scrubbedMessage} — ${scrubbedHint}` : scrubbedMessage;
+  const combined = scrubbedHint ? `${scrubbedMessage} - ${scrubbedHint}` : scrubbedMessage;
 
   // Whitespace collapse + hard cap run on the JOINED text (UNCHANGED cap
   // semantics): the bound covers message and hint together, so a long hint can
@@ -78,7 +78,7 @@ export function summarizeProtocolError(err: unknown, options?: { readonly preser
     err instanceof VexError ? err.retryAfterSeconds : undefined,
   );
   const withRemedy = category === "insufficient_funds" && remediation
-    ? `${bounded} — ${remediation}`
+    ? `${bounded} - ${remediation}`
     : bounded;
 
   const summary: SafeErrorSummary = {
@@ -106,7 +106,7 @@ export function renderProtocolFailureOutput(toolId: string, summary: SafeErrorSu
   const status = summary.httpStatus === undefined ? "" : `, HTTP ${summary.httpStatus}`;
   const retryable = summary.retryable === true ? " (retryable)" : "";
   const remediation = summary.remediation !== undefined && !summary.message.includes(summary.remediation)
-    ? ` — ${summary.remediation}`
+    ? ` - ${summary.remediation}`
     : "";
   return `${toolId} failed [${summary.code}/${summary.category}${status}]: ${summary.message}${remediation}${retryable}`;
 }
@@ -159,7 +159,7 @@ export function describeFailureForAgent(err: unknown): string {
   const detail = causeChainText(err);
   if (detail.length === 0 || detail === err.hint?.trim()) return label;
   const scrubbed = summarizeProtocolError(new Error(detail)).message;
-  return scrubbed.length === 0 ? label : `${label} — ${scrubbed}`;
+  return scrubbed.length === 0 ? label : `${label} - ${scrubbed}`;
 }
 
 /**

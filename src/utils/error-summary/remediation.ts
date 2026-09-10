@@ -15,21 +15,21 @@ const REMEDIATION_BY_CATEGORY: Readonly<Record<ErrorCategory, string | undefined
   insufficient_funds:
     "the wallet on this chain cannot cover value + gas: top up the wallet or lower the amount",
   auth:
-    "this provider rejected our credentials — the key is missing, expired, or out of quota; "
+    "this provider rejected our credentials - the key is missing, expired, or out of quota; "
     + "do not retry, report it",
   rate_limit:
     "the provider is rate-limiting; wait before retrying this venue, or use another venue",
   invalid_request:
-    "fix the named parameter and call again — retrying unchanged will fail identically",
+    "fix the named parameter and call again - retrying unchanged will fail identically",
   policy_refusal:
     "Vex refused this before signing; nothing was sent. Change the request, do not retry it",
   response_schema:
-    "the provider's response shape changed; no parameter fixes this — report it and use another route",
+    "the provider's response shape changed; no parameter fixes this - report it and use another route",
   timeout:
-    "transport failure — the request may or may not have reached the provider; "
+    "transport failure - the request may or may not have reached the provider; "
     + "verify state before retrying a mutation",
   network:
-    "transport failure — the request may or may not have reached the provider; "
+    "transport failure - the request may or may not have reached the provider; "
     + "verify state before retrying a mutation",
   provider_error: undefined,
   unknown: undefined,
@@ -117,15 +117,15 @@ export interface SlippageRemediationInput {
  * that field.
  */
 export function slippageRemediation(input: SlippageRemediationInput): string {
-  return `Re-quote and retry with a higher slippageBps that YOU choose explicitly — `
+  return `Re-quote and retry with a higher slippageBps that YOU choose explicitly - `
     + `${appliedTolerancePhrase(input.appliedBps)}, and Vex rejects anything above ${input.maxBps} rather than clamping it. `
     + `Vex never raises it for you: exactly one attempt was made, at the tolerance this call passed. `
     + observedImpactPhrase(input)
     + `Raise it in steps; every increase widens the worst-case price you accept. `
-    + `This is the market moving, not the venue failing — retrying unchanged will be refused the same way.`
+    + `This is the market moving, not the venue failing - retrying unchanged will be refused the same way.`
     + (input.staleReserveCaution
       ? ` One exception: if the fresh quote's priceImpact is strongly negative (output supposedly worth more than input), `
-        + `the venue is pricing off stale reserves and more tolerance would only buy a worse fill — re-quote or switch venue instead.`
+        + `the venue is pricing off stale reserves and more tolerance would only buy a worse fill - re-quote or switch venue instead.`
       : "");
 }
 

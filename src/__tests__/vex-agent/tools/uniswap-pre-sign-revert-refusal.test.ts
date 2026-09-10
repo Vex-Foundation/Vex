@@ -27,6 +27,8 @@ import { readStandingInForTheParams } from "./_uniswap-approved-snapshot.js";
 import { ExecutionRevertedError } from "viem";
 import { VexError, ErrorCodes } from "../../../errors.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { rpcExhaustionFixture } from "../../tools/evm-chains/rpc-exhaustion.fixture.js";
+import { RpcReadExhaustedError } from "@tools/evm-chains/rpc-read-failure.js";
 
 const TOKEN_IN = "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b";
 const TOKEN_OUT = "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31";
@@ -220,6 +222,39 @@ beforeEach(() => {
 });
 
 describe("Uniswap pre-sign diagnostic evidence", () => {
+  it("keeps an exhausted fee-read class through the fee-market wrapper after intent creation", async () => {
+    const { UniswapLiveFeeRequirementUnreadableError } = await import("@tools/uniswap/execute.js");
+    signUniswapTransaction.mockRejectedValueOnce(new UniswapLiveFeeRequirementUnreadableError(
+      new RpcReadExhaustedError(4663, "rate_limited", "eth_maxPriorityFeePerGas", new Error("fixture"))));
+    const result = await execute(SWAP_ONLY_PARAMS, context);
+    expect(result.data).toMatchObject({ status: "not_attempted", retryable: true, failureCode: "rate_limited" });
+    expect(failActivityEvent).toHaveBeenCalledWith(100, expect.objectContaining({ failureCode: "rate_limited" }));
+    expect(markActivityBroadcast).not.toHaveBeenCalled();
+    expect(broadcastUniswapTransaction).not.toHaveBeenCalled();
+  });
+  it("records exhausted preflight reads as rate_limited without calling a signer", async () => {
+    const fixture = await rpcExhaustionFixture(4663);
+    try {
+      const { readUniswapErc20Metadata } = await import("@tools/uniswap/erc20.js");
+      vi.mocked(readUniswapErc20Metadata).mockImplementationOnce(async () => {
+        await fixture.client.getBalance({ address: WALLET });
+        throw new Error("The refusing fixture unexpectedly answered");
+      });
+      const result = await execute(SWAP_ONLY_PARAMS, context);
+      expect(result.data).toMatchObject({ status: "not_attempted", retryable: true, failureCode: "rate_limited" });
+      expect(result.output).toContain("chain 4663");
+      expect(result.output).toContain("Settings > Chain endpoints > EVM RPC URL");
+      expect(result.output).not.toMatch(/Request body|viem@|\[url\]|\[body\]/);
+      expect(createAgentActivityPreBroadcastFailure).toHaveBeenCalledWith(expect.objectContaining({
+        event: expect.objectContaining({ failureCode: "rate_limited", failureReason: expect.stringContaining("Nothing was signed") }),
+      }));
+      // Provider-supplied endpoints retain their declared two read retries;
+      // the failover chain itself must not multiply that budget.
+      for (const methods of fixture.seen) expect(methods.filter(m => m !== "eth_chainId")).toEqual(Array(3).fill("eth_getBalance"));
+      expect(signUniswapTransaction).not.toHaveBeenCalled();
+      expect(broadcastUniswapTransaction).not.toHaveBeenCalled();
+    } finally { await fixture.close(); }
+  });
   it("keeps a real Base custom revert in the output, activity failure and execution result", async () => {
     signUniswapTransaction.mockRejectedValueOnce(new Error("estimate refused", { cause: { code: 3, data: LIVE_FLOOR_REVERT } }));
     const result = await execute(SWAP_ONLY_PARAMS, context);

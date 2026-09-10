@@ -176,7 +176,7 @@ export async function executeUniswapSwap(
     // applies at all depends on a token fact the eligibility check owns.
     feeCharge = await resolveUniswapFeeCharge({ chainId: deployment.chainId, tokenIn, amountInRaw: amountIn });
     quoted = approved.v4
-      ? await revalidateV4Quote({ client: getUniswapPublicClient(deployment), deployment, approved, wallet: getAddress(walletAddress), ...(context.abortSignal ? { signal: context.abortSignal } : {}) })
+      ? await revalidateV4Quote({ client: getUniswapPublicClient(deployment), deployment, approved, resolvedTokens: [tokenIn, tokenOut], wallet: getAddress(walletAddress), ...(context.abortSignal ? { signal: context.abortSignal } : {}) })
       : await computeQuote(deployment, tokenIn, tokenOut, feeCharge.swapAmountRaw, slippageBps, false, getAddress(walletAddress));
   } catch (err) {
     return failPreBroadcast(
@@ -509,7 +509,9 @@ export async function executeUniswapSwap(
         // priced are the same one by construction, not by a widened cast.
         async (request) => {
           if (approved.v4) {
-            quoted = await revalidateV4Quote({ client: clients.publicClient, deployment, approved, wallet: getAddress(signer.address), ...(context.abortSignal ? { signal: context.abortSignal } : {}) });
+            quoted = await revalidateV4Quote({ client: clients.publicClient, deployment, approved,
+              ...(quoted.route.version === "v4" ? { freshBinding: quoted.route.v4 } : {}),
+              wallet: getAddress(signer.address), ...(context.abortSignal ? { signal: context.abortSignal } : {}) });
             if (event.eventRole === "swap") {
               const deadline = decodeFunctionData({ abi: UNIVERSAL_ROUTER_ABI, data: tx.data }).args[2];
               if (deadline <= BigInt(Math.floor(Date.now() / 1000))) throw v4Refusal("transaction deadline expired before signing");

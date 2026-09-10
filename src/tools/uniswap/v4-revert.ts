@@ -1,5 +1,5 @@
 import { decodeErrorResult, parseAbi, type Hex } from "viem";
-import type { UniswapRevertClassification } from "./revert-mapping.js";
+import type { UniswapRouterRevertClassification as UniswapRevertClassification } from "./revert-mapping.js";
 import { classifyRouterRevertReason } from "../evm-chains/router-revert-reason.js";
 export interface UniswapRevertEvidence {
   readonly selector: Hex;

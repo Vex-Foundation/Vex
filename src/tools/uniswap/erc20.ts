@@ -11,6 +11,7 @@
  * lifecycle, which a single blocking helper here could not provide.
  */
 
+import { rpcReadFailureOf } from "../evm-chains/rpc-read-failure.js";
 import type { Address, Chain, PublicClient, Transport } from "viem";
 
 import { VexError, ErrorCodes } from "../../errors.js";
@@ -33,17 +34,19 @@ export async function readUniswapErc20Metadata(
   let decimals: number;
   try {
     decimals = await client.readContract({ address, abi: UNISWAP_ERC20_ABI, functionName: "decimals" });
-  } catch {
+  } catch (error) {
+    if (rpcReadFailureOf(error)) throw error;
     throw new VexError(
       ErrorCodes.KYBER_TOKEN_NOT_FOUND,
-      `Cannot read decimals for ${address} — not a valid ERC-20 contract on this chain`,
+      `Cannot read decimals for ${address} - not a valid ERC-20 contract on this chain`,
       "Verify the token address and chain are correct.",
     );
   }
   let symbol = "UNKNOWN";
   try {
     symbol = await client.readContract({ address, abi: UNISWAP_ERC20_ABI, functionName: "symbol" });
-  } catch {
+  } catch (error) {
+    if (rpcReadFailureOf(error)) throw error;
     logger.debug({ event: "uniswap.erc20.symbol_failed", address });
   }
   return { address, symbol, decimals, isNative: false };

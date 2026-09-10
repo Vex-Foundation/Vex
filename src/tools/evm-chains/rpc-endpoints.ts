@@ -64,6 +64,8 @@ export interface RpcEndpoint {
   /** Absent means "every method". */
   readonly methods?: RpcMethodScope;
   readonly timeoutMs: number;
+  /** Bundled aliases that consume one upstream quota share one pacing queue. */
+  readonly requestPacingGroup?: string;
   /**
    * Attempts THIS endpoint makes before the list advances, minus one.
    *
@@ -101,13 +103,9 @@ export interface RpcEndpoint {
    */
   readonly broadcastSafe: boolean;
   /**
-   * Minimum milliseconds between requests THIS PROCESS sends to THIS endpoint.
-   *
-   * Per endpoint, not per chain, because the endpoints on one chain shed load
-   * at wildly different rates: on Base the Tenderly gateway took twelve of
-   * twelve at full speed while both `*.base.org` hosts answer five and then
-   * 429. Enforced by a paced `fetchFn` on that endpoint's own transport, so an
-   * endpoint's ceiling never slows its neighbours.
+   * Minimum time between request starts in this process. A quota group shares
+   * that bound across its declared aliases; otherwise it applies per URL.
+   * Chain-ID probes and read/pinned clients use the same admission owner.
    */
   readonly minRequestSpacingMs?: number;
   /** Why this entry sits where it does, in one line. Provenance, not narration. */
@@ -577,6 +575,8 @@ const RPC_CHAINS: readonly RpcChainEntry[] = [
         timeoutMs: TIMEOUT_MS,
         retryCount: 0,
         broadcastSafe: false,
+        minRequestSpacingMs: 250,
+        requestPacingGroup: "base-bundled-rpc",
         // READ PRIMARY. It clears every Base cell the previous candidates each
         // failed: head-block receipts (publicnode cannot), state and calls
         // (`base.drpc.org` cannot), `eth_feeHistory` (`1rpc.io/base` cannot),
@@ -585,7 +585,9 @@ const RPC_CHAINS: readonly RpcChainEntry[] = [
         // error, which `classifyRpcFailure` reads as `range_capped` - so the
         // 10000-block candles window fails over to the `*.base.org` lane below
         // instead of being excluded here and losing the narrow windows too.
-        note: "read primary: full method set, 12/12 burst, eth_getLogs capped at 1000 blocks",
+        // 2026-09-10: real quote/execute bursts exhausted all three entries.
+        // Admit four starts/second across the lane, below the fallback's 5 rps.
+        note: "read primary: full method set; shared Base lane pacing after execute-burst 429s; eth_getLogs capped at 1000 blocks",
       },
       {
         url: "https://developer-access-mainnet.base.org",
@@ -597,6 +599,7 @@ const RPC_CHAINS: readonly RpcChainEntry[] = [
         // the 5 rps ceiling of its sibling below, so it is redundancy for that
         // lane, not extra throughput, and it is paced accordingly.
         minRequestSpacingMs: 250,
+        requestPacingGroup: "base-bundled-rpc",
         note: "wide eth_getLogs lane; paced against a measured ~5 rps ceiling",
       },
       {
@@ -610,6 +613,7 @@ const RPC_CHAINS: readonly RpcChainEntry[] = [
         // Base is therefore a chain where the read primary and the broadcast
         // endpoint are deliberately different hosts.
         minRequestSpacingMs: 250,
+        requestPacingGroup: "base-bundled-rpc",
         note: "broadcast endpoint (official) and wide eth_getLogs lane; paced against a measured ~5 rps ceiling",
       },
     ],

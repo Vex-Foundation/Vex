@@ -55,7 +55,7 @@ export function preSignRefusalResult(input: {
   readonly executionId: number;
 }): ToolResult {
   const classification = input.classification;
-  const guidance = classification.onChainRevert
+  const guidance = classification.rpcFailure ? classification.failureReason : classification.onChainRevert
     ? preSignRefusalGuidance({
         revertReason: classification.failureReason,
         failureCode: classification.failureCode,

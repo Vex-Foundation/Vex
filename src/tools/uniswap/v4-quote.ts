@@ -36,7 +36,20 @@ export async function quoteBoundV4Pool(
   const currencyIn = bound.zeroForOne ? bound.poolKey.currency0 : bound.poolKey.currency1;
   const currencyOut = bound.zeroForOne ? bound.poolKey.currency1 : bound.poolKey.currency0;
   const fresh = await bindV4Pool(client, deployment, bound.poolId, currencyIn, currencyOut);
-  if (fresh.hookPermissions !== bound.hookPermissions) throw v4Refusal("hook permissions changed");
+  return quoteFreshV4Pool(client, deployment, bound, fresh, amountIn);
+}
+
+/** Reuse only a binding read within this execute, never the stored approval. */
+export async function quoteFreshV4Pool(
+  client: PublicClient<Transport, Chain>, deployment: UniswapDeployment,
+  approved: V4RouteBinding, fresh: V4RouteBinding, amountIn: bigint,
+): Promise<Extract<UniswapRoute, { version: "v4" }>> {
+  assertV4Binding(deployment, approved);
+  assertV4Binding(deployment, fresh);
+  if (fresh.poolId.toLowerCase() !== approved.poolId.toLowerCase()
+    || v4PoolId(fresh.poolKey) !== v4PoolId(approved.poolKey)
+    || fresh.zeroForOne !== approved.zeroForOne
+    || fresh.hookPermissions !== approved.hookPermissions) throw v4Refusal("PoolKey or hook permissions changed");
   return quoteV4WithBinding(client, deployment, fresh, amountIn);
 }
 async function quoteV4WithBinding(client: PublicClient<Transport, Chain>, deployment: UniswapDeployment, fresh: V4RouteBinding, amountIn: bigint): Promise<Extract<UniswapRoute, { version: "v4" }>> {

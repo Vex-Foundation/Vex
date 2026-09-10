@@ -328,6 +328,9 @@ function mapFailureCode(value: unknown): string | null {
   const code = str(value);
   if (code === null) return null;
   if (code === "solana_signature_expired") return "confirmation_timeout";
+  // Keep the server's current wire enum; the local ledger retains the exact
+  // RPC class and its reason. Endpoint exhaustion is venue unavailability.
+  if (["archive_gated", "range_capped", "rate_limited", "compute_budget", "method_unsupported", "transport"].includes(code)) return "venue_unavailable";
   return SERVER_FAILURE_CODES.has(code) ? code : "unknown";
 }
 

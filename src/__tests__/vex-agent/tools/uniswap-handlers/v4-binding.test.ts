@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createPublicClient, custom, decodeFunctionData, encodeAbiParameters, encodeFunctionResult, parseAbi, zeroAddress } from "viem";
 import { mainnet } from "viem/chains";
 import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
@@ -47,6 +47,22 @@ function client(output = 1000n, decimals = 18, cancel?: () => void) {
 }
 
 describe("v4 approved route and last-sign revalidation", () => {
+  it("reuses this execute's binding while re-reading decimals and simulating the final floor", async () => {
+    const c = client();
+    const reads = vi.spyOn(c, "readContract");
+    const approved = sealUniswapSnapshot(fields());
+    const first = await revalidateV4Quote({ client: c, deployment, approved, wallet });
+    if (first.route.version !== "v4") throw new Error("Expected v4 binding");
+    await revalidateV4Quote({ client: c, deployment, approved, wallet, freshBinding: first.route.v4 });
+    const names = reads.mock.calls.map(([call]) => call.functionName);
+    expect(names.filter(n => n === "poolKeys")).toHaveLength(1);
+    expect(names.filter(n => n === "getSlot0")).toHaveLength(1);
+    expect(names.filter(n => n === "decimals")).toHaveLength(2);
+    await expect(revalidateV4Quote({ client: c, deployment, approved, wallet,
+      freshBinding: { ...first.route.v4, hookPermissions: 0 } })).rejects.toThrow(/PoolKey|hook/);
+    await expect(revalidateV4Quote({ client: client(989n), deployment, approved, wallet,
+      freshBinding: first.route.v4 })).rejects.toThrow(/below the approved/);
+  });
   it("preserves the full route through a durable snapshot and the approval preview builder", () => {
     const snapshot = sealUniswapSnapshot(fields());
     expect(restoreUniswapSnapshot(JSON.parse(JSON.stringify(snapshot)))).toEqual({ ok: true, snapshot });

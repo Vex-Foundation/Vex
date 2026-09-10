@@ -7,6 +7,7 @@ import { v4PoolId } from "@tools/uniswap/v4-pool.js";
 import { v4RouteBindingSchema } from "@tools/uniswap/v4-types.js";
 import { classifyUniswapRevertError } from "@tools/uniswap/revert-mapping.js";
 import { VexError, ErrorCodes } from "../../../errors.js";
+import { RpcReadExhaustedError } from "@tools/evm-chains/rpc-read-failure.js";
 
 const floorData = "0x8b063d7300000000000000000000000000000000000000000000000000000000000788b8000000000000000000000000000000000000000000000000000000000003c45c";
 
@@ -36,6 +37,9 @@ describe("real v4 native estimate evidence", () => {
     expect(result).toMatchObject({ failureCode: "slippage", onChainRevert: true,
       revert: { errorName: "V4TooLittleReceived", selector: "0x8b063d73", data: floorData } });
     expect(result.failureReason).toContain("V4TooLittleReceived(493752, 246876)");
+    expect(classifyUniswapRevertError(new RpcReadExhaustedError(8453, "unknown", "eth_call", { data: floorData }))).toMatchObject({
+      failureCode: "slippage", revert: { errorName: "V4TooLittleReceived", data: floorData },
+    });
   });
 
   it("retains the full outer wrapper and decodes its nested floor error", () => {

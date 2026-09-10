@@ -53,7 +53,7 @@ export interface ConfirmedPriorLeg {
 
 /** The call to price — the same `to`/`data`/`value` that will actually be signed. */
 export interface PlanLegCall {
-  readonly account: Account;
+  readonly account: Account | Address;
   readonly to: Address;
   readonly data?: Hex;
   readonly value: bigint;
@@ -107,7 +107,7 @@ export class DependentLegGasEstimateError extends Error {
       `${DEPENDENT_LEG_ESTIMATE_MARKER} attempts=${params.attempts}`
         + ` prior_leg_block=${params.priorLegBlockNumber}`
         + ` rpc_head=${params.observedHeadBlock ?? "unknown"}`
-        + ` nothing_signed — ${firstLineOf(params.cause)}`,
+        + ` nothing_signed - ${firstLineOf(params.cause)}`,
       { cause: params.cause },
     );
     this.name = "DependentLegGasEstimateError";

@@ -1,0 +1,62 @@
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { createPublicClient, defineChain } from "viem";
+import type { RpcEndpoint } from "@tools/evm-chains/rpc-endpoints.js";
+import { buildEvmTransport, buildPinnedEvmTransport, resetRpcVerification } from "@tools/evm-chains/rpc-transport.js";
+import { rpcReadFailureOf } from "@tools/evm-chains/rpc-read-failure.js";
+
+const state = vi.hoisted(() => ({ endpoints: [] as RpcEndpoint[] }));
+vi.mock("@tools/evm-chains/rpc-endpoints.js", async original => ({
+  ...await original<typeof import("@tools/evm-chains/rpc-endpoints.js")>(), resolveRpcEndpoints: () => state.endpoints,
+}));
+vi.mock("@utils/logger.js", () => ({ default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() } }));
+const chain = defineChain({ id: 8453, name: "paced fixture", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: { default: { http: ["http://rpc-one.invalid"] } } });
+beforeEach(() => {
+  vi.useFakeTimers(); resetRpcVerification();
+  state.endpoints = ["http://rpc-one.invalid", "http://rpc-two.invalid"].map((url, i) => ({
+    url, tier: "bundled", retryCount: 0, timeoutMs: 30000, broadcastSafe: i === 1,
+    minRequestSpacingMs: 250, requestPacingGroup: "test-shared-quota",
+  }));
+});
+
+it("exhausts each bundled endpoint once instead of retrying the whole failover chain", async () => {
+  const methods: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body)) as { id: number; method: string };
+    methods.push(body.method);
+    return new Response(JSON.stringify(body.method === "eth_chainId"
+      ? { jsonrpc: "2.0", id: body.id, result: "0x2105" }
+      : { jsonrpc: "2.0", id: body.id, error: { code: 429, message: "rate limit" } }), { status: body.method === "eth_chainId" ? 200 : 429 });
+  }));
+  const client = createPublicClient({ chain, transport: buildEvmTransport(8453) });
+  const outcome = client.getBlockNumber().then(() => undefined, error => rpcReadFailureOf(error));
+  await vi.runAllTimersAsync();
+  expect(await outcome).toMatchObject({ chainId: 8453, failureClass: "rate_limited" });
+  expect(methods.filter(m => m !== "eth_chainId")).toEqual(["eth_blockNumber", "eth_blockNumber"]);
+});
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); resetRpcVerification(); });
+
+it("paces probes, independent clients and failover attempts through one shared quota", async () => {
+  const calls: { method: string; host: string; at: number }[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body)) as { id: number; method: string };
+    const host = new URL(url).host;
+    calls.push({ method: body.method, host, at: Date.now() });
+    const refused = body.method !== "eth_chainId" && host === "rpc-one.invalid";
+    return new Response(JSON.stringify(refused ? { jsonrpc: "2.0", id: body.id, error: { code: 429, message: "rate limit" } }
+      : { jsonrpc: "2.0", id: body.id, result: body.method === "eth_chainId" ? "0x2105" : "0x1" }), { status: refused ? 429 : 200 });
+  }));
+  const a = createPublicClient({ chain, transport: buildEvmTransport(8453) });
+  const b = createPublicClient({ chain, transport: buildEvmTransport(8453) });
+  const pinned = createPublicClient({ chain, transport: buildPinnedEvmTransport(8453) });
+  const results = Promise.all([a.getBlockNumber(), b.getBlockNumber(), pinned.getBlockNumber()]);
+  await vi.runAllTimersAsync();
+  expect(await results).toEqual([1n, 1n, 1n]);
+  expect(calls.filter(c => c.method === "eth_chainId")).toHaveLength(2);
+  expect(calls.filter(c => c.method === "eth_blockNumber")).toHaveLength(5);
+  for (let i = 1; i < calls.length; i++) {
+    const now = calls[i], previous = calls[i - 1];
+    if (!now || !previous) throw new Error("missing request evidence");
+    expect(now.at - previous.at).toBeGreaterThanOrEqual(250);
+  }
+});
