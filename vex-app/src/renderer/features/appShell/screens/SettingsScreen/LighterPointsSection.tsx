@@ -139,53 +139,78 @@ function ReferralField({
   );
 }
 
-function WalletCard({ row }: { readonly row: LighterPointsRow }): JSX.Element {
+function WalletCard({
+  row,
+  renderTradingSetup,
+}: {
+  readonly row: LighterPointsRow;
+  readonly renderTradingSetup: (row: LighterPointsRow) => JSX.Element | null;
+}): JSX.Element {
   return (
-    <li
-      className="rounded-xl border border-line-1 p-4"
-      data-vex-lighter-points-card={row.walletAddress}
-    >
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <span className="font-mono text-[12px] leading-[18px] text-ink-secondary">
-          {row.walletAddress}
-        </span>
-        <span className="vex-micro-label uppercase text-ink-secondary">
-          {ENVIRONMENT_LABEL[row.environment]} - account {row.accountIndex}
-        </span>
-      </div>
-      {row.kind === "unavailable" ? (
-        <p
-          className="mt-3 text-[13px] leading-[20px] text-warning"
-          data-vex-lighter-points-unavailable={row.reason}
-        >
-          {AUTH_REASON_COPY[row.reason] ?? row.detail}
-        </p>
-      ) : (
-        <>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <RankField label="All-time" rank={row.allTime} testId="allTime" />
-            <RankField label="This week" rank={row.weekly} testId="weekly" />
-            <div data-vex-lighter-points-field="livePoints">
-              <Field label="Live points">
-                {row.livePoints.kind === "value" ? (
-                  formatPoints(row.livePoints.value)
-                ) : (
-                  <Unavailable reason={row.livePoints.reason} />
-                )}
-              </Field>
-            </div>
-            <ReferralField referral={row.referral} />
-          </div>
-          <p className="mt-3 text-[12px] leading-[18px] text-ink-tertiary">
-            Read {formatObservedAt(row.observedAt)}
+    // ONE WALLET, TWO CARDS. The list item is the wallet; the Points card and
+    // the Trading setup card are its contents. The wallet list has ONE owner
+    // (this read), so the trading card can never enumerate a different set of
+    // accounts than the points card beside it.
+    <li className="flex flex-col gap-3" data-vex-lighter-wallet={row.walletAddress}>
+      <div
+        className="rounded-xl border border-line-1 p-4"
+        data-vex-lighter-points-card={row.walletAddress}
+      >
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <span className="font-mono text-[12px] leading-[18px] text-ink-secondary">
+            {row.walletAddress}
+          </span>
+          <span className="vex-micro-label uppercase text-ink-secondary">
+            {ENVIRONMENT_LABEL[row.environment]} - account {row.accountIndex}
+          </span>
+        </div>
+        {row.kind === "unavailable" ? (
+          <p
+            className="mt-3 text-[13px] leading-[20px] text-warning"
+            data-vex-lighter-points-unavailable={row.reason}
+          >
+            {AUTH_REASON_COPY[row.reason] ?? row.detail}
           </p>
-        </>
-      )}
+        ) : (
+          <>
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <RankField label="All-time" rank={row.allTime} testId="allTime" />
+              <RankField label="This week" rank={row.weekly} testId="weekly" />
+              <div data-vex-lighter-points-field="livePoints">
+                <Field label="Live points">
+                  {row.livePoints.kind === "value" ? (
+                    formatPoints(row.livePoints.value)
+                  ) : (
+                    <Unavailable reason={row.livePoints.reason} />
+                  )}
+                </Field>
+              </div>
+              <ReferralField referral={row.referral} />
+            </div>
+            <p className="mt-3 text-[12px] leading-[18px] text-ink-tertiary">
+              Read {formatObservedAt(row.observedAt)}
+            </p>
+          </>
+        )}
+      </div>
+      {renderTradingSetup(row)}
     </li>
   );
 }
 
-export function LighterPointsSection(): JSX.Element {
+export interface LighterPointsSectionProps {
+  /**
+   * The card rendered under each wallet's points card. It is a REQUIRED slot,
+   * not an optional decoration: the wallet list this read produces is the only
+   * enumeration of Lighter accounts in Settings, so whatever else Settings says
+   * about a wallet is composed here rather than re-derived from a second read.
+   */
+  readonly renderTradingSetup: (row: LighterPointsRow) => JSX.Element | null;
+}
+
+export function LighterPointsSection({
+  renderTradingSetup,
+}: LighterPointsSectionProps): JSX.Element {
   const { state, refreshing, refresh } = useLighterPoints();
   return (
     <section aria-label="Lighter Points" data-vex-lighter-points>
@@ -243,7 +268,11 @@ export function LighterPointsSection(): JSX.Element {
           <>
             <ul className="flex flex-col gap-3" data-vex-lighter-points-list>
               {state.result.rows.map((row) => (
-                <WalletCard key={`${row.environment}:${row.walletAddress}`} row={row} />
+                <WalletCard
+                  key={`${row.environment}:${row.walletAddress}`}
+                  row={row}
+                  renderTradingSetup={renderTradingSetup}
+                />
               ))}
             </ul>
             {state.result.walletCount > state.result.rows.length ? (

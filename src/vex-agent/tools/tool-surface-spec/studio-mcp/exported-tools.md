@@ -142,8 +142,8 @@ free. Both texts live on the tool
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| lighter__account_get | Read a Lighter account | protocol | yes | no | no | - | 536 | - | none (read) |
-| lighter__account_onboarding_status | Check Lighter account onboarding readiness | protocol | yes | no | no | - | 1366 | - | none (read) |
+| lighter__account_get | Read a Lighter account | protocol | yes | no | no | - | 735 | - | none (read) |
+| lighter__account_onboarding_status | Check Lighter account onboarding readiness | protocol | yes | no | no | - | 1531 | - | none (read) |
 | lighter__api_keys_inspect | Inspect Lighter API-key registrations | protocol | yes | no | no | - | 518 | - | none (read) |
 | lighter__candles_list | Read Lighter market candles | protocol | yes | no | no | - | 483 | - | none (read) |
 | lighter__deposit | Execute an approved Lighter deposit | protocol | no | yes | no | - | 817 | - | - |
@@ -155,8 +155,8 @@ free. Both texts live on the tool
 | lighter__key_register | Register an approved Lighter trading key | protocol | no | yes | no | - | 724 | - | - |
 | lighter__key_register_prepare | Prepare a Lighter trading-key approval | protocol | no | no | no | - | 1016 | - | - |
 | lighter__key_register_status | Check a Lighter key registration's status | protocol | yes | no | no | - | 773 | - | none (read) |
-| lighter__market_get | Read one Lighter market | protocol | yes | no | no | - | 594 | - | none (read) |
-| lighter__markets_list | List Lighter markets | protocol | yes | no | no | - | 549 | - | none (read) |
+| lighter__market_get | Read one Lighter market | protocol | yes | no | no | - | 775 | - | none (read) |
+| lighter__markets_list | List Lighter markets | protocol | yes | no | no | - | 665 | - | none (read) |
 | lighter__open_orders_list | List open Lighter orders | protocol | yes | no | no | - | 503 | - | none (read) |
 | lighter__order_cancel | Cancel an approved Lighter order | protocol | no | yes | no | - | 636 | - | - |
 | lighter__order_cancel_all | Cancel all approved Lighter orders | protocol | no | yes | no | - | 665 | - | - |
@@ -167,13 +167,13 @@ free. Both texts live on the tool
 | lighter__order_history_list | Read Lighter order history | protocol | yes | no | no | - | 483 | - | none (read) |
 | lighter__order_modify | Modify an approved Lighter limit order | protocol | no | yes | no | - | 613 | - | - |
 | lighter__order_modify_prepare | Prepare a Lighter order-modification approval | protocol | no | no | no | - | 552 | - | - |
-| lighter__order_preview | Preview a Lighter order | protocol | no | no | no | - | 1870 | - | - |
+| lighter__order_preview | Preview a Lighter order | protocol | no | no | no | - | 2078 | - | - |
 | lighter__order_status | Check a Lighter order action's status | protocol | yes | no | no | - | 936 | - | none (read) |
 | lighter__orderbook_get | Read a Lighter order book | protocol | yes | no | no | - | 537 | - | none (read) |
 | lighter__position_close | Close an approved Lighter position | protocol | no | yes | no | - | 631 | - | - |
 | lighter__position_close_prepare | Prepare a Lighter position-close approval | protocol | no | no | no | - | 602 | - | - |
 | lighter__position_protect | Preview Lighter position protection | protocol | no | no | no | - | 1108 | - | - |
-| lighter__positions_list | List Lighter positions | protocol | yes | no | no | - | 529 | - | none (read) |
+| lighter__positions_list | List Lighter positions | protocol | yes | no | no | - | 709 | - | none (read) |
 | lighter__recent_trades_list | Read recent public Lighter trades | protocol | yes | no | no | - | 472 | - | none (read) |
 | lighter__system_get | Read Lighter system status | protocol | yes | no | no | - | 462 | - | none (read) |
 | lighter__trades_list | Read Lighter account trades | protocol | yes | no | no | - | 522 | - | none (read) |

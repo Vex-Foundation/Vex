@@ -19,7 +19,7 @@ import {
   WalletsStep,
 } from "../../../wizard/index.js";
 import { ExportPrivateKeyModal } from "../../../wallets/ExportPrivateKeyModal.js";
-import { LighterPointsSection } from "./LighterPointsSection.js";
+import { LighterSection } from "./LighterSection.js";
 import type { SectionMeta } from "./settings-sections.js";
 import { SuperboardKeySection } from "./SuperboardKeySection.js";
 import { ChainEndpointsSection } from "./ChainEndpointsSection.js";
@@ -66,7 +66,7 @@ function renderSectionContent(
     case "superboardKey":
       return <SuperboardKeySection />;
     case "lighterPoints":
-      return <LighterPointsSection />;
+      return <LighterSection />;
   }
   switch (meta.stepId) {
     case undefined:

@@ -38,6 +38,11 @@ import {
 import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
 import * as lighterOrderPreviewsRepo from "@vex-agent/db/repos/lighter-order-previews.js";
 import { describeFailureForAgent, describeFailureForLog } from "../../runtime/errors.js";
+import { resolveLighterPreviewCapitalShareAdvisory } from "../capital-share-policy.js";
+import {
+  LIGHTER_TRADING_LIMITS_GUIDANCE,
+  readLighterOnboardingTradingLimits,
+} from "../trading-limits.js";
 import {
   defaultLighterOrderRepairDeps,
   repairLighterOrderIntent,
@@ -760,6 +765,16 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
               toolId: null,
               params: null,
             };
+      // The two numbers the USER owns on this account. They ride this hot
+      // readiness read rather than a prompt layer because they are per wallet,
+      // change whenever the user touches Settings or Lighter's own UI, and would
+      // otherwise cost every turn to carry. See `trading-limits.ts`.
+      const tradingLimits = await readLighterOnboardingTradingLimits({
+        client: getLighterClient(),
+        environment: environment.value,
+        walletAddress,
+        accountIndex: status.accountIndex,
+      });
       const environmentLabel = environment.value === "core"
         ? "Lighter Core"
         : "Lighter RHC";
@@ -806,7 +821,8 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         fundingRoute,
         tradingAccessRoute,
         depositAmountProvided,
-        userGuidance,
+        tradingLimits,
+        userGuidance: `${userGuidance} ${LIGHTER_TRADING_LIMITS_GUIDANCE}`,
       });
     } catch (err) {
       return fail(
@@ -1205,7 +1221,12 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         client.getAccount(environment.value, {
           by: "index",
           value: accountIndex,
-          activeOnly: true,
+          // `false`, deliberately: `activeOnly: true` hides a market the account
+          // has leverage settings for but no OPEN POSITION on (the SDK documents
+          // the flag that way in `lighter-python/lighter/api/account_api.py`),
+          // and that hidden row is exactly the one carrying the
+          // `initial_margin_fraction` this preview's capital share needs.
+          activeOnly: false,
         }),
       ]);
       const market = findMarketDetail(marketDetails, marketId);
@@ -1246,6 +1267,23 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       const accountTakerFeeTicks = market.market_type === "spot" && previewParams.value.side === "buy"
         ? await readLighterOrderAccountFeeTicks(client, environment.value, accountIndex)
         : undefined;
+      // ADVISORY, never a veto: the preview is a read, and the capital share is
+      // ENFORCED at `lighter.order.create.prepare` where the intent row and its
+      // commitment are admitted in one transaction. Showing the ceiling here is
+      // what lets the user see the number before the refusal explains it.
+      const capitalShare = await resolveLighterPreviewCapitalShareAdvisory({
+        client,
+        environment: environment.value,
+        accountIndex,
+        account,
+        market,
+        baseAmount: previewParams.value.baseAmount,
+        price: previewParams.value.price,
+        side: previewParams.value.side,
+        orderType: previewParams.value.orderType,
+        reduceOnly: previewParams.value.reduceOnly,
+        integratorFees,
+      });
       const preview = buildLighterOrderPreview({
         sessionId,
         environment: environment.value,
@@ -1269,6 +1307,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         market,
         orderBook,
         account,
+        ...(capitalShare === null ? {} : { capitalShare }),
         ...(accountTakerFeeTicks === undefined ? {} : { accountTakerFeeTicks }),
       });
       await lighterOrderPreviewsRepo.create({

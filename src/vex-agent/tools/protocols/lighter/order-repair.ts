@@ -5,10 +5,18 @@ import {
 } from "@tools/lighter/client.js";
 import type { LighterTradingCredentialVaultReference } from "@tools/lighter/trading-credentials.js";
 import type { LighterEnvironment } from "@tools/lighter/types.js";
+import {
+  LIGHTER_CREATE_COMMITMENT_SETTLED_STATES,
+  LIGHTER_CREATE_COMMITMENT_UNSUBMITTED_STATES,
+} from "@vex-agent/db/repos/lighter-capital-commitments.js";
 import * as lighterNonceStateRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
 import * as lighterOrderExecutionIntentsRepo from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import logger from "@utils/logger.js";
+import {
+  markLighterOrderCapitalCommitmentSettled,
+  retireLighterOrderCapitalCommitment,
+} from "./capital-share-policy.js";
 import { lighterOrderNonceReservationId } from "./nonce-reservation.js";
 import {
   defaultLighterFillObservationDeps,
@@ -295,9 +303,58 @@ export function selectRotatingSlice<T>(
   return selected;
 }
 
+/**
+ * Repair one create intent, and settle or retire its capital commitment
+ * according to WHAT THE REPAIR PROVED.
+ *
+ * BOTH entry points come through here - the exact-id call above and the
+ * background sweep - which is why this lives at this seam and not in each
+ * resolution branch. Repair is the path that reaches an intent nobody else
+ * will: a crash between admission and outcome leaves a live commitment whose
+ * order is long settled.
+ *
+ * The two proofs are NOT the same, and treating them alike was the defect:
+ *
+ * - a state that proves the order NEVER REACHED LIGHTER retires the commitment
+ *   at once, because nothing on the account can be covering it;
+ * - a state that proves the order SETTLED AT LIGHTER only stamps the
+ *   settlement, because a session whose account snapshot predates that
+ *   settlement would otherwise see the capital in neither place. The stamp
+ *   starts the observation lag; the admission sweep retires the row when it
+ *   elapses.
+ *
+ * Neither ever changes the repair verdict: both ledger calls swallow and log
+ * their own failure, and a row that keeps counting only tightens the ceiling.
+ */
 export async function repairLighterOrderIntent(
   intent: LighterOrderExecutionIntentRow,
   deps: LighterOrderRepairDeps = defaultLighterOrderRepairDeps(),
+): Promise<LighterOrderRepairReport> {
+  const report = await resolveLighterOrderIntentRepair(intent, deps);
+  if (LIGHTER_CREATE_COMMITMENT_UNSUBMITTED.has(report.stateAfter)) {
+    await retireLighterOrderCapitalCommitment({
+      intentId: report.intentId,
+      reason: `repair_${report.stateAfter}`,
+    });
+  } else if (LIGHTER_CREATE_COMMITMENT_SETTLED.has(report.stateAfter)) {
+    await markLighterOrderCapitalCommitmentSettled(report.intentId);
+  }
+  return report;
+}
+
+/** Create-intent states that PROVE the order never reached Lighter. */
+const LIGHTER_CREATE_COMMITMENT_UNSUBMITTED: ReadonlySet<string> = new Set(
+  LIGHTER_CREATE_COMMITMENT_UNSUBMITTED_STATES,
+);
+
+/** Create-intent states that prove the order SETTLED at Lighter. */
+const LIGHTER_CREATE_COMMITMENT_SETTLED: ReadonlySet<string> = new Set(
+  LIGHTER_CREATE_COMMITMENT_SETTLED_STATES,
+);
+
+async function resolveLighterOrderIntentRepair(
+  intent: LighterOrderExecutionIntentRow,
+  deps: LighterOrderRepairDeps,
 ): Promise<LighterOrderRepairReport> {
   const base = baseReport(intent);
   if (isLighterExpiredUnsubmittedState(intent.executionState)) {

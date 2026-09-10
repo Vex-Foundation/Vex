@@ -19,6 +19,7 @@ import {
   type LighterCandleResolution,
   type LighterEndpointConfig,
   type LighterEnvironment,
+  type LighterMarketFilter,
 } from "./constants.js";
 import {
   mapLighterError,
@@ -607,6 +608,33 @@ export class LighterClient {
         market_id: String(marketId),
         filter: params.filter,
       },
+      options,
+    );
+  }
+
+  /**
+   * EVERY market's details in ONE call: `orderBookDetails` without a
+   * `market_id` returns the whole catalogue.
+   *
+   * Measured live on RHC (2026-09-10): `filter=perp` returns 57 active
+   * perpetual rows, each carrying `min_initial_margin_fraction` and
+   * `default_initial_margin_fraction`, and `spot_order_book_details` comes back
+   * as JSON null rather than an empty array, which the response validator
+   * already normalizes. A separate method rather than an optional `marketId`
+   * on `getMarketDetails`: reading the whole catalogue is a different request
+   * with a different cost, and it should never be what a forgotten argument
+   * does by accident.
+   */
+  async getAllMarketDetails(
+    environment: LighterEnvironment,
+    params: { readonly filter?: LighterMarketFilter } = {},
+    options: LighterPublicReadOptions = {},
+  ): Promise<LighterMarketDetailsResponse> {
+    return this.request(
+      environment,
+      LIGHTER_ENDPOINT_PATHS.orderBookDetails,
+      validateLighterMarketDetails,
+      { filter: params.filter },
       options,
     );
   }

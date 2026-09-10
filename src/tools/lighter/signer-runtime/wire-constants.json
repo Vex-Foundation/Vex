@@ -16,5 +16,17 @@
     "ImmediateOrCancel": 0,
     "PostOnly": 2
   },
-  "apiMaxOrderType": 6
+  "apiMaxOrderType": 6,
+  "txTypes": {
+    "TxTypeL2UpdateLeverage": 20
+  },
+  "marginModes": {
+    "CrossMargin": 0,
+    "IsolatedMargin": 1
+  },
+  "marginFractionTick": 10000,
+  "perpsMarketIndex": {
+    "min": 0,
+    "max": 254
+  }
 }

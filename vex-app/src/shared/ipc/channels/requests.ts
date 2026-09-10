@@ -349,6 +349,17 @@ export const CH = {
     // with a Lighter account registered through the app. Cancellable: the
     // renderer aborts it on navigation and on a second Refresh.
     lighterPoints: "vex:settings:lighterPoints",
+    // Lighter trading setup: the agent's capital share (a preference the agent
+    // READS, never authority) and the user's own leverage change. The leverage
+    // pair is PREPARE/CONFIRM: prepare resolves and persists an immutable
+    // proposal main issued, confirm carries only its id, so a renderer can
+    // never hand main the terms it wants signed.
+    getLighterTradingLimits: "vex:settings:getLighterTradingLimits",
+    setLighterTradingLimits: "vex:settings:setLighterTradingLimits",
+    getLighterLeverageOverview: "vex:settings:getLighterLeverageOverview",
+    prepareLighterLeverage: "vex:settings:prepareLighterLeverage",
+    confirmLighterLeverage: "vex:settings:confirmLighterLeverage",
+    reconcileLighterLeverage: "vex:settings:reconcileLighterLeverage",
     // "Vex setup" user profile (display name, instructions, work
     // description) - DB-backed (soul singleton), replaces persona.md.
     getUserProfile: "vex:settings:getUserProfile",

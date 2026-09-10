@@ -53,8 +53,28 @@ import {
   revalidateApprovedLighterOrder,
   type LighterOrderPreSubmitRevalidationEvidence,
 } from "./pre-submit-revalidation.js";
+import {
+  markLighterOrderCapitalCommitmentSettled,
+  readmitLighterOrderCapitalCommitmentAtExecute,
+  retireLighterOrderCapitalCommitment,
+} from "./capital-share-policy.js";
 import { assertLighterPhaseOneOrderPolicy } from "@tools/lighter/order-policy.js";
 import { assertLighterTradingApiKeyIndexAllowed } from "@tools/lighter/trading-credentials.js";
+
+/**
+ * The provider states that PROVE this create order can consume no more capital.
+ *
+ * `open` and `partially_filled` are deliberately absent: a resting order still
+ * holds the margin its commitment reserved, and retiring on them was the gap
+ * that let a second order be admitted against capital counted in neither the
+ * provider's numbers nor the ledger. `sequencer_pending` has no evidence at all
+ * yet.
+ */
+const LIGHTER_CREATE_SETTLED_PROVIDER_STATES: ReadonlySet<string> = new Set([
+  "filled",
+  "canceled",
+  "rejected",
+]);
 
 const SENDTX_AMBIGUOUS_REASON = "sendtx_failed_after_submit_attempt";
 const SIGNING_AMBIGUOUS_REASON = "signing_failed_after_nonce_reservation";
@@ -368,10 +388,21 @@ export async function executeApprovedLighterCreateOrder(input: {
           intentId: plan.intentId, sessionId: plan.sessionId, reservationId: nonce.reservationId,
           signerTxHash, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
         });
-      if (refused) await deps.nonceState.releaseUnsubmittedReservation({
-        environment: plan.environment, accountIndex: plan.accountIndex, apiKeyIndex: plan.apiKeyIndex,
-        reservationId: nonce.reservationId, nonceValue: nonce.nonceValue,
-      });
+      if (refused) {
+        await deps.nonceState.releaseUnsubmittedReservation({
+          environment: plan.environment, accountIndex: plan.accountIndex, apiKeyIndex: plan.apiKeyIndex,
+          reservationId: nonce.reservationId, nonceValue: nonce.nonceValue,
+        });
+        // Both transitions above are proof this order was NEVER sent: one is
+        // taken before any signature exists, the other only while
+        // `send_attempt_started_at IS NULL`. Nothing on the account can be
+        // covering the commitment, so it is retired here rather than waiting
+        // out the observation lag at the next admission.
+        await retireLighterOrderCapitalCommitment({
+          intentId: plan.intentId,
+          reason: signerTxHash === null ? "refused_unsubmitted" : "expired_unsubmitted",
+        });
+      }
     } else if (signerTxHash === null || error instanceof LighterIntentRefusal) {
       await markAmbiguous(deps, plan, error instanceof LighterIntentRefusal ? error.reason : SIGNING_AMBIGUOUS_REASON);
     }
@@ -502,6 +533,12 @@ async function revalidateLiveOrderState(
       deps.client.getAccount(plan.environment, {
         by: "index",
         value: plan.accountIndex,
+        // `false`: the position row carrying this market's
+        // `initial_margin_fraction` may exist with no OPEN POSITION, and
+        // `activeOnly: true` hides exactly that row. Revalidating the capital
+        // share against a hidden row would price the order at the market
+        // default instead of the account's own leverage.
+        activeOnly: false,
       }, FRESH_PUBLIC_READ),
     ]);
   } catch {
@@ -522,6 +559,15 @@ async function revalidateLiveOrderState(
   await revalidateLighterOrderFees({ client: deps.client, environment: plan.environment, accountIndex: plan.accountIndex, market: marketDetail, account, reduceOnly: plan.reduceOnly, side: plan.side, integratorFees: plan.integratorFees });
   const accountTakerFeeTicks = marketDetail.market_type === "spot" && plan.side === "buy"
     ? await readLighterOrderAccountFeeTicks(deps.client, plan.environment, plan.accountIndex) : undefined;
+  // RE-ADMISSION at the commit point, against the account and the limits row as
+  // they are NOW. `excludeIntentId` keeps this intent's own commitment from
+  // counting against itself; the user may have withdrawn collateral or lowered
+  // the share since approval, and either must refuse before anything is signed.
+  await readmitLighterOrderCapitalCommitmentAtExecute({
+    intentId: plan.intentId,
+    preview: approvedPreview,
+    client: deps.client,
+  });
   const evidence = revalidateApprovedLighterOrder({
     plan,
     approvedPreview,
@@ -896,6 +942,20 @@ async function persistProviderOutcome(input: {
     providerOutcomeJson: input.providerOutcomeJson,
   });
   if (persisted !== null) await observeFillsFromOrderEvidence(input, input.state, input.source);
+  if (persisted !== null && LIGHTER_CREATE_SETTLED_PROVIDER_STATES.has(input.state)) {
+    // STAMP the settlement, do not retire. The order is terminal, so from here
+    // the provider's own numbers carry it: a fill becomes position margin
+    // inside `cross_initial_margin_requirement`, and a cancel or rejection
+    // committed nothing at all. But those numbers only reach a session that
+    // READS THE ACCOUNT AFTER this moment; a session holding a snapshot taken
+    // before the fill would see the capital nowhere. The commitment therefore
+    // keeps counting until the observation lag has run from this stamp.
+    //
+    // `open`, `partially_filled` and `sequencer_pending` stamp nothing: those
+    // orders can still consume the capital they reserved, so the commitment is
+    // simply still true. `ambiguous` likewise.
+    await markLighterOrderCapitalCommitmentSettled(input.plan.intentId);
+  }
   if (persisted === null) {
     // A stream update can confirm the order while the REST lookup is in flight.
     const current = await input.deps.intents.findByIntentIdAnySession(input.plan.intentId);

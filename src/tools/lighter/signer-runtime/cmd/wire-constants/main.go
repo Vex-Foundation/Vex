@@ -40,12 +40,24 @@ import (
 // EXPORTED Go identifier so a rename in lighter-go shows up as a key diff
 // rather than silently re-pointing a value.
 type artifact struct {
-	Source          string         `json:"source"`
-	Generator       string         `json:"generator"`
-	Regenerate      string         `json:"regenerate"`
-	OrderTypes      map[string]int `json:"orderTypes"`
-	TimeInForce     map[string]int `json:"timeInForce"`
-	ApiMaxOrderType int            `json:"apiMaxOrderType"`
+	Source             string         `json:"source"`
+	Generator          string         `json:"generator"`
+	Regenerate         string         `json:"regenerate"`
+	OrderTypes         map[string]int `json:"orderTypes"`
+	TimeInForce        map[string]int `json:"timeInForce"`
+	ApiMaxOrderType    int            `json:"apiMaxOrderType"`
+	TxTypes            map[string]int `json:"txTypes"`
+	MarginModes        map[string]int `json:"marginModes"`
+	MarginFractionTick int64          `json:"marginFractionTick"`
+	PerpsMarketIndex   marketRange    `json:"perpsMarketIndex"`
+}
+
+// marketRange is the provider's own bound on perpetual market indexes. The
+// leverage payload is perps-only, and 255 is lighter-go's NilMarketIndex, so
+// the range is emitted rather than restated in TypeScript.
+type marketRange struct {
+	Min int `json:"min"`
+	Max int `json:"max"`
 }
 
 func main() {
@@ -73,6 +85,22 @@ func main() {
 			"PostOnly":          txtypes.PostOnly,
 		},
 		ApiMaxOrderType: txtypes.ApiMaxOrderType,
+		// Transaction types Vex signs and whose number the TypeScript side has
+		// to know. Only the leverage change is listed today because it is the
+		// only one whose TypeScript constant is table-tested here; the order
+		// lifecycle numbers are asserted against the helper's own responses.
+		TxTypes: map[string]int{
+			"TxTypeL2UpdateLeverage": txtypes.TxTypeL2UpdateLeverage,
+		},
+		MarginModes: map[string]int{
+			"CrossMargin":    txtypes.CrossMargin,
+			"IsolatedMargin": txtypes.IsolatedMargin,
+		},
+		MarginFractionTick: txtypes.MarginFractionTick,
+		PerpsMarketIndex: marketRange{
+			Min: int(txtypes.MinPerpsMarketIndex),
+			Max: int(txtypes.MaxPerpsMarketIndex),
+		},
 	}
 
 	// An Encoder rather than MarshalIndent: MarshalIndent escapes "&", "<" and

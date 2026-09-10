@@ -31,14 +31,18 @@ import {
   LIVE_ENVIRONMENT,
   LIGHTER_LIFECYCLE_TERMINAL_STATES,
   LIVE_FLAGS,
+  positionMarginFractionConverter,
   openEvidence,
   orderStatusReport,
   pollUntil,
   prepareAndEnqueueApproval,
   printInspectionSql,
+  readAccountRow,
   readApprovalRecord,
+  readRawAccount,
   readRawMarketDetail,
   requireLiveTarget,
+  resolveInitialMarginFraction,
   runReadTool,
   type EvidenceWriter,
   type LiveSession,
@@ -120,24 +124,52 @@ describeLive("a resting Lighter order placed and cancelled on the owner's accoun
       const priceDecimals = Number(detail["supported_price_decimals"]);
       const price = (lastTradePrice * RESTING_PRICE_FRACTION).toFixed(priceDecimals);
 
-      const accountRead = await runReadTool({
+      const before = await readAccountRow({
         sessionId: live.sessionId,
-        publicName: "lighter__account_get",
-        params: { environment: LIVE_ENVIRONMENT, accountIndex: EXPECTED_ACCOUNT_INDEX },
+        accountIndex: EXPECTED_ACCOUNT_INDEX,
       });
-      expect(accountRead.success, accountRead.output).toBe(true);
-      const accounts = (accountRead.json as Record<string, unknown> | null)?.["accounts"];
-      const account = Array.isArray(accounts) ? accounts[0] as Record<string, unknown> : null;
-      if (account === null) throw new Error("Lighter returned no account row for the owner's account.");
+      const account = before.account;
 
       const sizing = decideOrderSizing({
         marketId: ETH_PERP_MARKET_ID,
         detail,
-        initialMarginFractionBps: Number(detail["default_initial_margin_fraction"]),
+        margin: resolveInitialMarginFraction({
+          marketId: ETH_PERP_MARKET_ID,
+          detail,
+          positions: account["positions"],
+          convertPositionPercent: positionMarginFractionConverter,
+        }),
         availableCollateralUsdg: Number(account["availableBalance"] ?? account["collateral"]),
         price: Number(price),
       });
       record.record("sizing", { price, sizing, rawOrderBookDetail: detail });
+
+      // THE MEASUREMENT THE CAPITAL ARITHMETIC NEEDS.
+      //
+      // Vex's capital-share ceiling adds the account's own
+      // `cross_initial_margin_requirement` to the margin reserved by open
+      // orders it can see. Whether the provider's IMR ALREADY counts a resting
+      // order is not documented anywhere, and guessing either way is wrong: too
+      // low lets the share be exceeded, too high double-counts and refuses
+      // orders that fit. This step is the only place that can answer it, because
+      // it is the only step that deliberately puts an order on the book. The
+      // two readings are recorded verbatim and NOT interpreted here.
+      const rawBefore = await readRawAccount(EXPECTED_ACCOUNT_INDEX);
+      record.record("imr-before", {
+        crossInitialMarginRequirement: rawBefore["cross_initial_margin_requirement"] ?? null,
+        collateral: rawBefore["collateral"] ?? null,
+        availableBalance: rawBefore["available_balance"] ?? null,
+        totalOrderCount: rawBefore["total_order_count"] ?? null,
+        restingOrderPlanned: {
+          price,
+          baseAmount: sizing.baseAmount,
+          requiredMarginUsdg: sizing.requiredMarginUsdg,
+          initialMarginFraction: sizing.initialMarginFraction,
+          initialMarginFractionSource: sizing.initialMarginFractionSource,
+        },
+        rawAccountBefore: rawBefore,
+        projectedAccountRead: before.output,
+      });
 
       // ── Leg 1: place the resting order ──
       const preview = await runReadTool({
@@ -211,6 +243,21 @@ describeLive("a resting Lighter order placed and cancelled on the owner's accoun
       expect(matches.length, JSON.stringify(matches)).toBe(1);
       providerOrderId = matches[0]?.["orderId"];
       record.record("resting", { providerOrderId, order: matches[0] });
+
+      // The second half of the measurement: the same account aggregate, now
+      // that the order is provably ON THE BOOK. If the two readings differ by
+      // the order's own required margin, the provider's IMR already counts
+      // resting orders and Vex's ceiling must not add them a second time. Read
+      // and recorded; the conclusion belongs to the lane doc, not to a test.
+      const rawAfter = await readRawAccount(EXPECTED_ACCOUNT_INDEX);
+      record.record("imr-after", {
+        crossInitialMarginRequirement: rawAfter["cross_initial_margin_requirement"] ?? null,
+        collateral: rawAfter["collateral"] ?? null,
+        availableBalance: rawAfter["available_balance"] ?? null,
+        totalOrderCount: rawAfter["total_order_count"] ?? null,
+        restingProviderOrderId: providerOrderId,
+        rawAccountAfter: rawAfter,
+      });
     } else {
       const open = await runReadTool({
         sessionId: live.sessionId,

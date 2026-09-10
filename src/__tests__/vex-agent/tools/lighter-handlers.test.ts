@@ -155,6 +155,28 @@ vi.mock("@vex-agent/db/repos/lighter-order-lifecycle-intents.js", () => ({
   markStreamEvidence: mocks.lifecycleIntentsRepo.markStreamEvidence,
 }));
 
+// The capital-share boundary. `readLighterTradingLimits` returning null is the
+// DEFAULT INSTALL: the user has set no share, so no ceiling applies and the
+// ledger is never reached. Enforcement with a share set is proved in
+// `lighter-capital-share-policy.test.ts`, against a fake that serializes the
+// way the real advisory-locked admission does.
+vi.mock("@vex-agent/db/repos/lighter-trading-limits.js", () => ({
+  readLighterTradingLimits: async () => null,
+}));
+// Partial: the module also owns the terminal-state tables that repair reads,
+// and those are a source of truth, not something a test may restate.
+vi.mock("@vex-agent/db/repos/lighter-capital-commitments.js", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@vex-agent/db/repos/lighter-capital-commitments.js")
+  >()),
+  admitLighterCapitalCommitment: async () => ({
+    admitted: true,
+    commitmentId: "commitment-test",
+    liveCommittedUnits: "0",
+  }),
+  listLiveLighterCapitalCommitments: async () => [],
+  retireLighterCapitalCommitment: async () => undefined,
+}));
 vi.mock("@vex-agent/db/repos/lighter-nonce-state.js", () => ({
   find: mocks.nonceStateRepo.find,
   releaseReservation: mocks.nonceStateRepo.releaseReservation,
@@ -557,6 +579,10 @@ beforeEach(() => {
   configureLighterReadOnlyAccountAuthResolver(null);
   mocks.sessionLock.withSessionControlLock.mockImplementation(async (_sessionId, fn) => fn({}));
   mocks.sessionLock.withSessionControlLocks.mockImplementation(async (_sessionIds, fn) => fn({}));
+  // A default live account, because preparation now re-reads the TRADED account
+  // to identify the wallet whose capital share governs it. Tests that care about
+  // a particular account still override this.
+  mocks.client.getAccount.mockResolvedValue({ code: 200, accounts: [ACCOUNT] });
   mocks.previewsRepo.findFreshById.mockResolvedValue(previewRow());
   mocks.previewsRepo.findById.mockResolvedValue(previewRow());
   mocks.executionIntentsRepo.findLiveByPreview.mockResolvedValue(null);
@@ -2106,7 +2132,16 @@ describe("Lighter agent read handlers", () => {
     });
     const account = requireValue((data.accounts as Record<string, unknown>[])[0]);
     expect(account.count).toBe(1);
-    expect(account.positions).toEqual(ACCOUNT.positions);
+    // CONTRACT CHANGE: the provider's row travels UNCHANGED, plus one derived
+    // `leverage` object. The raw `initial_margin_fraction` is a percent string
+    // ("5.00"), which on its own is not readable as leverage; see
+    // `lighter-projectors-margin.test.ts`.
+    expect(account.positions).toEqual(
+      requireValue(ACCOUNT.positions).map((position) => ({
+        ...position,
+        leverage: { initialMarginFraction: 500, current: "20.00", marginMode: "cross" },
+      })),
+    );
   });
 
   it("rejects ambiguous account lookup params before reaching the client", async () => {
@@ -2350,7 +2385,10 @@ describe("Lighter agent read handlers", () => {
     expect(mocks.client.getAccount).toHaveBeenCalledWith("rhc", {
       by: "index",
       value: 42,
-      activeOnly: true,
+      // `false`, since the preview now reasons over the position row's own
+      // initial margin fraction and `activeOnly: true` hides a market the
+      // account has leverage settings for but no OPEN POSITION on.
+      activeOnly: false,
     });
     expect(mocks.previewsRepo.create).toHaveBeenCalledTimes(1);
     const persisted = requireValue(mocks.previewsRepo.create.mock.calls[0])[0] as {
@@ -2825,7 +2863,10 @@ describe("Lighter agent read handlers", () => {
     expect(mocks.client.getAccount).toHaveBeenCalledWith("rhc", {
       by: "index",
       value: 42,
-      activeOnly: true,
+      // `false`, since the preview now reasons over the position row's own
+      // initial margin fraction and `activeOnly: true` hides a market the
+      // account has leverage settings for but no OPEN POSITION on.
+      activeOnly: false,
     });
     const persisted = requireValue(mocks.previewsRepo.create.mock.calls[0])[0] as {
       readonly preview: {
@@ -3039,7 +3080,9 @@ describe("Lighter agent read handlers", () => {
     });
     mocks.client.getAccount.mockResolvedValue({
       code: 200,
-      accounts: [{ ...ACCOUNT, index: 736778 }],
+      // Both rows: the preview resolves 736778 from the saved scopes, while the
+      // approval preparation re-reads the account the stored preview names.
+      accounts: [{ ...ACCOUNT, index: 736778 }, ACCOUNT],
     });
     mocks.previewsRepo.create.mockResolvedValue(undefined);
 
@@ -3057,7 +3100,10 @@ describe("Lighter agent read handlers", () => {
     expect(mocks.client.getAccount).toHaveBeenCalledWith("core", {
       by: "index",
       value: 736778,
-      activeOnly: true,
+      // `false`, since the preview now reasons over the position row's own
+      // initial margin fraction and `activeOnly: true` hides a market the
+      // account has leverage settings for but no OPEN POSITION on.
+      activeOnly: false,
     });
     expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
   });
@@ -3102,7 +3148,10 @@ describe("Lighter agent read handlers", () => {
     expect(mocks.client.getAccount).toHaveBeenCalledWith("core", {
       by: "index",
       value: 42,
-      activeOnly: true,
+      // `false`, since the preview now reasons over the position row's own
+      // initial margin fraction and `activeOnly: true` hides a market the
+      // account has leverage settings for but no OPEN POSITION on.
+      activeOnly: false,
     });
     expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
   });
@@ -3293,7 +3342,10 @@ describe("Lighter agent read handlers", () => {
     expect(mocks.client.getAccount).toHaveBeenCalledWith("rhc", {
       by: "index",
       value: 42,
-      activeOnly: true,
+      // `false`, since the preview now reasons over the position row's own
+      // initial margin fraction and `activeOnly: true` hides a market the
+      // account has leverage settings for but no OPEN POSITION on.
+      activeOnly: false,
     });
   });
 

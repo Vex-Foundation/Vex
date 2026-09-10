@@ -77,7 +77,13 @@ export const STUDIO_CHANGELOG: readonly StudioChangelogEntry[] = [
       + "withdrawals and manual claims. Every order, deposit and withdrawal "
       + "runs through its own approval card, and the Vex fee is 0.10% on "
       + "perpetual trades and 0.25% on spot, authorized once on a card that "
-      + "also states what the tier change does to Lighter's own fees.",
+      + "also states what the tier change does to Lighter's own fees. "
+      + "Leverage per market and the share of the account's capital the agent "
+      + "may commit are the user's own settings, made in Settings -> Lighter -> "
+      + "Trading setup and applied on the Lighter account from there; call "
+      + "lighter_rhc_onboarding_status (or the core twin) and read tradingLimits "
+      + "for the live values, because no tool changes them and the capital "
+      + "share is enforced before any order the agent prepares is signed.",
   },
   {
     version: "0.2.8",

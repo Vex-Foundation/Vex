@@ -15,7 +15,16 @@ export const LIGHTER_TX_TYPE_CANCEL_ALL_ORDERS = 16;
 export const LIGHTER_TX_TYPE_MODIFY_ORDER = 17;
 export const LIGHTER_PROVIDER_ORDER_INDEX_MAX = (1n << 60n) - 1n;
 
-interface LighterOrderLifecycleSigningScope {
+/**
+ * The signing scope every non-create Lighter transaction shares: which account
+ * and key sign, on which environment, with which nonce and expiry.
+ *
+ * Exported because `signer-leverage.ts` signs TxType 20 under exactly this
+ * scope. It is the same account-and-key identity with the same bounds, so it
+ * reuses this contract and `lifecycleScope`'s validation rather than restating
+ * either.
+ */
+export interface LighterOrderLifecycleSigningScope {
   readonly environment: LighterEnvironment;
   readonly restBaseUrl: string;
   readonly chainId: number;
@@ -146,7 +155,13 @@ export function buildLighterCancelAllOrdersSigningInput(input: {
   };
 }
 
-function lifecycleScope(input: {
+/**
+ * Validates and resolves the shared signing scope. Exported for
+ * `signer-leverage.ts`, whose TxType 20 builder must apply the identical
+ * account, key-index, nonce and expiry bounds; a second copy of those bounds
+ * would be a second place to get them wrong.
+ */
+export function lifecycleScope(input: {
   readonly environment: LighterEnvironment;
   readonly accountIndex: number;
   readonly apiKeyIndex: number;

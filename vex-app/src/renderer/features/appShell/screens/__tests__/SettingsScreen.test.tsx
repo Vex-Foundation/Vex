@@ -233,7 +233,7 @@ describe("SettingsScreen", () => {
       "Memory",
       "Tuning",
       "Superboard key",
-      "Lighter Points",
+      "Lighter",
     ]) {
       expect(screen.getByText(name)).not.toBeNull();
     }
@@ -270,7 +270,7 @@ describe("SettingsScreen", () => {
     expect(screen.getByText(/the Superboard key, and Lighter points/)).not.toBeNull();
 
     const superboard = screen.getByRole("button", { name: /Superboard key/ });
-    const lighter = screen.getByRole("button", { name: /Lighter Points/ });
+    const lighter = screen.getByRole("button", { name: /Lighter/ });
     const superboardIcon = superboard.querySelector("svg");
     const lighterIcon = lighter.querySelector("svg");
     expect(superboardIcon?.getAttribute("viewBox")).toBe("0 0 48 31");
@@ -324,14 +324,14 @@ describe("SettingsScreen", () => {
       openSettings();
       const superboard = await screen.findByRole("button", { name: /Superboard key/ });
       expect(within(superboard).getByText(word).classList.contains(tone)).toBe(true);
-      const lighter = screen.getByRole("button", { name: /Lighter Points/ });
+      const lighter = screen.getByRole("button", { name: /Lighter/ });
       expect(within(lighter).getByText("Open").classList.contains("text-ink-secondary")).toBe(true);
     },
   );
 
   it.each([
     ["superboardKey", /Superboard key/, "[data-vex-superboard-key]", "[data-vex-lighter-points]"],
-    ["lighterPoints", /Lighter Points/, "[data-vex-lighter-points]", "[data-vex-superboard-key]"],
+    ["lighterPoints", /Lighter/, "[data-vex-lighter-points]", "[data-vex-superboard-key]"],
   ] satisfies ReadonlyArray<readonly [SettingsSection, RegExp, string, string]>)(
     "opens %s from its row and returns to the register",
     async (_section, name, active, inactive) => {

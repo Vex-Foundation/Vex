@@ -21,6 +21,10 @@ import {
   type GlyphProps,
 } from "../../../../components/icons/index.js";
 import type { SettingsSection } from "../../../../stores/uiStore.js";
+import {
+  LIGHTER_SECTION_HINT,
+  LIGHTER_SECTION_NAME,
+} from "./lighter-trading-setup-copy.js";
 
 /** Superboard wordmark for the register row and the section header. */
 export const SUPERBOARD_KEY_ICON: ComponentType<GlyphProps> = IconSuperboard;
@@ -88,8 +92,8 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
   {
     id: "lighterPoints",
     icon: IconLighter,
-    name: "Lighter Points",
-    hint: "Robinhood Chain campaign points and leaderboard position per wallet",
+    name: LIGHTER_SECTION_NAME,
+    hint: LIGHTER_SECTION_HINT,
   },
 ];
 

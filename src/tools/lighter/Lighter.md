@@ -664,6 +664,226 @@ Owner: `src/tools/lighter/wallet-funding/deposit-approval-disclosure.ts` for the
 wording, `deposit-pre-sign.ts` for the guard.
 
 
+## Leverage and Margin Mode
+
+Leverage on Lighter is an ACCOUNT setting, per market, that Vex applies from
+Settings and the agent only ever reads. No agent tool changes it, by owner
+decision (2026-09-10).
+
+### The flow
+
+1. The user opens Settings -> Lighter -> Trading setup and picks a market, a
+   leverage and a margin mode, or types the percent of the account's collateral
+   the agent may commit.
+2. For a leverage change, main resolves and persists the exact proposal, the
+   modal renders that proposal, and Confirm sends only its id. The executor
+   reloads the stored proposal, revalidates every bound field against live state
+   and signs TxType 20 once. Nothing is retried; an ambiguous submission is
+   reconciled by a `getTx` proof, never by re-signing.
+3. The capital share needs no signature. It is a revisioned local row per
+   `(environment, wallet_address)`.
+4. The agent reads both on its next `lighter_rhc_onboarding_status` (or
+   `lighter__account_onboarding_status`) call, in the `tradingLimits` block.
+
+### Three scales, one converter
+
+One concept reaches Vex in three representations, which is why the number was
+unreadable before this arc and why exactly one module parses any of them.
+
+| Where | Shape | Example (measured live 2026-09-10) |
+|---|---|---|
+| Market detail (`orderBookDetails`) | 10000-scale INTEGER | RHC BTC `default_initial_margin_fraction: 5000`, `min_initial_margin_fraction: 200` |
+| Account position row (`account`) | PERCENT STRING | RHC account 24226 ETH row `initial_margin_fraction: "50.00"` |
+| Trade rows | 10000-scale INTEGER | `*_initial_margin_fraction_before` |
+| Account WebSocket frame (`account_all_positions`) | PERCENT STRING, same as REST | measured 2026-09-10 (`leverage-BTC-2026-09-10T20-32-06-390Z/07-ws-frame.json`): `"50.00"` for ETH, `"2.00"` for BTC after the 50x change; the hand-written `"0.05"` fixture in `order-stream.test.ts` was wrong and one converter serves both sources |
+
+`src/tools/lighter/margin-fraction.ts` is the ONLY parser and the only place a
+scale changes. 5000 is 50 percent, which is 2.00x. 200 is 2 percent, which is
+50.00x. Conversions from a requested leverage CEIL, so a user never receives
+more leverage than they asked for.
+
+### Consent invariants
+
+The confirmation binds the account and key identity, the market, the CURRENT
+fraction and mode, the TARGET fraction and mode, and the open position size and
+side. Every one is re-read immediately before signing and any drift refuses.
+Liquidation price, open orders, unrealized PnL and collateral are shown as
+observations and are not bound. The nonce is never bound and must be free at
+signing. Consent expires two minutes after main issues the proposal and Confirm
+never refreshes it.
+
+### Transaction proof, not account state
+
+A completed leverage change is proven by a `getTx` record whose hash, type,
+account, key, nonce and `info` fields equal the signed identity. The account read
+is taken as well and reported as the OBSERVED configuration, never as the proof:
+the row can already match before signing, can be set by another key after an
+ambiguous submission, or can be superseded later.
+
+### The agent's capital share
+
+`agentCapitalSharePercent` is an integer 1..100, or `null` for no ceiling.
+
+- `budget = floor(collateral * percent / 100)`, rounded DOWN.
+- `committed` is a conservative SUPERSET: the provider's
+  `cross_initial_margin_requirement`, plus isolated `allocated_margin`, plus
+  margin reserved by resting orders, plus Vex's own live commitments.
+- `required = ceil(base * riskPrice * imf / 10000) + exchange taker fee + VEX
+  integrator fee`, rounded UP.
+- The exchange taker fee is charged at `max(market taker_fee, THIS ACCOUNT's
+  exchange fee tier)`, the same rule the order preview applies to its own
+  taker-fee estimate. The account tier is `current_taker_fee_tick` from the
+  authenticated `accountLimits` read, the same provider source `order-fees.ts`
+  gives the preview. `market.taker_fee` alone under-reserves for exactly the
+  accounts whose fee setup moved their tier, and an order at the ceiling was
+  admitted without reserving what it would be charged. A tier that cannot be
+  read REFUSES under a configured share; it is never defaulted to zero.
+- The risk price is the APPROVED WORST CASE: for a buy, the approved bound (a
+  limit price or a market order's hard execution bound), never the current best
+  quote; for a sell, `max(limit price, mark price)`. A market order with no
+  approved bound is not admitted.
+- A position row whose `margin_mode` Vex does not recognise REFUSES admission.
+  Skipping it would drop its allocated margin out of `committed` and widen the
+  ceiling by an amount nobody could classify.
+- Admission is ONE transaction under an account-scoped advisory lock, so two
+  sessions preparing at once serialize and only the fitting total proceeds. It
+  runs at preparation and again at execution. Re-admission UPDATES the
+  reservation: the intent's own row is always excluded from the sum, and the row
+  is rewritten to the requirement just computed, reactivated if it had been
+  retired, and its settlement stamp cleared. A conflicting row belonging to a
+  different account, environment or operation kind refuses by name. An insert
+  that did nothing on conflict reported success while every other order on the
+  account kept seeing the smaller original reservation.
+- A required amount of ZERO always fits, even when the account is already over
+  budget. A modification that shrinks an order admits a delta of zero: it frees
+  capital, and refusing it would trap the user inside the overage they are
+  reducing.
+- Reduce-only orders are exempt, proven against the live position. Spot SELLS
+  are exempt. Spot BUYS are refused while a share is set (see the omissions).
+- Exceeding the share REFUSES with both numbers and the remedy. An order is
+  never resized.
+- The share caps everything Vex prepares on the account, which includes the
+  user's own trade ticket: the ticket drafts a chat message the agent turns into
+  an ordinary order, so it is indistinguishable at the enforcement seam.
+  Threading a trusted origin flag would change the provenance contract and was
+  not done. Keys the user drives outside Vex are their own and are not policed.
+
+#### When a commitment stops counting
+
+A commitment leaves the ledger through exactly two doors, and they are not
+interchangeable.
+
+**Immediate retirement, for PROVEN NON-SUBMISSION only.** An approval rejected
+or expired before signing, an `expired_unsubmitted` transition (whose schema
+proves `send_attempt_started_at IS NULL`), an unsubmitted refusal. Nothing on the
+account can be covering such a commitment, so no waiting is owed.
+
+**Settlement, then the observation lag, for everything that REACHED LIGHTER.** A
+terminal provider state (`filled`, `canceled`, `rejected`, a lifecycle
+`completed`) STAMPS `settled_at` and the row keeps counting until
+`settled_at + LIGHTER_CAPITAL_COMMITMENT_OBSERVATION_LAG_MS` (10 minutes,
+matching the repair grace already used for "the provider may not show this yet")
+has passed. `open`, `partially_filled` and `sequencer_pending` stamp nothing at
+all: those orders can still consume the capital they reserved.
+
+WHY THE LAG FENCES THE STALE-SNAPSHOT RACE, and why it runs from the settlement.
+Session B reads the account at T. Session A's order fills at T+1 and its
+commitment retires. B reaches admission at T+2 holding the snapshot it read at
+T, which predates A's fill, so A's capital appears in NEITHER the provider's
+numbers B is holding NOR the ledger, and B is admitted against money that is
+already spent. B's account read can only predate A's fill by the age of that
+read; A's commitment outlives it by the full lag, which is longer than any
+account read Vex holds. Measuring the lag from `admitted_at` was no fence at
+all: a limit order that rested for an hour was already past its lag when it
+filled, so it retired at the exact instant the gap was widest. Inside the lag
+the same capital is counted by both Vex and the provider, and over-counting only
+tightens the ceiling.
+
+The ledger is also SELF-HEALING at admission, because explicit settlement cannot
+be the only path: a rejected or ignored approval card writes nothing to the
+intent, and a crash between admission and outcome leaves a row nobody will ever
+settle, and every stranded row would shrink the user's agent budget permanently.
+So every admission first sweeps, in the same transaction and under the same
+advisory lock, this account's commitments whose backing intent is terminal or
+gone. The sweep stamps a terminal intent it finds unstamped (so a crash cannot
+cost the lag its clock), retires the proven-unsent ones immediately, retires the
+settled ones once their own stamp has aged, and retires a missing intent row or
+an unanswered approval window after the same lag measured from `admitted_at` -
+neither of those is a settlement. The retire reason is recorded on every row.
+
+A user-originated leverage change from Settings is NOT admitted against the
+agent's capital share, by design. The share bounds what the AGENT may commit;
+the leverage a person sets on their own account is their own decision on their
+own funds, and refusing it against an agent budget would police the user's
+machine. Committed margin that such a change produces is not invisible either:
+it is read LIVE from the account at the agent's next admission, inside
+`cross_initial_margin_requirement` and isolated `allocated_margin`, so it
+reduces the remaining budget the agent sees without any ledger row of its own.
+
+### Live answers, measured on 2026-09-10 (RHC, account 24226)
+
+Evidence under `agents-colab/agents_dm/lighter-live-evidence/` (git-ignored; the
+durable rows in the owner's database are the second half of the evidence):
+
+- **A position row appears for a market that had none.** Before the change the
+  account carried no BTC row; after `UpdateLeverage` to IMF 200 the public account
+  read carried `BTC: initial_margin_fraction "2.00", margin_mode 0, margin_set_flag 1,
+  position "0.00000"`. Reading with `activeOnly: false` is what makes that row
+  visible (`leverage-BTC-2026-09-10T20-32-06-390Z/05-observed.json`).
+- **`getTx` for a type-20 transaction reports `status: 2` once executed.** Hash
+  `2ed160fc...19ee9d6` came back with `status: 2`, `block_height: 20413971`,
+  `executed_at: 0`, `committed_at: 0`, `verified_at: 0`, while the account already
+  held the new terms. So 2 is "executed in an L2 block, not yet committed to L1";
+  3 is the later committed/verified status the Core withdrawal proof waits for.
+  The leverage executor accepts both (`EXECUTED_TX_STATUSES = [2, 3]` in
+  `vex-app/src/main/lighter/leverage-execution.ts`). No failed status was
+  observed; `LIGHTER_LEVERAGE_FAILED_TX_STATUSES` stays empty and an unproven
+  outcome stays reconcilable.
+- **The WebSocket `account_all_positions` frame carries `initial_margin_fraction`
+  as the same percent string REST does** (`"50.00"`, `"2.00"`), so
+  `positionInitialMarginFractionToProviderScale` serves both sources.
+- **`cross_initial_margin_requirement` does NOT include resting orders.** With
+  the two positions open the account read `3.699600`; after a resting GTT buy of
+  0.0164 ETH at 1231.70 (about 2.02 USDG of margin at 10x) it read `3.699580`
+  (`cancel-2026-09-10T20-46-24-920Z/03-imr-before.json`, `07-imr-after.json`).
+  Vex's capital arithmetic therefore adds resting-order margin on top of the
+  provider figure without double counting.
+- **A leverage change on an open position is accepted by the provider.** BTC
+  went from 50x to 25x with 0.00040 BTC open (`leverage-BTC-2026-09-10T20-4...`);
+  the account read `initial_margin_fraction "4.00"` afterwards and
+  `cross_initial_margin_requirement` moved to the sum of the two positions'
+  notional times their fractions. Isolated mode was exercised on SOL (5x,
+  `margin_mode 1`, `"20.00"`) and reverted to 2x cross without a position.
+
+### Named omissions, with reasons
+
+- **TxType 29 (isolated margin add and remove), 41 and 42**: not implemented.
+  Isolated mode can be SET, but moving allocated margin afterwards is a separate
+  signing path with its own consent and reconciliation contract, and no user flow
+  needed it in this arc.
+- **No agent tool changes leverage or the capital share.** Owner decision
+  (2026-09-10): the agent reads the numbers and directs the user to Settings.
+  An earlier design exposed an agent tool pair; it was superseded.
+- **No leverage control in the trading panel.** The setting lives in Settings
+  beside Points, where the user already manages the account.
+- **A spot inventory ledger with verified exits.** Without it, spot purchases
+  settle into inventory that leaves `committed` entirely, so repeated buys could
+  exceed the share while each one passed. Spot buys are therefore refused while a
+  share is configured rather than admitted on an accounting Vex cannot close.
+- **The CI Go test step for the signer runtime**: a separate PR.
+- **The defaults of markets the account has never traded** are not enumerated in
+  `tradingLimits`. Margin fractions live only on `orderBookDetails`, which serves
+  one market per call (`/orderBooks` returns 84 rows and no margin field,
+  measured live 2026-09-10), so listing them would cost dozens of provider calls
+  on a hot readiness read. The untouched markets are COUNTED and the agent is
+  pointed at `lighter__market_get`.
+
+### Downgrade honesty
+
+A build without this code cannot reconcile a leverage row that holds a nonce
+reservation. Orders on that key then fail closed at `recordExecutionObserved`
+until the build is upgraded again.
+
 ## Safety Notes
 
 - Normal conversational calls default to `rhc`; callers can still explicitly

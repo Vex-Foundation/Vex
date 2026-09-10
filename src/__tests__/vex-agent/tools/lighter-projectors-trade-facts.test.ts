@@ -344,6 +344,11 @@ describe("projectMarketDetail", () => {
 
   it("emits the margin fractions with the scale that makes them readable", () => {
     const projected = projectMarketDetail(PERP);
+    // CONTRACT CHANGE: the raw fractions and their scale are unchanged, and
+    // three DERIVED fields are added beside them. The scale alone turned out not
+    // to be enough - it explains that 5000 is 50 percent but never that 5000 is
+    // 2x and 200 is 50x, which is how an agent reading this surface concluded
+    // "max leverage 2". See `lighter-projectors-margin.test.ts`.
     expect(projected.margin).toEqual({
       scale: 10_000,
       scaleNote: "Provider fractions on a 10000 scale: 5000 is 50 percent.",
@@ -351,6 +356,10 @@ describe("projectMarketDetail", () => {
       minInitialFraction: 200,
       maintenanceFraction: 120,
       closeoutFraction: 80,
+      defaultLeverage: "2.00",
+      maxLeverage: "50.00",
+      note:
+        "Leverage is a per-market account setting the user changes in Settings -> Lighter; the account's current value is on its position row as leverage.current.",
     });
   });
 

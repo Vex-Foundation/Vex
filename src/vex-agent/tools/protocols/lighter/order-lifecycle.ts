@@ -5,6 +5,11 @@ import type { LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
 import { resolveLighterOrderFees, revalidateLighterOrderFees, type LighterOrderFeeClient } from "./order-fees.js";
 import { confirmedLighterCloseDisposition } from "./close-position-confirmation.js";
 import { lighterDecimalGreaterThanZero } from "./order-evidence.js";
+import {
+  admitLighterModifyCapitalCommitment,
+  markLighterOrderCapitalCommitmentSettled,
+  retireLighterOrderCapitalCommitment,
+} from "./capital-share-policy.js";
 import { createHash } from "node:crypto";
 
 import type {
@@ -227,6 +232,11 @@ export interface LighterOrderLifecycleExecutionDeps {
     | "getAccountTrades"
     | "getApiKeys"
     | "getMarkets"
+    // Margin fractions live ONLY on the market DETAIL endpoint (`getMarkets`
+    // carries none: measured live 2026-09-10). The modify path's capital-share
+    // re-admission needs them, and taking them from the INJECTED client keeps a
+    // test's fake client the only provider a test ever reaches.
+    | "getMarketDetails"
     | "getNextNonce"
     | "getOrderBookOrders"
     | "sendTx"
@@ -848,6 +858,27 @@ export async function executeApprovedLighterModifyOrder(
   if (nextNonce.nonce !== providerKey.nonce) {
     throw blocked("Lighter returned inconsistent nonce evidence.");
   }
+  // RE-ADMISSION of the modification's margin DELTA at the commit point, before
+  // anything is signed. The approval may be minutes old and the account's
+  // collateral or the user's share may have moved since.
+  await admitLighterModifyCapitalCommitment({
+    environment: intent.environment,
+    accountIndex: intent.accountIndex,
+    marketIndex: intent.marketIndex!,
+    intentId: intent.intentId,
+    excludeIntentId: intent.intentId,
+    side: liveSnapshot.side === "sell" ? "sell" : "buy",
+    reduceOnly: liveSnapshot.reduceOnly,
+    filledBaseAmount: liveSnapshot.filledBaseAmount,
+    currentBaseAmount: liveSnapshot.initialBaseAmount,
+    currentPrice: liveSnapshot.price,
+    requestedBaseAmount: String(intent.providerSnapshotJson.requestedBaseAmount),
+    requestedPrice: String(intent.providerSnapshotJson.requestedPrice),
+    sizeDecimals: market.supported_size_decimals,
+    priceDecimals: market.supported_price_decimals,
+    integratorFees: intent.integratorFees ?? null,
+    client: deps.client,
+  });
   const evidence = {
     kind: "lighter_modify_order_pre_submit_revalidation",
     checkedAt: new Date(deps.now()).toISOString(),
@@ -987,6 +1018,14 @@ export async function executeApprovedLighterModifyOrder(
       await deps.intents.markProviderOutcome({ intentId: intent.intentId, state: "completed", evidence: {
         kind: "lighter_modify_order_outcome", order: snapshot, disposition: status,
       } });
+      // Provider evidence now shows the modified order, so the delta this
+      // modification committed is carried by the account's own numbers: the
+      // resting remainder by the reserved-margin leg, a fill by position
+      // margin. STAMPED, not retired: those numbers only reach a session that
+      // reads the account after this moment, so the commitment keeps counting
+      // until the observation lag has run from here. `sequencer_pending` below
+      // stamps nothing, because there is no provider evidence yet.
+      await markLighterOrderCapitalCommitmentSettled(intent.intentId);
       return {
         status,
         intentId: intent.intentId,
@@ -1024,10 +1063,19 @@ export async function executeApprovedLighterModifyOrder(
         : await deps.intents.markExpiredUnsubmitted({
           intentId: intent.intentId, sessionId: intent.sessionId, reservationId, signerTxHash, reason: error instanceof LighterIntentRefusal ? error.reason : "pre_sign_refused",
         });
-      if (refused) await deps.nonceState.releaseUnsubmittedReservation({
-        environment: intent.environment, accountIndex: intent.accountIndex, apiKeyIndex: intent.apiKeyIndex,
-        reservationId, nonceValue: reserved,
-      });
+      if (refused) {
+        await deps.nonceState.releaseUnsubmittedReservation({
+          environment: intent.environment, accountIndex: intent.accountIndex, apiKeyIndex: intent.apiKeyIndex,
+          reservationId, nonceValue: reserved,
+        });
+        // Both transitions prove this modification was never sent, so the
+        // margin delta it reserved is released now rather than at the next
+        // admission's observation lag.
+        await retireLighterOrderCapitalCommitment({
+          intentId: intent.intentId,
+          reason: signerTxHash === null ? "refused_unsubmitted" : "expired_unsubmitted",
+        });
+      }
     } else if (signerTxHash === null || error instanceof LighterIntentRefusal) {
       await deps.intents.markAmbiguous({ intentId: intent.intentId,
         reason: error instanceof LighterIntentRefusal ? error.reason : "signing_failed_after_nonce_reservation" });

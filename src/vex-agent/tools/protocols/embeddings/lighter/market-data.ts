@@ -6,10 +6,24 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     embeddingText: embeddingText(
       `Check whether the selected Vex wallet is ready to trade on Lighter. Unspecified conversational requests default to Robinhood Chain; use Core only when explicitly selected, and keep that environment in later calls. ` +
       `Use when: setup, funding, readiness, or a perp request needs checking. Pass the requested market so Vex checks its live minimum. Reads wallet settlement balance, Lighter collateral, deposit minimum, and public key state. It signs and moves nothing. ` +
-      `Example queries: set up my Lighter account, trade perps on Lighter, can this wallet trade on Lighter, fund Lighter for a 2 USDC trade.`,
+      `Also carries tradingLimits: leverage per market and the agent's capital share, set only in Settings. ` +
+      `Example queries: set up my Lighter account, trade perps on Lighter, fund Lighter for a 2 USDC trade, max leverage, change leverage.`,
     ),
-    aliases: ["lighter onboarding status", "lighter account readiness", "can I trade on lighter", "trade on lighter", "lighter wallet setup", "set up lighter account", "lighter perps setup"],
-    exampleIntents: ["set up my Lighter account", "I need to trade on Lighter", "get me ready to trade on Lighter", "I want to trade perps on Lighter"],
+    // LEVERAGE VOCABULARY, deliberately token-light. The retrieval scorer is
+    // lexical when no embedding backend is configured, so every extra token that
+    // also appears in a FUNDING query lifts this entry against
+    // `lighter.deposit.prepare` - and the baseline margin between them for "fund
+    // my Lighter RHC account with 5 USDG" is only 18 points. An earlier draft
+    // added intents like "what leverage is my Lighter account using" and flipped
+    // that routing, so the terms below carry leverage meaning and nothing that
+    // reads as funding.
+    aliases: ["lighter onboarding status", "lighter account readiness", "can I trade on lighter", "trade on lighter", "lighter wallet setup", "set up lighter account", "lighter perps setup", "leverage settings", "capital share", "trading limits"],
+    exampleIntents: ["set up my Lighter account", "I need to trade on Lighter", "get me ready to trade on Lighter", "I want to trade perps on Lighter", "max leverage on BTC", "what leverage am I using", "change leverage"],
+    // The leverage vocabulary is deliberately NARROW. Broadening it with
+    // funding-shaped phrasing ("how much ... can the agent trade with") made
+    // this entry outrank `lighter.deposit.prepare` for "fund my Lighter RHC
+    // account with 5 USDG", which is a real routing regression: an explicit
+    // deposit amount must reach deposit preparation, not a readiness read.
     ecosystems: ["lighter", "robinhood-chain", "ethereum"],
     sourceClass: "protocol_native",
     sideEffectLevel: "none",
@@ -31,10 +45,10 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     embeddingText: embeddingText(
       `List public Lighter markets and order books on Core or Robinhood Chain, with optional market id and spot or perpetual filtering plus a bounded result cap. ` +
       `Use when: the user wants to find Lighter market ids, inspect available symbols, compare spot and perp markets, or choose the market for later depth, trades, or candles. ` +
-      `Returns concise market rows: symbol, ids, status, fee strings, minimum order amounts, decimals, and truncation disclosure. ` +
+      `Returns concise market rows: symbol, ids, status, fee strings, minimum order amounts, decimals, and truncation disclosure; for a market's default and maximum leverage read one market with the market-get tool. ` +
       `Example queries: list lighter markets, find btc market id on rhc, lighter spot markets, lighter perp symbols.`,
     ),
-    aliases: ["lighter markets", "lighter symbols", "market ids", "order books list"],
+    aliases: ["lighter markets", "lighter symbols", "market ids", "order books list", "which lighter markets support leverage"],
     exampleIntents: ["list lighter markets", "find btc market id on rhc", "lighter spot markets"],
     ecosystems: ["lighter", "robinhood-chain"],
     sourceClass: "protocol_native",
@@ -43,38 +57,38 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.market.get": {
     embeddingText: embeddingText(
       `Get detailed public metadata for one Lighter market on Core or Robinhood Chain by numeric market id, including daily activity, last trade price, fee settings, decimal metadata, funding fields, and status. ` +
-      `Use when: the user already has a Lighter market id and wants one-market context before reading depth, trades, candles, or planning future order support. ` +
-      `Returns one or more matching detail rows and fails clearly if the market id is not found. ` +
-      `Example queries: lighter market 0 detail, get eth perp on core, details for rhc market id 1.`,
+      `Use when: the user already has a Lighter market id and wants one-market context before reading depth, trades, or candles. ` +
+      `Returns one or more matching detail rows and fails clearly if the market id is not found. Its margin block carries the market's default and MAXIMUM leverage, derived from its initial margin fractions. ` +
+      `Example queries: lighter market 0 detail, get eth perp on core, details for rhc market id 1, max leverage on BTC, default leverage for SOL.`,
     ),
-    aliases: ["lighter market detail", "market metadata", "market id lookup", "lighter market get"],
-    exampleIntents: ["lighter market 0 detail", "details for rhc market id 1", "get eth perp on core"],
+    aliases: ["lighter market detail", "market metadata", "market id lookup", "lighter market get", "max leverage", "maximum leverage", "leverage limit", "initial margin fraction"],
+    exampleIntents: ["lighter market 0 detail", "details for rhc market id 1", "get eth perp on core", "max leverage on BTC", "what is the maximum leverage on Lighter ETH", "default leverage for this market"],
     ecosystems: ["lighter", "robinhood-chain"],
     sourceClass: "protocol_native",
     sideEffectLevel: "none",
   },
   "lighter.account.get": {
     embeddingText: embeddingText(
-      `Read public Lighter account state on Core or Robinhood Chain by account index or L1 address, including collateral, available balance, assets, and inline positions when the provider includes them. ` +
+      `Read public Lighter account state on Core or Robinhood Chain by account index or L1 address, including collateral, available balance, assets, and inline positions when the provider includes them, each position carrying its current leverage and cross or isolated margin mode. ` +
       `Use when: the user asks to inspect a Lighter account, check account state, find public balances, or review account-level data without credentials. ` +
       `This is public provider data from the account endpoint; it does not prove private authenticated access and never uses a token, wallet, signer, or order path. ` +
       `Example queries: get lighter account 42, inspect rhc account by address, lighter account balance.`,
     ),
-    aliases: ["lighter account", "lighter account get", "account state", "lighter balances"],
-    exampleIntents: ["get lighter account 42", "inspect rhc account by address", "lighter account balance"],
+    aliases: ["lighter account", "lighter account get", "account state", "lighter balances", "my leverage", "account margin mode", "cross or isolated"],
+    exampleIntents: ["get lighter account 42", "inspect rhc account by address", "lighter account balance", "what leverage is this Lighter account using", "is my Lighter position cross or isolated"],
     ecosystems: ["lighter", "robinhood-chain"],
     sourceClass: "protocol_native",
     sideEffectLevel: "none",
   },
   "lighter.positions": {
     embeddingText: embeddingText(
-      `Read public Lighter positions exposed on the account payload for Core or Robinhood Chain by account index or L1 address, with bounded account and position rows. ` +
+      `Read public Lighter positions exposed on the account payload for Core or Robinhood Chain by account index or L1 address, with bounded account and position rows, each carrying its current leverage and cross or isolated margin mode derived from the position's initial margin fraction. ` +
       `Use when: the user asks for positions, exposure, open account holdings, or account market state visible through Lighter's public account endpoint. ` +
       `This is public provider data and must not be described as authenticated private account visibility unless a later auth-gated tool proves that path. ` +
       `Example queries: lighter positions for account 42, rhc account exposure, core positions by wallet address.`,
     ),
-    aliases: ["lighter positions", "account positions", "lighter exposure", "rhc positions"],
-    exampleIntents: ["lighter positions for account 42", "rhc account exposure", "core positions by wallet address"],
+    aliases: ["lighter positions", "account positions", "lighter exposure", "rhc positions", "position leverage", "my leverage per market"],
+    exampleIntents: ["lighter positions for account 42", "rhc account exposure", "core positions by wallet address", "what leverage is my ETH position using"],
     ecosystems: ["lighter", "robinhood-chain"],
     sourceClass: "protocol_native",
     sideEffectLevel: "none",

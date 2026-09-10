@@ -102,13 +102,13 @@ afterEach(() => {
 
 describe("LighterPointsSection", () => {
   it("reads on mount and says so while it waits", () => {
-    render(<LighterPointsSection />);
+    render(<LighterPointsSection renderTradingSetup={() => null} />);
     expect(screen.getByText("Reading the campaign from Lighter…")).not.toBeNull();
     expect(pending).toHaveLength(1);
   });
 
   it("shows the provider's board position for a wallet that has one", async () => {
-    render(<LighterPointsSection />);
+    render(<LighterPointsSection renderTradingSetup={() => null} />);
     await settle(0, result([healthyRow()]));
 
     const card = screen.getByText(WALLET).closest("li");
@@ -122,7 +122,7 @@ describe("LighterPointsSection", () => {
   });
 
   it("says the rank is unavailable rather than showing zero points", async () => {
-    render(<LighterPointsSection />);
+    render(<LighterPointsSection renderTradingSetup={() => null} />);
     await settle(0, result([{ ...healthyRow(), allTime: { kind: "rank_unavailable" } }]));
 
     expect(screen.getByText("Rank unavailable")).not.toBeNull();
@@ -130,7 +130,7 @@ describe("LighterPointsSection", () => {
   });
 
   it("keeps the healthy reads beside a refused one", async () => {
-    render(<LighterPointsSection />);
+    render(<LighterPointsSection renderTradingSetup={() => null} />);
     await settle(
       0,
       result([
@@ -150,7 +150,7 @@ describe("LighterPointsSection", () => {
   });
 
   it("lists a wallet whose vault is locked, with the reason", async () => {
-    render(<LighterPointsSection />);
+    render(<LighterPointsSection renderTradingSetup={() => null} />);
     await settle(
       0,
       result([
@@ -171,21 +171,21 @@ describe("LighterPointsSection", () => {
   });
 
   it("points a user with no registered wallet at the Lighter setup", async () => {
-    render(<LighterPointsSection />);
+    render(<LighterPointsSection renderTradingSetup={() => null} />);
     await settle(0, result([]));
 
     expect(screen.getByText(/No wallet has a Lighter account registered/)).not.toBeNull();
   });
 
   it("says how many registered wallets the bounded page left out", async () => {
-    render(<LighterPointsSection />);
+    render(<LighterPointsSection renderTradingSetup={() => null} />);
     await settle(0, result([healthyRow()], 12));
 
     expect(screen.getByText(/Showing 1 of 12/)).not.toBeNull();
   });
 
   it("shows the failure and keeps Refresh usable", async () => {
-    render(<LighterPointsSection />);
+    render(<LighterPointsSection renderTradingSetup={() => null} />);
     await settle(0, {
       ok: false,
       error: {
@@ -206,7 +206,7 @@ describe("LighterPointsSection", () => {
   });
 
   it("cancels the in-flight read before starting a newer one, and ignores the stale answer", async () => {
-    render(<LighterPointsSection />);
+    render(<LighterPointsSection renderTradingSetup={() => null} />);
     await settle(0, result([healthyRow()]));
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
@@ -224,13 +224,13 @@ describe("LighterPointsSection", () => {
   });
 
   it("cancels the read when the section unmounts", async () => {
-    const view = render(<LighterPointsSection />);
+    const view = render(<LighterPointsSection renderTradingSetup={() => null} />);
     view.unmount();
     expect(invocation(0).cancel).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the control keyboard-reachable and refuses a second read while one is in flight", async () => {
-    render(<LighterPointsSection />);
+    render(<LighterPointsSection renderTradingSetup={() => null} />);
     // While a read is in flight the control names its own state and cannot
     // start a second one.
     const reading = screen.getByRole("button", { name: "Reading…" });

@@ -200,7 +200,10 @@ export const LIGHTER_OCO_HANDLERS: Record<string, ProtocolHandler> = {
       const [details, orderBook, account] = await Promise.all([
         client.getMarketDetails(environment.value, { marketId, filter: "perp" }),
         client.getOrderBookOrders(environment.value, { marketId, limit: 10 }),
-        client.getAccount(environment.value, { by: "index", value: accountIndex, activeOnly: true }),
+        // activeOnly: false, as every other leverage-relevant account read: the
+        // provider's activeOnly hides markets whose leverage was set but hold no
+        // position, and the protection preview reads the position's margin terms.
+        client.getAccount(environment.value, { by: "index", value: accountIndex, activeOnly: false }),
       ]);
       const market = findMarketDetail(details, marketId);
       if (market === null || market.market_type !== "perp") {

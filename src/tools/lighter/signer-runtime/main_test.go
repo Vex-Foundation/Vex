@@ -841,3 +841,173 @@ func publicKeyBytes(t *testing.T, publicKey string) []byte {
 	}
 	return decoded
 }
+
+// The first-party reference for this transaction is lighter-go's own
+// client/sign_test.go:226 TestSignUpdateLeverage: it builds the request, signs
+// it, and asserts the transaction type plus the round-trip of the payload
+// fields. This test asserts the same identity across OUR process boundary - the
+// helper's JSON request in, the helper's txInfo out - because that boundary,
+// not the library call, is where a Vex defect would live.
+func TestSignUpdateLeverageProducesTxType20WithExactPayloadIdentity(t *testing.T) {
+	expiredAt := time.Now().Add(2 * time.Minute).UnixMilli()
+	request := signerRequest{
+		Operation: "signUpdateLeverage", PrivateKey: strings.Repeat("1", 80),
+		ChainID: lighterRHCChainID, AccountIndex: "42", APIKeyIndex: 7, Nonce: "9",
+		ExpiredAt: fmt.Sprintf("%d", expiredAt),
+		UpdateLeverage: &updateLeverageRequest{
+			MarketIndex:           int16Pointer(1),
+			InitialMarginFraction: uint16Pointer(200),
+			MarginMode:            uint8Pointer(txtypes.IsolatedMargin),
+		},
+	}
+
+	payload, err := json.Marshal(request)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	decoded, err := readRequest(strings.NewReader(string(payload)))
+	if err != nil {
+		t.Fatalf("readRequest() error = %v", err)
+	}
+
+	response, err := signUpdateLeverage(decoded)
+	if err != nil {
+		t.Fatalf("signUpdateLeverage() error = %v", err)
+	}
+	if response.TxType != txtypes.TxTypeL2UpdateLeverage {
+		t.Fatalf("TxType = %d, want %d", response.TxType, txtypes.TxTypeL2UpdateLeverage)
+	}
+	if response.TxHash == "" {
+		t.Fatal("signUpdateLeverage() returned an empty transaction hash")
+	}
+	assertLifecycleTxInfo(t, response.TxInfo, map[string]any{
+		"MarketIndex":           float64(1),
+		"InitialMarginFraction": float64(200),
+		"MarginMode":            float64(txtypes.IsolatedMargin),
+		"AccountIndex":          float64(42),
+		"ApiKeyIndex":           float64(7),
+		"Nonce":                 float64(9),
+		"ExpiredAt":             float64(expiredAt),
+	})
+
+	// Vex never takes a fee on a configuration change, and lighter-go would
+	// sign one if asked (L2UpdateLeverageTxInfo embeds and hashes
+	// L2TxAttributes). The signed payload must therefore carry no integrator
+	// attributes at all.
+	var txInfo map[string]any
+	if err := json.Unmarshal([]byte(response.TxInfo), &txInfo); err != nil {
+		t.Fatalf("txInfo is not JSON: %v", err)
+	}
+	// txtypes.L2TxAttributes is a map, so "no attributes" is JSON null (a nil
+	// map) - the same shape the cancel and cancel-all paths already produce.
+	// Anything with a member in it is a fee leg on a configuration change.
+	if attributes := txInfo["L2TxAttributes"]; attributes != nil {
+		mapped, ok := attributes.(map[string]any)
+		if !ok || len(mapped) != 0 {
+			t.Fatalf("signed leverage payload carries transaction attributes: %#v", attributes)
+		}
+	}
+}
+
+func TestSignUpdateLeverageAcceptsTheProviderBoundsExactly(t *testing.T) {
+	expiredAt := time.Now().Add(2 * time.Minute).UnixMilli()
+	for _, bound := range []struct {
+		name        string
+		marketIndex int16
+		fraction    uint16
+	}{
+		{name: "lowest-perps-market-and-maximum-leverage", marketIndex: txtypes.MinPerpsMarketIndex, fraction: 1},
+		{name: "highest-perps-market-and-no-leverage", marketIndex: txtypes.MaxPerpsMarketIndex, fraction: uint16(txtypes.MarginFractionTick)},
+	} {
+		t.Run(bound.name, func(t *testing.T) {
+			request := signerRequest{
+				Operation: "signUpdateLeverage", PrivateKey: strings.Repeat("1", 80),
+				ChainID: lighterCoreChainID, AccountIndex: "42", APIKeyIndex: 7, Nonce: "0",
+				ExpiredAt: fmt.Sprintf("%d", expiredAt),
+				UpdateLeverage: &updateLeverageRequest{
+					MarketIndex:           int16Pointer(bound.marketIndex),
+					InitialMarginFraction: uint16Pointer(bound.fraction),
+					MarginMode:            uint8Pointer(txtypes.CrossMargin),
+				},
+			}
+			payload, _ := json.Marshal(request)
+			decoded, err := readRequest(strings.NewReader(string(payload)))
+			if err != nil {
+				t.Fatalf("readRequest() error = %v", err)
+			}
+			response, err := signUpdateLeverage(decoded)
+			if err != nil || response.TxType != txtypes.TxTypeL2UpdateLeverage {
+				t.Fatalf("signUpdateLeverage() = %#v, %v", response, err)
+			}
+			assertLifecycleTxInfo(t, response.TxInfo, map[string]any{
+				"MarketIndex":           float64(bound.marketIndex),
+				"InitialMarginFraction": float64(bound.fraction),
+			})
+		})
+	}
+}
+
+func TestReadRequestRejectsUnsafeUpdateLeverageShapes(t *testing.T) {
+	expiredAt := time.Now().Add(2 * time.Minute).UnixMilli()
+	base := signerRequest{
+		Operation: "signUpdateLeverage", PrivateKey: strings.Repeat("1", 80),
+		ChainID: lighterRHCChainID, AccountIndex: "42", APIKeyIndex: 7, Nonce: "9",
+		ExpiredAt: fmt.Sprintf("%d", expiredAt),
+		UpdateLeverage: &updateLeverageRequest{
+			MarketIndex:           int16Pointer(0),
+			InitialMarginFraction: uint16Pointer(200),
+			MarginMode:            uint8Pointer(txtypes.CrossMargin),
+		},
+	}
+	tests := []struct {
+		name   string
+		mutate func(*signerRequest)
+	}{
+		{name: "no margin at all", mutate: func(r *signerRequest) { r.UpdateLeverage.InitialMarginFraction = uint16Pointer(0) }},
+		{name: "margin above the provider tick", mutate: func(r *signerRequest) {
+			r.UpdateLeverage.InitialMarginFraction = uint16Pointer(uint16(txtypes.MarginFractionTick) + 1)
+		}},
+		{name: "unknown margin mode", mutate: func(r *signerRequest) { r.UpdateLeverage.MarginMode = uint8Pointer(2) }},
+		{name: "missing payload", mutate: func(r *signerRequest) { r.UpdateLeverage = nil }},
+		// Each omitted member has a VALID zero value (market 0 is ETH, mode 0
+		// is cross), so an absent field must refuse rather than default.
+		{name: "omitted market index", mutate: func(r *signerRequest) { r.UpdateLeverage.MarketIndex = nil }},
+		{name: "omitted margin fraction", mutate: func(r *signerRequest) { r.UpdateLeverage.InitialMarginFraction = nil }},
+		{name: "omitted margin mode", mutate: func(r *signerRequest) { r.UpdateLeverage.MarginMode = nil }},
+		{name: "spot market index", mutate: func(r *signerRequest) {
+			r.UpdateLeverage.MarketIndex = int16Pointer(txtypes.MinSpotMarketIndex)
+		}},
+		{name: "nil market index marker", mutate: func(r *signerRequest) {
+			r.UpdateLeverage.MarketIndex = int16Pointer(txtypes.NilMarketIndex)
+		}},
+		{name: "negative market index", mutate: func(r *signerRequest) { r.UpdateLeverage.MarketIndex = int16Pointer(-1) }},
+		// Vex takes no fee on a configuration change: the integrator-fee
+		// allowlist admits only the three order operations.
+		{name: "integrator fees present", mutate: func(r *signerRequest) {
+			r.IntegratorFees = &integratorFeesRequest{IntegratorAccountIndex: 1, IntegratorMakerFee: 0, IntegratorTakerFee: 0}
+		}},
+		{name: "expired signature", mutate: func(r *signerRequest) { r.ExpiredAt = fmt.Sprintf("%d", time.Now().UnixMilli()) }},
+		{name: "expiry beyond the signing window", mutate: func(r *signerRequest) {
+			r.ExpiredAt = fmt.Sprintf("%d", time.Now().Add(time.Hour).UnixMilli())
+		}},
+		{name: "reserved key index", mutate: func(r *signerRequest) { r.APIKeyIndex = 3 }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := base
+			leverage := *base.UpdateLeverage
+			candidate.UpdateLeverage = &leverage
+			test.mutate(&candidate)
+			payload, _ := json.Marshal(candidate)
+			if _, err := readRequest(strings.NewReader(string(payload))); err == nil {
+				t.Fatal("expected unsafe update leverage request rejection")
+			}
+		})
+	}
+}
+
+func int16Pointer(value int16) *int16 { return &value }
+
+func uint16Pointer(value uint16) *uint16 { return &value }
+
+func uint8Pointer(value uint8) *uint8 { return &value }
