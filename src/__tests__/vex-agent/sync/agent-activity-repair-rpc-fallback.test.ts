@@ -172,3 +172,6 @@ describe("buildProductionRepairDeps chain-source fallback", () => {
     expect(mockGetPendlePublicClient).not.toHaveBeenCalled();
   });
 });
+
+// These tests isolate RPC selection; confirmed-sibling proof is pinned in Postgres.
+vi.mock("@vex-agent/db/repos/agent-activity/nonce-sibling.js", () => ({ hasConfirmedEvmNonceSibling: async () => false }));

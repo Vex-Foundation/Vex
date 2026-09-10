@@ -47,6 +47,7 @@ import { amountDisplay } from "../../../../lib/token-leg-display.js";
  */
 export function quantityText(field: AmountField): string {
   if (field.unitProvenance !== "human") return "-";
+  if (field.basis === "lower_bound" && field.value !== null) return `at least ${field.value}`;
   return amountDisplay(field.value, true) ?? "-";
 }
 

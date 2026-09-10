@@ -108,6 +108,7 @@ function clients(send: SendOutcome, receipt: ReceiptOutcome) {
   });
   return {
     publicClient: {
+      getTransactionCount: async () => 42,
       estimateGas: vi.fn(async () => 1_000_000n),
       sendRawTransaction,
       waitForTransactionReceipt,

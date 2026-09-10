@@ -152,8 +152,8 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   kyberswap__swap_execute: "Execute a KyberSwap swap",
 
   // ── uniswap ───────────────────────────────────────────────────────────────
-  uniswap__swap_quote: "Quote a Uniswap V2/V3 route",
-  uniswap__swap_execute: "Execute a Uniswap V2/V3 swap",
+  uniswap__swap_quote: "Quote a Uniswap V2/V3/v4 route",
+  uniswap__swap_execute: "Execute a Uniswap V2/V3/v4 swap",
 
   // ── relay ─────────────────────────────────────────────────────────────────
   relay__bridge_quote_get: "Quote a Relay cross-chain bridge",

@@ -1,4 +1,5 @@
 import { renderStudioProtocolMap } from "@vex-agent/studio/instructions/protocol-map.js";
+import { SWAP_VENUE_STANDING } from "@vex-agent/tools/registry/swap-venue-guidance.js";
 /**
  * `.vex/vex-guide.md`: NOTHING WAS LOST IN THE SPLIT, and the guide is managed
  * exactly as the block is.
@@ -129,11 +130,12 @@ describe("the split moved every section WHOLE", () => {
     ).toEqual([]);
   });
 
-  it("adds only the connective text and the declared inline protocol map", () => {
+  it("adds only the connective text, inline protocol map and shared venue guidance", () => {
     // The other direction, so a green run cannot be bought by pasting new prose
     // into the documents: everything in them is either a paragraph the single
-    // block already had, or one of the four texts the split introduced.
+    // block already had, or one of the explicitly declared additions.
     const introduced = new Set([
+      SWAP_VENUE_STANDING,
       ...paragraphs(STUDIO_READ_ON_START_NOTE),
       ...paragraphs(renderStudioProtocolMap(STUDIO_TEST_ENVIRONMENT)),
       // The two documents' own opening paragraphs and their generated-file
@@ -165,6 +167,11 @@ describe("the split moved every section WHOLE", () => {
 });
 
 describe("what the guide carries", () => {
+  it("states the default router and the explicit Robinhood preference", () => {
+    expect(guide).toContain(SWAP_VENUE_STANDING);
+    expect(guide).toContain("KyberSwap is the default");
+    expect(guide).toContain("On Robinhood Chain, native Uniswap is the more stable choice.");
+  });
   it("renders the four sections in order, under its own title", () => {
     const order = [
       "# Vex guide - project \"acme-trading\"",

@@ -255,12 +255,10 @@ export function mapEntry(row: PageRow): TokenHistoryEntry {
         token: row.input_token_address,
         symbol: sanitizeTokenSymbol(row.input_token_symbol),
         localSymbol: null,
-        amount: agentActivityAmountField(
-          status,
-          row.input_amount,
-          row.executed_amount_in_raw,
-          row.token_in_decimals,
-        ),
+        amount: {
+          ...agentActivityAmountField(status, row.input_amount, row.executed_amount_in_raw, row.token_in_decimals),
+          ...(status === "confirmed" && row.evidence_source === "native_balance_delta_bound" ? { basis: "lower_bound" as const } : {}),
+        },
         valueUsd: usdField(row.input_value_usd, "estimated"),
       },
       output: {

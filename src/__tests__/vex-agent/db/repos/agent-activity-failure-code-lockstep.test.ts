@@ -32,6 +32,7 @@ const MIGRATION_SQL = [
   readMigration("045_bridge_activity.sql"),
   readMigration("049_agent_activity_solana_vocabulary.sql"),
   readMigration("076_agent_activity_venue_unavailable.sql"),
+  readMigration("156_agent_activity_rpc_read_failures.sql"),
 ].join("\n");
 
 /** Extract the LAST `CONSTRAINT agent_activity_failure_code_valid CHECK (failure_code IN (...))` value list. */

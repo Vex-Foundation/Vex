@@ -33,6 +33,7 @@ export { withFeeDisclosure } from "./attach.js";
 
 export {
   runUniswapFeeLeg,
+  recordUniswapFeeNotCollected,
   uniswapFeeNotAttempted,
   uniswapFeeNotCharged,
   type RunUniswapFeeLegInput,

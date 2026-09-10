@@ -46,9 +46,11 @@ describe("venue tools are always visible (owner decision D4)", () => {
     expect(tool.description).toContain("switch to `uniswap__swap_quote` then `uniswap__swap_execute` on the same chain");
   });
 
-  it.each(UNISWAP_SWAP_TOOLS)("$publicName states its regional role and pool-version limit", (tool) => {
+  it.each(UNISWAP_SWAP_TOOLS)("$publicName states its regional role and current pool coverage", (tool) => {
     expect(tool.description).toContain("when KyberSwap is unavailable in the user's region");
-    expect(tool.description).toContain("Uniswap V2 and V3 pools only, with no v4 support yet");
+    expect(tool.description).toContain("Uniswap V2, V3 and v4 pools on seven chains");
+    expect(tool.description).toContain("Liquidity only on other DEXes");
+    expect(tool.description).not.toContain("no v4 support yet");
   });
 
   it("carries NO visibility gate on any of the four venue tools", () => {

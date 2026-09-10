@@ -1,18 +1,21 @@
 /**
- * Keyless on-chain Uniswap quoting — best route across V2 + V3.
+ * Keyless on-chain Uniswap quoting - best route across V2, V3 and v4.
  *
  * Reads only (QuoterV2 / V2 getAmountsOut / V2 getReserves) via `eth_call`; no
  * key, no broadcast. Candidate routes are fired with `Promise.allSettled` so a
  * missing pool (a revert) simply drops that candidate instead of failing the
- * whole quote. The best `amountOut` across every successful candidate wins.
+ * whole quote. Ranking subtracts gas when all candidate costs are comparable;
+ * otherwise the result explicitly labels its gross-output comparison.
  *
  * Route space (bounded):
  *   - V2: direct [in,out] + 2-hop [in,C,out] for each connector C.
  *   - V3: 1-hop across the chain's fee tiers + 2-hop [in,f1,C,f2,out] for each
  *     connector C over the non-dust fee tiers.
- * Native legs route as WETH (the router wraps/unwraps); `path` carries WETH.
+ *   - V4: four canonical hookless keys plus up to three DexScreener pools.
+ * V2/V3 native legs route as WETH; v4 native currencies use address zero.
  */
 
+import { estimateV2RouteGas, outputGasPrice, selectUniswapRoute } from "./route-ranking.js";
 import {
   encodePacked,
   getAddress,
@@ -28,6 +31,7 @@ import {
   UNISWAP_V2_PAIR_ABI,
   UNISWAP_V3_QUOTER_V2_ABI,
 } from "./abis.js";
+import { quoteV4Candidates, type V4DiscoveryStats } from "./v4-quote.js";
 import type { UniswapDeployment } from "./deployments.js";
 import type { UniswapRoute, UniswapToken } from "./types.js";
 import { VexError, ErrorCodes } from "../../errors.js";
@@ -188,17 +192,21 @@ export interface QuoteRouteArgs {
   readonly tokenIn: UniswapToken;
   readonly tokenOut: UniswapToken;
   readonly amountIn: bigint;
+  readonly allowV4?: boolean;
+  /** Address-only quote context. No key is resolved for gas estimation. */
+  readonly wallet?: Address;
+  readonly slippageBps: number;
 }
 
 /**
- * Quote the best route across V2 + V3. Returns the winning `UniswapRoute` plus a
+ * Quote the best route across V2, V3 and v4. Returns the winning `UniswapRoute` plus a
  * best-effort price impact, or `null` when no route yields output (no pool /
  * fully illiquid). Native legs are already resolved to WETH by the caller.
  */
 export async function quoteBestRoute(
   client: PublicClient<Transport, Chain>,
   args: QuoteRouteArgs,
-): Promise<{ route: UniswapRoute; priceImpact?: number } | null> {
+): Promise<{ route: UniswapRoute; priceImpact?: number; v4Discovery?: V4DiscoveryStats; selectionBasis?: string } | null> {
   const { deployment, tokenIn, tokenOut, amountIn } = args;
   const inAddr = tokenIn.address;
   const outAddr = tokenOut.address;
@@ -232,19 +240,41 @@ export async function quoteBestRoute(
   }
 
   const settled = await Promise.allSettled(candidates);
-  let best: UniswapRoute | null = null;
-  for (const s of settled) {
-    if (s.status !== "fulfilled" || s.value === null) continue;
-    if (best === null || s.value.amountOut > best.amountOut) best = s.value;
+  let v4Discovery: V4DiscoveryStats | undefined;
+  if (deployment.v4 && args.allowV4 !== false) {
+    try {
+      const v4 = await quoteV4Candidates(client, args);
+      v4Discovery = v4.discovery;
+      for (const route of v4.routes) settled.push({ status: "fulfilled", value: route });
+    } catch {
+      v4Discovery = { unavailable: true, indexed: 0, matching: 0, considered: 0, refused: 0 };
+    }
   }
-  if (best === null) return null;
+  const routes: UniswapRoute[] = [];
+  for (const result of settled) {
+    if (result.status !== "fulfilled" || !result.value) continue;
+    const route = result.value;
+    routes.push(route.version === "v2" && args.wallet
+      ? await estimateV2RouteGas(client, { deployment, route, wallet: args.wallet,
+          amountIn, minAmountOut: applySlippage(route.amountOut, args.slippageBps),
+          tokenInIsNative: tokenIn.isNative, tokenOutIsNative: tokenOut.isNative })
+      : route);
+  }
+  let gasPrice = null;
+  if (routes.length > 1 && routes.every(r => r.gasEstimate !== undefined)) {
+    try { gasPrice = await outputGasPrice(deployment, tokenOut, await client.getGasPrice()); } catch { /* Exposed as unpriced below. */ }
+  }
+  const selection = selectUniswapRoute(routes, gasPrice);
+  if (!selection) return null;
+  const best = selection.route;
 
   const priceImpact =
     best.version === "v2" && best.path.length === 2
       ? await computeV2DirectPriceImpact(client, deployment, inAddr, outAddr, amountIn, best.amountOut)
       : undefined;
 
-  return priceImpact !== undefined ? { route: best, priceImpact } : { route: best };
+  return { route: best, selectionBasis: routes.length === 1 ? "only_successful_candidate" : selection.selectionBasis, ...(priceImpact === undefined ? {} : { priceImpact }),
+    ...(v4Discovery === undefined ? {} : { v4Discovery }) };
 }
 
 /**

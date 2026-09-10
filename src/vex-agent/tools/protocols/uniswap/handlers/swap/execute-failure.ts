@@ -54,17 +54,29 @@ export function preSignRefusalResult(input: {
   readonly slippageBps: number;
   readonly executionId: number;
 }): ToolResult {
+  const classification = input.classification;
+  const guidance = classification.rpcFailure ? classification.failureReason : classification.onChainRevert
+    ? preSignRefusalGuidance({
+        revertReason: classification.failureReason,
+        failureCode: classification.failureCode,
+        slippage: { appliedBps: input.slippageBps, maxBps: effectiveMaxSlippageBps() },
+        ...(classification.remedy ? { remedy: classification.remedy } : {}),
+      })
+    : `Nothing was signed or broadcast for this step. Transaction preparation was refused: ${classification.failureReason}. `
+      + (classification.remedy ?? "Resolve this preparation failure before requesting a fresh quote; no on-chain revert was established.");
+  const revert = classification.revert;
+  const diagnostic = revert
+    ? ` Revert selector: ${revert.selector}.${revert.errorName ? ` Error: ${revert.errorName}.` : ` Revert data: ${revert.data}.`}`
+    : "";
   return {
     success: false,
-    output: `${TOOL_ID}: the ${input.eventRole} step was refused before signing. ${preSignRefusalGuidance({
-      // Already through this venue's single scrub boundary (C37).
-      revertReason: input.classification.failureReason,
-      failureCode: input.classification.failureCode,
-      slippage: { appliedBps: input.slippageBps, maxBps: effectiveMaxSlippageBps() },
-    })} Recorded as execution ${input.executionId}.`,
+    output: `${TOOL_ID}: the ${input.eventRole} step was refused before signing. ${guidance}${diagnostic} Recorded as execution ${input.executionId}.`,
     data: {
       _executionId: input.executionId, status: "not_attempted", retryable: true,
       failureCode: input.classification.failureCode,
+      failureReason: classification.failureReason,
+      guidance,
+      ...(classification.revert ? { revert: classification.revert } : {}),
     },
   };
 }

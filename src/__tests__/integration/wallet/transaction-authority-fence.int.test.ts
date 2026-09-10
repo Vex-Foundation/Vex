@@ -414,6 +414,7 @@ function evmDeps(
   sessionId: string,
   barrier: Barrier,
   at: "preflight" | "post_claim" | "post_sign" | "never",
+  pendingNonce = 0,
 ) {
   const calls = { signed: 0, sent: 0, clientsBuilt: 0, walletsCreated: 0 };
 
@@ -466,11 +467,15 @@ function evmDeps(
     }),
   });
 
+  // Preparation and the fresh pre-sign read observe the same node nonce.
+  // Keep this RPC at the fake boundary, like gas estimation and submission.
+  const getTransactionCount = vi.fn(async () => pendingNonce);
   const publicClient = Object.assign(createPublicClient({
     chain: CHAIN,
     transport: http("http://127.0.0.1:1"),
   }), {
     chain: CHAIN,
+    getTransactionCount,
     estimateGas: async () => 21_000n,
     prepareTransactionRequest: async () => ({
       to: TO,
@@ -479,7 +484,7 @@ function evmDeps(
       gas: 42_000n,
       maxFeePerGas: 1_000_000_000n,
       maxPriorityFeePerGas: 1_000_000n,
-      nonce: 7,
+      nonce: pendingNonce,
       chain: CHAIN,
     }),
     sendRawTransaction: async () => {
@@ -507,6 +512,7 @@ function evmDeps(
 
   return {
     calls,
+    getTransactionCount,
     deps: {
       chainFactory,
       signerClientsFactory,
@@ -589,10 +595,10 @@ describe("the authority fence: EVM barriers at all three points", () => {
       .mockReturnValue({ family: "eip155", address: WALLET, privateKey: `0x${"1".repeat(64)}` });
   });
 
-  it("with NO barrier the same setup signs and broadcasts, so the refusals below are the fence", async () => {
+  it.each([0, 7])("with NO barrier and pending nonce %i the same setup signs and broadcasts, so the refusals below are the fence", async (pendingNonce) => {
     const sessionId = await sessionWithWallet();
     const intent = await insert(evmRow(sessionId, `wtx-${randomUUID()}`));
-    const { calls, deps } = evmDeps(sessionId, lockVex, "never");
+    const { calls, deps, getTransactionCount } = evmDeps(sessionId, lockVex, "never", pendingNonce);
 
     const result = await handleWalletEvmTransactionConfirm(
       { intentId: intent.intentId },
@@ -603,6 +609,12 @@ describe("the authority fence: EVM barriers at all three points", () => {
     expect(result.success).toBe(true);
     expect(calls.signed).toBe(1);
     expect(calls.sent).toBe(1);
+    expect(getTransactionCount).toHaveBeenCalledExactlyOnceWith({ address: WALLET, blockTag: "pending" });
+    const activity = await queryOne<{ nonce: string; nonce_reservation_until: Date | null }>(
+      "SELECT nonce, nonce_reservation_until FROM agent_activity WHERE session_id = $1 AND event_index = 0",
+      [sessionId],
+    );
+    expect(activity).toEqual({ nonce: String(pendingNonce), nonce_reservation_until: null });
     const row = await readIntent(intent.intentId);
     expect(row?.status).toBe("executed");
   });

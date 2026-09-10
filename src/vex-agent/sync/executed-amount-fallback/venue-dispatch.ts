@@ -81,6 +81,9 @@ export interface VenueDecodeInput {
 }
 
 export type VenueDecodeResult =
+  | { readonly kind: "v4_native"; readonly poolId: string; readonly amountInRaw: string;
+      readonly amountOutRaw?: string; readonly inputIsBound: boolean; readonly outputUnproven: boolean;
+      readonly poolOutputEstimateRaw?: string }
   | { readonly kind: "decoded"; readonly amounts: ConfirmActivityEventInput }
   | {
     readonly kind: "declined";
@@ -213,19 +216,19 @@ function decodeKyberRow(input: VenueDecodeInput): VenueDecodeResult {
  * immediate path runs in `finalize-confirmed.ts`; this branch only resolves its
  * inputs from the row's validated columns.
  *
- * A NATIVE LEG IS PASSED AS `null`, not as a sentinel address. That is the
- * decoder's own contract for "read this leg from the WETH Deposit/Withdrawal
- * event the router emitted", and it is why this branch needs neither the
- * declared value nor a wrapped-native lookup: the decoder resolves both from
- * the chain's own verified deployment registry, bound to a registered router.
- *
- * Takes no chain read, so it never DEFERS. A deployment this build does not
- * know, or a receipt that proves only one leg, declines by name.
+ * Native legs are passed as null. V2/V3 use the existing wrapper logs; v4
+ * additionally restores the bound key and reads the mined transaction through
+ * the repair lane's public RPC adapter. An unavailable read defers without
+ * consuming eligibility. Unprovable native receipt amounts decline by name.
  */
-function decodeUniswapRow(input: VenueDecodeInput): VenueDecodeResult {
+async function decodeUniswapRow(input: VenueDecodeInput): Promise<VenueDecodeResult> {
   const { row } = input;
-  const tokenInAddress = row.tokenInAddress;
-  const tokenOutAddress = row.tokenOutAddress;
+  const hint = input.hint?.decoder === "uniswap" ? input.hint : null;
+  const v4Binding = hint?.v4;
+  const tokenInAddress = row.tokenInAddress ?? (v4Binding && hint?.declaredValueRaw !== undefined
+    && row.tokenInDecimals === 18 ? "0x0000000000000000000000000000000000000000" : null);
+  const tokenOutAddress = row.tokenOutAddress ?? (v4Binding && hint?.wrappedNativeAddress !== undefined
+    && row.tokenOutDecimals === 18 ? "0x0000000000000000000000000000000000000000" : null);
   const walletAddress = row.walletAddress;
   if (!tokenInAddress || !tokenOutAddress || !walletAddress) {
     return {
@@ -235,12 +238,24 @@ function decodeUniswapRow(input: VenueDecodeInput): VenueDecodeResult {
     };
   }
 
+  const needsNativeTransaction = isNativeAddress(tokenInAddress)
+    || (isNativeAddress(tokenOutAddress) && v4Binding?.poolKey.hooks.toLowerCase() === "0x0000000000000000000000000000000000000000");
+  const transaction = v4Binding && row.txHash && needsNativeTransaction
+    ? await input.deps.fetchTransaction({ chainId: row.chainId, txHash: row.txHash }) : null;
+  if (v4Binding && needsNativeTransaction && transaction === null) {
+    return { kind: "deferred", detail: "v4_transaction_unavailable" };
+  }
   let decoded: DecodedUniswapLegs;
   try {
+    const nativeBalance = v4Binding && row.txHash && needsNativeTransaction
+      ? await input.deps.fetchNativeBalanceEvidence?.({ chainId: row.chainId, txHash: row.txHash,
+          wallet: walletAddress, router: v4Binding.universalRouter }) : undefined;
     decoded = decodeUniswapExecutedLegs({
       receipt: { logs: input.logs },
       chainId: row.chainId,
       walletAddress,
+      ...(v4Binding ? { version: "v4", v4Binding, v4Transaction: transaction ?? undefined } as const : {}),
+      nativeBalance,
       tokenInAddress: isNativeAddress(tokenInAddress) ? null : tokenInAddress,
       tokenOutAddress: isNativeAddress(tokenOutAddress) ? null : tokenOutAddress,
     });
@@ -255,11 +270,22 @@ function decodeUniswapRow(input: VenueDecodeInput): VenueDecodeResult {
     };
   }
 
+  if (decoded.v4Settlement?.pendingReason === "native_balance_unproven") {
+    return { kind: "deferred", detail: decoded.v4Settlement.nativeBalanceReason ?? "native_balance_unproven" };
+  }
+  const inputIsBound = decoded.v4Settlement?.evidenceSource === "native_balance_delta_bound";
+  const outputUnproven = decoded.v4Settlement?.pendingReason === "native_output_unproven_hooked";
+  if (v4Binding && decoded.executedAmountInRaw !== undefined && (inputIsBound || outputUnproven)
+    && (outputUnproven || decoded.executedAmountOutRaw !== undefined)) {
+    return { kind: "v4_native", poolId: v4Binding.poolId, amountInRaw: decoded.executedAmountInRaw.toString(),
+      amountOutRaw: decoded.executedAmountOutRaw?.toString(), inputIsBound, outputUnproven,
+      poolOutputEstimateRaw: decoded.v4Settlement?.poolAmountOutRaw };
+  }
   if (decoded.executedAmountInRaw === undefined || decoded.executedAmountOutRaw === undefined) {
     return {
       kind: "declined",
       reason: "amounts_undecodable",
-      detail: "the venue decoder could not establish both legs from this receipt",
+      detail: decoded.v4Settlement?.pendingReason ?? "the venue decoder could not establish both legs from this receipt",
     };
   }
 

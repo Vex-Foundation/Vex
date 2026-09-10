@@ -1,3 +1,4 @@
+import { EvmNonceMismatchError } from "@tools/evm-chains/nonce-signing-guard.js";
 /**
  * `WalletWrapConfirm` - the call that signs and broadcasts a wrap or unwrap.
  *
@@ -374,6 +375,7 @@ async function executeWrap(args: {
         verdict: UNDECODED,
       };
     }
+    if (cause instanceof EvmNonceMismatchError) return { execution: preBroadcast(cause, cause.message), verdict: UNDECODED };
     if (stagingFailed) {
       return {
         execution: {

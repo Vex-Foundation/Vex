@@ -194,6 +194,7 @@ interface LegSource {
   readonly chainId: number | null;
   /** The one honest amount for this leg's status, already resolved (C20). */
   readonly displayAmount: string | null;
+  readonly amountBasis?: "lower_bound";
 }
 
 function mapTokenLeg(source: LegSource): AgentScanTokenLeg {
@@ -210,6 +211,7 @@ function mapTokenLeg(source: LegSource): AgentScanTokenLeg {
     executedAmountHuman: source.executedAmountHuman,
     executedAmountRaw: source.executedAmountRaw,
     displayAmount: source.displayAmount,
+    ...(source.amountBasis ? { amountBasis: source.amountBasis } : {}),
     usdEst: toUsdStringOrNull(source.usdEst),
   };
 }
@@ -383,6 +385,7 @@ export function mapAgentScanRow(row: AgentScanRow): AgentScanEntry {
       // (which, for a fill row, is the destination).
       chainId: isBridge ? fromChainId : chainId,
       displayAmount: inputDisplayAmount,
+      ...(amountStatus === "confirmed" && row.evidence_source === "native_balance_delta_bound" ? { amountBasis: "lower_bound" as const } : {}),
     }),
     output: mapTokenLeg({
       address: row.token_out_address,

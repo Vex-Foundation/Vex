@@ -46,6 +46,12 @@ export function isFailedActivityStatus(status: AgentActivityStatus): boolean {
  * the row `pending` forever instead.
  */
 export type AgentActivityFailureCode =
+  | "archive_gated"
+  | "range_capped"
+  | "rate_limited"
+  | "compute_budget"
+  | "method_unsupported"
+  | "transport"
   | "route_not_found"
   | "slippage"
   | "deadline_expired"

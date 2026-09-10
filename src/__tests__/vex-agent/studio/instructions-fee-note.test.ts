@@ -184,6 +184,7 @@ describe("the Vex fee note in the managed block", () => {
     // `amountIn - fee` and the user is debited exactly `amountIn`.
     expect(STUDIO_FEE_NOTE).toContain("`amountIn` minus 25 bps");
     expect(STUDIO_FEE_NOTE).toContain("together are exactly `amountIn`");
+    expect(STUDIO_FEE_NOTE).toContain("`amountIn`, a ceiling. Native bounds can lower the fee.");
     const constants = readFileSync(
       resolve(REPO_ROOT, "src/tools/uniswap/fee/constants.ts"),
       "utf8",

@@ -1,0 +1,3243 @@
+{
+  "checkpoint": "ef84c6a75",
+  "harness": "uniswap-v4-burst-live.test.ts",
+  "scope": "Real handlers and read-only RPC requests; isolated audit callbacks; default wallet address only; account always throws before creating bytes; broadcasts blocked.",
+  "before": [
+    {
+      "chain": "8453",
+      "signerReached": false,
+      "success": false,
+      "status": "not_attempted",
+      "failureCode": "route_not_found",
+      "peakConcurrency": 15,
+      "phases": {
+        "quote": {
+          "count": 49,
+          "methods": {
+            "eth_chainId": 3,
+            "eth_call": 36,
+            "eth_gasPrice": 1,
+            "eth_estimateGas": 4,
+            "eth_getBlockByNumber": 1,
+            "eth_maxPriorityFeePerGas": 2,
+            "eth_getTransactionCount": 1,
+            "eth_getBalance": 1
+          },
+          "maxConcurrency": 15
+        },
+        "execute_preflight": {
+          "count": 2,
+          "methods": {
+            "eth_call": 2
+          },
+          "maxConcurrency": 1
+        },
+        "execute_revalidation": {
+          "count": 6,
+          "methods": {
+            "eth_call": 6
+          },
+          "maxConcurrency": 1
+        },
+        "sign_preparation_and_fence": {
+          "count": 9,
+          "methods": {
+            "eth_fillTransaction": 2,
+            "eth_getTransactionCount": 2,
+            "eth_getBlockByNumber": 2,
+            "eth_maxPriorityFeePerGas": 2,
+            "eth_estimateGas": 1
+          },
+          "maxConcurrency": 1
+        },
+        "presign_revalidation": {
+          "count": 1,
+          "methods": {
+            "eth_call": 1
+          },
+          "maxConcurrency": 1
+        }
+      },
+      "ledger": [
+        {
+          "failureCode": "route_not_found",
+          "status": "definitively_failed"
+        },
+        {
+          "status": "definitively_failed"
+        }
+      ],
+      "calls": [
+        {
+          "phase": "quote",
+          "method": "eth_chainId",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 2133.08146,
+          "durationMs": 213.9713230000002,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_chainId",
+          "host": "developer-access-mainnet.base.org",
+          "startMs": 2348.314922,
+          "durationMs": 252.013465,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_chainId",
+          "host": "mainnet.base.org",
+          "startMs": 2851.645215,
+          "durationMs": 214.2888969999999,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x313ce567",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3321.512545,
+          "durationMs": 47.817715000000135,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x95d89b41",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3371.939973,
+          "durationMs": 129.29323599999998,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xd06ca61f",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3515.271858,
+          "durationMs": 54.92150300000003,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xd06ca61f",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3515.877903,
+          "durationMs": 177.06559900000002,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3516.272648,
+          "durationMs": 178.439977,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3516.626355,
+          "durationMs": 167.07586300000003,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3517.043331,
+          "durationMs": 168.10768400000006,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3517.473534,
+          "durationMs": 198.4106069999998,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3517.812607,
+          "durationMs": 201.52735699999994,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3518.055325,
+          "durationMs": 240.5025300000002,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3518.261704,
+          "durationMs": 238.96495300000015,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3518.448172,
+          "durationMs": 272.937179,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3518.703416,
+          "durationMs": 268.42076,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3518.911987,
+          "durationMs": 314.72546599999987,
+          "status": 429
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3519.105054,
+          "durationMs": 301.0831469999998,
+          "status": 429
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3519.290399,
+          "durationMs": 336.36831900000016,
+          "status": 429
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3519.473531,
+          "durationMs": 337.1002920000001,
+          "status": 429
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "developer-access-mainnet.base.org",
+          "startMs": 3821.426737,
+          "durationMs": 151.63738700000022,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "developer-access-mainnet.base.org",
+          "startMs": 4075.160465,
+          "durationMs": 143.93308200000047,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "developer-access-mainnet.base.org",
+          "startMs": 4330.253431,
+          "durationMs": 139.670564,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "developer-access-mainnet.base.org",
+          "startMs": 4581.348061,
+          "durationMs": 147.2309519999999,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5000.807372,
+          "durationMs": 47.99706100000003,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5050.918337,
+          "durationMs": 52.40771599999971,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5105.788675,
+          "durationMs": 50.97950899999978,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5157.849782,
+          "durationMs": 43.3360619999994,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5202.418624,
+          "durationMs": 41.243037000000186,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5244.804659,
+          "durationMs": 44.60538599999927,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5290.676726,
+          "durationMs": 40.74115299999994,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5332.326566,
+          "durationMs": 40.13853400000062,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5373.305042,
+          "durationMs": 40.97294799999963,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5415.160299,
+          "durationMs": 43.40680499999962,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_gasPrice",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5459.442835,
+          "durationMs": 40.29847299999983,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x1698ee82",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5502.762912,
+          "durationMs": 40.597577999999885,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x1a686502",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5544.161663,
+          "durationMs": 41.67392999999993,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_estimateGas",
+          "selector": "0x3593564c",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5682.677653,
+          "durationMs": 70.49774700000034,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_estimateGas",
+          "selector": "0x",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5753.931215,
+          "durationMs": 37.17328400000042,
+          "status": 429
+        },
+        {
+          "phase": "quote",
+          "method": "eth_estimateGas",
+          "selector": "0x",
+          "host": "developer-access-mainnet.base.org",
+          "startMs": 5791.903983,
+          "durationMs": 136.73053299999992,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_getBlockByNumber",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5929.545301,
+          "durationMs": 44.89114100000006,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_maxPriorityFeePerGas",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5979.553516,
+          "durationMs": 43.46338999999989,
+          "status": 429
+        },
+        {
+          "phase": "quote",
+          "method": "eth_maxPriorityFeePerGas",
+          "host": "developer-access-mainnet.base.org",
+          "startMs": 6042.185014,
+          "durationMs": 150.65627500000028,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_getTransactionCount",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 6194.030936,
+          "durationMs": 42.8102659999995,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x49948e0e",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 6239.108219,
+          "durationMs": 43.62990600000012,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x49948e0e",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 6283.691445,
+          "durationMs": 41.85650599999917,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_estimateGas",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 6326.538393,
+          "durationMs": 42.50144300000011,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x49948e0e",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 6369.99897,
+          "durationMs": 44.34817999999996,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_getBalance",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 6416.210427,
+          "durationMs": 41.33750400000008,
+          "status": 200
+        },
+        {
+          "phase": "execute_preflight",
+          "method": "eth_call",
+          "selector": "0x313ce567",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 6462.520255,
+          "durationMs": 43.21178599999985,
+          "status": 200
+        },
+        {
+          "phase": "execute_preflight",
+          "method": "eth_call",
+          "selector": "0x95d89b41",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 6506.318617,
+          "durationMs": 41.2195670000001,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0x313ce567",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 6549.325382,
+          "durationMs": 43.301180000000386,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0x95d89b41",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 6593.399617,
+          "durationMs": 41.05871000000025,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 6635.620736,
+          "durationMs": 42.58330999999998,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 6678.976261,
+          "durationMs": 44.60708500000055,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 6724.666392,
+          "durationMs": 38.67909200000031,
+          "status": 429
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "developer-access-mainnet.base.org",
+          "startMs": 6764.205277,
+          "durationMs": 143.72379399999954,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_fillTransaction",
+          "selector": "0x3593564c",
+          "host": "mainnet.base.org",
+          "startMs": 6913.815527,
+          "durationMs": 126.95120600000064,
+          "status": 403
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_getTransactionCount",
+          "host": "mainnet.base.org",
+          "startMs": 7163.736261,
+          "durationMs": 145.6635239999996,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_getBlockByNumber",
+          "host": "mainnet.base.org",
+          "startMs": 7413.831098,
+          "durationMs": 146.588882,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_maxPriorityFeePerGas",
+          "host": "mainnet.base.org",
+          "startMs": 7668.420607,
+          "durationMs": 141.4899230000001,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_estimateGas",
+          "selector": "0x3593564c",
+          "host": "mainnet.base.org",
+          "startMs": 7918.781835,
+          "durationMs": 154.92202200000065,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_fillTransaction",
+          "selector": "0x3593564c",
+          "host": "mainnet.base.org",
+          "startMs": 8169.38069,
+          "durationMs": 127.33465400000023,
+          "status": 403
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_getTransactionCount",
+          "host": "mainnet.base.org",
+          "startMs": 8420.610693,
+          "durationMs": 138.07485599999927,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_getBlockByNumber",
+          "host": "mainnet.base.org",
+          "startMs": 8670.781829,
+          "durationMs": 141.12916399999995,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_maxPriorityFeePerGas",
+          "host": "mainnet.base.org",
+          "startMs": 8920.713397,
+          "durationMs": 145.45009000000027,
+          "status": 200
+        },
+        {
+          "phase": "presign_revalidation",
+          "method": "eth_call",
+          "selector": "0x313ce567",
+          "host": "mainnet.base.org",
+          "startMs": 9173.523508,
+          "durationMs": 126.1410820000001,
+          "status": 429
+        }
+      ]
+    },
+    {
+      "chain": "4663",
+      "signerReached": true,
+      "success": false,
+      "status": "not_attempted",
+      "failureCode": "unknown",
+      "peakConcurrency": 2,
+      "phases": {
+        "quote": {
+          "count": 52,
+          "methods": {
+            "eth_chainId": 3,
+            "eth_call": 41,
+            "eth_gasPrice": 1,
+            "eth_estimateGas": 3,
+            "eth_getBlockByNumber": 1,
+            "eth_maxPriorityFeePerGas": 1,
+            "eth_getTransactionCount": 1,
+            "eth_getBalance": 1
+          },
+          "maxConcurrency": 2
+        },
+        "execute_preflight": {
+          "count": 2,
+          "methods": {
+            "eth_call": 2
+          },
+          "maxConcurrency": 1
+        },
+        "execute_revalidation": {
+          "count": 5,
+          "methods": {
+            "eth_call": 5
+          },
+          "maxConcurrency": 1
+        },
+        "sign_preparation_and_fence": {
+          "count": 12,
+          "methods": {
+            "eth_fillTransaction": 2,
+            "eth_getTransactionCount": 2,
+            "eth_getBlockByNumber": 2,
+            "eth_maxPriorityFeePerGas": 2,
+            "eth_estimateGas": 3,
+            "eth_getBalance": 1
+          },
+          "maxConcurrency": 1
+        },
+        "presign_revalidation": {
+          "count": 5,
+          "methods": {
+            "eth_call": 5
+          },
+          "maxConcurrency": 1
+        }
+      },
+      "ledger": [
+        {
+          "failureCode": "unknown",
+          "status": "definitively_failed"
+        },
+        {
+          "status": "definitively_failed"
+        }
+      ],
+      "calls": [
+        {
+          "phase": "quote",
+          "method": "eth_chainId",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 9306.453338,
+          "durationMs": 211.7312980000006,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_chainId",
+          "host": "robinhood-rpc.publicnode.com",
+          "startMs": 9669.403104,
+          "durationMs": 125.79306099999849,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_chainId",
+          "host": "rpc.ordofi.network",
+          "startMs": 9795.492549,
+          "durationMs": 279.45092099999965,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x313ce567",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 10075.642628,
+          "durationMs": 157.2647620000007,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x95d89b41",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 10233.712151,
+          "durationMs": 153.70234700000037,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xd06ca61f",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 10394.613359,
+          "durationMs": 144.32761499999833,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xd06ca61f",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 10545.309221,
+          "durationMs": 148.61464100000012,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xd06ca61f",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 10695.907401,
+          "durationMs": 146.41787999999906,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 10845.431127,
+          "durationMs": 146.49756800000068,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 10995.999613,
+          "durationMs": 146.73884100000032,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 11145.799001,
+          "durationMs": 147.08939100000134,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 11295.994805,
+          "durationMs": 149.00793499999963,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 11445.220359,
+          "durationMs": 145.8815139999988,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 11596.372091,
+          "durationMs": 156.46463700000095,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 11746.584515,
+          "durationMs": 187.57817599999908,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 11911.93967,
+          "durationMs": 148.5637540000007,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 12061.647891,
+          "durationMs": 145.7410289999989,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 12211.597328,
+          "durationMs": 147.64233000000058,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 12362.271377,
+          "durationMs": 166.22543000000042,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 12514.316273,
+          "durationMs": 151.4417089999988,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 12665.959842,
+          "durationMs": 153.7645360000006,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 12815.911466,
+          "durationMs": 154.66034600000057,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 12966.280832,
+          "durationMs": 147.02250699999968,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 13116.471665,
+          "durationMs": 147.08334000000104,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 13266.87345,
+          "durationMs": 148.05439800000022,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 13417.278058,
+          "durationMs": 146.61384999999973,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 13568.330265,
+          "durationMs": 142.02539499999875,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 13718.571712,
+          "durationMs": 142.67247899999893,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 13868.556739,
+          "durationMs": 144.0552800000005,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 14018.949582,
+          "durationMs": 142.5714820000012,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 14264.255629,
+          "durationMs": 146.90360099999998,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 14414.523619,
+          "durationMs": 139.36088500000005,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 14564.769755,
+          "durationMs": 142.84749700000066,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 14714.938593,
+          "durationMs": 139.86433699999907,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 14864.460737,
+          "durationMs": 372.8138490000001,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 15238.708099,
+          "durationMs": 144.17083100000127,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 15389.314116,
+          "durationMs": 158.34551199999987,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 15548.942906,
+          "durationMs": 146.14868100000058,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 15698.669542,
+          "durationMs": 362.97618800000055,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 16063.561435,
+          "durationMs": 147.88707100000101,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 16213.808154,
+          "durationMs": 146.61893299999974,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 16363.396909,
+          "durationMs": 150.0858279999993,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 16514.54755,
+          "durationMs": 149.32965899999908,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_gasPrice",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 16665.370033,
+          "durationMs": 147.1977360000019,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x1698ee82",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 16815.195639,
+          "durationMs": 146.50524199999927,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_estimateGas",
+          "selector": "0x3593564c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 16965.579825,
+          "durationMs": 147.35128199999963,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_estimateGas",
+          "selector": "0x",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 17116.300187,
+          "durationMs": 148.06507799999963,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_getBlockByNumber",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 17267.116753,
+          "durationMs": 146.41225100000156,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_maxPriorityFeePerGas",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 17416.674069,
+          "durationMs": 144.0508779999982,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_getTransactionCount",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 17567.001997,
+          "durationMs": 147.49340600000141,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_estimateGas",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 17717.152578,
+          "durationMs": 148.21664699999747,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_getBalance",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 17866.348759,
+          "durationMs": 153.0367609999994,
+          "status": 200
+        },
+        {
+          "phase": "execute_preflight",
+          "method": "eth_call",
+          "selector": "0x313ce567",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 18023.975769,
+          "durationMs": 143.49555099999998,
+          "status": 200
+        },
+        {
+          "phase": "execute_preflight",
+          "method": "eth_call",
+          "selector": "0x95d89b41",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 18173.994739,
+          "durationMs": 152.3645089999991,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0x313ce567",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 18327.68229,
+          "durationMs": 144.5992159999987,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0x95d89b41",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 18478.263295,
+          "durationMs": 223.14668900000106,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 18702.479078,
+          "durationMs": 150.96901499999876,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 18854.522412,
+          "durationMs": 148.45399499999985,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 19004.334241,
+          "durationMs": 147.74984799999947,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_fillTransaction",
+          "selector": "0x3593564c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 19155.491789,
+          "durationMs": 143.1296880000009,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_getTransactionCount",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 19306.073417,
+          "durationMs": 152.35789700000169,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_getBlockByNumber",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 19459.271536,
+          "durationMs": 148.61646499999915,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_maxPriorityFeePerGas",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 19609.917356,
+          "durationMs": 150.57217599999785,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_estimateGas",
+          "selector": "0x3593564c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 19761.858383,
+          "durationMs": 158.359883000001,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_fillTransaction",
+          "selector": "0x3593564c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 19921.4136,
+          "durationMs": 147.50182499999937,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_getTransactionCount",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 20071.432154,
+          "durationMs": 153.6589890000032,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_getBlockByNumber",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 20226.190528,
+          "durationMs": 151.61846800000058,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_maxPriorityFeePerGas",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 20379.600056,
+          "durationMs": 151.98152499999924,
+          "status": 200
+        },
+        {
+          "phase": "presign_revalidation",
+          "method": "eth_call",
+          "selector": "0x313ce567",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 20533.066452,
+          "durationMs": 151.86053299999912,
+          "status": 200
+        },
+        {
+          "phase": "presign_revalidation",
+          "method": "eth_call",
+          "selector": "0x95d89b41",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 20685.92914,
+          "durationMs": 152.32632000000012,
+          "status": 200
+        },
+        {
+          "phase": "presign_revalidation",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 20839.284464,
+          "durationMs": 147.95395300000018,
+          "status": 200
+        },
+        {
+          "phase": "presign_revalidation",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 20989.629929,
+          "durationMs": 151.31994000000122,
+          "status": 200
+        },
+        {
+          "phase": "presign_revalidation",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 21142.337197,
+          "durationMs": 151.69126300000062,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_estimateGas",
+          "selector": "0x",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 21295.637012,
+          "durationMs": 149.51888899999904,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_estimateGas",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 21446.491639,
+          "durationMs": 151.9335080000019,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_getBalance",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 21599.213108,
+          "durationMs": 147.17113299999983,
+          "status": 200
+        }
+      ]
+    }
+  ],
+  "after": [
+    {
+      "chain": "8453",
+      "signerReached": true,
+      "success": false,
+      "status": "not_attempted",
+      "failureCode": "unknown",
+      "peakConcurrency": 1,
+      "phases": {
+        "quote": {
+          "count": 43,
+          "methods": {
+            "eth_chainId": 3,
+            "eth_call": 32,
+            "eth_gasPrice": 1,
+            "eth_estimateGas": 3,
+            "eth_getBlockByNumber": 1,
+            "eth_maxPriorityFeePerGas": 1,
+            "eth_getTransactionCount": 1,
+            "eth_getBalance": 1
+          },
+          "maxConcurrency": 1
+        },
+        "execute_preflight": {
+          "count": 2,
+          "methods": {
+            "eth_call": 2
+          },
+          "maxConcurrency": 1
+        },
+        "execute_revalidation": {
+          "count": 3,
+          "methods": {
+            "eth_call": 3
+          },
+          "maxConcurrency": 1
+        },
+        "sign_preparation_and_fence": {
+          "count": 10,
+          "methods": {
+            "eth_estimateGas": 3,
+            "eth_getTransactionCount": 1,
+            "eth_getBlockByNumber": 1,
+            "eth_maxPriorityFeePerGas": 1,
+            "eth_call": 3,
+            "eth_getBalance": 1
+          },
+          "maxConcurrency": 1
+        },
+        "presign_revalidation": {
+          "count": 2,
+          "methods": {
+            "eth_call": 2
+          },
+          "maxConcurrency": 1
+        }
+      },
+      "ledger": [
+        {
+          "failureCode": "unknown",
+          "status": "definitively_failed"
+        },
+        {
+          "failureCode": "unknown",
+          "status": "definitively_failed"
+        }
+      ],
+      "calls": [
+        {
+          "phase": "quote",
+          "method": "eth_chainId",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 2601.278261,
+          "durationMs": 348.67820699999993,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_chainId",
+          "host": "developer-access-mainnet.base.org",
+          "startMs": 2951.358969,
+          "durationMs": 256.9430379999999,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_chainId",
+          "host": "mainnet.base.org",
+          "startMs": 3208.758672,
+          "durationMs": 225.55578300000025,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x313ce567",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3458.886246,
+          "durationMs": 45.50634200000013,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x95d89b41",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3709.016771,
+          "durationMs": 47.55307600000015,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xd06ca61f",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 3960.190474,
+          "durationMs": 48.57126500000004,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xd06ca61f",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 4210.543334,
+          "durationMs": 50.31244700000025,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 4462.685776,
+          "durationMs": 49.13698199999999,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 4712.990543,
+          "durationMs": 50.43539800000053,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 4963.804957,
+          "durationMs": 50.53773199999978,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5214.685511,
+          "durationMs": 50.76461300000028,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5464.912677,
+          "durationMs": 47.93771899999956,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5715.280502,
+          "durationMs": 54.260167000000365,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 5966.262076,
+          "durationMs": 47.89609699999983,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 6216.89461,
+          "durationMs": 49.752330999999685,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 6467.180539,
+          "durationMs": 49.291605999999774,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 6717.938104,
+          "durationMs": 48.25115100000039,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 6968.739212,
+          "durationMs": 46.62735799999973,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 7218.532563,
+          "durationMs": 50.467962000000625,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 7469.31901,
+          "durationMs": 48.42099099999996,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 7802.388167,
+          "durationMs": 47.35887300000013,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 8052.868761,
+          "durationMs": 46.35532400000011,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 8303.230913,
+          "durationMs": 50.83319600000141,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 8554.116435,
+          "durationMs": 46.69839300000058,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 8804.514115,
+          "durationMs": 46.65358799999922,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 9055.400422,
+          "durationMs": 42.26201500000025,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 9305.931672,
+          "durationMs": 46.87723399999959,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 9556.987783,
+          "durationMs": 46.413760999999795,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 9807.862683,
+          "durationMs": 51.898379000000205,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 10058.902832,
+          "durationMs": 44.324093999999604,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_gasPrice",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 10310.54643,
+          "durationMs": 45.18817399999898,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x1698ee82",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 10560.365523,
+          "durationMs": 47.813342999999804,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x1a686502",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 10811.175963,
+          "durationMs": 45.54981500000031,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_estimateGas",
+          "selector": "0x3593564c",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 11062.230763,
+          "durationMs": 76.45330500000091,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_estimateGas",
+          "selector": "0x",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 11313.021781,
+          "durationMs": 45.41095400000086,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_getBlockByNumber",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 11563.585935,
+          "durationMs": 47.51849100000072,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_maxPriorityFeePerGas",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 11814.12388,
+          "durationMs": 55.14506100000108,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_getTransactionCount",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 12068.464549,
+          "durationMs": 52.0808820000002,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x49948e0e",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 12319.043418,
+          "durationMs": 50.185083000000304,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x49948e0e",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 12569.890016,
+          "durationMs": 48.49125600000116,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_estimateGas",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 12822.31193,
+          "durationMs": 46.73243999999977,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x49948e0e",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 13073.167199,
+          "durationMs": 42.81838600000083,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_getBalance",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 13325.328024,
+          "durationMs": 43.260567999999694,
+          "status": 200
+        },
+        {
+          "phase": "execute_preflight",
+          "method": "eth_call",
+          "selector": "0x313ce567",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 13576.17879,
+          "durationMs": 46.21081400000003,
+          "status": 200
+        },
+        {
+          "phase": "execute_preflight",
+          "method": "eth_call",
+          "selector": "0x95d89b41",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 13827.770684,
+          "durationMs": 45.68475000000035,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 14077.358647,
+          "durationMs": 45.790595000000394,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 14329.477195,
+          "durationMs": 45.302669000000606,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "base.gateway.tenderly.co",
+          "startMs": 14579.650814,
+          "durationMs": 54.47816799999964,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_estimateGas",
+          "selector": "0x3593564c",
+          "host": "mainnet.base.org",
+          "startMs": 14829.600507,
+          "durationMs": 204.76443199999994,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_getTransactionCount",
+          "host": "mainnet.base.org",
+          "startMs": 15079.83762,
+          "durationMs": 235.70911399999932,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_getBlockByNumber",
+          "host": "mainnet.base.org",
+          "startMs": 15329.252244,
+          "durationMs": 141.88715500000035,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_maxPriorityFeePerGas",
+          "host": "mainnet.base.org",
+          "startMs": 15583.645865,
+          "durationMs": 142.5984499999995,
+          "status": 200
+        },
+        {
+          "phase": "presign_revalidation",
+          "method": "eth_call",
+          "selector": "0x313ce567",
+          "host": "mainnet.base.org",
+          "startMs": 15833.318415,
+          "durationMs": 138.99623900000006,
+          "status": 200
+        },
+        {
+          "phase": "presign_revalidation",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "mainnet.base.org",
+          "startMs": 16084.097161,
+          "durationMs": 138.05053000000044,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_estimateGas",
+          "selector": "0x",
+          "host": "mainnet.base.org",
+          "startMs": 16334.378425,
+          "durationMs": 161.0414949999995,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_call",
+          "selector": "0x49948e0e",
+          "host": "mainnet.base.org",
+          "startMs": 16585.684623,
+          "durationMs": 141.97970799999894,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_call",
+          "selector": "0x49948e0e",
+          "host": "mainnet.base.org",
+          "startMs": 16840.053615,
+          "durationMs": 144.456768,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_estimateGas",
+          "host": "mainnet.base.org",
+          "startMs": 17090.411881,
+          "durationMs": 138.57923899999878,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_call",
+          "selector": "0x49948e0e",
+          "host": "mainnet.base.org",
+          "startMs": 17340.790583,
+          "durationMs": 143.21069699999862,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_getBalance",
+          "host": "mainnet.base.org",
+          "startMs": 17591.625605,
+          "durationMs": 144.61852999999974,
+          "status": 200
+        }
+      ]
+    },
+    {
+      "chain": "4663",
+      "signerReached": true,
+      "success": false,
+      "status": "not_attempted",
+      "failureCode": "unknown",
+      "poolId": "0x7f8271c1a7a6a434f33b0babc15bf2980a0dcb4196848b4f7e789a7fd73a5350",
+      "approvedFeeCap": {
+        "mode": "eip1559",
+        "maxFeePerGasWei": "164469600",
+        "maxPriorityFeePerGasWei": "0"
+      },
+      "peakConcurrency": 2,
+      "phases": {
+        "quote": {
+          "count": 52,
+          "methods": {
+            "eth_chainId": 3,
+            "eth_call": 41,
+            "eth_gasPrice": 1,
+            "eth_estimateGas": 3,
+            "eth_getBlockByNumber": 1,
+            "eth_maxPriorityFeePerGas": 1,
+            "eth_getTransactionCount": 1,
+            "eth_getBalance": 1
+          },
+          "maxConcurrency": 2
+        },
+        "execute_preflight": {
+          "count": 2,
+          "methods": {
+            "eth_call": 2
+          },
+          "maxConcurrency": 1
+        },
+        "execute_revalidation": {
+          "count": 3,
+          "methods": {
+            "eth_call": 3
+          },
+          "maxConcurrency": 1
+        },
+        "sign_preparation_and_fence": {
+          "count": 7,
+          "methods": {
+            "eth_estimateGas": 3,
+            "eth_getTransactionCount": 1,
+            "eth_getBlockByNumber": 1,
+            "eth_maxPriorityFeePerGas": 1,
+            "eth_getBalance": 1
+          },
+          "maxConcurrency": 1
+        },
+        "presign_revalidation": {
+          "count": 2,
+          "methods": {
+            "eth_call": 2
+          },
+          "maxConcurrency": 1
+        }
+      },
+      "ledger": [
+        {
+          "failureCode": "unknown",
+          "status": "definitively_failed"
+        },
+        {
+          "failureCode": "unknown",
+          "status": "definitively_failed"
+        }
+      ],
+      "calls": [
+        {
+          "phase": "quote",
+          "method": "eth_chainId",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 2129.177985,
+          "durationMs": 290.48408900000004,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_chainId",
+          "host": "robinhood-rpc.publicnode.com",
+          "startMs": 2422.051672,
+          "durationMs": 76.27799499999992,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_chainId",
+          "host": "rpc.ordofi.network",
+          "startMs": 2498.716407,
+          "durationMs": 230.2176199999999,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x313ce567",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 2731.679053,
+          "durationMs": 154.0240270000004,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x95d89b41",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 2888.841671,
+          "durationMs": 148.8858009999999,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xd06ca61f",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 3052.897154,
+          "durationMs": 156.60024900000008,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xd06ca61f",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 3202.537302,
+          "durationMs": 202.04148499999974,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xd06ca61f",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 3353.178114,
+          "durationMs": 154.6159190000003,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 3503.746083,
+          "durationMs": 152.87167499999987,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 3654.367623,
+          "durationMs": 161.95505400000002,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 3804.791335,
+          "durationMs": 148.41568700000016,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 3954.336931,
+          "durationMs": 150.33174700000018,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 4105.009881,
+          "durationMs": 154.1442109999998,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 4254.440203,
+          "durationMs": 152.39958699999988,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 4404.713127,
+          "durationMs": 158.93536500000027,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 4555.386345,
+          "durationMs": 154.52941699999974,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 4708.43382,
+          "durationMs": 175.46575200000007,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 4859.494536,
+          "durationMs": 156.49506199999996,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 5010.448204,
+          "durationMs": 170.0009460000001,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 5161.636387,
+          "durationMs": 155.8724400000001,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 5316.020935,
+          "durationMs": 152.52813700000024,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 5466.160558,
+          "durationMs": 164.00959800000055,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 5616.127166,
+          "durationMs": 159.42111399999976,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 5767.310311,
+          "durationMs": 156.88570400000026,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 5917.964751,
+          "durationMs": 154.044261,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 6068.423538,
+          "durationMs": 152.92770999999993,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 6219.84475,
+          "durationMs": 157.2668819999999,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 6370.245603,
+          "durationMs": 153.60582599999998,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 6521.210569,
+          "durationMs": 152.53261100000054,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 6672.297061,
+          "durationMs": 151.4344489999994,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 6999.015251,
+          "durationMs": 154.4632019999999,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 7156.711158,
+          "durationMs": 154.1395419999999,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 7313.825129,
+          "durationMs": 155.09603700000025,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 7469.995832,
+          "durationMs": 154.2288210000006,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 7625.497021,
+          "durationMs": 155.36465899999985,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 7782.042205,
+          "durationMs": 156.43932500000028,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 7939.500376,
+          "durationMs": 152.57159200000024,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 8093.269863,
+          "durationMs": 154.40380099999948,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 8249.150023,
+          "durationMs": 285.2303319999992,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 8536.469843,
+          "durationMs": 156.04645699999855,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 8693.558794,
+          "durationMs": 150.1459649999997,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 8844.590395,
+          "durationMs": 156.68906500000048,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 9002.859305,
+          "durationMs": 165.627391,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_gasPrice",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 9169.92721,
+          "durationMs": 153.68465199999991,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x1698ee82",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 9326.537272,
+          "durationMs": 153.92175700000007,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_estimateGas",
+          "selector": "0x3593564c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 9483.479051,
+          "durationMs": 164.05347900000015,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_estimateGas",
+          "selector": "0x",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 9648.421191,
+          "durationMs": 162.50557000000117,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_getBlockByNumber",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 9812.007386,
+          "durationMs": 153.46248100000048,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_maxPriorityFeePerGas",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 9966.629865,
+          "durationMs": 153.27240299999903,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_getTransactionCount",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 10120.717944,
+          "durationMs": 156.1068379999997,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_estimateGas",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 10278.185186,
+          "durationMs": 154.35177599999952,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_getBalance",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 10434.037719,
+          "durationMs": 149.23815900000045,
+          "status": 200
+        },
+        {
+          "phase": "execute_preflight",
+          "method": "eth_call",
+          "selector": "0x313ce567",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 10591.313217,
+          "durationMs": 153.8039209999988,
+          "status": 200
+        },
+        {
+          "phase": "execute_preflight",
+          "method": "eth_call",
+          "selector": "0x95d89b41",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 10746.002963,
+          "durationMs": 152.66563499999938,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 10900.637442,
+          "durationMs": 159.05585600000086,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 11060.536608,
+          "durationMs": 149.47088599999915,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 11211.769702,
+          "durationMs": 159.75875900000028,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_estimateGas",
+          "selector": "0x3593564c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 11377.102622,
+          "durationMs": 153.98058800000035,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_getTransactionCount",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 11532.183238,
+          "durationMs": 156.56508899999972,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_getBlockByNumber",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 11689.946583,
+          "durationMs": 149.89143299999887,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_maxPriorityFeePerGas",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 11840.486495,
+          "durationMs": 156.35074600000007,
+          "status": 200
+        },
+        {
+          "phase": "presign_revalidation",
+          "method": "eth_call",
+          "selector": "0x313ce567",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 11999.074524,
+          "durationMs": 153.87212700000055,
+          "status": 200
+        },
+        {
+          "phase": "presign_revalidation",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 12154.128276,
+          "durationMs": 156.4980910000013,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_estimateGas",
+          "selector": "0x",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 12312.086284,
+          "durationMs": 156.91379699999925,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_estimateGas",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 12469.769362,
+          "durationMs": 157.4470710000005,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_getBalance",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 12628.768222,
+          "durationMs": 167.27398100000028,
+          "status": 200
+        }
+      ]
+    }
+  ],
+  "guardLimitedAfter": [
+    {
+      "chain": "4663",
+      "signerReached": false,
+      "success": false,
+      "status": "not_attempted",
+      "failureCode": "approved_gas_price_exceeded",
+      "peakConcurrency": 2,
+      "phases": {
+        "quote": {
+          "count": 52,
+          "methods": {
+            "eth_chainId": 3,
+            "eth_call": 41,
+            "eth_gasPrice": 1,
+            "eth_estimateGas": 3,
+            "eth_getBlockByNumber": 1,
+            "eth_maxPriorityFeePerGas": 1,
+            "eth_getTransactionCount": 1,
+            "eth_getBalance": 1
+          },
+          "maxConcurrency": 2
+        },
+        "execute_preflight": {
+          "count": 2,
+          "methods": {
+            "eth_call": 2
+          },
+          "maxConcurrency": 1
+        },
+        "execute_revalidation": {
+          "count": 3,
+          "methods": {
+            "eth_call": 3
+          },
+          "maxConcurrency": 1
+        },
+        "sign_preparation_and_fence": {
+          "count": 4,
+          "methods": {
+            "eth_estimateGas": 1,
+            "eth_getTransactionCount": 1,
+            "eth_getBlockByNumber": 1,
+            "eth_maxPriorityFeePerGas": 1
+          },
+          "maxConcurrency": 1
+        }
+      },
+      "ledger": [
+        {
+          "failureCode": "unknown",
+          "status": "definitively_failed"
+        }
+      ],
+      "calls": [
+        {
+          "phase": "quote",
+          "method": "eth_chainId",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 17742.073913,
+          "durationMs": 213.4673819999989,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_chainId",
+          "host": "robinhood-rpc.publicnode.com",
+          "startMs": 17956.050828,
+          "durationMs": 159.9064180000023,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_chainId",
+          "host": "rpc.ordofi.network",
+          "startMs": 18116.178405,
+          "durationMs": 467.9189000000006,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x313ce567",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 18584.971561,
+          "durationMs": 154.48107600000003,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x95d89b41",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 18740.617214,
+          "durationMs": 142.95581999999922,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xd06ca61f",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 18892.04459,
+          "durationMs": 150.37950499999715,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xd06ca61f",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 19042.601816,
+          "durationMs": 151.00501900000017,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xd06ca61f",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 19194.075674,
+          "durationMs": 162.1812460000001,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 19347.589021,
+          "durationMs": 182.54436799999894,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 19503.065986,
+          "durationMs": 160.1583929999979,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 19655.118825,
+          "durationMs": 154.68311299999914,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc6a5026a",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 19806.044004,
+          "durationMs": 148.3473699999995,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 19956.622036,
+          "durationMs": 149.68911099999968,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 20106.497475,
+          "durationMs": 148.9243349999997,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 20255.939522,
+          "durationMs": 147.9446289999978,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 20406.208937,
+          "durationMs": 148.00491200000033,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 20556.392604,
+          "durationMs": 159.92476700000043,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 20706.335905,
+          "durationMs": 153.35788400000092,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 20856.613685,
+          "durationMs": 144.03690700000152,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 21007.255159,
+          "durationMs": 149.40992600000027,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 21156.840192,
+          "durationMs": 149.24583200000052,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 21307.538579,
+          "durationMs": 151.2718359999999,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 21459.090879,
+          "durationMs": 143.6323510000002,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 21609.954559,
+          "durationMs": 309.8119310000002,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 21761.064923,
+          "durationMs": 151.31343599999673,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 21912.701986,
+          "durationMs": 149.00262099999964,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 22061.907751,
+          "durationMs": 148.16793700000198,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 22212.600124,
+          "durationMs": 150.3164919999981,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 22363.166019,
+          "durationMs": 157.52196900000126,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xcdca1753",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 22513.925466,
+          "durationMs": 145.58721800000058,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 22773.788093,
+          "durationMs": 144.8585149999999,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 22924.198541,
+          "durationMs": 148.2229359999983,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 23075.089712,
+          "durationMs": 152.0182160000004,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 23228.256465,
+          "durationMs": 151.92326800000228,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 23381.780913,
+          "durationMs": 149.1544240000003,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 23532.538868,
+          "durationMs": 149.57329000000027,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 23683.731014,
+          "durationMs": 145.497879999999,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 23834.05963,
+          "durationMs": 147.81090100000074,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 23984.301953,
+          "durationMs": 225.63482600000134,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 24212.848608,
+          "durationMs": 147.38811599999826,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 24363.744876,
+          "durationMs": 149.21794099999897,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 24514.250951,
+          "durationMs": 147.8763579999977,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 24664.663689,
+          "durationMs": 149.6641180000006,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_gasPrice",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 24815.656353,
+          "durationMs": 149.686823,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_call",
+          "selector": "0x1698ee82",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 24968.143215,
+          "durationMs": 145.96853499999997,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_estimateGas",
+          "selector": "0x3593564c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 25118.228536,
+          "durationMs": 147.59567400000014,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_estimateGas",
+          "selector": "0x",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 25268.736422,
+          "durationMs": 148.26571999999942,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_getBlockByNumber",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 25418.136708,
+          "durationMs": 149.61182399999961,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_maxPriorityFeePerGas",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 25568.872885,
+          "durationMs": 143.5224849999977,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_getTransactionCount",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 25719.490861,
+          "durationMs": 147.67986400000154,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_estimateGas",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 25868.84111,
+          "durationMs": 149.89395899999727,
+          "status": 200
+        },
+        {
+          "phase": "quote",
+          "method": "eth_getBalance",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 26020.024032,
+          "durationMs": 148.01736799999708,
+          "status": 200
+        },
+        {
+          "phase": "execute_preflight",
+          "method": "eth_call",
+          "selector": "0x313ce567",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 26170.630054,
+          "durationMs": 150.66037199999846,
+          "status": 200
+        },
+        {
+          "phase": "execute_preflight",
+          "method": "eth_call",
+          "selector": "0x95d89b41",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 26322.157486,
+          "durationMs": 147.8767289999996,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0x86b6be7d",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 26472.963149,
+          "durationMs": 147.3308500000021,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0xc815641c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 26623.570175,
+          "durationMs": 149.051234999999,
+          "status": 200
+        },
+        {
+          "phase": "execute_revalidation",
+          "method": "eth_call",
+          "selector": "0xaa9d21cb",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 26774.461337,
+          "durationMs": 149.095272999999,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_estimateGas",
+          "selector": "0x3593564c",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 26928.686153,
+          "durationMs": 153.98598500000298,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_getTransactionCount",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 27083.668262,
+          "durationMs": 148.36326200000258,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_getBlockByNumber",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 27232.828833,
+          "durationMs": 146.53656400000182,
+          "status": 200
+        },
+        {
+          "phase": "sign_preparation_and_fence",
+          "method": "eth_maxPriorityFeePerGas",
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "startMs": 27384.005608,
+          "durationMs": 157.21089900000152,
+          "status": 200
+        }
+      ]
+    }
+  ],
+  "measurementCorrection": "The initial reference allowlist omitted the unsigned eth_fillTransaction read. The reported baseline was re-run from an unchanged archive of the checkpoint with this read admitted. Original early burst capture is not used for the before/after totals."
+}

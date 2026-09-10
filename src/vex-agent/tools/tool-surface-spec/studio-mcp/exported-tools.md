@@ -128,8 +128,8 @@ free. Both texts live on the tool
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | kyberswap__chains_list | List KyberSwap chains | protocol | yes | no | no | - | 776 | - | none (read) |
-| kyberswap__swap_execute | Execute a KyberSwap swap | protocol | no | yes | no | - | 3910 | yes | 25 bps |
-| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 3788 | - | none (read) |
+| kyberswap__swap_execute | Execute a KyberSwap swap | protocol | no | yes | no | - | 3930 | yes | 25 bps |
+| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 3808 | - | none (read) |
 | kyberswap__token_safety_check | Audit an EVM token with KyberSwap | protocol | yes | no | no | - | 1138 | - | none (read) |
 
 ### launchpads
@@ -309,8 +309,8 @@ free. Both texts live on the tool
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| uniswap__swap_execute | Execute a Uniswap V2/V3 swap | protocol | no | yes | no | - | 3389 | yes | 25 bps |
-| uniswap__swap_quote | Quote a Uniswap V2/V3 route | protocol | yes | no | no | - | 4391 | - | none (read) |
+| uniswap__swap_execute | Execute a Uniswap V2/V3/v4 swap | protocol | no | yes | no | - | 3912 | yes | 25 bps |
+| uniswap__swap_quote | Quote a Uniswap V2/V3/v4 route | protocol | yes | no | no | - | 5133 | - | none (read) |
 
 ### virtuals
 

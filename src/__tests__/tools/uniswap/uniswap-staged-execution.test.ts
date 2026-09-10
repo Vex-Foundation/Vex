@@ -158,7 +158,7 @@ function stagedClients(nonce: number | null = 7, opts: StagedClientOptions = {})
     prepareTransactionRequest,
     signTransaction: walletAction,
   };
-  const publicClient = { estimateGas, getBlockNumber, sendRawTransaction };
+  const publicClient = { estimateGas, getBlockNumber, sendRawTransaction, getTransactionCount: async () => nonce ?? 0 };
   return {
     walletClient,
     publicClient,

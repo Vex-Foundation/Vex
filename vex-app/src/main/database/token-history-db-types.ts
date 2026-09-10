@@ -38,6 +38,7 @@ export interface PageRow {
   readonly failure_code: string | null;
   /** `agent_activity` only — receipt-derived EXECUTED leg, raw base-unit integer text (C20). */
   readonly executed_amount_in_raw: string | null;
+  readonly evidence_source?: string | null;
   readonly executed_amount_out_raw: string | null;
   /** `agent_activity` only — token decimals, needed to format the raw executed amount. */
   readonly token_in_decimals: number | null;

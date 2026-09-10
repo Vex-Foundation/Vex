@@ -1,0 +1,133 @@
+{
+  "provenance": {
+    "observedAt": "2026-09-09T15:24:47.989Z",
+    "chainId": 4663,
+    "rpc": "https://rpc.mainnet.chain.robinhood.com",
+    "fromBlock": "58646557",
+    "toBlock": "58651557",
+    "method": "eth_getLogs filtered by PoolManager, pool ID and UniversalRouter; eth_getTransactionReceipt; eth_getTransactionByHash; poolKeys",
+    "coreRevision": "59d3ecf53afa9264a16bba0e38f4c5d2231f80bc",
+    "eventSignature": {
+      "name": "Swap",
+      "type": "event",
+      "inputs": [
+        {
+          "type": "bytes32",
+          "name": "id",
+          "indexed": true
+        },
+        {
+          "type": "address",
+          "name": "sender",
+          "indexed": true
+        },
+        {
+          "type": "int128",
+          "name": "amount0"
+        },
+        {
+          "type": "int128",
+          "name": "amount1"
+        },
+        {
+          "type": "uint160",
+          "name": "sqrtPriceX96"
+        },
+        {
+          "type": "uint128",
+          "name": "liquidity"
+        },
+        {
+          "type": "int24",
+          "name": "tick"
+        },
+        {
+          "type": "uint24",
+          "name": "fee"
+        }
+      ]
+    },
+    "topic0": "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f",
+    "transactionProjection": "from, to, value only; transaction calldata and signature excluded",
+    "scope": "Public external transaction for receipt characterization, not assumed to use the Vex exact-input calldata. Its native value difference remains unproven."
+  },
+  "poolId": "0x7f8271c1a7a6a434f33b0babc15bf2980a0dcb4196848b4f7e789a7fd73a5350",
+  "poolKey": {
+    "currency0": "0x0000000000000000000000000000000000000000",
+    "currency1": "0x008Df4b3E857D06c4603Aeb11F267ccD32ce2005",
+    "fee": 0,
+    "tickSpacing": 200,
+    "hooks": "0xE5e702641Ea86F4ae6cC3cDaeD2B886f976Be044"
+  },
+  "transaction": {
+    "from": "0xd635dbd451a11fa9be85273f6bec91dff7d94ca7",
+    "to": "0x8876789976decbfcbbbe364623c63652db8c0904",
+    "value": "126569828429920923"
+  },
+  "receipt": {
+    "blockHash": "0xceda68ed164d3d3ae55c521b5c4ec9497c457a3f25201be1159536984e19b5b2",
+    "blockNumber": "58647873",
+    "contractAddress": null,
+    "cumulativeGasUsed": "2585564",
+    "effectiveGasPrice": "182592000",
+    "from": "0xd635dbd451a11fa9be85273f6bec91dff7d94ca7",
+    "gasUsed": "141077",
+    "gasUsedForL1": "0x386",
+    "l1BlockNumber": "0x18bd2b4",
+    "logs": [
+      {
+        "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+        "topics": [
+          "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f",
+          "0x7f8271c1a7a6a434f33b0babc15bf2980a0dcb4196848b4f7e789a7fd73a5350",
+          "0x0000000000000000000000008876789976decbfcbbbe364623c63652db8c0904"
+        ],
+        "data": "0xfffffffffffffffffffffffffffffffffffffffffffffffffe4da508c0435dcc000000000000000000000000000000000000000000003f870857a3e0e380000000000000000000000000000000000000000006195739caa953a6ab2742dee01c0000000000000000000000000000000000000000000006331c062631f58a481b0000000000000000000000000000000000000000000000000000000000023e810000000000000000000000000000000000000000000000000000000000000000",
+        "blockNumber": "58647873",
+        "transactionHash": "0x244f5291fbcc13d4d42e9770f2b4a0e4494c7847b55156f0cb409f9b70d8a1ff",
+        "transactionIndex": 10,
+        "blockHash": "0xceda68ed164d3d3ae55c521b5c4ec9497c457a3f25201be1159536984e19b5b2",
+        "blockTimestamp": "1788967112",
+        "logIndex": 73,
+        "removed": false
+      },
+      {
+        "address": "0xe5e702641ea86f4ae6cc3cdaed2b886f976be044",
+        "topics": [
+          "0xc532c43b3423e14ef72748f1c8291238829ca0af8ba9b67975ad1483485a4b4d",
+          "0x7f8271c1a7a6a434f33b0babc15bf2980a0dcb4196848b4f7e789a7fd73a5350"
+        ],
+        "data": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000457f31ccc20570000000000000000000000000000000000000000000000000000000000000000",
+        "blockNumber": "58647873",
+        "transactionHash": "0x244f5291fbcc13d4d42e9770f2b4a0e4494c7847b55156f0cb409f9b70d8a1ff",
+        "transactionIndex": 10,
+        "blockHash": "0xceda68ed164d3d3ae55c521b5c4ec9497c457a3f25201be1159536984e19b5b2",
+        "blockTimestamp": "1788967112",
+        "logIndex": 74,
+        "removed": false
+      },
+      {
+        "address": "0x008df4b3e857d06c4603aeb11f267ccd32ce2005",
+        "topics": [
+          "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "0x0000000000000000000000008366a39cc670b4001a1121b8f6a443a643e40951",
+          "0x000000000000000000000000d635dbd451a11fa9be85273f6bec91dff7d94ca7"
+        ],
+        "data": "0x000000000000000000000000000000000000000000003f870857a3e0e3800000",
+        "blockNumber": "58647873",
+        "transactionHash": "0x244f5291fbcc13d4d42e9770f2b4a0e4494c7847b55156f0cb409f9b70d8a1ff",
+        "transactionIndex": 10,
+        "blockHash": "0xceda68ed164d3d3ae55c521b5c4ec9497c457a3f25201be1159536984e19b5b2",
+        "blockTimestamp": "1788967112",
+        "logIndex": 75,
+        "removed": false
+      }
+    ],
+    "logsBloom": "0x000000000000000000000002000000000000000000000000000000000000000000000000000000000000008000000200000000000c0000000000000000000200000000000000400000000008000000000000000000000020000000000000000000000000000000000000000000000000000000000000400000000010040000000000000000000000000000000000000000080000010000200000000000000000000000000000000000000020000000000000000000000000000000000000000000000402000000000000000000000000000000000020800700000000000100000000000000000080004000000900000000000000000000000000000002040000",
+    "status": "success",
+    "to": "0x8876789976decbfcbbbe364623c63652db8c0904",
+    "transactionHash": "0x244f5291fbcc13d4d42e9770f2b4a0e4494c7847b55156f0cb409f9b70d8a1ff",
+    "transactionIndex": 10,
+    "type": "eip1559"
+  }
+}

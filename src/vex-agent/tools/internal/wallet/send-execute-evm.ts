@@ -1,3 +1,4 @@
+import { EvmNonceMismatchError } from "@tools/evm-chains/nonce-signing-guard.js";
 /**
  * Wallet send - EVM executor (multi-chain via Khalani).
  *
@@ -144,7 +145,7 @@ export async function executeEvmTransfer(
     await activity.completeExecution({ kind: "failed_before_broadcast" });
     await activity.fail({
       failureCode: "broadcast_error",
-      failureReason: `PreBroadcast:${sum.errorKind}:${sum.errorHash}`,
+      failureReason: cause instanceof EvmNonceMismatchError ? cause.message : `PreBroadcast:${sum.errorKind}:${sum.errorHash}`,
     });
     return preBroadcastFailed(cause);
   }

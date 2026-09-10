@@ -1,3 +1,5 @@
+import { EvmNonceReservationExpiredError } from "@tools/evm-chains/nonce-reservation-scope.js";
+import { EvmNonceMismatchError } from "@tools/evm-chains/nonce-signing-guard.js";
 /**
  * What `kyberswap.swap.execute` tells the agent - and writes to
  * `agent_activity` - when the staged broadcast loop throws AFTER the intent
@@ -29,6 +31,7 @@ import { KYBERSWAP_MAX_SLIPPAGE_BPS } from "@tools/kyberswap/constants.js";
 import { effectiveMaxSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
 import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
 import logger from "@utils/logger.js";
+import { rpcReadFailureOf, preSignRpcRefusal } from "@tools/evm-chains/rpc-read-failure.js";
 import type { ToolResult } from "../../../../types.js";
 import { abortRemainingPlans, failRefusedLeg } from "./activity-recording.js";
 import { kyberFailureMessage } from "./error-output.js";
@@ -57,6 +60,20 @@ export interface PostIntentFailureInput {
 
 export async function buildPostIntentFailureResult(input: PostIntentFailureInput): Promise<ToolResult> {
   const { err, toolId, sessionId, executionId, currentIndex, legBroadcastAttempted, plans, events, slippage } = input;
+  if (!legBroadcastAttempted && (err instanceof EvmNonceMismatchError || err instanceof EvmNonceReservationExpiredError)) {
+    await failRefusedLeg(events[currentIndex], err.failureCode, err.message);
+    await abortRemainingPlans(executionId, currentIndex, err.message);
+    return { success: false, output: err.message,
+      data: { _executionId: executionId, status: err.status, retryable: true, failureCode: err.failureCode, reason: err instanceof EvmNonceMismatchError ? err.reason : "nonce_signing_lease_expired" } };
+  }
+  const rpc = legBroadcastAttempted ? undefined : rpcReadFailureOf(err);
+  if (rpc) {
+    const failureReason = preSignRpcRefusal(rpc);
+    await failRefusedLeg(events[currentIndex], rpc.failureClass, failureReason);
+    await abortRemainingPlans(executionId, currentIndex, failureReason);
+    return { success: false, output: `${toolId}: ${failureReason} Recorded as execution ${executionId}.`,
+      data: { _executionId: executionId, status: "not_attempted", retryable: true, failureCode: rpc.failureClass, failureReason } };
+  }
   const slippageBounds = {
     appliedBps: slippage,
     maxBps: effectiveMaxSlippageBps(KYBERSWAP_MAX_SLIPPAGE_BPS),

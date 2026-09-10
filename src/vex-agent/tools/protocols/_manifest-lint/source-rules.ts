@@ -242,7 +242,7 @@ export function lintRetiredVenuePrecedence(files: readonly SourceFile[]): Manife
           detail: phrase,
           message:
             `line ${index + 1} still ranks the EVM swap venues in its own words ("${phrase}"). `
-            + "KyberSwap and Uniswap have equal standing (owner decision 2026-09-07); import the "
+            + "Venue preference has one owner; import the "
             + "sentence from `registry/swap-venue-guidance.ts` instead of re-wording the policy here.",
         });
       }

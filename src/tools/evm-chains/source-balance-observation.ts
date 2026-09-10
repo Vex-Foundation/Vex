@@ -30,6 +30,7 @@
  */
 
 import type { Address } from "viem";
+import { rpcReadFailureOf } from "./rpc-read-failure.js";
 import { formatUnits } from "viem";
 
 import type {
@@ -251,6 +252,7 @@ async function observeBalance(
     const balance = await readAt(tag);
     return { ok: true, observation: observationOf(request, tag, balance, now().toISOString()) };
   } catch (readFailure) {
+    if (rpcReadFailureOf(readFailure)) throw readFailure;
     if (request.signal?.aborted) throw readFailure;
     if (tag !== "pending") {
       return {
@@ -269,6 +271,7 @@ async function observeBalance(
         advisoryLatest: observationOf(request, "latest", latest, now().toISOString()),
       };
     } catch (latestFailure) {
+      if (rpcReadFailureOf(latestFailure)) throw latestFailure;
       if (request.signal?.aborted) throw latestFailure;
       return {
         ok: false,

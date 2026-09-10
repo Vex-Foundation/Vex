@@ -33,6 +33,7 @@
  * top double-counts it, and is the arithmetic mistake this module's tests pin.
  */
 
+import { rpcReadFailureOf } from "./rpc-read-failure.js";
 import type { Address, Hex } from "viem";
 
 import {
@@ -73,6 +74,7 @@ export function boundGasPriceWei(cap: LegFeeCap): bigint {
 export type NativeDebitLegRole =
   | "allowance_reset"
   | "allowance"
+  | "permit2_allowance"
   | "swap"
   | "swap_fee";
 
@@ -255,7 +257,8 @@ export async function priceFollowUpReserve(
       to: request.wallet,
       value: 0n,
     });
-  } catch {
+  } catch (error) {
+    if (rpcReadFailureOf(error)) throw error;
     return { ok: false, cause: "follow_up_reserve_estimate_failed" };
   }
 

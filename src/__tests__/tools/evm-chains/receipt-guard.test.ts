@@ -112,3 +112,31 @@ describe("waitForReceiptWithReplacementEvidence", () => {
     });
   });
 });
+
+it("bounds the whole receipt wait even when the client never settles its promise", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+  try {
+    const wait = vi.fn(() => new Promise<never>(() => {}));
+    const pending = waitForReceiptWithReplacementEvidence(receiptClient(wait), HASH, { timeoutMs: 50 });
+    const refused = expect(pending).rejects.toMatchObject({ name: "ReceiptWaitDeadlineError", message: expect.stringContaining("awaiting inclusion") });
+    await vi.advanceTimersByTimeAsync(50);
+    await refused;
+    expect(wait).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally { vi.useRealTimers(); }
+});
+
+it.each(["repriced", "cancelled", "replaced"] as const)("does not attribute a %s replacement to the original transaction", async reason => {
+  const replacementHash = `0x${"cd".repeat(32)}` as const;
+  const wait = vi.fn(async (params: { onReplaced?: (value: Record<string, unknown>) => void }) => {
+    params.onReplaced?.({ reason, replacedTransaction: { hash: HASH }, transaction: {
+      hash: replacementHash, from: "0x1111111111111111111111111111111111111111", nonce: 7,
+      to: "0x2222222222222222222222222222222222222222", input: "0x", value: 0n,
+      gas: 21000n, maxFeePerGas: 10n, maxPriorityFeePerGas: 1n,
+    }, transactionReceipt: { status: "success", transactionHash: replacementHash } });
+    return { status: "success", transactionHash: replacementHash };
+  });
+  await expect(waitForSuccessfulReceipt(receiptClient(wait), HASH, context, { delayMs: 0 }))
+    .rejects.toMatchObject({ code: "CONFIRMATION_UNKNOWN", message: expect.stringContaining("replacement receipt"), cause: { name: "UnattributedReceiptReplacementError" } });
+  expect(wait).toHaveBeenCalledOnce();
+});
