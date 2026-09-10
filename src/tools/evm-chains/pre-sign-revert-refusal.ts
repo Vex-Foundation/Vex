@@ -57,6 +57,7 @@
  */
 
 import { slippageRemediation } from "../../utils/error-summary.js";
+import { describeSwapOutputShortfall, type SwapOutputObservation } from "./swap-output-shortfall.js";
 
 import { DependentLegGasEstimateError } from "./dependent-leg-gas-estimate.js";
 import {
@@ -67,6 +68,7 @@ import {
 
 /** The tolerance this attempt actually applied, and the ceiling a retry may not exceed. Both are quoted to the agent — a remedy without numbers is not actionable. */
 export interface PreSignSlippageBounds {
+  readonly outputObservation?: SwapOutputObservation;
   readonly appliedBps: number;
   readonly maxBps: number;
   /**
@@ -155,6 +157,7 @@ function remedyFor(failureCode: EvmRouterRevertFailureCode, slippage: PreSignSli
       // than a fill. A remedy that contradicted shipped guidance would be worse
       // than none.
       return `That is the price guard doing its job: the pool moved past the minimum output written into this quote's calldata between the quote and the estimate. `
+        + (slippage.outputObservation === undefined ? "" : describeSwapOutputShortfall(slippage.outputObservation))
         + slippageRemediation({ ...slippage, staleReserveCaution: true });
     case "deadline_expired":
       return `The quote's deadline had already passed when the estimate ran. Get a fresh quote and execute it promptly; that alone can succeed.`;

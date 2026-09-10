@@ -46,6 +46,7 @@ import type { ResolvedKyberTokenMetadata } from "@tools/kyberswap/helpers.js";
 import type { KyberChainSlug } from "@tools/kyberswap/types.js";
 import { getEvmNativeCurrency } from "@tools/evm-chains/native-currency.js";
 import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
+import { swapFeeCeiling, SWAP_FEE_HEADROOM_BPS, SwapApprovedGasPriceExceededError } from "@tools/evm-chains/swap-fee-ceiling.js";
 import {
   observeEvmSwapBalances,
   type SourceBalanceClient,
@@ -501,8 +502,9 @@ export async function evaluateKyberQuoteSpendability(
     return refuse(failure instanceof LegPlanFailure ? failure.cause : CAUSES.legGasUnavailable);
   }
 
-  const feeCap = await readLegFeeCap(input.client);
-  if (feeCap === null) return refuse(CAUSES.feePriceUnavailable);
+  const observedFee = await readLegFeeCap(input.client);
+  if (observedFee === null) return refuse(CAUSES.feePriceUnavailable);
+  const feeCap = swapFeeCeiling(observedFee);
 
   let firstNonce: number;
   try {
@@ -538,6 +540,7 @@ export async function evaluateKyberQuoteSpendability(
   // block-to-block inside the quote window (measured on Base 2026-08-31), so
   // binding them would refuse fundable swaps.
   const debitPlan = buildBoundDebitPlan({
+    feeHeadroomBps: SWAP_FEE_HEADROOM_BPS,
     legs: legs.map((leg) => ({ role: leg.role, pricing: "measured" as const })),
     feeCap,
   });
@@ -822,11 +825,8 @@ export async function assertKyberPreSignSpendability(
     { gasLimit: 0n, cap: approvedCap },
   );
   if (!capVerdict.withinCap) {
-    throw new VexError(
-      ErrorCodes.KYBER_MALFORMED_PARAMS,
-      `Refused at signing: this ${signing.role} transaction's ${capVerdict.field} is ${capVerdict.requiredRaw},`
-        + ` above the ${capVerdict.approvedRaw} the approved quote was priced at.`,
-      "Nothing was signed. Request a fresh kyberswap__swap_quote at the current gas price.",
+    throw new SwapApprovedGasPriceExceededError(
+      capVerdict.field, capVerdict.requiredRaw, capVerdict.approvedRaw, "kyberswap__swap_quote",
     );
   }
 

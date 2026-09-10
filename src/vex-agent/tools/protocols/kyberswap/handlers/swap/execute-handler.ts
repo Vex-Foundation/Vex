@@ -36,8 +36,18 @@ import { venueFallbackNoteOnFailure } from "./fallback-messaging.js";
 import { resolveKyberSlippageBps } from "./slippage.js";
 import type { KyberGetRouteResponse } from "./route-request.js";
 import { readSwapExecutionSnapshot, commitPrequoteClaim } from "../../../prequote/claim.js";
+import { createSwapExecutionTiming } from "@tools/evm-chains/swap-execution-timing.js";
+import { withApprovedGasFees } from "../../../quote-authority/fee-ceiling-disclosure.js";
 
 export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolResult> => {
+  const timing = createSwapExecutionTiming("kyberswap.swap.execute");
+  return timing.run("execute", () => executeWithTiming(p, context, timing));
+};
+
+async function executeWithTiming(
+  p: Parameters<ProtocolHandler>[0], context: Parameters<ProtocolHandler>[1],
+  timing: ReturnType<typeof createSwapExecutionTiming>,
+): Promise<ToolResult> {
   const toolId = "kyberswap.swap.execute";
 
   // Defensive guard against the spine-inherited `previewSupport:true`
@@ -82,8 +92,14 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
   let tokenIn: ResolvedKyberTokenMetadata;
   let tokenOut: ResolvedKyberTokenMetadata;
   try {
-    tokenIn = await resolveTokenMetadataStrict(tokenInRaw, chainId);
-    tokenOut = await resolveTokenMetadataStrict(tokenOutRaw, chainId);
+    [tokenIn, tokenOut] = await timing.run("token_metadata", async () => {
+      const [input, output] = await Promise.allSettled([
+        resolveTokenMetadataStrict(tokenInRaw, chainId), resolveTokenMetadataStrict(tokenOutRaw, chainId),
+      ]);
+      if (input.status === "rejected") throw input.reason;
+      if (output.status === "rejected") throw output.reason;
+      return [input.value, output.value] as const;
+    });
   } catch (err) {
     // The REAL wallet_address (resolved above) is already known even
     // though the tokens never resolved.
@@ -118,7 +134,7 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
   for (const leg of [tokenIn, tokenOut]) {
     if (leg.isNative) continue;
     try {
-      const check = await getKyberTokenApiClient().getHoneypotFotInfo(chainId, leg.address);
+      const check = await timing.run("token_safety", () => getKyberTokenApiClient().getHoneypotFotInfo(chainId, leg.address));
       if (check.isHoneypot) {
         return failPreBroadcast(
           toolId, p, sessionId, walletAddress, chainId, slug,
@@ -171,7 +187,7 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
   // (review finding, 2026-09-04). Claiming here spent the approved quote on the way out
   // of a correct refusal, and the retry the refusal asked for got
   // `already_claimed`.
-  const claimed = await readSwapExecutionSnapshot(toolId, sessionId, p, context);
+  const claimed = await timing.run("approved_quote", () => readSwapExecutionSnapshot(toolId, sessionId, p, context));
   if (!claimed.ok) {
     return failPreBroadcast(
       toolId, p, sessionId, walletAddress, chainId, slug,
@@ -194,7 +210,7 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
   // pre-intent ONLY).
   let prepared;
   try {
-    prepared = await prepareSwapExecution({
+    prepared = await timing.run("execution_plan", () => prepareSwapExecution({
       toolId, intentParams: p, sessionId, publicClient, walletAddress, chainId, slug,
       tokenIn, tokenOut, amountIn, amountInRaw, slippage, routerAddress,
       approvedSummary, approvedSnapshot: claimed.snapshot,
@@ -207,15 +223,15 @@ export const executeHandler: ProtocolHandler = async (p, context): Promise<ToolR
       // refusal, which the catch below records exactly as any other pre-intent
       // failure - with nothing signed and, on a divergence, nothing claimed.
       commitApprovedQuote: () => commitPrequoteClaim(claimed.claim, `${toolId}:${sessionId}`),
-    });
+    }));
   } catch (err) {
     return failPreBroadcast(toolId, p, sessionId, walletAddress, chainId, slug, legInput(tokenIn), legInput(tokenOut), err, true);
   }
 
   // ── Phase B (post-intent): staged broadcast loop.
-  return runStagedSwapBroadcast({
+  return withApprovedGasFees(await runStagedSwapBroadcast({
     toolId, prepared, publicClient, walletClient, walletAddress, sessionId,
     chainId, slug, tokenIn, tokenOut, tokenInLabel, tokenOutLabel, slippage,
     safetyCheckUnavailable,
-  });
-};
+  }), claimed.snapshot.debitPlan);
+}

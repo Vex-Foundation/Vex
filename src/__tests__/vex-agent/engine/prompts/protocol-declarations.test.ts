@@ -20,6 +20,17 @@ function declarationProse(entry: ReturnType<typeof getAdvertisedProtocolNavigati
 }
 
 describe("protocol declarations", () => {
+  it.each(["kyberswap", "uniswap"])("states the Robinhood venue preference in %s", (namespace) => {
+    const entry = getAdvertisedProtocolNavigation().find((item) => item.namespace === namespace);
+    expect(entry).toBeDefined();
+    const prose = entry ? declarationProse(entry) : "";
+    expect(prose).toContain("On Robinhood Chain, quote both venues when both price the pair");
+    expect(prose).toContain("prefer direct Uniswap when it has a route");
+    expect(prose).toContain("quiet pools");
+    expect(prose).toContain("USD reference lags");
+    expect(prose).toContain("V2/V3/v4");
+    expect(prose).toContain("Elsewhere, KyberSwap is the usual first choice");
+  });
   it("couples every model-visible retrieval term to declaration prose and frozen embedding text", () => {
     for (const entry of getAdvertisedProtocolNavigation()) {
       const prose = normalize(declarationProse(entry));

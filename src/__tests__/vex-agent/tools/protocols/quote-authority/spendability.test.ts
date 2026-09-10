@@ -342,6 +342,18 @@ describe("the durable preview", () => {
     expect(parseSpendabilityPreview(persisted)).toEqual(outcome.preview);
   });
 
+  it("displays the sealed fee ceiling and explicit headroom after persistence", () => {
+    const preview = outcome.preview;
+    if (preview === undefined) throw new Error("preview missing");
+    const persisted = parseSpendabilityPreview(JSON.parse(JSON.stringify({ ...preview,
+      debitPlan: { ...PLAN, feeHeadroomBps: 1500 } })));
+    if (persisted === undefined) throw new Error("persisted preview missing");
+    const line = renderSpendability(persisted);
+    expect(line).toContain("at most 11210000 wei/gas");
+    expect(line).toContain("including 15% headroom over the observed fee");
+    expect(line).toContain("per-gas ceiling, not a fixed total gas bill");
+  });
+
   it("refuses a payload written under a different card version", () => {
     const stale = { ...outcome.preview, cardVersion: "spendability-v0" };
     expect(parseSpendabilityPreview(stale)).toBeUndefined();

@@ -1,3 +1,4 @@
+import { uniswapFeeRefusal } from "./fee-refusal.js";
 /**
  * The `agent_activity` writes that are NOT part of a staged broadcast: the
  * hashless pre-broadcast failure row, and the best-effort finalization of
@@ -47,7 +48,8 @@ export async function failPreBroadcast(
   refusal?: Record<string, unknown>,
 ): Promise<ToolResult> {
   const classified = classifyPreBroadcastFailure(err);
-  const failureCode = classified.failureCode;
+  const feeRefusal = uniswapFeeRefusal(err);
+  const failureCode = feeRefusal?.failureCode ?? classified.failureCode;
   const failureReason = uniswapFailureMessage(classified.rpcFailure ? classified.failureReason : err, { preserveLength: true });
   const { executionId } = await createAgentActivityPreBroadcastFailure({
     toolId: TOOL_ID,
@@ -73,6 +75,7 @@ export async function failPreBroadcast(
     output: `${TOOL_ID} failed: ${failureReason}.`,
     data: { _executionId: executionId,
       ...(classified.rpcFailure ? { status: "not_attempted", retryable: true, failureCode, failureReason } : {}),
+      ...(feeRefusal ? { status: "not_attempted", ...feeRefusal } : {}),
       ...(refusal ?? {}) },
   };
 }

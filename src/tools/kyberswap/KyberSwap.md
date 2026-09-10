@@ -1,5 +1,11 @@
 # KyberSwap Module Map — Multi-Chain EVM Aggregator Swaps
 
+KyberSwap is the usual first choice. On Robinhood Chain, quote both venues when
+both price the pair and prefer direct Uniswap when it has a route. KyberSwap's
+index drops quiet pools there and its USD reference can lag. Direct Uniswap
+covers V2, V3 and v4 on verified deployments; other DEX liquidity can be absent.
+Each execution requires that venue's matching approved quote.
+
 > **Last updated: 2026-07-22 (Agent Scan Phase 1 — limit orders, ZaaS/zap, and the phantom
 > `src/commands/kyberswap/` CLI references removed; staged swap.execute documented)**
 >

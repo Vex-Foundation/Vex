@@ -18,7 +18,7 @@ import type { UniswapDeployment } from "@tools/uniswap/deployments.js";
 import type { UniswapToken } from "@tools/uniswap/types.js";
 import { resolveUniswapToken } from "@vex-agent/tools/protocols/uniswap/handlers/swap/token-resolution.js";
 import { buildUniswapQuoteSnapshot } from "@vex-agent/tools/protocols/uniswap/handlers/swap/execution-binding.js";
-import type { UniswapExecutionSnapshot } from "@vex-agent/tools/protocols/quote-authority/uniswap.js";
+import { sealUniswapSnapshot, type UniswapExecutionSnapshot } from "@vex-agent/tools/protocols/quote-authority/uniswap.js";
 import { buildBoundDebitPlan } from "@vex-agent/tools/protocols/quote-authority/debit-plan.js";
 import type { LegFeeCap, NativeDebitLegRole } from "@tools/evm-chains/swap-native-debit.js";
 import {
@@ -94,7 +94,7 @@ export async function approvedUniswapSnapshot(
     tokenIn: input.tokenIn,
     amountInRaw: input.amountInRaw,
   });
-  return buildUniswapQuoteSnapshot({
+  const snapshot = buildUniswapQuoteSnapshot({
     chainId: input.chainId,
     tokenIn: input.tokenIn,
     tokenOut: input.tokenOut,
@@ -119,6 +119,10 @@ export async function approvedUniswapSnapshot(
       feeCap: input.feeCap ?? DEFAULT_FEE_CAP,
     }),
   });
+  // Existing execution suites exercise the supported older snapshot shape.
+  // Route reuse has its own tests with a bound hint and live path refresh.
+  const { routeHint: _routeHint, digest: _digest, ...legacy } = snapshot;
+  return sealUniswapSnapshot(legacy);
 }
 
 /**

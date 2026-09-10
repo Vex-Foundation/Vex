@@ -32,6 +32,7 @@
 import { createHash } from "node:crypto";
 
 import { canonicalizeDebitPlan, type BoundDebitPlan } from "./debit-plan.js";
+import { canonicalizeSwapPriceReference, type SwapPriceReference } from "@tools/evm-chains/swap-price-reference.js";
 import type { QuoteEligibility } from "./eligibility.js";
 
 /**
@@ -70,6 +71,7 @@ export type SnapshotProvider = "kyberswap";
  * approval card and the execute floor are bound to.
  */
 export interface RouteSnapshot {
+  readonly priceReference?: SwapPriceReference;
   readonly v: typeof ROUTE_SNAPSHOT_VERSION;
   readonly provider: SnapshotProvider;
   readonly raw: string;
@@ -154,6 +156,7 @@ export function digestRouteSnapshot(
     fields.provider,
     digestSnapshotRaw(fields.raw),
     canonicalizeDebitPlan(fields.debitPlan),
+    ...(fields.priceReference === undefined ? [] : [canonicalizeSwapPriceReference(fields.priceReference)]),
     fields.approvedAmountOutRaw,
     fields.approvedMinOutRaw,
     JSON.stringify(fields.approvedAmountOutHuman),

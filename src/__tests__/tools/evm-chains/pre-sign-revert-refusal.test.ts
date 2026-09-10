@@ -251,6 +251,9 @@ describe("preSignRefusalGuidance — the autonomy contract (plan rule 8)", () =>
 
   it("says whether a retry can succeed, not merely that something was invalid", () => {
     expect(guidance).toMatch(/re-quote/i);
+    expect(guidance).toContain("Re-quote at the same slippageBps first");
+    expect(guidance).toContain("user's stated limit");
+    expect(guidance).not.toContain("retrying unchanged will be refused the same way");
     expect(guidance).not.toMatch(/validation failed/i);
   });
 

@@ -27,6 +27,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { uniswapSpendabilityFake } from "./_uniswap-spendability-fake.js";
 import { getAddress, parseUnits } from "viem";
+import { readTokenPools } from "@tools/dexscreener/price-read.js";
+import { validateTokensPairsResponse } from "@tools/dexscreener/validation/pairs.js";
+import dexFixture from "../../fixtures/swap-quality/dex-robinhood.json" with { type: "json" };
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 
@@ -80,7 +83,7 @@ vi.mock("@tools/uniswap/safety.js", () => ({
   probeFotSignal: vi.fn(async () => false),
   UNISWAP_MIN_LIQUIDITY_USD: 5000,
 }));
-vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokensPairs: vi.fn(async () => []) }));
+vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []) }));
 vi.mock("@tools/evm-chains/registry.js", () => ({ getLocalChain: vi.fn(() => ({ chainId: CHAIN_ID })) }));
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddress: vi.fn(() => WALLET),
@@ -133,9 +136,44 @@ function run() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(readTokenPools).mockResolvedValue([]);
+});
+
+describe("Uniswap routes without a pool-reserve impact", () => {
+  it.each([
+    { output: "997.5", kind: "executable", impact: 0 },
+    { output: "528.675", kind: "excessive_impact", impact: 0.47 },
+  ])("uses the independent pair reference for output $output", async ({ output, kind, impact }) => {
+    const pair = validateTokensPairsResponse(dexFixture)[0];
+    if (pair === undefined) throw new Error("Live reference fixture is empty");
+    vi.mocked(readTokenPools).mockResolvedValue([{ ...pair,
+      baseToken: { address: TOKEN_OUT, symbol: "OUT", name: "Output" },
+      quoteToken: { address: TOKEN_IN, symbol: "IN", name: "Input" },
+      priceUsd: "1", priceNative: "0.001" }]);
+    quoteBestRoute.mockResolvedValue({ route: { ...unmeasured().route, amountOut: parseUnits(output, 18) } });
+    const result = await run();
+    expect(result.quoteAuthority?.eligibilityKind).toBe(kind);
+    const data = JSON.parse(result.output);
+    expect(data.priceImpactReference).toBe("dexscreener");
+    expect(data.priceImpact).toBeCloseTo(impact);
+    expect(data.eligibility.impactMeasured).toBe(true);
+    // The output population is shared with liquidity; no third token request.
+    expect(readTokenPools).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("uniswap.swap.quote eligibility over MEASURED impact", () => {
+  it("seals a gas ceiling with 15% headroom over the quote observation", async () => {
+    quoteBestRoute.mockResolvedValue(measured(0.001));
+    const result = await run();
+    expect(result.quoteAuthority?.routeSnapshot).toMatchObject({
+      debitPlan: {
+        feeHeadroomBps: 1500,
+        legs: [{ role: "swap", feeCap: { mode: "legacy", gasPriceWei: "1150" } },
+          { role: "swap_fee", feeCap: { mode: "legacy", gasPriceWei: "1150" } }],
+      },
+    });
+  });
   it("refuses to authorize an execute at or above the shared ceiling, and says why", async () => {
     // Above the ceiling by a whole point, so the assertion cannot be an
     // artefact of a boundary rounding.

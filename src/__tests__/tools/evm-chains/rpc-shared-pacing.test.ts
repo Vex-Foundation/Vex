@@ -91,3 +91,46 @@ it("paces probes, independent clients and failover attempts through one shared q
     expect(now.at - previous.at).toBeGreaterThanOrEqual(250);
   }
 });
+
+it.each(["read", "pinned"] as const)("isolates %s caller cancellation without consuming or bypassing shared Base pacing", async (kind) => {
+  const calls: { method: string; at: number; address?: string }[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body)) as { id: number; method: string; params?: string[] };
+    calls.push({ method: body.method, at: Date.now(), address: body.params?.[0] });
+    return Response.json({ jsonrpc: "2.0", id: body.id, result: body.method === "eth_chainId" ? "0x2105" : "0x1" });
+  }));
+  const a = createPublicClient({ chain, transport: kind === "read" ? buildEvmTransport(8453) : buildPinnedEvmTransport(8453) });
+  const b = createPublicClient({ chain, transport: buildEvmTransport(8453) });
+  const warm = Promise.all([a.getBlockNumber(), b.getBlockNumber()]);
+  await vi.runAllTimersAsync(); await warm;
+  // Occupy this quota interval before admitting three independent callers.
+  await a.request({ method: "eth_blockNumber" });
+  calls.length = 0;
+  const start = Date.now();
+  const cancelled = new AbortController(), surviving = new AbortController();
+  const deadAddress = "0x1111111111111111111111111111111111111111";
+  const liveAddress = "0x2222222222222222222222222222222222222222";
+  const peerAddress = "0x3333333333333333333333333333333333333333";
+  const dead = a.request({ method: "eth_getBalance", params: [deadAddress, "latest"] }, { signal: cancelled.signal })
+    .then(() => undefined, error => error);
+  const live = a.request({ method: "eth_getBalance", params: [liveAddress, "latest"] }, { signal: surviving.signal });
+  const peer = b.request({ method: "eth_getBalance", params: [peerAddress, "latest"] });
+  await vi.advanceTimersByTimeAsync(0);
+  cancelled.abort();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(await dead).toBe(cancelled.signal.reason);
+  expect(rpcReadFailureOf(await dead)).toBeUndefined();
+  expect(surviving.signal.aborted).toBe(false);
+  await vi.advanceTimersByTimeAsync(249);
+  expect(calls).toEqual([]);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(await live).toBe("0x1");
+  expect(calls).toEqual([{ method: "eth_getBalance", at: start + 250, address: liveAddress }]);
+  await vi.advanceTimersByTimeAsync(250);
+  expect(await peer).toBe("0x1");
+  expect(calls).toEqual([
+    { method: "eth_getBalance", at: start + 250, address: liveAddress },
+    { method: "eth_getBalance", at: start + 500, address: peerAddress },
+  ]);
+  await vi.runAllTimersAsync();
+});

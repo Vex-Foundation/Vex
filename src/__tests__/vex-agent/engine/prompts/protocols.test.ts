@@ -8,8 +8,8 @@ import { getProtocolNamespaceCoverage } from "@vex-agent/engine/prompts/chain-co
 import { buildPromptStack } from "@vex-agent/engine/prompts/index.js";
 import { makeContext } from "./_prompt-stack-helpers.js";
 import {
-  SWAP_VENUE_STANDING,
-  SWAP_VENUE_UNISWAP_OCCASIONS,
+  ROBINHOOD_SWAP_VENUE_GUIDANCE,
+  SWAP_VENUE_GUIDANCE_FULL,
 } from "@vex-agent/tools/registry/swap-venue-guidance.js";
 
 describe("buildProtocolsPrompt", () => {
@@ -29,7 +29,7 @@ describe("buildProtocolsPrompt", () => {
     resetProtocolsPromptCache();
     const prompt = buildProtocolsPrompt();
     expect(prompt).toContain("### uniswap");
-    expect(prompt).toContain(SWAP_VENUE_STANDING);
+    expect(prompt).toContain(ROBINHOOD_SWAP_VENUE_GUIDANCE);
     // The standing must never be phrased as a lock, or as a ranking.
     expect(prompt).not.toContain("backup venue is now available");
     expect(prompt).not.toMatch(/unlocks? it/i);
@@ -49,7 +49,7 @@ describe("buildProtocolsPrompt", () => {
     // quote comparison the owner now wants - while the rule it used to travel
     // with, that slippage/balance/allowance/deadline failures are not venue
     // failures, lives on in the swap task shape and is asserted there.
-    expect(prompt).toContain(SWAP_VENUE_UNISWAP_OCCASIONS);
+    expect(prompt).toContain(SWAP_VENUE_GUIDANCE_FULL);
     expect(prompt).not.toContain("Do not switch for a bad price alone");
   });
 

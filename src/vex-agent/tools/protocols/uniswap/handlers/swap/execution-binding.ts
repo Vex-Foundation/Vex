@@ -100,6 +100,9 @@ export function buildUniswapQuoteSnapshot(input: {
   if (quoted.route.version === "v4" && !input.recipient) throw new Error("A v4 quote snapshot requires the executing recipient");
   const inputs = executionInputsFrom(input);
   return sealUniswapSnapshot({
+    ...(quoted.priceReference === undefined ? {} : { priceReference: quoted.priceReference }),
+    ...(quoted.route.version === "v4" ? {} : { routeHint: { version: quoted.route.version, path: [...quoted.route.path],
+      ...(quoted.route.fees === undefined ? {} : { fees: [...quoted.route.fees] }) } }),
     v: UNISWAP_SNAPSHOT_VERSION,
     provider: "uniswap",
     chainId: inputs.chainId,

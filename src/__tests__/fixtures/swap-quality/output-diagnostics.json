@@ -1,0 +1,40 @@
+[
+  {
+    "chain": "base",
+    "at": "2026-09-09T16:17:37.252Z",
+    "counterfactualFloorRefused": true,
+    "quotedOutputRaw": "248311",
+    "counterfactualFloorRaw": "496622",
+    "simulatedOutputRaw": "248308",
+    "venue": "kyberswap"
+  },
+  {
+    "chain": "robinhood",
+    "at": "2026-09-09T16:17:39.052Z",
+    "counterfactualFloorRefused": true,
+    "quotedOutputRaw": "359501266213279104",
+    "counterfactualFloorRaw": "719002532426558208",
+    "simulatedOutputRaw": "359496902919931880",
+    "venue": "kyberswap"
+  },
+  {
+    "chain": "base",
+    "version": "v3",
+    "at": "2026-09-09T16:26:11.291Z",
+    "counterfactualFloorRefused": true,
+    "quotedOutputRaw": "248172",
+    "counterfactualFloorRaw": "496344",
+    "simulatedOutputRaw": "248172",
+    "venue": "uniswap"
+  },
+  {
+    "chain": "robinhood",
+    "version": "v3",
+    "at": "2026-09-09T16:26:13.072Z",
+    "counterfactualFloorRefused": true,
+    "quotedOutputRaw": "359682455560571200",
+    "counterfactualFloorRaw": "719364911121142400",
+    "simulatedOutputRaw": "359682455560571200",
+    "venue": "uniswap"
+  }
+]

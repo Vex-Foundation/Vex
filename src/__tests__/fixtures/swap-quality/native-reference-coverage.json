@@ -1,0 +1,182 @@
+[
+  {
+    "at": "2026-09-10T10:03:38.260Z",
+    "chainId": 1,
+    "chainKey": "ethereum",
+    "wrappedNativeAddress": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "rowCount": 30,
+    "matchingChainRows": 30,
+    "priced": true,
+    "elapsedMs": 171
+  },
+  {
+    "at": "2026-09-10T10:03:38.601Z",
+    "chainId": 56,
+    "chainKey": "bsc",
+    "wrappedNativeAddress": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+    "rowCount": 30,
+    "matchingChainRows": 30,
+    "priced": true,
+    "elapsedMs": 39
+  },
+  {
+    "at": "2026-09-10T10:03:38.962Z",
+    "chainId": 42161,
+    "chainKey": "arbitrum",
+    "wrappedNativeAddress": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+    "rowCount": 30,
+    "matchingChainRows": 30,
+    "priced": true,
+    "elapsedMs": 60
+  },
+  {
+    "at": "2026-09-10T10:03:39.444Z",
+    "chainId": 137,
+    "chainKey": "polygon",
+    "wrappedNativeAddress": "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+    "rowCount": 30,
+    "matchingChainRows": 30,
+    "priced": true,
+    "elapsedMs": 181
+  },
+  {
+    "at": "2026-09-10T10:03:39.994Z",
+    "chainId": 10,
+    "chainKey": "optimism",
+    "wrappedNativeAddress": "0x4200000000000000000000000000000000000006",
+    "rowCount": 30,
+    "matchingChainRows": 30,
+    "priced": true,
+    "elapsedMs": 249
+  },
+  {
+    "at": "2026-09-10T10:03:40.528Z",
+    "chainId": 43114,
+    "chainKey": "avalanche",
+    "wrappedNativeAddress": "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",
+    "rowCount": 30,
+    "matchingChainRows": 30,
+    "priced": true,
+    "elapsedMs": 234
+  },
+  {
+    "at": "2026-09-10T10:03:40.867Z",
+    "chainId": 8453,
+    "chainKey": "base",
+    "wrappedNativeAddress": "0x4200000000000000000000000000000000000006",
+    "rowCount": 30,
+    "matchingChainRows": 30,
+    "priced": true,
+    "elapsedMs": 37
+  },
+  {
+    "at": "2026-09-10T10:03:41.203Z",
+    "chainId": 59144,
+    "chainKey": "linea",
+    "wrappedNativeAddress": "0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f",
+    "rowCount": 30,
+    "matchingChainRows": 30,
+    "priced": true,
+    "elapsedMs": 35
+  },
+  {
+    "at": "2026-09-10T10:03:41.733Z",
+    "chainId": 5000,
+    "chainKey": "mantle",
+    "wrappedNativeAddress": "0x78c1b0C915c4FAA5FffA6CAbf0219DA63d7f4cb8",
+    "rowCount": 30,
+    "matchingChainRows": 30,
+    "priced": true,
+    "elapsedMs": 230
+  },
+  {
+    "at": "2026-09-10T10:03:42.223Z",
+    "chainId": 146,
+    "chainKey": "sonic",
+    "wrappedNativeAddress": "0x039e2fB66102314Ce7b64Ce5Ce3E5183bc94aD38",
+    "rowCount": 30,
+    "matchingChainRows": 30,
+    "priced": true,
+    "elapsedMs": 188
+  },
+  {
+    "at": "2026-09-10T10:03:42.714Z",
+    "chainId": 80094,
+    "chainKey": "berachain",
+    "wrappedNativeAddress": "0x6969696969696969696969696969696969696969",
+    "rowCount": 30,
+    "matchingChainRows": 30,
+    "priced": true,
+    "elapsedMs": 189
+  },
+  {
+    "at": "2026-09-10T10:03:43.221Z",
+    "chainId": 2020,
+    "chainKey": "ronin",
+    "wrappedNativeAddress": "0xe514d9DEB7966c8BE0ca922de8a064264eA6bcd4",
+    "rowCount": 0,
+    "matchingChainRows": 0,
+    "priced": false,
+    "elapsedMs": 206
+  },
+  {
+    "at": "2026-09-10T10:03:43.728Z",
+    "chainId": 130,
+    "chainKey": "unichain",
+    "wrappedNativeAddress": "0x4200000000000000000000000000000000000006",
+    "rowCount": 30,
+    "matchingChainRows": 30,
+    "priced": true,
+    "elapsedMs": 206
+  },
+  {
+    "at": "2026-09-10T10:03:44.061Z",
+    "chainId": 999,
+    "chainKey": "hyperevm",
+    "wrappedNativeAddress": "0x5555555555555555555555555555555555555555",
+    "rowCount": 30,
+    "matchingChainRows": 30,
+    "priced": true,
+    "elapsedMs": 32
+  },
+  {
+    "at": "2026-09-10T10:03:44.407Z",
+    "chainId": 9745,
+    "chainKey": "plasma",
+    "wrappedNativeAddress": "0x6100e367285b01f48d07953803a2d8dca5d19873",
+    "rowCount": 30,
+    "matchingChainRows": 30,
+    "priced": true,
+    "elapsedMs": 46
+  },
+  {
+    "at": "2026-09-10T10:03:44.927Z",
+    "chainId": 143,
+    "chainKey": "monad",
+    "wrappedNativeAddress": "0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A",
+    "rowCount": 30,
+    "matchingChainRows": 30,
+    "priced": true,
+    "elapsedMs": 219
+  },
+  {
+    "at": "2026-09-10T10:03:45.430Z",
+    "chainId": 4326,
+    "chainKey": "megaeth",
+    "wrappedNativeAddress": "0x4200000000000000000000000000000000000006",
+    "rowCount": 20,
+    "matchingChainRows": 20,
+    "priced": true,
+    "elapsedMs": 202
+  },
+  {
+    "at": "2026-09-10T10:03:45.905Z",
+    "chainId": 4663,
+    "chainKey": "robinhood",
+    "wrappedNativeAddress": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+    "rowCount": 30,
+    "matchingChainRows": 30,
+    "priced": true,
+    "elapsedMs": 173
+  }
+]
