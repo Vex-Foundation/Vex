@@ -35,6 +35,7 @@ const WRITER_SOURCES = [
   source("swap-lifecycle.ts"),
   source("swap-lifecycle/verification-bookkeeping.ts"),
   source("settlement-enrichment.ts"),
+  source("v4-native-settlement.ts"),
   source("launch-lifecycle.ts"),
   source("bridge-lifecycle.ts"),
 ].join("\n");

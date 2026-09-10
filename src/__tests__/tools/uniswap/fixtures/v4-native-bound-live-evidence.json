@@ -1,0 +1,30 @@
+{
+  "observedAt": "2026-09-10T14:54:33.379Z",
+  "scope": "Read-only production reader, no signer or broadcast",
+  "records": [
+    {
+      "chainId": 4663,
+      "txHash": "0x244f5291fbcc13d4d42e9770f2b4a0e4494c7847b55156f0cb409f9b70d8a1ff",
+      "evidence": {
+        "kind": "bound",
+        "inputLowerBound": "123482759443825291",
+        "outputCredit": "-123482759443825291",
+        "gasCost": "25759531584000",
+        "blockHash": "0xceda68ed164d3d3ae55c521b5c4ec9497c457a3f25201be1159536984e19b5b2",
+        "blockNumber": "58647873"
+      }
+    },
+    {
+      "chainId": 8453,
+      "txHash": "0x41418f8891916ee148325586372d3a9778194c7e7f3a30ba336def979e846b14",
+      "evidence": {
+        "kind": "bound",
+        "inputLowerBound": "99750000000000",
+        "outputCredit": "-99750000000000",
+        "gasCost": "4653107508773",
+        "blockHash": "0x0cf5324e04170b5179fee00bcd2a6a1ea8e5b3d112bc9f67560308ad3d325b2a",
+        "blockNumber": "51122644"
+      }
+    }
+  ]
+}

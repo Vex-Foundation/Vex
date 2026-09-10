@@ -117,7 +117,9 @@ export const clients: MorphoExecutionClients = {
     chain: base,
     transport: http("http://127.0.0.1:1"),
   }),
-  actionClient: getMorphoActionClient(CHAIN_ID),
+  // The post-approval barrier reads this head before the mocked preparation.
+  // It must not issue a real RPC while settlement tests control fake timers.
+  actionClient: Object.assign(getMorphoActionClient(CHAIN_ID), { getBlockNumber: async () => 42n }),
 };
 
 export function request(

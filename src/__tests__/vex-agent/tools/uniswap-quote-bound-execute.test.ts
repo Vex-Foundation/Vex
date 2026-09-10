@@ -334,6 +334,7 @@ describe("the 2026-08-27 incident shape", () => {
     expect(result.success).toBe(true);
     const floor = signedFloor();
     expect(floor.toString()).toBe(snapshot.approvedMinOutRaw);
+    expect(quoteBestRoute).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ allowV4: false, wallet: WALLET }));
     // The old derivation would have written a LOWER number into the calldata.
     expect(applySlippage(movedWithinTolerance, SLIPPAGE_BPS)).toBeLessThan(floor);
   });

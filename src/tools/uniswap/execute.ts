@@ -1,3 +1,4 @@
+import { assertReservedNonceMatchesPending } from "@tools/evm-chains/nonce-signing-guard.js";
 /**
  * Uniswap execution — calldata builders (V2 Router02 / V3 SwapRouter02) + a
  * STAGED sign/broadcast pair (plan §11.1's durability contract).
@@ -58,6 +59,7 @@ import {
   UNISWAP_V3_SWAP_ROUTER_02_ABI,
 } from "./abis.js";
 import type { UniswapDeployment } from "./deployments.js";
+import { buildV4SwapTx } from "./v4-execute.js";
 import type { UniswapRoute } from "./types.js";
 
 /** Native EVM token sentinel (same across all EVM chains; shared with kyberswap). */
@@ -203,6 +205,7 @@ export function buildV3SwapTx(args: BuildSwapArgs): BuiltSwapTx {
 
 /** Build the swap tx for a route (dispatches V2/V3). */
 export function buildSwapTx(args: BuildSwapArgs): BuiltSwapTx {
+  if (args.route.version === "v4") return buildV4SwapTx(args);
   return args.route.version === "v2" ? buildV2SwapTx(args) : buildV3SwapTx(args);
 }
 
@@ -316,7 +319,9 @@ export async function signUniswapTransaction(
   // (`dependent-leg-gas-estimate.ts`).
   const gasEstimate = await estimateGasForPlanLeg(
     publicClient,
-    { account, to: tx.to, data: tx.data, value: tx.value },
+    // An address keeps viem from auto-preparing fees and nonce inside the
+    // estimate. The actual request is prepared once below, under its owner.
+    { account: account.address, to: tx.to, data: tx.data, value: tx.value },
     priorLeg,
   );
   // With an approved ceiling the headroom is still applied and then JUDGED: a
@@ -328,6 +333,9 @@ export async function signUniswapTransaction(
   const prepared = await walletClient.prepareTransactionRequest({
     account,
     chain: walletClient.chain,
+    // Gas is already measured and approved prices are explicit. Avoid an
+    // optional eth_fillTransaction round trip for fields we already supplied.
+    ...(bounds === undefined ? {} : { parameters: ["chainId", "nonce", "type"] as const }),
     to: tx.to,
     data: tx.data,
     value: tx.value,
@@ -356,7 +364,7 @@ export async function signUniswapTransaction(
     chainId: walletClient.chain.id,
     nodePendingNonce,
   });
-  if (!Number.isSafeInteger(nonce) || nonce < nodePendingNonce) {
+  if (!Number.isSafeInteger(nonce) || nonce < 0) {
     throw new VexError(ErrorCodes.SWAP_FAILED, "Uniswap durable nonce reservation is invalid.");
   }
   // Re-asserted on the request that is actually serialized: when fees/nonce
@@ -370,6 +378,7 @@ export async function signUniswapTransaction(
   const finalRequest = { ...prepared, ...signingFees, gas: gasLimit, nonce };
   // THE FENCE. Every field below is read off the object on the next line, so a
   // guard cannot pass on a value the signer does not receive.
+  await assertReservedNonceMatchesPending(publicClient, account.address, walletClient.chain.id, nonce);
   if (onBeforeSign) {
     await onBeforeSign({
       to: finalRequest.to,

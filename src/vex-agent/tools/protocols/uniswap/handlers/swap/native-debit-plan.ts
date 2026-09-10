@@ -47,6 +47,8 @@
  * alternative cost the user an allowance and a stranded position.
  */
 
+import { rpcReadFailureOf } from "@tools/evm-chains/rpc-read-failure.js";
+import { tokenSpender, needsV4Allowance, buildV4ApproveTx, type V4AllowanceState } from "@tools/uniswap/v4-allowance.js";
 import { type Address, type Hex } from "viem";
 
 import { gasLimitWithHeadroom } from "@tools/evm-chains/gas-limit-headroom.js";
@@ -201,24 +203,30 @@ export function planUniswapDebitLegs(input: {
   readonly quoted: QuotedRoute;
   readonly charge: UniswapFeeCharge;
   readonly currentAllowance: bigint;
+  readonly permit2Allowance?: V4AllowanceState;
   readonly now?: () => number;
 }): readonly Omit<UniswapPlannedLeg, "gas" | "broadcast">[] {
   const { tokenIn, charge, quoted } = input;
   const swapAmount = charge.swapAmountRaw;
+  const spender = tokenSpender(input.deployment, quoted.route, input.router);
   const needsAllowance = !tokenIn.isNative && input.currentAllowance < swapAmount;
   const needsReset = needsAllowance && input.currentAllowance > 0n;
 
   const legs: Omit<UniswapPlannedLeg, "gas" | "broadcast">[] = [];
   if (needsReset) {
-    const reset = buildApproveTx(tokenIn.address as Address, input.router, 0n);
+    const reset = buildApproveTx(tokenIn.address as Address, spender, 0n);
     legs.push({ role: "allowance_reset", to: reset.to, data: reset.data, valueWei: reset.value });
   }
   if (needsAllowance) {
-    const approve = buildApproveTx(tokenIn.address as Address, input.router, swapAmount);
+    const approve = buildApproveTx(tokenIn.address as Address, spender, swapAmount);
     legs.push({ role: "allowance", to: approve.to, data: approve.data, valueWei: approve.value });
   }
 
   const nowMs = (input.now ?? Date.now)();
+  if (quoted.route.version === "v4" && !tokenIn.isNative && needsV4Allowance(input.permit2Allowance, swapAmount, Math.floor(nowMs / 1000))) {
+    const grant = buildV4ApproveTx(input.deployment, tokenIn.address, swapAmount, Math.floor(nowMs / 1000) + PLANNING_DEADLINE_SECONDS);
+    legs.push({ role: "permit2_allowance", to: grant.to, data: grant.data, valueWei: grant.value });
+  }
   const swap = buildSwapTx({
     deployment: input.deployment,
     route: quoted.route,
@@ -264,7 +272,8 @@ async function estimateLegGas(
       value: leg.valueWei,
     });
     return gasLimitWithHeadroom(estimate);
-  } catch {
+  } catch (error) {
+    if (rpcReadFailureOf(error)) throw error;
     return null;
   }
 }
@@ -291,7 +300,8 @@ export async function resolveUniswapLegFeeCap(
       };
     }
     if (fees.gasPrice !== undefined) return { mode: "legacy", gasPriceWei: fees.gasPrice };
-  } catch {
+  } catch (error) {
+    if (rpcReadFailureOf(error)) throw error;
     // Fall through to the legacy read: a chain that cannot answer the 1559
     // question can still state a gas price, and the alternative is refusing a
     // swap for a fee-market shape rather than for a money fact.

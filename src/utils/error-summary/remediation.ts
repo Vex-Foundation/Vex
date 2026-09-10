@@ -15,21 +15,21 @@ const REMEDIATION_BY_CATEGORY: Readonly<Record<ErrorCategory, string | undefined
   insufficient_funds:
     "the wallet on this chain cannot cover value + gas: top up the wallet or lower the amount",
   auth:
-    "this provider rejected our credentials — the key is missing, expired, or out of quota; "
+    "this provider rejected our credentials - the key is missing, expired, or out of quota; "
     + "do not retry, report it",
   rate_limit:
     "the provider is rate-limiting; wait before retrying this venue, or use another venue",
   invalid_request:
-    "fix the named parameter and call again — retrying unchanged will fail identically",
+    "fix the named parameter and call again - retrying unchanged will fail identically",
   policy_refusal:
     "Vex refused this before signing; nothing was sent. Change the request, do not retry it",
   response_schema:
-    "the provider's response shape changed; no parameter fixes this — report it and use another route",
+    "the provider's response shape changed; no parameter fixes this - report it and use another route",
   timeout:
-    "transport failure — the request may or may not have reached the provider; "
+    "transport failure - the request may or may not have reached the provider; "
     + "verify state before retrying a mutation",
   network:
-    "transport failure — the request may or may not have reached the provider; "
+    "transport failure - the request may or may not have reached the provider; "
     + "verify state before retrying a mutation",
   provider_error: undefined,
   unknown: undefined,

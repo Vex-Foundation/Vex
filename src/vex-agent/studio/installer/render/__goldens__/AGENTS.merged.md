@@ -2,7 +2,7 @@
 
 Run the tests before you push.
 
-<!-- vex:studio:begin vex=0.2.6 hash=078137c8a0dab213 -->
+<!-- vex:studio:begin vex=0.2.6 hash=cd730b5819da49cc -->
 # Vex Studio - project "acme-trading"
 
 This repository is connected to Vex, a self-custodial crypto agent whose tools
@@ -204,9 +204,9 @@ origin deposit, transaction or fill described below.
   so the quoted output is already net of it and you
   never add it on top when reporting what was spent. The Uniswap pair takes
   the same 25 bps from the input, but Uniswap's routers carry no fee field,
-  so it is Vex's own transfer leg after the swap confirms: the swap spends
-  `amountIn` minus 25 bps and that 25 bps is transferred to Vex, and the two
-  together are exactly `amountIn`, which is what the user is debited.
+  so it is Vex's own transfer leg after the swap confirms. The quoted swap is
+  `amountIn` minus 25 bps; swap and fee plans
+  together are exactly `amountIn`, a ceiling. Native bounds can lower the fee.
 - Bridges (`BridgeQuote`/`BridgeExecute` and the Relay pair): 25 bps of the
   origin input as a SEPARATE transfer only after the deposit lands. The fee
   follows the origin deposit's success; destination delivery is a separate outcome.
@@ -262,24 +262,21 @@ silently dropping them, and convert with `UnitsConvert`, never in your head.
 
 ### Swap
 
-`TokenFind` resolves each token to a CONTRACT ADDRESS on the exact chain, then
-`SwapQuote`, then `SwapExecute` with identical parameters including the same
-slippage. That pair routes EVM trades to KyberSwap and Solana to Jupiter
-itself; `SwapQuoteUniswap` then `SwapExecuteUniswap` is the Uniswap pair, on a
-chain with a verified Vex deployment.
+Resolve token CONTRACT ADDRESSES on the exact chain with `TokenFind`.
+`SwapQuote`/`SwapExecute` route EVM to KyberSwap and Solana to Jupiter;
+`SwapQuoteUniswap`/`SwapExecuteUniswap` use verified Uniswap deployments.
+Execute with identical quote parameters, including slippage.
 
-On Robinhood Chain, quote both venues when both price the pair; prefer direct Uniswap when it has a route (V2/V3 only, no v4). KyberSwap drops quiet pools; its USD reference lags. Elsewhere, KyberSwap is the usual first choice. Use Uniswap when KyberSwap is region/edge-blocked, unavailable, mispriced, or on request. Quote both when unsure. Execute on the venue you quoted.
+KyberSwap is the default; Uniswap prices V2, V3 and v4 pools on seven chains. Other DEX liquidity may be unavailable there. On Robinhood Chain, quote both venues when both price the pair; prefer direct Uniswap when it has a route (V2/V3/v4). KyberSwap drops quiet pools; its USD reference lags. Elsewhere, KyberSwap is the usual first choice. Use Uniswap when KyberSwap is region/edge-blocked, unavailable, mispriced, or on request. Quote both when unsure. Execute on the venue you quoted.
 
-Restate the quote's expected output, price impact, gas and safety verdicts
-before executing. Slippage binds the quote you were SHOWN: the execute writes
-that floor into the calldata and refuses BY NAME rather than filling worse. So
+Restate expected output, price impact, gas and safety verdicts before executing.
+Execution writes the approved floor into calldata and refuses by name below it.
 RE-QUOTE AT THE SAME SLIPPAGE FIRST. Increase `slippageBps` only within the
 user's stated limit or after the user authorizes the new worst-case amount.
-Announcing a larger bound does not authorize it. On EVM a
-quote is refused at or above 15% price impact and when the venue cannot price
-the output in USD; on Solana there are no USD figures at all, so only the
-impact rule applies. The card names the chain, the tokens, the amounts, the
-expected output and the Vex fee when a card is required.
+Announcing a larger bound does not authorize it. EVM quotes refuse at 15%
+impact or above, or without output USD pricing; on Solana there are no USD figures at all;
+only its impact rule applies. Required cards name chain, tokens, amounts,
+expected output and Vex fee.
 
 ### Bridge
 

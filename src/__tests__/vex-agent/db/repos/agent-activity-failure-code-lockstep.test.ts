@@ -32,6 +32,8 @@ const MIGRATION_SQL = [
   readMigration("045_bridge_activity.sql"),
   readMigration("049_agent_activity_solana_vocabulary.sql"),
   readMigration("076_agent_activity_venue_unavailable.sql"),
+  readMigration("156_agent_activity_rpc_read_failures.sql"),
+  readMigration("159_agent_activity_fee_bound_refusal.sql"),
 ].join("\n");
 
 /** Extract the LAST `CONSTRAINT agent_activity_failure_code_valid CHECK (failure_code IN (...))` value list. */
@@ -60,6 +62,11 @@ describe("agent_activity.failure_code — SQL CHECK <-> TS CLOSED_FAILURE_CODES 
     const sqlCodes = parseFailureCodeCheck(MIGRATION_SQL);
     const tsCodes = [...CLOSED_FAILURE_CODES];
     expect(sorted(tsCodes)).toEqual(sorted(sqlCodes));
+  });
+
+  it("includes the local fee-bound refusal in SQL and TypeScript", () => {
+    expect(parseFailureCodeCheck(MIGRATION_SQL)).toContain("fee_bound_refused");
+    expect(CLOSED_FAILURE_CODES.has("fee_bound_refused")).toBe(true);
   });
 
   it("includes the W5 addition 'solana_signature_expired' on both sides", () => {

@@ -28,7 +28,8 @@ export function requireDeployment(chain: string): UniswapDeployment {
 }
 
 export function routerFor(deployment: UniswapDeployment, route: UniswapRoute): Address {
-  const router = route.version === "v2" ? deployment.v2?.router02 : deployment.v3?.swapRouter02;
+  const router = route.version === "v4" ? deployment.v4?.universalRouter
+    : route.version === "v2" ? deployment.v2?.router02 : deployment.v3?.swapRouter02;
   if (!router) throw new VexError(ErrorCodes.SWAP_FAILED, `No ${route.version} router on ${deployment.name}.`);
   return getAddress(router);
 }

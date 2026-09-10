@@ -28,7 +28,7 @@ describe("protocol declarations", () => {
     expect(prose).toContain("prefer direct Uniswap when it has a route");
     expect(prose).toContain("quiet pools");
     expect(prose).toContain("USD reference lags");
-    expect(prose).toContain("V2/V3 only");
+    expect(prose).toContain("V2/V3/v4");
     expect(prose).toContain("Elsewhere, KyberSwap is the usual first choice");
   });
   it("couples every model-visible retrieval term to declaration prose and frozen embedding text", () => {

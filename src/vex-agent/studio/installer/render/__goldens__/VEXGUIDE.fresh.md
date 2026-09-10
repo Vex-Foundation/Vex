@@ -1,4 +1,4 @@
-<!-- vex:studio:begin vex=0.2.6 hash=11e2652a7f309fd0 -->
+<!-- vex:studio:begin vex=0.2.6 hash=f74b657946ce6b91 -->
 # Vex guide - project "acme-trading"
 
 The companion to this project's `AGENTS.md`, which carries the authority:
@@ -39,6 +39,8 @@ Text OUTSIDE the markers belongs to the user; Vex preserves it.
 
 - 2026-08-25 · Vex 0.9.4 · updated the wallet selection
 - 2026-08-12 · Vex 0.9.3 · added the codex config
+
+KyberSwap is the default; Uniswap prices V2, V3 and v4 pools on seven chains. Other DEX liquidity may be unavailable there. On Robinhood Chain, quote both venues when both price the pair; prefer direct Uniswap when it has a route (V2/V3/v4). KyberSwap drops quiet pools; its USD reference lags. Elsewhere, KyberSwap is the usual first choice.
 
 ## Protocols available to this project (Added in Vex 0.2.7)
 
@@ -84,11 +86,11 @@ KyberSwap is an EVM swap aggregator that routes exact-input trades across more t
 
 ### uniswap
 
-Uniswap is an on-chain spot-swap venue that compares V2 and V3 pools for an exact-input trade.
+Uniswap is an on-chain spot-swap venue that compares V2, V3 and v4 pools for an exact-input trade.
 
 - Chains: Robinhood Chain (4663), Ethereum (1), Base (8453), Arbitrum One (42161), Optimism (10), Polygon (137), BNB Chain (56).
 - Read: Read a route preview's pool path, expected output, price impact, gas estimate, and token-safety signals. Resolve exact token addresses first; no symbol search.
-- Quote: Create a read-only route preview, including VIRTUAL pairs, with the best route before funds move.
+- Quote: Preview the best route read-only, including VIRTUAL pairs, before funds move.
 - Act: Execute a buy, sell, or swap after a fresh matching quote. A token approval may be required before the wallet signs and broadcasts the trade.
 - Vex fee: 25 bps of the input on a swap execute, as a separate transfer leg, not in the quote.
 

@@ -1,0 +1,39 @@
+{
+  "observedAt": "2026-09-09T14:48Z",
+  "method": "executeProtocolTool(uniswap.swap.quote)",
+  "executeStageRun": false,
+  "quotes": [
+    {
+      "event": "uniswap.v4.live_quote",
+      "chainId": 4663,
+      "poolId": "0x7f8271c1a7a6a434f33b0babc15bf2980a0dcb4196848b4f7e789a7fd73a5350",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x008Df4b3E857D06c4603Aeb11F267ccD32ce2005",
+        "fee": 0,
+        "tickSpacing": 200,
+        "hooks": "0xE5e702641Ea86F4ae6cC3cDaeD2B886f976Be044"
+      },
+      "amountIn": "0.0001",
+      "amountOutRaw": "225637358105786271553",
+      "minAmountOutRaw": "223380984524728408837",
+      "gasEstimate": "79803"
+    },
+    {
+      "event": "uniswap.v4.live_quote",
+      "chainId": 8453,
+      "poolId": "0x4f7e88a5183a5e034dd1e2e6b4277e8ca820a310a0fba6d5b0dd3db374ad256a",
+      "poolKey": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xC9750053FE947E0961eab0f3E29325F0311DCb07",
+        "fee": 910000,
+        "tickSpacing": 9100,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "amountIn": "0.0001",
+      "amountOutRaw": "5429846364271211987111",
+      "minAmountOutRaw": "5375547900628499867239",
+      "gasEstimate": "59743"
+    }
+  ]
+}

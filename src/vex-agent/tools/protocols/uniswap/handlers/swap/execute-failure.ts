@@ -1,3 +1,4 @@
+import { uniswapFeeRefusal } from "./fee-refusal.js";
 /**
  * How a Uniswap execute that got past the intent tells the agent what happened.
  *
@@ -14,7 +15,6 @@ import {
   preSignRefusalGuidance,
 } from "@tools/evm-chains/pre-sign-revert-refusal.js";
 import { UniswapFinalRequestRefusal } from "@tools/uniswap/final-request-guard.js";
-import { UniswapFeeCapExceededError, UniswapLiveFeeMarketRefusal } from "@tools/uniswap/execute.js";
 import { UniswapPreSignDebitRefusal } from "./quote-spendability.js";
 import { effectiveMaxSlippageBps } from "@vex-agent/tools/protocols/slippage-policy.js";
 import type { AgentActivityEvent } from "@vex-agent/db/repos/agent-activity.js";
@@ -56,18 +56,30 @@ export function preSignRefusalResult(input: {
   readonly slippageBps: number;
   readonly executionId: number;
 }): ToolResult {
+  const classification = input.classification;
+  const guidance = classification.rpcFailure ? classification.failureReason : classification.onChainRevert
+    ? preSignRefusalGuidance({
+        revertReason: classification.failureReason,
+        failureCode: classification.failureCode,
+        slippage: { appliedBps: input.slippageBps, maxBps: effectiveMaxSlippageBps(), outputObservation: input.outputObservation },
+        ...(classification.remedy ? { remedy: classification.remedy } : {}),
+      })
+    : `Nothing was signed or broadcast for this step. Transaction preparation was refused: ${classification.failureReason}. `
+      + (classification.remedy ?? "Resolve this preparation failure before requesting a fresh quote; no on-chain revert was established.");
+  const revert = classification.revert;
+  const diagnostic = revert
+    ? ` Revert selector: ${revert.selector}.${revert.errorName ? ` Error: ${revert.errorName}.` : ` Revert data: ${revert.data}.`}`
+    : "";
   return {
     success: false,
-    output: `${TOOL_ID}: the ${input.eventRole} step was refused before signing. ${preSignRefusalGuidance({
-      // Already through this venue's single scrub boundary (C37).
-      revertReason: input.classification.failureReason,
-      failureCode: input.classification.failureCode,
-      slippage: { appliedBps: input.slippageBps, maxBps: effectiveMaxSlippageBps(), outputObservation: input.outputObservation },
-    })} Recorded as execution ${input.executionId}.`,
+    output: `${TOOL_ID}: the ${input.eventRole} step was refused before signing. ${guidance}${diagnostic} Recorded as execution ${input.executionId}.`,
     data: {
       _executionId: input.executionId, status: "not_attempted", retryable: true,
       failureCode: input.classification.failureCode,
-      ...(input.classification.failureCode === "slippage" && input.outputObservation
+      failureReason: classification.failureReason,
+      guidance,
+      ...(classification.revert ? { revert: classification.revert } : {}),
+      ...(classification.failureCode === "slippage" && input.outputObservation
         ? { outputObservation: swapOutputEvidence(input.outputObservation) } : {}),
     },
   };
@@ -173,31 +185,12 @@ export async function postIntentFailureResult(input: {
       },
     };
   }
-  // The chain's current price left the ceiling this execution's debit total was
-  // computed under. Nothing was signed; the way out is a fresh quote, not a
-  // retry at whatever the node now asks for.
-  if (err instanceof UniswapFeeCapExceededError) {
+  const feeRefusal = uniswapFeeRefusal(err);
+  if (feeRefusal) {
     return {
       success: false,
-      output: `${TOOL_ID}: the ${input.refusedRole} step was refused before signing. ${uniswapFailureMessage(err)} Recorded as execution ${executionId}.`,
-      data: { _executionId: executionId, status: "not_attempted", retryable: false },
-    };
-  }
-  // The LIVE fee market could not be shown to still fit the approved ceiling.
-  // Nothing was signed, so `not_attempted` like the refusals above, and the
-  // refusal's own sentence - which names which of the three happened and the
-  // way out - is rendered verbatim. `retryable` comes off the refusal because
-  // the three differ exactly there: an unreachable node may answer next time, a
-  // risen price and a changed pricing mode need a fresh quote. Reducing an
-  // unreadable market to "failed unexpectedly" is the collapse rule 90 forbids.
-  if (err instanceof UniswapLiveFeeMarketRefusal) {
-    return {
-      success: false,
-      output: `${TOOL_ID}: the ${input.refusedRole} step was refused before signing. ${uniswapFailureMessage(err)} Recorded as execution ${executionId}.`,
-      data: {
-        _executionId: executionId, status: "not_attempted", retryable: err.retryable,
-        failureCode: err.kind,
-      },
+      output: `${TOOL_ID}: the ${input.refusedRole} step was refused before signing. ${feeRefusal.failureReason} Recorded as execution ${executionId}.`,
+      data: { _executionId: executionId, status: "not_attempted", ...feeRefusal },
     };
   }
   return {

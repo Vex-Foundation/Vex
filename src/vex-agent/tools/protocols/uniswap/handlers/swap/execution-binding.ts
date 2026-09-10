@@ -94,13 +94,15 @@ export function buildUniswapQuoteSnapshot(input: {
    * binding exists to close.
    */
   readonly debitPlan: BoundDebitPlan;
+  readonly recipient?: string;
 }): UniswapExecutionSnapshot {
   const { tokenOut, quoted } = input;
+  if (quoted.route.version === "v4" && !input.recipient) throw new Error("A v4 quote snapshot requires the executing recipient");
   const inputs = executionInputsFrom(input);
   return sealUniswapSnapshot({
     ...(quoted.priceReference === undefined ? {} : { priceReference: quoted.priceReference }),
-    routeHint: { version: quoted.route.version, path: [...quoted.route.path],
-      ...(quoted.route.fees === undefined ? {} : { fees: [...quoted.route.fees] }) },
+    ...(quoted.route.version === "v4" ? {} : { routeHint: { version: quoted.route.version, path: [...quoted.route.path],
+      ...(quoted.route.fees === undefined ? {} : { fees: [...quoted.route.fees] }) } }),
     v: UNISWAP_SNAPSHOT_VERSION,
     provider: "uniswap",
     chainId: inputs.chainId,
@@ -116,5 +118,6 @@ export function buildUniswapQuoteSnapshot(input: {
     slippageBps: quoted.slippageBps,
     expiresAt: input.expiresAt,
     debitPlan: input.debitPlan,
+    ...(quoted.route.version === "v4" && input.recipient ? { v4: { route: quoted.route.v4, recipient: input.recipient } } : {}),
   });
 }

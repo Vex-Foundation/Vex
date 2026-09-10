@@ -643,3 +643,223 @@ Changed files in this review-fix round:
 - `src/vex-agent/tools/protocols/uniswap/handlers/swap/quote-handler.ts`
 - `src/vex-agent/tools/protocols/uniswap/handlers/swap/quote-safety.ts`
 - `src/vex-agent/tools/tool-surface-spec/balance-reads/swap-quality-2026-09-09.md`
+
+## Merged with v4
+
+Reconciliation of `3d9c6caa1` with the coordinator-started merge of
+`95dd1a4ce` (`origin/feat/uniswap-v4-direct`). No commit is made here.
+
+### Conflicts and resolutions
+
+- `rpc-transport.ts`: retained the module-owned `RpcRequestPacer`, Base quota
+  groups, cancellable admission, single-flight endpoint discovery and default
+  transport, and zero fallback retries. Signal-bearing requests instantiate
+  only their endpoint option bindings. Cancellation is propagated into the
+  shared pacer and checked before exhaustion classification, so AbortError
+  retains its identity and consumes no queued slot. No signal-bound instance
+  is cached or shared with another caller.
+- `fee-cap-gate.ts` and `execute.ts`: retained the measured 1500-bps quote-time
+  headroom and live repricing within the sealed ceiling. Exported the existing
+  prepared-request and live-cap assertions needed by the post-success fee leg.
+  Kept the typed exceeded, unreadable and pricing-mode refusals. No headroom is
+  added to an old snapshot at execution; no approval or floor is broadened.
+- Snapshot authority and execution: both canonical v4 binding fields and
+  independent price/route-hint fields remain in the digest. V4 uses its own
+  revalidation and never receives a V2/V3 route hint. Old snapshots without a
+  hint still discover V2/V3 routes, without silently enabling v4. The approved
+  floor is compared before claim. The selected price reference remains sealed
+  through execution and reporting.
+- Execution result conflicts preserve timing, approved fee disclosure, v4
+  native settlement and reduced post-success fees, typed RPC/revert facts,
+  and the separate post-refusal output diagnostic. The diagnostic cannot sign
+  or change the approved request; timeout remains three seconds.
+- `mapper.ts` retains independent-reference estimates and v4 route disclosure.
+  Slippage remediation remains re-quote at the same slippage first, increasing
+  only within the user's stated limit or after fresh authorization.
+- Guidance, protocol declarations, module docs and generated artifacts now
+  consistently describe V2/V3/v4. KyberSwap stays the usual default; Robinhood
+  quotes both venues when both price the pair and prefers direct Uniswap when
+  it has a route, explaining the quiet-pool index and lagging USD reference.
+  The same swap section was shortened by restating complete instructions;
+  no content is cut at runtime and no byte or slippage ceiling was increased.
+  Prompt snapshots and AGENTS/VEXGUIDE goldens were regenerated with
+  `UPDATE_PROMPTSNAPS=true` and `UPDATE_TOOLSNAPS=true` respectively.
+- The KyberSwap wrapped-native registry header now acknowledges pricing use;
+  its addresses and execution permissions are unchanged.
+
+### Typed ledger refusal
+
+Added the closed `fee_bound_refused` code because the existing vocabulary
+could not distinguish a local fee-bound refusal from a router revert or an
+unknown failure. Migration 159 expands the SQL constraint and restricts this
+code to failed, hashless rows. The TypeScript vocabulary and lockstep test
+change together; the packaged migration mirror is regenerated through
+`node vex-app/scripts/copy-migrations.mjs`. Existing rows are not rewritten.
+Deploy the expanded vocabulary before its writer; retain that vocabulary
+while recorded rows use it when rolling back application code.
+
+The affected unsigned leg is finalized with the sanitized typed reason before
+remaining unsigned plans are aborted. Cleanup cannot overwrite its code.
+The result also names the specific fee refusal kind and whether a fresh read
+can help. Nothing signs or broadcasts on this path. A confirmed earlier leg
+is unaffected, and this change does not retry a fee or a swap.
+
+### Reference and size decisions
+
+Re-read the wallet-reference audit and the existing MetaMask rpc-service
+failure/retry policy and its tests, plus VS Code async cancellation/timeout
+races and their tests. Adopted explicit error classification and cleanup on
+both race outcomes. Rejected copying their retry/circuit-breaker policies or
+sharing caller cancellation with unrelated work. The existing Vex owners
+already enforce signing authority and endpoint-specific retry rules.
+
+No edited production module crosses 750 lines. The managed-block test was
+already above 750 lines; its changes reconcile existing assertions in that
+single generated-document contract suite, so no new lifecycle or policy owner
+justifies extracting a facade. Generated snapshots/goldens remain renderer
+outputs. This chronological audit remains one document.
+
+### Verification
+
+Live read-only pinned-transport smoke on 2026-09-10 at 16:31 UTC:
+Robinhood 4663 returned block 59547818 in 1713 ms; Base 8453 returned block
+51134270 in 908 ms. Calls were sequential, with chain identity probes and one
+block read per chain. No wallet, signature or broadcast was accessed.
+
+The new concurrent regression exercises real public clients and HTTP transport
+forwarding: cancelling a queued request on both read and pinned transports
+preserves AbortError, does not become exhaustion, leaves another signal live,
+and dispatches surviving same-client and peer-client requests at the shared
+250-ms intervals without reserving the cancelled slot. Added regressions also
+cover typed fee ledger writes, cleanup ordering, real-Postgres persistence,
+and v4 snapshot construction alongside independent prices.
+
+Gate results:
+
+- Initial requested broad group: 836 files passed, 2 failed, 7 skipped;
+  13,520 tests passed, 10 failed, 23 skipped. Failures were four stale tool
+  snapshots and six static prompt budgets, each 12 bytes above its unchanged
+  ceiling. The Uniswap preview sentence was shortened without removing its
+  contract, and the artifacts were regenerated.
+- Corrected prompt/tool/golden contracts: 5 files, 447 tests passed.
+- Initial full root suite (`pnpm test --maxWorkers=3`): 1,490 files passed,
+  1 failed, 18 skipped; 22,214 tests passed, 1 failed, 75 skipped. The one
+  failure was the MCP inventory's four description-byte counts. Regenerated
+  with `UPDATE_TOOLSNAPS=true`; its suite passed all 3 tests. A final full
+  root run is recorded below.
+- Final full root suite (`pnpm test --maxWorkers=3`): exit 0; 1,491 files
+  passed, 18 skipped; 22,215 tests passed, 75 skipped, in 548.21 seconds.
+  This pass covers the corrected artifacts and the complete requested broad
+  group. No implementation change followed the passing type or app gates.
+- `pnpm run check:em-dash`, `pnpm run test:unsafe-escapes` and
+  `git diff --check`: exit 0 on the completed reconciliation. No compiler,
+  test baseline, dependency or static prompt ceiling was increased.
+- `pnpm run test:studio-postgres --maxWorkers=3`: exit 0; 47 files passed,
+  599 tests passed and 31 skipped. Migration 159 applied and the typed refusal
+  survived real repository cleanup.
+- `pnpm exec tsc --noEmit -p tsconfig.json`: exit 0, no diagnostics.
+- From `vex-app`, `pnpm run lint`: exit 0. Strict projects and process
+  boundaries passed; the type ratchet retained 312 known baseline errors
+  with no increase. No baseline or compiler setting was changed.
+- From `vex-app`, `VEX_REQUIRE_BRIDGE_CONFORMANCE=1 pnpm test --maxWorkers=3`:
+  exit 0; 878 files passed, 10 skipped; 12,119 tests passed, 29 skipped.
+  The Linux bridge conformance prerequisite was required, not silently skipped.
+- Linux bridge prerequisite: `PATH=/home/kubas/.local/go/bin:$PATH
+  GOCACHE=/tmp/swap-merge-go-cache GOMODCACHE=/tmp/swap-merge-go-mod
+  GOFLAGS=-p=1 GOMAXPROCS=1 bash bridge/build.sh linux amd64`: exit 0 using
+  the repository-pinned Go 1.27.0. This enables the app's CI conformance flag.
+
+Staging was attempted for all 28 resolved conflict files. The session's
+filesystem policy makes `/home/kubas/Vex/.git/worktrees/swap-quality` read-only,
+so `git add` failed creating `index.lock`. No workaround or git-state change
+was attempted. The coordinator must stage the resolved files and additions;
+the worktree contents are preserved and contain no conflict markers.
+
+### Gate commands for the merged tree
+
+Before each verifier, `pgrep -f "vitest|tsc --noEmit" --ignore-ancestors`
+reported no matches. This turn's Vitest and TypeScript processes were awaited
+sequentially. The app lint script also runs its compiler projects sequentially.
+The process runner isolates PID visibility, so these checks do not establish
+absence of processes outside the runner's namespace.
+
+```sh
+pnpm exec vitest run --maxWorkers=3 src/__tests__/tools src/__tests__/vex-agent/tools src/__tests__/vex-agent/engine/prompts src/__tests__/vex-agent/studio src/__tests__/vex-agent/agentscan src/__tests__/vex-agent/sync src/__tests__/vex-agent/db
+pnpm test --maxWorkers=3
+pnpm run test:studio-postgres --maxWorkers=3
+pnpm exec tsc --noEmit -p tsconfig.json
+pnpm run check:em-dash
+pnpm run test:unsafe-escapes
+git diff --check
+# From vex-app:
+pnpm run lint
+VEX_REQUIRE_BRIDGE_CONFORMANCE=1 pnpm test --maxWorkers=3
+```
+
+The required fee-cap search matched five test files; all were run in the
+initial affected gate and again by the root suite. The final root suite also
+subsumes every directory in the requested broad group.
+
+### Reconciliation file inventory
+
+The following 55 files differ from the coordinator-created automatic merge
+result, including the two new source files. Incoming v4 files that required
+no reconciliation are not counted here.
+
+```text
+src/__tests__/integration/agent-scan/agent-activity-staged-broadcast.int.test.ts
+src/__tests__/tools/evm-chains/rpc-shared-pacing.test.ts
+src/__tests__/vex-agent/db/repos/agent-activity-failure-code-lockstep.test.ts
+src/__tests__/vex-agent/engine/prompts/protocol-declarations.test.ts
+src/__tests__/vex-agent/studio/managed-block.test.ts
+src/__tests__/vex-agent/studio/vex-guide.test.ts
+src/__tests__/vex-agent/tools/uniswap-handlers/v4-binding.test.ts
+src/__tests__/vex-agent/tools/uniswap-pre-sign-revert-refusal.test.ts
+src/__tests__/vex-agent/tools/uniswap-quote-bound-execute.test.ts
+src/tools/evm-chains/rpc-transport.ts
+src/tools/kyberswap/KyberSwap.md
+src/tools/kyberswap/wrapped-native.ts
+src/tools/uniswap/Uniswap.md
+src/tools/uniswap/execute.ts
+src/tools/uniswap/fee-cap-gate.ts
+src/utils/error-summary/remediation.ts
+src/vex-agent/agentscan/mapper.ts
+src/vex-agent/db/migrations/159_agent_activity_fee_bound_refusal.sql
+src/vex-agent/db/repos/agent-activity/types/status-and-failure.ts
+src/vex-agent/db/repos/agent-activity/validation.ts
+src/vex-agent/engine/prompts/__promptsnaps__/agent-full.jupiter.md
+src/vex-agent/engine/prompts/__promptsnaps__/agent-full.nojupiter.md
+src/vex-agent/engine/prompts/__promptsnaps__/agent-restricted.jupiter.md
+src/vex-agent/engine/prompts/__promptsnaps__/agent-restricted.nojupiter.md
+src/vex-agent/engine/prompts/__promptsnaps__/mission-run-full.jupiter.md
+src/vex-agent/engine/prompts/__promptsnaps__/mission-run-full.nojupiter.md
+src/vex-agent/engine/prompts/__promptsnaps__/mission-run-restricted.jupiter.md
+src/vex-agent/engine/prompts/__promptsnaps__/mission-run-restricted.nojupiter.md
+src/vex-agent/engine/prompts/__promptsnaps__/mission-setup-full.jupiter.md
+src/vex-agent/engine/prompts/__promptsnaps__/mission-setup-full.nojupiter.md
+src/vex-agent/engine/prompts/__promptsnaps__/mission-setup-restricted.jupiter.md
+src/vex-agent/engine/prompts/__promptsnaps__/mission-setup-restricted.nojupiter.md
+src/vex-agent/mcp/__toolsnaps__/studio-exported-surface.json
+src/vex-agent/studio/installer/render/__goldens__/AGENTS.fresh.md
+src/vex-agent/studio/installer/render/__goldens__/AGENTS.merged.md
+src/vex-agent/studio/installer/render/__goldens__/VEXGUIDE.fresh.md
+src/vex-agent/studio/installer/render/__goldens__/VEXGUIDE.merged.md
+src/vex-agent/studio/instructions/project-brief.ts
+src/vex-agent/tools/__toolsnaps__/kyberswap__swap_execute.json
+src/vex-agent/tools/__toolsnaps__/kyberswap__swap_quote.json
+src/vex-agent/tools/__toolsnaps__/uniswap__swap_execute.json
+src/vex-agent/tools/__toolsnaps__/uniswap__swap_quote.json
+src/vex-agent/tools/protocols/navigation/entries-market/uniswap.ts
+src/vex-agent/tools/protocols/quote-authority/uniswap.ts
+src/vex-agent/tools/protocols/uniswap/handlers/swap/activity-recording.ts
+src/vex-agent/tools/protocols/uniswap/handlers/swap/execute-broadcast.ts
+src/vex-agent/tools/protocols/uniswap/handlers/swap/execute-failure.ts
+src/vex-agent/tools/protocols/uniswap/handlers/swap/execute-handler.ts
+src/vex-agent/tools/protocols/uniswap/handlers/swap/execution-binding.ts
+src/vex-agent/tools/protocols/uniswap/handlers/swap/fee-refusal.ts
+src/vex-agent/tools/protocols/uniswap/handlers/swap/quote-handler.ts
+src/vex-agent/tools/protocols/uniswap/handlers/swap/route-quote.ts
+src/vex-agent/tools/registry/swap-venue-guidance.ts
+src/vex-agent/tools/tool-surface-spec/balance-reads/swap-quality-2026-09-09.md
+src/vex-agent/tools/tool-surface-spec/studio-mcp/exported-tools.md
+```

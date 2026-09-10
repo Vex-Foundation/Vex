@@ -162,9 +162,9 @@ function remedyFor(failureCode: EvmRouterRevertFailureCode, slippage: PreSignSli
     case "deadline_expired":
       return `The quote's deadline had already passed when the estimate ran. Get a fresh quote and execute it promptly; that alone can succeed.`;
     case "allowance_or_balance":
-      return `The wallet's balance, or the router's allowance for the input token, was short at estimate time. Check both and reduce the amount if needed — repeating the same request unchanged will be refused the same way.`;
+      return `The wallet's balance, or the router's allowance for the input token, was short at estimate time. Check both and reduce the amount if needed - repeating the same request unchanged will be refused the same way.`;
     case "insufficient_liquidity":
-      return `The pool cannot fill this size at all. Retry with a smaller amountIn, or route through a different pair or venue — repeating the same request unchanged will be refused the same way.`;
+      return `The pool cannot fill this size at all. Retry with a smaller amountIn, or route through a different pair or venue - repeating the same request unchanged will be refused the same way.`;
     default:
       return `No specific remedy is known for that reason. Get a fresh quote and try once more, since the route may simply have gone stale; if a fresh quote is refused the same way, treat this route as unavailable and try another pair or venue rather than repeating it.`;
   }
@@ -182,10 +182,12 @@ export function preSignRefusalGuidance(input: {
   readonly revertReason: string;
   readonly failureCode: EvmRouterRevertFailureCode;
   readonly slippage: PreSignSlippageBounds;
+  /** Venue-decoded custom errors may have a more specific, source-verified remedy. */
+  readonly remedy?: string;
 }): string {
   return `Nothing was signed or broadcast for this step, so it moved no funds and re-running cannot duplicate it. `
     + `The pre-sign gas estimate was refused on-chain: ${input.revertReason}. `
-    + remedyFor(input.failureCode, input.slippage);
+    + (input.remedy ?? remedyFor(input.failureCode, input.slippage));
 }
 
 /**
@@ -213,6 +215,6 @@ export function dependentLegPoolStateRefusalGuidance(input: {
     failureCode: input.failureCode,
     slippage: input.slippage,
   })
-    + ` For the record: the estimate was retried ${input.error.attempts} times after the previous step confirmed on-chain at block ${input.error.priorLegBlockNumber} — the wait that exists to absorb an RPC still catching up to that step — and the refusal survived it. `
+    + ` For the record: the estimate was retried ${input.error.attempts} times after the previous step confirmed on-chain at block ${input.error.priorLegBlockNumber} - the wait that exists to absorb an RPC still catching up to that step - and the refusal survived it. `
     + `A node behind the head would read the pool at an EARLIER block, closer to this quote, so lag cannot produce this reason: re-quoting is the move, not re-running the identical request.`;
 }

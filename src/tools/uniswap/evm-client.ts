@@ -28,6 +28,7 @@ import {
   http,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { getEvmNativeCurrency } from "@tools/evm-chains/native-currency.js";
 import { getLocalChain } from "@tools/evm-chains/registry.js";
 import { getLocalEvmClients, getLocalPublicClient } from "@tools/evm-chains/evm-client.js";
 import { resolveRpcEndpoints } from "@tools/evm-chains/rpc-endpoints.js";
@@ -47,10 +48,12 @@ function toViemChain(deployment: UniswapDeployment): Chain {
   if (first === undefined) {
     throw new Error(`Uniswap: no RPC endpoint is bundled or configured for chain ${deployment.chainId}.`);
   }
+  const nativeCurrency = getEvmNativeCurrency(deployment.chainId);
+  if (!nativeCurrency) throw new Error(`Uniswap: native currency is unknown for chain ${deployment.chainId}.`);
   return defineChain({
     id: deployment.chainId,
     name: deployment.name,
-    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    nativeCurrency,
     rpcUrls: { default: { http: [first.url] } },
   });
 }

@@ -40,6 +40,7 @@
  * section E0.
  */
 
+import { rpcReadFailureOf } from "./rpc-read-failure.js";
 import { serializeTransaction, type Address, type Hex } from "viem";
 
 /**
@@ -354,7 +355,8 @@ export async function estimateL1DataFee(
       };
     }
     return { kind: "priced", capability, additionalWei: answer };
-  } catch {
+  } catch (error) {
+    if (rpcReadFailureOf(error)) throw error;
     // The provider's own text never travels: it is uncontrolled payload, and
     // the caller's decision is the same whatever it says (rule 04 error layers).
     return { kind: "unavailable", chainId: request.chainId, cause: "l1_data_fee_oracle_read_failed" };

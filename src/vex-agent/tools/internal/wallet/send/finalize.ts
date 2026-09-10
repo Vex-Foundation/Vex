@@ -117,9 +117,9 @@ export async function finalizeOutcome(
       );
     case "pre_broadcast_failed":
       await markFailedChecked(intentId, sessionId, outcome, null);
-      return fail(
-        `Wallet transfer failed before broadcast. Error hash: ${outcome.errorHash}.`,
-      );
+      return outcome.nonceRefusal
+        ? failWith(outcome.nonceRefusal.message, outcome.nonceRefusal)
+        : fail(`Wallet transfer failed before broadcast. Error hash: ${outcome.errorHash}.`);
   }
 }
 

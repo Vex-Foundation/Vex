@@ -27,6 +27,8 @@ import { readStandingInForTheParams } from "./_uniswap-approved-snapshot.js";
 import { ExecutionRevertedError } from "viem";
 import { VexError, ErrorCodes } from "../../../errors.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import { rpcExhaustionFixture } from "../../tools/evm-chains/rpc-exhaustion.fixture.js";
+import { RpcReadExhaustedError } from "@tools/evm-chains/rpc-read-failure.js";
 
 const TOKEN_IN = "0x8Ff92566f2e81BDd68EDfAa8cde73942A723796b";
 const TOKEN_OUT = "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31";
@@ -49,6 +51,8 @@ const abortPlannedEvents = vi.fn();
 const decodeUniswapExecutedLegs = vi.fn();
 const clearUniswapPairReveal = vi.fn();
 const waitForSuccessfulReceipt = vi.fn();
+
+const LIVE_FLOOR_REVERT = "0x8b063d7300000000000000000000000000000000000000000000000000000000000788b8000000000000000000000000000000000000000000000000000000000003c45c";
 
 // The fee-eligibility oracle (migration 066's `swap_fee` leg) is a token fact,
 // never a live network call in a unit test.
@@ -215,6 +219,88 @@ beforeEach(() => {
   abortPlannedEvents.mockResolvedValue(undefined);
   pinTrackedToken.mockResolvedValue({ inserted: true });
   getLocalChain.mockReturnValue({ chainId: 4663 });
+});
+
+describe("Uniswap pre-sign diagnostic evidence", () => {
+  it("keeps an exhausted fee-read class through the fee-market wrapper after intent creation", async () => {
+    const { UniswapLiveFeeRequirementUnreadableError } = await import("@tools/uniswap/execute.js");
+    signUniswapTransaction.mockRejectedValueOnce(new UniswapLiveFeeRequirementUnreadableError(
+      new RpcReadExhaustedError(4663, "rate_limited", "eth_maxPriorityFeePerGas", new Error("fixture"))));
+    const result = await execute(SWAP_ONLY_PARAMS, context);
+    expect(result.data).toMatchObject({ status: "not_attempted", retryable: true, failureCode: "rate_limited" });
+    expect(failActivityEvent).toHaveBeenCalledWith(100, expect.objectContaining({ failureCode: "rate_limited" }));
+    expect(markActivityBroadcast).not.toHaveBeenCalled();
+    expect(broadcastUniswapTransaction).not.toHaveBeenCalled();
+  });
+  it("records exhausted preflight reads as rate_limited without calling a signer", async () => {
+    const fixture = await rpcExhaustionFixture(4663);
+    try {
+      const { readUniswapErc20Metadata } = await import("@tools/uniswap/erc20.js");
+      vi.mocked(readUniswapErc20Metadata).mockImplementationOnce(async () => {
+        await fixture.client.getBalance({ address: WALLET });
+        throw new Error("The refusing fixture unexpectedly answered");
+      });
+      const result = await execute(SWAP_ONLY_PARAMS, context);
+      expect(result.data).toMatchObject({ status: "not_attempted", retryable: true, failureCode: "rate_limited" });
+      expect(result.output).toContain("chain 4663");
+      expect(result.output).toContain("Settings > Chain endpoints > EVM RPC URL");
+      expect(result.output).not.toMatch(/Request body|viem@|\[url\]|\[body\]/);
+      expect(createAgentActivityPreBroadcastFailure).toHaveBeenCalledWith(expect.objectContaining({
+        event: expect.objectContaining({ failureCode: "rate_limited", failureReason: expect.stringContaining("Nothing was signed") }),
+      }));
+      // Provider-supplied endpoints retain their declared two read retries;
+      // the failover chain itself must not multiply that budget.
+      for (const methods of fixture.seen) expect(methods.filter(m => m !== "eth_chainId")).toEqual(Array(3).fill("eth_getBalance"));
+      expect(signUniswapTransaction).not.toHaveBeenCalled();
+      expect(broadcastUniswapTransaction).not.toHaveBeenCalled();
+    } finally { await fixture.close(); }
+  });
+  it("keeps a real Base custom revert in the output, activity failure and execution result", async () => {
+    signUniswapTransaction.mockRejectedValueOnce(new Error("estimate refused", { cause: { code: 3, data: LIVE_FLOOR_REVERT } }));
+    const result = await execute(SWAP_ONLY_PARAMS, context);
+    expect(result.output).toContain("V4TooLittleReceived");
+    expect(result.output).toContain("0x8b063d73");
+    expect(result.output).toContain("slippageBps");
+    expect(result.data).toMatchObject({ status: "not_attempted", failureCode: "slippage",
+      revert: { data: LIVE_FLOOR_REVERT, selector: "0x8b063d73", errorName: "V4TooLittleReceived" } });
+    expect(failActivityEvent).toHaveBeenCalledWith(100, expect.objectContaining({
+      failureCode: "slippage", failureReason: expect.stringContaining("V4TooLittleReceived") }));
+    expect(broadcastUniswapTransaction).not.toHaveBeenCalled();
+    expect(markActivityBroadcast).not.toHaveBeenCalled();
+  });
+
+  it("keeps unknown revert data in full and does not advise widening slippage", async () => {
+    const data = `0x12345678${"ab".repeat(300)}`;
+    signUniswapTransaction.mockRejectedValueOnce({ cause: { code: 3, data } });
+    const result = await execute(SWAP_ONLY_PARAMS, context);
+    expect(result.output).toContain(data);
+    expect(result.data).toMatchObject({ failureCode: "simulation_reverted", revert: { data, selector: "0x12345678" } });
+    expect(result.output).toContain("different route");
+    expect(result.output).not.toContain("slippageBps");
+    expect(broadcastUniswapTransaction).not.toHaveBeenCalled();
+  });
+
+  it("renders a local VexError reason without falsely calling it an on-chain estimate revert", async () => {
+    signUniswapTransaction.mockRejectedValueOnce(new VexError(ErrorCodes.SWAP_FAILED,
+      "Transaction preparation did not resolve a nonce", "Check the pinned RPC nonce response"));
+    const result = await execute(SWAP_ONLY_PARAMS, context);
+    expect(result.output).toContain("Transaction preparation did not resolve a nonce");
+    expect(result.output).toContain("Check the pinned RPC nonce response");
+    expect(result.output).not.toContain("VexError");
+    expect(result.output).not.toContain("refused on-chain");
+    expect(result.data).toMatchObject({ status: "not_attempted", failureReason: "Transaction preparation did not resolve a nonce" });
+    expect(broadcastUniswapTransaction).not.toHaveBeenCalled();
+  });
+
+  it("retains the complete scrubbed diagnostic beyond the ordinary error-summary display cap", async () => {
+    const reason = "The node could not resolve transaction preparation. ".repeat(12) + "Final diagnostic retained";
+    signUniswapTransaction.mockRejectedValueOnce(new VexError(ErrorCodes.SWAP_FAILED, reason));
+    const result = await execute(SWAP_ONLY_PARAMS, context);
+    expect(result.output).toContain(reason);
+    expect(result.data?.failureReason).toBe(reason);
+    expect(result.output).not.toContain("…");
+    expect(broadcastUniswapTransaction).not.toHaveBeenCalled();
+  });
 });
 
 describe("uniswap.swap.execute — a sign-time revert is a refusal, not a failed trade", () => {
@@ -436,5 +522,23 @@ describe("uniswap.swap.execute — a broadcast of unknown outcome still says do 
     expect(result.output).toMatch(/do not retry/i);
     expect(result.output).not.toMatch(/nothing was signed/i);
     expect(failActivityEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe("fee-bound refusals retain a typed ledger cause", () => {
+  it.each(["prepared", "live", "mode", "unreadable"] as const)("records %s refusal without a signature or broadcast", async (kind) => {
+    const fees = await import("@tools/uniswap/fee-cap-gate.js");
+    const error = kind === "prepared" ? new fees.UniswapFeeCapExceededError("gasPrice", "1151", "1150")
+      : kind === "live" ? new fees.UniswapApprovedGasPriceExceededError("gasPrice", "1151", "1150")
+      : kind === "mode" ? new fees.UniswapApprovedGasPricingModeChangedError("legacy", "eip1559")
+      : new fees.UniswapLiveFeeRequirementUnreadableError(new Error("provider payload must stay private"));
+    signUniswapTransaction.mockRejectedValueOnce(error);
+    const result = await execute(SWAP_ONLY_PARAMS, context);
+    expect(result.data).toMatchObject({ status: "not_attempted", failureCode: "fee_bound_refused", retryable: kind === "unreadable" });
+    expect(failActivityEvent).toHaveBeenCalledWith(100, expect.objectContaining({ failureCode: "fee_bound_refused", failureReason: error.message }));
+    expect(failActivityEvent.mock.invocationCallOrder[0]).toBeLessThan(abortPlannedEvents.mock.invocationCallOrder[0] ?? Infinity);
+    expect(result.output).not.toContain("provider payload");
+    expect(markActivityBroadcast).not.toHaveBeenCalled();
+    expect(broadcastUniswapTransaction).not.toHaveBeenCalled();
   });
 });

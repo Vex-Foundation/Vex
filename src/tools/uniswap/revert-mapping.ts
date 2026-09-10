@@ -1,3 +1,5 @@
+import { EvmNonceReservationExpiredError } from "../evm-chains/nonce-reservation-scope.js";
+import { EvmNonceMismatchError } from "../evm-chains/nonce-signing-guard.js";
 /**
  * Uniswap revert/error → failure-code mapping (plan §8.2), captured from the
  * SIGN-time path only (never the broadcast/send stage — C29, see
@@ -20,6 +22,8 @@
  * `src/tools/**` still never depends on `src/vex-agent/**`.
  */
 
+import { classifyV4Revert, type UniswapRevertEvidence } from "./v4-revert.js";
+import { rpcReadFailureOf, preSignRpcRefusal, type RpcReadFailureClass } from "../evm-chains/rpc-read-failure.js";
 import {
   ExecutionRevertedError,
   FeeCapTooHighError,
@@ -42,12 +46,24 @@ import {
 import { VexError, ErrorCodes } from "../../errors.js";
 import { redact } from "../../lib/diagnostics/text-redaction.js";
 
-export type UniswapRevertFailureCode = EvmRouterRevertFailureCode;
+export type UniswapRevertFailureCode = EvmRouterRevertFailureCode | RpcReadFailureClass;
 
-export interface UniswapRevertClassification {
-  readonly failureCode: UniswapRevertFailureCode;
+export interface UniswapRouterRevertClassification {
+  readonly failureCode: EvmRouterRevertFailureCode;
   readonly failureReason: string;
+  readonly onChainRevert?: boolean;
+  readonly revert?: UniswapRevertEvidence;
+  readonly remedy?: string;
+  readonly rpcFailure?: false;
 }
+export type UniswapRevertClassification = UniswapRouterRevertClassification | {
+  readonly failureCode: RpcReadFailureClass;
+  readonly failureReason: string;
+  readonly rpcFailure: true;
+  readonly onChainRevert: false;
+  readonly remedy?: undefined;
+  readonly revert?: undefined;
+};
 
 /**
  * True iff any error in the `.cause` chain is an instance of one of the given
@@ -111,12 +127,23 @@ const BROADCAST_REJECTION_CLASSES = [
  * see `db/repos/agent-activity.ts`'s write protocol).
  */
 export function classifyUniswapRevertError(err: unknown): UniswapRevertClassification {
+  if (err instanceof EvmNonceMismatchError || err instanceof EvmNonceReservationExpiredError) return { failureCode: err.failureCode, failureReason: err.message, onChainRevert: false };
+  const rpc = rpcReadFailureOf(err);
+  // An unclassified node response may still carry a known contract error.
+  // Preserve that stronger evidence without overriding a proven quota failure.
+  if (rpc?.failureClass === "unknown") {
+    const decoded = classifyV4Revert(err);
+    if (decoded) return decoded;
+  }
+  if (rpc) return { failureCode: rpc.failureClass, failureReason: preSignRpcRefusal(rpc), rpcFailure: true, onChainRevert: false };
+  const v4 = classifyV4Revert(err);
+  if (v4) return v4;
   const reason = extractDecodedRevertReason(err);
   if (reason !== undefined) {
     const mapped = classifyRouterRevertReason(reason);
-    if (mapped) return { failureCode: mapped, failureReason: reason };
+    if (mapped) return { failureCode: mapped, failureReason: reason, onChainRevert: true };
     // A genuine, decoded on-chain revert we do not have a specific bucket for.
-    return { failureCode: "simulation_reverted", failureReason: reason };
+    return { failureCode: "simulation_reverted", failureReason: reason, onChainRevert: true };
   }
 
   if (chainIncludesInstanceOf(err, [InsufficientFundsError])) {
@@ -135,8 +162,15 @@ export function classifyUniswapRevertError(err: unknown): UniswapRevertClassific
 
   if (chainIncludesInstanceOf(err, [ExecutionRevertedError])) {
     // Reverted, but the node gave no decodable reason at all.
-    return { failureCode: "unknown", failureReason: "reverted with no reason available" };
+    return { failureCode: "unknown", failureReason: "reverted with no reason available", onChainRevert: true };
   }
+
+  if (err instanceof VexError) return {
+    failureCode: PRE_BROADCAST_CODE_TABLE.get(err.code) ?? "unknown",
+    failureReason: redact(err.message).text,
+    ...(err.hint ? { remedy: redact(err.hint).text } : {}),
+    onChainRevert: false,
+  };
 
   return {
     failureCode: "unknown",
@@ -145,7 +179,7 @@ export function classifyUniswapRevertError(err: unknown): UniswapRevertClassific
 }
 
 /** Pre-broadcast `VexError` code → failure code, for a validation/quote failure that never reached a signed payload. */
-const PRE_BROADCAST_CODE_TABLE: ReadonlyMap<string, UniswapRevertFailureCode> = new Map([
+const PRE_BROADCAST_CODE_TABLE: ReadonlyMap<string, EvmRouterRevertFailureCode> = new Map([
   [ErrorCodes.KYBER_UNSUPPORTED_CHAIN, "chain_unsupported"],
   [ErrorCodes.KYBER_ROUTE_NOT_FOUND, "route_not_found"],
   [ErrorCodes.KYBER_TOKEN_NOT_FOUND, "route_not_found"],
@@ -163,6 +197,8 @@ const PRE_BROADCAST_CODE_TABLE: ReadonlyMap<string, UniswapRevertFailureCode> = 
  * re-redacts unconditionally regardless of what a caller passes).
  */
 export function classifyPreBroadcastFailure(err: unknown): UniswapRevertClassification {
+  const rpc = rpcReadFailureOf(err);
+  if (rpc) return { failureCode: rpc.failureClass, failureReason: preSignRpcRefusal(rpc), rpcFailure: true, onChainRevert: false };
   if (err instanceof VexError) {
     const mapped = PRE_BROADCAST_CODE_TABLE.get(err.code);
     if (mapped) return { failureCode: mapped, failureReason: redact(err.message).text };

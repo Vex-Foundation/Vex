@@ -82,6 +82,7 @@ function clients(estimate: bigint | Error) {
   const sendRawTransaction = vi.fn(async () => TX_HASH);
   return {
     publicClient: {
+      getTransactionCount: async () => 7,
       estimateGas,
       sendRawTransaction,
       // The receipt is irrelevant to gas: these cases end at the signed bytes.

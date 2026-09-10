@@ -19,6 +19,8 @@ import { redact } from "../../../../lib/diagnostics/text-redaction.js";
 import type { AgentActivityFailureCode } from "./types.js";
 
 export const CLOSED_FAILURE_CODES: ReadonlySet<string> = new Set<AgentActivityFailureCode>([
+  "fee_bound_refused",
+  "archive_gated", "range_capped", "rate_limited", "compute_budget", "method_unsupported", "transport",
   "route_not_found",
   "slippage",
   "deadline_expired",

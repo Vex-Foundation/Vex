@@ -62,11 +62,14 @@ const ATOMIC_INTEGER = /^\d+$/;
 const MAX_ATOMIC_DIGITS = 80;
 
 /**
- * The most legs any venue on this lane plans: allowance reset, allowance, swap,
- * fee transfer. A bound, not a cut - a longer list is refused as unreadable
- * rather than silently shortened.
+ * Ordinary swap plans have at most four legs. Only the complete Permit2 plan
+ * needs a fifth: token reset, token approval, Permit2 approval, swap and fee.
+ * This exception must not admit longer ordinary plans or duplicate fee legs.
  */
-export const MAX_BOUND_DEBIT_LEGS = 4;
+export const MAX_BOUND_DEBIT_LEGS = 5;
+const STANDARD_BOUND_DEBIT_LEGS = 4;
+const FULL_PERMIT2_PLAN = ["allowance_reset", "allowance", "permit2_allowance", "swap", "swap_fee"] as const;
+const LEG_LIMIT_REFUSAL = "debit_plan_leg_limit: only the ordered Permit2 plan may contain five legs";
 
 const atomicString = z.string().regex(ATOMIC_INTEGER).max(MAX_ATOMIC_DIGITS);
 
@@ -151,7 +154,7 @@ export interface BoundDebitPlan {
   readonly reserve: BoundDebitReserve;
 }
 
-const legRoleSchema = z.enum(["allowance_reset", "allowance", "swap", "swap_fee"]);
+const legRoleSchema = z.enum(["allowance_reset", "allowance", "permit2_allowance", "swap", "swap_fee"]);
 const legGasPricingSchema = z.enum(["measured", "conservative"]);
 
 /**
@@ -172,7 +175,9 @@ export const boundDebitPlanSchema = z.object({
       }),
     )
     .min(1)
-    .max(MAX_BOUND_DEBIT_LEGS),
+    .max(MAX_BOUND_DEBIT_LEGS, LEG_LIMIT_REFUSAL)
+    .refine(legs => legs.length <= STANDARD_BOUND_DEBIT_LEGS
+      || legs.every((leg, index) => leg.role === FULL_PERMIT2_PLAN[index]), LEG_LIMIT_REFUSAL),
   reserve: z.object({
     kind: z.literal("zero_value_self_transfer"),
     feeCap: boundFeeCapSchema,

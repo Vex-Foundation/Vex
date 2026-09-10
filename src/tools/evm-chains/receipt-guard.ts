@@ -1,3 +1,4 @@
+import { receiptWaitDeadlineMs, ReceiptWaitDeadlineError } from "./receipt-wait-policy.js";
 /**
  * Receipt confirmation guard for state-changing EVM operations.
  *
@@ -24,7 +25,15 @@ import type {
 
 import { ErrorCodes, VexError } from "../../errors.js";
 
-export type ReceiptWaitClient = Pick<PublicClient, "waitForTransactionReceipt">;
+/** A receipt for another hash cannot silently confirm the staged transaction. */
+export class UnattributedReceiptReplacementError extends Error {
+  constructor() {
+    super("A replacement transaction was observed. Its receipt does not establish the original transaction's outcome; reconciliation must resolve the original hash. Do not rebroadcast.");
+    this.name = "UnattributedReceiptReplacementError";
+  }
+}
+
+export type ReceiptWaitClient = Pick<PublicClient, "waitForTransactionReceipt"> & Partial<Pick<PublicClient, "chain">>;
 
 /**
  * Total attempts at the receipt wait, the first included. Small on purpose:
@@ -43,7 +52,7 @@ export interface ReceiptWaitRetryOptions {
   readonly delayMs?: number;
   /** Total wait calls, including the first. Defaults to the shared bounded limit. */
   readonly attempts?: number;
-  /** Optional viem polling timeout for each wait call. */
+  /** Total budget across all wait attempts, capped by the chain receipt policy. */
   readonly timeoutMs?: number;
 }
 
@@ -77,7 +86,9 @@ export async function waitForReceiptWithRetry(
   hash: Hex,
   options?: ReceiptWaitRetryOptions,
 ): Promise<TransactionReceipt> {
-  return (await waitForReceiptWithReplacementEvidence(client, hash, options)).receipt;
+  const result = await waitForReceiptWithReplacementEvidence(client, hash, options);
+  if (result.replacement !== null) throw new UnattributedReceiptReplacementError();
+  return result.receipt;
 }
 
 /** Same bounded receipt read, preserving any provider-proven replacement. */
@@ -97,23 +108,35 @@ export async function waitForReceiptWithReplacementEvidence(
   ) {
     throw new Error("Receipt wait timeout must be a positive integer.");
   }
+  const deadlineMs = Math.min(options?.timeoutMs ?? Infinity, receiptWaitDeadlineMs(client.chain?.id));
+  const started = performance.now();
+  const remaining = () => Math.max(0, deadlineMs - (performance.now() - started));
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     let replacement: ReceiptReplacementEvidence | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const receipt = await client.waitForTransactionReceipt({
+      const budget = remaining();
+      if (budget <= 0) throw new ReceiptWaitDeadlineError();
+      const deadline = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new ReceiptWaitDeadlineError()), budget);
+      });
+      const receipt = await Promise.race([deadline, client.waitForTransactionReceipt({
         hash,
-        ...(options?.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
+        timeout: Math.max(1, Math.floor(budget)),
         onReplaced: (value) => {
           replacement = projectReplacement(value);
         },
-      });
+      })]);
       return { receipt, replacement };
     } catch (err) {
       lastError = err;
+      if (err instanceof ReceiptWaitDeadlineError || remaining() <= 0) throw new ReceiptWaitDeadlineError();
       if (attempt < attempts) {
-        await delay(baseDelayMs * 2 ** (attempt - 1));
+        await delay(Math.min(remaining(), baseDelayMs * 2 ** (attempt - 1)));
       }
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
     }
   }
   throw lastError;
@@ -158,7 +181,9 @@ export async function waitForSuccessfulReceipt(
   } catch (err) {
     const unknownConfirmation = new VexError(
       ErrorCodes.CONFIRMATION_UNKNOWN,
-      `Transaction ${hash} was broadcast but its confirmation could not be determined. It may still confirm on-chain.`,
+      err instanceof UnattributedReceiptReplacementError
+        ? `A replacement receipt was observed while waiting for transaction ${hash}. It does not prove the original transaction's outcome; reconciliation continues.`
+        : `Transaction ${hash} was broadcast but its confirmation could not be determined. It may still confirm on-chain.`,
       "Do not retry automatically. Check the transaction hash on-chain before taking any further action.",
     );
     // The cause is KEPT (SPEC §1.5). This fires on an ALREADY-BROADCAST

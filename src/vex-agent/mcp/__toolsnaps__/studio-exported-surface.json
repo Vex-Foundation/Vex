@@ -4895,7 +4895,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 3910,
+      "descriptionBytes": 4087,
       "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
@@ -4956,7 +4956,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 3788,
+      "descriptionBytes": 3965,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -12100,7 +12100,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 3389,
+      "descriptionBytes": 4069,
       "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
@@ -12156,12 +12156,12 @@
       "publicName": "uniswap__swap_execute",
       "readOnlyHint": false,
       "requiresEnv": null,
-      "title": "Execute a Uniswap V2/V3 swap",
+      "title": "Execute a Uniswap V2/V3/v4 swap",
       "toolId": "uniswap.swap.execute"
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 4391,
+      "descriptionBytes": 5290,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -12217,7 +12217,7 @@
       "publicName": "uniswap__swap_quote",
       "readOnlyHint": true,
       "requiresEnv": null,
-      "title": "Quote a Uniswap V2/V3 route",
+      "title": "Quote a Uniswap V2/V3/v4 route",
       "toolId": "uniswap.swap.quote"
     },
     {

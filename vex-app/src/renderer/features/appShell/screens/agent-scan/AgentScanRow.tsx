@@ -44,14 +44,16 @@ function LegText({
   amount,
   symbol,
   estimated,
+  bound = false,
 }: {
   readonly amount: string | null;
   readonly symbol: string;
   readonly estimated: boolean;
+  readonly bound?: boolean;
 }): JSX.Element {
   const shown = amount !== null && estimated ? `~${amount}` : amount;
   return (
-    <span className="truncate">
+    <span className={bound ? "min-w-0 whitespace-normal break-all" : "truncate"}>
       {shown !== null ? `${shown} ` : ""}
       {symbol}
     </span>
@@ -85,6 +87,7 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
 
   const protocolMark = resolveProtocolMark(entry.protocol);
   const estimated = isEstimatedBasis(entry);
+  const hasNativeBound = entry.input.amountBasis === "lower_bound";
   const route = chainRouteText(entry);
   const clock = entryClockText(entry.createdAt);
   const usd = primaryUsdEstText(entry);
@@ -196,11 +199,12 @@ export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX
           />
         ) : null}
 
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap font-mono text-[11.5px] leading-none text-ink-primary">
+        <span className={`flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[11.5px] text-ink-primary ${hasNativeBound ? "flex-wrap whitespace-normal leading-relaxed" : "overflow-hidden whitespace-nowrap leading-none"}`}>
           <LegText
             amount={legAmountText(entry.input)}
             symbol={legSymbolText(entry.input)}
             estimated={estimated}
+            bound={hasNativeBound}
           />
           <span className="shrink-0 text-ink-tertiary">→</span>
           <LegText

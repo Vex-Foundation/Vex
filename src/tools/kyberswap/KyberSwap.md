@@ -1,5 +1,11 @@
 # KyberSwap Module Map — Multi-Chain EVM Aggregator Swaps
 
+KyberSwap is the usual first choice. On Robinhood Chain, quote both venues when
+both price the pair and prefer direct Uniswap when it has a route. KyberSwap's
+index drops quiet pools there and its USD reference can lag. Direct Uniswap
+covers V2, V3 and v4 on verified deployments; other DEX liquidity can be absent.
+Each execution requires that venue's matching approved quote.
+
 > **Last updated: 2026-07-22 (Agent Scan Phase 1 — limit orders, ZaaS/zap, and the phantom
 > `src/commands/kyberswap/` CLI references removed; staged swap.execute documented)**
 >
@@ -40,11 +46,12 @@ KyberSwap response body. Vex treats HTTP 401, 403 and 451 as terminal edge refus
 do not repeat the request unchanged on this venue. Retry the trade with
 `uniswap__swap_quote` then `uniswap__swap_execute` on the same chain, subject to
 the verified deployments in [Uniswap's registry](../uniswap/deployments.ts) and a
-fresh Uniswap quote and applicable approval. This venue prices Uniswap V2 and V3
-pools directly without KyberSwap; it cannot trade tokens whose only liquidity is
-in Uniswap v4 pools yet. Tell the user about that limitation instead of retrying
-KyberSwap. KyberSwap itself can route v4 pools on Base and Robinhood Chain
-(owner measurements, 2026-09-09), so its pool coverage exceeds this fallback's.
+fresh Uniswap quote and applicable approval. The direct venue prices Uniswap V2,
+V3 and v4 pools on its seven verified chains. A token can still be unavailable
+there when its liquidity sits on another DEX or outside direct discovery.
+Explain that gap instead of retrying blocked KyberSwap. Hookless v4 discovery
+probes the standard fee/tick-spacing combinations; hooked pools still depend on
+DexScreener indexing. KyberSwap aggregates other DEXes as well.
 
 ---
 

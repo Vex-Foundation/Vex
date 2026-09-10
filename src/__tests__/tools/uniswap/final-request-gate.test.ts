@@ -351,6 +351,7 @@ function harness(preparedFees: PreparedFees = { maxFeePerGas: 1_000_000n, maxPri
   const publicClient = Object.assign(
     createPublicClient({ chain: CHAIN, transport: transport() }),
     {
+      getTransactionCount: vi.fn(async () => 7),
       estimateGas: vi.fn(async () => 21_000n),
       // The chain's CURRENT suggestion. Read in the same order and from the
       // same actions the quote's ceiling was established with

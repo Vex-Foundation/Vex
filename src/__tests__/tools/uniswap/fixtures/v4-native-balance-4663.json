@@ -1,0 +1,111 @@
+{
+  "provenance": {
+    "chainId": 4663,
+    "rpc": "https://rpc.mainnet.chain.robinhood.com",
+    "observedAt": "2026-09-10T14:15:20.008Z",
+    "scope": "Read-only receipt, complete projected block transactions, EIP-1898 code/balances. No calldata or signatures retained.",
+    "balanceRpc": "https://rpc.ordofi.network",
+    "refusedHistory": [
+      "official: metadata is not found",
+      "publicnode getCode: historical state unavailable"
+    ]
+  },
+  "receipt": {
+    "transactionHash": "0x244f5291fbcc13d4d42e9770f2b4a0e4494c7847b55156f0cb409f9b70d8a1ff",
+    "blockHash": "0xceda68ed164d3d3ae55c521b5c4ec9497c457a3f25201be1159536984e19b5b2",
+    "blockNumber": "0x37ee541",
+    "from": "0xd635dbd451a11fa9be85273f6bec91dff7d94ca7",
+    "to": "0x8876789976decbfcbbbe364623c63652db8c0904",
+    "status": "0x1",
+    "gasUsed": "0x22715",
+    "effectiveGasPrice": "0xae22200"
+  },
+  "block": {
+    "hash": "0xceda68ed164d3d3ae55c521b5c4ec9497c457a3f25201be1159536984e19b5b2",
+    "parentHash": "0xfe04c09884f624cb8359e75a20561650bf9f81b4499c1ff396485e00f2f11dd3",
+    "number": "0x37ee541",
+    "transactions": [
+      {
+        "hash": "0xc86f1e1f60ecc81cc08ba2bfade9a8187bfde8e583638ec0d289d54c5c518ecb",
+        "from": "0x00000000000000000000000000000000000a4b05",
+        "to": "0x00000000000000000000000000000000000a4b05",
+        "value": "0x0",
+        "type": "0x6a"
+      },
+      {
+        "hash": "0xb9f5008c4c5e00380b260e9fea37e90901b7d572b49a4ec672c2c96aaff409f7",
+        "from": "0xffaf0d098cb6fe944fb92ec1887b136b7d85d11a",
+        "to": "0xef161b8b000810944017a69af3b4bb28c87ae318",
+        "value": "0xb1a2bc2ec50000",
+        "type": "0x2"
+      },
+      {
+        "hash": "0xf17fde4c3c9688b95f4f73edaee475ce6fd975eba76caa5c9a71614c23bceefb",
+        "from": "0xa9e27a418529c23fc0848357a14f3adbbc9e0f93",
+        "to": "0xa49f317086368da903ea40a286ad675664c9e123",
+        "value": "0x0",
+        "type": "0x2"
+      },
+      {
+        "hash": "0x6846467546c49e8f05b5282cb21ea3bbae3ab0272fa8798045247588cea4bd78",
+        "from": "0xe1f7f5a42019d5128687ce74fcec77215bf9ece7",
+        "to": "0x884f39004af7de1045dcf6e248553aa9e815cf91",
+        "value": "0x0",
+        "type": "0x2"
+      },
+      {
+        "hash": "0xe4029fdec31e4df96c165dfaa062f24c0e8610b0371386411078226aad66f017",
+        "from": "0x06330eafaea7b063ef065b5ed395a134aaf29189",
+        "to": "0xef161b8b000810944017a69af3b4bb28c87ae318",
+        "value": "0x91a94863ca8000",
+        "type": "0x2"
+      },
+      {
+        "hash": "0x73dd95611e74c0a5bbcf8493ff8f640f7d84cba730d9beee572d1f7315b6310e",
+        "from": "0xecb55e5ccfc128a1eca67e48dbe2f299e4366d0e",
+        "to": "0x77058091a6a1cf0ea6862467db88c44cf04fdd86",
+        "value": "0x0",
+        "type": "0x2"
+      },
+      {
+        "hash": "0x4dcaec1f560ba3a1504010b930bb74519a06fd034c571f29b6fc49e9ac54d420",
+        "from": "0x6abea4998f9ef34ee1cda5715ccca0e4d4efb730",
+        "to": "0x957ebd5c280a5409f25a71086617b935838671db",
+        "value": "0x0",
+        "type": "0x2"
+      },
+      {
+        "hash": "0x78bc45cf91f793536c6a65ead57fcf09bc9b8a43831d72c38a2632c9730e5931",
+        "from": "0x866475476bdac51eb41cb058ab41baac3d2b97fe",
+        "to": "0x7331efcbbf03656d50b902cbb31189fae319c940",
+        "value": "0x0",
+        "type": "0x2"
+      },
+      {
+        "hash": "0x4ce5312cc142f01b2a743aee8cd56fa745dcc1488c521ebf148020d11157b4ac",
+        "from": "0xf0bc84dddc729c79a26a47c22a9d718ffdcfc08c",
+        "to": "0x02e5be68d46dac0b524905bff209cf47ee6db2a9",
+        "value": "0x0",
+        "type": "0x2"
+      },
+      {
+        "hash": "0xc6603a33bb2a0a99170c0fd9991dc0dfa3411d15cdfe599a35debe4cca8d2638",
+        "from": "0x866475476bdac51eb41cb058ab41baac3d2b97fe",
+        "to": "0x65050a9b7e5075a2ba5ced7b1b64ee66262c40dc",
+        "value": "0x0",
+        "type": "0x2"
+      },
+      {
+        "hash": "0x244f5291fbcc13d4d42e9770f2b4a0e4494c7847b55156f0cb409f9b70d8a1ff",
+        "from": "0xd635dbd451a11fa9be85273f6bec91dff7d94ca7",
+        "to": "0x8876789976decbfcbbbe364623c63652db8c0904",
+        "value": "0x1c1aa969ed8fa9b",
+        "type": "0x2"
+      }
+    ]
+  },
+  "parentCode": "0x",
+  "parentBalance": "0x1da199172636c23",
+  "minedBalance": "0x234f397a1fdf98",
+  "expectedInputBound": "123482759443825291"
+}

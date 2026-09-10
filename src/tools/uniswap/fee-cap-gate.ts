@@ -192,7 +192,7 @@ export class UniswapFeeCapExceededError extends Error {
  * which `checkFeeCap` refuses on its own - a cap approved as one mode says
  * nothing about what the other may be.
  */
-function assertWithinLegFeeBounds(
+export function assertWithinLegFeeBounds(
   request: {
     readonly gasPrice?: bigint | undefined;
     readonly maxFeePerGas?: bigint | undefined;
@@ -252,7 +252,7 @@ function assertWithinLegFeeBounds(
  * a transaction that may already be underpriced, which is stuck pending and
  * ambiguous rather than refused, and reports a check it never performed.
  */
-async function assertApprovedCapStillSuffices(
+export async function assertApprovedCapStillSuffices(
   publicClient: PublicClient<Transport, Chain>,
   bounds: UniswapLegFeeBounds,
 ): Promise<LegFeeCap> {

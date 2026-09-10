@@ -296,6 +296,7 @@ export function mapRow(r: Record<string, unknown>): TransactionRow {
       outputToken: str(r.output_token),
       outputAmount,
       amountBasis,
+      ...(r.last_verification_reason === "native_balance_delta_bound" ? { inputAmountBasis: "lower_bound" as const } : {}),
       valueUsd: num(r.value_usd),
       status,
       failureCode: str(r.failure_code),

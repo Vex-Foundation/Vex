@@ -83,6 +83,7 @@ function harness(overrides: { chainId?: number; account?: Address } = {}) {
     chain: CHAIN,
     transport: testTransport(),
   }), {
+    getTransactionCount: vi.fn(async () => 7),
     estimateGas: vi.fn(async () => {
       trace.push("publicClient.estimateGas");
       return 21_000n;

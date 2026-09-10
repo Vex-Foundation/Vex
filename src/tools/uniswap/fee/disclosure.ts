@@ -3,11 +3,11 @@
  *
  * Same field names as the bridge disclosure (`bridge-fee/fee-disclosure.ts`) so
  * the model reads one `vexFee` shape across venues, with the bridge-specific
- * `bridgedAmountRaw` replaced by `swappedAmountRaw` — the amount the swap
- * actually executes on.
+ * `bridgedAmountRaw` replaced by `swappedAmountRaw`: the planned router input,
+ * or a labelled native lower bound in a settlement result.
  *
- * `feeAmountRaw` is DEFINED as the amount debited from the user's wallet and
- * SENT to the treasury. For an ordinary token that is also the amount credited;
+ * `feeAmountRaw` is the fee plan's wallet debit. Collection is reported
+ * separately. For an ordinary token it is also the amount to be credited;
  * for a taxing token it is not, which is why the eligibility check declines the
  * fee on tokens it can prove are fee-on-transfer, and why this note states the
  * semantics instead of leaving them implied.
@@ -22,10 +22,12 @@ import { formatUnits } from "viem";
 import { UNISWAP_FEE_BPS, UNISWAP_FEE_CHARGE_BY } from "./constants.js";
 
 interface UniswapFeeAmounts {
-  /** Amount the route was quoted for and the router actually swaps (`amountIn − fee`). */
+  /** Quoted router input, or a labelled native lower bound after settlement. */
   readonly swappedAmountRaw: string;
-  /** Amount the user is debited in total (the `amountIn` they asked for). */
-  readonly totalDebitedRaw: string;
+  /** Planned total ceiling; NULL when settlement has only a native lower bound. */
+  readonly totalDebitedRaw: string | null;
+  readonly swappedAmountBasis?: "lower_bound";
+  readonly totalDebitedLowerBoundRaw?: string;
   readonly note: string;
 }
 
@@ -38,7 +40,7 @@ export type UniswapFeeDisclosure =
       readonly tokenAddress: string;
       readonly tokenSymbol: string;
       readonly tokenDecimals: number;
-      /** Smallest units, exact — debited from the wallet and sent to the treasury. */
+      /** Exact atomic fee plan; collection is reported separately. */
       readonly feeAmountRaw: string;
       /** Exact decimal string at the token's own decimals. */
       readonly feeAmountDecimal: string;
@@ -54,12 +56,12 @@ export type UniswapFeeDisclosure =
 
 const CHARGED_NOTE =
   `Vex charges ${UNISWAP_FEE_BPS} bps (0.25%) on the input token of every Uniswap swap, as a separate transfer to `
-  + "the Vex treasury that runs AFTER the swap confirms — a swap that does not happen is never charged. The quoted "
-  + "output is for the post-fee amount, so it is what actually arrives, and `totalDebitedRaw` is what leaves the "
-  + "wallet in total. `feeAmountRaw` is the amount debited and sent to the treasury.";
+  + "the Vex treasury after confirmation. These are planned amounts, not proof of collection. The quote uses "
+  + "post-fee input; output remains an estimate. `totalDebitedRaw` is the requested ceiling. Native input bounds "
+  + "can reduce the fee, and missing required evidence withholds it. The execute result states collection separately.";
 
 const SKIPPED_NOTE =
-  "No Vex fee was taken on this swap. The full requested amount is quoted and swapped.";
+  "No Vex fee is planned. The quote uses the full requested input; settlement determines the recorded amounts.";
 
 export function buildUniswapFeeDisclosure(input: {
   readonly tokenAddress: string;

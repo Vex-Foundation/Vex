@@ -7,6 +7,7 @@
  * builder turns each created row back into the calldata for its own role.
  */
 
+import { tokenSpender, needsV4Allowance, buildV4ApproveTx, type V4AllowanceState } from "@tools/uniswap/v4-allowance.js";
 import { formatUnits, type Address } from "viem";
 import { valueSwapAtReference } from "@tools/evm-chains/swap-price-reference.js";
 
@@ -35,8 +36,12 @@ export interface TxBuildContext {
 }
 
 export function buildTxForEvent(event: AgentActivityEvent, ctx: TxBuildContext): BuiltSwapTx {
-  if (event.eventRole === "allowance_reset") return buildApproveTx(ctx.tokenIn.address, ctx.router, 0n);
-  if (event.eventRole === "allowance") return buildApproveTx(ctx.tokenIn.address, ctx.router, ctx.amountIn);
+  if (event.eventRole === "allowance" && event.routeProvenance?.allowanceKind === "permit2") {
+    return buildV4ApproveTx(ctx.deployment, ctx.tokenIn.address, ctx.amountIn, Math.floor(Date.now() / 1000) + DEFAULT_DEADLINE_SECONDS);
+  }
+  const spender = tokenSpender(ctx.deployment, ctx.quoted.route, ctx.router);
+  if (event.eventRole === "allowance_reset") return buildApproveTx(ctx.tokenIn.address, spender, 0n);
+  if (event.eventRole === "allowance") return buildApproveTx(ctx.tokenIn.address, spender, ctx.amountIn);
   const deadline = BigInt(Math.floor(Date.now() / 1000) + DEFAULT_DEADLINE_SECONDS);
   return buildSwapTx({
     deployment: ctx.deployment,
@@ -68,6 +73,7 @@ export interface PlanSwapEventsInput {
   readonly amountInHuman: string;
   readonly quoted: QuotedRoute;
   readonly currentAllowance: bigint;
+  readonly permit2Allowance?: V4AllowanceState;
   /**
    * The floor the approved quote authorized, duplicated onto the swap row so a
    * post-crash settlement sweep can assess the executed fill against what was
@@ -104,6 +110,12 @@ export function planSwapEvents(input: PlanSwapEventsInput): PlannedEvent[] {
       tokenIn: { ...legFor(tokenIn), amountHuman: formatUnits(amountIn, tokenIn.decimals), amountRaw: amountIn.toString() },
     });
   }
+  if (quoted.route.version === "v4" && !tokenIn.isNative && needsV4Allowance(input.permit2Allowance, amountIn)) {
+    events.push({ eventIndex: eventIndex++, eventRole: "allowance", ...common,
+      tokenIn: { ...legFor(tokenIn), amountHuman: formatUnits(amountIn, tokenIn.decimals), amountRaw: amountIn.toString() },
+      routeProvenance: { allowanceKind: "permit2", spender: quoted.route.v4.universalRouter, permit2: quoted.route.v4.permit2 },
+    });
+  }
   events.push({
     eventIndex, eventRole: "swap", ...common,
     ...(usdValues === undefined ? {} : { usdInEst: usdValues.amountInUsd, usdOutEst: usdValues.amountOutUsd, usdSource: "dexscreener" }),
@@ -112,6 +124,7 @@ export function planSwapEvents(input: PlanSwapEventsInput): PlannedEvent[] {
     routeProvenance: {
       ...(quoted.priceReference === undefined ? {} : { swapPriceReference: quoted.priceReference }),
       version: quoted.route.version, path: quoted.route.path, fees: quoted.route.fees ?? null,
+      ...(quoted.route.version === "v4" ? { v4: quoted.route.v4 } : {}),
       // The approved floor, non-attested: the AgentScan mapper does not read it
       // and `amount_out_raw` keeps its meaning (the executed output).
       approvedMinOutRaw: input.approvedMinOutRaw,
@@ -122,6 +135,7 @@ export function planSwapEvents(input: PlanSwapEventsInput): PlannedEvent[] {
       // are the only cases where a decoder needs either.
       ...settlementDecodeProvenance({
         decoder: "uniswap",
+        ...(quoted.route.version === "v4" ? { v4: quoted.route.v4 } : {}),
         chainId: deployment.chainId,
         routerAddress: routerFor(deployment, quoted.route),
         ...(tokenIn.isNative ? { declaredValueRaw: amountIn.toString() } : {}),

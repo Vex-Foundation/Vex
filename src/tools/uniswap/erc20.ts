@@ -11,12 +11,13 @@
  * lifecycle, which a single blocking helper here could not provide.
  */
 
+import { rpcReadFailureOf } from "../evm-chains/rpc-read-failure.js";
 import type { Address, Chain, PublicClient, Transport } from "viem";
 
 import { VexError, ErrorCodes } from "../../errors.js";
 import logger from "../../utils/logger.js";
 import { UNISWAP_ERC20_ABI } from "./abis.js";
-import { UNISWAP_KNOWN_SPENDERS } from "./deployments.js";
+import { getUniswapDeployment, UNISWAP_KNOWN_SPENDERS } from "./deployments.js";
 
 export interface UniswapErc20Metadata {
   address: Address;
@@ -33,29 +34,33 @@ export async function readUniswapErc20Metadata(
   let decimals: number;
   try {
     decimals = await client.readContract({ address, abi: UNISWAP_ERC20_ABI, functionName: "decimals" });
-  } catch {
+  } catch (error) {
+    if (rpcReadFailureOf(error)) throw error;
     throw new VexError(
       ErrorCodes.KYBER_TOKEN_NOT_FOUND,
-      `Cannot read decimals for ${address} — not a valid ERC-20 contract on this chain`,
+      `Cannot read decimals for ${address} - not a valid ERC-20 contract on this chain`,
       "Verify the token address and chain are correct.",
     );
   }
   let symbol = "UNKNOWN";
   try {
     symbol = await client.readContract({ address, abi: UNISWAP_ERC20_ABI, functionName: "symbol" });
-  } catch {
+  } catch (error) {
+    if (rpcReadFailureOf(error)) throw error;
     logger.debug({ event: "uniswap.erc20.symbol_failed", address });
   }
   return { address, symbol, decimals, isNative: false };
 }
 
 /** Verify a spender is an allowlisted Uniswap router. Throws otherwise. */
-export function validateUniswapSpender(address: Address): void {
-  if (!UNISWAP_KNOWN_SPENDERS.has(address.toLowerCase())) {
+export function validateUniswapSpender(address: Address, chainId?: number): void {
+  const d = chainId === undefined ? undefined : getUniswapDeployment(chainId);
+  const chainMatches = chainId === undefined || [d?.v2?.router02, d?.v3?.swapRouter02, d?.v4?.permit2, d?.v4?.universalRouter].some(a => a?.toLowerCase() === address.toLowerCase());
+  if (!chainMatches || !UNISWAP_KNOWN_SPENDERS.has(address.toLowerCase())) {
     throw new VexError(
       ErrorCodes.INVALID_SPENDER,
       `Spender ${address} is not a known Uniswap router`,
-      "Approvals may only target a registered Uniswap V2 Router02 or V3 SwapRouter02.",
+      "Approvals may only target the registered router or Permit2 on this chain.",
     );
   }
 }

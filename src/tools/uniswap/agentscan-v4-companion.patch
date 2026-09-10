@@ -1,0 +1,43 @@
+--- a/packages/contract/src/event.ts
++++ b/packages/contract/src/event.ts
+@@ -22,0 +23,12 @@
++const evmAddress = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
++const uniswapV4Route = z.object({
++  version: z.literal("v4"),
++  path: z.array(evmAddress).length(2),
++  poolId: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
++  poolKey: z.object({
++    currency0: evmAddress, currency1: evmAddress,
++    fee: z.number().int().min(0).max(0x800000),
++    tickSpacing: z.number().int().min(1).max(32767), hooks: evmAddress,
++  }).strict(),
++}).strict();
++
+@@ -23,0 +36,1 @@
++  route: uniswapV4Route.nullish(),
+@@ -307,0 +321,3 @@
++  if (event.route && (event.protocol !== "uniswap" || event.kind !== "swap" || event.eventRole !== "swap")) {
++    ctx.addIssue({ code: "custom", path: ["route"], message: "A Uniswap v4 route belongs only to a Uniswap swap" });
++  }
+--- a/apps/server/src/repos/activities-ingest-repo.ts
++++ b/apps/server/src/repos/activities-ingest-repo.ts
+@@ -42,1 +42,1 @@
+-    statuses_seen, verification_state, backfill, received_schema_version
++    statuses_seen, verification_state, backfill, received_schema_version, route
+@@ -46,1 +46,1 @@
+-    $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50
++    $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51::jsonb
+@@ -51,0 +52,1 @@
++    route = COALESCE(route, $26::jsonb),
+@@ -167,0 +169,1 @@
++    event.route == null ? null : JSON.stringify(event.route),
+@@ -220,0 +223,1 @@
++    event.route == null ? null : JSON.stringify(event.route),
+--- /dev/null
++++ b/db/migrations/0025_uniswap_v4_route.sql
+@@ -0,0 +1,5 @@
++-- Reader before writer: nullable declared route metadata does not change settlement verification.
++ALTER TABLE activities ADD COLUMN route jsonb;
++ALTER TABLE activities ADD CONSTRAINT uniswap_v4_route_role CHECK (
++  route IS NULL OR (protocol = 'uniswap' AND kind = 'swap' AND event_role = 'swap')
++);

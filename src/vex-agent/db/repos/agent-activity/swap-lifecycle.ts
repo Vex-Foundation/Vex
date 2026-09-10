@@ -78,9 +78,10 @@ export async function markActivityBroadcast(
 ): Promise<CasResult> {
   const row = await queryOne<Record<string, unknown>>(
     `UPDATE agent_activity
-        SET tx_hash = $2, from_address = $3, nonce = $4,
+        SET tx_hash = $2, from_address = $3, nonce = $4, nonce_reservation_until = NULL,
             submit_attempted_at = NOW(), updated_at = NOW()
       WHERE id = $1 AND status = 'pending' AND tx_hash IS NULL
+        AND (nonce IS NULL OR nonce_reservation_until > NOW())
         AND chain_family = 'eip155'
         AND (
           (lower(from_address) = lower($3) AND nonce = $4)
@@ -297,6 +298,7 @@ export {
   failActivityEvent,
   failActivityEventWith,
   failHashlessActivityEventWith,
+  failHashlessActivityEvent,
 } from "./swap-lifecycle/terminal-cas.js";
 
 // ── Reads ─────────────────────────────────────────────────────────
