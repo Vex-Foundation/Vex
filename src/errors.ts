@@ -330,6 +330,14 @@ export const ErrorCodes = {
   LIGHTER_INVALID_RESPONSE: "LIGHTER_INVALID_RESPONSE",
   LIGHTER_INVALID_REQUEST: "LIGHTER_INVALID_REQUEST",
   LIGHTER_NOT_FOUND: "LIGHTER_NOT_FOUND",
+  // The user's Lighter trading limits changed since the editor read them. The
+  // write is refused rather than silently overwriting the winner.
+  LIGHTER_SETTINGS_REVISION_CONFLICT: "LIGHTER_SETTINGS_REVISION_CONFLICT",
+  // A user-originated leverage change was refused before anything was signed:
+  // a consent invariant drifted, the market or target is not admissible, or
+  // another Lighter transaction owns this account's next nonce.
+  LIGHTER_LEVERAGE_REFUSED: "LIGHTER_LEVERAGE_REFUSED",
+  LIGHTER_CAPITAL_SHARE_EXCEEDED: "LIGHTER_CAPITAL_SHARE_EXCEEDED",
 
   // Pendle v2 (fixed-yield PT - Ethereum v1)
   PENDLE_API_ERROR: "PENDLE_API_ERROR",

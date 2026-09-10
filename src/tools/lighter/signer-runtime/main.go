@@ -58,6 +58,20 @@ type signerRequest struct {
 	ModifyOrder         *modifyOrderRequest       `json:"modifyOrder"`
 	CancelAllOrders     *cancelAllOrdersRequest   `json:"cancelAllOrders"`
 	Withdrawal          *withdrawRequest          `json:"withdrawal"`
+	UpdateLeverage      *updateLeverageRequest    `json:"updateLeverage"`
+}
+
+// updateLeverageRequest carries Lighter's TxType 20 payload.
+//
+// Every member is a POINTER on purpose. The three fields have valid zero
+// values - market 0 is ETH on both environments, margin mode 0 is cross - so a
+// caller that omits one would otherwise sign a leverage change for a market and
+// a mode it never named. Presence is checked in readRequest before anything is
+// signed; absence is a refusal, never a default.
+type updateLeverageRequest struct {
+	MarketIndex           *int16  `json:"marketIndex"`
+	InitialMarginFraction *uint16 `json:"initialMarginFraction"`
+	MarginMode            *uint8  `json:"marginMode"`
 }
 
 type createOrderRequest struct {
@@ -146,6 +160,8 @@ func main() {
 		response, err = signModifyOrder(request)
 	case "signCancelAllOrders":
 		response, err = signCancelAllOrders(request)
+	case "signUpdateLeverage":
+		response, err = signUpdateLeverage(request)
 	case "signWithdraw":
 		response, err = signWithdraw(request)
 	case "signApproveIntegrator":
@@ -172,7 +188,8 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 		return request, fmt.Errorf("invalid signer request")
 	}
 	if request.Operation != "signCreateOrder" && request.Operation != "signCreateGroupedOrders" && request.Operation != "signCancelOrder" && request.Operation != "signModifyOrder" &&
-		request.Operation != "signCancelAllOrders" && request.Operation != "signWithdraw" && request.Operation != "signChangePubKey" && request.Operation != "signApproveIntegrator" &&
+		request.Operation != "signCancelAllOrders" && request.Operation != "signUpdateLeverage" &&
+		request.Operation != "signWithdraw" && request.Operation != "signChangePubKey" && request.Operation != "signApproveIntegrator" &&
 		request.Operation != "checkClient" &&
 		request.Operation != "createAccountAuth" &&
 		request.Operation != "generateApiKey" && request.Operation != "derivePublicKey" {
@@ -324,6 +341,49 @@ func readRequest(reader io.Reader) (signerRequest, error) {
 			if request.CancelAllOrders == nil || request.CancelAllOrders.TimeInForce != 0 || request.CancelAllOrders.Time != "0" {
 				return request, fmt.Errorf("only immediate account-wide cancel all is supported")
 			}
+		}
+		return request, nil
+	}
+	if request.Operation == "signUpdateLeverage" {
+		// Fee attributes are NOT reachable here: the integrator-fee allowlist
+		// above admits only the three order operations, so a request that pairs
+		// integratorFees with this operation is already refused. That exclusion
+		// is Vex policy rather than an SDK guarantee - lighter-go's
+		// L2UpdateLeverageTxInfo embeds L2TxAttributes and hashes them
+		// (types/txtypes/update_leverage.go:23,99-100), so the library would
+		// happily sign a leverage change that carries a fee leg. Vex never takes
+		// a fee on a configuration change, and the TypeScript adapter asserts
+		// the signed payload carries no attributes either.
+		nonce, err := parseNonNegativeInt64(request.Nonce, "nonce")
+		if err != nil || nonce > maxRegistrationNonce {
+			return request, fmt.Errorf("invalid nonce")
+		}
+		expiredAt, err := parsePositiveInt64(request.ExpiredAt, "expiry")
+		if err != nil {
+			return request, fmt.Errorf("invalid expiry")
+		}
+		nowMillis := time.Now().UnixMilli()
+		if expiredAt < nowMillis+minWithdrawExpiryLead || expiredAt > nowMillis+maxWithdrawExpiryLead {
+			return request, fmt.Errorf("invalid leverage expiry window")
+		}
+		if request.UpdateLeverage == nil {
+			return request, fmt.Errorf("missing update leverage")
+		}
+		leverage := request.UpdateLeverage
+		if leverage.MarketIndex == nil || leverage.InitialMarginFraction == nil || leverage.MarginMode == nil {
+			return request, fmt.Errorf("incomplete update leverage")
+		}
+		// Perpetual markets only. Leverage is a perp concept; the spot range
+		// (2048..4094) has no initial margin fraction to set, and NilMarketIndex
+		// (255) is the provider's own "absent" marker.
+		if *leverage.MarketIndex < txtypes.MinPerpsMarketIndex || *leverage.MarketIndex > txtypes.MaxPerpsMarketIndex {
+			return request, fmt.Errorf("invalid leverage market index")
+		}
+		if *leverage.MarginMode != txtypes.CrossMargin && *leverage.MarginMode != txtypes.IsolatedMargin {
+			return request, fmt.Errorf("invalid margin mode")
+		}
+		if *leverage.InitialMarginFraction == 0 || int64(*leverage.InitialMarginFraction) > txtypes.MarginFractionTick {
+			return request, fmt.Errorf("invalid initial margin fraction")
 		}
 		return request, nil
 	}
@@ -868,6 +928,37 @@ func signCancelAllOrders(request signerRequest) (signerResponse, error) {
 		return signerResponse{}, err
 	}
 	return lifecycleResponse(tx, 16)
+}
+
+// signUpdateLeverage signs Lighter's TxType 20, the per-market initial margin
+// fraction and margin mode of one account.
+//
+// It carries an EMPTY L2TxAttributes for the same reason the cancel path does:
+// the attribute map is where an integrator fee leg would live, and passing an
+// explicit empty one keeps the signed hash free of attributes instead of
+// depending on whatever the SDK's default happens to be.
+func signUpdateLeverage(request signerRequest) (signerResponse, error) {
+	client, accountIndex, nonce, err := lifecycleClient(request)
+	if err != nil || request.UpdateLeverage == nil ||
+		request.UpdateLeverage.MarketIndex == nil ||
+		request.UpdateLeverage.InitialMarginFraction == nil ||
+		request.UpdateLeverage.MarginMode == nil {
+		return signerResponse{}, fmt.Errorf("invalid update leverage request")
+	}
+	expiredAt, err := parsePositiveInt64(request.ExpiredAt, "expiry")
+	if err != nil {
+		return signerResponse{}, err
+	}
+	apiKeyIndex := request.APIKeyIndex
+	tx, err := client.GetUpdateLeverageTransaction(&types.UpdateLeverageTxReq{
+		MarketIndex:           *request.UpdateLeverage.MarketIndex,
+		InitialMarginFraction: *request.UpdateLeverage.InitialMarginFraction,
+		MarginMode:            *request.UpdateLeverage.MarginMode,
+	}, &types.TransactOpts{FromAccountIndex: &accountIndex, ApiKeyIndex: &apiKeyIndex, Nonce: &nonce, ExpiredAt: expiredAt, TxAttributes: &types.L2TxAttributes{}})
+	if err != nil {
+		return signerResponse{}, err
+	}
+	return lifecycleResponse(tx, txtypes.TxTypeL2UpdateLeverage)
 }
 
 func signWithdraw(request signerRequest) (signerResponse, error) {

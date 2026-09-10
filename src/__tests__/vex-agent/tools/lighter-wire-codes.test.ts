@@ -37,6 +37,17 @@ import {
   LIGHTER_SIGNER_ORDER_TYPE_CODES,
   LIGHTER_SIGNER_TIME_IN_FORCE_CODES,
 } from "@tools/lighter/signer-order.js";
+import {
+  LIGHTER_MARGIN_FRACTION_TICK,
+  LIGHTER_MARGIN_MODE_WIRE,
+  initialMarginFractionToLeverageDisplay,
+  marginModeFromWire,
+} from "@tools/lighter/margin-fraction.js";
+import {
+  LIGHTER_TX_TYPE_UPDATE_LEVERAGE,
+  buildLighterUpdateLeverageSigningInput,
+} from "@tools/lighter/signer-leverage.js";
+import { materialFromSecret } from "@tools/lighter/trading-secret.js";
 
 const ARTIFACT_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -50,6 +61,10 @@ interface WireConstants {
   readonly orderTypes: Readonly<Record<string, number>>;
   readonly timeInForce: Readonly<Record<string, number>>;
   readonly apiMaxOrderType: number;
+  readonly txTypes: Readonly<Record<string, number>>;
+  readonly marginModes: Readonly<Record<string, number>>;
+  readonly marginFractionTick: number;
+  readonly perpsMarketIndex: { readonly min: number; readonly max: number };
 }
 
 const artifact = JSON.parse(readFileSync(ARTIFACT_PATH, "utf8")) as WireConstants;
@@ -149,5 +164,70 @@ describe("Lighter signer wire codes match the pinned lighter-go artifact", () =>
       expect(Number.isInteger(code)).toBe(true);
       expect(code).toBeGreaterThanOrEqual(0);
     }
+  });
+});
+
+/**
+ * The leverage transaction's wire vocabulary, pinned the same way.
+ *
+ * `signer-leverage.ts` and `margin-fraction.ts` name three numbers that decide
+ * what a signed leverage change means: the transaction type, the two margin
+ * modes, and the tick that turns a fraction into a leverage. Each one is a
+ * value the provider owns; each is asserted against the generated artifact
+ * rather than against a second hand-written copy, and the market range is
+ * asserted through the builder's own behavior so the bound cannot drift from
+ * the one the Go helper enforces.
+ */
+describe("Lighter leverage wire vocabulary matches the pinned lighter-go artifact", () => {
+  it("pins the update-leverage transaction type", () => {
+    expect(artifact.txTypes).toHaveProperty("TxTypeL2UpdateLeverage");
+    expect(LIGHTER_TX_TYPE_UPDATE_LEVERAGE).toBe(artifact.txTypes.TxTypeL2UpdateLeverage);
+  });
+
+  it.each([
+    { vexName: "cross" as const, goName: "CrossMargin" },
+    { vexName: "isolated" as const, goName: "IsolatedMargin" },
+  ])("maps margin mode $vexName to txtypes.$goName", ({ vexName, goName }) => {
+    expect(artifact.marginModes).toHaveProperty(goName);
+    expect(LIGHTER_MARGIN_MODE_WIRE[vexName]).toBe(artifact.marginModes[goName]);
+    // Both directions: the provider integer resolves back to the same spelling.
+    expect(marginModeFromWire(artifact.marginModes[goName] as number)).toBe(vexName);
+  });
+
+  it("accounts for every margin mode the provider defines", () => {
+    // A THIRD margin mode upstream lands here and gets a decision, rather than
+    // silently becoming an "unknown margin mode" refusal in front of a user.
+    const mapped = new Set(["CrossMargin", "IsolatedMargin"]);
+    expect(Object.keys(artifact.marginModes).filter((name) => !mapped.has(name))).toEqual([]);
+  });
+
+  it("pins the margin fraction tick", () => {
+    expect(LIGHTER_MARGIN_FRACTION_TICK).toBe(artifact.marginFractionTick);
+    // The tick is also the maximum fraction: it means "the whole position is
+    // margin", so 1x.
+    expect(initialMarginFractionToLeverageDisplay(artifact.marginFractionTick)).toBe("1.00");
+  });
+
+  it("accepts exactly the provider's perpetual market range for a leverage change", () => {
+    const scope = {
+      environment: "rhc" as const,
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      nonce: "9",
+      expiredAt: "1893456000000",
+      secret: materialFromSecret(`0x${"1".repeat(80)}`),
+      initialMarginFraction: 200,
+      marginMode: 0 as const,
+    };
+    const { min, max } = artifact.perpsMarketIndex;
+    expect(() => buildLighterUpdateLeverageSigningInput({ ...scope, marketIndex: min }))
+      .not.toThrow();
+    expect(() => buildLighterUpdateLeverageSigningInput({ ...scope, marketIndex: max }))
+      .not.toThrow();
+    expect(() => buildLighterUpdateLeverageSigningInput({ ...scope, marketIndex: min - 1 }))
+      .toThrow();
+    // max + 1 is the provider's own NilMarketIndex.
+    expect(() => buildLighterUpdateLeverageSigningInput({ ...scope, marketIndex: max + 1 }))
+      .toThrow();
   });
 });

@@ -21,6 +21,21 @@ function context(overrides: Partial<EngineContext>): EngineContext {
 }
 
 /**
+ * REVIEWED CEILING MOVE, Lighter trading setup (2026-09-10). +246 bytes in
+ * every mode, identical in all six because the growth is ONE static sentence
+ * appended to the Lighter navigation `declaration.read`, rendered once per
+ * mode by the protocol block: it tells the agent that per-market leverage and
+ * its capital share are user settings from Settings -> Lighter -> Trading
+ * setup, that the live values come from `lighter_rhc_onboarding_status`
+ * (`tradingLimits`), and that no tool changes them. WHAT THE BYTES BUY: before
+ * this sentence an agent asked for "max leverage on BTC" could only read a
+ * 50 percent default margin fraction and had no way to know the user could
+ * change it, which produced the "max is 2x" answer the owner reported. The
+ * dynamic numbers stay in the tool result, not in the prefix; this is the one
+ * static clause the owner asked for ("minimal orientation"). Measured on the
+ * merged tree: 60_648 -> 60_894, 61_349 -> 61_595, 67_125 -> 67_371,
+ * 67_144 -> 67_390, 65_849 -> 66_095, 65_664 -> 65_910.
+ *
  * REVIEWED CEILING MOVE, launchpads arc integration. TWO additions share this
  * raise, and both were measured on this merged tree rather than estimated.
  * The Lighter integration (2026-09-07) raised every mode by a further 827 B:
@@ -109,12 +124,12 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  * The coordinator reviews this raise.
  */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 60_648 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 61_349 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 67_125 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 67_144 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 65_849 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 65_664 },
+  { name: "agent / restricted", context: context({}), ceiling: 60_894 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 61_595 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 67_371 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 67_390 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 66_095 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 65_910 },
 ] as const;
 
 beforeAll(() => {

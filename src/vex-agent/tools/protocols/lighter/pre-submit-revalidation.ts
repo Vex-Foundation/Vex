@@ -33,6 +33,7 @@ export interface LighterOrderPreSubmitRevalidationEvidence {
     "live_market_minimums",
     "account_and_reduce_only",
     "approved_price_behavior",
+    "agent_capital_share",
   ];
 }
 
@@ -130,6 +131,12 @@ export function revalidateApprovedLighterOrder(input: {
       "live_market_minimums",
       "account_and_reduce_only",
       "approved_price_behavior",
+      // Re-admitted against the LIVE account and the limits row as they stand at
+      // the commit point, in `order-create-execution.ts`, before any key is
+      // loaded. Named here because this tuple is the list of what an approved
+      // order was re-checked against, and a check the evidence does not name is
+      // a check nobody can audit.
+      "agent_capital_share",
     ],
   };
 }

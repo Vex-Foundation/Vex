@@ -32,7 +32,7 @@ export const LIGHTER_NAVIGATION: ProtocolNamespaceNavigation = {
     identity:
       "Lighter is a perp-trading venue with Core and Robinhood Chain environments, managed wallet-funded onboarding, local encrypted trading credentials, and approval-gated deposits, orders, withdrawals, and claims.",
     read:
-      "Read public environment status, markets, market detail, order books, recent trades, candles, public account state, authenticated account orders and fills, managed onboarding readiness, and durable deposit, withdrawal, key-registration, and order status.",
+      "Read public environment status, markets, market detail, order books, recent trades, candles, public account state, authenticated account orders and fills, managed onboarding readiness, and durable deposit, withdrawal, key-registration, and order status. Per-market leverage and the agent's capital share are user settings from Settings -> Lighter -> Trading setup; call lighter_rhc_onboarding_status (or the core twin) and read tradingLimits for the live values; Vex exposes no tool to change them, direct the user to Settings.",
     quote:
       "Preview exact Lighter orders from live market and account data before any approval; a Lighter order preview reviews exact terms. Managed onboarding also computes the exact settlement-asset top-up needed before a deposit is prepared.",
     act:
@@ -119,7 +119,7 @@ export const LIGHTER_NAVIGATION: ProtocolNamespaceNavigation = {
     {
       label: "Accounts and positions",
       summary:
-        "Read public Lighter account state, positions, and API-key metadata by account index or owning wallet address.",
+        "Read public Lighter account state, positions with their current per-market leverage and margin mode, and API-key metadata by account index or owning wallet address.",
       toolPrefixes: ["lighter.account", "lighter.positions", "lighter.apiKeys"],
       hints: [
         "lighter account",

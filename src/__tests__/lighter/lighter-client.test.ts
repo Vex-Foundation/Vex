@@ -735,6 +735,27 @@ describe("LighterClient validation", () => {
     expect(details.order_book_details).toHaveLength(1);
   });
 
+  it("reads the whole market catalogue in one call, sending no market id", async () => {
+    // Measured live on RHC 2026-09-10: `orderBookDetails` without `market_id`
+    // returns every market (57 active perps under `filter=perp`), which is what
+    // lets the Settings leverage card list markets the account has never
+    // traded instead of only the ones with a position row.
+    mockOk({
+      code: 200,
+      order_book_details: [{ ...MARKET, market_id: 0 }, { ...MARKET, market_id: 1, symbol: "BTC" }],
+      spot_order_book_details: null,
+    });
+
+    const details = await client.getAllMarketDetails("rhc", { filter: "perp" });
+
+    const url = lastUrl();
+    expect(url.pathname).toBe("/api/v1/orderBookDetails");
+    expect(url.searchParams.get("market_id")).toBeNull();
+    expect(url.searchParams.get("filter")).toBe("perp");
+    expect(details.order_book_details).toHaveLength(2);
+    expect(details.spot_order_book_details).toEqual([]);
+  });
+
   it("validates market details including spot detail defaults", async () => {
     mockOk({ code: 200, order_book_details: [{ ...MARKET, last_trade_price: 3000 }] });
     const details = await client.getMarketDetails("core", { marketId: 0 });

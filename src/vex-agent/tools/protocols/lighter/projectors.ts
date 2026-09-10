@@ -2,6 +2,7 @@ import type {
   LighterAccount,
   LighterAccountOrder,
   LighterAccountOrdersResponse,
+  LighterAccountPosition,
   LighterAccountResponse,
   LighterApiKey,
   LighterApiKeysResponse,
@@ -24,6 +25,11 @@ import {
   readLighterAccountFillFacts,
   type LighterPositionEffect,
 } from "./fill-position-effect.js";
+import {
+  initialMarginFractionToLeverageDisplay,
+  marginModeFromWire,
+  positionInitialMarginFractionToProviderScale,
+} from "@tools/lighter/margin-fraction.js";
 
 export interface LighterSlice<T> {
   readonly rows: T[];
@@ -81,6 +87,22 @@ function numberOrNull(value: unknown): number | null {
 
 function safeIntegerOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) ? value : null;
+}
+
+/**
+ * A 10000-scale margin fraction rendered as the leverage a human reads.
+ *
+ * `null` rather than a throw for the same reason every other projector helper
+ * degrades: a spot row carries no fraction at all, and a market read must not
+ * fail because one field was absent or out of range.
+ */
+function leverageDisplayOrNull(fraction: unknown): string | null {
+  if (typeof fraction !== "number" || !Number.isInteger(fraction)) return null;
+  try {
+    return initialMarginFractionToLeverageDisplay(fraction);
+  } catch {
+    return null;
+  }
 }
 
 function epochMillisecondsIsoOrNull(value: unknown): string | null {
@@ -164,6 +186,15 @@ export function projectMarketDetail(detail: LighterMarketDetail): Record<string,
       minInitialFraction: numberOrNull(detail.min_initial_margin_fraction),
       maintenanceFraction: numberOrNull(detail.maintenance_margin_fraction),
       closeoutFraction: numberOrNull(detail.closeout_margin_fraction),
+      // THE DEFECT THIS CLOSES: the only leverage-shaped facts an agent could
+      // read here were the bare fractions, so "5000 is 50 percent" was the whole
+      // story and `minInitialFraction: 200` was explained nowhere. An agent
+      // reading that answered "max leverage 2, and only 50%". The fractions
+      // stay exactly as the provider sent them; these are DERIVED and additive.
+      defaultLeverage: leverageDisplayOrNull(detail.default_initial_margin_fraction),
+      maxLeverage: leverageDisplayOrNull(detail.min_initial_margin_fraction),
+      note:
+        "Leverage is a per-market account setting the user changes in Settings -> Lighter; the account's current value is on its position row as leverage.current.",
     },
     // Decimal strings as the provider reports them, never parsed to a float.
     markPrice: detail.mark_price ?? null,
@@ -183,6 +214,49 @@ export function projectMarketDetails(response: LighterMarketDetailsResponse): Re
   ].map(projectMarketDetail);
 }
 
+/**
+ * A position row, EXACTLY as the provider sent it, plus one derived `leverage`
+ * object.
+ *
+ * The raw row is preserved in full: `initial_margin_fraction` arrives as a
+ * PERCENT STRING ("50.00", measured live on RHC account 24226), which is a third
+ * representation of the same concept the market rows report as a 10000-scale
+ * integer. Rewriting the row would hide the provider's own answer; leaving it
+ * alone was what made the number unreadable. So both travel, and
+ * `margin-fraction.ts` is the only thing that ever parses the string.
+ *
+ * NEVER THROWS. A row whose fraction cannot be parsed keeps its raw value and
+ * gets `leverage: null` with the reason. A projection that threw would take a
+ * whole account read down over one malformed row.
+ */
+export function projectPositionRow(position: LighterAccountPosition): Record<string, unknown> {
+  return { ...position, leverage: deriveLeverage(position) };
+}
+
+function deriveLeverage(position: LighterAccountPosition): Record<string, unknown> | null {
+  const raw = position.initial_margin_fraction;
+  if (typeof raw !== "string" || raw.trim().length === 0) return null;
+  let initialMarginFraction: number;
+  try {
+    initialMarginFraction = positionInitialMarginFractionToProviderScale(raw);
+  } catch {
+    return null;
+  }
+  let current: string;
+  try {
+    current = initialMarginFractionToLeverageDisplay(initialMarginFraction);
+  } catch {
+    return null;
+  }
+  let marginMode: string | null;
+  try {
+    marginMode = marginModeFromWire(position.margin_mode);
+  } catch {
+    marginMode = null;
+  }
+  return { initialMarginFraction, current, marginMode };
+}
+
 export function projectAccount(account: LighterAccount, positionLimit: number): Record<string, unknown> {
   const positions = Array.isArray(account.positions) ? takeFirst(account.positions, positionLimit) : null;
   const assets = Array.isArray(account.assets) ? takeFirst(account.assets, positionLimit) : null;
@@ -194,7 +268,7 @@ export function projectAccount(account: LighterAccount, positionLimit: number): 
     availableBalance: account.available_balance ?? null,
     positionCount: positions?.total ?? 0,
     positionsTruncated: positions?.truncated ?? false,
-    positions: positions?.rows ?? [],
+    positions: (positions?.rows ?? []).map(projectPositionRow),
     assetCount: assets?.total ?? 0,
     assetsTruncated: assets?.truncated ?? false,
     assets: assets?.rows ?? [],
@@ -228,7 +302,7 @@ export function projectPositions(
       count: positions?.count ?? 0,
       totalProviderRows: positions?.total ?? 0,
       truncated: positions?.truncated ?? false,
-      positions: positions?.rows ?? [],
+      positions: (positions?.rows ?? []).map(projectPositionRow),
     };
   }), accountLimit);
   return {

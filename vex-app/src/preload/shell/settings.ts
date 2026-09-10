@@ -17,6 +17,20 @@ import {
   type SetLighterIntegrationInput,
 } from "../../shared/schemas/lighter-integration.js";
 import { readLighterPointsInputSchema } from "../../shared/schemas/lighter-points.js";
+import {
+  confirmLighterLeverageInputSchema,
+  getLighterLeverageOverviewInputSchema,
+  getLighterTradingLimitsInputSchema,
+  prepareLighterLeverageInputSchema,
+  reconcileLighterLeverageInputSchema,
+  setLighterTradingLimitsInputSchema,
+  type ConfirmLighterLeverageInput,
+  type GetLighterLeverageOverviewInput,
+  type GetLighterTradingLimitsInput,
+  type PrepareLighterLeverageInput,
+  type ReconcileLighterLeverageInput,
+  type SetLighterTradingLimitsInput,
+} from "../../shared/schemas/lighter-trading-limits.js";
 import { abortableInvoke, invokeWithSchema } from "../_dispatch.js";
 
 const setTelemetryConsentInputSchema = z
@@ -78,6 +92,51 @@ export const settings = {
   // cancels the in-flight read, which is what reaches main's `ctx.signal`.
   lighterPoints() {
     return abortableInvoke(CH.settings.lighterPoints, {}, readLighterPointsInputSchema);
+  },
+  getLighterTradingLimits(input: GetLighterTradingLimitsInput) {
+    return invokeWithSchema(
+      CH.settings.getLighterTradingLimits,
+      input,
+      getLighterTradingLimitsInputSchema,
+    );
+  },
+  setLighterTradingLimits(input: SetLighterTradingLimitsInput) {
+    return invokeWithSchema(
+      CH.settings.setLighterTradingLimits,
+      input,
+      setLighterTradingLimitsInputSchema,
+    );
+  },
+  getLighterLeverageOverview(input: GetLighterLeverageOverviewInput) {
+    return invokeWithSchema(
+      CH.settings.getLighterLeverageOverview,
+      input,
+      getLighterLeverageOverviewInputSchema,
+    );
+  },
+  prepareLighterLeverage(input: PrepareLighterLeverageInput) {
+    return invokeWithSchema(
+      CH.settings.prepareLighterLeverage,
+      input,
+      prepareLighterLeverageInputSchema,
+    );
+  },
+  // Abortable: closing the confirmation modal cancels the in-flight confirm,
+  // which reaches main's `ctx.signal` and refuses BEFORE the nonce reservation
+  // and BEFORE submission. It cannot recall a transaction already sent.
+  confirmLighterLeverage(input: ConfirmLighterLeverageInput) {
+    return abortableInvoke(
+      CH.settings.confirmLighterLeverage,
+      input,
+      confirmLighterLeverageInputSchema,
+    );
+  },
+  reconcileLighterLeverage(input: ReconcileLighterLeverageInput) {
+    return invokeWithSchema(
+      CH.settings.reconcileLighterLeverage,
+      input,
+      reconcileLighterLeverageInputSchema,
+    );
   },
   getUserProfile() {
     return invokeWithSchema(CH.settings.getUserProfile, {});

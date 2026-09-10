@@ -395,6 +395,15 @@ export type VexErrorCode =
   | "projects.wallet_drift"
   | "projects.backing_session_integrity"
   /**
+   * Lighter trading setup (Settings -> Lighter). `settings.lighter_revision_conflict`
+   * mirrors `projects.scope_conflict`: the optimistic `expectedRevision` on a
+   * capital-share write did not match the stored row's revision, so someone
+   * else saved first. Nothing was written; the renderer offers a reload rather
+   * than a retry that would overwrite the winner. `retryable: false,
+   * userActionable: true`.
+   */
+  | "settings.lighter_revision_conflict"
+  /**
    * B0 - the project is being DELETED, so the operation was declined. Not a
    * failure and not `not_found`: the project still exists as the user last saw
    * it, and their own delete is what refused this. Retryable only in the sense

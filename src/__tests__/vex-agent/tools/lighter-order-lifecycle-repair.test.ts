@@ -3,6 +3,27 @@ import { describe, expect, it, vi } from "vitest";
 import { deriveVexAssignedClientOrderIndex } from "@tools/lighter/signer-order.js";
 import type { LighterAccountOrder } from "@tools/lighter/types.js";
 import type { LighterOrderLifecycleIntentRow } from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
+
+/**
+ * The capital ledger is faked at the REPO boundary so lifecycle repair reaches
+ * the real retirement helper, swallow included. `importOriginal` keeps the
+ * terminal-state tables the production code reads.
+ */
+const ledger = vi.hoisted(() => ({
+  retired: [] as { intentId: string; reason: string }[],
+  settled: [] as string[],
+}));
+vi.mock("@vex-agent/db/repos/lighter-capital-commitments.js", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@vex-agent/db/repos/lighter-capital-commitments.js")
+  >()),
+  retireLighterCapitalCommitment: async (input: { intentId: string; reason: string }) => {
+    ledger.retired.push(input);
+  },
+  markLighterCapitalCommitmentSettled: async (intentId: string) => {
+    ledger.settled.push(intentId);
+  },
+}));
 import {
   LIGHTER_LIFECYCLE_REPAIR_EXPIRY_GRACE_MS,
   repairLighterOrderLifecycleIntent,
@@ -240,6 +261,50 @@ describe("Lighter order lifecycle repair", () => {
 
     expect(report.resolution).toBe("nonce_released_expired_unconsumed");
     expect(d.nonceState.releaseReservation).toHaveBeenCalledWith(expect.objectContaining({ providerNonce: 9 }));
+  });
+
+  it("retires a modify commitment only where the state proves it was never sent", async () => {
+    for (const state of ["expired", "expired_unsubmitted"] as const) {
+      ledger.retired.length = 0;
+      ledger.settled.length = 0;
+      const row = intent({ actionType: "modify", executionState: state });
+
+      const report = await repairLighterOrderLifecycleIntent(row, deps(row, { readsFail: true }));
+
+      expect(report.stateAfter).toBe(state);
+      expect(ledger.retired).toEqual([{ intentId: row.intentId, reason: `repair_${state}` }]);
+      expect(ledger.settled).toEqual([]);
+    }
+  });
+
+  it("STAMPS a settled modification instead of retiring it, so the lag runs", async () => {
+    // A modification that reached Lighter is carried by the account's own
+    // numbers only for a session that reads the account AFTER it settled.
+    for (const state of ["completed", "rejected"] as const) {
+      ledger.retired.length = 0;
+      ledger.settled.length = 0;
+      const row = intent({ actionType: "modify", executionState: state });
+
+      const report = await repairLighterOrderLifecycleIntent(row, deps(row, { readsFail: true }));
+
+      expect(report.stateAfter).toBe(state);
+      expect(ledger.settled).toEqual([row.intentId]);
+      expect(ledger.retired).toEqual([]);
+    }
+  });
+
+  it("keeps the commitment while the lifecycle outcome is still unknown", async () => {
+    ledger.retired.length = 0;
+    ledger.settled.length = 0;
+    const row = intent({ actionType: "modify", signerExpiryMs: NOW + 60_000 });
+
+    const report = await repairLighterOrderLifecycleIntent(
+      row,
+      deps(row, { readsFail: true, nextNonce: 10 }),
+    );
+
+    expect(report.stateAfter).toBe("ambiguous");
+    expect(ledger.retired).toEqual([]);
   });
 
   it("unblocks a consumed nonce without claiming the lifecycle action completed", async () => {

@@ -45,6 +45,12 @@ import {
   type LighterOrderLifecycleSignerAdapter,
   type LighterOrderLifecycleSignerResult,
 } from "./signer-order-lifecycle.js";
+import {
+  LIGHTER_TX_TYPE_UPDATE_LEVERAGE,
+  type LighterLeverageSignerAdapter,
+  type LighterUpdateLeverageSignerResult,
+  type LighterUpdateLeverageSigningInput,
+} from "./signer-leverage.js";
 
 import { assertLighterIntegratorFees, type LighterIntegratorFees } from "./fee-policy.js";
 import { LIGHTER_TX_TYPE_APPROVE_INTEGRATOR, type LighterApproveIntegratorSignerAdapter,
@@ -184,6 +190,17 @@ interface LighterSignerBinaryCancelAllOrdersPayload extends LighterSignerBinaryB
   };
 }
 
+interface LighterSignerBinaryUpdateLeveragePayload extends LighterSignerBinaryBasePayload {
+  readonly operation: "signUpdateLeverage";
+  readonly nonce: string;
+  readonly expiredAt: string;
+  readonly updateLeverage: {
+    readonly marketIndex: number;
+    readonly initialMarginFraction: number;
+    readonly marginMode: 0 | 1;
+  };
+}
+
 interface LighterSignerBinaryWithdrawPayload extends LighterSignerBinaryBasePayload {
   readonly operation: "signWithdraw";
   readonly nonce: string;
@@ -233,6 +250,7 @@ type LighterSignerBinaryPayload =
   | LighterSignerBinaryCancelOrderPayload
   | LighterSignerBinaryModifyOrderPayload
   | LighterSignerBinaryCancelAllOrdersPayload
+  | LighterSignerBinaryUpdateLeveragePayload
   | LighterSignerBinaryWithdrawPayload
   | LighterSignerBinaryApproveIntegratorPayload
   | LighterSignerBinaryChangePubKeyPayload
@@ -461,6 +479,55 @@ export function createLighterOrderLifecycleSignerBinary(
   };
 }
 
+/**
+ * The leverage signer: one operation, TxType 20.
+ *
+ * Deliberately a SEPARATE adapter from the order lifecycle one rather than a
+ * fourth method on it. A leverage change is a user-originated Settings action
+ * with its own authority story; the order lifecycle adapter is handed to
+ * agent-facing execution paths, and a signer method there is a method the agent
+ * path could reach.
+ */
+export function createLighterLeverageSignerBinary(
+  options: LighterSignerBinaryAdapterOptions = {},
+): LighterLeverageSignerAdapter {
+  const runner = options.runner ?? runLighterSignerBinary;
+  const binaryPath = defaultBinaryPath(options);
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
+  return {
+    source: "official_lighter_signer",
+    signUpdateLeverage: async (
+      input: LighterUpdateLeverageSigningInput,
+    ): Promise<LighterUpdateLeverageSignerResult> => {
+      const raw = await runner({
+        binaryPath,
+        payload: buildUpdateLeveragePayload(input),
+        timeoutMs,
+      });
+      const output = parseOrderLifecycleSignerOutput(raw, LIGHTER_TX_TYPE_UPDATE_LEVERAGE);
+      // Vex takes no fee on a configuration change. The Go helper refuses a
+      // request that pairs integrator fees with this operation, and lighter-go
+      // itself would sign one if asked (L2UpdateLeverageTxInfo embeds and
+      // hashes L2TxAttributes), so the SIGNED payload is checked here too: the
+      // helper is a separate process, and its output is evidence, not trust.
+      assertSignedIntegratorAttributes(output.txInfo, null);
+      return {
+        kind: "lighter_update_leverage_signer_result",
+        operation: "update_leverage",
+        environment: input.environment,
+        accountIndex: input.accountIndex,
+        apiKeyIndex: input.apiKeyIndex,
+        nonce: input.nonce,
+        expiredAt: input.expiredAt,
+        txType: LIGHTER_TX_TYPE_UPDATE_LEVERAGE,
+        txInfo: output.txInfo,
+        txHash: output.txHash,
+      };
+    },
+  };
+}
+
 export function createLighterSignerBinaryApproveIntegratorAdapter(
   options: LighterSignerBinaryAdapterOptions = {},
 ): LighterApproveIntegratorSignerAdapter {
@@ -646,7 +713,11 @@ function buildWithdrawPayload(
 }
 
 function lifecyclePayloadBase(
-  input: LighterCancelOrderSigningInput | LighterModifyOrderSigningInput | LighterCancelAllOrdersSigningInput,
+  input:
+    | LighterCancelOrderSigningInput
+    | LighterModifyOrderSigningInput
+    | LighterCancelAllOrdersSigningInput
+    | LighterUpdateLeverageSigningInput,
 ): LighterSignerBinaryBasePayload & { readonly nonce: string; readonly expiredAt: string } {
   return {
     privateKey: input.secret.privateKey,
@@ -677,6 +748,20 @@ function buildModifyOrderPayload(input: LighterModifyOrderSigningInput): Lighter
       baseAmount: input.baseAmountInteger,
       price: input.priceInteger,
       triggerPrice: input.triggerPriceInteger,
+    },
+  };
+}
+
+function buildUpdateLeveragePayload(
+  input: LighterUpdateLeverageSigningInput,
+): LighterSignerBinaryUpdateLeveragePayload {
+  return {
+    operation: "signUpdateLeverage",
+    ...lifecyclePayloadBase(input),
+    updateLeverage: {
+      marketIndex: input.marketIndex,
+      initialMarginFraction: input.initialMarginFraction,
+      marginMode: input.marginMode,
     },
   };
 }
@@ -1258,9 +1343,16 @@ function parseWithdrawalSignerOutput(raw: unknown): Pick<
   return { txInfo: signed.txInfo, txHash: signed.txHash };
 }
 
+/**
+ * A refusal check, not a classifier: the helper answered a request whose type
+ * the caller already chose, so a different type back means the helper signed
+ * something else and the result is discarded. 20 (leverage) is admitted here
+ * alongside the three order-lifecycle types because it shares the same
+ * "txInfo plus txHash" response shape.
+ */
 function parseOrderLifecycleSignerOutput(
   raw: unknown,
-  expectedTxType: 15 | 16 | 17,
+  expectedTxType: 15 | 16 | 17 | 20,
 ): Pick<LighterOrderLifecycleSignerResult, "txInfo" | "txHash"> {
   const signed = parseSignerOutput(raw);
   if (signed.txType !== expectedTxType) throw signerProcessFailed(raw);

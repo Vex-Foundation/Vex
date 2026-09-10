@@ -13,6 +13,10 @@ import type {
   LighterEnvironment,
   LighterTrade,
 } from "@tools/lighter/types.js";
+import {
+  LIGHTER_LIFECYCLE_COMMITMENT_SETTLED_STATES,
+  LIGHTER_LIFECYCLE_COMMITMENT_UNSUBMITTED_STATES,
+} from "@vex-agent/db/repos/lighter-capital-commitments.js";
 import * as lifecycleIntentsRepo from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
 import type { LighterOrderLifecycleIntentRow } from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
 import * as nonceStateRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
@@ -26,6 +30,10 @@ import {
   isLighterExpiredUnsubmittedState,
   LIGHTER_EXPIRED_UNSUBMITTED_GUIDANCE,
 } from "./order-evidence.js";
+import {
+  markLighterOrderCapitalCommitmentSettled,
+  retireLighterOrderCapitalCommitment,
+} from "./capital-share-policy.js";
 import { averageFillPrice } from "./order-lifecycle.js";
 import { resolveLighterReadOnlyAccountAuth } from "./read-account-auth.js";
 
@@ -120,9 +128,50 @@ export async function repairUnresolvedLighterOrderLifecycles(
   return reports;
 }
 
+/**
+ * Repair one lifecycle action, and settle or retire its capital commitment
+ * according to what the repair PROVED.
+ *
+ * Only a `modify` ever holds a commitment (a cancel or a close frees margin, it
+ * never reserves any), but both calls are keyed on the intent id, so a cancel
+ * simply touches nothing. Both entry points - exact-id and sweep - come through
+ * this function.
+ *
+ * A state proving the modification NEVER REACHED Lighter retires the commitment
+ * at once. A state proving it SETTLED only stamps the settlement, so the
+ * observation lag runs before the row stops counting: see
+ * `order-repair.ts:repairLighterOrderIntent` for the race that distinction
+ * fences.
+ */
 export async function repairLighterOrderLifecycleIntent(
   intent: LighterOrderLifecycleIntentRow,
   deps: LighterOrderLifecycleRepairDeps = defaultLighterOrderLifecycleRepairDeps(),
+): Promise<LighterOrderLifecycleRepairReport> {
+  const report = await resolveLighterOrderLifecycleRepair(intent, deps);
+  if (LIGHTER_LIFECYCLE_COMMITMENT_UNSUBMITTED.has(report.stateAfter)) {
+    await retireLighterOrderCapitalCommitment({
+      intentId: report.intentId,
+      reason: `repair_${report.stateAfter}`,
+    });
+  } else if (LIGHTER_LIFECYCLE_COMMITMENT_SETTLED.has(report.stateAfter)) {
+    await markLighterOrderCapitalCommitmentSettled(report.intentId);
+  }
+  return report;
+}
+
+/** Lifecycle-intent states that PROVE the action never reached Lighter. */
+const LIGHTER_LIFECYCLE_COMMITMENT_UNSUBMITTED: ReadonlySet<string> = new Set(
+  LIGHTER_LIFECYCLE_COMMITMENT_UNSUBMITTED_STATES,
+);
+
+/** Lifecycle-intent states that prove the action SETTLED at Lighter. */
+const LIGHTER_LIFECYCLE_COMMITMENT_SETTLED: ReadonlySet<string> = new Set(
+  LIGHTER_LIFECYCLE_COMMITMENT_SETTLED_STATES,
+);
+
+async function resolveLighterOrderLifecycleRepair(
+  intent: LighterOrderLifecycleIntentRow,
+  deps: LighterOrderLifecycleRepairDeps,
 ): Promise<LighterOrderLifecycleRepairReport> {
   if (isLighterExpiredUnsubmittedState(intent.executionState)) {
     // Terminal for recovery: no provider read is spent, nothing is resubmitted,

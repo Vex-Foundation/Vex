@@ -1,6 +1,38 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as feePolicy from "@tools/lighter/fee-policy.js";
 
+// The capital-share boundary at execute-time re-admission. `null` limits is the
+// DEFAULT INSTALL: no share is set, so no ceiling applies and the ledger is
+// never reached. Enforcement with a share set, including the refusal when the
+// live account shrank after approval, is proved in
+// `lighter-capital-share-policy.test.ts`.
+vi.mock("@vex-agent/db/repos/lighter-trading-limits.js", () => ({
+  readLighterTradingLimits: async () => null,
+}));
+// Both ledger exits are RECORDED rather than stubbed away, because the outcome
+// paths must not confuse them: a commitment that outlives its intent shrinks
+// the user's capital share forever, while one retired the moment its order
+// filled hands the next admission a budget that counts the exposure NOWHERE.
+// A never-sent order retires at once; a settled one is only STAMPED.
+const ledger = vi.hoisted(() => ({
+  retired: [] as { intentId: string; reason: string }[],
+  settled: [] as string[],
+}));
+vi.mock("@vex-agent/db/repos/lighter-capital-commitments.js", () => ({
+  admitLighterCapitalCommitment: async () => ({
+    admitted: true,
+    commitmentId: "commitment-test",
+    liveCommittedUnits: "0",
+  }),
+  listLiveLighterCapitalCommitments: async () => [],
+  retireLighterCapitalCommitment: async (input: { intentId: string; reason: string }) => {
+    ledger.retired.push(input);
+  },
+  markLighterCapitalCommitmentSettled: async (intentId: string) => {
+    ledger.settled.push(intentId);
+  },
+}));
+
 import {
   configureLighterCreateOrderExecutionDeps,
   executeApprovedLighterCreateOrder,
@@ -94,9 +126,15 @@ const ACCOUNT: LighterAccountResponse = {
   total: 1,
   accounts: [{
     index: 42,
+    // The live account endpoint always reports the owning wallet (measured
+    // 2026-09-10 on RHC account 24226, checksummed). The capital-share
+    // re-admission identifies the wallet from it and refuses without it, so the
+    // fixture carries what the provider carries.
+    l1_address: "0x1111111111111111111111111111111111111111",
     status: 1,
     collateral: "1000",
     available_balance: "900",
+    cross_initial_margin_requirement: "0.000000",
     positions: [],
   }],
 };
@@ -798,6 +836,10 @@ describe("Lighter approved create execution pipeline", () => {
     expect(d.client.getAccount).toHaveBeenCalledWith("rhc", {
       by: "index",
       value: spotPlan.accountIndex,
+      // `false`: revalidation reads the account's own margin fractions, and
+      // `activeOnly: true` hides a market the account has leverage settings for
+      // but no open position on.
+      activeOnly: false,
     }, { fresh: true });
     expect(d.client.getApiKeys).toHaveBeenCalledWith("rhc", {
       accountIndex: spotPlan.accountIndex,
@@ -1563,6 +1605,51 @@ describe("Lighter approved create execution pipeline", () => {
     expect(d.intents.markAmbiguous).not.toHaveBeenCalled();
   });
 
+  it("STAMPS a filled order's capital commitment and never retires it early", async () => {
+    // Retiring on provider evidence was the stale-snapshot gap: another session
+    // that read the account BEFORE this fill would then find the capital in
+    // neither `cross_initial_margin_requirement` nor the ledger, and admit a
+    // second order against it. The stamp starts the observation lag instead.
+    ledger.retired.length = 0;
+    ledger.settled.length = 0;
+    const d = deps();
+    vi.mocked(d.client.getAccountInactiveOrders)
+      .mockResolvedValueOnce({ code: 200, orders: [] })
+      .mockResolvedValue({ code: 200, orders: [accountOrder({
+        status: "filled", base_size: 0, filled_base_amount: "1", remaining_base_amount: "0",
+        filled_quote_amount: "3000", is_ask: false,
+      })] });
+
+    const result = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+
+    expect(result).toMatchObject({ status: "provider_confirmed", executionState: "filled" });
+    expect(ledger.settled).toEqual([PLAN.intentId]);
+    expect(ledger.retired).toEqual([]);
+  });
+
+  it("leaves a RESTING order's commitment untouched: it can still consume that capital", async () => {
+    // `open` was retired with every other non-pending state. A resting order
+    // still holds the margin its commitment reserved, so nothing is settled and
+    // nothing is retired.
+    ledger.retired.length = 0;
+    ledger.settled.length = 0;
+    const d = deps({
+      client: {
+        ...deps().client,
+        getAccountActiveOrders: vi
+          .fn()
+          .mockResolvedValueOnce({ code: 200, orders: [] })
+          .mockResolvedValueOnce({ code: 200, orders: [accountOrder()] }),
+      },
+    });
+
+    const result = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+
+    expect(result).toMatchObject({ status: "provider_confirmed", executionState: "open" });
+    expect(ledger.settled).toEqual([]);
+    expect(ledger.retired).toEqual([]);
+  });
+
   it("does not turn a fill already confirmed by the stream into a persistence error", async () => {
     const d = deps();
     vi.mocked(d.client.getAccountInactiveOrders)
@@ -2056,6 +2143,11 @@ describe("Lighter create-order signer settlement contract", () => {
     expect(d.intents.markExpiredUnsubmitted).toHaveBeenCalledWith(expect.objectContaining({
       signerTxHash: TX_HASH, reason: "consent_expired_after_signing",
     }));
+    // The schema proves this transition never started a send, so the capital it
+    // reserved is released now, not after the ledger's observation lag.
+    expect(ledger.retired).toContainEqual({
+      intentId: PLAN.intentId, reason: "expired_unsubmitted",
+    });
     expect(d.nonceState.releaseUnsubmittedReservation).toHaveBeenCalledWith(RELEASE);
     expect(d.intents.markAmbiguous).not.toHaveBeenCalled();
     expect(d.client.sendTx).not.toHaveBeenCalled();
@@ -2069,6 +2161,9 @@ describe("Lighter create-order signer settlement contract", () => {
     expect(d.intents.markUnsubmittedRefused).toHaveBeenCalledWith(expect.objectContaining({
       reason: "pre_sign_refused",
     }));
+    expect(ledger.retired).toContainEqual({
+      intentId: PLAN.intentId, reason: "refused_unsubmitted",
+    });
     expect(d.nonceState.releaseUnsubmittedReservation).toHaveBeenCalledWith(RELEASE);
     expect(d.intents.markAmbiguous).not.toHaveBeenCalled();
   });

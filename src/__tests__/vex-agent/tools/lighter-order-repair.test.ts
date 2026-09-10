@@ -10,6 +10,29 @@ import {
 } from "@vex-agent/tools/protocols/lighter/order-repair.js";
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 
+/**
+ * The capital ledger is faked at the REPO boundary, not at the policy module:
+ * repair must reach the real `retireLighterOrderCapitalCommitment`, including
+ * the swallow that keeps a ledger failure from changing a repair verdict.
+ * `importOriginal` keeps the terminal-state tables, which are the same source
+ * of truth the production code reads.
+ */
+const ledger = vi.hoisted(() => ({
+  retired: [] as { intentId: string; reason: string }[],
+  settled: [] as string[],
+}));
+vi.mock("@vex-agent/db/repos/lighter-capital-commitments.js", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@vex-agent/db/repos/lighter-capital-commitments.js")
+  >()),
+  retireLighterCapitalCommitment: async (input: { intentId: string; reason: string }) => {
+    ledger.retired.push(input);
+  },
+  markLighterCapitalCommitmentSettled: async (intentId: string) => {
+    ledger.settled.push(intentId);
+  },
+}));
+
 const NOW = Date.parse("2026-08-14T12:00:00.000Z");
 const ORDER_EXPIRY_MS = NOW + 30 * 60 * 1000;
 const INTENT_ID = "lighter-exec-00000000-0000-4000-8000-000000000001";
@@ -378,6 +401,49 @@ describe("Lighter order repair", () => {
 
     expect(report.resolution).toBe("already_terminal");
     expect(deps.client.getNextNonce).not.toHaveBeenCalled();
+  });
+
+  it("retires immediately ONLY where the state proves the order never reached Lighter", async () => {
+    ledger.retired.length = 0;
+    ledger.settled.length = 0;
+
+    await repairLighterOrderIntent(
+      intentRow({ executionState: "expired_unsubmitted" }),
+      makeDeps(),
+    );
+
+    expect(ledger.retired).toEqual([
+      { intentId: INTENT_ID, reason: "repair_expired_unsubmitted" },
+    ]);
+    expect(ledger.settled).toEqual([]);
+  });
+
+  it("STAMPS a settled order instead of retiring it, so the observation lag runs", async () => {
+    // Retiring here was the stale-snapshot gap: a session that read the account
+    // before this fill would then see the capital in neither the provider's
+    // numbers nor the ledger, and admit a second order against it.
+    for (const state of ["filled", "canceled", "rejected"] as const) {
+      ledger.retired.length = 0;
+      ledger.settled.length = 0;
+
+      await repairLighterOrderIntent(intentRow({ executionState: state }), makeDeps());
+
+      expect(ledger.settled).toEqual([INTENT_ID]);
+      expect(ledger.retired).toEqual([]);
+    }
+  });
+
+  it("keeps the commitment while the outcome is still unknown", async () => {
+    ledger.retired.length = 0;
+    ledger.settled.length = 0;
+
+    const report = await repairLighterOrderIntent(
+      intentRow({ executionState: "submitted" }),
+      makeDeps({ nextNonce: new Error("offline") }),
+    );
+
+    expect(report.resolution).toBe("degraded");
+    expect(ledger.retired).toEqual([]);
   });
 
   it("sweeps every unresolved intent through the same repair path", async () => {

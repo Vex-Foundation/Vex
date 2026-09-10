@@ -19,6 +19,11 @@ import {
   getConfiguredLighterCreateOrderExecutionDeps,
   type ExecuteApprovedLighterCreateOrderResult,
 } from "../order-create-execution.js";
+import {
+  admitLighterOrderCapitalCommitmentForPreview,
+  retireLighterOrderCapitalCommitment,
+} from "../capital-share-policy.js";
+import { describeFailureForAgent } from "../../runtime/errors.js";
 import { assertLighterOrderCreateApprovalBinding } from "../approval-binding.js";
 import { buildLighterOrderApprovalDisclosure } from "../approval-disclosure.js";
 import { lighterPhaseOneOrderPolicyFailure } from "@tools/lighter/order-policy.js";
@@ -250,6 +255,17 @@ export const prepareLighterOrderCreateApproval: ProtocolHandler = async (params,
     }
 
     const intentId = `lighter-exec-${randomUUID()}`;
+    // THE ENFORCEMENT POINT for the user's capital share, after credential
+    // readiness and BEFORE the intent row exists. Admission and commitment are
+    // one transaction under an account-scoped advisory lock, so two sessions
+    // preparing at once serialize and only the budget-fitting total proceeds. A
+    // breach throws `LIGHTER_CAPITAL_SHARE_EXCEEDED` naming both numbers; the
+    // order is never resized to fit.
+    try {
+      await admitLighterOrderCapitalCommitmentForPreview({ intentId, preview });
+    } catch (error) {
+      return fail(describeFailureForAgent(error));
+    }
     const expiresAt = executionIntentExpiresAt(preview.expiresAt);
     const created = await withSessionControlLock(sessionId, (client) =>
       lighterOrderExecutionIntentsRepo.createApprovalPendingWith(client, {
@@ -321,6 +337,13 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
         decision: "expired",
         approvalId: context.approvalId,
         reason: "approval resume observed an expired Lighter execution intent",
+      });
+      // This intent can never be approved now, so the capital it reserved at
+      // prepare is released here instead of waiting for the next admission to
+      // notice. Nothing was signed or sent.
+      await retireLighterOrderCapitalCommitment({
+        intentId: intent.intentId,
+        reason: "approval_expired",
       });
       return fail(`Lighter order execution intent ${intent.intentId} expired before approval resume.`);
     }

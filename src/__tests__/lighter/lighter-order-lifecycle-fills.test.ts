@@ -274,6 +274,14 @@ function closeDeps(input: {
         async () => ({ code: 200, orders: [CLOSE_ORDER] }),
       ),
       getAccountTrades: input.getAccountTrades,
+      // The capital-share policy widened the lifecycle client with the market
+      // detail read; this close has no configured share, so the fake is never
+      // reached, and it is typed so the deps object still satisfies the contract.
+      getMarketDetails: vi.fn<Client["getMarketDetails"]>(async () => ({
+        code: 200,
+        order_book_details: [],
+        spot_order_book_details: [],
+      })),
       getMarkets: vi.fn<Client["getMarkets"]>(async () => ({
         code: 200,
         order_books: [{

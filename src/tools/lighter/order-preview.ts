@@ -60,8 +60,38 @@ export interface LighterOrderPreviewContext {
   readonly accountTakerFeeTicks?: number;
   readonly market: LighterMarketDetail;
   readonly orderBook: LighterOrderBookOrdersResponse;
+  /**
+   * The account read the preview reasons over.
+   *
+   * READ IT WITH `activeOnly: false`. An `activeOnly: true` read hides a market
+   * the account has leverage settings for but no open position on (the SDK
+   * documents the flag that way in `lighter-python/lighter/api/account_api.py`),
+   * which is exactly the row whose `initial_margin_fraction` the capital share
+   * and the derived leverage need.
+   */
   readonly account: LighterAccountResponse;
+  /**
+   * The agent's capital-share advisory, already resolved by the caller.
+   *
+   * ADVISORY ONLY and OPAQUE HERE: this builder is pure and synchronous, while
+   * the share needs a durable row and an authenticated read. The protocol layer
+   * (`capital-share-policy.ts`) computes it and hands it in; the preview simply
+   * carries it beside `minimumChecks` so the user and the agent can see the
+   * ceiling BEFORE the prepare that enforces it. Absent means the caller did not
+   * resolve one, never that no ceiling exists.
+   */
+  readonly capitalShare?: LighterOrderPreviewCapitalShare;
 }
+
+/**
+ * The preview's capital-share block. Structurally opaque on purpose: its shape
+ * is owned by `capital-share-policy.ts`, and restating that union here would
+ * make this pure module a second source of truth for a money rule.
+ */
+export type LighterOrderPreviewCapitalShare = {
+  readonly status: "not_applicable" | "would_refuse" | "within_share" | "unavailable";
+  readonly [key: string]: unknown;
+};
 
 export interface LighterOrderPreviewIdentity {
   readonly integratorFees?: LighterIntegratorFees | null;
@@ -140,6 +170,13 @@ export interface LighterOrderPreview {
       readonly marketPosition: string | null;
       readonly positionSide: "long" | "short" | "flat" | "unknown";
     };
+    /**
+     * What the agent's capital share would say about this order. `null` when the
+     * caller resolved none. It never blocks a preview: the ceiling is enforced
+     * at `lighter.order.create.prepare`, where the intent and its commitment are
+     * admitted together.
+     */
+    readonly capitalShare: LighterOrderPreviewCapitalShare | null;
     readonly spotInventoryContext: {
       readonly verified: true;
       readonly assetId: number;
@@ -335,13 +372,7 @@ export function buildLighterOrderPreview(
         display: formatInteger(priceInteger, context.market.supported_price_decimals),
         integer: priceInteger.toString(),
         decimals: context.market.supported_price_decimals,
-        role: input.orderType === "market"
-          ? "worst_acceptable_price"
-          : isTriggerLimitOrderType(input.orderType)
-            ? "limit_price"
-            : isProtectiveOrderType(input.orderType)
-              ? "trigger_execution_bound"
-              : "limit_price",
+        role: lighterOrderPriceRole(input.orderType),
       },
       triggerPrice: {
         display: triggerPriceInteger === null
@@ -376,6 +407,7 @@ export function buildLighterOrderPreview(
         priceComparison,
       },
       positionContext,
+      capitalShare: context.capitalShare ?? null,
       spotInventoryContext,
       riskNotes: [
         "Preview only. No order was signed, submitted, placed, cancelled, deposited, withdrawn, or transferred.",
@@ -566,6 +598,23 @@ function assertProtectiveTriggerDirection(
       `Protective ${input.side} execution bound must be ${input.side === "sell" ? "at or below" : "at or above"} triggerPrice ${triggerPrice}.`,
     );
   }
+}
+
+/**
+ * What the approved price MEANS for an order of this type.
+ *
+ * Extracted so the capital-share policy, which must price a buy at the approved
+ * WORST CASE, reads the role from the same owner the preview renders it from.
+ * Two mappings of one concept is how a market order's slippage bound gets
+ * mistaken for a resting limit price.
+ */
+export function lighterOrderPriceRole(
+  orderType: LighterOrderType,
+): "limit_price" | "worst_acceptable_price" | "trigger_execution_bound" {
+  if (orderType === "market") return "worst_acceptable_price";
+  if (isTriggerLimitOrderType(orderType)) return "limit_price";
+  if (isProtectiveOrderType(orderType)) return "trigger_execution_bound";
+  return "limit_price";
 }
 
 export function isProtectiveOrderType(

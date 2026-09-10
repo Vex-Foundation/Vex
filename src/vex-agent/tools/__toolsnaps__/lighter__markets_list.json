@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "List Lighter public markets/order books on Core or Robinhood Chain. Use when the user needs symbols, market ids, active/inactive status, spot versus perp coverage, fee strings, minimum order amounts, quote limits, or decimal metadata before requesting detail, depth, trades, or candles. Returns deterministically ordered, bounded market rows plus provider row count, page, nextPage, and truncation disclosure so broad market lists are walkable instead of silently shortened. Read-only: no account, key, signing, order, deposit, or withdrawal access.",
+      "description": "List Lighter public markets/order books on Core or Robinhood Chain. Use when the user needs symbols, market ids, active/inactive status, spot versus perp coverage, fee strings, minimum order amounts, quote limits, or decimal metadata before requesting detail, depth, trades, or candles. Returns deterministically ordered, bounded market rows plus provider row count, page, nextPage, and truncation disclosure so broad market lists are walkable instead of silently shortened. For a market's default and maximum leverage call lighter__market_get, which derives both from its margin fractions. Read-only: no account, key, signing, order, deposit, or withdrawal access.",
       "name": "lighter__markets_list",
       "parameters": {
         "additionalProperties": false,

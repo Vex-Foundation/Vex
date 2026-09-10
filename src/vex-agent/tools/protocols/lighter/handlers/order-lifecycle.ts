@@ -33,6 +33,8 @@ import {
   prepareLighterClosePosition,
   prepareLighterModifyOrder,
 } from "../order-lifecycle.js";
+import { admitLighterModifyCapitalCommitment } from "../capital-share-policy.js";
+import { describeFailureForAgent } from "../../runtime/errors.js";
 import {
   assertLighterCancelAllApprovalBinding,
   assertLighterCancelOneApprovalBinding,
@@ -226,8 +228,34 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (accountWide !== null) {
       return fail(`An account-wide Lighter cancellation already exists in state ${accountWide.executionState}.`);
     }
+    const modifyIntentId = `lighter-lifecycle-${randomUUID()}`;
+    // The capital share governs a modification by its DELTA: an increase in
+    // required margin must fit what remains, a decrease always passes. Admitted
+    // atomically, exactly as a create is, so two concurrent preparations cannot
+    // both pass the same remaining budget.
+    try {
+      await admitLighterModifyCapitalCommitment({
+        environment: environment.value,
+        accountIndex: scope.value.accountIndex,
+        marketIndex: marketId.value,
+        intentId: modifyIntentId,
+        side: prepared.snapshot.side === "sell" ? "sell" : "buy",
+        reduceOnly: prepared.snapshot.reduceOnly,
+        filledBaseAmount: prepared.snapshot.filledBaseAmount,
+        currentBaseAmount: prepared.snapshot.initialBaseAmount,
+        currentPrice: prepared.snapshot.price,
+        requestedBaseAmount: prepared.requestedBaseAmount,
+        requestedPrice: prepared.requestedPrice,
+        sizeDecimals: prepared.sizeDecimals,
+        priceDecimals: prepared.priceDecimals,
+        integratorFees: prepared.integratorFees ?? null,
+        client,
+      });
+    } catch (error) {
+      return fail(describeFailureForAgent(error));
+    }
     const createInput: intentsRepo.CreateLighterOrderLifecycleIntentInput = {
-      intentId: `lighter-lifecycle-${randomUUID()}`,
+      intentId: modifyIntentId,
       sessionId: context.sessionId,
       matchHash: prepared.matchHash,
       environment: prepared.environment,

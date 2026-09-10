@@ -295,6 +295,62 @@ describe("Lighter agent discovery surface", () => {
     }
   });
 
+  it("ranks the market and onboarding reads for leverage questions", async () => {
+    // THE DEFECT THIS PINS: `vex_ToolSearch("leverage")` had nothing to rank,
+    // because no Lighter tool's discovery text used the word. An agent asked
+    // "what's my max leverage on BTC" could find no tool and answered from the
+    // raw fractions it already had, which is how "max leverage 2" happened.
+    //
+    // `reembed.ts` embeds `embeddingText ?? canonicalSummary ?? description`, so
+    // editing the manifest descriptions alone would NOT change retrieval. These
+    // queries therefore exercise the discovery entries, not the descriptions.
+    for (const query of [
+      "max leverage on BTC",
+      "what is the maximum leverage on Lighter ETH",
+      "default leverage for this market",
+    ]) {
+      const result = await discoverProtocolCapabilities({ namespace: "lighter", query, limit: 5 });
+      expect(result.success).toBe(true);
+      expect(result.tools.map((tool) => tool.toolId), query).toContain("lighter.market.get");
+    }
+
+    // The onboarding read carries the ACCOUNT's live numbers, so the same
+    // question must reach it too, not only the market read.
+    const both = await discoverProtocolCapabilities({
+      namespace: "lighter",
+      query: "max leverage on BTC",
+      limit: 5,
+    });
+    expect(both.tools.map((tool) => tool.toolId)).toContain("lighter.account.onboarding.status");
+
+    // AND the leverage vocabulary must not be broad enough to steal FUNDING
+    // routing. Retrieval is lexical when no embedding backend is configured, and
+    // the baseline margin between the onboarding read and deposit preparation
+    // for this query is only 18 points; an earlier draft of the onboarding
+    // intents ("what leverage is my Lighter account using") flipped it. This
+    // guard therefore travels with the vocabulary, in the same test.
+    const funding = await discoverProtocolCapabilities({
+      namespace: "lighter",
+      query: "fund my Lighter RHC account with 5 USDG from my Vex wallet",
+      limit: 5,
+    });
+    expect(funding.tools[0]?.toolId).toBe("lighter.deposit.prepare");
+  });
+
+  it("states in the navigation declaration that leverage is a user setting", async () => {
+    // ONE owner for the static half of the instruction: `buildProtocolsPrompt`
+    // renders this declaration into the in-app prompt and `protocol-blocks.ts`
+    // renders the same text into the Studio AGENTS block, so both surfaces
+    // inherit it from here.
+    const navigation = getProtocolNamespaceNavigation("lighter");
+    expect(navigation.declaration.read).toContain(
+      "Per-market leverage and the agent's capital share are user settings from Settings -> Lighter -> Trading setup",
+    );
+    expect(navigation.declaration.read).toContain("read tradingLimits for the live values");
+    expect(navigation.declaration.read).toContain("Vex exposes no tool to change them");
+    expect(navigation.declaration.read).not.toContain("\u2014");
+  });
+
   it("lists the complete lighter namespace as lean discovery rows", async () => {
     const result = await discoverProtocolCapabilities({ list: true, namespace: "lighter" });
     expect(result.success).toBe(true);

@@ -85,6 +85,7 @@ export const VEX_ERROR_CODES = [
   "projects.root_out_of_space",
   "projects.root_path_invalid",
   "projects.name_reserved",
+  "settings.lighter_revision_conflict",
   "internal.contract_violation",
   "internal.cancelled",
   "internal.unexpected",

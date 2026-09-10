@@ -57,6 +57,7 @@ import {
 import type { RegisterShareTokenOutcome } from "@vex-agent/agentscan/share-token-client.js";
 
 import { registerChainEndpointSettingsHandlers } from "./settings-chain-endpoints.js";
+import { registerLighterTradingSettingsHandlers } from "./settings-lighter-trading.js";
 
 const empty = z.object({}).strict();
 
@@ -111,7 +112,10 @@ const setTelemetryConsentInput = z
 
 export function registerSettingsHandlers(): Array<() => void> {
   resetShareMintHold();
-  const handlers: Array<() => void> = registerChainEndpointSettingsHandlers();
+  const handlers: Array<() => void> = [
+    ...registerChainEndpointSettingsHandlers(),
+    ...registerLighterTradingSettingsHandlers(),
+  ];
 
   handlers.push(
     registerHandler({

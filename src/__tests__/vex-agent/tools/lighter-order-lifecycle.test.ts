@@ -1,6 +1,37 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as feePolicy from "@tools/lighter/fee-policy.js";
 
+// The capital-share boundary on the modify path. `null` limits is the DEFAULT
+// INSTALL: no share is set, so the modification's margin delta has no ceiling to
+// fit and the ledger is never reached. Delta admission with a share set is
+// proved in `lighter-capital-share-policy.test.ts`.
+vi.mock("@vex-agent/db/repos/lighter-trading-limits.js", () => ({
+  readLighterTradingLimits: async () => null,
+}));
+// Both ledger exits are RECORDED rather than stubbed away, because they are
+// NOT interchangeable: a commitment that outlives its intent shrinks the user's
+// budget forever, while one retired the instant its modification settled
+// reopens the stale-snapshot gap. A never-sent modification retires at once; a
+// settled one is only STAMPED and keeps counting until the observation lag runs.
+const ledger = vi.hoisted(() => ({
+  retired: [] as { intentId: string; reason: string }[],
+  settled: [] as string[],
+}));
+vi.mock("@vex-agent/db/repos/lighter-capital-commitments.js", () => ({
+  admitLighterCapitalCommitment: async () => ({
+    admitted: true,
+    commitmentId: "commitment-test",
+    liveCommittedUnits: "0",
+  }),
+  listLiveLighterCapitalCommitments: async () => [],
+  retireLighterCapitalCommitment: async (input: { intentId: string; reason: string }) => {
+    ledger.retired.push(input);
+  },
+  markLighterCapitalCommitmentSettled: async (intentId: string) => {
+    ledger.settled.push(intentId);
+  },
+}));
+
 import {
   executeApprovedLighterCancelAll,
   executeApprovedLighterCancelOne,
@@ -178,6 +209,37 @@ function deps(overrides: Partial<LighterOrderLifecycleExecutionDeps> = {}): Ligh
     client: {
       getAccountActiveOrders: active,
       getAccountInactiveOrders: vi.fn().mockResolvedValue({ code: 200, orders: [canceledOrder] }),
+      // The modify path re-admits its margin DELTA against the agent's capital
+      // share before signing, which reads the traded account (for the owning
+      // wallet) and, only when a share exists, the market's margin fractions.
+      getAccount: vi.fn().mockResolvedValue({
+        code: 200,
+        accounts: [{
+          index: 42,
+          l1_address: "0x1111111111111111111111111111111111111111",
+          collateral: "1000",
+          available_balance: "900",
+          cross_initial_margin_requirement: "0.000000",
+          positions: [],
+        }],
+      }),
+      getMarketDetails: vi.fn().mockResolvedValue({
+        code: 200,
+        order_book_details: [{
+          market_id: 0,
+          symbol: "ETH",
+          market_type: "perp",
+          status: "active",
+          taker_fee: "0.0000",
+          supported_size_decimals: 4,
+          supported_price_decimals: 2,
+          supported_quote_decimals: 6,
+          default_initial_margin_fraction: 5000,
+          min_initial_margin_fraction: 200,
+          mark_price: "3000.00",
+        }],
+        spot_order_book_details: [],
+      }),
       getMarkets: vi.fn().mockResolvedValue({
         code: 200,
         order_books: [{ market_id: 0, status: "active", supported_size_decimals: 4, supported_price_decimals: 2 }],
@@ -355,6 +417,12 @@ describe("Lighter modify-order lifecycle", () => {
       priceInteger: "5125",
     }));
     expect(dependencies.client.sendTx).toHaveBeenCalledTimes(1);
+    // The provider now shows the modified order, so the delta this
+    // modification committed is carried by the account's own numbers - but only
+    // for a reader whose account snapshot is NEWER than this moment. The
+    // commitment is therefore STAMPED and keeps counting, not retired.
+    expect(ledger.settled).toEqual([modifyIntent.intentId]);
+    expect(ledger.retired).toEqual([]);
   });
 
   it("blocks a changed order before reserving a modify nonce", async () => {
@@ -887,6 +955,34 @@ describe("Lighter lifecycle signer settlement contract", () => {
     }));
     expect(d.nonceState.releaseUnsubmittedReservation).toHaveBeenCalledOnce();
     expect(d.intents.markAmbiguous).not.toHaveBeenCalled();
+  });
+
+  it("releases the modify capital commitment on both unsubmitted exits", async () => {
+    ledger.retired.length = 0;
+    ledger.settled.length = 0;
+    let nowMs = NOW;
+    const expiring = approvedIntent("modify");
+    const expired = compositionDeps(signerRunnerEmitting(() => {
+      nowMs = Date.parse(expiring.expiresAt);
+      return { ok: true, ...LIFECYCLE_SIGNER_TX.modify };
+    }));
+    Object.assign(expired, { now: () => nowMs });
+    await expect(executeApprovedLighterModifyOrder(expiring, expired)).rejects.toThrow();
+
+    const refusing = approvedIntent("modify");
+    await expect(executeApprovedLighterModifyOrder(
+      refusing,
+      compositionDeps(signerRunnerExitingWithoutOutput()),
+    )).rejects.toThrow();
+
+    // Neither transition ever sent bytes, so the margin delta is released at
+    // once instead of waiting out the ledger's observation lag.
+    expect(ledger.retired).toEqual([
+      { intentId: expiring.intentId, reason: "expired_unsubmitted" },
+      { intentId: refusing.intentId, reason: "refused_unsubmitted" },
+    ]);
+    // Nothing settled at the provider, so nothing was stamped.
+    expect(ledger.settled).toEqual([]);
   });
 
   it.each([

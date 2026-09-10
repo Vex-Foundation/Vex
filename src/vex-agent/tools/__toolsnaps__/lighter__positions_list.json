@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Read positions exposed through Lighter's public account endpoint on Core or Robinhood Chain by account index or the owning L1 walletAddress. Use when the user asks for public account positions, exposure, or holdings visible in Lighter account data. Returns bounded account rows and at most 25 positions per account. Public read: no credential, wallet, signer, order placement, cancellation, deposit, or withdrawal support. Provide at most one of: accountIndex, walletAddress. Provide at least one of: accountIndex, walletAddress.",
+      "description": "Read positions exposed through Lighter's public account endpoint on Core or Robinhood Chain by account index or the owning L1 walletAddress. Use when the user asks for public account positions, exposure, or holdings visible in Lighter account data. Returns bounded account rows and at most 25 positions per account, each carrying a derived leverage object with the account's current leverage and margin mode for that market, which the user sets in Settings -> Lighter and no Vex tool can change. Public read: no credential, wallet, signer, order placement, cancellation, deposit, or withdrawal support. Provide at most one of: accountIndex, walletAddress. Provide at least one of: accountIndex, walletAddress.",
       "name": "lighter__positions_list",
       "parameters": {
         "additionalProperties": false,

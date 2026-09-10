@@ -20,6 +20,10 @@ export const CRITICAL_OP = {
   // Keystore / secret-vault writes + private-key decrypt (wallet generate /
   // import / restore / export, provider+api-key+embedding+agent-core persist).
   secretVaultOp: "secret_vault_op",
+  // The user's Lighter leverage change: signing plus the submission window. A
+  // Settings action has no agent activity and no approval row for the
+  // safe-restart gate to detect, so the executor registers it here instead.
+  lighterLeverageChange: "lighter_leverage_change",
 } as const;
 
 export type CriticalOpLabel = (typeof CRITICAL_OP)[keyof typeof CRITICAL_OP];

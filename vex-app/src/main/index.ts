@@ -70,6 +70,7 @@ import { installLighterOrderCreateExecutionDeps } from "./lighter/order-create-e
 import { installLighterKeyRegistrationCredentialPreparer } from "./lighter/key-registration-credential.js";
 import { installLighterKeyRegistrationExecutor } from "./lighter/key-registration-execution.js";
 import { installLighterFeeAuthorizationService } from "./lighter/fee-authorization-execution.js";
+import { installLighterLeverageService } from "./lighter/leverage-execution.js";
 import { shutdownLighterPublicMarkets } from "./lighter/public-market-stream.js";
 import { shutdownLighterCandleStreams } from "./lighter/candle-stream.js";
 import { setupStudioHostStatusBridge } from "./studio/host-status-bridge.js";
@@ -276,6 +277,13 @@ async function initializeMainRuntime(): Promise<void> {
   globalCleanup.add(() => {
     uninstallLighterFeeAuthorizationService();
   }, "lighter-fee-authorization-service");
+  // The user's leverage change owns ADMISSION, not the work: quit refuses a new
+  // confirmation before it can reserve a nonce, while a signing window already
+  // in flight keeps running and is what the updater's safe-restart gate sees.
+  const uninstallLighterLeverageService = installLighterLeverageService();
+  globalCleanup.add(() => {
+    uninstallLighterLeverageService();
+  }, "lighter-leverage-service");
 
   // The two public Lighter market supervisors are process-wide singletons owned
   // by their modules. Shutting them down here closes their sockets and their

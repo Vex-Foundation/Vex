@@ -2,7 +2,7 @@
 
 Kept outside the markers.
 
-<!-- vex:studio:begin vex=0.2.6 hash=a4483e9fde0cf64e -->
+<!-- vex:studio:begin vex=0.2.6 hash=bcd7579865924042 -->
 # Vex guide - project "acme-trading"
 
 The companion to this project's `AGENTS.md`, which carries the authority:
@@ -142,7 +142,7 @@ DexScreener is read-only market research for indexed automated-market-maker pair
 Lighter is a perp-trading venue with Core and Robinhood Chain environments, managed wallet-funded onboarding, local encrypted trading credentials, and approval-gated deposits, orders, withdrawals, and claims.
 
 - Chains: Covers Lighter Core and Lighter on Robinhood Chain with environment-specific settlement assets: Ethereum USDC for Core and Robinhood Chain USDG for RHC.
-- Read: Read public environment status, markets, market detail, order books, recent trades, candles, public account state, authenticated account orders and fills, managed onboarding readiness, and durable deposit, withdrawal, key-registration, and order status.
+- Read: Read public environment status, markets, market detail, order books, recent trades, candles, public account state, authenticated account orders and fills, managed onboarding readiness, and durable deposit, withdrawal, key-registration, and order status. Per-market leverage and the agent's capital share are user settings from Settings -> Lighter -> Trading setup; call lighter_rhc_onboarding_status (or the core twin) and read tradingLimits for the live values; Vex exposes no tool to change them, direct the user to Settings.
 - Quote: Preview exact Lighter orders from live market and account data before any approval; a Lighter order preview reviews exact terms. Managed onboarding also computes the exact settlement-asset top-up needed before a deposit is prepared.
 - Act: Prepare trade approval for order create/cancel/modify/cancel-all, plus approvals for deposits, key registration, full-position close, secure withdrawals, and manual settlement claims; execute only through the matching user-approved card.
 - Vex fee: 0.10% maker/taker on perpetual trades and 0.25% on spot trades, through the approved native integrator allowance; reads are free. Exchange fees are separate, and authorizing the Vex fees moves the account to Lighter's Premium tier when it is not already on Plus or Premium (Lighter attaches integrator fees only to those tiers), which changes the exchange's own fee schedule; the fee-authorization card states both changes before anything is signed.
