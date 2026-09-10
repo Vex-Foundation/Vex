@@ -57,6 +57,7 @@ function makeClients(opts: {
       calls.push("getBlockNumber");
       return opts.headBlock ?? 0n;
     }),
+    getTransactionCount: vi.fn(async () => NONCE),
     estimateGas: vi.fn(async (args: Record<string, unknown>) => {
       calls.push("estimateGas");
       estimateArgs.push(args);

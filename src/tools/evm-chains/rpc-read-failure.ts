@@ -1,4 +1,10 @@
 /** Typed failure after the configured read lane has no usable answer. No retries. */
+import {
+  AbiDecodingZeroDataError, BlockNotFoundError, ContractFunctionRevertedError,
+  ContractFunctionZeroDataError, HttpRequestError, ResourceNotFoundRpcError,
+  ResponseBodyTooLargeError, SocketClosedError, TimeoutError, TransactionNotFoundError,
+  TransactionReceiptNotFoundError, WebSocketRequestError,
+} from "viem";
 import { classifyRpcFailure, type RpcFailureClass } from "./rpc-endpoints.js";
 import { isAbortError } from "../../utils/cancellation.js";
 
@@ -27,8 +33,33 @@ export function exhaustedRpcRead(chainId: number, method: string, error: unknown
     current = "cause" in current ? current.cause : undefined;
   }
   const failure = classifyRpcFailure(error);
-  // A contract revert is an answer, never endpoint exhaustion.
-  return failure === "execution_reverted" ? error : new RpcReadExhaustedError(chainId, failure, method, error);
+  if (failure === "execution_reverted") return error;
+  let transportEvidence = false;
+  let rpcCode = false;
+  current = error;
+  for (let depth = 0; depth < 12 && current && typeof current === "object"; depth++) {
+    // These are usable data outcomes, including null-result conversions. Their
+    // identity belongs to the caller, even when a wrapper mentions a timeout.
+    if (current instanceof BlockNotFoundError || current instanceof TransactionNotFoundError
+      || current instanceof TransactionReceiptNotFoundError || current instanceof ResourceNotFoundRpcError
+      || current instanceof ContractFunctionRevertedError || current instanceof ContractFunctionZeroDataError
+      || current instanceof AbiDecodingZeroDataError) return error;
+    if (current instanceof RpcReadExhaustedError) return error;
+    transportEvidence ||= current instanceof HttpRequestError || current instanceof WebSocketRequestError
+      || current instanceof SocketClosedError || current instanceof TimeoutError
+      || current instanceof ResponseBodyTooLargeError
+      || ("name" in current && current.name === "TimeoutError")
+      || ("status" in current && typeof current.status === "number" && current.status >= 400 && current.status <= 599)
+      || ("code" in current && typeof current.code === "string"
+        && /^(?:ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|UND_ERR_.*)$/.test(current.code))
+      || (current instanceof TypeError && /fetch failed|network error/i.test(current.message));
+    rpcCode ||= "code" in current && typeof current.code === "number";
+    current = "cause" in current ? current.cause : undefined;
+  }
+  // Message text alone is not endpoint evidence. Unknown RPC/data errors stay
+  // intact instead of becoming an invented exhaustion classification.
+  if (!transportEvidence && !(rpcCode && failure !== "unknown")) return error;
+  return new RpcReadExhaustedError(chainId, failure === "unknown" ? "transport" : failure, method, error);
 }
 
 export function rpcReadFailureOf(error: unknown): RpcReadExhaustedError | undefined {

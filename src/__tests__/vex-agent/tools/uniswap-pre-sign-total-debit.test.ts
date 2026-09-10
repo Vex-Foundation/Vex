@@ -57,6 +57,7 @@ const markActivityBroadcast = vi.fn();
 const markBroadcastAccepted = vi.fn();
 const confirmActivityEvent = vi.fn();
 const failActivityEvent = vi.fn();
+const failHashlessActivityEvent = vi.fn(async () => ({ applied: true }));
 const abortPlannedEvents = vi.fn();
 const createAgentActivityPreBroadcastFailure = vi.fn();
 const waitForSuccessfulReceipt = vi.fn();
@@ -175,6 +176,7 @@ vi.mock("@vex-agent/db/repos/agent-activity.js", () => ({
   markBroadcastAccepted: (...args: unknown[]) => markBroadcastAccepted(...args),
   confirmActivityEvent: (...args: unknown[]) => confirmActivityEvent(...args),
   failActivityEvent: (...args: unknown[]) => failActivityEvent(...args),
+  failHashlessActivityEvent,
   abortPlannedEvents: (...args: unknown[]) => abortPlannedEvents(...args),
 }));
 vi.mock("@vex-agent/db/repos/tracked-tokens.js", () => ({ pinTrackedToken: vi.fn() }));
@@ -385,7 +387,10 @@ describe("the Vex fee leg is counted first and checked again", () => {
     expect(result.success).toBe(true);
     const data = result.data as { vexFee?: { collection?: string; collectionNote?: string } };
     expect(data.vexFee?.collection).toBe("not_attempted");
-    expect(String(data.vexFee?.collectionNote)).toContain("Your swap succeeded");
+    expect(String(data.vexFee?.collectionNote)).toContain("swap is unaffected");
+    expect(String(data.vexFee?.collectionNote)).toContain("pricing mode");
+    expect(String(data.vexFee?.collectionNote)).not.toContain("unused");
+    expect(failHashlessActivityEvent).toHaveBeenCalled();
     // The swap's own row was confirmed and never failed by the fee's refusal.
     expect(failActivityEvent).not.toHaveBeenCalled();
   });

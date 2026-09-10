@@ -114,6 +114,7 @@ const fakeWalletClient = {
   signTransaction: (...a: unknown[]) => signTransaction(...a),
 };
 const fakePublicClient = {
+  getTransactionCount: vi.fn(async () => 1),
   // The deferred arm prepares on the PUBLIC client (the wallet key is not in
   // hand yet), then the gate sees the prepared request.
   prepareTransactionRequest: (...a: unknown[]) => prepareTransactionRequest(...a),

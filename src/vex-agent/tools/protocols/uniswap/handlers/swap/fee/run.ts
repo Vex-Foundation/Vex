@@ -1,3 +1,5 @@
+import { UniswapPreSignDebitRefusal } from "../quote-spendability.js";
+import { redact } from "../../../../../../../lib/diagnostics/text-redaction.js";
 import { EvmNonceReservationExpiredError } from "@tools/evm-chains/nonce-reservation-scope.js";
 import { EvmNonceMismatchError } from "@tools/evm-chains/nonce-signing-guard.js";
 /**
@@ -235,7 +237,9 @@ export async function runUniswapFeeLeg(input: RunUniswapFeeLegInput): Promise<Un
     const classified = classifyUniswapRevertError(err);
     const failureCode = classified.failureCode === "unknown" ? "broadcast_error" : classified.failureCode;
     // Fee failure must never recommend repeating the already successful swap.
-    const detail = err instanceof EvmNonceMismatchError
+    const detail = err instanceof UniswapPreSignDebitRefusal
+      ? err.message.trim() || "The fee leg's pre-sign debit check refused the remaining cost"
+      : err instanceof EvmNonceMismatchError
       ? `The fee leg's local nonce ledger is ${err.reason === "local_nonce_ledger_ahead" ? "ahead of" : "behind"} the network on chain ${err.chainId}; nonce reconciliation is required`
       : err instanceof EvmNonceReservationExpiredError
         ? "The fee signing lease expired before the fee could be submitted"
@@ -246,8 +250,8 @@ export async function runUniswapFeeLeg(input: RunUniswapFeeLegInput): Promise<Un
           pricing_mode_changed: "The fee leg's live pricing mode differs from its approved cap",
         }[err.kind]
       : classified.failureReason;
-    const reason = detail.replace(/0x[0-9a-fA-F]{40,}/g, "[address or payload]");
-    const collectionNote = `Your swap succeeded. The Vex fee was not collected: ${reason}. No fee retry happens automatically.`;
+    const reason = redact(detail.trim() || "Fee transaction preparation was refused before signing; no further reason was supplied").text.replace(/0x[0-9a-fA-F]{40,}/g, "[address or payload]");
+    const collectionNote = `Your swap succeeded. The Vex fee was not collected: ${reason}. The swap is unaffected. No fee retry happens automatically.`;
     logger.warn("uniswap.fee.leg_failed", { id: feeRowId, failureCode, reason });
     return recordUniswapFeeNotCollected(feeRowId, collectionNote, failureCode);
   }

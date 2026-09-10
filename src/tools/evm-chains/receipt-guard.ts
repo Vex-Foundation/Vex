@@ -25,6 +25,14 @@ import type {
 
 import { ErrorCodes, VexError } from "../../errors.js";
 
+/** A receipt for another hash cannot silently confirm the staged transaction. */
+export class UnattributedReceiptReplacementError extends Error {
+  constructor() {
+    super("A replacement transaction was observed. Its receipt does not establish the original transaction's outcome; reconciliation must resolve the original hash. Do not rebroadcast.");
+    this.name = "UnattributedReceiptReplacementError";
+  }
+}
+
 export type ReceiptWaitClient = Pick<PublicClient, "waitForTransactionReceipt"> & Partial<Pick<PublicClient, "chain">>;
 
 /**
@@ -78,7 +86,9 @@ export async function waitForReceiptWithRetry(
   hash: Hex,
   options?: ReceiptWaitRetryOptions,
 ): Promise<TransactionReceipt> {
-  return (await waitForReceiptWithReplacementEvidence(client, hash, options)).receipt;
+  const result = await waitForReceiptWithReplacementEvidence(client, hash, options);
+  if (result.replacement !== null) throw new UnattributedReceiptReplacementError();
+  return result.receipt;
 }
 
 /** Same bounded receipt read, preserving any provider-proven replacement. */
@@ -171,7 +181,9 @@ export async function waitForSuccessfulReceipt(
   } catch (err) {
     const unknownConfirmation = new VexError(
       ErrorCodes.CONFIRMATION_UNKNOWN,
-      `Transaction ${hash} was broadcast but its confirmation could not be determined. It may still confirm on-chain.`,
+      err instanceof UnattributedReceiptReplacementError
+        ? `A replacement receipt was observed while waiting for transaction ${hash}. It does not prove the original transaction's outcome; reconciliation continues.`
+        : `Transaction ${hash} was broadcast but its confirmation could not be determined. It may still confirm on-chain.`,
       "Do not retry automatically. Check the transaction hash on-chain before taking any further action.",
     );
     // The cause is KEPT (SPEC §1.5). This fires on an ALREADY-BROADCAST

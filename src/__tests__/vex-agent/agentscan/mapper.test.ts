@@ -806,3 +806,9 @@ describe("mapActivityToEvent: the launchpad family", () => {
     }
   });
 });
+
+it.each(["archive_gated", "range_capped", "rate_limited", "compute_budget", "method_unsupported", "transport"])("maps local RPC class %s into the accepted server vocabulary", failure_code => {
+  const event = mapActivityToEvent({ ...confirmedSwapRow(), status: "definitively_failed", tx_hash: null, failure_code }, { status: "definitively_failed" });
+  expect(event.failureCode).toBe("venue_unavailable");
+  expect(serverEventSchema.safeParse(event).success).toBe(true);
+});
