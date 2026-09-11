@@ -467,7 +467,12 @@ async function writeFill(
   try {
     const outcome = await deps.recordFill(record);
     if (outcome.kind === "recorded") return "recorded";
-    if (outcome.kind === "duplicate") return "duplicate";
+    // Already held with the same economics: a plain duplicate, or one that
+    // learned the account's own fields on the way (`enriched`). Neither is a
+    // failure - the row exists and says what this observation says - and the
+    // revision bump an enrichment carries is the ledger's business, not a
+    // count here.
+    if (outcome.kind === "duplicate" || outcome.kind === "enriched") return "duplicate";
     // A conflict is already logged with its fields by the writer; it is a
     // defect in whoever produced the second report and never an overwrite.
     return "failed";

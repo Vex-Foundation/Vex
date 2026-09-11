@@ -39,6 +39,7 @@ import {
 } from "@vex-agent/tools/protocols/lighter/order-repair.js";
 import {
   LIGHTER_FILL_FOLLOW_UP_TRADES_LIMIT,
+  observeLighterFills,
   observeLighterFillsFromAccountTrades,
   resetLighterMarketAssetsCache,
   resolveLighterMarketAssets,
@@ -937,5 +938,54 @@ describe("market assets: a perpetual names its instrument and its collateral, a 
     await expect(resolveLighterMarketAssets("core", 0, marketDeps(perp, [wrongId, eth]))).rejects.toThrow(/verified core USDC collateral/);
     const wrongAddress = { ...collateral, l1_address: "0x0000000000000000000000000000000000000001" };
     await expect(resolveLighterMarketAssets("core", 0, marketDeps(perp, [wrongAddress, eth]))).rejects.toThrow(/verified core USDC collateral/);
+  });
+});
+
+describe("observation counters: the report says what the ledger answered", () => {
+  const intent = {
+    intentId: "lighter-order-counters",
+    environment: "core" as const,
+    accountIndex: ACCOUNT_INDEX,
+    marketIndex: 0,
+    side: "buy" as const,
+    clientOrderIndex: CLIENT_ORDER_INDEX,
+  };
+
+  it("counts a fill the ledger enriched as already held, never as a failure", async () => {
+    // The ledger held the row without the account's own fields and this
+    // observation supplied them: nothing was inserted and nothing failed. The
+    // revision the ledger bumped is its own business and not a count here.
+    const recordFill = vi.fn<LighterFillObservationDeps["recordFill"]>(async () => ({
+      kind: "enriched" as const,
+      fillId: 1,
+      revision: 1,
+    }));
+
+    const report = await observeLighterFills({
+      intent,
+      trades: [trade()],
+      authorizedFees: null,
+      deps: fillDeps(recordFill),
+    });
+
+    expect(recordFill).toHaveBeenCalledTimes(1);
+    expect(report).toEqual({ observed: 1, recorded: 0, duplicates: 1, failed: 0 });
+  });
+
+  it("counts an identity conflict as a failure, because the second report contradicts the ledger", async () => {
+    const recordFill = vi.fn<LighterFillObservationDeps["recordFill"]>(async () => ({
+      kind: "conflict" as const,
+      fillId: 1,
+      fields: ["price"],
+    }));
+
+    const report = await observeLighterFills({
+      intent,
+      trades: [trade()],
+      authorizedFees: null,
+      deps: fillDeps(recordFill),
+    });
+
+    expect(report).toEqual({ observed: 1, recorded: 0, duplicates: 0, failed: 1 });
   });
 });

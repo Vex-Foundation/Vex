@@ -59,8 +59,6 @@ describe("isAllowedExternalUrl", () => {
   // two in sync — every new production entry needs both an allow case
   // and a near-miss deny case below.
   const allowlist: ReadonlyArray<ExternalAllowEntry> = [
-    "vex.ai",
-    "docs.vex.ai",
     "portal.jup.ag",
     "app.tavily.com",
     "openrouter.ai",
@@ -77,6 +75,7 @@ describe("isAllowedExternalUrl", () => {
     "polygonscan.com",
     "optimistic.etherscan.io",
     { host: "projectvex.ai", pathPrefix: "/releases" },
+    { host: "projectvex.ai", pathPrefix: "/docs" },
     { host: "github.com", pathPrefix: "/electron/electron/releases" },
     {
       host: "chromewebstore.google.com",
@@ -90,8 +89,6 @@ describe("isAllowedExternalUrl", () => {
   ];
 
   it.each([
-    "https://vex.ai/",
-    "https://docs.vex.ai/",
     "https://portal.jup.ag/keys",
     "https://app.tavily.com/",
     "https://app.tavily.com/home",
@@ -102,6 +99,8 @@ describe("isAllowedExternalUrl", () => {
     "https://docs.docker.com/desktop/setup/install/mac-install/",
     "https://projectvex.ai/releases",
     "https://projectvex.ai/releases/v0-2-0",
+    "https://projectvex.ai/docs",
+    "https://projectvex.ai/docs/security/privacy",
     "https://github.com/electron/electron/releases",
     "https://github.com/electron/electron/releases/tag/v42.0.0",
     "https://dexscreener.com/solana/8sLbNZoA1cfnvMJLPfp98ZLAnFSYCFApfJKMbiXNLwxj",
@@ -122,7 +121,7 @@ describe("isAllowedExternalUrl", () => {
   });
 
   it.each([
-    "http://vex.ai/", // wrong scheme
+    "http://projectvex.ai/docs", // wrong scheme
     "javascript:alert(1)",
     "file:///etc/passwd",
     "data:text/html,<script>",
@@ -141,9 +140,15 @@ describe("isAllowedExternalUrl", () => {
     "https://github.com/Vex-Foundation/Vex",
     "https://github.com/Vex-Foundation/Vex/releases",
     // projectvex.ai near-misses: path boundary, host root, exact-host only
-    "https://projectvex.ai/", // root not under /releases
+    "https://projectvex.ai/", // root not under /releases or /docs
     "https://projectvex.ai/releasesX",
     "https://projectvex.ai/release",
+    "https://projectvex.ai/docsX",
+    "https://projectvex.ai/doc",
+    // Regression: the placeholder `vex.ai` / `docs.vex.ai` host-wide entries
+    // died with the docs repoint (2026-09-11) - must stay denied.
+    "https://vex.ai/",
+    "https://docs.vex.ai/security/local-vault",
     "https://www.projectvex.ai/releases", // exact-host match, no subdomains
     "https://projectvex.ai.evil.com/releases",
     // Traversal in path
@@ -188,7 +193,9 @@ describe("isAllowedExternalUrl", () => {
   });
 
   it("URL spec normalizes hostname to lowercase - mixed case still allowed", () => {
-    expect(isAllowedExternalUrl("https://VEX.AI/", allowlist)).toBe(true);
+    expect(
+      isAllowedExternalUrl("https://PROJECTVEX.AI/docs/security/privacy", allowlist)
+    ).toBe(true);
     expect(
       isAllowedExternalUrl("https://PROJECTvex.ai/releases", allowlist)
     ).toBe(true);

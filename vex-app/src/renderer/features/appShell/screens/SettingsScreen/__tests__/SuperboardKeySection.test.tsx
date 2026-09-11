@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Result } from "@shared/ipc/result.js";
+import { VEX_PRIVACY_DOC_URL } from "@shared/docs-links.js";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
 import { SuperboardKeySection } from "../SuperboardKeySection.js";
 
@@ -169,7 +170,11 @@ describe("SuperboardKeySection", () => {
     getSuperboardKey.mockResolvedValue(ok({ kind: "missing" }));
     renderSection();
     expect(await screen.findByRole("heading", { name: "Superboard key" })).toBeTruthy();
-    expect(screen.getByText("Your data stays yours")).toBeTruthy();
+    const privacy = screen.getByText("Your data stays yours").closest("a");
+    expect(privacy).not.toBeNull();
+    // The anchor and main's allowlist share one declaration; the href here is
+    // the URL `docs-links.test.ts` proves the allowlist admits.
+    expect(privacy?.getAttribute("href")).toBe(VEX_PRIVACY_DOC_URL);
   });
 
   it.each([

@@ -42,6 +42,7 @@ import {
   WIZARD_STEP_IDS,
   type WizardStepId,
 } from "@shared/schemas/wizard.js";
+import { VEX_PRIVACY_DOC_LABEL, VEX_PRIVACY_DOC_URL } from "@shared/docs-links.js";
 
 import type { WizardFlowMode } from "../../lib/api/wizard.js";
 import { cn } from "../../lib/utils.js";
@@ -140,7 +141,7 @@ function TrailingMeta({
         </>
       ) : null}
       <a
-        href="https://docs.vex.ai/security/local-vault"
+        href={VEX_PRIVACY_DOC_URL}
         target="_blank"
         rel="noopener noreferrer"
         className={cn(
@@ -149,7 +150,7 @@ function TrailingMeta({
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
         )}
       >
-        Your data stays yours
+        {VEX_PRIVACY_DOC_LABEL}
         <IconArrowUpRight size={10} />
       </a>
     </div>

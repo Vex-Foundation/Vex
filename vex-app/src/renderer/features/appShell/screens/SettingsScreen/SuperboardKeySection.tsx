@@ -13,6 +13,7 @@ import {
   useSuperboardKey,
 } from "../../../../lib/api/superboard-key.js";
 import { cn } from "../../../../lib/utils.js";
+import { VEX_PRIVACY_DOC_LABEL, VEX_PRIVACY_DOC_URL } from "@shared/docs-links.js";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
 import { SUPERBOARD_KEY_ICON } from "./settings-sections.js";
 import { superboardPendingCopy } from "./superboard-pending-copy.js";
@@ -160,7 +161,7 @@ export function SuperboardKeySection(): JSX.Element {
       <div className="mt-6 border-t border-[var(--color-border)] pt-4">
         <div className="flex items-center gap-3 vex-micro text-ink-tertiary">
           <a
-            href="https://docs.vex.ai/security/local-vault"
+            href={VEX_PRIVACY_DOC_URL}
             target="_blank"
             rel="noopener noreferrer"
             className={cn(
@@ -169,7 +170,7 @@ export function SuperboardKeySection(): JSX.Element {
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
             )}
           >
-            Your data stays yours
+            {VEX_PRIVACY_DOC_LABEL}
             <IconArrowUpRight size={10} />
           </a>
         </div>
