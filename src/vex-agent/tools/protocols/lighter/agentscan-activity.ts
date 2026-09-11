@@ -81,6 +81,10 @@ import type { PoolClient } from "pg";
 
 import { execute, executeWith, queryOne, queryOneWith } from "@vex-agent/db/client.js";
 import type { LighterEnvironment } from "@tools/lighter/constants.js";
+import {
+  LIGHTER_MARGIN_FRACTION_TICK,
+  MINIMUM_INITIAL_MARGIN_FRACTION,
+} from "@tools/lighter/margin-fraction.js";
 import type { LighterTrade, LighterTradeType } from "@tools/lighter/types.js";
 import logger from "@utils/logger.js";
 
@@ -477,6 +481,27 @@ const IMMUTABLE_FILL_FIELDS = [
 ] as const;
 
 /**
+ * PURE: a provider initial-margin fraction -> the value the ledger may hold.
+ *
+ * `readLighterAccountFillFacts` accepts ANY nonnegative safe integer the trade
+ * record carries, because reading is not judging; migration 162's column
+ * accepts only `MINIMUM_INITIAL_MARGIN_FRACTION..LIGHTER_MARGIN_FRACTION_TICK`,
+ * because those are the fractions that mean a leverage a human can be shown.
+ * A value outside that range - a 0, a number above the tick - becomes NULL,
+ * which the column documents as UNKNOWN.
+ *
+ * NEVER CLAMPED, and never allowed to fail the write. Clamping would invent a
+ * leverage nobody measured, and letting the CHECK reject the statement would
+ * lose the whole fill - the economics, the fees, the attribution - over one
+ * optional field. The fill is the fact; the fraction is context.
+ */
+function storableInitialMarginFraction(value: number | null | undefined): number | null {
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) return null;
+  if (value < MINIMUM_INITIAL_MARGIN_FRACTION || value > LIGHTER_MARGIN_FRACTION_TICK) return null;
+  return value;
+}
+
+/**
  * THE FILL COMMIT POINT.
  *
  * Call it at the same durable transition where an order execution intent
@@ -539,6 +564,9 @@ export async function recordLighterFillActivity(
     record.exchangeFeeEstimatedUsd,
     record.collectorAccountIndex,
     record.feeAuthorizationIntentId,
+    // Normalized, never raw: the CHECK must not be able to refuse a fill over
+    // a provider value this ledger simply does not know how to read.
+    storableInitialMarginFraction(record.accountFacts?.initialMarginFractionBefore),
   ];
 
   // DO NOTHING, never DO UPDATE: an insert conflict is a fill we already hold,
@@ -580,12 +608,46 @@ export async function recordLighterFillActivity(
     return { kind: "conflict", fillId, fields: [...fields] };
   }
 
+  // THE INITIAL MARGIN FRACTION FILLS ONCE, AND INDEPENDENTLY OF THE MERGE.
+  //
+  // It cannot ride only on the account merge below: that merge refuses to run
+  // at all once `position_size_before` is set, so a first authenticated
+  // observation whose trade record omitted the fraction would freeze this
+  // column at NULL for the life of the row - and the fraction is exactly the
+  // field a later observation is most likely to be the first to carry. Where
+  // the merge DOES run, it carries the fraction in its own statement, so the
+  // account's half and the leverage that produced it commit together.
+  //
+  // Only past the conflict check above, and never on a `conflict`: a report
+  // whose economics contradict the ledger is a defect in whoever produced it,
+  // and nothing from it is trusted, not even a field that would have been free
+  // to take.
+  //
+  // NO REVISION BUMP. The enrichment outbox selects rows by (fill, revision)
+  // and the fraction is not on the AgentScan wire, so moving the revision
+  // would enqueue a delivery carrying nothing new. The outcome kinds below are
+  // unchanged by this write for the same reason: what the caller observed
+  // about the FILL is still a duplicate or an enrichment.
+  const fraction = storableInitialMarginFraction(record.accountFacts?.initialMarginFractionBefore);
+  const fractionIsNews = fraction !== null && existing.initial_margin_fraction_before === null;
+  // Through the caller's transaction client when there is one, so the fraction
+  // commits with the transition that observed it.
+  const fillFraction = async (): Promise<void> => {
+    const fractionParams = [record.canonicalIdentity, fraction];
+    if (client === undefined) {
+      await execute(FILL_INITIAL_MARGIN_FRACTION_SQL, fractionParams);
+    } else {
+      await executeWith(client, FILL_INITIAL_MARGIN_FRACTION_SQL, fractionParams);
+    }
+  };
+
   // THE ECONOMICS AGREE. If this observation knows the account's own half and
   // the held row does not, that is knowledge arriving, not a revision: fill it
   // once and move the revision so it reaches a server that already has the
   // fill. If the row already knows, or this observation does not, nothing
   // happens and the report is an ordinary duplicate.
   if (record.accountFacts === null || existing.position_size_before !== null) {
+    if (fractionIsNews) await fillFraction();
     return { kind: "duplicate", fillId };
   }
   const mergeParams = [
@@ -595,13 +657,18 @@ export async function recordLighterFillActivity(
     record.accountFacts.entryQuoteBefore,
     record.accountFacts.accountPnl,
     record.positionEffect,
+    fraction,
   ];
   const merged = client === undefined
     ? await queryOne<{ id: string | number; revision: number }>(MERGE_FILL_ACCOUNT_FACTS_SQL, mergeParams)
     : await queryOneWith<{ id: string | number; revision: number }>(client, MERGE_FILL_ACCOUNT_FACTS_SQL, mergeParams);
   // A concurrent observation won the race and established the same knowledge
-  // first. Nothing was lost and nothing is claimed twice.
-  if (merged === null) return { kind: "duplicate", fillId };
+  // first. Nothing was lost and nothing is claimed twice - but the winner may
+  // have had no fraction to give, so this observation still offers its own.
+  if (merged === null) {
+    if (fractionIsNews) await fillFraction();
+    return { kind: "duplicate", fillId };
+  }
   return { kind: "enriched", fillId: Number(merged.id), revision: Number(merged.revision) };
 }
 
@@ -771,11 +838,12 @@ const INSERT_FILL_SQL = `
     integrator_fee_charged_raw,
     exchange_fee_tick_observed, exchange_fee_charged_raw,
     integrator_fee_estimated_usd, exchange_fee_estimated_usd,
-    collector_account_index, fee_authorization_intent_id
+    collector_account_index, fee_authorization_intent_id,
+    initial_margin_fraction_before
   ) VALUES (
     $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
     $21,$22::timestamptz,$23,$24,$25,$26,$27,$28,$29,$30,
-    $31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45
+    $31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46
   )
   ON CONFLICT DO NOTHING
   RETURNING id`;
@@ -783,7 +851,7 @@ const INSERT_FILL_SQL = `
 const SELECT_FILL_BY_IDENTITY_SQL = `
   SELECT id, side, price, base_size, quote_notional, block_height,
          trade_type, usd_amount, to_char(traded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS traded_at,
-         position_size_before, execution_intent_id
+         position_size_before, initial_margin_fraction_before, execution_intent_id
     FROM lighter_fills WHERE canonical_identity = $1`;
 
 /**
@@ -799,6 +867,12 @@ const SELECT_FILL_BY_IDENTITY_SQL = `
  * which a second observation could revise a price, a size or a notional - and
  * the revision bump is what carries the new knowledge to a server that already
  * holds the fill.
+ *
+ * The initial margin fraction rides along under a COALESCE rather than under
+ * the five-column rule: it is outside the whole-or-nothing CHECK (migration
+ * 162) and an observation can know the account's half without knowing the
+ * fraction, or the other way round. COALESCE keeps the transition one-way:
+ * a fraction this row already holds is never revised by the merge.
  */
 const MERGE_FILL_ACCOUNT_FACTS_SQL = `
   UPDATE lighter_fills
@@ -807,12 +881,28 @@ const MERGE_FILL_ACCOUNT_FACTS_SQL = `
          entry_quote_before = $4,
          account_pnl = $5,
          position_effect = $6,
+         initial_margin_fraction_before = COALESCE(initial_margin_fraction_before, $7),
          revision = revision + 1,
          updated_at = NOW()
    WHERE canonical_identity = $1
      AND position_size_before IS NULL
      AND $2::text IS NOT NULL
   RETURNING id, revision`;
+
+/**
+ * THE FRACTION FILL, null to known, once.
+ *
+ * `IS NULL` in the WHERE is the whole guard: a fraction the row already holds
+ * is a fact established by an earlier observation and this statement cannot
+ * reach it. `updated_at` moves because the row changed; `revision` does not,
+ * because nothing the AgentScan wire carries did (see the call site).
+ */
+const FILL_INITIAL_MARGIN_FRACTION_SQL = `
+  UPDATE lighter_fills
+     SET initial_margin_fraction_before = $2,
+         updated_at = NOW()
+   WHERE canonical_identity = $1
+     AND initial_margin_fraction_before IS NULL`;
 
 /**
  * THE ENRICHMENT PATH - the only write that may touch a recorded fill.

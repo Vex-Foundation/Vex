@@ -90,6 +90,12 @@ import { randomUUID } from "node:crypto";
 import { query, withTransaction } from "@vex-agent/db/client.js";
 import { getLighterClient } from "@tools/lighter/client.js";
 import type { LighterEnvironment } from "@tools/lighter/constants.js";
+import {
+  LIGHTER_MARGIN_FRACTION_TICK,
+  marginModeFromWire,
+  positionInitialMarginFractionToProviderScale,
+  type LighterMarginMode,
+} from "@tools/lighter/margin-fraction.js";
 import type { LighterAccountPosition } from "@tools/lighter/types.js";
 import { resolveLighterReadOnlyAccountAuth } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
 import {
@@ -200,6 +206,22 @@ export interface LighterObservedPosition {
   readonly unrealizedPnl: string | null;
   readonly realizedPnl: string | null;
   readonly liquidationPrice: string | null;
+  /**
+   * The position's initial margin fraction on the canonical 10000-scale
+   * (1000 = 10x), converted from the percent string the account endpoint
+   * reports ("50.00" -> 5000). NULL when the provider omitted it or reported
+   * something this build cannot read exactly: a leverage nobody measured is
+   * not shown, and there is no safe default for "how much margin does this
+   * position hold".
+   */
+  readonly initialMarginFraction: number | null;
+  /**
+   * Cross or isolated, from the provider's own code (0 / 1). NULL for a code
+   * Vex does not know - never cross by default, because the two have
+   * different liquidation behavior and a wrong label is a wrong sentence in
+   * front of the user.
+   */
+  readonly marginMode: LighterMarginMode | null;
 }
 
 /**
@@ -229,7 +251,37 @@ export function projectLighterPosition(dto: LighterAccountPosition): LighterObse
     unrealizedPnl: signedDecimalOrNull(dto.unrealized_pnl),
     realizedPnl: signedDecimalOrNull(dto.realized_pnl),
     liquidationPrice: decimalOrNull(dto.liquidation_price),
+    initialMarginFraction: readInitialMarginFraction(dto.initial_margin_fraction),
+    marginMode: readMarginMode(dto.margin_mode),
   };
+}
+
+/**
+ * The margin terms are CONTEXT, never a reason to lose a position.
+ *
+ * Both owners in `margin-fraction.ts` refuse rather than default, which is the
+ * right posture for a consent path: nothing there may guess what leverage a
+ * user is about to sign for. Here the position itself is the fact being
+ * recorded, and its size, entry and PnL do not become less true because the
+ * provider sent a margin field this build cannot read. So the refusal is
+ * caught and becomes NULL - unknown - and the position is still stored.
+ */
+function readInitialMarginFraction(value: unknown): number | null {
+  if (typeof value !== "string") return null;
+  try {
+    return positionInitialMarginFractionToProviderScale(value);
+  } catch {
+    return null;
+  }
+}
+
+function readMarginMode(value: unknown): LighterMarginMode | null {
+  if (typeof value !== "number") return null;
+  try {
+    return marginModeFromWire(value);
+  } catch {
+    return null;
+  }
 }
 
 /** One observation, ready to be stored. */
@@ -810,8 +862,23 @@ function readStoredPositions(value: unknown): readonly LighterObservedPosition[]
       unrealizedPnl: signedDecimalOrNull(row.unrealizedPnl),
       realizedPnl: signedDecimalOrNull(row.realizedPnl),
       liquidationPrice: decimalOrNull(row.liquidationPrice),
+      // Absent on every observation stored before these fields existed, and
+      // that reads as what it is: unknown. A stored row is durable state that
+      // has crossed JSONB, so it is validated here rather than trusted.
+      initialMarginFraction: storedInitialMarginFraction(row.initialMarginFraction),
+      marginMode: row.marginMode === "cross" || row.marginMode === "isolated" ? row.marginMode : null,
     }];
   });
+}
+
+/**
+ * A stored fraction is trusted only inside the range the canonical unit
+ * defines (1..10000); anything else is unknown rather than a number a reader
+ * would divide by.
+ */
+function storedInitialMarginFraction(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isInteger(value)) return null;
+  return value >= 1 && value <= LIGHTER_MARGIN_FRACTION_TICK ? value : null;
 }
 
 /**
