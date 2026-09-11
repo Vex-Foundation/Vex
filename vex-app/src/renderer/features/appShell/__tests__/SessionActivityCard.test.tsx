@@ -22,6 +22,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { AgentScanEntry } from "@shared/schemas/agent-scan-feed.js";
+import { lighterFill } from "../screens/__tests__/_agent-scan-fixtures.js";
 
 const mockUseAgentScanInfinite = vi.hoisted(() => vi.fn());
 vi.mock("../../../lib/api/portfolio.js", () => ({
@@ -38,6 +39,7 @@ const PROJECT_SCOPE = { kind: "project", projectId: PROJECT } as const;
 
 function entry(overrides: Partial<AgentScanEntry> & { readonly id: string }): AgentScanEntry {
   return {
+    source: "agent_activity",
     createdAt: "2026-05-21T10:00:00.000Z",
     activityKind: "swap",
     eventRole: null,
@@ -239,6 +241,36 @@ describe("SessionActivityCard", () => {
       origin: { x: 0, y: 0, width: 0, height: 0 },
       projectId: PROJECT,
     });
+  });
+
+  /**
+   * TWO LEDGERS, ONE CARD. The page main sends is already merged and ordered;
+   * the card's only job is to render each row in the grammar its ledger
+   * deserves and to key them on `(source, id)` - the two BIGSERIAL sequences
+   * share id space, and keying on the id alone reconciles one row onto the
+   * other.
+   */
+  it("renders BOTH row kinds of a mixed page, in main's order and with distinct keys", () => {
+    mockFeed([
+      entry({ id: "42" }),
+      lighterFill({ id: "42", createdAt: "2026-05-21T09:00:00.000Z" }),
+    ]);
+    const { container } = render(<SessionActivityCard scope={SESSION_SCOPE} />);
+
+    const rows = container.querySelectorAll("li");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.textContent).toContain("100 USDC");
+    expect(rows[1]?.textContent).toContain("Buy 0.0050 ETH");
+    // The venue's own SETTLED usd, plain, plus the leverage before the fill.
+    expect(rows[1]?.textContent).toContain("$12.99");
+    expect(rows[1]?.textContent).toContain("10.00x");
+    expect(rows[1]?.textContent).not.toContain("est.");
+  });
+
+  it("a fill line carries NO explorer link - there is no settlement transaction", () => {
+    mockFeed([lighterFill({ id: "7" })]);
+    render(<SessionActivityCard scope={SESSION_SCOPE} />);
+    expect(screen.queryByRole("link")).toBeNull();
   });
 
   it("'View all' opens the Agent Scan screen PRESET to this session", () => {

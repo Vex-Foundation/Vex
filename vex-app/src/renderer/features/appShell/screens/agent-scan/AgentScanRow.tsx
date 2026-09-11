@@ -1,6 +1,8 @@
 /**
- * One Agent Scan feed row — the LOGICAL activity (never a per-leg row) plus
- * its expandable audit detail.
+ * One Agent Scan feed row for an AGENT_ACTIVITY entry - the LOGICAL activity
+ * (never a per-leg row) plus its expandable audit detail. The feed's second
+ * arm (a Lighter fill) is rendered by `AgentScanLighterRow`: one list, one
+ * renderer per kind, chosen by the entry's `source` discriminator.
  *
  * The row: protocol mark · ActivityBadge (kind·role + attention status) ·
  * `IN → OUT` legs · USD estimate · chain/route · time · TX↗.
@@ -21,7 +23,7 @@
 
 import { useId, useRef, useState, type JSX } from "react";
 import { IconArrowUpRight } from "../../../../components/icons/index.js";
-import type { AgentScanEntry } from "@shared/schemas/agent-scan-feed.js";
+import type { AgentScanActivityEntry } from "@shared/schemas/agent-scan-feed.js";
 import { isBridgeTrackingStale } from "@shared/bridge-tracking.js";
 import { ProtocolMark } from "../../../../components/common/ProtocolMark.js";
 import { resolveProtocolMark } from "../../../../lib/protocol-marks.js";
@@ -80,7 +82,11 @@ function DetailLine({
   );
 }
 
-export function AgentScanRow({ entry }: { readonly entry: AgentScanEntry }): JSX.Element {
+export function AgentScanRow({
+  entry,
+}: {
+  readonly entry: AgentScanActivityEntry;
+}): JSX.Element {
   const [open, setOpen] = useState(false);
   const detailId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);

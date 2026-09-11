@@ -20,6 +20,12 @@
  * forward; keeping a second pipeline alive just to show them was the debt the
  * retirement removes.
  *
+ * TWO LEDGERS, ONE CARD. The feed's page is discriminated on `source`, and
+ * this card renders both arms in the order main sent them - an `agent_activity`
+ * row and a Lighter fill - with a compact line each. It never filters or sorts
+ * a row out itself: the scope is a wire filter, and a renderer-side skip would
+ * make the rail disagree with the audit screen about what happened.
+ *
  * The row grammar is AgentScanRow's, compacted to one line: protocol mark ·
  * ActivityBadge · `IN → OUT` legs · time · TX↗. Amounts use `displayAmount`
  * ONLY — never `amountHuman`, which is a raw unscaled figure. An estimated
@@ -34,7 +40,12 @@
  */
 
 import { useMemo, type JSX, type MouseEvent } from "react";
-import type { AgentScanDto, AgentScanEntry } from "@shared/schemas/agent-scan-feed.js";
+import type {
+  AgentScanActivityEntry,
+  AgentScanDto,
+  AgentScanEntry,
+} from "@shared/schemas/agent-scan-feed.js";
+import type { AgentScanLighterFillEntry } from "@shared/schemas/agent-scan-lighter-entry.js";
 import type { Result } from "@shared/ipc/result.js";
 import {
   IconChevronRight,
@@ -46,13 +57,21 @@ import { useUiStore } from "../../../stores/uiStore.js";
 import type { ShellRoute } from "../../../stores/uiStore/shell-route.js";
 import { ProtocolMark } from "../../../components/common/ProtocolMark.js";
 import { resolveProtocolMark } from "../../../lib/protocol-marks.js";
-import { ActivityBadge } from "../ActivityBadge.js";
+import { ActivityBadge, ActivityChip } from "../ActivityBadge.js";
 import {
   entryClockText,
   isEstimatedBasis,
   legAmountText,
   legSymbolText,
 } from "../screens/agent-scan/agent-scan-display.js";
+import {
+  lighterAttentionTradeTypeText,
+  lighterCompactTradeText,
+  lighterEffectLabel,
+  lighterKindLabel,
+  lighterLeverageChipText,
+  lighterUsdSettledText,
+} from "../screens/agent-scan/agent-scan-lighter-display.js";
 import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
 
 /** The card shows the newest few; the Agent Scan screen has the full feed. */
@@ -176,8 +195,10 @@ export function SessionActivityCard({
   } else {
     body = (
       <ul className="flex flex-col">
+        {/* `(source, id)` - the two ledgers share id space, so the id alone
+          * is not an identity and React would reconcile the wrong row. */}
         {entries.map((entry) => (
-          <ActivityRow key={entry.id} entry={entry} />
+          <ActivityRow key={`${entry.source}:${entry.id}`} entry={entry} />
         ))}
       </ul>
     );
@@ -198,8 +219,77 @@ export function SessionActivityCard({
   );
 }
 
-/** One compact activity line — the AgentScanRow grammar without the audit detail. */
+/**
+ * One compact line, dispatched on the entry's ledger. The card renders EVERY
+ * row main sent, in the order main sent them: narrowing is a wire filter
+ * (`sessionId` / `projectId`) and never a renderer-side skip, or the card
+ * would quietly disagree with the audit screen about what happened.
+ */
 function ActivityRow({ entry }: { readonly entry: AgentScanEntry }): JSX.Element {
+  switch (entry.source) {
+    case "agent_activity":
+      return <AgentActivityRow entry={entry} />;
+    case "lighter_fill":
+      return <LighterFillRow entry={entry} />;
+  }
+}
+
+/**
+ * One compact LIGHTER FILL line: badge, the executed trade, the venue's own
+ * settled USD, the leverage before the fill, the clock. No link and no status
+ * chip - a fill has neither a settlement transaction nor a lifecycle.
+ */
+function LighterFillRow({
+  entry,
+}: {
+  readonly entry: AgentScanLighterFillEntry;
+}): JSX.Element {
+  const clock = entryClockText(entry.createdAt);
+  const leverage = entry.spot ? null : lighterLeverageChipText(entry.leverage);
+  const attention = lighterAttentionTradeTypeText(entry.tradeType);
+
+  return (
+    <li className="flex flex-col gap-0.5 border-b border-line-1 py-1.5 last:border-b-0 last:pb-0.5">
+      <div className="flex items-center gap-1.5">
+        <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+          <ProtocolMark mark={resolveProtocolMark("lighter")} size={13} />
+        </span>
+        <ActivityChip
+          tone="solid"
+          text={`${lighterKindLabel(entry.spot)}·${lighterEffectLabel(entry.positionEffect)}`}
+        />
+        {attention !== null ? (
+          <ActivityChip
+            tone="accent"
+            text={attention}
+            title="The venue acted on this account - this fill was not a trade the user placed."
+          />
+        ) : null}
+      </div>
+      <div className="flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap pl-[20px] text-[10.5px] tabular-nums text-ink-secondary">
+        <span className="truncate">{lighterCompactTradeText(entry)}</span>
+        <span title={entry.usdAmount} className="shrink-0">
+          {lighterUsdSettledText(entry.usdAmount)}
+        </span>
+        {leverage !== null ? (
+          <span className="shrink-0 text-ink-tertiary" title="Leverage before this fill">
+            {leverage}
+          </span>
+        ) : null}
+        {clock !== null ? (
+          <span className="ml-auto shrink-0 text-ink-tertiary">{clock}</span>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+/** One compact activity line - the AgentScanRow grammar without the audit detail. */
+function AgentActivityRow({
+  entry,
+}: {
+  readonly entry: AgentScanActivityEntry;
+}): JSX.Element {
   const mark = resolveProtocolMark(entry.protocol);
   const estimated = isEstimatedBasis(entry);
   const clock = entryClockText(entry.createdAt);

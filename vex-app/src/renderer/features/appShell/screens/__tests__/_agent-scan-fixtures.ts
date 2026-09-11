@@ -15,9 +15,11 @@
  */
 
 import type {
+  AgentScanActivityEntry,
   AgentScanDto,
   AgentScanEntry,
 } from "@shared/schemas/agent-scan-feed.js";
+import type { AgentScanLighterFillEntry } from "@shared/schemas/agent-scan-lighter-entry.js";
 import type { Result } from "@shared/ipc/result.js";
 import type { AgentScanRouteScope } from "../../../../stores/uiStore/shell-route.js";
 
@@ -38,9 +40,13 @@ export const PROJECT_SCOPE: AgentScanRouteScope = {
 export const PROJECT_NAME = "Trading";
 
 export function entry(
-  overrides: Partial<AgentScanEntry> & { readonly id: string },
-): AgentScanEntry {
+  overrides: Partial<AgentScanActivityEntry> & { readonly id: string },
+): AgentScanActivityEntry {
   return {
+    // The ledger discriminator. Required, not defaulted: both sides of the IPC
+    // ship in one build, and a fixture that could omit it would let a consumer
+    // forget to switch on it.
+    source: "agent_activity",
     createdAt: "2026-07-20T10:21:00+00:00",
     activityKind: "swap",
     eventRole: "swap",
@@ -97,6 +103,80 @@ export function entry(
   };
 }
 
+/**
+ * ONE LIGHTER FILL, fully populated - the ETH example from the plan: a 0.0050
+ * ETH buy at 2,598.09 that OPENED a 10x position, with the Vex fee still only
+ * ESTIMATED (charged is unproven, not zero), the exchange fee likewise, and a
+ * position observation taken after the fill.
+ *
+ * Every optional fact is present here on purpose, so a test that wants an
+ * absence states it as an override and the absence is visible in the test
+ * itself rather than hidden in this factory.
+ */
+export function lighterFill(
+  overrides: Partial<AgentScanLighterFillEntry> & { readonly id: string },
+): AgentScanLighterFillEntry {
+  return {
+    source: "lighter_fill",
+    createdAt: "2026-07-20T10:21:00+00:00",
+    observedAt: "2026-07-20T10:21:04+00:00",
+    environment: "core",
+    marketIndex: 1,
+    marketSymbol: "ETH-USD",
+    spot: false,
+    side: "buy",
+    tradeType: "trade",
+    positionEffect: "open",
+    baseSize: "0.0050",
+    price: "2598.09",
+    quoteNotional: "12.990450",
+    usdAmount: "12.990450",
+    blockHeight: "18412771",
+    baseAsset: { symbol: "ETH", decimals: 18 },
+    quoteAsset: { symbol: "USDG", decimals: 6 },
+    positionSizeBefore: "0",
+    entryQuoteBefore: "0",
+    accountPnl: "0",
+    leverage: { initialMarginFraction: 1000, display: "10.00" },
+    feeSide: "taker",
+    integratorFee: {
+      charged: null,
+      estimate: {
+        raw: "12990",
+        symbol: "USDG",
+        decimals: 6,
+        basis: "quote_notional",
+        tickSource: "observed",
+        usd: "0.012990",
+      },
+      tickObserved: 1000,
+      tickAuthorized: 1000,
+    },
+    exchangeFee: {
+      charged: null,
+      estimatedUsd: "0.004546",
+      tickObserved: 350,
+    },
+    providerTradeId: "884412",
+    providerOrderId: "771203",
+    intentId: "lighter-exec-00000000-0000-4000-8000-0000000000f1",
+    positionNow: {
+      observedAt: "2026-07-20T16:49:00+00:00",
+      open: true,
+      position: {
+        size: "0.0050",
+        entryPrice: "2598.09",
+        unrealizedPnl: "-0.0077",
+        realizedPnl: "0",
+        liquidationPrice: "2365.93",
+        leverage: { initialMarginFraction: 1000, display: "10.00" },
+        marginMode: "isolated",
+      },
+    },
+    ...overrides,
+  };
+}
+
 export function availablePage(
   entries: readonly AgentScanEntry[],
   options?: { readonly hasMore?: boolean },
@@ -108,7 +188,13 @@ export function availablePage(
       entries: [...entries],
       nextCursor:
         options?.hasMore === true
-          ? { createdAt: "2026-07-20T10:21:00.000000Z", sourceId: "1" }
+          ? {
+              createdAt: "2026-07-20T10:21:00.000000Z",
+              sourceId: "1",
+              // The ARM the boundary row came from, now that the cursor spans
+              // two ledgers (`(cursor_ts DESC, source_rank DESC, id DESC)`).
+              sourceRank: 0,
+            }
           : null,
       hasMore: options?.hasMore === true,
     },

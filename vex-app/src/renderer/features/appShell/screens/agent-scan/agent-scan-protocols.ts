@@ -23,6 +23,15 @@
  *                         writes `agent_activity` directly, same staged path as
  *                         Jupiter Lend
  *   pools               — pools.fun launches and fee claims (Robinhood Chain)
+ *   lighter             - BOTH arms write it: the `exchange` deposit and
+ *                         withdrawal rows in `agent_activity`
+ *                         (`agentscan-activity.ts` stamps `protocol:
+ *                         "lighter"`) and the venue's own matched fills, which
+ *                         reach this feed through its SECOND ledger
+ *                         (`lighter_fills`, migration 152). The rule above is
+ *                         unchanged by that: the option exists because things
+ *                         really do write rows this feed can show, which is
+ *                         the only test an option has to pass.
  *   khalani · relay     — bridge executors
  *
  * `pools` joined the list in Phase 3, WITH the launch and claim executors that
@@ -62,6 +71,7 @@ export const KNOWN_FEED_PROTOCOLS = [
   "trench",
   "morpho",
   "pools",
+  "lighter",
   "khalani",
   "relay",
 ] as const;
