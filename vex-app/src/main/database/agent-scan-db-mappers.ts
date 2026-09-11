@@ -1,5 +1,9 @@
 /**
- * `agent-scan-db.ts` row → `AgentScanEntry` mapping.
+ * `agent-scan-db.ts` `agent_activity` row → `AgentScanActivityEntry` mapping.
+ *
+ * The feed's LIGHTER arm has its own mapper (`agent-scan-lighter-mappers.ts`);
+ * `agent-scan-db.ts` routes each merged row to one of the two by its
+ * `source_rank`.
  *
  * Four decisions live here, and each one has a specific failure it exists to
  * prevent.
@@ -56,9 +60,9 @@ import { explorerTxUrl } from "@shared/explorer-links.js";
 import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
 import {
   AGENT_SCAN_TEXT_BOUNDS,
+  type AgentScanActivityEntry,
   type AgentScanBridgeLeg,
   type AgentScanChainRef,
-  type AgentScanEntry,
   type AgentScanTokenLeg,
   type AgentScanVexFee,
 } from "@shared/schemas/agent-scan-feed.js";
@@ -266,7 +270,7 @@ function mapExecutionLegs(raw: unknown): AgentScanBridgeLeg[] {
 function resolveRowAmountBasis(
   inRes: AmountEstimateResolution,
   outRes: AmountEstimateResolution,
-): AgentScanEntry["amountBasis"] {
+): AgentScanActivityEntry["amountBasis"] {
   const voted = [inRes.basis, outRes.basis].filter((basis): basis is "executed" | "estimated" => basis !== null);
   if (voted.length === 0) return null;
   return voted.includes("estimated") ? "estimated" : "executed";
@@ -313,7 +317,7 @@ function mapVexFee(row: AgentScanRow): AgentScanVexFee | null {
 
 // ── Entry ─────────────────────────────────────────────────────────────────
 
-export function mapAgentScanRow(row: AgentScanRow): AgentScanEntry {
+export function mapAgentScanRow(row: AgentScanRow): AgentScanActivityEntry {
   const activityKind = boundedText(row.activity_kind, ACTIVITY_KIND_MAX_LENGTH) ?? "activity";
   const amountStatus = toAmountStatus(row.status);
   // Guard the decimals ONCE, here, before anything consumes them. They feed the
@@ -350,12 +354,16 @@ export function mapAgentScanRow(row: AgentScanRow): AgentScanEntry {
   // partial decode can leave exactly one populated; labelling that row
   // "executed" off the output leg would present a quoted INPUT leg as settled
   // truth. Mixed provenance ⇒ "estimated".
-  const amountBasis: AgentScanEntry["amountBasis"] = resolveRowAmountBasis(inRes, outRes);
+  const amountBasis: AgentScanActivityEntry["amountBasis"] = resolveRowAmountBasis(inRes, outRes);
 
   const chainSlug = boundedText(row.chain_slug, AGENT_SCAN_TEXT_BOUNDS.chainSlug);
   const txHash = boundedText(row.tx_hash, AGENT_SCAN_TEXT_BOUNDS.txRef);
 
   return {
+    // The ledger this entry came from. The feed unions two of them on this
+    // discriminator, and it is required rather than defaulted because both
+    // sides of the IPC ship in the same build.
+    source: "agent_activity",
     id: row.source_id,
     createdAt: toIso(row.created_at),
     activityKind,

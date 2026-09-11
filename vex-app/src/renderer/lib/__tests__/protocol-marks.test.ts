@@ -6,7 +6,7 @@
  * asset is granted ONLY to a venue actually present in the curated map, every
  * other value degrades to a monogram, and nothing ever resolves to a remote
  * URL. The venue strings below are the complete vocabulary the tools emit
- * (`khalani`, `kyberswap`, `morpho`, `pendle`, `pools`, `relay`, `trench`,
+ * (`khalani`, `kyberswap`, `lighter`, `morpho`, `pendle`, `pools`, `relay`, `trench`,
  * `uniswap`, `jupiter`, `dexscreener`, `polymarket`, `trench`, plus the
  * `solana`/`virtuals` toolId namespaces); `polymarket`, `trench` and `solana`
  * deliberately have no bundled asset
@@ -28,6 +28,7 @@ describe("resolveProtocolMark - curated venues", () => {
     ["jupiter", "/protocols/jupiter.jpg", "Jupiter"],
     ["khalani", "/protocols/khalani.svg", "Khalani"],
     ["kyberswap", "/protocols/kyberswap.svg", "KyberSwap"],
+    ["lighter", "/protocols/lighter.svg", "Lighter"],
     ["morpho", "/protocols/morpho.jpg", "Morpho"],
     ["pendle", "/protocols/pendle.jpg", "Pendle"],
     ["pools", "/protocols/pools.jpg", "pools.fun"],

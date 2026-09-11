@@ -70,6 +70,8 @@ function position(marketIndex: number, size = "0.4"): LighterObservedPosition {
     unrealizedPnl: null,
     realizedPnl: null,
     liquidationPrice: null,
+    initialMarginFraction: null,
+    marginMode: null,
   };
 }
 
@@ -142,6 +144,59 @@ describe("migration 152's position tables", () => {
         WHERE environment = 'core' AND account_index = $1 AND market_index = 1`,
       [ACCOUNT],
     )).rejects.toThrow(/lighter_position_market_state_open_has_position/);
+  });
+});
+
+describe("the margin terms a position carries", () => {
+  /**
+   * THROUGH REAL JSONB AND BACK.
+   *
+   * `readStoredPositions` reads named fields only, so a field added to the
+   * stored shape reaches a reader exactly when the reader is taught to ask for
+   * it - and an observation written before it existed has to keep reading. A
+   * fake client cannot prove either half: the round trip is the point.
+   */
+  it("round-trips the leverage and the margin mode", async () => {
+    await storeLighterPositionObservation(observation("obs-margin", 10, {
+      positions: [{
+        ...position(1),
+        initialMarginFraction: 1000,
+        marginMode: "isolated",
+      }],
+    }));
+
+    const [stored] = await listUnsentLighterPositionObservations(10);
+    expect(stored?.positions[0]).toMatchObject({
+      marketIndex: 1,
+      size: "0.4",
+      initialMarginFraction: 1000,
+      marginMode: "isolated",
+    });
+  });
+
+  it("reads an observation stored before these fields existed as unknown, not as cross at 1x", async () => {
+    // Exactly the JSON a pre-162 build wrote: the named fields it knew, and
+    // nothing else.
+    await query(
+      `INSERT INTO lighter_position_observations
+         (environment, account_index, observation_id, observed_at, coverage_markets, complete, positions)
+       VALUES ('core', $1, 'obs-old', '2026-09-07T10:00:00.000Z', '"all"'::jsonb, TRUE, $2::jsonb)`,
+      [ACCOUNT, JSON.stringify([{
+        marketIndex: 1,
+        marketSymbol: "M1",
+        size: "0.4",
+        entryPrice: "2500.5",
+        unrealizedPnl: null,
+        realizedPnl: null,
+        liquidationPrice: null,
+      }])],
+    );
+
+    const [stored] = await listUnsentLighterPositionObservations(10);
+    expect(stored?.positions).toHaveLength(1);
+    expect(stored?.positions[0]?.size).toBe("0.4");
+    expect(stored?.positions[0]?.initialMarginFraction).toBeNull();
+    expect(stored?.positions[0]?.marginMode).toBeNull();
   });
 });
 

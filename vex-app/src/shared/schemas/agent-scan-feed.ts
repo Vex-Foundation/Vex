@@ -5,24 +5,30 @@
  * WHAT THIS IS. `portfolio-moves` answers "what did the agent do in THIS
  * session"; `token-history` answers "what happened to THIS token". Agent Scan
  * answers "what has the agent ever done", across every wallet in the configured
- * inventory, filterable and keyset-paginated. It is the first surface built on
- * the canonical `agent_activity` vocabulary alone (see
- * `../agent-activity-vocabulary.ts`) — there is NO legacy `proj_activity` /
+ * inventory, filterable and keyset-paginated. It is built on the canonical
+ * `agent_activity` vocabulary (see `../agent-activity-vocabulary.ts`) and,
+ * through its second arm, on the venue's own Lighter fill ledger
+ * (`./agent-scan-lighter-entry.ts`) - there is NO legacy `proj_activity` /
  * `wallet_intents` arm here, deliberately: the legacy arms keep serving the two
  * feeds that already union them, and this feed does not inherit the SPOT
  * taxonomy they were built on.
  *
- * SINGLE ARM, SINGLE CURSOR. Because there is exactly one source table, the
- * cursor is a plain 2-field keyset — `{ createdAt, sourceId }` over
- * `(created_at DESC, id DESC)` — with no `sourceRank` tie-breaker
- * (`token-history.ts`'s 3-field cursor needs one only because it orders a
- * 3-table UNION). `createdAt` is the EXACT microsecond serialization SQL
- * produced (`to_char(… 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`), never a `Date`
- * round-trip: `new Date(…).toISOString()` truncates to milliseconds, and two
- * rows written in the same millisecond would then straddle the boundary — the
- * page would skip or repeat rows. `sourceId` is `agent_activity.id` (BIGSERIAL)
- * as a bounded decimal string, because a bigint beyond 2^53 cannot survive a
- * JSON number.
+ * TWO ARMS, ONE CURSOR. The feed reads two local ledgers: `agent_activity`
+ * (swaps, bridges, lends, launches, Lighter deposits and withdrawals) and
+ * `lighter_fills` (the venue's own matched Lighter trades, migration 152).
+ * Each entry says which through `source`, and the page is ONE time-ordered
+ * sequence: main runs both arm queries after the SAME keyset boundary and
+ * merges them, so the cursor is the 3-field keyset `{ createdAt, sourceRank,
+ * sourceId }` over `(cursor_ts DESC, source_rank DESC, id DESC)` - the shape
+ * `token-history.ts` already uses for its multi-table UNION. `createdAt` is
+ * the EXACT microsecond serialization SQL produced (`to_char(...
+ * 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`), never a `Date` round-trip:
+ * `new Date(...).toISOString()` truncates to milliseconds, and two rows written
+ * in the same millisecond would then straddle the boundary - the page would
+ * skip or repeat rows. `sourceId` is the arm's own BIGSERIAL as a bounded
+ * decimal string, because a bigint beyond 2^53 cannot survive a JSON number;
+ * the two ledgers share id space, so `(source, id)` is the identity, never
+ * the id alone. A fill's feed time is the venue's `traded_at`.
  *
  * ROW MODEL (owner decision). One row per LOGICAL activity, with its execution
  * detail nested in `legs` — the same model the existing feeds use. A bridge
@@ -39,10 +45,12 @@
  * Bounded is not negotiable either — tolerant means "unknown values pass", not
  * "unbounded strings pass".
  *
- * INPUT IS THE OPPOSITE. Filters compile straight into SQL, so their
- * vocabularies are CLOSED and their arrays hard-capped. `statuses` and
- * `chainFamily` are enums here precisely because a value outside the set can
- * only be a bug or an attack — there is nothing to degrade gracefully to.
+ * INPUT IS THE OPPOSITE. Filters compile straight into SQL, so their arrays
+ * are hard-capped and their vocabularies are either CLOSED (`statuses`,
+ * `chainFamily`) or bounded open strings that reach SQL only as bound array
+ * parameters (`kinds`, `protocols`). `statuses` and `chainFamily` are enums
+ * here precisely because a value outside the set can only be a bug or an
+ * attack - there is nothing to degrade gracefully to.
  * `sessionId` and `projectId` NARROW the read; neither can ever widen it (main
  * always applies the inventory wallet allow-list first, and a project's
  * addresses are INTERSECTED with it - see `agent-scan-db.ts`). They are
@@ -78,6 +86,22 @@ import {
 } from "../agent-activity-vocabulary.js";
 import { TOKEN_SYMBOL_MAX_LENGTH } from "../token-symbol-sanitizer.js";
 import { bridgeAmountBasisSchema } from "./bridge-legs.js";
+import { agentScanLighterFillEntrySchema } from "./agent-scan-lighter-entry.js";
+
+export {
+  AGENT_SCAN_LIGHTER_TEXT_BOUNDS,
+  agentScanLighterFillEntrySchema,
+  agentScanLighterPositionNowSchema,
+  type AgentScanLighterAsset,
+  type AgentScanLighterAssetAmount,
+  type AgentScanLighterExchangeFee,
+  type AgentScanLighterFillEntry,
+  type AgentScanLighterIntegratorFee,
+  type AgentScanLighterLeverage,
+  type AgentScanLighterObservedPosition,
+  type AgentScanLighterPositionNow,
+  type AgentScanLighterSignedAssetAmount,
+} from "./agent-scan-lighter-entry.js";
 
 // ── Bounds ────────────────────────────────────────────────────────────────
 
@@ -156,6 +180,13 @@ export const agentScanCursorSchema = z
     sourceId: z
       .string()
       .regex(SOURCE_ID_PATTERN, "sourceId must be a decimal bigint string"),
+    /**
+     * Which arm the last row came from: 0 = `agent_activity`, 1 =
+     * `lighter_fills`. The tie-break between the two arms at an identical
+     * microsecond. Defaults to 0 so a cursor minted before the second arm
+     * existed still parses and still resumes correctly.
+     */
+    sourceRank: z.number().int().min(0).max(1).default(0),
   })
   .strict();
 export type AgentScanCursor = z.infer<typeof agentScanCursorSchema>;
@@ -183,7 +214,15 @@ export type AgentScanChainFamilyFilter = z.infer<typeof agentScanChainFamilyFilt
  * Every filter is optional and bounded. `kinds` and `protocols` stay OPEN
  * strings (a user may legitimately filter on a kind this build predates) but
  * are length- and count-capped; they reach SQL only as bound array parameters,
- * never as interpolated text.
+ * never as interpolated text. An EMPTY array means "no restriction", exactly
+ * like an absent field.
+ *
+ * `kinds` also routes the Lighter arm: the FEED kind `lighter_fill` (not an
+ * `agent_activity.kind`, so the kind lockstep gate is untouched) selects the
+ * fill ledger, and a non-empty `kinds` without it excludes that arm; likewise
+ * a non-empty `protocols` without `lighter`, any `chainFamily` (a venue is not
+ * a chain family), and a non-empty `statuses` without `confirmed` (a fill has
+ * no other status).
  */
 export const agentScanFiltersSchema = z
   .object({
@@ -376,8 +415,10 @@ export type AgentScanBridgeLeg = z.infer<typeof agentScanBridgeLegSchema>;
 
 // ── Output: entry ─────────────────────────────────────────────────────────
 
-export const agentScanEntrySchema = z
+export const agentScanActivityEntrySchema = z
   .object({
+    /** The ledger this entry came from; see the union below. */
+    source: z.literal("agent_activity"),
     /** `agent_activity.id` as a decimal string — also this row's cursor `sourceId`. */
     id: z.string().min(1).max(32),
     createdAt: z.string().datetime({ offset: true }),
@@ -462,7 +503,23 @@ export const agentScanEntrySchema = z
     pendingReason: z.string().max(FAILURE_REASON_MAX_LENGTH).nullable(),
   })
   .strict();
+export type AgentScanActivityEntry = z.infer<typeof agentScanActivityEntrySchema>;
+
+// ── Output: the entry, one of two ledgers ─────────────────────────────────
+
+/**
+ * ONE feed, TWO ledgers, discriminated on `source`. The Lighter fill entry
+ * lives in its sibling `agent-scan-lighter-entry.ts` (its own vocabulary,
+ * bounds and reasons to change). Every consumer switches on `source`;
+ * TypeScript exhaustiveness is the gate. Both sides of the IPC ship in the
+ * same build, so the discriminator is required rather than defaulted.
+ */
+export const agentScanEntrySchema = z.discriminatedUnion("source", [
+  agentScanActivityEntrySchema,
+  agentScanLighterFillEntrySchema,
+]);
 export type AgentScanEntry = z.infer<typeof agentScanEntrySchema>;
+
 
 // ── Push: a pending row terminalized (Wave P) ─────────────────────────────
 

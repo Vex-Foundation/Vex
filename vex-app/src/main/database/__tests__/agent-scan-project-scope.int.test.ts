@@ -114,10 +114,24 @@ vi.mock("../db-config.js", () => ({
 }));
 
 import { ok } from "@shared/ipc/result.js";
+import type { AgentScanEntry } from "@shared/schemas/agent-scan-feed.js";
 import { getAgentScan } from "../agent-scan-db.js";
 import { withClient } from "../sessions/connection.js";
 
 const CORRELATION_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+
+/**
+ * The `tx_hash` of every ACTIVITY row on the page.
+ *
+ * The feed's entry is a discriminated union now, so the arm has to be named
+ * before a field only one arm has can be read. This suite seeds `agent_activity`
+ * only, so an entry from the other arm here would itself be the defect.
+ */
+function activityTxHashes(entries: readonly AgentScanEntry[]): readonly (string | null)[] {
+  return entries.flatMap((entry) =>
+    entry.source === "agent_activity" ? [entry.txHash] : [],
+  );
+}
 
 async function sql<T extends Record<string, unknown>>(
   text: string,
@@ -234,7 +248,7 @@ describe("getAgentScan project scope on a real database", () => {
     expect(outcome.data.status).toBe("available");
     if (outcome.data.status !== "available") return;
 
-    const hashes = outcome.data.entries.map((row) => row.txHash);
+    const hashes = activityTxHashes(outcome.data.entries);
     // The EVM row matched despite the casing difference: the project's stored
     // checksummed address is expanded to its lookup variants, exactly as the
     // inventory allow-list is. Without that, a funded project reads as
@@ -252,7 +266,7 @@ describe("getAgentScan project scope on a real database", () => {
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     if (outcome.data.status !== "available") return;
-    const hashes = outcome.data.entries.map((row) => row.txHash);
+    const hashes = activityTxHashes(outcome.data.entries);
     // The same three rows the project read narrowed to two. This is the
     // control that proves the second predicate REMOVED rows rather than the
     // fixture simply lacking them.
@@ -321,7 +335,7 @@ describe("getAgentScan project scope on a real database", () => {
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     if (outcome.data.status !== "available") return;
-    expect(outcome.data.entries.map((row) => row.txHash)).toEqual([
+    expect(activityTxHashes(outcome.data.entries)).toEqual([
       `sol-project-${projectId}`,
     ]);
   });

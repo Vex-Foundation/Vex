@@ -47,6 +47,9 @@ function leg(overrides: Record<string, unknown> = {}) {
 
 function entry(overrides: Record<string, unknown> = {}): unknown {
   return {
+    // The feed is a union of two ledgers discriminated on `source`; this
+    // fixture is the `agent_activity` arm (the Lighter arm has its own suite).
+    source: "agent_activity",
     id: "42",
     createdAt: "2026-05-21T10:00:00.000Z",
     activityKind: "swap",
@@ -278,6 +281,8 @@ describe("agentScanEntrySchema", () => {
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
     const value: AgentScanEntry = parsed.data;
+    // Narrow to the activity arm: the union's other member has no such fields.
+    if (value.source !== "agent_activity") throw new Error("expected the activity arm");
     expect(value.activityKind).toBe("perp_futures");
     expect(value.eventRole).toBe("perp_open");
     expect(value.status).toBe("settling");
@@ -312,7 +317,7 @@ describe("agentScanEntrySchema", () => {
     // `displaySymbol`, never on `symbol`.
     const parsed = agentScanEntrySchema.safeParse(entry());
     expect(parsed.success).toBe(true);
-    if (!parsed.success) return;
+    if (!parsed.success || parsed.data.source !== "agent_activity") return;
     expect(parsed.data.output.symbol).toBe("NATIVE");
     expect(parsed.data.output.displaySymbol).toBe("NATIVE (ETH)");
   });
@@ -349,7 +354,7 @@ describe("agentScanEntrySchema", () => {
       }),
     );
     expect(parsed.success).toBe(true);
-    if (!parsed.success) return;
+    if (!parsed.success || parsed.data.source !== "agent_activity") return;
     expect(parsed.data.legs).toHaveLength(2);
     expect(parsed.data.legs[1]?.role).toBe("a_role_added_after_this_build");
   });

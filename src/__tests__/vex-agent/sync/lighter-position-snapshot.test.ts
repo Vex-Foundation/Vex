@@ -50,6 +50,8 @@ const {
   recordLighterSnapshotAttempt,
   snapshotLighterPositions,
   projectLighterPosition,
+  projectLighterObservationForWire,
+  listUnsentLighterPositionObservations,
   storeLighterPositionObservation,
   LIGHTER_SNAPSHOT_SCOPES_PER_SWEEP,
 } = await import("@vex-agent/sync/lighter-position-snapshot.js");
@@ -137,13 +139,147 @@ describe("projecting one provider position", () => {
     );
     expect(Object.keys(projected ?? {}).sort()).toEqual([
       "entryPrice",
+      "initialMarginFraction",
       "liquidationPrice",
+      "marginMode",
       "marketIndex",
       "marketSymbol",
       "realizedPnl",
       "size",
       "unrealizedPnl",
     ]);
+  });
+
+  it.each([
+    ["10.00", 1, 1000, "isolated" as const],
+    ["50.00", 0, 5000, "cross" as const],
+    ["100", 0, 10_000, "cross" as const],
+  ])(
+    "reads the account endpoint's percent string %s and margin code %i as the canonical unit",
+    (percent, mode, fraction, marginMode) => {
+      const projected = projectLighterPosition(
+        position({ initial_margin_fraction: percent, margin_mode: mode }),
+      );
+      expect(projected?.initialMarginFraction).toBe(fraction);
+      expect(projected?.marginMode).toBe(marginMode);
+    },
+  );
+
+  // A non-textual fraction is a provider row this build has not seen. It is
+  // built through the DTO's own open index signature (`[key: string]: unknown`)
+  // rather than through a cast that would hide the wrong type from the reader.
+  const nonTextual: Record<string, unknown> = { ...position(), initial_margin_fraction: 10 };
+
+  it.each([
+    ["a fraction Vex cannot read exactly", position({ initial_margin_fraction: "33.333" })],
+    ["a fraction above 100 percent", position({ initial_margin_fraction: "150.00" })],
+    ["a zero fraction", position({ initial_margin_fraction: "0" })],
+    ["a non-textual fraction", nonTextual as LighterAccountPosition],
+  ])("leaves the leverage unknown on %s, and still keeps the position", (_label, row) => {
+    const projected = projectLighterPosition(row);
+    // The margin terms are context. The size, entry and PnL are the fact, and
+    // they do not become less true because one optional field is unreadable.
+    expect(projected?.size).toBe("0.4");
+    expect(projected?.entryPrice).toBe("2500.5");
+    expect(projected?.initialMarginFraction).toBeNull();
+  });
+
+  it("leaves an unknown margin-mode code unknown rather than calling it cross", () => {
+    const projected = projectLighterPosition(position({ margin_mode: 7 }));
+    expect(projected?.marginMode).toBeNull();
+    expect(projected?.size).toBe("0.4");
+  });
+});
+
+describe("reading an observation back out of storage", () => {
+  /** One stored row as the owed-observations query returns it. */
+  function storedRow(positions: unknown): Record<string, unknown> {
+    return {
+      id: 1,
+      environment: "core",
+      account_index: "743799",
+      observation_id: "obs-1",
+      observed_at: "2026-09-07T10:00:00.000Z",
+      coverage_markets: "all",
+      complete: true,
+      positions,
+    };
+  }
+
+  it("reads the margin terms back through their own named fields", async () => {
+    mockQuery.mockResolvedValue([storedRow([{
+      marketIndex: 1, marketSymbol: "ETH-USD", size: "0.4",
+      entryPrice: "2500.5", unrealizedPnl: null, realizedPnl: null, liquidationPrice: null,
+      initialMarginFraction: 1000, marginMode: "isolated",
+    }])]);
+
+    const [observation] = await listUnsentLighterPositionObservations(10);
+    expect(observation?.positions[0]).toMatchObject({
+      initialMarginFraction: 1000,
+      marginMode: "isolated",
+    });
+  });
+
+  it.each([
+    ["an observation stored before these fields existed", {}],
+    ["an explicit null", { initialMarginFraction: null, marginMode: null }],
+    ["a fraction outside the canonical range", { initialMarginFraction: 20_000, marginMode: "sideways" }],
+    ["values of the wrong type", { initialMarginFraction: "1000", marginMode: 1 }],
+  ])("reads %s as unknown, without losing the position", async (_label, margin) => {
+    mockQuery.mockResolvedValue([storedRow([{
+      marketIndex: 1, marketSymbol: "ETH-USD", size: "0.4",
+      entryPrice: "2500.5", unrealizedPnl: null, realizedPnl: null, liquidationPrice: null,
+      ...margin,
+    }])]);
+
+    const [observation] = await listUnsentLighterPositionObservations(10);
+    expect(observation?.positions).toHaveLength(1);
+    expect(observation?.positions[0]?.size).toBe("0.4");
+    expect(observation?.positions[0]?.initialMarginFraction).toBeNull();
+    expect(observation?.positions[0]?.marginMode).toBeNull();
+  });
+});
+
+describe("the AgentScan wire payload", () => {
+  it("does not grow a key because the ledger learned one", () => {
+    const payload = projectLighterObservationForWire(
+      {
+        id: 1,
+        environment: "core",
+        accountIndex: 743799,
+        observationId: "obs-1",
+        observedAt: "2026-09-07T10:00:00.000Z",
+        coverage: "all",
+        complete: true,
+        positions: [{
+          marketIndex: 1,
+          marketSymbol: "ETH-USD",
+          size: "0.4",
+          entryPrice: "2500.5",
+          unrealizedPnl: "12.5",
+          realizedPnl: null,
+          liquidationPrice: "1800",
+          initialMarginFraction: 1000,
+          marginMode: "isolated",
+        }],
+      },
+      new Map([[1, 4]]),
+    );
+
+    // The mapper names every field it sends, which is exactly what keeps a new
+    // durable fact off the external wire until someone decides to send it.
+    expect(Object.keys(payload?.positions[0] ?? {}).sort()).toEqual([
+      "entryPrice",
+      "liquidationPrice",
+      "marketIndex",
+      "marketSymbol",
+      "realizedPnl",
+      "size",
+      "sizeDecimals",
+      "unrealizedPnl",
+    ]);
+    expect(JSON.stringify(payload)).not.toContain("initialMarginFraction");
+    expect(JSON.stringify(payload)).not.toContain("marginMode");
   });
 });
 
@@ -338,6 +474,8 @@ describe("storing an observation", () => {
         unrealizedPnl: "12.5",
         realizedPnl: null,
         liquidationPrice: "1800",
+        initialMarginFraction: 1000,
+        marginMode: "isolated",
       }],
     });
 
@@ -359,6 +497,7 @@ describe("storing an observation", () => {
       positions: [{
         marketIndex: 1, marketSymbol: "ETH-USD", size: "0.4",
         entryPrice: null, unrealizedPnl: null, realizedPnl: null, liquidationPrice: null,
+        initialMarginFraction: null, marginMode: null,
       }],
     });
 
@@ -401,6 +540,7 @@ describe("storing an observation", () => {
       positions: [{
         marketIndex: 1, marketSymbol: "ETH-USD", size: "0.4",
         entryPrice: null, unrealizedPnl: null, realizedPnl: null, liquidationPrice: null,
+        initialMarginFraction: null, marginMode: null,
       }],
     });
 

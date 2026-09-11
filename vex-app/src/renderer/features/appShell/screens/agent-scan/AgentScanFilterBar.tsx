@@ -41,6 +41,15 @@ import {
 } from "../../../../stores/uiStore/shell-route.js";
 import { FEED_PROTOCOL_OPTIONS } from "./agent-scan-protocols.js";
 
+/**
+ * The FEED kind that selects the Lighter fill ledger, exactly as
+ * `agentScanFiltersSchema` documents it: a member of the `kinds` list that is
+ * NOT an `agent_activity.kind`, so the engine's kind lockstep gate is
+ * untouched and main routes the second arm on it.
+ */
+const LIGHTER_FILL_KIND = "lighter_fill";
+const LIGHTER_FILL_KIND_LABEL = "Lighter fills";
+
 /** The renderer-side filter selection. `null` means "no constraint". */
 export interface AgentScanFilterState {
   readonly kinds: readonly string[];
@@ -253,6 +262,22 @@ export function AgentScanFilterBar({
             }
           />
         ))}
+        {/* The FEED kind that selects the second ledger. It sits beside the
+          * vocabulary-derived chips and routes identically (`kinds` is an OPEN
+          * bounded list on the contract), but it is deliberately NOT in
+          * `AGENT_ACTIVITY_KINDS`: a venue fill is not an `agent_activity`
+          * kind and adding it there would put a value in the database
+          * vocabulary that no row can ever carry. */}
+        <FilterChip
+          label={LIGHTER_FILL_KIND_LABEL}
+          active={state.kinds.includes(LIGHTER_FILL_KIND)}
+          onToggle={() =>
+            onChange({
+              ...state,
+              kinds: toggleValue(state.kinds, LIGHTER_FILL_KIND),
+            })
+          }
+        />
       </FilterGroup>
 
       <FilterGroup label="Status">

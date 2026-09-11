@@ -6,13 +6,28 @@
  * `pg.Client` per call, no `@vex-agent/db/repos/*` import, reading the same
  * local `vex` Postgres the engine writes to.
  *
- * SOURCE — `agent_activity` ONLY (single arm, deliberately). The token-history
- * feed UNIONs the legacy `proj_activity` / `wallet_intents` projections; this
- * one does not. Those arms keep serving the feed that already depends on them,
- * and Agent Scan gets to be built purely on the canonical vocabulary
- * (`@shared/agent-activity-vocabulary.js`) instead of inheriting the SPOT
- * taxonomy the legacy arms were minted with. One arm also means one cursor and
- * no `sourceRank` tie-break — see `agent-scan-feed.ts`'s header.
+ * SOURCE - TWO LOCAL LEDGERS, `agent_activity` and `lighter_fills`. The
+ * token-history feed UNIONs the legacy `proj_activity` / `wallet_intents`
+ * projections; this one does not. Those arms keep serving the feed that already
+ * depends on them, and Agent Scan is built purely on the canonical vocabulary
+ * (`@shared/agent-activity-vocabulary.js`) plus the venue's own fill ledger
+ * (migration 152), instead of inheriting the SPOT taxonomy the legacy arms were
+ * minted with.
+ *
+ * ONE PAGE, ONE SNAPSHOT, ONE CURSOR. Each arm has its own query
+ * (`agent-scan-db-query.ts`, `agent-scan-lighter-query.ts`), both are issued
+ * after the SAME 3-field keyset boundary with the same `limit + 1` probe, and
+ * `agent-scan-merge.ts` interleaves them into one sequence - see its header for
+ * why that is equivalent to a single ordered read, and for the late-attribution
+ * limit it cannot remove. The transaction is `REPEATABLE READ` rather than the
+ * default `READ COMMITTED` because the two statements must see ONE snapshot: at
+ * READ COMMITTED each statement takes its own, so a fill inserted between them
+ * could be counted by one arm's `hasMore` probe while the other arm's boundary
+ * had already moved past it (PostgreSQL, "Transaction Isolation": a READ
+ * COMMITTED statement sees a snapshot taken at the start of THAT statement,
+ * while a REPEATABLE READ transaction sees one taken at its first statement).
+ * The Lighter arm is SKIPPED ENTIRELY when the caller's filters exclude it, in
+ * which case this read behaves exactly as the single-arm one did.
  *
  * ROW SELECTION — one row per LOGICAL activity (owner decision), selected by
  * the shared positive role allow-list in `agent-activity-logical-row.ts`.
@@ -65,9 +80,12 @@
  * identities, tx hashes, or filter values.
  *
  * Internals split into siblings, mirroring the two feeds' own layout:
- * `agent-scan-db-types.ts` (row shape), `agent-scan-db-query.ts` (connection,
- * filter compilation, page SQL), `agent-scan-db-mappers.ts` (row → DTO). This
- * file is the public gate — `getAgentScan` is the only export.
+ * `agent-scan-db-types.ts` / `agent-scan-lighter-types.ts` (row shapes),
+ * `agent-scan-db-query.ts` (connection, filter compilation, activity page SQL,
+ * the shared keyset boundary) and `agent-scan-lighter-query.ts` (fill page
+ * SQL), `agent-scan-db-mappers.ts` / `agent-scan-lighter-mappers.ts` (row →
+ * DTO), `agent-scan-merge.ts` (the two arms → one page). This file is the
+ * public gate - `getAgentScan` is the only export.
  */
 
 import { ok, type Result, type VexError } from "@shared/ipc/result.js";
@@ -81,6 +99,13 @@ import { resolveInventoryWalletAddressLookupVariants } from "./inventory-wallets
 import { log } from "../logger/index.js";
 import { mapAgentScanRow } from "./agent-scan-db-mappers.js";
 import {
+  mapAgentScanLighterRow,
+  type AgentScanLighterMappingStats,
+} from "./agent-scan-lighter-mappers.js";
+import { buildAgentScanLighterPageQuery } from "./agent-scan-lighter-query.js";
+import { mergeAgentScanArms } from "./agent-scan-merge.js";
+import {
+  AGENT_SCAN_ACTIVITY_SOURCE_RANK,
   buildAgentScanPageQuery,
   dbError,
   isStatementTimeout,
@@ -93,6 +118,7 @@ import {
 } from "./agent-scan-db-query.js";
 import { readProjectPortfolioScope } from "./projects/portfolio-scope.js";
 import type { AgentScanRow } from "./agent-scan-db-types.js";
+import type { AgentScanLighterRow } from "./agent-scan-lighter-types.js";
 
 /** The empty available page - the one shape "there is nothing to show" takes. */
 const EMPTY_PAGE = {
@@ -192,12 +218,24 @@ export async function getAgentScan(
     filters: input.filters,
     cursor: input.cursor,
   });
+  // `null` = the caller's filters exclude the Lighter arm; no SQL is issued for
+  // it and the page is whatever the activity arm returns, exactly as before.
+  const lighterPlan = buildAgentScanLighterPageQuery({
+    wallets,
+    projectWallets,
+    filters: input.filters,
+    cursor: input.cursor,
+  });
 
   return withClient<AgentScanDto>(correlationId, async (client) => {
     try {
-      await client.query("BEGIN READ ONLY");
+      // REPEATABLE READ, not the default READ COMMITTED: both arm queries of one
+      // page must read ONE snapshot, or a row written between them could be
+      // seen by one arm's boundary and missed by the other's. READ ONLY keeps
+      // the guarantee the single-arm read already had.
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     } catch (cause) {
-      return dbError(correlationId, "BEGIN READ ONLY failed", cause);
+      return dbError(correlationId, "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY failed", cause);
     }
 
     try {
@@ -207,10 +245,10 @@ export async function getAgentScan(
       return dbError(correlationId, "SET LOCAL statement_timeout failed", cause);
     }
 
-    let pageRows: AgentScanRow[];
+    let activityRows: AgentScanRow[];
     try {
       const result = await client.query<AgentScanRow>(sql, [...params]);
-      pageRows = result.rows;
+      activityRows = result.rows;
     } catch (cause) {
       await rollbackQuietly(client);
       if (isStatementTimeout(cause)) {
@@ -220,19 +258,52 @@ export async function getAgentScan(
       return dbError(correlationId, "page query failed", cause);
     }
 
-    // The read asked for `limit + 1`: the extra row proves there is another
-    // page WITHOUT a second COUNT query, and is dropped before mapping.
-    const hasMore = pageRows.length > AGENT_SCAN_PAGE_SIZE;
-    const kept = hasMore ? pageRows.slice(0, AGENT_SCAN_PAGE_SIZE) : pageRows;
-    const entries = kept.map(mapAgentScanRow);
+    // A timeout on EITHER arm fails the WHOLE read closed. Returning the arm
+    // that answered would silently present a partial history as the history.
+    let lighterRows: AgentScanLighterRow[] = [];
+    if (lighterPlan !== null) {
+      try {
+        const result = await client.query<AgentScanLighterRow>(
+          lighterPlan.sql,
+          [...lighterPlan.params],
+        );
+        lighterRows = result.rows;
+      } catch (cause) {
+        await rollbackQuietly(client);
+        if (isStatementTimeout(cause)) {
+          log.info("portfolio.agent_scan_query_canceled phase=lighter");
+          return ok({ status: "unavailable", reason: "query_timeout" });
+        }
+        return dbError(correlationId, "lighter page query failed", cause);
+      }
+    }
+
+    // Each arm asked for `limit + 1`: the extra rows prove there is another page
+    // WITHOUT a second COUNT query, and are dropped by the merge.
+    const { kept, hasMore } = mergeAgentScanArms(
+      activityRows,
+      lighterRows,
+      AGENT_SCAN_PAGE_SIZE,
+    );
+    const stats: AgentScanLighterMappingStats = { unreadablePositions: 0 };
+    const entries = kept.map((row) =>
+      Number(row.source_rank) === AGENT_SCAN_ACTIVITY_SOURCE_RANK
+        ? mapAgentScanRow(row as AgentScanRow)
+        : mapAgentScanLighterRow(row as AgentScanLighterRow, stats),
+    );
 
     const lastKept = kept[kept.length - 1];
     // `cursor_ts` is the SQL-rendered microsecond string, NOT a `Date`
     // round-trip — a millisecond-truncated boundary would skip or repeat rows
-    // whenever two activities share a millisecond.
+    // whenever two activities share a millisecond. `sourceRank` travels with it
+    // so the next page resumes on the right side of a cross-arm tie.
     const nextCursor: AgentScanCursor | null =
       hasMore && lastKept !== undefined
-        ? { createdAt: lastKept.cursor_ts, sourceId: lastKept.source_id }
+        ? {
+            createdAt: lastKept.cursor_ts,
+            sourceId: lastKept.source_id,
+            sourceRank: Number(lastKept.source_rank) === AGENT_SCAN_ACTIVITY_SOURCE_RANK ? 0 : 1,
+          }
         : null;
 
     try {
@@ -242,8 +313,12 @@ export async function getAgentScan(
       return dbError(correlationId, "COMMIT failed", cause);
     }
 
+    // COUNTS AND DTO STATUS ONLY - never an address, an amount, a market, a
+    // position figure or a filter value.
     log.info(
-      `[agent-scan-db] getAgentScan ok entries=${entries.length} hasMore=${hasMore}`,
+      `[agent-scan-db] getAgentScan ok entries=${entries.length} hasMore=${hasMore}`
+      + ` activityRows=${activityRows.length} lighterRows=${lighterRows.length}`
+      + ` unreadablePositions=${stats.unreadablePositions}`,
     );
     return ok({ status: "available", entries, nextCursor, hasMore });
   });

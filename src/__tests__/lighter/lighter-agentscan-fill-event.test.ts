@@ -329,6 +329,17 @@ describe("privacy", () => {
     ]);
   });
 
+  it("keeps the leverage before the fill OFF the wire, ledger column or not", () => {
+    // Migration 162 records `initial_margin_fraction_before` for the LOCAL
+    // activity feed. The external server was never told about it, so a ledger
+    // row that carries it must project exactly the payload above: a durable
+    // column is not a wire field, and the two grow by separate decisions.
+    const event = mapOrThrow(ledgerRow({ initial_margin_fraction_before: 1000 }));
+    expect(event.lighterFill).not.toHaveProperty("initialMarginFractionBefore");
+    expect(JSON.stringify(event)).not.toContain("initial_margin_fraction_before");
+    expect(JSON.stringify(event)).not.toContain("MarginFraction");
+  });
+
   it("never carries a counterparty, a credential, a nonce or an L1 address, even when the row does", () => {
     // A raw provider record smuggled onto the ledger row: none of it is read.
     const event = mapOrThrow(ledgerRow({

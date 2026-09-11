@@ -31,8 +31,16 @@ import { ErrorCodes, VexError } from "../../errors.js";
  */
 export const LIGHTER_MARGIN_FRACTION_TICK = 10_000;
 
-/** The smallest fraction the provider accepts: 10000x, one tick of margin. */
-const MINIMUM_INITIAL_MARGIN_FRACTION = 1;
+/**
+ * The smallest fraction the provider accepts: 10000x, one tick of margin.
+ *
+ * Exported because it is also the LOWER BOUND OF THE DURABLE RANGE: the
+ * `lighter_fills.initial_margin_fraction_before` CHECK (migration 162) admits
+ * exactly `MINIMUM_INITIAL_MARGIN_FRACTION..LIGHTER_MARGIN_FRACTION_TICK`, and
+ * the writer that normalizes a provider value against it must read the bound
+ * from this owner rather than spelling a 1 of its own.
+ */
+export const MINIMUM_INITIAL_MARGIN_FRACTION = 1;
 
 /** Two decimals is exactly what the account endpoint emits ("50.00"). */
 const PERCENT_DECIMALS = 2;

@@ -14,7 +14,10 @@ import {
   mapAgentScanRow,
   STALLED_VERIFICATION_ATTEMPTS,
 } from "../agent-scan-db-mappers.js";
-import { agentScanEntrySchema } from "@shared/schemas/agent-scan-feed.js";
+import {
+  agentScanActivityEntrySchema,
+  agentScanEntrySchema,
+} from "@shared/schemas/agent-scan-feed.js";
 import type { AgentScanRow } from "../agent-scan-db-types.js";
 
 const BASE_CHAIN_ID = 8453;
@@ -24,6 +27,8 @@ const SOLANA_PROVIDER_CHAIN_ID = 20011000000;
 
 function row(overrides: Partial<AgentScanRow> = {}): AgentScanRow {
   return {
+    // The arm discriminator SQL selects as a literal: 0 = `agent_activity`.
+    source_rank: 0,
     source_id: "42",
     created_at: new Date("2026-05-21T10:00:00.000Z"),
     cursor_ts: "2026-05-21T10:00:00.000000Z",
@@ -81,7 +86,10 @@ function row(overrides: Partial<AgentScanRow> = {}): AgentScanRow {
 }
 
 it("carries a native input lower-bound basis through the IPC schema without changing the output basis", () => {
-  const entry = agentScanEntrySchema.parse(mapAgentScanRow(row({ protocol: "uniswap", token_in_address: null,
+  // Parsed through the ACTIVITY member of the union: the feed's entry schema is
+  // a discriminated union now, and this assertion is about an activity row's
+  // legs, which the Lighter member does not have.
+  const entry = agentScanActivityEntrySchema.parse(mapAgentScanRow(row({ protocol: "uniswap", token_in_address: null,
     token_in_symbol: "ETH", token_in_decimals: 18, executed_amount_in_raw: "1999999999999999999",
     evidence_source: "native_balance_delta_bound" })));
   expect(entry.input.amountBasis).toBe("lower_bound");

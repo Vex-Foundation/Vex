@@ -6,8 +6,11 @@
  * survives Clear and shows as its own non-clearable chip.
  *
  * Where `TokenHistoryScreen` answers "what happened to THIS token?", this
- * screen answers "what has the agent DONE?" — every `agent_activity` row,
- * newest first, filterable, each carrying its receipt.
+ * screen answers "what has the agent DONE?": every `agent_activity` row AND
+ * every attributed Lighter fill, newest first, filterable, each carrying its
+ * own receipt. The two ledgers arrive as ONE time-ordered page from main
+ * (`AgentScanEntry` is discriminated on `source`); the screen never merges,
+ * filters or sorts them itself.
  *
  * VIRTUALIZED (`@tanstack/react-virtual`). This is an unbounded feed: it pages
  * forever and must never retain a DOM node per fetched row, or a long-running
@@ -28,7 +31,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { AgentScanDto, AgentScanEntry } from "@shared/schemas/agent-scan-feed.js";
+import type {
+  AgentScanActivityEntry,
+  AgentScanDto,
+  AgentScanEntry,
+} from "@shared/schemas/agent-scan-feed.js";
+import type { AgentScanLighterFillEntry } from "@shared/schemas/agent-scan-lighter-entry.js";
 import type { Result } from "@shared/ipc/result.js";
 import { useAgentScanInfinite } from "../../../lib/api/portfolio.js";
 import { useProject } from "../../../lib/api/projects.js";
@@ -43,6 +51,7 @@ import {
   toAgentScanFilters,
   type AgentScanFilterState,
 } from "./agent-scan/AgentScanFilterBar.js";
+import { AgentScanLighterRow } from "./agent-scan/AgentScanLighterRow.js";
 import { AgentScanRow } from "./agent-scan/AgentScanRow.js";
 import { dayKey, dayLabel } from "./agent-scan/agent-scan-display.js";
 
@@ -56,11 +65,11 @@ const SCREEN_TITLE = "Agent Scan";
 function screenSubtitle(scope: AgentScanRouteScope): string {
   switch (scope.kind) {
     case "global":
-      return "Every action Vex executed on-chain, newest first - each row links to its transaction.";
+      return "Every action Vex executed on-chain, newest first - each row carries its own receipt.";
     case "session":
-      return "Everything Vex executed on-chain in THIS session, newest first - each row links to its transaction.";
+      return "Everything Vex executed on-chain in THIS session, newest first - each row carries its own receipt.";
     case "project":
-      return "Everything Vex executed on-chain with THIS project's wallets, newest first - each row links to its transaction.";
+      return "Everything Vex executed on-chain with THIS project's wallets, newest first - each row carries its own receipt.";
   }
 }
 
@@ -70,10 +79,29 @@ const ESTIMATED_ROW_PX = 56;
 /** Rows kept mounted beyond the visible window, to cover fast scrolling. */
 const OVERSCAN_ROWS = 8;
 
-/** A day divider or one activity — the flat list the virtualizer indexes. */
+/**
+ * A day divider or ONE entry from either ledger - the flat list the
+ * virtualizer indexes.
+ *
+ * The two entry members are the row TEMPLATES of a heterogeneous list: the
+ * kind is decided once, here, from the DTO's `source` discriminator, and the
+ * render branch then mounts the one component that knows that shape. This is
+ * the shape VS Code's list gives a mixed feed (`getTemplateId` picking one
+ * `IListRenderer` per kind) and it is why the screen never grows a row that
+ * branches on every field of two unrelated ledgers.
+ */
 type FeedRow =
   | { readonly kind: "day"; readonly key: string; readonly label: string }
-  | { readonly kind: "entry"; readonly key: string; readonly entry: AgentScanEntry };
+  | {
+      readonly kind: "activity";
+      readonly key: string;
+      readonly entry: AgentScanActivityEntry;
+    }
+  | {
+      readonly kind: "lighter";
+      readonly key: string;
+      readonly entry: AgentScanLighterFillEntry;
+    };
 
 /** Narrow one query page to its available payload, else null. */
 function availablePage(
@@ -97,7 +125,22 @@ function buildFeedRows(entries: readonly AgentScanEntry[]): readonly FeedRow[] {
       currentDay = key;
       rows.push({ kind: "day", key: `day:${key}`, label: dayLabel(entry.createdAt) });
     }
-    rows.push({ kind: "entry", key: `entry:${entry.id}`, entry });
+    // IDENTITY IS `(source, id)`, NEVER THE ID ALONE. The two ledgers have
+    // separate BIGSERIAL sequences and therefore share id space: `agent_activity`
+    // row 42 and `lighter_fills` row 42 can both be on one page, and a key
+    // collision in a virtualized list silently reuses the wrong measured row.
+    // TypeScript cannot catch this - both ids are strings.
+    const rowKey = `entry:${entry.source}:${entry.id}`;
+    // Exhaustive over the union: a third ledger is a compile error here rather
+    // than an entry that is silently dropped from the feed.
+    switch (entry.source) {
+      case "agent_activity":
+        rows.push({ kind: "activity", key: rowKey, entry });
+        break;
+      case "lighter_fill":
+        rows.push({ kind: "lighter", key: rowKey, entry });
+        break;
+    }
   }
   return rows;
 }
@@ -243,6 +286,8 @@ export function AgentScanScreen({
                   </span>
                   <span aria-hidden className="h-px flex-1 bg-line-2" />
                 </div>
+              ) : row.kind === "lighter" ? (
+                <AgentScanLighterRow entry={row.entry} />
               ) : (
                 <AgentScanRow entry={row.entry} />
               )}

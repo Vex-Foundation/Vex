@@ -78,6 +78,8 @@ function observation(
       unrealizedPnl: "-12.5",
       realizedPnl: null,
       liquidationPrice: null,
+      initialMarginFraction: 1000,
+      marginMode: "isolated",
     }],
     ...overrides,
   };
@@ -255,6 +257,7 @@ describe("disjoint observations of one scope", () => {
       positions: [{
         marketIndex: 2, marketSymbol: "BTC", size: "1.0", entryPrice: "60000.0",
         unrealizedPnl: null, realizedPnl: null, liquidationPrice: null,
+        initialMarginFraction: null, marginMode: null,
       }],
     });
     const newer = observation({ id: 2, observationId: "obs-12", coverage: [1] });

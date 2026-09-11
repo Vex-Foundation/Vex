@@ -118,12 +118,15 @@ interface StoredFill {
   readonly position_effect: string | null;
   readonly revision: number;
   readonly execution_intent_id: string | null;
+  readonly initial_margin_fraction_before: number | null;
+  readonly updated_at: Date;
 }
 
 async function stored(): Promise<StoredFill> {
   const row = await queryOne<StoredFill>(
     `SELECT price, usd_amount, trade_type, position_size_before, position_sign_changed,
-            entry_quote_before, account_pnl, position_effect, revision, execution_intent_id
+            entry_quote_before, account_pnl, position_effect, revision, execution_intent_id,
+            initial_margin_fraction_before, updated_at
        FROM lighter_fills WHERE canonical_identity = $1`,
     [IDENTITY],
   );
@@ -248,6 +251,201 @@ describe("re-observing the same fill", () => {
     // whose economics disagree, because that record is not trustworthy.
     expect(row.position_size_before).toBeNull();
     expect(Number(row.revision)).toBe(0);
+  });
+});
+
+describe("the leverage in force before the fill", () => {
+  /**
+   * MIGRATION 162'S COLUMN, against the CHECK itself.
+   *
+   * The fraction is the only honest source for "what leverage was this trade
+   * taken at": the account's leverage NOW is a different number about a
+   * different moment. It is also OPTIONAL in every sense that matters - a
+   * public trade row has no account half at all, an authenticated one may omit
+   * the field, and `marginFraction()` in `fill-position-effect.ts` hands on any
+   * nonnegative safe integer, including values the column refuses. So the two
+   * properties proved here are: a readable value is stored exactly, and an
+   * unreadable one costs the ledger NOTHING - not the fill, not the fees, not
+   * the attribution.
+   */
+  it("stores the fraction at insert when the first observation carries one", async () => {
+    expect(await recordLighterFillActivity(authenticatedRow({
+      accountFacts: {
+        positionSizeBefore: "-2.5",
+        positionSignChanged: false,
+        entryQuoteBefore: "-6000.000000",
+        accountPnl: "1.989696",
+        initialMarginFractionBefore: 1000,
+      },
+    }))).toMatchObject({ kind: "recorded" });
+    // 1000 on the provider's 10000 scale is 10x, and it is stored as the
+    // provider's own integer: no leverage is computed at the write.
+    expect((await stored()).initial_margin_fraction_before).toBe(1000);
+  });
+
+  it.each([
+    ["a zero the CHECK would refuse", 0],
+    ["a value above the 10000 tick", 20_000],
+    ["a negative value", -1],
+    ["a non-integer", 1000.5],
+    ["no value at all", null],
+  ])("records the fill and stores the leverage as unknown on %s", async (_label, value) => {
+    const outcome = await recordLighterFillActivity(authenticatedRow({
+      accountFacts: {
+        positionSizeBefore: "-2.5",
+        positionSignChanged: false,
+        entryQuoteBefore: "-6000.000000",
+        accountPnl: "1.989696",
+        initialMarginFractionBefore: value,
+      },
+    }));
+    // The fill is the fact. Failing its whole insert over an optional context
+    // field - or clamping the field into a plausible-looking leverage - are
+    // both worse than saying "unknown".
+    expect(outcome).toMatchObject({ kind: "recorded" });
+    const row = await stored();
+    expect(row.initial_margin_fraction_before).toBeNull();
+    expect(row.price).toBe("2500.5");
+    expect(row.position_size_before).toBe("-2.5");
+  });
+
+  it("fills the fraction through the account merge, in the same statement", async () => {
+    await recordLighterFillActivity(publicRow());
+    expect((await stored()).initial_margin_fraction_before).toBeNull();
+
+    expect(await recordLighterFillActivity(authenticatedRow({
+      accountFacts: {
+        positionSizeBefore: "-2.5",
+        positionSignChanged: false,
+        entryQuoteBefore: "-6000.000000",
+        accountPnl: "1.989696",
+        initialMarginFractionBefore: 1000,
+      },
+    }))).toMatchObject({ kind: "enriched", revision: 1 });
+
+    const row = await stored();
+    expect(row.initial_margin_fraction_before).toBe(1000);
+    expect(row.position_size_before).toBe("-2.5");
+  });
+
+  it("fills the fraction when the account half is ALREADY held and the merge cannot run", async () => {
+    // The defect this pins: the merge refuses once `position_size_before` is
+    // set, so a first authenticated observation without the fraction would
+    // freeze the column at NULL for the life of the row.
+    await recordLighterFillActivity(authenticatedRow({
+      accountFacts: {
+        positionSizeBefore: "-2.5",
+        positionSignChanged: false,
+        entryQuoteBefore: "-6000.000000",
+        accountPnl: "1.989696",
+        initialMarginFractionBefore: null,
+      },
+    }));
+    expect((await stored()).initial_margin_fraction_before).toBeNull();
+
+    const second = await recordLighterFillActivity(authenticatedRow({
+      accountFacts: {
+        positionSizeBefore: "-2.5",
+        positionSignChanged: false,
+        entryQuoteBefore: "-6000.000000",
+        accountPnl: "1.989696",
+        initialMarginFractionBefore: 1000,
+      },
+    }));
+
+    // The outcome is what it was about the FILL: an ordinary duplicate. The
+    // fraction is not on the AgentScan wire, so nothing was enriched for a
+    // server and the revision does not move.
+    expect(second).toMatchObject({ kind: "duplicate" });
+    const row = await stored();
+    expect(row.initial_margin_fraction_before).toBe(1000);
+    expect(Number(row.revision)).toBe(0);
+  });
+
+  it("never revises a fraction it already holds", async () => {
+    await recordLighterFillActivity(authenticatedRow({
+      accountFacts: {
+        positionSizeBefore: "-2.5",
+        positionSignChanged: false,
+        entryQuoteBefore: "-6000.000000",
+        accountPnl: "1.989696",
+        initialMarginFractionBefore: 1000,
+      },
+    }));
+
+    expect(await recordLighterFillActivity(authenticatedRow({
+      accountFacts: {
+        positionSizeBefore: "-2.5",
+        positionSignChanged: false,
+        entryQuoteBefore: "-6000.000000",
+        accountPnl: "1.989696",
+        initialMarginFractionBefore: 5000,
+      },
+    }))).toMatchObject({ kind: "duplicate" });
+
+    expect((await stored()).initial_margin_fraction_before).toBe(1000);
+  });
+
+  it("takes NOTHING from a report whose economics contradict the ledger", async () => {
+    await recordLighterFillActivity(publicRow());
+    const before = await stored();
+
+    const outcome = await recordLighterFillActivity(authenticatedRow({
+      price: "2600.0",
+      accountFacts: {
+        positionSizeBefore: "-2.5",
+        positionSignChanged: false,
+        entryQuoteBefore: "-6000.000000",
+        accountPnl: "1.989696",
+        initialMarginFractionBefore: 1000,
+      },
+    }));
+
+    // A contradicting report is a defect in whoever produced it. A field that
+    // would have been free to take is still a field from a source the ledger
+    // has just refused, so the refusal is total and the row is untouched.
+    expect(outcome.kind).toBe("conflict");
+    const row = await stored();
+    expect(row.initial_margin_fraction_before).toBeNull();
+    expect(row.updated_at.toISOString()).toBe(before.updated_at.toISOString());
+    expect(Number(row.revision)).toBe(0);
+  });
+
+  it("does not move the revision or the outcome when only the fraction is news", async () => {
+    await recordLighterFillActivity(publicRow());
+    await recordLighterFillActivity(authenticatedRow({
+      accountFacts: {
+        positionSizeBefore: "-2.5",
+        positionSignChanged: false,
+        entryQuoteBefore: "-6000.000000",
+        accountPnl: "1.989696",
+        initialMarginFractionBefore: null,
+      },
+    }));
+    // One enrichment so far: the account half. The outbox owes exactly that.
+    expect(Number((await stored()).revision)).toBe(1);
+
+    expect(await recordLighterFillActivity(authenticatedRow({
+      accountFacts: {
+        positionSizeBefore: "-2.5",
+        positionSignChanged: false,
+        entryQuoteBefore: "-6000.000000",
+        accountPnl: "1.989696",
+        initialMarginFractionBefore: 1000,
+      },
+    }))).toMatchObject({ kind: "duplicate" });
+
+    const row = await stored();
+    expect(row.initial_margin_fraction_before).toBe(1000);
+    // Bumping it here would enqueue an enrichment delivery carrying nothing
+    // the server does not already have.
+    expect(Number(row.revision)).toBe(1);
+  });
+
+  it("leaves a public re-observation unable to establish a fraction at all", async () => {
+    await recordLighterFillActivity(publicRow());
+    expect(await recordLighterFillActivity(publicRow())).toMatchObject({ kind: "duplicate" });
+    expect((await stored()).initial_margin_fraction_before).toBeNull();
   });
 });
 

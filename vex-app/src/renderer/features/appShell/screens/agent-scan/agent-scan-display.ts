@@ -1,6 +1,12 @@
 /**
- * Agent Scan field display — the honest readers that turn one
- * `AgentScanEntry` field into the exact text a row prints.
+ * Agent Scan field display - the honest readers that turn one
+ * `AgentScanActivityEntry` field into the exact text a row prints.
+ *
+ * THE ACTIVITY ARM ONLY. The feed's second arm (`lighter_fill`) has its own
+ * vocabulary, its own invariants and its own readers in
+ * `agent-scan-lighter-display.ts`; the timestamp and day-bucket helpers at the
+ * bottom of this file are the only ones both arms share, because a feed time
+ * is a feed time whichever ledger wrote it.
  *
  * The rules this file enforces, all of them contract obligations documented on
  * `shared/schemas/agent-scan-feed.ts`:
@@ -22,7 +28,7 @@
  */
 
 import type {
-  AgentScanEntry,
+  AgentScanActivityEntry,
   AgentScanTokenLeg,
 } from "@shared/schemas/agent-scan-feed.js";
 import { formatClock, formatUsd, truncateAddress } from "../../../../lib/format.js";
@@ -54,7 +60,7 @@ export function legAmountText(leg: AgentScanTokenLeg): string | null {
 }
 
 /** True when this row's shown amounts are QUOTED, not independently verified. */
-export function isEstimatedBasis(entry: AgentScanEntry): boolean {
+export function isEstimatedBasis(entry: AgentScanActivityEntry): boolean {
   return entry.amountBasis === "estimated";
 }
 
@@ -63,7 +69,7 @@ export function isEstimatedBasis(entry: AgentScanEntry): boolean {
  * rendered with the `~ … est.` marker because this feed carries no
  * settlement-time USD at all. `null` when unpriced — never a fabricated $0.00.
  */
-export function primaryUsdEstText(entry: AgentScanEntry): string | null {
+export function primaryUsdEstText(entry: AgentScanActivityEntry): string | null {
   const raw = entry.output.usdEst ?? entry.input.usdEst;
   if (raw === null) return null;
   const parsed = Number.parseFloat(raw);
@@ -83,7 +89,7 @@ export function usdEstText(value: string | null): string | null {
  * the resolved endpoints; everything else names its own chain. Empty when the
  * DTO carries no chain text at all — the row simply omits the segment.
  */
-export function chainRouteText(entry: AgentScanEntry): string | null {
+export function chainRouteText(entry: AgentScanActivityEntry): string | null {
   const from = entry.fromChain?.slug ?? null;
   const to = entry.toChain?.slug ?? null;
   if (from !== null && to !== null && from.length > 0 && to.length > 0) {
@@ -135,7 +141,7 @@ export function timestampText(iso: string): string | null {
  * own state is named instead of the row falling silent about a charge the user
  * may still be paying. `null` only when the row records no fee attempt at all.
  */
-export function vexFeeText(entry: AgentScanEntry): string | null {
+export function vexFeeText(entry: AgentScanActivityEntry): string | null {
   const fee = entry.vexFee;
   if (fee === null) return null;
   const amount = fee.amountHuman === null ? null : amountDisplay(fee.amountHuman, true);

@@ -147,6 +147,9 @@ describe("AgentScanScreen - filters drive the query input", () => {
       "Trench Express (legacy)",
       // Joined in Phase 3, with the launch and claim executors that write it.
       "pools.fun",
+      // Both arms write it: `exchange` deposits/withdrawals in `agent_activity`
+      // and the venue's own matched fills in `lighter_fills`.
+      "Lighter",
       "Khalani",
       "Relay",
     ]) {
@@ -159,6 +162,35 @@ describe("AgentScanScreen - filters drive the query input", () => {
     for (const label of ["Polymarket", "DexScreener", "Pendle"]) {
       expect(screen.queryByRole("button", { name: label })).toBeNull();
     }
+  });
+
+  /**
+   * The FEED kind that selects the second ledger. `kinds` is an OPEN bounded
+   * list on the contract, so this chip routes exactly like the vocabulary-derived
+   * ones - it is simply not an `agent_activity.kind`, which is why it is not in
+   * `AGENT_ACTIVITY_KINDS`.
+   */
+  it("offers a Lighter fills kind chip that toggles `kinds` like every other chip", () => {
+    mockQuery([availablePage([entry({ id: "1" })])]);
+    mountScreen();
+
+    const chip = screen.getByRole("button", { name: "Lighter fills" });
+    fireEvent.click(chip);
+    expect(lastFilters()).toEqual({ kinds: ["lighter_fill"] });
+
+    fireEvent.click(screen.getByRole("button", { name: "swap" }));
+    expect(lastFilters()).toEqual({ kinds: ["lighter_fill", "swap"] });
+
+    fireEvent.click(chip);
+    expect(lastFilters()).toEqual({ kinds: ["swap"] });
+  });
+
+  it("offers the `lighter` protocol, which both arms of the feed write", () => {
+    mockQuery([availablePage([entry({ id: "1" })])]);
+    mountScreen();
+
+    fireEvent.click(screen.getByRole("button", { name: "Lighter" }));
+    expect(lastFilters()).toEqual({ protocols: ["lighter"] });
   });
 
   it("toggles a selected value back off", () => {

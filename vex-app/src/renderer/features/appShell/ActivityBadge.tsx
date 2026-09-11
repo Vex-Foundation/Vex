@@ -170,8 +170,11 @@ const KIND_LABEL: Record<FeedActivityKind, string> = {
   // it carries the decoded effect (`TX·APPROVE`, `TX·CALL`).
   transaction: "TX",
   // Migration 152 - money moved between the wallet and a venue account
-  // (Lighter deposits and withdrawals). Fills never reach this feed: they live
-  // in the venue's own fill ledger.
+  // (Lighter deposits and withdrawals). A venue FILL is not one of these rows
+  // and never will be: it reaches the feed through the SECOND arm, straight
+  // from the venue's own `lighter_fills` ledger, carrying its own vocabulary
+  // and its own labels (`agent-scan/agent-scan-lighter-display.ts`). This
+  // record stays total over the `agent_activity` database vocabulary alone.
   exchange: "EXCHANGE",
   activity: "ACTIVITY",
 };
