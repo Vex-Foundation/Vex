@@ -165,13 +165,18 @@ describe("projecting one provider position", () => {
     },
   );
 
+  // A non-textual fraction is a provider row this build has not seen. It is
+  // built through the DTO's own open index signature (`[key: string]: unknown`)
+  // rather than through a cast that would hide the wrong type from the reader.
+  const nonTextual: Record<string, unknown> = { ...position(), initial_margin_fraction: 10 };
+
   it.each([
-    ["a fraction Vex cannot read exactly", { initial_margin_fraction: "33.333" }],
-    ["a fraction above 100 percent", { initial_margin_fraction: "150.00" }],
-    ["a zero fraction", { initial_margin_fraction: "0" }],
-    ["a non-textual fraction", { initial_margin_fraction: 10 as unknown as string }],
-  ])("leaves the leverage unknown on %s, and still keeps the position", (_label, override) => {
-    const projected = projectLighterPosition(position(override));
+    ["a fraction Vex cannot read exactly", position({ initial_margin_fraction: "33.333" })],
+    ["a fraction above 100 percent", position({ initial_margin_fraction: "150.00" })],
+    ["a zero fraction", position({ initial_margin_fraction: "0" })],
+    ["a non-textual fraction", nonTextual as LighterAccountPosition],
+  ])("leaves the leverage unknown on %s, and still keeps the position", (_label, row) => {
+    const projected = projectLighterPosition(row);
     // The margin terms are context. The size, entry and PnL are the fact, and
     // they do not become less true because one optional field is unreadable.
     expect(projected?.size).toBe("0.4");
