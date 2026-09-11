@@ -20,6 +20,7 @@ import { EXPLORER_EXTERNAL_ALLOW } from "@shared/explorer-links.js";
 import { observeWindowForFiles } from "../studio/files/files-composition.js";
 import { observeWindowForTerminals } from "../studio/terminal-domain.js";
 import { CHART_ATTRIBUTION_EXTERNAL_ALLOW } from "@shared/chart-attribution.js";
+import { DOCS_EXTERNAL_ALLOW } from "@shared/docs-links.js";
 import {
   clampToVisibleArea,
   type DisplayInfo,
@@ -50,8 +51,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * NOT `/electron/electron/releases-malicious`. See `pathStartsWithBoundary`.
  */
 const ALLOWED_EXTERNAL: ReadonlyArray<ExternalAllowEntry> = [
-  "vex.ai",
-  "docs.vex.ai",
   "portal.jup.ag",
   "app.tavily.com",
   "openrouter.ai",
@@ -82,6 +81,13 @@ const ALLOWED_EXTERNAL: ReadonlyArray<ExternalAllowEntry> = [
   // just does nothing. Exact host `www.tradingview.com`; lookalikes denied by
   // `isAllowedExternalUrl`'s hostname equality.
   ...CHART_ATTRIBUTION_EXTERNAL_ALLOW,
+  // The "Your data stays yours" privacy link (Settings Superboard section and
+  // the wizard footer). Single source of truth in `@shared/docs-links`, for
+  // the same drift reason as the two spreads above. Path-scoped to the docs
+  // tree on the apex host. The former host-wide `vex.ai` / `docs.vex.ai`
+  // entries died with this repoint: `docs.vex.ai` does not resolve and the
+  // apex is a third party's, and no consumer remains.
+  ...DOCS_EXTERNAL_ALLOW,
   // Vex release notes (updater toast CTA) — path-scoped per owner decision
   // 2026-07-22. The former github.com/Vex-Foundation/ entry died with this
   // repoint (it existed solely for the release-notes CTA; zero remaining
