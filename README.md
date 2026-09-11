@@ -33,7 +33,7 @@ off with the bag."
 - **Local memory.** Conversation, knowledge, and embeddings in a local Postgres + pgvector store. Your context stays on your box.
 - **Hardened desktop.** Sandboxed renderer, strict CSP, locked IPC boundary between the UI and anything that touches keys.
 - **Perpetuals on your terms.** Perpetual and spot trading on Lighter Core and Robinhood Chain. Leverage per market and the share of the account's capital the agent may commit are set by you in Settings; the agent only reads them, and Vex enforces the share before any order the agent prepares is signed.
-- **Cross-platform.** macOS (Apple Silicon + Intel) and Linux at launch; Windows to follow.
+- **Cross-platform.** macOS (Apple Silicon + Intel), Windows and Linux; macOS builds are notarized and Windows builds are Authenticode signed.
 
 ## Download
 
