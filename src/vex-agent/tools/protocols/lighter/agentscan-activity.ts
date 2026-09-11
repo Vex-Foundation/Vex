@@ -738,6 +738,22 @@ const ATTACH_FILL_SQL = `
      AND execution_intent_id IS NULL
   RETURNING id`;
 
+/**
+ * NO ARBITER ON THE CONFLICT CLAUSE, on purpose.
+ *
+ * The row carries two unique identities that name the same fill: the
+ * canonical string and the (environment, account, market, trade id) tuple it
+ * is derived from. Naming `(canonical_identity)` as the arbiter made only that
+ * index arbitrated: the arbiter pre-check runs unlocked, so a second observer
+ * racing the first can miss the winner's insertion there and go on to collide
+ * on the tuple index, which is not arbitrated and raises `unique_violation`
+ * instead of resolving to "already held". Measured 2026-09-11 on a live
+ * install: the order-evidence follow-up and a concurrent observation of the
+ * same trade, 8 ms apart, and the loser logged `ledger_write_failed` for a
+ * fill the ledger held. With no arbiter named, every unique index arbitrates,
+ * so a concurrent duplicate waits for the winner and resolves to DO NOTHING,
+ * which is what idempotence by identity promised all along.
+ */
 const INSERT_FILL_SQL = `
   INSERT INTO lighter_fills (
     canonical_identity, environment, account_index, market_index, provider_trade_id,
@@ -761,7 +777,7 @@ const INSERT_FILL_SQL = `
     $21,$22::timestamptz,$23,$24,$25,$26,$27,$28,$29,$30,
     $31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45
   )
-  ON CONFLICT (canonical_identity) DO NOTHING
+  ON CONFLICT DO NOTHING
   RETURNING id`;
 
 const SELECT_FILL_BY_IDENTITY_SQL = `
