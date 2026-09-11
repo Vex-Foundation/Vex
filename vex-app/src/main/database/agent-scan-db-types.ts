@@ -17,6 +17,13 @@
  */
 
 export interface AgentScanRow {
+  /**
+   * Literal `0` from SQL: the arm this row belongs to. The feed merges this
+   * arm with `lighter_fills` into one sequence, and the rank is both the
+   * tie-break at an identical microsecond and the value the cursor carries so
+   * the next page resumes on the right side of a tie.
+   */
+  readonly source_rank: number | string;
   /** `agent_activity.id::text` — the DTO id AND the keyset cursor's `sourceId`. */
   readonly source_id: string;
   readonly created_at: string | Date;

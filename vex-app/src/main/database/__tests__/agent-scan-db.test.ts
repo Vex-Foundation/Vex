@@ -46,6 +46,7 @@ vi.mock("../db-config.js", () => ({ buildPoolConfig: mocks.buildPoolConfig }));
 vi.mock("@vex-lib/wallet.js", () => ({ listWallets: mocks.listWallets }));
 vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 
+const { agentScanCursorSchema } = await import("@shared/schemas/agent-scan-feed.js");
 const { getAgentScan } = await import("../agent-scan-db.js");
 const { AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE } = await import(
   "../agent-activity-logical-row.js"
@@ -66,6 +67,7 @@ class FakeDbError extends Error {
 
 function row(overrides: Partial<Record<string, unknown>> = {}) {
   return {
+    source_rank: 0,
     source_id: "1",
     created_at: new Date("2026-05-21T10:00:00.000Z"),
     cursor_ts: "2026-05-21T10:00:00.000000Z",
@@ -118,6 +120,81 @@ function pageCall(): { sql: string; params: readonly unknown[] } {
   );
   if (call === undefined) throw new Error("no page query issued");
   return { sql: call[0] as string, params: (call[1] ?? []) as readonly unknown[] };
+}
+
+/** The Lighter arm's page SELECT, or `null` when the arm was excluded. */
+function lighterCall(): { sql: string; params: readonly unknown[] } | null {
+  const call = mocks.query.mock.calls.find(
+    (c) => typeof c[0] === "string" && c[0].includes("FROM lighter_fills"),
+  );
+  if (call === undefined) return null;
+  return { sql: call[0] as string, params: (call[1] ?? []) as readonly unknown[] };
+}
+
+/**
+ * One `lighter_fills` row as the Lighter arm selects it. Only the fields this
+ * suite's assertions read are spelled out here; the full row and its mapping
+ * are the subject of `agent-scan-lighter-mappers.test.ts`.
+ */
+function lighterRow(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    source_rank: 1,
+    source_id: "7",
+    cursor_ts: "2026-05-21T10:00:00.000000Z",
+    traded_at: new Date("2026-05-21T10:00:00.000Z"),
+    observed_at: new Date("2026-05-21T10:00:02.000Z"),
+    environment: "core",
+    market_index: 1,
+    market_symbol: "ETH",
+    side: "buy",
+    trade_type: "trade",
+    position_effect: null,
+    base_size: "0.005",
+    price: "2598.09",
+    quote_notional: "12.99045",
+    usd_amount: "12.99",
+    block_height: "10453221",
+    base_asset_symbol: "ETH",
+    base_asset_decimals: 18,
+    quote_asset_symbol: "USDC",
+    quote_asset_decimals: 6,
+    position_size_before: null,
+    entry_quote_before: null,
+    account_pnl: null,
+    initial_margin_fraction_before: null,
+    fee_side: "taker",
+    integrator_fee_charged_raw: null,
+    integrator_fee_estimated_raw: null,
+    integrator_fee_estimate_basis: null,
+    integrator_fee_estimate_tick_source: null,
+    integrator_fee_estimated_usd: null,
+    integrator_fee_asset_symbol: null,
+    integrator_fee_asset_decimals: null,
+    integrator_fee_tick_observed: null,
+    integrator_fee_tick_authorized: null,
+    exchange_fee_charged_raw: null,
+    exchange_fee_estimated_usd: null,
+    exchange_fee_tick_observed: null,
+    provider_trade_id: "918273645",
+    provider_order_id: null,
+    execution_intent_id: "lighter-exec-1",
+    position_observed_at: null,
+    position_open: null,
+    position_now: null,
+    ...overrides,
+  };
+}
+
+/** Answer both arms independently, so a page can mix them. */
+function respondWithArms(
+  activityRows: ReadonlyArray<Record<string, unknown>>,
+  fillRows: ReadonlyArray<Record<string, unknown>>,
+): void {
+  mocks.query.mockImplementation(async (text: string) => {
+    if (text.includes("FROM agent_activity")) return { rows: activityRows };
+    if (text.includes("FROM lighter_fills")) return { rows: fillRows };
+    return { rows: [] };
+  });
 }
 
 function respondWith(rows: ReadonlyArray<Record<string, unknown>>): void {
@@ -362,10 +439,10 @@ describe("getAgentScan row selection", () => {
     expect(pageCall().sql).toContain("ORDER BY aa.created_at DESC, aa.id DESC");
   });
 
-  it("runs inside a bounded READ ONLY transaction", async () => {
+  it("runs BOTH arms inside ONE bounded REPEATABLE READ READ ONLY snapshot", async () => {
     await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
     const texts = mocks.query.mock.calls.map((c) => c[0] as string);
-    expect(texts).toContain("BEGIN READ ONLY");
+    expect(texts).toContain("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     expect(texts.some((t) => t.includes("SET LOCAL statement_timeout = '2s'"))).toBe(true);
     expect(texts).toContain("COMMIT");
   });
@@ -458,12 +535,15 @@ describe("getAgentScan keyset pagination", () => {
 
   it("compares the id NUMERICALLY at equal timestamps", async () => {
     await getAgentScan({
-      cursor: { createdAt: "2026-05-21T10:00:00.123456Z", sourceId: "500" },
+      cursor: { createdAt: "2026-05-21T10:00:00.123456Z", sourceId: "500", sourceRank: 0 },
       filters: {},
     }, CORRELATION_ID);
     const { sql, params } = pageCall();
     expect(sql).toMatch(/aa\.created_at < \$\d+::timestamptz/);
-    expect(sql).toMatch(/aa\.created_at = \$\d+::timestamptz AND aa\.id < \$\d+::bigint/);
+    // The 3-field boundary: the arm's rank is a LITERAL, compared against the
+    // cursor's, and only a tie on both reaches the id compare.
+    expect(sql).toMatch(/aa\.created_at = \$\d+::timestamptz AND 0 < \$\d+::int/);
+    expect(sql).toMatch(/AND 0 = \$\d+::int AND aa\.id < \$\d+::bigint/);
     expect(params).toContain("2026-05-21T10:00:00.123456Z");
     expect(params).toContain("500");
   });
@@ -498,6 +578,9 @@ describe("getAgentScan keyset pagination", () => {
     expect(outcome.data.nextCursor).toEqual({
       createdAt: "2026-05-21T10:00:00.000051Z",
       sourceId: "51",
+      // The arm the page ended on. Without it the next page could not resume
+      // on the right side of a cross-arm tie at the same microsecond.
+      sourceRank: 0,
     });
   });
 
@@ -556,5 +639,184 @@ describe("getAgentScan bounded-read failure", () => {
     mocks.buildPoolConfig.mockResolvedValue(null);
     const outcome = await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
     expect(outcome.ok).toBe(false);
+  });
+});
+
+// ── The two arms ──────────────────────────────────────────────────────────
+
+describe("getAgentScan two-arm composition", () => {
+  it("issues BOTH arm queries inside the SAME transaction", async () => {
+    await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
+    const texts = mocks.query.mock.calls.map((c) => c[0] as string);
+    const begin = texts.findIndex((t) => t.startsWith("BEGIN"));
+    const commit = texts.indexOf("COMMIT");
+    const activity = texts.findIndex((t) => t.includes("FROM agent_activity"));
+    const lighter = texts.findIndex((t) => t.includes("FROM lighter_fills"));
+    expect(begin).toBeGreaterThanOrEqual(0);
+    expect(activity).toBeGreaterThan(begin);
+    expect(lighter).toBeGreaterThan(begin);
+    expect(commit).toBeGreaterThan(Math.max(activity, lighter));
+  });
+
+  /**
+   * REPEATABLE READ, not the default READ COMMITTED: at READ COMMITTED each
+   * statement takes its OWN snapshot, so a fill inserted between the two arm
+   * queries could be counted by one arm's `limit + 1` probe while the other
+   * arm's boundary had already moved past it.
+   */
+  it("reads both arms from ONE snapshot", async () => {
+    await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
+    const texts = mocks.query.mock.calls.map((c) => c[0] as string);
+    expect(texts).toContain("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    expect(texts.some((t) => t.includes("SET LOCAL statement_timeout = '2s'"))).toBe(true);
+  });
+
+  it("binds the SAME inventory allow-list to both arms", async () => {
+    await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
+    const lighter = lighterCall();
+    expect(lighter).not.toBeNull();
+    expect(lighter?.params[0]).toEqual(pageCall().params[0]);
+  });
+
+  it("skips the Lighter arm entirely when the filters exclude it", async () => {
+    await getAgentScan({ cursor: null, filters: { kinds: ["swap"] } }, CORRELATION_ID);
+    expect(lighterCall()).toBeNull();
+  });
+
+  it("reads the Lighter arm when kinds names just that feed kind", async () => {
+    respondWithArms([row()], [lighterRow()]);
+    await getAgentScan({ cursor: null, filters: { kinds: ["lighter_fill"] } }, CORRELATION_ID);
+    // The activity arm's own `kind` predicate compiles the same value, which
+    // matches no `agent_activity.kind` - `lighter_fill` is a FEED kind, not a
+    // ledger one, so that arm legitimately returns nothing for it.
+    expect(pageCall().params).toContainEqual(["lighter_fill"]);
+    expect(lighterCall()).not.toBeNull();
+  });
+
+  it("interleaves the two arms into one time-ordered page", async () => {
+    respondWithArms(
+      [
+        row({ source_id: "20", cursor_ts: "2026-05-21T10:00:03.000000Z" }),
+        row({ source_id: "18", cursor_ts: "2026-05-21T10:00:01.000000Z" }),
+      ],
+      [lighterRow({ source_id: "7", cursor_ts: "2026-05-21T10:00:02.000000Z" })],
+    );
+    const outcome = await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok || outcome.data.status !== "available") return;
+    expect(outcome.data.entries.map((entry) => [entry.source, entry.id])).toEqual([
+      ["agent_activity", "20"],
+      ["lighter_fill", "7"],
+      ["agent_activity", "18"],
+    ]);
+  });
+
+  it("carries the arm the page ended on into nextCursor", async () => {
+    // 51 rows across the two arms, 49 of them newer activity rows: the page
+    // keeps 50, so the last kept row is the FIRST fill and the cursor has to
+    // say which arm it came from.
+    const activityRows = Array.from({ length: 49 }, (_, i) =>
+      row({
+        source_id: String(100 - i),
+        cursor_ts: `2026-05-21T10:00:00.${String(900 - i).padStart(6, "0")}Z`,
+      }),
+    );
+    respondWithArms(activityRows, [
+      lighterRow({ source_id: "7", cursor_ts: "2026-05-21T10:00:00.000100Z" }),
+      lighterRow({ source_id: "6", cursor_ts: "2026-05-21T10:00:00.000090Z" }),
+    ]);
+    const outcome = await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok || outcome.data.status !== "available") return;
+    expect(outcome.data.entries).toHaveLength(50);
+    expect(outcome.data.hasMore).toBe(true);
+    expect(outcome.data.nextCursor).toEqual({
+      createdAt: "2026-05-21T10:00:00.000100Z",
+      sourceId: "7",
+      sourceRank: 1,
+    });
+  });
+
+  it("applies the SAME cursor boundary to both arms", async () => {
+    await getAgentScan({
+      cursor: { createdAt: "2026-05-21T10:00:00.123456Z", sourceId: "500", sourceRank: 1 },
+      filters: {},
+    }, CORRELATION_ID);
+    expect(pageCall().params).toContain("2026-05-21T10:00:00.123456Z");
+    expect(lighterCall()?.params).toContain("2026-05-21T10:00:00.123456Z");
+    expect(pageCall().params).toContain(1);
+    expect(lighterCall()?.params).toContain(1);
+  });
+
+  /**
+   * A timeout on EITHER arm fails the WHOLE read closed. Returning the arm that
+   * answered would present half a history as the history, on a surface whose
+   * whole promise is that nothing is hidden.
+   */
+  it("fails the whole read closed when the LIGHTER arm times out", async () => {
+    mocks.query.mockImplementation(async (text: string) => {
+      if (text.includes("FROM lighter_fills")) throw new FakeDbError("57014");
+      if (text.includes("FROM agent_activity")) return { rows: [row()] };
+      return { rows: [] };
+    });
+    const outcome = await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.data).toEqual({ status: "unavailable", reason: "query_timeout" });
+  });
+
+  it("rolls back and errors on any other LIGHTER arm failure", async () => {
+    mocks.query.mockImplementation(async (text: string) => {
+      if (text.includes("FROM lighter_fills")) throw new FakeDbError("42P01");
+      if (text.includes("FROM agent_activity")) return { rows: [] };
+      return { rows: [] };
+    });
+    const outcome = await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
+    expect(outcome.ok).toBe(false);
+    expect(mocks.query.mock.calls.map((c) => c[0] as string)).toContain("ROLLBACK");
+  });
+
+  it("returns the empty page WITHOUT issuing either arm when the inventory is empty", async () => {
+    mocks.listWallets.mockReturnValue([]);
+    await getAgentScan(EMPTY_INPUT, CORRELATION_ID);
+    expect(mocks.query).not.toHaveBeenCalled();
+  });
+});
+
+// ── Cursor compatibility ──────────────────────────────────────────────────
+
+describe("the feed cursor across the two arms", () => {
+  /**
+   * A cursor minted before the second arm existed carries no `sourceRank`. It
+   * must still parse, and must resume on the ACTIVITY side of a tie - which is
+   * where it was issued.
+   */
+  it("parses a cursor minted before the Lighter arm existed", () => {
+    const parsed = agentScanCursorSchema.parse({
+      createdAt: "2026-05-21T10:00:00.123456Z",
+      sourceId: "500",
+    });
+    expect(parsed).toEqual({
+      createdAt: "2026-05-21T10:00:00.123456Z",
+      sourceId: "500",
+      sourceRank: 0,
+    });
+  });
+
+  it("round-trips a cursor the feed itself minted", () => {
+    const minted = {
+      createdAt: "2026-05-21T10:00:00.123456Z",
+      sourceId: "500",
+      sourceRank: 1,
+    };
+    expect(agentScanCursorSchema.parse(minted)).toEqual(minted);
+  });
+
+  it("refuses a rank outside the two arms that exist", () => {
+    expect(agentScanCursorSchema.safeParse({
+      createdAt: "2026-05-21T10:00:00.123456Z",
+      sourceId: "500",
+      sourceRank: 2,
+    }).success).toBe(false);
   });
 });

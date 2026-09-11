@@ -290,8 +290,55 @@ export interface AgentScanQueryArgs {
   readonly cursor: AgentScanCursor | null;
 }
 
-/** DB-side microsecond-precision UTC render — the keyset cursor's `createdAt`. */
-const CURSOR_TS_EXPR = `to_char(aa.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+/**
+ * DB-side microsecond-precision UTC render - the keyset cursor's `createdAt`.
+ *
+ * SHARED BY BOTH ARMS (`agent-scan-lighter-query.ts` imports it). The two arms
+ * are merged into one sequence against one cursor, so a render that differed by
+ * a character between them would put the boundary in a different place for each
+ * and the page would skip or repeat rows. `new Date(...).toISOString()` is not
+ * an option for the same reason at finer grain: it truncates to milliseconds.
+ */
+export function agentScanCursorTsExpr(column: string): string {
+  return `to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+}
+
+const CURSOR_TS_EXPR = agentScanCursorTsExpr("aa.created_at");
+
+/** The `agent_activity` arm's discriminator, selected as a SQL literal. */
+export const AGENT_SCAN_ACTIVITY_SOURCE_RANK = 0;
+
+/**
+ * The 3-field keyset boundary `(created_at, source_rank, id)` DESC, shared by
+ * both arms - the shape `token-history-db-query.ts` already uses for its
+ * multi-table union.
+ *
+ * `sourceRankLiteral` is a CONSTANT per arm rather than a column: each arm
+ * knows which rank it is, so the comparison specialises to two cheap branches
+ * instead of a row-value compare the planner cannot use an index for.
+ *
+ * The id is compared as a BIGINT. Both ledgers key on a BIGSERIAL, and a
+ * lexicographic compare would order "9" after "10" and silently drop rows from
+ * the next page.
+ */
+export function agentScanKeysetPredicate(args: {
+  readonly createdAtColumn: string;
+  readonly idColumn: string;
+  readonly sourceRankLiteral: number;
+  readonly tsParam: number;
+  readonly rankParam: number;
+  readonly idParam: number;
+}): string {
+  const { createdAtColumn, idColumn, sourceRankLiteral, tsParam, rankParam, idParam } = args;
+  return (
+    `AND (${createdAtColumn} < $${tsParam}::timestamptz`
+    + ` OR (${createdAtColumn} = $${tsParam}::timestamptz`
+    + ` AND ${sourceRankLiteral} < $${rankParam}::int)`
+    + ` OR (${createdAtColumn} = $${tsParam}::timestamptz`
+    + ` AND ${sourceRankLiteral} = $${rankParam}::int`
+    + ` AND ${idColumn} < $${idParam}::bigint))`
+  );
+}
 
 /**
  * THE VEX FEE FROM ITS SEPARATE LEG, projected onto the logical row (R1 Step 2b)
@@ -429,12 +476,17 @@ export function buildAgentScanPageQuery(args: AgentScanQueryArgs): AgentScanQuer
 
   if (cursor !== null) {
     const tsParam = push(cursor.createdAt);
-    // Compared as a BIGINT, not text: `id` is a BIGSERIAL, and a lexicographic
-    // compare would order "9" after "10" and drop rows from the next page.
+    const rankParam = push(cursor.sourceRank);
     const idParam = push(cursor.sourceId);
     predicates.push(
-      `AND (aa.created_at < $${tsParam}::timestamptz` +
-        ` OR (aa.created_at = $${tsParam}::timestamptz AND aa.id < $${idParam}::bigint))`,
+      agentScanKeysetPredicate({
+        createdAtColumn: "aa.created_at",
+        idColumn: "aa.id",
+        sourceRankLiteral: AGENT_SCAN_ACTIVITY_SOURCE_RANK,
+        tsParam,
+        rankParam,
+        idParam,
+      }),
     );
   }
 
@@ -442,6 +494,7 @@ export function buildAgentScanPageQuery(args: AgentScanQueryArgs): AgentScanQuer
 
   const sql = `
       SELECT
+        ${AGENT_SCAN_ACTIVITY_SOURCE_RANK} AS source_rank,
         aa.id::text AS source_id,
         aa.created_at,
         ${CURSOR_TS_EXPR} AS cursor_ts,
