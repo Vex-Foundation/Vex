@@ -573,29 +573,60 @@ const RPC_CHAINS: readonly RpcChainEntry[] = [
         url: "https://rpc.mainnet.arc.io",
         tier: "bundled",
         timeoutMs: TIMEOUT_MS,
-        retryCount: 2,
+        retryCount: 0,
         broadcastSafe: true,
         // Circle's own primary Arc mainnet endpoint (docs.arc.io/arc/references/
-        // rpc-endpoints). SINGLE-ENDPOINT CHAIN, so the retry budget is real:
-        // the documented alternates (rpc.drpc.mainnet.arc.io,
-        // rpc.blockdaemon.mainnet.arc.io, rpc.quicknode.mainnet.arc.io) each echo
-        // 0x13b2 on a keyless read but were not method-scope measured, so they are
-        // future read failovers, not adopted yet.
+        // rpc-endpoints).
         //
         // PROBED 2026-09-16: eth_chainId → 0x13b2 (5042, echoing the chainId key
         // above), net_version 5042, live head ~0x142b557; eth_getBalance,
         // eth_call, eth_getCode and eth_gasPrice (~40.5 Gwei, paid in USDC) all
         // clean and keyless. broadcastSafe follows the convention's "official
-        // endpoint" rule. The mainnet is live and openly transacting — KyberSwap
-        // and DexScreener index real Arc DEX pools (e.g. a $1.47M ARGUS/USDC
-        // Uniswap v3 pool) — and Circle's own connect-to-arc page presents a
-        // public add-to-wallet flow with no credential requirement. One Circle
-        // doc page still carries stale "private mainnet phase" wording; reads are
-        // confirmed open here and a signed broadcast has not been exercised from
-        // this install, so any residual write gate would surface as a provider
-        // error at execute time under the existing approval gate, never a silent
-        // loss.
-        note: "official Circle endpoint; reads verified keyless 2026-09-16; mainnet live and openly transacting",
+        // endpoint" rule, and a live signed swap has since settled on-chain
+        // through this endpoint (a real Uniswap v4 execute, confirmed receipt,
+        // balance verified before/after) - the write path is proven, not just
+        // the official-endpoint convention. The mainnet is live and openly
+        // transacting — KyberSwap and DexScreener index real Arc DEX pools (e.g.
+        // a $1.47M ARGUS/USDC Uniswap v3 pool) — and Circle's own connect-to-arc
+        // page presents a public add-to-wallet flow with no credential
+        // requirement.
+        note: "official Circle endpoint; reads verified keyless 2026-09-16; a live swap has broadcast through it",
+      },
+      {
+        url: "https://rpc.drpc.mainnet.arc.io",
+        tier: "bundled",
+        timeoutMs: TIMEOUT_MS,
+        retryCount: 0,
+        broadcastSafe: false,
+        // Read fallback. PROBED 2026-09-16, keyless: eth_chainId → 0x13b2,
+        // eth_blockNumber and eth_getBalance both clean, live head within one
+        // block of the official endpoint at probe time. Method scope beyond
+        // these three calls (eth_getLogs windows, burst behavior) was not
+        // measured - unlike Robinhood's fallbacks, no `methods` restriction is
+        // asserted here because none was tested, not because none exists.
+        note: "read fallback: chainId/blockNumber/getBalance verified keyless 2026-09-16, method scope not otherwise measured",
+      },
+      {
+        url: "https://rpc.blockdaemon.mainnet.arc.io",
+        tier: "bundled",
+        timeoutMs: TIMEOUT_MS,
+        retryCount: 0,
+        broadcastSafe: false,
+        // Read fallback. Same probe as the drpc entry above, same date, same
+        // three calls clean and keyless.
+        note: "read fallback: chainId/blockNumber/getBalance verified keyless 2026-09-16, method scope not otherwise measured",
+      },
+      {
+        url: "https://rpc.quicknode.mainnet.arc.io",
+        tier: "bundled",
+        timeoutMs: TIMEOUT_MS,
+        retryCount: 0,
+        broadcastSafe: false,
+        // Read fallback, last: same probe as the two entries above, same date,
+        // same three calls clean and keyless. Ordered last only because the
+        // documented-alternates list named it last; no measured reason to
+        // prefer either sibling over it.
+        note: "read fallback: chainId/blockNumber/getBalance verified keyless 2026-09-16, method scope not otherwise measured",
       },
     ],
   },
