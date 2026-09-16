@@ -205,7 +205,9 @@ describe("handleWalletBalances — inclusive chain scope", () => {
     // Two local chains now: Robinhood 4663 and Arc 5042, each read once.
     expect(mockReadLocal).toHaveBeenCalledTimes(2);
     const data = res.data as { wallets: Array<Record<string, unknown>>; totalUsd: number };
-    expect(data.wallets[0]!.scannedChainIds).toEqual([8453, 4663, 5042]);
+    const wallet = data.wallets[0];
+    if (!wallet) throw new Error("expected at least one wallet in the result");
+    expect(wallet.scannedChainIds).toEqual([8453, 4663, 5042]);
     // 7 khalani + 11 per local chain × 2 local chains.
     expect(data.totalUsd).toBeCloseTo(7 + 11 + 11);
   });

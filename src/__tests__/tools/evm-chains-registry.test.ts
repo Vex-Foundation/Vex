@@ -80,21 +80,24 @@ describe("evm-chains registry — Arc (5042)", () => {
 
   it("registers 5042 with USDC gas (18-dec native interface) and canonical Multicall3", () => {
     const chain = getLocalChain(ARC_ID);
-    expect(chain).toBeDefined();
-    expect(chain!.id).toBe(ARC_ID);
-    expect(chain!.name).toBe("Arc");
-    expect(chain!.family).toBe("eip155");
-    expect(chain!.nativeCurrency).toEqual({ name: "USDC", symbol: "USDC", decimals: 18 });
-    expect(chain!.multicall3).toBe(CANONICAL_MULTICALL3);
-    expect(chain!.dexscreenerSlug).toBe("arc");
+    if (!chain) throw new Error("Arc (5042) must be registered");
+    expect(chain.id).toBe(ARC_ID);
+    expect(chain.name).toBe("Arc");
+    expect(chain.family).toBe("eip155");
+    expect(chain.nativeCurrency).toEqual({ name: "USDC", symbol: "USDC", decimals: 18 });
+    expect(chain.multicall3).toBe(CANONICAL_MULTICALL3);
+    expect(chain.dexscreenerSlug).toBe("arc");
     // Native gas is USDC, a $1 stablecoin DexScreener never prices as a base, so
     // the config pegs it at $1 (Robinhood's ETH-native chain declares no peg).
-    expect(chain!.nativeUsdPeg).toBe(1);
-    expect(getLocalChain(RH_ID)!.nativeUsdPeg).toBeUndefined();
+    expect(chain.nativeUsdPeg).toBe(1);
+    const robinhood = getLocalChain(RH_ID);
+    if (!robinhood) throw new Error("Robinhood must be registered");
+    expect(robinhood.nativeUsdPeg).toBeUndefined();
   });
 
   it("does NOT seed native USDC as an ERC-20 (avoids double-counting the native row)", () => {
-    const chain = getLocalChain(ARC_ID)!;
+    const chain = getLocalChain(ARC_ID);
+    if (!chain) throw new Error("Arc (5042) must be registered");
     expect(chain.seedTokens).toHaveLength(0);
     // The native USDC address anchors pricing via the quote policy, never as a seed.
     expect(chain.quoteAssetPolicy.wrappedNative).toBe(ARC_USDC);
