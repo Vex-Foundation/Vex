@@ -39,6 +39,8 @@ export const BRIDGE_CAPABILITY_ABSENT_AFTER_MS = 24 * 60 * 60_000;
 
 /** Robinhood Chain - Khalani does not cover it; Relay is the only bridge route. */
 const ROBINHOOD_CHAIN_ID = 4663;
+/** Arc - also absent from Khalani; also Relay-only. Live-confirmed 2026-09-16 via api.relay.link/chains (id 5042, depositEnabled true, disabled false). */
+const ARC_CHAIN_ID = 5042;
 /** Defensive ceiling on the rendered chain count (guards an oversized upstream list). */
 const MAX_BRIDGE_CHAIN_NAMES = 64;
 
@@ -78,6 +80,13 @@ export interface BridgeCapabilitySnapshot {
   readonly chainNames: readonly string[];
   /** Whether Relay's `/chains` health gate for Robinhood 4663 passed at fetch time. */
   readonly robinhoodViaRelay: boolean;
+  /**
+   * Whether Relay's `/chains` health gate for Arc 5042 passed at fetch time.
+   * Optional (not `false`-defaulted at the type level) so existing snapshot
+   * fixtures that predate Arc keep typechecking without every call site
+   * naming a field it never cared about; `performRefresh` always sets it.
+   */
+  readonly arcViaRelay?: boolean;
   /** Epoch-ms of the last successful Khalani chains fetch that built this snapshot. */
   readonly lastSuccessfulAt: number;
 }
@@ -88,6 +97,7 @@ export type BridgeCapabilityView =
       readonly kind: "available";
       readonly chainNames: readonly string[];
       readonly robinhoodViaRelay: boolean;
+      readonly arcViaRelay?: boolean;
       readonly stale: boolean;
     }
   | { readonly kind: "unavailable" };
@@ -147,7 +157,22 @@ export function projectBridgeChainNames(rawChains: readonly KhalaniChain[]): str
  * not `disabled`. Missing chain or missing fields → fail closed (false).
  */
 export function isRobinhoodRelayHealthy(relayChains: readonly RelayChain[]): boolean {
-  const chain = relayChains.find((entry) => entry.id === ROBINHOOD_CHAIN_ID);
+  return isChainRelayHealthy(relayChains, ROBINHOOD_CHAIN_ID);
+}
+
+/**
+ * Relay `/chains` health gate for Arc 5042: same rule, same fail-closed
+ * default, as Robinhood's. Live-confirmed 2026-09-16: Arc is present with
+ * `depositEnabled: true`, `disabled: false`, and its featured bridgeable
+ * token is the same 0x3600…0000 USDC address already verified elsewhere in
+ * this codebase (`tools/evm-chains/registry.ts`).
+ */
+export function isArcRelayHealthy(relayChains: readonly RelayChain[]): boolean {
+  return isChainRelayHealthy(relayChains, ARC_CHAIN_ID);
+}
+
+function isChainRelayHealthy(relayChains: readonly RelayChain[], chainId: number): boolean {
+  const chain = relayChains.find((entry) => entry.id === chainId);
   if (chain === undefined) return false;
   return chain.depositEnabled === true && chain.disabled === false;
 }
@@ -164,6 +189,7 @@ export function classifyBridgeCapability(
     kind: "available",
     chainNames: snapshot.chainNames,
     robinhoodViaRelay: snapshot.robinhoodViaRelay,
+    arcViaRelay: snapshot.arcViaRelay,
     stale: age >= BRIDGE_CAPABILITY_STALE_AFTER_MS,
   };
 }
@@ -201,18 +227,25 @@ async function performRefresh(): Promise<void> {
   }
 
   let robinhoodViaRelay = false;
+  let arcViaRelay = false;
   try {
-    robinhoodViaRelay = isRobinhoodRelayHealthy(await fetchers.fetchRelayChains());
+    // ONE fetch feeds both gates - Relay's chain list doesn't change per chain
+    // asked about, so asking twice would double the request for no new data.
+    const relayChains = await fetchers.fetchRelayChains();
+    robinhoodViaRelay = isRobinhoodRelayHealthy(relayChains);
+    arcViaRelay = isArcRelayHealthy(relayChains);
   } catch (err) {
     logger.debug("bridge_capability.relay_health_unavailable", {
       error: summarizeProtocolError(err).message,
     });
     robinhoodViaRelay = false; // no Robinhood line without a confirmed health gate
+    arcViaRelay = false; // no Arc line without a confirmed health gate
   }
 
   currentSnapshot = {
     chainNames: projectBridgeChainNames(khalaniChains),
     robinhoodViaRelay,
+    arcViaRelay,
     lastSuccessfulAt: Date.now(),
   };
 }

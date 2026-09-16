@@ -11,6 +11,7 @@ import {
   classifyBridgeCapability,
   getBridgeCapabilitySnapshotForTest,
   getBridgeCapabilityView,
+  isArcRelayHealthy,
   isRobinhoodRelayHealthy,
   projectBridgeChainNames,
   resetBridgeCapabilityStateForTest,
@@ -213,6 +214,73 @@ describe("Robinhood-via-Relay health gate", () => {
     );
     expect(section).not.toMatch(/Relay-supported chains/i);
     expect(section).not.toMatch(/chains \(Relay\)/i);
+  });
+});
+
+describe("Arc-via-Relay health gate", () => {
+  it("passes only when 5042 is present, depositEnabled, and not disabled", () => {
+    expect(isArcRelayHealthy([relayChain(5042, { depositEnabled: true, disabled: false })])).toBe(true);
+  });
+
+  it("fails closed on a missing chain, missing fields, disabled, or the wrong chain", () => {
+    expect(isArcRelayHealthy([])).toBe(false);
+    expect(isArcRelayHealthy([relayChain(5042, { depositEnabled: true })])).toBe(false);
+    expect(isArcRelayHealthy([relayChain(5042, { disabled: false })])).toBe(false);
+    expect(isArcRelayHealthy([relayChain(5042, { depositEnabled: true, disabled: true })])).toBe(false);
+    expect(isArcRelayHealthy([relayChain(4663, { depositEnabled: true, disabled: false })])).toBe(false);
+  });
+
+  it("renders the Arc line only when the gate passed, independent of Robinhood's", () => {
+    const withGate = buildBridgeCapabilityPrompt(
+      classifyBridgeCapability({ chainNames: ["Base"], robinhoodViaRelay: false, arcViaRelay: true, lastSuccessfulAt: NOW }, NOW),
+    );
+    expect(withGate).toContain("Arc (5042): bridges via Relay only.");
+    expect(withGate).toContain("To fund Arc");
+    expect(withGate).not.toContain("bridges via Relay only.\n- To fund Robinhood");
+
+    const withoutGate = buildBridgeCapabilityPrompt(
+      classifyBridgeCapability({ chainNames: ["Base"], robinhoodViaRelay: false, arcViaRelay: false, lastSuccessfulAt: NOW }, NOW),
+    );
+    expect(withoutGate).not.toContain("Arc (5042)");
+    expect(withoutGate).not.toContain("To fund Arc");
+  });
+
+  it("a snapshot that predates Arc (no arcViaRelay field) renders no Arc line", () => {
+    const section = buildBridgeCapabilityPrompt(
+      classifyBridgeCapability({ chainNames: ["Base"], robinhoodViaRelay: true, lastSuccessfulAt: NOW }, NOW),
+    );
+    expect(section).not.toContain("Arc (5042)");
+  });
+
+  it("both gates share one Relay fetch and can pass independently", async () => {
+    resetBridgeCapabilityStateForTest();
+    setBridgeCapabilityFetchersForTest({
+      fetchKhalaniChains: async () => [khChain(8453)],
+      fetchRelayChains: async () => [relayChain(5042, { depositEnabled: true, disabled: false })],
+    });
+
+    await triggerBridgeCapabilityRefresh();
+
+    const stored = getBridgeCapabilitySnapshotForTest();
+    expect(stored?.robinhoodViaRelay).toBe(false);
+    expect(stored?.arcViaRelay).toBe(true);
+  });
+
+  it("a Relay health failure drops both gates but still builds the snapshot", async () => {
+    resetBridgeCapabilityStateForTest();
+    setBridgeCapabilityFetchersForTest({
+      fetchKhalaniChains: async () => [khChain(8453)],
+      fetchRelayChains: async () => {
+        throw new Error("relay down");
+      },
+    });
+
+    await triggerBridgeCapabilityRefresh();
+
+    const stored = getBridgeCapabilitySnapshotForTest();
+    expect(stored?.chainNames).toEqual(["Base"]);
+    expect(stored?.robinhoodViaRelay).toBe(false);
+    expect(stored?.arcViaRelay).toBe(false);
   });
 });
 

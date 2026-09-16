@@ -22,5 +22,11 @@ export function buildBridgeCapabilityPrompt(view: BridgeCapabilityView): string 
       "- To fund Robinhood Chain, bridge ETH, USDG, or VIRTUAL in with `BridgeQuote` then `BridgeExecute` (they auto-route to Relay for this chain), then swap on-chain with `SwapQuote`/`SwapExecute`; reverse the flow to exit.",
     );
   }
+  if (view.kind === "available" && view.arcViaRelay === true) {
+    lines.push("Arc (5042): bridges via Relay only. Native gas asset IS USDC (not a volatile coin) - Blockscout explorer.");
+    lines.push(
+      "- To fund Arc, bridge USDC in with `BridgeQuote` then `BridgeExecute` (auto-routes to Relay for this chain); the funds land ready to spend since USDC is already Arc's native asset, no swap needed first. Reverse the flow to exit. Arc has many tokens squatting recognizable tickers (including \"USDC\" itself) - resolve to the exact verified contract, never trust a symbol alone.",
+    );
+  }
   return lines.join("\n");
 }
