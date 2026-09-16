@@ -1,30 +1,70 @@
-# Blockscout REST v2 on Robinhood Chain (4663)
+# Blockscout REST v2 on Vex's local chains (Robinhood 4663, Arc 5042)
 
 Reference document, live-probed. The endpoint inventory below was measured on
-2026-08-31. Later dated sections record changes in access behavior; the latest
-request-context measurement supersedes earlier transport conclusions. Anything
-not measured is named as such.
+2026-08-31 against Robinhood Chain. Later dated sections record changes in
+access behavior; the latest request-context measurement supersedes earlier
+transport conclusions. Anything not measured is named as such.
 
-- Host: `https://robinhoodchain.blockscout.com`
+- Host: `https://robinhoodchain.blockscout.com` (Robinhood 4663);
+  `https://explorer.arc.io` (Arc 5042, see "Arc (5042)" below)
 - Base path: `/api/v2`
-- Backend: `v11.2.8.+commit.1169dbc5` (`GET /api/v2/config/backend-version`)
-- Chain: Robinhood Chain, chain id 4663, native ETH, 18 decimals
+- Backend: `v11.2.8.+commit.1169dbc5` (`GET /api/v2/config/backend-version`,
+  measured on Robinhood only)
+- Chain: Robinhood Chain, chain id 4663, native ETH, 18 decimals. (Arc, chain
+  id 5042, native USDC, is the second chain in scope — see below.)
 - Auth: none. No API key was sent on any probe; every call succeeded anonymously.
 - Fixtures: `src/__tests__/fixtures/blockscout/`, provenance in that directory's
-  `PROVENANCE.md`.
+  `PROVENANCE.md`. All fixtures below are Robinhood-sourced; Arc has none yet.
 
 ## Why this exists
 
-Vex reads 4663 balances today from a hardcoded 4-token seed list (WETH, VEX,
-VIRTUAL, USDG in `src/tools/evm-chains/registry.ts`) plus whatever the user
-pinned. A token held on 4663 that was never pinned and never bought through Vex
-is invisible. `GET /api/v2/addresses/{address}/token-balances` returns the
+Vex reads a local chain's balances from a hardcoded seed list
+(`src/tools/evm-chains/registry.ts`) plus whatever the user pinned. A token
+held on that chain that was never pinned and never bought through Vex is
+invisible. `GET /api/v2/addresses/{address}/token-balances` returns the
 complete ERC-20 and NFT inventory for an address in one unpaginated call, which
-is exactly the enumeration the seed list cannot do. On the owner's address it
-returned 34 tokens where the seed list can see at most 4.
+is exactly the enumeration the seed list cannot do. On Robinhood, this returned
+34 tokens for the owner's address where the 4-token seed list (WETH, VEX,
+VIRTUAL, USDG) can see at most 4.
 
-Blockscout is scoped to chain 4663 by product decision. It is not a general EVM
-balance source for Vex; see "Where Blockscout is not an option" below.
+Blockscout is scoped to chains that opt in via `hasBlockscoutIndexer` in
+`LocalChainConfig` (Robinhood 4663, Arc 5042) by product decision. It is not a
+general EVM balance source for Vex; see "Where Blockscout is not an option"
+below.
+
+## Arc (5042)
+
+Added 2026-09-16, extending this document's scope beyond the Robinhood-only
+measurements above. Confirmed BY EXTENSION, not by an independent live probe
+through the app the way Robinhood's endpoint index was:
+
+- Arc's official explorer is Blockscout: Blockscout's own announcement states
+  "Blockscout is proud to support Arc from day one with a fully operational,
+  data-driven block explorer," and `explorer.arc.io`'s page title ("Arc
+  Mainnet blockchain explorer - View Arc Mainnet stats | Blockscout") is
+  Blockscout's standard SEO template — the same one Robinhood's instance
+  carries.
+- `explorer.arc.io` sits behind a Cloudflare Managed Challenge, measured
+  directly: a bare request gets `cf-mitigated: challenge`, matching
+  Robinhood's instance byte-for-byte in header shape. `robinhoodchain.
+  blockscout.com` was re-probed the same way at the same time and produced the
+  identical header, confirming this is not an Arc-specific hardening, just the
+  same wall the existing Electron-transport recipe below (measured 2026-09-09,
+  Robinhood-only) is already built to clear.
+- NOT verified: Arc's actual `/api/v2` response shapes, byte sizes, rate
+  limits, backend version, or whether the Robinhood-measured header recipe in
+  "Explorer request-context measurement" actually passes Arc's Cloudflare
+  rule. Everything in the "Endpoint index" through "Pagination" sections below
+  was measured on Robinhood only and is assumed, not proven, to hold for Arc
+  (same Blockscout software, standard `/api/v2` surface). A live discrepancy
+  surfaces as `cloudflare_challenge` or `http_<status>` on the Arc sync path,
+  never as silent data loss — `syncLocalChainForWallet` keeps known balances
+  and reports discovery as incomplete rather than replacing the whole chain.
+- Native asset handling differs from Robinhood: Arc's native gas asset is
+  USDC itself (dual native/ERC-20 interface at `0x3600...0000`), not a
+  volatile coin, so a Blockscout `coin_balance` read is not how Vex prices or
+  scans Arc's native row (see `ARC_USDC` in `registry.ts`). Blockscout is used
+  here ONLY for `token-balances` identity discovery, exactly as on Robinhood.
 
 ## Endpoint index
 
@@ -510,11 +550,15 @@ zero).
 ## Chain mapping
 
 Blockscout host to Vex chain id, for the instances the Blockscout chains
-registry lists as first-party. Only the first row is in scope for Vex.
+registry lists as first-party. Only chains in `LOCAL_CHAINS`
+(`src/tools/evm-chains/registry.ts`) with `hasBlockscoutIndexer: true` are in
+scope for Vex — every other chain there is Khalani-covered and never reaches
+this client.
 
 | Vex chain id | slug | host | in Vex's Blockscout scope |
 | --- | --- | --- | --- |
-| 4663 | robinhood | `https://robinhoodchain.blockscout.com` | **yes, the only one** |
+| 4663 | robinhood | `https://robinhoodchain.blockscout.com` | **yes** |
+| 5042 | arc | `https://explorer.arc.io` | **yes** (added 2026-09-16, see "Arc (5042)" above) |
 | 1 | ethereum | `https://eth.blockscout.com` | no |
 | 10 | optimism | `https://explorer.optimism.io` | no |
 | 130 | unichain | `https://unichain.blockscout.com` | no |
@@ -525,20 +569,20 @@ registry lists as first-party. Only the first row is in scope for Vex.
 | 42161 | arbitrum | `https://arbitrum.blockscout.com` | no |
 | 42220 | celo | `https://celo.blockscout.com` | no |
 
-The non-4663 hosts are listed only so nobody re-derives them. Their paths were
-not probed under this scope and their behavior here is asserted for none of
-them.
+The "no" hosts are listed only so nobody re-derives them. Their paths were not
+probed under this scope and their behavior here is asserted for none of them.
 
 ## Vex transport and client contract
 
 WP6a exposes one operation-specific transport method for
 `GET /api/v2/addresses/{address}/token-balances`. The shared contract accepts
-an address, not a URL. The Electron implementation resolves the user-owned
-base URL (or the unchanged public default), composes the exact operation path,
-refuses redirects, applies caller and lifecycle cancellation,
-and rejects the complete response when it passes 512 KiB. The client rejects
-an unpaginated array above 500 rows. Neither limit returns a prefix that looks
-complete.
+a chain id (selecting a host from the small built-in/override allow-list in
+`operation.ts`) and an address, never a URL. The Electron implementation
+resolves the user-owned base URL for that chain id (or the unchanged public
+default), composes the exact operation path, refuses redirects, applies caller
+and lifecycle cancellation, and rejects the complete response when it passes
+512 KiB. The client rejects an unpaginated array above 500 rows. Neither limit
+returns a prefix that looks complete.
 
 The client result has `inventoryScope: "erc20"` and one of these states:
 
@@ -565,10 +609,14 @@ partial inventory names its residue.
 
 ## Where Blockscout is not an option
 
-Blockscout is a 4663-only balance source in Vex, by product decision, because
-4663 is an app-local chain absent from Khalani's registry and therefore the one
-chain with no enumerating balance provider. Every other chain Vex reads is
-served by Khalani, which returns correct native and token balances there.
+Blockscout is a balance source in Vex only for local (non-Khalani) chains that
+declare `hasBlockscoutIndexer: true` — today Robinhood 4663 and Arc 5042 — by
+product decision, because those are app-local chains absent from Khalani's
+registry and therefore chains with no OTHER enumerating balance provider.
+Every other chain Vex reads is served by Khalani, which returns correct native
+and token balances there. A THIRD local chain with no Blockscout instance at
+all would leave `hasBlockscoutIndexer: false` and stay seed + pins only,
+exactly as both 4663 and 5042 did before their own indexer was wired in.
 
 Independently of that decision, Blockscout could not serve these even if we
 wanted it to:

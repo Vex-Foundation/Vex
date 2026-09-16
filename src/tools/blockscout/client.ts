@@ -5,9 +5,8 @@ import {
   isBlockscoutError,
 } from "./errors.js";
 import {
-  buildRobinhoodTokenBalancesUrl,
-  isExactRobinhoodTokenBalancesUrl,
-  ROBINHOOD_CHAIN_ID,
+  buildBlockscoutTokenBalancesUrl,
+  isExactBlockscoutTokenBalancesUrl,
   validateBlockscoutAddress,
 } from "./operation.js";
 import {
@@ -39,7 +38,7 @@ export type BlockscoutInventoryIncompleteReason =
 
 interface BlockscoutInventoryCommon {
   readonly source: "blockscout";
-  readonly chainId: typeof ROBINHOOD_CHAIN_ID;
+  readonly chainId: number;
   readonly inventoryScope: "erc20";
   readonly maxResponseBytes: typeof BLOCKSCOUT_TOKEN_BALANCES_MAX_BYTES;
   readonly maxProviderRows: typeof BLOCKSCOUT_MAX_TOKEN_ROWS;
@@ -72,6 +71,7 @@ export interface BlockscoutInventoryOptions {
 }
 
 function noRowsIncomplete(
+  chainId: number,
   reason: BlockscoutInventoryIncompleteReason,
   errorCode: string,
   transport: BlockscoutTransport["name"] | null,
@@ -83,7 +83,7 @@ function noRowsIncomplete(
     incompleteReason: reason,
     errorCode,
     source: "blockscout",
-    chainId: ROBINHOOD_CHAIN_ID,
+    chainId,
     inventoryScope: "erc20",
     maxResponseBytes: BLOCKSCOUT_TOKEN_BALANCES_MAX_BYTES,
     maxProviderRows: BLOCKSCOUT_MAX_TOKEN_ROWS,
@@ -188,40 +188,44 @@ function parseJsonBody(body: Uint8Array): unknown {
 }
 
 function mapTypedFailure(
+  chainId: number,
   error: VexError,
   transport: BlockscoutTransport["name"] | null,
 ): BlockscoutInventoryResult {
   switch (error.code) {
     case BlockscoutErrorCodes.CLOUDFLARE_CHALLENGE:
-      return noRowsIncomplete("cloudflare_challenge", error.code, transport);
+      return noRowsIncomplete(chainId, "cloudflare_challenge", error.code, transport);
     case BlockscoutErrorCodes.RESPONSE_OVER_CAP:
-      return noRowsIncomplete("over_cap", error.code, transport);
+      return noRowsIncomplete(chainId, "over_cap", error.code, transport);
     case BlockscoutErrorCodes.TRANSPORT_UNAVAILABLE:
-      return noRowsIncomplete("transport_unavailable", error.code, transport);
+      return noRowsIncomplete(chainId, "transport_unavailable", error.code, transport);
     case BlockscoutErrorCodes.TRANSPORT_TIMEOUT:
-      return noRowsIncomplete("timeout", error.code, transport);
+      return noRowsIncomplete(chainId, "timeout", error.code, transport);
     case BlockscoutErrorCodes.TRANSPORT_FAILED:
-      return noRowsIncomplete("transport_failed", error.code, transport);
+      return noRowsIncomplete(chainId, "transport_failed", error.code, transport);
     case BlockscoutErrorCodes.REDIRECT_REFUSED:
-      return noRowsIncomplete("redirect_refused", error.code, transport);
+      return noRowsIncomplete(chainId, "redirect_refused", error.code, transport);
     case BlockscoutErrorCodes.PROVIDER_UNAVAILABLE:
     case BlockscoutErrorCodes.PROVIDER_REFUSED:
-      return noRowsIncomplete(error.httpStatus === undefined ? "transport_failed" : `http_${error.httpStatus}`, error.code, transport);
+      return noRowsIncomplete(chainId, error.httpStatus === undefined ? "transport_failed" : `http_${error.httpStatus}`, error.code, transport);
     case BlockscoutErrorCodes.CONTENT_TYPE_INVALID:
     case BlockscoutErrorCodes.RESPONSE_INVALID:
-      return noRowsIncomplete("invalid_response", error.code, transport);
+      return noRowsIncomplete(chainId, "invalid_response", error.code, transport);
     default:
       throw error;
   }
 }
 
 /**
- * Enumerate Robinhood ERC-20 identity candidates from Blockscout.
+ * Enumerate ERC-20 identity candidates from Blockscout, for one of the chain
+ * ids {@link getBlockscoutBaseUrlForChain} resolves a host for (Robinhood
+ * 4663, Arc 5042).
  *
  * This read never makes Blockscout authoritative for balances, decimals,
  * symbols, prices, or signing. WP6b must re-read each candidate from RPC.
  */
-export async function readRobinhoodErc20IdentityCandidates(
+export async function readBlockscoutErc20IdentityCandidates(
+  chainId: number,
   address: string,
   options: BlockscoutInventoryOptions = {},
 ): Promise<BlockscoutInventoryResult> {
@@ -232,14 +236,14 @@ export async function readRobinhoodErc20IdentityCandidates(
   let transport: BlockscoutTransport | null = null;
   try {
     transport = getBlockscoutTransport();
-    const requestedUrl = buildRobinhoodTokenBalancesUrl(address);
-    const response = await transport.fetchAddressTokenBalances(address, {
+    const requestedUrl = buildBlockscoutTokenBalancesUrl(chainId, address);
+    const response = await transport.fetchAddressTokenBalances(chainId, address, {
       timeoutMs,
       signal: options.signal,
       maxBytes: BLOCKSCOUT_TOKEN_BALANCES_MAX_BYTES,
     });
 
-    if (!isExactRobinhoodTokenBalancesUrl(response.finalUrl, requestedUrl)) {
+    if (!isExactBlockscoutTokenBalancesUrl(response.finalUrl, requestedUrl)) {
       throw blockscoutError(
         BlockscoutErrorCodes.REDIRECT_REFUSED,
         "The Blockscout response came from an unexpected URL",
@@ -255,6 +259,7 @@ export async function readRobinhoodErc20IdentityCandidates(
 
     if (validation.status === "invalid_document") {
       return noRowsIncomplete(
+        chainId,
         "invalid_response",
         BlockscoutErrorCodes.RESPONSE_INVALID,
         transport.name,
@@ -264,6 +269,7 @@ export async function readRobinhoodErc20IdentityCandidates(
     if (validation.status === "over_cap") {
       return {
         ...noRowsIncomplete(
+          chainId,
           "over_cap",
           BlockscoutErrorCodes.RESPONSE_OVER_CAP,
           transport.name,
@@ -275,7 +281,7 @@ export async function readRobinhoodErc20IdentityCandidates(
 
     const facts: BlockscoutInventoryCommon = {
       source: "blockscout",
-      chainId: ROBINHOOD_CHAIN_ID,
+      chainId,
       inventoryScope: "erc20",
       maxResponseBytes: BLOCKSCOUT_TOKEN_BALANCES_MAX_BYTES,
       maxProviderRows: BLOCKSCOUT_MAX_TOKEN_ROWS,
@@ -307,7 +313,7 @@ export async function readRobinhoodErc20IdentityCandidates(
       throw error;
     }
     if (isBlockscoutError(error)) {
-      return mapTypedFailure(error, transport?.name ?? null);
+      return mapTypedFailure(chainId, error, transport?.name ?? null);
     }
     throw error;
   }

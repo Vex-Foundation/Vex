@@ -30,7 +30,7 @@ export function createBlockscoutBridgeTransport(
 
   const transport: BlockscoutTransport = {
     name: "electron_net",
-    async fetchAddressTokenBalances(address, options) {
+    async fetchAddressTokenBalances(chainId, address, options) {
       if (!accepting) {
         throw blockscoutError(
           BlockscoutErrorCodes.TRANSPORT_UNAVAILABLE,
@@ -41,6 +41,7 @@ export function createBlockscoutBridgeTransport(
 
       const request = fetchBlockscoutAddressTokenBalances(
         fetcher,
+        chainId,
         address,
         options,
         lifecycleController.signal,

@@ -2,7 +2,7 @@
 
 Kept outside the markers.
 
-<!-- vex:studio:begin vex=0.2.6 hash=3a36be84e39a0a54 -->
+<!-- vex:studio:begin vex=0.2.6 hash=75ad36c6639f4a96 -->
 # Vex guide - project "acme-trading"
 
 The companion to this project's `AGENTS.md`, which carries the authority:
@@ -52,7 +52,7 @@ Text OUTSIDE the markers belongs to the user; Vex preserves it.
 - 2026-08-25 · Vex 0.9.4 · updated the wallet selection
 - 2026-08-12 · Vex 0.9.3 · added the codex config
 
-KyberSwap is the default; Uniswap prices V2, V3 and v4 pools on seven chains. Other DEX liquidity may be unavailable there. On Robinhood Chain, quote both venues when both price the pair; prefer direct Uniswap when it has a route (V2/V3/v4). KyberSwap drops quiet pools; its USD reference lags. Elsewhere, KyberSwap is the usual first choice.
+KyberSwap is the default; Uniswap prices V2, V3 and v4 pools on eight chains. Other DEX liquidity may be unavailable there. On Robinhood Chain, quote both venues when both price the pair; prefer direct Uniswap when it has a route (V2/V3/v4). KyberSwap drops quiet pools; its USD reference lags. Elsewhere, KyberSwap is the usual first choice.
 
 ## Protocols available to this project (Added in Vex 0.2.7)
 
@@ -90,7 +90,7 @@ Relay is a keyless cross-chain bridge for moving a token from one EVM chain to a
 
 KyberSwap is an EVM swap aggregator that routes exact-input trades across more than 400 decentralized exchanges.
 
-- Chains: Ethereum (1), BSC (56), Arbitrum (42161), Polygon (137), Optimism (10), Avalanche (43114), Base (8453), Linea (59144), Mantle (5000), Sonic (146), Berachain (80094), Ronin (2020), Unichain (130), HyperEVM (999), Plasma (9745), Monad (143), MegaETH (4326), Robinhood Chain (4663).
+- Chains: Ethereum (1), BSC (56), Arbitrum (42161), Polygon (137), Optimism (10), Avalanche (43114), Base (8453), Linea (59144), Mantle (5000), Sonic (146), Berachain (80094), Ronin (2020), Unichain (130), HyperEVM (999), Plasma (9745), Monad (143), MegaETH (4326), Robinhood Chain (4663), Arc (5042).
 - Read: Read EVM chains, the feature matrix, live chain status, token metadata and a honeypot/fee-on-transfer safety check.
 - Quote: Preview a token swap: best price, route, output, gas estimate, price impact, slippage and both tokens' safety results; no signing.
 - Act: Buy, sell, swap or exit a position after a fresh quote with identical parameters. The wallet signs and broadcasts; it can confirm, spend gas and revert, refuse before signing, or stay pending.
@@ -100,7 +100,7 @@ KyberSwap is an EVM swap aggregator that routes exact-input trades across more t
 
 Uniswap is an on-chain spot-swap venue that compares V2, V3 and v4 pools for an exact-input trade.
 
-- Chains: Robinhood Chain (4663), Ethereum (1), Base (8453), Arbitrum One (42161), Optimism (10), Polygon (137), BNB Chain (56).
+- Chains: Robinhood Chain (4663), Arc (5042), Ethereum (1), Base (8453), Arbitrum One (42161), Optimism (10), Polygon (137), BNB Chain (56).
 - Read: Read a route preview's pool path, expected output, price impact, gas estimate, and token-safety signals. Resolve exact token addresses first; no symbol search.
 - Quote: Preview the best route read-only, including VIRTUAL pairs, before funds move.
 - Act: Execute a buy, sell, or swap after a fresh matching quote. A token approval may be required before the wallet signs and broadcasts the trade.

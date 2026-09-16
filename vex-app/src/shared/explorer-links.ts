@@ -132,6 +132,12 @@ const EXPLORER_TX_BASE: ReadonlyMap<string, string> = new Map([
   ["rhc", "https://robinhoodchain.blockscout.com/tx/"],
   ["4663", "https://robinhoodchain.blockscout.com/tx/"],
   ["eip155:4663", "https://robinhoodchain.blockscout.com/tx/"],
+  // Arc (id 5042): activityChainKeys aliases (src/tools/evm-chains/registry.ts)
+  // plus the CAIP-2 form → the chain's Blockscout explorer (same software as
+  // Robinhood's, confirmed in tools/blockscout/BLOCKSCOUT.md).
+  ["arc", "https://explorer.arc.io/tx/"],
+  ["5042", "https://explorer.arc.io/tx/"],
+  ["eip155:5042", "https://explorer.arc.io/tx/"],
 ]);
 
 /**
@@ -247,4 +253,5 @@ export const EXPLORER_EXTERNAL_ALLOW: readonly ExplorerAllowEntry[] = [
   { host: "mega.etherscan.io", pathPrefix: "/tx/" },
   { host: "scrollscan.com", pathPrefix: "/tx/" },
   { host: "explorer.zksync.io", pathPrefix: "/tx/" },
+  { host: "explorer.arc.io", pathPrefix: "/tx/" },
 ];

@@ -124,7 +124,12 @@ export async function readLocalChainBalances(
   // quote policy already names it - no label-matching heuristic needed. The
   // pricing pass always seeds it into the request, so this is answerable even
   // when the wallet holds no wrapped native at all.
-  const nativePriceUsd = nativeUsd;
+  //
+  // On a USDC-native chain (Arc) the native asset is a stablecoin that is the
+  // QUOTE of every pool and never a base, so `nativeUsd` is null and the peg
+  // ($1) is the honest fallback - otherwise the wallet's native USDC renders at
+  // $0 and is hidden. Volatile-native chains declare no peg and keep null.
+  const nativePriceUsd = nativeUsd ?? config.nativeUsdPeg ?? null;
 
 
   const tokens: LocalChainTokenRead[] = [];

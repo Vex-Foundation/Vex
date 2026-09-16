@@ -112,12 +112,15 @@ function resolveKyberRpcUrl(slug: KyberChainSlug): string {
 }
 
 export function toViemChain(slug: KyberChainSlug): Chain {
-  // Robinhood reuses the shared local-chain definition (wires Multicall3 +
-  // explorer + user RPC override) instead of the minimal build below.
-  if (slug === "robinhood") {
-    return toLocalViemChain(robinhoodLocalChain());
-  }
   const chainId = slugToChainId(slug);
+  // Any slug backed by a shared evm-chains registry entry (Robinhood 4663,
+  // Arc 5042) reuses that definition, which wires Multicall3 + explorer + the
+  // user RPC override AND the correct nativeCurrency — Arc's gas asset is USDC,
+  // not the ETH default the minimal build below hardcodes.
+  const local = getLocalChain(chainId);
+  if (local) {
+    return toLocalViemChain(local);
+  }
   const rpcUrl = resolveKyberRpcUrl(slug);
   return {
     id: chainId,

@@ -23,6 +23,7 @@ export const ETHEREUM_CHAIN_ID = 1;
 export const BASE_CHAIN_ID = 8453;
 export const ARBITRUM_CHAIN_ID = 42161;
 export const ROBINHOOD_CHAIN_ID = 4663;
+export const ARC_CHAIN_ID = 5042;
 
 /**
  * Family a chain id belongs to. The single Solana id is the only non-EVM
@@ -76,6 +77,22 @@ const CHAIN_DISPLAY: Readonly<Record<number, ChainDisplay>> = {
     name: "Robinhood",
     family: "evm",
     icon: { kind: "thesvg", key: "robinhood" },
+  },
+  [ARC_CHAIN_ID]: {
+    chainId: ARC_CHAIN_ID,
+    name: "Arc",
+    family: "evm",
+    // Official Arc "arch" glyph, white variant, from Circle's Arc Brand Kit
+    // (linked from docs.arc.io/terms and circle.com/pressroom). Flat mark,
+    // no disc, matching every other local asset here. White reads clearly on
+    // this app's dark theme (every current chain mark on dark surfaces uses a
+    // light/saturated tone); on the light theme it leans on the same
+    // `bg-interactive-hover` plinth the chip row already wraps every mark in
+    // for exactly this contrast reason (`PositionChains.tsx`). If light-theme
+    // legibility ever needs more than that, swap to the kit's Navy variant
+    // (`Arc_Icon_Navay.svg` in the brand kit — sic, upstream typo) instead of
+    // adding a second theme-aware asset kind no other chain here has.
+    icon: { kind: "asset", src: "/logo/arc.svg" },
   },
   [BASE_CHAIN_ID]: {
     chainId: BASE_CHAIN_ID,
@@ -147,6 +164,7 @@ export const EVM_QUICK_CHAIN_IDS: readonly number[] = [
   ROBINHOOD_CHAIN_ID,
   BASE_CHAIN_ID,
   ARBITRUM_CHAIN_ID,
+  ARC_CHAIN_ID,
 ];
 
 /** Default EVM selection — ALWAYS Ethereum, even at zero balance. */
@@ -188,6 +206,7 @@ const CHAIN_ID_BY_SLUG: Readonly<Record<string, number>> = {
   bnbchain: 56,
   "bnb-chain": 56,
   robinhood: ROBINHOOD_CHAIN_ID,
+  arc: ARC_CHAIN_ID,
 };
 
 /** Normalized lookup key for a provider chain slug. */

@@ -46,7 +46,42 @@ export interface LocalChainConfig {
   /** Lowercase alias tokens accepted by the inclusive resolver (never fed to Khalani). */
   aliases: readonly string[];
   nativeCurrency: { name: string; symbol: string; decimals: number };
+  /**
+   * USD price of the native asset when it is a USD-pegged stablecoin, used as a
+   * fallback when pool-derived pricing cannot value it. Set ONLY on a chain
+   * whose native gas asset IS a dollar stablecoin (Arc: native gas is USDC).
+   *
+   * WHY IT IS NEEDED. The native-USD anchor is derived from a DEX pool whose
+   * BASE is the native asset. On a USDC-native chain USDC is the QUOTE of every
+   * pool and never the base, so that derivation returns null and the wallet's
+   * native balance would render at $0 and be hidden. The peg is the same $1
+   * assumption tier-0 pricing already makes for every USDC-quoted pool — not a
+   * new guess — with the usual stablecoin-depeg caveat. Absent on every chain
+   * whose native asset is a volatile coin (ETH, BNB, …), which must be priced.
+   */
+  nativeUsdPeg?: number;
   explorerUrl: string;
+  /**
+   * True when `explorerUrl` is a Blockscout instance this repo's Blockscout
+   * client (`tools/blockscout/`) can enumerate ERC-20 identities from — the
+   * ONLY thing that lets a local chain's balance scan claim a token set wider
+   * than seeds + pins (see `sync/local-chain-balance-sync.ts`). False (the
+   * default assumption a chain must opt INTO, never out of) means the chain's
+   * scan can never be exhaustive, which is the honest state for a local chain
+   * with no enumerating balance provider at all.
+   */
+  hasBlockscoutIndexer: boolean;
+  /**
+   * An ERC-20 contract address that must NEVER become its own scan-set entry
+   * or balance row, because it is the SAME underlying funds as this chain's
+   * native row (a dual native/ERC-20 interface over one balance — Arc's
+   * native USDC at `0x3600…0000` is the only example today; see `ARC_USDC`).
+   * Absent on every chain whose native asset has no such shadow. Excluded at
+   * `buildLocalChainInventory` regardless of HOW it would have entered the
+   * scan set — seed, pin, or indexer candidate — because an indexer has no
+   * way to know two addresses are the same funds and will happily report it.
+   */
+  nativeShadowTokenAddress?: `0x${string}`;
   /** Canonical Multicall3 (same deterministic-deploy address on every EVM chain). */
   multicall3: `0x${string}`;
   /** DexScreener chain slug used for price lookups (tokens/v1). */
@@ -98,6 +133,7 @@ const ROBINHOOD_CHAIN: LocalChainConfig = {
   aliases: ["robinhood", "robinhoodchain", "rhc"],
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   explorerUrl: "https://robinhoodchain.blockscout.com",
+  hasBlockscoutIndexer: true,
   // Canonical Multicall3 (Deterministic Deployment Proxy address, present on
   // 4663 — verified 2026-07-05 via balanceOf/decimals/symbol batch). NOT the
   // Robinhood docs' "L2 Multicall" 0x2cAC2D89... which is a Multicall2.
@@ -117,7 +153,92 @@ const ROBINHOOD_CHAIN: LocalChainConfig = {
   ],
 };
 
-const LOCAL_CHAINS: readonly LocalChainConfig[] = [ROBINHOOD_CHAIN];
+// ── Arc (5042) ──────────────────────────────────────────────────────
+//
+// Circle's USDC-native EVM L1. Native gas is USDC, exposed at ONE address
+// (0x3600…0000) through a dual interface: 18 decimals via the native interface
+// (what eth_getBalance scales to) and 6 decimals via the ERC-20 interface. All
+// values below independently verified against https://rpc.mainnet.arc.io on
+// 2026-09-16 (eth_chainId → 0x13b2 = 5042) and cross-checked against Circle's
+// docs (docs.arc.io/arc/references/rpc-endpoints: chain id 5042, currency USDC).
+/**
+ * Native/ERC-20 USDC on Arc. On-chain 2026-09-16: eth_getCode shows a live proxy;
+ * symbol() = "USDC"; decimals() = 6 (the ERC-20 view). DELIBERATELY NOT a seed
+ * token: Arc's native gas balance and this ERC-20's balanceOf are the SAME funds
+ * (verified 2026-09-16 — a wallet read 761,472.59 via both eth_getBalance/1e18
+ * and balanceOf/1e6), so seeding it would double-count USDC against the native
+ * row. It rides the `wrappedNative`/`stables` policy below to anchor pricing
+ * without ever becoming a balance row of its own — and is ALSO named as
+ * `nativeShadowTokenAddress` below, because a seed exclusion alone does not
+ * stop a pin or an indexer candidate from reintroducing the same double-count.
+ */
+const ARC_USDC = "0x3600000000000000000000000000000000000000" as const;
+
+const ARC_CHAIN: LocalChainConfig = {
+  id: 5042,
+  name: "Arc",
+  family: "eip155",
+  aliases: ["arc"],
+  // Native gas asset is USDC. decimals: 18 is the NATIVE interface scale that
+  // eth_getBalance returns (the ERC-20 interface's 6 decimals is a different
+  // view of the same balance and is not what the native row is formatted with).
+  // name/symbol/decimals match viem's built-in `arc` chain (viem/chains) and
+  // Circle's docs — Circle also instructs that native USDC and ERC-20 USDC are
+  // ONE balance and must not be shown as two rows, which is why USDC is the
+  // native row here and is not also seeded below.
+  nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
+  // Native gas asset is USDC, a USD stablecoin. DexScreener never prices it (it
+  // is the quote of every Arc pool, never a base), so peg the native balance at
+  // $1 — the same assumption tier-0 pricing makes for USDC everywhere else —
+  // instead of rendering the wallet's USDC at $0.
+  nativeUsdPeg: 1,
+  // Mainnet explorer per Circle docs (docs.arc.io).
+  explorerUrl: "https://explorer.arc.io",
+  // Confirmed Blockscout: Blockscout's own announcement names Arc as an
+  // official day-one integration, and explorer.arc.io's page title
+  // ("Arc Mainnet blockchain explorer - View Arc Mainnet stats | Blockscout")
+  // is Blockscout's standard SEO template — the same one Robinhood's instance
+  // carries. Behind the same Cloudflare Managed Challenge Robinhood's instance
+  // is (measured: identical `cf-mitigated: challenge` to a bare request); not
+  // independently live-probed end-to-end the way Robinhood's endpoint index in
+  // `tools/blockscout/BLOCKSCOUT.md` was. A wrong assumption here fails safe:
+  // `syncLocalChainForWallet` treats an indexer failure as "discovery
+  // incomplete, keep known balances," never as data loss.
+  hasBlockscoutIndexer: true,
+  // The Blockscout indexer just added above enumerates a wallet's ERC-20
+  // identities, and ARC_USDC answers ERC-20 calls (it is the dual-interface
+  // native/ERC-20 address) — so an exhaustive Blockscout answer WILL name it
+  // as a candidate even though it was deliberately excluded from seedTokens
+  // above for exactly this reason. Naming it here closes that second door:
+  // `buildLocalChainInventory` strips it regardless of which source offered
+  // it, so the indexer path can never reintroduce the double-count the seed
+  // exclusion was written to prevent.
+  nativeShadowTokenAddress: ARC_USDC,
+  // Canonical Multicall3 (Deterministic Deployment Proxy address). Verified live
+  // 2026-09-16: eth_getCode at this address returns real Multicall3 bytecode.
+  multicall3: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  // DexScreener indexes Arc under this slug (verified 2026-09-16:
+  // tokens/v1/arc/<USDC> answered real Uniswap v3/v4 pools, e.g. ARGUS/USDC at
+  // $1.47M liquidity).
+  dexscreenerSlug: "arc",
+  quoteAssetPolicy: {
+    // Arc is USDC-native: essentially every indexed pool is USDC-quoted, so USDC
+    // is the sole trusted stablecoin quote.
+    stables: new Set([ARC_USDC.toLowerCase()]),
+    // Arc has no WETH-shaped wrapped native distinct from its gas asset — the
+    // "wrapped native" and the stablecoin are the same USDC address. This only
+    // anchors nativeUsd (fetched independently of the seed set), so the native
+    // USDC row prices at ~$1 without USDC being a scanned balance.
+    wrappedNative: ARC_USDC.toLowerCase(),
+  },
+  activityChainKeys: ["arc", "5042"],
+  // No ERC-20 seeds: USDC is the native asset (see ARC_USDC) and any other Arc
+  // token needs its own live symbol()/decimals() verification before seeding.
+  // Additive later; native USDC balances and pinned tokens already resolve.
+  seedTokens: [],
+};
+
+const LOCAL_CHAINS: readonly LocalChainConfig[] = [ROBINHOOD_CHAIN, ARC_CHAIN];
 
 /** chainId → config, built once. */
 const BY_ID: ReadonlyMap<number, LocalChainConfig> = new Map(

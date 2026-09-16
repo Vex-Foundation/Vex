@@ -21,14 +21,19 @@ export interface BlockscoutTransportResponse {
 }
 
 /**
- * Operation-specific transport for one Robinhood Blockscout endpoint.
+ * Operation-specific transport for the one Blockscout endpoint this seam
+ * knows: an address's token balances, on one of the chain ids
+ * `getBlockscoutBaseUrlForChain` resolves a host for.
  *
  * Deliberately not an HTTP client: accepting a URL here would turn Chromium's
  * Cloudflare-compatible network stack into a generic privileged fetch proxy.
+ * `chainId` selects a host from that small built-in/override allow-list, so
+ * this stays a chain-id parameter, never a caller-supplied origin.
  */
 export interface BlockscoutTransport {
   readonly name: "electron_net";
   fetchAddressTokenBalances(
+    chainId: number,
     address: string,
     options: BlockscoutFetchOptions,
   ): Promise<BlockscoutTransportResponse>;

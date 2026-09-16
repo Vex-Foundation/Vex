@@ -15,14 +15,14 @@ export type KyberChainSlug =
   | "ethereum" | "bsc" | "arbitrum" | "polygon" | "optimism"
   | "avalanche" | "base" | "linea" | "mantle" | "sonic"
   | "berachain" | "ronin" | "unichain" | "hyperevm" | "plasma"
-  | "monad" | "megaeth" | "robinhood";
+  | "monad" | "megaeth" | "robinhood" | "arc";
 
 /** Chain IDs corresponding to supported KyberSwap chains. */
 export type KyberChainId =
   | 1 | 56 | 42161 | 137 | 10
   | 43114 | 8453 | 59144 | 5000 | 146
   | 80094 | 2020 | 130 | 999 | 9745
-  | 143 | 4326 | 4663;
+  | 143 | 4326 | 4663 | 5042;
 
 /** Chain info returned by the Common Service supported-chains endpoint. */
 export interface KyberChainInfo {

@@ -107,7 +107,7 @@ describe("kyberswap handlers", () => {
 
   // ── Read-only handlers return data (no wallet needed) ────────────
 
-  it("kyberswap.chains returns the registry (18 aggregator chains, Scroll/zkSync/Etherlink dropped)", async () => {
+  it("kyberswap.chains returns the registry (19 aggregator chains, Scroll/zkSync/Etherlink dropped; Arc added)", async () => {
     const result = await handlerFor("kyberswap.chains")(
       {},
       ctx({ sessionPermission: "restricted", approved: false }),
@@ -119,8 +119,8 @@ describe("kyberswap handlers", () => {
       count: number;
       chains: Array<{ slug: string; chainId: number; aggregator: boolean; state: string | null; stateReason: string | null }>;
     };
-    expect(data.count).toBe(18);
-    expect(data.chains).toHaveLength(18);
+    expect(data.count).toBe(19);
+    expect(data.chains).toHaveLength(19);
     const [first] = data.chains;
     expect(first?.slug).toBeDefined();
     expect(first?.chainId).toBeDefined();
@@ -197,7 +197,7 @@ describe("kyberswap handlers", () => {
     };
     expect(data.liveStatus).toBe(true);
     expect(data.liveStatusAvailable).toBe(false);
-    expect(data.chains).toHaveLength(18);
+    expect(data.chains).toHaveLength(19);
     for (const chain of data.chains) {
       expect(chain.slug).toBeDefined();
       expect(chain.state).toBeNull();

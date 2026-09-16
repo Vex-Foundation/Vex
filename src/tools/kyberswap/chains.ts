@@ -48,6 +48,13 @@ const CHAINS: readonly ChainEntry[] = [
   // real routes) and on-chain (MetaAggregationRouterV2 0x6131…37b5 has bytecode;
   // eth_chainId 0x1237 = 4663).
   { slug: "robinhood", chainId: 4663,  name: "Robinhood Chain", aggregator: true },
+  // Arc (Circle's USDC-native EVM L1) — aggregator support verified live
+  // 2026-09-16 (GET /arc/api/v1/routes?tokenIn=<native>&tokenOut=<USDC> → code:0
+  // "successfully" with a real routeSummary: 1e18 native → 1000000 USDC,
+  // confirming native gas = USDC at the 18-dec native / 6-dec ERC-20 split).
+  // Chain id 5042 confirmed on-chain (eth_chainId 0x13b2) and against Circle's
+  // docs (docs.arc.io/arc/references/rpc-endpoints).
+  { slug: "arc",       chainId: 5042,  name: "Arc",             aggregator: true },
 ] as const;
 
 // ── Alias map ───────────────────────────────────────────────────────

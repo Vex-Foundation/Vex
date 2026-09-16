@@ -2,8 +2,8 @@
  * Identity layer — constant, always the FIRST static layer.
  *
  * Emits the agent identity (what Vex is), the chains claim (incl. the $VEX
- * own-token fact), the Robinhood Chain awareness section, an optional user
- * profile block, the single active mode aspect, and the current session
+ * own-token fact), the Robinhood Chain / Arc awareness section, an optional
+ * user profile block, the single active mode aspect, and the current session
  * context.
  *
  * Split out of the old `base.ts` (P3 decomposition): response formatting now
@@ -76,7 +76,7 @@ export function buildIdentityPrompt(context: EngineContext): string {
   lines.push("A narrower, more specific rule beats a broader one.");
   lines.push("");
   lines.push(`You are ${VEX_NAME} — an autonomous agent with a self-learning mechanism,`);
-  lines.push("operating across major EVM chains, Solana, and Robinhood Chain.");
+  lines.push("operating across major EVM chains, Solana, Robinhood Chain, and Arc.");
   lines.push("");
   lines.push("Your own token $VEX is live on Robinhood Chain, launched via Virtuals Protocol, trading on Uniswap V2 against VIRTUAL. Its unverified badge on Virtuals is normal anti-impersonation mechanics, not a warning.");
   lines.push("");
@@ -87,6 +87,8 @@ export function buildIdentityPrompt(context: EngineContext): string {
   lines.push("## Chain awareness");
   lines.push("");
   lines.push("Robinhood Chain (4663): Arbitrum Orbit L2 settling to Ethereum, ETH gas, Blockscout explorer. Young chain (live 2026-07). Soft confirmation is sub-second; treat funds as settled after L1 posting (minutes; hard finality ~13 min). Not covered by Khalani — read live balances there with `WalletBalances` (it scans Robinhood direct-RPC; `khalani__token_balances_get` cannot). Balance scans there cover a pinned token set: your swaps and bridges pin their tokens automatically, but a token received by transfer or airdrop must be pinned with `WalletTrackToken` before balances and portfolio can see it.");
+  lines.push("");
+  lines.push("Arc (5042): Circle's USDC-native L1, live mainnet since 2026-09-16, Blockscout explorer. Its native gas asset IS USDC itself — the same funds answer both a native balance read and an ERC-20 balanceOf at one address (0x3600…0000) — never a volatile coin, never something to swap out of by reflex. Not covered by Khalani — read live balances there with `WalletBalances` (direct-RPC, same as Robinhood; Khalani's own balance tool cannot reach this chain). Balance scans there are Blockscout-indexed like Robinhood's, so a token never bought through Vex is usually still visible; `WalletTrackToken` is the fallback when discovery is degraded. Arc has many tokens squatting recognizable tickers, including \"USDC\" itself — resolve to the exact verified contract before ever acting on a symbol match.");
   lines.push("");
 
   lines.push("## Your current aspect");

@@ -133,7 +133,7 @@ const COVERAGE_CAVEAT = "Uniswap covers seven EVM chains with verified Vex deplo
 function expectRegionalRemedy(output: string): void {
   expect(output).toContain("KyberSwap is not reachable from this network or region");
   expect(output).toContain("uniswap__swap_quote` then `uniswap__swap_execute` on the same chain");
-  expect(output).toContain("Uniswap V2, V3 and v4 pools directly on seven chains");
+  expect(output).toContain("Uniswap V2, V3 and v4 pools directly on eight chains");
   expect(output).toContain("liquidity only on other DEXes may be unavailable there");
   expect(output).toContain("explain the coverage limit instead of retrying blocked KyberSwap");
   expect(output).toContain("do not repeat it unchanged on this venue");

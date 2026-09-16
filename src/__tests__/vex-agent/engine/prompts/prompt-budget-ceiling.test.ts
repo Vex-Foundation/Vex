@@ -125,13 +125,74 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  *
  * The coordinator reviews this raise.
  */
+/*
+ * REVIEWED CEILING MOVE, Arc mainnet chain coverage (2026-09-16). NET +12 in
+ * EVERY mode, and the uniformity is the proof that only the shared chain
+ * coverage line moved: `prompts/chain-coverage.ts` renders the swap-venue chain
+ * list once per mode, and adding Arc appends ", Arc (5042)" to it (12 bytes).
+ * Nothing per-tool entered the static prefix. WHAT THE BYTES BUY: the agent can
+ * now name and route Arc (Circle's USDC-native L1, chain id 5042 verified on
+ * its official RPC), which KyberSwap aggregates and Vex reads directly.
+ *
+ *   agent / restricted          60,914 -> 60,926
+ *   agent / full                61,615 -> 61,627
+ *   mission setup / restricted  67,391 -> 67,403
+ *   mission setup / full        67,410 -> 67,422
+ *   mission run / restricted    66,115 -> 66,127
+ *   mission run / full          65,930 -> 65,942
+ *
+ * REVIEWED CEILING MOVE, Uniswap v4 on Arc (2026-09-16). A further NET +12 in
+ * EVERY mode: the Uniswap venue coverage line (swap-venue-guidance +
+ * chain-coverage) gains "Arc (5042)" once Arc is a verified Uniswap deployment.
+ * "seven chains" -> "eight chains" is byte-neutral. WHAT THE BYTES BUY: the
+ * agent can now quote/execute Uniswap v4 directly on Arc, its native USDC
+ * resolved to the ERC-20 form so no wrap path is taken.
+ *
+ *   agent / restricted          60,926 -> 60,938
+ *   agent / full                61,627 -> 61,639
+ *   mission setup / restricted  67,403 -> 67,415
+ *   mission setup / full        67,422 -> 67,434
+ *   mission run / restricted    66,127 -> 66,139
+ *   mission run / full          65,942 -> 65,954
+ *
+ * REVIEWED CEILING MOVE, Arc chain awareness (2026-09-16). NET +810 bytes in
+ * EVERY mode, uniform because the growth is entirely `prompts/identity.ts`'s
+ * own static text (the chains-claim intro line naming Arc alongside Robinhood
+ * Chain, plus a new "Chain awareness" paragraph for Arc mirroring Robinhood's
+ * own), rendered once per mode regardless of session kind or permission.
+ * WHAT THE BYTES BUY: before this the agent had zero prewritten knowledge that
+ * Arc exists, that its native gas asset IS USDC rather than a volatile coin
+ * (the swap-out-by-reflex mistake this specifically forecloses), that Arc
+ * reads through `WalletBalances` the same way Robinhood does (Khalani cannot
+ * reach it), or that Arc carries many tokens squatting recognizable tickers
+ * including "USDC" itself - a real failure mode a live Arc swap and a live
+ * Arc bridge on this tree already had to route around reactively, from tool
+ * output alone, with no prewritten knowledge to draw on. This raise moves
+ * that knowledge into the prefix so it is available BEFORE any tool call
+ * happens to surface it. (14 of the 810 bytes are a wording fix, not new
+ * content: the Arc paragraph's first draft named the raw protocol tool
+ * `khalani__token_balances_get`, mirroring Robinhood's own pre-existing
+ * sentence - but `fresh-model-surface-names.test.ts` correctly refused that
+ * as a SECOND occurrence of an uncallable-on-a-fresh-surface name, a doctrine
+ * that ratchets toward zero and may never quietly grow. Reworded to state the
+ * same fact - Khalani cannot read Arc balances - without printing the name.)
+ *
+ *   agent / restricted          60,938 -> 61,748
+ *   agent / full                61,639 -> 62,449
+ *   mission setup / restricted  67,415 -> 68,225
+ *   mission setup / full        67,434 -> 68,244
+ *   mission run / restricted    66,139 -> 66,949
+ *   mission run / full          65,954 -> 66,764
+ *
+ * The coordinator reviews this raise.
+ */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 60_914 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 61_615 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 67_391 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 67_410 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 66_115 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 65_930 },
+  { name: "agent / restricted", context: context({}), ceiling: 61_748 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 62_449 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 68_225 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 68_244 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 66_949 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 66_764 },
 ] as const;
 
 beforeAll(() => {

@@ -86,7 +86,7 @@ describe("prompt-stack — identity content", () => {
       const joined = joinedStack(makeContext());
       expect(joined).toContain("Your own token $VEX is live on Robinhood Chain");
       expect(joined).toContain("anti-impersonation mechanics, not a warning");
-      expect(joined).toContain("major EVM chains, Solana, and Robinhood Chain");
+      expect(joined).toContain("major EVM chains, Solana, Robinhood Chain, and Arc");
       // Stale "20+ EVM chains and Solana" line is gone.
       expect(joined).not.toContain("20+ EVM chains");
     });
@@ -106,6 +106,20 @@ describe("prompt-stack — identity content", () => {
     it("keeps chain-awareness content in the STATIC prefix (cache-safe, no live numbers)", () => {
       const { staticLayers } = buildPromptStack(makeContext());
       expect(staticLayers.join("\n")).toContain("## Chain awareness");
+    });
+
+    it("carries the static Chain awareness section for Arc (5042)", () => {
+      const joined = joinedStack(makeContext());
+      expect(joined).toContain("Arc (5042): Circle's USDC-native L1");
+      // The one fact that most needs to land before any tool call: native gas
+      // IS the stablecoin, never a volatile coin to swap out of by reflex.
+      expect(joined).toContain("native gas asset IS USDC itself");
+      expect(joined).toContain("never a volatile coin");
+      // Same balance-read routing rule as Robinhood, stated for Arc.
+      expect(joined).toContain("Not covered by Khalani — read live balances there with `WalletBalances` (direct-RPC, same as Robinhood");
+      // The ticker-squatting caution — a real failure mode already routed
+      // around reactively before this paragraph existed.
+      expect(joined).toContain("squatting recognizable tickers, including \"USDC\" itself");
     });
 
     it("repositions dexscreener as the market-discovery backbone in the protocols prompt", () => {

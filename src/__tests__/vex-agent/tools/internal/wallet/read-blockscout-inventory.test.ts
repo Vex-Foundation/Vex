@@ -21,7 +21,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import type { ChainFamily } from "@tools/khalani/types.js";
-import { buildRobinhoodTokenBalancesUrl } from "@tools/blockscout/operation.js";
+import { buildBlockscoutTokenBalancesUrl } from "@tools/blockscout/operation.js";
 import {
   registerBlockscoutTransport,
   type BlockscoutTransport,
@@ -178,8 +178,8 @@ function mountBlockscout(
 }
 
 function mountInventory(rows: readonly ReturnType<typeof providerRow>[]): void {
-  mountBlockscout(async (address) => ({
-    finalUrl: buildRobinhoodTokenBalancesUrl(address).toString(),
+  mountBlockscout(async (chainId, address) => ({
+    finalUrl: buildBlockscoutTokenBalancesUrl(chainId, address).toString(),
     status: 200,
     contentType: "application/json",
     body: encoder.encode(JSON.stringify(rows)),
@@ -309,7 +309,7 @@ describe("WalletBalances on 4663 - a complete indexer answer", () => {
 describe("WalletBalances on 4663 - the indexer could not answer", () => {
   beforeEach(() => {
     mountBlockscout(async () => ({
-      finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(),
+      finalUrl: buildBlockscoutTokenBalancesUrl(ROBINHOOD_CHAIN_ID, WALLET).toString(),
       status: 403,
       contentType: "text/html; charset=UTF-8",
       body: encoder.encode("<html>challenge</html>"),
