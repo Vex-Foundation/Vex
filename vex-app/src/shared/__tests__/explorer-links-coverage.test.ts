@@ -49,17 +49,20 @@ const KYBER_CHAINS: ReadonlyArray<readonly [slug: string, chainId: number]> = [
   ["megaeth", 4326],
   ["scroll", 534352],
   ["zksync", 324],
+  ["arc", 5042],
 ];
 
 // MIRROR of src/tools/evm-chains/registry.ts ROBINHOOD_CHAIN.activityChainKeys
-// — the exact lowercased `_tradeCapture.chain` values that map to chain 4663.
-// KEEP IN SYNC with that file.
+// and ARC_CHAIN.activityChainKeys — the exact lowercased `_tradeCapture.chain`
+// values that map to chains 4663 and 5042. KEEP IN SYNC with that file.
 const EVM_ACTIVITY_CHAIN_KEYS: readonly string[] = [
   "robinhood",
   "robinhood chain",
   "robinhoodchain",
   "rhc",
   "4663",
+  "arc",
+  "5042",
 ];
 
 // Non-EVM + L1 identities the wallet paths emit directly.
