@@ -87,6 +87,10 @@ describe("evm-chains registry — Arc (5042)", () => {
     expect(chain!.nativeCurrency).toEqual({ name: "USDC", symbol: "USDC", decimals: 18 });
     expect(chain!.multicall3).toBe(CANONICAL_MULTICALL3);
     expect(chain!.dexscreenerSlug).toBe("arc");
+    // Native gas is USDC, a $1 stablecoin DexScreener never prices as a base, so
+    // the config pegs it at $1 (Robinhood's ETH-native chain declares no peg).
+    expect(chain!.nativeUsdPeg).toBe(1);
+    expect(getLocalChain(RH_ID)!.nativeUsdPeg).toBeUndefined();
   });
 
   it("does NOT seed native USDC as an ERC-20 (avoids double-counting the native row)", () => {

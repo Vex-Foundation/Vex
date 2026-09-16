@@ -46,6 +46,20 @@ export interface LocalChainConfig {
   /** Lowercase alias tokens accepted by the inclusive resolver (never fed to Khalani). */
   aliases: readonly string[];
   nativeCurrency: { name: string; symbol: string; decimals: number };
+  /**
+   * USD price of the native asset when it is a USD-pegged stablecoin, used as a
+   * fallback when pool-derived pricing cannot value it. Set ONLY on a chain
+   * whose native gas asset IS a dollar stablecoin (Arc: native gas is USDC).
+   *
+   * WHY IT IS NEEDED. The native-USD anchor is derived from a DEX pool whose
+   * BASE is the native asset. On a USDC-native chain USDC is the QUOTE of every
+   * pool and never the base, so that derivation returns null and the wallet's
+   * native balance would render at $0 and be hidden. The peg is the same $1
+   * assumption tier-0 pricing already makes for every USDC-quoted pool — not a
+   * new guess — with the usual stablecoin-depeg caveat. Absent on every chain
+   * whose native asset is a volatile coin (ETH, BNB, …), which must be priced.
+   */
+  nativeUsdPeg?: number;
   explorerUrl: string;
   /** Canonical Multicall3 (same deterministic-deploy address on every EVM chain). */
   multicall3: `0x${string}`;
@@ -149,6 +163,11 @@ const ARC_CHAIN: LocalChainConfig = {
   // ONE balance and must not be shown as two rows, which is why USDC is the
   // native row here and is not also seeded below.
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
+  // Native gas asset is USDC, a USD stablecoin. DexScreener never prices it (it
+  // is the quote of every Arc pool, never a base), so peg the native balance at
+  // $1 — the same assumption tier-0 pricing makes for USDC everywhere else —
+  // instead of rendering the wallet's USDC at $0.
+  nativeUsdPeg: 1,
   // Mainnet explorer per Circle docs (docs.arc.io). Display-only metadata.
   explorerUrl: "https://explorer.arc.io",
   // Canonical Multicall3 (Deterministic Deployment Proxy address). Verified live

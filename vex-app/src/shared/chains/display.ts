@@ -23,6 +23,7 @@ export const ETHEREUM_CHAIN_ID = 1;
 export const BASE_CHAIN_ID = 8453;
 export const ARBITRUM_CHAIN_ID = 42161;
 export const ROBINHOOD_CHAIN_ID = 4663;
+export const ARC_CHAIN_ID = 5042;
 
 /**
  * Family a chain id belongs to. The single Solana id is the only non-EVM
@@ -76,6 +77,15 @@ const CHAIN_DISPLAY: Readonly<Record<number, ChainDisplay>> = {
     name: "Robinhood",
     family: "evm",
     icon: { kind: "thesvg", key: "robinhood" },
+  },
+  [ARC_CHAIN_ID]: {
+    chainId: ARC_CHAIN_ID,
+    name: "Arc",
+    family: "evm",
+    // No `@thesvg` arc icon and no local brand asset yet — a neutral "A"
+    // monogram, so the label reads "Arc" instead of the bare "Chain 5042"
+    // fallback. Swap for a local asset once an Arc mark is added to publicDir.
+    icon: { kind: "fallback" },
   },
   [BASE_CHAIN_ID]: {
     chainId: BASE_CHAIN_ID,
@@ -188,6 +198,7 @@ const CHAIN_ID_BY_SLUG: Readonly<Record<string, number>> = {
   bnbchain: 56,
   "bnb-chain": 56,
   robinhood: ROBINHOOD_CHAIN_ID,
+  arc: ARC_CHAIN_ID,
 };
 
 /** Normalized lookup key for a provider chain slug. */
