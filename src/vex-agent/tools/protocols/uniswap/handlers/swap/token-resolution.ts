@@ -25,6 +25,15 @@ export async function resolveUniswapToken(
   input: string,
 ): Promise<UniswapToken> {
   if (isNativeInput(input)) {
+    // Dual-interface native (Arc: native USDC == the ERC-20 at 0x3600). There is
+    // no WETH-style wrapper, and the DEX liquidity is on the ERC-20, so resolve
+    // the native spelling to that ERC-20 with isNative:false. This keeps the
+    // WRAP_ETH/UNWRAP_WETH path (v4-execute) unreachable and routes the swap
+    // against the pool the funds are actually in — a plain ERC-20 leg.
+    const dual = deployment.nativeErc20;
+    if (dual) {
+      return { address: getAddress(dual.address), symbol: dual.symbol, decimals: dual.decimals, isNative: false };
+    }
     return { address: getAddress(deployment.weth), symbol: nativeSymbolFor(deployment.chainId), decimals: 18, isNative: true };
   }
   if (!isAddress(input)) {

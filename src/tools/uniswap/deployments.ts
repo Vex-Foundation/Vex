@@ -72,6 +72,19 @@ export interface UniswapDeployment {
   /** Canonical wrapped-native token — always a connector and the native-leg wrap target. */
   readonly weth: Address;
   /**
+   * DUAL-INTERFACE NATIVE. Set only on a chain whose native gas asset is ALSO
+   * directly a well-known ERC-20 at a fixed address (Arc: USDC is the native
+   * coin AND the ERC-20 at 0x3600…0000, one balance seen two ways). On such a
+   * chain there is NO WETH-style wrapper with deposit()/withdraw(), and all DEX
+   * liquidity lives on the ERC-20 form, so the native spelling ("native"/"eth"/
+   * sentinel) MUST resolve to this ERC-20 with `isNative: false` rather than to a
+   * wrapper — that keeps the WRAP_ETH/UNWRAP_WETH path (`v4-execute.ts`)
+   * structurally unreachable, and the swap becomes a plain ERC-20 leg against the
+   * pool the funds are actually in. `decimals` is the ERC-20-interface scale
+   * (Arc USDC reads 6 via balanceOf), which is the scale the pools price in.
+   */
+  readonly nativeErc20?: { readonly address: Address; readonly symbol: string; readonly decimals: number };
+  /**
    * Extra intermediate tokens to try for 2-hop routes, on top of WETH (which is
    * always tried). On 4663 this is VIRTUAL + USDG (VIRTUAL is the base pair for
    * Virtuals agent tokens like $VEX). Addresses on-chain-verified.
@@ -358,8 +371,44 @@ const BSC: UniswapDeployment = {
   },
 };
 
+// ── Arc (5042) - Uniswap v4 only; KyberSwap aggregates it too ──
+// Circle's USDC-native L1. All v4 addresses cross-verified on-chain 2026-09-16
+// via https://rpc.mainnet.arc.io (eth_chainId 0x13b2 = 5042):
+//   eth_getCode present on all six (poolManager 48020, positionManager 47756,
+//   quoter 12238, stateView 7064, universalRouter 49094, permit2 18306 bytes);
+//   quoter/stateView/positionManager .poolManager() all == the PoolManager;
+//   universalRouter.eip712Domain() = "UniversalRouter" / version "2" / chainId
+//   5042 / verifyingContract == self, so it is the 2.1.1-class router (a 2.0
+//   router reverts that read). Candidate addresses from developers.uniswap.org
+//   v4 deployments (Arc: 5042); the on-chain probe is the authority.
+//
+// NO v3/v2 entry: Uniswap's v3 deployments page does not list Arc, so only v4 is
+// verified here. `weth` is USDC (Arc's native asset in ERC-20 form) — the routing
+// hub, not a wrapper — and `nativeErc20` marks the dual interface so the native
+// spelling resolves to USDC (0x3600, 6 decimals, isNative:false) and the
+// WRAP_ETH/UNWRAP_WETH path is never taken.
+const ARC_USDC = "0x3600000000000000000000000000000000000000" as const;
+const ARC: UniswapDeployment = {
+  chainId: 5042,
+  key: "arc",
+  name: "Arc",
+  weth: ARC_USDC,
+  connectors: [],
+  nativeErc20: { address: ARC_USDC, symbol: "USDC", decimals: 6 },
+  v4: {
+    poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+    quoter: "0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94",
+    stateView: "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b",
+    positionManager: "0x6049c9a0e26405C0985f9E3685C87d0aE917f82B",
+    permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    universalRouter: "0x4fcA4a51Ab4F23A7447b3284fBd7D73289A89Fb1",
+    universalRouterVersion: "2.1.1",
+  },
+};
+
 const DEPLOYMENTS: readonly UniswapDeployment[] = [
   ROBINHOOD,
+  ARC,
   ETHEREUM,
   BASE,
   ARBITRUM,

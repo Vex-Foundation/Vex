@@ -2,7 +2,7 @@
 
 Run the tests before you push.
 
-<!-- vex:studio:begin vex=0.2.6 hash=708bba78f36d4982 -->
+<!-- vex:studio:begin vex=0.2.6 hash=dbbbf242762eb099 -->
 # Vex Studio - project "acme-trading"
 
 This repository is connected to Vex, a self-custodial crypto agent whose tools
@@ -15,7 +15,7 @@ companion guide for protocol details before acting.
 - khalani: cross-chain bridge/token-resolution; Ethereum,Optimism,BNB Chain,Unichain,Polygon,Monad,ZKsync Era,Abstract,Mantle,Base,0G,Arbitrum,Avalanche,Linea,Berachain,Katana,Solana; live reach; fee 25 bps origin input; key not required; `khalani__`.
 - relay: cross-chain bridge; EVM only; Robinhood Chain needs live health gate; fee 25 bps origin input; key not required; `relay__`.
 - kyberswap: EVM swap aggregator; Ethereum,BSC,Arbitrum,Polygon,Optimism,Avalanche,Base,Linea,Mantle,Sonic,Berachain,Ronin,Unichain,HyperEVM,Plasma,Monad,MegaETH,Robinhood Chain,Arc; fee 25 bps swap input; key not required; `kyberswap__`.
-- uniswap: spot-swap; Robinhood Chain,Ethereum,Base,Arbitrum One,Optimism,Polygon,BNB Chain; fee 25 bps swap input; key not required; `uniswap__`.
+- uniswap: spot-swap; Robinhood Chain,Arc,Ethereum,Base,Arbitrum One,Optimism,Polygon,BNB Chain; fee 25 bps swap input; key not required; `uniswap__`.
 - morpho: variable-rate lending/Morpho vaults; ethereum,optimism,unichain,polygon,monad,hyperevm,robinhood,base,arbitrum; fee none; key not required; `morpho__`.
 - pendle: term-yield; Ethereum,Optimism,BNB Smart Chain,Monad,Sonic,HyperEVM,Mantle,Base,Plasma,Arbitrum One,Berachain; fee none; key not required; `pendle__`.
 - solana: swaps/lending/borrowing/prediction markets; Solana; fee 25 bps swap input; lend/predict free; key JUPITER_API_KEY missing; `solana__`.
@@ -267,7 +267,7 @@ Resolve token CONTRACT ADDRESSES on the exact chain with `TokenFind`.
 `SwapQuoteUniswap`/`SwapExecuteUniswap` use verified Uniswap deployments.
 Execute with identical quote parameters, including slippage.
 
-KyberSwap is the default; Uniswap prices V2, V3 and v4 pools on seven chains. Other DEX liquidity may be unavailable there. On Robinhood Chain, quote both venues when both price the pair; prefer direct Uniswap when it has a route (V2/V3/v4). KyberSwap drops quiet pools; its USD reference lags. Elsewhere, KyberSwap is the usual first choice. Use Uniswap when KyberSwap is region/edge-blocked, unavailable, mispriced, or on request. Quote both when unsure. Execute on the venue you quoted.
+KyberSwap is the default; Uniswap prices V2, V3 and v4 pools on eight chains. Other DEX liquidity may be unavailable there. On Robinhood Chain, quote both venues when both price the pair; prefer direct Uniswap when it has a route (V2/V3/v4). KyberSwap drops quiet pools; its USD reference lags. Elsewhere, KyberSwap is the usual first choice. Use Uniswap when KyberSwap is region/edge-blocked, unavailable, mispriced, or on request. Quote both when unsure. Execute on the venue you quoted.
 
 Restate expected output, price impact, gas and safety verdicts before executing.
 Execution writes the approved floor into calldata and refuses by name below it.

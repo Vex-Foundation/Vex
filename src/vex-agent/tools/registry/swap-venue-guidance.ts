@@ -9,7 +9,7 @@ export const ROBINHOOD_SWAP_VENUE_GUIDANCE =
   + "KyberSwap drops quiet pools; its USD reference lags. Elsewhere, KyberSwap is the usual first choice.";
 
 export const SWAP_VENUE_STANDING =
-  "KyberSwap is the default; Uniswap prices V2, V3 and v4 pools on seven chains. "
+  "KyberSwap is the default; Uniswap prices V2, V3 and v4 pools on eight chains. "
   + "Other DEX liquidity may be unavailable there. "
   + ROBINHOOD_SWAP_VENUE_GUIDANCE;
 
@@ -34,13 +34,13 @@ export const KYBERSWAP_EDGE_BLOCK_GUIDANCE =
 /** The direct venue's regional role and current pool-version limit. */
 export const UNISWAP_REGIONAL_GUIDANCE =
   "Use this venue when KyberSwap is unavailable in the user's region; it prices Uniswap V2, V3 "
-  + "and v4 pools on seven chains. Liquidity only on other DEXes may be unavailable here.";
+  + "and v4 pools on eight chains. Liquidity only on other DEXes may be unavailable here.";
 
 /** Appended only to the closed 401/403/451 edge-refusal outcome. */
 export const KYBERSWAP_EDGE_BLOCK_REMEDY =
   " KyberSwap is not reachable from this network or region; retry this trade with "
   + "`uniswap__swap_quote` then `uniswap__swap_execute` on the same chain. "
-  + "That venue prices Uniswap V2, V3 and v4 pools directly on seven chains; liquidity only on "
+  + "That venue prices Uniswap V2, V3 and v4 pools directly on eight chains; liquidity only on "
   + "other DEXes may be unavailable there. If its quote finds no route, explain the coverage "
   + "limit instead of retrying blocked KyberSwap.";
 

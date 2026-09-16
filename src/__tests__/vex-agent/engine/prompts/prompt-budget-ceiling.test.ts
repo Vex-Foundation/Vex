@@ -140,14 +140,28 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  *   mission setup / full        67,410 -> 67,422
  *   mission run / restricted    66,115 -> 66,127
  *   mission run / full          65,930 -> 65,942
+ *
+ * REVIEWED CEILING MOVE, Uniswap v4 on Arc (2026-09-16). A further NET +12 in
+ * EVERY mode: the Uniswap venue coverage line (swap-venue-guidance +
+ * chain-coverage) gains "Arc (5042)" once Arc is a verified Uniswap deployment.
+ * "seven chains" -> "eight chains" is byte-neutral. WHAT THE BYTES BUY: the
+ * agent can now quote/execute Uniswap v4 directly on Arc, its native USDC
+ * resolved to the ERC-20 form so no wrap path is taken.
+ *
+ *   agent / restricted          60,926 -> 60,938
+ *   agent / full                61,627 -> 61,639
+ *   mission setup / restricted  67,403 -> 67,415
+ *   mission setup / full        67,422 -> 67,434
+ *   mission run / restricted    66,127 -> 66,139
+ *   mission run / full          65,942 -> 65,954
  */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 60_926 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 61_627 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 67_403 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 67_422 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 66_127 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 65_942 },
+  { name: "agent / restricted", context: context({}), ceiling: 60_938 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 61_639 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 67_415 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 67_434 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 66_139 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 65_954 },
 ] as const;
 
 beforeAll(() => {

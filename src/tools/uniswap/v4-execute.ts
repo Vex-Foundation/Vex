@@ -24,6 +24,14 @@ export function buildV4SwapTx(args: BuildSwapArgs): BuiltSwapTx {
   const unwrapsInput = !args.tokenInIsNative && input === zeroAddress;
   const unwrapsOutput = args.tokenOutIsNative && output !== zeroAddress;
   const wrapsOutput = !args.tokenOutIsNative && output === zeroAddress;
+  // Dual-interface native chains (Arc) have no WETH-style wrapper: the native
+  // spelling already resolved to the ERC-20 in token-resolution, so no
+  // wrap/unwrap may ever fire. Fail closed if one somehow would — a WRAP_ETH
+  // against a token that is not a wrapper is exactly the money-path mistake the
+  // dual-interface handling exists to prevent.
+  if (deployment.nativeErc20 && (wrapsInput || unwrapsInput || unwrapsOutput || wrapsOutput)) {
+    throw v4Refusal("native wrap/unwrap is not available on a dual-interface-native chain");
+  }
   if ((wrapsInput && input.toLowerCase() !== deployment.weth.toLowerCase()) || (unwrapsOutput && output.toLowerCase() !== deployment.weth.toLowerCase())) throw v4Refusal("native transition is not the canonical wrapper");
   let commands = "0x";
   const inputs: Hex[] = [];

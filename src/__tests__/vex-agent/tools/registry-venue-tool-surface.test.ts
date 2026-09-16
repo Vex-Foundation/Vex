@@ -48,7 +48,7 @@ describe("venue tools are always visible (owner decision D4)", () => {
 
   it.each(UNISWAP_SWAP_TOOLS)("$publicName states its regional role and current pool coverage", (tool) => {
     expect(tool.description).toContain("when KyberSwap is unavailable in the user's region");
-    expect(tool.description).toContain("Uniswap V2, V3 and v4 pools on seven chains");
+    expect(tool.description).toContain("Uniswap V2, V3 and v4 pools on eight chains");
     expect(tool.description).toContain("Liquidity only on other DEXes");
     expect(tool.description).not.toContain("no v4 support yet");
   });

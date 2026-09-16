@@ -11,7 +11,7 @@ import { resolveUniswapToken } from "@vex-agent/tools/protocols/uniswap/handlers
 import type { V4PoolKey, V4RouteBinding } from "@tools/uniswap/v4-types.js";
 import provenance from "./fixtures/v4-deployment-provenance.json" with { type: "json" };
 
-const chainIds = [1, 10, 56, 137, 4663, 8453, 42161];
+const chainIds = [1, 10, 56, 137, 4663, 5042, 8453, 42161];
 function required<T>(value: T | undefined): T {
   if (value === undefined) throw new Error("Required deployment evidence missing");
   return value;
@@ -25,7 +25,7 @@ describe("verified Uniswap v4 on every direct venue chain", () => {
     const deployment = required(getUniswapDeployment(chainId));
     const v4 = required(deployment.v4);
     const row = required(provenance.find(p => p.chainId === chainId));
-    const expectedCodeBytes: Record<string, number> = { poolManager: 24009, quoter: chainId === 4663 ? 6118 : 5820, stateView: 3531, positionManager: 23877, router: 24546, permit2: 9152 };
+    const expectedCodeBytes: Record<string, number> = { poolManager: 24009, quoter: (chainId === 4663 || chainId === 5042) ? 6118 : 5820, stateView: 3531, positionManager: 23877, router: 24546, permit2: 9152 };
     const contracts = { poolManager: v4.poolManager, quoter: v4.quoter, stateView: v4.stateView, positionManager: v4.positionManager, router: v4.universalRouter, permit2: v4.permit2 };
     for (const [name,address] of Object.entries(contracts)) {
       const fact = required(row.contracts.find(c => c.name === name));
@@ -107,4 +107,39 @@ describe.each([
     expect(() => buildSwapTx({ deployment, route: route(poolKey, poolKey.currency0 === input), amountIn: 100n, minAmountOut: 90n, recipient: RECIPIENT, deadline: 1900000000n, tokenInIsNative: side === "input", tokenOutIsNative: side === "output" })).toThrow(/canonical wrapper/);
   });
 
+});
+
+describe("Arc (5042) dual-interface native — USDC gas is an ERC-20, no WETH wrapper", () => {
+  const ARC_USDC = getAddress("0x3600000000000000000000000000000000000000");
+  const deployment = required(getUniswapDeployment(5042));
+
+  it("is a v4-only deployment whose weth is USDC and marks the dual interface", () => {
+    expect(deployment.v4).toBeDefined();
+    expect(deployment.v3).toBeUndefined();
+    expect(deployment.v2).toBeUndefined();
+    expect(getAddress(deployment.weth)).toBe(ARC_USDC);
+    expect(deployment.nativeErc20).toEqual({ address: ARC_USDC, symbol: "USDC", decimals: 6 });
+    expect(resolveUniswapChainId("arc")).toBe(5042);
+  });
+
+  it.each(["native", "eth", "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"])(
+    "resolves the native spelling %s to the USDC ERC-20 with isNative:false (no wrap)",
+    async spelling => {
+      expect(await resolveUniswapToken(deployment, spelling)).toEqual({
+        address: ARC_USDC, symbol: "USDC", decimals: 6, isNative: false,
+      });
+    },
+  );
+
+  it("fails closed if a native wrap/unwrap would ever be built on the dual-interface chain", () => {
+    // Force the impossible-by-construction case: a native-flagged input against a
+    // non-zero pool currency. The guard must refuse rather than emit WRAP_ETH.
+    const v4 = required(deployment.v4);
+    const other = getAddress("0x1111111111111111111111111111111111111111");
+    const poolKey: V4PoolKey = { currency0: BigInt(ARC_USDC) < BigInt(other) ? ARC_USDC : other, currency1: BigInt(ARC_USDC) < BigInt(other) ? other : ARC_USDC, fee: 500, tickSpacing: 10, hooks: zeroAddress };
+    const zeroForOne = poolKey.currency0.toLowerCase() === ARC_USDC.toLowerCase();
+    const binding: V4RouteBinding = { poolId: v4PoolId(poolKey), poolKey, zeroForOne, hookPermissions: 0, dynamicFee: false, observedLpFee: 500, universalRouter: v4.universalRouter, universalRouterVersion: v4.universalRouterVersion, permit2: v4.permit2 };
+    const route = { version: "v4" as const, path: zeroForOne ? [poolKey.currency0, poolKey.currency1] : [poolKey.currency1, poolKey.currency0], v4: binding, amountOut: 1000n };
+    expect(() => buildSwapTx({ deployment, route, amountIn: 100n, minAmountOut: 90n, recipient: RECIPIENT, deadline: 1900000000n, tokenInIsNative: true, tokenOutIsNative: false })).toThrow(/dual-interface-native/);
+  });
 });

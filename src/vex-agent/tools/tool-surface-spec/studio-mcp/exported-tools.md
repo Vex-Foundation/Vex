@@ -309,8 +309,8 @@ free. Both texts live on the tool
 
 | name | title | lane | read only | destructive | always load | requires env | description bytes | returns | vex fee |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| uniswap__swap_execute | Execute a Uniswap V2/V3/v4 swap | protocol | no | yes | no | - | 4069 | yes | 25 bps |
-| uniswap__swap_quote | Quote a Uniswap V2/V3/v4 route | protocol | yes | no | no | - | 5290 | - | none (read) |
+| uniswap__swap_execute | Execute a Uniswap V2/V3/v4 swap | protocol | no | yes | no | - | 4074 | yes | 25 bps |
+| uniswap__swap_quote | Quote a Uniswap V2/V3/v4 route | protocol | yes | no | no | - | 5295 | - | none (read) |
 
 ### virtuals
 
