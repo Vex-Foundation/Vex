@@ -87,10 +87,11 @@ export function setupAgentBridges(): () => Promise<void> {
   // the locker would be inert.
   teardowns.push(mountLaunchImageByteResolver());
 
-  // Robinhood Blockscout bridge - claim the operation-specific transport slot
-  // used to enumerate ERC-20 identities on chain 4663. The handle opens no
-  // request eagerly. Teardown closes admission by unregistering first, then
-  // aborts and drains every request that was already admitted.
+  // Blockscout bridge - claim the operation-specific transport slot used to
+  // enumerate ERC-20 identities on local chains that have a Blockscout
+  // instance (Robinhood 4663, Arc 5042). The handle opens no request eagerly.
+  // Teardown closes admission by unregistering first, then aborts and drains
+  // every request that was already admitted.
   const blockscoutBridge = createBlockscoutBridgeTransport();
   const unregisterBlockscout = registerBlockscoutTransport(
     blockscoutBridge.transport,

@@ -16,7 +16,8 @@
  * Token set = the chain's seed set ∪ the wallet's EXPLICIT pins
  * (`tracked_tokens` — written by the `WalletTrackToken` tool and the
  * swap/bridge auto-pin hooks) ∪ the identity candidates the chain's indexer
- * enumerated (Blockscout on 4663). The union itself is owned by the pure
+ * enumerated (Blockscout, on every local chain whose config sets
+ * `hasBlockscoutIndexer`: Robinhood 4663, Arc 5042). The union itself is owned by the pure
  * `wallet-inventory/local-chain.ts`; this module performs the two reads that
  * feed it. The indexer is authoritative for IDENTITY ONLY - every balance,
  * scale and symbol below is re-read from RPC.
@@ -38,8 +39,8 @@ import { getLocalChain, type LocalChainConfig } from "@tools/evm-chains/registry
 import type { ChainFamily } from "@tools/khalani/types.js";
 import * as balancesRepo from "@vex-agent/db/repos/balances.js";
 import * as trackedTokensRepo from "@vex-agent/db/repos/tracked-tokens.js";
-import { readRobinhoodErc20IdentityCandidates } from "@tools/blockscout/client.js";
-import { ROBINHOOD_CHAIN_ID, getBlockscoutBaseUrlForChain } from "@tools/blockscout/operation.js";
+import { readBlockscoutErc20IdentityCandidates } from "@tools/blockscout/client.js";
+import { getBlockscoutBaseUrlForChain } from "@tools/blockscout/operation.js";
 import {
   buildLocalChainScanSet,
   fromBlockscoutInventory,
@@ -104,8 +105,17 @@ export async function syncLocalChainForWallet(
   const tokenAddrs = [...knownAddresses];
 
   // Discovery completeness and a successful balance read are independent facts.
+  //
+  // A chain with NO indexer at all (`config.hasBlockscoutIndexer` false -
+  // seed + pins only, by product decision; see registry.ts) can NEVER become
+  // exhaustive: there is nothing to retry. Warning the user "retry after
+  // checking the connection" for a gap that is permanent by design is
+  // misleading, so that log/warning path is scoped to chains that DO have an
+  // indexer and it came back incomplete (Blockscout returning a transient
+  // 403, hitting its row cap, etc.) - a real, retry-worthy condition.
   const logKey = `${walletAddress}:${chainId}`;
-  if (!inventory.exhaustive) {
+  const hasIndexer = inventory.indexer !== null;
+  if (!inventory.exhaustive && hasIndexer) {
     const reason = inventory.indexer?.incompleteReason ?? "enumeration_not_exhaustive";
     const signal = enumerationLog.observe(logKey, `${reason}:${tokenAddrs.length}:${inventory.droppedAddresses.length}`);
     if (signal !== undefined) logger.warn("sync.local_chain.enumeration_not_exhaustive", {
@@ -113,7 +123,7 @@ export async function syncLocalChainForWallet(
       address: walletAddress.slice(0, 10) + "...",
       indexerSource: inventory.indexer?.source ?? null,
       indexerReason: reason,
-      endpointHost: chainId === ROBINHOOD_CHAIN_ID ? new URL(getBlockscoutBaseUrlForChain(chainId)).hostname : null,
+      endpointHost: new URL(getBlockscoutBaseUrlForChain(chainId)).hostname,
       ...signal,
       unprocessedContracts: inventory.indexer?.unprocessedContractAddresses.length ?? 0,
       droppedAddresses: inventory.droppedAddresses.length,
@@ -175,10 +185,14 @@ export async function syncLocalChainForWallet(
     // rule refused rather than guessed at.
     priceTiers: read.priceTiers,
   });
+  // A chain with no indexer (`hasIndexer` false) is reported `"ok"`: seeds +
+  // pins IS the complete read this chain can ever offer, so there is no
+  // discovery gap to surface — only a chain whose indexer came back
+  // incomplete has one worth warning about.
   return {
     chainId, tokensUpdated: count, skipped: false,
-    readStatus: inventory.exhaustive ? "ok" : "inventory_incomplete",
-    reason: inventory.exhaustive ? null : (inventory.indexer?.incompleteReason ?? "enumeration_not_exhaustive"),
+    readStatus: inventory.exhaustive || !hasIndexer ? "ok" : "inventory_incomplete",
+    reason: inventory.exhaustive || !hasIndexer ? null : (inventory.indexer?.incompleteReason ?? "enumeration_not_exhaustive"),
   };
 }
 
@@ -205,29 +219,57 @@ export async function buildLocalChainInventory(
     walletAddress,
     config.id,
   );
+  const indexer = await readIdentityCandidates(config, walletAddress, options.signal);
   return buildLocalChainScanSet({
     chainId: config.id,
     seedAddresses: config.seedTokens.map((token) => token.address),
-    pinnedAddresses,
-    indexer: await readIdentityCandidates(config, walletAddress, options.signal),
+    // The native-shadow address (Arc's dual native/ERC-20 USDC) is excluded
+    // from BOTH sources here, never just seeds: a pin or an indexer candidate
+    // is exactly as capable of reintroducing the native row's own funds as a
+    // second, phantom holding. Dropped BEFORE the union, not after, so this
+    // never counts as a failed/incomplete indexer candidate (see
+    // `LocalChainScanSet.droppedAddresses`) - it was never a distinct
+    // identity to begin with, so omitting it costs nothing towards
+    // `exhaustive`.
+    pinnedAddresses: dropNativeShadowAddress(config, pinnedAddresses),
+    indexer: indexer === null ? null : {
+      ...indexer,
+      candidates: indexer.candidates.filter(
+        (candidate) => !isNativeShadowAddress(config, candidate.address),
+      ),
+    },
   });
+}
+
+/** True when `address` is this chain's dual native/ERC-20 shadow, if it has one. */
+function isNativeShadowAddress(config: LocalChainConfig, address: string): boolean {
+  return config.nativeShadowTokenAddress !== undefined
+    && address.toLowerCase() === config.nativeShadowTokenAddress.toLowerCase();
+}
+
+function dropNativeShadowAddress(
+  config: LocalChainConfig,
+  addresses: readonly string[],
+): readonly string[] {
+  if (config.nativeShadowTokenAddress === undefined) return addresses;
+  return addresses.filter((address) => !isNativeShadowAddress(config, address));
 }
 
 /**
  * The identity enumerator for this chain, or null when it has none.
  *
- * Blockscout is scoped to Robinhood Chain by product decision (see
- * `tools/blockscout/BLOCKSCOUT.md`), so the check is on the chain id rather
- * than a capability flag no other chain would ever set.
+ * Blockscout is scoped to the chains whose config opts in via
+ * `hasBlockscoutIndexer` (see `tools/blockscout/BLOCKSCOUT.md`), so a chain
+ * with no Blockscout instance at all never lies about not having one.
  */
 async function readIdentityCandidates(
   config: LocalChainConfig,
   walletAddress: string,
   signal: AbortSignal | undefined,
 ): Promise<LocalChainIndexerObservation | null> {
-  if (config.id !== ROBINHOOD_CHAIN_ID) return null;
+  if (!config.hasBlockscoutIndexer) return null;
   return fromBlockscoutInventory(
-    await readRobinhoodErc20IdentityCandidates(walletAddress, { signal }),
+    await readBlockscoutErc20IdentityCandidates(config.id, walletAddress, { signal }),
   );
 }
 
@@ -257,7 +299,18 @@ function buildBalanceRows(
 
   // ERC-20s: the reader skipped zero balances, and a read failure has already
   // short-circuited this whole pass above.
+  //
+  // Defensive final guard, belt-and-suspenders with `buildLocalChainInventory`
+  // already excluding this address from the scan set: a wallet that was
+  // synced before that exclusion existed can have a STALE cached row for the
+  // native-shadow address (see `dropNativeShadowAddress`), which re-enters
+  // `tokenAddrs` through the cached-known-addresses union in
+  // `syncLocalChainForWallet` and gets re-scanned one more time here. Skipping
+  // it at row assembly, rather than only at scan-set build, means an already
+  // exhaustive replace (`replaceBalancesForChain`) self-heals the duplicate
+  // out of `proj_balances` on its own, with no migration needed.
   for (const token of read.tokens) {
+    if (isNativeShadowAddress(config, token.address)) continue;
     rows.push(
       toRow(family, walletAddress, config.id, {
         tokenAddress: token.address,

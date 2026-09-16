@@ -51,7 +51,7 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
   getBalances: (...a: unknown[]) => mockCached(...a),
 }));
 
-import { buildRobinhoodTokenBalancesUrl } from "@tools/blockscout/operation.js";
+import { buildBlockscoutTokenBalancesUrl } from "@tools/blockscout/operation.js";
 import {
   registerBlockscoutTransport,
   type BlockscoutTransport,
@@ -103,8 +103,8 @@ function mountBlockscout(implementation: TransportImplementation): void {
 
 /** A complete inventory answer carrying exactly these contract addresses. */
 function mountInventory(addresses: readonly string[]): void {
-  mountBlockscout(async (address) => ({
-    finalUrl: buildRobinhoodTokenBalancesUrl(address).toString(),
+  mountBlockscout(async (chainId, address) => ({
+    finalUrl: buildBlockscoutTokenBalancesUrl(chainId, address).toString(),
     status: 200,
     contentType: "application/json",
     body: encoder.encode(JSON.stringify(addresses.map((entry) => providerRow(entry)))),
@@ -403,7 +403,7 @@ describe("syncLocalChainForWallet", () => {
       await syncLocalChainForWallet("eip155", WALLET, 4663);
       vi.mocked(logger.warn).mockClear();
       let status = 403;
-      mountBlockscout(async () => ({ finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(), status, contentType: "text/html", body: encoder.encode("refused") }));
+      mountBlockscout(async () => ({ finalUrl: buildBlockscoutTokenBalancesUrl(4663, WALLET).toString(), status, contentType: "text/html", body: encoder.encode("refused") }));
       const warnings = () => vi.mocked(logger.warn).mock.calls.filter(([event]) => event === "sync.local_chain.enumeration_not_exhaustive");
       await syncLocalChainForWallet("eip155", WALLET, 4663);
       await syncLocalChainForWallet("eip155", WALLET, 4663);
@@ -418,7 +418,7 @@ describe("syncLocalChainForWallet", () => {
       expect(warnings()).toHaveLength(3);
       mountInventory([]);
       await syncLocalChainForWallet("eip155", WALLET, 4663);
-      mountBlockscout(async () => ({ finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(), status, contentType: "text/html", body: encoder.encode("refused") }));
+      mountBlockscout(async () => ({ finalUrl: buildBlockscoutTokenBalancesUrl(4663, WALLET).toString(), status, contentType: "text/html", body: encoder.encode("refused") }));
       await syncLocalChainForWallet("eip155", WALLET, 4663);
       expect(warnings()).toHaveLength(4);
     } finally {
@@ -428,7 +428,7 @@ describe("syncLocalChainForWallet", () => {
 
   it("BLOCKS the whole-chain replacement when the indexer is unavailable", async () => {
     mountBlockscout(async () => ({
-      finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(),
+      finalUrl: buildBlockscoutTokenBalancesUrl(4663, WALLET).toString(),
       status: 403,
       contentType: "text/html; charset=UTF-8",
       body: encoder.encode("<html>challenge</html>"),
@@ -447,7 +447,7 @@ describe("syncLocalChainForWallet", () => {
 
   it("BLOCKS the replacement when the indexer answer was over its row cap", async () => {
     mountBlockscout(async () => ({
-      finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(),
+      finalUrl: buildBlockscoutTokenBalancesUrl(4663, WALLET).toString(),
       status: 200,
       contentType: "application/json",
       body: encoder.encode(JSON.stringify(Array.from({ length: 501 }, () => null))),
@@ -463,7 +463,7 @@ describe("syncLocalChainForWallet", () => {
 
   it("BLOCKS the replacement when the indexer answer was unreadable", async () => {
     mountBlockscout(async () => ({
-      finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(),
+      finalUrl: buildBlockscoutTokenBalancesUrl(4663, WALLET).toString(),
       status: 200,
       contentType: "application/json",
       body: encoder.encode("{\"items\":[]}"),
@@ -479,7 +479,7 @@ describe("syncLocalChainForWallet", () => {
 
   it("BLOCKS the replacement on a PARTIAL answer, even though it carried real candidates", async () => {
     mountBlockscout(async () => ({
-      finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(),
+      finalUrl: buildBlockscoutTokenBalancesUrl(4663, WALLET).toString(),
       status: 200,
       contentType: "application/json",
       body: encoder.encode(
@@ -502,7 +502,7 @@ describe("syncLocalChainForWallet", () => {
 
   it("refreshes a cached holding outside seeds and pins when discovery is refused", async () => {
     mockCached.mockResolvedValue([{ tokenAddress: NEW_TOKEN }]);
-    mountBlockscout(async () => ({ finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(),
+    mountBlockscout(async () => ({ finalUrl: buildBlockscoutTokenBalancesUrl(4663, WALLET).toString(),
       status: 403, contentType: "text/html", body: encoder.encode("refused") }));
     const result = await syncLocalChainForWallet("eip155", WALLET, 4663);
     expect(result).toMatchObject({ skipped: false, readStatus: "inventory_incomplete", reason: "http_403" });
@@ -513,7 +513,7 @@ describe("syncLocalChainForWallet", () => {
   });
 
   it("reports an RPC error as read_failed even when discovery was also refused", async () => {
-    mountBlockscout(async () => ({ finalUrl: buildRobinhoodTokenBalancesUrl(WALLET).toString(),
+    mountBlockscout(async () => ({ finalUrl: buildBlockscoutTokenBalancesUrl(4663, WALLET).toString(),
       status: 403, contentType: "text/html", body: encoder.encode("refused") }));
     fakeClient.getBalance.mockRejectedValueOnce(new Error("RPC refused"));
     expect(await syncLocalChainForWallet("eip155", WALLET, 4663)).toMatchObject({
@@ -557,5 +557,61 @@ describe("syncLocalChainForWallet", () => {
 
     expect(mockGetLocalPublicClient).not.toHaveBeenCalled();
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  // ── Arc (5042) has a Blockscout indexer too (registry.ts:
+  // `hasBlockscoutIndexer: true`), so it earns the same whole-chain
+  // enumeration Robinhood does - it is no longer permanently "known tokens
+  // only" the way an actually indexer-less chain would be.
+  it("syncs Arc (5042) through the same Blockscout indexer path as Robinhood", async () => {
+    mountBlockscout(async (chainId, address) => ({
+      finalUrl: buildBlockscoutTokenBalancesUrl(chainId, address).toString(),
+      status: 200,
+      contentType: "application/json",
+      body: encoder.encode(JSON.stringify([providerRow(NEW_TOKEN)])),
+    }));
+
+    const res = await syncLocalChainForWallet("eip155", WALLET, 5042);
+
+    expect(res.skipped).toBe(false);
+    expect(res.readStatus).toBe("ok");
+    expect(res.reason).toBeNull();
+    // A COMPLETE Arc enumeration earns the whole-chain replace, exactly like
+    // a complete Robinhood one - not the known-only fallback.
+    expect(mockReplace).toHaveBeenCalledWith(WALLET, 5042, expect.anything());
+    expect(mockReplaceKnown).not.toHaveBeenCalled();
+  });
+
+  // ── Arc's native USDC has a dual native/ERC-20 interface at one address
+  // (registry.ts: `ARC_USDC`, `nativeShadowTokenAddress`). Blockscout answers
+  // ERC-20 calls on that address, so a REAL indexer response can legitimately
+  // list it as a candidate identity - exactly what would double-count the
+  // wallet's own native row as a second, phantom ERC-20 holding if nothing
+  // excluded it.
+  it("never double-counts Arc's native USDC even when Blockscout names it as an ERC-20 candidate", async () => {
+    const ARC_USDC = "0x3600000000000000000000000000000000000000";
+    mountBlockscout(async (chainId, address) => ({
+      finalUrl: buildBlockscoutTokenBalancesUrl(chainId, address).toString(),
+      status: 200,
+      contentType: "application/json",
+      body: encoder.encode(
+        JSON.stringify([providerRow(ARC_USDC, { symbol: "USDC" }), providerRow(NEW_TOKEN)]),
+      ),
+    }));
+
+    const res = await syncLocalChainForWallet("eip155", WALLET, 5042);
+
+    expect(res.skipped).toBe(false);
+    // The scan set never even asks RPC about the shadow address.
+    const queried = (balanceOfMulticallContracts() ?? []).map((c) => c.address.toLowerCase());
+    expect(queried).not.toContain(ARC_USDC.toLowerCase());
+    expect(queried).toContain(NEW_TOKEN.toLowerCase());
+
+    const [, chainId, rows] = mockReplace.mock.calls[0] as [string, number, Array<Record<string, unknown>>];
+    expect(chainId).toBe(5042);
+    // Exactly the native row and the genuinely distinct token - never a
+    // second row keyed on the indexer's own identity of the shadow address.
+    expect(rows.some((row) => String(row.tokenAddress).toLowerCase() === ARC_USDC.toLowerCase())).toBe(false);
+    expect(rows).toHaveLength(2);
   });
 });

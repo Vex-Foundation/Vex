@@ -3,13 +3,13 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   BLOCKSCOUT_TOKEN_BALANCES_MAX_BYTES,
-  readRobinhoodErc20IdentityCandidates,
+  readBlockscoutErc20IdentityCandidates,
 } from "@tools/blockscout/client.js";
 import {
   BlockscoutErrorCodes,
   blockscoutError,
 } from "@tools/blockscout/errors.js";
-import { buildRobinhoodTokenBalancesUrl } from "@tools/blockscout/operation.js";
+import { buildBlockscoutTokenBalancesUrl } from "@tools/blockscout/operation.js";
 import {
   registerBlockscoutTransport,
   type BlockscoutTransport,
@@ -20,6 +20,7 @@ import {
   validateBlockscoutTokenBalances,
 } from "@tools/blockscout/validation.js";
 
+const ROBINHOOD_CHAIN_ID = 4663;
 const PUBLIC_ADDRESS = "0x0000000000000000000000000000000000000001";
 const SECOND_PUBLIC_ADDRESS = "0x0000000000000000000000000000000000000002";
 const encoder = new TextEncoder();
@@ -43,7 +44,7 @@ function response(
   overrides: Partial<BlockscoutTransportResponse> = {},
 ): BlockscoutTransportResponse {
   return {
-    finalUrl: buildRobinhoodTokenBalancesUrl(PUBLIC_ADDRESS).toString(),
+    finalUrl: buildBlockscoutTokenBalancesUrl(ROBINHOOD_CHAIN_ID, PUBLIC_ADDRESS).toString(),
     status: 200,
     contentType: "application/json",
     body,
@@ -331,17 +332,17 @@ describe("validateBlockscoutTokenBalances", () => {
   });
 });
 
-describe("readRobinhoodErc20IdentityCandidates", () => {
+describe("readBlockscoutErc20IdentityCandidates", () => {
   it("drives the registered operation transport and returns a complete inventory", async () => {
     let capturedMaxBytes: number | null = null;
     unregister = registerBlockscoutTransport(
-      transportFor(async (_address, options) => {
+      transportFor(async (_chainId, _address, options) => {
         capturedMaxBytes = options.maxBytes;
         return response(fixtureBytes("address-token-balances.json"));
       }),
     );
 
-    const result = await readRobinhoodErc20IdentityCandidates(PUBLIC_ADDRESS);
+    const result = await readBlockscoutErc20IdentityCandidates(ROBINHOOD_CHAIN_ID, PUBLIC_ADDRESS);
 
     expect(capturedMaxBytes).toBe(BLOCKSCOUT_TOKEN_BALANCES_MAX_BYTES);
     expect(result.status).toBe("complete");
@@ -351,9 +352,32 @@ describe("readRobinhoodErc20IdentityCandidates", () => {
     expect(result.candidates).toHaveLength(34);
   });
 
+  it("reads a different chain id's inventory through the same client, chain-generic", async () => {
+    const ARC_CHAIN_ID = 5042;
+    let requestedChainId: number | null = null;
+    unregister = registerBlockscoutTransport(
+      transportFor(async (chainId, _address, _options) => {
+        requestedChainId = chainId;
+        return {
+          finalUrl: buildBlockscoutTokenBalancesUrl(ARC_CHAIN_ID, PUBLIC_ADDRESS).toString(),
+          status: 200,
+          contentType: "application/json",
+          body: encoder.encode("[]"),
+        };
+      }),
+    );
+
+    const result = await readBlockscoutErc20IdentityCandidates(ARC_CHAIN_ID, PUBLIC_ADDRESS);
+
+    expect(requestedChainId).toBe(ARC_CHAIN_ID);
+    expect(result).toEqual(
+      expect.objectContaining({ status: "complete", inventoryComplete: true, chainId: ARC_CHAIN_ID, candidates: [] }),
+    );
+  });
+
   it.each([401, 404, 429, 500, 503])("preserves HTTP %i as the inventory failure reason", async (status) => {
     unregister = registerBlockscoutTransport(transportFor(async () => response(encoder.encode("refused"), { status })));
-    await expect(readRobinhoodErc20IdentityCandidates(PUBLIC_ADDRESS)).resolves.toMatchObject({
+    await expect(readBlockscoutErc20IdentityCandidates(ROBINHOOD_CHAIN_ID, PUBLIC_ADDRESS)).resolves.toMatchObject({
       status: "incomplete", inventoryComplete: false, incompleteReason: `http_${status}`, candidates: [],
     });
   });
@@ -364,7 +388,7 @@ describe("readRobinhoodErc20IdentityCandidates", () => {
     [BlockscoutErrorCodes.REDIRECT_REFUSED, "redirect_refused"],
   ])("preserves %s without a provider payload", async (code, reason) => {
     unregister = registerBlockscoutTransport(transportFor(async () => { throw blockscoutError(code, "safe failure"); }));
-    await expect(readRobinhoodErc20IdentityCandidates(PUBLIC_ADDRESS)).resolves.toMatchObject({
+    await expect(readBlockscoutErc20IdentityCandidates(ROBINHOOD_CHAIN_ID, PUBLIC_ADDRESS)).resolves.toMatchObject({
       status: "incomplete", inventoryComplete: false, incompleteReason: reason, candidates: [],
     });
   });
@@ -376,7 +400,7 @@ describe("readRobinhoodErc20IdentityCandidates", () => {
     unregister = registerBlockscoutTransport(transportFor(async () => response(encoder.encode(body), {
       status: 403, contentType: "text/html", cfMitigatedChallenge,
     })));
-    const result = await readRobinhoodErc20IdentityCandidates(PUBLIC_ADDRESS);
+    const result = await readBlockscoutErc20IdentityCandidates(ROBINHOOD_CHAIN_ID, PUBLIC_ADDRESS);
     expect(result).toMatchObject({ status: "incomplete", inventoryComplete: false,
       incompleteReason: "cloudflare_challenge", errorCode: BlockscoutErrorCodes.CLOUDFLARE_CHALLENGE,
       candidates: [], providerRowCount: null,
@@ -388,7 +412,7 @@ describe("readRobinhoodErc20IdentityCandidates", () => {
     unregister = registerBlockscoutTransport(transportFor(async () => response(
       encoder.encode("<html><title>Just a moment...</title><p>Please wait</p></html>"), { status: 403, contentType: "text/html" },
     )));
-    expect(await readRobinhoodErc20IdentityCandidates(PUBLIC_ADDRESS)).toMatchObject({ incompleteReason: "http_403" });
+    expect(await readBlockscoutErc20IdentityCandidates(ROBINHOOD_CHAIN_ID, PUBLIC_ADDRESS)).toMatchObject({ incompleteReason: "http_403" });
   });
 
   it("names a 403 HTML refusal, never as empty success", async () => {
@@ -401,7 +425,7 @@ describe("readRobinhoodErc20IdentityCandidates", () => {
       ),
     );
 
-    const result = await readRobinhoodErc20IdentityCandidates(PUBLIC_ADDRESS);
+    const result = await readBlockscoutErc20IdentityCandidates(ROBINHOOD_CHAIN_ID, PUBLIC_ADDRESS);
 
     expect(result).toEqual(
       expect.objectContaining({
@@ -422,7 +446,7 @@ describe("readRobinhoodErc20IdentityCandidates", () => {
       ),
     );
 
-    const result = await readRobinhoodErc20IdentityCandidates(PUBLIC_ADDRESS);
+    const result = await readBlockscoutErc20IdentityCandidates(ROBINHOOD_CHAIN_ID, PUBLIC_ADDRESS);
 
     expect(result.status).toBe("incomplete");
     if (result.status !== "incomplete") throw new Error("expected incomplete result");
@@ -436,7 +460,7 @@ describe("readRobinhoodErc20IdentityCandidates", () => {
       transportFor(async () => response(encoder.encode("[]"))),
     );
 
-    const result = await readRobinhoodErc20IdentityCandidates(PUBLIC_ADDRESS);
+    const result = await readBlockscoutErc20IdentityCandidates(ROBINHOOD_CHAIN_ID, PUBLIC_ADDRESS);
 
     expect(result).toEqual(
       expect.objectContaining({
@@ -458,7 +482,7 @@ describe("readRobinhoodErc20IdentityCandidates", () => {
       transportFor(async () => response(overCap)),
     );
 
-    const result = await readRobinhoodErc20IdentityCandidates(PUBLIC_ADDRESS);
+    const result = await readBlockscoutErc20IdentityCandidates(ROBINHOOD_CHAIN_ID, PUBLIC_ADDRESS);
 
     expect(result).toEqual(
       expect.objectContaining({
@@ -501,7 +525,7 @@ describe("readRobinhoodErc20IdentityCandidates", () => {
       transportFor(async () => response(body)),
     );
 
-    const result = await readRobinhoodErc20IdentityCandidates(PUBLIC_ADDRESS);
+    const result = await readBlockscoutErc20IdentityCandidates(ROBINHOOD_CHAIN_ID, PUBLIC_ADDRESS);
 
     expect(result.status).toBe("incomplete");
     expect(result.inventoryComplete).toBe(false);
@@ -511,7 +535,7 @@ describe("readRobinhoodErc20IdentityCandidates", () => {
   });
 
   it("names the missing Electron transport when none is mounted", async () => {
-    const result = await readRobinhoodErc20IdentityCandidates(PUBLIC_ADDRESS);
+    const result = await readBlockscoutErc20IdentityCandidates(ROBINHOOD_CHAIN_ID, PUBLIC_ADDRESS);
     expect(result).toEqual(
       expect.objectContaining({
         status: "incomplete",
@@ -533,7 +557,7 @@ describe("readRobinhoodErc20IdentityCandidates", () => {
     );
 
     await expect(
-      readRobinhoodErc20IdentityCandidates(PUBLIC_ADDRESS),
+      readBlockscoutErc20IdentityCandidates(ROBINHOOD_CHAIN_ID, PUBLIC_ADDRESS),
     ).rejects.toMatchObject({ code: BlockscoutErrorCodes.TRANSPORT_CANCELLED });
   });
 

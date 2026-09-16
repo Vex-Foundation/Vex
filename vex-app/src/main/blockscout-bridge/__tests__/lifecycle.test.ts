@@ -7,6 +7,7 @@ vi.mock("electron", () => ({
 const { BlockscoutErrorCodes } = await import("@tools/blockscout/errors.js");
 const { createBlockscoutBridgeTransport } = await import("../index.js");
 
+const ROBINHOOD_CHAIN_ID = 4663;
 const PUBLIC_ADDRESS = "0x0000000000000000000000000000000000000001";
 
 describe("createBlockscoutBridgeTransport", () => {
@@ -26,6 +27,7 @@ describe("createBlockscoutBridgeTransport", () => {
     );
 
     const activeRequest = handle.transport.fetchAddressTokenBalances(
+      ROBINHOOD_CHAIN_ID,
       PUBLIC_ADDRESS,
       { timeoutMs: 5_000, maxBytes: 1_000 },
     );
@@ -41,7 +43,7 @@ describe("createBlockscoutBridgeTransport", () => {
     await firstDispose;
 
     await expect(
-      handle.transport.fetchAddressTokenBalances(PUBLIC_ADDRESS, {
+      handle.transport.fetchAddressTokenBalances(ROBINHOOD_CHAIN_ID, PUBLIC_ADDRESS, {
         timeoutMs: 5_000,
         maxBytes: 1_000,
       }),
@@ -57,7 +59,7 @@ describe("createBlockscoutBridgeTransport", () => {
     caller.abort();
 
     await expect(
-      handle.transport.fetchAddressTokenBalances(PUBLIC_ADDRESS, {
+      handle.transport.fetchAddressTokenBalances(ROBINHOOD_CHAIN_ID, PUBLIC_ADDRESS, {
         timeoutMs: 5_000,
         maxBytes: 1_000,
         signal: caller.signal,

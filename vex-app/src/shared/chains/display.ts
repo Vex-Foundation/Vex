@@ -157,6 +157,7 @@ export const EVM_QUICK_CHAIN_IDS: readonly number[] = [
   ROBINHOOD_CHAIN_ID,
   BASE_CHAIN_ID,
   ARBITRUM_CHAIN_ID,
+  ARC_CHAIN_ID,
 ];
 
 /** Default EVM selection — ALWAYS Ethereum, even at zero balance. */

@@ -61,6 +61,27 @@ export interface LocalChainConfig {
    */
   nativeUsdPeg?: number;
   explorerUrl: string;
+  /**
+   * True when `explorerUrl` is a Blockscout instance this repo's Blockscout
+   * client (`tools/blockscout/`) can enumerate ERC-20 identities from — the
+   * ONLY thing that lets a local chain's balance scan claim a token set wider
+   * than seeds + pins (see `sync/local-chain-balance-sync.ts`). False (the
+   * default assumption a chain must opt INTO, never out of) means the chain's
+   * scan can never be exhaustive, which is the honest state for a local chain
+   * with no enumerating balance provider at all.
+   */
+  hasBlockscoutIndexer: boolean;
+  /**
+   * An ERC-20 contract address that must NEVER become its own scan-set entry
+   * or balance row, because it is the SAME underlying funds as this chain's
+   * native row (a dual native/ERC-20 interface over one balance — Arc's
+   * native USDC at `0x3600…0000` is the only example today; see `ARC_USDC`).
+   * Absent on every chain whose native asset has no such shadow. Excluded at
+   * `buildLocalChainInventory` regardless of HOW it would have entered the
+   * scan set — seed, pin, or indexer candidate — because an indexer has no
+   * way to know two addresses are the same funds and will happily report it.
+   */
+  nativeShadowTokenAddress?: `0x${string}`;
   /** Canonical Multicall3 (same deterministic-deploy address on every EVM chain). */
   multicall3: `0x${string}`;
   /** DexScreener chain slug used for price lookups (tokens/v1). */
@@ -112,6 +133,7 @@ const ROBINHOOD_CHAIN: LocalChainConfig = {
   aliases: ["robinhood", "robinhoodchain", "rhc"],
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   explorerUrl: "https://robinhoodchain.blockscout.com",
+  hasBlockscoutIndexer: true,
   // Canonical Multicall3 (Deterministic Deployment Proxy address, present on
   // 4663 — verified 2026-07-05 via balanceOf/decimals/symbol batch). NOT the
   // Robinhood docs' "L2 Multicall" 0x2cAC2D89... which is a Multicall2.
@@ -146,7 +168,9 @@ const ROBINHOOD_CHAIN: LocalChainConfig = {
  * (verified 2026-09-16 — a wallet read 761,472.59 via both eth_getBalance/1e18
  * and balanceOf/1e6), so seeding it would double-count USDC against the native
  * row. It rides the `wrappedNative`/`stables` policy below to anchor pricing
- * without ever becoming a balance row of its own.
+ * without ever becoming a balance row of its own — and is ALSO named as
+ * `nativeShadowTokenAddress` below, because a seed exclusion alone does not
+ * stop a pin or an indexer candidate from reintroducing the same double-count.
  */
 const ARC_USDC = "0x3600000000000000000000000000000000000000" as const;
 
@@ -168,8 +192,28 @@ const ARC_CHAIN: LocalChainConfig = {
   // $1 — the same assumption tier-0 pricing makes for USDC everywhere else —
   // instead of rendering the wallet's USDC at $0.
   nativeUsdPeg: 1,
-  // Mainnet explorer per Circle docs (docs.arc.io). Display-only metadata.
+  // Mainnet explorer per Circle docs (docs.arc.io).
   explorerUrl: "https://explorer.arc.io",
+  // Confirmed Blockscout: Blockscout's own announcement names Arc as an
+  // official day-one integration, and explorer.arc.io's page title
+  // ("Arc Mainnet blockchain explorer - View Arc Mainnet stats | Blockscout")
+  // is Blockscout's standard SEO template — the same one Robinhood's instance
+  // carries. Behind the same Cloudflare Managed Challenge Robinhood's instance
+  // is (measured: identical `cf-mitigated: challenge` to a bare request); not
+  // independently live-probed end-to-end the way Robinhood's endpoint index in
+  // `tools/blockscout/BLOCKSCOUT.md` was. A wrong assumption here fails safe:
+  // `syncLocalChainForWallet` treats an indexer failure as "discovery
+  // incomplete, keep known balances," never as data loss.
+  hasBlockscoutIndexer: true,
+  // The Blockscout indexer just added above enumerates a wallet's ERC-20
+  // identities, and ARC_USDC answers ERC-20 calls (it is the dual-interface
+  // native/ERC-20 address) — so an exhaustive Blockscout answer WILL name it
+  // as a candidate even though it was deliberately excluded from seedTokens
+  // above for exactly this reason. Naming it here closes that second door:
+  // `buildLocalChainInventory` strips it regardless of which source offered
+  // it, so the indexer path can never reintroduce the double-count the seed
+  // exclusion was written to prevent.
+  nativeShadowTokenAddress: ARC_USDC,
   // Canonical Multicall3 (Deterministic Deployment Proxy address). Verified live
   // 2026-09-16: eth_getCode at this address returns real Multicall3 bytecode.
   multicall3: "0xcA11bde05977b3631167028862bE2a173976CA11",

@@ -6,6 +6,7 @@ import { fetchBlockscoutAddressTokenBalances } from "../http.js";
 const config = vi.hoisted(() => ({ blockscoutBaseUrls: {} as Record<string, string> }));
 vi.mock("@config/store.js", () => ({ loadConfig: () => config }));
 
+const ROBINHOOD_CHAIN_ID = 4663;
 const PUBLIC_ADDRESS = "0x0000000000000000000000000000000000000001";
 
 afterEach(() => {
@@ -55,6 +56,7 @@ describe("fetchBlockscoutAddressTokenBalances", () => {
           headers: { "content-type": "application/json" },
         });
       },
+      ROBINHOOD_CHAIN_ID,
       PUBLIC_ADDRESS,
       { timeoutMs: 5_000, maxBytes: 1_000 },
     );
@@ -92,7 +94,7 @@ describe("fetchBlockscoutAddressTokenBalances", () => {
       requested = url;
       captured = init;
       return new Response("[]", { headers: { "content-type": "application/json" } });
-    }, PUBLIC_ADDRESS, { timeoutMs: 5_000, maxBytes: 1_000 });
+    }, ROBINHOOD_CHAIN_ID, PUBLIC_ADDRESS, { timeoutMs: 5_000, maxBytes: 1_000 });
     expect(requested).toBe(`${baseUrl}/api/v2/addresses/${PUBLIC_ADDRESS}/token-balances`);
     expect(captured?.headers).toEqual({
       Accept: "application/json", Origin: new URL(baseUrl).origin, Referer: referer,
@@ -103,7 +105,7 @@ describe("fetchBlockscoutAddressTokenBalances", () => {
   it("preserves only the Cloudflare challenge header fact for the adapter", async () => {
     const result = await fetchBlockscoutAddressTokenBalances(async () => new Response("refused", {
       status: 403, headers: { "cf-mitigated": "challenge", "server": "cloudflare", "x-provider-secret": "fixture-private-header" },
-    }), PUBLIC_ADDRESS, { timeoutMs: 5_000, maxBytes: 1_000 });
+    }), ROBINHOOD_CHAIN_ID, PUBLIC_ADDRESS, { timeoutMs: 5_000, maxBytes: 1_000 });
     expect(result.cfMitigatedChallenge).toBe(true);
     expect(JSON.stringify(result)).not.toContain("fixture-private-header");
     expect(result).not.toHaveProperty("headers");
@@ -117,6 +119,7 @@ describe("fetchBlockscoutAddressTokenBalances", () => {
           invoked = true;
           return new Response("[]");
         },
+        ROBINHOOD_CHAIN_ID,
         "https://example.com/",
         { timeoutMs: 5_000, maxBytes: 1_000 },
       ),
@@ -139,6 +142,7 @@ describe("fetchBlockscoutAddressTokenBalances", () => {
             status: 200,
             headers: { "content-type": "application/json" },
           }),
+        ROBINHOOD_CHAIN_ID,
         PUBLIC_ADDRESS,
         { timeoutMs: 5_000, maxBytes: 50 },
       ),
@@ -151,6 +155,7 @@ describe("fetchBlockscoutAddressTokenBalances", () => {
     await expect(
       fetchBlockscoutAddressTokenBalances(
         async () => Response.redirect("https://example.com/escaped", 302),
+        ROBINHOOD_CHAIN_ID,
         PUBLIC_ADDRESS,
         { timeoutMs: 5_000, maxBytes: 1_000 },
       ),
@@ -168,6 +173,7 @@ describe("fetchBlockscoutAddressTokenBalances", () => {
             { once: true },
           );
         }),
+      ROBINHOOD_CHAIN_ID,
       PUBLIC_ADDRESS,
       { timeoutMs: 5_000, maxBytes: 1_000, signal: caller.signal },
     );
@@ -189,6 +195,7 @@ describe("fetchBlockscoutAddressTokenBalances", () => {
             { once: true },
           );
         }),
+      ROBINHOOD_CHAIN_ID,
       PUBLIC_ADDRESS,
       { timeoutMs: 25, maxBytes: 1_000 },
     );
