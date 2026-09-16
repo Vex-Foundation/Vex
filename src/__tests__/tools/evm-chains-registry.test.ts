@@ -68,8 +68,39 @@ describe("resolveLocalChainId", () => {
 
   it("keeps its aliases OUT of any Khalani alias space (correction #2)", () => {
     expect(LOCAL_CHAIN_ALIASES.robinhood).toBe(RH_ID);
-    // Sanity: only local ids are present.
-    for (const id of Object.values(LOCAL_CHAIN_ALIASES)) expect(id).toBe(RH_ID);
+    // Sanity: every alias maps to a real local chain id, never a foreign one.
+    const localIds = new Set(listLocalChains().map((c) => c.id));
+    for (const id of Object.values(LOCAL_CHAIN_ALIASES)) expect(localIds.has(id)).toBe(true);
+  });
+});
+
+describe("evm-chains registry — Arc (5042)", () => {
+  const ARC_ID = 5042;
+  const ARC_USDC = "0x3600000000000000000000000000000000000000";
+
+  it("registers 5042 with USDC gas (18-dec native interface) and canonical Multicall3", () => {
+    const chain = getLocalChain(ARC_ID);
+    expect(chain).toBeDefined();
+    expect(chain!.id).toBe(ARC_ID);
+    expect(chain!.name).toBe("Arc");
+    expect(chain!.family).toBe("eip155");
+    expect(chain!.nativeCurrency).toEqual({ name: "USDC", symbol: "USDC", decimals: 18 });
+    expect(chain!.multicall3).toBe(CANONICAL_MULTICALL3);
+    expect(chain!.dexscreenerSlug).toBe("arc");
+  });
+
+  it("does NOT seed native USDC as an ERC-20 (avoids double-counting the native row)", () => {
+    const chain = getLocalChain(ARC_ID)!;
+    expect(chain.seedTokens).toHaveLength(0);
+    // The native USDC address anchors pricing via the quote policy, never as a seed.
+    expect(chain.quoteAssetPolicy.wrappedNative).toBe(ARC_USDC);
+    expect(chain.quoteAssetPolicy.stables.has(ARC_USDC)).toBe(true);
+  });
+
+  it("resolves the arc alias and numeric id", () => {
+    expect(resolveLocalChainId("arc")).toBe(ARC_ID);
+    expect(resolveLocalChainId("ARC")).toBe(ARC_ID);
+    expect(resolveLocalChainId("5042")).toBe(ARC_ID);
   });
 });
 

@@ -2,7 +2,7 @@
 
 Kept outside the markers.
 
-<!-- vex:studio:begin vex=0.2.6 hash=3a36be84e39a0a54 -->
+<!-- vex:studio:begin vex=0.2.6 hash=998d1f86b328b2a5 -->
 # Vex guide - project "acme-trading"
 
 The companion to this project's `AGENTS.md`, which carries the authority:
@@ -90,7 +90,7 @@ Relay is a keyless cross-chain bridge for moving a token from one EVM chain to a
 
 KyberSwap is an EVM swap aggregator that routes exact-input trades across more than 400 decentralized exchanges.
 
-- Chains: Ethereum (1), BSC (56), Arbitrum (42161), Polygon (137), Optimism (10), Avalanche (43114), Base (8453), Linea (59144), Mantle (5000), Sonic (146), Berachain (80094), Ronin (2020), Unichain (130), HyperEVM (999), Plasma (9745), Monad (143), MegaETH (4326), Robinhood Chain (4663).
+- Chains: Ethereum (1), BSC (56), Arbitrum (42161), Polygon (137), Optimism (10), Avalanche (43114), Base (8453), Linea (59144), Mantle (5000), Sonic (146), Berachain (80094), Ronin (2020), Unichain (130), HyperEVM (999), Plasma (9745), Monad (143), MegaETH (4326), Robinhood Chain (4663), Arc (5042).
 - Read: Read EVM chains, the feature matrix, live chain status, token metadata and a honeypot/fee-on-transfer safety check.
 - Quote: Preview a token swap: best price, route, output, gas estimate, price impact, slippage and both tokens' safety results; no signing.
 - Act: Buy, sell, swap or exit a position after a fresh quote with identical parameters. The wallet signs and broadcasts; it can confirm, spend gas and revert, refuse before signing, or stay pending.

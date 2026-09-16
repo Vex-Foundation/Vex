@@ -125,13 +125,29 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  *
  * The coordinator reviews this raise.
  */
+/*
+ * REVIEWED CEILING MOVE, Arc mainnet chain coverage (2026-09-16). NET +12 in
+ * EVERY mode, and the uniformity is the proof that only the shared chain
+ * coverage line moved: `prompts/chain-coverage.ts` renders the swap-venue chain
+ * list once per mode, and adding Arc appends ", Arc (5042)" to it (12 bytes).
+ * Nothing per-tool entered the static prefix. WHAT THE BYTES BUY: the agent can
+ * now name and route Arc (Circle's USDC-native L1, chain id 5042 verified on
+ * its official RPC), which KyberSwap aggregates and Vex reads directly.
+ *
+ *   agent / restricted          60,914 -> 60,926
+ *   agent / full                61,615 -> 61,627
+ *   mission setup / restricted  67,391 -> 67,403
+ *   mission setup / full        67,410 -> 67,422
+ *   mission run / restricted    66,115 -> 66,127
+ *   mission run / full          65,930 -> 65,942
+ */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 60_914 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 61_615 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 67_391 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 67_410 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 66_115 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 65_930 },
+  { name: "agent / restricted", context: context({}), ceiling: 60_926 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 61_627 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 67_403 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 67_422 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 66_127 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 65_942 },
 ] as const;
 
 beforeAll(() => {

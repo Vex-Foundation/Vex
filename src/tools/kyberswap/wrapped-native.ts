@@ -45,6 +45,10 @@ const WRAPPED_NATIVE_ADDRESS: Partial<Record<KyberChainSlug, Address>> = {
   monad: "0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A", // WMON
   megaeth: "0x4200000000000000000000000000000000000006", // WETH
   robinhood: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73", // WETH
+  // Arc's native gas asset is USDC; its ERC-20 interface at this dual-interface
+  // address IS the wrapped-native form (no separate WXXX exists). Verified
+  // on-chain 2026-09-16: eth_getCode is a live proxy, symbol() = "USDC".
+  arc: "0x3600000000000000000000000000000000000000", // USDC (native asset, ERC-20 view)
 };
 
 /**

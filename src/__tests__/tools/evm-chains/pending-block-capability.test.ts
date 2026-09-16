@@ -50,7 +50,7 @@ describe("the pending-state capability table", () => {
   it("classifies every remaining endpoint as alias or absent, never as unknown-but-fine", () => {
     const rest = listPendingBlockCapabilities().filter((row) => row.state !== "distinct");
 
-    expect(rest.length).toBe(14);
+    expect(rest.length).toBe(15);
     for (const row of rest) {
       expect(["head_alias", "absent"]).toContain(row.state);
     }
@@ -72,7 +72,9 @@ describe("the pending-state capability table", () => {
       // The evidence names the OBSERVATION that decided the row, so a reader
       // can tell a proven alias from an endpoint that merely could not be
       // shown to have a pending state.
-      expect(row.evidence).toMatch(/UNSEALED|returned null|canonical block/);
+      // An endpoint that REFUSES a pending block (e.g. Arc's -32014 "requested
+      // data not available") is the same fact as a null one: no pending state.
+      expect(row.evidence).toMatch(/UNSEALED|returned null|canonical block|no pending block/);
     }
   });
 

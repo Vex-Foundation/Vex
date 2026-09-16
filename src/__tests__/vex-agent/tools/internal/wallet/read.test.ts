@@ -202,10 +202,12 @@ describe("handleWalletBalances — inclusive chain scope", () => {
     const res = await handleWalletBalances({ walletFamily: "eip155" }, CONTEXT);
     expect(res.success).toBe(true);
     expect(mockScan).toHaveBeenCalledTimes(1);
-    expect(mockReadLocal).toHaveBeenCalledTimes(1);
+    // Two local chains now: Robinhood 4663 and Arc 5042, each read once.
+    expect(mockReadLocal).toHaveBeenCalledTimes(2);
     const data = res.data as { wallets: Array<Record<string, unknown>>; totalUsd: number };
-    expect(data.wallets[0]!.scannedChainIds).toEqual([8453, 4663]);
-    expect(data.totalUsd).toBeCloseTo(7 + 11);
+    expect(data.wallets[0]!.scannedChainIds).toEqual([8453, 4663, 5042]);
+    // 7 khalani + 11 per local chain × 2 local chains.
+    expect(data.totalUsd).toBeCloseTo(7 + 11 + 11);
   });
 
   it("a Khalani-only filter ('base') never touches the local reader", async () => {

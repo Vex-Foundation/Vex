@@ -2,7 +2,7 @@
 
 Run the tests before you push.
 
-<!-- vex:studio:begin vex=0.2.6 hash=cd730b5819da49cc -->
+<!-- vex:studio:begin vex=0.2.6 hash=708bba78f36d4982 -->
 # Vex Studio - project "acme-trading"
 
 This repository is connected to Vex, a self-custodial crypto agent whose tools
@@ -14,7 +14,7 @@ companion guide for protocol details before acting.
 
 - khalani: cross-chain bridge/token-resolution; Ethereum,Optimism,BNB Chain,Unichain,Polygon,Monad,ZKsync Era,Abstract,Mantle,Base,0G,Arbitrum,Avalanche,Linea,Berachain,Katana,Solana; live reach; fee 25 bps origin input; key not required; `khalani__`.
 - relay: cross-chain bridge; EVM only; Robinhood Chain needs live health gate; fee 25 bps origin input; key not required; `relay__`.
-- kyberswap: EVM swap aggregator; Ethereum,BSC,Arbitrum,Polygon,Optimism,Avalanche,Base,Linea,Mantle,Sonic,Berachain,Ronin,Unichain,HyperEVM,Plasma,Monad,MegaETH,Robinhood Chain; fee 25 bps swap input; key not required; `kyberswap__`.
+- kyberswap: EVM swap aggregator; Ethereum,BSC,Arbitrum,Polygon,Optimism,Avalanche,Base,Linea,Mantle,Sonic,Berachain,Ronin,Unichain,HyperEVM,Plasma,Monad,MegaETH,Robinhood Chain,Arc; fee 25 bps swap input; key not required; `kyberswap__`.
 - uniswap: spot-swap; Robinhood Chain,Ethereum,Base,Arbitrum One,Optimism,Polygon,BNB Chain; fee 25 bps swap input; key not required; `uniswap__`.
 - morpho: variable-rate lending/Morpho vaults; ethereum,optimism,unichain,polygon,monad,hyperevm,robinhood,base,arbitrum; fee none; key not required; `morpho__`.
 - pendle: term-yield; Ethereum,Optimism,BNB Smart Chain,Monad,Sonic,HyperEVM,Mantle,Base,Plasma,Arbitrum One,Berachain; fee none; key not required; `pendle__`.

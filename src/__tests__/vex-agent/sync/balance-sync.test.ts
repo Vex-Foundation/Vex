@@ -506,8 +506,10 @@ describe("local-chain routing", () => {
   });
 
   it("merges local token counts into the wallet result", async () => {
+    // Scope to one local chain so the merged count is deterministic now that the
+    // registry holds more than one local chain (4663 and Arc 5042).
     mockLocalSync.mockResolvedValue({ chainId: 4663, tokensUpdated: 3, skipped: false });
-    const res = await syncWalletBalances("eip155", EVM_A);
+    const res = await syncWalletBalances("eip155", EVM_A, [4663]);
     expect(res.tokensUpdated).toBe(3); // 0 khalani + 3 local
     expect(res.chainsUpdated).toBeGreaterThanOrEqual(1);
   });
@@ -524,12 +526,15 @@ describe("local-chain routing", () => {
     expect(mockScan).toHaveBeenCalledWith({ address: EVM_A, family: "eip155", chainIds: [4663] });
     expect(mockLocalSync).not.toHaveBeenCalled();
 
-    // Unfiltered scope: the all-chains Khalani scan covers 4663; no local sync.
+    // Unfiltered scope: the all-chains Khalani scan covers 4663, so 4663's local
+    // path is not used. Arc (5042) is NOT in Khalani's registry, so it still
+    // local-syncs — the assertion is scoped to 4663 rather than "never called".
     mockScan.mockClear();
     mockLocalSync.mockClear();
     await syncWalletBalances("eip155", EVM_A);
     expect(mockScan).toHaveBeenCalledWith({ address: EVM_A, family: "eip155", chainIds: undefined });
-    expect(mockLocalSync).not.toHaveBeenCalled();
+    expect(mockLocalSync).not.toHaveBeenCalledWith("eip155", EVM_A, 4663);
+    expect(mockLocalSync).toHaveBeenCalledWith("eip155", EVM_A, 5042);
   });
 
   it("fails OPEN to local-registry partition when the Khalani registry fetch fails", async () => {

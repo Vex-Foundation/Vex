@@ -50,10 +50,18 @@ describe("resolveBridgeVenue", () => {
     expect(await resolveBridgeVenue("4663", "base")).toEqual({ venue: "relay" });
   });
 
+  it("routes Arc to relay (a resolvable local chain Khalani does not serve)", async () => {
+    // Arc (5042) resolves via the local registry, so it is no longer an
+    // unresolvable name. Khalani does not list it, so it routes to Relay, whose
+    // own live /chains + health gate is the fail-closed serviceability check.
+    expect(await resolveBridgeVenue("base", "arc")).toEqual({ venue: "relay" });
+    expect(await resolveBridgeVenue("5042", "base")).toEqual({ venue: "relay" });
+  });
+
   it("refuses BY NAME for a chain no Vex registry resolves, instead of naming a venue", async () => {
-    const decision = await resolveBridgeVenue("base", "arc");
+    const decision = await resolveBridgeVenue("base", "narnia");
     expect(decision.venue).toBeNull();
-    expect(decision.refusal).toContain("\"arc\" is not a chain Vex can resolve");
+    expect(decision.refusal).toContain("\"narnia\" is not a chain Vex can resolve");
     expect(khalaniClient.getChains).not.toHaveBeenCalled();
   });
 

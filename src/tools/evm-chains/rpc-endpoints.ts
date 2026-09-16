@@ -566,6 +566,40 @@ const RPC_CHAINS: readonly RpcChainEntry[] = [
     ],
   },
   {
+    chainId: 5042,
+    label: "arc",
+    endpoints: [
+      {
+        url: "https://rpc.mainnet.arc.io",
+        tier: "bundled",
+        timeoutMs: TIMEOUT_MS,
+        retryCount: 2,
+        broadcastSafe: true,
+        // Circle's own primary Arc mainnet endpoint (docs.arc.io/arc/references/
+        // rpc-endpoints). SINGLE-ENDPOINT CHAIN, so the retry budget is real:
+        // the documented alternates (rpc.drpc.mainnet.arc.io,
+        // rpc.blockdaemon.mainnet.arc.io, rpc.quicknode.mainnet.arc.io) each echo
+        // 0x13b2 on a keyless read but were not method-scope measured, so they are
+        // future read failovers, not adopted yet.
+        //
+        // PROBED 2026-09-16: eth_chainId → 0x13b2 (5042, echoing the chainId key
+        // above), net_version 5042, live head ~0x142b557; eth_getBalance,
+        // eth_call, eth_getCode and eth_gasPrice (~40.5 Gwei, paid in USDC) all
+        // clean and keyless. broadcastSafe follows the convention's "official
+        // endpoint" rule. The mainnet is live and openly transacting — KyberSwap
+        // and DexScreener index real Arc DEX pools (e.g. a $1.47M ARGUS/USDC
+        // Uniswap v3 pool) — and Circle's own connect-to-arc page presents a
+        // public add-to-wallet flow with no credential requirement. One Circle
+        // doc page still carries stale "private mainnet phase" wording; reads are
+        // confirmed open here and a signed broadcast has not been exercised from
+        // this install, so any residual write gate would surface as a provider
+        // error at execute time under the existing approval gate, never a silent
+        // loss.
+        note: "official Circle endpoint; reads verified keyless 2026-09-16; mainnet live and openly transacting",
+      },
+    ],
+  },
+  {
     chainId: 8453,
     label: "base",
     endpoints: [

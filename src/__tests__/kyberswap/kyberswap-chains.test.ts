@@ -131,9 +131,9 @@ describe("chainSupportsFeature", () => {
 });
 
 describe("getKyberChains", () => {
-  it("returns 18 chains (Scroll/zkSync/Etherlink dropped)", () => {
+  it("returns 19 chains (Scroll/zkSync/Etherlink dropped; Arc added)", () => {
     const chains = getKyberChains();
-    expect(chains).toHaveLength(18);
+    expect(chains).toHaveLength(19);
   });
 
   it("each chain has required fields", () => {
@@ -147,7 +147,7 @@ describe("getKyberChains", () => {
 
   it("every chain is aggregator-enabled (the only surviving feature)", () => {
     const aggregatorChains = getKyberChains().filter((c) => c.aggregator);
-    expect(aggregatorChains.length).toBe(18);
+    expect(aggregatorChains.length).toBe(19);
   });
 
   it("no chain slug is the deleted Scroll/zkSync entry", () => {

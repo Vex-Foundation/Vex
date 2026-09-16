@@ -120,6 +120,15 @@ const CAPABILITIES: readonly PendingBlockCapability[] = [
   { chainId: 2020, slug: "ronin", state: "head_alias", evidence: INCONCLUSIVE },
   { chainId: 4326, slug: "megaeth", state: "absent", evidence: NO_PENDING_BLOCK },
   { chainId: 4663, slug: "robinhood", state: "head_alias", evidence: CANONICAL },
+  {
+    chainId: 5042,
+    slug: "arc",
+    state: "absent",
+    evidence: "measured live 2026-09-16: eth_getBlockByNumber at pending refused with -32014 "
+      + "\"requested data not available\" across repeated probes, so the endpoint exposes no "
+      + "pending block at all; a pending balance is a latest balance and cannot subtract "
+      + "in-flight transactions.",
+  },
   { chainId: 5000, slug: "mantle", state: "head_alias", evidence: CANONICAL },
   { chainId: 8453, slug: "base", state: "distinct", evidence: UNSEALED },
   { chainId: 9745, slug: "plasma", state: "head_alias", evidence: CANONICAL },

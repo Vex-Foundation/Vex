@@ -182,6 +182,15 @@ const CAPABILITIES: readonly L1DataFeeCapability[] = [
       + "eth_estimateGas returns (118-byte self-call 23224 gas against a 22888 EVM intrinsic).",
   },
   {
+    chainId: 5042,
+    slug: "arc",
+    mechanism: "in_gas_price",
+    evidence: "measured live 2026-09-16: Circle's USDC-native L1 is a settlement layer of its "
+      + "own; no bytecode at the OP-stack predeploy (eth_getCode returned 0x); 118-byte self-call "
+      + "estimate 26062 gas against a 21000 empty estimate, i.e. pure EVM intrinsic calldata "
+      + "pricing, and the data cost rides in the chain's own base fee (eth_feeHistory answers).",
+  },
+  {
     chainId: 5000,
     slug: "mantle",
     mechanism: "op_stack_oracle",
