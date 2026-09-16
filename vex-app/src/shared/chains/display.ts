@@ -82,10 +82,17 @@ const CHAIN_DISPLAY: Readonly<Record<number, ChainDisplay>> = {
     chainId: ARC_CHAIN_ID,
     name: "Arc",
     family: "evm",
-    // No `@thesvg` arc icon and no local brand asset yet — a neutral "A"
-    // monogram, so the label reads "Arc" instead of the bare "Chain 5042"
-    // fallback. Swap for a local asset once an Arc mark is added to publicDir.
-    icon: { kind: "fallback" },
+    // Official Arc "arch" glyph, white variant, from Circle's Arc Brand Kit
+    // (linked from docs.arc.io/terms and circle.com/pressroom). Flat mark,
+    // no disc, matching every other local asset here. White reads clearly on
+    // this app's dark theme (every current chain mark on dark surfaces uses a
+    // light/saturated tone); on the light theme it leans on the same
+    // `bg-interactive-hover` plinth the chip row already wraps every mark in
+    // for exactly this contrast reason (`PositionChains.tsx`). If light-theme
+    // legibility ever needs more than that, swap to the kit's Navy variant
+    // (`Arc_Icon_Navay.svg` in the brand kit — sic, upstream typo) instead of
+    // adding a second theme-aware asset kind no other chain here has.
+    icon: { kind: "asset", src: "/logo/arc.svg" },
   },
   [BASE_CHAIN_ID]: {
     chainId: BASE_CHAIN_ID,
