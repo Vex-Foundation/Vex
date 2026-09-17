@@ -563,7 +563,10 @@ export function MarketChart({
     const previousFirstTime = previous.candles[0]?.time;
     // Backfilled history lands before the first bar, which `update` cannot add.
     const prependedBars = previousFirstTime === undefined ? 0 : chartCandles.filter(point => point.time < previousFirstTime).length;
-    const rebuild = droppedBars > 0 || prependedBars > 0;
+    // Growing an empty series bar by bar with `update` lets the library's
+    // right-offset compensation pin the viewport to the first bars, so the
+    // first history page after an empty identity is applied as one `setData`.
+    const rebuild = droppedBars > 0 || prependedBars > 0 || previous.candles.length === 0;
     if (rebuild) {
       // Keep every native series on the same bounded timeline as the adapter.
       // Retaining invisible old points changes logical indexes and drawing anchors.

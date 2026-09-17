@@ -222,11 +222,13 @@ describe("Light it up chart adapter", () => {
     }));
 
     expect(chartHarness.createChart).toHaveBeenCalledTimes(1);
-    expect(chartHarness.candleSetData).toHaveBeenCalledTimes(1);
-    expect(chartHarness.candleUpdate).toHaveBeenLastCalledWith(
+    // The first bars after an empty start land as one setData, not per-bar
+    // updates, so the viewport is placed on a fully built series.
+    expect(chartHarness.candleSetData).toHaveBeenCalledTimes(2);
+    expect(chartHarness.candleSetData).toHaveBeenLastCalledWith([
       expect.objectContaining({ time: 1_720_000_000, close: 102 }),
-      false,
-    );
+    ]);
+    expect(chartHarness.candleUpdate).not.toHaveBeenCalled();
     expect(screen.queryByRole("status", { name: "Building ETH candle chart" })).toBeNull();
     expect(chartHarness.setVisibleLogicalRange).toHaveBeenLastCalledWith({ from: 0, to: 7 });
   });

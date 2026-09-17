@@ -6,7 +6,7 @@ import type { LighterTradingCandle } from "@shared/schemas/lighter-trading.js";
 const harness = vi.hoisted(() => {
   const makeSeries = () => ({ setData: vi.fn(), update: vi.fn(), applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }), createPriceLine: vi.fn((options: { price: number }) => ({ options })), removePriceLine: vi.fn(), priceToCoordinate: (price: number) => 300 - price, coordinateToPrice: (y: number) => 300 - y });
   const candles = makeSeries(); const volume = makeSeries(); const line = makeSeries();
-  const range = vi.fn(() => ({ from: 400, to: 506 })); const setRange = vi.fn();
+  const range = vi.fn((): { from: number; to: number } | null => ({ from: 400, to: 506 })); const setRange = vi.fn();
   const rangeHandlers: Array<(range: { from: number; to: number } | null) => void> = [];
   const markers = { detach: vi.fn() };
   const createSeriesMarkers = vi.fn(() => markers);
@@ -54,6 +54,15 @@ describe("Chart timeline continuity", () => {
     expect(requireValue(harness.candles.setData.mock.lastCall)[0][0]).toMatchObject({ time: 1_700_000_000 - 50 * 60 });
     expect(harness.candles.update).not.toHaveBeenCalled();
     expect(harness.setRange).toHaveBeenLastCalledWith({ from: 55, to: 110 });
+  });
+  it("applies the first history page as one setData when the identity started empty", () => {
+    harness.range.mockReturnValue(null);
+    const view = render(<MarketChart candles={[]} symbol="BTC" theme="chronos" marketId={1} resolution="1d" />);
+    harness.range.mockReturnValue({ from: 481, to: 587 });
+    view.rerender(<MarketChart candles={candles(84)} symbol="BTC" theme="chronos" marketId={1} resolution="1d" />);
+    expect(requireValue(harness.candles.setData.mock.lastCall)[0]).toHaveLength(84);
+    expect(harness.candles.update).not.toHaveBeenCalled();
+    expect(harness.setRange).toHaveBeenLastCalledWith({ from: 0, to: 90 });
   });
   it("draws the account's fills on whichever series is showing", () => {
     const fills = [{ tradeId: "t1", marketId: 1, symbol: "ETH", side: "buy" as const, role: "taker" as const, type: "trade", size: "2", price: "11", value: null, realizedPnl: null, timestamp: 1_700_000_130_000 }];
