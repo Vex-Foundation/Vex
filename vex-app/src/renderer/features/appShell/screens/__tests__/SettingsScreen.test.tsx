@@ -116,6 +116,7 @@ const mockUseSuperboardKey = vi.hoisted(() => vi.fn());
 vi.mock("../../../../lib/api/superboard-key.js", () => ({
   useSuperboardKey: mockUseSuperboardKey,
   useGenerateSuperboardKey: () => ({ mutate: () => undefined, isPending: false }),
+  useRotateSuperboardKey: () => ({ mutate: () => undefined, isPending: false }),
 }));
 vi.mock("../../../../lib/api/lighter-points.js", () => ({
   useLighterPoints: () => ({
@@ -196,7 +197,15 @@ beforeEach(() => {
   mockUseSuperboardKey.mockReturnValue({
     isLoading: false,
     isFetching: false,
-    data: { ok: true, data: { kind: "registered", shareToken: "A".repeat(43) } },
+    data: {
+      ok: true,
+      data: {
+        kind: "registered",
+        shareToken: "A".repeat(43),
+        rotation: { kind: "available" },
+        rotatedAt: null,
+      },
+    },
   });
   mockUseWizardState.mockReturnValue({
     isLoading: false,
@@ -311,8 +320,26 @@ describe("SettingsScreen", () => {
   it.each([
     [{ kind: "not_ready" }, "Not ready", "text-warning"],
     [{ kind: "missing" }, "Not set", "text-warning"],
-    [{ kind: "pending", shareToken: "A".repeat(43), lastError: null }, "Linking", "text-ink-secondary"],
-    [{ kind: "registered", shareToken: "A".repeat(43) }, "Linked", "text-success"],
+    [{ kind: "pending", shareToken: "A".repeat(43), attempt: { kind: "none" } }, "Linking", "text-ink-secondary"],
+    [
+      {
+        kind: "pending",
+        shareToken: "A".repeat(43),
+        attempt: {
+          kind: "failed",
+          at: "2026-09-08T12:00:00.000Z",
+          failure: { kind: "transport", reason: "timeout" },
+          detail: "VexError: Request timed out after 15000ms",
+          correlationId: "corr-1",
+          durationMs: 15012,
+        },
+      },
+      "Not linked",
+      "text-warning",
+    ],
+    [{ kind: "registered", shareToken: "A".repeat(43), rotation: { kind: "available" }, rotatedAt: null }, "Linked", "text-success"],
+    [{ kind: "registered", shareToken: "A".repeat(43), rotation: { kind: "unavailable", reason: "server" }, rotatedAt: null }, "Linked", "text-success"],
+    [{ kind: "registered", shareToken: "A".repeat(43), rotation: { kind: "pending", attempt: { kind: "none" } }, rotatedAt: null }, "Rotating", "text-ink-secondary"],
     [null, "-", "text-ink-secondary"],
   ] satisfies ReadonlyArray<readonly [SuperboardKeyStatus | null, string, string]>)(
     "keeps the Superboard status %j independent of the Lighter entry",

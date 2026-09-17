@@ -120,8 +120,14 @@ export function superboardRegisterStatus(
     case "missing":
       return { word: "Not set", tone: "warning" };
     case "pending":
-      return { word: "Linking", tone: "neutral" };
+      return status.attempt.kind === "failed"
+        ? { word: "Not linked", tone: "warning" }
+        : { word: "Linking", tone: "neutral" };
     case "registered":
+      // The row states the link, not the rotation capability: available and
+      // unavailable alike stay Linked, never dimmed. Only a rotation in
+      // flight earns its own word.
+      if (status.rotation.kind === "pending") return { word: "Rotating", tone: "neutral" };
       return { word: "Linked", tone: "success" };
   }
 }

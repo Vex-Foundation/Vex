@@ -74,6 +74,20 @@ function readErrorBodyCode(
 }
 
 /**
+ * Attach `cause` the way `new Error(msg, { cause })` does: non-enumerable, so
+ * a serialized VexError (JSON, structured clone, IPC) never carries the
+ * wrapped undici error, while `error.cause` still reads it.
+ */
+function attachCause(error: VexError, cause: unknown): void {
+  Object.defineProperty(error, "cause", {
+    value: cause,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  });
+}
+
+/**
  * Fetch with timeout and standardized error handling.
  *
  * `options.signal` is COMPOSED with the timeout rather than replacing it: a
@@ -106,18 +120,24 @@ export async function fetchWithTimeout(
   } catch (err) {
     // A caller abort is the caller's own event — never a timeout.
     if (callerSignal?.aborted === true) throw err;
+    // The original rejection rides as `cause` so callers can classify the
+    // transport failure from its code chain instead of re-parsing this message.
     if (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")) {
-      throw new VexError(
+      const timeout = new VexError(
         ErrorCodes.HTTP_TIMEOUT,
         `Request timed out after ${timeoutMs}ms`,
         "Check network connectivity or try again later"
       );
+      attachCause(timeout, err);
+      throw timeout;
     }
-    throw new VexError(
+    const failed = new VexError(
       ErrorCodes.HTTP_REQUEST_FAILED,
       err instanceof Error ? err.message : "HTTP request failed",
       "Check network connectivity"
     );
+    attachCause(failed, err);
+    throw failed;
   } finally {
     if (timeoutId !== undefined) clearTimeout(timeoutId);
   }

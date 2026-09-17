@@ -150,4 +150,7 @@ export const settings = {
   generateSuperboardKey() {
     return invokeWithSchema(CH.settings.generateSuperboardKey, {});
   },
+  rotateSuperboardKey() {
+    return invokeWithSchema(CH.settings.rotateSuperboardKey, {});
+  },
 } satisfies SettingsBridge;

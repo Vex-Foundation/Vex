@@ -24,7 +24,15 @@ function useSuperboardKeyMutation(
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: mutate,
+    // A stale in-flight `get` must not overwrite the status this mutation
+    // is about to produce.
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: superboardKeyKeys.status() });
+    },
     onSuccess: (result) => {
+      // The mutation result IS the post-attempt status: publish it directly.
+      // The status key is deliberately never invalidated - a refetch here
+      // would re-run the bind or rotation the mutation just attempted.
       if (result.ok) {
         queryClient.setQueryData(superboardKeyKeys.status(), result);
       }
@@ -38,4 +46,12 @@ export function useGenerateSuperboardKey(): UseMutationResult<
   void
 > {
   return useSuperboardKeyMutation(() => window.vex.settings.generateSuperboardKey());
+}
+
+export function useRotateSuperboardKey(): UseMutationResult<
+  Result<SuperboardKeyStatus>,
+  Error,
+  void
+> {
+  return useSuperboardKeyMutation(() => window.vex.settings.rotateSuperboardKey());
 }

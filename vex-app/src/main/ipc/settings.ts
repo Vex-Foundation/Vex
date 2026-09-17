@@ -11,7 +11,10 @@ import {
 } from "@shared/schemas/preferences.js";
 import {
   superboardKeyStatusSchema,
+  type ShareTokenAttempt,
+  type ShareTokenFailure,
   type SuperboardKeyStatus,
+  type SuperboardRotationState,
 } from "@shared/schemas/superboard-key.js";
 import {
   userProfileSchema,
@@ -55,53 +58,110 @@ import {
   whenEngineDbReady,
 } from "../database/engine-db-readiness.js";
 import type { RegisterShareTokenOutcome } from "@vex-agent/agentscan/share-token-client.js";
+import type { RotateShareTokenOutcome } from "@vex-agent/agentscan/register-share-token.js";
+import type { ShareTokenRotationAvailability } from "@vex-agent/agentscan/share-token-rotation-capability.js";
 
 import { registerChainEndpointSettingsHandlers } from "./settings-chain-endpoints.js";
 import { registerLighterTradingSettingsHandlers } from "./settings-lighter-trading.js";
 
 const empty = z.object({}).strict();
 
-type ShareMintHold =
-  | { kind: "none" }
-  | { kind: "stopped"; registrationGeneration: number; lastError: string | null }
-  | { kind: "cooldown"; registrationGeneration: number; untilMs: number; lastError: string | null };
+type ShareTokenLastAttempt = {
+  readonly registrationGeneration: number;
+  readonly at: string;               // ISO
+  readonly outcomeKind: RegisterShareTokenOutcome["kind"] | "rotation_not_allowed";
+  readonly attempt: ShareTokenAttempt;   // { kind: "failed", ... } for every non-success
+  readonly holdUntilMs: number | null;   // null = hold until an explicit call
+  readonly rotation: boolean;
+};
 
-let shareMintHold: ShareMintHold = { kind: "none" };
+let lastAttempt: ShareTokenLastAttempt | null = null;
 
-function resetShareMintHold(): void {
-  shareMintHold = { kind: "none" };
+function resetShareTokenLastAttempt(): void {
+  lastAttempt = null;
 }
 
-function rememberShareMintOutcome(
-  outcome: RegisterShareTokenOutcome,
-  registrationGeneration: number,
-): void {
-  const lastError = lastErrorFrom(outcome);
-  if (outcome.kind === "auth_lost" || outcome.kind === "stopped") {
-    shareMintHold = { kind: "stopped", registrationGeneration, lastError };
-    return;
+/** The recorded attempt, or null. A record from another generation is discarded on read. */
+function readLastAttempt(registrationGeneration: number): ShareTokenLastAttempt | null {
+  if (lastAttempt === null) return null;
+  if (lastAttempt.registrationGeneration !== registrationGeneration) {
+    lastAttempt = null;
+    return null;
   }
-  if (outcome.kind === "retryable") {
-    const waitMs = Math.max(0, outcome.retryAfterSeconds ?? 0) * 1000;
-    shareMintHold = { kind: "cooldown", registrationGeneration, untilMs: Date.now() + waitMs, lastError };
-    return;
-  }
-  if (outcome.kind === "registered") {
-    shareMintHold = { kind: "none" };
+  return lastAttempt;
+}
+
+/**
+ * The record gates a `get` attempt when it belongs to this generation and its
+ * hold has not expired. Explicit calls never consult this: they always attempt.
+ */
+function holdApplies(registrationGeneration: number, nowMs: number): ShareTokenLastAttempt | null {
+  const record = readLastAttempt(registrationGeneration);
+  if (record === null) return null;
+  if (record.holdUntilMs === null || nowMs < record.holdUntilMs) return record;
+  return null;
+}
+
+/** Default wait when a retryable failure names no interval. */
+const SHARE_TOKEN_DEFAULT_COOLDOWN_MS = 30_000;
+const SHARE_TOKEN_DEFAULT_COOLDOWN_SECONDS = SHARE_TOKEN_DEFAULT_COOLDOWN_MS / 1000;
+
+function holdForGetAttempt(outcome: RegisterShareTokenOutcome, nowMs: number): number | null {
+  switch (outcome.kind) {
+    case "http":
+      return outcome.status < 500
+        ? null
+        : nowMs + (outcome.retryAfterSeconds ?? SHARE_TOKEN_DEFAULT_COOLDOWN_SECONDS) * 1000;
+    case "conflict":
+    case "auth_lost":
+    case "stopped":
+    case "malformed_response":
+      return null;
+    case "rate_limited":
+      return nowMs + (outcome.retryAfterSeconds ?? SHARE_TOKEN_DEFAULT_COOLDOWN_SECONDS) * 1000;
+    case "transport":
+      return nowMs + SHARE_TOKEN_DEFAULT_COOLDOWN_MS;
+    case "registered":
+    case "not_ready":
+      return nowMs; // unreachable: success clears the record before a hold is computed
   }
 }
 
-function shouldSkipGetMint(registrationGeneration: number): boolean {
-  // Recovery invalidates provider refusals and backoff for the old identity state.
-  if (shareMintHold.kind !== "none" && shareMintHold.registrationGeneration !== registrationGeneration) {
-    resetShareMintHold();
+function failureFromOutcome(outcome: RegisterShareTokenOutcome): {
+  readonly failure: ShareTokenFailure;
+  readonly detail: string;
+} | null {
+  switch (outcome.kind) {
+    case "registered":
+    case "not_ready":
+      return null;
+    case "http":
+      return {
+        failure: { kind: "http", status: outcome.status, code: outcome.code },
+        detail: outcome.detail,
+      };
+    case "transport":
+      return {
+        failure: { kind: "transport", reason: outcome.reason },
+        detail: outcome.detail,
+      };
+    case "malformed_response":
+      return { failure: { kind: "malformed_response" }, detail: "malformed response" };
+    case "conflict":
+      return { failure: { kind: "conflict" }, detail: "conflict" };
+    case "auth_lost":
+      return { failure: { kind: "auth_lost" }, detail: "unauthorized" };
+    case "stopped":
+      return {
+        failure: { kind: "stopped", reason: outcome.reason },
+        detail: outcome.reason,
+      };
+    case "rate_limited":
+      return {
+        failure: { kind: "rate_limited", retryAfterSeconds: outcome.retryAfterSeconds },
+        detail: outcome.detail,
+      };
   }
-  if (shareMintHold.kind === "stopped") return true;
-  return shareMintHold.kind === "cooldown" && Date.now() < shareMintHold.untilMs;
-}
-
-function holdLastError(): string | null {
-  return shareMintHold.kind === "none" ? null : shareMintHold.lastError;
 }
 
 const setTelemetryConsentInput = z
@@ -111,7 +171,7 @@ const setTelemetryConsentInput = z
   .strict();
 
 export function registerSettingsHandlers(): Array<() => void> {
-  resetShareMintHold();
+  resetShareTokenLastAttempt();
   const handlers: Array<() => void> = [
     ...registerChainEndpointSettingsHandlers(),
     ...registerLighterTradingSettingsHandlers(),
@@ -384,6 +444,16 @@ export function registerSettingsHandlers(): Array<() => void> {
     })
   );
 
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.rotateSuperboardKey,
+      domain: "settings",
+      inputSchema: empty,
+      outputSchema: superboardKeyStatusSchema,
+      handle: (_input, ctx) => handleSuperboardKey(ctx, "rotate"),
+    })
+  );
+
   return handlers;
 }
 
@@ -532,37 +602,86 @@ function superboardUnexpected(correlationId: string): Result<never> {
   });
 }
 
-function lastErrorFrom(outcome: RegisterShareTokenOutcome): string | null {
-  switch (outcome.kind) {
-    case "registered":
-    case "not_ready":
-      return null;
-    case "auth_lost":
-      return "unauthorized";
-    case "stopped":
-      return outcome.reason;
-    case "conflict":
-      return "share_token_conflict";
-    case "invalid":
-    case "retryable":
-      return outcome.detail;
+interface ShareTokenDbState {
+  readonly ingestToken: string | null;
+  readonly shareToken: string | null;
+  readonly shareTokenRegisteredAt: string | null;
+  readonly shareTokenRotationCandidate: string | null;
+  readonly shareTokenRotatedAt: string | null;
+  readonly registrationGeneration: number;
+}
+
+async function readShareTokenDbState(): Promise<ShareTokenDbState> {
+  const reporting = await import("@vex-agent/db/repos/agentscan-reporting.js");
+  return reporting.getReportingState();
+}
+
+/**
+ * Whether the server carries rotation, asked live (the capability module owns
+ * the cache). A missing base URL cannot be asked at all: unknown, uncached.
+ */
+async function readRotationAvailability(
+  ingestToken: string | null,
+): Promise<ShareTokenRotationAvailability> {
+  const { resolveAgentscanBaseUrl } = await import(
+    "@vex-agent/sync/agentscan-report/production-deps.js"
+  );
+  const { loadConfig } = await import("@config/store.js");
+  const baseUrl = resolveAgentscanBaseUrl(loadConfig().services.agentscanApiUrl);
+  if (baseUrl === null) return { kind: "unknown", reason: "transport" };
+  const { readShareTokenRotationAvailability } = await import(
+    "@vex-agent/agentscan/share-token-rotation-capability.js"
+  );
+  const { buildAgentscanClient } = await import("@vex-agent/agentscan/client.js");
+  return readShareTokenRotationAvailability({
+    baseUrl,
+    ingestToken,
+    nowMs: Date.now(),
+    fetchCapabilities: (input) => buildAgentscanClient(baseUrl).fetchCapabilities(input),
+  });
+}
+
+function rotationStateFromAvailability(
+  availability: ShareTokenRotationAvailability,
+): SuperboardRotationState {
+  switch (availability.kind) {
+    case "available":
+      return { kind: "available" };
+    case "unavailable":
+      return { kind: "unavailable", reason: "server" };
+    case "unknown":
+      return { kind: "unavailable", reason: "unknown" };
   }
 }
 
-function statusFromState(
-  state: {
-    readonly ingestToken: string | null;
-    readonly shareToken: string | null;
-    readonly shareTokenRegisteredAt: string | null;
-  },
-  lastError: string | null,
-): SuperboardKeyStatus {
+/** The status a state describes, without sending anything. */
+async function statusForState(state: ShareTokenDbState): Promise<SuperboardKeyStatus> {
   if (state.ingestToken === null) return { kind: "not_ready" };
   if (state.shareToken === null) return { kind: "missing" };
-  if (state.shareTokenRegisteredAt === null) {
-    return { kind: "pending", shareToken: state.shareToken, lastError };
+  if (state.shareTokenRegisteredAt !== null) {
+    if (state.shareTokenRotationCandidate !== null) {
+      const record = readLastAttempt(state.registrationGeneration);
+      return {
+        kind: "registered",
+        shareToken: state.shareToken,
+        rotation: { kind: "pending", attempt: record?.attempt ?? { kind: "none" } },
+        rotatedAt: state.shareTokenRotatedAt,
+      };
+    }
+    const availability = await readRotationAvailability(state.ingestToken);
+    return {
+      kind: "registered",
+      shareToken: state.shareToken,
+      rotation: rotationStateFromAvailability(availability),
+      rotatedAt: state.shareTokenRotatedAt,
+    };
   }
-  return { kind: "registered", shareToken: state.shareToken };
+  const record = readLastAttempt(state.registrationGeneration);
+  return {
+    kind: "pending",
+    shareToken: state.shareToken,
+    attempt: record?.attempt ?? { kind: "none" },
+  };
 }
 
 async function registerShareToken(): Promise<RegisterShareTokenOutcome> {
@@ -581,17 +700,120 @@ async function registerShareToken(): Promise<RegisterShareTokenOutcome> {
       return {
         ingestToken: state.ingestToken,
         shareToken: state.shareToken,
+        shareTokenRegisteredAt: state.shareTokenRegisteredAt,
+        shareTokenRotationCandidate: state.shareTokenRotationCandidate,
         registrationGeneration: state.registrationGeneration,
       };
     },
     persistShareToken: reporting.persistShareToken,
+    persistRotationCandidate: reporting.persistRotationCandidate,
     markShareTokenRegistered: reporting.markShareTokenRegistered,
+    commitShareTokenRotation: reporting.commitShareTokenRotation,
   });
+}
+
+async function rotateShareToken(): Promise<RotateShareTokenOutcome> {
+  const { rotatePersistedShareToken } = await import(
+    "@vex-agent/agentscan/register-share-token.js"
+  );
+  const reporting = await import("@vex-agent/db/repos/agentscan-reporting.js");
+  const { resolveAgentscanBaseUrl } = await import(
+    "@vex-agent/sync/agentscan-report/production-deps.js"
+  );
+  const { loadConfig } = await import("@config/store.js");
+  return rotatePersistedShareToken({
+    baseUrl: () => resolveAgentscanBaseUrl(loadConfig().services.agentscanApiUrl),
+    getState: async () => {
+      const state = await reporting.getReportingState();
+      return {
+        ingestToken: state.ingestToken,
+        shareToken: state.shareToken,
+        shareTokenRegisteredAt: state.shareTokenRegisteredAt,
+        shareTokenRotationCandidate: state.shareTokenRotationCandidate,
+        registrationGeneration: state.registrationGeneration,
+      };
+    },
+    persistShareToken: reporting.persistShareToken,
+    persistRotationCandidate: reporting.persistRotationCandidate,
+    markShareTokenRegistered: reporting.markShareTokenRegistered,
+    commitShareTokenRotation: reporting.commitShareTokenRotation,
+  });
+}
+
+/**
+ * Record an attempt's outcome. Success clears the record; a refusal to even
+ * try (`rotation_not_allowed`) leaves it untouched; every other outcome stores
+ * its structured failure. Only `get` installs a hold - explicit calls always
+ * attempt, so theirs expires immediately.
+ */
+function recordShareTokenAttempt(input: {
+  action: "get" | "ensure" | "rotate";
+  outcome: RegisterShareTokenOutcome | RotateShareTokenOutcome;
+  state: ShareTokenDbState;
+  at: string;
+  durationMs: number;
+  correlationId: string;
+  rotation: boolean;
+}): void {
+  if (input.outcome.kind === "rotation_not_allowed") return;
+  const mapped = failureFromOutcome(input.outcome);
+  if (mapped === null) {
+    lastAttempt = null;
+    return;
+  }
+  const nowMs = Date.now();
+  lastAttempt = {
+    registrationGeneration: input.state.registrationGeneration,
+    at: input.at,
+    outcomeKind: input.outcome.kind,
+    attempt: {
+      kind: "failed",
+      at: input.at,
+      failure: mapped.failure,
+      detail: mapped.detail,
+      correlationId: input.correlationId,
+      durationMs: input.durationMs,
+    },
+    holdUntilMs: input.action === "get" ? holdForGetAttempt(input.outcome, nowMs) : nowMs,
+    rotation: input.rotation,
+  };
+}
+
+/**
+ * One line per attempt, through the module log. Never the token, the
+ * candidate, the ingest token or the base URL: the failure shape, the status
+ * and the sanitized detail are what an operator needs.
+ */
+function logShareTokenAttempt(input: {
+  action: "get" | "ensure" | "rotate";
+  outcome: RegisterShareTokenOutcome | RotateShareTokenOutcome;
+  state: ShareTokenDbState;
+  durationMs: number;
+  correlationId: string;
+  rotation: boolean;
+}): void {
+  const outcome = input.outcome;
+  const status = outcome.kind === "http"
+    ? String(outcome.status)
+    : outcome.kind === "rate_limited"
+      ? "429"
+      : "-";
+  const code = outcome.kind === "http" ? (outcome.code ?? "-") : "-";
+  const transport = outcome.kind === "transport" ? outcome.reason : "-";
+  // A refused rotation is still a user-visible press: the refusal reason is
+  // what the operator needs to see.
+  const reason = outcome.kind === "rotation_not_allowed" ? ` reason=${outcome.reason}` : "";
+  log.info(
+    `[agentscan:share-token] attempt action=${input.action} outcome=${outcome.kind} `
+      + `status=${status} code=${code} transport=${transport} `
+      + `rotation=${input.rotation} generation=${input.state.registrationGeneration} `
+      + `durationMs=${input.durationMs}${reason} correlationId=${input.correlationId}`,
+  );
 }
 
 async function handleSuperboardKey(
   ctx: HandlerContext,
-  action: "get" | "ensure",
+  action: "get" | "ensure" | "rotate",
 ): Promise<Result<SuperboardKeyStatus>> {
   try {
     await whenEngineDbReady({ signal: ctx.signal });
@@ -600,28 +822,89 @@ async function handleSuperboardKey(
     return superboardUnexpected(ctx.requestId);
   }
   try {
-    const reporting = await import("@vex-agent/db/repos/agentscan-reporting.js");
-    const state = await reporting.getReportingState();
+    const state = await readShareTokenDbState();
     if (action === "get") {
       if (state.ingestToken === null) return ok({ kind: "not_ready" });
       if (state.shareToken === null) return ok({ kind: "missing" });
-      if (state.shareTokenRegisteredAt !== null) {
-        return ok({ kind: "registered", shareToken: state.shareToken });
+      if (state.shareTokenRegisteredAt !== null && state.shareTokenRotationCandidate === null) {
+        return ok(await statusForState(state));
       }
-      if (shouldSkipGetMint(state.registrationGeneration)) {
-        return ok(statusFromState(state, holdLastError()));
+      const held = holdApplies(state.registrationGeneration, Date.now());
+      if (held !== null) {
+        return ok(await statusForState(state));
       }
-      const outcome = await registerShareToken();
-      rememberShareMintOutcome(outcome, state.registrationGeneration);
-      const next = await reporting.getReportingState();
-      return ok(statusFromState(next, lastErrorFrom(outcome)));
+      return ok(await attemptAndStatus(ctx, action, state, registerShareToken));
     }
-    const outcome = await registerShareToken();
-    rememberShareMintOutcome(outcome, state.registrationGeneration);
-    const next = await reporting.getReportingState();
-    return ok(statusFromState(next, lastErrorFrom(outcome)));
+    if (action === "rotate") {
+      if (
+        state.shareToken !== null &&
+        state.shareTokenRegisteredAt !== null &&
+        state.shareTokenRotationCandidate === null
+      ) {
+        // The privileged handler rechecks the capability: the renderer's
+        // hidden button is not enforcement. No request leaves here.
+        const availability = await readRotationAvailability(state.ingestToken);
+        if (availability.kind !== "available") {
+          return ok({
+            kind: "registered",
+            shareToken: state.shareToken,
+            rotation: rotationStateFromAvailability(availability),
+            rotatedAt: state.shareTokenRotatedAt,
+          });
+        }
+      }
+      const outcome = await attemptAndStatus(ctx, action, state, rotateShareToken);
+      return ok(outcome);
+    }
+    return ok(await attemptAndStatus(ctx, action, state, registerShareToken));
   } catch (cause) {
     log.warn(`[ipc:vex:settings:superboardKey] failed correlationId=${ctx.requestId}`, cause);
     return superboardUnexpected(ctx.requestId);
   }
+}
+
+/**
+ * Run one bind or rotation attempt, record it, log it, and return the status
+ * the resulting state describes. A refused rotation returns the current status
+ * unchanged: nothing was attempted, so nothing is recorded.
+ */
+async function attemptAndStatus(
+  ctx: HandlerContext,
+  action: "get" | "ensure" | "rotate",
+  state: ShareTokenDbState,
+  attempt: () => Promise<RegisterShareTokenOutcome | RotateShareTokenOutcome>,
+): Promise<SuperboardKeyStatus> {
+  const startedMs = Date.now();
+  const outcome = await attempt();
+  const durationMs = Date.now() - startedMs;
+  if (outcome.kind === "rotation_not_allowed") {
+    logShareTokenAttempt({
+      action,
+      outcome,
+      state,
+      durationMs,
+      correlationId: ctx.requestId,
+      rotation: state.shareTokenRotationCandidate !== null,
+    });
+    return statusForState(state);
+  }
+  const next = await readShareTokenDbState();
+  // A `rotate` action past the refusal branch always sent `replaces`; a
+  // successful fresh rotation clears the candidate on both sides of the
+  // attempt, so the candidate alone cannot say what went on the wire.
+  const rotation = action === "rotate" ||
+    state.shareTokenRotationCandidate !== null ||
+    next.shareTokenRotationCandidate !== null;
+  const at = new Date().toISOString();
+  recordShareTokenAttempt({
+    action,
+    outcome,
+    state,
+    at,
+    durationMs,
+    correlationId: ctx.requestId,
+    rotation,
+  });
+  logShareTokenAttempt({ action, outcome, state, durationMs, correlationId: ctx.requestId, rotation });
+  return statusForState(next);
 }

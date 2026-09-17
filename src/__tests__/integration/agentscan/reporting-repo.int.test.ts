@@ -127,6 +127,8 @@ describe("agentscan_reporting_state — singleton + progress stamps", () => {
     expect(state.registerAttemptCount).toBe(0);
     expect(state.shareToken).toBeNull();
     expect(state.shareTokenRegisteredAt).toBeNull();
+    expect(state.shareTokenRotationCandidate).toBeNull();
+    expect(state.shareTokenRotatedAt).toBeNull();
   });
 
   it("ensureIdentity stores the first identity and NEVER replaces it", async () => {
@@ -572,7 +574,9 @@ describe("agentscan_reporting_state - Superboard share token", () => {
       baseUrl: () => "http://localhost",
       getState: repo.getReportingState,
       persistShareToken: repo.persistShareToken,
+      persistRotationCandidate: repo.persistRotationCandidate,
       markShareTokenRegistered: repo.markShareTokenRegistered,
+      commitShareTokenRotation: repo.commitShareTokenRotation,
       post: async () => {
         started.resolve();
         return response.promise;
@@ -612,6 +616,85 @@ describe("agentscan_reporting_state - Superboard share token", () => {
     state = await repo.getReportingState();
     expect(state.shareToken).toBe("A".repeat(43));
     expect(state.shareTokenRegisteredAt).not.toBeNull();
+  });
+});
+
+describe("agentscan_reporting_state - Superboard share token rotation", () => {
+  const TOKEN = "S".repeat(43);
+  const CANDIDATE = "N".repeat(43);
+  const OTHER = "O".repeat(43);
+
+  it("persistRotationCandidate is write-once: a second persist is a no-op", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await repo.ensureIdentity(() => IDENTITY_A);
+    await repo.persistShareToken(TOKEN);
+    await repo.persistRotationCandidate(CANDIDATE);
+    expect((await repo.getReportingState()).shareTokenRotationCandidate).toBe(CANDIDATE);
+    await repo.persistRotationCandidate(OTHER);
+    const state = await repo.getReportingState();
+    expect(state.shareTokenRotationCandidate).toBe(CANDIDATE);
+    expect(state.shareToken).toBe(TOKEN);
+  });
+
+  it("persistRotationCandidate is refused when no token exists yet", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await repo.ensureIdentity(() => IDENTITY_A);
+    await repo.persistRotationCandidate(CANDIDATE);
+    expect((await repo.getReportingState()).shareTokenRotationCandidate).toBeNull();
+  });
+
+  it("commitShareTokenRotation succeeds only when generation, previous token and candidate all match", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await repo.ensureIdentity(() => IDENTITY_A);
+    await repo.persistShareToken(TOKEN);
+    await repo.persistRotationCandidate(CANDIDATE);
+    const generation = (await repo.getReportingState()).registrationGeneration;
+
+    expect(await repo.commitShareTokenRotation({
+      registrationGeneration: generation + 1,
+      previousShareToken: TOKEN,
+      candidate: CANDIDATE,
+    })).toBe(false);
+    expect(await repo.commitShareTokenRotation({
+      registrationGeneration: generation,
+      previousShareToken: OTHER,
+      candidate: CANDIDATE,
+    })).toBe(false);
+    expect(await repo.commitShareTokenRotation({
+      registrationGeneration: generation,
+      previousShareToken: TOKEN,
+      candidate: OTHER,
+    })).toBe(false);
+    expect((await repo.getReportingState()).shareToken).toBe(TOKEN);
+
+    expect(await repo.commitShareTokenRotation({
+      registrationGeneration: generation,
+      previousShareToken: TOKEN,
+      candidate: CANDIDATE,
+    })).toBe(true);
+    const state = await repo.getReportingState();
+    expect(state.shareToken).toBe(CANDIDATE);
+    expect(state.shareTokenRegisteredAt).not.toBeNull();
+    expect(state.shareTokenRotatedAt).not.toBeNull();
+    expect(state.shareTokenRotationCandidate).toBeNull();
+  });
+
+  it("resetForReRegistration keeps the candidate; resetIdentityForRecovery clears it", async () => {
+    const repo = await import("../../../vex-agent/db/repos/agentscan-reporting.js");
+    await repo.ensureIdentity(() => IDENTITY_A);
+    await repo.persistShareToken(TOKEN);
+    await repo.persistRotationCandidate(CANDIDATE);
+
+    await repo.resetForReRegistration();
+    let state = await repo.getReportingState();
+    expect(state.shareToken).toBe(TOKEN);
+    expect(state.shareTokenRotationCandidate).toBe(CANDIDATE);
+
+    await repo.resetIdentityForRecovery();
+    state = await repo.getReportingState();
+    expect(state.shareToken).toBeNull();
+    expect(state.shareTokenRotationCandidate).toBeNull();
+    expect(state.shareTokenRotatedAt).toBeNull();
   });
 });
 

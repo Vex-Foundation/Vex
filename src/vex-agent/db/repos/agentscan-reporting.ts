@@ -91,6 +91,14 @@ export interface AgentscanReportingState {
   readonly boundWalletsFingerprint: string | null;
   readonly shareToken: string | null;
   readonly shareTokenRegisteredAt: string | null;
+  /**
+   * The NEW key minted for a rotation AgentScan has not acknowledged yet.
+   * Re-sent verbatim on every retry until acknowledged; never abandoned by the
+   * user. Cleared only by the commit transaction or by identity recovery.
+   */
+  readonly shareTokenRotationCandidate: string | null;
+  /** Stamped by the rotation commit transaction. Display only ("New key linked"). */
+  readonly shareTokenRotatedAt: string | null;
 }
 
 /**
@@ -612,6 +620,8 @@ interface StateRow {
   bound_wallets_fingerprint: string | null;
   share_token: string | null;
   share_token_registered_at: Date | null;
+  share_token_rotation_candidate: string | null;
+  share_token_rotated_at: Date | null;
 }
 
 function mapState(row: StateRow): AgentscanReportingState {
@@ -636,6 +646,10 @@ function mapState(row: StateRow): AgentscanReportingState {
     shareToken: row.share_token ?? null,
     shareTokenRegisteredAt: row.share_token_registered_at
       ? new Date(row.share_token_registered_at).toISOString()
+      : null,
+    shareTokenRotationCandidate: row.share_token_rotation_candidate ?? null,
+    shareTokenRotatedAt: row.share_token_rotated_at
+      ? new Date(row.share_token_rotated_at).toISOString()
       : null,
   };
 }
@@ -756,6 +770,12 @@ async function resetOutboxForFullResend(client: PoolClient): Promise<void> {
  * untouched: this path is for when the SERVER has forgotten the install, not
  * for when the CLIENT's stored token has drifted from what the server
  * actually holds (that case is `resetIdentityForRecovery`, below).
+ *
+ * The share token AND its rotation candidate survive; only
+ * `share_token_registered_at` is cleared. A rotation in flight when the server
+ * forgot the install is still the rotation to finish: the candidate is
+ * re-sent verbatim and every server slot it can meet (NULL, the old hash, the
+ * new hash) answers success.
  */
 export async function resetForReRegistration(): Promise<void> {
   await ensureSingleton();
@@ -808,6 +828,8 @@ export async function resetIdentityForRecovery(): Promise<void> {
               server_cursor_row_id = NULL,
               share_token = NULL,
               share_token_registered_at = NULL,
+              share_token_rotation_candidate = NULL,
+              share_token_rotated_at = NULL,
               register_attempt_count = 0,
               next_register_attempt_at = NOW(),
               updated_at = NOW()
@@ -840,6 +862,45 @@ export async function markShareTokenRegistered(input: {
       WHERE id = 1 AND registration_generation = $1 AND share_token = $2
       RETURNING id`,
     [input.registrationGeneration, input.shareToken],
+  );
+  return row !== null;
+}
+
+/** Write-once while a rotation is in flight; refused when no token exists yet. */
+export async function persistRotationCandidate(candidate: string): Promise<void> {
+  await ensureSingleton();
+  await execute(
+    `UPDATE agentscan_reporting_state
+        SET share_token_rotation_candidate = $1, updated_at = NOW()
+      WHERE id = 1 AND share_token IS NOT NULL AND share_token_rotation_candidate IS NULL`,
+    [candidate],
+  );
+}
+
+/**
+ * Commit an acknowledged rotation: the candidate becomes the token. Fenced on the
+ * generation, the previous token and the candidate so a late response cannot commit
+ * a different rotation. Returns false when the fence refused.
+ */
+export async function commitShareTokenRotation(input: {
+  registrationGeneration: number;
+  previousShareToken: string;
+  candidate: string;
+}): Promise<boolean> {
+  await ensureSingleton();
+  const row = await queryOne<{ id: number }>(
+    `UPDATE agentscan_reporting_state
+        SET share_token = $3,
+            share_token_registered_at = NOW(),
+            share_token_rotated_at = NOW(),
+            share_token_rotation_candidate = NULL,
+            updated_at = NOW()
+      WHERE id = 1
+        AND registration_generation = $1
+        AND share_token = $2
+        AND share_token_rotation_candidate = $3
+      RETURNING id`,
+    [input.registrationGeneration, input.previousShareToken, input.candidate],
   );
   return row !== null;
 }
