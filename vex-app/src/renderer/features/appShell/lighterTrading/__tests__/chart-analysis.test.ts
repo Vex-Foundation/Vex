@@ -76,14 +76,15 @@ describe("Bounded drawing state", () => {
 describe("Bounded chart preference parsing", () => {
   it("accepts known settings, deduplicates studies and rejects malformed data", () => {
     const periods = { sma: 20, ema: 20, bb: 20, rsi: 14 };
-    expect(parseChartPreferences(JSON.stringify({ studies: ["ema", "ema", "rsi"], volume: false, chartType: "line" }))).toEqual({ studies: ["ema", "rsi"], volume: false, chartType: "line", scale: "linear", periods });
-    const defaults = { studies: [], volume: true, chartType: "candles", scale: "linear", periods };
+    expect(parseChartPreferences(JSON.stringify({ studies: ["ema", "ema", "rsi"], volume: false, chartType: "line" }))).toEqual({ studies: ["ema", "rsi"], volume: false, fills: true, chartType: "line", scale: "linear", periods });
+    const defaults = { studies: [], volume: true, fills: true, chartType: "candles", scale: "linear", periods };
     for (const raw of [null, "{", " ".repeat(1025), JSON.stringify({ studies: ["unknown"], volume: false, chartType: "line" }), JSON.stringify({ studies: Array(7).fill("ema"), volume: true, chartType: "candles" }), JSON.stringify({ studies: [], volume: "false", chartType: "line" })]) expect(parseChartPreferences(raw)).toEqual(defaults);
   });
-  it("accepts a log scale and bounded integer periods, rejecting anything else", () => {
+  it("accepts a log scale, a fills flag and bounded integer periods, rejecting anything else", () => {
     const base = { studies: [], volume: true, chartType: "candles" };
-    expect(parseChartPreferences(JSON.stringify({ ...base, scale: "log", periods: { sma: 50, ema: 9, bb: 20, rsi: 7 } }))).toEqual({ ...base, scale: "log", periods: { sma: 50, ema: 9, bb: 20, rsi: 7 } });
+    expect(parseChartPreferences(JSON.stringify({ ...base, scale: "log", periods: { sma: 50, ema: 9, bb: 20, rsi: 7 } }))).toEqual({ ...base, fills: true, scale: "log", periods: { sma: 50, ema: 9, bb: 20, rsi: 7 } });
+    expect(parseChartPreferences(JSON.stringify({ ...base, fills: false })).fills).toBe(false);
     const defaults = parseChartPreferences(null);
-    for (const raw of [{ ...base, scale: "semilog" }, { ...base, periods: { sma: 0, ema: 20, bb: 20, rsi: 14 } }, { ...base, periods: { sma: 501, ema: 20, bb: 20, rsi: 14 } }, { ...base, periods: { sma: 2.5, ema: 20, bb: 20, rsi: 14 } }, { ...base, periods: { sma: 20 } }, { ...base, periods: "20" }]) expect(parseChartPreferences(JSON.stringify(raw))).toEqual(defaults);
+    for (const raw of [{ ...base, scale: "semilog" }, { ...base, fills: "no" }, { ...base, periods: { sma: 0, ema: 20, bb: 20, rsi: 14 } }, { ...base, periods: { sma: 501, ema: 20, bb: 20, rsi: 14 } }, { ...base, periods: { sma: 2.5, ema: 20, bb: 20, rsi: 14 } }, { ...base, periods: { sma: 20 } }, { ...base, periods: "20" }]) expect(parseChartPreferences(JSON.stringify(raw))).toEqual(defaults);
   });
 });

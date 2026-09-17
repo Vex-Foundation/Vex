@@ -15,7 +15,7 @@ function setup() {
   const chart = { subscribeCrosshairMove: vi.fn(), unsubscribeCrosshairMove: vi.fn(), paneSize: () => ({ width: 500, height: 300 }), takeScreenshot: vi.fn(() => ({ toBlob: (callback: (blob: Blob | null) => void) => callback(new Blob(["image"])) })), addSeries: vi.fn((_definition: unknown, _options: unknown, _pane?: number) => { const line = { setData: vi.fn(), createPriceLine: vi.fn() }; lines.push(line); return line; }), removeSeries: vi.fn(), panes: () => [0, 1, 2].map(() => ({ setStretchFactor })), timeScale: () => ({ timeToCoordinate: () => 0, coordinateToLogical: (x: number) => x, logicalToCoordinate: (x: number) => x, subscribeVisibleLogicalRangeChange: vi.fn(), unsubscribeVisibleLogicalRangeChange: vi.fn(), getVisibleLogicalRange: () => ({ from: 10, to: 40 }), setVisibleLogicalRange: vi.fn() }) };
   const rows: ChartCandleRow[] = Array.from({ length: 50 }, (_, i) => ({ timestamp: 1_700_000_000 + i * 60, open: 10 + i, close: 11 + i, high: 12 + i, low: 9 + i, volumeBase: 100, volumeQuote: 1000 }));
   const host = { current: document.createElement("div") };
-  const props = { chart: chart satisfies StudyChartApi, series: null, host, rows, scope: "rhc:7", theme: "chronos", precision: 2, chartType: "candles" as const, onChartType: vi.fn(), onVolume: vi.fn(), onScale: vi.fn() };
+  const props = { chart: chart satisfies StudyChartApi, series: null, host, rows, scope: "rhc:7", theme: "chronos", precision: 2, chartType: "candles" as const, onChartType: vi.fn(), onVolume: vi.fn(), onFills: vi.fn(), onScale: vi.fn() };
   return { chart, rows, lines, props, setStretchFactor };
 }
 describe("Chart analysis controls", () => {
@@ -105,6 +105,10 @@ describe("Chart analysis controls", () => {
     expect(props.onChartType).toHaveBeenCalledWith("line");
     fireEvent.click(screen.getByRole("button", { name: "Volume" }));
     expect(props.onVolume).toHaveBeenLastCalledWith(false);
+    expect(props.onFills).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByRole("button", { name: "Fills" }));
+    expect(props.onFills).toHaveBeenLastCalledWith(false);
+    expect(requireValue(useLighterAnalysisStore.getState().charts["rhc:7"]).preferences.fills).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Log" }));
     expect(props.onScale).toHaveBeenLastCalledWith("log");
     expect(screen.getByRole("button", { name: "Log" }).getAttribute("aria-pressed")).toBe("true");

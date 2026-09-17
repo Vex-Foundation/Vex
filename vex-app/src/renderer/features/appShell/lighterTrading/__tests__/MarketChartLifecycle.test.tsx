@@ -15,14 +15,17 @@ const harness = vi.hoisted(() => {
 });
 vi.mock("lightweight-charts", () => ({ CandlestickSeries: "candles", HistogramSeries: "volume", LineSeries: "line", ColorType: { Solid: "solid" }, LineStyle: { Solid: 0, Dotted: 1, Dashed: 2 }, TickMarkType: {}, PriceScaleMode: { Normal: 0, Logarithmic: 1 }, createChart: () => harness.chart, createSeriesMarkers: harness.createSeriesMarkers }));
 vi.mock("../ChartTools.js", () => ({
-  ChartTools: ({ onChartType, onVolume, onScale }: {
+  ChartTools: ({ onChartType, onVolume, onFills, onScale }: {
     onChartType: (type: "line" | "candles") => void;
     onVolume: (visible: boolean) => void;
+    onFills: (visible: boolean) => void;
     onScale: (scale: "linear" | "log") => void;
   }) => <>
     <button onClick={() => onChartType("line")}>Use line</button>
     <button onClick={() => onChartType("candles")}>Use candles</button>
     <button onClick={() => onVolume(false)}>Hide volume</button>
+    <button onClick={() => onFills(false)}>Hide fills</button>
+    <button onClick={() => onFills(true)}>Show fills</button>
     <button onClick={() => onScale("log")}>Use log scale</button>
     <button onClick={() => onScale("linear")}>Use linear scale</button>
   </>,
@@ -71,6 +74,12 @@ describe("Chart timeline continuity", () => {
     fireEvent.click(screen.getByRole("button", { name: "Use line" }));
     expect(harness.markers.detach).toHaveBeenCalledTimes(1);
     expect(harness.createSeriesMarkers).toHaveBeenLastCalledWith(harness.line, expect.any(Array));
+    // The toolbar's Fills toggle detaches the arrows and brings them back.
+    fireEvent.click(screen.getByRole("button", { name: "Hide fills" }));
+    expect(harness.markers.detach).toHaveBeenCalledTimes(2);
+    expect(harness.createSeriesMarkers).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "Show fills" }));
+    expect(harness.createSeriesMarkers).toHaveBeenCalledTimes(3);
   });
   it("asks for older history only when the viewport nears the earliest bar", () => {
     const onLoadOlder = vi.fn();

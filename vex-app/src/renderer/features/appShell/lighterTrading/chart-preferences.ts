@@ -2,6 +2,8 @@ import { DEFAULT_STUDY_PERIODS, STUDIES, STUDY_PERIOD_MAX, STUDY_PERIOD_MIN, typ
 export interface ChartPreferences {
   studies: Study[];
   volume: boolean;
+  /** Fill arrows on the bars the account traded. */
+  fills: boolean;
   chartType: "candles" | "line";
   scale: "linear" | "log";
   periods: StudyPeriods;
@@ -9,6 +11,7 @@ export interface ChartPreferences {
 export const DEFAULT_CHART_PREFERENCES: ChartPreferences = {
   studies: [],
   volume: true,
+  fills: true,
   chartType: "candles",
   scale: "linear",
   periods: DEFAULT_STUDY_PERIODS
@@ -41,12 +44,16 @@ export function parseChartPreferences(raw: string | null): ChartPreferences {
     const scale = "scale" in value ? value.scale : "linear";
     if (scale !== "linear" && scale !== "log")
       return defaults();
+    const fills = "fills" in value ? value.fills : true;
+    if (typeof fills !== "boolean")
+      return defaults();
     const periods = parsePeriods("periods" in value ? value.periods : undefined);
     if (periods === null)
       return defaults();
     return {
       studies: [...new Set(value.studies)] as Study[],
       volume: value.volume,
+      fills,
       chartType: value.chartType,
       scale,
       periods

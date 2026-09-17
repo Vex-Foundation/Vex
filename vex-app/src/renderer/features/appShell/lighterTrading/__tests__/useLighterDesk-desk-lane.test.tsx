@@ -20,13 +20,16 @@ const MARKET = {
 
 const prepareDeskAction = vi.fn();
 const approve = vi.fn();
+const FILL = { tradeId: "t1", marketId: 7, symbol: "ETH", side: "buy", role: "taker", type: "trade", size: "0.5", price: "3200", value: null, realizedPnl: null, timestamp: 1 };
+const accountData = { value: undefined as unknown };
+const fillsData = { value: undefined as unknown };
 const funnelStep = vi.fn(async () => ({ ok: true, data: { recorded: false } }));
 
 vi.mock("../../../../lib/api/lighter-trading.js", () => ({
   useLighterTradingMarkets: () => ({ data: { ok: true, data: { retrievedAt: 0, markets: [MARKET] } } }),
   useLighterTradingSnapshot: () => ({ data: undefined, refetch: vi.fn() }),
-  useLighterTradingAccount: () => ({ data: undefined }),
-  useLighterTradingFills: () => ({ data: undefined }),
+  useLighterTradingAccount: () => ({ data: accountData.value }),
+  useLighterTradingFills: () => ({ data: fillsData.value }),
   useLighterAccountActivityRefresh: () => undefined,
   useLighterOnboardingChecklist: () => ({ data: undefined }),
 }));
@@ -74,6 +77,8 @@ describe("desk lane", () => {
     prepareDeskAction.mockReset();
     approve.mockReset();
     funnelStep.mockClear();
+    accountData.value = undefined;
+    fillsData.value = undefined;
     vi.stubGlobal("window", Object.assign(window, { vex: { lighterTrading: { prepareDeskAction }, approvals: { approve }, telemetry: { funnelStep } } }));
     useUiStore.setState({ activeSessionId: "s1", createSessionOpen: false });
     useLighterAnalysisStore.getState().saveDesk({ environment: "rhc", marketId: 7, skipCloseConfirm: false });
@@ -157,6 +162,14 @@ describe("desk lane", () => {
     // The card is spent: a second resolution for the same id is ignored.
     act(() => { result.current.onApprovalResolved("approved", resolved({ id: "ap-1", executionStatus: "failed" })); });
     expect(result.current.deskOutcome?.tone).toBe("ok");
+  });
+
+  it("draws this market's fills only while a position is open on it", () => {
+    fillsData.value = { ok: true, data: { fills: [FILL, { ...FILL, tradeId: "t2", marketId: 8 }] } };
+    accountData.value = { ok: true, data: { status: "ready", summary: null, positions: [], marginTerms: [], openOrders: [] } };
+    expect(renderDesk().result.current.chartFills).toEqual([]);
+    accountData.value = { ok: true, data: { status: "ready", summary: null, positions: [{ marketId: 7, side: "long", size: "0.5" }], marginTerms: [], openOrders: [] } };
+    expect(renderDesk().result.current.chartFills).toEqual([FILL]);
   });
 
   it("shows the tool's own words on failure and a caution when the outcome is unknown", async () => {

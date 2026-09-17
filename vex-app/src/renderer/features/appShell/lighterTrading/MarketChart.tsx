@@ -277,6 +277,7 @@ export function MarketChart({
 }: MarketChartProps): JSX.Element {
   const [chartApi, setChartApi] = useState<IChartApi | null>(null);
   const [chartType, setChartType] = useState<"candles" | "line">("candles");
+  const [showFills, setShowFills] = useState(true);
   const lineSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -326,6 +327,10 @@ export function MarketChart({
 
   const handleVolume = useCallback((visible: boolean): void => {
     volumeSeriesRef.current?.applyOptions({ visible });
+  }, []);
+
+  const handleFills = useCallback((visible: boolean): void => {
+    setShowFills(visible);
   }, []);
 
   const handleScale = useCallback((scale: "linear" | "log"): void => {
@@ -659,14 +664,14 @@ export function MarketChart({
   useEffect(() => {
     const host = hostRef.current;
     const series = chartType === "line" ? lineSeriesRef.current : candleSeriesRef.current;
-    if (!host || !series || fills.length === 0) return undefined;
+    if (!host || !series || !showFills || fills.length === 0) return undefined;
     const colors = getChartColors(host);
     const barTimes = (appliedDataRef.current?.candles ?? []).map((point) => Number(point.time));
     const markers = createSeriesMarkers(series, fillMarkers(fills, barTimes, colors));
     return () => {
       if (chartRef.current !== null) markers.detach();
     };
-  }, [fills, candles, chartType, theme]);
+  }, [fills, showFills, candles, chartType, theme]);
 
   return (
     <>
@@ -682,6 +687,7 @@ export function MarketChart({
         minMove={resolvePriceFormat(pricePrecision, priceMinMove).minMove}
         onChartType={setChartType}
         onVolume={handleVolume}
+        onFills={handleFills}
         onScale={handleScale}
         leading={toolbarStart}
         trailing={toolbarEnd}

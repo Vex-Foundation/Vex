@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { coerceLighterAnalysis, createLighterAnalysisStore, LIGHTER_ANALYSIS_STORAGE_KEY, MAX_SAVED_CHARTS } from "../lighterAnalysisStore.js";
 import type { Drawing } from "../../features/appShell/lighterTrading/chart-drawings.js";
 import { DEFAULT_LIGHTER_DESK } from "../../features/appShell/lighterTrading/desk-preferences.js";
-const preferences = { studies: ["ema" as const], volume: false, chartType: "line" as const, scale: "linear" as const, periods: { sma: 20, ema: 20, bb: 20, rsi: 14 } };
+const preferences = { studies: ["ema" as const], volume: false, fills: true, chartType: "line" as const, scale: "linear" as const, periods: { sma: 20, ema: 20, bb: 20, rsi: 14 } };
 const drawing: Drawing = { id: "line-1", kind: "horizontal", a: { time: 100, price: 200 }, b: { time: 100, price: 200 } };
 function memoryStorage(initial?: string) {
   const values = new Map<string, string>(initial === undefined ? [] : [[LIGHTER_ANALYSIS_STORAGE_KEY, initial]]);
@@ -31,7 +31,7 @@ describe("Lighter renderer preference persistence", () => {
     } }));
     const store = createLighterAnalysisStore(() => storage);
     expect(Object.keys(store.getState().charts)).toEqual(["rhc:7"]);
-    expect(store.getState().charts["rhc:7"]).toEqual({ preferences: { studies: [], volume: true, chartType: "candles", scale: "linear", periods: { sma: 20, ema: 20, bb: 20, rsi: 14 } }, drawings: [] });
+    expect(store.getState().charts["rhc:7"]).toEqual({ preferences: { studies: [], volume: true, fills: true, chartType: "candles", scale: "linear", periods: { sma: 20, ema: 20, bb: 20, rsi: 14 } }, drawings: [] });
     expect(store.getState().favorites).toEqual(["rhc:perp:7:1:2:ETH"]);
     expect(typeof store.getState().savePreferences).toBe("function");
     expect(store.getState()).not.toHaveProperty("signingAuthority");
@@ -48,7 +48,7 @@ describe("Lighter renderer preference persistence", () => {
     expect(store.getState().savePreferences("other:1", preferences)).toBe(false);
     const oversized = { charts: Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`rhc:${i}`, { preferences }])), favorites: Array(1001).fill("rhc:perp:7:1:2:ETH") };
     expect(coerceLighterAnalysis(oversized)).toEqual({ charts: {}, favorites: [], desk: DEFAULT_LIGHTER_DESK });
-    expect(coerceLighterAnalysis({ charts: { "rhc:7": { preferences: { ...preferences, studies: Array(7).fill("ema") }, drawings: Array(61).fill(drawing) } } }).charts["rhc:7"]).toEqual({ preferences: { studies: [], volume: true, chartType: "candles", scale: "linear", periods: { sma: 20, ema: 20, bb: 20, rsi: 14 } }, drawings: [] });
+    expect(coerceLighterAnalysis({ charts: { "rhc:7": { preferences: { ...preferences, studies: Array(7).fill("ema") }, drawings: Array(61).fill(drawing) } } }).charts["rhc:7"]).toEqual({ preferences: { studies: [], volume: true, fills: true, chartType: "candles", scale: "linear", periods: { sma: 20, ema: 20, bb: 20, rsi: 14 } }, drawings: [] });
   });
   it("keeps edits in memory and reports write failure without leaking action methods", () => {
     const storage = memoryStorage("not-json");

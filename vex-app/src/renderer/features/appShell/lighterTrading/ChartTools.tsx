@@ -26,6 +26,7 @@ export interface ChartToolsProps {
   minMove?: number;
   onChartType: (type: "candles" | "line") => void;
   onVolume: (visible: boolean) => void;
+  onFills: (visible: boolean) => void;
   onScale: (scale: "linear" | "log") => void;
   /** Desk controls that share this one toolbar row: intervals first, expand last. */
   leading?: ReactNode;
@@ -42,12 +43,13 @@ export function ChartTools({
   minMove,
   onChartType,
   onVolume,
+  onFills,
   onScale,
   leading,
   trailing,
 }: ChartToolsProps): JSX.Element {
   const [preferences, setPreferences] = useState(() => useLighterAnalysisStore.getState().charts[scope]?.preferences ?? parseChartPreferences(null));
-  const { studies, volume: showVolume, chartType, scale, periods } = preferences;
+  const { studies, volume: showVolume, fills: showFills, chartType, scale, periods } = preferences;
   const studyLabel = (id: Study): string => STUDY_BY_ID[id].label(periods);
 
   const setPeriod = (id: PeriodStudy, raw: string): void => {
@@ -206,6 +208,10 @@ export function ChartTools({
   }, [showVolume, onVolume, chart]);
 
   useEffect(() => {
+    onFills(showFills);
+  }, [showFills, onFills, chart]);
+
+  useEffect(() => {
     onScale(scale);
   }, [scale, onScale, chart]);
 
@@ -268,6 +274,12 @@ export function ChartTools({
         aria-pressed={showVolume}
         onClick={() => setPreferences((current) => ({ ...current, volume: !current.volume }))}
       >Volume</button>
+      <button
+        type="button"
+        aria-pressed={showFills}
+        title="Mark the account's fills on the chart"
+        onClick={() => setPreferences((current) => ({ ...current, fills: !current.fills }))}
+      >Fills</button>
       <button
         type="button"
         aria-pressed={scale === "log"}

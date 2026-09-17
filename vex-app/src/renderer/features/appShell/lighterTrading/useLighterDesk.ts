@@ -104,9 +104,11 @@ export function useLighterDesk() {
   // Same query the account panel's Fills tab reads, so this adds no request.
   const fillsQuery = useLighterTradingFills(environment, chartMarketId !== null);
   const fills = fillsQuery.data?.ok === true ? fillsQuery.data.data.fills : null;
+  // Fill arrows only accompany an open position on this market; a flat chart stays clean.
+  const positionOpen = chartMarketId !== null && (account?.positions.some((position) => position.marketId === chartMarketId) ?? false);
   const chartFills = useMemo(
-    () => (chartMarketId === null || fills === null ? [] : fills.filter((fill) => fill.marketId === chartMarketId)),
-    [chartMarketId, fills],
+    () => (chartMarketId === null || fills === null || !positionOpen ? [] : fills.filter((fill) => fill.marketId === chartMarketId)),
+    [chartMarketId, fills, positionOpen],
   );
 
   const {
