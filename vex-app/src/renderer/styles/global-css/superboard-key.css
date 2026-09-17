@@ -1,0 +1,53 @@
+/* Superboard key section motion: one entrance, one pending marker, one swap.
+ * All three ride the duration/ease tokens and freeze under reduced motion
+ * (belt and braces beside the base.css catch-all). No control animates. */
+
+@keyframes vex-superboard-settle {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Entrance the status row replays whenever its sentence changes (remount the
+ * inner content with a new key; the role="status" wrapper stays mounted). */
+.vex-animate-status-settle {
+  animation: vex-superboard-settle var(--vex-duration-base) var(--vex-ease-out);
+}
+
+/* Pending marker on the ongoing StateDot. The chase itself is StateDot-owned
+ * (indicators.css, reduced-motion safe); this hook exists so the row - the
+ * only place that renders an ongoing dot - owns its play state explicitly. */
+.vex-superboard-dot-pending {
+  flex: none;
+}
+
+/* Fade for the Show/Hide key swap only: remount the code element keyed on
+ * the revealed flag so the new text fades in. */
+@keyframes vex-superboard-key-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.vex-superboard-key-swap {
+  animation: vex-superboard-key-fade var(--vex-duration-fast) var(--vex-ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-animate-status-settle,
+  .vex-superboard-key-swap {
+    animation: none;
+  }
+  .vex-superboard-dot-pending,
+  .vex-superboard-dot-pending .vex-state-cell {
+    animation: none !important;
+  }
+}

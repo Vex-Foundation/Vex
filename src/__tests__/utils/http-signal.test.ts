@@ -70,6 +70,37 @@ describe("fetchWithTimeout signal composition", () => {
     expect((thrown as Error).name).toBe("AbortError");
   });
 
+  it("carries the original rejection as cause on the timeout and request-failed branches", async () => {
+    vi.stubGlobal("fetch", hangingFetch());
+    let timedOut: unknown;
+    try {
+      await fetchWithTimeout("https://example.test/x", { timeoutMs: 10 });
+    } catch (err) {
+      timedOut = err;
+    }
+    expect(timedOut).toBeInstanceOf(VexError);
+    expect((timedOut as VexError).code).toBe(ErrorCodes.HTTP_TIMEOUT);
+    expect((timedOut as VexError).cause).toBeInstanceOf(Error);
+    // `cause` is attached like `new Error(msg, { cause })`: readable, never
+    // serialized.
+    expect(Object.keys(timedOut as object)).not.toContain("cause");
+
+    const rejected = new TypeError("fetch failed", {
+      cause: Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:1"), { code: "ECONNREFUSED" }),
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => { throw rejected; }));
+    let failed: unknown;
+    try {
+      await fetchWithTimeout("https://example.test/x", { timeoutMs: 1000 });
+    } catch (err) {
+      failed = err;
+    }
+    expect(failed).toBeInstanceOf(VexError);
+    expect((failed as VexError).code).toBe(ErrorCodes.HTTP_REQUEST_FAILED);
+    expect((failed as VexError).cause).toBe(rejected);
+    expect(Object.keys(failed as object)).not.toContain("cause");
+  });
+
   it("keeps the timeout ceiling when a caller signal is present", async () => {
     vi.stubGlobal("fetch", hangingFetch());
     const controller = new AbortController();

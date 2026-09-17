@@ -1,29 +1,57 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Result } from "@shared/ipc/result.js";
 import { VEX_PRIVACY_DOC_URL } from "@shared/docs-links.js";
-import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
+import type {
+  ShareTokenAttempt,
+  SuperboardKeyStatus,
+} from "@shared/schemas/superboard-key.js";
 import { SuperboardKeySection } from "../SuperboardKeySection.js";
 
 const SHARE = "S".repeat(43);
 const getSuperboardKey = vi.fn();
 const generateSuperboardKey = vi.fn();
+const rotateSuperboardKey = vi.fn();
 const writeText = vi.fn<(text: string) => Promise<void>>();
 
-function renderSection(): ReturnType<typeof render> {
-  const client = new QueryClient({
+function renderSection(
+  client: QueryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
-  });
-  return render(
+  }),
+): { client: QueryClient } & ReturnType<typeof render> {
+  const rendered = render(
     <QueryClientProvider client={client}>
       <SuperboardKeySection />
     </QueryClientProvider>,
   );
+  return { client, ...rendered };
 }
 
 function ok(data: SuperboardKeyStatus) {
   return { ok: true as const, data };
+}
+
+function registered(overrides: Record<string, unknown> = {}) {
+  return ok({
+    kind: "registered",
+    shareToken: SHARE,
+    rotation: { kind: "available" },
+    rotatedAt: null,
+    ...overrides,
+  } as SuperboardKeyStatus);
+}
+
+function failedAttempt(overrides: Record<string, unknown> = {}): ShareTokenAttempt {
+  return {
+    kind: "failed",
+    at: new Date(Date.now() - 30_000).toISOString(),
+    failure: { kind: "transport", reason: "timeout" },
+    detail: "VexError: Request timed out after 15000ms",
+    correlationId: "corr-1",
+    durationMs: 15012,
+    ...overrides,
+  } as ShareTokenAttempt;
 }
 
 function readFailure(): Result<SuperboardKeyStatus> {
@@ -41,9 +69,30 @@ function readFailure(): Result<SuperboardKeyStatus> {
   };
 }
 
+function rootAttributes(container: HTMLElement): {
+  readonly kind: string | null;
+  readonly attempt: string | null;
+  readonly rotation: string | null;
+} {
+  const root = container.querySelector("[data-vex-superboard-key]");
+  expect(root).not.toBeNull();
+  return {
+    kind: root!.getAttribute("data-vex-superboard-kind"),
+    attempt: root!.getAttribute("data-vex-superboard-attempt"),
+    rotation: root!.getAttribute("data-vex-superboard-rotation"),
+  };
+}
+
+function statusRow(): HTMLElement {
+  const rows = screen.queryAllByRole("status");
+  expect(rows).toHaveLength(1);
+  return rows[0] as HTMLElement;
+}
+
 beforeEach(() => {
   getSuperboardKey.mockReset();
   generateSuperboardKey.mockReset();
+  rotateSuperboardKey.mockReset();
   writeText.mockReset();
   writeText.mockResolvedValue();
   Object.defineProperty(navigator, "clipboard", {
@@ -57,6 +106,7 @@ beforeEach(() => {
       settings: {
         getSuperboardKey,
         generateSuperboardKey,
+        rotateSuperboardKey,
       },
     },
   });
@@ -68,16 +118,22 @@ afterEach(() => {
 });
 
 describe("SuperboardKeySection", () => {
-  it("shows loading without asking a connected user to connect AgentScan", async () => {
+  it("shows loading, then the linked row once the key arrives", async () => {
     const { promise, resolve: resolveRead } = Promise.withResolvers<Result<SuperboardKeyStatus>>();
     getSuperboardKey.mockReturnValue(promise);
-    renderSection();
-    expect(screen.getByRole("status").textContent).toBe("Loading Superboard key…");
+    const { container } = renderSection();
+    expect(statusRow().textContent).toBe("Loading Superboard key…");
     expect(screen.queryByText(/Connect AgentScan first/)).toBeNull();
     expect(screen.queryByRole("button", { name: "Generate" })).toBeNull();
-    resolveRead(ok({ kind: "registered", shareToken: SHARE }));
+    expect(rootAttributes(container)).toEqual({ kind: "loading", attempt: "none", rotation: null });
+    resolveRead(registered());
     expect(await screen.findByRole("button", { name: "Copy" })).toBeTruthy();
-    expect(screen.queryByRole("status")).toBeNull();
+    expect(statusRow().textContent).toBe("Linked to AgentScan");
+    expect(rootAttributes(container)).toEqual({
+      kind: "registered",
+      attempt: "none",
+      rotation: "available",
+    });
   });
 
   it.each(["result", "rejection"])("shows a %s read failure and retries only the read", async (failure) => {
@@ -87,6 +143,7 @@ describe("SuperboardKeySection", () => {
     getSuperboardKey.mockReturnValueOnce(promise);
     renderSection();
     expect((await screen.findByRole("alert")).textContent).toContain("Couldn't load the Superboard key.");
+    expect(statusRow().textContent).toBe("");
     expect(screen.queryByText(/Connect AgentScan first/)).toBeNull();
     expect(screen.queryByText(/private \/vault\/path/)).toBeNull();
     if (failure === "result") {
@@ -95,13 +152,12 @@ describe("SuperboardKeySection", () => {
     }
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(getSuperboardKey).toHaveBeenCalledTimes(2));
-    expect(screen.getByRole("status").textContent).toBe("Loading Superboard key…");
     expect(screen.queryByRole("button", { name: "Generate" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Copy" })).toBeNull();
     const retry = screen.queryByRole("button", { name: "Retry" });
     if (retry !== null) expect(retry).toHaveProperty("disabled", true);
     expect(generateSuperboardKey).not.toHaveBeenCalled();
-    resolveRetry(ok({ kind: "registered", shareToken: SHARE }));
+    resolveRetry(registered());
     const copy = await screen.findByRole("button", { name: "Copy" });
     expect(copy).toHaveProperty("disabled", false);
     expect(screen.queryByRole("alert")).toBeNull();
@@ -111,7 +167,7 @@ describe("SuperboardKeySection", () => {
     getSuperboardKey.mockResolvedValueOnce(ok({ kind: "missing" }));
     if (failure === "result") generateSuperboardKey.mockResolvedValueOnce(readFailure());
     else generateSuperboardKey.mockRejectedValueOnce(new Error("private /vault/path"));
-    getSuperboardKey.mockResolvedValueOnce(ok({ kind: "registered", shareToken: SHARE }));
+    getSuperboardKey.mockResolvedValueOnce(registered());
     renderSection();
     fireEvent.click(await screen.findByRole("button", { name: "Generate" }));
     expect((await screen.findByRole("alert")).textContent).toContain("Couldn't confirm key generation.");
@@ -133,31 +189,35 @@ describe("SuperboardKeySection", () => {
     getSuperboardKey.mockResolvedValue(ok({ kind: "missing" }));
     const { promise, resolve: resolveGenerate } = Promise.withResolvers<Result<SuperboardKeyStatus>>();
     generateSuperboardKey.mockReturnValue(promise);
-    renderSection();
+    const { container } = renderSection();
     fireEvent.click(await screen.findByRole("button", { name: "Generate" }));
     const generating = await screen.findByRole("button", { name: "Generating…" });
     expect(generating).toHaveProperty("disabled", true);
+    expect(statusRow().textContent).toBe("Linking to AgentScan...");
     fireEvent.click(generating);
     expect(generateSuperboardKey).toHaveBeenCalledTimes(1);
-    resolveGenerate(ok({ kind: "pending", shareToken: SHARE, lastError: null }));
+    resolveGenerate(ok({ kind: "pending", shareToken: SHARE, attempt: { kind: "none" } }));
     const copy = await screen.findByRole("button", { name: "Copy" });
     expect(copy).toHaveProperty("disabled", false);
     fireEvent.click(copy);
     await waitFor(() => expect(writeText).toHaveBeenCalledExactlyOnceWith(SHARE));
-    expect(screen.getByText("Not linked yet.")).toBeTruthy();
+    expect(statusRow().textContent).toBe("Linking to AgentScan...");
+    expect(rootAttributes(container)).toEqual({ kind: "pending", attempt: "none", rotation: null });
     expect(screen.queryByRole("button", { name: "Generate" })).toBeNull();
     expect(getSuperboardKey).toHaveBeenCalledTimes(1);
   });
 
   it("shows Generate when the key is missing", async () => {
     getSuperboardKey.mockResolvedValue(ok({ kind: "missing" }));
-    renderSection();
+    const { container } = renderSection();
     expect(await screen.findByRole("button", { name: "Generate" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Copy" })).toBeNull();
+    expect(statusRow().textContent).toBe("");
+    expect(rootAttributes(container)).toEqual({ kind: "missing", attempt: "none", rotation: null });
   });
 
   it("enables Copy when registered and never offers Regenerate", async () => {
-    getSuperboardKey.mockResolvedValue(ok({ kind: "registered", shareToken: SHARE }));
+    getSuperboardKey.mockResolvedValue(registered());
     renderSection();
     const copy = (await screen.findByRole("button", { name: "Copy" })) as HTMLButtonElement;
     expect(copy.disabled).toBe(false);
@@ -178,45 +238,191 @@ describe("SuperboardKeySection", () => {
   });
 
   it.each([
-    { lastError: null, message: "Not linked yet." },
-    { lastError: "HTTP 400 validation_failed", message: "Couldn't link this key yet. Try again later." },
-    { lastError: "HTTP 429 rate_limited", message: "Too many attempts. Wait a moment and try again." },
-  ])("copies a pending key while keeping the honest status: $message", async ({ lastError, message }) => {
-    getSuperboardKey.mockResolvedValue(ok({ kind: "pending", shareToken: SHARE, lastError }));
-    renderSection();
-    const copy = await screen.findByRole("button", { name: "Copy" });
+    {
+      failure: { kind: "transport", reason: "timeout" },
+      detail: "VexError: Request timed out after 15000ms",
+      primary: "AgentScan didn't answer in time.",
+      reassurance: "Your key is valid; only the link to AgentScan is missing.",
+    },
+    {
+      failure: { kind: "http", status: 400, code: "validation_failed" },
+      detail: "HTTP 400 validation_failed",
+      primary: "AgentScan refused this key.",
+      reassurance: null,
+    },
+    {
+      failure: { kind: "conflict" },
+      detail: "conflict",
+      primary: "This key couldn't be linked.",
+      reassurance:
+        "AgentScan already holds a different key for this install. Retrying resends this same key; share the ref below when asking for help.",
+    },
+  ])("renders a failed link once: $primary", async ({ failure, detail, primary, reassurance }) => {
+    getSuperboardKey.mockResolvedValue(
+      ok({
+        kind: "pending",
+        shareToken: SHARE,
+        attempt: failedAttempt({ failure, detail, correlationId: "corr-9" }),
+      }),
+    );
+    const { container } = renderSection();
+    expect((await screen.findByText(primary)).textContent).toBe(primary);
+    expect(statusRow().textContent).toBe(primary);
+    // A failed attempt is a warning, never an error: the key is still valid.
+    expect(statusRow().querySelector('.vex-state-dot[data-state="warning"]')).not.toBeNull();
+    expect(statusRow().querySelector('.vex-state-dot[data-state="error"]')).toBeNull();
+    expect(rootAttributes(container)).toEqual({ kind: "pending", attempt: "failed", rotation: null });
+    const detailLine = await screen.findByText(/ref corr-9/);
+    expect(detailLine.textContent).toBe(`${detail} · just now · ref corr-9`);
+    expect(screen.getAllByText(primary)).toHaveLength(1);
+    if (reassurance === null) {
+      expect(screen.queryByText(/Your key is valid/)).toBeNull();
+    } else {
+      expect(screen.getByText(reassurance).textContent).toBe(reassurance);
+    }
+    const copy = screen.getByRole("button", { name: "Copy" });
     expect(copy).toHaveProperty("disabled", false);
     fireEvent.click(copy);
     await waitFor(() => expect(writeText).toHaveBeenCalledExactlyOnceWith(SHARE));
-    expect(screen.getByText(message)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Generate" })).toBeNull();
-    expect(generateSuperboardKey).not.toHaveBeenCalled();
   });
 
-  it("shows a human pending line instead of HTTP 404 not_found", async () => {
+  it("resolves the sentence from the failure kind, never by parsing the detail", async () => {
     getSuperboardKey.mockResolvedValue(
-      ok({ kind: "pending", shareToken: SHARE, lastError: "HTTP 404 not_found" }),
+      ok({
+        kind: "pending",
+        shareToken: SHARE,
+        attempt: failedAttempt({
+          failure: { kind: "transport", reason: "timeout" },
+          detail: "HTTP 404 not_found",
+          correlationId: "corr-7",
+        }),
+      }),
     );
     renderSection();
-    expect(
-      await screen.findByText("Couldn't link this key yet. Try again later."),
-    ).toBeTruthy();
-    expect(screen.queryByText("HTTP 404 not_found")).toBeNull();
-    expect(screen.queryByText(/not_found/i)).toBeNull();
+    expect(await screen.findByText("AgentScan didn't answer in time.")).toBeTruthy();
+    expect(statusRow().textContent).toBe("AgentScan didn't answer in time.");
+    expect(await screen.findByText("HTTP 404 not_found · just now · ref corr-7")).toBeTruthy();
   });
 
-  it("hides Generate when not ready", async () => {
-    getSuperboardKey.mockResolvedValue(ok({ kind: "not_ready" }));
+  it("retries a failed link through generate and replays the entrance on the new attempt", async () => {
+    getSuperboardKey.mockResolvedValue(
+      ok({
+        kind: "pending",
+        shareToken: SHARE,
+        attempt: failedAttempt({ correlationId: "corr-1" }),
+      }),
+    );
+    generateSuperboardKey.mockResolvedValue(
+      ok({
+        kind: "pending",
+        shareToken: SHARE,
+        attempt: failedAttempt({
+          failure: { kind: "conflict" },
+          detail: "conflict",
+          correlationId: "corr-2",
+        }),
+      }),
+    );
     renderSection();
+    expect(await screen.findByText("AgentScan didn't answer in time.")).toBeTruthy();
+    expect(statusRow().textContent).toBe("AgentScan didn't answer in time.");
+    const firstSettle = statusRow().querySelector(".vex-animate-status-settle");
+    expect(firstSettle).not.toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("This key couldn't be linked.")).toBeTruthy();
+    expect(statusRow().textContent).toBe("This key couldn't be linked.");
+    const secondSettle = statusRow().querySelector(".vex-animate-status-settle");
+    expect(secondSettle).not.toBeNull();
+    expect(secondSettle).not.toBe(firstSettle);
+    expect(generateSuperboardKey).toHaveBeenCalledTimes(1);
+    expect(rotateSuperboardKey).not.toHaveBeenCalled();
+  });
+
+  it("labels Retry while its attempt is in flight", async () => {
+    getSuperboardKey.mockResolvedValue(
+      ok({
+        kind: "pending",
+        shareToken: SHARE,
+        attempt: failedAttempt({ correlationId: "corr-1" }),
+      }),
+    );
+    const { promise, resolve } = Promise.withResolvers<Result<SuperboardKeyStatus>>();
+    generateSuperboardKey.mockReturnValue(promise);
+    renderSection();
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    const retrying = await screen.findByRole("button", { name: "Retrying..." });
+    expect(retrying).toHaveProperty("disabled", true);
+    resolve(ok({ kind: "pending", shareToken: SHARE, attempt: { kind: "none" } }));
+    expect(await screen.findByText("Linking to AgentScan...")).toBeTruthy();
+    expect(statusRow().textContent).toBe("Linking to AgentScan...");
+  });
+
+  it.each([
+    {
+      context: "link",
+      flight: "Linking to AgentScan...",
+      reassurance: "Your key is valid; only the link to AgentScan is missing.",
+      status: (): Result<SuperboardKeyStatus> =>
+        ok({
+          kind: "pending",
+          shareToken: SHARE,
+          attempt: failedAttempt({ correlationId: "corr-1" }),
+        }),
+    },
+    {
+      context: "rotation",
+      flight: "Linking the new key...",
+      reassurance: "Your current key may already be replaced. Retry sends the same new key again.",
+      status: (): Result<SuperboardKeyStatus> =>
+        registered({
+          rotation: { kind: "pending", attempt: failedAttempt({ correlationId: "corr-1" }) },
+        }),
+    },
+  ])("replaces the failed $context row with the flight while Retry runs, then brings it back", async ({ flight, reassurance, status }) => {
+    const failed = status();
+    getSuperboardKey.mockResolvedValue(failed);
+    const { promise, resolve } = Promise.withResolvers<Result<SuperboardKeyStatus>>();
+    generateSuperboardKey.mockReturnValue(promise);
+    renderSection();
+    expect(await screen.findByText("AgentScan didn't answer in time.")).toBeTruthy();
+    expect(screen.getByText(reassurance)).toBeTruthy();
+    expect(screen.getByText(/ref corr-1/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    const retrying = await screen.findByRole("button", { name: "Retrying..." });
+    expect(retrying).toHaveProperty("disabled", true);
+    expect(statusRow().textContent).toBe(flight);
+    expect(statusRow().querySelector('.vex-state-matrix[data-state="ongoing"]')).not.toBeNull();
+    expect(screen.queryByText("AgentScan didn't answer in time.")).toBeNull();
+    expect(screen.queryByText(reassurance)).toBeNull();
+    expect(screen.queryByText(/ref corr-1/)).toBeNull();
+    resolve(failed);
+    expect(await screen.findByText("AgentScan didn't answer in time.")).toBeTruthy();
+    expect(statusRow().textContent).toBe("AgentScan didn't answer in time.");
+    expect(screen.getByText(reassurance)).toBeTruthy();
+    expect(screen.getByText(/ref corr-1/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toHaveProperty("disabled", false);
+    expect(generateSuperboardKey).toHaveBeenCalledTimes(1);
+    expect(rotateSuperboardKey).not.toHaveBeenCalled();
+  });
+
+  it("hides Generate when not ready and keeps the row empty", async () => {
+    getSuperboardKey.mockResolvedValue(ok({ kind: "not_ready" }));
+    const { container } = renderSection();
     expect(await screen.findByRole("heading", { name: "Superboard key" })).toBeTruthy();
+    const line = await screen.findByText(
+      "Connect AgentScan first. The Superboard key is minted against that identity.",
+    );
+    expect(line.querySelector('.vex-state-dot[data-state="warning"]')).not.toBeNull();
+    expect(statusRow().textContent).toBe("");
+    expect(rootAttributes(container)).toEqual({ kind: "not_ready", attempt: "none", rotation: null });
     expect(screen.queryByRole("button", { name: "Generate" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Copy" })).toBeNull();
   });
 
   it("does not refetch getSuperboardKey after Generate succeeds", async () => {
     getSuperboardKey.mockResolvedValue(ok({ kind: "missing" }));
-    generateSuperboardKey.mockResolvedValue(ok({ kind: "registered", shareToken: SHARE }));
+    generateSuperboardKey.mockResolvedValue(registered());
     renderSection();
     fireEvent.click(await screen.findByRole("button", { name: "Generate" }));
     expect(await screen.findByRole("button", { name: "Copy" })).toBeTruthy();
@@ -225,12 +431,186 @@ describe("SuperboardKeySection", () => {
   });
 
   it("masks the secret again after Hide", async () => {
-    getSuperboardKey.mockResolvedValue(ok({ kind: "registered", shareToken: SHARE }));
+    getSuperboardKey.mockResolvedValue(registered());
     renderSection();
     fireEvent.click(await screen.findByRole("button", { name: "Show" }));
     expect(screen.getByText(SHARE)).toBeTruthy();
+    expect(screen.getByText(SHARE).className).toContain("vex-superboard-key-swap");
     fireEvent.click(screen.getByRole("button", { name: "Hide" }));
     expect(screen.queryByText(SHARE)).toBeNull();
     expect(screen.getByText("••••••••••••••••••••••••")).toBeTruthy();
+  });
+
+  it.each([
+    {
+      rotation: { kind: "unavailable", reason: "server" },
+      line: "Key rotation needs a newer AgentScan.",
+    },
+    {
+      rotation: { kind: "unavailable", reason: "unknown" },
+      line: "Checking whether AgentScan supports key rotation...",
+    },
+  ])("shows the rotation availability line without actions: $line", async ({ rotation, line }) => {
+    getSuperboardKey.mockResolvedValue(registered({ rotation }));
+    const { container } = renderSection();
+    expect(await screen.findByText(line)).toBeTruthy();
+    expect(statusRow().textContent).toBe("Linked to AgentScan");
+    expect(screen.queryByRole("button", { name: "Generate new key" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(rootAttributes(container)).toEqual({
+      kind: "registered",
+      attempt: "none",
+      rotation: "unavailable",
+    });
+  });
+
+  it("retries a failed rotation through generate, in rotation context", async () => {
+    getSuperboardKey.mockResolvedValue(
+      registered({
+        rotation: {
+          kind: "pending",
+          attempt: failedAttempt({
+            failure: { kind: "conflict" },
+            detail: "conflict",
+            correlationId: "corr-r",
+          }),
+        },
+      }),
+    );
+    generateSuperboardKey.mockResolvedValue(registered());
+    const { container } = renderSection();
+    expect(await screen.findByText("The new key couldn't be linked.")).toBeTruthy();
+    expect(statusRow().textContent).toBe("The new key couldn't be linked.");
+    expect(statusRow().querySelector('.vex-state-dot[data-state="warning"]')).not.toBeNull();
+    expect(
+      await screen.findByText(
+        "Your current key still works. AgentScan holds a key this app doesn't know; share the ref below when asking for help.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("conflict · just now · ref corr-r")).toBeTruthy();
+    expect(rootAttributes(container)).toEqual({
+      kind: "registered",
+      attempt: "failed",
+      rotation: "pending",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(generateSuperboardKey).toHaveBeenCalledTimes(1));
+    expect(rotateSuperboardKey).not.toHaveBeenCalled();
+    expect(statusRow().textContent).toBe("Linked to AgentScan");
+  });
+
+  it("shows one indicator while a rotation is in flight", async () => {
+    getSuperboardKey.mockResolvedValue(
+      registered({ rotation: { kind: "pending", attempt: { kind: "none" } } }),
+    );
+    const { container } = renderSection();
+    expect(await screen.findByText("Linking the new key...")).toBeTruthy();
+    expect(statusRow().textContent).toBe("Linking the new key...");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(screen.queryByText("Waiting to link...")).toBeNull();
+    expect(container.querySelectorAll(".vex-state-matrix")).toHaveLength(1);
+    expect(rootAttributes(container)).toEqual({
+      kind: "registered",
+      attempt: "none",
+      rotation: "pending",
+    });
+  });
+
+  it("opens the rotate dialog on Cancel focus and cancels on Escape without rotating", async () => {
+    getSuperboardKey.mockResolvedValue(registered());
+    renderSection();
+    fireEvent.click(await screen.findByRole("button", { name: "Generate new key" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(screen.getByRole("heading", { name: "Generate a new Superboard key?" })).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Your current key stops working in Superboard the moment the new one is linked. You will paste the new key there.",
+      ),
+    ).toBeTruthy();
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    expect(cancel.hasAttribute("autofocus")).toBe(true);
+    // Escape: the native <dialog> cancel event, routed through onOpenChange.
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(rotateSuperboardKey).not.toHaveBeenCalled();
+  });
+
+  it("cancels the rotate dialog on a backdrop click without rotating", async () => {
+    getSuperboardKey.mockResolvedValue(registered());
+    renderSection();
+    fireEvent.click(await screen.findByRole("button", { name: "Generate new key" }));
+    const dialog = await screen.findByRole("dialog");
+    // A click whose target is the dialog element itself is the backdrop.
+    fireEvent.click(dialog);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(rotateSuperboardKey).not.toHaveBeenCalled();
+  });
+
+  it("confirms the rotation, celebrates once, then returns to linked", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-08T02:00:00.000Z"));
+    getSuperboardKey.mockResolvedValue(registered());
+    const rotated = registered({
+      shareToken: "N".repeat(43),
+      rotatedAt: "2026-09-08T00:00:00.000Z",
+    });
+    rotateSuperboardKey.mockResolvedValue(rotated);
+    const { client, unmount } = renderSection();
+    fireEvent.click(await screen.findByRole("button", { name: "Generate new key" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Generate new key" }));
+    await waitFor(() => expect(rotateSuperboardKey).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("New key linked. Paste it in Superboard.")).toBeTruthy();
+    expect(statusRow().textContent).toBe("New key linked. Paste it in Superboard.");
+    // A later status ends the celebration: remount on the same cache (a fresh
+    // mount with settled mutation state) and the row is back to linked, now
+    // carrying the rotation time.
+    unmount();
+    renderSection(client);
+    expect(await screen.findByText("Linked to AgentScan · new key since 2 h ago")).toBeTruthy();
+    expect(screen.queryByText("New key linked. Paste it in Superboard.")).toBeNull();
+  });
+
+  it("does not celebrate a rotate that answered registered with the same rotatedAt", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-08T00:05:00.000Z"));
+    const before = registered({ rotatedAt: "2026-09-08T00:00:00.000Z" });
+    getSuperboardKey.mockResolvedValue(before);
+    // A refused or fenced rotation: the handler returns the current status.
+    rotateSuperboardKey.mockResolvedValue(before);
+    renderSection();
+    expect(await screen.findByText("Linked to AgentScan · new key since 5 min ago")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Generate new key" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Generate new key" }));
+    await waitFor(() => expect(rotateSuperboardKey).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Generate new key" })).toHaveProperty("disabled", false));
+    expect(statusRow().textContent).toBe("Linked to AgentScan · new key since 5 min ago");
+    expect(screen.queryByText("New key linked. Paste it in Superboard.")).toBeNull();
+  });
+
+  it("reads the rotation time on the linked row", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-08T03:30:00.000Z"));
+    getSuperboardKey.mockResolvedValue(registered({ rotatedAt: "2026-09-08T00:00:00.000Z" }));
+    renderSection();
+    expect(await screen.findByText("Linked to AgentScan · new key since 3 h ago")).toBeTruthy();
+    expect(statusRow().textContent).toBe("Linked to AgentScan · new key since 3 h ago");
+    expect(statusRow().querySelector('.vex-state-dot[data-state="done"]')).not.toBeNull();
+  });
+
+  it("shows the rotation flight while rotate is pending", async () => {
+    getSuperboardKey.mockResolvedValue(registered());
+    const { promise, resolve } = Promise.withResolvers<Result<SuperboardKeyStatus>>();
+    rotateSuperboardKey.mockReturnValue(promise);
+    renderSection();
+    fireEvent.click(await screen.findByRole("button", { name: "Generate new key" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Generate new key" }));
+    await waitFor(() => expect(rotateSuperboardKey).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(statusRow().textContent).toBe("Linking the new key...");
+    // The row is the only in-flight indicator: the trigger keeps its label.
+    expect(screen.getByRole("button", { name: "Generate new key" })).toHaveProperty("disabled", true);
+    expect(screen.queryByRole("button", { name: "Generating..." })).toBeNull();
+    resolve(registered());
+    expect(await screen.findByText("Linked to AgentScan")).toBeTruthy();
   });
 });
