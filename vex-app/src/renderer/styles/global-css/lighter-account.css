@@ -35,7 +35,7 @@
 .lit-risk-strip .lit-margin-usage-bar { width: 44px; }
 
 /* Narrow dock: the status text yields first, then the strip's outer items. */
-@container (max-width: 860px) {
+@container (max-width: 1060px) {
   .lit-bottom-status > span { display: none; }
 }
 @container (max-width: 850px) {

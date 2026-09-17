@@ -177,29 +177,41 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
 
 /* The bar answers to its own width (`.lit-desk-top` is the container), not
  * the viewport: the shell rails on both sides decide how much it gets. */
-@container (max-width: 1100px) {
+/* Thresholds come from the measured strip: the fixed items (switch, market,
+ * price, categories, Ask, Live) take 689px of the container, then each stat
+ * its own width. Every step removes whole stats so the strip never shows a
+ * half label; the scroll above is only the safety net for longer values. */
+@container (max-width: 1350px) {
   .lit-market-bar .lit-market-metric[data-metric="index"],
   .lit-market-bar .lit-market-metric[data-metric="low"] { display: none; }
-  /* Each product keeps what it trades on: a perp its funding and open
-   * interest, spot its range and volume. The strip clips silently, so what
-   * goes is named here rather than left to the overflow. */
-  .lit-market-bar[data-market-type="perp"] .lit-market-metric[data-metric="high"],
-  .lit-market-bar[data-market-type="perp"] .lit-market-metric[data-metric="volume"],
-  .lit-market-bar[data-market-type="spot"] .lit-market-metric[data-metric="mid"] { display: none; }
 }
 
-@container (max-width: 940px) {
+@container (max-width: 1190px) {
+  /* Each product keeps what it trades on: a perp its funding and open
+   * interest, spot its range and volume. */
+  .lit-market-bar[data-market-type="perp"] .lit-market-metric[data-metric="high"],
+  .lit-market-bar[data-market-type="perp"] .lit-market-metric[data-metric="volume"] { display: none; }
+}
+
+@container (max-width: 1020px) {
   .lit-market-bar .lit-market-metric[data-metric="change"],
   .lit-market-bar .lit-market-metric[data-metric="mid"] { display: none; }
   .lit-market-metrics { gap: 14px; }
 }
 
-@container (max-width: 760px) {
-  .lit-market-bar .lit-market-metric[data-metric="high"],
+@container (max-width: 930px) {
+  .lit-market-bar .lit-market-metric[data-metric="funding"] { display: none; }
+}
+
+@container (max-width: 850px) {
   .lit-market-bar .lit-market-metric[data-metric="volume"] { display: none; }
 }
 
-@container (max-width: 560px) {
+@container (max-width: 820px) {
+  .lit-market-bar .lit-market-metric[data-metric="open-interest"] { display: none; }
+}
+
+@container (max-width: 740px) {
   .lit-market-metrics { display: none; }
 }
 
