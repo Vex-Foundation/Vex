@@ -102,8 +102,12 @@ describe("desk lane", () => {
     prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-2" } });
     const { result } = renderDesk();
 
-    await act(async () => { result.current.accountActions.onClosePosition({ marketId: 7, side: "long", size: "0.25" } as LighterPositionRow); });
+    await act(async () => { result.current.accountActions.onClosePosition({ marketId: 7, side: "long", size: "0.25" } as LighterPositionRow, 1); });
     expect(prepareDeskAction).toHaveBeenLastCalledWith(expect.objectContaining({ action: { kind: "close", marketId: 7 } }));
+
+    // A portion is not main's whole-position close: it loads the ticket instead.
+    await act(async () => { result.current.accountActions.onClosePosition({ marketId: 7, side: "long", size: "0.25" } as LighterPositionRow, 0.5); });
+    expect(prepareDeskAction).toHaveBeenCalledTimes(1);
 
     await act(async () => { result.current.accountActions.onCancelOrder({ marketId: 7, orderId: "9001" } as LighterOpenOrderRow); });
     expect(prepareDeskAction).toHaveBeenLastCalledWith(expect.objectContaining({ action: { kind: "cancel", marketId: 7, orderId: "9001" } }));
@@ -159,7 +163,7 @@ describe("desk lane", () => {
     prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-3" } });
     const { result } = renderDesk();
 
-    await act(async () => { result.current.accountActions.onClosePosition({ marketId: 7, side: "long", size: "0.25" } as LighterPositionRow); });
+    await act(async () => { result.current.accountActions.onClosePosition({ marketId: 7, side: "long", size: "0.25" } as LighterPositionRow, 1); });
     act(() => { result.current.onApprovalResolved("approved", resolved({ id: "ap-3", executionStatus: "failed", toolOutput: "Position already closed." })); });
     expect(result.current.deskOutcome).toEqual({ tone: "error", text: "Position already closed." });
 
@@ -182,7 +186,7 @@ describe("desk lane", () => {
       approve.mockResolvedValue({ ok: true, data: resolved({ id: "ap-9" }) });
       const { result, invalidate } = renderDesk();
 
-      await act(async () => { result.current.accountActions.onClosePosition(POSITION); });
+      await act(async () => { result.current.accountActions.onClosePosition(POSITION, 1); });
 
       // Main still prepared the card; the desk only signed it in the user's stead.
       expect(prepareDeskAction).toHaveBeenLastCalledWith(expect.objectContaining({ action: { kind: "close", marketId: 7 } }));
@@ -210,7 +214,7 @@ describe("desk lane", () => {
       approve.mockResolvedValue({ ok: false, error: { code: "approval.not_found", message: "Approval expired." } });
       const { result } = renderDesk();
 
-      await act(async () => { result.current.accountActions.onClosePosition(POSITION); });
+      await act(async () => { result.current.accountActions.onClosePosition(POSITION, 1); });
       expect(result.current.handoffError).toBe("Approval expired.");
       expect(result.current.deskOutcome).toBeNull();
     });

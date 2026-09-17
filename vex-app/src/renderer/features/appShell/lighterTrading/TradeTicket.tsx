@@ -411,7 +411,11 @@ export function TradeTicket({
         ) : null}
 
         {perp && !protective && form.protectOpen ? <ProtectSection form={form} /> : null}
+      </div>
 
+      <div className="lit-ticket-footer">
+        {/* The facts sit in the sticky footer so Cost, Max Size and Liq. Price
+            stay in view when the fields above scroll. */}
         <dl className="lit-ticket-facts">
           <div>
             <dt>Order Value</dt>
@@ -451,9 +455,6 @@ export function TradeTicket({
             </div>
           )}
         </dl>
-      </div>
-
-      <div className="lit-ticket-footer">
         {handoffError ? <p className="lit-review-error" role="alert">{handoffError}</p> : null}
         {outcome !== null && handoffError == null ? (
           <p className="lit-review-outcome" data-tone={outcome.tone} role="status">{outcome.text}</p>

@@ -123,14 +123,21 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   from { color: var(--lit-negative); text-shadow: 0 0 10px color-mix(in srgb, var(--lit-negative) 55%, transparent); }
 }
 
+/* Narrow windows scroll the strip sideways instead of clipping the last stats;
+ * the right edge fades to say there is more. */
 .lit-market-metrics {
   display: flex;
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
   gap: 20px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
 }
+
+.lit-market-metrics::-webkit-scrollbar { display: none; }
 
 .lit-market-metric {
   display: flex;

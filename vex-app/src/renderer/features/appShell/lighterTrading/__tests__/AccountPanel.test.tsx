@@ -334,7 +334,13 @@ describe("TradingBottomPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Review BTC position with Vex" }));
     expect(mocks.actions.onReviewPosition).toHaveBeenCalledWith(account.positions[0]);
     fireEvent.click(screen.getByRole("button", { name: "Close BTC position" }));
-    expect(mocks.actions.onClosePosition).toHaveBeenCalledWith(account.positions[0]);
+    expect(mocks.actions.onClosePosition).toHaveBeenCalledWith(account.positions[0], 1);
+    // The row's portion rides along with both close buttons.
+    fireEvent.change(screen.getByRole("combobox", { name: "Portion of BTC position to close" }), { target: { value: "0.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Close BTC position" }));
+    expect(mocks.actions.onClosePosition).toHaveBeenLastCalledWith(account.positions[0], 0.5);
+    fireEvent.click(screen.getByRole("button", { name: "Close BTC position with a limit order" }));
+    expect(mocks.actions.onCloseLimit).toHaveBeenCalledWith(account.positions[0], 0.5);
     fireEvent.click(screen.getByRole("button", { name: "Set stop loss and take profit for BTC" }));
     expect(mocks.actions.onProtectPosition).toHaveBeenCalledWith(account.positions[0]);
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   marginUsage,
+  portionOfSize,
   positionMetrics,
   positionProtection,
   type LighterOpenOrderRow,
@@ -141,5 +142,16 @@ describe("desk messages", () => {
     const withdraw = buildFundMessage({ environment: "core", kind: "withdraw" });
     expect(withdraw).toContain("Vex has no withdrawal tool");
     expect(withdraw).not.toContain("approval card");
+  });
+});
+
+describe("portionOfSize", () => {
+  it("floors the portion to the market's size decimals and keeps the whole position exact", () => {
+    expect(portionOfSize("0.00051", 1, 5)).toBe("0.00051");
+    expect(portionOfSize("0.00051", 0.75, 5)).toBe("0.00038");
+    expect(portionOfSize("0.00051", 0.25, 5)).toBe("0.00012");
+    expect(portionOfSize("3", 0.5, 0)).toBe("1");
+    expect(portionOfSize("1.5", 0.5, 1)).toBe("0.7");
+    expect(portionOfSize("0.00001", 0.25, 5)).toBe("0");
   });
 });

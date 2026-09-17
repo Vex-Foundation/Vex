@@ -1,6 +1,6 @@
 import type { SeriesMarker, UTCTimestamp } from "lightweight-charts";
 import type { LighterTradingFill } from "@shared/schemas/lighter-trading.js";
-import { formatCompact, formatPrice } from "./format.js";
+import { formatDecimalString, formatPrice } from "./format.js";
 
 /** Index of the latest bar at or before `time`, or -1 when none is loaded. */
 function barIndexAt(barTimes: readonly number[], time: number): number {
@@ -28,7 +28,9 @@ export function fillMarkers(
   precision: number,
 ): SeriesMarker<UTCTimestamp>[] {
   if (fills.length === 0 || barTimes.length === 0) return [];
-  const buckets = new Map<string, { time: number; side: "buy" | "sell"; size: number; notional: number }>();
+  // Sizes are decimal strings at the market's size precision, so summing at
+  // the widest fraction in a bucket keeps a 0.00051 BTC total exact.
+  const buckets = new Map<string, { time: number; side: "buy" | "sell"; size: number; notional: number; decimals: number }>();
   for (const fill of fills) {
     const size = Number(fill.size);
     const price = Number(fill.price);
@@ -38,9 +40,10 @@ export function fillMarkers(
     if (index < 0) continue;
     const time = barTimes[index]!;
     const key = `${time}:${fill.side}`;
-    const bucket = buckets.get(key) ?? { time, side: fill.side, size: 0, notional: 0 };
+    const bucket = buckets.get(key) ?? { time, side: fill.side, size: 0, notional: 0, decimals: 0 };
     bucket.size += size;
     bucket.notional += size * price;
+    bucket.decimals = Math.max(bucket.decimals, fill.size.split(".")[1]?.length ?? 0);
     buckets.set(key, bucket);
   }
   return [...buckets.values()]
@@ -51,6 +54,6 @@ export function fillMarkers(
       position: bucket.side === "buy" ? "belowBar" : "aboveBar",
       shape: bucket.side === "buy" ? "arrowUp" : "arrowDown",
       color: bucket.side === "buy" ? colors.positive : colors.negative,
-      text: `${bucket.side === "buy" ? "B" : "S"} ${formatCompact(bucket.size)} @ ${formatPrice(bucket.notional / bucket.size, precision)}`,
+      text: `${bucket.side === "buy" ? "B" : "S"} ${formatDecimalString(bucket.size.toFixed(bucket.decimals).replace(/\.?0+$/, ""))} @ ${formatPrice(bucket.notional / bucket.size, precision)}`,
     }));
 }

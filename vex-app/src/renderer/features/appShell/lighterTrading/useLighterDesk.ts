@@ -18,7 +18,7 @@ import {
 } from "./desk-messages.js";
 import { publishDeskSend } from "./desk-send-intent.js";
 import { findLoadMarket, useDeskTicketLoadStore } from "./desk-ticket-load.js";
-import { accountRisk, positionMetrics } from "./account-model.js";
+import { accountRisk, portionOfSize, positionMetrics, type ClosePortion } from "./account-model.js";
 import { buildChartLevels } from "./chart-levels.js";
 import { marketSectionFor, type LighterMarketSection } from "./market-classification.js";
 import { selectDefaultLighterMarket } from "./market-selection.js";
@@ -204,8 +204,10 @@ export function useLighterDesk() {
   };
 
   // A limit close rests at the mark: the live one on this desk, else the
-  // snapshot's. Reduce-only, so it can only ever shrink the position.
-  const prefillFromPosition = (position: LighterPositionRow, mode: "limit" | "oco"): void => {
+  // snapshot's. Reduce-only, so it can only ever shrink the position. A
+  // partial market close also loads here: main's close selector is the whole
+  // position, so a portion goes out as a reduce-only market order instead.
+  const prefillFromPosition = (position: LighterPositionRow, mode: "market" | "limit" | "oco", portion: ClosePortion = 1): void => {
     const target = openPositionMarket(position);
     if (target === null) return;
     const size = position.size.startsWith("-") ? position.size.slice(1) : position.size;
@@ -214,8 +216,8 @@ export function useLighterDesk() {
       key: Date.now(),
       mode,
       side: position.side === "long" ? "sell" : "buy",
-      baseAmount: size,
-      reduceOnly: mode === "limit",
+      baseAmount: portionOfSize(size, portion, target.decimals.size),
+      reduceOnly: mode !== "oco",
       ...(mode === "limit" && mark !== null ? { price: mark.toFixed(target.decimals.price) } : {}),
     });
   };
@@ -244,9 +246,12 @@ export function useLighterDesk() {
 
   const accountActions: AccountActions = {
     onReviewPosition: (position) => sendToChat(buildReviewPositionMessage({ environment, position })),
-    onClosePosition: (position) => { void prepareOnDesk({ kind: "close", marketId: position.marketId }, null); },
+    onClosePosition: (position, portion) => {
+      if (portion === 1) void prepareOnDesk({ kind: "close", marketId: position.marketId }, null);
+      else prefillFromPosition(position, "market", portion);
+    },
     onProtectPosition: (position) => prefillFromPosition(position, "oco"),
-    onCloseLimit: (position) => prefillFromPosition(position, "limit"),
+    onCloseLimit: (position, portion) => prefillFromPosition(position, "limit", portion),
     onOpenMarket: (position) => { openPositionMarket(position); },
     onRestoreCloseConfirm: () => saveDesk({ skipCloseConfirm: false }),
     onCancelOrder: (order) => { void prepareOnDesk({ kind: "cancel", marketId: order.marketId, orderId: order.orderId }, null); },

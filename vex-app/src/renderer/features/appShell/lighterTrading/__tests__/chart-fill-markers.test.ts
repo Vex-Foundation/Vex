@@ -35,6 +35,14 @@ describe("fillMarkers", () => {
     ]);
   });
 
+  it("shows small totals at the fills' own precision instead of rounding to 0", () => {
+    const markers = fillMarkers([
+      fill({ tradeId: "a", size: "0.00026", price: "76804.9", timestamp: 1_700_000_030_000 }),
+      fill({ tradeId: "b", size: "0.00025", price: "76641.1", timestamp: 1_700_000_040_000 }),
+    ], [1_700_000_000], colors, 1);
+    expect(markers[0]?.text).toBe("B 0.00051 @ 76,724.6");
+  });
+
   it("drops fills older than the loaded history and unusable rows", () => {
     const bars = [1_700_000_060];
     expect(fillMarkers([

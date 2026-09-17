@@ -8,7 +8,7 @@ import type {
 } from "@shared/schemas/lighter-trading.js";
 import { IconChevronDown, IconChevronUp } from "../../../components/icons/index.js";
 import { useLighterTradingAccount, useLighterTradingFills } from "../../../lib/api/lighter-trading.js";
-import { accountRisk, marginUsage, positionMetrics, positionProtection, type LighterOpenOrderRow, type LighterPositionRow } from "./account-model.js";
+import { CLOSE_PORTIONS, accountRisk, marginUsage, positionMetrics, positionProtection, type ClosePortion, type LighterOpenOrderRow, type LighterPositionRow } from "./account-model.js";
 import { NO_VALUE, formatDecimalString, formatNumber, formatPrice, formatRetrievedAt } from "./format.js";
 
 type BottomTab = "positions" | "orders" | "fills" | "balances";
@@ -96,12 +96,12 @@ function tabCount(account: LighterTradingAccount | null, tab: BottomTab): number
 export interface AccountActions {
   /** Asks the trading session to review this position; nothing is prepared. */
   readonly onReviewPosition: (position: LighterPositionRow) => void;
-  /** Asks the trading session to close this position at market, reduce-only. */
-  readonly onClosePosition: (position: LighterPositionRow) => void;
+  /** Closes this portion of the position at market, reduce-only; the whole position goes straight to its card. */
+  readonly onClosePosition: (position: LighterPositionRow, portion: ClosePortion) => void;
   /** Prefills the ticket with an OCO stop-loss and take-profit for this position. */
   readonly onProtectPosition: (position: LighterPositionRow) => void;
-  /** Prefills the ticket with a reduce-only limit close of the whole position at the mark. */
-  readonly onCloseLimit: (position: LighterPositionRow) => void;
+  /** Prefills the ticket with a reduce-only limit close of this portion of the position at the mark. */
+  readonly onCloseLimit: (position: LighterPositionRow, portion: ClosePortion) => void;
   /** Puts this position's market on the desk. */
   readonly onOpenMarket: (position: LighterPositionRow) => void;
   /** Asks the trading session to cancel one resting order. */
@@ -362,6 +362,8 @@ function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDec
   readonly closeConfirmSkipped: boolean;
   readonly actions: AccountActions;
 }): JSX.Element {
+  // How much of each row the Limit and Market buttons close; whole by default.
+  const [portions, setPortions] = useState<Record<string, ClosePortion>>({});
   if (account.positions.length === 0) {
     return <p className="lit-book-empty">No open positions.</p>;
   }
@@ -386,8 +388,10 @@ function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDec
           const live = position.marketId === activeMarketId ? activeMarkPrice : null;
           const metrics = positionMetrics(position, live);
           const protection = positionProtection(position, account.openOrders);
+          const rowKey = `${position.marketId}-${position.side}`;
+          const portion = portions[rowKey] ?? 1;
           return (
-            <div className="lit-account-row" role="row" key={`${position.marketId}-${position.side}`}>
+            <div className="lit-account-row" role="row" key={rowKey}>
               <span className="lit-order-cell" role="cell">
                 <button
                   type="button"
@@ -425,10 +429,17 @@ function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDec
                 <button type="button" onClick={() => actions.onProtectPosition(position)} aria-label={`Set stop loss and take profit for ${position.symbol}`}>
                   Protect
                 </button>
-                <button type="button" onClick={() => actions.onCloseLimit(position)} aria-label={`Close ${position.symbol} position with a limit order`}>
+                <select
+                  value={String(portion)}
+                  onChange={(event) => setPortions((prev) => ({ ...prev, [rowKey]: Number(event.target.value) as ClosePortion }))}
+                  aria-label={`Portion of ${position.symbol} position to close`}
+                >
+                  {CLOSE_PORTIONS.map((option) => <option key={option} value={String(option)}>{option * 100}%</option>)}
+                </select>
+                <button type="button" onClick={() => actions.onCloseLimit(position, portion)} aria-label={`Close ${position.symbol} position with a limit order`}>
                   Limit
                 </button>
-                <button type="button" data-danger onClick={() => actions.onClosePosition(position)} aria-label={`Close ${position.symbol} position`}>
+                <button type="button" data-danger onClick={() => actions.onClosePosition(position, portion)} aria-label={`Close ${position.symbol} position`}>
                   Market
                 </button>
               </span>

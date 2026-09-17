@@ -36,6 +36,25 @@ export function positionMetrics(position: LighterPositionRow, liveMark: number |
   };
 }
 
+/** Portions the positions table can close; 1 is the whole position. */
+export const CLOSE_PORTIONS = [1, 0.75, 0.5, 0.25] as const;
+export type ClosePortion = (typeof CLOSE_PORTIONS)[number];
+
+/**
+ * A portion of a position's size, floored to the market's size decimals so
+ * the order is one the book accepts. Integer math on the decimal string keeps
+ * 0.00051 × 0.75 exact where floats would not.
+ */
+export function portionOfSize(size: string, portion: ClosePortion, sizeDecimals: number): string {
+  const [whole, fraction = ""] = size.split(".");
+  const units = BigInt(`${whole}${fraction.padEnd(sizeDecimals, "0").slice(0, sizeDecimals)}`);
+  const scaled = (units * BigInt(Math.round(portion * 100))) / 100n;
+  const digits = scaled.toString().padStart(sizeDecimals + 1, "0");
+  const head = digits.slice(0, digits.length - sizeDecimals);
+  const tail = digits.slice(digits.length - sizeDecimals).replace(/0+$/, "");
+  return tail === "" ? head : `${head}.${tail}`;
+}
+
 export interface PositionProtection {
   readonly stopLoss: LighterOpenOrderRow | null;
   readonly takeProfit: LighterOpenOrderRow | null;

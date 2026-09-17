@@ -208,6 +208,18 @@
   font-weight: 600;
 }
 
+/* The close portion sits with Limit and Market and reads like one of them. */
+.lit-row-actions select {
+  height: 24px;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: var(--lit-panel);
+  padding: 0 4px;
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .lit-row-actions button:hover { border-color: var(--lit-line-strong); color: var(--lit-ink); }
 .lit-row-actions button[data-danger]:hover { border-color: var(--lit-negative); color: var(--lit-negative); }
 
