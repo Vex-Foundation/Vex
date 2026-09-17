@@ -28,19 +28,11 @@ describe("fillMarkers", () => {
       fill({ tradeId: "a", size: "0.5", price: "80000", timestamp: 1_700_000_030_000 }),
       fill({ tradeId: "b", size: "1.5", price: "84000", timestamp: 1_700_000_059 }),
       fill({ tradeId: "c", side: "sell", size: "1", price: "85000", timestamp: 1_700_000_130_000 }),
-    ], bars, colors, 0);
+    ], bars, colors);
     expect(markers).toEqual([
-      expect.objectContaining({ time: 1_700_000_000, position: "belowBar", shape: "arrowUp", color: "green", text: "B 2 @ 83,000" }),
-      expect.objectContaining({ time: 1_700_000_120, position: "aboveBar", shape: "arrowDown", color: "red", text: "S 1 @ 85,000" }),
+      { id: "fill:1700000000:buy", time: 1_700_000_000, position: "belowBar", shape: "arrowUp", color: "green" },
+      { id: "fill:1700000120:sell", time: 1_700_000_120, position: "aboveBar", shape: "arrowDown", color: "red" },
     ]);
-  });
-
-  it("shows small totals at the fills' own precision instead of rounding to 0", () => {
-    const markers = fillMarkers([
-      fill({ tradeId: "a", size: "0.00026", price: "76804.9", timestamp: 1_700_000_030_000 }),
-      fill({ tradeId: "b", size: "0.00025", price: "76641.1", timestamp: 1_700_000_040_000 }),
-    ], [1_700_000_000], colors, 1);
-    expect(markers[0]?.text).toBe("B 0.00051 @ 76,724.6");
   });
 
   it("drops fills older than the loaded history and unusable rows", () => {
@@ -48,7 +40,7 @@ describe("fillMarkers", () => {
     expect(fillMarkers([
       fill({ timestamp: 1_700_000_000_000 }),
       fill({ timestamp: 1_700_000_090_000, size: "0" }),
-    ], bars, colors, 0)).toEqual([]);
-    expect(fillMarkers([fill({})], [], colors, 0)).toEqual([]);
+    ], bars, colors)).toEqual([]);
+    expect(fillMarkers([fill({})], [], colors)).toEqual([]);
   });
 });

@@ -132,7 +132,10 @@ export function ChartTools({
             lastValueVisible: false
           }, paneIndex)
           : chart.addSeries(LineSeries, {
-            title: id === "macd" ? i === 0 ? "MACD" : "Signal" : `${studyLabel(id)}${i ? i === 1 ? " upper" : " lower" : ""}`,
+            // Overlays on the price pane carry no title: the chart draws it
+            // beside the price label, where it crowds the last price. The
+            // toolbar readout names them instead; pane studies keep theirs.
+            title: paneIndex === 0 ? "" : id === "macd" ? i === 0 ? "MACD" : "Signal" : studyLabel(id),
             color: studyColor || (i === 1 ? secondary : i === 2 ? negative : positive),
             lineWidth: 1,
             priceLineVisible: false,

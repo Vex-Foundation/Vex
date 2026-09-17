@@ -1,6 +1,5 @@
 import type { SeriesMarker, UTCTimestamp } from "lightweight-charts";
 import type { LighterTradingFill } from "@shared/schemas/lighter-trading.js";
-import { formatDecimalString, formatPrice } from "./format.js";
 
 /** Index of the latest bar at or before `time`, or -1 when none is loaded. */
 function barIndexAt(barTimes: readonly number[], time: number): number {
@@ -18,33 +17,25 @@ function barIndexAt(barTimes: readonly number[], time: number): number {
 }
 
 /**
- * One marker per bar and side: fills inside the same bar collapse into their
- * total size and size-weighted price, which is what the account traded there.
+ * One arrow per bar and side: fills inside the same bar collapse into a single
+ * marker. The arrows carry no text, so a busy account never buries its own
+ * candles under labels; the sizes and prices live in the trade history.
  */
 export function fillMarkers(
   fills: readonly LighterTradingFill[],
   barTimes: readonly number[],
   colors: { readonly positive: string; readonly negative: string },
-  precision: number,
 ): SeriesMarker<UTCTimestamp>[] {
   if (fills.length === 0 || barTimes.length === 0) return [];
-  // Sizes are decimal strings at the market's size precision, so summing at
-  // the widest fraction in a bucket keeps a 0.00051 BTC total exact.
-  const buckets = new Map<string, { time: number; side: "buy" | "sell"; size: number; notional: number; decimals: number }>();
+  const buckets = new Map<string, { time: number; side: "buy" | "sell" }>();
   for (const fill of fills) {
     const size = Number(fill.size);
-    const price = Number(fill.price);
-    if (!Number.isFinite(size) || !Number.isFinite(price) || size <= 0) continue;
+    if (!Number.isFinite(size) || size <= 0) continue;
     const seconds = fill.timestamp >= 1_000_000_000_000 ? Math.floor(fill.timestamp / 1_000) : fill.timestamp;
     const index = barIndexAt(barTimes, seconds);
     if (index < 0) continue;
     const time = barTimes[index]!;
-    const key = `${time}:${fill.side}`;
-    const bucket = buckets.get(key) ?? { time, side: fill.side, size: 0, notional: 0, decimals: 0 };
-    bucket.size += size;
-    bucket.notional += size * price;
-    bucket.decimals = Math.max(bucket.decimals, fill.size.split(".")[1]?.length ?? 0);
-    buckets.set(key, bucket);
+    buckets.set(`${time}:${fill.side}`, { time, side: fill.side });
   }
   return [...buckets.values()]
     .sort((left, right) => left.time - right.time || (left.side === "buy" ? -1 : 1))
@@ -54,6 +45,5 @@ export function fillMarkers(
       position: bucket.side === "buy" ? "belowBar" : "aboveBar",
       shape: bucket.side === "buy" ? "arrowUp" : "arrowDown",
       color: bucket.side === "buy" ? colors.positive : colors.negative,
-      text: `${bucket.side === "buy" ? "B" : "S"} ${formatDecimalString(bucket.size.toFixed(bucket.decimals).replace(/\.?0+$/, ""))} @ ${formatPrice(bucket.notional / bucket.size, precision)}`,
     }));
 }

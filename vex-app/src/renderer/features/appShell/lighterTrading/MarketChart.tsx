@@ -395,7 +395,8 @@ export function MarketChart({
     const volumeSeries = chart.addSeries(HistogramSeries, {
       priceFormat: { type: "volume" },
       priceScaleId: "volume",
-      lastValueVisible: true,
+      // The volume axis shares the bottom-right corner with the price label.
+      lastValueVisible: false,
       priceLineVisible: false,
     });
     volumeSeries.priceScale().applyOptions({
@@ -661,11 +662,11 @@ export function MarketChart({
     if (!host || !series || fills.length === 0) return undefined;
     const colors = getChartColors(host);
     const barTimes = (appliedDataRef.current?.candles ?? []).map((point) => Number(point.time));
-    const markers = createSeriesMarkers(series, fillMarkers(fills, barTimes, colors, precision));
+    const markers = createSeriesMarkers(series, fillMarkers(fills, barTimes, colors));
     return () => {
       if (chartRef.current !== null) markers.detach();
     };
-  }, [fills, candles, chartType, theme, precision]);
+  }, [fills, candles, chartType, theme]);
 
   return (
     <>
