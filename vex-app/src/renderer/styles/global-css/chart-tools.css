@@ -9,7 +9,7 @@
 .lit-study-active { padding-left: 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; }
 .lit-study-menu { position: relative; }
 .lit-study-menu summary { list-style-position: inside; white-space: nowrap; }
-.lit-study-popover { position: absolute; top: 34px; left: 0; width: min(290px, calc(100vw - 140px)); max-height: 360px; overflow-y: auto; padding: 6px; border: 1px solid var(--lit-line); border-radius: var(--lit-radius-lg); background: var(--lit-panel-raised); box-shadow: var(--shadow-lv2); }
+.lit-study-popover { position: absolute; top: 34px; left: 0; width: min(290px, calc(100vw - 140px)); max-height: min(420px, calc(100vh - 160px)); overflow-y: auto; padding: 6px; border: 1px solid var(--lit-line); border-radius: var(--lit-radius-lg); background: var(--lit-panel-raised); box-shadow: var(--shadow-lv2); }
 .lit-study-row { display: flex; align-items: flex-start; }
 .lit-study-row:hover { background: var(--lit-panel); }
 .lit-study-popover label { flex: 1; display: flex; align-items: flex-start; gap: 8px; padding: 8px; cursor: pointer; color: var(--lit-ink); }
@@ -60,6 +60,13 @@
   .lit-resolution-tabs button { min-width: 30px; }
   .lit-resolution-tabs button:nth-child(4):not([aria-pressed="true"]),
   .lit-resolution-tabs button:nth-child(7):not([aria-pressed="true"]) { display: none; }
+}
+/* Below that the strip stopped shrinking at nothing: it keeps room for three
+ * intervals and scrolls (the selected one is kept in view), and the Volume
+ * and Log toggles go instead of the chart type and the studies. */
+@container (max-width: 480px) {
+  .lit-analysis-toolbar > .lit-resolution-tabs { flex-shrink: 0; min-width: 104px; }
+  .lit-analysis-toolbar > button[aria-pressed] { display: none; }
 }
 
 .lit-analysis-toolbar .lit-chart-export { margin-left: auto; display: grid; place-items: center; }

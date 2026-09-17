@@ -146,6 +146,8 @@ function DeskBody({ desk, theme }: {
     setLayout({ ...layoutRef.current, ...next });
   };
   const bodyRef = useRef<HTMLDivElement>(null);
+  const resolutionTabsRef = useRef<HTMLDivElement>(null);
+  useRevealSelectedTab(resolutionTabsRef, resolution);
   const ticketRef = useRef<HTMLElement>(null);
   const ticketContentRef = useRef<HTMLDivElement>(null);
   const body = useElementSize(bodyRef);
@@ -269,7 +271,7 @@ function DeskBody({ desk, theme }: {
               onDragOrder={(price, side) => desk.setPricePick({ key: Date.now(), price, kind: "limit", side })}
               onLoadOlder={desk.candleStream.loadOlder}
               toolbarStart={(
-                <div className="lit-resolution-tabs" role="group" aria-label="Chart interval">
+                <div className="lit-resolution-tabs" role="group" aria-label="Chart interval" ref={resolutionTabsRef}>
                   {LIGHTER_RESOLUTIONS.map((item) => (
                     <button
                       type="button"
@@ -409,6 +411,26 @@ function DeskBody({ desk, theme }: {
       )}
     </div>
   );
+}
+
+/** The interval strip scrolls when narrow; the selected interval must never sit out of view. */
+function useRevealSelectedTab(ref: RefObject<HTMLElement | null>, selected: string): void {
+  useEffect(() => {
+    const tabs = ref.current;
+    if (tabs === null) return;
+    const reveal = (): void => {
+      const active = tabs.querySelector<HTMLElement>('[aria-pressed="true"]');
+      if (active === null) return;
+      const strip = tabs.getBoundingClientRect();
+      const tab = active.getBoundingClientRect();
+      if (tab.right > strip.right) tabs.scrollLeft += tab.right - strip.right;
+      else if (tab.left < strip.left) tabs.scrollLeft -= strip.left - tab.left;
+    };
+    reveal();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(reveal);
+    observer?.observe(tabs);
+    return () => observer?.disconnect();
+  }, [ref, selected]);
 }
 
 function useElementSize(ref: RefObject<HTMLElement | null>): { readonly width: number; readonly height: number } {
