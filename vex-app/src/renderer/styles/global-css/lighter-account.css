@@ -38,6 +38,12 @@
 @container (max-width: 860px) {
   .lit-bottom-status > span { display: none; }
 }
+@container (max-width: 850px) {
+  .lit-risk-strip > div:last-child { display: none; }
+}
+@container (max-width: 720px) {
+  .lit-risk-strip > div:first-child { display: none; }
+}
 
 .lit-bottom-status {
   display: flex;

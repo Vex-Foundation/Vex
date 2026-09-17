@@ -252,6 +252,10 @@
   min-width: 0;
 }
 
+/* The tab labels never squeeze; a narrow header sheds its other items instead. */
+.lit-book-header > .lit-panel-tabs,
+.lit-bottom-tabs { flex: 0 0 auto; }
+
 .lit-bottom-tabs { gap: 8px; }
 
 .lit-panel-tabs button,
