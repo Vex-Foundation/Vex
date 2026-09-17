@@ -75,11 +75,11 @@ function rootAttributes(container: HTMLElement): {
   readonly rotation: string | null;
 } {
   const root = container.querySelector("[data-vex-superboard-key]");
-  expect(root).not.toBeNull();
+  if (root === null) throw new Error("Superboard key root is not rendered");
   return {
-    kind: root!.getAttribute("data-vex-superboard-kind"),
-    attempt: root!.getAttribute("data-vex-superboard-attempt"),
-    rotation: root!.getAttribute("data-vex-superboard-rotation"),
+    kind: root.getAttribute("data-vex-superboard-kind"),
+    attempt: root.getAttribute("data-vex-superboard-attempt"),
+    rotation: root.getAttribute("data-vex-superboard-rotation"),
   };
 }
 

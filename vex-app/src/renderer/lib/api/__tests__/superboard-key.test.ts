@@ -47,8 +47,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  // @ts-expect-error - test cleanup
-  delete window.vex;
+  Reflect.deleteProperty(window, "vex");
 });
 
 describe("useSuperboardKey", () => {
