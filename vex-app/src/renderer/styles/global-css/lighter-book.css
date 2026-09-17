@@ -1,0 +1,307 @@
+/* ---------------------------------------------------------------------------
+ * Order book (asks over bids, or bids | asks side by side) and trades
+ * ------------------------------------------------------------------------- */
+
+.lit-book-header {
+  gap: 6px;
+  padding-inline: 0 10px;
+}
+
+/* At the column floor (220px) the title, unit switch and view switch fit on one line only unwrapped. */
+.lit-book-header h3 { white-space: nowrap; }
+
+.lit-book-controls {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.lit-expiry select {
+  height: 24px;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: var(--lit-panel);
+  padding: 0 20px 0 6px;
+  color: var(--lit-ink-secondary);
+  font-size: 10.5px;
+}
+
+.lit-unit-switch {
+  display: flex;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  padding: 1px;
+}
+
+.lit-unit-switch button {
+  min-width: 34px;
+  min-height: 20px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  padding: 0 6px;
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.lit-unit-switch button[aria-pressed="true"] {
+  background: var(--lit-panel-raised);
+  color: var(--lit-ink);
+}
+
+.lit-view-switch button { min-width: 24px; padding: 0; }
+.lit-view-switch svg { display: block; width: 12px; height: 12px; margin: 0 auto; fill: currentColor; }
+
+/* Pinned inside row: last trade, spread, mark. */
+.lit-book-mid {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  border-bottom: 1px solid var(--lit-line);
+  padding: 6px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lit-book-mid b {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.lit-book-mid[data-trend="up"] b { color: var(--lit-positive); }
+.lit-book-mid[data-trend="down"] b { color: var(--lit-negative); }
+/* Exchange register: the last trade carries its tick direction. */
+.lit-book-mid[data-trend="up"] b::after { content: " \2191"; font-size: 12px; }
+.lit-book-mid[data-trend="down"] b::after { content: " \2193"; font-size: 12px; }
+
+/* At the column's floor the last and the mark keep the row; the spread moves
+ * to the row's tooltip rather than clipping the mark's digits. */
+@container (max-width: 260px) {
+  .lit-book-mid { grid-template-columns: auto 1fr; }
+  .lit-book-mid > span:first-of-type { display: none; }
+  .lit-book-mid > span:last-of-type { text-align: right; }
+}
+
+.lit-book-mid span {
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.lit-book-mid span:last-child { text-align: right; }
+
+/* Column labels with the tick-size select at the row's end. */
+.lit-book-labels {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px 3px 0;
+}
+
+.lit-book-labels > select {
+  width: 50px;
+  height: 20px;
+  flex: 0 0 auto;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: var(--lit-panel);
+  padding: 0 12px 0 5px;
+  color: var(--lit-ink-secondary);
+  font-size: 10px;
+}
+
+.lit-book-columns {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  padding: 0 8px;
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.lit-book-columns[data-view="split"] span:nth-child(2) { text-align: right; padding-right: 6px; }
+.lit-book-columns[data-view="split"] span:nth-child(3) { padding-left: 6px; }
+.lit-book-columns[data-view="split"] span:nth-child(4) { text-align: right; }
+
+.lit-book-columns[data-view="stack"] { grid-template-columns: 1.1fr 1fr 1fr; column-gap: 4px; }
+.lit-book-columns[data-view="stack"] span:not(:first-child) { text-align: right; }
+
+.lit-trades-columns { flex: 0 0 auto; grid-template-columns: 1.1fr 1fr 1fr; padding: 4px 8px; }
+.lit-trades-columns span:not(:first-child) { text-align: right; }
+
+.lit-book-body {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: 1fr 1fr;
+  align-content: start;
+  overflow: hidden auto;
+}
+
+.lit-book-body > .lit-book-empty { grid-column: 1 / -1; }
+
+.lit-book-rows {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.lit-book-rows[data-side="bid"] { padding-right: 3px; }
+.lit-book-rows[data-side="ask"] { padding-left: 3px; }
+
+.lit-book-row {
+  --lit-depth: 0%;
+  position: relative;
+  display: grid;
+  min-height: 18px;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Bids: size | price, depth grows from the center leftward. */
+.lit-book-rows[data-side="bid"] .lit-book-row {
+  grid-template-columns: 1fr auto;
+  padding: 0 4px 0 8px;
+  text-align: left;
+}
+
+/* Asks: price | size, depth grows from the center rightward. */
+.lit-book-rows[data-side="ask"] .lit-book-row {
+  grid-template-columns: auto 1fr;
+  padding: 0 8px 0 4px;
+  text-align: right;
+}
+
+.lit-book-rows[data-side="bid"] .lit-book-row b { order: 2; }
+
+.lit-book-row::before {
+  content: "";
+  position: absolute;
+  inset: 1px auto;
+  width: var(--lit-depth);
+  background: var(--lit-positive-wash);
+}
+
+.lit-book-rows[data-side="bid"] .lit-book-row::before { right: 0; }
+.lit-book-rows[data-side="ask"] .lit-book-row::before { left: 0; background: var(--lit-negative-wash); }
+
+.lit-book-row > * { position: relative; z-index: 1; }
+
+.lit-book-row b {
+  color: var(--lit-positive);
+  font-weight: 600;
+}
+
+.lit-book-rows[data-side="ask"] .lit-book-row b,
+.lit-trade-row[data-side="sell"] b { color: var(--lit-negative); }
+
+.lit-book-row:hover { background: var(--lit-hover); }
+
+/* A level whose size just changed, and a trade that just printed, flash
+ * once in the side's color and settle; the animation ends on its own. */
+.lit-book-rows[data-side="bid"] .lit-book-row[data-flash],
+.lit-trade-row[data-side="buy"][data-new] { animation: lit-flash-positive 560ms ease-out; }
+.lit-book-rows[data-side="ask"] .lit-book-row[data-flash],
+.lit-trade-row[data-side="sell"][data-new] { animation: lit-flash-negative 560ms ease-out; }
+
+@keyframes lit-flash-positive {
+  from { background: color-mix(in srgb, var(--lit-positive) 28%, transparent); }
+  to { background: transparent; }
+}
+
+@keyframes lit-flash-negative {
+  from { background: color-mix(in srgb, var(--lit-negative) 28%, transparent); }
+  to { background: transparent; }
+}
+.lit-book-row:focus-visible { outline-offset: -2px; }
+
+/* Stacked view: asks read down to the inside row, bids read down from it.
+ * Each side takes half the room and clips its far levels, so the inside
+ * stays pinned to the middle. Rows are price | size | cumulative sum, with
+ * the depth bar growing in from the right. */
+.lit-book-stack {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.lit-book-stack > .lit-book-rows {
+  min-height: 0;
+  flex: 1 1 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.lit-book-stack > .lit-book-rows[data-side="ask"] { justify-content: flex-end; }
+.lit-book-stack > .lit-book-mid { border-top: 1px solid var(--lit-line); }
+
+.lit-book-stack .lit-book-rows[data-side] .lit-book-row {
+  grid-template-columns: 1.1fr 1fr 1fr;
+  padding: 0 8px;
+  text-align: right;
+}
+
+.lit-book-stack .lit-book-rows[data-side] .lit-book-row b { order: 0; text-align: left; }
+.lit-book-stack .lit-book-rows[data-side] .lit-book-row span:last-child { color: var(--lit-ink-muted); }
+.lit-book-stack .lit-book-rows[data-side] .lit-book-row::before { right: 0; left: auto; }
+
+.lit-book-ratio {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--lit-line);
+  padding: 6px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.lit-book-ratio > span:first-child { color: var(--lit-positive); }
+.lit-book-ratio > span:last-child { color: var(--lit-negative); }
+
+.lit-book-ratio i {
+  --lit-bid-share: 50%;
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--lit-positive) var(--lit-bid-share), var(--lit-negative) var(--lit-bid-share));
+}
+
+.lit-trades-list {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden auto;
+}
+
+.lit-trade-row {
+  grid-template-columns: 1.1fr 1fr 1fr;
+  padding: 0 8px;
+  text-align: right;
+}
+
+.lit-trade-row b { color: var(--lit-positive); text-align: left; }
+.lit-trade-row span:last-child { color: var(--lit-ink-muted); }
+
+.lit-book-empty {
+  margin: 0;
+  padding: 16px 12px;
+  color: var(--lit-ink-muted);
+  font-size: 12px;
+  text-align: center;
+}

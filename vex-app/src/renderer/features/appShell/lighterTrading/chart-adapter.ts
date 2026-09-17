@@ -11,7 +11,9 @@ export type ChartCandleRow = LighterTradingCandle & {
   readonly source?: string;
 };
 
-const MAX_CHART_CANDLES = 500;
+// Scroll-back history pages in 300-candle REST reads; this is how far back one
+// market/resolution can grow before the oldest bars are released again.
+const MAX_CHART_CANDLES = 5000;
 
 function toUnixSeconds(timestamp: number): UTCTimestamp {
   const seconds = timestamp >= 1_000_000_000_000

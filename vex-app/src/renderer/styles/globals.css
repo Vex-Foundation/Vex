@@ -23,8 +23,14 @@
 @import "./global-css/console.css";
 @import "./global-css/pending-ring.css";
 @import "./global-css/chronos-gate.css";
-@import "./global-css/lighter-trading.css";
-@import "./global-css/lighter-workspace.css";
+@import "./global-css/lighter-tokens.css";
+@import "./global-css/lighter-desk.css";
+@import "./global-css/lighter-market-bar.css";
+@import "./global-css/lighter-chart.css";
+@import "./global-css/lighter-book.css";
+@import "./global-css/lighter-ticket.css";
+@import "./global-css/lighter-account.css";
+@import "./global-css/lighter-chat.css";
 @import "./global-css/market-picker.css";
 @import "./global-css/chart-tools.css";
 @import "./global-css/trade-ticket-controls.css";

@@ -53,19 +53,23 @@ import type {
 import { applyPolicyDriftSideEffects, applyRejectSideEffects } from "./reject.js";
 
 /**
- * Reject / expire side effects for either origin. `toolResultContent` is only
- * consumed by the agent branch; the Studio branch has nowhere to put prose and
- * says so by ignoring it.
+ * Reject / expire side effects per origin. `toolResultContent` is only
+ * consumed by the agent branch; the Studio and desk branches have nowhere to
+ * put prose and say so by ignoring it.
  */
 export async function dispatchRejectSideEffects(
   approvalId: string,
   snapshot: Extract<RejectSnapshot, { type: "rejected_in_tx" }>,
   toolResultContent: string,
 ): Promise<RejectPrepareOutcome> {
-  if (snapshot.row.origin !== "studio_mcp") {
+  if (snapshot.row.origin !== "studio_mcp" && snapshot.row.origin !== "desk") {
     return applyRejectSideEffects(approvalId, snapshot, toolResultContent);
   }
-  announceStudioRejection(approvalId, snapshot.row);
+  // A desk row (migration 164) has no transcript either and nobody to announce
+  // to: the desk reads the outcome off the decision reply.
+  if (snapshot.row.origin === "studio_mcp") {
+    announceStudioRejection(approvalId, snapshot.row);
+  }
   return {
     kind: "rejected",
     approvalId,
@@ -87,10 +91,12 @@ export async function dispatchPolicyDriftSideEffects(
   snapshot: Extract<ApproveSnapshot, { type: "policy_drift_blocked" }>,
   toolResultContent: string,
 ): Promise<Extract<ApprovePrepareOutcome, { kind: "policy_drift_blocked" }>> {
-  if (snapshot.row.origin !== "studio_mcp") {
+  if (snapshot.row.origin !== "studio_mcp" && snapshot.row.origin !== "desk") {
     return applyPolicyDriftSideEffects(approvalId, snapshot, toolResultContent);
   }
-  announceStudioRejection(approvalId, snapshot.row);
+  if (snapshot.row.origin === "studio_mcp") {
+    announceStudioRejection(approvalId, snapshot.row);
+  }
   return {
     kind: "policy_drift_blocked",
     approvalId,

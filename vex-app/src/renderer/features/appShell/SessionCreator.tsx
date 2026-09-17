@@ -39,6 +39,7 @@ import { SubmitError } from "../../components/ui/submit-error.js";
 import { useCreateSession } from "../../lib/api/sessions.js";
 import { useAvailableWallets } from "../../lib/api/session-wallets.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { useDeskSessionName } from "./lighterTrading/desk-session.js";
 import { deriveSessionName } from "./SessionCreator/deriveSessionName.js";
 import {
   ModeFieldset,
@@ -60,6 +61,11 @@ export function SessionCreator({
   // already filtered to Mission and opens "New session", default the dialog to
   // Mission mode so they don't have to flip it by hand.
   const sessionModeFilter = useUiStore((s) => s.sessionModeFilter);
+  // A session created from the Lighter desk is an agent session pinned to
+  // that workspace: mission mode has no meaning there, so the fieldset hides
+  // and the create input carries `workspace: "lighter"`.
+  const lighter = useUiStore((s) => s.runtimeMode === "lighter");
+  const deskSessionName = useDeskSessionName();
   const createSessionInitialTurn = useUiStore(
     (s) => s.createSessionInitialTurn,
   );
@@ -89,15 +95,18 @@ export function SessionCreator({
       setName(
         createSessionInitialTurn !== null
           ? deriveSessionName(createSessionInitialTurn.message)
-          : "",
+          : (deskSessionName ?? ""),
       );
-      setMode(sessionModeFilter === "mission" ? "mission" : "agent");
+      setMode(!lighter && sessionModeFilter === "mission" ? "mission" : "agent");
       setPermission("restricted");
       setSelectedEvmWalletId(null);
       setSelectedSolanaWalletId(null);
       setSubmitError(null);
     }
-  }, [open, createSessionInitialTurn, sessionModeFilter]);
+    // `deskSessionName` is read at open time only: the market list settling
+    // while the dialog is up must not overwrite what the operator typed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, createSessionInitialTurn, sessionModeFilter, lighter]);
 
   // Focus the Name input first when the dialog opens — it is the only
   // text field in this modal. Mission goal capture happens in chat.
@@ -121,7 +130,14 @@ export function SessionCreator({
       const input: SessionCreateInput =
         mode === "mission"
           ? { mode: "mission", name: trimmedName, permission, selectedEvmWalletId, selectedSolanaWalletId }
-          : { mode: "agent", name: trimmedName, permission, selectedEvmWalletId, selectedSolanaWalletId };
+          : {
+            mode: "agent",
+            name: trimmedName,
+            permission,
+            selectedEvmWalletId,
+            selectedSolanaWalletId,
+            ...(lighter && { workspace: "lighter" as const }),
+          };
       // The sidebar's New-session key mirrors this mutation: ink loop while
       // in flight, one-shot glint on success (the glint's animationend
       // returns the state to idle). The try/catch exists only so an
@@ -160,6 +176,7 @@ export function SessionCreator({
       completeSessionCreate,
       createMutation,
       createSessionInitialTurn,
+      lighter,
       mode,
       permission,
       selectedEvmWalletId,
@@ -196,7 +213,7 @@ export function SessionCreator({
           <DialogBody className="gap-6 px-8">
             <NameField name={name} onNameChange={setName} nameRef={nameRef} />
 
-            <ModeFieldset mode={mode} onModeChange={setMode} />
+            {lighter ? null : <ModeFieldset mode={mode} onModeChange={setMode} />}
 
             <PermissionFieldset
               permission={permission}

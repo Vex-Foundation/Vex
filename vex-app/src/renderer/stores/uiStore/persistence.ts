@@ -13,7 +13,11 @@ import {
   systemPrefersDark,
   type VexTheme,
 } from "./theme.js";
-import { coerceRuntimeMode, DEFAULT_RUNTIME_MODE } from "./runtime-mode.js";
+import {
+  coerceRuntimeMode,
+  DEFAULT_RUNTIME_MODE,
+  persistRuntimeMode,
+} from "./runtime-mode.js";
 import {
   coerceBookWidth,
   coerceSidebarWidth,
@@ -92,6 +96,8 @@ export type PersistedUiKey = (typeof PERSISTED_UI_KEYS)[number];
 export function partializeUiState(state: UiState): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
   for (const key of PERSISTED_UI_KEYS) payload[key] = state[key];
+  // The Lighter desk is entered, never resumed into: see `persistRuntimeMode`.
+  payload["runtimeMode"] = persistRuntimeMode(state.runtimeMode);
   return payload;
 }
 

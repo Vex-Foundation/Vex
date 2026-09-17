@@ -146,7 +146,7 @@ describe("lighter labels", () => {
 
   it.each([
     ["core", "Lighter Core"],
-    ["rhc", "Lighter on Robinhood Chain"],
+    ["rhc", "Robinhood Chain"],
     ["staging", "staging"],
   ])("names the %s venue", (environment, expected) => {
     expect(lighterVenueLabel(environment)).toBe(expected);

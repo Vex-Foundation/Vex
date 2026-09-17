@@ -1,0 +1,260 @@
+/* ---------------------------------------------------------------------------
+ * Market bar: ticker, last price, then one row of live metrics.
+ * ------------------------------------------------------------------------- */
+
+.lit-market-bar {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 18px;
+}
+
+button.lit-market-select {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: var(--lit-radius);
+  background: transparent;
+  padding: 2px 8px 2px 6px;
+  color: var(--lit-ink);
+  text-align: left;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+button.lit-market-select:hover,
+button.lit-market-select[aria-expanded="true"] {
+  border-color: var(--lit-line);
+  background: var(--lit-hover);
+}
+
+button.lit-market-select > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+button.lit-market-select b {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+button.lit-market-select small {
+  margin-top: 2px;
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(--lit-ink-muted); }
+
+/* Perps | Stocks | Spot: the section the desk is on, one tap to another. */
+.lit-category-tabs {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: var(--lit-panel);
+  padding: 2px;
+}
+
+.lit-category-tabs button {
+  min-height: 26px;
+  border: 0;
+  border-radius: var(--lit-radius);
+  background: transparent;
+  padding: 0 10px;
+  color: var(--lit-ink-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.lit-category-tabs button:hover { color: var(--lit-ink); }
+
+.lit-category-tabs button[aria-pressed="true"] {
+  background: var(--lit-panel-raised);
+  box-shadow: inset 0 0 0 1px var(--lit-line);
+  color: var(--lit-ink);
+}
+
+.lit-market-price {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.lit-market-price b {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.lit-market-price small {
+  margin-top: 2px;
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+}
+
+.lit-market-price[data-tone="positive"] b,
+.lit-market-price[data-tone="positive"] small { color: var(--lit-positive); }
+.lit-market-price[data-tone="negative"] b,
+.lit-market-price[data-tone="negative"] small { color: var(--lit-negative); }
+
+/* Each tick flashes the last price in the direction it moved (keyed remount). */
+.lit-market-price b[data-flash="up"] { animation: lit-tick-up 640ms ease-out; }
+.lit-market-price b[data-flash="down"] { animation: lit-tick-down 640ms ease-out; }
+
+@keyframes lit-tick-up {
+  from { color: var(--lit-positive); text-shadow: 0 0 10px color-mix(in srgb, var(--lit-positive) 55%, transparent); }
+}
+
+@keyframes lit-tick-down {
+  from { color: var(--lit-negative); text-shadow: 0 0 10px color-mix(in srgb, var(--lit-negative) 55%, transparent); }
+}
+
+.lit-market-metrics {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 20px;
+  overflow: hidden;
+}
+
+.lit-market-metric {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.lit-market-metric small {
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.lit-market-metric b {
+  color: var(--lit-ink-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.lit-market-metric[data-tone="positive"] b { color: var(--lit-positive); }
+.lit-market-metric[data-tone="negative"] b { color: var(--lit-negative); }
+
+.lit-market-bar[data-loading="true"] .lit-market-metric b,
+.lit-market-bar[data-loading="true"] .lit-market-price b,
+.lit-market-metric[data-pending="true"] b {
+  color: var(--lit-ink-muted);
+}
+
+/* Explicit product identities: what hides at narrow widths is named, not counted. */
+.lit-market-bar[data-market-type="perp"] .lit-market-metric[data-metric="funding"],
+.lit-market-bar[data-market-type="spot"] .lit-market-metric[data-metric="mid"] { order: 6; }
+.lit-market-bar[data-market-type="perp"] .lit-market-metric[data-metric="open-interest"],
+.lit-market-bar[data-market-type="spot"] .lit-market-metric[data-metric="high"] { order: 5; }
+
+/* The bar answers to its own width (`.lit-desk-top` is the container), not
+ * the viewport: the shell rails on both sides decide how much it gets. */
+@container (max-width: 1100px) {
+  .lit-market-bar .lit-market-metric[data-metric="index"],
+  .lit-market-bar .lit-market-metric[data-metric="low"] { display: none; }
+  /* Each product keeps what it trades on: a perp its funding and open
+   * interest, spot its range and volume. The strip clips silently, so what
+   * goes is named here rather than left to the overflow. */
+  .lit-market-bar[data-market-type="perp"] .lit-market-metric[data-metric="high"],
+  .lit-market-bar[data-market-type="perp"] .lit-market-metric[data-metric="volume"],
+  .lit-market-bar[data-market-type="spot"] .lit-market-metric[data-metric="mid"] { display: none; }
+}
+
+@container (max-width: 940px) {
+  .lit-market-bar .lit-market-metric[data-metric="change"],
+  .lit-market-bar .lit-market-metric[data-metric="mid"] { display: none; }
+  .lit-market-metrics { gap: 14px; }
+}
+
+@container (max-width: 760px) {
+  .lit-market-bar .lit-market-metric[data-metric="high"],
+  .lit-market-bar .lit-market-metric[data-metric="volume"] { display: none; }
+}
+
+@container (max-width: 560px) {
+  .lit-market-metrics { display: none; }
+}
+
+.lit-live-status {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--lit-positive);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.lit-live-status i,
+.lit-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.lit-live-status[data-status="connecting"],
+.lit-live-status[data-status="reconnecting"] { color: var(--lit-ink-secondary); }
+.lit-live-status[data-status="delayed"] { color: var(--lit-warning); }
+.lit-live-status[data-status="unavailable"] { color: var(--lit-negative); }
+.lit-live-status[data-status="stopped"] { color: var(--lit-ink-muted); }
+
+.lit-live-dot { color: var(--lit-warning); }
+.lit-live-dot[data-status="live"] { color: var(--lit-positive); }
+.lit-live-dot[data-status="unavailable"] { color: var(--lit-negative); }
+.lit-live-dot[data-status="stopped"] { color: var(--lit-ink-muted); }
+
+/* Core | RHC: the Lighter network the desk is on; the same segment sits in the market picker. */
+.lit-environment-switch {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: var(--lit-panel);
+  padding: 2px;
+}
+
+.lit-environment-switch button {
+  min-height: 26px;
+  border: 0;
+  border-radius: var(--lit-radius);
+  background: transparent;
+  padding: 0 9px;
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.lit-environment-switch button:hover { color: var(--lit-ink); }
+
+.lit-environment-switch button[aria-checked="true"] {
+  background: var(--lit-panel-raised);
+  box-shadow: inset 0 0 0 1px var(--lit-line);
+  color: var(--lit-ink);
+}
+
+.lit-market-bar > .lit-environment-switch { margin-right: -8px; }

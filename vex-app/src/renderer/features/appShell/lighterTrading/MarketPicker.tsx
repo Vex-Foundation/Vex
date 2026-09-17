@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from "react";
 import type { LighterTradingEnvironment, LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
 import { IconChevronDown, IconClose, IconSearch, IconStar, IconStarFill } from "../../../components/icons/index.js";
+import { EnvironmentSwitch } from "./EnvironmentSwitch.js";
 import { MarketSymbol } from "./MarketSymbol.js";
+import { marketIdentity } from "./market-selection.js";
 import { classifyLighterMarket, marketProductLabel, type LighterMarketSection } from "./market-classification.js";
 import { NO_VALUE, formatBaseAmount, formatNumber, formatPrice, formatQuoteVolume, marketSymbols } from "./format.js";
 
@@ -16,10 +18,6 @@ const COLUMNS: readonly { readonly key: SortColumn; readonly label: string }[] =
   { key: "interest", label: "Open interest" },
 ];
 
-function identity(environment: LighterTradingEnvironment, market: LighterTradingMarket): string {
-  return [environment, market.marketType, market.marketId, market.baseAssetId, market.quoteAssetId, market.symbol].join(":");
-}
-
 function sortValue(market: LighterTradingMarket, column: SortColumn): number | null {
   switch (column) {
     case "price": return market.statistics?.lastTradePrice ?? null;
@@ -30,12 +28,15 @@ function sortValue(market: LighterTradingMarket, column: SortColumn): number | n
   }
 }
 
-export function MarketPicker({ environment, markets, selectedMarketId, onClose, onSelect }: {
+export function MarketPicker({ environment, markets, loading = false, selectedMarketId, onClose, onSelect, onSelectEnvironment }: {
   readonly environment: LighterTradingEnvironment;
   readonly markets: readonly LighterTradingMarket[];
+  /** The list for this environment has not arrived yet (right after a network switch). */
+  readonly loading?: boolean;
   readonly selectedMarketId: number | null;
   readonly onClose: () => void;
   readonly onSelect: (market: LighterTradingMarket) => void;
+  readonly onSelectEnvironment: (environment: LighterTradingEnvironment) => void;
 }): JSX.Element {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"all" | LighterMarketSection>("all");
@@ -46,7 +47,7 @@ export function MarketPicker({ environment, markets, selectedMarketId, onClose, 
   const [sort, setSort] = useState<Sort | null>(null);
   const [highlightedKey, setHighlightedKey] = useState<string | null>(() => {
     const selected = markets.find((market) => market.marketId === selectedMarketId);
-    return selected === undefined ? null : identity(environment, selected);
+    return selected === undefined ? null : marketIdentity(environment, selected);
   });
   const pickerRef = useRef<HTMLElement | null>(null);
   const highlightedOptionRef = useRef<HTMLButtonElement | null>(null);
@@ -57,7 +58,7 @@ export function MarketPicker({ environment, markets, selectedMarketId, onClose, 
     const filtered = markets.filter((market) => {
       const classification = classifyLighterMarket(environment, market);
       return (tab === "all" || classification.section === tab)
-        && (!favoritesOnly || favorites.has(identity(environment, market)))
+        && (!favoritesOnly || favorites.has(marketIdentity(environment, market)))
         && (normalized.length === 0 || market.symbol.toLocaleLowerCase().includes(normalized)
           || classification.ticker.toLocaleLowerCase().includes(normalized));
     });
@@ -74,9 +75,9 @@ export function MarketPicker({ environment, markets, selectedMarketId, onClose, 
       return (leftValue - rightValue) * (sort.direction === "asc" ? 1 : -1) || fallback;
     });
   }, [environment, favorites, favoritesOnly, markets, query, sort, tab]);
-  const highlighted = shown.find((market) => identity(environment, market) === highlightedKey)
+  const highlighted = shown.find((market) => marketIdentity(environment, market) === highlightedKey)
     ?? shown.find((market) => market.marketId === selectedMarketId) ?? shown[0];
-  const activeKey = highlighted === undefined ? null : identity(environment, highlighted);
+  const activeKey = highlighted === undefined ? null : marketIdentity(environment, highlighted);
   const activeOptionId = highlighted === undefined ? undefined : `lit-market-${environment}-${highlighted.marketType}-${highlighted.marketId}`;
 
   useEffect(() => {
@@ -106,7 +107,7 @@ export function MarketPicker({ environment, markets, selectedMarketId, onClose, 
   }, [onClose]);
 
   const toggleFavorite = (market: LighterTradingMarket): void => {
-    const key = identity(environment, market);
+    const key = marketIdentity(environment, market);
     const next = new Set(favorites);
     if (next.has(key)) next.delete(key);
     else if (next.size < 1_000) next.add(key);
@@ -149,16 +150,16 @@ export function MarketPicker({ environment, markets, selectedMarketId, onClose, 
     if (event.key === "Home" || event.key === "End") {
       event.preventDefault();
       const next = event.key === "Home" ? shown[0] : shown.at(-1);
-      if (next !== undefined) setHighlightedKey(identity(environment, next));
+      if (next !== undefined) setHighlightedKey(marketIdentity(environment, next));
       return;
     }
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
     event.preventDefault();
     if (shown.length === 0) return;
-    const current = shown.findIndex((market) => identity(environment, market) === activeKey);
+    const current = shown.findIndex((market) => marketIdentity(environment, market) === activeKey);
     const direction = event.key === "ArrowDown" ? 1 : -1;
     const next = shown[(current + direction + shown.length) % shown.length];
-    if (next !== undefined) setHighlightedKey(identity(environment, next));
+    if (next !== undefined) setHighlightedKey(marketIdentity(environment, next));
   };
 
   return <div className="lit-market-picker-layer" onKeyDown={onKeyDown}>
@@ -166,7 +167,8 @@ export function MarketPicker({ environment, markets, selectedMarketId, onClose, 
       aria-labelledby="lit-market-picker-title" aria-describedby="lit-market-picker-description">
       <header className="lit-picker-heading">
         <h2 id="lit-market-picker-title"><span aria-hidden="true">Markets</span><span className="sr-only">Search Lighter markets</span></h2>
-        <p id="lit-market-picker-description">{environment === "rhc" ? "Robinhood Chain" : "Lighter Core"}<span className="sr-only"> · Choose the market for this desk</span></p>
+        <p id="lit-market-picker-description" className="sr-only">Choose the network and the market for this desk</p>
+        <EnvironmentSwitch environment={environment} onSelect={onSelectEnvironment} />
       </header>
       <div className="lit-picker-search"><IconSearch size={17} />
         <input autoFocus role="combobox" aria-autocomplete="list" aria-controls="lit-market-options" aria-expanded="true"
@@ -194,7 +196,7 @@ export function MarketPicker({ environment, markets, selectedMarketId, onClose, 
         </div>
         <div id="lit-market-options" role="listbox" aria-label="Available Lighter markets" className="lit-picker-options">
           {shown.map((market) => {
-            const key = identity(environment, market);
+            const key = marketIdentity(environment, market);
             const symbols = marketSymbols(market.symbol, market.marketType);
             const productLabel = marketProductLabel(classifyLighterMarket(environment, market));
             const isFavorite = favorites.has(key);
@@ -230,7 +232,7 @@ export function MarketPicker({ environment, markets, selectedMarketId, onClose, 
             </div>;
           })}
         </div>
-        {shown.length === 0 && <p className="lit-picker-empty" role="status">{favoritesOnly ? "No favorite markets match. Star a market to save it here." : "No matching markets. Try another symbol or category."}</p>}
+        {shown.length === 0 && <p className="lit-picker-empty" role="status">{loading ? "Loading markets…" : favoritesOnly ? "No favorite markets match. Star a market to save it here." : "No matching markets. Try another symbol or category."}</p>}
       </div>
       <footer className="lit-picker-footer" id="lit-picker-keyboard">
         <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>Enter</kbd> Select</span><span><kbd>Alt F</kbd> Favorite</span><span><kbd>Esc</kbd> Close</span>

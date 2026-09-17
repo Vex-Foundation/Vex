@@ -68,7 +68,7 @@ import {
 } from "../../../components/ui/tabs.js";
 import { ActiveBoardModule } from "./board/ActiveBoardModule.js";
 import { useBoardSurfaceStore } from "../Board/board-surface-store.js";
-import { requestLighterWorkspaceOpen } from "../lighterTrading/workspace-command.js";
+import { enterLighterMode } from "../lighterTrading/workspace-command.js";
 import { BookInspectPanel } from "./inspect/BookInspectPanel.js";
 import { useToolInspectStore } from "./inspect/inspect-store.js";
 import { ImageLockerCard } from "./ImageLockerCard.js";
@@ -339,9 +339,8 @@ function SessionBookInstruments({
         </TabsList>
         <button
           type="button"
-          aria-haspopup="dialog"
           data-vex-area="book-lighter-launch"
-          onClick={requestLighterWorkspaceOpen}
+          onClick={enterLighterMode}
           className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-[13px] font-medium leading-5 text-ink-tertiary hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Lighter

@@ -18,6 +18,7 @@ import {
   inspectStoredLighterConnections,
 } from "../../../../lib/api/lighter-integration.js";
 import { useInvalidateEnvStateAfterApiKeysWrite } from "../../../../lib/api/api-keys.js";
+import { LIGHTER_ENVIRONMENT_NAMES, LIGHTER_ENVIRONMENT_SHORT_LABELS } from "@shared/lighter-environment-labels.js";
 
 export function LighterCredentialConnections(): JSX.Element {
   const invalidateEnvState = useInvalidateEnvStateAfterApiKeysWrite();
@@ -262,7 +263,7 @@ function ScopeRow({ scope }: { readonly scope: LighterCredentialScope }): JSX.El
   return (
     <div className="grid grid-cols-[1fr_auto] gap-4 py-2.5">
       <dt className="text-ink-secondary">
-        {scope.environment === "rhc" ? "Lighter RHC" : "Lighter Core"}
+        {LIGHTER_ENVIRONMENT_NAMES[scope.environment]}
       </dt>
       <dd className="text-right font-mono text-ink-primary">
         account {scope.accountIndex} · key {scope.apiKeyIndex}
@@ -272,6 +273,6 @@ function ScopeRow({ scope }: { readonly scope: LighterCredentialScope }): JSX.El
 }
 
 function scopeLabel(scope: LighterCredentialScope): string {
-  const environment = scope.environment === "rhc" ? "RHC" : "Core";
+  const environment = LIGHTER_ENVIRONMENT_SHORT_LABELS[scope.environment];
   return `${environment} account ${scope.accountIndex}, key ${scope.apiKeyIndex}`;
 }

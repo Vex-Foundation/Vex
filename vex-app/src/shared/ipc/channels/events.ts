@@ -35,6 +35,7 @@ export const EV = {
     publicTrades: "vex:event:lighter:publicTrades",
     publicStats: "vex:event:lighter:publicStats",
     publicMarketStatus: "vex:event:lighter:publicMarketStatus",
+    accountActivity: "vex:event:lighter:accountActivity",
   },
 
   /**

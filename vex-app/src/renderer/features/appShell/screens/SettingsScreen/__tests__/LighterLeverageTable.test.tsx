@@ -1,12 +1,13 @@
 /**
- * The leverage table: what it shows, what it will not let a person send, and
- * what it says when the vault is locked or rows are missing.
+ * The leverage table: what it shows, which rows offer a change, and what it
+ * says when the vault is locked or rows are missing.
  *
- * The properties worth pinning are the bounds. Apply is the entry to a signing
- * path, so it stays disabled for anything the market's own maximum does not
- * admit, and "Max" fills the largest whole leverage rather than a rounded one.
- * The vault-locked copy is the SAME sentence the Points card uses, because one
- * lock must read one way across the section.
+ * The table proposes nothing itself: Change hands the row up, and the section
+ * opens the shared sheet (`LighterLeverageSheet.test.tsx` pins the bounds on
+ * the values). What is worth pinning here is that Change is withheld whenever
+ * a change could not be made - vault locked, another change in flight, no
+ * usable market maximum - and that the vault-locked copy is the SAME sentence
+ * the Points card uses, because one lock must read one way across the section.
  */
 
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -57,8 +58,8 @@ const POSITION_ROW = marketRow({
 
 function renderTable(
   props: Partial<React.ComponentProps<typeof LighterLeverageTable>> = {},
-): { readonly onApply: ReturnType<typeof vi.fn>; readonly onReconcile: ReturnType<typeof vi.fn> } {
-  const onApply = vi.fn();
+): { readonly onChange: ReturnType<typeof vi.fn>; readonly onReconcile: ReturnType<typeof vi.fn> } {
+  const onChange = vi.fn();
   const onReconcile = vi.fn();
   render(
     <LighterLeverageTable
@@ -67,21 +68,17 @@ function renderTable(
       vaultLocked={false}
       busyMarketId={null}
       outcomes={new Map<number, LeverageOutcomeView>()}
-      onApply={onApply}
+      onChange={onChange}
       onReconcile={onReconcile}
       {...props}
     />,
   );
-  return { onApply, onReconcile };
+  return { onChange, onReconcile };
 }
 
-function leverageField(symbol: string): HTMLInputElement {
-  return screen.getByLabelText(`New leverage for ${symbol}`) as HTMLInputElement;
-}
-
-function applyButton(symbol: string): HTMLButtonElement {
+function changeButton(symbol: string): HTMLButtonElement {
   return screen.getByRole("button", {
-    name: `Apply new leverage to ${symbol}`,
+    name: `Change leverage for ${symbol}`,
   }) as HTMLButtonElement;
 }
 
@@ -90,7 +87,7 @@ it("says a market with no leverage row is on the market default", () => {
   const eth = screen.getByRole("row", { name: /ETH/ });
   expect(within(eth).getByText("2.00x cross")).not.toBeNull();
   // BTC has neither a position nor terms of its own, so it is not listed yet.
-  expect(screen.queryByLabelText("New leverage for BTC")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Change leverage for BTC" })).toBeNull();
 });
 
 it("shows nothing to change when the account has no terms anywhere", () => {
@@ -105,50 +102,29 @@ it("shows the market maximum and the open position with its base unit", () => {
   expect(eth.textContent).toContain("long 0.0050 ETH");
 });
 
-it("Max fills the largest whole leverage the market admits", () => {
-  const { onApply } = renderTable({
-    markets: [{ ...POSITION_ROW, max: { initialMarginFraction: 3333, leverageDisplay: "3.00" } }],
+it("hands up the row to change, never the terms of the change", () => {
+  const { onChange } = renderTable();
+  fireEvent.click(changeButton("ETH"));
+  expect(onChange).toHaveBeenCalledTimes(1);
+  expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ marketId: 0, symbol: "ETH" }));
+});
+
+it("withholds Change when Lighter reported no usable maximum", () => {
+  renderTable({
+    markets: [{ ...POSITION_ROW, max: { initialMarginFraction: 0, leverageDisplay: "0.00" } }],
   });
-  fireEvent.click(screen.getByRole("button", { name: "Use the maximum leverage for ETH" }));
-  expect(leverageField("ETH").value).toBe("3");
-  fireEvent.click(applyButton("ETH"));
-  expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ symbol: "ETH" }), 3, "cross");
+  expect(changeButton("ETH").disabled).toBe(true);
 });
 
-it("will not let a leverage above the market maximum reach main", () => {
-  const { onApply } = renderTable();
-  fireEvent.change(leverageField("ETH"), { target: { value: "51" } });
-  expect(applyButton("ETH").disabled).toBe(true);
-  expect(screen.getByText("Lighter's maximum for ETH is 50x.")).not.toBeNull();
-  fireEvent.click(applyButton("ETH"));
-  expect(onApply).not.toHaveBeenCalled();
-});
-
-it("hands up a selector, never the terms of the change", () => {
-  const { onApply } = renderTable();
-  fireEvent.change(leverageField("ETH"), { target: { value: "10" } });
-  fireEvent.click(applyButton("ETH"));
-  expect(onApply).toHaveBeenCalledTimes(1);
-  const [row, leverage, marginMode] = onApply.mock.calls[0] as [
-    LighterLeverageMarketRow,
-    number,
-    string,
-  ];
-  expect(row.marketId).toBe(0);
-  expect(leverage).toBe(10);
-  expect(marginMode).toBe("cross");
-});
-
-it("disables every control with the Points card's own locked sentence", () => {
+it("withholds Change with the Points card's own locked sentence", () => {
   renderTable({ vaultLocked: true });
   expect(screen.getByText(new RegExp(LEVERAGE_VAULT_LOCKED))).not.toBeNull();
-  expect(leverageField("ETH").disabled).toBe(true);
-  expect(applyButton("ETH").disabled).toBe(true);
+  expect(changeButton("ETH").disabled).toBe(true);
 });
 
-it("stops a second Apply while one change is in flight", () => {
+it("withholds Change while one change is in flight", () => {
   renderTable({ busyMarketId: 0 });
-  expect(applyButton("ETH").disabled).toBe(true);
+  expect(changeButton("ETH").disabled).toBe(true);
 });
 
 it("says how many markets are not listed, and why", () => {
@@ -172,10 +148,10 @@ it("browses every market without a query, and says what the window leaves out", 
 
 it("adds a market the person searched for", () => {
   renderTable({ markets: [POSITION_ROW, marketRow({ marketId: 3, symbol: "SOL" })] });
-  expect(screen.queryByLabelText("New leverage for SOL")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Change leverage for SOL" })).toBeNull();
   fireEvent.change(screen.getByLabelText("Add a market"), { target: { value: "sol" } });
   fireEvent.click(screen.getByRole("button", { name: "SOL" }));
-  expect(screen.getByLabelText("New leverage for SOL")).not.toBeNull();
+  expect(changeButton("SOL")).not.toBeNull();
 });
 
 it("shows an outcome for the row it belongs to, with Reconcile only when it applies", () => {

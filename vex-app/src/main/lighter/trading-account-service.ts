@@ -1,16 +1,24 @@
 import type { LighterEnvironment } from "@tools/lighter/constants.js";
 import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
+import {
+  marginModeFromWire,
+  positionInitialMarginFractionToProviderScale,
+} from "@tools/lighter/margin-fraction.js";
 import type {
   LighterAccount,
   LighterAccountAsset,
   LighterAccountOrder,
   LighterAccountPosition,
+  LighterTrade,
 } from "@tools/lighter/types.js";
 import type {
   LighterTradingAccount,
   LighterTradingAccountUnavailableReason,
   LighterTradingAsset,
+  LighterTradingFill,
+  LighterTradingFills,
   LighterTradingOpenOrder,
+  LighterTradingMarginTerm,
   LighterTradingPosition,
 } from "@shared/schemas/lighter-trading.js";
 import { isAbortError, throwIfAborted } from "../../../../src/utils/cancellation.js";
@@ -24,6 +32,7 @@ import {
 import { log } from "../logger/index.js";
 
 const MAX_ROWS = 200;
+const LIGHTER_TRADING_FILLS_MAX = 100;
 const DECIMAL_PATTERN = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/;
 const UNSIGNED_DECIMAL_PATTERN = /^(?:0|[1-9]\d*)(?:\.\d+)?$/;
 
@@ -31,6 +40,10 @@ const UNSIGNED_DECIMAL_PATTERN = /^(?:0|[1-9]\d*)(?:\.\d+)?$/;
 export interface LighterTradingAccountClient {
   getAccount: LighterClient["getAccount"];
   getAccountActiveOrders: LighterClient["getAccountActiveOrders"];
+}
+
+export interface LighterTradingFillsClient {
+  getAccountTrades: LighterClient["getAccountTrades"];
 }
 
 function cleanDecimal(value: unknown): string | null {
@@ -133,7 +146,36 @@ function projectPosition(
     value: cleanUnsigned(raw.position_value),
     unrealizedPnl: cleanDecimal(raw.unrealized_pnl),
     liquidationPrice: cleanUnsigned(raw.liquidation_price),
+    initialMarginFraction: readOrNull(() =>
+      positionInitialMarginFractionToProviderScale(raw.initial_margin_fraction)),
+    marginMode: readOrNull(() => marginModeFromWire(raw.margin_mode)),
+    allocatedMargin: cleanUnsigned(raw.allocated_margin),
   };
+}
+
+/**
+ * The account's own margin terms for a market, from its position row whether
+ * or not a position is open. A row whose fraction Vex cannot read is left out
+ * rather than shown as a number it is not.
+ */
+function projectMarginTerm(raw: LighterAccountPosition): LighterTradingMarginTerm | null {
+  const initialMarginFraction = readOrNull(() =>
+    positionInitialMarginFractionToProviderScale(raw.initial_margin_fraction));
+  if (initialMarginFraction === null) return null;
+  return {
+    marketId: raw.market_id,
+    initialMarginFraction,
+    marginMode: readOrNull(() => marginModeFromWire(raw.margin_mode)),
+  };
+}
+
+/** A margin term Vex cannot read exactly is shown as unknown, not as a failed panel. */
+function readOrNull<T>(read: () => T): T | null {
+  try {
+    return read();
+  } catch {
+    return null;
+  }
 }
 
 function projectOrder(
@@ -267,6 +309,7 @@ function unavailable(
     summary: null,
     assets: [],
     positions: [],
+    marginTerms: [],
     openOrders: [],
   };
 }
@@ -287,6 +330,7 @@ export interface LighterTradingAccountProjectionInput {
   readonly orders: readonly LighterAccountOrder[];
   readonly ordersNextCursor?: string;
   readonly openOrdersAvailable: boolean;
+  readonly openOrdersUnavailableReason?: "no_read_auth" | "read_failed";
   readonly symbolFor: (marketId: number) => string;
   readonly now: () => number;
 }
@@ -302,6 +346,10 @@ export function projectLighterTradingAccount(
   const positions = (input.account?.positions ?? [])
     .map((row) => projectPosition(row, input.symbolFor))
     .filter((row): row is LighterTradingPosition => row !== null)
+    .slice(0, MAX_ROWS);
+  const marginTerms = (input.account?.positions ?? [])
+    .map(projectMarginTerm)
+    .filter((row): row is LighterTradingMarginTerm => row !== null)
     .slice(0, MAX_ROWS);
   const assets = (input.account?.assets ?? [])
     .map(projectAsset)
@@ -335,6 +383,9 @@ export function projectLighterTradingAccount(
     unavailableReason: null,
     accountIndex: input.accountIndex,
     openOrdersAvailable: input.openOrdersAvailable,
+    ...(input.openOrdersAvailable || input.openOrdersUnavailableReason === undefined
+      ? {}
+      : { openOrdersUnavailableReason: input.openOrdersUnavailableReason }),
     openOrdersTruncated,
     summary: {
       collateral: cleanDecimal(input.account?.collateral),
@@ -343,6 +394,7 @@ export function projectLighterTradingAccount(
     },
     assets,
     positions,
+    marginTerms,
     openOrders,
   };
 }
@@ -388,6 +440,7 @@ export async function readLighterTradingAccount(
   let orders: readonly LighterAccountOrder[] = [];
   let ordersNextCursor: string | undefined;
   let openOrdersAvailable = false;
+  let openOrdersUnavailableReason: "no_read_auth" | "read_failed" = "no_read_auth";
   const auth = await resolveLighterReadOnlyAccountAuth(environment, accountIndex);
   if (auth !== null) {
     try {
@@ -408,6 +461,7 @@ export async function readLighterTradingAccount(
       throwIfAborted(signal);
       if (isAbortError(cause)) throw cause;
       log.warn("[lighter-trading] active orders read failed", { environment, accountIndex });
+      openOrdersUnavailableReason = "read_failed";
     }
   }
 
@@ -418,6 +472,120 @@ export async function readLighterTradingAccount(
     orders,
     ordersNextCursor,
     openOrdersAvailable,
+    openOrdersUnavailableReason,
+    symbolFor,
+    now,
+  });
+}
+
+/**
+ * Which side of a trade the account was on, from the record's own party ids.
+ * Null when it is on neither (a foreign row) or both (self-trade: no single
+ * side to report).
+ */
+function fillSideForAccount(trade: LighterTrade, accountIndex: number): "buy" | "sell" | null {
+  const isAsk = trade.ask_account_id === accountIndex;
+  const isBid = trade.bid_account_id === accountIndex;
+  if (isAsk === isBid) return null;
+  return isAsk ? "sell" : "buy";
+}
+
+function projectLighterTradingFill(
+  trade: LighterTrade,
+  accountIndex: number,
+  symbolFor: (marketId: number) => string,
+): LighterTradingFill | null {
+  const side = fillSideForAccount(trade, accountIndex);
+  const size = cleanUnsigned(trade.size);
+  const price = cleanUnsigned(trade.price);
+  const tradeId = typeof trade.trade_id_str === "string" && trade.trade_id_str.length > 0
+    ? trade.trade_id_str
+    : Number.isSafeInteger(trade.trade_id) ? String(trade.trade_id) : null;
+  if (
+    side === null || size === null || price === null || tradeId === null
+    || !Number.isSafeInteger(trade.market_id) || trade.market_id < 0
+    || !Number.isSafeInteger(trade.timestamp) || trade.timestamp < 0
+  ) return null;
+  return {
+    tradeId,
+    marketId: trade.market_id,
+    symbol: symbolFor(trade.market_id),
+    side,
+    // The ask is the maker exactly when `is_maker_ask`; the account is the ask when it sold.
+    role: (side === "sell") === trade.is_maker_ask ? "maker" : "taker",
+    type: typeof trade.type === "string" && trade.type.length > 0 ? trade.type : "trade",
+    size,
+    price,
+    value: cleanUnsigned(trade.usd_amount),
+    // Realized PnL for the account is on ITS side of the fill; the other
+    // field is the counterparty's (see the LighterTrade descriptor).
+    realizedPnl: cleanDecimal(side === "sell" ? trade.ask_account_pnl : trade.bid_account_pnl),
+    timestamp: trade.timestamp,
+  };
+}
+
+export function projectLighterTradingFills(input: {
+  environment: LighterEnvironment;
+  accountIndex: number;
+  trades: readonly LighterTrade[];
+  symbolFor: (marketId: number) => string;
+  now: () => number;
+}): LighterTradingFills {
+  const fills: LighterTradingFill[] = [];
+  for (const trade of input.trades) {
+    const fill = projectLighterTradingFill(trade, input.accountIndex, input.symbolFor);
+    if (fill !== null) fills.push(fill);
+    if (fills.length === LIGHTER_TRADING_FILLS_MAX) break;
+  }
+  fills.sort((a, b) => b.timestamp - a.timestamp);
+  return {
+    environment: input.environment,
+    retrievedAt: input.now(),
+    accountIndex: input.accountIndex,
+    available: true,
+    fills,
+  };
+}
+
+/**
+ * The account's recent fills, projected renderer-safe. Same scope and
+ * account resolution as the account read; the trades endpoint always needs
+ * the derived read-only authorization, so no auth means `available: false`
+ * rather than an error.
+ */
+export async function readLighterTradingFills(
+  environment: LighterEnvironment,
+  limit: number = 50,
+  client: LighterTradingFillsClient = getLighterClient(),
+  now: () => number = Date.now,
+  signal?: AbortSignal,
+): Promise<LighterTradingFills> {
+  throwIfAborted(signal);
+  const unavailable = (accountIndex: number | null): LighterTradingFills => ({
+    environment,
+    retrievedAt: now(),
+    accountIndex,
+    available: false,
+    fills: [],
+  });
+  const scopes = listUnlockedLighterTradingCredentialScopes(environment);
+  if (scopes.length === 0) return unavailable(null);
+  const accountIndex = resolveUniqueLighterAccountIndex(scopes);
+  if (accountIndex === null) return unavailable(null);
+  const auth = await resolveLighterReadOnlyAccountAuth(environment, accountIndex);
+  if (auth === null) return unavailable(accountIndex);
+
+  const symbolFor = await symbolResolver(environment, signal);
+  const response = await client.getAccountTrades(
+    environment,
+    { accountIndex, limit, sortBy: "timestamp" },
+    auth,
+    { signal },
+  );
+  return projectLighterTradingFills({
+    environment,
+    accountIndex,
+    trades: response.trades,
     symbolFor,
     now,
   });

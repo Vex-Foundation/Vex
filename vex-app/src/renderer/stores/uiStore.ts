@@ -55,6 +55,8 @@ import {
 } from "./uiStore/persistence.js";
 import {
   DEFAULT_RUNTIME_MODE,
+  transitionRuntimeMode,
+  type LighterModeState,
   type RuntimeMode,
 } from "./uiStore/runtime-mode.js";
 import {
@@ -157,6 +159,9 @@ export interface UiState {
    * merge that spread the whole payload rather than about the slot.
    */
   readonly runtimeMode: RuntimeMode;
+  /** The Lighter desk's return point and remembered session. Ephemeral. */
+  readonly lighterReturn: LighterModeState["lighterReturn"];
+  readonly lighterSessionId: LighterModeState["lighterSessionId"];
   /**
    * Currently-selected Studio project. `null` means the Studio welcome screen.
    *
@@ -464,6 +469,8 @@ export const useUiStore = create<UiState>()(
       theme: resolveTheme(DEFAULT_THEME_PREFERENCE, systemPrefersDark()),
       themePreference: DEFAULT_THEME_PREFERENCE,
       runtimeMode: DEFAULT_RUNTIME_MODE,
+      lighterReturn: null,
+      lighterSessionId: null,
       setThemePreference: (themePreference) => {
         const theme = resolveTheme(themePreference, systemPrefersDark());
         applyThemeToDocument(theme);
@@ -521,7 +528,8 @@ export const useUiStore = create<UiState>()(
       openUnlock: (unlockReturnView) =>
         set({ currentView: "unlock", unlockReturnView }),
       setActiveSessionId: (activeSessionId) => set({ activeSessionId }),
-      setRuntimeMode: (runtimeMode) => set({ runtimeMode }),
+      setRuntimeMode: (runtimeMode) =>
+        set((state) => transitionRuntimeMode(state, runtimeMode)),
       setActiveProjectId: (activeProjectId) => set({ activeProjectId }),
       setShellRoute: (shellRoute) => set({ shellRoute }),
       openCreateSession: (initialMessage = null, reasoningEffort = null) => {

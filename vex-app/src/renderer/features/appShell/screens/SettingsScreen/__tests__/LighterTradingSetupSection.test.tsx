@@ -143,10 +143,10 @@ afterEach(cleanup);
 
 it("adds a market this account has no terms on, and applies to it", async () => {
   renderCard();
-  await screen.findByLabelText("New leverage for ETH");
+  await screen.findByRole("button", { name: "Change leverage for ETH" });
   // BTC has no row of its own, so it is not in the table by default: the
   // account's markets are the table, every market is the picker.
-  expect(screen.queryByLabelText("New leverage for BTC")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Change leverage for BTC" })).toBeNull();
 
   // No query typed. The picker browses, which is how a person discovers that
   // a market they have never traded can be configured at all.
@@ -156,6 +156,8 @@ it("adds a market this account has no terms on, and applies to it", async () => 
   expect(within(row).getByText("2.00x default")).not.toBeNull();
   expect(within(row).getByText("50x")).not.toBeNull();
 
+  // Change opens the shared sheet; Apply there sends the selector.
+  fireEvent.click(screen.getByRole("button", { name: "Change leverage for BTC" }));
   fireEvent.change(screen.getByLabelText("New leverage for BTC"), {
     target: { value: "25" },
   });
@@ -225,7 +227,7 @@ it("keeps an unresolved change after a remount and reconciles it by intent id", 
 
 it("says nothing about unresolved changes when there are none", async () => {
   renderCard();
-  await screen.findByLabelText("New leverage for ETH");
+  await screen.findByRole("button", { name: "Change leverage for ETH" });
   expect(screen.queryByLabelText(UNRESOLVED_TITLE)).toBeNull();
 });
 
@@ -267,14 +269,17 @@ it("offers Reconcile for an unanswered confirmation before the overview is read 
   } satisfies Result<ApplyLighterLeverageResult>);
 
   renderCard();
-  fireEvent.change(await screen.findByLabelText("New leverage for ETH"), {
+  fireEvent.click(await screen.findByRole("button", { name: "Change leverage for ETH" }));
+  fireEvent.change(screen.getByLabelText("New leverage for ETH"), {
     target: { value: "50" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Apply new leverage to ETH" }));
   fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
 
-  const reconcile = await screen.findByRole("button", { name: "Reconcile" });
-  fireEvent.click(reconcile);
+  // The outcome lands where the person is (the sheet, still open under the
+  // modal) and on the table row behind it; either Reconcile is the same read.
+  const [reconcile] = await screen.findAllByRole("button", { name: "Reconcile" });
+  fireEvent.click(reconcile as HTMLElement);
   await waitFor(() => {
     expect(reconcileLighterLeverage).toHaveBeenCalledWith({ proposalId: "proposal-77" });
   });

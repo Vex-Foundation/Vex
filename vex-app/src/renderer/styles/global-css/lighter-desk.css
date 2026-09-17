@@ -1,0 +1,335 @@
+/* Lighter desk frame: the mode's center column. Chart | ticket-over-book on
+ * the right, the account dock under both, and two drag splitters (column, dock).
+ * The chat rail lives in the shell's BOOK column (LighterChatRail). */
+
+.lit-desk {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.lit-desk-top {
+  /* The market picker layer hangs off this bar (`top: 100%`), not the shell. */
+  position: relative;
+  container-type: inline-size;
+  display: flex;
+  min-height: 48px;
+  flex: 0 0 auto;
+  align-items: center;
+  border-bottom: 1px solid var(--lit-line);
+  background: color-mix(in srgb, var(--lit-bg) 92%, var(--lit-panel));
+  padding: 0 10px 0 6px;
+}
+
+/* Shell strip flank (notices, approvals, export), portaled in from
+ * `ShellStatusStrip`; nothing to show means no gap either. */
+.lit-desk-top-shell { display: flex; flex: 0 0 auto; align-items: center; margin-left: 14px; }
+.lit-desk-top-shell:empty { display: none; }
+
+/* Ask Vex: the market bar's pill with the shortcut, before the live status;
+ * it opens the rail and focuses its composer (no second input on the desk). */
+.lit-ask-trigger {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: var(--lit-panel);
+  padding: 0 6px 0 7px;
+  color: var(--lit-focus);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.lit-ask-trigger:hover { border-color: var(--lit-focus); background: var(--lit-hover); }
+.lit-ask-trigger:focus-visible { outline: 2px solid var(--lit-focus); outline-offset: 2px; }
+
+.lit-ask-trigger kbd {
+  border: 1px solid var(--lit-line);
+  border-radius: 3px;
+  padding: 0 4px;
+  color: var(--lit-ink-muted);
+  font-family: inherit;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 15px;
+}
+
+/* With the chat rail open the desk is ~1024 wide and the composer is already
+ * on screen, so the pill drops to its mark; the words come back when the rail
+ * is collapsed and the pill is the way in. */
+@container (max-width: 1100px) {
+  .lit-ask-trigger kbd, .lit-ask-trigger b { display: none; }
+  .lit-ask-trigger { padding: 0 6px; }
+}
+
+.lit-desk-body {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-rows: minmax(0, 1fr) 190px;
+  background: var(--lit-line);
+  gap: 1px;
+}
+
+.lit-desk-body[data-resizing] { user-select: none; }
+.lit-desk-body[data-resizing] iframe { pointer-events: none; }
+
+.lit-desk-upper {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) 260px 300px;
+  background: var(--lit-line);
+  gap: 1px;
+}
+
+/* The middle column: the book takes what the trades panel (S3) leaves. */
+.lit-book-column,
+.lit-ticket-column {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--lit-line);
+  gap: 1px;
+}
+
+/* Fixed grid track, so the book can query its own width for its floor rules. */
+.lit-book-column { container-type: inline-size; }
+
+.lit-book-column > .lit-book-panel { position: relative; min-height: 140px; flex: 1 1 140px; }
+.lit-book-column > .lit-trades-slot { position: relative; display: flex; min-height: 120px; flex: 0 0 auto; }
+.lit-trades-slot > .lit-trades-panel { flex: 1; min-height: 0; }
+
+/* Stacked desk (narrow, the chat rail open): the chart keeps the left column
+ * top to bottom, the ticket sits over the book column on the right, and the
+ * book and the trades share that lower panel as tabs. */
+.lit-desk-upper[data-stacked] > .lit-chart-panel { grid-column: 1; grid-row: 1 / span 2; }
+.lit-desk-upper[data-stacked] > .lit-ticket-column { grid-column: 2; grid-row: 1; }
+.lit-desk-upper[data-stacked] > .lit-book-column { grid-column: 2; grid-row: 2; }
+.lit-desk-upper[data-stacked] > .lit-book-column > .lit-trades-slot { flex: 1 1 120px; }
+.lit-desk-upper[data-stacked] > .lit-book-column[data-tab="trades"] > .lit-book-panel,
+.lit-desk-upper[data-stacked] > .lit-book-column[data-tab="book"] > .lit-trades-slot { display: none; }
+
+/* The ticket column scrolls with its side buttons stuck to the bottom edge
+ * when it is shorter than its content. */
+.lit-ticket-column > .lit-ticket-panel { flex: 1 1 auto; min-height: 0; overflow: hidden auto; }
+.lit-ticket-column > .lit-ticket-panel::-webkit-scrollbar { width: 6px; }
+.lit-ticket-column > .lit-ticket-panel::-webkit-scrollbar-thumb { border-radius: var(--lit-radius); background: var(--lit-line-strong); }
+
+.lit-bottom-dock {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.lit-bottom-dock > .lit-bottom-panel { flex: 1; }
+
+/* Splitters: 10px hit area straddling the 1px seam, a 2px line lit on hover,
+ * focus and drag. `data-axis` says which way it moves. Sizes are shares of the
+ * desk (see desk-preferences), so the seams move with the window. */
+.lit-splitter {
+  position: absolute;
+  z-index: 3;
+  touch-action: none;
+}
+
+.lit-splitter[data-axis="x"] {
+  top: 0;
+  bottom: 0;
+  left: -5px;
+  width: 10px;
+  cursor: ew-resize;
+}
+
+.lit-splitter[data-axis="y"] {
+  top: -5px;
+  right: 0;
+  left: 0;
+  height: 10px;
+  cursor: ns-resize;
+}
+
+.lit-splitter::after {
+  content: "";
+  position: absolute;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.lit-splitter[data-axis="x"]::after { top: 0; bottom: 0; left: 4px; width: 2px; }
+.lit-splitter[data-axis="y"]::after { top: 4px; right: 0; left: 0; height: 2px; }
+
+.lit-splitter:hover::after,
+.lit-splitter:focus-visible::after,
+.lit-splitter[data-dragging]::after { background: var(--lit-positive); }
+
+.lit-splitter:focus-visible { outline: 0; }
+
+/* Expanded chart: the chart panel takes the whole desk; the rest stays mounted. */
+.lit-desk[data-chart-expanded] { position: relative; }
+
+.lit-desk[data-chart-expanded] .lit-desk-top,
+.lit-desk[data-chart-expanded] .lit-desk-body > :not(.lit-desk-upper),
+.lit-desk[data-chart-expanded] .lit-desk-upper > :not(.lit-chart-panel) {
+  visibility: hidden;
+}
+
+.lit-desk[data-chart-expanded] .lit-chart-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  width: 100%;
+  height: 100%;
+  background: var(--lit-panel);
+}
+
+/* The chart column is the grid's flexible track; as a query container its
+ * toolbar can shed the study readout and two intervals before they clip. */
+.lit-chart-panel { container-type: inline-size; }
+
+.lit-chat-starters svg,
+.lit-chart-tools svg,
+.lit-chevron {
+  width: 20px;
+  height: 20px;
+}
+
+.lit-stroke-icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.lit-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--lit-panel);
+}
+
+.lit-panel-header {
+  display: flex;
+  min-height: 38px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--lit-line);
+  padding: 0 12px;
+}
+
+.lit-panel-header h3 {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.lit-panel-header small {
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+}
+
+.lit-panel-tabs,
+.lit-bottom-tabs {
+  display: flex;
+  align-items: stretch;
+  align-self: stretch;
+  min-width: 0;
+}
+
+.lit-bottom-tabs { gap: 8px; }
+
+.lit-panel-tabs button,
+.lit-bottom-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  padding: 0 10px;
+  white-space: nowrap;
+  color: var(--lit-ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+  transition: color 140ms ease, border-color 140ms ease;
+}
+
+.lit-panel-tabs button:hover,
+.lit-bottom-tabs button:hover { color: var(--lit-ink); }
+
+.lit-panel-tabs button[aria-selected="true"],
+.lit-bottom-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--lit-positive);
+  color: var(--lit-ink);
+}
+
+/* Exchange register: the count rides inline, "Positions (2)". */
+.lit-bottom-tabs button i {
+  color: var(--lit-ink-muted);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------------------
+ * Loading and error states, motion
+ * ------------------------------------------------------------------------- */
+
+.lit-workspace-state {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  color: var(--lit-ink-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.lit-workspace-state b { color: var(--lit-ink); font-size: 16px; }
+.lit-workspace-state span { max-width: 520px; color: var(--lit-ink-secondary); line-height: 1.5; }
+
+.lit-loader {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--lit-line-strong);
+  border-top-color: var(--lit-positive);
+  border-radius: 50%;
+  animation: lit-spin 800ms linear infinite;
+}
+
+@keyframes lit-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .lit-desk *,
+  .lit-desk *::before,
+  .lit-desk *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .lit-chart-loading-candle {
+    opacity: 0.38;
+    transform: scaleY(1);
+  }
+}

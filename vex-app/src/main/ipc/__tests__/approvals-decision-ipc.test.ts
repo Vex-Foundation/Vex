@@ -44,6 +44,7 @@ const mocks = vi.hoisted(() => ({
     skippedLeaseHeld: 0,
     errored: 0,
   }),
+  reconcileAbandonedDeskDispatches: vi.fn().mockResolvedValue([]),
   runResumeAfterDecision: vi.fn(),
   dispatchPreparedMission: vi.fn(),
   listPendingForSession: vi.fn().mockResolvedValue({ ok: true, data: [] }),
@@ -130,6 +131,8 @@ vi.mock("@vex-agent/engine/core/approval-runtime.js", () => ({
   // Lifecycle reconciler — runs in the SAME scheduled cycle as the TTL sweep.
   reconcileApprovalLifecycle: (...a: unknown[]) =>
     mocks.reconcileApprovalLifecycle(...a),
+  reconcileAbandonedDeskDispatches: (...a: unknown[]) =>
+    mocks.reconcileAbandonedDeskDispatches(...a),
   runResumeAfterDecision: (...a: unknown[]) =>
     mocks.runResumeAfterDecision(...a),
   // A chat continuation has no mission run; the helper narrows the union so
@@ -812,6 +815,17 @@ describe("scheduled TTL sweep", () => {
 
     expect(mocks.sweepExpiredApprovals).toHaveBeenCalled();
     expect(mocks.reconcileApprovalLifecycle).toHaveBeenCalled();
+  });
+
+  it("desk dispatch recovery runs once per process, not once per cycle", async () => {
+    // Marking a `dispatching` desk row indeterminate is only safe before this
+    // process could have started one, so a later cycle must never repeat it.
+    await flushMicrotasks();
+    const callsAfterFirstCycle = mocks.reconcileAbandonedDeskDispatches.mock.calls.length;
+    teardownHandlers(active);
+    active = setupHandlers();
+    await flushMicrotasks();
+    expect(mocks.reconcileAbandonedDeskDispatches.mock.calls.length).toBe(callsAfterFirstCycle);
   });
 
   it("a TTL-sweep failure still lets the reconciler pass run", async () => {

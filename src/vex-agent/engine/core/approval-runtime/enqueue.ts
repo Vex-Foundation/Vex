@@ -183,7 +183,7 @@ export interface EnqueueApprovalInput {
    * already carry whole.
    */
   readonly preparedApprovalBinding?: PreparedApprovalBinding;
-  readonly origin: "agent" | "studio_mcp";
+  readonly origin: "agent" | "studio_mcp" | "desk";
   /**
    * Studio only - the `clientInfo.name` the external MCP client declared in its
    * `initialize` handshake, so the card can NAME who asked instead of leaving

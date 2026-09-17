@@ -5,6 +5,7 @@ import type { LighterCandleTarget, LighterInternalCandle } from "../trading-pane
 import {
   LIGHTER_CANDLE_STREAM_KEEPALIVE_INTERVAL_MS,
   LIGHTER_CANDLE_STREAM_MAX_EVENT_CANDLES,
+  LIGHTER_CANDLE_STREAM_GIVE_UP_RETRY_MS,
   LIGHTER_CANDLE_STREAM_MAX_RECONNECT_ATTEMPTS,
   LIGHTER_CANDLE_STREAM_RECONCILE_INTERVAL_MS,
   LighterCandleStreamSupervisor,
@@ -406,9 +407,13 @@ describe("Lighter candle stream supervisor", () => {
     const socket = await connect(h);
     h.events.length = 0;
 
+    const exhausted = (): boolean => h.diagnostics.some(
+      (entry) => entry.event === "lighter.candle_stream.recovery_exhausted",
+    );
     let current = socket;
     for (let attempt = 0; attempt < LIGHTER_CANDLE_STREAM_MAX_RECONNECT_ATTEMPTS + 1; attempt += 1) {
       current.emit("error", {});
+      if (exhausted()) break;
       await vi.advanceTimersByTimeAsync(60_000);
       const next = h.sockets.at(-1);
       if (next === undefined || next === current) break;
@@ -423,6 +428,14 @@ describe("Lighter candle stream supervisor", () => {
       }),
     }));
     expect(h.events.at(-1)).toMatchObject({ kind: "status", status: "unavailable" });
+
+    // The budget rebuilds after the rest while the subscriber is still there.
+    const restedAt = h.events.length;
+    await vi.advanceTimersByTimeAsync(LIGHTER_CANDLE_STREAM_GIVE_UP_RETRY_MS);
+    expect(h.sockets.length).toBeGreaterThan(LIGHTER_CANDLE_STREAM_MAX_RECONNECT_ATTEMPTS);
+    expect(h.events.slice(restedAt)).toContainEqual(
+      expect.objectContaining({ kind: "status", status: "reconnecting" }),
+    );
     h.supervisor.stop();
   });
 });

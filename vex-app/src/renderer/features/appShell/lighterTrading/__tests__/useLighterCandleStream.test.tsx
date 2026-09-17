@@ -25,6 +25,22 @@ const stop = vi.fn(async ({ subscriptionId }: { readonly subscriptionId: string 
   ok: true as const,
   data: { subscriptionId, status: "stopped" as const },
 }));
+const history = vi.fn((input: { readonly endTimestamp: number; readonly count: number }) => ({
+  cancel: vi.fn(),
+  promise: Promise.resolve({
+    ok: true as const,
+    data: {
+      environment: "rhc" as const,
+      marketId: 10,
+      resolution: "5m" as const,
+      retrievedAt: 1_720_000_002_000,
+      candles: input.endTimestamp < 1_719_999_000_000 ? [] : [
+        streamCandle({ timestamp: 1_719_999_700_000, low: 89, close: 90, lastTradeId: undefined, source: "rest_snapshot" }),
+        streamCandle({ timestamp: 1_720_000_000_000, close: 100, lastTradeId: undefined, source: "rest_snapshot" }),
+      ],
+    },
+  }),
+}));
 
 beforeEach(() => {
   callbacks.snapshot.length = 0;
@@ -32,12 +48,14 @@ beforeEach(() => {
   callbacks.status.length = 0;
   start.mockClear();
   stop.mockClear();
+  history.mockClear();
   Object.defineProperty(window, "vex", {
     configurable: true,
     value: {
       lighterTrading: {
         startCandleSubscription: start,
         stopCandleSubscription: stop,
+        getCandleHistory: history,
         onCandleSnapshot: (callback: (event: LighterTradingCandleSnapshotEvent) => void) => {
           callbacks.snapshot.push(callback);
           return () => callbacks.snapshot.splice(callbacks.snapshot.indexOf(callback), 1);
@@ -91,6 +109,34 @@ describe("useLighterCandleStream", () => {
     expect(callbacks.snapshot).toHaveLength(0);
     expect(callbacks.update).toHaveLength(0);
     expect(callbacks.status).toHaveLength(0);
+  });
+
+  it("pages older history from the earliest bar, dedupes in-flight reads, and marks exhaustion", async () => {
+    // Stable seed rows: the hook re-merges `restCandles` whenever the array identity changes.
+    const seed = [streamCandle({ lastTradeId: undefined, source: "rest_snapshot" })];
+    const { result } = renderHook(() => useLighterCandleStream({
+      enabled: true,
+      environment: "rhc",
+      marketId: 10,
+      resolution: "5m",
+      restCandles: seed,
+    }));
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+    expect(result.current.history).toBe("idle");
+
+    act(() => { result.current.loadOlder(); result.current.loadOlder(); });
+    expect(history).toHaveBeenCalledTimes(1);
+    expect(requireValue(history.mock.calls[0])[0]).toMatchObject({ endTimestamp: 1_719_999_999_999, count: 300 });
+    expect(result.current.history).toBe("loading");
+
+    await waitFor(() => expect(result.current.history).toBe("idle"));
+    expect(result.current.candles.map((candle) => candle.close)).toEqual([90, 101]);
+
+    act(() => { result.current.loadOlder(); });
+    await waitFor(() => expect(result.current.history).toBe("exhausted"));
+    expect(history).toHaveBeenCalledTimes(2);
+    act(() => { result.current.loadOlder(); });
+    expect(history).toHaveBeenCalledTimes(2);
   });
 
   it("surfaces provider connection states independently of REST retrieval time", async () => {

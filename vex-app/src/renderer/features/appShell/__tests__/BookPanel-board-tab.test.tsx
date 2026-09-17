@@ -52,6 +52,12 @@ vi.mock("../book/board/ActiveBoardModule.js", () => ({
   ActiveBoardModule: () => <div data-testid="active-board-module" />,
 }));
 
+// The Lighter rail swaps in after the Lighter button; its queries are not
+// under test here.
+vi.mock("../lighterTrading/LighterChatRail.js", () => ({
+  LighterChatRail: () => <div data-testid="lighter-chat-rail" />,
+}));
+
 const { BookPanel } = await import("../BookPanel.js");
 const { useUiStore } = await import("../../../stores/uiStore.js");
 const { useBoardSurfaceStore } = await import(
@@ -59,9 +65,6 @@ const { useBoardSurfaceStore } = await import(
 );
 const { boardRefOf } = await import("../Board/board-surface-contracts.js");
 const { boardSpec } = await import("../Board/__tests__/boardFixture.js");
-const { subscribeLighterWorkspaceOpen } = await import(
-  "../lighterTrading/workspace-command.js"
-);
 
 const SESSION = "00000000-0000-4000-8000-00000000dddd";
 
@@ -78,7 +81,7 @@ function renderRail() {
 beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
-  useUiStore.setState({ bookSectionOrder: [], bookTab: "portfolio" });
+  useUiStore.setState({ bookSectionOrder: [], bookTab: "portfolio", runtimeMode: "agent" });
   useBoardSurfaceStore.setState({
     latestBoard: null,
     pinnedBoard: null,
@@ -129,25 +132,19 @@ describe("BOOK tabs", () => {
     expect(useUiStore.getState().bookTab).toBe("portfolio");
   });
 
-  it("shows Lighter as the third option and opens the shared trading dialog", () => {
-    const onOpen = vi.fn();
-    const unsubscribe = subscribeLighterWorkspaceOpen(onOpen);
+  it("shows Lighter as the third option and enters the Lighter shell mode", () => {
     renderRail();
 
     const instruments = screen.getByRole("group", { name: "Book instruments" });
     const lighter = screen.getByRole("button", { name: "Lighter" });
     expect(instruments.lastElementChild).toBe(lighter);
-    expect(lighter.getAttribute("aria-haspopup")).toBe("dialog");
 
     fireEvent.click(screen.getByRole("tab", { name: /Board/ }));
     fireEvent.click(lighter);
 
-    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(useUiStore.getState().runtimeMode).toBe("lighter");
     expect(useUiStore.getState().bookTab).toBe("board");
-    expect(
-      screen.getByRole("tab", { name: /Board/ }).getAttribute("aria-selected"),
-    ).toBe("true");
-    unsubscribe();
+    expect(screen.getByTestId("lighter-chat-rail")).not.toBeNull();
   });
 
   it("NEVER auto-switches: a live board arrival lights the dot and nothing else", () => {

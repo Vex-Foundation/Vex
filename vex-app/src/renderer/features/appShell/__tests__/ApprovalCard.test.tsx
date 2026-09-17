@@ -102,6 +102,23 @@ beforeEach(() => {
 });
 
 describe("ApprovalCard", () => {
+  it("offers a reject reason on agent cards and none on desk cards, which have no model to read it", () => {
+    const { unmount } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ApprovalCard summary={makeSummary({ origin: "agent" })} sessionId={SESSION} focusOnMount={false} />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByLabelText("Reason for rejecting (optional)")).toBeTruthy();
+    expect(screen.getByText("Vex's own agent")).toBeTruthy();
+    unmount();
+    renderCard(makeSummary({ origin: "desk" }), false);
+    expect(screen.queryByLabelText("Reason for rejecting (optional)")).toBeNull();
+    expect(screen.getByText("You, from the Lighter desk")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /reject/i }));
+    fireEvent.click(screen.getByRole("button", { name: /reject/i }));
+    expect(mockRejectMutate).toHaveBeenCalledWith({ id: "appr-1" }, expect.anything());
+  });
+
   it("renders the full v4 quote binding, including hook, limits and consequence", () => {
     const binding = "Uniswap v4 pool 0x" + "ab".repeat(32)
       + ", fee dynamic, currently 10000 (millionths), tick spacing 200, hook 0x0000000000000000000000000000000000000044 : this hook can change the output after the swap"
@@ -225,9 +242,9 @@ describe("ApprovalCard", () => {
   );
 
   it.each([
-    ["immediate-or-cancel", "Immediate only"],
-    ["good-till-time", "Keep open"],
-    ["post-only", "Maker only"],
+    ["immediate-or-cancel", "IOC"],
+    ["good-till-time", "GTC"],
+    ["post-only", "Post-Only"],
   ] as const)("shows %s as the plain-language order behavior", (timeInForce, behaviorLabel) => {
     renderCard(
       makeSummary({

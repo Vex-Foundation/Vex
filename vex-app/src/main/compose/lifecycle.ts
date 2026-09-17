@@ -19,8 +19,7 @@
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { DEFAULT_EMBED_PORT } from "../onboarding/embedding-defaults.js";
-import { DEFAULT_PG_PORT } from "@shared/local-service-ports.js";
+import { resolveEmbedPort, resolvePgPort } from "../paths/service-ports.js";
 import {
   waitForEmbeddingsRuntimeReady,
   type EmbeddingsReadinessKind,
@@ -117,8 +116,8 @@ export async function composeUp(
   const {
     signal,
     onLogLine,
-    pgPort = DEFAULT_PG_PORT,
-    embedPort = DEFAULT_EMBED_PORT,
+    pgPort = resolvePgPort(),
+    embedPort = resolveEmbedPort(),
   } = options;
   const renderOptions = { pgPort, embedPort };
 

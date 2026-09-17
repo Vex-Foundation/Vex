@@ -1,16 +1,34 @@
-import { STUDIES, type Study } from "./chart-indicators.js";
+import { DEFAULT_STUDY_PERIODS, STUDIES, STUDY_PERIOD_MAX, STUDY_PERIOD_MIN, type Study, type StudyPeriods } from "./chart-indicators.js";
 export interface ChartPreferences {
   studies: Study[];
   volume: boolean;
   chartType: "candles" | "line";
+  scale: "linear" | "log";
+  periods: StudyPeriods;
 }
 export const DEFAULT_CHART_PREFERENCES: ChartPreferences = {
   studies: [],
   volume: true,
-  chartType: "candles"
+  chartType: "candles",
+  scale: "linear",
+  periods: DEFAULT_STUDY_PERIODS
 };
+function parsePeriods(value: unknown): StudyPeriods | null {
+  if (value === undefined)
+    return { ...DEFAULT_STUDY_PERIODS };
+  if (typeof value !== "object" || value === null)
+    return null;
+  const periods = { ...DEFAULT_STUDY_PERIODS };
+  for (const key of Object.keys(periods) as (keyof StudyPeriods)[]) {
+    const period: unknown = key in value ? (value as Record<string, unknown>)[key] : undefined;
+    if (!Number.isInteger(period) || (period as number) < STUDY_PERIOD_MIN || (period as number) > STUDY_PERIOD_MAX)
+      return null;
+    periods[key] = period as number;
+  }
+  return periods;
+}
 export function parseChartPreferences(raw: string | null): ChartPreferences {
-  const defaults = (): ChartPreferences => ({ ...DEFAULT_CHART_PREFERENCES, studies: [] });
+  const defaults = (): ChartPreferences => ({ ...DEFAULT_CHART_PREFERENCES, studies: [], periods: { ...DEFAULT_STUDY_PERIODS } });
   if (!raw || raw.length > 1024)
     return defaults();
   try {
@@ -19,10 +37,19 @@ export function parseChartPreferences(raw: string | null): ChartPreferences {
       return defaults();
     if (!value.studies.every(id => STUDIES.some(study => study.id === id)))
       return defaults();
+    // Settings added after the first release are optional so saved charts keep loading.
+    const scale = "scale" in value ? value.scale : "linear";
+    if (scale !== "linear" && scale !== "log")
+      return defaults();
+    const periods = parsePeriods("periods" in value ? value.periods : undefined);
+    if (periods === null)
+      return defaults();
     return {
       studies: [...new Set(value.studies)] as Study[],
       volume: value.volume,
-      chartType: value.chartType
+      chartType: value.chartType,
+      scale,
+      periods
     };
   } catch {
     return defaults();

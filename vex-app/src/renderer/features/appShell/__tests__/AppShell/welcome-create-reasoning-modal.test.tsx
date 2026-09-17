@@ -32,8 +32,8 @@ vi.mock("../../screens/SettingsScreen.js", () => ({
   SettingsScreen: () => null,
 }));
 
-vi.mock("../../lighterTrading/LighterTradingDialog.js", () => ({
-  LighterTradingDialog: () => null,
+vi.mock("../../lighterTrading/LighterCenter.js", () => ({
+  LighterCenter: () => null,
 }));
 
 // Every brand mark stubs to null, whatever its name: the marks are

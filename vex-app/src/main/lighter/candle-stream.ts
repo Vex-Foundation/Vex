@@ -9,6 +9,7 @@ import type {
   LighterTradingStreamCandle,
 } from "@shared/schemas/lighter-trading.js";
 import { log } from "../logger/index.js";
+import { SocketWatcherReconnectState } from "./stream-supervisor.js";
 import {
   canonicalLighterCandleTarget,
   lighterCandleResponseChannel,
@@ -40,6 +41,13 @@ export const LIGHTER_CANDLE_STREAM_MAX_EVENT_CANDLES = 50;
  * order stream supervisors; the backoff ceiling differs per consumer.
  */
 export const LIGHTER_CANDLE_STREAM_MAX_RECONNECT_ATTEMPTS = 8;
+/**
+ * Rest between exhausted restart budgets. The budget above spans about two
+ * minutes of backoff, which a laptop sleeping or a router rebooting outlasts
+ * easily; a watcher that still has subscribers probes again after this pause
+ * instead of staying `unavailable` until the market is switched.
+ */
+export const LIGHTER_CANDLE_STREAM_GIVE_UP_RETRY_MS = 90_000;
 
 const INITIAL_HISTORY_COUNT = 300;
 const TAIL_HISTORY_COUNT = 3;
@@ -124,12 +132,7 @@ interface CandleWatcher {
   subscriptionSent: boolean;
   providerAcknowledged: boolean;
   stopped: boolean;
-  givenUp: boolean;
-  lastFailureReason: string;
-  reconnectAttempt: number;
-  reconnectTimer: ReturnType<typeof setTimeout> | null;
-  handshakeTimer: ReturnType<typeof setTimeout> | null;
-  keepaliveTimer: ReturnType<typeof setTimeout> | null;
+  readonly reconnect: SocketWatcherReconnectState;
   reconcileTimer: ReturnType<typeof setTimeout> | null;
   historyGeneration: number;
   historyPending: boolean;
@@ -198,7 +201,7 @@ export class LighterCandleStreamSupervisor {
     if (watcher.providerAcknowledged) {
       this.emitStatusTo(subscription, watcher, "live");
       if (watcher.records.size > 0) this.emitSnapshotTo(subscription, watcher);
-    } else if (watcher.givenUp) {
+    } else if (watcher.reconnect.givenUp) {
       // Recovery is already exhausted for this market and resolution. Report
       // the terminal state rather than a "connecting" that will never resolve.
       this.emitStatusTo(subscription, watcher, "unavailable");
@@ -241,24 +244,35 @@ export class LighterCandleStreamSupervisor {
   }
 
   private scheduleConnect(watcher: CandleWatcher, delayMs?: number): void {
-    if (
-      this.stopped
+    const blocked = this.stopped
       || watcher.stopped
-      || watcher.givenUp
       || watcher.subscriptions.size === 0
-      || watcher.socket !== null
-      || watcher.reconnectTimer !== null
-    ) return;
-    if (watcher.reconnectAttempt >= LIGHTER_CANDLE_STREAM_MAX_RECONNECT_ATTEMPTS) {
-      this.giveUp(watcher);
-      return;
-    }
-    const delay = delayMs ?? reconnectDelayMs(watcher.reconnectAttempt, this.deps.random());
-    watcher.reconnectAttempt += 1;
-    watcher.reconnectTimer = setTimeout(() => {
-      watcher.reconnectTimer = null;
-      this.connect(watcher);
-    }, delay);
+      || watcher.socket !== null;
+    watcher.reconnect.scheduleConnect({
+      blocked,
+      delayMs,
+      random: this.deps.random,
+      connect: () => this.connect(watcher),
+      giveUp: {
+        onGiveUp: (attempts, reason) => {
+          // End of one restart budget. The renderer learns about it through the
+          // `unavailable` status; reason and attempt count stay in the diagnostic
+          // because the shared status event carries no reason field. The watcher
+          // rests, then rebuilds its budget while anyone is still subscribed.
+          this.deps.diagnostic("lighter.candle_stream.recovery_exhausted", {
+            ...targetDetail(watcher.target),
+            attempts,
+            reason,
+          });
+          this.emitStatus(watcher, "unavailable");
+        },
+        onRearm: () => {
+          this.emitStatus(watcher, "reconnecting");
+          this.scheduleConnect(watcher, 0);
+        },
+        rearmBlocked: () => this.stopped || watcher.stopped || watcher.subscriptions.size === 0,
+      },
+    });
   }
 
   private connect(watcher: CandleWatcher): void {
@@ -281,12 +295,11 @@ export class LighterCandleStreamSupervisor {
         if (watcher.socket !== socket) return;
         this.restartWatcher(watcher, "socket_error");
       });
-      watcher.handshakeTimer = setTimeout(() => {
-        watcher.handshakeTimer = null;
+      watcher.reconnect.armHandshakeTimeout(LIGHTER_CANDLE_STREAM_HANDSHAKE_TIMEOUT_MS, () => {
         if (watcher.socket !== socket) return;
         this.deps.diagnostic("lighter.candle_stream.handshake_failed", targetDetail(watcher.target));
         this.restartWatcher(watcher, "handshake_timeout");
-      }, LIGHTER_CANDLE_STREAM_HANDSHAKE_TIMEOUT_MS);
+      });
       if (socket.readyState === WS_OPEN) this.sendSubscription(watcher, socket);
     } catch {
       this.deps.diagnostic("lighter.candle_stream.connect_failed", targetDetail(watcher.target));
@@ -363,9 +376,8 @@ export class LighterCandleStreamSupervisor {
     watcher.lastProviderTimestamp = Math.max(watcher.lastProviderTimestamp, frame.timestamp);
     if (type === "subscribed/candle") {
       watcher.providerAcknowledged = true;
-      watcher.reconnectAttempt = 0;
-      if (watcher.handshakeTimer !== null) clearTimeout(watcher.handshakeTimer);
-      watcher.handshakeTimer = null;
+      watcher.reconnect.reconnectAttempt = 0;
+      watcher.reconnect.clearHandshakeTimeout();
       this.emitStatus(watcher, "live");
       this.scheduleKeepalive(watcher);
       this.scheduleReconciliation(watcher);
@@ -485,22 +497,24 @@ export class LighterCandleStreamSupervisor {
   }
 
   private scheduleKeepalive(watcher: CandleWatcher): void {
-    if (watcher.keepaliveTimer !== null || watcher.socket === null) return;
-    watcher.keepaliveTimer = setTimeout(() => {
-      watcher.keepaliveTimer = null;
-      const socket = watcher.socket;
-      if (socket === null) return;
-      if (this.deps.now() - watcher.lastReceivedAt > LIGHTER_CANDLE_STREAM_STALE_AFTER_MS) {
-        this.emitStatus(watcher, "delayed");
-        this.restartWatcher(watcher, "stale_connection");
-        return;
-      }
-      if (!this.sendIfOpen(socket, JSON.stringify({ type: "ping" }))) {
-        this.restartWatcher(watcher, "keepalive_failed");
-        return;
-      }
-      this.scheduleKeepalive(watcher);
-    }, LIGHTER_CANDLE_STREAM_KEEPALIVE_INTERVAL_MS);
+    watcher.reconnect.scheduleKeepalive(
+      LIGHTER_CANDLE_STREAM_KEEPALIVE_INTERVAL_MS,
+      () => watcher.socket === null,
+      () => {
+        const socket = watcher.socket;
+        if (socket === null) return false;
+        if (this.deps.now() - watcher.lastReceivedAt > LIGHTER_CANDLE_STREAM_STALE_AFTER_MS) {
+          this.emitStatus(watcher, "delayed");
+          this.restartWatcher(watcher, "stale_connection");
+          return false;
+        }
+        if (!this.sendIfOpen(socket, JSON.stringify({ type: "ping" }))) {
+          this.restartWatcher(watcher, "keepalive_failed");
+          return false;
+        }
+        return true;
+      },
+    );
   }
 
   private scheduleReconciliation(watcher: CandleWatcher): void {
@@ -533,7 +547,7 @@ export class LighterCandleStreamSupervisor {
   private handleClose(watcher: CandleWatcher, socket: LighterCandleStreamSocket): void {
     if (watcher.socket !== socket) return;
     watcher.socket = null;
-    watcher.lastFailureReason = "socket_closed";
+    watcher.reconnect.lastFailureReason = "socket_closed";
     watcher.providerAcknowledged = false;
     watcher.subscriptionSent = false;
     clearSocketTimers(watcher);
@@ -549,28 +563,12 @@ export class LighterCandleStreamSupervisor {
   }
 
   private restartWatcher(watcher: CandleWatcher, reason: string): void {
-    watcher.lastFailureReason = reason;
+    watcher.reconnect.lastFailureReason = reason;
     disconnectSocket(watcher, reason);
     if (!this.stopped && !watcher.stopped && watcher.subscriptions.size > 0) {
       this.emitStatus(watcher, "reconnecting");
       this.scheduleConnect(watcher);
     }
-  }
-
-  /**
-   * Terminal end of the restart budget. The renderer learns about it through
-   * the `unavailable` status; reason and attempt count stay in the diagnostic
-   * because the shared status event carries no reason field.
-   */
-  private giveUp(watcher: CandleWatcher): void {
-    if (watcher.givenUp) return;
-    watcher.givenUp = true;
-    this.deps.diagnostic("lighter.candle_stream.recovery_exhausted", {
-      ...targetDetail(watcher.target),
-      attempts: watcher.reconnectAttempt,
-      reason: watcher.lastFailureReason,
-    });
-    this.emitStatus(watcher, "unavailable");
   }
 
   private removeSubscription(subscription: Subscription, notify: boolean): void {
@@ -589,8 +587,7 @@ export class LighterCandleStreamSupervisor {
     watcher.stopped = true;
     watcher.historyGeneration += 1;
     watcher.bufferedFrames = [];
-    if (watcher.reconnectTimer !== null) clearTimeout(watcher.reconnectTimer);
-    watcher.reconnectTimer = null;
+    watcher.reconnect.clearReconnectTimer();
     disconnectSocket(watcher, reason);
   }
 
@@ -807,12 +804,12 @@ function createWatcher(key: string, target: LighterCandleTarget): CandleWatcher 
     subscriptionSent: false,
     providerAcknowledged: false,
     stopped: false,
-    givenUp: false,
-    lastFailureReason: "none",
-    reconnectAttempt: 0,
-    reconnectTimer: null,
-    handshakeTimer: null,
-    keepaliveTimer: null,
+    reconnect: new SocketWatcherReconnectState({
+      maxReconnectAttempts: LIGHTER_CANDLE_STREAM_MAX_RECONNECT_ATTEMPTS,
+      reconnectCeilingMs: 30_000,
+      reconnectExponentCap: 5,
+      giveUpRetryMs: LIGHTER_CANDLE_STREAM_GIVE_UP_RETRY_MS,
+    }),
     reconcileTimer: null,
     historyGeneration: 0,
     historyPending: false,
@@ -844,18 +841,9 @@ function disconnectSocket(watcher: CandleWatcher, reason: string): void {
 }
 
 function clearSocketTimers(watcher: CandleWatcher): void {
-  if (watcher.handshakeTimer !== null) clearTimeout(watcher.handshakeTimer);
-  if (watcher.keepaliveTimer !== null) clearTimeout(watcher.keepaliveTimer);
+  watcher.reconnect.clearSocketTimers();
   if (watcher.reconcileTimer !== null) clearTimeout(watcher.reconcileTimer);
-  watcher.handshakeTimer = null;
-  watcher.keepaliveTimer = null;
   watcher.reconcileTimer = null;
-}
-
-function reconnectDelayMs(attempt: number, random: number): number {
-  const base = Math.min(30_000, 1_000 * (2 ** Math.min(attempt, 5)));
-  const jitter = 0.8 + Math.max(0, Math.min(1, random)) * 0.4;
-  return Math.floor(base * jitter);
 }
 
 function compareDecimalIds(left: string, right: string): number {

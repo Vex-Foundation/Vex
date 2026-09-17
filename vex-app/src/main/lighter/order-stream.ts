@@ -15,11 +15,15 @@ import * as lighterOrderExecutionIntentsRepo from "@vex-agent/db/repos/lighter-o
 import * as lighterOrderLifecycleIntentsRepo from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
 import { reconcileLighterAccountStreamMessage } from "@vex-agent/tools/protocols/lighter/account-stream-reconciliation.js";
 import { resnapshotLighterOrderAccount } from "@vex-agent/tools/protocols/lighter/order-stream-resnapshot.js";
+import { EV } from "@shared/ipc/channels.js";
+import type { LighterTradingAccountActivityEvent } from "@shared/schemas/lighter-trading.js";
+import { broadcastToAllWindows } from "../lifecycle/broadcast.js";
 import { log } from "../logger/index.js";
 import {
   getSecretSessionStatus,
   onSecretSessionLifecycle,
 } from "../secrets/session.js";
+import { SocketWatcherReconnectState } from "./stream-supervisor.js";
 
 export const LIGHTER_ORDER_STREAM_DISCOVERY_INTERVAL_MS = 5_000;
 export const LIGHTER_ORDER_STREAM_HANDSHAKE_TIMEOUT_MS = 15_000;
@@ -39,6 +43,8 @@ export const LIGHTER_ORDER_STREAM_MAX_QUEUED_FRAMES = 100;
  * trades reconnect latency for fewer authenticated handshakes.
  */
 export const LIGHTER_ORDER_STREAM_MAX_RECONNECT_ATTEMPTS = 8;
+/** Rest between exhausted restart budgets; see the candle stream's twin. */
+export const LIGHTER_ORDER_STREAM_GIVE_UP_RETRY_MS = 90_000;
 /**
  * Rows read per discovery pass from each intent repository. The repositories
  * return a plain array today, so a full page is reported as a bound that was
@@ -78,6 +84,12 @@ export interface LighterOrderStreamSupervisorDeps {
     accountIndex: number,
     auth: LighterPrivilegedAccountAuth,
   ) => Promise<unknown>;
+  /** Fires per validated evidence frame so the desk can refresh its account reads. */
+  readonly onEvidence?: (
+    environment: LighterEnvironment,
+    accountIndex: number,
+    kind: "orders" | "trades" | "positions",
+  ) => void;
   readonly isVaultUnlocked: () => boolean;
   readonly onVaultLifecycle: (listener: (state: "unlocked" | "locked") => void) => () => void;
   readonly now: () => number;
@@ -92,15 +104,10 @@ interface AccountWatcher {
   readonly key: string;
   target: LighterOrderStreamTarget;
   active: boolean;
-  givenUp: boolean;
-  lastFailureReason: string;
+  readonly reconnect: SocketWatcherReconnectState;
   connecting: boolean;
   socket: LighterOrderStreamSocket | null;
   pendingAuthToken: string | null;
-  reconnectAttempt: number;
-  reconnectTimer: ReturnType<typeof setTimeout> | null;
-  handshakeTimer: ReturnType<typeof setTimeout> | null;
-  keepaliveTimer: ReturnType<typeof setTimeout> | null;
   rotationTimer: ReturnType<typeof setTimeout> | null;
   snapshotTimer: ReturnType<typeof setTimeout> | null;
   lastReceivedAt: number;
@@ -120,6 +127,10 @@ export function defaultLighterOrderStreamSupervisorDeps(
       reconcileLighterAccountStreamMessage(environment, accountIndex, message),
     resnapshot: (environment, accountIndex, auth) =>
       resnapshotLighterOrderAccount(environment, accountIndex, auth),
+    onEvidence: (environment, accountIndex, kind) => {
+      const event: LighterTradingAccountActivityEvent = { environment, accountIndex, kind, at: Date.now() };
+      broadcastToAllWindows(EV.lighterTrading.accountActivity, event);
+    },
     isVaultUnlocked: () => getSecretSessionStatus().unlocked,
     onVaultLifecycle: onSecretSessionLifecycle,
     now: Date.now,
@@ -212,8 +223,7 @@ export class LighterOrderStreamSupervisor {
           if (credentialChanged) {
             // Fresh authority is fresh evidence: it re-arms an exhausted
             // watcher instead of leaving it terminally unavailable.
-            watcher.givenUp = false;
-            watcher.reconnectAttempt = 0;
+            watcher.reconnect.forceRearm();
             this.restartWatcher(watcher, "credential_changed");
           } else {
             this.scheduleConnect(watcher, 0);
@@ -239,27 +249,33 @@ export class LighterOrderStreamSupervisor {
   }
 
   private scheduleConnect(watcher: AccountWatcher, delayMs?: number): void {
-    if (
-      this.stopped
+    const blocked = this.stopped
       || !watcher.active
-      || watcher.givenUp
       || watcher.connecting
       || watcher.socket !== null
-      || watcher.reconnectTimer !== null
-      || !this.deps.isVaultUnlocked()
-    ) {
-      return;
-    }
-    if (watcher.reconnectAttempt >= LIGHTER_ORDER_STREAM_MAX_RECONNECT_ATTEMPTS) {
-      this.giveUp(watcher);
-      return;
-    }
-    const delay = delayMs ?? reconnectDelayMs(watcher.reconnectAttempt, this.deps.random());
-    watcher.reconnectAttempt += 1;
-    watcher.reconnectTimer = setTimeout(() => {
-      watcher.reconnectTimer = null;
-      void this.connect(watcher);
-    }, delay);
+      || !this.deps.isVaultUnlocked();
+    watcher.reconnect.scheduleConnect({
+      blocked,
+      delayMs,
+      random: this.deps.random,
+      connect: () => void this.connect(watcher),
+      giveUp: {
+        // End of one restart budget. This stream has no renderer status
+        // channel, so the state is reported as a diagnostic with its reason
+        // and attempt count. A credential change, a vault unlock, the target
+        // leaving and re-entering the watch set, or the rest below builds a
+        // fresh budget.
+        onGiveUp: (attempts, reason) => {
+          this.deps.diagnostic("lighter.order_stream.recovery_exhausted", {
+            ...scopeDetail(watcher.target),
+            attempts,
+            reason,
+          });
+        },
+        onRearm: () => this.scheduleConnect(watcher, 0),
+        rearmBlocked: () => this.stopped || !watcher.active,
+      },
+    });
   }
 
   private async connect(watcher: AccountWatcher): Promise<void> {
@@ -277,7 +293,7 @@ export class LighterOrderStreamSupervisor {
         || auth.token.trim().length === 0
       ) {
         this.deps.diagnostic("lighter.order_stream.auth_failed", scopeDetail(watcher.target));
-        watcher.lastFailureReason = "auth_failed";
+        watcher.reconnect.lastFailureReason = "auth_failed";
         watcher.connecting = false;
         this.scheduleConnect(watcher);
         return;
@@ -289,17 +305,20 @@ export class LighterOrderStreamSupervisor {
       watcher.socket = socket;
       watcher.pendingAuthToken = auth.token;
       watcher.lastReceivedAt = this.deps.now();
-      watcher.handshakeTimer = setTimeout(() => {
-        watcher.handshakeTimer = null;
+      // No socket-identity fencing here (unlike the candle and public market
+      // streams): this callback fires on the current handshake timer only,
+      // and the timer is always cleared/replaced alongside the socket it
+      // was armed for, so there is nothing to fence against.
+      watcher.reconnect.armHandshakeTimeout(LIGHTER_ORDER_STREAM_HANDSHAKE_TIMEOUT_MS, () => {
         this.deps.diagnostic("lighter.order_stream.handshake_failed", scopeDetail(watcher.target));
         this.restartWatcher(watcher, "handshake_timeout");
-      }, LIGHTER_ORDER_STREAM_HANDSHAKE_TIMEOUT_MS);
+      });
       socket.addEventListener("message", (event) => this.handleMessage(watcher, socket, event));
       socket.addEventListener("close", () => this.handleClose(watcher, socket));
       socket.addEventListener("error", () => this.handleSocketError(watcher, socket));
     } catch {
       watcher.pendingAuthToken = null;
-      watcher.lastFailureReason = "connect_failed";
+      watcher.reconnect.lastFailureReason = "connect_failed";
       disconnectWatcherSocket(watcher, "connect_failed");
       this.deps.diagnostic("lighter.order_stream.connect_failed", scopeDetail(watcher.target));
       watcher.connecting = false;
@@ -332,8 +351,7 @@ export class LighterOrderStreamSupervisor {
     const type = readMessageType(raw);
     watcher.lastReceivedAt = this.deps.now();
     if (type === "connected") {
-      if (watcher.handshakeTimer !== null) clearTimeout(watcher.handshakeTimer);
-      watcher.handshakeTimer = null;
+      watcher.reconnect.clearHandshakeTimeout();
       this.subscribe(watcher, socket);
       return;
     }
@@ -352,7 +370,8 @@ export class LighterOrderStreamSupervisor {
       this.restartWatcher(watcher, "invalid_account_evidence");
       return;
     }
-    watcher.reconnectAttempt = 0;
+    watcher.reconnect.reconnectAttempt = 0;
+    this.deps.onEvidence?.(watcher.target.environment, watcher.target.accountIndex, evidenceKind(message.type));
     watcher.queuedFrames += 1;
     if (watcher.queuedFrames > LIGHTER_ORDER_STREAM_MAX_QUEUED_FRAMES) {
       this.deps.diagnostic("lighter.order_stream.backlog_closed", scopeDetail(watcher.target));
@@ -416,22 +435,24 @@ export class LighterOrderStreamSupervisor {
   }
 
   private scheduleKeepalive(watcher: AccountWatcher): void {
-    if (!watcher.active || watcher.socket === null || watcher.keepaliveTimer !== null) return;
-    watcher.keepaliveTimer = setTimeout(() => {
-      watcher.keepaliveTimer = null;
-      const socket = watcher.socket;
-      if (socket === null) return;
-      if (this.deps.now() - watcher.lastReceivedAt > LIGHTER_ORDER_STREAM_STALE_AFTER_MS) {
-        this.deps.diagnostic("lighter.order_stream.stale_closed", scopeDetail(watcher.target));
-        this.restartWatcher(watcher, "stale_connection");
-        return;
-      }
-      if (!this.sendIfOpen(socket, JSON.stringify({ type: "ping" }))) {
-        this.restartWatcher(watcher, "keepalive_failed");
-        return;
-      }
-      this.scheduleKeepalive(watcher);
-    }, LIGHTER_ORDER_STREAM_KEEPALIVE_INTERVAL_MS);
+    watcher.reconnect.scheduleKeepalive(
+      LIGHTER_ORDER_STREAM_KEEPALIVE_INTERVAL_MS,
+      () => !watcher.active || watcher.socket === null,
+      () => {
+        const socket = watcher.socket;
+        if (socket === null) return false;
+        if (this.deps.now() - watcher.lastReceivedAt > LIGHTER_ORDER_STREAM_STALE_AFTER_MS) {
+          this.deps.diagnostic("lighter.order_stream.stale_closed", scopeDetail(watcher.target));
+          this.restartWatcher(watcher, "stale_connection");
+          return false;
+        }
+        if (!this.sendIfOpen(socket, JSON.stringify({ type: "ping" }))) {
+          this.restartWatcher(watcher, "keepalive_failed");
+          return false;
+        }
+        return true;
+      },
+    );
   }
 
   private async maybeResnapshot(
@@ -475,7 +496,7 @@ export class LighterOrderStreamSupervisor {
   private handleClose(watcher: AccountWatcher, socket: LighterOrderStreamSocket): void {
     if (watcher.socket !== socket) return;
     watcher.socket = null;
-    watcher.lastFailureReason = "socket_closed";
+    watcher.reconnect.lastFailureReason = "socket_closed";
     watcher.pendingAuthToken = null;
     clearWatcherSocketTimers(watcher);
     if (!this.stopped && watcher.active && this.deps.isVaultUnlocked()) {
@@ -491,27 +512,11 @@ export class LighterOrderStreamSupervisor {
   }
 
   private restartWatcher(watcher: AccountWatcher, reason: string): void {
-    watcher.lastFailureReason = reason;
+    watcher.reconnect.lastFailureReason = reason;
     disconnectWatcherSocket(watcher, reason);
     if (!this.stopped && watcher.active && this.deps.isVaultUnlocked()) {
       this.scheduleConnect(watcher);
     }
-  }
-
-  /**
-   * Terminal end of the restart budget. This stream has no renderer status
-   * channel, so the terminal state is reported as a diagnostic with its reason
-   * and attempt count. A credential change, a vault unlock, or the target
-   * leaving and re-entering the watch set builds a fresh attempt budget.
-   */
-  private giveUp(watcher: AccountWatcher): void {
-    if (watcher.givenUp) return;
-    watcher.givenUp = true;
-    this.deps.diagnostic("lighter.order_stream.recovery_exhausted", {
-      ...scopeDetail(watcher.target),
-      attempts: watcher.reconnectAttempt,
-      reason: watcher.lastFailureReason,
-    });
   }
 
   private sendIfOpen(socket: LighterOrderStreamSocket, data: string): boolean {
@@ -526,8 +531,7 @@ export class LighterOrderStreamSupervisor {
 
   private deactivateWatcher(watcher: AccountWatcher, reason: string): void {
     watcher.active = false;
-    if (watcher.reconnectTimer !== null) clearTimeout(watcher.reconnectTimer);
-    watcher.reconnectTimer = null;
+    watcher.reconnect.clearReconnectTimer();
     if (watcher.snapshotTimer !== null) clearTimeout(watcher.snapshotTimer);
     watcher.snapshotTimer = null;
     disconnectWatcherSocket(watcher, reason);
@@ -617,15 +621,15 @@ function createWatcher(key: string, target: LighterOrderStreamTarget): AccountWa
     key,
     target,
     active: true,
-    givenUp: false,
-    lastFailureReason: "none",
+    reconnect: new SocketWatcherReconnectState({
+      maxReconnectAttempts: LIGHTER_ORDER_STREAM_MAX_RECONNECT_ATTEMPTS,
+      reconnectCeilingMs: 60_000,
+      reconnectExponentCap: 6,
+      giveUpRetryMs: LIGHTER_ORDER_STREAM_GIVE_UP_RETRY_MS,
+    }),
     connecting: false,
     socket: null,
     pendingAuthToken: null,
-    reconnectAttempt: 0,
-    reconnectTimer: null,
-    handshakeTimer: null,
-    keepaliveTimer: null,
     rotationTimer: null,
     snapshotTimer: null,
     lastReceivedAt: 0,
@@ -658,16 +662,15 @@ function scopeDetail(target: LighterOrderStreamTarget): Readonly<Record<string, 
   };
 }
 
-function reconnectDelayMs(attempt: number, random: number): number {
-  const base = Math.min(60_000, 1_000 * (2 ** Math.min(attempt, 6)));
-  const jitter = 0.8 + Math.max(0, Math.min(1, random)) * 0.4;
-  return Math.floor(base * jitter);
-}
-
 function readMessageType(raw: unknown): string | null {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
   const type = (raw as Record<string, unknown>).type;
   return typeof type === "string" ? type : null;
+}
+
+function evidenceKind(type: LighterAccountStreamMessage["type"]): "orders" | "trades" | "positions" {
+  if (type.endsWith("account_all_orders")) return "orders";
+  return type.endsWith("account_all_trades") ? "trades" : "positions";
 }
 
 function isAccountEvidenceMessageType(type: string | null): type is LighterAccountStreamMessage["type"] {
@@ -699,11 +702,8 @@ function readStringMessageData(event: unknown): string | null {
 }
 
 function clearWatcherSocketTimers(watcher: AccountWatcher): void {
-  if (watcher.handshakeTimer !== null) clearTimeout(watcher.handshakeTimer);
-  if (watcher.keepaliveTimer !== null) clearTimeout(watcher.keepaliveTimer);
+  watcher.reconnect.clearSocketTimers();
   if (watcher.rotationTimer !== null) clearTimeout(watcher.rotationTimer);
-  watcher.handshakeTimer = null;
-  watcher.keepaliveTimer = null;
   watcher.rotationTimer = null;
 }
 

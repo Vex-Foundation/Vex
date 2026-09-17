@@ -75,6 +75,7 @@ export function mapApproveOutcome(
         missionRunId: outcome.missionRunId,
         cached: false,
         message,
+        toolOutput: outcome.toolResult.output,
       });
     }
     case "deferred_busy":

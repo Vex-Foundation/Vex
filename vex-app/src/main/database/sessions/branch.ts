@@ -109,11 +109,11 @@ export async function branchSessionWithClient(
          (id, scope, mode, permission, initial_goal, title,
           summary, compacted, token_count, checkpoint_generation,
           selected_evm_wallet_id, selected_evm_wallet_address,
-          selected_solana_wallet_id, selected_solana_wallet_address)
+          selected_solana_wallet_id, selected_solana_wallet_address, workspace)
        SELECT $1, scope, mode, permission, initial_goal, $3,
               summary, compacted, token_count, checkpoint_generation,
               selected_evm_wallet_id, selected_evm_wallet_address,
-              selected_solana_wallet_id, selected_solana_wallet_address
+              selected_solana_wallet_id, selected_solana_wallet_address, workspace
          FROM sessions WHERE id = $2`,
       [newSessionId, sourceId, title],
     );

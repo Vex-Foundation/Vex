@@ -1,15 +1,18 @@
-import { useEffect, useRef, useState, type JSX } from "react";
+import { useCallback, useEffect, useRef, useState, type JSX, type ReactNode } from "react";
 import {
   CandlestickSeries,
   ColorType,
   createChart,
+  createSeriesMarkers,
   HistogramSeries,
   LineSeries,
   LineStyle,
+  PriceScaleMode,
   TickMarkType,
   type CandlestickData,
   type HistogramData,
   type IChartApi,
+  type IPriceLine,
   type IRange,
   type ISeriesApi,
   type Time,
@@ -19,6 +22,7 @@ import type {
   LighterTradingCandle,
   LighterTradingCandleConnectionStatus,
   LighterTradingEnvironment,
+  LighterTradingFill,
   LighterTradingResolution,
 } from "@shared/schemas/lighter-trading.js";
 import { IconPlus, IconRefresh } from "../../../components/icons/index.js";
@@ -29,10 +33,20 @@ import {
   type ChartCandleRow,
 } from "./chart-adapter.js";
 
+import { ChartOrderHandle, type ChartOrderSide } from "./ChartOrderHandle.js";
 import { ChartTools } from "./ChartTools.js";
+import { candleCountdown } from "./chart-countdown.js";
+import { fillMarkers } from "./chart-fill-markers.js";
+import type { ChartLevel } from "./chart-levels.js";
 
+// Axis labels are fixed to en-US so tick widths never depend on the OS locale.
+const CHART_LOCALE = "en-US";
 const INITIAL_VISIBLE_BARS = 100;
 const LIVE_RIGHT_OFFSET = 7;
+// Scrolling within this many bars of the earliest loaded bar asks for older history.
+const LOAD_OLDER_THRESHOLD_BARS = 30;
+const NO_LEVELS: readonly ChartLevel[] = [];
+const NO_FILLS: readonly LighterTradingFill[] = [];
 
 interface ChartLegendValues {
   readonly open: number;
@@ -61,8 +75,22 @@ export interface MarketChartProps {
   readonly pricePrecision?: number;
   readonly priceMinMove?: number;
   readonly snapshotFailed?: boolean;
+  /** The account's entry, liquidation, and resting orders on this market. */
+  readonly levels?: readonly ChartLevel[];
+  /** The account's fills on this market, drawn as arrows on the bar they hit. */
+  readonly fills?: readonly LighterTradingFill[];
   readonly onRetry?: () => void;
   readonly onChooseMarket?: () => void;
+  /**
+   * Drag-to-order: the handle on the last price drops a limit price into the
+   * ticket. Placing still runs through the ticket and its approval card.
+   */
+  readonly onDragOrder?: (price: string, side: ChartOrderSide) => void;
+  /** Called when the user scrolls near the earliest loaded bar. */
+  readonly onLoadOlder?: () => void;
+  /** Rendered at the ends of the chart's toolbar row (intervals, expand). */
+  readonly toolbarStart?: ReactNode;
+  readonly toolbarEnd?: ReactNode;
 }
 
 function CandleChartLoading({ symbol }: { readonly symbol: string }): JSX.Element {
@@ -110,7 +138,7 @@ function timestampToLocalDate(time: Time): Date | null {
 export function formatLocalChartTime(time: Time): string {
   const date = timestampToLocalDate(time);
   if (date === null) return "";
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(CHART_LOCALE, {
     month: "short",
     day: "2-digit",
     hour: "2-digit",
@@ -123,20 +151,20 @@ export function formatLocalChartTick(time: Time, tickMarkType: TickMarkType): st
   if (date === null) return "";
   switch (tickMarkType) {
     case TickMarkType.Year:
-      return new Intl.DateTimeFormat(undefined, { year: "numeric" }).format(date);
+      return new Intl.DateTimeFormat(CHART_LOCALE, { year: "numeric" }).format(date);
     case TickMarkType.Month:
-      return new Intl.DateTimeFormat(undefined, { month: "short" }).format(date);
+      return new Intl.DateTimeFormat(CHART_LOCALE, { month: "short" }).format(date);
     case TickMarkType.DayOfMonth:
-      return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
+      return new Intl.DateTimeFormat(CHART_LOCALE, { month: "short", day: "numeric" }).format(date);
     case TickMarkType.TimeWithSeconds:
-      return new Intl.DateTimeFormat(undefined, {
+      return new Intl.DateTimeFormat(CHART_LOCALE, {
         hour: "2-digit",
         minute: "2-digit",
         second: "2-digit",
         hourCycle: "h23",
       }).format(date);
     case TickMarkType.Time:
-      return new Intl.DateTimeFormat(undefined, {
+      return new Intl.DateTimeFormat(CHART_LOCALE, {
         hour: "2-digit",
         minute: "2-digit",
         hourCycle: "h23",
@@ -238,8 +266,14 @@ export function MarketChart({
   pricePrecision,
   priceMinMove,
   snapshotFailed = false,
+  levels = NO_LEVELS,
+  fills = NO_FILLS,
   onRetry,
   onChooseMarket,
+  onDragOrder,
+  onLoadOlder,
+  toolbarStart,
+  toolbarEnd,
 }: MarketChartProps): JSX.Element {
   const [chartApi, setChartApi] = useState<IChartApi | null>(null);
   const [chartType, setChartType] = useState<"candles" | "line">("candles");
@@ -251,9 +285,16 @@ export function MarketChart({
   const appliedDataRef = useRef<AppliedChartData | null>(null);
   const latestLegendRef = useRef<ChartLegendValues | null>(null);
   const crosshairActiveRef = useRef(false);
+  const onLoadOlderRef = useRef(onLoadOlder);
+  onLoadOlderRef.current = onLoadOlder;
   const [legend, setLegend] = useState<ChartLegendValues | null>(null);
+  const [countdown, setCountdown] = useState<string | null>(null);
   const identity = `${environment ?? "unknown"}:${marketId ?? symbol}:${resolution ?? "unknown"}`;
   const precision = resolvePriceFormat(pricePrecision, priceMinMove).precision;
+  const lastClose = candles[candles.length - 1]?.close ?? null;
+  // Seed rows stay on screen while the stream (re)connects: hiding a chart
+  // that already has candles reads as the chart cutting out. The connection
+  // badge in the toolbar carries the "connecting" state instead.
   const loading = candles.length === 0
     && status !== undefined
     && status !== "unavailable"
@@ -282,6 +323,28 @@ export function MarketChart({
     if (chart === null || applied === null || applied.candles.length === 0) return;
     chart.timeScale().setVisibleLogicalRange(initialVisibleRange(applied.candles.length));
   };
+
+  const handleVolume = useCallback((visible: boolean): void => {
+    volumeSeriesRef.current?.applyOptions({ visible });
+  }, []);
+
+  const handleScale = useCallback((scale: "linear" | "log"): void => {
+    chartRef.current?.priceScale("right").applyOptions({
+      mode: scale === "log" ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+    });
+  }, []);
+
+  // Bar close countdown: ticks once a second while a resolution is known.
+  useEffect(() => {
+    if (resolution === undefined || candles.length === 0) {
+      setCountdown(null);
+      return undefined;
+    }
+    const tick = (): void => setCountdown(candleCountdown(resolution, Date.now()));
+    tick();
+    const timer = window.setInterval(tick, 1_000);
+    return () => window.clearInterval(timer);
+  }, [resolution, candles.length === 0]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -373,11 +436,13 @@ export function MarketChart({
     candleSeriesRef.current = candleSeries;
     volumeSeriesRef.current = volumeSeries;
     setChartApi(chart);
-    const volumeVisibility = (event: Event): void => volumeSeries.applyOptions({ visible: (event as CustomEvent<boolean>).detail });
-    host.addEventListener("lit-chart-volume", volumeVisibility);
+    const handleLogicalRange = (range: IRange<number> | null): void => {
+      if (range !== null && range.from < LOAD_OLDER_THRESHOLD_BARS) onLoadOlderRef.current?.();
+    };
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handleLogicalRange);
 
     return () => {
-      host.removeEventListener("lit-chart-volume", volumeVisibility);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleLogicalRange);
       chart.unsubscribeCrosshairMove(handleCrosshairMove);
       chart.remove();
       chartRef.current = null;
@@ -495,7 +560,11 @@ export function MarketChart({
     let changed = false;
     const firstTime = chartCandles[0]?.time;
     const droppedBars = firstTime === undefined ? 0 : previous.candles.filter(point => point.time < firstTime).length;
-    if (droppedBars > 0) {
+    const previousFirstTime = previous.candles[0]?.time;
+    // Backfilled history lands before the first bar, which `update` cannot add.
+    const prependedBars = previousFirstTime === undefined ? 0 : chartCandles.filter(point => point.time < previousFirstTime).length;
+    const rebuild = droppedBars > 0 || prependedBars > 0;
+    if (rebuild) {
       // Keep every native series on the same bounded timeline as the adapter.
       // Retaining invisible old points changes logical indexes and drawing anchors.
       candleSeries.setData(chartCandles);
@@ -504,7 +573,7 @@ export function MarketChart({
       changed = true;
     }
 
-    for (const point of droppedBars > 0 ? [] : chartCandles) {
+    for (const point of rebuild ? [] : chartCandles) {
       const prior = priorCandlesByTime.get(point.time);
       if (prior === undefined || !sameCandle(prior, point)) {
         const historicalUpdate = previousLastTime !== undefined && point.time < previousLastTime;
@@ -513,7 +582,7 @@ export function MarketChart({
         if (previousLastTime === undefined || point.time > previousLastTime) appendedBars += 1;
       }
     }
-    for (const point of droppedBars > 0 ? [] : chartVolumes) {
+    for (const point of rebuild ? [] : chartVolumes) {
       const prior = priorVolumesByTime.get(point.time);
       if (prior === undefined || !sameVolume(prior, point)) {
         const historicalUpdate = previousLastTime !== undefined && point.time < previousLastTime;
@@ -527,7 +596,7 @@ export function MarketChart({
       timeScale.setVisibleLogicalRange(initialVisibleRange(chartCandles.length));
       viewportDecided = true;
     } else if (visibleRange !== null && changed) {
-      const shift = (wasLive ? appendedBars : 0) - droppedBars;
+      const shift = (wasLive ? appendedBars : 0) - droppedBars + prependedBars;
       timeScale.setVisibleLogicalRange(shift === 0 ? visibleRange : {
         from: visibleRange.from + shift,
         to: visibleRange.to + shift,
@@ -560,6 +629,41 @@ export function MarketChart({
     if (range && lineSeriesRef.current) chart.timeScale().setVisibleLogicalRange(range);
   }, [chartType, candles, identity, theme, pricePrecision, priceMinMove]);
 
+  // Price lines belong to a series, so they follow whichever one is showing.
+  useEffect(() => {
+    const host = hostRef.current;
+    const series = chartType === "line" ? lineSeriesRef.current : candleSeriesRef.current;
+    if (!host || !series) return undefined;
+    const colors = getChartColors(host);
+    const lines: IPriceLine[] = levels.map((level) => series.createPriceLine({
+      price: level.price,
+      title: level.title,
+      color: level.kind === "liquidation" || level.kind === "stopLoss" ? colors.negative
+        : level.kind === "takeProfit" ? colors.positive
+          : level.side === "buy" ? colors.positive : colors.negative,
+      lineWidth: 1,
+      lineStyle: level.kind === "entry" ? LineStyle.Solid : level.kind === "liquidation" ? LineStyle.Dotted : LineStyle.Dashed,
+      axisLabelVisible: true,
+    }));
+    return () => {
+      // The chart's own cleanup runs first on unmount and takes the lines with it.
+      if (chartRef.current !== null) for (const line of lines) series.removePriceLine(line);
+    };
+  }, [levels, chartType, theme]);
+
+  // Fill markers attach to a series the same way price lines do.
+  useEffect(() => {
+    const host = hostRef.current;
+    const series = chartType === "line" ? lineSeriesRef.current : candleSeriesRef.current;
+    if (!host || !series || fills.length === 0) return undefined;
+    const colors = getChartColors(host);
+    const barTimes = (appliedDataRef.current?.candles ?? []).map((point) => Number(point.time));
+    const markers = createSeriesMarkers(series, fillMarkers(fills, barTimes, colors, precision));
+    return () => {
+      if (chartRef.current !== null) markers.detach();
+    };
+  }, [fills, candles, chartType, theme, precision]);
+
   return (
     <>
       <ChartTools
@@ -573,6 +677,10 @@ export function MarketChart({
         precision={precision}
         minMove={resolvePriceFormat(pricePrecision, priceMinMove).minMove}
         onChartType={setChartType}
+        onVolume={handleVolume}
+        onScale={handleScale}
+        leading={toolbarStart}
+        trailing={toolbarEnd}
       />
       <div
         ref={hostRef}
@@ -581,6 +689,17 @@ export function MarketChart({
         aria-label={`${symbol} ${chartType === "candles" ? "candlestick" : "line"} chart with volume`}
         data-testid="lighter-market-chart"
       />
+      {onDragOrder !== undefined && chartApi !== null && candleSeriesRef.current !== null && lastClose !== null ? (
+        <ChartOrderHandle
+          chart={chartApi}
+          series={candleSeriesRef.current}
+          host={hostRef}
+          lastPrice={lastClose}
+          precision={precision}
+          minMove={resolvePriceFormat(pricePrecision, priceMinMove).minMove}
+          onDragOrder={onDragOrder}
+        />
+      ) : null}
       {candles.length > 0 ? (
         <div className="lit-chart-tools" role="toolbar" aria-label="Chart controls">
           <button
@@ -631,6 +750,7 @@ export function MarketChart({
           <span><b>L</b> {legend.low.toFixed(precision)}</span>
           <span><b>C</b> {legend.close.toFixed(precision)}</span>
           <span><b>Vol</b> {legend.volume.toLocaleString()}</span>
+          {countdown !== null ? <span aria-label="Time until bar close"><b>Close</b> {countdown}</span> : null}
         </div>
       ) : null}
       {loading ? <CandleChartLoading symbol={symbol} /> : null}

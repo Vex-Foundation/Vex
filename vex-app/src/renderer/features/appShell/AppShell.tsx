@@ -47,7 +47,8 @@ import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
 import { ShellBackdrop } from "./ShellBackdrop.js";
 import { ShellDragHandle } from "./ShellDragHandle.js";
 import { ShellScreens } from "./screens/ShellScreens.js";
-import { LighterTradingHost } from "./lighterTrading/LighterTradingHost.js";
+import { LighterCenter } from "./lighterTrading/LighterCenter.js";
+import { LighterSidebar } from "./lighterTrading/LighterSidebar.js";
 
 export function AppShell(): JSX.Element {
   // App-wide engine-error RETENTION. Mounted here, not per session: a wake or
@@ -67,8 +68,11 @@ export function AppShell(): JSX.Element {
   // transcript.
   // Studio's own welcome stage is "no project selected", so the veil follows
   // whichever selection the ACTIVE mode is keyed on.
+  // Lighter has no welcome stage: the desk is always the resident surface.
   const backdropDimmed =
-    runtimeMode === "studio" ? activeProjectId !== null : activeSessionId !== null;
+    runtimeMode === "lighter"
+      ? true
+      : runtimeMode === "studio" ? activeProjectId !== null : activeSessionId !== null;
 
   return (
     // `relative isolate`: anchors the absolutely-positioned shell backdrop
@@ -136,7 +140,6 @@ function ShellFrame({
   const bookWidth = useUiStore((s) => s.bookWidth);
   const setBookWidth = useUiStore((s) => s.setBookWidth);
   const setActiveProjectId = useUiStore((s) => s.setActiveProjectId);
-  const [lighterTradingOpen, setLighterTradingOpen] = useState(false);
 
   const frameRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState(() =>
@@ -166,8 +169,10 @@ function ShellFrame({
   // Narrow viewports auto-collapse the sidebar to the rail; a manual toggle
   // below the breakpoint flips the ephemeral re-expand override instead of
   // the persisted preference. Crossing back into wide clears the override so
-  // the next narrow entry starts at the rail again.
-  const narrow = shouldAutoCollapseSidebar(viewport);
+  // the next narrow entry starts at the rail again. The Lighter desk starts
+  // at the rail regardless: the chart and chat want the width more.
+  const lighter = runtimeMode === "lighter";
+  const narrow = shouldAutoCollapseSidebar(viewport) || lighter;
   useEffect(() => {
     if (!narrow) setSidebarNarrowExpanded(false);
   }, [narrow, setSidebarNarrowExpanded]);
@@ -191,7 +196,9 @@ function ShellFrame({
   // the same floating-Portfolio geometry on its welcome screen that agent mode
   // gets on its own.
   const studio = runtimeMode === "studio";
-  const welcomeStage = studio ? activeProjectId === null : activeSessionId === null;
+  const welcomeStage = lighter
+    ? false
+    : studio ? activeProjectId === null : activeSessionId === null;
   const cols: ShellColumns = computeShellColumns(
     viewport,
     sidebarCollapsed ? 0 : sidebarWidth,
@@ -260,7 +267,13 @@ function ShellFrame({
         * components on purpose: they hold different objects with different
         * lifetimes, and one component branching on the mode would own both. */}
       <div className="relative z-20 min-w-0 overflow-visible">
-        {studio ? (
+        {lighter ? (
+          <LighterSidebar
+            collapsed={sidebarCollapsed}
+            width={cols.sidebar}
+            onToggleSidebar={toggleSidebar}
+          />
+        ) : studio ? (
           <StudioSidebar
             collapsed={sidebarCollapsed}
             width={cols.sidebar}
@@ -290,23 +303,10 @@ function ShellFrame({
           activeSessionId={activeSessionId}
         />
 
-        <LighterTradingHost
-          activeSessionId={activeSessionId}
-          open={lighterTradingOpen}
-          onOpenChange={setLighterTradingOpen}
-          onCreateSession={onCreate}
-        />
-
         <div className="min-h-0 flex-1">
-          {/* The live conversation moves into Light it up while the workspace
-           * is open. Keeping a single mounted chat prevents duplicate
-           * composers, approval cards, and submit handlers. Studio owns its
-           * separate center and is unaffected by the agent workspace state. */}
-          {studio ? (
-            <StudioCenter />
-          ) : lighterTradingOpen ? null : (
-            <SessionPanel />
-          )}
+          {/* In Lighter mode the conversation lives in the BOOK column
+           * (`LighterChatRail`), so the center is the desk alone. */}
+          {lighter ? <LighterCenter /> : studio ? <StudioCenter /> : <SessionPanel />}
         </div>
       </section>
 

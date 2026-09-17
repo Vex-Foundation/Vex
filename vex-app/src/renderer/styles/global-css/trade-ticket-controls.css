@@ -1,6 +1,5 @@
 .lit-order-type-controls {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.7fr);
+  display: flex;
   flex: 0 0 auto;
   gap: 4px;
   min-width: 0;
@@ -8,12 +7,12 @@
   padding-bottom: 10px;
 }
 
-.lit-order-type-controls > button,
-.lit-order-type-controls > select {
+.lit-order-type-controls > button {
   min-width: 0;
   min-height: 34px;
+  flex: 1 1 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--lit-radius);
   background: transparent;
   color: var(--lit-ink-muted);
   padding: 0 8px;
@@ -22,41 +21,21 @@
   transition: background 140ms ease, color 140ms ease;
 }
 
-.lit-order-type-controls > select {
-  width: 100%;
-  cursor: pointer;
-  text-overflow: ellipsis;
-}
-
-.lit-order-type-controls > select option {
-  background: var(--lit-panel-raised);
-  color: var(--lit-ink);
-}
-
-.lit-order-type-controls > button:hover,
-.lit-order-type-controls > select:not(:disabled):hover {
+.lit-order-type-controls > button:hover {
   background: var(--lit-hover);
   color: var(--lit-ink);
 }
 
-.lit-order-type-controls > button[aria-pressed="true"],
-.lit-order-type-controls > select[data-active] {
+.lit-order-type-controls > button[aria-pressed="true"] {
   background: var(--lit-panel-raised);
   color: var(--lit-ink);
 }
 
-.lit-order-type-controls > select:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.lit-order-type-controls > button:focus-visible,
-.lit-order-type-controls > select:focus-visible {
+.lit-order-type-controls > button:focus-visible {
   outline: 2px solid var(--lit-focus);
   outline-offset: 2px;
 }
 
 @media (hover: none) and (pointer: coarse) {
-  .lit-order-type-controls > button,
-  .lit-order-type-controls > select { min-height: 44px; }
+  .lit-order-type-controls > button { min-height: 44px; }
 }

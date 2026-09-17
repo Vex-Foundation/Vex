@@ -1,0 +1,384 @@
+/* ---------------------------------------------------------------------------
+ * Account dock
+ * ------------------------------------------------------------------------- */
+
+.lit-bottom-header { padding-inline: 4px 10px; }
+
+/* Risk strip: between the tabs and the status, one line, never wraps. */
+.lit-risk-strip {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  margin: 0;
+  overflow: hidden;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.lit-risk-strip > div { display: flex; align-items: center; gap: 5px; }
+.lit-risk-strip dt { color: var(--lit-ink-muted); }
+.lit-risk-strip dd {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  color: var(--lit-ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.lit-risk-strip dd i { color: var(--lit-ink-muted); font-style: normal; font-weight: 500; }
+.lit-risk-strip dd[data-tone="positive"] { color: var(--lit-positive); }
+.lit-risk-strip dd[data-tone="negative"] { color: var(--lit-negative); }
+.lit-risk-strip .lit-margin-usage-bar { width: 44px; }
+
+/* Narrow dock: the status text yields first, then the strip's outer items. */
+@container (max-width: 860px) {
+  .lit-bottom-status > span { display: none; }
+}
+
+.lit-bottom-status {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.lit-account-refresh-button {
+  min-height: 26px;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: transparent;
+  padding: 0 10px;
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+
+.lit-account-refresh-button:hover:not(:disabled) {
+  border-color: var(--lit-line-strong);
+  color: var(--lit-ink);
+}
+
+.lit-account-refresh-button:disabled { cursor: wait; opacity: 0.5; }
+
+.lit-bottom-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
+.lit-account-table { min-width: 920px; }
+
+/* Positions: Market · Size · Entry · Mark · Liq. · Margin · uPnL (ROE) · TP / SL · actions */
+.lit-account-columns,
+.lit-account-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.2fr) repeat(7, minmax(0, 1fr)) minmax(228px, auto);
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Open orders: Market · Side · Price · Size · Filled · Time · actions */
+.lit-open-orders .lit-account-columns,
+.lit-open-orders .lit-account-row {
+  grid-template-columns: minmax(120px, 1.3fr) minmax(0, 0.6fr) repeat(4, minmax(0, 1fr)) minmax(80px, auto);
+}
+
+/* Fills: Time · Market · Side · Price · Size · Value · Realized PnL */
+.lit-fills .lit-account-columns,
+.lit-fills .lit-account-row {
+  grid-template-columns: minmax(110px, 0.9fr) minmax(120px, 1.3fr) minmax(0, 0.6fr) repeat(4, minmax(0, 1fr));
+}
+
+.lit-account-columns {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  min-height: 26px;
+  background: var(--lit-panel);
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+}
+
+.lit-account-row {
+  min-height: 38px;
+  border-top: 1px solid var(--lit-line);
+  color: var(--lit-ink-secondary);
+}
+
+.lit-account-row b { color: var(--lit-ink); font-weight: 600; }
+
+/* The market cell is a link to the desk; the active market reads as current. */
+.lit-market-link {
+  align-self: flex-start;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  padding: 0;
+  color: var(--lit-ink);
+  font-size: inherit;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.lit-market-link:hover { border-bottom-color: var(--lit-ink-muted); }
+.lit-market-link[aria-current="true"] { color: var(--lit-positive); }
+.lit-account-row [data-tone="positive"],
+.lit-account-row [data-tone="positive"] b { color: var(--lit-positive); }
+.lit-account-row [data-tone="negative"],
+.lit-account-row [data-tone="negative"] b { color: var(--lit-negative); }
+
+.lit-order-cell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.2;
+}
+
+.lit-order-cell small,
+.lit-order-cell time {
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.lit-open-orders-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 12px;
+}
+
+.lit-open-orders-note {
+  margin: 0;
+  overflow: hidden;
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lit-cancel-all,
+.lit-fund-actions button {
+  min-height: 24px;
+  flex: 0 0 auto;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: transparent;
+  padding: 0 8px;
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.lit-cancel-all:hover { border-color: var(--lit-negative); color: var(--lit-negative); }
+.lit-fund-actions button:hover { border-color: var(--lit-line-strong); color: var(--lit-ink); }
+
+.lit-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.lit-row-actions button {
+  min-height: 24px;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: transparent;
+  padding: 0 8px;
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.lit-row-actions button:hover { border-color: var(--lit-line-strong); color: var(--lit-ink); }
+.lit-row-actions button[data-danger]:hover { border-color: var(--lit-negative); color: var(--lit-negative); }
+
+/* Market close is sending without its card; the one way back sits with the table. */
+.lit-positions-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 12px;
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+}
+.lit-positions-note button {
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  padding: 0;
+  color: var(--lit-ink-secondary);
+  font-size: inherit;
+  font-weight: 600;
+}
+.lit-positions-note button:hover { border-bottom-color: var(--lit-ink-muted); color: var(--lit-ink); }
+
+/* The desk approval dialog's "Don't ask again" for Market close. */
+.lit-desk-skip-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+  color: var(--lit-ink-secondary);
+  font-size: 12px;
+}
+
+.lit-account-balances {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+}
+
+.lit-balance-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.lit-balance-summary .lit-asset-row {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  padding: 8px 10px;
+}
+
+.lit-margin-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+
+.lit-margin-usage-head {
+  display: flex;
+  justify-content: space-between;
+  color: var(--lit-ink-muted);
+}
+
+.lit-margin-usage-head b { color: var(--lit-ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.lit-margin-usage-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--lit-panel-raised);
+  overflow: hidden;
+}
+
+.lit-margin-usage-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--lit-positive);
+  transition: width 200ms ease;
+}
+
+.lit-margin-usage-bar[data-level="mid"] i { background: var(--lit-warning); }
+.lit-margin-usage-bar[data-level="high"] i { background: var(--lit-negative); }
+
+.lit-fund-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.lit-fund-actions small { color: var(--lit-ink-muted); font-size: 11px; }
+
+.lit-asset-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lit-asset-row span { color: var(--lit-ink-muted); }
+.lit-asset-row b { color: var(--lit-ink); font-weight: 600; }
+.lit-asset-row b[data-tone="positive"] { color: var(--lit-positive); }
+.lit-asset-row b[data-tone="negative"] { color: var(--lit-negative); }
+.lit-asset-row b small { color: var(--lit-ink-muted); font-weight: 400; }
+
+.lit-asset-section {
+  margin: 6px 0 2px;
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lit-asset-note {
+  margin: 0;
+  padding: 6px 0;
+  color: var(--lit-ink-muted);
+  font-size: 12px;
+}
+
+.lit-account-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px 12px;
+  color: var(--lit-ink-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.lit-account-empty b { color: var(--lit-ink); }
+.lit-account-empty span { max-width: 560px; }
+
+.lit-account-empty-action {
+  min-height: 28px;
+  margin-top: 4px;
+  border: 1px solid var(--lit-line-strong);
+  border-radius: var(--lit-radius);
+  background: var(--lit-panel-raised);
+  padding: 0 12px;
+  color: var(--lit-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.lit-account-empty-action:hover { background: var(--lit-hover); }
+
+/* Collapsed dock: header only; the tabs stay clickable and re-expand it. */
+.lit-bottom-collapse {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: transparent;
+  color: var(--lit-ink-secondary);
+  transition: border-color 140ms ease, color 140ms ease;
+}
+
+.lit-bottom-collapse:hover { border-color: var(--lit-line-strong); color: var(--lit-ink); }
+.lit-bottom-collapse svg { width: 16px; height: 16px; }
+
+.lit-bottom-panel { container-type: inline-size; }
+.lit-bottom-panel[data-collapsed] .lit-bottom-header { min-height: 32px; border-bottom: 0; }
+.lit-bottom-panel[data-collapsed] .lit-bottom-tabs button { border-bottom-color: transparent; }

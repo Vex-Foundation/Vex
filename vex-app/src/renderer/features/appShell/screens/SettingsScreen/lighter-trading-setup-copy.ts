@@ -90,9 +90,6 @@ export const LEVERAGE_EMPTY =
 export const LEVERAGE_COLUMN_MARKET = "Market";
 export const LEVERAGE_COLUMN_CURRENT = "Current";
 export const LEVERAGE_COLUMN_MAX = "Market maximum";
-export const LEVERAGE_COLUMN_TARGET = "New leverage";
-export const LEVERAGE_COLUMN_MODE = "Margin mode";
-export const LEVERAGE_COLUMN_ACTION = "Apply";
 export const LEVERAGE_MAX_BUTTON = "Max";
 export const LEVERAGE_APPLY_BUTTON = "Apply";
 export const LEVERAGE_PICKER_LABEL = "Add a market";
@@ -116,6 +113,33 @@ export const LEVERAGE_VAULT_LOCKED_ACTION =
   "Unlock Vex to change leverage on this account.";
 export const LEVERAGE_MAX_UNAVAILABLE =
   "Lighter did not report a usable maximum for this market, so Vex will not offer an unbounded input.";
+
+/* Leverage sheet: one surface for the Settings table and the desk ticket ---- */
+
+export const LEVERAGE_CHANGE_BUTTON = "Change";
+export const LEVERAGE_COLUMN_CHANGE = "Change";
+export const LEVERAGE_SHEET_INTRO =
+  "Pick a whole number up to Lighter's maximum for this market. Apply shows the exact change on the account before anything is signed.";
+export const LEVERAGE_SHEET_CURRENT = "Current";
+export const LEVERAGE_SHEET_MAX = "Market maximum";
+export const LEVERAGE_SHEET_SLIDER_MIN = "1x";
+export const LEVERAGE_SHEET_CLOSE = "Close";
+export const LEVERAGE_SHEET_NO_WALLET =
+  "Vex could not tell which saved wallet this Lighter account belongs to, so leverage is read-only here. Open Settings to change it.";
+export const LEVERAGE_SHEET_MARKET_MISSING =
+  "Lighter's leverage overview does not list this market, so there is nothing to change here.";
+
+export function leverageSheetTitle(symbol: string): string {
+  return `Leverage for ${symbol}`;
+}
+
+export function leverageChangeLabel(symbol: string): string {
+  return `Change leverage for ${symbol}`;
+}
+
+export function leverageSliderLabel(symbol: string): string {
+  return `Leverage slider for ${symbol}`;
+}
 
 export function leverageReadFailed(reason: string): string {
   return `Vex could not read this account's leverage: ${reason}`;

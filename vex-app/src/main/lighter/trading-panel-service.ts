@@ -199,7 +199,29 @@ export function projectLighterTradingMarket(
         ? nonNegativeNumberOrNull(detail?.open_interest)
         : null,
     },
+    margin: market.market_type === "perp" ? projectMarginFractions(detail) : null,
   };
+}
+
+function marginFractionOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 10_000
+    ? value
+    : null;
+}
+
+/** All three or nothing: a cost or liquidation estimate needs every term. */
+function projectMarginFractions(
+  detail: LighterMarketDetail | null,
+): LighterTradingMarket["margin"] {
+  const defaultInitialMarginFraction = marginFractionOrNull(detail?.default_initial_margin_fraction);
+  const minInitialMarginFraction = marginFractionOrNull(detail?.min_initial_margin_fraction);
+  const maintenanceMarginFraction = marginFractionOrNull(detail?.maintenance_margin_fraction);
+  if (
+    defaultInitialMarginFraction === null
+    || minInitialMarginFraction === null
+    || maintenanceMarginFraction === null
+  ) return null;
+  return { defaultInitialMarginFraction, minInitialMarginFraction, maintenanceMarginFraction };
 }
 
 function nonNegativeNumberOrNull(value: unknown): number | null {
@@ -348,7 +370,7 @@ export function projectLighterInternalCandles(
     .slice(-SNAPSHOT_CANDLE_COUNT);
 }
 
-function projectSnapshotCandles(
+export function projectSnapshotCandles(
   candles: readonly LighterInternalCandle[],
 ): LighterTradingSnapshot["candles"] {
   return candles.map((candle) => ({

@@ -47,6 +47,14 @@ export type SessionMode = z.infer<typeof sessionModeSchema>;
 export const sessionPermissionSchema = z.enum(["restricted", "full"]);
 export type SessionPermission = z.infer<typeof sessionPermissionSchema>;
 
+/**
+ * The surface a session belongs to (migration 163). Absent / null is the agent
+ * shell; `lighter` is the trading desk, which lists only its own sessions and
+ * never appears in the agent rail. Set at create time, never rewritten.
+ */
+export const sessionWorkspaceSchema = z.enum(["lighter"]);
+export type SessionWorkspace = z.infer<typeof sessionWorkspaceSchema>;
+
 // Mirror of `src/vex-agent/engine/types.ts MISSION_RUN_STATUSES`. The
 // runtime-status drift test in
 // `src/__tests__/lib/diagnostics/runtime-status-sync.test.ts` pins the
@@ -81,6 +89,7 @@ export const sessionCreateInputSchema = z.discriminatedUnion("mode", [
       // Renderer sends only inventory IDs; main resolves id → address.
       selectedEvmWalletId: z.string().max(128).nullable().optional(),
       selectedSolanaWalletId: z.string().max(128).nullable().optional(),
+      workspace: sessionWorkspaceSchema.optional(),
     })
     .strict(),
   z
@@ -137,6 +146,8 @@ export const sessionListItemSchema = z
      * pinned first). The timestamp double as ordering key.
      */
     pinnedAt: z.string().datetime().nullable(),
+    /** See `sessionWorkspaceSchema`. Optional so pre-163 fixtures still parse. */
+    workspace: sessionWorkspaceSchema.nullable().optional(),
   })
   .strict();
 export type SessionListItem = z.infer<typeof sessionListItemSchema>;

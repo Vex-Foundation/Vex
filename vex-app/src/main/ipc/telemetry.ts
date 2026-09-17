@@ -24,13 +24,14 @@
 import { CH } from "@shared/ipc/channels.js";
 import { ok, type Result } from "@shared/ipc/result.js";
 import {
+  telemetryFunnelInputSchema,
   telemetryReportInputSchema,
   telemetryReportOutputSchema,
 } from "@shared/schemas/telemetry.js";
 import type { TelemetryStackDigest } from "@shared/types/bridge/common.js";
 import { log } from "../logger/index.js";
 import { preferencesStore } from "../preferences/store.js";
-import { captureRendererError } from "../telemetry/sentry-lifecycle.js";
+import { captureFunnelStep, captureRendererError } from "../telemetry/sentry-lifecycle.js";
 import { registerHandler } from "./register-handler.js";
 
 /**
@@ -94,6 +95,27 @@ export function registerTelemetryHandler(): () => void {
         stack: input.stack ?? null,
       });
       return ok({ recorded });
+    },
+  });
+}
+
+/**
+ * vex.telemetry.funnelStep - Lighter desk funnel counts. Sentry only, and
+ * only with consent: a step from a user who never opted in is dropped here
+ * and not logged either, since a step is not evidence of anything.
+ */
+export function registerFunnelHandler(): () => void {
+  return registerHandler({
+    channel: CH.telemetry.funnelStep,
+    domain: "telemetry",
+    inputSchema: telemetryFunnelInputSchema,
+    outputSchema: telemetryReportOutputSchema,
+    handle: async (input): Promise<Result<{ recorded: boolean }>> => {
+      const prefs = await preferencesStore.load();
+      if (!prefs.telemetry.enabled) {
+        return ok({ recorded: false });
+      }
+      return ok({ recorded: await captureFunnelStep(input) });
     },
   });
 }

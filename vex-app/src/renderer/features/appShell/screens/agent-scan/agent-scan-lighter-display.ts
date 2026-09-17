@@ -45,6 +45,7 @@ import type {
   AgentScanLighterFillEntry,
   AgentScanLighterPositionNow,
 } from "@shared/schemas/agent-scan-lighter-entry.js";
+import { LIGHTER_ENVIRONMENT_NAMES } from "@shared/lighter-environment-labels.js";
 
 /**
  * The entry's own field types. The contract module exports schemas for these
@@ -276,10 +277,7 @@ export function lighterAttentionTradeTypeText(tradeType: string): string | null 
   return ATTENTION_TRADE_TYPES[key] ?? null;
 }
 
-const VENUE_LABEL: Readonly<Record<string, string>> = {
-  core: "Lighter Core",
-  rhc: "Lighter on Robinhood Chain",
-};
+const VENUE_LABEL: Readonly<Record<string, string>> = LIGHTER_ENVIRONMENT_NAMES;
 
 /** Which Lighter deployment this fill happened on. */
 export function lighterVenueLabel(environment: string): string {

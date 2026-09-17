@@ -113,7 +113,7 @@ vi.mock("../../../wizard/steps/provider/ModelBrandIcon.js", () => ({
 }));
 
 const { SessionComposer } = await import("../../SessionComposer.js");
-const { WELCOME_PLACEHOLDERS } = await import("../../composer-placeholders.js");
+const { LIGHTER_DESK_PLACEHOLDER, WELCOME_PLACEHOLDERS } = await import("../../composer-placeholders.js");
 
 // The capsule's chrome (border/shadow/pending dot) lives in console.css -
 // pseudo/keyframe rules jsdom cannot compute, so pin them against the raw
@@ -276,6 +276,19 @@ describe("composer capsule - placeholder + starter chips", () => {
     const overlay = container.querySelector("[data-vex-composer-placeholder]");
     expect(overlay?.getAttribute("aria-hidden")).toBe("true");
     expect(overlay?.textContent).toBe(WELCOME_PLACEHOLDERS[0]);
+  });
+
+  it("rests on the desk phrase in Lighter mode instead of the swap and bridge orders", () => {
+    useUiStore.setState({ runtimeMode: "lighter" });
+    try {
+      const { container } = render(
+        <SessionComposer activeSession={null} activeSessionId={null} />,
+      );
+      const overlay = container.querySelector("[data-vex-composer-placeholder]");
+      expect(overlay?.textContent).toBe(LIGHTER_DESK_PLACEHOLDER);
+    } finally {
+      useUiStore.setState({ runtimeMode: "agent" });
+    }
   });
 
   it("hides the faux placeholder while the draft holds text, like a native placeholder", () => {

@@ -98,6 +98,19 @@ export {
 } from "./approval-runtime/studio/reconcile-dispatching.js";
 
 /**
+ * The desk lane (migration 164): the Lighter desk's own buttons prepare and
+ * enqueue an approval with no model turn, and recover their abandoned
+ * dispatches at process start the same way Studio does.
+ */
+export {
+  DESK_PREPARE_TOOL_IDS,
+  prepareDeskApproval,
+  type DeskPrepareOutcome,
+  type DeskPrepareToolId,
+} from "./approval-runtime/desk/prepare.js";
+export { reconcileAbandonedDeskDispatches } from "./approval-runtime/desk/reconcile.js";
+
+/**
  * The same-process repair owner for terminal writes that FAILED. Retries the
  * write and never a dispatch; see its module header.
  */
