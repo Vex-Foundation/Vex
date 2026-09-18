@@ -1,13 +1,29 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { withdrawalIntent } from "../../helpers/lighter-intents.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 
-const mocks = vi.hoisted(() => ({ getApproval: vi.fn(), getAudit: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  getApproval: vi.fn(),
+  getAudit: vi.fn(),
+  findByIntentId: vi.fn(),
+  markApprovalDecision: vi.fn(),
+}));
 vi.mock("@vex-agent/db/repos/approvals.js", () => ({ getByIdForSession: mocks.getApproval }));
 vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({ getByApprovalId: mocks.getAudit }));
+// Only full-access reaches the repo directly in this file's tests - restricted
+// calls (none here) would return at the host approval gate before any lookup.
+vi.mock("@vex-agent/db/repos/lighter-withdrawal-intents.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/db/repos/lighter-withdrawal-intents.js")>()),
+  findByIntentId: mocks.findByIntentId,
+  markApprovalDecision: mocks.markApprovalDecision,
+}));
 
 const { assertLighterWithdrawalApprovalBinding, buildLighterWithdrawalCriticalArgs } = await import(
   "@vex-agent/tools/protocols/lighter/withdrawal-approval-binding.js"
+);
+const { LIGHTER_WITHDRAWAL_HANDLERS } = await import(
+  "@vex-agent/tools/protocols/lighter/handlers/withdrawal.js"
 );
 
 const INTENT = withdrawalIntent({
@@ -38,6 +54,8 @@ beforeEach(() => {
     actionKind: "external_post", executionStatus: "dispatching",
     previewJson: { toolName: "withdraw", namespace: "lighter",
       criticalArgs: buildLighterWithdrawalCriticalArgs(INTENT) } });
+  mocks.findByIntentId.mockReset().mockResolvedValue(null);
+  mocks.markApprovalDecision.mockReset();
 });
 
 describe("Lighter RHC withdrawal approval binding", () => {
@@ -59,5 +77,42 @@ describe("Lighter RHC withdrawal approval binding", () => {
     await expect(assertLighterWithdrawalApprovalBinding({
       approvalId: "approval-1", sessionId: "session-1", intent: INTENT,
     })).rejects.toThrow("Nothing was signed or submitted");
+  });
+
+  it("auto-approves a full-access withdrawal without the binding lookup", async () => {
+    mocks.findByIntentId.mockResolvedValueOnce(INTENT);
+    mocks.markApprovalDecision.mockResolvedValueOnce({ ...INTENT, approvalStatus: "approved" });
+
+    const result = await requireValue(LIGHTER_WITHDRAWAL_HANDLERS["lighter.withdraw"])(
+      { intentId: INTENT.intentId },
+      { sessionId: "session-1", sessionPermission: "full", approved: false,
+        walletResolution: { source: "default" }, walletPolicy: { kind: "none" } },
+    );
+
+    expect(mocks.getApproval).not.toHaveBeenCalled();
+    expect(mocks.getAudit).not.toHaveBeenCalled();
+    expect(mocks.markApprovalDecision).toHaveBeenCalledWith(expect.objectContaining({
+      decision: "approved",
+      approvalId: null,
+      reason: "auto-approved: session permission is full access",
+    }));
+    // No deps configured in this test env - proves it reached the signer
+    // boundary having never required a Vex approval card.
+    expect(result.pendingApproval).not.toBe(true);
+    expect(result.output).toContain("unavailable");
+  });
+
+  it("still refuses a full-access withdrawal for an intent nothing prepared", async () => {
+    const result = await requireValue(LIGHTER_WITHDRAWAL_HANDLERS["lighter.withdraw"])(
+      { intentId: "lighter-withdrawal-never-prepared" },
+      { sessionId: "session-1", sessionPermission: "full", approved: false,
+        walletResolution: { source: "default" }, walletPolicy: { kind: "none" } },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.pendingApproval).not.toBe(true);
+    expect(result.output).toContain("No Lighter withdrawal intent");
+    expect(mocks.getApproval).not.toHaveBeenCalled();
+    expect(mocks.markApprovalDecision).not.toHaveBeenCalled();
   });
 });

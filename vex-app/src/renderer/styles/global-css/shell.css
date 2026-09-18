@@ -59,6 +59,13 @@
    * like the three --vex-pin-* lines above it, so status-contrast.test.ts can
    * resolve the partner out of tokens.css and re-measure both themes. */
   --vex-pin-hover: color-mix(in oklab, var(--vex-alias-state-warn) 85%, var(--vex-alias-label-primary));
+  /* OPAQUE pin fill — same 10% wash as --vex-pin-fill, but mixed onto the
+   * canvas instead of transparent. --vex-pin-fill is a veil: it only reads
+   * right layered once, directly over --vex-surface-0. A STICKY header needs
+   * to fully occlude whatever card content scrolls underneath it, and a veil
+   * over a veil (its own card's fill, still visible through it) ghosts the
+   * scrolled content right through the "stuck" title (ApprovalDetails.tsx). */
+  --vex-pin-fill-solid: color-mix(in oklab, var(--vex-alias-state-warn) 10%, var(--vex-surface-0));
   /* GLASS TIERS (glass redesign 2026-09-04). Every translucent surface in the
    * shell is one of four named tiers, consumed ONLY through the classes in
    * global-css/glass.css (.vex-glass-rail / -pane / -chip / -overlay); no TSX

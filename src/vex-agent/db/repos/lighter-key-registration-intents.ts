@@ -388,10 +388,12 @@ export async function markLighterKeyRegistrationApprovedWith(
   input: {
     readonly intentId: string;
     readonly sessionId: string;
-    readonly approvalId: string;
+    /** Null for a full-access auto-approval, where no approval_queue row exists to bind to. */
+    readonly approvalId: string | null;
+    readonly reason?: string;
   },
 ): Promise<LighterKeyRegistrationReservationRow | null> {
-  if (input.approvalId.trim().length === 0) {
+  if (input.approvalId !== null && input.approvalId.trim().length === 0) {
     throw new Error("Lighter key registration approval id is required.");
   }
   const result = await client.query<Record<string, unknown>>(
@@ -399,7 +401,7 @@ export async function markLighterKeyRegistrationApprovedWith(
         SET approval_status = 'approved',
             approval_id = $3,
             decided_at = NOW(),
-            decision_reason = 'user approved exact Lighter key registration intent',
+            decision_reason = $4,
             execution_state = 'approved',
             updated_at = NOW()
       WHERE intent_id = $1
@@ -409,7 +411,12 @@ export async function markLighterKeyRegistrationApprovedWith(
         AND execution_state = 'approval_pending'
         AND expires_at > NOW()
       RETURNING ${RETURNING}`,
-    [input.intentId, input.sessionId, input.approvalId],
+    [
+      input.intentId,
+      input.sessionId,
+      input.approvalId,
+      input.reason ?? "user approved exact Lighter key registration intent",
+    ],
   );
   const row = result.rows[0];
   return row === undefined ? null : mapRow(row);

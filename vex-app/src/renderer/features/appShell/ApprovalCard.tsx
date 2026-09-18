@@ -244,7 +244,15 @@ export function ApprovalCard({
       // The landing's amber alert language (.ws-alert): pin border + pin fill
       // ARE the "awaiting your signature" emphasis — this card is the one
       // place the page asks for the user's pen.
-      className={`mt-3 overflow-hidden rounded-lg border border-[var(--vex-pin-border)] bg-[var(--vex-pin-fill)] text-sm text-[var(--vex-text-2)]${criticalArgs?.toolId === "lighter.fees.approve" ? " @container" : ""}`}
+      // NOT `overflow-hidden`: any `overflow` other than `visible` becomes the
+      // containing scrollport for a `position: sticky` descendant (CSS
+      // Positioned Layout ยง4.2), and this section never scrolls itself — only
+      // `ApprovalsRegion`'s `overflow-y-auto` wrapper does. `overflow-hidden`
+      // here (previously used only to clip the rounded corners) silently
+      // resolved ApprovalDetails's sticky header against this non-scrolling
+      // box instead, making it a no-op. Corner clipping now lives on the
+      // header (`rounded-t-lg`) instead of on this whole section.
+      className={`mt-3 rounded-lg border border-[var(--vex-pin-border)] bg-[var(--vex-pin-fill)] text-sm text-[var(--vex-text-2)]${criticalArgs?.toolId === "lighter.fees.approve" ? " @container" : ""}`}
     >
       <ApprovalDetails
         summary={summary}

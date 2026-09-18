@@ -1573,20 +1573,50 @@ describe("Lighter agent read handlers", () => {
     expect(mocks.executionIntentsRepo.findByIntentId).not.toHaveBeenCalled();
   });
 
-  it("queues a Lighter create approval in full mode before signer access", async () => {
-    const result = await executeProtocolTool({
-      toolId: "lighter.order.create",
-      params: { intentId: "lighter-exec-00000000-0000-4000-8000-000000000001" },
+  it("auto-approves lighter.order.create in full mode - no card, no binding lookup, still session-scoped", async () => {
+    mocks.executionIntentsRepo.findByIntentId.mockResolvedValueOnce(executionIntentRow());
+    mocks.executionIntentsRepo.markApprovalDecision.mockResolvedValueOnce(executionIntentRow({
+      approvalStatus: "approved",
+      decisionReason: "auto-approved: session permission is full access",
+      decidedAt: "2026-08-12T00:01:00.000Z",
+    }));
+
+    const result = await requireValue(LIGHTER_HANDLERS["lighter.order.create"])({
+      intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
     }, FULL_CTX);
 
-    expect(result).toMatchObject({
-      success: false,
-      pendingApproval: true,
-      actionKind: "external_post",
-    });
-    expect(result.output).toContain("approved Vex approval card");
-    expect(mocks.executionIntentsRepo.findByIntentId).not.toHaveBeenCalled();
+    // No approval_queue row exists for a full-access call, so nothing to bind
+    // against - the binding lookup itself must never run.
     expect(mocks.approvalsRepo.getByIdForSession).not.toHaveBeenCalled();
+    expect(mocks.approvalIntentsRepo.getByApprovalId).not.toHaveBeenCalled();
+    expect(mocks.executionIntentsRepo.markApprovalDecision).toHaveBeenCalledWith({
+      intentId: "lighter-exec-00000000-0000-4000-8000-000000000001",
+      decision: "approved",
+      approvalId: null,
+      reason: "auto-approved: session permission is full access",
+    });
+    // Same terminal state the approved-restricted-mode test below hits: reaches
+    // the signer-dependency boundary having never required a Vex approval card.
+    expect(result.pendingApproval).not.toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("live order create dependencies are unavailable");
+  });
+
+  it("still refuses a full-mode lighter.order.create for an intent nothing prepared", async () => {
+    // Full access removes the human-approval requirement; it does not let a
+    // model fabricate an intent id and skip preparation entirely.
+    mocks.executionIntentsRepo.findByIntentId.mockResolvedValueOnce(null);
+    mocks.ocoIntentsRepo.findByIntentId.mockResolvedValueOnce(null);
+
+    const result = await executeProtocolTool({
+      toolId: "lighter.order.create",
+      params: { intentId: "lighter-exec-never-prepared" },
+    }, FULL_CTX);
+
+    expect(result.success).toBe(false);
+    expect(result.pendingApproval).not.toBe(true);
+    expect(result.output).toContain("No Lighter order execution intent lighter-exec-never-prepared found");
+    expect(mocks.executionIntentsRepo.markApprovalDecision).not.toHaveBeenCalled();
   });
 
   it("records an approved Lighter create decision but refuses when privileged dependencies are unavailable", async () => {

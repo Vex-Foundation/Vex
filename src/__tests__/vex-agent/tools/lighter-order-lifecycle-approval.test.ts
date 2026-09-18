@@ -4,12 +4,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getApproval = vi.fn();
 const getAudit = vi.fn();
+const findByIntentId = vi.fn();
+const markApprovalDecision = vi.fn();
 
 vi.mock("@vex-agent/db/repos/approvals.js", () => ({
   getByIdForSession: (...args: unknown[]) => getApproval(...args),
 }));
 vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
   getByApprovalId: (...args: unknown[]) => getAudit(...args),
+}));
+// Only full-access reaches the repo directly in this file's tests -
+// restricted-mode calls return at the host approval gate before any lookup.
+// Real functions this test never exercises (createApprovalPendingWith, the
+// account-wide lookups .prepare uses, etc.) pass through unmocked.
+vi.mock("@vex-agent/db/repos/lighter-order-lifecycle-intents.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/db/repos/lighter-order-lifecycle-intents.js")>()),
+  findByIntentId: (...args: unknown[]) => findByIntentId(...args),
+  markApprovalDecision: (...args: unknown[]) => markApprovalDecision(...args),
 }));
 
 const { assertLighterCancelAllApprovalBinding, assertLighterCancelOneApprovalBinding, assertLighterClosePositionApprovalBinding, assertLighterModifyOrderApprovalBinding } = await import(
@@ -112,7 +123,17 @@ beforeEach(() => {
     executionStatus: "dispatching",
     previewJson: { toolName: "order.cancel", namespace: "lighter", criticalArgs },
   });
+  findByIntentId.mockReset().mockResolvedValue(null);
+  markApprovalDecision.mockReset();
 });
+
+const FULL_CTX = {
+  sessionId: "session-1",
+  sessionPermission: "full" as const,
+  approved: false,
+  walletResolution: { source: "default" as const },
+  walletPolicy: { kind: "none" as const },
+};
 
 describe("Lighter modify-order approval binding", () => {
   const modifyIntent: LighterOrderLifecycleIntentRow = {
@@ -186,12 +207,37 @@ describe("Lighter modify-order approval binding", () => {
     })).rejects.toThrow("approval does not match the exact provider order and replacement values");
   });
 
-  it("keeps direct modify calls behind the host approval gate", async () => {
+  it("still refuses a full-access modify call for an intent nothing prepared", async () => {
     const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.modify"])(
       { intentId },
-      { sessionId: "session-1", sessionPermission: "full", approved: false, walletResolution: { source: "default" }, walletPolicy: { kind: "none" } },
+      FULL_CTX,
     );
-    expect(result).toMatchObject({ success: false, pendingApproval: true });
+    expect(result).toMatchObject({ success: false });
+    expect(result.pendingApproval).not.toBe(true);
+    expect(getApproval).not.toHaveBeenCalled();
+    expect(markApprovalDecision).not.toHaveBeenCalled();
+  });
+
+  it("auto-approves a full-access modify call without the binding lookup", async () => {
+    findByIntentId.mockResolvedValueOnce({ ...modifyIntent, expiresAt: "2030-01-01T00:00:00.000Z" });
+    markApprovalDecision.mockResolvedValueOnce({ ...modifyIntent, approvalStatus: "approved" });
+
+    const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.modify"])(
+      { intentId },
+      FULL_CTX,
+    );
+
+    expect(getApproval).not.toHaveBeenCalled();
+    expect(getAudit).not.toHaveBeenCalled();
+    expect(markApprovalDecision).toHaveBeenCalledWith(expect.objectContaining({
+      decision: "approved",
+      approvalId: null,
+      reason: "auto-approved: session permission is full access",
+    }));
+    // No deps configured in this test env - proves it reached the signer
+    // boundary having never required a Vex approval card.
+    expect(result.pendingApproval).not.toBe(true);
+    expect(result.output).toContain("dependencies are unavailable");
   });
 });
 
@@ -258,12 +304,35 @@ describe("Lighter cancel-all approval binding", () => {
     })).rejects.toThrow("approval does not match the exact account-wide active-order set");
   });
 
-  it("keeps direct cancel-all calls behind the host approval gate", async () => {
+  it("still refuses a full-access cancel-all call for an intent nothing prepared", async () => {
     const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.cancelAll"])(
       { intentId },
-      { sessionId: "session-1", sessionPermission: "full", approved: false, walletResolution: { source: "default" }, walletPolicy: { kind: "none" } },
+      FULL_CTX,
     );
-    expect(result).toMatchObject({ success: false, pendingApproval: true });
+    expect(result).toMatchObject({ success: false });
+    expect(result.pendingApproval).not.toBe(true);
+    expect(getApproval).not.toHaveBeenCalled();
+    expect(markApprovalDecision).not.toHaveBeenCalled();
+  });
+
+  it("auto-approves a full-access cancel-all call without the binding lookup", async () => {
+    findByIntentId.mockResolvedValueOnce({ ...cancelAllIntent, expiresAt: "2030-01-01T00:00:00.000Z" });
+    markApprovalDecision.mockResolvedValueOnce({ ...cancelAllIntent, approvalStatus: "approved" });
+
+    const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.cancelAll"])(
+      { intentId },
+      FULL_CTX,
+    );
+
+    expect(getApproval).not.toHaveBeenCalled();
+    expect(getAudit).not.toHaveBeenCalled();
+    expect(markApprovalDecision).toHaveBeenCalledWith(expect.objectContaining({
+      decision: "approved",
+      approvalId: null,
+      reason: "auto-approved: session permission is full access",
+    }));
+    expect(result.pendingApproval).not.toBe(true);
+    expect(result.output).toContain("dependencies are unavailable");
   });
 });
 
@@ -351,12 +420,35 @@ describe("Lighter close-position approval binding", () => {
     })).rejects.toThrow("approval does not match the exact live position");
   });
 
-  it("keeps direct close calls behind the host approval gate", async () => {
+  it("still refuses a full-access close call for an intent nothing prepared", async () => {
     const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.position.close"])(
       { intentId },
-      { sessionId: "session-1", sessionPermission: "full", approved: false, walletResolution: { source: "default" }, walletPolicy: { kind: "none" } },
+      FULL_CTX,
     );
-    expect(result).toMatchObject({ success: false, pendingApproval: true });
+    expect(result).toMatchObject({ success: false });
+    expect(result.pendingApproval).not.toBe(true);
+    expect(getApproval).not.toHaveBeenCalled();
+    expect(markApprovalDecision).not.toHaveBeenCalled();
+  });
+
+  it("auto-approves a full-access close call without the binding lookup", async () => {
+    findByIntentId.mockResolvedValueOnce({ ...closeIntent, expiresAt: "2030-01-01T00:00:00.000Z" });
+    markApprovalDecision.mockResolvedValueOnce({ ...closeIntent, approvalStatus: "approved" });
+
+    const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.position.close"])(
+      { intentId },
+      FULL_CTX,
+    );
+
+    expect(getApproval).not.toHaveBeenCalled();
+    expect(getAudit).not.toHaveBeenCalled();
+    expect(markApprovalDecision).toHaveBeenCalledWith(expect.objectContaining({
+      decision: "approved",
+      approvalId: null,
+      reason: "auto-approved: session permission is full access",
+    }));
+    expect(result.pendingApproval).not.toBe(true);
+    expect(result.output).toContain("dependencies are unavailable");
   });
 });
 
@@ -388,12 +480,34 @@ describe("Lighter cancel-one approval binding", () => {
     })).rejects.toThrow("approval does not match the exact provider order intent");
   });
 
-  it("keeps direct calls behind the host approval gate", async () => {
+  it("still refuses a full-access cancel call for an intent nothing prepared", async () => {
     const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.cancel"])(
       { intentId },
-      { sessionId: "session-1", sessionPermission: "full", approved: false, walletResolution: { source: "default" }, walletPolicy: { kind: "none" } },
+      FULL_CTX,
     );
-    expect(result).toMatchObject({ success: false, pendingApproval: true });
+    expect(result).toMatchObject({ success: false });
+    expect(result.pendingApproval).not.toBe(true);
     expect(getApproval).not.toHaveBeenCalled();
+    expect(markApprovalDecision).not.toHaveBeenCalled();
+  });
+
+  it("auto-approves a full-access cancel call without the binding lookup", async () => {
+    findByIntentId.mockResolvedValueOnce({ ...intent, expiresAt: "2030-01-01T00:00:00.000Z" });
+    markApprovalDecision.mockResolvedValueOnce({ ...intent, approvalStatus: "approved" });
+
+    const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.order.cancel"])(
+      { intentId },
+      FULL_CTX,
+    );
+
+    expect(getApproval).not.toHaveBeenCalled();
+    expect(getAudit).not.toHaveBeenCalled();
+    expect(markApprovalDecision).toHaveBeenCalledWith(expect.objectContaining({
+      decision: "approved",
+      approvalId: null,
+      reason: "auto-approved: session permission is full access",
+    }));
+    expect(result.pendingApproval).not.toBe(true);
+    expect(result.output).toContain("dependencies are unavailable");
   });
 });

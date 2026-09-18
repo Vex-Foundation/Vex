@@ -46,13 +46,78 @@ const FEE_AUTHORIZATION_LABELS: Readonly<Record<string,string>> = {
   exchangeFees: "Lighter exchange fees", scopeNote: "Permission scope",
 };
 
+/**
+ * `buildLighterWithdrawalCriticalArgs` (withdrawal-approval-binding.ts) binds
+ * 35 fields - gateway addresses, code hashes, chain-plumbing IDs, account
+ * indices - because the binding must re-verify every one of them against the
+ * durable intent before a withdrawal executes. None of that changes what gets
+ * REVIEWED: a human deciding whether to sign a withdrawal needs what, how
+ * much, to where, on what network, when it clears, and the one-time-submit
+ * caveat - `summary` and `scopeNote` already say the first four in one
+ * sentence each. Everything else here stays bound and verified; it just never
+ * needed to be READ.
+ */
+const LIGHTER_WITHDRAWAL_LABELS: Readonly<Record<string,string>> = {
+  summary: "Action", walletAddress: "Your wallet", destinationAddress: "Destination",
+  settlementNetworkName: "Network", amountDisplay: "Amount",
+  // Room to spare once the well was curated down to 7 rows - these two answer
+  // the question the agent's own reasoning already volunteers in the
+  // transcript ("this withdraws the full balance") but the card itself
+  // didn't: is this a partial or a full drain, and are there open positions
+  // that make draining collateral riskier right now.
+  collateralUnits: "Account balance", openPositionCount: "Open positions",
+  estimatedClaimableAt: "Claimable at", scopeNote: "Permission scope",
+};
+
+/**
+ * `buildDepositApprovalFollowUp` (handlers/deposit.ts) binds 31 fields, the
+ * same shape of bloat as withdrawal: gateway/token contract addresses, code
+ * hashes, ERC-20 allowance/balance snapshots, block numbers. `approvalRequired`
+ * is the one non-obvious fact worth a row of its own - it tells the user
+ * whether this deposit ALSO spends a separate token-allowance approval, which
+ * `summary` does not say.
+ */
+const LIGHTER_DEPOSIT_LABELS: Readonly<Record<string,string>> = {
+  summary: "Action", walletAddress: "Your wallet", depositTo: "Deposit to",
+  settlementNetworkName: "Network", amountDisplay: "Amount",
+  approvalRequired: "Requires token approval", scopeNote: "Permission scope",
+};
+
+/**
+ * `buildLighterWithdrawalClaimCriticalArgs` (withdrawal-claim-approval-
+ * binding.ts) binds 31 fields, the same profile again (gateway/token
+ * addresses, code hashes, gas-quote plumbing). `networkFeeCeilingDisplay` is
+ * kept because it is a real spending cap this approval authorizes, distinct
+ * from the asset amount in `summary`.
+ */
+const LIGHTER_WITHDRAWAL_CLAIM_LABELS: Readonly<Record<string,string>> = {
+  summary: "Action", ownerAddress: "Recipient", settlementNetworkName: "Network",
+  amountDisplay: "Amount", networkFeeCeilingDisplay: "Max network fee",
+  scopeNote: "Permission scope",
+};
+
+/**
+ * One allowlist per tool whose critical-args well is dominated by fields
+ * that stay bound and verified server-side but were never meant to be READ.
+ * `lighter.order.create` is deliberately NOT here: its fields (market, side,
+ * price, size, time-in-force, reduce-only, trigger price) are the trade
+ * itself, not gateway plumbing - a trader reviewing an order approval wants
+ * most of them, so there is no bloat to curate away.
+ */
+const CRITICAL_ARGS_ALLOWLIST_BY_TOOL: Readonly<Record<string, Readonly<Record<string,string>>>> = {
+  "lighter.fees.approve": FEE_AUTHORIZATION_LABELS,
+  "lighter.withdraw": LIGHTER_WITHDRAWAL_LABELS,
+  "lighter.deposit": LIGHTER_DEPOSIT_LABELS,
+  "lighter.withdraw.claim": LIGHTER_WITHDRAWAL_CLAIM_LABELS,
+};
+
 function visibleCriticalArgs(criticalArgs: ApprovalPreview["criticalArgs"]): [string,unknown][] {
   const entries=Object.entries(criticalArgs);
-  // The fee card's human rows already disclose every permission term. Numeric
+  const allowlist = CRITICAL_ARGS_ALLOWLIST_BY_TOOL[String(criticalArgs.toolId)];
+  // The curated rows already disclose every permission term. Numeric
   // duplicates and the internal key/intent identities stay bound in the host's
   // approval record, without making users review signer implementation fields.
-  return criticalArgs.toolId==="lighter.fees.approve"
-    ? entries.filter(([key])=>key in FEE_AUTHORIZATION_LABELS) : entries;
+  return allowlist ? entries.filter(([key])=>key in allowlist) : entries;
 }
 
 function isLighterCreateOrderBehavior(
@@ -67,11 +132,41 @@ function isLighterCreateOrderBehavior(
       || value === "post-only");
 }
 
+/**
+ * `collateralUnits` (withdrawal-approval-binding.ts) is a raw base-unit
+ * integer, exactly like `amountUnits` - the binding never formats it because
+ * nothing signs the formatted string, only the raw one. `assetDecimals` and
+ * `assetSymbol` are still on the full `criticalArgs` object even though
+ * neither has its own visible row, so the shift can happen here without
+ * asking the backend to add a pre-formatted display field for one label.
+ */
+function formatLighterAssetUnits(
+  value: unknown,
+  criticalArgs: ApprovalPreview["criticalArgs"],
+): string {
+  const decimals = criticalArgs.assetDecimals;
+  const symbol = criticalArgs.assetSymbol;
+  if (typeof decimals !== "number" || typeof symbol !== "string") return String(value);
+  if (typeof value !== "string" && typeof value !== "number") return String(value);
+  try {
+    const raw = BigInt(value);
+    const divisor = 10n ** BigInt(decimals);
+    const whole = raw / divisor;
+    const fraction = (raw % divisor).toString().padStart(decimals, "0").replace(/0+$/, "");
+    return `${fraction.length > 0 ? `${whole}.${fraction}` : `${whole}`} ${symbol}`;
+  } catch {
+    return String(value);
+  }
+}
+
 function criticalArgValue(
   key: string,
   value: unknown,
   criticalArgs: ApprovalPreview["criticalArgs"],
 ): string {
+  if (key === "collateralUnits" && criticalArgs.toolId === "lighter.withdraw") {
+    return formatLighterAssetUnits(value, criticalArgs);
+  }
   if (!isLighterCreateOrderBehavior(key, value, criticalArgs)) return String(value);
   if (value === "good-till-time") return "GTC";
   if (value === "immediate-or-cancel") return "IOC";
@@ -82,7 +177,8 @@ function criticalArgLabel(
   key: string,
   criticalArgs: ApprovalPreview["criticalArgs"],
 ): string {
-  if (criticalArgs.toolId === "lighter.fees.approve") return FEE_AUTHORIZATION_LABELS[key] ?? key;
+  const allowlist = CRITICAL_ARGS_ALLOWLIST_BY_TOOL[String(criticalArgs.toolId)];
+  if (allowlist) return allowlist[key] ?? key;
   if (isLighterCreateOrderBehavior(key, criticalArgs[key], criticalArgs)) {
     return "Order behavior";
   }
@@ -168,7 +264,16 @@ export function ApprovalDetails({
   ) : null;
   return (
     <>
-      <header className="flex flex-wrap items-center gap-2 border-b border-[var(--vex-line)] px-4 py-3">
+      <header
+        // Pinned to the top of the card's own scroll ancestor
+        // (`ApprovalsRegion`'s bounded `overflow-y-auto` region): a long
+        // critical-args well — the combined key+fee card can run to dozens of
+        // rows — used to scroll the title (what is being signed) out of view
+        // before the user ever reached Approve/Reject. Same
+        // `sticky top-0 z-10` + solid-background pattern `GlobalApprovals`
+        // already uses for its `DialogHeader`.
+        className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-t-lg border-b border-[var(--vex-line)] bg-[var(--vex-pin-fill-solid)] px-4 py-3"
+      >
         <div className="min-w-0 flex-1">
           <h3
             id={titleId}
