@@ -250,6 +250,13 @@ export function AgentScanRow({
             <IconArrowUpRight size={11} />
           </a>
         ) : null}
+        <button
+          type="button"
+          onClick={() => openCreateSession(activityFollowUpMessage(entry))}
+          className="ml-auto shrink-0 rounded-[3px] border border-line-2 px-2 py-1 vex-micro-label uppercase text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+        >
+          Ask Vex
+        </button>
         {hasDetail ? (
           <button
             ref={triggerRef}
@@ -369,13 +376,6 @@ export function AgentScanRow({
               </ul>
             </DetailLine>
           ) : null}
-          <button
-            type="button"
-            onClick={() => openCreateSession(activityFollowUpMessage(entry))}
-            className="mt-1 inline-flex w-full items-center justify-center rounded-lg border border-line-2 px-3 py-2 vex-micro-label uppercase text-ink-primary transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-          >
-            Ask Vex about this event
-          </button>
       </ExpandRegion>
     </div>
   );
