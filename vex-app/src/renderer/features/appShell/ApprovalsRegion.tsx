@@ -107,10 +107,16 @@ export function ApprovalsRegion({
         // Bound height (Codex F3 #2) so multiple pendings can't push the composer
         // off-screen; scroll within the region instead. S3: a single hairline
         // separates the region from the transcript — no box of its own.
+        // 40vh (pre-2026-09-18) was tuned before any card carried a critical-args
+        // well this long (a Lighter withdrawal's live-state disclosure runs to ~18
+        // rows) - a card that tall spent almost its entire visible area on
+        // internal scroll before the user reached Approve/Reject. 75vh keeps the
+        // ORIGINAL guarantee (a stack of pendings still can't swallow the
+        // composer) while actually fitting one long card's content on screen.
         // `relative z-50`: stacks above `.vex-approval-mask` (z-40, fixed) so
         // the card(s) actually being signed stay sharp while everything else
         // behind the mask blurs.
-        className="relative z-50 max-h-[40vh] shrink-0 overflow-y-auto border-t border-[var(--vex-line)]"
+        className="relative z-50 max-h-[75vh] shrink-0 overflow-y-auto border-t border-[var(--vex-line)]"
       >
         {view.rows.map((summary) => (
           <ApprovalCard

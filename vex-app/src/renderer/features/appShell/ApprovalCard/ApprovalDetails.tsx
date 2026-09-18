@@ -155,7 +155,7 @@ export function ApprovalDetails({
         // before the user ever reached Approve/Reject. Same
         // `sticky top-0 z-10` + solid-background pattern `GlobalApprovals`
         // already uses for its `DialogHeader`.
-        className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-t-lg border-b border-[var(--vex-line)] bg-[var(--vex-pin-fill)] px-4 py-3"
+        className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-t-lg border-b border-[var(--vex-line)] bg-[var(--vex-pin-fill-solid)] px-4 py-3"
       >
         <div className="min-w-0 flex-1">
           <h3
