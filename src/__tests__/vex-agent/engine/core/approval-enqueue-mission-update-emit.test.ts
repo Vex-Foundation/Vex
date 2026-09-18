@@ -15,13 +15,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const enqueueWith = vi.fn();
 const createWith = vi.fn();
+const markDecisionWith = vi.fn();
 const rejectWith = vi.fn();
 const updateStatus = vi.fn();
 const gateOnOperatorStopWithClient = vi.fn();
 const acquireSessionControlLock = vi.fn();
 
 vi.mock("@vex-agent/db/repos/approvals.js", () => ({ enqueueWith, rejectWith }));
-vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({ createWith }));
+vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
+  createWith,
+  markDecisionWith,
+}));
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({ updateStatus }));
 vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
   acquireSessionControlLock: (...a: unknown[]) => acquireSessionControlLock(...a),
@@ -73,6 +77,8 @@ function baseArgs() {
 describe("enqueueApprovalIntent mission-update emit", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    rejectWith.mockResolvedValue({ id: "approval-rejected" });
+    markDecisionWith.mockResolvedValue(true);
     gateOnOperatorStopWithClient.mockResolvedValue({ kind: "clear" });
   });
 
@@ -112,6 +118,27 @@ describe("enqueueApprovalIntent mission-update emit", () => {
     } finally {
       off();
     }
+    expect(rejectWith).toHaveBeenCalledTimes(1);
+    expect(markDecisionWith).toHaveBeenCalledTimes(1);
+    expect(markDecisionWith.mock.calls[0]?.[1]).toMatchObject({
+      kind: "rejected_stop",
+      reason: "operator_stop",
+    });
     expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("fails the enqueue transaction if the companion intent decision loses its CAS", async () => {
+    gateOnOperatorStopWithClient.mockResolvedValue({
+      kind: "stopped",
+      runStatus: "stopped",
+    });
+    markDecisionWith.mockResolvedValue(false);
+
+    await expect(enqueueApprovalIntent(baseArgs())).rejects.toThrow(
+      "stop rejection did not update both rows",
+    );
+
+    expect(rejectWith).toHaveBeenCalledTimes(1);
+    expect(markDecisionWith).toHaveBeenCalledTimes(1);
   });
 });

@@ -33,6 +33,8 @@ import { ApprovalPostDecisionError, type ApprovePrepareOutcome } from "../../typ
 import { deriveApprovedDispatchExecutionStatus } from "../dispatch-approved.js";
 import { buildResumedApprovalToolContext } from "./resumed-tool-context.js";
 import { claimDispatchSlotUnderStopGate } from "./dispatch-slot-gate.js";
+import { registerDeskSettlementRepair } from "../../desk/repair-registry.js";
+import { runDeskApprovalDispatch } from "../../desk/dispatch-flight.js";
 
 const DESK_DISPATCH_STOPPED_OUTPUT =
   "Stopped before the order was sent. Nothing was executed and no funds moved.";
@@ -41,6 +43,14 @@ const DESK_DISPATCH_UNPROVABLE_OUTPUT =
   + "It will NOT be retried; check the account panel before sending it again.";
 
 export async function applyDeskApproveSideEffects(
+  approvalId: string,
+  snapshot: Extract<ApproveSnapshot, { type: "approved_in_tx" }>,
+): Promise<ApprovePrepareOutcome> {
+  return runDeskApprovalDispatch(approvalId, () =>
+    dispatchDeskApproval(approvalId, snapshot));
+}
+
+async function dispatchDeskApproval(
   approvalId: string,
   snapshot: Extract<ApproveSnapshot, { type: "approved_in_tx" }>,
 ): Promise<ApprovePrepareOutcome> {
@@ -65,8 +75,20 @@ export async function applyDeskApproveSideEffects(
       missionRunId: null,
     });
     if (!slotGate.tookSlot) {
-      // The decision CAS admits one approver per row, so a taken slot here
-      // means the row was already dispatching - there is nothing safe to do.
+      // Startup/sweep recovery may race the IPC path after the decision commit.
+      // The shared `not_started -> dispatching` CAS still admits exactly one
+      // tool call. The loser reports the durable winner's state instead of
+      // turning a healthy race into a dispatch failure.
+      const current = await approvalIntentsRepo.getByApprovalId(approvalId);
+      if (current?.decision === "approved") {
+        return {
+          kind: "cached_approved",
+          approvalId,
+          resolvedAt: snapshot.queueResolvedAt,
+          executionStatus: current.executionStatus,
+          missionRunId: null,
+        };
+      }
       throw new ApprovalPostDecisionError(
         approvalId,
         "desk_slot_taken",
@@ -173,15 +195,31 @@ async function settle(
     });
     settledStatus = "indeterminate";
     try {
-      await withTransaction((client) =>
+      const committed = await withTransaction((client) =>
         approvalIntentsRepo.commitDeskSettlementWith(client, {
           approvalId,
           status: "indeterminate",
           resultHash: summary.errorHash,
         }),
       );
-    } catch {
-      // Left `dispatching`; process-start recovery marks it indeterminate.
+      if (!committed) {
+        logger.info("engine.desk.settlement_write_superseded", { approvalId });
+      }
+    } catch (repairCause) {
+      // Keep retrying the terminal write in the scheduled approval sweep. The
+      // entry contains no tool input and the repair path cannot dispatch, so a
+      // database outage can never turn into a duplicate order. A process
+      // restart is the second floor for the same `dispatching` row.
+      registerDeskSettlementRepair({
+        approvalId,
+        resultHash: summary.errorHash,
+      });
+      const repairSummary = summarizeErrorForLog(repairCause);
+      logger.error("engine.desk.settlement_repair_registered", {
+        approvalId,
+        errorKind: repairSummary.errorKind,
+        errorHash: repairSummary.errorHash,
+      });
     }
   }
   return {

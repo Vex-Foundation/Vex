@@ -326,6 +326,26 @@ describe("openImageInsideRoot: symbolic links are never followed", () => {
     if (!result.ok) return;
     expect(result.relativePath).toBe("logo.png");
   });
+
+  it("accepts an absolute file path spelled through the same symlinked root", async () => {
+    if (!(await canCreateSymlinks())) {
+      console.warn("skipped: this platform cannot create symbolic links");
+      return;
+    }
+    await fs.writeFile(path.join(root, "logo.png"), pngBytes());
+    const linkedRoot = path.join(sandbox, "proj-link");
+    await fs.symlink(root, linkedRoot, "dir");
+
+    const result = await openImageInsideRoot({
+      projectRoot: linkedRoot,
+      requestedPath: path.join(linkedRoot, "logo.png"),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.relativePath).toBe("logo.png");
+    expect(result.resolvedPath).toBe(path.join(await realRoot(), "logo.png"));
+  });
 });
 
 // -- file kind -------------------------------------------------------------

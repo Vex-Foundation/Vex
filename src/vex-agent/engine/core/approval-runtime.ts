@@ -30,6 +30,7 @@ import {
 } from "./approval-runtime/snapshot.js";
 import { withApprovalDecisionTransaction } from "./approval-runtime/snapshot/locked-transaction.js";
 import { applyApproveSideEffects } from "./approval-runtime/post-tx.js";
+import { readDeskApprovalDispatch } from "./approval-runtime/desk/dispatch-flight.js";
 // Every generic decision entry point below goes through the ORIGIN-AWARE
 // dispatcher, never through `applyRejectSideEffects` directly. For an agent
 // row it IS `applyRejectSideEffects`, unchanged; for a Studio row it settles
@@ -108,7 +109,11 @@ export {
   type DeskPrepareOutcome,
   type DeskPrepareToolId,
 } from "./approval-runtime/desk/prepare.js";
-export { reconcileAbandonedDeskDispatches } from "./approval-runtime/desk/reconcile.js";
+export {
+  reconcileAbandonedDeskDispatches,
+  reconcileDeskApprovalLifecycle,
+  type DeskApprovalLifecycleResult,
+} from "./approval-runtime/desk/reconcile.js";
 
 /**
  * The same-process repair owner for terminal writes that FAILED. Retries the
@@ -164,6 +169,18 @@ export async function prepareApprove(
       throw new Error(`Approval ${approvalId} not found`);
 
     case "cached_approved":
+      if (snapshot.row.origin === "desk") {
+        const shared = readDeskApprovalDispatch(approvalId);
+        if (shared !== null) return shared;
+        if ((snapshot.row.execution_status ?? "not_started") === "not_started") {
+          return applyApproveSideEffects(approvalId, {
+            type: "approved_in_tx",
+            row: snapshot.row,
+            queueResolvedAt:
+              toIsoOrNull(snapshot.row.queue_resolved_at) ?? toIsoNow(),
+          });
+        }
+      }
       return {
         kind: "cached_approved",
         approvalId,

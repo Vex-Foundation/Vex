@@ -46,14 +46,36 @@ export async function commitDeskSettlementWith(
  * the order reached the sequencer. It is marked indeterminate and never
  * retried - the same rule the agent and Studio lanes apply.
  */
-export async function markAbandonedDeskDispatchesIndeterminate(): Promise<
+export async function markAbandonedDeskDispatchesIndeterminate(
+  startedBefore: Date | string,
+): Promise<
   readonly string[]
 > {
+  const cutoff = typeof startedBefore === "string"
+    ? startedBefore
+    : startedBefore.toISOString();
   const rows = await query<{ approval_id: string }>(
     `UPDATE approval_intents
         SET execution_status = 'indeterminate'
-      WHERE origin = 'desk' AND execution_status = 'dispatching'
+      WHERE origin = 'desk'
+        AND decision = 'approved'
+        AND execution_status = 'dispatching'
+        AND (dispatch_started_at IS NULL OR dispatch_started_at < $1)
   RETURNING approval_id`,
+    [cutoff],
+  );
+  return rows.map((row) => row.approval_id);
+}
+
+/** Desk rows that are approved but still prove the tool never started. */
+export async function listUnstartedDeskApprovals(): Promise<readonly string[]> {
+  const rows = await query<{ approval_id: string }>(
+    `SELECT approval_id
+       FROM approval_intents
+      WHERE origin = 'desk'
+        AND decision = 'approved'
+        AND execution_status = 'not_started'
+      ORDER BY decided_at ASC, approval_id ASC`,
   );
   return rows.map((row) => row.approval_id);
 }

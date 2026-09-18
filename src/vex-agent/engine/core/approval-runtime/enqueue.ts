@@ -325,8 +325,20 @@ export async function enqueueApprovalIntentWithGate(
 
     if (runIsDead) {
       // Auto-reject in the SAME transaction and leave the terminal run alone.
-      // The row exists for audit but can never be approved.
-      await approvalsRepo.rejectWith(client, approvalId);
+      // The queue and its companion intent are one decision record. Writing
+      // only the queue side leaves an undecided intent that neither the TTL
+      // sweep nor a later operator action can honestly resolve.
+      const rejected = await approvalsRepo.rejectWith(client, approvalId);
+      const decided = await approvalIntentsRepo.markDecisionWith(client, {
+        approvalId,
+        kind: "rejected_stop",
+        reason: "operator_stop",
+      });
+      if (rejected === null || !decided) {
+        throw new Error(
+          `Approval ${approvalId} stop rejection did not update both rows`,
+        );
+      }
       logger.warn("engine.approval.auto_rejected_terminal_run", {
         sessionId: input.sessionId,
         missionRunId: input.missionRunId,

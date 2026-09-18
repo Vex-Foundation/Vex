@@ -99,6 +99,12 @@ describe("illegal transitions are no-ops the caller detects", () => {
       // `expired` claims the window closed with NO Confirm.
       guard: "consented_at IS NULL",
     },
+    {
+      name: "markCancelled",
+      run: () => intents.markCancelled(INTENT_ID),
+      expected: ["proposed"],
+      guard: "consented_at IS NULL",
+    },
   ] as const;
 
   for (const testCase of cases) {

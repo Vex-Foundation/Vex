@@ -90,6 +90,7 @@ export {
 /** Desk settlement writes (migration 164): the Lighter desk's own buttons. */
 export {
   commitDeskSettlementWith,
+  listUnstartedDeskApprovals,
   markAbandonedDeskDispatchesIndeterminate,
 } from "./approval-intents/desk-settlement.js";
 
