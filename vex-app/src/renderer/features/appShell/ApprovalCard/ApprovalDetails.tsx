@@ -59,6 +59,12 @@ const FEE_AUTHORIZATION_LABELS: Readonly<Record<string,string>> = {
 const LIGHTER_WITHDRAWAL_LABELS: Readonly<Record<string,string>> = {
   summary: "Action", walletAddress: "Your wallet", destinationAddress: "Destination",
   settlementNetworkName: "Network", amountDisplay: "Amount",
+  // Room to spare once the well was curated down to 7 rows - these two answer
+  // the question the agent's own reasoning already volunteers in the
+  // transcript ("this withdraws the full balance") but the card itself
+  // didn't: is this a partial or a full drain, and are there open positions
+  // that make draining collateral riskier right now.
+  collateralUnits: "Account balance", openPositionCount: "Open positions",
   estimatedClaimableAt: "Claimable at", scopeNote: "Permission scope",
 };
 
@@ -125,11 +131,41 @@ function isLighterCreateOrderBehavior(
       || value === "post-only");
 }
 
+/**
+ * `collateralUnits` (withdrawal-approval-binding.ts) is a raw base-unit
+ * integer, exactly like `amountUnits` - the binding never formats it because
+ * nothing signs the formatted string, only the raw one. `assetDecimals` and
+ * `assetSymbol` are still on the full `criticalArgs` object even though
+ * neither has its own visible row, so the shift can happen here without
+ * asking the backend to add a pre-formatted display field for one label.
+ */
+function formatLighterAssetUnits(
+  value: unknown,
+  criticalArgs: ApprovalPreview["criticalArgs"],
+): string {
+  const decimals = criticalArgs.assetDecimals;
+  const symbol = criticalArgs.assetSymbol;
+  if (typeof decimals !== "number" || typeof symbol !== "string") return String(value);
+  if (typeof value !== "string" && typeof value !== "number") return String(value);
+  try {
+    const raw = BigInt(value);
+    const divisor = 10n ** BigInt(decimals);
+    const whole = raw / divisor;
+    const fraction = (raw % divisor).toString().padStart(decimals, "0").replace(/0+$/, "");
+    return `${fraction.length > 0 ? `${whole}.${fraction}` : `${whole}`} ${symbol}`;
+  } catch {
+    return String(value);
+  }
+}
+
 function criticalArgValue(
   key: string,
   value: unknown,
   criticalArgs: ApprovalPreview["criticalArgs"],
 ): string {
+  if (key === "collateralUnits" && criticalArgs.toolId === "lighter.withdraw") {
+    return formatLighterAssetUnits(value, criticalArgs);
+  }
   if (!isLighterCreateOrderBehavior(key, value, criticalArgs)) return String(value);
   if (value === "good-till-time") return "Keep open";
   if (value === "immediate-or-cancel") return "Immediate only";
