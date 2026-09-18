@@ -530,4 +530,51 @@ describe("lighter.key.register", () => {
       abortSignal: undefined,
     });
   });
+
+  it("registers in full-access mode with no approval card and no binding lookup", async () => {
+    mocks.findIntent.mockResolvedValue(row("approval_pending"));
+    mocks.getExecutor.mockReturnValue({ execute: mocks.executeRegistration });
+    mocks.executeRegistration.mockResolvedValue({
+      source: "vex_lighter_key_registration",
+      status: "active",
+      intentId: INTENT_ID,
+      executionState: "active",
+      accountIndex: 42,
+      apiKeyIndex: 6,
+      txHash: "a".repeat(80),
+      postRegistrationNonce: "1",
+      message: "Registration verified.",
+    });
+
+    const context: ProtocolExecutionContext = { ...CONTEXT, sessionPermission: "full", approved: false };
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register"])(
+      { intentId: INTENT_ID },
+      context,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.assertApprovalBinding).not.toHaveBeenCalled();
+    expect(mocks.markApproved).toHaveBeenCalledWith(expect.objectContaining({
+      intentId: INTENT_ID,
+      sessionId: "session-1",
+      approvalId: null,
+      reason: "auto-approved: session permission is full access",
+    }));
+  });
+
+  it("refuses a full-access registration for an intent nothing prepared", async () => {
+    mocks.findIntent.mockResolvedValue(null);
+
+    const context: ProtocolExecutionContext = { ...CONTEXT, sessionPermission: "full", approved: false };
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register"])(
+      { intentId: INTENT_ID },
+      context,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.pendingApproval).not.toBe(true);
+    expect(result.output).toContain("No Lighter key-registration intent");
+    expect(mocks.assertApprovalBinding).not.toHaveBeenCalled();
+    expect(mocks.markApproved).not.toHaveBeenCalled();
+  });
 });

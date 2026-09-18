@@ -129,25 +129,29 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (!context.sessionId) return fail("Lighter order cancellation requires a host session id.");
     const intentId = readIntentId(params.intentId);
     if (!intentId.ok) return fail(intentId.reason);
-    if (!context.approved || !context.approvalId) {
+    const fullAccess = context.sessionPermission === "full";
+    if (!fullAccess && (!context.approved || !context.approvalId)) {
       return { success: false, output: "Lighter order cancellation requires its exact approved Vex approval card.", pendingApproval: true };
     }
     const intent = await intentsRepo.findByIntentId(context.sessionId, intentId.value);
     if (intent === null) return fail(`No Lighter lifecycle intent ${intentId.value} exists in this session.`);
-    try {
-      await assertLighterCancelOneApprovalBinding({
-        approvalId: context.approvalId,
-        sessionId: context.sessionId,
-        intent,
-      });
-    } catch (error) {
-      return fail(error instanceof Error ? error.message : String(error));
+    if (!fullAccess) {
+      if (!context.approvalId) return fail("Lighter order cancellation requires an approval id to bind against.");
+      try {
+        await assertLighterCancelOneApprovalBinding({
+          approvalId: context.approvalId,
+          sessionId: context.sessionId,
+          intent,
+        });
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : String(error));
+      }
     }
     if (Date.parse(intent.expiresAt) <= Date.now()) {
       await intentsRepo.markApprovalDecision({
         intentId: intent.intentId,
         decision: "expired",
-        approvalId: context.approvalId,
+        approvalId: context.approvalId ?? null,
         reason: "approved cancellation resumed after expiry",
       });
       return fail("The exact Lighter cancellation approval expired. Prepare it again from fresh provider state.");
@@ -155,8 +159,10 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     const approved = await intentsRepo.markApprovalDecision({
       intentId: intent.intentId,
       decision: "approved",
-      approvalId: context.approvalId,
-      reason: "user approved exact Lighter provider order cancellation",
+      approvalId: context.approvalId ?? null,
+      reason: fullAccess
+        ? "auto-approved: session permission is full access"
+        : "user approved exact Lighter provider order cancellation",
     });
     if (approved === null) return fail("The Lighter cancellation intent has already left approval-pending state.");
     const deps = getConfiguredLighterOrderLifecycleExecutionDeps();
@@ -308,25 +314,29 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (!context.sessionId) return fail("Lighter order modification requires a host session id.");
     const intentId = readIntentId(params.intentId);
     if (!intentId.ok) return fail(intentId.reason);
-    if (!context.approved || !context.approvalId) {
+    const fullAccess = context.sessionPermission === "full";
+    if (!fullAccess && (!context.approved || !context.approvalId)) {
       return { success: false, output: "Lighter order modification requires its exact approved Vex approval card.", pendingApproval: true };
     }
     const intent = await intentsRepo.findByIntentId(context.sessionId, intentId.value);
     if (intent === null) return fail(`No Lighter lifecycle intent ${intentId.value} exists in this session.`);
-    try {
-      await assertLighterModifyOrderApprovalBinding({
-        approvalId: context.approvalId,
-        sessionId: context.sessionId,
-        intent,
-      });
-    } catch (error) {
-      return fail(error instanceof Error ? error.message : String(error));
+    if (!fullAccess) {
+      if (!context.approvalId) return fail("Lighter order modification requires an approval id to bind against.");
+      try {
+        await assertLighterModifyOrderApprovalBinding({
+          approvalId: context.approvalId,
+          sessionId: context.sessionId,
+          intent,
+        });
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : String(error));
+      }
     }
     if (Date.parse(intent.expiresAt) <= Date.now()) {
       await intentsRepo.markApprovalDecision({
         intentId: intent.intentId,
         decision: "expired",
-        approvalId: context.approvalId,
+        approvalId: context.approvalId ?? null,
         reason: "approved modification resumed after expiry",
       });
       return fail("The exact Lighter modification approval expired. Prepare it again from fresh provider state.");
@@ -334,8 +344,10 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     const approved = await intentsRepo.markApprovalDecision({
       intentId: intent.intentId,
       decision: "approved",
-      approvalId: context.approvalId,
-      reason: "user approved exact Lighter provider order modification",
+      approvalId: context.approvalId ?? null,
+      reason: fullAccess
+        ? "auto-approved: session permission is full access"
+        : "user approved exact Lighter provider order modification",
     });
     if (approved === null) return fail("The Lighter modification intent has already left approval-pending state.");
     const deps = getConfiguredLighterOrderLifecycleExecutionDeps();
@@ -428,25 +440,29 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (!context.sessionId) return fail("Lighter account-wide cancellation requires a host session id.");
     const intentId = readIntentId(params.intentId);
     if (!intentId.ok) return fail(intentId.reason);
-    if (!context.approved || !context.approvalId) {
+    const fullAccess = context.sessionPermission === "full";
+    if (!fullAccess && (!context.approved || !context.approvalId)) {
       return { success: false, output: "Lighter cancel-all requires its exact approved Vex approval card.", pendingApproval: true };
     }
     const intent = await intentsRepo.findByIntentId(context.sessionId, intentId.value);
     if (intent === null) return fail(`No Lighter lifecycle intent ${intentId.value} exists in this session.`);
-    try {
-      await assertLighterCancelAllApprovalBinding({
-        approvalId: context.approvalId,
-        sessionId: context.sessionId,
-        intent,
-      });
-    } catch (error) {
-      return fail(error instanceof Error ? error.message : String(error));
+    if (!fullAccess) {
+      if (!context.approvalId) return fail("Lighter cancel-all requires an approval id to bind against.");
+      try {
+        await assertLighterCancelAllApprovalBinding({
+          approvalId: context.approvalId,
+          sessionId: context.sessionId,
+          intent,
+        });
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : String(error));
+      }
     }
     if (Date.parse(intent.expiresAt) <= Date.now()) {
       await intentsRepo.markApprovalDecision({
         intentId: intent.intentId,
         decision: "expired",
-        approvalId: context.approvalId,
+        approvalId: context.approvalId ?? null,
         reason: "approved cancel-all resumed after expiry",
       });
       return fail("The exact Lighter cancel-all approval expired. Prepare it again from fresh provider state.");
@@ -454,8 +470,10 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     const approved = await intentsRepo.markApprovalDecision({
       intentId: intent.intentId,
       decision: "approved",
-      approvalId: context.approvalId,
-      reason: "user approved exact account-wide Lighter order cancellation",
+      approvalId: context.approvalId ?? null,
+      reason: fullAccess
+        ? "auto-approved: session permission is full access"
+        : "user approved exact account-wide Lighter order cancellation",
     });
     if (approved === null) return fail("The Lighter cancel-all intent has already left approval-pending state.");
     const deps = getConfiguredLighterOrderLifecycleExecutionDeps();
@@ -564,26 +582,30 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (!context.sessionId) return fail("Lighter position close requires a host session id.");
     const intentId = readIntentId(params.intentId);
     if (!intentId.ok) return fail(intentId.reason);
-    if (!context.approved || !context.approvalId) {
+    const fullAccess = context.sessionPermission === "full";
+    if (!fullAccess && (!context.approved || !context.approvalId)) {
       return { success: false, output: "Lighter position close requires its exact approved Vex approval card.", pendingApproval: true };
     }
     const intent = await intentsRepo.findByIntentId(context.sessionId, intentId.value);
     if (intent === null) return fail(`No Lighter lifecycle intent ${intentId.value} exists in this session.`);
-    try {
-      await assertLighterClosePositionApprovalBinding({
-        approvalId: context.approvalId,
-        sessionId: context.sessionId,
-        intent,
-      });
-    } catch (error) {
-      return fail(error instanceof Error ? error.message : String(error));
+    if (!fullAccess) {
+      if (!context.approvalId) return fail("Lighter position close requires an approval id to bind against.");
+      try {
+        await assertLighterClosePositionApprovalBinding({
+          approvalId: context.approvalId,
+          sessionId: context.sessionId,
+          intent,
+        });
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : String(error));
+      }
     }
     if (Date.parse(intent.expiresAt) <= Date.now()) {
       if (intent.approvalStatus === "approval_pending") {
         await intentsRepo.markApprovalDecision({
           intentId: intent.intentId,
           decision: "expired",
-          approvalId: context.approvalId,
+          approvalId: context.approvalId ?? null,
           reason: "approved position close resumed after expiry",
         });
       } else if (intentsRepo.isSafelyExpirablePreSubmit(intent)) {
@@ -595,22 +617,33 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     const approved = await intentsRepo.markApprovalDecision({
       intentId: intent.intentId,
       decision: "approved",
-      approvalId: context.approvalId,
-      reason: "user approved exact reduce-only Lighter position close",
+      approvalId: context.approvalId ?? null,
+      reason: fullAccess
+        ? "auto-approved: session permission is full access"
+        : "user approved exact reduce-only Lighter position close",
     });
     if (approved === null) return fail("The Lighter position-close intent has already left approval-pending state.");
     const deps = getConfiguredLighterOrderLifecycleExecutionDeps();
     if (deps === null) return fail("Privileged Lighter close-position dependencies are unavailable. Nothing was signed or submitted.");
+    const approvalNarration = fullAccess
+      ? "This is an execution result from a full-access session; no Vex approval card was shown. A Studio prepare call can wait for that approval and return this result; it is not an unapproved preview."
+      : "This is an execution result after the user approved in Vex. A Studio prepare call can wait for that approval and return this result; it is not an unapproved preview.";
+    const guidanceApprovalClause = fullAccess
+      ? "This full-access session auto-approved the action."
+      : "The user approved this action in Vex.";
     try {
       const result = await executeApprovedLighterClosePosition(approved, deps, context?.abortSignal);
       return ok({
         source: "vex_lighter_position_close",
-        approval: { status: "approved_in_vex", approvalId: context.approvalId },
-        workflow: "This is an execution result after the user approved in Vex. A Studio prepare call can wait for that approval and return this result; it is not an unapproved preview.",
+        approval: {
+          status: fullAccess ? "auto_approved_full_access" : "approved_in_vex",
+          approvalId: context.approvalId ?? null,
+        },
+        workflow: approvalNarration,
         ...result,
         userGuidance: result.status === "closed" || result.status === "partially_closed" || result.status === "not_closed"
-          ? "The user approved this action in Vex. Report the exact fill, average fill price, provider status and confirmed position. not_closed means the order ended with no fill. No automatic retry occurred."
-          : "The user approved this action in Vex. Report any observed order fill separately from position confirmation, which is still pending. Do not claim a partial close from an unchanged position. Reconcile before any retry.",
+          ? `${guidanceApprovalClause} Report the exact fill, average fill price, provider status and confirmed position. not_closed means the order ended with no fill. No automatic retry occurred.`
+          : `${guidanceApprovalClause} Report any observed order fill separately from position confirmation, which is still pending. Do not claim a partial close from an unchanged position. Reconcile before any retry.`,
       });
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));

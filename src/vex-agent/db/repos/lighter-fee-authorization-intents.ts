@@ -194,7 +194,8 @@ export async function markLighterFeeAuthorizationDecisionWith(
   input: {
     readonly intentId: string;
     readonly sessionId: string;
-    readonly approvalId: string;
+    /** Null for a full-access auto-approval, where no approval_queue row exists to bind to. */
+    readonly approvalId: string | null;
     readonly status: "approved" | "rejected" | "expired";
   },
 ): Promise<LighterFeeAuthorizationIntentRow | null> {

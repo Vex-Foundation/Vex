@@ -376,7 +376,8 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
     if (typeof intentId !== "string" || intentId.trim().length === 0) {
       return fail("Missing required: intentId.");
     }
-    if (!context.approved || !context.approvalId) {
+    const fullAccess = context.sessionPermission === "full";
+    if (!fullAccess && (!context.approved || !context.approvalId)) {
       return {
         success: false,
         output:
@@ -399,21 +400,27 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
     ) {
       return fail(`Lighter key-registration intent ${intent.intentId} expired before approval resume.`);
     }
-    try {
-      await assertLighterKeyRegistrationApprovalBinding({
-        approvalId: context.approvalId,
-        sessionId,
-        intent,
-      });
-    } catch (error) {
-      return fail(error instanceof Error ? error.message : String(error));
+    if (!fullAccess) {
+      if (!context.approvalId) return fail("Lighter key registration requires an approval id to bind against.");
+      try {
+        await assertLighterKeyRegistrationApprovalBinding({
+          approvalId: context.approvalId,
+          sessionId,
+          intent,
+        });
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : String(error));
+      }
     }
     const approved = intent.executionState === "approval_pending"
       ? await withSessionControlLock(sessionId, (client) =>
         keyIntentsRepo.markLighterKeyRegistrationApprovedWith(client, {
           intentId: intent.intentId,
           sessionId,
-          approvalId: context.approvalId!,
+          approvalId: context.approvalId ?? null,
+          reason: fullAccess
+            ? "auto-approved: session permission is full access"
+            : "user approved exact Lighter key registration intent",
         }))
       : intent.approvalStatus === "approved" ? intent : null;
     if (approved === null) {

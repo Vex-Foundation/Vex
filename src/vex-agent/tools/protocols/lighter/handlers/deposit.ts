@@ -928,7 +928,8 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
     if (typeof intentId !== "string" || intentId.trim().length === 0) {
       return fail("Missing required: intentId.");
     }
-    if (!context.approved || !context.approvalId) {
+    const fullAccess = context.sessionPermission === "full";
+    if (!fullAccess && (!context.approved || !context.approvalId)) {
       return {
         success: false,
         output: "Lighter deposit requires an approved Vex approval card for a prepared deposit intent.",
@@ -948,10 +949,13 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
         "Lighter was disabled for this Vex wallet before execution. Nothing was signed or submitted; enable it again and prepare a fresh approval.",
       );
     }
-    try {
-      await assertLighterDepositApprovalBinding({ approvalId: context.approvalId, sessionId, intent });
-    } catch (err) {
-      return fail(err instanceof Error ? err.message : String(err));
+    if (!fullAccess) {
+      if (!context.approvalId) return fail("Lighter deposit requires an approval id to bind against.");
+      try {
+        await assertLighterDepositApprovalBinding({ approvalId: context.approvalId, sessionId, intent });
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
     }
     const confirmedRecoveryPending = isConfirmedApprovalRecoveryPending(intent);
     if (intent.expiresAt.getTime() <= Date.now()) {
@@ -960,13 +964,13 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
           ? onboardingIntentsRepo.markConfirmedApprovalRecoveryDecisionWith(client, {
               intentId: intent.intentId,
               decision: "expired",
-              approvalId: context.approvalId,
+              approvalId: context.approvalId ?? null,
               reason: "approval resume observed an expired Lighter deposit recovery",
             })
           : onboardingIntentsRepo.markApprovalDecisionWith(client, {
               intentId: intent.intentId,
               decision: "expired",
-              approvalId: context.approvalId,
+              approvalId: context.approvalId ?? null,
               reason: "approval resume observed an expired Lighter deposit intent",
             }),
       );
@@ -978,8 +982,10 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
         onboardingIntentsRepo.markApprovalDecisionWith(client, {
           intentId: intent.intentId,
           decision: "approved",
-          approvalId: context.approvalId,
-          reason: "user approved exact Lighter deposit intent",
+          approvalId: context.approvalId ?? null,
+          reason: fullAccess
+            ? "auto-approved: session permission is full access"
+            : "user approved exact Lighter deposit intent",
         }),
       )
       : confirmedRecoveryPending
@@ -987,8 +993,10 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
           onboardingIntentsRepo.markConfirmedApprovalRecoveryDecisionWith(client, {
             intentId: intent.intentId,
             decision: "approved",
-            approvalId: context.approvalId,
-            reason: "user approved exact Lighter deposit-only recovery",
+            approvalId: context.approvalId ?? null,
+            reason: fullAccess
+              ? "auto-approved: session permission is full access"
+              : "user approved exact Lighter deposit-only recovery",
           }),
         )
       : isPristineApprovedDepositIntent(intent) ? intent : null;

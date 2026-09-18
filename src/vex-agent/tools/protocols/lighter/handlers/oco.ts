@@ -127,7 +127,8 @@ function executionGuidance(result: ExecuteApprovedLighterOcoResult): string {
 
 export async function executePreparedLighterOco(
   intent: LighterOcoExecutionIntentRow,
-  approvalId: string,
+  approvalId: string | null,
+  fullAccess: boolean,
   abortSignal?: AbortSignal,
 ) {
   const [stopLoss, takeProfit] = await Promise.all([
@@ -135,16 +136,23 @@ export async function executePreparedLighterOco(
     previewsRepo.findById(intent.sessionId, intent.environment, intent.takeProfitPreviewId),
   ]);
   if (stopLoss === null || takeProfit === null) return fail("The exact persisted OCO previews are unavailable.");
-  try {
-    await assertLighterOcoApprovalBinding({
-      approvalId,
-      sessionId: intent.sessionId,
-      intent,
-      stopLossPreview: stopLoss,
-      takeProfitPreview: takeProfit,
-    });
-  } catch (error) {
-    return fail(error instanceof Error ? error.message : String(error));
+  // A full-access session never went through a human approval card, so there is
+  // no approval_queue row to bind against - the binding check exists to prove a
+  // human-reviewed preview matches this exact intent, which is moot when no
+  // human reviewed anything. Freshness (expiry, below) still applies either way.
+  if (!fullAccess) {
+    if (approvalId === null) return fail("Lighter OCO execution requires an approved Vex approval card.");
+    try {
+      await assertLighterOcoApprovalBinding({
+        approvalId,
+        sessionId: intent.sessionId,
+        intent,
+        stopLossPreview: stopLoss,
+        takeProfitPreview: takeProfit,
+      });
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
   }
   if (Date.parse(intent.expiresAt) <= Date.now()) {
     await ocoIntentsRepo.markApprovalDecision({
@@ -159,7 +167,9 @@ export async function executePreparedLighterOco(
     intentId: intent.intentId,
     decision: "approved",
     approvalId,
-    reason: "user approved exact native Lighter OCO protection",
+    reason: fullAccess
+      ? "auto-approved: session permission is full access"
+      : "user approved exact native Lighter OCO protection",
   });
   if (approved === null) return fail("The Lighter OCO intent already left approval_pending.");
   const deps = getConfiguredLighterOcoExecutionDeps();

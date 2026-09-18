@@ -36,23 +36,32 @@ describe("Lighter tool surface safety", () => {
     expect(network).not.toHaveBeenCalled();
   });
 
-  for (const sessionPermission of ["restricted", "full"] as const) {
-    it.each(EXECUTION_TOOLS)(`%s cannot bypass approval using dryRun in ${sessionPermission} mode`, async (toolId) => {
-      const network = vi.fn(() => { throw new Error("Unexpected network access"); });
-      vi.stubGlobal("fetch", network);
-      const manifest = requireValue(LIGHTER_TOOLS.find((tool) => tool.toolId === toolId));
+  // A restricted session always requires an approval card, for every
+  // execution tool, no matter what a model claims in its own arguments.
+  it.each(EXECUTION_TOOLS)("%s cannot bypass approval using dryRun in restricted mode", async (toolId) => {
+    const network = vi.fn(() => { throw new Error("Unexpected network access"); });
+    vi.stubGlobal("fetch", network);
+    const manifest = requireValue(LIGHTER_TOOLS.find((tool) => tool.toolId === toolId));
 
-      const result = await executeProtocolTool({ toolId, params: { ...executionParams(toolId), dryRun: true } },
-        makeProtocolContext({ sessionId: "lighter-safety-test", sessionPermission }));
+    const result = await executeProtocolTool({ toolId, params: { ...executionParams(toolId), dryRun: true } },
+      makeProtocolContext({ sessionId: "lighter-safety-test", sessionPermission: "restricted" }));
 
-      expect(result.success).toBe(false);
-      expect(result.pendingApproval).toBe(true);
-      expect(result.output).toMatch(/approv/i);
-      expect(result.actionKind).toBe(manifest.actionKind);
-      expect(network).not.toHaveBeenCalled();
-    });
-  }
+    expect(result.success).toBe(false);
+    expect(result.pendingApproval).toBe(true);
+    expect(result.output).toMatch(/approv/i);
+    expect(result.actionKind).toBe(manifest.actionKind);
+    expect(network).not.toHaveBeenCalled();
+  });
 
+  // Every EXECUTION_TOOLS entry now auto-approves under full access (see each
+  // handler's `sessionPermission === "full"` branch) instead of returning
+  // `pendingApproval`, so the old "full mode still blocks" sweep no longer
+  // applies here. That does NOT mean full access accepts a fabricated call:
+  // it still needs a real, previously-prepared intent to act on, and a
+  // fabricated id fails for that reason, not an approval reason. Proving that
+  // needs a mocked DB layer, which lives in `lighter-handlers.test.ts`
+  // (`still refuses a full-mode lighter.order.create for an intent nothing
+  // prepared` and its siblings for the other execution tools).
   it.each(EXECUTION_TOOLS)("%s refuses an approved flag without a host approval identity", async (toolId) => {
     const network = vi.fn(() => { throw new Error("Unexpected network access"); });
     vi.stubGlobal("fetch", network);

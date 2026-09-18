@@ -302,7 +302,14 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
     if (!sessionId) return fail("Lighter order create requires a host session id.");
     const intentId = readRequiredString(params, "intentId");
     if (!intentId.ok) return fail(intentId.reason);
-    if (!context.approved || !context.approvalId) {
+    // Full access is the platform-wide default for mutating tools
+    // (`tools/dispatcher/protocol-route.ts` only blocks a RESTRICTED session
+    // without approval); Lighter used to re-impose approval unconditionally on
+    // top of that. A full-access session never produces an approval_queue row,
+    // so there is nothing to bind against below - freshness (expiry) is what
+    // guards a full-access execution instead.
+    const fullAccess = context.sessionPermission === "full";
+    if (!fullAccess && (!context.approved || !context.approvalId)) {
       return {
         success: false,
         output:
@@ -318,24 +325,30 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
         intentId.value,
       );
       if (ocoIntent !== null) {
-        return executePreparedLighterOco(ocoIntent, context.approvalId, context.abortSignal);
+        return executePreparedLighterOco(ocoIntent, context.approvalId ?? null, fullAccess, context.abortSignal);
       }
       return fail(`No Lighter order execution intent ${intentId.value} found in this session.`);
     }
-    try {
-      await assertLighterOrderCreateApprovalBinding({
-        approvalId: context.approvalId,
-        sessionId,
-        intent,
-      });
-    } catch (err) {
-      return fail(err instanceof Error ? err.message : String(err));
+    if (!fullAccess) {
+      // Unreachable given the guard above (restricted + unapproved already
+      // returned), but narrows `approvalId` to `string` for the binding call
+      // instead of asserting past what the type actually proves here.
+      if (!context.approvalId) return fail("Lighter order create requires an approval id to bind against.");
+      try {
+        await assertLighterOrderCreateApprovalBinding({
+          approvalId: context.approvalId,
+          sessionId,
+          intent,
+        });
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
     }
     if (Date.parse(intent.expiresAt) <= Date.now()) {
       await lighterOrderExecutionIntentsRepo.markApprovalDecision({
         intentId: intent.intentId,
         decision: "expired",
-        approvalId: context.approvalId,
+        approvalId: context.approvalId ?? null,
         reason: "approval resume observed an expired Lighter execution intent",
       });
       // This intent can never be approved now, so the capital it reserved at
@@ -351,8 +364,10 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
     const approved = await lighterOrderExecutionIntentsRepo.markApprovalDecision({
       intentId: intent.intentId,
       decision: "approved",
-      approvalId: context.approvalId,
-      reason: "user approved exact Lighter order create intent",
+      approvalId: context.approvalId ?? null,
+      reason: fullAccess
+        ? "auto-approved: session permission is full access"
+        : "user approved exact Lighter order create intent",
     });
     if (approved === null) {
       return fail(`Lighter order execution intent ${intent.intentId} has already left approval_pending.`);

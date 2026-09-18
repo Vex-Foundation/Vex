@@ -176,26 +176,32 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
     const sessionId = context.sessionId;
     const claimId = typeof params.claimId === "string" ? params.claimId.trim() : "";
     if (!sessionId || claimId.length === 0) return fail("Manual Lighter claim requires a session-scoped prepared claim id.");
-    if (!context.approved || !context.approvalId) {
+    const fullAccess = context.sessionPermission === "full";
+    if (!fullAccess && (!context.approved || !context.approvalId)) {
       return { success: false, output: "Manual Lighter claim requires its matching approved settlement-network claim card.", pendingApproval: true };
     }
     const attempt = await withdrawalClaimsRepo.findByClaimId(sessionId, claimId);
     if (attempt === null) return fail(`No manual Lighter claim ${claimId} exists in this session.`);
     const profile = getLighterSecureWithdrawalProfile(attempt.operationClass === "manual_core_usdc_claim" ? "core" : "rhc");
-    try {
-      await assertLighterWithdrawalClaimApprovalBinding({ approvalId: context.approvalId, sessionId, attempt });
-    } catch (error) {
-      return fail(error instanceof Error ? error.message : String(error));
+    if (!fullAccess) {
+      if (!context.approvalId) return fail("Manual Lighter claim requires an approval id to bind against.");
+      try {
+        await assertLighterWithdrawalClaimApprovalBinding({ approvalId: context.approvalId, sessionId, attempt });
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : String(error));
+      }
     }
     if (Date.parse(attempt.expiresAt) <= Date.now()) {
       await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markDecisionWith(client, {
-        claimId, sessionId, approvalId: context.approvalId!, decision: "expired", reason: "approved claim resume observed expired preview",
+        claimId, sessionId, approvalId: context.approvalId ?? null, decision: "expired", reason: "approved claim resume observed expired preview",
       }));
       return fail(`Manual ${profile.sourceName} claim ${claimId} expired before execution.`);
     }
     const approved = await withSessionControlLock(sessionId, (client) => withdrawalClaimsRepo.markDecisionWith(client, {
-      claimId, sessionId, approvalId: context.approvalId!, decision: "approved",
-      reason: `user approved exact ${profile.settlementNetworkName} ${profile.sourceName} ${profile.assetSymbol} claim`,
+      claimId, sessionId, approvalId: context.approvalId ?? null, decision: "approved",
+      reason: fullAccess
+        ? "auto-approved: session permission is full access"
+        : `user approved exact ${profile.settlementNetworkName} ${profile.sourceName} ${profile.assetSymbol} claim`,
     }));
     if (approved === null) return fail(`Manual ${profile.sourceName} claim ${claimId} has already left prepared state.`);
     const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
@@ -651,27 +657,33 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
     const sessionId = context.sessionId;
     const intentId = typeof params.intentId === "string" ? params.intentId.trim() : "";
     if (!sessionId || intentId.length === 0) return fail("Lighter withdrawal requires a session-scoped prepared intent id.");
-    if (!context.approved || !context.approvalId) {
+    const fullAccess = context.sessionPermission === "full";
+    if (!fullAccess && (!context.approved || !context.approvalId)) {
       return { success: false, output: "Lighter withdrawal requires the matching approved Vex approval card.", pendingApproval: true };
     }
     const intent = await withdrawalIntentsRepo.findByIntentId(sessionId, intentId);
     if (intent === null) return fail(`No Lighter withdrawal intent ${intentId} exists in this session.`);
     const profile = getLighterSecureWithdrawalProfile(intent.environment);
-    try {
-      await assertLighterWithdrawalApprovalBinding({ approvalId: context.approvalId, sessionId, intent });
-    } catch (error) {
-      return fail(error instanceof Error ? error.message : String(error));
+    if (!fullAccess) {
+      if (!context.approvalId) return fail("Lighter withdrawal requires an approval id to bind against.");
+      try {
+        await assertLighterWithdrawalApprovalBinding({ approvalId: context.approvalId, sessionId, intent });
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : String(error));
+      }
     }
     if (Date.parse(intent.expiresAt) <= Date.now()) {
       await withdrawalIntentsRepo.markApprovalDecision({
-        intentId, sessionId, approvalId: context.approvalId, decision: "expired",
+        intentId, sessionId, approvalId: context.approvalId ?? null, decision: "expired",
         reason: `approved resume observed expired ${intent.environment} withdrawal intent`,
       });
       return fail(`${profile.sourceName} withdrawal intent ${intentId} expired before execution.`);
     }
     const approved = await withdrawalIntentsRepo.markApprovalDecision({
-      intentId, sessionId, approvalId: context.approvalId, decision: "approved",
-      reason: `user approved exact ${profile.sourceName} ${profile.assetSymbol} secure withdrawal`,
+      intentId, sessionId, approvalId: context.approvalId ?? null, decision: "approved",
+      reason: fullAccess
+        ? "auto-approved: session permission is full access"
+        : `user approved exact ${profile.sourceName} ${profile.assetSymbol} secure withdrawal`,
     });
     if (approved === null) return fail(`${profile.sourceName} withdrawal intent ${intentId} has already left approval_pending.`);
     const deps = getConfiguredLighterCoreWithdrawalExecutionDeps();
