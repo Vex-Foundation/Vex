@@ -147,7 +147,16 @@ export function ApprovalDetails({
   });
   return (
     <>
-      <header className="flex flex-wrap items-center gap-2 border-b border-[var(--vex-line)] px-4 py-3">
+      <header
+        // Pinned to the top of the card's own scroll ancestor
+        // (`ApprovalsRegion`'s bounded `overflow-y-auto` region): a long
+        // critical-args well — the combined key+fee card can run to dozens of
+        // rows — used to scroll the title (what is being signed) out of view
+        // before the user ever reached Approve/Reject. Same
+        // `sticky top-0 z-10` + solid-background pattern `GlobalApprovals`
+        // already uses for its `DialogHeader`.
+        className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-[var(--vex-line)] bg-[var(--vex-pin-fill)] px-4 py-3"
+      >
         <div className="min-w-0 flex-1">
           <h3
             id={titleId}

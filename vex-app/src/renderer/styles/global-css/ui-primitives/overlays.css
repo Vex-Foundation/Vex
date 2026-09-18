@@ -17,6 +17,25 @@ dialog.vex-dialog::backdrop {
   backdrop-filter: var(--vex-mask-blur);
 }
 
+/* ── Approval focus mask ────────────────────────────────────────────────────
+ * A pending approval is the one thing blocking the run; the rest of the
+ * shell (transcript, composer, sidebar) dims and softly blurs behind it so
+ * attention lands on the card. Same dim + blur tokens as the dialog
+ * `::backdrop` and the lightbox mask above, for one masking vocabulary
+ * across the app. `position: fixed` so it covers the viewport regardless of
+ * where `ApprovalsRegion` sits in the scrolling transcript, and
+ * `pointer-events: none` because this is a visual cue, not a second click
+ * trap on top of the region's own `aria-live` announcement — the run is
+ * already paused; nothing under the mask needs to be unreachable. */
+.vex-approval-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  background: var(--vex-alias-bg-mask-1);
+  backdrop-filter: var(--vex-mask-blur);
+}
+
 /* ── Notification toast stack ──────────────────────────────────────────────
  * The app's ONE floating notification surface (lib/notifications), on the dark
  * chrome plate in both themes, stacked top-center: at most three, plus the

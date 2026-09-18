@@ -96,21 +96,31 @@ export function ApprovalsRegion({
   if (view.rows.length === 0) return null;
 
   return (
-    <section
-      data-vex-area="approvals-region"
-      // Bound height (Codex F3 #2) so multiple pendings can't push the composer
-      // off-screen; scroll within the region instead. S3: a single hairline
-      // separates the region from the transcript — no box of its own.
-      className="max-h-[40vh] shrink-0 overflow-y-auto border-t border-[var(--vex-line)]"
-    >
-      {view.rows.map((summary) => (
-        <ApprovalCard
-          key={summary.id}
-          summary={summary}
-          sessionId={sessionId}
-          focusOnMount={summary.id === focusTargetId}
-        />
-      ))}
-    </section>
+    <>
+      {/* Decorative: the mask carries no content of its own, and the run's
+          `paused_approval` state is already announced through the card's own
+          `aria-live` region — a screen reader does not need a second node for
+          this purely visual dim+blur cue. */}
+      <div aria-hidden="true" data-vex-area="approval-focus-mask" className="vex-approval-mask" />
+      <section
+        data-vex-area="approvals-region"
+        // Bound height (Codex F3 #2) so multiple pendings can't push the composer
+        // off-screen; scroll within the region instead. S3: a single hairline
+        // separates the region from the transcript — no box of its own.
+        // `relative z-50`: stacks above `.vex-approval-mask` (z-40, fixed) so
+        // the card(s) actually being signed stay sharp while everything else
+        // behind the mask blurs.
+        className="relative z-50 max-h-[40vh] shrink-0 overflow-y-auto border-t border-[var(--vex-line)]"
+      >
+        {view.rows.map((summary) => (
+          <ApprovalCard
+            key={summary.id}
+            summary={summary}
+            sessionId={sessionId}
+            focusOnMount={summary.id === focusTargetId}
+          />
+        ))}
+      </section>
+    </>
   );
 }
