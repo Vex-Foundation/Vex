@@ -37,7 +37,16 @@ describe("Lighter tool surface safety", () => {
   });
 
   for (const sessionPermission of ["restricted", "full"] as const) {
-    it.each(EXECUTION_TOOLS)(`%s cannot bypass approval using dryRun in ${sessionPermission} mode`, async (toolId) => {
+    // `lighter.order.create` is the one deliberate exception: a full-access
+    // session auto-approves it instead of returning `pendingApproval` (see
+    // `handlers/write.ts`), so it would need a mocked DB layer to prove
+    // anything here. That proof - full mode still refuses an intent nothing
+    // prepared, and never touches the signer path for a fabricated id - lives
+    // in `lighter-handlers.test.ts` where the repos are already mocked.
+    const toolsForThisPermission = sessionPermission === "full"
+      ? EXECUTION_TOOLS.filter((toolId) => toolId !== "lighter.order.create")
+      : EXECUTION_TOOLS;
+    it.each(toolsForThisPermission)(`%s cannot bypass approval using dryRun in ${sessionPermission} mode`, async (toolId) => {
       const network = vi.fn(() => { throw new Error("Unexpected network access"); });
       vi.stubGlobal("fetch", network);
       const manifest = requireValue(LIGHTER_TOOLS.find((tool) => tool.toolId === toolId));
