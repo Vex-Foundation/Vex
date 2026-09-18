@@ -1,6 +1,6 @@
 import { requireValue } from "../../../../../../../src/__tests__/helpers/require-value.js";
 import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
 import { MarketPicker } from "../MarketPicker.js";
@@ -124,7 +124,7 @@ describe("market picker", () => {
     trigger.remove();
   });
 
-  it("recovers from malformed storage and keeps favorites usable if storage is denied", () => {
+  it("recovers from malformed storage and keeps favorites usable if storage is denied", async () => {
     localStorage.setItem("vex-lighter-analysis", "not-json");
     void useLighterAnalysisStore.persist.rehydrate();
     render(<MarketPicker {...baseProps} />);
@@ -133,7 +133,7 @@ describe("market picker", () => {
     vi.spyOn(localStorage, "setItem").mockImplementation(() => { throw new Error("unavailable"); });
     fireEvent.click(screen.getByRole("button", { name: "Add BTC Perpetual to favorites" }));
     expect(screen.getByRole("button", { name: "Remove BTC Perpetual from favorites" })).toBeTruthy();
-    expect(screen.getByText(/Favorites are saved for this view only/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/Favorites are saved for this view only/)).toBeTruthy());
   });
 
   it("filters verified stock listings without changing their execution product", () => {
