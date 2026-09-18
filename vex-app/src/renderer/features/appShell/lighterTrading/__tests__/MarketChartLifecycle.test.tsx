@@ -68,7 +68,7 @@ describe("Chart timeline continuity", () => {
     expect(harness.setRange).toHaveBeenLastCalledWith({ from: 0, to: 90 });
   });
   it("draws the account's fills on whichever series is showing", () => {
-    const fills = [{ tradeId: "t1", marketId: 1, symbol: "ETH", side: "buy" as const, role: "taker" as const, type: "trade", size: "2", price: "11", value: null, realizedPnl: null, timestamp: 1_700_000_130_000 }];
+    const fills = [{ tradeId: "t1", orderId: "o1", marketId: 1, symbol: "ETH", side: "buy" as const, role: "taker" as const, type: "trade", size: "2", price: "11", value: null, realizedPnl: null, timestamp: 1_700_000_130_000 }];
     render(<MarketChart candles={candles(40)} symbol="ETH" theme="chronos" marketId={1} resolution="1m" fills={fills} />);
     expect(harness.createSeriesMarkers).toHaveBeenCalledWith(harness.candles, [expect.objectContaining({ time: 1_700_000_120, shape: "arrowUp" })]);
     fireEvent.click(screen.getByRole("button", { name: "Use line" }));
@@ -105,6 +105,7 @@ describe("Chart timeline continuity", () => {
     view.rerender(<MarketChart candles={candles(5, 1_600_000_000)} symbol="BTC" theme="chronos" marketId={2} resolution="1d" />);
     expect(requireValue(harness.line.setData.mock.lastCall)[0]).toEqual(candles(5, 1_600_000_000).map(c => ({ time: c.timestamp, value: c.close })));
     expect(harness.line.applyOptions).toHaveBeenLastCalledWith({ visible: false });
+    expect(harness.setRange).toHaveBeenLastCalledWith({ from: 0, to: 11 });
   });
   it("shows the drag-to-order handle only when the desk wires a drop target", () => {
     const view = render(<MarketChart candles={candles(40)} symbol="ETH" theme="chronos" marketId={1} resolution="1m" />);

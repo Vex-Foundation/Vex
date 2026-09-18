@@ -20,6 +20,7 @@ import type { UserProfile } from "@shared/schemas/user-profile.js";
 import { sessionKeys } from "../../../../lib/api/sessions.js";
 import { createQueryClient } from "../../../../app/queryClient.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
+import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
 import { WELCOME_PORTFOLIO_WIDTH } from "../../../../lib/shell-columns.js";
 
 // Phase 2b: the Settings ShellScreen hosts the wizard step forms, whose
@@ -38,7 +39,28 @@ vi.mock("../../screens/AgentScanScreen.js", () => ({
 }));
 
 vi.mock("../../lighterTrading/LighterCenter.js", () => ({
-  LighterCenter: () => null,
+  LighterCenter: () => <div data-testid="lighter-center" />,
+}));
+
+vi.mock("../../lighterTrading/LighterSidebar.js", () => ({
+  LighterSidebar: ({
+    collapsed,
+    onToggleSidebar,
+  }: {
+    readonly collapsed: boolean;
+    readonly onToggleSidebar: () => void;
+  }) => (
+    <aside
+      data-vex-area="lighter-sidebar"
+      data-vex-sidebar-open={collapsed ? "false" : "true"}
+    >
+      <button
+        type="button"
+        aria-label={collapsed ? "Expand the sidebar" : "Collapse the sidebar"}
+        onClick={onToggleSidebar}
+      />
+    </aside>
+  ),
 }));
 
 // Every brand mark stubs to null, whatever its name: the marks are
@@ -639,6 +661,72 @@ describe("AppShell", () => {
       screen.getByRole("button", { name: /Expand sessions sidebar/i }),
     );
     expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("true");
+  });
+
+  it("keeps the Lighter center mounted while its rail toggles", () => {
+    useUiStore.setState({ runtimeMode: "lighter", sidebarNarrowExpanded: false });
+    const view = renderShell();
+    const sidebar = view.container.querySelector("[data-vex-area='lighter-sidebar']");
+
+    expect(screen.queryByTestId("lighter-center")).not.toBeNull();
+    expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("false");
+
+    fireEvent.click(screen.getByRole("button", { name: /Expand the sidebar/i }));
+    expect(screen.queryByTestId("lighter-center")).not.toBeNull();
+    expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: /Collapse the sidebar/i }));
+    expect(screen.queryByTestId("lighter-center")).not.toBeNull();
+    expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("false");
+    act(() => useUiStore.getState().setRuntimeMode("agent"));
+  });
+
+  it("keeps every Lighter column pinned to the full frame height", () => {
+    useUiStore.setState({ runtimeMode: "lighter", sidebarNarrowExpanded: false });
+    const view = renderShell();
+    const sidebarColumn = view.container.querySelector("[data-vex-area='lighter-sidebar']")?.parentElement;
+    const centerColumn = screen.getByTestId("lighter-center").parentElement?.parentElement;
+    const bookColumn = view.container.querySelector("[data-vex-area='book-panel']")?.parentElement;
+    const columns = [sidebarColumn, centerColumn, bookColumn];
+
+    act(() => useUiStore.getState().setRuntimeMode("agent"));
+
+    for (const column of columns) {
+      expect(column).not.toBeNull();
+      expect(column?.classList.contains("h-full")).toBe(true);
+      expect(column?.classList.contains("min-h-0")).toBe(true);
+    }
+  });
+
+  it("sizes the Lighter agent independently from the portfolio preference", () => {
+    const previousBookWidth = useUiStore.getState().bookWidth;
+    useUiStore.setState({ runtimeMode: "lighter", sidebarNarrowExpanded: false, bookOpen: true, bookWidth: 300 });
+    useLighterAnalysisStore.getState().saveDesk({ chatShare: 0.32 });
+    const view = renderShell();
+    const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
+    expect(frame?.style.gridTemplateColumns).toBe("56px minmax(0, 1fr) 328px");
+    act(() => useLighterAnalysisStore.getState().saveDesk({ chatShare: 310 / window.innerWidth }));
+    expect(frame?.style.gridTemplateColumns).toBe("56px minmax(0, 1fr) 310px");
+    fireEvent.keyDown(screen.getByRole("separator", { name: "Resize the Vex panel" }), { key: "ArrowLeft" });
+    expect(frame?.style.gridTemplateColumns).toBe("56px minmax(0, 1fr) 328px");
+    expect(useLighterAnalysisStore.getState().desk.chatShare).toBeCloseTo(334 / window.innerWidth);
+    expect(useUiStore.getState().bookWidth).toBe(300);
+    act(() => {
+      useUiStore.getState().setRuntimeMode("agent");
+      useUiStore.getState().setBookWidth(previousBookWidth);
+      useLighterAnalysisStore.getState().saveDesk({ chatShare: 0.32 });
+    });
+  });
+
+  it("expands an automatically folded Vex panel with one click", () => {
+    useUiStore.setState({ runtimeMode: "lighter", sidebarNarrowExpanded: true, bookOpen: true });
+    const view = renderShell();
+    const panel = view.container.querySelector("[data-vex-area='book-panel']");
+    expect(panel?.getAttribute("data-vex-book-open")).toBe("false");
+    fireEvent.click(screen.getByRole("button", { name: "Open Vex" }));
+    expect(panel?.getAttribute("data-vex-book-open")).toBe("true");
+    expect(useUiStore.getState().sidebarNarrowExpanded).toBe(false);
+    act(() => useUiStore.getState().setRuntimeMode("agent"));
   });
 
   it("crowns the sidebar rail with the static logo mark, not a VEX wordmark", () => {

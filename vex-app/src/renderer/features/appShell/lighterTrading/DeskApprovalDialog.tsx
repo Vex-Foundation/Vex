@@ -1,4 +1,4 @@
-import { useState, type JSX } from "react";
+import { useEffect, useState, type JSX } from "react";
 import type { ApprovalActionResult, ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import {
   Dialog,
@@ -10,6 +10,25 @@ import {
 } from "../../../components/ui/dialog.js";
 import { ApprovalCard } from "../ApprovalCard.js";
 import { isDeskCloseApproval } from "./desk-approvals.js";
+
+function approvalToolId(summary: ApprovalSummaryDto): string | null {
+  const preview = summary.preview;
+  if (preview?.namespace === "lighter") return `lighter.${preview.toolName}`;
+  const toolId = preview?.criticalArgs.toolId;
+  return typeof toolId === "string" ? toolId : null;
+}
+
+function approvalTitle(approvals: ReadonlyArray<ApprovalSummaryDto>): string {
+  const kinds = new Set(approvals.map(approvalToolId));
+  if (kinds.size !== 1) return "Review mixed actions";
+  switch ([...kinds][0]) {
+    case "lighter.order.create": return "Review order";
+    case "lighter.position.close": return "Review close";
+    case "lighter.order.cancel": return "Review cancellation";
+    case "lighter.position.protect": return "Review protection";
+    default: return "Review action";
+  }
+}
 
 /**
  * The desk's own approval cards, as a modal over the desk.
@@ -23,15 +42,18 @@ import { isDeskCloseApproval } from "./desk-approvals.js";
  * A Market close card also offers "Don't ask again": ticking it makes the
  * desk approve later close cards itself. This card still waits for Confirm.
  */
-export function DeskApprovalDialog({ approvals, sessionId, focusApprovalId, onResolved, skipCloseConfirm, onSkipCloseConfirm }: {
+export function DeskApprovalDialog({ approvals, sessionId, focusApprovalId, onResolved, skipCloseConfirm, onSkipCloseConfirm, reopenSignal = 0 }: {
   readonly approvals: ReadonlyArray<ApprovalSummaryDto>;
   readonly sessionId: string;
   readonly focusApprovalId: string | null;
   readonly onResolved: (decision: "approved" | "rejected", result: ApprovalActionResult) => void;
   readonly skipCloseConfirm: boolean;
   readonly onSkipCloseConfirm: (next: boolean) => void;
+  /** Changes when the ticket asks to reopen approvals dismissed with Escape. */
+  readonly reopenSignal?: number;
 }): JSX.Element {
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => { setDismissed(new Set()); }, [reopenSignal]);
   const open = approvals.some((summary) => !dismissed.has(summary.id));
   const showsClose = approvals.some(isDeskCloseApproval);
   return (
@@ -47,7 +69,7 @@ export function DeskApprovalDialog({ approvals, sessionId, focusApprovalId, onRe
         closeOnBackdropClick={false}
       >
         <DialogHeader>
-          <DialogTitle>Approve order</DialogTitle>
+          <DialogTitle>{approvalTitle(approvals)}</DialogTitle>
           <DialogDescription>Nothing signs until you confirm.</DialogDescription>
         </DialogHeader>
         <DialogBody className="gap-3 px-3 pb-4 pt-0">

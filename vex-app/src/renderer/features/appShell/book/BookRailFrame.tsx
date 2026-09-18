@@ -31,6 +31,8 @@ import { SidebarIconButton } from "../SessionRows.js";
 export function BookRailFrame({
   label,
   headline,
+  toggleLabel = "BOOK panel",
+  collapsedLabel,
   bookOpen,
   onToggle,
   children,
@@ -47,6 +49,8 @@ export function BookRailFrame({
    * where a build stamp belongs.
    */
   readonly headline?: string;
+  readonly toggleLabel?: string;
+  readonly collapsedLabel?: string;
   readonly bookOpen: boolean;
   readonly onToggle: () => void;
   /** Rendered only while expanded; the header bar persists in both states. */
@@ -75,12 +79,23 @@ export function BookRailFrame({
         ) : null}
         {/* One static glyph for both states, like the left rail toggle - the
             open/close semantic lives in the aria-label. */}
-        <SidebarIconButton
-          label={bookOpen ? "Collapse the BOOK panel" : "Expand the BOOK panel"}
+        {!bookOpen && collapsedLabel !== undefined ? (
+          <button
+            type="button"
+            aria-label={collapsedLabel}
+            aria-expanded="false"
+            onClick={onToggle}
+            className="flex min-h-14 w-10 flex-col items-center justify-center gap-1 rounded-[6px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+          >
+            <IconPanelRight size={17} />
+            <span className="text-[10px] font-medium leading-3">{collapsedLabel}</span>
+          </button>
+        ) : <SidebarIconButton
+          label={`${bookOpen ? "Collapse" : "Expand"} the ${toggleLabel}`}
           onClick={onToggle}
         >
           <IconPanelRight size={17} />
-        </SidebarIconButton>
+        </SidebarIconButton>}
       </div>
       {bookOpen ? children : null}
       {/* The build stamp, at the foot. `mt-auto` keeps it on the floor of the

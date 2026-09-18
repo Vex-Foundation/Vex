@@ -20,8 +20,13 @@ import {
   type JSX,
 } from "react";
 import { useUiStore, type RuntimeMode } from "../../stores/uiStore.js";
+import { useLighterAnalysisStore } from "../../stores/lighterAnalysisStore.js";
 import {
   BOOK_COLLAPSED,
+  BOOK_MIN,
+  BOOK_MAX,
+  SIDEBAR_MIN,
+  SIDEBAR_MAX,
   computeShellColumns,
   shouldAutoCollapseSidebar,
   WELCOME_PORTFOLIO_WIDTH,
@@ -137,8 +142,11 @@ function ShellFrame({
   const setSidebarWidth = useUiStore((s) => s.setSidebarWidth);
   const bookOpen = useUiStore((s) => s.bookOpen);
   const toggleBook = useUiStore((s) => s.toggleBook);
+  const setBookOpen = useUiStore((s) => s.setBookOpen);
   const bookWidth = useUiStore((s) => s.bookWidth);
   const setBookWidth = useUiStore((s) => s.setBookWidth);
+  const lighterChatShare = useLighterAnalysisStore((s) => s.desk.chatShare);
+  const saveLighterDesk = useLighterAnalysisStore((s) => s.saveDesk);
   const setActiveProjectId = useUiStore((s) => s.setActiveProjectId);
 
   const frameRef = useRef<HTMLDivElement | null>(null);
@@ -202,7 +210,7 @@ function ShellFrame({
   const cols: ShellColumns = computeShellColumns(
     viewport,
     sidebarCollapsed ? 0 : sidebarWidth,
-    welcomeStage || !bookOpen ? 0 : bookWidth,
+    welcomeStage || !bookOpen ? 0 : lighter ? Math.max(1, viewport * lighterChatShare) : bookWidth,
   );
   const colsRef = useRef(cols);
   colsRef.current = cols;
@@ -229,8 +237,12 @@ function ShellFrame({
     [setSidebarWidth],
   );
   const onBookDrag = useCallback(
-    (dx: number) => setBookWidth(bookBase.current - dx),
-    [setBookWidth],
+    (dx: number) => {
+      const width = bookBase.current - dx;
+      if (lighter && viewport > 0) saveLighterDesk({ chatShare: width / viewport });
+      else setBookWidth(width);
+    },
+    [lighter, viewport, saveLighterDesk, setBookWidth],
   );
 
   const networkOnline = useNetworkOnline();
@@ -266,7 +278,7 @@ function ShellFrame({
       {/* COLUMN 1 - the rail the active mode owns. The two rails are separate
         * components on purpose: they hold different objects with different
         * lifetimes, and one component branching on the mode would own both. */}
-      <div className="relative z-20 min-w-0 overflow-visible">
+      <div className="relative z-20 h-full min-h-0 min-w-0 overflow-visible">
         {lighter ? (
           <LighterSidebar
             collapsed={sidebarCollapsed}
@@ -292,7 +304,7 @@ function ShellFrame({
         )}
       </div>
 
-      <section className="relative z-10 flex min-w-0 flex-col overflow-hidden">
+      <section className="relative z-10 flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
         {/* THE STATUS STRIP, mounted ONCE for the whole frame regardless of
           * mode. It carries `GlobalApprovals`, which owns the approvals live
           * sync, and preload allows one subscriber per event kind per window -
@@ -310,7 +322,7 @@ function ShellFrame({
         </div>
       </section>
 
-      <div className="relative z-10 min-w-0 overflow-visible">
+      <div className="relative z-10 h-full min-h-0 min-w-0 overflow-visible">
         {/* Always mounted — the panel owns its collapsed rendering, so a
          * derived auto-close never remounts it. `bookEffectiveOpen` folds the
          * concession solve into the open flag WITHOUT touching the stored
@@ -318,7 +330,13 @@ function ShellFrame({
         <BookPanel
           activeSessionId={activeSessionId}
           bookOpen={welcomeStage ? bookOpen : bookEffectiveOpen}
-          onToggle={toggleBook}
+          onToggle={() => {
+            if (lighter && !bookEffectiveOpen) {
+              setBookOpen(true);
+              setSidebarNarrowExpanded(false);
+            }
+            else toggleBook();
+          }}
         />
       </div>
 
@@ -329,6 +347,9 @@ function ShellFrame({
           side="sidebar"
           left={cols.sidebar}
           label="Resize the sessions sidebar"
+          value={cols.sidebar}
+          min={SIDEBAR_MIN}
+          max={SIDEBAR_MAX}
           onStart={onSidebarStart}
           onDrag={onSidebarDrag}
           onEnd={onDragEnd}
@@ -338,7 +359,10 @@ function ShellFrame({
         <ShellDragHandle
           side="book"
           left={viewport - cols.book}
-          label="Resize the BOOK panel"
+          label={lighter ? "Resize the Vex panel" : "Resize the BOOK panel"}
+          value={cols.book}
+          min={BOOK_MIN}
+          max={BOOK_MAX}
           onStart={onBookStart}
           onDrag={onBookDrag}
           onEnd={onDragEnd}

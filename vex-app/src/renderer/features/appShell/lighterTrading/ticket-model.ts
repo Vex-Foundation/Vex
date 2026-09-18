@@ -3,6 +3,7 @@ import type {
   LighterTradingAccount,
   LighterTradingMarket,
 } from "@shared/schemas/lighter-trading.js";
+import { wholeLeverageLabelFromFraction } from "./leverage-display.js";
 import { toDecimal } from "./decimal.js";
 
 export type TradeSide = "buy" | "sell";
@@ -211,8 +212,7 @@ export function resolveTicketMargin(
 }
 
 export function leverageLabel(initialMarginFraction: number): string {
-  const leverage = 10_000 / initialMarginFraction;
-  return `${Number.isInteger(leverage) ? leverage : leverage.toFixed(2).replace(/\.?0+$/, "")}x`;
+  return wholeLeverageLabelFromFraction(initialMarginFraction);
 }
 
 /** Collateral an order of this notional locks up. */
@@ -355,11 +355,12 @@ export function toDeskOrderDraft(draft: TradeDraft): LighterDeskOrderDraft {
 export function protectionPrefill(
   draft: TradeDraft,
   key: number,
+  filledBaseAmount: string = draft.baseAmount,
 ): TradeTicketPrefill | null {
   if (draft.mode !== "market" && draft.mode !== "limit") return null;
   const protection = draft.protection ?? null;
   if (protection === null || (protection.stopLoss === null && protection.takeProfit === null)) return null;
-  const base = { key, side: draft.side === "buy" ? "sell" : "buy", baseAmount: draft.baseAmount, reduceOnly: true } as const;
+  const base = { key, side: draft.side === "buy" ? "sell" : "buy", baseAmount: filledBaseAmount, reduceOnly: true } as const;
   if (protection.stopLoss !== null && protection.takeProfit !== null) {
     return { ...base, mode: "oco", protection };
   }

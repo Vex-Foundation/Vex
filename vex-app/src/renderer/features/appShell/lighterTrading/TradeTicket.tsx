@@ -38,12 +38,19 @@ const ONBOARDING_STEPS = [
 ] as const;
 
 const STEP_STATE_TEXT = { done: "Done", todo: "To do", not_required: "Not needed" } as const;
+const SETUP_ACTION_TEXT: Readonly<Record<LighterOnboardingChecklist["nextAction"], string>> = {
+  start_setup: "Set up Lighter",
+  continue_setup: "Continue setup",
+  check_status: "Check setup",
+  none: "Setup complete",
+};
 
 export function TradeTicket({
   market,
   book,
   lastPrice,
   available,
+  baseAvailable,
   equity,
   margin,
   settlementSymbol,
@@ -60,18 +67,22 @@ export function TradeTicket({
   onAsk,
   onConnect,
   onOpenLeverage,
+  pendingApprovalCount = 0,
+  onReviewApprovals,
 }: {
   readonly market: LighterTradingMarket;
   readonly book: LighterOrderBookData;
   readonly lastPrice: number | null;
   /** Settlement balance the account can still commit, when the account read succeeded. */
   readonly available: string | null;
+  /** Spot base inventory available to sell, when the account read succeeded. */
+  readonly baseAvailable?: string | null;
   /** Account equity Risk mode sizes against; null without an account. */
   readonly equity: number | null;
   /** Margin terms for this market; null for spot or when Lighter reported none. */
   readonly margin: TicketMargin | null;
   readonly settlementSymbol: string;
-  /** Why there is no account to trade from; the ticket offers Connect Lighter instead of Long/Short. */
+  /** Why there is no account to trade from; the ticket offers setup instead of Long/Short. */
   readonly accountGap?: LighterTradingAccountUnavailableReason | null;
   /** Where the session's wallet stands on the three onboarding steps; null until read. */
   readonly checklist?: LighterOnboardingChecklist | null;
@@ -93,9 +104,14 @@ export function TradeTicket({
   readonly onConnect: () => void;
   /** Opens the leverage sheet for this market over the desk. */
   readonly onOpenLeverage: () => void;
+  /** Desk approvals that still require a decision, including a dismissed modal. */
+  readonly pendingApprovalCount?: number;
+  readonly onReviewApprovals?: () => void;
 }): JSX.Element {
-  const form = useTradeTicketForm({ market, book, lastPrice, available, equity, margin, dataFresh, prefill, pricePick });
+  const form = useTradeTicketForm({ market, book, lastPrice, available, baseAvailable, equity, margin, dataFresh, prefill, pricePick });
   const { mode, side, protective, triggerLimit, perp, symbols } = form;
+  const availableForSide = market.marketType === "spot" && side === "sell" ? (baseAvailable ?? null) : available;
+  const availableSymbol = market.marketType === "spot" && side === "sell" ? symbols.base : settlementSymbol;
   // A fresh ticket is incomplete, not wrong: problems show once a field changes.
   const [touched, setTouched] = useState(false);
   useEffect(() => {
@@ -130,11 +146,12 @@ export function TradeTicket({
   // No account yet: the ticket is one sentence and the way in, not a form of
   // dashes. The chart and book keep working; the dock says the same words.
   if (accountGap === "not_onboarded") {
+    const setupAction = checklist?.nextAction ?? "start_setup";
     return (
-      <form className="lit-ticket" aria-label="Order ticket" data-gate="not-connected" onSubmit={(event) => event.preventDefault()}>
-        <div className="lit-ticket-connect" role="status">
-          <b>Not connected</b>
-          <span>Vex sets the account up in the chat, one approval card per step. Then this ticket previews orders.</span>
+      <form className="lit-ticket" aria-label="Order ticket" data-gate="not-connected" data-setup-progress={checklist?.progress} onSubmit={(event) => event.preventDefault()}>
+        <div className="lit-ticket-connect" role="status" aria-live="polite">
+          <b>Lighter setup</b>
+          <span>{checklist?.detail ?? "Vex checks your account, then guides each required approval in the chat."}</span>
           <ol className="lit-ticket-steps" aria-label="Setup steps">
             {ONBOARDING_STEPS.map(([key, label]) => {
               const state = checklist?.[key] ?? "pending";
@@ -146,7 +163,9 @@ export function TradeTicket({
               );
             })}
           </ol>
-          <button type="button" className="lit-review-button" onClick={onConnect}>Connect Lighter</button>
+          <button type="button" className="lit-review-button" onClick={onConnect} disabled={setupAction === "none"}>
+            {SETUP_ACTION_TEXT[setupAction]}
+          </button>
         </div>
       </form>
     );
@@ -161,24 +180,30 @@ export function TradeTicket({
       data-side={side}
       data-mode={mode}
     >
-      {/* The fields scroll; the submit footer below never leaves the viewport. */}
-      <div className="lit-ticket-body">
+      {/* Account context and submit actions stay fixed. Only the variable-height
+          order fields scroll when the stacked desk is short. */}
+      <div className="lit-ticket-meta">
         {perp ? (
-          <div className="lit-ticket-meta">
-            <button
-              type="button"
-              className="lit-margin-chip"
-              title="Change leverage and margin mode"
-              aria-label="Leverage and margin mode"
-              onClick={onOpenLeverage}
-            >
-              {margin === null
-                ? "Leverage"
-                : `${margin.marginMode === "cross" ? "Cross" : "Isolated"} · ${leverageLabel(margin.initialMarginFraction)}`}
-              <i aria-hidden="true">›</i>
-            </button>
-          </div>
+          <button
+            type="button"
+            className="lit-margin-chip"
+            title="Change leverage and margin mode"
+            aria-label="Leverage and margin mode"
+            onClick={onOpenLeverage}
+          >
+            {margin === null
+              ? "Leverage"
+              : `${margin.marginMode === "cross" ? "Cross" : "Isolated"} · ${leverageLabel(margin.initialMarginFraction)}`}
+            <i aria-hidden="true">›</i>
+          </button>
         ) : null}
+        <span className="lit-ticket-available">
+          <small>Avbl</small>
+          <b>{availableForSide === null ? NO_VALUE : `${formatDecimalString(availableForSide)} ${availableSymbol}`}</b>
+        </span>
+      </div>
+
+      <div className="lit-ticket-body">
 
         <div className="lit-order-type-controls" role="group" aria-label="Order type">
           {(["market", "limit"] as const).map((item) => (
@@ -195,11 +220,12 @@ export function TradeTicket({
             </button>
           ) : null}
         </div>
-
-        <span className="lit-ticket-available">
-          <small>Avbl</small>
-          <b>{available === null ? NO_VALUE : `${formatDecimalString(available)} ${settlementSymbol}`}</b>
-        </span>
+        <p
+          className="lit-ticket-book-hint"
+          title="Click a book or trade price for Limit. Shift-click for Trigger."
+        >
+          Price click → Limit · Shift-click → Trigger
+        </p>
 
         {protective ? (
           <p className="lit-ticket-context">Reduce only. Sell protects a long, buy protects a short.</p>
@@ -275,7 +301,7 @@ export function TradeTicket({
                   type="button"
                   aria-pressed={form.riskMode}
                   disabled={equity === null}
-                  title={equity === null ? "Connect Lighter to size by risk" : "Size from the stop-loss: risk a share of equity"}
+                  title={equity === null ? "Set up Lighter to size by risk" : "Size from the stop-loss: risk a share of equity"}
                   onClick={() => form.selectSizeMode("risk")}
                 >
                   Risk
@@ -371,7 +397,7 @@ export function TradeTicket({
 
         {mode === "market" || mode === "limit" || triggerLimit ? (
           <div className="lit-ticket-options">
-            {!protective ? (
+            {perp && !protective ? (
               <span className="lit-check-group">
                 <label className="lit-check-row">
                   <input
@@ -456,11 +482,34 @@ export function TradeTicket({
       </div>
 
       <div className="lit-ticket-footer">
+        {pendingApprovalCount > 0 ? (
+          <div className="lit-ticket-approval-waiting" role="status">
+            <span><b>Approval waiting</b><small>{pendingApprovalCount === 1 ? "1 action needs a decision" : `${String(pendingApprovalCount)} actions need a decision`}</small></span>
+            {onReviewApprovals === undefined ? null : (
+              <button type="button" onClick={onReviewApprovals}>Review</button>
+            )}
+          </div>
+        ) : null}
         {handoffError ? <p className="lit-review-error" role="alert">{handoffError}</p> : null}
         {outcome !== null && handoffError == null ? (
           <p className="lit-review-outcome" data-tone={outcome.tone} role="status">{outcome.text}</p>
         ) : null}
         {problem !== null ? <p className="lit-validation" role="status">{problem}</p> : null}
+        {onAsk === undefined ? null : (
+          <button
+            type="button"
+            className="lit-ask-draft"
+            disabled={submitting || form.validation !== null}
+            title={form.validation ?? "Ask Vex to review this draft before placing an order"}
+            onClick={() => {
+              setTouched(true);
+              const draft = form.buildDraft();
+              if (draft !== null) onAsk(draft);
+            }}
+          >
+            <VexMark size={14} /> Review with Vex
+          </button>
+        )}
         <div className="lit-side-actions" role="group" aria-label={protective ? "Position close side" : "Order side"}>
           {(["buy", "sell"] as const).map((item) => {
             const active = item === side;
@@ -486,24 +535,9 @@ export function TradeTicket({
           <p className="lit-review-note" role="note">
             <span>
               {activeSession
-                ? "Nothing signs until you confirm the card."
-                : "Opens a Vex session first. Nothing signs until you confirm the card."}
+                ? "Nothing signs until you confirm."
+                : "Opens Vex first. Nothing signs until you confirm."}
             </span>
-            {onAsk === undefined ? null : (
-              <button
-                type="button"
-                className="lit-ask-draft"
-                disabled={submitting || form.validation !== null}
-                title="Second opinion on this order before you send it"
-                onClick={() => {
-                  setTouched(true);
-                  const draft = form.buildDraft();
-                  if (draft !== null) onAsk(draft);
-                }}
-              >
-                <VexMark size={11} /> Ask Vex
-              </button>
-            )}
           </p>
         ) : null}
       </div>
@@ -536,7 +570,7 @@ function executionLabel(form: TradeTicketForm): string {
 function SlippageField({ form }: { readonly form: TradeTicketForm }): JSX.Element {
   return (
     <div className="lit-field lit-slippage-field">
-      <span>Max Slippage</span>
+      <span title="Maximum allowed slippage">Slippage</span>
       <span className="lit-slippage-controls" role="group" aria-label="Max slippage">
         {SLIPPAGE_PRESETS.map((preset) => (
           <button

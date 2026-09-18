@@ -15,6 +15,8 @@ import { TradeTicket } from "./TradeTicket.js";
 import {
   LIGHTER_BOOK_COLUMN_DEFAULT_SHARE,
   LIGHTER_BOOK_COLUMN_MIN,
+  LIGHTER_COMPACT_BOOK_MIN,
+  LIGHTER_COMPACT_BOOK_DEFAULT_SHARE,
   LIGHTER_BOTTOM_COLLAPSED,
   LIGHTER_BOTTOM_DEFAULT_SHARE,
   LIGHTER_BOTTOM_MIN,
@@ -77,13 +79,11 @@ export function LighterCenter(): JSX.Element {
           market={market}
           marketPickerOpen={marketPickerOpen}
           onOpenMarketPicker={() => setMarketPickerOpen((current) => !current)}
-          onSelectEnvironment={desk.selectEnvironment}
           onSelectSection={desk.selectSection}
           snapshot={desk.snapshot}
           liveStats={desk.publicMarketStream.stats}
           streamStatus={desk.publicMarketStream.statsStatus}
           streamReceivedAt={desk.publicMarketStream.statsReceivedAt}
-          onAskVex={market === null ? null : askVex}
         />
         {/* The shell strip's notices/approvals/export land here; see shellStripSlot.ts. */}
         <div className="lit-desk-top-shell" ref={setShellStripSlot} />
@@ -132,8 +132,10 @@ function DeskBody({ desk, theme }: {
   const savedLayout = useLighterAnalysisStore((state) => state.desk.layout);
   const saveDesk = useLighterAnalysisStore((state) => state.saveDesk);
   const [layout, setLayoutState] = useState<LighterLayout>(savedLayout);
-  // Stacked desk: which of the book and the trades the lower-right panel shows.
+  // Compact desk: the market-depth panel below the chart shares book/trades tabs.
   const [bookTab, setBookTab] = useState<"book" | "trades">("book");
+  const [bookCollapsed, setBookCollapsed] = useState(false);
+  const [approvalReopenSignal, setApprovalReopenSignal] = useState(0);
   // A key step or reset commits in the same tick as its change, before React
   // re-renders, so the value to persist has to live outside the closure.
   const layoutRef = useRef(layout);
@@ -148,11 +150,7 @@ function DeskBody({ desk, theme }: {
   const bodyRef = useRef<HTMLDivElement>(null);
   const resolutionTabsRef = useRef<HTMLDivElement>(null);
   useRevealSelectedTab(resolutionTabsRef, resolution);
-  const ticketRef = useRef<HTMLElement>(null);
-  const ticketContentRef = useRef<HTMLDivElement>(null);
   const body = useElementSize(bodyRef);
-  const ticketNatural = useElementSize(ticketContentRef).height;
-  const ticketShown = useElementSize(ticketRef).height;
 
   // Shares become pixels against the measured desk, so a resized window or a
   // folded rail scales every panel together.
@@ -160,6 +158,8 @@ function DeskBody({ desk, theme }: {
   const stacked = body.width > 0 && body.width < LIGHTER_STACK_BELOW;
   const bottomVisible = layout.bottomCollapsed ? LIGHTER_BOTTOM_COLLAPSED : pixels.bottomHeight;
   const column = body.height - 1 - bottomVisible;
+  const bookTrack = bookCollapsed ? 36 : pixels.bookWidth;
+  const compactBookTrack = bookCollapsed ? 36 : pixels.compactBookHeight;
 
   // A minimum book plus a minimum trades panel outranks the dock: when even the
   // dock's floor is too much, it folds to its bar, and it reopens once the
@@ -226,7 +226,18 @@ function DeskBody({ desk, theme }: {
     onChange: (bottomHeight) => { if (body.height > 0) patch({ bottomShare: bottomHeight / body.height }); },
     onCommit: commit,
   });
-  const resizing = bookSplitter.dragging || ticketSplitter.dragging || tradesSplitter.dragging || bottomSplitter.dragging;
+  const compactBookSplitter = useSplitter({
+    axis: "y",
+    grows: "start",
+    value: pixels.compactBookHeight,
+    min: LIGHTER_COMPACT_BOOK_MIN,
+    max: pixels.compactBookMax,
+    defaultValue: Math.round(column * LIGHTER_COMPACT_BOOK_DEFAULT_SHARE),
+    label: "Resize chart and market depth",
+    onChange: (height) => { if (column > 0) patch({ compactBookShare: height / column }); },
+    onCommit: commit,
+  });
+  const resizing = bookSplitter.dragging || ticketSplitter.dragging || tradesSplitter.dragging || bottomSplitter.dragging || compactBookSplitter.dragging;
   // The desk's own clicks pop as a modal; the agent's proposals stay in chat.
   const deskApprovals = approvals.filter((summary) => summary.origin === "desk");
   const symbols = marketSymbols(market.symbol, market.marketType);
@@ -247,9 +258,10 @@ function DeskBody({ desk, theme }: {
       <div
         className="lit-desk-upper"
         data-stacked={stacked || undefined}
+        data-book-collapsed={bookCollapsed || undefined}
         style={stacked
-          ? { gridTemplateColumns: `minmax(0, 1fr) ${pixels.ticketWidth}px`, gridTemplateRows: "fit-content(62%) minmax(0, 1fr)" }
-          : { gridTemplateColumns: `minmax(0, 1fr) ${pixels.bookWidth}px ${pixels.ticketWidth}px` }}
+          ? { gridTemplateColumns: `minmax(0, 1fr) ${pixels.ticketWidth}px`, gridTemplateRows: `minmax(0, 1fr) ${compactBookTrack}px` }
+          : { gridTemplateColumns: `minmax(0, 1fr) ${bookTrack}px ${pixels.ticketWidth}px` }}
       >
         <section className="lit-panel lit-chart-panel" aria-label="Price chart">
           <div className="lit-chart-body">
@@ -312,8 +324,12 @@ function DeskBody({ desk, theme }: {
           </footer>
         </section>
         <div className="lit-book-column" data-tab={stacked ? bookTab : undefined}>
+          {stacked ? <div className="lit-splitter" data-axis="y" {...compactBookSplitter.handleProps} /> : null}
           <MarketBookPanel
-            splitter={stacked ? undefined : <div className="lit-splitter" data-axis="x" {...bookSplitter.handleProps} />}
+            preferredView={stacked ? "split" : "stack"}
+            collapsed={bookCollapsed}
+            onToggleCollapse={() => setBookCollapsed((current) => !current)}
+            splitter={stacked || bookCollapsed ? undefined : <div className="lit-splitter" data-axis="x" {...bookSplitter.handleProps} />}
             heading={bookTabs}
             book={desk.book}
             baseSymbol={symbols.base}
@@ -341,16 +357,15 @@ function DeskBody({ desk, theme }: {
           <div className="lit-splitter" data-axis="x" {...ticketSplitter.handleProps} />
           <section
             className="lit-panel lit-ticket-panel"
-            ref={ticketRef}
-            data-ticket-overflow={ticketNatural > ticketShown}
             aria-label="Order ticket"
           >
-            <div className="lit-ticket-content" ref={ticketContentRef}>
+            <div className="lit-ticket-content">
               <TradeTicket
                 market={market}
                 book={desk.book}
                 lastPrice={desk.lastPrice}
                 available={desk.available}
+                baseAvailable={desk.baseAvailable}
                 equity={desk.equity}
                 settlementSymbol={desk.settlementSymbol}
                 accountGap={desk.accountGap}
@@ -367,6 +382,8 @@ function DeskBody({ desk, theme }: {
                 onAsk={desk.askAboutDraft}
                 onConnect={desk.connectLighter}
                 onOpenLeverage={desk.openLeverage}
+                pendingApprovalCount={deskApprovals.length}
+                onReviewApprovals={() => setApprovalReopenSignal((value) => value + 1)}
               />
             </div>
           </section>
@@ -407,6 +424,7 @@ function DeskBody({ desk, theme }: {
           onResolved={desk.onApprovalResolved}
           skipCloseConfirm={desk.skipCloseConfirm}
           onSkipCloseConfirm={desk.setSkipCloseConfirm}
+          reopenSignal={approvalReopenSignal}
         />
       )}
     </div>

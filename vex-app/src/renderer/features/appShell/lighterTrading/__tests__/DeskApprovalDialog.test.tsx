@@ -14,9 +14,25 @@ vi.mock("../../ApprovalCard.js", () => ({
 function approval(id: string, toolName = "order.create"): ApprovalSummaryDto {
   return {
     id,
-    origin: "desk",
+    sessionId: "00000000-0000-0000-0000-000000000001",
+    toolCallId: null,
+    toolName,
+    status: "pending",
+    permissionAtEnqueue: "restricted",
+    createdAt: "2026-09-18T00:00:00.000Z",
+    resolvedAt: null,
+    reasoningPreview: "",
+    actionKind: "user_wallet_broadcast",
+    riskLevel: "high",
     preview: { toolName, namespace: "lighter", criticalArgs: {} },
-  } as unknown as ApprovalSummaryDto;
+    expiresAt: null,
+    decision: null,
+    decisionReason: null,
+    executionStatus: null,
+    origin: "desk",
+    projectId: null,
+    requestedByClient: null,
+  };
 }
 
 const skip = { skipCloseConfirm: false, onSkipCloseConfirm: vi.fn() };
@@ -34,6 +50,7 @@ describe("DeskApprovalDialog", () => {
     );
     expect(dialogOf(container).open).toBe(true);
     expect(dialogOf(container).textContent).toContain("a1");
+    expect(container.querySelector("dialog h2")?.textContent).toBe("Review order");
     rerender(<DeskApprovalDialog approvals={[]} sessionId="s1" focusApprovalId={null} onResolved={vi.fn()} {...skip} />);
     expect(dialogOf(container).open).toBe(false);
   });
@@ -49,6 +66,23 @@ describe("DeskApprovalDialog", () => {
     );
     expect(dialogOf(container).open).toBe(true);
     expect(dialogOf(container).textContent).toContain("a2");
+  });
+
+  it("reopens the same pending card when the ticket requests review", () => {
+    const props = {
+      approvals: [approval("a1")],
+      sessionId: "s1",
+      focusApprovalId: null,
+      onResolved: vi.fn(),
+      ...skip,
+    };
+    const { container, rerender } = render(<DeskApprovalDialog {...props} reopenSignal={0} />);
+    fireEvent(dialogOf(container), new Event("cancel", { cancelable: true }));
+    expect(dialogOf(container).open).toBe(false);
+
+    rerender(<DeskApprovalDialog {...props} reopenSignal={1} />);
+    expect(dialogOf(container).open).toBe(true);
+    expect(dialogOf(container).textContent).toContain("a1");
   });
 
   it("offers Don't ask again only on a Market close card and reports the tick", () => {
@@ -82,5 +116,23 @@ describe("DeskApprovalDialog", () => {
     expect(onSkipCloseConfirm).toHaveBeenCalledWith(true);
     // The card that offered the box still waits for Confirm.
     expect(dialogOf(container).open).toBe(true);
+    expect(container.querySelector("dialog h2")?.textContent).toBe("Review close");
+  });
+
+  it.each([
+    ["order.cancel", "Review cancellation"],
+    ["position.protect", "Review protection"],
+  ])("names %s approvals", (toolName, title) => {
+    const { container } = render(
+      <DeskApprovalDialog approvals={[approval("a1", toolName)]} sessionId="s1" focusApprovalId={null} onResolved={vi.fn()} {...skip} />,
+    );
+    expect(container.querySelector("dialog h2")?.textContent).toBe(title);
+  });
+
+  it("names mixed approval cards as mixed actions", () => {
+    const { container } = render(
+      <DeskApprovalDialog approvals={[approval("a1"), approval("a2", "order.cancel")]} sessionId="s1" focusApprovalId={null} onResolved={vi.fn()} {...skip} />,
+    );
+    expect(container.querySelector("dialog h2")?.textContent).toBe("Review mixed actions");
   });
 });

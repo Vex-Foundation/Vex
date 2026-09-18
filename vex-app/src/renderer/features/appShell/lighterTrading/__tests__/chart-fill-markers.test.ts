@@ -7,6 +7,7 @@ const colors = { positive: "green", negative: "red" };
 function fill(overrides: Partial<LighterTradingFill>): LighterTradingFill {
   return {
     tradeId: "1",
+    orderId: "o1",
     marketId: 1,
     symbol: "BTC",
     side: "buy",
@@ -30,8 +31,8 @@ describe("fillMarkers", () => {
       fill({ tradeId: "c", side: "sell", size: "1", price: "85000", timestamp: 1_700_000_130_000 }),
     ], bars, colors);
     expect(markers).toEqual([
-      { id: "fill:1700000000:buy", time: 1_700_000_000, position: "belowBar", shape: "arrowUp", color: "green" },
-      { id: "fill:1700000120:sell", time: 1_700_000_120, position: "aboveBar", shape: "arrowDown", color: "red" },
+      { id: "fill:1700000000:buy", time: 1_700_000_000, position: "belowBar", shape: "arrowUp", color: "green", size: 2 },
+      { id: "fill:1700000120:sell", time: 1_700_000_120, position: "aboveBar", shape: "arrowDown", color: "red", size: 2 },
     ]);
   });
 

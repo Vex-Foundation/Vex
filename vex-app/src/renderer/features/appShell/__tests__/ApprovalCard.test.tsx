@@ -13,7 +13,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 
@@ -570,6 +570,32 @@ describe("ApprovalCard", () => {
     expect(screen.getByRole("alert").textContent).toContain(
       "Wallet rejected the request.",
     );
+  });
+
+  it("invalidates approval queries when approve returns a Result-level failure", async () => {
+    const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries").mockResolvedValue();
+    mockApproveMutate.mockImplementation((_input, options) => {
+      void options?.onSuccess?.({
+        ok: false,
+        error: {
+          code: "approvals.dispatch_failed",
+          domain: "approvals",
+          message: "Dispatch failed.",
+          retryable: true,
+          userActionable: true,
+          redacted: true,
+          correlationId: "req-y",
+        },
+      });
+    });
+
+    renderCard(makeSummary({ origin: "desk", riskLevel: "info", actionKind: "read" }), false);
+    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+
+    await waitFor(() => expect(invalidate).toHaveBeenCalled());
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["approvals", "pending", SESSION] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["approvals", "history", SESSION] });
+    invalidate.mockRestore();
   });
 
   // S5 signed glint — the ONE success light in the approvals flow.

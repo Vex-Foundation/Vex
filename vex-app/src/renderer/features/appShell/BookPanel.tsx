@@ -67,7 +67,7 @@ export function BookPanel({
   // Lighter mode: the rail is the desk's conversation, never the instrument.
   if (runtimeMode === "lighter") {
     return (
-      <BookRailFrame label="Lighter chat" bookOpen={bookOpen} onToggle={onToggle}>
+      <BookRailFrame label="Lighter chat" headline="Vex" toggleLabel="Vex panel" collapsedLabel="Open Vex" bookOpen={bookOpen} onToggle={onToggle}>
         <LighterChatRail />
       </BookRailFrame>
     );

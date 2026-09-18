@@ -3,6 +3,7 @@
  * ------------------------------------------------------------------------- */
 
 .lit-bottom-header { padding-inline: 4px 10px; }
+.lit-bottom-header { gap: 10px; }
 
 /* Risk strip: between the tabs and the status, one line, never wraps. */
 .lit-risk-strip {
@@ -78,6 +79,7 @@
   min-height: 0;
   flex: 1 1 auto;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .lit-account-table { min-width: 920px; }
@@ -120,7 +122,10 @@
   min-height: 38px;
   border-top: 1px solid var(--lit-line);
   color: var(--lit-ink-secondary);
+  transition: background-color 120ms ease;
 }
+
+.lit-account-row:hover { background: color-mix(in srgb, var(--lit-hover) 55%, transparent); }
 
 .lit-account-row b { color: var(--lit-ink); font-weight: 600; }
 
@@ -173,6 +178,14 @@
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.lit-fills-note {
+  margin: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--lit-line);
+  color: var(--lit-ink-muted);
+  font-size: 11px;
 }
 
 .lit-cancel-all,
@@ -379,6 +392,23 @@
 }
 
 .lit-account-empty-action:hover { background: var(--lit-hover); }
+
+.lit-account-empty-action:focus-visible,
+.lit-account-refresh-button:focus-visible,
+.lit-row-actions button:focus-visible,
+.lit-row-actions select:focus-visible,
+.lit-cancel-all:focus-visible,
+.lit-fund-actions button:focus-visible {
+  outline: 2px solid var(--lit-focus);
+  outline-offset: 2px;
+}
+
+@container (max-width: 560px) {
+  .lit-bottom-header { padding-inline: 2px 8px; }
+  .lit-bottom-tabs { gap: 2px; }
+  .lit-bottom-tabs button { padding-inline: 7px; }
+  .lit-account-refresh-button { padding-inline: 7px; }
+}
 
 /* Collapsed dock: header only; the tabs stay clickable and re-expand it. */
 .lit-bottom-collapse {

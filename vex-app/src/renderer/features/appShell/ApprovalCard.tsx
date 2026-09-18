@@ -170,6 +170,7 @@ export function ApprovalCard({
             onResolved?.("approved", result.data);
           } else {
             setInlineError(result.error.message);
+            void invalidateOnResolve();
           }
         },
         onError: (e) => setInlineError(e.message),
@@ -194,6 +195,7 @@ export function ApprovalCard({
             onResolved?.("rejected", result.data);
           } else {
             setInlineError(result.error.message);
+            void invalidateOnResolve();
           }
         },
         onError: (e) => setInlineError(e.message),

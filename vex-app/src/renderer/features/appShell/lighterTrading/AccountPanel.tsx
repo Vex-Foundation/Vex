@@ -10,6 +10,8 @@ import { IconChevronDown, IconChevronUp } from "../../../components/icons/index.
 import { useLighterTradingAccount, useLighterTradingFills } from "../../../lib/api/lighter-trading.js";
 import { CLOSE_PORTIONS, accountRisk, marginUsage, positionMetrics, positionProtection, type ClosePortion, type LighterOpenOrderRow, type LighterPositionRow } from "./account-model.js";
 import { NO_VALUE, formatDecimalString, formatNumber, formatPrice, formatRetrievedAt } from "./format.js";
+import { wholeLeverageDisplay } from "./leverage-display.js";
+import { useUiStore } from "../../../stores/uiStore.js";
 
 type BottomTab = "positions" | "orders" | "fills" | "balances";
 
@@ -41,7 +43,7 @@ function signedPercent(value: number | null): string {
 
 function leverageText(leverage: number | null, marginMode: "cross" | "isolated" | null): string {
   if (leverage === null) return NO_VALUE;
-  const label = `${Number.isInteger(leverage) ? leverage : leverage.toFixed(1).replace(/\.0$/, "")}x`;
+  const label = `${wholeLeverageDisplay(leverage)}x`;
   return marginMode === null ? label : `${label} ${marginMode === "cross" ? "Cross" : "Isolated"}`;
 }
 
@@ -145,6 +147,7 @@ export function TradingBottomPanel({
 }): JSX.Element {
   const [tab, setTab] = useState<BottomTab>("positions");
   const accountQuery = useLighterTradingAccount(environment, open);
+  const openUnlock = useUiStore((state) => state.openUnlock);
   const account = accountQuery.data?.ok === true ? accountQuery.data.data : null;
   const activeTabId = `lit-bottom-tab-${tab}`;
   const activePanelId = `lit-bottom-panel-${tab}`;
@@ -176,6 +179,25 @@ export function TradingBottomPanel({
                 aria-controls={`lit-bottom-panel-${item}`}
                 aria-selected={item === tab}
                 tabIndex={item === tab ? 0 : -1}
+                onKeyDown={(event) => {
+                  const index = ACCOUNT_TABS.indexOf(item);
+                  const nextIndex = event.key === "ArrowRight" || event.key === "ArrowDown"
+                    ? (index + 1) % ACCOUNT_TABS.length
+                    : event.key === "ArrowLeft" || event.key === "ArrowUp"
+                      ? (index - 1 + ACCOUNT_TABS.length) % ACCOUNT_TABS.length
+                      : event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? ACCOUNT_TABS.length - 1
+                          : null;
+                  if (nextIndex === null) return;
+                  event.preventDefault();
+                  const nextTab = ACCOUNT_TABS.at(nextIndex);
+                  if (nextTab === undefined) return;
+                  setTab(nextTab);
+                  if (collapsed) onToggleCollapse();
+                  window.requestAnimationFrame(() => document.getElementById(`lit-bottom-tab-${nextTab}`)?.focus());
+                }}
                 onClick={() => {
                   setTab(item);
                   if (collapsed) onToggleCollapse();
@@ -189,7 +211,7 @@ export function TradingBottomPanel({
         </div>
         {account !== null && account.status !== "unavailable" ? <RiskStrip account={account} /> : null}
         <div className="lit-bottom-status">
-          {status === null ? null : <span>{status}</span>}
+          {status === null ? null : <span role="status" aria-live="polite">{status}</span>}
           <button
             type="button"
             className="lit-account-refresh-button"
@@ -222,9 +244,9 @@ export function TradingBottomPanel({
             retrying={accountQuery.isFetching}
           />
         ) : account === null ? (
-          <AccountUnavailable reason={null} onConnect={actions.onConnect} onOpenSettings={actions.onOpenSettings} />
+          <AccountUnavailable reason={null} onConnect={actions.onConnect} onOpenSettings={actions.onOpenSettings} onUnlock={() => openUnlock("appShell")} />
         ) : account.status === "unavailable" ? (
-          <AccountUnavailable reason={account.unavailableReason} onConnect={actions.onConnect} onOpenSettings={actions.onOpenSettings} />
+          <AccountUnavailable reason={account.unavailableReason} onConnect={actions.onConnect} onOpenSettings={actions.onOpenSettings} onUnlock={() => openUnlock("appShell")} />
         ) : tab === "positions" ? (
           <PositionsTab account={account} activeMarketId={activeMarketId} activeMarkPrice={activeMarkPrice} activePriceDecimals={activePriceDecimals} closeConfirmSkipped={closeConfirmSkipped} actions={actions} />
         ) : tab === "orders" ? (
@@ -248,22 +270,23 @@ export function TradingBottomPanel({
 function RiskStrip({ account }: { readonly account: LighterTradingAccount }): JSX.Element {
   const risk = accountRisk(account.summary);
   const money = (value: number | null): string => formatNumber(value, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const settlement = account.environment === "core" ? "USDC" : "USDG";
   const pnl = risk.unrealizedPnl;
   return (
     <dl className="lit-risk-strip" aria-label="Account risk">
-      <div><dt>Equity</dt><dd>{money(risk.equity)}</dd></div>
-      <div><dt>Avbl</dt><dd>{money(risk.available)}</dd></div>
+      <div><dt>Equity</dt><dd>{money(risk.equity)} {settlement}</dd></div>
+      <div><dt>Avbl</dt><dd>{money(risk.available)} {settlement}</dd></div>
       <div>
         <dt>uPnL</dt>
         <dd data-tone={signedTone(pnl)}>
-          {pnl === null ? NO_VALUE : `${pnl > 0 ? "+" : ""}${money(pnl)}`}
+          {pnl === null ? NO_VALUE : `${pnl > 0 ? "+" : ""}${money(pnl)} ${settlement}`}
           {risk.roe === null ? null : <i> ({signedPercent(risk.roe)})</i>}
         </dd>
       </div>
       <div>
         <dt>Margin</dt>
         <dd>
-          {money(risk.marginUsed)}
+          {money(risk.marginUsed)} {settlement}
           {risk.usage === null ? null : (
             <span
               className="lit-margin-usage-bar"
@@ -290,10 +313,11 @@ function RiskStrip({ account }: { readonly account: LighterTradingAccount }): JS
  * unlock, one is onboarding, one is a choice Vex refuses to make for them.
  * A null reason is the pre-first-answer state, not a fourth reason.
  */
-function AccountUnavailable({ reason, onConnect, onOpenSettings }: {
+function AccountUnavailable({ reason, onConnect, onOpenSettings, onUnlock }: {
   readonly reason: LighterTradingAccountUnavailableReason | null;
   readonly onConnect: () => void;
   readonly onOpenSettings: (event?: { readonly currentTarget: EventTarget | null }) => void;
+  readonly onUnlock: () => void;
 }): JSX.Element {
   const copy = reason === "locked_vault"
     ? {
@@ -314,12 +338,13 @@ function AccountUnavailable({ reason, onConnect, onOpenSettings }: {
       <b>{copy.title}</b>
       <span>{copy.detail}</span>
       {/* Unlocking is the vault's flow; too many accounts is fixed in Settings;
-          no account is a chat the agent runs. "Connect Lighter" is the ticket's
-          word for that same gap. */}
-      {reason === "locked_vault" ? null : reason === "ambiguous_account" ? (
+          setup is a chat the agent runs one approval at a time. */}
+      {reason === "locked_vault" ? (
+        <button type="button" className="lit-account-empty-action" onClick={onUnlock}>Unlock Vex</button>
+      ) : reason === "ambiguous_account" ? (
         <button type="button" className="lit-account-empty-action" onClick={onOpenSettings}>Open Settings</button>
       ) : (
-        <button type="button" className="lit-account-empty-action" onClick={onConnect}>Connect Lighter</button>
+        <button type="button" className="lit-account-empty-action" onClick={onConnect}>Set up Lighter</button>
       )}
     </div>
   );
@@ -585,38 +610,43 @@ function FillsTab({ environment }: {
     return <p className="lit-book-empty">No fills yet.</p>;
   }
   return (
-    <div className="lit-account-table lit-fills" role="table" aria-label="Recent Lighter fills">
-      <div className="lit-account-columns" role="row">
-        <span role="columnheader">Time</span><span role="columnheader">Market</span>
-        <span role="columnheader">Side</span><span role="columnheader">Price</span>
-        <span role="columnheader">Size</span><span role="columnheader">Value</span>
-        <span role="columnheader">Realized PnL</span>
+    <>
+      {fills.truncated ? (
+        <p className="lit-fills-note" role="note">Showing the most recent fills; older activity is not loaded.</p>
+      ) : null}
+      <div className="lit-account-table lit-fills" role="table" aria-label="Recent Lighter fills">
+        <div className="lit-account-columns" role="row">
+          <span role="columnheader">Time</span><span role="columnheader">Market</span>
+          <span role="columnheader">Side</span><span role="columnheader">Price</span>
+          <span role="columnheader">Size</span><span role="columnheader">Value</span>
+          <span role="columnheader">Realized PnL</span>
+        </div>
+        <div className="lit-account-rows" role="rowgroup">
+          {fills.fills.map((fill) => {
+            const when = orderTimestampDetails(fill.timestamp);
+            const detail = fillTypeLabel(fill);
+            return (
+              <div className="lit-account-row" role="row" key={`${fills.environment}:${fills.accountIndex}:${fill.tradeId}`}>
+                <span role="cell">
+                  {when === null ? NO_VALUE : <time dateTime={when.iso}>{when.label}</time>}
+                </span>
+                <span className="lit-order-cell" role="cell">
+                  <b>{fill.symbol}</b>
+                  {detail === null ? null : <small>{detail}</small>}
+                </span>
+                <span role="cell" data-tone={fill.side === "buy" ? "positive" : "negative"}>
+                  {fill.side === "buy" ? "Buy" : "Sell"}
+                </span>
+                <span role="cell">{num(fill.price)}</span>
+                <span role="cell">{num(fill.size)}</span>
+                <span role="cell">{num(fill.value)}</span>
+                <span role="cell" data-tone={signedTone(fill.realizedPnl)}>{num(fill.realizedPnl)}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
-      <div className="lit-account-rows" role="rowgroup">
-        {fills.fills.map((fill) => {
-          const when = orderTimestampDetails(fill.timestamp);
-          const detail = fillTypeLabel(fill);
-          return (
-            <div className="lit-account-row" role="row" key={`${fills.environment}:${fills.accountIndex}:${fill.tradeId}`}>
-              <span role="cell">
-                {when === null ? NO_VALUE : <time dateTime={when.iso}>{when.label}</time>}
-              </span>
-              <span className="lit-order-cell" role="cell">
-                <b>{fill.symbol}</b>
-                {detail === null ? null : <small>{detail}</small>}
-              </span>
-              <span role="cell" data-tone={fill.side === "buy" ? "positive" : "negative"}>
-                {fill.side === "buy" ? "Buy" : "Sell"}
-              </span>
-              <span role="cell">{num(fill.price)}</span>
-              <span role="cell">{num(fill.size)}</span>
-              <span role="cell">{num(fill.value)}</span>
-              <span role="cell" data-tone={signedTone(fill.realizedPnl)}>{num(fill.realizedPnl)}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -658,8 +688,8 @@ function BalancesTab({ account, onFund }: {
       </div>
       <div className="lit-fund-actions">
         <button type="button" onClick={() => onFund("deposit")}>Deposit</button>
-        <button type="button" onClick={() => onFund("withdraw")}>Withdraw</button>
-        <small>Vex walks you through it in this session; nothing moves without your approval.</small>
+        <button type="button" onClick={() => onFund("withdraw")}>Withdrawal help</button>
+        <small>Deposits require approval. Withdrawal help explains how to finish on Lighter.</small>
       </div>
       <p className="lit-asset-section">Token balances</p>
       {account.assets.length === 0 ? (

@@ -149,10 +149,10 @@ export function deskQuickPrompts(
     const plan = (side: "long" | "short"): string =>
       `${context} Plan a ${side} risking 1% of my available Lighter balance: the entry trigger, stop, targets, risk-to-reward, and the position size that keeps the loss at the stop to 1%. ${NO_EXECUTION}`;
     return [
-      { label: "Read this chart", message: `${context} Read the current chart: market structure, key levels, and clear invalidation. ${NO_EXECUTION}` },
-      { label: "Where's the liquidity?", message: `${context} Where is the liquidity? Read the order book and recent trades for resting size, likely stop clusters, and absorption. ${NO_EXECUTION}` },
-      { label: "Plan a long, 1% risk", message: plan("long") },
-      { label: "Plan a short, 1% risk", message: plan("short") },
+      { label: "Analyze chart", message: `${context} Read the current chart: market structure, key levels, and clear invalidation. ${NO_EXECUTION}` },
+      { label: "Find liquidity", message: `${context} Where is the liquidity? Read the order book and recent trades for resting size, likely stop clusters, and absorption. ${NO_EXECUTION}` },
+      { label: "Plan long · 1%", message: plan("long") },
+      { label: "Plan short · 1%", message: plan("short") },
     ];
   }
   const held = `I am ${position.side} ${position.size} ${position.symbol}${position.entryPrice === null ? "" : ` from ${position.entryPrice}`}.`;

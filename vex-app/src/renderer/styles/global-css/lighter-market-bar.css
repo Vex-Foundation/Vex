@@ -178,7 +178,7 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
 /* The bar answers to its own width (`.lit-desk-top` is the container), not
  * the viewport: the shell rails on both sides decide how much it gets. */
 /* Thresholds come from the measured strip: the fixed items (switch, market,
- * price, categories, Ask, Live) take 689px of the container, then each stat
+ * price, categories, Live) leave the remaining container width to each stat
  * its own width. Every step removes whole stats so the strip never shows a
  * half label; the scroll above is only the safety net for longer values. */
 @container (max-width: 1350px) {
@@ -276,4 +276,36 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   color: var(--lit-ink);
 }
 
-.lit-market-bar > .lit-environment-switch { margin-right: -8px; }
+/* Keep the register compact while giving the two primary readouts a clear
+ * rhythm: market identity, last price, then secondary statistics. */
+.lit-market-bar { gap: 14px; }
+
+button.lit-market-select {
+  max-width: 188px;
+  overflow: hidden;
+}
+
+button.lit-market-select > span { overflow: hidden; }
+button.lit-market-select small { overflow: hidden; text-overflow: ellipsis; }
+
+.lit-market-price {
+  min-width: 86px;
+  border-left: 1px solid var(--lit-line);
+  padding-left: 14px;
+}
+
+.lit-market-metrics { gap: 16px; }
+
+.lit-live-status[data-status="live"] i {
+  animation: lit-live-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes lit-live-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--lit-positive) 0%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--lit-positive) 22%, transparent); }
+}
+
+@container (max-width: 930px) {
+  .lit-market-bar { gap: 10px; }
+  .lit-market-price { padding-left: 10px; }
+}

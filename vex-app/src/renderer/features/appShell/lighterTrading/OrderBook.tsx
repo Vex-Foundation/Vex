@@ -55,11 +55,11 @@ function BookColumn({ levels, side, unit, maxTotal, view, onPriceSelect }: {
   readonly onPriceSelect: PriceSelect;
 }): JSX.Element {
   const ticks = useLevelTicks(levels);
-  // Stacked, the asks read far to best downward so the inside meets the mid row.
-  const rows = view === "stack" && side === "ask" ? [...levels].reverse() : levels;
+  // Stacked asks use column-reverse: the best price starts beside the mid row,
+  // and the trader can scroll upward to deeper levels without moving the bids.
   return (
     <div className="lit-book-rows" data-side={side}>
-      {rows.map((level) => {
+      {levels.map((level) => {
         const depth = maxTotal > 0 ? Math.min(100, (Number(level.total) / maxTotal) * 100) : 0;
         const tick = ticks.get(level.price) ?? 0;
         return (
@@ -87,6 +87,9 @@ function BookColumn({ levels, side, unit, maxTotal, view, onPriceSelect }: {
 export function MarketBookPanel({
   splitter,
   heading,
+  collapsed = false,
+  onToggleCollapse,
+  preferredView = "stack",
   book,
   baseSymbol,
   quoteSymbol,
@@ -100,6 +103,11 @@ export function MarketBookPanel({
   readonly splitter?: ReactNode;
   /** Replaces the panel's title, e.g. the book/trades tabs when the column is stacked. */
   readonly heading?: ReactNode;
+  /** Folds the depth panel to its live spread/mark summary. */
+  readonly collapsed?: boolean;
+  readonly onToggleCollapse?: () => void;
+  /** A shallow panel uses side-by-side prices until the user chooses a view. */
+  readonly preferredView?: BookView;
   readonly book: LighterOrderBookData;
   readonly baseSymbol: string;
   readonly quoteSymbol: string;
@@ -109,7 +117,8 @@ export function MarketBookPanel({
   readonly bookStatus: LighterTradingCandleConnectionStatus;
   readonly onPriceSelect: PriceSelect;
 }): JSX.Element {
-  const [view, setView] = useState<BookView>("stack");
+  const [chosenView, setView] = useState<BookView | null>(null);
+  const view = chosenView ?? preferredView;
   const [unit, setUnit] = useState<SizeUnit>("base");
   const [multiplier, setMultiplier] = useState<number>(1);
   const previousLast = useRef<number | null>(null);
@@ -172,11 +181,38 @@ export function MarketBookPanel({
   );
 
   return (
-    <section className="lit-panel lit-book-panel" aria-label="Order book" data-view={view}>
+    <section
+      className="lit-panel lit-book-panel"
+      aria-label="Order book"
+      aria-busy={bookStatus === "connecting" || bookStatus === "reconnecting"}
+      data-view={view}
+      data-collapsed={collapsed || undefined}
+    >
       {splitter}
       <header className="lit-panel-header lit-book-header">
         {heading ?? <h3>Order Book</h3>}
+        {onToggleCollapse === undefined ? null : (
+          <button
+            type="button"
+            className="lit-book-collapse"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand order book" : "Collapse order book"}
+            title={collapsed ? "Expand order book" : "Collapse order book"}
+            onClick={onToggleCollapse}
+          >
+            <span aria-hidden="true">{collapsed ? "＋" : "－"}</span>
+          </button>
+        )}
         <div className="lit-book-controls">
+          <select
+            aria-label="Price grouping"
+            value={multiplier}
+            onChange={(event) => setMultiplier(Number(event.currentTarget.value))}
+          >
+            {GROUP_MULTIPLIERS.map((item) => (
+              <option key={item} value={item}>{groupTickLabel(item, priceDecimals)}</option>
+            ))}
+          </select>
           <div className="lit-unit-switch" role="group" aria-label="Size unit">
             <button type="button" aria-pressed={unit === "base"} onClick={() => setUnit("base")}>{baseSymbol}</button>
             <button type="button" aria-pressed={unit === "quote"} onClick={() => setUnit("quote")}>{quoteSymbol}</button>
@@ -190,7 +226,14 @@ export function MarketBookPanel({
             </button>
           </div>
         </div>
-        <span className="lit-live-dot" data-status={bookStatus} title={`Book: ${bookStatus}`} aria-label={`Book ${bookStatus}`} />
+        <span
+          className="lit-live-dot"
+          data-status={bookStatus}
+          title={`Book: ${bookStatus}`}
+          aria-label={`Book ${bookStatus}`}
+          role="status"
+          aria-live="polite"
+        />
       </header>
       <div className="lit-book-labels">
         <div className="lit-book-columns" data-view={view}>
@@ -210,17 +253,8 @@ export function MarketBookPanel({
           </>
         )}
         </div>
-        <select
-          aria-label="Price grouping"
-          value={multiplier}
-          onChange={(event) => setMultiplier(Number(event.currentTarget.value))}
-        >
-          {GROUP_MULTIPLIERS.map((item) => (
-            <option key={item} value={item}>{groupTickLabel(item, priceDecimals)}</option>
-          ))}
-        </select>
       </div>
-      {view === "stack" ? (
+      {collapsed ? mid : view === "stack" ? (
         <div className="lit-book-stack">
           {empty ? <p className="lit-book-empty">No order book levels yet.</p> : column("ask")}
           {mid}
@@ -256,11 +290,18 @@ export function TradesPanel({ splitter, heading, trades, baseSymbol, tradesStatu
   const tradeIds = useMemo(() => trades.map((trade) => trade.tradeId), [trades]);
   const newTradeIds = useNewIds(tradeIds);
   return (
-    <section className="lit-panel lit-trades-panel" aria-label="Trades">
+    <section className="lit-panel lit-trades-panel" aria-label="Trades" aria-busy={tradesStatus === "connecting" || tradesStatus === "reconnecting"}>
       {splitter}
       <header className="lit-panel-header lit-book-header">
         {heading ?? <h3>Trades</h3>}
-        <span className="lit-live-dot" data-status={tradesStatus} title={`Trades: ${tradesStatus}`} aria-label={`Trades ${tradesStatus}`} />
+        <span
+          className="lit-live-dot"
+          data-status={tradesStatus}
+          title={`Trades: ${tradesStatus}`}
+          aria-label={`Trades ${tradesStatus}`}
+          role="status"
+          aria-live="polite"
+        />
       </header>
       <div className="lit-book-columns lit-trades-columns" aria-hidden="true">
         <span>Price</span>

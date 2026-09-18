@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { LighterTradingEnvironment, LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
 import {
   useLighterAccountActivityRefresh,
@@ -18,6 +18,7 @@ import {
 } from "./desk-messages.js";
 import { publishDeskSend } from "./desk-send-intent.js";
 import { findLoadMarket, useDeskTicketLoadStore } from "./desk-ticket-load.js";
+import { recordFunnelStep } from "./funnel.js";
 import { accountRisk, portionOfSize, positionMetrics, type ClosePortion } from "./account-model.js";
 import { buildChartLevels } from "./chart-levels.js";
 import { marketSectionFor, type LighterMarketSection } from "./market-classification.js";
@@ -36,7 +37,8 @@ import { useDeskStreams } from "./useDeskStreams.js";
 export function useLighterDesk() {
   const activeSessionId = useUiStore((state) => state.activeSessionId);
   const bookOpen = useUiStore((state) => state.bookOpen);
-  const toggleBook = useUiStore((state) => state.toggleBook);
+  const setBookOpen = useUiStore((state) => state.setBookOpen);
+  const setSidebarNarrowExpanded = useUiStore((state) => state.setSidebarNarrowExpanded);
   const setShellRoute = useUiStore((state) => state.setShellRoute);
   const openCreateSession = useUiStore((state) => state.openCreateSession);
   const desk = useLighterAnalysisStore((state) => state.desk);
@@ -48,6 +50,11 @@ export function useLighterDesk() {
   const [focusComposer, setFocusComposer] = useState(false);
   // The ticket's margin chip opens the leverage sheet over the desk.
   const [leverageOpen, setLeverageOpen] = useState(false);
+  const pendingEnvironmentMarket = useRef<{
+    readonly symbol: LighterTradingMarket["symbol"];
+    readonly marketType: LighterTradingMarket["marketType"];
+    readonly section: LighterMarketSection;
+  } | null>(null);
 
   const marketsQuery = useLighterTradingMarkets(environment, true);
   const marketList = marketsQuery.data?.ok === true ? marketsQuery.data.data : null;
@@ -56,7 +63,14 @@ export function useLighterDesk() {
   // Persisted market gone from this environment (or first visit): pick a stable default.
   useEffect(() => {
     if (marketList === null || market !== null) return;
-    const next = selectDefaultLighterMarket("perp", marketList.markets);
+    const preferred = pendingEnvironmentMarket.current;
+    pendingEnvironmentMarket.current = null;
+    const next = preferred === null
+      ? selectDefaultLighterMarket("perp", marketList.markets)
+      : marketList.markets.find((row) => row.symbol === preferred.symbol && row.marketType === preferred.marketType)
+        ?? marketList.markets.find((row) => row.symbol === preferred.symbol)
+        ?? selectDefaultLighterMarket(preferred.section, marketList.markets)
+        ?? selectDefaultLighterMarket("perp", marketList.markets);
     if (next !== null) saveDesk({ marketId: next.marketId });
   }, [market, marketList, saveDesk]);
 
@@ -76,6 +90,9 @@ export function useLighterDesk() {
   const account = accountQuery.data?.ok === true ? accountQuery.data.data : null;
   const available = account !== null && account.status !== "unavailable"
     ? account.summary?.availableBalance ?? null
+    : null;
+  const baseAvailable = market?.marketType === "spot" && account !== null && account.status !== "unavailable"
+    ? account.assets.find((asset) => asset.assetId === market.baseAssetId)?.available ?? null
     : null;
   // What the ticket's Risk mode sizes against: collateral plus open PnL.
   const equity = account !== null && account.status !== "unavailable" ? accountRisk(account.summary).equity : null;
@@ -103,7 +120,8 @@ export function useLighterDesk() {
   );
   // Same query the account panel's Fills tab reads, so this adds no request.
   const fillsQuery = useLighterTradingFills(environment, chartMarketId !== null);
-  const fills = fillsQuery.data?.ok === true ? fillsQuery.data.data.fills : null;
+  const fillsSnapshot = fillsQuery.data?.ok === true ? fillsQuery.data.data : null;
+  const fills = fillsSnapshot?.fills ?? null;
   // Fill arrows only accompany an open position on this market; a flat chart stays clean.
   const positionOpen = chartMarketId !== null && (account?.positions.some((position) => position.marketId === chartMarketId) ?? false);
   const chartFills = useMemo(
@@ -124,7 +142,16 @@ export function useLighterDesk() {
     deskOutcome,
     prepareOnDesk,
     onApprovalResolved,
-  } = useDeskLane({ activeSessionId, environment, marketId, skipCloseConfirm, fills, onNoSession: openCreateSession });
+  } = useDeskLane({
+    activeSessionId,
+    environment,
+    marketId,
+    marketSymbol: market?.symbol ?? null,
+    skipCloseConfirm,
+    account,
+    fills: fillsSnapshot,
+    onNoSession: openCreateSession,
+  });
 
   // The market bar's Perps | Stocks | Spot control: the section's default
   // market, unless the desk is already on that section.
@@ -136,9 +163,19 @@ export function useLighterDesk() {
     );
     if (next !== null) saveDesk({ marketId: next.marketId });
   };
-  // Core | RHC: the other network's market ids do not line up, so the desk starts from its default.
+  // Core | RHC market ids do not line up. Carry the visible symbol/type across
+  // when the destination lists it; otherwise fall back within the same product.
   const selectEnvironment = (next: LighterTradingEnvironment): void => {
-    if (next !== environment) saveDesk({ environment: next, marketId: null });
+    if (next !== environment) {
+      pendingEnvironmentMarket.current = market === null
+        ? null
+        : {
+            symbol: market.symbol,
+            marketType: market.marketType,
+            section: marketSectionFor(environment, market),
+          };
+      saveDesk({ environment: next, marketId: null });
+    }
   };
   const selectMarket = (next: LighterTradingMarket): void => {
     saveDesk({ marketId: next.marketId });
@@ -151,14 +188,15 @@ export function useLighterDesk() {
     void prepareOnDesk({ kind: "order", marketId: market.marketId, draft: toDeskOrderDraft(draft) }, draft);
   };
 
-  // "Ask Vex" from the market bar or ⌘K: the rail's composer is the only
+  // Open Vex via ⌘K: the rail's composer is the only
   // place to type, so this opens the rail and puts the caret there.
   const askVex = (): void => {
+    setBookOpen(true);
+    setSidebarNarrowExpanded(false);
     if (activeSessionId === null) {
       openCreateSession();
       return;
     }
-    if (!bookOpen) toggleBook();
     setFocusComposer(true);
   };
 
@@ -173,19 +211,21 @@ export function useLighterDesk() {
   // Withdraw, Connect) send immediately: the agent prepares the change and
   // the approval card is the only thing that can execute it (design §7.3 b).
   const sendToChat = (message: string): void => {
+    setBookOpen(true);
+    setSidebarNarrowExpanded(false);
     if (activeSessionId === null) {
       openCreateSession(message);
       return;
     }
     publishDeskSend(activeSessionId, message);
     setHandoffError(null);
-    if (!bookOpen) toggleBook();
   };
 
-  // Connect Lighter: onboarding is the trading session's job (first deposit,
+  // Set up Lighter: onboarding is the trading session's job (first deposit,
   // trading key, fee authorization, each an approval card), so the button
-  // sends, like Deposit does; there is no screen that connects an account.
+  // sends, like Deposit does; there is no screen that silently connects an account.
   const connectLighter = (): void => {
+    recordFunnelStep("desk_setup_start", environment);
     sendToChat(buildConnectMessage({ environment }));
   };
 
@@ -288,6 +328,7 @@ export function useLighterDesk() {
     lastPrice,
     dataFresh,
     available,
+    baseAvailable,
     equity,
     settlementSymbol,
     margin,

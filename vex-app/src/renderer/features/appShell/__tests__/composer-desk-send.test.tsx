@@ -9,8 +9,8 @@
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { makeSessionRows } from "./AppShell/_appshell-render.js";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import { createElement, StrictMode, type ReactNode } from "react";
+import { act, cleanup, fireEvent, render, renderHook, waitFor } from "@testing-library/react";
+import { createElement, StrictMode, type FormEvent, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { readQueue, resetComposerQueueForTest } from "../../../lib/composer-queue.js";
 import { resetDraftsForTest } from "../../../lib/composer-drafts.js";
@@ -43,6 +43,14 @@ const MESSAGE = "Close my entire ETH long on Lighter now; environment=core; mark
 const [SESSION_ROW] = makeSessionRows();
 if (SESSION_ROW === undefined) throw new Error("session fixture rows are empty");
 const AGENT_SESSION: SessionListItem = { ...SESSION_ROW, id: SESSION, mode: "agent" };
+
+function submitThrough(onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>): void {
+  const harness = render(<form onSubmit={onSubmit} />);
+  const form = harness.container.querySelector("form");
+  if (form === null) throw new Error("submit harness rendered no form");
+  fireEvent.submit(form);
+  harness.unmount();
+}
 
 function providers(strict: boolean) {
   return function Wrapper({ children }: { readonly children: ReactNode }) {
@@ -136,13 +144,13 @@ describe("Lighter desk row actions through the resident composer", () => {
 
 describe("Lighter desk scope on typed messages", () => {
   const TAG = "Lighter desk scope: environment=core, marketId=1, symbol=BTC, candleInterval=15m.";
-  const submitEvent = { preventDefault: () => {} } as unknown as React.FormEvent<HTMLFormElement>;
 
   it("appends the desk's scope tag to what was typed, and only to what was typed", async () => {
     useDeskScopeStore.setState({ tag: TAG });
     const { result } = renderHook(() => useComposerSubmit(SESSION, AGENT_SESSION, false, null), { wrapper: providers(false) });
     act(() => { result.current.setDraft("should I trim?"); });
-    await act(async () => { await result.current.onSubmit(submitEvent); });
+    submitThrough(result.current.onSubmit);
+    await waitFor(() => { expect(mockMutateAsync).toHaveBeenCalledTimes(1); });
     expect(mockMutateAsync.mock.calls[0]?.[0]).toEqual({ sessionId: SESSION, message: `should I trim?\n\n${TAG}` });
     expect(result.current.draft).toBe("");
 
@@ -155,7 +163,8 @@ describe("Lighter desk scope on typed messages", () => {
   it("outside the desk the typed message goes as is", async () => {
     const { result } = renderHook(() => useComposerSubmit(SESSION, AGENT_SESSION, false, null), { wrapper: providers(false) });
     act(() => { result.current.setDraft("gm vex"); });
-    await act(async () => { await result.current.onSubmit(submitEvent); });
+    submitThrough(result.current.onSubmit);
+    await waitFor(() => { expect(mockMutateAsync).toHaveBeenCalledTimes(1); });
     expect(mockMutateAsync.mock.calls[0]?.[0]).toEqual({ sessionId: SESSION, message: "gm vex" });
   });
 });

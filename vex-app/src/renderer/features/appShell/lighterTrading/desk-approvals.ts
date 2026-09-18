@@ -25,6 +25,7 @@ function lighterToolId(summary: ApprovalSummaryDto): string | null {
 }
 
 export function isLighterOrderApproval(summary: ApprovalSummaryDto): boolean {
+  if (summary.origin !== "desk") return false;
   const toolId = lighterToolId(summary);
   return toolId !== null && DESK_CARD_TOOL_IDS.has(toolId);
 }

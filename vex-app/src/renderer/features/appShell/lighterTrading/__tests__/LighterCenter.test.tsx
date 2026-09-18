@@ -9,11 +9,7 @@ const mocks = vi.hoisted(() => ({ useLighterDesk: vi.fn() }));
 
 vi.mock("../useLighterDesk.js", () => ({ useLighterDesk: mocks.useLighterDesk }));
 vi.mock("../MarketBar.js", () => ({
-  MarketBar: ({ onAskVex }: { onAskVex: (() => void) | null }) => (
-    <div data-testid="market-bar">
-      {onAskVex === null ? null : <button type="button" onClick={onAskVex}>Ask Vex</button>}
-    </div>
-  ),
+  MarketBar: () => <div data-testid="market-bar" />,
   streamStatusLabel: (status: string) => status,
 }));
 vi.mock("../MarketChart.js", () => ({
@@ -21,8 +17,8 @@ vi.mock("../MarketChart.js", () => ({
 }));
 vi.mock("../MarketPicker.js", () => ({ MarketPicker: () => <div data-testid="market-picker" /> }));
 vi.mock("../OrderBook.js", () => ({
-  MarketBookPanel: ({ splitter, heading }: { splitter?: ReactNode; heading?: ReactNode }) => (
-    <div data-testid="order-book">{splitter}{heading}</div>
+  MarketBookPanel: ({ splitter, heading, preferredView }: { splitter?: ReactNode; heading?: ReactNode; preferredView?: string }) => (
+    <div data-testid="order-book" data-view={preferredView}>{splitter}{heading}</div>
   ),
   TradesPanel: ({ splitter, heading }: { splitter?: ReactNode; heading?: ReactNode }) => (
     <div data-testid="trades">{splitter}{heading}</div>
@@ -45,8 +41,16 @@ const market = {
   marketId: 1,
   symbol: "BTC",
   marketType: "perp",
-  decimals: { price: 1, size: 4 },
-} as unknown as LighterTradingMarket;
+  status: "active",
+  baseAssetId: 1,
+  quoteAssetId: 2,
+  minBaseAmount: "0.0001",
+  minQuoteAmount: "1",
+  orderQuoteLimit: "1000000",
+  decimals: { price: 1, size: 4, quote: 2 },
+  fees: { maker: "0", taker: "0", makerEnabled: true, takerEnabled: true },
+  activity24h: { tradesCount: null, quoteVolume: null },
+} satisfies LighterTradingMarket;
 
 function desk(overrides: Record<string, unknown> = {}) {
   const marketList = { retrievedAt: 0, markets: [market] };
@@ -148,7 +152,7 @@ describe("LighterCenter", () => {
     expect(screen.getByRole("status").textContent).toContain("Choosing a market…");
   });
 
-  it("lays out chart, ticket over book and the dock with three named splitters", () => {
+  it("lays out chart, market depth and ticket with four named splitters on a wide desk", () => {
     mocks.useLighterDesk.mockReturnValue(desk());
     render(<LighterCenter />);
     expect(screen.getByTestId("market-chart")).toBeTruthy();
@@ -165,31 +169,55 @@ describe("LighterCenter", () => {
     expect(screen.getByRole("group", { name: "Chart interval" }).querySelectorAll("button")).toHaveLength(8);
   });
 
-  it("stacks the ticket over the book with book/trades tabs when the desk is narrow", () => {
+  it("keeps the ticket at full height and tabs market depth below the chart on a compact desk", () => {
     bodyWidth = LIGHTER_STACK_BELOW - 1;
     mocks.useLighterDesk.mockReturnValue(desk());
     const { container } = render(<LighterCenter />);
-    expect(container.querySelector(".lit-desk-upper[data-stacked]")).not.toBeNull();
+    const upper = container.querySelector<HTMLElement>(".lit-desk-upper[data-stacked]");
+    expect(upper).not.toBeNull();
+    expect(upper?.style.gridTemplateRows).toBe("minmax(0, 1fr) 240px");
+    expect(screen.getByTestId("order-book").getAttribute("data-view")).toBe("split");
     expect(screen.getAllByRole("separator").map((node) => node.getAttribute("aria-label"))).toEqual([
+      "Resize chart and market depth",
       "Resize the order ticket column",
       "Resize the account dock",
     ]);
     const column = container.querySelector(".lit-book-column");
     expect(column?.getAttribute("data-tab")).toBe("book");
-    fireEvent.click(screen.getAllByRole("tab", { name: "Trades" })[0]!);
+    const tradesTab = screen.getAllByRole("tab", { name: "Trades" })[0];
+    if (!tradesTab) throw new Error("trades tab missing");
+    fireEvent.click(tradesTab);
     expect(column?.getAttribute("data-tab")).toBe("trades");
+  });
+
+  it("resizes compact market depth without changing ticket or wide-layout proportions", () => {
+    bodyWidth = 900;
+    mocks.useLighterDesk.mockReturnValue(desk());
+    render(<LighterCenter />);
+    const seam = screen.getByRole("separator", { name: "Resize chart and market depth" });
+    fireEvent.keyDown(seam, { key: "ArrowUp" });
+    const saved = useLighterAnalysisStore.getState().desk.layout;
+    expect(saved.compactBookShare).toBeCloseTo(216 / 719);
+    expect(saved.ticketShare).toBe(DEFAULT_LIGHTER_LAYOUT.ticketShare);
+    expect(saved.tradesShare).toBe(DEFAULT_LIGHTER_LAYOUT.tradesShare);
+    fireEvent.doubleClick(seam);
+    expect(useLighterAnalysisStore.getState().desk.layout.compactBookShare).toBeCloseTo(240 / 719);
   });
 
   it("pops the desk's own cards in a dialog and leaves the agent's to the chat rail", () => {
     mocks.useLighterDesk.mockReturnValue(desk({
-      approvals: [{ id: "a1", origin: "desk" }, { id: "a2", origin: "agent" }, { id: "a3", origin: "desk" }],
+      approvals: [
+        { id: "a1", origin: "desk", preview: { namespace: "lighter", toolName: "order.create", criticalArgs: {} } },
+        { id: "a2", origin: "agent", preview: { namespace: "lighter", toolName: "order.create", criticalArgs: {} } },
+        { id: "a3", origin: "desk", preview: { namespace: "lighter", toolName: "order.create", criticalArgs: {} } },
+      ],
       focusApprovalId: "a3",
     }));
     const { container } = render(<LighterCenter />);
     expect(screen.getByTestId("trade-ticket")).toBeTruthy();
     const dialog = container.querySelector("dialog[data-vex-area=lighter-desk-approval]");
     expect(dialog?.hasAttribute("open")).toBe(true);
-    expect(dialog?.textContent).toContain("Approve order");
+    expect(dialog?.textContent).toContain("Review order");
     expect(screen.getAllByTestId("approval-card").map((node) => node.textContent)).toEqual(["a1", "a3"]);
   });
 
@@ -200,19 +228,16 @@ describe("LighterCenter", () => {
     expect(screen.queryByTestId("approval-card")).toBeNull();
   });
 
-  it("routes the market bar's Ask Vex and ⌘K to the desk, closing the market picker first", () => {
+  it("opens Vex with the keyboard without repeating an Ask button on the chart", () => {
     const current = desk();
     mocks.useLighterDesk.mockReturnValue(current);
     render(<LighterCenter />);
-    fireEvent.click(screen.getByRole("button", { name: "Ask Vex" }));
+    expect(screen.queryByRole("button", { name: "Ask Vex" })).toBeNull();
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
     expect(current.askVex).toHaveBeenCalledTimes(1);
     expect(current.setMarketPickerOpen).toHaveBeenCalledWith(false);
-
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
-    expect(current.askVex).toHaveBeenCalledTimes(2);
-    // Shift/Alt chords belong to something else.
     fireEvent.keyDown(window, { key: "k", metaKey: true, shiftKey: true });
-    expect(current.askVex).toHaveBeenCalledTimes(2);
+    expect(current.askVex).toHaveBeenCalledTimes(1);
   });
 
   it("collapses the expanded chart on Escape unless a layer above already took the key", () => {

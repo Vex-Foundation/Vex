@@ -1,11 +1,11 @@
-import { act, renderHook } from "@testing-library/react";
-import type { KeyboardEvent, PointerEvent } from "react";
+import { act, fireEvent, render, renderHook } from "@testing-library/react";
+import type { KeyboardEvent } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { useSplitter, type SplitterOptions } from "../useSplitter.js";
 
-/** A handle element with the pointer-capture surface jsdom lacks. */
-function handleElement() {
-  const element = document.createElement("div");
+function pointerElement(props: ReturnType<typeof useSplitter>["handleProps"]): HTMLElement {
+  const view = render(<div {...props} />);
+  const element = view.getByRole("separator");
   const captured = new Set<number>();
   Object.assign(element, {
     setPointerCapture: (id: number) => captured.add(id),
@@ -15,23 +15,8 @@ function handleElement() {
   return element;
 }
 
-function pointer(
-  element: HTMLElement,
-  overrides: Partial<{ button: number; clientX: number; clientY: number }> = {},
-): PointerEvent<HTMLElement> {
-  return {
-    button: 0,
-    clientX: 0,
-    clientY: 0,
-    pointerId: 7,
-    currentTarget: element,
-    preventDefault: vi.fn(),
-    ...overrides,
-  } as unknown as PointerEvent<HTMLElement>;
-}
-
 function key(name: string): KeyboardEvent<HTMLElement> & { preventDefault: ReturnType<typeof vi.fn> } {
-  return { key: name, preventDefault: vi.fn() } as unknown as KeyboardEvent<HTMLElement> & {
+  return { key: name, preventDefault: vi.fn() } as KeyboardEvent<HTMLElement> & {
     preventDefault: ReturnType<typeof vi.fn>;
   };
 }
@@ -69,41 +54,41 @@ describe("useSplitter", () => {
 
   it("drags with pointer capture, clamps to the range and commits once on release", () => {
     const { result, onChange, onCommit } = setup();
-    const element = handleElement();
+    const element = pointerElement(result.current.handleProps);
 
-    act(() => result.current.handleProps.onPointerDown(pointer(element, { clientX: 100 })));
+    fireEvent.pointerDown(element, { button: 0, clientX: 100, pointerId: 7 });
     expect(result.current.dragging).toBe(true);
     expect(result.current.handleProps["data-dragging"]).toBe(true);
     expect(element.hasPointerCapture(7)).toBe(true);
 
-    act(() => result.current.handleProps.onPointerMove(pointer(element, { clientX: 150 })));
-    act(() => result.current.handleProps.onPointerMove(pointer(element, { clientX: 900 })));
+    fireEvent.pointerMove(element, { clientX: 150, pointerId: 7 });
+    fireEvent.pointerMove(element, { clientX: 900, pointerId: 7 });
     expect(onChange.mock.calls).toEqual([[350], [500]]);
     expect(onCommit).not.toHaveBeenCalled();
 
-    act(() => result.current.handleProps.onPointerUp(pointer(element, { clientX: 900 })));
+    fireEvent.pointerUp(element, { clientX: 900, pointerId: 7 });
     expect(result.current.dragging).toBe(false);
     expect(element.hasPointerCapture(7)).toBe(false);
     expect(onCommit).toHaveBeenCalledTimes(1);
 
     // A move without a drag in flight is inert, as is a secondary button.
-    act(() => result.current.handleProps.onPointerMove(pointer(element, { clientX: 10 })));
-    act(() => result.current.handleProps.onPointerDown(pointer(element, { button: 2 })));
+    fireEvent.pointerMove(element, { clientX: 10, pointerId: 7 });
+    fireEvent.pointerDown(element, { button: 2, pointerId: 7 });
     expect(onChange).toHaveBeenCalledTimes(2);
     expect(result.current.dragging).toBe(false);
   });
 
   it("grows toward the start edge on the y axis and drops the drag when capture is lost", () => {
     const { result, onChange, onCommit } = setup({ axis: "y", grows: "start", value: 240, min: 120, max: 480 });
-    const element = handleElement();
-    act(() => result.current.handleProps.onPointerDown(pointer(element, { clientY: 400 })));
-    act(() => result.current.handleProps.onPointerMove(pointer(element, { clientY: 370 })));
+    const element = pointerElement(result.current.handleProps);
+    fireEvent.pointerDown(element, { button: 0, clientY: 400, pointerId: 7 });
+    fireEvent.pointerMove(element, { clientY: 370, pointerId: 7 });
     expect(onChange).toHaveBeenLastCalledWith(270);
-    act(() => result.current.handleProps.onLostPointerCapture());
+    fireEvent.lostPointerCapture(element, { pointerId: 7 });
     expect(result.current.dragging).toBe(false);
     expect(onCommit).toHaveBeenCalledTimes(1);
     // Ending twice never commits twice.
-    act(() => result.current.handleProps.onPointerCancel());
+    fireEvent.pointerCancel(element, { pointerId: 7 });
     expect(onCommit).toHaveBeenCalledTimes(1);
   });
 

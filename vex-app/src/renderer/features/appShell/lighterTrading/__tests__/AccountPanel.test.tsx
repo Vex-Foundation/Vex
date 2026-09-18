@@ -1,6 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LighterTradingAccount } from "@shared/schemas/lighter-trading.js";
+import { useUiStore } from "../../../../stores/uiStore.js";
 import { TradingBottomPanel } from "../AccountPanel.js";
 import { formatRetrievedAt } from "../format.js";
 
@@ -98,11 +99,20 @@ describe("TradingBottomPanel", () => {
     expect(screen.getByRole("tabpanel", { name: /^Open Orders/ }).getAttribute("aria-labelledby")).toBe("lit-bottom-tab-orders");
   });
 
+  it("moves across account tabs with arrow keys", () => {
+    renderPanel();
+    const positionsTab = screen.getByRole("tab", { name: /^Positions/ });
+    fireEvent.keyDown(positionsTab, { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: /^Open Orders/ }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(screen.getByRole("tab", { name: /^Open Orders/ }), { key: "End" });
+    expect(screen.getByRole("tab", { name: /^Assets/ }).getAttribute("aria-selected")).toBe("true");
+  });
+
   it("keeps the account's risk in the dock header, even folded", () => {
     mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: EMPTY_ACCOUNT } }));
     const view = render(panel({ collapsed: true }));
     const strip = screen.getByLabelText("Account risk");
-    expect(strip.textContent).toBe("Equity1,213.25Avbl800.25uPnL+12.75 (+3.19%)Margin400.2533%");
+    expect(strip.textContent).toBe("Equity1,213.25 USDGAvbl800.25 USDGuPnL+12.75 USDG (+3.19%)Margin400.25 USDG33%");
     expect(screen.getByRole("meter", { name: "Margin usage" }).getAttribute("aria-valuenow")).toBe("33");
     mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: { ...EMPTY_ACCOUNT, status: "unavailable", unavailableReason: "locked_vault", summary: null } } }));
     view.rerender(panel({ collapsed: true }));
@@ -139,7 +149,7 @@ describe("TradingBottomPanel", () => {
     view.rerender(panel());
     // The dock and the ticket say the same two words for the same gap.
     expect(screen.getAllByText("Not connected").length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "Connect Lighter" }));
+    fireEvent.click(screen.getByRole("button", { name: "Set up Lighter" }));
     expect(mocks.actions.onConnect).toHaveBeenCalledTimes(1);
     expect(mocks.actions.onOpenSettings).not.toHaveBeenCalled();
   });
@@ -157,9 +167,13 @@ describe("TradingBottomPanel", () => {
         },
       },
     }));
+    const openUnlock = vi.fn();
+    act(() => { useUiStore.setState({ openUnlock }); });
     const view = renderPanel();
     expect(screen.getByText("Vex is locked")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Unlock Vex" }));
+    expect(openUnlock).toHaveBeenCalledWith("appShell");
 
     mocks.useAccount.mockReturnValue(query({
       data: {
@@ -229,8 +243,10 @@ describe("TradingBottomPanel", () => {
           retrievedAt: 1_787_530_000_000,
           accountIndex: 42,
           available: true,
+          truncated: true,
           fills: [{
             tradeId: "7",
+            orderId: "9001",
             marketId: 1,
             symbol: "ETH",
             side: "sell",
@@ -256,12 +272,13 @@ describe("TradingBottomPanel", () => {
     expect(table.textContent).toContain("Sell");
     expect(table.textContent).toContain("3,200.5");
     expect(table.textContent).toContain("-12.5");
+    expect(screen.getByRole("note").textContent).toContain("older activity is not loaded");
 
     mocks.useFills.mockReturnValue({
       isLoading: false,
       isFetching: false,
       refetch: mocks.refetch,
-      data: { ok: true, data: { environment: "rhc", retrievedAt: 1, accountIndex: 42, available: false, fills: [] } },
+      data: { ok: true, data: { environment: "rhc", retrievedAt: 1, accountIndex: 42, available: false, truncated: false, fills: [] } },
     });
     fireEvent.click(screen.getByRole("tab", { name: /^Assets/ }));
     fireEvent.click(screen.getByRole("tab", { name: /^Trade History/ }));
@@ -366,7 +383,7 @@ describe("TradingBottomPanel", () => {
     expect(screen.getByText("33.3%")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Deposit" }));
     expect(mocks.actions.onFund).toHaveBeenCalledWith("deposit");
-    fireEvent.click(screen.getByRole("button", { name: "Withdraw" }));
+    fireEvent.click(screen.getByRole("button", { name: "Withdrawal help" }));
     expect(mocks.actions.onFund).toHaveBeenCalledWith("withdraw");
   });
 

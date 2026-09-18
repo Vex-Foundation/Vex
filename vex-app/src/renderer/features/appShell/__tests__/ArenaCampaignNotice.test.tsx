@@ -5,7 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import { ArenaCampaignNotice } from "../ArenaCampaignNotice.js";
@@ -30,11 +30,20 @@ describe("arenaCampaignPhase", () => {
 });
 
 describe("ArenaCampaignNotice", () => {
+  it("updates event status while the welcome screen stays open", () => {
+    vi.setSystemTime(new Date("2026-09-18T10:59:30Z"));
+    render(<ArenaCampaignNotice />);
+    expect(screen.getByText("Upcoming event")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Perps Trading Arena" })).toBeTruthy();
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(screen.getByText("Live now")).toBeTruthy();
+    expect(screen.getByRole("status").dataset["phase"]).toBe("live");
+  });
   it("announces the start before the window opens", () => {
     vi.setSystemTime(new Date("2026-09-17T17:30:00Z"));
     render(<ArenaCampaignNotice />);
     expect(screen.getByRole("status").textContent).toContain(
-      "Perps Trading Arena starts Sep 18, 11:00 UTC, on Lighter Robinhood Chain.",
+      "Starts Sep 18 · 11:00 UTC",
     );
     expect(screen.getByRole("status").dataset["phase"]).toBe("upcoming");
   });
@@ -43,20 +52,25 @@ describe("ArenaCampaignNotice", () => {
     vi.setSystemTime(new Date("2026-09-20T00:00:00Z"));
     render(<ArenaCampaignNotice />);
     expect(screen.getByRole("status").textContent).toContain(
-      "Perps Trading Arena is live on Lighter Robinhood Chain through Oct 16.",
+      "Ends Oct 16 · 11:00 UTC",
     );
   });
 
-  it("renders nothing once the window has closed", () => {
+  it("becomes a permanent Lighter entry once the campaign closes", () => {
     vi.setSystemTime(new Date("2026-10-17T00:00:00Z"));
-    const { container } = render(<ArenaCampaignNotice />);
-    expect(container.firstChild).toBeNull();
+    render(<ArenaCampaignNotice />);
+    expect(screen.getByRole("status").textContent).toContain(
+      "Live markets · Vex analysis · Orders you approve",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open Lighter" }));
+    expect(useLighterAnalysisStore.getState().desk.environment).toBe("core");
+    expect(useUiStore.getState().runtimeMode).toBe("lighter");
   });
 
-  it("Open the desk pins the venue to Robinhood Chain and enters Lighter mode", () => {
+  it("Enter with Vex pins the venue to Robinhood Chain and enters Lighter mode", () => {
     vi.setSystemTime(new Date("2026-09-20T00:00:00Z"));
     render(<ArenaCampaignNotice />);
-    fireEvent.click(screen.getByRole("button", { name: "Open the desk" }));
+    fireEvent.click(screen.getByRole("button", { name: "Enter with Vex" }));
     expect(useLighterAnalysisStore.getState().desk.environment).toBe("rhc");
     expect(useUiStore.getState().runtimeMode).toBe("lighter");
   });

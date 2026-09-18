@@ -4,11 +4,32 @@
 
 .lit-book-header {
   gap: 6px;
-  padding-inline: 0 10px;
+  padding-inline: 8px;
 }
 
 /* At the column floor (220px) the title, unit switch and view switch fit on one line only unwrapped. */
 .lit-book-header h3 { white-space: nowrap; }
+
+/* The desk can fold market depth without losing the live price context. */
+.lit-book-collapse {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--lit-line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--lit-ink-muted);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.lit-book-collapse:hover,
+.lit-book-collapse:focus-visible {
+  background: var(--lit-hover);
+  color: var(--lit-ink);
+}
 
 .lit-book-controls {
   display: flex;
@@ -16,6 +37,34 @@
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
+}
+
+.lit-book-panel[data-collapsed] .lit-book-labels,
+.lit-book-panel[data-collapsed] .lit-book-stack,
+.lit-book-panel[data-collapsed] .lit-book-body {
+  display: none;
+}
+
+.lit-book-panel[data-collapsed] .lit-book-mid {
+  border-bottom: 0;
+}
+
+.lit-book-panel[data-collapsed] .lit-book-ratio {
+  display: none;
+}
+
+/* On a wide desk the folded column becomes a slim rail; keep only the
+ * expand affordance so controls never spill into the ticket column. */
+.lit-desk-upper:not([data-stacked]) .lit-book-panel[data-collapsed] .lit-book-header h3,
+.lit-desk-upper:not([data-stacked]) .lit-book-panel[data-collapsed] .lit-panel-tabs,
+.lit-desk-upper:not([data-stacked]) .lit-book-panel[data-collapsed] .lit-book-controls,
+.lit-desk-upper:not([data-stacked]) .lit-book-panel[data-collapsed] .lit-live-dot {
+  display: none;
+}
+
+.lit-desk-upper:not([data-stacked]) .lit-book-panel[data-collapsed] .lit-book-header {
+  justify-content: center;
+  padding-inline: 0;
 }
 
 .lit-expiry select {
@@ -55,14 +104,18 @@
 .lit-view-switch button { min-width: 24px; padding: 0; }
 .lit-view-switch svg { display: block; width: 12px; height: 12px; margin: 0 auto; fill: currentColor; }
 
-/* Stacked desk: the book and trades tabs share this header with the unit and
- * view switches, and at the ticket floor (260px) that only fits tightened. */
-@container (max-width: 300px) {
-  .lit-book-header:has(> .lit-panel-tabs) { gap: 4px; }
-  .lit-book-header:has(> .lit-panel-tabs) .lit-panel-tabs button { padding: 0 6px; }
-  .lit-book-header:has(> .lit-panel-tabs) .lit-book-controls { gap: 4px; }
-  .lit-book-header:has(> .lit-panel-tabs) .lit-unit-switch button { min-width: 28px; padding: 0 3px; }
-  .lit-book-header:has(> .lit-panel-tabs) .lit-view-switch button { min-width: 22px; }
+/* A narrow depth column gives controls their own row instead of squeezing
+ * the title or shifting column labels away from the prices below them. */
+@container (max-width: 400px) {
+  .lit-book-header:has(.lit-book-controls) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 4px 6px;
+    padding-block: 6px;
+  }
+  .lit-book-controls { grid-row: 2; grid-column: 1 / -1; justify-content: space-between; }
+  .lit-book-header > .lit-book-collapse { grid-row: 1; grid-column: 2; }
+  .lit-book-header > .lit-live-dot { grid-row: 1; grid-column: 3; }
 }
 
 /* Pinned inside row: last trade, spread, mark. */
@@ -104,16 +157,15 @@
 
 .lit-book-mid span:last-child { text-align: right; }
 
-/* Column labels with the tick-size select at the row's end. */
+/* Labels use the same full-width grid as the data rows. */
 .lit-book-labels {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px 3px 0;
+  padding: 3px 0;
 }
 
-.lit-book-labels > select {
+.lit-book-controls > select {
   width: 50px;
   height: 20px;
   flex: 0 0 auto;
@@ -136,8 +188,8 @@
   white-space: nowrap;
 }
 
-.lit-book-columns[data-view="split"] span:nth-child(2) { text-align: right; padding-right: 6px; }
-.lit-book-columns[data-view="split"] span:nth-child(3) { padding-left: 6px; }
+.lit-book-columns[data-view="split"] span:nth-child(2) { text-align: right; padding-right: 7px; }
+.lit-book-columns[data-view="split"] span:nth-child(3) { padding-left: 7px; }
 .lit-book-columns[data-view="split"] span:nth-child(4) { text-align: right; }
 
 .lit-book-columns[data-view="stack"] { grid-template-columns: 1.1fr 1fr 1fr; column-gap: 4px; }
@@ -151,8 +203,7 @@
   min-height: 0;
   flex: 1 1 auto;
   grid-template-columns: 1fr 1fr;
-  align-content: start;
-  overflow: hidden auto;
+  overflow: hidden;
 }
 
 .lit-book-body > .lit-book-empty { grid-column: 1 / -1; }
@@ -160,7 +211,11 @@
 .lit-book-rows {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex-direction: column;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 .lit-book-rows[data-side="bid"] { padding-right: 3px; }
@@ -170,13 +225,15 @@
   --lit-depth: 0%;
   position: relative;
   display: grid;
-  min-height: 18px;
+  min-height: 20px;
+  flex: 0 0 auto;
   align-items: center;
   border: 0;
   background: transparent;
   color: var(--lit-ink-secondary);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 /* Bids: size | price, depth grows from the center leftward. */
@@ -252,10 +309,10 @@
   min-height: 0;
   flex: 1 1 0;
   padding: 0;
-  overflow: hidden;
+  overflow: hidden auto;
 }
 
-.lit-book-stack > .lit-book-rows[data-side="ask"] { justify-content: flex-end; }
+.lit-book-stack > .lit-book-rows[data-side="ask"] { flex-direction: column-reverse; }
 .lit-book-stack > .lit-book-mid { border-top: 1px solid var(--lit-line); }
 
 .lit-book-stack .lit-book-rows[data-side] .lit-book-row {
@@ -297,6 +354,7 @@
   flex: 1 1 auto;
   flex-direction: column;
   overflow: hidden auto;
+  overscroll-behavior: contain;
 }
 
 .lit-trade-row {
@@ -314,4 +372,18 @@
   color: var(--lit-ink-muted);
   font-size: 12px;
   text-align: center;
+}
+
+/* Dense data stays scannable at a glance, while rows retain a comfortable
+ * keyboard and pointer target. The depth wash remains the primary signal. */
+.lit-book-mid {
+  background: color-mix(in srgb, var(--lit-panel-raised) 34%, transparent);
+}
+
+.lit-live-dot[role="status"][data-status="live"] {
+  animation: lit-live-pulse 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lit-live-dot[role="status"][data-status="live"] { animation: none; }
 }

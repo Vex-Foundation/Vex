@@ -1,6 +1,8 @@
 # Vex 셸 3모드 분리 설계 — Agent / Studio / Lighter
 
-*작성 2026-09-17. 기준 트리: `~/Projects/vex-2026-09-17` (main `7531273cc`, 0.2.10). 인용은 `vex-app/src` 기준 경로.*
+*작성 2026-09-17. 이 문서는 모달에서 셸 모드로 옮기기 전의 설계 기준과 제안이다. 구현 이후의 현재 상태 문서로 읽지 말 것. 기준 트리: `~/Projects/vex-2026-09-17` (main `7531273cc`, 0.2.10). 인용은 `vex-app/src` 기준 경로.*
+
+Current implemented behavior is documented in [`LIGHTER_DESK_PRODUCT_UX.md`](./LIGHTER_DESK_PRODUCT_UX.md).
 
 ---
 

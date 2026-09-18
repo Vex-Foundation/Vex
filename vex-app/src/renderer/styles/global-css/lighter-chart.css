@@ -29,6 +29,14 @@
   color: var(--lit-ink);
 }
 
+.lit-resolution-tabs button:focus-visible,
+.lit-chart-expand:focus-visible,
+.lit-chart-tools button:focus-visible,
+.lit-chart-empty-actions button:focus-visible {
+  outline: 2px solid var(--lit-focus);
+  outline-offset: 2px;
+}
+
 .lit-chart-heading-end {
   display: flex;
   flex: 0 0 auto;
@@ -54,6 +62,8 @@
 
 .lit-chart-connection[data-status="live"] i { background: var(--lit-positive); }
 .lit-chart-connection[data-status="unavailable"] i { background: var(--lit-negative); }
+.lit-chart-connection[data-status="connecting"] i,
+.lit-chart-connection[data-status="reconnecting"] i { animation: lit-live-pulse 1.6s ease-in-out infinite; }
 
 .lit-chart-expand {
   display: grid;
@@ -111,6 +121,8 @@
   background: var(--lit-panel-raised);
   color: var(--lit-ink);
 }
+
+.lit-chart-tools button:active { transform: scale(0.95); }
 
 .lit-chart-tools button:last-child { color: var(--lit-positive); }
 .lit-chart-tools button svg { width: 17px; height: 17px; }

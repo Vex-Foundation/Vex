@@ -1,5 +1,4 @@
 import { useEffect, type JSX } from "react";
-import { VexMark } from "../../../components/common/VexMark.js";
 import { IconArrowUpRight } from "../../../components/icons/index.js";
 import { useLighterTradingAccount, useLighterTradingMarkets } from "../../../lib/api/lighter-trading.js";
 import { useSessionsList } from "../../../lib/api/sessions.js";
@@ -65,12 +64,6 @@ export function LighterChatRail(): JSX.Element {
   if (activeSessionId !== null) {
     return (
       <div className="lit-chat-shell">
-        <header className="lit-panel-header lit-chat-heading">
-          <span>
-            <h3><VexMark size={13} /> Vex</h3>
-            <small>Active session · Vex's proposals land here</small>
-          </span>
-        </header>
         {scope === null ? null : <DeskScopeStrip scope={scope} sessionId={activeSessionId} />}
         <SessionPanel surface="embedded" />
       </div>

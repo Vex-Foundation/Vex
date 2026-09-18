@@ -16,7 +16,6 @@ import {
   isPositionProtectionMode,
   isTriggerLimitMode,
   marginCost,
-  maxBaseSize,
   riskBaseSize,
   slippageBound,
   type LimitTimeInForce,
@@ -36,6 +35,8 @@ export interface TradeTicketFormInput {
   readonly book: LighterOrderBookData;
   readonly lastPrice: number | null;
   readonly available: string | null;
+  /** Spot base inventory available to sell; settlement balance is not inventory. */
+  readonly baseAvailable?: string | null;
   /** Account equity (collateral plus open PnL) that Risk mode sizes against; null without an account. */
   readonly equity: number | null;
   readonly margin: TicketMargin | null;
@@ -53,6 +54,7 @@ export function useTradeTicketForm({
   book,
   lastPrice,
   available,
+  baseAvailable = null,
   equity,
   margin,
   dataFresh,
@@ -76,12 +78,21 @@ export function useTradeTicketForm({
   const [stopLossPrice, setStopLossPrice] = useState("");
   const [takeProfitTriggerPrice, setTakeProfitTriggerPrice] = useState("");
   const [takeProfitPrice, setTakeProfitPrice] = useState("");
-  const [reduceOnly, setReduceOnly] = useState(false);
-  const [protectOpen, setProtectOpen] = useState(false);
+  const [reduceOnly, setReduceOnlyState] = useState(false);
+  const [protectOpen, setProtectOpenState] = useState(false);
+  const setReduceOnly = (next: boolean): void => {
+    setReduceOnlyState(next);
+    if (next) setProtectOpenState(false);
+  };
+  const setProtectOpen = (next: boolean): void => {
+    setProtectOpenState(next);
+    if (next) setReduceOnlyState(false);
+  };
 
   const protective = isPositionProtectionMode(mode);
   const triggerLimit = isTriggerLimitMode(mode);
   const perp = market.marketType === "perp";
+  const draftReduceOnly = perp && reduceOnly;
   const symbols = marketSymbols(market.symbol, market.marketType);
   const sizeDecimals = market.decimals.size ?? SIZE_DECIMALS_FALLBACK;
   const priceDecimals = market.decimals.price;
@@ -94,20 +105,30 @@ export function useTradeTicketForm({
     return lastPrice !== null && lastPrice > 0 ? lastPrice : null;
   }, [lastPrice, suggestedPrice]);
   const availableNumber = available === null ? null : Number(available);
-  const canSizeFromBalance = availableNumber !== null
-    && Number.isFinite(availableNumber)
-    && availableNumber > 0
+  const baseAvailableNumber = baseAvailable === null ? null : Number(baseAvailable);
+  const sizingBalance = market.marketType === "spot" && side === "sell"
+    ? baseAvailableNumber
+    : availableNumber;
+  const canSizeFromBalance = sizingBalance !== null
+    && Number.isFinite(sizingBalance)
+    && sizingBalance > 0
     && referencePrice !== null;
+  const worstPrice = useMemo(
+    () => slippageBound(suggestedPrice, slippagePercent, side, priceDecimals),
+    [priceDecimals, side, slippagePercent, suggestedPrice],
+  );
 
   // Risk mode is for opening perp orders whose stop-loss can be attached.
   const canSizeByRisk = perp && !protective && (mode === "market" || mode === "limit");
   const riskMode = canSizeByRisk && sizeMode === "risk";
   /** Risk mode: the size that loses `riskPercent` of equity at the stop, or why there is none yet. */
   const riskSizing = useMemo((): { readonly baseAmount: string; readonly riskAmount: number } | { readonly reason: string } => {
-    if (equity === null || !(equity > 0)) return { reason: "Connect Lighter to size by risk." };
+    if (equity === null || !(equity > 0)) return { reason: "Set up Lighter to size by risk." };
     if (!isPositiveDecimal(riskPercent)) return { reason: "Enter the percent of equity to risk." };
     if (!protectOpen || !isPositiveDecimal(stopLossTriggerPrice)) return { reason: "Enter a stop-loss trigger first." };
-    const entry = mode === "limit" ? (isPositiveDecimal(limitPrice) ? Number(limitPrice) : null) : referencePrice;
+    const entry = mode === "limit"
+      ? (isPositiveDecimal(limitPrice) ? Number(limitPrice) : null)
+      : worstPrice === null ? referencePrice : Number(worstPrice);
     if (entry === null) return { reason: mode === "limit" ? "Enter a limit price first." : "A live price is required to size by risk." };
     const size = riskBaseSize(equity, Number(riskPercent), entry, Number(stopLossTriggerPrice));
     // Floor to the size step: rounding up would risk more than asked.
@@ -115,18 +136,20 @@ export function useTradeTicketForm({
     const amount = size === null ? null : toDecimal(Math.floor(size * step) / step, sizeDecimals);
     if (amount === null || !isPositiveDecimal(amount)) return { reason: "The stop-loss trigger must sit away from the entry price." };
     return { baseAmount: amount, riskAmount: (equity * Number(riskPercent)) / 100 };
-  }, [equity, limitPrice, mode, protectOpen, referencePrice, riskPercent, sizeDecimals, stopLossTriggerPrice]);
+  }, [equity, limitPrice, mode, protectOpen, referencePrice, riskPercent, sizeDecimals, stopLossTriggerPrice, worstPrice]);
+  const conversionPrice = mode === "market"
+    ? (worstPrice === null ? null : Number(worstPrice))
+    : mode === "limit" || triggerLimit
+      ? (isPositiveDecimal(limitPrice) ? Number(limitPrice) : null)
+      : referencePrice;
 
   const baseAmount = useMemo(() => {
     if (riskMode) return "baseAmount" in riskSizing ? riskSizing.baseAmount : "";
     if (sizeUnit === "base") return sizeInput;
-    if (!isPositiveDecimal(sizeInput) || referencePrice === null) return "";
-    return toDecimal(Number(sizeInput) / referencePrice, sizeDecimals) ?? "";
-  }, [referencePrice, riskMode, riskSizing, sizeDecimals, sizeInput, sizeUnit]);
-  const worstPrice = useMemo(
-    () => slippageBound(suggestedPrice, slippagePercent, side, priceDecimals),
-    [priceDecimals, side, slippagePercent, suggestedPrice],
-  );
+    if (!isPositiveDecimal(sizeInput) || conversionPrice === null) return "";
+    const step = 10 ** sizeDecimals;
+    return toDecimal(Math.floor((Number(sizeInput) / conversionPrice) * step) / step, sizeDecimals) ?? "";
+  }, [conversionPrice, riskMode, riskSizing, sizeDecimals, sizeInput, sizeUnit]);
 
   const limitPriceBookStatus = useMemo(() => {
     if (mode !== "limit" || suggestedPrice === null) return null;
@@ -159,20 +182,38 @@ export function useTradeTicketForm({
 
   /** Max openable size: leveraged for perps, plain quote balance for spot. */
   const maxSize = useMemo(() => {
-    if (!canSizeFromBalance || availableNumber === null || referencePrice === null) return null;
+    if (!canSizeFromBalance || sizingBalance === null || referencePrice === null) return null;
+    const limitSizingPrice = (mode === "limit" || triggerLimit) && isPositiveDecimal(limitPrice)
+      ? Number(limitPrice)
+      : null;
+    const price = mode === "market" && worstPrice !== null
+      ? Number(worstPrice)
+      : limitSizingPrice ?? referencePrice;
+    if (!Number.isFinite(price) || price <= 0) return null;
+    if (market.marketType === "spot" && side === "sell") {
+      return toDecimal(Math.floor(sizingBalance * (10 ** sizeDecimals)) / (10 ** sizeDecimals), sizeDecimals);
+    }
+    const fee = ((mode === "limit" || triggerLimit) && limitTimeInForce === "post-only")
+      ? { rate: market.fees.maker, enabled: market.fees.makerEnabled }
+      : { rate: market.fees.taker, enabled: market.fees.takerEnabled };
+    const feePercent = Number(fee.rate);
+    const feeFraction = fee.enabled && Number.isFinite(feePercent) && feePercent > 0 ? feePercent / 100 : 0;
     const size = margin === null
-      ? availableNumber / referencePrice
-      : maxBaseSize(availableNumber, margin.initialMarginFraction, referencePrice);
-    return toDecimal(size, sizeDecimals);
-  }, [availableNumber, canSizeFromBalance, margin, referencePrice, sizeDecimals]);
+      ? sizingBalance / (price * (1 + feeFraction))
+      : sizingBalance / (margin.initialMarginFraction / 10_000 + feeFraction) / price;
+    const step = 10 ** sizeDecimals;
+    return toDecimal(Math.floor(size * step) / step, sizeDecimals);
+  }, [canSizeFromBalance, limitPrice, limitTimeInForce, margin, market.fees.maker, market.fees.makerEnabled, market.fees.taker, market.fees.takerEnabled, market.marketType, mode, referencePrice, side, sizeDecimals, sizingBalance, triggerLimit, worstPrice]);
 
   const applySizePercent = (percent: number): void => {
-    if (maxSize === null || referencePrice === null) return;
+    if (maxSize === null) return;
     setSizePercent(percent);
     if (percent === 0) { setSizeInput(""); return; }
-    const base = (Number(maxSize) * percent) / 100;
+    const step = 10 ** sizeDecimals;
+    const base = Math.floor(((Number(maxSize) * percent) / 100) * step) / step;
+    if (sizeUnit === "quote" && conversionPrice === null) return;
     setSizeInput(sizeUnit === "quote"
-      ? toDecimal(base * referencePrice, 2) ?? ""
+      ? toDecimal(Math.floor(base * conversionPrice! * 100) / 100, 2) ?? ""
       : toDecimal(base, sizeDecimals) ?? "");
   };
 
@@ -278,9 +319,11 @@ export function useTradeTicketForm({
     : mode === "stop-loss" || mode === "take-profit"
       ? triggerPrice
       : null;
-  const valuationPrice = activePrice !== null && isPositiveDecimal(activePrice)
-    ? Number(activePrice)
-    : referencePrice;
+  const valuationPrice = mode === "market"
+    ? (worstPrice === null ? referencePrice : Number(worstPrice))
+    : activePrice !== null && isPositiveDecimal(activePrice)
+      ? Number(activePrice)
+      : referencePrice;
   const orderValue = isPositiveDecimal(baseAmount) && valuationPrice !== null
     ? Number(baseAmount) * valuationPrice
     : null;
@@ -335,12 +378,23 @@ export function useTradeTicketForm({
     if (protective && !perp) return "Position protection is available only for perpetual markets.";
     if (!isPositiveDecimal(baseAmount)) {
       if (riskMode) return "reason" in riskSizing ? riskSizing.reason : "Enter a size greater than zero.";
+      if (sizeUnit === "quote" && isPositiveDecimal(sizeInput) && (mode === "limit" || triggerLimit) && !isPositiveDecimal(limitPrice)) {
+        return "Enter a valid limit price.";
+      }
       return sizeUnit === "quote" && isPositiveDecimal(sizeInput)
         ? "A live price is required to convert the quote size."
         : "Enter a size greater than zero.";
     }
     if ((compareDecimalStrings(baseAmount, market.minBaseAmount) ?? 0) < 0) {
       return `Minimum size is ${market.minBaseAmount} ${symbols.base}.`;
+    }
+    const minimumQuote = Number(market.minQuoteAmount);
+    const executionPrice = mode === "market" ? worstPrice : valuationPrice;
+    const executionPriceNumber = executionPrice === null ? Number.NaN : Number(executionPrice);
+    if (Number.isFinite(minimumQuote) && minimumQuote > 0
+      && Number.isFinite(executionPriceNumber)
+      && Number(baseAmount) * executionPriceNumber < minimumQuote) {
+      return `Minimum order value is ${market.minQuoteAmount} ${symbols.quote}.`;
     }
     if (mode === "oco") {
       if (![stopLossTriggerPrice, stopLossPrice, takeProfitTriggerPrice, takeProfitPrice].every(isPositiveDecimal)) {
@@ -376,6 +430,7 @@ export function useTradeTicketForm({
     limitPrice,
     limitTimeInForce,
     market.minBaseAmount,
+    market.minQuoteAmount,
     market.status,
     mode,
     perp,
@@ -396,6 +451,7 @@ export function useTradeTicketForm({
     triggerLimit,
     triggerPrice,
     worstPrice,
+    valuationPrice,
   ]);
 
   const buildDraft = (): TradeDraft | null => {
@@ -419,12 +475,12 @@ export function useTradeTicketForm({
         orderExpiryOffsetMinutes: limitTimeInForce === "immediate-or-cancel"
           ? IOC_PREVIEW_EXPIRY_MINUTES
           : orderExpiryOffsetMinutes,
-        reduceOnly,
+        reduceOnly: draftReduceOnly,
         protection,
       };
     }
     if (worstPrice === null) return null;
-    return { mode, side, baseAmount, worstPrice, reduceOnly, protection };
+    return { mode, side, baseAmount, worstPrice, reduceOnly: draftReduceOnly, protection };
   };
 
   return {

@@ -6,9 +6,7 @@ import type {
   LighterTradingPublicStatsEvent,
   LighterTradingSnapshot,
 } from "@shared/schemas/lighter-trading.js";
-import { VexMark } from "../../../components/common/VexMark.js";
 import { IconChevronDown } from "../../../components/icons/index.js";
-import { EnvironmentSwitch } from "./EnvironmentSwitch.js";
 import { MarketSymbol } from "./MarketSymbol.js";
 import { useTickFlash } from "./useLiveFlash.js";
 import { classifyLighterMarket, marketProductLabel, type LighterMarketSection } from "./market-classification.js";
@@ -30,32 +28,27 @@ const SECTIONS: readonly { readonly value: LighterMarketSection; readonly label:
   { value: "spot", label: "Spot" },
 ];
 
-/** The desk's top strip: network switch, market picker trigger, section tabs, last price, live metrics. */
+/** The desk's top strip: market picker trigger, section tabs, last price, live metrics. */
 export function MarketBar({
   environment,
   market,
   marketPickerOpen,
   onOpenMarketPicker,
-  onSelectEnvironment,
   onSelectSection,
   snapshot,
   liveStats,
   streamStatus,
   streamReceivedAt,
-  onAskVex,
 }: {
   readonly environment: LighterTradingEnvironment;
   readonly market: LighterTradingMarket | null;
   readonly marketPickerOpen: boolean;
   readonly onOpenMarketPicker: () => void;
-  readonly onSelectEnvironment: (environment: LighterTradingEnvironment) => void;
   readonly onSelectSection: (section: LighterMarketSection) => void;
   readonly snapshot: LighterTradingSnapshot | null;
   readonly liveStats: LighterTradingPublicStatsEvent["stats"] | null;
   readonly streamStatus: LighterTradingCandleConnectionStatus;
   readonly streamReceivedAt: number | null;
-  /** Opens the Ask Vex palette; null while no market is on screen. */
-  readonly onAskVex: (() => void) | null;
 }): JSX.Element {
   const change = liveStats?.daily.priceChange ?? snapshot?.detail.daily.priceChange ?? null;
   const symbols = market === null ? null : marketSymbols(market.symbol, market.marketType);
@@ -92,7 +85,6 @@ export function MarketBar({
       aria-label="Selected market summary"
       aria-busy={marketDataLoading}
     >
-      <EnvironmentSwitch environment={environment} onSelect={onSelectEnvironment} />
       <button
         type="button"
         className="lit-market-select"
@@ -112,6 +104,7 @@ export function MarketBar({
               ? "Lighter"
               : [
                 market.symbol === classification?.ticker ? null : market.symbol,
+                environment === "rhc" ? "RHC" : "Core",
                 productLabel,
                 market.status === "active" ? null : "Inactive",
               ].filter((part): part is string => part !== null).join(" · ")}
@@ -168,13 +161,6 @@ export function MarketBar({
           </button>
         ))}
       </nav>
-      {onAskVex === null ? null : (
-        <button type="button" className="lit-ask-trigger" onClick={onAskVex} title="Ask Vex about this market (⌘K)">
-          <VexMark size={12} />
-          <b>Ask Vex</b>
-          <kbd aria-hidden="true">⌘K</kbd>
-        </button>
-      )}
       <span
         className="lit-live-status"
         data-status={streamStatus}

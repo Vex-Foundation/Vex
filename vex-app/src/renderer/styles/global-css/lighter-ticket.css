@@ -2,44 +2,56 @@
  * Order ticket
  * ------------------------------------------------------------------------- */
 
-/* Natural height, never clipped: the desk measures this wrapper to decide
- * whether the dock has to fold. When the panel is still shorter (pinned by
- * the user, or the dock reopened in a short window) the panel scrolls and
- * the footer stays stuck to its bottom edge, so the submit never leaves view. */
+/* The ticket owns its panel height. Account context and actions stay visible;
+ * only the variable-height field body scrolls in a short stacked desk. */
 .lit-ticket-content,
 .lit-ticket {
   display: flex;
-  flex: 0 0 auto;
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
   flex-direction: column;
 }
 
 /* The column is a fixed grid track, so the ticket can be a query container:
  * its floor rules key off its own width, not the window's. */
-.lit-ticket { container-type: inline-size; }
+.lit-ticket { container-type: inline-size; overflow: hidden; }
+
+.lit-ticket button:focus-visible,
+.lit-ticket select:focus-visible {
+  outline: 2px solid var(--lit-focus);
+  outline-offset: 2px;
+}
+
+.lit-ticket input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--lit-focus);
+  outline-offset: 2px;
+}
 
 .lit-ticket-body {
   display: flex;
-  flex: 0 0 auto;
+  min-height: 0;
+  flex: 0 1 auto;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 8px 8px;
 }
 
+.lit-ticket-body::-webkit-scrollbar { width: 5px; }
+.lit-ticket-body::-webkit-scrollbar-thumb { border-radius: var(--lit-radius); background: var(--lit-line-strong); }
+
 .lit-ticket-footer {
-  position: sticky;
-  bottom: 0;
+  position: relative;
+  z-index: 1;
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   border-top: 1px solid var(--lit-line);
-  padding: 10px 12px;
+  padding: 6px 8px;
   background: var(--lit-panel);
-}
-
-/* Content hidden under the footer gets a shadow; a fully shown ticket none. */
-.lit-ticket-panel[data-ticket-overflow="true"] .lit-ticket-footer {
-  box-shadow: 0 -10px 12px -10px rgb(0 0 0 / 45%);
 }
 
 .lit-ticket-meta {
@@ -48,6 +60,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  border-bottom: 1px solid var(--lit-line);
+  padding: 6px 8px;
+  background: var(--lit-panel);
   font-size: 11.5px;
 }
 
@@ -81,6 +96,11 @@
   white-space: nowrap;
 }
 
+.lit-ticket-available small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .lit-ticket-available b {
   color: var(--lit-ink);
   font-weight: 600;
@@ -92,6 +112,17 @@
   color: var(--lit-ink-muted);
   font-size: 11.5px;
   line-height: 1.45;
+}
+
+.lit-ticket-book-hint {
+  flex: 0 0 auto;
+  margin: -1px 0 0;
+  overflow: hidden;
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lit-field {
@@ -173,9 +204,9 @@
 /* One row: label, presets, custom input. The worst price is a fact below. */
 .lit-slippage-field {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: 52px minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .lit-slippage-controls {
@@ -204,10 +235,13 @@
 .lit-slippage-input { padding: 0 6px; }
 .lit-slippage-input input { height: 24px; font-size: 11.5px; }
 
-/* At the ticket's floor the label and the four controls no longer share a
- * row without the custom input losing its digits; the label steps above. */
+/* Keep slippage on one row at the ticket floor; smaller gaps preserve the
+ * editable value without stealing a second line from the order flow. */
 @container (max-width: 300px) {
-  .lit-slippage-field { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .lit-slippage-field { grid-template-columns: 48px minmax(0, 1fr); gap: 4px; }
+  .lit-slippage-controls { gap: 3px; }
+  .lit-slippage-controls > button { padding-inline: 4px; }
+  .lit-slippage-input { padding-inline: 4px; }
 }
 
 /* Binance-style size slider: the track fills to the share, quarter ticks below. */
@@ -382,7 +416,7 @@
 .lit-check-group {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .lit-protection-leg,
@@ -441,7 +475,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
 }
 
 .lit-check-row {
@@ -466,10 +500,10 @@
   display: grid;
   flex: 0 0 auto;
   grid-template-columns: 1fr 1fr;
-  gap: 5px 12px;
-  margin: auto 0 0;
+  gap: 3px 8px;
+  margin: 4px 0 0;
   border-top: 1px solid var(--lit-line);
-  padding-top: 10px;
+  padding-top: 6px;
   font-size: 11px;
 }
 
@@ -510,24 +544,43 @@
   line-height: 1.45;
 }
 
-/* Second opinion on the draft: a quiet link beside the note, live once the draft is valid. */
+/* Agent review comes before the manual order actions. */
 .lit-ask-draft {
-  display: inline-flex;
+  display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
-  border: 0;
+  justify-content: center;
+  min-height: 32px;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--lit-focus) 32%, var(--lit-line));
   border-radius: var(--lit-radius);
-  background: transparent;
-  padding: 2px 4px;
+  background: color-mix(in srgb, var(--lit-focus) 10%, transparent);
+  padding: 6px 8px;
   color: var(--lit-focus);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
 }
 
 .lit-ask-draft:hover:not(:disabled) { background: var(--lit-hover); }
 .lit-ask-draft:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.lit-ticket-approval-waiting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--lit-warning) 38%, transparent);
+  border-radius: var(--lit-radius);
+  background: color-mix(in srgb, var(--lit-warning) 10%, transparent);
+  padding: 6px 8px;
+  animation: lit-ticket-status-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lit-ticket-approval-waiting span { display: flex; min-width: 0; flex-direction: column; }
+.lit-ticket-approval-waiting b { color: var(--lit-warning); font-size: 11.5px; }
+.lit-ticket-approval-waiting small { overflow: hidden; color: var(--lit-ink-muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.lit-ticket-approval-waiting button { border: 0; border-radius: var(--lit-radius); background: var(--lit-hover); padding: 4px 7px; color: var(--lit-ink); font-size: 11px; font-weight: 600; }
 
 .lit-review-error {
   margin: 0;
@@ -538,6 +591,7 @@
   color: var(--lit-negative);
   font-size: 11.5px;
   line-height: 1.45;
+  animation: lit-ticket-status-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Where the last desk card landed: sent, failed, or unknown. */
@@ -550,6 +604,11 @@
   color: var(--lit-positive);
   font-size: 11.5px;
   line-height: 1.45;
+  animation: lit-ticket-status-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes lit-ticket-status-in {
+  from { opacity: 0; transform: translateY(3px); }
 }
 
 .lit-review-outcome[data-tone="warn"] {
@@ -587,18 +646,24 @@
   display: grid;
   flex: 0 0 auto;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 4px;
 }
 
 .lit-side-actions .lit-review-button {
   display: flex;
-  min-height: 42px;
+  min-height: 38px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 4px 8px;
   gap: 1px;
   line-height: 1.2;
+}
+
+@container (max-width: 300px) {
+  .lit-ticket-body,
+  .lit-ticket-footer,
+  .lit-ticket-meta { padding-inline: 7px; }
 }
 
 .lit-side-actions .lit-review-button small {
@@ -624,10 +689,10 @@
 }
 
 .lit-review-button:hover:not(:disabled) { opacity: 0.92; }
+.lit-review-button:active:not(:disabled) { transform: translateY(1px); }
 .lit-review-button:disabled { cursor: not-allowed; opacity: 0.45; }
 
-/* No account yet: the ticket is this one block, in the body's seat, with the
- * same words as the dock ("Not connected", "Connect Lighter"). */
+/* No account yet: the ticket becomes one guided setup block. */
 .lit-ticket-connect {
   display: flex;
   flex-direction: column;
@@ -666,4 +731,3 @@
 .lit-ticket-steps li em { font-style: normal; color: var(--lit-ink-muted); }
 .lit-ticket-steps li[data-state="done"] span { color: var(--lit-ink-secondary); }
 .lit-ticket-steps li[data-state="done"] em { color: var(--lit-positive); }
-

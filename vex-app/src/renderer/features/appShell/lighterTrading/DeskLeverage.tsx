@@ -88,6 +88,7 @@ function DeskLeverageScoped({
     <>
       <LighterLeverageSheet
         key={row === null ? "pending" : "row"}
+        open={change.proposal === null}
         symbol={symbol}
         row={row}
         notice={row === null ? notice : null}
@@ -101,8 +102,9 @@ function DeskLeverageScoped({
       {change.proposal === null ? null : (
         <LighterLeverageConfirmModal
           proposal={change.proposal.value}
-          environment={environment}
           submitting={change.submitting}
+          cancelling={change.cancelling}
+          error={change.proposalError}
           onCancel={change.closeProposal}
           onConfirm={change.onConfirm}
         />

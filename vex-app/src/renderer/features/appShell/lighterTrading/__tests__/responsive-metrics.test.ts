@@ -14,8 +14,28 @@ describe("Lighter desk responsive market metrics", () => {
     expect(css).toMatch(/\.lit-bottom-tabs\s*\{[^}]*gap: 8px;/s);
   });
 
+  it("shows all agent prompts without a hidden horizontal scroll", () => {
+    expect(css).toMatch(/\.lit-desk-scope\s*\{[^}]*flex-direction: column;[^}]*padding: 6px 12px;/s);
+    expect(css).toMatch(/\.lit-desk-quick\s*\{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/s);
+    expect(css).toMatch(/@container \(max-width: 420px\)[\s\S]*\.lit-desk-quick > button \{ padding-inline: 8px; \}/s);
+  });
+
+  it("keeps the ticket compact while preserving its primary controls", () => {
+    expect(css).toMatch(/\.lit-ticket-body\s*\{[^}]*gap: 5px;[^}]*overflow-y: auto;[^}]*padding: 6px 8px 8px;/s);
+    expect(css).toMatch(/\.lit-ticket-footer\s*\{[^}]*gap: 4px;[^}]*padding: 6px 8px;/s);
+    expect(css).toMatch(/\.lit-side-actions \.lit-review-button\s*\{[^}]*min-height: 38px;/s);
+    expect(css).toMatch(/@container \(max-width: 300px\)[\s\S]*\.lit-ticket-meta \{ padding-inline: 7px; \}/s);
+    expect(css).toMatch(/@container \(max-width: 300px\)[\s\S]*\.lit-slippage-field \{ grid-template-columns: 48px minmax\(0, 1fr\);/s);
+  });
+
   it("keeps order-behavior choices legible at desk density", () => {
     expect(css).toMatch(/\.lit-tif-tabs button\s*\{[^}]*min-height: 30px;[^}]*font-size: 11px;/s);
+  });
+
+  it("gives ticket actions visible focus and brief reduced-motion-safe feedback", () => {
+    expect(css).toMatch(/\.lit-ticket button:focus-visible,[\s\S]*outline: 2px solid var\(--lit-focus\);/s);
+    expect(css).toContain("@keyframes lit-ticket-status-in");
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.lit-desk \*/s);
   });
 
   it("uses explicit product and metric identities instead of DOM positions", () => {
@@ -36,7 +56,7 @@ describe("Lighter desk responsive market metrics", () => {
 
   it("sizes the market bar to its own column, not the viewport", () => {
     expect(css).toMatch(/\.lit-desk-top\s*\{[^}]*container-type: inline-size;/s);
-    expect(css).toContain("@container (max-width: 1100px)");
+    expect(css).toContain("@container (max-width: 1020px)");
     expect(css).not.toMatch(/@media \(max-width: 1440px\)/);
   });
 
@@ -44,7 +64,9 @@ describe("Lighter desk responsive market metrics", () => {
     expect(css).toMatch(/\.lit-desk-upper\s*\{[^}]*grid-template-columns: minmax\(0, 1fr\) 260px 300px;/s);
     expect(css).toMatch(/\.lit-book-column > \.lit-book-panel\s*\{[^}]*min-height: 140px;/s);
     expect(css).toMatch(/\.lit-book-column > \.lit-trades-slot\s*\{[^}]*min-height: 120px;/s);
-    expect(css).toMatch(/\.lit-ticket-footer\s*\{[^}]*position: sticky;/s);
+    expect(css).toMatch(/\.lit-ticket-content,\s*\.lit-ticket\s*\{[^}]*min-height: 0;[^}]*height: 100%;[^}]*flex: 1 1 auto;/s);
+    expect(css).toMatch(/\.lit-ticket-column > \.lit-ticket-panel\s*\{[^}]*overflow: hidden;/s);
+    expect(css).toMatch(/\.lit-ticket-footer\s*\{[^}]*flex: 0 0 auto;/s);
     expect(css).toMatch(/\.lit-splitter\[data-axis="x"\]\s*\{[^}]*cursor: ew-resize;/s);
     expect(css).not.toMatch(/\.lit-bottom-panel\s*\{[^}]*display: none/s);
     expect(css).not.toContain(".lit-dialog");

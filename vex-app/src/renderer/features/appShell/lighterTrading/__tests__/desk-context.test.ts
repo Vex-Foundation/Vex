@@ -107,10 +107,10 @@ describe("deskQuickPrompts", () => {
   it("flat on the market: reads and 1% risk plans, every one scoped and non-executing", () => {
     const prompts = deskQuickPrompts(SCOPE, null);
     expect(prompts.map((p) => p.label)).toEqual([
-      "Read this chart",
-      "Where's the liquidity?",
-      "Plan a long, 1% risk",
-      "Plan a short, 1% risk",
+      "Analyze chart",
+      "Find liquidity",
+      "Plan long · 1%",
+      "Plan short · 1%",
     ]);
     for (const prompt of prompts) {
       expect(prompt.message.startsWith(buildDeskContext(SCOPE))).toBe(true);

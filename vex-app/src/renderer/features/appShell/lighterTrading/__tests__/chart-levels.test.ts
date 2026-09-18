@@ -66,7 +66,7 @@ describe("buildChartLevels", () => {
   });
 
   it("skips a position without a liquidation price and orders without a price", () => {
-    expect(buildChartLevels(1, [{ ...LONG, liquidationPrice: null }], [order({ price: null as never, remaining: null })])).toEqual([
+    expect(buildChartLevels(1, [{ ...LONG, liquidationPrice: null }], [order({ price: null, remaining: null })])).toEqual([
       { key: "entry:1", kind: "entry", price: 64_000, title: "Entry", side: "buy" },
     ]);
   });

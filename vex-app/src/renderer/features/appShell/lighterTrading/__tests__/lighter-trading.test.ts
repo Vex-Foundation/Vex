@@ -372,7 +372,7 @@ describe("Light it up chart adapter", () => {
     expect(createdChart?.addSeries).toHaveBeenNthCalledWith(
       2,
       chartHarness.histogramToken,
-      expect.objectContaining({ lastValueVisible: true }),
+      expect.objectContaining({ lastValueVisible: false }),
     );
     chartHarness.getVisibleLogicalRange.mockReturnValue({ from: -3, to: 7 });
 
@@ -463,7 +463,7 @@ describe("Light it up chart adapter", () => {
 });
 
 describe("Light it up order book", () => {
-  function bookPanel(book: Parameters<typeof MarketBookPanel>[0]["book"], lastPrice: number | null = null) {
+  function bookPanel(book: Parameters<typeof MarketBookPanel>[0]["book"], lastPrice: number | null = null, preferredView?: "stack" | "split") {
     return createElement(MarketBookPanel, {
       book,
       baseSymbol: "BTC",
@@ -473,8 +473,37 @@ describe("Light it up order book", () => {
       markPrice: 100.25,
       bookStatus: "live",
       onPriceSelect: vi.fn(),
+      preferredView,
     });
   }
+
+  it("adapts the book orientation to available space until the trader chooses a view", () => {
+    const book = { asks: [{ price: "101", size: "2" }], bids: [{ price: "100", size: "3" }] };
+    const { rerender } = render(bookPanel(book));
+    expect(screen.getByRole("button", { name: "Stacked", pressed: true })).toBeTruthy();
+    rerender(bookPanel(book, null, "split"));
+    expect(screen.getByRole("button", { name: "Side by side", pressed: true })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Stacked" }));
+    rerender(bookPanel(book, null, "stack"));
+    rerender(bookPanel(book, null, "split"));
+    expect(screen.getByRole("button", { name: "Stacked", pressed: true })).toBeTruthy();
+  });
+
+  it("folds the depth rows while keeping the live spread summary visible", () => {
+    const book = { asks: [{ price: "101", size: "2" }], bids: [{ price: "100", size: "3" }] };
+    const onToggleCollapse = vi.fn();
+    const { container } = render(createElement(MarketBookPanel, {
+      ...bookPanel(book).props,
+      collapsed: true,
+      onToggleCollapse,
+    }));
+
+    expect(screen.getByRole("button", { name: "Expand order book" })).toBeTruthy();
+    expect(container.querySelector(".lit-book-stack")).toBeNull();
+    expect(container.querySelector(".lit-book-mid")?.textContent).toContain("Spread");
+    fireEvent.click(screen.getByRole("button", { name: "Expand order book" }));
+    expect(onToggleCollapse).toHaveBeenCalledOnce();
+  });
 
   it("stacks the asks down to the inside row and the bids under it, with the spread in basis points", () => {
     const asks = [
@@ -488,9 +517,9 @@ describe("Light it up order book", () => {
     }, 100.5));
 
     expect(bestBookPrice(asks, "ask")).toBe("101");
-    // Stacked, the asks read far → best so the best ask meets the inside row.
+    // Best-first DOM order pairs with column-reverse to keep the best ask by the inside row.
     expect(Array.from(container.querySelectorAll('[data-side="ask"] .lit-book-row b'))
-      .map((node) => node.textContent)).toEqual(["103", "102", "101"]);
+      .map((node) => node.textContent)).toEqual(["101", "102", "103"]);
     expect(Array.from(container.querySelectorAll(".lit-book-stack > *")).map((node) => node.className))
       .toEqual(["lit-book-rows", "lit-book-mid", "lit-book-rows"]);
     expect(container.querySelector(".lit-book-columns")?.textContent).toBe("Price (USD)Size (BTC)Sum");
@@ -515,7 +544,7 @@ describe("Light it up order book", () => {
     const totals = (side: string): string[] => Array.from(container.querySelectorAll(`[data-side="${side}"] .lit-book-row`))
       .map((row) => row.getAttribute("aria-label")?.replace(/.*total /, "") ?? "");
     // Totals accumulate outward from the inside; the Sum column shows them.
-    expect(totals("ask")).toEqual(["9", "5", "2"]);
+    expect(totals("ask")).toEqual(["2", "5", "9"]);
     expect(totals("bid")).toEqual(["5", "11"]);
     expect(Array.from(container.querySelectorAll('[data-side="bid"] .lit-book-row span:last-child'))
       .map((node) => node.textContent)).toEqual(["5", "11"]);

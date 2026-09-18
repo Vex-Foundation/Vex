@@ -1,8 +1,8 @@
 /**
  * VEX Perps Trading Arena - the Superboard campaign that counts trades on
  * Lighter Robinhood Chain only. Dates are the campaign's published window;
- * the phase is a pure read of a clock the caller freezes (the hero reads its
- * clock once per mount and never ticks).
+ * the phase is a pure read of the supplied clock. The welcome card refreshes
+ * its phase each minute while mounted.
  */
 
 export const ARENA_CAMPAIGN = {

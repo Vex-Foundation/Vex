@@ -263,7 +263,7 @@ describe("SessionActivityCard", () => {
     expect(rows[1]?.textContent).toContain("Buy 0.0050 ETH");
     // The venue's own SETTLED usd, plain, plus the leverage before the fill.
     expect(rows[1]?.textContent).toContain("$12.99");
-    expect(rows[1]?.textContent).toContain("10.00x");
+    expect(rows[1]?.textContent).toContain("10x");
     expect(rows[1]?.textContent).not.toContain("est.");
   });
 

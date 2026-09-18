@@ -97,7 +97,9 @@ describe("ticket margin math", () => {
 
   it("prices leverage, cost and maximum size on the 10000 scale", () => {
     expect(leverageLabel(1_000)).toBe("10x");
-    expect(leverageLabel(1_500)).toBe("6.67x");
+    expect(leverageLabel(1_500)).toBe("7x");
+    expect(leverageLabel(295)).toBe("34x");
+    expect(leverageLabel(3_334)).toBe("3x");
     expect(marginCost(1_284.2, 1_000)).toBeCloseTo(128.42);
     expect(maxBaseSize(5_000, 1_000, 3_210.5)).toBeCloseTo(15.5739, 4);
     expect(maxBaseSize(5_000, 1_000, 0)).toBe(0);
@@ -166,6 +168,16 @@ describe("protection follow-up prefill", () => {
       baseAmount: "0.5",
       reduceOnly: true,
       protection,
+    });
+  });
+
+  it("uses the provider-confirmed filled amount instead of the requested entry size", () => {
+    const protection = { stopLoss: { triggerPrice: "3000", price: "2970" }, takeProfit: null };
+    expect(protectionPrefill({ ...entry, protection }, 8, "0.2")).toMatchObject({
+      mode: "stop-loss",
+      side: "sell",
+      baseAmount: "0.2",
+      reduceOnly: true,
     });
   });
 

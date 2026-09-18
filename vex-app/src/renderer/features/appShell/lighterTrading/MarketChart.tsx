@@ -278,6 +278,7 @@ export function MarketChart({
   const [chartApi, setChartApi] = useState<IChartApi | null>(null);
   const [chartType, setChartType] = useState<"candles" | "line">("candles");
   const [showFills, setShowFills] = useState(true);
+  const previousChartTypeRef = useRef(chartType);
   const lineSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -627,7 +628,8 @@ export function MarketChart({
     const chart = chartRef.current;
     const series = candleSeriesRef.current;
     if (!chart || !series) return;
-    const range = chart.timeScale().getVisibleLogicalRange();
+    const chartTypeChanged = previousChartTypeRef.current !== chartType;
+    const range = chartTypeChanged ? chart.timeScale().getVisibleLogicalRange() : null;
     series.applyOptions({ visible: chartType === "candles" });
     if (chartType === "line") {
       if (!lineSeriesRef.current) lineSeriesRef.current = chart.addSeries(LineSeries, { lineWidth: 2, priceLineVisible: true });
@@ -635,6 +637,7 @@ export function MarketChart({
     } else lineSeriesRef.current?.applyOptions({ visible: false });
     // Hidden series still contribute timestamps to the shared chart timeline.
     lineSeriesRef.current?.setData((appliedDataRef.current?.candles ?? []).map(c => ({ time: c.time, value: c.close })));
+    previousChartTypeRef.current = chartType;
     if (range && lineSeriesRef.current) chart.timeScale().setVisibleLogicalRange(range);
   }, [chartType, candles, identity, theme, pricePrecision, priceMinMove]);
 

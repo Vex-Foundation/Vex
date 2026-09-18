@@ -8,8 +8,15 @@ const market = {
   symbol: "BTC",
   marketType: "perp",
   status: "active",
-  decimals: { price: 1, size: 4 },
-} as unknown as LighterTradingMarket;
+  baseAssetId: 1,
+  quoteAssetId: 2,
+  minBaseAmount: "0.0001",
+  minQuoteAmount: "1",
+  orderQuoteLimit: "1000000",
+  decimals: { price: 1, size: 4, quote: 2 },
+  fees: { maker: "0", taker: "0", makerEnabled: true, takerEnabled: true },
+  activity24h: { tradesCount: null, quoteVolume: null },
+} satisfies LighterTradingMarket;
 
 describe("MarketBar", () => {
   it("names the desk's section in the Perps | Stocks | Spot control and switches on tap", () => {
@@ -20,13 +27,11 @@ describe("MarketBar", () => {
         market={market}
         marketPickerOpen={false}
         onOpenMarketPicker={vi.fn()}
-        onSelectEnvironment={vi.fn()}
         onSelectSection={onSelectSection}
         snapshot={null}
         liveStats={null}
         streamStatus="live"
         streamReceivedAt={null}
-        onAskVex={null}
       />,
     );
     const tabs = screen.getByRole("navigation", { name: "Lighter market category" });
@@ -37,54 +42,27 @@ describe("MarketBar", () => {
     expect(onSelectSection).toHaveBeenCalledWith("spot");
   });
 
-  it("offers Ask Vex with its shortcut before the live status once a market is on screen", () => {
-    const onAskVex = vi.fn();
-    render(
-      <MarketBar
-        environment="rhc"
-        market={market}
-        marketPickerOpen={false}
-        onOpenMarketPicker={vi.fn()}
-        onSelectEnvironment={vi.fn()}
-        onSelectSection={vi.fn()}
-        snapshot={null}
-        liveStats={null}
-        streamStatus="live"
-        streamReceivedAt={null}
-        onAskVex={onAskVex}
-      />,
-    );
-    const trigger = screen.getByRole("button", { name: "Ask Vex" });
-    expect(trigger.nextElementSibling).toBe(screen.getByRole("status"));
-    fireEvent.click(trigger);
-    expect(onAskVex).toHaveBeenCalledTimes(1);
-  });
-
-  it("puts the Core | RHC network switch first, ahead of the market select, and switches on tap", () => {
-    const onSelectEnvironment = vi.fn();
+  it("keeps environment switching in the picker and shows only the selected context", () => {
+    const onOpenMarketPicker = vi.fn();
     render(
       <MarketBar
         environment="core"
         market={market}
         marketPickerOpen={false}
-        onOpenMarketPicker={vi.fn()}
-        onSelectEnvironment={onSelectEnvironment}
+        onOpenMarketPicker={onOpenMarketPicker}
         onSelectSection={vi.fn()}
         snapshot={null}
         liveStats={null}
         streamStatus="live"
         streamReceivedAt={null}
-        onAskVex={null}
       />,
     );
     const bar = screen.getByRole("region", { name: "Selected market summary" });
-    const group = screen.getByRole("radiogroup", { name: "Lighter environment" });
-    expect(bar.firstElementChild).toBe(group);
-    expect(group.textContent).toBe("CoreRHC");
-    expect(screen.getByRole("radio", { name: "Lighter Core" }).getAttribute("aria-checked")).toBe("true");
-    fireEvent.click(screen.getByRole("radio", { name: "Lighter Core" }));
-    expect(onSelectEnvironment).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("radio", { name: "Robinhood Chain" }));
-    expect(onSelectEnvironment).toHaveBeenCalledWith("rhc");
+    expect(screen.queryByRole("radiogroup", { name: "Lighter environment" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ask Vex" })).toBeNull();
+    const picker = screen.getByRole("button", { name: /BTC.*Core/ });
+    expect(bar.firstElementChild).toBe(picker);
+    fireEvent.click(picker);
+    expect(onOpenMarketPicker).toHaveBeenCalledOnce();
   });
 });

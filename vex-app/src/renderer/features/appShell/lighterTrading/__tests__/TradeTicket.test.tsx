@@ -74,25 +74,49 @@ function renderTicket(overrides: Partial<Parameters<typeof TradeTicket>[0]> = {}
 }
 
 describe("Light it up trade ticket", () => {
-  it("collapses to one Connect Lighter block while no account is onboarded", () => {
+  it("keeps account context and order actions outside the scrolling field body", () => {
+    renderTicket();
+    const ticket = document.querySelector<HTMLFormElement>("form.lit-ticket");
+    if (ticket === null) throw new Error("ticket missing");
+    expect(Array.from(ticket.children).map((node) => node.className)).toEqual([
+      "lit-ticket-meta",
+      "lit-ticket-body",
+      "lit-ticket-footer",
+    ]);
+    expect(ticket.querySelector(".lit-ticket-meta")?.parentElement).toBe(ticket);
+    expect(ticket.querySelector(".lit-side-actions")?.parentElement?.className).toBe("lit-ticket-footer");
+    expect(screen.getByText("Price click → Limit · Shift-click → Trigger")).toBeTruthy();
+  });
+
+  it("collapses to one truthful setup block while no account is onboarded", () => {
     const { onConnect, onOpenLeverage, rerender } = renderTicket({ available: null, accountGap: "not_onboarded" });
     expect(screen.queryAllByRole("button", { name: /^(Long|Short|Buy|Sell)\b/ })).toHaveLength(0);
     // No form of dashes: no size field, no order type tabs, just the way in.
     expect(screen.queryByLabelText("Size")).toBeNull();
     expect(screen.queryByRole("button", { name: "Limit" })).toBeNull();
-    expect(screen.getByRole("status").textContent).toContain("Not connected");
+    expect(screen.getByRole("status").textContent).toContain("Lighter setup");
     // Steps are listed even before the checklist read lands, without a status mark.
     const steps = within(screen.getByRole("list", { name: "Setup steps" })).getAllByRole("listitem");
     expect(steps.map((step) => step.textContent)).toEqual(["First deposit", "Trading key", "Fee approval"]);
-    fireEvent.click(screen.getByRole("button", { name: "Connect Lighter" }));
+    fireEvent.click(screen.getByRole("button", { name: "Set up Lighter" }));
     expect(onConnect).toHaveBeenCalledTimes(1);
     expect(onOpenLeverage).not.toHaveBeenCalled();
 
     // Once read, each step carries where the wallet stands.
-    rerender({ checklist: { deposit: "done", key: "todo", fee: "not_required" } });
+    rerender({ checklist: {
+      deposit: "done",
+      key: "todo",
+      fee: "not_required",
+      progress: "action_required",
+      detail: "Trading key approval is required.",
+      nextAction: "continue_setup",
+      updatedAt: "2026-09-18T00:01:00.000Z",
+    } });
     const marked = within(screen.getByRole("list", { name: "Setup steps" })).getAllByRole("listitem");
     expect(marked.map((step) => step.textContent)).toEqual(["First depositDone", "Trading keyTo do", "Fee approvalNot needed"]);
     expect(marked.map((step) => step.getAttribute("data-state"))).toEqual(["done", "todo", "not_required"]);
+    expect(screen.getByText("Trading key approval is required.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Continue setup" })).toBeTruthy();
 
     // A locked vault is not a missing account: the preview stays, the vault flow unlocks.
     rerender({ accountGap: "locked_vault" });
@@ -132,7 +156,17 @@ describe("Light it up trade ticket", () => {
       takeProfitTriggerPrice: "3300",
       takeProfitPrice: "3250",
     });
-    expect(screen.getByRole("note").textContent).toContain("Nothing signs until you confirm the card");
+    expect(screen.getByRole("note").textContent).toContain("Nothing signs until you confirm");
+  });
+
+  it("keeps a dismissed pending approval recoverable from the ticket", () => {
+    const onReviewApprovals = vi.fn();
+    renderTicket({ pendingApprovalCount: 1, onReviewApprovals });
+
+    expect(screen.getByText("Approval waiting")).toBeTruthy();
+    expect(screen.getByText("1 action needs a decision")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    expect(onReviewApprovals).toHaveBeenCalledTimes(1);
   });
 
   it("bounds a market order from the live inside price and the chosen slippage", () => {
@@ -143,7 +177,7 @@ describe("Light it up trade ticket", () => {
     expect(screen.getByRole("button", { name: "Long" })).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("Size"), { target: { value: "0.5" } });
-    expect(screen.getByText("Order Value").nextElementSibling?.textContent).toBe("1,605.25 USD");
+    expect(screen.getByText("Order Value").nextElementSibling?.textContent).toBe("1,613.28 USD");
     expect(screen.getByText("Fee (Taker)").getAttribute("title")).toBe("Taker 0.0003%");
     fireEvent.click(screen.getByRole("button", { name: "Long 0.5 ETH" }));
     expect(onSend).toHaveBeenLastCalledWith({
@@ -190,14 +224,14 @@ describe("Light it up trade ticket", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Size unit: ETH. Switch" }));
     fireEvent.change(screen.getByLabelText("Size in quote"), { target: { value: "1000" } });
-    expect(screen.getByText("≈ 0.3115 ETH")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Long 0.3115 ETH" }));
-    expect(onSend).toHaveBeenLastCalledWith(expect.objectContaining({ baseAmount: "0.3115" }));
+    expect(screen.getByText("≈ 0.3099 ETH")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Long 0.3099 ETH" }));
+    expect(onSend).toHaveBeenLastCalledWith(expect.objectContaining({ baseAmount: "0.3099" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Size unit: USD. Switch" }));
-    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("15.5739 ETH");
+    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("15.4959 ETH");
     fireEvent.click(screen.getByRole("button", { name: "50%" }));
-    expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("7.787");
+    expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("7.7479");
     expect(screen.getByRole("button", { name: "50%", pressed: true })).toBeTruthy();
     expect(screen.getByText("5,000 USDG")).toBeTruthy();
   });
@@ -208,7 +242,7 @@ describe("Light it up trade ticket", () => {
     const slider = screen.getByRole("slider", { name: "Size as percent of maximum" }) as HTMLInputElement;
     expect(slider.value).toBe("0");
     fireEvent.change(slider, { target: { value: "40" } });
-    expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("6.2296");
+    expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("6.1983");
     // Typing moves the thumb to the nearest whole percent of the maximum.
     fireEvent.change(screen.getByLabelText("Size"), { target: { value: "7.787" } });
     expect(slider.value).toBe("50");
@@ -229,11 +263,11 @@ describe("Light it up trade ticket", () => {
     renderTicket();
 
     fireEvent.change(screen.getByLabelText("Size"), { target: { value: "0.4" } });
-    expect(screen.getByText("Cost").nextElementSibling?.textContent).toBe("128.42 USD");
-    expect(screen.getByText("Liq. Price").nextElementSibling?.textContent).toBe("≈ 3,017.87");
+    expect(screen.getByText("Cost").nextElementSibling?.textContent).toBe("129.06 USD");
+    expect(screen.getByText("Liq. Price").nextElementSibling?.textContent).toBe("≈ 3,032.97");
 
     fireEvent.click(screen.getByRole("button", { name: /^Short/ }));
-    expect(screen.getByText("Liq. Price").nextElementSibling?.textContent).toBe("≈ 3,391.47");
+    expect(screen.getByText("Liq. Price").nextElementSibling?.textContent).toBe("≈ 3,374.51");
   });
 
   it("attaches stop-loss and take-profit triggers to a market entry with bounds one percent past each trigger", () => {
@@ -259,17 +293,67 @@ describe("Light it up trade ticket", () => {
     }));
   });
 
+  it("keeps Reduce-Only and attached TP/SL mutually exclusive", () => {
+    renderTicket();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "TP/SL" }));
+    expect((screen.getByRole("checkbox", { name: "Reduce-Only" }) as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByLabelText("Attached stop-loss trigger price")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Reduce-Only" }));
+    expect((screen.getByRole("checkbox", { name: "TP/SL" }) as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByLabelText("Attached stop-loss trigger price")).toBeNull();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "TP/SL" }));
+    expect((screen.getByRole("checkbox", { name: "Reduce-Only" }) as HTMLInputElement).checked).toBe(false);
+  });
+
+  it("converts quote size and Max from the selected limit execution price", () => {
+    renderTicket();
+
+    fireEvent.click(screen.getByRole("button", { name: "Limit" }));
+    fireEvent.change(screen.getByLabelText("Limit price"), { target: { value: "4000" } });
+    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("12.4996 ETH");
+    fireEvent.click(screen.getByRole("button", { name: "Size unit: ETH. Switch" }));
+    fireEvent.change(screen.getByLabelText("Size in quote"), { target: { value: "1000" } });
+    expect(screen.getByText("≈ 0.25 ETH")).toBeTruthy();
+    expect(screen.getByText("Order Value").nextElementSibling?.textContent).toBe("1,000 USD");
+  });
+
+  it("uses the limit price for quote sizing on trigger-limit protection", () => {
+    renderTicket({
+      prefill: {
+        key: 1,
+        mode: "stop-loss-limit",
+        side: "buy",
+        baseAmount: "",
+        triggerPrice: "3000",
+        price: "4000",
+        timeInForce: "good-till-time",
+        reduceOnly: true,
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Size unit: ETH. Switch" }));
+    fireEvent.change(screen.getByLabelText("Size in quote"), { target: { value: "1000" } });
+    expect(screen.getByText("≈ 0.25 ETH")).toBeTruthy();
+  });
+
   it("asks Vex about the drafted order as a question, live only once the draft is valid", () => {
     const onAsk = vi.fn();
-    renderTicket({ onAsk });
+    const { onSend } = renderTicket({ onAsk });
 
-    const ask = screen.getByRole("button", { name: "Ask Vex" }) as HTMLButtonElement;
+    const ask = screen.getByRole("button", { name: "Review with Vex" }) as HTMLButtonElement;
     expect(ask.disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("Size"), { target: { value: "0.5" } });
     expect(ask.disabled).toBe(false);
     fireEvent.click(ask);
 
     expect(onAsk).toHaveBeenCalledWith(expect.objectContaining({ mode: "market", side: "buy", baseAmount: "0.5" }));
+    expect(onSend).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "" } });
+    expect(screen.getByRole("button", { name: "Review with Vex" })).toBe(ask);
+    expect(ask.disabled).toBe(true);
   });
 
   it("sizes by risk from the attached stop-loss and keeps Risk off without an account", () => {
@@ -279,15 +363,16 @@ describe("Light it up trade ticket", () => {
     expect((screen.getByRole("checkbox", { name: "TP/SL" }) as HTMLInputElement).checked).toBe(true);
     expect(screen.getByText("Enter a stop-loss trigger first.")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Attached stop-loss trigger price"), { target: { value: "3000" } });
-    // 1% of 10,000 over the 3,210.50 ask to 3,000 stop distance (0.47506), floored to the size step.
-    expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("0.475");
+    // Market risk uses the approved worst-price bound (3,226.56), so a fill at
+    // that bound still loses no more than the selected equity percentage.
+    expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("0.4413");
     expect(screen.getByText("Risks 100 USDG if the stop fills at 3,000.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "2%" }));
     expect((screen.getByLabelText("Risk as percent of equity") as HTMLInputElement).value).toBe("2");
-    expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("0.9501");
-    fireEvent.click(screen.getByRole("button", { name: "Long 0.9501 ETH + TP/SL" }));
+    expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("0.8827");
+    fireEvent.click(screen.getByRole("button", { name: "Long 0.8827 ETH + TP/SL" }));
     expect(onSend).toHaveBeenLastCalledWith(expect.objectContaining({
-      baseAmount: "0.9501",
+      baseAmount: "0.8827",
       protection: expect.objectContaining({ stopLoss: { triggerPrice: "3000", price: "2970" } }),
     }));
 
@@ -420,25 +505,30 @@ describe("Light it up trade ticket", () => {
   });
 
   it("keeps protection unavailable on spot and uses buy and sell wording", () => {
-    const { onSend, onOpenLeverage } = renderTicket({ market: SPOT, settlementSymbol: "USDG" });
+    const { onSend, onOpenLeverage } = renderTicket({ market: SPOT, settlementSymbol: "USDG", baseAvailable: "1.2345" });
 
     expect(screen.queryByRole("checkbox", { name: "TP/SL" })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "Reduce-Only" })).toBeNull();
     expect(sideButtons("Order side")).toEqual(["Buy", "Sell"]);
     expect(screen.queryByRole("button", { name: /Leverage and margin mode/ })).toBeNull();
     expect(onOpenLeverage).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByLabelText("Size"), { target: { value: "0.5" } });
-    expect(screen.getByText("Order Value").nextElementSibling?.textContent).toBe("1,605.25 USDG");
+    expect(screen.getByText("Order Value").nextElementSibling?.textContent).toBe("1,613.28 USDG");
     expect(screen.queryByText("Cost")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Buy 0.5 ETH" }));
-    expect(onSend).toHaveBeenCalledWith(expect.objectContaining({ mode: "market", side: "buy" }));
+    expect(onSend).toHaveBeenCalledWith(expect.objectContaining({ mode: "market", side: "buy", reduceOnly: false }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sell/ }));
+    expect(screen.getByText("Avbl").nextElementSibling?.textContent).toBe("1.2345 ETH");
   });
 
   it("opens the leverage sheet from the margin chip instead of editing in the ticket", () => {
-    const { onOpenLeverage } = renderTicket();
+    const { onOpenLeverage, rerender } = renderTicket();
 
     const chip = screen.getByRole("button", { name: "Leverage and margin mode" });
     expect(chip.textContent).toBe("Cross · 10x›");
+    rerender({ margin: { ...MARGIN, initialMarginFraction: 295 } });
+    expect(chip.textContent).toBe("Cross · 34x›");
     fireEvent.click(chip);
     expect(onOpenLeverage).toHaveBeenCalledTimes(1);
   });

@@ -15,8 +15,11 @@ describe("Light it up conversational activation", () => {
   });
 
   it("enters the Lighter shell mode and remembers where to return", () => {
+    useUiStore.setState({ bookOpen: false, sidebarNarrowExpanded: true });
     enterLighterMode();
     expect(useUiStore.getState().runtimeMode).toBe("lighter");
     expect(useUiStore.getState().lighterReturn?.mode).toBe("agent");
+    expect(useUiStore.getState().bookOpen).toBe(true);
+    expect(useUiStore.getState().sidebarNarrowExpanded).toBe(false);
   });
 });

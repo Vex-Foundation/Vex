@@ -23,4 +23,6 @@ export function isLighterWorkspaceCommand(message: string): boolean {
 export function enterLighterMode(): void {
   recordFunnelStep("desk_enter", useLighterAnalysisStore.getState().desk.environment);
   useUiStore.getState().setRuntimeMode("lighter");
+  useUiStore.getState().setBookOpen(true);
+  useUiStore.getState().setSidebarNarrowExpanded(false);
 }

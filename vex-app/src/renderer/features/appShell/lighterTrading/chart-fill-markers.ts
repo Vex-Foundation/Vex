@@ -45,5 +45,8 @@ export function fillMarkers(
       position: bucket.side === "buy" ? "belowBar" : "aboveBar",
       shape: bucket.side === "buy" ? "arrowUp" : "arrowDown",
       color: bucket.side === "buy" ? colors.positive : colors.negative,
+      // Keep one uncluttered marker per bar/side, but make confirmed account
+      // events visibly distinct from drawing handles and price-line labels.
+      size: 2,
     }));
 }
