@@ -87,6 +87,28 @@ function order(overrides: Partial<LighterAccountOrder>): LighterAccountOrder {
 const symbolFor = (marketId: number): string => (marketId === 1 ? "BTC" : `#${marketId}`);
 
 describe("projectLighterTradingAccount", () => {
+  it("keeps oversized provider labels and decimals inside the account DTO", () => {
+    const dto = projectLighterTradingAccount({
+      environment: "core",
+      accountIndex: 42,
+      account: {
+        account_index: 42,
+        collateral: "1".repeat(97),
+        positions: [position({ symbol: "P".repeat(49) })],
+        assets: [{ asset_id: 1, symbol: "A".repeat(49), balance: "1", locked_balance: "0", margin_balance: "0", margin_mode: "enabled", multiplier: "1" }],
+      },
+      orders: [],
+      openOrdersAvailable: true,
+      symbolFor,
+      now: () => 1,
+    });
+
+    expect(lighterTradingAccountSchema.safeParse(dto).success).toBe(true);
+    expect(dto.positions[0]?.symbol).toBe("#1");
+    expect(dto.assets[0]?.symbol).toBe("#1");
+    expect(dto.summary?.collateral).toBe(null);
+  });
+
   it("projects positions, orders, and a summed unrealized PnL into a schema-valid DTO", () => {
     const account: LighterAccount = {
       account_index: 42,
@@ -585,6 +607,19 @@ function trade(overrides: Partial<LighterTrade>): LighterTrade {
 }
 
 describe("projectLighterTradingFills", () => {
+  it("keeps one oversized provider label from invalidating the fills DTO", () => {
+    const fills = projectLighterTradingFills({
+      environment: "core",
+      accountIndex: 42,
+      trades: [Object.defineProperty(trade({}), "type", { value: "x".repeat(33) })],
+      symbolFor: () => "S".repeat(49),
+      now: () => 5,
+    });
+
+    expect(lighterTradingFillsSchema.safeParse(fills).success).toBe(true);
+    expect(fills.fills[0]).toMatchObject({ symbol: "#1", type: "trade" });
+  });
+
   it("reads side, role and realized PnL from the account's own side of the fill", () => {
     const fills = projectLighterTradingFills({
       environment: "core",
@@ -603,13 +638,14 @@ describe("projectLighterTradingFills", () => {
     expect(fills.fills.map((row) => row.tradeId)).toEqual(["8", "7"]);
     expect(fills.fills[1]).toMatchObject({
       symbol: "BTC",
+      orderId: "2",
       side: "buy",
       role: "taker",
       type: "trade",
       value: "20000",
       realizedPnl: "12.5",
     });
-    expect(fills.fills[0]).toMatchObject({ side: "sell", role: "taker", type: "liquidation", realizedPnl: "-5" });
+    expect(fills.fills[0]).toMatchObject({ orderId: "1", side: "sell", role: "taker", type: "liquidation", realizedPnl: "-5" });
   });
 
   it("drops rows the account is not on exactly one side of", () => {
@@ -638,7 +674,7 @@ describe("readLighterTradingFills", () => {
 
     const fills = await readLighterTradingFills("core", 20, client, () => 1);
 
-    expect(fills).toEqual({ environment: "core", retrievedAt: 1, accountIndex: 42, available: false, fills: [] });
+    expect(fills).toEqual({ environment: "core", retrievedAt: 1, accountIndex: 42, available: false, truncated: false, fills: [] });
     expect(client.getAccountTrades).not.toHaveBeenCalled();
   });
 
@@ -660,5 +696,18 @@ describe("readLighterTradingFills", () => {
     );
     expect(fills.fills).toHaveLength(1);
     expect(fills.fills[0]?.symbol).toBe("BTC");
+    expect(fills.truncated).toBe(false);
+  });
+
+  it("marks a bounded provider page incomplete when more fills are available", async () => {
+    vi.clearAllMocks();
+    secrets.listScopes.mockReturnValue([scope]);
+    const auth = { accountIndex: 42, token: "never-crosses" };
+    secrets.readOnlyAuth.mockResolvedValue(auth);
+    client.getAccountTrades.mockResolvedValue({ trades: [trade({})], next_cursor: "next" });
+
+    const fills = await readLighterTradingFills("core", 20, client, () => 1);
+
+    expect(fills.truncated).toBe(true);
   });
 });

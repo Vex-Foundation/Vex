@@ -176,14 +176,14 @@ describe("lighter labels", () => {
 describe("lighter leverage - absent is not 1x", () => {
   it("renders the chip only when the fraction is on the row", () => {
     expect(lighterLeverageChipText({ initialMarginFraction: 1000, display: "10.00" }))
-      .toBe("10.00x");
+      .toBe("10x");
     expect(lighterLeverageChipText(null)).toBeNull();
   });
 
   it("says `unknown` in the drawer - never 0x, never the current setting", () => {
     expect(lighterLeverageDrawerText(null)).toBe("unknown");
     expect(lighterLeverageDrawerText({ initialMarginFraction: 3334, display: "2.99" }))
-      .toBe("2.99x");
+      .toBe("3x");
   });
 });
 
@@ -456,7 +456,7 @@ describe("lighter position now - four cases", () => {
       "realized PnL 0 USDG",
       "liquidation 2,365.93",
       "isolated",
-      "10.00x",
+      "10x",
     ]);
   });
 

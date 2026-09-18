@@ -164,7 +164,7 @@ export function mapRejectOutcome(
         cached: false,
         message: resumed
           ? "Rejected. The agent is continuing with the rejection in context."
-          : "Rejected. The rejection is recorded in the transcript.",
+          : "Rejected.",
       });
     }
     case "deferred_busy":

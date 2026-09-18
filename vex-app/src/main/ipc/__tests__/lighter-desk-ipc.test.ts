@@ -5,6 +5,7 @@
  *   - The renderer hands main a selector; main derives the prepare-tool
  *     terms itself (the same terms the ticket used to spell out in chat).
  *   - `ensureEngineDbUrl` first; bail with its Result when the DB is away.
+ *   - The referenced session must belong to the Lighter workspace.
  *   - The engine's `prepareDeskApproval` outcome is returned as-is, and an
  *     engine throw becomes `internal.unexpected` rather than a fake refusal.
  */
@@ -17,6 +18,7 @@ type Handler = (event: TestIpcEvent, raw: unknown) => Promise<unknown>;
 const handlers = vi.hoisted(() => new Map<string, Handler>());
 const mocks = vi.hoisted(() => ({
   ensureEngineDbUrl: vi.fn(),
+  getSessionById: vi.fn(),
   prepareDeskApproval: vi.fn(),
 }));
 
@@ -32,6 +34,9 @@ vi.mock("../../logger/index.js", () => ({
 }));
 vi.mock("../../database/engine-db-readiness.js", () => ({
   ensureEngineDbUrl: (...a: unknown[]) => mocks.ensureEngineDbUrl(...a),
+}));
+vi.mock("../../database/sessions-db.js", () => ({
+  getSessionById: (...a: unknown[]) => mocks.getSessionById(...a),
 }));
 vi.mock("@vex-agent/engine/core/approval-runtime.js", () => ({
   prepareDeskApproval: (...a: unknown[]) => mocks.prepareDeskApproval(...a),
@@ -63,6 +68,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   handlers.clear();
   mocks.ensureEngineDbUrl.mockResolvedValue({ ok: true, data: undefined });
+  mocks.getSessionById.mockResolvedValue({
+    ok: true,
+    data: { id: SESSION, workspace: "lighter" },
+  });
   mocks.prepareDeskApproval.mockResolvedValue({ kind: "enqueued", approvalId: "appr-1" });
   teardowns = registerLighterDeskHandlers();
 });
@@ -197,6 +206,49 @@ describe("vex:lighterTrading:prepareDeskAction", () => {
       kind: "refused",
       reason: "No open position in this market.",
     });
+  });
+
+  it("joins concurrent identical submits so they cannot create two approval cards", async () => {
+    let release: ((value: { kind: "enqueued"; approvalId: string }) => void) | undefined;
+    mocks.prepareDeskApproval.mockImplementationOnce(
+      () => new Promise((resolve) => { release = resolve; }),
+    );
+    const payload = {
+      sessionId: SESSION,
+      environment: "rhc",
+      action: { kind: "close" as const, marketId: 7 },
+    };
+
+    const first = call(payload);
+    await vi.waitFor(() => expect(mocks.prepareDeskApproval).toHaveBeenCalledTimes(1));
+    const second = call(payload);
+    release?.({ kind: "enqueued", approvalId: "appr-joined" });
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      { ok: true, data: { kind: "enqueued", approvalId: "appr-joined" } },
+      { ok: true, data: { kind: "enqueued", approvalId: "appr-joined" } },
+    ]);
+    expect(mocks.prepareDeskApproval).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a session outside the Lighter workspace before preparing", async () => {
+    mocks.getSessionById.mockResolvedValueOnce({
+      ok: true,
+      data: { id: SESSION, workspace: null },
+    });
+    const result = await call({
+      sessionId: SESSION,
+      environment: "rhc",
+      action: { kind: "close", marketId: 7 },
+    });
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        kind: "refused",
+        reason: "This action is only available from a Lighter desk session.",
+      },
+    });
+    expect(mocks.prepareDeskApproval).not.toHaveBeenCalled();
   });
 
   it("rejects a renderer payload that carries terms outside the selector", async () => {

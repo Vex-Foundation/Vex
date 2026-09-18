@@ -16,8 +16,8 @@
  * THE RULES THIS FILE ENFORCES, all of them contract obligations documented on
  * `shared/schemas/agent-scan-lighter-entry.ts`:
  *
- *  - MONEY IS STRING ARITHMETIC. Not one figure here passes through `Number`,
- *    `parseFloat` or `toFixed`. Every amount arrives as a decimal or integer
+ *  - MONEY IS STRING ARITHMETIC. Not one settled amount here passes through
+ *    `Number`, `parseFloat` or `toFixed`. Every amount arrives as a decimal or integer
  *    STRING from the venue's own ledger, and grouping, sign and scale are done
  *    on the characters. A float round-trip of a base-unit integer is exactly
  *    the defect rule 90 forbids on a money path.
@@ -46,6 +46,7 @@ import type {
   AgentScanLighterPositionNow,
 } from "@shared/schemas/agent-scan-lighter-entry.js";
 import { LIGHTER_ENVIRONMENT_NAMES } from "@shared/lighter-environment-labels.js";
+import { wholeLeverageDisplay } from "../../lighterTrading/leverage-display.js";
 
 /**
  * The entry's own field types. The contract module exports schemas for these
@@ -230,14 +231,14 @@ export function lighterCompactTradeText(entry: AgentScanLighterFillEntry): strin
 }
 
 /**
- * The leverage chip: `10.00x`, or NOTHING when the ledger holds this row
+ * The leverage chip: `10x`, or NOTHING when the ledger holds this row
  * without the fraction. Not `1x`, not `-`: an absent historical leverage is
  * not a leverage of one, and a chip is a claim.
  */
 export function lighterLeverageChipText(
   leverage: AgentScanLighterLeverage | null,
 ): string | null {
-  return leverage === null ? null : `${leverage.display}x`;
+  return leverage === null ? null : `${wholeLeverageDisplay(leverage.display)}x`;
 }
 
 /**
@@ -248,7 +249,7 @@ export function lighterLeverageChipText(
 export function lighterLeverageDrawerText(
   leverage: AgentScanLighterLeverage | null,
 ): string {
-  return leverage === null ? "unknown" : `${leverage.display}x`;
+  return leverage === null ? "unknown" : `${wholeLeverageDisplay(leverage.display)}x`;
 }
 
 const TRADE_TYPE_LABEL: Readonly<Record<string, string>> = {
@@ -492,7 +493,9 @@ export function lighterPositionNowLines(
   }
   const marginMode = vocabularyKey(position.marginMode);
   if (marginMode !== null) lines.push(rawVocabularyText(marginMode));
-  if (position.leverage !== null) lines.push(`${position.leverage.display}x`);
+  if (position.leverage !== null) {
+    lines.push(`${wholeLeverageDisplay(position.leverage.display)}x`);
+  }
   return lines;
 }
 

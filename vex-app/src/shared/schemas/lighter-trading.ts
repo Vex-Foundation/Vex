@@ -533,6 +533,10 @@ export const lighterTradingFillsInputSchema = z
 const lighterTradingFillSchema = z
   .object({
     tradeId: z.string().min(1).max(128),
+    // Exact provider order identity for this account's side of the trade.
+    // A market can have several simultaneous orders, so tradeId alone cannot
+    // tie later account activity back to the desk order being followed.
+    orderId: z.string().min(1).max(128),
     marketId: marketIdSchema,
     symbol: z.string().min(1).max(48),
     side: z.enum(["buy", "sell"]),
@@ -554,6 +558,9 @@ export const lighterTradingFillsSchema = z
     retrievedAt: z.number().int().nonnegative(),
     accountIndex: z.number().int().nonnegative().nullable(),
     available: z.boolean(),
+    // True when the bounded provider page may omit older fills. Consumers
+    // must not treat a partial page as the complete fill total of an order.
+    truncated: z.boolean(),
     fills: z.array(lighterTradingFillSchema).max(100),
   })
   .strict();
@@ -716,11 +723,31 @@ export const lighterOnboardingChecklistInputSchema = z
 
 const lighterOnboardingStepSchema = z.enum(["done", "todo"]);
 
+export const lighterOnboardingProgressSchema = z.enum([
+  "not_started",
+  "in_progress",
+  "action_required",
+  "needs_reconciliation",
+  "failed",
+  "ready",
+]);
+
+export const lighterOnboardingNextActionSchema = z.enum([
+  "start_setup",
+  "continue_setup",
+  "check_status",
+  "none",
+]);
+
 export const lighterOnboardingChecklistSchema = z
   .object({
     deposit: lighterOnboardingStepSchema,
     key: lighterOnboardingStepSchema,
     fee: z.enum(["done", "todo", "not_required"]),
+    progress: lighterOnboardingProgressSchema,
+    detail: z.string().min(1).max(180),
+    nextAction: lighterOnboardingNextActionSchema,
+    updatedAt: z.string().datetime().nullable(),
   })
   .strict();
 

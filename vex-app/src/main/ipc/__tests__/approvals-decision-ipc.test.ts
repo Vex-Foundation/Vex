@@ -45,6 +45,13 @@ const mocks = vi.hoisted(() => ({
     errored: 0,
   }),
   reconcileAbandonedDeskDispatches: vi.fn().mockResolvedValue([]),
+  reconcileDeskApprovalLifecycle: vi.fn().mockResolvedValue({
+    abandoned: 0,
+    repaired: 0,
+    dispatched: 0,
+    superseded: 0,
+    errored: 0,
+  }),
   runResumeAfterDecision: vi.fn(),
   dispatchPreparedMission: vi.fn(),
   listPendingForSession: vi.fn().mockResolvedValue({ ok: true, data: [] }),
@@ -133,6 +140,8 @@ vi.mock("@vex-agent/engine/core/approval-runtime.js", () => ({
     mocks.reconcileApprovalLifecycle(...a),
   reconcileAbandonedDeskDispatches: (...a: unknown[]) =>
     mocks.reconcileAbandonedDeskDispatches(...a),
+  reconcileDeskApprovalLifecycle: (...a: unknown[]) =>
+    mocks.reconcileDeskApprovalLifecycle(...a),
   runResumeAfterDecision: (...a: unknown[]) =>
     mocks.runResumeAfterDecision(...a),
   // A chat continuation has no mission run; the helper narrows the union so
@@ -217,6 +226,13 @@ beforeEach(() => {
     indeterminate: 0,
     resumed: 0,
     skippedLeaseHeld: 0,
+    errored: 0,
+  });
+  mocks.reconcileDeskApprovalLifecycle.mockResolvedValue({
+    abandoned: 0,
+    repaired: 0,
+    dispatched: 0,
+    superseded: 0,
     errored: 0,
   });
   active = setupHandlers();
@@ -364,6 +380,31 @@ describe("approve handler decision outcome mapping", () => {
     expect((result.data as { message: string }).message).not.toMatch(
       /continuing|will continue/i,
     );
+    expect(mocks.dispatchPreparedMission).not.toHaveBeenCalled();
+  });
+
+  it("joined Desk dispatch preserves the winner's terminal status and tool output", async () => {
+    mocks.prepareApprove.mockResolvedValue({
+      kind: "dispatched",
+      approvalId: "desk-race",
+      resolvedAt: "2026-09-18T00:00:00.000Z",
+      executionStatus: "succeeded",
+      sessionId: SESSION,
+      missionRunId: null,
+      continuation: null,
+      toolResult: { success: true, output: "Order 77 filled." },
+    });
+
+    const result = await call(CH.approvals.approve, { id: "desk-race" });
+
+    expect(result.ok).toBe(true);
+    expect(result.data).toMatchObject({
+      status: "approved",
+      runtimeOutcome: "stopped",
+      executionStatus: "succeeded",
+      cached: false,
+      toolOutput: "Order 77 filled.",
+    });
     expect(mocks.dispatchPreparedMission).not.toHaveBeenCalled();
   });
 
@@ -668,7 +709,7 @@ describe("reject handler decision outcome mapping", () => {
       continuation: null,
     });
 
-    await call(CH.approvals.reject, {
+    const result = await call<{ message: string }>(CH.approvals.reject, {
       id: "r-2c",
       reason: "Too much slippage",
     });
@@ -677,6 +718,7 @@ describe("reject handler decision outcome mapping", () => {
       "r-2c",
       "Too much slippage",
     );
+    expect(result.data?.message).toBe("Rejected.");
   });
 
   it("omitted reason reaches the engine as undefined (engine owns the default)", async () => {
@@ -815,6 +857,7 @@ describe("scheduled TTL sweep", () => {
 
     expect(mocks.sweepExpiredApprovals).toHaveBeenCalled();
     expect(mocks.reconcileApprovalLifecycle).toHaveBeenCalled();
+    expect(mocks.reconcileDeskApprovalLifecycle).toHaveBeenCalled();
   });
 
   it("desk dispatch recovery runs once per process, not once per cycle", async () => {

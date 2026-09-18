@@ -29,6 +29,7 @@ import type { LighterLeverageOverview } from "@shared/schemas/lighter-trading-li
 import type { UseQueryResult } from "@tanstack/react-query";
 import {
   useConfirmLighterLeverage,
+  useCancelLighterLeverage,
   useLighterLeverageOverview,
   usePrepareLighterLeverage,
   useReconcileLighterLeverage,
@@ -43,7 +44,7 @@ import {
   type UnresolvedLeverageIntent,
   type UnresolvedLeverageIntents,
 } from "./lighter-leverage-view.js";
-import type { LeverageMarginMode } from "./LighterLeverageSheet.js";
+import type { LeverageMarginMode, LeverageSelection } from "./LighterLeverageSheet.js";
 import { outcomeAlreadyConfigured, outcomeFailed } from "./lighter-trading-setup-copy.js";
 
 export interface LighterLeverageChange {
@@ -55,7 +56,13 @@ export interface LighterLeverageChange {
   readonly reconciling: ReadonlySet<string>;
   readonly proposal: { readonly value: LighterLeverageIssuedProposal; readonly marketId: number } | null;
   readonly submitting: boolean;
-  readonly onApply: (row: LighterLeverageMarketRow, leverage: number, marginMode: LeverageMarginMode) => void;
+  readonly cancelling: boolean;
+  readonly proposalError: string | null;
+  readonly onApply: (
+    row: LighterLeverageMarketRow,
+    leverage: LeverageSelection,
+    marginMode: LeverageMarginMode,
+  ) => void;
   readonly closeProposal: () => void;
   readonly onConfirm: (proposalId: string) => void;
   readonly onReconcile: (row: LighterLeverageMarketRow) => void;
@@ -73,10 +80,13 @@ export function useLighterLeverageChange(scope: {
   // account read inside the adapter, so this hook never refetches by hand:
   // a second read here would only race the adapter's own.
   const confirm = useConfirmLighterLeverage(scope);
+  const cancel = useCancelLighterLeverage(scope);
   const reconcile = useReconcileLighterLeverage(scope);
 
   const [proposal, setProposal] = useState<LighterLeverageChange["proposal"]>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [proposalError, setProposalError] = useState<string | null>(null);
   const [busyMarketId, setBusyMarketId] = useState<number | null>(null);
   const [outcomes, setOutcomes] = useState<ReadonlyMap<number, LeverageOutcomeView>>(
     () => new Map<number, LeverageOutcomeView>(),
@@ -118,8 +128,9 @@ export function useLighterLeverageChange(scope: {
   );
 
   const onApply = useCallback(
-    (row: LighterLeverageMarketRow, leverage: number, marginMode: LeverageMarginMode): void => {
+    (row: LighterLeverageMarketRow, leverage: LeverageSelection, marginMode: LeverageMarginMode): void => {
       setBusyMarketId(row.marketId);
+      setProposalError(null);
       setOutcomes((previous) => {
         const next = new Map(previous);
         next.delete(row.marketId);
@@ -164,10 +175,35 @@ export function useLighterLeverageChange(scope: {
     [environment, prepare, recordOutcome, walletAddress],
   );
 
-  const closeProposal = useCallback((): void => {
+  const clearProposal = useCallback((): void => {
     setProposal(null);
     setBusyMarketId(null);
   }, []);
+
+  const closeProposal = useCallback((): void => {
+    const open = proposal;
+    if (open === null || cancelling || submitting) return;
+    const proposalId = open.value.proposalId;
+    setCancelling(true);
+    setProposalError(null);
+    void cancel
+      .mutateAsync({ proposalId })
+      .then((result) => {
+        setCancelling(false);
+        if (!result.ok) {
+          setProposalError(outcomeFailed(result.error.message));
+          return;
+        }
+        setProposal((current) =>
+          current?.value.proposalId === proposalId ? null : current,
+        );
+        setBusyMarketId(null);
+      })
+      .catch(() => {
+        setCancelling(false);
+        setProposalError(outcomeFailed("The cancellation did not reach Vex."));
+      });
+  }, [cancel, cancelling, proposal, submitting]);
 
   const onConfirm = useCallback(
     (proposalId: string): void => {
@@ -186,12 +222,12 @@ export function useLighterLeverageChange(scope: {
         .mutateAsync({ proposalId })
         .then((result) => {
           setSubmitting(false);
-          closeProposal();
+          clearProposal();
           if (!result.ok) {
             recordOutcome(open.marketId, {
               tone: "warning",
               message: outcomeFailed(result.error.message),
-              reconcilable: false,
+              reconcilable: result.error.code === "internal.unexpected",
             });
             return;
           }
@@ -199,7 +235,7 @@ export function useLighterLeverageChange(scope: {
         })
         .catch(() => {
           setSubmitting(false);
-          closeProposal();
+          clearProposal();
           // An invocation that never answered is NOT a failed change: main may
           // have signed. It is reported as unresolved, and Reconcile is the
           // only way this surface learns the truth.
@@ -210,7 +246,7 @@ export function useLighterLeverageChange(scope: {
           });
         });
     },
-    [closeProposal, confirm, proposal, recordOutcome],
+    [clearProposal, confirm, proposal, recordOutcome],
   );
 
   /**
@@ -280,6 +316,8 @@ export function useLighterLeverageChange(scope: {
     reconciling,
     proposal,
     submitting,
+    cancelling,
+    proposalError,
     onApply,
     closeProposal,
     onConfirm,

@@ -20,6 +20,7 @@ import {
 import type { LighterIntegrationEnvironment } from "@shared/schemas/lighter-integration.js";
 import { log } from "../logger/index.js";
 import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
+import { getSessionById } from "../database/sessions-db.js";
 import { registerHandler } from "./register-handler.js";
 import { approvalsUnexpectedError } from "./approvals/_errors.js";
 
@@ -37,6 +38,65 @@ export type DeskPrepareCall = {
     | "lighter.order.cancel.prepare";
   readonly params: Record<string, unknown>;
 };
+
+/**
+ * A rapid second click must join the first prepare, not create a second
+ * approval card that could later be approved into a duplicate order. This is
+ * deliberately an in-process, in-flight key: a later deliberate submission
+ * still creates a fresh approval and re-reads the live market.
+ */
+const deskPrepareFlights = new Map<string, Promise<LighterDeskPrepareResult>>();
+
+function deskPrepareKey(input: {
+  readonly sessionId: string;
+  readonly environment: LighterIntegrationEnvironment;
+  readonly action: LighterDeskAction;
+}): string {
+  const { action } = input;
+  switch (action.kind) {
+    case "close":
+      return `${input.sessionId}|${input.environment}|close|${action.marketId}`;
+    case "cancel":
+      return `${input.sessionId}|${input.environment}|cancel|${action.marketId}|${action.orderId}`;
+    case "order":
+      // Every draft field is a scalar after the strict schema parse. Sorting
+      // makes equivalent IPC objects share a key even when their property
+      // insertion order differed before they reached main.
+      return JSON.stringify([
+        input.sessionId,
+        input.environment,
+        "order",
+        action.marketId,
+        Object.entries(action.draft).sort(([left], [right]) => left.localeCompare(right)),
+      ]);
+  }
+}
+
+function prepareDeskOnce(
+  input: {
+    readonly sessionId: string;
+    readonly environment: LighterIntegrationEnvironment;
+    readonly action: LighterDeskAction;
+  },
+): Promise<LighterDeskPrepareResult> {
+  const key = deskPrepareKey(input);
+  const existing = deskPrepareFlights.get(key);
+  if (existing !== undefined) return existing;
+
+  const call = deskActionToPrepareCall(input.environment, input.action);
+  const flight = import("@vex-agent/engine/core/approval-runtime.js")
+    .then(({ prepareDeskApproval }) => prepareDeskApproval({
+      sessionId: input.sessionId,
+      toolId: call.toolId,
+      params: call.params,
+    }));
+  deskPrepareFlights.set(key, flight);
+  const clear = (): void => {
+    if (deskPrepareFlights.get(key) === flight) deskPrepareFlights.delete(key);
+  };
+  void flight.then(clear, clear);
+  return flight;
+}
 
 /**
  * Selector -> prepare-tool call. Mirrors what the ticket used to spell out in
@@ -155,16 +215,18 @@ export function registerLighterDeskHandlers(): ReadonlyArray<() => void> {
         const dbUrlOutcome = await ensureEngineDbUrl(ctx.requestId);
         if (!dbUrlOutcome.ok) return dbUrlOutcome;
 
-        try {
-          const { prepareDeskApproval } = await import(
-            "@vex-agent/engine/core/approval-runtime.js"
-          );
-          const call = deskActionToPrepareCall(input.environment, input.action);
-          const outcome = await prepareDeskApproval({
-            sessionId: input.sessionId,
-            toolId: call.toolId,
-            params: call.params,
+        const session = await getSessionById(input.sessionId);
+        if (!session.ok) return session;
+        if (session.data === null || session.data.workspace !== "lighter") {
+          return ok({
+            kind: "refused",
+            reason: "This action is only available from a Lighter desk session.",
           });
+        }
+
+        try {
+          const call = deskActionToPrepareCall(input.environment, input.action);
+          const outcome = await prepareDeskOnce(input);
           log.info(
             `[ipc:vex:lighterTrading:prepareDeskAction] ${outcome.kind} ` +
               `action=${input.action.kind} tool=${call.toolId} correlationId=${ctx.requestId}`,

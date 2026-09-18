@@ -49,7 +49,7 @@ export interface LighterTradingFillsClient {
 function cleanDecimal(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
-  return DECIMAL_PATTERN.test(trimmed) ? trimmed : null;
+  return trimmed.length <= 96 && DECIMAL_PATTERN.test(trimmed) ? trimmed : null;
 }
 
 function cleanUnsigned(value: unknown): string | null {
@@ -73,6 +73,11 @@ function cleanBoundedText(value: unknown, maxLength: number): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 && trimmed.length <= maxLength ? trimmed : null;
+}
+
+/** Provider labels cross the renderer schema boundary; invalid labels become a stable id. */
+function providerSymbol(value: unknown, marketId: number): string {
+  return cleanBoundedText(value, 48) ?? `#${marketId}`;
 }
 
 interface DecimalParts {
@@ -139,7 +144,7 @@ function projectPosition(
   const marketId = raw.market_id;
   return {
     marketId,
-    symbol: raw.symbol.trim().length > 0 ? raw.symbol : symbolFor(marketId),
+    symbol: providerSymbol(raw.symbol.trim().length > 0 ? raw.symbol : symbolFor(marketId), marketId),
     side: raw.sign > 0 ? "long" : "short",
     size: size ?? "0",
     entryPrice: cleanUnsigned(raw.avg_entry_price),
@@ -206,7 +211,7 @@ function projectOrder(
     // have lost precision before this projection runs.
     clientOrderId: cleanBoundedText(raw.client_order_id, 128),
     marketId,
-    symbol: symbolFor(marketId),
+    symbol: providerSymbol(symbolFor(marketId), marketId),
     side,
     type,
     timeInForce: cleanBoundedText(raw.time_in_force, 32),
@@ -239,9 +244,7 @@ function projectAsset(raw: LighterAccountAsset): LighterTradingAsset | null {
   }
   return {
     assetId: raw.asset_id,
-    symbol: typeof raw.symbol === "string" && raw.symbol.trim().length > 0
-      ? raw.symbol
-      : `#${raw.asset_id}`,
+    symbol: providerSymbol(raw.symbol, raw.asset_id),
     balance,
     available,
     marginMode: raw.margin_mode === "enabled" || raw.margin_mode === "disabled"
@@ -499,21 +502,27 @@ function projectLighterTradingFill(
   const size = cleanUnsigned(trade.size);
   const price = cleanUnsigned(trade.price);
   const tradeId = typeof trade.trade_id_str === "string" && trade.trade_id_str.length > 0
-    ? trade.trade_id_str
+    ? cleanBoundedText(trade.trade_id_str, 128)
     : Number.isSafeInteger(trade.trade_id) ? String(trade.trade_id) : null;
+  const rawOrderId = side === "sell" ? trade.ask_id_str : trade.bid_id_str;
+  const numericOrderId = side === "sell" ? trade.ask_id : trade.bid_id;
+  const orderId = typeof rawOrderId === "string" && rawOrderId.length > 0
+    ? cleanBoundedText(rawOrderId, 128)
+    : Number.isSafeInteger(numericOrderId) ? String(numericOrderId) : null;
   if (
-    side === null || size === null || price === null || tradeId === null
+    side === null || size === null || price === null || tradeId === null || orderId === null
     || !Number.isSafeInteger(trade.market_id) || trade.market_id < 0
     || !Number.isSafeInteger(trade.timestamp) || trade.timestamp < 0
   ) return null;
   return {
     tradeId,
+    orderId,
     marketId: trade.market_id,
-    symbol: symbolFor(trade.market_id),
+    symbol: providerSymbol(symbolFor(trade.market_id), trade.market_id),
     side,
     // The ask is the maker exactly when `is_maker_ask`; the account is the ask when it sold.
     role: (side === "sell") === trade.is_maker_ask ? "maker" : "taker",
-    type: typeof trade.type === "string" && trade.type.length > 0 ? trade.type : "trade",
+    type: cleanBoundedText(trade.type, 32) ?? "trade",
     size,
     price,
     value: cleanUnsigned(trade.usd_amount),
@@ -528,6 +537,7 @@ export function projectLighterTradingFills(input: {
   environment: LighterEnvironment;
   accountIndex: number;
   trades: readonly LighterTrade[];
+  truncated?: boolean;
   symbolFor: (marketId: number) => string;
   now: () => number;
 }): LighterTradingFills {
@@ -543,6 +553,7 @@ export function projectLighterTradingFills(input: {
     retrievedAt: input.now(),
     accountIndex: input.accountIndex,
     available: true,
+    truncated: input.truncated ?? false,
     fills,
   };
 }
@@ -566,6 +577,7 @@ export async function readLighterTradingFills(
     retrievedAt: now(),
     accountIndex,
     available: false,
+    truncated: false,
     fills: [],
   });
   const scopes = listUnlockedLighterTradingCredentialScopes(environment);
@@ -586,6 +598,9 @@ export async function readLighterTradingFills(
     environment,
     accountIndex,
     trades: response.trades,
+    // A full bounded page is conservatively incomplete even if the provider
+    // omitted its cursor; otherwise a busy account could under-size TP/SL.
+    truncated: (response.next_cursor?.trim().length ?? 0) > 0 || response.trades.length >= limit,
     symbolFor,
     now,
   });

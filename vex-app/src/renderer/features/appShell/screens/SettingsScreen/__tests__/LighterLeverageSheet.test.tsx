@@ -73,17 +73,43 @@ function slider(): HTMLInputElement {
 }
 
 function applyButton(): HTMLButtonElement {
-  return screen.getByRole("button", { name: "Apply new leverage to ETH" }) as HTMLButtonElement;
+  return screen.getByRole("button", { name: "Review leverage change for ETH" }) as HTMLButtonElement;
 }
 
 it("opens on the row's current terms and its market maximum", () => {
   renderSheet();
-  expect(screen.getByText("2.00x cross")).not.toBeNull();
+  expect(screen.getByText("2x cross")).not.toBeNull();
   expect(screen.getAllByText("50x").length).toBeGreaterThan(0);
   expect(screen.getByText("long 0.0050 ETH")).not.toBeNull();
   expect(leverageField().value).toBe("2");
   expect(slider().max).toBe("50");
+  expect(applyButton().disabled).toBe(true);
+});
+
+it("shows one whole leverage everywhere and keeps the initial draft unchanged", () => {
+  const onApply = vi.fn();
+  renderSheet({
+    row: {
+      ...ETH_ROW,
+      current: {
+        initialMarginFraction: 295,
+        leverageDisplay: "33.89",
+        marginMode: "cross",
+        source: "position_row",
+      },
+    },
+    onApply,
+  });
+
+  expect(screen.getByText("34x cross")).not.toBeNull();
+  expect(leverageField().value).toBe("34");
+  expect(applyButton().disabled).toBe(true);
+
+  fireEvent.click(screen.getByRole("combobox", { name: "Margin mode for ETH" }));
+  fireEvent.click(screen.getByRole("option", { name: "Isolated" }));
   expect(applyButton().disabled).toBe(false);
+  fireEvent.click(applyButton());
+  expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ marketId: 0 }), "current", "isolated");
 });
 
 it("keeps the slider and the field as one draft", () => {
@@ -157,6 +183,8 @@ it("holds Apply and Close while a change is in flight", () => {
   expect(applyButton().disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
   expect(onClose).not.toHaveBeenCalled();
+  expect(screen.getByRole("status").textContent).toBe("Preparing…");
+  expect(screen.getByRole("dialog").getAttribute("aria-busy")).toBe("true");
 });
 
 it("shows the outcome where the person is, with Reconcile only when it applies", () => {

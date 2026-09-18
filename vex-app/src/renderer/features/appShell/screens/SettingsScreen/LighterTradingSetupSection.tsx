@@ -181,6 +181,7 @@ export function LighterTradingSetupSection({
       {sheetRow === null ? null : (
         <LighterLeverageSheet
           key={sheetRow.marketId}
+          open={proposal === null}
           symbol={sheetRow.symbol}
           row={sheetRow}
           notice={null}
@@ -196,8 +197,9 @@ export function LighterTradingSetupSection({
       {proposal === null ? null : (
         <LighterLeverageConfirmModal
           proposal={proposal.value}
-          environment={environment}
           submitting={change.submitting}
+          cancelling={change.cancelling}
+          error={change.proposalError}
           onCancel={change.closeProposal}
           onConfirm={change.onConfirm}
         />

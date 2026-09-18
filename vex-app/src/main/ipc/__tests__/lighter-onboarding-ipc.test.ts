@@ -59,7 +59,15 @@ beforeEach(() => {
   vi.clearAllMocks();
   handlers.clear();
   mocks.ensureEngineDbUrl.mockResolvedValue({ ok: true, data: undefined });
-  mocks.resolveLighterOnboardingChecklist.mockResolvedValue({ deposit: "done", key: "todo", fee: "todo" });
+  mocks.resolveLighterOnboardingChecklist.mockResolvedValue({
+    deposit: "done",
+    key: "todo",
+    fee: "todo",
+    progress: "action_required",
+    detail: "Trading key approval is required.",
+    nextAction: "continue_setup",
+    updatedAt: null,
+  });
   teardowns = registerLighterOnboardingHandlers();
 });
 
@@ -71,7 +79,15 @@ describe("vex:lighterTrading:getOnboardingChecklist", () => {
   it("returns the resolved checklist for the session and environment", async () => {
     const result = await call({ sessionId: SESSION, environment: "rhc" });
     expect(result.ok).toBe(true);
-    expect(result.data).toEqual({ deposit: "done", key: "todo", fee: "todo" });
+    expect(result.data).toEqual({
+      deposit: "done",
+      key: "todo",
+      fee: "todo",
+      progress: "action_required",
+      detail: "Trading key approval is required.",
+      nextAction: "continue_setup",
+      updatedAt: null,
+    });
     expect(mocks.resolveLighterOnboardingChecklist).toHaveBeenCalledWith({ sessionId: SESSION, environment: "rhc" });
   });
 

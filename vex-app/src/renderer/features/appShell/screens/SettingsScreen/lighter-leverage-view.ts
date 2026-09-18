@@ -57,7 +57,12 @@ export function maxLeverageForMarket(
   if (!Number.isInteger(maxInitialMarginFraction)) return null;
   if (maxInitialMarginFraction < 1) return null;
   if (maxInitialMarginFraction > MARGIN_FRACTION_TICK) return null;
-  const leverage = Math.floor(MARGIN_FRACTION_TICK / maxInitialMarginFraction);
+  // A whole selection L becomes ceil(10000 / L) in main. Invert that exact
+  // rule so a market minimum such as 295 correctly admits 34x (which maps
+  // back to 295), while 35x is still refused.
+  const leverage = maxInitialMarginFraction === 1
+    ? MARGIN_FRACTION_TICK
+    : Math.floor((MARGIN_FRACTION_TICK - 1) / (maxInitialMarginFraction - 1));
   return leverage < 1 ? null : leverage;
 }
 
@@ -81,7 +86,7 @@ export function parseLeverageInput(
 ): LeverageInputState {
   const trimmed = raw.trim();
   if (trimmed.length === 0) return { kind: "empty" };
-  if (!/^\d{1,4}$/.test(trimmed)) {
+  if (!/^\d{1,5}$/.test(trimmed)) {
     return { kind: "invalid", message: leverageInvalid(symbol, maxLeverage) };
   }
   const leverage = Number.parseInt(trimmed, 10);

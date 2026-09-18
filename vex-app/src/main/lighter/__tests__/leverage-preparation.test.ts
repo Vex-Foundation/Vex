@@ -22,6 +22,7 @@ import type { LighterMarketDetail } from "@tools/lighter/types.js";
 import type { LighterLeverageIntentRow } from "@vex-agent/db/repos/lighter-leverage-intents.js";
 import {
   getLighterLeverageOverview,
+  prepareLighterLeverage,
   type LighterLeveragePreparationDeps,
 } from "../leverage-preparation.js";
 
@@ -114,6 +115,8 @@ function deps(options: {
   readonly markets?: readonly LighterMarketDetail[];
   readonly positions?: readonly ReturnType<typeof positionRow>[];
   readonly unresolved?: readonly LighterLeverageIntentRow[];
+  readonly positionFraction?: string;
+  readonly positionMode?: 0 | 1;
 } = {}) {
   const markets = options.markets ?? [
     perp({ market_id: 0, symbol: "ETH" }),
@@ -128,7 +131,16 @@ function deps(options: {
           {
             account_index: ACCOUNT,
             l1_address: WALLET,
-            positions: [...(options.positions ?? [])],
+            positions: [...(
+              options.positions
+              ?? (options.positionFraction === undefined
+                ? []
+                : [{
+                    ...positionRow(1),
+                    initial_margin_fraction: options.positionFraction,
+                    margin_mode: options.positionMode ?? 0,
+                  }])
+            )],
           },
         ],
       })),
@@ -137,17 +149,38 @@ function deps(options: {
         order_book_details: [...markets],
         spot_order_book_details: [],
       })),
-      getMarketDetails: vi.fn(async () => {
-        throw new Error("the overview must not read markets one at a time");
-      }),
-      getApiKeys: vi.fn(),
+      getMarketDetails: vi.fn(async (_environment, input) => ({
+        code: 200,
+        order_book_details: markets.filter((row) => row.market_id === input.marketId),
+        spot_order_book_details: [],
+      })),
+      getApiKeys: vi.fn(async () => ({
+        code: 200,
+        api_keys: [{
+          account_index: ACCOUNT,
+          api_key_index: 4,
+          nonce: 0,
+          public_key: "ab".repeat(20),
+          transaction_time: 0,
+        }],
+      })),
     },
     listUnresolvedIntents: vi.fn(async () => options.unresolved ?? []),
+    expireStaleProposals: vi.fn(async () => 0),
+    findLiveIntent: vi.fn(async () => null),
+    createIntent: vi.fn(async (input) => intentRow({
+      intentId: input.intentId,
+      marketIndex: input.marketIndex,
+      requestedInitialMarginFraction: input.requestedInitialMarginFraction,
+      requestedMarginMode: input.requestedMarginMode,
+      observedBefore: input.observedBefore,
+      expiresAt: input.expiresAt,
+    })),
     listResolvedAccounts: vi.fn(async () => [
       { environment: "rhc" as const, walletAddress: WALLET.toLowerCase(), accountIndex: ACCOUNT },
     ]),
-    listCredentialScopes: vi.fn(),
-    derivePublicKey: vi.fn(),
+    listCredentialScopes: vi.fn(() => [{ environment: "rhc" as const, accountIndex: ACCOUNT, apiKeyIndex: 4 }]),
+    derivePublicKey: vi.fn(async () => "ab".repeat(20)),
     vaultUnlocked: () => true,
     now: () => Date.parse("2030-01-01T00:00:00Z"),
   } satisfies LighterLeveragePreparationDeps;
@@ -233,5 +266,85 @@ describe("getLighterLeverageOverview", () => {
   it("returns an empty unresolved list when nothing is outstanding", async () => {
     const overview = await getLighterLeverageOverview(input, deps());
     expect(overview.unresolved).toEqual([]);
+  });
+});
+
+describe("prepareLighterLeverage", () => {
+  it("accepts the largest whole selector for an irregular market minimum and names it without decimals", async () => {
+    const markets = [perp({ market_id: 1, symbol: "BTC", min_initial_margin_fraction: 295 })];
+    const accepted = deps({ markets });
+
+    const proposal = await prepareLighterLeverage(
+      {
+        environment: "rhc",
+        walletAddress: WALLET,
+        marketId: 1,
+        leverage: 34,
+        marginMode: "cross",
+      },
+      accepted,
+    );
+
+    expect(proposal).toMatchObject({
+      kind: "proposal",
+      target: { initialMarginFraction: 295, leverageDisplay: "33.89" },
+    });
+
+    const refused = deps({ markets });
+    await expect(
+      prepareLighterLeverage(
+        {
+          environment: "rhc",
+          walletAddress: WALLET,
+          marketId: 1,
+          leverage: 35,
+          marginMode: "cross",
+        },
+        refused,
+      ),
+    ).rejects.toThrow("BTC allows at most 34x leverage on Lighter.");
+    expect(refused.createIntent).not.toHaveBeenCalled();
+  });
+
+  it("preserves the live canonical fraction for a mode-only change", async () => {
+    const d = deps({ positionFraction: "2.95", positionMode: 0 });
+
+    const proposal = await prepareLighterLeverage(
+      {
+        environment: "rhc",
+        walletAddress: WALLET,
+        marketId: 1,
+        leverage: "current",
+        marginMode: "isolated",
+      },
+      d,
+    );
+
+    expect(proposal).toMatchObject({
+      kind: "proposal",
+      current: { initialMarginFraction: 295, leverageDisplay: "33.89", marginMode: "cross" },
+      target: { initialMarginFraction: 295, leverageDisplay: "33.89", marginMode: "isolated" },
+    });
+    expect(d.createIntent).toHaveBeenCalledWith(
+      expect.objectContaining({ requestedInitialMarginFraction: 295, requestedMarginMode: 1 }),
+    );
+  });
+
+  it("does not persist a current selector when the mode is unchanged", async () => {
+    const d = deps({ positionFraction: "2.95", positionMode: 0 });
+
+    const result = await prepareLighterLeverage(
+      {
+        environment: "rhc",
+        walletAddress: WALLET,
+        marketId: 1,
+        leverage: "current",
+        marginMode: "cross",
+      },
+      d,
+    );
+
+    expect(result).toMatchObject({ kind: "already_configured" });
+    expect(d.createIntent).not.toHaveBeenCalled();
   });
 });

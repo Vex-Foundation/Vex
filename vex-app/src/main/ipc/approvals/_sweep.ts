@@ -28,6 +28,7 @@ import { ensureEngineDbUrl } from "../../database/engine-db-readiness.js";
 // was abandoned mid-dispatch and can only be marked indeterminate. Piggybacks
 // on the first cycle that finds the database ready instead of owning a timer.
 let deskDispatchesRecovered = false;
+const deskProcessStartedAt = new Date();
 
 export async function runScheduledSweep(): Promise<void> {
   const correlationId = `sweep-${randomUUID()}`;
@@ -57,13 +58,16 @@ export async function runScheduledSweep(): Promise<void> {
     sweepExpiredApprovals,
     reconcileApprovalLifecycle,
     reconcileAbandonedDeskDispatches,
+    reconcileDeskApprovalLifecycle,
     runResumeAfterDecision,
     continuationMissionRunId,
   } = runtime;
 
   if (!deskDispatchesRecovered) {
     try {
-      const abandoned = await reconcileAbandonedDeskDispatches();
+      const abandoned = await reconcileAbandonedDeskDispatches(
+        deskProcessStartedAt,
+      );
       deskDispatchesRecovered = true;
       if (abandoned.length > 0) {
         log.warn(
@@ -77,6 +81,27 @@ export async function runScheduledSweep(): Promise<void> {
         cause,
       );
     }
+  }
+
+  try {
+    const desk = await reconcileDeskApprovalLifecycle();
+    if (
+      desk.repaired > 0
+      || desk.dispatched > 0
+      || desk.superseded > 0
+      || desk.errored > 0
+    ) {
+      log.info(
+        `[approvals.desk-reconcile] correlationId=${correlationId} ` +
+          `repaired=${desk.repaired} dispatched=${desk.dispatched} ` +
+          `superseded=${desk.superseded} errored=${desk.errored}`,
+      );
+    }
+  } catch (cause) {
+    log.warn(
+      `[approvals.desk-reconcile] failed correlationId=${correlationId}`,
+      cause,
+    );
   }
 
   try {

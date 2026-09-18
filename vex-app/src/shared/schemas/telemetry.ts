@@ -79,9 +79,18 @@ export const telemetryReportOutputSchema = z
  */
 export const lighterFunnelStepSchema = z.enum([
   "arena_banner",
+  "desk_entry_cta",
   "desk_enter",
+  "desk_setup_start",
   "desk_card",
   "desk_approve",
+  "desk_approval_rejected",
+  "desk_order_accepted",
+  "desk_order_partial",
+  "desk_order_filled",
+  "desk_order_canceled",
+  "desk_order_rejected",
+  "desk_order_unknown",
 ]);
 
 export const telemetryFunnelInputSchema = z

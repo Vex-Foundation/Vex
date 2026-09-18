@@ -5,10 +5,10 @@
  * desk's `--lit-*` tokens are scoped to `.lit-desk` and do not reach the top
  * layer), so it reads the same on both surfaces.
  *
- * It signs nothing and decides nothing. Apply hands a selector (market, whole
+ * It signs nothing and decides nothing. Review hands a selector (market, whole
  * number, mode) to the caller, which sends it to main; main's proposal comes
- * back in `LighterLeverageConfirmModal`, which stacks on top of this sheet.
- * The sheet stays open underneath so the outcome lands where the person is.
+ * back in `LighterLeverageConfirmModal`. The sheet closes while that modal is
+ * open, but stays mounted so Cancel and the outcome return to the same draft.
  *
  * `row` is the overview's live row for the market and every number here is
  * read from it: the current terms, the market maximum that bounds the slider,
@@ -42,6 +42,7 @@ import {
   LEVERAGE_MAX_UNAVAILABLE,
   LEVERAGE_MODE_CROSS,
   LEVERAGE_MODE_ISOLATED,
+  LEVERAGE_PREPARING,
   LEVERAGE_SHEET_CLOSE,
   LEVERAGE_SHEET_CURRENT,
   LEVERAGE_SHEET_INTRO,
@@ -58,8 +59,10 @@ import {
   leverageSheetTitle,
   leverageSliderLabel,
 } from "./lighter-trading-setup-copy.js";
+import { wholeLeverageDisplay } from "../../lighterTrading/leverage-display.js";
 
 export type LeverageMarginMode = "cross" | "isolated";
+export type LeverageSelection = number | "current";
 
 export const MODE_OPTIONS: ReadonlyArray<{
   readonly value: LeverageMarginMode;
@@ -70,17 +73,18 @@ export const MODE_OPTIONS: ReadonlyArray<{
 ];
 
 export interface LighterLeverageSheetProps {
+  readonly open?: boolean;
   readonly symbol: string;
   readonly row: LighterLeverageMarketRow | null;
   /** Shown instead of the controls when there is no row to change. */
   readonly notice: string | null;
   readonly vaultLocked: boolean;
-  /** A change for this market is in flight; Apply and Close wait for it. */
+  /** A change for this market is in flight; Review and Close wait for it. */
   readonly busy: boolean;
   readonly outcome: LeverageOutcomeView | null;
   readonly onApply: (
     row: LighterLeverageMarketRow,
-    leverage: number,
+    leverage: LeverageSelection,
     marginMode: LeverageMarginMode,
   ) => void;
   readonly onReconcile: (row: LighterLeverageMarketRow) => void;
@@ -90,11 +94,12 @@ export interface LighterLeverageSheetProps {
 /** The whole-number leverage a current display like "2.00" stands for. */
 function initialLeverage(row: LighterLeverageMarketRow | null): string {
   if (row === null) return "";
-  const value = Number.parseFloat(row.current.leverageDisplay);
-  return Number.isFinite(value) && value >= 1 ? String(Math.round(value)) : "";
+  const value = wholeLeverageDisplay(row.current.leverageDisplay);
+  return /^\d{1,5}$/.test(value) ? value : "";
 }
 
 export function LighterLeverageSheet({
+  open = true,
   symbol,
   row,
   notice,
@@ -130,7 +135,14 @@ export function LighterLeverageSheet({
   const parsed: LeverageInputState =
     maxLeverage === null ? { kind: "empty" } : parseLeverageInput(leverage, maxLeverage, symbol);
   const disabled = vaultLocked || busy || row === null || maxLeverage === null;
-  const canApply = !disabled && parsed.kind === "value";
+  const initialLeverageValue = initialLeverage(row);
+  const initialMarginMode: LeverageMarginMode =
+    row?.current.marginMode === "isolated" ? "isolated" : "cross";
+  const leverageChanged =
+    parsed.kind === "value" && String(parsed.leverage) !== initialLeverageValue;
+  const marginModeChanged = marginMode !== initialMarginMode;
+  const canApply =
+    !disabled && parsed.kind === "value" && (leverageChanged || marginModeChanged);
   const sliderValue =
     parsed.kind === "value"
       ? parsed.leverage
@@ -140,12 +152,12 @@ export function LighterLeverageSheet({
 
   return (
     <Dialog
-      open
+      open={open}
       onOpenChange={(next) => {
         if (!next && !busy) onClose();
       }}
     >
-      <DialogContent data-vex-lighter-leverage-sheet={symbol}>
+      <DialogContent data-vex-lighter-leverage-sheet={symbol} aria-busy={busy}>
         <DialogHeader>
           <DialogTitle>{leverageSheetTitle(symbol)}</DialogTitle>
           <DialogDescription>{LEVERAGE_SHEET_INTRO}</DialogDescription>
@@ -274,6 +286,11 @@ export function LighterLeverageSheet({
               ) : null}
             </div>
           )}
+          {busy ? (
+            <p role="status" aria-live="polite" className="text-[12px] leading-[18px] text-ink-secondary">
+              {LEVERAGE_PREPARING}
+            </p>
+          ) : null}
         </DialogBody>
 
         <DialogFooter>
@@ -287,7 +304,7 @@ export function LighterLeverageSheet({
             data-vex-lighter-leverage-apply={symbol}
             onClick={() => {
               if (row === null || parsed.kind !== "value") return;
-              onApply(row, parsed.leverage, marginMode);
+              onApply(row, leverageChanged ? parsed.leverage : "current", marginMode);
             }}
           >
             {LEVERAGE_APPLY_BUTTON}

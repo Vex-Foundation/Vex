@@ -335,7 +335,7 @@ describe("lighterTrading IPC", () => {
   });
 
   it("reads fills with a bounded limit and rejects anything but environment and limit", async () => {
-    const fills = { environment: "rhc", retrievedAt: 1, accountIndex: 42, available: true, fills: [] };
+    const fills = { environment: "rhc", retrievedAt: 1, accountIndex: 42, available: true, truncated: false, fills: [] };
     mocks.readFills.mockResolvedValueOnce(fills);
 
     const result = await call(CH.lighterTrading.listFills, { environment: "rhc", limit: 20 });

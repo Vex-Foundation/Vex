@@ -363,6 +363,7 @@ export const CH = {
     getLighterLeverageOverview: "vex:settings:getLighterLeverageOverview",
     prepareLighterLeverage: "vex:settings:prepareLighterLeverage",
     confirmLighterLeverage: "vex:settings:confirmLighterLeverage",
+    cancelLighterLeverage: "vex:settings:cancelLighterLeverage",
     reconcileLighterLeverage: "vex:settings:reconcileLighterLeverage",
     // "Vex setup" user profile (display name, instructions, work
     // description) - DB-backed (soul singleton), replaces persona.md.

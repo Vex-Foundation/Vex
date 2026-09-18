@@ -12,6 +12,7 @@
  */
 
 import type { LighterIntegrationEnvironment } from "@shared/schemas/lighter-integration.js";
+import { wholeLeverageDisplay } from "../../lighterTrading/leverage-display.js";
 
 /** Settings register row. */
 export const LIGHTER_SECTION_NAME = "Lighter";
@@ -91,7 +92,8 @@ export const LEVERAGE_COLUMN_MARKET = "Market";
 export const LEVERAGE_COLUMN_CURRENT = "Current";
 export const LEVERAGE_COLUMN_MAX = "Market maximum";
 export const LEVERAGE_MAX_BUTTON = "Max";
-export const LEVERAGE_APPLY_BUTTON = "Apply";
+export const LEVERAGE_APPLY_BUTTON = "Review change";
+export const LEVERAGE_PREPARING = "Preparing…";
 export const LEVERAGE_PICKER_LABEL = "Add a market";
 export const LEVERAGE_PICKER_SEARCH_LABEL = "Search markets by symbol";
 /**
@@ -119,7 +121,7 @@ export const LEVERAGE_MAX_UNAVAILABLE =
 export const LEVERAGE_CHANGE_BUTTON = "Change";
 export const LEVERAGE_COLUMN_CHANGE = "Change";
 export const LEVERAGE_SHEET_INTRO =
-  "Pick a whole number up to Lighter's maximum for this market. Apply shows the exact change on the account before anything is signed.";
+  "Pick a whole number up to Lighter's maximum for this market. Review change shows the exact change on the account before anything is signed.";
 export const LEVERAGE_SHEET_CURRENT = "Current";
 export const LEVERAGE_SHEET_MAX = "Market maximum";
 export const LEVERAGE_SHEET_SLIDER_MIN = "1x";
@@ -175,22 +177,22 @@ export function leverageModeLabel(symbol: string): string {
 }
 
 export function leverageApplyLabel(symbol: string): string {
-  return `Apply new leverage to ${symbol}`;
+  return `Review leverage change for ${symbol}`;
 }
 
 export function leverageMaxLabel(symbol: string): string {
   return `Use the maximum leverage for ${symbol}`;
 }
 
-/** "2.00x cross", or "2.00x default" when the account has no row of its own. */
+/** "2x cross", or "2x default" when the account has no row of its own. */
 export function currentLeverageLine(
   leverageDisplay: string,
   marginMode: string,
   source: string,
 ): string {
   return source === "position_row"
-    ? `${leverageDisplay}x ${marginMode}`
-    : `${leverageDisplay}x default`;
+    ? `${wholeLeverageDisplay(leverageDisplay)}x ${marginMode}`
+    : `${wholeLeverageDisplay(leverageDisplay)}x default`;
 }
 
 /* Confirmation modal ----------------------------------------------------- */
@@ -209,6 +211,7 @@ export const CONFIRM_UNKNOWN = "Not reported";
 export const CONFIRM_OBSERVATION_NOTE =
   "Liquidation price and open orders are what Lighter reports right now. They are shown so the decision is informed; they are not part of what Vex signs.";
 export const CONFIRM_SUBMITTING = "Applying on Lighter…";
+export const CONFIRM_CANCELLING = "Cancelling review…";
 
 export function confirmTitle(symbol: string): string {
   return `Change ${symbol} leverage`;
@@ -223,7 +226,7 @@ export function leverageConsequenceSentence(symbol: string): string {
   return `This changes the initial margin this Lighter account must hold for ${symbol}: higher leverage lets a larger position be opened with the same collateral and lowers the margin reserved for the current position. Liquidation still follows the market's maintenance margin; in isolated mode the allocated margin sets the liquidation price.`;
 }
 
-/** "2.00x to 25.00x", "cross to isolated": what changes, in one reading. */
+/** "2x to 25x", "cross to isolated": what changes, in one reading. */
 export function confirmTransition(from: string, to: string): string {
   return `${from} to ${to}`;
 }
@@ -246,7 +249,7 @@ export const OUTCOME_RECONCILE = "Reconcile";
 export const OUTCOME_AMBIGUOUS =
   "Vex sent the change and does not yet have proof of what Lighter did with it. Nothing will be signed again. Reconcile reads the outcome from Lighter.";
 export const OUTCOME_EXPIRED =
-  "This proposal expired before it was confirmed, so nothing was signed. Apply again to get a fresh one.";
+  "This proposal expired before it was confirmed, so nothing was signed. Review the change again to get a fresh one.";
 
 /** Main's own record of an unresolved or expired attempt, kept verbatim. */
 export function outcomeRecorded(base: string, reason: string): string {
@@ -258,7 +261,7 @@ export function outcomeCompleted(
   leverageDisplay: string,
   marginMode: string,
 ): string {
-  return `Applied. Lighter now reports ${leverageDisplay}x ${marginMode} for ${symbol}.`;
+  return `Applied. Lighter now reports ${wholeLeverageDisplay(leverageDisplay)}x ${marginMode} for ${symbol}.`;
 }
 
 /**
@@ -276,7 +279,7 @@ export function outcomeAlreadyConfigured(
   leverageDisplay: string,
   marginMode: string,
 ): string {
-  return `${symbol} is already set to ${leverageDisplay}x ${marginMode} on Lighter. Nothing was signed.`;
+  return `${symbol} is already set to ${wholeLeverageDisplay(leverageDisplay)}x ${marginMode} on Lighter. Nothing was signed.`;
 }
 
 export function outcomeRefused(reason: string): string {

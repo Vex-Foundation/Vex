@@ -18,12 +18,14 @@ import {
 } from "../../shared/schemas/lighter-integration.js";
 import { readLighterPointsInputSchema } from "../../shared/schemas/lighter-points.js";
 import {
+  cancelLighterLeverageInputSchema,
   confirmLighterLeverageInputSchema,
   getLighterLeverageOverviewInputSchema,
   getLighterTradingLimitsInputSchema,
   prepareLighterLeverageInputSchema,
   reconcileLighterLeverageInputSchema,
   setLighterTradingLimitsInputSchema,
+  type CancelLighterLeverageInput,
   type ConfirmLighterLeverageInput,
   type GetLighterLeverageOverviewInput,
   type GetLighterTradingLimitsInput,
@@ -129,6 +131,13 @@ export const settings = {
       CH.settings.confirmLighterLeverage,
       input,
       confirmLighterLeverageInputSchema,
+    );
+  },
+  cancelLighterLeverage(input: CancelLighterLeverageInput) {
+    return invokeWithSchema(
+      CH.settings.cancelLighterLeverage,
+      input,
+      cancelLighterLeverageInputSchema,
     );
   },
   reconcileLighterLeverage(input: ReconcileLighterLeverageInput) {

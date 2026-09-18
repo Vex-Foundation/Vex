@@ -85,7 +85,7 @@ function changeButton(symbol: string): HTMLButtonElement {
 it("says a market with no leverage row is on the market default", () => {
   renderTable({ markets: [marketRow(), POSITION_ROW] });
   const eth = screen.getByRole("row", { name: /ETH/ });
-  expect(within(eth).getByText("2.00x cross")).not.toBeNull();
+  expect(within(eth).getByText("2x cross")).not.toBeNull();
   // BTC has neither a position nor terms of its own, so it is not listed yet.
   expect(screen.queryByRole("button", { name: "Change leverage for BTC" })).toBeNull();
 });
