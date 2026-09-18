@@ -45,13 +45,35 @@ const FEE_AUTHORIZATION_LABELS: Readonly<Record<string,string>> = {
   exchangeFees: "Lighter exchange fees", scopeNote: "Permission scope",
 };
 
+/**
+ * `buildLighterWithdrawalCriticalArgs` (withdrawal-approval-binding.ts) binds
+ * 35 fields - gateway addresses, code hashes, chain-plumbing IDs, account
+ * indices - because the binding must re-verify every one of them against the
+ * durable intent before a withdrawal executes. None of that changes what gets
+ * REVIEWED: a human deciding whether to sign a withdrawal needs what, how
+ * much, to where, on what network, when it clears, and the one-time-submit
+ * caveat - `summary` and `scopeNote` already say the first four in one
+ * sentence each. Everything else here stays bound and verified; it just never
+ * needed to be READ.
+ */
+const LIGHTER_WITHDRAWAL_LABELS: Readonly<Record<string,string>> = {
+  summary: "Action", walletAddress: "Your wallet", destinationAddress: "Destination",
+  settlementNetworkName: "Network", amountDisplay: "Amount",
+  estimatedClaimableAt: "Claimable at", scopeNote: "Permission scope",
+};
+
 function visibleCriticalArgs(criticalArgs: ApprovalPreview["criticalArgs"]): [string,unknown][] {
   const entries=Object.entries(criticalArgs);
   // The fee card's human rows already disclose every permission term. Numeric
   // duplicates and the internal key/intent identities stay bound in the host's
   // approval record, without making users review signer implementation fields.
-  return criticalArgs.toolId==="lighter.fees.approve"
-    ? entries.filter(([key])=>key in FEE_AUTHORIZATION_LABELS) : entries;
+  if (criticalArgs.toolId==="lighter.fees.approve") {
+    return entries.filter(([key])=>key in FEE_AUTHORIZATION_LABELS);
+  }
+  if (criticalArgs.toolId==="lighter.withdraw") {
+    return entries.filter(([key])=>key in LIGHTER_WITHDRAWAL_LABELS);
+  }
+  return entries;
 }
 
 function isLighterCreateOrderBehavior(
@@ -82,6 +104,7 @@ function criticalArgLabel(
   criticalArgs: ApprovalPreview["criticalArgs"],
 ): string {
   if (criticalArgs.toolId === "lighter.fees.approve") return FEE_AUTHORIZATION_LABELS[key] ?? key;
+  if (criticalArgs.toolId === "lighter.withdraw") return LIGHTER_WITHDRAWAL_LABELS[key] ?? key;
   if (isLighterCreateOrderBehavior(key, criticalArgs[key], criticalArgs)) {
     return "Order behavior";
   }
