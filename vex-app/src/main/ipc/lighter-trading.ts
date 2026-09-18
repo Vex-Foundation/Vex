@@ -10,8 +10,12 @@ import {
   lighterTradingCandleSubscriptionStopInputSchema,
   lighterTradingCandleSubscriptionStopResultSchema,
   lighterTradingCandleUpdateEventSchema,
+  lighterTradingCandleHistoryInputSchema,
+  lighterTradingCandleHistorySchema,
   lighterTradingAccountInputSchema,
   lighterTradingAccountSchema,
+  lighterTradingFillsInputSchema,
+  lighterTradingFillsSchema,
   lighterTradingListMarketsInputSchema,
   lighterTradingMarketListSchema,
   lighterTradingPublicBookEventSchema,
@@ -25,8 +29,10 @@ import {
   lighterTradingSnapshotInputSchema,
   lighterTradingSnapshotSchema,
   type LighterTradingAccount,
+  type LighterTradingCandleHistory,
   type LighterTradingCandleSubscriptionStartResult,
   type LighterTradingCandleSubscriptionStopResult,
+  type LighterTradingFills,
   type LighterTradingMarketList,
   type LighterTradingPublicMarketSubscriptionStartResult,
   type LighterTradingPublicMarketSubscriptionStopResult,
@@ -34,11 +40,13 @@ import {
 } from "@shared/schemas/lighter-trading.js";
 import {
   lighterTradingReadFailureOf,
+  projectSnapshotCandles,
+  readLighterTradingCandleHistory,
   readLighterTradingMarketList,
   readLighterTradingMarketSnapshot,
   type LighterTradingReadFailure,
 } from "../lighter/trading-panel-service.js";
-import { readLighterTradingAccount } from "../lighter/trading-account-service.js";
+import { readLighterTradingAccount, readLighterTradingFills } from "../lighter/trading-account-service.js";
 import {
   cleanupLighterCandleStreamsForOwner,
   subscribeLighterCandleStream,
@@ -225,17 +233,33 @@ function forwardCandleStreamEvent(
   };
 
   if (kind === "snapshot") {
-    const parsed = lighterTradingCandleSnapshotEventSchema.safeParse(candidate);
-    if (parsed.success) sender.send(EV.lighterTrading.candleSnapshot, parsed.data);
+    sendParsed(sender, EV.lighterTrading.candleSnapshot, lighterTradingCandleSnapshotEventSchema, candidate);
     return;
   }
   if (kind === "update") {
-    const parsed = lighterTradingCandleUpdateEventSchema.safeParse(candidate);
-    if (parsed.success) sender.send(EV.lighterTrading.candleUpdate, parsed.data);
+    sendParsed(sender, EV.lighterTrading.candleUpdate, lighterTradingCandleUpdateEventSchema, candidate);
     return;
   }
-  const parsed = lighterTradingCandleStatusEventSchema.safeParse(candidate);
-  if (parsed.success) sender.send(EV.lighterTrading.candleStatus, parsed.data);
+  sendParsed(sender, EV.lighterTrading.candleStatus, lighterTradingCandleStatusEventSchema, candidate);
+}
+
+// A stream event the renderer schema rejects is a main/shared contract drift,
+// not user noise: log it so a silently frozen lane leaves a trace.
+function sendParsed<T>(
+  sender: WebContents,
+  channel: string,
+  schema: { safeParse(input: unknown): { success: true; data: T } | { success: false; error: unknown } },
+  candidate: unknown,
+): void {
+  const parsed = schema.safeParse(candidate);
+  if (parsed.success) {
+    sender.send(channel, parsed.data);
+    return;
+  }
+  log.warn("[lighter-trading] dropped stream event that failed schema validation", {
+    channel,
+    error: String(parsed.error),
+  });
 }
 
 function forwardPublicMarketEvent(
@@ -260,23 +284,19 @@ function forwardPublicMarketEvent(
 
   const { kind: _kind, ...candidate } = record;
   if (record.kind === "book") {
-    const parsed = lighterTradingPublicBookEventSchema.safeParse(candidate);
-    if (parsed.success) sender.send(EV.lighterTrading.publicBook, parsed.data);
+    sendParsed(sender, EV.lighterTrading.publicBook, lighterTradingPublicBookEventSchema, candidate);
     return;
   }
   if (record.kind === "trades") {
-    const parsed = lighterTradingPublicTradesEventSchema.safeParse(candidate);
-    if (parsed.success) sender.send(EV.lighterTrading.publicTrades, parsed.data);
+    sendParsed(sender, EV.lighterTrading.publicTrades, lighterTradingPublicTradesEventSchema, candidate);
     return;
   }
   if (record.kind === "stats") {
-    const parsed = lighterTradingPublicStatsEventSchema.safeParse(candidate);
-    if (parsed.success) sender.send(EV.lighterTrading.publicStats, parsed.data);
+    sendParsed(sender, EV.lighterTrading.publicStats, lighterTradingPublicStatsEventSchema, candidate);
     return;
   }
   if (record.kind === "status") {
-    const parsed = lighterTradingPublicMarketStatusEventSchema.safeParse(candidate);
-    if (parsed.success) sender.send(EV.lighterTrading.publicMarketStatus, parsed.data);
+    sendParsed(sender, EV.lighterTrading.publicMarketStatus, lighterTradingPublicMarketStatusEventSchema, candidate);
   }
 }
 
@@ -347,6 +367,40 @@ export function registerLighterTradingHandlers(): Array<() => void> {
       },
     }),
     registerHandler({
+      channel: CH.lighterTrading.getCandleHistory,
+      domain: "market",
+      inputSchema: lighterTradingCandleHistoryInputSchema,
+      outputSchema: lighterTradingCandleHistorySchema,
+      handle: async (input, ctx): Promise<Result<LighterTradingCandleHistory>> => {
+        try {
+          const candles = await readLighterTradingCandleHistory(
+            input,
+            undefined,
+            undefined,
+            ctx.signal,
+          );
+          return ok({
+            environment: input.environment,
+            marketId: input.marketId,
+            resolution: input.resolution,
+            retrievedAt: Date.now(),
+            candles: projectSnapshotCandles(candles),
+          });
+        } catch (cause) {
+          if (isAbortError(cause)) throw cause;
+          const reason = lighterTradingReadFailureOf(cause);
+          log.warn("[lighter-trading] candle history read failed", {
+            environment: input.environment,
+            marketId: input.marketId,
+            resolution: input.resolution,
+            endTimestamp: input.endTimestamp,
+            reason,
+          });
+          return readFailureError(reason, ctx.requestId);
+        }
+      },
+    }),
+    registerHandler({
       channel: CH.lighterTrading.getAccount,
       domain: "market",
       inputSchema: lighterTradingAccountInputSchema,
@@ -363,6 +417,31 @@ export function registerLighterTradingHandlers(): Array<() => void> {
           if (isAbortError(cause)) throw cause;
           const reason = lighterTradingReadFailureOf(cause);
           log.warn("[lighter-trading] account panel read failed", {
+            environment: input.environment,
+            reason,
+          });
+          return readFailureError(reason, ctx.requestId);
+        }
+      },
+    }),
+    registerHandler({
+      channel: CH.lighterTrading.listFills,
+      domain: "market",
+      inputSchema: lighterTradingFillsInputSchema,
+      outputSchema: lighterTradingFillsSchema,
+      handle: async (input, ctx): Promise<Result<LighterTradingFills>> => {
+        try {
+          return ok(await readLighterTradingFills(
+            input.environment,
+            input.limit,
+            undefined,
+            undefined,
+            ctx.signal,
+          ));
+        } catch (cause) {
+          if (isAbortError(cause)) throw cause;
+          const reason = lighterTradingReadFailureOf(cause);
+          log.warn("[lighter-trading] fills read failed", {
             environment: input.environment,
             reason,
           });

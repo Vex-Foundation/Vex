@@ -42,6 +42,7 @@ import { BookRailFrame } from "./book/BookRailFrame.js";
 import { BookRailStack } from "./book/BookRailStack.js";
 import { StudioBookRailFrame } from "./book/StudioBookRailFrame.js";
 import { WelcomePortfolioPanel } from "./book/portfolio/WelcomePortfolioPanel.js";
+import { LighterChatRail } from "./lighterTrading/LighterChatRail.js";
 import { useUiStore } from "../../stores/uiStore.js";
 
 /**
@@ -62,6 +63,15 @@ export function BookPanel({
 }): JSX.Element {
   const runtimeMode = useUiStore((state) => state.runtimeMode);
   const activeProjectId = useUiStore((state) => state.activeProjectId);
+
+  // Lighter mode: the rail is the desk's conversation, never the instrument.
+  if (runtimeMode === "lighter") {
+    return (
+      <BookRailFrame label="Lighter chat" headline="Vex" toggleLabel="Vex panel" collapsedLabel="Open Vex" bookOpen={bookOpen} onToggle={onToggle}>
+        <LighterChatRail />
+      </BookRailFrame>
+    );
+  }
 
   if (runtimeMode === "studio") {
     // No project selected yet: the honest global tab. See the module doc -

@@ -13,6 +13,12 @@ export interface QuickAction {
 
 export const QUICK_ACTIONS: readonly QuickAction[] = [
   {
+    // The typed desk command (`isLighterWorkspaceCommand`): Send opens the
+    // Lighter desk instead of a chat. The one chip that leads somewhere else.
+    label: "Trade perps on Lighter",
+    prompt: "Light it up.",
+  },
+  {
     label: "Hunt trending memecoins",
     prompt:
       "Hunt the trendiest memecoins right now - combine DexScreener trending narratives with X sentiment if my X account is connected, and propose a plan before any trade.",

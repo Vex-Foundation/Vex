@@ -150,9 +150,12 @@ export type ApprovalExecutionStatus = z.infer<
  * WHO asked for this action - the provenance recorded on `approval_intents`.
  *
  * `agent` is Vex's own agent loop; `studio_mcp` is an external coding agent
- * that reached Vex through the Vex Studio MCP host. The distinction is a
- * money-path fact: "an external tool asked my wallet to do this" is a different
- * thing for a user to approve than "the assistant I was talking to asked".
+ * that reached Vex through the Vex Studio MCP host; `desk` is the user's own
+ * click on the Lighter desk (Close, Cancel, the ticket's Long/Short), turned
+ * into a proposal by main with no model in the loop (migration 164). The
+ * distinction is a money-path fact: "an external tool asked my wallet to do
+ * this" is a different thing for a user to approve than "the assistant I was
+ * talking to asked", and both differ from "I asked, from a button".
  *
  * NULL on the DTO means something specific and narrower than "unknown": the
  * approval has no companion `approval_intents` row at all (it predates
@@ -161,7 +164,7 @@ export type ApprovalExecutionStatus = z.infer<
  * Studio-originated row as agent-originated would be a lie about authority, and
  * the safe direction is to claim less, not more.
  */
-export const approvalOriginSchema = z.enum(["agent", "studio_mcp"]);
+export const approvalOriginSchema = z.enum(["agent", "studio_mcp", "desk"]);
 export type ApprovalOrigin = z.infer<typeof approvalOriginSchema>;
 
 /**
@@ -367,6 +370,9 @@ export type ApprovalActionInput = z.infer<typeof approvalActionInputSchema>;
  *   - `cached`            — `true` when the response is an idempotent
  *                           replay of a prior decision (no new dispatch).
  *   - `message`           — short human-readable summary for the UI toast.
+ *   - `toolOutput`        — the dispatched tool's own text, present only when
+ *                           this decision ran the tool. The desk lane has no
+ *                           transcript, so this is where its outcome lives.
  */
 export const approvalActionResultSchema = z
   .object({
@@ -383,6 +389,7 @@ export const approvalActionResultSchema = z
     missionRunId: z.string().nullable(),
     cached: z.boolean(),
     message: z.string(),
+    toolOutput: z.string().optional(),
   })
   .strict();
 export type ApprovalActionResult = z.infer<typeof approvalActionResultSchema>;

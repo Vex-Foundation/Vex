@@ -29,6 +29,7 @@ import { ProtocolMark } from "../../../../components/common/ProtocolMark.js";
 import { resolveProtocolMark } from "../../../../lib/protocol-marks.js";
 import { ActivityBadge, ActivityChip } from "../../ActivityBadge.js";
 import { ExpandRegion } from "../../../../components/ui/expand-region.js";
+import { useUiStore } from "../../../../stores/uiStore.js";
 import {
   chainRouteText,
   entryClockText,
@@ -40,6 +41,7 @@ import {
   usdEstText,
   vexFeeText,
 } from "./agent-scan-display.js";
+import { activityFollowUpMessage } from "./event-follow-up.js";
 
 /** One `IN`/`OUT` leg: quantity (marked `~` when quoted) + main-resolved symbol. */
 function LegText({
@@ -88,6 +90,7 @@ export function AgentScanRow({
   readonly entry: AgentScanActivityEntry;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
+  const openCreateSession = useUiStore((state) => state.openCreateSession);
   const detailId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
 
@@ -247,6 +250,13 @@ export function AgentScanRow({
             <IconArrowUpRight size={11} />
           </a>
         ) : null}
+        <button
+          type="button"
+          onClick={() => openCreateSession(activityFollowUpMessage(entry))}
+          className="ml-auto shrink-0 rounded-[3px] border border-line-2 px-2 py-1 vex-micro-label uppercase text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+        >
+          Ask Vex
+        </button>
         {hasDetail ? (
           <button
             ref={triggerRef}

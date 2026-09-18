@@ -23,6 +23,7 @@
 import { app } from "electron";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type { TelemetryFunnelInput } from "@shared/schemas/telemetry.js";
 import type { TelemetryStackDigest } from "@shared/types/bridge/common.js";
 import { preferencesStore } from "../preferences/store.js";
 import { resolveDsn } from "./dsn.js";
@@ -34,6 +35,7 @@ import { log } from "../logger/index.js";
 
 let sentryInitialized = false;
 let lifecycleChain: Promise<void> = Promise.resolve();
+let funnelSequence = 0;
 
 function enqueue<T>(task: () => Promise<T>): Promise<T> {
   let resolved!: (value: T) => void;
@@ -187,6 +189,34 @@ export async function captureRendererError(input: {
   }
 }
 
+/**
+ * Count one step of the Lighter desk funnel. No-op if SDK not initialized,
+ * which is also the consent gate: the SDK only loads after opt-in. The event
+ * carries the step and venue as tags and nothing else, so Sentry counts per
+ * step are the funnel; no user identity is attached.
+ *
+ * The dedupe integration drops an event whose message and fingerprint match
+ * the previous one, which would swallow two Long cards in a row. So the
+ * message carries a per-process sequence number and the fingerprint, which
+ * is what Sentry groups by, stays one issue per step and venue.
+ */
+export async function captureFunnelStep(input: TelemetryFunnelInput): Promise<boolean> {
+  if (!sentryInitialized) return false;
+  try {
+    const Sentry = await import("@sentry/electron/main");
+    funnelSequence += 1;
+    Sentry.captureMessage(`lighter.funnel ${input.step} #${String(funnelSequence)}`, {
+      level: "info",
+      fingerprint: ["lighter.funnel", input.step, input.environment],
+      tags: { source: "renderer", funnelStep: input.step, environment: input.environment },
+    });
+    return true;
+  } catch (cause) {
+    log.warn("[sentry] captureFunnelStep failed", cause);
+    return false;
+  }
+}
+
 async function rmOfflineQueue(): Promise<void> {
   try {
     const queueDir = path.join(app.getPath("userData"), "sentry");
@@ -200,6 +230,7 @@ async function rmOfflineQueue(): Promise<void> {
 export function __resetSentryLifecycleForTests(): void {
   sentryInitialized = false;
   lifecycleChain = Promise.resolve();
+  funnelSequence = 0;
 }
 
 export function __isSentryInitializedForTests(): boolean {

@@ -20,8 +20,13 @@ import {
   type JSX,
 } from "react";
 import { useUiStore, type RuntimeMode } from "../../stores/uiStore.js";
+import { useLighterAnalysisStore } from "../../stores/lighterAnalysisStore.js";
 import {
   BOOK_COLLAPSED,
+  BOOK_MIN,
+  BOOK_MAX,
+  SIDEBAR_MIN,
+  SIDEBAR_MAX,
   computeShellColumns,
   shouldAutoCollapseSidebar,
   WELCOME_PORTFOLIO_WIDTH,
@@ -47,7 +52,8 @@ import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
 import { ShellBackdrop } from "./ShellBackdrop.js";
 import { ShellDragHandle } from "./ShellDragHandle.js";
 import { ShellScreens } from "./screens/ShellScreens.js";
-import { LighterTradingHost } from "./lighterTrading/LighterTradingHost.js";
+import { LighterCenter } from "./lighterTrading/LighterCenter.js";
+import { LighterSidebar } from "./lighterTrading/LighterSidebar.js";
 
 export function AppShell(): JSX.Element {
   // App-wide engine-error RETENTION. Mounted here, not per session: a wake or
@@ -67,8 +73,11 @@ export function AppShell(): JSX.Element {
   // transcript.
   // Studio's own welcome stage is "no project selected", so the veil follows
   // whichever selection the ACTIVE mode is keyed on.
+  // Lighter has no welcome stage: the desk is always the resident surface.
   const backdropDimmed =
-    runtimeMode === "studio" ? activeProjectId !== null : activeSessionId !== null;
+    runtimeMode === "lighter"
+      ? true
+      : runtimeMode === "studio" ? activeProjectId !== null : activeSessionId !== null;
 
   return (
     // `relative isolate`: anchors the absolutely-positioned shell backdrop
@@ -133,10 +142,12 @@ function ShellFrame({
   const setSidebarWidth = useUiStore((s) => s.setSidebarWidth);
   const bookOpen = useUiStore((s) => s.bookOpen);
   const toggleBook = useUiStore((s) => s.toggleBook);
+  const setBookOpen = useUiStore((s) => s.setBookOpen);
   const bookWidth = useUiStore((s) => s.bookWidth);
   const setBookWidth = useUiStore((s) => s.setBookWidth);
+  const lighterChatShare = useLighterAnalysisStore((s) => s.desk.chatShare);
+  const saveLighterDesk = useLighterAnalysisStore((s) => s.saveDesk);
   const setActiveProjectId = useUiStore((s) => s.setActiveProjectId);
-  const [lighterTradingOpen, setLighterTradingOpen] = useState(false);
 
   const frameRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState(() =>
@@ -166,8 +177,10 @@ function ShellFrame({
   // Narrow viewports auto-collapse the sidebar to the rail; a manual toggle
   // below the breakpoint flips the ephemeral re-expand override instead of
   // the persisted preference. Crossing back into wide clears the override so
-  // the next narrow entry starts at the rail again.
-  const narrow = shouldAutoCollapseSidebar(viewport);
+  // the next narrow entry starts at the rail again. The Lighter desk starts
+  // at the rail regardless: the chart and chat want the width more.
+  const lighter = runtimeMode === "lighter";
+  const narrow = shouldAutoCollapseSidebar(viewport) || lighter;
   useEffect(() => {
     if (!narrow) setSidebarNarrowExpanded(false);
   }, [narrow, setSidebarNarrowExpanded]);
@@ -191,11 +204,13 @@ function ShellFrame({
   // the same floating-Portfolio geometry on its welcome screen that agent mode
   // gets on its own.
   const studio = runtimeMode === "studio";
-  const welcomeStage = studio ? activeProjectId === null : activeSessionId === null;
+  const welcomeStage = lighter
+    ? false
+    : studio ? activeProjectId === null : activeSessionId === null;
   const cols: ShellColumns = computeShellColumns(
     viewport,
     sidebarCollapsed ? 0 : sidebarWidth,
-    welcomeStage || !bookOpen ? 0 : bookWidth,
+    welcomeStage || !bookOpen ? 0 : lighter ? Math.max(1, viewport * lighterChatShare) : bookWidth,
   );
   const colsRef = useRef(cols);
   colsRef.current = cols;
@@ -222,8 +237,12 @@ function ShellFrame({
     [setSidebarWidth],
   );
   const onBookDrag = useCallback(
-    (dx: number) => setBookWidth(bookBase.current - dx),
-    [setBookWidth],
+    (dx: number) => {
+      const width = bookBase.current - dx;
+      if (lighter && viewport > 0) saveLighterDesk({ chatShare: width / viewport });
+      else setBookWidth(width);
+    },
+    [lighter, viewport, saveLighterDesk, setBookWidth],
   );
 
   const networkOnline = useNetworkOnline();
@@ -259,8 +278,14 @@ function ShellFrame({
       {/* COLUMN 1 - the rail the active mode owns. The two rails are separate
         * components on purpose: they hold different objects with different
         * lifetimes, and one component branching on the mode would own both. */}
-      <div className="relative z-20 min-w-0 overflow-visible">
-        {studio ? (
+      <div className="relative z-20 h-full min-h-0 min-w-0 overflow-visible">
+        {lighter ? (
+          <LighterSidebar
+            collapsed={sidebarCollapsed}
+            width={cols.sidebar}
+            onToggleSidebar={toggleSidebar}
+          />
+        ) : studio ? (
           <StudioSidebar
             collapsed={sidebarCollapsed}
             width={cols.sidebar}
@@ -279,7 +304,7 @@ function ShellFrame({
         )}
       </div>
 
-      <section className="relative z-10 flex min-w-0 flex-col overflow-hidden">
+      <section className="relative z-10 flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
         {/* THE STATUS STRIP, mounted ONCE for the whole frame regardless of
           * mode. It carries `GlobalApprovals`, which owns the approvals live
           * sync, and preload allows one subscriber per event kind per window -
@@ -290,27 +315,14 @@ function ShellFrame({
           activeSessionId={activeSessionId}
         />
 
-        <LighterTradingHost
-          activeSessionId={activeSessionId}
-          open={lighterTradingOpen}
-          onOpenChange={setLighterTradingOpen}
-          onCreateSession={onCreate}
-        />
-
         <div className="min-h-0 flex-1">
-          {/* The live conversation moves into Light it up while the workspace
-           * is open. Keeping a single mounted chat prevents duplicate
-           * composers, approval cards, and submit handlers. Studio owns its
-           * separate center and is unaffected by the agent workspace state. */}
-          {studio ? (
-            <StudioCenter />
-          ) : lighterTradingOpen ? null : (
-            <SessionPanel />
-          )}
+          {/* In Lighter mode the conversation lives in the BOOK column
+           * (`LighterChatRail`), so the center is the desk alone. */}
+          {lighter ? <LighterCenter /> : studio ? <StudioCenter /> : <SessionPanel />}
         </div>
       </section>
 
-      <div className="relative z-10 min-w-0 overflow-visible">
+      <div className="relative z-10 h-full min-h-0 min-w-0 overflow-visible">
         {/* Always mounted — the panel owns its collapsed rendering, so a
          * derived auto-close never remounts it. `bookEffectiveOpen` folds the
          * concession solve into the open flag WITHOUT touching the stored
@@ -318,7 +330,13 @@ function ShellFrame({
         <BookPanel
           activeSessionId={activeSessionId}
           bookOpen={welcomeStage ? bookOpen : bookEffectiveOpen}
-          onToggle={toggleBook}
+          onToggle={() => {
+            if (lighter && !bookEffectiveOpen) {
+              setBookOpen(true);
+              setSidebarNarrowExpanded(false);
+            }
+            else toggleBook();
+          }}
         />
       </div>
 
@@ -329,6 +347,9 @@ function ShellFrame({
           side="sidebar"
           left={cols.sidebar}
           label="Resize the sessions sidebar"
+          value={cols.sidebar}
+          min={SIDEBAR_MIN}
+          max={SIDEBAR_MAX}
           onStart={onSidebarStart}
           onDrag={onSidebarDrag}
           onEnd={onDragEnd}
@@ -338,7 +359,10 @@ function ShellFrame({
         <ShellDragHandle
           side="book"
           left={viewport - cols.book}
-          label="Resize the BOOK panel"
+          label={lighter ? "Resize the Vex panel" : "Resize the BOOK panel"}
+          value={cols.book}
+          min={BOOK_MIN}
+          max={BOOK_MAX}
           onStart={onBookStart}
           onDrag={onBookDrag}
           onEnd={onDragEnd}

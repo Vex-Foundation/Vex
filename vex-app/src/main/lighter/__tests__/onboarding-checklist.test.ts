@@ -1,0 +1,140 @@
+import { describe, expect, it, vi } from "vitest";
+
+import {
+  resolveLighterOnboardingChecklist,
+  type LighterOnboardingChecklistDeps,
+} from "../onboarding-checklist.js";
+import type { LighterOnboardingWorkflowRow } from "@vex-agent/db/repos/lighter-onboarding-workflows.js";
+
+const WALLET = "0x1111111111111111111111111111111111111111";
+const SESSION = "11111111-1111-4111-8111-111111111111";
+
+function deps(overrides: Partial<LighterOnboardingChecklistDeps> = {}): LighterOnboardingChecklistDeps {
+  return {
+    readSessionWallet: vi.fn().mockResolvedValue({
+      walletAddress: WALLET,
+      walletResolution: { source: "session", evm: { id: "w1", address: WALLET }, solana: null },
+      walletPolicy: { kind: "none" },
+    }),
+    readLighterAccount: vi.fn().mockResolvedValue({ account_index: 42 }),
+    readWorkflow: vi.fn().mockResolvedValue(null),
+    hasTradingKey: vi.fn().mockReturnValue(false),
+    inspectFee: vi.fn().mockResolvedValue({ status: "needs_approval", reason: "", accountIndex: 42 }),
+    ...overrides,
+  };
+}
+
+function workflow(
+  workflowState: LighterOnboardingWorkflowRow["workflowState"],
+): LighterOnboardingWorkflowRow {
+  return {
+    environment: "rhc",
+    walletAddress: WALLET,
+    workflowState,
+    lastStableState: null,
+    activeDepositIntentId: null,
+    resolvedAccountIndex: null,
+    apiKeyIndex: null,
+    publicKeyFingerprint: null,
+    failureCode: null,
+    revision: 1,
+    createdAt: new Date("2026-09-18T00:00:00.000Z"),
+    updatedAt: new Date("2026-09-18T00:01:00.000Z"),
+  };
+}
+
+describe("resolveLighterOnboardingChecklist", () => {
+  it("marks every step todo when the wallet owns no Lighter account, without a fee read", async () => {
+    const d = deps({ readLighterAccount: vi.fn().mockResolvedValue(null) });
+    await expect(resolveLighterOnboardingChecklist({ sessionId: SESSION, environment: "rhc" }, d))
+      .resolves.toEqual({
+        deposit: "todo",
+        key: "todo",
+        fee: "todo",
+        progress: "not_started",
+        detail: "Setup has not started.",
+        nextAction: "start_setup",
+        updatedAt: null,
+      });
+    expect(d.readLighterAccount).toHaveBeenCalledWith("rhc", WALLET);
+    expect(d.readWorkflow).toHaveBeenCalledWith("rhc", WALLET);
+    expect(d.inspectFee).not.toHaveBeenCalled();
+  });
+
+  it("reads the key from the vault scope for the account and the fee from the inspection", async () => {
+    const d = deps({
+      hasTradingKey: vi.fn().mockReturnValue(true),
+      inspectFee: vi.fn().mockResolvedValue({ status: "ready", reason: "", accountIndex: 42 }),
+    });
+    await expect(resolveLighterOnboardingChecklist({ sessionId: SESSION, environment: "core" }, d))
+      .resolves.toEqual({
+        deposit: "done",
+        key: "done",
+        fee: "done",
+        progress: "ready",
+        detail: "Lighter setup is complete.",
+        nextAction: "none",
+        updatedAt: null,
+      });
+    expect(d.hasTradingKey).toHaveBeenCalledWith("core", 42);
+    expect(d.inspectFee).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: SESSION,
+      environment: "core",
+      walletPolicy: { kind: "none" },
+    }));
+  });
+
+  it("reports a disabled fee policy as not required and anything else as todo", async () => {
+    await expect(resolveLighterOnboardingChecklist(
+      { sessionId: SESSION, environment: "core" },
+      deps({ inspectFee: vi.fn().mockResolvedValue({ status: "disabled", reason: "", accountIndex: null }) }),
+    )).resolves.toEqual({
+      deposit: "done",
+      key: "todo",
+      fee: "not_required",
+      progress: "action_required",
+      detail: "Trading key approval is required.",
+      nextAction: "continue_setup",
+      updatedAt: null,
+    });
+    await expect(resolveLighterOnboardingChecklist(
+      { sessionId: SESSION, environment: "core" },
+      deps({ inspectFee: vi.fn().mockResolvedValue({ status: "blocked", reason: "", accountIndex: 42 }) }),
+    )).resolves.toEqual({
+      deposit: "done",
+      key: "todo",
+      fee: "todo",
+      progress: "action_required",
+      detail: "Trading key approval is required.",
+      nextAction: "continue_setup",
+      updatedAt: null,
+    });
+  });
+
+  it("surfaces a pending deposit and an ambiguous workflow with one safe next action", async () => {
+    await expect(resolveLighterOnboardingChecklist(
+      { sessionId: SESSION, environment: "rhc" },
+      deps({
+        readLighterAccount: vi.fn().mockResolvedValue(null),
+        readWorkflow: vi.fn().mockResolvedValue(workflow("deposit_l2_pending")),
+      }),
+    )).resolves.toMatchObject({
+      progress: "in_progress",
+      detail: "Deposit confirmed on Ethereum. Waiting for Lighter credit.",
+      nextAction: "check_status",
+      updatedAt: "2026-09-18T00:01:00.000Z",
+    });
+
+    await expect(resolveLighterOnboardingChecklist(
+      { sessionId: SESSION, environment: "rhc" },
+      deps({
+        readLighterAccount: vi.fn().mockResolvedValue(null),
+        readWorkflow: vi.fn().mockResolvedValue(workflow("ambiguous")),
+      }),
+    )).resolves.toMatchObject({
+      progress: "needs_reconciliation",
+      detail: "Setup needs a status check before you continue.",
+      nextAction: "check_status",
+    });
+  });
+});

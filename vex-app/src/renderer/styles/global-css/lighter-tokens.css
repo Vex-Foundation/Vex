@@ -1,0 +1,82 @@
+/* Lighter desk tokens. Every role resolves from the Vex shell aliases so the desk shares the
+ * shell's surfaces, lines, accent and radii; the shell's theme attribute flips light/dark.
+ * Only the trading directions (positive/negative) and their washes are desk-specific. */
+.lit-desk {
+  --lit-bg: var(--vex-alias-bg-deep);
+  --lit-panel: var(--vex-alias-bg-layer-1);
+  --lit-panel-raised: var(--vex-alias-interactive-solid);
+  --lit-line: var(--vex-alias-border-l2);
+  --lit-line-strong: var(--vex-alias-border-l4);
+  --lit-ink: var(--vex-alias-label-primary);
+  --lit-ink-secondary: var(--vex-alias-label-secondary);
+  --lit-ink-muted: var(--vex-alias-label-tertiary);
+  --lit-grid: color-mix(in srgb, var(--vex-alias-label-primary) 6%, transparent);
+  --lit-positive: var(--vex-alias-state-success);
+  --lit-positive-ink: var(--vex-alias-label-on-accent);
+  /* The chart library parses the volume colors itself and cannot read color-mix(),
+   * so these are the success/error palette values at 30%, per theme. */
+  --lit-positive-volume: rgba(31, 185, 84, 0.3);
+  --lit-positive-wash: color-mix(in srgb, var(--lit-positive) 12%, transparent);
+  --lit-negative: var(--vex-alias-state-error);
+  --lit-negative-volume: rgba(242, 109, 109, 0.3);
+  --lit-negative-wash: color-mix(in srgb, var(--lit-negative) 12%, transparent);
+  --lit-warning: var(--vex-alias-state-warn);
+  --lit-action: var(--vex-alias-button-accent-fill);
+  --lit-action-ink: var(--vex-alias-button-accent-ink);
+  --lit-focus: var(--vex-alias-accent-primary);
+  --lit-hover: var(--vex-alias-interactive-hover);
+  --lit-selection: color-mix(in srgb, var(--vex-alias-accent-primary) 28%, transparent);
+  --lit-scrollbar: color-mix(in srgb, var(--vex-alias-label-primary) 26%, transparent);
+  --lit-canvas: var(--lit-bg);
+  --lit-radius: var(--radius-sm);
+  --lit-radius-lg: var(--radius-md);
+  --lit-market-picker-surface: var(--vex-alias-bg-layer-1);
+  --lit-market-picker-chrome: var(--lit-bg);
+  --lit-market-picker-hover: var(--vex-alias-interactive-hover);
+  --lit-market-picker-selected: var(--vex-alias-accent-wash);
+  --lit-market-picker-scrim: color-mix(in srgb, var(--vex-alias-bg-base) 70%, transparent);
+  --lit-chart-font-size: 13;
+  background: var(--lit-canvas);
+  color: var(--lit-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.4;
+  color-scheme: dark;
+  accent-color: var(--lit-focus);
+  caret-color: var(--lit-focus);
+}
+
+.lit-desk[data-lighter-theme="celeris"] {
+  color-scheme: light;
+  --lit-positive-volume: rgba(19, 112, 51, 0.3);
+  --lit-negative-volume: rgba(179, 51, 51, 0.3);
+}
+
+.lit-desk ::selection {
+  background: var(--lit-selection);
+  color: var(--lit-ink);
+}
+
+.lit-desk * {
+  scrollbar-color: var(--lit-scrollbar) transparent;
+  scrollbar-width: thin;
+}
+
+.lit-desk *::-webkit-scrollbar { width: 8px; height: 8px; }
+.lit-desk *::-webkit-scrollbar-track { background: transparent; }
+.lit-desk *::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--radius-capsule);
+  background: var(--lit-scrollbar);
+  background-clip: padding-box;
+}
+
+.lit-desk button:not(:disabled) { cursor: pointer; }
+
+.lit-desk button:focus-visible,
+.lit-desk select:focus-visible,
+.lit-desk input:focus-visible,
+.lit-desk a:focus-visible {
+  outline: 2px solid var(--lit-focus);
+  outline-offset: 3px;
+}

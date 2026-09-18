@@ -370,8 +370,11 @@ describe("Lighter signer helper child lifecycle", () => {
       expect(result.sawPayload).toBe("generateApiKey");
       expect(result.argv).toEqual([]);
       // The vault-populated environment of the privileged process never reaches
-      // the process that holds a trading private key.
-      expect(result.envKeys).toEqual([]);
+      // the process that holds a trading private key. macOS itself injects its
+      // text-encoding marker after spawn even when Node passes `env: {}`.
+      const platformKeys = process.platform === "darwin" ? ["__CF_USER_TEXT_ENCODING"] : [];
+      expect(result.envKeys.filter((key) => !platformKeys.includes(key))).toEqual([]);
+      expect(result.envKeys).not.toContain("VEX_SIGNER_ENV_LEAK_PROBE");
     } finally {
       delete process.env.VEX_SIGNER_ENV_LEAK_PROBE;
     }

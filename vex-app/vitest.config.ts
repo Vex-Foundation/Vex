@@ -30,6 +30,13 @@ const NATIVE_FS_SUITE = "src/main/studio/files/__tests__/files-real-fs.test.ts";
 const excludeNativeFsSuite = process.env.VEX_SKIP_NATIVE_FS_SUITE === "1";
 
 /**
+ * Keep transform and SDK module loading below the contention point observed
+ * on the full suite.  The value remains overridable for profiling or a
+ * machine with a different CPU budget.
+ */
+const maxWorkers = Number.parseInt(process.env.VEX_VITEST_MAX_WORKERS ?? "4", 10);
+
+/**
  * Two projects so renderer component tests run under jsdom while main /
  * shared / preload unit tests stay in pure node — keeps the existing
  * suite fast and avoids accidental DOM globals in main-process code.
@@ -47,6 +54,7 @@ export default defineConfig({
     },
   },
   test: {
+    maxWorkers: Number.isFinite(maxWorkers) && maxWorkers > 0 ? maxWorkers : 4,
     /**
      * 15s instead of vitest's 5s default (UIUX round 2, 2026-08-21).
      *

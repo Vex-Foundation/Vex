@@ -210,7 +210,9 @@ describe("SessionPanel welcome - crown anchored above a downward growth band", (
     const field = screen.getByLabelText(
       "Session draft",
     ) as HTMLTextAreaElement;
-    expect(field.value).toBe(QUICK_ACTIONS[0]?.prompt);
+    expect(field.value).toBe(
+      QUICK_ACTIONS.find((action) => action.label === "Hunt trending memecoins")?.prompt,
+    );
     await waitFor(() =>
       expect(
         screen.queryByRole("button", { name: /hunt trending memecoins/i }),

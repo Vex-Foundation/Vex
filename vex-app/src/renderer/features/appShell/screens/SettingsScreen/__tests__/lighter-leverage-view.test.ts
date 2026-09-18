@@ -6,8 +6,8 @@
  * about whether anything was signed. Table tests, in the shape VS Code's
  * `terminalProfiles.test.ts` uses for the same kind of pure view model.
  *
- * RED ON REVERT: turn `maxLeverageForMarket`'s floor into a round and the 3333
- * row fails, because 4x is a value main is obliged to refuse. Make
+ * RED ON REVERT: calculate `maxLeverageForMarket` from the raw decimal ratio
+ * and the 295 row loses the valid 34x selector main accepts. Make
  * `describeApplyOutcome` treat `ambiguous` as a failure and the "nothing will
  * be signed again" row fails.
  */
@@ -39,6 +39,7 @@ import {
   OUTCOME_AMBIGUOUS,
   OUTCOME_EXPIRED,
   leverageAboveMaximum,
+  outcomeAlreadyConfigured,
 } from "../lighter-trading-setup-copy.js";
 
 function marketRow(
@@ -65,7 +66,8 @@ describe("maxLeverageForMarket", () => {
     [200, 50, "BTC and ETH on Robinhood Chain"],
     [400, 25, "SOL"],
     [2000, 5, "a five-times market"],
-    [3333, 3, "floor, because 4x resolves to 2500 which is below 3333"],
+    [295, 34, "34x resolves back to the exact 295 provider fraction"],
+    [3333, 3, "4x resolves to 2500 which is below 3333"],
     [5000, 2, "the chain-wide default"],
     [10_000, 1, "a market that admits no leverage at all"],
   ])("reads %i as %ix (%s)", (fraction, expected) => {
@@ -87,6 +89,13 @@ describe("parseLeverageInput", () => {
 
   it("accepts exactly the maximum", () => {
     expect(parseLeverageInput("50", 50, "BTC")).toEqual({ kind: "value", leverage: 50 });
+  });
+
+  it("accepts the provider-scale whole-number ceiling", () => {
+    expect(parseLeverageInput("10000", 10_000, "TEST")).toEqual({
+      kind: "value",
+      leverage: 10_000,
+    });
   });
 
   it("names the market maximum when the value is above it", () => {
@@ -272,6 +281,12 @@ describe("unresolved changes", () => {
 });
 
 describe("describeApplyOutcome", () => {
+  it("uses the same whole leverage in no-op outcomes", () => {
+    expect(outcomeAlreadyConfigured("BTC", "33.89", "cross")).toBe(
+      "BTC is already set to 34x cross on Lighter. Nothing was signed.",
+    );
+  });
+
   it("states the observed configuration after a completed change", () => {
     const result = {
       status: "completed",
@@ -285,7 +300,7 @@ describe("describeApplyOutcome", () => {
     } as const satisfies ApplyLighterLeverageResult;
     expect(describeApplyOutcome("BTC", result)).toEqual({
       tone: "success",
-      message: "Applied. Lighter now reports 25.00x cross for BTC.",
+      message: "Applied. Lighter now reports 25x cross for BTC.",
       reconcilable: false,
     });
   });

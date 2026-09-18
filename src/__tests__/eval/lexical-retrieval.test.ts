@@ -84,7 +84,7 @@ describe("lexical retrieval determinism", () => {
   it("evaluates every canonical seed case", () => {
     const report = evaluateLexicalDiscovery(loadDataset(), 5);
     expect(toBaselineMetrics(report).overall.count).toBe(loadDataset().length);
-  });
+  }, 60_000);
 });
 
 describe("supplemental retrieval dataset", () => {

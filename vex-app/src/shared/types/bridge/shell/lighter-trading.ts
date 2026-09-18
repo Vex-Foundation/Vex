@@ -2,7 +2,12 @@ import type { Result } from "../../../ipc/result.js";
 import type { AbortableInvocation } from "../common.js";
 import type {
   LighterTradingAccount,
+  LighterTradingAccountActivityEvent,
   LighterTradingAccountInput,
+  LighterTradingFills,
+  LighterTradingFillsInput,
+  LighterTradingCandleHistory,
+  LighterTradingCandleHistoryInput,
   LighterTradingCandleSnapshotEvent,
   LighterTradingCandleStatusEvent,
   LighterTradingCandleSubscriptionStartInput,
@@ -10,6 +15,10 @@ import type {
   LighterTradingCandleSubscriptionStopInput,
   LighterTradingCandleSubscriptionStopResult,
   LighterTradingCandleUpdateEvent,
+  LighterDeskPrepareInput,
+  LighterDeskPrepareResult,
+  LighterOnboardingChecklist,
+  LighterOnboardingChecklistInput,
   LighterTradingListMarketsInput,
   LighterTradingMarketList,
   LighterTradingPublicBookEvent,
@@ -37,9 +46,16 @@ export interface LighterTradingBridge {
   readonly getSnapshot: (
     input: LighterTradingSnapshotInput,
   ) => AbortableInvocation<LighterTradingSnapshot>;
+  /** Older candles for the chart's scroll-back; cancelled like the snapshot. */
+  readonly getCandleHistory: (
+    input: LighterTradingCandleHistoryInput,
+  ) => AbortableInvocation<LighterTradingCandleHistory>;
   readonly getAccount: (
     input: LighterTradingAccountInput,
   ) => AbortableInvocation<LighterTradingAccount>;
+  readonly listFills: (
+    input: LighterTradingFillsInput,
+  ) => AbortableInvocation<LighterTradingFills>;
   readonly startCandleSubscription: (
     input: LighterTradingCandleSubscriptionStartInput,
   ) => Promise<Result<LighterTradingCandleSubscriptionStartResult>>;
@@ -73,4 +89,22 @@ export interface LighterTradingBridge {
   readonly onPublicMarketStatus: (
     callback: (event: LighterTradingPublicMarketStatusEvent) => void,
   ) => () => void;
+  readonly onAccountActivity: (
+    callback: (event: LighterTradingAccountActivityEvent) => void,
+  ) => () => void;
+  /**
+   * Desk lane: hands main a selector (ticket draft, position to close, order
+   * to cancel). Main prepares the action with the Lighter tools and enqueues
+   * an approval; the returned id is the card the user still has to confirm.
+   */
+  readonly prepareDeskAction: (
+    input: LighterDeskPrepareInput,
+  ) => Promise<Result<LighterDeskPrepareResult>>;
+  /**
+   * The ticket gate's checklist: which of the three onboarding steps this
+   * session's wallet has completed. Address-only reads; no key leaves main.
+   */
+  readonly getOnboardingChecklist: (
+    input: LighterOnboardingChecklistInput,
+  ) => AbortableInvocation<LighterOnboardingChecklist>;
 }

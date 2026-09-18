@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import {
   filterSessionsByTitle,
+  filterSessionsByWorkspace,
   formatSessionTime,
 } from "../sessionListModel.js";
 
@@ -49,6 +50,22 @@ describe("filterSessionsByTitle", () => {
   });
 });
 
+describe("filterSessionsByWorkspace", () => {
+  const agent = makeRow({ title: "Agent" });
+  const legacy = makeRow({ title: "Before the column existed" });
+  delete (legacy as { workspace?: unknown }).workspace;
+  const desk = makeRow({ title: "BTC · Sep 17", workspace: "lighter" });
+  const rows = [agent, legacy, desk];
+
+  it("gives the agent rail only agent sessions, legacy rows included", () => {
+    expect(filterSessionsByWorkspace(rows, null)).toEqual([agent, legacy]);
+  });
+
+  it("gives the Lighter rail only desk sessions", () => {
+    expect(filterSessionsByWorkspace(rows, "lighter")).toEqual([desk]);
+  });
+});
+
 function makeRow(
   overrides: Partial<SessionListItem>,
 ): SessionListItem {
@@ -62,6 +79,7 @@ function makeRow(
     endedAt: null,
     missionStatus: null,
     pinnedAt: null,
+    workspace: null,
     ...overrides,
   };
 }

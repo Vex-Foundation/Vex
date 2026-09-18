@@ -23,12 +23,15 @@ import type {
   LighterTxFromL1Response,
 } from "@tools/lighter/types.js";
 import {
+  cancelLighterLeverage,
   confirmLighterLeverage,
   installLighterLeverageService,
   proveLighterUpdateLeverageTransaction,
   reconcileLighterLeverage,
   type LighterLeverageExecutionDeps,
+  type LighterLeverageCancellationDeps,
 } from "../leverage-execution.js";
+import { leverageRefusal } from "../leverage-preparation.js";
 import type { LighterLeverageAccountSetup } from "../leverage-preparation.js";
 import {
   activeCriticalOps,
@@ -920,6 +923,75 @@ describe("reconcileLighterLeverage", () => {
     expect(result.status).toBe("ambiguous");
     expect(result).toMatchObject({ reason: expect.stringContaining("Reconcile") });
     expect(h.current().executionState).toBe("submission_staged");
+  });
+});
+
+describe("cancelLighterLeverage", () => {
+  it("returns the strict cancellation result when the proposed-state CAS wins", async () => {
+    const cancelled = baseIntent({ executionState: "cancelled" });
+    const deps = {
+      markCancelled: vi.fn(async () => cancelled),
+      readIntent: vi.fn(async () => cancelled),
+    } satisfies LighterLeverageCancellationDeps;
+
+    await expect(cancelLighterLeverage({ proposalId: INTENT_ID }, deps)).resolves.toEqual({
+      status: "cancelled",
+      proposalId: INTENT_ID,
+    });
+    expect(deps.readIntent).not.toHaveBeenCalled();
+  });
+
+  it("is idempotent after a previous cancellation", async () => {
+    const cancelled = baseIntent({ executionState: "cancelled" });
+    const deps = {
+      markCancelled: vi.fn(async () => null),
+      readIntent: vi.fn(async () => cancelled),
+    } satisfies LighterLeverageCancellationDeps;
+
+    await expect(cancelLighterLeverage({ proposalId: INTENT_ID }, deps)).resolves.toEqual({
+      status: "cancelled",
+      proposalId: INTENT_ID,
+    });
+  });
+
+  it("refuses after Confirm entered signing", async () => {
+    const signing = baseIntent({
+      executionState: "signing",
+      consentedAt: new Date(NOW),
+      nonceValue: "7",
+      txExpiryMs: TX_EXPIRY,
+    });
+    const deps = {
+      markCancelled: vi.fn(async () => null),
+      readIntent: vi.fn(async () => signing),
+    } satisfies LighterLeverageCancellationDeps;
+
+    await expect(cancelLighterLeverage({ proposalId: INTENT_ID }, deps)).rejects.toThrow(
+      "can no longer be cancelled",
+    );
+    expect(signing).toMatchObject({ executionState: "signing", nonceValue: "7" });
+  });
+
+  it("makes a Confirm that loses the CAS report the cancellation without signing", async () => {
+    const h = setup();
+    vi.mocked(h.deps.reserveSigning).mockImplementation(async () => {
+      h.patch({ executionState: "cancelled" });
+      throw leverageRefusal("The proposal was cancelled before reservation.");
+    });
+
+    const result = await confirmLighterLeverage({ proposalId: INTENT_ID }, undefined, h.deps);
+
+    expect(result).toMatchObject({
+      status: "refused",
+      reason: expect.stringContaining("cancelled before confirmation"),
+    });
+    expect(h.deps.sign).not.toHaveBeenCalled();
+    expect(h.deps.client.sendTx).not.toHaveBeenCalled();
+    expect(h.current()).toMatchObject({
+      executionState: "cancelled",
+      nonceValue: null,
+      signerTxHash: null,
+    });
   });
 });
 

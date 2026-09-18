@@ -16,6 +16,7 @@ import type {
   ApprovalSummaryDto,
 } from "@shared/schemas/approvals.js";
 import { riskChipClasses } from "./risk.js";
+import { lighterOrderFacts } from "./lighter-order-facts.js";
 import {
   APPROVAL_ACTOR_FIELD_LABEL,
   APPROVAL_EXPIRY_FIELD_LABEL,
@@ -72,9 +73,9 @@ function criticalArgValue(
   criticalArgs: ApprovalPreview["criticalArgs"],
 ): string {
   if (!isLighterCreateOrderBehavior(key, value, criticalArgs)) return String(value);
-  if (value === "good-till-time") return "Keep open";
-  if (value === "immediate-or-cancel") return "Immediate only";
-  return "Maker only";
+  if (value === "good-till-time") return "GTC";
+  if (value === "immediate-or-cancel") return "IOC";
+  return "Post-Only";
 }
 
 function criticalArgLabel(
@@ -145,6 +146,26 @@ export function ApprovalDetails({
     projectId: summary.projectId,
     projectName,
   });
+  const orderFacts = criticalArgs === null ? null : lighterOrderFacts(criticalArgs);
+  const criticalArgsWell = criticalArgs !== null && Object.keys(criticalArgs).length > 0 ? (
+    <dl
+      data-testid="critical-args"
+      className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 rounded-[6px] border border-[var(--vex-line)] bg-[var(--vex-surface-down)] px-3 py-2 font-mono text-[11px]"
+    >
+      {visibleCriticalArgs(criticalArgs).map(([k, v]) => (
+        // `display: contents` keeps the grid layout while giving each
+        // pair a stable React key.
+        <div key={k} className="contents">
+          <dt className="uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+            {criticalArgLabel(k, criticalArgs)}
+          </dt>
+          <dd className={criticalArgs.toolId === "lighter.fees.approve"
+            ? "min-w-0 break-words [overflow-wrap:anywhere] text-[var(--vex-text-2)]"
+            : "break-all text-[var(--vex-text-2)]"}>{criticalArgValue(k, v, criticalArgs)}</dd>
+        </div>
+      ))}
+    </dl>
+  ) : null;
   return (
     <>
       <header className="flex flex-wrap items-center gap-2 border-b border-[var(--vex-line)] px-4 py-3">
@@ -255,26 +276,33 @@ export function ApprovalDetails({
             {summary.reasoningPreview}
           </p>
         ) : null}
-        {/* Critical args — recessed well: the facts being signed for. */}
-        {criticalArgs !== null && Object.keys(criticalArgs).length > 0 ? (
+        {/* A Lighter order card reads as an order first: the human rows, then
+            the full signed field list folded beneath them. Every other card
+            shows the field list alone. */}
+        {orderFacts !== null && orderFacts.length > 0 ? (
           <dl
-            data-testid="critical-args"
-            className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 rounded-[6px] border border-[var(--vex-line)] bg-[var(--vex-surface-down)] px-3 py-2 font-mono text-[11px]"
+            data-testid="order-facts"
+            className="grid grid-cols-[max-content_1fr] items-baseline gap-x-3 gap-y-1.5 rounded-[6px] border border-[var(--vex-line)] bg-[var(--vex-surface-down)] px-3 py-2 text-[12px]"
           >
-            {visibleCriticalArgs(criticalArgs).map(([k, v]) => (
-              // `display: contents` keeps the grid layout while giving each
-              // pair a stable React key.
-              <div key={k} className="contents">
-                <dt className="uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
-                  {criticalArgLabel(k, criticalArgs)}
+            {orderFacts.map((fact) => (
+              <div key={fact.label} className="contents">
+                <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+                  {fact.label}
                 </dt>
-                <dd className={criticalArgs.toolId === "lighter.fees.approve"
-                  ? "min-w-0 break-words [overflow-wrap:anywhere] text-[var(--vex-text-2)]"
-                  : "break-all text-[var(--vex-text-2)]"}>{criticalArgValue(k, v, criticalArgs)}</dd>
+                <dd className="min-w-0 break-words [overflow-wrap:anywhere] text-[var(--vex-text)]">{fact.value}</dd>
               </div>
             ))}
           </dl>
         ) : null}
+        {/* Critical args — recessed well: the facts being signed for. */}
+        {orderFacts !== null && criticalArgsWell !== null ? (
+          <details className="group">
+            <summary className="cursor-pointer select-none font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)] hover:text-[var(--vex-text-2)]">
+              All signed fields
+            </summary>
+            <div className="mt-2">{criticalArgsWell}</div>
+          </details>
+        ) : criticalArgsWell}
         {inlineError !== null ? (
           <p
             role="alert"

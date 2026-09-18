@@ -1,0 +1,733 @@
+/* ---------------------------------------------------------------------------
+ * Order ticket
+ * ------------------------------------------------------------------------- */
+
+/* The ticket owns its panel height. Account context and actions stay visible;
+ * only the variable-height field body scrolls in a short stacked desk. */
+.lit-ticket-content,
+.lit-ticket {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+/* The column is a fixed grid track, so the ticket can be a query container:
+ * its floor rules key off its own width, not the window's. */
+.lit-ticket { container-type: inline-size; overflow: hidden; }
+
+.lit-ticket button:focus-visible,
+.lit-ticket select:focus-visible {
+  outline: 2px solid var(--lit-focus);
+  outline-offset: 2px;
+}
+
+.lit-ticket input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--lit-focus);
+  outline-offset: 2px;
+}
+
+.lit-ticket-body {
+  display: flex;
+  min-height: 0;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 8px 8px;
+}
+
+.lit-ticket-body::-webkit-scrollbar { width: 5px; }
+.lit-ticket-body::-webkit-scrollbar-thumb { border-radius: var(--lit-radius); background: var(--lit-line-strong); }
+
+.lit-ticket-footer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--lit-line);
+  padding: 6px 8px;
+  background: var(--lit-panel);
+}
+
+.lit-ticket-meta {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--lit-line);
+  padding: 6px 8px;
+  background: var(--lit-panel);
+  font-size: 11.5px;
+}
+
+.lit-margin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: var(--lit-panel-raised);
+  padding: 4px 8px;
+  color: var(--lit-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.lit-margin-chip i {
+  color: var(--lit-ink-muted);
+  font-style: normal;
+}
+
+.lit-margin-chip:hover { border-color: var(--lit-line-strong); }
+
+.lit-ticket-available {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--lit-ink-muted);
+  white-space: nowrap;
+}
+
+.lit-ticket-available small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lit-ticket-available b {
+  color: var(--lit-ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.lit-ticket-context {
+  margin: 0;
+  color: var(--lit-ink-muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.lit-ticket-book-hint {
+  flex: 0 0 auto;
+  margin: -1px 0 0;
+  overflow: hidden;
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lit-field {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.lit-field > span:first-child,
+.lit-protection-leg legend,
+.lit-tif-field legend {
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.lit-field small,
+.lit-protection-leg > small,
+.lit-tif-field > small {
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.lit-input-shell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: var(--lit-bg);
+  padding: 0 10px;
+  transition: border-color 140ms ease;
+}
+
+.lit-input-shell:focus-within { border-color: var(--lit-line-strong); }
+
+.lit-input-shell input {
+  min-width: 0;
+  height: 32px;
+  flex: 1 1 auto;
+  border: 0;
+  background: transparent;
+  color: var(--lit-ink);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  outline: 0;
+}
+
+.lit-input-shell b,
+.lit-unit-toggle {
+  color: var(--lit-ink-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.lit-unit-toggle,
+.lit-price-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-radius: var(--lit-radius);
+  background: var(--lit-panel-raised);
+  padding: 3px 7px;
+}
+
+.lit-unit-toggle:hover,
+.lit-price-chip:hover { color: var(--lit-ink); }
+
+.lit-price-chip {
+  color: var(--lit-positive);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* One row: label, presets, custom input. The worst price is a fact below. */
+.lit-slippage-field {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.lit-slippage-controls {
+  display: grid;
+  grid-template-columns: repeat(3, auto) minmax(0, 1fr);
+  gap: 4px;
+}
+
+.lit-slippage-controls > button {
+  min-height: 26px;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: transparent;
+  padding: 0 6px;
+  color: var(--lit-ink-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.lit-slippage-controls > button[aria-pressed="true"] {
+  border-color: var(--lit-line-strong);
+  background: var(--lit-panel-raised);
+  color: var(--lit-ink);
+}
+
+.lit-slippage-input { padding: 0 6px; }
+.lit-slippage-input input { height: 24px; font-size: 11.5px; }
+
+/* Keep slippage on one row at the ticket floor; smaller gaps preserve the
+ * editable value without stealing a second line from the order flow. */
+@container (max-width: 300px) {
+  .lit-slippage-field { grid-template-columns: 48px minmax(0, 1fr); gap: 4px; }
+  .lit-slippage-controls { gap: 3px; }
+  .lit-slippage-controls > button { padding-inline: 4px; }
+  .lit-slippage-input { padding-inline: 4px; }
+}
+
+/* Binance-style size slider: the track fills to the share, quarter ticks below. */
+.lit-size-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 0 0;
+}
+
+.lit-size-slider input[type="range"] {
+  width: 100%;
+  height: 14px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.lit-size-slider input[type="range"]:disabled { cursor: default; opacity: 0.4; }
+
+.lit-size-slider input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--lit-ink-secondary) var(--lit-size-fill, 0%), var(--lit-line) 0);
+}
+
+.lit-size-slider input[type="range"]::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-top: -4.5px;
+  appearance: none;
+  border: 2px solid var(--lit-ink);
+  border-radius: 2px;
+  background: var(--lit-panel);
+  transform: rotate(45deg);
+}
+
+.lit-size-slider input[type="range"]:focus-visible { outline: 0; }
+.lit-size-slider input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--lit-focus); }
+
+.lit-size-presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.lit-size-slider .lit-size-presets {
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0;
+}
+
+.lit-size-slider .lit-size-presets button {
+  min-height: 16px;
+  border: 0;
+  padding: 0;
+  font-size: 10px;
+  text-align: center;
+}
+
+.lit-size-slider .lit-size-presets button:first-child { text-align: left; }
+.lit-size-slider .lit-size-presets button:last-child { text-align: right; }
+
+.lit-size-slider .lit-size-presets button[aria-pressed="true"] {
+  background: transparent;
+  color: var(--lit-ink);
+}
+
+.lit-size-presets button {
+  min-height: 24px;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: transparent;
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.lit-size-presets button:hover:not(:disabled) { color: var(--lit-ink); }
+.lit-size-presets button:disabled { opacity: 0.4; }
+
+.lit-size-presets button[aria-pressed="true"] {
+  border-color: var(--lit-line-strong);
+  background: var(--lit-panel-raised);
+  color: var(--lit-ink);
+}
+
+/* Qty | Risk beside the Size label; Risk derives the size from the stop-loss. */
+.lit-size-field > span:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lit-size-mode {
+  display: inline-flex;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: var(--lit-panel);
+  padding: 1px;
+}
+
+.lit-size-mode button {
+  min-height: 18px;
+  border: 0;
+  border-radius: calc(var(--lit-radius) - 1px);
+  background: transparent;
+  padding: 0 7px;
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  font-weight: 650;
+}
+
+.lit-size-mode button:hover:not(:disabled) { color: var(--lit-ink); }
+.lit-size-mode button:disabled { opacity: 0.4; }
+
+.lit-size-mode button[aria-pressed="true"] {
+  background: var(--lit-panel-raised);
+  color: var(--lit-ink);
+  box-shadow: inset 0 0 0 1px var(--lit-line);
+}
+
+.lit-size-field[data-size-mode="risk"] .lit-size-presets { grid-template-columns: repeat(3, 1fr); }
+
+/* The size Risk mode computed: read, not typed. */
+.lit-input-shell--readout { background: var(--lit-panel); }
+.lit-input-shell--readout input { color: var(--lit-ink-muted); }
+
+.lit-protect {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  padding: 8px 10px;
+}
+
+/* Exchange row: label beside the trigger input, the bound note underneath the input. */
+.lit-protect-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
+}
+
+.lit-protect-row > span:first-child {
+  color: var(--lit-ink-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.lit-protect-row > small {
+  grid-column: 2;
+  overflow: hidden;
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lit-protect-note {
+  margin: 0;
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.lit-check-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lit-protection-leg,
+.lit-tif-field {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.lit-protection-leg {
+  border-top: 1px solid var(--lit-line);
+  padding-top: 10px;
+}
+
+.lit-protection-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.lit-tif-tabs {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  overflow: hidden;
+}
+
+.lit-tif-tabs button {
+  min-height: 30px;
+  border: 0;
+  background: transparent;
+  padding: 0 4px;
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.lit-tif-tabs button + button { border-left: 1px solid var(--lit-line); }
+.lit-tif-tabs button:hover { background: var(--lit-hover); color: var(--lit-ink); }
+
+.lit-tif-tabs button[aria-pressed="true"] {
+  background: var(--lit-panel-raised);
+  color: var(--lit-ink);
+}
+
+.lit-ticket-options {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.lit-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--lit-ink-secondary);
+  font-size: 12px;
+}
+
+.lit-check-row input { margin: 0; accent-color: var(--lit-positive); }
+
+.lit-expiry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+}
+
+.lit-ticket-facts {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 8px;
+  margin: 4px 0 0;
+  border-top: 1px solid var(--lit-line);
+  padding-top: 6px;
+  font-size: 11px;
+}
+
+.lit-ticket-facts > div {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.lit-ticket-facts > div:nth-last-child(-n + 2):nth-child(odd),
+.lit-ticket-facts > div:last-child { grid-column: auto; }
+
+.lit-ticket-facts dt {
+  overflow: hidden;
+  color: var(--lit-ink-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lit-ticket-facts dd {
+  margin: 0;
+  color: var(--lit-ink);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.lit-validation,
+.lit-review-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+/* Agent review comes before the manual order actions. */
+.lit-ask-draft {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--lit-focus) 32%, var(--lit-line));
+  border-radius: var(--lit-radius);
+  background: color-mix(in srgb, var(--lit-focus) 10%, transparent);
+  padding: 6px 8px;
+  color: var(--lit-focus);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.lit-ask-draft:hover:not(:disabled) { background: var(--lit-hover); }
+.lit-ask-draft:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.lit-ticket-approval-waiting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--lit-warning) 38%, transparent);
+  border-radius: var(--lit-radius);
+  background: color-mix(in srgb, var(--lit-warning) 10%, transparent);
+  padding: 6px 8px;
+  animation: lit-ticket-status-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lit-ticket-approval-waiting span { display: flex; min-width: 0; flex-direction: column; }
+.lit-ticket-approval-waiting b { color: var(--lit-warning); font-size: 11.5px; }
+.lit-ticket-approval-waiting small { overflow: hidden; color: var(--lit-ink-muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.lit-ticket-approval-waiting button { border: 0; border-radius: var(--lit-radius); background: var(--lit-hover); padding: 4px 7px; color: var(--lit-ink); font-size: 11px; font-weight: 600; }
+
+.lit-review-error {
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--lit-negative) 40%, transparent);
+  border-radius: var(--lit-radius);
+  background: var(--lit-negative-wash);
+  padding: 8px 10px;
+  color: var(--lit-negative);
+  font-size: 11.5px;
+  line-height: 1.45;
+  animation: lit-ticket-status-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Where the last desk card landed: sent, failed, or unknown. */
+.lit-review-outcome {
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--lit-positive) 40%, transparent);
+  border-radius: var(--lit-radius);
+  background: var(--lit-positive-wash);
+  padding: 8px 10px;
+  color: var(--lit-positive);
+  font-size: 11.5px;
+  line-height: 1.45;
+  animation: lit-ticket-status-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes lit-ticket-status-in {
+  from { opacity: 0; transform: translateY(3px); }
+}
+
+.lit-review-outcome[data-tone="warn"] {
+  border-color: color-mix(in srgb, var(--lit-warning) 40%, transparent);
+  background: color-mix(in srgb, var(--lit-warning) 12%, transparent);
+  color: var(--lit-warning);
+}
+
+.lit-review-outcome[data-tone="error"] {
+  border-color: color-mix(in srgb, var(--lit-negative) 40%, transparent);
+  background: var(--lit-negative-wash);
+  color: var(--lit-negative);
+}
+
+.lit-review-button {
+  min-height: 38px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: var(--lit-radius);
+  background: var(--lit-positive);
+  color: var(--lit-positive-ink);
+  font-size: 13.5px;
+  font-weight: 700;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.lit-review-button[data-side="sell"] {
+  background: var(--lit-negative);
+  color: #fff;
+}
+
+/* The two side buttons: the active side submits, the other side flips the
+ * ticket and submits for it. The inactive side reads as a choice, not a state. */
+.lit-side-actions {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.lit-side-actions .lit-review-button {
+  display: flex;
+  min-height: 38px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  gap: 1px;
+  line-height: 1.2;
+}
+
+@container (max-width: 300px) {
+  .lit-ticket-body,
+  .lit-ticket-footer,
+  .lit-ticket-meta { padding-inline: 7px; }
+}
+
+.lit-side-actions .lit-review-button small {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 10.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+.lit-side-actions .lit-review-button:not([data-active]) {
+  border: 1px solid var(--lit-positive);
+  background: var(--lit-positive-wash);
+  color: var(--lit-positive);
+}
+
+.lit-side-actions .lit-review-button[data-side="sell"]:not([data-active]) {
+  border-color: var(--lit-negative);
+  background: var(--lit-negative-wash);
+  color: var(--lit-negative);
+}
+
+.lit-review-button:hover:not(:disabled) { opacity: 0.92; }
+.lit-review-button:active:not(:disabled) { transform: translateY(1px); }
+.lit-review-button:disabled { cursor: not-allowed; opacity: 0.45; }
+
+/* No account yet: the ticket becomes one guided setup block. */
+.lit-ticket-connect {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 12px;
+  color: var(--lit-ink-secondary);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.lit-ticket-connect b { color: var(--lit-ink); font-size: 13px; }
+.lit-ticket-connect .lit-review-button { margin-top: 6px; }
+
+.lit-ticket-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: lit-step;
+}
+.lit-ticket-steps li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  counter-increment: lit-step;
+}
+.lit-ticket-steps li::before {
+  content: counter(lit-step);
+  min-width: 14px;
+  color: var(--lit-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+.lit-ticket-steps li span { flex: 1; color: var(--lit-ink); }
+.lit-ticket-steps li em { font-style: normal; color: var(--lit-ink-muted); }
+.lit-ticket-steps li[data-state="done"] span { color: var(--lit-ink-secondary); }
+.lit-ticket-steps li[data-state="done"] em { color: var(--lit-positive); }

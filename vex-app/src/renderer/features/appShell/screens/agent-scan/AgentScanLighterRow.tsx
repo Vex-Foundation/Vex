@@ -30,6 +30,8 @@ import { resolveProtocolMark } from "../../../../lib/protocol-marks.js";
 import { ActivityChip } from "../../ActivityBadge.js";
 import { ExpandRegion } from "../../../../components/ui/expand-region.js";
 import { entryClockText } from "./agent-scan-display.js";
+import { lighterFillFollowUpMessage } from "./event-follow-up.js";
+import { useUiStore } from "../../../../stores/uiStore.js";
 import {
   lighterAttentionTradeTypeText,
   lighterBlockHeightText,
@@ -84,6 +86,7 @@ export function AgentScanLighterRow({
   readonly entry: AgentScanLighterFillEntry;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
+  const openCreateSession = useUiStore((state) => state.openCreateSession);
   const detailId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
 
@@ -248,6 +251,13 @@ export function AgentScanLighterRow({
             </span>
           </DetailLine>
         ) : null}
+        <button
+          type="button"
+          onClick={() => openCreateSession(lighterFillFollowUpMessage(entry))}
+          className="mt-1 inline-flex w-full items-center justify-center rounded-lg border border-line-2 px-3 py-2 vex-micro-label uppercase text-ink-primary transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+        >
+          Ask Vex about this fill
+        </button>
       </ExpandRegion>
     </div>
   );

@@ -145,6 +145,7 @@ import {
 import { buildResumedApprovalToolContext } from "./dispatch-approved/resumed-tool-context.js";
 import { claimDispatchSlotUnderStopGate } from "./dispatch-approved/dispatch-slot-gate.js";
 import { applyStudioApproveSideEffects } from "./dispatch-approved/studio.js";
+import { applyDeskApproveSideEffects } from "./dispatch-approved/desk.js";
 
 type ApprovedDispatchExecutionStatus = "succeeded" | "failed" | "indeterminate";
 
@@ -196,6 +197,11 @@ export async function applyApproveSideEffects(
   // tool call it never made. Nothing below this line changed.
   if (row.origin === "studio_mcp") {
     return applyStudioApproveSideEffects(approvalId, snapshot);
+  }
+  // A desk approval (the Lighter desk's own buttons, migration 164) likewise
+  // has no turn to resume and no transcript to append to.
+  if (row.origin === "desk") {
+    return applyDeskApproveSideEffects(approvalId, snapshot);
   }
   const sessionId = row.session_id;
   const missionRunId = row.mission_run_id;

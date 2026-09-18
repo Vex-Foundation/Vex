@@ -48,6 +48,7 @@
  */
 
 import type { JSX } from "react";
+import { createPortal } from "react-dom";
 import type { RuntimeMode } from "../../stores/uiStore.js";
 import { DeskRuleTapeState } from "./DeskRuleTapeState.js";
 import { GlobalApprovals } from "./GlobalApprovals.js";
@@ -56,6 +57,7 @@ import { NotificationCenter } from "./NotificationCenter.js";
 import { NotificationAnnouncer } from "../../components/ui/notification-announcer.js";
 import { SessionExportControl } from "./SessionExportControl.js";
 import { StudioHostStatusWord } from "./StudioHostStatusWord.js";
+import { useShellStripSlot } from "./lighterTrading/shellStripSlot.js";
 
 export interface ShellStatusStripProps {
   readonly runtimeMode: RuntimeMode;
@@ -68,30 +70,43 @@ export function ShellStatusStrip({
 }: ShellStatusStripProps): JSX.Element {
   // See the module note: the session-scoped flanks belong to the agent shell.
   const sessionScopedId = runtimeMode === "studio" ? null : activeSessionId;
+  const lighter = runtimeMode === "lighter";
+  // Lighter has no header row: the desk's market bar is the top edge, and the
+  // flank rides at its right end (see `lighterTrading/shellStripSlot.ts`).
+  // The strip itself collapses; the flank only moves in the DOM.
+  const lighterSlot = useShellStripSlot();
+  const flank = (
+    <div className="flex items-center justify-end gap-2">
+      {/* Session-LESS failures (memory maintenance) reach the user here
+       * too: they are notifications now, so the center is their surface and
+       * there is no second pill beside it. Renders null when idle. */}
+      <NotificationCenter />
+      <GlobalApprovals />
+      <NotificationAnnouncer />
+      <SessionExportControl activeSessionId={sessionScopedId} />
+    </div>
+  );
   return (
     <header
-      className="relative grid h-11 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 px-6"
+      className={lighter
+        ? "contents"
+        : "relative grid h-11 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 px-6"}
       data-vex-area="shell-status-strip"
+      data-collapsed={lighter || undefined}
     >
-      <div className="flex min-w-0 items-center justify-start">
-        <MissionRail activeSessionId={sessionScopedId} />
-      </div>
-      <div className="flex min-w-0 items-center justify-center">
-        {runtimeMode === "studio" ? (
-          <StudioHostStatusWord />
-        ) : (
-          <DeskRuleTapeState />
-        )}
-      </div>
-      <div className="flex items-center justify-end gap-2">
-        {/* Session-LESS failures (memory maintenance) reach the user here
-         * too: they are notifications now, so the center is their surface and
-         * there is no second pill beside it. Renders null when idle. */}
-        <NotificationCenter />
-        <GlobalApprovals />
-        <NotificationAnnouncer />
-        <SessionExportControl activeSessionId={sessionScopedId} />
-      </div>
+      {lighter ? (
+        lighterSlot === null ? <div hidden>{flank}</div> : createPortal(flank, lighterSlot)
+      ) : (
+        <>
+          <div className="flex min-w-0 items-center justify-start">
+            <MissionRail activeSessionId={sessionScopedId} />
+          </div>
+          <div className="flex min-w-0 items-center justify-center">
+            {runtimeMode === "studio" ? <StudioHostStatusWord /> : <DeskRuleTapeState />}
+          </div>
+          {flank}
+        </>
+      )}
     </header>
   );
 }

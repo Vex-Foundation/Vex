@@ -141,11 +141,20 @@ export async function openImageInsideRoot(
 
   // 3. Containment BEFORE the open, so an obviously escaping path never becomes
   //    a syscall at all.
-  const candidate = path.normalize(
+  const requestedRoot = path.resolve(input.projectRoot);
+  let candidate = path.normalize(
     path.isAbsolute(requested) ? requested : path.resolve(root, requested),
   );
   if (!isInsideRoot(root, candidate)) {
-    return refuse(escapesRoot(requested, "outside the project root"));
+    // An absolute path can use the caller's spelling of a root that resolves
+    // through a symlink (`/var` -> `/private/var` on macOS). Translate only
+    // the already-contained suffix; the post-open realpath check below still
+    // rejects an intermediate link that leaves the resolved root.
+    if (path.isAbsolute(requested) && isInsideRoot(requestedRoot, candidate)) {
+      candidate = path.resolve(root, path.relative(requestedRoot, candidate));
+    } else {
+      return refuse(escapesRoot(requested, "outside the project root"));
+    }
   }
 
   // 4. The no-follow open. This is the core of the module: the kernel, not a

@@ -29,6 +29,7 @@ import { jsonb } from "../params.js";
 export type LighterLeverageExecutionState =
   | "proposed"
   | "expired"
+  | "cancelled"
   | "refused_unsubmitted"
   | "signing"
   | "signed"
@@ -239,6 +240,18 @@ export async function expireStaleProposals(
  */
 export async function markExpired(intentId: string): Promise<LighterLeverageIntentRow | null> {
   return transition(intentId, ["proposed"], "expired", {}, "consented_at IS NULL");
+}
+
+/**
+ * The person dismissed a proposal before Confirm won the signing reservation.
+ *
+ * This is a single compare-and-set against `proposed`. A concurrent Confirm
+ * moves the row to `signing` in its own guarded statement, so exactly one side
+ * can win. No nonce columns are read or changed here: a cancellation that loses
+ * to Confirm cannot release or rewrite signing authority.
+ */
+export async function markCancelled(intentId: string): Promise<LighterLeverageIntentRow | null> {
+  return transition(intentId, ["proposed"], "cancelled", {}, "consented_at IS NULL");
 }
 
 /**

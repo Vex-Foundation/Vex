@@ -1,41 +1,54 @@
 import type { CandlestickData, LineData, UTCTimestamp } from "lightweight-charts";
 export type Study = "sma" | "ema" | "bb" | "vwap" | "rsi" | "macd";
-export const STUDIES: readonly {
+/** Studies whose look-back the trader can change; MACD keeps its 12 / 26 / 9. */
+export type PeriodStudy = "sma" | "ema" | "bb" | "rsi";
+export type StudyPeriods = Record<PeriodStudy, number>;
+export const DEFAULT_STUDY_PERIODS: StudyPeriods = { sma: 20, ema: 20, bb: 20, rsi: 14 };
+export const STUDY_PERIOD_MIN = 1;
+export const STUDY_PERIOD_MAX = 500;
+export interface StudyDefinition {
   id: Study;
-  label: string;
-  description: string;
-}[] = [
+  label: (periods: StudyPeriods) => string;
+  description: (periods: StudyPeriods) => string;
+}
+export const STUDIES: readonly StudyDefinition[] = [
     {
       id: "sma",
-      label: "SMA 20",
-      description: "Simple moving average · 20 bars"
+      label: p => `SMA ${p.sma}`,
+      description: p => `Simple moving average · ${p.sma} bars`
     },
     {
       id: "ema",
-      label: "EMA 20",
-      description: "Exponential moving average · 20 bars"
+      label: p => `EMA ${p.ema}`,
+      description: p => `Exponential moving average · ${p.ema} bars`
     },
     {
       id: "bb",
-      label: "Bollinger bands",
-      description: "20 bars · 2 standard deviations"
+      label: () => "Bollinger bands",
+      description: p => `${p.bb} bars · 2 standard deviations`
     },
     {
       id: "vwap",
-      label: "Session VWAP",
-      description: "Volume weighted typical price · resets at 00:00 UTC"
+      label: () => "Session VWAP",
+      description: () => "Volume weighted typical price · resets at 00:00 UTC"
     },
     {
       id: "rsi",
-      label: "RSI 14",
-      description: "Wilder relative strength · 14 bars"
+      label: p => `RSI ${p.rsi}`,
+      description: p => `Wilder relative strength · ${p.rsi} bars`
     },
     {
       id: "macd",
-      label: "MACD",
-      description: "12 / 26 EMA · 9 signal"
+      label: () => "MACD",
+      description: () => "12 / 26 EMA · 9 signal"
     },
   ];
+export function isPeriodStudy(id: Study): id is PeriodStudy {
+  return id in DEFAULT_STUDY_PERIODS;
+}
+export const STUDY_BY_ID: Record<Study, StudyDefinition> = Object.fromEntries(
+  STUDIES.map(study => [study.id, study]),
+) as Record<Study, StudyDefinition>;
 type Point = LineData<UTCTimestamp>;
 export function sma(values: readonly number[], period: number): (number | null)[] {
   if (!Number.isInteger(period) || period < 1)
@@ -78,11 +91,11 @@ export function rsi(values: readonly number[], period = 14): (number | null)[] {
     return i < period ? null : loss === 0 ? gain === 0 ? 50 : 100 : 100 - 100 / (1 + gain / loss);
   });
 }
-export function computeStudies(candles: readonly CandlestickData<UTCTimestamp>[], volumes: ReadonlyMap<number, number>): Record<Study, Point[][]> {
+export function computeStudies(candles: readonly CandlestickData<UTCTimestamp>[], volumes: ReadonlyMap<number, number>, periods: StudyPeriods = DEFAULT_STUDY_PERIODS): Record<Study, Point[][]> {
   const closes = candles.map(c => c.close);
   const points = (values: readonly (number | null)[]): Point[] => values.flatMap((value, i) => value === null || !Number.isFinite(value) ? [] : [{ time: candles[i]!.time, value }]);
-  const mean = sma(closes, 20);
-  const deviations = mean.map((value, i) => value === null ? null : Math.sqrt(closes.slice(i - 19, i + 1).reduce((sum, close) => sum + (close - value) ** 2, 0) / 20));
+  const mean = sma(closes, periods.bb);
+  const deviations = mean.map((value, i) => value === null ? null : Math.sqrt(closes.slice(i - periods.bb + 1, i + 1).reduce((sum, close) => sum + (close - value) ** 2, 0) / periods.bb));
   let day = -1;
   let total = 0;
   let volume = 0;
@@ -107,11 +120,11 @@ export function computeStudies(candles: readonly CandlestickData<UTCTimestamp>[]
   let signalIndex = 0;
   const signal = macd.map(value => value === null ? null : compactSignal[signalIndex++]!);
   return {
-    sma: [points(mean)],
-    ema: [points(ema(closes, 20))],
+    sma: [points(sma(closes, periods.sma))],
+    ema: [points(ema(closes, periods.ema))],
     bb: [points(mean), points(mean.map((v, i) => v === null ? null : v + 2 * deviations[i]!)), points(mean.map((v, i) => v === null ? null : v - 2 * deviations[i]!))],
     vwap: [points(vwap)],
-    rsi: [points(rsi(closes))],
+    rsi: [points(rsi(closes, periods.rsi))],
     macd: [points(macd), points(signal), points(macd.map((v, i) => v === null || signal[i] === null ? null : v - signal[i]!))]
   };
 }

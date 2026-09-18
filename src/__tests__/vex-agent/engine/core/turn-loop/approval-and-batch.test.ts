@@ -102,9 +102,10 @@ vi.mock("@vex-agent/engine/compact-jobs/forced-fallback.js", () => ({
 // empty by design — tests that exercise the bridge counter add their own
 // db client mocks to inject content.
 
-const mockRejectApprovalWith = vi.fn().mockResolvedValue(null);
+const mockRejectApprovalWith = vi.fn().mockResolvedValue({ id: "approval-1" });
 const mockEnqueueApprovalWith = vi.fn();
 const mockCreateApprovalIntentWith = vi.fn();
+const mockMarkApprovalIntentDecisionWith = vi.fn().mockResolvedValue(true);
 
 vi.mock("@vex-agent/db/repos/approvals.js", () => ({
   enqueue: vi.fn(),
@@ -116,6 +117,7 @@ vi.mock("@vex-agent/db/repos/approvals.js", () => ({
 
 vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
   createWith: (...a: unknown[]) => mockCreateApprovalIntentWith(...a),
+  markDecisionWith: (...a: unknown[]) => mockMarkApprovalIntentDecisionWith(...a),
 }));
 
 vi.mock("@vex-agent/db/repos/usage.js", () => ({
@@ -264,7 +266,8 @@ describe("turn-loop", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetSessionForLoop.mockResolvedValue({ tokenCount: 0 });
-    mockRejectApprovalWith.mockResolvedValue(null);
+    mockRejectApprovalWith.mockResolvedValue({ id: "approval-1" });
+    mockMarkApprovalIntentDecisionWith.mockResolvedValue(true);
     mockQueryOneWith.mockImplementation(
       async (_exec: unknown, sql: string) => defaultQueryOneWith(sql),
     );
@@ -854,6 +857,10 @@ describe("turn-loop", () => {
       expect(result.pendingApprovals).toEqual([]);
       // Rejected inside the enqueue transaction.
       expect(mockRejectApprovalWith).toHaveBeenCalledTimes(1);
+      expect(mockMarkApprovalIntentDecisionWith).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ kind: "rejected_stop", reason: "operator_stop" }),
+      );
       // The run is NOT flipped to paused_approval.
       expect(mockUpdateStatus).not.toHaveBeenCalledWith(
         "run-1",

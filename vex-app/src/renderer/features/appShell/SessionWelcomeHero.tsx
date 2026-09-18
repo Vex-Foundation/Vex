@@ -29,6 +29,7 @@ import { pickGreeting } from "../../lib/greeting.js";
 import { useUserProfile } from "../../lib/api/user-profile.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { RuntimeModeToggle } from "./RuntimeModeToggle.js";
+import { ArenaCampaignNotice } from "./ArenaCampaignNotice.js";
 
 /** Honest build-stage disclosure (carried from the retired PREVIEW badge). */
 const PREVIEW_TITLE =
@@ -89,6 +90,7 @@ export function SessionWelcomeHero(): JSX.Element {
           {headline}
         </h1>
       </div>
+      <ArenaCampaignNotice />
     </div>
   );
 }

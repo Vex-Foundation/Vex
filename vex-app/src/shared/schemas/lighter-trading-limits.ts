@@ -167,7 +167,12 @@ export const prepareLighterLeverageInputSchema = z
     walletAddress: walletAddressSchema,
     marketId: z.number().int().min(0).max(254),
     /** A whole multiplier, or the market's maximum resolved by main. */
-    leverage: z.union([z.number().int().min(1).max(10_000), z.literal("max")]),
+    leverage: z.union([
+      z.number().int().min(1).max(10_000),
+      z.literal("max"),
+      /** Preserve the live canonical fraction while changing only margin mode. */
+      z.literal("current"),
+    ]),
     marginMode: marginModeSchema,
   })
   .strict();
@@ -224,6 +229,15 @@ export const confirmLighterLeverageInputSchema = z
   .strict();
 
 export const reconcileLighterLeverageInputSchema = confirmLighterLeverageInputSchema;
+
+export const cancelLighterLeverageInputSchema = confirmLighterLeverageInputSchema;
+
+export const cancelLighterLeverageResultSchema = z
+  .object({
+    status: z.literal("cancelled"),
+    proposalId: z.string().min(1).max(200),
+  })
+  .strict();
 
 /**
  * The five honest outcomes. `ambiguous` is NOT a failure: bytes may have
@@ -294,4 +308,6 @@ export type PrepareLighterLeverageInput = z.infer<typeof prepareLighterLeverageI
 export type LighterLeverageProposal = z.infer<typeof lighterLeverageProposalSchema>;
 export type ConfirmLighterLeverageInput = z.infer<typeof confirmLighterLeverageInputSchema>;
 export type ReconcileLighterLeverageInput = z.infer<typeof reconcileLighterLeverageInputSchema>;
+export type CancelLighterLeverageInput = z.infer<typeof cancelLighterLeverageInputSchema>;
+export type CancelLighterLeverageResult = z.infer<typeof cancelLighterLeverageResultSchema>;
 export type ApplyLighterLeverageResult = z.infer<typeof applyLighterLeverageResultSchema>;

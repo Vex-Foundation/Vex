@@ -23,6 +23,7 @@ const mockInit = vi.fn();
 const mockClose = vi.fn(async () => undefined);
 const mockDedupe = vi.fn(() => ({ name: "Dedupe" }));
 const mockLinkedErrors = vi.fn(() => ({ name: "LinkedErrors" }));
+const mockCaptureMessage = vi.fn();
 
 vi.mock("@sentry/electron/main", async () => {
   sentryModuleLoaded = true;
@@ -31,7 +32,7 @@ vi.mock("@sentry/electron/main", async () => {
     close: mockClose,
     dedupeIntegration: mockDedupe,
     linkedErrorsIntegration: mockLinkedErrors,
-    captureMessage: vi.fn(),
+    captureMessage: mockCaptureMessage,
     IPCMode: { Classic: "classic", Protocol: "protocol", Both: "both" },
   };
 });
@@ -68,6 +69,7 @@ const {
   initSentryIfConsented,
   disableSentry,
   captureRendererError,
+  captureFunnelStep,
   __resetSentryLifecycleForTests,
   __isSentryInitializedForTests,
 } = lifecycleModule;
@@ -76,6 +78,7 @@ beforeEach(() => {
   sentryModuleLoaded = false;
   mockInit.mockReset();
   mockClose.mockReset().mockImplementation(async () => undefined);
+  mockCaptureMessage.mockReset();
   mockLoad.mockReset();
   mockResolveDsn.mockReset();
   __resetSentryLifecycleForTests();
@@ -186,5 +189,32 @@ describe("captureRendererError", () => {
       componentStack: null,
     });
     expect(recorded).toBe(false);
+  });
+});
+
+describe("captureFunnelStep", () => {
+  it("returns false and sends nothing when SDK not initialized", async () => {
+    expect(await captureFunnelStep({ step: "desk_card", environment: "rhc" })).toBe(false);
+    expect(mockCaptureMessage).not.toHaveBeenCalled();
+  });
+
+  it("sends step and venue as tags only, with a message the dedupe integration cannot collapse", async () => {
+    mockLoad.mockResolvedValue({ telemetry: { enabled: true } });
+    mockResolveDsn.mockReturnValue("https://k@o.ingest.sentry.io/1");
+    await initSentryIfConsented();
+
+    expect(await captureFunnelStep({ step: "desk_card", environment: "rhc" })).toBe(true);
+    expect(await captureFunnelStep({ step: "desk_card", environment: "rhc" })).toBe(true);
+    const calls = mockCaptureMessage.mock.calls as Array<[string, Record<string, unknown>]>;
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.[0]).not.toBe(calls[1]?.[0]);
+    for (const [message, context] of calls) {
+      expect(message).toMatch(/^lighter\.funnel desk_card #\d+$/);
+      expect(context).toEqual({
+        level: "info",
+        fingerprint: ["lighter.funnel", "desk_card", "rhc"],
+        tags: { source: "renderer", funnelStep: "desk_card", environment: "rhc" },
+      });
+    }
   });
 });

@@ -87,6 +87,13 @@ export {
   type StudioSettlementRow,
 } from "./approval-intents/studio-settlement.js";
 
+/** Desk settlement writes (migration 164): the Lighter desk's own buttons. */
+export {
+  commitDeskSettlementWith,
+  listUnstartedDeskApprovals,
+  markAbandonedDeskDispatchesIndeterminate,
+} from "./approval-intents/desk-settlement.js";
+
 export type ApprovalDecision = "approved" | "rejected" | "rejected_stop";
 
 /**
@@ -96,10 +103,12 @@ export type ApprovalDecision = "approved" | "rejected" | "rejected_stop";
  *
  * It is not a second state axis. It selects which SIDE EFFECTS a decision
  * runs: an agent row appends a transcript tool result and resumes a turn, a
- * Studio row writes a settlement and releases a blocked MCP call. The decision
- * and execution state machines are identical for both.
+ * Studio row writes a settlement and releases a blocked MCP call, a `desk`
+ * row (migration 164, the Lighter desk's own buttons) settles on the row alone
+ * and hands its outcome back to the desk. The decision and execution state
+ * machines are identical for all three.
  */
-export type ApprovalOrigin = "agent" | "studio_mcp";
+export type ApprovalOrigin = "agent" | "studio_mcp" | "desk";
 
 /**
  * The six causes that terminally refuse a PENDING Studio intent. Written

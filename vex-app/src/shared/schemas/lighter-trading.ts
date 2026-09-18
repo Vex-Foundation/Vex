@@ -40,6 +40,7 @@ const unsignedDecimalStringSchema = z
   .max(96)
   .regex(/^(?:0|[1-9]\d*)(?:\.\d+)?$/);
 const finiteOrNullSchema = z.number().finite().nullable();
+const marginFractionSchema = z.number().int().min(1).max(10_000);
 
 export const lighterTradingMarketSchema = z
   .object({
@@ -81,6 +82,19 @@ export const lighterTradingMarketSchema = z
       })
       .strict()
       .optional(),
+    /**
+     * Perpetual margin fractions on Lighter's 10000 scale (10000 = 1x). Null
+     * for spot markets and for a perp whose detail did not report them.
+     */
+    margin: z
+      .object({
+        defaultInitialMarginFraction: marginFractionSchema,
+        minInitialMarginFraction: marginFractionSchema,
+        maintenanceMarginFraction: marginFractionSchema,
+      })
+      .strict()
+      .nullable()
+      .optional(),
   })
   .strict();
 
@@ -101,6 +115,19 @@ export const lighterTradingSnapshotInputSchema = z
     environment: lighterIntegrationEnvironmentSchema,
     marketId: marketIdSchema,
     resolution: lighterTradingResolutionSchema,
+  })
+  .strict();
+
+// Older-history page for the chart's scroll-back backfill. `count` is bounded
+// by the provider read (300 per request); `endTimestamp` is the exclusive
+// upper bound in ms, i.e. the oldest loaded candle's open minus one.
+export const lighterTradingCandleHistoryInputSchema = z
+  .object({
+    environment: lighterIntegrationEnvironmentSchema,
+    marketId: marketIdSchema,
+    resolution: lighterTradingResolutionSchema,
+    endTimestamp: z.number().int().nonnegative(),
+    count: z.number().int().min(1).max(300),
   })
   .strict();
 
@@ -332,6 +359,20 @@ export const lighterTradingPublicStatsEventSchema =
     })
     .strict();
 
+/**
+ * Main's authenticated account stream saw evidence for the bound account. It
+ * carries no order data: the renderer refreshes its REST reads in response,
+ * which keeps every account figure on the one projection main already vets.
+ */
+export const lighterTradingAccountActivityEventSchema = z
+  .object({
+    environment: lighterIntegrationEnvironmentSchema,
+    accountIndex: z.number().int().nonnegative(),
+    kind: z.enum(["orders", "trades", "positions"]),
+    at: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export const lighterTradingPublicMarketStatusEventSchema =
   lighterTradingPublicMarketEventBaseSchema
     .extend({
@@ -382,6 +423,16 @@ export const lighterTradingSnapshotSchema = z
   })
   .strict();
 
+export const lighterTradingCandleHistorySchema = z
+  .object({
+    environment: lighterIntegrationEnvironmentSchema,
+    marketId: marketIdSchema,
+    resolution: lighterTradingResolutionSchema,
+    retrievedAt: z.number().int().nonnegative(),
+    candles: z.array(lighterTradingCandleSchema).max(500),
+  })
+  .strict();
+
 // Authenticated Light it up account panel. The renderer supplies only the
 // environment; the main process resolves the owning account from the unlocked
 // trading scope and never returns tokens or key material. Positions and
@@ -420,6 +471,24 @@ const lighterTradingPositionSchema = z
     value: unsignedDecimalStringSchema.nullable(),
     unrealizedPnl: decimalStringSchema.nullable(),
     liquidationPrice: unsignedDecimalStringSchema.nullable(),
+    /** The position row's own margin terms; null when Lighter's value was unreadable. */
+    initialMarginFraction: marginFractionSchema.nullable(),
+    marginMode: z.enum(["cross", "isolated"]).nullable(),
+    allocatedMargin: unsignedDecimalStringSchema.nullable(),
+  })
+  .strict();
+
+/**
+ * The margin terms Lighter holds for a market on this account, position or
+ * not. Lighter keeps a position row per market once leverage was ever set, so
+ * a 0-size row still carries the account's own terms; `positions` drops those
+ * rows, this list keeps their terms.
+ */
+const lighterTradingMarginTermSchema = z
+  .object({
+    marketId: marketIdSchema,
+    initialMarginFraction: marginFractionSchema,
+    marginMode: z.enum(["cross", "isolated"]).nullable(),
   })
   .strict();
 
@@ -446,6 +515,53 @@ const lighterTradingOpenOrderSchema = z
     remaining: unsignedDecimalStringSchema.nullable(),
     status: z.string().min(1).max(32).nullable(),
     createdAt: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
+
+/**
+ * The account's most recent fills, newest first. The read needs the same
+ * derived read-only authorization as open orders; `available` is false when
+ * none could be derived, which is a state and not a failure.
+ */
+export const lighterTradingFillsInputSchema = z
+  .object({
+    environment: lighterIntegrationEnvironmentSchema,
+    limit: z.number().int().min(1).max(100).optional(),
+  })
+  .strict();
+
+const lighterTradingFillSchema = z
+  .object({
+    tradeId: z.string().min(1).max(128),
+    // Exact provider order identity for this account's side of the trade.
+    // A market can have several simultaneous orders, so tradeId alone cannot
+    // tie later account activity back to the desk order being followed.
+    orderId: z.string().min(1).max(128),
+    marketId: marketIdSchema,
+    symbol: z.string().min(1).max(48),
+    side: z.enum(["buy", "sell"]),
+    role: z.enum(["maker", "taker"]),
+    // Lighter's own trade kind: "trade", "liquidation", "deleverage", …
+    type: z.string().min(1).max(32),
+    size: unsignedDecimalStringSchema,
+    price: unsignedDecimalStringSchema,
+    value: unsignedDecimalStringSchema.nullable(),
+    // Realized on this fill for THIS account; null when the provider reports none.
+    realizedPnl: decimalStringSchema.nullable(),
+    timestamp: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const lighterTradingFillsSchema = z
+  .object({
+    environment: lighterIntegrationEnvironmentSchema,
+    retrievedAt: z.number().int().nonnegative(),
+    accountIndex: z.number().int().nonnegative().nullable(),
+    available: z.boolean(),
+    // True when the bounded provider page may omit older fills. Consumers
+    // must not treat a partial page as the complete fill total of an order.
+    truncated: z.boolean(),
+    fills: z.array(lighterTradingFillSchema).max(100),
   })
   .strict();
 
@@ -476,11 +592,16 @@ export const lighterTradingAccountSchema = z
     unavailableReason: lighterTradingAccountUnavailableReasonSchema.nullable(),
     accountIndex: z.number().int().nonnegative().nullable(),
     openOrdersAvailable: z.boolean(),
+    // Why the open-orders lane is empty when `openOrdersAvailable` is false:
+    // "no_read_auth" means the vault is locked (the user can fix that);
+    // "read_failed" means the provider read failed (retry, not unlock).
+    openOrdersUnavailableReason: z.enum(["no_read_auth", "read_failed"]).optional(),
     // Required so a bounded snapshot can never be mistaken for a complete one.
     openOrdersTruncated: z.boolean(),
     summary: lighterTradingAccountSummarySchema.nullable(),
     assets: z.array(lighterTradingAssetSchema).max(200),
     positions: z.array(lighterTradingPositionSchema).max(200),
+    marginTerms: z.array(lighterTradingMarginTermSchema).max(200),
     openOrders: z.array(lighterTradingOpenOrderSchema).max(200),
   })
   .strict();
@@ -488,6 +609,155 @@ export const lighterTradingAccountSchema = z
 export type LighterTradingEnvironment = z.infer<
   typeof lighterIntegrationEnvironmentSchema
 >;
+
+// Desk lane: the Lighter desk's own buttons (ticket Long/Short, position
+// Close, order Cancel) hand main a selector only. Main runs the same prepare
+// tools the AI lane uses and enqueues an approval; nothing signs until the
+// user confirms the card.
+const deskTimeInForceSchema = z.enum([
+  "immediate-or-cancel",
+  "good-till-time",
+  "post-only",
+]);
+const deskExpiryMinutesSchema = z.number().int().min(5).max(43_200);
+const deskSideSchema = z.enum(["buy", "sell"]);
+
+export const lighterDeskOrderDraftSchema = z.discriminatedUnion("mode", [
+  z
+    .object({
+      mode: z.literal("market"),
+      side: deskSideSchema,
+      baseAmount: unsignedDecimalStringSchema,
+      worstPrice: unsignedDecimalStringSchema,
+      reduceOnly: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      mode: z.literal("limit"),
+      side: deskSideSchema,
+      baseAmount: unsignedDecimalStringSchema,
+      limitPrice: unsignedDecimalStringSchema,
+      timeInForce: deskTimeInForceSchema,
+      orderExpiryOffsetMinutes: deskExpiryMinutesSchema,
+      reduceOnly: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      mode: z.enum(["stop-loss", "take-profit"]),
+      side: deskSideSchema,
+      baseAmount: unsignedDecimalStringSchema,
+      triggerPrice: unsignedDecimalStringSchema,
+      worstPrice: unsignedDecimalStringSchema,
+      reduceOnly: z.literal(true),
+    })
+    .strict(),
+  z
+    .object({
+      mode: z.enum(["stop-loss-limit", "take-profit-limit"]),
+      side: deskSideSchema,
+      baseAmount: unsignedDecimalStringSchema,
+      triggerPrice: unsignedDecimalStringSchema,
+      limitPrice: unsignedDecimalStringSchema,
+      timeInForce: deskTimeInForceSchema,
+      orderExpiryOffsetMinutes: deskExpiryMinutesSchema,
+      reduceOnly: z.literal(true),
+    })
+    .strict(),
+  z
+    .object({
+      mode: z.literal("oco"),
+      side: deskSideSchema,
+      baseAmount: unsignedDecimalStringSchema,
+      stopLossTriggerPrice: unsignedDecimalStringSchema,
+      stopLossPrice: unsignedDecimalStringSchema,
+      takeProfitTriggerPrice: unsignedDecimalStringSchema,
+      takeProfitPrice: unsignedDecimalStringSchema,
+    })
+    .strict(),
+]);
+
+export const lighterDeskActionSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("order"),
+      marketId: marketIdSchema,
+      draft: lighterDeskOrderDraftSchema,
+    })
+    .strict(),
+  z.object({ kind: z.literal("close"), marketId: marketIdSchema }).strict(),
+  z
+    .object({
+      kind: z.literal("cancel"),
+      marketId: marketIdSchema,
+      orderId: z.string().min(1).max(40).regex(/^[1-9][0-9]*$/),
+    })
+    .strict(),
+]);
+
+export const lighterDeskPrepareInputSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    environment: lighterIntegrationEnvironmentSchema,
+    action: lighterDeskActionSchema,
+  })
+  .strict();
+
+export const lighterDeskPrepareResultSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("enqueued"), approvalId: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal("refused"), reason: z.string().min(1) }).strict(),
+]);
+
+/**
+ * The ticket gate's checklist: where this session's wallet stands on the
+ * three onboarding steps the chat walks through. Read-only; `fee` is
+ * `not_required` where Vex collects no fee for the deployment.
+ */
+export const lighterOnboardingChecklistInputSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    environment: lighterIntegrationEnvironmentSchema,
+  })
+  .strict();
+
+const lighterOnboardingStepSchema = z.enum(["done", "todo"]);
+
+export const lighterOnboardingProgressSchema = z.enum([
+  "not_started",
+  "in_progress",
+  "action_required",
+  "needs_reconciliation",
+  "failed",
+  "ready",
+]);
+
+export const lighterOnboardingNextActionSchema = z.enum([
+  "start_setup",
+  "continue_setup",
+  "check_status",
+  "none",
+]);
+
+export const lighterOnboardingChecklistSchema = z
+  .object({
+    deposit: lighterOnboardingStepSchema,
+    key: lighterOnboardingStepSchema,
+    fee: z.enum(["done", "todo", "not_required"]),
+    progress: lighterOnboardingProgressSchema,
+    detail: z.string().min(1).max(180),
+    nextAction: lighterOnboardingNextActionSchema,
+    updatedAt: z.string().datetime().nullable(),
+  })
+  .strict();
+
+export type LighterDeskOrderDraft = z.infer<typeof lighterDeskOrderDraftSchema>;
+export type LighterDeskAction = z.infer<typeof lighterDeskActionSchema>;
+export type LighterDeskPrepareInput = z.infer<typeof lighterDeskPrepareInputSchema>;
+export type LighterDeskPrepareResult = z.infer<typeof lighterDeskPrepareResultSchema>;
+export type LighterOnboardingChecklistInput = z.infer<typeof lighterOnboardingChecklistInputSchema>;
+export type LighterOnboardingChecklist = z.infer<typeof lighterOnboardingChecklistSchema>;
+
 export type LighterTradingResolution = z.infer<
   typeof lighterTradingResolutionSchema
 >;
@@ -511,6 +781,13 @@ export type LighterTradingSnapshot = z.infer<
   typeof lighterTradingSnapshotSchema
 >;
 export type LighterTradingCandle = z.infer<typeof lighterTradingCandleSchema>;
+export type LighterTradingCandleHistoryInput = z.infer<
+  typeof lighterTradingCandleHistoryInputSchema
+>;
+export type LighterTradingCandleHistory = z.infer<
+  typeof lighterTradingCandleHistorySchema
+>;
+
 export type LighterTradingStreamCandle = z.infer<
   typeof lighterTradingStreamCandleSchema
 >;
@@ -565,12 +842,19 @@ export type LighterTradingPublicMarketStatusEvent = z.infer<
 export type LighterTradingAccountInput = z.infer<
   typeof lighterTradingAccountInputSchema
 >;
+export type LighterTradingAccountActivityEvent = z.infer<
+  typeof lighterTradingAccountActivityEventSchema
+>;
+export type LighterTradingFillsInput = z.infer<typeof lighterTradingFillsInputSchema>;
+export type LighterTradingFill = z.infer<typeof lighterTradingFillSchema>;
+export type LighterTradingFills = z.infer<typeof lighterTradingFillsSchema>;
 export type LighterTradingAccount = z.infer<typeof lighterTradingAccountSchema>;
 export type LighterTradingAccountUnavailableReason = z.infer<
   typeof lighterTradingAccountUnavailableReasonSchema
 >;
 export type LighterTradingAsset = z.infer<typeof lighterTradingAssetSchema>;
 export type LighterTradingPosition = z.infer<typeof lighterTradingPositionSchema>;
+export type LighterTradingMarginTerm = z.infer<typeof lighterTradingMarginTermSchema>;
 export type LighterTradingOpenOrder = z.infer<
   typeof lighterTradingOpenOrderSchema
 >;

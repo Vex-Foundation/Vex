@@ -23,14 +23,27 @@
 /**
  * The migration-108 Trench Express retirement carried 63 reviewed deletions
  * here; they merged with PR #165 (`7890245fa`) and were consumed by that
- * merge. The one entry below rides the Superboard key contract change (PR
- * #193) and is consumed the moment that PR merges.
+ * merge. The entry below rides the Superboard key contract change (PR #193)
+ * and is consumed the moment that PR merges. The two Lighter entries ride the
+ * Lighter shell migration, which deletes the modal/workspace subjects
+ * together with their tests; their replacement is covered by the new centre
+ * and component suites named below.
  */
 export const DELETED_TEST_ALLOWLIST = [
   {
     path: "vex-app/src/renderer/features/appShell/screens/SettingsScreen/__tests__/superboard-pending-copy.test.ts",
     reason:
       "Subject `superboard-pending-copy.ts` deleted: the Superboard status contract replaced the free-form `lastError` string with a structured `ShareTokenFailure`, so a copy resolver that pattern-matched prose has no input left. Surviving behavior (one sentence per failure kind and context, reassurance rows, the no-invented-controls guard) is covered by `__tests__/superboard-key-copy.test.ts`; the rendered rows by `__tests__/SuperboardKeySection.test.tsx`.",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/lighterTrading/__tests__/LighterTradingDialog.test.tsx",
+    reason: "The modal subject was removed when Lighter became a shell mode.",
+    coveredBy: "vex-app/src/renderer/features/appShell/lighterTrading/__tests__/LighterCenter.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/lighterTrading/__tests__/TradingWorkspace.test.tsx",
+    reason: "The workspace subject was replaced by the Lighter centre composition.",
+    coveredBy: "vex-app/src/renderer/features/appShell/lighterTrading/__tests__/LighterCenter.test.tsx",
   },
 ];
 

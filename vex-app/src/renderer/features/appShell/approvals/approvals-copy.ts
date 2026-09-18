@@ -91,13 +91,13 @@ export const APPROVAL_UNNAMED_MCP_CLIENT = "an MCP client";
 /**
  * WHO proposed this action, as one sentence for the card's actor row.
  *
- * Rule 90 binds an approval to its ORIGIN (agent or studio_mcp) and to whether an
+ * Rule 90 binds an approval to its ORIGIN (agent, studio_mcp or desk) and to whether an
  * agent proposed it; the client name shown beside it is client-reported provenance,
  * and the two are one fact for a reader: "Claude Code (an MCP client) in
  * project vex-studio" answers both at once. The three inputs are the three
  * things Vex actually knows, and none of them is derived from model input:
  *
- *   - `origin` is the durable provenance column (`agent` / `studio_mcp`), the
+ *   - `origin` is the durable provenance column (`agent` / `studio_mcp` / `desk`), the
  *     only one of the three that is authority-relevant;
  *   - `requestedByClient` is the client's self-declared `initialize` name,
  *     sanitized and bounded at both boundaries it crosses. An absent name is
@@ -115,13 +115,14 @@ export const APPROVAL_UNNAMED_MCP_CLIENT = "an MCP client";
  * the finest true answer, so it is the one given.
  */
 export function approvalActorLine(input: {
-  readonly origin: "agent" | "studio_mcp" | null;
+  readonly origin: "agent" | "studio_mcp" | "desk" | null;
   readonly requestedByClient: string | null;
   readonly projectId: string | null;
   readonly projectName: string | null;
 }): string | null {
   if (input.origin === null) return null;
   if (input.origin === "agent") return "Vex's own agent";
+  if (input.origin === "desk") return "You, from the Lighter desk";
   const trimmed = input.requestedByClient?.trim() ?? "";
   const who =
     trimmed.length > 0

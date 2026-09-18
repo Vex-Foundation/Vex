@@ -1,716 +1,679 @@
-import { useEffect, useMemo, useState, type FormEvent, type JSX } from "react";
-import type { LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
+import { useEffect, useState, type CSSProperties, type FormEvent, type JSX } from "react";
+import type {
+  LighterOnboardingChecklist,
+  LighterTradingAccountUnavailableReason,
+  LighterTradingMarket,
+} from "@shared/schemas/lighter-trading.js";
+import { VexMark } from "../../../components/common/VexMark.js";
+import type { LighterOrderBookData } from "./book-model.js";
+import { isPositiveDecimal } from "./decimal.js";
+import { NO_VALUE, formatDecimalString, formatNumber, formatProviderPercent } from "./format.js";
 import {
-  bestBookPrice,
-  type LighterOrderBookData,
-} from "./OrderBook.js";
+  LIMIT_TIME_IN_FORCE_LABELS,
+  LIMIT_TIME_IN_FORCE_NAMES,
+  MODE_LABELS,
+  ORDER_EXPIRY_OPTIONS,
+  PROTECTION_BOUND_PERCENT,
+  RISK_PERCENT_PRESETS,
+  SIZE_PERCENT_PRESETS,
+  SLIPPAGE_PRESETS,
+  hardBoundLabel,
+  hardBoundShortLabel,
+  leverageLabel,
+  sideLabel,
+  type DeskOutcome,
+  type LimitTimeInForce,
+  type TicketMargin,
+  type TradeDraft,
+  type TradeSide,
+  type TradeTicketPrefill,
+  type TradeTicketPricePick,
+} from "./ticket-model.js";
+import { useTradeTicketForm, type TradeTicketForm } from "./useTradeTicketForm.js";
 
-export type TradeSide = "buy" | "sell";
-export type LimitTimeInForce = "immediate-or-cancel" | "good-till-time" | "post-only";
-export type TradeOrderMode =
-  | "market"
-  | "limit"
-  | "stop-loss"
-  | "stop-loss-limit"
-  | "take-profit"
-  | "take-profit-limit"
-  | "oco";
-
-const POSITIVE_DECIMAL = /^(?:0|[1-9]\d*)(?:\.\d+)?$/;
-
-interface TradeDraftBase {
-  readonly side: TradeSide;
-  readonly baseAmount: string;
-}
-
-export type TradeDraft =
-  | (TradeDraftBase & {
-      readonly mode: "market";
-      readonly worstPrice: string;
-      readonly reduceOnly: boolean;
-    })
-  | (TradeDraftBase & {
-      readonly mode: "limit";
-      readonly limitPrice: string;
-      readonly timeInForce: LimitTimeInForce;
-      readonly orderExpiryOffsetMinutes: number;
-      readonly reduceOnly: boolean;
-    })
-  | (TradeDraftBase & {
-      readonly mode: "stop-loss" | "take-profit";
-      readonly triggerPrice: string;
-      readonly worstPrice: string;
-      readonly reduceOnly: true;
-    })
-  | (TradeDraftBase & {
-      readonly mode: "stop-loss-limit" | "take-profit-limit";
-      readonly triggerPrice: string;
-      readonly limitPrice: string;
-      readonly timeInForce: LimitTimeInForce;
-      readonly orderExpiryOffsetMinutes: number;
-      readonly reduceOnly: true;
-    })
-  | (TradeDraftBase & {
-      readonly mode: "oco";
-      readonly stopLossTriggerPrice: string;
-      readonly stopLossPrice: string;
-      readonly takeProfitTriggerPrice: string;
-      readonly takeProfitPrice: string;
-    });
-
-const MODE_LABELS: Readonly<Record<TradeOrderMode, string>> = {
-  market: "Market",
-  limit: "Limit",
-  "stop-loss": "Stop loss",
-  "stop-loss-limit": "Stop-loss limit",
-  "take-profit": "Take profit",
-  "take-profit-limit": "Take-profit limit",
-  oco: "SL + TP",
-};
-
-const PROTECTION_MODES = [
-  "stop-loss",
-  "stop-loss-limit",
-  "take-profit",
-  "take-profit-limit",
-  "oco",
-] as const satisfies readonly TradeOrderMode[];
-
-const LIMIT_TIME_IN_FORCE_LABELS: Readonly<Record<LimitTimeInForce, string>> = {
-  "immediate-or-cancel": "Immediate only",
-  "good-till-time": "Keep open",
-  "post-only": "Maker only",
-};
-
-const ORDER_EXPIRY_OPTIONS = [
-  { minutes: 10, label: "10 minutes" },
-  { minutes: 30, label: "30 minutes" },
-  { minutes: 60, label: "1 hour" },
-  { minutes: 240, label: "4 hours" },
-  { minutes: 1_440, label: "1 day" },
-  { minutes: 10_080, label: "7 days" },
-  { minutes: 43_200, label: "30 days" },
+const ONBOARDING_STEPS = [
+  ["deposit", "First deposit"],
+  ["key", "Trading key"],
+  ["fee", "Fee approval"],
 ] as const;
 
-const DEFAULT_ORDER_EXPIRY_MINUTES = 1_440;
-const IOC_PREVIEW_EXPIRY_MINUTES = 30;
-const DEFAULT_LIMIT_TIME_IN_FORCE: LimitTimeInForce = "good-till-time";
-
-function exactScope(input: {
-  readonly environment: "core" | "rhc";
-  readonly market: LighterTradingMarket;
-  readonly draft: TradeDraft;
-}): string[] {
-  return [
-    `environment=${input.environment}`,
-    `marketId=${input.market.marketId}`,
-    `marketSymbol=${input.market.symbol}`,
-    `marketType=${input.market.marketType}`,
-    `side=${input.draft.side}`,
-    `baseAmountIn=${input.draft.baseAmount}`,
-  ];
-}
-
-export function buildLighterReviewMessage(input: {
-  readonly environment: "core" | "rhc";
-  readonly market: LighterTradingMarket;
-  readonly draft: TradeDraft;
-}): string {
-  const common = exactScope(input);
-  if (input.draft.mode === "oco") {
-    return [
-      "Review this exact native Lighter stop-loss plus take-profit protection as a preview only. Do not place or submit it.",
-      ...common,
-      `stopLossTriggerPrice=${input.draft.stopLossTriggerPrice}`,
-      `stopLossPrice=${input.draft.stopLossPrice}`,
-      `takeProfitTriggerPrice=${input.draft.takeProfitTriggerPrice}`,
-      `takeProfitPrice=${input.draft.takeProfitPrice}`,
-      "orderExpiryOffsetMinutes=1440",
-      "Prepare exactly one native OCO group with two same-size reduce-only children and display one approval card directly.",
-      "Nothing may execute without the user's explicit approval on that card.",
-    ].join("; ");
-  }
-  if (input.draft.mode === "limit") {
-    const tifInstruction = input.draft.timeInForce === "immediate-or-cancel"
-      ? "Order behavior is Immediate only. Any amount that cannot fill immediately at the approved limit price must cancel; do not turn it into a resting order."
-      : input.draft.timeInForce === "post-only"
-        ? "Order behavior is Maker only. Keep provider-native post-only semantics; do not silently change this to good-till-time or immediate-or-cancel."
-        : "Order behavior is Keep open. Keep the order active only until its exact approved expiry unless it fills or is canceled first.";
-    return [
-      "Review this exact plain Lighter limit order as a preview only. Do not place or submit it.",
-      ...common,
-      `price=${input.draft.limitPrice}`,
-      "orderType=limit",
-      `timeInForce=${input.draft.timeInForce}`,
-      `reduceOnly=${String(input.draft.reduceOnly)}`,
-      `orderExpiryOffsetMinutes=${input.draft.orderExpiryOffsetMinutes}`,
-      tifInstruction,
-      "Treat price as the exact limit price, not a market-order execution bound.",
-      "After the live preview, display the approval card directly. Nothing may execute without the user's explicit approval on that card.",
-    ].join("; ");
-  }
-  if (input.draft.mode === "stop-loss-limit" || input.draft.mode === "take-profit-limit") {
-    const tifInstruction = input.draft.timeInForce === "immediate-or-cancel"
-      ? "Order behavior is Immediate only. When triggered, fill immediately at the exact limit price and cancel any remainder; keep the positive trigger-order expiry."
-      : input.draft.timeInForce === "post-only"
-        ? "Order behavior is Maker only. When triggered, keep provider-native post-only semantics; do not judge the dormant order against the current book."
-        : "Order behavior is Keep open. When triggered, keep the limit active only until its exact approved expiry unless it fills or is canceled first.";
-    return [
-      `Review this exact native Lighter ${input.draft.mode} as a preview only. Do not place or submit it.`,
-      ...common,
-      `price=${input.draft.limitPrice}`,
-      `triggerPrice=${input.draft.triggerPrice}`,
-      `orderType=${input.draft.mode}`,
-      `timeInForce=${input.draft.timeInForce}`,
-      "reduceOnly=true",
-      `orderExpiryOffsetMinutes=${input.draft.orderExpiryOffsetMinutes}`,
-      tifInstruction,
-      "Treat price as the exact limit price that becomes active after the trigger, not a market-style worst execution bound.",
-      "After the live preview, display the approval card directly. Nothing may execute without the user's explicit approval on that card.",
-    ].join("; ");
-  }
-  if (input.draft.mode === "stop-loss" || input.draft.mode === "take-profit") {
-    return [
-      `Review this exact Lighter ${MODE_LABELS[input.draft.mode].toLowerCase()} as a preview only. Do not place or submit it.`,
-      ...common,
-      `price=${input.draft.worstPrice}`,
-      `triggerPrice=${input.draft.triggerPrice}`,
-      `orderType=${input.draft.mode}`,
-      "timeInForce=immediate-or-cancel",
-      "reduceOnly=true",
-      "orderExpiryOffsetMinutes=1440",
-      "After the live preview, display the approval card directly. Nothing may execute without the user's explicit approval on that card.",
-    ].join("; ");
-  }
-  if (input.draft.mode === "market") {
-    return [
-      "Review this exact Lighter trade as a preview only. Do not place or submit it.",
-      ...common,
-      `price=${input.draft.worstPrice}`,
-      "orderType=market",
-      "timeInForce=immediate-or-cancel",
-      `reduceOnly=${String(input.draft.reduceOnly)}`,
-      "orderExpiryOffsetMinutes=30",
-      "After the live preview, display the approval card directly. Nothing may execute without the user's explicit approval on that card.",
-    ].join("; ");
-  }
-  throw new Error("Unsupported Lighter trade draft mode.");
-}
-
-function isPositiveDecimal(value: string): boolean {
-  return POSITIVE_DECIMAL.test(value) && /[1-9]/.test(value);
-}
-
-function hardBoundLabel(side: TradeSide): string {
-  return side === "buy" ? "Maximum buy price" : "Minimum sell price";
-}
-
-function submitLabel(mode: TradeOrderMode): string {
-  switch (mode) {
-    case "market": return "Review market order";
-    case "limit": return "Review limit order";
-    case "stop-loss": return "Review stop loss";
-    case "stop-loss-limit": return "Review stop-loss limit";
-    case "take-profit": return "Review take profit";
-    case "take-profit-limit": return "Review take-profit limit";
-    case "oco": return "Review SL + TP protection";
-  }
-}
-
-function isPositionProtectionMode(mode: TradeOrderMode): boolean {
-  return mode === "stop-loss"
-    || mode === "stop-loss-limit"
-    || mode === "take-profit"
-    || mode === "take-profit-limit"
-    || mode === "oco";
-}
-
-function isTriggerLimitMode(
-  mode: TradeOrderMode,
-): mode is "stop-loss-limit" | "take-profit-limit" {
-  return mode === "stop-loss-limit" || mode === "take-profit-limit";
-}
-
-function expiryLabel(minutes: number): string {
-  return ORDER_EXPIRY_OPTIONS.find((option) => option.minutes === minutes)?.label ?? `${minutes} minutes`;
-}
-
-function compareDecimalStrings(left: string, right: string): number | null {
-  const leftParts = decimalParts(left);
-  const rightParts = decimalParts(right);
-  if (leftParts === null || rightParts === null) return null;
-  const scale = Math.max(leftParts.scale, rightParts.scale);
-  const leftInteger = leftParts.integer * (10n ** BigInt(scale - leftParts.scale));
-  const rightInteger = rightParts.integer * (10n ** BigInt(scale - rightParts.scale));
-  return leftInteger === rightInteger ? 0 : leftInteger < rightInteger ? -1 : 1;
-}
-
-function decimalParts(value: string): { readonly integer: bigint; readonly scale: number } | null {
-  if (!POSITIVE_DECIMAL.test(value)) return null;
-  const [whole, fraction = ""] = value.split(".");
-  return {
-    integer: BigInt(`${whole}${fraction}`.replace(/^0+(?=\d)/, "")),
-    scale: fraction.length,
-  };
-}
+const STEP_STATE_TEXT = { done: "Done", todo: "To do", not_required: "Not needed" } as const;
+const SETUP_ACTION_TEXT: Readonly<Record<LighterOnboardingChecklist["nextAction"], string>> = {
+  start_setup: "Set up Lighter",
+  continue_setup: "Continue setup",
+  check_status: "Check setup",
+  none: "Setup complete",
+};
 
 export function TradeTicket({
   market,
   book,
+  lastPrice,
+  available,
+  baseAvailable,
+  equity,
+  margin,
+  settlementSymbol,
+  accountGap = null,
+  checklist = null,
   activeSession,
   dataFresh,
   submitting,
   handoffError,
-  hidden,
-  onReview,
+  outcome = null,
+  prefill,
+  pricePick,
+  onSend,
+  onAsk,
+  onConnect,
+  onOpenLeverage,
+  pendingApprovalCount = 0,
+  onReviewApprovals,
 }: {
   readonly market: LighterTradingMarket;
   readonly book: LighterOrderBookData;
+  readonly lastPrice: number | null;
+  /** Settlement balance the account can still commit, when the account read succeeded. */
+  readonly available: string | null;
+  /** Spot base inventory available to sell, when the account read succeeded. */
+  readonly baseAvailable?: string | null;
+  /** Account equity Risk mode sizes against; null without an account. */
+  readonly equity: number | null;
+  /** Margin terms for this market; null for spot or when Lighter reported none. */
+  readonly margin: TicketMargin | null;
+  readonly settlementSymbol: string;
+  /** Why there is no account to trade from; the ticket offers setup instead of Long/Short. */
+  readonly accountGap?: LighterTradingAccountUnavailableReason | null;
+  /** Where the session's wallet stands on the three onboarding steps; null until read. */
+  readonly checklist?: LighterOnboardingChecklist | null;
   readonly activeSession: boolean;
   readonly dataFresh: boolean;
+  /** True while main derives the terms and enqueues the approval card. */
   readonly submitting: boolean;
   readonly handoffError?: string | null;
-  readonly hidden?: boolean;
-  readonly onReview: (draft: TradeDraft) => void;
+  /** What the last desk card came to, once it resolved. */
+  readonly outcome?: DeskOutcome | null;
+  readonly prefill?: TradeTicketPrefill | null;
+  /** A price clicked in the book or tape: a limit price, or a protection trigger on shift-click. */
+  readonly pricePick?: TradeTicketPricePick | null;
+  /** Long/Short: main builds the proposal from this draft and the approval card takes over. */
+  readonly onSend: (draft: TradeDraft) => void;
+  /** Sends the drafted order to Vex as a question; nothing is prepared. */
+  readonly onAsk?: (draft: TradeDraft) => void;
+  /** Starts the onboarding chat: first deposit, trading key, fee approval. */
+  readonly onConnect: () => void;
+  /** Opens the leverage sheet for this market over the desk. */
+  readonly onOpenLeverage: () => void;
+  /** Desk approvals that still require a decision, including a dismissed modal. */
+  readonly pendingApprovalCount?: number;
+  readonly onReviewApprovals?: () => void;
 }): JSX.Element {
-  const [mode, setMode] = useState<TradeOrderMode>("market");
-  const [side, setSide] = useState<TradeSide>("buy");
-  const [baseAmount, setBaseAmount] = useState("");
-  const [worstPrice, setWorstPrice] = useState("");
-  const [limitPrice, setLimitPrice] = useState("");
-  const [limitTimeInForce, setLimitTimeInForce] = useState<LimitTimeInForce | null>(null);
-  const [orderExpiryOffsetMinutes, setOrderExpiryOffsetMinutes] = useState(DEFAULT_ORDER_EXPIRY_MINUTES);
-  const [triggerPrice, setTriggerPrice] = useState("");
-  const [stopLossTriggerPrice, setStopLossTriggerPrice] = useState("");
-  const [stopLossPrice, setStopLossPrice] = useState("");
-  const [takeProfitTriggerPrice, setTakeProfitTriggerPrice] = useState("");
-  const [takeProfitPrice, setTakeProfitPrice] = useState("");
-  const [priceTouched, setPriceTouched] = useState(false);
-  const [reduceOnly, setReduceOnly] = useState(false);
-
-  const protective = isPositionProtectionMode(mode);
-  const triggerLimit = isTriggerLimitMode(mode);
-  const suggestedPrice = side === "buy"
-    ? bestBookPrice(book.asks, "ask")
-    : bestBookPrice(book.bids, "bid");
-  const limitPriceBookStatus = useMemo(() => {
-    if (mode !== "limit" || suggestedPrice === null) return null;
-    const comparison = compareDecimalStrings(limitPrice, suggestedPrice);
-    if (comparison === null) return null;
-    const marketable = side === "buy" ? comparison >= 0 : comparison <= 0;
-    return marketable ? "marketable" : "resting";
-  }, [limitPrice, mode, side, suggestedPrice]);
-  const limitPriceGuidance = useMemo(() => {
-    if (limitPriceBookStatus === null || suggestedPrice === null) {
-      return "Enter the exact price you are willing to buy or sell at.";
-    }
-    const oppositeSide = side === "buy" ? "ask" : "bid";
-    const marketContext = `At the current best ${oppositeSide} (${suggestedPrice})`;
-    if (limitPriceBookStatus === "resting") {
-      if (limitTimeInForce === "immediate-or-cancel") {
-        return `${marketContext}, this price is not marketable. Immediate only would cancel instead of resting.`;
-      }
-      if (limitTimeInForce === "post-only") {
-        return `${marketContext}, this price can rest as a maker order.`;
-      }
-      return `${marketContext}, this price can rest until the market reaches it.`;
-    }
-    if (limitTimeInForce === "post-only") {
-      return `${marketContext}, this price crosses the live book, so Maker only cannot be reviewed.`;
-    }
-    if (limitTimeInForce === "immediate-or-cancel") {
-      return `${marketContext}, this price can fill immediately; any remainder cancels.`;
-    }
-    return `${marketContext}, this price can fill immediately; any unfilled amount stays open.`;
-  }, [limitPriceBookStatus, limitTimeInForce, side, suggestedPrice]);
-
-  const selectMode = (nextMode: TradeOrderMode): void => {
-    if (nextMode === mode) return;
-    setMode(nextMode);
-    setLimitTimeInForce(nextMode === "limit" ? DEFAULT_LIMIT_TIME_IN_FORCE : null);
-  };
-
+  const form = useTradeTicketForm({ market, book, lastPrice, available, baseAvailable, equity, margin, dataFresh, prefill, pricePick });
+  const { mode, side, protective, triggerLimit, perp, symbols } = form;
+  const availableForSide = market.marketType === "spot" && side === "sell" ? (baseAvailable ?? null) : available;
+  const availableSymbol = market.marketType === "spot" && side === "sell" ? symbols.base : settlementSymbol;
+  // A fresh ticket is incomplete, not wrong: problems show once a field changes.
+  const [touched, setTouched] = useState(false);
   useEffect(() => {
-    if (!priceTouched && mode === "market") setWorstPrice(suggestedPrice ?? "");
-  }, [mode, priceTouched, suggestedPrice]);
-
+    if ((prefill ?? null) !== null || (pricePick ?? null) !== null) setTouched(true);
+  }, [prefill, pricePick]);
+  const problem = touched ? form.validation : null;
+  // The inactive side's button is an order for that side: flip the side, then
+  // review once the form has re-derived its prices for it.
+  const [pendingSide, setPendingSide] = useState<TradeSide | null>(null);
   useEffect(() => {
-    setMode("market");
-    setSide("buy");
-    setBaseAmount("");
-    setWorstPrice("");
-    setLimitPrice("");
-    setLimitTimeInForce(null);
-    setOrderExpiryOffsetMinutes(DEFAULT_ORDER_EXPIRY_MINUTES);
-    setTriggerPrice("");
-    setStopLossTriggerPrice("");
-    setStopLossPrice("");
-    setTakeProfitTriggerPrice("");
-    setTakeProfitPrice("");
-    setReduceOnly(false);
-    setPriceTouched(false);
-  }, [market.marketId]);
-
-  useEffect(() => {
-    if (market.marketType === "spot" && protective) {
-      setMode("market");
-      setLimitTimeInForce(null);
-    }
-  }, [market.marketType, mode, protective]);
-
-  useEffect(() => {
-    if (mode === "market") setPriceTouched(false);
-  }, [mode, side]);
-
-  const validation = useMemo(() => {
-    if (!dataFresh) return "Live market data is delayed. Wait for a fresh snapshot before review.";
-    if (market.status !== "active") return "This market is inactive.";
-    if (protective && market.marketType !== "perp") {
-      return "Position protection is available only for perpetual markets.";
-    }
-    if (!isPositiveDecimal(baseAmount)) return "Enter an exact base size greater than zero.";
-    if (mode === "oco") {
-      if (![stopLossTriggerPrice, stopLossPrice, takeProfitTriggerPrice, takeProfitPrice].every(isPositiveDecimal)) {
-        return "Enter all four stop-loss and take-profit prices.";
-      }
-      return null;
-    }
-    if (mode === "stop-loss" || mode === "take-profit") {
-      if (!isPositiveDecimal(triggerPrice)) return "Enter an exact trigger price.";
-      if (!isPositiveDecimal(worstPrice)) return `Enter a valid ${hardBoundLabel(side).toLowerCase()}.`;
-      return null;
-    }
-    if (triggerLimit) {
-      if (!isPositiveDecimal(triggerPrice)) return "Enter an exact trigger price.";
-      if (!isPositiveDecimal(limitPrice)) return "Enter a valid limit price.";
-      if (limitTimeInForce === null) return "Choose how the triggered limit should behave.";
-      return null;
-    }
-    if (mode === "limit") {
-      if (!isPositiveDecimal(limitPrice)) return "Enter a valid limit price.";
-      if (limitTimeInForce === null) return "Choose how the limit order should behave.";
-      if (limitTimeInForce === "post-only") {
-        const comparison = suggestedPrice === null ? null : compareDecimalStrings(limitPrice, suggestedPrice);
-        if (comparison === null) return "A fresh opposite-side price is required for maker-only review.";
-        const crosses = side === "buy" ? comparison >= 0 : comparison <= 0;
-        if (crosses) return `Maker-only ${side} price must stay ${side === "buy" ? "below the best ask" : "above the best bid"}.`;
-      }
-      return null;
-    }
-    if (!isPositiveDecimal(worstPrice)) return `Enter a valid ${hardBoundLabel(side).toLowerCase()}.`;
-    return null;
-  }, [
-    baseAmount,
-    dataFresh,
-    market.marketType,
-    market.status,
-    mode,
-    limitPrice,
-    limitTimeInForce,
-    protective,
-    side,
-    suggestedPrice,
-    stopLossPrice,
-    stopLossTriggerPrice,
-    takeProfitPrice,
-    takeProfitTriggerPrice,
-    triggerPrice,
-    triggerLimit,
-    worstPrice,
-  ]);
+    if (pendingSide === null || pendingSide !== side) return;
+    setPendingSide(null);
+    setTouched(true);
+    const draft = form.buildDraft();
+    if (draft !== null) onSend(draft);
+    // form.buildDraft is rebuilt every render; the side flip is the trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingSide, side]);
+  const priceDigits = { minimumFractionDigits: Math.min(market.decimals.price, 2), maximumFractionDigits: market.decimals.price };
 
   const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
-    if (validation !== null || submitting) return;
-    if (mode === "oco") {
-      onReview({
-        mode,
-        side,
-        baseAmount,
-        stopLossTriggerPrice,
-        stopLossPrice,
-        takeProfitTriggerPrice,
-        takeProfitPrice,
-      });
-      return;
-    }
-    if (mode === "stop-loss" || mode === "take-profit") {
-      onReview({ mode, side, baseAmount, triggerPrice, worstPrice, reduceOnly: true });
-      return;
-    }
-    if (mode === "limit") {
-      if (limitTimeInForce === null) return;
-      onReview({
-        mode,
-        side,
-        baseAmount,
-        limitPrice,
-        timeInForce: limitTimeInForce,
-        orderExpiryOffsetMinutes: limitTimeInForce === "immediate-or-cancel"
-          ? IOC_PREVIEW_EXPIRY_MINUTES
-          : orderExpiryOffsetMinutes,
-        reduceOnly,
-      });
-      return;
-    }
-    if (triggerLimit) {
-      if (limitTimeInForce === null) return;
-      onReview({
-        mode,
-        side,
-        baseAmount,
-        triggerPrice,
-        limitPrice,
-        timeInForce: limitTimeInForce,
-        orderExpiryOffsetMinutes,
-        reduceOnly: true,
-      });
-      return;
-    }
-    onReview({ mode, side, baseAmount, worstPrice, reduceOnly });
+    if (submitting) return;
+    const draft = form.buildDraft();
+    if (draft !== null) onSend(draft);
   };
 
+  const quote = (value: number | null, digits = 2): string => value === null
+    ? NO_VALUE
+    : `${formatNumber(value, { maximumFractionDigits: digits })} ${symbols.quote}`;
+
+  // No account yet: the ticket is one sentence and the way in, not a form of
+  // dashes. The chart and book keep working; the dock says the same words.
+  if (accountGap === "not_onboarded") {
+    const setupAction = checklist?.nextAction ?? "start_setup";
+    return (
+      <form className="lit-ticket" aria-label="Order ticket" data-gate="not-connected" data-setup-progress={checklist?.progress} onSubmit={(event) => event.preventDefault()}>
+        <div className="lit-ticket-connect" role="status" aria-live="polite">
+          <b>Lighter setup</b>
+          <span>{checklist?.detail ?? "Vex checks your account, then guides each required approval in the chat."}</span>
+          <ol className="lit-ticket-steps" aria-label="Setup steps">
+            {ONBOARDING_STEPS.map(([key, label]) => {
+              const state = checklist?.[key] ?? "pending";
+              return (
+                <li key={key} data-state={state}>
+                  <span>{label}</span>
+                  {state !== "pending" ? <em>{STEP_STATE_TEXT[state]}</em> : null}
+                </li>
+              );
+            })}
+          </ol>
+          <button type="button" className="lit-review-button" onClick={onConnect} disabled={setupAction === "none"}>
+            {SETUP_ACTION_TEXT[setupAction]}
+          </button>
+        </div>
+      </form>
+    );
+  }
+
   return (
-    <div
+    <form
+      onSubmit={onSubmit}
+      onChange={() => setTouched(true)}
       className="lit-ticket"
-      role="region"
-      id="lit-workspace-trade-panel"
-      aria-label="Trade ticket"
-      hidden={hidden}
+      aria-label="Order ticket"
+      data-side={side}
+      data-mode={mode}
     >
-      <form onSubmit={onSubmit} className="lit-ticket-form">
+      {/* Account context and submit actions stay fixed. Only the variable-height
+          order fields scroll when the stacked desk is short. */}
+      <div className="lit-ticket-meta">
+        {perp ? (
+          <button
+            type="button"
+            className="lit-margin-chip"
+            title="Change leverage and margin mode"
+            aria-label="Leverage and margin mode"
+            onClick={onOpenLeverage}
+          >
+            {margin === null
+              ? "Leverage"
+              : `${margin.marginMode === "cross" ? "Cross" : "Isolated"} · ${leverageLabel(margin.initialMarginFraction)}`}
+            <i aria-hidden="true">›</i>
+          </button>
+        ) : null}
+        <span className="lit-ticket-available">
+          <small>Avbl</small>
+          <b>{availableForSide === null ? NO_VALUE : `${formatDecimalString(availableForSide)} ${availableSymbol}`}</b>
+        </span>
+      </div>
+
+      <div className="lit-ticket-body">
+
         <div className="lit-order-type-controls" role="group" aria-label="Order type">
           {(["market", "limit"] as const).map((item) => (
-            <button
-              type="button"
-              key={item}
-              aria-pressed={mode === item}
-              onClick={() => selectMode(item)}
-            >
+            <button type="button" key={item} aria-pressed={mode === item} onClick={() => form.selectMode(item)}>
               {MODE_LABELS[item]}
             </button>
           ))}
-          <select
-            aria-label="Protection order type"
-            aria-describedby={market.marketType !== "perp" ? "lit-protection-unavailable" : undefined}
-            value={protective ? mode : ""}
-            data-active={protective || undefined}
-            disabled={market.marketType !== "perp"}
-            onChange={(event) => {
-              const nextMode = PROTECTION_MODES.find((item) => item === event.currentTarget.value);
-              if (nextMode !== undefined) selectMode(nextMode);
-            }}
-          >
-            <option value="" disabled>Protection</option>
-            {PROTECTION_MODES.map((item) => (
-              <option key={item} value={item}>{MODE_LABELS[item]}</option>
-            ))}
-          </select>
+          {/* Protection modes are not picked here: entries attach TP/SL below, and
+              a position's stop and take profit load from the Positions tab or the
+              agent. The loaded mode shows as a third, already-pressed tab. */}
+          {protective ? (
+            <button type="button" aria-pressed="true" title="Loaded from a position or the agent">
+              {MODE_LABELS[mode]}
+            </button>
+          ) : null}
         </div>
+        <p
+          className="lit-ticket-book-hint"
+          title="Click a book or trade price for Limit. Shift-click for Trigger."
+        >
+          Price click → Limit · Shift-click → Trigger
+        </p>
 
-        {market.marketType === "spot" ? (
-          <p className="lit-ticket-context" id="lit-protection-unavailable">Spot supports Market and plain Limit orders here. Position protection requires a perpetual market.</p>
-        ) : protective ? (
-          <p className="lit-ticket-context">Protection is reduce only and must match a live {market.symbol} position.</p>
+        {protective ? (
+          <p className="lit-ticket-context">Reduce only. Sell protects a long, buy protects a short.</p>
         ) : null}
 
-        <div className="lit-side-switch" aria-label={protective ? "Position close side" : "Order side"}>
-          <button type="button" data-active={side === "buy" || undefined} data-side="buy" onClick={() => setSide("buy")}>Buy</button>
-          <button type="button" data-active={side === "sell" || undefined} data-side="sell" onClick={() => setSide("sell")}>Sell</button>
-        </div>
-
-        <label className="lit-field">
-          <span>Base size</span>
-          <span className="lit-input-shell">
-            <input
-              value={baseAmount}
-              onChange={(event) => setBaseAmount(event.currentTarget.value.trim())}
-              inputMode="decimal"
-              autoComplete="off"
-              placeholder={market.minBaseAmount}
-              aria-label="Base size"
-              aria-describedby="lit-size-note"
-            />
-            <b>{market.symbol}</b>
-          </span>
-          <small id="lit-size-note">Minimum {market.minBaseAmount}</small>
-        </label>
-
-        {mode === "oco" ? (
+        {mode === "market" ? null : mode === "oco" ? (
           <>
             <ProtectionLeg
               label="Stop loss"
               side={side}
-              triggerPrice={stopLossTriggerPrice}
-              executionPrice={stopLossPrice}
-              onTriggerPriceChange={setStopLossTriggerPrice}
-              onExecutionPriceChange={setStopLossPrice}
+              triggerPrice={form.stopLossTriggerPrice}
+              executionPrice={form.stopLossPrice}
+              onTriggerPriceChange={form.setStopLossTriggerPrice}
+              onExecutionPriceChange={form.setStopLossPrice}
             />
             <ProtectionLeg
               label="Take profit"
               side={side}
-              triggerPrice={takeProfitTriggerPrice}
-              executionPrice={takeProfitPrice}
-              onTriggerPriceChange={setTakeProfitTriggerPrice}
-              onExecutionPriceChange={setTakeProfitPrice}
+              triggerPrice={form.takeProfitTriggerPrice}
+              executionPrice={form.takeProfitPrice}
+              onTriggerPriceChange={form.setTakeProfitTriggerPrice}
+              onExecutionPriceChange={form.setTakeProfitPrice}
             />
           </>
         ) : mode === "stop-loss" || mode === "take-profit" || triggerLimit ? (
           <ProtectionLeg
             label={MODE_LABELS[mode]}
             side={side}
-            triggerPrice={triggerPrice}
-            executionPrice={triggerLimit ? limitPrice : worstPrice}
+            triggerPrice={form.triggerPrice}
+            executionPrice={triggerLimit ? form.limitPrice : form.triggerBound}
             priceKind={triggerLimit ? "limit" : "bound"}
-            onTriggerPriceChange={setTriggerPrice}
-            onExecutionPriceChange={(value) => {
-              if (triggerLimit) setLimitPrice(value);
-              else {
-                setPriceTouched(true);
-                setWorstPrice(value);
-              }
-            }}
+            onTriggerPriceChange={form.setTriggerPrice}
+            onExecutionPriceChange={triggerLimit ? form.setLimitPrice : form.setTriggerBound}
           />
-        ) : mode === "limit" ? (
+        ) : (
           <label className="lit-field">
             <span>Limit price</span>
             <span className="lit-input-shell">
               <input
-                value={limitPrice}
-                onChange={(event) => setLimitPrice(event.currentTarget.value.trim())}
+                value={form.limitPrice}
+                onChange={(event) => form.setLimitPrice(event.currentTarget.value.trim())}
                 inputMode="decimal"
                 autoComplete="off"
                 aria-label="Limit price"
                 aria-describedby="lit-limit-price-note"
               />
-              <b>Quote</b>
+              {form.suggestedPrice === null ? (
+                <b>{symbols.quote}</b>
+              ) : (
+                <button
+                  type="button"
+                  className="lit-price-chip"
+                  onClick={() => form.setLimitPrice(form.suggestedPrice ?? "")}
+                  aria-label={`Use best ${side === "buy" ? "ask" : "bid"} ${form.suggestedPrice}`}
+                >
+                  {side === "buy" ? "Ask" : "Bid"}
+                </button>
+              )}
             </span>
-            <small id="lit-limit-price-note">{limitPriceGuidance}</small>
-          </label>
-        ) : (
-          <label className="lit-field">
-            <span>{hardBoundLabel(side)}</span>
-            <span className="lit-input-shell">
-              <input
-                value={worstPrice}
-                onChange={(event) => {
-                  setPriceTouched(true);
-                  setWorstPrice(event.currentTarget.value.trim());
-                }}
-                inputMode="decimal"
-                autoComplete="off"
-                aria-describedby="lit-price-note"
-              />
-              <b>Quote</b>
-            </span>
-            <small id="lit-price-note">Defaults to the live best {side === "buy" ? "ask" : "bid"}; this is a hard price bound.</small>
+            <small id="lit-limit-price-note">{form.limitPriceGuidance}</small>
           </label>
         )}
 
+        <div className="lit-field lit-size-field" data-size-mode={form.riskMode ? "risk" : "qty"}>
+          <span>
+            Size
+            {form.canSizeByRisk ? (
+              // Qty types a size; Risk derives it from the stop-loss so a filled
+              // stop costs a set share of equity (needs an account to read).
+              <span className="lit-size-mode" role="group" aria-label="Size by">
+                <button type="button" aria-pressed={!form.riskMode} onClick={() => form.selectSizeMode("qty")}>Qty</button>
+                <button
+                  type="button"
+                  aria-pressed={form.riskMode}
+                  disabled={equity === null}
+                  title={equity === null ? "Set up Lighter to size by risk" : "Size from the stop-loss: risk a share of equity"}
+                  onClick={() => form.selectSizeMode("risk")}
+                >
+                  Risk
+                </button>
+              </span>
+            ) : null}
+          </span>
+          {form.riskMode ? (
+            <>
+              <span className="lit-input-shell">
+                <input
+                  value={form.riskPercent}
+                  onChange={(event) => form.setRiskPercent(event.currentTarget.value.trim())}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder="1"
+                  aria-label="Risk as percent of equity"
+                  aria-describedby="lit-size-note"
+                />
+                <b>% of equity</b>
+              </span>
+              <span className="lit-size-presets" role="group" aria-label="Risk presets">
+                {RISK_PERCENT_PRESETS.map((percent) => (
+                  <button
+                    type="button"
+                    key={percent}
+                    aria-pressed={Number(form.riskPercent) === percent}
+                    onClick={() => form.setRiskPercent(String(percent))}
+                  >
+                    {percent}%
+                  </button>
+                ))}
+              </span>
+              <span className="lit-input-shell lit-input-shell--readout">
+                <input readOnly value={isPositiveDecimal(form.baseAmount) ? formatDecimalString(form.baseAmount) : ""} placeholder="0" aria-label="Size" />
+                <b>{symbols.base}</b>
+              </span>
+              <small id="lit-size-note">
+                {"riskAmount" in form.riskSizing
+                  ? `Risks ${formatNumber(form.riskSizing.riskAmount)} ${settlementSymbol} if the stop fills at ${formatDecimalString(form.stopLossTriggerPrice)}.`
+                  : form.riskSizing.reason}
+              </small>
+            </>
+          ) : (
+            <>
+              <span className="lit-input-shell">
+                <input
+                  value={form.sizeInput}
+                  onChange={(event) => form.editSize(event.currentTarget.value.trim())}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder={form.sizeUnit === "base" ? market.minBaseAmount : "0"}
+                  aria-label={form.sizeUnit === "base" ? "Size" : "Size in quote"}
+                  aria-describedby={form.sizeUnit === "quote" ? "lit-size-note" : undefined}
+                />
+                <button
+                  type="button"
+                  className="lit-unit-toggle"
+                  aria-label={`Size unit: ${form.sizeUnit === "base" ? symbols.base : symbols.quote}. Switch`}
+                  onClick={form.toggleSizeUnit}
+                >
+                  {form.sizeUnit === "base" ? symbols.base : symbols.quote} ⇄
+                </button>
+              </span>
+              <SizeSlider form={form} />
+              {form.sizeUnit === "quote" && isPositiveDecimal(form.baseAmount) ? (
+                <small id="lit-size-note">≈ {formatDecimalString(form.baseAmount)} {symbols.base}</small>
+              ) : null}
+            </>
+          )}
+        </div>
+
+        {mode === "market" ? <SlippageField form={form} /> : null}
+
         {mode === "limit" || triggerLimit ? (
-          <fieldset className="lit-tif-field" aria-describedby="lit-order-behavior-note">
-            <legend>Order behavior</legend>
+          <fieldset className="lit-tif-field">
+            <legend>Time in Force</legend>
             <div className="lit-tif-tabs">
               {(Object.keys(LIMIT_TIME_IN_FORCE_LABELS) as LimitTimeInForce[]).map((item) => (
                 <button
                   type="button"
                   key={item}
-                  aria-pressed={limitTimeInForce === item}
-                  onClick={() => setLimitTimeInForce(item)}
+                  aria-pressed={form.limitTimeInForce === item}
+                  title={LIMIT_TIME_IN_FORCE_NAMES[item]}
+                  onClick={() => form.setLimitTimeInForce(item)}
                 >
                   {LIMIT_TIME_IN_FORCE_LABELS[item]}
                 </button>
               ))}
             </div>
-            <small id="lit-order-behavior-note">
-              {limitTimeInForce === null
-                ? "Choose what should happen to the limit order after it is activated."
-                : limitTimeInForce === "immediate-or-cancel"
-                ? triggerLimit
-                  ? "When triggered, fill immediately at the limit price and cancel any remainder."
-                  : "Fill immediately at the limit price; cancel any remainder."
-                : limitTimeInForce === "good-till-time"
-                  ? triggerLimit
-                    ? "When triggered, stay open until filled, canceled, or the selected expiry."
-                    : "Unfilled amount stays open until filled, canceled, or the selected expiry."
-                  : triggerLimit
-                    ? "When triggered, add liquidity only; the current dormant price is not a crossing check."
-                    : "Add liquidity only; a price crossing the live book cannot be reviewed."}
-            </small>
           </fieldset>
         ) : null}
 
-        {(mode === "limit" && limitTimeInForce !== null && limitTimeInForce !== "immediate-or-cancel") || triggerLimit ? (
-          <label className="lit-field">
-            <span>Order expiry</span>
-            <span className="lit-select-shell">
-              <select
-                value={String(orderExpiryOffsetMinutes)}
-                onChange={(event) => setOrderExpiryOffsetMinutes(Number(event.currentTarget.value))}
-                aria-label="Order expiry"
-              >
-                {ORDER_EXPIRY_OPTIONS.map((option) => (
-                  <option key={option.minutes} value={option.minutes}>{option.label}</option>
-                ))}
-              </select>
-            </span>
-            <small>Measured from the fresh provider-backed preview.</small>
-          </label>
+        {mode === "market" || mode === "limit" || triggerLimit ? (
+          <div className="lit-ticket-options">
+            {perp && !protective ? (
+              <span className="lit-check-group">
+                <label className="lit-check-row">
+                  <input
+                    type="checkbox"
+                    checked={form.reduceOnly}
+                    onChange={(event) => form.setReduceOnly(event.currentTarget.checked)}
+                  />
+                  <span>Reduce-Only</span>
+                </label>
+                {perp ? (
+                  <label className="lit-check-row">
+                    <input
+                      type="checkbox"
+                      checked={form.protectOpen}
+                      onChange={(event) => form.setProtectOpen(event.currentTarget.checked)}
+                    />
+                    <span>TP/SL</span>
+                  </label>
+                ) : null}
+              </span>
+            ) : null}
+            {(mode === "limit" && form.limitTimeInForce !== "immediate-or-cancel") || triggerLimit ? (
+              <label className="lit-expiry">
+                <span>Expires</span>
+                <select
+                  value={String(form.orderExpiryOffsetMinutes)}
+                  onChange={(event) => form.setOrderExpiryOffsetMinutes(Number(event.currentTarget.value))}
+                  aria-label="Order expiry"
+                >
+                  {ORDER_EXPIRY_OPTIONS.map((option) => (
+                    <option key={option.minutes} value={option.minutes}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+          </div>
         ) : null}
 
-        {mode === "market" || mode === "limit" ? (
-          <label className="lit-check-row">
-            <input
-              type="checkbox"
-              checked={reduceOnly}
-              onChange={(event) => setReduceOnly(event.currentTarget.checked)}
-            />
-            <span>
-              <b>Reduce only</b>
-              <small>Accepted only when live position evidence proves reduction.</small>
-            </span>
-          </label>
-        ) : null}
+        {perp && !protective && form.protectOpen ? <ProtectSection form={form} /> : null}
 
+        {/* The facts close the scrolling body: only the side buttons stay
+            pinned, so a short panel never hides the price and size fields. */}
         <dl className="lit-ticket-facts">
           <div>
-            <dt>Order behavior</dt>
-            <dd>{mode === "limit" || triggerLimit ? limitTimeInForce === null ? "Choose" : LIMIT_TIME_IN_FORCE_LABELS[limitTimeInForce] : "Immediate only"}</dd>
+            <dt>Order Value</dt>
+            <dd>{quote(form.orderValue)}</dd>
           </div>
+          {perp ? (
+            <>
+              <div>
+                <dt>Cost</dt>
+                <dd>{quote(form.cost)}</dd>
+              </div>
+              <div>
+                <dt>Max Size</dt>
+                <dd>{form.maxSize === null ? NO_VALUE : `${formatDecimalString(form.maxSize)} ${symbols.base}`}</dd>
+              </div>
+              <div>
+                <dt>Liq. Price</dt>
+                <dd title="Isolated-style estimate for this order alone; cross accounts liquidate on the whole portfolio.">
+                  {form.liquidationEstimate === null ? NO_VALUE : `≈ ${formatNumber(form.liquidationEstimate, priceDigits)}`}
+                </dd>
+              </div>
+            </>
+          ) : null}
           <div>
-            <dt>{protective || (mode === "limit" && limitTimeInForce !== null && limitTimeInForce !== "immediate-or-cancel") ? "Order expiry" : "Signed order expiry"}</dt>
-            <dd>
-              {mode === "limit"
-                ? limitTimeInForce === null ? "Choose behavior" : limitTimeInForce === "immediate-or-cancel" ? "None (immediate only)" : expiryLabel(orderExpiryOffsetMinutes)
-                : triggerLimit ? expiryLabel(orderExpiryOffsetMinutes) : protective ? "24 hours" : "None (immediate only)"}
-            </dd>
+            <dt title={`${form.feeRate.label} ${formatProviderPercent(form.feeRate.rate, form.feeRate.enabled)}`}>Fee ({form.feeRate.label})</dt>
+            <dd>{form.estimatedFee === null ? NO_VALUE : `≈ ${quote(form.estimatedFee, 4)}`}</dd>
           </div>
-          <div><dt>Market type</dt><dd>{market.marketType === "perp" ? "Perpetual" : "Spot"}</dd></div>
-          <div>
-            <dt>Execution</dt>
-            <dd>
-              {mode === "oco"
-                ? "Native OCO"
-                : triggerLimit
-                  ? limitTimeInForce === null ? "Choose behavior" : limitTimeInForce === "post-only" ? "Conditional maker only" : limitTimeInForce === "immediate-or-cancel" ? "Conditional fill or cancel" : "Native trigger limit"
-                  : mode === "limit"
-                    ? limitTimeInForce === null ? "Choose behavior" : limitTimeInForce === "post-only" ? "Maker only" : limitTimeInForce === "immediate-or-cancel" ? limitPriceBookStatus === "resting" ? "Would cancel now" : "Fill or cancel" : limitPriceBookStatus === "marketable" ? "Can fill now" : limitPriceBookStatus === "resting" ? "Can rest" : "May rest"
-                    : protective ? "Reduce only" : "Approval gated"}
-            </dd>
-          </div>
+          {mode === "market" ? (
+            <div>
+              <dt title={hardBoundLabel(side)}>{hardBoundShortLabel(side)}</dt>
+              <dd>{form.worstPrice === null ? NO_VALUE : formatDecimalString(form.worstPrice)}</dd>
+            </div>
+          ) : (
+            <div>
+              <dt>Execution</dt>
+              <dd>{executionLabel(form)}</dd>
+            </div>
+          )}
         </dl>
+      </div>
 
-        <div className="lit-review-note" role="note">
-          {activeSession
-            ? "Review in chat drafts the exact request. It does not sign or submit an order."
-            : "Review opens a Vex session with the exact request. It does not sign or submit an order."}
-        </div>
+      <div className="lit-ticket-footer">
+        {pendingApprovalCount > 0 ? (
+          <div className="lit-ticket-approval-waiting" role="status">
+            <span><b>Approval waiting</b><small>{pendingApprovalCount === 1 ? "1 action needs a decision" : `${String(pendingApprovalCount)} actions need a decision`}</small></span>
+            {onReviewApprovals === undefined ? null : (
+              <button type="button" onClick={onReviewApprovals}>Review</button>
+            )}
+          </div>
+        ) : null}
         {handoffError ? <p className="lit-review-error" role="alert">{handoffError}</p> : null}
-        {validation !== null ? <p className="lit-validation" role="status">{validation}</p> : null}
-        <button className="lit-review-button" type="submit" disabled={validation !== null || submitting}>
-          {submitting ? "Opening review…" : submitLabel(mode)}
-        </button>
-      </form>
+        {outcome !== null && handoffError == null ? (
+          <p className="lit-review-outcome" data-tone={outcome.tone} role="status">{outcome.text}</p>
+        ) : null}
+        {problem !== null ? <p className="lit-validation" role="status">{problem}</p> : null}
+        {onAsk === undefined ? null : (
+          <button
+            type="button"
+            className="lit-ask-draft"
+            disabled={submitting || form.validation !== null}
+            title={form.validation ?? "Ask Vex to review this draft before placing an order"}
+            onClick={() => {
+              setTouched(true);
+              const draft = form.buildDraft();
+              if (draft !== null) onAsk(draft);
+            }}
+          >
+            <VexMark size={14} /> Review with Vex
+          </button>
+        )}
+        <div className="lit-side-actions" role="group" aria-label={protective ? "Position close side" : "Order side"}>
+          {(["buy", "sell"] as const).map((item) => {
+            const active = item === side;
+            const detail = submitDetail(form);
+            return (
+              <button
+                key={item}
+                className="lit-review-button"
+                type={active ? "submit" : "button"}
+                data-side={item}
+                data-active={active || undefined}
+                aria-label={`${sideLabel(item, market.marketType, protective)}${detail}`}
+                disabled={submitting || (active && form.validation !== null)}
+                onClick={active ? undefined : () => { form.setSide(item); setPendingSide(item); }}
+              >
+                <b>{sideLabel(item, market.marketType, protective)}</b>
+                <small>{submitting && active ? "Preparing…" : detail.trim() || MODE_LABELS[form.mode]}</small>
+              </button>
+            );
+          })}
+        </div>
+        {problem === null ? (
+          <p className="lit-review-note" role="note">
+            <span>
+              {activeSession
+                ? "Nothing signs until you confirm."
+                : "Opens Vex first. Nothing signs until you confirm."}
+            </span>
+          </p>
+        ) : null}
+      </div>
+    </form>
+  );
+}
+
+/** What follows the side in a side button's name: the mode for protection, the size, and any attached TP/SL. */
+function submitDetail(form: TradeTicketForm): string {
+  const size = isPositiveDecimal(form.baseAmount) ? ` ${formatDecimalString(form.baseAmount)} ${form.symbols.base}` : "";
+  if (form.protective) return ` ${MODE_LABELS[form.mode]}${size}`;
+  const withProtection = form.protection !== null && (form.protection.stopLoss !== null || form.protection.takeProfit !== null);
+  return `${size}${withProtection ? " + TP/SL" : ""}`;
+}
+
+function executionLabel(form: TradeTicketForm): string {
+  const { mode, limitTimeInForce, limitPriceBookStatus } = form;
+  if (mode === "oco") return "Native OCO";
+  if (form.triggerLimit) {
+    return `Conditional ${LIMIT_TIME_IN_FORCE_LABELS[limitTimeInForce]}`;
+  }
+  if (mode === "limit") {
+    if (limitTimeInForce === "post-only") return "Post-Only";
+    if (limitTimeInForce === "immediate-or-cancel") return limitPriceBookStatus === "resting" ? "IOC, would cancel now" : "IOC, fills now";
+    return limitPriceBookStatus === "marketable" ? "GTC, can fill now" : "GTC, rests on the book";
+  }
+  return form.protective ? "Reduce only, 24 hour expiry" : "IOC";
+}
+
+function SlippageField({ form }: { readonly form: TradeTicketForm }): JSX.Element {
+  return (
+    <div className="lit-field lit-slippage-field">
+      <span title="Maximum allowed slippage">Slippage</span>
+      <span className="lit-slippage-controls" role="group" aria-label="Max slippage">
+        {SLIPPAGE_PRESETS.map((preset) => (
+          <button
+            type="button"
+            key={preset}
+            aria-pressed={form.slippagePercent === preset}
+            onClick={() => form.setSlippagePercent(preset)}
+          >
+            {preset}%
+          </button>
+        ))}
+        <span className="lit-input-shell lit-slippage-input">
+          <input
+            value={form.slippagePercent}
+            onChange={(event) => form.setSlippagePercent(event.currentTarget.value.trim())}
+            inputMode="decimal"
+            autoComplete="off"
+            aria-label="Max slippage percent"
+          />
+          <b>%</b>
+        </span>
+      </span>
+    </div>
+  );
+}
+
+/** Optional take-profit / stop-loss attached to a market or limit entry, shown while TP/SL is checked. */
+/** Size as a share of the maximum: a slider with the quarter ticks as buttons. */
+function SizeSlider({ form }: { readonly form: TradeTicketForm }): JSX.Element {
+  const disabled = form.maxSize === null;
+  // A typed size moves the thumb too; a preset or drag pins it exactly.
+  const percent = form.sizePercent ?? (
+    !disabled && isPositiveDecimal(form.baseAmount)
+      ? Math.min(100, Math.max(0, Math.round((Number(form.baseAmount) / Number(form.maxSize)) * 100)))
+      : 0
+  );
+  return (
+    <div className="lit-size-slider" style={{ "--lit-size-fill": `${percent}%` } as CSSProperties}>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={1}
+        value={percent}
+        disabled={disabled}
+        aria-label="Size as percent of maximum"
+        aria-valuetext={`${percent}%`}
+        onChange={(event) => form.applySizePercent(Number(event.currentTarget.value))}
+      />
+      <span className="lit-size-presets" role="group" aria-label="Size presets">
+        {[0, ...SIZE_PERCENT_PRESETS].map((tick) => (
+          <button
+            type="button"
+            key={tick}
+            aria-pressed={form.sizePercent === tick}
+            disabled={disabled}
+            onClick={() => form.applySizePercent(tick)}
+          >
+            {tick}%
+          </button>
+        ))}
+      </span>
+    </div>
+  );
+}
+
+function ProtectSection({ form }: { readonly form: TradeTicketForm }): JSX.Element {
+  const boundNote = (leg: { readonly price: string } | null): string => leg === null
+    ? "Shift-click a book price to load it"
+    : `${form.closeSide === "sell" ? "Sell ≥" : "Buy ≤"} ${formatDecimalString(leg.price)} · ${PROTECTION_BOUND_PERCENT}% bound`;
+  return (
+    <div className="lit-protect" role="group" aria-label="Take profit and stop loss">
+      <label className="lit-protect-row">
+        <span>Take Profit</span>
+        <span className="lit-input-shell">
+          <input
+            value={form.takeProfitTriggerPrice}
+            onChange={(event) => form.setTakeProfitTriggerPrice(event.currentTarget.value.trim())}
+            inputMode="decimal"
+            autoComplete="off"
+            placeholder="Trigger"
+            aria-label="Attached take-profit trigger price"
+          />
+          <b>{form.symbols.quote}</b>
+        </span>
+        <small>{boundNote(form.protection?.takeProfit ?? null)}</small>
+      </label>
+      <label className="lit-protect-row">
+        <span>Stop Loss</span>
+        <span className="lit-input-shell">
+          <input
+            value={form.stopLossTriggerPrice}
+            onChange={(event) => form.setStopLossTriggerPrice(event.currentTarget.value.trim())}
+            inputMode="decimal"
+            autoComplete="off"
+            placeholder="Trigger"
+            aria-label="Attached stop-loss trigger price"
+          />
+          <b>{form.symbols.quote}</b>
+        </span>
+        <small>{boundNote(form.protection?.stopLoss ?? null)}</small>
+      </label>
+      <p className="lit-protect-note">Prepared as a separate approval once this entry fills.</p>
     </div>
   );
 }
@@ -732,13 +695,12 @@ function ProtectionLeg({
   readonly onTriggerPriceChange: (value: string) => void;
   readonly onExecutionPriceChange: (value: string) => void;
 }): JSX.Element {
-  const id = label.toLocaleLowerCase().replaceAll(" ", "-");
   return (
     <fieldset className="lit-protection-leg">
       <legend>{label}</legend>
       <div className="lit-protection-fields">
         <label className="lit-field">
-          <span>Trigger price</span>
+          <span>Trigger</span>
           <span className="lit-input-shell">
             <input
               value={triggerPrice}
@@ -747,11 +709,10 @@ function ProtectionLeg({
               autoComplete="off"
               aria-label={`${label} trigger price`}
             />
-            <b>Quote</b>
           </span>
         </label>
         <label className="lit-field">
-          <span>{priceKind === "limit" ? "Limit price" : hardBoundLabel(side)}</span>
+          <span>{priceKind === "limit" ? "Limit" : side === "buy" ? "Max price" : "Min price"}</span>
           <span className="lit-input-shell">
             <input
               value={executionPrice}
@@ -759,17 +720,10 @@ function ProtectionLeg({
               inputMode="decimal"
               autoComplete="off"
               aria-label={`${label} ${priceKind === "limit" ? "limit price" : hardBoundLabel(side).toLowerCase()}`}
-              aria-describedby={`${id}-bound-note`}
             />
-            <b>Quote</b>
           </span>
         </label>
       </div>
-      <small id={`${id}-bound-note`}>
-        {priceKind === "limit"
-          ? "Provider-native limit price activated after the trigger fires."
-          : "Hard execution bound after the trigger fires."}
-      </small>
     </fieldset>
   );
 }
