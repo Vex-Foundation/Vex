@@ -62,18 +62,55 @@ const LIGHTER_WITHDRAWAL_LABELS: Readonly<Record<string,string>> = {
   estimatedClaimableAt: "Claimable at", scopeNote: "Permission scope",
 };
 
+/**
+ * `buildDepositApprovalFollowUp` (handlers/deposit.ts) binds 31 fields, the
+ * same shape of bloat as withdrawal: gateway/token contract addresses, code
+ * hashes, ERC-20 allowance/balance snapshots, block numbers. `approvalRequired`
+ * is the one non-obvious fact worth a row of its own - it tells the user
+ * whether this deposit ALSO spends a separate token-allowance approval, which
+ * `summary` does not say.
+ */
+const LIGHTER_DEPOSIT_LABELS: Readonly<Record<string,string>> = {
+  summary: "Action", walletAddress: "Your wallet", depositTo: "Deposit to",
+  settlementNetworkName: "Network", amountDisplay: "Amount",
+  approvalRequired: "Requires token approval", scopeNote: "Permission scope",
+};
+
+/**
+ * `buildLighterWithdrawalClaimCriticalArgs` (withdrawal-claim-approval-
+ * binding.ts) binds 31 fields, the same profile again (gateway/token
+ * addresses, code hashes, gas-quote plumbing). `networkFeeCeilingDisplay` is
+ * kept because it is a real spending cap this approval authorizes, distinct
+ * from the asset amount in `summary`.
+ */
+const LIGHTER_WITHDRAWAL_CLAIM_LABELS: Readonly<Record<string,string>> = {
+  summary: "Action", ownerAddress: "Recipient", settlementNetworkName: "Network",
+  amountDisplay: "Amount", networkFeeCeilingDisplay: "Max network fee",
+  scopeNote: "Permission scope",
+};
+
+/**
+ * One allowlist per tool whose critical-args well is dominated by fields
+ * that stay bound and verified server-side but were never meant to be READ.
+ * `lighter.order.create` is deliberately NOT here: its fields (market, side,
+ * price, size, time-in-force, reduce-only, trigger price) are the trade
+ * itself, not gateway plumbing - a trader reviewing an order approval wants
+ * most of them, so there is no bloat to curate away.
+ */
+const CRITICAL_ARGS_ALLOWLIST_BY_TOOL: Readonly<Record<string, Readonly<Record<string,string>>>> = {
+  "lighter.fees.approve": FEE_AUTHORIZATION_LABELS,
+  "lighter.withdraw": LIGHTER_WITHDRAWAL_LABELS,
+  "lighter.deposit": LIGHTER_DEPOSIT_LABELS,
+  "lighter.withdraw.claim": LIGHTER_WITHDRAWAL_CLAIM_LABELS,
+};
+
 function visibleCriticalArgs(criticalArgs: ApprovalPreview["criticalArgs"]): [string,unknown][] {
   const entries=Object.entries(criticalArgs);
-  // The fee card's human rows already disclose every permission term. Numeric
+  const allowlist = CRITICAL_ARGS_ALLOWLIST_BY_TOOL[String(criticalArgs.toolId)];
+  // The curated rows already disclose every permission term. Numeric
   // duplicates and the internal key/intent identities stay bound in the host's
   // approval record, without making users review signer implementation fields.
-  if (criticalArgs.toolId==="lighter.fees.approve") {
-    return entries.filter(([key])=>key in FEE_AUTHORIZATION_LABELS);
-  }
-  if (criticalArgs.toolId==="lighter.withdraw") {
-    return entries.filter(([key])=>key in LIGHTER_WITHDRAWAL_LABELS);
-  }
-  return entries;
+  return allowlist ? entries.filter(([key])=>key in allowlist) : entries;
 }
 
 function isLighterCreateOrderBehavior(
@@ -103,8 +140,8 @@ function criticalArgLabel(
   key: string,
   criticalArgs: ApprovalPreview["criticalArgs"],
 ): string {
-  if (criticalArgs.toolId === "lighter.fees.approve") return FEE_AUTHORIZATION_LABELS[key] ?? key;
-  if (criticalArgs.toolId === "lighter.withdraw") return LIGHTER_WITHDRAWAL_LABELS[key] ?? key;
+  const allowlist = CRITICAL_ARGS_ALLOWLIST_BY_TOOL[String(criticalArgs.toolId)];
+  if (allowlist) return allowlist[key] ?? key;
   if (isLighterCreateOrderBehavior(key, criticalArgs[key], criticalArgs)) {
     return "Order behavior";
   }
