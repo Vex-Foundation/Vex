@@ -48,7 +48,7 @@ export const sessionPermissionSchema = z.enum(["restricted", "full"]);
 export type SessionPermission = z.infer<typeof sessionPermissionSchema>;
 
 /**
- * The surface a session belongs to (migration 163). Absent / null is the agent
+ * The surface a session belongs to (migration 164). Absent / null is the agent
  * shell; `lighter` is the trading desk, which lists only its own sessions and
  * never appears in the agent rail. Set at create time, never rewritten.
  */

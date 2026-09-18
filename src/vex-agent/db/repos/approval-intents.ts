@@ -87,7 +87,7 @@ export {
   type StudioSettlementRow,
 } from "./approval-intents/studio-settlement.js";
 
-/** Desk settlement writes (migration 164): the Lighter desk's own buttons. */
+/** Desk settlement writes (migration 165): the Lighter desk's own buttons. */
 export {
   commitDeskSettlementWith,
   listUnstartedDeskApprovals,
@@ -104,7 +104,7 @@ export type ApprovalDecision = "approved" | "rejected" | "rejected_stop";
  * It is not a second state axis. It selects which SIDE EFFECTS a decision
  * runs: an agent row appends a transcript tool result and resumes a turn, a
  * Studio row writes a settlement and releases a blocked MCP call, a `desk`
- * row (migration 164, the Lighter desk's own buttons) settles on the row alone
+ * row (migration 165, the Lighter desk's own buttons) settles on the row alone
  * and hands its outcome back to the desk. The decision and execution state
  * machines are identical for all three.
  */

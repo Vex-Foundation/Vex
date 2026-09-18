@@ -198,7 +198,7 @@ export async function applyApproveSideEffects(
   if (row.origin === "studio_mcp") {
     return applyStudioApproveSideEffects(approvalId, snapshot);
   }
-  // A desk approval (the Lighter desk's own buttons, migration 164) likewise
+  // A desk approval (the Lighter desk's own buttons, migration 165) likewise
   // has no turn to resume and no transcript to append to.
   if (row.origin === "desk") {
     return applyDeskApproveSideEffects(approvalId, snapshot);

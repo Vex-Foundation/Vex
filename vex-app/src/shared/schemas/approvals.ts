@@ -152,7 +152,7 @@ export type ApprovalExecutionStatus = z.infer<
  * `agent` is Vex's own agent loop; `studio_mcp` is an external coding agent
  * that reached Vex through the Vex Studio MCP host; `desk` is the user's own
  * click on the Lighter desk (Close, Cancel, the ticket's Long/Short), turned
- * into a proposal by main with no model in the loop (migration 164). The
+ * into a proposal by main with no model in the loop (migration 165). The
  * distinction is a money-path fact: "an external tool asked my wallet to do
  * this" is a different thing for a user to approve than "the assistant I was
  * talking to asked", and both differ from "I asked, from a button".

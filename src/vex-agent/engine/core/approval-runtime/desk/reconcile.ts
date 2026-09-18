@@ -1,5 +1,5 @@
 /**
- * Process-start recovery for desk rows (migration 164), the desk counterpart
+ * Process-start recovery for desk rows (migration 165), the desk counterpart
  * of `../studio/reconcile-dispatching.ts`: a row still `dispatching` when the
  * process starts was abandoned mid-call, and nobody can prove what the
  * exchange did with it. It becomes `indeterminate`, never a retry.

@@ -99,7 +99,7 @@ export {
 } from "./approval-runtime/studio/reconcile-dispatching.js";
 
 /**
- * The desk lane (migration 164): the Lighter desk's own buttons prepare and
+ * The desk lane (migration 165): the Lighter desk's own buttons prepare and
  * enqueue an approval with no model turn, and recover their abandoned
  * dispatches at process start the same way Studio does.
  */

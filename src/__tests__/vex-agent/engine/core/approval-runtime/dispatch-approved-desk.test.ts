@@ -1,5 +1,5 @@
 /**
- * The desk lane's approve half (migration 164): a `desk` row dispatches
+ * The desk lane's approve half (migration 165): a `desk` row dispatches
  * through the same slot gate and the same `dispatchTool` as an agent row, but
  * writes no transcript tool result, claims no continuation, and settles
  * through `commitDeskSettlementWith`. Its outcome rides the approve reply.

@@ -65,7 +65,7 @@ export async function dispatchRejectSideEffects(
   if (snapshot.row.origin !== "studio_mcp" && snapshot.row.origin !== "desk") {
     return applyRejectSideEffects(approvalId, snapshot, toolResultContent);
   }
-  // A desk row (migration 164) has no transcript either and nobody to announce
+  // A desk row (migration 165) has no transcript either and nobody to announce
   // to: the desk reads the outcome off the decision reply.
   if (snapshot.row.origin === "studio_mcp") {
     announceStudioRejection(approvalId, snapshot.row);

@@ -1,5 +1,5 @@
 /**
- * The desk lane's PREPARE half (migration 164): the Lighter desk's own Close,
+ * The desk lane's PREPARE half (migration 165): the Lighter desk's own Close,
  * Cancel and Long/Short buttons, with no model turn in front of them.
  *
  * It is the agent lane's prepared-action hop

@@ -1,5 +1,5 @@
 /**
- * Desk settlement writes (migration 164). Same table, fourth reason to change:
+ * Desk settlement writes (migration 165). Same table, fourth reason to change:
  * a desk row has no transcript message to point at and no Studio settlement
  * blob to release, so its dispatch settles on the row alone. The desk reads
  * the tool outcome from the approve reply; the row keeps the durable status
