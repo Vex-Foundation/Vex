@@ -15,7 +15,10 @@ import { buildLighterDepositCalldata } from "@tools/lighter/wallet-funding/depos
 import { LIGHTER_CORE_WITHDRAW_GATEWAY_ABI } from "@tools/lighter/withdrawal/core-preflight.js";
 import { LIGHTER_WITHDRAWAL_CLAIM_CRITICAL_ARG_KEYS } from "../protocols/lighter/withdrawal-claim-approval-binding.js";
 import { lighterOrderFeeCriticalArgs, readLighterOrderFeeTerms } from "@tools/lighter/order-fee-terms.js";
-import { validateLighterFeeAuthorizationCriticalArgs } from "../protocols/lighter/fee-authorization-disclosure.js";
+import {
+  LIGHTER_FEE_AUTHORIZATION_CRITICAL_KEYS,
+  validateLighterFeeAuthorizationCriticalArgs,
+} from "../protocols/lighter/fee-authorization-disclosure.js";
 import {
   LIGHTER_PHASE_ONE_ORDER_TYPES,
   LIGHTER_PHASE_ONE_TIME_IN_FORCE,
@@ -548,6 +551,26 @@ function copyLighterFeeTerms(source: Record<string, ApprovalPreviewScalar>, targ
   } catch { return false; }
 }
 
+/**
+ * VEX's fixed fee, bundled onto the SAME key-registration card so one
+ * approval covers both (see `key-registration-approval-binding.ts`). Every
+ * fee field rides under its `fee`-prefixed name there to avoid colliding with
+ * key-registration's own field names; derived here from the ONE list of real
+ * fee field names so the two can never drift apart.
+ */
+const LIGHTER_KEY_REGISTRATION_FEE_BUNDLE_KEYS = LIGHTER_FEE_AUTHORIZATION_CRITICAL_KEYS.map(
+  (key) => `fee${key.charAt(0).toUpperCase()}${key.slice(1)}`,
+);
+
+function unprefixLighterFeeBundleKeys(source: Record<string, ApprovalPreviewScalar>): Record<string, ApprovalPreviewScalar> {
+  const out: Record<string, ApprovalPreviewScalar> = {};
+  for (const prefixedKey of LIGHTER_KEY_REGISTRATION_FEE_BUNDLE_KEYS) {
+    const original = `${prefixedKey.charAt(3).toLowerCase()}${prefixedKey.slice(4)}`;
+    out[original] = source[prefixedKey]!;
+  }
+  return out;
+}
+
 function validateLighterKeyRegistrationFollowUp(
   candidate: PreparedActionFollowUp,
 ): PreparedActionFollowUpValidation {
@@ -577,14 +600,20 @@ function validateLighterKeyRegistrationFollowUp(
   if (preview.toolName !== "key.register" || preview.namespace !== "lighter") {
     return { ok: false, reason: "invalid_contract" };
   }
+  const presentKeys = Object.keys(preview.criticalArgs).sort().join(",");
+  const feeBundled = presentKeys
+    === [...LIGHTER_KEY_REGISTRATION_PREVIEW_KEYS, ...LIGHTER_KEY_REGISTRATION_FEE_BUNDLE_KEYS].sort().join(",");
   if (
-    Object.keys(preview.criticalArgs).sort().join(",")
-    !== [...LIGHTER_KEY_REGISTRATION_PREVIEW_KEYS].sort().join(",")
+    !feeBundled
+    && presentKeys !== [...LIGHTER_KEY_REGISTRATION_PREVIEW_KEYS].sort().join(",")
   ) {
     return { ok: false, reason: "invalid_contract" };
   }
+  const fullKeySet = feeBundled
+    ? [...LIGHTER_KEY_REGISTRATION_PREVIEW_KEYS, ...LIGHTER_KEY_REGISTRATION_FEE_BUNDLE_KEYS]
+    : LIGHTER_KEY_REGISTRATION_PREVIEW_KEYS;
   const criticalArgs: Record<string, ApprovalPreviewScalar> = {};
-  for (const key of LIGHTER_KEY_REGISTRATION_PREVIEW_KEYS) {
+  for (const key of fullKeySet) {
     const value = preview.criticalArgs[key];
     if (!isScalar(value)) return { ok: false, reason: "invalid_contract" };
     criticalArgs[key] = value;
@@ -627,6 +656,16 @@ function validateLighterKeyRegistrationFollowUp(
     || !isBoundedText(criticalArgs.scopeNote)
   ) {
     return { ok: false, reason: "invalid_contract" };
+  }
+  if (feeBundled) {
+    const unprefixed = unprefixLighterFeeBundleKeys(criticalArgs);
+    const feeIntentId = unprefixed.intentId;
+    if (
+      typeof feeIntentId !== "string"
+      || !validateLighterFeeAuthorizationCriticalArgs(unprefixed, feeIntentId)
+    ) {
+      return { ok: false, reason: "invalid_contract" };
+    }
   }
   return {
     ok: true,

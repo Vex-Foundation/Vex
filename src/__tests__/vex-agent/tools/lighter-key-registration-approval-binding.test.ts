@@ -111,12 +111,12 @@ beforeEach(() => {
 });
 
 describe("Lighter key-registration approval binding", () => {
-  it("accepts only the exact approved intent and persisted disclosure", async () => {
+  it("accepts only the exact approved intent and persisted disclosure, with no fee bundled", async () => {
     await expect(assertLighterKeyRegistrationApprovalBinding({
       approvalId: "approval-1",
       sessionId: "session-1",
       intent: INTENT,
-    })).resolves.toBeUndefined();
+    })).resolves.toBeNull();
   });
 
   it.each([

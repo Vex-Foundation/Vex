@@ -45,13 +45,34 @@ const FEE_AUTHORIZATION_LABELS: Readonly<Record<string,string>> = {
   exchangeFees: "Lighter exchange fees", scopeNote: "Permission scope",
 };
 
+/**
+ * The same fee labels, under their `fee`-prefixed names, for the key-
+ * registration card VEX's fixed fee rides on (`key-registration-approval-
+ * binding.ts`'s `buildLighterKeyRegistrationCriticalArgs`). Derived from
+ * `FEE_AUTHORIZATION_LABELS` so the two label sets can never drift apart.
+ */
+const FEE_AUTHORIZATION_BUNDLE_LABELS: Readonly<Record<string,string>> = Object.fromEntries(
+  Object.entries(FEE_AUTHORIZATION_LABELS).map(
+    ([key, label]) => [`fee${key.charAt(0).toUpperCase()}${key.slice(1)}`, label],
+  ),
+);
+
 function visibleCriticalArgs(criticalArgs: ApprovalPreview["criticalArgs"]): [string,unknown][] {
   const entries=Object.entries(criticalArgs);
   // The fee card's human rows already disclose every permission term. Numeric
   // duplicates and the internal key/intent identities stay bound in the host's
   // approval record, without making users review signer implementation fields.
-  return criticalArgs.toolId==="lighter.fees.approve"
-    ? entries.filter(([key])=>key in FEE_AUTHORIZATION_LABELS) : entries;
+  if (criticalArgs.toolId==="lighter.fees.approve") {
+    return entries.filter(([key])=>key in FEE_AUTHORIZATION_LABELS);
+  }
+  // VEX's fixed fee, bundled onto the key-registration card: show the same
+  // curated fee rows the standalone fee card would, alongside key
+  // registration's own fields, and hide the rest of the fee disclosure's
+  // internal/duplicate fields exactly as the standalone card does.
+  if (criticalArgs.toolId==="lighter.key.register" && "feeIntentId" in criticalArgs) {
+    return entries.filter(([key])=>!key.startsWith("fee") || key in FEE_AUTHORIZATION_BUNDLE_LABELS);
+  }
+  return entries;
 }
 
 function isLighterCreateOrderBehavior(
@@ -82,6 +103,9 @@ function criticalArgLabel(
   criticalArgs: ApprovalPreview["criticalArgs"],
 ): string {
   if (criticalArgs.toolId === "lighter.fees.approve") return FEE_AUTHORIZATION_LABELS[key] ?? key;
+  if (criticalArgs.toolId === "lighter.key.register" && key in FEE_AUTHORIZATION_BUNDLE_LABELS) {
+    return FEE_AUTHORIZATION_BUNDLE_LABELS[key]!;
+  }
   if (isLighterCreateOrderBehavior(key, criticalArgs[key], criticalArgs)) {
     return "Order behavior";
   }

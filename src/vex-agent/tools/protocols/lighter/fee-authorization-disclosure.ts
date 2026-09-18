@@ -87,6 +87,28 @@ const AUTHORIZATION_DURATION =
 const REVOKED_DURATION =
   "Revoked now. Authorizing again later is a fresh approval, valid for 10 years from that approval.";
 
+/**
+ * The fee disclosure, key-by-key, under a `fee`-prefixed name.
+ *
+ * Bundled onto the key-registration card (see `key-registration-approval-
+ * binding.ts`), the two disclosures land in ONE flat criticalArgs object -
+ * `ApprovalPreviewScalar` allows no nesting - and nine of this disclosure's
+ * keys (`toolId`, `intentId`, `walletAddress`, `summary`, `scopeNote`,
+ * `environment`, `accountIndex`, `apiKeyIndex`, `publicKey`) collide by name
+ * with key-registration's own, with different values. Prefixing every key
+ * mechanically, rather than cherry-picking the colliding ones, means a future
+ * field added to the fee disclosure can never silently collide again.
+ */
+export function prefixLighterFeeDisclosureForBundle(
+  disclosure: Record<string, ApprovalPreviewScalar>,
+): Record<string, ApprovalPreviewScalar> {
+  const prefixed: Record<string, ApprovalPreviewScalar> = {};
+  for (const [key, value] of Object.entries(disclosure)) {
+    prefixed[`fee${key.charAt(0).toUpperCase()}${key.slice(1)}`] = value;
+  }
+  return prefixed;
+}
+
 export function buildLighterFeeAuthorizationDisclosure(
   intent: LighterFeeAuthorizationIntentRow,
 ): Record<string, ApprovalPreviewScalar> {

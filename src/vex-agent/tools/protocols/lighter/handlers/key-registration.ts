@@ -8,6 +8,8 @@ import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deplo
 import { buildLighterKeyRegistrationApprovalDisclosure } from "@tools/lighter/wallet-funding/key-registration-approval-disclosure.js";
 import type { LighterEnvironment } from "@tools/lighter/constants.js";
 import * as keyIntentsRepo from "@vex-agent/db/repos/lighter-key-registration-intents.js";
+import type { LighterFeeAuthorizationIntentRow } from "@vex-agent/db/repos/lighter-fee-authorization-intents.js";
+import * as feeIntentsRepo from "@vex-agent/db/repos/lighter-fee-authorization-intents.js";
 import {
   isLighterIntegrationEnabled,
   setLighterIntegrationEnabled,
@@ -22,13 +24,55 @@ import {
   withSessionControlLocks,
 } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { resolveSelectedAddress, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
-import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "../../../types.js";
+import type { PreparedActionFollowUp } from "../../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
-import type { ProtocolHandler } from "../../types.js";
-import { assertLighterKeyRegistrationApprovalBinding } from "../key-registration-approval-binding.js";
+import type { ProtocolExecutionContext, ProtocolHandler } from "../../types.js";
+import {
+  assertLighterKeyRegistrationApprovalBinding,
+  buildLighterKeyRegistrationCriticalArgs,
+} from "../key-registration-approval-binding.js";
 import { getConfiguredLighterKeyRegistrationExecutor } from "../key-registration-execution.js";
 import { getConfiguredLighterKeyRegistrationCredentialPreparer } from "../key-registration-preparation.js";
+import { getConfiguredLighterFeeAuthorizationService } from "../fee-authorization-execution.js";
 import { readEnvironment } from "../params.js";
+
+/**
+ * VEX's fee is fixed (0.1% perps / 0.25% spot, a 10-year authorization) and
+ * never re-priced per install, so there is nothing to re-approve later: fold
+ * it into the SAME key-registration card instead of a second one. Returns
+ * `null` whenever there is nothing to bundle right now - fees already
+ * active, the environment carries no fee policy, the service is unavailable,
+ * or the account is in a state `fees.approve.prepare` itself would refuse
+ * (e.g. mid tier-change dispute). Every one of those is exactly today's
+ * key-only card, unchanged, with the existing `nextToolId` handoff after
+ * registration as the fallback path.
+ */
+async function resolveBundledFeeIntent(input: {
+  readonly sessionId: string;
+  readonly environment: LighterEnvironment;
+  readonly context: ProtocolExecutionContext;
+}): Promise<LighterFeeAuthorizationIntentRow | null> {
+  if (getLighterFeePolicy(input.environment) === null) return null;
+  const service = getConfiguredLighterFeeAuthorizationService();
+  if (service === null) return null;
+  const setup = {
+    sessionId: input.sessionId,
+    environment: input.environment,
+    walletResolution: input.context.walletResolution,
+    walletPolicy: input.context.walletPolicy,
+  };
+  try {
+    const readiness = await service.inspect(setup);
+    if (readiness.status !== "needs_approval") return null;
+    const intent = await service.prepare({ ...setup, revoke: false });
+    return intent.executionState === "approval_pending" ? intent : null;
+  } catch {
+    // Fee bundling is a bonus on top of key registration, never a blocker for
+    // it. Anything wrong here surfaces later through the existing
+    // fees.approve.prepare fallback instead of failing registration itself.
+    return null;
+  }
+}
 
 const INTENT_TTL_MS = 15 * 60 * 1_000;
 
@@ -67,26 +111,9 @@ async function resolveOrAdoptExistingAccount(
 
 export function buildKeyRegistrationApprovalFollowUp(
   intent: keyIntentsRepo.LighterKeyRegistrationReservationRow,
+  bundledFeeIntent: LighterFeeAuthorizationIntentRow | null = null,
 ): PreparedActionFollowUp {
-  const disclosure = buildLighterKeyRegistrationApprovalDisclosure(intent);
-  const criticalArgs: Record<string, ApprovalPreviewScalar> = {
-    toolId: "lighter.key.register",
-    intentId: intent.intentId,
-    environment: intent.environment,
-    walletAddress: disclosure.walletAddress,
-    ethereumChainId: disclosure.ethereumChainId,
-    lighterChainId: disclosure.lighterChainId,
-    accountIndex: disclosure.accountIndex,
-    apiKeyIndex: disclosure.apiKeyIndex,
-    registrationNonce: disclosure.registrationNonce,
-    publicKey: disclosure.publicKey,
-    publicKeyFingerprint: disclosure.publicKeyFingerprint,
-    vaultCredentialId: disclosure.vaultCredentialId,
-    summary: disclosure.summary,
-    authorityNote: disclosure.authorityNote,
-    signatureNote: disclosure.signatureNote,
-    scopeNote: disclosure.scopeNote,
-  };
+  const criticalArgs = buildLighterKeyRegistrationCriticalArgs(intent, bundledFeeIntent);
   return {
     toolName: "execute_tool",
     args: {
@@ -105,6 +132,7 @@ export function buildKeyRegistrationApprovalFollowUp(
 function approvalPreparedPayload(
   intent: keyIntentsRepo.LighterKeyRegistrationReservationRow,
   reissued = false,
+  feeBundled = false,
 ): Record<string, unknown> {
   const disclosure = buildLighterKeyRegistrationApprovalDisclosure(intent);
   return {
@@ -112,7 +140,9 @@ function approvalPreparedPayload(
     status: reissued ? "approval_reissued" : "approval_prepared",
     message: reissued
       ? "The unchanged Lighter key registration is safe to retry; Vex will request a fresh approval for the exact same account, slot, public key, and nonce."
-      : "Lighter key registration prepared; Vex will request approval for this exact account, slot, public key, and nonce.",
+      : feeBundled
+        ? "Lighter key registration prepared; Vex will request one approval covering this exact account, slot, public key, nonce, and VEX's fixed trading fee (0.1% perps / 0.25% spot, authorized once for as long as the key is active)."
+        : "Lighter key registration prepared; Vex will request approval for this exact account, slot, public key, and nonce.",
     intentId: intent.intentId,
     environment: intent.environment,
     walletAddress: disclosure.walletAddress,
@@ -128,11 +158,12 @@ function approvalPreparedPayload(
     expiresAt: intent.expiresAt.toISOString(),
     approvalUi: {
       surface: "approval_card",
-      approveLabel: "Approve key registration",
+      approveLabel: feeBundled ? "Approve key registration and fees" : "Approve key registration",
       rejectLabel: "Reject",
     },
-    userGuidance:
-      "Vex prepared the remaining secure trading setup and an approval card is available in the app. Tell the user to review and approve that setup if they want to continue. Do not ask them for or require them to validate account indexes, API-key indexes, nonces, fingerprints, or key material unless they explicitly request technical details.",
+    userGuidance: feeBundled
+      ? "Vex prepared the remaining secure trading setup, bundled with VEX's one-time fixed fee authorization, and an approval card is available in the app. Tell the user this single approval covers both. Do not ask them for or require them to validate account indexes, API-key indexes, nonces, fingerprints, or key material unless they explicitly request technical details."
+      : "Vex prepared the remaining secure trading setup and an approval card is available in the app. Tell the user to review and approve that setup if they want to continue. Do not ask them for or require them to validate account indexes, API-key indexes, nonces, fingerprints, or key material unless they explicitly request technical details.",
   };
 }
 
@@ -360,9 +391,14 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
       }
       const reissuingApproval = isPristineApprovedIntent(reserved);
       const approvalPending = await prepareApprovalPendingIntent(reserved, sessionId);
+      const bundledFeeIntent = await resolveBundledFeeIntent({
+        sessionId,
+        environment: environment.value,
+        context,
+      });
       return {
-        ...ok(approvalPreparedPayload(approvalPending, reissuingApproval)),
-        preparedActionFollowUp: buildKeyRegistrationApprovalFollowUp(approvalPending),
+        ...ok(approvalPreparedPayload(approvalPending, reissuingApproval, bundledFeeIntent !== null)),
+        preparedActionFollowUp: buildKeyRegistrationApprovalFollowUp(approvalPending, bundledFeeIntent),
       };
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));
@@ -399,8 +435,9 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
     ) {
       return fail(`Lighter key-registration intent ${intent.intentId} expired before approval resume.`);
     }
+    let bundledFeeIntent: LighterFeeAuthorizationIntentRow | null;
     try {
-      await assertLighterKeyRegistrationApprovalBinding({
+      bundledFeeIntent = await assertLighterKeyRegistrationApprovalBinding({
         approvalId: context.approvalId,
         sessionId,
         intent,
@@ -418,6 +455,23 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
       : intent.approvalStatus === "approved" ? intent : null;
     if (approved === null) {
       return fail(`Lighter key-registration intent ${intent.intentId} is not approval-authorized.`);
+    }
+    // Mark the bundled fee intent approved NOW, under the same card, rather
+    // than after key registration executes: that execution can take real
+    // wall-clock time (signing, submission, chain confirmation), and the fee
+    // intent's own approval-pending TTL should not be spent waiting on it.
+    let approvedFeeIntent: LighterFeeAuthorizationIntentRow | null = null;
+    if (bundledFeeIntent !== null) {
+      approvedFeeIntent = await withSessionControlLock(sessionId, (client) =>
+        feeIntentsRepo.markLighterFeeAuthorizationDecisionWith(client, {
+          intentId: bundledFeeIntent.intentId,
+          sessionId,
+          approvalId: context.approvalId!,
+          status: "approved",
+        }));
+      // A lost race or an intent that moved out of approval_pending some other
+      // way is not this call's problem to solve: registration proceeds either
+      // way, and fees.approve.prepare remains the recovery path.
     }
     const executor = getConfiguredLighterKeyRegistrationExecutor();
     if (executor === null) {
@@ -438,7 +492,35 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
         walletPolicy: context.walletPolicy,
         abortSignal: context.abortSignal,
       });
-      return ok(result.status === "active" && getLighterFeePolicy(approved.environment) !== null
+      if (result.status !== "active") return ok(result);
+      if (approvedFeeIntent !== null) {
+        const feeService = getConfiguredLighterFeeAuthorizationService();
+        if (feeService !== null) {
+          try {
+            const feeResult = await feeService.execute({
+              sessionId,
+              intentId: approvedFeeIntent.intentId,
+              walletResolution: context.walletResolution,
+              walletPolicy: context.walletPolicy,
+              abortSignal: context.abortSignal,
+            });
+            return ok({
+              ...result,
+              feeAuthorization: feeResult,
+              message: feeResult.status === "active"
+                ? "The local trading key is active and VEX's fixed trading fee (0.1% maker/taker perps, 0.25% maker/taker spot) is authorized for as long as this key stays active. No further fee approval is needed."
+                : `The local trading key is active. ${feeResult.message}`,
+            });
+          } catch (error) {
+            return ok({
+              ...result,
+              message: "The local trading key is active. VEX's bundled fee authorization hit an error and needs attention; check lighter.fees.status.",
+              feeAuthorizationError: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      }
+      return ok(getLighterFeePolicy(approved.environment) !== null
         ? { ...result,
             message: "The local trading key is active. Continue Lighter fee authorization before preparing a new fee-bearing trade.",
             nextToolId: "lighter.fees.approve.prepare",

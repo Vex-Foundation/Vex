@@ -36,6 +36,11 @@ const mocks = vi.hoisted(() => ({
   assertApprovalBinding: vi.fn(),
   getExecutor: vi.fn(),
   executeRegistration: vi.fn(),
+  inspectFeeSetup: vi.fn(),
+  prepareFeeSetup: vi.fn(),
+  executeFeeSetup: vi.fn(),
+  getFeeService: vi.fn(),
+  markFeeDecision: vi.fn(),
 }));
 
 vi.mock("@tools/lighter/client.js", () => ({
@@ -85,12 +90,22 @@ vi.mock("@vex-agent/tools/protocols/lighter/key-registration-preparation.js", ()
   getConfiguredLighterKeyRegistrationCredentialPreparer: mocks.getPreparer,
 }));
 
-vi.mock("@vex-agent/tools/protocols/lighter/key-registration-approval-binding.js", () => ({
+vi.mock("@vex-agent/tools/protocols/lighter/key-registration-approval-binding.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/tools/protocols/lighter/key-registration-approval-binding.js")>()),
   assertLighterKeyRegistrationApprovalBinding: mocks.assertApprovalBinding,
 }));
 
 vi.mock("@vex-agent/tools/protocols/lighter/key-registration-execution.js", () => ({
   getConfiguredLighterKeyRegistrationExecutor: mocks.getExecutor,
+}));
+
+vi.mock("@vex-agent/tools/protocols/lighter/fee-authorization-execution.js", () => ({
+  getConfiguredLighterFeeAuthorizationService: mocks.getFeeService,
+}));
+
+vi.mock("@vex-agent/db/repos/lighter-fee-authorization-intents.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/db/repos/lighter-fee-authorization-intents.js")>()),
+  markLighterFeeAuthorizationDecisionWith: (_client: unknown, input: unknown) => mocks.markFeeDecision(input),
 }));
 
 const { LIGHTER_KEY_REGISTRATION_HANDLERS } = await import(
@@ -149,6 +164,43 @@ function row(
   };
 }
 
+function feeIntent() {
+  return {
+    intentId: "fees-00000000-0000-4000-8000-000000000001",
+    sessionId: "session-1",
+    environment: "core" as const,
+    walletAddress: WALLET,
+    accountIndex: 42,
+    apiKeyIndex: 6,
+    terms: {
+      collectorAccountIndex: 743799,
+      collectorL1Address: "0x10ce97cf3142be2a1a28ac83a55b21fdce493c03",
+      maxPerpsMakerFee: 1000,
+      maxPerpsTakerFee: 1000,
+      maxSpotMakerFee: 2500,
+      maxSpotTakerFee: 2500,
+      authorizationExpiryMs: 2208988800000,
+      revoke: false,
+      publicKey: PUBLIC_KEY,
+      currentTier: "standard" as const,
+      targetTier: "plus" as const,
+      exchangeMakerFeeTick: 50,
+      exchangeTakerFeeTick: 50,
+      currentExchangeMakerFeeTick: null,
+      currentExchangeTakerFeeTick: null,
+    },
+    approvalId: null,
+    approvalStatus: "approval_pending" as const,
+    executionState: "approval_pending" as const,
+    nonceValue: null,
+    txHash: null,
+    txExpiryMs: null,
+    failureReason: null,
+    expiresAt: new Date("2030-01-01T00:15:00.000Z"),
+    verifiedAt: null,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.resolveSelectedAddress.mockReturnValue(WALLET);
@@ -191,8 +243,9 @@ beforeEach(() => {
   mocks.markApproved.mockResolvedValue(row("approved"));
   mocks.renewPristineApproved.mockResolvedValue(row("approved"));
   mocks.adoptPristineApproval.mockResolvedValue(null);
-  mocks.assertApprovalBinding.mockResolvedValue(undefined);
+  mocks.assertApprovalBinding.mockResolvedValue(null);
   mocks.getExecutor.mockReturnValue(null);
+  mocks.getFeeService.mockReturnValue(null);
 });
 
 describe("lighter.key.register.prepare", () => {
@@ -469,6 +522,80 @@ describe("lighter.key.register.prepare", () => {
     expect(result.output).toContain("already in approved");
     expect(result.preparedActionFollowUp).toBeUndefined();
   });
+
+  it("bundles VEX's fixed fee onto the same card when fee setup needs approval", async () => {
+    mocks.getFeeService.mockReturnValue({
+      inspect: mocks.inspectFeeSetup,
+      prepare: mocks.prepareFeeSetup,
+      execute: mocks.executeFeeSetup,
+    });
+    mocks.inspectFeeSetup.mockResolvedValue({ status: "needs_approval", reason: "", accountIndex: 42 });
+    mocks.prepareFeeSetup.mockResolvedValue(feeIntent());
+
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.prepareFeeSetup).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "session-1",
+      environment: "core",
+      revoke: false,
+    }));
+    const followUp = requireValue(result.preparedActionFollowUp);
+    const validated = validatePreparedActionFollowUp("lighter.key.register.prepare", followUp);
+    expect(validated.ok, JSON.stringify(validated)).toBe(true);
+    if (!validated.ok) return;
+    const criticalArgs = validated.followUp.approvalPreview.criticalArgs;
+    expect(criticalArgs.toolId).toBe("lighter.key.register");
+    expect(criticalArgs.feeToolId).toBe("lighter.fees.approve");
+    expect(criticalArgs.feeIntentId).toBe(feeIntent().intentId);
+    expect(criticalArgs.feePerpetualFee).toContain("0.1%");
+    expect(criticalArgs.feeSpotFee).toContain("0.25%");
+  });
+
+  it.each([
+    ["ready" as const],
+    ["disabled" as const],
+    ["blocked" as const],
+  ])("does not bundle a fee card when readiness is %s", async (status) => {
+    mocks.getFeeService.mockReturnValue({
+      inspect: mocks.inspectFeeSetup,
+      prepare: mocks.prepareFeeSetup,
+      execute: mocks.executeFeeSetup,
+    });
+    mocks.inspectFeeSetup.mockResolvedValue({ status, reason: "n/a", accountIndex: 42 });
+
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.prepareFeeSetup).not.toHaveBeenCalled();
+    const followUp = requireValue(result.preparedActionFollowUp);
+    const validated = validatePreparedActionFollowUp("lighter.key.register.prepare", followUp);
+    expect(validated.ok, JSON.stringify(validated)).toBe(true);
+    if (!validated.ok) return;
+    expect(validated.followUp.approvalPreview.criticalArgs.feeIntentId).toBeUndefined();
+  });
+
+  it("does not bundle when no fee service is configured", async () => {
+    mocks.getFeeService.mockReturnValue(null);
+
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    const followUp = requireValue(result.preparedActionFollowUp);
+    const validated = validatePreparedActionFollowUp("lighter.key.register.prepare", followUp);
+    expect(validated.ok, JSON.stringify(validated)).toBe(true);
+    if (!validated.ok) return;
+    expect(validated.followUp.approvalPreview.criticalArgs.feeIntentId).toBeUndefined();
+  });
 });
 
 describe("lighter.key.register", () => {
@@ -529,5 +656,94 @@ describe("lighter.key.register", () => {
       walletPolicy: context.walletPolicy,
       abortSignal: undefined,
     });
+  });
+
+  it("marks the bundled fee intent approved and executes it right after the key goes active", async () => {
+    mocks.findIntent.mockResolvedValue(row("approval_pending"));
+    mocks.assertApprovalBinding.mockResolvedValue(feeIntent());
+    mocks.markFeeDecision.mockResolvedValue({ ...feeIntent(), approvalStatus: "approved", executionState: "approved" });
+    mocks.getExecutor.mockReturnValue({ execute: mocks.executeRegistration });
+    mocks.executeRegistration.mockResolvedValue({
+      source: "vex_lighter_key_registration",
+      status: "active",
+      intentId: INTENT_ID,
+      executionState: "active",
+      accountIndex: 42,
+      apiKeyIndex: 6,
+      txHash: "a".repeat(80),
+      postRegistrationNonce: "1",
+      message: "Registration verified.",
+    });
+    mocks.getFeeService.mockReturnValue({
+      inspect: mocks.inspectFeeSetup,
+      prepare: mocks.prepareFeeSetup,
+      execute: mocks.executeFeeSetup,
+    });
+    mocks.executeFeeSetup.mockResolvedValue({
+      source: "vex_lighter_fee_authorization",
+      status: "active",
+      intentId: feeIntent().intentId,
+      executionState: "active",
+      txHash: "b".repeat(64),
+      message: "Lighter confirmed VEX's spot and perpetual fee authorization. Future trades keep their normal approval requirement.",
+    });
+
+    const context = { ...CONTEXT, approved: true, approvalId: "approval-1" };
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register"])(
+      { intentId: INTENT_ID },
+      context,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.markFeeDecision).toHaveBeenCalledWith({
+      intentId: feeIntent().intentId,
+      sessionId: "session-1",
+      approvalId: "approval-1",
+      status: "approved",
+    });
+    expect(mocks.executeFeeSetup).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      intentId: feeIntent().intentId,
+      walletResolution: context.walletResolution,
+      walletPolicy: context.walletPolicy,
+      abortSignal: undefined,
+    });
+    expect(result.data?.feeAuthorization).toMatchObject({ status: "active" });
+    // No second card - the fallback nextToolId handoff must not fire when the
+    // fee leg already ran as part of this same approval.
+    expect(result.data?.nextToolId).toBeUndefined();
+  });
+
+  it("still reports the key as active if the bundled fee execution errors, without failing the call", async () => {
+    mocks.findIntent.mockResolvedValue(row("approval_pending"));
+    mocks.assertApprovalBinding.mockResolvedValue(feeIntent());
+    mocks.markFeeDecision.mockResolvedValue({ ...feeIntent(), approvalStatus: "approved", executionState: "approved" });
+    mocks.getExecutor.mockReturnValue({ execute: mocks.executeRegistration });
+    mocks.executeRegistration.mockResolvedValue({
+      source: "vex_lighter_key_registration",
+      status: "active",
+      intentId: INTENT_ID,
+      executionState: "active",
+      accountIndex: 42,
+      apiKeyIndex: 6,
+      txHash: "a".repeat(80),
+      postRegistrationNonce: "1",
+      message: "Registration verified.",
+    });
+    mocks.getFeeService.mockReturnValue({
+      inspect: mocks.inspectFeeSetup,
+      prepare: mocks.prepareFeeSetup,
+      execute: mocks.executeFeeSetup,
+    });
+    mocks.executeFeeSetup.mockRejectedValue(new Error("nonce reservation lost"));
+
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register"])(
+      { intentId: INTENT_ID },
+      { ...CONTEXT, approved: true, approvalId: "approval-1" },
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(result.data?.status).toBe("active");
+    expect(result.data?.feeAuthorizationError).toContain("nonce reservation lost");
   });
 });
