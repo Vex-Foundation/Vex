@@ -102,7 +102,8 @@ export const LIGHTER_FEE_AUTHORIZATION_HANDLERS: Record<
     }
   },
   "lighter.fees.approve": async (params, context) => {
-    if (!context.approved || !context.approvalId)
+    const fullAccess = context.sessionPermission === "full";
+    if (!fullAccess && (!context.approved || !context.approvalId))
       return {
         success: false,
         pendingApproval: true,
@@ -123,18 +124,22 @@ export const LIGHTER_FEE_AUTHORIZATION_HANDLERS: Record<
       );
       if (!intent || intent.sessionId !== context.sessionId)
         return fail("Fee authorization does not belong to this session.");
-      await assertLighterFeeAuthorizationApprovalBinding({
-        intent,
-        sessionId: context.sessionId,
-        approvalId: context.approvalId,
-      });
+      const approvalId = context.approvalId ?? null;
+      if (!fullAccess) {
+        if (!approvalId) return fail("Fee authorization requires an approval id to bind against.");
+        await assertLighterFeeAuthorizationApprovalBinding({
+          intent,
+          sessionId: context.sessionId,
+          approvalId,
+        });
+      }
       const approved =
         intent.executionState === "approval_pending"
           ? await withSessionControlLock(context.sessionId, (client) =>
               intents.markLighterFeeAuthorizationDecisionWith(client, {
                 intentId: intent.intentId,
                 sessionId: context.sessionId!,
-                approvalId: context.approvalId!,
+                approvalId,
                 status: "approved",
               }),
             )
@@ -142,7 +147,7 @@ export const LIGHTER_FEE_AUTHORIZATION_HANDLERS: Record<
       if (
         !approved ||
         approved.approvalStatus !== "approved" ||
-        approved.approvalId !== context.approvalId
+        (approved.approvalId ?? null) !== approvalId
       ) {
         return fail(
           "The fee authorization expired or its approval changed. Prepare it again.",

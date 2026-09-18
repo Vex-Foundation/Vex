@@ -628,6 +628,77 @@ describe("lighter.deposit execution lease", () => {
     expect(mocks.leaseRelease).toHaveBeenCalledTimes(1);
   });
 
+  it("executes a full-access deposit with no approval card and no binding lookup", async () => {
+    const fullContext: ProtocolExecutionContext = {
+      ...CONTEXT,
+      sessionPermission: "full",
+      approved: false,
+    };
+    const pending = rhcIntentRow();
+    const approved = rhcIntentRow({
+      approvalId: null,
+      approvalStatus: "approved",
+      executionState: "approved",
+    });
+    mocks.findByIntentId.mockResolvedValueOnce(pending);
+    mocks.markApprovalDecision.mockResolvedValueOnce(approved);
+    mocks.readDepositPreflight.mockResolvedValueOnce(rhcPreflightSnapshot());
+    mocks.acquireExecutionLease.mockResolvedValueOnce({
+      acquired: true,
+      handle: {
+        assertOwned: mocks.leaseAssertOwned,
+        releaseExecutionLease: mocks.leaseRelease,
+      },
+    });
+    mocks.resolveSigningWallet.mockReturnValueOnce({
+      family: "eip155",
+      address: WALLET,
+      privateKey: `0x${"1".repeat(64)}`,
+    });
+    mocks.executeApprovedDeposit.mockResolvedValueOnce({
+      status: "l2_pending",
+      approveTxHash: `0x${"a".repeat(64)}`,
+      depositTxHash: `0x${"b".repeat(64)}`,
+      reason: "exact RHC Lighter evidence pending",
+    });
+
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"])(
+      { intentId: pending.intentId },
+      fullContext,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.assertApprovalBinding).not.toHaveBeenCalled();
+    expect(mocks.markApprovalDecision).toHaveBeenCalledWith(expect.objectContaining({
+      approvalId: null,
+      reason: "auto-approved: session permission is full access",
+    }));
+    expect(mocks.executeApprovedDeposit).toHaveBeenCalledWith({
+      intent: approved,
+      deps: { marker: "execution-deps" },
+    });
+  });
+
+  it("refuses a full-access deposit for an intent nothing prepared", async () => {
+    const fullContext: ProtocolExecutionContext = {
+      ...CONTEXT,
+      sessionPermission: "full",
+      approved: false,
+    };
+    mocks.findByIntentId.mockResolvedValueOnce(null);
+
+    const result = await requireValue(LIGHTER_DEPOSIT_HANDLERS["lighter.deposit"])(
+      { intentId: "lighter-onboard-never-prepared" },
+      fullContext,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.pendingApproval).not.toBe(true);
+    expect(result.output).toContain("No Lighter deposit intent");
+    expect(mocks.assertApprovalBinding).not.toHaveBeenCalled();
+    expect(mocks.markApprovalDecision).not.toHaveBeenCalled();
+  });
+
   it("refuses a busy wallet lease before resolving the private key", async () => {
     mocks.acquireExecutionLease.mockResolvedValue({
       acquired: false,

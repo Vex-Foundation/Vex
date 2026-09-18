@@ -1,11 +1,28 @@
+import { requireValue } from "../../helpers/require-value.js";
 import { claimAttempt } from "../../helpers/lighter-intents.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LighterWithdrawalClaimAttemptRow } from "@vex-agent/db/repos/lighter-withdrawal-claims.js";
 
-const mocks = vi.hoisted(() => ({ getApproval: vi.fn(), getAudit: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  getApproval: vi.fn(),
+  getAudit: vi.fn(),
+  findByClaimId: vi.fn(),
+  markDecisionWith: vi.fn(),
+  withSessionControlLock: vi.fn(),
+}));
 vi.mock("@vex-agent/db/repos/approvals.js", () => ({ getByIdForSession: mocks.getApproval }));
 vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({ getByApprovalId: mocks.getAudit }));
+// Only full-access reaches the repo directly in this file's tests - restricted
+// calls (none here) would return at the host approval gate before any lookup.
+vi.mock("@vex-agent/db/repos/lighter-withdrawal-claims.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/db/repos/lighter-withdrawal-claims.js")>()),
+  findByClaimId: mocks.findByClaimId,
+  markDecisionWith: (client: unknown, input: unknown) => mocks.markDecisionWith(input),
+}));
+vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
+  withSessionControlLock: mocks.withSessionControlLock,
+}));
 
 const {
   assertLighterCoreClaimApprovalBinding,
@@ -14,6 +31,9 @@ const {
   buildLighterWithdrawalClaimCriticalArgs,
 } = await import(
   "@vex-agent/tools/protocols/lighter/withdrawal-claim-approval-binding.js"
+);
+const { LIGHTER_WITHDRAWAL_HANDLERS } = await import(
+  "@vex-agent/tools/protocols/lighter/handlers/withdrawal.js"
 );
 
 const ATTEMPT = claimAttempt({
@@ -57,6 +77,9 @@ beforeEach(() => {
     executionStatus: "dispatching",
     previewJson: { toolName: "claim", namespace: "lighter", criticalArgs: buildLighterCoreClaimCriticalArgs(ATTEMPT) },
   });
+  mocks.findByClaimId.mockReset().mockResolvedValue(null);
+  mocks.markDecisionWith.mockReset();
+  mocks.withSessionControlLock.mockReset().mockImplementation(async (_sessionId, fn) => fn({ marker: "locked-client" }));
 });
 
 describe("Lighter RHC manual claim approval binding", () => {
@@ -140,5 +163,42 @@ describe("Lighter Core manual claim approval binding", () => {
     await expect(assertLighterCoreClaimApprovalBinding({
       approvalId: "approval-1", sessionId: "session-1", attempt: ATTEMPT,
     })).rejects.toThrow("Nothing was signed or submitted");
+  });
+
+  it("auto-approves a full-access manual claim without the binding lookup", async () => {
+    mocks.findByClaimId.mockResolvedValueOnce(ATTEMPT);
+    mocks.markDecisionWith.mockResolvedValueOnce({ ...ATTEMPT, state: "approved" });
+
+    const result = await requireValue(LIGHTER_WITHDRAWAL_HANDLERS["lighter.withdraw.claim"])(
+      { claimId: ATTEMPT.claimId },
+      { sessionId: "session-1", sessionPermission: "full", approved: false,
+        walletResolution: { source: "default" }, walletPolicy: { kind: "none" } },
+    );
+
+    expect(mocks.getApproval).not.toHaveBeenCalled();
+    expect(mocks.getAudit).not.toHaveBeenCalled();
+    expect(mocks.markDecisionWith).toHaveBeenCalledWith(expect.objectContaining({
+      decision: "approved",
+      approvalId: null,
+      reason: "auto-approved: session permission is full access",
+    }));
+    // No real chain/lease infra in this test env - proves it reached that
+    // boundary having never required a Vex approval card.
+    expect(result.pendingApproval).not.toBe(true);
+    expect(result.success).toBe(false);
+  });
+
+  it("still refuses a full-access manual claim for a claim nothing prepared", async () => {
+    const result = await requireValue(LIGHTER_WITHDRAWAL_HANDLERS["lighter.withdraw.claim"])(
+      { claimId: "claim-never-prepared" },
+      { sessionId: "session-1", sessionPermission: "full", approved: false,
+        walletResolution: { source: "default" }, walletPolicy: { kind: "none" } },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.pendingApproval).not.toBe(true);
+    expect(result.output).toContain("No manual Lighter claim");
+    expect(mocks.getApproval).not.toHaveBeenCalled();
+    expect(mocks.markDecisionWith).not.toHaveBeenCalled();
   });
 });

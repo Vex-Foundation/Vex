@@ -1,18 +1,43 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LighterFeeAuthorizationIntentRow } from "@vex-agent/db/repos/lighter-fee-authorization-intents.js";
+import { requireValue } from "../../helpers/require-value.js";
 import {
   buildLighterFeeAuthorizationDisclosure,
   validateLighterFeeAuthorizationCriticalArgs,
 } from "@vex-agent/tools/protocols/lighter/fee-authorization-disclosure.js";
-const mocks = vi.hoisted(() => ({ approval: vi.fn(), audit: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  approval: vi.fn(),
+  audit: vi.fn(),
+  findIntent: vi.fn(),
+  markDecision: vi.fn(),
+  getService: vi.fn(),
+  execute: vi.fn(),
+  withSessionControlLock: vi.fn(),
+}));
 vi.mock("@vex-agent/db/repos/approvals.js", () => ({
   getByIdForSession: mocks.approval,
 }));
 vi.mock("@vex-agent/db/repos/approval-intents.js", () => ({
   getByApprovalId: mocks.audit,
 }));
+// Only full-access reaches the repo directly in this file's tests -
+// restricted calls (none here) would return at the host approval gate before
+// any lookup.
+vi.mock("@vex-agent/db/repos/lighter-fee-authorization-intents.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/db/repos/lighter-fee-authorization-intents.js")>()),
+  findLighterFeeAuthorizationIntent: mocks.findIntent,
+  markLighterFeeAuthorizationDecisionWith: (client: unknown, input: unknown) => mocks.markDecision(input),
+}));
+vi.mock("@vex-agent/tools/protocols/lighter/fee-authorization-execution.js", () => ({
+  getConfiguredLighterFeeAuthorizationService: mocks.getService,
+}));
+vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
+  withSessionControlLock: mocks.withSessionControlLock,
+}));
 const { assertLighterFeeAuthorizationApprovalBinding } =
   await import("@vex-agent/tools/protocols/lighter/fee-authorization-approval-binding.js");
+const { LIGHTER_FEE_AUTHORIZATION_HANDLERS } =
+  await import("@vex-agent/tools/protocols/lighter/handlers/fee-authorization.js");
 
 const intent: LighterFeeAuthorizationIntentRow = {
   intentId: "fees-1",
@@ -72,6 +97,11 @@ beforeEach(() => {
       criticalArgs: buildLighterFeeAuthorizationDisclosure(intent),
     },
   });
+  mocks.findIntent.mockReset().mockResolvedValue(null);
+  mocks.markDecision.mockReset();
+  mocks.execute.mockReset();
+  mocks.getService.mockReset().mockReturnValue({ execute: mocks.execute });
+  mocks.withSessionControlLock.mockReset().mockImplementation(async (_sessionId, fn) => fn({ marker: "locked-client" }));
 });
 
 describe("Lighter fee approval", () => {
@@ -310,5 +340,41 @@ describe("Lighter fee approval", () => {
     expect(
       validateLighterFeeAuthorizationCriticalArgs(disclosure, intent.intentId),
     ).toBe(true);
+  });
+
+  it("auto-approves a full-access fee authorization without the binding lookup", async () => {
+    mocks.findIntent.mockResolvedValueOnce(intent);
+    mocks.markDecision.mockResolvedValueOnce({ ...intent, approvalStatus: "approved", approvalId: null });
+    mocks.execute.mockResolvedValueOnce({ source: "vex_lighter_fee_authorization", status: "active" });
+
+    const result = await requireValue(LIGHTER_FEE_AUTHORIZATION_HANDLERS["lighter.fees.approve"])(
+      { intentId: intent.intentId },
+      { sessionId: "session-1", sessionPermission: "full", approved: false,
+        walletResolution: { source: "default" }, walletPolicy: { kind: "none" } },
+    );
+
+    expect(mocks.approval).not.toHaveBeenCalled();
+    expect(mocks.audit).not.toHaveBeenCalled();
+    expect(mocks.markDecision).toHaveBeenCalledWith(expect.objectContaining({
+      intentId: intent.intentId,
+      sessionId: "session-1",
+      approvalId: null,
+      status: "approved",
+    }));
+    expect(result.success, result.output).toBe(true);
+  });
+
+  it("still refuses a full-access fee authorization for an intent nothing prepared", async () => {
+    const result = await requireValue(LIGHTER_FEE_AUTHORIZATION_HANDLERS["lighter.fees.approve"])(
+      { intentId: "fees-never-prepared" },
+      { sessionId: "session-1", sessionPermission: "full", approved: false,
+        walletResolution: { source: "default" }, walletPolicy: { kind: "none" } },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.pendingApproval).not.toBe(true);
+    expect(result.output).toContain("does not belong to this session");
+    expect(mocks.approval).not.toHaveBeenCalled();
+    expect(mocks.markDecision).not.toHaveBeenCalled();
   });
 });

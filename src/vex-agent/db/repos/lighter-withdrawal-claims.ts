@@ -233,7 +233,8 @@ export async function expirePreparedWith(
 export async function markDecisionWith(client: PoolClient, input: {
   readonly claimId: string;
   readonly sessionId: string;
-  readonly approvalId: string;
+  /** Null for a full-access auto-approval, where no approval_queue row exists to bind to. */
+  readonly approvalId: string | null;
   readonly decision: "approved" | "rejected" | "expired";
   readonly reason: string;
 }): Promise<LighterWithdrawalClaimAttemptRow | null> {

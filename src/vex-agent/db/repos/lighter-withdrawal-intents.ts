@@ -599,7 +599,8 @@ export async function listReconciliationCandidates(limit = 5): Promise<LighterWi
 export async function markApprovalDecision(input: {
   readonly intentId: string;
   readonly sessionId: string;
-  readonly approvalId: string;
+  /** Null for a full-access auto-approval, where no approval_queue row exists to bind to. */
+  readonly approvalId: string | null;
   readonly decision: "approved" | "rejected" | "expired";
   readonly reason: string;
 }): Promise<LighterWithdrawalIntentRow | null> {
