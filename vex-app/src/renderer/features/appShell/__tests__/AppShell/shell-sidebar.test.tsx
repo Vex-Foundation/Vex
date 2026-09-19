@@ -43,6 +43,7 @@ vi.mock("../../lighterTrading/LighterCenter.js", () => ({
 }));
 
 vi.mock("../../lighterTrading/LighterSidebar.js", () => ({
+  LIGHTER_TOPBAR_HEIGHT: 44,
   LighterSidebar: ({
     collapsed,
     onToggleSidebar,
@@ -56,7 +57,7 @@ vi.mock("../../lighterTrading/LighterSidebar.js", () => ({
     >
       <button
         type="button"
-        aria-label={collapsed ? "Expand the sidebar" : "Collapse the sidebar"}
+        aria-label={collapsed ? "Open markets and sessions" : "Close markets and sessions"}
         onClick={onToggleSidebar}
       />
     </aside>
@@ -663,7 +664,7 @@ describe("AppShell", () => {
     expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("true");
   });
 
-  it("keeps the Lighter center mounted while its rail toggles", () => {
+  it("keeps the Lighter center mounted while its top navigation drawer toggles", () => {
     useUiStore.setState({ runtimeMode: "lighter", sidebarNarrowExpanded: false });
     const view = renderShell();
     const sidebar = view.container.querySelector("[data-vex-area='lighter-sidebar']");
@@ -671,31 +672,35 @@ describe("AppShell", () => {
     expect(screen.queryByTestId("lighter-center")).not.toBeNull();
     expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("false");
 
-    fireEvent.click(screen.getByRole("button", { name: /Expand the sidebar/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Open markets and sessions/i }));
     expect(screen.queryByTestId("lighter-center")).not.toBeNull();
     expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("true");
 
-    fireEvent.click(screen.getByRole("button", { name: /Collapse the sidebar/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Close markets and sessions/i }));
     expect(screen.queryByTestId("lighter-center")).not.toBeNull();
     expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("false");
     act(() => useUiStore.getState().setRuntimeMode("agent"));
   });
 
-  it("keeps every Lighter column pinned to the full frame height", () => {
+  it("places Lighter navigation above the grid and keeps the content columns full-height", () => {
     useUiStore.setState({ runtimeMode: "lighter", sidebarNarrowExpanded: false });
     const view = renderShell();
-    const sidebarColumn = view.container.querySelector("[data-vex-area='lighter-sidebar']")?.parentElement;
+    const topbar = view.container.querySelector("[data-vex-area='lighter-sidebar']");
+    const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
     const centerColumn = screen.getByTestId("lighter-center").parentElement?.parentElement;
     const bookColumn = view.container.querySelector("[data-vex-area='book-panel']")?.parentElement;
-    const columns = [sidebarColumn, centerColumn, bookColumn];
+    const columns = [centerColumn, bookColumn];
 
-    act(() => useUiStore.getState().setRuntimeMode("agent"));
+    expect(topbar?.parentElement).toBe(frame);
+    expect(frame?.style.paddingTop).toBe("44px");
+    expect(frame?.style.gridTemplateColumns).toMatch(/^0px /);
 
     for (const column of columns) {
       expect(column).not.toBeNull();
       expect(column?.classList.contains("h-full")).toBe(true);
       expect(column?.classList.contains("min-h-0")).toBe(true);
     }
+    act(() => useUiStore.getState().setRuntimeMode("agent"));
   });
 
   it("sizes the Lighter agent independently from the portfolio preference", () => {
@@ -704,11 +709,11 @@ describe("AppShell", () => {
     useLighterAnalysisStore.getState().saveDesk({ chatShare: 0.32 });
     const view = renderShell();
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
-    expect(frame?.style.gridTemplateColumns).toBe("56px minmax(0, 1fr) 328px");
+    expect(frame?.style.gridTemplateColumns).toBe("0px minmax(0, 1fr) 328px");
     act(() => useLighterAnalysisStore.getState().saveDesk({ chatShare: 310 / window.innerWidth }));
-    expect(frame?.style.gridTemplateColumns).toBe("56px minmax(0, 1fr) 310px");
+    expect(frame?.style.gridTemplateColumns).toBe("0px minmax(0, 1fr) 310px");
     fireEvent.keyDown(screen.getByRole("separator", { name: "Resize the Vex panel" }), { key: "ArrowLeft" });
-    expect(frame?.style.gridTemplateColumns).toBe("56px minmax(0, 1fr) 328px");
+    expect(frame?.style.gridTemplateColumns).toBe("0px minmax(0, 1fr) 334px");
     expect(useLighterAnalysisStore.getState().desk.chatShare).toBeCloseTo(334 / window.innerWidth);
     expect(useUiStore.getState().bookWidth).toBe(300);
     act(() => {
@@ -718,12 +723,13 @@ describe("AppShell", () => {
     });
   });
 
-  it("expands an automatically folded Vex panel with one click", () => {
+  it("keeps the Vex panel open while the top navigation drawer is open", () => {
     useUiStore.setState({ runtimeMode: "lighter", sidebarNarrowExpanded: true, bookOpen: true });
     const view = renderShell();
     const panel = view.container.querySelector("[data-vex-area='book-panel']");
-    expect(panel?.getAttribute("data-vex-book-open")).toBe("false");
-    fireEvent.click(screen.getByRole("button", { name: "Open Vex" }));
+    expect(panel?.getAttribute("data-vex-book-open")).toBe("true");
+    expect(useUiStore.getState().sidebarNarrowExpanded).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /Close markets and sessions/i }));
     expect(panel?.getAttribute("data-vex-book-open")).toBe("true");
     expect(useUiStore.getState().sidebarNarrowExpanded).toBe(false);
     act(() => useUiStore.getState().setRuntimeMode("agent"));

@@ -8,7 +8,7 @@ Current implemented behavior is documented in [`LIGHTER_DESK_PRODUCT_UX.md`](./L
 
 ## 0. 한 줄 요약
 
-Vex 셸에는 이미 "모드" 개념(`runtimeMode: "agent" | "studio"`)이 있고 Studio가 그 정석 패턴이다. Lighter만 그 패턴을 안 따르고 **에이전트 채팅 위에 뜨는 모달**로 붙어 있어서 화면·대화·상태가 전부 뒤섞인다. 해법은 Lighter를 **세 번째 `runtimeMode`** 로 승격하고, **전용 트레이딩 세션**을 갖게 하는 것. 그러면 세 모드가 같은 셸 프레임(사이드바 | 센터 | 우측 트랙) 위에서 각자 다른 내용물을 갖는 구조가 된다. 단, **진입 문법은 지금 그대로**: 헤더 토글은 `Agent | Studio`로 두고, Lighter는 BOOK 레일의 `Lighter` 버튼이나 `light it up`으로 **들어가는** 화면이다.
+Vex 셸에는 이미 "모드" 개념(`runtimeMode: "agent" | "studio"`)이 있고 Studio가 그 정석 패턴이다. Lighter만 그 패턴을 안 따르고 **에이전트 채팅 위에 뜨는 모달**로 붙어 있어서 화면·대화·상태가 전부 뒤섞인다. 해법은 Lighter를 **세 번째 `runtimeMode`** 로 승격하고, **전용 트레이딩 세션**을 갖게 하는 것. 그러면 세 모드가 같은 셸 프레임 위에서 각자 다른 내용물을 갖고, Lighter는 영구 왼쪽 레일 대신 상단 탐색을 사용한다. 단, **진입 문법은 지금 그대로**: 헤더 토글은 `Agent | Studio`로 두고, Lighter는 BOOK 레일의 `Lighter` 버튼이나 `light it up`으로 **들어가는** 화면이다.
 
 ---
 
@@ -111,7 +111,7 @@ vex-2026-09-17/
 | 단축키 | — | `⌘⇧A` (Studio 안에서만) | 없음 (버튼으로 들어가는 화면) |
 
 원칙
-- **한 프레임, 세 내용물.** 그리드·리사이즈·접힘·상태바는 공유. 모드는 세 슬롯(사이드바/센터/우측)의 내용만 바꾼다.
+- **한 프레임, 세 내용물.** 그리드·리사이즈·접힘·상태바는 공유. Agent/Studio는 사이드바·센터·우측 슬롯을 쓰고, Lighter는 탐색을 상단 바로 옮겨 센터·우측 슬롯에 더 넓은 폭을 준다.
 - **모달 제거.** Lighter는 오버레이가 아니라 자리를 차지하는 모드.
 - **진입 문법은 유지.** 헤더 토글은 `Agent | Studio`. Lighter는 토글의 세 번째 칸이 아니라 BOOK 버튼/`light it up`으로 들어가고 `← Agent`로 나오는 화면.
 - **대화는 모드에 속한다.** Lighter 세션은 Lighter 모드에서만 만들어지고 보인다.
@@ -124,20 +124,18 @@ vex-2026-09-17/
 ### 3.1 레이아웃
 
 ```
-┌ 사이드바 (264–420) ┬ 센터 (≥640) ────────────────────────┬ 우측 트랙 (300–520) ┐
-│ ← Agent    Lighter   │ 마켓바: ETH-PERP · 3,205.10 · 24h · 펀딩│ 트레이딩 대화        │
-│ ── 환경 ──          │ ┌────────────────────┬───────────┐ │ ┌────────────────┐ │
-│ ● Robinhood Chain   │ │ 차트               │ 호가/체결 │ │ │ 트랜스크립트     │ │
-│ ○ Lighter Core      │ │                    │           │ │ │                │ │
-│ ── 워치리스트 ──     │ │                    │           │ │ │  [승인 카드]    │ │
-│ ★ ETH-PERP  +1.2%   │ ├────────────────────┴───────────┤ │ │                │ │
-│ ★ BTC-PERP  −0.4%   │ │ 주문 티켓 (승인 카드가 대체)      │ │ └────────────────┘ │
-│   SOL-PERP          │ ├────────────────────────────────┤ │ [컴포저]            │
-│ ── 세션 ──          │ │ 포지션 | 주문 | 잔고   (접힘 가능) │ │                    │
-│ 오늘 · ETH 스캘핑    │ └────────────────────────────────┘ │                    │
-│ 어제 · BTC 헤지      │                                     │                    │
-│ [프로필]            │                                     │                    │
-└─────────────────────┴─────────────────────────────────────┴─────────────────────┘
+┌ 상단 탐색: ← Agent · Lighter · RHC/Core · Markets & sessions · New session ┐
+├ 센터 (≥640) ─────────────────────────────────────┬ 우측 트랙 (300–520) ┤
+│ 마켓바: ETH-PERP · 3,205.10 · 24h · 펀딩          │ 트레이딩 대화        │
+│ ┌────────────────────────────┬───────────────┐   │ ┌────────────────┐ │
+│ │ 차트                       │ 호가/체결      │   │ │ 트랜스크립트     │ │
+│ │                            │               │   │ │ [승인 카드]     │ │
+│ ├────────────────────────────┴───────────────┤   │ └────────────────┘ │
+│ │ 주문 티켓 (승인 카드가 대체)                 │   │ [컴포저]           │
+│ ├────────────────────────────────────────────┤   │                    │
+│ │ 포지션 | 주문 | 잔고 (접힘 가능)              │   │                    │
+│ └────────────────────────────────────────────┘   │                    │
+└─────────────────────────────────────────────────┴────────────────────┘
 ```
 
 - **우측 트랙 = 대화.** 앞서 결정한 "≥1600px에서 4번째 열, 좁으면 드로어"는 셸의 BOOK 트랙이 이미 그 역할을 함: 넓으면 열려 있고, `computeShellColumns`가 센터 최소폭을 못 지키면 스파인(48px)으로 접힘 → 스파인 클릭으로 오버레이 드로어. 별도 드로어 구현 불필요.
@@ -145,13 +143,13 @@ vex-2026-09-17/
 - 하단 계정 패널은 센터 안 접힘 도크. 센터 높이가 부족하면 접힘 상태를 기본으로.
 - 차트 확장(`chartExpanded`)은 센터 안에서 티켓·하단 숨김으로 처리.
 
-### 3.2 사이드바 `LighterSidebar`
+### 3.2 상단 탐색 `LighterSidebar`
 
-`StudioSidebar`가 `SessionsList`를 요소 단위로 미러링하듯, 같은 `<aside>` 크롬(`.vex-glass-rail`, 접힘 코레오그래피, 푸터 `SidebarProfile`)을 쓰되, 헤더는 `RuntimeModeToggle` 대신 **`← Agent` 뒤로 버튼 + "Lighter" 타이틀**. 내용:
-1. **환경 세그먼트** Core / RHC — 바꾸면 워치리스트·마켓·세션 목록이 환경 기준으로 필터.
-2. **워치리스트** — 즐겨찾기 마켓 + 최근 가격·24h 변화(퍼블릭 stats 스트림 재사용). 클릭 = 활성 마켓 전환. "마켓 찾기" 행은 기존 `MarketPicker`를 팝오버로.
-3. **트레이딩 세션** — `workspace='lighter'` 세션만, `SessionGroups` 재사용(고정/오늘/어제/이전). "새 트레이딩 세션" 버튼.
-4. 접힘 레일: 환경 아이콘 · 별 · 세션 아이콘.
+44px 상단 바가 **`← Agent` 뒤로 버튼 + "Lighter" + 현재 환경**을 항상 표시하고, 영구 왼쪽 레일은 예약하지 않는다. `Markets & sessions`는 상단 바 아래의 오버레이 드로어를 열며 차트 폭을 바꾸지 않는다. 내용:
+1. **현재 환경** Core / RHC — 바와 데스크 팔레트에 텍스트와 색으로 함께 표시.
+2. **워치리스트** — 즐겨찾기 마켓 + 최근 가격·24h 변화(퍼블릭 stats 스트림 재사용). 클릭 = 활성 마켓 전환 후 드로어 닫힘.
+3. **트레이딩 세션** — `workspace='lighter'` 세션만, `SessionGroups` 재사용(고정/오늘/어제/이전). 선택 후 드로어 닫힘.
+4. **상단 액션** — 새 세션, 설정, 테마, 프로필. 드로어는 Escape 또는 바깥 클릭으로 닫힘.
 
 ### 3.3 센터 `LighterCenter`
 
@@ -172,16 +170,16 @@ vex-2026-09-17/
 - **(B) 컬럼 추가 `sessions.workspace TEXT NULL CHECK (workspace IN ('lighter'))`** — 마이그레이션 1개. `sessionCreateInputSchema`(agent arm)에 `workspace?: "lighter"`, `sessionListItemSchema`에 `workspace`, 목록 쿼리는 그대로 두고 렌더러에서 필터(`filterSessionsByWorkspace`). **권장.**
 
 세부
-- 에이전트 모드 `SessionsList`는 `workspace === null`만, Lighter 사이드바는 `workspace === "lighter"`만.
+- 에이전트 모드 `SessionsList`는 `workspace === null`만, Lighter 탐색 드로어는 `workspace === "lighter"`만.
 - Lighter 세션은 `mode: "agent"`(미션 아님) 고정. 제목 기본값 `"{SYMBOL} · {날짜}"`.
 - 툴 표면 제한(그 세션에선 Lighter 툴만)은 **범위 밖**. 필요해지면 `workspace`를 main 쪽 세션 컨텍스트에 넘겨 시스템 프롬프트/툴 필터에 쓰면 됨 — 컬럼이 그 훅 역할.
 - 마이그레이션 번호: 이 트리의 최신은 162. 공식 앱과 DB를 공유하지 않는 것이 전제(9/16 충돌 사고 참고). 격리 인스턴스 `vex-0917`에서만 적용.
 
 ### 3.6 진입 / 이탈 / 영속
 
-- `RuntimeMode = "agent" | "studio" | "lighter"`. **`RuntimeModeToggle`은 `Agent | Studio` 2세그먼트 그대로** — Lighter 모드에서는 토글이 마운트되지 않음(사이드바 헤더가 다름).
+- `RuntimeMode = "agent" | "studio" | "lighter"`. **`RuntimeModeToggle`은 `Agent | Studio` 2세그먼트 그대로** — Lighter 모드에서는 토글이 마운트되지 않음(상단 탐색이 다름).
 - 진입: BOOK 레일 `Lighter` 버튼과 `light it up` 둘 다 `setRuntimeMode("lighter")`. `LighterTradingHost`, `workspace-command.ts`의 window 이벤트, `AppShell`의 `lighterTradingOpen` 삭제. 컴포저의 문구 감지는 유지.
-- 이탈: Lighter 사이드바 헤더 `← Agent` → `setRuntimeMode("agent")`. `Esc`는 안 씀(티켓 입력·마켓 피커와 충돌).
+- 이탈: Lighter 상단 탐색 `← Agent` → `setRuntimeMode("agent")`. `Esc`는 드로어를 닫는 데만 쓰고 모드는 바꾸지 않음.
 - 영속: `runtimeMode` 저장 시 `"lighter"`는 `"agent"`로 강등(`coerceRuntimeMode`가 아니라 persist 단계에서) — 버튼으로 들어가는 화면이라 재시작 후 자동 복귀하지 않음. 대신 `lighterEnvironment`("core"|"rhc"), `lighterMarketId`(환경별), `lighterWatchlist`(환경별 marketId 배열), `lighterBottomOpen`은 영속. `activeLighterSessionId`는 비영속(`activeSessionId`와 동일 규칙).
 - 마켓 컨텍스트가 대화에 붙어 다니도록 새 Lighter 세션 생성 시 initial turn에 환경·마켓을 명시(현재 `buildLighterReviewMessage`가 하는 방식).
 
@@ -213,8 +211,8 @@ vex-2026-09-17/
 | 단계 | 내용 | 검증 |
 |---|---|---|
 | **P0 정리** | 리디자인한 5개 파일 모듈화: `useTradeTicketForm`, `ticket-model.ts`, `decimal.ts` 공용화, Dialog 내부 컴포넌트 파일 분리, CSS 분할 | 기존 lighterTrading 테스트 137개 그대로 통과, 타입에러 0 |
-| **P1 모드 승격** | `RuntimeMode` 3값(토글은 무변경), `AppShell` 3분기, `LighterSidebar`(`← Agent` + 환경 + 마켓피커 최소), `LighterCenter`, `LighterChatRail`, 모달·Host·window 이벤트 삭제, BOOK 버튼·`light it up` → 모드 전환, 영속 슬롯 4개 + persist 강등 | `AppShell` e2e: BOOK 버튼/`light it up`으로 진입 → `← Agent`로 들어오기 전 모드 복귀, 재시작 후 Agent로 시작하되 마켓·환경 복원. 기존 Studio 테스트 무변경 통과 |
-| **P2 전용 세션** | 마이그레이션 `sessions.workspace`, 스키마·IPC·목록 필터, Lighter 사이드바 세션 목록, Review → Lighter 세션 컴포저, 웰컴/스타터 | 에이전트 목록에 Lighter 세션 미노출·역방향도 동일(단위 테스트), Review 후 드래프트 충돌 0, 승인 카드가 티켓 자리+대화 레일 양쪽에 표시 |
+| **P1 모드 승격** | `RuntimeMode` 3값(토글은 무변경), `AppShell` 3분기, Lighter 상단 탐색(`← Agent` + 환경 + 마켓/세션 드로어), `LighterCenter`, `LighterChatRail`, 모달·Host·window 이벤트 삭제, BOOK 버튼·`light it up` → 모드 전환, 영속 슬롯 4개 + persist 강등 | `AppShell` e2e: BOOK 버튼/`light it up`으로 진입 → `← Agent`로 들어오기 전 모드 복귀, 재시작 후 Agent로 시작하되 마켓·환경 복원. 기존 Studio 테스트 무변경 통과 |
+| **P2 전용 세션** | 마이그레이션 `sessions.workspace`, 스키마·IPC·목록 필터, Lighter 탐색 드로어 세션 목록, Review → Lighter 세션 컴포저, 웰컴/스타터 | 에이전트 목록에 Lighter 세션 미노출·역방향도 동일(단위 테스트), Review 후 드래프트 충돌 0, 승인 카드가 티켓 자리+대화 레일 양쪽에 표시 |
 | **P3 완성도** | 워치리스트, `order-stream` 렌더러 배선, CSS 분할·토큰 승격, Studio/Agent 토글 자리 통일, BookPanel 레지스트리 | 격리 인스턴스에서 수동 QA (`docs/QA_MATRIX.md` 형식으로 항목 추가) |
 
 각 단계는 독립적으로 머지 가능. P1이 끝나면 사용자가 본 "구별 안 됨" 문제는 해소되고, P2가 끝나야 "대화가 이사 다니는" 문제가 해소된다.
@@ -226,7 +224,7 @@ vex-2026-09-17/
 1. **우측 트랙 = 대화 레일** 방식(3.1) 동의? 대안은 센터 안 4번째 열 + 자체 드로어(현재 리디자인 구현) — 셸 리사이저와 이중이 되어 비추천.
 2. 전용 세션 저장 방식 **(B) `workspace` 컬럼** 동의? 마이그레이션 1개 추가됨.
 3. Lighter 모드 진입 시 **BOOK 포트폴리오 카드**(지갑 잔고 등)는 대화 레일에 밀려 안 보임. 하단 계정 패널의 "잔고" 탭이 대신함 — 괜찮은지.
-4. 이탈 버튼 위치 — 사이드바 헤더 `← Agent`(제안) vs 마켓바 오른쪽 끝 ✕. 사이드바 접힘 상태에서도 보이려면 헤더 쪽이 유리.
+4. 이탈 버튼은 상단 탐색의 `← Agent`로 고정해 드로어 상태와 무관하게 항상 보인다.
 5. P0(코드 정리)를 P1보다 먼저 할지, P1 하면서 같이 할지. 추천: **P1을 하면서 P0** — 어차피 Dialog를 해체하면서 훅 추출이 일어남.
 
 ---

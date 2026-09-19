@@ -112,8 +112,10 @@ function entryIcon(Icon: (props: GlyphProps) => ReactNode): ReactNode {
 
 export function SidebarProfile({
   sidebarOpen,
+  menuSide = "top",
 }: {
   readonly sidebarOpen: boolean;
+  readonly menuSide?: "top" | "bottom";
 }): JSX.Element {
   const setShellRoute = useUiStore((s) => s.setShellRoute);
   const memoryEnabled = useMemoryFeatureEnabled();
@@ -350,7 +352,7 @@ export function SidebarProfile({
           },
         }}
         portal
-        side="top"
+        side={menuSide}
         align="start"
         className="block w-full"
       />

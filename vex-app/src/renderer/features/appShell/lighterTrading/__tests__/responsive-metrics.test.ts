@@ -10,6 +10,12 @@ const css = readdirSync(dir)
   .join("\n");
 
 describe("Lighter desk responsive market metrics", () => {
+  it("uses a compact top navigation bar with an overlay drawer", () => {
+    expect(css).toMatch(/\.lit-desk-topbar-header\s*\{[^}]*height: 100%;[^}]*align-items: center;/s);
+    expect(css).toMatch(/\.lit-desk-nav-drawer\s*\{[^}]*position: absolute;[^}]*top: calc\(100% \+ 6px\);/s);
+    expect(css).toMatch(/\.lit-desk-nav-drawer\s*\{[^}]*width: min\(420px, calc\(100vw - 16px\)\);/s);
+  });
+
   it("keeps the bottom tabs in a breathable compact cluster", () => {
     expect(css).toMatch(/\.lit-bottom-tabs\s*\{[^}]*gap: 8px;/s);
   });

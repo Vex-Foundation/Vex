@@ -1,6 +1,8 @@
 /**
- * Pure concession-chain column solver for the three-column shell frame
- * (sidebar | session column | BOOK). Chain order is fixed by contract: keep
+ * Pure concession-chain column solver for the shell content frame
+ * (navigation | session column | BOOK). Agent and Studio reserve the first
+ * track for a sidebar; Lighter supplies zero because its navigation sits above
+ * the grid. Chain order is fixed by contract: keep
  * center >= CENTER_MIN by shrinking BOOK, then auto-closing it to its spine
  * (derived width — stored preferences are never rewritten, so widening the
  * window restores them). The sidebar never concedes: its rendered width is
@@ -101,6 +103,26 @@ export function computeShellColumns(
     sidebar === 0
       ? SIDEBAR_COLLAPSED
       : clampWidth(sidebar, SIDEBAR_MIN, SIDEBAR_MAX);
+  return solveShellColumns(viewport, s, book);
+}
+
+/**
+ * Lighter moves its navigation into a top bar, so no left track is reserved.
+ * BOOK keeps the same concession order and center floor as the shared shell.
+ */
+export function computeShellColumnsWithoutSidebar(
+  viewport: number,
+  book: number,
+): ShellColumns {
+  return solveShellColumns(viewport, 0, book);
+}
+
+function solveShellColumns(
+  viewport: number,
+  sidebar: number,
+  book: number,
+): ShellColumns {
+  const s = sidebar;
   const b0 = book === 0 ? BOOK_COLLAPSED : clampWidth(book, BOOK_MIN, BOOK_MAX);
 
   // Step 1: everything fits at preferred widths.

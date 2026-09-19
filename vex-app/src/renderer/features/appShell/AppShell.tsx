@@ -1,5 +1,5 @@
 /**
- * Main app shell: the three-column frame (sessions sidebar | session column |
+ * Main app shell: the shared content frame (navigation | session column |
  * BOOK) on grid tracks solved by `lib/shell-columns.ts`, plus the full-app
  * overlay screens and the new-session modal. The frame owns viewport
  * measurement, the sidebar auto-collapse breakpoint, the drag handles, and
@@ -9,7 +9,8 @@
  * `data-vex-shell="true"` scopes the shell tokens; `data-vex-screen="appShell"`
  * stays the e2e/test selector. The room's back wall is ShellBackdrop (z-0);
  * the grid floats above it and the two rails read the artwork through their
- * glass surfaces.
+ * glass surfaces. Lighter moves navigation above the grid and therefore
+ * resolves its first track to zero.
  */
 
 import {
@@ -28,6 +29,7 @@ import {
   SIDEBAR_MIN,
   SIDEBAR_MAX,
   computeShellColumns,
+  computeShellColumnsWithoutSidebar,
   shouldAutoCollapseSidebar,
   WELCOME_PORTFOLIO_WIDTH,
   type ShellColumns,
@@ -53,7 +55,7 @@ import { ShellBackdrop } from "./ShellBackdrop.js";
 import { ShellDragHandle } from "./ShellDragHandle.js";
 import { ShellScreens } from "./screens/ShellScreens.js";
 import { LighterCenter } from "./lighterTrading/LighterCenter.js";
-import { LighterSidebar } from "./lighterTrading/LighterSidebar.js";
+import { LIGHTER_TOPBAR_HEIGHT, LighterSidebar } from "./lighterTrading/LighterSidebar.js";
 
 export function AppShell(): JSX.Element {
   // App-wide engine-error RETENTION. Mounted here, not per session: a wake or
@@ -118,7 +120,7 @@ export function AppShell(): JSX.Element {
 
 /**
  * The shell grid: measures its own box (rAF-throttled ResizeObserver),
- * decides the sidebar auto-collapse, solves the three tracks, and hosts the
+ * decides the sidebar auto-collapse, solves the content tracks, and hosts the
  * drag handles. The BOOK auto-close is DERIVED from the solve (the stored
  * `bookOpen` preference is never rewritten, so widening the window restores
  * an open BOOK).
@@ -177,18 +179,21 @@ function ShellFrame({
   // Narrow viewports auto-collapse the sidebar to the rail; a manual toggle
   // below the breakpoint flips the ephemeral re-expand override instead of
   // the persisted preference. Crossing back into wide clears the override so
-  // the next narrow entry starts at the rail again. The Lighter desk starts
-  // at the rail regardless: the chart and chat want the width more.
+  // the next narrow entry starts at the rail again. Lighter owns a horizontal
+  // top bar instead; this same ephemeral flag opens its desk-navigation tray.
   const lighter = runtimeMode === "lighter";
-  const narrow = shouldAutoCollapseSidebar(viewport) || lighter;
+  const narrow = shouldAutoCollapseSidebar(viewport);
   useEffect(() => {
-    if (!narrow) setSidebarNarrowExpanded(false);
-  }, [narrow, setSidebarNarrowExpanded]);
-  const sidebarCollapsed = narrow ? !sidebarNarrowExpanded : !sidebarOpen;
+    if (!lighter && !narrow) setSidebarNarrowExpanded(false);
+  }, [lighter, narrow, setSidebarNarrowExpanded]);
+  const sidebarCollapsed = lighter
+    ? !sidebarNarrowExpanded
+    : narrow ? !sidebarNarrowExpanded : !sidebarOpen;
   const toggleSidebar = useCallback((): void => {
-    if (narrow) setSidebarNarrowExpanded(!sidebarNarrowExpanded);
+    if (lighter || narrow) setSidebarNarrowExpanded(!sidebarNarrowExpanded);
     else setSidebarOpen(!sidebarOpen);
   }, [
+    lighter,
     narrow,
     sidebarNarrowExpanded,
     setSidebarNarrowExpanded,
@@ -207,11 +212,16 @@ function ShellFrame({
   const welcomeStage = lighter
     ? false
     : studio ? activeProjectId === null : activeSessionId === null;
-  const cols: ShellColumns = computeShellColumns(
-    viewport,
-    sidebarCollapsed ? 0 : sidebarWidth,
-    welcomeStage || !bookOpen ? 0 : lighter ? Math.max(1, viewport * lighterChatShare) : bookWidth,
-  );
+  const requestedBookWidth = welcomeStage || !bookOpen
+    ? 0
+    : lighter ? Math.max(1, viewport * lighterChatShare) : bookWidth;
+  const cols: ShellColumns = lighter
+    ? computeShellColumnsWithoutSidebar(viewport, requestedBookWidth)
+    : computeShellColumns(
+      viewport,
+      sidebarCollapsed ? 0 : sidebarWidth,
+      requestedBookWidth,
+    );
   const colsRef = useRef(cols);
   colsRef.current = cols;
   // Derived auto-close: preference stays `true`, the rendered panel collapses.
@@ -265,6 +275,7 @@ function ShellFrame({
       className="vex-shell-frame relative z-10 h-full min-w-0 flex-1"
       style={{
         gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${rightTrack}px`,
+        paddingTop: lighter ? LIGHTER_TOPBAR_HEIGHT : undefined,
       }}
       data-vex-area="shell-frame"
       data-dragging={dragging || undefined}
@@ -275,17 +286,17 @@ function ShellFrame({
         reconnecting={!networkOnline}
         label="Offline - waiting for the network to come back"
       />
+      {lighter ? (
+        <LighterSidebar
+          collapsed={sidebarCollapsed}
+          onToggleSidebar={toggleSidebar}
+        />
+      ) : null}
       {/* COLUMN 1 - the rail the active mode owns. The two rails are separate
         * components on purpose: they hold different objects with different
         * lifetimes, and one component branching on the mode would own both. */}
       <div className="relative z-20 h-full min-h-0 min-w-0 overflow-visible">
-        {lighter ? (
-          <LighterSidebar
-            collapsed={sidebarCollapsed}
-            width={cols.sidebar}
-            onToggleSidebar={toggleSidebar}
-          />
-        ) : studio ? (
+        {lighter ? null : studio ? (
           <StudioSidebar
             collapsed={sidebarCollapsed}
             width={cols.sidebar}
@@ -342,7 +353,7 @@ function ShellFrame({
 
       {/* The collapsed rail is fixed-width: no resize handle while closed.
        * The BOOK handle exists only while the panel is effectively open. */}
-      {!sidebarCollapsed ? (
+      {!lighter && !sidebarCollapsed ? (
         <ShellDragHandle
           side="sidebar"
           left={cols.sidebar}
