@@ -49,6 +49,7 @@ export async function createSessionWithClient(
   const permission: SessionPermission = input.permission;
   const title: string = input.name;
   const initialGoal: string | null = null;
+  const workspace = input.mode === "agent" ? (input.workspace ?? null) : null;
   const { evm, solana } = walletRefs;
   // Mission draft allowed_wallets is a deterministic projection of the
   // session's selected wallet ADDRESSES — 5B mission policy reads this, frozen
@@ -62,12 +63,12 @@ export async function createSessionWithClient(
     `INSERT INTO sessions
        (id, scope, mode, permission, initial_goal, title,
         selected_evm_wallet_id, selected_evm_wallet_address,
-        selected_solana_wallet_id, selected_solana_wallet_address)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        selected_solana_wallet_id, selected_solana_wallet_address, workspace)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [
       id, VEX_APP_SESSION_SCOPE, mode, permission, initialGoal, title,
       evm?.id ?? null, evm?.address ?? null,
-      solana?.id ?? null, solana?.address ?? null,
+      solana?.id ?? null, solana?.address ?? null, workspace,
     ],
   );
   if (mode === "mission") {

@@ -50,6 +50,18 @@ export function filterSessionsByMode(
 }
 
 /**
+ * Split the register by workspace. Lighter sessions belong to the Lighter
+ * rail and agent sessions to the agent rail; neither rail lists the other's
+ * so a session never appears in a mode that cannot render it.
+ */
+export function filterSessionsByWorkspace(
+  rows: readonly SessionListItem[],
+  workspace: "lighter" | null,
+): readonly SessionListItem[] {
+  return rows.filter((row) => (row.workspace ?? null) === workspace);
+}
+
+/**
  * Case-insensitive title search for the sessions register. Search the same
  * resolved title the row renders so legacy missions (which fall back to their
  * initial goal) remain discoverable without exposing a second naming rule.

@@ -35,6 +35,9 @@ import {
 import { showToast } from "../../lib/toast.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useBoardAskIntentStore } from "./Board/board-ask-intent.js";
+import { withDeskScope } from "./lighterTrading/desk-context.js";
+import { useDeskScopeStore } from "./lighterTrading/desk-scope.js";
+import { useDeskSendIntentStore } from "./lighterTrading/desk-send-intent.js";
 import { readStopAvailability } from "./composer-submit/stop-availability.js";
 import { resolveStopAffordance } from "./composer-submit/stop-affordance.js";
 import {
@@ -49,8 +52,8 @@ import {
   submitSuccessText,
 } from "./composer-helpers.js";
 import {
+  enterLighterMode,
   isLighterWorkspaceCommand,
-  requestLighterWorkspaceOpen,
 } from "./lighterTrading/workspace-command.js";
 
 export type ComposerNotice =
@@ -178,6 +181,13 @@ export function useComposerSubmit(
   );
   const clearBoardAskIntent = useBoardAskIntentStore(
     (s) => s.clearBoardAskIntent,
+  );
+  const deskIntent = useDeskSendIntentStore((s) => s.intent);
+  const consumeDeskSendIntent = useDeskSendIntentStore(
+    (s) => s.consumeDeskSendIntent,
+  );
+  const clearDeskSendIntent = useDeskSendIntentStore(
+    (s) => s.clearDeskSendIntent,
   );
   const runtimeQuery = useRuntimeState(sessionId);
   const requestStop = useRequestStop();
@@ -456,21 +466,26 @@ export function useComposerSubmit(
     [sessionId, submitPending, freeTextGate, runStatus, runChatSubmit],
   );
 
+  const deskScopeTag = useDeskScopeStore((state) => state.tag);
   const onSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>): Promise<void> => {
       event.preventDefault();
-      const message = draft.trim();
-      if (message.length === 0) return;
+      const typed = draft.trim();
+      if (typed.length === 0) return;
       // `Light it up` is a renderer-local workspace command, not an agent
       // prompt. Consume it before session creation, steering, queueing, mission
       // gates, or chat submission so it can never enter the transcript or
       // receive an out-of-context model response.
-      if (isLighterWorkspaceCommand(message)) {
+      if (isLighterWorkspaceCommand(typed)) {
         setDraft("");
         setNotice(null);
-        requestLighterWorkspaceOpen();
+        enterLighterMode();
         return;
       }
+      // On the Lighter desk a typed message carries the desk's scope, so
+      // "should I trim?" names the market on screen. Desk row actions and
+      // quick prompts enter through `dispatchMessage` with their own scope.
+      const message = deskScopeTag === null ? typed : withDeskScope(typed, deskScopeTag);
       // Welcome state (no session yet): Send opens the new-session modal
       // seeded with this draft PLUS the reasoning effort SNAPSHOTTED right
       // now (E3/D5) — unresolved capability at this instant → null → a
@@ -502,6 +517,7 @@ export function useComposerSubmit(
     [
       sessionId,
       draft,
+      deskScopeTag,
       effectiveReasoningEffort,
       freeTextGate,
       openCreateSession,
@@ -538,6 +554,26 @@ export function useComposerSubmit(
     sessionId,
     clearBoardAskIntent,
     consumeBoardAskIntent,
+    dispatchMessage,
+  ]);
+
+  // LIGHTER DESK ROW ACTIONS. Close / Cancel / Cancel all / Deposit park a
+  // message the same way a board question does, and go through the same
+  // dispatch for the same three properties above.
+  useEffect(() => {
+    if (deskIntent === null) return;
+    if (sessionId === null || deskIntent.sessionId !== sessionId) {
+      clearDeskSendIntent();
+      return;
+    }
+    const taken = consumeDeskSendIntent(deskIntent.intentId, sessionId);
+    if (taken === null) return;
+    void dispatchMessage(taken.message);
+  }, [
+    deskIntent,
+    sessionId,
+    clearDeskSendIntent,
+    consumeDeskSendIntent,
     dispatchMessage,
   ]);
 

@@ -65,6 +65,14 @@ vi.mock("@vex-agent/engine/core/approval-runtime.js", () => ({
     skippedLeaseHeld: 0,
     errored: 0,
   }),
+  reconcileAbandonedDeskDispatches: vi.fn().mockResolvedValue([]),
+  reconcileDeskApprovalLifecycle: vi.fn().mockResolvedValue({
+    abandoned: 0,
+    repaired: 0,
+    dispatched: 0,
+    superseded: 0,
+    errored: 0,
+  }),
   runResumeAfterDecision: vi.fn(),
   continuationMissionRunId: (cont: { kind: string; missionRunId?: string }) =>
     cont.kind === "mission_run" ? cont.missionRunId : undefined,

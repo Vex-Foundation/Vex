@@ -41,6 +41,12 @@ export interface ApprovalDecisionActionsProps {
   readonly approveLabel?: string;
   readonly confirmApproveLabel?: string;
   readonly wrapReasonOnNarrow?: boolean;
+  /**
+   * The reason input exists to reach the model as transcript content. A card
+   * with no model behind it (a desk click) has nobody to read it, so the
+   * parent turns the input off rather than collecting words that go nowhere.
+   */
+  readonly rejectReasonInput?: boolean;
 }
 
 // Shared key shape — the landing's mono-uppercase pill. Tone classes below
@@ -68,21 +74,24 @@ export function ApprovalDecisionActions({
   approveLabel = "Approve",
   confirmApproveLabel = "Click again to confirm approve",
   wrapReasonOnNarrow = false,
+  rejectReasonInput = true,
 }: ApprovalDecisionActionsProps): JSX.Element {
   const rejectArmed = isHighRisk && armedAction === "reject";
   const approveArmed = isHighRisk && armedAction === "approve";
   return (
     <footer className={`flex items-center justify-end gap-2 border-t border-[var(--vex-line)] px-4 py-3${wrapReasonOnNarrow ? " @max-[640px]:flex-wrap" : ""}`}>
-      <input
-        type="text"
-        value={rejectReason}
-        onChange={(e) => onRejectReasonChange(e.target.value)}
-        disabled={inFlight}
-        maxLength={APPROVAL_REJECT_REASON_MAX}
-        aria-label="Reason for rejecting (optional)"
-        placeholder="Reason (optional)"
-        className={`${REASON_INPUT}${wrapReasonOnNarrow ? " @max-[640px]:basis-full" : ""}`}
-      />
+      {rejectReasonInput ? (
+        <input
+          type="text"
+          value={rejectReason}
+          onChange={(e) => onRejectReasonChange(e.target.value)}
+          disabled={inFlight}
+          maxLength={APPROVAL_REJECT_REASON_MAX}
+          aria-label="Reason for rejecting (optional)"
+          placeholder="Reason (optional)"
+          className={`${REASON_INPUT}${wrapReasonOnNarrow ? " @max-[640px]:basis-full" : ""}`}
+        />
+      ) : null}
       {/* REJECT IS THE NAMED INITIAL FOCUS, and it is first in the footer.
           The safer action owns both, and it owns them through the same
           `autofocus` content attribute every dialog in this app names its

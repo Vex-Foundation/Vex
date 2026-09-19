@@ -8,6 +8,7 @@ import {
   LIGHTER_ORDER_STREAM_HANDSHAKE_TIMEOUT_MS,
   LIGHTER_ORDER_STREAM_KEEPALIVE_INTERVAL_MS,
   LIGHTER_ORDER_STREAM_MAX_QUEUED_FRAMES,
+  LIGHTER_ORDER_STREAM_GIVE_UP_RETRY_MS,
   LIGHTER_ORDER_STREAM_MAX_RECONNECT_ATTEMPTS,
   LIGHTER_ORDER_STREAM_WATCHABLE_PAGE_LIMIT,
   LighterOrderStreamSupervisor,
@@ -277,6 +278,28 @@ describe("Lighter order stream supervisor", () => {
     stop();
   });
 
+  it("announces validated evidence by kind and stays silent for rejected frames", async () => {
+    const h = makeHarness();
+    const onEvidence = vi.fn();
+    const supervisor = new LighterOrderStreamSupervisor({ ...h.deps, onEvidence });
+    const stop = supervisor.start();
+    await vi.advanceTimersToNextTimerAsync();
+    await vi.advanceTimersToNextTimerAsync();
+    const socket = requireValue(h.sockets[0]);
+    socket.message({ type: "connected" });
+    socket.message(orderFrame());
+    socket.message(tradeFrame());
+    socket.message(positionFrame());
+    socket.message({ ...orderFrame(), channel: "account_all_orders:43" });
+
+    expect(onEvidence.mock.calls).toEqual([
+      ["rhc", 42, "orders"],
+      ["rhc", 42, "trades"],
+      ["rhc", 42, "positions"],
+    ]);
+    stop();
+  });
+
   it("rejects non-text frames without exposing their contents", async () => {
     const h = makeHarness();
     const stop = await startHarness(h);
@@ -418,18 +441,27 @@ describe("Lighter order stream supervisor", () => {
     expect(socket.closes.at(-1)?.reason).toBe("no_watchable_orders");
     stop();
   });
-  it("stops retrying after the restart budget and reports the exhausted recovery", async () => {
-    const h = makeHarness();
-    const stop = await startHarness(h);
-
+  /** Errors sockets until the supervisor records an exhausted restart budget. */
+  async function exhaustBudget(h: ReturnType<typeof makeHarness>): Promise<void> {
+    const exhausted = (): boolean => h.diagnostics.some(
+      (entry) => entry.event === "lighter.order_stream.recovery_exhausted",
+    );
     let current = requireValue(h.sockets[0]);
     for (let attempt = 0; attempt < LIGHTER_ORDER_STREAM_MAX_RECONNECT_ATTEMPTS + 2; attempt += 1) {
       current.emit("error", {});
+      if (exhausted()) break;
       await vi.advanceTimersByTimeAsync(120_000);
       const next = h.sockets.at(-1);
       if (next === undefined || next === current) break;
       current = next;
     }
+  }
+
+  it("stops retrying after the restart budget and reports the exhausted recovery", async () => {
+    const h = makeHarness();
+    const stop = await startHarness(h);
+
+    await exhaustBudget(h);
 
     expect(h.sockets).toHaveLength(LIGHTER_ORDER_STREAM_MAX_RECONNECT_ATTEMPTS);
     expect(h.diagnostics).toContainEqual(expect.objectContaining({
@@ -444,6 +476,10 @@ describe("Lighter order stream supervisor", () => {
     // Discovery keeps running and must not resurrect an exhausted watcher.
     await vi.advanceTimersByTimeAsync(LIGHTER_ORDER_STREAM_DISCOVERY_INTERVAL_MS * 3);
     expect(h.sockets).toHaveLength(LIGHTER_ORDER_STREAM_MAX_RECONNECT_ATTEMPTS);
+
+    // The rest does: a fresh budget starts once it elapses.
+    await vi.advanceTimersByTimeAsync(LIGHTER_ORDER_STREAM_GIVE_UP_RETRY_MS);
+    expect(h.sockets).toHaveLength(LIGHTER_ORDER_STREAM_MAX_RECONNECT_ATTEMPTS + 1);
     stop();
   });
 
@@ -451,14 +487,7 @@ describe("Lighter order stream supervisor", () => {
     const h = makeHarness();
     const stop = await startHarness(h);
 
-    let current = requireValue(h.sockets[0]);
-    for (let attempt = 0; attempt < LIGHTER_ORDER_STREAM_MAX_RECONNECT_ATTEMPTS + 2; attempt += 1) {
-      current.emit("error", {});
-      await vi.advanceTimersByTimeAsync(120_000);
-      const next = h.sockets.at(-1);
-      if (next === undefined || next === current) break;
-      current = next;
-    }
+    await exhaustBudget(h);
     const exhausted = h.sockets.length;
 
     h.listTargets.mockResolvedValue([{

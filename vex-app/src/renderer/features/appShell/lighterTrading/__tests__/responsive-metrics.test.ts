@@ -1,19 +1,41 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const css = readFileSync(
-  resolve(process.cwd(), "src/renderer/styles/global-css/lighter-trading.css"),
-  "utf8",
-);
+const dir = resolve(process.cwd(), "src/renderer/styles/global-css");
+const css = readdirSync(dir)
+  .filter((name) => name.startsWith("lighter-") && name.endsWith(".css"))
+  .sort()
+  .map((name) => readFileSync(resolve(dir, name), "utf8"))
+  .join("\n");
 
-describe("Light it up responsive market metrics", () => {
+describe("Lighter desk responsive market metrics", () => {
   it("keeps the bottom tabs in a breathable compact cluster", () => {
     expect(css).toMatch(/\.lit-bottom-tabs\s*\{[^}]*gap: 8px;/s);
   });
 
-  it("keeps order-behavior choices legible and touch-sized", () => {
-    expect(css).toMatch(/\.lit-tif-tabs button\s*\{[^}]*min-height: 44px;[^}]*font-size: 11px;/s);
+  it("shows all agent prompts without a hidden horizontal scroll", () => {
+    expect(css).toMatch(/\.lit-desk-scope\s*\{[^}]*flex-direction: column;[^}]*padding: 6px 12px;/s);
+    expect(css).toMatch(/\.lit-desk-quick\s*\{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/s);
+    expect(css).toMatch(/@container \(max-width: 420px\)[\s\S]*\.lit-desk-quick > button \{ padding-inline: 8px; \}/s);
+  });
+
+  it("keeps the ticket compact while preserving its primary controls", () => {
+    expect(css).toMatch(/\.lit-ticket-body\s*\{[^}]*gap: 5px;[^}]*overflow-y: auto;[^}]*padding: 6px 8px 8px;/s);
+    expect(css).toMatch(/\.lit-ticket-footer\s*\{[^}]*gap: 4px;[^}]*padding: 6px 8px;/s);
+    expect(css).toMatch(/\.lit-side-actions \.lit-review-button\s*\{[^}]*min-height: 38px;/s);
+    expect(css).toMatch(/@container \(max-width: 300px\)[\s\S]*\.lit-ticket-meta \{ padding-inline: 7px; \}/s);
+    expect(css).toMatch(/@container \(max-width: 300px\)[\s\S]*\.lit-slippage-field \{ grid-template-columns: 48px minmax\(0, 1fr\);/s);
+  });
+
+  it("keeps order-behavior choices legible at desk density", () => {
+    expect(css).toMatch(/\.lit-tif-tabs button\s*\{[^}]*min-height: 30px;[^}]*font-size: 11px;/s);
+  });
+
+  it("gives ticket actions visible focus and brief reduced-motion-safe feedback", () => {
+    expect(css).toMatch(/\.lit-ticket button:focus-visible,[\s\S]*outline: 2px solid var\(--lit-focus\);/s);
+    expect(css).toContain("@keyframes lit-ticket-status-in");
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.lit-desk \*/s);
   });
 
   it("uses explicit product and metric identities instead of DOM positions", () => {
@@ -32,17 +54,29 @@ describe("Light it up responsive market metrics", () => {
     expect(css).not.toMatch(/\.lit-market-metric:nth-of-type/);
   });
 
-  it("keeps the chart, order book, desk and account panel available on compact screens", () => {
-    expect(css).toContain('"trades trades chat"');
-    expect(css).toContain('"trades trades"');
-    expect(css).toContain("var(--lit-bottom-height, 190px)");
-    expect(css).not.toMatch(/\.lit-bottom-panel\s*\{[^}]*display: none/s);
-    expect(css).not.toMatch(/\.lit-chat-panel\s*\{[^}]*display: none/s);
+  it("sizes the market bar to its own column, not the viewport", () => {
+    expect(css).toMatch(/\.lit-desk-top\s*\{[^}]*container-type: inline-size;/s);
+    expect(css).toContain("@container (max-width: 1020px)");
+    expect(css).not.toMatch(/@media \(max-width: 1440px\)/);
   });
 
-  it("shares a neutral canvas across networks without scaling up the chrome", () => {
-    expect(css).toContain("--lit-bg: #111214;");
-    expect(css).toContain("--lit-positive: #20b7ae;");
+  it("keeps the chart, order book, ticket and account dock mounted together", () => {
+    expect(css).toMatch(/\.lit-desk-upper\s*\{[^}]*grid-template-columns: minmax\(0, 1fr\) 260px 300px;/s);
+    expect(css).toMatch(/\.lit-book-column > \.lit-book-panel\s*\{[^}]*min-height: 140px;/s);
+    expect(css).toMatch(/\.lit-book-column > \.lit-trades-slot\s*\{[^}]*min-height: 120px;/s);
+    expect(css).toMatch(/\.lit-ticket-content,\s*\.lit-ticket\s*\{[^}]*min-height: 0;[^}]*height: 100%;[^}]*flex: 1 1 auto;/s);
+    expect(css).toMatch(/\.lit-ticket-column > \.lit-ticket-panel\s*\{[^}]*overflow: hidden;/s);
+    expect(css).toMatch(/\.lit-ticket-footer\s*\{[^}]*flex: 0 0 auto;/s);
+    expect(css).toMatch(/\.lit-splitter\[data-axis="x"\]\s*\{[^}]*cursor: ew-resize;/s);
+    expect(css).not.toMatch(/\.lit-bottom-panel\s*\{[^}]*display: none/s);
+    expect(css).not.toContain(".lit-dialog");
+  });
+
+  it("resolves the desk from the shell's aliases without scaling up the chrome", () => {
+    expect(css).toContain("--lit-bg: var(--vex-alias-bg-deep);");
+    expect(css).toContain("--lit-positive: var(--vex-alias-state-success);");
+    expect(css).toContain("--lit-radius: var(--radius-sm);");
+    expect(css).not.toContain("data-lighter-environment");
     expect(css).not.toContain("radial-gradient(");
     expect(css).not.toContain("--lit-robin-neon");
     expect(css).not.toContain("--lit-chart-font-size: 18");

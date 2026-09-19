@@ -377,7 +377,7 @@ describe("AgentScanScreen - Lighter fill rows", () => {
     expect(usd.textContent).not.toContain("est.");
     // The whole value is still reachable - the two-decimal cell hides nothing.
     expect(usd.getAttribute("title")).toBe("12.990450");
-    expect(screen.getByText("10.00x")).not.toBeNull();
+    expect(screen.getByText("10x")).not.toBeNull();
   });
 
   it("renders NO link for a fill - there is no settlement transaction to link to", () => {
@@ -488,7 +488,7 @@ describe("AgentScanScreen - Lighter fill rows", () => {
     mountScreen();
 
     // Not "1x", not "-": an absent historical leverage is not a leverage of one.
-    expect(screen.queryByText("10.00x")).toBeNull();
+    expect(screen.queryByText("10x")).toBeNull();
     expect(screen.queryByText("1x")).toBeNull();
     expand();
     expect(screen.getByText("unknown")).not.toBeNull();
@@ -524,7 +524,7 @@ describe("AgentScanScreen - Lighter fill rows", () => {
     mountScreen();
 
     expect(screen.getByText("SPOT·UNKNOWN")).not.toBeNull();
-    expect(screen.queryByText("10.00x")).toBeNull();
+    expect(screen.queryByText("10x")).toBeNull();
     expand();
     expect(screen.queryByText("Position before")).toBeNull();
     expect(screen.queryByText("Leverage")).toBeNull();

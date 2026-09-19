@@ -1,4 +1,4 @@
-import type { LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
+import type { LighterTradingEnvironment, LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
 import type { LighterMarketSection } from "./market-classification.js";
 
 /**
@@ -33,4 +33,12 @@ export function selectDefaultLighterMarket(
     ?? active[0]
     ?? markets[0]
     ?? null;
+}
+
+/** The favorites key: environment plus every field that pins a market's identity. */
+export function marketIdentity(
+  environment: LighterTradingEnvironment,
+  market: LighterTradingMarket,
+): string {
+  return [environment, market.marketType, market.marketId, market.baseAssetId, market.quoteAssetId, market.symbol].join(":");
 }

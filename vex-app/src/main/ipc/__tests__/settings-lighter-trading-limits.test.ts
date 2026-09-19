@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   getLighterLeverageOverview: vi.fn(),
   prepareLighterLeverage: vi.fn(),
   confirmLighterLeverage: vi.fn(),
+  cancelLighterLeverage: vi.fn(),
   reconcileLighterLeverage: vi.fn(),
 }));
 
@@ -64,6 +65,7 @@ vi.mock("../../lighter/leverage-preparation.js", () => ({
 }));
 vi.mock("../../lighter/leverage-execution.js", () => ({
   confirmLighterLeverage: (...args: unknown[]) => mocks.confirmLighterLeverage(...args),
+  cancelLighterLeverage: (...args: unknown[]) => mocks.cancelLighterLeverage(...args),
   reconcileLighterLeverage: (...args: unknown[]) => mocks.reconcileLighterLeverage(...args),
 }));
 
@@ -268,7 +270,7 @@ describe("settings leverage handlers", () => {
     mocks.prepareLighterLeverage.mockRejectedValueOnce(
       new VexError(
         ErrorCodes.LIGHTER_LEVERAGE_REFUSED,
-        "BTC allows at most 50.00x leverage on Lighter.",
+        "BTC allows at most 50x leverage on Lighter.",
         "Choose a leverage at or below that maximum.",
       ),
     );
@@ -282,7 +284,32 @@ describe("settings leverage handlers", () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(result.error?.message).toContain("at most 50.00x");
+    expect(result.error?.message).toContain("at most 50x");
+  });
+
+  it("accepts current as a selector main resolves from live terms", async () => {
+    mocks.prepareLighterLeverage.mockResolvedValueOnce({
+      kind: "already_configured",
+      current: {
+        initialMarginFraction: 295,
+        leverageDisplay: "33.89",
+        marginMode: "cross",
+        source: "position_row",
+      },
+    });
+
+    const result = await call(CH.settings.prepareLighterLeverage, {
+      environment: "rhc",
+      walletAddress: WALLET,
+      marketId: 1,
+      leverage: "current",
+      marginMode: "cross",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mocks.prepareLighterLeverage).toHaveBeenCalledWith(
+      expect.objectContaining({ leverage: "current" }),
+    );
   });
 
   it("redacts an unexpected failure to a stable message with a correlation id", async () => {
@@ -353,6 +380,25 @@ describe("settings leverage handlers", () => {
       proposalId: "lighter-leverage-1",
     });
     expect(ok).toMatchObject({ ok: true, data: { status: "completed" } });
+  });
+
+  it("cancels by proposal id and validates the strict result", async () => {
+    mocks.cancelLighterLeverage.mockResolvedValueOnce({
+      status: "cancelled",
+      proposalId: "lighter-leverage-1",
+    });
+
+    const result = await call(CH.settings.cancelLighterLeverage, {
+      proposalId: "lighter-leverage-1",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      data: { status: "cancelled", proposalId: "lighter-leverage-1" },
+    });
+    expect(mocks.cancelLighterLeverage).toHaveBeenCalledWith({
+      proposalId: "lighter-leverage-1",
+    });
   });
 
   it("returns an ambiguous outcome as its own status, never as a failure", async () => {

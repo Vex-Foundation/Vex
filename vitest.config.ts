@@ -11,6 +11,9 @@ export default defineConfig({
     },
   },
   test: {
+    // Limit concurrent transforms so dynamic SDK loading does not starve the
+    // short-lived lexical/evaluation tests under a full repository run.
+    maxWorkers: Number.parseInt(process.env.VEX_VITEST_MAX_WORKERS ?? "4", 10) || 4,
     include: [
       "src/__tests__/**/*.test.ts",
       "src/tools/solana-ecosystem/jupiter/__tests__/**/*.test.ts",

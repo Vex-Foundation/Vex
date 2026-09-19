@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StudyChartApi } from "../chart-analysis-api.js";
 import { ChartTools } from "../ChartTools.js";
 import type { ChartCandleRow } from "../chart-adapter.js";
+import { parseChartPreferences } from "../chart-preferences.js";
 vi.mock("../ChartDrawings.js", () => ({ ChartDrawings: () => null }));
 beforeEach(() => { localStorage.clear(); useLighterAnalysisStore.setState({ charts: {}, favorites: [] }); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
@@ -14,7 +15,7 @@ function setup() {
   const chart = { subscribeCrosshairMove: vi.fn(), unsubscribeCrosshairMove: vi.fn(), paneSize: () => ({ width: 500, height: 300 }), takeScreenshot: vi.fn(() => ({ toBlob: (callback: (blob: Blob | null) => void) => callback(new Blob(["image"])) })), addSeries: vi.fn((_definition: unknown, _options: unknown, _pane?: number) => { const line = { setData: vi.fn(), createPriceLine: vi.fn() }; lines.push(line); return line; }), removeSeries: vi.fn(), panes: () => [0, 1, 2].map(() => ({ setStretchFactor })), timeScale: () => ({ timeToCoordinate: () => 0, coordinateToLogical: (x: number) => x, logicalToCoordinate: (x: number) => x, subscribeVisibleLogicalRangeChange: vi.fn(), unsubscribeVisibleLogicalRangeChange: vi.fn(), getVisibleLogicalRange: () => ({ from: 10, to: 40 }), setVisibleLogicalRange: vi.fn() }) };
   const rows: ChartCandleRow[] = Array.from({ length: 50 }, (_, i) => ({ timestamp: 1_700_000_000 + i * 60, open: 10 + i, close: 11 + i, high: 12 + i, low: 9 + i, volumeBase: 100, volumeQuote: 1000 }));
   const host = { current: document.createElement("div") };
-  const props = { chart: chart satisfies StudyChartApi, series: null, host, rows, scope: "rhc:7", theme: "chronos", precision: 2, chartType: "candles" as const, onChartType: vi.fn() };
+  const props = { chart: chart satisfies StudyChartApi, series: null, host, rows, scope: "rhc:7", theme: "chronos", precision: 2, chartType: "candles" as const, onChartType: vi.fn(), onVolume: vi.fn(), onFills: vi.fn(), onScale: vi.fn() };
   return { chart, rows, lines, props, setStretchFactor };
 }
 describe("Chart analysis controls", () => {
@@ -44,7 +45,7 @@ describe("Chart analysis controls", () => {
   });
   it("restores validated study, volume and type preferences without leaking between markets", () => {
     const { props } = setup();
-    useLighterAnalysisStore.getState().savePreferences("rhc:7", { studies: ["ema"], volume: false, chartType: "line" });
+    useLighterAnalysisStore.getState().savePreferences("rhc:7", { ...parseChartPreferences(null), studies: ["ema"], volume: false, chartType: "line" });
     const view = render(<ChartTools key="rhc:7" {...props} />);
     expect((screen.getByRole("checkbox", { name: /EMA 20/ }) as HTMLInputElement).checked).toBe(true);
     expect(screen.getByRole("button", { name: "Volume" }).getAttribute("aria-pressed")).toBe("false");
@@ -60,11 +61,11 @@ describe("Chart analysis controls", () => {
   });
   it("applies restored volume visibility when the chart becomes ready", () => {
     const { props } = setup();
-    useLighterAnalysisStore.getState().savePreferences("rhc:7", { studies: [], volume: false, chartType: "candles" });
+    useLighterAnalysisStore.getState().savePreferences("rhc:7", { ...parseChartPreferences(null), volume: false });
     const view = render(<ChartTools {...props} chart={null} />);
-    const volume = vi.fn(); props.host.current.addEventListener("lit-chart-volume", volume);
+    props.onVolume.mockClear();
     view.rerender(<ChartTools {...props} />);
-    expect(requireValue(volume.mock.lastCall)[0].detail).toBe(false);
+    expect(props.onVolume).toHaveBeenLastCalledWith(false);
   });
   it("exports the native chart image and releases the download URL", () => {
     vi.useFakeTimers();
@@ -80,14 +81,38 @@ describe("Chart analysis controls", () => {
     vi.runAllTimers();
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:chart-image");
   });
+  it("recomputes and relabels a study when its period changes, rejecting out-of-range input", () => {
+    const { props, lines } = setup();
+    render(<ChartTools {...props} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /SMA 20/ }));
+    const line = requireValue(lines[0]);
+    expect(requireValue(line.setData.mock.lastCall)[0]).toHaveLength(31);
+    fireEvent.change(screen.getByLabelText("SMA 20 period"), { target: { value: "5" } });
+    expect(screen.getByRole("checkbox", { name: /SMA 5/ })).toBeTruthy();
+    expect(screen.getByLabelText("Active indicators").textContent).toBe("SMA 5");
+    const relabeled = requireValue(lines[lines.length - 1]);
+    expect(requireValue(relabeled.setData.mock.lastCall)[0]).toHaveLength(46);
+    expect(requireValue(useLighterAnalysisStore.getState().charts["rhc:7"]).preferences.periods.sma).toBe(5);
+    fireEvent.change(screen.getByLabelText("SMA 5 period"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("SMA 5 period"), { target: { value: "501" } });
+    expect(requireValue(useLighterAnalysisStore.getState().charts["rhc:7"]).preferences.periods.sma).toBe(5);
+  });
   it("routes type and volume controls and closes the study disclosure with Escape", () => {
     const { props } = setup();
-    const volume = vi.fn(); props.host.current.addEventListener("lit-chart-volume", volume);
     render(<ChartTools {...props} />);
+    expect(props.onScale).toHaveBeenLastCalledWith("linear");
     fireEvent.change(screen.getByLabelText("Chart type"), { target: { value: "line" } });
     expect(props.onChartType).toHaveBeenCalledWith("line");
     fireEvent.click(screen.getByRole("button", { name: "Volume" }));
-    expect(requireValue(volume.mock.lastCall)[0].detail).toBe(false);
+    expect(props.onVolume).toHaveBeenLastCalledWith(false);
+    expect(props.onFills).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByRole("button", { name: "Fills" }));
+    expect(props.onFills).toHaveBeenLastCalledWith(false);
+    expect(requireValue(useLighterAnalysisStore.getState().charts["rhc:7"]).preferences.fills).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Log" }));
+    expect(props.onScale).toHaveBeenLastCalledWith("log");
+    expect(screen.getByRole("button", { name: "Log" }).getAttribute("aria-pressed")).toBe("true");
+    expect(requireValue(useLighterAnalysisStore.getState().charts["rhc:7"]).preferences.scale).toBe("log");
     const details = requireValue(screen.getByText("Indicators").closest("details"));
     details.open = true;
     const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });

@@ -58,7 +58,9 @@ export function ApprovalsRegion({
     if (query.data.ok === false) {
       return { kind: "error", message: query.data.error.message };
     }
-    return { kind: "rows", rows: query.data.data };
+    // A desk click's card pops in the desk's own dialog; chat shows what was
+    // proposed to it.
+    return { kind: "rows", rows: query.data.data.filter((row) => row.origin !== "desk") };
   }, [query.data]);
 
   // Identify the FIRST newly-appearing id (oldest by createdAt) for focus.

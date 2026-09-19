@@ -1,178 +1,331 @@
-import { useMemo, type JSX } from "react";
-import type { LighterTradingCandleConnectionStatus } from "@shared/schemas/lighter-trading.js";
-import { NO_VALUE, formatDecimalString, formatNumber, formatRetrievedAt } from "./format.js";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type JSX, type MouseEvent, type ReactNode } from "react";
+import type {
+  LighterTradingCandleConnectionStatus,
+  LighterTradingSnapshot,
+} from "@shared/schemas/lighter-trading.js";
+import {
+  GROUP_MULTIPLIERS,
+  bookInside,
+  groupTickLabel,
+  groupedLevels,
+  type BookLevel,
+  type BookSide,
+  type LighterOrderBookData,
+} from "./book-model.js";
+import { NO_VALUE, formatDecimalString, formatNumber } from "./format.js";
+import type { TradeTicketPricePick } from "./ticket-model.js";
+import { useLevelTicks, useNewIds } from "./useLiveFlash.js";
 
-type BookRow = {
-  readonly price: string;
-  readonly size: string;
-  readonly orderId?: string;
-};
-export type LighterOrderBookData = {
-  readonly asks: readonly BookRow[];
-  readonly bids: readonly BookRow[];
-};
+export type { LighterOrderBookData } from "./book-model.js";
 
-interface BookLevel {
-  readonly price: string;
-  readonly size: string;
-  readonly total: string;
+/** `stack`: asks over the inside row over bids with a cumulative Sum column; `split`: bids beside asks. */
+type BookView = "stack" | "split";
+type SizeUnit = "base" | "quote";
+type PriceSelect = (price: string, kind: TradeTicketPricePick["kind"]) => void;
+
+const TRADES_LIMIT = 40;
+
+function sizeLabel(size: string, price: string, unit: SizeUnit): string {
+  if (unit === "base") return formatDecimalString(size);
+  const quote = Number(size) * Number(price);
+  return formatNumber(quote, { maximumFractionDigits: quote >= 1_000 ? 0 : 2 });
 }
 
-/* Render every level the snapshot provides (the service caps depth at 24 per
- * side). More levels than fit keeps the rail packed solid with no gaps: the
- * inside market stays pinned to the spread while far levels clip at the edges. */
-const DEPTH_LIMIT = 24;
-
-function compareUnsignedDecimals(left: string, right: string): number {
-  const [leftInteger = "0", leftFraction = ""] = left.split(".");
-  const [rightInteger = "0", rightFraction = ""] = right.split(".");
-  const normalizedLeftInteger = leftInteger.replace(/^0+(?=\d)/, "");
-  const normalizedRightInteger = rightInteger.replace(/^0+(?=\d)/, "");
-  if (normalizedLeftInteger.length !== normalizedRightInteger.length) {
-    return normalizedLeftInteger.length > normalizedRightInteger.length ? 1 : -1;
-  }
-  if (normalizedLeftInteger !== normalizedRightInteger) {
-    return normalizedLeftInteger > normalizedRightInteger ? 1 : -1;
-  }
-  const width = Math.max(leftFraction.length, rightFraction.length);
-  const normalizedLeftFraction = leftFraction.padEnd(width, "0");
-  const normalizedRightFraction = rightFraction.padEnd(width, "0");
-  if (normalizedLeftFraction === normalizedRightFraction) return 0;
-  return normalizedLeftFraction > normalizedRightFraction ? 1 : -1;
+function tradeTime(timestamp: number): string {
+  const millis = timestamp >= 1_000_000_000_000 ? timestamp : timestamp * 1_000;
+  const date = new Date(millis);
+  if (!Number.isFinite(date.getTime())) return NO_VALUE;
+  return new Intl.DateTimeFormat("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date);
 }
 
-function addUnsignedDecimals(left: string, right: string): string {
-  const [leftInteger = "0", leftFraction = ""] = left.split(".");
-  const [rightInteger = "0", rightFraction = ""] = right.split(".");
-  const scale = Math.max(leftFraction.length, rightFraction.length);
-  const leftDigits = `${leftInteger}${leftFraction.padEnd(scale, "0")}`;
-  const rightDigits = `${rightInteger}${rightFraction.padEnd(scale, "0")}`;
-  const sum = (BigInt(leftDigits) + BigInt(rightDigits)).toString().padStart(scale + 1, "0");
-  if (scale === 0) return sum;
-  const integer = sum.slice(0, -scale) || "0";
-  const fraction = sum.slice(-scale).replace(/0+$/, "");
-  return fraction.length === 0 ? integer : `${integer}.${fraction}`;
-}
+/** Shift-click loads the price as a protection trigger instead of a limit price. */
+const pickKind = (event: MouseEvent): TradeTicketPricePick["kind"] => event.shiftKey ? "trigger" : "limit";
 
-function subtractUnsignedDecimals(left: string, right: string): string | null {
-  if (compareUnsignedDecimals(left, right) < 0) return null;
-  const [leftInteger = "0", leftFraction = ""] = left.split(".");
-  const [rightInteger = "0", rightFraction = ""] = right.split(".");
-  const scale = Math.max(leftFraction.length, rightFraction.length);
-  const leftDigits = BigInt(`${leftInteger}${leftFraction.padEnd(scale, "0")}`);
-  const rightDigits = BigInt(`${rightInteger}${rightFraction.padEnd(scale, "0")}`);
-  const difference = (leftDigits - rightDigits).toString().padStart(scale + 1, "0");
-  if (scale === 0) return difference;
-  const integer = difference.slice(0, -scale) || "0";
-  const fraction = difference.slice(-scale).replace(/0+$/, "");
-  return fraction.length === 0 ? integer : `${integer}.${fraction}`;
-}
-
-function sortedRows(rows: readonly BookRow[], side: "ask" | "bid"): BookRow[] {
-  const byPrice = new Map<string, string>();
-  for (const row of rows) {
-    if (!/^\d+(?:\.\d+)?$/.test(row.price) || !/^\d+(?:\.\d+)?$/.test(row.size)) continue;
-    byPrice.set(row.price, addUnsignedDecimals(byPrice.get(row.price) ?? "0", row.size));
-  }
-  return [...byPrice.entries()]
-    .map(([price, size]) => ({ price, size }))
-    .sort((left, right) => side === "ask"
-      ? compareUnsignedDecimals(left.price, right.price)
-      : compareUnsignedDecimals(right.price, left.price))
-    .slice(0, DEPTH_LIMIT);
-}
-
-export function bestBookPrice(
-  rows: readonly BookRow[],
-  side: "ask" | "bid",
-): string | null {
-  return sortedRows(rows, side)[0]?.price ?? null;
-}
-
-function cumulativeLevels(rows: readonly BookRow[], side: "ask" | "bid"): BookLevel[] {
-  let cumulative = "0";
-  return sortedRows(rows, side).map((row) => {
-    cumulative = addUnsignedDecimals(cumulative, row.size);
-    return { price: row.price, size: row.size, total: cumulative };
-  });
-}
-
-function BookSide({ rows, side }: {
-  readonly rows: readonly BookRow[];
-  readonly side: "ask" | "bid";
+function BookColumn({ levels, side, unit, maxTotal, view, onPriceSelect }: {
+  readonly levels: readonly BookLevel[];
+  readonly side: BookSide;
+  readonly unit: SizeUnit;
+  readonly maxTotal: number;
+  readonly view: BookView;
+  readonly onPriceSelect: PriceSelect;
 }): JSX.Element {
-  const { levels, maxTotal } = useMemo(() => {
-    const best = cumulativeLevels(rows, side);
-    // Asks read far → best (best pinned to the spread at the bottom); bids best → far.
-    return {
-      levels: side === "ask" ? [...best].reverse() : best,
-      maxTotal: Number(best.at(-1)?.total ?? 0),
-    };
-  }, [rows, side]);
-
-  if (levels.length === 0) {
-    return <p className="lit-book-empty">No {side === "ask" ? "asks" : "bids"}</p>;
-  }
-
+  const ticks = useLevelTicks(levels);
+  // Stacked asks use column-reverse: the best price starts beside the mid row,
+  // and the trader can scroll upward to deeper levels without moving the bids.
   return (
-    <div className="lit-book-side" data-side={side}>
+    <div className="lit-book-rows" data-side={side}>
       {levels.map((level) => {
-        const percent = maxTotal > 0 ? Math.min(100, (Number(level.total) / maxTotal) * 100) : 0;
+        const depth = maxTotal > 0 ? Math.min(100, (Number(level.total) / maxTotal) * 100) : 0;
+        const tick = ticks.get(level.price) ?? 0;
         return (
-          <div className="lit-book-row" key={`${side}:${level.price}`}>
-            <span className="lit-book-depth" style={{ width: `${percent}%` }} aria-hidden="true" />
-            <span className="lit-book-price">{formatDecimalString(level.price)}</span>
-            <span className="lit-book-size">{formatDecimalString(level.size)}</span>
-            <span className="lit-book-total">{formatDecimalString(level.total)}</span>
-          </div>
+          <button
+            type="button"
+            // A changed size remounts the row, which replays its flash.
+            key={`${level.price}:${String(tick)}`}
+            className="lit-book-row"
+            data-flash={tick > 0 ? "" : undefined}
+            style={{ "--lit-depth": `${depth}%` } as CSSProperties}
+            onClick={(event) => onPriceSelect(level.price, pickKind(event))}
+            title={`Total ${sizeLabel(level.total, level.price, unit)} · shift-click for a trigger`}
+            aria-label={`${side === "ask" ? "Ask" : "Bid"} ${level.price}, size ${level.size}, total ${level.total}`}
+          >
+            <b>{formatDecimalString(level.price)}</b>
+            <span>{sizeLabel(level.size, level.price, unit)}</span>
+            {view === "stack" ? <span>{sizeLabel(level.total, level.price, unit)}</span> : null}
+          </button>
         );
       })}
     </div>
   );
 }
 
-export function OrderBook({ book, symbol, status, receivedAt }: {
+export function MarketBookPanel({
+  splitter,
+  heading,
+  collapsed = false,
+  onToggleCollapse,
+  preferredView = "stack",
+  book,
+  baseSymbol,
+  quoteSymbol,
+  priceDecimals,
+  lastPrice,
+  markPrice,
+  bookStatus,
+  onPriceSelect,
+}: {
+  /** The seam beside the book, rendered inside so it sits on the panel's edge. */
+  readonly splitter?: ReactNode;
+  /** Replaces the panel's title, e.g. the book/trades tabs when the column is stacked. */
+  readonly heading?: ReactNode;
+  /** Folds the depth panel to its live spread/mark summary. */
+  readonly collapsed?: boolean;
+  readonly onToggleCollapse?: () => void;
+  /** A shallow panel uses side-by-side prices until the user chooses a view. */
+  readonly preferredView?: BookView;
   readonly book: LighterOrderBookData;
-  readonly symbol?: string;
-  readonly status?: LighterTradingCandleConnectionStatus;
-  readonly receivedAt?: number | null;
+  readonly baseSymbol: string;
+  readonly quoteSymbol: string;
+  readonly priceDecimals: number;
+  readonly lastPrice: number | null;
+  readonly markPrice: number | null;
+  readonly bookStatus: LighterTradingCandleConnectionStatus;
+  readonly onPriceSelect: PriceSelect;
 }): JSX.Element {
-  const bestAsk = bestBookPrice(book.asks, "ask");
-  const bestBid = bestBookPrice(book.bids, "bid");
-  const ask = bestAsk === null ? null : Number(bestAsk);
-  const bid = bestBid === null ? null : Number(bestBid);
-  const spread = bestAsk === null || bestBid === null
-    ? null
-    : subtractUnsignedDecimals(bestAsk, bestBid);
-  const mid = ask !== null && bid !== null ? (ask + bid) / 2 : null;
-  const spreadPercent = spread !== null && mid !== null && mid > 0
-    ? (Number(spread) / mid) * 100
-    : null;
+  const [chosenView, setView] = useState<BookView | null>(null);
+  const view = chosenView ?? preferredView;
+  const [unit, setUnit] = useState<SizeUnit>("base");
+  const [multiplier, setMultiplier] = useState<number>(1);
+  const previousLast = useRef<number | null>(null);
+  const [trend, setTrend] = useState<"up" | "down" | null>(null);
+
+  useEffect(() => {
+    // A market switch passes through null (REST snapshot and stream stats both
+    // reset); forgetting the old market's price keeps its trend from bleeding
+    // into the new one's first tick.
+    if (lastPrice === null) {
+      previousLast.current = null;
+      setTrend(null);
+      return;
+    }
+    const previous = previousLast.current;
+    previousLast.current = lastPrice;
+    if (previous === null || previous === lastPrice) return;
+    setTrend(lastPrice > previous ? "up" : "down");
+  }, [lastPrice]);
+
+  const { asks, bids, maxTotal, bidShare, inside } = useMemo(() => {
+    const askLevels = groupedLevels(book.asks, "ask", priceDecimals, multiplier);
+    const bidLevels = groupedLevels(book.bids, "bid", priceDecimals, multiplier);
+    const askTotal = Number(askLevels.at(-1)?.total ?? 0);
+    const bidTotal = Number(bidLevels.at(-1)?.total ?? 0);
+    return {
+      asks: askLevels,
+      bids: bidLevels,
+      maxTotal: Math.max(askTotal, bidTotal),
+      bidShare: askTotal + bidTotal > 0 ? (bidTotal / (askTotal + bidTotal)) * 100 : null,
+      inside: bookInside(book),
+    };
+  }, [book, multiplier, priceDecimals]);
+
+  const priceDigits = { minimumFractionDigits: Math.min(priceDecimals, 2), maximumFractionDigits: priceDecimals };
+  const empty = asks.length === 0 && bids.length === 0;
+  const unitSymbol = unit === "base" ? baseSymbol : quoteSymbol;
+  const column = (side: BookSide): JSX.Element => (
+    <BookColumn
+      levels={side === "ask" ? asks : bids}
+      side={side}
+      unit={unit}
+      maxTotal={maxTotal}
+      view={view}
+      onPriceSelect={onPriceSelect}
+    />
+  );
+  const spreadLabel =
+    inside.spread === null
+      ? "Spread --"
+      : `Spread ${formatDecimalString(inside.spread)}${inside.spreadBps === null ? "" : ` (${formatNumber(inside.spreadBps, { maximumFractionDigits: 1 })} bp)`}`;
+  // The row carries the spread as its title too: at the column's floor the
+  // words give way to the mark (lighter-book.css) and the hover still says it.
+  const mid = (
+    <div className="lit-book-mid" data-trend={trend ?? undefined} title={spreadLabel}>
+      <b>{lastPrice === null ? NO_VALUE : formatNumber(lastPrice, priceDigits)}</b>
+      <span>{spreadLabel}</span>
+      <span>{markPrice === null ? "Mark --" : `Mark ${formatNumber(markPrice, priceDigits)}`}</span>
+    </div>
+  );
 
   return (
-    <section className="lit-panel lit-order-book" aria-labelledby="lit-order-book-title">
-      <header className="lit-panel-header">
-        <h3 id="lit-order-book-title">Order book</h3>
-        <span>
-          {receivedAt === null || receivedAt === undefined
-            ? "REST snapshot"
-            : status === "live" ? "Live depth" : "Depth delayed"}
-          {receivedAt === null || receivedAt === undefined ? "" : ` · ${formatRetrievedAt(receivedAt)}`}
-        </span>
-      </header>
-      <div className="lit-book-columns" aria-hidden="true">
-        <span>Price</span>
-        <span>Size{symbol === undefined ? "" : ` ${symbol}`}</span>
-        <span>Total</span>
-      </div>
-      <div className="lit-book-scroll">
-        <BookSide rows={book.asks} side="ask" />
-        <div className="lit-book-spread">
-          <strong>{formatDecimalString(spread)}</strong>
-          <span>Spread</span>
-          <strong>{spreadPercent === null ? NO_VALUE : `${formatNumber(spreadPercent)}%`}</strong>
+    <section
+      className="lit-panel lit-book-panel"
+      aria-label="Order book"
+      aria-busy={bookStatus === "connecting" || bookStatus === "reconnecting"}
+      data-view={view}
+      data-collapsed={collapsed || undefined}
+    >
+      {splitter}
+      <header className="lit-panel-header lit-book-header">
+        {heading ?? <h3>Order Book</h3>}
+        {onToggleCollapse === undefined ? null : (
+          <button
+            type="button"
+            className="lit-book-collapse"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand order book" : "Collapse order book"}
+            title={collapsed ? "Expand order book" : "Collapse order book"}
+            onClick={onToggleCollapse}
+          >
+            <span aria-hidden="true">{collapsed ? "＋" : "－"}</span>
+          </button>
+        )}
+        <div className="lit-book-controls">
+          <select
+            aria-label="Price grouping"
+            value={multiplier}
+            onChange={(event) => setMultiplier(Number(event.currentTarget.value))}
+          >
+            {GROUP_MULTIPLIERS.map((item) => (
+              <option key={item} value={item}>{groupTickLabel(item, priceDecimals)}</option>
+            ))}
+          </select>
+          <div className="lit-unit-switch" role="group" aria-label="Size unit">
+            <button type="button" aria-pressed={unit === "base"} onClick={() => setUnit("base")}>{baseSymbol}</button>
+            <button type="button" aria-pressed={unit === "quote"} onClick={() => setUnit("quote")}>{quoteSymbol}</button>
+          </div>
+          <div className="lit-unit-switch lit-view-switch" role="group" aria-label="Book view">
+            <button type="button" aria-pressed={view === "stack"} aria-label="Stacked" title="Asks over bids" onClick={() => setView("stack")}>
+              <svg viewBox="0 0 12 12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="3.5" /><rect x="1.5" y="7" width="9" height="3.5" /></svg>
+            </button>
+            <button type="button" aria-pressed={view === "split"} aria-label="Side by side" title="Bids beside asks" onClick={() => setView("split")}>
+              <svg viewBox="0 0 12 12" aria-hidden="true"><rect x="1.5" y="1.5" width="3.5" height="9" /><rect x="7" y="1.5" width="3.5" height="9" /></svg>
+            </button>
+          </div>
         </div>
-        <BookSide rows={book.bids} side="bid" />
+        <span
+          className="lit-live-dot"
+          data-status={bookStatus}
+          title={`Book: ${bookStatus}`}
+          aria-label={`Book ${bookStatus}`}
+          role="status"
+          aria-live="polite"
+        />
+      </header>
+      <div className="lit-book-labels">
+        <div className="lit-book-columns" data-view={view}>
+        {view === "stack" ? (
+          <>
+            <span aria-hidden="true">Price ({quoteSymbol})</span>
+            <span aria-hidden="true">Size ({unitSymbol})</span>
+            {/* The sum is in the size unit; the label stays bare so three columns fit the 220px floor. */}
+            <span aria-hidden="true">Sum</span>
+          </>
+        ) : (
+          <>
+            <span aria-hidden="true">Size</span>
+            <span aria-hidden="true">Bid</span>
+            <span aria-hidden="true">Ask</span>
+            <span aria-hidden="true">Size</span>
+          </>
+        )}
+        </div>
+      </div>
+      {collapsed ? mid : view === "stack" ? (
+        <div className="lit-book-stack">
+          {empty ? <p className="lit-book-empty">No order book levels yet.</p> : column("ask")}
+          {mid}
+          {empty ? null : column("bid")}
+        </div>
+      ) : (
+        <>
+          {mid}
+          <div className="lit-book-body">
+            {empty ? <p className="lit-book-empty">No order book levels yet.</p> : <>{column("bid")}{column("ask")}</>}
+          </div>
+        </>
+      )}
+      <div className="lit-book-ratio" aria-label={bidShare === null ? "Bid and ask depth unavailable" : `Bids ${formatNumber(bidShare, { maximumFractionDigits: 0 })}% of visible depth`}>
+        <span data-side="bid">B {bidShare === null ? NO_VALUE : `${formatNumber(bidShare, { maximumFractionDigits: 0 })}%`}</span>
+        <i style={{ "--lit-bid-share": `${bidShare ?? 50}%` } as CSSProperties} />
+        <span data-side="ask">{bidShare === null ? NO_VALUE : `${formatNumber(100 - bidShare, { maximumFractionDigits: 0 })}%`} S</span>
+      </div>
+    </section>
+  );
+}
+
+/** The tape under the book: its own panel, so it never hides behind a tab. */
+export function TradesPanel({ splitter, heading, trades, baseSymbol, tradesStatus, onPriceSelect }: {
+  /** The seam above the trades, rendered inside so it sits on the panel's top edge. */
+  readonly splitter?: ReactNode;
+  readonly heading?: ReactNode;
+  readonly trades: LighterTradingSnapshot["trades"];
+  readonly baseSymbol: string;
+  readonly tradesStatus: LighterTradingCandleConnectionStatus;
+  readonly onPriceSelect: PriceSelect;
+}): JSX.Element {
+  const tradeIds = useMemo(() => trades.map((trade) => trade.tradeId), [trades]);
+  const newTradeIds = useNewIds(tradeIds);
+  return (
+    <section className="lit-panel lit-trades-panel" aria-label="Trades" aria-busy={tradesStatus === "connecting" || tradesStatus === "reconnecting"}>
+      {splitter}
+      <header className="lit-panel-header lit-book-header">
+        {heading ?? <h3>Trades</h3>}
+        <span
+          className="lit-live-dot"
+          data-status={tradesStatus}
+          title={`Trades: ${tradesStatus}`}
+          aria-label={`Trades ${tradesStatus}`}
+          role="status"
+          aria-live="polite"
+        />
+      </header>
+      <div className="lit-book-columns lit-trades-columns" aria-hidden="true">
+        <span>Price</span>
+        <span>Size {baseSymbol}</span>
+        <span>Time</span>
+      </div>
+      <div className="lit-trades-list">
+        {trades.length === 0 ? (
+          <p className="lit-book-empty">No recent trades returned.</p>
+        ) : trades.slice(0, TRADES_LIMIT).map((trade) => (
+          <button
+            type="button"
+            key={trade.tradeId}
+            className="lit-book-row lit-trade-row"
+            data-side={trade.takerSide}
+            data-new={newTradeIds.has(trade.tradeId) ? "" : undefined}
+            onClick={(event) => onPriceSelect(trade.price, pickKind(event))}
+            aria-label={`${trade.takerSide === "buy" ? "Buy" : "Sell"} ${trade.price}, size ${trade.size}`}
+          >
+            <b>{formatDecimalString(trade.price)}</b>
+            <span>{formatDecimalString(trade.size)}</span>
+            <span>{tradeTime(trade.timestamp)}</span>
+          </button>
+        ))}
       </div>
     </section>
   );

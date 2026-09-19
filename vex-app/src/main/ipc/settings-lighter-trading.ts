@@ -23,6 +23,8 @@ import { CH } from "@shared/ipc/channels.js";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import {
   applyLighterLeverageResultSchema,
+  cancelLighterLeverageInputSchema,
+  cancelLighterLeverageResultSchema,
   confirmLighterLeverageInputSchema,
   getLighterLeverageOverviewInputSchema,
   getLighterTradingLimitsInputSchema,
@@ -33,6 +35,7 @@ import {
   reconcileLighterLeverageInputSchema,
   setLighterTradingLimitsInputSchema,
   type ApplyLighterLeverageResult,
+  type CancelLighterLeverageResult,
   type LighterLeverageOverview,
   type LighterLeverageProposal,
   type LighterTradingLimits,
@@ -160,6 +163,23 @@ export function registerLighterTradingSettingsHandlers(): Array<() => void> {
           return ok(await confirmLighterLeverage(input, ctx.signal));
         } catch (cause) {
           return err(failure("confirmLighterLeverage", cause, ctx.requestId));
+        }
+      },
+    }),
+
+    registerHandler({
+      channel: CH.settings.cancelLighterLeverage,
+      domain: "settings",
+      inputSchema: cancelLighterLeverageInputSchema,
+      outputSchema: cancelLighterLeverageResultSchema,
+      handle: async (input, ctx): Promise<Result<CancelLighterLeverageResult>> => {
+        const dbUrlOutcome = await ensureEngineDbUrl(ctx.requestId);
+        if (!dbUrlOutcome.ok) return dbUrlOutcome;
+        try {
+          const { cancelLighterLeverage } = await import("../lighter/leverage-execution.js");
+          return ok(await cancelLighterLeverage(input));
+        } catch (cause) {
+          return err(failure("cancelLighterLeverage", cause, ctx.requestId));
         }
       },
     }),

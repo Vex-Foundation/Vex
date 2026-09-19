@@ -122,6 +122,21 @@ describe("ApprovalsRegion", () => {
     expect(card).not.toBeNull();
   });
 
+  it("leaves a desk click's card to the desk's own dialog", () => {
+    pendingState = {
+      data: {
+        ok: true,
+        data: [
+          makeSummary({ id: "appr-desk", origin: "desk" }),
+          makeSummary({ id: "appr-agent", origin: "agent" }),
+        ],
+      },
+    };
+    renderRegion();
+    expect(document.querySelector("[data-approval-id='appr-desk']")).toBeNull();
+    expect(document.querySelector("[data-approval-id='appr-agent']")).not.toBeNull();
+  });
+
   it("the FIRST newly-appearing (oldest by createdAt) card gets focus on mount", () => {
     pendingState = {
       data: {

@@ -19,12 +19,8 @@ import type {
   LighterPointsReferral,
   LighterPointsRow,
 } from "@shared/schemas/lighter-points.js";
+import { LIGHTER_ENVIRONMENT_NAMES } from "@shared/lighter-environment-labels.js";
 import { useLighterPoints } from "../../../../lib/api/lighter-points.js";
-
-const ENVIRONMENT_LABEL: Readonly<Record<"core" | "rhc", string>> = {
-  core: "Lighter Core",
-  rhc: "Robinhood Chain",
-};
 
 const AUTH_REASON_COPY: Readonly<Record<string, string>> = {
   no_credential: "No Lighter trading credential is saved for this account on this machine.",
@@ -161,7 +157,7 @@ function WalletCard({
             {row.walletAddress}
           </span>
           <span className="vex-micro-label uppercase text-ink-secondary">
-            {ENVIRONMENT_LABEL[row.environment]} - account {row.accountIndex}
+            {LIGHTER_ENVIRONMENT_NAMES[row.environment]} - account {row.accountIndex}
           </span>
         </div>
         {row.kind === "unavailable" ? (
@@ -261,8 +257,9 @@ export function LighterPointsSection({
             data-vex-lighter-points-state="empty"
           >
             No wallet has a Lighter account registered through Vex yet. Open the
-            Lighter panel and complete the deposit and key setup for a wallet;
-            its points appear here afterwards.
+            Lighter desk and press Connect Lighter; Vex walks the wallet through
+            the deposit and key setup in the chat, and its points appear here
+            afterwards.
           </p>
         ) : (
           <>

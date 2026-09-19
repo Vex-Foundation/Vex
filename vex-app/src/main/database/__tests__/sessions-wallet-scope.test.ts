@@ -140,7 +140,7 @@ describe("createSessionWithClient", () => {
     const sessionsInsert = calls.find((c) => String(c[0]).includes("INSERT INTO sessions"));
     expect(sessionsInsert?.[1]).toEqual([
       SID, "vex_app", "mission", "restricted", null, "M",
-      "evm_1", "0xEvmAddr", "sol_1", "SolAddr",
+      "evm_1", "0xEvmAddr", "sol_1", "SolAddr", null,
     ]);
     const missionsInsert = calls.find((c) => String(c[0]).includes("INSERT INTO missions"));
     expect(missionsInsert?.[1]).toEqual([expect.any(String), SID, ["0xEvmAddr", "SolAddr"]]);

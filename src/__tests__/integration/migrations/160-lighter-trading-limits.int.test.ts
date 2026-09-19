@@ -431,6 +431,58 @@ describe("the leverage intent lifecycle on real PostgreSQL", () => {
     expect(stored?.sendAttemptStartedAt).not.toBeNull();
   });
 
+  it("cancels only a proposal and frees its market without creating nonce evidence", async () => {
+    await proposal("i-life-cancel", 20);
+
+    const cancelled = await intents.markCancelled("i-life-cancel");
+    expect(cancelled).toMatchObject({
+      executionState: "cancelled",
+      consentedAt: null,
+      nonceValue: null,
+      signerTxHash: null,
+      sendAttemptStartedAt: null,
+    });
+    await expect(proposal("i-life-cancel-next", 20)).resolves.toMatchObject({
+      executionState: "proposed",
+    });
+  });
+
+  it("lets exactly one of concurrent Cancel and Confirm reservation win", async () => {
+    await proposal("i-life-cancel-race", 21);
+
+    const [cancelled, signing] = await Promise.all([
+      intents.markCancelled("i-life-cancel-race"),
+      reserve("i-life-cancel-race", "17"),
+    ]);
+
+    expect([cancelled !== null, signing !== null].filter(Boolean)).toHaveLength(1);
+    const stored = await intents.find("i-life-cancel-race");
+    if (cancelled !== null) {
+      expect(stored).toMatchObject({
+        executionState: "cancelled",
+        consentedAt: null,
+        nonceValue: null,
+      });
+    } else {
+      expect(stored).toMatchObject({
+        executionState: "signing",
+        nonceValue: "17",
+      });
+    }
+  });
+
+  it("refuses cancellation after signing starts and leaves the reserved nonce unchanged", async () => {
+    await proposal("i-life-cancel-late", 22);
+    await reserve("i-life-cancel-late", "19");
+
+    expect(await intents.markCancelled("i-life-cancel-late")).toBeNull();
+    expect(await intents.find("i-life-cancel-late")).toMatchObject({
+      executionState: "signing",
+      nonceValue: "19",
+      signerTxHash: null,
+    });
+  });
+
   it("claims the send-admission latch exactly once, and never after consent expires", async () => {
     await proposal("i-life-latch", 11);
     await reserve("i-life-latch");

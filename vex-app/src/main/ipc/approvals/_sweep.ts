@@ -24,6 +24,12 @@ import { log } from "../../logger/index.js";
 import { dispatchPreparedMission } from "../mission/_engine-dispatch.js";
 import { ensureEngineDbUrl } from "../../database/engine-db-readiness.js";
 
+// Once per process: a desk row still `dispatching` from a previous process
+// was abandoned mid-dispatch and can only be marked indeterminate. Piggybacks
+// on the first cycle that finds the database ready instead of owning a timer.
+let deskDispatchesRecovered = false;
+const deskProcessStartedAt = new Date();
+
 export async function runScheduledSweep(): Promise<void> {
   const correlationId = `sweep-${randomUUID()}`;
   const dbUrlOutcome = await ensureEngineDbUrl(correlationId);
@@ -51,9 +57,52 @@ export async function runScheduledSweep(): Promise<void> {
   const {
     sweepExpiredApprovals,
     reconcileApprovalLifecycle,
+    reconcileAbandonedDeskDispatches,
+    reconcileDeskApprovalLifecycle,
     runResumeAfterDecision,
     continuationMissionRunId,
   } = runtime;
+
+  if (!deskDispatchesRecovered) {
+    try {
+      const abandoned = await reconcileAbandonedDeskDispatches(
+        deskProcessStartedAt,
+      );
+      deskDispatchesRecovered = true;
+      if (abandoned.length > 0) {
+        log.warn(
+          `[approvals.desk-recovery] correlationId=${correlationId} ` +
+            `indeterminate=${abandoned.length}`,
+        );
+      }
+    } catch (cause) {
+      log.warn(
+        `[approvals.desk-recovery] failed correlationId=${correlationId}`,
+        cause,
+      );
+    }
+  }
+
+  try {
+    const desk = await reconcileDeskApprovalLifecycle();
+    if (
+      desk.repaired > 0
+      || desk.dispatched > 0
+      || desk.superseded > 0
+      || desk.errored > 0
+    ) {
+      log.info(
+        `[approvals.desk-reconcile] correlationId=${correlationId} ` +
+          `repaired=${desk.repaired} dispatched=${desk.dispatched} ` +
+          `superseded=${desk.superseded} errored=${desk.errored}`,
+      );
+    }
+  } catch (cause) {
+    log.warn(
+      `[approvals.desk-reconcile] failed correlationId=${correlationId}`,
+      cause,
+    );
+  }
 
   try {
     const result = await sweepExpiredApprovals(new Date());

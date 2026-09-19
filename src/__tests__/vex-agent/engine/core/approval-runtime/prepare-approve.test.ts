@@ -194,6 +194,7 @@ const mockMarkResumeAttempted = vi.fn().mockResolvedValue(undefined);
 // landed. The repo write is CAS-fenced on that status.
 const mockCommitExecutionResultWith = vi.fn().mockResolvedValue(true);
 const mockAttachResultMessageWith = vi.fn().mockResolvedValue(undefined);
+const mockCommitDeskSettlementWith = vi.fn().mockResolvedValue(true);
 vi.mock("@vex-agent/db/repos/approval-intents.js", async () => {
   const actual = await vi.importActual<typeof import("@vex-agent/db/repos/approval-intents.js")>(
     "@vex-agent/db/repos/approval-intents.js",
@@ -209,6 +210,8 @@ vi.mock("@vex-agent/db/repos/approval-intents.js", async () => {
       mockCommitExecutionResultWith(...a),
     attachResultMessageWith: (...a: unknown[]) =>
       mockAttachResultMessageWith(...a),
+    commitDeskSettlementWith: (...a: unknown[]) =>
+      mockCommitDeskSettlementWith(...a),
   };
 });
 
@@ -222,6 +225,12 @@ const {
   ApprovalDispatchError,
   ApprovalPostDecisionError,
 } = await import("@vex-agent/engine/core/approval-runtime.js");
+const {
+  resetDeskApprovalDispatchesForTests,
+  runDeskApprovalDispatch,
+} = await import(
+  "@vex-agent/engine/core/approval-runtime/desk/dispatch-flight.js"
+);
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -242,6 +251,7 @@ interface SnapshotRowOverrides {
   session_permission_live?: "restricted" | "full";
   /** The digest recorded at enqueue; a pre-digest row carries none. */
   request_digest?: string | null;
+  origin?: "agent" | "studio_mcp" | "desk";
 }
 
 function buildSnapshotRow(o: SnapshotRowOverrides = {}): Record<string, unknown> {
@@ -256,6 +266,9 @@ function buildSnapshotRow(o: SnapshotRowOverrides = {}): Record<string, unknown>
     decided_at: null,
     execution_status: o.execution_status ?? null,
     execution_result_hash: null,
+    origin: o.origin ?? "agent",
+    project_id: null,
+    scope_version_at_enqueue: null,
     queue_status: o.queue_status ?? "pending",
     queue_resolved_at: null,
     queue_created_at: new Date("2026-05-23T10:00:00.000Z"),
@@ -348,6 +361,7 @@ function programSnapshotOnly(
 }
 
 beforeEach(() => {
+  resetDeskApprovalDispatchesForTests();
   resetClientQuery();
   mockDispatchTool.mockReset();
   mockAppendMessage.mockReset();
@@ -364,6 +378,7 @@ beforeEach(() => {
   mockMarkResumeAttempted.mockReset();
   mockCommitExecutionResultWith.mockReset();
   mockAttachResultMessageWith.mockReset();
+  mockCommitDeskSettlementWith.mockReset();
   mockScheduleDeferredResumeRetries.mockReset();
 
   // Transcript writes return the inserted row — the atomic commit needs its id
@@ -380,6 +395,7 @@ beforeEach(() => {
   // `true` = this writer still owned the `dispatching` slot (CAS-fenced write).
   mockCommitExecutionResultWith.mockResolvedValue(true);
   mockAttachResultMessageWith.mockResolvedValue(undefined);
+  mockCommitDeskSettlementWith.mockResolvedValue(true);
   mockReleaseLeaseAndEmit.mockResolvedValue(undefined);
 
   // Chat sessions claim a plain session lease.
@@ -712,6 +728,69 @@ describe("prepareApprove", () => {
 
     expect(mockDispatchTool).not.toHaveBeenCalled();
     expect(mockClaimRunLeaseAndFlipToRunning).not.toHaveBeenCalled();
+  });
+
+  it("cached Desk approve reads back the shared terminal result and tool output", async () => {
+    const shared = {
+      kind: "dispatched" as const,
+      approvalId: APPROVAL_ID,
+      resolvedAt: "2026-05-23T20:00:00.000Z",
+      executionStatus: "succeeded" as const,
+      sessionId: SESSION_ID,
+      missionRunId: null,
+      continuation: null,
+      toolResult: { success: true, output: "Order 77 filled." },
+    };
+    await runDeskApprovalDispatch(APPROVAL_ID, async () => shared);
+    programSnapshotOnly(
+      buildSnapshotRow({
+        origin: "desk",
+        decision: "approved",
+        queue_status: "approved",
+        execution_status: "succeeded",
+        mission_run_id: null,
+      }),
+    );
+
+    const outcome = await prepareApprove(APPROVAL_ID);
+
+    expect(outcome).toEqual(shared);
+    expect(mockDispatchTool).not.toHaveBeenCalled();
+    expect(mockCasMarkDispatching).not.toHaveBeenCalled();
+  });
+
+  it("cached Desk not_started closes the decision-to-flight gap through the shared dispatch", async () => {
+    programSnapshotOnly(
+      buildSnapshotRow({
+        origin: "desk",
+        decision: "approved",
+        queue_status: "approved",
+        execution_status: "not_started",
+        mission_run_id: null,
+        queue_tool_call: {
+          command: "execute_tool",
+          args: {
+            toolId: "lighter.position.close",
+            params: { intentId: "close-1" },
+          },
+        },
+      }),
+    );
+    mockDispatchTool.mockResolvedValue({
+      success: true,
+      output: "Position closed.",
+    });
+
+    const outcome = await prepareApprove(APPROVAL_ID);
+
+    expect(outcome).toMatchObject({
+      kind: "dispatched",
+      executionStatus: "succeeded",
+      toolResult: { success: true, output: "Position closed." },
+    });
+    expect(mockCasMarkDispatching).toHaveBeenCalledTimes(1);
+    expect(mockDispatchTool).toHaveBeenCalledTimes(1);
+    expect(mockCommitDeskSettlementWith).toHaveBeenCalledTimes(1);
   });
 
   it("snapshot returns already_rejected → returns outcome, no dispatch", async () => {

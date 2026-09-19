@@ -46,6 +46,7 @@ const setLighterTradingLimits = vi.fn();
 const getLighterLeverageOverview = vi.fn();
 const prepareLighterLeverage = vi.fn();
 const confirmLighterLeverage = vi.fn();
+const cancelLighterLeverage = vi.fn();
 const reconcileLighterLeverage = vi.fn();
 
 /** The account's own market: ETH has terms and an open position. */
@@ -76,7 +77,10 @@ const BTC_ROW: LeverageMarketRow = {
   openPosition: null,
 };
 
-function overview(unresolved: readonly UnresolvedRow[] = []): Result<LighterLeverageOverview> {
+function overview(
+  unresolved: readonly UnresolvedRow[] = [],
+  markets: readonly LeverageMarketRow[] = [ETH_ROW, BTC_ROW],
+): Result<LighterLeverageOverview> {
   return {
     ok: true,
     data: {
@@ -84,7 +88,7 @@ function overview(unresolved: readonly UnresolvedRow[] = []): Result<LighterLeve
       walletAddress: WALLET,
       accountIndex: 24226,
       vaultState: "unlocked",
-      markets: [ETH_ROW, BTC_ROW],
+      markets,
       omitted: { count: 0, reason: "none" },
       unresolved,
     },
@@ -114,6 +118,7 @@ function installBridge(): void {
         getLighterLeverageOverview,
         prepareLighterLeverage,
         confirmLighterLeverage,
+        cancelLighterLeverage,
         reconcileLighterLeverage,
       },
     },
@@ -143,23 +148,25 @@ afterEach(cleanup);
 
 it("adds a market this account has no terms on, and applies to it", async () => {
   renderCard();
-  await screen.findByLabelText("New leverage for ETH");
+  await screen.findByRole("button", { name: "Change leverage for ETH" });
   // BTC has no row of its own, so it is not in the table by default: the
   // account's markets are the table, every market is the picker.
-  expect(screen.queryByLabelText("New leverage for BTC")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Change leverage for BTC" })).toBeNull();
 
   // No query typed. The picker browses, which is how a person discovers that
   // a market they have never traded can be configured at all.
   fireEvent.click(screen.getByRole("button", { name: "BTC" }));
 
   const row = screen.getByRole("row", { name: /BTC/ });
-  expect(within(row).getByText("2.00x default")).not.toBeNull();
+  expect(within(row).getByText("2x default")).not.toBeNull();
   expect(within(row).getByText("50x")).not.toBeNull();
 
+  // Change opens the shared sheet; Apply there sends the selector.
+  fireEvent.click(screen.getByRole("button", { name: "Change leverage for BTC" }));
   fireEvent.change(screen.getByLabelText("New leverage for BTC"), {
     target: { value: "25" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Apply new leverage to BTC" }));
+  fireEvent.click(screen.getByRole("button", { name: "Review leverage change for BTC" }));
 
   await waitFor(() => {
     expect(prepareLighterLeverage).toHaveBeenCalledWith({
@@ -170,6 +177,79 @@ it("adds a market this account has no terms on, and applies to it", async () => 
       marginMode: "cross",
     });
   });
+});
+
+it("keeps Confirm pending until the applied leverage has been read back", async () => {
+  const proposal: Result<LighterLeverageProposal> = {
+    ok: true,
+    data: {
+      kind: "proposal",
+      proposalId: "proposal-refresh-1",
+      environment: "rhc",
+      walletAddress: WALLET,
+      accountIndex: 24226,
+      apiKeyIndex: 4,
+      marketId: 0,
+      symbol: "ETH",
+      current: ETH_ROW.current,
+      target: { initialMarginFraction: 200, leverageDisplay: "50.00", marginMode: "cross" },
+      marketMinInitialMarginFraction: 200,
+      openPosition: ETH_ROW.openPosition,
+      observations: { liquidationPrice: null, openOrders: { count: 0 } },
+      expiresAt: "2026-09-10T12:05:00.000Z",
+    },
+  };
+  const applied: Result<ApplyLighterLeverageResult> = {
+    ok: true,
+    data: {
+      status: "completed",
+      intentId: "proposal-refresh-1",
+      observed: {
+        initialMarginFraction: 200,
+        leverageDisplay: "50.00",
+        marginMode: "cross",
+        source: "position_row",
+      },
+    },
+  };
+  const refreshedEth: LeverageMarketRow = {
+    ...ETH_ROW,
+    current: applied.data.status === "completed" && applied.data.observed !== null
+      ? applied.data.observed
+      : ETH_ROW.current,
+  };
+  let releaseRefresh!: (value: Result<LighterLeverageOverview>) => void;
+  const refresh = new Promise<Result<LighterLeverageOverview>>((resolve) => {
+    releaseRefresh = resolve;
+  });
+  getLighterLeverageOverview
+    .mockResolvedValueOnce(overview())
+    .mockReturnValue(refresh);
+  prepareLighterLeverage.mockResolvedValue(proposal);
+  confirmLighterLeverage.mockReturnValue({ promise: Promise.resolve(applied), cancel: vi.fn() });
+
+  renderCard();
+  fireEvent.click(await screen.findByRole("button", { name: "Change leverage for ETH" }));
+  fireEvent.change(screen.getByLabelText("New leverage for ETH"), {
+    target: { value: "50" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Review leverage change for ETH" }));
+  const confirm = await screen.findByRole("button", { name: "Confirm" });
+  fireEvent.click(confirm);
+
+  await waitFor(() => {
+    expect(confirmLighterLeverage).toHaveBeenCalledWith({ proposalId: "proposal-refresh-1" });
+    expect(getLighterLeverageOverview).toHaveBeenCalledTimes(2);
+  });
+  expect((screen.getByRole("button", { name: "Confirm" }) as HTMLButtonElement).disabled).toBe(true);
+
+  releaseRefresh(overview([], [refreshedEth, BTC_ROW]));
+  await waitFor(() => {
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+  });
+  const refreshedRow = screen.getByRole("button", { name: "Change leverage for ETH" }).closest("tr");
+  expect(refreshedRow).not.toBeNull();
+  expect(within(refreshedRow as HTMLElement).getByText("50x cross")).not.toBeNull();
 });
 
 it("keeps an unresolved change after a remount and reconciles it by intent id", async () => {
@@ -218,15 +298,60 @@ it("keeps an unresolved change after a remount and reconciles it by intent id", 
   // One outcome store, two surfaces: the market's row and the unresolved list
   // state the same answer rather than disagreeing about the same intent.
   const stated = await screen.findAllByText(
-    "Applied. Lighter now reports 25.00x cross for ETH.",
+    "Applied. Lighter now reports 25x cross for ETH.",
   );
   expect(stated).toHaveLength(2);
 });
 
 it("says nothing about unresolved changes when there are none", async () => {
   renderCard();
-  await screen.findByLabelText("New leverage for ETH");
+  await screen.findByRole("button", { name: "Change leverage for ETH" });
   expect(screen.queryByLabelText(UNRESOLVED_TITLE)).toBeNull();
+});
+
+it("cancels the durable review before returning to the editable sheet", async () => {
+  const proposal: Result<LighterLeverageProposal> = {
+    ok: true,
+    data: {
+      kind: "proposal",
+      proposalId: "proposal-cancel-1",
+      environment: "rhc",
+      walletAddress: WALLET,
+      accountIndex: 24226,
+      apiKeyIndex: 4,
+      marketId: 0,
+      symbol: "ETH",
+      current: ETH_ROW.current,
+      target: { initialMarginFraction: 200, leverageDisplay: "50.00", marginMode: "cross" },
+      marketMinInitialMarginFraction: 200,
+      openPosition: ETH_ROW.openPosition,
+      observations: { liquidationPrice: null, openOrders: { count: 0 } },
+      expiresAt: "2026-09-10T12:05:00.000Z",
+    },
+  };
+  prepareLighterLeverage.mockResolvedValue(proposal);
+  cancelLighterLeverage.mockResolvedValue({
+    ok: true,
+    data: { status: "cancelled", proposalId: "proposal-cancel-1" },
+  });
+
+  renderCard();
+  fireEvent.click(await screen.findByRole("button", { name: "Change leverage for ETH" }));
+  fireEvent.change(screen.getByLabelText("New leverage for ETH"), {
+    target: { value: "50" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Review leverage change for ETH" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+
+  await waitFor(() => {
+    expect(cancelLighterLeverage).toHaveBeenCalledWith({ proposalId: "proposal-cancel-1" });
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+  });
+  expect((screen.getByLabelText("New leverage for ETH") as HTMLInputElement).value).toBe("50");
+  expect(
+    (screen.getByRole("button", { name: "Review leverage change for ETH" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(false);
 });
 
 it("offers Reconcile for an unanswered confirmation before the overview is read again", async () => {
@@ -267,14 +392,21 @@ it("offers Reconcile for an unanswered confirmation before the overview is read 
   } satisfies Result<ApplyLighterLeverageResult>);
 
   renderCard();
-  fireEvent.change(await screen.findByLabelText("New leverage for ETH"), {
+  fireEvent.click(await screen.findByRole("button", { name: "Change leverage for ETH" }));
+  fireEvent.change(screen.getByLabelText("New leverage for ETH"), {
     target: { value: "50" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Apply new leverage to ETH" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+  fireEvent.click(screen.getByRole("button", { name: "Review leverage change for ETH" }));
+  const confirm = await screen.findByRole("button", { name: "Confirm" });
+  const openDialogs = document.querySelectorAll("dialog[open]");
+  expect(openDialogs).toHaveLength(1);
+  expect(openDialogs[0]?.hasAttribute("data-vex-lighter-leverage-confirm")).toBe(true);
+  fireEvent.click(confirm);
 
-  const reconcile = await screen.findByRole("button", { name: "Reconcile" });
-  fireEvent.click(reconcile);
+  // The outcome lands back on the sheet and on the table row behind it; either
+  // Reconcile is the same read.
+  const [reconcile] = await screen.findAllByRole("button", { name: "Reconcile" });
+  fireEvent.click(reconcile as HTMLElement);
   await waitFor(() => {
     expect(reconcileLighterLeverage).toHaveBeenCalledWith({ proposalId: "proposal-77" });
   });

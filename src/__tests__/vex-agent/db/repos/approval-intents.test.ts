@@ -381,7 +381,9 @@ describe("getExpired", () => {
     const now = new Date("2026-05-23T20:00:00Z");
     await intents.getExpired(now);
 
-    const [sql, params] = mockPoolQuery.mock.calls[0]!;
+    const call = mockPoolQuery.mock.calls[0];
+    if (!call) throw new Error("expected query call");
+    const [sql, params] = call;
     expect(sql).toContain("FROM approval_intents i");
     expect(sql).toContain("JOIN approval_queue q ON q.id = i.approval_id");
     expect(sql).toContain("WHERE i.expires_at IS NOT NULL");
@@ -442,7 +444,9 @@ describe("getPendingForSession", () => {
   it("JOINs approval_queue and filters status = 'pending'", async () => {
     mockPoolQuery.mockResolvedValue([]);
     await intents.getPendingForSession(SESSION_ID);
-    const [sql, params] = mockPoolQuery.mock.calls[0]!;
+    const call = mockPoolQuery.mock.calls[0];
+    if (!call) throw new Error("expected query call");
+    const [sql, params] = call;
     expect(sql).toContain("FROM approval_intents i");
     expect(sql).toContain("JOIN approval_queue q ON q.id = i.approval_id");
     expect(sql).toContain("WHERE i.session_id = $1 AND q.status = 'pending'");
@@ -559,7 +563,9 @@ describe("getPendingLifecycleForSession", () => {
   it("matches decided-but-undispatched AND dispatched-but-unresumed", async () => {
     await intents.getPendingLifecycleForSession(SESSION_ID);
 
-    const [sql, params] = mockPoolQuery.mock.calls[0]!;
+    const call = mockPoolQuery.mock.calls[0];
+    if (!call) throw new Error("expected query call");
+    const [sql, params] = call;
     expect(sql).toContain("session_id    = $1");
     expect(sql).toContain(
       "(decision = 'approved' AND execution_status = 'not_started')",
@@ -580,7 +586,9 @@ describe("getPendingLifecycleForSession", () => {
   it("shares its predicate with the reconciler scan, which also sees `dispatching`", async () => {
     await intents.getIncompleteLifecycle();
 
-    const [sql] = mockPoolQuery.mock.calls[0]!;
+    const call = mockPoolQuery.mock.calls[0];
+    if (!call) throw new Error("expected query call");
+    const [sql] = call;
     expect(sql).toContain(
       "(decision = 'approved' AND execution_status = 'dispatching')",
     );
@@ -590,6 +598,44 @@ describe("getPendingLifecycleForSession", () => {
     expect(sql).toContain(
       "(result_message_id IS NOT NULL AND resume_consumed_at IS NULL)",
     );
+  });
+});
+
+describe("desk lifecycle recovery", () => {
+  it("terminalizes only approved dispatches older than process start", async () => {
+    mockPoolQuery.mockResolvedValue([{ approval_id: "desk-old" }]);
+    const cutoff = new Date("2026-09-18T00:00:00.000Z");
+
+    const ids = await intents.markAbandonedDeskDispatchesIndeterminate(cutoff);
+
+    expect(ids).toEqual(["desk-old"]);
+    const call = mockPoolQuery.mock.calls[0];
+    if (!call) throw new Error("expected query call");
+    const [sql, params] = call;
+    expect(sql).toContain("origin = 'desk'");
+    expect(sql).toContain("decision = 'approved'");
+    expect(sql).toContain("execution_status = 'dispatching'");
+    expect(sql).toContain("dispatch_started_at < $1");
+    expect(params).toEqual([cutoff.toISOString()]);
+  });
+
+  it("lists only approved Desk rows that still prove dispatch never started", async () => {
+    mockPoolQuery.mockResolvedValue([
+      { approval_id: "desk-1" },
+      { approval_id: "desk-2" },
+    ]);
+
+    const ids = await intents.listUnstartedDeskApprovals();
+
+    expect(ids).toEqual(["desk-1", "desk-2"]);
+    const call = mockPoolQuery.mock.calls[0];
+    if (!call) throw new Error("expected query call");
+    const [sql, params] = call;
+    expect(sql).toContain("origin = 'desk'");
+    expect(sql).toContain("decision = 'approved'");
+    expect(sql).toContain("execution_status = 'not_started'");
+    expect(sql).toContain("ORDER BY decided_at ASC, approval_id ASC");
+    expect(params).toBeUndefined();
   });
 });
 

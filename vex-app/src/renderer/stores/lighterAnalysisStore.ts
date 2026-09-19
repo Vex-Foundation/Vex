@@ -3,6 +3,12 @@ import { createJSONStorage, persist, type StateStorage } from "zustand/middlewar
 import { parseDrawings, type Drawing } from "../features/appShell/lighterTrading/chart-drawings.js";
 import { parseChartPreferences, type ChartPreferences } from "../features/appShell/lighterTrading/chart-preferences.js";
 
+import {
+  coerceLighterDesk,
+  DEFAULT_LIGHTER_DESK,
+  type LighterDeskPreferences,
+} from "../features/appShell/lighterTrading/desk-preferences.js";
+
 export const LIGHTER_ANALYSIS_STORAGE_KEY = "vex-lighter-analysis";
 export const MAX_SAVED_CHARTS = 64;
 export const MAX_MARKET_FAVORITES = 1_000;
@@ -14,11 +20,14 @@ interface SavedChart {
 export interface PersistedLighterAnalysis {
   charts: Record<string, SavedChart>;
   favorites: string[];
+  /** The desk's last environment / market / splitter layout (v2). */
+  desk: LighterDeskPreferences;
 }
 interface LighterAnalysisState extends PersistedLighterAnalysis {
   savePreferences: (scope: string, preferences: ChartPreferences) => boolean;
   saveDrawings: (scope: string, drawings: Drawing[]) => boolean;
   saveFavorites: (favorites: string[]) => boolean;
+  saveDesk: (patch: Partial<LighterDeskPreferences>) => void;
 }
 
 const validScope = (value: string): boolean => /^(?:core|rhc|unknown):[A-Za-z0-9._:/-]{1,48}$/.test(value);
@@ -28,13 +37,14 @@ const emptyChart = (): SavedChart => ({ preferences: parseChartPreferences(null)
 
 /** Only cosmetic chart annotations, display settings and market favorites persist. */
 export function partializeLighterAnalysis(state: LighterAnalysisState): PersistedLighterAnalysis {
-  return { charts: state.charts, favorites: state.favorites };
+  return { charts: state.charts, favorites: state.favorites, desk: state.desk };
 }
 
 /** Validate every persisted field before merging; stored methods never become authority. */
 export function coerceLighterAnalysis(value: unknown): PersistedLighterAnalysis {
-  const result: PersistedLighterAnalysis = { charts: {}, favorites: [] };
+  const result: PersistedLighterAnalysis = { charts: {}, favorites: [], desk: DEFAULT_LIGHTER_DESK };
   if (typeof value !== "object" || value === null) return result;
+  result.desk = coerceLighterDesk("desk" in value ? value.desk : undefined);
   if ("favorites" in value && Array.isArray(value.favorites) && value.favorites.length <= MAX_MARKET_FAVORITES) {
     result.favorites = [...new Set(value.favorites.filter(validFavorite))];
   }
@@ -94,6 +104,7 @@ export function createLighterAnalysisStore(storageProvider: () => StateStorage =
       (set) => ({
         charts: {},
         favorites: [],
+        desk: DEFAULT_LIGHTER_DESK,
         savePreferences: (scope, preferences) => {
           if (!validScope(scope)) return false;
           try {
@@ -119,10 +130,15 @@ export function createLighterAnalysisStore(storageProvider: () => StateStorage =
             }));
           } catch { return false; }
         },
+        saveDesk: (patch) => {
+          try {
+            set(state => ({ desk: coerceLighterDesk({ ...state.desk, ...patch }) }));
+          } catch { /* a refused write leaves the in-memory desk as the user set it */ }
+        },
       }),
       {
         name: LIGHTER_ANALYSIS_STORAGE_KEY,
-        version: 1,
+        version: 2,
         storage,
         partialize: partializeLighterAnalysis,
         migrate: (persisted) => coerceLighterAnalysis(persisted),

@@ -208,6 +208,26 @@ describe("uiStore", () => {
     expect(useUiStore.getState().createSessionInitialTurn).toBeNull();
   });
 
+  it("requestLighterSetup arms a one-shot flag that clearLighterSetupRequest consumes", () => {
+    expect(useUiStore.getState().lighterSetupRequested).toBe(false);
+    useUiStore.getState().requestLighterSetup();
+    expect(useUiStore.getState().lighterSetupRequested).toBe(true);
+    useUiStore.getState().clearLighterSetupRequest();
+    expect(useUiStore.getState().lighterSetupRequested).toBe(false);
+  });
+
+  it("leaving the Lighter desk drops an unconsumed setup request; entering keeps it", () => {
+    useUiStore.getState().setRuntimeMode("lighter");
+    useUiStore.getState().requestLighterSetup();
+    expect(useUiStore.getState().lighterSetupRequested).toBe(true);
+    // Entering the desk (already there → no-op) must not clear it.
+    useUiStore.getState().setRuntimeMode("lighter");
+    expect(useUiStore.getState().lighterSetupRequested).toBe(true);
+    // Leaving the desk clears it, so it can never fire on a later entry.
+    useUiStore.getState().setRuntimeMode("agent");
+    expect(useUiStore.getState().lighterSetupRequested).toBe(false);
+  });
+
   it("openCreateSession snapshots the reasoning effort argument verbatim", () => {
     useUiStore.getState().openCreateSession("research TAO", "high");
     expect(useUiStore.getState().createSessionInitialTurn).toEqual({

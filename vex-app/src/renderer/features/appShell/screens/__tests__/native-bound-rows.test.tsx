@@ -1,11 +1,15 @@
 import { afterEach, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { AgentScanRow } from "../agent-scan/AgentScanRow.js";
 import { EntryRow } from "../token-history/TokenHistoryRow.js";
 import { entry } from "./_agent-scan-fixtures.js";
 import { swapEntry } from "./_token-history-fixtures.js";
+import { useUiStore } from "../../../../stores/uiStore.js";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useUiStore.getState().closeCreateSession();
+});
 const value = "170141183460469231731.687303715884105727";
 
 it.each(["activity", "token"])("keeps the full native bound visible in the %s row", kind => {
@@ -26,4 +30,13 @@ it.each(["activity", "token"])("keeps the full native bound visible in the %s ro
     expect(node.classList.contains("truncate")).toBe(false);
     expect(node.classList.contains("overflow-hidden")).toBe(false);
   }
+});
+
+it("keeps Ask Vex visible when an event has no expandable audit detail", () => {
+  render(<AgentScanRow entry={entry({ id: "no-detail", legs: [] })} />);
+  fireEvent.click(screen.getByRole("button", { name: "Ask Vex" }));
+  expect(useUiStore.getState().createSessionOpen).toBe(true);
+  expect(useUiStore.getState().createSessionInitialTurn?.message).toContain(
+    "Review this recorded Vex event",
+  );
 });

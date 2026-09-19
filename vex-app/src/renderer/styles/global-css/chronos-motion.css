@@ -211,3 +211,39 @@
   transform: scaleX(1);
 }
 
+
+/* Arena campaign notice — a slow, whole-bar blink that pulls the eye to the
+ * live event, plus a fast red "on air" dot inside the LIVE NOW badge. Both
+ * are decorative attention cues, so they stop cold under reduced motion. */
+@keyframes vex-arena-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.68;
+  }
+}
+.vex-arena-pulse {
+  animation: vex-arena-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes vex-live-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}
+.vex-live-dot {
+  animation: vex-live-dot 1.1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-arena-pulse,
+  .vex-live-dot {
+    animation: none;
+  }
+}

@@ -47,6 +47,7 @@ import {
 import { JsonTree } from "../../../components/ui/json-tree.js";
 import { cn } from "../../../lib/utils.js";
 import { ExpandRegion } from "../../../components/ui/expand-region.js";
+import { DeskTicketLoadStamp } from "../lighterTrading/DeskTicketLoadStamp.js";
 import type { ToolCallActView } from "../transcriptRowModel.js";
 import { ApprovalLinkStamp } from "./ApprovalLinkStamp.js";
 import { ExplorerRefLinks } from "./ExplorerRefLinks.js";
@@ -427,6 +428,7 @@ export function ToolActRow({
             ) : null}
           </span>
         </button>
+        <DeskTicketLoadStamp act={act} />
         {confirmed ? (
           <ConfirmedStamp />
         ) : pendingApprovalId !== null ? (

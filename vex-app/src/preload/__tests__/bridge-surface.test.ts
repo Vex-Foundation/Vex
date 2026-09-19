@@ -274,6 +274,14 @@ describe("preload bridge surface", () => {
       "onPublicTrades",
       "onPublicStats",
       "onPublicMarketStatus",
+      "EV.lighterTrading.accountActivity",
+      "onAccountActivity",
+      "CH.lighterTrading.prepareDeskAction",
+      "prepareDeskAction",
+      "CH.lighterTrading.getOnboardingChecklist",
+      "getOnboardingChecklist",
+      "CH.telemetry.funnelStep",
+      "funnelStep",
     ]) {
       expect(corpus).toContain(reference);
     }

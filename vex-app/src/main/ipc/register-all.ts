@@ -29,6 +29,8 @@ import { registerDatabaseHandlers } from "./database.js";
 import { registerLongMemoryHandlers } from "./long-memory.js";
 import { registerMarketHandlers } from "./market.js";
 import { registerLighterTradingHandlers } from "./lighter-trading.js";
+import { registerLighterDeskHandlers } from "./lighter-desk.js";
+import { registerLighterOnboardingHandlers } from "./lighter-onboarding.js";
 import { registerStudioHandlers } from "./studio.js";
 import { registerStudioBridgeReadinessHandlers } from "./studio-bridge-readiness.js";
 import { registerStudioFilesHandlers } from "./studio-files.js";
@@ -77,7 +79,7 @@ import { registerSettingsHandlers } from "./settings.js";
 import { registerShellBackdropHandlers } from "./shell-backdrop.js";
 import { registerSupportHandler } from "./support.js";
 import { registerSystemHandlers } from "./system.js";
-import { registerTelemetryHandler } from "./telemetry.js";
+import { registerFunnelHandler, registerTelemetryHandler } from "./telemetry.js";
 import { registerUpdaterHandlers } from "./updates.js";
 import { registerUsageHandlers } from "./usage.js";
 import { registerWalletExportHandler } from "./wallet-export.js";
@@ -173,6 +175,8 @@ export function registerAllIpcHandlers(): () => Promise<void> {
   // broadcast are owned by the market service, started in index.ts.
   teardowns.push(...registerMarketHandlers());
   teardowns.push(...registerLighterTradingHandlers());
+  teardowns.push(...registerLighterDeskHandlers());
+  teardowns.push(...registerLighterOnboardingHandlers());
 
   // B0: read-only Vex Studio host status. The handler serves main's in-memory
   // cache; the transitions are published by the MCP host itself and broadcast
@@ -284,6 +288,7 @@ export function registerAllIpcHandlers(): () => Promise<void> {
   // `preferences.json` (`shell.backdrop`).
   teardowns.push(...registerShellBackdropHandlers());
   teardowns.push(registerTelemetryHandler());
+  teardowns.push(registerFunnelHandler());
   teardowns.push(registerSupportHandler());
   // Updater (M13): user-triggered in-app update check/download/restart.
   // Handlers are thin; the autoUpdater event stream is owned by

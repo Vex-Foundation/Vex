@@ -11,13 +11,13 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { ComposerQuickActions } from "../ComposerQuickActions.js";
 
 describe("ComposerQuickActions", () => {
-  it("renders three text-only chips - no leading glyph, no 01-03 numbering", () => {
+  it("renders four text-only chips - no leading glyph, no 01-04 numbering", () => {
     const { container } = render(<ComposerQuickActions onPick={() => {}} />);
 
-    // Three starter chips (memecoins / Pendle yields / Trench launchpad),
-    // each a real focusable button.
+    // Four starter chips (Lighter desk / memecoins / Pendle yields / Trench
+    // launchpad), each a real focusable button.
     const chips = screen.getAllByRole("button");
-    expect(chips).toHaveLength(3);
+    expect(chips).toHaveLength(4);
 
     // A chip renders its label and no glyph beside it.
     for (const chip of chips) {
@@ -26,10 +26,10 @@ describe("ComposerQuickActions", () => {
     }
 
     // The numbering was dropped - no 01/02/03 marks in the chip text.
-    for (const n of ["01", "02", "03"]) {
+    for (const n of ["01", "02", "03", "04"]) {
       expect(screen.queryByText(n)).toBeNull();
     }
-    expect(container.textContent).not.toMatch(/\b0[123]\b/);
+    expect(container.textContent).not.toMatch(/\b0[1234]\b/);
   });
 
   it("renders bare capsule chips - no band, no glass behind the row (tokens v2)", () => {
@@ -43,6 +43,13 @@ describe("ComposerQuickActions", () => {
     const chip = root?.querySelector("button");
     expect(chip?.className).toContain("rounded-capsule");
     expect(chip?.className).toContain("border-line-2");
+  });
+
+  it("the Lighter chip seeds the typed desk command, so Send opens the desk", () => {
+    const onPick = vi.fn();
+    render(<ComposerQuickActions onPick={onPick} />);
+    fireEvent.click(screen.getByRole("button", { name: /trade perps on lighter/i }));
+    expect(onPick).toHaveBeenCalledWith("Light it up.");
   });
 
   it("seeds the draft with the chip's full prompt", () => {

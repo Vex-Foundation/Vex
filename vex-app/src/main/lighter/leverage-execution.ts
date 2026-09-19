@@ -43,7 +43,6 @@ import {
 import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js";
 import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
 import {
-  initialMarginFractionToLeverageDisplay,
   LIGHTER_MARGIN_MODE_WIRE,
 } from "@tools/lighter/margin-fraction.js";
 import type { LighterTxFromL1Response } from "@tools/lighter/types.js";
@@ -53,6 +52,8 @@ import { withTransaction } from "@vex-agent/db/client.js";
 import { ErrorCodes, VexError } from "../../../../src/errors.js";
 import type {
   ApplyLighterLeverageResult,
+  CancelLighterLeverageInput,
+  CancelLighterLeverageResult,
   ConfirmLighterLeverageInput,
   LighterLeverageOverview,
 } from "@shared/schemas/lighter-trading-limits.js";
@@ -63,6 +64,7 @@ import {
   exactOwnedAccount,
   leverageRefusal,
   marketMinimum,
+  maximumWholeLeverageForMinimumFraction,
   positionSide,
   readLighterLeverageAccountSetup,
   readPerpMarketDetail,
@@ -166,6 +168,40 @@ export function lighterLeverageReservationId(intentId: string): string {
   return `lighter-leverage:${intentId}`;
 }
 
+export interface LighterLeverageCancellationDeps {
+  readonly readIntent: typeof intents.find;
+  readonly markCancelled: typeof intents.markCancelled;
+}
+
+function defaultLighterLeverageCancellationDeps(): LighterLeverageCancellationDeps {
+  return { readIntent: intents.find, markCancelled: intents.markCancelled };
+}
+
+/**
+ * Cancel only an unconfirmed proposal. The repository owns the CAS: if Confirm
+ * has already moved the row into `signing`, cancellation loses and cannot touch
+ * its nonce. Repeating Cancel after the first win is idempotent.
+ */
+export async function cancelLighterLeverage(
+  input: CancelLighterLeverageInput,
+  deps: LighterLeverageCancellationDeps = defaultLighterLeverageCancellationDeps(),
+): Promise<CancelLighterLeverageResult> {
+  const cancelled = await deps.markCancelled(input.proposalId);
+  if (cancelled !== null) return { status: "cancelled", proposalId: cancelled.intentId };
+
+  const current = await deps.readIntent(input.proposalId);
+  if (current?.executionState === "cancelled") {
+    return { status: "cancelled", proposalId: current.intentId };
+  }
+  if (current === null) {
+    throw leverageRefusal("That leverage change is not on record. Start it again from Settings.");
+  }
+  throw leverageRefusal(
+    "This leverage change can no longer be cancelled because confirmation already started or it is closed.",
+    "Use Reconcile if its outcome is unresolved.",
+  );
+}
+
 /**
  * Record the CONSENT and its revalidation, reserve the shared nonce and enter
  * `signing`, in ONE transaction, with the wire expiry persisted alongside.
@@ -237,7 +273,7 @@ export async function confirmLighterLeverage(
   }
   if (deps.now() >= intent.expiresAt.getTime()) {
     const expired = await deps.markExpired(intent.intentId);
-    return expiredResult(expired ?? intent);
+    return expired === null ? reconcileLighterLeverage(input, deps) : expiredResult(expired);
   }
 
   // REVALIDATION. Every consent invariant of the proposal is re-read against
@@ -252,7 +288,8 @@ export async function confirmLighterLeverage(
       intentId: intent.intentId,
       failureReason: "consent_invariant_drift",
     });
-    return { status: "refused", intentId: (refused ?? intent).intentId, reason };
+    if (refused === null) return reconcileLighterLeverage(input, deps);
+    return { status: "refused", intentId: refused.intentId, reason };
   }
 
   return deps.track(() => runSigningWindow(intent, revalidation, input, signal, deps));
@@ -379,7 +416,7 @@ async function runSigningWindow(
         intentId: intent.intentId,
         failureReason: reason,
       });
-      if (refused === null) return unresolvedResult(intent, "refused_unsubmitted");
+      if (refused === null) return reconcileLighterLeverage(input, deps);
       return { status: "refused", intentId: refused.intentId, reason: message };
     }
     const provenUnsent =
@@ -472,6 +509,13 @@ export async function reconcileLighterLeverage(
     };
   }
   if (intent.executionState === "expired") return expiredResult(intent);
+  if (intent.executionState === "cancelled") {
+    return {
+      status: "refused",
+      intentId: intent.intentId,
+      reason: "This leverage change was cancelled before confirmation. Nothing was signed or submitted.",
+    };
+  }
   if (intent.executionState === "refused_unsubmitted" || intent.executionState === "expired_unsubmitted") {
     return {
       status: "refused",
@@ -807,7 +851,7 @@ async function revalidateConsent(
   const minFraction = marketMinimum(detail);
   if (intent.requestedInitialMarginFraction < minFraction) {
     throw leverageRefusal(
-      `${detail.symbol} now allows at most ${initialMarginFractionToLeverageDisplay(minFraction)}x leverage on Lighter.`,
+      `${detail.symbol} now allows at most ${maximumWholeLeverageForMinimumFraction(minFraction)}x leverage on Lighter.`,
       "Start the change again and choose a leverage at or below that maximum.",
     );
   }

@@ -31,6 +31,7 @@ import {
 import {
   initialMarginFractionToLeverageDisplay,
   leverageToInitialMarginFraction,
+  LIGHTER_MARGIN_FRACTION_TICK,
   LIGHTER_MARGIN_MODE_WIRE,
   marginModeFromWire,
   positionInitialMarginFractionToProviderScale,
@@ -78,7 +79,7 @@ export interface LighterLeverageSelector {
   readonly environment: LighterEnvironment;
   readonly walletAddress: string;
   readonly marketId: number;
-  readonly leverage: number | "max";
+  readonly leverage: number | "max" | "current";
   readonly marginMode: LighterMarginMode;
 }
 
@@ -99,6 +100,9 @@ export interface LighterLeveragePreparationDeps {
   >;
   /** The durable owner of "which leverage changes still need reconciling". */
   readonly listUnresolvedIntents: typeof intents.listUnresolved;
+  readonly expireStaleProposals: typeof intents.expireStaleProposals;
+  readonly findLiveIntent: typeof intents.findLive;
+  readonly createIntent: typeof intents.create;
   readonly listResolvedAccounts: () => Promise<
     readonly { environment: LighterEnvironment; walletAddress: string; accountIndex: number }[]
   >;
@@ -114,6 +118,9 @@ export function defaultLighterLeveragePreparationDeps(): LighterLeveragePreparat
   return {
     client: getLighterClient(),
     listUnresolvedIntents: intents.listUnresolved,
+    expireStaleProposals: intents.expireStaleProposals,
+    findLiveIntent: intents.findLive,
+    createIntent: intents.create,
     listResolvedAccounts: async () => {
       const { listLighterOnboardingResolvedAccounts } = await import(
         "@vex-agent/db/repos/lighter-onboarding-workflows.js"
@@ -359,20 +366,28 @@ export async function prepareLighterLeverage(
   const setup = await readLighterLeverageAccountSetup(selector, deps);
   const detail = await readPerpMarketDetail(selector.environment, selector.marketId, deps);
   const minFraction = marketMinimum(detail);
-  const targetFraction =
-    selector.leverage === "max" ? minFraction : leverageToInitialMarginFraction(selector.leverage);
-  if (targetFraction < minFraction) {
-    throw leverageRefusal(
-      `${detail.symbol} allows at most ${initialMarginFractionToLeverageDisplay(minFraction)}x leverage on Lighter.`,
-      "Choose a leverage at or below that maximum.",
-    );
-  }
-  const targetMode = LIGHTER_MARGIN_MODE_WIRE[selector.marginMode];
   const position =
     (Array.isArray(setup.account.positions) ? setup.account.positions : []).find(
       (row) => row.market_id === selector.marketId,
     ) ?? null;
   const current = currentTerms(position, detail);
+  // `current` is resolved here, from the same fresh account read that supplies
+  // the proposal's before-terms. It never accepts a renderer-supplied fraction.
+  // This lets a mode-only change preserve a non-whole leverage such as 295
+  // (33.89x) exactly instead of round-tripping it through a whole multiplier.
+  const targetFraction =
+    selector.leverage === "current"
+      ? current.initialMarginFraction
+      : selector.leverage === "max"
+        ? minFraction
+        : leverageToInitialMarginFraction(selector.leverage);
+  if (targetFraction < minFraction) {
+    throw leverageRefusal(
+      `${detail.symbol} allows at most ${maximumWholeLeverageForMinimumFraction(minFraction)}x leverage on Lighter.`,
+      "Choose a leverage at or below that maximum.",
+    );
+  }
+  const targetMode = LIGHTER_MARGIN_MODE_WIRE[selector.marginMode];
 
   if (
     current.initialMarginFraction === targetFraction
@@ -383,8 +398,8 @@ export async function prepareLighterLeverage(
 
   // A stale proposal for this market would otherwise hold the live-market
   // uniqueness index and refuse a fresh Apply the user is entitled to.
-  await intents.expireStaleProposals(selector.environment, setup.accountIndex);
-  const live = await intents.findLive(
+  await deps.expireStaleProposals(selector.environment, setup.accountIndex);
+  const live = await deps.findLiveIntent(
     selector.environment,
     setup.accountIndex,
     selector.marketId,
@@ -401,7 +416,7 @@ export async function prepareLighterLeverage(
   }
 
   const expiresAt = new Date(deps.now() + LIGHTER_LEVERAGE_CONSENT_WINDOW_MS);
-  const row = await intents.create({
+  const row = await deps.createIntent({
     intentId: `lighter-leverage-${randomUUID()}`,
     environment: selector.environment,
     walletAddress: setup.walletAddress,
@@ -493,6 +508,13 @@ export function marketMinimum(detail: LighterMarketDetail): number {
     );
   }
   return value;
+}
+
+/** Largest whole selector whose rounded-up fraction still clears the market minimum. */
+export function maximumWholeLeverageForMinimumFraction(minFraction: number): number {
+  return minFraction === 1
+    ? LIGHTER_MARGIN_FRACTION_TICK
+    : Math.floor((LIGHTER_MARGIN_FRACTION_TICK - 1) / (minFraction - 1));
 }
 
 /**

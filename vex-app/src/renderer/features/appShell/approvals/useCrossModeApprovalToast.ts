@@ -64,6 +64,8 @@ export function approvalOriginMode(
 ): RuntimeMode {
   if (row.origin === "studio_mcp") return "studio";
   if (row.origin === "agent") return "agent";
+  // A desk click is raised inside the Lighter desk, which hosts agent sessions.
+  if (row.origin === "desk") return "agent";
   return row.projectId === null ? "agent" : "studio";
 }
 
@@ -100,7 +102,8 @@ export function useCrossModeApprovalToast(
     if (rows === null) return;
     const fresh = selectFreshApprovals(rows, announced);
     if (fresh.length === 0) return;
-    const currentMode = modeRef.current;
+    // The Lighter desk hosts agent sessions, so its approvals are home there.
+    const currentMode = modeRef.current === "lighter" ? "agent" : modeRef.current;
     const crossMode = fresh.filter(
       (row) => approvalOriginMode(row) !== currentMode,
     );

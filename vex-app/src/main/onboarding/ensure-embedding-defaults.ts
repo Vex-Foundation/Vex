@@ -34,10 +34,8 @@ import {
 import { ENV_FILE } from "../paths/config-dir.js";
 import { log } from "../logger/index.js";
 import { withEnvWriteLock } from "./env-write-mutex.js";
-import {
-  DEFAULT_EMBED_PORT,
-  defaultEmbeddingEnv,
-} from "./embedding-defaults.js";
+import { defaultEmbeddingEnv } from "./embedding-defaults.js";
+import { resolveEmbedPort } from "../paths/service-ports.js";
 
 const EMBEDDING_KEYS = [
   "EMBEDDING_BASE_URL",
@@ -78,7 +76,7 @@ export async function ensureEmbeddingDefaults(
   options: EnsureEmbeddingDefaultsOptions = {}
 ): Promise<EnsureEmbeddingDefaultsResult> {
   const envFile = options.envFile ?? ENV_FILE;
-  const embedPort = options.embedPort ?? DEFAULT_EMBED_PORT;
+  const embedPort = options.embedPort ?? resolveEmbedPort();
 
   return withEnvWriteLock(async () => {
     const existing = EMBEDDING_KEYS.map((k) => readKey(envFile, k));

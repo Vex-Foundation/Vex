@@ -322,15 +322,20 @@ export const CH = {
   lighterTrading: {
     listMarkets: "vex:lighterTrading:listMarkets",
     getSnapshot: "vex:lighterTrading:getSnapshot",
+    getCandleHistory: "vex:lighterTrading:getCandleHistory",
     // Authenticated account panel read. Main resolves the owning account from
     // the unlocked trading scope; renderer supplies only the environment and
     // never receives auth tokens. Positions/balances are public account-index
     // reads; open orders use a short-lived read-only auth derived in main.
     getAccount: "vex:lighterTrading:getAccount",
+    listFills: "vex:lighterTrading:listFills",
     startCandleSubscription: "vex:lighterTrading:startCandleSubscription",
     stopCandleSubscription: "vex:lighterTrading:stopCandleSubscription",
     startPublicMarketSubscription: "vex:lighterTrading:startPublicMarketSubscription",
     stopPublicMarketSubscription: "vex:lighterTrading:stopPublicMarketSubscription",
+    prepareDeskAction: "vex:lighterTrading:prepareDeskAction",
+    getOnboardingChecklist: "vex:lighterTrading:getOnboardingChecklist",
+    getAccountSetupStatus: "vex:lighterTrading:getAccountSetupStatus",
   },
 
   // Settings - read-only Phase 1 (Phase 2 dodaje setters)
@@ -359,6 +364,7 @@ export const CH = {
     getLighterLeverageOverview: "vex:settings:getLighterLeverageOverview",
     prepareLighterLeverage: "vex:settings:prepareLighterLeverage",
     confirmLighterLeverage: "vex:settings:confirmLighterLeverage",
+    cancelLighterLeverage: "vex:settings:cancelLighterLeverage",
     reconcileLighterLeverage: "vex:settings:reconcileLighterLeverage",
     // "Vex setup" user profile (display name, instructions, work
     // description) - DB-backed (soul singleton), replaces persona.md.
@@ -405,6 +411,7 @@ export const CH = {
   // Telemetry - renderer-side error reporting (Sentry, opt-in only)
   telemetry: {
     reportRendererError: "vex:telemetry:reportRendererError",
+    funnelStep: "vex:telemetry:funnelStep",
   },
 
   // Support - local-first bug report sink (Phase 1: persist; Phase 3: upload)
