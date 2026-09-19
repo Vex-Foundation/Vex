@@ -194,7 +194,7 @@ vex-2026-09-17/
 
 - 모드 스코프는 관례대로 `[data-vex-runtime-mode="lighter"]` 속성 셀렉터. 새 전역 파일 추가 금지.
 - 현재 `lighter-trading.css`(2,043줄)는 `lighter-workspace.css`(레이아웃) / `lighter-ticket.css` / `lighter-book.css` / `lighter-account.css` / `lighter-sidebar.css`로 분할, `globals.css` 매니페스트에 순서대로 등록. 토큰(`--lit-*`)은 `tokens.css` 옆 `lighter-tokens.css`로 승격.
-- **톤앤매너 = Vex 셸 기반 환경 팔레트(2026-09-19).** 현재 레이아웃·반경·그림자 체계는 Vex 셸을 유지하되, 데스크와 인접 Vex 채팅 레일의 `data-lighter-environment`가 같은 의미 토큰을 다시 매핑한다. Core는 그래파이트/틸, RHC는 올리브 블랙/라임으로 캔버스·면·선·포커스·선택·액션을 구분하며, 채팅 헤더·트랜스크립트 바닥·컴포저·전송 액션도 선택한 환경과 이어진다. RHC 차트의 상승/하락 색은 환경 라임과 혼동되지 않도록 별도의 부드러운 틸/레드로 유지하며, Core/RHC 텍스트 레이블도 함께 표시해 색만으로 환경을 전달하지 않는다. 숫자는 Inter Tight `tabular-nums`(거래소 관례).
+- **톤앤매너 = Vex 셸 기반 환경 팔레트(2026-09-19).** 현재 레이아웃·반경·그림자 체계는 Vex 셸을 유지하되, 데스크와 인접 Vex 채팅 레일의 `data-lighter-environment`가 같은 의미 토큰을 다시 매핑한다. Core는 그래파이트/틸, RHC는 올리브 블랙/라임으로 캔버스·면·선·포커스·선택·액션을 구분하며, 채팅 헤더·트랜스크립트 바닥·컴포저·전송 액션뿐 아니라 라이브 Thinking 패널·Reasoned/Thought 행·tool 내부 상태도 선택한 환경과 이어진다. RHC 차트의 상승/하락 색은 환경 라임과 혼동되지 않도록 별도의 부드러운 틸/레드로 유지하며, Core/RHC 텍스트 레이블도 함께 표시해 색만으로 환경을 전달하지 않는다. 숫자는 Inter Tight `tabular-nums`(거래소 관례).
 
 ---
 

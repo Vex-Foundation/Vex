@@ -47,6 +47,33 @@
   --vex-alias-scrollbar-l1-hover: var(--lit-ink-muted);
   --vex-alias-scrollbar-l2: var(--lit-scrollbar);
   --vex-alias-scrollbar-l2-hover: var(--lit-ink-muted);
+
+  /* Shell bridge tokens are computed on the outer app shell before these
+   * aliases inherit, so rebind them here as well. Live thinking, reasoning
+   * segments and tool internals consume these stable names directly. */
+  --vex-surface-0: var(--lit-bg);
+  --vex-surface-1: var(--lit-panel);
+  --vex-surface-2: var(--lit-panel-raised);
+  --vex-surface-down: var(--lit-bg);
+  --vex-line: var(--lit-line);
+  --vex-line-strong: var(--lit-line-strong);
+  --vex-text: var(--lit-ink);
+  --vex-text-2: var(--lit-ink-secondary);
+  --vex-text-3: var(--lit-ink-muted);
+  --vex-accent: var(--lit-focus);
+  --vex-accent-hover: color-mix(in srgb, var(--lit-focus) 82%, var(--lit-panel-raised));
+  --vex-accent-active: color-mix(in srgb, var(--lit-focus) 74%, var(--lit-panel-raised));
+  --vex-accent-text: var(--lit-focus);
+  --vex-accent-border: color-mix(in srgb, var(--lit-focus) 55%, transparent);
+  --vex-accent-border-strong: color-mix(in srgb, var(--lit-focus) 85%, transparent);
+  --vex-accent-fill-8: color-mix(in srgb, var(--lit-focus) 8%, transparent);
+  --vex-accent-fill-12: color-mix(in srgb, var(--lit-focus) 12%, transparent);
+  --vex-accent-contrast: var(--lit-action-ink);
+  --vex-pin: var(--lit-warning);
+  --vex-pin-border: color-mix(in srgb, var(--lit-warning) 40%, transparent);
+  --vex-pin-fill: color-mix(in srgb, var(--lit-warning) 10%, transparent);
+  --vex-pin-fill-hover: color-mix(in srgb, var(--lit-warning) 16%, transparent);
+  --vex-pin-fill-solid: color-mix(in srgb, var(--lit-warning) 10%, var(--lit-bg));
 }
 
 .lit-chat-frame > [data-vex-area="book-panel"] {
@@ -85,6 +112,26 @@
 .lit-chat-shell .vex-chat-prose { font-size: 12.5px; line-height: 1.5; }
 .lit-chat-shell .vex-chat-prose table { font-size: 12px; }
 .lit-chat-shell .vex-reasoning-prose { font-size: 12.5px; line-height: 1.5; }
+
+/* The global turn shimmer carries a blue highlight for the ordinary agent
+ * room. On the Lighter desk the same motion follows the selected deployment:
+ * teal on Core, lime on RHC, with a light ink glint for legibility. */
+.lit-chat-shell .vex-turn-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--lit-focus) 0%,
+    var(--lit-focus) 40%,
+    color-mix(in srgb, var(--lit-focus) 58%, var(--lit-ink)) 50%,
+    var(--lit-focus) 60%,
+    var(--lit-focus) 100%
+  );
+  background-position: 100% 0;
+  background-size: 250% 100%;
+  background-clip: text;
+  color: transparent;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
 
 /* Desk register: the rail is a side column, not a reading page, so the chat's
  * document sizes (16px composer, 24px headings) step down to the desk's grid.

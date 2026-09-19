@@ -93,4 +93,11 @@ describe("Lighter desk responsive market metrics", () => {
     expect(css).toMatch(/\.lit-chat-frame\s*>\s*\[data-vex-area="book-panel"\]\s*\{[^}]*background: var\(--lit-bg\);/s);
     expect(css).toMatch(/\.lit-chat-frame\s*\{[^}]*--vex-alias-button-accent-fill: var\(--lit-action\);/s);
   });
+
+  it("themes live thinking and internal activity surfaces with the desk palette", () => {
+    expect(css).toMatch(/\.lit-chat-frame\s*\{[^}]*--vex-surface-1: var\(--lit-panel\);/s);
+    expect(css).toMatch(/\.lit-chat-frame\s*\{[^}]*--vex-text-2: var\(--lit-ink-secondary\);/s);
+    expect(css).toMatch(/\.lit-chat-frame\s*\{[^}]*--vex-accent-text: var\(--lit-focus\);/s);
+    expect(css).toMatch(/\.lit-chat-shell \.vex-turn-shimmer\s*\{[^}]*var\(--lit-focus\)[^}]*var\(--lit-ink\)/s);
+  });
 });
