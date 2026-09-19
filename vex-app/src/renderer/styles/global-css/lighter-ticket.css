@@ -731,3 +731,245 @@
 .lit-ticket-steps li em { font-style: normal; color: var(--lit-ink-muted); }
 .lit-ticket-steps li[data-state="done"] span { color: var(--lit-ink-secondary); }
 .lit-ticket-steps li[data-state="done"] em { color: var(--lit-positive); }
+
+/* The account-setup modal: the Core/RHC segmented switch, the deposit field, a
+ * three-step tracker (Deposit -> Trading key -> Fees) that plans the work while
+ * idle and reports it live while the chain runs, and one primary action.
+ *
+ * The environment accent (`--lit-setup-accent`) is the ONE thing that differs
+ * between the two desks - the selected segment, the asset unit and the active
+ * step wear it - so a trader always knows whether they are funding Core (indigo,
+ * USDC) or Robinhood Chain (green, USDG). `data-environment` rides the
+ * DialogContent element (see `LighterAccountSetupModal`). */
+[data-vex-area="lighter-account-setup"] { --lit-setup-accent: var(--lit-env-core); }
+[data-vex-area="lighter-account-setup"][data-environment="rhc"] { --lit-setup-accent: var(--lit-env-rhc); }
+
+/* Environment segmented control: one inset track, the selected desk a raised
+ * segment carrying its own accent and its settlement asset. */
+.lit-setup-env {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: calc(var(--lit-radius) + 4px);
+  background: var(--lit-bg);
+  border: 1px solid var(--lit-line);
+}
+.lit-setup-env > button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--lit-radius);
+  background: transparent;
+  color: var(--lit-ink-muted);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+.lit-setup-env-name { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+.lit-setup-env-asset {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.lit-setup-env > button:hover:not(:disabled) { color: var(--lit-ink); background: var(--lit-hover); }
+.lit-setup-env > button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--lit-setup-accent) 14%, var(--lit-panel-raised));
+  border-color: color-mix(in srgb, var(--lit-setup-accent) 55%, transparent);
+  color: var(--lit-ink);
+}
+.lit-setup-env > button[aria-pressed="true"] .lit-setup-env-asset { color: var(--lit-setup-accent); opacity: 1; }
+.lit-setup-env > button:disabled { cursor: default; }
+.lit-setup-env > button:disabled:not([aria-pressed="true"]) { opacity: 0.4; }
+.lit-setup-env > button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--lit-bg), 0 0 0 4px var(--lit-setup-accent);
+}
+
+/* Checking-account and already-funded lines. */
+.lit-setup-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--lit-ink-secondary);
+  font-size: 12.5px;
+}
+.lit-setup-loading .lit-loader { width: 14px; height: 14px; }
+.lit-setup-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--lit-ink-secondary);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.lit-setup-note svg { flex: 0 0 auto; margin-top: 1px; color: var(--lit-positive); }
+
+/* Deposit field: a label/balance head over a large tabular amount input whose
+ * unit is an accent chip. */
+.lit-setup-field { display: flex; flex-direction: column; gap: 7px; }
+.lit-setup-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.lit-setup-field-head label { font-size: 12px; font-weight: 600; color: var(--lit-ink-secondary); }
+.lit-setup-balance { font-size: 11.5px; color: var(--lit-ink-muted); font-variant-numeric: tabular-nums; }
+.lit-setup-amount {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: var(--lit-radius);
+  border: 1px solid var(--lit-line);
+  background: var(--lit-bg);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.lit-setup-amount:focus-within {
+  border-color: color-mix(in srgb, var(--lit-setup-accent) 60%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lit-setup-accent) 18%, transparent);
+}
+.lit-setup-amount input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--lit-ink);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+.lit-setup-amount input::placeholder { color: var(--lit-ink-muted); }
+.lit-setup-amount b {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--lit-setup-accent);
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lit-setup-accent) 15%, transparent);
+}
+.lit-setup-min { font-size: 11.5px; color: var(--lit-ink-muted); }
+.lit-setup-warn { font-size: 11.5px; color: var(--lit-warning); line-height: 1.4; }
+
+/* Three-step tracker: the plan while idle, live progress while the chain runs. */
+.lit-setup-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 13px 14px;
+  border-radius: var(--lit-radius);
+  border: 1px solid var(--lit-line);
+  background: color-mix(in srgb, var(--lit-panel-raised) 45%, transparent);
+}
+.lit-setup-steps ol {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lit-setup-steps li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--lit-ink-muted);
+}
+.lit-setup-step-mark {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--lit-line-strong);
+  color: var(--lit-ink-muted);
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.lit-setup-step-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.lit-setup-step-mark .lit-loader { width: 12px; height: 12px; border-width: 1.5px; border-top-color: var(--lit-setup-accent); }
+.lit-setup-step-label { white-space: nowrap; }
+.lit-setup-steps li[data-state="active"] { color: var(--lit-ink); }
+.lit-setup-steps li[data-state="active"] .lit-setup-step-mark {
+  border-color: color-mix(in srgb, var(--lit-setup-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--lit-setup-accent) 12%, transparent);
+}
+.lit-setup-steps li[data-state="done"] { color: var(--lit-ink-secondary); }
+.lit-setup-steps li[data-state="done"] .lit-setup-step-mark {
+  border-color: var(--lit-positive);
+  background: var(--lit-positive);
+  color: var(--lit-positive-ink);
+}
+.lit-setup-status {
+  font-size: 12px;
+  color: var(--lit-ink-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.lit-setup-status[data-phase="done"] { color: var(--lit-positive); font-weight: 600; }
+
+/* Fee line: a quiet hairline-topped note, the rates in ink. */
+.lit-setup-fee {
+  padding-top: 11px;
+  border-top: 1px solid var(--lit-line);
+  color: var(--lit-ink-muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.lit-setup-fee b { color: var(--lit-ink-secondary); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.lit-setup-status-error,
+.lit-setup-step-error {
+  color: var(--lit-negative);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Primary action: full-width, the desk's confident go-green, carrying its own
+ * running and done states so there is one thing to watch. */
+.lit-setup-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--lit-radius);
+  background: var(--lit-positive);
+  color: var(--lit-positive-ink);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: filter 140ms ease, transform 80ms ease, opacity 140ms ease;
+}
+.lit-setup-cta:hover:not(:disabled) { filter: brightness(1.05); }
+.lit-setup-cta:active:not(:disabled) { transform: translateY(1px); }
+.lit-setup-cta:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--lit-panel), 0 0 0 4px var(--lit-positive);
+}
+.lit-setup-cta:disabled { cursor: default; opacity: 0.5; }
+.lit-setup-cta[data-busy] { opacity: 0.85; }
+.lit-setup-cta[data-done] { opacity: 1; }
+.lit-setup-cta .lit-loader {
+  width: 16px;
+  height: 16px;
+  border-color: color-mix(in srgb, var(--lit-positive-ink) 35%, transparent);
+  border-top-color: var(--lit-positive-ink);
+}

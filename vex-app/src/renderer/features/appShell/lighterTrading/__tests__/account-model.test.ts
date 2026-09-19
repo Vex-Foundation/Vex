@@ -9,8 +9,7 @@ import {
 } from "../account-model.js";
 import {
   buildCancelAllOrdersMessage,
-  buildConnectMessage,
-  buildFundMessage,
+  buildWithdrawMessage,
 } from "../desk-messages.js";
 
 const LONG: LighterPositionRow = {
@@ -125,21 +124,8 @@ describe("desk messages", () => {
     );
   });
 
-  it("starts onboarding from the status read and names every step as its own approval", () => {
-    const connect = buildConnectMessage({ environment: "rhc" });
-    expect(connect).toContain("lighter__account_onboarding_status");
-    expect(connect).toContain("lighter__deposit_prepare");
-    expect(connect).toContain("lighter__key_register_prepare");
-    expect(connect).toContain("lighter__fees_approve_prepare");
-    expect(connect).toContain("environment=rhc");
-    expect(connect).toContain("Nothing may execute without my explicit approval");
-  });
-
-  it("asks for a deposit walkthrough with approval, and is honest that withdrawals happen on Lighter", () => {
-    const deposit = buildFundMessage({ environment: "core", kind: "deposit" });
-    expect(deposit).toContain("lighter__deposit_prepare");
-    expect(deposit).toContain("Nothing may execute without my explicit approval");
-    const withdraw = buildFundMessage({ environment: "core", kind: "withdraw" });
+  it("is honest that withdrawals happen on Lighter, not in Vex", () => {
+    const withdraw = buildWithdrawMessage({ environment: "core" });
     expect(withdraw).toContain("Vex has no withdrawal tool");
     expect(withdraw).not.toContain("approval card");
   });

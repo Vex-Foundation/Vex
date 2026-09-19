@@ -21,6 +21,10 @@
   --lit-negative-volume: rgba(242, 109, 109, 0.3);
   --lit-negative-wash: color-mix(in srgb, var(--lit-negative) 12%, transparent);
   --lit-warning: var(--vex-alias-state-warn);
+  /* Environment accents: Core reads in the app's indigo, Robinhood Chain in a
+   * Robinhood green, so the account-setup modal never blurs the two desks. */
+  --lit-env-core: #6f6cf0;
+  --lit-env-rhc: #16b364;
   --lit-action: var(--vex-alias-button-accent-fill);
   --lit-action-ink: var(--vex-alias-button-accent-ink);
   --lit-focus: var(--vex-alias-accent-primary);

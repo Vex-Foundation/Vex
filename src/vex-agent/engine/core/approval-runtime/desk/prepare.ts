@@ -38,6 +38,11 @@ export const DESK_PREPARE_TOOL_IDS = [
   "lighter.position.protect",
   "lighter.position.close.prepare",
   "lighter.order.cancel.prepare",
+  // The account-setup modal's deposit -> key -> fee chain (design: no model
+  // turn walks these three; the modal is the consent surface for all three).
+  "lighter.deposit.prepare",
+  "lighter.key.register.prepare",
+  "lighter.fees.approve.prepare",
 ] as const;
 export type DeskPrepareToolId = (typeof DESK_PREPARE_TOOL_IDS)[number];
 

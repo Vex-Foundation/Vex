@@ -1,9 +1,18 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
 import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
 import { DEFAULT_LIGHTER_LAYOUT, LIGHTER_BOOK_COLUMN_MIN, LIGHTER_STACK_BELOW } from "../desk-preferences.js";
+
+// The always-mounted account-setup modal reads `useQueryClient()` even while
+// closed (see LighterAccountSetupModal.js), so every render needs a provider
+// - the app itself has one at the root; this test tree otherwise would not.
+function renderCenter(...args: Parameters<typeof render>) {
+  const queryClient = new QueryClient();
+  return render(<QueryClientProvider client={queryClient}>{args[0]}</QueryClientProvider>, args[1]);
+}
 
 const mocks = vi.hoisted(() => ({ useLighterDesk: vi.fn() }));
 
@@ -121,7 +130,7 @@ describe("LighterCenter", () => {
         refetch,
       },
     }));
-    const { unmount } = render(<LighterCenter />);
+    const { unmount } = renderCenter(<LighterCenter />);
     expect(screen.getByRole("alert").textContent).toContain("Lighter is not answering");
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(refetch).toHaveBeenCalledTimes(1);
@@ -136,25 +145,25 @@ describe("LighterCenter", () => {
         refetch,
       },
     }));
-    render(<LighterCenter />);
+    renderCenter(<LighterCenter />);
     expect(screen.getByRole("alert").textContent).toContain("Markets unavailable");
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
 
   it("shows a loading state until the market list and a market resolve", () => {
     mocks.useLighterDesk.mockReturnValue(desk({ marketList: null, market: null, marketsQuery: { data: undefined, isLoading: true, isFetching: true, refetch: vi.fn() } }));
-    const { unmount } = render(<LighterCenter />);
+    const { unmount } = renderCenter(<LighterCenter />);
     expect(screen.getByRole("status").textContent).toContain("Loading live Lighter markets…");
     unmount();
 
     mocks.useLighterDesk.mockReturnValue(desk({ market: null }));
-    render(<LighterCenter />);
+    renderCenter(<LighterCenter />);
     expect(screen.getByRole("status").textContent).toContain("Choosing a market…");
   });
 
   it("lays out chart, market depth and ticket with four named splitters on a wide desk", () => {
     mocks.useLighterDesk.mockReturnValue(desk());
-    render(<LighterCenter />);
+    renderCenter(<LighterCenter />);
     expect(screen.getByTestId("market-chart")).toBeTruthy();
     expect(screen.getByTestId("trade-ticket")).toBeTruthy();
     expect(screen.getByTestId("order-book")).toBeTruthy();
@@ -172,7 +181,7 @@ describe("LighterCenter", () => {
   it("keeps the ticket at full height and tabs market depth below the chart on a compact desk", () => {
     bodyWidth = LIGHTER_STACK_BELOW - 1;
     mocks.useLighterDesk.mockReturnValue(desk());
-    const { container } = render(<LighterCenter />);
+    const { container } = renderCenter(<LighterCenter />);
     const upper = container.querySelector<HTMLElement>(".lit-desk-upper[data-stacked]");
     expect(upper).not.toBeNull();
     expect(upper?.style.gridTemplateRows).toBe("minmax(0, 1fr) 240px");
@@ -193,7 +202,7 @@ describe("LighterCenter", () => {
   it("resizes compact market depth without changing ticket or wide-layout proportions", () => {
     bodyWidth = 900;
     mocks.useLighterDesk.mockReturnValue(desk());
-    render(<LighterCenter />);
+    renderCenter(<LighterCenter />);
     const seam = screen.getByRole("separator", { name: "Resize chart and market depth" });
     fireEvent.keyDown(seam, { key: "ArrowUp" });
     const saved = useLighterAnalysisStore.getState().desk.layout;
@@ -213,7 +222,7 @@ describe("LighterCenter", () => {
       ],
       focusApprovalId: "a3",
     }));
-    const { container } = render(<LighterCenter />);
+    const { container } = renderCenter(<LighterCenter />);
     expect(screen.getByTestId("trade-ticket")).toBeTruthy();
     const dialog = container.querySelector("dialog[data-vex-area=lighter-desk-approval]");
     expect(dialog?.hasAttribute("open")).toBe(true);
@@ -223,7 +232,7 @@ describe("LighterCenter", () => {
 
   it("keeps the desk's dialog closed while only the agent's cards are pending", () => {
     mocks.useLighterDesk.mockReturnValue(desk({ approvals: [{ id: "a2", origin: "agent" }] }));
-    const { container } = render(<LighterCenter />);
+    const { container } = renderCenter(<LighterCenter />);
     expect(container.querySelector("dialog[data-vex-area=lighter-desk-approval]")?.hasAttribute("open")).toBe(false);
     expect(screen.queryByTestId("approval-card")).toBeNull();
   });
@@ -231,7 +240,7 @@ describe("LighterCenter", () => {
   it("opens Vex with the keyboard without repeating an Ask button on the chart", () => {
     const current = desk();
     mocks.useLighterDesk.mockReturnValue(current);
-    render(<LighterCenter />);
+    renderCenter(<LighterCenter />);
     expect(screen.queryByRole("button", { name: "Ask Vex" })).toBeNull();
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     expect(current.askVex).toHaveBeenCalledTimes(1);
@@ -243,14 +252,14 @@ describe("LighterCenter", () => {
   it("collapses the expanded chart on Escape unless a layer above already took the key", () => {
     const collapsed = desk();
     mocks.useLighterDesk.mockReturnValue(collapsed);
-    const { unmount } = render(<LighterCenter />);
+    const { unmount } = renderCenter(<LighterCenter />);
     fireEvent.keyDown(window, { key: "Escape" });
     expect(collapsed.setChartExpanded).not.toHaveBeenCalled();
     unmount();
 
     const expanded = desk({ chartExpanded: true });
     mocks.useLighterDesk.mockReturnValue(expanded);
-    render(<LighterCenter />);
+    renderCenter(<LighterCenter />);
     const taken = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
     taken.preventDefault();
     window.dispatchEvent(taken);
@@ -261,7 +270,7 @@ describe("LighterCenter", () => {
 
   it("persists splitter steps and dock collapse through the desk preferences", () => {
     mocks.useLighterDesk.mockReturnValue(desk());
-    render(<LighterCenter />);
+    renderCenter(<LighterCenter />);
     const column = screen.getByRole("separator", { name: "Resize the order book column" });
     expect(column.getAttribute("aria-valuenow")).toBe(String(Math.round(1200 * DEFAULT_LIGHTER_LAYOUT.bookShare)));
     fireEvent.keyDown(column, { key: "Home" });

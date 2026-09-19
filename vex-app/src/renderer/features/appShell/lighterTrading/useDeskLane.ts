@@ -31,7 +31,14 @@ import {
 /** Fallback poll only; the live sync pushes new approvals the moment they enqueue. */
 const APPROVALS_REFETCH_INTERVAL_MS = 60_000;
 
-const SENT_TEXT: Record<LighterDeskAction["kind"], string> = {
+/**
+ * The ticket's own Long/Short, Close and Cancel - never the account-setup
+ * modal's deposit/key/fee chain, which has its own auto-approve driver
+ * (`useLighterAccountSetup`) and never reaches this lane's approval dialog.
+ */
+type DeskLaneAction = Extract<LighterDeskAction, { kind: "order" | "close" | "cancel" }>;
+
+const SENT_TEXT: Record<DeskLaneAction["kind"], string> = {
   order: "Order sent.",
   close: "Close sent.",
   cancel: "Cancel sent.",
@@ -59,7 +66,7 @@ interface DeskScope {
 }
 
 interface PendingDeskAction {
-  readonly action: LighterDeskAction;
+  readonly action: DeskLaneAction;
   readonly draft: TradeDraft | null;
   readonly scope: DeskScope;
   readonly symbol: string | null;
@@ -365,7 +372,7 @@ export function useDeskLane({
     onApprovalResolved("approved", result.data);
   };
 
-  const prepareOnDesk = async (action: LighterDeskAction, draft: TradeDraft | null): Promise<void> => {
+  const prepareOnDesk = async (action: DeskLaneAction, draft: TradeDraft | null): Promise<void> => {
     if (activeSessionId === null) {
       onNoSession();
       return;

@@ -35,7 +35,10 @@ export type DeskPrepareCall = {
     | "lighter.order.preview"
     | "lighter.position.protect"
     | "lighter.position.close.prepare"
-    | "lighter.order.cancel.prepare";
+    | "lighter.order.cancel.prepare"
+    | "lighter.deposit.prepare"
+    | "lighter.key.register.prepare"
+    | "lighter.fees.approve.prepare";
   readonly params: Record<string, unknown>;
 };
 
@@ -58,6 +61,12 @@ function deskPrepareKey(input: {
       return `${input.sessionId}|${input.environment}|close|${action.marketId}`;
     case "cancel":
       return `${input.sessionId}|${input.environment}|cancel|${action.marketId}|${action.orderId}`;
+    case "onboarding_deposit":
+      return `${input.sessionId}|${input.environment}|onboarding_deposit|${action.amountIn}`;
+    case "onboarding_key":
+      return `${input.sessionId}|${input.environment}|onboarding_key`;
+    case "onboarding_fee":
+      return `${input.sessionId}|${input.environment}|onboarding_fee`;
     case "order":
       // Every draft field is a scalar after the strict schema parse. Sorting
       // makes equivalent IPC objects share a key even when their property
@@ -126,6 +135,15 @@ export function deskActionToPrepareCall(
           orderId: action.orderId,
         },
       };
+    case "onboarding_deposit":
+      return {
+        toolId: "lighter.deposit.prepare",
+        params: { environment, amountIn: action.amountIn },
+      };
+    case "onboarding_key":
+      return { toolId: "lighter.key.register.prepare", params: { environment } };
+    case "onboarding_fee":
+      return { toolId: "lighter.fees.approve.prepare", params: { environment } };
     case "order": {
       const { draft } = action;
       const base = {

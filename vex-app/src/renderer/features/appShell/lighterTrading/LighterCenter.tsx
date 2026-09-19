@@ -6,6 +6,7 @@ import { TradingBottomPanel } from "./AccountPanel.js";
 import { ChartExpandButton } from "./ChartExpandButton.js";
 import { DeskApprovalDialog } from "./DeskApprovalDialog.js";
 import { DeskLeverage } from "./DeskLeverage.js";
+import { LighterAccountSetupModal } from "./LighterAccountSetupModal.js";
 import { MarketBar, streamStatusLabel } from "./MarketBar.js";
 import { MarketChart } from "./MarketChart.js";
 import { MarketPicker } from "./MarketPicker.js";
@@ -427,6 +428,13 @@ function DeskBody({ desk, theme }: {
           reopenSignal={approvalReopenSignal}
         />
       )}
+      <LighterAccountSetupModal
+        open={desk.setupModalOpen}
+        onOpenChange={(next) => { if (!next) desk.closeLighterSetup(); }}
+        sessionId={activeSessionId}
+        environment={environment}
+        onDone={desk.onLighterSetupDone}
+      />
     </div>
   );
 }
