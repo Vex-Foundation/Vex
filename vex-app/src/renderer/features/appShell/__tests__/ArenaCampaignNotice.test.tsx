@@ -13,6 +13,7 @@ import { arenaCampaignPhase } from "../lighterTrading/arena-campaign.js";
 
 beforeEach(() => {
   vi.useFakeTimers();
+  sessionStorage.clear();
   useUiStore.setState({ runtimeMode: "agent", activeSessionId: null });
   useLighterAnalysisStore.getState().saveDesk({ environment: "core" });
 });
@@ -43,7 +44,7 @@ describe("ArenaCampaignNotice", () => {
     vi.setSystemTime(new Date("2026-09-17T17:30:00Z"));
     render(<ArenaCampaignNotice />);
     expect(screen.getByRole("status").textContent).toContain(
-      "Starts Sep 18 · 11:00 UTC",
+      "Starts Sep 18",
     );
     expect(screen.getByRole("status").dataset["phase"]).toBe("upcoming");
   });
@@ -52,8 +53,31 @@ describe("ArenaCampaignNotice", () => {
     vi.setSystemTime(new Date("2026-09-20T00:00:00Z"));
     render(<ArenaCampaignNotice />);
     expect(screen.getByRole("status").textContent).toContain(
-      "Ends Oct 16 · 11:00 UTC",
+      "Ends Oct 16",
     );
+  });
+
+  it("shows the blinking live dot only while the window is open", () => {
+    vi.setSystemTime(new Date("2026-09-17T17:30:00Z"));
+    const { container, rerender } = render(<ArenaCampaignNotice />);
+    expect(container.querySelector(".vex-live-dot")).toBeNull();
+    vi.setSystemTime(new Date("2026-09-20T00:00:00Z"));
+    rerender(<ArenaCampaignNotice key="live" />);
+    expect(container.querySelector(".vex-live-dot")).not.toBeNull();
+  });
+
+  it("advertises the reward pool while the campaign runs", () => {
+    vi.setSystemTime(new Date("2026-09-20T00:00:00Z"));
+    render(<ArenaCampaignNotice />);
+    expect(screen.getByRole("status").textContent).toContain(
+      "Rewards: Up to 5,000 USDC",
+    );
+  });
+
+  it("drops the reward pill once the campaign closes", () => {
+    vi.setSystemTime(new Date("2026-10-17T00:00:00Z"));
+    render(<ArenaCampaignNotice />);
+    expect(screen.getByRole("status").textContent).not.toContain("Rewards:");
   });
 
   it("becomes a permanent Lighter entry once the campaign closes", () => {
@@ -73,5 +97,19 @@ describe("ArenaCampaignNotice", () => {
     fireEvent.click(screen.getByRole("button", { name: "Enter with Vex" }));
     expect(useLighterAnalysisStore.getState().desk.environment).toBe("rhc");
     expect(useUiStore.getState().runtimeMode).toBe("lighter");
+  });
+
+  it("Dismiss hides the card for the session but returns after a reboot clears sessionStorage", () => {
+    vi.setSystemTime(new Date("2026-09-20T00:00:00Z"));
+    const { unmount } = render(<ArenaCampaignNotice />);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("status")).toBeNull();
+    unmount();
+    render(<ArenaCampaignNotice />);
+    expect(screen.queryByRole("status")).toBeNull();
+    unmount();
+    sessionStorage.clear(); // the next app reboot starts a fresh session
+    render(<ArenaCampaignNotice />);
+    expect(screen.getByRole("status")).toBeTruthy();
   });
 });

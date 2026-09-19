@@ -281,6 +281,17 @@ export const IconWifi = ({ size = 16, className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+/** A wrapped gift: the reward pool a campaign puts up. */
+export const IconGift = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M4 11.5h16V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-8.5Z" />
+    <path d="M3 8.5a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-2Z" />
+    <path d="M12 7.5V21" />
+    <path d="M12 7.5S10.5 3.5 8 3.5a2 2 0 0 0 0 4h4Z" />
+    <path d="M12 7.5S13.5 3.5 16 3.5a2 2 0 0 1 0 4h-4Z" />
+  </svg>
+);
+
 export const IconWaypoints = ({ size = 16, className }: GlyphProps): JSX.Element => (
   <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <path fillRule="evenodd" clipRule="evenodd" d={ringPath(12, 4.75, 2.75, OUTLINE_WEIGHT)} fill="currentColor" />

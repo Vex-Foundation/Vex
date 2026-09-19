@@ -10,6 +10,8 @@ export const ARENA_CAMPAIGN = {
   venue: "Lighter Robinhood Chain",
   startsAt: new Date("2026-09-18T11:00:00Z"),
   endsAt: new Date("2026-10-16T11:00:00Z"),
+  /** Headline reward, shown on the welcome card to draw traders in. */
+  reward: "Up to 5,000 USDC",
 } as const;
 
 export type ArenaCampaignPhase = "upcoming" | "live" | "over";
