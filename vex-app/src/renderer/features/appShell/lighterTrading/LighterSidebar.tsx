@@ -31,6 +31,7 @@ import {
 import { SidebarProfile } from "../SidebarProfile.js";
 import { filterSessionsByWorkspace, groupSessions } from "../sessionListModel.js";
 import { useSessionRowActions } from "../useSessionRowActions.js";
+import { EnvironmentSwitch } from "./EnvironmentSwitch.js";
 import { NO_VALUE, formatNumber, formatPrice } from "./format.js";
 import { classifyLighterMarket } from "./market-classification.js";
 import { marketIdentity } from "./market-selection.js";
@@ -50,6 +51,7 @@ export function LighterSidebar({ collapsed, onToggleSidebar }: {
   const theme = useUiStore((s) => s.theme);
   const setThemePreference = useUiStore((s) => s.setThemePreference);
   const environment = useLighterAnalysisStore((s) => s.desk.environment);
+  const saveDesk = useLighterAnalysisStore((s) => s.saveDesk);
   const query = useSessionsList();
   const actions = useSessionRowActions();
   const rootRef = useRef<HTMLElement | null>(null);
@@ -106,10 +108,11 @@ export function LighterSidebar({ collapsed, onToggleSidebar }: {
         <span className="lit-topbar-brand">
           <img src="./protocols/lighter.svg" alt="" width="20" height="20" />
           <b>Lighter</b>
-          <small className="lit-topbar-environment">
-            {environment === "rhc" ? "Robinhood Chain" : "Core"}
-          </small>
         </span>
+        <EnvironmentSwitch
+          environment={environment}
+          onSelect={(next) => saveDesk({ environment: next, marketId: null })}
+        />
         <button
           type="button"
           className="lit-topbar-button"

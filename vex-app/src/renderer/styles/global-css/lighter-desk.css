@@ -69,7 +69,7 @@
 
 .lit-topbar-brand img { width: 20px; height: 20px; }
 .lit-topbar-brand b { font-size: 13px; font-weight: 650; }
-.lit-topbar-brand small { color: var(--lit-ink-muted); font-size: 11px; white-space: nowrap; }
+.lit-desk-topbar .lit-environment-switch { margin-left: 2px; }
 .lit-topbar-spacer { min-width: 4px; flex: 1 1 auto; }
 .lit-topbar-profile { width: 40px; flex: 0 0 40px; }
 .lit-topbar-profile [data-vex-area="sidebar-profile"] {
@@ -126,10 +126,14 @@
 .lit-environment-dialog input[type="range"] { accent-color: var(--lit-focus); }
 
 @container (max-width: 720px) {
-  .lit-topbar-environment,
   .lit-topbar-button-label { display: none; }
   .lit-topbar-button,
   .lit-topbar-primary { width: 32px; padding-inline: 0; }
+}
+
+@container (max-width: 520px) {
+  .lit-topbar-divider,
+  .lit-topbar-brand b { display: none; }
 }
 
 .lit-desk {
