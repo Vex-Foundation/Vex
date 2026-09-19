@@ -1,5 +1,8 @@
 import type { JSX } from "react";
-import type { LighterTradingEnvironment } from "@shared/schemas/lighter-trading.js";
+import type {
+  LighterAccountSetupStatus,
+  LighterTradingEnvironment,
+} from "@shared/schemas/lighter-trading.js";
 import { IconCheck } from "../../../components/icons/index.js";
 import {
   Dialog,
@@ -24,6 +27,11 @@ const ENVIRONMENT_ASSETS: Readonly<Record<LighterTradingEnvironment, string>> = 
   rhc: "USDG",
 };
 
+const START_TRADING_LABELS: Readonly<Record<LighterTradingEnvironment, string>> = {
+  core: "Start Trading on Lighter Core",
+  rhc: "Start Trading on Lighter RHC",
+};
+
 /** The live status line under the tracker (screen-reader announced). */
 const PHASE_LABELS: Readonly<Record<LighterAccountSetupPhase, string>> = {
   idle: "One confirmation runs all three steps.",
@@ -38,6 +46,13 @@ const PHASE_LABELS: Readonly<Record<LighterAccountSetupPhase, string>> = {
 
 type StepState = "done" | "active" | "upcoming";
 
+export interface LighterSetupPresentation {
+  readonly steps: readonly [StepState, StepState, StepState];
+  readonly accountNote: string | null;
+  readonly statusLabel: string;
+  readonly ready: boolean;
+}
+
 const SETUP_STEPS = [
   { key: "deposit", label: "Deposit" },
   { key: "key", label: "Trading key" },
@@ -45,29 +60,72 @@ const SETUP_STEPS = [
 ] as const;
 
 /**
- * Maps the chain's fine-grained phase onto the three steps the trader thinks
- * in. A wallet that already holds an account skips step one, so it reads as
- * already done rather than pending.
+ * Maps the backend's observed setup state and the chain's fine-grained phase
+ * onto the three steps the trader sees. Idle is a real status view, not merely
+ * a plan: reopening setup must preserve every completed check.
  */
-function stepStates(
+export function lighterSetupPresentation(
   phase: LighterAccountSetupPhase,
-  needsDeposit: boolean,
-): readonly [StepState, StepState, StepState] {
-  const deposit: StepState = needsDeposit ? "upcoming" : "done";
+  status: LighterAccountSetupStatus,
+): LighterSetupPresentation {
+  const accountNote = !status.accountExists
+    ? null
+    : !status.tradingKeyRegistered
+      ? `This wallet already holds a Lighter account on ${ENVIRONMENT_LABELS[status.environment]}. Setup continues from the trading key.`
+      : !status.feeAuthorized
+        ? `This wallet's Lighter account and trading key are ready on ${ENVIRONMENT_LABELS[status.environment]}. Setup continues from fee authorization.`
+        : `This wallet is fully set up for Lighter on ${ENVIRONMENT_LABELS[status.environment]}.`;
+  const ready = status.accountExists && status.tradingKeyRegistered && status.feeAuthorized;
+
   switch (phase) {
     case "idle":
-      return [deposit, "upcoming", "upcoming"];
+      return {
+        steps: [
+          status.accountExists ? "done" : "upcoming",
+          status.tradingKeyRegistered ? "done" : "upcoming",
+          status.accountExists && status.feeAuthorized ? "done" : "upcoming",
+        ],
+        accountNote,
+        statusLabel: !status.accountExists
+          ? PHASE_LABELS.idle
+          : !status.tradingKeyRegistered
+            ? "Deposit confirmed. Trading key and fee authorization remain."
+            : !status.feeAuthorized
+              ? "Deposit and trading key confirmed. Fee authorization remains."
+              : "Deposit, trading key and fee authorization confirmed.",
+        ready,
+      };
     case "depositing":
     case "confirming_deposit":
-      return ["active", "upcoming", "upcoming"];
+      return {
+        steps: ["active", "upcoming", "upcoming"],
+        accountNote,
+        statusLabel: PHASE_LABELS[phase],
+        ready: false,
+      };
     case "registering_key":
     case "confirming_key":
-      return ["done", "active", "upcoming"];
+      return {
+        steps: ["done", "active", "upcoming"],
+        accountNote,
+        statusLabel: PHASE_LABELS[phase],
+        ready: false,
+      };
     case "authorizing_fee":
     case "confirming_fee":
-      return ["done", "done", "active"];
+      return {
+        steps: ["done", "done", "active"],
+        accountNote,
+        statusLabel: PHASE_LABELS[phase],
+        ready: false,
+      };
     case "done":
-      return ["done", "done", "done"];
+      return {
+        steps: ["done", "done", "done"],
+        accountNote,
+        statusLabel: PHASE_LABELS.done,
+        ready: true,
+      };
   }
 }
 
@@ -109,7 +167,9 @@ export function LighterAccountSetupModal({
   const running = setup.phase !== "idle" && setup.phase !== "done";
   const started = setup.phase !== "idle";
   const { status } = setup;
-  const steps = stepStates(setup.phase, setup.needsDeposit);
+  const presentation = status === null
+    ? null
+    : lighterSetupPresentation(setup.phase, status);
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!running) onOpenChange(next); }}>
@@ -182,24 +242,21 @@ export function LighterAccountSetupModal({
                     </p>
                   )}
                 </div>
-              ) : (
+              ) : presentation !== null && presentation.accountNote !== null ? (
                 <p className="lit-setup-note">
                   <IconCheck size={15} aria-hidden="true" />
-                  <span>
-                    This wallet already holds a Lighter account on {ENVIRONMENT_LABELS[setup.environment]}.
-                    Setup continues from the trading key.
-                  </span>
+                  <span>{presentation.accountNote}</span>
                 </p>
-              )}
+              ) : null}
 
               <div className="lit-setup-steps" data-running={started || undefined}>
                 <ol>
                   {SETUP_STEPS.map((step, index) => (
-                    <li key={step.key} data-state={steps[index]}>
+                    <li key={step.key} data-state={presentation?.steps[index]}>
                       <span className="lit-setup-step-mark" aria-hidden="true">
-                        {steps[index] === "done" ? (
+                        {presentation?.steps[index] === "done" ? (
                           <IconCheck size={13} />
-                        ) : steps[index] === "active" ? (
+                        ) : presentation?.steps[index] === "active" ? (
                           <span className="lit-loader" />
                         ) : (
                           <span className="lit-setup-step-dot" />
@@ -209,8 +266,13 @@ export function LighterAccountSetupModal({
                     </li>
                   ))}
                 </ol>
-                <p className="lit-setup-status" role="status" aria-live="polite" data-phase={setup.phase}>
-                  {PHASE_LABELS[setup.phase]}
+                <p
+                  className="lit-setup-status"
+                  role="status"
+                  aria-live="polite"
+                  data-phase={presentation?.ready === true ? "done" : setup.phase}
+                >
+                  {presentation?.statusLabel}
                 </p>
               </div>
 
@@ -232,10 +294,18 @@ export function LighterAccountSetupModal({
             <button type="button" className="lit-setup-cta" onClick={setup.retry}>
               Try again
             </button>
-          ) : setup.phase === "done" ? (
-            <button type="button" className="lit-setup-cta" data-done disabled>
+          ) : presentation?.ready === true ? (
+            <button
+              type="button"
+              className="lit-setup-cta"
+              data-done
+              onClick={() => {
+                onDone(setup.environment);
+                onOpenChange(false);
+              }}
+            >
               <IconCheck size={16} aria-hidden="true" />
-              Ready to trade
+              {START_TRADING_LABELS[setup.environment]}
             </button>
           ) : (
             <button

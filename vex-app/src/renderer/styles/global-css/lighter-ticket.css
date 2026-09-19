@@ -736,11 +736,10 @@
  * three-step tracker (Deposit -> Trading key -> Fees) that plans the work while
  * idle and reports it live while the chain runs, and one primary action.
  *
- * The environment accent (`--lit-setup-accent`) is the ONE thing that differs
- * between the two desks - the selected segment, the asset unit and the active
- * step wear it - so a trader always knows whether they are funding Core (indigo,
- * USDC) or Robinhood Chain (green, USDG). `data-environment` rides the
- * DialogContent element (see `LighterAccountSetupModal`). */
+ * The environment accent (`--lit-setup-accent`) carries the same identity as
+ * the desk palette: the selected segment, asset unit and active step show Core
+ * in teal (USDC) or Robinhood Chain in lime (USDG). `data-environment` rides
+ * the DialogContent element (see `LighterAccountSetupModal`). */
 [data-vex-area="lighter-account-setup"] { --lit-setup-accent: var(--lit-env-core); }
 [data-vex-area="lighter-account-setup"][data-environment="rhc"] { --lit-setup-accent: var(--lit-env-rhc); }
 

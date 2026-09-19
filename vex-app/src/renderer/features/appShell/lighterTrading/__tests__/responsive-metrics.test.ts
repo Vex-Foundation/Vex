@@ -72,13 +72,25 @@ describe("Lighter desk responsive market metrics", () => {
     expect(css).not.toContain(".lit-dialog");
   });
 
-  it("resolves the desk from the shell's aliases without scaling up the chrome", () => {
+  it("preserves shell fallbacks while distinguishing Core and RHC by semantic tokens", () => {
     expect(css).toContain("--lit-bg: var(--vex-alias-bg-deep);");
     expect(css).toContain("--lit-positive: var(--vex-alias-state-success);");
     expect(css).toContain("--lit-radius: var(--radius-sm);");
-    expect(css).not.toContain("data-lighter-environment");
+    expect(css).toContain('.lit-desk[data-lighter-environment="core"]');
+    expect(css).toContain('.lit-desk[data-lighter-environment="rhc"]');
+    expect(css).toContain("--lit-bg: #111214;");
+    expect(css).toContain("--lit-bg: #0b0e0a;");
+    expect(css).toContain("--lit-action: #ccff00;");
     expect(css).not.toContain("radial-gradient(");
     expect(css).not.toContain("--lit-robin-neon");
     expect(css).not.toContain("--lit-chart-font-size: 18");
+  });
+
+  it("extends the selected environment across the adjacent Vex rail", () => {
+    expect(css).toContain('.lit-chat-frame[data-lighter-environment="core"]');
+    expect(css).toContain('.lit-chat-frame[data-lighter-environment="rhc"]');
+    expect(css).toMatch(/\.lit-chat-frame\s*\{[^}]*--vex-alias-bg-base: var\(--lit-bg\);/s);
+    expect(css).toMatch(/\.lit-chat-frame\s*>\s*\[data-vex-area="book-panel"\]\s*\{[^}]*background: var\(--lit-bg\);/s);
+    expect(css).toMatch(/\.lit-chat-frame\s*\{[^}]*--vex-alias-button-accent-fill: var\(--lit-action\);/s);
   });
 });

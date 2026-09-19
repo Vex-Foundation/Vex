@@ -72,6 +72,7 @@ export function LighterCenter(): JSX.Element {
       className="lit-desk"
       data-vex-area="lighter-desk"
       data-lighter-theme={theme}
+      data-lighter-environment={environment}
       data-chart-expanded={desk.chartExpanded || undefined}
     >
       <div className="lit-desk-top">

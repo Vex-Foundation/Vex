@@ -119,6 +119,21 @@ describe("LighterCenter", () => {
     useLighterAnalysisStore.getState().saveDesk({ layout: DEFAULT_LIGHTER_LAYOUT });
   });
 
+  it("keys the desk theme to the selected Lighter environment", () => {
+    mocks.useLighterDesk.mockReturnValue(desk({ environment: "rhc" }));
+    const rhc = renderCenter(<LighterCenter />);
+    expect(
+      rhc.container.querySelector('[data-vex-area="lighter-desk"]')?.getAttribute("data-lighter-environment"),
+    ).toBe("rhc");
+    rhc.unmount();
+
+    mocks.useLighterDesk.mockReturnValue(desk({ environment: "core", settlementSymbol: "USDC" }));
+    const core = renderCenter(<LighterCenter />);
+    expect(
+      core.container.querySelector('[data-vex-area="lighter-desk"]')?.getAttribute("data-lighter-environment"),
+    ).toBe("core");
+  });
+
   it("offers a retry only when the market list error says one can help", () => {
     const refetch = vi.fn();
     mocks.useLighterDesk.mockReturnValue(desk({

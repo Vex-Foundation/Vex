@@ -43,6 +43,7 @@ import { BookRailStack } from "./book/BookRailStack.js";
 import { StudioBookRailFrame } from "./book/StudioBookRailFrame.js";
 import { WelcomePortfolioPanel } from "./book/portfolio/WelcomePortfolioPanel.js";
 import { LighterChatRail } from "./lighterTrading/LighterChatRail.js";
+import { useLighterAnalysisStore } from "../../stores/lighterAnalysisStore.js";
 import { useUiStore } from "../../stores/uiStore.js";
 
 /**
@@ -66,11 +67,7 @@ export function BookPanel({
 
   // Lighter mode: the rail is the desk's conversation, never the instrument.
   if (runtimeMode === "lighter") {
-    return (
-      <BookRailFrame label="Lighter chat" headline="Vex" toggleLabel="Vex panel" collapsedLabel="Open Vex" bookOpen={bookOpen} onToggle={onToggle}>
-        <LighterChatRail />
-      </BookRailFrame>
-    );
+    return <LighterBookPanel bookOpen={bookOpen} onToggle={onToggle} />;
   }
 
   if (runtimeMode === "studio") {
@@ -102,5 +99,33 @@ export function BookPanel({
     >
       <BookRailStack scope={{ kind: "session", sessionId: activeSessionId }} />
     </BookRailFrame>
+  );
+}
+
+/**
+ * The rail receives the same visual scope as the market desk beside it. It is
+ * kept in a child component so the ordinary BOOK routes do not subscribe to
+ * Lighter preferences merely because they share the frame component.
+ */
+function LighterBookPanel({
+  bookOpen,
+  onToggle,
+}: {
+  readonly bookOpen: boolean;
+  readonly onToggle: () => void;
+}): JSX.Element {
+  const theme = useUiStore((state) => state.theme);
+  const environment = useLighterAnalysisStore((state) => state.desk.environment);
+
+  return (
+    <div
+      className="lit-chat-frame h-full min-h-0 w-full"
+      data-lighter-theme={theme}
+      data-lighter-environment={environment}
+    >
+      <BookRailFrame label="Lighter chat" headline="Vex" toggleLabel="Vex panel" collapsedLabel="Open Vex" bookOpen={bookOpen} onToggle={onToggle}>
+        <LighterChatRail />
+      </BookRailFrame>
+    </div>
   );
 }

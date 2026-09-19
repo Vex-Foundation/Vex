@@ -2,6 +2,61 @@
  * Vex chat rail (the shell's BOOK column in Lighter mode)
  * ------------------------------------------------------------------------- */
 
+/* The shell's BOOK frame is outside `.lit-desk`, so it needs its own copy of
+ * the selected environment scope. Re-projecting the Lighter roles onto the
+ * shell aliases lets the existing transcript and composer keep their shared
+ * components while shedding the unrelated navy/blue room palette. */
+.lit-chat-frame {
+  --vex-alias-bg-base: var(--lit-bg);
+  --vex-alias-bg-deep: var(--lit-bg);
+  --vex-alias-bg-layer-1: var(--lit-panel);
+  --vex-alias-bg-layer-2: var(--lit-panel-raised);
+  --vex-alias-bg-layer-3: var(--lit-panel-raised);
+  --vex-alias-bg-overlay: var(--lit-panel-raised);
+  --vex-alias-bg-skeleton: color-mix(in srgb, var(--lit-ink) 8%, transparent);
+  --vex-alias-bubble: var(--lit-panel-raised);
+  --vex-alias-composer: var(--lit-panel-raised);
+  --vex-alias-border-l1: var(--lit-line);
+  --vex-alias-border-l2: var(--lit-line);
+  --vex-alias-border-l3: var(--lit-line-strong);
+  --vex-alias-border-l4: var(--lit-line-strong);
+  --vex-alias-border-input: var(--lit-line-strong);
+  --vex-alias-label-primary: var(--lit-ink);
+  --vex-alias-label-secondary: var(--lit-ink-secondary);
+  --vex-alias-label-tertiary: var(--lit-ink-muted);
+  --vex-alias-label-caption: var(--lit-ink-muted);
+  --vex-alias-label-dimmed: color-mix(in srgb, var(--lit-ink-muted) 72%, transparent);
+  --vex-alias-label-on-accent: var(--lit-action-ink);
+  --vex-alias-button-accent-fill: var(--lit-action);
+  --vex-alias-button-accent-hover: color-mix(in srgb, var(--lit-action) 88%, var(--lit-panel-raised));
+  --vex-alias-button-accent-ink: var(--lit-action-ink);
+  --vex-alias-accent-primary: var(--lit-focus);
+  --vex-alias-accent-hover: color-mix(in srgb, var(--lit-focus) 82%, var(--lit-ink));
+  --vex-alias-accent-brand: var(--lit-environment-mark);
+  --vex-alias-accent-wash: var(--lit-environment-surface);
+  --vex-alias-interactive-hover: var(--lit-hover);
+  --vex-alias-interactive-active: color-mix(in srgb, var(--lit-ink) 12%, transparent);
+  --vex-alias-interactive-solid: var(--lit-panel-raised);
+  --vex-alias-state-success: var(--lit-positive);
+  --vex-alias-state-success-wash: var(--lit-positive-wash);
+  --vex-alias-state-warn: var(--lit-warning);
+  --vex-alias-state-warn-label: var(--lit-warning);
+  --vex-alias-state-error: var(--lit-negative);
+  --vex-alias-state-error-wash: var(--lit-negative-wash);
+  --vex-alias-scrollbar-l1: var(--lit-scrollbar);
+  --vex-alias-scrollbar-l1-hover: var(--lit-ink-muted);
+  --vex-alias-scrollbar-l2: var(--lit-scrollbar);
+  --vex-alias-scrollbar-l2-hover: var(--lit-ink-muted);
+}
+
+.lit-chat-frame > [data-vex-area="book-panel"] {
+  background: var(--lit-bg);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: inset 1px 0 0 var(--lit-line);
+  color: var(--lit-ink);
+}
+
 .lit-chat-shell {
   display: flex;
   container-type: inline-size;
@@ -20,6 +75,13 @@
 .lit-chat-shell [data-vex-area="session-header"] { height: 30px; }
 .lit-chat-shell [data-vex-composer-seat] { background-color: transparent; }
 .lit-chat-shell [data-vex-composer-seat] { border-top: 1px solid var(--lit-line); }
+.lit-chat-shell [data-vex-area="session-panel"][data-phase="active"] [data-vex-composer-seat] {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--lit-bg) 0%, transparent) 0,
+    var(--lit-bg) 36px
+  );
+}
 .lit-chat-shell .vex-chat-prose { font-size: 12.5px; line-height: 1.5; }
 .lit-chat-shell .vex-chat-prose table { font-size: 12px; }
 .lit-chat-shell .vex-reasoning-prose { font-size: 12.5px; line-height: 1.5; }
