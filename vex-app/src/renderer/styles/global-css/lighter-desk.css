@@ -95,6 +95,36 @@
   color: var(--lit-ink);
 }
 
+/* Native dialogs enter the browser's top layer and therefore cannot inherit
+ * the desk's environment scope. Lighter dialog roots carry the scope directly;
+ * this rule gives their chrome, controls and backdrop the same Core/RHC world
+ * without changing the shared dialog primitive. */
+.lit-environment-dialog.vex-dialog {
+  border-color: var(--lit-line-strong);
+  background: var(--lit-panel);
+  color: var(--lit-ink);
+  box-shadow: 0 24px 72px color-mix(in srgb, var(--lit-bg) 78%, transparent);
+}
+
+.lit-environment-dialog.vex-dialog::backdrop {
+  background: color-mix(in srgb, var(--lit-bg) 82%, transparent);
+}
+
+.lit-environment-dialog [data-vex-button="primary"]:enabled {
+  background: var(--lit-action);
+  color: var(--lit-action-ink);
+}
+
+.lit-environment-dialog [data-vex-button="primary"]:enabled:hover {
+  background: color-mix(in srgb, var(--lit-action) 88%, var(--lit-panel-raised));
+}
+
+.lit-environment-dialog [data-vex-button="outline"] {
+  border-color: var(--lit-line-strong);
+}
+
+.lit-environment-dialog input[type="range"] { accent-color: var(--lit-focus); }
+
 @container (max-width: 720px) {
   .lit-topbar-environment,
   .lit-topbar-button-label { display: none; }

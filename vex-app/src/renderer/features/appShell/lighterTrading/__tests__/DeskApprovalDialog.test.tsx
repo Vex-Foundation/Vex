@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { fireEvent, render } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ApprovalSummaryDto } from "../../../../../shared/schemas/approvals.js";
+import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
 import { DeskApprovalDialog } from "../DeskApprovalDialog.js";
 
 vi.mock("../../ApprovalCard.js", () => ({
@@ -44,11 +45,17 @@ function dialogOf(container: HTMLElement): HTMLDialogElement {
 }
 
 describe("DeskApprovalDialog", () => {
+  beforeEach(() => {
+    useLighterAnalysisStore.getState().saveDesk({ environment: "rhc" });
+  });
+
   it("opens with the pending cards and closes once none are left", () => {
     const { container, rerender } = render(
       <DeskApprovalDialog approvals={[approval("a1")]} sessionId="s1" focusApprovalId="a1" onResolved={vi.fn()} {...skip} />,
     );
     expect(dialogOf(container).open).toBe(true);
+    expect(dialogOf(container).classList.contains("lit-environment-dialog")).toBe(true);
+    expect(dialogOf(container).getAttribute("data-lighter-environment")).toBe("rhc");
     expect(dialogOf(container).textContent).toContain("a1");
     expect(container.querySelector("dialog h2")?.textContent).toBe("Review order");
     rerender(<DeskApprovalDialog approvals={[]} sessionId="s1" focusApprovalId={null} onResolved={vi.fn()} {...skip} />);

@@ -50,6 +50,7 @@ export function DeskLeverage(props: DeskLeverageProps): JSX.Element {
         : LEVERAGE_SHEET_NO_WALLET;
     return (
       <LighterLeverageSheet
+        environment={environment}
         symbol={symbol}
         row={null}
         notice={notice}
@@ -89,6 +90,7 @@ function DeskLeverageScoped({
       <LighterLeverageSheet
         key={row === null ? "pending" : "row"}
         open={change.proposal === null}
+        environment={environment}
         symbol={symbol}
         row={row}
         notice={row === null ? notice : null}

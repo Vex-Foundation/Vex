@@ -27,6 +27,9 @@
   --vex-alias-label-caption: var(--lit-ink-muted);
   --vex-alias-label-dimmed: color-mix(in srgb, var(--lit-ink-muted) 72%, transparent);
   --vex-alias-label-on-accent: var(--lit-action-ink);
+  --vex-alias-label-on-primary: var(--lit-action-ink);
+  --vex-alias-button-primary-fill: var(--lit-action);
+  --vex-alias-button-primary-hover: color-mix(in srgb, var(--lit-action) 88%, var(--lit-panel-raised));
   --vex-alias-button-accent-fill: var(--lit-action);
   --vex-alias-button-accent-hover: color-mix(in srgb, var(--lit-action) 88%, var(--lit-panel-raised));
   --vex-alias-button-accent-ink: var(--lit-action-ink);
@@ -41,12 +44,14 @@
   --vex-alias-state-success-wash: var(--lit-positive-wash);
   --vex-alias-state-warn: var(--lit-warning);
   --vex-alias-state-warn-label: var(--lit-warning);
+  --vex-alias-state-warn-wash: color-mix(in srgb, var(--lit-warning) 13%, var(--lit-panel));
   --vex-alias-state-error: var(--lit-negative);
   --vex-alias-state-error-wash: var(--lit-negative-wash);
   --vex-alias-scrollbar-l1: var(--lit-scrollbar);
   --vex-alias-scrollbar-l1-hover: var(--lit-ink-muted);
   --vex-alias-scrollbar-l2: var(--lit-scrollbar);
   --vex-alias-scrollbar-l2-hover: var(--lit-ink-muted);
+  --vex-alias-bg-mask-1: color-mix(in srgb, var(--lit-bg) 82%, transparent);
 
   /* Shell bridge tokens are computed on the outer app shell before these
    * aliases inherit, so rebind them here as well. Live thinking, reasoning

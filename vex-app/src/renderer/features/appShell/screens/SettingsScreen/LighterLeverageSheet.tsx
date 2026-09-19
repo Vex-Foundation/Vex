@@ -17,6 +17,7 @@
  */
 
 import { useEffect, useRef, useState, type JSX } from "react";
+import type { LighterIntegrationEnvironment } from "@shared/schemas/lighter-integration.js";
 import { Button } from "../../../../components/ui/button.js";
 import {
   Dialog,
@@ -29,6 +30,7 @@ import {
 } from "../../../../components/ui/dialog.js";
 import { Input } from "../../../../components/ui/input.js";
 import { SelectMenu } from "../../../../components/ui/select-menu.js";
+import { useUiStore } from "../../../../stores/uiStore.js";
 import {
   maxLeverageForMarket,
   parseLeverageInput,
@@ -74,6 +76,7 @@ export const MODE_OPTIONS: ReadonlyArray<{
 
 export interface LighterLeverageSheetProps {
   readonly open?: boolean;
+  readonly environment: LighterIntegrationEnvironment;
   readonly symbol: string;
   readonly row: LighterLeverageMarketRow | null;
   /** Shown instead of the controls when there is no row to change. */
@@ -100,6 +103,7 @@ function initialLeverage(row: LighterLeverageMarketRow | null): string {
 
 export function LighterLeverageSheet({
   open = true,
+  environment,
   symbol,
   row,
   notice,
@@ -110,6 +114,7 @@ export function LighterLeverageSheet({
   onReconcile,
   onClose,
 }: LighterLeverageSheetProps): JSX.Element {
+  const theme = useUiStore((state) => state.theme);
   // The caller keys this sheet by market, so the draft starts from the row's
   // current terms once and is not reset under the person while the overview
   // refetches after a change.
@@ -157,7 +162,13 @@ export function LighterLeverageSheet({
         if (!next && !busy) onClose();
       }}
     >
-      <DialogContent data-vex-lighter-leverage-sheet={symbol} aria-busy={busy}>
+      <DialogContent
+        className="lit-chat-frame lit-environment-dialog"
+        data-lighter-theme={theme}
+        data-lighter-environment={environment}
+        data-vex-lighter-leverage-sheet={symbol}
+        aria-busy={busy}
+      >
         <DialogHeader>
           <DialogTitle>{leverageSheetTitle(symbol)}</DialogTitle>
           <DialogDescription>{LEVERAGE_SHEET_INTRO}</DialogDescription>

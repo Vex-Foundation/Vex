@@ -49,6 +49,7 @@ function renderSheet(
   const onClose = vi.fn();
   render(
     <LighterLeverageSheet
+      environment="rhc"
       symbol="ETH"
       row={ETH_ROW}
       notice={null}
@@ -78,6 +79,9 @@ function applyButton(): HTMLButtonElement {
 
 it("opens on the row's current terms and its market maximum", () => {
   renderSheet();
+  const dialog = screen.getByRole("dialog");
+  expect(dialog.classList.contains("lit-environment-dialog")).toBe(true);
+  expect(dialog.getAttribute("data-lighter-environment")).toBe("rhc");
   expect(screen.getByText("2x cross")).not.toBeNull();
   expect(screen.getAllByText("50x").length).toBeGreaterThan(0);
   expect(screen.getByText("long 0.0050 ETH")).not.toBeNull();

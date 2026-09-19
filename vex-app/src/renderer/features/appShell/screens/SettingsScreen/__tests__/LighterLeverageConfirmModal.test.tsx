@@ -85,6 +85,8 @@ it("renders main's proposal: the terms, the exposure, the account and the expiry
   renderModal();
   const dialog = screen.getByRole("dialog");
   expect(dialog.textContent).toContain("Change BTC leverage");
+  expect(dialog.classList.contains("lit-environment-dialog")).toBe(true);
+  expect(dialog.getAttribute("data-lighter-environment")).toBe("rhc");
   expect(dialog.textContent).toContain("2x to 25x");
   expect(dialog.textContent).toContain("cross to cross");
   expect(dialog.textContent).toContain("long 0.00020 BTC");

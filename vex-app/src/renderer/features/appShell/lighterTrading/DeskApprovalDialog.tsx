@@ -9,6 +9,8 @@ import {
   DialogTitle,
 } from "../../../components/ui/dialog.js";
 import { ApprovalCard } from "../ApprovalCard.js";
+import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
+import { useUiStore } from "../../../stores/uiStore.js";
 import { isDeskCloseApproval } from "./desk-approvals.js";
 
 function approvalToolId(summary: ApprovalSummaryDto): string | null {
@@ -52,6 +54,8 @@ export function DeskApprovalDialog({ approvals, sessionId, focusApprovalId, onRe
   /** Changes when the ticket asks to reopen approvals dismissed with Escape. */
   readonly reopenSignal?: number;
 }): JSX.Element {
+  const theme = useUiStore((state) => state.theme);
+  const environment = useLighterAnalysisStore((state) => state.desk.environment);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => { setDismissed(new Set()); }, [reopenSignal]);
   const open = approvals.some((summary) => !dismissed.has(summary.id));
@@ -65,7 +69,9 @@ export function DeskApprovalDialog({ approvals, sessionId, focusApprovalId, onRe
     >
       <DialogContent
         data-vex-area="lighter-desk-approval"
-        className="w-[calc(100vw-3rem)] max-w-[560px]"
+        data-lighter-theme={theme}
+        data-lighter-environment={environment}
+        className="lit-chat-frame lit-environment-dialog w-[calc(100vw-3rem)] max-w-[560px]"
         closeOnBackdropClick={false}
       >
         <DialogHeader>

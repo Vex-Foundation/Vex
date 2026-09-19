@@ -182,6 +182,7 @@ export function LighterTradingSetupSection({
         <LighterLeverageSheet
           key={sheetRow.marketId}
           open={proposal === null}
+          environment={environment}
           symbol={sheetRow.symbol}
           row={sheetRow}
           notice={null}

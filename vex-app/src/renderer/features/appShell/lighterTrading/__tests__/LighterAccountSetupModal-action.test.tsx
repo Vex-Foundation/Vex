@@ -57,6 +57,9 @@ function renderReady(environment: "core" | "rhc") {
       onDone={onDone}
     />,
   );
+  const dialog = screen.getByRole("dialog");
+  expect(dialog.classList.contains("lit-environment-dialog")).toBe(true);
+  expect(dialog.getAttribute("data-lighter-environment")).toBe(environment);
   return { onDone, onOpenChange };
 }
 

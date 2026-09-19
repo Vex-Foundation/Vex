@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "../../../components/ui/dialog.js";
 import { formatDecimalString } from "./format.js";
+import { useUiStore } from "../../../stores/uiStore.js";
 import { useLighterAccountSetup, type LighterAccountSetupPhase } from "./useLighterAccountSetup.js";
 
 const ENVIRONMENT_LABELS: Readonly<Record<LighterTradingEnvironment, string>> = {
@@ -154,6 +155,7 @@ export function LighterAccountSetupModal({
   readonly environment: LighterTradingEnvironment;
   readonly onDone: (environment: LighterTradingEnvironment) => void;
 }): JSX.Element {
+  const theme = useUiStore((state) => state.theme);
   const setup = useLighterAccountSetup({
     sessionId,
     initialEnvironment: environment,
@@ -176,8 +178,10 @@ export function LighterAccountSetupModal({
       <DialogContent
         data-vex-area="lighter-account-setup"
         data-environment={setup.environment}
+        data-lighter-theme={theme}
+        data-lighter-environment={setup.environment}
         closeOnBackdropClick={!running}
-        className="w-[calc(100vw-3rem)] max-w-[420px]"
+        className="lit-chat-frame lit-environment-dialog w-[calc(100vw-3rem)] max-w-[420px]"
       >
         <DialogHeader>
           <DialogTitle>Set up Lighter</DialogTitle>

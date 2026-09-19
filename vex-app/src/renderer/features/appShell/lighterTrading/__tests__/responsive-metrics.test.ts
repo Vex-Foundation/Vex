@@ -16,6 +16,13 @@ describe("Lighter desk responsive market metrics", () => {
     expect(css).toMatch(/\.lit-desk-nav-drawer\s*\{[^}]*width: min\(420px, calc\(100vw - 16px\)\);/s);
   });
 
+  it("carries the selected environment into native top-layer dialogs", () => {
+    expect(css).toMatch(/\.lit-environment-dialog\.vex-dialog\s*\{[^}]*border-color: var\(--lit-line-strong\);[^}]*background: var\(--lit-panel\);/s);
+    expect(css).toMatch(/\.lit-environment-dialog\.vex-dialog::backdrop\s*\{[^}]*var\(--lit-bg\)/s);
+    expect(css).toMatch(/\.lit-environment-dialog \[data-vex-button="primary"\]:enabled\s*\{[^}]*background: var\(--lit-action\);[^}]*color: var\(--lit-action-ink\);/s);
+    expect(css).toMatch(/\.lit-environment-dialog input\[type="range"\]\s*\{ accent-color: var\(--lit-focus\); \}/s);
+  });
+
   it("keeps the bottom tabs in a breathable compact cluster", () => {
     expect(css).toMatch(/\.lit-bottom-tabs\s*\{[^}]*gap: 8px;/s);
   });

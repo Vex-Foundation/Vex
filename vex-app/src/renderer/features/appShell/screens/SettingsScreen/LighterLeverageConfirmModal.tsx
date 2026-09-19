@@ -25,6 +25,7 @@
 import { useEffect, useRef, type JSX } from "react";
 import type { LighterLeverageProposal } from "@shared/schemas/lighter-trading-limits.js";
 import { Button } from "../../../../components/ui/button.js";
+import { useUiStore } from "../../../../stores/uiStore.js";
 import {
   Dialog,
   DialogBody,
@@ -86,6 +87,7 @@ export function LighterLeverageConfirmModal({
   onCancel,
   onConfirm,
 }: LighterLeverageConfirmModalProps): JSX.Element {
+  const theme = useUiStore((state) => state.theme);
   const quoteUnit = COLLATERAL_UNIT[proposal.environment];
   const busy = submitting || cancelling;
 
@@ -120,6 +122,9 @@ export function LighterLeverageConfirmModal({
       }}
     >
       <DialogContent
+        className="lit-chat-frame lit-environment-dialog"
+        data-lighter-theme={theme}
+        data-lighter-environment={proposal.environment}
         closeOnBackdropClick={false}
         aria-busy={busy}
         data-vex-lighter-leverage-confirm={proposal.symbol}
