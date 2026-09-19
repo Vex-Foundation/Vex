@@ -331,14 +331,15 @@ function AccountUnavailable({ reason, onConnect, onOpenSettings, onUnlock }: {
         }
       : {
           title: "Not connected",
-          detail: "Vex sets the account up in the chat: first deposit, trading key, and fee approval, one approval card each.",
+          detail: "Set up your Lighter account in one step: first deposit, trading key, and fee approval, all from a single confirmation.",
         };
   return (
     <div className="lit-account-empty" role="status">
       <b>{copy.title}</b>
       <span>{copy.detail}</span>
       {/* Unlocking is the vault's flow; too many accounts is fixed in Settings;
-          setup is a chat the agent runs one approval at a time. */}
+          setup opens the account-setup modal, which runs the deposit -> key ->
+          fee chain from one confirmation (no chat, no per-step approval). */}
       {reason === "locked_vault" ? (
         <button type="button" className="lit-account-empty-action" onClick={onUnlock}>Unlock Vex</button>
       ) : reason === "ambiguous_account" ? (

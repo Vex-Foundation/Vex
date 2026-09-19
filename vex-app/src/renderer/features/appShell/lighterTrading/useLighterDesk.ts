@@ -1,20 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { LighterTradingEnvironment, LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
 import {
+  lighterAccountSetupStatusQueryKey,
   useLighterAccountActivityRefresh,
   useLighterOnboardingChecklist,
   useLighterTradingAccount,
   useLighterTradingFills,
   useLighterTradingMarkets,
 } from "../../../lib/api/lighter-trading.js";
+import { useCreateSession, useSessionsList } from "../../../lib/api/sessions.js";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import type { AccountActions, LighterPositionRow } from "./AccountPanel.js";
+import { deskSessionTitle, latestDeskSession } from "./desk-session.js";
+import { shouldPresentLighterSetup } from "./lighter-setup-gate.js";
 import {
   buildCancelAllOrdersMessage,
   buildReviewPositionMessage,
-  buildConnectMessage,
-  buildFundMessage,
+  buildWithdrawMessage,
 } from "./desk-messages.js";
 import { publishDeskSend } from "./desk-send-intent.js";
 import { findLoadMarket, useDeskTicketLoadStore } from "./desk-ticket-load.js";
@@ -35,12 +39,17 @@ import { useDeskStreams } from "./useDeskStreams.js";
  * composes them with the account, the market list and the chat handoffs.
  */
 export function useLighterDesk() {
+  const queryClient = useQueryClient();
   const activeSessionId = useUiStore((state) => state.activeSessionId);
   const bookOpen = useUiStore((state) => state.bookOpen);
   const setBookOpen = useUiStore((state) => state.setBookOpen);
   const setSidebarNarrowExpanded = useUiStore((state) => state.setSidebarNarrowExpanded);
   const setShellRoute = useUiStore((state) => state.setShellRoute);
   const openCreateSession = useUiStore((state) => state.openCreateSession);
+  const lighterSetupRequested = useUiStore((state) => state.lighterSetupRequested);
+  const requestLighterSetup = useUiStore((state) => state.requestLighterSetup);
+  const clearLighterSetupRequest = useUiStore((state) => state.clearLighterSetupRequest);
+  const completeSessionCreate = useUiStore((state) => state.completeSessionCreate);
   const desk = useLighterAnalysisStore((state) => state.desk);
   const saveDesk = useLighterAnalysisStore((state) => state.saveDesk);
   const { environment, marketId, resolution, skipCloseConfirm } = desk;
@@ -221,12 +230,92 @@ export function useLighterDesk() {
     setHandoffError(null);
   };
 
-  // Set up Lighter: onboarding is the trading session's job (first deposit,
-  // trading key, fee authorization, each an approval card), so the button
-  // sends, like Deposit does; there is no screen that silently connects an account.
+  // Set up Lighter: the account-setup modal runs deposit, trading key and fee
+  // authorization as one deterministic chain (design: no agent turn decides
+  // this fixed sequence) - see `LighterAccountSetupModal`. The desk gates the
+  // live panel behind a set-up trading key: entering it without one (any of
+  // the three entry points - "light it up", the BOOK rail's Lighter button, or
+  // the Arena banner) presents this modal rather than a tradeable ticket.
+  const [setupModalOpen, setSetupModalOpen] = useState(false);
+  // A manual close (the operator chose not to set up now) parks the auto-gate
+  // for this not-onboarded episode, so it does not immediately reopen; a change
+  // in onboarding state re-arms it.
+  const setupGateDismissed = useRef(false);
   const connectLighter = (): void => {
     recordFunnelStep("desk_setup_start", environment);
-    sendToChat(buildConnectMessage({ environment }));
+    setupGateDismissed.current = false;
+    requestLighterSetup();
+  };
+  const closeLighterSetup = (): void => {
+    setupGateDismissed.current = true;
+    setSetupModalOpen(false);
+  };
+
+  // The gate itself: no Lighter trading key for this wallet (`not_onboarded` is
+  // env-only - vault unlocked, no key) arms setup. A locked vault, several
+  // onboarded accounts, or a provider error are the desk's OWN gates (Unlock /
+  // Settings / retry), never a missing key, so they never force setup.
+  const setupGated = shouldPresentLighterSetup(accountGap);
+  useEffect(() => {
+    if (!setupGated) {
+      setupGateDismissed.current = false;
+      return;
+    }
+    if (setupGateDismissed.current) return;
+    requestLighterSetup();
+  }, [setupGated, requestLighterSetup]);
+
+  // The modal's status read and the deposit -> key -> fee chain both need a
+  // live desk session. A first-time (not-onboarded) trader has none and nothing
+  // to resume, so mint ONE Lighter-workspace session with the desk defaults;
+  // every later entry resumes THAT session (LighterChatRail), so the desk never
+  // litters the sidebar. `provisioning` guards against a double create while
+  // the mutation is in flight.
+  const sessionsQuery = useSessionsList();
+  const createDeskSession = useCreateSession();
+  const resumableDeskSession = sessionsQuery.data?.ok === true
+    ? latestDeskSession(sessionsQuery.data.data) !== null
+    : null; // null: the list has not answered yet - wait, do not create
+  const provisioning = useRef(false);
+  useEffect(() => {
+    if (!lighterSetupRequested || activeSessionId !== null) return;
+    if (resumableDeskSession !== false || provisioning.current) return;
+    provisioning.current = true;
+    void (async () => {
+      try {
+        const created = await createDeskSession.mutateAsync({
+          mode: "agent",
+          name: market === null ? "Lighter" : deskSessionTitle(market.symbol),
+          permission: "restricted",
+          selectedEvmWalletId: null,
+          selectedSolanaWalletId: null,
+          workspace: "lighter",
+        });
+        if (created.ok) completeSessionCreate(created.data.id, null);
+      } finally {
+        provisioning.current = false;
+      }
+    })();
+  }, [lighterSetupRequested, activeSessionId, resumableDeskSession, createDeskSession, completeSessionCreate, market]);
+
+  // Open the modal the instant the desk has a session (resumed or just minted).
+  // Consumed exactly once; leaving Lighter mode clears any unconsumed request
+  // in `transitionRuntimeMode`, so it never fires on a later entry.
+  useEffect(() => {
+    if (!lighterSetupRequested || activeSessionId === null) return;
+    setSetupModalOpen(true);
+    clearLighterSetupRequest();
+  }, [lighterSetupRequested, activeSessionId, clearLighterSetupRequest]);
+  const onLighterSetupDone = (doneEnvironment: LighterTradingEnvironment): void => {
+    if (activeSessionId !== null) {
+      void queryClient.invalidateQueries({
+        queryKey: lighterAccountSetupStatusQueryKey(doneEnvironment, activeSessionId),
+      });
+      void queryClient.invalidateQueries({ queryKey: ["lighterTrading", "onboarding", doneEnvironment, activeSessionId] });
+    }
+    void queryClient.invalidateQueries({ queryKey: ["lighterTrading", "account", doneEnvironment] });
+    void queryClient.invalidateQueries({ queryKey: ["lighterTrading", "fills", doneEnvironment] });
+    if (doneEnvironment !== environment) saveDesk({ environment: doneEnvironment });
   };
 
   // Settings morphs out of the button that asked for it (the dock's Open
@@ -299,7 +388,9 @@ export function useLighterDesk() {
     onCancelOrder: (order) => { void prepareOnDesk({ kind: "cancel", marketId: order.marketId, orderId: order.orderId }, null); },
     onCancelAllOrders: (orders) =>
       sendToChat(buildCancelAllOrdersMessage({ environment, orderCount: orders.length })),
-    onFund: (kind) => sendToChat(buildFundMessage({ environment, kind })),
+    // Deposit is the setup modal's own first step; Lighter has no
+    // withdrawal tool, so that leg still walks the user through chat.
+    onFund: (kind) => (kind === "deposit" ? connectLighter() : sendToChat(buildWithdrawMessage({ environment }))),
     onConnect: connectLighter,
     onOpenSettings: openTradingSettings,
   };
@@ -349,6 +440,9 @@ export function useLighterDesk() {
     askVex,
     askAboutDraft,
     connectLighter,
+    setupModalOpen,
+    closeLighterSetup,
+    onLighterSetupDone,
     openTradingSettings,
     accountActions,
     accountIndex: account?.accountIndex ?? null,
