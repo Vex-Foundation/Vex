@@ -335,6 +335,7 @@ export const CH = {
     stopPublicMarketSubscription: "vex:lighterTrading:stopPublicMarketSubscription",
     prepareDeskAction: "vex:lighterTrading:prepareDeskAction",
     getOnboardingChecklist: "vex:lighterTrading:getOnboardingChecklist",
+    getAccountSetupStatus: "vex:lighterTrading:getAccountSetupStatus",
   },
 
   // Settings - read-only Phase 1 (Phase 2 dodaje setters)

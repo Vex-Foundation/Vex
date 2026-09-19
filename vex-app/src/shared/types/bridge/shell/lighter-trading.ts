@@ -1,6 +1,8 @@
 import type { Result } from "../../../ipc/result.js";
 import type { AbortableInvocation } from "../common.js";
 import type {
+  LighterAccountSetupStatus,
+  LighterAccountSetupStatusInput,
   LighterTradingAccount,
   LighterTradingAccountActivityEvent,
   LighterTradingAccountInput,
@@ -107,4 +109,11 @@ export interface LighterTradingBridge {
   readonly getOnboardingChecklist: (
     input: LighterOnboardingChecklistInput,
   ) => AbortableInvocation<LighterOnboardingChecklist>;
+  /**
+   * The account-setup modal's read: wallet balance, minimum deposit and fee
+   * terms for one environment, before and while the modal's chain runs.
+   */
+  readonly getAccountSetupStatus: (
+    input: LighterAccountSetupStatusInput,
+  ) => AbortableInvocation<LighterAccountSetupStatus>;
 }

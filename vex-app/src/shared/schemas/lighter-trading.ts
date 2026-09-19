@@ -694,6 +694,14 @@ export const lighterDeskActionSchema = z.discriminatedUnion("kind", [
       orderId: z.string().min(1).max(40).regex(/^[1-9][0-9]*$/),
     })
     .strict(),
+  // The account-setup modal's three steps (design: single-click chain, no
+  // model turn). Each still prepares a real approval, then the modal
+  // auto-confirms it exactly like the ticket's own skip-close-confirm path.
+  z
+    .object({ kind: z.literal("onboarding_deposit"), amountIn: unsignedDecimalStringSchema })
+    .strict(),
+  z.object({ kind: z.literal("onboarding_key") }).strict(),
+  z.object({ kind: z.literal("onboarding_fee") }).strict(),
 ]);
 
 export const lighterDeskPrepareInputSchema = z
@@ -751,12 +759,65 @@ export const lighterOnboardingChecklistSchema = z
   })
   .strict();
 
+/**
+ * The account-setup modal's read: what the modal shows before the user
+ * commits (wallet balance, minimum deposit, fee terms) and what it polls
+ * while a step is in flight. Address-only and pure reads; no key leaves
+ * main. `settlementSymbol` and every decimal figure are already scoped to
+ * `environment` (Ethereum USDC for Core, Robinhood Chain USDG for RHC).
+ */
+export const lighterAccountSetupStatusInputSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    environment: lighterIntegrationEnvironmentSchema,
+  })
+  .strict();
+
+export const lighterAccountSetupFeePolicySchema = z
+  .object({
+    perpFeePercent: z.number().positive(),
+    spotFeePercent: z.number().positive(),
+  })
+  .strict();
+
+export const lighterAccountSetupStatusSchema = z
+  .object({
+    environment: lighterIntegrationEnvironmentSchema,
+    settlementSymbol: z.enum(["USDC", "USDG"]),
+    /** The exact wallet balance an entered amount is validated against. */
+    walletSettlementBalance: unsignedDecimalStringSchema,
+    /** Native gas balance is a pass/fail, not a figure the modal shows. */
+    nativeGasSufficient: z.boolean(),
+    minimumDeposit: unsignedDecimalStringSchema,
+    accountExists: z.boolean(),
+    /** Lighter-side collateral already on the account, before any new deposit. */
+    accountCollateral: unsignedDecimalStringSchema,
+    tradingKeyRegistered: z.boolean(),
+    /**
+     * True when a trading key is registered on-chain but its local credential
+     * is not yet active - a live registration intent sits in a post-submission
+     * state (`change_pub_key_submitted` / `key_verified` / `nonce_synchronized`).
+     * The modal completes such a key by RECONCILING it (no funds, no new
+     * signature), so it may finish that step automatically. Only ever true
+     * while `tradingKeyRegistered` is false.
+     */
+    keyRegistrationResumable: z.boolean(),
+    /** Static policy terms; null when this environment collects no VEX fee. */
+    feePolicy: lighterAccountSetupFeePolicySchema.nullable(),
+    /** True once no fee step remains: already authorized, or none is owed. */
+    feeAuthorized: z.boolean(),
+  })
+  .strict();
+
 export type LighterDeskOrderDraft = z.infer<typeof lighterDeskOrderDraftSchema>;
 export type LighterDeskAction = z.infer<typeof lighterDeskActionSchema>;
 export type LighterDeskPrepareInput = z.infer<typeof lighterDeskPrepareInputSchema>;
 export type LighterDeskPrepareResult = z.infer<typeof lighterDeskPrepareResultSchema>;
 export type LighterOnboardingChecklistInput = z.infer<typeof lighterOnboardingChecklistInputSchema>;
 export type LighterOnboardingChecklist = z.infer<typeof lighterOnboardingChecklistSchema>;
+export type LighterAccountSetupStatusInput = z.infer<typeof lighterAccountSetupStatusInputSchema>;
+export type LighterAccountSetupFeePolicy = z.infer<typeof lighterAccountSetupFeePolicySchema>;
+export type LighterAccountSetupStatus = z.infer<typeof lighterAccountSetupStatusSchema>;
 
 export type LighterTradingResolution = z.infer<
   typeof lighterTradingResolutionSchema

@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  resolveLighterAccountSetupStatus,
   resolveLighterOnboardingChecklist,
+  type LighterAccountSetupStatusDeps,
   type LighterOnboardingChecklistDeps,
 } from "../onboarding-checklist.js";
 import type { LighterOnboardingWorkflowRow } from "@vex-agent/db/repos/lighter-onboarding-workflows.js";
@@ -136,5 +138,67 @@ describe("resolveLighterOnboardingChecklist", () => {
       detail: "Setup needs a status check before you continue.",
       nextAction: "check_status",
     });
+  });
+});
+
+function setupDeps(
+  overrides: Partial<LighterAccountSetupStatusDeps> = {},
+): LighterAccountSetupStatusDeps {
+  return {
+    readSessionWallet: vi.fn().mockResolvedValue({
+      walletAddress: WALLET,
+      walletResolution: { source: "session", evm: { id: "w1", address: WALLET }, solana: null },
+      walletPolicy: { kind: "none" },
+    }),
+    readers: {
+      readWalletSettlementUnits: vi.fn().mockResolvedValue(0n),
+      readWalletNativeBalanceWei: vi.fn().mockResolvedValue(0n),
+      readWalletSettlementAllowanceUnits: vi.fn().mockResolvedValue(0n),
+      readWalletCanAcquireSettlement: vi.fn().mockResolvedValue(true),
+      readMinimumDepositUnits: vi.fn().mockResolvedValue(0n),
+      readLighterAccount: vi.fn().mockResolvedValue({ account_index: 42, available_balance: "0" }),
+      readVexTradingKeyRegistered: vi.fn().mockResolvedValue(false),
+    },
+    hasTradingKey: vi.fn().mockReturnValue(false),
+    readLiveKeyRegistrationState: vi.fn().mockResolvedValue(null),
+    // No fee policy keeps the fee read out of the way; the key gate is the focus.
+    feePolicy: vi.fn().mockReturnValue(null),
+    inspectFee: vi.fn(),
+    ...overrides,
+  };
+}
+
+describe("resolveLighterAccountSetupStatus key gate", () => {
+  it("marks a submitted-but-inactive key resumable (reconcile completes it, no signing)", async () => {
+    for (const state of ["change_pub_key_submitted", "key_verified", "nonce_synchronized"]) {
+      const status = await resolveLighterAccountSetupStatus(
+        { sessionId: SESSION, environment: "rhc" },
+        setupDeps({ readLiveKeyRegistrationState: vi.fn().mockResolvedValue(state) }),
+      );
+      expect(status.tradingKeyRegistered).toBe(false);
+      expect(status.keyRegistrationResumable).toBe(true);
+    }
+  });
+
+  it("never marks a pre-submission intent resumable (finishing it would sign)", async () => {
+    for (const state of ["approved", "key_registration_tx_staged", "ambiguous", null]) {
+      const status = await resolveLighterAccountSetupStatus(
+        { sessionId: SESSION, environment: "rhc" },
+        setupDeps({ readLiveKeyRegistrationState: vi.fn().mockResolvedValue(state) }),
+      );
+      expect(status.keyRegistrationResumable).toBe(false);
+    }
+  });
+
+  it("is never resumable once the local key is active", async () => {
+    const status = await resolveLighterAccountSetupStatus(
+      { sessionId: SESSION, environment: "rhc" },
+      setupDeps({
+        hasTradingKey: vi.fn().mockReturnValue(true),
+        readLiveKeyRegistrationState: vi.fn().mockResolvedValue("change_pub_key_submitted"),
+      }),
+    );
+    expect(status.tradingKeyRegistered).toBe(true);
+    expect(status.keyRegistrationResumable).toBe(false);
   });
 });

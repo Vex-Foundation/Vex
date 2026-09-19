@@ -11,16 +11,24 @@
  */
 
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
+import { getLighterFeePolicy } from "@tools/lighter/fee-policy.js";
 import { buildLighterOnboardingReaders } from "@tools/lighter/wallet-funding/onboarding-readers.js";
 import type { LighterOnboardingReaders } from "@tools/lighter/wallet-funding/onboarding-status.js";
+import { parseSettlementFloor } from "@tools/lighter/wallet-funding/onboarding-observation.js";
+import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
 import type { WalletPolicy } from "@vex-agent/engine/types.js";
 import { resolveSelectedAddressForRead } from "@vex-agent/tools/internal/wallet/resolve.js";
 import {
   getLighterOnboardingWorkflow,
   type LighterOnboardingWorkflowRow,
 } from "@vex-agent/db/repos/lighter-onboarding-workflows.js";
+import { findLiveLighterKeyRegistrationIntentForAccount } from "@vex-agent/db/repos/lighter-key-registration-intents.js";
 import type { LighterIntegrationEnvironment } from "@shared/schemas/lighter-integration.js";
-import type { LighterOnboardingChecklist } from "@shared/schemas/lighter-trading.js";
+import type {
+  LighterAccountSetupStatus,
+  LighterAccountSetupStatusInput,
+  LighterOnboardingChecklist,
+} from "@shared/schemas/lighter-trading.js";
 import { inspectLighterFeeAuthorization } from "./fee-authorization-preparation.js";
 import { listUnlockedLighterTradingCredentialScopes } from "../secrets/lighter-trading-credential.js";
 
@@ -195,5 +203,117 @@ function defaultDeps(): LighterOnboardingChecklistDeps {
       listUnlockedLighterTradingCredentialScopes(environment)
         .some((scope) => scope.accountIndex === accountIndex),
     inspectFee: inspectLighterFeeAuthorization,
+  };
+}
+
+/**
+ * Base settlement units -> the canonical decimal string the desk schemas
+ * accept (`unsignedDecimalStringSchema`): no leading zeros, no trailing
+ * fractional zeros, "0" for nothing.
+ */
+function formatSettlementBaseUnits(units: bigint, decimals: number): string {
+  const scale = 10n ** BigInt(decimals);
+  const whole = units / scale;
+  const fraction = (units % scale).toString().padStart(decimals, "0").replace(/0+$/, "");
+  return fraction.length === 0 ? whole.toString() : `${whole}.${fraction}`;
+}
+
+/**
+ * A key registration whose change-pub-key transaction has already been
+ * broadcast on-chain and only needs reconciling to activate the local
+ * credential - never a state that would sign or submit a fresh registration.
+ */
+const RECONCILABLE_KEY_REGISTRATION_STATES: ReadonlySet<string> = new Set([
+  "change_pub_key_submitted",
+  "key_verified",
+  "nonce_synchronized",
+]);
+
+export interface LighterAccountSetupStatusDeps {
+  readonly readSessionWallet: (sessionId: string) => Promise<SessionWalletScope>;
+  readonly readers: LighterOnboardingReaders;
+  readonly hasTradingKey: (environment: LighterIntegrationEnvironment, accountIndex: number) => boolean;
+  readonly readLiveKeyRegistrationState: (
+    environment: LighterIntegrationEnvironment,
+    accountIndex: number,
+  ) => Promise<string | null>;
+  readonly feePolicy: typeof getLighterFeePolicy;
+  readonly inspectFee: typeof inspectLighterFeeAuthorization;
+}
+
+function defaultSetupStatusDeps(): LighterAccountSetupStatusDeps {
+  return {
+    readSessionWallet: readSessionWalletFromEngine,
+    readers: buildLighterOnboardingReaders(),
+    hasTradingKey: (environment, accountIndex) =>
+      listUnlockedLighterTradingCredentialScopes(environment)
+        .some((scope) => scope.accountIndex === accountIndex),
+    readLiveKeyRegistrationState: async (environment, accountIndex) =>
+      (await findLiveLighterKeyRegistrationIntentForAccount(environment, accountIndex))
+        ?.executionState ?? null,
+    feePolicy: getLighterFeePolicy,
+    inspectFee: inspectLighterFeeAuthorization,
+  };
+}
+
+/**
+ * The account-setup modal's read: wallet balance, minimum deposit, and fee
+ * terms up front, so the amount field and fee line are right the first time
+ * instead of after a `lighter.deposit.prepare` refusal. `nativeGasSufficient`
+ * is a coarse "not literally zero" signal only - the real preflight inside
+ * `lighter.deposit.prepare` is the authoritative gas check.
+ */
+export async function resolveLighterAccountSetupStatus(
+  input: LighterAccountSetupStatusInput,
+  deps: LighterAccountSetupStatusDeps = defaultSetupStatusDeps(),
+): Promise<LighterAccountSetupStatus> {
+  const wallet = await deps.readSessionWallet(input.sessionId);
+  const deployment = getLighterFundingDeployment(input.environment);
+  const [walletUnits, nativeWei, minimumDepositUnits, account] = await Promise.all([
+    deps.readers.readWalletSettlementUnits(input.environment, wallet.walletAddress),
+    deps.readers.readWalletNativeBalanceWei(input.environment, wallet.walletAddress),
+    deps.readers.readMinimumDepositUnits(input.environment),
+    deps.readers.readLighterAccount(input.environment, wallet.walletAddress),
+  ]);
+  const tradingKeyRegistered = account !== null
+    && deps.hasTradingKey(input.environment, account.account_index);
+  // A key whose local credential is not active yet may already be registered
+  // on-chain, its registration intent parked in a post-submission state. That
+  // is completed by RECONCILING (no funds, no new signature), so the modal can
+  // finish it without asking - unlike a fresh registration, which signs.
+  const keyRegistrationResumable = account !== null && !tradingKeyRegistered
+    && RECONCILABLE_KEY_REGISTRATION_STATES.has(
+      (await deps.readLiveKeyRegistrationState(input.environment, account.account_index)) ?? "",
+    );
+  const accountCollateralUnits = account === null
+    ? 0n
+    : parseSettlementFloor(
+        account.available_balance ?? account.collateral ?? "0",
+        deployment.settlementDecimals,
+      );
+  const policy = deps.feePolicy(input.environment);
+  // Only worth a live check once the key exists - inspectFee reports
+  // "blocked" without one, which would misread as "not yet authorized" for a
+  // step the modal has not reached rather than "nothing to wait for".
+  const feeAuthorized = policy === null || !tradingKeyRegistered
+    ? policy === null
+    : (await deps.inspectFee({
+        sessionId: input.sessionId,
+        environment: input.environment,
+        walletResolution: wallet.walletResolution,
+        walletPolicy: wallet.walletPolicy,
+      })).status === "ready";
+  return {
+    environment: input.environment,
+    settlementSymbol: deployment.settlementSymbol,
+    walletSettlementBalance: formatSettlementBaseUnits(walletUnits, deployment.settlementDecimals),
+    nativeGasSufficient: nativeWei > 0n,
+    minimumDeposit: formatSettlementBaseUnits(minimumDepositUnits, deployment.settlementDecimals),
+    accountExists: account !== null,
+    accountCollateral: formatSettlementBaseUnits(accountCollateralUnits, deployment.settlementDecimals),
+    tradingKeyRegistered,
+    keyRegistrationResumable,
+    feePolicy: policy === null ? null : { perpFeePercent: policy.perpsMakerFee / 10_000, spotFeePercent: policy.spotMakerFee / 10_000 },
+    feeAuthorized,
   };
 }

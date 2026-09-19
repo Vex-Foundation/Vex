@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
 import type {
+  LighterAccountSetupStatus,
   LighterTradingAccount,
   LighterTradingEnvironment,
   LighterTradingFills,
@@ -152,6 +153,37 @@ export function useLighterOnboardingChecklist(
     staleTime: 5_000,
     refetchInterval: active ? ONBOARDING_REFETCH_MS : false,
     refetchIntervalInBackground: false,
+  });
+}
+
+// The account-setup modal's own read (balance, minimum deposit, fee terms).
+// The modal shows this once on open to size the amount field; once its chain
+// is running, the chain's own poll loop pushes fresher reads into this exact
+// query's cache (see `useLighterAccountSetup`), so this hook needs no
+// interval of its own - a live-in-flight step is never reading stale data.
+export function lighterAccountSetupStatusQueryKey(
+  environment: LighterTradingEnvironment,
+  sessionId: string | null,
+) {
+  return ["lighterTrading", "accountSetup", environment, sessionId] as const;
+}
+
+export function useLighterAccountSetupStatus(
+  sessionId: string | null,
+  environment: LighterTradingEnvironment,
+  enabled: boolean,
+): UseQueryResult<Result<LighterAccountSetupStatus>> {
+  const active = enabled && sessionId !== null;
+  return useQuery({
+    queryKey: lighterAccountSetupStatusQueryKey(environment, sessionId),
+    queryFn: ({ signal }) =>
+      abortable(
+        window.vex.lighterTrading.getAccountSetupStatus({ sessionId: sessionId ?? "", environment }),
+        signal,
+      ),
+    enabled: active,
+    staleTime: 5_000,
+    refetchInterval: false,
   });
 }
 

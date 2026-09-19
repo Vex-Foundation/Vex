@@ -8,6 +8,7 @@ import {
   lighterTradingCandleSubscriptionStopInputSchema,
   lighterTradingCandleUpdateEventSchema,
   lighterTradingCandleHistoryInputSchema,
+  lighterAccountSetupStatusInputSchema,
   lighterDeskPrepareInputSchema,
   lighterOnboardingChecklistInputSchema,
   lighterTradingFillsInputSchema,
@@ -123,6 +124,13 @@ export const lighterTrading = {
       CH.lighterTrading.getOnboardingChecklist,
       input,
       lighterOnboardingChecklistInputSchema,
+    );
+  },
+  getAccountSetupStatus(input) {
+    return abortableInvoke(
+      CH.lighterTrading.getAccountSetupStatus,
+      input,
+      lighterAccountSetupStatusInputSchema,
     );
   },
   onPublicBook(callback) {
