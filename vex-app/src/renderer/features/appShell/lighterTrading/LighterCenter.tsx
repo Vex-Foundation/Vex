@@ -292,6 +292,7 @@ function DeskBody({ desk, theme }: {
               onChooseMarket={() => desk.setMarketPickerOpen(true)}
               onDragOrder={(price, side) => desk.setPricePick({ key: Date.now(), price, kind: "limit", side })}
               onLoadOlder={desk.candleStream.loadOlder}
+              historyStatus={desk.candleStream.history}
               toolbarStart={(
                 <div className="lit-resolution-tabs" role="group" aria-label="Chart interval" ref={resolutionTabsRef}>
                   {LIGHTER_RESOLUTIONS.map((item) => (

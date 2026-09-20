@@ -1,5 +1,5 @@
 import { requireValue } from "../../../../../../../src/__tests__/helpers/require-value.js";
-import { fireEvent, render, screen, cleanup } from "@testing-library/react";
+import { act, fireEvent, render, screen, cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MarketChart } from "../MarketChart.js";
 import type { LighterTradingCandle } from "@shared/schemas/lighter-trading.js";
@@ -65,7 +65,16 @@ describe("Chart timeline continuity", () => {
     view.rerender(<MarketChart candles={candles(84)} symbol="BTC" theme="chronos" marketId={1} resolution="1d" />);
     expect(requireValue(harness.candles.setData.mock.lastCall)[0]).toHaveLength(84);
     expect(harness.candles.update).not.toHaveBeenCalled();
-    expect(harness.setRange).toHaveBeenLastCalledWith({ from: 0, to: 90 });
+    expect(harness.setRange).toHaveBeenLastCalledWith({ from: 24, to: 90 });
+  });
+  it("keeps older daily bars pannable and explains the provider boundary", () => {
+    render(<MarketChart candles={candles(87)} symbol="BTC" theme="chronos" marketId={1} resolution="1d" historyStatus="exhausted" />);
+    expect(harness.setRange).toHaveBeenLastCalledWith({ from: 27, to: 93 });
+    const handler = requireValue(harness.rangeHandlers[0]);
+    act(() => handler({ from: 12, to: 72 }));
+    expect(screen.getByRole("status").textContent).toMatch(/Earliest Lighter history/);
+    act(() => handler({ from: 40, to: 100 }));
+    expect(screen.queryByText(/Earliest Lighter history/)).toBeNull();
   });
   it("draws the account's fills on whichever series is showing", () => {
     const fills = [{ tradeId: "t1", orderId: "o1", marketId: 1, symbol: "ETH", side: "buy" as const, role: "taker" as const, type: "trade", size: "2", price: "11", value: null, realizedPnl: null, timestamp: 1_700_000_130_000 }];

@@ -175,6 +175,24 @@
 .lit-chart-legend span { white-space: nowrap; }
 .lit-chart-legend b { color: var(--lit-ink-muted); font-weight: 600; }
 
+.lit-chart-history-boundary {
+  position: absolute;
+  z-index: 3;
+  bottom: 38px;
+  left: 50%;
+  max-width: calc(100% - 180px);
+  transform: translateX(-50%);
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: color-mix(in srgb, var(--lit-panel) 92%, transparent);
+  padding: 4px 8px;
+  pointer-events: none;
+  color: var(--lit-ink-muted);
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .lit-market-metric b,
 .lit-chart-legend,
 .lit-book-row,

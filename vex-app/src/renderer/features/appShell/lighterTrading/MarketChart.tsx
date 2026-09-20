@@ -42,6 +42,10 @@ import type { ChartLevel } from "./chart-levels.js";
 // Axis labels are fixed to en-US so tick widths never depend on the OS locale.
 const CHART_LOCALE = "en-US";
 const INITIAL_VISIBLE_BARS = 100;
+// RHC currently has fewer than 100 daily candles, so fitting the generic
+// window made the whole provider history visible at once and left nothing to
+// pan into. Keep a useful analysis window while preserving older daily bars.
+const INITIAL_VISIBLE_DAILY_BARS = 60;
 const LIVE_RIGHT_OFFSET = 7;
 // Scrolling within this many bars of the earliest loaded bar asks for older history.
 const LOAD_OLDER_THRESHOLD_BARS = 30;
@@ -88,6 +92,8 @@ export interface MarketChartProps {
   readonly onDragOrder?: (price: string, side: ChartOrderSide) => void;
   /** Called when the user scrolls near the earliest loaded bar. */
   readonly onLoadOlder?: () => void;
+  /** Whether the provider has confirmed that no earlier page exists. */
+  readonly historyStatus?: "idle" | "loading" | "exhausted";
   /** Rendered at the ends of the chart's toolbar row (intervals, expand). */
   readonly toolbarStart?: ReactNode;
   readonly toolbarEnd?: ReactNode;
@@ -186,11 +192,28 @@ function resolvePriceFormat(
   return { type: "price", precision, minMove };
 }
 
-function initialVisibleRange(length: number): IRange<number> {
+function initialVisibleRange(
+  length: number,
+  resolution: LighterTradingResolution | undefined,
+): IRange<number> {
+  const visibleBars = resolution === "1d"
+    ? INITIAL_VISIBLE_DAILY_BARS
+    : INITIAL_VISIBLE_BARS;
   return {
-    from: Math.max(0, length - INITIAL_VISIBLE_BARS),
+    from: Math.max(0, length - visibleBars),
     to: Math.max(0, length - 1) + LIVE_RIGHT_OFFSET,
   };
+}
+
+function formatHistoryStart(timestamp: number): string {
+  const milliseconds = timestamp >= 1_000_000_000_000
+    ? timestamp
+    : timestamp * 1_000;
+  return new Intl.DateTimeFormat(CHART_LOCALE, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(milliseconds));
 }
 
 function sameCandle(
@@ -272,6 +295,7 @@ export function MarketChart({
   onChooseMarket,
   onDragOrder,
   onLoadOlder,
+  historyStatus = "idle",
   toolbarStart,
   toolbarEnd,
 }: MarketChartProps): JSX.Element {
@@ -291,6 +315,7 @@ export function MarketChart({
   onLoadOlderRef.current = onLoadOlder;
   const [legend, setLegend] = useState<ChartLegendValues | null>(null);
   const [countdown, setCountdown] = useState<string | null>(null);
+  const [nearHistoryStart, setNearHistoryStart] = useState(false);
   const identity = `${environment ?? "unknown"}:${marketId ?? symbol}:${resolution ?? "unknown"}`;
   const precision = resolvePriceFormat(pricePrecision, priceMinMove).precision;
   const lastClose = candles[candles.length - 1]?.close ?? null;
@@ -323,7 +348,7 @@ export function MarketChart({
     const chart = chartRef.current;
     const applied = appliedDataRef.current;
     if (chart === null || applied === null || applied.candles.length === 0) return;
-    chart.timeScale().setVisibleLogicalRange(initialVisibleRange(applied.candles.length));
+    chart.timeScale().setVisibleLogicalRange(initialVisibleRange(applied.candles.length, resolution));
   };
 
   const handleVolume = useCallback((visible: boolean): void => {
@@ -444,7 +469,9 @@ export function MarketChart({
     volumeSeriesRef.current = volumeSeries;
     setChartApi(chart);
     const handleLogicalRange = (range: IRange<number> | null): void => {
-      if (range !== null && range.from < LOAD_OLDER_THRESHOLD_BARS) onLoadOlderRef.current?.();
+      const nearStart = range !== null && range.from < LOAD_OLDER_THRESHOLD_BARS;
+      setNearHistoryStart((current) => current === nearStart ? current : nearStart);
+      if (nearStart) onLoadOlderRef.current?.();
     };
     chart.timeScale().subscribeVisibleLogicalRangeChange(handleLogicalRange);
 
@@ -551,7 +578,7 @@ export function MarketChart({
       latestLegendRef.current = latestLegend(chartCandles, chartVolumes);
       setLegend(latestLegendRef.current);
       if (viewportDecided) {
-        timeScale.setVisibleLogicalRange(initialVisibleRange(chartCandles.length));
+        timeScale.setVisibleLogicalRange(initialVisibleRange(chartCandles.length, resolution));
       }
       return;
     }
@@ -603,7 +630,7 @@ export function MarketChart({
 
     let viewportDecided = previous.viewportDecided;
     if (!viewportDecided && chartCandles.length > 0) {
-      timeScale.setVisibleLogicalRange(initialVisibleRange(chartCandles.length));
+      timeScale.setVisibleLogicalRange(initialVisibleRange(chartCandles.length, resolution));
       viewportDecided = true;
     } else if (visibleRange !== null && changed) {
       const shift = (wasLive ? appendedBars : 0) - droppedBars + prependedBars;
@@ -754,6 +781,11 @@ export function MarketChart({
               <path d="M5.8 5.8a6 6 0 0 0 0 8.4M14.2 5.8a6 6 0 0 1 0 8.4" />
             </svg>
           </button>
+        </div>
+      ) : null}
+      {historyStatus === "exhausted" && nearHistoryStart && candles[0] !== undefined ? (
+        <div className="lit-chart-history-boundary" role="status">
+          Earliest Lighter history · {formatHistoryStart(candles[0].timestamp)}
         </div>
       ) : null}
       {legend !== null ? (
