@@ -118,6 +118,17 @@ export function LighterCenter({ zenMode, onOpenZenAssistant }: {
       ) : (
         <DeskBody desk={desk} theme={theme} />
       )}
+      {/* Keep the native modal outside the chart-expansion visibility layer.
+       * Zen deliberately hides the desk chrome, but a newly selected
+       * environment can still require setup and must present this gate above
+       * the chart rather than leaving an invisible modal blocking it. */}
+      <LighterAccountSetupModal
+        open={desk.setupModalOpen}
+        onOpenChange={(next) => { if (!next) desk.closeLighterSetup(); }}
+        sessionId={desk.activeSessionId}
+        environment={environment}
+        onDone={desk.onLighterSetupDone}
+      />
     </div>
   );
 }
@@ -425,13 +436,6 @@ function DeskBody({ desk, theme }: {
           reopenSignal={approvalReopenSignal}
         />
       )}
-      <LighterAccountSetupModal
-        open={desk.setupModalOpen}
-        onOpenChange={(next) => { if (!next) desk.closeLighterSetup(); }}
-        sessionId={activeSessionId}
-        environment={environment}
-        onDone={desk.onLighterSetupDone}
-      />
     </div>
   );
 }

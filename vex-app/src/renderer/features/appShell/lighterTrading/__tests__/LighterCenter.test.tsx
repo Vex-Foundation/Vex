@@ -94,6 +94,9 @@ function desk(overrides: Record<string, unknown> = {}) {
     deskOutcome: null,
     submitDraft: vi.fn(),
     onApprovalResolved: vi.fn(),
+    setupModalOpen: false,
+    closeLighterSetup: vi.fn(),
+    onLighterSetupDone: vi.fn(),
     askVex: vi.fn(),
     openTradingSettings: vi.fn(),
     accountActions: {},
@@ -276,6 +279,23 @@ describe("LighterCenter", () => {
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     expect(openZenAssistant).toHaveBeenCalledTimes(1);
     expect(current.askVex).toHaveBeenCalledWith(false);
+  });
+
+  it("keeps environment setup visible above the Zen chart", () => {
+    mocks.useLighterDesk.mockReturnValue(desk({
+      environment: "core",
+      settlementSymbol: "USDC",
+      setupModalOpen: true,
+    }));
+    const { container } = renderCenter(<LighterCenter zenMode />);
+
+    const dialog = container.querySelector<HTMLDialogElement>(
+      'dialog[data-vex-area="lighter-account-setup"]',
+    );
+    expect(dialog?.hasAttribute("open")).toBe(true);
+    expect(dialog?.getAttribute("data-lighter-environment")).toBe("core");
+    expect(dialog?.closest(".lit-desk-body")).toBeNull();
+    expect(dialog?.closest('[data-vex-area="lighter-desk"]')).not.toBeNull();
   });
 
   it("persists splitter steps and dock collapse through the desk preferences", () => {
