@@ -57,9 +57,12 @@ describe("desk scope", () => {
       + " Do not infer the environment or product from the symbol."
       + " Answer in under 150 words unless asked for more: the levels and numbers first,"
       + " one line of reasoning each, no preamble and no summary of what you read."
-      + " End with one line headed \"Read:\" giving the plain-words stance now"
-      + " (buy zone, sell zone, hold, or stand aside), the level it hangs on,"
-      + " and what would flip it.",
+      + " Close with one sentence in plain English that reads the findings back as a"
+      + " course of action and names the price range it applies to, in the register"
+      + " of: Based on the findings, it is advisable to wait for a reclaim of"
+      + " 81,264 to 81,290 before buying. Say so just as plainly when the action is"
+      + " to stand aside, and give the range that would change that. End the"
+      + " sentence with: This is not financial advice.",
     );
     expect(withDeskScope("should I trim?", tag)).toBe(`should I trim?\n\n${tag}`);
     expect(deskScopeLabel(SCOPE)).toBe("Core · BTC · 15m");
@@ -100,7 +103,7 @@ describe("chart notes", () => {
     const bare = buildDeskContext(SCOPE);
     expect(buildDeskContext({ ...SCOPE, chart: { preferences: DEFAULT_CHART_PREFERENCES, drawings: [] } })).toBe(bare);
     expect(bare).toContain("Refresh official read-only Lighter data for this exact scope before relying on changing values.");
-    expect(bare.endsWith("and what would flip it.")).toBe(true);
+    expect(bare.endsWith("This is not financial advice.")).toBe(true);
   });
 
   it("carries the notes into the prompts and the typed-message tag", () => {

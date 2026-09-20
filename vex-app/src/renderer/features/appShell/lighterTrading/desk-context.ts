@@ -131,9 +131,12 @@ const READ_BUDGET =
  * which is why every prompt still carries {@link NO_EXECUTION}.
  */
 const DESK_CLOSE =
-  "End with one line headed \"Read:\" giving the plain-words stance now"
-  + " (buy zone, sell zone, hold, or stand aside), the level it hangs on,"
-  + " and what would flip it.";
+  "Close with one sentence in plain English that reads the findings back as a"
+  + " course of action and names the price range it applies to, in the register"
+  + " of: Based on the findings, it is advisable to wait for a reclaim of"
+  + " 81,264 to 81,290 before buying. Say so just as plainly when the action is"
+  + " to stand aside, and give the range that would change that. End the"
+  + " sentence with: This is not financial advice.";
 
 /**
  * House style for a desk answer. The quick prompts each carry their own cap;
