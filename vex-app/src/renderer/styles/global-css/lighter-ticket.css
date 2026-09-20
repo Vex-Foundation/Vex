@@ -857,6 +857,11 @@
   border-radius: 999px;
   background: color-mix(in srgb, var(--lit-setup-accent) 15%, transparent);
 }
+/* The wrapper already draws a rounded ring on :focus-within, so the
+ * frame-wide `input:focus-visible` outline in lighter-tokens.css would stack a
+ * second, square one inside it. Opt this field out; the ring is the focus cue. */
+.lit-chat-frame .lit-setup-amount input:focus-visible { outline: none; }
+
 .lit-setup-min { font-size: 11.5px; color: var(--lit-ink-muted); }
 .lit-setup-warn { font-size: 11.5px; color: var(--lit-warning); line-height: 1.4; }
 
