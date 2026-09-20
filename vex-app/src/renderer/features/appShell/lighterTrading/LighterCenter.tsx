@@ -3,7 +3,6 @@ import type { LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 import { useUiStore, type VexTheme } from "../../../stores/uiStore.js";
 import { TradingBottomPanel } from "./AccountPanel.js";
-import { ChartExpandButton } from "./ChartExpandButton.js";
 import { DeskApprovalDialog } from "./DeskApprovalDialog.js";
 import { DeskLeverage } from "./DeskLeverage.js";
 import { LighterAccountSetupModal } from "./LighterAccountSetupModal.js";
@@ -37,32 +36,29 @@ import { useSplitter } from "./useSplitter.js";
 const EMPTY_MARKETS: readonly LighterTradingMarket[] = [];
 
 /** The Lighter desk: chart, book over trades, ticket, account dock — the shell's center column. */
-export function LighterCenter(): JSX.Element {
+export function LighterCenter({ zenMode, onOpenZenAssistant }: {
+  readonly zenMode?: boolean;
+  readonly onOpenZenAssistant?: () => void;
+} = {}): JSX.Element {
+  const zenActive = zenMode === true;
   const theme = useUiStore((state) => state.theme);
   const desk = useLighterDesk();
   const { environment, market, marketList, marketsQuery, marketPickerOpen, setMarketPickerOpen } = desk;
   const askVex = (): void => {
     setMarketPickerOpen(false);
-    desk.askVex();
+    if (zenActive) onOpenZenAssistant?.();
+    desk.askVex(!zenActive);
   };
-  // ⌘K / Ctrl+K anywhere on the desk is "Ask Vex"; Escape brings an expanded
-  // chart back, after any layer above it (picker, study menu, drawings) has
-  // had its turn. The latest handlers are read through a ref so the listener
-  // is bound once.
-  const keysRef = useRef({ askVex, collapseChart: (): void => {} });
-  keysRef.current = {
-    askVex,
-    collapseChart: (): void => { if (desk.chartExpanded) desk.setChartExpanded(false); },
-  };
+  // ⌘K / Ctrl+K opens the normal rail on the desk and the floating,
+  // chart-contextual assistant in Zen Mode. The latest handler is read through
+  // a ref so the listener is bound once.
+  const askVexRef = useRef(askVex);
+  askVexRef.current = askVex;
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        if (!event.defaultPrevented) keysRef.current.collapseChart();
-        return;
-      }
       if (event.key.toLowerCase() !== "k" || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
       event.preventDefault();
-      keysRef.current.askVex();
+      askVexRef.current();
     };
     window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("keydown", onKey); };
@@ -73,7 +69,8 @@ export function LighterCenter(): JSX.Element {
       data-vex-area="lighter-desk"
       data-lighter-theme={theme}
       data-lighter-environment={environment}
-      data-chart-expanded={desk.chartExpanded || undefined}
+      data-chart-expanded={zenActive || undefined}
+      data-zen-mode={zenActive || undefined}
     >
       <div className="lit-desk-top">
         <MarketBar
@@ -316,7 +313,6 @@ function DeskBody({ desk, theme }: {
                     {streamStatusLabel(desk.candleStream.status)}
                   </span>
                   )}
-                  <ChartExpandButton expanded={desk.chartExpanded} onToggle={() => desk.setChartExpanded(!desk.chartExpanded)} />
                 </span>
               )}
             />

@@ -150,6 +150,8 @@ function ShellFrame({
   const lighterChatShare = useLighterAnalysisStore((s) => s.desk.chatShare);
   const saveLighterDesk = useLighterAnalysisStore((s) => s.saveDesk);
   const setActiveProjectId = useUiStore((s) => s.setActiveProjectId);
+  const [lighterZen, setLighterZen] = useState(false);
+  const [zenAssistantOpen, setZenAssistantOpen] = useState(false);
 
   const frameRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState(() =>
@@ -182,6 +184,43 @@ function ShellFrame({
   // the next narrow entry starts at the rail again. Lighter owns a horizontal
   // top bar instead; this same ephemeral flag opens its desk-navigation tray.
   const lighter = runtimeMode === "lighter";
+  useEffect(() => {
+    if (lighter) return;
+    setLighterZen(false);
+    setZenAssistantOpen(false);
+  }, [lighter]);
+
+  const setZenMode = useCallback((next: boolean): void => {
+    setLighterZen(next);
+    setZenAssistantOpen(false);
+    setSidebarNarrowExpanded(false);
+  }, [setSidebarNarrowExpanded]);
+
+  const openZenAssistant = useCallback((): void => {
+    setZenAssistantOpen(true);
+    setSidebarNarrowExpanded(false);
+    if (activeSessionId === null) {
+      onCreate();
+      return;
+    }
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Session draft"]')
+        ?.focus({ preventScroll: true });
+    });
+  }, [activeSessionId, onCreate, setSidebarNarrowExpanded]);
+
+  useEffect(() => {
+    if (!lighter || !lighterZen) return undefined;
+    const onZenKey = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      if (zenAssistantOpen) setZenAssistantOpen(false);
+      else setZenMode(false);
+    };
+    window.addEventListener("keydown", onZenKey);
+    return () => window.removeEventListener("keydown", onZenKey);
+  }, [lighter, lighterZen, setZenMode, zenAssistantOpen]);
+
   const narrow = shouldAutoCollapseSidebar(viewport);
   useEffect(() => {
     if (!lighter && !narrow) setSidebarNarrowExpanded(false);
@@ -212,7 +251,7 @@ function ShellFrame({
   const welcomeStage = lighter
     ? false
     : studio ? activeProjectId === null : activeSessionId === null;
-  const requestedBookWidth = welcomeStage || !bookOpen
+  const requestedBookWidth = lighterZen || welcomeStage || !bookOpen
     ? 0
     : lighter ? Math.max(1, viewport * lighterChatShare) : bookWidth;
   const cols: ShellColumns = lighter
@@ -263,7 +302,9 @@ function ShellFrame({
   // spine) in session. The 300ms track transition then only ever interpolates
   // length-to-length, so crossing welcome<->session cannot sweep the rail
   // through the centre column.
-  const rightTrack = welcomeStage
+  const rightTrack = lighterZen
+    ? 0
+    : welcomeStage
     ? bookOpen
       ? WELCOME_PORTFOLIO_WIDTH
       : 0
@@ -280,6 +321,8 @@ function ShellFrame({
       data-vex-area="shell-frame"
       data-dragging={dragging || undefined}
       data-vex-sidebar-collapsed={sidebarCollapsed || undefined}
+      data-lighter-zen={lighter && lighterZen ? "true" : undefined}
+      data-lighter-zen-assistant={lighter && zenAssistantOpen ? "open" : undefined}
     >
       {/* G10 - fixed strip; only an actual outage renders it. */}
       <ConnectionBanner
@@ -290,6 +333,13 @@ function ShellFrame({
         <LighterSidebar
           collapsed={sidebarCollapsed}
           onToggleSidebar={toggleSidebar}
+          zenMode={lighterZen}
+          zenAssistantOpen={zenAssistantOpen}
+          onToggleZen={() => setZenMode(!lighterZen)}
+          onToggleZenAssistant={() => {
+            if (zenAssistantOpen) setZenAssistantOpen(false);
+            else openZenAssistant();
+          }}
         />
       ) : null}
       {/* COLUMN 1 - the rail the active mode owns. The two rails are separate
@@ -329,19 +379,28 @@ function ShellFrame({
         <div className="min-h-0 flex-1">
           {/* In Lighter mode the conversation lives in the BOOK column
            * (`LighterChatRail`), so the center is the desk alone. */}
-          {lighter ? <LighterCenter /> : studio ? <StudioCenter /> : <SessionPanel />}
+          {lighter ? (
+            <LighterCenter
+              zenMode={lighterZen}
+              onOpenZenAssistant={openZenAssistant}
+            />
+          ) : studio ? <StudioCenter /> : <SessionPanel />}
         </div>
       </section>
 
-      <div className="relative z-10 h-full min-h-0 min-w-0 overflow-visible">
+      <div className="lit-zen-assistant relative z-10 h-full min-h-0 min-w-0 overflow-visible">
         {/* Always mounted — the panel owns its collapsed rendering, so a
          * derived auto-close never remounts it. `bookEffectiveOpen` folds the
          * concession solve into the open flag WITHOUT touching the stored
          * preference. */}
         <BookPanel
           activeSessionId={activeSessionId}
-          bookOpen={welcomeStage ? bookOpen : bookEffectiveOpen}
+          bookOpen={lighterZen ? zenAssistantOpen : welcomeStage ? bookOpen : bookEffectiveOpen}
           onToggle={() => {
+            if (lighterZen) {
+              setZenAssistantOpen(false);
+              return;
+            }
             if (lighter && !bookEffectiveOpen) {
               setBookOpen(true);
               setSidebarNarrowExpanded(false);
@@ -366,7 +425,7 @@ function ShellFrame({
           onEnd={onDragEnd}
         />
       ) : null}
-      {bookEffectiveOpen ? (
+      {bookEffectiveOpen && !lighterZen ? (
         <ShellDragHandle
           side="book"
           left={viewport - cols.book}

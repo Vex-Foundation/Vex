@@ -39,7 +39,9 @@ vi.mock("../../screens/AgentScanScreen.js", () => ({
 }));
 
 vi.mock("../../lighterTrading/LighterCenter.js", () => ({
-  LighterCenter: () => <div data-testid="lighter-center" />,
+  LighterCenter: ({ zenMode }: { readonly zenMode: boolean }) => (
+    <div data-testid="lighter-center" data-zen-mode={zenMode ? "true" : undefined} />
+  ),
 }));
 
 vi.mock("../../lighterTrading/LighterSidebar.js", () => ({
@@ -47,9 +49,17 @@ vi.mock("../../lighterTrading/LighterSidebar.js", () => ({
   LighterSidebar: ({
     collapsed,
     onToggleSidebar,
+    zenMode,
+    zenAssistantOpen,
+    onToggleZen,
+    onToggleZenAssistant,
   }: {
     readonly collapsed: boolean;
     readonly onToggleSidebar: () => void;
+    readonly zenMode: boolean;
+    readonly zenAssistantOpen: boolean;
+    readonly onToggleZen: () => void;
+    readonly onToggleZenAssistant: () => void;
   }) => (
     <aside
       data-vex-area="lighter-sidebar"
@@ -60,6 +70,18 @@ vi.mock("../../lighterTrading/LighterSidebar.js", () => ({
         aria-label={collapsed ? "Open markets and sessions" : "Close markets and sessions"}
         onClick={onToggleSidebar}
       />
+      <button
+        type="button"
+        aria-label={zenMode ? "Exit Zen Mode" : "Enter Zen Mode"}
+        onClick={onToggleZen}
+      />
+      {zenMode ? (
+        <button
+          type="button"
+          aria-label={zenAssistantOpen ? "Close Vex" : "Ask Vex"}
+          onClick={onToggleZenAssistant}
+        />
+      ) : null}
     </aside>
   ),
 }));
@@ -700,6 +722,35 @@ describe("AppShell", () => {
       expect(column?.classList.contains("h-full")).toBe(true);
       expect(column?.classList.contains("min-h-0")).toBe(true);
     }
+    act(() => useUiStore.getState().setRuntimeMode("agent"));
+  });
+
+  it("gives Zen Mode the full chart track and overlays a contextual Vex panel", () => {
+    useUiStore.setState({
+      runtimeMode: "lighter",
+      activeSessionId: "s-1",
+      sidebarNarrowExpanded: false,
+      bookOpen: true,
+    });
+    const view = renderShell();
+    const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
+
+    fireEvent.click(screen.getByRole("button", { name: "Enter Zen Mode" }));
+    expect(frame?.getAttribute("data-lighter-zen")).toBe("true");
+    expect(frame?.style.gridTemplateColumns).toBe("0px minmax(0, 1fr) 0px");
+    expect(screen.getByTestId("lighter-center").getAttribute("data-zen-mode")).toBe("true");
+    expect(view.container.querySelector("[data-vex-area='book-panel']")?.getAttribute("data-vex-book-open")).toBe("false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Ask Vex" }));
+    expect(frame?.getAttribute("data-lighter-zen-assistant")).toBe("open");
+    expect(view.container.querySelector("[data-vex-area='book-panel']")?.getAttribute("data-vex-book-open")).toBe("true");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(frame?.getAttribute("data-lighter-zen")).toBe("true");
+    expect(frame?.hasAttribute("data-lighter-zen-assistant")).toBe(false);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(frame?.hasAttribute("data-lighter-zen")).toBe(false);
+    expect(frame?.style.gridTemplateColumns).not.toBe("0px minmax(0, 1fr) 0px");
     act(() => useUiStore.getState().setRuntimeMode("agent"));
   });
 

@@ -74,8 +74,6 @@ function desk(overrides: Record<string, unknown> = {}) {
     selectMarket: vi.fn(),
     marketPickerOpen: false,
     setMarketPickerOpen: vi.fn(),
-    chartExpanded: false,
-    setChartExpanded: vi.fn(),
     snapshotQuery: { isError: false, data: undefined, refetch: vi.fn() },
     snapshot: null,
     candleStream: { candles: [], status: "live", receivedAt: null },
@@ -258,29 +256,26 @@ describe("LighterCenter", () => {
     renderCenter(<LighterCenter />);
     expect(screen.queryByRole("button", { name: "Ask Vex" })).toBeNull();
     fireEvent.keyDown(window, { key: "k", metaKey: true });
-    expect(current.askVex).toHaveBeenCalledTimes(1);
+    expect(current.askVex).toHaveBeenCalledWith(true);
     expect(current.setMarketPickerOpen).toHaveBeenCalledWith(false);
     fireEvent.keyDown(window, { key: "k", metaKey: true, shiftKey: true });
     expect(current.askVex).toHaveBeenCalledTimes(1);
   });
 
-  it("collapses the expanded chart on Escape unless a layer above already took the key", () => {
-    const collapsed = desk();
-    mocks.useLighterDesk.mockReturnValue(collapsed);
-    const { unmount } = renderCenter(<LighterCenter />);
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(collapsed.setChartExpanded).not.toHaveBeenCalled();
-    unmount();
+  it("turns the resident chart into the Zen canvas and opens Vex without restoring the rail", () => {
+    const current = desk();
+    const openZenAssistant = vi.fn();
+    mocks.useLighterDesk.mockReturnValue(current);
+    const { container } = renderCenter(
+      <LighterCenter zenMode onOpenZenAssistant={openZenAssistant} />,
+    );
 
-    const expanded = desk({ chartExpanded: true });
-    mocks.useLighterDesk.mockReturnValue(expanded);
-    renderCenter(<LighterCenter />);
-    const taken = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
-    taken.preventDefault();
-    window.dispatchEvent(taken);
-    expect(expanded.setChartExpanded).not.toHaveBeenCalled();
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(expanded.setChartExpanded).toHaveBeenCalledWith(false);
+    const root = container.querySelector('[data-vex-area="lighter-desk"]');
+    expect(root?.getAttribute("data-chart-expanded")).toBe("true");
+    expect(root?.getAttribute("data-zen-mode")).toBe("true");
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    expect(openZenAssistant).toHaveBeenCalledTimes(1);
+    expect(current.askVex).toHaveBeenCalledWith(false);
   });
 
   it("persists splitter steps and dock collapse through the desk preferences", () => {

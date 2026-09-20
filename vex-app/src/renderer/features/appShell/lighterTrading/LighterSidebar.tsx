@@ -8,12 +8,14 @@ import { useEffect, useId, useMemo, useRef, type JSX } from "react";
 import type { LighterTradingEnvironment } from "@shared/schemas/lighter-trading.js";
 import {
   IconChevronLeft,
+  IconFullscreen,
   IconPanelLeft,
   IconPlus,
   IconSettings,
   IconThemeDark,
   IconThemeLight,
 } from "../../../components/icons/index.js";
+import { VexMark } from "../../../components/common/VexMark.js";
 import { useLighterTradingMarkets } from "../../../lib/api/lighter-trading.js";
 import { useSessionsList } from "../../../lib/api/sessions.js";
 import { useScrollbarVisibility } from "../../../lib/useScrollbarVisibility.js";
@@ -38,9 +40,20 @@ import { marketIdentity } from "./market-selection.js";
 
 export const LIGHTER_TOPBAR_HEIGHT = 44;
 
-export function LighterSidebar({ collapsed, onToggleSidebar }: {
+export function LighterSidebar({
+  collapsed,
+  onToggleSidebar,
+  zenMode,
+  zenAssistantOpen,
+  onToggleZen,
+  onToggleZenAssistant,
+}: {
   readonly collapsed: boolean;
   readonly onToggleSidebar: () => void;
+  readonly zenMode: boolean;
+  readonly zenAssistantOpen: boolean;
+  readonly onToggleZen: () => void;
+  readonly onToggleZenAssistant: () => void;
 }): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
@@ -51,7 +64,13 @@ export function LighterSidebar({ collapsed, onToggleSidebar }: {
   const theme = useUiStore((s) => s.theme);
   const setThemePreference = useUiStore((s) => s.setThemePreference);
   const environment = useLighterAnalysisStore((s) => s.desk.environment);
+  const marketId = useLighterAnalysisStore((s) => s.desk.marketId);
+  const resolution = useLighterAnalysisStore((s) => s.desk.resolution);
   const saveDesk = useLighterAnalysisStore((s) => s.saveDesk);
+  const marketsQuery = useLighterTradingMarkets(environment, true);
+  const activeMarket = marketsQuery.data?.ok === true
+    ? marketsQuery.data.data.markets.find((market) => market.marketId === marketId) ?? null
+    : null;
   const query = useSessionsList();
   const actions = useSessionRowActions();
   const rootRef = useRef<HTMLElement | null>(null);
@@ -93,6 +112,7 @@ export function LighterSidebar({ collapsed, onToggleSidebar }: {
       data-vex-sidebar-open={collapsed ? "false" : "true"}
       data-lighter-theme={theme}
       data-lighter-environment={environment}
+      data-lighter-zen={zenMode ? "true" : undefined}
       aria-label="Lighter navigation"
     >
       <header className="lit-desk-topbar-header">
@@ -109,9 +129,14 @@ export function LighterSidebar({ collapsed, onToggleSidebar }: {
           <img src="./protocols/lighter.svg" alt="" width="20" height="20" />
           <b>Lighter</b>
         </span>
+        {zenMode && activeMarket !== null ? (
+          <span className="lit-topbar-zen-market" aria-label={`Viewing ${activeMarket.symbol} ${resolution} chart`}>
+            {activeMarket.symbol} · {resolution}
+          </span>
+        ) : null}
         <button
           type="button"
-          className="lit-topbar-button"
+          className="lit-topbar-button lit-topbar-distraction"
           aria-expanded={!collapsed}
           aria-controls={drawerId}
           onClick={onToggleSidebar}
@@ -122,29 +147,57 @@ export function LighterSidebar({ collapsed, onToggleSidebar }: {
         <button
           type="button"
           onClick={() => openCreateSession()}
-          className="lit-topbar-primary"
+          className="lit-topbar-primary lit-topbar-distraction"
         >
           <IconPlus size={15} />
           <span className="lit-topbar-button-label">New session</span>
         </button>
+        <div className="lit-topbar-center">
+          <button
+            type="button"
+            className="lit-zen-toggle"
+            aria-label={zenMode ? "Exit Zen Mode" : "Enter Zen Mode"}
+            aria-pressed={zenMode}
+            title={zenMode ? "Exit Zen Mode · Esc" : "Open a distraction-free chart"}
+            onClick={onToggleZen}
+          >
+            <IconFullscreen size={15} />
+            <span>{zenMode ? "Exit Zen" : "Zen Mode"}</span>
+          </button>
+        </div>
         <span className="lit-topbar-spacer" />
+        {zenMode ? (
+          <button
+            type="button"
+            className="lit-topbar-ask"
+            aria-label={zenAssistantOpen ? "Close Vex" : "Ask Vex"}
+            aria-pressed={zenAssistantOpen}
+            title={zenAssistantOpen ? "Close Vex · Esc" : "Ask Vex about this chart · ⌘K"}
+            onClick={onToggleZenAssistant}
+          >
+            <VexMark size={14} />
+            <span>{zenAssistantOpen ? "Close Vex" : "Ask Vex"}</span>
+          </button>
+        ) : null}
         <EnvironmentSwitch
           environment={environment}
           onSelect={(next) => saveDesk({ environment: next, marketId: null })}
         />
-        <SidebarIconButton
-          label="Settings"
-          onClick={() => { setShellRoute({ kind: "settings", origin: null, section: null }); }}
-        >
-          <IconSettings size={16} />
-        </SidebarIconButton>
+        <span className="lit-topbar-distraction">
+          <SidebarIconButton
+            label="Settings"
+            onClick={() => { setShellRoute({ kind: "settings", origin: null, section: null }); }}
+          >
+            <IconSettings size={16} />
+          </SidebarIconButton>
+        </span>
         <SidebarIconButton
           label={theme === "chronos" ? "Switch to the light theme" : "Switch to the dark theme"}
           onClick={() => { setThemePreference(theme === "chronos" ? "celeris" : "chronos"); }}
         >
           {theme === "chronos" ? <IconThemeLight size={16} /> : <IconThemeDark size={16} />}
         </SidebarIconButton>
-        <div className="lit-topbar-profile">
+        <div className="lit-topbar-profile lit-topbar-distraction">
           <SidebarProfile sidebarOpen={false} menuSide="bottom" />
         </div>
       </header>

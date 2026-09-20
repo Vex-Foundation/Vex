@@ -45,7 +45,16 @@ describe("LighterSidebar environment switch", () => {
   });
 
   it("keeps Core and RHC in the top bar and clears the old market on switch", () => {
-    render(<LighterSidebar collapsed onToggleSidebar={vi.fn()} />);
+    render(
+      <LighterSidebar
+        collapsed
+        onToggleSidebar={vi.fn()}
+        zenMode={false}
+        zenAssistantOpen={false}
+        onToggleZen={vi.fn()}
+        onToggleZenAssistant={vi.fn()}
+      />,
+    );
 
     const navigation = screen.getByRole("complementary", { name: "Lighter navigation" });
     const group = within(navigation).getByRole("radiogroup", { name: "Lighter environment" });
@@ -55,5 +64,38 @@ describe("LighterSidebar environment switch", () => {
 
     expect(useLighterAnalysisStore.getState().desk.environment).toBe("core");
     expect(useLighterAnalysisStore.getState().desk.marketId).toBeNull();
+  });
+
+  it("keeps Zen Mode centered and reveals the contextual Vex control only while focused", () => {
+    const onToggleZen = vi.fn();
+    const onToggleZenAssistant = vi.fn();
+    const { rerender } = render(
+      <LighterSidebar
+        collapsed
+        onToggleSidebar={vi.fn()}
+        zenMode={false}
+        zenAssistantOpen={false}
+        onToggleZen={onToggleZen}
+        onToggleZenAssistant={onToggleZenAssistant}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Enter Zen Mode" }));
+    expect(onToggleZen).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Ask Vex" })).toBeNull();
+
+    rerender(
+      <LighterSidebar
+        collapsed
+        onToggleSidebar={vi.fn()}
+        zenMode
+        zenAssistantOpen={false}
+        onToggleZen={onToggleZen}
+        onToggleZenAssistant={onToggleZenAssistant}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Exit Zen Mode" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Ask Vex" }));
+    expect(onToggleZenAssistant).toHaveBeenCalledTimes(1);
   });
 });

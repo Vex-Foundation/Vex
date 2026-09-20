@@ -10,6 +10,7 @@
 }
 
 .lit-desk-topbar-header {
+  position: relative;
   display: flex;
   height: 100%;
   min-width: 0;
@@ -71,6 +72,63 @@
 .lit-topbar-brand b { font-size: 13px; font-weight: 650; }
 .lit-desk-topbar .lit-environment-switch { margin-right: 2px; }
 .lit-topbar-spacer { min-width: 4px; flex: 1 1 auto; }
+
+.lit-topbar-center {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.lit-zen-toggle,
+.lit-topbar-ask {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--lit-line-strong);
+  border-radius: var(--lit-radius);
+  background: var(--lit-panel);
+  padding: 0 10px;
+  color: var(--lit-ink-secondary);
+  font-size: 11.5px;
+  font-weight: 650;
+  white-space: nowrap;
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.lit-zen-toggle { pointer-events: auto; }
+
+.lit-zen-toggle:hover,
+.lit-topbar-ask:hover {
+  border-color: var(--lit-focus);
+  background: var(--lit-hover);
+  color: var(--lit-ink);
+}
+
+.lit-zen-toggle[aria-pressed="true"],
+.lit-topbar-ask[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--lit-focus) 55%, var(--lit-line-strong));
+  background: var(--lit-environment-surface);
+  color: var(--lit-environment-mark);
+}
+
+.lit-topbar-zen-market {
+  overflow: hidden;
+  max-width: 140px;
+  color: var(--lit-ink-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lit-desk-topbar[data-lighter-zen] .lit-topbar-distraction { display: none; }
+
 .lit-topbar-profile { width: 40px; flex: 0 0 40px; }
 .lit-topbar-profile [data-vex-area="sidebar-profile"] {
   width: 40px;
@@ -129,6 +187,11 @@
   .lit-topbar-button-label { display: none; }
   .lit-topbar-button,
   .lit-topbar-primary { width: 32px; padding-inline: 0; }
+  .lit-zen-toggle span,
+  .lit-topbar-ask span,
+  .lit-topbar-zen-market { display: none; }
+  .lit-zen-toggle,
+  .lit-topbar-ask { width: 32px; padding-inline: 0; }
 }
 
 @container (max-width: 520px) {
@@ -285,6 +348,45 @@
   background: var(--lit-panel);
 }
 
+/* Zen keeps the chart mounted while the shell gives it the Vex rail's track.
+ * The assistant returns as an overlay, so asking a question never changes the
+ * chart's measured width or visible range. */
+.vex-shell-frame[data-lighter-zen] > .lit-zen-assistant {
+  position: absolute;
+  z-index: 35;
+  top: 44px;
+  right: 0;
+  bottom: 0;
+  width: min(430px, calc(100vw - 24px));
+  height: auto;
+  overflow: hidden;
+  clip-path: inset(0 0 0 10%);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(calc(100% + 18px), 0, 0);
+  visibility: hidden;
+  transition:
+    transform var(--vex-duration-reveal) var(--vex-ease-inout),
+    opacity var(--vex-duration-base) var(--vex-ease-out),
+    clip-path var(--vex-duration-reveal) var(--vex-ease-inout),
+    visibility 0s linear var(--vex-duration-reveal);
+}
+
+.vex-shell-frame[data-lighter-zen][data-lighter-zen-assistant="open"] > .lit-zen-assistant {
+  clip-path: inset(0);
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate3d(0, 0, 0);
+  visibility: visible;
+  transition-delay: 0s;
+  box-shadow: -18px 0 42px color-mix(in srgb, var(--vex-surface-0) 48%, transparent);
+}
+
+.vex-shell-frame[data-lighter-zen] > .lit-zen-assistant .lit-chat-frame {
+  border-left: 1px solid var(--lit-line-strong);
+  background: var(--lit-bg);
+}
+
 /* The chart column is the grid's flexible track; as a query container its
  * toolbar can shed the study readout and two intervals before they clip. */
 .lit-chart-panel { container-type: inline-size; }
@@ -414,6 +516,7 @@
 @keyframes lit-spin { to { transform: rotate(360deg); } }
 
 @media (prefers-reduced-motion: reduce) {
+  .vex-shell-frame[data-lighter-zen] > .lit-zen-assistant,
   .lit-desk *,
   .lit-desk *::before,
   .lit-desk *::after {

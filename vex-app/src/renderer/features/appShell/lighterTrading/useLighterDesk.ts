@@ -55,7 +55,6 @@ export function useLighterDesk() {
   const { environment, marketId, resolution, skipCloseConfirm } = desk;
 
   const [marketPickerOpen, setMarketPickerOpen] = useState(false);
-  const [chartExpanded, setChartExpanded] = useState(false);
   const [focusComposer, setFocusComposer] = useState(false);
   // The ticket's margin chip opens the leverage sheet over the desk.
   const [leverageOpen, setLeverageOpen] = useState(false);
@@ -199,8 +198,8 @@ export function useLighterDesk() {
 
   // Open Vex via ⌘K: the rail's composer is the only
   // place to type, so this opens the rail and puts the caret there.
-  const askVex = (): void => {
-    setBookOpen(true);
+  const askVex = (revealRail = true): void => {
+    if (revealRail) setBookOpen(true);
     setSidebarNarrowExpanded(false);
     if (activeSessionId === null) {
       openCreateSession();
@@ -409,8 +408,6 @@ export function useLighterDesk() {
     selectSection,
     marketPickerOpen,
     setMarketPickerOpen,
-    chartExpanded,
-    setChartExpanded,
     snapshotQuery,
     snapshot,
     candleStream,
