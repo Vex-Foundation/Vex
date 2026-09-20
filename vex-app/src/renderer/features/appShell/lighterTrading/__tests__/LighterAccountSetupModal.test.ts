@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LighterAccountSetupStatus } from "@shared/schemas/lighter-trading.js";
-import { lighterSetupPresentation } from "../LighterAccountSetupModal.js";
+import { fundingShortfall, lighterSetupPresentation } from "../LighterAccountSetupModal.js";
 
 function status(
   overrides: Partial<LighterAccountSetupStatus> = {},
@@ -8,8 +8,11 @@ function status(
   return {
     environment: "rhc",
     settlementSymbol: "USDG",
+    walletAddress: "0xb3920000000000000000000000000000000dDfE1",
     walletSettlementBalance: "0",
     nativeGasSufficient: true,
+    settlementNetworkName: "Robinhood Chain mainnet",
+    nativeGasSymbol: "ETH",
     minimumDeposit: "1",
     accountExists: false,
     accountCollateral: "0",
@@ -91,6 +94,49 @@ describe("lighterSetupPresentation", () => {
 
     expect(core.accountNote).toBe(
       "This wallet's Lighter account and trading key are ready on Core. Setup continues from fee authorization.",
+    );
+  });
+});
+
+describe("fundingShortfall", () => {
+  it("names the missing settlement asset before an amount is typed", () => {
+    // Regression: the shortfall was read off the typed amount, so an empty
+    // field over a zero balance reported only the gas gap and left the trader
+    // wondering why USDG went unmentioned.
+    expect(fundingShortfall(status({ nativeGasSufficient: false }), true)).toBe(
+      "Your Vex wallet holds 0 USDG and no ETH for network fees. "
+      + "Send USDG and ETH on Robinhood Chain mainnet to it, "
+      + "so we can proceed with the account setup.",
+    );
+  });
+
+  it("asks only for the settlement asset when gas is already funded", () => {
+    expect(fundingShortfall(status(), true)).toBe(
+      "Your Vex wallet holds 0 USDG. Send USDG on Robinhood Chain mainnet to it, "
+      + "so we can proceed with the account setup.",
+    );
+  });
+
+  it("asks only for gas when the settlement balance covers the deposit", () => {
+    const funded = status({ nativeGasSufficient: false, walletSettlementBalance: "25" });
+    expect(fundingShortfall(funded, false)).toBe(
+      "Your Vex wallet has no ETH for network fees. "
+      + "Send ETH on Robinhood Chain mainnet to it, "
+      + "so we can proceed with the account setup.",
+    );
+  });
+
+  it("names the Core network and asset on the Core desk", () => {
+    const core = status({
+      environment: "core",
+      settlementSymbol: "USDC",
+      settlementNetworkName: "Ethereum mainnet",
+      nativeGasSufficient: false,
+    });
+    expect(fundingShortfall(core, true)).toBe(
+      "Your Vex wallet holds 0 USDC and no ETH for network fees. "
+      + "Send USDC and ETH on Ethereum mainnet to it, "
+      + "so we can proceed with the account setup.",
     );
   });
 });

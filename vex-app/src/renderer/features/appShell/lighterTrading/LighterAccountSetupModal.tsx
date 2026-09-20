@@ -1,9 +1,9 @@
-import type { JSX } from "react";
+import { useState, type JSX } from "react";
 import type {
   LighterAccountSetupStatus,
   LighterTradingEnvironment,
 } from "@shared/schemas/lighter-trading.js";
-import { IconCheck } from "../../../components/icons/index.js";
+import { IconCheck, IconCopy } from "../../../components/icons/index.js";
 import {
   Dialog,
   DialogBody,
@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../../components/ui/dialog.js";
+import { writeClipboard } from "../../../lib/clipboard.js";
 import { formatDecimalString } from "./format.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import { useLighterAccountSetup, type LighterAccountSetupPhase } from "./useLighterAccountSetup.js";
@@ -131,6 +132,35 @@ export function lighterSetupPresentation(
 }
 
 /**
+ * What the wallet still needs before it can deposit. The network is named
+ * rather than just the gas symbol: both desks pay gas in ETH, so "send ETH"
+ * alone would not tell a trader that mainnet ETH funds nothing on Robinhood
+ * Chain.
+ */
+export function fundingShortfall(
+  status: LighterAccountSetupStatus,
+  settlementShortfall: boolean,
+): string {
+  const { settlementSymbol: symbol, nativeGasSymbol: gas, settlementNetworkName: network } = status;
+  const held = `${formatDecimalString(status.walletSettlementBalance)} ${symbol}`;
+  const close = `so we can proceed with the account setup.`;
+  if (settlementShortfall && !status.nativeGasSufficient) {
+    return `Your Vex wallet holds ${held} and no ${gas} for network fees. `
+      + `Send ${symbol} and ${gas} on ${network} to it, ${close}`;
+  }
+  if (settlementShortfall) {
+    return `Your Vex wallet holds ${held}. Send ${symbol} on ${network} to it, ${close}`;
+  }
+  return `Your Vex wallet has no ${gas} for network fees. `
+    + `Send ${gas} on ${network} to it, ${close}`;
+}
+
+/** Middle-truncated for the strip; Copy and the tooltip carry the full value. */
+function shortAddress(address: string): string {
+  return `${address.slice(0, 6)}\u2026${address.slice(-4)}`;
+}
+
+/**
  * The desk's account-setup modal: deposit, trading key and fee authorization
  * as one click, no chat and no per-step approval card (see
  * `useLighterAccountSetup` for why one click can stand for all three).
@@ -156,6 +186,7 @@ export function LighterAccountSetupModal({
   readonly onDone: (environment: LighterTradingEnvironment) => void;
 }): JSX.Element {
   const theme = useUiStore((state) => state.theme);
+  const [walletCopied, setWalletCopied] = useState(false);
   const setup = useLighterAccountSetup({
     sessionId,
     initialEnvironment: environment,
@@ -166,6 +197,11 @@ export function LighterAccountSetupModal({
       window.setTimeout(() => onOpenChange(false), 1_200);
     },
   });
+  const copyWallet = async (address: string): Promise<void> => {
+    if (!(await writeClipboard(address))) return;
+    setWalletCopied(true);
+    window.setTimeout(() => setWalletCopied(false), 1_500);
+  };
   const running = setup.phase !== "idle" && setup.phase !== "done";
   const started = setup.phase !== "idle";
   const { status } = setup;
@@ -186,9 +222,8 @@ export function LighterAccountSetupModal({
         <DialogHeader>
           <DialogTitle>Set up Lighter</DialogTitle>
           <DialogDescription>
-            A first deposit funds your account. One confirmation then covers the
-            deposit, the trading key and the fee authorization — no chat, no
-            back-and-forth.
+            Lighter needs a first deposit to activate your account and set up
+            trading. Enter the amount you want to deposit.
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="gap-5 pt-1">
@@ -240,11 +275,25 @@ export function LighterAccountSetupModal({
                   <p className="lit-setup-min">
                     Minimum {formatDecimalString(status.minimumDeposit)} {status.settlementSymbol}
                   </p>
-                  {status.nativeGasSufficient ? null : (
-                    <p className="lit-setup-warn">
-                      This wallet has no network-fee balance on {ENVIRONMENT_LABELS[setup.environment]} yet.
-                    </p>
-                  )}
+                  {setup.settlementShortfall || !status.nativeGasSufficient ? (
+                    <div className="lit-setup-fund" role="alert">
+                      <p>{fundingShortfall(status, setup.settlementShortfall)}</p>
+                      <div className="lit-setup-fund-row">
+                        <span className="lit-setup-fund-label">Your Vex wallet</span>
+                        <code title={status.walletAddress}>{shortAddress(status.walletAddress)}</code>
+                        <button
+                          type="button"
+                          className="lit-setup-fund-copy"
+                          onClick={() => { void copyWallet(status.walletAddress); }}
+                        >
+                          {walletCopied
+                            ? <IconCheck size={13} aria-hidden="true" />
+                            : <IconCopy size={13} aria-hidden="true" />}
+                          {walletCopied ? "Copied" : "Copy"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : presentation !== null && presentation.accountNote !== null ? (
                 <p className="lit-setup-note">

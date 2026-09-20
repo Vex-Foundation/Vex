@@ -18,8 +18,11 @@ function readyStatus(
   return {
     environment,
     settlementSymbol: environment === "core" ? "USDC" : "USDG",
+    walletAddress: "0xb3920000000000000000000000000000000dDfE1",
     walletSettlementBalance: "0",
     nativeGasSufficient: true,
+    settlementNetworkName: environment === "core" ? "Ethereum mainnet" : "Robinhood Chain mainnet",
+    nativeGasSymbol: "ETH",
     minimumDeposit: "1",
     accountExists: true,
     accountCollateral: "10",

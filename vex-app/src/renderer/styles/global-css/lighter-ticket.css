@@ -863,7 +863,66 @@
 .lit-chat-frame .lit-setup-amount input:focus-visible { outline: none; }
 
 .lit-setup-min { font-size: 11.5px; color: var(--lit-ink-muted); }
-.lit-setup-warn { font-size: 11.5px; color: var(--lit-warning); line-height: 1.4; }
+
+/* Shortfall: the amount is larger than the wallet holds. Names the gap and
+ * hands over the address that closes it. Tinted from the warning hue rather
+ * than bordered, so it reads as part of the field instead of a fourth panel
+ * competing with the env switch, the input and the tracker. */
+.lit-setup-fund {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 1px;
+  padding: 10px 11px;
+  border-radius: var(--lit-radius);
+  background: color-mix(in srgb, var(--lit-warning) 12%, transparent);
+}
+.lit-setup-fund > p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--lit-warning);
+}
+.lit-setup-fund-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.lit-setup-fund-label {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--lit-warning) 45%, var(--lit-ink-muted));
+}
+.lit-setup-fund-row code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--lit-ink);
+}
+.lit-setup-fund-copy {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid var(--lit-line);
+  border-radius: 999px;
+  background: var(--lit-bg);
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+.lit-setup-fund-copy:hover {
+  border-color: var(--lit-line-strong);
+  color: var(--lit-ink);
+}
 
 /* Three-step tracker: the plan while idle, live progress while the chain runs. */
 .lit-setup-steps {

@@ -306,8 +306,11 @@ export async function resolveLighterAccountSetupStatus(
   return {
     environment: input.environment,
     settlementSymbol: deployment.settlementSymbol,
+    walletAddress: wallet.walletAddress,
     walletSettlementBalance: formatSettlementBaseUnits(walletUnits, deployment.settlementDecimals),
     nativeGasSufficient: nativeWei > 0n,
+    settlementNetworkName: deployment.settlementNetworkName,
+    nativeGasSymbol: deployment.nativeGasSymbol,
     minimumDeposit: formatSettlementBaseUnits(minimumDepositUnits, deployment.settlementDecimals),
     accountExists: account !== null,
     accountCollateral: formatSettlementBaseUnits(accountCollateralUnits, deployment.settlementDecimals),

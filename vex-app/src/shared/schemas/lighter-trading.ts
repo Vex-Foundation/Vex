@@ -784,10 +784,23 @@ export const lighterAccountSetupStatusSchema = z
   .object({
     environment: lighterIntegrationEnvironmentSchema,
     settlementSymbol: z.enum(["USDC", "USDG"]),
+    /**
+     * The Vex wallet the deposit is drawn from - the same address the balance
+     * below is read for. Shown when the entered amount exceeds that balance,
+     * so the trader knows where to send funds.
+     */
+    walletAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
     /** The exact wallet balance an entered amount is validated against. */
     walletSettlementBalance: unsignedDecimalStringSchema,
     /** Native gas balance is a pass/fail, not a figure the modal shows. */
     nativeGasSufficient: z.boolean(),
+    /**
+     * The chain the deposit settles on, named in full. Both desks pay gas in
+     * ETH, so the symbol alone is ambiguous - mainnet ETH funds nothing on
+     * Robinhood Chain - and the funding notice names the network instead.
+     */
+    settlementNetworkName: z.string().min(1),
+    nativeGasSymbol: z.literal("ETH"),
     minimumDeposit: unsignedDecimalStringSchema,
     accountExists: z.boolean(),
     /** Lighter-side collateral already on the account, before any new deposit. */

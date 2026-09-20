@@ -9,7 +9,7 @@ import {
   lighterAccountSetupStatusQueryKey,
   useLighterAccountSetupStatus,
 } from "../../../lib/api/lighter-trading.js";
-import { isPositiveDecimal } from "./decimal.js";
+import { compareUnsignedDecimals, isPositiveDecimal } from "./decimal.js";
 
 /**
  * The account-setup modal's single-click chain: deposit -> trading key ->
@@ -68,6 +68,12 @@ export interface LighterAccountSetupState {
   readonly error: string | null;
   /** False once the wallet already owns a Lighter account - the amount field is moot. */
   readonly needsDeposit: boolean;
+  /**
+   * True when the wallet cannot cover what the deposit needs - the entered
+   * amount, or the minimum while the field is still empty. Drives the funding
+   * notice, which must name a zero settlement balance before anything is typed.
+   */
+  readonly settlementShortfall: boolean;
   readonly canStart: boolean;
   readonly start: () => void;
   readonly retry: () => void;
@@ -259,9 +265,28 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
   // requires, so the amount field - and requiring it - only applies pre-account.
   const needsDeposit = status === null || !status.accountExists;
 
+  // The wallet cannot deposit what it does not hold. Caught here rather than
+  // on-chain so the trader is told before a transaction is signed and burns
+  // gas on a revert - the recovery is funding the wallet first.
+  //
+  // Two readings, deliberately: `insufficientBalance` gates the button and so
+  // only speaks to what was actually typed, while `settlementShortfall` drives
+  // the notice and falls back to the minimum deposit - an empty field over a
+  // zero balance is still a wallet that cannot fund this account.
+  const insufficientBalance = status !== null
+    && needsDeposit
+    && isPositiveDecimal(amountIn)
+    && compareUnsignedDecimals(amountIn, status.walletSettlementBalance) > 0;
+  const requiredSettlement = isPositiveDecimal(amountIn) ? amountIn : status?.minimumDeposit ?? null;
+  const settlementShortfall = status !== null
+    && needsDeposit
+    && requiredSettlement !== null
+    && compareUnsignedDecimals(requiredSettlement, status.walletSettlementBalance) > 0;
+
   const start = (): void => {
     if (phase !== "idle" || sessionId === null || status === null) return;
     if (needsDeposit && !isPositiveDecimal(amountIn)) return;
+    if (insufficientBalance) return;
     setError(null);
     if (!needsDeposit) {
       if (status.tradingKeyRegistered) void runFee(environment);
@@ -304,7 +329,9 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     phase,
     error,
     needsDeposit,
-    canStart: phase === "idle" && status !== null && (!needsDeposit || isPositiveDecimal(amountIn)),
+    settlementShortfall,
+    canStart: phase === "idle" && status !== null && !insufficientBalance
+      && (!needsDeposit || isPositiveDecimal(amountIn)),
     start,
     retry,
   };
