@@ -40,6 +40,24 @@
  *  a later edit to those two descriptions has something to move against. The 40
  *  Lighter PROTOCOL schemas are not in this block at all: they stay behind
  *  ToolSearch and are paid only by a session that discovered them.
+ *
+ *  2026-09-20, desk setup handoff. The handoff wording pushed the two shortcuts
+ *  to 4,940 B, over their bound, while neither description stated a RETURNS
+ *  shape, so every turn paid for prose and the model still had to guess the
+ *  result keys. Both descriptions were rewritten around what the model cannot
+ *  decide without them - when to call this, the one exception, what happens on
+ *  handoff - plus a returns clause, and the parameter text that only restated
+ *  the prose was dropped. The call-time wording the shortcut suite pins is
+ *  unchanged, word for word. 4,940 B to 4,406 B measured, back inside the
+ *  bound, with a returns shape the block did not carry before. The mode
+ *  ceilings stay where they were: this change moves them by ~200 B, which is
+ *  inside their existing headroom, and re-pinning them on every wording touch
+ *  would turn a budget decision into a chore.
+ *
+ *    agent / restricted        measured 102,584 B over 32 tools  ceiling 104,600
+ *    agent / full              measured 110,942 B over 33 tools  ceiling 113,200
+ *    mission run / restricted  measured 112,167 B over 34 tools  ceiling 114,400
+ *    the two shortcuts          measured  4,406 B                bound     4,500
  */
 
 import { describe, it, expect } from "vitest";

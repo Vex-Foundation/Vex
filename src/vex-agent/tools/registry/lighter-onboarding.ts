@@ -23,17 +23,17 @@ function onboardingParameters(
       amountIn: {
         type: "string",
         description:
-          `Optional target collateral for a named trade in human ${settlementAsset} decimals, for example "1" or "11". Requires marketId or marketSymbol. Never pass a direct deposit or funding amount here; use ToolSearch once to select lighter.deposit.prepare and pass the user's amount unchanged.`,
+          `Optional target collateral for a named trade in human ${settlementAsset} decimals, for example "1". Requires marketId or marketSymbol, and is never a direct deposit or funding amount.`,
       },
       marketId: {
         type: "number",
         description:
-          `Optional Lighter ${environmentShortName} market id. Provide at most one of marketId or marketSymbol, and include amountIn when checking a market minimum.`,
+          `Optional Lighter ${environmentShortName} market id. Pass at most one of marketId or marketSymbol, with amountIn.`,
       },
       marketSymbol: {
         type: "string",
         description:
-          `Optional Lighter ${environmentShortName} market symbol, for example SUI. Provide at most one of marketSymbol or marketId, and include amountIn when checking a market minimum.`,
+          `Optional Lighter ${environmentShortName} market symbol, for example SUI. Pass at most one of marketSymbol or marketId, with amountIn.`,
       },
     },
     additionalProperties: false,
@@ -56,8 +56,15 @@ function defineOnboardingShortcut(
     mutating: false,
     pressureSafety: "read_only",
     actionKind: "read",
+    // Every byte here is paid on EVERY provider request of EVERY session,
+    // including the ones that never mention Lighter, because both shortcuts sit
+    // in the always-loaded set (see `always-loaded-schema-bytes.test.ts`). The
+    // wording is therefore kept to the decisions the model cannot take without
+    // it: when to call this instead of something else, the one exception, what
+    // happens on handoff, and the shape of what comes back. Anything the
+    // parameter schema already says is not repeated here.
     description:
-      `Check the selected Vex wallet's complete live Lighter onboarding readiness on ${environmentName} (${environmentShortName}) in ONE read-only call. This tool is fixed to ${environmentShortName}. It already checks wallet ${settlementAsset} on ${settlementNetwork}, native ETH for gas, Lighter collateral/account ownership, gateway allowance, the live deposit minimum, and locally managed trading-credential readiness. When the user clearly says they want to start or set up trading on ${environmentShortName}, call this immediately as the first and only tool in the batch; do not narrate or reason through setup before calling it. Prefer this directly for ${environmentShortName} setup, readiness, named-trade funding checks, and 'can I deposit?' questions; do NOT run protocol discovery or a separate wallet-balance read first. Direct deposits are the exception: when the user says deposit or fund an explicit amount, skip this onboarding read and WalletBalances, use ToolSearch once to select lighter.deposit.prepare, and pass the requested amount unchanged. If the desktop setup handoff opens, the runtime ends the turn and the modal owns the flow; do not continue setup in chat. Otherwise answer directly from its deterministic result without another diagnostic or research pass unless the call failed. It moves no funds, signs nothing, creates no approval, and never registers a key. Omit walletAddress to use the selected Vex EVM wallet. amountIn is target collateral for a named trade only and requires marketSymbol or marketId.`,
+      `Check the selected Vex wallet's live Lighter onboarding readiness on ${environmentName} (${environmentShortName}) in ONE read-only call, fixed to ${environmentShortName}: wallet ${settlementAsset} on ${settlementNetwork}, native ETH for gas, collateral and account ownership, gateway allowance, deposit minimum, and local trading-credential readiness. When the user says they want to start or set up trading on ${environmentShortName}, call this immediately as the first and only tool in the batch; do not narrate or reason through setup before calling it. Prefer it for ${environmentShortName} setup, readiness, funding checks and 'can I deposit?' questions; do NOT run protocol discovery or a separate wallet-balance read first. Direct deposits are the exception: when the user names an amount to deposit or fund, skip this onboarding read and WalletBalances, use ToolSearch once to select lighter.deposit.prepare, and pass that amount unchanged. If the desktop setup handoff opens, the runtime ends the turn and the modal owns the flow; do not continue setup in chat. Otherwise answer directly from its deterministic result unless the call failed. Returns balances, account collateral, trading-key and managed-access readiness, a funding assessment with amounts and shortfalls, a plan of required legs, the next-step route with its toolId, and any named-trade minimum. Read-only: moves no funds, signs nothing, creates no approval, registers no key.`,
     returns:
       `RETURNS source and provenance, the fixed ${environmentShortName} environment, walletAddress, walletSettlementUnits and walletSettlementAllowanceUnits (${settlementAsset} base-unit strings), walletNativeBalanceWei (ETH gas balance only), walletCanAcquireSettlement, accountExists, nullable accountIndex, accountCollateralUnits, tradingKeyRegistered, requiredCollateralUnits and minimumDepositUnits. fundingAssessment carries the funding decision, exact base-unit amounts, human-readable ${settlementAsset} displays, shortfalls and nullable deposit amounts. plan carries ready, blocked, required legs with reasons, and nullable depositUnits/acquireUnits. managedTradingAccessActive and nullable managedTradingReadiness report local trading-access checks and their reason, never credential material. tradeMinimumAssessment is null without a named trade; otherwise it compares the requested trade with the live market minimum and combined balances. fundingRoute and tradingAccessRoute name the next step with nullable toolId/params; depositAmountProvided and userGuidance explain how to proceed. tradingLimits carries this wallet's live per-market leverage and the agent's capital share, which the user sets in Settings -> Lighter -> Trading setup and no Vex tool can change. These are readiness observations and suggested next steps, not an approval, registered key, deposit or placed order. Invalid inputs or unavailable reads return a failure explanation, not a readiness result.`,
     parameters: onboardingParameters(definition),
