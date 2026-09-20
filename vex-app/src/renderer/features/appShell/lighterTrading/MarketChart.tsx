@@ -377,9 +377,6 @@ export function MarketChart({
         borderColor: colors.grid,
         timeVisible: true,
         secondsVisible: false,
-        // Never let a quick left drag strand the viewport in whitespace while
-        // the next provider page is loading. Each prepend moves this edge back.
-        fixLeftEdge: true,
         rightOffset: LIVE_RIGHT_OFFSET,
         shiftVisibleRangeOnNewBar: false,
         tickMarkFormatter: formatLocalChartTick,

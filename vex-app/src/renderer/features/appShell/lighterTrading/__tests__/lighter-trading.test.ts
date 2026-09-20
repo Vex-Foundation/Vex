@@ -137,7 +137,7 @@ describe("Light it up chart adapter", () => {
     expect(formatLocalChartTick(time, 2)).toMatch(/^[A-Z][a-z]{2} \d{1,2}$/);
   });
 
-  it("keeps the left edge pinned to loaded history while older pages arrive", () => {
+  it("keeps horizontal panning enabled while older pages arrive", () => {
     render(createElement(MarketChart, {
       candles: [candle()],
       symbol: "BTC",
@@ -147,6 +147,10 @@ describe("Light it up chart adapter", () => {
     }));
 
     expect(chartHarness.createChart).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ handleScroll: true }),
+    );
+    expect(chartHarness.createChart).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         timeScale: expect.objectContaining({ fixLeftEdge: true }),
