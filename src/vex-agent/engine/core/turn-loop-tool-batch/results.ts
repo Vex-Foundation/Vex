@@ -34,15 +34,6 @@ export const BATCH_ABORTED_BY_USER_STOP_OUTPUT =
   + "It did NOT execute and had no effect.";
 
 /**
- * Synthetic result for calls emitted after a Lighter onboarding read that
- * transferred control to the desktop setup dialog. The current turn ends, but
- * the pairing remains valid if the transcript is loaded by a later turn.
- */
-export const BATCH_ABORTED_BY_LIGHTER_SETUP_OUTPUT =
-  "batch_aborted_by_lighter_setup: Lighter account setup moved to the desktop dialog before "
-  + "this tool call was dispatched. It did NOT execute and had no effect.";
-
-/**
  * Synthetic tool-result emitted for batch tool calls that were never dispatched
  * because the TURN's wall-clock slice expired mid-batch. Same pairing contract
  * as the other drains. Distinct from the deadline drain below because the

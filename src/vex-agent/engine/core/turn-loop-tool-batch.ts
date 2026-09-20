@@ -62,7 +62,6 @@ import {
   USER_FORM_ABANDONED_RUN_TERMINAL_OUTPUT,
   APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT,
   BATCH_ABORTED_BY_COMPACT_OUTPUT,
-  BATCH_ABORTED_BY_LIGHTER_SETUP_OUTPUT,
   BATCH_ABORTED_BY_LOOP_CORRECTION_OUTPUT,
   BATCH_ABORTED_BY_TOOL_CALL_LOOP_OUTPUT,
   BATCH_ABORTED_BY_DEADLINE_OUTPUT,
@@ -73,6 +72,7 @@ import {
 } from "./turn-loop-tool-batch/results.js";
 import { emitLighterSetupRequested } from "../runtime/lighter-setup-bus.js";
 import { parkTurnOnUserForm } from "./turn-loop-tool-batch/user-form-stop.js";
+import { parkTurnOnLighterSetup } from "./turn-loop-tool-batch/lighter-setup-stop.js";
 import { evaluatePresentationGate } from "./turn-loop-tool-batch/presentation-gate.js";
 import { hasPendingPresentation } from "./board-presentation.js";
 import logger from "@utils/logger.js";
@@ -150,7 +150,10 @@ export async function processTurnToolBatch(args: {
   let compactCommittedThisBatch = false;
   let approvalId: string | null = null;
   let userFormIntentId: string | null = null;
-  let lighterSetupEnvironment: "core" | "rhc" | null = null;
+  let lighterSetupPause: {
+    readonly intentId: string;
+    readonly environment: "core" | "rhc";
+  } | null = null;
   /** Set by a first-strike detection; emitted after the transcript persists. */
   let loopCorrectionFacts: ToolCallLoopFacts | null = null;
 
@@ -381,6 +384,38 @@ export async function processTurnToolBatch(args: {
       break; // remaining calls are NOT dispatched
     }
 
+    // A confirmed missing Lighter trading key is another human interaction,
+    // not a completed status read. Persist the assistant's call WITHOUT a
+    // result and park it on a durable setup intent. The modal supplies the one
+    // result later, then the same Agent turn resumes and can continue a
+    // compound request through the normal trade approval path.
+    if (
+      context.sessionKind === "agent"
+      && resultForTranscript.lighterSetupHandoff !== undefined
+    ) {
+      executedCalls.push(toolCall);
+      const environment = resultForTranscript.lighterSetupHandoff.environment;
+      const park = await parkTurnOnLighterSetup({
+        context,
+        toolCallId: toolCall.id,
+        environment,
+      });
+      if (park.kind === "abandoned") {
+        executedResults.push({
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          output: resultForTranscript.output,
+          success: resultForTranscript.success,
+          explorerRefs: deriveExplorerRefs(resultForTranscript.data),
+        });
+        drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_USER_STOP_OUTPUT);
+        batchStopReason = "user_stopped";
+        break;
+      }
+      lighterSetupPause = { intentId: park.intentId, environment };
+      break; // remaining calls are not part of the parked transcript prefix
+    }
+
     // Track executed call + result
     executedCalls.push(toolCall);
     executedResults.push({
@@ -398,19 +433,6 @@ export async function processTurnToolBatch(args: {
       // broadcast so the UI can say "Pending" instead of "Failed".
       ...displayStatusPayload(resultForTranscript.data),
     });
-
-    // A confirmed missing Lighter trading key transfers the interaction to the
-    // native setup dialog. This is Agent-only: missions must never be silently
-    // diverted into an ephemeral desktop surface. The status result above is
-    // kept, while every later call in the same batch is paired as unexecuted.
-    if (
-      context.sessionKind === "agent"
-      && resultForTranscript.lighterSetupHandoff !== undefined
-    ) {
-      lighterSetupEnvironment = resultForTranscript.lighterSetupHandoff.environment;
-      drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_LIGHTER_SETUP_OUTPUT);
-      break;
-    }
 
     // A validated prepared-action follow-up short-circuits the rest of this
     // batch: persist the prepare call above, then synthesize + dispatch the
@@ -577,13 +599,15 @@ export async function processTurnToolBatch(args: {
   // Emit only after the status and all synthetic batch results are durable.
   // The renderer can switch surfaces immediately without racing transcript
   // persistence, and there is deliberately no subsequent model inference.
-  if (lighterSetupEnvironment !== null) {
+  if (lighterSetupPause !== null) {
     emitLighterSetupRequested({
       sessionId: context.sessionId,
-      environment: lighterSetupEnvironment,
+      intentId: lighterSetupPause.intentId,
+      environment: lighterSetupPause.environment,
     });
     return {
-      kind: "lighter_setup_handoff",
+      kind: "lighter_setup_pause",
+      intentId: lighterSetupPause.intentId,
       toolCallsExecuted,
       lastText: turnResult.content ?? args.lastTextSoFar,
     };

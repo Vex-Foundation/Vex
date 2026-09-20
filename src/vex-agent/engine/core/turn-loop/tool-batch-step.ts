@@ -129,16 +129,14 @@ export async function applyToolBatchOutcome(args: {
     return { kind: "continue" };
   }
 
-  if (batchOutcome.kind === "lighter_setup_handoff") {
+  if (batchOutcome.kind === "lighter_setup_pause") {
     return {
       kind: "return",
       result: {
-        // The setup dialog is now the response surface. Returning no text keeps
-        // the agent from adding a redundant setup explanation beside it.
         text: null,
         toolCallsMade: args.totalToolCalls,
         pendingApprovals: args.pendingApprovals,
-        stopReason: null,
+        stopReason: "user_form_required",
       },
     };
   }

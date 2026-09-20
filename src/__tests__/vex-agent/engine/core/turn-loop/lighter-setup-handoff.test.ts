@@ -14,6 +14,7 @@ const mockAppendMessage = vi.fn().mockResolvedValue({
   timestamp: new Date().toISOString(),
 });
 const mockEmitLighterSetupRequested = vi.fn();
+const mockParkTurnOnLighterSetup = vi.fn();
 
 vi.mock("@vex-agent/tools/dispatcher.js", () => ({
   dispatchTool: (...args: unknown[]) => mockDispatchTool(...args),
@@ -37,6 +38,10 @@ vi.mock("@vex-agent/db/repos/messages.js", async (importOriginal) => ({
 vi.mock("@vex-agent/engine/runtime/lighter-setup-bus.js", () => ({
   emitLighterSetupRequested: (...args: unknown[]) =>
     mockEmitLighterSetupRequested(...args),
+}));
+
+vi.mock("@vex-agent/engine/core/turn-loop-tool-batch/lighter-setup-stop.js", () => ({
+  parkTurnOnLighterSetup: (...args: unknown[]) => mockParkTurnOnLighterSetup(...args),
 }));
 
 vi.mock("@vex-agent/db/client.js", () => ({
@@ -94,10 +99,14 @@ function handoffResult() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockParkTurnOnLighterSetup.mockResolvedValue({
+    kind: "parked",
+    intentId: "11111111-1111-4111-8111-111111111111",
+  });
 });
 
 describe("Lighter setup turn handoff", () => {
-  it("persists the status, drains later calls, then emits the desktop request", async () => {
+  it("persists only the pending call, skips later calls, then opens the modal", async () => {
     mockDispatchTool.mockResolvedValueOnce(handoffResult());
 
     const outcome = await processTurnToolBatch({
@@ -111,7 +120,8 @@ describe("Lighter setup turn handoff", () => {
 
     expect(mockDispatchTool).toHaveBeenCalledTimes(1);
     expect(outcome).toMatchObject({
-      kind: "lighter_setup_handoff",
+      kind: "lighter_setup_pause",
+      intentId: "11111111-1111-4111-8111-111111111111",
       toolCallsExecuted: 1,
     });
 
@@ -119,15 +129,10 @@ describe("Lighter setup turn handoff", () => {
       const message = call[1] as { role?: string } | undefined;
       return message?.role === "tool";
     });
-    expect(toolRows).toHaveLength(2);
-    expect((toolRows[0]?.[1] as { content: string }).content).toContain(
-      "trading key is not registered",
-    );
-    expect((toolRows[1]?.[1] as { content: string }).content).toContain(
-      "batch_aborted_by_lighter_setup",
-    );
+    expect(toolRows).toHaveLength(0);
     expect(mockEmitLighterSetupRequested).toHaveBeenCalledWith({
       sessionId: "session-lighter-setup",
+      intentId: "11111111-1111-4111-8111-111111111111",
       environment: "core",
     });
     expect(
@@ -157,7 +162,8 @@ describe("Lighter setup turn handoff", () => {
   it("ends the agent turn with no redundant assistant response", async () => {
     const step = await applyToolBatchOutcome({
       batchOutcome: {
-        kind: "lighter_setup_handoff",
+        kind: "lighter_setup_pause",
+        intentId: "11111111-1111-4111-8111-111111111111",
         toolCallsExecuted: 1,
         lastText: "I will explain the setup.",
       },
@@ -180,7 +186,7 @@ describe("Lighter setup turn handoff", () => {
         text: null,
         toolCallsMade: 1,
         pendingApprovals: [],
-        stopReason: null,
+        stopReason: "user_form_required",
       },
     });
   });

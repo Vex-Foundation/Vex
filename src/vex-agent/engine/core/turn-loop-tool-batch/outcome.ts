@@ -70,8 +70,9 @@ export type ToolBatchOutcome =
       readonly lastText: string | null;
     }
   | {
-      /** The desktop setup dialog owns the next interaction; no model round follows. */
-      readonly kind: "lighter_setup_handoff";
+      /** The setup modal owns the pending tool call until success or cancel. */
+      readonly kind: "lighter_setup_pause";
+      readonly intentId: string;
       readonly toolCallsExecuted: number;
       readonly lastText: string | null;
     }
