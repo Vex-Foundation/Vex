@@ -426,6 +426,20 @@ export interface ToolResult {
    */
   pendingUserForm?: { readonly intentId: string };
   /**
+   * Desktop-only handoff produced by an environment-fixed Lighter onboarding
+   * shortcut after live status proves that the selected wallet has no Vex
+   * trading key for that environment.
+   *
+   * This is deliberately separate from `data`: it is an engine command, not a
+   * model-visible readiness fact. The agent turn records the status result,
+   * stops without another inference round, and asks the desktop shell to open
+   * its existing deterministic deposit -> key -> fee setup dialog. It carries
+   * no credential material and grants no approval.
+   */
+  lighterSetupHandoff?: {
+    readonly environment: "core" | "rhc";
+  };
+  /**
    * What an approval for this call would be BOUND TO, rebuilt from the durable
    * intent row by the handler that is asking for it (stage A4b, spec item 2).
    *

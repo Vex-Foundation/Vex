@@ -138,6 +138,47 @@ describe("Lighter environment-fixed onboarding shortcuts", () => {
     },
   );
 
+  it.each(SHORTCUTS)(
+    "$name requests the native setup handoff only when its live result proves the trading key is missing",
+    async ({ environment, handler }) => {
+      mocks.executeProtocolTool.mockResolvedValue({
+        success: true,
+        output: JSON.stringify({ environment, tradingKeyRegistered: false }),
+        data: { environment, tradingKeyRegistered: false, accountExists: true },
+        actionKind: "read",
+      });
+
+      const result = await handler({}, makeTestContext());
+
+      expect(result.lighterSetupHandoff).toEqual({ environment });
+    },
+  );
+
+  it.each(SHORTCUTS)(
+    "$name does not request setup for failures or an already registered key",
+    async ({ environment, handler }) => {
+      mocks.executeProtocolTool
+        .mockResolvedValueOnce({
+          success: false,
+          output: "vault locked",
+          data: { environment, tradingKeyRegistered: false },
+          actionKind: "read",
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          output: "ready",
+          data: { environment, tradingKeyRegistered: true },
+          actionKind: "read",
+        });
+
+      const failed = await handler({}, makeTestContext());
+      const ready = await handler({}, makeTestContext());
+
+      expect(failed.lighterSetupHandoff).toBeUndefined();
+      expect(ready.lighterSetupHandoff).toBeUndefined();
+    },
+  );
+
   it("dispatches the Core shortcut through the production lazy-loader route", async () => {
     mocks.executeProtocolTool.mockResolvedValue({
       success: true,
@@ -188,6 +229,8 @@ describe("Lighter environment-fixed onboarding shortcuts", () => {
     for (const shortcut of SHORTCUTS) {
       const description = getToolDef(shortcut.name)?.description ?? "";
       expect(description).toContain("do NOT run protocol discovery or a separate wallet-balance read first");
+      expect(description).toContain("first and only tool in the batch");
+      expect(description).toContain("do not narrate or reason through setup before calling it");
       expect(description).toContain("answer directly from its deterministic result");
     }
   });

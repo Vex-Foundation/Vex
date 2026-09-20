@@ -129,6 +129,20 @@ export async function applyToolBatchOutcome(args: {
     return { kind: "continue" };
   }
 
+  if (batchOutcome.kind === "lighter_setup_handoff") {
+    return {
+      kind: "return",
+      result: {
+        // The setup dialog is now the response surface. Returning no text keeps
+        // the agent from adding a redundant setup explanation beside it.
+        text: null,
+        toolCallsMade: args.totalToolCalls,
+        pendingApprovals: args.pendingApprovals,
+        stopReason: null,
+      },
+    };
+  }
+
   // Normal batch complete
   await args.mergeOperatorInstructions();
   return { kind: "continue" };

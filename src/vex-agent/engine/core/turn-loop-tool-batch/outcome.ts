@@ -70,6 +70,12 @@ export type ToolBatchOutcome =
       readonly lastText: string | null;
     }
   | {
+      /** The desktop setup dialog owns the next interaction; no model round follows. */
+      readonly kind: "lighter_setup_handoff";
+      readonly toolCallsExecuted: number;
+      readonly lastText: string | null;
+    }
+  | {
       readonly kind: "normal_complete";
       readonly toolCallsExecuted: number;
       readonly lastText: string | null;

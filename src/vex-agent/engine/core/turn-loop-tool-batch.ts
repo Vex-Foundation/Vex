@@ -62,6 +62,7 @@ import {
   USER_FORM_ABANDONED_RUN_TERMINAL_OUTPUT,
   APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT,
   BATCH_ABORTED_BY_COMPACT_OUTPUT,
+  BATCH_ABORTED_BY_LIGHTER_SETUP_OUTPUT,
   BATCH_ABORTED_BY_LOOP_CORRECTION_OUTPUT,
   BATCH_ABORTED_BY_TOOL_CALL_LOOP_OUTPUT,
   BATCH_ABORTED_BY_DEADLINE_OUTPUT,
@@ -70,6 +71,7 @@ import {
   mapBatchOutcome,
   persistBatchTranscript,
 } from "./turn-loop-tool-batch/results.js";
+import { emitLighterSetupRequested } from "../runtime/lighter-setup-bus.js";
 import { parkTurnOnUserForm } from "./turn-loop-tool-batch/user-form-stop.js";
 import { evaluatePresentationGate } from "./turn-loop-tool-batch/presentation-gate.js";
 import { hasPendingPresentation } from "./board-presentation.js";
@@ -148,6 +150,7 @@ export async function processTurnToolBatch(args: {
   let compactCommittedThisBatch = false;
   let approvalId: string | null = null;
   let userFormIntentId: string | null = null;
+  let lighterSetupEnvironment: "core" | "rhc" | null = null;
   /** Set by a first-strike detection; emitted after the transcript persists. */
   let loopCorrectionFacts: ToolCallLoopFacts | null = null;
 
@@ -396,6 +399,19 @@ export async function processTurnToolBatch(args: {
       ...displayStatusPayload(resultForTranscript.data),
     });
 
+    // A confirmed missing Lighter trading key transfers the interaction to the
+    // native setup dialog. This is Agent-only: missions must never be silently
+    // diverted into an ephemeral desktop surface. The status result above is
+    // kept, while every later call in the same batch is paired as unexecuted.
+    if (
+      context.sessionKind === "agent"
+      && resultForTranscript.lighterSetupHandoff !== undefined
+    ) {
+      lighterSetupEnvironment = resultForTranscript.lighterSetupHandoff.environment;
+      drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_LIGHTER_SETUP_OUTPUT);
+      break;
+    }
+
     // A validated prepared-action follow-up short-circuits the rest of this
     // batch: persist the prepare call above, then synthesize + dispatch the
     // trusted confirm call and return its own outcome directly (restricted
@@ -557,6 +573,21 @@ export async function processTurnToolBatch(args: {
     liveMessages,
     reasoning: turnResult.reasoning,
   });
+
+  // Emit only after the status and all synthetic batch results are durable.
+  // The renderer can switch surfaces immediately without racing transcript
+  // persistence, and there is deliberately no subsequent model inference.
+  if (lighterSetupEnvironment !== null) {
+    emitLighterSetupRequested({
+      sessionId: context.sessionId,
+      environment: lighterSetupEnvironment,
+    });
+    return {
+      kind: "lighter_setup_handoff",
+      toolCallsExecuted,
+      lastText: turnResult.content ?? args.lastTextSoFar,
+    };
+  }
 
   // ── First-strike correction, strictly AFTER the transcript ──
   // The tape must read assistant message → every tool result (including the

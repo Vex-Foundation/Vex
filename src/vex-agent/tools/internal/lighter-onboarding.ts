@@ -40,7 +40,7 @@ function makeLighterOnboardingStatusHandler(
       if (params[key] !== undefined) targetParams[key] = params[key];
     }
 
-    return executeProtocolTool(
+    const result = await executeProtocolTool(
       {
         toolId: "lighter.account.onboarding.status",
         params: targetParams,
@@ -59,6 +59,24 @@ function makeLighterOnboardingStatusHandler(
         ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),
       },
     );
+
+    // The desktop setup dialog owns first-time deposit, local key registration
+    // and fee authorization as one deterministic flow. Hand off only when the
+    // successful live result proves the key is missing for THIS fixed
+    // environment. Failures, locked-vault states and nonce/reconciliation
+    // problems stay with the agent instead of opening an unrelated modal.
+    if (
+      result.success
+      && result.data?.environment === environment
+      && result.data.tradingKeyRegistered === false
+    ) {
+      return {
+        ...result,
+        lighterSetupHandoff: { environment },
+      };
+    }
+
+    return result;
   };
 }
 
