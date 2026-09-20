@@ -3555,6 +3555,77 @@ describe("Lighter agent read handlers", () => {
     expect((data.candles as Record<string, unknown>[])[0]?.index).toBe("5");
   });
 
+  it("narrows a window wider than its row cap instead of spending the call on a rejection", async () => {
+    mocks.client.getCandles.mockResolvedValue({
+      code: 200,
+      r: "5m",
+      c: [candle(0)],
+    });
+
+    // A day of 5m candles is 288 rows against a cap of 100: the provider used
+    // to reject this outright, costing one call and a recovery call.
+    const end = 1_786_233_600_000;
+    const data = await callJson("lighter.candles", {
+      environment: "rhc",
+      marketId: 0,
+      resolution: "5m",
+      startTimestamp: end - 24 * 60 * 60 * 1_000,
+      endTimestamp: end,
+      countBack: 100,
+    });
+
+    expect(mocks.client.getCandles).toHaveBeenCalledWith("rhc", {
+      marketId: 0,
+      resolution: "5m",
+      startTimestamp: end - 100 * 5 * 60 * 1_000,
+      endTimestamp: end,
+      countBack: 100,
+    });
+    expect(data.windowNarrowed).toBe(true);
+    expect(data.windowNote).toContain("newest 100");
+    expect(data.requestedWindow).toEqual({ startTimestamp: end - 24 * 60 * 60 * 1_000, endTimestamp: end });
+    expect(data.readWindow).toEqual({ startTimestamp: end - 100 * 5 * 60 * 1_000, endTimestamp: end });
+  });
+
+  it("takes the provider maximum when no row cap is given, and says nothing when the window fits", async () => {
+    mocks.client.getCandles.mockResolvedValue({ code: 200, r: "5m", c: [candle(0)] });
+    const end = 1_786_233_600_000;
+
+    await callJson("lighter.candles", {
+      environment: "rhc",
+      marketId: 0,
+      resolution: "5m",
+      // A month of 5m candles: without a cap this was the same rejection.
+      startTimestamp: end - 30 * 24 * 60 * 60 * 1_000,
+      endTimestamp: end,
+    });
+    expect(mocks.client.getCandles).toHaveBeenLastCalledWith("rhc", {
+      marketId: 0,
+      resolution: "5m",
+      startTimestamp: end - 500 * 5 * 60 * 1_000,
+      endTimestamp: end,
+      countBack: 500,
+    });
+
+    const fits = await callJson("lighter.candles", {
+      environment: "rhc",
+      marketId: 0,
+      resolution: "5m",
+      startTimestamp: end - 50 * 5 * 60 * 1_000,
+      endTimestamp: end,
+      countBack: 100,
+    });
+    expect(mocks.client.getCandles).toHaveBeenLastCalledWith("rhc", {
+      marketId: 0,
+      resolution: "5m",
+      startTimestamp: end - 50 * 5 * 60 * 1_000,
+      endTimestamp: end,
+      countBack: 100,
+    });
+    expect(fits.windowNarrowed).toBe(false);
+    expect(fits.windowNote).toBeNull();
+  });
+
   it("rejects missing or invalid params before reaching the client", async () => {
     const invalidEnv = await callFail("lighter.orderbook", { environment: "mainnet", marketId: 0 });
     expect(invalidEnv).toContain("environment must be core, rhc");

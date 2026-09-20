@@ -79,8 +79,8 @@ free. Both texts live on the tool
 | WalletTrackToken | Track a token in the local wallet view | internal | no | no | yes | - | 1044 | yes | none |
 | WalletWrapConfirm | Broadcast a prepared wrap or unwrap | internal | no | yes | yes | - | 2023 | yes | none |
 | WalletWrapPrepare | Prepare a native / wrapped-native conversion | internal | no | no | yes | - | 2022 | yes | none |
-| lighter_core_onboarding_status | Check Lighter Core onboarding readiness | internal | yes | no | yes | - | 1135 | yes | none (read) |
-| lighter_rhc_onboarding_status | Check Robinhood Chain Lighter readiness | internal | yes | no | yes | - | 1134 | yes | none (read) |
+| lighter_core_onboarding_status | Check Lighter Core onboarding readiness | internal | yes | no | yes | - | 1432 | yes | none (read) |
+| lighter_rhc_onboarding_status | Check Robinhood Chain Lighter readiness | internal | yes | no | yes | - | 1430 | yes | none (read) |
 | vex_ToolDescribe | Read one tool's whole contract | internal | yes | no | yes | - | 1812 | yes | none |
 | vex_ToolSearch | Search the protocol tool catalog | internal | yes | no | yes | - | 1500 | yes | none |
 
@@ -145,7 +145,7 @@ free. Both texts live on the tool
 | lighter__account_get | Read a Lighter account | protocol | yes | no | no | - | 735 | - | none (read) |
 | lighter__account_onboarding_status | Check Lighter account onboarding readiness | protocol | yes | no | no | - | 1531 | - | none (read) |
 | lighter__api_keys_inspect | Inspect Lighter API-key registrations | protocol | yes | no | no | - | 518 | - | none (read) |
-| lighter__candles_list | Read Lighter market candles | protocol | yes | no | no | - | 483 | - | none (read) |
+| lighter__candles_list | Read Lighter market candles | protocol | yes | no | no | - | 709 | - | none (read) |
 | lighter__deposit | Execute an approved Lighter deposit | protocol | no | yes | no | - | 817 | - | - |
 | lighter__deposit_prepare | Prepare a Lighter deposit approval | protocol | no | no | no | - | 1005 | - | - |
 | lighter__deposit_status | Check a Lighter deposit's status | protocol | yes | no | no | - | 919 | - | none (read) |

@@ -623,7 +623,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Read public OHLCV candles for one Lighter market on Core or Robinhood Chain using epoch-millisecond start/end timestamps. Use when the user asks for chart history, recent price movement, volatility, or candle data after choosing a market id. Returns provider rows bounded by countBack and the newest projected rows, plus provider row count, requested window, resolution, countBack, and truncation disclosure. Read-only: no account lookup, signing, order, deposit, or withdrawal path.",
+      "Read public OHLCV candles for one Lighter market on Core or Robinhood Chain using epoch-millisecond start/end timestamps. Use when the user asks for chart history, recent price movement, volatility, or candle data after choosing a market id. A window holding more candles than countBack allows is narrowed to the newest countBack of them rather than rejected, so one call answers whatever window you ask for. Returns provider rows bounded by countBack and the newest projected rows, plus provider row count, requested window, the window actually read with a note when it was narrowed, resolution, countBack, and truncation disclosure. Read-only: no account lookup, signing, order, deposit, or withdrawal path.",
     mutating: false,
     actionKind: "read",
     params: [
@@ -655,7 +655,8 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
         key: "countBack",
         type: "number",
         description:
-          "Provider candle row cap for the requested range (max 500). Vex also shows at most "
+          "Provider candle row cap for the requested range (max 500, and 500 when omitted). "
+          + "A wider window is read back from its end to this many candles. Vex also shows at most "
           + `${LIGHTER_AGENT_CANDLE_OUTPUT_MAX} newest rows in the agent response.`,
       },
       {

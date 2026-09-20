@@ -1249,7 +1249,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1135,
+      "descriptionBytes": 1432,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -1281,7 +1281,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1134,
+      "descriptionBytes": 1430,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -5224,13 +5224,13 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 483,
+      "descriptionBytes": 709,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "countBack": {
-            "description": "Provider candle row cap for the requested range (max 500). Vex also shows at most 100 newest rows in the agent response.",
+            "description": "Provider candle row cap for the requested range (max 500, and 500 when omitted). A wider window is read back from its end to this many candles. Vex also shows at most 100 newest rows in the agent response.",
             "type": "number"
           },
           "dryRun": {

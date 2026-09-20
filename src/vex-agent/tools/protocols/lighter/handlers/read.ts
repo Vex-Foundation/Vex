@@ -1,6 +1,8 @@
 import {
   LIGHTER_API_KEY_INDEX_ALL,
   LIGHTER_CACHE_TTL_MS,
+  LIGHTER_CANDLE_RESOLUTION_MS,
+  LIGHTER_CANDLES_COUNT_MAX,
   LIGHTER_ENDPOINT_PATHS,
   LIGHTER_ENDPOINTS,
   type LighterEnvironment,
@@ -554,6 +556,40 @@ function managedReadinessRecoveryLeg(
   return {
     kind: "reconcile_trading_access",
     reason: "Reconcile the existing managed credential from durable vault and exact provider evidence; do not register a replacement key.",
+  };
+}
+
+/**
+ * The window one candle read may actually ask the provider for.
+ *
+ * Lighter reads a window AND a row cap, and rejects the call outright when the
+ * window holds more candles than the cap allows. A model that asks for a day of
+ * 5m candles without doing that arithmetic spent the whole call on the
+ * rejection and a second call recovering from it, which is two provider round
+ * trips for one answer. `count_back` already means "the newest N ending here",
+ * so the window is narrowed to what the cap can carry and the answer says so.
+ * An omitted cap takes the provider maximum rather than the requested span,
+ * which is the same rejection by another route.
+ */
+export function clampCandleWindow(input: {
+  readonly resolution: keyof typeof LIGHTER_CANDLE_RESOLUTION_MS;
+  readonly startTimestamp: number;
+  readonly endTimestamp: number;
+  readonly countBack: number | undefined;
+}): { readonly startTimestamp: number; readonly countBack: number; readonly narrowed: boolean } {
+  const resolutionMs = LIGHTER_CANDLE_RESOLUTION_MS[input.resolution];
+  const requested = Math.ceil((input.endTimestamp - input.startTimestamp) / resolutionMs);
+  const countBack = Math.max(
+    1,
+    Math.min(input.countBack ?? requested, LIGHTER_CANDLES_COUNT_MAX),
+  );
+  if (requested <= countBack) {
+    return { startTimestamp: input.startTimestamp, countBack, narrowed: false };
+  }
+  return {
+    startTimestamp: input.endTimestamp - resolutionMs * countBack,
+    countBack,
+    narrowed: true,
   };
 }
 
@@ -1456,14 +1492,20 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     const countBack = readCountBack(params);
     if (!countBack.ok) return fail(countBack.reason);
     const setTimestampToEnd = readSetTimestampToEnd(params);
+    const window = clampCandleWindow({
+      resolution: resolution.value,
+      startTimestamp: startTimestamp.value,
+      endTimestamp: endTimestamp.value,
+      countBack: countBack.value,
+    });
 
     try {
       const response = await getLighterClient().getCandles(environment.value, {
         marketId: marketId.value!,
         resolution: resolution.value,
-        startTimestamp: startTimestamp.value,
+        startTimestamp: window.startTimestamp,
         endTimestamp: endTimestamp.value,
-        ...(countBack.value === undefined ? {} : { countBack: countBack.value }),
+        countBack: window.countBack,
         ...(setTimestampToEnd === undefined ? {} : { setTimestampToEnd }),
       });
       return ok({
@@ -1472,9 +1514,9 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         ], {
           marketId: marketId.value,
           resolution: resolution.value,
-          startTimestamp: startTimestamp.value,
+          startTimestamp: window.startTimestamp,
           endTimestamp: endTimestamp.value,
-          countBack: countBack.value ?? null,
+          countBack: window.countBack,
         }),
         environment: environment.value,
         marketId: marketId.value,
@@ -1482,7 +1524,15 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           startTimestamp: startTimestamp.value,
           endTimestamp: endTimestamp.value,
         },
-        countBack: countBack.value ?? null,
+        readWindow: {
+          startTimestamp: window.startTimestamp,
+          endTimestamp: endTimestamp.value,
+        },
+        windowNarrowed: window.narrowed,
+        windowNote: window.narrowed
+          ? `The requested window holds more than ${window.countBack} ${resolution.value} candles, so the newest ${window.countBack} were read, from ${window.startTimestamp}. Ask again with an earlier endTimestamp for the rows before that.`
+          : null,
+        countBack: window.countBack,
         outputLimit: LIGHTER_AGENT_CANDLE_OUTPUT_MAX,
         ...projectCandles(response, LIGHTER_AGENT_CANDLE_OUTPUT_MAX),
       });
