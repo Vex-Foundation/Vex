@@ -69,7 +69,7 @@
 
 .lit-topbar-brand img { width: 20px; height: 20px; }
 .lit-topbar-brand b { font-size: 13px; font-weight: 650; }
-.lit-desk-topbar .lit-environment-switch { margin-left: 2px; }
+.lit-desk-topbar .lit-environment-switch { margin-right: 2px; }
 .lit-topbar-spacer { min-width: 4px; flex: 1 1 auto; }
 .lit-topbar-profile { width: 40px; flex: 0 0 40px; }
 .lit-topbar-profile [data-vex-area="sidebar-profile"] {

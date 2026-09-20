@@ -109,10 +109,6 @@ export function LighterSidebar({ collapsed, onToggleSidebar }: {
           <img src="./protocols/lighter.svg" alt="" width="20" height="20" />
           <b>Lighter</b>
         </span>
-        <EnvironmentSwitch
-          environment={environment}
-          onSelect={(next) => saveDesk({ environment: next, marketId: null })}
-        />
         <button
           type="button"
           className="lit-topbar-button"
@@ -132,6 +128,10 @@ export function LighterSidebar({ collapsed, onToggleSidebar }: {
           <span className="lit-topbar-button-label">New session</span>
         </button>
         <span className="lit-topbar-spacer" />
+        <EnvironmentSwitch
+          environment={environment}
+          onSelect={(next) => saveDesk({ environment: next, marketId: null })}
+        />
         <SidebarIconButton
           label="Settings"
           onClick={() => { setShellRoute({ kind: "settings", origin: null, section: null }); }}
