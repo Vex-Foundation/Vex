@@ -51,7 +51,9 @@ describe("LighterSidebar environment switch", () => {
         onToggleSidebar={vi.fn()}
         zenMode={false}
         zenAssistantOpen={false}
+        zenControlsOpen={false}
         onToggleZen={vi.fn()}
+        onToggleZenControls={vi.fn()}
         onToggleZenAssistant={vi.fn()}
       />,
     );
@@ -68,6 +70,7 @@ describe("LighterSidebar environment switch", () => {
 
   it("keeps Zen Mode centered and reveals the contextual Vex control only while focused", () => {
     const onToggleZen = vi.fn();
+    const onToggleZenControls = vi.fn();
     const onToggleZenAssistant = vi.fn();
     const { rerender } = render(
       <LighterSidebar
@@ -75,7 +78,9 @@ describe("LighterSidebar environment switch", () => {
         onToggleSidebar={vi.fn()}
         zenMode={false}
         zenAssistantOpen={false}
+        zenControlsOpen={false}
         onToggleZen={onToggleZen}
+        onToggleZenControls={onToggleZenControls}
         onToggleZenAssistant={onToggleZenAssistant}
       />,
     );
@@ -90,11 +95,32 @@ describe("LighterSidebar environment switch", () => {
         onToggleSidebar={vi.fn()}
         zenMode
         zenAssistantOpen={false}
+        zenControlsOpen={false}
         onToggleZen={onToggleZen}
+        onToggleZenControls={onToggleZenControls}
+        onToggleZenAssistant={onToggleZenAssistant}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Show Zen controls" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Exit Zen Mode" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ask Vex" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show Zen controls" }));
+    expect(onToggleZenControls).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <LighterSidebar
+        collapsed
+        onToggleSidebar={vi.fn()}
+        zenMode
+        zenAssistantOpen={false}
+        zenControlsOpen
+        onToggleZen={onToggleZen}
+        onToggleZenControls={onToggleZenControls}
         onToggleZenAssistant={onToggleZenAssistant}
       />,
     );
     expect(screen.getByRole("button", { name: "Exit Zen Mode" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Hide Zen controls" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Ask Vex" }));
     expect(onToggleZenAssistant).toHaveBeenCalledTimes(1);
   });

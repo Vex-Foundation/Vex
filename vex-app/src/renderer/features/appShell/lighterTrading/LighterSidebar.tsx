@@ -7,7 +7,9 @@
 import { useEffect, useId, useMemo, useRef, type JSX } from "react";
 import type { LighterTradingEnvironment } from "@shared/schemas/lighter-trading.js";
 import {
+  IconChevronDown,
   IconChevronLeft,
+  IconChevronUp,
   IconFullscreen,
   IconPanelLeft,
   IconPlus,
@@ -45,14 +47,18 @@ export function LighterSidebar({
   onToggleSidebar,
   zenMode,
   zenAssistantOpen,
+  zenControlsOpen,
   onToggleZen,
+  onToggleZenControls,
   onToggleZenAssistant,
 }: {
   readonly collapsed: boolean;
   readonly onToggleSidebar: () => void;
   readonly zenMode: boolean;
   readonly zenAssistantOpen: boolean;
+  readonly zenControlsOpen: boolean;
   readonly onToggleZen: () => void;
+  readonly onToggleZenControls: () => void;
   readonly onToggleZenAssistant: () => void;
 }): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
@@ -113,93 +119,121 @@ export function LighterSidebar({
       data-lighter-theme={theme}
       data-lighter-environment={environment}
       data-lighter-zen={zenMode ? "true" : undefined}
+      data-zen-controls={zenMode ? zenControlsOpen ? "open" : "closed" : undefined}
       aria-label="Lighter navigation"
     >
       <header className="lit-desk-topbar-header">
-        <button
-          type="button"
-          onClick={() => setRuntimeMode(returnMode)}
-          className="lit-topbar-button"
-        >
-          <IconChevronLeft size={15} />
-          <span className="lit-topbar-button-label">{returnMode === "studio" ? "Studio" : "Agent"}</span>
-        </button>
-        <span className="lit-topbar-divider" aria-hidden="true" />
-        <span className="lit-topbar-brand">
-          <img src="./protocols/lighter.svg" alt="" width="20" height="20" />
-          <b>Lighter</b>
-        </span>
-        {zenMode && activeMarket !== null ? (
-          <span className="lit-topbar-zen-market" aria-label={`Viewing ${activeMarket.symbol} ${resolution} chart`}>
-            {activeMarket.symbol} · {resolution}
-          </span>
-        ) : null}
-        <button
-          type="button"
-          className="lit-topbar-button lit-topbar-distraction"
-          aria-expanded={!collapsed}
-          aria-controls={drawerId}
-          onClick={onToggleSidebar}
-        >
-          <IconPanelLeft size={16} />
-          <span className="lit-topbar-button-label">Markets & sessions</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => openCreateSession()}
-          className="lit-topbar-primary lit-topbar-distraction"
-        >
-          <IconPlus size={15} />
-          <span className="lit-topbar-button-label">New session</span>
-        </button>
-        <div className="lit-topbar-center">
+        {zenMode && !zenControlsOpen ? (
           <button
             type="button"
-            className="lit-zen-toggle"
-            aria-label={zenMode ? "Exit Zen Mode" : "Enter Zen Mode"}
-            aria-pressed={zenMode}
-            title={zenMode ? "Exit Zen Mode · Esc" : "Open a distraction-free chart"}
-            onClick={onToggleZen}
+            className="lit-zen-controls-reveal"
+            aria-label="Show Zen controls"
+            aria-expanded="false"
+            title="Show Zen controls"
+            onClick={onToggleZenControls}
           >
-            <IconFullscreen size={15} />
-            <span>{zenMode ? "Exit Zen" : "Zen Mode"}</span>
+            <IconChevronDown size={14} />
           </button>
-        </div>
-        <span className="lit-topbar-spacer" />
-        {zenMode ? (
-          <button
-            type="button"
-            className="lit-topbar-ask"
-            aria-label={zenAssistantOpen ? "Close Vex" : "Ask Vex"}
-            aria-pressed={zenAssistantOpen}
-            title={zenAssistantOpen ? "Close Vex · Esc" : "Ask Vex about this chart · ⌘K"}
-            onClick={onToggleZenAssistant}
-          >
-            <VexMark size={14} />
-            <span>{zenAssistantOpen ? "Close Vex" : "Ask Vex"}</span>
-          </button>
-        ) : null}
-        <EnvironmentSwitch
-          environment={environment}
-          onSelect={(next) => saveDesk({ environment: next, marketId: null })}
-        />
-        <span className="lit-topbar-distraction">
-          <SidebarIconButton
-            label="Settings"
-            onClick={() => { setShellRoute({ kind: "settings", origin: null, section: null }); }}
-          >
-            <IconSettings size={16} />
-          </SidebarIconButton>
-        </span>
-        <SidebarIconButton
-          label={theme === "chronos" ? "Switch to the light theme" : "Switch to the dark theme"}
-          onClick={() => { setThemePreference(theme === "chronos" ? "celeris" : "chronos"); }}
-        >
-          {theme === "chronos" ? <IconThemeLight size={16} /> : <IconThemeDark size={16} />}
-        </SidebarIconButton>
-        <div className="lit-topbar-profile lit-topbar-distraction">
-          <SidebarProfile sidebarOpen={false} menuSide="bottom" />
-        </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => setRuntimeMode(returnMode)}
+              className="lit-topbar-button"
+            >
+              <IconChevronLeft size={15} />
+              <span className="lit-topbar-button-label">{returnMode === "studio" ? "Studio" : "Agent"}</span>
+            </button>
+            <span className="lit-topbar-divider" aria-hidden="true" />
+            <span className="lit-topbar-brand">
+              <img src="./protocols/lighter.svg" alt="" width="20" height="20" />
+              <b>Lighter</b>
+            </span>
+            {zenMode && activeMarket !== null ? (
+              <span className="lit-topbar-zen-market" aria-label={`Viewing ${activeMarket.symbol} ${resolution} chart`}>
+                {activeMarket.symbol} · {resolution}
+              </span>
+            ) : null}
+            <button
+              type="button"
+              className="lit-topbar-button lit-topbar-distraction"
+              aria-expanded={!collapsed}
+              aria-controls={drawerId}
+              onClick={onToggleSidebar}
+            >
+              <IconPanelLeft size={16} />
+              <span className="lit-topbar-button-label">Markets & sessions</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openCreateSession()}
+              className="lit-topbar-primary lit-topbar-distraction"
+            >
+              <IconPlus size={15} />
+              <span className="lit-topbar-button-label">New session</span>
+            </button>
+            <div className="lit-topbar-center">
+              <button
+                type="button"
+                className="lit-zen-toggle"
+                aria-label={zenMode ? "Exit Zen Mode" : "Enter Zen Mode"}
+                aria-pressed={zenMode}
+                title={zenMode ? "Exit Zen Mode · Esc" : "Open a distraction-free chart"}
+                onClick={onToggleZen}
+              >
+                <IconFullscreen size={15} />
+                <span>{zenMode ? "Exit Zen" : "Zen Mode"}</span>
+              </button>
+              {zenMode ? (
+                <button
+                  type="button"
+                  className="lit-zen-controls-hide"
+                  aria-label="Hide Zen controls"
+                  aria-expanded="true"
+                  title="Hide Zen controls · Esc"
+                  onClick={onToggleZenControls}
+                >
+                  <IconChevronUp size={14} />
+                </button>
+              ) : null}
+            </div>
+            <span className="lit-topbar-spacer" />
+            {zenMode ? (
+              <button
+                type="button"
+                className="lit-topbar-ask"
+                aria-label={zenAssistantOpen ? "Close Vex" : "Ask Vex"}
+                aria-pressed={zenAssistantOpen}
+                title={zenAssistantOpen ? "Close Vex · Esc" : "Ask Vex about this chart · ⌘K"}
+                onClick={onToggleZenAssistant}
+              >
+                <VexMark size={14} />
+                <span>{zenAssistantOpen ? "Close Vex" : "Ask Vex"}</span>
+              </button>
+            ) : null}
+            <EnvironmentSwitch
+              environment={environment}
+              onSelect={(next) => saveDesk({ environment: next, marketId: null })}
+            />
+            <span className="lit-topbar-distraction">
+              <SidebarIconButton
+                label="Settings"
+                onClick={() => { setShellRoute({ kind: "settings", origin: null, section: null }); }}
+              >
+                <IconSettings size={16} />
+              </SidebarIconButton>
+            </span>
+            <SidebarIconButton
+              label={theme === "chronos" ? "Switch to the light theme" : "Switch to the dark theme"}
+              onClick={() => { setThemePreference(theme === "chronos" ? "celeris" : "chronos"); }}
+            >
+              {theme === "chronos" ? <IconThemeLight size={16} /> : <IconThemeDark size={16} />}
+            </SidebarIconButton>
+            <div className="lit-topbar-profile lit-topbar-distraction">
+              <SidebarProfile sidebarOpen={false} menuSide="bottom" />
+            </div>
+          </>
+        )}
       </header>
 
       {!collapsed ? (

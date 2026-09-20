@@ -152,6 +152,7 @@ function ShellFrame({
   const setActiveProjectId = useUiStore((s) => s.setActiveProjectId);
   const [lighterZen, setLighterZen] = useState(false);
   const [zenAssistantOpen, setZenAssistantOpen] = useState(false);
+  const [zenControlsOpen, setZenControlsOpen] = useState(false);
 
   const frameRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState(() =>
@@ -188,11 +189,13 @@ function ShellFrame({
     if (lighter) return;
     setLighterZen(false);
     setZenAssistantOpen(false);
+    setZenControlsOpen(false);
   }, [lighter]);
 
   const setZenMode = useCallback((next: boolean): void => {
     setLighterZen(next);
     setZenAssistantOpen(false);
+    setZenControlsOpen(false);
     setSidebarNarrowExpanded(false);
   }, [setSidebarNarrowExpanded]);
 
@@ -215,11 +218,12 @@ function ShellFrame({
       if (event.key !== "Escape" || event.defaultPrevented) return;
       event.preventDefault();
       if (zenAssistantOpen) setZenAssistantOpen(false);
+      else if (zenControlsOpen) setZenControlsOpen(false);
       else setZenMode(false);
     };
     window.addEventListener("keydown", onZenKey);
     return () => window.removeEventListener("keydown", onZenKey);
-  }, [lighter, lighterZen, setZenMode, zenAssistantOpen]);
+  }, [lighter, lighterZen, setZenMode, zenAssistantOpen, zenControlsOpen]);
 
   const narrow = shouldAutoCollapseSidebar(viewport);
   useEffect(() => {
@@ -316,13 +320,16 @@ function ShellFrame({
       className="vex-shell-frame relative z-10 h-full min-w-0 flex-1"
       style={{
         gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${rightTrack}px`,
-        paddingTop: lighter ? LIGHTER_TOPBAR_HEIGHT : undefined,
+        paddingTop: lighter && !lighterZen ? LIGHTER_TOPBAR_HEIGHT : undefined,
       }}
       data-vex-area="shell-frame"
       data-dragging={dragging || undefined}
       data-vex-sidebar-collapsed={sidebarCollapsed || undefined}
       data-lighter-zen={lighter && lighterZen ? "true" : undefined}
       data-lighter-zen-assistant={lighter && zenAssistantOpen ? "open" : undefined}
+      data-lighter-zen-controls={lighter && lighterZen
+        ? zenControlsOpen ? "open" : "closed"
+        : undefined}
     >
       {/* G10 - fixed strip; only an actual outage renders it. */}
       <ConnectionBanner
@@ -335,7 +342,9 @@ function ShellFrame({
           onToggleSidebar={toggleSidebar}
           zenMode={lighterZen}
           zenAssistantOpen={zenAssistantOpen}
+          zenControlsOpen={zenControlsOpen}
           onToggleZen={() => setZenMode(!lighterZen)}
+          onToggleZenControls={() => setZenControlsOpen((current) => !current)}
           onToggleZenAssistant={() => {
             if (zenAssistantOpen) setZenAssistantOpen(false);
             else openZenAssistant();

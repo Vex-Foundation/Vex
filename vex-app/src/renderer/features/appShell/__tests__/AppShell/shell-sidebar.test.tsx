@@ -51,14 +51,18 @@ vi.mock("../../lighterTrading/LighterSidebar.js", () => ({
     onToggleSidebar,
     zenMode,
     zenAssistantOpen,
+    zenControlsOpen,
     onToggleZen,
+    onToggleZenControls,
     onToggleZenAssistant,
   }: {
     readonly collapsed: boolean;
     readonly onToggleSidebar: () => void;
     readonly zenMode: boolean;
     readonly zenAssistantOpen: boolean;
+    readonly zenControlsOpen: boolean;
     readonly onToggleZen: () => void;
+    readonly onToggleZenControls: () => void;
     readonly onToggleZenAssistant: () => void;
   }) => (
     <aside
@@ -70,18 +74,25 @@ vi.mock("../../lighterTrading/LighterSidebar.js", () => ({
         aria-label={collapsed ? "Open markets and sessions" : "Close markets and sessions"}
         onClick={onToggleSidebar}
       />
-      <button
-        type="button"
-        aria-label={zenMode ? "Exit Zen Mode" : "Enter Zen Mode"}
-        onClick={onToggleZen}
-      />
-      {zenMode ? (
+      {!zenMode ? (
         <button
           type="button"
-          aria-label={zenAssistantOpen ? "Close Vex" : "Ask Vex"}
-          onClick={onToggleZenAssistant}
+          aria-label="Enter Zen Mode"
+          onClick={onToggleZen}
         />
-      ) : null}
+      ) : !zenControlsOpen ? (
+        <button type="button" aria-label="Show Zen controls" onClick={onToggleZenControls} />
+      ) : (
+        <>
+          <button type="button" aria-label="Exit Zen Mode" onClick={onToggleZen} />
+          <button type="button" aria-label="Hide Zen controls" onClick={onToggleZenControls} />
+          <button
+            type="button"
+            aria-label={zenAssistantOpen ? "Close Vex" : "Ask Vex"}
+            onClick={onToggleZenAssistant}
+          />
+        </>
+      )}
     </aside>
   ),
 }));
@@ -737,10 +748,14 @@ describe("AppShell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Enter Zen Mode" }));
     expect(frame?.getAttribute("data-lighter-zen")).toBe("true");
+    expect(frame?.getAttribute("data-lighter-zen-controls")).toBe("closed");
+    expect(frame?.style.paddingTop).toBe("");
     expect(frame?.style.gridTemplateColumns).toBe("0px minmax(0, 1fr) 0px");
     expect(screen.getByTestId("lighter-center").getAttribute("data-zen-mode")).toBe("true");
     expect(view.container.querySelector("[data-vex-area='book-panel']")?.getAttribute("data-vex-book-open")).toBe("false");
 
+    fireEvent.click(screen.getByRole("button", { name: "Show Zen controls" }));
+    expect(frame?.getAttribute("data-lighter-zen-controls")).toBe("open");
     fireEvent.click(screen.getByRole("button", { name: "Ask Vex" }));
     expect(frame?.getAttribute("data-lighter-zen-assistant")).toBe("open");
     expect(view.container.querySelector("[data-vex-area='book-panel']")?.getAttribute("data-vex-book-open")).toBe("true");
@@ -748,6 +763,9 @@ describe("AppShell", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(frame?.getAttribute("data-lighter-zen")).toBe("true");
     expect(frame?.hasAttribute("data-lighter-zen-assistant")).toBe(false);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(frame?.getAttribute("data-lighter-zen")).toBe("true");
+    expect(frame?.getAttribute("data-lighter-zen-controls")).toBe("closed");
     fireEvent.keyDown(window, { key: "Escape" });
     expect(frame?.hasAttribute("data-lighter-zen")).toBe(false);
     expect(frame?.style.gridTemplateColumns).not.toBe("0px minmax(0, 1fr) 0px");

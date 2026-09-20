@@ -7,6 +7,7 @@
   background: var(--lit-market-bar-surface);
   color: var(--lit-ink);
   box-shadow: inset 0 -1px 0 var(--lit-line);
+  transition: background-color 140ms ease, box-shadow 140ms ease;
 }
 
 .lit-desk-topbar-header {
@@ -79,11 +80,13 @@
   top: 50%;
   left: 50%;
   display: flex;
+  gap: 4px;
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
 
 .lit-zen-toggle,
+.lit-zen-controls-hide,
 .lit-topbar-ask {
   display: inline-flex;
   min-height: 30px;
@@ -102,8 +105,10 @@
 }
 
 .lit-zen-toggle { pointer-events: auto; }
+.lit-zen-controls-hide { width: 30px; padding-inline: 0; pointer-events: auto; }
 
 .lit-zen-toggle:hover,
+.lit-zen-controls-hide:hover,
 .lit-topbar-ask:hover {
   border-color: var(--lit-focus);
   background: var(--lit-hover);
@@ -128,6 +133,43 @@
 }
 
 .lit-desk-topbar[data-lighter-zen] .lit-topbar-distraction { display: none; }
+
+/* The chart owns the whole viewport in Zen. Its shell controls are progressive
+ * disclosure: the closed state contributes only this small top-edge handle,
+ * and the full bar returns as an overlay without changing the chart's bounds. */
+.lit-desk-topbar[data-lighter-zen][data-zen-controls="closed"] {
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.lit-zen-controls-reveal {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  display: inline-flex;
+  width: 34px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--lit-line-strong);
+  border-radius: var(--lit-radius);
+  background: var(--lit-panel);
+  color: var(--lit-ink-secondary);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--lit-bg) 34%, transparent);
+  opacity: 0.82;
+  pointer-events: auto;
+  transform: translateX(-50%);
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease, opacity 140ms ease;
+}
+
+.lit-zen-controls-reveal:hover,
+.lit-zen-controls-reveal:focus-visible {
+  border-color: var(--lit-focus);
+  background: var(--lit-hover);
+  color: var(--lit-ink);
+  opacity: 1;
+}
 
 .lit-topbar-profile { width: 40px; flex: 0 0 40px; }
 .lit-topbar-profile [data-vex-area="sidebar-profile"] {
