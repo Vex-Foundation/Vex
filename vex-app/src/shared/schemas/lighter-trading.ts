@@ -119,7 +119,7 @@ export const lighterTradingSnapshotInputSchema = z
   .strict();
 
 // Older-history page for the chart's scroll-back backfill. `count` is bounded
-// by the provider read (300 per request); `endTimestamp` is the exclusive
+// by the provider read (500 per request); `endTimestamp` is the exclusive
 // upper bound in ms, i.e. the oldest loaded candle's open minus one.
 export const lighterTradingCandleHistoryInputSchema = z
   .object({
@@ -127,7 +127,7 @@ export const lighterTradingCandleHistoryInputSchema = z
     marketId: marketIdSchema,
     resolution: lighterTradingResolutionSchema,
     endTimestamp: z.number().int().nonnegative(),
-    count: z.number().int().min(1).max(300),
+    count: z.number().int().min(1).max(500),
   })
   .strict();
 

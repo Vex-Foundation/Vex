@@ -34,20 +34,20 @@ function candles(count: number, start = 1_700_000_000): LighterTradingCandle[] {
 beforeEach(() => { vi.clearAllMocks(); harness.rangeHandlers.length = 0; harness.createSeriesMarkers.mockReturnValue(harness.markers); harness.range.mockReturnValue({ from: 400, to: 506 }); });
 afterEach(cleanup);
 describe("Chart timeline continuity", () => {
-  it("prunes native candle and volume history at 5000 bars without displacing live view", () => {
+  it("keeps native history beyond 5000 bars and follows a new live bar", () => {
     harness.range.mockReturnValue({ from: 4900, to: 5006 });
     const view = render(<MarketChart candles={candles(5000)} symbol="ETH" theme="chronos" marketId={1} resolution="1m" />);
     view.rerender(<MarketChart candles={candles(5001)} symbol="ETH" theme="chronos" marketId={1} resolution="1m" />);
-    expect(harness.candles.setData).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({ time: 1_700_000_060 })]));
     expect(requireValue(harness.candles.setData.mock.lastCall)[0]).toHaveLength(5000);
-    expect(requireValue(harness.volume.setData.mock.lastCall)[0]).toHaveLength(5000);
-    expect(harness.setRange).toHaveBeenLastCalledWith({ from: 4900, to: 5006 });
+    expect(harness.candles.update).toHaveBeenLastCalledWith(expect.objectContaining({ time: 1_700_300_000 }), false);
+    expect(harness.volume.update).toHaveBeenLastCalledWith(expect.objectContaining({ time: 1_700_300_000 }), false);
+    expect(harness.setRange).toHaveBeenLastCalledWith({ from: 4901, to: 5007 });
   });
-  it("keeps historical candle timestamps under the same viewport after pruning", () => {
+  it("keeps a historical viewport stable when a live bar is appended", () => {
     const view = render(<MarketChart candles={candles(5000)} symbol="ETH" theme="chronos" />);
     harness.range.mockReturnValue({ from: 50, to: 100 });
     view.rerender(<MarketChart candles={candles(5001)} symbol="ETH" theme="chronos" />);
-    expect(harness.setRange).toHaveBeenLastCalledWith({ from: 49, to: 99 });
+    expect(harness.setRange).toHaveBeenLastCalledWith({ from: 50, to: 100 });
   });
   it("rebuilds the series and keeps the viewport when older history is prepended", () => {
     const view = render(<MarketChart candles={candles(100)} symbol="ETH" theme="chronos" marketId={1} resolution="1m" />);

@@ -126,7 +126,7 @@ describe("useLighterCandleStream", () => {
 
     act(() => { result.current.loadOlder(); result.current.loadOlder(); });
     expect(history).toHaveBeenCalledTimes(1);
-    expect(requireValue(history.mock.calls[0])[0]).toMatchObject({ endTimestamp: 1_719_999_999_999, count: 300 });
+    expect(requireValue(history.mock.calls[0])[0]).toMatchObject({ endTimestamp: 1_719_999_999_999, count: 500 });
     expect(result.current.history).toBe("loading");
 
     await waitFor(() => expect(result.current.history).toBe("idle"));

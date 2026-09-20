@@ -77,6 +77,7 @@ export function lighterTradingReadFailureOf(cause: unknown): LighterTradingReadF
 }
 
 const SNAPSHOT_CANDLE_COUNT = 300;
+const HISTORY_CANDLE_PAGE_COUNT_MAX = 500;
 const SNAPSHOT_BOOK_ROWS = 24;
 const SNAPSHOT_TRADE_ROWS = 30;
 const ALL_MARKET_DETAILS_ID = 255;
@@ -338,6 +339,7 @@ export function projectLighterInternalCandles(
   resolution: LighterStreamCandleResolution,
   source: LighterTradingStreamCandle["source"],
   receivedAt: number,
+  limit = SNAPSHOT_CANDLE_COUNT,
 ): LighterInternalCandle[] {
   const byTimestamp = new Map<number, LighterInternalCandle>();
   for (const candle of candles) {
@@ -367,7 +369,7 @@ export function projectLighterInternalCandles(
   }
   return [...byTimestamp.values()]
     .sort((left, right) => left.timestamp - right.timestamp)
-    .slice(-SNAPSHOT_CANDLE_COUNT);
+    .slice(-limit);
 }
 
 export function projectSnapshotCandles(
@@ -410,7 +412,7 @@ export async function readLighterTradingCandleHistory(
 ): Promise<LighterInternalCandle[]> {
   const target = canonicalLighterCandleTarget(input);
   const count = input.count ?? SNAPSHOT_CANDLE_COUNT;
-  if (!Number.isSafeInteger(count) || count < 1 || count > SNAPSHOT_CANDLE_COUNT) {
+  if (!Number.isSafeInteger(count) || count < 1 || count > HISTORY_CANDLE_PAGE_COUNT_MAX) {
     throw new Error("Lighter candle history count is out of bounds.");
   }
   const receivedAt = now();
@@ -433,6 +435,7 @@ export async function readLighterTradingCandleHistory(
     target.resolution,
     "rest_snapshot",
     receivedAt,
+    count,
   );
 }
 

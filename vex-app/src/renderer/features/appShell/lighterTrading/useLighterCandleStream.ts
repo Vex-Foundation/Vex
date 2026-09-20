@@ -31,7 +31,7 @@ interface InternalStreamState {
 }
 
 /** One provider read; the same bound `readLighterTradingCandleHistory` enforces. */
-const HISTORY_PAGE_COUNT = 300;
+const HISTORY_PAGE_COUNT = 500;
 
 function restRows(
   candles: readonly LighterTradingCandle[],
@@ -198,9 +198,8 @@ export function useLighterCandleStream({
   const earliestRef = useRef<LighterTradingCandle | undefined>(currentCandles[0]);
   earliestRef.current = currentCandles[0];
   const inFlightRef = useRef<{ readonly cancel: () => void } | null>(null);
-  // The earliest bar the last page was requested from. When a page arrives and
-  // the earliest bar still has not moved, the adapter's bound released it: there
-  // is no further back to go for this identity.
+  // The earliest bar the last page was requested from. A successful page must
+  // move this boundary; repeating it means the provider has no earlier rows.
   const lastRequestedRef = useRef<{ readonly identity: string; readonly timestamp: number } | null>(null);
   const [history, setHistory] = useState<{
     readonly identity: string;

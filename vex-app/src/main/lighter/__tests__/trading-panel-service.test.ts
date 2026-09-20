@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { lighterTradingSnapshotSchema } from "@shared/schemas/lighter-trading.js";
 import {
   projectLighterTradingMarket,
+  readLighterTradingCandleHistory,
   readLighterTradingMarketList,
   readLighterTradingMarketSnapshot,
   readLighterTradingSnapshot,
@@ -303,6 +304,42 @@ describe("Lighter trading panel service", () => {
       resolution: "15m",
       setTimestampToEnd: false,
     }), { signal: undefined });
+  });
+
+  it("returns the provider's full 500-candle history page", async () => {
+    const client = fakeClient();
+    const endTimestamp = 1_787_530_000_000;
+    const rows = Array.from({ length: 500 }, (_, index) => ({
+      t: endTimestamp - (500 - index) * 60_000,
+      o: 4_000 + index,
+      h: 4_002 + index,
+      l: 3_999 + index,
+      c: 4_001 + index,
+      v: index,
+      V: index * 4_000,
+      i: String(index + 1),
+    }));
+    vi.mocked(client.getCandles).mockResolvedValueOnce({ code: 200, r: "1m", c: rows });
+
+    const result = await readLighterTradingCandleHistory({
+      environment: "rhc",
+      marketId: 7,
+      resolution: "1m",
+      count: 500,
+      endTimestamp,
+    }, client, () => endTimestamp);
+
+    expect(result).toHaveLength(500);
+    expect(result[0]?.timestamp).toBe(rows[0]?.t);
+    expect(result.at(-1)?.timestamp).toBe(rows.at(-1)?.t);
+    expect(client.getCandles).toHaveBeenCalledWith("rhc", {
+      marketId: 7,
+      resolution: "1m",
+      startTimestamp: endTimestamp - 500 * 60_000,
+      endTimestamp,
+      countBack: 500,
+      setTimestampToEnd: false,
+    }, { signal: undefined });
   });
 
   it("hydrates the IPC market snapshot without a duplicate candle-history gate", async () => {

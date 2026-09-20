@@ -364,7 +364,7 @@ describe("lighterTrading IPC", () => {
     mocks.readHistory.mockResolvedValueOnce([candle]);
 
     const result = await call<{ candles: unknown[] }>(CH.lighterTrading.getCandleHistory, {
-      environment: "rhc", marketId: 7, resolution: "1m", endTimestamp: 1_720_000_059_999, count: 300,
+      environment: "rhc", marketId: 7, resolution: "1m", endTimestamp: 1_720_000_059_999, count: 500,
     });
 
     expect(result.ok).toBe(true);
@@ -373,13 +373,13 @@ describe("lighterTrading IPC", () => {
       lastTradeId: "9", providerResolution: "1m", source: "rest_snapshot",
     }]);
     expect(mocks.readHistory).toHaveBeenCalledWith(
-      { environment: "rhc", marketId: 7, resolution: "1m", endTimestamp: 1_720_000_059_999, count: 300 },
+      { environment: "rhc", marketId: 7, resolution: "1m", endTimestamp: 1_720_000_059_999, count: 500 },
       undefined, undefined, expect.any(AbortSignal),
     );
 
     mocks.readHistory.mockClear();
     const refused = await call(CH.lighterTrading.getCandleHistory, {
-      environment: "rhc", marketId: 7, resolution: "1m", endTimestamp: 1, count: 301,
+      environment: "rhc", marketId: 7, resolution: "1m", endTimestamp: 1, count: 501,
     });
     expect(refused.error.code).toBe("validation.invalid_input");
     expect(mocks.readHistory).not.toHaveBeenCalled();

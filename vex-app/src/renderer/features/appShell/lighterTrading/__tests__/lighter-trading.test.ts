@@ -137,6 +137,23 @@ describe("Light it up chart adapter", () => {
     expect(formatLocalChartTick(time, 2)).toMatch(/^[A-Z][a-z]{2} \d{1,2}$/);
   });
 
+  it("keeps the left edge pinned to loaded history while older pages arrive", () => {
+    render(createElement(MarketChart, {
+      candles: [candle()],
+      symbol: "BTC",
+      theme: "chronos",
+      marketId: 1,
+      resolution: "15m",
+    }));
+
+    expect(chartHarness.createChart).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        timeScale: expect.objectContaining({ fixLeftEdge: true }),
+      }),
+    );
+  });
+
   it("upserts equal-time candles with lossless provider ids and rejects stale echoes", () => {
     const enormous = "90071992547409931234567890";
     expect(compareCandleTradeIds(enormous, "90071992547409931234567889")).toBe(1);
@@ -161,15 +178,15 @@ describe("Light it up chart adapter", () => {
     expect(upsertChartCandles([equalStream], [rest])).toEqual([rest]);
   });
 
-  it("bounds long-running chart history to the newest 5000 provider candles", () => {
+  it("keeps provider history beyond the former 5000-candle cutoff", () => {
     const rows = Array.from({ length: 5020 }, (_, index) => candle({
       timestamp: 1_720_000_000 + index * 60,
       close: 100 + index,
       high: 101 + index,
     }));
     const merged = upsertChartCandles([], rows);
-    expect(merged).toHaveLength(5000);
-    expect(merged[0]?.timestamp).toBe(rows[20]?.timestamp);
+    expect(merged).toHaveLength(5020);
+    expect(merged[0]?.timestamp).toBe(rows[0]?.timestamp);
     expect(merged.at(-1)?.timestamp).toBe(rows.at(-1)?.timestamp);
   });
 
