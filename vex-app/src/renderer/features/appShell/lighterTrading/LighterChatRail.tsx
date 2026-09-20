@@ -1,6 +1,10 @@
 import { useEffect, type JSX } from "react";
 import { IconArrowUpRight } from "../../../components/icons/index.js";
-import { useLighterTradingAccount, useLighterTradingMarkets } from "../../../lib/api/lighter-trading.js";
+import {
+  useLighterTradingAccount,
+  useLighterTradingMarkets,
+  useLighterTradingSnapshot,
+} from "../../../lib/api/lighter-trading.js";
 import { useSessionsList } from "../../../lib/api/sessions.js";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 import { useUiStore } from "../../../stores/uiStore.js";
@@ -14,6 +18,7 @@ import {
   type DeskContextScope,
 } from "./desk-context.js";
 import { useDeskScopeStore } from "./desk-scope.js";
+import { marketSectionFor } from "./market-classification.js";
 import { publishDeskSend } from "./desk-send-intent.js";
 import { latestDeskSession } from "./desk-session.js";
 
@@ -44,16 +49,37 @@ export function LighterChatRail(): JSX.Element {
     market === null ? undefined : state.charts[deskChartScopeKey(environment, market.marketId)],
   );
   // The values already on the desk travel with the scope, so a plain question
-  // is answered from them instead of from a round of provider reads. The list
-  // carries the provider's own retrieval time, which is what the agent is told.
-  const live = market === null || marketList === null
+  // is answered from them instead of from a round of provider reads.
+  //
+  // The desk's own snapshot is read first and the market list second. The list
+  // joins its statistics from a SEPARATE all-market detail call that is
+  // allowed to fail (see `readLighterTradingMarketList`), and when it does,
+  // every market in the list comes back with null statistics: a desk showing
+  // a price in its market bar was handing the agent nothing at all. The
+  // snapshot also carries the day's range, which the list does not.
+  //
+  // This is the same query key the desk already uses, so it shares that cache
+  // rather than issuing a second read, and it is held to the same condition.
+  const snapshotQuery = useLighterTradingSnapshot(
+    environment,
+    marketId,
+    resolution,
+    market !== null && marketSectionFor(environment, market) !== "stocks",
+  );
+  const snapshot = snapshotQuery.data?.ok === true ? snapshotQuery.data.data : null;
+  const valuesRetrievedAt = snapshot?.retrievedAt ?? marketList?.retrievedAt ?? null;
+  const live = market === null || valuesRetrievedAt === null
     ? undefined
     : {
-      lastTradePrice: market.statistics?.lastTradePrice ?? null,
-      priceChange24h: market.statistics?.priceChange24h ?? null,
-      quoteVolume24h: market.activity24h.quoteVolume,
+      lastTradePrice: snapshot?.detail.lastTradePrice ?? market.statistics?.lastTradePrice ?? null,
+      priceChange24h: snapshot?.detail.daily.priceChange ?? market.statistics?.priceChange24h ?? null,
+      dayHigh: snapshot?.detail.daily.priceHigh ?? null,
+      dayLow: snapshot?.detail.daily.priceLow ?? null,
+      quoteVolume24h: snapshot?.detail.daily.quoteTokenVolume ?? market.activity24h.quoteVolume,
+      // REST reports perp open interest in base size; the list already guards
+      // that, so it stays the one source for it.
       openInterestBase: market.statistics?.openInterestBase ?? null,
-      retrievedAt: marketList.retrievedAt,
+      retrievedAt: valuesRetrievedAt,
     };
   const scope: DeskContextScope | null = market === null
     ? null

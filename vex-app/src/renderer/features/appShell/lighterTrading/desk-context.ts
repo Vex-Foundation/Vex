@@ -25,6 +25,8 @@ export interface DeskMarketState {
   readonly lastTradePrice: number | null;
   /** Percent, as the picker and sidebar render it. */
   readonly priceChange24h: number | null;
+  readonly dayHigh: number | null;
+  readonly dayLow: number | null;
   readonly quoteVolume24h: number | null;
   readonly openInterestBase: number | null;
   /** Provider retrieval time for these values, epoch milliseconds. */
@@ -65,6 +67,9 @@ export function describeMarketState(
   if (live.lastTradePrice !== null) parts.push(`last ${live.lastTradePrice.toFixed(market.decimals.price)}`);
   if (live.priceChange24h !== null) {
     parts.push(`24h change ${live.priceChange24h > 0 ? "+" : ""}${live.priceChange24h.toFixed(2)}%`);
+  }
+  if (live.dayHigh !== null && live.dayLow !== null) {
+    parts.push(`24h range ${live.dayLow.toFixed(market.decimals.price)} to ${live.dayHigh.toFixed(market.decimals.price)}`);
   }
   if (live.quoteVolume24h !== null) parts.push(`24h quote volume ${Math.round(live.quoteVolume24h)}`);
   if (live.openInterestBase !== null) parts.push(`open interest ${live.openInterestBase} base`);
@@ -119,12 +124,25 @@ const READ_BUDGET =
   "Answer from those values. Read Lighter only for what they do not cover (candle history, order book depth, recent trades, account state), and always re-read before preparing or changing an order.";
 
 /**
+ * The line a trader actually reads first. A page of levels with no call is
+ * work the reader has to finish themselves, so every desk answer ends by
+ * saying where it stands in plain words, with the level that would change it.
+ * It is a read, not an instruction: nothing here loosens the execution gate,
+ * which is why every prompt still carries {@link NO_EXECUTION}.
+ */
+const DESK_CLOSE =
+  "End with one line headed \"Read:\" giving the plain-words stance now"
+  + " (buy zone, sell zone, hold, or stand aside), the level it hangs on,"
+  + " and what would flip it.";
+
+/**
  * House style for a desk answer. The quick prompts each carry their own cap;
  * a typed question carries none, which is how one word ("analyze") bought a
  * full report. Numbers first, prose only where it decides something.
  */
 const DESK_STYLE =
-  "Answer in under 150 words unless asked for more: the levels and numbers first, one line of reasoning each, no preamble and no summary of what you read.";
+  "Answer in under 150 words unless asked for more: the levels and numbers first,"
+  + ` one line of reasoning each, no preamble and no summary of what you read. ${DESK_CLOSE}`;
 
 export function buildDeskContext({ environment, market, resolution, chart, live }: DeskContextScope): string {
   const notes = describeChartNotes(chart, market);
@@ -139,6 +157,9 @@ export function buildDeskContext({ environment, market, resolution, chart, live 
       ? "Refresh official read-only Lighter data for this exact scope before relying on changing values."
       : READ_BUDGET,
     ...(notes === "" ? [] : [notes]),
+    // One house style for every desk message: the prompts used to carry their
+    // own caps, which is how a typed question ended up with none.
+    DESK_STYLE,
   ].join(" ");
 }
 
@@ -156,19 +177,19 @@ export function deskStarterPrompts(scope: DeskContextScope): readonly DeskStarte
       code: "Chart",
       label: "Mark the chart",
       detail: "Key levels and what invalidates them",
-      message: `${context} Mark this chart: the key levels and the price that invalidates them. Levels first, then one line each on why. Mark inference as inference. Under 120 words. ${NO_EXECUTION}`,
+      message: withDeskScope(`Mark this chart: the key levels and the price that invalidates them. Levels first, then one line each on why. Mark inference as inference. ${NO_EXECUTION}`, context),
     },
     {
       code: "Flow",
       label: "Read the tape",
       detail: "Where the pressure and the resting size sit",
-      message: `${context} Read the order book and recent trades: where the pressure sits and whether size is being absorbed. Lead with the answer. Under 120 words. ${NO_EXECUTION}`,
+      message: withDeskScope(`Read the order book and recent trades: where the pressure sits and whether size is being absorbed. Lead with the answer. ${NO_EXECUTION}`, context),
     },
     {
       code: "Risk",
       label: "Build the play",
       detail: "Entry trigger, stop, target, risk-to-reward",
-      message: `${context} Build one risk-managed play as a short list: entry trigger, invalidation, stop, target, risk-to-reward. Under 150 words. ${NO_EXECUTION}`,
+      message: withDeskScope(`Build one risk-managed play as a short list: entry trigger, invalidation, stop, target, risk-to-reward. ${NO_EXECUTION}`, context),
     },
   ];
 }
@@ -195,6 +216,32 @@ export function withDeskScope(message: string, tag: string): string {
   return `${message}\n\n${tag}`;
 }
 
+/**
+ * The openings of the two desk context blocks. Both are appended after a blank
+ * line, which is what lets a transcript show the question and hide the scope.
+ */
+const DESK_CONTEXT_OPENINGS = [
+  "Lighter desk scope:",
+  "Use this exact Lighter scope:",
+] as const;
+
+/**
+ * One desk message as the trader should READ it: their question, without the
+ * scope, values and house style the desk attached for the agent. The block is
+ * only ever appended after a blank line, so nothing a trader typed is at risk
+ * unless they typed the opening themselves at the start of a paragraph.
+ *
+ * Display only. What was sent is unchanged, and the transcript row still holds
+ * the full message.
+ */
+export function deskMessageForDisplay(content: string): string {
+  for (const opening of DESK_CONTEXT_OPENINGS) {
+    const marker = content.indexOf(`\n\n${opening}`);
+    if (marker !== -1) return content.slice(0, marker).trimEnd();
+  }
+  return content;
+}
+
 /** The chip's label: `Core · BTC · 15m`. */
 export function deskScopeLabel({ environment, market, resolution }: DeskContextScope): string {
   return `${LIGHTER_ENVIRONMENT_SHORT_LABELS[environment]} · ${market.symbol} · ${resolution}`;
@@ -217,19 +264,21 @@ export function deskQuickPrompts(
 ): readonly DeskQuickPrompt[] {
   const context = buildDeskContext(scope);
   if (position === null) {
-    const plan = (side: "long" | "short"): string =>
-      `${context} Plan a ${side} risking 1% of my available Lighter balance. List the entry trigger, stop, target, risk-to-reward, and the size that keeps the loss at the stop to 1%. Under 150 words. ${NO_EXECUTION}`;
+    const plan = (side: "long" | "short"): string => withDeskScope(
+      `Plan a ${side} risking 1% of my available Lighter balance. List the entry trigger, stop, target, risk-to-reward, and the size that keeps the loss at the stop to 1%. ${NO_EXECUTION}`,
+      context,
+    );
     return [
-      { label: "Analyze chart", message: `${context} The key levels on this chart and the price that invalidates them. Levels first. Under 120 words. ${NO_EXECUTION}` },
-      { label: "Find liquidity", message: `${context} Where is the liquidity? Read the order book and recent trades for resting size and likely stop clusters. Under 120 words. ${NO_EXECUTION}` },
+      { label: "Analyze chart", message: withDeskScope(`The key levels on this chart and the price that invalidates them. Levels first. ${NO_EXECUTION}`, context) },
+      { label: "Find liquidity", message: withDeskScope(`Where is the liquidity? Read the order book and recent trades for resting size and likely stop clusters. ${NO_EXECUTION}`, context) },
       { label: "Plan long · 1%", message: plan("long") },
       { label: "Plan short · 1%", message: plan("short") },
     ];
   }
   const held = `I am ${position.side} ${position.size} ${position.symbol}${position.entryPrice === null ? "" : ` from ${position.entryPrice}`}.`;
   return [
-    { label: "Should I trim?", message: `${context} ${held} Should I trim? Answer first, then the two things that decide it. Under 120 words. ${NO_EXECUTION}` },
-    { label: "Set a protective stop", message: `${context} ${held} Give a protective stop and a take profit as exact trigger prices, one line of reasoning each. ${NO_EXECUTION} I will load them into the ticket myself.` },
-    { label: "What invalidates this?", message: `${context} ${held} Name the price that invalidates this position and what to watch before it. Under 100 words. ${NO_EXECUTION}` },
+    { label: "Should I trim?", message: withDeskScope(`${held} Should I trim? Answer first, then the two things that decide it. ${NO_EXECUTION}`, context) },
+    { label: "Set a protective stop", message: withDeskScope(`${held} Give a protective stop and a take profit as exact trigger prices, one line of reasoning each. ${NO_EXECUTION} I will load them into the ticket myself.`, context) },
+    { label: "What invalidates this?", message: withDeskScope(`${held} Name the price that invalidates this position and what to watch before it. ${NO_EXECUTION}`, context) },
   ];
 }

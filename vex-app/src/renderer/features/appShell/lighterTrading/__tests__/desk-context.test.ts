@@ -6,6 +6,7 @@ import {
   deskQuickPrompts,
   deskScopeLabel,
   deskScopeTag,
+  deskMessageForDisplay,
   deskStarterPrompts,
   describeChartNotes,
   describeMarketState,
@@ -55,7 +56,10 @@ describe("desk scope", () => {
       "Lighter desk scope: environment=core, marketId=1, marketType=perp, symbol=BTC, candleInterval=15m."
       + " Do not infer the environment or product from the symbol."
       + " Answer in under 150 words unless asked for more: the levels and numbers first,"
-      + " one line of reasoning each, no preamble and no summary of what you read.",
+      + " one line of reasoning each, no preamble and no summary of what you read."
+      + " End with one line headed \"Read:\" giving the plain-words stance now"
+      + " (buy zone, sell zone, hold, or stand aside), the level it hangs on,"
+      + " and what would flip it.",
     );
     expect(withDeskScope("should I trim?", tag)).toBe(`should I trim?\n\n${tag}`);
     expect(deskScopeLabel(SCOPE)).toBe("Core · BTC · 15m");
@@ -95,13 +99,14 @@ describe("chart notes", () => {
     expect(describeChartNotes({ preferences: DEFAULT_CHART_PREFERENCES, drawings: [] }, MARKET)).toBe("");
     const bare = buildDeskContext(SCOPE);
     expect(buildDeskContext({ ...SCOPE, chart: { preferences: DEFAULT_CHART_PREFERENCES, drawings: [] } })).toBe(bare);
-    expect(bare.endsWith("Refresh official read-only Lighter data for this exact scope before relying on changing values.")).toBe(true);
+    expect(bare).toContain("Refresh official read-only Lighter data for this exact scope before relying on changing values.");
+    expect(bare.endsWith("and what would flip it.")).toBe(true);
   });
 
   it("carries the notes into the prompts and the typed-message tag", () => {
     const scope = { ...SCOPE, chart: CHART };
     const notes = describeChartNotes(CHART, MARKET);
-    expect(buildDeskContext(scope).endsWith(` ${notes}`)).toBe(true);
+    expect(buildDeskContext(scope)).toContain(` ${notes} `);
     expect(deskScopeTag(scope)).toContain(` ${notes} `);
     expect(deskScopeTag(SCOPE)).not.toContain("Drawings");
     for (const prompt of deskQuickPrompts(scope, null)) expect(prompt.message).toContain("horizontal line at 64000.0");
@@ -114,6 +119,8 @@ describe("desk market state", () => {
   const LIVE: DeskMarketState = {
     lastTradePrice: 81320,
     priceChange24h: 1.4237,
+    dayHigh: 81468.4,
+    dayLow: 80109.9,
     quoteVolume24h: 1_600_000.4,
     openInterestBase: 12.5,
     retrievedAt: 1_789_925_400_000,
@@ -122,11 +129,11 @@ describe("desk market state", () => {
   it("reads the desk's own values out at market precision with the provider's time", () => {
     expect(describeMarketState(LIVE, MARKET)).toBe(
       "Desk values at 2026-09-20 17:30 UTC: last 81320.0, 24h change +1.42%, "
-      + "24h quote volume 1600000, open interest 12.5 base.",
+      + "24h range 80109.9 to 81468.4, 24h quote volume 1600000, open interest 12.5 base.",
     );
     expect(describeMarketState(undefined, MARKET)).toBe("");
     expect(describeMarketState(
-      { lastTradePrice: null, priceChange24h: null, quoteVolume24h: null, openInterestBase: null, retrievedAt: 0 },
+      { lastTradePrice: null, priceChange24h: null, dayHigh: null, dayLow: null, quoteVolume24h: null, openInterestBase: null, retrievedAt: 0 },
       MARKET,
     )).toBe("");
   });
@@ -152,6 +159,25 @@ describe("desk market state", () => {
   });
 });
 
+describe("deskMessageForDisplay", () => {
+  it("shows the trader their own question, whichever way the desk attached the scope", () => {
+    const typed = withDeskScope("should I trim?", deskScopeTag({ ...SCOPE, live: undefined }));
+    expect(deskMessageForDisplay(typed)).toBe("should I trim?");
+    const [quick] = deskQuickPrompts(SCOPE, null);
+    expect(deskMessageForDisplay(quick?.message ?? "")).toBe(
+      "The key levels on this chart and the price that invalidates them. Levels first. Do not execute anything.",
+    );
+  });
+
+  it("leaves a message the desk never touched alone, including its blank lines", () => {
+    expect(deskMessageForDisplay("plain question")).toBe("plain question");
+    expect(deskMessageForDisplay("first\n\nsecond")).toBe("first\n\nsecond");
+    // A trader quoting the phrase mid-sentence keeps every word.
+    expect(deskMessageForDisplay("what is the Lighter desk scope: here?"))
+      .toBe("what is the Lighter desk scope: here?");
+  });
+});
+
 describe("deskQuickPrompts", () => {
   it("flat on the market: reads and 1% risk plans, every one scoped and non-executing", () => {
     const prompts = deskQuickPrompts(SCOPE, null);
@@ -162,8 +188,12 @@ describe("deskQuickPrompts", () => {
       "Plan short · 1%",
     ]);
     for (const prompt of prompts) {
-      expect(prompt.message.startsWith(buildDeskContext(SCOPE))).toBe(true);
+      expect(prompt.message.endsWith(buildDeskContext(SCOPE))).toBe(true);
       expect(prompt.message).toContain("Do not execute anything.");
+      // What the trader reads back in the transcript is their question alone.
+      const shown = deskMessageForDisplay(prompt.message);
+      expect(shown).not.toContain("Use this exact Lighter scope:");
+      expect(shown.length).toBeGreaterThan(0);
     }
     expect(prompts[2]?.message).toContain("Plan a long risking 1%");
     expect(prompts[3]?.message).toContain("Plan a short risking 1%");
