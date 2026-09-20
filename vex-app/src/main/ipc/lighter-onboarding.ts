@@ -161,13 +161,24 @@ export function registerLighterOnboardingHandlers(): ReadonlyArray<() => void> {
           : current.status === targetStatus ? current : null;
         if (settled === null) return ok({ settled: false, resumedAgentTurn: false });
 
-        const resumed = await resumeAgentAfterLighterSetup({
+        // Settlement is the acknowledgement the modal is waiting for. The
+        // resumed model turn may take seconds (or pause again for approval), so
+        // it must not hold the dialog on screen. The continuation is durable
+        // and owns its own bounded busy retry; start it after the CAS and let
+        // IPC return immediately.
+        void resumeAgentAfterLighterSetup({
           intentId: input.intentId,
           sessionId: input.sessionId,
+        }).catch((cause: unknown) => {
+          log.warn("[lighter-onboarding] setup continuation failed", {
+            intentId: input.intentId,
+            sessionId: input.sessionId,
+            cause: cause instanceof Error ? cause.message : String(cause),
+          });
         });
         return ok({
           settled: true,
-          resumedAgentTurn: resumed.resumed || resumed.reason === "already_resolved",
+          resumedAgentTurn: current.resumeConsumedAt !== null,
         });
       },
     }),

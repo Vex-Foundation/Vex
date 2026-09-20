@@ -127,6 +127,9 @@ describe("Agent Lighter setup continuation", () => {
 
   it("re-verifies completed setup before settling and resuming", async () => {
     const intentId = "22222222-2222-4222-8222-222222222222";
+    // A resumed model turn can be long-running. The settlement response must
+    // still return as soon as the durable CAS succeeds.
+    mocks.resumeAgentAfterLighterSetup.mockReturnValueOnce(new Promise(() => undefined));
     const result = await call(
       { sessionId: SESSION, intentId, outcome: "completed" },
       CH.lighterTrading.settleAgentSetup,
@@ -145,6 +148,10 @@ describe("Agent Lighter setup continuation", () => {
     expect(mocks.resumeAgentAfterLighterSetup).toHaveBeenCalledWith({
       intentId,
       sessionId: SESSION,
+    });
+    expect(result.data).toMatchObject({
+      settled: true,
+      resumedAgentTurn: false,
     });
   });
 

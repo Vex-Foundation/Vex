@@ -180,6 +180,7 @@ export function LighterAccountSetupModal({
   onDone,
   onCancel,
   lockEnvironment = false,
+  externalError = null,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (next: boolean) => void;
@@ -193,6 +194,8 @@ export function LighterAccountSetupModal({
   readonly onCancel?: () => boolean | void | Promise<boolean | void>;
   /** Agent-originated setup is fixed to the environment the status tool proved. */
   readonly lockEnvironment?: boolean;
+  /** Host-owned settlement failure, used when an optimistic close rolls back. */
+  readonly externalError?: string | null;
 }): JSX.Element {
   const theme = useUiStore((state) => state.theme);
   const [walletCopied, setWalletCopied] = useState(false);
@@ -400,6 +403,9 @@ export function LighterAccountSetupModal({
           )}
           {settlementError === null ? null : (
             <p className="lit-setup-step-error" role="alert">{settlementError}</p>
+          )}
+          {externalError === null ? null : (
+            <p className="lit-setup-step-error" role="alert">{externalError}</p>
           )}
         </DialogBody>
         <DialogFooter className="lit-setup-footer pt-2">

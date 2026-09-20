@@ -11,10 +11,14 @@ const getPendingAgentSetup = vi.fn();
 vi.mock("../LighterAccountSetupModal.js", () => ({
   LighterAccountSetupModal: (props: {
     environment: string;
-    onCancel: () => Promise<boolean>;
+    externalError?: string | null;
+    onCancel: () => void;
     onDone: () => Promise<boolean>;
   }) => (
     <div data-testid="setup-modal" data-environment={props.environment}>
+      {props.externalError === null || props.externalError === undefined
+        ? null
+        : <p role="alert">{props.externalError}</p>}
       <button onClick={() => { void props.onCancel(); }}>Cancel</button>
       <button onClick={() => { void props.onDone(); }}>Done</button>
     </div>
@@ -73,17 +77,37 @@ describe("AgentLighterSetupHost", () => {
     expect(screen.queryByTestId("setup-modal")).toBeNull();
   });
 
-  it("settles a deliberate cancellation and removes the modal", async () => {
+  it("removes the modal immediately while cancellation settles", async () => {
+    let resolveSettlement!: (value: unknown) => void;
+    settleAgentSetup.mockReturnValueOnce(new Promise((resolve) => {
+      resolveSettlement = resolve;
+    }));
     render(<AgentLighterSetupHost sessionId={ACTIVE_SESSION} />);
     act(() => listener?.(event()));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
+    expect(screen.queryByTestId("setup-modal")).toBeNull();
     await waitFor(() => expect(settleAgentSetup).toHaveBeenCalledWith({
       sessionId: ACTIVE_SESSION,
       intentId: INTENT,
       outcome: "cancelled",
     }));
-    await waitFor(() => expect(screen.queryByTestId("setup-modal")).toBeNull());
+    resolveSettlement({ ok: true, data: { settled: true, resumedAgentTurn: false } });
+  });
+
+  it("restores the modal with a retry message when cancellation is refused", async () => {
+    settleAgentSetup.mockResolvedValueOnce({
+      ok: true,
+      data: { settled: false, resumedAgentTurn: false },
+    });
+    render(<AgentLighterSetupHost sessionId={ACTIVE_SESSION} />);
+    act(() => listener?.(event()));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByTestId("setup-modal")).toBeNull();
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "could not record the cancellation",
+    );
   });
 
   it("recovers a pending modal after remount", async () => {
