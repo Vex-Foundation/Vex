@@ -17,6 +17,7 @@ import type { CompactionPreparationEvent } from "@shared/schemas/compaction-prep
 import type { EngineErrorEvent } from "@shared/schemas/engine-error.js";
 import type { TranscriptAppendEvent } from "@shared/schemas/messages.js";
 import type { MissionUpdateEvent } from "@shared/schemas/mission-update.js";
+import type { LighterSetupHandoffEvent } from "@shared/schemas/lighter-setup-handoff.js";
 import type { ControlStateEvent } from "@shared/schemas/runtime.js";
 import type { StreamDeltaEvent } from "@shared/schemas/stream.js";
 
@@ -116,5 +117,14 @@ export interface EngineEventsBridge {
    */
   readonly onCompactionPreparation: (
     cb: (event: CompactionPreparationEvent) => void,
+  ) => () => void;
+
+  /**
+   * The active Agent session proved that the selected Lighter environment has
+   * no Vex trading key. The renderer switches to that environment and opens
+   * the existing setup modal; the event itself carries no setup data.
+   */
+  readonly onLighterSetupRequested: (
+    cb: (event: LighterSetupHandoffEvent) => void,
   ) => () => void;
 }

@@ -86,6 +86,7 @@ vi.mock("../compaction-preparation-bridge.js", () => ({
   setupCompactionPreparationBridge: noopTeardown,
 }));
 vi.mock("../launch-form-bridge.js", () => ({ setupLaunchFormBridge: noopTeardown }));
+vi.mock("../lighter-setup-bridge.js", () => ({ setupLighterSetupBridge: noopTeardown }));
 vi.mock("../activity-resolved-bridge.js", () => ({
   setupActivityResolvedBridge: noopTeardown,
 }));

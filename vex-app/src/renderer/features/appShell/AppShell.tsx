@@ -56,12 +56,14 @@ import { ShellDragHandle } from "./ShellDragHandle.js";
 import { ShellScreens } from "./screens/ShellScreens.js";
 import { LighterCenter } from "./lighterTrading/LighterCenter.js";
 import { LIGHTER_TOPBAR_HEIGHT, LighterSidebar } from "./lighterTrading/LighterSidebar.js";
+import { useLighterSetupHandoff } from "./lighterTrading/useLighterSetupHandoff.js";
 
 export function AppShell(): JSX.Element {
   // App-wide engine-error RETENTION. Mounted here, not per session: a wake or
   // compact failure for a session the user is not currently looking at must
   // still be waiting for them when they select it.
   useEngineErrorRetentionSync();
+  useLighterSetupHandoff();
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const activeProjectId = useUiStore((s) => s.activeProjectId);
   const runtimeMode = useUiStore((s) => s.runtimeMode);

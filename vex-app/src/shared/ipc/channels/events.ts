@@ -194,5 +194,6 @@ export const EV = {
     error: "vex:event:engine:error",
     missionUpdate: "vex:event:engine:missionUpdate",
     compactionPreparation: "vex:event:engine:compactionPreparation",
+    lighterSetupRequested: "vex:event:engine:lighterSetupRequested",
   },
 } as const;
