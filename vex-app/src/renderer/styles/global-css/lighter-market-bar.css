@@ -256,12 +256,11 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
 }
 
 .lit-environment-switch button {
-  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   min-height: 26px;
-  overflow: hidden;
   border: 0;
   border-radius: var(--lit-radius);
   background: transparent;
@@ -273,26 +272,19 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   transition: background 140ms ease, color 140ms ease;
 }
 
-/* The network logo sits behind the label as a faint watermark: Ethereum for
- * Core, the Robinhood feather for RHC. It brightens on the active segment. */
+/* The network mark sits beside the label so the pair reads as one name:
+ * Ethereum for Core, the Robinhood feather for RHC. The inactive segment
+ * dims its mark to match the muted label rather than hiding it. */
 .lit-environment-logo {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 20px;
-  height: 20px;
-  transform: translate(-50%, -50%);
-  opacity: 0.16;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  opacity: 0.65;
   pointer-events: none;
   transition: opacity 140ms ease;
 }
 
-.lit-environment-label {
-  position: relative;
-  z-index: 1;
-}
-
-.lit-environment-switch button:hover .lit-environment-logo { opacity: 0.24; }
+.lit-environment-switch button:hover .lit-environment-logo { opacity: 0.85; }
 
 .lit-environment-switch button:hover {
   background: var(--lit-environment-surface-hover);
@@ -305,7 +297,7 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   color: var(--lit-environment-mark);
 }
 
-.lit-environment-switch button[aria-checked="true"] .lit-environment-logo { opacity: 0.32; }
+.lit-environment-switch button[aria-checked="true"] .lit-environment-logo { opacity: 1; }
 
 /* Keep the register compact while giving the two primary readouts a clear
  * rhythm: market identity, last price, then secondary statistics. */
