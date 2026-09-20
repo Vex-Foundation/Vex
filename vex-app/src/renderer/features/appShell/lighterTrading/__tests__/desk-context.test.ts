@@ -6,10 +6,13 @@ import {
   deskQuickPrompts,
   deskScopeLabel,
   deskScopeTag,
+  deskStarterPrompts,
   describeChartNotes,
+  describeMarketState,
   withDeskScope,
   type DeskChartNotes,
   type DeskContextScope,
+  type DeskMarketState,
 } from "../desk-context.js";
 import { DEFAULT_CHART_PREFERENCES } from "../chart-preferences.js";
 
@@ -89,7 +92,7 @@ describe("chart notes", () => {
     expect(describeChartNotes({ preferences: DEFAULT_CHART_PREFERENCES, drawings: [] }, MARKET)).toBe("");
     const bare = buildDeskContext(SCOPE);
     expect(buildDeskContext({ ...SCOPE, chart: { preferences: DEFAULT_CHART_PREFERENCES, drawings: [] } })).toBe(bare);
-    expect(bare.endsWith("do not infer the environment or product from the symbol.")).toBe(true);
+    expect(bare.endsWith("Refresh official read-only Lighter data for this exact scope before relying on changing values.")).toBe(true);
   });
 
   it("carries the notes into the prompts and the typed-message tag", () => {
@@ -100,6 +103,44 @@ describe("chart notes", () => {
     expect(deskScopeTag(SCOPE)).not.toContain("Drawings");
     for (const prompt of deskQuickPrompts(scope, null)) expect(prompt.message).toContain("horizontal line at 64000.0");
     expect(deskChartScopeKey("rhc", 7)).toBe("rhc:7");
+  });
+});
+
+describe("desk market state", () => {
+  // 2026-09-20 17:30 UTC.
+  const LIVE: DeskMarketState = {
+    lastTradePrice: 81320,
+    priceChange24h: 1.4237,
+    quoteVolume24h: 1_600_000.4,
+    openInterestBase: 12.5,
+    retrievedAt: 1_789_925_400_000,
+  };
+
+  it("reads the desk's own values out at market precision with the provider's time", () => {
+    expect(describeMarketState(LIVE, MARKET)).toBe(
+      "Desk values at 2026-09-20 17:30 UTC: last 81320.0, 24h change +1.42%, "
+      + "24h quote volume 1600000, open interest 12.5 base.",
+    );
+    expect(describeMarketState(undefined, MARKET)).toBe("");
+    expect(describeMarketState(
+      { lastTradePrice: null, priceChange24h: null, quoteVolume24h: null, openInterestBase: null, retrievedAt: 0 },
+      MARKET,
+    )).toBe("");
+  });
+
+  it("spends reads on what the values do not cover, and still re-reads before an order", () => {
+    const context = buildDeskContext({ ...SCOPE, live: LIVE });
+    expect(context).toContain(describeMarketState(LIVE, MARKET));
+    expect(context).toContain("Answer from those values.");
+    expect(context).toContain("re-read before preparing or changing an order");
+    expect(context).not.toContain("Refresh official read-only Lighter data");
+  });
+
+  it("carries the values into the tag and the prompts the desk opens on", () => {
+    const scope = { ...SCOPE, live: LIVE };
+    expect(deskScopeTag(scope)).toContain("last 81320.0");
+    for (const prompt of deskStarterPrompts(scope)) expect(prompt.message).toContain("last 81320.0");
+    for (const prompt of deskQuickPrompts(scope, null)) expect(prompt.message).toContain("last 81320.0");
   });
 });
 

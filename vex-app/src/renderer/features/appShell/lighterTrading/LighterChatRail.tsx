@@ -43,6 +43,18 @@ export function LighterChatRail(): JSX.Element {
   const savedChart = useLighterAnalysisStore((state) =>
     market === null ? undefined : state.charts[deskChartScopeKey(environment, market.marketId)],
   );
+  // The values already on the desk travel with the scope, so a plain question
+  // is answered from them instead of from a round of provider reads. The list
+  // carries the provider's own retrieval time, which is what the agent is told.
+  const live = market === null || marketList === null
+    ? undefined
+    : {
+      lastTradePrice: market.statistics?.lastTradePrice ?? null,
+      priceChange24h: market.statistics?.priceChange24h ?? null,
+      quoteVolume24h: market.activity24h.quoteVolume,
+      openInterestBase: market.statistics?.openInterestBase ?? null,
+      retrievedAt: marketList.retrievedAt,
+    };
   const scope: DeskContextScope | null = market === null
     ? null
     : {
@@ -50,6 +62,7 @@ export function LighterChatRail(): JSX.Element {
       market,
       resolution,
       ...(savedChart === undefined ? {} : { chart: { preferences: savedChart.preferences, drawings: savedChart.drawings } }),
+      ...(live === undefined ? {} : { live }),
     };
 
   // Typed messages carry the desk's scope (see `composer-submit.ts`); the tag
@@ -71,7 +84,9 @@ export function LighterChatRail(): JSX.Element {
   }
 
   const symbol = market?.symbol ?? "Lighter";
-  const prompts = market === null ? [] : deskStarterPrompts({ environment, market, resolution });
+  // The same scope the tag and quick prompts use: the starters are the chart
+  // prompts, so they cannot be the one path that drops the chart and its values.
+  const prompts = scope === null ? [] : deskStarterPrompts(scope);
   return (
     <div className="lit-chat-empty">
       <div className="lit-chat-empty-content">
