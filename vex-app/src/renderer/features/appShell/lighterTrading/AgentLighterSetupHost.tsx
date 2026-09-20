@@ -17,7 +17,9 @@ export function AgentLighterSetupHost({
   const [settlementError, setSettlementError] = useState<string | null>(null);
 
   useEffect(() => {
-    return window.vex.engine.onLighterSetupRequested((event: LighterSetupHandoffEvent) => {
+    const engine = window.vex.engine;
+    if (engine?.onLighterSetupRequested === undefined) return undefined;
+    return engine.onLighterSetupRequested((event: LighterSetupHandoffEvent) => {
       if (event.sessionId !== sessionId) return;
       setSettlementError(null);
       setSnapshot({
@@ -33,8 +35,17 @@ export function AgentLighterSetupHost({
       setSnapshot(null);
       return;
     }
+    // The host mounts with the agent shell, which is also rendered where the
+    // Lighter bridge is absent. An unguarded read here threw during mount and
+    // took the whole shell down with it, so a missing bridge is simply no
+    // parked setup to resume.
+    const bridge = window.vex.lighterTrading;
+    if (bridge?.getPendingAgentSetup === undefined) {
+      setSnapshot(null);
+      return;
+    }
     let active = true;
-    void window.vex.lighterTrading.getPendingAgentSetup({ sessionId }).then((result) => {
+    void bridge.getPendingAgentSetup({ sessionId }).then((result) => {
       if (!active || !result.ok || result.data.interaction === null) return;
       const interaction = result.data.interaction;
       setSettlementError(null);
