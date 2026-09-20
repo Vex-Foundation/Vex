@@ -8,7 +8,12 @@ ALTER TABLE lighter_leverage_intents
   DROP CONSTRAINT IF EXISTS lighter_leverage_intents_check1,
   DROP CONSTRAINT IF EXISTS lighter_leverage_intents_check2,
   DROP CONSTRAINT IF EXISTS lighter_leverage_intents_check3,
-  DROP CONSTRAINT IF EXISTS lighter_leverage_intents_check4;
+  DROP CONSTRAINT IF EXISTS lighter_leverage_intents_check4,
+  DROP CONSTRAINT IF EXISTS lighter_leverage_intents_consent_shape,
+  DROP CONSTRAINT IF EXISTS lighter_leverage_intents_nonce_shape,
+  DROP CONSTRAINT IF EXISTS lighter_leverage_intents_hash_shape,
+  DROP CONSTRAINT IF EXISTS lighter_leverage_intents_pre_signing_shape,
+  DROP CONSTRAINT IF EXISTS lighter_leverage_intents_expired_unsubmitted_shape;
 
 ALTER TABLE lighter_leverage_intents
   ADD CONSTRAINT lighter_leverage_intents_execution_state_check CHECK (
