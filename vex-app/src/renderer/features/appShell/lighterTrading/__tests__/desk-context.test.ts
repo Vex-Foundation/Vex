@@ -52,7 +52,10 @@ describe("desk scope", () => {
   it("tags a typed message with the exact scope and forbids inferring it from the symbol", () => {
     const tag = deskScopeTag(SCOPE);
     expect(tag).toBe(
-      "Lighter desk scope: environment=core, marketId=1, marketType=perp, symbol=BTC, candleInterval=15m. Do not infer the environment or product from the symbol.",
+      "Lighter desk scope: environment=core, marketId=1, marketType=perp, symbol=BTC, candleInterval=15m."
+      + " Do not infer the environment or product from the symbol."
+      + " Answer in under 150 words unless asked for more: the levels and numbers first,"
+      + " one line of reasoning each, no preamble and no summary of what you read.",
     );
     expect(withDeskScope("should I trim?", tag)).toBe(`should I trim?\n\n${tag}`);
     expect(deskScopeLabel(SCOPE)).toBe("Core · BTC · 15m");
@@ -99,7 +102,7 @@ describe("chart notes", () => {
     const scope = { ...SCOPE, chart: CHART };
     const notes = describeChartNotes(CHART, MARKET);
     expect(buildDeskContext(scope).endsWith(` ${notes}`)).toBe(true);
-    expect(deskScopeTag(scope).endsWith(` ${notes}`)).toBe(true);
+    expect(deskScopeTag(scope)).toContain(` ${notes} `);
     expect(deskScopeTag(SCOPE)).not.toContain("Drawings");
     for (const prompt of deskQuickPrompts(scope, null)) expect(prompt.message).toContain("horizontal line at 64000.0");
     expect(deskChartScopeKey("rhc", 7)).toBe("rhc:7");
@@ -138,7 +141,12 @@ describe("desk market state", () => {
 
   it("carries the values into the tag and the prompts the desk opens on", () => {
     const scope = { ...SCOPE, live: LIVE };
+    // A typed question carries no prompt wording of its own, so the tag is
+    // where its read budget and its length cap have to live.
     expect(deskScopeTag(scope)).toContain("last 81320.0");
+    expect(deskScopeTag(scope)).toContain("Answer from those values.");
+    expect(deskScopeTag(scope)).toContain("Answer in under 150 words");
+    expect(deskScopeTag(SCOPE)).not.toContain("Answer from those values.");
     for (const prompt of deskStarterPrompts(scope)) expect(prompt.message).toContain("last 81320.0");
     for (const prompt of deskQuickPrompts(scope, null)) expect(prompt.message).toContain("last 81320.0");
   });

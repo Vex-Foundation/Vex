@@ -115,6 +115,17 @@ export function describeChartNotes(chart: DeskChartNotes | undefined, market: Li
  * round trips. A value that decides an ORDER is never one of these: preparing
  * or changing one still re-reads the provider.
  */
+const READ_BUDGET =
+  "Answer from those values. Read Lighter only for what they do not cover (candle history, order book depth, recent trades, account state), and always re-read before preparing or changing an order.";
+
+/**
+ * House style for a desk answer. The quick prompts each carry their own cap;
+ * a typed question carries none, which is how one word ("analyze") bought a
+ * full report. Numbers first, prose only where it decides something.
+ */
+const DESK_STYLE =
+  "Answer in under 150 words unless asked for more: the levels and numbers first, one line of reasoning each, no preamble and no summary of what you read.";
+
 export function buildDeskContext({ environment, market, resolution, chart, live }: DeskContextScope): string {
   const notes = describeChartNotes(chart, market);
   const values = describeMarketState(live, market);
@@ -126,7 +137,7 @@ export function buildDeskContext({ environment, market, resolution, chart, live 
     ...(values === "" ? [] : [values]),
     values === ""
       ? "Refresh official read-only Lighter data for this exact scope before relying on changing values."
-      : "Answer from those values. Read Lighter only for what they do not cover (candle history, order book depth, recent trades, account state), and always re-read before preparing or changing an order.",
+      : READ_BUDGET,
     ...(notes === "" ? [] : [notes]),
   ].join(" ");
 }
@@ -165,12 +176,19 @@ export function deskStarterPrompts(scope: DeskContextScope): readonly DeskStarte
 /**
  * The one line appended to a message typed into the desk's composer. A typed
  * "should I trim?" has no market in it; the tag gives the agent the exact
- * scope without the full refresh instructions of {@link buildDeskContext}.
+ * scope, the desk's own values, and the same house style the quick prompts
+ * ask for, since a typed question carries none of their wording.
  */
 export function deskScopeTag({ environment, market, resolution, chart, live }: DeskContextScope): string {
   const notes = describeChartNotes(chart, market);
   const values = describeMarketState(live, market);
-  return `Lighter desk scope: environment=${environment}, marketId=${market.marketId}, marketType=${market.marketType}, symbol=${market.symbol}, candleInterval=${resolution}. Do not infer the environment or product from the symbol.${values === "" ? "" : ` ${values}`}${notes === "" ? "" : ` ${notes}`}`;
+  return [
+    `Lighter desk scope: environment=${environment}, marketId=${market.marketId}, marketType=${market.marketType}, symbol=${market.symbol}, candleInterval=${resolution}.`,
+    "Do not infer the environment or product from the symbol.",
+    ...(values === "" ? [] : [values, READ_BUDGET]),
+    ...(notes === "" ? [] : [notes]),
+    DESK_STYLE,
+  ].join(" ");
 }
 
 export function withDeskScope(message: string, tag: string): string {
