@@ -6,9 +6,10 @@ export const LIGHTER_ENVIRONMENTS: ReadonlyArray<{
   readonly value: LighterTradingEnvironment;
   readonly label: string;
   readonly name: string;
+  readonly logo: string;
 }> = [
-  { value: "core", label: LIGHTER_ENVIRONMENT_SHORT_LABELS.core, name: LIGHTER_ENVIRONMENT_NAMES.core },
-  { value: "rhc", label: LIGHTER_ENVIRONMENT_SHORT_LABELS.rhc, name: LIGHTER_ENVIRONMENT_NAMES.rhc },
+  { value: "core", label: LIGHTER_ENVIRONMENT_SHORT_LABELS.core, name: LIGHTER_ENVIRONMENT_NAMES.core, logo: "./logo/ethereum.svg" },
+  { value: "rhc", label: LIGHTER_ENVIRONMENT_SHORT_LABELS.rhc, name: LIGHTER_ENVIRONMENT_NAMES.rhc, logo: "./logo/robinhood.svg" },
 ];
 
 /** Core | RHC: which Lighter network the desk trades on. Switching drops the market, the desk picks that network's default. */
@@ -32,7 +33,8 @@ export function EnvironmentSwitch({ environment, onSelect }: {
               if (!active) onSelect(item.value);
             }}
           >
-            {item.label}
+            <img className="lit-environment-logo" src={item.logo} alt="" aria-hidden="true" />
+            <span className="lit-environment-label">{item.label}</span>
           </button>
         );
       })}
