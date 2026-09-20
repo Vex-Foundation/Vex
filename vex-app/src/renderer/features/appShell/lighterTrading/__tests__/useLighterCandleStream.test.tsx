@@ -1,7 +1,9 @@
 import { requireValue } from "../../../../../../../src/__tests__/helpers/require-value.js";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Result } from "@shared/ipc/result.js";
 import type {
+  LighterTradingCandleHistory,
   LighterTradingCandleSnapshotEvent,
   LighterTradingCandleStatusEvent,
   LighterTradingCandleUpdateEvent,
@@ -25,7 +27,12 @@ const stop = vi.fn(async ({ subscriptionId }: { readonly subscriptionId: string 
   ok: true as const,
   data: { subscriptionId, status: "stopped" as const },
 }));
-const history = vi.fn((input: { readonly endTimestamp: number; readonly count: number }) => ({
+interface HistoryInvocation {
+  readonly cancel: () => void;
+  readonly promise: Promise<Result<LighterTradingCandleHistory>>;
+}
+
+const history = vi.fn((input: { readonly endTimestamp: number; readonly count: number }): HistoryInvocation => ({
   cancel: vi.fn(),
   promise: Promise.resolve({
     ok: true as const,
@@ -137,6 +144,62 @@ describe("useLighterCandleStream", () => {
     expect(history).toHaveBeenCalledTimes(2);
     act(() => { result.current.loadOlder(); });
     expect(history).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps paging after a failed read and after a page the chart has not rendered yet", async () => {
+    const seed = [streamCandle({ timestamp: 1_720_000_600_000, lastTradeId: undefined, source: "rest_snapshot" })];
+    history.mockImplementationOnce((): HistoryInvocation => ({
+      cancel: vi.fn(),
+      promise: Promise.resolve({
+        ok: false,
+        error: { code: "provider.unavailable", domain: "market", message: "Live Lighter market data is temporarily unavailable.", retryable: true, userActionable: true, redacted: true, correlationId: "11111111-2222-3333-4444-555555555555" },
+      }),
+    }));
+    const { result } = renderHook(() => useLighterCandleStream({
+      enabled: true,
+      environment: "rhc",
+      marketId: 10,
+      resolution: "5m",
+      restCandles: seed,
+    }));
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+
+    // A provider failure is not a history boundary: the next scroll retries it.
+    act(() => { result.current.loadOlder(); });
+    await waitFor(() => expect(result.current.history).toBe("idle"));
+    expect(history).toHaveBeenCalledTimes(1);
+
+    act(() => { result.current.loadOlder(); });
+    await waitFor(() => expect(result.current.history).toBe("idle"));
+    expect(history).toHaveBeenCalledTimes(2);
+    expect(result.current.candles.map((candle) => candle.timestamp)).toEqual([
+      1_719_999_700_000,
+      1_720_000_000_000,
+      1_720_000_600_000,
+    ]);
+  });
+
+  it("anchors the next page on the applied page, not on the next render", async () => {
+    const seed = [streamCandle({ timestamp: 1_720_000_600_000, lastTradeId: undefined, source: "rest_snapshot" })];
+    const { result } = renderHook(() => useLighterCandleStream({
+      enabled: true,
+      environment: "rhc",
+      marketId: 10,
+      resolution: "5m",
+      restCandles: seed,
+    }));
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+
+    // The chart can scroll again between a page landing and React re-rendering.
+    // The second request must start below the page that just landed.
+    await act(async () => {
+      result.current.loadOlder();
+      await Promise.resolve();
+      await Promise.resolve();
+      result.current.loadOlder();
+    });
+    await waitFor(() => expect(history).toHaveBeenCalledTimes(2));
+    expect(requireValue(history.mock.calls[1])[0]).toMatchObject({ endTimestamp: 1_719_999_699_999 });
   });
 
   it("surfaces provider connection states independently of REST retrieval time", async () => {

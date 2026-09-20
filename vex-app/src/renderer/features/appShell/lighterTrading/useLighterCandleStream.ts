@@ -198,9 +198,6 @@ export function useLighterCandleStream({
   const earliestRef = useRef<LighterTradingCandle | undefined>(currentCandles[0]);
   earliestRef.current = currentCandles[0];
   const inFlightRef = useRef<{ readonly cancel: () => void } | null>(null);
-  // The earliest bar the last page was requested from. A successful page must
-  // move this boundary; repeating it means the provider has no earlier rows.
-  const lastRequestedRef = useRef<{ readonly identity: string; readonly timestamp: number } | null>(null);
   const [history, setHistory] = useState<{
     readonly identity: string;
     readonly status: LighterCandleHistoryStatus;
@@ -221,17 +218,12 @@ export function useLighterCandleStream({
       || inFlightRef.current !== null
       || currentHistory === "exhausted"
     ) return;
-    const lastRequested = lastRequestedRef.current;
-    if (lastRequested?.identity === identity && lastRequested.timestamp === earliest.timestamp) {
-      setHistory({ identity, status: "exhausted" });
-      return;
-    }
-    lastRequestedRef.current = { identity, timestamp: earliest.timestamp };
+    const anchor = earliest.timestamp;
     const invocation = window.vex.lighterTrading.getCandleHistory({
       environment,
       marketId,
       resolution,
-      endTimestamp: Math.max(0, earliest.timestamp - 1),
+      endTimestamp: Math.max(0, anchor - 1),
       count: HISTORY_PAGE_COUNT,
     });
     inFlightRef.current = invocation;
@@ -243,13 +235,24 @@ export function useLighterCandleStream({
     };
     invocation.promise.then((result) => {
       if (inFlightRef.current !== invocation) return;
+      // A read that failed says nothing about how far the provider's history
+      // goes, so the next scroll may ask for this same page again.
       if (!result.ok) { settle("idle"); return; }
-      const older = result.data.candles.filter((candle) => candle.timestamp < earliest.timestamp);
-      if (older.length === 0) { settle("exhausted"); return; }
+      const older = result.data.candles.filter((candle) => candle.timestamp < anchor);
+      const page = upsertChartCandles([], restRows(older));
+      const oldest = page[0];
+      // Only an answered read that carries no usable earlier bar proves the
+      // provider boundary. Every other outcome stays retryable.
+      if (oldest === undefined) { settle("exhausted"); return; }
       setState((previous) => previous.identity !== identity ? previous : ({
         ...previous,
-        candles: upsertChartCandles(previous.candles, restRows(older)),
+        candles: upsertChartCandles(previous.candles, page),
       }));
+      // Move the request boundary with the page, not with the next render: the
+      // chart can ask for another page before React has re-rendered, and an
+      // anchor still pointing at the applied page would re-read it. A boundary
+      // that already moved belongs to a newer render, so it is left alone.
+      if (earliestRef.current?.timestamp === anchor) earliestRef.current = oldest;
       settle("idle");
     }).catch(() => settle("idle"));
   }, [currentHistory, enabled, environment, identity, marketId, resolution]);
