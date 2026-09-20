@@ -16,6 +16,21 @@ import {
   type LighterAccountSetupStatus,
   type LighterOnboardingChecklist,
 } from "@shared/schemas/lighter-trading.js";
+import {
+  lighterSetupPendingInputSchema,
+  lighterSetupPendingSchema,
+  lighterSetupSettleInputSchema,
+  lighterSetupSettleResultSchema,
+  type LighterSetupPending,
+  type LighterSetupSettleResult,
+} from "@shared/schemas/lighter-setup-handoff.js";
+import {
+  getById as getLighterSetupInteraction,
+  getPendingForSession,
+  settleIfPendingWith,
+} from "@vex-agent/db/repos/lighter-setup-interactions.js";
+import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status.js";
+import { resumeAgentAfterLighterSetup } from "@vex-agent/engine/core/lighter-setup-resume.js";
 import { log } from "../logger/index.js";
 import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import { resolveLighterAccountSetupStatus, resolveLighterOnboardingChecklist } from "../lighter/onboarding-checklist.js";
@@ -72,6 +87,88 @@ export function registerLighterOnboardingHandlers(): ReadonlyArray<() => void> {
           });
           return unavailable("Lighter account setup status is temporarily unavailable.", ctx.requestId);
         }
+      },
+    }),
+    registerHandler({
+      channel: CH.lighterTrading.getPendingAgentSetup,
+      domain: "market",
+      inputSchema: lighterSetupPendingInputSchema,
+      outputSchema: lighterSetupPendingSchema,
+      handle: async (input, ctx): Promise<Result<LighterSetupPending>> => {
+        const dbUrlOutcome = await ensureEngineDbUrl(ctx.requestId);
+        if (!dbUrlOutcome.ok) return dbUrlOutcome;
+        const pending = await getPendingForSession(input.sessionId);
+        return ok({
+          interaction: pending === null ? null : {
+            intentId: pending.intentId,
+            sessionId: pending.sessionId,
+            environment: pending.environment,
+            status: "pending",
+            createdAt: pending.createdAt,
+          },
+        });
+      },
+    }),
+    registerHandler({
+      channel: CH.lighterTrading.settleAgentSetup,
+      domain: "market",
+      inputSchema: lighterSetupSettleInputSchema,
+      outputSchema: lighterSetupSettleResultSchema,
+      handle: async (input, ctx): Promise<Result<LighterSetupSettleResult>> => {
+        const dbUrlOutcome = await ensureEngineDbUrl(ctx.requestId);
+        if (!dbUrlOutcome.ok) return dbUrlOutcome;
+
+        const current = await getLighterSetupInteraction(input.intentId, input.sessionId);
+        if (current === null) {
+          return err({
+            code: "validation.invalid_input",
+            domain: "market",
+            message: "This Lighter setup request is no longer available.",
+            retryable: false,
+            userActionable: true,
+            redacted: true,
+            correlationId: ctx.requestId,
+          });
+        }
+
+        if (input.outcome === "completed" && current.status === "pending") {
+          const status = await resolveLighterAccountSetupStatus({
+            sessionId: input.sessionId,
+            environment: current.environment,
+          });
+          if (!status.accountExists || !status.tradingKeyRegistered || !status.feeAuthorized) {
+            return err({
+              code: "validation.invalid_input",
+              domain: "market",
+              message: "Lighter setup is not fully confirmed yet. Check the setup status and try again.",
+              retryable: true,
+              userActionable: true,
+              redacted: true,
+              correlationId: ctx.requestId,
+            });
+          }
+        }
+
+        const targetStatus = input.outcome === "completed" ? "completed" : "cancelled";
+        const settled = current.status === "pending"
+          ? await withSessionControlLock(input.sessionId, (client) =>
+              settleIfPendingWith(
+                client,
+                input.intentId,
+                input.sessionId,
+                targetStatus,
+              ))
+          : current.status === targetStatus ? current : null;
+        if (settled === null) return ok({ settled: false, resumedAgentTurn: false });
+
+        const resumed = await resumeAgentAfterLighterSetup({
+          intentId: input.intentId,
+          sessionId: input.sessionId,
+        });
+        return ok({
+          settled: true,
+          resumedAgentTurn: resumed.resumed || resumed.reason === "already_resolved",
+        });
       },
     }),
   ];

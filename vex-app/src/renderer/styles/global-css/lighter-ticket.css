@@ -1036,3 +1036,21 @@
   border-color: color-mix(in srgb, var(--lit-positive-ink) 35%, transparent);
   border-top-color: var(--lit-positive-ink);
 }
+
+.lit-setup-footer { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; }
+.lit-setup-cancel {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--lit-border-strong);
+  border-radius: 8px;
+  color: var(--lit-ink-secondary);
+  background: var(--lit-panel-raised);
+  font-size: 13px;
+  font-weight: 600;
+}
+.lit-setup-cancel:hover:not(:disabled) { color: var(--lit-ink); background: var(--lit-hover); }
+.lit-setup-cancel:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--lit-bg), 0 0 0 4px var(--lit-setup-accent);
+}
+.lit-setup-cancel:disabled { cursor: default; opacity: 0.45; }

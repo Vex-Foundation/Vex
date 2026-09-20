@@ -1,4 +1,4 @@
-import { useState, type JSX } from "react";
+import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import type {
   LighterAccountSetupStatus,
   LighterTradingEnvironment,
@@ -12,6 +12,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DIALOG_INITIAL_FOCUS,
 } from "../../../components/ui/dialog.js";
 import { writeClipboard } from "../../../lib/clipboard.js";
 import { formatDecimalString } from "./format.js";
@@ -177,25 +178,81 @@ export function LighterAccountSetupModal({
   sessionId,
   environment,
   onDone,
+  onCancel,
+  lockEnvironment = false,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (next: boolean) => void;
   readonly sessionId: string | null;
   /** The desk's current environment; the modal's own switch may pick the other one. */
   readonly environment: LighterTradingEnvironment;
-  readonly onDone: (environment: LighterTradingEnvironment) => void;
+  readonly onDone: (
+    environment: LighterTradingEnvironment,
+  ) => boolean | void | Promise<boolean | void>;
+  /** Only this deliberate action can dismiss an unfinished setup. */
+  readonly onCancel?: () => boolean | void | Promise<boolean | void>;
+  /** Agent-originated setup is fixed to the environment the status tool proved. */
+  readonly lockEnvironment?: boolean;
 }): JSX.Element {
   const theme = useUiStore((state) => state.theme);
   const [walletCopied, setWalletCopied] = useState(false);
+  const [settling, setSettling] = useState(false);
+  const [settlementError, setSettlementError] = useState<string | null>(null);
+  const completionStarted = useRef(false);
+
+  useEffect(() => {
+    if (!open) return;
+    completionStarted.current = false;
+    setSettling(false);
+    setSettlementError(null);
+  }, [open]);
+
+  const complete = useCallback(async (
+    doneEnvironment: LighterTradingEnvironment,
+  ): Promise<void> => {
+    if (completionStarted.current) return;
+    completionStarted.current = true;
+    setSettling(true);
+    setSettlementError(null);
+    try {
+      const accepted = await onDone(doneEnvironment);
+      if (accepted === false) {
+        completionStarted.current = false;
+        setSettlementError("Setup finished, but Vex could not resume this Agent request. Try again.");
+        return;
+      }
+      onOpenChange(false);
+    } catch {
+      completionStarted.current = false;
+      setSettlementError("Setup finished, but Vex could not resume this Agent request. Try again.");
+    } finally {
+      setSettling(false);
+    }
+  }, [onDone, onOpenChange]);
+
+  const cancel = useCallback(async (): Promise<void> => {
+    if (settling) return;
+    setSettling(true);
+    setSettlementError(null);
+    try {
+      const accepted = await onCancel?.();
+      if (accepted === false) {
+        setSettlementError("Vex could not cancel this setup request. Try again.");
+        return;
+      }
+      onOpenChange(false);
+    } catch {
+      setSettlementError("Vex could not cancel this setup request. Try again.");
+    } finally {
+      setSettling(false);
+    }
+  }, [onCancel, onOpenChange, settling]);
+
   const setup = useLighterAccountSetup({
     sessionId,
     initialEnvironment: environment,
     open,
-    onDone: (doneEnvironment) => {
-      onDone(doneEnvironment);
-      // Leave the done state on screen briefly rather than snapping shut.
-      window.setTimeout(() => onOpenChange(false), 1_200);
-    },
+    onDone: (doneEnvironment) => { void complete(doneEnvironment); },
   });
   const copyWallet = async (address: string): Promise<void> => {
     if (!(await writeClipboard(address))) return;
@@ -210,13 +267,13 @@ export function LighterAccountSetupModal({
     : lighterSetupPresentation(setup.phase, status);
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!running) onOpenChange(next); }}>
+    <Dialog open={open} onOpenChange={() => undefined}>
       <DialogContent
         data-vex-area="lighter-account-setup"
         data-environment={setup.environment}
         data-lighter-theme={theme}
         data-lighter-environment={setup.environment}
-        closeOnBackdropClick={!running}
+        closeOnBackdropClick={false}
         className="lit-chat-frame lit-environment-dialog w-[calc(100vw-3rem)] max-w-[420px]"
       >
         <DialogHeader>
@@ -233,7 +290,7 @@ export function LighterAccountSetupModal({
                 type="button"
                 key={env}
                 aria-pressed={setup.environment === env}
-                disabled={started}
+                disabled={started || lockEnvironment}
                 onClick={() => setup.setEnvironment(env)}
               >
                 <span className="lit-setup-env-name">{ENVIRONMENT_LABELS[env]}</span>
@@ -341,10 +398,22 @@ export function LighterAccountSetupModal({
           {setup.error === null ? null : (
             <p className="lit-setup-step-error" role="alert">{setup.error}</p>
           )}
+          {settlementError === null ? null : (
+            <p className="lit-setup-step-error" role="alert">{settlementError}</p>
+          )}
         </DialogBody>
-        <DialogFooter className="pt-2">
+        <DialogFooter className="lit-setup-footer pt-2">
+          <button
+            type="button"
+            className="lit-setup-cancel"
+            disabled={running || settling}
+            onClick={() => { void cancel(); }}
+            {...DIALOG_INITIAL_FOCUS}
+          >
+            Cancel
+          </button>
           {setup.error !== null ? (
-            <button type="button" className="lit-setup-cta" onClick={setup.retry}>
+            <button type="button" className="lit-setup-cta" disabled={settling} onClick={setup.retry}>
               Try again
             </button>
           ) : presentation?.ready === true ? (
@@ -352,10 +421,8 @@ export function LighterAccountSetupModal({
               type="button"
               className="lit-setup-cta"
               data-done
-              onClick={() => {
-                onDone(setup.environment);
-                onOpenChange(false);
-              }}
+              disabled={settling}
+              onClick={() => { void complete(setup.environment); }}
             >
               <IconCheck size={16} aria-hidden="true" />
               {START_TRADING_LABELS[setup.environment]}
@@ -365,7 +432,7 @@ export function LighterAccountSetupModal({
               type="button"
               className="lit-setup-cta"
               data-busy={running || undefined}
-              disabled={!setup.canStart || running}
+              disabled={!setup.canStart || running || settling}
               onClick={setup.start}
             >
               {running ? <span className="lit-loader" aria-hidden="true" /> : null}

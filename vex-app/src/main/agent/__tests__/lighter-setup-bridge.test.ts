@@ -16,6 +16,7 @@ import { setupLighterSetupBridge } from "../lighter-setup-bridge.js";
 const VALID = {
   type: "engine.lighter.setup",
   sessionId: "00000000-0000-4000-8000-0000000000a1",
+  intentId: "11111111-1111-4111-8111-111111111111",
   environment: "core",
   kind: "requested",
   occurredAt: "2026-09-20T13:00:00.000Z",

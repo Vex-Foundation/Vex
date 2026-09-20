@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { LighterAccountSetupStatus } from "@shared/schemas/lighter-trading.js";
 
@@ -51,6 +51,7 @@ function renderReady(environment: "core" | "rhc") {
   });
   const onDone = vi.fn();
   const onOpenChange = vi.fn();
+  const onCancel = vi.fn();
   render(
     <LighterAccountSetupModal
       open
@@ -58,19 +59,20 @@ function renderReady(environment: "core" | "rhc") {
       sessionId="11111111-1111-4111-8111-111111111111"
       environment={environment}
       onDone={onDone}
+      onCancel={onCancel}
     />,
   );
   const dialog = screen.getByRole("dialog");
   expect(dialog.classList.contains("lit-environment-dialog")).toBe(true);
   expect(dialog.getAttribute("data-lighter-environment")).toBe(environment);
-  return { onDone, onOpenChange };
+  return { onDone, onOpenChange, onCancel };
 }
 
 describe("LighterAccountSetupModal ready action", () => {
   it.each([
     ["rhc", "Start Trading on Lighter RHC"],
     ["core", "Start Trading on Lighter Core"],
-  ] as const)("enters the ready %s environment immediately", (environment, label) => {
+  ] as const)("enters the ready %s environment immediately", async (environment, label) => {
     const { onDone, onOpenChange } = renderReady(environment);
     const button = screen.getByRole("button", { name: label });
 
@@ -79,6 +81,31 @@ describe("LighterAccountSetupModal ready action", () => {
 
     expect(onDone).toHaveBeenCalledOnce();
     expect(onDone).toHaveBeenCalledWith(environment);
-    expect(onOpenChange).toHaveBeenCalledWith(false);
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it("ignores backdrop and Escape and closes only from Cancel", async () => {
+    const { onOpenChange, onCancel } = renderReady("core");
+    const dialog = screen.getByRole("dialog");
+
+    fireEvent.click(dialog);
+    fireEvent(dialog, new Event("cancel", { bubbles: false, cancelable: true }));
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(onCancel).toHaveBeenCalledOnce());
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it("stays open when the deliberate cancellation is not acknowledged", async () => {
+    const rendered = renderReady("rhc");
+    rendered.onCancel.mockResolvedValue(false);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "could not cancel this setup request",
+    );
+    expect(rendered.onOpenChange).not.toHaveBeenCalled();
   });
 });

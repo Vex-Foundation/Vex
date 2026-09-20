@@ -336,6 +336,8 @@ export const CH = {
     prepareDeskAction: "vex:lighterTrading:prepareDeskAction",
     getOnboardingChecklist: "vex:lighterTrading:getOnboardingChecklist",
     getAccountSetupStatus: "vex:lighterTrading:getAccountSetupStatus",
+    getPendingAgentSetup: "vex:lighterTrading:getPendingAgentSetup",
+    settleAgentSetup: "vex:lighterTrading:settleAgentSetup",
   },
 
   // Settings - read-only Phase 1 (Phase 2 dodaje setters)

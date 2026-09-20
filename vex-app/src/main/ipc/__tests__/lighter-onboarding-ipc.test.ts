@@ -16,6 +16,11 @@ const handlers = vi.hoisted(() => new Map<string, Handler>());
 const mocks = vi.hoisted(() => ({
   ensureEngineDbUrl: vi.fn(),
   resolveLighterOnboardingChecklist: vi.fn(),
+  resolveLighterAccountSetupStatus: vi.fn(),
+  getPendingForSession: vi.fn(),
+  getLighterSetupInteraction: vi.fn(),
+  settleIfPendingWith: vi.fn(),
+  resumeAgentAfterLighterSetup: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
@@ -33,6 +38,18 @@ vi.mock("../../database/engine-db-readiness.js", () => ({
 }));
 vi.mock("../../lighter/onboarding-checklist.js", () => ({
   resolveLighterOnboardingChecklist: (...a: unknown[]) => mocks.resolveLighterOnboardingChecklist(...a),
+  resolveLighterAccountSetupStatus: (...a: unknown[]) => mocks.resolveLighterAccountSetupStatus(...a),
+}));
+vi.mock("@vex-agent/db/repos/lighter-setup-interactions.js", () => ({
+  getPendingForSession: (...a: unknown[]) => mocks.getPendingForSession(...a),
+  getById: (...a: unknown[]) => mocks.getLighterSetupInteraction(...a),
+  settleIfPendingWith: (...a: unknown[]) => mocks.settleIfPendingWith(...a),
+}));
+vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
+  withSessionControlLock: async (_sessionId: string, fn: (client: unknown) => Promise<unknown>) => fn({}),
+}));
+vi.mock("@vex-agent/engine/core/lighter-setup-resume.js", () => ({
+  resumeAgentAfterLighterSetup: (...a: unknown[]) => mocks.resumeAgentAfterLighterSetup(...a),
 }));
 
 const { registerLighterOnboardingHandlers } = await import("../lighter-onboarding.js");
@@ -49,8 +66,11 @@ type CallResult<T = unknown> = {
   readonly error: { readonly code: string; readonly retryable: boolean };
 };
 
-async function call<T = unknown>(payload: unknown): Promise<CallResult<T>> {
-  const handler = handlers.get(CH.lighterTrading.getOnboardingChecklist);
+async function call<T = unknown>(
+  payload: unknown,
+  channel: string = CH.lighterTrading.getOnboardingChecklist,
+): Promise<CallResult<T>> {
+  const handler = handlers.get(channel);
   if (handler === undefined) throw new Error("checklist handler not registered");
   return (await handler(sender, { requestId: REQUEST_ID, payload })) as CallResult<T>;
 }
@@ -68,7 +88,99 @@ beforeEach(() => {
     nextAction: "continue_setup",
     updatedAt: null,
   });
+  mocks.getPendingForSession.mockResolvedValue(null);
+  mocks.getLighterSetupInteraction.mockResolvedValue({
+    intentId: "22222222-2222-4222-8222-222222222222",
+    sessionId: SESSION,
+    toolCallId: "call_setup",
+    environment: "core",
+    status: "pending",
+    resultMessageId: null,
+    resumeConsumedAt: null,
+  });
+  mocks.resolveLighterAccountSetupStatus.mockResolvedValue({
+    accountExists: true,
+    tradingKeyRegistered: true,
+    feeAuthorized: true,
+  });
+  mocks.settleIfPendingWith.mockResolvedValue({ status: "completed" });
+  mocks.resumeAgentAfterLighterSetup.mockResolvedValue({ resumed: true });
   teardowns = registerLighterOnboardingHandlers();
+});
+
+describe("Agent Lighter setup continuation", () => {
+  it("returns the pending interaction for renderer recovery", async () => {
+    mocks.getPendingForSession.mockResolvedValue({
+      intentId: "22222222-2222-4222-8222-222222222222",
+      sessionId: SESSION,
+      environment: "rhc",
+      status: "pending",
+      createdAt: "2026-09-20T13:00:00.000Z",
+    });
+    const result = await call(
+      { sessionId: SESSION },
+      CH.lighterTrading.getPendingAgentSetup,
+    );
+    expect(result.ok).toBe(true);
+    expect(result.data).toMatchObject({ interaction: { environment: "rhc" } });
+  });
+
+  it("re-verifies completed setup before settling and resuming", async () => {
+    const intentId = "22222222-2222-4222-8222-222222222222";
+    const result = await call(
+      { sessionId: SESSION, intentId, outcome: "completed" },
+      CH.lighterTrading.settleAgentSetup,
+    );
+    expect(result.ok).toBe(true);
+    expect(mocks.resolveLighterAccountSetupStatus).toHaveBeenCalledWith({
+      sessionId: SESSION,
+      environment: "core",
+    });
+    expect(mocks.settleIfPendingWith).toHaveBeenCalledWith(
+      expect.anything(),
+      intentId,
+      SESSION,
+      "completed",
+    );
+    expect(mocks.resumeAgentAfterLighterSetup).toHaveBeenCalledWith({
+      intentId,
+      sessionId: SESSION,
+    });
+  });
+
+  it("refuses a false completed claim and leaves the turn parked", async () => {
+    mocks.resolveLighterAccountSetupStatus.mockResolvedValue({
+      accountExists: true,
+      tradingKeyRegistered: false,
+      feeAuthorized: false,
+    });
+    const result = await call(
+      {
+        sessionId: SESSION,
+        intentId: "22222222-2222-4222-8222-222222222222",
+        outcome: "completed",
+      },
+      CH.lighterTrading.settleAgentSetup,
+    );
+    expect(result.ok).toBe(false);
+    expect(mocks.settleIfPendingWith).not.toHaveBeenCalled();
+    expect(mocks.resumeAgentAfterLighterSetup).not.toHaveBeenCalled();
+  });
+
+  it("cancels deliberately without pretending setup completed", async () => {
+    const intentId = "22222222-2222-4222-8222-222222222222";
+    await call(
+      { sessionId: SESSION, intentId, outcome: "cancelled" },
+      CH.lighterTrading.settleAgentSetup,
+    );
+    expect(mocks.resolveLighterAccountSetupStatus).not.toHaveBeenCalled();
+    expect(mocks.settleIfPendingWith).toHaveBeenCalledWith(
+      expect.anything(),
+      intentId,
+      SESSION,
+      "cancelled",
+    );
+  });
 });
 
 afterEach(() => {

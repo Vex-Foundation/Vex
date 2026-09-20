@@ -121,8 +121,8 @@ export interface EngineEventsBridge {
 
   /**
    * The active Agent session proved that the selected Lighter environment has
-   * no Vex trading key. The renderer switches to that environment and opens
-   * the existing setup modal; the event itself carries no setup data.
+   * no Vex trading key. The renderer opens the existing setup modal over that
+   * same session; the event carries only the durable interaction identity.
    */
   readonly onLighterSetupRequested: (
     cb: (event: LighterSetupHandoffEvent) => void,

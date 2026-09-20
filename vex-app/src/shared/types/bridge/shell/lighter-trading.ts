@@ -34,6 +34,12 @@ import type {
   LighterTradingSnapshot,
   LighterTradingSnapshotInput,
 } from "../../../schemas/lighter-trading.js";
+import type {
+  LighterSetupPending,
+  LighterSetupPendingInput,
+  LighterSetupSettleInput,
+  LighterSetupSettleResult,
+} from "../../../schemas/lighter-setup-handoff.js";
 
 /** Read-only, renderer-safe Lighter market data for the Light it up workspace. */
 export interface LighterTradingBridge {
@@ -116,4 +122,12 @@ export interface LighterTradingBridge {
   readonly getAccountSetupStatus: (
     input: LighterAccountSetupStatusInput,
   ) => AbortableInvocation<LighterAccountSetupStatus>;
+  /** Recover an Agent-owned setup modal after a renderer reload/session switch. */
+  readonly getPendingAgentSetup: (
+    input: LighterSetupPendingInput,
+  ) => Promise<Result<LighterSetupPending>>;
+  /** Deliberately complete or cancel the exact modal that owns the parked call. */
+  readonly settleAgentSetup: (
+    input: LighterSetupSettleInput,
+  ) => Promise<Result<LighterSetupSettleResult>>;
 }

@@ -22,6 +22,10 @@ import {
   lighterTradingSnapshotInputSchema,
 } from "../../shared/schemas/lighter-trading.js";
 import type { LighterTradingBridge } from "../../shared/types/bridge/shell/lighter-trading.js";
+import {
+  lighterSetupPendingInputSchema,
+  lighterSetupSettleInputSchema,
+} from "../../shared/schemas/lighter-setup-handoff.js";
 import { abortableInvoke, invokeWithSchema, subscribe } from "../_dispatch.js";
 
 export const lighterTrading = {
@@ -131,6 +135,20 @@ export const lighterTrading = {
       CH.lighterTrading.getAccountSetupStatus,
       input,
       lighterAccountSetupStatusInputSchema,
+    );
+  },
+  getPendingAgentSetup(input) {
+    return invokeWithSchema(
+      CH.lighterTrading.getPendingAgentSetup,
+      input,
+      lighterSetupPendingInputSchema,
+    );
+  },
+  settleAgentSetup(input) {
+    return invokeWithSchema(
+      CH.lighterTrading.settleAgentSetup,
+      input,
+      lighterSetupSettleInputSchema,
     );
   },
   onPublicBook(callback) {
