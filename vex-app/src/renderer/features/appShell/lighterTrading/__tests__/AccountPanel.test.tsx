@@ -350,13 +350,19 @@ describe("TradingBottomPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Review BTC position with Vex" }));
     expect(mocks.actions.onReviewPosition).toHaveBeenCalledWith(account.positions[0]);
+    // The row's one close key opens the card; it decides nothing by itself.
     fireEvent.click(screen.getByRole("button", { name: "Close BTC position" }));
+    expect(mocks.actions.onClosePosition).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Market" }));
     expect(mocks.actions.onClosePosition).toHaveBeenCalledWith(account.positions[0], 1);
-    // The row's portion rides along with both close buttons.
-    fireEvent.change(screen.getByRole("combobox", { name: "Portion of BTC position to close" }), { target: { value: "0.5" } });
+
+    // The chosen portion rides along with whichever key sends it.
     fireEvent.click(screen.getByRole("button", { name: "Close BTC position" }));
+    fireEvent.click(screen.getByRole("radio", { name: "50%" }));
+    fireEvent.click(screen.getByRole("button", { name: "Market" }));
     expect(mocks.actions.onClosePosition).toHaveBeenLastCalledWith(account.positions[0], 0.5);
-    fireEvent.click(screen.getByRole("button", { name: "Close BTC position with a limit order" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close BTC position" }));
+    fireEvent.click(screen.getByRole("button", { name: "Limit" }));
     expect(mocks.actions.onCloseLimit).toHaveBeenCalledWith(account.positions[0], 0.5);
     fireEvent.click(screen.getByRole("button", { name: "Set stop loss and take profit for BTC" }));
     expect(mocks.actions.onProtectPosition).toHaveBeenCalledWith(account.positions[0]);

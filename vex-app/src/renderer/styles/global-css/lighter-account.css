@@ -221,16 +221,103 @@
   font-weight: 600;
 }
 
-/* The close portion sits with Limit and Market and reads like one of them. */
-.lit-row-actions select {
-  height: 24px;
+/* ============================================================ *
+ *  CLOSE CARD - one key for the close decision, and the card    *
+ *  it opens. The row used to spend three controls on this: a    *
+ *  portion select, a Limit key and a Market key, with the       *
+ *  destructive one sitting a stray click from Protect. The      *
+ *  trigger is square so it reads as a mark rather than a fourth *
+ *  word, and the card asks the two questions a close actually   *
+ *  has - how much, at what kind of price - in one place.        *
+ * ============================================================ */
+.lit-row-actions .lit-close-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  padding: 0;
+  color: var(--lit-ink-secondary);
+}
+
+.lit-close-card {
+  /* The portaled-surface layer, the same one `ui-primitives/menu.css` puts
+   * `.vex-menu-portal` on: this card is body-portaled and fixed for exactly
+   * the reason a portaled menu is, so it belongs at the same height rather
+   * than at a number picked to clear today's desk chrome. */
+  z-index: 1100;
+  display: flex;
+  min-width: 208px;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--lit-line-strong);
+  border-radius: calc(var(--lit-radius) * 2);
+  background: var(--lit-panel);
+  padding: 10px;
+  /* An offset and a soft blur: the card is above the panel, not glowing on it. */
+  box-shadow: 0 8px 24px -6px rgb(0 0 0 / 0.45);
+}
+
+.lit-close-card-title {
+  margin: 0;
+  color: var(--lit-ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.lit-close-portions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.lit-close-portions button {
+  min-height: 24px;
   border: 1px solid var(--lit-line);
   border-radius: var(--lit-radius);
-  background: var(--lit-panel);
-  padding: 0 4px;
+  background: transparent;
   color: var(--lit-ink-secondary);
   font-size: 11px;
   font-weight: 600;
+}
+
+.lit-close-portions button:hover { border-color: var(--lit-line-strong); color: var(--lit-ink); }
+
+/* The chosen portion decides how much of a position leaves, so the mark has to
+ * survive a glance: a quiet raised surface, a strong edge and full ink. The
+ * fill is neutral rather than coloured, so it reads as "this one" without
+ * competing with the Market key below it for the eye. */
+.lit-close-portions button[data-selected] {
+  border-color: var(--lit-line-strong);
+  background: color-mix(in oklab, var(--lit-ink) 14%, transparent);
+  color: var(--lit-ink);
+}
+
+.lit-close-card-keys {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.lit-close-card-keys button {
+  min-height: 28px;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: transparent;
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.lit-close-card-keys button:hover { border-color: var(--lit-line-strong); color: var(--lit-ink); }
+
+.lit-close-card-keys button[data-danger] {
+  border-color: color-mix(in oklab, var(--lit-negative) 45%, transparent);
+  color: var(--lit-negative);
+}
+
+.lit-close-card-keys button[data-danger]:hover {
+  border-color: var(--lit-negative);
+  background: color-mix(in oklab, var(--lit-negative) 12%, transparent);
 }
 
 .lit-row-actions button:hover { border-color: var(--lit-line-strong); color: var(--lit-ink); }
@@ -396,7 +483,7 @@
 .lit-account-empty-action:focus-visible,
 .lit-account-refresh-button:focus-visible,
 .lit-row-actions button:focus-visible,
-.lit-row-actions select:focus-visible,
+.lit-close-card button:focus-visible,
 .lit-cancel-all:focus-visible,
 .lit-fund-actions button:focus-visible {
   outline: 2px solid var(--lit-focus);
