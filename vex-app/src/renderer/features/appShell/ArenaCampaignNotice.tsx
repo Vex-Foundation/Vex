@@ -19,23 +19,28 @@ import {
 import { recordFunnelStep } from "./lighterTrading/funnel.js";
 import { enterLighterMode } from "./lighterTrading/workspace-command.js";
 
-const DISMISS_STORAGE_KEY = "vex-arena-notice-dismissed";
+/**
+ * Dismissal lives in renderer-process memory, so it clears on the next app
+ * reboot and the card returns. A module-level flag (not sessionStorage) keeps
+ * the state out of any web-storage API the renderer is forbidden from touching,
+ * while giving the same "gone until reboot" lifetime.
+ */
+let dismissedThisSession = false;
 
-/** Dismissal lives in sessionStorage, so it clears on the next app reboot and the card returns. */
 function readDismissed(): boolean {
-  try {
-    return sessionStorage.getItem(DISMISS_STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
+  return dismissedThisSession;
 }
 
 function writeDismissed(): void {
-  try {
-    sessionStorage.setItem(DISMISS_STORAGE_KEY, "1");
-  } catch {
-    /* a refused write just means the card returns on the next reload */
-  }
+  dismissedThisSession = true;
+}
+
+/**
+ * Test hook only: reset the in-memory dismissal so a suite can model a fresh
+ * app boot. Never called by production code.
+ */
+export function __resetArenaNoticeDismissalForTests(): void {
+  dismissedThisSession = false;
 }
 
 function openLighterDesk(campaignActive: boolean): void {

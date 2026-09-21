@@ -5,6 +5,8 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { BatchTurnResult } from "@vex-agent/engine/core/turn-loop-tool-batch/outcome.js";
+import { makeEngineContext } from "../../_engine-context.js";
 
 const mockDispatchTool = vi.fn();
 const mockAppendMessage = vi.fn().mockResolvedValue({
@@ -64,16 +66,15 @@ const { applyToolBatchOutcome } = await import(
 );
 
 function context(sessionKind: "agent" | "mission" = "agent") {
-  return {
+  return makeEngineContext({
     sessionId: "session-lighter-setup",
+    sessionKind,
     missionId: sessionKind === "mission" ? "mission-1" : null,
     missionRunId: sessionKind === "mission" ? "run-1" : null,
-    sessionPermission: "restricted",
-    sessionKind,
-  } as never;
+  });
 }
 
-function batch(...names: string[]) {
+function batch(...names: string[]): BatchTurnResult {
   return {
     content: null,
     reasoning: null,
@@ -82,7 +83,7 @@ function batch(...names: string[]) {
       name,
       arguments: {},
     })),
-  } as never;
+  };
 }
 
 function handoffResult() {
@@ -112,7 +113,7 @@ describe("Lighter setup turn handoff", () => {
     const outcome = await processTurnToolBatch({
       context: context(),
       turnResult: batch("lighter_core_onboarding_status", "WalletBalances"),
-      liveMessages: [] as never,
+      liveMessages: [],
       currentTokenCount: 0,
       contextLimit: 100_000,
       lastTextSoFar: null,
@@ -148,7 +149,7 @@ describe("Lighter setup turn handoff", () => {
     const outcome = await processTurnToolBatch({
       context: context("mission"),
       turnResult: batch("lighter_core_onboarding_status", "WalletBalances"),
-      liveMessages: [] as never,
+      liveMessages: [],
       currentTokenCount: 0,
       contextLimit: 100_000,
       lastTextSoFar: null,

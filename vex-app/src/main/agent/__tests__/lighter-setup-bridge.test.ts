@@ -7,7 +7,7 @@ vi.mock("../../logger/index.js", () => ({
   log: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { lighterSetupBus } from "@vex-agent/engine/runtime/lighter-setup-bus.js";
+import { lighterSetupBus, type LighterSetupEvent } from "@vex-agent/engine/runtime/lighter-setup-bus.js";
 import { EV } from "@shared/ipc/channels.js";
 import { broadcastToAllWindows } from "../../lifecycle/broadcast.js";
 import { log } from "../../logger/index.js";
@@ -41,8 +41,14 @@ describe("setupLighterSetupBridge", () => {
 
   it("drops extra setup content and invalid environments", () => {
     const teardown = setupLighterSetupBridge();
-    lighterSetupBus.emit({ ...VALID, walletAddress: "0xsecret" } as never);
-    lighterSetupBus.emit({ ...VALID, environment: "testnet" } as never);
+    // Both payloads are deliberately off-contract — an extra secret field and
+    // an environment outside the union — to prove the bridge validates at
+    // runtime and drops them. Typing the off-contract value as a plain string
+    // keeps the object assignable to the real event type (so the compiler still
+    // checks the rest of the call) without an `as never`/`as unknown as` escape.
+    const invalidEnvironment: string = "testnet";
+    lighterSetupBus.emit({ ...VALID, walletAddress: "0xsecret" } as LighterSetupEvent);
+    lighterSetupBus.emit({ ...VALID, environment: invalidEnvironment } as LighterSetupEvent);
 
     expect(broadcastToAllWindows).not.toHaveBeenCalled();
     expect(log.warn).toHaveBeenCalledTimes(2);

@@ -8,12 +8,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 import { useUiStore } from "../../../stores/uiStore.js";
-import { ArenaCampaignNotice } from "../ArenaCampaignNotice.js";
+import {
+  ArenaCampaignNotice,
+  __resetArenaNoticeDismissalForTests,
+} from "../ArenaCampaignNotice.js";
 import { arenaCampaignPhase } from "../lighterTrading/arena-campaign.js";
 
 beforeEach(() => {
   vi.useFakeTimers();
-  sessionStorage.clear();
+  __resetArenaNoticeDismissalForTests();
   useUiStore.setState({ runtimeMode: "agent", activeSessionId: null });
   useLighterAnalysisStore.getState().saveDesk({ environment: "core" });
 });
@@ -99,7 +102,7 @@ describe("ArenaCampaignNotice", () => {
     expect(useUiStore.getState().runtimeMode).toBe("lighter");
   });
 
-  it("Dismiss hides the card for the session but returns after a reboot clears sessionStorage", () => {
+  it("Dismiss hides the card for the session but returns after a reboot", () => {
     vi.setSystemTime(new Date("2026-09-20T00:00:00Z"));
     const { unmount } = render(<ArenaCampaignNotice />);
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
@@ -108,7 +111,7 @@ describe("ArenaCampaignNotice", () => {
     render(<ArenaCampaignNotice />);
     expect(screen.queryByRole("status")).toBeNull();
     unmount();
-    sessionStorage.clear(); // the next app reboot starts a fresh session
+    __resetArenaNoticeDismissalForTests(); // the next app reboot starts fresh
     render(<ArenaCampaignNotice />);
     expect(screen.getByRole("status")).toBeTruthy();
   });
