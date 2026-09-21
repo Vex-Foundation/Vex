@@ -755,11 +755,10 @@
   border: 1px solid var(--lit-line);
 }
 .lit-setup-env > button {
-  position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 1px;
+  justify-content: center;
+  gap: 9px;
   min-width: 0;
   padding: 8px 10px;
   border: 1px solid transparent;
@@ -767,35 +766,38 @@
   background: transparent;
   color: var(--lit-ink-muted);
   cursor: pointer;
-  overflow: hidden;
   transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
 }
 
-/* The network mark, BEHIND its own name: Ethereum for Core, the Robinhood
- * feather for RHC - the same pairing the desk's environment switch makes,
- * from the same source.
+/* The network mark beside its own name: Ethereum for Core, the Robinhood
+ * feather for RHC - the same pairing, from the same source, that the desk's
+ * environment switch makes, so the two surfaces read alike.
  *
- * Leading edge, not centre: these buttons are only as tall as their two lines
- * of text, so a centred mark sits squarely behind the label and "Robinhood
- * Chain" is long enough to swallow the feather whole. Set against the leading
- * edge it reads as a mark rather than a smudge, and the text keeps its
- * contrast. `aria-hidden` on the image: the network is already written above
- * it, and announcing it twice would only be noise. */
+ * Beside, not behind. Behind was tried: these buttons are only as tall as
+ * their two lines of text, so a mark large enough to see either sat squarely
+ * under the label or was stranded out at an edge with the centred text
+ * floating away from it. Set against the label it belongs to, the pair reads
+ * as one name. The unselected side dims its mark to match its muted label
+ * rather than hiding it.
+ *
+ * `aria-hidden` on the image: the network is already written next to it, and
+ * announcing it twice would only be noise. */
 .lit-setup-env-logo {
-  position: absolute;
-  top: 50%;
-  left: 4px;
-  width: 44px;
-  height: 44px;
-  transform: translateY(-50%);
-  opacity: 0.22;
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+  opacity: 0.75;
   pointer-events: none;
   user-select: none;
   transition: opacity 140ms ease;
 }
-/* Both lines ride above the watermark. */
-.lit-setup-env-name,
-.lit-setup-env-asset { position: relative; }
+.lit-setup-env-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+}
 .lit-setup-env-name { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
 .lit-setup-env-asset {
   font-size: 10px;
@@ -805,28 +807,15 @@
   opacity: 0.75;
 }
 .lit-setup-env > button:hover:not(:disabled) { color: var(--lit-ink); background: var(--lit-hover); }
-.lit-setup-env > button:hover:not(:disabled) .lit-setup-env-logo { opacity: 0.3; }
+.lit-setup-env > button:hover:not(:disabled) .lit-setup-env-logo { opacity: 0.9; }
 .lit-setup-env > button[aria-pressed="true"] {
   background: color-mix(in srgb, var(--lit-setup-accent) 14%, var(--lit-panel-raised));
   border-color: color-mix(in srgb, var(--lit-setup-accent) 55%, transparent);
   color: var(--lit-ink);
 }
 .lit-setup-env > button[aria-pressed="true"] .lit-setup-env-asset { color: var(--lit-setup-accent); opacity: 1; }
-.lit-setup-env > button[aria-pressed="true"] .lit-setup-env-logo { opacity: 0.34; }
+.lit-setup-env > button[aria-pressed="true"] .lit-setup-env-logo { opacity: 1; }
 
-/* Celeris is a LIGHT surface, and both marks are light themselves - the
- * Robinhood chartreuse most of all, which at the dark theme's opacity would
- * disappear into a pale panel entirely. Darkened a touch and carried a little
- * stronger so the watermark reads as the same quiet presence it has on dark,
- * rather than as nothing. */
-.lit-chat-frame[data-lighter-theme="celeris"] .lit-setup-env-logo {
-  opacity: 0.16;
-  filter: brightness(0.72) saturate(1.15);
-}
-.lit-chat-frame[data-lighter-theme="celeris"]
-  .lit-setup-env > button:hover:not(:disabled) .lit-setup-env-logo { opacity: 0.24; }
-.lit-chat-frame[data-lighter-theme="celeris"]
-  .lit-setup-env > button[aria-pressed="true"] .lit-setup-env-logo { opacity: 0.3; }
 .lit-setup-env > button:disabled { cursor: default; }
 .lit-setup-env > button:disabled:not([aria-pressed="true"]) { opacity: 0.4; }
 .lit-setup-env > button:focus-visible {

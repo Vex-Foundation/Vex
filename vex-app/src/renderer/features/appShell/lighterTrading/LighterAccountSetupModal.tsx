@@ -306,8 +306,10 @@ export function LighterAccountSetupModal({
                   aria-hidden="true"
                   draggable={false}
                 />
-                <span className="lit-setup-env-name">{ENVIRONMENT_LABELS[env]}</span>
-                <span className="lit-setup-env-asset">{ENVIRONMENT_ASSETS[env]}</span>
+                <span className="lit-setup-env-text">
+                  <span className="lit-setup-env-name">{ENVIRONMENT_LABELS[env]}</span>
+                  <span className="lit-setup-env-asset">{ENVIRONMENT_ASSETS[env]}</span>
+                </span>
               </button>
             ))}
           </div>
