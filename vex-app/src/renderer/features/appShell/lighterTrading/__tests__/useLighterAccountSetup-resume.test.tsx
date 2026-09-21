@@ -11,8 +11,9 @@
  *   2. Retry reads the live account FIRST. The recorded step is a closure from
  *      when the step began; replaying it blindly re-runs a phase the account
  *      has moved past.
- *   3. A submit that failed with nothing sent retries ITSELF, bounded, before
- *      the user is asked - and a refusal they must act on still reaches them.
+ *   3. A submit REFUSED BEFORE DISPATCH retries ITSELF, bounded, before the
+ *      user is asked - while a failure reported after dispatch never does,
+ *      because it may already have paid for a transaction.
  *
  * Both are driven through the real hook against a fake bridge, so a regression
  * shows up as an extra `prepareDeskAction` call rather than as prose.
@@ -73,6 +74,8 @@ function status(over: Partial<LighterAccountSetupStatus> = {}): LighterAccountSe
 let live: LighterAccountSetupStatus;
 let prepared: Array<LighterDeskAction>;
 let approveExecutionStatus: "succeeded" | "failed" | "indeterminate";
+/** The dispatched result's body, as the approve reply carries it. */
+let approveToolOutput: string | null;
 /** Refusals the fake bridge hands back, one per `prepareDeskAction`, then none. */
 let refusals: Array<string>;
 
@@ -111,6 +114,7 @@ beforeEach(() => {
   prepared = [];
   refusals = [];
   approveExecutionStatus = "succeeded";
+  approveToolOutput = null;
   mocks.useLighterAccountSetupStatus.mockImplementation(() => ({
     data: { ok: true, data: live },
     isLoading: false,
@@ -130,7 +134,11 @@ beforeEach(() => {
       approve: () =>
         Promise.resolve({
           ok: true,
-          data: { executionStatus: approveExecutionStatus, toolOutput: null, message: "" },
+          data: {
+            executionStatus: approveExecutionStatus,
+            toolOutput: approveToolOutput,
+            message: "approve reply message",
+          },
         }),
     },
   };
@@ -217,23 +225,33 @@ describe("useLighterAccountSetup resume rules", () => {
     expect(result.current.error).toBe("nope");
   });
 
-  it("a proven failure re-submits, because nothing reached the chain", async () => {
+  it("a deposit that reverted is never re-sent automatically", async () => {
+    // The dispatch happened and the transaction paid for itself. Re-sending it
+    // on a timer would pay again for the same refusal, so this one stops and
+    // asks - and it says what the chain said, not the JSON it arrived in.
     approveExecutionStatus = "failed";
+    approveToolOutput = JSON.stringify({
+      source: "vex_lighter_live_deposit",
+      status: "failed",
+      stage: "deposit",
+      reason: "Deposit transaction reverted on chain.",
+    });
     const { result } = mount();
 
     act(() => { result.current.setAmountIn("12"); });
     act(() => { result.current.start(); });
     await tick();
-    await tick(AUTO_RETRY_MS[0]);
-    await tick(AUTO_RETRY_MS[1]);
-    expect(result.current.error).not.toBeNull();
-    expect(prepared.filter((a) => a.kind === "onboarding_deposit")).toHaveLength(3);
+    expect(result.current.error).toBe("Deposit transaction reverted on chain.");
 
-    // The account still has not moved, so the user's own click sends it again.
+    await tick(AUTO_RETRY_MS[0] + AUTO_RETRY_MS[1]);
+    expect(prepared.filter((a) => a.kind === "onboarding_deposit")).toHaveLength(1);
+
+    // The user can still decide to send it again themselves.
     approveExecutionStatus = "succeeded";
+    approveToolOutput = null;
     act(() => { result.current.retry(); });
     await tick();
-    expect(prepared.filter((a) => a.kind === "onboarding_deposit")).toHaveLength(4);
+    expect(prepared.filter((a) => a.kind === "onboarding_deposit")).toHaveLength(2);
   });
 
   it("retry after a completed setup finishes instead of re-running a step", async () => {
@@ -243,8 +261,6 @@ describe("useLighterAccountSetup resume rules", () => {
     act(() => { result.current.setAmountIn("12"); });
     act(() => { result.current.start(); });
     await tick();
-    await tick(AUTO_RETRY_MS[0]);
-    await tick(AUTO_RETRY_MS[1]);
     expect(result.current.error).not.toBeNull();
     const attempts = prepared.length;
 

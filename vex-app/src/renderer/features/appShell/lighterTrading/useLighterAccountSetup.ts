@@ -34,11 +34,11 @@ export type LighterAccountSetupPhase =
 
 const POLL_INTERVAL_MS = 2_000;
 /**
- * A submit half that failed with NOTHING SENT is re-attempted on the user's
- * behalf before they are asked to do it themselves. Several of these refusals
- * are races that clear in seconds - a deposit whose credit is not proven
- * locally yet, a busy wallet execution slot, a provider that blinked - and
- * "Try again" was only ever the user performing the recovery by hand.
+ * A submit half REFUSED BEFORE DISPATCH is re-attempted on the user's behalf
+ * before they are asked to do it themselves. Several of these refusals are
+ * races that clear in seconds - a deposit whose credit is not proven locally
+ * yet, a busy wallet execution slot, a provider that blinked - and "Try again"
+ * was only ever the user performing that recovery by hand.
  *
  * Bounded deliberately: two attempts, then the error surfaces exactly as
  * before, so a refusal the user must act on (an unfunded wallet, an amount
@@ -65,7 +65,42 @@ function sleep(ms: number): Promise<void> {
  */
 type StepOutcome =
   | { readonly ok: true }
-  | { readonly ok: false; readonly unproven?: true; readonly reason: string };
+  | {
+      readonly ok: false;
+      readonly unproven?: true;
+      /**
+       * Nothing was dispatched: the step was refused before approval, so
+       * sending it again costs nothing and may well work. A failure reported
+       * AFTER dispatch is never marked this way - a Lighter deposit that
+       * reverted is a real transaction that paid gas, and re-sending it
+       * automatically would pay again for the same refusal.
+       */
+      readonly retryable?: true;
+      readonly reason: string;
+    };
+
+/**
+ * The human sentence behind a failed step. A refusal's tool output IS that
+ * sentence, but a handler that reports its own failure inside a SUCCESSFUL
+ * result carries it in a JSON body, and a JSON body is not something to show
+ * a person.
+ */
+function stepFailureReason(result: {
+  readonly toolOutput?: string | null;
+  readonly message: string;
+}): string {
+  const output = result.toolOutput ?? null;
+  if (output === null) return result.message;
+  const trimmed = output.trim();
+  if (!trimmed.startsWith("{")) return trimmed;
+  try {
+    const reason = (JSON.parse(trimmed) as Record<string, unknown>)["reason"];
+    if (typeof reason === "string" && reason.trim().length > 0) return reason.trim();
+  } catch {
+    // Not JSON after all; the raw sentence below is the better answer.
+  }
+  return result.message;
+}
 
 export interface UseLighterAccountSetupInput {
   readonly sessionId: string | null;
@@ -196,13 +231,17 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     action: LighterDeskAction,
   ): Promise<StepOutcome> => {
     if (sessionId === null) return { ok: false, reason: "No active session." };
+    // Everything up to the approve call is pre-dispatch: a refusal there left
+    // the chain untouched and is worth simply asking again.
     const prepared = await window.vex.lighterTrading.prepareDeskAction({ sessionId, environment: env, action });
-    if (!prepared.ok) return { ok: false, reason: prepared.error.message };
-    if (prepared.data.kind === "refused") return { ok: false, reason: prepared.data.reason };
+    if (!prepared.ok) return { ok: false, retryable: true, reason: prepared.error.message };
+    if (prepared.data.kind === "refused") {
+      return { ok: false, retryable: true, reason: prepared.data.reason };
+    }
     const approved = await window.vex.approvals.approve({ id: prepared.data.approvalId });
     if (!approved.ok) return { ok: false, reason: approved.error.message };
     if (approved.data.executionStatus === "failed") {
-      return { ok: false, reason: approved.data.toolOutput ?? approved.data.message };
+      return { ok: false, reason: stepFailureReason(approved.data) };
     }
     if (approved.data.executionStatus === "indeterminate") {
       return {
@@ -215,17 +254,18 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
   };
 
   /**
-   * A submit half refused with nothing sent. Spend an automatic attempt if any
-   * remain, otherwise hand the reason to the user with the Try again button.
+   * A submit half failed. Spend an automatic attempt if the refusal is one
+   * that sent nothing and any attempts remain; otherwise hand the reason to
+   * the user with the Try again button.
    *
    * The attempt goes through `resumeFromStatus`, the very function the button
    * calls, so an automatic retry can no more re-submit a step the account has
    * already moved past than a click can - and the live re-read in front of it
    * is what makes repeating a money-path step safe at all.
    */
-  const failStep = (reason: string): void => {
+  const failStep = (reason: string, retryable: boolean): void => {
     if (cancelled.current) return;
-    const delay = AUTO_RETRY_DELAYS_MS[autoRetries.current];
+    const delay = retryable ? AUTO_RETRY_DELAYS_MS[autoRetries.current] : undefined;
     if (delay === undefined) { setError(reason); return; }
     autoRetries.current += 1;
     autoRetryTimer.current = setTimeout(() => {
@@ -248,7 +288,7 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     const submitted = await prepareAndApprove(env, action);
     if (cancelled.current) return false;
     if (!submitted.ok && submitted.unproven !== true) {
-      failStep(submitted.reason);
+      failStep(submitted.reason, submitted.retryable === true);
       return false;
     }
     // This step's submit is behind us: the next one starts with a full budget.

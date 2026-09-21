@@ -149,26 +149,42 @@ import { applyDeskApproveSideEffects } from "./dispatch-approved/desk.js";
 
 type ApprovedDispatchExecutionStatus = "succeeded" | "failed" | "indeterminate";
 
-function isLighterUnresolvedResult(data: unknown): boolean {
+/**
+ * What a Lighter money-path result says about ITSELF, or `null` when it says
+ * nothing this function is willing to read.
+ *
+ * These handlers report their own verdict INSIDE a successful tool result: the
+ * call completed and the structured answer carries what happened, so the
+ * envelope's `success` cannot be the whole story. A deposit that reverted on
+ * chain arrives here as `{ success: true, status: "failed" }`, and reading only
+ * the envelope reported it as `succeeded` - which told the desk to go wait for
+ * a credit that was never coming.
+ */
+function lighterResultStatus(data: unknown): ApprovedDispatchExecutionStatus | null {
   if (data === null || typeof data !== "object" || Array.isArray(data)) {
-    return false;
+    return null;
   }
   const row = data as Record<string, unknown>;
-  if (
-    row["source"] === "vex_lighter_live_deposit"
-    && (row["status"] === "ambiguous" || row["status"] === "l2_pending")
-  ) {
-    return true;
-  }
-  if (row["source"] !== "vex_lighter_live_order_create") return false;
   const status = row["status"];
+  if (row["source"] === "vex_lighter_live_deposit") {
+    // Confirmed on the settlement chain with the Lighter credit still landing,
+    // or an outcome nobody can prove: neither may ever be sent again.
+    if (status === "ambiguous" || status === "l2_pending") return "indeterminate";
+    // The deposit did not go through, and the handler proved that much.
+    if (status === "failed") return "failed";
+    return null;
+  }
+  if (row["source"] !== "vex_lighter_live_order_create") return null;
   const executionState = row["executionState"];
+  // An order's own negative verdicts (`rejected`, `canceled`) are settled
+  // answers from the exchange, not failures of this dispatch, so they stay
+  // `succeeded` exactly as before. Only the unresolved ones are named here.
   return (
     status === "ambiguous"
     || status === "sequencer_pending"
     || executionState === "ambiguous"
     || executionState === "sequencer_pending"
-  );
+  ) ? "indeterminate" : null;
 }
 
 export function deriveApprovedDispatchExecutionStatus(input: {
@@ -176,7 +192,7 @@ export function deriveApprovedDispatchExecutionStatus(input: {
   readonly data?: Record<string, unknown>;
 }): ApprovedDispatchExecutionStatus {
   if (!input.success) return "failed";
-  return isLighterUnresolvedResult(input.data) ? "indeterminate" : "succeeded";
+  return lighterResultStatus(input.data) ?? "succeeded";
 }
 
 /**

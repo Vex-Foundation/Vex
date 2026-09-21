@@ -224,6 +224,35 @@ describe("deriveApprovedDispatchExecutionStatus", () => {
     expect(deriveApprovedDispatchExecutionStatus({ success: false, data: {} })).toBe("failed");
   });
 
+  /**
+   * These handlers report their own verdict inside a SUCCESSFUL result, so the
+   * envelope alone called a reverted deposit `succeeded` - which sent the desk
+   * off to wait three minutes for a credit that was never coming.
+   */
+  it("reads a Lighter deposit's own failure verdict out of a successful result", () => {
+    expect(
+      deriveApprovedDispatchExecutionStatus({
+        success: true,
+        data: { source: "vex_lighter_live_deposit", status: "failed", stage: "deposit" },
+      }),
+    ).toBe("failed");
+  });
+
+  it("leaves an order's own settled negatives alone", () => {
+    // `rejected` is an answer from the exchange, not a failure of this
+    // dispatch: the call ran and the venue said no.
+    expect(
+      deriveApprovedDispatchExecutionStatus({
+        success: true,
+        data: {
+          source: "vex_lighter_live_order_create",
+          status: "provider_confirmed",
+          executionState: "rejected",
+        },
+      }),
+    ).toBe("succeeded");
+  });
+
   it("uses indeterminate only for source-scoped unresolved Lighter results", () => {
     expect(
       deriveApprovedDispatchExecutionStatus({
@@ -258,11 +287,14 @@ describe("deriveApprovedDispatchExecutionStatus", () => {
         },
       }),
     ).toBe("indeterminate");
+    // A deposit that failed is not UNRESOLVED - that distinction still holds,
+    // and it is why this case sits here. What changed is the other half of it:
+    // it is not `succeeded` either (see the verdict case above).
     expect(
       deriveApprovedDispatchExecutionStatus({
         success: true,
         data: { source: "vex_lighter_live_deposit", status: "failed" },
       }),
-    ).toBe("succeeded");
+    ).not.toBe("indeterminate");
   });
 });
