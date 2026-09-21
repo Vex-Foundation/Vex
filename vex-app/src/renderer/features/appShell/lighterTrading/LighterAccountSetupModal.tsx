@@ -15,6 +15,7 @@ import {
   DIALOG_INITIAL_FOCUS,
 } from "../../../components/ui/dialog.js";
 import { writeClipboard } from "../../../lib/clipboard.js";
+import { LIGHTER_ENVIRONMENT_LOGOS } from "./environment-logos.js";
 import { formatDecimalString } from "./format.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import { useLighterAccountSetup, type LighterAccountSetupPhase } from "./useLighterAccountSetup.js";
@@ -298,6 +299,13 @@ export function LighterAccountSetupModal({
                 disabled={started}
                 onClick={() => setup.setEnvironment(env)}
               >
+                <img
+                  className="lit-setup-env-logo"
+                  src={LIGHTER_ENVIRONMENT_LOGOS[env]}
+                  alt=""
+                  aria-hidden="true"
+                  draggable={false}
+                />
                 <span className="lit-setup-env-name">{ENVIRONMENT_LABELS[env]}</span>
                 <span className="lit-setup-env-asset">{ENVIRONMENT_ASSETS[env]}</span>
               </button>

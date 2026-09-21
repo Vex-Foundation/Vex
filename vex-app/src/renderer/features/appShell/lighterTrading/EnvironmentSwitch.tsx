@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import type { LighterTradingEnvironment } from "@shared/schemas/lighter-trading.js";
 import { LIGHTER_ENVIRONMENT_NAMES, LIGHTER_ENVIRONMENT_SHORT_LABELS } from "@shared/lighter-environment-labels.js";
+import { LIGHTER_ENVIRONMENT_LOGOS } from "./environment-logos.js";
 
 export const LIGHTER_ENVIRONMENTS: ReadonlyArray<{
   readonly value: LighterTradingEnvironment;
@@ -8,8 +9,8 @@ export const LIGHTER_ENVIRONMENTS: ReadonlyArray<{
   readonly name: string;
   readonly logo: string;
 }> = [
-  { value: "core", label: LIGHTER_ENVIRONMENT_SHORT_LABELS.core, name: LIGHTER_ENVIRONMENT_NAMES.core, logo: "./logo/ethereum.svg" },
-  { value: "rhc", label: LIGHTER_ENVIRONMENT_SHORT_LABELS.rhc, name: LIGHTER_ENVIRONMENT_NAMES.rhc, logo: "./logo/robinhood.svg" },
+  { value: "core", label: LIGHTER_ENVIRONMENT_SHORT_LABELS.core, name: LIGHTER_ENVIRONMENT_NAMES.core, logo: LIGHTER_ENVIRONMENT_LOGOS.core },
+  { value: "rhc", label: LIGHTER_ENVIRONMENT_SHORT_LABELS.rhc, name: LIGHTER_ENVIRONMENT_NAMES.rhc, logo: LIGHTER_ENVIRONMENT_LOGOS.rhc },
 ];
 
 /** Core | RHC: which Lighter network the desk trades on. Switching drops the market, the desk picks that network's default. */

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { LighterAccountSetupStatus } from "@shared/schemas/lighter-trading.js";
 
@@ -82,6 +82,29 @@ describe("LighterAccountSetupModal ready action", () => {
     expect(onDone).toHaveBeenCalledOnce();
     expect(onDone).toHaveBeenCalledWith(environment);
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  /**
+   * Ethereum behind Core, the Robinhood feather behind RHC - the same pairing
+   * the desk's environment switch makes, from the same source, so the two
+   * surfaces cannot drift onto different files. Decorative: the network is
+   * already written above the mark, so announcing it twice would be noise.
+   */
+  it.each([
+    ["core", "./logo/ethereum.svg"],
+    ["rhc", "./logo/robinhood.svg"],
+  ] as const)("marks the %s button with its own network logo", (environment, src) => {
+    renderReady(environment);
+    // Scoped to the toggle: "Core" also names the ready-state action button.
+    const toggle = within(screen.getByRole("group", { name: "Environment" }));
+    const button = toggle.getByRole("button", {
+      name: environment === "core" ? /Core/ : /Robinhood Chain/,
+    });
+    const logo = button.querySelector("img.lit-setup-env-logo");
+
+    expect(logo?.getAttribute("src")).toBe(src);
+    expect(logo?.getAttribute("aria-hidden")).toBe("true");
+    expect(logo?.getAttribute("alt")).toBe("");
   });
 
   it("ignores backdrop and Escape and closes only from Cancel", async () => {
