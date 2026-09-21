@@ -294,6 +294,17 @@ describe("approvalActorLine", () => {
     ).toBe("Vex's own agent");
   });
 
+  it("names the user for a desk click, since no agent or client proposed it", () => {
+    expect(
+      approvalActorLine({
+        origin: "desk",
+        requestedByClient: null,
+        projectId: null,
+        projectName: null,
+      }),
+    ).toBe("You, from the Lighter desk");
+  });
+
   /**
    * The one case that must render NOTHING. A row with no recorded provenance
    * captioned "Vex's own agent" would be a lie about authority if the row was

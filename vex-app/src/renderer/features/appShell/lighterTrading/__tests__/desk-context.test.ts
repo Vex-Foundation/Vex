@@ -1,0 +1,222 @@
+import { describe, expect, it } from "vitest";
+import type { LighterTradingAccount, LighterTradingMarket } from "../../../../../shared/schemas/lighter-trading.js";
+import {
+  buildDeskContext,
+  deskChartScopeKey,
+  deskQuickPrompts,
+  deskScopeLabel,
+  deskScopeTag,
+  deskMessageForDisplay,
+  deskStarterPrompts,
+  describeChartNotes,
+  describeMarketState,
+  withDeskScope,
+  type DeskChartNotes,
+  type DeskContextScope,
+  type DeskMarketState,
+} from "../desk-context.js";
+import { DEFAULT_CHART_PREFERENCES } from "../chart-preferences.js";
+
+const MARKET: LighterTradingMarket = {
+  marketId: 1,
+  symbol: "BTC",
+  marketType: "perp",
+  status: "active",
+  baseAssetId: 1,
+  quoteAssetId: 3,
+  minBaseAmount: "0.0001",
+  minQuoteAmount: "10",
+  orderQuoteLimit: "100000",
+  decimals: { size: 5, price: 1, quote: 6 },
+  fees: { maker: "0", taker: "0.0003", makerEnabled: false, takerEnabled: true, integratorMaker: null, integratorTaker: null },
+  activity24h: { tradesCount: 120, quoteVolume: 1_600_000 },
+  margin: { defaultInitialMarginFraction: 1_000, minInitialMarginFraction: 200, maintenanceMarginFraction: 400 },
+};
+
+const SCOPE: DeskContextScope = { environment: "core", market: MARKET, resolution: "15m" };
+
+const POSITION: LighterTradingAccount["positions"][number] = {
+  marketId: 1,
+  symbol: "BTC",
+  side: "short",
+  size: "0.25",
+  entryPrice: "64000",
+  value: "16000",
+  unrealizedPnl: "120",
+  liquidationPrice: "70100",
+  initialMarginFraction: 1_000,
+  marginMode: "cross",
+  allocatedMargin: "1600",
+};
+
+describe("desk scope", () => {
+  it("tags a typed message with the exact scope and forbids inferring it from the symbol", () => {
+    const tag = deskScopeTag(SCOPE);
+    expect(tag).toBe(
+      "Lighter desk scope: environment=core, marketId=1, marketType=perp, symbol=BTC, candleInterval=15m."
+      + " Do not infer the environment or product from the symbol."
+      + " Answer in under 150 words unless asked for more: the levels and numbers first,"
+      + " one line of reasoning each, no preamble and no summary of what you read."
+      + " Close with one sentence in plain English that reads the findings back as a"
+      + " course of action and names the price range it applies to, in the register"
+      + " of: Based on the findings, it is advisable to wait for a reclaim of"
+      + " 81,264 to 81,290 before buying. Say so just as plainly when the action is"
+      + " to stand aside, and give the range that would change that. End the"
+      + " sentence with: This is not financial advice.",
+    );
+    expect(withDeskScope("should I trim?", tag)).toBe(`should I trim?\n\n${tag}`);
+    expect(deskScopeLabel(SCOPE)).toBe("Core · BTC · 15m");
+    expect(deskScopeLabel({ ...SCOPE, environment: "rhc" })).toBe("RHC · BTC · 15m");
+  });
+});
+
+describe("chart notes", () => {
+  // 2026-09-17 10:00 UTC and 12:00 UTC.
+  const T1 = 1_789_639_200;
+  const T2 = T1 + 7_200;
+  const CHART: DeskChartNotes = {
+    preferences: { ...DEFAULT_CHART_PREFERENCES, studies: ["rsi", "sma"], periods: { sma: 50, ema: 20, bb: 20, rsi: 14 } },
+    drawings: [
+      { id: "h", kind: "horizontal", a: { time: T1, price: 64000 }, b: { time: T1, price: 64000 } },
+      { id: "t", kind: "trend", a: { time: T1, price: 63000.25 }, b: { time: T2, price: 65000 } },
+      { id: "r", kind: "rectangle", a: { time: T2, price: 64500 }, b: { time: T1, price: 63500 } },
+      { id: "f", kind: "fib", a: { time: T1, price: 62000 }, b: { time: T2, price: 66000 } },
+      { id: "m", kind: "measure", a: { time: T1, price: 63000 }, b: { time: T2, price: 64000 } },
+    ],
+  };
+
+  it("reads out indicators in toolbar order and every drawing at market precision", () => {
+    expect(describeChartNotes(CHART, MARKET)).toBe(
+      "Indicators on the trader's chart: SMA 50, RSI 14. "
+      + "Drawings the trader placed on the chart: horizontal line at 64000.0; "
+      + "trend line from 63000.3 (2026-09-17 10:00 UTC) to 65000.0 (2026-09-17 12:00 UTC); "
+      + "rectangle 63500.0 to 64500.0 between 2026-09-17 10:00 UTC and 2026-09-17 12:00 UTC; "
+      + "fib retracement from 62000.0 (2026-09-17 10:00 UTC) to 66000.0 (2026-09-17 12:00 UTC); "
+      + "measured move from 63000.0 (2026-09-17 10:00 UTC) to 64000.0 (2026-09-17 12:00 UTC). "
+      + "Refer to these levels by their prices.",
+    );
+  });
+
+  it("says nothing for a bare chart and keeps the scope unchanged without notes", () => {
+    expect(describeChartNotes(undefined, MARKET)).toBe("");
+    expect(describeChartNotes({ preferences: DEFAULT_CHART_PREFERENCES, drawings: [] }, MARKET)).toBe("");
+    const bare = buildDeskContext(SCOPE);
+    expect(buildDeskContext({ ...SCOPE, chart: { preferences: DEFAULT_CHART_PREFERENCES, drawings: [] } })).toBe(bare);
+    expect(bare).toContain("Refresh official read-only Lighter data for this exact scope before relying on changing values.");
+    expect(bare.endsWith("This is not financial advice.")).toBe(true);
+  });
+
+  it("carries the notes into the prompts and the typed-message tag", () => {
+    const scope = { ...SCOPE, chart: CHART };
+    const notes = describeChartNotes(CHART, MARKET);
+    expect(buildDeskContext(scope)).toContain(` ${notes} `);
+    expect(deskScopeTag(scope)).toContain(` ${notes} `);
+    expect(deskScopeTag(SCOPE)).not.toContain("Drawings");
+    for (const prompt of deskQuickPrompts(scope, null)) expect(prompt.message).toContain("horizontal line at 64000.0");
+    expect(deskChartScopeKey("rhc", 7)).toBe("rhc:7");
+  });
+});
+
+describe("desk market state", () => {
+  // 2026-09-20 17:30 UTC.
+  const LIVE: DeskMarketState = {
+    lastTradePrice: 81320,
+    priceChange24h: 1.4237,
+    dayHigh: 81468.4,
+    dayLow: 80109.9,
+    quoteVolume24h: 1_600_000.4,
+    openInterestBase: 12.5,
+    retrievedAt: 1_789_925_400_000,
+  };
+
+  it("reads the desk's own values out at market precision with the provider's time", () => {
+    expect(describeMarketState(LIVE, MARKET)).toBe(
+      "Desk values at 2026-09-20 17:30 UTC: last 81320.0, 24h change +1.42%, "
+      + "24h range 80109.9 to 81468.4, 24h quote volume 1600000, open interest 12.5 base.",
+    );
+    expect(describeMarketState(undefined, MARKET)).toBe("");
+    expect(describeMarketState(
+      { lastTradePrice: null, priceChange24h: null, dayHigh: null, dayLow: null, quoteVolume24h: null, openInterestBase: null, retrievedAt: 0 },
+      MARKET,
+    )).toBe("");
+  });
+
+  it("spends reads on what the values do not cover, and still re-reads before an order", () => {
+    const context = buildDeskContext({ ...SCOPE, live: LIVE });
+    expect(context).toContain(describeMarketState(LIVE, MARKET));
+    expect(context).toContain("Answer from those values.");
+    expect(context).toContain("re-read before preparing or changing an order");
+    expect(context).not.toContain("Refresh official read-only Lighter data");
+  });
+
+  it("carries the values into the tag and the prompts the desk opens on", () => {
+    const scope = { ...SCOPE, live: LIVE };
+    // A typed question carries no prompt wording of its own, so the tag is
+    // where its read budget and its length cap have to live.
+    expect(deskScopeTag(scope)).toContain("last 81320.0");
+    expect(deskScopeTag(scope)).toContain("Answer from those values.");
+    expect(deskScopeTag(scope)).toContain("Answer in under 150 words");
+    expect(deskScopeTag(SCOPE)).not.toContain("Answer from those values.");
+    for (const prompt of deskStarterPrompts(scope)) expect(prompt.message).toContain("last 81320.0");
+    for (const prompt of deskQuickPrompts(scope, null)) expect(prompt.message).toContain("last 81320.0");
+  });
+});
+
+describe("deskMessageForDisplay", () => {
+  it("shows the trader their own question, whichever way the desk attached the scope", () => {
+    const typed = withDeskScope("should I trim?", deskScopeTag({ ...SCOPE, live: undefined }));
+    expect(deskMessageForDisplay(typed)).toBe("should I trim?");
+    const [quick] = deskQuickPrompts(SCOPE, null);
+    expect(deskMessageForDisplay(quick?.message ?? "")).toBe(
+      "The key levels on this chart and the price that invalidates them. Levels first. Do not execute anything.",
+    );
+  });
+
+  it("leaves a message the desk never touched alone, including its blank lines", () => {
+    expect(deskMessageForDisplay("plain question")).toBe("plain question");
+    expect(deskMessageForDisplay("first\n\nsecond")).toBe("first\n\nsecond");
+    // A trader quoting the phrase mid-sentence keeps every word.
+    expect(deskMessageForDisplay("what is the Lighter desk scope: here?"))
+      .toBe("what is the Lighter desk scope: here?");
+  });
+});
+
+describe("deskQuickPrompts", () => {
+  it("flat on the market: reads and 1% risk plans, every one scoped and non-executing", () => {
+    const prompts = deskQuickPrompts(SCOPE, null);
+    expect(prompts.map((p) => p.label)).toEqual([
+      "Analyze chart",
+      "Find liquidity",
+      "Plan long · 1%",
+      "Plan short · 1%",
+    ]);
+    for (const prompt of prompts) {
+      expect(prompt.message.endsWith(buildDeskContext(SCOPE))).toBe(true);
+      expect(prompt.message).toContain("Do not execute anything.");
+      // What the trader reads back in the transcript is their question alone.
+      const shown = deskMessageForDisplay(prompt.message);
+      expect(shown).not.toContain("Use this exact Lighter scope:");
+      expect(shown.length).toBeGreaterThan(0);
+    }
+    expect(prompts[2]?.message).toContain("Plan a long risking 1%");
+    expect(prompts[3]?.message).toContain("Plan a short risking 1%");
+  });
+
+  it("in a position: manages what is open and names the position", () => {
+    const prompts = deskQuickPrompts(SCOPE, POSITION);
+    expect(prompts.map((p) => p.label)).toEqual([
+      "Should I trim?",
+      "Set a protective stop",
+      "What invalidates this?",
+    ]);
+    for (const prompt of prompts) {
+      expect(prompt.message).toContain("I am short 0.25 BTC from 64000.");
+      expect(prompt.message).toContain("Do not execute anything.");
+    }
+  });
+
+  it("omits the entry when Lighter did not report one", () => {
+    const [trim] = deskQuickPrompts(SCOPE, { ...POSITION, entryPrice: null });
+    expect(trim?.message).toContain("I am short 0.25 BTC. Should I trim?");
+  });
+});

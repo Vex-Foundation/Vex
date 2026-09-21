@@ -12,6 +12,7 @@ import { compactionPreparationEventSchema } from "../../shared/schemas/compactio
 import { engineErrorEventSchema } from "../../shared/schemas/engine-error.js";
 import { transcriptAppendEventSchema } from "../../shared/schemas/messages.js";
 import { missionUpdateEventSchema } from "../../shared/schemas/mission-update.js";
+import { lighterSetupHandoffEventSchema } from "../../shared/schemas/lighter-setup-handoff.js";
 import { controlStateEventSchema } from "../../shared/schemas/runtime.js";
 import { streamDeltaEventSchema } from "../../shared/schemas/stream.js";
 import type { EngineEventsBridge } from "../../shared/types/bridge/agent/engine.js";
@@ -31,6 +32,12 @@ export const engine = {
     subscribe(
       EV.engine.compactionPreparation,
       compactionPreparationEventSchema,
+      cb,
+    ),
+  onLighterSetupRequested: (cb) =>
+    subscribe(
+      EV.engine.lighterSetupRequested,
+      lighterSetupHandoffEventSchema,
       cb,
     ),
 } satisfies EngineEventsBridge;

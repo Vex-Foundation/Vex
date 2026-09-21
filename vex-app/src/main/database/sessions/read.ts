@@ -49,8 +49,9 @@ export async function getSessionById(
 
 /**
  * List sessions (most-recent first), enriched with active mission_run
- * status for mission-mode rows. Bounded at 100 — the sidebar paginates
- * later if we exceed that.
+ * status for mission-mode rows. Bounded at 100 per workspace so the newer
+ * Lighter rail cannot starve the agent rail (or the reverse) before the
+ * renderer applies its workspace filter.
  */
 export async function listSessions(
   limit = 100,
@@ -58,11 +59,19 @@ export async function listSessions(
   return withClient(async (client) => {
     try {
       const sessionsResult = await client.query<SessionRow>(
-        `SELECT ${SESSION_ROW_COLUMNS}
-         FROM sessions
-         WHERE scope = $1 AND deleted_at IS NULL
-         ORDER BY pinned_at DESC NULLS LAST, started_at DESC
-         LIMIT $2`,
+        `WITH ranked AS (
+           SELECT ${SESSION_ROW_COLUMNS},
+             ROW_NUMBER() OVER (
+               PARTITION BY COALESCE(workspace, 'agent')
+               ORDER BY pinned_at DESC NULLS LAST, started_at DESC
+             ) AS workspace_row
+           FROM sessions
+           WHERE scope = $1 AND deleted_at IS NULL
+         )
+         SELECT ${SESSION_ROW_COLUMNS}
+         FROM ranked
+         WHERE workspace_row <= $2
+         ORDER BY pinned_at DESC NULLS LAST, started_at DESC`,
         [VEX_APP_SESSION_SCOPE, limit],
       );
       const rows = sessionsResult.rows;

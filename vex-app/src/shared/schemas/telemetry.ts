@@ -71,3 +71,34 @@ export const telemetryReportInputSchema = z
 export const telemetryReportOutputSchema = z
   .object({ recorded: z.boolean() })
   .strict();
+
+/**
+ * The `vex:telemetry:funnelStep` payload: one enum step of the Lighter desk
+ * funnel plus the venue. No free text crosses here, so there is nothing to
+ * bound or redact; consent is still checked in main before anything leaves.
+ */
+export const lighterFunnelStepSchema = z.enum([
+  "arena_banner",
+  "desk_entry_cta",
+  "desk_enter",
+  "desk_setup_start",
+  "desk_card",
+  "desk_approve",
+  "desk_approval_rejected",
+  "desk_order_accepted",
+  "desk_order_partial",
+  "desk_order_filled",
+  "desk_order_canceled",
+  "desk_order_rejected",
+  "desk_order_unknown",
+]);
+
+export const telemetryFunnelInputSchema = z
+  .object({
+    step: lighterFunnelStepSchema,
+    environment: z.enum(["core", "rhc"]),
+  })
+  .strict();
+
+export type LighterFunnelStep = z.infer<typeof lighterFunnelStepSchema>;
+export type TelemetryFunnelInput = z.infer<typeof telemetryFunnelInputSchema>;

@@ -70,7 +70,9 @@ import {
   mapBatchOutcome,
   persistBatchTranscript,
 } from "./turn-loop-tool-batch/results.js";
+import { emitLighterSetupRequested } from "../runtime/lighter-setup-bus.js";
 import { parkTurnOnUserForm } from "./turn-loop-tool-batch/user-form-stop.js";
+import { parkTurnOnLighterSetup } from "./turn-loop-tool-batch/lighter-setup-stop.js";
 import { evaluatePresentationGate } from "./turn-loop-tool-batch/presentation-gate.js";
 import { hasPendingPresentation } from "./board-presentation.js";
 import logger from "@utils/logger.js";
@@ -148,6 +150,10 @@ export async function processTurnToolBatch(args: {
   let compactCommittedThisBatch = false;
   let approvalId: string | null = null;
   let userFormIntentId: string | null = null;
+  let lighterSetupPause: {
+    readonly intentId: string;
+    readonly environment: "core" | "rhc";
+  } | null = null;
   /** Set by a first-strike detection; emitted after the transcript persists. */
   let loopCorrectionFacts: ToolCallLoopFacts | null = null;
 
@@ -378,6 +384,38 @@ export async function processTurnToolBatch(args: {
       break; // remaining calls are NOT dispatched
     }
 
+    // A confirmed missing Lighter trading key is another human interaction,
+    // not a completed status read. Persist the assistant's call WITHOUT a
+    // result and park it on a durable setup intent. The modal supplies the one
+    // result later, then the same Agent turn resumes and can continue a
+    // compound request through the normal trade approval path.
+    if (
+      context.sessionKind === "agent"
+      && resultForTranscript.lighterSetupHandoff !== undefined
+    ) {
+      executedCalls.push(toolCall);
+      const environment = resultForTranscript.lighterSetupHandoff.environment;
+      const park = await parkTurnOnLighterSetup({
+        context,
+        toolCallId: toolCall.id,
+        environment,
+      });
+      if (park.kind === "abandoned") {
+        executedResults.push({
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          output: resultForTranscript.output,
+          success: resultForTranscript.success,
+          explorerRefs: deriveExplorerRefs(resultForTranscript.data),
+        });
+        drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_USER_STOP_OUTPUT);
+        batchStopReason = "user_stopped";
+        break;
+      }
+      lighterSetupPause = { intentId: park.intentId, environment };
+      break; // remaining calls are not part of the parked transcript prefix
+    }
+
     // Track executed call + result
     executedCalls.push(toolCall);
     executedResults.push({
@@ -557,6 +595,23 @@ export async function processTurnToolBatch(args: {
     liveMessages,
     reasoning: turnResult.reasoning,
   });
+
+  // Emit only after the status and all synthetic batch results are durable.
+  // The renderer can switch surfaces immediately without racing transcript
+  // persistence, and there is deliberately no subsequent model inference.
+  if (lighterSetupPause !== null) {
+    emitLighterSetupRequested({
+      sessionId: context.sessionId,
+      intentId: lighterSetupPause.intentId,
+      environment: lighterSetupPause.environment,
+    });
+    return {
+      kind: "lighter_setup_pause",
+      intentId: lighterSetupPause.intentId,
+      toolCallsExecuted,
+      lastText: turnResult.content ?? args.lastTextSoFar,
+    };
+  }
 
   // ── First-strike correction, strictly AFTER the transcript ──
   // The tape must read assistant message → every tool result (including the

@@ -1,5 +1,5 @@
 /**
- * Main app shell: the three-column frame (sessions sidebar | session column |
+ * Main app shell: the shared content frame (navigation | session column |
  * BOOK) on grid tracks solved by `lib/shell-columns.ts`, plus the full-app
  * overlay screens and the new-session modal. The frame owns viewport
  * measurement, the sidebar auto-collapse breakpoint, the drag handles, and
@@ -9,7 +9,8 @@
  * `data-vex-shell="true"` scopes the shell tokens; `data-vex-screen="appShell"`
  * stays the e2e/test selector. The room's back wall is ShellBackdrop (z-0);
  * the grid floats above it and the two rails read the artwork through their
- * glass surfaces.
+ * glass surfaces. Lighter moves navigation above the grid and therefore
+ * resolves its first track to zero.
  */
 
 import {
@@ -20,9 +21,15 @@ import {
   type JSX,
 } from "react";
 import { useUiStore, type RuntimeMode } from "../../stores/uiStore.js";
+import { useLighterAnalysisStore } from "../../stores/lighterAnalysisStore.js";
 import {
   BOOK_COLLAPSED,
+  BOOK_MIN,
+  BOOK_MAX,
+  SIDEBAR_MIN,
+  SIDEBAR_MAX,
   computeShellColumns,
+  computeShellColumnsWithoutSidebar,
   shouldAutoCollapseSidebar,
   WELCOME_PORTFOLIO_WIDTH,
   type ShellColumns,
@@ -47,7 +54,9 @@ import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
 import { ShellBackdrop } from "./ShellBackdrop.js";
 import { ShellDragHandle } from "./ShellDragHandle.js";
 import { ShellScreens } from "./screens/ShellScreens.js";
-import { LighterTradingHost } from "./lighterTrading/LighterTradingHost.js";
+import { LighterCenter } from "./lighterTrading/LighterCenter.js";
+import { LIGHTER_TOPBAR_HEIGHT, LighterSidebar } from "./lighterTrading/LighterSidebar.js";
+import { AgentLighterSetupHost } from "./lighterTrading/AgentLighterSetupHost.js";
 
 export function AppShell(): JSX.Element {
   // App-wide engine-error RETENTION. Mounted here, not per session: a wake or
@@ -67,8 +76,11 @@ export function AppShell(): JSX.Element {
   // transcript.
   // Studio's own welcome stage is "no project selected", so the veil follows
   // whichever selection the ACTIVE mode is keyed on.
+  // Lighter has no welcome stage: the desk is always the resident surface.
   const backdropDimmed =
-    runtimeMode === "studio" ? activeProjectId !== null : activeSessionId !== null;
+    runtimeMode === "lighter"
+      ? true
+      : runtimeMode === "studio" ? activeProjectId !== null : activeSessionId !== null;
 
   return (
     // `relative isolate`: anchors the absolutely-positioned shell backdrop
@@ -103,13 +115,14 @@ export function AppShell(): JSX.Element {
           if (!next) closeCreateSession();
         }}
       />
+      <AgentLighterSetupHost sessionId={activeSessionId} />
     </main>
   );
 }
 
 /**
  * The shell grid: measures its own box (rAF-throttled ResizeObserver),
- * decides the sidebar auto-collapse, solves the three tracks, and hosts the
+ * decides the sidebar auto-collapse, solves the content tracks, and hosts the
  * drag handles. The BOOK auto-close is DERIVED from the solve (the stored
  * `bookOpen` preference is never rewritten, so widening the window restores
  * an open BOOK).
@@ -133,10 +146,15 @@ function ShellFrame({
   const setSidebarWidth = useUiStore((s) => s.setSidebarWidth);
   const bookOpen = useUiStore((s) => s.bookOpen);
   const toggleBook = useUiStore((s) => s.toggleBook);
+  const setBookOpen = useUiStore((s) => s.setBookOpen);
   const bookWidth = useUiStore((s) => s.bookWidth);
   const setBookWidth = useUiStore((s) => s.setBookWidth);
+  const lighterChatShare = useLighterAnalysisStore((s) => s.desk.chatShare);
+  const saveLighterDesk = useLighterAnalysisStore((s) => s.saveDesk);
   const setActiveProjectId = useUiStore((s) => s.setActiveProjectId);
-  const [lighterTradingOpen, setLighterTradingOpen] = useState(false);
+  const [lighterZen, setLighterZen] = useState(false);
+  const [zenAssistantOpen, setZenAssistantOpen] = useState(false);
+  const [zenControlsOpen, setZenControlsOpen] = useState(false);
 
   const frameRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState(() =>
@@ -166,16 +184,61 @@ function ShellFrame({
   // Narrow viewports auto-collapse the sidebar to the rail; a manual toggle
   // below the breakpoint flips the ephemeral re-expand override instead of
   // the persisted preference. Crossing back into wide clears the override so
-  // the next narrow entry starts at the rail again.
+  // the next narrow entry starts at the rail again. Lighter owns a horizontal
+  // top bar instead; this same ephemeral flag opens its desk-navigation tray.
+  const lighter = runtimeMode === "lighter";
+  useEffect(() => {
+    if (lighter) return;
+    setLighterZen(false);
+    setZenAssistantOpen(false);
+    setZenControlsOpen(false);
+  }, [lighter]);
+
+  const setZenMode = useCallback((next: boolean): void => {
+    setLighterZen(next);
+    setZenAssistantOpen(false);
+    setZenControlsOpen(false);
+    setSidebarNarrowExpanded(false);
+  }, [setSidebarNarrowExpanded]);
+
+  const openZenAssistant = useCallback((): void => {
+    setZenAssistantOpen(true);
+    setSidebarNarrowExpanded(false);
+    if (activeSessionId === null) {
+      onCreate();
+      return;
+    }
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Session draft"]')
+        ?.focus({ preventScroll: true });
+    });
+  }, [activeSessionId, onCreate, setSidebarNarrowExpanded]);
+
+  useEffect(() => {
+    if (!lighter || !lighterZen) return undefined;
+    const onZenKey = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      if (zenAssistantOpen) setZenAssistantOpen(false);
+      else if (zenControlsOpen) setZenControlsOpen(false);
+      else setZenMode(false);
+    };
+    window.addEventListener("keydown", onZenKey);
+    return () => window.removeEventListener("keydown", onZenKey);
+  }, [lighter, lighterZen, setZenMode, zenAssistantOpen, zenControlsOpen]);
+
   const narrow = shouldAutoCollapseSidebar(viewport);
   useEffect(() => {
-    if (!narrow) setSidebarNarrowExpanded(false);
-  }, [narrow, setSidebarNarrowExpanded]);
-  const sidebarCollapsed = narrow ? !sidebarNarrowExpanded : !sidebarOpen;
+    if (!lighter && !narrow) setSidebarNarrowExpanded(false);
+  }, [lighter, narrow, setSidebarNarrowExpanded]);
+  const sidebarCollapsed = lighter
+    ? !sidebarNarrowExpanded
+    : narrow ? !sidebarNarrowExpanded : !sidebarOpen;
   const toggleSidebar = useCallback((): void => {
-    if (narrow) setSidebarNarrowExpanded(!sidebarNarrowExpanded);
+    if (lighter || narrow) setSidebarNarrowExpanded(!sidebarNarrowExpanded);
     else setSidebarOpen(!sidebarOpen);
   }, [
+    lighter,
     narrow,
     sidebarNarrowExpanded,
     setSidebarNarrowExpanded,
@@ -191,12 +254,19 @@ function ShellFrame({
   // the same floating-Portfolio geometry on its welcome screen that agent mode
   // gets on its own.
   const studio = runtimeMode === "studio";
-  const welcomeStage = studio ? activeProjectId === null : activeSessionId === null;
-  const cols: ShellColumns = computeShellColumns(
-    viewport,
-    sidebarCollapsed ? 0 : sidebarWidth,
-    welcomeStage || !bookOpen ? 0 : bookWidth,
-  );
+  const welcomeStage = lighter
+    ? false
+    : studio ? activeProjectId === null : activeSessionId === null;
+  const requestedBookWidth = lighterZen || welcomeStage || !bookOpen
+    ? 0
+    : lighter ? Math.max(1, viewport * lighterChatShare) : bookWidth;
+  const cols: ShellColumns = lighter
+    ? computeShellColumnsWithoutSidebar(viewport, requestedBookWidth)
+    : computeShellColumns(
+      viewport,
+      sidebarCollapsed ? 0 : sidebarWidth,
+      requestedBookWidth,
+    );
   const colsRef = useRef(cols);
   colsRef.current = cols;
   // Derived auto-close: preference stays `true`, the rendered panel collapses.
@@ -222,8 +292,12 @@ function ShellFrame({
     [setSidebarWidth],
   );
   const onBookDrag = useCallback(
-    (dx: number) => setBookWidth(bookBase.current - dx),
-    [setBookWidth],
+    (dx: number) => {
+      const width = bookBase.current - dx;
+      if (lighter && viewport > 0) saveLighterDesk({ chatShare: width / viewport });
+      else setBookWidth(width);
+    },
+    [lighter, viewport, saveLighterDesk, setBookWidth],
   );
 
   const networkOnline = useNetworkOnline();
@@ -234,7 +308,9 @@ function ShellFrame({
   // spine) in session. The 300ms track transition then only ever interpolates
   // length-to-length, so crossing welcome<->session cannot sweep the rail
   // through the centre column.
-  const rightTrack = welcomeStage
+  const rightTrack = lighterZen
+    ? 0
+    : welcomeStage
     ? bookOpen
       ? WELCOME_PORTFOLIO_WIDTH
       : 0
@@ -246,21 +322,42 @@ function ShellFrame({
       className="vex-shell-frame relative z-10 h-full min-w-0 flex-1"
       style={{
         gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${rightTrack}px`,
+        paddingTop: lighter && !lighterZen ? LIGHTER_TOPBAR_HEIGHT : undefined,
       }}
       data-vex-area="shell-frame"
       data-dragging={dragging || undefined}
       data-vex-sidebar-collapsed={sidebarCollapsed || undefined}
+      data-lighter-zen={lighter && lighterZen ? "true" : undefined}
+      data-lighter-zen-assistant={lighter && zenAssistantOpen ? "open" : undefined}
+      data-lighter-zen-controls={lighter && lighterZen
+        ? zenControlsOpen ? "open" : "closed"
+        : undefined}
     >
       {/* G10 - fixed strip; only an actual outage renders it. */}
       <ConnectionBanner
         reconnecting={!networkOnline}
         label="Offline - waiting for the network to come back"
       />
+      {lighter ? (
+        <LighterSidebar
+          collapsed={sidebarCollapsed}
+          onToggleSidebar={toggleSidebar}
+          zenMode={lighterZen}
+          zenAssistantOpen={zenAssistantOpen}
+          zenControlsOpen={zenControlsOpen}
+          onToggleZen={() => setZenMode(!lighterZen)}
+          onToggleZenControls={() => setZenControlsOpen((current) => !current)}
+          onToggleZenAssistant={() => {
+            if (zenAssistantOpen) setZenAssistantOpen(false);
+            else openZenAssistant();
+          }}
+        />
+      ) : null}
       {/* COLUMN 1 - the rail the active mode owns. The two rails are separate
         * components on purpose: they hold different objects with different
         * lifetimes, and one component branching on the mode would own both. */}
-      <div className="relative z-20 min-w-0 overflow-visible">
-        {studio ? (
+      <div className="relative z-20 h-full min-h-0 min-w-0 overflow-visible">
+        {lighter ? null : studio ? (
           <StudioSidebar
             collapsed={sidebarCollapsed}
             width={cols.sidebar}
@@ -279,7 +376,7 @@ function ShellFrame({
         )}
       </div>
 
-      <section className="relative z-10 flex min-w-0 flex-col overflow-hidden">
+      <section className="relative z-10 flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
         {/* THE STATUS STRIP, mounted ONCE for the whole frame regardless of
           * mode. It carries `GlobalApprovals`, which owns the approvals live
           * sync, and preload allows one subscriber per event kind per window -
@@ -290,55 +387,63 @@ function ShellFrame({
           activeSessionId={activeSessionId}
         />
 
-        <LighterTradingHost
-          activeSessionId={activeSessionId}
-          open={lighterTradingOpen}
-          onOpenChange={setLighterTradingOpen}
-          onCreateSession={onCreate}
-        />
-
         <div className="min-h-0 flex-1">
-          {/* The live conversation moves into Light it up while the workspace
-           * is open. Keeping a single mounted chat prevents duplicate
-           * composers, approval cards, and submit handlers. Studio owns its
-           * separate center and is unaffected by the agent workspace state. */}
-          {studio ? (
-            <StudioCenter />
-          ) : lighterTradingOpen ? null : (
-            <SessionPanel />
-          )}
+          {/* In Lighter mode the conversation lives in the BOOK column
+           * (`LighterChatRail`), so the center is the desk alone. */}
+          {lighter ? (
+            <LighterCenter
+              zenMode={lighterZen}
+              onOpenZenAssistant={openZenAssistant}
+            />
+          ) : studio ? <StudioCenter /> : <SessionPanel />}
         </div>
       </section>
 
-      <div className="relative z-10 min-w-0 overflow-visible">
+      <div className="lit-zen-assistant relative z-10 h-full min-h-0 min-w-0 overflow-visible">
         {/* Always mounted — the panel owns its collapsed rendering, so a
          * derived auto-close never remounts it. `bookEffectiveOpen` folds the
          * concession solve into the open flag WITHOUT touching the stored
          * preference. */}
         <BookPanel
           activeSessionId={activeSessionId}
-          bookOpen={welcomeStage ? bookOpen : bookEffectiveOpen}
-          onToggle={toggleBook}
+          bookOpen={lighterZen ? zenAssistantOpen : welcomeStage ? bookOpen : bookEffectiveOpen}
+          onToggle={() => {
+            if (lighterZen) {
+              setZenAssistantOpen(false);
+              return;
+            }
+            if (lighter && !bookEffectiveOpen) {
+              setBookOpen(true);
+              setSidebarNarrowExpanded(false);
+            }
+            else toggleBook();
+          }}
         />
       </div>
 
       {/* The collapsed rail is fixed-width: no resize handle while closed.
        * The BOOK handle exists only while the panel is effectively open. */}
-      {!sidebarCollapsed ? (
+      {!lighter && !sidebarCollapsed ? (
         <ShellDragHandle
           side="sidebar"
           left={cols.sidebar}
           label="Resize the sessions sidebar"
+          value={cols.sidebar}
+          min={SIDEBAR_MIN}
+          max={SIDEBAR_MAX}
           onStart={onSidebarStart}
           onDrag={onSidebarDrag}
           onEnd={onDragEnd}
         />
       ) : null}
-      {bookEffectiveOpen ? (
+      {bookEffectiveOpen && !lighterZen ? (
         <ShellDragHandle
           side="book"
           left={viewport - cols.book}
-          label="Resize the BOOK panel"
+          label={lighter ? "Resize the Vex panel" : "Resize the BOOK panel"}
+          value={cols.book}
+          min={BOOK_MIN}
+          max={BOOK_MAX}
           onStart={onBookStart}
           onDrag={onBookDrag}
           onEnd={onDragEnd}

@@ -246,6 +246,13 @@ describe("preload bridge surface", () => {
     ).toContain("compactionPreparationEventSchema");
   });
 
+  it("exposes the validated Lighter setup handoff", () => {
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    expect(corpus).toContain("EV.engine.lighterSetupRequested");
+    expect(corpus).toContain("onLighterSetupRequested");
+    expect(corpus).toContain("lighterSetupHandoffEventSchema");
+  });
+
   it("exposes EV.market.vex and the market-update bridge method (T1)", () => {
     const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
     expect(corpus, "EV.market.vex not referenced in preload").toContain(
@@ -274,6 +281,14 @@ describe("preload bridge surface", () => {
       "onPublicTrades",
       "onPublicStats",
       "onPublicMarketStatus",
+      "EV.lighterTrading.accountActivity",
+      "onAccountActivity",
+      "CH.lighterTrading.prepareDeskAction",
+      "prepareDeskAction",
+      "CH.lighterTrading.getOnboardingChecklist",
+      "getOnboardingChecklist",
+      "CH.telemetry.funnelStep",
+      "funnelStep",
     ]) {
       expect(corpus).toContain(reference);
     }

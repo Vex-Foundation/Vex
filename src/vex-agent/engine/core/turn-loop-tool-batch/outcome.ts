@@ -70,6 +70,13 @@ export type ToolBatchOutcome =
       readonly lastText: string | null;
     }
   | {
+      /** The setup modal owns the pending tool call until success or cancel. */
+      readonly kind: "lighter_setup_pause";
+      readonly intentId: string;
+      readonly toolCallsExecuted: number;
+      readonly lastText: string | null;
+    }
+  | {
       readonly kind: "normal_complete";
       readonly toolCallsExecuted: number;
       readonly lastText: string | null;

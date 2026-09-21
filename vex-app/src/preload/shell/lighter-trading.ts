@@ -1,11 +1,18 @@
 import { CH, EV } from "../../shared/ipc/channels.js";
 import {
+  lighterTradingAccountActivityEventSchema,
   lighterTradingAccountInputSchema,
   lighterTradingCandleSnapshotEventSchema,
   lighterTradingCandleStatusEventSchema,
   lighterTradingCandleSubscriptionStartInputSchema,
   lighterTradingCandleSubscriptionStopInputSchema,
   lighterTradingCandleUpdateEventSchema,
+  lighterTradingCandleHistoryInputSchema,
+  lighterAccountSetupStatusInputSchema,
+  lighterKeyRegistrationReconcileInputSchema,
+  lighterDeskPrepareInputSchema,
+  lighterOnboardingChecklistInputSchema,
+  lighterTradingFillsInputSchema,
   lighterTradingListMarketsInputSchema,
   lighterTradingPublicBookEventSchema,
   lighterTradingPublicMarketStatusEventSchema,
@@ -16,6 +23,10 @@ import {
   lighterTradingSnapshotInputSchema,
 } from "../../shared/schemas/lighter-trading.js";
 import type { LighterTradingBridge } from "../../shared/types/bridge/shell/lighter-trading.js";
+import {
+  lighterSetupPendingInputSchema,
+  lighterSetupSettleInputSchema,
+} from "../../shared/schemas/lighter-setup-handoff.js";
 import { abortableInvoke, invokeWithSchema, subscribe } from "../_dispatch.js";
 
 export const lighterTrading = {
@@ -36,11 +47,25 @@ export const lighterTrading = {
       lighterTradingSnapshotInputSchema,
     );
   },
+  getCandleHistory(input) {
+    return abortableInvoke(
+      CH.lighterTrading.getCandleHistory,
+      input,
+      lighterTradingCandleHistoryInputSchema,
+    );
+  },
   getAccount(input) {
     return abortableInvoke(
       CH.lighterTrading.getAccount,
       input,
       lighterTradingAccountInputSchema,
+    );
+  },
+  listFills(input) {
+    return abortableInvoke(
+      CH.lighterTrading.listFills,
+      input,
+      lighterTradingFillsInputSchema,
     );
   },
   startCandleSubscription(input) {
@@ -92,6 +117,48 @@ export const lighterTrading = {
       lighterTradingPublicMarketSubscriptionStopInputSchema,
     );
   },
+  prepareDeskAction(input) {
+    return invokeWithSchema(
+      CH.lighterTrading.prepareDeskAction,
+      input,
+      lighterDeskPrepareInputSchema,
+    );
+  },
+  getOnboardingChecklist(input) {
+    return abortableInvoke(
+      CH.lighterTrading.getOnboardingChecklist,
+      input,
+      lighterOnboardingChecklistInputSchema,
+    );
+  },
+  getAccountSetupStatus(input) {
+    return abortableInvoke(
+      CH.lighterTrading.getAccountSetupStatus,
+      input,
+      lighterAccountSetupStatusInputSchema,
+    );
+  },
+  reconcileKeyRegistration(input) {
+    return invokeWithSchema(
+      CH.lighterTrading.reconcileKeyRegistration,
+      input,
+      lighterKeyRegistrationReconcileInputSchema,
+    );
+  },
+  getPendingAgentSetup(input) {
+    return invokeWithSchema(
+      CH.lighterTrading.getPendingAgentSetup,
+      input,
+      lighterSetupPendingInputSchema,
+    );
+  },
+  settleAgentSetup(input) {
+    return invokeWithSchema(
+      CH.lighterTrading.settleAgentSetup,
+      input,
+      lighterSetupSettleInputSchema,
+    );
+  },
   onPublicBook(callback) {
     return subscribe(
       EV.lighterTrading.publicBook,
@@ -117,6 +184,13 @@ export const lighterTrading = {
     return subscribe(
       EV.lighterTrading.publicMarketStatus,
       lighterTradingPublicMarketStatusEventSchema,
+      callback,
+    );
+  },
+  onAccountActivity(callback) {
+    return subscribe(
+      EV.lighterTrading.accountActivity,
+      lighterTradingAccountActivityEventSchema,
       callback,
     );
   },

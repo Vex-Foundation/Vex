@@ -23,9 +23,9 @@
  */
 
 import { useEffect, useRef, type JSX } from "react";
-import type { LighterIntegrationEnvironment } from "@shared/schemas/lighter-integration.js";
 import type { LighterLeverageProposal } from "@shared/schemas/lighter-trading-limits.js";
 import { Button } from "../../../../components/ui/button.js";
+import { useUiStore } from "../../../../stores/uiStore.js";
 import {
   Dialog,
   DialogBody,
@@ -40,6 +40,7 @@ import {
 import {
   COLLATERAL_UNIT,
   CONFIRM_CANCEL,
+  CONFIRM_CANCELLING,
   CONFIRM_CONFIRM,
   CONFIRM_LABEL_ACCOUNT,
   CONFIRM_LABEL_LEVERAGE,
@@ -60,6 +61,7 @@ import {
   leverageConsequenceSentence,
 } from "./lighter-trading-setup-copy.js";
 import { formatProposalExpiry } from "./lighter-leverage-view.js";
+import { wholeLeverageDisplay } from "../../lighterTrading/leverage-display.js";
 
 /** The issued proposal branch: the union's other branch signs nothing. */
 export type LighterLeverageIssuedProposal = Extract<
@@ -69,21 +71,25 @@ export type LighterLeverageIssuedProposal = Extract<
 
 export interface LighterLeverageConfirmModalProps {
   readonly proposal: LighterLeverageIssuedProposal;
-  readonly environment: LighterIntegrationEnvironment;
   /** True while Confirm is in flight; both buttons stop accepting a second press. */
   readonly submitting: boolean;
+  readonly cancelling: boolean;
+  readonly error: string | null;
   readonly onCancel: () => void;
   readonly onConfirm: (proposalId: string) => void;
 }
 
 export function LighterLeverageConfirmModal({
   proposal,
-  environment,
   submitting,
+  cancelling,
+  error,
   onCancel,
   onConfirm,
 }: LighterLeverageConfirmModalProps): JSX.Element {
-  const quoteUnit = COLLATERAL_UNIT[environment];
+  const theme = useUiStore((state) => state.theme);
+  const quoteUnit = COLLATERAL_UNIT[proposal.environment];
+  const busy = submitting || cancelling;
 
   /**
    * FOCUS COMES BACK, on every exit.
@@ -112,19 +118,23 @@ export function LighterLeverageConfirmModal({
         // Escape and backdrop both arrive here. A close intent while the change
         // is in flight is ignored rather than pretended: the signing is already
         // main's, and closing the surface would not recall it.
-        if (!next && !submitting) onCancel();
+        if (!next && !busy) onCancel();
       }}
     >
       <DialogContent
+        className="lit-chat-frame lit-environment-dialog"
+        data-lighter-theme={theme}
+        data-lighter-environment={proposal.environment}
         closeOnBackdropClick={false}
+        aria-busy={busy}
         data-vex-lighter-leverage-confirm={proposal.symbol}
       >
         <DialogHeader>
           <DialogTitle>{confirmTitle(proposal.symbol)}</DialogTitle>
           <DialogDescription>
             {confirmTransition(
-              `${proposal.current.leverageDisplay}x ${proposal.current.marginMode}`,
-              `${proposal.target.leverageDisplay}x ${proposal.target.marginMode}`,
+              `${wholeLeverageDisplay(proposal.current.leverageDisplay)}x ${proposal.current.marginMode}`,
+              `${wholeLeverageDisplay(proposal.target.leverageDisplay)}x ${proposal.target.marginMode}`,
             )}
           </DialogDescription>
         </DialogHeader>
@@ -140,8 +150,8 @@ export function LighterLeverageConfirmModal({
             <Row
               label={CONFIRM_LABEL_LEVERAGE}
               value={confirmTransition(
-                `${proposal.current.leverageDisplay}x`,
-                `${proposal.target.leverageDisplay}x`,
+                `${wholeLeverageDisplay(proposal.current.leverageDisplay)}x`,
+                `${wholeLeverageDisplay(proposal.target.leverageDisplay)}x`,
               )}
             />
             <Row
@@ -186,17 +196,22 @@ export function LighterLeverageConfirmModal({
           <p className="text-[12px] leading-[18px] text-ink-tertiary">
             {CONFIRM_OBSERVATION_NOTE}
           </p>
-          {submitting ? (
+          {busy ? (
             <p role="status" aria-live="polite" className="text-[12px] leading-[18px] text-ink-secondary">
-              {CONFIRM_SUBMITTING}
+              {cancelling ? CONFIRM_CANCELLING : CONFIRM_SUBMITTING}
             </p>
           ) : null}
+          {error === null ? null : (
+            <p role="alert" className="text-[12px] leading-[18px] text-warning">
+              {error}
+            </p>
+          )}
         </DialogBody>
 
         <DialogFooter>
           <Button
             variant="ghost"
-            disabled={submitting}
+            disabled={busy}
             onClick={onCancel}
             data-vex-lighter-leverage-confirm-cancel
             {...DIALOG_INITIAL_FOCUS}
@@ -205,7 +220,7 @@ export function LighterLeverageConfirmModal({
           </Button>
           <Button
             variant="primary"
-            disabled={submitting}
+            disabled={busy}
             onClick={() => onConfirm(proposal.proposalId)}
             data-vex-lighter-leverage-confirm-submit
           >

@@ -1,6 +1,6 @@
 import { requireValue } from "../../../../../../../src/__tests__/helpers/require-value.js";
 import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
 import { MarketPicker } from "../MarketPicker.js";
@@ -10,18 +10,31 @@ const makeMarket = (id: number, symbol: string, price: number | null, overrides:
   marketId: id, symbol, marketType: "perp", status: "active", baseAssetId: 0, quoteAssetId: 0,
   minBaseAmount: "0.001", minQuoteAmount: "10", orderQuoteLimit: "100000",
   decimals: { size: 3, price: 2, quote: 5 },
-  fees: { maker: "0", taker: "0", makerEnabled: false, takerEnabled: false },
+  fees: { maker: "0", taker: "0", makerEnabled: false, takerEnabled: false, integratorMaker: null, integratorTaker: null },
   activity24h: { tradesCount: 50, quoteVolume: price === null ? null : price * 100 },
   statistics: { lastTradePrice: price, priceChange24h: price === null ? null : -1.2, openInterestBase: price === null ? null : 500 },
   ...overrides,
 });
 const markets = [makeMarket(1, "BTC", 60000), makeMarket(0, "ETH", 3000), makeMarket(3, "UNKNOWN", null)];
-const baseProps = { environment: "rhc" as const, markets, selectedMarketId: 1, onSelect: vi.fn(), onClose: vi.fn() };
+const baseProps = { environment: "rhc" as const, markets, selectedMarketId: 1, onSelect: vi.fn(), onClose: vi.fn(), onSelectEnvironment: vi.fn() };
 const symbols = (): (string | null)[] => screen.getAllByRole("option").map((row) => row.querySelector("b")?.textContent ?? null);
 
-beforeEach(() => { vi.restoreAllMocks(); localStorage.clear(); useLighterAnalysisStore.setState({ charts: {}, favorites: [] }); baseProps.onSelect.mockReset(); baseProps.onClose.mockReset(); });
+beforeEach(() => { vi.restoreAllMocks(); localStorage.clear(); useLighterAnalysisStore.setState({ charts: {}, favorites: [] }); baseProps.onSelect.mockReset(); baseProps.onClose.mockReset(); baseProps.onSelectEnvironment.mockReset(); });
 
 describe("market picker", () => {
+  it("offers Core | RHC at the top and reports the other network; an empty list while it loads says so", () => {
+    const view = render(<MarketPicker {...baseProps} />);
+    const dialog = screen.getByRole("dialog", { name: "Search Lighter markets" });
+    const group = within(dialog).getByRole("radiogroup", { name: "Lighter environment" });
+    expect(within(group).getByRole("radio", { name: "Robinhood Chain" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(within(group).getByRole("radio", { name: "Robinhood Chain" }));
+    expect(baseProps.onSelectEnvironment).not.toHaveBeenCalled();
+    fireEvent.click(within(group).getByRole("radio", { name: "Lighter Core" }));
+    expect(baseProps.onSelectEnvironment).toHaveBeenCalledWith("core");
+    view.rerender(<MarketPicker {...baseProps} environment="core" markets={[]} loading />);
+    expect(screen.getByText("Loading markets…").getAttribute("role")).toBe("status");
+  });
+
   it("displays actual metrics and explicit base units while unavailable data stays empty", () => {
     render(<MarketPicker {...baseProps} />);
     const btc = screen.getByRole("option", { name: /BTC, Perpetual, active/ });
@@ -100,8 +113,9 @@ describe("market picker", () => {
     trigger.focus();
     const view = render(<MarketPicker {...baseProps} />);
     const search = screen.getByRole("combobox");
-    search.focus();
-    fireEvent.keyDown(search, { key: "Tab", shiftKey: true });
+    const first = screen.getByRole("radio", { name: "Lighter Core" });
+    first.focus();
+    fireEvent.keyDown(first, { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Add BTC Perpetual to favorites" }));
     fireEvent.keyDown(search, { key: "Escape" });
     expect(baseProps.onClose).toHaveBeenCalledOnce();
@@ -110,14 +124,22 @@ describe("market picker", () => {
     trigger.remove();
   });
 
-  it("recovers from malformed storage and keeps favorites usable if storage is denied", () => {
+  it("recovers from malformed storage and keeps favorites usable if storage is denied", async () => {
     localStorage.setItem("vex-lighter-analysis", "not-json");
     void useLighterAnalysisStore.persist.rehydrate();
     render(<MarketPicker {...baseProps} />);
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("unavailable"); });
+    // Storage denial must be simulated on whichever object actually backs
+    // `localStorage`. jsdom serves `setItem` off `Storage.prototype`, and spying
+    // the instance is silently ignored there; a plain-object shim instead owns
+    // its own `setItem`. Spy on the instance when it owns the method, else the
+    // prototype, so the thrown write reaches the store either way.
+    const storageTarget = Object.prototype.hasOwnProperty.call(localStorage, "setItem")
+      ? localStorage
+      : Storage.prototype;
+    vi.spyOn(storageTarget, "setItem").mockImplementation(() => { throw new Error("unavailable"); });
     fireEvent.click(screen.getByRole("button", { name: "Add BTC Perpetual to favorites" }));
     expect(screen.getByRole("button", { name: "Remove BTC Perpetual from favorites" })).toBeTruthy();
-    expect(screen.getByText(/Favorites are saved for this view only/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/Favorites are saved for this view only/)).toBeTruthy());
   });
 
   it("filters verified stock listings without changing their execution product", () => {

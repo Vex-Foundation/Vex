@@ -47,7 +47,7 @@ vi.mock("../DeskRuleTapeState.js", () => ({
 const { ShellStatusStrip } = await import("../ShellStatusStrip.js");
 
 function renderStrip(
-  mode: "agent" | "studio",
+  mode: "agent" | "studio" | "lighter",
   activeSessionId: string | null = null,
 ): void {
   const client = new QueryClient({
@@ -71,6 +71,12 @@ describe("the centre word", () => {
   it("agent mode takes it from DeskRuleTapeState", () => {
     renderStrip("agent");
     expect(screen.getByTestId("desk-rule-word")).not.toBeNull();
+    expect(screen.queryByLabelText(/Vex Studio host status$/)).toBeNull();
+  });
+
+  it("lighter mode shows no word: the desk carries its own feed status", () => {
+    renderStrip("lighter", "session-1");
+    expect(screen.queryByTestId("desk-rule-word")).toBeNull();
     expect(screen.queryByLabelText(/Vex Studio host status$/)).toBeNull();
   });
 

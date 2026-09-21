@@ -281,6 +281,25 @@ export const IconWifi = ({ size = 16, className }: GlyphProps): JSX.Element => (
   </svg>
 );
 
+/** A wrapped gift: the reward pool a campaign puts up. */
+/** A frame of thickness `w`: the outer box and its inner box under evenodd. */
+function framePath(x: number, y: number, width: number, height: number, w: number): string {
+  return (
+    `M${x} ${y}h${width}v${height}h${-width}Z`
+    + `M${x + w} ${y + w}h${width - w * 2}v${height - w * 2}h${-(width - w * 2)}Z`
+  );
+}
+
+export const IconGift = ({ size = 16, className }: GlyphProps): JSX.Element => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path fillRule="evenodd" clipRule="evenodd" d={framePath(4, 11.5, 16, 9, OUTLINE_WEIGHT)} fill="currentColor" />
+    <path fillRule="evenodd" clipRule="evenodd" d={framePath(3, 7.5, 18, 4, OUTLINE_WEIGHT)} fill="currentColor" />
+    <path d={`M${12 - OUTLINE_WEIGHT / 2} 7.5h${OUTLINE_WEIGHT}v13h${-OUTLINE_WEIGHT}Z`} fill="currentColor" />
+    <path fillRule="evenodd" clipRule="evenodd" d={ringPath(9, 5.5, 2, OUTLINE_WEIGHT)} fill="currentColor" />
+    <path fillRule="evenodd" clipRule="evenodd" d={ringPath(15, 5.5, 2, OUTLINE_WEIGHT)} fill="currentColor" />
+  </svg>
+);
+
 export const IconWaypoints = ({ size = 16, className }: GlyphProps): JSX.Element => (
   <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <path fillRule="evenodd" clipRule="evenodd" d={ringPath(12, 4.75, 2.75, OUTLINE_WEIGHT)} fill="currentColor" />

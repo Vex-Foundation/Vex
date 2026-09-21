@@ -64,12 +64,37 @@ describe("Lighter environment-fixed onboarding shortcuts", () => {
       expect(def?.parameters.properties).not.toHaveProperty("environment");
       expect(def?.description).toContain(shortcut.settlementAsset);
       expect(def?.description).toContain("Direct deposits are the exception");
-      expect(def?.description).toContain("skip this onboarding read and WalletBalances");
+      expect(def?.description).toContain("skip this read and WalletBalances");
       expect(def?.parameters.properties?.amountIn?.description).toContain(
         "Requires marketId or marketSymbol",
       );
       expect(visible).toContain(shortcut.name);
     }
+  });
+
+  /**
+   * "I want to start trading on Lighter" names no environment. A pair whose
+   * triggers each recognised only their own name left that request matching
+   * NEITHER, so the model deliberated over which tool was meant - the one
+   * thing a hot-path shortcut exists to prevent. The unnamed case is RHC's,
+   * the same answer `LIGHTER_DEFAULT_ENVIRONMENT` gives everywhere else, and
+   * the Core twin says so rather than staying silent and inviting the guess.
+   */
+  it("leaves no ambiguous case between the two triggers", () => {
+    const rhc = getToolDef("lighter_rhc_onboarding_status")?.description ?? "";
+    const core = getToolDef("lighter_core_onboarding_status")?.description ?? "";
+
+    expect(rhc).toContain("names RHC or NO environment at all");
+    expect(rhc).toContain("unnamed means RHC");
+    expect(core).toContain("When the user NAMES Core");
+    expect(core).toContain("An unnamed environment is the RHC twin's, not this one.");
+
+    // Neither may invite a clarifying question or a think-first detour.
+    for (const description of [rhc, core]) {
+      expect(description).toContain("first and only tool in the batch");
+      expect(description).toMatch(/never narrate/);
+    }
+    expect(rhc).toContain("ask which environment first");
   });
 
   it.each(SHORTCUTS)(
@@ -138,6 +163,47 @@ describe("Lighter environment-fixed onboarding shortcuts", () => {
     },
   );
 
+  it.each(SHORTCUTS)(
+    "$name requests the native setup handoff only when its live result proves the trading key is missing",
+    async ({ environment, handler }) => {
+      mocks.executeProtocolTool.mockResolvedValue({
+        success: true,
+        output: JSON.stringify({ environment, tradingKeyRegistered: false }),
+        data: { environment, tradingKeyRegistered: false, accountExists: true },
+        actionKind: "read",
+      });
+
+      const result = await handler({}, makeTestContext());
+
+      expect(result.lighterSetupHandoff).toEqual({ environment });
+    },
+  );
+
+  it.each(SHORTCUTS)(
+    "$name does not request setup for failures or an already registered key",
+    async ({ environment, handler }) => {
+      mocks.executeProtocolTool
+        .mockResolvedValueOnce({
+          success: false,
+          output: "vault locked",
+          data: { environment, tradingKeyRegistered: false },
+          actionKind: "read",
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          output: "ready",
+          data: { environment, tradingKeyRegistered: true },
+          actionKind: "read",
+        });
+
+      const failed = await handler({}, makeTestContext());
+      const ready = await handler({}, makeTestContext());
+
+      expect(failed.lighterSetupHandoff).toBeUndefined();
+      expect(ready.lighterSetupHandoff).toBeUndefined();
+    },
+  );
+
   it("dispatches the Core shortcut through the production lazy-loader route", async () => {
     mocks.executeProtocolTool.mockResolvedValue({
       success: true,
@@ -187,8 +253,12 @@ describe("Lighter environment-fixed onboarding shortcuts", () => {
 
     for (const shortcut of SHORTCUTS) {
       const description = getToolDef(shortcut.name)?.description ?? "";
-      expect(description).toContain("do NOT run protocol discovery or a separate wallet-balance read first");
-      expect(description).toContain("answer directly from its deterministic result");
+      expect(description).toContain("do NOT run protocol discovery or a wallet-balance read first");
+      expect(description).toContain("first and only tool in the batch");
+      // The no-deliberation clause moved into each trigger, which is also
+      // where the unnamed-environment case is now settled.
+      expect(description).toMatch(/never narrate/);
+      expect(description).toContain("answer from its result");
     }
   });
 });

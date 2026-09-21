@@ -1,40 +1,23 @@
 /**
  * Settings -> Lighter -> Trading setup, for ONE wallet's Lighter account.
  *
- * This is the seam between the bridge and three presentational pieces, and it
- * owns exactly the state that spans them: which proposal is open, which market
- * is busy, and what the last outcome said. The capital-share field, the leverage
- * table and the confirmation modal hold no bridge knowledge at all, which is
- * what makes their states testable without a `window.vex`.
+ * This is the seam between the bridge and the presentational pieces, and it
+ * owns exactly the state that spans them: the capital-share write, and which
+ * market's leverage sheet is open. The leverage change itself (prepare ->
+ * confirm -> reconcile, busy market, outcomes) lives in
+ * `useLighterLeverageChange`, shared with the desk ticket, so the two surfaces
+ * cannot drift. The capital-share field, the leverage table, the sheet and the
+ * confirmation modal hold no bridge knowledge at all, which is what makes their
+ * states testable without a `window.vex`.
  *
- * THE CONSENT CONTRACT (plan section 7). Apply does not sign and does not decide
- * what would be signed: it sends a SELECTOR (market, whole-number leverage,
- * margin mode) to main, which resolves it against live account and market state
- * and persists a proposal. The modal renders that proposal; Confirm sends only
- * its id. Nothing on this side can widen, refresh or restate the terms, and an
- * expired proposal is re-prepared rather than re-confirmed.
- *
- * RECOVERY IS DURABLE, NOT REMEMBERED. What is still unresolved comes from the
- * overview, which reads main's own intents table, so a change Vex started and
- * cannot yet call settled is still on this card after the screen closes, the
- * card remounts or the app restarts. This component's own map of intent ids
- * covers one window only: a confirmation whose invocation never answered,
- * before the overview has been read again.
- *
- * A refusal reaches the person in main's own words. That includes the case this
- * app cares most about - "an agent order is settling on this account" - which is
- * a real, actionable cause and must never be flattened into a generic failure.
+ * The consent contract and the recovery rules are documented on the hook.
  */
 
-import { useCallback, useMemo, useState, type JSX } from "react";
+import { useCallback, useState, type JSX } from "react";
 import type { LighterIntegrationEnvironment } from "@shared/schemas/lighter-integration.js";
 import { Button } from "../../../../components/ui/button.js";
 import {
-  useConfirmLighterLeverage,
-  useLighterLeverageOverview,
   useLighterTradingLimits,
-  usePrepareLighterLeverage,
-  useReconcileLighterLeverage,
   useSetLighterTradingLimits,
 } from "../../../../lib/api/lighter-trading-limits.js";
 import {
@@ -43,19 +26,14 @@ import {
   type CapitalShareWriteState,
 } from "./LighterCapitalShareCard.js";
 import { LighterLeverageTable } from "./LighterLeverageTable.js";
+import { LighterLeverageConfirmModal } from "./LighterLeverageConfirmModal.js";
+import { LighterLeverageSheet } from "./LighterLeverageSheet.js";
+import { useLighterLeverageChange } from "./useLighterLeverageChange.js";
 import {
-  LighterLeverageConfirmModal,
-  type LighterLeverageIssuedProposal,
-} from "./LighterLeverageConfirmModal.js";
-import {
-  describeApplyOutcome,
   formatRecordedInstant,
   isRevisionConflict,
   isVaultLocked,
-  readUnresolvedIntents,
-  reconcileIntentIdForMarket,
   type LeverageOutcomeView,
-  type LighterLeverageMarketRow,
   type UnresolvedLeverageIntent,
   type UnresolvedLeverageIntents,
 } from "./lighter-leverage-view.js";
@@ -67,8 +45,6 @@ import {
   UNRESOLVED_INTRO,
   UNRESOLVED_TITLE,
   leverageReadFailed,
-  outcomeAlreadyConfigured,
-  outcomeFailed,
   unresolvedIntentLine,
   unresolvedReconcileLabel,
   unresolvedStateLabel,
@@ -88,60 +64,16 @@ export function LighterTradingSetupSection({
   // two VALUES, not on this object's identity.
   const scope = { environment, walletAddress };
   const limits = useLighterTradingLimits(scope);
-  const overview = useLighterLeverageOverview(scope);
   const setLimits = useSetLighterTradingLimits();
-  const prepare = usePrepareLighterLeverage();
-  // Both settle-paths invalidate the limits, the overview and the trading
-  // account read inside the adapter, so this component never refetches by hand:
-  // a second read here would only race the adapter's own.
-  const confirm = useConfirmLighterLeverage(scope);
-  const reconcile = useReconcileLighterLeverage(scope);
+  const change = useLighterLeverageChange(scope);
+  const { overview, unresolved, busyMarketId, outcomes, proposal } = change;
 
   const [write, setWrite] = useState<CapitalShareWriteState>({ kind: "idle" });
-  const [proposal, setProposal] = useState<{
-    readonly value: LighterLeverageIssuedProposal;
-    readonly marketId: number;
-  } | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [busyMarketId, setBusyMarketId] = useState<number | null>(null);
-  const [outcomes, setOutcomes] = useState<ReadonlyMap<number, LeverageOutcomeView>>(
-    () => new Map<number, LeverageOutcomeView>(),
-  );
-  // The in-session half of the reconcile record: an id written BEFORE the
-  // invocation, so a confirmation that never answers still has something to
-  // reconcile before the overview has been re-read. The durable list below is
-  // the authority; this map only covers that one window.
-  const [sessionIntentIds, setSessionIntentIds] = useState<ReadonlyMap<number, string>>(
-    () => new Map<number, string>(),
-  );
-  const [reconciling, setReconciling] = useState<ReadonlySet<string>>(
-    () => new Set<string>(),
-  );
-
-  /**
-   * The unresolved changes main still holds for this account, read from the
-   * overview on every visit. This is what makes recovery survive a remount, a
-   * closed Settings screen and a restart: the list is main's durable record,
-   * not something this component remembered.
-   */
-  const unresolved: UnresolvedLeverageIntents = useMemo(
-    () =>
-      overview.data !== undefined && overview.data.ok
-        ? readUnresolvedIntents(overview.data.data)
-        : { rows: [], unreadable: 0 },
-    [overview.data],
-  );
-
-  const recordOutcome = useCallback(
-    (marketId: number, outcome: LeverageOutcomeView): void => {
-      setOutcomes((previous) => {
-        const next = new Map(previous);
-        next.set(marketId, outcome);
-        return next;
-      });
-    },
-    [],
-  );
+  // Which market's leverage sheet is open. The sheet reads its row from the
+  // overview on every render, so a change shows in it as soon as the overview
+  // is re-read; the table row behind it says the same thing.
+  const [sheetMarketId, setSheetMarketId] = useState<number | null>(null);
+  const closeSheet = useCallback((): void => setSheetMarketId(null), []);
 
   const onSaveShare = useCallback(
     (percent: number | null, expectedRevision: number | null): void => {
@@ -173,164 +105,6 @@ export function LighterTradingSetupSection({
     void limits.refetch();
   }, [limits]);
 
-  const onApply = useCallback(
-    (row: LighterLeverageMarketRow, leverage: number, marginMode: "cross" | "isolated"): void => {
-      setBusyMarketId(row.marketId);
-      setOutcomes((previous) => {
-        const next = new Map(previous);
-        next.delete(row.marketId);
-        return next;
-      });
-      void prepare
-        .mutateAsync({ environment, walletAddress, marketId: row.marketId, leverage, marginMode })
-        .then((result) => {
-          if (!result.ok) {
-            setBusyMarketId(null);
-            recordOutcome(row.marketId, {
-              tone: "warning",
-              message: outcomeFailed(result.error.message),
-              reconcilable: false,
-            });
-            return;
-          }
-          if (result.data.kind === "already_configured") {
-            setBusyMarketId(null);
-            recordOutcome(row.marketId, {
-              tone: "neutral",
-              message: outcomeAlreadyConfigured(
-                row.symbol,
-                result.data.current.leverageDisplay,
-                result.data.current.marginMode,
-              ),
-              reconcilable: false,
-            });
-            return;
-          }
-          setProposal({ value: result.data, marketId: row.marketId });
-        })
-        .catch(() => {
-          setBusyMarketId(null);
-          recordOutcome(row.marketId, {
-            tone: "warning",
-            message: outcomeFailed("The request did not reach Vex."),
-            reconcilable: false,
-          });
-        });
-    },
-    [environment, prepare, recordOutcome, walletAddress],
-  );
-
-  const closeProposal = useCallback((): void => {
-    setProposal(null);
-    setBusyMarketId(null);
-  }, []);
-
-  const onConfirm = useCallback(
-    (proposalId: string): void => {
-      const open = proposal;
-      if (open === null) return;
-      setSubmitting(true);
-      // Recorded BEFORE the call. If the invocation never answers, main may
-      // still have signed, and the only honest recovery is to read the outcome
-      // by this proposal id rather than to ask again.
-      setSessionIntentIds((previous) => {
-        const next = new Map(previous);
-        next.set(open.marketId, proposalId);
-        return next;
-      });
-      void confirm
-        .mutateAsync({ proposalId })
-        .then((result) => {
-          setSubmitting(false);
-          closeProposal();
-          if (!result.ok) {
-            recordOutcome(open.marketId, {
-              tone: "warning",
-              message: outcomeFailed(result.error.message),
-              reconcilable: false,
-            });
-            return;
-          }
-          recordOutcome(open.marketId, describeApplyOutcome(open.value.symbol, result.data));
-        })
-        .catch(() => {
-          setSubmitting(false);
-          closeProposal();
-          // An invocation that never answered is NOT a failed change: main may
-          // have signed. It is reported as unresolved, and Reconcile is the
-          // only way this surface learns the truth.
-          recordOutcome(open.marketId, {
-            tone: "warning",
-            message: outcomeFailed("Vex did not answer, so the outcome is unknown."),
-            reconcilable: true,
-          });
-        });
-    },
-    [closeProposal, confirm, proposal, recordOutcome],
-  );
-
-  /**
-   * ONE reconcile path for both surfaces. Reconcile is a READ of what Lighter
-   * did with an intent main already holds; it never signs, which is why the
-   * only thing it needs is the intent id. Its outcome is recorded against the
-   * market, so the table row and the unresolved list state the same answer.
-   */
-  const runReconcile = useCallback(
-    (marketId: number, symbol: string, intentId: string): void => {
-      setReconciling((previous) => new Set(previous).add(intentId));
-      const settle = (): void => {
-        setReconciling((previous) => {
-          const next = new Set(previous);
-          next.delete(intentId);
-          return next;
-        });
-      };
-      void reconcile
-        .mutateAsync({ proposalId: intentId })
-        .then((result) => {
-          settle();
-          if (!result.ok) {
-            recordOutcome(marketId, {
-              tone: "warning",
-              message: outcomeFailed(result.error.message),
-              reconcilable: true,
-            });
-            return;
-          }
-          recordOutcome(marketId, describeApplyOutcome(symbol, result.data));
-        })
-        .catch(() => {
-          settle();
-          recordOutcome(marketId, {
-            tone: "warning",
-            message: outcomeFailed("Vex did not answer, so the outcome is still unknown."),
-            reconcilable: true,
-          });
-        });
-    },
-    [recordOutcome, reconcile],
-  );
-
-  const onReconcile = useCallback(
-    (row: LighterLeverageMarketRow): void => {
-      const intentId = reconcileIntentIdForMarket(
-        row.marketId,
-        unresolved.rows,
-        sessionIntentIds,
-      );
-      if (intentId === null) return;
-      runReconcile(row.marketId, row.symbol, intentId);
-    },
-    [runReconcile, sessionIntentIds, unresolved.rows],
-  );
-
-  const onReconcileIntent = useCallback(
-    (intent: UnresolvedLeverageIntent): void => {
-      runReconcile(intent.marketId, intent.symbol, intent.intentId);
-    },
-    [runReconcile],
-  );
-
   const read: CapitalShareReadState = limits.isPending
     ? { kind: "loading" }
     : limits.data === undefined
@@ -342,6 +116,14 @@ export function LighterTradingSetupSection({
             revision: limits.data.data.revision,
           }
         : { kind: "failed", reason: limits.data.error.message };
+
+  const overviewData =
+    overview.data !== undefined && overview.data.ok ? overview.data.data : null;
+  const vaultLocked = overviewData !== null && isVaultLocked(overviewData.vaultState);
+  const sheetRow =
+    overviewData === null || sheetMarketId === null
+      ? null
+      : (overviewData.markets.find((row) => row.marketId === sheetMarketId) ?? null);
 
   return (
     <section
@@ -383,26 +165,44 @@ export function LighterTradingSetupSection({
             vaultLocked={isVaultLocked(overview.data.data.vaultState)}
             busyMarketId={busyMarketId}
             outcomes={outcomes}
-            onApply={onApply}
-            onReconcile={onReconcile}
+            onChange={(row) => setSheetMarketId(row.marketId)}
+            onReconcile={change.onReconcile}
           />
         )}
       </div>
 
       <LighterUnresolvedChanges
         unresolved={unresolved}
-        reconciling={reconciling}
+        reconciling={change.reconciling}
         outcomes={outcomes}
-        onReconcile={onReconcileIntent}
+        onReconcile={change.onReconcileIntent}
       />
+
+      {sheetRow === null ? null : (
+        <LighterLeverageSheet
+          key={sheetRow.marketId}
+          open={proposal === null}
+          environment={environment}
+          symbol={sheetRow.symbol}
+          row={sheetRow}
+          notice={null}
+          vaultLocked={vaultLocked}
+          busy={busyMarketId !== null}
+          outcome={outcomes.get(sheetRow.marketId) ?? null}
+          onApply={change.onApply}
+          onReconcile={change.onReconcile}
+          onClose={closeSheet}
+        />
+      )}
 
       {proposal === null ? null : (
         <LighterLeverageConfirmModal
           proposal={proposal.value}
-          environment={environment}
-          submitting={submitting}
-          onCancel={closeProposal}
-          onConfirm={onConfirm}
+          submitting={change.submitting}
+          cancelling={change.cancelling}
+          error={change.proposalError}
+          onCancel={change.closeProposal}
+          onConfirm={change.onConfirm}
         />
       )}
     </section>

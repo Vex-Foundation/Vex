@@ -5,6 +5,8 @@ import {
   type LighterEnvironment,
 } from "@tools/lighter/constants.js";
 import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
+import { getLighterFeePolicy, getLighterIntegratorFees } from "@tools/lighter/fee-policy.js";
+import { lighterFeePercent } from "@tools/lighter/order-fee-terms.js";
 import type {
   LighterCandle,
   LighterMarket,
@@ -77,6 +79,7 @@ export function lighterTradingReadFailureOf(cause: unknown): LighterTradingReadF
 }
 
 const SNAPSHOT_CANDLE_COUNT = 300;
+const HISTORY_CANDLE_PAGE_COUNT_MAX = 500;
 const SNAPSHOT_BOOK_ROWS = 24;
 const SNAPSHOT_TRADE_ROWS = 30;
 const ALL_MARKET_DETAILS_ID = 255;
@@ -162,10 +165,31 @@ function marketStatusRank(market: LighterMarket): number {
   return market.status === "active" ? 0 : 1;
 }
 
+/**
+ * Vex's integrator fee for this market as a percent string, or null when the
+ * environment has no collector configured. Read from the SAME policy the
+ * signer authorizes the order against (`@tools/lighter/fee-policy.js`), so the
+ * ticket can never size against terms different from the ones submitted.
+ */
+function integratorFeePercents(
+  environment: LighterEnvironment,
+  marketType: LighterMarket["market_type"],
+): { readonly maker: string | null; readonly taker: string | null } {
+  const policy = getLighterFeePolicy(environment);
+  if (policy === null) return { maker: null, taker: null };
+  const fees = getLighterIntegratorFees(policy, marketType);
+  return {
+    maker: lighterFeePercent(fees.integratorMakerFee),
+    taker: lighterFeePercent(fees.integratorTakerFee),
+  };
+}
+
 export function projectLighterTradingMarket(
+  environment: LighterEnvironment,
   market: LighterMarket,
   detail: LighterMarketDetail | null = null,
 ): LighterTradingMarket {
+  const integrator = integratorFeePercents(environment, market.market_type);
   return {
     marketId: market.market_id,
     symbol: market.symbol,
@@ -186,6 +210,8 @@ export function projectLighterTradingMarket(
       taker: market.taker_fee,
       makerEnabled: market.is_maker_fee_enabled,
       takerEnabled: market.is_taker_fee_enabled,
+      integratorMaker: integrator.maker,
+      integratorTaker: integrator.taker,
     },
     activity24h: {
       tradesCount: nonNegativeNumberOrNull(detail?.daily_trades_count),
@@ -199,7 +225,29 @@ export function projectLighterTradingMarket(
         ? nonNegativeNumberOrNull(detail?.open_interest)
         : null,
     },
+    margin: market.market_type === "perp" ? projectMarginFractions(detail) : null,
   };
+}
+
+function marginFractionOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 10_000
+    ? value
+    : null;
+}
+
+/** All three or nothing: a cost or liquidation estimate needs every term. */
+function projectMarginFractions(
+  detail: LighterMarketDetail | null,
+): LighterTradingMarket["margin"] {
+  const defaultInitialMarginFraction = marginFractionOrNull(detail?.default_initial_margin_fraction);
+  const minInitialMarginFraction = marginFractionOrNull(detail?.min_initial_margin_fraction);
+  const maintenanceMarginFraction = marginFractionOrNull(detail?.maintenance_margin_fraction);
+  if (
+    defaultInitialMarginFraction === null
+    || minInitialMarginFraction === null
+    || maintenanceMarginFraction === null
+  ) return null;
+  return { defaultInitialMarginFraction, minInitialMarginFraction, maintenanceMarginFraction };
 }
 
 function nonNegativeNumberOrNull(value: unknown): number | null {
@@ -268,6 +316,7 @@ export async function readLighterTradingMarketList(
     markets: sortMarkets(response.order_books)
       .slice(0, 500)
       .map((market) => projectLighterTradingMarket(
+        environment,
         market,
         matchingMarketDetail(market, details),
       )),
@@ -316,6 +365,7 @@ export function projectLighterInternalCandles(
   resolution: LighterStreamCandleResolution,
   source: LighterTradingStreamCandle["source"],
   receivedAt: number,
+  limit = SNAPSHOT_CANDLE_COUNT,
 ): LighterInternalCandle[] {
   const byTimestamp = new Map<number, LighterInternalCandle>();
   for (const candle of candles) {
@@ -345,10 +395,10 @@ export function projectLighterInternalCandles(
   }
   return [...byTimestamp.values()]
     .sort((left, right) => left.timestamp - right.timestamp)
-    .slice(-SNAPSHOT_CANDLE_COUNT);
+    .slice(-limit);
 }
 
-function projectSnapshotCandles(
+export function projectSnapshotCandles(
   candles: readonly LighterInternalCandle[],
 ): LighterTradingSnapshot["candles"] {
   return candles.map((candle) => ({
@@ -388,7 +438,7 @@ export async function readLighterTradingCandleHistory(
 ): Promise<LighterInternalCandle[]> {
   const target = canonicalLighterCandleTarget(input);
   const count = input.count ?? SNAPSHOT_CANDLE_COUNT;
-  if (!Number.isSafeInteger(count) || count < 1 || count > SNAPSHOT_CANDLE_COUNT) {
+  if (!Number.isSafeInteger(count) || count < 1 || count > HISTORY_CANDLE_PAGE_COUNT_MAX) {
     throw new Error("Lighter candle history count is out of bounds.");
   }
   const receivedAt = now();
@@ -411,6 +461,7 @@ export async function readLighterTradingCandleHistory(
     target.resolution,
     "rest_snapshot",
     receivedAt,
+    count,
   );
 }
 
@@ -519,7 +570,7 @@ async function readLighterTradingSnapshotInternal(
   return {
     environment: input.environment,
     retrievedAt: now(),
-    market: projectLighterTradingMarket(market, detail),
+    market: projectLighterTradingMarket(input.environment, market, detail),
     detail: {
       lastTradePrice: numberOrNull(detail.last_trade_price),
       openInterest: numberOrNull(detail.open_interest),

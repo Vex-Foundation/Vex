@@ -38,6 +38,7 @@ export interface SessionRow {
   readonly ended_at: string | Date | null;
   readonly title: string | null;
   readonly pinned_at: string | Date | null;
+  readonly workspace: string | null;
 }
 
 export interface MissionRunStatusRow {
@@ -46,7 +47,7 @@ export interface MissionRunStatusRow {
 }
 
 export const SESSION_ROW_COLUMNS =
-  "id, mode, permission, initial_goal, started_at, ended_at, title, pinned_at";
+  "id, mode, permission, initial_goal, started_at, ended_at, title, pinned_at, workspace";
 
 function toIsoString(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -84,6 +85,7 @@ export function toListItem(
     endedAt: toIsoStringOrNull(row.ended_at),
     missionStatus,
     pinnedAt: toIsoStringOrNull(row.pinned_at),
+    workspace: row.workspace === "lighter" ? "lighter" : null,
   };
 }
 

@@ -12,6 +12,18 @@
  *  Token-only: the arc reads var(--vex-accent), so both themes    *
  *  recolor automatically.                                        *
  * ============================================================ */
+/* ------------------------------------------------------------ *
+ *  TWO TEMPOS, ONE LAW. The arc above is the card PARKED on the  *
+ *  user's decision: a 7s orbit, because the thing being waited   *
+ *  on is the person. `.vex-ring-working` below is the other half  *
+ *  - Vex is working and the PERSON is waiting - so it orbits at  *
+ *  the pace of something running, on whatever host owns the act.  *
+ *  Both are bound to a verifiable state and both are DROPPED by   *
+ *  the consumer when that state ends; neither ever loops idle.    *
+ *  They use different mechanisms on purpose - see the note on     *
+ *  `.vex-ring-working` for why a pill cannot wear a conic arc.    *
+ * ------------------------------------------------------------ */
+
 @property --vex-ring-angle {
   syntax: "<angle>";
   inherits: false;
@@ -55,6 +67,79 @@
   }
 }
 
+/* THE WORKING RUNNER - a dispatch is in flight on this control.
+ *
+ * Same law as the arc above (bound to a verifiable state, dropped when it
+ * ends), DELIBERATELY NOT the same mechanism, because neither the arc nor the
+ * obvious alternative survives this host's shape. Both were built and measured
+ * before this one was written:
+ *
+ *   A CONIC ARC maps ANGLE, and angle only tracks perimeter on a roughly
+ *   square host. On the approve key - a 234x27 pill - the band's whole sweep
+ *   lands within a few pixels of the bottom edge and the "travelling" arc
+ *   renders as a stationary stub.
+ *
+ *   A DASHED `rect` STROKE is parameterised by perimeter, which is right, but
+ *   a stadium needs `rx == ry == height/2` and there is no way to say that.
+ *   `rx` clamps to half the WIDTH, and SVG 2's auto-`rx`-from-`ry` does not
+ *   resolve here - the element reports `rx = 0` and strokes square ends.
+ *
+ * So the runner is a LANE, not an orbit: a short band travelling the width of
+ * the key just inside its lower edge, clipped to the key's own radius. It is
+ * correct at every aspect ratio and every size, it needs nothing measured, and
+ * on a control this wide it reads as "running" more directly than an orbit
+ * does. The host must clip (`overflow: hidden`) for the lane to take its
+ * corners - a key has no overflowing content, so that costs nothing.
+ *
+ * THE BAND'S COLOUR IS THE HOST'S INK. On a filled key an accent-coloured lane
+ * would be amber on amber; the host sets `--vex-ring-ink` to whatever its own
+ * label is drawn in and the band inherits that contrast by construction. The
+ * accent default keeps it right on an unfilled host. */
+.vex-ring-working {
+  position: relative;
+  overflow: hidden;
+}
+
+.vex-ring-working > .vex-ring-runner {
+  position: absolute;
+  inset: auto 0 1px 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.vex-ring-working > .vex-ring-runner::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 30%;
+  border-radius: 2px;
+  /* Dense head, dissolving tail - the band reads a direction rather than
+   * sliding as an undifferentiated block. */
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in oklab, var(--vex-ring-ink, var(--vex-accent)) 55%, transparent) 55%,
+    var(--vex-ring-ink, var(--vex-accent))
+  );
+  animation: vex-ring-run 1.2s linear infinite;
+}
+
+/* `translateX` percentages measure the BAND, not the lane, so the travel is
+ * stated in band-widths: -100% parks it just off the left edge, and 333.33%
+ * (the lane's 100% divided by the band's 30%) carries its trailing edge just
+ * past the right. The band therefore clears the lane completely before it
+ * re-enters, and the loop never shows two of it at once. Keep the two numbers
+ * in step if the width above ever changes. */
+@keyframes vex-ring-run {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(333.333%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .vex-ring-pending::before {
     animation: none;
@@ -62,6 +147,16 @@
       color-mix(in oklab, var(--vex-accent) 26%, transparent),
       color-mix(in oklab, var(--vex-accent) 26%, transparent)
     );
+  }
+
+  /* The movement goes; the fact does not. The band stops travelling and opens
+   * into a full quiet rule under the label, and the key still says what it is
+   * doing in words - reduced motion asks for less movement, not less
+   * feedback. */
+  .vex-ring-working > .vex-ring-runner::before {
+    animation: none;
+    width: 100%;
+    background: color-mix(in oklab, var(--vex-ring-ink, var(--vex-accent)) 40%, transparent);
   }
 }
 

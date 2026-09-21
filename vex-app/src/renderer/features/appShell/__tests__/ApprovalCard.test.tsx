@@ -13,7 +13,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 
@@ -102,6 +102,23 @@ beforeEach(() => {
 });
 
 describe("ApprovalCard", () => {
+  it("offers a reject reason on agent cards and none on desk cards, which have no model to read it", () => {
+    const { unmount } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ApprovalCard summary={makeSummary({ origin: "agent" })} sessionId={SESSION} focusOnMount={false} />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByLabelText("Reason for rejecting (optional)")).toBeTruthy();
+    expect(screen.getByText("Vex's own agent")).toBeTruthy();
+    unmount();
+    renderCard(makeSummary({ origin: "desk" }), false);
+    expect(screen.queryByLabelText("Reason for rejecting (optional)")).toBeNull();
+    expect(screen.getByText("You, from the Lighter desk")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /reject/i }));
+    fireEvent.click(screen.getByRole("button", { name: /reject/i }));
+    expect(mockRejectMutate).toHaveBeenCalledWith({ id: "appr-1" }, expect.anything());
+  });
+
   it("renders the full v4 quote binding, including hook, limits and consequence", () => {
     const binding = "Uniswap v4 pool 0x" + "ab".repeat(32)
       + ", fee dynamic, currently 10000 (millionths), tick spacing 200, hook 0x0000000000000000000000000000000000000044 : this hook can change the output after the swap"
@@ -225,9 +242,9 @@ describe("ApprovalCard", () => {
   );
 
   it.each([
-    ["immediate-or-cancel", "Immediate only"],
-    ["good-till-time", "Keep open"],
-    ["post-only", "Maker only"],
+    ["immediate-or-cancel", "IOC"],
+    ["good-till-time", "GTC"],
+    ["post-only", "Post-Only"],
   ] as const)("shows %s as the plain-language order behavior", (timeInForce, behaviorLabel) => {
     renderCard(
       makeSummary({
@@ -555,6 +572,32 @@ describe("ApprovalCard", () => {
     );
   });
 
+  it("invalidates approval queries when approve returns a Result-level failure", async () => {
+    const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries").mockResolvedValue();
+    mockApproveMutate.mockImplementation((_input, options) => {
+      void options?.onSuccess?.({
+        ok: false,
+        error: {
+          code: "approvals.dispatch_failed",
+          domain: "approvals",
+          message: "Dispatch failed.",
+          retryable: true,
+          userActionable: true,
+          redacted: true,
+          correlationId: "req-y",
+        },
+      });
+    });
+
+    renderCard(makeSummary({ origin: "desk", riskLevel: "info", actionKind: "read" }), false);
+    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+
+    await waitFor(() => expect(invalidate).toHaveBeenCalled());
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["approvals", "pending", SESSION] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["approvals", "history", SESSION] });
+    invalidate.mockRestore();
+  });
+
   // S5 signed glint — the ONE success light in the approvals flow.
   it("renders the one-shot signed glint after a successful approve", () => {
     mockApproveMutate.mockImplementation((_input, options) => {
@@ -574,15 +617,34 @@ describe("ApprovalCard", () => {
     expect(document.querySelector("[data-vex-signed-glint]")).toBeNull();
   });
 
-  it("buttons disabled while a mutation is in-flight", () => {
+  it("buttons disabled while a mutation is in-flight, and the approve key says it is working", () => {
     approvePending = true;
     renderCard(
       makeSummary({ riskLevel: "info", actionKind: "read" }),
       false,
     );
-    const approve = screen.getByRole("button", { name: /^approve$/i });
+    // The key the user pressed names what it is doing and is marked busy; a
+    // dispatch can run for fifteen seconds, and a key that only dimmed for
+    // that long read as a click that never landed.
+    const approve = screen.getByRole("button", { name: /working, please wait/i });
     const reject = screen.getByRole("button", { name: /^reject$/i });
     expect(approve.getAttribute("disabled")).not.toBeNull();
     expect(reject.getAttribute("disabled")).not.toBeNull();
+    expect(approve.getAttribute("aria-busy")).toBe("true");
+    expect(approve.className).toContain("vex-ring-working");
+  });
+
+  it("leaves the approve key alone while a REJECTION is the thing in flight", () => {
+    // `inFlight` covers both mutations. The travelling arc marks the key that
+    // was actually pressed, so a running rejection must not light Approve.
+    rejectPending = true;
+    renderCard(
+      makeSummary({ riskLevel: "info", actionKind: "read" }),
+      false,
+    );
+    const approve = screen.getByRole("button", { name: /^approve$/i });
+    expect(approve.getAttribute("disabled")).not.toBeNull();
+    expect(approve.className).not.toContain("vex-ring-working");
+    expect(approve.getAttribute("aria-busy")).toBe("false");
   });
 });

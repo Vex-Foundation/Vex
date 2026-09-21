@@ -309,6 +309,7 @@
   transition: background-color var(--vex-duration-fast) var(--vex-ease-out);
 }
 .vex-shell-handle:hover::before,
+.vex-shell-handle:focus-visible::before,
 .vex-shell-handle[data-dragging]::before {
   background: color-mix(in oklab, var(--vex-accent) 55%, transparent);
 }
@@ -328,6 +329,7 @@
   transition: opacity var(--vex-duration-reveal) var(--vex-ease-inout);
 }
 .vex-shell-handle[data-side="book"]:hover::after,
+.vex-shell-handle[data-side="book"]:focus-visible::after,
 .vex-shell-handle[data-side="book"][data-dragging]::after {
   opacity: 1;
   border-color: var(--vex-alias-border-l3);
@@ -444,4 +446,3 @@
     scrollbar-width: thin;
   }
 }
-

@@ -35,7 +35,7 @@ import { useComposerSubmit } from "./composer-submit.js";
 import { ComposerField } from "./ComposerField.js";
 import { ComposerQuickActions } from "./ComposerQuickActions.js";
 import { ComposerSendControl } from "./ComposerSendControl.js";
-import { usePlaceholderRotator } from "./composer-placeholders.js";
+import { LIGHTER_DESK_PLACEHOLDER, usePlaceholderRotator } from "./composer-placeholders.js";
 import {
   ReasoningEffortPlaceholder,
   ReasoningEffortSelect,
@@ -144,6 +144,7 @@ export function SessionComposer({
   // ── slash commands (B9/B12) ────────────────────────────────────────────
   const theme = useUiStore((s) => s.theme);
   const setThemePreference = useUiStore((s) => s.setThemePreference);
+  const onLighterDesk = useUiStore((s) => s.runtimeMode === "lighter");
   const runtimeQuery = useRuntimeState(sessionId);
   const runStatus = readRunStatus(runtimeQuery.data);
   const runtimeActivity = readActivity(runtimeQuery.data);
@@ -251,19 +252,23 @@ export function SessionComposer({
     focused ||
     draft.length > 0 ||
     activeSession?.mode === "mission" ||
-    submitPending;
+    submitPending ||
+    onLighterDesk;
   const welcomePlaceholder = usePlaceholderRotator(rotatorPaused);
   // PLACEHOLDER PRECEDENCE, highest first: mission copy (the run owns the
   // field) -> the steer/queue hint while a turn is running -> the rotating
   // default. The steer hint outranks the default because during a turn the
   // Send key does something DIFFERENT from what the default advertises, and a
-  // rotating suggestion at that moment is actively misleading.
+  // rotating suggestion at that moment is actively misleading. On the Lighter
+  // desk the rail is a trading copilot, so the resting phrase is the desk's.
   const placeholder =
     activeSession?.mode === "mission"
       ? placeholderFor(activeSession)
       : submitPending
         ? STEER_QUEUE_PLACEHOLDER
-        : welcomePlaceholder;
+        : onLighterDesk
+          ? LIGHTER_DESK_PLACEHOLDER
+          : welcomePlaceholder;
 
   // File-drag visual only: attachments are not supported yet, so the drop
   // ring signals the surface and the drop itself answers honestly.

@@ -84,6 +84,14 @@ import { formatZodIssueForModel } from "../arg-validation.js";
 import { mapWithConcurrency } from "@utils/concurrency.js";
 import { throwIfAborted } from "@utils/cancellation.js";
 
+/** Entries -> the CSV the chain resolver reads; all-empty reads as omitted. */
+function joinChainList(entries: readonly unknown[]): string | undefined {
+  const joined = entries
+    .filter((entry): entry is string => typeof entry === "string" && entry.trim() !== "")
+    .join(",");
+  return joined === "" ? undefined : joined;
+}
+
 const WalletReadArgs = z.object({
   walletFamily: z.enum(["eip155", "solana", "all"]).optional().default("all"),
   // Empty / whitespace-only `chainIds` is treated as omission (scan all chains).
@@ -95,11 +103,25 @@ const WalletReadArgs = z.object({
   // them itself. Empty entries are dropped; an all-empty list reads as omitted.
   chainIds: z.preprocess(
     (v) => {
-      if (Array.isArray(v)) {
-        const joined = v.filter((entry) => typeof entry === "string" && entry.trim() !== "").join(",");
-        return joined === "" ? undefined : joined;
+      if (Array.isArray(v)) return joinChainList(v);
+      if (typeof v !== "string") return v;
+      const trimmed = v.trim();
+      if (trimmed === "") return undefined;
+      // Some serializers hand the ARRAY BACK AS TEXT: `"[\"robinhood\"]"`.
+      // Unwrapped here for the same reason the array form is accepted at all -
+      // a model that holds a list of chains should not lose a turn to the
+      // encoding it happened to use. Observed live: two wasted WalletBalances
+      // calls, both answered "Unsupported chain: [\"robinhood\"]", for a chain
+      // that resolves perfectly well by slug and by id.
+      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+        try {
+          const parsed: unknown = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) return joinChainList(parsed);
+        } catch {
+          // Not JSON; fall through and let the resolver name what it got.
+        }
       }
-      return typeof v === "string" && v.trim() === "" ? undefined : v;
+      return v;
     },
     z.string().trim().min(1, { message: "chainIds must be a non-empty comma-separated string, or an array of chain slugs/ids" }).optional(),
   ),

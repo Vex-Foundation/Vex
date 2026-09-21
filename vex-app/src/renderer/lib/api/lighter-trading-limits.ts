@@ -24,6 +24,8 @@ import type { Result } from "@shared/ipc/result.js";
 import type { LighterIntegrationEnvironment } from "@shared/schemas/lighter-integration.js";
 import type {
   ApplyLighterLeverageResult,
+  CancelLighterLeverageInput,
+  CancelLighterLeverageResult,
   ConfirmLighterLeverageInput,
   LighterLeverageOverview,
   LighterLeverageProposal,
@@ -123,13 +125,30 @@ export function useReconcileLighterLeverage(
   });
 }
 
+export function useCancelLighterLeverage(
+  scope: WalletScope,
+): UseMutationResult<Result<CancelLighterLeverageResult>, Error, CancelLighterLeverageInput> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    retry: false,
+    mutationFn: (input) => window.vex.settings.cancelLighterLeverage(input),
+    onSettled: () => invalidateAfterLeverageChange(queryClient, scope),
+  });
+}
+
 function invalidateAfterLeverageChange(
   queryClient: ReturnType<typeof useQueryClient>,
   scope: WalletScope,
-): void {
-  void queryClient.invalidateQueries({ queryKey: lighterLeverageOverviewKey(scope) });
-  void queryClient.invalidateQueries({ queryKey: lighterTradingLimitsKey(scope) });
-  // The trading panel reads the same account: its margin figures move with the
-  // initial margin fraction, so a stale cache there would contradict this card.
-  void queryClient.invalidateQueries({ queryKey: ["lighterTrading", "account", scope.environment] });
+): Promise<void> {
+  const refreshes = [
+    queryClient.invalidateQueries({ queryKey: lighterLeverageOverviewKey(scope) }),
+    queryClient.invalidateQueries({ queryKey: lighterTradingLimitsKey(scope) }),
+    // The trading panel reads the same account: its margin figures move with the
+    // initial margin fraction, so a stale cache there would contradict this card.
+    queryClient.invalidateQueries({ queryKey: ["lighterTrading", "account", scope.environment] }),
+  ];
+  // Keep the mutation pending until active views have replaced their stale
+  // values. A failed refresh must not recast a proven provider outcome as a
+  // failed confirmation, so wait for every read without throwing its error.
+  return Promise.allSettled(refreshes).then(() => undefined);
 }

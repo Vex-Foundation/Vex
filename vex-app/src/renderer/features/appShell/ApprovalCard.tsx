@@ -27,13 +27,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
+import type { ApprovalActionResult, ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import { useApprove, useReject } from "../../lib/api/approvals.js";
-import {
-  approvalsKeys,
-  messagesKeys,
-  runtimeKeys,
-} from "../../lib/api/queryKeys.js";
+import { invalidateOnApprovalResolve } from "./approvals/invalidate-on-resolve.js";
 import { isHighRisk as classifyHighRisk } from "./ApprovalCard/risk.js";
 import { ApprovalDetails } from "./ApprovalCard/ApprovalDetails.js";
 import { ApprovalDecisionActions } from "./ApprovalCard/ApprovalDecisionActions.js";
@@ -61,6 +57,24 @@ function approveLabelFor(summary: ApprovalSummaryDto): string {
   if (isLighterOrderCreateApproval(summary)) return "Approve and execute trade";
   if (isLighterDepositApproval(summary)) return "Approve and deposit";
   return "Approve";
+}
+
+/**
+ * What the key says WHILE the dispatch runs.
+ *
+ * A Lighter order create signs, submits and then waits on the sequencer's
+ * answer, which is fifteen-odd seconds of an app that is otherwise instant. A
+ * key that only dims for that long reads as a click that did not land, so it
+ * names the step it is on instead - and the name has to stay true for the
+ * whole window, which rules out a phase the card cannot actually observe.
+ */
+function pendingApproveLabelFor(summary: ApprovalSummaryDto): string {
+  if (isLighterOrderCreateApproval(summary)) return "Signing and sending";
+  if (isLighterDepositApproval(summary)) return "Signing and depositing";
+  if (summary.preview?.criticalArgs.toolId === "lighter.fees.approve") {
+    return summary.preview.criticalArgs.revoke === true ? "Revoking" : "Authorizing";
+  }
+  return "Working";
 }
 
 function confirmApproveLabelFor(summary: ApprovalSummaryDto): string {
@@ -99,6 +113,12 @@ export interface ApprovalCardProps {
    * only; `summary.projectId` is the identity and is already on the summary.
    */
   readonly projectName?: string | null;
+  /**
+   * Fires after a decision has landed and the queries were refreshed. The
+   * Lighter desk uses it to show the tool's outcome under the ticket, which
+   * has no transcript to read it from.
+   */
+  readonly onResolved?: (decision: "approved" | "rejected", result: ApprovalActionResult) => void;
 }
 
 export function ApprovalCard({
@@ -107,6 +127,7 @@ export function ApprovalCard({
   focusOnMount,
   idVariant,
   projectName = null,
+  onResolved,
 }: ApprovalCardProps): JSX.Element {
   const queryClient = useQueryClient();
   const approve = useApprove();
@@ -152,28 +173,7 @@ export function ApprovalCard({
   const [signedGlint, setSignedGlint] = useState(false);
   const inFlight = approve.isPending || reject.isPending;
 
-  const invalidateOnResolve = async (): Promise<void> => {
-    await Promise.all([
-      queryClient.invalidateQueries({
-        queryKey: approvalsKeys.pending(sessionId),
-      }),
-      // App-wide inbox badge: any decision (from the inline card OR the global
-      // panel) must refresh the DESK RULE count.
-      queryClient.invalidateQueries({
-        queryKey: approvalsKeys.pendingAll(),
-      }),
-      // history prefix (limit varies): match every history query for this session.
-      queryClient.invalidateQueries({
-        queryKey: ["approvals", "history", sessionId] as const,
-      }),
-      queryClient.invalidateQueries({
-        queryKey: messagesKeys.forSession(sessionId),
-      }),
-      queryClient.invalidateQueries({
-        queryKey: runtimeKeys.state(sessionId),
-      }),
-    ]);
-  };
+  const invalidateOnResolve = (): Promise<void> => invalidateOnApprovalResolve(queryClient, sessionId);
 
   const fireApprove = (): void => {
     setInlineError(null);
@@ -185,8 +185,10 @@ export function ApprovalCard({
             setArmedAction(null);
             setSignedGlint(true);
             await invalidateOnResolve();
+            onResolved?.("approved", result.data);
           } else {
             setInlineError(result.error.message);
+            void invalidateOnResolve();
           }
         },
         onError: (e) => setInlineError(e.message),
@@ -208,8 +210,10 @@ export function ApprovalCard({
             setArmedAction(null);
             setRejectReason("");
             await invalidateOnResolve();
+            onResolved?.("rejected", result.data);
           } else {
             setInlineError(result.error.message);
+            void invalidateOnResolve();
           }
         },
         onError: (e) => setInlineError(e.message),
@@ -243,6 +247,7 @@ export function ApprovalCard({
   const criticalArgs = summary.preview?.criticalArgs ?? null;
   const approveLabel = approveLabelFor(summary);
   const confirmApproveLabel = confirmApproveLabelFor(summary);
+  const pendingApproveLabel = pendingApproveLabelFor(summary);
 
   return (
     <section
@@ -289,7 +294,10 @@ export function ApprovalCard({
         onRejectReasonChange={setRejectReason}
         approveLabel={approveLabel}
         confirmApproveLabel={confirmApproveLabel}
+        pendingApproveLabel={pendingApproveLabel}
+        approvePending={approve.isPending}
         wrapReasonOnNarrow={criticalArgs?.toolId === "lighter.fees.approve"}
+        rejectReasonInput={summary.origin !== "desk"}
       />
     </section>
   );

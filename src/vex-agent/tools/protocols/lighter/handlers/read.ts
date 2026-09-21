@@ -1,6 +1,8 @@
 import {
   LIGHTER_API_KEY_INDEX_ALL,
   LIGHTER_CACHE_TTL_MS,
+  LIGHTER_CANDLE_RESOLUTION_MS,
+  LIGHTER_CANDLES_COUNT_MAX,
   LIGHTER_ENDPOINT_PATHS,
   LIGHTER_ENDPOINTS,
   type LighterEnvironment,
@@ -82,6 +84,10 @@ import {
   readTimestamp,
   type LighterOrderPreviewMarketType,
 } from "../params.js";
+import {
+  lighterEnvironmentLabel,
+  lighterSetupCompleteGuidance,
+} from "../setup-presentation.js";
 import {
   projectCandles,
   projectAccountResponse,
@@ -557,6 +563,40 @@ function managedReadinessRecoveryLeg(
   };
 }
 
+/**
+ * The window one candle read may actually ask the provider for.
+ *
+ * Lighter reads a window AND a row cap, and rejects the call outright when the
+ * window holds more candles than the cap allows. A model that asks for a day of
+ * 5m candles without doing that arithmetic spent the whole call on the
+ * rejection and a second call recovering from it, which is two provider round
+ * trips for one answer. `count_back` already means "the newest N ending here",
+ * so the window is narrowed to what the cap can carry and the answer says so.
+ * An omitted cap takes the provider maximum rather than the requested span,
+ * which is the same rejection by another route.
+ */
+export function clampCandleWindow(input: {
+  readonly resolution: keyof typeof LIGHTER_CANDLE_RESOLUTION_MS;
+  readonly startTimestamp: number;
+  readonly endTimestamp: number;
+  readonly countBack: number | undefined;
+}): { readonly startTimestamp: number; readonly countBack: number; readonly narrowed: boolean } {
+  const resolutionMs = LIGHTER_CANDLE_RESOLUTION_MS[input.resolution];
+  const requested = Math.ceil((input.endTimestamp - input.startTimestamp) / resolutionMs);
+  const countBack = Math.max(
+    1,
+    Math.min(input.countBack ?? requested, LIGHTER_CANDLES_COUNT_MAX),
+  );
+  if (requested <= countBack) {
+    return { startTimestamp: input.startTimestamp, countBack, narrowed: false };
+  }
+  return {
+    startTimestamp: input.endTimestamp - resolutionMs * countBack,
+    countBack,
+    narrowed: true,
+  };
+}
+
 export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
   "lighter.account.onboarding.status": async (params, context) => {
     const environment = readEnvironment(params);
@@ -775,9 +815,11 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         walletAddress,
         accountIndex: status.accountIndex,
       });
-      const environmentLabel = environment.value === "core"
-        ? "Lighter Core"
-        : "Lighter RHC";
+      const environmentLabel = lighterEnvironmentLabel(environment.value);
+      // An account that is already ready is not a research prompt: the request
+      // that reached this read has its answer, and the guidance says to give it
+      // rather than go shopping first (see `setup-presentation.ts`).
+      const setupCompleteGuidance = lighterSetupCompleteGuidance(environmentLabel);
       const userGuidance = belowTradeMinimum && tradeMinimumAssessment !== null
         ? `Do not prepare a deposit or approval card. The requested ${tradeMinimumAssessment.requestedTradeDisplay} ${tradeMinimumAssessment.marketSymbol} trade is below Lighter's live minimum trade size ${tradeMinimumAssessment.minimumTradeDisplay}. Show the user these live values in a compact table: requested trade ${tradeMinimumAssessment.requestedTradeDisplay}; Lighter market minimum ${tradeMinimumAssessment.minimumTradeDisplay}; current Lighter collateral ${fundingAssessment.lighterCollateralDisplay}; Vex wallet ${settlementAsset} ${fundingAssessment.walletSettlementDisplay}; combined available ${settlementAsset} ${fundingAssessment.combinedSettlementDisplay}. ${tradeMinimumAssessment.combinedBalanceMeetsMinimum ? "The balances can cover the venue minimum, but Vex will not increase the requested trade or move extra funds without a new user amount." : "The Lighter and Vex-wallet balances combined are also below the venue minimum."} Ask the user to choose a trade amount at or above the live minimum; move no funds now.`
         : !depositAmountProvided && needsFunding
@@ -795,7 +837,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
             : feeAuthorizationReadiness?.status === "blocked"
               ? feeAuthorizationReadiness.reason
             : plan.ready && managedTradingAccessActive
-              ? "The selected wallet's Lighter account is funded and its locally encrypted Vex trading access is active. Tell the user they are ready to trade; do not expose account or API-key indexes unless they ask for technical details."
+              ? setupCompleteGuidance
               : managedTradingReadiness?.reason === "nonce_not_reservable"
                 ? `Reconcile the exact local transaction that owns the ${environment.value.toUpperCase()} nonce reservation. Use lighter.withdraw.status for a withdrawal reservation or lighter.order.status for an order or order-lifecycle reservation. Do not prepare a key registration or another signed action until the nonce is reservable.`
                 : readinessRecoveryLeg?.kind === "reconcile_trading_access"
@@ -822,7 +864,12 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         tradingAccessRoute,
         depositAmountProvided,
         tradingLimits,
-        userGuidance: `${userGuidance} ${LIGHTER_TRADING_LIMITS_GUIDANCE}`,
+        // The ready answer is a verbatim reply, so nothing may be appended to
+        // it - "and nothing else" has to mean it. Every other branch keeps the
+        // limits note, which is what sizing the next trade needs.
+        userGuidance: userGuidance === setupCompleteGuidance
+          ? userGuidance
+          : `${userGuidance} ${LIGHTER_TRADING_LIMITS_GUIDANCE}`,
       });
     } catch (err) {
       return fail(
@@ -1456,14 +1503,20 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     const countBack = readCountBack(params);
     if (!countBack.ok) return fail(countBack.reason);
     const setTimestampToEnd = readSetTimestampToEnd(params);
+    const window = clampCandleWindow({
+      resolution: resolution.value,
+      startTimestamp: startTimestamp.value,
+      endTimestamp: endTimestamp.value,
+      countBack: countBack.value,
+    });
 
     try {
       const response = await getLighterClient().getCandles(environment.value, {
         marketId: marketId.value!,
         resolution: resolution.value,
-        startTimestamp: startTimestamp.value,
+        startTimestamp: window.startTimestamp,
         endTimestamp: endTimestamp.value,
-        ...(countBack.value === undefined ? {} : { countBack: countBack.value }),
+        countBack: window.countBack,
         ...(setTimestampToEnd === undefined ? {} : { setTimestampToEnd }),
       });
       return ok({
@@ -1472,9 +1525,9 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         ], {
           marketId: marketId.value,
           resolution: resolution.value,
-          startTimestamp: startTimestamp.value,
+          startTimestamp: window.startTimestamp,
           endTimestamp: endTimestamp.value,
-          countBack: countBack.value ?? null,
+          countBack: window.countBack,
         }),
         environment: environment.value,
         marketId: marketId.value,
@@ -1482,7 +1535,15 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           startTimestamp: startTimestamp.value,
           endTimestamp: endTimestamp.value,
         },
-        countBack: countBack.value ?? null,
+        readWindow: {
+          startTimestamp: window.startTimestamp,
+          endTimestamp: endTimestamp.value,
+        },
+        windowNarrowed: window.narrowed,
+        windowNote: window.narrowed
+          ? `The requested window holds more than ${window.countBack} ${resolution.value} candles, so the newest ${window.countBack} were read, from ${window.startTimestamp}. Ask again with an earlier endTimestamp for the rows before that.`
+          : null,
+        countBack: window.countBack,
         outputLimit: LIGHTER_AGENT_CANDLE_OUTPUT_MAX,
         ...projectCandles(response, LIGHTER_AGENT_CANDLE_OUTPUT_MAX),
       });

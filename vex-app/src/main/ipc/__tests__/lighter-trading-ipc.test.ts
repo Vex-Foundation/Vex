@@ -7,6 +7,7 @@ const handlers = vi.hoisted(() => new Map<string, Handler>());
 const mocks = vi.hoisted(() => ({
   readList: vi.fn(),
   readSnapshot: vi.fn(),
+  readHistory: vi.fn(),
   subscribe: vi.fn(),
   unsubscribe: vi.fn(),
   cleanupOwner: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   publicUnsubscribe: vi.fn(),
   publicCleanupOwner: vi.fn(),
   readAccount: vi.fn(),
+  readFills: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
@@ -36,6 +38,7 @@ vi.mock("../../lighter/trading-panel-service.js", async () => {
     ...actual,
     readLighterTradingMarketList: (...args: unknown[]) => mocks.readList(...args),
     readLighterTradingMarketSnapshot: (...args: unknown[]) => mocks.readSnapshot(...args),
+    readLighterTradingCandleHistory: (...args: unknown[]) => mocks.readHistory(...args),
   };
 });
 vi.mock("../../lighter/candle-stream.js", () => ({
@@ -52,6 +55,7 @@ vi.mock("../../lighter/public-market-stream.js", () => ({
 }));
 vi.mock("../../lighter/trading-account-service.js", () => ({
   readLighterTradingAccount: (...args: unknown[]) => mocks.readAccount(...args),
+  readLighterTradingFills: (...args: unknown[]) => mocks.readFills(...args),
 }));
 
 const { registerLighterTradingHandlers } = await import("../lighter-trading.js");
@@ -103,7 +107,7 @@ const market = {
   minQuoteAmount: "10",
   orderQuoteLimit: "1000000",
   decimals: { size: 4, price: 2, quote: 6 },
-  fees: { maker: "0", taker: "0", makerEnabled: false, takerEnabled: false },
+  fees: { maker: "0", taker: "0", makerEnabled: false, takerEnabled: false, integratorMaker: "0.1", integratorTaker: "0.1" },
   activity24h: { tradesCount: 120, quoteVolume: 126_000 },
 };
 const account = {
@@ -121,6 +125,7 @@ const account = {
   },
   assets: [],
   positions: [],
+  marginTerms: [],
   openOrders: [],
 };
 
@@ -327,6 +332,64 @@ describe("lighterTrading IPC", () => {
     expect(refused.ok).toBe(false);
     expect(refused.error.code).toBe("validation.invalid_input");
     expect(mocks.readAccount).not.toHaveBeenCalled();
+  });
+
+  it("reads fills with a bounded limit and rejects anything but environment and limit", async () => {
+    const fills = { environment: "rhc", retrievedAt: 1, accountIndex: 42, available: true, truncated: false, fills: [] };
+    mocks.readFills.mockResolvedValueOnce(fills);
+
+    const result = await call(CH.lighterTrading.listFills, { environment: "rhc", limit: 20 });
+
+    expect(result).toEqual({ ok: true, data: fills });
+    expect(mocks.readFills).toHaveBeenCalledWith("rhc", 20, undefined, undefined, expect.any(AbortSignal));
+
+    mocks.readFills.mockClear();
+    const refused = await call(CH.lighterTrading.listFills, { environment: "rhc", limit: 500 });
+    expect(refused.ok).toBe(false);
+    expect(refused.error.code).toBe("validation.invalid_input");
+    expect(mocks.readFills).not.toHaveBeenCalled();
+
+    mocks.readFills.mockRejectedValueOnce(new Error("provider echoed privileged-token"));
+    const failed = await call(CH.lighterTrading.listFills, { environment: "rhc" });
+    expect(failed.ok).toBe(false);
+    expect(JSON.stringify(failed)).not.toContain("privileged-token");
+  });
+
+  it("pages older candles with a bounded count and projects the internal rows", async () => {
+    const candle = {
+      timestamp: 1_720_000_000_000, open: 1, high: 2, low: 0.5, close: 1.5,
+      volumeBase: 3, volumeQuote: 4, lastTradeId: "9", providerResolution: "1m", source: "rest_snapshot",
+      receivedAt: 5, extra: "internal-only",
+    };
+    mocks.readHistory.mockResolvedValueOnce([candle]);
+
+    const result = await call<{ candles: unknown[] }>(CH.lighterTrading.getCandleHistory, {
+      environment: "rhc", marketId: 7, resolution: "1m", endTimestamp: 1_720_000_059_999, count: 500,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.data.candles).toEqual([{
+      timestamp: candle.timestamp, open: 1, high: 2, low: 0.5, close: 1.5, volumeBase: 3, volumeQuote: 4,
+      lastTradeId: "9", providerResolution: "1m", source: "rest_snapshot",
+    }]);
+    expect(mocks.readHistory).toHaveBeenCalledWith(
+      { environment: "rhc", marketId: 7, resolution: "1m", endTimestamp: 1_720_000_059_999, count: 500 },
+      undefined, undefined, expect.any(AbortSignal),
+    );
+
+    mocks.readHistory.mockClear();
+    const refused = await call(CH.lighterTrading.getCandleHistory, {
+      environment: "rhc", marketId: 7, resolution: "1m", endTimestamp: 1, count: 501,
+    });
+    expect(refused.error.code).toBe("validation.invalid_input");
+    expect(mocks.readHistory).not.toHaveBeenCalled();
+
+    mocks.readHistory.mockRejectedValueOnce(new Error("provider echoed privileged-token"));
+    const failed = await call(CH.lighterTrading.getCandleHistory, {
+      environment: "rhc", marketId: 7, resolution: "1m", endTimestamp: 1, count: 10,
+    });
+    expect(failed.ok).toBe(false);
+    expect(JSON.stringify(failed)).not.toContain("privileged-token");
   });
 
   it("redacts account-read failures at the IPC boundary", async () => {

@@ -39,6 +39,13 @@ export const WELCOME_PLACEHOLDERS = [
   "Rebalance my portfolio.",
 ] as const;
 
+/**
+ * The Lighter desk's composer rests on one desk phrase instead of the swap and
+ * bridge orders: the scope strip above it already names the market, and the
+ * rotator is frozen there so the phrase never shuffles beside a live book.
+ */
+export const LIGHTER_DESK_PLACEHOLDER = "Ask about this market, or describe an order.";
+
 /** ~6s per phrase — long enough to read, matched to the pill's calm cadence. */
 export const PLACEHOLDER_ROTATE_MS = 6000;
 

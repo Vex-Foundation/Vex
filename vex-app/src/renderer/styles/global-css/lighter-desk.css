@@ -1,0 +1,575 @@
+/* Lighter desk frame: chart and depth beside a full-height order ticket,
+ * with the account dock below. Wide desks give depth its own middle column.
+ * The chat rail lives in the shell's BOOK column (LighterChatRail). */
+
+.lit-desk-topbar {
+  container-type: inline-size;
+  background: var(--lit-market-bar-surface);
+  color: var(--lit-ink);
+  box-shadow: inset 0 -1px 0 var(--lit-line);
+  transition: background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.lit-desk-topbar-header {
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+}
+
+.lit-topbar-button,
+.lit-topbar-primary {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: var(--lit-radius);
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.lit-topbar-button {
+  background: transparent;
+  color: var(--lit-ink-secondary);
+}
+
+.lit-topbar-button:hover {
+  background: var(--lit-hover);
+  color: var(--lit-ink);
+}
+
+.lit-topbar-primary {
+  background: var(--lit-action);
+  color: var(--lit-action-ink);
+}
+
+.lit-topbar-primary:hover { background: color-mix(in srgb, var(--lit-action) 88%, var(--lit-panel-raised)); }
+
+.lit-topbar-divider {
+  width: 1px;
+  height: 20px;
+  flex: 0 0 auto;
+  background: var(--lit-line);
+}
+
+.lit-topbar-brand {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: var(--lit-ink);
+}
+
+.lit-topbar-brand img { width: 20px; height: 20px; }
+.lit-topbar-brand b { font-size: 13px; font-weight: 650; }
+.lit-desk-topbar .lit-environment-switch { margin-right: 2px; }
+.lit-topbar-spacer { min-width: 4px; flex: 1 1 auto; }
+
+.lit-topbar-center {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  gap: 4px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.lit-zen-toggle,
+.lit-zen-controls-hide,
+.lit-topbar-ask {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--lit-line-strong);
+  border-radius: var(--lit-radius);
+  background: var(--lit-panel);
+  padding: 0 10px;
+  color: var(--lit-ink-secondary);
+  font-size: 11.5px;
+  font-weight: 650;
+  white-space: nowrap;
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.lit-zen-toggle { pointer-events: auto; }
+.lit-zen-controls-hide { width: 30px; padding-inline: 0; pointer-events: auto; }
+
+.lit-zen-toggle:hover,
+.lit-zen-controls-hide:hover,
+.lit-topbar-ask:hover {
+  border-color: var(--lit-focus);
+  background: var(--lit-hover);
+  color: var(--lit-ink);
+}
+
+.lit-zen-toggle[aria-pressed="true"],
+.lit-topbar-ask[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--lit-focus) 55%, var(--lit-line-strong));
+  background: var(--lit-environment-surface);
+  color: var(--lit-environment-mark);
+}
+
+.lit-topbar-zen-market {
+  overflow: hidden;
+  max-width: 140px;
+  color: var(--lit-ink-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lit-desk-topbar[data-lighter-zen] .lit-topbar-distraction { display: none; }
+
+/* The chart owns the whole viewport in Zen. Its shell controls are progressive
+ * disclosure: the closed state contributes only this small top-edge handle,
+ * and the full bar returns as an overlay without changing the chart's bounds. */
+.lit-desk-topbar[data-lighter-zen][data-zen-controls="closed"] {
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.lit-zen-controls-reveal {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  display: inline-flex;
+  width: 34px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--lit-line-strong);
+  border-radius: var(--lit-radius);
+  background: var(--lit-panel);
+  color: var(--lit-ink-secondary);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--lit-bg) 34%, transparent);
+  opacity: 0.82;
+  pointer-events: auto;
+  transform: translateX(-50%);
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease, opacity 140ms ease;
+}
+
+.lit-zen-controls-reveal:hover,
+.lit-zen-controls-reveal:focus-visible {
+  border-color: var(--lit-focus);
+  background: var(--lit-hover);
+  color: var(--lit-ink);
+  opacity: 1;
+}
+
+.lit-topbar-profile { width: 40px; flex: 0 0 40px; }
+.lit-topbar-profile [data-vex-area="sidebar-profile"] {
+  width: 40px;
+  border-top: 0;
+  background: transparent;
+}
+.lit-topbar-profile [data-vex-area="sidebar-profile"] button { height: 40px; }
+
+.lit-desk-nav-drawer {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 8px;
+  z-index: 45;
+  display: flex;
+  width: min(420px, calc(100vw - 16px));
+  max-height: calc(100vh - 60px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--lit-line-strong);
+  border-radius: var(--lit-radius-lg);
+  background: var(--lit-panel);
+  color: var(--lit-ink);
+}
+
+/* Native dialogs enter the browser's top layer and therefore cannot inherit
+ * the desk's environment scope. Lighter dialog roots carry the scope directly;
+ * this rule gives their chrome, controls and backdrop the same Core/RHC world
+ * without changing the shared dialog primitive. */
+.lit-environment-dialog.vex-dialog {
+  border-color: var(--lit-line-strong);
+  background: var(--lit-panel);
+  color: var(--lit-ink);
+  box-shadow: 0 24px 72px color-mix(in srgb, var(--lit-bg) 78%, transparent);
+}
+
+.lit-environment-dialog.vex-dialog::backdrop {
+  background: color-mix(in srgb, var(--lit-bg) 82%, transparent);
+}
+
+.lit-environment-dialog [data-vex-button="primary"]:enabled {
+  background: var(--lit-action);
+  color: var(--lit-action-ink);
+}
+
+.lit-environment-dialog [data-vex-button="primary"]:enabled:hover {
+  background: color-mix(in srgb, var(--lit-action) 88%, var(--lit-panel-raised));
+}
+
+.lit-environment-dialog [data-vex-button="outline"] {
+  border-color: var(--lit-line-strong);
+}
+
+.lit-environment-dialog input[type="range"] { accent-color: var(--lit-focus); }
+
+@container (max-width: 720px) {
+  .lit-topbar-button-label { display: none; }
+  .lit-topbar-button,
+  .lit-topbar-primary { width: 32px; padding-inline: 0; }
+  .lit-zen-toggle span,
+  .lit-topbar-ask span,
+  .lit-topbar-zen-market { display: none; }
+  .lit-zen-toggle,
+  .lit-topbar-ask { width: 32px; padding-inline: 0; }
+}
+
+@container (max-width: 520px) {
+  .lit-topbar-divider,
+  .lit-topbar-brand b { display: none; }
+}
+
+.lit-desk {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.lit-desk-top {
+  /* The market picker layer hangs off this bar (`top: 100%`), not the shell. */
+  position: relative;
+  container-type: inline-size;
+  display: flex;
+  min-height: 48px;
+  flex: 0 0 auto;
+  align-items: center;
+  border-bottom: 1px solid var(--lit-line);
+  background: var(--lit-market-bar-surface);
+  padding: 0 10px 0 6px;
+}
+
+/* Shell strip flank (notices, approvals, export), portaled in from
+ * `ShellStatusStrip`; nothing to show means no gap either. */
+.lit-desk-top-shell { display: flex; flex: 0 0 auto; align-items: center; margin-left: 14px; }
+.lit-desk-top-shell:empty { display: none; }
+
+.lit-desk-body {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-rows: minmax(0, 1fr) 190px;
+  background: var(--lit-line);
+  gap: 1px;
+}
+
+.lit-desk-body[data-resizing] { user-select: none; }
+.lit-desk-body[data-resizing] iframe { pointer-events: none; }
+
+.lit-desk-upper {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) 260px 300px;
+  background: var(--lit-line);
+  gap: 1px;
+}
+
+/* The middle column: the book takes what the trades panel (S3) leaves. */
+.lit-book-column,
+.lit-ticket-column {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--lit-line);
+  gap: 1px;
+}
+
+/* Fixed grid track, so the book can query its own width for its floor rules. */
+.lit-book-column { container-type: inline-size; }
+
+.lit-book-column > .lit-book-panel { position: relative; min-height: 140px; flex: 1 1 140px; }
+.lit-book-column > .lit-trades-slot { position: relative; display: flex; min-height: 120px; flex: 0 0 auto; }
+.lit-trades-slot > .lit-trades-panel { flex: 1; min-height: 0; }
+
+/* Compact desk: keep market observation together on the left and order entry
+ * at full height on the right. The shallow depth panel defaults to split bids/asks. */
+.lit-desk-upper[data-stacked] > .lit-chart-panel { grid-column: 1; grid-row: 1; }
+.lit-desk-upper[data-stacked] .lit-chart-body { min-height: 0; }
+.lit-desk-upper[data-stacked] > .lit-ticket-column { grid-column: 2; grid-row: 1 / span 2; }
+.lit-desk-upper[data-stacked] > .lit-book-column { grid-column: 1; grid-row: 2; }
+.lit-desk-upper[data-stacked] > .lit-book-column > .lit-trades-slot { flex: 1 1 120px; }
+.lit-desk-upper[data-stacked] > .lit-book-column[data-tab="trades"] > .lit-book-panel,
+.lit-desk-upper[data-stacked] > .lit-book-column[data-tab="book"] > .lit-trades-slot { display: none; }
+
+/* The ticket's field body owns scrolling, while account context and order
+ * actions stay fixed inside this clipped panel. */
+.lit-ticket-column > .lit-ticket-panel { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+
+.lit-bottom-dock {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.lit-bottom-dock > .lit-bottom-panel { flex: 1; }
+
+/* Splitters: 10px hit area straddling the 1px seam, a 2px line lit on hover,
+ * focus and drag. `data-axis` says which way it moves. Sizes are shares of the
+ * desk (see desk-preferences), so the seams move with the window. */
+.lit-splitter {
+  position: absolute;
+  z-index: 3;
+  touch-action: none;
+}
+
+.lit-splitter[data-axis="x"] {
+  top: 0;
+  bottom: 0;
+  left: -5px;
+  width: 10px;
+  cursor: ew-resize;
+}
+
+.lit-splitter[data-axis="y"] {
+  top: -5px;
+  right: 0;
+  left: 0;
+  height: 10px;
+  cursor: ns-resize;
+}
+
+.lit-splitter::after {
+  content: "";
+  position: absolute;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.lit-splitter[data-axis="x"]::after { top: 0; bottom: 0; left: 4px; width: 2px; }
+.lit-splitter[data-axis="y"]::after { top: 4px; right: 0; left: 0; height: 2px; }
+
+.lit-splitter:hover::after,
+.lit-splitter:focus-visible::after,
+.lit-splitter[data-dragging]::after { background: var(--lit-positive); }
+
+.lit-splitter:focus-visible { outline: 0; }
+
+/* Expanded chart: the chart panel takes the whole desk; the rest stays mounted. */
+.lit-desk[data-chart-expanded] { position: relative; }
+
+.lit-desk[data-chart-expanded] .lit-desk-top,
+.lit-desk[data-chart-expanded] .lit-desk-body > :not(.lit-desk-upper),
+.lit-desk[data-chart-expanded] .lit-desk-upper > :not(.lit-chart-panel) {
+  visibility: hidden;
+}
+
+.lit-desk[data-chart-expanded] .lit-chart-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  width: 100%;
+  height: 100%;
+  background: var(--lit-panel);
+}
+
+/* Zen keeps the chart mounted while the shell gives it the Vex rail's track.
+ * The assistant returns as an overlay, so asking a question never changes the
+ * chart's measured width or visible range. */
+.vex-shell-frame[data-lighter-zen] > .lit-zen-assistant {
+  position: absolute;
+  z-index: 35;
+  top: 44px;
+  right: 0;
+  bottom: 0;
+  width: min(430px, calc(100vw - 24px));
+  height: auto;
+  overflow: hidden;
+  clip-path: inset(0 0 0 10%);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(calc(100% + 18px), 0, 0);
+  visibility: hidden;
+  transition:
+    transform var(--vex-duration-reveal) var(--vex-ease-inout),
+    opacity var(--vex-duration-base) var(--vex-ease-out),
+    clip-path var(--vex-duration-reveal) var(--vex-ease-inout),
+    visibility 0s linear var(--vex-duration-reveal);
+}
+
+.vex-shell-frame[data-lighter-zen][data-lighter-zen-assistant="open"] > .lit-zen-assistant {
+  clip-path: inset(0);
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate3d(0, 0, 0);
+  visibility: visible;
+  transition-delay: 0s;
+  box-shadow: -18px 0 42px color-mix(in srgb, var(--vex-surface-0) 48%, transparent);
+}
+
+.vex-shell-frame[data-lighter-zen] > .lit-zen-assistant .lit-chat-frame {
+  border-left: 1px solid var(--lit-line-strong);
+  background: var(--lit-bg);
+}
+
+/* The chart column is the grid's flexible track; as a query container its
+ * toolbar can shed the study readout and two intervals before they clip. */
+.lit-chart-panel { container-type: inline-size; }
+
+.lit-chat-starters svg,
+.lit-chart-tools svg,
+.lit-chevron {
+  width: 20px;
+  height: 20px;
+}
+
+.lit-stroke-icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.lit-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--lit-panel);
+}
+
+.lit-panel-header {
+  display: flex;
+  min-height: 38px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--lit-line);
+  padding: 0 12px;
+}
+
+.lit-panel-header h3 {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.lit-panel-header small {
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+}
+
+.lit-panel-tabs,
+.lit-bottom-tabs {
+  display: flex;
+  align-items: stretch;
+  align-self: stretch;
+  min-width: 0;
+}
+
+/* The tab labels never squeeze; a narrow header sheds its other items instead. */
+.lit-book-header > .lit-panel-tabs,
+.lit-bottom-tabs { flex: 0 0 auto; }
+
+.lit-bottom-tabs { gap: 8px; }
+
+.lit-panel-tabs button,
+.lit-bottom-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  padding: 0 10px;
+  white-space: nowrap;
+  color: var(--lit-ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+  transition: color 140ms ease, border-color 140ms ease;
+}
+
+.lit-panel-tabs button:hover,
+.lit-bottom-tabs button:hover { color: var(--lit-ink); }
+
+.lit-panel-tabs button[aria-selected="true"],
+.lit-bottom-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--lit-positive);
+  color: var(--lit-ink);
+}
+
+/* Exchange register: the count rides inline, "Positions (2)". */
+.lit-bottom-tabs button i {
+  color: var(--lit-ink-muted);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------------------
+ * Loading and error states, motion
+ * ------------------------------------------------------------------------- */
+
+.lit-workspace-state {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  color: var(--lit-ink-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.lit-workspace-state b { color: var(--lit-ink); font-size: 16px; }
+.lit-workspace-state span { max-width: 520px; color: var(--lit-ink-secondary); line-height: 1.5; }
+
+.lit-loader {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--lit-line-strong);
+  border-top-color: var(--lit-positive);
+  border-radius: 50%;
+  animation: lit-spin 800ms linear infinite;
+}
+
+@keyframes lit-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-shell-frame[data-lighter-zen] > .lit-zen-assistant,
+  .lit-desk *,
+  .lit-desk *::before,
+  .lit-desk *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .lit-chart-loading-candle {
+    opacity: 0.38;
+    transform: scaleY(1);
+  }
+}

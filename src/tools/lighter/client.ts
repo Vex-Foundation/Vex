@@ -691,6 +691,7 @@ export class LighterClient {
     environment: LighterEnvironment,
     params: LighterAccountTradesParams,
     privilegedAuth?: LighterPrivilegedAccountAuth,
+    options: LighterPublicReadOptions = {},
   ): Promise<LighterAccountTradesResponse> {
     const auth = this.accountAuth(environment, params.accountIndex, privilegedAuth);
     const accountIndex = readAccountIndex(auth.accountIndex);
@@ -709,7 +710,7 @@ export class LighterClient {
         limit: String(limit),
         sort_by: params.sortBy ?? "timestamp",
       },
-      { auth: "read-only", authToken: auth.token },
+      { auth: "read-only", authToken: auth.token, signal: options.signal },
     );
   }
 

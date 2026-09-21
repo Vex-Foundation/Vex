@@ -51,7 +51,7 @@ function market(overrides: Partial<LighterTradingMarket>): LighterTradingMarket 
     minQuoteAmount: "10",
     orderQuoteLimit: "100000",
     decimals: { size: 4, price: 2, quote: 6 },
-    fees: { maker: "0", taker: "0", makerEnabled: true, takerEnabled: true },
+    fees: { maker: "0", taker: "0", makerEnabled: true, takerEnabled: true, integratorMaker: null, integratorTaker: null },
     activity24h: { tradesCount: 0, quoteVolume: 0 },
     ...overrides,
   };

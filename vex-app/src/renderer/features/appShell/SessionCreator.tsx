@@ -39,6 +39,7 @@ import { SubmitError } from "../../components/ui/submit-error.js";
 import { useCreateSession } from "../../lib/api/sessions.js";
 import { useAvailableWallets } from "../../lib/api/session-wallets.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { useDeskSessionName } from "./lighterTrading/desk-session.js";
 import { deriveSessionName } from "./SessionCreator/deriveSessionName.js";
 import {
   ModeFieldset,
@@ -60,6 +61,11 @@ export function SessionCreator({
   // already filtered to Mission and opens "New session", default the dialog to
   // Mission mode so they don't have to flip it by hand.
   const sessionModeFilter = useUiStore((s) => s.sessionModeFilter);
+  // A session created from the Lighter desk is an agent session pinned to
+  // that workspace: mission mode has no meaning there, so the fieldset hides
+  // and the create input carries `workspace: "lighter"`.
+  const lighter = useUiStore((s) => s.runtimeMode === "lighter");
+  const deskSessionName = useDeskSessionName();
   const createSessionInitialTurn = useUiStore(
     (s) => s.createSessionInitialTurn,
   );
@@ -79,6 +85,12 @@ export function SessionCreator({
   const [selectedSolanaWalletId, setSelectedSolanaWalletId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement | null>(null);
+  /**
+   * Whether the operator has touched the EVM field this opening. The desk
+   * default below fills an UNANSWERED field, so it must never re-apply over a
+   * deliberate clear back to none.
+   */
+  const evmChosen = useRef(false);
   // Announcement is driven by the SUBMIT PATH below, never by a role on the
   // error paragraph - see `components/ui/live-region.tsx`.
   const { announce, region: liveRegion } = useLiveAnnouncer();
@@ -89,15 +101,50 @@ export function SessionCreator({
       setName(
         createSessionInitialTurn !== null
           ? deriveSessionName(createSessionInitialTurn.message)
-          : "",
+          : (deskSessionName ?? ""),
       );
-      setMode(sessionModeFilter === "mission" ? "mission" : "agent");
+      setMode(!lighter && sessionModeFilter === "mission" ? "mission" : "agent");
       setPermission("restricted");
       setSelectedEvmWalletId(null);
       setSelectedSolanaWalletId(null);
       setSubmitError(null);
+      evmChosen.current = false;
     }
-  }, [open, createSessionInitialTurn, sessionModeFilter]);
+    // `deskSessionName` is read at open time only: the market list settling
+    // while the dialog is up must not overwrite what the operator typed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, createSessionInitialTurn, sessionModeFilter, lighter]);
+
+  /**
+   * THE DESK OPENS ON THE PRIMARY WALLET, and says so.
+   *
+   * Main already binds it: a create carrying `workspace: "lighter"` with no
+   * selection is filled with the primary entry (`ipc/_wallet-refs.ts`,
+   * `deskWalletRef`), because the desk mints sessions down routes that have no
+   * picker in front of them at all. What was missing is that this form - the
+   * one route that DOES show a picker - rendered that same session as an empty
+   * field, which reads as "chat-only, no wallet" and is the opposite of what
+   * the create would do.
+   *
+   * So the field is seeded rather than defaulted in main alone, and only here,
+   * in the desk workspace: an ordinary session keeps opening empty, where an
+   * empty field still means the chat-only session it says it means.
+   *
+   * Seeded in its own effect because the inventory is a query: at the moment
+   * the dialog opens it may not have answered yet, and the reset above has
+   * just cleared the field. This lands when the wallets arrive, once, and
+   * never over an operator who has already answered.
+   */
+  // INDEX 0 IS THE PRIMARY, on both sides of the boundary: main's
+  // `getPrimaryEvmEntry` is `cfg.wallet.evm[0]` and `wallets:listAvailable`
+  // hands this list over in config order, unsorted. Sorting it anywhere in
+  // between would leave the field showing one wallet and the create binding
+  // another, which is worse than showing nothing.
+  const primaryEvmWalletId = inventory.evm[0]?.id ?? null;
+  useEffect(() => {
+    if (!open || !lighter || evmChosen.current || primaryEvmWalletId === null) return;
+    setSelectedEvmWalletId((current) => current ?? primaryEvmWalletId);
+  }, [open, lighter, primaryEvmWalletId]);
 
   // Focus the Name input first when the dialog opens — it is the only
   // text field in this modal. Mission goal capture happens in chat.
@@ -121,7 +168,14 @@ export function SessionCreator({
       const input: SessionCreateInput =
         mode === "mission"
           ? { mode: "mission", name: trimmedName, permission, selectedEvmWalletId, selectedSolanaWalletId }
-          : { mode: "agent", name: trimmedName, permission, selectedEvmWalletId, selectedSolanaWalletId };
+          : {
+            mode: "agent",
+            name: trimmedName,
+            permission,
+            selectedEvmWalletId,
+            selectedSolanaWalletId,
+            ...(lighter && { workspace: "lighter" as const }),
+          };
       // The sidebar's New-session key mirrors this mutation: ink loop while
       // in flight, one-shot glint on success (the glint's animationend
       // returns the state to idle). The try/catch exists only so an
@@ -160,6 +214,7 @@ export function SessionCreator({
       completeSessionCreate,
       createMutation,
       createSessionInitialTurn,
+      lighter,
       mode,
       permission,
       selectedEvmWalletId,
@@ -196,7 +251,7 @@ export function SessionCreator({
           <DialogBody className="gap-6 px-8">
             <NameField name={name} onNameChange={setName} nameRef={nameRef} />
 
-            <ModeFieldset mode={mode} onModeChange={setMode} />
+            {lighter ? null : <ModeFieldset mode={mode} onModeChange={setMode} />}
 
             <PermissionFieldset
               permission={permission}
@@ -208,7 +263,10 @@ export function SessionCreator({
               selectedSolanaWalletId={selectedSolanaWalletId}
               evmOptions={inventory.evm}
               solanaOptions={inventory.solana}
-              onEvmChange={setSelectedEvmWalletId}
+              onEvmChange={(id) => {
+                evmChosen.current = true;
+                setSelectedEvmWalletId(id);
+              }}
               onSolanaChange={setSelectedSolanaWalletId}
             />
           </DialogBody>

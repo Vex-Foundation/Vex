@@ -102,3 +102,18 @@ export function formatRetrievedAt(timestamp: number): string {
     second: "2-digit",
   }).format(new Date(timestamp));
 }
+
+/** Provider timestamps arrive in seconds or milliseconds; the agent gets ISO either way. */
+export function formatContextTimestamp(timestamp: number | null): string {
+  if (timestamp === null) return "snapshot/not-yet-streamed";
+  const milliseconds = timestamp < 1_000_000_000_000 ? timestamp * 1_000 : timestamp;
+  return new Date(milliseconds).toISOString();
+}
+
+/** `mm:ss` until the next top of the hour: Lighter settles funding hourly. */
+export function formatFundingCountdown(now: number): string {
+  const remaining = 3_600_000 - (now % 3_600_000);
+  const minutes = Math.floor(remaining / 60_000);
+  const seconds = Math.floor((remaining % 60_000) / 1_000);
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}

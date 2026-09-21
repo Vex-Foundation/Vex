@@ -20,6 +20,7 @@ import type { UserProfile } from "@shared/schemas/user-profile.js";
 import { sessionKeys } from "../../../../lib/api/sessions.js";
 import { createQueryClient } from "../../../../app/queryClient.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
+import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
 import { WELCOME_PORTFOLIO_WIDTH } from "../../../../lib/shell-columns.js";
 
 // Phase 2b: the Settings ShellScreen hosts the wizard step forms, whose
@@ -37,8 +38,63 @@ vi.mock("../../screens/AgentScanScreen.js", () => ({
   AgentScanScreen: () => null,
 }));
 
-vi.mock("../../lighterTrading/LighterTradingDialog.js", () => ({
-  LighterTradingDialog: () => null,
+vi.mock("../../lighterTrading/LighterCenter.js", () => ({
+  LighterCenter: ({ zenMode }: { readonly zenMode: boolean }) => (
+    <div data-testid="lighter-center" data-zen-mode={zenMode ? "true" : undefined} />
+  ),
+}));
+
+vi.mock("../../lighterTrading/LighterSidebar.js", () => ({
+  LIGHTER_TOPBAR_HEIGHT: 44,
+  LighterSidebar: ({
+    collapsed,
+    onToggleSidebar,
+    zenMode,
+    zenAssistantOpen,
+    zenControlsOpen,
+    onToggleZen,
+    onToggleZenControls,
+    onToggleZenAssistant,
+  }: {
+    readonly collapsed: boolean;
+    readonly onToggleSidebar: () => void;
+    readonly zenMode: boolean;
+    readonly zenAssistantOpen: boolean;
+    readonly zenControlsOpen: boolean;
+    readonly onToggleZen: () => void;
+    readonly onToggleZenControls: () => void;
+    readonly onToggleZenAssistant: () => void;
+  }) => (
+    <aside
+      data-vex-area="lighter-sidebar"
+      data-vex-sidebar-open={collapsed ? "false" : "true"}
+    >
+      <button
+        type="button"
+        aria-label={collapsed ? "Open markets and sessions" : "Close markets and sessions"}
+        onClick={onToggleSidebar}
+      />
+      {!zenMode ? (
+        <button
+          type="button"
+          aria-label="Enter Zen Mode"
+          onClick={onToggleZen}
+        />
+      ) : !zenControlsOpen ? (
+        <button type="button" aria-label="Show Zen controls" onClick={onToggleZenControls} />
+      ) : (
+        <>
+          <button type="button" aria-label="Exit Zen Mode" onClick={onToggleZen} />
+          <button type="button" aria-label="Hide Zen controls" onClick={onToggleZenControls} />
+          <button
+            type="button"
+            aria-label={zenAssistantOpen ? "Close Vex" : "Ask Vex"}
+            onClick={onToggleZenAssistant}
+          />
+        </>
+      )}
+    </aside>
+  ),
 }));
 
 // Every brand mark stubs to null, whatever its name: the marks are
@@ -639,6 +695,113 @@ describe("AppShell", () => {
       screen.getByRole("button", { name: /Expand sessions sidebar/i }),
     );
     expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("true");
+  });
+
+  it("keeps the Lighter center mounted while its top navigation drawer toggles", () => {
+    useUiStore.setState({ runtimeMode: "lighter", sidebarNarrowExpanded: false });
+    const view = renderShell();
+    const sidebar = view.container.querySelector("[data-vex-area='lighter-sidebar']");
+
+    expect(screen.queryByTestId("lighter-center")).not.toBeNull();
+    expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("false");
+
+    fireEvent.click(screen.getByRole("button", { name: /Open markets and sessions/i }));
+    expect(screen.queryByTestId("lighter-center")).not.toBeNull();
+    expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: /Close markets and sessions/i }));
+    expect(screen.queryByTestId("lighter-center")).not.toBeNull();
+    expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("false");
+    act(() => useUiStore.getState().setRuntimeMode("agent"));
+  });
+
+  it("places Lighter navigation above the grid and keeps the content columns full-height", () => {
+    useUiStore.setState({ runtimeMode: "lighter", sidebarNarrowExpanded: false });
+    const view = renderShell();
+    const topbar = view.container.querySelector("[data-vex-area='lighter-sidebar']");
+    const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
+    const centerColumn = screen.getByTestId("lighter-center").parentElement?.parentElement;
+    const bookColumn = view.container.querySelector("[data-vex-area='book-panel']")?.parentElement;
+    const columns = [centerColumn, bookColumn];
+
+    expect(topbar?.parentElement).toBe(frame);
+    expect(frame?.style.paddingTop).toBe("44px");
+    expect(frame?.style.gridTemplateColumns).toMatch(/^0px /);
+
+    for (const column of columns) {
+      expect(column).not.toBeNull();
+      expect(column?.classList.contains("h-full")).toBe(true);
+      expect(column?.classList.contains("min-h-0")).toBe(true);
+    }
+    act(() => useUiStore.getState().setRuntimeMode("agent"));
+  });
+
+  it("gives Zen Mode the full chart track and overlays a contextual Vex panel", () => {
+    useUiStore.setState({
+      runtimeMode: "lighter",
+      activeSessionId: "s-1",
+      sidebarNarrowExpanded: false,
+      bookOpen: true,
+    });
+    const view = renderShell();
+    const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
+
+    fireEvent.click(screen.getByRole("button", { name: "Enter Zen Mode" }));
+    expect(frame?.getAttribute("data-lighter-zen")).toBe("true");
+    expect(frame?.getAttribute("data-lighter-zen-controls")).toBe("closed");
+    expect(frame?.style.paddingTop).toBe("");
+    expect(frame?.style.gridTemplateColumns).toBe("0px minmax(0, 1fr) 0px");
+    expect(screen.getByTestId("lighter-center").getAttribute("data-zen-mode")).toBe("true");
+    expect(view.container.querySelector("[data-vex-area='book-panel']")?.getAttribute("data-vex-book-open")).toBe("false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Show Zen controls" }));
+    expect(frame?.getAttribute("data-lighter-zen-controls")).toBe("open");
+    fireEvent.click(screen.getByRole("button", { name: "Ask Vex" }));
+    expect(frame?.getAttribute("data-lighter-zen-assistant")).toBe("open");
+    expect(view.container.querySelector("[data-vex-area='book-panel']")?.getAttribute("data-vex-book-open")).toBe("true");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(frame?.getAttribute("data-lighter-zen")).toBe("true");
+    expect(frame?.hasAttribute("data-lighter-zen-assistant")).toBe(false);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(frame?.getAttribute("data-lighter-zen")).toBe("true");
+    expect(frame?.getAttribute("data-lighter-zen-controls")).toBe("closed");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(frame?.hasAttribute("data-lighter-zen")).toBe(false);
+    expect(frame?.style.gridTemplateColumns).not.toBe("0px minmax(0, 1fr) 0px");
+    act(() => useUiStore.getState().setRuntimeMode("agent"));
+  });
+
+  it("sizes the Lighter agent independently from the portfolio preference", () => {
+    const previousBookWidth = useUiStore.getState().bookWidth;
+    useUiStore.setState({ runtimeMode: "lighter", sidebarNarrowExpanded: false, bookOpen: true, bookWidth: 300 });
+    useLighterAnalysisStore.getState().saveDesk({ chatShare: 0.32 });
+    const view = renderShell();
+    const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
+    expect(frame?.style.gridTemplateColumns).toBe("0px minmax(0, 1fr) 328px");
+    act(() => useLighterAnalysisStore.getState().saveDesk({ chatShare: 310 / window.innerWidth }));
+    expect(frame?.style.gridTemplateColumns).toBe("0px minmax(0, 1fr) 310px");
+    fireEvent.keyDown(screen.getByRole("separator", { name: "Resize the Vex panel" }), { key: "ArrowLeft" });
+    expect(frame?.style.gridTemplateColumns).toBe("0px minmax(0, 1fr) 334px");
+    expect(useLighterAnalysisStore.getState().desk.chatShare).toBeCloseTo(334 / window.innerWidth);
+    expect(useUiStore.getState().bookWidth).toBe(300);
+    act(() => {
+      useUiStore.getState().setRuntimeMode("agent");
+      useUiStore.getState().setBookWidth(previousBookWidth);
+      useLighterAnalysisStore.getState().saveDesk({ chatShare: 0.32 });
+    });
+  });
+
+  it("keeps the Vex panel open while the top navigation drawer is open", () => {
+    useUiStore.setState({ runtimeMode: "lighter", sidebarNarrowExpanded: true, bookOpen: true });
+    const view = renderShell();
+    const panel = view.container.querySelector("[data-vex-area='book-panel']");
+    expect(panel?.getAttribute("data-vex-book-open")).toBe("true");
+    expect(useUiStore.getState().sidebarNarrowExpanded).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /Close markets and sessions/i }));
+    expect(panel?.getAttribute("data-vex-book-open")).toBe("true");
+    expect(useUiStore.getState().sidebarNarrowExpanded).toBe(false);
+    act(() => useUiStore.getState().setRuntimeMode("agent"));
   });
 
   it("crowns the sidebar rail with the static logo mark, not a VEX wordmark", () => {

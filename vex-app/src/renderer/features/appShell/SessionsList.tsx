@@ -22,17 +22,8 @@ import {
   IconPlus,
   IconSearch,
 } from "../../components/icons/index.js";
-import type {
-  SessionDeleteOutcome,
-  SessionListItem,
-} from "@shared/schemas/sessions.js";
 import { cn } from "../../lib/utils.js";
-import {
-  useDeleteSession,
-  useRenameSession,
-  useSessionsList,
-  useSetSessionPinned,
-} from "../../lib/api/sessions.js";
+import { useSessionsList } from "../../lib/api/sessions.js";
 import { useCollapseChoreography } from "../../lib/useCollapseChoreography.js";
 import { useQuietScrollbars } from "../../lib/useQuietScrollbars.js";
 import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
@@ -41,6 +32,7 @@ import { RailSearchField } from "../../components/ui/rail-list.js";
 import { AgentSidebarHeader } from "./AgentSidebarHeader.js";
 import { SessionDeleteDialog } from "./SessionDeleteDialog.js";
 import { SidebarProfile } from "./SidebarProfile.js";
+import { useSessionRowActions } from "./useSessionRowActions.js";
 import { VexTokenCardCompact } from "./market/VexTokenCardCompact.js";
 import {
   SessionGroups,
@@ -51,6 +43,7 @@ import {
 import {
   filterSessionsByMode,
   filterSessionsByTitle,
+  filterSessionsByWorkspace,
   groupSessions,
   SESSION_MODE_FILTERS,
 } from "./sessionListModel.js";
@@ -79,18 +72,17 @@ export function SessionsList({
   const signingState = useUiStore((s) => s.signingState);
   const setSigningState = useUiStore((s) => s.setSigningState);
   const query = useSessionsList();
-  const pinMutation = useSetSessionPinned();
-  const deleteMutation = useDeleteSession();
-  const renameMutation = useRenameSession();
-  // TanStack Query exposes the last variables sent to the mutation; we
-  // use it to disable the star button on the in-flight row only.
-  const pendingPinId =
-    pinMutation.isPending && pinMutation.variables
-      ? pinMutation.variables.id
-      : null;
-  const [removeTarget, setRemoveTarget] = useState<SessionListItem | null>(null);
-  const [removeBlocked, setRemoveBlocked] =
-    useState<SessionDeleteOutcome | null>(null);
+  const {
+    pendingPinId,
+    removeTarget,
+    removeBlocked,
+    removePending,
+    handleTogglePin,
+    handleRename,
+    handleRequestRemove,
+    handleCancelRemove,
+    handleConfirmRemove,
+  } = useSessionRowActions();
 
   // Wide content stays mounted while a live collapse fades, unmounts at
   // settle, remounts right away on expand; the frozen width keeps the
@@ -120,7 +112,10 @@ export function SessionsList({
 
   const visibleRows = useMemo(() => {
     if (!query.data?.ok) return [];
-    const byMode = filterSessionsByMode(query.data.data, sessionModeFilter);
+    const byMode = filterSessionsByMode(
+      filterSessionsByWorkspace(query.data.data, null),
+      sessionModeFilter,
+    );
     return searchOpen ? filterSessionsByTitle(byMode, searchText) : byMode;
   }, [query.data, sessionModeFilter, searchOpen, searchText]);
 
@@ -132,51 +127,6 @@ export function SessionsList({
     },
     [setActiveSessionId],
   );
-
-  const handleTogglePin = useCallback(
-    (id: string, nextPinned: boolean): void => {
-      pinMutation.mutate({ id, pinned: nextPinned });
-    },
-    [pinMutation],
-  );
-
-  const handleRename = useCallback(
-    (id: string, name: string): void => {
-      renameMutation.mutate({ id, name });
-    },
-    [renameMutation],
-  );
-
-  const handleRequestRemove = useCallback((row: SessionListItem): void => {
-    setRemoveTarget(row);
-    setRemoveBlocked(null);
-  }, []);
-
-  const handleCancelRemove = useCallback((): void => {
-    setRemoveTarget(null);
-    setRemoveBlocked(null);
-  }, []);
-
-  const handleConfirmRemove = useCallback(async (): Promise<void> => {
-    if (removeTarget === null) return;
-    const result = await deleteMutation.mutateAsync({ id: removeTarget.id });
-    if (!result.ok) {
-      setRemoveBlocked("state_changed");
-      return;
-    }
-    const outcome = result.data.outcome;
-    if (
-      outcome === "removed" ||
-      outcome === "not_found" ||
-      outcome === "already_removed"
-    ) {
-      setRemoveTarget(null);
-      setRemoveBlocked(null);
-      return;
-    }
-    // blocked_active_mission | blocked_pending_approval | state_changed
-    setRemoveBlocked(outcome);
-  }, [deleteMutation, removeTarget]);
 
   const closeSearch = useCallback((): void => {
     setSearchOpen(false);
@@ -384,7 +334,7 @@ export function SessionsList({
       <SessionDeleteDialog
         session={removeTarget}
         blockedOutcome={removeBlocked}
-        pending={deleteMutation.isPending}
+        pending={removePending}
         onCancel={handleCancelRemove}
         onConfirm={() => {
           void handleConfirmRemove();

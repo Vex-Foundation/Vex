@@ -7,6 +7,7 @@ import {
   CENTER_MIN,
   clampWidth,
   computeShellColumns,
+  computeShellColumnsWithoutSidebar,
   SIDEBAR_COLLAPSED,
   SIDEBAR_DEFAULT,
   SIDEBAR_AUTO_COLLAPSE,
@@ -24,6 +25,30 @@ describe("clampWidth", () => {
     expect(clampWidth(280.4, SIDEBAR_MIN, SIDEBAR_MAX)).toBe(280);
     expect(clampWidth(100, SIDEBAR_MIN, SIDEBAR_MAX)).toBe(SIDEBAR_MIN);
     expect(clampWidth(9999, SIDEBAR_MIN, SIDEBAR_MAX)).toBe(SIDEBAR_MAX);
+  });
+});
+
+describe("computeShellColumnsWithoutSidebar", () => {
+  it("gives Lighter the full width left of its Vex panel", () => {
+    expect(computeShellColumnsWithoutSidebar(1024, 328)).toEqual({
+      sidebar: 0,
+      center: 696,
+      book: 328,
+    });
+  });
+
+  it("keeps the BOOK concession seam without reserving a navigation rail", () => {
+    const seam = CENTER_MIN + BOOK_MIN;
+    expect(computeShellColumnsWithoutSidebar(seam, BOOK_DEFAULT)).toEqual({
+      sidebar: 0,
+      center: CENTER_MIN,
+      book: BOOK_MIN,
+    });
+    expect(computeShellColumnsWithoutSidebar(seam - 1, BOOK_DEFAULT)).toEqual({
+      sidebar: 0,
+      center: seam - 1 - BOOK_COLLAPSED,
+      book: BOOK_COLLAPSED,
+    });
   });
 });
 

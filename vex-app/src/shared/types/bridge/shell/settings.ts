@@ -16,6 +16,8 @@ import type {
 import type { LighterPointsResult } from "../../../schemas/lighter-points.js";
 import type {
   ApplyLighterLeverageResult,
+  CancelLighterLeverageInput,
+  CancelLighterLeverageResult,
   ConfirmLighterLeverageInput,
   GetLighterLeverageOverviewInput,
   GetLighterTradingLimitsInput,
@@ -84,6 +86,10 @@ export interface SettingsBridge {
   readonly confirmLighterLeverage: (
     input: ConfirmLighterLeverageInput,
   ) => AbortableInvocation<ApplyLighterLeverageResult>;
+  /** Cancel only a proposal that has not entered the signing lifecycle. */
+  readonly cancelLighterLeverage: (
+    input: CancelLighterLeverageInput,
+  ) => Promise<Result<CancelLighterLeverageResult>>;
   /** Recover an unresolved change. Never signs or submits again. */
   readonly reconcileLighterLeverage: (
     input: ReconcileLighterLeverageInput,

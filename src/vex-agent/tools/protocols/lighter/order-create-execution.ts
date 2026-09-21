@@ -23,6 +23,7 @@ import {
 import { ErrorCodes, VexError } from "../../../../errors.js";
 import logger from "@utils/logger.js";
 import * as lighterOrderExecutionIntentsRepo from "@vex-agent/db/repos/lighter-order-execution-intents.js";
+import type { LighterOrderExecutionIntentState } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import * as lighterOrderPreviewsRepo from "@vex-agent/db/repos/lighter-order-previews.js";
 import * as lighterNonceStateRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
 import {
@@ -35,6 +36,7 @@ import {
   matchingLighterTrades,
   observeLighterFills,
   observeLighterFillsFromAccountTrades,
+  reportedLighterFilledBaseSize,
   type LighterFillObservationDeps,
 } from "./fill-observation.js";
 import {
@@ -75,6 +77,20 @@ const LIGHTER_CREATE_SETTLED_PROVIDER_STATES: ReadonlySet<string> = new Set([
   "canceled",
   "rejected",
 ]);
+
+/**
+ * The same three states, read back off a row the stream already committed.
+ *
+ * Reuses the set above deliberately: "this order can consume no more capital"
+ * and "this outcome is final enough to report" are the same question, and
+ * answering them from two lists is how `canceled` came to be reported as an
+ * unknown outcome while `filled` was not.
+ */
+function isTerminalProviderExecutionState(
+  state: LighterOrderExecutionIntentState,
+): state is "filled" | "canceled" | "rejected" {
+  return LIGHTER_CREATE_SETTLED_PROVIDER_STATES.has(state);
+}
 
 const SENDTX_AMBIGUOUS_REASON = "sendtx_failed_after_submit_attempt";
 const SIGNING_AMBIGUOUS_REASON = "signing_failed_after_nonce_reservation";
@@ -719,17 +735,40 @@ async function reconcileProviderOutcome(input: {
   } = input;
 
   try {
-    const delayMs = providerOutcomeDelayMs(predictedExecutionTimeMs);
+    // BOTH LISTS ON EVERY ATTEMPT, because a resting order and a finished one
+    // are not two phases of the same wait - they are two places the SAME
+    // answer can appear, and which one it lands in is decided before the first
+    // read. This polled only active orders, three times, and fell through to
+    // inactive once at the end. A market IOC never rests: it is inactive from
+    // the moment it executes, so every one of those three reads was a
+    // guaranteed miss and the waits between them were spent waiting for a row
+    // that could not arrive. Nine of nine orders on this account resolved from
+    // `inactive_order`; the active poll had never once hit.
     for (let attempt = 0; attempt < PROVIDER_OUTCOME_ACTIVE_ATTEMPTS; attempt += 1) {
-      const activeOrders = await deps.client.getAccountActiveOrders(
-        plan.environment,
-        {
-          accountIndex: plan.accountIndex,
-          marketId: plan.marketIndex,
-          marketType: "all",
-        },
-        { token: accountAuthToken, accountIndex: plan.accountIndex },
-      );
+      const [activeOrders, inactiveOrders] = await Promise.all([
+        deps.client.getAccountActiveOrders(
+          plan.environment,
+          {
+            accountIndex: plan.accountIndex,
+            marketId: plan.marketIndex,
+            marketType: "all",
+          },
+          { token: accountAuthToken, accountIndex: plan.accountIndex },
+        ),
+        deps.client.getAccountInactiveOrders(
+          plan.environment,
+          {
+            accountIndex: plan.accountIndex,
+            marketId: plan.marketIndex,
+            marketType: "all",
+            limit: 100,
+          },
+          { token: accountAuthToken, accountIndex: plan.accountIndex },
+        ),
+      ]);
+      // Active first, and only as a tie-break: an order is in one list or the
+      // other, and preferring the live row keeps a still-working order from
+      // being read as finished by a stale inactive page.
       const active = findMatchingLighterOrder(
         activeOrders.orders,
         evidenceScope,
@@ -753,43 +792,36 @@ async function reconcileProviderOutcome(input: {
           volumeQuotaRemaining,
         });
       }
+      const inactive = findMatchingLighterOrder(
+        inactiveOrders.orders,
+        evidenceScope,
+        unsignedOrder.clientOrderIndex,
+      );
+      if (inactive !== null) {
+        return persistProviderOutcomeSafely({
+          plan,
+          unsignedOrder,
+          deps,
+          accountAuthToken,
+          signerTxHash,
+          submittedTxHash,
+          source: "inactive_order",
+          state: stateFromInactiveLighterOrder(inactive),
+          providerOrderId: inactive.order_id,
+          providerOrderStatus: inactive.status ?? null,
+          providerOutcomeJson: lighterOrderEvidenceJson("inactive_order", inactive, unsignedOrder.clientOrderIndex),
+          submitCode,
+          predictedExecutionTimeMs,
+          volumeQuotaRemaining,
+        });
+      }
       if (attempt < PROVIDER_OUTCOME_ACTIVE_ATTEMPTS - 1) {
+        // Recomputed each time against the clock, so the wait tracks the time
+        // still left until the provider expects to have executed rather than a
+        // figure taken before the first read.
+        const delayMs = providerOutcomeDelayMs(predictedExecutionTimeMs, deps.now());
         await deps.wait(delayMs * (attempt + 1));
       }
-    }
-
-    const inactiveOrders = await deps.client.getAccountInactiveOrders(
-      plan.environment,
-      {
-        accountIndex: plan.accountIndex,
-        marketId: plan.marketIndex,
-        marketType: "all",
-        limit: 100,
-      },
-      { token: accountAuthToken, accountIndex: plan.accountIndex },
-    );
-    const inactive = findMatchingLighterOrder(
-      inactiveOrders.orders,
-      evidenceScope,
-      unsignedOrder.clientOrderIndex,
-    );
-    if (inactive !== null) {
-      return persistProviderOutcomeSafely({
-        plan,
-        unsignedOrder,
-        deps,
-        accountAuthToken,
-        signerTxHash,
-        submittedTxHash,
-        source: "inactive_order",
-        state: stateFromInactiveLighterOrder(inactive),
-        providerOrderId: inactive.order_id,
-        providerOrderStatus: inactive.status ?? null,
-        providerOutcomeJson: lighterOrderEvidenceJson("inactive_order", inactive, unsignedOrder.clientOrderIndex),
-        submitCode,
-        predictedExecutionTimeMs,
-        volumeQuotaRemaining,
-      });
     }
 
     const trades = await deps.client.getAccountTrades(
@@ -905,11 +937,31 @@ async function reconcileProviderOutcome(input: {
   };
 }
 
-function providerOutcomeDelayMs(predictedExecutionTimeMs: number): number {
-  if (!Number.isFinite(predictedExecutionTimeMs)) return PROVIDER_OUTCOME_MIN_DELAY_MS;
+/**
+ * How long to wait before asking the provider again.
+ *
+ * `predicted_execution_time_ms` is an INSTANT, not a duration: Lighter answers
+ * `sendTx` with the wall-clock time it expects the order to execute at. This
+ * read it as a length and handed the clamp an epoch figure, so
+ * `min(2000, max(100, 1.79e12))` pinned every wait to the 2s ceiling and the
+ * loop slept its full budget on every order, however fast the order actually
+ * was. Measured on a live RHC fill: the prediction landed BEFORE `sendTx` even
+ * returned, and the poll still slept six seconds.
+ *
+ * Taking the remaining time against a caller-supplied clock also makes the
+ * wait self-correcting across attempts, rather than a figure computed once
+ * before the first read and then reused while it goes stale.
+ *
+ * A deployment that ever answers with a genuine duration lands far in the past
+ * under this reading and clamps to the floor, which is the safe direction:
+ * Vex polls sooner and reads the provider's own evidence either way.
+ */
+function providerOutcomeDelayMs(predictedExecutionAtMs: number, nowMs: number): number {
+  const remainingMs = predictedExecutionAtMs - nowMs;
+  if (!Number.isFinite(remainingMs)) return PROVIDER_OUTCOME_MIN_DELAY_MS;
   return Math.min(
     PROVIDER_OUTCOME_MAX_DELAY_MS,
-    Math.max(PROVIDER_OUTCOME_MIN_DELAY_MS, Math.ceil(predictedExecutionTimeMs)),
+    Math.max(PROVIDER_OUTCOME_MIN_DELAY_MS, Math.ceil(remainingMs)),
   );
 }
 
@@ -959,22 +1011,30 @@ async function persistProviderOutcome(input: {
   if (persisted === null) {
     // A stream update can confirm the order while the REST lookup is in flight.
     const current = await input.deps.intents.findByIntentIdAnySession(input.plan.intentId);
-    if (current !== null
+    const streamed = current !== null
       && current.sessionId === input.plan.sessionId
       && current.environment === input.plan.environment
       && current.approvalStatus === "approved"
       && current.clientOrderIndex === input.unsignedOrder.clientOrderIndex
       && current.providerOrderId === input.providerOrderId
-      && current.executionState === "filled"
-      && current.providerOutcomeSource === "inactive_order") {
+      && current.providerOutcomeSource === "inactive_order"
+      && isTerminalProviderExecutionState(current.executionState)
+      ? current.executionState
+      : null;
+    if (current !== null && streamed !== null) {
       // The stream committed the terminal outcome while this read was in
       // flight, so the ledger write that belongs to it was never made here.
-      await observeFillsFromOrderEvidence(input, "filled", "inactive_order");
+      // EVERY terminal state belongs here, not only `filled`: the refusal
+      // above is the transition guard doing its job, and reporting a proven
+      // cancel or rejection as ambiguous told the desk an outcome was unknown
+      // when the row beside it already said exactly what happened.
+      await observeFillsFromOrderEvidence(input, streamed, "inactive_order");
+      await markLighterOrderCapitalCommitmentSettled(input.plan.intentId);
       return {
         status: "provider_confirmed",
         intentId: input.plan.intentId,
         environment: input.plan.environment,
-        executionState: "filled",
+        executionState: streamed,
         signerTxHash: input.signerTxHash,
         submittedTxHash: input.submittedTxHash,
         evidenceSource: "inactive_order",
@@ -982,7 +1042,7 @@ async function persistProviderOutcome(input: {
         providerOrderId: current.providerOrderId,
         providerOrderStatus: current.providerOrderStatus,
         providerEvidence: current.providerOutcomeJson ?? undefined,
-        message: "Lighter provider evidence confirmed order state filled.",
+        message: `Lighter provider evidence confirmed order state ${streamed}.`,
       };
     }
     await markAmbiguous(input.deps, input.plan, PROVIDER_OUTCOME_PERSIST_AMBIGUOUS_REASON);
@@ -1037,6 +1097,21 @@ async function persistProviderOutcome(input: {
  * the trade branch above already observed the very page it classified from,
  * and reading again would spend a second privileged request for nothing.
  *
+ * AND ONLY WHILE THE LEDGER IS STILL BEHIND THE VENUE. The account order
+ * stream watches the same order this dispatch is settling, and on a fast fill
+ * it records the trade first; this read then re-derived the market, the assets
+ * and the trade page to discover it held nothing new. Measured live: six
+ * seconds on the trader's critical path to report `recorded: 0,
+ * duplicates: 1`.
+ *
+ * The gate is a COMPLETENESS test, not an existence test - it asks whether the
+ * recorded quantity has caught up with the quantity the provider reported for
+ * THIS order, and reads whenever it has not, or whenever either figure cannot
+ * be read. That is what makes it safe here: a partial fill recorded by the
+ * stream does not excuse the rest, and an evidence row carrying no filled
+ * quantity still reads. Nothing is skipped on the strength of a row merely
+ * existing, which is the mistake that loses a late second fill for good.
+ *
  * The read never throws and never changes the committed outcome; its counts
  * are logged so an operator can see that it ran and what it found.
  */
@@ -1060,6 +1135,11 @@ async function observeFillsFromOrderEvidence(
     },
     authorizedFees: input.plan.integratorFees ?? null,
     deps: fills,
+    onlyWhenLedgerIncomplete: {
+      reportedFilledBaseSize: reportedLighterFilledBaseSize(
+        input.providerOutcomeJson["filledBaseAmount"],
+      ),
+    },
     read: {
       // Bound through a closure: the production client is a class instance
       // whose method needs its receiver.

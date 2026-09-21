@@ -55,6 +55,8 @@ import {
 } from "./uiStore/persistence.js";
 import {
   DEFAULT_RUNTIME_MODE,
+  transitionRuntimeMode,
+  type LighterModeState,
   type RuntimeMode,
 } from "./uiStore/runtime-mode.js";
 import {
@@ -157,6 +159,9 @@ export interface UiState {
    * merge that spread the whole payload rather than about the slot.
    */
   readonly runtimeMode: RuntimeMode;
+  /** The Lighter desk's return point and remembered session. Ephemeral. */
+  readonly lighterReturn: LighterModeState["lighterReturn"];
+  readonly lighterSessionId: LighterModeState["lighterSessionId"];
   /**
    * Currently-selected Studio project. `null` means the Studio welcome screen.
    *
@@ -240,6 +245,14 @@ export interface UiState {
    */
   readonly createSessionOpen: boolean;
   readonly createSessionInitialTurn: CreateSessionInitialTurn | null;
+  /**
+   * A one-shot request to open the Lighter account-setup modal once the desk
+   * has a live session. Set when a surface OUTSIDE the desk (the welcome
+   * "Set up Lighter" button) enters Lighter mode with setup in mind; the desk
+   * consumes and clears it as soon as `activeSessionId` is non-null. UI-only,
+   * NOT persisted (see partialize), so it never survives a reload.
+   */
+  readonly lighterSetupRequested: boolean;
   /**
    * Signing-stroke state for the sidebar's New-session key: "signing"
    * while the create mutation is in flight (the ink loop runs), "signed"
@@ -395,6 +408,10 @@ export interface UiState {
     initialMessage?: string | null,
     reasoningEffort?: ReasoningEffort | null,
   ) => void;
+  /** Arm the one-shot Lighter setup-open request (see `lighterSetupRequested`). */
+  readonly requestLighterSetup: () => void;
+  /** Consume the one-shot Lighter setup-open request. */
+  readonly clearLighterSetupRequest: () => void;
   /**
    * Close the modal — Cancel, Escape, or backdrop dismiss. Discards
    * `createSessionInitialTurn` too: an abandoned draft must never ride into
@@ -464,6 +481,8 @@ export const useUiStore = create<UiState>()(
       theme: resolveTheme(DEFAULT_THEME_PREFERENCE, systemPrefersDark()),
       themePreference: DEFAULT_THEME_PREFERENCE,
       runtimeMode: DEFAULT_RUNTIME_MODE,
+      lighterReturn: null,
+      lighterSessionId: null,
       setThemePreference: (themePreference) => {
         const theme = resolveTheme(themePreference, systemPrefersDark());
         applyThemeToDocument(theme);
@@ -487,6 +506,7 @@ export const useUiStore = create<UiState>()(
       shellRoute: { kind: "none" },
       createSessionOpen: false,
       createSessionInitialTurn: null,
+      lighterSetupRequested: false,
       signingState: "idle",
       reasoningEffortBySession: {},
       reviewModal: "none",
@@ -521,7 +541,15 @@ export const useUiStore = create<UiState>()(
       openUnlock: (unlockReturnView) =>
         set({ currentView: "unlock", unlockReturnView }),
       setActiveSessionId: (activeSessionId) => set({ activeSessionId }),
-      setRuntimeMode: (runtimeMode) => set({ runtimeMode }),
+      setRuntimeMode: (runtimeMode) =>
+        set((state) => {
+          const patch = transitionRuntimeMode(state, runtimeMode);
+          // Leaving the desk drops any unconsumed Lighter setup request, so it
+          // can never fire on a later, unrelated desk entry.
+          return state.runtimeMode === "lighter" && runtimeMode !== "lighter"
+            ? { ...patch, lighterSetupRequested: false }
+            : patch;
+        }),
       setActiveProjectId: (activeProjectId) => set({ activeProjectId }),
       setShellRoute: (shellRoute) => set({ shellRoute }),
       openCreateSession: (initialMessage = null, reasoningEffort = null) => {
@@ -535,6 +563,8 @@ export const useUiStore = create<UiState>()(
       },
       closeCreateSession: () =>
         set({ createSessionOpen: false, createSessionInitialTurn: null }),
+      requestLighterSetup: () => set({ lighterSetupRequested: true }),
+      clearLighterSetupRequest: () => set({ lighterSetupRequested: false }),
       completeSessionCreate: (sessionId, reasoningEffort) =>
         set((state) => ({
           activeSessionId: sessionId,

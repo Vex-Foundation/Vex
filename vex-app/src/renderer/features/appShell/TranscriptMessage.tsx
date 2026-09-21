@@ -29,6 +29,7 @@ import {
   type MessageFeedbackContext,
 } from "./TranscriptMessage/MessageIconActions.js";
 import { CompactionMarker } from "./CompactionMarker.js";
+import { deskMessageForDisplay } from "./lighterTrading/desk-context.js";
 import { MemoryMarker } from "./MemoryMarker.js";
 import { ReasonedBlock } from "./ReasonedBlock.js";
 import { BoardRowCard } from "./Board/BoardRowCard.js";
@@ -262,7 +263,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
       ? { sessionId: feedbackSessionId, messageKey: feedbackMessageKey }
       : undefined;
   switch (row.variant) {
-    case "user":
+    case "user": {
+      // A desk message carries the market scope, the desk's values and the
+      // house style for the agent. The trader wrote the part above them, and
+      // that is the part they get back. The row still holds what was sent.
+      const written = deskMessageForDisplay(row.content);
       return (
         <div
           data-vex-message-role="user"
@@ -279,7 +284,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
               windows sane. 44px single-line bubble: 24 line + 10 padding each
               side. */}
           <div className="max-w-[min(525px,82%)] whitespace-pre-wrap break-words rounded-[22px] bg-surface-bubble px-4 py-2.5 text-[16px] leading-6 text-ink-primary">
-            {row.content}
+            {written}
           </div>
           {/* A33 - an operator instruction says WHEN it reaches the model, in
               words. The words come from the engine's own typed disposition
@@ -306,20 +311,21 @@ export const TranscriptMessage = memo(function TranscriptMessage({
             {onEditInNewBranch !== undefined ? (
               <BranchMessageAction
                 label="Edit in a new branch"
-                onBranch={() => onEditInNewBranch(row.id, row.content)}
+                onBranch={() => onEditInNewBranch(row.id, written)}
               />
             ) : null}
             {onEditMessage !== undefined ? (
               <EditMessageAction
-                onEdit={() => onEditMessage(row.id, row.content)}
+                onEdit={() => onEditMessage(row.id, written)}
               />
             ) : null}
-            <CopyMessageAction text={row.content} />
+            <CopyMessageAction text={written} />
             <span className="text-[var(--vex-text-3)]">You</span>
             <TapeClock createdAt={row.createdAt} className="vex-time-reveal" />
           </span>
         </div>
       );
+    }
     case "assistant":
       return (
         <div

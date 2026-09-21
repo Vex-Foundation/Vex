@@ -134,6 +134,17 @@ describe("settings Lighter trading limits bridge", () => {
     expect(invocationAt(0).envelope.payload).toMatchObject({ leverage: "max" });
   });
 
+  it("accepts current as a mode-only selector value main resolves", async () => {
+    await settings.prepareLighterLeverage({
+      environment: "rhc",
+      walletAddress: WALLET,
+      marketId: 1,
+      leverage: "current",
+      marginMode: "isolated",
+    });
+    expect(invocationAt(0).envelope.payload).toMatchObject({ leverage: "current" });
+  });
+
   it("sends only the proposal id on confirm, and offers a real cancel", async () => {
     const invocation = settings.confirmLighterLeverage({ proposalId: "lighter-leverage-1" });
     await invocation.promise;
@@ -155,6 +166,12 @@ describe("settings Lighter trading limits bridge", () => {
   it("sends the reconcile with the same id shape and no extra authority", async () => {
     await settings.reconcileLighterLeverage({ proposalId: "lighter-leverage-1" });
     expect(invocationAt(0).channel).toBe(CH.settings.reconcileLighterLeverage);
+    expect(invocationAt(0).envelope.payload).toEqual({ proposalId: "lighter-leverage-1" });
+  });
+
+  it("sends cancellation on its own channel with only the proposal id", async () => {
+    await settings.cancelLighterLeverage({ proposalId: "lighter-leverage-1" });
+    expect(invocationAt(0).channel).toBe(CH.settings.cancelLighterLeverage);
     expect(invocationAt(0).envelope.payload).toEqual({ proposalId: "lighter-leverage-1" });
   });
 });

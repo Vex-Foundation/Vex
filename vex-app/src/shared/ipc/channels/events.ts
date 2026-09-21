@@ -35,6 +35,7 @@ export const EV = {
     publicTrades: "vex:event:lighter:publicTrades",
     publicStats: "vex:event:lighter:publicStats",
     publicMarketStatus: "vex:event:lighter:publicMarketStatus",
+    accountActivity: "vex:event:lighter:accountActivity",
   },
 
   /**
@@ -193,5 +194,6 @@ export const EV = {
     error: "vex:event:engine:error",
     missionUpdate: "vex:event:engine:missionUpdate",
     compactionPreparation: "vex:event:engine:compactionPreparation",
+    lighterSetupRequested: "vex:event:engine:lighterSetupRequested",
   },
 } as const;

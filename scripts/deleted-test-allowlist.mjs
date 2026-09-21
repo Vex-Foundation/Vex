@@ -23,10 +23,23 @@
 /**
  * The migration-108 Trench Express retirement carried 63 reviewed deletions
  * here; they merged with PR #165 (`7890245fa`) and were consumed by that
- * merge. The table is back to its empty resting state; this note keeps the
- * retirement's history on the file that named its deleted tests.
+ * merge. The two Lighter entries below ride the Lighter shell migration,
+ * which deletes the modal/workspace subjects together with their tests;
+ * their replacement is covered by the new centre and component suites named
+ * below.
  */
-export const DELETED_TEST_ALLOWLIST = [];
+export const DELETED_TEST_ALLOWLIST = [
+  {
+    path: "vex-app/src/renderer/features/appShell/lighterTrading/__tests__/LighterTradingDialog.test.tsx",
+    reason: "The modal subject was removed when Lighter became a shell mode.",
+    coveredBy: "vex-app/src/renderer/features/appShell/lighterTrading/__tests__/LighterCenter.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/lighterTrading/__tests__/TradingWorkspace.test.tsx",
+    reason: "The workspace subject was replaced by the Lighter centre composition.",
+    coveredBy: "vex-app/src/renderer/features/appShell/lighterTrading/__tests__/LighterCenter.test.tsx",
+  },
+];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(
   DELETED_TEST_ALLOWLIST.map((entry) => entry.path),

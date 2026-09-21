@@ -1,0 +1,1089 @@
+/* ---------------------------------------------------------------------------
+ * Order ticket
+ * ------------------------------------------------------------------------- */
+
+/* The ticket owns its panel height. Account context and actions stay visible;
+ * only the variable-height field body scrolls in a short stacked desk. */
+.lit-ticket-content,
+.lit-ticket {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+/* The column is a fixed grid track, so the ticket can be a query container:
+ * its floor rules key off its own width, not the window's. */
+.lit-ticket { container-type: inline-size; overflow: hidden; }
+
+.lit-ticket button:focus-visible,
+.lit-ticket select:focus-visible {
+  outline: 2px solid var(--lit-focus);
+  outline-offset: 2px;
+}
+
+.lit-ticket input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--lit-focus);
+  outline-offset: 2px;
+}
+
+.lit-ticket-body {
+  display: flex;
+  min-height: 0;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 8px 8px;
+}
+
+.lit-ticket-body::-webkit-scrollbar { width: 5px; }
+.lit-ticket-body::-webkit-scrollbar-thumb { border-radius: var(--lit-radius); background: var(--lit-line-strong); }
+
+.lit-ticket-footer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--lit-line);
+  padding: 6px 8px;
+  background: var(--lit-panel);
+}
+
+.lit-ticket-meta {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--lit-line);
+  padding: 6px 8px;
+  background: var(--lit-panel);
+  font-size: 11.5px;
+}
+
+.lit-margin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: var(--lit-panel-raised);
+  padding: 4px 8px;
+  color: var(--lit-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.lit-margin-chip i {
+  color: var(--lit-ink-muted);
+  font-style: normal;
+}
+
+.lit-margin-chip:hover { border-color: var(--lit-line-strong); }
+
+.lit-ticket-available {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--lit-ink-muted);
+  white-space: nowrap;
+}
+
+.lit-ticket-available small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lit-ticket-available b {
+  color: var(--lit-ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.lit-ticket-context {
+  margin: 0;
+  color: var(--lit-ink-muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.lit-ticket-book-hint {
+  flex: 0 0 auto;
+  margin: -1px 0 0;
+  overflow: hidden;
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lit-field {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.lit-field > span:first-child,
+.lit-protection-leg legend,
+.lit-tif-field legend {
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.lit-field small,
+.lit-protection-leg > small,
+.lit-tif-field > small {
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.lit-input-shell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: var(--lit-bg);
+  padding: 0 10px;
+  transition: border-color 140ms ease;
+}
+
+.lit-input-shell:focus-within { border-color: var(--lit-line-strong); }
+
+.lit-input-shell input {
+  min-width: 0;
+  height: 32px;
+  flex: 1 1 auto;
+  border: 0;
+  background: transparent;
+  color: var(--lit-ink);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  outline: 0;
+}
+
+.lit-input-shell b,
+.lit-unit-toggle {
+  color: var(--lit-ink-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.lit-unit-toggle,
+.lit-price-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-radius: var(--lit-radius);
+  background: var(--lit-panel-raised);
+  padding: 3px 7px;
+}
+
+.lit-unit-toggle:hover,
+.lit-price-chip:hover { color: var(--lit-ink); }
+
+.lit-price-chip {
+  color: var(--lit-positive);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* One row: label, presets, custom input. The worst price is a fact below. */
+.lit-slippage-field {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.lit-slippage-controls {
+  display: grid;
+  grid-template-columns: repeat(3, auto) minmax(0, 1fr);
+  gap: 4px;
+}
+
+.lit-slippage-controls > button {
+  min-height: 26px;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: transparent;
+  padding: 0 6px;
+  color: var(--lit-ink-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.lit-slippage-controls > button[aria-pressed="true"] {
+  border-color: var(--lit-line-strong);
+  background: var(--lit-panel-raised);
+  color: var(--lit-ink);
+}
+
+.lit-slippage-input { padding: 0 6px; }
+.lit-slippage-input input { height: 24px; font-size: 11.5px; }
+
+/* Keep slippage on one row at the ticket floor; smaller gaps preserve the
+ * editable value without stealing a second line from the order flow. */
+@container (max-width: 300px) {
+  .lit-slippage-field { grid-template-columns: 48px minmax(0, 1fr); gap: 4px; }
+  .lit-slippage-controls { gap: 3px; }
+  .lit-slippage-controls > button { padding-inline: 4px; }
+  .lit-slippage-input { padding-inline: 4px; }
+}
+
+/* Binance-style size slider: the track fills to the share, quarter ticks below. */
+.lit-size-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 0 0;
+}
+
+.lit-size-slider input[type="range"] {
+  width: 100%;
+  height: 14px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.lit-size-slider input[type="range"]:disabled { cursor: default; opacity: 0.4; }
+
+.lit-size-slider input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--lit-ink-secondary) var(--lit-size-fill, 0%), var(--lit-line) 0);
+}
+
+.lit-size-slider input[type="range"]::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-top: -4.5px;
+  appearance: none;
+  border: 2px solid var(--lit-ink);
+  border-radius: 2px;
+  background: var(--lit-panel);
+  transform: rotate(45deg);
+}
+
+.lit-size-slider input[type="range"]:focus-visible { outline: 0; }
+.lit-size-slider input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--lit-focus); }
+
+.lit-size-presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.lit-size-slider .lit-size-presets {
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0;
+}
+
+.lit-size-slider .lit-size-presets button {
+  min-height: 16px;
+  border: 0;
+  padding: 0;
+  font-size: 10px;
+  text-align: center;
+}
+
+.lit-size-slider .lit-size-presets button:first-child { text-align: left; }
+.lit-size-slider .lit-size-presets button:last-child { text-align: right; }
+
+.lit-size-slider .lit-size-presets button[aria-pressed="true"] {
+  background: transparent;
+  color: var(--lit-ink);
+}
+
+.lit-size-presets button {
+  min-height: 24px;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: transparent;
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.lit-size-presets button:hover:not(:disabled) { color: var(--lit-ink); }
+.lit-size-presets button:disabled { opacity: 0.4; }
+
+.lit-size-presets button[aria-pressed="true"] {
+  border-color: var(--lit-line-strong);
+  background: var(--lit-panel-raised);
+  color: var(--lit-ink);
+}
+
+/* Qty | Risk beside the Size label; Risk derives the size from the stop-loss. */
+.lit-size-field > span:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lit-size-mode {
+  display: inline-flex;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  background: var(--lit-panel);
+  padding: 1px;
+}
+
+.lit-size-mode button {
+  min-height: 18px;
+  border: 0;
+  border-radius: calc(var(--lit-radius) - 1px);
+  background: transparent;
+  padding: 0 7px;
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  font-weight: 650;
+}
+
+.lit-size-mode button:hover:not(:disabled) { color: var(--lit-ink); }
+.lit-size-mode button:disabled { opacity: 0.4; }
+
+.lit-size-mode button[aria-pressed="true"] {
+  background: var(--lit-panel-raised);
+  color: var(--lit-ink);
+  box-shadow: inset 0 0 0 1px var(--lit-line);
+}
+
+.lit-size-field[data-size-mode="risk"] .lit-size-presets { grid-template-columns: repeat(3, 1fr); }
+
+/* The size Risk mode computed: read, not typed. */
+.lit-input-shell--readout { background: var(--lit-panel); }
+.lit-input-shell--readout input { color: var(--lit-ink-muted); }
+
+.lit-protect {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  padding: 8px 10px;
+}
+
+/* Exchange row: label beside the trigger input, the bound note underneath the input. */
+.lit-protect-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
+}
+
+.lit-protect-row > span:first-child {
+  color: var(--lit-ink-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.lit-protect-row > small {
+  grid-column: 2;
+  overflow: hidden;
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lit-protect-note {
+  margin: 0;
+  color: var(--lit-ink-muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.lit-check-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lit-protection-leg,
+.lit-tif-field {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.lit-protection-leg {
+  border-top: 1px solid var(--lit-line);
+  padding-top: 10px;
+}
+
+.lit-protection-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.lit-tif-tabs {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  border: 1px solid var(--lit-line);
+  border-radius: var(--lit-radius);
+  overflow: hidden;
+}
+
+.lit-tif-tabs button {
+  min-height: 30px;
+  border: 0;
+  background: transparent;
+  padding: 0 4px;
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.lit-tif-tabs button + button { border-left: 1px solid var(--lit-line); }
+.lit-tif-tabs button:hover { background: var(--lit-hover); color: var(--lit-ink); }
+
+.lit-tif-tabs button[aria-pressed="true"] {
+  background: var(--lit-panel-raised);
+  color: var(--lit-ink);
+}
+
+.lit-ticket-options {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.lit-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--lit-ink-secondary);
+  font-size: 12px;
+}
+
+.lit-check-row input { margin: 0; accent-color: var(--lit-positive); }
+
+.lit-expiry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+}
+
+.lit-ticket-facts {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 8px;
+  margin: 4px 0 0;
+  border-top: 1px solid var(--lit-line);
+  padding-top: 6px;
+  font-size: 11px;
+}
+
+.lit-ticket-facts > div {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.lit-ticket-facts > div:nth-last-child(-n + 2):nth-child(odd),
+.lit-ticket-facts > div:last-child { grid-column: auto; }
+
+.lit-ticket-facts dt {
+  overflow: hidden;
+  color: var(--lit-ink-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lit-ticket-facts dd {
+  margin: 0;
+  color: var(--lit-ink);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.lit-validation,
+.lit-review-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+/* Agent review comes before the manual order actions. */
+.lit-ask-draft {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--lit-focus) 32%, var(--lit-line));
+  border-radius: var(--lit-radius);
+  background: color-mix(in srgb, var(--lit-focus) 10%, transparent);
+  padding: 6px 8px;
+  color: var(--lit-focus);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.lit-ask-draft:hover:not(:disabled) { background: var(--lit-hover); }
+.lit-ask-draft:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.lit-ticket-approval-waiting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--lit-warning) 38%, transparent);
+  border-radius: var(--lit-radius);
+  background: color-mix(in srgb, var(--lit-warning) 10%, transparent);
+  padding: 6px 8px;
+  animation: lit-ticket-status-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lit-ticket-approval-waiting span { display: flex; min-width: 0; flex-direction: column; }
+.lit-ticket-approval-waiting b { color: var(--lit-warning); font-size: 11.5px; }
+.lit-ticket-approval-waiting small { overflow: hidden; color: var(--lit-ink-muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.lit-ticket-approval-waiting button { border: 0; border-radius: var(--lit-radius); background: var(--lit-hover); padding: 4px 7px; color: var(--lit-ink); font-size: 11px; font-weight: 600; }
+
+.lit-review-error {
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--lit-negative) 40%, transparent);
+  border-radius: var(--lit-radius);
+  background: var(--lit-negative-wash);
+  padding: 8px 10px;
+  color: var(--lit-negative);
+  font-size: 11.5px;
+  line-height: 1.45;
+  animation: lit-ticket-status-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Where the last desk card landed: sent, failed, or unknown. */
+.lit-review-outcome {
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--lit-positive) 40%, transparent);
+  border-radius: var(--lit-radius);
+  background: var(--lit-positive-wash);
+  padding: 8px 10px;
+  color: var(--lit-positive);
+  font-size: 11.5px;
+  line-height: 1.45;
+  animation: lit-ticket-status-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes lit-ticket-status-in {
+  from { opacity: 0; transform: translateY(3px); }
+}
+
+.lit-review-outcome[data-tone="warn"] {
+  border-color: color-mix(in srgb, var(--lit-warning) 40%, transparent);
+  background: color-mix(in srgb, var(--lit-warning) 12%, transparent);
+  color: var(--lit-warning);
+}
+
+.lit-review-outcome[data-tone="error"] {
+  border-color: color-mix(in srgb, var(--lit-negative) 40%, transparent);
+  background: var(--lit-negative-wash);
+  color: var(--lit-negative);
+}
+
+.lit-review-button {
+  min-height: 38px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: var(--lit-radius);
+  background: var(--lit-positive);
+  color: var(--lit-positive-ink);
+  font-size: 13.5px;
+  font-weight: 700;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.lit-review-button[data-side="sell"] {
+  background: var(--lit-negative);
+  color: #fff;
+}
+
+/* The two side buttons: the active side submits, the other side flips the
+ * ticket and submits for it. The inactive side reads as a choice, not a state. */
+.lit-side-actions {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.lit-side-actions .lit-review-button {
+  display: flex;
+  min-height: 38px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  gap: 1px;
+  line-height: 1.2;
+}
+
+@container (max-width: 300px) {
+  .lit-ticket-body,
+  .lit-ticket-footer,
+  .lit-ticket-meta { padding-inline: 7px; }
+}
+
+.lit-side-actions .lit-review-button small {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 10.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+.lit-side-actions .lit-review-button:not([data-active]) {
+  border: 1px solid var(--lit-positive);
+  background: var(--lit-positive-wash);
+  color: var(--lit-positive);
+}
+
+.lit-side-actions .lit-review-button[data-side="sell"]:not([data-active]) {
+  border-color: var(--lit-negative);
+  background: var(--lit-negative-wash);
+  color: var(--lit-negative);
+}
+
+.lit-review-button:hover:not(:disabled) { opacity: 0.92; }
+.lit-review-button:active:not(:disabled) { transform: translateY(1px); }
+.lit-review-button:disabled { cursor: not-allowed; opacity: 0.45; }
+
+/* No account yet: the ticket becomes one guided setup block. */
+.lit-ticket-connect {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 12px;
+  color: var(--lit-ink-secondary);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.lit-ticket-connect b { color: var(--lit-ink); font-size: 13px; }
+.lit-ticket-connect .lit-review-button { margin-top: 6px; }
+
+.lit-ticket-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: lit-step;
+}
+.lit-ticket-steps li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  counter-increment: lit-step;
+}
+.lit-ticket-steps li::before {
+  content: counter(lit-step);
+  min-width: 14px;
+  color: var(--lit-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+.lit-ticket-steps li span { flex: 1; color: var(--lit-ink); }
+.lit-ticket-steps li em { font-style: normal; color: var(--lit-ink-muted); }
+.lit-ticket-steps li[data-state="done"] span { color: var(--lit-ink-secondary); }
+.lit-ticket-steps li[data-state="done"] em { color: var(--lit-positive); }
+
+/* The account-setup modal: the Core/RHC segmented switch, the deposit field, a
+ * three-step tracker (Deposit -> Trading key -> Fees) that plans the work while
+ * idle and reports it live while the chain runs, and one primary action.
+ *
+ * The environment accent (`--lit-setup-accent`) carries the same identity as
+ * the desk palette: the selected segment, asset unit and active step show Core
+ * in teal (USDC) or Robinhood Chain in lime (USDG). `data-environment` rides
+ * the DialogContent element (see `LighterAccountSetupModal`). */
+[data-vex-area="lighter-account-setup"] { --lit-setup-accent: var(--lit-env-core); }
+[data-vex-area="lighter-account-setup"][data-environment="rhc"] { --lit-setup-accent: var(--lit-env-rhc); }
+
+/* Environment segmented control: one inset track, the selected desk a raised
+ * segment carrying its own accent and its settlement asset. */
+.lit-setup-env {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: calc(var(--lit-radius) + 4px);
+  background: var(--lit-bg);
+  border: 1px solid var(--lit-line);
+}
+.lit-setup-env > button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--lit-radius);
+  background: transparent;
+  color: var(--lit-ink-muted);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+/* The network mark beside its own name: Ethereum for Core, the Robinhood
+ * feather for RHC - the same pairing, from the same source, that the desk's
+ * environment switch makes, so the two surfaces read alike.
+ *
+ * Beside, not behind. Behind was tried: these buttons are only as tall as
+ * their two lines of text, so a mark large enough to see either sat squarely
+ * under the label or was stranded out at an edge with the centred text
+ * floating away from it. Set against the label it belongs to, the pair reads
+ * as one name. The unselected side dims its mark to match its muted label
+ * rather than hiding it.
+ *
+ * `aria-hidden` on the image: the network is already written next to it, and
+ * announcing it twice would only be noise. */
+.lit-setup-env-logo {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+  opacity: 0.75;
+  pointer-events: none;
+  user-select: none;
+  transition: opacity 140ms ease;
+}
+.lit-setup-env-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+}
+.lit-setup-env-name { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+.lit-setup-env-asset {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.lit-setup-env > button:hover:not(:disabled) { color: var(--lit-ink); background: var(--lit-hover); }
+.lit-setup-env > button:hover:not(:disabled) .lit-setup-env-logo { opacity: 0.9; }
+.lit-setup-env > button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--lit-setup-accent) 14%, var(--lit-panel-raised));
+  border-color: color-mix(in srgb, var(--lit-setup-accent) 55%, transparent);
+  color: var(--lit-ink);
+}
+.lit-setup-env > button[aria-pressed="true"] .lit-setup-env-asset { color: var(--lit-setup-accent); opacity: 1; }
+.lit-setup-env > button[aria-pressed="true"] .lit-setup-env-logo { opacity: 1; }
+
+.lit-setup-env > button:disabled { cursor: default; }
+.lit-setup-env > button:disabled:not([aria-pressed="true"]) { opacity: 0.4; }
+.lit-setup-env > button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--lit-bg), 0 0 0 4px var(--lit-setup-accent);
+}
+
+/* Checking-account and already-funded lines. */
+.lit-setup-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--lit-ink-secondary);
+  font-size: 12.5px;
+}
+.lit-setup-loading .lit-loader { width: 14px; height: 14px; }
+.lit-setup-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--lit-ink-secondary);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.lit-setup-note svg { flex: 0 0 auto; margin-top: 1px; color: var(--lit-positive); }
+
+/* Deposit field: a label/balance head over a large tabular amount input whose
+ * unit is an accent chip. */
+.lit-setup-field { display: flex; flex-direction: column; gap: 7px; }
+.lit-setup-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.lit-setup-field-head label { font-size: 12px; font-weight: 600; color: var(--lit-ink-secondary); }
+.lit-setup-balance { font-size: 11.5px; color: var(--lit-ink-muted); font-variant-numeric: tabular-nums; }
+.lit-setup-amount {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: var(--lit-radius);
+  border: 1px solid var(--lit-line);
+  background: var(--lit-bg);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.lit-setup-amount:focus-within {
+  border-color: color-mix(in srgb, var(--lit-setup-accent) 60%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lit-setup-accent) 18%, transparent);
+}
+.lit-setup-amount input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--lit-ink);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+.lit-setup-amount input::placeholder { color: var(--lit-ink-muted); }
+.lit-setup-amount b {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--lit-setup-accent);
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lit-setup-accent) 15%, transparent);
+}
+/* The wrapper already draws a rounded ring on :focus-within, so the
+ * frame-wide `input:focus-visible` outline in lighter-tokens.css would stack a
+ * second, square one inside it. Opt this field out; the ring is the focus cue. */
+.lit-chat-frame .lit-setup-amount input:focus-visible { outline: none; }
+
+.lit-setup-min { font-size: 11.5px; color: var(--lit-ink-muted); }
+
+/* Shortfall: the amount is larger than the wallet holds. Names the gap and
+ * hands over the address that closes it. Tinted from the warning hue rather
+ * than bordered, so it reads as part of the field instead of a fourth panel
+ * competing with the env switch, the input and the tracker. */
+.lit-setup-fund {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 1px;
+  padding: 10px 11px;
+  border-radius: var(--lit-radius);
+  background: color-mix(in srgb, var(--lit-warning) 12%, transparent);
+}
+.lit-setup-fund > p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--lit-warning);
+}
+.lit-setup-fund-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.lit-setup-fund-label {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--lit-warning) 45%, var(--lit-ink-muted));
+}
+.lit-setup-fund-row code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--lit-ink);
+}
+.lit-setup-fund-copy {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid var(--lit-line);
+  border-radius: 999px;
+  background: var(--lit-bg);
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+.lit-setup-fund-copy:hover {
+  border-color: var(--lit-line-strong);
+  color: var(--lit-ink);
+}
+
+/* Three-step tracker: the plan while idle, live progress while the chain runs. */
+.lit-setup-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 13px 14px;
+  border-radius: var(--lit-radius);
+  border: 1px solid var(--lit-line);
+  background: color-mix(in srgb, var(--lit-panel-raised) 45%, transparent);
+}
+.lit-setup-steps ol {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lit-setup-steps li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--lit-ink-muted);
+}
+.lit-setup-step-mark {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--lit-line-strong);
+  color: var(--lit-ink-muted);
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.lit-setup-step-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.lit-setup-step-mark .lit-loader { width: 12px; height: 12px; border-width: 1.5px; border-top-color: var(--lit-setup-accent); }
+.lit-setup-step-label { white-space: nowrap; }
+.lit-setup-steps li[data-state="active"] { color: var(--lit-ink); }
+.lit-setup-steps li[data-state="active"] .lit-setup-step-mark {
+  border-color: color-mix(in srgb, var(--lit-setup-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--lit-setup-accent) 12%, transparent);
+}
+.lit-setup-steps li[data-state="done"] { color: var(--lit-ink-secondary); }
+.lit-setup-steps li[data-state="done"] .lit-setup-step-mark {
+  border-color: var(--lit-positive);
+  background: var(--lit-positive);
+  color: var(--lit-positive-ink);
+}
+.lit-setup-status {
+  font-size: 12px;
+  color: var(--lit-ink-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.lit-setup-status[data-phase="done"] { color: var(--lit-positive); font-weight: 600; }
+
+/* Fee line: a quiet hairline-topped note, the rates in ink. */
+.lit-setup-fee {
+  padding-top: 11px;
+  border-top: 1px solid var(--lit-line);
+  color: var(--lit-ink-muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.lit-setup-fee b { color: var(--lit-ink-secondary); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.lit-setup-status-error,
+.lit-setup-step-error {
+  color: var(--lit-negative);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Primary action: full-width, the desk's confident go-green, carrying its own
+ * running and done states so there is one thing to watch. */
+.lit-setup-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--lit-radius);
+  background: var(--lit-positive);
+  color: var(--lit-positive-ink);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: filter 140ms ease, transform 80ms ease, opacity 140ms ease;
+}
+.lit-setup-cta:hover:not(:disabled) { filter: brightness(1.05); }
+.lit-setup-cta:active:not(:disabled) { transform: translateY(1px); }
+.lit-setup-cta:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--lit-panel), 0 0 0 4px var(--lit-positive);
+}
+.lit-setup-cta:disabled { cursor: default; opacity: 0.5; }
+.lit-setup-cta[data-busy] { opacity: 0.85; }
+.lit-setup-cta[data-done] { opacity: 1; }
+.lit-setup-cta .lit-loader {
+  width: 16px;
+  height: 16px;
+  border-color: color-mix(in srgb, var(--lit-positive-ink) 35%, transparent);
+  border-top-color: var(--lit-positive-ink);
+}
+
+.lit-setup-footer { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; }
+.lit-setup-cancel {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--lit-border-strong);
+  border-radius: 8px;
+  color: var(--lit-ink-secondary);
+  background: var(--lit-panel-raised);
+  font-size: 13px;
+  font-weight: 600;
+}
+.lit-setup-cancel:hover:not(:disabled) { color: var(--lit-ink); background: var(--lit-hover); }
+.lit-setup-cancel:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--lit-bg), 0 0 0 4px var(--lit-setup-accent);
+}
+.lit-setup-cancel:disabled { cursor: default; opacity: 0.45; }

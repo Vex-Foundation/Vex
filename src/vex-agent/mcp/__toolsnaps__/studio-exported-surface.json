@@ -1249,21 +1249,21 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1135,
+      "descriptionBytes": 1304,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "amountIn": {
-            "description": "Optional target collateral for a named trade in human USDC decimals, for example \"1\" or \"11\". Requires marketId or marketSymbol. Never pass a direct deposit or funding amount here; use ToolSearch once to select lighter.deposit.prepare and pass the user's amount unchanged.",
+            "description": "Optional target collateral for a named trade in human USDC decimals, for example \"1\". Requires marketId or marketSymbol, and is never a direct deposit or funding amount.",
             "type": "string"
           },
           "marketId": {
-            "description": "Optional Lighter Core market id. Provide at most one of marketId or marketSymbol, and include amountIn when checking a market minimum.",
+            "description": "Optional Lighter Core market id. Pass at most one of marketId or marketSymbol, with amountIn.",
             "type": "number"
           },
           "marketSymbol": {
-            "description": "Optional Lighter Core market symbol, for example SUI. Provide at most one of marketSymbol or marketId, and include amountIn when checking a market minimum.",
+            "description": "Optional Lighter Core market symbol, for example SUI. Pass at most one of marketSymbol or marketId, with amountIn.",
             "type": "string"
           },
           "walletAddress": {
@@ -1281,21 +1281,21 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1134,
+      "descriptionBytes": 1333,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "amountIn": {
-            "description": "Optional target collateral for a named trade in human USDG decimals, for example \"1\" or \"11\". Requires marketId or marketSymbol. Never pass a direct deposit or funding amount here; use ToolSearch once to select lighter.deposit.prepare and pass the user's amount unchanged.",
+            "description": "Optional target collateral for a named trade in human USDG decimals, for example \"1\". Requires marketId or marketSymbol, and is never a direct deposit or funding amount.",
             "type": "string"
           },
           "marketId": {
-            "description": "Optional Lighter RHC market id. Provide at most one of marketId or marketSymbol, and include amountIn when checking a market minimum.",
+            "description": "Optional Lighter RHC market id. Pass at most one of marketId or marketSymbol, with amountIn.",
             "type": "number"
           },
           "marketSymbol": {
-            "description": "Optional Lighter RHC market symbol, for example SUI. Provide at most one of marketSymbol or marketId, and include amountIn when checking a market minimum.",
+            "description": "Optional Lighter RHC market symbol, for example SUI. Pass at most one of marketSymbol or marketId, with amountIn.",
             "type": "string"
           },
           "walletAddress": {
@@ -5224,13 +5224,13 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 483,
+      "descriptionBytes": 709,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "countBack": {
-            "description": "Provider candle row cap for the requested range (max 500). Vex also shows at most 100 newest rows in the agent response.",
+            "description": "Provider candle row cap for the requested range (max 500, and 500 when omitted). A wider window is read back from its end to this many candles. Vex also shows at most 100 newest rows in the agent response.",
             "type": "number"
           },
           "dryRun": {

@@ -36,7 +36,7 @@ import {
 import { buildRenderDeps } from "../compose/deps-factory.js";
 import { log } from "../logger/index.js";
 import { CONFIG_DIR } from "../paths/config-dir.js";
-import { DEFAULT_PG_PORT } from "@shared/local-service-ports.js";
+import { resolvePgPort } from "../paths/service-ports.js";
 import { setDbConnection } from "../database/connection-state.js";
 import { broadcastToAllWindows } from "../lifecycle/broadcast.js";
 import { CRITICAL_OP, trackCriticalOp } from "../updates/critical-ops.js";
@@ -81,7 +81,7 @@ export function registerDockerHandlers(): Array<() => void> {
       outputSchema: dockerStatusSchema,
       handle: async (): Promise<Result<DockerStatus>> => {
         const status = await probeDocker({
-          pgPort: DEFAULT_PG_PORT,
+          pgPort: resolvePgPort(),
           modelRunnerBaseUrl: DEFAULT_MODEL_RUNNER_BASE_URL,
           diskTarget: CONFIG_DIR,
         });

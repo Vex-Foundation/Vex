@@ -79,9 +79,13 @@ vi.mock("../book/portfolio/WelcomePortfolioPanel.js", () => ({
     />
   ),
 }));
+vi.mock("../lighterTrading/LighterChatRail.js", () => ({
+  LighterChatRail: () => <div data-testid="lighter-chat-rail" />,
+}));
 
 const { BookPanel } = await import("../BookPanel.js");
 const { useUiStore } = await import("../../../stores/uiStore.js");
+const { useLighterAnalysisStore } = await import("../../../stores/lighterAnalysisStore.js");
 
 const SESSION = "00000000-0000-4000-8000-00000000dddd";
 
@@ -100,10 +104,25 @@ beforeEach(() => {
   // The rail now reads a PERSISTED section order; without this reset an order
   // set by one case would leak into the next.
   window.localStorage.clear();
-  useUiStore.setState({ bookSectionOrder: [] });
+  useUiStore.setState({ bookSectionOrder: [], runtimeMode: "agent", theme: "chronos" });
+  useLighterAnalysisStore.getState().saveDesk({ environment: "rhc" });
 });
 
 describe("BookPanel chrome", () => {
+  it("carries the active Lighter environment across the Vex rail", () => {
+    useUiStore.setState({ runtimeMode: "lighter", theme: "celeris" });
+    useLighterAnalysisStore.getState().saveDesk({ environment: "core" });
+
+    const { container } = render(
+      <BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />,
+    );
+
+    const frame = container.querySelector(".lit-chat-frame");
+    expect(frame?.getAttribute("data-lighter-theme")).toBe("celeris");
+    expect(frame?.getAttribute("data-lighter-environment")).toBe("core");
+    expect(screen.getByTestId("lighter-chat-rail")).not.toBeNull();
+  });
+
   it("shows the version stamp + Collapse chevron when expanded", () => {
     render(<BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />);
     expect(screen.getByText(/^v/)).not.toBeNull();

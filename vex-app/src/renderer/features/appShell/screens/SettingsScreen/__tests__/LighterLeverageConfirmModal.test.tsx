@@ -70,8 +70,9 @@ function renderModal(
   render(
     <LighterLeverageConfirmModal
       proposal={PROPOSAL}
-      environment="rhc"
       submitting={false}
+      cancelling={false}
+      error={null}
       onCancel={onCancel}
       onConfirm={onConfirm}
       {...overrides}
@@ -84,7 +85,9 @@ it("renders main's proposal: the terms, the exposure, the account and the expiry
   renderModal();
   const dialog = screen.getByRole("dialog");
   expect(dialog.textContent).toContain("Change BTC leverage");
-  expect(dialog.textContent).toContain("2.00x to 25.00x");
+  expect(dialog.classList.contains("lit-environment-dialog")).toBe(true);
+  expect(dialog.getAttribute("data-lighter-environment")).toBe("rhc");
+  expect(dialog.textContent).toContain("2x to 25x");
   expect(dialog.textContent).toContain("cross to cross");
   expect(dialog.textContent).toContain("long 0.00020 BTC");
   expect(dialog.textContent).toContain("61234.5 USDG");
@@ -95,9 +98,34 @@ it("renders main's proposal: the terms, the exposure, the account and the expiry
   expect(dialog.textContent).toContain("This proposal expires");
 });
 
+it("renders fractional provider terms as the same whole leverage used by the picker", () => {
+  renderModal({
+    proposal: {
+      ...PROPOSAL,
+      current: {
+        initialMarginFraction: 295,
+        leverageDisplay: "33.89",
+        marginMode: "cross",
+        source: "position_row",
+      },
+      target: {
+        initialMarginFraction: 250,
+        leverageDisplay: "40.00",
+        marginMode: "cross",
+      },
+    },
+  });
+  expect(screen.getByRole("dialog").textContent).toContain("34x to 40x");
+});
+
 it("labels the liquidation price and open orders as observations", () => {
   renderModal();
   expect(screen.getByRole("dialog").textContent).toContain(CONFIRM_OBSERVATION_NOTE);
+});
+
+it("uses the environment frozen into main's proposal for the collateral unit", () => {
+  renderModal({ proposal: { ...PROPOSAL, environment: "core" } });
+  expect(screen.getByRole("dialog").textContent).toContain("61234.5 USDC");
 });
 
 it("says Not reported rather than a number Lighter did not give", () => {
@@ -147,9 +175,22 @@ it("disables both choices while the change is in flight and says so", () => {
   expect(screen.getByRole("status").textContent).toBe("Applying on Lighter…");
 });
 
+it("keeps the proposal open and reports cancellation progress or failure", () => {
+  const { onCancel } = renderModal({ cancelling: true });
+  expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Confirm" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByRole("status").textContent).toBe("Cancelling review…");
+  fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
+  expect(onCancel).not.toHaveBeenCalled();
+
+  cleanup();
+  renderModal({ error: "Vex could not cancel this review." });
+  expect(screen.getByRole("alert").textContent).toBe("Vex could not cancel this review.");
+});
+
 it("returns focus to the control that opened it when the card drops the proposal", () => {
   const trigger = document.createElement("button");
-  trigger.textContent = "Apply new leverage to BTC";
+  trigger.textContent = "Review leverage change for BTC";
   document.body.appendChild(trigger);
   trigger.focus();
   expect(document.activeElement).toBe(trigger);
@@ -157,8 +198,9 @@ it("returns focus to the control that opened it when the card drops the proposal
   const { unmount } = render(
     <LighterLeverageConfirmModal
       proposal={PROPOSAL}
-      environment="rhc"
       submitting={false}
+      cancelling={false}
+      error={null}
       onCancel={vi.fn()}
       onConfirm={vi.fn()}
     />,

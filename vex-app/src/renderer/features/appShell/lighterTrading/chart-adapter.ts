@@ -11,8 +11,6 @@ export type ChartCandleRow = LighterTradingCandle & {
   readonly source?: string;
 };
 
-const MAX_CHART_CANDLES = 500;
-
 function toUnixSeconds(timestamp: number): UTCTimestamp {
   const seconds = timestamp >= 1_000_000_000_000
     ? Math.floor(timestamp / 1_000)
@@ -97,8 +95,7 @@ export function upsertChartCandles(
 
   return [...byTime.entries()]
     .sort(([left], [right]) => left - right)
-    .map(([, row]) => row)
-    .slice(-MAX_CHART_CANDLES);
+    .map(([, row]) => row);
 }
 
 export function toChartCandles(

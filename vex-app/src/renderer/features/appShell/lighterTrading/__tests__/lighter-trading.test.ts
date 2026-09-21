@@ -13,8 +13,9 @@ import {
   upsertChartCandles,
 } from "../chart-adapter.js";
 import { formatLocalChartTick, MarketChart } from "../MarketChart.js";
-import { bestBookPrice, OrderBook } from "../OrderBook.js";
-import { buildLighterReviewMessage } from "../TradeTicket.js";
+import { bestBookPrice } from "../book-model.js";
+import { MarketBookPanel } from "../OrderBook.js";
+import { riskBaseSize } from "../ticket-model.js";
 
 const chartHarness = vi.hoisted(() => {
   const candlestickToken = Symbol("CandlestickSeries");
@@ -50,7 +51,8 @@ const chartHarness = vi.hoisted(() => {
     remove,
     subscribeCrosshairMove,
     unsubscribeCrosshairMove,
-    timeScale: () => ({ getVisibleLogicalRange, setVisibleLogicalRange }),
+    priceScale: () => ({ applyOptions: vi.fn() }),
+    timeScale: () => ({ getVisibleLogicalRange, setVisibleLogicalRange, subscribeVisibleLogicalRangeChange: vi.fn(), unsubscribeVisibleLogicalRangeChange: vi.fn() }),
   }));
   return {
     candlestickToken,
@@ -78,7 +80,9 @@ vi.mock("lightweight-charts", () => ({
   ColorType: { Solid: "solid" },
   LineStyle: { Dotted: 1 },
   TickMarkType: { Year: 0, Month: 1, DayOfMonth: 2, Time: 3, TimeWithSeconds: 4 },
+  PriceScaleMode: { Normal: 0, Logarithmic: 1 },
   createChart: chartHarness.createChart,
+  createSeriesMarkers: vi.fn(() => ({ detach: vi.fn() })),
 }));
 
 const MARKET: LighterTradingMarket = {
@@ -92,167 +96,18 @@ const MARKET: LighterTradingMarket = {
   minQuoteAmount: "10",
   orderQuoteLimit: "100000",
   decimals: { size: 4, price: 2, quote: 6 },
-  fees: { maker: "0", taker: "0.0003", makerEnabled: false, takerEnabled: true },
+  fees: { maker: "0", taker: "0.0003", makerEnabled: false, takerEnabled: true, integratorMaker: null, integratorTaker: null },
   activity24h: { tradesCount: 120, quoteVolume: 1_600_000 },
 };
 
-describe("Light it up deterministic review handoff", () => {
-  it("names the exact preview-only IOC inputs and never claims execution", () => {
-    const message = buildLighterReviewMessage({
-      environment: "rhc",
-      market: MARKET,
-      draft: {
-        mode: "market",
-        side: "buy",
-        baseAmount: "0.02",
-        worstPrice: "3210.50",
-        reduceOnly: false,
-      },
-    });
-
-    expect(message).toContain("preview only");
-    expect(message).toContain("environment=rhc");
-    expect(message).toContain("marketId=7");
-    expect(message).toContain("marketSymbol=ETH");
-    expect(message).toContain("side=buy");
-    expect(message).toContain("baseAmountIn=0.02");
-    expect(message).toContain("price=3210.50");
-    expect(message).toContain("orderType=market");
-    expect(message).toContain("timeInForce=immediate-or-cancel");
-    expect(message).toContain("orderExpiryOffsetMinutes=30");
-    expect(message).toContain("display the approval card directly");
-    expect(message).toContain("Nothing may execute without the user's explicit approval");
-    expect(message).not.toMatch(/order (?:was|is) (?:placed|submitted|filled)/i);
-  });
-
-  it("binds a standalone stop loss to its trigger, hard bound, and reduce-only policy", () => {
-    const message = buildLighterReviewMessage({
-      environment: "core",
-      market: MARKET,
-      draft: {
-        mode: "stop-loss",
-        side: "sell",
-        baseAmount: "0.1",
-        triggerPrice: "2900",
-        worstPrice: "2850",
-        reduceOnly: true,
-      },
-    });
-
-    expect(message).toContain("marketType=perp");
-    expect(message).toContain("orderType=stop-loss");
-    expect(message).toContain("triggerPrice=2900");
-    expect(message).toContain("price=2850");
-    expect(message).toContain("reduceOnly=true");
-    expect(message).toContain("orderExpiryOffsetMinutes=1440");
-    expect(message).toContain("preview only");
-  });
-
-  it("binds a standalone take profit to its trigger and hard execution bound", () => {
-    const message = buildLighterReviewMessage({
-      environment: "rhc",
-      market: MARKET,
-      draft: {
-        mode: "take-profit",
-        side: "sell",
-        baseAmount: "0.1",
-        triggerPrice: "3300",
-        worstPrice: "3250",
-        reduceOnly: true,
-      },
-    });
-
-    expect(message).toContain("orderType=take-profit");
-    expect(message).toContain("triggerPrice=3300");
-    expect(message).toContain("price=3250");
-    expect(message).toContain("reduceOnly=true");
-    expect(message).toContain("approval card directly");
-  });
-
-  it.each([
-    ["immediate-or-cancel", 30, "Immediate only"],
-    ["good-till-time", 240, "Keep open"],
-    ["post-only", 1_440, "Maker only"],
-  ] as const)("binds a plain limit order to exact %s semantics", (timeInForce, orderExpiryOffsetMinutes, behaviorLabel) => {
-    const message = buildLighterReviewMessage({
-      environment: "rhc",
-      market: MARKET,
-      draft: {
-        mode: "limit",
-        side: "buy",
-        baseAmount: "0.2",
-        limitPrice: "3190.25",
-        timeInForce,
-        orderExpiryOffsetMinutes,
-        reduceOnly: false,
-      },
-    });
-
-    expect(message).toContain("plain Lighter limit order");
-    expect(message).toContain("price=3190.25");
-    expect(message).toContain("orderType=limit");
-    expect(message).toContain(`timeInForce=${timeInForce}`);
-    expect(message).toContain(`Order behavior is ${behaviorLabel}`);
-    expect(message).toContain(`orderExpiryOffsetMinutes=${orderExpiryOffsetMinutes}`);
-    expect(message).toContain("exact limit price, not a market-order execution bound");
-    expect(message).toContain("preview only");
-    expect(message).not.toMatch(/order (?:was|is) (?:placed|submitted|filled)/i);
-  });
-
-  it.each([
-    ["stop-loss-limit", "2900", "2875"],
-    ["take-profit-limit", "3300", "3275"],
-  ] as const)("binds native %s to its trigger, limit price, exact TIF, and expiry", (mode, triggerPrice, limitPrice) => {
-    for (const timeInForce of ["immediate-or-cancel", "good-till-time", "post-only"] as const) {
-      const message = buildLighterReviewMessage({
-        environment: "core",
-        market: MARKET,
-        draft: {
-          mode,
-          side: "sell",
-          baseAmount: "0.1",
-          triggerPrice,
-          limitPrice,
-          timeInForce,
-          orderExpiryOffsetMinutes: 240,
-          reduceOnly: true,
-        },
-      });
-
-      expect(message).toContain(`native Lighter ${mode}`);
-      expect(message).toContain(`orderType=${mode}`);
-      expect(message).toContain(`triggerPrice=${triggerPrice}`);
-      expect(message).toContain(`price=${limitPrice}`);
-      expect(message).toContain(`timeInForce=${timeInForce}`);
-      expect(message).toContain("orderExpiryOffsetMinutes=240");
-      expect(message).toContain("limit price that becomes active after the trigger");
-      expect(message).toContain("Nothing may execute without the user's explicit approval");
-    }
-  });
-
-  it("binds both protection legs into one native OCO review request", () => {
-    const message = buildLighterReviewMessage({
-      environment: "rhc",
-      market: MARKET,
-      draft: {
-        mode: "oco",
-        side: "sell",
-        baseAmount: "0.1",
-        stopLossTriggerPrice: "2900",
-        stopLossPrice: "2850",
-        takeProfitTriggerPrice: "3300",
-        takeProfitPrice: "3250",
-      },
-    });
-
-    expect(message).toContain("native Lighter stop-loss plus take-profit protection");
-    expect(message).toContain("stopLossTriggerPrice=2900");
-    expect(message).toContain("stopLossPrice=2850");
-    expect(message).toContain("takeProfitTriggerPrice=3300");
-    expect(message).toContain("takeProfitPrice=3250");
-    expect(message).toContain("exactly one native OCO group");
-    expect(message).toContain("two same-size reduce-only children");
-    expect(message).toContain("one approval card");
+describe("Light it up risk sizing", () => {
+  it("sizes so a filled stop costs the chosen share of equity, and refuses a stop at the entry", () => {
+    // 1% of 10,000 = 100 at risk over a 210.5 move, long or short.
+    expect(riskBaseSize(10_000, 1, 3210.5, 3000)).toBeCloseTo(0.47506, 5);
+    expect(riskBaseSize(10_000, 1, 3000, 3210.5)).toBeCloseTo(0.47506, 5);
+    expect(riskBaseSize(10_000, 1, 3000, 3000)).toBeNull();
+    expect(riskBaseSize(0, 1, 3210.5, 3000)).toBeNull();
+    expect(riskBaseSize(10_000, 0, 3210.5, 3000)).toBeNull();
   });
 });
 
@@ -282,6 +137,27 @@ describe("Light it up chart adapter", () => {
     expect(formatLocalChartTick(time, 2)).toMatch(/^[A-Z][a-z]{2} \d{1,2}$/);
   });
 
+  it("keeps horizontal panning enabled while older pages arrive", () => {
+    render(createElement(MarketChart, {
+      candles: [candle()],
+      symbol: "BTC",
+      theme: "chronos",
+      marketId: 1,
+      resolution: "15m",
+    }));
+
+    expect(chartHarness.createChart).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ handleScroll: true }),
+    );
+    expect(chartHarness.createChart).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        timeScale: expect.objectContaining({ fixLeftEdge: true }),
+      }),
+    );
+  });
+
   it("upserts equal-time candles with lossless provider ids and rejects stale echoes", () => {
     const enormous = "90071992547409931234567890";
     expect(compareCandleTradeIds(enormous, "90071992547409931234567889")).toBe(1);
@@ -306,15 +182,15 @@ describe("Light it up chart adapter", () => {
     expect(upsertChartCandles([equalStream], [rest])).toEqual([rest]);
   });
 
-  it("bounds long-running chart history to the newest 500 provider candles", () => {
-    const rows = Array.from({ length: 520 }, (_, index) => candle({
+  it("keeps provider history beyond the former 5000-candle cutoff", () => {
+    const rows = Array.from({ length: 5020 }, (_, index) => candle({
       timestamp: 1_720_000_000 + index * 60,
       close: 100 + index,
       high: 101 + index,
     }));
     const merged = upsertChartCandles([], rows);
-    expect(merged).toHaveLength(500);
-    expect(merged[0]?.timestamp).toBe(rows[20]?.timestamp);
+    expect(merged).toHaveLength(5020);
+    expect(merged[0]?.timestamp).toBe(rows[0]?.timestamp);
     expect(merged.at(-1)?.timestamp).toBe(rows.at(-1)?.timestamp);
   });
 
@@ -367,11 +243,13 @@ describe("Light it up chart adapter", () => {
     }));
 
     expect(chartHarness.createChart).toHaveBeenCalledTimes(1);
-    expect(chartHarness.candleSetData).toHaveBeenCalledTimes(1);
-    expect(chartHarness.candleUpdate).toHaveBeenLastCalledWith(
+    // The first bars after an empty start land as one setData, not per-bar
+    // updates, so the viewport is placed on a fully built series.
+    expect(chartHarness.candleSetData).toHaveBeenCalledTimes(2);
+    expect(chartHarness.candleSetData).toHaveBeenLastCalledWith([
       expect.objectContaining({ time: 1_720_000_000, close: 102 }),
-      false,
-    );
+    ]);
+    expect(chartHarness.candleUpdate).not.toHaveBeenCalled();
     expect(screen.queryByRole("status", { name: "Building ETH candle chart" })).toBeNull();
     expect(chartHarness.setVisibleLogicalRange).toHaveBeenLastCalledWith({ from: 0, to: 7 });
   });
@@ -515,7 +393,7 @@ describe("Light it up chart adapter", () => {
     expect(createdChart?.addSeries).toHaveBeenNthCalledWith(
       2,
       chartHarness.histogramToken,
-      expect.objectContaining({ lastValueVisible: true }),
+      expect.objectContaining({ lastValueVisible: false }),
     );
     chartHarness.getVisibleLogicalRange.mockReturnValue({ from: -3, to: 7 });
 
@@ -606,47 +484,99 @@ describe("Light it up chart adapter", () => {
 });
 
 describe("Light it up order book", () => {
-  it("places the best ask next to the spread while preserving best-price selection", () => {
+  function bookPanel(book: Parameters<typeof MarketBookPanel>[0]["book"], lastPrice: number | null = null, preferredView?: "stack" | "split") {
+    return createElement(MarketBookPanel, {
+      book,
+      baseSymbol: "BTC",
+      quoteSymbol: "USD",
+      priceDecimals: 2,
+      lastPrice,
+      markPrice: 100.25,
+      bookStatus: "live",
+      onPriceSelect: vi.fn(),
+      preferredView,
+    });
+  }
+
+  it("adapts the book orientation to available space until the trader chooses a view", () => {
+    const book = { asks: [{ price: "101", size: "2" }], bids: [{ price: "100", size: "3" }] };
+    const { rerender } = render(bookPanel(book));
+    expect(screen.getByRole("button", { name: "Stacked", pressed: true })).toBeTruthy();
+    rerender(bookPanel(book, null, "split"));
+    expect(screen.getByRole("button", { name: "Side by side", pressed: true })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Stacked" }));
+    rerender(bookPanel(book, null, "stack"));
+    rerender(bookPanel(book, null, "split"));
+    expect(screen.getByRole("button", { name: "Stacked", pressed: true })).toBeTruthy();
+  });
+
+  it("folds the depth rows while keeping the live spread summary visible", () => {
+    const book = { asks: [{ price: "101", size: "2" }], bids: [{ price: "100", size: "3" }] };
+    const onToggleCollapse = vi.fn();
+    const { container } = render(createElement(MarketBookPanel, {
+      ...bookPanel(book).props,
+      collapsed: true,
+      onToggleCollapse,
+    }));
+
+    expect(screen.getByRole("button", { name: "Expand order book" })).toBeTruthy();
+    expect(container.querySelector(".lit-book-stack")).toBeNull();
+    expect(container.querySelector(".lit-book-mid")?.textContent).toContain("Spread");
+    fireEvent.click(screen.getByRole("button", { name: "Expand order book" }));
+    expect(onToggleCollapse).toHaveBeenCalledOnce();
+  });
+
+  it("stacks the asks down to the inside row and the bids under it, with the spread in basis points", () => {
     const asks = [
       { orderId: "a1", price: "101", size: "2" },
       { orderId: "a2", price: "103", size: "4" },
       { orderId: "a3", price: "102", size: "3" },
     ];
-    const { container } = render(createElement(OrderBook, {
-      book: {
-        asks,
-        bids: [{ orderId: "b1", price: "100", size: "5" }],
-      },
-    }));
+    const { container } = render(bookPanel({
+      asks,
+      bids: [{ orderId: "b1", price: "100", size: "5" }],
+    }, 100.5));
 
     expect(bestBookPrice(asks, "ask")).toBe("101");
-    expect(Array.from(container.querySelectorAll('[data-side="ask"] .lit-book-price'))
-      .map((node) => node.textContent)).toEqual(["103", "102", "101"]);
+    // Best-first DOM order pairs with column-reverse to keep the best ask by the inside row.
+    expect(Array.from(container.querySelectorAll('[data-side="ask"] .lit-book-row b'))
+      .map((node) => node.textContent)).toEqual(["101", "102", "103"]);
+    expect(Array.from(container.querySelectorAll(".lit-book-stack > *")).map((node) => node.className))
+      .toEqual(["lit-book-rows", "lit-book-mid", "lit-book-rows"]);
+    expect(container.querySelector(".lit-book-columns")?.textContent).toBe("Price (USD)Size (BTC)Sum");
+    expect(container.querySelector(".lit-book-mid b")?.textContent).toBe("100.50");
+    const notes = Array.from(container.querySelectorAll(".lit-book-mid span")).map((node) => node.textContent);
+    expect(notes).toEqual(["Spread 1 (99.5 bp)", "Mark 100.25"]);
   });
 
   it("renders cumulative totals from the inside market outward", () => {
-    const { container } = render(createElement(OrderBook, {
-      symbol: "BTC",
-      book: {
-        asks: [
-          { orderId: "a1", price: "101", size: "2" },
-          { orderId: "a2", price: "102", size: "3" },
-          { orderId: "a3", price: "103", size: "4" },
-        ],
-        bids: [
-          { orderId: "b1", price: "100", size: "5" },
-          { orderId: "b2", price: "99", size: "6" },
-        ],
-      },
+    const { container } = render(bookPanel({
+      asks: [
+        { orderId: "a1", price: "101", size: "2" },
+        { orderId: "a2", price: "102", size: "3" },
+        { orderId: "a3", price: "103", size: "4" },
+      ],
+      bids: [
+        { orderId: "b1", price: "100", size: "5" },
+        { orderId: "b2", price: "99", size: "6" },
+      ],
     }));
 
-    // Asks read far → best; totals accumulate from the best ask outward.
-    expect(Array.from(container.querySelectorAll('[data-side="ask"] .lit-book-total'))
-      .map((node) => node.textContent)).toEqual(["9", "5", "2"]);
-    // Bids read best → far; totals accumulate downward.
-    expect(Array.from(container.querySelectorAll('[data-side="bid"] .lit-book-total'))
+    const totals = (side: string): string[] => Array.from(container.querySelectorAll(`[data-side="${side}"] .lit-book-row`))
+      .map((row) => row.getAttribute("aria-label")?.replace(/.*total /, "") ?? "");
+    // Totals accumulate outward from the inside; the Sum column shows them.
+    expect(totals("ask")).toEqual(["2", "5", "9"]);
+    expect(totals("bid")).toEqual(["5", "11"]);
+    expect(Array.from(container.querySelectorAll('[data-side="bid"] .lit-book-row span:last-child'))
       .map((node) => node.textContent)).toEqual(["5", "11"]);
-    expect(container.querySelector(".lit-book-columns")?.textContent).toContain("Size BTC");
+    expect(screen.getByRole("button", { name: "BTC", pressed: true })).toBeTruthy();
+
+    // Side by side: both sides read best → far from the center, without the Sum column.
+    fireEvent.click(screen.getByRole("button", { name: "Side by side" }));
+    expect(totals("ask")).toEqual(["2", "5", "9"]);
+    expect(container.querySelector(".lit-book-columns")?.textContent).toBe("SizeBidAskSize");
+    expect(container.querySelectorAll('[data-side="bid"] .lit-book-row span')).toHaveLength(2);
+    expect(container.querySelector(".lit-book-stack")).toBeNull();
   });
 
   it("renders far more than ten levels per side to fill the depth rail", () => {
@@ -655,30 +585,26 @@ describe("Light it up order book", () => {
       price: String(200 + index),
       size: "1",
     }));
-    const { container } = render(createElement(OrderBook, {
-      book: { asks, bids: [{ orderId: "b1", price: "199", size: "1" }] },
-    }));
+    const { container } = render(bookPanel({ asks, bids: [{ orderId: "b1", price: "199", size: "1" }] }));
 
     // Capped at the 24-level depth limit, well above the previous 10.
     expect(container.querySelectorAll('[data-side="ask"] .lit-book-row').length).toBe(24);
   });
 
   it("aggregates duplicate REST prices without coercing provider decimals", () => {
-    const { container } = render(createElement(OrderBook, {
-      book: {
-        asks: [
-          { orderId: "a1", price: "9007199254740993.10", size: "0.1" },
-          { orderId: "a2", price: "9007199254740993.10", size: "0.2" },
-        ],
-        bids: [{ orderId: "b1", price: "9007199254740993.00", size: "1" }],
-      },
+    const { container } = render(bookPanel({
+      asks: [
+        { orderId: "a1", price: "9007199254740993.10", size: "0.1" },
+        { orderId: "a2", price: "9007199254740993.10", size: "0.2" },
+      ],
+      bids: [{ orderId: "b1", price: "9007199254740993.00", size: "1" }],
     }));
 
+    const row = container.querySelector('[data-side="ask"] .lit-book-row');
     expect(container.querySelectorAll('[data-side="ask"] .lit-book-row')).toHaveLength(1);
-    expect(container.querySelector('[data-side="ask"] .lit-book-price')?.textContent)
-      .toBe("9,007,199,254,740,993.10");
-    expect(container.querySelector('[data-side="ask"] .lit-book-size')?.textContent).toBe("0.3");
-    expect(container.querySelector(".lit-book-spread strong")?.textContent).toBe("0.1");
+    expect(row?.querySelector("b")?.textContent).toBe("9,007,199,254,740,993.10");
+    expect(row?.querySelectorAll("span")[0]?.textContent).toBe("0.3");
+    expect(container.querySelector(".lit-book-mid span")?.textContent).toContain("Spread 0.1");
   });
 });
 

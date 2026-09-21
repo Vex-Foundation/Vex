@@ -129,6 +129,18 @@ export async function applyToolBatchOutcome(args: {
     return { kind: "continue" };
   }
 
+  if (batchOutcome.kind === "lighter_setup_pause") {
+    return {
+      kind: "return",
+      result: {
+        text: null,
+        toolCallsMade: args.totalToolCalls,
+        pendingApprovals: args.pendingApprovals,
+        stopReason: "user_form_required",
+      },
+    };
+  }
+
   // Normal batch complete
   await args.mergeOperatorInstructions();
   return { kind: "continue" };

@@ -30,6 +30,7 @@ import {
 } from "./approval-runtime/snapshot.js";
 import { withApprovalDecisionTransaction } from "./approval-runtime/snapshot/locked-transaction.js";
 import { applyApproveSideEffects } from "./approval-runtime/post-tx.js";
+import { readDeskApprovalDispatch } from "./approval-runtime/desk/dispatch-flight.js";
 // Every generic decision entry point below goes through the ORIGIN-AWARE
 // dispatcher, never through `applyRejectSideEffects` directly. For an agent
 // row it IS `applyRejectSideEffects`, unchanged; for a Studio row it settles
@@ -98,6 +99,23 @@ export {
 } from "./approval-runtime/studio/reconcile-dispatching.js";
 
 /**
+ * The desk lane (migration 165): the Lighter desk's own buttons prepare and
+ * enqueue an approval with no model turn, and recover their abandoned
+ * dispatches at process start the same way Studio does.
+ */
+export {
+  DESK_PREPARE_TOOL_IDS,
+  prepareDeskApproval,
+  type DeskPrepareOutcome,
+  type DeskPrepareToolId,
+} from "./approval-runtime/desk/prepare.js";
+export {
+  reconcileAbandonedDeskDispatches,
+  reconcileDeskApprovalLifecycle,
+  type DeskApprovalLifecycleResult,
+} from "./approval-runtime/desk/reconcile.js";
+
+/**
  * The same-process repair owner for terminal writes that FAILED. Retries the
  * write and never a dispatch; see its module header.
  */
@@ -151,6 +169,18 @@ export async function prepareApprove(
       throw new Error(`Approval ${approvalId} not found`);
 
     case "cached_approved":
+      if (snapshot.row.origin === "desk") {
+        const shared = readDeskApprovalDispatch(approvalId);
+        if (shared !== null) return shared;
+        if ((snapshot.row.execution_status ?? "not_started") === "not_started") {
+          return applyApproveSideEffects(approvalId, {
+            type: "approved_in_tx",
+            row: snapshot.row,
+            queueResolvedAt:
+              toIsoOrNull(snapshot.row.queue_resolved_at) ?? toIsoNow(),
+          });
+        }
+      }
       return {
         kind: "cached_approved",
         approvalId,

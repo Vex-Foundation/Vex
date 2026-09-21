@@ -21,7 +21,7 @@ import {
 import { createSession } from "../../database/sessions-db.js";
 import { log } from "../../logger/index.js";
 import { registerHandler } from "../register-handler.js";
-import { invalidWalletSelectionError, resolveWalletRef } from "../_wallet-refs.js";
+import { deskWalletRef, invalidWalletSelectionError, resolveWalletRef } from "../_wallet-refs.js";
 
 export function registerSessionsCreateHandler(): () => void {
   return registerHandler({
@@ -40,7 +40,14 @@ export function registerSessionsCreateHandler(): () => void {
         );
         return err(invalidWalletSelectionError(ctx.requestId));
       }
-      const outcome = await createSession(input, { evm, solana });
+      // A Lighter desk session has no wallet picker in front of it, so an
+      // absent selection means "nobody was asked", not "chat only".
+      // Only an agent-mode create carries a workspace; a mission never does.
+      const workspace = input.mode === "agent" ? input.workspace ?? null : null;
+      const outcome = await createSession(input, {
+        evm: deskWalletRef(workspace, evm),
+        solana,
+      });
       if (outcome.ok) {
         log.info(
           `[ipc:vex:sessions:create] ok ` +

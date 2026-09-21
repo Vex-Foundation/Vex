@@ -1,9 +1,13 @@
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
 import type {
+  LighterAccountSetupStatus,
   LighterTradingAccount,
   LighterTradingEnvironment,
+  LighterTradingFills,
   LighterTradingMarketList,
+  LighterOnboardingChecklist,
   LighterTradingResolution,
   LighterTradingSnapshot,
 } from "@shared/schemas/lighter-trading.js";
@@ -111,4 +115,106 @@ export function useLighterTradingAccount(
     refetchInterval: enabled ? ACCOUNT_REFETCH_MS : false,
     refetchIntervalInBackground: false,
   });
+}
+
+export function useLighterTradingFills(
+  environment: LighterTradingEnvironment,
+  enabled: boolean,
+): UseQueryResult<Result<LighterTradingFills>> {
+  return useQuery({
+    queryKey: ["lighterTrading", "fills", environment],
+    queryFn: ({ signal }) =>
+      abortable(window.vex.lighterTrading.listFills({ environment, limit: 50 }), signal),
+    enabled,
+    staleTime: 5_000,
+    refetchInterval: enabled ? ACCOUNT_REFETCH_MS : false,
+    refetchIntervalInBackground: false,
+  });
+}
+
+// The ticket gate's checklist: three address-only reads, refreshed while the
+// gate is up so a step the chat just completed shows as done within a poll.
+const ONBOARDING_REFETCH_MS = 20_000;
+
+export function useLighterOnboardingChecklist(
+  sessionId: string | null,
+  environment: LighterTradingEnvironment,
+  enabled: boolean,
+): UseQueryResult<Result<LighterOnboardingChecklist>> {
+  const active = enabled && sessionId !== null;
+  return useQuery({
+    queryKey: ["lighterTrading", "onboarding", environment, sessionId],
+    queryFn: ({ signal }) =>
+      abortable(
+        window.vex.lighterTrading.getOnboardingChecklist({ sessionId: sessionId ?? "", environment }),
+        signal,
+      ),
+    enabled: active,
+    staleTime: 5_000,
+    refetchInterval: active ? ONBOARDING_REFETCH_MS : false,
+    refetchIntervalInBackground: false,
+  });
+}
+
+// The account-setup modal's own read (balance, minimum deposit, fee terms).
+// The modal shows this once on open to size the amount field; once its chain
+// is running, the chain's own poll loop pushes fresher reads into this exact
+// query's cache (see `useLighterAccountSetup`), so this hook needs no
+// interval of its own - a live-in-flight step is never reading stale data.
+export function lighterAccountSetupStatusQueryKey(
+  environment: LighterTradingEnvironment,
+  sessionId: string | null,
+) {
+  return ["lighterTrading", "accountSetup", environment, sessionId] as const;
+}
+
+export function useLighterAccountSetupStatus(
+  sessionId: string | null,
+  environment: LighterTradingEnvironment,
+  enabled: boolean,
+): UseQueryResult<Result<LighterAccountSetupStatus>> {
+  const active = enabled && sessionId !== null;
+  return useQuery({
+    queryKey: lighterAccountSetupStatusQueryKey(environment, sessionId),
+    queryFn: ({ signal }) =>
+      abortable(
+        window.vex.lighterTrading.getAccountSetupStatus({ sessionId: sessionId ?? "", environment }),
+        signal,
+      ),
+    enabled: active,
+    staleTime: 5_000,
+    refetchInterval: false,
+  });
+}
+
+/** How long to coalesce a burst of stream frames before one refetch. */
+const ACCOUNT_ACTIVITY_DEBOUNCE_MS = 400;
+
+/**
+ * Refreshes the account and fills reads when main's authenticated stream
+ * reports activity for this environment, so a fill or cancel shows up in the
+ * dock within a second instead of at the next poll.
+ */
+export function useLighterAccountActivityRefresh(
+  environment: LighterTradingEnvironment,
+  enabled: boolean,
+): void {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!enabled) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const off = window.vex.lighterTrading.onAccountActivity((event) => {
+      if (event.environment !== environment) return;
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        void queryClient.invalidateQueries({ queryKey: ["lighterTrading", "account", environment] });
+        void queryClient.invalidateQueries({ queryKey: ["lighterTrading", "fills", environment] });
+      }, ACCOUNT_ACTIVITY_DEBOUNCE_MS);
+    });
+    return () => {
+      off();
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [enabled, environment, queryClient]);
 }
