@@ -547,12 +547,17 @@ func TestDialPipeStopsWaitingWhenItsContextIsCancelled(t *testing.T) {
 	const cancelAfter = 50 * time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	// `started` is captured BEFORE the cancel timer is armed, so the cancel
+	// fires no earlier than `started + cancelAfter` and `elapsed` cannot dip
+	// under `cancelAfter`. Arming the timer first scheduled the cancel from a
+	// moment just before `started`, so on a loaded runner `elapsed` could land
+	// a hair below `cancelAfter` and trip the lower-bound check below.
+	started := time.Now()
 	// CANCELLED MID-WAIT, not before the first attempt: the loop has to be
 	// inside its 10 ms wait by the time this fires.
 	timer := time.AfterFunc(cancelAfter, cancel)
 	defer timer.Stop()
 
-	started := time.Now()
 	conn, err := dialPipeWithin(ctx, name, budget, resolveServerUserSID, resolveCurrentUserSID)
 	elapsed := time.Since(started)
 	if conn != nil {
