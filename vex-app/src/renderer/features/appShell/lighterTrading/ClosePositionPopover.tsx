@@ -35,7 +35,15 @@ import { useUiStore } from "../../../stores/uiStore.js";
 
 /** Clamp margin between the card and the viewport edges, as Menu uses. */
 const MARGIN = 12;
-/** Laid out but unpainted, so the first measure reads real dimensions. */
+/**
+ * Laid out but unpainted, so the first measure reads real dimensions.
+ *
+ * `position: fixed` is NOT here: it belongs to `.lit-close-card`, and it has
+ * to arrive with the class rather than with the placement, because this style
+ * is what the card is wearing WHILE it is measured. A card still in static
+ * flow measures the full viewport width and the placement below then clamps
+ * it to the left margin.
+ */
 const MEASURE_STYLE: CSSProperties = { visibility: "hidden", left: 0, top: 0 };
 
 export function ClosePositionPopover({
@@ -90,7 +98,7 @@ export function ClosePositionPopover({
     const top = fitsBelow
       ? below
       : Math.max(MARGIN, anchor.top - height - 6);
-    setFixedPos({ position: "fixed", left, top });
+    setFixedPos({ left, top });
   }, [open]);
 
   // Focus lands on the chosen portion so the keyboard path never has to travel

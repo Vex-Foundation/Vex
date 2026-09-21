@@ -240,6 +240,15 @@
 }
 
 .lit-close-card {
+  /* FIXED HERE, NOT IN THE COMPONENT, and it is not only about where the card
+   * ends up. The owner measures this box to place it, and a card left in
+   * static flow is a block in `document.body`: it measures the FULL VIEWPORT
+   * WIDTH, the placement maths clamps to the left margin, and the card lands
+   * at the far left of the window instead of under its key. Measured at a
+   * 1990px viewport: 1990px static versus 230px fixed. `.vex-menu-portal`
+   * carries `position: fixed` in its own stylesheet for the same reason.
+   * The component supplies `left` and `top` and nothing else. */
+  position: fixed;
   /* The portaled-surface layer, the same one `ui-primitives/menu.css` puts
    * `.vex-menu-portal` on: this card is body-portaled and fixed for exactly
    * the reason a portaled menu is, so it belongs at the same height rather
