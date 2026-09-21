@@ -36,6 +36,8 @@ const mocks = vi.hoisted(() => ({
   assertApprovalBinding: vi.fn(),
   getExecutor: vi.fn(),
   executeRegistration: vi.fn(),
+  listUnresolvedDeposits: vi.fn(),
+  repairDeposit: vi.fn(),
 }));
 
 vi.mock("@tools/lighter/client.js", () => ({
@@ -58,6 +60,19 @@ vi.mock("@vex-agent/db/repos/lighter-key-registration-intents.js", () => ({
     mocks.markApproved(input),
   renewPristineApprovedLighterKeyRegistrationIntentWith: (_client: unknown, input: unknown) =>
     mocks.renewPristineApproved(input),
+}));
+
+vi.mock("@vex-agent/db/repos/lighter-onboarding-intents.js", () => ({
+  listUnresolvedDepositsForWallet: mocks.listUnresolvedDeposits,
+}));
+
+vi.mock("@vex-agent/sync/lighter-deposit-repair.js", () => ({
+  buildProductionLighterDepositRepairDeps: () => ({ marker: "repair-deps" }),
+  repairLighterDepositIntent: mocks.repairDeposit,
+}));
+
+vi.mock("@utils/logger.js", () => ({
+  default: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock("@vex-agent/db/repos/lighter-integration-settings.js", () => ({
@@ -193,6 +208,8 @@ beforeEach(() => {
   mocks.adoptPristineApproval.mockResolvedValue(null);
   mocks.assertApprovalBinding.mockResolvedValue(undefined);
   mocks.getExecutor.mockReturnValue(null);
+  mocks.listUnresolvedDeposits.mockResolvedValue([]);
+  mocks.repairDeposit.mockResolvedValue({ resolution: "awaiting_lighter" });
 });
 
 describe("lighter.key.register.prepare", () => {
@@ -211,6 +228,76 @@ describe("lighter.key.register.prepare", () => {
       enabled: true,
     });
     expect(result.data).toMatchObject({ status: "approval_prepared" });
+  });
+
+  /**
+   * `account_resolved` is written by the 30-second deposit repair sweep, while
+   * Lighter credits the account in seconds. Everything that watches the live
+   * account - the setup modal's deposit poll above all - arrives here inside
+   * that window, so the handler proves the deposit itself rather than refusing
+   * a key for an account that already exists.
+   */
+  it("reconciles this wallet's deposit before refusing an unresolved account", async () => {
+    mocks.getWorkflow
+      .mockResolvedValueOnce({ workflowState: "deposit_l2_pending", resolvedAccountIndex: null })
+      .mockResolvedValue({ workflowState: "account_resolved", resolvedAccountIndex: 42 });
+    mocks.listUnresolvedDeposits.mockResolvedValue([{ intentId: "deposit-1" }]);
+    mocks.repairDeposit.mockResolvedValue({ resolution: "credited" });
+
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.listUnresolvedDeposits).toHaveBeenCalledWith("core", WALLET);
+    expect(mocks.repairDeposit).toHaveBeenCalledOnce();
+    expect(result.data).toMatchObject({ status: "approval_prepared" });
+  });
+
+  it("still refuses when the deposit cannot be proven credited", async () => {
+    mocks.getWorkflow.mockResolvedValue({
+      workflowState: "deposit_l2_pending",
+      resolvedAccountIndex: null,
+    });
+    mocks.listUnresolvedDeposits.mockResolvedValue([{ intentId: "deposit-1" }]);
+    mocks.repairDeposit.mockResolvedValue({ resolution: "awaiting_lighter" });
+
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("Phase 2-resolved account");
+    expect(mocks.reserve).not.toHaveBeenCalled();
+  });
+
+  it("a repair that throws leaves the refusal exactly as it was", async () => {
+    mocks.getWorkflow.mockResolvedValue({
+      workflowState: "deposit_l2_pending",
+      resolvedAccountIndex: null,
+    });
+    mocks.listUnresolvedDeposits.mockResolvedValue([{ intentId: "deposit-1" }]);
+    mocks.repairDeposit.mockRejectedValue(new Error("lighter unreachable"));
+
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("Phase 2-resolved account");
+  });
+
+  it("does not reconcile when the account is already resolved", async () => {
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.listUnresolvedDeposits).not.toHaveBeenCalled();
   });
 
   it("adopts one live wallet-owned master account before reserving a key slot", async () => {

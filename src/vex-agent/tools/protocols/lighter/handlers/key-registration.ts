@@ -8,6 +8,7 @@ import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deplo
 import { buildLighterKeyRegistrationApprovalDisclosure } from "@tools/lighter/wallet-funding/key-registration-approval-disclosure.js";
 import type { LighterEnvironment } from "@tools/lighter/constants.js";
 import * as keyIntentsRepo from "@vex-agent/db/repos/lighter-key-registration-intents.js";
+import { listUnresolvedDepositsForWallet } from "@vex-agent/db/repos/lighter-onboarding-intents.js";
 import {
   isLighterIntegrationEnabled,
   setLighterIntegrationEnabled,
@@ -22,6 +23,11 @@ import {
   withSessionControlLocks,
 } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { resolveSelectedAddress, walletScopeErrorToResult } from "@vex-agent/tools/internal/wallet/resolve.js";
+import {
+  buildProductionLighterDepositRepairDeps,
+  repairLighterDepositIntent,
+} from "@vex-agent/sync/lighter-deposit-repair.js";
+import logger from "@utils/logger.js";
 import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "../../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
 import type { ProtocolHandler } from "../../types.js";
@@ -63,6 +69,53 @@ async function resolveOrAdoptExistingAccount(
     return workflow;
   }
   throw new Error("The Lighter onboarding workflow changed while adopting the owned account.");
+}
+
+/**
+ * The deposit that precedes this key, reconciled ON DEMAND rather than waited
+ * for.
+ *
+ * `account_resolved` - the state this handler requires - is written only when
+ * a deposit is PROVEN credited, and that proof is produced by the 30-second
+ * background repair sweep. Lighter itself credits the L2 account in seconds,
+ * so anything watching the live account (the setup modal polls its collateral)
+ * legitimately sees the deposit land and moves on to the key while the local
+ * proof is still up to half a minute away. That window refused a key
+ * registration for an account that plainly exists.
+ *
+ * So the same evidence-only repair runs here, for this wallet's own unresolved
+ * deposits, exactly as `lighter.deposit.status` runs it. It signs nothing,
+ * sends nothing and invents nothing: a deposit that is not provably credited
+ * stays unresolved and the refusal below still stands.
+ */
+async function reconcileDepositsBehindKeyRegistration(
+  environment: LighterEnvironment,
+  walletAddress: string,
+): Promise<boolean> {
+  let pending;
+  try {
+    pending = await listUnresolvedDepositsForWallet(environment, walletAddress);
+  } catch {
+    return false;
+  }
+  if (pending.length === 0) return false;
+  let advanced = false;
+  const deps = buildProductionLighterDepositRepairDeps();
+  for (const intent of pending) {
+    try {
+      const report = await repairLighterDepositIntent(intent, deps);
+      if (report.resolution === "credited") advanced = true;
+    } catch (cause) {
+      // A read that will not answer leaves the deposit exactly as it was; the
+      // sweep owns the retry. Key registration then refuses as before.
+      logger.warn("lighter.key_registration.deposit_reconcile_failed", {
+        environment,
+        intentId: intent.intentId,
+        errorKind: cause instanceof Error ? cause.name : "UnknownError",
+      });
+    }
+  }
+  return advanced;
 }
 
 export function buildKeyRegistrationApprovalFollowUp(
@@ -309,7 +362,23 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));
     }
-    if (workflow?.resolvedAccountIndex === null || workflow === null) {
+    // No resolved account yet: a deposit of this wallet's may already be
+    // credited on Lighter and simply not proven locally (see
+    // `reconcileDepositsBehindKeyRegistration`). Prove it now, then ask again.
+    if (workflow === null || workflow.resolvedAccountIndex === null) {
+      if (await reconcileDepositsBehindKeyRegistration(environment.value, walletAddress)) {
+        try {
+          workflow = await resolveOrAdoptExistingAccount(
+            sessionId,
+            environment.value,
+            walletAddress,
+          );
+        } catch (error) {
+          return fail(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+    if (workflow === null || workflow.resolvedAccountIndex === null) {
       return fail(
         "Lighter key registration requires a Phase 2-resolved account owned by the selected wallet.",
       );
