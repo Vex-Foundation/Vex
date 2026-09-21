@@ -30,6 +30,8 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { CLOSE_PORTIONS, type ClosePortion, type LighterPositionRow } from "./account-model.js";
+import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
+import { useUiStore } from "../../../stores/uiStore.js";
 
 /** Clamp margin between the card and the viewport edges, as Menu uses. */
 const MARGIN = 12;
@@ -45,6 +47,16 @@ export function ClosePositionPopover({
   readonly onCloseMarket: (portion: ClosePortion) => void;
   readonly onCloseLimit: (portion: ClosePortion) => void;
 }): JSX.Element {
+  // THE PORTAL LEAVES THE DESK'S TOKEN SCOPE, so it has to carry it. Every
+  // `--lit-*` token is defined on `.lit-desk, .lit-chat-frame`, never on
+  // `:root`, and this card renders into `document.body` - outside both. The
+  // first build shipped without them and every `var(--lit-…)` resolved to
+  // nothing: `border: 1px solid var(--lit-line)` is an invalid shorthand at
+  // computed-value time, so the card lost its border, its panel and its ink
+  // and drew as bare text over the chart. `DeskApprovalDialog` answers the
+  // same problem the same way for its own portaled surface.
+  const theme = useUiStore((state) => state.theme);
+  const environment = useLighterAnalysisStore((state) => state.desk.environment);
   const [open, setOpen] = useState(false);
   const [portion, setPortion] = useState<ClosePortion>(1);
   const [fixedPos, setFixedPos] = useState<CSSProperties | null>(null);
@@ -58,9 +70,10 @@ export function ClosePositionPopover({
     if (returnFocus) triggerRef.current?.focus();
   }, []);
 
-  // Place above the row by default: these rows sit low in a bottom panel, so
-  // a card opening downward would be clamped against the viewport floor on
-  // the positions that need it most.
+  // DIRECTLY UNDER THE KEY, right edges aligned, so the card reads as that
+  // button's own menu rather than as something that appeared elsewhere on the
+  // screen. It flips above only when the viewport genuinely has no room below,
+  // which these rows can hit sitting at the foot of the account panel.
   useLayoutEffect(() => {
     if (!open) return;
     const anchor = triggerRef.current?.getBoundingClientRect();
@@ -68,12 +81,15 @@ export function ClosePositionPopover({
     if (anchor === undefined || card === null) return;
     const width = card.offsetWidth;
     const height = card.offsetHeight;
-    const above = anchor.top - height - 6;
     const left = Math.min(
       Math.max(MARGIN, anchor.right - width),
-      window.innerWidth - width - MARGIN,
+      Math.max(MARGIN, window.innerWidth - width - MARGIN),
     );
-    const top = above >= MARGIN ? above : Math.min(anchor.bottom + 6, window.innerHeight - height - MARGIN);
+    const below = anchor.bottom + 6;
+    const fitsBelow = below + height <= window.innerHeight - MARGIN;
+    const top = fitsBelow
+      ? below
+      : Math.max(MARGIN, anchor.top - height - 6);
     setFixedPos({ position: "fixed", left, top });
   }, [open]);
 
@@ -128,7 +144,9 @@ export function ClosePositionPopover({
       role="dialog"
       aria-label={title}
       data-vex-area="lighter-close-position"
-      className="lit-close-card"
+      data-lighter-theme={theme}
+      data-lighter-environment={environment}
+      className="lit-chat-frame lit-close-card"
       style={fixedPos ?? MEASURE_STYLE}
     >
       <p className="lit-close-card-title">{title}</p>

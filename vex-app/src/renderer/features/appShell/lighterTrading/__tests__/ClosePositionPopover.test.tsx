@@ -124,6 +124,24 @@ describe("ClosePositionPopover", () => {
     expect(onCloseMarket).toHaveBeenCalledWith(0.25);
   });
 
+  it("carries the desk's token scope into the portal", () => {
+    // Every `--lit-*` token is defined on `.lit-desk, .lit-chat-frame`, never
+    // on `:root`, and this card renders into `document.body` - outside both.
+    // Shipped without the scope class the card lost its panel, its border and
+    // its ink and drew as bare text over the chart, because
+    // `border: 1px solid var(--lit-line)` is an invalid shorthand once the
+    // token resolves to nothing.
+    renderCard();
+    fireEvent.click(trigger());
+    const card = screen.getByRole("dialog", { name: "Close BTC long" });
+    expect(card.className).toContain("lit-chat-frame");
+    expect(card.getAttribute("data-lighter-environment")).not.toBeNull();
+    expect(card.getAttribute("data-lighter-theme")).not.toBeNull();
+    // And it really is outside the desk subtree, which is why it needs them.
+    expect(card.closest(".lit-desk")).toBeNull();
+    expect(card.parentElement).toBe(document.body);
+  });
+
   it("reports its state on the trigger and toggles shut on a second press", () => {
     renderCard();
     expect(trigger().getAttribute("aria-expanded")).toBe("false");
