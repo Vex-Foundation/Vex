@@ -1760,7 +1760,11 @@ describe("Lighter approved create execution pipeline", () => {
         orderId: "123",
       }),
     });
-    expect(d.client.getAccountInactiveOrders).toHaveBeenCalledTimes(1);
+    // Both lists are read on every attempt, so the two rounds it took to see
+    // the resting order cost two reads of each. Active still wins the round it
+    // appears in.
+    expect(d.client.getAccountActiveOrders).toHaveBeenCalledTimes(2);
+    expect(d.client.getAccountInactiveOrders).toHaveBeenCalledTimes(2);
     expect(d.client.getAccountTrades).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       status: "provider_confirmed",
@@ -2328,7 +2332,122 @@ function filledInactiveOrder() {
   });
 }
 
+describe("Lighter create execution: the settlement poll", () => {
+  it("takes an inactive-order answer on the first round, without waiting", async () => {
+    // A market IOC never rests, so it is inactive from the moment it executes.
+    // The poll used to read active orders three times before ever looking at
+    // the list the answer was always in, sleeping between each miss.
+    const d = deps();
+    vi.mocked(d.client.getAccountActiveOrders).mockResolvedValue({ code: 200, orders: [] });
+    vi.mocked(d.client.getAccountInactiveOrders)
+      // The pre-submission duplicate check reads this list too, and must not
+      // see the order it is about to send.
+      .mockResolvedValueOnce({ code: 200, orders: [] })
+      .mockResolvedValue({ code: 200, orders: [filledInactiveOrder()] });
+
+    const result = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+
+    expect(result).toMatchObject({ status: "provider_confirmed", executionState: "filled" });
+    // One pre-submission check of each list, then ONE settlement round that
+    // answers. `wait` never running is the proof the poll did not retry.
+    expect(d.client.getAccountInactiveOrders).toHaveBeenCalledTimes(2);
+    expect(d.client.getAccountActiveOrders).toHaveBeenCalledTimes(2);
+    expect(d.wait).not.toHaveBeenCalled();
+  });
+
+  it("waits the time still left until the provider's predicted execution", async () => {
+    // `predicted_execution_time_ms` is an INSTANT. Read as a duration it fed
+    // the clamp an epoch figure, so every wait pinned to the 2s ceiling.
+    const d = deps({
+      client: {
+        ...deps().client,
+        sendTx: vi.fn(async () => ({
+          code: 200,
+          message: PROVIDER_SUBMIT_MESSAGE,
+          tx_hash: TX_HASH,
+          predicted_execution_time_ms: NOW + 400,
+          volume_quota_remaining: 99,
+        })),
+      },
+    });
+    vi.mocked(d.client.getAccountActiveOrders).mockResolvedValue({ code: 200, orders: [] });
+    vi.mocked(d.client.getAccountInactiveOrders).mockResolvedValue({ code: 200, orders: [] });
+
+    await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+
+    expect(d.wait).toHaveBeenNthCalledWith(1, 400);
+    expect(d.wait).toHaveBeenNthCalledWith(2, 800);
+  });
+
+  it("floors the wait when the predicted instant has already passed", async () => {
+    const d = deps({
+      client: {
+        ...deps().client,
+        sendTx: vi.fn(async () => ({
+          code: 200,
+          message: PROVIDER_SUBMIT_MESSAGE,
+          tx_hash: TX_HASH,
+          predicted_execution_time_ms: NOW - 5_000,
+          volume_quota_remaining: 99,
+        })),
+      },
+    });
+    vi.mocked(d.client.getAccountActiveOrders).mockResolvedValue({ code: 200, orders: [] });
+    vi.mocked(d.client.getAccountInactiveOrders).mockResolvedValue({ code: 200, orders: [] });
+
+    await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+
+    // Already due: poll promptly rather than sleeping out a ceiling.
+    expect(d.wait).toHaveBeenNthCalledWith(1, 100);
+  });
+});
+
 describe("Lighter create execution: an ORDER-evidence fill still reaches the ledger", () => {
+  it("spends no read when the ledger already holds the whole reported fill", async () => {
+    // The account order stream watches the same order and on a fast fill
+    // records the trade first. This follow-up then re-derived the market, the
+    // assets and the trade page only to report that it held nothing new -
+    // six seconds on the trader's critical path, measured live.
+    const { recordFill } = fillLedger();
+    const fills = fillObservationDeps(recordFill);
+    // Level with the venue: the inactive order reports `filled_base_amount: "1"`.
+    vi.mocked(fills.recordedFillBaseSize).mockResolvedValue("1");
+    const d = deps({ fills });
+    vi.mocked(d.client.getAccountInactiveOrders)
+      .mockResolvedValueOnce({ code: 200, orders: [] })
+      .mockResolvedValue({ code: 200, orders: [filledInactiveOrder()] });
+    const result = await executeApprovedLighterCreateOrder({
+      plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d,
+    });
+
+    expect(result).toMatchObject({ status: "provider_confirmed", executionState: "filled" });
+    // The outcome still committed; only the redundant follow-up was skipped.
+    // The one remaining trade read is the pre-submission duplicate check,
+    // which runs before anything is signed.
+    expect(d.client.getAccountTrades).toHaveBeenCalledTimes(1);
+    expect(recordFill).not.toHaveBeenCalled();
+  });
+
+  it("still reads when the ledger is BEHIND the reported fill, not merely non-empty", async () => {
+    // The gate is a completeness test. A partial fill already recorded must
+    // never excuse the rest, which is how gating on mere existence loses a
+    // late second fill for good.
+    const { recordFill } = fillLedger();
+    const fills = fillObservationDeps(recordFill);
+    vi.mocked(fills.recordedFillBaseSize).mockResolvedValue("0.5");
+    const d = deps({ fills });
+    vi.mocked(d.client.getAccountInactiveOrders)
+      .mockResolvedValueOnce({ code: 200, orders: [] })
+      .mockResolvedValue({ code: 200, orders: [filledInactiveOrder()] });
+    vi.mocked(d.client.getAccountTrades)
+      .mockResolvedValueOnce({ code: 200, trades: [] })
+      .mockResolvedValue({ code: 200, trades: [settledTrade()] });
+
+    await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+
+    expect(recordFill).toHaveBeenCalled();
+  });
+
   it("records the fill an inactive-order confirmation proves", async () => {
     const { rows, recordFill } = fillLedger();
     const d = deps({ fills: fillObservationDeps(recordFill) });
