@@ -79,8 +79,8 @@ free. Both texts live on the tool
 | WalletTrackToken | Track a token in the local wallet view | internal | no | no | yes | - | 1044 | yes | none |
 | WalletWrapConfirm | Broadcast a prepared wrap or unwrap | internal | no | yes | yes | - | 2023 | yes | none |
 | WalletWrapPrepare | Prepare a native / wrapped-native conversion | internal | no | no | yes | - | 2022 | yes | none |
-| lighter_core_onboarding_status | Check Lighter Core onboarding readiness | internal | yes | no | yes | - | 1352 | yes | none (read) |
-| lighter_rhc_onboarding_status | Check Robinhood Chain Lighter readiness | internal | yes | no | yes | - | 1350 | yes | none (read) |
+| lighter_core_onboarding_status | Check Lighter Core onboarding readiness | internal | yes | no | yes | - | 1304 | yes | none (read) |
+| lighter_rhc_onboarding_status | Check Robinhood Chain Lighter readiness | internal | yes | no | yes | - | 1333 | yes | none (read) |
 | vex_ToolDescribe | Read one tool's whole contract | internal | yes | no | yes | - | 1812 | yes | none |
 | vex_ToolSearch | Search the protocol tool catalog | internal | yes | no | yes | - | 1500 | yes | none |
 

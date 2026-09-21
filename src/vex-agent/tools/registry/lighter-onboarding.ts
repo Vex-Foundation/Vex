@@ -6,6 +6,16 @@ interface LighterOnboardingShortcutDefinition {
   readonly environmentShortName: "RHC" | "Core";
   readonly settlementAsset: "USDG" | "USDC";
   readonly settlementNetwork: string;
+  /**
+   * When to fire, worded so the pair leaves NO ambiguous case between them.
+   * "I want to start trading on Lighter" names no environment, and a trigger
+   * that only recognised its own name left the model to deliberate over which
+   * tool it meant - the one thing this hot path exists to avoid. The unnamed
+   * case belongs to RHC, which is what `LIGHTER_DEFAULT_ENVIRONMENT` already
+   * resolves it to everywhere else, and the Core twin says so rather than
+   * staying silent and inviting the same guess.
+   */
+  readonly triggerClause: string;
 }
 
 function onboardingParameters(
@@ -49,6 +59,7 @@ function defineOnboardingShortcut(
     environmentShortName,
     settlementAsset,
     settlementNetwork,
+    triggerClause,
   } = definition;
   return {
     name,
@@ -64,7 +75,7 @@ function defineOnboardingShortcut(
     // happens on handoff, and the shape of what comes back. Anything the
     // parameter schema already says is not repeated here.
     description:
-      `Check the selected Vex wallet's live Lighter onboarding readiness on ${environmentName} (${environmentShortName}) in ONE read-only call, fixed to ${environmentShortName}: wallet ${settlementAsset} on ${settlementNetwork}, native ETH for gas, collateral and account ownership, gateway allowance, deposit minimum, and local trading-credential readiness. When the user says they want to start or set up trading on ${environmentShortName}, call this immediately as the first and only tool in the batch; do not narrate or reason through setup before calling it. Prefer it for ${environmentShortName} setup, readiness, funding checks and 'can I deposit?' questions; do NOT run protocol discovery or a separate wallet-balance read first. Direct deposits are the exception: when the user names an amount to deposit or fund, skip this onboarding read and WalletBalances, use ToolSearch once to select lighter.deposit.prepare, and pass that amount unchanged. If the desktop setup handoff opens, the runtime ends the turn and the modal owns the flow; do not continue setup in chat. Otherwise answer directly from its deterministic result unless the call failed. Returns balances, account collateral, trading-key and managed-access readiness, a funding assessment with amounts and shortfalls, a plan of required legs, the next-step route with its toolId, and any named-trade minimum. Read-only: moves no funds, signs nothing, creates no approval, registers no key.`,
+      `Check the selected Vex wallet's live Lighter onboarding readiness on ${environmentName} in ONE read-only call, fixed to ${environmentShortName}: wallet ${settlementAsset} on ${settlementNetwork}, native ETH for gas, collateral and account ownership, gateway allowance, deposit minimum, and local trading-credential readiness. ${triggerClause} Prefer it for ${environmentShortName} setup, readiness, funding checks and 'can I deposit?' questions; do NOT run protocol discovery or a wallet-balance read first. Direct deposits are the exception: when the user names an amount to deposit or fund, skip this read and WalletBalances, use ToolSearch once to select lighter.deposit.prepare, and pass that amount unchanged. If the setup handoff opens, the runtime ends the turn and the modal owns it; do not continue setup in chat. Otherwise answer from its result unless the call failed. Returns balances, account collateral, trading-key and managed-access readiness, a funding assessment with amounts and shortfalls, a plan of required legs, the next-step route with its toolId, and any named-trade minimum. Read-only: moves no funds, signs nothing, creates no approval or key.`,
     returns:
       `RETURNS source and provenance, the fixed ${environmentShortName} environment, walletAddress, walletSettlementUnits and walletSettlementAllowanceUnits (${settlementAsset} base-unit strings), walletNativeBalanceWei (ETH gas balance only), walletCanAcquireSettlement, accountExists, nullable accountIndex, accountCollateralUnits, tradingKeyRegistered, requiredCollateralUnits and minimumDepositUnits. fundingAssessment carries the funding decision, exact base-unit amounts, human-readable ${settlementAsset} displays, shortfalls and nullable deposit amounts. plan carries ready, blocked, required legs with reasons, and nullable depositUnits/acquireUnits. managedTradingAccessActive and nullable managedTradingReadiness report local trading-access checks and their reason, never credential material. tradeMinimumAssessment is null without a named trade; otherwise it compares the requested trade with the live market minimum and combined balances. fundingRoute and tradingAccessRoute name the next step with nullable toolId/params; depositAmountProvided and userGuidance explain how to proceed. tradingLimits carries this wallet's live per-market leverage and the agent's capital share, which the user sets in Settings -> Lighter -> Trading setup and no Vex tool can change. These are readiness observations and suggested next steps, not an approval, registered key, deposit or placed order. Invalid inputs or unavailable reads return a failure explanation, not a readiness result.`,
     parameters: onboardingParameters(definition),
@@ -85,6 +96,8 @@ export const LIGHTER_ONBOARDING_TOOLS: readonly ToolDef[] = [
     environmentShortName: "RHC",
     settlementAsset: "USDG",
     settlementNetwork: "Robinhood Chain",
+    triggerClause:
+      "When the user wants to start, set up or begin trading on Lighter and names RHC or NO environment at all, call this immediately as the first and only tool in the batch; never narrate, reason or ask which environment first - unnamed means RHC.",
   }),
   defineOnboardingShortcut({
     name: "lighter_core_onboarding_status",
@@ -92,5 +105,7 @@ export const LIGHTER_ONBOARDING_TOOLS: readonly ToolDef[] = [
     environmentShortName: "Core",
     settlementAsset: "USDC",
     settlementNetwork: "Ethereum mainnet",
+    triggerClause:
+      "When the user NAMES Core and wants to start or set up trading, call this immediately as the first and only tool in the batch; never narrate or reason first. An unnamed environment is the RHC twin's, not this one.",
   }),
 ];
