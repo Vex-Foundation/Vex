@@ -40,6 +40,35 @@ import { resolveLighterAccountSetupStatus, resolveLighterOnboardingChecklist } f
 import { reconcileSetupKeyRegistration } from "../lighter/key-registration-reconcile.js";
 import { registerHandler } from "./register-handler.js";
 
+/**
+ * A wallet-scope refusal is not a provider outage and must not be dressed as
+ * one. "Temporarily unavailable" told a trader to wait for a condition that
+ * would never clear on its own - a desk session with no wallet bound stays
+ * that way - and hid the one thing they could act on.
+ */
+const WALLET_SCOPE_CODES: ReadonlySet<string> = new Set([
+  "WALLET_NOT_SELECTED",
+  "WALLET_NOT_CONFIGURED",
+  "WALLET_SCOPE_MISMATCH",
+]);
+
+function walletScopeRefusal(cause: unknown, correlationId: string): Result<never> | null {
+  const code = (cause as { code?: unknown } | null)?.code;
+  if (typeof code !== "string" || !WALLET_SCOPE_CODES.has(code)) return null;
+  return err({
+    code: "wallets.invalid_selection",
+    domain: "wallets",
+    message:
+      code === "WALLET_NOT_CONFIGURED"
+        ? "No EVM wallet is configured yet. Create one before setting up Lighter."
+        : "This session has no usable EVM wallet. Start a new Lighter session and try again.",
+    retryable: false,
+    userActionable: true,
+    redacted: true,
+    correlationId,
+  });
+}
+
 /** Both reads share the same provider-unavailable shape; only the copy differs. */
 function unavailable(message: string, correlationId: string): Result<never> {
   return err({
@@ -70,7 +99,8 @@ export function registerLighterOnboardingHandlers(): ReadonlyArray<() => void> {
             environment: input.environment,
             cause: cause instanceof Error ? cause.message : String(cause),
           });
-          return unavailable("Lighter setup status is temporarily unavailable.", ctx.requestId);
+          return walletScopeRefusal(cause, ctx.requestId)
+            ?? unavailable("Lighter setup status is temporarily unavailable.", ctx.requestId);
         }
       },
     }),
@@ -89,7 +119,8 @@ export function registerLighterOnboardingHandlers(): ReadonlyArray<() => void> {
             environment: input.environment,
             cause: cause instanceof Error ? cause.message : String(cause),
           });
-          return unavailable("Lighter account setup status is temporarily unavailable.", ctx.requestId);
+          return walletScopeRefusal(cause, ctx.requestId)
+            ?? unavailable("Lighter account setup status is temporarily unavailable.", ctx.requestId);
         }
       },
     }),

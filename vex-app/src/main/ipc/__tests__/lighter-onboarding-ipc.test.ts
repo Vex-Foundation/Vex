@@ -63,7 +63,12 @@ const sender = createTrustedSender();
 type CallResult<T = unknown> = {
   readonly ok: boolean;
   readonly data: T;
-  readonly error: { readonly code: string; readonly retryable: boolean };
+  readonly error: {
+    readonly code: string;
+    readonly retryable: boolean;
+    readonly userActionable: boolean;
+    readonly message: string;
+  };
 };
 
 async function call<T = unknown>(
@@ -106,6 +111,47 @@ beforeEach(() => {
   mocks.settleIfPendingWith.mockResolvedValue({ status: "completed" });
   mocks.resumeAgentAfterLighterSetup.mockResolvedValue({ resumed: true });
   teardowns = registerLighterOnboardingHandlers();
+});
+
+/**
+ * A desk session with no wallet cannot answer "what is this wallet's Lighter
+ * account?", and it never will - the selection is fixed at create time. Read
+ * as a provider outage, that told the trader to wait for something that was
+ * never going to happen, and hid the one move that fixes it.
+ */
+describe("wallet-scope refusals are not outages", () => {
+  it.each([
+    ["WALLET_NOT_SELECTED", "no usable EVM wallet"],
+    ["WALLET_SCOPE_MISMATCH", "no usable EVM wallet"],
+    ["WALLET_NOT_CONFIGURED", "No EVM wallet is configured"],
+  ])("reports %s as the wallet problem it is", async (code, copy) => {
+    mocks.resolveLighterAccountSetupStatus.mockRejectedValue(
+      Object.assign(new Error("wallet scope"), { code }),
+    );
+
+    const result = await call(
+      { sessionId: SESSION, environment: "rhc" },
+      CH.lighterTrading.getAccountSetupStatus,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe("wallets.invalid_selection");
+    expect(result.error).toMatchObject({ retryable: false, userActionable: true });
+    expect(result.error.message).toContain(copy);
+  });
+
+  it("still calls a genuine provider failure temporary", async () => {
+    mocks.resolveLighterAccountSetupStatus.mockRejectedValue(new Error("socket hang up"));
+
+    const result = await call(
+      { sessionId: SESSION, environment: "rhc" },
+      CH.lighterTrading.getAccountSetupStatus,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe("provider.unavailable");
+    expect(result.error).toMatchObject({ retryable: true });
+  });
 });
 
 describe("Agent Lighter setup continuation", () => {
