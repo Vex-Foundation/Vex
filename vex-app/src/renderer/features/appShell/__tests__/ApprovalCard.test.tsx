@@ -617,15 +617,34 @@ describe("ApprovalCard", () => {
     expect(document.querySelector("[data-vex-signed-glint]")).toBeNull();
   });
 
-  it("buttons disabled while a mutation is in-flight", () => {
+  it("buttons disabled while a mutation is in-flight, and the approve key says it is working", () => {
     approvePending = true;
     renderCard(
       makeSummary({ riskLevel: "info", actionKind: "read" }),
       false,
     );
-    const approve = screen.getByRole("button", { name: /^approve$/i });
+    // The key the user pressed names what it is doing and is marked busy; a
+    // dispatch can run for fifteen seconds, and a key that only dimmed for
+    // that long read as a click that never landed.
+    const approve = screen.getByRole("button", { name: /working, please wait/i });
     const reject = screen.getByRole("button", { name: /^reject$/i });
     expect(approve.getAttribute("disabled")).not.toBeNull();
     expect(reject.getAttribute("disabled")).not.toBeNull();
+    expect(approve.getAttribute("aria-busy")).toBe("true");
+    expect(approve.className).toContain("vex-ring-working");
+  });
+
+  it("leaves the approve key alone while a REJECTION is the thing in flight", () => {
+    // `inFlight` covers both mutations. The travelling arc marks the key that
+    // was actually pressed, so a running rejection must not light Approve.
+    rejectPending = true;
+    renderCard(
+      makeSummary({ riskLevel: "info", actionKind: "read" }),
+      false,
+    );
+    const approve = screen.getByRole("button", { name: /^approve$/i });
+    expect(approve.getAttribute("disabled")).not.toBeNull();
+    expect(approve.className).not.toContain("vex-ring-working");
+    expect(approve.getAttribute("aria-busy")).toBe("false");
   });
 });

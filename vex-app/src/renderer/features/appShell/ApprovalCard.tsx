@@ -59,6 +59,24 @@ function approveLabelFor(summary: ApprovalSummaryDto): string {
   return "Approve";
 }
 
+/**
+ * What the key says WHILE the dispatch runs.
+ *
+ * A Lighter order create signs, submits and then waits on the sequencer's
+ * answer, which is fifteen-odd seconds of an app that is otherwise instant. A
+ * key that only dims for that long reads as a click that did not land, so it
+ * names the step it is on instead - and the name has to stay true for the
+ * whole window, which rules out a phase the card cannot actually observe.
+ */
+function pendingApproveLabelFor(summary: ApprovalSummaryDto): string {
+  if (isLighterOrderCreateApproval(summary)) return "Signing and sending";
+  if (isLighterDepositApproval(summary)) return "Signing and depositing";
+  if (summary.preview?.criticalArgs.toolId === "lighter.fees.approve") {
+    return summary.preview.criticalArgs.revoke === true ? "Revoking" : "Authorizing";
+  }
+  return "Working";
+}
+
 function confirmApproveLabelFor(summary: ApprovalSummaryDto): string {
   if (summary.preview?.criticalArgs.toolId === "lighter.fees.approve") {
     return summary.preview.criticalArgs.revoke === true
@@ -229,6 +247,7 @@ export function ApprovalCard({
   const criticalArgs = summary.preview?.criticalArgs ?? null;
   const approveLabel = approveLabelFor(summary);
   const confirmApproveLabel = confirmApproveLabelFor(summary);
+  const pendingApproveLabel = pendingApproveLabelFor(summary);
 
   return (
     <section
@@ -275,6 +294,8 @@ export function ApprovalCard({
         onRejectReasonChange={setRejectReason}
         approveLabel={approveLabel}
         confirmApproveLabel={confirmApproveLabel}
+        pendingApproveLabel={pendingApproveLabel}
+        approvePending={approve.isPending}
         wrapReasonOnNarrow={criticalArgs?.toolId === "lighter.fees.approve"}
         rejectReasonInput={summary.origin !== "desk"}
       />

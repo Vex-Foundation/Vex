@@ -40,6 +40,14 @@ export interface ApprovalDecisionActionsProps {
   readonly onRejectReasonChange: (value: string) => void;
   readonly approveLabel?: string;
   readonly confirmApproveLabel?: string;
+  /** What the approve key says while its own dispatch is in flight. */
+  readonly pendingApproveLabel?: string;
+  /**
+   * APPROVE specifically is in flight - not merely `inFlight`, which a running
+   * rejection also sets. The working arc marks the key the user actually
+   * pressed, so a rejection must never light the one they did not.
+   */
+  readonly approvePending?: boolean;
   readonly wrapReasonOnNarrow?: boolean;
   /**
    * The reason input exists to reach the model as transcript content. A card
@@ -73,6 +81,8 @@ export function ApprovalDecisionActions({
   onRejectReasonChange,
   approveLabel = "Approve",
   confirmApproveLabel = "Click again to confirm approve",
+  pendingApproveLabel = "Working",
+  approvePending = false,
   wrapReasonOnNarrow = false,
   rejectReasonInput = true,
 }: ApprovalDecisionActionsProps): JSX.Element {
@@ -114,16 +124,51 @@ export function ApprovalDecisionActions({
       >
         {rejectArmed ? "Click again to confirm reject" : "Reject"}
       </button>
+      {/* THE WORKING KEY. A desk order signs, submits and then waits on the
+          sequencer - fifteen-odd seconds in an app that is otherwise instant.
+          While its own dispatch runs this button is the only live thing on
+          screen, so it keeps full opacity and wears the house's travelling
+          lane (`global-css/pending-ring.css`) while the dimmed Reject beside
+          it goes inert: the action you took stays alive, the one you did not
+          recedes. `--vex-ring-ink` hands the lane this key's own ink, so an
+          amber band can never sit invisibly on an amber fill. `aria-busy` and
+          the swapped label carry the same fact without the motion, which is
+          what a screen reader and a reduced-motion viewer each get. */}
       <button
         type="button"
         onClick={onApprove}
         disabled={inFlight}
-        aria-label={approveArmed ? "Confirm approve" : approveLabel}
+        aria-busy={approvePending}
+        aria-label={
+          approvePending
+            ? `${pendingApproveLabel}, please wait`
+            : approveArmed ? "Confirm approve" : approveLabel
+        }
         className={`${KEY_BASE} bg-[var(--vex-pin)] font-medium text-[var(--vex-surface-0)] hover:bg-[var(--vex-pin-hover)] ${
-          approveArmed ? ARMED_BORDER : "border-transparent"
+          approvePending
+            ? "vex-ring-working [--vex-ring-ink:var(--vex-surface-0)] border-transparent disabled:opacity-100"
+            : approveArmed ? ARMED_BORDER : "border-transparent"
         }`}
       >
-        {approveArmed ? confirmApproveLabel : approveLabel}
+        {approvePending ? <span aria-hidden className="vex-ring-runner" /> : null}
+        {/* ONE WIDTH, TWO LABELS. Both sit in the same grid cell, so the key
+            is always sized to the longer of them and the swap crossfades in
+            place instead of snapping the footer narrower under the pointer
+            that just pressed it. The resting width is unchanged: the idle
+            label is the longer one. The button's `aria-label` is what names
+            it, so the faded copy is never announced twice. */}
+        <span className="grid grid-cols-1 grid-rows-1 place-items-center">
+          <span
+            className={`col-start-1 row-start-1 transition-opacity ${approvePending ? "opacity-100" : "opacity-0"}`}
+          >
+            {pendingApproveLabel}
+          </span>
+          <span
+            className={`col-start-1 row-start-1 transition-opacity ${approvePending ? "opacity-0" : "opacity-100"}`}
+          >
+            {approveArmed ? confirmApproveLabel : approveLabel}
+          </span>
+        </span>
       </button>
     </footer>
   );
