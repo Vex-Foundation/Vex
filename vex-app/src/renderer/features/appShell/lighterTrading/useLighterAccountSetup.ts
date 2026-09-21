@@ -201,13 +201,22 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     return result.data;
   };
 
+  /**
+   * `drive` runs before each read, for a step that does not finish on its own.
+   * A key registration whose transaction has landed is completed by
+   * RECONCILING, and nothing else performs that, so a poll that only watched
+   * could never come true (see `reconcileKeyRegistration`).
+   */
   const waitUntil = async (
     env: LighterTradingEnvironment,
     predicate: (fresh: LighterAccountSetupStatus) => boolean,
     timeoutMs: number,
+    drive?: () => Promise<void>,
   ): Promise<StepOutcome> => {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
+      if (cancelled.current) return { ok: false, reason: "cancelled" };
+      if (drive !== undefined) await drive();
       if (cancelled.current) return { ok: false, reason: "cancelled" };
       const fresh = await refreshStatus(env);
       if (fresh !== null && predicate(fresh)) return { ok: true };
@@ -218,6 +227,27 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
         };
       }
       await sleep(POLL_INTERVAL_MS);
+    }
+  };
+
+  /**
+   * Carry an on-chain key registration the rest of the way. Signs nothing: it
+   * activates a credential whose change-pub-key transaction has already
+   * landed, which is the one thing that makes `tradingKeyRegistered` true
+   * after the executor stopped short waiting for the account nonce.
+   *
+   * Failures are deliberately silent. This runs on a poll, the registration is
+   * left exactly as it was, and the next pass asks again; the confirm window
+   * is what decides when to stop and tell the user.
+   */
+  const reconcileKeyRegistration = async (env: LighterTradingEnvironment): Promise<void> => {
+    if (sessionId === null) return;
+    const bridge = window.vex.lighterTrading;
+    if (bridge?.reconcileKeyRegistration === undefined) return;
+    try {
+      await bridge.reconcileKeyRegistration({ sessionId, environment: env });
+    } catch {
+      // Left for the next poll.
     }
   };
 
@@ -324,7 +354,12 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
   const confirmKey = async (env: LighterTradingEnvironment): Promise<void> => {
     setResume(() => confirmKey(env));
     setPhase("confirming_key");
-    const confirmed = await waitUntil(env, (s) => s.tradingKeyRegistered, CONFIRM_TIMEOUT_MS.confirming_key!);
+    const confirmed = await waitUntil(
+      env,
+      (s) => s.tradingKeyRegistered,
+      CONFIRM_TIMEOUT_MS.confirming_key!,
+      () => reconcileKeyRegistration(env),
+    );
     if (cancelled.current) return;
     if (!confirmed.ok) { setError(confirmed.reason); return; }
     await runFee(env);
@@ -332,6 +367,14 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
 
   const runKey = async (env: LighterTradingEnvironment): Promise<void> => {
     setResume(() => runKey(env));
+    const before = await refreshStatus(env);
+    if (cancelled.current) return;
+    if (before !== null && before.tradingKeyRegistered) { await runFee(env); return; }
+    // A registration whose transaction is already on chain is finished by
+    // RECONCILING. Preparing a second one is refused by design - that refusal
+    // is what stops a registered key being registered again - so every route
+    // into this step checks here rather than walking into it.
+    if (before !== null && before.keyRegistrationResumable) { await confirmKey(env); return; }
     setPhase("registering_key");
     if (!(await submitStep(env, { kind: "onboarding_key" }))) return;
     await confirmKey(env);
@@ -372,10 +415,13 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
   // operator confirms that themselves, rather than it being granted silently.
   const autoReconcileKey = async (env: LighterTradingEnvironment): Promise<void> => {
     setResume(() => autoReconcileKey(env), true);
-    setPhase("registering_key");
-    if (!(await submitStep(env, { kind: "onboarding_key" }))) return;
     setPhase("confirming_key");
-    const confirmed = await waitUntil(env, (s) => s.tradingKeyRegistered, CONFIRM_TIMEOUT_MS.confirming_key!);
+    const confirmed = await waitUntil(
+      env,
+      (s) => s.tradingKeyRegistered,
+      CONFIRM_TIMEOUT_MS.confirming_key!,
+      () => reconcileKeyRegistration(env),
+    );
     if (cancelled.current) return;
     if (!confirmed.ok) { setError(confirmed.reason); return; }
     const fresh = await refreshStatus(env);

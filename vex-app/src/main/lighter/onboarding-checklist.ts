@@ -177,7 +177,7 @@ export async function resolveLighterOnboardingChecklist(
   };
 }
 
-async function readSessionWalletFromEngine(sessionId: string): Promise<SessionWalletScope> {
+export async function readSessionWalletFromEngine(sessionId: string): Promise<SessionWalletScope> {
   // The engine's own hydration, the way the desk lane and approval resume get
   // their wallet scope; fails closed when the session is gone.
   const { buildSessionWalletResolution, hydrateEngineSession } = await import(

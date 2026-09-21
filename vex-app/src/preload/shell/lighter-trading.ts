@@ -9,6 +9,7 @@ import {
   lighterTradingCandleUpdateEventSchema,
   lighterTradingCandleHistoryInputSchema,
   lighterAccountSetupStatusInputSchema,
+  lighterKeyRegistrationReconcileInputSchema,
   lighterDeskPrepareInputSchema,
   lighterOnboardingChecklistInputSchema,
   lighterTradingFillsInputSchema,
@@ -135,6 +136,13 @@ export const lighterTrading = {
       CH.lighterTrading.getAccountSetupStatus,
       input,
       lighterAccountSetupStatusInputSchema,
+    );
+  },
+  reconcileKeyRegistration(input) {
+    return invokeWithSchema(
+      CH.lighterTrading.reconcileKeyRegistration,
+      input,
+      lighterKeyRegistrationReconcileInputSchema,
     );
   },
   getPendingAgentSetup(input) {

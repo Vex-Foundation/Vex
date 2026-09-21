@@ -828,6 +828,37 @@ export type LighterDeskPrepareInput = z.infer<typeof lighterDeskPrepareInputSche
 export type LighterDeskPrepareResult = z.infer<typeof lighterDeskPrepareResultSchema>;
 export type LighterOnboardingChecklistInput = z.infer<typeof lighterOnboardingChecklistInputSchema>;
 export type LighterOnboardingChecklist = z.infer<typeof lighterOnboardingChecklistSchema>;
+/**
+ * Finish a Lighter key registration that is already ON CHAIN.
+ *
+ * Reconciliation is the only thing that completes a registration whose
+ * change-pub-key transaction has landed: the executor stops at `key_verified`
+ * until the account nonce catches up, no background sweep covers key
+ * registration, and re-preparing a registration from that state is refused by
+ * design. This route reads evidence and advances local lifecycle state; it is
+ * structurally unable to sign or send anything.
+ */
+export const lighterKeyRegistrationReconcileInputSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    environment: lighterIntegrationEnvironmentSchema,
+  })
+  .strict();
+
+export const lighterKeyRegistrationReconcileSchema = z
+  .object({
+    /** False when this wallet has no live registration to reconcile. */
+    attempted: z.boolean(),
+    /** The executor's own lifecycle verdict, when it ran. */
+    status: z.string().nullable(),
+  })
+  .strict();
+
+export type LighterKeyRegistrationReconcileInput =
+  z.infer<typeof lighterKeyRegistrationReconcileInputSchema>;
+export type LighterKeyRegistrationReconcile =
+  z.infer<typeof lighterKeyRegistrationReconcileSchema>;
+
 export type LighterAccountSetupStatusInput = z.infer<typeof lighterAccountSetupStatusInputSchema>;
 export type LighterAccountSetupFeePolicy = z.infer<typeof lighterAccountSetupFeePolicySchema>;
 export type LighterAccountSetupStatus = z.infer<typeof lighterAccountSetupStatusSchema>;

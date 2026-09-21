@@ -11,9 +11,12 @@ import { err, ok, type Result } from "@shared/ipc/result.js";
 import {
   lighterAccountSetupStatusInputSchema,
   lighterAccountSetupStatusSchema,
+  lighterKeyRegistrationReconcileInputSchema,
+  lighterKeyRegistrationReconcileSchema,
   lighterOnboardingChecklistInputSchema,
   lighterOnboardingChecklistSchema,
   type LighterAccountSetupStatus,
+  type LighterKeyRegistrationReconcile,
   type LighterOnboardingChecklist,
 } from "@shared/schemas/lighter-trading.js";
 import {
@@ -34,6 +37,7 @@ import { resumeAgentAfterLighterSetup } from "@vex-agent/engine/core/lighter-set
 import { log } from "../logger/index.js";
 import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import { resolveLighterAccountSetupStatus, resolveLighterOnboardingChecklist } from "../lighter/onboarding-checklist.js";
+import { reconcileSetupKeyRegistration } from "../lighter/key-registration-reconcile.js";
 import { registerHandler } from "./register-handler.js";
 
 /** Both reads share the same provider-unavailable shape; only the copy differs. */
@@ -86,6 +90,30 @@ export function registerLighterOnboardingHandlers(): ReadonlyArray<() => void> {
             cause: cause instanceof Error ? cause.message : String(cause),
           });
           return unavailable("Lighter account setup status is temporarily unavailable.", ctx.requestId);
+        }
+      },
+    }),
+    registerHandler({
+      channel: CH.lighterTrading.reconcileKeyRegistration,
+      domain: "market",
+      inputSchema: lighterKeyRegistrationReconcileInputSchema,
+      outputSchema: lighterKeyRegistrationReconcileSchema,
+      handle: async (input, ctx): Promise<Result<LighterKeyRegistrationReconcile>> => {
+        const dbUrlOutcome = await ensureEngineDbUrl(ctx.requestId);
+        if (!dbUrlOutcome.ok) return dbUrlOutcome;
+        try {
+          return ok(await reconcileSetupKeyRegistration(input));
+        } catch (cause) {
+          // A reconcile that will not answer leaves the registration exactly
+          // as it was; the caller polls and asks again.
+          log.warn("[lighter-onboarding] key registration reconcile failed", {
+            environment: input.environment,
+            cause: cause instanceof Error ? cause.message : String(cause),
+          });
+          return unavailable(
+            "Lighter could not confirm the trading key just now.",
+            ctx.requestId,
+          );
         }
       },
     }),

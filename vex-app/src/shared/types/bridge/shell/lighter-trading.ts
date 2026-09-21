@@ -3,6 +3,8 @@ import type { AbortableInvocation } from "../common.js";
 import type {
   LighterAccountSetupStatus,
   LighterAccountSetupStatusInput,
+  LighterKeyRegistrationReconcile,
+  LighterKeyRegistrationReconcileInput,
   LighterTradingAccount,
   LighterTradingAccountActivityEvent,
   LighterTradingAccountInput,
@@ -122,6 +124,14 @@ export interface LighterTradingBridge {
   readonly getAccountSetupStatus: (
     input: LighterAccountSetupStatusInput,
   ) => AbortableInvocation<LighterAccountSetupStatus>;
+  /**
+   * Carry a key registration that is already on chain the rest of the way.
+   * Evidence-only: it can activate a credential whose change-pub-key
+   * transaction has landed, and it cannot sign, submit or replace anything.
+   */
+  readonly reconcileKeyRegistration: (
+    input: LighterKeyRegistrationReconcileInput,
+  ) => Promise<Result<LighterKeyRegistrationReconcile>>;
   /** Recover an Agent-owned setup modal after a renderer reload/session switch. */
   readonly getPendingAgentSetup: (
     input: LighterSetupPendingInput,

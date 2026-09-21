@@ -49,6 +49,7 @@ const SESSION = "11111111-1111-4111-8111-111111111111";
 /** Mirrors of the hook's own schedule; a drift here shows up as a stalled case. */
 const POLL_MS = 2_000;
 const AUTO_RETRY_MS = [2_000, 5_000] as const;
+const CONFIRM_KEY_TIMEOUT_MS = 2 * 60_000;
 
 function status(over: Partial<LighterAccountSetupStatus> = {}): LighterAccountSetupStatus {
   return {
@@ -76,6 +77,10 @@ let prepared: Array<LighterDeskAction>;
 let approveExecutionStatus: "succeeded" | "failed" | "indeterminate";
 /** The dispatched result's body, as the approve reply carries it. */
 let approveToolOutput: string | null;
+/** Every reconcile the modal asked for; the count is the point of several cases. */
+let reconcileCalls: number;
+/** Flips the live key on, as a real reconcile would once the nonce lands. */
+let reconcileActivatesKey: boolean;
 /** Refusals the fake bridge hands back, one per `prepareDeskAction`, then none. */
 let refusals: Array<string>;
 
@@ -115,6 +120,8 @@ beforeEach(() => {
   refusals = [];
   approveExecutionStatus = "succeeded";
   approveToolOutput = null;
+  reconcileCalls = 0;
+  reconcileActivatesKey = false;
   mocks.useLighterAccountSetupStatus.mockImplementation(() => ({
     data: { ok: true, data: live },
     isLoading: false,
@@ -122,6 +129,13 @@ beforeEach(() => {
   (globalThis as unknown as { window: Record<string, unknown> }).window.vex = {
     lighterTrading: {
       getAccountSetupStatus: () => ({ promise: Promise.resolve({ ok: true, data: live }) }),
+      reconcileKeyRegistration: () => {
+        reconcileCalls += 1;
+        if (reconcileActivatesKey) {
+          live = { ...live, tradingKeyRegistered: true, keyRegistrationResumable: false };
+        }
+        return Promise.resolve({ ok: true, data: { attempted: true, status: "active" } });
+      },
       prepareDeskAction: (input: { action: LighterDeskAction }) => {
         prepared.push(input.action);
         const refusal = refusals.shift();
@@ -275,6 +289,72 @@ describe("useLighterAccountSetup resume rules", () => {
 
     expect(result.current.phase).toBe("done");
     expect(prepared).toHaveLength(attempts);
+  });
+
+  /**
+   * The executor stops at `key_verified` when the account nonce has not caught
+   * up, and nothing else finishes a registration: no sweep covers it, and
+   * re-preparing one is refused by design. A confirm that only WATCHED
+   * `tradingKeyRegistered` could therefore never come true - it polled for two
+   * minutes and then asked the user to press a button that refused.
+   */
+  it("drives the reconcile while confirming the key, instead of only watching", async () => {
+    live = status({ accountExists: true, accountCollateral: "12" });
+    const { result } = mount();
+
+    act(() => { result.current.start(); });
+    await tick();
+    expect(result.current.phase).toBe("confirming_key");
+    expect(reconcileCalls).toBeGreaterThan(0);
+
+    // The nonce lands and the next reconcile activates the credential.
+    reconcileActivatesKey = true;
+    await tick(POLL_MS);
+
+    expect(live.tradingKeyRegistered).toBe(true);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("reconciles an on-chain registration instead of preparing a second one", async () => {
+    // Exactly the stuck state: the key is registered and verified on Lighter,
+    // the local credential is not active, and a fresh registration is refused.
+    live = status({
+      accountExists: true,
+      accountCollateral: "12",
+      keyRegistrationResumable: true,
+    });
+    refusals = ["Lighter onboarding workflow is in key_verified; key registration cannot be prepared from this state."];
+    reconcileActivatesKey = true;
+
+    const { result } = mount();
+    act(() => { result.current.start(); });
+    await tick();
+
+    // Not one registration was prepared, so not one could be refused.
+    expect(prepared.filter((a) => a.kind === "onboarding_key")).toHaveLength(0);
+    expect(reconcileCalls).toBeGreaterThan(0);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("retry out of the stuck state reconciles rather than re-registering", async () => {
+    live = status({
+      accountExists: true,
+      accountCollateral: "12",
+      keyRegistrationResumable: true,
+    });
+    const { result } = mount();
+
+    // Get the modal into the error state the timeout leaves behind.
+    act(() => { result.current.start(); });
+    await tick(CONFIRM_KEY_TIMEOUT_MS + POLL_MS);
+    expect(result.current.error).not.toBeNull();
+
+    reconcileActivatesKey = true;
+    act(() => { result.current.retry(); });
+    await tick();
+
+    expect(prepared.filter((a) => a.kind === "onboarding_key")).toHaveLength(0);
+    expect(live.tradingKeyRegistered).toBe(true);
   });
 
   it("a pending automatic retry does not outlive the modal", async () => {
