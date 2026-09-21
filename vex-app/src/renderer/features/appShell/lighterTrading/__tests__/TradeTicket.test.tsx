@@ -21,7 +21,7 @@ const PERP: LighterTradingMarket = {
   minQuoteAmount: "10",
   orderQuoteLimit: "100000",
   decimals: { size: 4, price: 2, quote: 6 },
-  fees: { maker: "0", taker: "0.0003", makerEnabled: false, takerEnabled: true },
+  fees: { maker: "0", taker: "0.0003", makerEnabled: false, takerEnabled: true, integratorMaker: "0.1", integratorTaker: "0.1" },
   activity24h: { tradesCount: 120, quoteVolume: 1_600_000 },
 };
 
@@ -178,7 +178,7 @@ describe("Light it up trade ticket", () => {
 
     fireEvent.change(screen.getByLabelText("Size"), { target: { value: "0.5" } });
     expect(screen.getByText("Order Value").nextElementSibling?.textContent).toBe("1,613.28 USD");
-    expect(screen.getByText("Fee (Taker)").getAttribute("title")).toBe("Taker 0.0003%");
+    expect(screen.getByText("Fee (Taker)").getAttribute("title")).toBe("Taker 0.0003% + Vex 0.1%");
     fireEvent.click(screen.getByRole("button", { name: "Long 0.5 ETH" }));
     expect(onSend).toHaveBeenLastCalledWith({
       mode: "market",
@@ -229,9 +229,10 @@ describe("Light it up trade ticket", () => {
     expect(onSend).toHaveBeenLastCalledWith(expect.objectContaining({ baseAmount: "0.3099" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Size unit: USD. Switch" }));
-    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("15.4959 ETH");
+    // Max reserves BOTH fee legs, so Vex's 0.1% shrinks it alongside the provider's.
+    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("15.3424 ETH");
     fireEvent.click(screen.getByRole("button", { name: "50%" }));
-    expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("7.7479");
+    expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("7.6712");
     expect(screen.getByRole("button", { name: "50%", pressed: true })).toBeTruthy();
     expect(screen.getByText("5,000 USDG")).toBeTruthy();
   });
@@ -242,9 +243,9 @@ describe("Light it up trade ticket", () => {
     const slider = screen.getByRole("slider", { name: "Size as percent of maximum" }) as HTMLInputElement;
     expect(slider.value).toBe("0");
     fireEvent.change(slider, { target: { value: "40" } });
-    expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("6.1983");
+    expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("6.1369");
     // Typing moves the thumb to the nearest whole percent of the maximum.
-    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "7.787" } });
+    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "7.71" } });
     expect(slider.value).toBe("50");
     fireEvent.click(screen.getByRole("button", { name: "0%" }));
     expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("");
@@ -313,7 +314,7 @@ describe("Light it up trade ticket", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Limit" }));
     fireEvent.change(screen.getByLabelText("Limit price"), { target: { value: "4000" } });
-    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("12.4996 ETH");
+    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("12.3758 ETH");
     fireEvent.click(screen.getByRole("button", { name: "Size unit: ETH. Switch" }));
     fireEvent.change(screen.getByLabelText("Size in quote"), { target: { value: "1000" } });
     expect(screen.getByText("≈ 0.25 ETH")).toBeTruthy();
@@ -449,7 +450,8 @@ describe("Light it up trade ticket", () => {
     expect(screen.getByText("Best ask 3,210.50: this price crosses the book, so Post-Only cannot be reviewed.")).toBeTruthy();
     expect(screen.getByRole("status").textContent).toBe("Maker-only buy price must stay below the best ask.");
     expect((screen.getByRole("button", { name: "Long 0.25 ETH" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText("Fee (Maker)").getAttribute("title")).toBe("Maker Disabled");
+    // A disabled provider fee does not make the order free: Vex still takes its own.
+    expect(screen.getByText("Fee (Maker)").getAttribute("title")).toBe("Maker Disabled + Vex 0.1%");
 
     fireEvent.change(screen.getByLabelText("Limit price"), { target: { value: "3200" } });
     expect(screen.queryByRole("status")).toBeNull();

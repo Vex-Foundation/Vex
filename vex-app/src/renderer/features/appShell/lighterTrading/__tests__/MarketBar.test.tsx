@@ -14,7 +14,7 @@ const market = {
   minQuoteAmount: "1",
   orderQuoteLimit: "1000000",
   decimals: { price: 1, size: 4, quote: 2 },
-  fees: { maker: "0", taker: "0", makerEnabled: true, takerEnabled: true },
+  fees: { maker: "0", taker: "0", makerEnabled: true, takerEnabled: true, integratorMaker: null, integratorTaker: null },
   activity24h: { tradesCount: null, quoteVolume: null },
 } satisfies LighterTradingMarket;
 

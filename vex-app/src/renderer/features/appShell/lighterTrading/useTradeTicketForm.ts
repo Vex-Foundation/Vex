@@ -13,6 +13,7 @@ import {
   SIZE_DECIMALS_FALLBACK,
   estimatedLiquidationPrice,
   hardBoundLabel,
+  integratorFeeFraction,
   isPositionProtectionMode,
   isTriggerLimitMode,
   marginCost,
@@ -194,10 +195,15 @@ export function useTradeTicketForm({
       return toDecimal(Math.floor(sizingBalance * (10 ** sizeDecimals)) / (10 ** sizeDecimals), sizeDecimals);
     }
     const fee = ((mode === "limit" || triggerLimit) && limitTimeInForce === "post-only")
-      ? { rate: market.fees.maker, enabled: market.fees.makerEnabled }
-      : { rate: market.fees.taker, enabled: market.fees.takerEnabled };
+      ? { rate: market.fees.maker, enabled: market.fees.makerEnabled, integrator: market.fees.integratorMaker }
+      : { rate: market.fees.taker, enabled: market.fees.takerEnabled, integrator: market.fees.integratorTaker };
     const feePercent = Number(fee.rate);
-    const feeFraction = fee.enabled && Number.isFinite(feePercent) && feePercent > 0 ? feePercent / 100 : 0;
+    // BOTH legs, because both are charged against the same margin. Lighter's
+    // own fee is zero on some deployments, and sizing on it alone spent every
+    // last unit of available margin on the position - leaving nothing for
+    // Vex's integrator fee, which the exchange then refused the order over.
+    const feeFraction = (fee.enabled && Number.isFinite(feePercent) && feePercent > 0 ? feePercent / 100 : 0)
+      + integratorFeeFraction(fee.integrator);
     const size = margin === null
       ? sizingBalance / (price * (1 + feeFraction))
       : sizingBalance / (margin.initialMarginFraction / 10_000 + feeFraction) / price;
@@ -328,11 +334,17 @@ export function useTradeTicketForm({
     ? Number(baseAmount) * valuationPrice
     : null;
   const feeRate = (mode === "limit" || triggerLimit) && limitTimeInForce === "post-only"
-    ? { rate: market.fees.maker, enabled: market.fees.makerEnabled, label: "Maker" }
-    : { rate: market.fees.taker, enabled: market.fees.takerEnabled, label: "Taker" };
-  const estimatedFee = orderValue !== null && feeRate.enabled && Number.isFinite(Number(feeRate.rate))
-    ? (orderValue * Number(feeRate.rate)) / 100
-    : null;
+    ? { rate: market.fees.maker, enabled: market.fees.makerEnabled, label: "Maker", integrator: market.fees.integratorMaker }
+    : { rate: market.fees.taker, enabled: market.fees.takerEnabled, label: "Taker", integrator: market.fees.integratorTaker };
+  // BOTH legs again: the provider's fee and Vex's own. On a deployment whose
+  // provider fee is disabled, the provider leg alone read "≈ 0" beside an
+  // order that was still charged 10 bps.
+  const providerFee = feeRate.enabled && Number.isFinite(Number(feeRate.rate))
+    ? Number(feeRate.rate) / 100
+    : 0;
+  const estimatedFee = orderValue === null
+    ? null
+    : orderValue * (providerFee + integratorFeeFraction(feeRate.integrator));
   const cost = orderValue !== null && margin !== null ? marginCost(orderValue, margin.initialMarginFraction) : null;
   const liquidationEstimate = margin !== null && valuationPrice !== null && !protective
     ? estimatedLiquidationPrice(valuationPrice, side, margin)

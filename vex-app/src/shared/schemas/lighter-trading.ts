@@ -66,6 +66,16 @@ export const lighterTradingMarketSchema = z
         taker: decimalStringSchema,
         makerEnabled: z.boolean(),
         takerEnabled: z.boolean(),
+        /**
+         * Vex's own integrator fee for this market, as a percent of executed
+         * trade value, or null where no collector is configured for the
+         * environment. It rides on the SAME order as the provider's fee and
+         * consumes the same margin, so the ticket that sizes against a balance
+         * has to see it: sizing on `taker` alone put every 100% order past the
+         * account's available margin and Lighter refused them outright.
+         */
+        integratorMaker: decimalStringSchema.nullable(),
+        integratorTaker: decimalStringSchema.nullable(),
       })
       .strict(),
     activity24h: z

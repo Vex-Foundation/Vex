@@ -20,7 +20,7 @@ const MARKET = {
   minQuoteAmount: "1",
   orderQuoteLimit: "1000000",
   decimals: { size: 4, price: 2, quote: 6 },
-  fees: { maker: "0", taker: "0", makerEnabled: true, takerEnabled: true },
+  fees: { maker: "0", taker: "0", makerEnabled: true, takerEnabled: true, integratorMaker: null, integratorTaker: null },
   activity24h: { tradesCount: null, quoteVolume: null },
   margin: null,
 } satisfies LighterTradingMarket;
@@ -438,6 +438,24 @@ describe("desk lane", () => {
     expect(renderDesk().result.current.chartFills).toEqual([]);
     accountData.value = { ok: true, data: { status: "ready", summary: null, positions: [{ marketId: 7, side: "long", size: "0.5" }], marginTerms: [], openOrders: [] } };
     expect(renderDesk().result.current.chartFills).toEqual([FILL]);
+  });
+
+  it("names the exchange's cancel instead of calling the outcome unknown", async () => {
+    // The other half of the "Outcome unknown" report: once the engine stops
+    // reporting a stream-confirmed cancel as indeterminate, the desk has the
+    // settled state and must say which order ended and how.
+    prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-c" } });
+    const { result } = renderDesk();
+    await act(async () => { result.current.submitDraft(ENTRY); });
+    act(() => { result.current.onApprovalResolved("approved", resolved({
+      id: "ap-c",
+      toolOutput: providerOrderOutput({ state: "canceled", source: "inactive_order", orderId: "9003" }),
+    })); });
+
+    expect(result.current.deskOutcome?.tone).toBe("warn");
+    expect(result.current.deskOutcome?.text).toContain("9003");
+    expect(result.current.deskOutcome?.text).toContain("canceled before it filled");
+    expect(funnelStep).toHaveBeenCalledWith({ step: "desk_order_canceled", environment: "rhc" });
   });
 
   it("shows the tool's own words on failure and a caution when the outcome is unknown", async () => {

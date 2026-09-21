@@ -5,6 +5,8 @@ import {
   type LighterEnvironment,
 } from "@tools/lighter/constants.js";
 import { getLighterClient, type LighterClient } from "@tools/lighter/client.js";
+import { getLighterFeePolicy, getLighterIntegratorFees } from "@tools/lighter/fee-policy.js";
+import { lighterFeePercent } from "@tools/lighter/order-fee-terms.js";
 import type {
   LighterCandle,
   LighterMarket,
@@ -163,10 +165,31 @@ function marketStatusRank(market: LighterMarket): number {
   return market.status === "active" ? 0 : 1;
 }
 
+/**
+ * Vex's integrator fee for this market as a percent string, or null when the
+ * environment has no collector configured. Read from the SAME policy the
+ * signer authorizes the order against (`@tools/lighter/fee-policy.js`), so the
+ * ticket can never size against terms different from the ones submitted.
+ */
+function integratorFeePercents(
+  environment: LighterEnvironment,
+  marketType: LighterMarket["market_type"],
+): { readonly maker: string | null; readonly taker: string | null } {
+  const policy = getLighterFeePolicy(environment);
+  if (policy === null) return { maker: null, taker: null };
+  const fees = getLighterIntegratorFees(policy, marketType);
+  return {
+    maker: lighterFeePercent(fees.integratorMakerFee),
+    taker: lighterFeePercent(fees.integratorTakerFee),
+  };
+}
+
 export function projectLighterTradingMarket(
+  environment: LighterEnvironment,
   market: LighterMarket,
   detail: LighterMarketDetail | null = null,
 ): LighterTradingMarket {
+  const integrator = integratorFeePercents(environment, market.market_type);
   return {
     marketId: market.market_id,
     symbol: market.symbol,
@@ -187,6 +210,8 @@ export function projectLighterTradingMarket(
       taker: market.taker_fee,
       makerEnabled: market.is_maker_fee_enabled,
       takerEnabled: market.is_taker_fee_enabled,
+      integratorMaker: integrator.maker,
+      integratorTaker: integrator.taker,
     },
     activity24h: {
       tradesCount: nonNegativeNumberOrNull(detail?.daily_trades_count),
@@ -291,6 +316,7 @@ export async function readLighterTradingMarketList(
     markets: sortMarkets(response.order_books)
       .slice(0, 500)
       .map((market) => projectLighterTradingMarket(
+        environment,
         market,
         matchingMarketDetail(market, details),
       )),
@@ -544,7 +570,7 @@ async function readLighterTradingSnapshotInternal(
   return {
     environment: input.environment,
     retrievedAt: now(),
-    market: projectLighterTradingMarket(market, detail),
+    market: projectLighterTradingMarket(input.environment, market, detail),
     detail: {
       lastTradePrice: numberOrNull(detail.last_trade_price),
       openInterest: numberOrNull(detail.open_interest),

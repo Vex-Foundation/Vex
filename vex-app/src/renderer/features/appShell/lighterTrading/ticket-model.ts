@@ -220,6 +220,17 @@ export function marginCost(notional: number, initialMarginFraction: number): num
   return (notional * initialMarginFraction) / 10_000;
 }
 
+/**
+ * Vex's integrator fee as a FRACTION of notional, from the percent string the
+ * market projection carries. An absent or unreadable value is zero, never a
+ * guess: the projection reports null only where no collector is configured.
+ */
+export function integratorFeeFraction(percent: string | null | undefined): number {
+  if (percent === null || percent === undefined) return 0;
+  const value = Number(percent);
+  return Number.isFinite(value) && value > 0 ? value / 100 : 0;
+}
+
 /** Largest base size the available balance can open at this price. */
 export function maxBaseSize(available: number, initialMarginFraction: number, price: number): number {
   if (price <= 0) return 0;

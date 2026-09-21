@@ -464,7 +464,7 @@ export function TradeTicket({
             </>
           ) : null}
           <div>
-            <dt title={`${form.feeRate.label} ${formatProviderPercent(form.feeRate.rate, form.feeRate.enabled)}`}>Fee ({form.feeRate.label})</dt>
+            <dt title={feeBreakdownTitle(form.feeRate)}>Fee ({form.feeRate.label})</dt>
             <dd>{form.estimatedFee === null ? NO_VALUE : `≈ ${quote(form.estimatedFee, 4)}`}</dd>
           </div>
           {mode === "market" ? (
@@ -543,6 +543,18 @@ export function TradeTicket({
       </div>
     </form>
   );
+}
+
+/**
+ * Both fee legs, named. The estimate beside this label is their SUM, and a
+ * single percent under it read as the whole charge - which on a deployment
+ * whose provider fee is zero made Vex's own fee look like it did not exist.
+ */
+function feeBreakdownTitle(fee: TradeTicketForm["feeRate"]): string {
+  const provider = `${fee.label} ${formatProviderPercent(fee.rate, fee.enabled)}`;
+  return fee.integrator === null
+    ? provider
+    : `${provider} + Vex ${formatProviderPercent(fee.integrator)}`;
 }
 
 /** What follows the side in a side button's name: the mode for protection, the size, and any attached TP/SL. */

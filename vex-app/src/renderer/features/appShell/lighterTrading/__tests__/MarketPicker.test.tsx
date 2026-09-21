@@ -10,7 +10,7 @@ const makeMarket = (id: number, symbol: string, price: number | null, overrides:
   marketId: id, symbol, marketType: "perp", status: "active", baseAssetId: 0, quoteAssetId: 0,
   minBaseAmount: "0.001", minQuoteAmount: "10", orderQuoteLimit: "100000",
   decimals: { size: 3, price: 2, quote: 5 },
-  fees: { maker: "0", taker: "0", makerEnabled: false, takerEnabled: false },
+  fees: { maker: "0", taker: "0", makerEnabled: false, takerEnabled: false, integratorMaker: null, integratorTaker: null },
   activity24h: { tradesCount: 50, quoteVolume: price === null ? null : price * 100 },
   statistics: { lastTradePrice: price, priceChange24h: price === null ? null : -1.2, openInterestBase: price === null ? null : 500 },
   ...overrides,

@@ -107,7 +107,7 @@ const market = {
   minQuoteAmount: "10",
   orderQuoteLimit: "1000000",
   decimals: { size: 4, price: 2, quote: 6 },
-  fees: { maker: "0", taker: "0", makerEnabled: false, takerEnabled: false },
+  fees: { maker: "0", taker: "0", makerEnabled: false, takerEnabled: false, integratorMaker: "0.1", integratorTaker: "0.1" },
   activity24h: { tradesCount: 120, quoteVolume: 126_000 },
 };
 const account = {

@@ -131,14 +131,14 @@ function fakeClient(): LighterTradingPanelClient {
 
 describe("Lighter trading panel service", () => {
   it("keeps price changes signed, rejects invalid metrics, and never assigns open interest to spot", () => {
-    const projected = projectLighterTradingMarket(market, {
+    const projected = projectLighterTradingMarket("rhc", market, {
       ...market, last_trade_price: -1, daily_price_change: -5,
       open_interest: Number.POSITIVE_INFINITY,
     });
     expect(projected.statistics).toEqual({ lastTradePrice: null, priceChange24h: -5, openInterestBase: null });
     const spot = { ...market, market_type: "spot" as const };
-    expect(projectLighterTradingMarket(spot, { ...spot, open_interest: 123 }).statistics?.openInterestBase).toBeNull();
-    expect(projectLighterTradingMarket(market, { ...market, daily_price_change: Number.NaN }).statistics?.priceChange24h).toBeNull();
+    expect(projectLighterTradingMarket("rhc", spot, { ...spot, open_interest: 123 }).statistics?.openInterestBase).toBeNull();
+    expect(projectLighterTradingMarket("rhc", market, { ...market, daily_price_change: Number.NaN }).statistics?.priceChange24h).toBeNull();
   });
 
   it("projects a bounded market list without provider passthrough fields", async () => {
