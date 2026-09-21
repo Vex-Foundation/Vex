@@ -21,6 +21,8 @@ import {
   type StateOverride,
 } from "viem";
 
+import logger from "@utils/logger.js";
+
 import { ErrorCodes, VexError } from "../../../errors.js";
 import { gasLimitWithHeadroom } from "../../evm-chains/gas-limit-headroom.js";
 import { getUniswapDeployment } from "../../uniswap/deployments.js";
@@ -237,6 +239,27 @@ export async function readLighterDepositPreflight(input: {
       lighter.getAssetDetails(environment),
     ]);
 
+    // ── The user-fixable refusals, stated before anything simulates ──
+    // The fee evidence below SIMULATES the real deposit, and the same amount
+    // also builds the deposit calldata. An unaffordable amount therefore
+    // reverts inside `estimateGas`, and a below-minimum one throws a bare
+    // Error - both arriving at the catch below as something it cannot tell
+    // apart from a provider fault, to be flattened into one generic sentence.
+    // `proveLighterDepositPreflight` owns every one of these checks and
+    // remains the authority (it also cross-checks Lighter's own live minimum);
+    // asserting them HERE, while the live numbers are in hand, is what lets a
+    // user read their own shortfall. Identity leads: a balance read from the
+    // wrong chain is not a shortfall, so the chain answers first.
+    if (chainId !== funding.settlementChainId) throw preflightError(`The live wallet RPC is not ${funding.settlementNetworkName}.`);
+    if (input.amountUnits <= 0n) throw preflightError("The Lighter deposit amount must be positive.");
+    if (input.amountUnits < funding.minimumDepositUnits) {
+      throw preflightError(`The requested amount is below Lighter's minimum ${funding.settlementSymbol} deposit.`);
+    }
+    if (settlementBalanceUnits < input.amountUnits) {
+      throw preflightError(`The selected wallet does not have enough ${funding.settlementSymbol} for this deposit.`);
+    }
+    if (nativeBalanceWei <= 0n) throw preflightError(`The selected wallet has no ${funding.nativeGasSymbol} for network fees.`);
+
     const feeEvidence = await readLighterDepositFeeEvidence({
       environment,
       publicClient,
@@ -276,6 +299,16 @@ export async function readLighterDepositPreflight(input: {
     });
   } catch (error) {
     if (error instanceof VexError && error.code === ErrorCodes.LIGHTER_INVALID_REQUEST) throw error;
+    // Every RPC fault, revert and provider timeout used to leave through the
+    // sentence below with nothing recorded anywhere, so a failed preflight was
+    // undiagnosable after the fact. The error KIND is the discriminator that
+    // was missing; the message is not logged, because a chain error's text can
+    // carry the wallet address and the exact calldata.
+    logger.warn("lighter.deposit.preflight_read_failed", {
+      environment,
+      settlementChainId: funding.settlementChainId,
+      errorKind: error instanceof Error ? error.name : "UnknownError",
+    });
     throw preflightError(`Live ${funding.settlementNetworkName} deposit preflight failed before any approval or signing.`);
   }
 }
