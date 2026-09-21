@@ -23,6 +23,7 @@ import {
 import { ErrorCodes, VexError } from "../../../../errors.js";
 import logger from "@utils/logger.js";
 import * as lighterOrderExecutionIntentsRepo from "@vex-agent/db/repos/lighter-order-execution-intents.js";
+import type { LighterOrderExecutionIntentState } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import * as lighterOrderPreviewsRepo from "@vex-agent/db/repos/lighter-order-previews.js";
 import * as lighterNonceStateRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
 import {
@@ -75,6 +76,20 @@ const LIGHTER_CREATE_SETTLED_PROVIDER_STATES: ReadonlySet<string> = new Set([
   "canceled",
   "rejected",
 ]);
+
+/**
+ * The same three states, read back off a row the stream already committed.
+ *
+ * Reuses the set above deliberately: "this order can consume no more capital"
+ * and "this outcome is final enough to report" are the same question, and
+ * answering them from two lists is how `canceled` came to be reported as an
+ * unknown outcome while `filled` was not.
+ */
+function isTerminalProviderExecutionState(
+  state: LighterOrderExecutionIntentState,
+): state is "filled" | "canceled" | "rejected" {
+  return LIGHTER_CREATE_SETTLED_PROVIDER_STATES.has(state);
+}
 
 const SENDTX_AMBIGUOUS_REASON = "sendtx_failed_after_submit_attempt";
 const SIGNING_AMBIGUOUS_REASON = "signing_failed_after_nonce_reservation";
@@ -959,22 +974,30 @@ async function persistProviderOutcome(input: {
   if (persisted === null) {
     // A stream update can confirm the order while the REST lookup is in flight.
     const current = await input.deps.intents.findByIntentIdAnySession(input.plan.intentId);
-    if (current !== null
+    const streamed = current !== null
       && current.sessionId === input.plan.sessionId
       && current.environment === input.plan.environment
       && current.approvalStatus === "approved"
       && current.clientOrderIndex === input.unsignedOrder.clientOrderIndex
       && current.providerOrderId === input.providerOrderId
-      && current.executionState === "filled"
-      && current.providerOutcomeSource === "inactive_order") {
+      && current.providerOutcomeSource === "inactive_order"
+      && isTerminalProviderExecutionState(current.executionState)
+      ? current.executionState
+      : null;
+    if (current !== null && streamed !== null) {
       // The stream committed the terminal outcome while this read was in
       // flight, so the ledger write that belongs to it was never made here.
-      await observeFillsFromOrderEvidence(input, "filled", "inactive_order");
+      // EVERY terminal state belongs here, not only `filled`: the refusal
+      // above is the transition guard doing its job, and reporting a proven
+      // cancel or rejection as ambiguous told the desk an outcome was unknown
+      // when the row beside it already said exactly what happened.
+      await observeFillsFromOrderEvidence(input, streamed, "inactive_order");
+      await markLighterOrderCapitalCommitmentSettled(input.plan.intentId);
       return {
         status: "provider_confirmed",
         intentId: input.plan.intentId,
         environment: input.plan.environment,
-        executionState: "filled",
+        executionState: streamed,
         signerTxHash: input.signerTxHash,
         submittedTxHash: input.submittedTxHash,
         evidenceSource: "inactive_order",
@@ -982,7 +1005,7 @@ async function persistProviderOutcome(input: {
         providerOrderId: current.providerOrderId,
         providerOrderStatus: current.providerOrderStatus,
         providerEvidence: current.providerOutcomeJson ?? undefined,
-        message: "Lighter provider evidence confirmed order state filled.",
+        message: `Lighter provider evidence confirmed order state ${streamed}.`,
       };
     }
     await markAmbiguous(input.deps, input.plan, PROVIDER_OUTCOME_PERSIST_AMBIGUOUS_REASON);

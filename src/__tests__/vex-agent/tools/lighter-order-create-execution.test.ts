@@ -1669,6 +1669,55 @@ describe("Lighter approved create execution pipeline", () => {
     expect(d.client.sendTx).toHaveBeenCalledTimes(1);
   });
 
+  it("does not turn a cancel already confirmed by the stream into an unknown outcome", async () => {
+    // The live shape behind "Outcome unknown": an IOC order Lighter refuses for
+    // margin is terminal within a second, so the order stream commits
+    // `canceled` while this REST lookup is still in flight. The transition
+    // guard then refuses this write - correctly - and reading that refusal as
+    // ambiguous told the desk nothing was known about an order the row beside
+    // it had already settled.
+    const d = deps();
+    vi.mocked(d.client.getAccountInactiveOrders)
+      .mockResolvedValueOnce({ code: 200, orders: [] })
+      .mockResolvedValue({ code: 200, orders: [accountOrder({
+        status: "canceled-margin-not-allowed", filled_base_amount: "0", remaining_base_amount: "0",
+      })] });
+    vi.mocked(d.intents.markProviderOutcome).mockResolvedValue(null);
+    vi.mocked(d.intents.findByIntentIdAnySession).mockResolvedValue({
+      ...APPROVED_INTENT_ROW, executionState: "canceled", clientOrderIndex: UNSIGNED_ORDER.clientOrderIndex,
+      providerOrderId: "123", providerOrderStatus: "canceled-margin-not-allowed",
+      providerOutcomeSource: "inactive_order",
+      providerOutcomeJson: { status: "canceled-margin-not-allowed" },
+    });
+    const result = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+    expect(result).toMatchObject({
+      status: "provider_confirmed",
+      executionState: "canceled",
+      providerOrderStatus: "canceled-margin-not-allowed",
+    });
+    expect(d.intents.markAmbiguous).not.toHaveBeenCalled();
+    expect(d.client.sendTx).toHaveBeenCalledTimes(1);
+  });
+
+  it("still reports ambiguous when the row the stream left is not terminal", async () => {
+    // The guard only refuses a write it has a settled answer for. Anything
+    // else reaching this branch is a persistence failure, and must keep saying
+    // so rather than borrowing the stream's confidence.
+    const d = deps();
+    vi.mocked(d.client.getAccountInactiveOrders)
+      .mockResolvedValueOnce({ code: 200, orders: [] })
+      .mockResolvedValue({ code: 200, orders: [accountOrder({
+        status: "canceled", filled_base_amount: "0", remaining_base_amount: "0",
+      })] });
+    vi.mocked(d.intents.markProviderOutcome).mockResolvedValue(null);
+    vi.mocked(d.intents.findByIntentIdAnySession).mockResolvedValue({
+      ...APPROVED_INTENT_ROW, executionState: "open", clientOrderIndex: UNSIGNED_ORDER.clientOrderIndex,
+      providerOrderId: "123", providerOrderStatus: "open", providerOutcomeSource: "active_order",
+    });
+    const result = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+    expect(result).toMatchObject({ status: "ambiguous" });
+  });
+
   it("reports a contradictory filled quantity specifically without submitting again", async () => {
     const d = deps();
     vi.mocked(d.client.getAccountInactiveOrders)
