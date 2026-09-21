@@ -928,6 +928,22 @@ describe("a decomposed (NFD) filename", () => {
 describe("watching a real project", () => {
   it("reports a create, an update and a delete", async () => {
     await watchTree();
+    // ARM the native subscription before the create under test, the same idiom
+    // the SUSPENDS test below uses. `watchFile` resolves as soon as the native
+    // `subscribe` call resolves, which is NOT the moment the stream starts
+    // delivering - so the very first write can land in that gap and its create
+    // is lost, which is exactly how this test timed out on Windows CI with
+    // "saw []". A sentinel written inside the root travels the whole pipeline,
+    // so its arrival proves the subscription is live; clearing events then
+    // leaves only the create/update/delete under test.
+    await writeFile(path.join(root, "arming-sentinel.txt"), "x", "utf8");
+    await waitFor(
+      "the sentinel that arms the native subscription",
+      () => changeFor("arming-sentinel.txt") !== undefined,
+      5_000,
+    );
+    events = [];
+
     const target = path.join(root, "a.txt");
 
     await writeFile(target, "one", "utf8");
