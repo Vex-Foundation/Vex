@@ -58,14 +58,21 @@ export function AgentLighterSetupHost({
     return () => { active = false; };
   }, [sessionId]);
 
+  /**
+   * `environment` is the one the modal FINISHED, which need not be the one the
+   * agent opened it with: the toggle is the user's to move. Main verifies and
+   * records that deployment, so the parked turn is answered about the account
+   * the user actually set up.
+   */
   const settle = useCallback(async (
-    outcome: "completed",
+    environment: "core" | "rhc",
   ): Promise<boolean> => {
     if (snapshot === null) return false;
     const result = await window.vex.lighterTrading.settleAgentSetup({
       sessionId: snapshot.sessionId,
       intentId: snapshot.intentId,
-      outcome,
+      outcome: "completed",
+      environment,
     });
     if (!result.ok || !result.data.settled) return false;
     setSnapshot(null);
@@ -102,9 +109,8 @@ export function AgentLighterSetupHost({
       onOpenChange={() => undefined}
       sessionId={snapshot.sessionId}
       environment={snapshot.environment}
-      lockEnvironment
       externalError={settlementError}
-      onDone={() => settle("completed")}
+      onDone={(environment) => settle(environment)}
       onCancel={cancel}
     />
   );

@@ -159,10 +159,14 @@ export function registerLighterOnboardingHandlers(): ReadonlyArray<() => void> {
           });
         }
 
+        // The user may have moved the modal's environment toggle after the
+        // agent opened it, so the deployment to verify is the one the modal
+        // says it finished - not the one the agent guessed.
+        const environment = input.environment ?? current.environment;
         if (input.outcome === "completed" && current.status === "pending") {
           const status = await resolveLighterAccountSetupStatus({
             sessionId: input.sessionId,
-            environment: current.environment,
+            environment,
           });
           if (!status.accountExists || !status.tradingKeyRegistered || !status.feeAuthorized) {
             return err({
@@ -185,6 +189,9 @@ export function registerLighterOnboardingHandlers(): ReadonlyArray<() => void> {
                 input.intentId,
                 input.sessionId,
                 targetStatus,
+                // Recorded only on a completion: a cancelled setup finished
+                // nothing anywhere, so it has no environment to claim.
+                input.outcome === "completed" ? environment : undefined,
               ))
           : current.status === targetStatus ? current : null;
         if (settled === null) return ok({ settled: false, resumedAgentTurn: false });

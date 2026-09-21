@@ -109,6 +109,58 @@ beforeEach(() => {
 });
 
 describe("Agent Lighter setup continuation", () => {
+  /**
+   * The agent picks an environment to OPEN the modal with - for a request that
+   * named none, the default. The user may then move the modal's own toggle, so
+   * the deployment to verify is the one the modal says it finished, not the
+   * agent's opening guess, and the row is re-pointed at it so the resumed turn
+   * names the account the user actually set up.
+   */
+  it("verifies and records the environment the modal finished on", async () => {
+    const intentId = "22222222-2222-4222-8222-222222222222";
+    mocks.resumeAgentAfterLighterSetup.mockReturnValueOnce(new Promise(() => undefined));
+
+    const result = await call(
+      { sessionId: SESSION, intentId, outcome: "completed", environment: "rhc" },
+      CH.lighterTrading.settleAgentSetup,
+    );
+
+    expect(result.ok).toBe(true);
+    // The row says "core"; the modal finished "rhc", and rhc is what counts.
+    expect(mocks.resolveLighterAccountSetupStatus).toHaveBeenCalledWith({
+      sessionId: SESSION,
+      environment: "rhc",
+    });
+    expect(mocks.settleIfPendingWith).toHaveBeenCalledWith(
+      expect.anything(),
+      intentId,
+      SESSION,
+      "completed",
+      "rhc",
+    );
+  });
+
+  it("refuses a switched environment that is not actually set up", async () => {
+    mocks.resolveLighterAccountSetupStatus.mockResolvedValue({
+      accountExists: true,
+      tradingKeyRegistered: false,
+      feeAuthorized: false,
+    });
+
+    const result = await call(
+      {
+        sessionId: SESSION,
+        intentId: "22222222-2222-4222-8222-222222222222",
+        outcome: "completed",
+        environment: "rhc",
+      },
+      CH.lighterTrading.settleAgentSetup,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(mocks.settleIfPendingWith).not.toHaveBeenCalled();
+  });
+
   it("returns the pending interaction for renderer recovery", async () => {
     mocks.getPendingForSession.mockResolvedValue({
       intentId: "22222222-2222-4222-8222-222222222222",
@@ -144,6 +196,7 @@ describe("Agent Lighter setup continuation", () => {
       intentId,
       SESSION,
       "completed",
+      "core",
     );
     expect(mocks.resumeAgentAfterLighterSetup).toHaveBeenCalledWith({
       intentId,
@@ -186,6 +239,8 @@ describe("Agent Lighter setup continuation", () => {
       intentId,
       SESSION,
       "cancelled",
+      // Nothing was set up anywhere, so the row claims no environment.
+      undefined,
     );
   });
 });

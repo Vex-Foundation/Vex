@@ -9,18 +9,27 @@ const settleAgentSetup = vi.fn();
 const getPendingAgentSetup = vi.fn();
 
 vi.mock("../LighterAccountSetupModal.js", () => ({
+  // The real modal reports which environment it FINISHED on, which is not
+  // necessarily the one it opened with - the switch belongs to the user. The
+  // two Done buttons stand for finishing on each side of that toggle.
   LighterAccountSetupModal: (props: {
     environment: string;
     externalError?: string | null;
+    lockEnvironment?: boolean;
     onCancel: () => void;
-    onDone: () => Promise<boolean>;
+    onDone: (environment: "core" | "rhc") => Promise<boolean>;
   }) => (
-    <div data-testid="setup-modal" data-environment={props.environment}>
+    <div
+      data-testid="setup-modal"
+      data-environment={props.environment}
+      data-locked={props.lockEnvironment === true ? "yes" : "no"}
+    >
       {props.externalError === null || props.externalError === undefined
         ? null
         : <p role="alert">{props.externalError}</p>}
       <button onClick={() => { void props.onCancel(); }}>Cancel</button>
-      <button onClick={() => { void props.onDone(); }}>Done</button>
+      <button onClick={() => { void props.onDone(props.environment as "core" | "rhc"); }}>Done</button>
+      <button onClick={() => { void props.onDone("rhc"); }}>Done on RHC</button>
     </div>
   ),
 }));
@@ -69,6 +78,42 @@ describe("AgentLighterSetupHost", () => {
 
     expect(screen.getByTestId("setup-modal").getAttribute("data-environment")).toBe("core");
     expect(getPendingAgentSetup).toHaveBeenCalledWith({ sessionId: ACTIVE_SESSION });
+  });
+
+  /**
+   * The agent has to pick an environment to open on, and for a request that
+   * named none it picks the default. That guess must not become a cage: the
+   * user switches the modal's own toggle, and settlement is told what they
+   * actually finished rather than what the agent assumed.
+   */
+  it("never pins the user to the environment the agent opened with", async () => {
+    render(<AgentLighterSetupHost sessionId={ACTIVE_SESSION} />);
+    act(() => listener?.(event()));
+
+    expect(screen.getByTestId("setup-modal").getAttribute("data-locked")).toBe("no");
+
+    fireEvent.click(screen.getByText("Done on RHC"));
+
+    await waitFor(() => expect(settleAgentSetup).toHaveBeenCalledWith({
+      sessionId: ACTIVE_SESSION,
+      intentId: INTENT,
+      outcome: "completed",
+      environment: "rhc",
+    }));
+  });
+
+  it("settles on the environment it opened with when nothing was switched", async () => {
+    render(<AgentLighterSetupHost sessionId={ACTIVE_SESSION} />);
+    act(() => listener?.(event()));
+
+    fireEvent.click(screen.getByText("Done"));
+
+    await waitFor(() => expect(settleAgentSetup).toHaveBeenCalledWith({
+      sessionId: ACTIVE_SESSION,
+      intentId: INTENT,
+      outcome: "completed",
+      environment: "core",
+    }));
   });
 
   it("ignores setup events owned by another session", () => {

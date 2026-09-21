@@ -42,6 +42,14 @@ export const lighterSetupSettleInputSchema = z.object({
   sessionId: z.string().uuid(),
   intentId: z.string().uuid(),
   outcome: z.enum(["completed", "cancelled"]),
+  /**
+   * The deployment the modal actually finished, when it differs from the one
+   * the agent opened it with. The modal's environment toggle is the user's to
+   * move, so a setup that started as RHC can legitimately complete as Core;
+   * main verifies THIS environment and records it, rather than checking the
+   * agent's opening guess. Omitted keeps the recorded one.
+   */
+  environment: z.enum(["core", "rhc"]).optional(),
 }).strict();
 
 export const lighterSetupSettleResultSchema = z.object({

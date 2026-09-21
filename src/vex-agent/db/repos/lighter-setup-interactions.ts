@@ -78,18 +78,31 @@ export async function getPendingForSession(
   return row === null ? null : mapRow(row);
 }
 
+/**
+ * `environment` re-points the row at the deployment the modal ACTUALLY set up.
+ * The agent picks one to open the modal with, and the user may switch the
+ * modal's own toggle before finishing; the row has to follow, because it is
+ * what settlement verifies against and what the resumed turn names back to the
+ * user. Omitted leaves the recorded environment untouched.
+ *
+ * Still the same single CAS: one statement, still admitting exactly one
+ * settlement of a pending row.
+ */
 export async function settleIfPendingWith(
   client: PoolClient,
   intentId: string,
   sessionId: string,
   status: Exclude<LighterSetupInteractionStatus, "pending">,
+  environment?: LighterSetupEnvironment,
 ): Promise<LighterSetupInteraction | null> {
   const result = await client.query<Record<string, unknown>>(
     `UPDATE lighter_setup_interactions
-        SET status = $3, updated_at = NOW()
+        SET status = $3,
+            environment = COALESCE($4, environment),
+            updated_at = NOW()
       WHERE intent_id = $1 AND session_id = $2 AND status = 'pending'
       RETURNING ${COLUMNS}`,
-    [intentId, sessionId, status],
+    [intentId, sessionId, status, environment ?? null],
   );
   const row = result.rows[0];
   return row === undefined ? null : mapRow(row);

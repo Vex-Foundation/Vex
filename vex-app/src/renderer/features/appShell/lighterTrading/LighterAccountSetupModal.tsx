@@ -179,21 +179,23 @@ export function LighterAccountSetupModal({
   environment,
   onDone,
   onCancel,
-  lockEnvironment = false,
   externalError = null,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (next: boolean) => void;
   readonly sessionId: string | null;
-  /** The desk's current environment; the modal's own switch may pick the other one. */
+  /**
+   * The environment to OPEN on - the desk's current one, or the one the agent
+   * proved unready. Either way the switch below is the user's: an agent that
+   * had to pick for an unnamed request must not be able to pin them to its
+   * guess. What they finish on is what settlement verifies and records.
+   */
   readonly environment: LighterTradingEnvironment;
   readonly onDone: (
     environment: LighterTradingEnvironment,
   ) => boolean | void | Promise<boolean | void>;
   /** Only this deliberate action can dismiss an unfinished setup. */
   readonly onCancel?: () => boolean | void | Promise<boolean | void>;
-  /** Agent-originated setup is fixed to the environment the status tool proved. */
-  readonly lockEnvironment?: boolean;
   /** Host-owned settlement failure, used when an optimistic close rolls back. */
   readonly externalError?: string | null;
 }): JSX.Element {
@@ -293,7 +295,7 @@ export function LighterAccountSetupModal({
                 type="button"
                 key={env}
                 aria-pressed={setup.environment === env}
-                disabled={started || lockEnvironment}
+                disabled={started}
                 onClick={() => setup.setEnvironment(env)}
               >
                 <span className="lit-setup-env-name">{ENVIRONMENT_LABELS[env]}</span>
