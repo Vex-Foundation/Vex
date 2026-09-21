@@ -1057,7 +1057,13 @@ describe("Lighter agent read handlers", () => {
       nonceReservable: true,
     });
     expect(data.plan).toMatchObject({ ready: true, legs: [] });
-    expect(data.userGuidance).toContain("they are ready to trade");
+    // A ready account answers immediately with Vex's own drafted message; the
+    // read is not an invitation to fetch markets and balances first.
+    expect(data.userGuidance).toContain("ANSWER NOW and CALL NO FURTHER TOOL");
+    expect(data.userGuidance).toContain("Your Lighter Core account is ready.");
+    // "and nothing else" has to mean it, so the limits note is not appended
+    // to this branch the way it is to every other one.
+    expect(data.userGuidance).not.toContain("capital share are set by the user");
   });
 
   it.each(["needs_approval", "ready", "blocked", "wrong-account"] as const)("includes %s fee consent in complete trade readiness", async (status) => {

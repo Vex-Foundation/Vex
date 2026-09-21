@@ -85,6 +85,10 @@ import {
   type LighterOrderPreviewMarketType,
 } from "../params.js";
 import {
+  lighterEnvironmentLabel,
+  lighterSetupCompleteGuidance,
+} from "../setup-presentation.js";
+import {
   projectCandles,
   projectAccountResponse,
   projectApiKeys,
@@ -811,9 +815,11 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         walletAddress,
         accountIndex: status.accountIndex,
       });
-      const environmentLabel = environment.value === "core"
-        ? "Lighter Core"
-        : "Lighter RHC";
+      const environmentLabel = lighterEnvironmentLabel(environment.value);
+      // An account that is already ready is not a research prompt: the request
+      // that reached this read has its answer, and the guidance says to give it
+      // rather than go shopping first (see `setup-presentation.ts`).
+      const setupCompleteGuidance = lighterSetupCompleteGuidance(environmentLabel);
       const userGuidance = belowTradeMinimum && tradeMinimumAssessment !== null
         ? `Do not prepare a deposit or approval card. The requested ${tradeMinimumAssessment.requestedTradeDisplay} ${tradeMinimumAssessment.marketSymbol} trade is below Lighter's live minimum trade size ${tradeMinimumAssessment.minimumTradeDisplay}. Show the user these live values in a compact table: requested trade ${tradeMinimumAssessment.requestedTradeDisplay}; Lighter market minimum ${tradeMinimumAssessment.minimumTradeDisplay}; current Lighter collateral ${fundingAssessment.lighterCollateralDisplay}; Vex wallet ${settlementAsset} ${fundingAssessment.walletSettlementDisplay}; combined available ${settlementAsset} ${fundingAssessment.combinedSettlementDisplay}. ${tradeMinimumAssessment.combinedBalanceMeetsMinimum ? "The balances can cover the venue minimum, but Vex will not increase the requested trade or move extra funds without a new user amount." : "The Lighter and Vex-wallet balances combined are also below the venue minimum."} Ask the user to choose a trade amount at or above the live minimum; move no funds now.`
         : !depositAmountProvided && needsFunding
@@ -831,7 +837,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
             : feeAuthorizationReadiness?.status === "blocked"
               ? feeAuthorizationReadiness.reason
             : plan.ready && managedTradingAccessActive
-              ? "The selected wallet's Lighter account is funded and its locally encrypted Vex trading access is active. Tell the user they are ready to trade; do not expose account or API-key indexes unless they ask for technical details."
+              ? setupCompleteGuidance
               : managedTradingReadiness?.reason === "nonce_not_reservable"
                 ? `Reconcile the exact local transaction that owns the ${environment.value.toUpperCase()} nonce reservation. Use lighter.withdraw.status for a withdrawal reservation or lighter.order.status for an order or order-lifecycle reservation. Do not prepare a key registration or another signed action until the nonce is reservable.`
                 : readinessRecoveryLeg?.kind === "reconcile_trading_access"
@@ -858,7 +864,12 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         tradingAccessRoute,
         depositAmountProvided,
         tradingLimits,
-        userGuidance: `${userGuidance} ${LIGHTER_TRADING_LIMITS_GUIDANCE}`,
+        // The ready answer is a verbatim reply, so nothing may be appended to
+        // it - "and nothing else" has to mean it. Every other branch keeps the
+        // limits note, which is what sizing the next trade needs.
+        userGuidance: userGuidance === setupCompleteGuidance
+          ? userGuidance
+          : `${userGuidance} ${LIGHTER_TRADING_LIMITS_GUIDANCE}`,
       });
     } catch (err) {
       return fail(

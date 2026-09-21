@@ -73,7 +73,15 @@ describe("resumeAgentAfterLighterSetup", () => {
       success: true,
       ref: { sessionId: "session-1", missionRunId: null, toolCallId: "call_setup" },
     });
-    expect(String(mocks.committed[0]?.output)).toContain("not consent to trade");
+    const output = String(mocks.committed[0]?.output);
+    // The resumed turn is told to ANSWER, not to go and look things up: a
+    // finished setup is not a research prompt (see `setup-presentation.ts`).
+    expect(output).toContain("ANSWER NOW and CALL NO FURTHER TOOL");
+    expect(output).toContain("Your Lighter Core account is ready.");
+    expect(output).toContain("Do not read balances, list markets");
+    // A compound request still gets to place the trade it asked for.
+    expect(output).toContain("ONLY IF the request did name a specific trade");
+    expect(output).toContain("never consent to trade");
     expect(mocks.runTurn).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: "session-1",
       logScope: "lighter_setup_resume",

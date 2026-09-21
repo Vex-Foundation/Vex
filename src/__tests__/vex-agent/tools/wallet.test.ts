@@ -184,6 +184,35 @@ describe("WalletBalances", () => {
     expect(data.wallets).toHaveLength(2);
   });
 
+  /**
+   * The array form is already accepted so a model holding a list does not lose
+   * a turn joining it. Some serializers go one step further and hand the array
+   * back AS TEXT. Observed live: `chainIds: "[\"robinhood\"]"` answered
+   * `Unsupported chain: ["robinhood"]`, the model retried as `["4663"]` and got
+   * the same, for a chain that resolves perfectly well by slug and by id - two
+   * calls burnt on an encoding.
+   */
+  it.each([
+    ['["robinhood"]', "a stringified single-entry array"],
+    ['["robinhood","ethereum"]', "a stringified multi-entry array"],
+    ['[ "robinhood" ]', "a stringified array with padding"],
+  ])("unwraps %s (%s)", async (chainIds) => {
+    const result = await handleWalletBalances({ walletFamily: "eip155", chainIds }, baseContext);
+    expect(result.success, result.output).toBe(true);
+    expect(result.output).not.toContain("Unsupported chain");
+  });
+
+  it("reads the same scope however the list was encoded", async () => {
+    const [text, array, json] = await Promise.all([
+      handleWalletBalances({ walletFamily: "eip155", chainIds: "robinhood" }, baseContext),
+      handleWalletBalances({ walletFamily: "eip155", chainIds: ["robinhood"] }, baseContext),
+      handleWalletBalances({ walletFamily: "eip155", chainIds: '["robinhood"]' }, baseContext),
+    ]);
+    expect(text.success, text.output).toBe(true);
+    expect(array.output).toEqual(text.output);
+    expect(json.output).toEqual(text.output);
+  });
+
   it("returns EVM snapshot when wallet=eip155", async () => {
     const result = await handleWalletBalances({ walletFamily: "eip155" }, baseContext);
     expect(result.success).toBe(true);

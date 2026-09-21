@@ -6,6 +6,10 @@ import {
   stampResultMessageWith,
 } from "../../db/repos/lighter-setup-interactions.js";
 import logger from "@utils/logger.js";
+import {
+  lighterEnvironmentLabel,
+  lighterSetupCompleteGuidance,
+} from "../../tools/protocols/lighter/setup-presentation.js";
 import { createLeaseHandle } from "../runtime/lease-handle.js";
 import { releaseLeaseAndEmitControlState } from "../runtime/release-and-emit.js";
 import { claimSessionLease } from "../runtime/lease-and-status.js";
@@ -124,13 +128,29 @@ function armBusyRetry(input: { readonly intentId: string; readonly sessionId: st
   })();
 }
 
+/**
+ * The one result the parked tool call receives, and the whole instruction the
+ * resumed turn gets.
+ *
+ * "Continue evaluating the user's original request" used to be all it said,
+ * which against "I want to start trading on Lighter RHC" is an invitation to go
+ * shopping - see `setup-presentation.ts` for what that cost. The completed arm
+ * now carries the answer instead of asking for one, and every claim in that
+ * answer was verified against live Lighter state by `settleAgentSetup` before
+ * this result could be written at all.
+ */
 function describeOutcome(
   status: "completed" | "cancelled",
   environment: "core" | "rhc",
 ): string {
-  const label = environment === "core" ? "Lighter Core" : "Lighter RHC";
+  const label = lighterEnvironmentLabel(environment);
   if (status === "cancelled") {
-    return `The user deliberately cancelled ${label} account setup. Do not continue any Lighter trade from the original request and do not reopen setup unless the user explicitly asks.`;
+    return `The user deliberately cancelled ${label} account setup. `
+      + "ANSWER NOW, in one or two sentences, and call no tool: say setup was cancelled and "
+      + "that you can pick it up again whenever they want. "
+      + "Do not continue any Lighter trade from the original request and do not reopen setup "
+      + "unless the user explicitly asks.";
   }
-  return `${label} account setup completed successfully. Continue evaluating the user's original request. This setup is not consent to trade: any trade must still use the normal preview and approval flow.`;
+  return `${label} account setup completed successfully, verified against live Lighter state.\n\n`
+    + lighterSetupCompleteGuidance(label);
 }
