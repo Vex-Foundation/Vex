@@ -33,6 +33,18 @@ export type LighterAccountSetupPhase =
   | "done";
 
 const POLL_INTERVAL_MS = 2_000;
+/**
+ * A submit half that failed with NOTHING SENT is re-attempted on the user's
+ * behalf before they are asked to do it themselves. Several of these refusals
+ * are races that clear in seconds - a deposit whose credit is not proven
+ * locally yet, a busy wallet execution slot, a provider that blinked - and
+ * "Try again" was only ever the user performing the recovery by hand.
+ *
+ * Bounded deliberately: two attempts, then the error surfaces exactly as
+ * before, so a refusal the user must act on (an unfunded wallet, an amount
+ * below the minimum) still reaches them promptly instead of spinning.
+ */
+const AUTO_RETRY_DELAYS_MS = [2_000, 5_000] as const;
 /** Generous ceilings - a slow provider should surface as "still waiting", never a false failure. */
 const CONFIRM_TIMEOUT_MS: Readonly<Record<string, number>> = {
   confirming_deposit: 3 * 60_000,
@@ -44,7 +56,16 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
 
-type StepOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: string };
+/**
+ * `unproven` is a submit that DISPATCHED and whose outcome Vex cannot prove -
+ * the engine's `indeterminate`. A Lighter deposit reaches it on `l2_pending`
+ * too: confirmed on the settlement chain, Lighter credit still landing. Either
+ * way the one thing that must never follow is a second submit, so it is not an
+ * error here - it hands over to the step's confirm half, which only polls.
+ */
+type StepOutcome =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly unproven?: true; readonly reason: string };
 
 export interface UseLighterAccountSetupInput {
   readonly sessionId: string | null;
@@ -64,7 +85,7 @@ export interface LighterAccountSetupState {
   readonly statusError: string | null;
   readonly statusLoading: boolean;
   readonly phase: LighterAccountSetupPhase;
-  /** Set once a step fails or a confirm wait times out; `retry` resumes exactly there. */
+  /** Set once a step fails or a confirm wait times out; `retry` continues from live status. */
   readonly error: string | null;
   /** False once the wallet already owns a Lighter account - the amount field is moot. */
   readonly needsDeposit: boolean;
@@ -86,10 +107,19 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
   const [amountIn, setAmountIn] = useState("");
   const [phase, setPhase] = useState<LighterAccountSetupPhase>("idle");
   const [error, setError] = useState<string | null>(null);
-  // The chain resumes from exactly the step that failed, never from the top -
-  // re-running a step whose approve already broadcast would double-submit it.
+  // Whichever half last ran, kept so a retry has something to fall back on.
+  // It is a fallback, not the plan: `resumeFromStatus` re-reads the account
+  // first, because re-running a step whose approve already broadcast would
+  // double-submit it.
   const resumeStep = useRef<(() => Promise<void>) | null>(null);
+  // True while the resume belongs to the on-open reconcile, which may finish a
+  // key but must never walk on into the fee grant (see `autoReconcileKey`).
+  const resumeReconcileOnly = useRef(false);
   const cancelled = useRef(false);
+  // Automatic attempts spent on the step being submitted right now; reset by
+  // forward progress, never by the retry itself (that would never end).
+  const autoRetries = useRef(0);
+  const autoRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Fires the on-open auto-reconcile at most once per opening.
   const autoTriggered = useRef(false);
 
@@ -100,9 +130,19 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     setPhase("idle");
     setError(null);
     resumeStep.current = null;
+    resumeReconcileOnly.current = false;
     cancelled.current = false;
     autoTriggered.current = false;
-    return () => { cancelled.current = true; };
+    autoRetries.current = 0;
+    return () => {
+      cancelled.current = true;
+      // A pending auto-retry must not outlive the modal and fire a submit at a
+      // surface nobody is looking at.
+      if (autoRetryTimer.current !== null) {
+        clearTimeout(autoRetryTimer.current);
+        autoRetryTimer.current = null;
+      }
+    };
     // Reset on the open transition only - not on every environment prop tick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -146,6 +186,11 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     }
   };
 
+  const setResume = (step: () => Promise<void>, reconcileOnly = false): void => {
+    resumeStep.current = step;
+    resumeReconcileOnly.current = reconcileOnly;
+  };
+
   const prepareAndApprove = async (
     env: LighterTradingEnvironment,
     action: LighterDeskAction,
@@ -160,9 +205,55 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
       return { ok: false, reason: approved.data.toolOutput ?? approved.data.message };
     }
     if (approved.data.executionStatus === "indeterminate") {
-      return { ok: false, reason: "The outcome is uncertain. Check status before retrying." };
+      return {
+        ok: false,
+        unproven: true,
+        reason: "The outcome is uncertain. Check status before retrying.",
+      };
     }
     return { ok: true };
+  };
+
+  /**
+   * A submit half refused with nothing sent. Spend an automatic attempt if any
+   * remain, otherwise hand the reason to the user with the Try again button.
+   *
+   * The attempt goes through `resumeFromStatus`, the very function the button
+   * calls, so an automatic retry can no more re-submit a step the account has
+   * already moved past than a click can - and the live re-read in front of it
+   * is what makes repeating a money-path step safe at all.
+   */
+  const failStep = (reason: string): void => {
+    if (cancelled.current) return;
+    const delay = AUTO_RETRY_DELAYS_MS[autoRetries.current];
+    if (delay === undefined) { setError(reason); return; }
+    autoRetries.current += 1;
+    autoRetryTimer.current = setTimeout(() => {
+      autoRetryTimer.current = null;
+      if (cancelled.current) return;
+      void resumeFromStatus(environment);
+    }, delay);
+  };
+
+  /**
+   * One submit half. Answers whether the chain may move on to its confirm
+   * half: a proven failure stops here (and may be retried automatically),
+   * while an unprovable one always moves on, because it may already have gone
+   * out and must never be sent twice.
+   */
+  const submitStep = async (
+    env: LighterTradingEnvironment,
+    action: LighterDeskAction,
+  ): Promise<boolean> => {
+    const submitted = await prepareAndApprove(env, action);
+    if (cancelled.current) return false;
+    if (!submitted.ok && submitted.unproven !== true) {
+      failStep(submitted.reason);
+      return false;
+    }
+    // This step's submit is behind us: the next one starts with a full budget.
+    autoRetries.current = 0;
+    return true;
   };
 
   // Each step is two separately-resumable halves: submit (safe to retry -
@@ -170,8 +261,10 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
   // re-submit an approval that already went out). `resumeStep` always points
   // at whichever half last ran, so a confirm timeout's Retry can never turn
   // into a second deposit, a second key registration, or a second fee grant.
+  // A submit whose outcome cannot be proven hands over to its own confirm half
+  // for the same reason: it may already have gone out.
   const confirmFee = async (env: LighterTradingEnvironment): Promise<void> => {
-    resumeStep.current = () => confirmFee(env);
+    setResume(() => confirmFee(env));
     setPhase("confirming_fee");
     const confirmed = await waitUntil(env, (s) => s.feeAuthorized, CONFIRM_TIMEOUT_MS.confirming_fee!);
     if (cancelled.current) return;
@@ -180,18 +273,16 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
   };
 
   const runFee = async (env: LighterTradingEnvironment): Promise<void> => {
-    resumeStep.current = () => runFee(env);
+    setResume(() => runFee(env));
     const before = await refreshStatus(env);
     if (before !== null && before.feeAuthorized) { finish(env); return; }
     setPhase("authorizing_fee");
-    const submitted = await prepareAndApprove(env, { kind: "onboarding_fee" });
-    if (cancelled.current) return;
-    if (!submitted.ok) { setError(submitted.reason); return; }
+    if (!(await submitStep(env, { kind: "onboarding_fee" }))) return;
     await confirmFee(env);
   };
 
   const confirmKey = async (env: LighterTradingEnvironment): Promise<void> => {
-    resumeStep.current = () => confirmKey(env);
+    setResume(() => confirmKey(env));
     setPhase("confirming_key");
     const confirmed = await waitUntil(env, (s) => s.tradingKeyRegistered, CONFIRM_TIMEOUT_MS.confirming_key!);
     if (cancelled.current) return;
@@ -200,16 +291,14 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
   };
 
   const runKey = async (env: LighterTradingEnvironment): Promise<void> => {
-    resumeStep.current = () => runKey(env);
+    setResume(() => runKey(env));
     setPhase("registering_key");
-    const submitted = await prepareAndApprove(env, { kind: "onboarding_key" });
-    if (cancelled.current) return;
-    if (!submitted.ok) { setError(submitted.reason); return; }
+    if (!(await submitStep(env, { kind: "onboarding_key" }))) return;
     await confirmKey(env);
   };
 
   const confirmDeposit = async (env: LighterTradingEnvironment, baseline: number): Promise<void> => {
-    resumeStep.current = () => confirmDeposit(env, baseline);
+    setResume(() => confirmDeposit(env, baseline));
     setPhase("confirming_deposit");
     const confirmed = await waitUntil(
       env,
@@ -222,17 +311,16 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
   };
 
   const runDeposit = async (env: LighterTradingEnvironment, amount: string, baseline: number): Promise<void> => {
-    resumeStep.current = () => runDeposit(env, amount, baseline);
+    setResume(() => runDeposit(env, amount, baseline));
     setPhase("depositing");
-    const submitted = await prepareAndApprove(env, { kind: "onboarding_deposit", amountIn: amount });
-    if (cancelled.current) return;
-    if (!submitted.ok) { setError(submitted.reason); return; }
+    if (!(await submitStep(env, { kind: "onboarding_deposit", amountIn: amount }))) return;
     await confirmDeposit(env, baseline);
   };
 
   function finish(env: LighterTradingEnvironment): void {
     if (cancelled.current) return;
     resumeStep.current = null;
+    resumeReconcileOnly.current = false;
     setPhase("done");
     onDone(env);
   }
@@ -243,11 +331,9 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
   // authorizing afterward - a real authorization - it hands back to idle so the
   // operator confirms that themselves, rather than it being granted silently.
   const autoReconcileKey = async (env: LighterTradingEnvironment): Promise<void> => {
-    resumeStep.current = () => autoReconcileKey(env);
+    setResume(() => autoReconcileKey(env), true);
     setPhase("registering_key");
-    const submitted = await prepareAndApprove(env, { kind: "onboarding_key" });
-    if (cancelled.current) return;
-    if (!submitted.ok) { setError(submitted.reason); return; }
+    if (!(await submitStep(env, { kind: "onboarding_key" }))) return;
     setPhase("confirming_key");
     const confirmed = await waitUntil(env, (s) => s.tradingKeyRegistered, CONFIRM_TIMEOUT_MS.confirming_key!);
     if (cancelled.current) return;
@@ -257,6 +343,7 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     if (fresh !== null && fresh.feeAuthorized) { finish(env); return; }
     // Fees remain: the operator authorizes that step with an explicit click.
     resumeStep.current = null;
+    resumeReconcileOnly.current = false;
     setPhase("idle");
   };
 
@@ -288,6 +375,7 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     if (needsDeposit && !isPositiveDecimal(amountIn)) return;
     if (insufficientBalance) return;
     setError(null);
+    autoRetries.current = 0;
     if (!needsDeposit) {
       if (status.tradingKeyRegistered) void runFee(environment);
       else void runKey(environment);
@@ -297,11 +385,43 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     void runDeposit(environment, amountIn, baseline);
   };
 
+  /**
+   * Retry reads the account BEFORE it resumes anything. The recorded step is a
+   * closure captured when the step began, so replaying it blindly can re-run a
+   * phase the account has since moved past - a deposit that landed while the
+   * modal was calling it a failure would be submitted a second time. Live
+   * status decides instead, and the recorded step is the fallback for exactly
+   * one case: the account has not moved, so whatever was interrupted is still
+   * the right thing to do.
+   */
+  const resumeFromStatus = async (env: LighterTradingEnvironment): Promise<void> => {
+    const fresh = await refreshStatus(env);
+    if (cancelled.current) return;
+    const step = resumeStep.current;
+    if (fresh !== null) {
+      if (fresh.feeAuthorized) { finish(env); return; }
+      if (resumeReconcileOnly.current) {
+        // A reconcile that got its key is done reconciling. Authorizing fees is
+        // the operator's own click, here as much as on open.
+        if (fresh.tradingKeyRegistered) {
+          resumeStep.current = null;
+          setPhase("idle");
+          return;
+        }
+      } else {
+        if (fresh.tradingKeyRegistered) { await runFee(env); return; }
+        if (fresh.accountExists) { await runKey(env); return; }
+      }
+    }
+    if (step !== null) await step();
+  };
+
   const retry = (): void => {
     if (resumeStep.current === null) return;
     setError(null);
-    const step = resumeStep.current;
-    void step();
+    // The automatic attempts are spent; the user asking again refills them.
+    autoRetries.current = 0;
+    void resumeFromStatus(environment);
   };
 
   // On open, silently finish a key that is already registered on-chain (see
