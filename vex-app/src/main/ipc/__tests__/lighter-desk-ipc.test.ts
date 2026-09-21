@@ -5,7 +5,9 @@
  *   - The renderer hands main a selector; main derives the prepare-tool
  *     terms itself (the same terms the ticket used to spell out in chat).
  *   - `ensureEngineDbUrl` first; bail with its Result when the DB is away.
- *   - The referenced session must belong to the Lighter workspace.
+ *   - The referenced session must belong to the Lighter workspace, except for
+ *     the setup chain, which an agent session parked on a pending setup
+ *     interaction may also run.
  *   - The engine's `prepareDeskApproval` outcome is returned as-is, and an
  *     engine throw becomes `internal.unexpected` rather than a fake refusal.
  */
@@ -20,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   ensureEngineDbUrl: vi.fn(),
   getSessionById: vi.fn(),
   prepareDeskApproval: vi.fn(),
+  getPendingForSession: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
@@ -40,6 +43,9 @@ vi.mock("../../database/sessions-db.js", () => ({
 }));
 vi.mock("@vex-agent/engine/core/approval-runtime.js", () => ({
   prepareDeskApproval: (...a: unknown[]) => mocks.prepareDeskApproval(...a),
+}));
+vi.mock("@vex-agent/db/repos/lighter-setup-interactions.js", () => ({
+  getPendingForSession: (...a: unknown[]) => mocks.getPendingForSession(...a),
 }));
 
 const { registerLighterDeskHandlers, deskActionToPrepareCall } = await import(
@@ -73,6 +79,7 @@ beforeEach(() => {
     data: { id: SESSION, workspace: "lighter" },
   });
   mocks.prepareDeskApproval.mockResolvedValue({ kind: "enqueued", approvalId: "appr-1" });
+  mocks.getPendingForSession.mockResolvedValue(null);
   teardowns = registerLighterDeskHandlers();
 });
 
@@ -231,7 +238,7 @@ describe("vex:lighterTrading:prepareDeskAction", () => {
     expect(mocks.prepareDeskApproval).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses a session outside the Lighter workspace before preparing", async () => {
+  it("refuses a trade from a session outside the Lighter workspace before preparing", async () => {
     mocks.getSessionById.mockResolvedValueOnce({
       ok: true,
       data: { id: SESSION, workspace: null },
@@ -247,6 +254,76 @@ describe("vex:lighterTrading:prepareDeskAction", () => {
         kind: "refused",
         reason: "This action is only available from a Lighter desk session.",
       },
+    });
+    expect(mocks.prepareDeskApproval).not.toHaveBeenCalled();
+  });
+
+  it("runs the setup chain for an agent session parked on a pending setup", async () => {
+    mocks.getSessionById.mockResolvedValue({
+      ok: true,
+      data: { id: SESSION, workspace: null },
+    });
+    mocks.getPendingForSession.mockResolvedValue({
+      intentId: "22222222-2222-4222-8222-222222222222",
+      sessionId: SESSION,
+      environment: "rhc",
+      status: "pending",
+    });
+    const result = await call({
+      sessionId: SESSION,
+      environment: "rhc",
+      action: { kind: "onboarding_deposit", amountIn: "12" },
+    });
+    expect(result).toEqual({ ok: true, data: { kind: "enqueued", approvalId: "appr-1" } });
+    expect(mocks.prepareDeskApproval).toHaveBeenCalledWith({
+      sessionId: SESSION,
+      toolId: "lighter.deposit.prepare",
+      params: { environment: "rhc", amountIn: "12" },
+    });
+  });
+
+  it("refuses a setup step for an environment the pending setup did not name", async () => {
+    mocks.getSessionById.mockResolvedValue({
+      ok: true,
+      data: { id: SESSION, workspace: null },
+    });
+    mocks.getPendingForSession.mockResolvedValue({
+      intentId: "22222222-2222-4222-8222-222222222222",
+      sessionId: SESSION,
+      environment: "core",
+      status: "pending",
+    });
+    const result = await call({
+      sessionId: SESSION,
+      environment: "rhc",
+      action: { kind: "onboarding_key" },
+    });
+    expect(result.data).toEqual({
+      kind: "refused",
+      reason: "This action is only available from a Lighter desk session.",
+    });
+    expect(mocks.prepareDeskApproval).not.toHaveBeenCalled();
+  });
+
+  it("never lets a pending setup unlock a trade from an agent session", async () => {
+    mocks.getSessionById.mockResolvedValue({
+      ok: true,
+      data: { id: SESSION, workspace: null },
+    });
+    mocks.getPendingForSession.mockResolvedValue({
+      intentId: "22222222-2222-4222-8222-222222222222",
+      sessionId: SESSION,
+      environment: "rhc",
+      status: "pending",
+    });
+    const result = await call({
+      sessionId: SESSION,
+      environment: "rhc",
+      action: { kind: "close", marketId: 7 },
+    });
+    expect(result.data).toEqual({
+      kind: "refused",
+      reason: "This action is only available from a Lighter desk session.",
     });
     expect(mocks.prepareDeskApproval).not.toHaveBeenCalled();
   });

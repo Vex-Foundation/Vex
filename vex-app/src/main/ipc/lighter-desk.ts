@@ -18,6 +18,7 @@ import {
   type LighterDeskPrepareResult,
 } from "@shared/schemas/lighter-trading.js";
 import type { LighterIntegrationEnvironment } from "@shared/schemas/lighter-integration.js";
+import { getPendingForSession } from "@vex-agent/db/repos/lighter-setup-interactions.js";
 import { log } from "../logger/index.js";
 import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import { getSessionById } from "../database/sessions-db.js";
@@ -29,6 +30,20 @@ const CLOSE_SLIPPAGE_BPS = 100;
 /** Protective orders rest for a day; a market entry's IOC only needs minutes. */
 const PROTECTIVE_EXPIRY_MINUTES = 1440;
 const MARKET_EXPIRY_MINUTES = 30;
+
+/**
+ * The account-setup chain the agent shell can also drive. A Lighter setup
+ * handoff parks an agent-shell session on the same modal the desk shows
+ * (`AgentLighterSetupHost`), and that session has no workspace, so the
+ * workspace check alone would refuse the three onboarding steps it exists to
+ * run. Nothing else crosses: an order, a close or a cancel still needs a desk
+ * session.
+ */
+const ONBOARDING_ACTION_KINDS: ReadonlySet<LighterDeskAction["kind"]> = new Set([
+  "onboarding_deposit",
+  "onboarding_key",
+  "onboarding_fee",
+]);
 
 export type DeskPrepareCall = {
   readonly toolId:
@@ -222,6 +237,11 @@ export function deskActionToPrepareCall(
   }
 }
 
+const WRONG_SESSION: LighterDeskPrepareResult = {
+  kind: "refused",
+  reason: "This action is only available from a Lighter desk session.",
+};
+
 export function registerLighterDeskHandlers(): ReadonlyArray<() => void> {
   return [
     registerHandler({
@@ -235,11 +255,16 @@ export function registerLighterDeskHandlers(): ReadonlyArray<() => void> {
 
         const session = await getSessionById(input.sessionId);
         if (!session.ok) return session;
-        if (session.data === null || session.data.workspace !== "lighter") {
-          return ok({
-            kind: "refused",
-            reason: "This action is only available from a Lighter desk session.",
-          });
+        if (session.data === null) return ok(WRONG_SESSION);
+        // A desk session may prepare anything on the list, and reaches the
+        // in-flight join below without a further await - a second click must
+        // still find the first flight. Any other session gets the extra read.
+        if (session.data.workspace !== "lighter") {
+          if (!ONBOARDING_ACTION_KINDS.has(input.action.kind)) return ok(WRONG_SESSION);
+          const pending = await getPendingForSession(input.sessionId);
+          if (pending === null || pending.environment !== input.environment) {
+            return ok(WRONG_SESSION);
+          }
         }
 
         try {
