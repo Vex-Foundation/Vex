@@ -18,7 +18,6 @@ import {
   type LighterDeskPrepareResult,
 } from "@shared/schemas/lighter-trading.js";
 import type { LighterIntegrationEnvironment } from "@shared/schemas/lighter-integration.js";
-import { getPendingForSession } from "@vex-agent/db/repos/lighter-setup-interactions.js";
 import { log } from "../logger/index.js";
 import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import { getSessionById } from "../database/sessions-db.js";
@@ -30,20 +29,6 @@ const CLOSE_SLIPPAGE_BPS = 100;
 /** Protective orders rest for a day; a market entry's IOC only needs minutes. */
 const PROTECTIVE_EXPIRY_MINUTES = 1440;
 const MARKET_EXPIRY_MINUTES = 30;
-
-/**
- * The account-setup chain the agent shell can also drive. A Lighter setup
- * handoff parks an agent-shell session on the same modal the desk shows
- * (`AgentLighterSetupHost`), and that session has no workspace, so the
- * workspace check alone would refuse the three onboarding steps it exists to
- * run. Nothing else crosses: an order, a close or a cancel still needs a desk
- * session.
- */
-const ONBOARDING_ACTION_KINDS: ReadonlySet<LighterDeskAction["kind"]> = new Set([
-  "onboarding_deposit",
-  "onboarding_key",
-  "onboarding_fee",
-]);
 
 export type DeskPrepareCall = {
   readonly toolId:
@@ -237,9 +222,9 @@ export function deskActionToPrepareCall(
   }
 }
 
-const WRONG_SESSION: LighterDeskPrepareResult = {
+const NO_SESSION: LighterDeskPrepareResult = {
   kind: "refused",
-  reason: "This action is only available from a Lighter desk session.",
+  reason: "This Lighter session is no longer available.",
 };
 
 export function registerLighterDeskHandlers(): ReadonlyArray<() => void> {
@@ -253,19 +238,25 @@ export function registerLighterDeskHandlers(): ReadonlyArray<() => void> {
         const dbUrlOutcome = await ensureEngineDbUrl(ctx.requestId);
         if (!dbUrlOutcome.ok) return dbUrlOutcome;
 
+        // THE SESSION MUST EXIST, AND THAT IS THE WHOLE CHECK.
+        //
+        // This used to require `workspace = 'lighter'`, on the premise that
+        // only a desk-born session could be sitting at the desk. That premise
+        // is gone: the trader's conversation now follows them in, so the
+        // session driving these buttons is ordinarily an agent one, and the
+        // check refused precisely the case the desk exists to serve.
+        //
+        // Nothing that was actually holding the line has moved. The renderer
+        // sends a SELECTOR, never terms to sign; `DESK_PREPARE_TOOL_IDS`
+        // still admits only the whitelisted prepare tools; the prepare
+        // handler still authors every argument the approved call will carry;
+        // the manifest-identity and request-digest checks still run; and the
+        // result is an approval card the user must confirm before anything is
+        // signed. The workspace column records where a session was CREATED,
+        // which was never the same question as who may ask for an approval.
         const session = await getSessionById(input.sessionId);
         if (!session.ok) return session;
-        if (session.data === null) return ok(WRONG_SESSION);
-        // A desk session may prepare anything on the list, and reaches the
-        // in-flight join below without a further await - a second click must
-        // still find the first flight. Any other session gets the extra read.
-        if (session.data.workspace !== "lighter") {
-          if (!ONBOARDING_ACTION_KINDS.has(input.action.kind)) return ok(WRONG_SESSION);
-          const pending = await getPendingForSession(input.sessionId);
-          if (pending === null || pending.environment !== input.environment) {
-            return ok(WRONG_SESSION);
-          }
-        }
+        if (session.data === null) return ok(NO_SESSION);
 
         try {
           const call = deskActionToPrepareCall(input.environment, input.action);

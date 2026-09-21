@@ -36,23 +36,35 @@ export function persistRuntimeMode(mode: RuntimeMode): PersistedRuntimeMode {
 }
 
 /**
- * The desk's ephemeral bookkeeping: where "← Agent" returns to, and which
- * trading session the desk resumes with next time it is entered.
+ * The desk's ephemeral bookkeeping: where "← Agent" returns to, and the
+ * session the desk falls back to when the shell brought none of its own.
  */
 export interface LighterModeState {
-  /** The mode and session to restore when the desk is left. */
+  /** The mode to restore when the desk is left. */
   readonly lighterReturn: {
     readonly mode: PersistedRuntimeMode;
     readonly sessionId: string | null;
   } | null;
-  /** The desk's own active session, remembered across desk visits. */
+  /** The last session the desk was used with; only a COLD entry reads it. */
   readonly lighterSessionId: string | null;
 }
 
 /**
- * The state patch for a mode switch. Entering the desk parks the shell's
- * selection and swaps in the desk's session; leaving does the reverse. A
- * switch that neither enters nor leaves the desk is the plain slot write.
+ * The state patch for a mode switch.
+ *
+ * THE CONVERSATION FOLLOWS THE TRADER. The desk used to park the shell's
+ * session on the way in and swap its own one back, which made the agent and
+ * the desk two separate correspondents: you asked the agent about a market,
+ * opened the chart it was describing, and found a stranger in the rail. They
+ * are one surface. A session carried in keeps its whole history, and the desk
+ * rail hands it the environment, the market and the chart's own indicators on
+ * top, so entering the desk ADDS what the agent can see instead of resetting
+ * who it is.
+ *
+ * `lighterSessionId` survives as the COLD-entry fallback only: entering the
+ * desk with nothing selected resumes the last session traded from, rather
+ * than opening on the starters. Leaving keeps whatever is active - there is
+ * one selection now, and it is the trader's.
  */
 export function transitionRuntimeMode(
   state: LighterModeState & {
@@ -69,14 +81,18 @@ export function transitionRuntimeMode(
         mode: persistRuntimeMode(state.runtimeMode),
         sessionId: state.activeSessionId,
       },
-      activeSessionId: state.lighterSessionId,
+      // Carry the conversation in. Only an empty selection takes the desk's
+      // own last session.
+      activeSessionId: state.activeSessionId ?? state.lighterSessionId,
     };
   }
   if (state.runtimeMode === "lighter") {
     return {
       runtimeMode: next,
       lighterSessionId: state.activeSessionId,
-      activeSessionId: state.lighterReturn?.sessionId ?? null,
+      // The session leaves with the trader: it is the same conversation on
+      // both sides, and dropping it here would be the old swap in reverse.
+      activeSessionId: state.activeSessionId,
       lighterReturn: null,
     };
   }
