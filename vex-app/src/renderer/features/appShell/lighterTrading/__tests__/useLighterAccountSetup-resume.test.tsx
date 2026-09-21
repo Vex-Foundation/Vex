@@ -126,7 +126,13 @@ beforeEach(() => {
     data: { ok: true, data: live },
     isLoading: false,
   }));
-  (globalThis as unknown as { window: Record<string, unknown> }).window.vex = {
+  // `window.vex` is a readonly, fully-typed bridge; a test stubs a partial of
+  // it. defineProperty sets it without an `as unknown as` escape (its `value`
+  // is untyped) and stays re-definable across beforeEach runs.
+  Object.defineProperty(window, "vex", {
+    configurable: true,
+    writable: true,
+    value: {
     lighterTrading: {
       getAccountSetupStatus: () => ({ promise: Promise.resolve({ ok: true, data: live }) }),
       reconcileKeyRegistration: () => {
@@ -155,7 +161,8 @@ beforeEach(() => {
           },
         }),
     },
-  };
+    },
+  });
 });
 
 afterEach(() => {
