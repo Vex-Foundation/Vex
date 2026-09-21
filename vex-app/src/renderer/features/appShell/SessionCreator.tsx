@@ -85,6 +85,12 @@ export function SessionCreator({
   const [selectedSolanaWalletId, setSelectedSolanaWalletId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement | null>(null);
+  /**
+   * Whether the operator has touched the EVM field this opening. The desk
+   * default below fills an UNANSWERED field, so it must never re-apply over a
+   * deliberate clear back to none.
+   */
+  const evmChosen = useRef(false);
   // Announcement is driven by the SUBMIT PATH below, never by a role on the
   // error paragraph - see `components/ui/live-region.tsx`.
   const { announce, region: liveRegion } = useLiveAnnouncer();
@@ -102,11 +108,43 @@ export function SessionCreator({
       setSelectedEvmWalletId(null);
       setSelectedSolanaWalletId(null);
       setSubmitError(null);
+      evmChosen.current = false;
     }
     // `deskSessionName` is read at open time only: the market list settling
     // while the dialog is up must not overwrite what the operator typed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, createSessionInitialTurn, sessionModeFilter, lighter]);
+
+  /**
+   * THE DESK OPENS ON THE PRIMARY WALLET, and says so.
+   *
+   * Main already binds it: a create carrying `workspace: "lighter"` with no
+   * selection is filled with the primary entry (`ipc/_wallet-refs.ts`,
+   * `deskWalletRef`), because the desk mints sessions down routes that have no
+   * picker in front of them at all. What was missing is that this form - the
+   * one route that DOES show a picker - rendered that same session as an empty
+   * field, which reads as "chat-only, no wallet" and is the opposite of what
+   * the create would do.
+   *
+   * So the field is seeded rather than defaulted in main alone, and only here,
+   * in the desk workspace: an ordinary session keeps opening empty, where an
+   * empty field still means the chat-only session it says it means.
+   *
+   * Seeded in its own effect because the inventory is a query: at the moment
+   * the dialog opens it may not have answered yet, and the reset above has
+   * just cleared the field. This lands when the wallets arrive, once, and
+   * never over an operator who has already answered.
+   */
+  // INDEX 0 IS THE PRIMARY, on both sides of the boundary: main's
+  // `getPrimaryEvmEntry` is `cfg.wallet.evm[0]` and `wallets:listAvailable`
+  // hands this list over in config order, unsorted. Sorting it anywhere in
+  // between would leave the field showing one wallet and the create binding
+  // another, which is worse than showing nothing.
+  const primaryEvmWalletId = inventory.evm[0]?.id ?? null;
+  useEffect(() => {
+    if (!open || !lighter || evmChosen.current || primaryEvmWalletId === null) return;
+    setSelectedEvmWalletId((current) => current ?? primaryEvmWalletId);
+  }, [open, lighter, primaryEvmWalletId]);
 
   // Focus the Name input first when the dialog opens — it is the only
   // text field in this modal. Mission goal capture happens in chat.
@@ -225,7 +263,10 @@ export function SessionCreator({
               selectedSolanaWalletId={selectedSolanaWalletId}
               evmOptions={inventory.evm}
               solanaOptions={inventory.solana}
-              onEvmChange={setSelectedEvmWalletId}
+              onEvmChange={(id) => {
+                evmChosen.current = true;
+                setSelectedEvmWalletId(id);
+              }}
               onSolanaChange={setSelectedSolanaWalletId}
             />
           </DialogBody>
