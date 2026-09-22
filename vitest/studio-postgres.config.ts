@@ -97,6 +97,7 @@ export default defineConfig({
       "src/__tests__/integration/repos/settlement-proven-activity.int.test.ts",
       // The durable refusal that retires a consent-expired key registration.
       "src/__tests__/integration/repos/lighter-key-registration-refusal.int.test.ts",
+      "src/__tests__/integration/repos/lighter-lifecycle-retirement.int.test.ts",
       // Deposit-repair attempt ordering on the intents table (needs VEX_LIGHTER_ONBOARDING_DB=1).
       "src/__tests__/lighter/lighter-onboarding-intents-repo.test.ts",
       "src/__tests__/integration/repos/wallet-transfer-unconfirmed-repair.int.test.ts",

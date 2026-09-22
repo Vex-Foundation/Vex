@@ -82,6 +82,30 @@ function intent(overrides: Partial<LighterOrderLifecycleIntentRow> = {}): Lighte
   };
 }
 
+function pristinePreSubmitClose(
+  overrides: Partial<LighterOrderLifecycleIntentRow> = {},
+): LighterOrderLifecycleIntentRow {
+  return intent({
+    actionType: "close_position",
+    providerOrderId: null,
+    approvalId: null,
+    executionState: "pre_submit_revalidated",
+    preSubmitRevalidationJson: { checked: true },
+    preSubmitRevalidatedAt: "2026-08-19T21:56:00.000Z",
+    nonceReservationId: null,
+    nonceValue: null,
+    signerExpiryMs: null,
+    signerTxHash: null,
+    submittedTxHash: null,
+    submitCode: null,
+    submitMessage: null,
+    predictedExecutionTimeMs: null,
+    ambiguousReason: null,
+    expiresAt: "2026-08-19T21:59:00.000Z",
+    ...overrides,
+  });
+}
+
 function nonce(status: "reserved" | "observed" = "reserved") {
   return {
     environment: "rhc" as const,
@@ -167,6 +191,7 @@ describe("Lighter order lifecycle repair", () => {
       submittedTxHash: null,
       submitCode: null,
       submitMessage: null,
+      predictedExecutionTimeMs: null,
       ambiguousReason: null,
       expiresAt: "2026-08-19T21:59:00.000Z",
     });
@@ -185,6 +210,46 @@ describe("Lighter order lifecycle repair", () => {
     expect(d.client.getNextNonce).not.toHaveBeenCalled();
     expect(d.resolveAuth).not.toHaveBeenCalled();
   });
+
+  it.each([null, "approval-1"])(
+    "reports an expired revalidated close as replaceable with approvalId %s",
+    async (approvalId) => {
+      const row = pristinePreSubmitClose({ approvalId });
+      const d = deps(row);
+
+      const result = await repairLighterOrderLifecycleIntent(row, d);
+
+      expect(result.resolution).toBe("stale_pre_submit");
+      expect(result.guidance).toContain("Prepare a fresh action");
+      expect(d.client.getNextNonce).not.toHaveBeenCalled();
+      expect(d.lifecycleIntents.markStreamEvidence).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { sendAttemptStartedAt: "2026-08-19T21:58:00.000Z" },
+    { nonceReservationId: "reserved", nonceValue: "9" },
+    { signerTxHash: "signed" },
+    { submittedTxHash: "submitted" },
+    { predictedExecutionTimeMs: 10 },
+    { providerOutcomeJson: {} },
+    { decidedAt: null },
+    { preSubmitRevalidatedAt: null },
+    { expiresAt: "invalid" },
+  ] satisfies Partial<LighterOrderLifecycleIntentRow>[])(
+    "does not recommend a replacement for contradictory pre-submit evidence %j",
+    async (evidence) => {
+      const d = deps(pristinePreSubmitClose(evidence));
+      const result = await repairLighterOrderLifecycleIntent(pristinePreSubmitClose(evidence), d);
+
+      expect(result.resolution).toBe("degraded");
+      expect(result.guidance).toContain("do not prepare a replacement or retry");
+      expect(result.guidance).not.toContain("Prepare a fresh action");
+      expect(d.client.getNextNonce).not.toHaveBeenCalled();
+      expect(d.nonceState.releaseReservation).not.toHaveBeenCalled();
+      expect(d.lifecycleIntents.markStreamEvidence).not.toHaveBeenCalled();
+    },
+  );
 
   it("resolves a reduce-only close from exact terminal order and full flat account snapshot", async () => {
     const matchHash = "c".repeat(64);

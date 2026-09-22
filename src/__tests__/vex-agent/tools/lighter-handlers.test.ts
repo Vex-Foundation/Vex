@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
 import type {
+  CreateLighterOrderLifecycleIntentInput,
+  LighterOrderLifecycleIntentRow,
+} from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
+import type {
   LighterAccount,
   LighterAccountOrder,
   LighterCandle,
@@ -142,7 +146,10 @@ vi.mock("@vex-agent/db/repos/lighter-oco-execution-intents.js", () => ({
   markSequencerPending: mocks.ocoIntentsRepo.markSequencerPending,
 }));
 
-vi.mock("@vex-agent/db/repos/lighter-order-lifecycle-intents.js", () => ({
+vi.mock("@vex-agent/db/repos/lighter-order-lifecycle-intents.js", async (importOriginal) => ({
+  hasPristinePreSubmitEvidence: (await importOriginal<
+    typeof import("@vex-agent/db/repos/lighter-order-lifecycle-intents.js")
+  >()).hasPristinePreSubmitEvidence,
   findLiveAccountWideCancel: mocks.lifecycleIntentsRepo.findLiveAccountWideCancel,
   findLiveOrderTarget: mocks.lifecycleIntentsRepo.findLiveOrderTarget,
   findAnyLiveOrderMutation: mocks.lifecycleIntentsRepo.findAnyLiveOrderMutation,
@@ -1701,28 +1708,12 @@ describe("Lighter agent read handlers", () => {
     });
   });
 
-  it("atomically replaces an expired evidence-free approved close preparation", async () => {
-    configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
-        environment === "rhc" && accountIndex === 42
-          ? { environment, accountIndex, apiKeyIndex: 7 }
-          : null,
-      listScopes: (environment) =>
-        environment === "rhc" ? [{ environment, accountIndex: 42, apiKeyIndex: 7 }] : [],
-    });
-    mocks.client.getAccount.mockResolvedValue({ code: 200, accounts: [ACCOUNT] });
-    mocks.client.getMarkets.mockResolvedValue({ code: 200, order_books: [MARKET] });
-    mocks.client.getOrderBookOrders.mockResolvedValue({
-      code: 200,
-      total_asks: 0,
-      asks: [],
-      total_bids: 1,
-      bids: [{ ...order(1, "3000"), remaining_base_amount: "2" }],
-    });
-    const stale: Record<string, unknown> = {
+  function staleClose(overrides: Partial<LighterOrderLifecycleIntentRow> = {}): LighterOrderLifecycleIntentRow {
+    return {
       intentId: `lighter-lifecycle-${"a".repeat(32)}`,
       sessionId: "old-session",
-      approvalId: "old-approval",
+      protocolExecutionId: null,
+      approvalId: null,
       matchHash: "b".repeat(64),
       environment: "rhc",
       accountIndex: 42,
@@ -1730,24 +1721,22 @@ describe("Lighter agent read handlers", () => {
       actionType: "close_position",
       marketIndex: 0,
       providerOrderId: null,
+      requestedBaseAmountInteger: "10000",
+      requestedPriceInteger: "297000",
+      requestedSide: "sell",
+      reduceOnly: true,
+      providerSnapshotJson: {},
+      credentialRefJson: {
+        kind: "encrypted_vault_reference",
+        environment: "rhc",
+        accountIndex: 42,
+        apiKeyIndex: 7,
+        vaultCredentialId: "lighter/rhc/account-42/api-key-7",
+      },
       approvalStatus: "approved",
       executionState: "approved",
-      expiresAt: "2026-08-19T21:59:00.000Z",
-    };
-    mocks.lifecycleIntentsRepo.findAnyLiveOrderMutation.mockResolvedValueOnce(stale);
-    mocks.lifecycleIntentsRepo.isSafelyExpirablePreSubmit.mockReturnValueOnce(true);
-    mocks.lifecycleIntentsRepo.expireStalePreSubmitWith.mockResolvedValueOnce({
-      ...stale,
-      executionState: "expired",
-    });
-    mocks.lifecycleIntentsRepo.createApprovalPendingWith.mockImplementationOnce(async (_db, input) => ({
-      ...input,
-      protocolExecutionId: null,
-      approvalId: null,
-      approvalStatus: "approval_pending",
-      executionState: "approval_pending",
-      decisionReason: null,
-      decidedAt: null,
+      decisionReason: "auto-approved: session permission is full access",
+      decidedAt: "2026-08-19T21:57:01.000Z",
       preSubmitRevalidationJson: null,
       preSubmitRevalidatedAt: null,
       nonceReservationId: null,
@@ -1755,6 +1744,7 @@ describe("Lighter agent read handlers", () => {
       signerExpiryMs: null,
       signerTxHash: null,
       submittedTxHash: null,
+      sendAttemptStartedAt: null,
       submitCode: null,
       submitMessage: null,
       predictedExecutionTimeMs: null,
@@ -1762,45 +1752,182 @@ describe("Lighter agent read handlers", () => {
       providerOutcomeJson: null,
       providerOutcomeCheckedAt: null,
       ambiguousReason: null,
-      createdAt: "2026-08-26T00:00:00.000Z",
-      updatedAt: "2026-08-26T00:00:00.000Z",
-    }));
+      createdAt: "2026-08-19T21:57:00.000Z",
+      updatedAt: "2026-08-19T21:57:01.000Z",
+      expiresAt: "2026-08-19T21:59:00.000Z",
+      ...overrides,
+    };
+  }
 
-    const result = await requireValue(LIGHTER_HANDLERS["lighter.position.close.prepare"])({
-      environment: "rhc",
-      accountIndex: 42,
-      marketId: 0,
-      slippageBps: 100,
-    }, READ_CTX);
+  describe("expired position-close preparation", () => {
+    function prepareClose(context: ProtocolExecutionContext = FULL_CTX) {
+      return requireValue(LIGHTER_HANDLERS["lighter.position.close.prepare"])({
+        environment: "rhc",
+        accountIndex: 42,
+        marketId: 0,
+        slippageBps: 100,
+      }, context);
+    }
 
-    expect(result.success).toBe(true);
-    expect(result.preparedActionFollowUp?.args).toMatchObject({
-      toolId: "lighter.position.close",
+    beforeEach(async () => {
+      configureLighterTradingCredentialScopeResolver({
+        findSavedScope: (environment, accountIndex) =>
+          environment === "rhc" && accountIndex === 42
+            ? { environment, accountIndex, apiKeyIndex: 7 }
+            : null,
+        listScopes: (environment) =>
+          environment === "rhc" ? [{ environment, accountIndex: 42, apiKeyIndex: 7 }] : [],
+      });
+      mocks.client.getMarkets.mockResolvedValue({ code: 200, order_books: [MARKET] });
+      mocks.client.getOrderBookOrders.mockResolvedValue({
+        code: 200,
+        total_asks: 0,
+        asks: [],
+        total_bids: 1,
+        bids: [{ ...order(1, "3000"), remaining_base_amount: "2" }],
+      });
+      const { isSafelyExpirablePreSubmit } = await vi.importActual<
+        typeof import("@vex-agent/db/repos/lighter-order-lifecycle-intents.js")
+      >("@vex-agent/db/repos/lighter-order-lifecycle-intents.js");
+      mocks.lifecycleIntentsRepo.isSafelyExpirablePreSubmit.mockReset().mockImplementationOnce(isSafelyExpirablePreSubmit);
+      mocks.lifecycleIntentsRepo.expireStalePreSubmitWith.mockReset();
+      mocks.lifecycleIntentsRepo.createApprovalPendingWith.mockReset();
+      const executeClose = vi.spyOn(
+        await import("@vex-agent/tools/protocols/lighter/order-lifecycle.js"),
+        "executeApprovedLighterClosePosition",
+      );
+      onTestFinished(() => {
+        try {
+          expect(executeClose).not.toHaveBeenCalled();
+        } finally {
+          executeClose.mockRestore();
+        }
+      });
     });
-    expect(mocks.sessionLock.withSessionControlLocks).toHaveBeenCalledWith(
-      ["old-session", "session-1"],
-      expect.any(Function),
-    );
-    expect(mocks.lifecycleIntentsRepo.expireStalePreSubmitWith).toHaveBeenCalledOnce();
-    expect(mocks.lifecycleIntentsRepo.createApprovalPendingWith).toHaveBeenCalledOnce();
+
+    it.each([
+      { executionState: "approved", approvalId: "old-approval" },
+      { executionState: "pre_submit_revalidated", approvalId: "old-approval" },
+      { executionState: "approved", approvalId: null },
+      { executionState: "pre_submit_revalidated", approvalId: null },
+    ] as const)("atomically replaces evidence-free $executionState with approvalId=$approvalId", async ({ executionState, approvalId }) => {
+      const stale = staleClose({
+        executionState,
+        approvalId,
+        decisionReason: approvalId === null
+          ? "auto-approved: session permission is full access"
+          : "user approved exact reduce-only Lighter position close",
+        ...(executionState === "pre_submit_revalidated" ? {
+          preSubmitRevalidationJson: { position: { marketIndex: 0, position: "1" } },
+          preSubmitRevalidatedAt: "2026-08-19T21:57:02.000Z",
+        } : {}),
+      });
+      mocks.lifecycleIntentsRepo.findAnyLiveOrderMutation.mockResolvedValueOnce(stale);
+      mocks.lifecycleIntentsRepo.expireStalePreSubmitWith.mockResolvedValueOnce({
+        ...stale,
+        executionState: "expired",
+      });
+      const transaction = {};
+      let underBothSessionLocks = false;
+      mocks.sessionLock.withSessionControlLocks.mockImplementationOnce(async (_sessionIds, fn) => {
+        underBothSessionLocks = true;
+        try {
+          return await fn(transaction);
+        } finally {
+          underBothSessionLocks = false;
+        }
+      });
+      mocks.lifecycleIntentsRepo.createApprovalPendingWith.mockImplementationOnce(async (db, input: CreateLighterOrderLifecycleIntentInput) => {
+        expect(underBothSessionLocks).toBe(true);
+        expect(db).toBe(transaction);
+        expect(mocks.lifecycleIntentsRepo.expireStalePreSubmitWith).toHaveBeenCalledWith(transaction, {
+          intentId: stale.intentId,
+          sessionId: stale.sessionId,
+          matchHash: stale.matchHash,
+          environment: "rhc",
+          accountIndex: 42,
+          actionType: "close_position",
+          marketIndex: 0,
+          providerOrderId: null,
+        });
+        return staleClose({
+          ...input,
+          approvalId: null,
+          approvalStatus: "approval_pending",
+          executionState: "approval_pending",
+          decisionReason: null,
+          decidedAt: null,
+        });
+      });
+
+      const result = await prepareClose(approvalId === null ? FULL_CTX : READ_CTX);
+
+      expect(result.success, result.output).toBe(true);
+      const fresh = requireValue(mocks.lifecycleIntentsRepo.createApprovalPendingWith.mock.calls[0]?.[1]) as CreateLighterOrderLifecycleIntentInput;
+      expect(fresh.intentId).not.toBe(stale.intentId);
+      expect(fresh.sessionId).toBe("session-1");
+      expect(Date.parse(fresh.expiresAt)).toBeGreaterThan(Date.now());
+      expect(JSON.parse(result.output)).toMatchObject({
+        status: "approval_prepared",
+        intentId: fresh.intentId,
+        approvalStatus: "approval_pending",
+        executionState: "approval_pending",
+        expiresAt: fresh.expiresAt,
+      });
+      expect(result.preparedActionFollowUp).toMatchObject({
+        args: { toolId: "lighter.position.close", params: { intentId: fresh.intentId } },
+        expiresAt: fresh.expiresAt,
+      });
+      expect(mocks.sessionLock.withSessionControlLocks).toHaveBeenCalledWith(
+        ["old-session", "session-1"],
+        expect.any(Function),
+      );
+      expect(mocks.lifecycleIntentsRepo.expireStalePreSubmitWith).toHaveBeenCalledOnce();
+      expect(mocks.lifecycleIntentsRepo.createApprovalPendingWith).toHaveBeenCalledOnce();
+    });
+
+    it("keeps the exact close blocked when its retirement compare-and-swap loses", async () => {
+      const stale = staleClose();
+      mocks.lifecycleIntentsRepo.findAnyLiveOrderMutation.mockResolvedValueOnce(stale);
+      mocks.lifecycleIntentsRepo.expireStalePreSubmitWith.mockResolvedValueOnce(null);
+
+      const result = await prepareClose();
+
+      expect(result.success).toBe(false);
+      expect(result.output).toContain(stale.intentId);
+      expect(result.output).toContain("lighter.order.status");
+      expect(result.preparedActionFollowUp).toBeUndefined();
+      expect(mocks.sessionLock.withSessionControlLocks).toHaveBeenCalledWith(
+        ["old-session", "session-1"],
+        expect.any(Function),
+      );
+      expect(mocks.lifecycleIntentsRepo.expireStalePreSubmitWith).toHaveBeenCalledOnce();
+      expect(mocks.lifecycleIntentsRepo.createApprovalPendingWith).not.toHaveBeenCalled();
+    });
+
+    it("keeps the exact close blocked when a send attempt exists despite its approved state", async () => {
+      const stale = staleClose({ sendAttemptStartedAt: "2026-08-19T21:57:02.000Z" });
+      mocks.lifecycleIntentsRepo.findAnyLiveOrderMutation.mockResolvedValueOnce(stale);
+
+      const result = await prepareClose();
+
+      expect(result.success).toBe(false);
+      expect(result.output).toContain(stale.intentId);
+      expect(result.output).toContain("lighter.order.status");
+      expect(result.preparedActionFollowUp).toBeUndefined();
+      expect(mocks.sessionLock.withSessionControlLocks).not.toHaveBeenCalled();
+      expect(mocks.lifecycleIntentsRepo.expireStalePreSubmitWith).not.toHaveBeenCalled();
+      expect(mocks.lifecycleIntentsRepo.createApprovalPendingWith).not.toHaveBeenCalled();
+    });
   });
 
   it("does not hide an expired approved close that never reached nonce reservation", async () => {
+    const { isSafelyExpirablePreSubmit } = await vi.importActual<
+      typeof import("@vex-agent/db/repos/lighter-order-lifecycle-intents.js")
+    >("@vex-agent/db/repos/lighter-order-lifecycle-intents.js");
+    mocks.lifecycleIntentsRepo.isSafelyExpirablePreSubmit.mockImplementationOnce(isSafelyExpirablePreSubmit);
     mocks.executionIntentsRepo.listUnresolved.mockResolvedValueOnce([]);
-    mocks.lifecycleIntentsRepo.listStatusCandidates.mockResolvedValueOnce([{
-      intentId: `lighter-lifecycle-${"a".repeat(32)}`,
-      environment: "rhc",
-      accountIndex: 42,
-      apiKeyIndex: 7,
-      actionType: "close_position",
-      marketIndex: 0,
-      providerOrderId: null,
-      approvalStatus: "approved",
-      executionState: "approved",
-      nonceValue: null,
-      providerOutcomeJson: null,
-      expiresAt: "2026-08-19T21:59:00.000Z",
-    }]);
+    mocks.lifecycleIntentsRepo.listStatusCandidates.mockResolvedValueOnce([staleClose()]);
 
     const data = await callJson("lighter.order.status", { environment: "rhc" });
 

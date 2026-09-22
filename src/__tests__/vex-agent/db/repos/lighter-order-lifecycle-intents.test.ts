@@ -169,6 +169,47 @@ describe("Lighter order lifecycle intent repository", () => {
     expect(repo.isSafelyExpirablePreSubmit(row({ submittedTxHash: "submitted" }), now)).toBe(false);
   });
 
+  it.each(["approved", "pre_submit_revalidated"] as const)(
+    "retires expired %s decisions with or without an approval card",
+    (executionState) => {
+      for (const approvalId of ["approval-1", null]) {
+        const checkpoint = row({
+          executionState,
+          approvalId,
+          preSubmitRevalidationJson: executionState === "approved" ? null : { checked: true },
+          preSubmitRevalidatedAt: executionState === "approved" ? null : base.expiresAt,
+        });
+        expect(repo.isSafelyExpirablePreSubmit(checkpoint, Date.parse(base.expiresAt))).toBe(true);
+        expect(repo.isSafelyExpirablePreSubmit({ ...checkpoint, decidedAt: null })).toBe(false);
+        expect(repo.isSafelyExpirablePreSubmit({
+          ...checkpoint,
+          preSubmitRevalidationJson: executionState === "approved" ? {} : null,
+        })).toBe(false);
+      }
+    },
+  );
+
+  it.each([
+    { sendAttemptStartedAt: base.expiresAt },
+    { nonceReservationId: "reservation" },
+    { nonceValue: "9" },
+    { signerExpiryMs: 1 },
+    { signerTxHash: "signed" },
+    { submittedTxHash: "submitted" },
+    { submitCode: 200 },
+    { submitMessage: "accepted" },
+    { predictedExecutionTimeMs: 1 },
+    { volumeQuotaRemaining: "1" },
+    { providerOutcomeJson: {} },
+    { providerOutcomeCheckedAt: base.expiresAt },
+    { ambiguousReason: "unknown" },
+  ] satisfies Partial<LighterOrderLifecycleIntentRow>[])(
+    "preserves an expired Full-access row with execution evidence %j",
+    (evidence) => {
+      expect(repo.isSafelyExpirablePreSubmit(row({ approvalId: null, ...evidence }))).toBe(false);
+    },
+  );
+
   it("uses a full evidence-free compare-and-set to expire stale pre-submit work", async () => {
     await repo.expireStalePreSubmitWith(testPoolClient(), {
       intentId: base.intentId,
@@ -184,6 +225,9 @@ describe("Lighter order lifecycle intent repository", () => {
     const sql = mockQueryOneWith.mock.calls[0]?.[1] ?? "";
     expect(sql).toContain("execution_state = 'expired'");
     expect(sql).toContain("expires_at <= NOW()");
+    expect(sql).not.toContain("approval_id IS NOT NULL");
+    expect(sql).toContain("decided_at IS NOT NULL");
+    expect(sql).toContain("send_attempt_started_at IS NULL");
     expect(sql).toContain("nonce_reservation_id IS NULL");
     expect(sql).toContain("signer_tx_hash IS NULL");
     expect(sql).toContain("submitted_tx_hash IS NULL");

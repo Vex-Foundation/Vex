@@ -713,12 +713,13 @@ async function settleExistingLifecyclePreparation(input: {
     } catch {
       return fail(
         "The expired Lighter lifecycle action could not be safely retired. "
-        + "Nothing was signed or submitted; check its exact status before retrying.",
+        + `Check lighter.order.status with environment ${existing.environment} and intentId ${existing.intentId}; do not retry or invent a replacement intent id.`,
       );
     }
   }
   return fail(
-    `A live Lighter ${existing.actionType} action already exists for ${input.target} in state ${existing.executionState}.`,
+    `A live Lighter ${existing.actionType} action already exists for ${input.target} in state ${existing.executionState}. `
+    + `Check lighter.order.status with environment ${existing.environment} and intentId ${existing.intentId}; do not retry or invent a replacement intent id.`,
   );
 }
 

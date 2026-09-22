@@ -185,8 +185,14 @@ async function resolveLighterOrderLifecycleRepair(
       `Lifecycle action is already ${intent.executionState}; no repair was needed.`);
   }
   if (isPreSubmit(intent.executionState)) {
-    const expired = Number.isFinite(Date.parse(intent.expiresAt))
-      && Date.parse(intent.expiresAt) <= deps.now();
+    if (!lifecycleIntentsRepo.hasPristinePreSubmitEvidence(intent)
+      || !Number.isFinite(Date.parse(intent.expiresAt))) {
+      const nonceRecorded = intent.nonceReservationId !== null || intent.nonceValue !== null;
+      return report(intent, intent, "degraded", null, intent.nonceValue, nonceRecorded, nonceRecorded,
+        "This lifecycle action cannot be proven safe to replace from its recorded pre-submit evidence. "
+        + "Keep it blocked for reconciliation; do not prepare a replacement or retry it.");
+    }
+    const expired = lifecycleIntentsRepo.isSafelyExpirablePreSubmit(intent, deps.now());
     return report(
       intent,
       intent,

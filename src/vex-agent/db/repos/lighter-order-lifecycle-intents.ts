@@ -242,6 +242,12 @@ export function isSafelyExpirablePreSubmit(
   intent: LighterOrderLifecycleIntentRow,
   nowMs = Date.now(),
 ): boolean {
+  return hasPristinePreSubmitEvidence(intent)
+    && Number.isFinite(Date.parse(intent.expiresAt))
+    && Date.parse(intent.expiresAt) <= nowMs;
+}
+
+export function hasPristinePreSubmitEvidence(intent: LighterOrderLifecycleIntentRow): boolean {
   const pending = intent.approvalStatus === "approval_pending"
     && intent.executionState === "approval_pending"
     && intent.approvalId === null
@@ -249,7 +255,8 @@ export function isSafelyExpirablePreSubmit(
     && intent.preSubmitRevalidationJson === null
     && intent.preSubmitRevalidatedAt === null;
   const approved = intent.approvalStatus === "approved"
-    && intent.approvalId !== null
+    // Full-access decisions have no approval card. Retirement consumes no
+    // authority; both kinds of approved row keep their original decision.
     && intent.decidedAt !== null
     && (
       (intent.executionState === "approved"
@@ -260,6 +267,7 @@ export function isSafelyExpirablePreSubmit(
         && intent.preSubmitRevalidatedAt !== null)
     );
   return (pending || approved)
+    && intent.sendAttemptStartedAt == null
     && intent.nonceReservationId === null
     && intent.nonceValue === null
     && intent.signerExpiryMs === null
@@ -271,9 +279,7 @@ export function isSafelyExpirablePreSubmit(
     && intent.volumeQuotaRemaining === null
     && intent.providerOutcomeJson === null
     && intent.providerOutcomeCheckedAt === null
-    && intent.ambiguousReason === null
-    && Number.isFinite(Date.parse(intent.expiresAt))
-    && Date.parse(intent.expiresAt) <= nowMs;
+    && intent.ambiguousReason === null;
 }
 
 export async function expireStalePreSubmitWith(
@@ -314,7 +320,7 @@ export async function expireStalePreSubmitWith(
             AND approval_id IS NULL AND decided_at IS NULL
             AND pre_submit_revalidation_json IS NULL AND pre_submit_revalidated_at IS NULL)
           OR
-          (approval_status = 'approved' AND approval_id IS NOT NULL AND decided_at IS NOT NULL
+          (approval_status = 'approved' AND decided_at IS NOT NULL
             AND (
               (execution_state = 'approved'
                 AND pre_submit_revalidation_json IS NULL AND pre_submit_revalidated_at IS NULL)
@@ -323,6 +329,7 @@ export async function expireStalePreSubmitWith(
                 AND pre_submit_revalidation_json IS NOT NULL AND pre_submit_revalidated_at IS NOT NULL)
             ))
         )
+        AND send_attempt_started_at IS NULL
         AND nonce_reservation_id IS NULL AND nonce_value IS NULL
         AND signer_expiry_ms IS NULL AND signer_tx_hash IS NULL
         AND submitted_tx_hash IS NULL AND submit_code IS NULL AND submit_message IS NULL
