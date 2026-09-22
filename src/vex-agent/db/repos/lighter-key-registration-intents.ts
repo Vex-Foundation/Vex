@@ -684,6 +684,44 @@ export async function adoptResumableLighterKeyRegistrationPreparationWith(
   return row === undefined ? null : mapRow(row);
 }
 
+/**
+ * Re-point a submitted/ambiguous registration to a resuming session for
+ * EVIDENCE-ONLY reconciliation, bound to the WALLET. The wallet is the owner;
+ * this only transfers which session carries the already-on-chain outcome
+ * forward so its durable marks can proceed - it signs and submits nothing. It
+ * never touches a pre-submission or terminal row, and a DIFFERENT wallet's
+ * intent is never matched.
+ */
+export async function adoptLighterKeyRegistrationForReconcile(input: {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly environment: LighterEnvironment;
+  readonly walletAddress: string;
+  readonly accountIndex: number;
+}): Promise<LighterKeyRegistrationReservationRow | null> {
+  if (input.sessionId.trim().length === 0) {
+    throw new Error("Lighter key-registration reconcile adoption requires a resuming session.");
+  }
+  if (!Number.isSafeInteger(input.accountIndex) || input.accountIndex <= 0) {
+    throw new Error("Lighter key-registration reconcile adoption requires a valid account index.");
+  }
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET session_id = $2, updated_at = clock_timestamp()
+      WHERE intent_id = $1
+        AND capability = 'key_registration'
+        AND environment = $3
+        AND LOWER(wallet_address) = LOWER($4)
+        AND resolved_account_index = $5
+        AND execution_state IN (
+          'key_registration_tx_staged','change_pub_key_submitted','key_verified','nonce_synchronized','ambiguous'
+        )
+      RETURNING ${RETURNING}`,
+    [input.intentId, input.sessionId, input.environment, input.walletAddress, input.accountIndex],
+  );
+  return row === null ? null : mapRow(row);
+}
+
 /** Persist public TxType/hash/expiry identity before sendTx can be called. */
 export async function markLighterKeyRegistrationTxStagedWith(
   client: LighterOnboardingQueryClient,

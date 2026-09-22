@@ -49,6 +49,7 @@ export interface LighterKeyRegistrationExecutionDeps {
     "getAccountsByL1Address" | "getApiKeys" | "getNextNonce" | "sendTx"
   >;
   readonly readIntent: typeof keyIntentsRepo.findLighterKeyRegistrationIntent;
+  readonly adoptForReconcile: typeof keyIntentsRepo.adoptLighterKeyRegistrationForReconcile;
   readonly integrationEnabled: typeof isLighterIntegrationEnabled;
   readonly resolveWallet: typeof resolveSigningWallet;
   readonly sign: typeof signApprovedLighterKeyRegistration;
@@ -92,8 +93,36 @@ async function runLighterKeyRegistration(
   allowSubmission: boolean,
 ): Promise<LighterKeyRegistrationExecutionResult> {
   let intent = await deps.readIntent(input.intentId);
-  if (intent === null || intent.sessionId !== input.sessionId) {
+  if (intent === null) {
     throw executionError("the approved registration intent is unavailable in this session");
+  }
+  if (intent.sessionId !== input.sessionId) {
+    // Signing must stay with the session that holds the approval. But an
+    // EVIDENCE-ONLY reconcile (allowSubmission === false) is wallet-bound: a
+    // registration already submitted on chain belongs to the WALLET, not the
+    // session that started it, so any session controlling that wallet may carry
+    // its outcome forward. Verify the wallet, then adopt it for the marks.
+    if (allowSubmission) {
+      throw executionError("the approved registration intent is unavailable in this session");
+    }
+    const resumingWallet = deps.resolveWallet(input.walletResolution, input.walletPolicy, "eip155");
+    if (
+      resumingWallet.family !== "eip155"
+      || getAddress(resumingWallet.address) !== getAddress(intent.walletAddress)
+    ) {
+      throw executionError("the registration belongs to a wallet this session does not control");
+    }
+    const adopted = await deps.adoptForReconcile({
+      intentId: intent.intentId,
+      sessionId: input.sessionId,
+      environment: intent.environment,
+      walletAddress: intent.walletAddress,
+      accountIndex: intent.accountIndex,
+    });
+    if (adopted === null) {
+      throw executionError("the submitted registration could not be adopted for reconciliation");
+    }
+    intent = adopted;
   }
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
     assertIntentAuthority(intent!.expiresAt, deps.now().getTime(), phase, input.abortSignal);
@@ -588,6 +617,7 @@ function defaultDeps(): LighterKeyRegistrationExecutionDeps {
   return {
     client: getLighterClient(),
     readIntent: keyIntentsRepo.findLighterKeyRegistrationIntent,
+    adoptForReconcile: keyIntentsRepo.adoptLighterKeyRegistrationForReconcile,
     integrationEnabled: isLighterIntegrationEnabled,
     resolveWallet: resolveSigningWallet,
     sign: signApprovedLighterKeyRegistration,

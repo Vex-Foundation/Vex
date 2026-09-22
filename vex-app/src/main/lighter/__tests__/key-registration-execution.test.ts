@@ -130,11 +130,13 @@ function makeDeps(options: {
   readonly missingSlotResponse?: "empty" | "not_found" | "other_error";
   readonly environment?: LighterEnvironment;
   readonly apiKeyIndex?: number;
+  readonly ownerSessionId?: string;
 } = {}) {
   const environment = options.environment ?? "core";
   const apiKeyIndex = options.apiKeyIndex ?? 7;
   const initiallyApproved = (options.initialExecutionState ?? "approved") === "approved";
   let current = intent(options.initialExecutionState, environment, apiKeyIndex);
+  if (options.ownerSessionId !== undefined) current = { ...current, sessionId: options.ownerSessionId };
   let apiKeyReadCount = 0;
   let nonceReadCount = 0;
   const events: string[] = [];
@@ -202,6 +204,10 @@ function makeDeps(options: {
       })),
     },
     readIntent: vi.fn(async () => current),
+    adoptForReconcile: vi.fn(async (input: { readonly sessionId: string }) => {
+      current = { ...current, sessionId: input.sessionId };
+      return current;
+    }),
     integrationEnabled: vi.fn(async () => true),
     resolveWallet: vi.fn(() => WALLET),
     sign: vi.fn(async () => {
@@ -465,6 +471,52 @@ describe("Lighter key registration execution", () => {
       .rejects.toThrow("no staged transaction to reconcile");
     expect(setup.deps.sign).not.toHaveBeenCalled();
     expect(setup.deps.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("reconciles a submitted registration started by ANOTHER session for the same wallet", async () => {
+    const setup = makeDeps({
+      initialExecutionState: "change_pub_key_submitted",
+      reconciliationPublicKey: PUBLIC_KEY,
+      ownerSessionId: "session-2",
+    });
+
+    const result = await reconcileLighterKeyRegistration(EXECUTION_INPUT, setup.deps);
+
+    expect(result.status).toBe("active");
+    // It verified the resuming session's wallet and adopted the intent for the
+    // evidence-only marks - never signing or submitting.
+    expect(setup.deps.resolveWallet).toHaveBeenCalled();
+    expect(setup.deps.adoptForReconcile).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "session-1",
+    }));
+    expect(setup.deps.sign).not.toHaveBeenCalled();
+    expect(setup.deps.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("refuses to reconcile a submitted registration owned by a DIFFERENT wallet", async () => {
+    const setup = makeDeps({
+      initialExecutionState: "change_pub_key_submitted",
+      reconciliationPublicKey: PUBLIC_KEY,
+      ownerSessionId: "session-2",
+    });
+    vi.mocked(setup.deps.resolveWallet).mockReturnValue({
+      ...WALLET,
+      address: "0x0000000000000000000000000000000000000009",
+    });
+
+    await expect(reconcileLighterKeyRegistration(EXECUTION_INPUT, setup.deps))
+      .rejects.toThrow("a wallet this session does not control");
+    expect(setup.deps.adoptForReconcile).not.toHaveBeenCalled();
+    expect(setup.deps.sign).not.toHaveBeenCalled();
+  });
+
+  it("does not relax the same-session rule for signing execution", async () => {
+    const setup = makeDeps({ ownerSessionId: "session-2" });
+
+    await expect(executeApprovedLighterKeyRegistration(EXECUTION_INPUT, setup.deps))
+      .rejects.toThrow("unavailable in this session");
+    expect(setup.deps.adoptForReconcile).not.toHaveBeenCalled();
+    expect(setup.deps.sign).not.toHaveBeenCalled();
   });
 });
 
