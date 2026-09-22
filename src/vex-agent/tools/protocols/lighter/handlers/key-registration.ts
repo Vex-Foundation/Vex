@@ -408,11 +408,16 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
         return fail("The durable key-registration reservation belongs to a different wallet.");
       }
       if (reserved.sessionId !== sessionId) {
+        // The intent is owned by another (usually closed) session. Ownership is
+        // by WALLET, not session: this session's selected wallet already matched
+        // above, so adopt the never-signed intent here and reset it to
+        // approval_pending for a fresh approval. A registration that ever staged
+        // or submitted a transaction is refused - it may be live on-chain and
+        // must be reconciled from provider evidence, not re-driven blindly.
         const adopted = await withSessionControlLocks(
           [reserved.sessionId, sessionId],
-          (client) => keyIntentsRepo.adoptPristineLighterKeyRegistrationPreparationWith(client, {
+          (client) => keyIntentsRepo.adoptResumableLighterKeyRegistrationPreparationWith(client, {
             intentId: reserved.intentId,
-            previousSessionId: reserved.sessionId,
             sessionId,
             environment: reserved.environment,
             walletAddress: reserved.walletAddress,
@@ -422,7 +427,8 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
         );
         if (adopted === null) {
           return fail(
-            `Lighter key-registration intent ${reserved.intentId} belongs to another session and cannot be safely resumed.`,
+            `Lighter key-registration intent ${reserved.intentId} has already staged or submitted a registration and cannot be resumed from preparation. `
+            + "Reconcile it from provider evidence before starting a new registration for this wallet.",
           );
         }
         reserved = adopted;

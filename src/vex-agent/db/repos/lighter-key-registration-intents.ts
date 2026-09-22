@@ -575,6 +575,115 @@ export async function adoptPristineLighterKeyRegistrationPreparationWith(
   return row === undefined ? null : mapRow(row);
 }
 
+/**
+ * Adopt a never-signed key-registration intent to a resuming session, bound to
+ * the WALLET rather than the session that started it. The `session_id` on an
+ * onboarding intent only records who last drove it; the wallet is the ownership
+ * boundary, so any session whose selected wallet matches may resume it. It also
+ * covers the `approved`-but-unsigned state (the abandoned-mid-onboarding case)
+ * and resets it to `approval_pending`, so the resuming session re-consents
+ * instead of inheriting another session's approval.
+ *
+ * It refuses anything that ever staged, signed, submitted, or activated a
+ * registration (all `registration_*` evidence must be NULL) - those may already
+ * be live on-chain and must be reconciled from provider evidence, never blindly
+ * re-driven. A registration for a DIFFERENT wallet is never matched.
+ */
+export async function adoptResumableLighterKeyRegistrationPreparationWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly environment: LighterEnvironment;
+    readonly walletAddress: string;
+    readonly accountIndex: number;
+    readonly expiresAt: Date;
+  },
+): Promise<LighterKeyRegistrationReservationRow | null> {
+  if (input.sessionId.trim().length === 0) {
+    throw new Error("Lighter key-registration adoption requires a resuming session.");
+  }
+  if (!Number.isSafeInteger(input.accountIndex) || input.accountIndex <= 0) {
+    throw new Error("Lighter key-registration adoption requires a valid account index.");
+  }
+  assertTimestamp(input.expiresAt, "adopted approval expiry");
+
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET session_id = $2,
+            expires_at = $6,
+            approval_status = 'approval_pending',
+            execution_state = CASE WHEN execution_state = 'approved' THEN 'approval_pending' ELSE execution_state END,
+            approval_id = NULL,
+            decided_at = NULL,
+            decision_reason = NULL,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND capability = 'key_registration'
+        AND environment = $3
+        AND LOWER(wallet_address) = LOWER($4)
+        AND resolved_account_index = $5
+        AND approval_status IN ('approval_pending','approved')
+        AND execution_state IN ('slot_reserved','key_generated_encrypted','approval_pending','approved')
+        AND protocol_execution_id IS NULL
+        AND failure_reason IS NULL
+        AND registration_tx_type IS NULL
+        AND registration_tx_hash IS NULL
+        AND registration_tx_expired_at IS NULL
+        AND registration_tx_staged_at IS NULL
+        AND registration_submitted_tx_hash IS NULL
+        AND registration_submit_code IS NULL
+        AND registration_predicted_execution_time_ms IS NULL
+        AND registration_submit_accepted_at IS NULL
+        AND registration_ambiguity_reason IS NULL
+        AND registration_key_verified_at IS NULL
+        AND registration_client_checked_at IS NULL
+        AND post_registration_nonce IS NULL
+        AND registration_nonce_synchronized_at IS NULL
+        AND registration_activated_at IS NULL
+        AND (
+          (
+            execution_state = 'slot_reserved'
+            AND vault_credential_id IS NULL
+            AND public_key IS NULL
+            AND public_key_fingerprint IS NULL
+            AND key_generated_at IS NULL
+            AND registration_nonce IS NULL
+            AND registration_nonce_observed_at IS NULL
+          )
+          OR (
+            execution_state = 'key_generated_encrypted'
+            AND vault_credential_id IS NOT NULL
+            AND public_key IS NOT NULL
+            AND public_key_fingerprint IS NOT NULL
+            AND key_generated_at IS NOT NULL
+            AND registration_nonce IS NULL
+            AND registration_nonce_observed_at IS NULL
+          )
+          OR (
+            execution_state IN ('approval_pending','approved')
+            AND vault_credential_id IS NOT NULL
+            AND public_key IS NOT NULL
+            AND public_key_fingerprint IS NOT NULL
+            AND key_generated_at IS NOT NULL
+            AND registration_nonce IS NOT NULL
+            AND registration_nonce_observed_at IS NOT NULL
+          )
+        )
+      RETURNING ${RETURNING}`,
+    [
+      input.intentId,
+      input.sessionId,
+      input.environment,
+      input.walletAddress,
+      input.accountIndex,
+      input.expiresAt,
+    ],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : mapRow(row);
+}
+
 /** Persist public TxType/hash/expiry identity before sendTx can be called. */
 export async function markLighterKeyRegistrationTxStagedWith(
   client: LighterOnboardingQueryClient,

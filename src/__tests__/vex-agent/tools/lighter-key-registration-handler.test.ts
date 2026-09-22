@@ -52,7 +52,7 @@ vi.mock("@vex-agent/db/repos/lighter-key-registration-intents.js", () => ({
   findLiveLighterKeyRegistrationIntentForAccount: mocks.findLive,
   reserveLighterApiKeySlotWith: (_client: unknown, input: unknown) => mocks.reserve(input),
   findLighterKeyRegistrationIntent: mocks.findIntent,
-  adoptPristineLighterKeyRegistrationPreparationWith: (_client: unknown, input: unknown) =>
+  adoptResumableLighterKeyRegistrationPreparationWith: (_client: unknown, input: unknown) =>
     mocks.adoptPristinePreparation(input),
   markLighterKeyRegistrationApprovalPendingWith: (_client: unknown, input: unknown) =>
     mocks.markApprovalPending(input),
@@ -451,7 +451,6 @@ describe("lighter.key.register.prepare", () => {
     expect(result.success, result.output).toBe(true);
     expect(mocks.adoptPristinePreparation).toHaveBeenCalledWith(expect.objectContaining({
       intentId: INTENT_ID,
-      previousSessionId: "session-2",
       sessionId: "session-1",
     }));
     expect(mocks.prepareCredential).toHaveBeenCalledWith({
@@ -499,8 +498,36 @@ describe("lighter.key.register.prepare", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("belongs to another session");
+    expect(result.output).toContain("has already staged or submitted a registration");
     expect(mocks.prepareCredential).not.toHaveBeenCalled();
+  });
+
+  it("adopts an approved-but-unsigned registration from another session", async () => {
+    const previous = { ...row("approval_pending"), sessionId: "session-2" };
+    // The resumable adoption resets the abandoned approved intent back to
+    // approval_pending under this session, so the user re-approves fresh.
+    const adopted = { ...previous, sessionId: "session-1" };
+    mocks.getWorkflow.mockResolvedValue({
+      workflowState: "key_registration_approval_pending",
+      resolvedAccountIndex: 42,
+    });
+    mocks.findLive.mockResolvedValue({ ...row("approved"), sessionId: "session-2" });
+    mocks.adoptPristinePreparation.mockResolvedValue(adopted);
+
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.withSessionControlLocks).toHaveBeenCalledWith(
+      ["session-2", "session-1"],
+      expect.any(Function),
+    );
+    expect(mocks.adoptPristinePreparation).toHaveBeenCalledWith(expect.objectContaining({
+      intentId: INTENT_ID,
+      sessionId: "session-1",
+    }));
   });
 
   it("adopts an unsubmitted RHC approval preparation into the current session", async () => {
@@ -525,7 +552,6 @@ describe("lighter.key.register.prepare", () => {
     );
     expect(mocks.adoptPristinePreparation).toHaveBeenCalledWith(expect.objectContaining({
       intentId: INTENT_ID,
-      previousSessionId: "session-2",
       sessionId: "session-1",
       environment: "rhc",
       walletAddress: WALLET,

@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { inspectLighterApiKeySlots } from "@tools/lighter/wallet-funding/api-key-slots.js";
 import {
   adoptPristineLighterKeyRegistrationPreparationWith,
+  adoptResumableLighterKeyRegistrationPreparationWith,
   markLighterKeyRegistrationActiveWith,
   markLighterKeyRegistrationAmbiguousWith,
   markLighterKeyRegistrationApprovalPendingWith,
@@ -419,6 +420,55 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
       42,
       expiresAt,
     ]);
+  });
+
+  it("resumably adopts an approved-but-unsigned registration, wallet-bound and reset to pending", async () => {
+    const expiresAt = new Date("2030-01-01T02:00:00.000Z");
+    const approved = lifecycleRow("approved", {
+      session_id: "session-2",
+      approval_status: "approved",
+      approval_id: "approval-old",
+      decided_at: new Date("2030-01-01T01:00:00.000Z"),
+      registration_tx_type: null,
+      registration_tx_hash: null,
+      registration_tx_staged_at: null,
+      expires_at: expiresAt,
+    });
+    const client = {
+      query: vi.fn().mockResolvedValueOnce({
+        rows: [{ ...approved, session_id: INPUT.sessionId, approval_status: "approval_pending", execution_state: "approval_pending", approval_id: null, decided_at: null }],
+        rowCount: 1,
+      }),
+    };
+
+    await expect(adoptResumableLighterKeyRegistrationPreparationWith(client, {
+      intentId: String(approved.intent_id),
+      sessionId: INPUT.sessionId,
+      environment: "core",
+      walletAddress: WALLET,
+      accountIndex: 42,
+      expiresAt,
+    })).resolves.toMatchObject({
+      sessionId: INPUT.sessionId,
+      approvalStatus: "approval_pending",
+      executionState: "approval_pending",
+    });
+
+    const [sql, params] = requireValue(client.query.mock.calls[0]);
+    // Session-agnostic: it matches on wallet + account + intent, NOT the prior
+    // session, and it covers the abandoned `approved` state.
+    expect(sql).not.toContain("AND session_id = $2");
+    expect(sql).toContain("LOWER(wallet_address) = LOWER($4)");
+    expect(sql).toContain("approval_status IN ('approval_pending','approved')");
+    expect(sql).toContain("execution_state IN ('slot_reserved','key_generated_encrypted','approval_pending','approved')");
+    // It resets any approval so the resuming session re-consents, and never
+    // resumes anything that staged or submitted a registration.
+    expect(sql).toContain("approval_status = 'approval_pending'");
+    expect(sql).toContain("approval_id = NULL");
+    expect(sql).toContain("registration_tx_hash IS NULL");
+    expect(sql).toContain("registration_submitted_tx_hash IS NULL");
+    expect(sql).toContain("registration_activated_at IS NULL");
+    expect(params).toEqual([approved.intent_id, INPUT.sessionId, "core", WALLET, 42, expiresAt]);
   });
 
   it("refuses an unresolved workflow that has not proven the requested account", async () => {
