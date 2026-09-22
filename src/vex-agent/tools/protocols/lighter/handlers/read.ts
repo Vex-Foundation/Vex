@@ -28,6 +28,10 @@ import type { ProtocolHandler } from "../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
 import { resolveSelectedAddressForRead } from "@vex-agent/tools/internal/wallet/resolve.js";
 import {
+  readUniqueLighterMasterAccount,
+  type LighterAccountOwnershipReader,
+} from "@tools/lighter/wallet-funding/account-ownership.js";
+import {
   LIGHTER_DEPOSIT_MIN_USDC,
   LIGHTER_SETTLEMENT_ASSET_DECIMALS,
 } from "@tools/lighter/wallet-funding/constants.js";
@@ -489,6 +493,61 @@ export function resolvePreviewAccountIndex(
     );
   }
   return savedScope.accountIndex;
+}
+
+/**
+ * Resolve the Lighter trading account for a preview, BOUND TO THE SESSION'S OWN
+ * WALLET. With more than one wallet each holding its own Lighter trading key,
+ * the account must follow the session's selected wallet, never the vault's
+ * saved-scope order - otherwise one wallet's session could sign on another
+ * wallet's account. A caller-supplied account index is honored only when the
+ * session wallet provably owns it (verified on-chain, the same authority the
+ * desk and onboarding paths use).
+ *
+ * When the host provides no selectable wallet - only legacy or no-wallet
+ * contexts, never a live trading session - it falls back to the unambiguous
+ * saved scope so existing single-wallet behavior is preserved.
+ */
+export async function resolveSessionBoundPreviewAccountIndex(input: {
+  readonly walletResolution: Parameters<typeof resolveSelectedAddressForRead>[0];
+  readonly walletPolicy: Parameters<typeof resolveSelectedAddressForRead>[1];
+  readonly environment: LighterEnvironment;
+  readonly requestedAccountIndex: number | undefined;
+  readonly client: LighterAccountOwnershipReader;
+}): Promise<number> {
+  const distinctAccounts = new Set(
+    listLighterTradingCredentialScopes(input.environment).map((scope) => scope.accountIndex),
+  );
+  // Common single-wallet path: no account was requested and only one account is
+  // configured, so there is nothing to disambiguate or guard. Use it directly.
+  if (input.requestedAccountIndex === undefined && distinctAccounts.size <= 1) {
+    return resolvePreviewAccountIndex(input.environment, undefined);
+  }
+  // A specific account was requested, or several accounts are configured (one
+  // Lighter key per wallet). Either way the account must follow the session's
+  // own wallet, never the vault's saved-scope order, so one wallet's session can
+  // never sign on another wallet's account. Ownership is verified on-chain, the
+  // same authority the desk and onboarding paths use.
+  let walletAddress: string | null = null;
+  try {
+    walletAddress = resolveSelectedAddressForRead(input.walletResolution, input.walletPolicy, "eip155");
+  } catch {
+    walletAddress = null;
+  }
+  if (walletAddress === null) {
+    // No selectable session wallet to bind against (legacy/no-wallet context).
+    // Fall back to the strict scope resolver, which refuses on ambiguity.
+    return resolvePreviewAccountIndex(input.environment, input.requestedAccountIndex);
+  }
+  const owned = await readUniqueLighterMasterAccount(input.client, input.environment, walletAddress);
+  if (input.requestedAccountIndex !== undefined && input.requestedAccountIndex !== owned) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      `This session's selected wallet owns Lighter ${input.environment} account ${owned}, not the requested account ${input.requestedAccountIndex}.`,
+      "Trade from the account owned by this session's selected wallet, or switch the session wallet; Vex will not sign for an account this wallet does not own.",
+    );
+  }
+  return owned;
 }
 
 export async function resolvePreviewApiKeyIndex(
@@ -1245,10 +1304,13 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
 
     try {
       const client = getLighterClient();
-      const accountIndex = resolvePreviewAccountIndex(
-        environment.value,
-        previewParams.value.accountIndex,
-      );
+      const accountIndex = await resolveSessionBoundPreviewAccountIndex({
+        walletResolution: context.walletResolution,
+        walletPolicy: context.walletPolicy,
+        environment: environment.value,
+        requestedAccountIndex: previewParams.value.accountIndex,
+        client,
+      });
       const [marketId, apiKeyResolution] = await Promise.all([
         resolvePreviewMarketId(client, environment.value, previewParams.value),
         resolvePreviewApiKeyIndex(

@@ -35,7 +35,7 @@ import {
   failureDetail,
   findMarketDetail,
   liveProvenance,
-  resolvePreviewAccountIndex,
+  resolveSessionBoundPreviewAccountIndex,
   resolvePreviewApiKeyIndex,
   resolvePreviewMarketId,
 } from "./read.js";
@@ -198,7 +198,13 @@ export const LIGHTER_OCO_HANDLERS: Record<string, ProtocolHandler> = {
     if (!parsed.ok) return fail(parsed.reason);
     try {
       const client = getLighterClient();
-      const accountIndex = resolvePreviewAccountIndex(environment.value, parsed.value.accountIndex);
+      const accountIndex = await resolveSessionBoundPreviewAccountIndex({
+        walletResolution: context.walletResolution,
+        walletPolicy: context.walletPolicy,
+        environment: environment.value,
+        requestedAccountIndex: parsed.value.accountIndex,
+        client,
+      });
       const [marketId, apiKey] = await Promise.all([
         resolvePreviewMarketId(client, environment.value, {
           marketId: parsed.value.marketId,

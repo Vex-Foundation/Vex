@@ -32,6 +32,15 @@ const mocks = vi.hoisted(() => ({
     getOrderBookOrders: vi.fn(),
     getRecentTrades: vi.fn(),
     getCandles: vi.fn(),
+    // Session-wallet -> owned Lighter account, echoing the requested L1 address
+    // so the ownership check passes. Defaults to the dominant test account (42);
+    // tests using another account override this mock.
+    getAccountsByL1Address: vi.fn(async (_environment: string, input: { readonly l1Address: string }) => ({
+      code: 200,
+      l1_address: input.l1Address,
+      sub_accounts: [{ index: 42, account_type: 0, l1_address: input.l1Address }],
+      next_cursor: null,
+    })),
   },
   previewsRepo: {
     create: vi.fn(),
@@ -590,6 +599,14 @@ beforeEach(() => {
   // to identify the wallet whose capital share governs it. Tests that care about
   // a particular account still override this.
   mocks.client.getAccount.mockResolvedValue({ code: 200, accounts: [ACCOUNT] });
+  // Reset the session-wallet ownership lookup to the default account (42); a
+  // per-test mockImplementation must not leak into later tests.
+  mocks.client.getAccountsByL1Address.mockImplementation(async (_environment: string, input: { readonly l1Address: string }) => ({
+    code: 200,
+    l1_address: input.l1Address,
+    sub_accounts: [{ index: 42, account_type: 0, l1_address: input.l1Address }],
+    next_cursor: null,
+  }));
   mocks.previewsRepo.findFreshById.mockResolvedValue(previewRow());
   mocks.previewsRepo.findById.mockResolvedValue(previewRow());
   mocks.executionIntentsRepo.findLiveByPreview.mockResolvedValue(null);
@@ -3284,12 +3301,40 @@ describe("Lighter agent read handlers", () => {
     expect(mocks.previewsRepo.create).not.toHaveBeenCalled();
   });
 
-  it("refuses to guess the account when multiple Lighter trading keys are configured", async () => {
+  it("refuses a requested account the session wallet does not own", async () => {
     configureLighterTradingCredentialScopeResolver({
       findSavedScope: (environment, accountIndex) =>
-        environment === "core" ? { environment, accountIndex, apiKeyIndex: 4 } : null,
-      // Two saved Core scopes: the resolver must refuse rather than silently
-      // pick the lowest account index.
+        environment === "core" && accountIndex === 42 ? { environment, accountIndex, apiKeyIndex: 4 } : null,
+      listScopes: (environment) =>
+        environment === "core" ? [{ environment, accountIndex: 42, apiKeyIndex: 4 }] : [],
+    });
+    // The default lookup has this session's wallet owning account 42.
+    const output = await callFail("lighter.order.preview", {
+      environment: "core",
+      accountIndex: 999,
+      marketSymbol: "ETH",
+      side: "buy",
+      baseAmountIn: "0.004",
+      price: "3000",
+      orderExpiryOffsetMinutes: 30,
+    });
+
+    expect(output).toContain("owns Lighter core account 42, not the requested account 999");
+    // It refuses before any live market/account read, never signing for an
+    // account this session's wallet does not own.
+    expect(mocks.client.getMarkets).not.toHaveBeenCalled();
+    expect(mocks.previewsRepo.create).not.toHaveBeenCalled();
+  });
+
+  it("binds to the session wallet's account when multiple Lighter trading keys are configured", async () => {
+    configureLighterTradingCredentialScopeResolver({
+      findSavedScope: (environment, accountIndex) =>
+        environment === "core" && accountIndex === 736778
+          ? { environment, accountIndex, apiKeyIndex: 4 }
+          : null,
+      // Two DISTINCT Core accounts are configured - the multi-wallet case. Vex
+      // must neither refuse nor guess: it resolves the account owned by THIS
+      // session's own wallet, never the other wallet's account.
       listScopes: (environment) =>
         environment === "core"
           ? [
@@ -3298,8 +3343,29 @@ describe("Lighter agent read handlers", () => {
             ]
           : [],
     });
+    // This session's wallet owns account 736778 (not the other configured 736758).
+    mocks.client.getAccountsByL1Address.mockImplementation(async (_environment: string, input: { readonly l1Address: string }) => ({
+      code: 200,
+      l1_address: input.l1Address,
+      sub_accounts: [{ index: 736778, account_type: 0, l1_address: input.l1Address }],
+      next_cursor: null,
+    }));
+    mocks.client.getMarkets.mockResolvedValue({
+      code: 200,
+      order_books: [{ ...MARKET, market_id: 0, symbol: "ETH-USD", status: "active" }],
+    });
+    mocks.client.getMarketDetails.mockResolvedValue({
+      code: 200, order_book_details: [DETAIL], spot_order_book_details: [],
+    });
+    mocks.client.getOrderBookOrders.mockResolvedValue({
+      code: 200, total_asks: 1, asks: [order(1, "3500.50")], total_bids: 1, bids: [order(2, "3499.50")],
+    });
+    mocks.client.getAccount.mockResolvedValue({
+      code: 200, accounts: [{ ...ACCOUNT, index: 736778 }, ACCOUNT],
+    });
+    mocks.previewsRepo.create.mockResolvedValue(undefined);
 
-    const output = await callFail("lighter.order.preview", {
+    const data = await callJson("lighter.order.preview", {
       environment: "core",
       marketSymbol: "ETH",
       side: "buy",
@@ -3308,11 +3374,13 @@ describe("Lighter agent read handlers", () => {
       orderExpiryOffsetMinutes: 30,
     });
 
-    expect(output).toContain("Multiple Lighter core trading accounts");
-    expect(output).toContain("736758");
-    expect(output).toContain("736778");
-    // It must fail before touching live market data, not pick an account.
-    expect(mocks.client.getMarkets).not.toHaveBeenCalled();
+    // It reads the session wallet's account (736778), never the other wallet's
+    // configured account (736758), and never refuses.
+    expect(mocks.client.getAccount).toHaveBeenCalledWith("core", {
+      by: "index", value: 736778, activeOnly: false,
+    });
+    expect(mocks.client.getAccount).not.toHaveBeenCalledWith("core", expect.objectContaining({ value: 736758 }));
+    expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
   });
 
   it("proceeds when multiple keys are saved for a single account", async () => {
