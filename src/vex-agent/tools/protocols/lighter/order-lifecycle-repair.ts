@@ -88,7 +88,7 @@ export interface LighterOrderLifecycleRepairDeps {
   readonly lifecycleIntents: Pick<
     typeof lifecycleIntentsRepo,
     "findByIntentIdAnySession" | "listStatusCandidates" | "listStreamWatchable" | "markStreamEvidence"
-  >;
+  > & Partial<Pick<typeof lifecycleIntentsRepo, "expirePreSendNonceReservation">>;
   readonly orderIntents: Pick<
     typeof orderIntentsRepo,
     "listStreamWatchable" | "markStreamOutcome" | "markEvidenceConflict"
@@ -126,6 +126,64 @@ export async function repairUnresolvedLighterOrderLifecycles(
   const reports: LighterOrderLifecycleRepairReport[] = [];
   for (const row of rows) reports.push(await repairLighterOrderLifecycleIntent(row, deps));
   return reports;
+}
+
+const LIGHTER_LIFECYCLE_BACKGROUND_REPAIR_LIMIT = 5;
+
+export interface LighterLifecycleRepairSweepReport {
+  readonly examined: number;
+  readonly advanced: number;
+  readonly awaiting: number;
+  readonly degraded: number;
+  readonly errors: number;
+}
+
+/** Resolutions that moved a lifecycle action forward or freed its nonce. */
+const LIGHTER_LIFECYCLE_ADVANCE_RESOLUTIONS: ReadonlySet<LighterOrderLifecycleRepairResolution> = new Set([
+  "already_terminal",
+  "expired_unsubmitted",
+  "provider_evidence",
+  "nonce_consumed_outcome_pending",
+  "nonce_released_never_submitted",
+  "nonce_released_expired_unconsumed",
+]);
+
+/**
+ * Bounded, unattended recovery for periodic sync. It disables privileged
+ * account-auth derivation and frees only what provable, expiry-gated facts
+ * allow - the same safe release the on-demand status tool performs. A stuck
+ * close/cancel/modify nonce reservation that no one is actively retrying is
+ * released here instead of blocking the account until the next user action.
+ *
+ * One malformed or temporarily unavailable intent must not prevent recovery of
+ * the others in the sweep; errors are counted and never persist raw provider
+ * responses or credential material.
+ */
+export async function repairUnresolvedLighterOrderLifecyclesInBackground(
+  input: { readonly environment?: LighterEnvironment; readonly limit?: number } = {},
+  deps: LighterOrderLifecycleRepairDeps = defaultLighterOrderLifecycleRepairDeps(),
+): Promise<LighterLifecycleRepairSweepReport> {
+  const limit = Math.max(
+    1,
+    Math.min(input.limit ?? LIGHTER_LIFECYCLE_BACKGROUND_REPAIR_LIMIT, LIGHTER_LIFECYCLE_BACKGROUND_REPAIR_LIMIT),
+  );
+  const rows = await deps.lifecycleIntents.listStatusCandidates(input.environment, limit);
+  const backgroundDeps: LighterOrderLifecycleRepairDeps = { ...deps, resolveAuth: async () => null };
+  let advanced = 0;
+  let awaiting = 0;
+  let degraded = 0;
+  let errors = 0;
+  for (const row of rows) {
+    try {
+      const report = await repairLighterOrderLifecycleIntent(row, backgroundDeps);
+      if (LIGHTER_LIFECYCLE_ADVANCE_RESOLUTIONS.has(report.resolution)) advanced += 1;
+      else if (report.resolution === "degraded") degraded += 1;
+      else awaiting += 1;
+    } catch {
+      errors += 1;
+    }
+  }
+  return { examined: rows.length, advanced, awaiting, degraded, errors };
 }
 
 /**
@@ -183,6 +241,30 @@ async function resolveLighterOrderLifecycleRepair(
   if (isTerminal(intent.executionState)) {
     return report(intent, intent, "already_terminal", null, null, false, false,
       `Lifecycle action is already ${intent.executionState}; no repair was needed.`);
+  }
+  if (intent.executionState === "nonce_reserved" || intent.executionState === "signed") {
+    const expiry = Date.parse(intent.expiresAt);
+    if (!Number.isFinite(expiry) || intent.nonceReservationId !== `lighter-lifecycle:${intent.intentId}`
+      || intent.nonceValue === null) {
+      return report(intent, intent, "degraded", null, intent.nonceValue, true, true,
+        "The pre-send reservation identity or consent expiry is incomplete. Keep this action blocked for reconciliation.");
+    }
+    if (expiry > deps.now()) {
+      return report(intent, intent, "awaiting_submission", null, intent.nonceValue, true, true,
+        "This lifecycle action still has valid consent and may be signing. Its nonce remains reserved; do not retry it.");
+    }
+    const retired = await deps.lifecycleIntents.expirePreSendNonceReservation?.({
+      intentId: intent.intentId, sessionId: intent.sessionId, environment: intent.environment,
+      accountIndex: intent.accountIndex, apiKeyIndex: intent.apiKeyIndex,
+      reservationId: intent.nonceReservationId, nonceValue: intent.nonceValue,
+      expectedState: intent.executionState, signerTxHash: intent.signerTxHash,
+    });
+    if (retired == null) {
+      return report(intent, intent, "degraded", null, intent.nonceValue, true, true,
+        "The expired pre-send action could not be atomically retired. Its state or evidence changed; keep it blocked and refresh its exact status.");
+    }
+    return report(intent, retired, "nonce_released_never_submitted", null, intent.nonceValue, true, false,
+      "The expired pre-send lifecycle action was atomically retired and its exact nonce reservation released. Nothing was submitted or retried.");
   }
   if (isPreSubmit(intent.executionState)) {
     if (!lifecycleIntentsRepo.hasPristinePreSubmitEvidence(intent)
@@ -483,12 +565,10 @@ async function observeLiveNonce(
 }
 
 function neverLeftVex(intent: LighterOrderLifecycleIntentRow): boolean {
-  return intent.executionState === "signed"
-    || (
-      intent.executionState === "ambiguous"
-      && intent.ambiguousReason !== null
-      && NEVER_SUBMITTED_REASONS.has(intent.ambiguousReason)
-    );
+  return intent.executionState === "ambiguous"
+    && intent.sendAttemptStartedAt == null
+    && intent.ambiguousReason !== null
+    && NEVER_SUBMITTED_REASONS.has(intent.ambiguousReason);
 }
 
 function isTerminal(state: LighterOrderLifecycleIntentRow["executionState"]): boolean {

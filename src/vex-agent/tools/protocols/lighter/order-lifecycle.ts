@@ -243,7 +243,7 @@ export interface LighterOrderLifecycleExecutionDeps {
   >;
   readonly intents: LighterEvidenceWritePorts<Pick<typeof intentsRepo,
     "markPreSubmitRevalidated" | "attachNonceReservationWith" | "markSigned" | "markSubmissionStaged" | "markApiAccepted" | "markProviderOutcome" | "markAmbiguous" | "markClosePositionChangedBeforeSubmissionWith">>
-    & Pick<typeof intentsRepo, "markSendAttemptStarted" | "markExpiredUnsubmitted" | "markUnsubmittedRefused">;
+    & Pick<typeof intentsRepo, "markSendAttemptStarted" | "markExpiredUnsubmitted" | "markUnsubmittedRefused" | "abandonRevalidatedBeforeNonce">;
   readonly nonceState: LighterEvidenceWritePorts<Pick<typeof nonceRepo, "recordExecutionObserved">>
     & Pick<typeof nonceRepo, "reserveObservedWith" | "releaseUnsubmittedReservation">;
   readonly transaction: typeof withTransaction;
@@ -635,7 +635,21 @@ export async function executeApprovedLighterCancelOne(
     publicKey: canonicalKey(providerKey.public_key),
     transactionTime: providerKey.transaction_time,
   });
-  if (observed === null) throw blocked("A previous Lighter nonce remains unresolved.");
+  if (observed === null) {
+    // The live nonce is still blocked by an unrelated reservation. This action
+    // never reserved, signed, or submitted, so retire it now instead of leaving
+    // it parked at pre_submit_revalidated where it would refuse every later
+    // prepare for this target with "already exists". Recovery clears the
+    // blocking reservation separately; the user or agent can then try again.
+    await deps.intents.abandonRevalidatedBeforeNonce({
+      intentId: intent.intentId,
+      sessionId: intent.sessionId,
+    });
+    throw blocked(
+      "A previous Lighter action still holds this account's nonce and its outcome is not yet proven. "
+      + "This action was not signed or submitted and has been retired; Vex clears the blocking reservation automatically. Try again shortly.",
+    );
+  }
 
   const reservationId = `lighter-lifecycle:${intent.intentId}`;
   assertAuthority("before_reservation");
@@ -902,7 +916,21 @@ export async function executeApprovedLighterModifyOrder(
     publicKey: canonicalKey(providerKey.public_key),
     transactionTime: providerKey.transaction_time,
   });
-  if (observed === null) throw blocked("A previous Lighter nonce remains unresolved.");
+  if (observed === null) {
+    // The live nonce is still blocked by an unrelated reservation. This action
+    // never reserved, signed, or submitted, so retire it now instead of leaving
+    // it parked at pre_submit_revalidated where it would refuse every later
+    // prepare for this target with "already exists". Recovery clears the
+    // blocking reservation separately; the user or agent can then try again.
+    await deps.intents.abandonRevalidatedBeforeNonce({
+      intentId: intent.intentId,
+      sessionId: intent.sessionId,
+    });
+    throw blocked(
+      "A previous Lighter action still holds this account's nonce and its outcome is not yet proven. "
+      + "This action was not signed or submitted and has been retired; Vex clears the blocking reservation automatically. Try again shortly.",
+    );
+  }
 
   const reservationId = `lighter-lifecycle:${intent.intentId}`;
   assertAuthority("before_reservation");
@@ -1154,7 +1182,21 @@ export async function executeApprovedLighterCancelAll(
     publicKey: canonicalKey(providerKey.public_key),
     transactionTime: providerKey.transaction_time,
   });
-  if (observed === null) throw blocked("A previous Lighter nonce remains unresolved.");
+  if (observed === null) {
+    // The live nonce is still blocked by an unrelated reservation. This action
+    // never reserved, signed, or submitted, so retire it now instead of leaving
+    // it parked at pre_submit_revalidated where it would refuse every later
+    // prepare for this target with "already exists". Recovery clears the
+    // blocking reservation separately; the user or agent can then try again.
+    await deps.intents.abandonRevalidatedBeforeNonce({
+      intentId: intent.intentId,
+      sessionId: intent.sessionId,
+    });
+    throw blocked(
+      "A previous Lighter action still holds this account's nonce and its outcome is not yet proven. "
+      + "This action was not signed or submitted and has been retired; Vex clears the blocking reservation automatically. Try again shortly.",
+    );
+  }
 
   const reservationId = `lighter-lifecycle:${intent.intentId}`;
   assertAuthority("before_reservation");
@@ -1444,7 +1486,21 @@ export async function executeApprovedLighterClosePosition(
     publicKey: canonicalKey(providerKey.public_key),
     transactionTime: providerKey.transaction_time,
   });
-  if (observed === null) throw blocked("A previous Lighter nonce remains unresolved.");
+  if (observed === null) {
+    // The live nonce is still blocked by an unrelated reservation. This action
+    // never reserved, signed, or submitted, so retire it now instead of leaving
+    // it parked at pre_submit_revalidated where it would refuse every later
+    // prepare for this target with "already exists". Recovery clears the
+    // blocking reservation separately; the user or agent can then try again.
+    await deps.intents.abandonRevalidatedBeforeNonce({
+      intentId: intent.intentId,
+      sessionId: intent.sessionId,
+    });
+    throw blocked(
+      "A previous Lighter action still holds this account's nonce and its outcome is not yet proven. "
+      + "This action was not signed or submitted and has been retired; Vex clears the blocking reservation automatically. Try again shortly.",
+    );
+  }
   const reservationId = `lighter-lifecycle:${intent.intentId}`;
   assertAuthority("before_reservation");
   const reserved = await deps.transaction(async (client) => {

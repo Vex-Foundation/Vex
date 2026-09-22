@@ -312,7 +312,8 @@ export async function listUnresolved(
   const limitParam = environment === undefined ? "$1" : "$2";
   const rows = await query<Record<string, unknown>>(
     `SELECT ${COLUMNS} FROM lighter_oco_execution_intents
-      WHERE execution_state IN ('signed','submitted','api_accepted','sequencer_pending','ambiguous')
+      WHERE (execution_state IN ('signed','submitted','api_accepted','sequencer_pending','ambiguous')
+        OR (execution_state='approval_pending' AND approval_status='approved' AND nonce_reservation_id IS NOT NULL))
       ${where} ORDER BY updated_at ASC LIMIT ${limitParam}`,
     values,
   );
@@ -427,4 +428,67 @@ export async function markUnsubmittedRefused(input: {
        RETURNING n.environment)
      SELECT intent_id FROM refused`, [input.intentId, input.sessionId, input.reservationId, input.reason]);
   return row !== null;
+}
+
+
+/**
+ * Retire an expired exact pre-send owner and release its nonce in one statement.
+ * Lock the owner before its nonce, matching the execution refusal transitions.
+ * The expected checkpoint excludes staged/submitted legacy rows even if they
+ * have no send marker, and a concurrent signer must lose the state CAS.
+ */
+export async function expirePreSendNonceReservation(input: {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly apiKeyIndex: number;
+  readonly reservationId: string;
+  readonly nonceValue: string;
+  readonly expectedState: "approval_pending" | "signed";
+  readonly signerTxHash: string | null;
+}): Promise<LighterOcoExecutionIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `WITH owner AS MATERIALIZED (
+      SELECT intent_id FROM lighter_oco_execution_intents
+      WHERE intent_id=$1 AND session_id=$2 AND environment=$3 AND account_index=$4 AND api_key_index=$5
+      FOR UPDATE
+    ), reservation AS MATERIALIZED (
+      SELECT environment, account_index, api_key_index FROM lighter_nonce_state
+      WHERE environment=$3 AND account_index=$4 AND api_key_index=$5
+        AND status='reserved' AND reservation_id=$6 AND reserved_nonce=$7
+        AND EXISTS (SELECT 1 FROM owner)
+      FOR UPDATE
+    ), retired AS (
+      UPDATE lighter_oco_execution_intents SET
+        execution_state=CASE WHEN execution_state='signed' THEN 'expired_unsubmitted' ELSE 'rejected' END,
+        ambiguous_reason='consent_expired_before_submission', updated_at=clock_timestamp()
+      WHERE intent_id=$1 AND session_id=$2 AND environment=$3 AND account_index=$4 AND api_key_index=$5
+        AND approval_status='approved' AND decided_at IS NOT NULL
+        AND execution_state=$8 AND nonce_reservation_id=$6 AND nonce_value=$7
+        AND expires_at <= clock_timestamp()
+        AND pre_submit_revalidation_json IS NOT NULL AND pre_submit_revalidated_at IS NOT NULL
+        AND (
+          (execution_state='approval_pending' AND signer_tx_hash IS NULL AND $9::text IS NULL
+            AND stop_loss_client_order_index IS NULL AND take_profit_client_order_index IS NULL)
+          OR (execution_state='signed' AND signer_tx_hash=$9 AND $9::text IS NOT NULL
+            AND stop_loss_client_order_index IS NOT NULL AND take_profit_client_order_index IS NOT NULL)
+        )
+        AND send_attempt_started_at IS NULL AND submitted_tx_hash IS NULL
+        AND submit_code IS NULL AND submit_message IS NULL
+        AND predicted_execution_time_ms IS NULL AND volume_quota_remaining IS NULL
+        AND provider_outcome_json IS NULL AND provider_outcome_checked_at IS NULL AND ambiguous_reason IS NULL
+
+        AND EXISTS (SELECT 1 FROM reservation)
+      RETURNING ${COLUMNS}
+    ), released AS (
+      UPDATE lighter_nonce_state n SET status='observed', reserved_nonce=NULL, reservation_id=NULL, updated_at=clock_timestamp()
+      FROM retired r WHERE n.environment=r.environment AND n.account_index=r.account_index AND n.api_key_index=r.api_key_index
+        AND n.status='reserved' AND n.reservation_id=r.nonce_reservation_id AND n.reserved_nonce=r.nonce_value
+      RETURNING n.environment
+    ) SELECT ${COLUMNS} FROM retired`,
+    [input.intentId, input.sessionId, input.environment, input.accountIndex, input.apiKeyIndex,
+      input.reservationId, input.nonceValue, input.expectedState, input.signerTxHash],
+  );
+  return row === null ? null : mapRow(row);
 }

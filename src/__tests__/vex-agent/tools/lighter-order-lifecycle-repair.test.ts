@@ -27,6 +27,7 @@ vi.mock("@vex-agent/db/repos/lighter-capital-commitments.js", async (importOrigi
 import {
   LIGHTER_LIFECYCLE_REPAIR_EXPIRY_GRACE_MS,
   repairLighterOrderLifecycleIntent,
+  repairUnresolvedLighterOrderLifecyclesInBackground,
   type LighterOrderLifecycleRepairDeps,
 } from "@vex-agent/tools/protocols/lighter/order-lifecycle-repair.js";
 
@@ -211,6 +212,38 @@ describe("Lighter order lifecycle repair", () => {
     expect(d.resolveAuth).not.toHaveBeenCalled();
   });
 
+  it("background sweep reads status candidates and counts them without privileged auth", async () => {
+    const row = intent({
+      actionType: "close_position",
+      providerOrderId: null,
+      requestedBaseAmountInteger: "10000",
+      requestedPriceInteger: "4950",
+      requestedSide: "sell",
+      reduceOnly: true,
+      approvalStatus: "approved",
+      executionState: "approved",
+      nonceReservationId: null,
+      nonceValue: null,
+      signerExpiryMs: null,
+      signerTxHash: null,
+      submittedTxHash: null,
+      submitCode: null,
+      submitMessage: null,
+      predictedExecutionTimeMs: null,
+      ambiguousReason: null,
+      expiresAt: "2026-08-19T21:59:00.000Z",
+    });
+    const d = deps(row);
+
+    const report = await repairUnresolvedLighterOrderLifecyclesInBackground({}, d);
+
+    expect(d.lifecycleIntents.listStatusCandidates).toHaveBeenCalled();
+    // The background sweep swaps in its own null auth resolver, so the caller's
+    // privileged resolver is never invoked on the sweep's behalf.
+    expect(d.resolveAuth).not.toHaveBeenCalled();
+    expect(report).toMatchObject({ examined: 1, advanced: 0, awaiting: 1, degraded: 0, errors: 0 });
+  });
+
   it.each([null, "approval-1"])(
     "reports an expired revalidated close as replaceable with approvalId %s",
     async (approvalId) => {
@@ -301,9 +334,10 @@ describe("Lighter order lifecycle repair", () => {
     }));
   });
 
-  it("releases a signed lifecycle transaction that never reached submission", async () => {
+  it("keeps a signed lifecycle transaction reserved while its consent remains valid", async () => {
     const row = intent({
       executionState: "signed",
+      nonceReservationId: `lighter-lifecycle:${intent().intentId}`,
       ambiguousReason: null,
       submittedTxHash: null,
       signerExpiryMs: NOW + 60_000,
@@ -312,10 +346,11 @@ describe("Lighter order lifecycle repair", () => {
 
     const report = await repairLighterOrderLifecycleIntent(row, d);
 
-    expect(report.resolution).toBe("nonce_released_never_submitted");
-    expect(report.stateAfter).toBe("rejected");
-    expect(report.nonceBlockedAfter).toBe(false);
-    expect(d.nonceState.releaseReservation).toHaveBeenCalledOnce();
+    expect(report.resolution).toBe("awaiting_submission");
+    expect(report.stateAfter).toBe("signed");
+    expect(report.nonceBlockedAfter).toBe(true);
+    expect(d.nonceState.releaseReservation).not.toHaveBeenCalled();
+    expect(d.client.getNextNonce).not.toHaveBeenCalled();
   });
 
   it("releases an expired transaction only when the live nonce stayed unconsumed", async () => {
@@ -326,6 +361,21 @@ describe("Lighter order lifecycle repair", () => {
 
     expect(report.resolution).toBe("nonce_released_expired_unconsumed");
     expect(d.nonceState.releaseReservation).toHaveBeenCalledWith(expect.objectContaining({ providerNonce: 9 }));
+  });
+
+  it("preserves a possible send despite a never-submitted ambiguity reason", async () => {
+    const row = intent({
+      ambiguousReason: "signed_state_persist_failed",
+      sendAttemptStartedAt: "2026-08-19T21:58:00.000Z",
+      signerExpiryMs: null,
+    });
+    const d = deps(row, { readsFail: true });
+
+    const result = await repairLighterOrderLifecycleIntent(row, d);
+
+    expect(result.resolution).toBe("awaiting_provider");
+    expect(result.nonceBlockedAfter).toBe(true);
+    expect(d.nonceState.releaseReservation).not.toHaveBeenCalled();
   });
 
   it("retires a modify commitment only where the state proves it was never sent", async () => {

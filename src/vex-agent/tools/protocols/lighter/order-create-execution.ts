@@ -254,7 +254,9 @@ export async function executeApprovedLighterCreateOrder(input: {
   if (observedNonce === null) {
     throw blockedBeforeSubmit(
       "The live Lighter nonce has not advanced beyond an unresolved local reservation. No order was signed or submitted. "
-      + "Run lighter.order.status to reconcile the stuck reservation from provider evidence before preparing another order.",
+      + "A previous Lighter action still holds the nonce and its outcome is not yet proven; Vex clears it automatically once its consent window expires. "
+      + `Run lighter.order.status with environment ${plan.environment} and accountIndex ${plan.accountIndex} yourself to check the exact reservation owner, then wait for it to clear before preparing another order. `
+      + "There is no Settings screen or button for this; do not direct the user to a nonexistent Reconcile setting.",
     );
   }
   assertWireOrderExpiryBeforeSigning(unsignedOrder, deps.now());

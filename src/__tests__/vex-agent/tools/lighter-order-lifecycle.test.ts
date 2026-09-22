@@ -264,6 +264,7 @@ function deps(overrides: Partial<LighterOrderLifecycleExecutionDeps> = {}): Ligh
       markProviderOutcome: vi.fn().mockResolvedValue(intent({ executionState: "completed" })),
       markAmbiguous: vi.fn().mockResolvedValue(intent({ executionState: "ambiguous" })),
       markClosePositionChangedBeforeSubmissionWith: vi.fn().mockResolvedValue(intent({ executionState: "rejected" })),
+      abandonRevalidatedBeforeNonce: vi.fn().mockResolvedValue(intent({ executionState: "rejected" })),
     },
     nonceState: {
       releaseUnsubmittedReservation: vi.fn(async () => null),
@@ -767,6 +768,56 @@ describe("Lighter reduce-only position close lifecycle", () => {
       closeIntent.sessionId,
     );
     expect(dependencies.intents.markPreSubmitRevalidated).not.toHaveBeenCalled();
+    expect(dependencies.nonceState.reserveObservedWith).not.toHaveBeenCalled();
+    expect(dependencies.authSigner.signCreateOrder).not.toHaveBeenCalled();
+    expect(dependencies.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("retires the revalidated close and never wedges it when the live nonce is still blocked", async () => {
+    const dependencies = deps();
+    Object.assign(dependencies.client, {
+      getAccount: vi.fn().mockResolvedValue({
+        code: 200,
+        accounts: [{ index: 42, positions: [{ ...longPosition, position: "1.0000" }] }],
+      }),
+      getMarkets: vi.fn().mockResolvedValue({ code: 200, order_books: [market] }),
+      getOrderBookOrders: vi.fn().mockResolvedValue({
+        code: 200, total_asks: 0, asks: [], total_bids: 1, bids: [bid],
+      }),
+      getAccountTrades: vi.fn().mockResolvedValue({ code: 200, trades: [] }),
+    });
+    // A prior action's reservation still owns the slot: the observe cannot advance.
+    vi.mocked(dependencies.nonceState.recordExecutionObserved).mockResolvedValue(null);
+    const closeIntent = intent({
+      actionType: "close_position",
+      marketIndex: 0,
+      providerOrderId: null,
+      requestedBaseAmountInteger: "10000",
+      requestedPriceInteger: "4950",
+      requestedSide: "sell",
+      reduceOnly: true,
+      providerSnapshotJson: {
+        position: {
+          marketIndex: 0, symbol: "ETH", sign: 1, side: "long", position: "1.0000",
+          averageEntryPrice: "45.00", positionValue: "50.000000", unrealizedPnl: "5.000000",
+          liquidationPrice: "30.00",
+        },
+        marketSizeDecimals: 4,
+        marketPriceDecimals: 2,
+        maxSlippageBps: 100,
+      },
+    });
+
+    await expect(executeApprovedLighterClosePosition(closeIntent, dependencies))
+      .rejects.toThrow(/has been retired/);
+
+    // It revalidated, then bailed on the blocked nonce, retiring itself so the
+    // next prepare is not refused with "already exists".
+    expect(dependencies.intents.markPreSubmitRevalidated).toHaveBeenCalled();
+    expect(dependencies.intents.abandonRevalidatedBeforeNonce).toHaveBeenCalledWith({
+      intentId: closeIntent.intentId,
+      sessionId: closeIntent.sessionId,
+    });
     expect(dependencies.nonceState.reserveObservedWith).not.toHaveBeenCalled();
     expect(dependencies.authSigner.signCreateOrder).not.toHaveBeenCalled();
     expect(dependencies.client.sendTx).not.toHaveBeenCalled();

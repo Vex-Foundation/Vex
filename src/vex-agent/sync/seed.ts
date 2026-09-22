@@ -36,6 +36,20 @@ const SYNC_JOBS = [
   // request-weight budget; expensive account history remains user-driven.
   { namespace: "_global", syncType: "lighter_order_repair", readToolId: null, strategy: "periodic", intervalSeconds: 300 },
 
+  // Lighter LIFECYCLE nonce recovery - the close/cancel/modify twin of the
+  // order sweep. Its own periodic job because a stuck close reservation is an
+  // account-wide lock (one nonce slot per account), and until now nothing
+  // released it in the background - it cleared only when the user next tried to
+  // trade. Bounded (five rows/run), privileged-auth disabled, expiry-gated
+  // release only: it never signs, submits, or retries. 60s, faster than the
+  // order sweep's 300s, because a user waiting to close a position is exactly
+  // the wait this ends. See order-lifecycle-repair.ts.
+  { namespace: "_global", syncType: "lighter_lifecycle_repair", readToolId: null, strategy: "periodic", intervalSeconds: 60 },
+
+  // Lighter OCO nonce recovery - the native-OCO twin of the two sweeps above,
+  // same bounded, expiry-gated, never-signs contract. See oco-order-repair.ts.
+  { namespace: "_global", syncType: "lighter_oco_repair", readToolId: null, strategy: "periodic", intervalSeconds: 300 },
+
   // Lighter POSITION SNAPSHOT sweep - the account-wide observation AgentScan
   // displays beside Vex-authored fills. Bounded (five scopes per sweep, the
   // remainder reported), credential-gated (a scope is observed only while this

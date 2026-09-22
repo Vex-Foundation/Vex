@@ -50,6 +50,7 @@ import {
   repairLighterOrderIntent,
   repairUnresolvedLighterOrders,
 } from "../order-repair.js";
+import { checkLighterNonceRecovery } from "../nonce-recovery.js";
 import {
   defaultLighterOrderLifecycleRepairDeps,
   repairLighterOrderLifecycleIntent,
@@ -554,7 +555,9 @@ function managedReadinessRecoveryLeg(
   ) {
     return {
       kind: "reconcile_nonce_state",
-      reason: "Reconcile the exact local transaction and nonce evidence before preparing another signed action or key registration.",
+      reason: "A previous Lighter transaction still holds this account's nonce and its outcome is not yet proven. "
+        + "Vex retires it automatically once its consent window expires; there is no Settings screen or button for this, so do not send the user to a Settings -> Lighter -> Reconcile control. "
+        + "To check or clear it now, run lighter.order.status with this environment and accountIndex yourself. Do not prepare or retry a signed action until it clears.",
     };
   }
   return {
@@ -1577,6 +1580,8 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
   "lighter.order.status": async (params) => {
     const environment = readEnvironment(params);
     if (!environment.ok) return fail(environment.reason);
+    const accountIndex = readOptionalAccountIndex(params);
+    if (!accountIndex.ok) return fail(accountIndex.reason);
     const intentIdRaw = params.intentId;
     const intentId =
       typeof intentIdRaw === "string" && intentIdRaw.trim().length > 0
@@ -1584,6 +1589,9 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         : null;
 
     try {
+      if (accountIndex.value !== undefined && intentId === null) {
+        return ok(await checkLighterNonceRecovery({ environment: environment.value, accountIndex: accountIndex.value }));
+      }
       const orderDeps = defaultLighterOrderRepairDeps();
       const lifecycleDeps = defaultLighterOrderLifecycleRepairDeps();
       let reports: Array<Record<string, unknown>>;

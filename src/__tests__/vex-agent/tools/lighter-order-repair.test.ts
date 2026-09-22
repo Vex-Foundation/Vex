@@ -326,6 +326,21 @@ describe("Lighter order repair", () => {
     expect(deps.intents.markRepairResolved).not.toHaveBeenCalled();
   });
 
+  it("does not trust a never-submitted reason when a send attempt is recorded", async () => {
+    const deps = makeDeps();
+    const report = await repairLighterOrderIntent(intentRow({
+      executionState: "ambiguous",
+      ambiguousReason: "signed_state_persist_failed",
+      submittedAt: null,
+      submittedTxHash: null,
+      sendAttemptStartedAt: "2026-08-14T11:00:02.000Z",
+    }), deps);
+
+    expect(report.resolution).toBe("awaiting_provider");
+    expect(report.nonceBlockedAfter).toBe(true);
+    expect(deps.nonceState.releaseReservation).not.toHaveBeenCalled();
+  });
+
   it("keeps an ambiguous IOC reservation after the local preview expiry", async () => {
     const deps = makeDeps({
       nextNonce: 1200,

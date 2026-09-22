@@ -606,6 +606,112 @@ beforeEach(() => {
 });
 
 describe("Lighter agent read handlers", () => {
+  describe.each([
+    ["lighter.order.cancel.prepare", "lighter.order.cancel", "cancel_one"],
+    ["lighter.order.modify.prepare", "lighter.order.modify", "modify"],
+    ["lighter.order.cancelAll.prepare", "lighter.order.cancelAll", "cancel_all"],
+    ["lighter.position.close.prepare", "lighter.position.close", "close_position"],
+  ])("%s account selection", (toolId, executeId, actionType) => {
+    const params = {
+      environment: "rhc",
+      ...(actionType === "cancel_all" ? {} : { marketId: 0 }),
+      ...(actionType === "cancel_one" || actionType === "modify"
+        ? { orderId: accountOrder().order_id } : {}),
+      ...(actionType === "modify" ? { totalBaseAmountIn: "100", price: "3500" } : {}),
+      ...(actionType === "close_position" ? { slippageBps: 100 } : {}),
+    };
+
+    beforeEach(() => {
+      mocks.client.getAccountActiveOrders.mockResolvedValue({
+        code: 200,
+        orders: [{ ...accountOrder(), type: "limit", time_in_force: "good-till-time" }],
+      });
+      mocks.client.getMarkets.mockResolvedValue({ code: 200, order_books: [MARKET] });
+      mocks.client.getOrderBookOrders.mockResolvedValue({
+        code: 200, total_asks: 0, asks: [], total_bids: 1,
+        bids: [{ ...order(1, "3000"), remaining_base_amount: "2" }],
+      });
+      mocks.lifecycleIntentsRepo.findLiveAccountWideCancel.mockResolvedValue(null);
+      mocks.lifecycleIntentsRepo.findLiveOrderTarget.mockResolvedValue(null);
+      mocks.lifecycleIntentsRepo.findAnyLiveOrderMutation.mockResolvedValue(null);
+      mocks.lifecycleIntentsRepo.createApprovalPendingWith.mockImplementation(async (_db, input) => ({
+        ...input, approvalStatus: "approval_pending", executionState: "approval_pending",
+      }));
+    });
+
+    it("prepares approval with the first saved key when all keys belong to one account", async () => {
+      configureLighterTradingCredentialScopeResolver({
+        findSavedScope: () => null,
+        listScopes: (environment) => [
+          { environment, accountIndex: 42, apiKeyIndex: 7 },
+          { environment, accountIndex: 42, apiKeyIndex: 4 },
+        ],
+      });
+
+      const result = await executeProtocolTool({ toolId, params }, READ_CTX);
+
+      expect(result.success, result.output).toBe(true);
+      expect(result.actionKind).toBe("approval_prepare");
+      expect(result.preparedActionFollowUp?.args).toMatchObject({ toolId: executeId });
+      expect(result.preparedActionFollowUp?.approvalPreview?.criticalArgs).toMatchObject({
+        environment: "rhc", accountIndex: 42, apiKeyIndex: 7,
+      });
+      expect(mocks.lifecycleIntentsRepo.createApprovalPendingWith).toHaveBeenCalledWith(
+        {}, expect.objectContaining({
+          actionType, accountIndex: 42, apiKeyIndex: 7,
+          credentialRefJson: expect.objectContaining({
+            environment: "rhc", accountIndex: 42, apiKeyIndex: 7,
+            vaultCredentialId: "lighter/rhc/account-42/api-key-7",
+          }),
+        }),
+      );
+    });
+
+    it.each([false, true])("refuses absent or ambiguous accounts before reading provider data (ambiguous=%s)", async (ambiguous) => {
+      configureLighterTradingCredentialScopeResolver({
+        findSavedScope: () => null,
+        listScopes: (environment) => ambiguous ? [
+          { environment, accountIndex: 42, apiKeyIndex: 7 },
+          { environment, accountIndex: 42, apiKeyIndex: 4 },
+          { environment, accountIndex: 43, apiKeyIndex: 7 },
+        ] : [],
+      });
+
+      const output = await callFail(toolId, params);
+
+      expect(output).toContain(ambiguous
+        ? "More than one managed Lighter account exists; specify accountIndex."
+        : "No managed Lighter account exists in this environment.");
+      expect(mocks.client.getAccount).not.toHaveBeenCalled();
+      expect(mocks.client.getAccountActiveOrders).not.toHaveBeenCalled();
+      expect(mocks.client.getMarkets).not.toHaveBeenCalled();
+      expect(mocks.client.getOrderBookOrders).not.toHaveBeenCalled();
+      expect(mocks.lifecycleIntentsRepo.createApprovalPendingWith).not.toHaveBeenCalled();
+    });
+
+    it("honors an explicit account and its saved key despite other configured accounts", async () => {
+      configureLighterTradingCredentialScopeResolver({
+        findSavedScope: (environment, accountIndex) =>
+          environment === "rhc" && accountIndex === 42
+            ? { environment, accountIndex, apiKeyIndex: 4 } : null,
+        listScopes: (environment) => [
+          { environment, accountIndex: 43, apiKeyIndex: 7 },
+          { environment, accountIndex: 42, apiKeyIndex: 4 },
+        ],
+      });
+
+      const result = await executeProtocolTool({ toolId, params: { ...params, accountIndex: 42 } }, READ_CTX);
+
+      expect(result.success, result.output).toBe(true);
+      expect(result.preparedActionFollowUp?.approvalPreview?.criticalArgs).toMatchObject({
+        environment: "rhc", accountIndex: 42, apiKeyIndex: 4,
+      });
+      expect(mocks.lifecycleIntentsRepo.createApprovalPendingWith).toHaveBeenCalledWith(
+        {}, expect.objectContaining({ actionType, accountIndex: 42, apiKeyIndex: 4 }),
+      );
+    });
+  });
+
   it.each([
     ["lighter.order.cancel.prepare", "lighter.order.cancel", "cancel_one"],
     ["lighter.order.modify.prepare", "lighter.order.modify", "modify"],

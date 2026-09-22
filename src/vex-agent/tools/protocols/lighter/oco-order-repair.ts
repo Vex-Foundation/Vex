@@ -21,7 +21,7 @@ export interface LighterOcoRepairReport {
   readonly intentId: string;
   readonly stateBefore: LighterOcoExecutionIntentRow["executionState"];
   readonly stateAfter: LighterOcoExecutionIntentRow["executionState"];
-  readonly resolution: "already_terminal" | "expired_unsubmitted" | "provider_evidence" | "awaiting_provider" | "nonce_released_never_submitted" | "degraded";
+  readonly resolution: "already_terminal" | "awaiting_submission" | "expired_unsubmitted" | "provider_evidence" | "awaiting_provider" | "nonce_released_never_submitted" | "degraded";
   readonly nonceBlockedAfter: boolean;
   readonly guidance: string;
   readonly evidence: Record<string, unknown> | null;
@@ -59,6 +59,30 @@ export async function repairLighterOcoIntent(
     return report(intent, intent.executionState, "expired_unsubmitted",
       intent.nonceReservationId !== null,
       LIGHTER_EXPIRED_UNSUBMITTED_GUIDANCE, intent.providerOutcomeJson);
+  }
+  if (intent.executionState === "signed"
+    || (intent.executionState === "approval_pending" && intent.nonceReservationId !== null)) {
+    const expiry = Date.parse(intent.expiresAt);
+    if (!Number.isFinite(expiry) || intent.nonceReservationId !== `lighter-oco:${intent.intentId}`
+      || intent.nonceValue === null) {
+      return report(intent, intent.executionState, "degraded", true,
+        "The pre-send reservation identity or consent expiry is incomplete. Keep this OCO blocked for reconciliation.", null);
+    }
+    if (expiry > Date.now()) {
+      return report(intent, intent.executionState, "awaiting_submission", true,
+        "This OCO still has valid consent and may be signing. Its nonce remains reserved; do not retry it.", null);
+    }
+    const retired = await intentsRepo.expirePreSendNonceReservation({
+      intentId: intent.intentId, sessionId: intent.sessionId, environment: intent.environment,
+      accountIndex: intent.accountIndex, apiKeyIndex: intent.apiKeyIndex,
+      reservationId: intent.nonceReservationId, nonceValue: intent.nonceValue,
+      expectedState: intent.executionState, signerTxHash: intent.signerTxHash,
+    });
+    return retired === null
+      ? report(intent, intent.executionState, "degraded", true,
+        "The expired pre-send OCO could not be atomically retired. Its state or evidence changed; keep it blocked and refresh its exact status.", null)
+      : report(intent, retired.executionState, "nonce_released_never_submitted", false,
+        "The expired pre-send OCO was atomically retired and its exact nonce reservation released. Nothing was submitted or retried.", null);
   }
   const terminal = ["active", "resolved", "rejected"].includes(intent.executionState);
   const deps = defaultLighterOrderRepairDeps();
@@ -134,7 +158,7 @@ export async function repairLighterOcoIntent(
       "The OCO nonce was consumed, but both exact child outcomes are not yet proven. New signing is unblocked; do not retry this OCO.", null);
   }
   if (
-    holds && reserved === nextNonce && intent.ambiguousReason !== null
+    holds && reserved === nextNonce && intent.sendAttemptStartedAt == null && intent.ambiguousReason !== null
     && NEVER_SUBMITTED.has(intent.ambiguousReason)
   ) {
     const released = await nonceRepo.releaseReservation({
@@ -168,6 +192,55 @@ export async function repairUnresolvedLighterOco(
   const reports: LighterOcoRepairReport[] = [];
   for (const row of rows) reports.push(await repairLighterOcoIntent(row));
   return reports;
+}
+
+const LIGHTER_OCO_BACKGROUND_REPAIR_LIMIT = 5;
+
+export interface LighterOcoRepairSweepReport {
+  readonly examined: number;
+  readonly advanced: number;
+  readonly awaiting: number;
+  readonly degraded: number;
+  readonly errors: number;
+}
+
+/** Resolutions that moved an OCO forward or freed its nonce. */
+const LIGHTER_OCO_ADVANCE_RESOLUTIONS: ReadonlySet<LighterOcoRepairReport["resolution"]> = new Set([
+  "already_terminal",
+  "expired_unsubmitted",
+  "provider_evidence",
+  "nonce_released_never_submitted",
+]);
+
+/**
+ * Bounded, unattended recovery for periodic sync - the OCO twin of the order
+ * and lifecycle background sweeps. It frees only what provable, expiry-gated
+ * facts allow and never signs, submits, or retries; a stuck OCO reservation no
+ * one is actively retrying is released here instead of blocking the account.
+ */
+export async function repairUnresolvedLighterOcoInBackground(
+  input: { readonly environment?: LighterEnvironment; readonly limit?: number } = {},
+): Promise<LighterOcoRepairSweepReport> {
+  const limit = Math.max(
+    1,
+    Math.min(input.limit ?? LIGHTER_OCO_BACKGROUND_REPAIR_LIMIT, LIGHTER_OCO_BACKGROUND_REPAIR_LIMIT),
+  );
+  const rows = await intentsRepo.listUnresolved(input.environment, limit);
+  let advanced = 0;
+  let awaiting = 0;
+  let degraded = 0;
+  let errors = 0;
+  for (const row of rows) {
+    try {
+      const report = await repairLighterOcoIntent(row);
+      if (LIGHTER_OCO_ADVANCE_RESOLUTIONS.has(report.resolution)) advanced += 1;
+      else if (report.resolution === "degraded") degraded += 1;
+      else awaiting += 1;
+    } catch {
+      errors += 1;
+    }
+  }
+  return { examined: rows.length, advanced, awaiting, degraded, errors };
 }
 
 async function refreshConsumedNonce(intent: LighterOcoExecutionIntentRow, nextNonce: number): Promise<boolean> {

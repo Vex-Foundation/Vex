@@ -139,6 +139,32 @@ export async function drainPendingRuns(): Promise<DrainResult> {
           errors: repairResult.errors,
         };
         rowsAffected = repairResult.advanced;
+      } else if (syncType === "lighter_lifecycle_repair") {
+        const { repairUnresolvedLighterOrderLifecyclesInBackground } = await import(
+          "@vex-agent/tools/protocols/lighter/order-lifecycle-repair.js"
+        );
+        const repairResult = await repairUnresolvedLighterOrderLifecyclesInBackground();
+        result = {
+          examined: repairResult.examined,
+          advanced: repairResult.advanced,
+          awaiting: repairResult.awaiting,
+          degraded: repairResult.degraded,
+          errors: repairResult.errors,
+        };
+        rowsAffected = repairResult.advanced;
+      } else if (syncType === "lighter_oco_repair") {
+        const { repairUnresolvedLighterOcoInBackground } = await import(
+          "@vex-agent/tools/protocols/lighter/oco-order-repair.js"
+        );
+        const repairResult = await repairUnresolvedLighterOcoInBackground();
+        result = {
+          examined: repairResult.examined,
+          advanced: repairResult.advanced,
+          awaiting: repairResult.awaiting,
+          degraded: repairResult.degraded,
+          errors: repairResult.errors,
+        };
+        rowsAffected = repairResult.advanced;
       } else if (syncType === "lighter_position_snapshot") {
         const { snapshotLighterPositions } = await import("./lighter-position-snapshot.js");
         const snapshotResult = await snapshotLighterPositions();
@@ -295,6 +321,38 @@ export async function processNextRun(): Promise<boolean> {
         "@vex-agent/tools/protocols/lighter/order-repair.js"
       );
       const repairResult = await repairUnresolvedLighterOrdersInBackground();
+      await syncRepo.completeRun(
+        run.id,
+        {
+          examined: repairResult.examined,
+          advanced: repairResult.advanced,
+          awaiting: repairResult.awaiting,
+          degraded: repairResult.degraded,
+          errors: repairResult.errors,
+        },
+        repairResult.advanced,
+      );
+    } else if (job.syncType === "lighter_lifecycle_repair") {
+      const { repairUnresolvedLighterOrderLifecyclesInBackground } = await import(
+        "@vex-agent/tools/protocols/lighter/order-lifecycle-repair.js"
+      );
+      const repairResult = await repairUnresolvedLighterOrderLifecyclesInBackground();
+      await syncRepo.completeRun(
+        run.id,
+        {
+          examined: repairResult.examined,
+          advanced: repairResult.advanced,
+          awaiting: repairResult.awaiting,
+          degraded: repairResult.degraded,
+          errors: repairResult.errors,
+        },
+        repairResult.advanced,
+      );
+    } else if (job.syncType === "lighter_oco_repair") {
+      const { repairUnresolvedLighterOcoInBackground } = await import(
+        "@vex-agent/tools/protocols/lighter/oco-order-repair.js"
+      );
+      const repairResult = await repairUnresolvedLighterOcoInBackground();
       await syncRepo.completeRun(
         run.id,
         {

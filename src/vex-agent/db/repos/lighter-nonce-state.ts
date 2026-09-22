@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 
 import type { LighterEnvironment } from "@tools/lighter/types.js";
-import { execute, queryOne, queryOneWith } from "../client.js";
+import { execute, query, queryOne, queryOneWith } from "../client.js";
 
 export const LIGHTER_NONCE_SOURCE = "live_lighter_public_api";
 
@@ -217,6 +217,19 @@ export async function find(
     [environment, accountIndex, apiKeyIndex],
   );
   return row ? mapRow(row) : null;
+}
+
+export async function listBlockedForAccount(
+  environment: LighterEnvironment,
+  accountIndex: number,
+): Promise<LighterNonceStateRow[]> {
+  const rows = await query<Record<string, unknown>>(
+    `SELECT ${SELECT_COLUMNS} FROM lighter_nonce_state
+      WHERE environment = $1 AND account_index = $2 AND status <> 'observed'
+      ORDER BY api_key_index`,
+    [environment, accountIndex],
+  );
+  return rows.map(mapRow);
 }
 
 export function exactSafeIntegerString(value: number, field: string): string {

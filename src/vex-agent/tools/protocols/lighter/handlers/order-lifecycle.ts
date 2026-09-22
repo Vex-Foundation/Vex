@@ -902,8 +902,9 @@ function resolveScope(environment: "core" | "rhc", accountIndex: number | null):
       : { ok: true, value: scope };
   }
   const scopes = listLighterTradingCredentialScopes(environment);
-  if (scopes.length !== 1) {
-    return { ok: false, reason: scopes.length === 0
+  const accountCount = new Set(scopes.map((scope) => scope.accountIndex)).size;
+  if (accountCount !== 1) {
+    return { ok: false, reason: accountCount === 0
       ? "No managed Lighter account exists in this environment."
       : "More than one managed Lighter account exists; specify accountIndex." };
   }

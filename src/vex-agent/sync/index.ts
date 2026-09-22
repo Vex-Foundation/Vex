@@ -98,6 +98,49 @@ export async function initSync(options: InitSyncOptions = {}): Promise<void> {
     });
   }
 
+  // 4b. Reconcile unresolved Lighter LIFECYCLE (close/cancel/modify) and OCO
+  //     nonce reservations on startup, the same bounded public-evidence path.
+  //     A close reservation orphaned by a crash is an account-wide lock, so
+  //     releasing it as the app reopens clears trading before the user retries.
+  try {
+    const { repairUnresolvedLighterOrderLifecyclesInBackground } = await import(
+      "@vex-agent/tools/protocols/lighter/order-lifecycle-repair.js"
+    );
+    const lighterLifecycles = await repairUnresolvedLighterOrderLifecyclesInBackground();
+    if (lighterLifecycles.examined > 0 || lighterLifecycles.errors > 0) {
+      logger.info("sync.init.lighter_lifecycle_repair", {
+        examined: lighterLifecycles.examined,
+        advanced: lighterLifecycles.advanced,
+        awaiting: lighterLifecycles.awaiting,
+        degraded: lighterLifecycles.degraded,
+        errors: lighterLifecycles.errors,
+      });
+    }
+  } catch (err) {
+    logger.warn("sync.init.lighter_lifecycle_repair_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  try {
+    const { repairUnresolvedLighterOcoInBackground } = await import(
+      "@vex-agent/tools/protocols/lighter/oco-order-repair.js"
+    );
+    const lighterOco = await repairUnresolvedLighterOcoInBackground();
+    if (lighterOco.examined > 0 || lighterOco.errors > 0) {
+      logger.info("sync.init.lighter_oco_repair", {
+        examined: lighterOco.examined,
+        advanced: lighterOco.advanced,
+        awaiting: lighterOco.awaiting,
+        degraded: lighterOco.degraded,
+        errors: lighterOco.errors,
+      });
+    }
+  } catch (err) {
+    logger.warn("sync.init.lighter_oco_repair_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   // 5. Re-arm fast lanes for rows that were in flight when the process died.
   //    Before the snapshot: a crash-recovered row is exactly the kind the
   //    snapshot guard must see as still pending.
@@ -249,6 +292,42 @@ export async function syncTick(): Promise<void> {
           "@vex-agent/tools/protocols/lighter/order-repair.js"
         );
         const repairResult = await repairUnresolvedLighterOrdersInBackground();
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(
+          runId,
+          {
+            examined: repairResult.examined,
+            advanced: repairResult.advanced,
+            awaiting: repairResult.awaiting,
+            degraded: repairResult.degraded,
+            errors: repairResult.errors,
+            periodic: true,
+          },
+          repairResult.advanced,
+        );
+      } else if (job.syncType === "lighter_lifecycle_repair") {
+        const { repairUnresolvedLighterOrderLifecyclesInBackground } = await import(
+          "@vex-agent/tools/protocols/lighter/order-lifecycle-repair.js"
+        );
+        const repairResult = await repairUnresolvedLighterOrderLifecyclesInBackground();
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(
+          runId,
+          {
+            examined: repairResult.examined,
+            advanced: repairResult.advanced,
+            awaiting: repairResult.awaiting,
+            degraded: repairResult.degraded,
+            errors: repairResult.errors,
+            periodic: true,
+          },
+          repairResult.advanced,
+        );
+      } else if (job.syncType === "lighter_oco_repair") {
+        const { repairUnresolvedLighterOcoInBackground } = await import(
+          "@vex-agent/tools/protocols/lighter/oco-order-repair.js"
+        );
+        const repairResult = await repairUnresolvedLighterOcoInBackground();
         const runId = await syncRepo.enqueueRun(job.id);
         await syncRepo.completeRun(
           runId,

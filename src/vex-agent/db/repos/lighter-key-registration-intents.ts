@@ -465,10 +465,17 @@ export async function renewPristineApprovedLighterKeyRegistrationIntentWith(
 /**
  * Move an unapproved key-registration preparation to the current session only
  * when durable state proves that signing, staging, submission, and activation
- * never began. The encrypted credential and exact public approval scope stay
- * unchanged; any approval parked in the old session can no longer execute it.
+ * never began. The SAME slot reservation and encrypted credential (when one
+ * has already been generated) continue forward; no second key or slot is
+ * created. An approval parked in the old session can no longer execute it.
+ *
+ * All three pre-approval checkpoints are transferable. A process can stop
+ * after reserving the slot, after encrypting the key, or after binding the
+ * public nonce. Restricting adoption to the last checkpoint leaves the first
+ * two as permanent cross-session wedges even though neither carries consent or
+ * transaction evidence.
  */
-export async function adoptPristineLighterKeyRegistrationApprovalWith(
+export async function adoptPristineLighterKeyRegistrationPreparationWith(
   client: LighterOnboardingQueryClient,
   input: {
     readonly intentId: string;
@@ -504,7 +511,7 @@ export async function adoptPristineLighterKeyRegistrationApprovalWith(
         AND LOWER(wallet_address) = LOWER($5)
         AND resolved_account_index = $6
         AND approval_status = 'approval_pending'
-        AND execution_state = 'approval_pending'
+        AND execution_state IN ('slot_reserved','key_generated_encrypted','approval_pending')
         AND approval_id IS NULL
         AND protocol_execution_id IS NULL
         AND decided_at IS NULL
@@ -524,6 +531,35 @@ export async function adoptPristineLighterKeyRegistrationApprovalWith(
         AND post_registration_nonce IS NULL
         AND registration_nonce_synchronized_at IS NULL
         AND registration_activated_at IS NULL
+        AND (
+          (
+            execution_state = 'slot_reserved'
+            AND vault_credential_id IS NULL
+            AND public_key IS NULL
+            AND public_key_fingerprint IS NULL
+            AND key_generated_at IS NULL
+            AND registration_nonce IS NULL
+            AND registration_nonce_observed_at IS NULL
+          )
+          OR (
+            execution_state = 'key_generated_encrypted'
+            AND vault_credential_id IS NOT NULL
+            AND public_key IS NOT NULL
+            AND public_key_fingerprint IS NOT NULL
+            AND key_generated_at IS NOT NULL
+            AND registration_nonce IS NULL
+            AND registration_nonce_observed_at IS NULL
+          )
+          OR (
+            execution_state = 'approval_pending'
+            AND vault_credential_id IS NOT NULL
+            AND public_key IS NOT NULL
+            AND public_key_fingerprint IS NOT NULL
+            AND key_generated_at IS NOT NULL
+            AND registration_nonce IS NOT NULL
+            AND registration_nonce_observed_at IS NOT NULL
+          )
+        )
       RETURNING ${RETURNING}`,
     [
       input.intentId,

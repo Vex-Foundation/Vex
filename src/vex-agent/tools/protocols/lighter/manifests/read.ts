@@ -582,6 +582,11 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     params: [
       ENVIRONMENT_PARAM,
       {
+        key: "accountIndex",
+        type: "number",
+        description: "When trading is blocked, pass the exact account index from the error to check its actual nonce reservation owners across sessions instead of scanning an unrelated page of orders.",
+      },
+      {
         key: "intentId",
         type: "string",
         description:

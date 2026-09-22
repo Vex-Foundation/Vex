@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { inspectLighterApiKeySlots } from "@tools/lighter/wallet-funding/api-key-slots.js";
 import {
-  adoptPristineLighterKeyRegistrationApprovalWith,
+  adoptPristineLighterKeyRegistrationPreparationWith,
   markLighterKeyRegistrationActiveWith,
   markLighterKeyRegistrationAmbiguousWith,
   markLighterKeyRegistrationApprovalPendingWith,
@@ -348,9 +348,26 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
     expect(params).toEqual([pristine.intent_id, INPUT.sessionId, expiresAt]);
   });
 
-  it("adopts only an unapproved registration with no signing or submission evidence", async () => {
+  it.each([
+    ["slot_reserved", {
+      vault_credential_id: null,
+      public_key: null,
+      public_key_fingerprint: null,
+      key_generated_at: null,
+      registration_nonce: null,
+      registration_nonce_observed_at: null,
+    }],
+    ["key_generated_encrypted", {
+      registration_nonce: null,
+      registration_nonce_observed_at: null,
+    }],
+    ["approval_pending", {}],
+  ] as const)("adopts a pristine %s registration from another session", async (
+    executionState,
+    stateFields,
+  ) => {
     const expiresAt = new Date("2030-01-01T02:00:00.000Z");
-    const pending = lifecycleRow("approval_pending", {
+    const pending = lifecycleRow(executionState, {
       session_id: "session-2",
       approval_status: "approval_pending",
       registration_tx_type: null,
@@ -358,6 +375,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
       registration_tx_expired_at: null,
       registration_tx_staged_at: null,
       expires_at: expiresAt,
+      ...stateFields,
     });
     const client = {
       query: vi.fn().mockResolvedValueOnce({
@@ -366,7 +384,7 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
       }),
     };
 
-    await expect(adoptPristineLighterKeyRegistrationApprovalWith(client, {
+    await expect(adoptPristineLighterKeyRegistrationPreparationWith(client, {
       intentId: String(pending.intent_id),
       previousSessionId: "session-2",
       sessionId: INPUT.sessionId,
@@ -377,15 +395,21 @@ describe("Lighter Phase 3 key slot reservation repository", () => {
     })).resolves.toMatchObject({
       sessionId: INPUT.sessionId,
       approvalStatus: "approval_pending",
-      executionState: "approval_pending",
+      executionState,
       expiresAt,
     });
 
     const [sql, params] = requireValue(client.query.mock.calls[0]);
     expect(sql).toContain("SET session_id = $3");
+    expect(sql).toContain(
+      "execution_state IN ('slot_reserved','key_generated_encrypted','approval_pending')",
+    );
     expect(sql).toContain("approval_id IS NULL");
     expect(sql).toContain("registration_tx_staged_at IS NULL");
     expect(sql).toContain("registration_activated_at IS NULL");
+    expect(sql).toContain("execution_state = 'slot_reserved'");
+    expect(sql).toContain("execution_state = 'key_generated_encrypted'");
+    expect(sql).toContain("execution_state = 'approval_pending'");
     expect(params).toEqual([
       pending.intent_id,
       "session-2",

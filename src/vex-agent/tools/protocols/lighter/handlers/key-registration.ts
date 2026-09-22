@@ -410,7 +410,7 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
       if (reserved.sessionId !== sessionId) {
         const adopted = await withSessionControlLocks(
           [reserved.sessionId, sessionId],
-          (client) => keyIntentsRepo.adoptPristineLighterKeyRegistrationApprovalWith(client, {
+          (client) => keyIntentsRepo.adoptPristineLighterKeyRegistrationPreparationWith(client, {
             intentId: reserved.intentId,
             previousSessionId: reserved.sessionId,
             sessionId,
