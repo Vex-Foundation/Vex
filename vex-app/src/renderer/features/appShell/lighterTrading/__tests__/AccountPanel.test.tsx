@@ -66,6 +66,7 @@ const EMPTY_ACCOUNT: LighterTradingAccount = {
 };
 
 beforeEach(() => {
+  useUiStore.setState({ activeSessionId: "11111111-1111-4111-8111-111111111111" });
   mocks.refetch.mockReset();
   for (const action of Object.values(mocks.actions)) action.mockReset();
   mocks.useAccount.mockReset();
@@ -78,7 +79,7 @@ describe("TradingBottomPanel", () => {
   it("loads positions by default, keeps the tab order, and wires tab semantics", () => {
     renderPanel();
 
-    expect(mocks.useAccount).toHaveBeenLastCalledWith("rhc", true);
+    expect(mocks.useAccount).toHaveBeenLastCalledWith("rhc", true, "11111111-1111-4111-8111-111111111111");
     expect(screen.getAllByRole("tab").map((item) => item.textContent)).toEqual([
       "Positions",
       "Open Orders",
@@ -121,7 +122,7 @@ describe("TradingBottomPanel", () => {
 
   it("keeps the account read paused while the desk is closed", () => {
     render(panel({ open: false }));
-    expect(mocks.useAccount).toHaveBeenLastCalledWith("rhc", false);
+    expect(mocks.useAccount).toHaveBeenLastCalledWith("rhc", false, "11111111-1111-4111-8111-111111111111");
   });
 
   it("renders account loading, provider error, and unavailable states", () => {
@@ -265,7 +266,7 @@ describe("TradingBottomPanel", () => {
     expect(mocks.useFills).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("tab", { name: /^Trade History/ }));
-    expect(mocks.useFills).toHaveBeenLastCalledWith("rhc", true);
+    expect(mocks.useFills).toHaveBeenLastCalledWith("rhc", true, "11111111-1111-4111-8111-111111111111");
     const table = screen.getByRole("table", { name: "Recent Lighter fills" });
     expect(table.textContent).toContain("ETH");
     expect(table.textContent).toContain("Liquidation · Maker");

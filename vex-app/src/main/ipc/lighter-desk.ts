@@ -23,6 +23,7 @@ import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import { getSessionById } from "../database/sessions-db.js";
 import { registerHandler } from "./register-handler.js";
 import { approvalsUnexpectedError } from "./approvals/_errors.js";
+import { resolveLighterSessionAccount } from "../lighter/session-account.js";
 
 /** Market close walks the book at most this far; the AI lane's usual default. */
 const CLOSE_SLIPPAGE_BPS = 100;
@@ -93,12 +94,32 @@ function prepareDeskOnce(
   if (existing !== undefined) return existing;
 
   const call = deskActionToPrepareCall(input.environment, input.action);
-  const flight = import("@vex-agent/engine/core/approval-runtime.js")
-    .then(({ prepareDeskApproval }) => prepareDeskApproval({
+  const flight = (async () => {
+    const accountIndex = input.action.kind === "order" || input.action.kind === "close" || input.action.kind === "cancel"
+      ? await resolveLighterSessionAccount(input)
+      : undefined;
+    if (accountIndex !== undefined) {
+      // Self-heal a slot locked by a prior pre-send reservation the provider
+      // never consumed before this card is prepared, so an expired stale lock
+      // clears itself instead of surfacing the block on the ticket. On the
+      // happy path this is two indexed reads; provider work runs only when a
+      // reservation is actually stuck, and one still inside consent is untouched.
+      try {
+        const { checkLighterNonceRecovery } = await import(
+          "@vex-agent/tools/protocols/lighter/nonce-recovery.js"
+        );
+        await checkLighterNonceRecovery({ environment: input.environment, accountIndex });
+      } catch {
+        // Best-effort; preparation and execution still enforce the nonce gate.
+      }
+    }
+    const { prepareDeskApproval } = await import("@vex-agent/engine/core/approval-runtime.js");
+    return prepareDeskApproval({
       sessionId: input.sessionId,
       toolId: call.toolId,
-      params: call.params,
-    }));
+      params: accountIndex === undefined ? call.params : { ...call.params, accountIndex },
+    });
+  })();
   deskPrepareFlights.set(key, flight);
   const clear = (): void => {
     if (deskPrepareFlights.get(key) === flight) deskPrepareFlights.delete(key);

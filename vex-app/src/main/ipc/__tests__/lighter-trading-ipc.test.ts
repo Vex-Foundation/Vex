@@ -312,7 +312,7 @@ describe("lighterTrading IPC", () => {
     expect(result.error.code).toBe("internal.cancelled");
   });
 
-  it("accepts only an environment for the account snapshot and returns the validated DTO", async () => {
+  it("keeps legacy account reads unscoped and rejects renderer account identities", async () => {
     const result = await call(CH.lighterTrading.getAccount, { environment: "rhc" });
 
     expect(result).toEqual({ ok: true, data: account });
@@ -321,6 +321,7 @@ describe("lighterTrading IPC", () => {
       undefined,
       undefined,
       expect.any(AbortSignal),
+      undefined,
     );
 
     mocks.readAccount.mockClear();
@@ -341,7 +342,7 @@ describe("lighterTrading IPC", () => {
     const result = await call(CH.lighterTrading.listFills, { environment: "rhc", limit: 20 });
 
     expect(result).toEqual({ ok: true, data: fills });
-    expect(mocks.readFills).toHaveBeenCalledWith("rhc", 20, undefined, undefined, expect.any(AbortSignal));
+    expect(mocks.readFills).toHaveBeenCalledWith("rhc", 20, undefined, undefined, expect.any(AbortSignal), undefined);
 
     mocks.readFills.mockClear();
     const refused = await call(CH.lighterTrading.listFills, { environment: "rhc", limit: 500 });
@@ -353,6 +354,14 @@ describe("lighterTrading IPC", () => {
     const failed = await call(CH.lighterTrading.listFills, { environment: "rhc" });
     expect(failed.ok).toBe(false);
     expect(JSON.stringify(failed)).not.toContain("privileged-token");
+  });
+
+  it("forwards the validated session for wallet-bound account and fills reads", async () => {
+    const sessionId = "11111111-1111-4111-8111-111111111111";
+    await call(CH.lighterTrading.getAccount, { environment: "rhc", sessionId });
+    expect(mocks.readAccount).toHaveBeenCalledWith("rhc", undefined, undefined, expect.any(AbortSignal), sessionId);
+    await call(CH.lighterTrading.listFills, { environment: "rhc", sessionId, limit: 20 });
+    expect(mocks.readFills).toHaveBeenCalledWith("rhc", 20, undefined, undefined, expect.any(AbortSignal), sessionId);
   });
 
   it("pages older candles with a bounded count and projects the internal rows", async () => {

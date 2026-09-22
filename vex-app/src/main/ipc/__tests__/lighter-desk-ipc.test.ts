@@ -22,6 +22,9 @@ const mocks = vi.hoisted(() => ({
   ensureEngineDbUrl: vi.fn(),
   getSessionById: vi.fn(),
   prepareDeskApproval: vi.fn(),
+  prepareApprove: vi.fn(),
+  resolveSessionAccount: vi.fn(),
+  checkNonceRecovery: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
@@ -42,6 +45,13 @@ vi.mock("../../database/sessions-db.js", () => ({
 }));
 vi.mock("@vex-agent/engine/core/approval-runtime.js", () => ({
   prepareDeskApproval: (...a: unknown[]) => mocks.prepareDeskApproval(...a),
+  prepareApprove: (...a: unknown[]) => mocks.prepareApprove(...a),
+}));
+vi.mock("../../lighter/session-account.js", () => ({
+  resolveLighterSessionAccount: (...a: unknown[]) => mocks.resolveSessionAccount(...a),
+}));
+vi.mock("@vex-agent/tools/protocols/lighter/nonce-recovery.js", () => ({
+  checkLighterNonceRecovery: (...a: unknown[]) => mocks.checkNonceRecovery(...a),
 }));
 
 const { registerLighterDeskHandlers, deskActionToPrepareCall } = await import(
@@ -75,6 +85,8 @@ beforeEach(() => {
     data: { id: SESSION, workspace: "lighter" },
   });
   mocks.prepareDeskApproval.mockResolvedValue({ kind: "enqueued", approvalId: "appr-1" });
+  mocks.resolveSessionAccount.mockReset().mockResolvedValue(42);
+  mocks.checkNonceRecovery.mockReset().mockResolvedValue({ status: "ready", message: "Pending actions checked." });
   teardowns = registerLighterDeskHandlers();
 });
 
@@ -189,7 +201,7 @@ describe("vex:lighterTrading:prepareDeskAction", () => {
     expect(mocks.prepareDeskApproval).toHaveBeenCalledWith({
       sessionId: SESSION,
       toolId: "lighter.position.close.prepare",
-      params: { environment: "rhc", marketId: 7, slippageBps: 100 },
+      params: { environment: "rhc", marketId: 7, slippageBps: 100, accountIndex: 42 },
     });
   });
 
@@ -304,5 +316,36 @@ describe("vex:lighterTrading:prepareDeskAction", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.error.code).toBe("internal.unexpected");
+  });
+});
+
+describe("desk prepare self-heals a stuck nonce reservation", () => {
+  it("recovers the resolved session account before preparing an order, with no separate action", async () => {
+    mocks.resolveSessionAccount.mockResolvedValueOnce(84);
+
+    const result = await call({
+      sessionId: SESSION,
+      environment: "rhc",
+      action: { kind: "close", marketId: 3 },
+    });
+
+    expect(mocks.checkNonceRecovery).toHaveBeenCalledWith({ environment: "rhc", accountIndex: 84 });
+    expect(mocks.prepareDeskApproval).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+  });
+
+  it("still prepares the card when the best-effort recovery check throws", async () => {
+    mocks.resolveSessionAccount.mockResolvedValueOnce(84);
+    mocks.checkNonceRecovery.mockRejectedValueOnce(new Error("internal-provider-response"));
+
+    const result = await call({
+      sessionId: SESSION,
+      environment: "rhc",
+      action: { kind: "close", marketId: 3 },
+    });
+
+    expect(mocks.prepareDeskApproval).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+    expect(JSON.stringify(result)).not.toContain("internal-provider-response");
   });
 });

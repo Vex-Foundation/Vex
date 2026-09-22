@@ -99,6 +99,7 @@ function deps(
       getNextNonce: vi.fn(async () => ({ code: 200, nonce: 1 })),
     },
     recordExecutionObserved: vi.fn(async () => observedNonce()),
+    recoverStuckReservations: vi.fn(async () => ({ status: "ready" })),
     ...overrides,
   };
 }
@@ -229,6 +230,33 @@ describe("managed Lighter trading readiness", () => {
       nonceSynchronized: true,
       nonceReservable: false,
     });
+  });
+
+  it("self-heals a stale local reservation via recovery, then reports ready", async () => {
+    const recordExecutionObserved = vi.fn()
+      .mockResolvedValueOnce(null)             // slot locked by a stuck reservation
+      .mockResolvedValueOnce(observedNonce()); // recovery retired it; re-observe is clean
+    const recoverStuckReservations = vi.fn(async () => ({ status: "ready" }));
+    const setup = deps({ recordExecutionObserved, recoverStuckReservations });
+
+    const result = await resolveManagedLighterTradingReadiness("core", 42, setup);
+
+    expect(recoverStuckReservations).toHaveBeenCalledWith({ environment: "core", accountIndex: 42 });
+    expect(recordExecutionObserved).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({ ready: true, reason: "ready", nonceReservable: true });
+  });
+
+  it("stays blocked without throwing when recovery cannot clear the reservation", async () => {
+    const recordExecutionObserved = vi.fn(async () => null);
+    const recoverStuckReservations = vi.fn(async () => {
+      throw new Error("internal-provider-response");
+    });
+    const setup = deps({ recordExecutionObserved, recoverStuckReservations });
+
+    const result = await resolveManagedLighterTradingReadiness("core", 42, setup);
+
+    expect(result).toMatchObject({ ready: false, reason: "nonce_not_reservable" });
+    expect(recordExecutionObserved).toHaveBeenCalledTimes(2);
   });
 
   it("retires a consumed local reservation from exact live nonce evidence", async () => {

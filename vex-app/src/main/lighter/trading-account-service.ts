@@ -30,6 +30,7 @@ import {
   readLighterTradingMarketList,
 } from "./trading-panel-service.js";
 import { log } from "../logger/index.js";
+import { resolveLighterSessionAccount } from "./session-account.js";
 
 const MAX_ROWS = 200;
 const LIGHTER_TRADING_FILLS_MAX = 100;
@@ -319,7 +320,8 @@ function unavailable(
 
 /**
  * Reads the authenticated Light it up account panel. The owning account is
- * resolved from the unlocked trading scope - the renderer never supplies an
+ * resolved from the session wallet and its unlocked trading scope; legacy
+ * unscoped reads require exactly one account. The renderer never supplies an
  * account identity and never receives auth tokens. Positions and balances come
  * from the public account-index read; open orders use a short-lived read-only
  * auth derived in the main process. When no unlocked trading scope exists (no
@@ -407,6 +409,7 @@ export async function readLighterTradingAccount(
   client: LighterTradingAccountClient = getLighterClient(),
   now: () => number = Date.now,
   signal?: AbortSignal,
+  sessionId?: string,
 ): Promise<LighterTradingAccount> {
   throwIfAborted(signal);
   const scopes = listUnlockedLighterTradingCredentialScopes(environment);
@@ -421,12 +424,16 @@ export async function readLighterTradingAccount(
       requireUnlockedMasterPassword().ok ? "not_onboarded" : "locked_vault",
     );
   }
-  // Multiple API keys for one account are equivalent for this read-only
-  // projection. Multiple distinct accounts are not: the renderer supplies no
-  // account identity, so main must fail closed instead of choosing by sort
-  // order and displaying an arbitrary account.
-  const accountIndex = resolveUniqueLighterAccountIndex(scopes);
+  // Session-bound reads resolve public wallet ownership. Legacy readers may
+  // select only one distinct account; multiple keys for it are equivalent.
+  const accountIndex = sessionId === undefined
+    ? resolveUniqueLighterAccountIndex(scopes)
+    : await resolveLighterSessionAccount({ sessionId, environment, signal });
   if (accountIndex === null) return unavailable(environment, now, "ambiguous_account");
+  if (!scopes.some((scope) => scope.accountIndex === accountIndex)) {
+    return unavailable(environment, now, "not_onboarded");
+  }
+  throwIfAborted(signal);
 
   const symbolFor = await symbolResolver(environment, signal);
   const accountResponse = await client.getAccount(environment, {
@@ -570,6 +577,7 @@ export async function readLighterTradingFills(
   client: LighterTradingFillsClient = getLighterClient(),
   now: () => number = Date.now,
   signal?: AbortSignal,
+  sessionId?: string,
 ): Promise<LighterTradingFills> {
   throwIfAborted(signal);
   const unavailable = (accountIndex: number | null): LighterTradingFills => ({
@@ -582,8 +590,12 @@ export async function readLighterTradingFills(
   });
   const scopes = listUnlockedLighterTradingCredentialScopes(environment);
   if (scopes.length === 0) return unavailable(null);
-  const accountIndex = resolveUniqueLighterAccountIndex(scopes);
+  const accountIndex = sessionId === undefined
+    ? resolveUniqueLighterAccountIndex(scopes)
+    : await resolveLighterSessionAccount({ sessionId, environment, signal });
   if (accountIndex === null) return unavailable(null);
+  if (!scopes.some((scope) => scope.accountIndex === accountIndex)) return unavailable(null);
+  throwIfAborted(signal);
   const auth = await resolveLighterReadOnlyAccountAuth(environment, accountIndex);
   if (auth === null) return unavailable(accountIndex);
 

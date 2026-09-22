@@ -99,6 +99,12 @@ function orderLabel(orderId: string | null): string {
   return `Order …${orderId.slice(-8)}`;
 }
 
+function deskFailureMessage(message: string): string {
+  return /unresolved local reservation|previous Lighter nonce remains unresolved|Run lighter\.order\.status|A live Lighter .* action already exists/i.test(message)
+    ? "A previous Lighter action is still settling and its outcome is not yet confirmed. Vex clears it automatically; wait a moment, then try again."
+    : message;
+}
+
 /**
  * The desk lane: Close, Cancel and the ticket's Long/Short go to main, main
  * derives the terms and enqueues an approval card, and only Confirm signs
@@ -355,7 +361,7 @@ export function useDeskLane({
     }
     if (pending.action.kind === "order") recordFunnelStep("desk_order_rejected", pending.scope.environment);
     if (!scopeIsCurrent) return;
-    setDeskOutcome({ tone: "error", text: result.toolOutput ?? result.message });
+    setDeskOutcome({ tone: "error", text: deskFailureMessage(result.toolOutput ?? result.message) });
   };
 
   // "Don't ask again" for Market close: the card still goes through main's
@@ -393,7 +399,7 @@ export function useDeskLane({
         return;
       }
       if (result.data.kind === "refused") {
-        setHandoffError(result.data.reason);
+        setHandoffError(deskFailureMessage(result.data.reason));
         return;
       }
       pendingDesk.current.set(result.data.approvalId, {

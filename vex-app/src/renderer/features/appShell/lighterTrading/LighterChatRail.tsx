@@ -164,7 +164,7 @@ function DeskScopeStrip({ scope, sessionId }: {
   readonly scope: DeskContextScope;
   readonly sessionId: string;
 }): JSX.Element {
-  const accountQuery = useLighterTradingAccount(scope.environment, true);
+  const accountQuery = useLighterTradingAccount(scope.environment, true, sessionId);
   const position =
     accountQuery.data?.ok === true
       ? accountQuery.data.data.positions.find((row) => row.marketId === scope.market.marketId) ?? null

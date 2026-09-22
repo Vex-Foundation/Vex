@@ -444,12 +444,16 @@ export const lighterTradingCandleHistorySchema = z
   .strict();
 
 // Authenticated Light it up account panel. The renderer supplies only the
-// environment; the main process resolves the owning account from the unlocked
-// trading scope and never returns tokens or key material. Positions and
+// environment and optional session; main resolves the session wallet's account
+// and never returns tokens or key material. Legacy unscoped reads require one
+// distinct account across the unlocked trading scopes. Positions and
 // balances are public account-index reads; open orders use a short-lived
 // read-only auth derived in main.
 export const lighterTradingAccountInputSchema = z
-  .object({ environment: lighterIntegrationEnvironmentSchema })
+  .object({
+    environment: lighterIntegrationEnvironmentSchema,
+    sessionId: z.string().uuid().optional(),
+  })
   .strict();
 
 export const lighterTradingAccountStatusSchema = z.enum(["ready", "unavailable"]);
@@ -536,6 +540,7 @@ const lighterTradingOpenOrderSchema = z
 export const lighterTradingFillsInputSchema = z
   .object({
     environment: lighterIntegrationEnvironmentSchema,
+    sessionId: z.string().uuid().optional(),
     limit: z.number().int().min(1).max(100).optional(),
   })
   .strict();

@@ -147,7 +147,8 @@ export function TradingBottomPanel({
   readonly actions: AccountActions;
 }): JSX.Element {
   const [tab, setTab] = useState<BottomTab>("positions");
-  const accountQuery = useLighterTradingAccount(environment, open);
+  const sessionId = useUiStore((state) => state.activeSessionId);
+  const accountQuery = useLighterTradingAccount(environment, open, sessionId);
   const openUnlock = useUiStore((state) => state.openUnlock);
   const account = accountQuery.data?.ok === true ? accountQuery.data.data : null;
   const activeTabId = `lit-bottom-tab-${tab}`;
@@ -575,7 +576,8 @@ function fillTypeLabel(fill: LighterTradingFill): string | null {
 function FillsTab({ environment }: {
   readonly environment: LighterTradingEnvironment;
 }): JSX.Element {
-  const fillsQuery = useLighterTradingFills(environment, true);
+  const sessionId = useUiStore((state) => state.activeSessionId);
+  const fillsQuery = useLighterTradingFills(environment, true, sessionId);
   if (fillsQuery.isLoading) {
     return <p className="lit-book-empty">Loading fills…</p>;
   }

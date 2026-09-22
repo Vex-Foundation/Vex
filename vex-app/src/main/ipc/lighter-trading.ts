@@ -412,6 +412,7 @@ export function registerLighterTradingHandlers(): Array<() => void> {
             undefined,
             undefined,
             ctx.signal,
+            input.sessionId,
           ));
         } catch (cause) {
           if (isAbortError(cause)) throw cause;
@@ -437,6 +438,7 @@ export function registerLighterTradingHandlers(): Array<() => void> {
             undefined,
             undefined,
             ctx.signal,
+            input.sessionId,
           ));
         } catch (cause) {
           if (isAbortError(cause)) throw cause;

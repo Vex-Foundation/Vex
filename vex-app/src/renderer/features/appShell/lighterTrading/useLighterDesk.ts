@@ -93,7 +93,7 @@ export function useLighterDesk() {
   } = useDeskStreams({ environment, market, resolution });
 
   // The same read the bottom dock makes; TanStack dedupes it by key.
-  const accountQuery = useLighterTradingAccount(environment, true);
+  const accountQuery = useLighterTradingAccount(environment, true, activeSessionId);
   useLighterAccountActivityRefresh(environment, true);
   const account = accountQuery.data?.ok === true ? accountQuery.data.data : null;
   const available = account !== null && account.status !== "unavailable"
@@ -127,7 +127,7 @@ export function useLighterDesk() {
     [chartMarketId, account],
   );
   // Same query the account panel's Fills tab reads, so this adds no request.
-  const fillsQuery = useLighterTradingFills(environment, chartMarketId !== null);
+  const fillsQuery = useLighterTradingFills(environment, chartMarketId !== null, activeSessionId);
   const fillsSnapshot = fillsQuery.data?.ok === true ? fillsQuery.data.data : null;
   const fills = fillsSnapshot?.fills ?? null;
   // Fill arrows only accompany an open position on this market; a flat chart stays clean.
