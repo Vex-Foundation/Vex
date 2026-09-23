@@ -88,7 +88,7 @@ const AUTH_ACCOUNT_INDEX_PARAM: ProtocolParamDef = {
   key: "accountIndex",
   type: "number",
   description:
-    "Optional account index. Omit to use the account bound to the default saved Vex-managed Lighter trading credential. Derived read-only authorization refuses account mismatches.",
+    "Optional account index. In a session, omit it to use the Lighter account owned by the selected EVM wallet; an explicit index must match that wallet. Derived read-only authorization stays on the exact account.",
 };
 
 const REQUIRED_ACCOUNT_INDEX_PARAM: ProtocolParamDef = {
@@ -349,7 +349,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      `Read authenticated open Lighter orders using short-lived read-only authorization derived locally from the saved Core or Robinhood Chain trading credential. Use when the user asks for their active/resting orders, open bids/asks, or order exposure. Defaults to the saved credential's account when accountIndex is omitted and refuses account mismatches. Returns exact provider string order identifiers for future safety. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
+      `Read authenticated open Lighter orders using short-lived read-only authorization derived locally from the saved Core or Robinhood Chain trading credential. Use when the user asks for their active/resting orders, open bids/asks, or order exposure. In a session, the account follows the selected EVM wallet and an explicit accountIndex must match it. Returns exact provider string order identifiers for future safety. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
     mutating: false,
     actionKind: "read",
     params: [ENVIRONMENT_PARAM, AUTH_ACCOUNT_INDEX_PARAM, MARKET_ID_OPTIONAL_PARAM, MARKET_FILTER_PARAM, ACCOUNT_ORDER_LIMIT_PARAM],
@@ -362,7 +362,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      `Read authenticated inactive Lighter order history using short-lived read-only authorization derived locally from the saved Core or Robinhood Chain trading credential. Use when the user asks for filled, cancelled, inactive, or historical orders. Defaults to the saved credential's account when accountIndex is omitted and refuses account mismatches. Returns exact provider string order identifiers. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
+      `Read authenticated inactive Lighter order history using short-lived read-only authorization derived locally from the saved Core or Robinhood Chain trading credential. Use when the user asks for filled, cancelled, inactive, or historical orders. In a session, the account follows the selected EVM wallet and an explicit accountIndex must match it. Returns exact provider string order identifiers. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
     mutating: false,
     actionKind: "read",
     params: [ENVIRONMENT_PARAM, AUTH_ACCOUNT_INDEX_PARAM, MARKET_ID_OPTIONAL_PARAM, MARKET_FILTER_PARAM, ACCOUNT_ORDER_LIMIT_PARAM],
@@ -375,7 +375,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      `Read authenticated Lighter account trade history using short-lived read-only authorization derived locally from the saved Core or Robinhood Chain trading credential. Use when the user asks for their fills, personal account trades, or executed trades rather than public market tape. Defaults to the saved credential's account when accountIndex is omitted and refuses account mismatches. Returns exact provider string trade and order ids. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
+      `Read authenticated Lighter account trade history using short-lived read-only authorization derived locally from the saved Core or Robinhood Chain trading credential. Use when the user asks for their fills, personal account trades, or executed trades rather than public market tape. In a session, the account follows the selected EVM wallet and an explicit accountIndex must match it. Returns exact provider string trade and order ids. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
     mutating: false,
     actionKind: "read",
     params: [ENVIRONMENT_PARAM, AUTH_ACCOUNT_INDEX_PARAM, ACCOUNT_ORDER_LIMIT_PARAM],

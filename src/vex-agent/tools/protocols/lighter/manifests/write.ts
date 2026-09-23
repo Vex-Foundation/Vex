@@ -35,7 +35,7 @@ const LIFECYCLE_INTENT_ID_PARAM: ProtocolParamDef = {
 const LIFECYCLE_ACCOUNT_PARAM: ProtocolParamDef = {
   key: "accountIndex",
   type: "number",
-  description: "Optional saved Lighter account index. Omit when exactly one managed account exists in the selected environment.",
+  description: "Optional Lighter account index. In a session, omit it to use the account owned by the selected EVM wallet; an explicit index must match that wallet.",
 };
 
 const LIFECYCLE_MARKET_PARAM: ProtocolParamDef = {

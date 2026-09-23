@@ -24,7 +24,7 @@ import {
 import type { LighterMarket, LighterMarketDetail } from "@tools/lighter/types.js";
 import { ErrorCodes, VexError } from "../../../../../errors.js";
 import logger from "@utils/logger.js";
-import type { ProtocolHandler } from "../../types.js";
+import type { ProtocolExecutionContext, ProtocolHandler } from "../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
 import { resolveSelectedAddressForRead } from "@vex-agent/tools/internal/wallet/resolve.js";
 import {
@@ -126,19 +126,30 @@ import {
 } from "../managed-trading-readiness.js";
 import { prepareLighterOrderCreateApproval } from "./write.js";
 
-// Resolves the account index and derives a short-lived read-only auth token from
-// the saved trading key for an authenticated account read. The read must target
-// that exact account (the client rejects a privileged token whose account index
-// does not match), so the resolved index is returned alongside it. When no token
-// can be derived, the caller's request is preserved and the client fails closed;
-// there is no standalone-token fallback.
+// An engine session reads only its selected wallet's provider-owned account,
+// even if another wallet has the sole saved trading key. Trusted default
+// contexts retain the legacy saved-scope fallback. Any short-lived read-only
+// token is derived for that exact account, never for another saved scope.
 async function resolveAuthenticatedAccountRead(
   environment: LighterEnvironment,
   requestedAccountIndex: number | undefined,
+  context: ProtocolExecutionContext,
 ): Promise<{
   readonly accountIndex: number | undefined;
   readonly privilegedAuth: LighterPrivilegedAccountAuth | undefined;
 }> {
+  if (context.walletResolution.source === "session") {
+    const accountIndex = await resolveSessionBoundPreviewAccountIndex({
+      walletResolution: context.walletResolution,
+      walletPolicy: context.walletPolicy,
+      environment,
+      requestedAccountIndex,
+      client: getLighterClient(),
+    });
+    const privilegedAuth =
+      (await resolveLighterReadOnlyAccountAuth(environment, accountIndex)) ?? undefined;
+    return { accountIndex, privilegedAuth };
+  }
   const targetAccount =
     requestedAccountIndex
     ?? resolveDefaultLighterTradingCredentialScope(environment)?.accountIndex;
@@ -504,9 +515,9 @@ export function resolvePreviewAccountIndex(
  * session wallet provably owns it (verified on-chain, the same authority the
  * desk and onboarding paths use).
  *
- * When the host provides no selectable wallet - only legacy or no-wallet
- * contexts, never a live trading session - it falls back to the unambiguous
- * saved scope so existing single-wallet behavior is preserved.
+ * Only a trusted default context with no configured EVM wallet may fall back
+ * to an unambiguous saved scope. A session with no selected wallet, a stale
+ * selection, or an invalid wallet policy must fail before a preview is stored.
  */
 export async function resolveSessionBoundPreviewAccountIndex(input: {
   readonly walletResolution: Parameters<typeof resolveSelectedAddressForRead>[0];
@@ -515,29 +526,20 @@ export async function resolveSessionBoundPreviewAccountIndex(input: {
   readonly requestedAccountIndex: number | undefined;
   readonly client: LighterAccountOwnershipReader;
 }): Promise<number> {
-  const distinctAccounts = new Set(
-    listLighterTradingCredentialScopes(input.environment).map((scope) => scope.accountIndex),
-  );
-  // Common single-wallet path: no account was requested and only one account is
-  // configured, so there is nothing to disambiguate or guard. Use it directly.
-  if (input.requestedAccountIndex === undefined && distinctAccounts.size <= 1) {
-    return resolvePreviewAccountIndex(input.environment, undefined);
-  }
-  // A specific account was requested, or several accounts are configured (one
-  // Lighter key per wallet). Either way the account must follow the session's
-  // own wallet, never the vault's saved-scope order, so one wallet's session can
-  // never sign on another wallet's account. Ownership is verified on-chain, the
-  // same authority the desk and onboarding paths use.
-  let walletAddress: string | null = null;
+  // Saved credential count cannot establish which wallet this session chose.
+  // Verify ownership even when only one Lighter account is configured.
+  let walletAddress: string;
   try {
     walletAddress = resolveSelectedAddressForRead(input.walletResolution, input.walletPolicy, "eip155");
-  } catch {
-    walletAddress = null;
-  }
-  if (walletAddress === null) {
-    // No selectable session wallet to bind against (legacy/no-wallet context).
-    // Fall back to the strict scope resolver, which refuses on ambiguity.
-    return resolvePreviewAccountIndex(input.environment, input.requestedAccountIndex);
+  } catch (error) {
+    if (input.walletResolution.source === "default"
+      && error instanceof VexError
+      && error.code === ErrorCodes.WALLET_NOT_CONFIGURED) {
+      // Trusted maintenance callers can still use one saved account when no
+      // EVM wallet exists. A session selection never takes this fallback.
+      return resolvePreviewAccountIndex(input.environment, input.requestedAccountIndex);
+    }
+    throw error;
   }
   const owned = await readUniqueLighterMasterAccount(input.client, input.environment, walletAddress);
   if (input.requestedAccountIndex !== undefined && input.requestedAccountIndex !== owned) {
@@ -1138,7 +1140,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     }
   },
 
-  "lighter.openOrders": async (params) => {
+  "lighter.openOrders": async (params, context) => {
     const environment = readEnvironment(params);
     if (!environment.ok) return fail(environment.reason);
     const accountIndex = readOptionalAccountIndex(params);
@@ -1151,7 +1153,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     if (!limit.ok) return fail(limit.reason);
 
     try {
-      const auth = await resolveAuthenticatedAccountRead(environment.value, accountIndex.value);
+      const auth = await resolveAuthenticatedAccountRead(environment.value, accountIndex.value, context);
       const response = await getLighterClient().getAccountActiveOrders(environment.value, {
         ...(auth.accountIndex === undefined ? {} : { accountIndex: auth.accountIndex }),
         ...(marketId.value === undefined ? {} : { marketId: marketId.value }),
@@ -1162,14 +1164,16 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           LIGHTER_ENDPOINT_PATHS.accountActiveOrders,
         ], {
           accountIndex: auth.accountIndex ?? null,
-          accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
+          accountIndexSource: context.walletResolution.source === "session"
+            ? "session_wallet" : accountIndex.value === undefined ? "credential" : "caller",
           marketId: marketId.value ?? null,
           filter: filter.value ?? null,
           outputLimit: limit.value,
         }),
         environment: environment.value,
         accountIndex: auth.accountIndex ?? null,
-        accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
+        accountIndexSource: context.walletResolution.source === "session"
+          ? "session_wallet" : accountIndex.value === undefined ? "credential" : "caller",
         marketId: marketId.value ?? null,
         filter: filter.value ?? null,
         limit: limit.value,
@@ -1180,7 +1184,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     }
   },
 
-  "lighter.orderHistory": async (params) => {
+  "lighter.orderHistory": async (params, context) => {
     const environment = readEnvironment(params);
     if (!environment.ok) return fail(environment.reason);
     const accountIndex = readOptionalAccountIndex(params);
@@ -1193,7 +1197,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     if (!limit.ok) return fail(limit.reason);
 
     try {
-      const auth = await resolveAuthenticatedAccountRead(environment.value, accountIndex.value);
+      const auth = await resolveAuthenticatedAccountRead(environment.value, accountIndex.value, context);
       const response = await getLighterClient().getAccountInactiveOrders(environment.value, {
         ...(auth.accountIndex === undefined ? {} : { accountIndex: auth.accountIndex }),
         ...(marketId.value === undefined ? {} : { marketId: marketId.value }),
@@ -1205,14 +1209,16 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           LIGHTER_ENDPOINT_PATHS.accountInactiveOrders,
         ], {
           accountIndex: auth.accountIndex ?? null,
-          accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
+          accountIndexSource: context.walletResolution.source === "session"
+            ? "session_wallet" : accountIndex.value === undefined ? "credential" : "caller",
           marketId: marketId.value ?? null,
           filter: filter.value ?? null,
           outputLimit: limit.value,
         }),
         environment: environment.value,
         accountIndex: auth.accountIndex ?? null,
-        accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
+        accountIndexSource: context.walletResolution.source === "session"
+          ? "session_wallet" : accountIndex.value === undefined ? "credential" : "caller",
         marketId: marketId.value ?? null,
         filter: filter.value ?? null,
         limit: limit.value,
@@ -1223,7 +1229,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     }
   },
 
-  "lighter.trades": async (params) => {
+  "lighter.trades": async (params, context) => {
     const environment = readEnvironment(params);
     if (!environment.ok) return fail(environment.reason);
     const accountIndex = readOptionalAccountIndex(params);
@@ -1232,7 +1238,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     if (!limit.ok) return fail(limit.reason);
 
     try {
-      const auth = await resolveAuthenticatedAccountRead(environment.value, accountIndex.value);
+      const auth = await resolveAuthenticatedAccountRead(environment.value, accountIndex.value, context);
       const response = await getLighterClient().getAccountTrades(environment.value, {
         ...(auth.accountIndex === undefined ? {} : { accountIndex: auth.accountIndex }),
         limit: limit.value,
@@ -1243,12 +1249,14 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           LIGHTER_ENDPOINT_PATHS.trades,
         ], {
           accountIndex: auth.accountIndex ?? null,
-          accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
+          accountIndexSource: context.walletResolution.source === "session"
+            ? "session_wallet" : accountIndex.value === undefined ? "credential" : "caller",
           outputLimit: limit.value,
         }),
         environment: environment.value,
         accountIndex: auth.accountIndex ?? null,
-        accountIndexSource: accountIndex.value === undefined ? "credential" : "caller",
+        accountIndexSource: context.walletResolution.source === "session"
+          ? "session_wallet" : accountIndex.value === undefined ? "credential" : "caller",
         limit: limit.value,
         // The resolved account lights up the account view (position before,
         // realized PnL, effect); `lighter.recentTrades` stays two-argument

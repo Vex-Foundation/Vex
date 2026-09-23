@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { LIGHTER_ENVIRONMENTS } from "@tools/lighter/constants.js";
+import { getLighterClient } from "@tools/lighter/client.js";
+import { readUniqueLighterMasterAccount } from "@tools/lighter/wallet-funding/account-ownership.js";
 import { executeProtocolTool } from "@vex-agent/tools/protocols/runtime.js";
 import {
   handleLighterCoreOnboardingStatus,
@@ -15,6 +17,20 @@ const PUBLIC_WALLET = "0x28C6c06298d514Db089934071355E5743bf21d60";
 
 describe.skipIf(!LIVE)("Lighter live public account reads", () => {
   for (const environment of LIGHTER_ENVIRONMENTS) {
+    const ownedAccountIndex = environment === "core" ? 677_540 : 24_226;
+    it(`resolves the live ${environment} master account from its owning wallet`,
+      { timeout: 60_000 }, async () => {
+        const client = getLighterClient();
+        const response = await client.getAccount(environment, { by: "index", value: ownedAccountIndex });
+        const account = response.accounts.find((row) => (row.index ?? row.account_index) === ownedAccountIndex);
+        const address = account?.l1_address;
+        expect(address).toMatch(/^0x[0-9a-fA-F]{40}$/);
+        if (address === undefined) throw new Error("Lighter account has no owner address");
+        expect(await readUniqueLighterMasterAccount(
+          client, environment, address,
+        )).toBe(ownedAccountIndex);
+      });
+
     it.each(["lighter.account.get", "lighter.positions"])(
       `%s reads the public ${environment} account without credentials`,
       { timeout: 60_000 },

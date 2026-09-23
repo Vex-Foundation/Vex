@@ -12,9 +12,12 @@ import {
   withSessionControlLocks,
 } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "../../../types.js";
-import type { ProtocolHandler } from "../../types.js";
+import type { ProtocolExecutionContext, ProtocolHandler } from "../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
 import { getLighterClient } from "@tools/lighter/client.js";
+import { readUniqueLighterMasterAccount } from "@tools/lighter/wallet-funding/account-ownership.js";
+import { resolveSelectedAddress } from "@vex-agent/tools/internal/wallet/resolve.js";
+import { VexError } from "../../../../../errors.js";
 import { readEnvironment } from "../params.js";
 import { resolveLighterReadOnlyAccountAuth } from "../read-account-auth.js";
 import {
@@ -55,7 +58,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (!orderId.ok) return fail(orderId.reason);
     const accountIndex = readOptionalAccountIndex(params.accountIndex);
     if (!accountIndex.ok) return fail(accountIndex.reason);
-    const scope = resolveScope(environment.value, accountIndex.value);
+    const scope = await resolveScope(environment.value, accountIndex.value, context);
     if (!scope.ok) return fail(scope.reason);
     const readiness = evaluateLighterTradingCredentialReadiness({
       ...scope.value,
@@ -195,7 +198,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (!price.ok) return fail(price.reason);
     const accountIndex = readOptionalAccountIndex(params.accountIndex);
     if (!accountIndex.ok) return fail(accountIndex.reason);
-    const scope = resolveScope(environment.value, accountIndex.value);
+    const scope = await resolveScope(environment.value, accountIndex.value, context);
     if (!scope.ok) return fail(scope.reason);
     const readiness = evaluateLighterTradingCredentialReadiness({
       ...scope.value,
@@ -372,7 +375,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (!environment.ok) return fail(environment.reason);
     const accountIndex = readOptionalAccountIndex(params.accountIndex);
     if (!accountIndex.ok) return fail(accountIndex.reason);
-    const scope = resolveScope(environment.value, accountIndex.value);
+    const scope = await resolveScope(environment.value, accountIndex.value, context);
     if (!scope.ok) return fail(scope.reason);
     const readiness = evaluateLighterTradingCredentialReadiness({
       ...scope.value,
@@ -502,7 +505,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (!maxSlippageBps.ok) return fail(maxSlippageBps.reason);
     const accountIndex = readOptionalAccountIndex(params.accountIndex);
     if (!accountIndex.ok) return fail(accountIndex.reason);
-    const scope = resolveScope(environment.value, accountIndex.value);
+    const scope = await resolveScope(environment.value, accountIndex.value, context);
     if (!scope.ok) return fail(scope.reason);
     const readiness = evaluateLighterTradingCredentialReadiness({
       ...scope.value,
@@ -870,9 +873,38 @@ function preparedPayload(intent: LighterOrderLifecycleIntentRow, status: string)
   };
 }
 
-function resolveScope(environment: "core" | "rhc", accountIndex: number | null):
+async function resolveScope(
+  environment: "core" | "rhc",
+  accountIndex: number | null,
+  context: ProtocolExecutionContext,
+): Promise<
   | { readonly ok: true; readonly value: LighterSavedTradingCredentialScope }
-  | { readonly ok: false; readonly reason: string } {
+  | { readonly ok: false; readonly reason: string }
+> {
+  if (context.walletResolution.source === "session") {
+    let ownedAccount: number;
+    try {
+      const walletAddress = resolveSelectedAddress(
+        context.walletResolution,
+        context.walletPolicy,
+        "eip155",
+      );
+      ownedAccount = await readUniqueLighterMasterAccount(
+        getLighterClient(), environment, walletAddress,
+      );
+    } catch (error) {
+      return { ok: false, reason: error instanceof VexError
+        ? error.message
+        : "Unable to verify the selected wallet's Lighter account. Check the connection and try again." };
+    }
+    if (accountIndex !== null && accountIndex !== ownedAccount) {
+      return { ok: false, reason: `This session's selected wallet owns Lighter ${environment} account ${ownedAccount}, not the requested account ${accountIndex}.` };
+    }
+    const scope = resolveSavedLighterTradingCredentialScope(environment, ownedAccount);
+    return scope === null
+      ? { ok: false, reason: "No managed Lighter trading credential exists for this session's selected wallet." }
+      : { ok: true, value: scope };
+  }
   if (accountIndex !== null) {
     const scope = resolveSavedLighterTradingCredentialScope(environment, accountIndex);
     return scope === null
