@@ -25,6 +25,7 @@ export interface DeskOrderExecution {
   readonly state: DeskProviderOrderState;
   readonly source: "active_order" | "inactive_order" | "account_trade" | "not_found" | null;
   readonly orderId: string | null;
+  readonly providerOrderStatus: string | null;
   readonly tradeId: string | null;
   readonly filledBaseAmount: string | null;
   readonly averageExecutionPrice: string | null;
@@ -84,6 +85,7 @@ export function parseDeskOrderExecution(
         state,
         source: null,
         orderId: null,
+        providerOrderStatus: null,
         tradeId: null,
         filledBaseAmount: null,
         averageExecutionPrice: null,
@@ -99,6 +101,7 @@ export function parseDeskOrderExecution(
         state,
         source,
         orderId: boundedString(output["providerOrderId"]),
+        providerOrderStatus: boundedString(output["providerOrderStatus"]),
         tradeId: null,
         filledBaseAmount: null,
         averageExecutionPrice: null,
@@ -123,6 +126,7 @@ export function parseDeskOrderExecution(
       state: state as Exclude<DeskProviderOrderState, "sequencer_pending" | "ambiguous">,
       source,
       orderId,
+      providerOrderStatus: boundedString(output["providerOrderStatus"]),
       tradeId: source === "account_trade" ? boundedString(evidence["tradeId"]) : null,
       filledBaseAmount: source === "account_trade" ? null : decimal(evidence["filledBaseAmount"]),
       averageExecutionPrice: source === "account_trade" ? null : decimal(evidence["averageExecutionPrice"]),

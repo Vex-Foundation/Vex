@@ -74,6 +74,7 @@ function providerOrderOutput(input: {
   readonly state: "open" | "partially_filled" | "filled" | "canceled" | "rejected";
   readonly source: "active_order" | "inactive_order" | "account_trade";
   readonly orderId: string;
+  readonly providerOrderStatus?: string;
   readonly filledBaseAmount?: string;
   readonly averageExecutionPrice?: string;
   readonly tradeId?: string;
@@ -86,6 +87,7 @@ function providerOrderOutput(input: {
     executionState: input.state,
     evidenceSource: input.source,
     providerOrderId: input.orderId,
+    ...(input.providerOrderStatus === undefined ? {} : { providerOrderStatus: input.providerOrderStatus }),
     providerEvidence: {
       source: input.source,
       marketIndex: 7,
@@ -454,8 +456,26 @@ describe("desk lane", () => {
 
     expect(result.current.deskOutcome?.tone).toBe("warn");
     expect(result.current.deskOutcome?.text).toContain("9003");
-    expect(result.current.deskOutcome?.text).toContain("canceled before it filled");
+    expect(result.current.deskOutcome?.text).toContain("canceled with no fill");
+    expect(result.current.deskOutcome?.text).toContain("did not open a position");
+    expect(result.current.deskOutcome?.text).toContain("Positions and Trade History");
+    expect(result.current.deskOutcome?.text).not.toContain("Check Orders below");
     expect(funnelStep).toHaveBeenCalledWith({ step: "desk_order_canceled", environment: "rhc" });
+  });
+
+  it("explains a provider-reported margin cancellation without guessing at other causes", async () => {
+    prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-margin" } });
+    const { result } = renderDesk();
+    await act(async () => { result.current.submitDraft(ENTRY); });
+    act(() => { result.current.onApprovalResolved("approved", resolved({
+      id: "ap-margin",
+      toolOutput: providerOrderOutput({
+        state: "canceled", source: "inactive_order", orderId: "9004",
+        providerOrderStatus: "canceled-margin-not-allowed",
+      }),
+    })); });
+
+    expect(result.current.deskOutcome?.text).toContain("Lighter did not allow the margin");
   });
 
   it("shows the tool's own words on failure and a caution when the outcome is unknown", async () => {

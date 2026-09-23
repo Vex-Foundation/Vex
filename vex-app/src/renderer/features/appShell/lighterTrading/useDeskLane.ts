@@ -17,6 +17,7 @@ import {
   fillsForOrder,
   parseDeskOrderExecution,
   totalFillSize,
+  type DeskOrderExecution,
 } from "./desk-fill-outcome.js";
 import { isPositiveDecimal } from "./decimal.js";
 import { recordFunnelStep } from "./funnel.js";
@@ -97,6 +98,16 @@ function hasAttachedProtection(draft: TradeDraft | null): boolean {
 function orderLabel(orderId: string | null): string {
   if (orderId === null) return "Order";
   return `Order …${orderId.slice(-8)}`;
+}
+
+function canceledOrderMessage(order: DeskOrderExecution): string {
+  const status = order.providerOrderStatus?.trim().toLowerCase().replace(/[\s_]+/g, "-");
+  const reason = status === "canceled-margin-not-allowed"
+    ? " Lighter did not allow the margin for this order."
+    : status === "canceled-expired"
+      ? " The order expired before it could fill."
+      : "";
+  return `${orderLabel(order.orderId)} was canceled with no fill.${reason} This order did not open a position. Check Positions and Trade History before placing another order.`;
 }
 
 function deskFailureMessage(message: string): string {
@@ -306,7 +317,7 @@ export function useDeskLane({
         if (!scopeIsCurrent) return;
         setDeskOutcome({
           tone: "warn",
-          text: `${orderLabel(execution.orderId)} was canceled before it filled. Check Orders below before retrying.`,
+          text: canceledOrderMessage(execution),
         });
         return;
       }
