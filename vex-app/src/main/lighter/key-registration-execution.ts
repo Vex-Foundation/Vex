@@ -27,7 +27,10 @@ import type {
   LighterKeyRegistrationExecutionResult,
   LighterKeyRegistrationExecutor,
 } from "@vex-agent/tools/protocols/lighter/key-registration-execution.js";
-import { configureLighterKeyRegistrationExecutor } from "@vex-agent/tools/protocols/lighter/key-registration-execution.js";
+import {
+  configureLighterKeyRegistrationExecutor,
+  LIGHTER_KEY_REGISTRATION_EXPIRY_GRACE_MS,
+} from "@vex-agent/tools/protocols/lighter/key-registration-execution.js";
 import { resolveSigningWallet } from "@vex-agent/tools/internal/wallet/resolve.js";
 import { ErrorCodes, VexError } from "../../../../src/errors.js";
 import {
@@ -65,6 +68,7 @@ export interface LighterKeyRegistrationExecutionDeps {
   readonly markStaged: typeof markStaged;
   readonly markSubmitted: typeof markSubmitted;
   readonly markAmbiguous: typeof markAmbiguous;
+  readonly markExpiredUnconsumed: typeof markExpiredUnconsumed;
   readonly markKeyVerified: typeof markKeyVerified;
   readonly markNonceSynchronized: typeof markNonceSynchronized;
   readonly markActive: typeof markActive;
@@ -274,6 +278,8 @@ async function reconcileRegistration(
   let intent = initialIntent;
   const slot = await waitForExactApiKeySlot(deps, intent);
   if (slot === null) {
+    const failed = await failIfExpiredUnconsumed(deps, intent);
+    if (failed !== null) return result(failed, "expired_unconsumed");
     return result(intent, intent.executionState === "ambiguous"
       ? "ambiguity_unresolved"
       : "submitted_pending_verification");
@@ -422,6 +428,43 @@ function isMissingExactApiKeySlot(error: unknown): boolean {
       .test(error.message);
 }
 
+/**
+ * A registration that may have been sent but whose key never appeared.
+ *
+ * Lighter consumes the key's nonce when a change-pub-key executes, so a live
+ * next nonce still equal to `registrationNonce` proves this one has not; once
+ * its signed expiry plus the grace has passed the sequencer refuses it, so it
+ * never will. Only then is it failed, which lets setup start a fresh
+ * registration instead of reporting the same ambiguity forever. An unreadable
+ * nonce proves nothing and changes nothing.
+ */
+async function failIfExpiredUnconsumed(
+  deps: LighterKeyRegistrationExecutionDeps,
+  intent: RegistrationIntent,
+): Promise<RegistrationIntent | null> {
+  if (intent.executionState !== "ambiguous" && intent.executionState !== "change_pub_key_submitted") {
+    return null;
+  }
+  const expiredAtMs = intent.registrationTxExpiredAt === null ? Number.NaN : Number(intent.registrationTxExpiredAt);
+  if (
+    !Number.isSafeInteger(expiredAtMs)
+    || deps.now().getTime() <= expiredAtMs + LIGHTER_KEY_REGISTRATION_EXPIRY_GRACE_MS
+  ) {
+    return null;
+  }
+  let next: Awaited<ReturnType<LighterKeyRegistrationExecutionDeps["client"]["getNextNonce"]>>;
+  try {
+    next = await deps.client.getNextNonce(intent.environment, {
+      accountIndex: intent.accountIndex,
+      apiKeyIndex: intent.apiKeyIndex,
+    });
+  } catch {
+    return null;
+  }
+  if (next.code !== 200 || String(next.nonce) !== intent.registrationNonce) return null;
+  return deps.markExpiredUnconsumed(intent.sessionId, intent.intentId);
+}
+
 async function waitForExactApiKeySlot(
   deps: LighterKeyRegistrationExecutionDeps,
   intent: RegistrationIntent,
@@ -515,6 +558,8 @@ function result(
       "The exact public key and official client check passed, but the next nonce is not the approved nonce plus one. The local credential remains inactive.",
     expired_unsubmitted:
       "The registration consent expired or the dispatch was cancelled before Vex attempted the submission. Nothing was sent to Lighter; the signing evidence is retained and the local credential remains inactive.",
+    expired_unconsumed:
+      "The registration transaction expired without Lighter ever using its nonce, so it can no longer register the key. It was marked failed; setup can start a fresh registration, which needs a new approval.",
   };
   return {
     source: "vex_lighter_key_registration",
@@ -568,6 +613,18 @@ async function markAmbiguous(
       sessionId,
       intentId,
       ...input,
+    }));
+}
+
+async function markExpiredUnconsumed(
+  sessionId: string,
+  intentId: string,
+): Promise<RegistrationIntent | null> {
+  return withSessionControlLock(sessionId, (client) =>
+    keyIntentsRepo.markLighterKeyRegistrationExpiredUnconsumedWith(client, {
+      sessionId,
+      intentId,
+      graceMs: LIGHTER_KEY_REGISTRATION_EXPIRY_GRACE_MS,
     }));
 }
 
@@ -632,6 +689,7 @@ function defaultDeps(): LighterKeyRegistrationExecutionDeps {
     markStaged,
     markSubmitted,
     markAmbiguous,
+    markExpiredUnconsumed,
     markKeyVerified,
     markNonceSynchronized,
     markActive,

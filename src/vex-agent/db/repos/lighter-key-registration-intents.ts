@@ -866,6 +866,65 @@ export async function markLighterKeyRegistrationAmbiguousWith(
   return intent;
 }
 
+/**
+ * Fail a registration whose signed change-pub-key transaction expired without
+ * Lighter ever using its nonce.
+ *
+ * The caller has read the key's live next nonce and found it still equal to
+ * `registration_nonce`: the transaction has not executed, and past its signed
+ * expiry the sequencer refuses it, so it never will. This statement re-proves
+ * the rest in SQL - the expiry plus `graceMs` has passed and no key was ever
+ * verified or activated - and settles the workflow as `failed`, from which
+ * `restartFailedLighterKeyRegistrationWorkflowWith` lets a fresh registration
+ * begin. Before this, such a registration stayed ambiguous and held the
+ * wallet's onboarding forever.
+ */
+export async function markLighterKeyRegistrationExpiredUnconsumedWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly graceMs: number;
+  },
+): Promise<LighterKeyRegistrationReservationRow | null> {
+  if (!Number.isSafeInteger(input.graceMs) || input.graceMs < 0) {
+    throw new Error("Lighter key registration expiry grace must be a non-negative safe integer.");
+  }
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET execution_state = 'failed',
+            registration_ambiguity_reason = 'expired_without_nonce_consumption',
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND capability = 'key_registration'
+        AND approval_status = 'approved'
+        AND execution_state IN ('change_pub_key_submitted', 'ambiguous')
+        AND registration_tx_expired_at IS NOT NULL
+        AND registration_tx_expired_at + $3 < (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint
+        AND registration_key_verified_at IS NULL
+        AND registration_activated_at IS NULL
+      RETURNING ${RETURNING}`,
+    [input.intentId, input.sessionId, input.graceMs],
+  );
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  const workflow = await transitionLighterOnboardingWorkflowWith(client, {
+    environment: intent.environment,
+    walletAddress: intent.walletAddress,
+    expectedStates: ["key_registration_approval_pending", "change_pub_key_submitted", "ambiguous"],
+    nextState: "failed",
+    apiKeyIndex: intent.apiKeyIndex,
+    publicKeyFingerprint: intent.publicKeyFingerprint,
+    failureCode: "key_registration_expired_unconsumed",
+  });
+  if (workflow === null) {
+    throw new Error("Lighter workflow rejected the expired key-registration failure.");
+  }
+  return intent;
+}
+
 export async function markLighterKeyRegistrationKeyVerifiedWith(
   client: LighterOnboardingQueryClient,
   input: {

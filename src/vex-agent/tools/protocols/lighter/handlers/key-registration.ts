@@ -15,6 +15,7 @@ import {
 } from "@vex-agent/db/repos/lighter-integration-settings.js";
 import {
   getLighterOnboardingWorkflow,
+  restartFailedLighterKeyRegistrationWorkflowWith,
   transitionLighterOnboardingWorkflowWith,
   type LighterOnboardingWorkflowRow,
 } from "@vex-agent/db/repos/lighter-onboarding-workflows.js";
@@ -32,7 +33,11 @@ import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "../../../typ
 import { fail, ok } from "../../handler-helpers.js";
 import type { ProtocolHandler } from "../../types.js";
 import { assertLighterKeyRegistrationApprovalBinding } from "../key-registration-approval-binding.js";
-import { getConfiguredLighterKeyRegistrationExecutor } from "../key-registration-execution.js";
+import {
+  getConfiguredLighterKeyRegistrationExecutor,
+  LIGHTER_KEY_REGISTRATION_EXPIRY_GRACE_MS,
+  type LighterKeyRegistrationExecutor,
+} from "../key-registration-execution.js";
 import { getConfiguredLighterKeyRegistrationCredentialPreparer } from "../key-registration-preparation.js";
 import { readEnvironment } from "../params.js";
 
@@ -187,6 +192,78 @@ function approvalPreparedPayload(
     userGuidance:
       "Vex prepared the remaining secure trading setup and an approval card is available in the app. Tell the user to review and approve that setup if they want to continue. Do not ask them for or require them to validate account indexes, API-key indexes, nonces, fingerprints, or key material unless they explicitly request technical details.",
   };
+}
+
+/** Registration states whose signed transaction may have been sent. */
+const POSSIBLY_SENT_REGISTRATION_STATES: ReadonlySet<string> = new Set([
+  "key_registration_tx_staged",
+  "change_pub_key_submitted",
+  "ambiguous",
+]);
+
+/**
+ * Clear what a stranded registration left behind before this prepare decides
+ * anything, so setup's "Continue" can start a fresh registration instead of
+ * refusing forever.
+ *
+ *  - A live registration whose signed transaction may have been sent, and
+ *    whose signed expiry plus the grace has passed, is handed to the
+ *    evidence-only reconcile. It either finishes (the key landed) or, when
+ *    Lighter never used its nonce, is marked failed. It never signs or sends.
+ *  - A workflow left `failed` by a registration that provably never executed
+ *    is returned to `account_resolved` so a fresh slot can be reserved.
+ *
+ * Anything else is returned untouched and the checks that follow still apply.
+ */
+async function recoverStrandedKeyRegistration(input: {
+  readonly sessionId: string;
+  readonly environment: LighterEnvironment;
+  readonly walletAddress: string;
+  readonly accountIndex: number;
+  readonly workflow: LighterOnboardingWorkflowRow;
+  readonly walletResolution: Parameters<LighterKeyRegistrationExecutor["reconcile"]>[0]["walletResolution"];
+  readonly walletPolicy: Parameters<LighterKeyRegistrationExecutor["reconcile"]>[0]["walletPolicy"];
+}): Promise<LighterOnboardingWorkflowRow> {
+  let workflow = input.workflow;
+  const live = await keyIntentsRepo.findLiveLighterKeyRegistrationIntentForAccount(
+    input.environment,
+    input.accountIndex,
+  );
+  const expiredAtMs = live?.registrationTxExpiredAt == null ? Number.NaN : Number(live.registrationTxExpiredAt);
+  const executor = getConfiguredLighterKeyRegistrationExecutor();
+  if (
+    live !== null
+    && executor !== null
+    && live.walletAddress.toLowerCase() === input.walletAddress.toLowerCase()
+    && POSSIBLY_SENT_REGISTRATION_STATES.has(live.executionState)
+    && Number.isSafeInteger(expiredAtMs)
+    && Date.now() > expiredAtMs + LIGHTER_KEY_REGISTRATION_EXPIRY_GRACE_MS
+  ) {
+    try {
+      await executor.reconcile({
+        sessionId: input.sessionId,
+        intentId: live.intentId,
+        walletResolution: input.walletResolution,
+        walletPolicy: input.walletPolicy,
+      });
+    } catch (error) {
+      logger.warn("lighter.key_registration.stranded_reconcile_failed", {
+        environment: input.environment,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    workflow = (await getLighterOnboardingWorkflow(input.environment, input.walletAddress)) ?? workflow;
+  }
+  if (workflow.workflowState === "failed") {
+    const restarted = await withSessionControlLock(input.sessionId, (client) =>
+      restartFailedLighterKeyRegistrationWorkflowWith(client, {
+        environment: input.environment,
+        walletAddress: input.walletAddress,
+        accountIndex: input.accountIndex,
+      }));
+    if (restarted !== null) workflow = restarted;
+  }
+  return workflow;
 }
 
 async function resolveOrReserveIntent(input: {
@@ -383,6 +460,16 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
         "Lighter key registration requires a Phase 2-resolved account owned by the selected wallet.",
       );
     }
+    const resolvedAccountIndex = workflow.resolvedAccountIndex;
+    workflow = await recoverStrandedKeyRegistration({
+      sessionId,
+      environment: environment.value,
+      walletAddress,
+      accountIndex: resolvedAccountIndex,
+      workflow,
+      walletResolution: context.walletResolution,
+      walletPolicy: context.walletPolicy,
+    });
     if (
       workflow.workflowState !== "account_resolved"
       && workflow.workflowState !== "key_generated_encrypted"
@@ -402,7 +489,7 @@ export const LIGHTER_KEY_REGISTRATION_HANDLERS: Record<string, ProtocolHandler> 
         sessionId,
         environment: environment.value,
         walletAddress,
-        accountIndex: workflow.resolvedAccountIndex,
+        accountIndex: resolvedAccountIndex,
       });
       if (reserved.walletAddress.toLowerCase() !== walletAddress.toLowerCase()) {
         return fail("The durable key-registration reservation belongs to a different wallet.");

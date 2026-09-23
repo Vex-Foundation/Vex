@@ -36,6 +36,8 @@ const mocks = vi.hoisted(() => ({
   assertApprovalBinding: vi.fn(),
   getExecutor: vi.fn(),
   executeRegistration: vi.fn(),
+  reconcileRegistration: vi.fn(),
+  restartWorkflow: vi.fn(),
   listUnresolvedDeposits: vi.fn(),
   repairDeposit: vi.fn(),
 }));
@@ -84,6 +86,8 @@ vi.mock("@vex-agent/db/repos/lighter-onboarding-workflows.js", () => ({
   getLighterOnboardingWorkflow: mocks.getWorkflow,
   transitionLighterOnboardingWorkflowWith: (_client: unknown, input: unknown) =>
     mocks.transitionWorkflow(input),
+  restartFailedLighterKeyRegistrationWorkflowWith: (_client: unknown, input: unknown) =>
+    mocks.restartWorkflow(input),
 }));
 
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
@@ -106,6 +110,7 @@ vi.mock("@vex-agent/tools/protocols/lighter/key-registration-approval-binding.js
 
 vi.mock("@vex-agent/tools/protocols/lighter/key-registration-execution.js", () => ({
   getConfiguredLighterKeyRegistrationExecutor: mocks.getExecutor,
+  LIGHTER_KEY_REGISTRATION_EXPIRY_GRACE_MS: 10 * 60_000,
 }));
 
 const { LIGHTER_KEY_REGISTRATION_HANDLERS } = await import(
@@ -210,6 +215,7 @@ beforeEach(() => {
   mocks.getExecutor.mockReturnValue(null);
   mocks.listUnresolvedDeposits.mockResolvedValue([]);
   mocks.repairDeposit.mockResolvedValue({ resolution: "awaiting_lighter" });
+  mocks.restartWorkflow.mockResolvedValue(null);
 });
 
 describe("lighter.key.register.prepare", () => {
@@ -483,6 +489,103 @@ describe("lighter.key.register.prepare", () => {
       apiKeyIndex: 6,
     });
     expect(mocks.markApprovalPending).toHaveBeenCalled();
+  });
+
+  describe("a registration stranded after it may have been sent", () => {
+    const GRACE_MS = 10 * 60_000;
+    const stranded = (expiredAgoMs: number) => ({
+      ...row("approved"),
+      sessionId: "session-2",
+      executionState: "ambiguous",
+      registrationTxType: 8,
+      registrationTxHash: "cd".repeat(40),
+      registrationTxExpiredAt: String(Date.now() - expiredAgoMs),
+      registrationAmbiguityReason: "send_tx_outcome_unknown",
+    });
+    const prepare = () => requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
+      { environment: "core" },
+      CONTEXT,
+    );
+    beforeEach(() => {
+      mocks.getExecutor.mockReturnValue({ execute: mocks.executeRegistration, reconcile: mocks.reconcileRegistration });
+      mocks.reconcileRegistration.mockResolvedValue({ status: "expired_unconsumed" });
+    });
+
+    it("reconciles it, restarts the failed workflow, and prepares a fresh registration", async () => {
+      mocks.findLive.mockResolvedValueOnce(stranded(GRACE_MS + 1_000)).mockResolvedValueOnce(null);
+      mocks.getWorkflow
+        .mockResolvedValueOnce({ workflowState: "ambiguous", resolvedAccountIndex: 42 })
+        .mockResolvedValueOnce({ workflowState: "failed", resolvedAccountIndex: 42 });
+      mocks.restartWorkflow.mockResolvedValueOnce({ workflowState: "account_resolved", resolvedAccountIndex: 42 });
+
+      const result = await prepare();
+
+      expect(mocks.reconcileRegistration).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        sessionId: "session-1",
+        intentId: INTENT_ID,
+        walletResolution: CONTEXT.walletResolution,
+        walletPolicy: CONTEXT.walletPolicy,
+      }));
+      expect(mocks.restartWorkflow).toHaveBeenCalledExactlyOnceWith({
+        environment: "core",
+        walletAddress: WALLET,
+        accountIndex: 42,
+      });
+      expect(mocks.reserve).toHaveBeenCalledOnce();
+      expect(mocks.prepareCredential).toHaveBeenCalledOnce();
+      expect(result.success).toBe(true);
+      expect(mocks.executeRegistration).not.toHaveBeenCalled();
+    });
+
+    it("leaves it alone until its signed expiry plus the grace has passed", async () => {
+      mocks.findLive.mockResolvedValue(stranded(GRACE_MS - 60_000));
+      mocks.getWorkflow.mockResolvedValue({ workflowState: "ambiguous", resolvedAccountIndex: 42 });
+
+      const result = await prepare();
+
+      expect(mocks.reconcileRegistration).not.toHaveBeenCalled();
+      expect(mocks.restartWorkflow).not.toHaveBeenCalled();
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("workflow is in ambiguous");
+    });
+
+    it("keeps the refusal when the reconcile cannot prove anything", async () => {
+      mocks.findLive.mockResolvedValue(stranded(GRACE_MS + 1_000));
+      mocks.getWorkflow.mockResolvedValue({ workflowState: "ambiguous", resolvedAccountIndex: 42 });
+      mocks.reconcileRegistration.mockRejectedValueOnce(new Error("provider unavailable"));
+
+      const result = await prepare();
+
+      expect(result.success).toBe(false);
+      expect(mocks.reserve).not.toHaveBeenCalled();
+    });
+  });
+
+  it("restarts a workflow left failed by a registration that never executed", async () => {
+    mocks.getWorkflow.mockResolvedValue({ workflowState: "failed", resolvedAccountIndex: 42 });
+    mocks.restartWorkflow.mockResolvedValueOnce({ workflowState: "account_resolved", resolvedAccountIndex: 42 });
+
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(mocks.restartWorkflow).toHaveBeenCalledOnce();
+    expect(mocks.reserve).toHaveBeenCalledOnce();
+    expect(result.success).toBe(true);
+  });
+
+  it("keeps refusing a failed workflow it cannot prove restartable", async () => {
+    mocks.getWorkflow.mockResolvedValue({ workflowState: "failed", resolvedAccountIndex: 42 });
+
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("workflow is in failed");
+    expect(mocks.reserve).not.toHaveBeenCalled();
   });
 
   it("still refuses a foreign registration that cannot be safely adopted", async () => {

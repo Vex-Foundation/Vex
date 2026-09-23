@@ -251,6 +251,15 @@ function makeDeps(options: {
       return current;
     }),
     markAmbiguous: markAmbiguous as LighterKeyRegistrationExecutionDeps["markAmbiguous"],
+    markExpiredUnconsumed: vi.fn(async () => {
+      events.push("expired-unconsumed");
+      current = {
+        ...current,
+        executionState: "failed",
+        registrationAmbiguityReason: "expired_without_nonce_consumption",
+      };
+      return current;
+    }),
     markKeyVerified: vi.fn(async () => {
       events.push("verified");
       current = { ...current, executionState: "key_verified" };
@@ -525,6 +534,54 @@ function controlledSigningGate() {
   const promise = new Promise<void>((resolve) => { release = resolve; });
   return { promise, release };
 }
+describe("a registration that expired without Lighter using its nonce", () => {
+  const SIGNED_EXPIRY_MS = 1_893_456_000_000;
+  const GRACE_MS = 10 * 60_000;
+  const stranded = (options: { readonly nonce?: number; readonly nowMs?: number } = {}) => {
+    const setup = makeDeps({
+      initialExecutionState: "ambiguous",
+      reconciliationPublicKey: null,
+      postRegistrationNonce: options.nonce ?? 0,
+    });
+    vi.mocked(setup.deps.now).mockReturnValue(new Date(options.nowMs ?? SIGNED_EXPIRY_MS + GRACE_MS + 1));
+    return setup;
+  };
+
+  it("fails it once the signed expiry plus the grace has passed, never signing or sending", async () => {
+    const setup = stranded();
+
+    const result = await reconcileLighterKeyRegistration(EXECUTION_INPUT, setup.deps);
+
+    expect(result).toMatchObject({ status: "expired_unconsumed", executionState: "failed" });
+    expect(setup.deps.markExpiredUnconsumed).toHaveBeenCalledExactlyOnceWith("session-1", "lighter-keyreg-1");
+    expect(setup.deps.sign).not.toHaveBeenCalled();
+    expect(setup.deps.client.sendTx).not.toHaveBeenCalled();
+    expect(setup.activateVaultCredential).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["the grace has not passed", { nowMs: SIGNED_EXPIRY_MS + GRACE_MS }],
+    ["Lighter consumed the nonce", { nonce: 1 }],
+  ])("keeps it ambiguous while %s", async (_label, options) => {
+    const setup = stranded(options);
+
+    const result = await reconcileLighterKeyRegistration(EXECUTION_INPUT, setup.deps);
+
+    expect(result.status).toBe("ambiguity_unresolved");
+    expect(setup.deps.markExpiredUnconsumed).not.toHaveBeenCalled();
+  });
+
+  it("keeps it ambiguous when the nonce cannot be read", async () => {
+    const setup = stranded();
+    vi.mocked(setup.deps.client.getNextNonce).mockRejectedValue(new Error("provider unavailable"));
+
+    const result = await reconcileLighterKeyRegistration(EXECUTION_INPUT, setup.deps);
+
+    expect(result.status).toBe("ambiguity_unresolved");
+    expect(setup.deps.markExpiredUnconsumed).not.toHaveBeenCalled();
+  });
+});
+
 describe("key registration consent races", () => {
   for (const kind of ["expiry", "cancellation"] as const) {
     it.each(["reservation", "signing", "staging", "send-admission"] as const)(`${kind} at %s refuses submission`, async (phase) => {

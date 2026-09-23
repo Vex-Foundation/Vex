@@ -1,8 +1,15 @@
 import type { WalletResolution } from "@tools/wallet/multi-auth.js";
 import type { WalletPolicy } from "@vex-agent/engine/types.js";
 
+/**
+ * Margin past a signed change-pub-key transaction's own expiry before an
+ * unconsumed registration nonce is taken as proof it can never execute.
+ */
+export const LIGHTER_KEY_REGISTRATION_EXPIRY_GRACE_MS = 10 * 60_000;
+
 export type LighterKeyRegistrationExecutionStatus =
   | "expired_unsubmitted"
+  | "expired_unconsumed"
   | "active"
   | "submitted_pending_verification"
   | "ambiguity_unresolved"
