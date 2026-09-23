@@ -168,7 +168,7 @@ free. Both texts live on the tool
 | lighter__order_modify | Modify an approved Lighter limit order | protocol | no | yes | no | - | 613 | - | - |
 | lighter__order_modify_prepare | Prepare a Lighter order-modification approval | protocol | no | no | no | - | 552 | - | - |
 | lighter__order_preview | Preview a Lighter order | protocol | no | no | no | - | 2078 | - | - |
-| lighter__order_status | Check a Lighter order action's status | protocol | yes | no | no | - | 936 | - | none (read) |
+| lighter__order_status | Check a Lighter order action's status | protocol | yes | no | no | - | 1163 | - | none (read) |
 | lighter__orderbook_get | Read a Lighter order book | protocol | yes | no | no | - | 537 | - | none (read) |
 | lighter__position_close | Close an approved Lighter position | protocol | no | yes | no | - | 631 | - | - |
 | lighter__position_close_prepare | Prepare a Lighter position-close approval | protocol | no | no | no | - | 602 | - | - |
