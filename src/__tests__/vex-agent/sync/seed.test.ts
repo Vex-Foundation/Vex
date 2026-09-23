@@ -58,8 +58,10 @@ describe("seedSyncJobs", () => {
     // 60s, the close/cancel/modify twin of the order sweep) and
     // `lighter_oco_repair` (periodic 300s), so a stuck reservation no one is
     // retrying is released in the background - taking the total to 23.
+    // `lighter_nonce_owner_repair` (periodic 60s) then covers the leverage-change
+    // and fee-authorization reservations those sweeps do not - taking it to 24.
     await seedSyncJobs();
-    expect(mockExecute).toHaveBeenCalledTimes(23);
+    expect(mockExecute).toHaveBeenCalledTimes(24);
   });
 
   it("uses ON CONFLICT DO NOTHING (idempotent)", async () => {

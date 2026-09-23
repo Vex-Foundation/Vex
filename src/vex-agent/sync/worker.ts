@@ -165,6 +165,13 @@ export async function drainPendingRuns(): Promise<DrainResult> {
           errors: repairResult.errors,
         };
         rowsAffected = repairResult.advanced;
+      } else if (syncType === "lighter_nonce_owner_repair") {
+        const { recoverLighterForeignNonceOwnersInBackground } = await import(
+          "@vex-agent/tools/protocols/lighter/nonce-recovery.js"
+        );
+        const repairResult = await recoverLighterForeignNonceOwnersInBackground();
+        result = { ...repairResult };
+        rowsAffected = repairResult.advanced;
       } else if (syncType === "lighter_position_snapshot") {
         const { snapshotLighterPositions } = await import("./lighter-position-snapshot.js");
         const snapshotResult = await snapshotLighterPositions();
@@ -364,6 +371,12 @@ export async function processNextRun(): Promise<boolean> {
         },
         repairResult.advanced,
       );
+    } else if (job.syncType === "lighter_nonce_owner_repair") {
+      const { recoverLighterForeignNonceOwnersInBackground } = await import(
+        "@vex-agent/tools/protocols/lighter/nonce-recovery.js"
+      );
+      const repairResult = await recoverLighterForeignNonceOwnersInBackground();
+      await syncRepo.completeRun(run.id, { ...repairResult }, repairResult.advanced);
     } else if (job.syncType === "lighter_position_snapshot") {
       const { snapshotLighterPositions } = await import("./lighter-position-snapshot.js");
       const snapshotResult = await snapshotLighterPositions();

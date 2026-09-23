@@ -28,10 +28,12 @@ import {
   installLighterLeverageService,
   proveLighterUpdateLeverageTransaction,
   reconcileLighterLeverage,
+  reconcileLighterLeverageReservation,
   type LighterLeverageExecutionDeps,
   type LighterLeverageCancellationDeps,
 } from "../leverage-execution.js";
 import { leverageRefusal } from "../leverage-preparation.js";
+import { getConfiguredLighterForeignNonceOwner } from "@vex-agent/tools/protocols/lighter/foreign-nonce-owners.js";
 import type { LighterLeverageAccountSetup } from "../leverage-preparation.js";
 import {
   activeCriticalOps,
@@ -923,6 +925,66 @@ describe("reconcileLighterLeverage", () => {
     expect(result.status).toBe("ambiguous");
     expect(result).toMatchObject({ reason: expect.stringContaining("Reconcile") });
     expect(h.current().executionState).toBe("submission_staged");
+  });
+});
+
+describe("reconcileLighterLeverageReservation", () => {
+  const held = (overrides: Partial<LighterNonceStateRow> = {}): LighterNonceStateRow => ({
+    ...nonceStateRow(),
+    status: "reserved",
+    reservedNonce: "7",
+    reservationId: `lighter-leverage:${INTENT_ID}`,
+    ...overrides,
+  });
+  const lost = (now: number) => setup({
+    now,
+    intent: {
+      executionState: "submitted",
+      consentedAt: new Date(NOW),
+      nonceValue: "7",
+      txExpiryMs: TX_EXPIRY,
+      signerTxHash: HASH,
+      sendAttemptStartedAt: new Date(NOW),
+    },
+  });
+
+  it("is installed as the leverage nonce owner and removed on uninstall", () => {
+    const uninstall = installLighterLeverageService();
+    expect(getConfiguredLighterForeignNonceOwner("leverage")).not.toBeNull();
+    uninstall();
+    expect(getConfiguredLighterForeignNonceOwner("leverage")).toBeNull();
+  });
+
+  it.each([
+    { reservedNonce: "8" },
+    { apiKeyIndex: 5 },
+    { accountIndex: 1 },
+    { environment: "core" as const },
+    { reservationId: "lighter-fees:x" },
+  ])("does not claim a reservation it does not own exactly (%j)", async (mismatch) => {
+    const h = lost(TX_EXPIRY + 60_001);
+    expect(await reconcileLighterLeverageReservation(held(mismatch), h.deps)).toBeNull();
+    expect(h.deps.client.getNextNonce).not.toHaveBeenCalled();
+    expect(h.deps.releaseNonce).not.toHaveBeenCalled();
+  });
+
+  it("reads and changes nothing before the wire expiry plus the safety margin", async () => {
+    const h = lost(TX_EXPIRY + 60_000);
+    const report = await reconcileLighterLeverageReservation(held(), h.deps);
+    expect(report).toMatchObject({ kind: "leverage_change", resolution: "awaiting_expiry" });
+    expect(h.deps.client.getNextNonce).not.toHaveBeenCalled();
+    expect(h.deps.client.getTx).not.toHaveBeenCalled();
+    expect(h.current().executionState).toBe("submitted");
+  });
+
+  it("releases a lost send once it has expired with the nonce unconsumed, never signing or sending", async () => {
+    const h = lost(TX_EXPIRY + 60_001);
+    const report = await reconcileLighterLeverageReservation(held(), h.deps);
+    expect(report).toMatchObject({ kind: "leverage_change", resolution: "rejected" });
+    expect(h.deps.releaseNonce).toHaveBeenCalledOnce();
+    expect(h.current().executionState).toBe("rejected");
+    expect(h.deps.sign).not.toHaveBeenCalled();
+    expect(h.deps.client.sendTx).not.toHaveBeenCalled();
   });
 });
 

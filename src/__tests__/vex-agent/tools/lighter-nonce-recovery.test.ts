@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { LighterNonceStateRow } from "@vex-agent/db/repos/lighter-nonce-state.js";
-import { checkLighterNonceRecovery, type LighterNonceRecoveryDeps } from "@vex-agent/tools/protocols/lighter/nonce-recovery.js";
+import {
+  checkLighterNonceRecovery,
+  recoverLighterForeignNonceOwnersInBackground,
+  type LighterForeignNonceOwnerSweepDeps,
+  type LighterNonceRecoveryDeps,
+} from "@vex-agent/tools/protocols/lighter/nonce-recovery.js";
+import type { LighterForeignNonceOwnerReconciler } from "@vex-agent/tools/protocols/lighter/foreign-nonce-owners.js";
 import { lifecycleIntent, ocoExecutionIntent, orderExecutionIntent } from "../../helpers/lighter-intents.js";
 
 const scope = { environment: "rhc" as const, accountIndex: 42 };
@@ -25,6 +31,7 @@ function harness(row = reservation()) {
     repairOrder: vi.fn(async () => ({ resolution: "expired_unsubmitted" })),
     repairOco: vi.fn(async () => ({ resolution: "expired_unsubmitted" })),
     repairLifecycle: vi.fn(async () => ({ resolution: "expired_unsubmitted" })),
+    foreignOwner: vi.fn<LighterNonceRecoveryDeps["foreignOwner"]>().mockReturnValue(null),
   } satisfies LighterNonceRecoveryDeps;
   return deps;
 }
@@ -97,5 +104,86 @@ describe("Lighter nonce recovery targets", () => {
     }));
     expect((await checkLighterNonceRecovery(scope, d)).status).toBe("ready");
     expect(d.repairOrder).toHaveBeenCalledTimes(7);
+  });
+
+  it.each([
+    ["lighter-leverage", "leverage"],
+    ["lighter-fees", "fees"],
+  ] as const)("hands a %s reservation to the installed main-process owner", async (prefix, kind) => {
+    const d = harness(reservation(prefix));
+    const reconcile = vi.fn<LighterForeignNonceOwnerReconciler>()
+      .mockResolvedValue({ kind: "owner", resolution: "nonce_released_expired_unconsumed" });
+    d.foreignOwner.mockImplementation((requested) => (requested === kind ? reconcile : null));
+    d.nonces.listBlockedForAccount.mockResolvedValueOnce([reservation(prefix)]).mockResolvedValueOnce([]);
+
+    const result = await checkLighterNonceRecovery(scope, d);
+
+    expect(reconcile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reservationId: `${prefix}:intent-1` }));
+    expect(result.status).toBe("ready");
+    expect(result.reports).toEqual([{ kind: "owner", resolution: "nonce_released_expired_unconsumed" }]);
+    expect(d.repairOrder).not.toHaveBeenCalled();
+  });
+
+  it("keeps a main-process reservation blocked when its owner does not claim it", async () => {
+    const d = harness(reservation("lighter-leverage"));
+    d.foreignOwner.mockReturnValue(vi.fn<LighterForeignNonceOwnerReconciler>().mockResolvedValue(null));
+
+    const result = await checkLighterNonceRecovery(scope, d);
+
+    expect(result.status).toBe("blocked");
+    expect(result.reports[0]).toMatchObject({ kind: "unresolved_reservation_owner", resolution: "degraded" });
+    expect(String(result.reports[0]?.guidance)).toContain("Reconcile on that market's leverage row");
+  });
+
+  it("names the withdrawal owner instead of calling it an unknown order", async () => {
+    const d = harness(reservation("lighter-withdrawal"));
+    const result = await checkLighterNonceRecovery(scope, d);
+    expect(result.status).toBe("blocked");
+    expect(String(result.reports[0]?.guidance)).toContain("lighter.withdraw.status");
+  });
+});
+
+describe("Lighter nonce-owner background sweep", () => {
+  function sweepHarness(rows: LighterNonceStateRow[]) {
+    const reconcile = vi.fn<LighterForeignNonceOwnerReconciler>().mockResolvedValue({ resolution: "ok" });
+    const deps = {
+      nonces: {
+        listBlockedWithReservationPrefixes: vi.fn().mockResolvedValue(rows),
+        find: vi.fn().mockResolvedValue(null),
+      },
+      foreignOwner: vi.fn<LighterForeignNonceOwnerSweepDeps["foreignOwner"]>().mockReturnValue(reconcile),
+    } satisfies LighterForeignNonceOwnerSweepDeps;
+    return { deps, reconcile };
+  }
+
+  it("reads only leverage and fee reservations, five at a time", async () => {
+    const { deps } = sweepHarness([]);
+    await recoverLighterForeignNonceOwnersInBackground(deps);
+    expect(deps.nonces.listBlockedWithReservationPrefixes)
+      .toHaveBeenCalledExactlyOnceWith(["lighter-leverage:", "lighter-fees:"], 5);
+  });
+
+  it("counts a reservation as advanced only when a fresh read shows it released", async () => {
+    const released = reservation("lighter-leverage");
+    const held = reservation("lighter-fees", { apiKeyIndex: 8 });
+    const { deps, reconcile } = sweepHarness([released, held]);
+    deps.nonces.find.mockImplementation(async (_env: string, _account: number, apiKeyIndex: number) =>
+      apiKeyIndex === 8 ? held : { ...released, status: "observed", reservationId: null, reservedNonce: null });
+
+    const result = await recoverLighterForeignNonceOwnersInBackground(deps);
+
+    expect(reconcile).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ examined: 2, advanced: 1, awaiting: 1, degraded: 0, errors: 0 });
+  });
+
+  it("reports an uninstalled or unclaimed owner as degraded and an owner failure as an error", async () => {
+    const rows = [reservation("lighter-leverage"), reservation("lighter-fees", { apiKeyIndex: 8 }), reservation("lighter-fees", { apiKeyIndex: 9 })];
+    const { deps, reconcile } = sweepHarness(rows);
+    deps.foreignOwner.mockImplementation((kind) => (kind === "leverage" ? null : reconcile));
+    reconcile.mockResolvedValueOnce(null).mockRejectedValueOnce(new Error("provider unavailable"));
+
+    const result = await recoverLighterForeignNonceOwnersInBackground(deps);
+
+    expect(result).toEqual({ examined: 3, advanced: 0, awaiting: 0, degraded: 2, errors: 1 });
   });
 });

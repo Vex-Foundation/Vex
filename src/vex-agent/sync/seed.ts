@@ -50,6 +50,15 @@ const SYNC_JOBS = [
   // same bounded, expiry-gated, never-signs contract. See oco-order-repair.ts.
   { namespace: "_global", syncType: "lighter_oco_repair", readToolId: null, strategy: "periodic", intervalSeconds: 300 },
 
+  // Lighter nonce-OWNER recovery for the main-process owners the three sweeps
+  // above do not cover: a leverage change or a fee authorization interrupted
+  // mid-sign. Their reservation locks every order on the account, and before
+  // this only the Settings Reconcile button released a leverage one. Bounded
+  // (five reservations/run), expiry-gated, evidence-only, no account auth; it
+  // never signs, submits or retries. 60s for the same reason as the lifecycle
+  // sweep. See nonce-recovery.ts.
+  { namespace: "_global", syncType: "lighter_nonce_owner_repair", readToolId: null, strategy: "periodic", intervalSeconds: 60 },
+
   // Lighter POSITION SNAPSHOT sweep - the account-wide observation AgentScan
   // displays beside Vex-authored fills. Bounded (five scopes per sweep, the
   // remainder reported), credential-gated (a scope is observed only while this

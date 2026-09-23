@@ -363,3 +363,43 @@ for (const kind of OWNERS) {
     });
   });
 }
+
+describe("blocked nonce slots by reservation owner", () => {
+  async function reserve(apiKeyIndex: number, reservationId: string) {
+    await insertFixture("lighter_nonce_state", {
+      environment: SCOPE.environment,
+      account_index: SCOPE.accountIndex,
+      api_key_index: apiKeyIndex,
+      provider_nonce: "12",
+      public_key: "integration-fixture-public-key",
+      source: "integration_fixture",
+    });
+    await nonces.reserveObserved({ ...SCOPE, apiKeyIndex, reservationId });
+  }
+
+  it("lists only reserved slots owned by a leverage change or fee authorization", async () => {
+    await reserve(1, "lighter-leverage:lever-1");
+    await reserve(2, "lighter-fees:fee-1");
+    await reserve(3, "lighter-order:order-1");
+    await reserve(4, "lighter-leverage-lookalike:x");
+    await insertFixture("lighter_nonce_state", {
+      environment: SCOPE.environment,
+      account_index: SCOPE.accountIndex,
+      api_key_index: 5,
+      provider_nonce: "12",
+      public_key: "integration-fixture-public-key",
+      source: "integration_fixture",
+    });
+
+    const rows = await nonces.listBlockedWithReservationPrefixes(["lighter-leverage:", "lighter-fees:"], 5);
+
+    expect(rows.map((row) => row.reservationId).sort()).toEqual(["lighter-fees:fee-1", "lighter-leverage:lever-1"]);
+    expect(rows.every((row) => row.status === "reserved")).toBe(true);
+  });
+
+  it("refuses a prefix that could widen the match", async () => {
+    await expect(nonces.listBlockedWithReservationPrefixes(["%"], 5)).rejects.toThrow(/owner tags/);
+    await expect(nonces.listBlockedWithReservationPrefixes(["lighter-fees"], 5)).rejects.toThrow(/owner tags/);
+  });
+});
+

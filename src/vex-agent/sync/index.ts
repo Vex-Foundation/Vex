@@ -140,6 +140,22 @@ export async function initSync(options: InitSyncOptions = {}): Promise<void> {
       error: err instanceof Error ? err.message : String(err),
     });
   }
+  //     And the main-process owners (leverage change, fee authorization): a
+  //     reservation one of them left behind at quit locks every order on the
+  //     account, so it is released as the app reopens once provably expired.
+  try {
+    const { recoverLighterForeignNonceOwnersInBackground } = await import(
+      "@vex-agent/tools/protocols/lighter/nonce-recovery.js"
+    );
+    const nonceOwners = await recoverLighterForeignNonceOwnersInBackground();
+    if (nonceOwners.examined > 0 || nonceOwners.errors > 0) {
+      logger.info("sync.init.lighter_nonce_owner_repair", { ...nonceOwners });
+    }
+  } catch (err) {
+    logger.warn("sync.init.lighter_nonce_owner_repair_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   // 5. Re-arm fast lanes for rows that were in flight when the process died.
   //    Before the snapshot: a crash-recovered row is exactly the kind the
@@ -341,6 +357,13 @@ export async function syncTick(): Promise<void> {
           },
           repairResult.advanced,
         );
+      } else if (job.syncType === "lighter_nonce_owner_repair") {
+        const { recoverLighterForeignNonceOwnersInBackground } = await import(
+          "@vex-agent/tools/protocols/lighter/nonce-recovery.js"
+        );
+        const repairResult = await recoverLighterForeignNonceOwnersInBackground();
+        const runId = await syncRepo.enqueueRun(job.id);
+        await syncRepo.completeRun(runId, { ...repairResult, periodic: true }, repairResult.advanced);
       } else if (job.syncType === "lighter_position_snapshot") {
         const { snapshotLighterPositions } = await import("./lighter-position-snapshot.js");
         const snapshotResult = await snapshotLighterPositions();

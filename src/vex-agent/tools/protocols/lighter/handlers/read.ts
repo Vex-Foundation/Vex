@@ -615,8 +615,10 @@ function managedReadinessRecoveryLeg(
     return {
       kind: "reconcile_nonce_state",
       reason: "A previous Lighter transaction still holds this account's nonce and its outcome is not yet proven. "
-        + "Vex retires it automatically once its consent window expires; there is no Settings screen or button for this, so do not send the user to a Settings -> Lighter -> Reconcile control. "
-        + "To check or clear it now, run lighter.order.status with this environment and accountIndex yourself. Do not prepare or retry a signed action until it clears.",
+        + "Vex releases it automatically once that action's signed transaction has expired unused. "
+        + "To check or clear it now, run lighter.order.status with this environment and accountIndex yourself; its report names the owner. "
+        + "Only a leverage-change owner has a manual control (Reconcile on its leverage row in Settings > Lighter); do not invent any other Settings step. "
+        + "Do not prepare or retry a signed action until it clears.",
     };
   }
   return {

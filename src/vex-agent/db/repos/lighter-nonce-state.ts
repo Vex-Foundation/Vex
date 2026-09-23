@@ -232,6 +232,30 @@ export async function listBlockedForAccount(
   return rows.map(mapRow);
 }
 
+/**
+ * Blocked slots whose reservation id starts with one of `prefixes`, oldest
+ * first. The background owner sweep reads these; each owner still proves its
+ * exact reservation before anything is released.
+ */
+export async function listBlockedWithReservationPrefixes(
+  prefixes: readonly string[],
+  limit: number,
+): Promise<LighterNonceStateRow[]> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error("lighter_nonce_state: limit must be from 1 through 100");
+  }
+  if (prefixes.length === 0 || prefixes.some((prefix) => !/^[a-z-]+:$/.test(prefix))) {
+    throw new Error("lighter_nonce_state: reservation prefixes must be lowercase owner tags ending in ':'");
+  }
+  const rows = await query<Record<string, unknown>>(
+    `SELECT ${SELECT_COLUMNS} FROM lighter_nonce_state
+      WHERE status <> 'observed' AND reservation_id LIKE ANY($1::text[])
+      ORDER BY updated_at ASC LIMIT $2`,
+    [prefixes.map((prefix) => `${prefix}%`), limit],
+  );
+  return rows.map(mapRow);
+}
+
 export function exactSafeIntegerString(value: number, field: string): string {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(`lighter_nonce_state: ${field} must be a safe non-negative integer`);

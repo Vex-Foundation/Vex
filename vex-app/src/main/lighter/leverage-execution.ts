@@ -49,6 +49,7 @@ import type { LighterTxFromL1Response } from "@tools/lighter/types.js";
 import * as intents from "@vex-agent/db/repos/lighter-leverage-intents.js";
 import * as nonceState from "@vex-agent/db/repos/lighter-nonce-state.js";
 import { withTransaction } from "@vex-agent/db/client.js";
+import { configureLighterForeignNonceOwner } from "@vex-agent/tools/protocols/lighter/foreign-nonce-owners.js";
 import { ErrorCodes, VexError } from "../../../../src/errors.js";
 import type {
   ApplyLighterLeverageResult,
@@ -1024,8 +1025,63 @@ let admissionOpen = false;
 
 export function installLighterLeverageService(): () => void {
   admissionOpen = true;
+  const uninstallNonceOwner = configureLighterForeignNonceOwner(
+    "leverage",
+    (reservation) => reconcileLighterLeverageReservation(reservation),
+  );
   return () => {
     admissionOpen = false;
+    uninstallNonceOwner();
+  };
+}
+
+/**
+ * Unattended recovery for a nonce slot a leverage change still holds.
+ *
+ * Before this, only the Settings Reconcile button could release it, so a change
+ * interrupted mid-sign (quit, crash, lost send) locked every order on the
+ * account until the person found that button. The engine's nonce recovery and
+ * its background sweep reach this through the foreign-owner registry.
+ *
+ * It is `reconcileLighterLeverage`, the same evidence-only path the button
+ * runs, gated to the moment that path can prove anything: after the wire expiry
+ * plus the safety margin. Before then it reads nothing and changes nothing. One
+ * attempt, no sleeps: a desk prepare waits on this. Returns `null` unless the
+ * intent owns this exact reservation.
+ */
+export async function reconcileLighterLeverageReservation(
+  reservation: nonceState.LighterNonceStateRow,
+  deps: LighterLeverageExecutionDeps = defaultLighterLeverageExecutionDeps(),
+): Promise<Record<string, unknown> | null> {
+  const prefix = "lighter-leverage:";
+  if (!reservation.reservationId?.startsWith(prefix)) return null;
+  const intent = await deps.readIntent(reservation.reservationId.slice(prefix.length));
+  if (
+    intent === null
+    || lighterLeverageReservationId(intent.intentId) !== reservation.reservationId
+    || intent.environment !== reservation.environment
+    || intent.accountIndex !== reservation.accountIndex
+    || intent.apiKeyIndex !== reservation.apiKeyIndex
+    || intent.nonceValue === null
+    || intent.nonceValue !== reservation.reservedNonce
+  ) {
+    return null;
+  }
+  const base = { kind: "leverage_change", intentId: intent.intentId, apiKeyIndex: intent.apiKeyIndex };
+  const releaseAfterMs = intent.txExpiryMs === null ? null : intent.txExpiryMs + EXPIRY_SAFETY_MS;
+  if (releaseAfterMs === null || deps.now() <= releaseAfterMs) {
+    return {
+      ...base,
+      resolution: "awaiting_expiry",
+      ...(releaseAfterMs === null ? {} : { releaseAfter: new Date(releaseAfterMs).toISOString() }),
+      guidance: "The leverage change's signed transaction has not expired yet, so its nonce stays reserved. Do not retry the trade yet.",
+    };
+  }
+  const outcome = await reconcileLighterLeverage({ proposalId: intent.intentId }, { ...deps, attempts: 1 });
+  return {
+    ...base,
+    resolution: outcome.status,
+    guidance: "reason" in outcome ? outcome.reason : (outcome.note ?? "Lighter confirmed the leverage change."),
   };
 }
 
