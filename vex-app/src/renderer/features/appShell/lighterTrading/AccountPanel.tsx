@@ -8,7 +8,7 @@ import type {
 } from "@shared/schemas/lighter-trading.js";
 import { IconChevronDown, IconChevronUp } from "../../../components/icons/index.js";
 import { useLighterTradingAccount, useLighterTradingFills } from "../../../lib/api/lighter-trading.js";
-import { accountRisk, marginUsage, positionMetrics, positionProtection, type ClosePortion, type LighterOpenOrderRow, type LighterPositionRow } from "./account-model.js";
+import { accountRisk, marginUsage, positionMetrics, positionProtection, type ClosePortion, type LighterOpenOrderRow, type LighterPositionRow, type PositionCloseStage } from "./account-model.js";
 import { ClosePositionPopover } from "./ClosePositionPopover.js";
 import { NO_VALUE, formatDecimalString, formatNumber, formatPrice, formatRetrievedAt } from "./format.js";
 import { wholeLeverageDisplay } from "./leverage-display.js";
@@ -130,6 +130,7 @@ export function TradingBottomPanel({
   activeMarkPrice,
   activePriceDecimals,
   closeConfirmSkipped,
+  closingPositions,
   actions,
 }: {
   readonly environment: LighterTradingEnvironment;
@@ -144,6 +145,7 @@ export function TradingBottomPanel({
   readonly activePriceDecimals: number | null;
   /** Market close sends without its approval card; the positions table says so. */
   readonly closeConfirmSkipped: boolean;
+  readonly closingPositions: ReadonlyMap<string, PositionCloseStage>;
   readonly actions: AccountActions;
 }): JSX.Element {
   const [tab, setTab] = useState<BottomTab>("positions");
@@ -250,7 +252,7 @@ export function TradingBottomPanel({
         ) : account.status === "unavailable" ? (
           <AccountUnavailable reason={account.unavailableReason} onConnect={actions.onConnect} onOpenSettings={actions.onOpenSettings} onUnlock={() => openUnlock("appShell")} />
         ) : tab === "positions" ? (
-          <PositionsTab account={account} activeMarketId={activeMarketId} activeMarkPrice={activeMarkPrice} activePriceDecimals={activePriceDecimals} closeConfirmSkipped={closeConfirmSkipped} actions={actions} />
+          <PositionsTab account={account} activeMarketId={activeMarketId} activeMarkPrice={activeMarkPrice} activePriceDecimals={activePriceDecimals} closeConfirmSkipped={closeConfirmSkipped} closingPositions={closingPositions} actions={actions} />
         ) : tab === "orders" ? (
           <OpenOrdersTab account={account} actions={actions} />
         ) : tab === "fills" ? (
@@ -382,12 +384,13 @@ function AccountReadFailed({ error, onRetry, retrying }: {
 }
 
 
-function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDecimals, closeConfirmSkipped, actions }: {
+function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDecimals, closeConfirmSkipped, closingPositions, actions }: {
   readonly account: LighterTradingAccount;
   readonly activeMarketId: number | null;
   readonly activeMarkPrice: number | null;
   readonly activePriceDecimals: number | null;
   readonly closeConfirmSkipped: boolean;
+  readonly closingPositions: ReadonlyMap<string, PositionCloseStage>;
   readonly actions: AccountActions;
 }): JSX.Element {
   // How much of each row the Limit and Market buttons close; whole by default.
@@ -416,8 +419,14 @@ function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDec
           const metrics = positionMetrics(position, live);
           const protection = positionProtection(position, account.openOrders);
           const rowKey = `${position.marketId}-${position.side}`;
+          const closeStage = closingPositions.get(rowKey) ?? null;
+          const closeLabel = closeStage === "preparing" ? "Preparing close"
+            : closeStage === "approval" ? "Awaiting approval"
+              : closeStage === "resting" ? "Close order open"
+                : closeStage === "uncertain" ? "Checking close status"
+                  : "Confirming close";
           return (
-            <div className="lit-account-row" role="row" key={rowKey}>
+            <div className="lit-account-row" role="row" key={rowKey} data-close-pending={closeStage === null ? undefined : ""} aria-busy={closeStage !== null && closeStage !== "resting"}>
               <span className="lit-order-cell" role="cell">
                 <button
                   type="button"
@@ -431,6 +440,12 @@ function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDec
                 <small data-tone={position.side === "long" ? "positive" : "negative"}>
                   {position.side === "long" ? "Long" : "Short"} · {leverageText(metrics.leverage, position.marginMode)}
                 </small>
+                {closeStage !== null ? (
+                  <small className="lit-position-close-status" role="status">
+                    {closeStage === "resting" ? null : <span className="lit-position-close-spinner" aria-hidden="true" />}
+                    {closeLabel}
+                  </small>
+                ) : null}
               </span>
               <span role="cell">{num(position.size)}</span>
               <span role="cell">{num(position.entryPrice)}</span>
@@ -457,6 +472,7 @@ function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDec
                 </button>
                 <ClosePositionPopover
                   position={position}
+                  disabled={closeStage !== null}
                   onCloseLimit={(chosen) => actions.onCloseLimit(position, chosen)}
                   onCloseMarket={(chosen) => actions.onClosePosition(position, chosen)}
                 />

@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LighterTradingAccount } from "@shared/schemas/lighter-trading.js";
+import type { PositionCloseStage } from "../account-model.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import { TradingBottomPanel } from "../AccountPanel.js";
 import { formatRetrievedAt } from "../format.js";
@@ -229,6 +230,27 @@ describe("TradingBottomPanel", () => {
     expect(screen.getByText("No open positions.")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: /^Open Orders/ }));
     expect(screen.getByText("No open orders.")).toBeTruthy();
+  });
+
+  it("keeps a closing position visible but prevents another close from its row", () => {
+    const account: LighterTradingAccount = {
+      ...EMPTY_ACCOUNT,
+      positions: [{
+        marketId: 1, symbol: "BTC", side: "long", size: "0.25", entryPrice: "64000",
+        value: "16000", unrealizedPnl: "0", liquidationPrice: "41000",
+        initialMarginFraction: 1000, marginMode: "cross", allocatedMargin: "1600",
+      }],
+    };
+    mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: account } }));
+    render(panel({ closingPositions: new Map([["1-long", "checking"]]) }));
+
+    expect(screen.getByText("Confirming close")).toBeTruthy();
+    const close = screen.getByRole("button", { name: "Close BTC position" }) as HTMLButtonElement;
+    expect(close.disabled).toBe(true);
+    fireEvent.click(close);
+    expect(screen.queryByRole("dialog", { name: "Close BTC long" })).toBeNull();
+    expect(mocks.actions.onClosePosition).not.toHaveBeenCalled();
+    expect(screen.getByRole("row", { busy: true })).toBeTruthy();
   });
 
   it("reads fills only on its own tab and renders them from the account's side", () => {
@@ -558,7 +580,7 @@ function renderPanel(): ReturnType<typeof render> {
   return render(panel());
 }
 
-function panel({ open = true, collapsed = false, closeConfirmSkipped = false }: { readonly open?: boolean; readonly collapsed?: boolean; readonly closeConfirmSkipped?: boolean } = {}) {
+function panel({ open = true, collapsed = false, closeConfirmSkipped = false, closingPositions = new Map() }: { readonly open?: boolean; readonly collapsed?: boolean; readonly closeConfirmSkipped?: boolean; readonly closingPositions?: ReadonlyMap<string, PositionCloseStage> } = {}) {
   return (
     <TradingBottomPanel
       environment="rhc"
@@ -569,6 +591,7 @@ function panel({ open = true, collapsed = false, closeConfirmSkipped = false }: 
       activeMarkPrice={64_100}
       activePriceDecimals={1}
       closeConfirmSkipped={closeConfirmSkipped}
+      closingPositions={closingPositions}
       actions={mocks.actions}
     />
   );

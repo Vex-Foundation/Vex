@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApprovalActionResult } from "@shared/schemas/approvals.js";
-import type { LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
+import type { LighterTradingAccount, LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
 import { approvalsKeys } from "../../../../lib/api/queryKeys.js";
 import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
@@ -55,6 +55,15 @@ vi.mock("../useLighterPublicMarketStream.js", () => ({
 import { useLighterDesk } from "../useLighterDesk.js";
 
 const ENTRY = { mode: "market" as const, side: "buy" as const, baseAmount: "0.5", worstPrice: "3226.56", reduceOnly: false };
+const OPEN_POSITION = { marketId: 7, symbol: "ETH", side: "long", size: "0.25" } as LighterPositionRow;
+
+function positionAccount(retrievedAt: number, positions: readonly LighterPositionRow[] = [OPEN_POSITION], openOrders: LighterTradingAccount["openOrders"] = []): LighterTradingAccount {
+  return {
+    environment: "rhc", retrievedAt, status: "ready", unavailableReason: null, accountIndex: 42,
+    summary: null, assets: [], positions: [...positions], marginTerms: [], openOrders,
+    openOrdersAvailable: true, openOrdersTruncated: false,
+  };
+}
 
 function resolved(overrides: Partial<ApprovalActionResult>): ApprovalActionResult {
   return {
@@ -120,6 +129,80 @@ describe("desk lane", () => {
     vi.stubGlobal("window", Object.assign(window, { vex: { lighterTrading: { prepareDeskAction }, approvals: { approve }, telemetry: { funnelStep } } }));
     useUiStore.setState({ activeSessionId: "s1", createSessionOpen: false });
     useLighterAnalysisStore.getState().saveDesk({ environment: "rhc", marketId: 7, skipCloseConfirm: false });
+  });
+
+  it("locks only the selected position until a fresh account snapshot proves it closed", async () => {
+    accountData.value = { ok: true, data: positionAccount(Date.now()) };
+    prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-1" } });
+    const { result, rerender } = renderDesk();
+
+    await act(async () => {
+      result.current.accountActions.onClosePosition(OPEN_POSITION, 1);
+      result.current.accountActions.onClosePosition(OPEN_POSITION, 1);
+    });
+    expect(prepareDeskAction).toHaveBeenCalledTimes(1);
+    expect(result.current.closingPositions.get("7-long")).toBe("approval");
+
+    act(() => result.current.onApprovalResolved("approved", resolved({
+      id: "ap-1",
+      toolOutput: JSON.stringify({ source: "vex_lighter_position_close", status: "closed" }),
+    })));
+    expect(result.current.closingPositions.get("7-long")).toBe("checking");
+    act(() => useUiStore.setState({ activeSessionId: "s2" }));
+    expect(result.current.closingPositions.get("7-long")).toBe("checking");
+    accountData.value = { ok: true, data: positionAccount(Date.now() + 1_000) };
+    rerender();
+    expect(result.current.closingPositions.get("7-long")).toBe("checking");
+
+    accountData.value = { ok: true, data: positionAccount(Date.now() + 2_000, []) };
+    rerender();
+    await waitFor(() => expect(result.current.closingPositions.has("7-long")).toBe(false));
+    expect(result.current.deskOutcome).toEqual({ tone: "ok", text: "Position closed." });
+  });
+
+  it("unlocks a rejected close and keeps a resting reduce-only limit tied to its position", async () => {
+    accountData.value = { ok: true, data: positionAccount(Date.now()) };
+    prepareDeskAction.mockResolvedValueOnce({ ok: true, data: { kind: "enqueued", approvalId: "ap-1" } })
+      .mockResolvedValueOnce({ ok: true, data: { kind: "enqueued", approvalId: "ap-2" } });
+    const { result, rerender } = renderDesk();
+
+    await act(async () => { result.current.accountActions.onClosePosition(OPEN_POSITION, 1); });
+    act(() => result.current.onApprovalResolved("rejected", resolved({ id: "ap-1", status: "rejected" })));
+    expect(result.current.closingPositions.has("7-long")).toBe(false);
+
+    await act(async () => { result.current.submitDraft({ mode: "limit", side: "sell", baseAmount: "0.25", limitPrice: "3300", timeInForce: "good-till-time", orderExpiryOffsetMinutes: 60, reduceOnly: true }); });
+    expect(result.current.closingPositions.get("7-long")).toBe("approval");
+    act(() => result.current.onApprovalResolved("approved", resolved({
+      id: "ap-2", toolOutput: providerOrderOutput({ state: "open", source: "active_order", orderId: "9001" }),
+    })));
+    expect(result.current.closingPositions.get("7-long")).toBe("resting");
+
+    const openOrder = { marketId: 7, orderId: "9001" } as LighterOpenOrderRow;
+    accountData.value = { ok: true, data: positionAccount(Date.now() + 1_000) };
+    rerender();
+    expect(result.current.closingPositions.get("7-long")).toBe("resting");
+    accountData.value = { ok: true, data: positionAccount(Date.now() + 2_000, [OPEN_POSITION], [openOrder]) };
+    rerender();
+    expect(result.current.closingPositions.get("7-long")).toBe("resting");
+    accountData.value = { ok: true, data: positionAccount(Date.now() + 3_000) };
+    rerender();
+    await waitFor(() => expect(result.current.closingPositions.has("7-long")).toBe(false));
+  });
+
+  it("releases a close that Lighter confirms did not fill", async () => {
+    accountData.value = { ok: true, data: positionAccount(Date.now()) };
+    prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-1" } });
+    const { result } = renderDesk();
+
+    await act(async () => { result.current.accountActions.onClosePosition(OPEN_POSITION, 1); });
+    act(() => result.current.onApprovalResolved("approved", resolved({
+      id: "ap-1",
+      toolOutput: JSON.stringify({ source: "vex_lighter_position_close", status: "not_closed" }),
+    })));
+
+    expect(result.current.closingPositions.has("7-long")).toBe(false);
+    expect(result.current.deskOutcome?.tone).toBe("warn");
+    expect(result.current.deskOutcome?.text).toContain("did not fill");
   });
 
   it("makes the agent visible when the expanded sidebar has squeezed it closed", () => {
@@ -555,7 +638,7 @@ describe("desk lane", () => {
       expect(approve).toHaveBeenCalledWith({ id: "ap-9" });
       expect(invalidate).toHaveBeenCalledWith({ queryKey: approvalsKeys.pending("s1") });
       expect(invalidate).toHaveBeenCalledWith({ queryKey: approvalsKeys.pendingAll() });
-      expect(result.current.deskOutcome).toEqual({ tone: "ok", text: "Close sent." });
+      expect(result.current.deskOutcome).toBeNull();
       expect(result.current.submitting).toBe(false);
       expect(result.current.handoffError).toBeNull();
     });

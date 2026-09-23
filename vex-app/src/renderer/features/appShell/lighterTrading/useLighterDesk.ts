@@ -149,6 +149,7 @@ export function useLighterDesk() {
     submitting,
     prepareStage,
     deskOutcome,
+    closingPositions,
     prepareOnDesk,
     onApprovalResolved,
   } = useDeskLane({
@@ -194,7 +195,11 @@ export function useLighterDesk() {
   // The ticket's Long/Short: the draft becomes a desk order card (design §7.11).
   const submitDraft = (draft: TradeDraft): void => {
     if (market === null) return;
-    void prepareOnDesk({ kind: "order", marketId: market.marketId, draft: toDeskOrderDraft(draft) }, draft);
+    const closePosition = (draft.mode === "market" || draft.mode === "limit") && draft.reduceOnly
+      ? account?.positions.find((position) => position.marketId === market.marketId
+        && position.side === (draft.side === "sell" ? "long" : "short")) ?? null
+      : null;
+    void prepareOnDesk({ kind: "order", marketId: market.marketId, draft: toDeskOrderDraft(draft) }, draft, closePosition);
   };
 
   // Open Vex via ⌘K: the rail's composer is the only
@@ -378,7 +383,7 @@ export function useLighterDesk() {
   const accountActions: AccountActions = {
     onReviewPosition: (position) => sendToChat(buildReviewPositionMessage({ environment, position })),
     onClosePosition: (position, portion) => {
-      if (portion === 1) void prepareOnDesk({ kind: "close", marketId: position.marketId }, null);
+      if (portion === 1) void prepareOnDesk({ kind: "close", marketId: position.marketId }, null, position);
       else prefillFromPosition(position, "market", portion);
     },
     onProtectPosition: (position) => prefillFromPosition(position, "oco"),
@@ -432,6 +437,7 @@ export function useLighterDesk() {
     submitting,
     prepareStage,
     deskOutcome,
+    closingPositions,
     submitDraft,
     onApprovalResolved,
     skipCloseConfirm,

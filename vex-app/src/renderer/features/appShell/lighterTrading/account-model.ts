@@ -2,6 +2,7 @@ import type { LighterTradingAccount } from "@shared/schemas/lighter-trading.js";
 
 export type LighterPositionRow = LighterTradingAccount["positions"][number];
 export type LighterOpenOrderRow = LighterTradingAccount["openOrders"][number];
+export type PositionCloseStage = "preparing" | "approval" | "checking" | "resting" | "uncertain";
 
 function finite(value: string | null): number | null {
   if (value === null) return null;
