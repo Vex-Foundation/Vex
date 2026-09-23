@@ -98,13 +98,79 @@ describe("Light it up trade ticket", () => {
     }
   });
 
-  it("keeps uncertain order outcomes visible for recovery", () => {
+  it("shows uncertain order outcomes with the same five-second countdown", () => {
     vi.useFakeTimers();
     try {
       renderTicket({ outcome: { tone: "warn", text: "Outcome unknown. Check Orders before retrying." } });
-      act(() => { vi.advanceTimersByTime(5_000); });
       expect(document.querySelector(".lit-review-outcome")?.textContent).toContain("Outcome unknown");
-      expect(document.querySelector(".lit-review-outcome-timer")).toBeNull();
+      expect(document.querySelector(".lit-review-outcome-timer")).not.toBeNull();
+      act(() => { vi.advanceTimersByTime(5_000); });
+      expect(document.querySelector(".lit-review-outcome")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("places preview errors below Long and Short, then clears them after five seconds", () => {
+    vi.useFakeTimers();
+    try {
+      renderTicket({ handoffError: "Lighter order preview unavailable (fetch failed)" });
+      const actions = screen.getByRole("group", { name: "Order side" });
+      const notice = screen.getByRole("alert");
+      expect(actions.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(notice.textContent).toContain("Lighter order preview unavailable");
+      expect(notice.querySelector(".lit-review-outcome-timer")).not.toBeNull();
+      act(() => { vi.advanceTimersByTime(5_000); });
+      expect(screen.queryByRole("alert")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets a new error replace a success without reviving the old success", () => {
+    const success = { tone: "ok" as const, text: "Order opened." };
+    const { rerender } = renderTicket({ outcome: success });
+    expect(screen.getByRole("status").textContent).toContain("Order opened");
+    rerender({ handoffError: "Lighter order preview unavailable" });
+    expect(screen.getByRole("alert").textContent).toContain("preview unavailable");
+    rerender({ handoffError: null });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("times out validation feedback while keeping the disabled action's reason accessible", () => {
+    vi.useFakeTimers();
+    try {
+      renderTicket();
+      fireEvent.change(screen.getByLabelText("Size"), { target: { value: "0.0005" } });
+      const notice = screen.getByRole("status");
+      const actions = screen.getByRole("group", { name: "Order side" });
+      expect(actions.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(notice.textContent).toContain("Minimum size is 0.001 ETH.");
+      expect(notice.querySelector(".lit-review-outcome-timer")).not.toBeNull();
+      act(() => { vi.advanceTimersByTime(5_000); });
+      expect(screen.queryByRole("status")).toBeNull();
+      const long = screen.getByRole("button", { name: "Long 0.0005 ETH" });
+      expect((long as HTMLButtonElement).disabled).toBe(true);
+      expect(long.getAttribute("aria-description")).toBe("Minimum size is 0.001 ETH.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the approval review action available after its timed notice ends", () => {
+    vi.useFakeTimers();
+    try {
+      const onReviewApprovals = vi.fn();
+      renderTicket({ pendingApprovalCount: 1, onReviewApprovals });
+      const actions = screen.getByRole("group", { name: "Order side" });
+      const notice = screen.getByRole("status");
+      expect(notice.textContent).toContain("Approval waiting");
+      expect(actions.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      act(() => { vi.advanceTimersByTime(5_000); });
+      expect(screen.queryByRole("status")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Review pending approval" }));
+      expect(onReviewApprovals).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
@@ -199,9 +265,8 @@ describe("Light it up trade ticket", () => {
     const onReviewApprovals = vi.fn();
     renderTicket({ pendingApprovalCount: 1, onReviewApprovals });
 
-    expect(screen.getByText("Approval waiting")).toBeTruthy();
-    expect(screen.getByText("1 action needs a decision")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    expect(screen.getByText(/Approval waiting/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Review pending approval" }));
     expect(onReviewApprovals).toHaveBeenCalledTimes(1);
   });
 

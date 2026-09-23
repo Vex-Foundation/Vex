@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type FormEvent, type JSX } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type JSX } from "react";
 import type {
   LighterDeskPrepareProgressEvent,
   LighterOnboardingChecklist,
@@ -45,6 +45,13 @@ const SETUP_ACTION_TEXT: Readonly<Record<LighterOnboardingChecklist["nextAction"
   check_status: "Check setup",
   none: "Setup complete",
 };
+
+type NoticeSource = "approval" | "validation" | "outcome" | "handoff";
+interface TicketNotice {
+  readonly source: NoticeSource;
+  readonly value: DeskOutcome;
+  readonly sequence: number;
+}
 
 export function TradeTicket({
   market,
@@ -117,23 +124,48 @@ export function TradeTicket({
   const availableSymbol = market.marketType === "spot" && side === "sell" ? symbols.base : settlementSymbol;
   // A fresh ticket is incomplete, not wrong: problems show once a field changes.
   const [touched, setTouched] = useState(false);
-  const [visibleOutcome, setVisibleOutcome] = useState<{ value: DeskOutcome; sequence: number } | null>(null);
+  const [visibleNotice, setVisibleNotice] = useState<TicketNotice | null>(null);
+  const noticeSequence = useRef(0);
+  const handoffErrorRef = useRef(handoffError);
+  handoffErrorRef.current = handoffError;
+  const showNotice = useCallback((source: NoticeSource, value: DeskOutcome): void => {
+    noticeSequence.current += 1;
+    setVisibleNotice({ source, value, sequence: noticeSequence.current });
+  }, []);
   useEffect(() => {
-    if (outcome === null) {
-      setVisibleOutcome(null);
-      return;
+    if (pendingApprovalCount > 0 && handoffErrorRef.current == null) {
+      showNotice("approval", {
+        tone: "warn",
+        text: pendingApprovalCount === 1 ? "Approval waiting. One action needs a decision." : `Approval waiting. ${pendingApprovalCount} actions need a decision.`,
+      });
+    } else if (pendingApprovalCount === 0) {
+      setVisibleNotice((current) => current?.source === "approval" ? null : current);
     }
-    setVisibleOutcome((current) => ({ value: outcome, sequence: (current?.sequence ?? 0) + 1 }));
-    if (outcome.tone !== "ok") return;
-    const timeout = window.setTimeout(() => {
-      setVisibleOutcome((current) => current?.value === outcome ? null : current);
-    }, 5_000);
-    return () => window.clearTimeout(timeout);
-  }, [outcome]);
+  }, [pendingApprovalCount, showNotice]);
   useEffect(() => {
     if ((prefill ?? null) !== null || (pricePick ?? null) !== null) setTouched(true);
   }, [prefill, pricePick]);
   const problem = touched ? form.validation : null;
+  useEffect(() => {
+    if (problem !== null && handoffErrorRef.current == null) showNotice("validation", { tone: "warn", text: problem });
+    else if (problem === null) setVisibleNotice((current) => current?.source === "validation" ? null : current);
+  }, [problem, showNotice]);
+  useEffect(() => {
+    if (outcome !== null && handoffErrorRef.current == null) showNotice("outcome", outcome);
+    else if (outcome === null) setVisibleNotice((current) => current?.source === "outcome" ? null : current);
+  }, [outcome, showNotice]);
+  useEffect(() => {
+    if (handoffError) showNotice("handoff", { tone: "error", text: handoffError });
+    else setVisibleNotice((current) => current?.source === "handoff" ? null : current);
+  }, [handoffError, showNotice]);
+  useEffect(() => {
+    if (visibleNotice === null) return;
+    const sequence = visibleNotice.sequence;
+    const timeout = window.setTimeout(() => {
+      setVisibleNotice((current) => current?.sequence === sequence ? null : current);
+    }, 5_000);
+    return () => window.clearTimeout(timeout);
+  }, [visibleNotice]);
   // The inactive side's button is an order for that side: flip the side, then
   // review once the form has re-derived its prices for it.
   const [pendingSide, setPendingSide] = useState<TradeSide | null>(null);
@@ -498,16 +530,6 @@ export function TradeTicket({
       </div>
 
       <div className="lit-ticket-footer">
-        {pendingApprovalCount > 0 ? (
-          <div className="lit-ticket-approval-waiting" role="status">
-            <span><b>Approval waiting</b><small>{pendingApprovalCount === 1 ? "1 action needs a decision" : `${String(pendingApprovalCount)} actions need a decision`}</small></span>
-            {onReviewApprovals === undefined ? null : (
-              <button type="button" onClick={onReviewApprovals}>Review</button>
-            )}
-          </div>
-        ) : null}
-        {handoffError ? <p className="lit-review-error" role="alert">{handoffError}</p> : null}
-        {problem !== null ? <p className="lit-validation" role="status">{problem}</p> : null}
         {onAsk === undefined ? null : (
           <button
             type="button"
@@ -535,6 +557,7 @@ export function TradeTicket({
                 data-side={item}
                 data-active={active || undefined}
                 aria-label={`${sideLabel(item, market.marketType, protective)}${detail}`}
+                aria-description={active && form.validation !== null ? form.validation : undefined}
                 disabled={submitting || (active && form.validation !== null)}
                 onClick={active ? undefined : () => { form.setSide(item); setPendingSide(item); }}
               >
@@ -549,22 +572,23 @@ export function TradeTicket({
             );
           })}
         </div>
-        {problem === null ? (
-          <p className="lit-review-note" role="note">
-            <span>
-              {activeSession
-                ? "Nothing signs until you confirm."
-                : "Opens Vex first. Nothing signs until you confirm."}
-            </span>
-          </p>
-        ) : null}
-        {visibleOutcome !== null && handoffError == null ? (
-          <div className="lit-review-outcome" data-tone={visibleOutcome.value.tone} role="status" key={visibleOutcome.sequence}>
-            <span>{visibleOutcome.value.text}</span>
-            {visibleOutcome.value.tone === "ok" ? (
-              <span className="lit-review-outcome-timer" aria-hidden="true" />
-            ) : null}
+        <p className="lit-review-note" role="note">
+          <span>
+            {activeSession
+              ? "Nothing signs until you confirm."
+              : "Opens Vex first. Nothing signs until you confirm."}
+          </span>
+        </p>
+        {visibleNotice !== null ? (
+          <div className="lit-review-outcome" data-tone={visibleNotice.value.tone} role={visibleNotice.value.tone === "error" ? "alert" : "status"} key={visibleNotice.sequence}>
+            <span>{visibleNotice.value.text}</span>
+            <span className="lit-review-outcome-timer" aria-hidden="true" />
           </div>
+        ) : null}
+        {pendingApprovalCount > 0 && onReviewApprovals !== undefined ? (
+          <button type="button" className="lit-ticket-approval-action" onClick={onReviewApprovals}>
+            Review pending {pendingApprovalCount === 1 ? "approval" : `approvals (${pendingApprovalCount})`}
+          </button>
         ) : null}
       </div>
     </form>
