@@ -95,7 +95,9 @@ describe("compacted transcript history", () => {
     await insertMessage(otherSessionId, "user", "another session", {
       timestamp: "2026-04-17T00:00:03Z",
     });
-    await archivePrefix(sessionId, ids[2]!, 2);
+    const archiveThroughId = ids[2];
+    if (archiveThroughId === undefined) throw new Error("missing third message");
+    await archivePrefix(sessionId, archiveThroughId, 2);
     await insertMessage(
       sessionId,
       "system",

@@ -28,7 +28,9 @@ describe("atomic expiration of pre-send nonce reservations", () => {
       } else {
         await entry.repo.expirePreSendNonceReservation({ ...identity, expectedState: entry.state });
       }
-      const [statement, parameters] = sql.one.mock.calls[0]!;
+      const call = sql.one.mock.calls[0];
+      if (call === undefined) throw new Error("nonce retirement did not query the repository");
+      const [statement, parameters] = call;
       expect(statement.indexOf("UPDATE lighter_nonce_state")).toBeGreaterThan(statement.indexOf("UPDATE lighter_"));
       expect(statement).toContain("AND status='reserved' AND reservation_id=$6 AND reserved_nonce=$7");
       expect(statement).toContain("execution_state=$8 AND nonce_reservation_id=$6 AND nonce_value=$7");
