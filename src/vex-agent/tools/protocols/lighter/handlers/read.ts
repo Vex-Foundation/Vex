@@ -616,11 +616,10 @@ function managedReadinessRecoveryLeg(
   ) {
     return {
       kind: "reconcile_nonce_state",
-      reason: "A previous Lighter transaction still holds this account's nonce and its outcome is not yet proven. "
-        + "Vex releases it automatically once that action's signed transaction has expired unused. "
-        + "To check or clear it now, run lighter.order.status with this environment and accountIndex yourself; its report names the owner. "
-        + "Only a leverage-change owner has a manual control (Reconcile on its leverage row in Settings > Lighter); do not invent any other Settings step. "
-        + "Do not prepare or retry a signed action until it clears.",
+      reason: "A previous Lighter action is still being checked, so this account cannot place another order yet. "
+        + "Vex releases its reservation only after confirming it is safe. "
+        + "If it remains blocked, ask Vex in chat to check the stuck Lighter action. "
+        + "Do not retry until Vex confirms the account is ready.",
     };
   }
   return {

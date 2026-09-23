@@ -999,6 +999,25 @@ describe("Lighter approved create execution pipeline", () => {
     expect(d.client.sendTx).not.toHaveBeenCalled();
   });
 
+  it("explains an unresolved prior action without asking the user to run an internal tool", async () => {
+    const d = deps({
+      nonceState: {
+        releaseUnsubmittedReservation: vi.fn(async () => null),
+        recordExecutionObserved: vi.fn(async () => null),
+      },
+    });
+
+    await expect(executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    })).rejects.toThrow("Ask Vex in chat to check the stuck Lighter action");
+
+    expect(d.reserveNonce).not.toHaveBeenCalled();
+    expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
   it("overlaps duplicate-evidence readiness with nonce observation and gates reservation on both", async () => {
     const repairReadGate = createGate();
     const observedNonceGate = createGate();

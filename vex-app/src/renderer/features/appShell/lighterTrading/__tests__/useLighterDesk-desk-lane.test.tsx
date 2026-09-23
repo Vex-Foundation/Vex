@@ -477,6 +477,24 @@ describe("desk lane", () => {
     expect(funnelStep).toHaveBeenLastCalledWith({ step: "desk_approval_rejected", environment: "rhc" });
   });
 
+  it("turns a stuck Lighter action into an in-app next step", async () => {
+    prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-3" } });
+    const { result } = renderDesk();
+
+    await act(async () => { result.current.accountActions.onClosePosition({ marketId: 7, side: "long", size: "0.25" } as LighterPositionRow, 1); });
+    act(() => {
+      result.current.onApprovalResolved("approved", resolved({
+        id: "ap-3",
+        executionStatus: "failed",
+        toolOutput: "A previous Lighter action on RHC account 42 is still being checked. This order was not signed or submitted.",
+      }));
+    });
+
+    expect(result.current.deskOutcome?.text).toContain("Ask Vex in chat");
+    expect(result.current.deskOutcome?.text).not.toContain("lighter.order.status");
+    expect(result.current.deskOutcome?.text).not.toContain("try again");
+  });
+
   describe("Don't ask again for Market close", () => {
     const POSITION = { marketId: 7, side: "long", size: "0.25" } as LighterPositionRow;
 

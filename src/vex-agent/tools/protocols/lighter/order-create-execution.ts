@@ -253,12 +253,10 @@ export async function executeApprovedLighterCreateOrder(input: {
     }),
   ]);
   if (observedNonce === null) {
-    throw blockedBeforeSubmit(
-      "The live Lighter nonce has not advanced beyond an unresolved local reservation. No order was signed or submitted. "
-      + "A previous Lighter action (an order, close, leverage change or fee setup) still holds the nonce and its outcome is not yet proven; "
-      + "Vex releases it automatically once that action's signed transaction has expired unused. "
-      + `Run lighter.order.status with environment ${plan.environment} and accountIndex ${plan.accountIndex} yourself to check the exact reservation owner, then wait for it to clear before preparing another order. `
-      + "Only a leverage change has a manual control (Reconcile on its leverage row in Settings > Lighter); do not invent any other Settings step.",
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      `A previous Lighter action on ${plan.environment.toUpperCase()} account ${plan.accountIndex} is still being checked. This order was not signed or submitted. Ask Vex in chat to check the stuck Lighter action if it remains blocked. Do not retry until Vex confirms the account is ready.`,
+      "Vex releases the earlier action's reservation only after it has enough evidence that doing so is safe.",
     );
   }
   assertWireOrderExpiryBeforeSigning(unsignedOrder, deps.now());
@@ -461,7 +459,7 @@ function assertWireOrderExpiryBeforeSubmission(
   throw new VexError(
     ErrorCodes.LIGHTER_INVALID_REQUEST,
     "The signed Lighter order fell below the provider's five-minute expiry minimum before submission, so Vex did not send it.",
-    "Run lighter.order.status to release the provably unsubmitted nonce reservation, then restart from a fresh preview and approval.",
+    "Ask Vex in chat to check this order before starting a fresh preview and approval.",
   );
 }
 

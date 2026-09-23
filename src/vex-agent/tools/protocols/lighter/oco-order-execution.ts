@@ -695,7 +695,7 @@ function blocked(reason: string): VexError {
   return new VexError(
     ErrorCodes.LIGHTER_INVALID_REQUEST,
     `${reason} No grouped order was submitted.`,
-    "Run lighter.order.status for unresolved state, or restart from a fresh OCO preview when safe.",
+    "Ask Vex in chat to check a stuck Lighter action before starting a fresh grouped-order preview.",
   );
 }
 
