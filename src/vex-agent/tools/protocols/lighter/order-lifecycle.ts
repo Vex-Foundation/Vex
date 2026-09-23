@@ -1789,11 +1789,14 @@ function exactOpenPosition(
 ): LighterAccountPosition {
   const matches = positions.filter((position) => position.market_id === marketIndex);
   if (matches.length !== 1 || matches[0] === undefined) {
-    throw blocked("The exact Lighter position could not be resolved uniquely.");
+    throw closePositionUnavailable("This position is no longer shown on Lighter or could not be identified safely.");
   }
   const position = matches[0];
-  if ((position.sign !== 1 && position.sign !== -1) || !isPositiveDecimal(position.position)) {
-    throw blocked("The exact Lighter position is flat or has invalid direction evidence.");
+  if (!isPositiveDecimal(position.position)) {
+    throw closePositionUnavailable("This position appears to be closed, or Lighter returned a size Vex cannot verify.");
+  }
+  if (position.sign !== 1 && position.sign !== -1) {
+    throw closePositionUnavailable("Lighter did not confirm whether this position is long or short.");
   }
   return position;
 }
@@ -2090,6 +2093,14 @@ function blocked(message: string): VexError {
     ErrorCodes.LIGHTER_INVALID_REQUEST,
     `${message} No lifecycle transaction was submitted.`,
     "Refresh the exact Lighter order and prepare a new approval-gated action.",
+  );
+}
+
+function closePositionUnavailable(message: string): VexError {
+  return new VexError(
+    ErrorCodes.LIGHTER_INVALID_REQUEST,
+    `${message} Refresh Positions and check the current Lighter account before trying again. No close order was placed.`,
+    "Refresh Positions and confirm the open position on Lighter before preparing another close.",
   );
 }
 

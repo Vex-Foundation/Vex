@@ -606,6 +606,37 @@ describe("Lighter reduce-only position close lifecycle", () => {
   });
 
   it.each([
+    {
+      name: "the position is absent",
+      positions: [],
+      message: "This position is no longer shown on Lighter or could not be identified safely.",
+    },
+    {
+      name: "the position is flat",
+      positions: [{ ...longPosition, position: "0.0000", sign: 0 }],
+      message: "This position appears to be closed, or Lighter returned a size Vex cannot verify.",
+    },
+    {
+      name: "the direction is invalid",
+      positions: [{ ...longPosition, sign: 0 }],
+      message: "Lighter did not confirm whether this position is long or short.",
+    },
+  ])("explains why $name cannot be closed again", async ({ positions, message }) => {
+    await expect(prepareLighterClosePosition({
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      marketIndex: 0,
+      maxSlippageBps: 100,
+      client: {
+        getAccount: vi.fn().mockResolvedValue({ code: 200, accounts: [{ index: 42, positions }] }),
+        getMarkets: vi.fn().mockResolvedValue({ code: 200, order_books: [market] }),
+        getOrderBookOrders: vi.fn().mockResolvedValue({ code: 200, total_asks: 0, asks: [], total_bids: 1, bids: [bid] }),
+      },
+    })).rejects.toThrow(`${message} Refresh Positions and check the current Lighter account before trying again. No close order was placed.`);
+  });
+
+  it.each([
     { name: "flat immediately", filled: "1.0000", position: "0.0000", lag: false, status: "closed" },
     { name: "flat after a lagging account response", filled: "1.0000", position: "0.0000", lag: true, status: "closed" },
     { name: "position never catches up", filled: "1.0000", position: "1.0000", lag: false, status: "sequencer_pending" },
