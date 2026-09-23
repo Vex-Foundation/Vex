@@ -54,10 +54,12 @@ export async function prepareDeskApproval(input: {
   readonly sessionId: string;
   readonly toolId: DeskPrepareToolId;
   readonly params: Record<string, unknown>;
+  readonly onProgress?: (stage: "checking_market" | "creating_approval") => void;
 }): Promise<DeskPrepareOutcome> {
   if (!DESK_PREPARE_TOOL_IDS.includes(input.toolId)) {
     return { kind: "refused", reason: "This action cannot be prepared from the desk." };
   }
+  const timingStart = performance.now();
   // The same hydrated, wallet-aware context the approved dispatch will run
   // under, minus the approval: `restricted` so the approval gate is the one
   // that answers, and no approval id so nothing downstream can mistake the
@@ -67,12 +69,17 @@ export async function prepareDeskApproval(input: {
     missionRunId: null,
     permissionAtEnqueue: "restricted",
   });
+  const contextMs = Math.round(performance.now() - timingStart);
+  let previewMs = 0;
+  let followUpMs = 0;
   const { disposeDispatch, ...base } = resumed;
   const toolContext: InternalToolContext = {
     ...base,
     approved: false,
     approvalId: null,
     sessionPermission: "restricted",
+    ...(input.onProgress ? { deskPrepareProgress: input.onProgress } : {}),
+    deskPreparation: true,
   };
   try {
     const prepared = await dispatchTool(
@@ -83,6 +90,7 @@ export async function prepareDeskApproval(input: {
       },
       toolContext,
     );
+    previewMs = Math.round(performance.now() - timingStart) - contextMs;
     if (!prepared.success) {
       return { kind: "refused", reason: prepared.output };
     }
@@ -103,6 +111,7 @@ export async function prepareDeskApproval(input: {
       return { kind: "refused", reason: "Vex could not prepare this action. Nothing was sent." };
     }
     const followUp = validated.followUp;
+    input.onProgress?.("creating_approval");
     const toolCall = {
       id: `prepared-follow-up-${randomUUID()}`,
       name: followUp.toolName,
@@ -112,6 +121,7 @@ export async function prepareDeskApproval(input: {
       { name: toolCall.name, args: toolCall.arguments, toolCallId: toolCall.id },
       toolContext,
     );
+    followUpMs = Math.round(performance.now() - timingStart) - contextMs - previewMs;
     if (result.preparedActionFollowUp !== undefined || !result.pendingApproval) {
       logger.warn("engine.desk.follow_up_not_pending", {
         sessionId: input.sessionId,
@@ -165,6 +175,14 @@ export async function prepareDeskApproval(input: {
         : "The session is stopped. Nothing was sent.",
     };
   } finally {
+    logger.info("engine.desk.prepare_timing", {
+      toolId: input.toolId,
+      contextMs,
+      previewMs,
+      followUpMs,
+      enqueueMs: Math.round(performance.now() - timingStart) - contextMs - previewMs - followUpMs,
+      totalMs: Math.round(performance.now() - timingStart),
+    });
     disposeDispatch();
   }
 }

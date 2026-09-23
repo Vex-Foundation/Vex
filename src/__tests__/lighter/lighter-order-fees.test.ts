@@ -50,6 +50,28 @@ describe("native Lighter order fees", () => {
     expect(await resolveLighterOrderFees({ ...scope, client: provider, market: { market_type: "spot" } })).toEqual({ ...fees, integratorMakerFee: 2500, integratorTakerFee: 2500 });
   });
 
+  it("reuses only an explicitly fresh preview account and still checks collector, caps and limits", async () => {
+    vi.spyOn(policyModule, "getLighterFeePolicy").mockReturnValue(policy);
+    configureLighterReadOnlyAccountAuthResolver(async () => ({ accountIndex: 42, token: "test-read-auth" }));
+    const provider = client();
+    const freshAccount = { code: 200, total: 1, accounts: [trader] };
+    expect(await resolveLighterOrderFees({ ...scope, client: provider, freshAccount })).toEqual(fees);
+    expect(provider.getAccount).toHaveBeenCalledTimes(1);
+    expect(provider.getAccount).toHaveBeenCalledWith("core", { by: "index", value: 99 }, { fresh: true });
+    expect(provider.getSystemConfig).toHaveBeenCalledTimes(1);
+    expect(provider.getAccountLimits).toHaveBeenCalledTimes(1);
+  });
+
+  it("revalidation refetches the trading account even if a preview response is supplied", async () => {
+    vi.spyOn(policyModule, "getLighterFeePolicy").mockReturnValue(policy);
+    configureLighterReadOnlyAccountAuthResolver(async () => ({ accountIndex: 42, token: "test-read-auth" }));
+    const provider = client({ ...trader, approved_integrators: [] });
+    await expect(revalidateLighterOrderFees({
+      ...scope, client: provider, freshAccount: { code: 200, total: 1, accounts: [trader] }, integratorFees: fees,
+    })).rejects.toThrow("fee setup is required");
+    expect(provider.getAccount).toHaveBeenCalledWith("core", { by: "index", value: 42 }, { fresh: true });
+  });
+
   it.each([
     { ...trader, approved_integrators: [] },
     { ...trader, approved_integrators: [...requireValue(trader.approved_integrators), ...requireValue(trader.approved_integrators)] },

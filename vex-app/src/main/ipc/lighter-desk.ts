@@ -9,7 +9,7 @@
  * approve handler. No model turn is involved anywhere on this path.
  */
 
-import { CH } from "@shared/ipc/channels.js";
+import { CH, EV } from "@shared/ipc/channels.js";
 import { err, ok, type Result } from "@shared/ipc/result.js";
 import {
   lighterDeskPrepareInputSchema,
@@ -88,6 +88,7 @@ function prepareDeskOnce(
     readonly environment: LighterIntegrationEnvironment;
     readonly action: LighterDeskAction;
   },
+  onProgress?: (stage: "checking_market" | "creating_approval") => void,
 ): Promise<LighterDeskPrepareResult> {
   const key = deskPrepareKey(input);
   const existing = deskPrepareFlights.get(key);
@@ -95,9 +96,21 @@ function prepareDeskOnce(
 
   const call = deskActionToPrepareCall(input.environment, input.action);
   const flight = (async () => {
-    const accountIndex = input.action.kind === "order" || input.action.kind === "close" || input.action.kind === "cancel"
+    const startedAt = performance.now();
+    let marketStageMs: number | null = null;
+    let approvalStageMs: number | null = null;
+    const reportTimedProgress = (stage: "checking_market" | "creating_approval"): void => {
+      const elapsed = Math.round(performance.now() - startedAt);
+      if (stage === "checking_market") marketStageMs = elapsed;
+      else approvalStageMs = elapsed;
+      onProgress?.(stage);
+    };
+    // The ordinary order-preview handler resolves and verifies this session's
+    // wallet itself. Looking it up here repeats the same public provider read.
+    const accountIndex = (input.action.kind === "order" && call.toolId !== "lighter.order.preview") || input.action.kind === "close" || input.action.kind === "cancel"
       ? await resolveLighterSessionAccount(input)
       : undefined;
+    const accountMs = Math.round(performance.now() - startedAt);
     if (accountIndex !== undefined) {
       // Self-heal a slot locked by a prior pre-send reservation the provider
       // never consumed before this card is prepared, so an expired stale lock
@@ -113,12 +126,30 @@ function prepareDeskOnce(
         // Best-effort; preparation and execution still enforce the nonce gate.
       }
     }
+    const recoveryMs = Math.round(performance.now() - startedAt) - accountMs;
     const { prepareDeskApproval } = await import("@vex-agent/engine/core/approval-runtime.js");
-    return prepareDeskApproval({
+    const outcome = await prepareDeskApproval({
       sessionId: input.sessionId,
       toolId: call.toolId,
       params: accountIndex === undefined ? call.params : { ...call.params, accountIndex },
+      onProgress: reportTimedProgress,
     });
+    const totalMs = Math.round(performance.now() - startedAt);
+    const timings = {
+      action: input.action.kind,
+      outcome: outcome.kind,
+      accountMs,
+      recoveryMs,
+      engineMs: totalMs - accountMs - recoveryMs,
+      marketStageMs,
+      approvalStageMs,
+      totalMs,
+    };
+    // Packaged builds retain warning-level logs. Record only slow prepares,
+    // and only duration/count metadata, for real-account latency diagnosis.
+    if (totalMs >= 1500) log.warn("lighter.desk.slow_prepare", timings);
+    else log.info("lighter.desk.prepare_timing", timings);
+    return outcome;
   })();
   deskPrepareFlights.set(key, flight);
   const clear = (): void => {
@@ -281,7 +312,20 @@ export function registerLighterDeskHandlers(): ReadonlyArray<() => void> {
 
         try {
           const call = deskActionToPrepareCall(input.environment, input.action);
-          const outcome = await prepareDeskOnce(input);
+          const reportProgress = input.progressId === undefined ? undefined : (stage: "checking_account" | "checking_market" | "creating_approval") => {
+            try {
+              if (!ctx.event.sender?.isDestroyed()) {
+                ctx.event.sender.send(EV.lighterTrading.deskPrepareProgress, {
+                  progressId: input.progressId,
+                  stage,
+                });
+              }
+            } catch {
+              // A closed renderer must not change the approval outcome.
+            }
+          };
+          reportProgress?.("checking_account");
+          const outcome = await prepareDeskOnce(input, reportProgress);
           log.info(
             `[ipc:vex:lighterTrading:prepareDeskAction] ${outcome.kind} ` +
               `action=${input.action.kind} tool=${call.toolId} correlationId=${ctx.requestId}`,

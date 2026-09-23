@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties, type FormEvent, type JSX } from "react";
 import type {
+  LighterDeskPrepareProgressEvent,
   LighterOnboardingChecklist,
   LighterTradingAccountUnavailableReason,
   LighterTradingMarket,
@@ -59,6 +60,7 @@ export function TradeTicket({
   activeSession,
   dataFresh,
   submitting,
+  prepareStage = null,
   handoffError,
   outcome = null,
   prefill,
@@ -90,6 +92,7 @@ export function TradeTicket({
   readonly dataFresh: boolean;
   /** True while main derives the terms and enqueues the approval card. */
   readonly submitting: boolean;
+  readonly prepareStage?: LighterDeskPrepareProgressEvent["stage"] | "opening_approval" | null;
   readonly handoffError?: string | null;
   /** What the last desk card came to, once it resolved. */
   readonly outcome?: DeskOutcome | null;
@@ -526,7 +529,12 @@ export function TradeTicket({
                 onClick={active ? undefined : () => { form.setSide(item); setPendingSide(item); }}
               >
                 <b>{sideLabel(item, market.marketType, protective)}</b>
-                <small>{submitting && active ? "Preparing…" : detail.trim() || MODE_LABELS[form.mode]}</small>
+                <small>{submitting && active ? (
+                  prepareStage === "checking_account" ? "Checking account…"
+                    : prepareStage === "checking_market" ? "Checking live price…"
+                      : prepareStage === "creating_approval" ? "Creating approval…"
+                        : prepareStage === "opening_approval" ? "Opening approval…" : "Preparing…"
+                ) : detail.trim() || MODE_LABELS[form.mode]}</small>
               </button>
             );
           })}

@@ -14,7 +14,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createTrustedSender, type TestIpcEvent } from "./test-sender.js";
+import { createTestWebContents, createTrustedSender, type TestIpcEvent } from "./test-sender.js";
 
 type Handler = (event: TestIpcEvent, raw: unknown) => Promise<unknown>;
 const handlers = vi.hoisted(() => new Map<string, Handler>());
@@ -57,7 +57,7 @@ vi.mock("@vex-agent/tools/protocols/lighter/nonce-recovery.js", () => ({
 const { registerLighterDeskHandlers, deskActionToPrepareCall } = await import(
   "../lighter-desk.js"
 );
-const { CH } = await import("@shared/ipc/channels.js");
+const { CH, EV } = await import("@shared/ipc/channels.js");
 
 const SESSION = "11111111-1111-4111-8111-111111111111";
 const REQUEST_ID = "00000000-0000-4000-8000-000000000225";
@@ -190,6 +190,39 @@ describe("deskActionToPrepareCall", () => {
 });
 
 describe("vex:lighterTrading:prepareDeskAction", () => {
+  it("prepares a standard order without a second main-process ownership lookup and reports real stages", async () => {
+    const webContents = createTestWebContents();
+    const progressId = "77777777-7777-4777-8777-777777777777";
+    mocks.prepareDeskApproval.mockImplementationOnce(async (input: { onProgress?: (stage: string) => void }) => {
+      input.onProgress?.("checking_market");
+      input.onProgress?.("creating_approval");
+      return { kind: "enqueued", approvalId: "appr-1" };
+    });
+    const handler = handlers.get(CH.lighterTrading.prepareDeskAction);
+    if (!handler) throw new Error("desk handler not registered");
+    const result = await handler(createTrustedSender({ sender: webContents }), {
+      requestId: REQUEST_ID,
+      payload: {
+        sessionId: SESSION,
+        environment: "rhc",
+        progressId,
+        action: { kind: "order", marketId: 7, draft: { mode: "market", side: "buy", baseAmount: "0.5", worstPrice: "3010.5", reduceOnly: false } },
+      },
+    });
+    expect(result).toMatchObject({ ok: true, data: { kind: "enqueued" } });
+    expect(mocks.resolveSessionAccount).not.toHaveBeenCalled();
+    expect(mocks.checkNonceRecovery).not.toHaveBeenCalled();
+    expect(mocks.prepareDeskApproval).toHaveBeenCalledWith(expect.objectContaining({
+      toolId: "lighter.order.preview",
+      params: expect.not.objectContaining({ accountIndex: expect.anything() }),
+    }));
+    expect(webContents.send.mock.calls).toEqual([
+      [EV.lighterTrading.deskPrepareProgress, { progressId, stage: "checking_account" }],
+      [EV.lighterTrading.deskPrepareProgress, { progressId, stage: "checking_market" }],
+      [EV.lighterTrading.deskPrepareProgress, { progressId, stage: "creating_approval" }],
+    ]);
+  });
+
   it("hands the engine the derived call and returns its outcome", async () => {
     const result = await call({
       sessionId: SESSION,
@@ -202,6 +235,7 @@ describe("vex:lighterTrading:prepareDeskAction", () => {
       sessionId: SESSION,
       toolId: "lighter.position.close.prepare",
       params: { environment: "rhc", marketId: 7, slippageBps: 100, accountIndex: 42 },
+      onProgress: expect.any(Function),
     });
   });
 

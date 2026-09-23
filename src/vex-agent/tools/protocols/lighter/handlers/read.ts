@@ -1312,6 +1312,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     if (!previewParams.ok) return fail(previewParams.reason);
 
     try {
+      const timingStart = performance.now();
       const client = getLighterClient();
       const accountIndex = await resolveSessionBoundPreviewAccountIndex({
         walletResolution: context.walletResolution,
@@ -1320,6 +1321,8 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         requestedAccountIndex: previewParams.value.accountIndex,
         client,
       });
+      const ownershipMs = Math.round(performance.now() - timingStart);
+      context.deskPrepareProgress?.("checking_market");
       const [marketId, apiKeyResolution] = await Promise.all([
         resolvePreviewMarketId(client, environment.value, previewParams.value),
         resolvePreviewApiKeyIndex(
@@ -1328,8 +1331,14 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           accountIndex,
           previewParams.value.apiKeyIndex,
         ),
+        context.deskPreparation
+          // The verified account is now known. Repair an old pre-send
+          // reservation while resolving the key; execution still gates nonce.
+          ? checkLighterNonceRecovery({ environment: environment.value, accountIndex }).catch(() => undefined)
+          : Promise.resolve(),
       ]);
       const { apiKeyIndex, apiKeyLookupStatus } = apiKeyResolution;
+      const scopeMs = Math.round(performance.now() - timingStart) - ownershipMs;
       const [marketDetails, orderBook, account] = await Promise.all([
         client.getMarketDetails(environment.value, {
           marketId,
@@ -1348,8 +1357,9 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           // and that hidden row is exactly the one carrying the
           // `initial_margin_fraction` this preview's capital share needs.
           activeOnly: false,
-        }),
+        }, { fresh: true }),
       ]);
+      const marketReadsMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs;
       const market = findMarketDetail(marketDetails, marketId);
       if (!market) {
         return fail(
@@ -1383,11 +1393,13 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       });
       const integratorFees = await resolveLighterOrderFees({
         client, environment: environment.value, accountIndex, market, account,
+        freshAccount: account,
         reduceOnly: previewParams.value.reduceOnly, side: previewParams.value.side,
       });
       const accountTakerFeeTicks = market.market_type === "spot" && previewParams.value.side === "buy"
         ? await readLighterOrderAccountFeeTicks(client, environment.value, accountIndex)
         : undefined;
+      const feeMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs - marketReadsMs;
       // ADVISORY, never a veto: the preview is a read, and the capital share is
       // ENFORCED at `lighter.order.create.prepare` where the intent row and its
       // commitment are admitted in one transaction. Showing the ceiling here is
@@ -1405,6 +1417,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         reduceOnly: previewParams.value.reduceOnly,
         integratorFees,
       });
+      const capitalMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs - marketReadsMs - feeMs;
       const preview = buildLighterOrderPreview({
         sessionId,
         environment: environment.value,
@@ -1435,6 +1448,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         preview,
         liveSourceJson: source.provenance as Record<string, unknown>,
       });
+      const previewMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs - marketReadsMs - feeMs - capitalMs;
       const approvalReady = apiKeyIndex !== null;
       const approvalPreparation = approvalReady
         ? await prepareLighterOrderCreateApproval({
@@ -1447,6 +1461,11 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           `Lighter order preview was created, but its approval card could not be prepared (${approvalPreparation.output})`,
         );
       }
+      if (context.deskPreparation) logger.info("lighter.desk.order_preview_timing", {
+        ownershipMs, marketIdKeyAndRecoveryMs: scopeMs, marketReadsMs, feeMs, capitalMs, previewMs,
+        approvalMs: Math.round(performance.now() - timingStart) - ownershipMs - scopeMs - marketReadsMs - feeMs - capitalMs - previewMs,
+        totalMs: Math.round(performance.now() - timingStart),
+      });
       const result = ok({
         ...source,
         status: "preview_ready",

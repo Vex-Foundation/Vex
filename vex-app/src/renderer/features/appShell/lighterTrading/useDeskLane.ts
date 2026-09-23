@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ApprovalActionResult } from "@shared/schemas/approvals.js";
 import type {
   LighterDeskAction,
+  LighterDeskPrepareProgressEvent,
   LighterTradingAccount,
   LighterTradingEnvironment,
   LighterTradingFills,
@@ -139,6 +140,7 @@ export function useDeskLane({
   // A selector goes to main, main builds the proposal and enqueues the card;
   // the ticket waits while that round trip runs.
   const [submitting, setSubmitting] = useState(false);
+  const [prepareStage, setPrepareStage] = useState<LighterDeskPrepareProgressEvent["stage"] | "opening_approval" | null>(null);
   const [deskOutcome, setDeskOutcome] = useState<DeskOutcome | null>(null);
   const [awaitedOrder, setAwaitedOrder] = useState<AwaitedProviderOrder | null>(null);
   // More than one desk card may be awaiting a decision at the same time.
@@ -398,13 +400,18 @@ export function useDeskLane({
     setDeskOutcome(null);
     setAwaitedOrder(null);
     setSubmitting(true);
+    setPrepareStage("checking_account");
+    const progressId = crypto.randomUUID();
+    const offProgress = window.vex.lighterTrading.onDeskPrepareProgress?.((event) => {
+      if (event.progressId === progressId) setPrepareStage(event.stage);
+    });
     const scope: DeskScope = {
       sessionId: activeSessionId,
       environment,
       marketId: action.marketId,
     };
     try {
-      const result = await window.vex.lighterTrading.prepareDeskAction({ sessionId: activeSessionId, environment, action });
+      const result = await window.vex.lighterTrading.prepareDeskAction({ sessionId: activeSessionId, environment, action, progressId });
       if (!result.ok) {
         setHandoffError(result.error.message);
         return;
@@ -413,6 +420,7 @@ export function useDeskLane({
         setHandoffError(deskFailureMessage(result.data.reason));
         return;
       }
+      setPrepareStage("opening_approval");
       pendingDesk.current.set(result.data.approvalId, {
         action,
         draft,
@@ -426,6 +434,8 @@ export function useDeskLane({
       }
       await queryClient.invalidateQueries({ queryKey: approvalsKeys.pending(activeSessionId) });
     } finally {
+      offProgress?.();
+      setPrepareStage(null);
       setSubmitting(false);
     }
   };
@@ -440,6 +450,7 @@ export function useDeskLane({
     handoffError,
     setHandoffError,
     submitting,
+    prepareStage,
     deskOutcome,
     prepareOnDesk,
     onApprovalResolved,

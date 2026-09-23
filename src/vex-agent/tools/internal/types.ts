@@ -180,6 +180,10 @@ export interface InternalToolContext {
   walletResolution: WalletResolution;
   /** Mission wallet policy - enforced alongside the resolution by the resolvers. */
   walletPolicy: WalletPolicy;
+  /** Host-only desk preparation progress; never derived from tool arguments. */
+  deskPrepareProgress?: (stage: "checking_market" | "creating_approval") => void;
+  /** Marks a host-built desk prepare, so the preview can run nonce recovery after wallet binding. */
+  deskPreparation?: true;
   /**
    * Operator Stop for the turn that owns this dispatch.
    *

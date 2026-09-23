@@ -724,8 +724,14 @@ export const lighterDeskPrepareInputSchema = z
     sessionId: z.string().uuid(),
     environment: lighterIntegrationEnvironmentSchema,
     action: lighterDeskActionSchema,
+    progressId: z.string().uuid().optional(),
   })
   .strict();
+
+export const lighterDeskPrepareProgressEventSchema = z.object({
+  progressId: z.string().uuid(),
+  stage: z.enum(["checking_account", "checking_market", "creating_approval"]),
+}).strict();
 
 export const lighterDeskPrepareResultSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("enqueued"), approvalId: z.string().min(1) }).strict(),
@@ -840,6 +846,7 @@ export const lighterAccountSetupStatusSchema = z
 export type LighterDeskOrderDraft = z.infer<typeof lighterDeskOrderDraftSchema>;
 export type LighterDeskAction = z.infer<typeof lighterDeskActionSchema>;
 export type LighterDeskPrepareInput = z.infer<typeof lighterDeskPrepareInputSchema>;
+export type LighterDeskPrepareProgressEvent = z.infer<typeof lighterDeskPrepareProgressEventSchema>;
 export type LighterDeskPrepareResult = z.infer<typeof lighterDeskPrepareResultSchema>;
 export type LighterOnboardingChecklistInput = z.infer<typeof lighterOnboardingChecklistInputSchema>;
 export type LighterOnboardingChecklist = z.infer<typeof lighterOnboardingChecklistSchema>;

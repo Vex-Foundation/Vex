@@ -404,6 +404,9 @@ export type ProtocolHandler = (
 ) => Promise<ToolResult>;
 
 export interface ProtocolExecutionContext {
+  /** Host-only progress for the desk's read-only preparation path. */
+  deskPrepareProgress?: (stage: "checking_market" | "creating_approval") => void;
+  deskPreparation?: true;
   /**
    * Session permission, hydrated once at engine entry from `sessions.permission`.
    * Approval gate in `tools/protocols/runtime.ts` reads this to decide whether

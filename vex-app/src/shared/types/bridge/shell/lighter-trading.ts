@@ -20,6 +20,7 @@ import type {
   LighterTradingCandleSubscriptionStopResult,
   LighterTradingCandleUpdateEvent,
   LighterDeskPrepareInput,
+  LighterDeskPrepareProgressEvent,
   LighterDeskPrepareResult,
   LighterOnboardingChecklist,
   LighterOnboardingChecklistInput,
@@ -110,6 +111,9 @@ export interface LighterTradingBridge {
   readonly prepareDeskAction: (
     input: LighterDeskPrepareInput,
   ) => Promise<Result<LighterDeskPrepareResult>>;
+  readonly onDeskPrepareProgress: (
+    callback: (event: LighterDeskPrepareProgressEvent) => void,
+  ) => () => void;
   /**
    * The ticket gate's checklist: which of the three onboarding steps this
    * session's wallet has completed. Address-only reads; no key leaves main.

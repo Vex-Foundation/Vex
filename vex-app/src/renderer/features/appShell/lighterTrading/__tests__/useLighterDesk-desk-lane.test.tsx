@@ -151,6 +151,7 @@ describe("desk lane", () => {
       sessionId: "s1",
       environment: "rhc",
       action: { kind: "order", marketId: 7, draft: ENTRY },
+      progressId: expect.any(String),
     });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: approvalsKeys.pending("s1") });
     expect(result.current.submitting).toBe(false);
@@ -158,6 +159,29 @@ describe("desk lane", () => {
     // The funnel counts the card once it is enqueued, not on the attempt.
     expect(funnelStep).toHaveBeenCalledTimes(1);
     expect(funnelStep).toHaveBeenCalledWith({ step: "desk_card", environment: "rhc" });
+  });
+
+  it("shows only progress for its own prepare and clears the stage after the card arrives", async () => {
+    let settle: ((value: unknown) => void) | undefined;
+    let listener: ((event: { progressId: string; stage: "checking_account" | "checking_market" | "creating_approval" }) => void) | undefined;
+    const unsubscribe = vi.fn();
+    prepareDeskAction.mockImplementationOnce(() => new Promise((resolve) => { settle = resolve; }));
+    vi.stubGlobal("window", Object.assign(window, {
+      vex: { lighterTrading: { prepareDeskAction, onDeskPrepareProgress: (callback: typeof listener) => { listener = callback; return unsubscribe; } }, approvals: { approve }, telemetry: { funnelStep } },
+    }));
+    const { result } = renderDesk();
+    act(() => { result.current.submitDraft(ENTRY); });
+    await waitFor(() => expect(result.current.prepareStage).toBe("checking_account"));
+    const progressId = prepareDeskAction.mock.calls[0]?.[0]?.progressId as string;
+    act(() => { listener?.({ progressId: crypto.randomUUID(), stage: "creating_approval" }); });
+    expect(result.current.prepareStage).toBe("checking_account");
+    act(() => { listener?.({ progressId, stage: "checking_market" }); });
+    expect(result.current.prepareStage).toBe("checking_market");
+    act(() => { listener?.({ progressId, stage: "creating_approval" }); });
+    expect(result.current.prepareStage).toBe("creating_approval");
+    await act(async () => { settle?.({ ok: true, data: { kind: "enqueued", approvalId: "ap-progress" } }); });
+    await waitFor(() => expect(result.current.prepareStage).toBeNull());
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 
   it("routes Close and Cancel rows through the same lane by id", async () => {

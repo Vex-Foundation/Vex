@@ -3631,7 +3631,7 @@ describe("Lighter agent read handlers", () => {
 
     expect(mocks.client.getAccount).toHaveBeenCalledWith("core", {
       by: "index", value: 736778, activeOnly: false,
-    });
+    }, { fresh: true });
     expect(mocks.client.getAccount).not.toHaveBeenCalledWith("core", expect.objectContaining({ value: 42 }));
     expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
   });
@@ -3688,7 +3688,7 @@ describe("Lighter agent read handlers", () => {
     // configured account (736758), and never refuses.
     expect(mocks.client.getAccount).toHaveBeenCalledWith("core", {
       by: "index", value: 736778, activeOnly: false,
-    });
+    }, { fresh: true });
     expect(mocks.client.getAccount).not.toHaveBeenCalledWith("core", expect.objectContaining({ value: 736758 }));
     expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
   });
@@ -3757,7 +3757,7 @@ describe("Lighter agent read handlers", () => {
       // initial margin fraction and `activeOnly: true` hides a market the
       // account has leverage settings for but no OPEN POSITION on.
       activeOnly: false,
-    });
+    }, { fresh: true });
     expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
   });
 
@@ -3805,7 +3805,7 @@ describe("Lighter agent read handlers", () => {
       // initial margin fraction and `activeOnly: true` hides a market the
       // account has leverage settings for but no OPEN POSITION on.
       activeOnly: false,
-    });
+    }, { fresh: true });
     expect(data.previewId).toMatch(/^lop_[0-9a-f]{24}$/);
   });
 

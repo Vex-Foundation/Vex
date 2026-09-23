@@ -383,6 +383,7 @@ function DeskBody({ desk, theme }: {
                 activeSession={activeSessionId !== null}
                 dataFresh={desk.dataFresh}
                 submitting={desk.submitting}
+                prepareStage={desk.prepareStage}
                 handoffError={desk.handoffError}
                 outcome={desk.deskOutcome}
                 prefill={desk.ticketPrefill}

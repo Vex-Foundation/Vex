@@ -11,6 +11,7 @@ import {
   lighterAccountSetupStatusInputSchema,
   lighterKeyRegistrationReconcileInputSchema,
   lighterDeskPrepareInputSchema,
+  lighterDeskPrepareProgressEventSchema,
   lighterOnboardingChecklistInputSchema,
   lighterTradingFillsInputSchema,
   lighterTradingListMarketsInputSchema,
@@ -122,6 +123,13 @@ export const lighterTrading = {
       CH.lighterTrading.prepareDeskAction,
       input,
       lighterDeskPrepareInputSchema,
+    );
+  },
+  onDeskPrepareProgress(callback) {
+    return subscribe(
+      EV.lighterTrading.deskPrepareProgress,
+      lighterDeskPrepareProgressEventSchema,
+      callback,
     );
   },
   getOnboardingChecklist(input) {
