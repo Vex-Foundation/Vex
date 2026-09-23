@@ -36,6 +36,7 @@ import {
 } from "./capital-share-policy.js";
 import { averageFillPrice } from "./order-lifecycle.js";
 import { lighterLostSendReleaseAtMs } from "./lost-send-release.js";
+import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { resolveLighterReadOnlyAccountAuth } from "./read-account-auth.js";
 
 export const LIGHTER_LIFECYCLE_REPAIR_EXPIRY_GRACE_MS = 10 * 60 * 1_000;
@@ -50,6 +51,7 @@ export type LighterOrderLifecycleRepairResolution =
   | "already_terminal"
   | "expired_unsubmitted"
   | "stale_pre_submit"
+  | "stale_pre_submit_retired"
   | "awaiting_submission"
   | "provider_evidence"
   | "nonce_consumed_outcome_pending"
@@ -103,6 +105,13 @@ export interface LighterOrderLifecycleRepairDeps {
     accountIndex: number,
   ) => Promise<LighterPrivilegedAccountAuth | null>;
   readonly now: () => number;
+  /**
+   * Retire an expired action that never reached a nonce, a signature or a
+   * submission. Absent, such an action is only reported (`stale_pre_submit`).
+   */
+  readonly retireStalePreSubmit?: (
+    intent: LighterOrderLifecycleIntentRow,
+  ) => Promise<LighterOrderLifecycleIntentRow | null>;
 }
 
 export function defaultLighterOrderLifecycleRepairDeps(): LighterOrderLifecycleRepairDeps {
@@ -113,6 +122,11 @@ export function defaultLighterOrderLifecycleRepairDeps(): LighterOrderLifecycleR
     nonceState: nonceStateRepo,
     resolveAuth: resolveLighterReadOnlyAccountAuth,
     now: Date.now,
+    retireStalePreSubmit: (intent) => withSessionControlLock(intent.sessionId, (client) =>
+      lifecycleIntentsRepo.expireStalePreSubmitWith(
+        client,
+        lifecycleIntentsRepo.lighterLifecycleRetirementIdentity(intent),
+      )),
   };
 }
 
@@ -147,6 +161,7 @@ const LIGHTER_LIFECYCLE_ADVANCE_RESOLUTIONS: ReadonlySet<LighterOrderLifecycleRe
   "nonce_consumed_outcome_pending",
   "nonce_released_never_submitted",
   "nonce_released_expired_unconsumed",
+  "stale_pre_submit_retired",
 ]);
 
 /**
@@ -276,6 +291,19 @@ async function resolveLighterOrderLifecycleRepair(
         + "Keep it blocked for reconciliation; do not prepare a replacement or retry it.");
     }
     const expired = lifecycleIntentsRepo.isSafelyExpirablePreSubmit(intent, deps.now());
+    // Retired here, not only when the next prepare for this account arrives:
+    // until then it refused every close, cancel and modify on the account
+    // ("already exists"), and the status check could see it but not clear it.
+    // The same guarded statement the prepare path uses proves it still holds
+    // no nonce, signature or submission, and its expiry, before retiring it.
+    if (expired && deps.retireStalePreSubmit !== undefined) {
+      const retired = await deps.retireStalePreSubmit(intent);
+      if (retired != null) {
+        return report(intent, retired, "stale_pre_submit_retired", null, null, false, false,
+          "This lifecycle action expired before any nonce, signature, or submission was recorded, so it was retired. "
+          + "Nothing was signed or submitted; prepare a fresh action if it is still wanted.");
+      }
+    }
     return report(
       intent,
       intent,

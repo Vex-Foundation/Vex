@@ -159,6 +159,9 @@ vi.mock("@vex-agent/db/repos/lighter-order-lifecycle-intents.js", async (importO
   hasPristinePreSubmitEvidence: (await importOriginal<
     typeof import("@vex-agent/db/repos/lighter-order-lifecycle-intents.js")
   >()).hasPristinePreSubmitEvidence,
+  lighterLifecycleRetirementIdentity: (await importOriginal<
+    typeof import("@vex-agent/db/repos/lighter-order-lifecycle-intents.js")
+  >()).lighterLifecycleRetirementIdentity,
   findLiveAccountWideCancel: mocks.lifecycleIntentsRepo.findLiveAccountWideCancel,
   findLiveOrderTarget: mocks.lifecycleIntentsRepo.findLiveOrderTarget,
   findAnyLiveOrderMutation: mocks.lifecycleIntentsRepo.findAnyLiveOrderMutation,
@@ -2044,13 +2047,40 @@ describe("Lighter agent read handlers", () => {
     });
   });
 
-  it("does not hide an expired approved close that never reached nonce reservation", async () => {
+  it("retires an expired approved close that never reached nonce reservation, under its session lock", async () => {
+    const { isSafelyExpirablePreSubmit } = await vi.importActual<
+      typeof import("@vex-agent/db/repos/lighter-order-lifecycle-intents.js")
+    >("@vex-agent/db/repos/lighter-order-lifecycle-intents.js");
+    mocks.lifecycleIntentsRepo.isSafelyExpirablePreSubmit.mockImplementationOnce(isSafelyExpirablePreSubmit);
+    mocks.executionIntentsRepo.listUnresolved.mockResolvedValueOnce([]);
+    const stale = staleClose();
+    mocks.lifecycleIntentsRepo.listStatusCandidates.mockResolvedValueOnce([stale]);
+    mocks.lifecycleIntentsRepo.expireStalePreSubmitWith.mockResolvedValueOnce({ ...stale, executionState: "expired" });
+
+    const data = await callJson("lighter.order.status", { environment: "rhc" });
+
+    expect(mocks.sessionLock.withSessionControlLock).toHaveBeenCalledWith(stale.sessionId, expect.any(Function));
+    expect(mocks.lifecycleIntentsRepo.expireStalePreSubmitWith).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ intentId: stale.intentId, actionType: "close_position" }),
+    );
+    expect(data).toMatchObject({ checkedIntents: 1, stillUnresolved: 0 });
+    expect((data.reports as Record<string, unknown>[])[0]).toMatchObject({
+      kind: "lifecycle_action",
+      stateBefore: "approved",
+      stateAfter: "expired",
+      resolution: "stale_pre_submit_retired",
+    });
+  });
+
+  it("does not hide an expired approved close whose guarded retirement refuses", async () => {
     const { isSafelyExpirablePreSubmit } = await vi.importActual<
       typeof import("@vex-agent/db/repos/lighter-order-lifecycle-intents.js")
     >("@vex-agent/db/repos/lighter-order-lifecycle-intents.js");
     mocks.lifecycleIntentsRepo.isSafelyExpirablePreSubmit.mockImplementationOnce(isSafelyExpirablePreSubmit);
     mocks.executionIntentsRepo.listUnresolved.mockResolvedValueOnce([]);
     mocks.lifecycleIntentsRepo.listStatusCandidates.mockResolvedValueOnce([staleClose()]);
+    mocks.lifecycleIntentsRepo.expireStalePreSubmitWith.mockResolvedValueOnce(null);
 
     const data = await callJson("lighter.order.status", { environment: "rhc" });
 

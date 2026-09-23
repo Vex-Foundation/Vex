@@ -610,7 +610,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
         });
       } else if (intentsRepo.isSafelyExpirablePreSubmit(intent)) {
         await withSessionControlLock(context.sessionId, (dbClient) =>
-          intentsRepo.expireStalePreSubmitWith(dbClient, lifecycleIdentity(intent)));
+          intentsRepo.expireStalePreSubmitWith(dbClient, intentsRepo.lighterLifecycleRetirementIdentity(intent)));
       }
       return fail("The exact Lighter position-close approval expired. Prepare it again from fresh position and book state.");
     }
@@ -697,7 +697,7 @@ async function settleExistingLifecyclePreparation(input: {
       const replacement = await withSessionControlLocks(
         [existing.sessionId, input.sessionId],
         async (dbClient) => {
-          const retired = await intentsRepo.expireStalePreSubmitWith(dbClient, lifecycleIdentity(existing));
+          const retired = await intentsRepo.expireStalePreSubmitWith(dbClient, intentsRepo.lighterLifecycleRetirementIdentity(existing));
           if (retired === null) return null;
           const created = await intentsRepo.createApprovalPendingWith(dbClient, input.createInput);
           if (created === null) throw new Error(`Replacement ${input.actionType} intent was not created.`);
@@ -721,28 +721,6 @@ async function settleExistingLifecyclePreparation(input: {
     `A live Lighter ${existing.actionType} action already exists for ${input.target} in state ${existing.executionState}. `
     + `Check lighter.order.status with environment ${existing.environment} and intentId ${existing.intentId}; do not retry or invent a replacement intent id.`,
   );
-}
-
-function lifecycleIdentity(intent: LighterOrderLifecycleIntentRow): {
-  readonly intentId: string;
-  readonly sessionId: string;
-  readonly matchHash: string;
-  readonly environment: LighterOrderLifecycleIntentRow["environment"];
-  readonly accountIndex: number;
-  readonly actionType: LighterOrderLifecycleIntentRow["actionType"];
-  readonly marketIndex: number | null;
-  readonly providerOrderId: string | null;
-} {
-  return {
-    intentId: intent.intentId,
-    sessionId: intent.sessionId,
-    matchHash: intent.matchHash,
-    environment: intent.environment,
-    accountIndex: intent.accountIndex,
-    actionType: intent.actionType,
-    marketIndex: intent.marketIndex,
-    providerOrderId: intent.providerOrderId,
-  };
 }
 
 export function cancelFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionFollowUp {

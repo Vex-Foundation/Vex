@@ -249,3 +249,30 @@ describe("Lighter lifecycle retirement against isolated PostgreSQL", () => {
     }
   });
 });
+
+describe("the lifecycle repair sweep retires a stale close itself", () => {
+  it("retires the full-permission close that v0.2.13 parked at pre_submit_revalidated", async () => {
+    const { repairLighterOrderLifecycleIntent, defaultLighterOrderLifecycleRepairDeps } = await import(
+      "@vex-agent/tools/protocols/lighter/order-lifecycle-repair.js"
+    );
+    const parked = await createAuthorized("full_permission", "pre_submit_revalidated");
+    expect(parked).toMatchObject({ approvalId: null, executionState: "pre_submit_revalidated" });
+
+    const report = await repairLighterOrderLifecycleIntent(parked, defaultLighterOrderLifecycleRepairDeps());
+
+    expect(report).toMatchObject({ resolution: "stale_pre_submit_retired", stateAfter: "expired" });
+    expect(await lifecycle.findAnyLiveOrderMutation(TARGET)).toBeNull();
+  });
+
+  it("leaves a close whose consent is still open", async () => {
+    const { repairLighterOrderLifecycleIntent, defaultLighterOrderLifecycleRepairDeps } = await import(
+      "@vex-agent/tools/protocols/lighter/order-lifecycle-repair.js"
+    );
+    const live = await createAuthorized("full_permission", "pre_submit_revalidated", false);
+
+    const report = await repairLighterOrderLifecycleIntent(live, defaultLighterOrderLifecycleRepairDeps());
+
+    expect(report.resolution).toBe("awaiting_submission");
+    expect(await lifecycle.findAnyLiveOrderMutation(TARGET)).toMatchObject({ intentId: live.intentId });
+  });
+});

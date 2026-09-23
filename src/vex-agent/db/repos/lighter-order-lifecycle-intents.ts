@@ -282,6 +282,29 @@ export function hasPristinePreSubmitEvidence(intent: LighterOrderLifecycleIntent
     && intent.ambiguousReason === null;
 }
 
+/** The exact identity `expireStalePreSubmitWith` matches before it retires a row. */
+export function lighterLifecycleRetirementIdentity(intent: LighterOrderLifecycleIntentRow): {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly matchHash: string;
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly actionType: LighterOrderLifecycleAction;
+  readonly marketIndex: number | null;
+  readonly providerOrderId: string | null;
+} {
+  return {
+    intentId: intent.intentId,
+    sessionId: intent.sessionId,
+    matchHash: intent.matchHash,
+    environment: intent.environment,
+    accountIndex: intent.accountIndex,
+    actionType: intent.actionType,
+    marketIndex: intent.marketIndex,
+    providerOrderId: intent.providerOrderId,
+  };
+}
+
 export async function expireStalePreSubmitWith(
   client: PoolClient,
   input: {

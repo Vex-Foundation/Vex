@@ -245,6 +245,58 @@ describe("Lighter order lifecycle repair", () => {
   });
 
   it.each([null, "approval-1"])(
+    "retires an expired revalidated close, approvalId %s, instead of only reporting it",
+    async (approvalId) => {
+      const row = pristinePreSubmitClose({ approvalId });
+      const retire = vi.fn(async (intent: LighterOrderLifecycleIntentRow) => ({ ...intent, executionState: "expired" as const }));
+      const d = { ...deps(row), retireStalePreSubmit: retire };
+
+      const result = await repairLighterOrderLifecycleIntent(row, d);
+
+      expect(retire).toHaveBeenCalledExactlyOnceWith(row);
+      expect(result).toMatchObject({
+        resolution: "stale_pre_submit_retired",
+        stateBefore: "pre_submit_revalidated",
+        stateAfter: "expired",
+        nonceBlockedAfter: false,
+      });
+      expect(d.client.getNextNonce).not.toHaveBeenCalled();
+    },
+  );
+
+  it("still reports the close when the guarded retirement refuses it", async () => {
+    const row = pristinePreSubmitClose();
+    const d = { ...deps(row), retireStalePreSubmit: vi.fn(async () => null) };
+
+    const result = await repairLighterOrderLifecycleIntent(row, d);
+
+    expect(result.resolution).toBe("stale_pre_submit");
+  });
+
+  it("never retires a close whose consent is still open", async () => {
+    const row = pristinePreSubmitClose({ expiresAt: "2026-08-19T22:05:00.000Z" });
+    const retire = vi.fn(async () => null);
+    const d = { ...deps(row), retireStalePreSubmit: retire };
+
+    const result = await repairLighterOrderLifecycleIntent(row, d);
+
+    expect(result.resolution).toBe("awaiting_submission");
+    expect(retire).not.toHaveBeenCalled();
+  });
+
+  it("counts a retired stale close as advanced in the background sweep", async () => {
+    const row = pristinePreSubmitClose();
+    const d = {
+      ...deps(row),
+      retireStalePreSubmit: vi.fn(async (intent: LighterOrderLifecycleIntentRow) => ({ ...intent, executionState: "expired" as const })),
+    };
+
+    const report = await repairUnresolvedLighterOrderLifecyclesInBackground({}, d);
+
+    expect(report).toMatchObject({ examined: 1, advanced: 1, awaiting: 0, degraded: 0, errors: 0 });
+  });
+
+  it.each([null, "approval-1"])(
     "reports an expired revalidated close as replaceable with approvalId %s",
     async (approvalId) => {
       const row = pristinePreSubmitClose({ approvalId });
