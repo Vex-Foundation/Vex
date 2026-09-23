@@ -1082,6 +1082,37 @@ describe("Lighter approved create execution pipeline", () => {
     expect(d.client.sendTx).not.toHaveBeenCalled();
   });
 
+  it("records the signed transaction's own ExpiredAt with the signed state", async () => {
+    const d = deps();
+    const signedExpiry = NOW + 599_000;
+    const original = d.signer.signCreateOrder;
+    d.signer.signCreateOrder = vi.fn(async (input) => ({
+      ...(await original(input)),
+      txInfo: `{"AccountIndex":42,"OrderExpiry":0,"ExpiredAt":${signedExpiry},"Nonce":0}`,
+    }));
+
+    await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+
+    expect(d.intents.markSigned).toHaveBeenCalledWith(expect.objectContaining({ signerExpiryMs: signedExpiry }));
+  });
+
+  it("refuses to send, and releases the nonce, when the signed expiry lies beyond the SDK window", async () => {
+    const d = deps();
+    const original = d.signer.signCreateOrder;
+    d.signer.signCreateOrder = vi.fn(async (input) => ({
+      ...(await original(input)),
+      txInfo: `{"ExpiredAt":${NOW + 10 * 60_000 + 1},"Nonce":0}`,
+    }));
+
+    await expect(executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d }))
+      .rejects.toThrow(/beyond the signer's default window/);
+
+    expect(d.intents.markSigned).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+    expect(d.intents.markUnsubmittedRefused).toHaveBeenCalledOnce();
+    expect(d.nonceState.releaseUnsubmittedReservation).toHaveBeenCalledOnce();
+  });
+
   it("signs with the privileged reader, submits once, and stores sequencer-pending repair evidence", async () => {
     const d = deps();
 
@@ -1123,6 +1154,8 @@ describe("Lighter approved create execution pipeline", () => {
       nonceValue: "0",
       clientOrderIndex: UNSIGNED_ORDER.clientOrderIndex,
       signerTxHash: TX_HASH,
+      // The fixture's signed info carries no ExpiredAt; repair then bounds it by consent.
+      signerExpiryMs: null,
     });
     expect(d.intents.markSubmitted).toHaveBeenCalledWith({
       intentId: PLAN.intentId,

@@ -18,6 +18,7 @@ import {
   retireLighterOrderCapitalCommitment,
 } from "./capital-share-policy.js";
 import { lighterOrderNonceReservationId } from "./nonce-reservation.js";
+import { lighterLostSendReleaseAtMs } from "./lost-send-release.js";
 import {
   defaultLighterFillObservationDeps,
   matchingLighterTrades,
@@ -758,14 +759,27 @@ async function resolveFromNonceFacts(
         detail: "The signed transaction never left Vex, so the reserved nonce could not have been consumed.",
       });
     }
+    // A send that may have left Vex and never landed. The nonce is still
+    // unconsumed, so it has not executed; once its signed expiry has passed it
+    // never can. Without this bound it held the account's nonce forever.
+    const releaseAt = lighterLostSendReleaseAtMs(intent);
+    if (releaseAt !== null && deps.now() > releaseAt) {
+      return releaseAndReject(intent, deps, base, reservedNonce, liveNextNonce, {
+        repair: "nonce_release_expired_unconsumed",
+        resolution: "nonce_released_expired_unconsumed",
+        detail: "The signed order transaction expired while Lighter had still not consumed its nonce, so it can no longer execute.",
+      });
+    }
     return {
       ...base,
       reservedNonce,
       resolution: "awaiting_provider",
       guidance:
-        "The submission may still reach the sequencer, so the nonce stays reserved. The approved preview expiry "
-        + "is not a signed sequencer expiry for ordinary IOC create orders. Wait for provider evidence or proof that the "
-        + "transaction never left Vex. Do not resubmit the order in the meantime.",
+        "The submission may still reach the sequencer, so the nonce stays reserved. "
+        + (releaseAt === null
+          ? "No usable expiry is recorded for it. "
+          : `It is released automatically after ${new Date(releaseAt).toISOString()} if Lighter still has not consumed it. `)
+        + "Do not resubmit the order in the meantime.",
     };
   }
 

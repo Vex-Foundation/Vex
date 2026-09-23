@@ -69,6 +69,11 @@ export interface LighterOcoExecutionIntentRow {
   readonly providerOutcomeJson: Record<string, unknown> | null;
   readonly providerOutcomeCheckedAt: string | null;
   readonly ambiguousReason: string | null;
+  /**
+   * The signed grouped transaction's wire expiry (`ExpiredAt`, epoch ms). Null
+   * before signing and on rows signed before migration 169 recorded it.
+   */
+  readonly signerExpiryMs?: number | null;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly expiresAt: string;
@@ -86,7 +91,7 @@ const COLUMNS = `
   nonce_value, stop_loss_client_order_index, take_profit_client_order_index,
   signer_tx_hash, submitted_tx_hash, submit_code, submit_message,
   predicted_execution_time_ms, volume_quota_remaining, provider_outcome_json,
-  provider_outcome_checked_at, ambiguous_reason, created_at, updated_at, expires_at`;
+  provider_outcome_checked_at, ambiguous_reason, created_at, updated_at, expires_at, signer_expiry_ms`;
 
 export async function createApprovalPendingWith(
   client: PoolClient,
@@ -226,17 +231,23 @@ export async function markSigned(input: {
   readonly stopLossClientOrderIndex: string;
   readonly takeProfitClientOrderIndex: string;
   readonly signerTxHash: string;
+  /** The signed transaction's own `ExpiredAt`; see `readLighterSignedTxExpiredAtMs`. */
+  readonly signerExpiryMs?: number | null;
 }): Promise<LighterOcoExecutionIntentRow | null> {
+  const signerExpiryMs = input.signerExpiryMs ?? null;
+  if (signerExpiryMs !== null && (!Number.isSafeInteger(signerExpiryMs) || signerExpiryMs <= 0)) {
+    throw new Error("lighter_oco_execution_intents: signerExpiryMs must be a positive safe integer");
+  }
   return transition(`UPDATE lighter_oco_execution_intents SET pre_submit_revalidation_json = COALESCE(pre_submit_revalidation_json, '{}'::jsonb) || jsonb_build_object('signedAt', clock_timestamp()),
       execution_state='signed',
       stop_loss_client_order_index=$6, take_profit_client_order_index=$7,
-      signer_tx_hash=$8, updated_at=NOW()
+      signer_tx_hash=$8, signer_expiry_ms=$9, updated_at=NOW()
       WHERE intent_id=$1 AND session_id=$2 AND environment=$3 AND approval_status='approved'
         AND execution_state='approval_pending' AND nonce_reservation_id=$4 AND nonce_value=$5
         AND stop_loss_client_order_index IS NULL AND take_profit_client_order_index IS NULL
         AND signer_tx_hash IS NULL RETURNING ${COLUMNS}`,
   [input.intentId, input.sessionId, input.environment, input.reservationId, input.nonceValue,
-    input.stopLossClientOrderIndex, input.takeProfitClientOrderIndex, input.signerTxHash]);
+    input.stopLossClientOrderIndex, input.takeProfitClientOrderIndex, input.signerTxHash, signerExpiryMs]);
 }
 
 export async function markSubmitted(input: {
@@ -370,6 +381,7 @@ function mapRow(row: Record<string, unknown>): LighterOcoExecutionIntentRow {
     volumeQuotaRemaining: row.volume_quota_remaining == null ? null : String(row.volume_quota_remaining),
     providerOutcomeJson: nullableRecord(row.provider_outcome_json), providerOutcomeCheckedAt: iso(row.provider_outcome_checked_at),
     ambiguousReason: row.ambiguous_reason == null ? null : String(row.ambiguous_reason),
+    signerExpiryMs: row.signer_expiry_ms == null ? null : Number(row.signer_expiry_ms),
     createdAt: iso(row.created_at)!, updatedAt: iso(row.updated_at)!, expiresAt: iso(row.expires_at)!,
   };
 }

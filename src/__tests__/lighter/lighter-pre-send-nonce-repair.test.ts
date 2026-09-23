@@ -102,3 +102,68 @@ describe("interrupted pre-send nonce owners", () => {
     }
   }
 });
+
+describe("an OCO send that left Vex and never landed", () => {
+  // Consent expired 11:59; + 10 min SDK window + 10 min grace = 12:19.
+  const LEGACY_RELEASE_AT = Date.parse("2026-09-22T12:19:00.000Z");
+  const sent = (overrides: Record<string, unknown> = {}) => {
+    const row = ocoExecutionIntent({
+      ...base,
+      executionState: "ambiguous",
+      signerTxHash: "oco-hash",
+      sendAttemptStartedAt: "2026-09-22T11:58:30.000Z",
+      ambiguousReason: "oco_provider_non_acceptance_code",
+      stopLossClientOrderIndex: null,
+      takeProfitClientOrderIndex: null,
+      ...overrides,
+    });
+    return { ...row, nonceReservationId: `lighter-oco:${row.intentId}` };
+  };
+  function held(row: ReturnType<typeof sent>) {
+    vi.mocked(getLighterClient().getNextNonce).mockResolvedValue({ code: 200, nonce: 9 });
+    vi.spyOn(nonceRepo, "find").mockResolvedValue({
+      environment: row.environment, accountIndex: row.accountIndex, apiKeyIndex: row.apiKeyIndex,
+      providerNonce: "9", publicKey: "key", providerTransactionTime: null, status: "reserved",
+      reservedNonce: "9", reservationId: row.nonceReservationId, source: "fixture", observedAt: "", updatedAt: "",
+    });
+    const release = vi.spyOn(nonceRepo, "releaseReservation").mockResolvedValue(null);
+    release.mockResolvedValueOnce({} as Awaited<ReturnType<typeof nonceRepo.releaseReservation>>);
+    const outcome = vi.spyOn(ocoRepo, "markProviderOutcome").mockResolvedValue({ ...row, executionState: "rejected" });
+    return { release, outcome };
+  }
+
+  it("releases the nonce and records no protection once the consent bound has passed", async () => {
+    const row = sent();
+    const { release, outcome } = held(row);
+    vi.setSystemTime(LEGACY_RELEASE_AT + 1);
+
+    const result = await repairLighterOcoIntent(row);
+
+    expect(result).toMatchObject({ resolution: "nonce_released_expired_unconsumed", stateAfter: "rejected", nonceBlockedAfter: false });
+    expect(release).toHaveBeenCalledWith(expect.objectContaining({ reservationId: row.nonceReservationId, providerNonce: 9 }));
+    expect(outcome).toHaveBeenCalledWith(expect.objectContaining({
+      state: "rejected", evidence: expect.objectContaining({ repair: "nonce_release_expired_unconsumed" }),
+    }));
+  });
+
+  it("holds the nonce until then", async () => {
+    const row = sent();
+    const { release } = held(row);
+    vi.setSystemTime(LEGACY_RELEASE_AT);
+
+    const result = await repairLighterOcoIntent(row);
+
+    expect(result).toMatchObject({ resolution: "awaiting_provider", nonceBlockedAfter: true });
+    expect(release).not.toHaveBeenCalled();
+  });
+
+  it("uses the recorded signed expiry when there is one", async () => {
+    const row = sent({ signerExpiryMs: NOW - 10 * 60_000 - 1 });
+    const { release } = held(row);
+
+    const result = await repairLighterOcoIntent(row);
+
+    expect(result.resolution).toBe("nonce_released_expired_unconsumed");
+    expect(release).toHaveBeenCalledOnce();
+  });
+});

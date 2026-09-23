@@ -1,6 +1,7 @@
 import { persistLighterSigningEvidence, type LighterEvidenceWritePorts } from "./execution-boundary.js";
 import { assertIntentAuthority, LighterIntentRefusal } from "./intent-expiry.js";
 import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js";
+import { readLighterSignedTxExpiredAtMs } from "@tools/lighter/signed-tx-expiry.js";
 import { revalidateLighterOrderFees, type LighterOrderFeeClient } from "./order-fees.js";
 import { LIGHTER_ENDPOINTS, type LighterEnvironment } from "@tools/lighter/constants.js";
 import type { LighterClient } from "@tools/lighter/client.js";
@@ -196,6 +197,10 @@ export async function executeApprovedLighterOco(input: {
       deps.groupedSigner,
     );
     signerExited = lighterSignerRunExited({ kind: "resolved" });
+    // Read before the hash is recorded: an expiry that contradicts the SDK
+    // default throws while this signature exists only in memory, so the
+    // refusal below releases the nonce as provably unsent.
+    const signerExpiryMs = readLighterSignedTxExpiredAtMs(signed.txInfo, deps.now());
     signerTxHash = signed.txHash;
     let persistedSigned;
     try {
@@ -208,6 +213,7 @@ export async function executeApprovedLighterOco(input: {
         stopLossClientOrderIndex: group.orders[0].clientOrderIndex,
         takeProfitClientOrderIndex: group.orders[1].clientOrderIndex,
         signerTxHash: signed.txHash,
+        signerExpiryMs,
       }));
     } catch {
       await markAmbiguous(plan, deps, "oco_signed_state_persist_failed");

@@ -35,6 +35,7 @@ import {
   retireLighterOrderCapitalCommitment,
 } from "./capital-share-policy.js";
 import { averageFillPrice } from "./order-lifecycle.js";
+import { lighterLostSendReleaseAtMs } from "./lost-send-release.js";
 import { resolveLighterReadOnlyAccountAuth } from "./read-account-auth.js";
 
 export const LIGHTER_LIFECYCLE_REPAIR_EXPIRY_GRACE_MS = 10 * 60 * 1_000;
@@ -345,9 +346,15 @@ async function resolveLighterOrderLifecycleRepair(
       "nonce_released_never_submitted",
       "The signed lifecycle transaction provably never reached submission.");
   }
-  const releaseAt = current.signerExpiryMs === null
-    ? null
-    : current.signerExpiryMs + LIGHTER_LIFECYCLE_REPAIR_EXPIRY_GRACE_MS;
+  // A close is a create-order transaction; one signed before its SDK-filled
+  // expiry was recorded (stored as null) is bounded by its consent expiry
+  // instead (see lost-send-release.ts). Cancel and modify always record the
+  // explicit expiry Vex signs them with.
+  const releaseAt = current.signerExpiryMs !== null
+    ? current.signerExpiryMs + LIGHTER_LIFECYCLE_REPAIR_EXPIRY_GRACE_MS
+    : current.actionType === "close_position"
+      ? lighterLostSendReleaseAtMs(current)
+      : null;
   if (releaseAt !== null && deps.now() > releaseAt) {
     return releaseUnconsumed(intent, current, deps, liveNextNonce, nonce.reservedNonce,
       "nonce_released_expired_unconsumed",

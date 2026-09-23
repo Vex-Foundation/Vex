@@ -9,6 +9,7 @@ import {
   LIGHTER_EXPIRED_UNSUBMITTED_GUIDANCE,
 } from "./order-evidence.js";
 import { defaultLighterOrderRepairDeps } from "./order-repair.js";
+import { lighterLostSendReleaseAtMs } from "./lost-send-release.js";
 
 const NEVER_SUBMITTED = new Set([
   "oco_signing_failed_after_nonce_reservation",
@@ -21,7 +22,7 @@ export interface LighterOcoRepairReport {
   readonly intentId: string;
   readonly stateBefore: LighterOcoExecutionIntentRow["executionState"];
   readonly stateAfter: LighterOcoExecutionIntentRow["executionState"];
-  readonly resolution: "already_terminal" | "awaiting_submission" | "expired_unsubmitted" | "provider_evidence" | "awaiting_provider" | "nonce_released_never_submitted" | "degraded";
+  readonly resolution: "already_terminal" | "awaiting_submission" | "expired_unsubmitted" | "provider_evidence" | "awaiting_provider" | "nonce_released_never_submitted" | "nonce_released_expired_unconsumed" | "degraded";
   readonly nonceBlockedAfter: boolean;
   readonly guidance: string;
   readonly evidence: Record<string, unknown> | null;
@@ -180,6 +181,31 @@ export async function repairLighterOcoIntent(
         "The grouped transaction provably never left Vex. Its nonce was released and no OCO protection was created.", null);
     }
   }
+  // A grouped send that may have left Vex and never landed. The nonce is still
+  // unconsumed, so it has not executed; once its signed expiry has passed it
+  // never can. Without this bound it held the account's nonce forever.
+  const releaseAt = lighterLostSendReleaseAtMs(intent);
+  if (holds && reserved === nextNonce && releaseAt !== null && Date.now() > releaseAt) {
+    const released = await nonceRepo.releaseReservation({
+      environment: intent.environment,
+      accountIndex: intent.accountIndex,
+      apiKeyIndex: intent.apiKeyIndex,
+      reservationId: `lighter-oco:${intent.intentId}`,
+      providerNonce: nextNonce,
+    });
+    if (released !== null) {
+      const updated = await intentsRepo.markProviderOutcome({
+        intentId: intent.intentId,
+        sessionId: intent.sessionId,
+        environment: intent.environment,
+        state: "rejected",
+        evidence: { repair: "nonce_release_expired_unconsumed", liveNextNonce: nextNonce },
+      });
+      return report(intent, updated?.executionState ?? "rejected", "nonce_released_expired_unconsumed", false,
+        "The signed grouped transaction expired while Lighter had still not consumed its nonce, so it can no longer execute. "
+        + "Its nonce was released and no OCO protection was created.", null);
+    }
+  }
   return report(intent, intent.executionState, "awaiting_provider", holds,
     "Both exact OCO children are not yet proven. Wait and check again; do not retry or claim the position is protected.", null);
 }
@@ -210,6 +236,7 @@ const LIGHTER_OCO_ADVANCE_RESOLUTIONS: ReadonlySet<LighterOcoRepairReport["resol
   "expired_unsubmitted",
   "provider_evidence",
   "nonce_released_never_submitted",
+  "nonce_released_expired_unconsumed",
 ]);
 
 /**

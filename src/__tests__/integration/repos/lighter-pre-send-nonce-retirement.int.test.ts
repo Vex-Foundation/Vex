@@ -403,3 +403,46 @@ describe("blocked nonce slots by reservation owner", () => {
   });
 });
 
+describe("the signed transaction expiry recorded at signing (migration 169)", () => {
+  it("stores and reads back a create order's signed ExpiredAt, and null when none was read", async () => {
+    const withExpiry = await seedOwner("create", false, false);
+    const expiry = Date.now() + 599_000;
+    const signed = await orders.markSigned({
+      intentId: withExpiry.input.intentId, sessionId, environment: SCOPE.environment,
+      nonceReservationId: withExpiry.input.reservationId, nonceValue: "12",
+      clientOrderIndex: "1001", signerTxHash: "fixture-hash-create", signerExpiryMs: expiry,
+    });
+    expect(signed).toMatchObject({ executionState: "signed", signerExpiryMs: expiry });
+    expect(await orders.findByIntentIdAnySession(withExpiry.input.intentId)).toMatchObject({ signerExpiryMs: expiry });
+
+    await execute("TRUNCATE lighter_nonce_state");
+    const without = await seedOwner("create", false, false);
+    expect(await orders.markSigned({
+      intentId: without.input.intentId, sessionId, environment: SCOPE.environment,
+      nonceReservationId: without.input.reservationId, nonceValue: "12",
+      clientOrderIndex: "1002", signerTxHash: "fixture-hash-create-2",
+    })).toMatchObject({ executionState: "signed", signerExpiryMs: null });
+  });
+
+  it("stores and reads back an OCO's signed ExpiredAt", async () => {
+    const fixture = await seedOwner("oco", false, false);
+    const expiry = Date.now() + 599_000;
+    const signed = await oco.markSigned({
+      intentId: fixture.input.intentId, sessionId, environment: SCOPE.environment,
+      reservationId: fixture.input.reservationId, nonceValue: "12",
+      stopLossClientOrderIndex: "1001", takeProfitClientOrderIndex: "1002",
+      signerTxHash: "fixture-hash-oco", signerExpiryMs: expiry,
+    });
+    expect(signed).toMatchObject({ executionState: "signed", signerExpiryMs: expiry });
+  });
+
+  it("refuses a malformed expiry before touching the row", async () => {
+    const fixture = await seedOwner("create", false, false);
+    await expect(orders.markSigned({
+      intentId: fixture.input.intentId, sessionId, environment: SCOPE.environment,
+      nonceReservationId: fixture.input.reservationId, nonceValue: "12",
+      clientOrderIndex: "1001", signerTxHash: "fixture-hash-create", signerExpiryMs: -1,
+    })).rejects.toThrow(/signerExpiryMs/);
+    expect(await orders.findByIntentIdAnySession(fixture.input.intentId)).toMatchObject({ executionState: "approval_pending" });
+  });
+});

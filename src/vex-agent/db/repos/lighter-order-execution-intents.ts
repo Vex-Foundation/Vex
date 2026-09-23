@@ -35,6 +35,11 @@ export type LighterOrderExecutionIntentState =
 export interface LighterOrderExecutionIntentRow {
   readonly integratorFees?: LighterIntegratorFees | null;
   readonly sendAttemptStartedAt?: string | null;
+  /**
+   * The signed transaction's wire expiry (`ExpiredAt`, epoch ms). Null before
+   * signing and on rows signed before migration 169 recorded it.
+   */
+  readonly signerExpiryMs?: number | null;
   readonly intentId: string;
   readonly sessionId: string;
   readonly previewId: string;
@@ -134,6 +139,8 @@ export interface MarkLighterOrderSignedInput {
   readonly nonceValue: string;
   readonly clientOrderIndex: string;
   readonly signerTxHash: string;
+  /** The signed transaction's own `ExpiredAt`; see `readLighterSignedTxExpiredAtMs`. */
+  readonly signerExpiryMs?: number | null;
 }
 
 export interface MarkLighterOrderSubmittedInput {
@@ -214,7 +221,7 @@ const SELECT_COLUMNS =
   "volume_quota_remaining, ambiguous_reason, signed_at, submitted_at, api_accepted_at, ambiguous_at, " +
   "provider_order_id, provider_order_status, provider_outcome_source, provider_outcome_json, provider_outcome_checked_at, " +
   "pre_submit_revalidation_json, pre_submit_revalidated_at, " +
-  "created_at, updated_at, expires_at, integrator_fees_json";
+  "created_at, updated_at, expires_at, integrator_fees_json, signer_expiry_ms";
 
 const INSERT_SQL = `INSERT INTO lighter_order_execution_intents (
   intent_id, session_id, preview_id, protocol_execution_id, approval_id, match_hash, environment,
@@ -271,6 +278,7 @@ const MARK_SIGNED_SQL = `UPDATE lighter_order_execution_intents
    SET execution_state = 'signed',
        client_order_index = $6,
        signer_tx_hash = $7,
+       signer_expiry_ms = $8,
        signed_at = NOW(),
        updated_at = NOW()
  WHERE intent_id = $1
@@ -780,7 +788,16 @@ function toMarkSignedParams(input: MarkLighterOrderSignedInput): unknown[] {
     requiredNonNegativeDecimal(input.nonceValue, "nonceValue"),
     requiredUint48Decimal(input.clientOrderIndex, "clientOrderIndex"),
     requiredSafeId(input.signerTxHash, "signerTxHash"),
+    optionalPositiveSafeInteger(input.signerExpiryMs, "signerExpiryMs"),
   ];
+}
+
+function optionalPositiveSafeInteger(value: number | null | undefined, field: string): number | null {
+  if (value === null || value === undefined) return null;
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`lighter_order_execution_intents: ${field} must be a positive safe integer`);
+  }
+  return value;
 }
 
 function toMarkSubmittedParams(input: MarkLighterOrderSubmittedInput): unknown[] {
@@ -1050,6 +1067,7 @@ function mapRow(row: Record<string, unknown>): LighterOrderExecutionIntentRow {
         : String(row.volume_quota_remaining),
     ambiguousReason: (row.ambiguous_reason as string | null) ?? null,
     signedAt: toIsoOrNull(row.signed_at as string | Date | null | undefined),
+    signerExpiryMs: row.signer_expiry_ms == null ? null : Number(row.signer_expiry_ms),
     submittedAt: toIsoOrNull(row.submitted_at as string | Date | null | undefined),
     apiAcceptedAt: toIsoOrNull(row.api_accepted_at as string | Date | null | undefined),
     ambiguousAt: toIsoOrNull(row.ambiguous_at as string | Date | null | undefined),

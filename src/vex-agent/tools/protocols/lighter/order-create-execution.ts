@@ -1,6 +1,7 @@
 import { persistLighterSigningEvidence, type LighterEvidenceWritePorts } from "./execution-boundary.js";
 import { assertIntentAuthority, LighterIntentRefusal } from "./intent-expiry.js";
 import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js";
+import { readLighterSignedTxExpiredAtMs } from "@tools/lighter/signed-tx-expiry.js";
 import { revalidateLighterOrderFees, readLighterOrderAccountFeeTicks, type LighterOrderFeeClient } from "./order-fees.js";
 import { lighterIntegratorFeesEqual } from "@tools/lighter/fee-policy.js";
 import type { LighterClient } from "@tools/lighter/client.js";
@@ -280,6 +281,10 @@ export async function executeApprovedLighterCreateOrder(input: {
     });
     const signed = await signLighterCreateOrderWithAdapter(signingInput, deps.signer);
     signerExited = lighterSignerRunExited({ kind: "resolved" });
+    // Read before the hash is recorded: an expiry that contradicts the SDK
+    // default throws here, while this signature still exists only in memory,
+    // so the refusal below releases the nonce as provably unsent.
+    const signerExpiryMs = readLighterSignedTxExpiredAtMs(signed.txInfo, deps.now());
     signerTxHash = signed.txHash;
 
     const signedIntent = await persistLighterSigningEvidence(() => deps.intents.markSigned({
@@ -290,6 +295,7 @@ export async function executeApprovedLighterCreateOrder(input: {
       nonceValue: nonce.nonceValue,
       clientOrderIndex: unsignedOrder.clientOrderIndex,
       signerTxHash: signed.txHash,
+      signerExpiryMs,
     }));
     if (signedIntent === null) {
       await markAmbiguous(deps, plan, SIGNED_PERSIST_AMBIGUOUS_REASON);

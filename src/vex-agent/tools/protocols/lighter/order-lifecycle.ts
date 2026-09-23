@@ -1,6 +1,7 @@
 import { persistLighterSigningEvidence, type LighterEvidenceWritePorts } from "./execution-boundary.js";
 import { assertIntentAuthority, assertIntentUnexpired, LighterIntentRefusal } from "./intent-expiry.js";
 import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js";
+import { readLighterSignedTxExpiredAtMs } from "@tools/lighter/signed-tx-expiry.js";
 import type { LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
 import { resolveLighterOrderFees, revalidateLighterOrderFees, type LighterOrderFeeClient } from "./order-fees.js";
 import { confirmedLighterCloseDisposition } from "./close-position-confirmation.js";
@@ -1536,17 +1537,20 @@ export async function executeApprovedLighterClosePosition(
       deps.authSigner,
     );
     signerExited = lighterSignerRunExited({ kind: "resolved" });
+    // A close is a create-order transaction: Vex passes no ExpiredAt, and the
+    // official SDK fills one (signing time + 9m59s) that is part of the signed
+    // hash. It is read from the signer's own tx info so repair can release a
+    // lost send once it passes. Read before the hash is recorded, so an expiry
+    // that contradicts the SDK default refuses while the signature exists only
+    // in memory.
+    const signerExpiryMs = readLighterSignedTxExpiredAtMs(signed.txInfo, deps.now());
     signerTxHash = signed.txHash;
     const signedRow = await persistLighterSigningEvidence(() => deps.intents.markSigned({
       intentId: intent.intentId,
       sessionId: intent.sessionId,
       reservationId,
       signerTxHash: signed.txHash,
-      // Create-order transactions do not carry the lifecycle signer's
-      // ExpiredAt field. For market IOC close orders, wire OrderExpiry is nil,
-      // so there is no signed expiry that repair may safely use to release an
-      // ambiguous nonce reservation.
-      signerExpiryMs: null,
+      signerExpiryMs,
     }));
     if (signedRow === null) return markAndReturnAmbiguous(deps, intent, "signed_state_persist_failed", signed.txHash);
     assertAuthority("after_signing");

@@ -1011,3 +1011,57 @@ func int16Pointer(value int16) *int16 { return &value }
 func uint16Pointer(value uint16) *uint16 { return &value }
 
 func uint8Pointer(value uint8) *uint8 { return &value }
+
+// Vex passes no ExpiredAt for create-order and grouped-order transactions, so
+// the official SDK fills one. Vex's lost-send recovery (lost-send-release.ts)
+// and the signed-expiry reader (signed-tx-expiry.ts) both rest on that default
+// being at most ten minutes after signing, and on it appearing exactly once in
+// the signed info. A lighter-go upgrade that changes either must fail here.
+func TestCreateOrderAndGroupedOrdersCarryTheSDKDefaultExpiry(t *testing.T) {
+	const maxLead = 10 * time.Minute
+	cases := map[string]func() (signerResponse, error){
+		"create order": func() (signerResponse, error) {
+			return signCreateOrder(signerRequest{
+				Operation: "signCreateOrder", PrivateKey: strings.Repeat("1", 80),
+				ChainID: lighterCoreChainID, AccountIndex: "42", APIKeyIndex: 7, Nonce: "3",
+				Order: &createOrderRequest{
+					MarketIndex: 0, ClientOrderIndex: "101", BaseAmount: "1000", Price: "300000",
+					IsAsk: 0, OrderType: 1, TimeInForce: 0, ReduceOnly: 0, TriggerPrice: "0", OrderExpiry: "0",
+				},
+			})
+		},
+		"grouped orders": func() (signerResponse, error) {
+			return signCreateGroupedOrders(signerRequest{
+				Operation: "signCreateGroupedOrders", PrivateKey: strings.Repeat("1", 80),
+				ChainID: lighterCoreChainID, AccountIndex: "42", APIKeyIndex: 7, Nonce: "9",
+				GroupedOrders: &groupedOrdersRequest{
+					GroupingType: txtypes.GroupingType_OneCancelsTheOther,
+					Orders: []createOrderRequest{
+						{MarketIndex: 0, ClientOrderIndex: "101", BaseAmount: "12500", Price: "280000", IsAsk: 1, OrderType: 2, TimeInForce: 0, ReduceOnly: 1, TriggerPrice: "285000", OrderExpiry: "1893456000000"},
+						{MarketIndex: 0, ClientOrderIndex: "102", BaseAmount: "12500", Price: "325000", IsAsk: 1, OrderType: 4, TimeInForce: 0, ReduceOnly: 1, TriggerPrice: "330000", OrderExpiry: "1893456000000"},
+					},
+				},
+			})
+		},
+	}
+	for name, sign := range cases {
+		t.Run(name, func(t *testing.T) {
+			before := time.Now().UnixMilli()
+			response, err := sign()
+			if err != nil {
+				t.Fatalf("sign error = %v", err)
+			}
+			after := time.Now().UnixMilli()
+			if count := strings.Count(response.TxInfo, `"ExpiredAt"`); count != 1 {
+				t.Fatalf("signed info carries ExpiredAt %d times, want exactly 1", count)
+			}
+			var info struct{ ExpiredAt int64 }
+			if err := json.Unmarshal([]byte(response.TxInfo), &info); err != nil {
+				t.Fatalf("signed info is not JSON: %v", err)
+			}
+			if info.ExpiredAt <= before || info.ExpiredAt > after+maxLead.Milliseconds() {
+				t.Fatalf("ExpiredAt = %d, want within (%d, %d]", info.ExpiredAt, before, after+maxLead.Milliseconds())
+			}
+		})
+	}
+}

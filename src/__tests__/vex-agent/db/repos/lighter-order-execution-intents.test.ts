@@ -467,6 +467,7 @@ describe("lighter order execution intents repo", () => {
       nonceValue: "1784732515923",
       clientOrderIndex: "187649984473770",
       signerTxHash: "0xabc123",
+      signerExpiryMs: 1_786_492_920_000,
     });
 
     const [sql, params] = requireValue(mockQueryOne.mock.calls[0]);
@@ -476,6 +477,7 @@ describe("lighter order execution intents repo", () => {
     expect(sql).toContain("AND nonce_reservation_id = $4");
     expect(sql).toContain("AND nonce_value = $5");
     expect(sql).toContain("AND client_order_index IS NULL");
+    expect(sql).toContain("signer_expiry_ms = $8");
     expect(params).toEqual([
       "lighter-exec-1",
       "session-1",
@@ -484,6 +486,7 @@ describe("lighter order execution intents repo", () => {
       "1784732515923",
       "187649984473770",
       "0xabc123",
+      1_786_492_920_000,
     ]);
     expect(signed).toMatchObject({
       executionState: "signed",
@@ -522,6 +525,7 @@ describe("lighter order execution intents repo", () => {
       "0",
       "187649984473770",
       "0xabc123",
+      null,
     ]);
     expect(signed).toMatchObject({
       executionState: "signed",

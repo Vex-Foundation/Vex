@@ -363,6 +363,54 @@ describe("Lighter order lifecycle repair", () => {
     expect(d.nonceState.releaseReservation).toHaveBeenCalledWith(expect.objectContaining({ providerNonce: 9 }));
   });
 
+  it("bounds a lost close signed before its expiry was recorded by consent expiry plus the SDK window", async () => {
+    // Consent expired 21:39:59; + 10 min SDK window + 10 min grace = 21:59:59, before NOW (22:00).
+    const row = intent({
+      actionType: "close_position",
+      providerOrderId: null,
+      signerExpiryMs: null,
+      sendAttemptStartedAt: "2026-08-19T21:39:00.000Z",
+      expiresAt: "2026-08-19T21:39:59.000Z",
+    });
+    const d = deps(row, { readsFail: true, nextNonce: 9 });
+
+    const report = await repairLighterOrderLifecycleIntent(row, d);
+
+    expect(report.resolution).toBe("nonce_released_expired_unconsumed");
+    expect(d.nonceState.releaseReservation).toHaveBeenCalledWith(expect.objectContaining({ providerNonce: 9 }));
+  });
+
+  it("holds that lost close until the consent bound has passed", async () => {
+    const row = intent({
+      actionType: "close_position",
+      providerOrderId: null,
+      signerExpiryMs: null,
+      sendAttemptStartedAt: "2026-08-19T21:39:00.000Z",
+      expiresAt: "2026-08-19T21:40:00.000Z",
+    });
+    const d = deps(row, { readsFail: true, nextNonce: 9 });
+
+    const report = await repairLighterOrderLifecycleIntent(row, d);
+
+    expect(report.resolution).toBe("awaiting_provider");
+    expect(d.nonceState.releaseReservation).not.toHaveBeenCalled();
+  });
+
+  it("never applies the consent bound to a cancel, which always records its own signed expiry", async () => {
+    const row = intent({
+      actionType: "cancel_one",
+      signerExpiryMs: null,
+      sendAttemptStartedAt: "2026-08-19T21:00:00.000Z",
+      expiresAt: "2026-08-19T21:00:00.000Z",
+    });
+    const d = deps(row, { readsFail: true, nextNonce: 9 });
+
+    const report = await repairLighterOrderLifecycleIntent(row, d);
+
+    expect(report.resolution).toBe("awaiting_provider");
+    expect(d.nonceState.releaseReservation).not.toHaveBeenCalled();
+  });
+
   it("preserves a possible send despite a never-submitted ambiguity reason", async () => {
     const row = intent({
       ambiguousReason: "signed_state_persist_failed",
