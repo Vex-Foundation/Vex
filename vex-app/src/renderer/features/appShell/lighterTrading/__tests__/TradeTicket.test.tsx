@@ -80,9 +80,10 @@ describe("Light it up trade ticket", () => {
       const { rerender } = renderTicket({ outcome: { tone: "ok", text: "Close sent." } });
       const actions = screen.getByRole("group", { name: "Order side" });
       const first = document.querySelector(".lit-review-outcome");
-      expect(first?.textContent).toBe("Close sent.");
-      expect(actions.compareDocumentPosition(first!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(first?.querySelector(".lit-review-outcome-timer")).not.toBeNull();
+      if (!first) throw new Error("expected the first order notice");
+      expect(first.textContent).toBe("Close sent.");
+      expect(actions.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(first.querySelector(".lit-review-outcome-timer")).not.toBeNull();
 
       act(() => { vi.advanceTimersByTime(4_999); });
       expect(document.querySelector(".lit-review-outcome")).not.toBeNull();
