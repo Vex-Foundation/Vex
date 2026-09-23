@@ -830,12 +830,16 @@ export const lighterAccountSetupStatusSchema = z
     /**
      * True when a trading key is registered on-chain but its local credential
      * is not yet active - a live registration intent sits in a post-submission
-     * state (`change_pub_key_submitted` / `key_verified` / `nonce_synchronized`).
+     * state (`change_pub_key_submitted` / `key_verified` /
+     * `nonce_synchronized` / `ambiguous`). Ambiguous is checked against
+     * provider evidence before any new registration can be prepared.
      * The modal completes such a key by RECONCILING it (no funds, no new
      * signature), so it may finish that step automatically. Only ever true
      * while `tradingKeyRegistered` is false.
      */
     keyRegistrationResumable: z.boolean(),
+    /** A saved uncertain attempt must be checked before another setup action. */
+    setupRecovery: z.enum(["none", "deposit", "key", "manual_review"]),
     /** Static policy terms; null when this environment collects no VEX fee. */
     feePolicy: lighterAccountSetupFeePolicySchema.nullable(),
     /** True once no fee step remains: already authorized, or none is owed. */
@@ -880,6 +884,12 @@ export type LighterKeyRegistrationReconcileInput =
   z.infer<typeof lighterKeyRegistrationReconcileInputSchema>;
 export type LighterKeyRegistrationReconcile =
   z.infer<typeof lighterKeyRegistrationReconcileSchema>;
+
+/** Evidence-only recovery of an uncertain deposit or trading-key setup. */
+export const lighterSetupReconcileInputSchema = lighterKeyRegistrationReconcileInputSchema;
+export const lighterSetupReconcileSchema = lighterKeyRegistrationReconcileSchema;
+export type LighterSetupReconcileInput = z.infer<typeof lighterSetupReconcileInputSchema>;
+export type LighterSetupReconcile = z.infer<typeof lighterSetupReconcileSchema>;
 
 export type LighterAccountSetupStatusInput = z.infer<typeof lighterAccountSetupStatusInputSchema>;
 export type LighterAccountSetupFeePolicy = z.infer<typeof lighterAccountSetupFeePolicySchema>;

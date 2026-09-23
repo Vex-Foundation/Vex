@@ -337,6 +337,7 @@ export const CH = {
     getOnboardingChecklist: "vex:lighterTrading:getOnboardingChecklist",
     getAccountSetupStatus: "vex:lighterTrading:getAccountSetupStatus",
     reconcileKeyRegistration: "vex:lighterTrading:reconcileKeyRegistration",
+    reconcileSetup: "vex:lighterTrading:reconcileSetup",
     getPendingAgentSetup: "vex:lighterTrading:getPendingAgentSetup",
     settleAgentSetup: "vex:lighterTrading:settleAgentSetup",
   },

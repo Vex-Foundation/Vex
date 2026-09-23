@@ -65,6 +65,7 @@ function status(over: Partial<LighterAccountSetupStatus> = {}): LighterAccountSe
     accountCollateral: "0",
     tradingKeyRegistered: false,
     keyRegistrationResumable: false,
+    setupRecovery: "none",
     feePolicy: { perpFeePercent: 0.1, spotFeePercent: 0.25 },
     feeAuthorized: false,
     ...over,
@@ -141,6 +142,13 @@ beforeEach(() => {
           live = { ...live, tradingKeyRegistered: true, keyRegistrationResumable: false };
         }
         return Promise.resolve({ ok: true, data: { attempted: true, status: "active" } });
+      },
+      reconcileSetup: () => {
+        reconcileCalls += 1;
+        if (reconcileActivatesKey) {
+          live = { ...live, tradingKeyRegistered: true, keyRegistrationResumable: false, setupRecovery: "none" };
+        }
+        return Promise.resolve({ ok: true, data: { attempted: true, status: "pending" } });
       },
       prepareDeskAction: (input: { action: LighterDeskAction }) => {
         prepared.push(input.action);
@@ -341,6 +349,41 @@ describe("useLighterAccountSetup resume rules", () => {
     expect(prepared.filter((a) => a.kind === "onboarding_key")).toHaveLength(0);
     expect(reconcileCalls).toBeGreaterThan(0);
     expect(result.current.error).toBeNull();
+  });
+
+  it("checks an ambiguous first trading-key attempt without preparing another key", async () => {
+    live = status({ accountExists: true, accountCollateral: "12", keyRegistrationResumable: true, setupRecovery: "key" });
+    reconcileActivatesKey = true;
+
+    const { result } = mount();
+    await tick();
+
+    expect(reconcileCalls).toBeGreaterThan(0);
+    expect(prepared).toHaveLength(0);
+    expect(live.tradingKeyRegistered).toBe(true);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("checks an uncertain deposit without submitting another deposit or key", async () => {
+    live = status({ setupRecovery: "deposit" });
+    const { result } = mount();
+    await tick();
+    expect(result.current.phase).toBe("checking_setup");
+    expect(result.current.needsDeposit).toBe(false);
+    expect(reconcileCalls).toBeGreaterThan(0);
+    expect(prepared).toHaveLength(0);
+
+    await tick(CONFIRM_KEY_TIMEOUT_MS + POLL_MS);
+    expect(result.current.error).toContain("No new deposit or trading key was submitted");
+    expect(prepared).toHaveLength(0);
+  });
+
+  it("leaves an untraceable saved attempt for support without submitting anything", async () => {
+    live = status({ accountExists: true, setupRecovery: "manual_review" });
+    const { result } = mount();
+    await tick();
+    expect(result.current.error).toContain("contact support");
+    expect(prepared).toHaveLength(0);
   });
 
   it("retry out of the stuck state reconciles rather than re-registering", async () => {

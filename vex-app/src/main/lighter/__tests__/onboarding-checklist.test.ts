@@ -161,6 +161,7 @@ function setupDeps(
     },
     hasTradingKey: vi.fn().mockReturnValue(false),
     readLiveKeyRegistrationState: vi.fn().mockResolvedValue(null),
+    readWorkflow: vi.fn().mockResolvedValue(null),
     // No fee policy keeps the fee read out of the way; the key gate is the focus.
     feePolicy: vi.fn().mockReturnValue(null),
     inspectFee: vi.fn(),
@@ -170,24 +171,66 @@ function setupDeps(
 
 describe("resolveLighterAccountSetupStatus key gate", () => {
   it("marks a submitted-but-inactive key resumable (reconcile completes it, no signing)", async () => {
-    for (const state of ["change_pub_key_submitted", "key_verified", "nonce_synchronized"]) {
+    for (const state of ["change_pub_key_submitted", "key_verified", "nonce_synchronized", "ambiguous"]) {
       const status = await resolveLighterAccountSetupStatus(
         { sessionId: SESSION, environment: "rhc" },
         setupDeps({ readLiveKeyRegistrationState: vi.fn().mockResolvedValue(state) }),
       );
       expect(status.tradingKeyRegistered).toBe(false);
       expect(status.keyRegistrationResumable).toBe(true);
+      expect(status.setupRecovery).toBe("key");
     }
   });
 
   it("never marks a pre-submission intent resumable (finishing it would sign)", async () => {
-    for (const state of ["approved", "key_registration_tx_staged", "ambiguous", null]) {
+    for (const state of ["approved", null]) {
       const status = await resolveLighterAccountSetupStatus(
         { sessionId: SESSION, environment: "rhc" },
         setupDeps({ readLiveKeyRegistrationState: vi.fn().mockResolvedValue(state) }),
       );
       expect(status.keyRegistrationResumable).toBe(false);
+      expect(status.setupRecovery).toBe("none");
     }
+  });
+
+  it("holds a signed staged registration for checking without sending it again", async () => {
+    const status = await resolveLighterAccountSetupStatus(
+      { sessionId: SESSION, environment: "rhc" },
+      setupDeps({ readLiveKeyRegistrationState: vi.fn().mockResolvedValue("key_registration_tx_staged") }),
+    );
+    expect(status.keyRegistrationResumable).toBe(false);
+    expect(status.setupRecovery).toBe("key");
+  });
+
+  it("holds an ambiguous deposit for evidence-only recovery even when the account is visible", async () => {
+    const deposit = { ...workflow("ambiguous"), activeDepositIntentId: "deposit-1" };
+    const status = await resolveLighterAccountSetupStatus(
+      { sessionId: SESSION, environment: "rhc" },
+      setupDeps({ readWorkflow: vi.fn().mockResolvedValue(deposit) }),
+    );
+    expect(status.accountExists).toBe(true);
+    expect(status.setupRecovery).toBe("deposit");
+    expect(status.keyRegistrationResumable).toBe(false);
+  });
+
+  it("does not offer a second deposit while a credited account is temporarily absent from the provider read", async () => {
+    const status = await resolveLighterAccountSetupStatus(
+      { sessionId: SESSION, environment: "rhc" },
+      setupDeps({
+        readWorkflow: vi.fn().mockResolvedValue({ ...workflow("account_resolved"), activeDepositIntentId: "deposit-1" }),
+        readers: { ...setupDeps().readers, readLighterAccount: vi.fn().mockResolvedValue(null) },
+      }),
+    );
+    expect(status.accountExists).toBe(false);
+    expect(status.setupRecovery).toBe("deposit");
+  });
+
+  it("holds an ambiguous workflow without an attributable intent for review", async () => {
+    const status = await resolveLighterAccountSetupStatus(
+      { sessionId: SESSION, environment: "rhc" },
+      setupDeps({ readWorkflow: vi.fn().mockResolvedValue(workflow("ambiguous")) }),
+    );
+    expect(status.setupRecovery).toBe("manual_review");
   });
 
   it("is never resumable once the local key is active", async () => {

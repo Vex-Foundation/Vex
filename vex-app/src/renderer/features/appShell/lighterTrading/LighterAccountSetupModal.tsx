@@ -41,6 +41,7 @@ const PHASE_LABELS: Readonly<Record<LighterAccountSetupPhase, string>> = {
   idle: "One confirmation runs all three steps.",
   depositing: "Depositing to Lighter…",
   confirming_deposit: "Confirming your deposit on-chain…",
+  checking_setup: "Checking your previous setup with Lighter…",
   registering_key: "Registering your trading key…",
   confirming_key: "Confirming your trading key…",
   authorizing_fee: "Authorizing fees…",
@@ -72,14 +73,17 @@ export function lighterSetupPresentation(
   phase: LighterAccountSetupPhase,
   status: LighterAccountSetupStatus,
 ): LighterSetupPresentation {
-  const accountNote = !status.accountExists
+  const accountNote = status.setupRecovery !== "none"
+    ? "Vex is checking an earlier setup attempt for this wallet. It will not submit another deposit or trading key while the outcome is uncertain."
+    : !status.accountExists
     ? null
     : !status.tradingKeyRegistered
       ? `This wallet already holds a Lighter account on ${ENVIRONMENT_LABELS[status.environment]}. Setup continues from the trading key.`
       : !status.feeAuthorized
         ? `This wallet's Lighter account and trading key are ready on ${ENVIRONMENT_LABELS[status.environment]}. Setup continues from fee authorization.`
         : `This wallet is fully set up for Lighter on ${ENVIRONMENT_LABELS[status.environment]}.`;
-  const ready = status.accountExists && status.tradingKeyRegistered && status.feeAuthorized;
+  const ready = status.setupRecovery === "none"
+    && status.accountExists && status.tradingKeyRegistered && status.feeAuthorized;
 
   switch (phase) {
     case "idle":
@@ -90,7 +94,9 @@ export function lighterSetupPresentation(
           status.accountExists && status.feeAuthorized ? "done" : "upcoming",
         ],
         accountNote,
-        statusLabel: !status.accountExists
+        statusLabel: status.setupRecovery !== "none"
+          ? "Previous setup needs a status check."
+          : !status.accountExists
           ? PHASE_LABELS.idle
           : !status.tradingKeyRegistered
             ? "Deposit confirmed. Trading key and fee authorization remain."
@@ -105,6 +111,13 @@ export function lighterSetupPresentation(
         steps: ["active", "upcoming", "upcoming"],
         accountNote,
         statusLabel: PHASE_LABELS[phase],
+        ready: false,
+      };
+    case "checking_setup":
+      return {
+        steps: [status.accountExists ? "done" : "active", status.tradingKeyRegistered ? "done" : "active", "upcoming"],
+        accountNote,
+        statusLabel: PHASE_LABELS.checking_setup,
         ready: false,
       };
     case "registering_key":
@@ -285,8 +298,9 @@ export function LighterAccountSetupModal({
         <DialogHeader>
           <DialogTitle>Set up Lighter</DialogTitle>
           <DialogDescription>
-            Lighter needs a first deposit to activate your account and set up
-            trading. Enter the amount you want to deposit.
+            {status?.setupRecovery !== undefined && status.setupRecovery !== "none"
+              ? "Vex will check your earlier setup with Lighter before continuing."
+              : "Lighter needs a first deposit to activate your account and set up trading. Enter the amount you want to deposit."}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="gap-5 pt-1">
@@ -424,7 +438,7 @@ export function LighterAccountSetupModal({
           <button
             type="button"
             className="lit-setup-cancel"
-            disabled={running || settling}
+            disabled={(running && setup.phase !== "checking_setup") || settling}
             onClick={() => { void cancel(); }}
             {...DIALOG_INITIAL_FOCUS}
           >
@@ -432,7 +446,7 @@ export function LighterAccountSetupModal({
           </button>
           {setup.error !== null ? (
             <button type="button" className="lit-setup-cta" disabled={settling} onClick={setup.retry}>
-              Try again
+              {status !== null && status.setupRecovery !== "none" ? "Check status" : "Try again"}
             </button>
           ) : presentation?.ready === true ? (
             <button
@@ -454,7 +468,7 @@ export function LighterAccountSetupModal({
               onClick={setup.start}
             >
               {running ? <span className="lit-loader" aria-hidden="true" /> : null}
-              {running ? "Setting up…" : "Set up my account"}
+              {running ? "Setting up…" : status !== null && status.setupRecovery !== "none" ? "Check existing setup" : "Set up my account"}
             </button>
           )}
         </DialogFooter>

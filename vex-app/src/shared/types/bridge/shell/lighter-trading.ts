@@ -5,6 +5,8 @@ import type {
   LighterAccountSetupStatusInput,
   LighterKeyRegistrationReconcile,
   LighterKeyRegistrationReconcileInput,
+  LighterSetupReconcile,
+  LighterSetupReconcileInput,
   LighterTradingAccount,
   LighterTradingAccountActivityEvent,
   LighterTradingAccountInput,
@@ -136,6 +138,10 @@ export interface LighterTradingBridge {
   readonly reconcileKeyRegistration: (
     input: LighterKeyRegistrationReconcileInput,
   ) => Promise<Result<LighterKeyRegistrationReconcile>>;
+  /** Check the saved deposit or key attempt from provider evidence; never sign or send. */
+  readonly reconcileSetup: (
+    input: LighterSetupReconcileInput,
+  ) => Promise<Result<LighterSetupReconcile>>;
   /** Recover an Agent-owned setup modal after a renderer reload/session switch. */
   readonly getPendingAgentSetup: (
     input: LighterSetupPendingInput,

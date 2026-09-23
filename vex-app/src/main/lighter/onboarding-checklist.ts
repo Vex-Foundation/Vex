@@ -227,6 +227,14 @@ const RECONCILABLE_KEY_REGISTRATION_STATES: ReadonlySet<string> = new Set([
   "change_pub_key_submitted",
   "key_verified",
   "nonce_synchronized",
+  "ambiguous",
+]);
+const DEPOSIT_EVIDENCE_STATES: ReadonlySet<string> = new Set([
+  "approve_staged",
+  "deposit_staged",
+  "deposit_l1_confirmed",
+  "deposit_l2_pending",
+  "account_resolved",
 ]);
 
 export interface LighterAccountSetupStatusDeps {
@@ -237,6 +245,7 @@ export interface LighterAccountSetupStatusDeps {
     environment: LighterIntegrationEnvironment,
     accountIndex: number,
   ) => Promise<string | null>;
+  readonly readWorkflow: typeof getLighterOnboardingWorkflow;
   readonly feePolicy: typeof getLighterFeePolicy;
   readonly inspectFee: typeof inspectLighterFeeAuthorization;
 }
@@ -251,6 +260,7 @@ function defaultSetupStatusDeps(): LighterAccountSetupStatusDeps {
     readLiveKeyRegistrationState: async (environment, accountIndex) =>
       (await findLiveLighterKeyRegistrationIntentForAccount(environment, accountIndex))
         ?.executionState ?? null,
+    readWorkflow: getLighterOnboardingWorkflow,
     feePolicy: getLighterFeePolicy,
     inspectFee: inspectLighterFeeAuthorization,
   };
@@ -269,11 +279,12 @@ export async function resolveLighterAccountSetupStatus(
 ): Promise<LighterAccountSetupStatus> {
   const wallet = await deps.readSessionWallet(input.sessionId);
   const deployment = getLighterFundingDeployment(input.environment);
-  const [walletUnits, nativeWei, minimumDepositUnits, account] = await Promise.all([
+  const [walletUnits, nativeWei, minimumDepositUnits, account, workflow] = await Promise.all([
     deps.readers.readWalletSettlementUnits(input.environment, wallet.walletAddress),
     deps.readers.readWalletNativeBalanceWei(input.environment, wallet.walletAddress),
     deps.readers.readMinimumDepositUnits(input.environment),
     deps.readers.readLighterAccount(input.environment, wallet.walletAddress),
+    deps.readWorkflow(input.environment, wallet.walletAddress),
   ]);
   const tradingKeyRegistered = account !== null
     && deps.hasTradingKey(input.environment, account.account_index);
@@ -281,10 +292,22 @@ export async function resolveLighterAccountSetupStatus(
   // on-chain, its registration intent parked in a post-submission state. That
   // is completed by RECONCILING (no funds, no new signature), so the modal can
   // finish it without asking - unlike a fresh registration, which signs.
+  const liveKeyState = account !== null && !tradingKeyRegistered
+    ? await deps.readLiveKeyRegistrationState(input.environment, account.account_index)
+    : null;
   const keyRegistrationResumable = account !== null && !tradingKeyRegistered
-    && RECONCILABLE_KEY_REGISTRATION_STATES.has(
-      (await deps.readLiveKeyRegistrationState(input.environment, account.account_index)) ?? "",
-    );
+    && RECONCILABLE_KEY_REGISTRATION_STATES.has(liveKeyState ?? "");
+  const depositNeedsEvidence = workflow !== null
+    && workflow.activeDepositIntentId !== null
+    && (workflow.workflowState === "ambiguous"
+      || (account === null && DEPOSIT_EVIDENCE_STATES.has(workflow.workflowState)));
+  const setupRecovery = keyRegistrationResumable || liveKeyState === "key_registration_tx_staged"
+    ? "key"
+    : depositNeedsEvidence
+      ? "deposit"
+      : workflow?.workflowState === "ambiguous"
+        ? "manual_review"
+      : "none";
   const accountCollateralUnits = account === null
     ? 0n
     : parseSettlementFloor(
@@ -316,6 +339,7 @@ export async function resolveLighterAccountSetupStatus(
     accountCollateral: formatSettlementBaseUnits(accountCollateralUnits, deployment.settlementDecimals),
     tradingKeyRegistered,
     keyRegistrationResumable,
+    setupRecovery,
     feePolicy: policy === null ? null : { perpFeePercent: policy.perpsMakerFee / 10_000, spotFeePercent: policy.spotMakerFee / 10_000 },
     feeAuthorized,
   };

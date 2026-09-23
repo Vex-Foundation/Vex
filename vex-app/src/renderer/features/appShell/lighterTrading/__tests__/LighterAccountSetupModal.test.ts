@@ -18,6 +18,7 @@ function status(
     accountCollateral: "0",
     tradingKeyRegistered: false,
     keyRegistrationResumable: false,
+    setupRecovery: "none",
     feePolicy: { perpFeePercent: 0.1, spotFeePercent: 0.25 },
     feeAuthorized: false,
     ...overrides,
@@ -25,6 +26,17 @@ function status(
 }
 
 describe("lighterSetupPresentation", () => {
+  it("does not mark an uncertain workflow ready just because the account flags are present", () => {
+    const presentation = lighterSetupPresentation("idle", status({
+      accountExists: true,
+      tradingKeyRegistered: true,
+      feeAuthorized: true,
+      setupRecovery: "manual_review",
+    }));
+    expect(presentation.ready).toBe(false);
+    expect(presentation.statusLabel).toBe("Previous setup needs a status check.");
+  });
+
   it("reports every observed idle step instead of resetting key and fee to upcoming", () => {
     expect(lighterSetupPresentation("idle", status()).steps).toEqual([
       "upcoming",
