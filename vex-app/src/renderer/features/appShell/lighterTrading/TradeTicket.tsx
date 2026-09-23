@@ -117,6 +117,19 @@ export function TradeTicket({
   const availableSymbol = market.marketType === "spot" && side === "sell" ? symbols.base : settlementSymbol;
   // A fresh ticket is incomplete, not wrong: problems show once a field changes.
   const [touched, setTouched] = useState(false);
+  const [visibleOutcome, setVisibleOutcome] = useState<{ value: DeskOutcome; sequence: number } | null>(null);
+  useEffect(() => {
+    if (outcome === null) {
+      setVisibleOutcome(null);
+      return;
+    }
+    setVisibleOutcome((current) => ({ value: outcome, sequence: (current?.sequence ?? 0) + 1 }));
+    if (outcome.tone !== "ok") return;
+    const timeout = window.setTimeout(() => {
+      setVisibleOutcome((current) => current?.value === outcome ? null : current);
+    }, 5_000);
+    return () => window.clearTimeout(timeout);
+  }, [outcome]);
   useEffect(() => {
     if ((prefill ?? null) !== null || (pricePick ?? null) !== null) setTouched(true);
   }, [prefill, pricePick]);
@@ -494,9 +507,6 @@ export function TradeTicket({
           </div>
         ) : null}
         {handoffError ? <p className="lit-review-error" role="alert">{handoffError}</p> : null}
-        {outcome !== null && handoffError == null ? (
-          <p className="lit-review-outcome" data-tone={outcome.tone} role="status">{outcome.text}</p>
-        ) : null}
         {problem !== null ? <p className="lit-validation" role="status">{problem}</p> : null}
         {onAsk === undefined ? null : (
           <button
@@ -547,6 +557,14 @@ export function TradeTicket({
                 : "Opens Vex first. Nothing signs until you confirm."}
             </span>
           </p>
+        ) : null}
+        {visibleOutcome !== null && handoffError == null ? (
+          <div className="lit-review-outcome" data-tone={visibleOutcome.value.tone} role="status" key={visibleOutcome.sequence}>
+            <span>{visibleOutcome.value.text}</span>
+            {visibleOutcome.value.tone === "ok" ? (
+              <span className="lit-review-outcome-timer" aria-hidden="true" />
+            ) : null}
+          </div>
         ) : null}
       </div>
     </form>

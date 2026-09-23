@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
 import type { TicketMargin } from "../ticket-model.js";
@@ -74,6 +74,42 @@ function renderTicket(overrides: Partial<Parameters<typeof TradeTicket>[0]> = {}
 }
 
 describe("Light it up trade ticket", () => {
+  it("shows each successful order notice below the side buttons for five seconds", () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender } = renderTicket({ outcome: { tone: "ok", text: "Close sent." } });
+      const actions = screen.getByRole("group", { name: "Order side" });
+      const first = document.querySelector(".lit-review-outcome");
+      expect(first?.textContent).toBe("Close sent.");
+      expect(actions.compareDocumentPosition(first!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(first?.querySelector(".lit-review-outcome-timer")).not.toBeNull();
+
+      act(() => { vi.advanceTimersByTime(4_999); });
+      expect(document.querySelector(".lit-review-outcome")).not.toBeNull();
+      rerender({ outcome: { tone: "ok", text: "Order opened." } });
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(document.querySelector(".lit-review-outcome")?.textContent).toBe("Order opened.");
+      act(() => { vi.advanceTimersByTime(4_998); });
+      expect(document.querySelector(".lit-review-outcome")).not.toBeNull();
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(document.querySelector(".lit-review-outcome")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps uncertain order outcomes visible for recovery", () => {
+    vi.useFakeTimers();
+    try {
+      renderTicket({ outcome: { tone: "warn", text: "Outcome unknown. Check Orders before retrying." } });
+      act(() => { vi.advanceTimersByTime(5_000); });
+      expect(document.querySelector(".lit-review-outcome")?.textContent).toContain("Outcome unknown");
+      expect(document.querySelector(".lit-review-outcome-timer")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps account context and order actions outside the scrolling field body", () => {
     renderTicket();
     const ticket = document.querySelector<HTMLFormElement>("form.lit-ticket");

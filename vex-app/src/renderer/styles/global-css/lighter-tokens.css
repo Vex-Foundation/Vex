@@ -22,6 +22,7 @@
   --lit-negative-volume: rgba(242, 109, 109, 0.3);
   --lit-negative-wash: color-mix(in srgb, var(--lit-negative) 12%, transparent);
   --lit-warning: var(--vex-alias-state-warn);
+  --lit-notice: #91b9ff;
   --lit-env-core: #20b7ae;
   --lit-env-rhc: #ccff00;
   --lit-environment-mark: var(--lit-env-core);
@@ -56,6 +57,7 @@
 .lit-desk[data-lighter-theme="celeris"],
 .lit-chat-frame[data-lighter-theme="celeris"] {
   color-scheme: light;
+  --lit-notice: #285b99;
   --lit-env-core: #007970;
   --lit-env-rhc: #427400;
   --lit-positive-volume: rgba(19, 112, 51, 0.3);
