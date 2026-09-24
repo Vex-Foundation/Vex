@@ -6,6 +6,7 @@ import {
   assertLighterFeeAllowance, lighterIntegratorFeesEqual, type LighterIntegratorFees,
 } from "@tools/lighter/fee-policy.js";
 import { resolveLighterReadOnlyAccountAuth } from "./read-account-auth.js";
+import { isLighterUnreachable } from "./before-send.js";
 
 export type LighterOrderFeeClient = Partial<Pick<LighterClient, "getAccount" | "getSystemConfig" | "getAccountLimits">>;
 
@@ -52,6 +53,11 @@ export async function resolveLighterOrderFees(input: ResolveLighterOrderFeesInpu
     // Existing funds remain accessible through ordinary explicit trade approval.
     // Never silently remove fees from an already approved fee-bearing order.
     if (reducing) return null;
+    // Not reaching Lighter says nothing about fee setup. Reporting it as missing
+    // setup told a trader who was offline "Lighter fee setup is required ...
+    // fetch failed" (2026-09-24), and would send the agent to a fee approval the
+    // account already has.
+    if (isLighterUnreachable(error)) throw error;
     throw new VexError(ErrorCodes.LIGHTER_INVALID_REQUEST,
       `Lighter fee setup is required before this trade. ${error instanceof Error ? error.message : "Live fee authorization could not be verified."}`,
       "Continue with lighter.fees.approve.prepare for this environment, then prepare the requested trade again after the user approves its fee card.");

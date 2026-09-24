@@ -7,6 +7,7 @@ import { estimateLighterOrderFee, lighterOrderFeeCriticalArgs, readLighterOrderF
 import { resolveLighterOrderFees, revalidateLighterOrderFees } from "@vex-agent/tools/protocols/lighter/order-fees.js";
 import { configureLighterReadOnlyAccountAuthResolver } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
 import { lighterTradeFeeEvidence } from "@vex-agent/tools/protocols/lighter/order-evidence.js";
+import { ErrorCodes, VexError } from "../../errors.js";
 import type { LighterAccount, LighterAccountLimitsResponse, LighterSystemConfigResponse, LighterTrade } from "@tools/lighter/types.js";
 
 const WALLET = `0x${"1".repeat(40)}`;
@@ -91,6 +92,21 @@ describe("native Lighter order fees", () => {
       code: 400, total: 1, accounts: [params.value === 99 ? collector : trader],
     }));
     await expect(resolveLighterOrderFees({ ...scope, client: provider })).rejects.toThrow("could not be verified");
+  });
+
+  it("passes an unreachable Lighter through instead of calling it missing fee setup", async () => {
+    // 2026-09-24, Wi-Fi off: an approved order read "Lighter fee setup is required
+    // before this trade. fetch failed", and the hint would have sent the agent to a
+    // fee approval the account already had.
+    vi.spyOn(policyModule, "getLighterFeePolicy").mockReturnValue(policy);
+    configureLighterReadOnlyAccountAuthResolver(async () => ({ accountIndex: 42, token: "test-read-auth" }));
+    const provider = client();
+    const offline = new VexError(ErrorCodes.LIGHTER_API_ERROR, "fetch failed", "Check network connectivity");
+    provider.getSystemConfig.mockRejectedValue(offline);
+
+    const failure = await resolveLighterOrderFees({ ...scope, client: provider }).then(() => null, (error: unknown) => error);
+
+    expect(failure).toBe(offline);
   });
 
   it("permits freshly disclosed no-fee exits but never drops an already approved fee", async () => {
