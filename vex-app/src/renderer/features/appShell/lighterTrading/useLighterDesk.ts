@@ -150,6 +150,7 @@ export function useLighterDesk() {
     prepareStage,
     deskOutcome,
     closingPositions,
+    cancellingOrders,
     prepareOnDesk,
     onApprovalResolved,
   } = useDeskLane({
@@ -438,6 +439,7 @@ export function useLighterDesk() {
     prepareStage,
     deskOutcome,
     closingPositions,
+    cancellingOrders,
     submitDraft,
     onApprovalResolved,
     skipCloseConfirm,

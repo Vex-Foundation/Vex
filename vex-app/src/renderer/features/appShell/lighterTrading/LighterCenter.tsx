@@ -425,6 +425,7 @@ function DeskBody({ desk, theme }: {
           activePriceDecimals={desk.market?.decimals.price ?? null}
           closeConfirmSkipped={desk.skipCloseConfirm}
           closingPositions={desk.closingPositions}
+          cancellingOrders={desk.cancellingOrders}
           actions={desk.accountActions}
         />
       </div>

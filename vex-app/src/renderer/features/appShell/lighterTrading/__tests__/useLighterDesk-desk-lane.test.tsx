@@ -160,6 +160,75 @@ describe("desk lane", () => {
     expect(result.current.deskOutcome).toEqual({ tone: "ok", text: "Position closed." });
   });
 
+  it("locks one cancel through approval until a fresh order list removes that order", async () => {
+    const order = { marketId: 7, orderId: "9001" } as LighterOpenOrderRow;
+    accountData.value = { ok: true, data: positionAccount(Date.now(), [], [order]) };
+    prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-1" } });
+    const { result, rerender } = renderDesk();
+
+    await act(async () => {
+      result.current.accountActions.onCancelOrder(order);
+      result.current.accountActions.onCancelOrder(order);
+    });
+    expect(prepareDeskAction).toHaveBeenCalledTimes(1);
+    expect(result.current.cancellingOrders.get("7:9001")).toBe("approval");
+
+    act(() => result.current.onApprovalResolved("approved", resolved({
+      id: "ap-1",
+      toolOutput: JSON.stringify({ source: "vex_lighter_order_cancel", status: "canceled" }),
+    })));
+    expect(result.current.cancellingOrders.get("7:9001")).toBe("checking");
+    accountData.value = { ok: true, data: positionAccount(Date.now() + 1_000, [], [order]) };
+    rerender();
+    expect(result.current.cancellingOrders.get("7:9001")).toBe("checking");
+
+    accountData.value = { ok: true, data: {
+      ...positionAccount(Date.now() + 1_500, [], []),
+      openOrdersTruncated: true,
+    } };
+    rerender();
+    expect(result.current.cancellingOrders.get("7:9001")).toBe("checking");
+
+    accountData.value = { ok: true, data: positionAccount(Date.now() + 2_000, [], []) };
+    rerender();
+    await waitFor(() => expect(result.current.cancellingOrders.has("7:9001")).toBe(false));
+    expect(result.current.deskOutcome).toEqual({ tone: "ok", text: "Order canceled." });
+  });
+
+  it("releases a rejected cancel but retains an uncertain cancel until provider evidence arrives", async () => {
+    const order = { marketId: 7, orderId: "9001" } as LighterOpenOrderRow;
+    accountData.value = { ok: true, data: positionAccount(Date.now(), [], [order]) };
+    prepareDeskAction.mockResolvedValueOnce({ ok: true, data: { kind: "enqueued", approvalId: "ap-1" } })
+      .mockResolvedValueOnce({ ok: true, data: { kind: "enqueued", approvalId: "ap-2" } });
+    const { result, rerender } = renderDesk();
+
+    await act(async () => { result.current.accountActions.onCancelOrder(order); });
+    act(() => result.current.onApprovalResolved("rejected", resolved({ id: "ap-1", status: "rejected" })));
+    expect(result.current.cancellingOrders.has("7:9001")).toBe(false);
+
+    await act(async () => { result.current.accountActions.onCancelOrder(order); });
+    act(() => result.current.onApprovalResolved("approved", resolved({ id: "ap-2", executionStatus: "indeterminate" })));
+    expect(result.current.cancellingOrders.get("7:9001")).toBe("uncertain");
+    accountData.value = { ok: true, data: positionAccount(Date.now() + 1_000, [], [order]) };
+    rerender();
+    expect(result.current.cancellingOrders.get("7:9001")).toBe("uncertain");
+    accountData.value = { ok: true, data: positionAccount(Date.now() + 2_000, [], []) };
+    rerender();
+    await waitFor(() => expect(result.current.cancellingOrders.has("7:9001")).toBe(false));
+    expect(result.current.deskOutcome?.text).toContain("Check Trade History for any fill");
+  });
+
+  it("unlocks a cancel when preparation is refused", async () => {
+    const order = { marketId: 7, orderId: "9001" } as LighterOpenOrderRow;
+    accountData.value = { ok: true, data: positionAccount(Date.now(), [], [order]) };
+    prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "refused", reason: "Order is no longer active." } });
+    const { result } = renderDesk();
+
+    await act(async () => { result.current.accountActions.onCancelOrder(order); });
+    expect(result.current.cancellingOrders.has("7:9001")).toBe(false);
+    expect(result.current.handoffError).toBe("Order is no longer active.");
+  });
+
   it("unlocks a rejected close and keeps a resting reduce-only limit tied to its position", async () => {
     accountData.value = { ok: true, data: positionAccount(Date.now()) };
     prepareDeskAction.mockResolvedValueOnce({ ok: true, data: { kind: "enqueued", approvalId: "ap-1" } })
@@ -596,9 +665,11 @@ describe("desk lane", () => {
     await act(async () => { result.current.accountActions.onCancelOrder({ marketId: 7, orderId: "9001" } as LighterOpenOrderRow); });
     expect(result.current.deskOutcome).toBeNull();
     act(() => { result.current.onApprovalResolved("approved", resolved({ id: "ap-3", executionStatus: "indeterminate" })); });
-    expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Outcome unknown. Open Orders below and refresh before retrying." });
+    expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Cancel outcome is uncertain. Wait for order status before retrying." });
 
     await act(async () => { result.current.accountActions.onCancelOrder({ marketId: 7, orderId: "9001" } as LighterOpenOrderRow); });
+    expect(prepareDeskAction).toHaveBeenCalledTimes(2);
+    await act(async () => { result.current.accountActions.onCancelOrder({ marketId: 7, orderId: "9002" } as LighterOpenOrderRow); });
     act(() => { result.current.onApprovalResolved("rejected", resolved({ id: "ap-3", status: "rejected", executionStatus: null })); });
     expect(result.current.deskOutcome).toBeNull();
     expect(funnelStep).toHaveBeenLastCalledWith({ step: "desk_approval_rejected", environment: "rhc" });

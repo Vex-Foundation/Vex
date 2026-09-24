@@ -8,7 +8,7 @@ import type {
 } from "@shared/schemas/lighter-trading.js";
 import { IconChevronDown, IconChevronUp } from "../../../components/icons/index.js";
 import { useLighterTradingAccount, useLighterTradingFills } from "../../../lib/api/lighter-trading.js";
-import { accountRisk, marginUsage, positionMetrics, positionProtection, type ClosePortion, type LighterOpenOrderRow, type LighterPositionRow, type PositionCloseStage } from "./account-model.js";
+import { accountRisk, marginUsage, positionMetrics, positionProtection, type ClosePortion, type LighterOpenOrderRow, type LighterPositionRow, type OrderCancelStage, type PositionCloseStage } from "./account-model.js";
 import { ClosePositionPopover } from "./ClosePositionPopover.js";
 import { NO_VALUE, formatDecimalString, formatNumber, formatPrice, formatRetrievedAt } from "./format.js";
 import { wholeLeverageDisplay } from "./leverage-display.js";
@@ -131,6 +131,7 @@ export function TradingBottomPanel({
   activePriceDecimals,
   closeConfirmSkipped,
   closingPositions,
+  cancellingOrders,
   actions,
 }: {
   readonly environment: LighterTradingEnvironment;
@@ -146,6 +147,7 @@ export function TradingBottomPanel({
   /** Market close sends without its approval card; the positions table says so. */
   readonly closeConfirmSkipped: boolean;
   readonly closingPositions: ReadonlyMap<string, PositionCloseStage>;
+  readonly cancellingOrders: ReadonlyMap<string, OrderCancelStage>;
   readonly actions: AccountActions;
 }): JSX.Element {
   const [tab, setTab] = useState<BottomTab>("positions");
@@ -254,7 +256,7 @@ export function TradingBottomPanel({
         ) : tab === "positions" ? (
           <PositionsTab account={account} activeMarketId={activeMarketId} activeMarkPrice={activeMarkPrice} activePriceDecimals={activePriceDecimals} closeConfirmSkipped={closeConfirmSkipped} closingPositions={closingPositions} actions={actions} />
         ) : tab === "orders" ? (
-          <OpenOrdersTab account={account} actions={actions} />
+          <OpenOrdersTab account={account} cancellingOrders={cancellingOrders} actions={actions} />
         ) : tab === "fills" ? (
           <FillsTab environment={environment} />
         ) : (
@@ -486,8 +488,9 @@ function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDec
   );
 }
 
-function OpenOrdersTab({ account, actions }: {
+function OpenOrdersTab({ account, cancellingOrders, actions }: {
   readonly account: LighterTradingAccount;
+  readonly cancellingOrders: ReadonlyMap<string, OrderCancelStage>;
   readonly actions: AccountActions;
 }): JSX.Element {
   if (!account.openOrdersAvailable) {
@@ -510,7 +513,7 @@ function OpenOrdersTab({ account, actions }: {
             Showing a partial active-order list (up to 200).
           </p>
         ) : null}
-        <button type="button" className="lit-cancel-all" onClick={() => actions.onCancelAllOrders(account.openOrders)}>
+        <button type="button" className="lit-cancel-all" disabled={cancellingOrders.size > 0} onClick={() => actions.onCancelAllOrders(account.openOrders)}>
           Cancel all
         </button>
       </div>
@@ -523,6 +526,11 @@ function OpenOrdersTab({ account, actions }: {
         </div>
         <div className="lit-account-rows" role="rowgroup">
           {account.openOrders.map((order) => {
+            const cancelStage = cancellingOrders.get(`${order.marketId}:${order.orderId}`) ?? null;
+            const cancelLabel = cancelStage === "preparing" ? "Preparing cancellation"
+              : cancelStage === "approval" ? "Awaiting approval"
+                : cancelStage === "uncertain" ? "Checking cancellation status"
+                  : "Confirming cancellation";
             const tif = timeInForceLabel(order.timeInForce);
             const expiry = orderTimestampDetails(order.orderExpiry);
             const triggeredAt = orderTimestampDetails(order.triggeredAt);
@@ -534,10 +542,18 @@ function OpenOrdersTab({ account, actions }: {
                 className="lit-account-row"
                 role="row"
                 key={`${account.environment}:${account.accountIndex}:${order.marketId}:${order.orderId}`}
+                data-cancel-pending={cancelStage === null ? undefined : ""}
+                aria-busy={cancelStage !== null}
               >
                 <span className="lit-order-cell" role="cell">
                   <b>{order.symbol}</b>
                   <small title={identityTitle}>Order {shortOrderId(order.orderId)}</small>
+                  {cancelStage !== null ? (
+                    <small className="lit-order-cancel-status" role="status">
+                      <span className="lit-order-cancel-spinner" aria-hidden="true" />
+                      {cancelLabel}
+                    </small>
+                  ) : null}
                 </span>
                 <span role="cell" data-tone={order.side === "buy" ? "positive" : "negative"}>
                   {order.side === "buy" ? "Buy" : "Sell"}
@@ -567,7 +583,7 @@ function OpenOrdersTab({ account, actions }: {
                   {expiry === null ? null : <time dateTime={expiry.iso}>Expires {expiry.label}</time>}
                 </span>
                 <span role="cell" className="lit-row-actions">
-                  <button type="button" data-danger onClick={() => actions.onCancelOrder(order)} aria-label={`Cancel ${order.symbol} order ${shortOrderId(order.orderId)}`}>
+                  <button type="button" data-danger disabled={cancelStage !== null} onClick={() => actions.onCancelOrder(order)} aria-label={`Cancel ${order.symbol} order ${shortOrderId(order.orderId)}`}>
                     Cancel
                   </button>
                 </span>

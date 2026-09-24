@@ -21,7 +21,7 @@ import {
   type DeskOrderExecution,
 } from "./desk-fill-outcome.js";
 import { isPositiveDecimal } from "./decimal.js";
-import type { LighterPositionRow, PositionCloseStage } from "./account-model.js";
+import type { LighterPositionRow, OrderCancelStage, PositionCloseStage } from "./account-model.js";
 import { recordFunnelStep } from "./funnel.js";
 import {
   protectionPrefill,
@@ -41,11 +41,6 @@ const APPROVALS_REFETCH_INTERVAL_MS = 60_000;
  */
 type DeskLaneAction = Extract<LighterDeskAction, { kind: "order" | "close" | "cancel" }>;
 
-const SENT_TEXT = {
-  order: "Order sent.",
-  cancel: "Cancel sent.",
-} as const;
-
 function closeDisposition(output: string | undefined): "closed" | "partially_closed" | "not_closed" | "sequencer_pending" | "ambiguous" | null {
   if (output === undefined) return null;
   try {
@@ -55,6 +50,19 @@ function closeDisposition(output: string | undefined): "closed" | "partially_clo
     const status = parsed.status;
     return status === "closed" || status === "partially_closed" || status === "not_closed"
       || status === "sequencer_pending" || status === "ambiguous" ? status : null;
+  } catch {
+    return null;
+  }
+}
+
+function cancelDisposition(output: string | undefined): "canceled" | "sequencer_pending" | "ambiguous" | null {
+  if (output === undefined) return null;
+  try {
+    const parsed: unknown = JSON.parse(output);
+    if (parsed === null || typeof parsed !== "object" || !("source" in parsed) || parsed.source !== "vex_lighter_order_cancel") return null;
+    if (!("status" in parsed)) return null;
+    return parsed.status === "canceled" || parsed.status === "sequencer_pending" || parsed.status === "ambiguous"
+      ? parsed.status : null;
   } catch {
     return null;
   }
@@ -87,6 +95,7 @@ interface PendingDeskAction {
   readonly scope: DeskScope;
   readonly symbol: string | null;
   readonly closeKey: string | null;
+  readonly cancelKey: string | null;
 }
 
 interface PendingClose {
@@ -102,6 +111,17 @@ interface PendingClose {
   readonly orderSeen: boolean;
 }
 
+interface PendingCancel {
+  readonly sessionId: string;
+  readonly environment: LighterTradingEnvironment;
+  readonly accountIndex: number | null;
+  readonly marketId: number;
+  readonly orderId: string;
+  /** Refreshed when the approval resolves, so an earlier snapshot cannot settle it. */
+  readonly startedAt: number;
+  readonly stage: OrderCancelStage;
+}
+
 function closeRowKey(marketId: number, side: LighterPositionRow["side"]): string {
   return `${marketId}-${side}`;
 }
@@ -109,6 +129,15 @@ function closeRowKey(marketId: number, side: LighterPositionRow["side"]): string
 function closeAttemptKey(input: Pick<PendingClose, "sessionId" | "environment" | "accountIndex" | "marketId" | "side">): string {
   const accountScope = input.accountIndex === null ? `session:${input.sessionId}` : `account:${input.accountIndex}`;
   return `${input.environment}:${accountScope}:${closeRowKey(input.marketId, input.side)}`;
+}
+
+function cancelRowKey(marketId: number, orderId: string): string {
+  return `${marketId}:${orderId}`;
+}
+
+function cancelAttemptKey(input: Pick<PendingCancel, "sessionId" | "environment" | "accountIndex" | "marketId" | "orderId">): string {
+  const accountScope = input.accountIndex === null ? `session:${input.sessionId}` : `account:${input.accountIndex}`;
+  return `${input.environment}:${accountScope}:${cancelRowKey(input.marketId, input.orderId)}`;
 }
 
 interface AwaitedProviderOrder {
@@ -185,6 +214,8 @@ export function useDeskLane({
   const pendingDesk = useRef<Map<string, PendingDeskAction>>(new Map());
   const closeAttempts = useRef<Map<string, PendingClose>>(new Map());
   const [pendingCloses, setPendingCloses] = useState<ReadonlyMap<string, PendingClose>>(() => new Map());
+  const cancelAttempts = useRef<Map<string, PendingCancel>>(new Map());
+  const [pendingCancels, setPendingCancels] = useState<ReadonlyMap<string, PendingCancel>>(() => new Map());
   const updateClose = (key: string, update: PendingClose | null): void => {
     const next = new Map(closeAttempts.current);
     if (update === null) next.delete(key);
@@ -199,6 +230,21 @@ export function useDeskLane({
   };
   const clearClose = (key: string | null): void => {
     if (key !== null && closeAttempts.current.has(key)) updateClose(key, null);
+  };
+  const updateCancel = (key: string, update: PendingCancel | null): void => {
+    const next = new Map(cancelAttempts.current);
+    if (update === null) next.delete(key);
+    else next.set(key, update);
+    cancelAttempts.current = next;
+    setPendingCancels(next);
+  };
+  const setCancelStage = (key: string | null, stage: OrderCancelStage): void => {
+    if (key === null) return;
+    const current = cancelAttempts.current.get(key);
+    if (current !== undefined) updateCancel(key, { ...current, stage, startedAt: Date.now() });
+  };
+  const clearCancel = (key: string | null): void => {
+    if (key !== null && cancelAttempts.current.has(key)) updateCancel(key, null);
   };
   const currentScope = useRef({ sessionId: activeSessionId, environment, marketId });
   currentScope.current = { sessionId: activeSessionId, environment, marketId };
@@ -260,6 +306,24 @@ export function useDeskLane({
     }
   }, [account, activeSessionId, environment]);
 
+  // A successful cancel response is not enough to remove a row from a cached
+  // account view. Only a newer, complete provider order list can release it.
+  useEffect(() => {
+    if (account === null || account.status === "unavailable" || activeSessionId === null
+      || !account.openOrdersAvailable || account.openOrdersTruncated) return;
+    for (const [key, cancel] of cancelAttempts.current) {
+      if ((cancel.accountIndex === null && cancel.sessionId !== activeSessionId)
+        || cancel.environment !== environment || cancel.accountIndex !== account.accountIndex
+        || cancel.stage === "preparing" || cancel.stage === "approval"
+        || account.retrievedAt <= cancel.startedAt) continue;
+      if (account.openOrders.some((order) => order.marketId === cancel.marketId && order.orderId === cancel.orderId)) continue;
+      updateCancel(key, null);
+      setDeskOutcome(cancel.stage === "checking"
+        ? { tone: "ok", text: "Order canceled." }
+        : { tone: "warn", text: "Order is no longer open. Check Trade History for any fill." });
+    }
+  }, [account, activeSessionId, environment]);
+
   const closingPositions = useMemo(() => {
     const rows = new Map<string, PositionCloseStage>();
     if (activeSessionId === null || account === null || account.status === "unavailable") return rows;
@@ -271,6 +335,18 @@ export function useDeskLane({
     }
     return rows;
   }, [account, activeSessionId, environment, pendingCloses]);
+
+  const cancellingOrders = useMemo(() => {
+    const rows = new Map<string, OrderCancelStage>();
+    if (activeSessionId === null || account === null || account.status === "unavailable") return rows;
+    for (const cancel of pendingCancels.values()) {
+      if ((cancel.accountIndex !== null || cancel.sessionId === activeSessionId)
+        && cancel.environment === environment && cancel.accountIndex === account.accountIndex) {
+        rows.set(cancelRowKey(cancel.marketId, cancel.orderId), cancel.stage);
+      }
+    }
+    return rows;
+  }, [account, activeSessionId, environment, pendingCancels]);
 
   const finishFilledOrder = useCallback((input: {
     readonly draft: TradeDraft | null;
@@ -358,11 +434,15 @@ export function useDeskLane({
     pendingDesk.current.delete(result.id);
     if (decision === "rejected") {
       clearClose(pending.closeKey);
+      clearCancel(pending.cancelKey);
       recordFunnelStep("desk_approval_rejected", pending.scope.environment);
       return;
     }
     recordFunnelStep("desk_approve", pending.scope.environment);
-    const scopeIsCurrent = sameDeskScope(pending.scope, currentScope.current);
+    const scopeIsCurrent = pending.action.kind === "cancel"
+      ? pending.scope.sessionId === currentScope.current.sessionId
+        && pending.scope.environment === currentScope.current.environment
+      : sameDeskScope(pending.scope, currentScope.current);
     if (result.executionStatus === "succeeded") {
       if (pending.action.kind !== "order") {
         if (pending.action.kind === "close") {
@@ -375,9 +455,17 @@ export function useDeskLane({
           setCloseStage(pending.closeKey, disposition === "sequencer_pending" || disposition === "ambiguous" || disposition === null
             ? "uncertain" : "checking");
           void queryClient.invalidateQueries({ queryKey: ["lighterTrading", "account", pending.scope.environment] });
+          return;
         }
-        if (!scopeIsCurrent || pending.action.kind === "close") return;
-        setDeskOutcome({ tone: "ok", text: SENT_TEXT[pending.action.kind] });
+        if (pending.action.kind === "cancel") {
+          const disposition = cancelDisposition(result.toolOutput);
+          setCancelStage(pending.cancelKey, disposition === "canceled" ? "checking" : "uncertain");
+          void queryClient.invalidateQueries({ queryKey: ["lighterTrading", "account", pending.scope.environment] });
+          if (scopeIsCurrent) setDeskOutcome(disposition === "canceled"
+            ? { tone: "warn", text: "Cancel confirmed. Refreshing the open order list…" }
+            : { tone: "warn", text: "Cancel outcome is uncertain. Wait for order status before retrying." });
+          return;
+        }
         return;
       }
       void Promise.all([
@@ -395,7 +483,7 @@ export function useDeskLane({
         if (!scopeIsCurrent) return;
         setDeskOutcome(hasAttachedProtection(pending.draft)
           ? { tone: "warn", text: "Order submitted, but its fill state could not be verified. Open Orders below before adding protection or retrying." }
-          : { tone: "ok", text: SENT_TEXT.order });
+          : { tone: "ok", text: "Order sent." });
         return;
       }
       if (execution.state === "ambiguous") {
@@ -496,13 +584,20 @@ export function useDeskLane({
     }
     if (result.executionStatus === "indeterminate") {
       setCloseStage(pending.closeKey, "uncertain");
+      setCancelStage(pending.cancelKey, "uncertain");
+      if (pending.cancelKey !== null) {
+        void queryClient.invalidateQueries({ queryKey: ["lighterTrading", "account", pending.scope.environment] });
+      }
       if (pending.action.kind === "order") recordFunnelStep("desk_order_unknown", pending.scope.environment);
       if (!scopeIsCurrent) return;
-      setDeskOutcome({ tone: "warn", text: "Outcome unknown. Open Orders below and refresh before retrying." });
+      setDeskOutcome({ tone: "warn", text: pending.action.kind === "cancel"
+        ? "Cancel outcome is uncertain. Wait for order status before retrying."
+        : "Outcome unknown. Open Orders below and refresh before retrying." });
       return;
     }
     if (pending.action.kind === "order") recordFunnelStep("desk_order_rejected", pending.scope.environment);
     clearClose(pending.closeKey);
+    clearCancel(pending.cancelKey);
     if (!scopeIsCurrent) return;
     setDeskOutcome({ tone: "error", text: deskFailureMessage(result.toolOutput ?? result.message) });
   };
@@ -517,6 +612,7 @@ export function useDeskLane({
       const pending = pendingDesk.current.get(approvalId);
       pendingDesk.current.delete(approvalId);
       clearClose(pending?.closeKey ?? null);
+      clearCancel(pending?.cancelKey ?? null);
       setHandoffError(result.error.message);
       return;
     }
@@ -544,6 +640,20 @@ export function useDeskLane({
     if (closeKey !== null) {
       if (closeAttempts.current.has(closeKey)) return;
       updateClose(closeKey, close);
+    }
+    const cancel = action.kind !== "cancel" ? null : {
+      sessionId: activeSessionId,
+      environment,
+      accountIndex: account?.accountIndex ?? null,
+      marketId: action.marketId,
+      orderId: action.orderId,
+      startedAt: Date.now(),
+      stage: "preparing" as const,
+    };
+    const cancelKey = cancel === null ? null : cancelAttemptKey(cancel);
+    if (cancelKey !== null) {
+      if (cancelAttempts.current.has(cancelKey)) return;
+      updateCancel(cancelKey, cancel);
     }
     setHandoffError(null);
     setDeskOutcome(null);
@@ -577,9 +687,11 @@ export function useDeskLane({
         scope,
         symbol: action.marketId === marketId ? marketSymbol : null,
         closeKey,
+        cancelKey,
       });
       enqueued = true;
       setCloseStage(closeKey, "approval");
+      setCancelStage(cancelKey, "approval");
       recordFunnelStep("desk_card", environment);
       if (action.kind === "close" && skipCloseConfirm) {
         await approveOnDesk(activeSessionId, result.data.approvalId);
@@ -590,6 +702,7 @@ export function useDeskLane({
       setHandoffError(error instanceof Error ? error.message : "Could not prepare the Lighter action.");
     } finally {
       if (!enqueued) clearClose(closeKey);
+      if (!enqueued) clearCancel(cancelKey);
       offProgress?.();
       setPrepareStage(null);
       setSubmitting(false);
@@ -609,6 +722,7 @@ export function useDeskLane({
     prepareStage,
     deskOutcome,
     closingPositions,
+    cancellingOrders,
     prepareOnDesk,
     onApprovalResolved,
   };

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LighterTradingAccount } from "@shared/schemas/lighter-trading.js";
-import type { PositionCloseStage } from "../account-model.js";
+import type { OrderCancelStage, PositionCloseStage } from "../account-model.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import { TradingBottomPanel } from "../AccountPanel.js";
 import { formatRetrievedAt } from "../format.js";
@@ -251,6 +251,26 @@ describe("TradingBottomPanel", () => {
     expect(screen.queryByRole("dialog", { name: "Close BTC long" })).toBeNull();
     expect(mocks.actions.onClosePosition).not.toHaveBeenCalled();
     expect(screen.getByRole("row", { busy: true })).toBeTruthy();
+  });
+
+  it("dims only the cancelling order and prevents another cancel click", () => {
+    const account: LighterTradingAccount = {
+      ...EMPTY_ACCOUNT,
+      openOrders: [limitOrder(), limitOrder({ orderId: "order-2" })],
+    };
+    mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: account } }));
+    render(panel({ cancellingOrders: new Map([["1:order-1", "checking"]]) }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Open Orders ?\(2\)$/ }));
+
+    const pending = screen.getByRole("button", { name: "Cancel BTC order order-1" }) as HTMLButtonElement;
+    const other = screen.getByRole("button", { name: "Cancel BTC order order-2" }) as HTMLButtonElement;
+    expect(pending.disabled).toBe(true);
+    expect(other.disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Cancel all" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Confirming cancellation")).toBeTruthy();
+    expect(pending.closest('[role="row"]')?.hasAttribute("data-cancel-pending")).toBe(true);
+    fireEvent.click(pending);
+    expect(mocks.actions.onCancelOrder).not.toHaveBeenCalled();
   });
 
   it("reads fills only on its own tab and renders them from the account's side", () => {
@@ -580,7 +600,7 @@ function renderPanel(): ReturnType<typeof render> {
   return render(panel());
 }
 
-function panel({ open = true, collapsed = false, closeConfirmSkipped = false, closingPositions = new Map() }: { readonly open?: boolean; readonly collapsed?: boolean; readonly closeConfirmSkipped?: boolean; readonly closingPositions?: ReadonlyMap<string, PositionCloseStage> } = {}) {
+function panel({ open = true, collapsed = false, closeConfirmSkipped = false, closingPositions = new Map(), cancellingOrders = new Map() }: { readonly open?: boolean; readonly collapsed?: boolean; readonly closeConfirmSkipped?: boolean; readonly closingPositions?: ReadonlyMap<string, PositionCloseStage>; readonly cancellingOrders?: ReadonlyMap<string, OrderCancelStage> } = {}) {
   return (
     <TradingBottomPanel
       environment="rhc"
@@ -592,6 +612,7 @@ function panel({ open = true, collapsed = false, closeConfirmSkipped = false, cl
       activePriceDecimals={1}
       closeConfirmSkipped={closeConfirmSkipped}
       closingPositions={closingPositions}
+      cancellingOrders={cancellingOrders}
       actions={mocks.actions}
     />
   );
