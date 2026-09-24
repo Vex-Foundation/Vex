@@ -200,7 +200,17 @@ function unwrapApprovalPreparationFailure(message: string): string {
   return coded?.[1] ?? inner;
 }
 
+/**
+ * Preparing a card only reads from Lighter. When those reads could not reach
+ * it (a timeout, a network failure or a 5xx), nothing was prepared or sent;
+ * the ticket says so instead of showing "LIGHTER_API_ERROR: ... fetch failed".
+ */
+const PREPARE_UNREACHABLE = /^Lighter [a-z -]+ unavailable \((?:LIGHTER_TIMEOUT|LIGHTER_API_ERROR)\b/;
+
 function deskFailureMessage(rawMessage: string): string {
+  if (PREPARE_UNREACHABLE.test(rawMessage.trim())) {
+    return "Couldn't reach Lighter, so nothing was prepared or sent. Check your connection and try again.";
+  }
   const message = unwrapApprovalPreparationFailure(rawMessage);
   // Execution has already tried to clear the earlier action by the time this
   // arrives, and the background repair keeps trying: nothing is asked of the

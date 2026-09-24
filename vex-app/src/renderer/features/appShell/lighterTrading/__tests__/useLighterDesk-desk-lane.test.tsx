@@ -277,6 +277,20 @@ describe("desk lane", () => {
     expect(result.current.handoffError).toBe("Order is no longer active.");
   });
 
+  it("says plainly that nothing was prepared when Lighter could not be reached", async () => {
+    // 2026-09-24, Wi-Fi off: the ticket read "Lighter order preview unavailable (LIGHTER_API_ERROR: ... fetch failed)".
+    const order = { marketId: 7, orderId: "9003" } as LighterOpenOrderRow;
+    accountData.value = { ok: true, data: positionAccount(Date.now(), [], [order]) };
+    prepareDeskAction.mockResolvedValue({
+      ok: true,
+      data: { kind: "refused", reason: "Lighter order preview unavailable (LIGHTER_API_ERROR: Check network connectivity - fetch failed)" },
+    });
+    const { result } = renderDesk();
+
+    await act(async () => { result.current.accountActions.onCancelOrder(order); });
+    expect(result.current.handoffError).toBe("Couldn't reach Lighter, so nothing was prepared or sent. Check your connection and try again.");
+  });
+
   it("shows a refusal at approval time without the agent lane's wrapper and error code", async () => {
     // Account 31824, 2026-09-24: the margin check's refusal reached the ticket wrapped.
     const refusal = "Lighter would cancel this BTC order with no fill: it needs about 1.135142 USDG, but account 31824 has 0.103463 USDG available. Nothing was signed. Even Lighter's minimum of 0.00020 BTC does not fit. Add margin first.";
