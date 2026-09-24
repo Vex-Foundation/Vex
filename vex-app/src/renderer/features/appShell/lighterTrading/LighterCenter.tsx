@@ -82,6 +82,7 @@ export function LighterCenter({ zenMode, onOpenZenAssistant }: {
           snapshot={desk.snapshot}
           liveStats={desk.publicMarketStream.stats}
           streamStatus={desk.publicMarketStream.statsStatus}
+          onReload={desk.reloadMarketData}
           streamReceivedAt={desk.publicMarketStream.statsReceivedAt}
         />
         {/* The shell strip's notices/approvals/export land here; see shellStripSlot.ts. */}

@@ -456,7 +456,7 @@ describe("Lighter public market stream", () => {
     h.supervisor.stop();
   });
 
-  it("stops retrying after the restart budget and reports the market unavailable", async () => {
+  it("stops retrying after the restart budget, and rearms only for a new subscriber", async () => {
     const h = makeHarness();
     const socket = await connect(h);
     h.events.length = 0;
@@ -482,8 +482,14 @@ describe("Lighter public market stream", () => {
     }));
     expect(h.events.at(-1)).toMatchObject({ kind: "status", status: "unavailable" });
 
-    // A later subscriber is told the truth instead of a "connecting" that will
-    // never resolve, and no new socket is opened for it.
+    // Nothing reconnects on a timer once the budget is spent...
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(h.sockets).toHaveLength(LIGHTER_PUBLIC_MARKET_MAX_RECONNECT_ATTEMPTS);
+
+    // ...but a new subscriber is a deliberate ask for this market (the desk's
+    // reload, a market switch). Reporting "unavailable" to it left the desk
+    // dead after the network came back; the budget is rebuilt and a socket
+    // opens at once.
     h.supervisor.subscribe(
       52,
       {
@@ -494,9 +500,9 @@ describe("Lighter public market stream", () => {
       },
       (event) => h.events.push(event),
     );
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(h.events.at(-1)).toMatchObject({ kind: "status", status: "unavailable" });
-    expect(h.sockets).toHaveLength(LIGHTER_PUBLIC_MARKET_MAX_RECONNECT_ATTEMPTS);
+    expect(h.events.at(-1)).toMatchObject({ kind: "status", status: "reconnecting" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.sockets).toHaveLength(LIGHTER_PUBLIC_MARKET_MAX_RECONNECT_ATTEMPTS + 1);
     h.supervisor.stop();
   });
 });

@@ -42,6 +42,37 @@ describe("MarketBar", () => {
     expect(onSelectSection).toHaveBeenCalledWith("spot");
   });
 
+  it("offers a reload next to the time once the market is not live", () => {
+    // 2026-09-24: after the Wi-Fi came back the header stayed "Unavailable";
+    // the public stream gives up after about two minutes and never rearms.
+    const onReload = vi.fn();
+    const bar = (streamStatus: "live" | "unavailable") => (
+      <MarketBar
+        environment="rhc"
+        market={market}
+        marketPickerOpen={false}
+        onOpenMarketPicker={vi.fn()}
+        onSelectSection={vi.fn()}
+        snapshot={null}
+        liveStats={null}
+        streamStatus={streamStatus}
+        streamReceivedAt={1_790_000_000_000}
+        onReload={onReload}
+      />
+    );
+    const { rerender } = render(bar("unavailable"));
+
+    const reload = screen.getByRole("button", { name: "Reload market data from Lighter" });
+    expect(screen.getByRole("status").textContent).toContain("Unavailable");
+    // The reload sits between the status and the time it was last updated.
+    expect(reload.nextElementSibling?.textContent).toMatch(/\d/);
+    fireEvent.click(reload);
+    expect(onReload).toHaveBeenCalledTimes(1);
+
+    rerender(bar("live"));
+    expect(screen.queryByRole("button", { name: "Reload market data from Lighter" })).toBeNull();
+  });
+
   it("keeps environment switching in the picker and shows only the selected context", () => {
     const onOpenMarketPicker = vi.fn();
     render(

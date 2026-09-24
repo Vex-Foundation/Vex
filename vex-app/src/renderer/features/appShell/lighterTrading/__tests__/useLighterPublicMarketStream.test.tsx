@@ -63,6 +63,30 @@ beforeEach(() => {
 });
 
 describe("useLighterPublicMarketStream", () => {
+  it("replaces its subscription when the desk asks for a reload", async () => {
+    const { rerender, unmount } = renderHook(
+      ({ reloadKey }: { reloadKey: number }) => useLighterPublicMarketStream({
+        enabled: true,
+        environment: "rhc",
+        marketId: 1,
+        marketType: "perp",
+        restSnapshot,
+        reloadKey,
+      }),
+      { initialProps: { reloadKey: 0 } },
+    );
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+    const first = requireValue(start.mock.calls[0])[0].subscriptionId;
+
+    rerender({ reloadKey: 1 });
+
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(2));
+    expect(stop).toHaveBeenCalledWith({ subscriptionId: first });
+    expect(requireValue(start.mock.calls[1])[0].subscriptionId).not.toBe(first);
+    unmount();
+  });
+
+
   it("scopes live events to one market and keeps independent surface freshness", async () => {
     const { result, unmount } = renderHook(() => useLighterPublicMarketStream({
       enabled: true,

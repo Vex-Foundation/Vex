@@ -166,10 +166,14 @@ export class LighterPublicMarketSupervisor {
       this.emitStatusTo(subscription, watcher, "live");
       this.emitCurrentTo(subscription, watcher);
     } else if (watcher.reconnect.givenUp) {
-      // Recovery for this market is already exhausted. Report the terminal
-      // state to the new subscriber instead of silently showing "connecting"
-      // for a watcher that will never reconnect on its own.
-      this.emitStatusTo(subscription, watcher, "unavailable");
+      // Recovery for this market was exhausted, but a new subscriber is a
+      // deliberate ask for it right now: opening the desk, switching markets,
+      // or the header's reload. Rebuild the budget and connect at once;
+      // reporting "unavailable" left the desk dead after the network came back
+      // (2026-09-24), since this watcher never rearms on its own.
+      watcher.reconnect.forceRearm();
+      this.emitStatus(watcher, "reconnecting");
+      this.scheduleConnect(watcher, 0);
     } else {
       this.emitStatusTo(subscription, watcher, watcher.socket === null ? "connecting" : "reconnecting");
       this.scheduleConnect(watcher, 0);
@@ -221,8 +225,8 @@ export class LighterPublicMarketSupervisor {
         // through the `unavailable` status; the reason and the attempt count
         // stay in the diagnostic, because the shared status event carries no
         // reason field. Unlike the candle and order streams, this watcher
-        // never auto-rearms: recovery stays exhausted until something
-        // external (a new subscriber, dropping the last one) rebuilds it.
+        // never auto-rearms on a timer: a new subscriber (the desk's reload,
+        // a market switch) rearms it, or dropping the last one rebuilds it.
         onGiveUp: (attempts, reason) => {
           this.deps.diagnostic("lighter.public_market.recovery_exhausted", {
             ...targetDetail(watcher.target),

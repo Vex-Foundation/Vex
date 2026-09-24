@@ -239,6 +239,30 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
 .lit-live-status[data-status="unavailable"] { color: var(--lit-negative); }
 .lit-live-status[data-status="stopped"] { color: var(--lit-ink-muted); }
 
+/* Status text and the dot stay together; the reload sits between the label and the time. */
+.lit-live-status > [role="status"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lit-live-reload {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.lit-live-reload:hover { opacity: 1; background: color-mix(in srgb, currentColor 14%, transparent); }
+.lit-live-reload:focus-visible { outline: 1px solid currentColor; outline-offset: 1px; }
+
 .lit-live-dot { color: var(--lit-warning); }
 .lit-live-dot[data-status="live"] { color: var(--lit-positive); }
 .lit-live-dot[data-status="unavailable"] { color: var(--lit-negative); }

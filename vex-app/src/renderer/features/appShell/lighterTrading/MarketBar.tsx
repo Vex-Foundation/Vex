@@ -39,6 +39,7 @@ export function MarketBar({
   liveStats,
   streamStatus,
   streamReceivedAt,
+  onReload,
 }: {
   readonly environment: LighterTradingEnvironment;
   readonly market: LighterTradingMarket | null;
@@ -49,6 +50,8 @@ export function MarketBar({
   readonly liveStats: LighterTradingPublicStatsEvent["stats"] | null;
   readonly streamStatus: LighterTradingCandleConnectionStatus;
   readonly streamReceivedAt: number | null;
+  /** Rebuilds the market streams and re-reads the desk's Lighter data; offered whenever it is not live. */
+  readonly onReload?: () => void;
 }): JSX.Element {
   const change = liveStats?.daily.priceChange ?? snapshot?.detail.daily.priceChange ?? null;
   const symbols = market === null ? null : marketSymbols(market.symbol, market.marketType);
@@ -164,12 +167,25 @@ export function MarketBar({
       <span
         className="lit-live-status"
         data-status={streamStatus}
-        role="status"
-        aria-live="polite"
         title={statsAsOf === null ? undefined : `Updated ${formatRetrievedAt(statsAsOf)}`}
       >
-        <i aria-hidden="true" /> {streamStatusLabel(streamStatus, market?.symbol)}
-        {statsAsOf === null || streamStatus === "live" ? "" : ` · ${formatRetrievedAt(statsAsOf)}`}
+        <span role="status" aria-live="polite">
+          <i aria-hidden="true" /> {streamStatusLabel(streamStatus, market?.symbol)}
+        </span>
+        {streamStatus === "live" ? null : (
+          <>
+            {statsAsOf === null && onReload === undefined ? null : <span aria-hidden="true">·</span>}
+            {onReload === undefined ? null : (
+              <button type="button" className="lit-live-reload" onClick={onReload} aria-label="Reload market data from Lighter" title="Reload from Lighter">
+                <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89" />
+                  <path d="M13.5 2.5v3.5H10" />
+                </svg>
+              </button>
+            )}
+            {statsAsOf === null ? null : <span>{formatRetrievedAt(statsAsOf)}</span>}
+          </>
+        )}
       </span>
     </section>
   );
