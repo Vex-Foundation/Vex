@@ -178,7 +178,23 @@ function canceledOrderMessage(order: DeskOrderExecution): string {
   return `${orderLabel(order.orderId)} was canceled with no fill.${reason} This order did not open a position. Check Positions and Trade History before placing another order.`;
 }
 
-function deskFailureMessage(message: string): string {
+/**
+ * The refusal itself, without the plumbing the agent lane wraps around it: a
+ * margin or capital refusal at approval time reached the ticket as "Lighter
+ * order preview was created, but its approval card could not be prepared
+ * (INSUFFICIENT_BALANCE - ...)".
+ */
+function unwrapApprovalPreparationFailure(message: string): string {
+  const wrapped = /^Lighter order preview was created, but its approval card could not be prepared \((.*)\)$/s.exec(message.trim());
+  if (wrapped === null) return message;
+  const inner = wrapped[1] ?? "";
+  // The agent's failure text leads with the error code: "CODE - detail" or "CODE: hint - detail".
+  const coded = /^[A-Z][A-Z0-9_]+(?::[^\n]*?)? - (.+)$/s.exec(inner);
+  return coded?.[1] ?? inner;
+}
+
+function deskFailureMessage(rawMessage: string): string {
+  const message = unwrapApprovalPreparationFailure(rawMessage);
   // Execution has already tried to clear the earlier action by the time this
   // arrives, and the background repair keeps trying: nothing is asked of the
   // trader but a later retry.

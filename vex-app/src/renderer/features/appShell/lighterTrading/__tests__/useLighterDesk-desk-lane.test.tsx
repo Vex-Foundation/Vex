@@ -229,6 +229,24 @@ describe("desk lane", () => {
     expect(result.current.handoffError).toBe("Order is no longer active.");
   });
 
+  it("shows a refusal at approval time without the agent lane's wrapper and error code", async () => {
+    // Account 31824, 2026-09-24: the margin check's refusal reached the ticket wrapped.
+    const refusal = "Lighter would cancel this BTC order with no fill: it needs about 1.135142 USDG, but account 31824 has 0.103463 USDG available. Nothing was signed. Even Lighter's minimum of 0.00020 BTC does not fit. Add margin first.";
+    const order = { marketId: 7, orderId: "9002" } as LighterOpenOrderRow;
+    accountData.value = { ok: true, data: positionAccount(Date.now(), [], [order]) };
+    prepareDeskAction.mockResolvedValue({
+      ok: true,
+      data: {
+        kind: "refused",
+        reason: `Lighter order preview was created, but its approval card could not be prepared (INSUFFICIENT_BALANCE - ${refusal})`,
+      },
+    });
+    const { result } = renderDesk();
+
+    await act(async () => { result.current.accountActions.onCancelOrder(order); });
+    expect(result.current.handoffError).toBe(refusal);
+  });
+
   it("unlocks a rejected close and keeps a resting reduce-only limit tied to its position", async () => {
     accountData.value = { ok: true, data: positionAccount(Date.now()) };
     prepareDeskAction.mockResolvedValueOnce({ ok: true, data: { kind: "enqueued", approvalId: "ap-1" } })
