@@ -35,11 +35,22 @@ import { approvalsKeys } from "./queryKeys.js";
 
 const STALE_MS = 3_000;
 
+/**
+ * Approvals live in the local database behind IPC; nothing here needs the
+ * internet. TanStack's default "online" mode paused them whenever macOS
+ * reported the Wi-Fi off (2026-09-24): a desk card that had already failed
+ * stayed on screen for eight minutes, and an Approve clicked offline would
+ * wait, then fire on its own once the connection came back. Main decides what
+ * needs the network, and fails fast and plainly when it cannot reach it.
+ */
+const LOCAL_IPC = "always" as const;
+
 function pendingOptions(sessionId: string) {
   return queryOptions({
     queryKey: approvalsKeys.pending(sessionId),
     queryFn: () => window.vex.approvals.listPending({ sessionId }),
     staleTime: STALE_MS,
+    networkMode: LOCAL_IPC,
     enabled: sessionId.length > 0,
   });
 }
@@ -49,6 +60,7 @@ function detailOptions(id: string) {
     queryKey: approvalsKeys.detail(id),
     queryFn: () => window.vex.approvals.get({ id }),
     staleTime: STALE_MS,
+    networkMode: LOCAL_IPC,
     enabled: id.length > 0,
   });
 }
@@ -59,6 +71,7 @@ function historyOptions(sessionId: string, limit: number) {
     queryFn: () =>
       window.vex.approvals.getHistory({ sessionId, limit }),
     staleTime: STALE_MS,
+    networkMode: LOCAL_IPC,
     enabled: sessionId.length > 0,
   });
 }
@@ -92,6 +105,7 @@ export function usePendingApprovalsAll(
     queryKey: approvalsKeys.pendingAll(),
     queryFn: () => window.vex.approvals.listPendingAll({}),
     staleTime: STALE_MS,
+    networkMode: LOCAL_IPC,
     refetchInterval: options?.refetchInterval,
   });
 }
@@ -165,6 +179,7 @@ export function useApprove(): ApprovalActionMutation {
   return useMutation({
     mutationFn: (input) => window.vex.approvals.approve(input),
     retry: false,
+    networkMode: LOCAL_IPC,
   });
 }
 
@@ -172,5 +187,6 @@ export function useReject(): ApprovalActionMutation {
   return useMutation({
     mutationFn: (input) => window.vex.approvals.reject(input),
     retry: false,
+    networkMode: LOCAL_IPC,
   });
 }
