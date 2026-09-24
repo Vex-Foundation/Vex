@@ -22,6 +22,7 @@ import {
   marginFitCostPerUnit,
   riskBaseSize,
   slippageBound,
+  ticketTakesPricePick,
   type LimitTimeInForce,
   type TicketMargin,
   type TradeDraft,
@@ -173,7 +174,7 @@ export function useTradeTicketForm({
   }, [limitPrice, mode, side, suggestedPrice]);
   const limitPriceGuidance = useMemo(() => {
     if (limitPriceBookStatus === null || suggestedPrice === null) {
-      return "Exact price you are willing to trade at.";
+      return "Exact price you are willing to trade at. Type it or click the chart.";
     }
     const marketContext = `Best ${side === "buy" ? "ask" : "bid"} ${formatDecimalString(suggestedPrice)}:`;
     if (limitPriceBookStatus === "resting") {
@@ -323,11 +324,15 @@ export function useTradeTicketForm({
   }, [prefill]);
 
   useEffect(() => {
-    if (pricePick === null || pricePick === undefined) return;
+    if (pricePick === null || pricePick === undefined || !ticketTakesPricePick(pricePick, mode)) return;
     if (pricePick.side !== undefined) setSide(pricePick.side);
     if (pricePick.kind === "limit") {
-      setMode("limit");
-      setLimitTimeInForce(DEFAULT_LIMIT_TIME_IN_FORCE);
+      // A chart click keeps the limit the trader set up (its time in force
+      // included); a book or chart-drag pick starts a fresh one.
+      if (pricePick.source !== "chart") {
+        setMode("limit");
+        setLimitTimeInForce(DEFAULT_LIMIT_TIME_IN_FORCE);
+      }
       setLimitPrice(pricePick.price);
       return;
     }

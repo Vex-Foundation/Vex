@@ -292,6 +292,7 @@ function DeskBody({ desk, theme }: {
               onRetry={() => { void desk.snapshotQuery.refetch(); }}
               onChooseMarket={() => desk.setMarketPickerOpen(true)}
               onDragOrder={(price, side) => desk.setPricePick({ key: Date.now(), price, kind: "limit", side })}
+              onPricePick={(price) => desk.setPricePick({ key: Date.now(), price, kind: "limit", source: "chart" })}
               onLoadOlder={desk.candleStream.loadOlder}
               historyStatus={desk.candleStream.history}
               toolbarStart={(

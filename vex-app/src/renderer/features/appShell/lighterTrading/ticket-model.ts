@@ -491,4 +491,15 @@ export interface TradeTicketPricePick {
   readonly kind: "limit" | "trigger";
   /** A chart drag also picks the side: below the last price buys, above it sells. */
   readonly side?: TradeSide;
+  /** A click on the chart, which only fills the price of a limit order already on the ticket. */
+  readonly source?: "chart";
+}
+
+/**
+ * Whether a pick lands on the ticket as it stands. A chart click is often just
+ * a click on the chart, so outside a limit order it is ignored rather than
+ * switching the trader's order type.
+ */
+export function ticketTakesPricePick(pick: TradeTicketPricePick, mode: TradeOrderMode): boolean {
+  return pick.source !== "chart" || mode === "limit";
 }

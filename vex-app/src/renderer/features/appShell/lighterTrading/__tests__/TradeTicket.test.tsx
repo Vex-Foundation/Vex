@@ -533,7 +533,7 @@ describe("Light it up trade ticket", () => {
     expect(screen.getByRole("button", { name: "GTC", pressed: true })).toBeTruthy();
     expect((screen.getByRole("combobox", { name: "Order expiry" }) as HTMLSelectElement).value).toBe("1440");
     expect(screen.getByLabelText("Limit price").getAttribute("aria-describedby")).toBe("lit-limit-price-note");
-    expect(screen.getByText("Exact price you are willing to trade at.")).toBeTruthy();
+    expect(screen.getByText("Exact price you are willing to trade at. Type it or click the chart.")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("Size"), { target: { value: "0.25" } });
     fireEvent.change(screen.getByLabelText("Limit price"), { target: { value: "3100" } });
@@ -694,6 +694,31 @@ describe("Light it up trade ticket", () => {
     rerender({ prefill: { key: 3, mode: "oco", side: "sell", baseAmount: "1.5", reduceOnly: false } });
     expect(screen.getByRole("button", { name: "SL + TP", pressed: true })).toBeTruthy();
     expect(screen.getByLabelText("Stop loss trigger price")).toBeTruthy();
+  });
+
+  it("fills the limit price from a chart click only while Limit is selected", () => {
+    const { rerender } = renderTicket();
+
+    // On Market a chart click is just a click: no switch, no price, no notice.
+    rerender({ pricePick: { key: 1, price: "3100.00", kind: "limit", source: "chart" } });
+    expect(screen.getByRole("button", { name: "Market", pressed: true })).toBeTruthy();
+    expect(screen.queryByLabelText("Limit price")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+
+    // On Limit it fills the price and keeps the trader's side and time in force.
+    fireEvent.click(screen.getByRole("button", { name: "Limit" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Short/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Post-Only" }));
+    rerender({ pricePick: { key: 2, price: "3240.50", kind: "limit", source: "chart" } });
+    expect((screen.getByLabelText("Limit price") as HTMLInputElement).value).toBe("3240.50");
+    expect(screen.getByRole("button", { name: "Post-Only", pressed: true })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Short/ }).getAttribute("data-active")).toBe("true");
+
+    // A later click replaces it; typing still works as before.
+    rerender({ pricePick: { key: 3, price: "3260.00", kind: "limit", source: "chart" } });
+    expect((screen.getByLabelText("Limit price") as HTMLInputElement).value).toBe("3260.00");
+    fireEvent.change(screen.getByLabelText("Limit price"), { target: { value: "3275" } });
+    expect((screen.getByLabelText("Limit price") as HTMLInputElement).value).toBe("3275");
   });
 
   it("loads an agent order preview with its price, time in force, expiry and trigger", () => {
