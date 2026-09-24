@@ -51,12 +51,27 @@ function order(overrides: Partial<LighterOpenOrderRow>): LighterOpenOrderRow {
 }
 
 describe("positionMetrics", () => {
-  it("prefers the live mark and Lighter's own margin allocation", () => {
-    const metrics = positionMetrics(LONG, 64_100);
+  it("prefers the live mark and Lighter's own allocation for an isolated position", () => {
+    const metrics = positionMetrics({ ...LONG, marginMode: "isolated", allocatedMargin: "1700" }, 64_100);
     expect(metrics.mark).toBe(64_100);
-    expect(metrics.margin).toBe(1_600);
+    expect(metrics.margin).toBe(1_700);
     expect(metrics.leverage).toBe(10);
-    expect(metrics.roe).toBeCloseTo(12.75 / 1_600, 8);
+    expect(metrics.roe).toBeCloseTo(12.75 / 1_700, 8);
+  });
+
+  it("computes a cross position's margin from its notional, since Lighter allocates none to cross", () => {
+    // Account 31824's 15x BTC long on 2026-09-24 read "0.00 of 111.660190" with no ROE.
+    const metrics = positionMetrics({
+      ...LONG,
+      size: "0.00134",
+      value: "111.660190",
+      unrealizedPnl: "-0.007370",
+      initialMarginFraction: 667,
+      marginMode: "cross",
+      allocatedMargin: "0.000000",
+    }, 83_311.2);
+    expect(metrics.margin).toBeCloseTo(111.66019 * 0.0667, 8);
+    expect(metrics.roe).toBeCloseTo(-0.00737 / (111.66019 * 0.0667), 8);
   });
 
   it("derives mark from the snapshot and margin from the IMF when Lighter gave neither", () => {
