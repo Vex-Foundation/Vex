@@ -442,12 +442,6 @@ function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDec
                 <small data-tone={position.side === "long" ? "positive" : "negative"}>
                   {position.side === "long" ? "Long" : "Short"} · {leverageText(metrics.leverage, position.marginMode)}
                 </small>
-                {closeStage !== null ? (
-                  <small className="lit-position-close-status" role="status">
-                    {closeStage === "resting" ? null : <span className="lit-position-close-spinner" aria-hidden="true" />}
-                    {closeLabel}
-                  </small>
-                ) : null}
               </span>
               <span role="cell">{num(position.size)}</span>
               <span role="cell">{num(position.entryPrice)}</span>
@@ -483,6 +477,13 @@ function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDec
                   onCloseLimit={(chosen) => actions.onCloseLimit(position, chosen)}
                   onCloseMarket={(chosen) => actions.onClosePosition(position, chosen)}
                 />
+                {/* Under the close control that started it. */}
+                {closeStage !== null ? (
+                  <small className="lit-position-close-status" role="status">
+                    {closeStage === "resting" ? null : <span className="lit-position-close-spinner" aria-hidden="true" />}
+                    {closeLabel}
+                  </small>
+                ) : null}
               </span>
             </div>
           );
@@ -553,12 +554,6 @@ function OpenOrdersTab({ account, cancellingOrders, actions }: {
                 <span className="lit-order-cell" role="cell">
                   <b>{order.symbol}</b>
                   <small title={identityTitle}>Order {shortOrderId(order.orderId)}</small>
-                  {cancelStage !== null ? (
-                    <small className="lit-order-cancel-status" role="status">
-                      <span className="lit-order-cancel-spinner" aria-hidden="true" />
-                      {cancelLabel}
-                    </small>
-                  ) : null}
                 </span>
                 <span role="cell" data-tone={order.side === "buy" ? "positive" : "negative"}>
                   {order.side === "buy" ? "Buy" : "Sell"}
@@ -591,6 +586,13 @@ function OpenOrdersTab({ account, cancellingOrders, actions }: {
                   <button type="button" data-danger disabled={cancelStage !== null} onClick={() => actions.onCancelOrder(order)} aria-label={`Cancel ${order.symbol} order ${shortOrderId(order.orderId)}`}>
                     Cancel
                   </button>
+                  {/* Under the Cancel button that started it. */}
+                  {cancelStage !== null ? (
+                    <small className="lit-order-cancel-status" role="status">
+                      <span className="lit-order-cancel-spinner" aria-hidden="true" />
+                      {cancelLabel}
+                    </small>
+                  ) : null}
                 </span>
               </div>
             );

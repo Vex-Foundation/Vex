@@ -165,10 +165,10 @@
   color: var(--lit-ink-muted);
 }
 
-.lit-positions .lit-account-row[data-close-pending] > [role="cell"]:not(:first-child),
-.lit-positions .lit-account-row[data-close-pending] .lit-order-cell > :not(.lit-position-close-status),
-.lit-open-orders .lit-account-row[data-cancel-pending] > [role="cell"]:not(:first-child),
-.lit-open-orders .lit-account-row[data-cancel-pending] .lit-order-cell > :not(.lit-order-cancel-status) {
+.lit-positions .lit-account-row[data-close-pending] > [role="cell"]:not(.lit-row-actions),
+.lit-positions .lit-account-row[data-close-pending] .lit-row-actions > :not(.lit-position-close-status),
+.lit-open-orders .lit-account-row[data-cancel-pending] > [role="cell"]:not(.lit-row-actions),
+.lit-open-orders .lit-account-row[data-cancel-pending] .lit-row-actions > :not(.lit-order-cancel-status) {
   opacity: 0.6;
 }
 
@@ -279,8 +279,16 @@
 
 .lit-row-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
+}
+
+/* A pending close or cancel reads on its own line, right under the control that started it. */
+.lit-row-actions > .lit-position-close-status,
+.lit-row-actions > .lit-order-cancel-status {
+  flex-basis: 100%;
+  justify-content: flex-end;
 }
 
 .lit-row-actions button {
