@@ -47,6 +47,7 @@ describe("assessLighterOrderMarginFit", () => {
       feeUnits: "242325",
       // Filling at 2691.15 against a 2690.88 mark.
       markGapUnits: "18009",
+      releasedMarginUnits: "0",
       requiredUnits: "8821611",
       availableUnits: "8792317",
       maxIncreasingBaseInteger: "664",
@@ -115,6 +116,46 @@ describe("assessLighterOrderMarginFit", () => {
 
     // 699 x 2692.18 x 4.77%, not 699 x 2678.95.
     expect(fit.initialMarginUnits).toBe("8976348");
+  });
+
+  describe("an order that first closes an opposite position", () => {
+    // Account 31824 at 13:36 on 2026-09-24: a 0.00134 BTC 15x long using all
+    // but 0.103463 USDG, closed by a market short.
+    const flip: LighterOrderMarginFitInput = {
+      side: "sell",
+      increasingBaseInteger: "66",
+      closingBaseInteger: "134",
+      approvedPriceInteger: "828950",
+      takesLiquidity: true,
+      bookLevels: [{ priceInteger: "833100", sizeInteger: "5000000" }],
+      markPrice: "83311.2",
+      sizeDecimals: 5,
+      priceDecimals: 1,
+      initialMarginFraction: 667,
+      exchangeTakerFeePercent: "0.0000",
+      exchangeAccountTakerFeeTicks: 350,
+      vexIntegratorTakerFeeTicks: 1000,
+      availableBalance: "0.103463",
+    };
+
+    it("admits a flip whose new side fits once the closed position's margin is freed", () => {
+      const fit = assessLighterOrderMarginFit(flip);
+
+      expect(fit.fits).toBe(true);
+      expect(fit.releasedMarginUnits).toBe("7446188");
+      // Fees and the fill gap are charged on the whole 0.002 traded, not just the new 0.00066.
+      expect(fit.feeUnits).toBe("224937");
+      expect(fit.markGapUnits).toBe("2400");
+      expect(fit.requiredUnits).toBe("0");
+    });
+
+    it("refuses a flip too large even after the freed margin, and names the largest new exposure", () => {
+      const fit = assessLighterOrderMarginFit({ ...flip, increasingBaseInteger: "266" });
+
+      expect(fit.fits).toBe(false);
+      expect(fit.requiredUnits).toBe("7789726");
+      expect(fit.maxIncreasingBaseInteger).toBe("130");
+    });
   });
 
   it("walks the book, and prices size past the listed depth at the order's bound", () => {

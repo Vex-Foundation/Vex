@@ -117,6 +117,7 @@ export async function assertLighterOrderFitsAccountMargin(input: {
     fit = assessLighterOrderMarginFit({
       side: preview.side,
       increasingBaseInteger: increasing.toString(),
+      closingBaseInteger: closingBase.toString(),
       approvedPriceInteger: preview.priceInteger,
       takesLiquidity: preview.orderType === "market"
         ? true
@@ -152,10 +153,13 @@ export async function assertLighterOrderFitsAccountMargin(input: {
     ? `Even Lighter's minimum of ${market.min_base_amount} ${market.symbol} does not fit. Add margin first.`
     : `Reduce the size to ${formatLighterIntegerAmount(maxBase, sizeDecimals)} ${market.symbol} or less, or add margin.`;
   const gap = BigInt(fit.markGapUnits) > 0n ? `, ${formatCapitalUnits(fit.markGapUnits)} for filling away from the mark price` : "";
+  const freed = BigInt(fit.releasedMarginUnits) > 0n
+    ? `, less ${formatCapitalUnits(fit.releasedMarginUnits)} freed by closing the existing ${market.symbol} position`
+    : "";
   throw new VexError(
     ErrorCodes.INSUFFICIENT_BALANCE,
     `Lighter would cancel this ${market.symbol} order with no fill: it needs about ${formatCapitalUnits(fit.requiredUnits)} ${settlement} `
-    + `(${formatCapitalUnits(fit.initialMarginUnits)} initial margin, ${formatCapitalUnits(fit.feeUnits)} in fees${gap}), `
+    + `(${formatCapitalUnits(fit.initialMarginUnits)} initial margin, ${formatCapitalUnits(fit.feeUnits)} in fees${gap}${freed}), `
     + `but account ${accountIndex} has ${formatCapitalUnits(fit.availableUnits)} ${settlement} available. Nothing was signed. ${resize}`,
   );
 }
