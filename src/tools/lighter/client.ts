@@ -12,6 +12,7 @@ import {
   LIGHTER_LEADERBOARD_TYPES,
   LIGHTER_ORDER_BOOK_LIMIT_MAX,
   LIGHTER_ORDER_BOOK_LIMIT_MIN,
+  LIGHTER_READ_TIMEOUT_MS,
   LIGHTER_RECENT_TRADES_LIMIT_MAX,
   LIGHTER_RECENT_TRADES_LIMIT_MIN,
   LIGHTER_TIMESTAMP_MAX,
@@ -195,7 +196,7 @@ export class LighterClient {
         ? this.throttle.defaultTtlMs
         : 0;
       return await this.throttle.run(url, environment, ttlMs, async (signal) => {
-        const response = await fetchWithTimeout(url, { headers, signal });
+        const response = await fetchWithTimeout(url, { headers, signal, timeoutMs: LIGHTER_READ_TIMEOUT_MS });
 
         if (!response.ok) {
           if (response.status === 429) {
@@ -830,7 +831,7 @@ export class LighterClient {
     const headers = this.headersFor(environment);
     try {
       return await this.throttle.run(url, environment, this.throttle.defaultTtlMs, async (signal) => {
-        const response = await fetchWithTimeout(url, { headers, signal });
+        const response = await fetchWithTimeout(url, { headers, signal, timeoutMs: LIGHTER_READ_TIMEOUT_MS });
         if (!response.ok) {
           if (response.status === 429) {
             const retryMs = parseRetryAfterMs(response.headers.get("retry-after"));
