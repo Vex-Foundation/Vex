@@ -68,6 +68,7 @@ import {
   runLighterNonceRecovery,
   type LighterNonceRecoveryRunner,
 } from "./nonce-commit-recovery.js";
+import { isLighterUnreachable, withLighterBeforeSendFailures, type LighterSendPhase } from "./before-send.js";
 
 /**
  * The provider states that PROVE this create order can consume no more capital.
@@ -216,6 +217,15 @@ export async function executeApprovedLighterCreateOrder(input: {
   readonly deps: ExecuteApprovedLighterCreateOrderDeps;
   readonly abortSignal?: AbortSignal;
 }): Promise<ExecuteApprovedLighterCreateOrderResult> {
+  return withLighterBeforeSendFailures((sendPhase) => runApprovedLighterCreateOrder(input, sendPhase));
+}
+
+async function runApprovedLighterCreateOrder(input: {
+  readonly plan: LighterOrderReadyForSignerPlan;
+  readonly unsignedOrder?: LighterUnsignedCreateOrderRequest;
+  readonly deps: ExecuteApprovedLighterCreateOrderDeps;
+  readonly abortSignal?: AbortSignal;
+}, sendPhase: LighterSendPhase): Promise<ExecuteApprovedLighterCreateOrderResult> {
   const { plan, deps } = input;
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
     assertIntentAuthority(plan.expiresAt, deps.now(), phase, input.abortSignal);
@@ -276,6 +286,7 @@ export async function executeApprovedLighterCreateOrder(input: {
   }
   assertWireOrderExpiryBeforeSigning(unsignedOrder, deps.now());
   assertAuthority("before_reservation");
+  sendPhase.reserving = true;
   const nonce = await deps.reserveNonce(plan);
   let signerTxHash: string | null = null;
   let signingStarted = false;
@@ -580,7 +591,9 @@ async function revalidateLiveOrderState(
         activeOnly: false,
       }, FRESH_PUBLIC_READ),
     ]);
-  } catch {
+  } catch (error) {
+    // Unreachable Lighter is restated plainly by the execution's before-send wrapper.
+    if (isLighterUnreachable(error)) throw error;
     throw blockedBeforeSubmit(
       "Live Lighter market or account state is unavailable for post-approval revalidation. No trading key was loaded and no order was signed or submitted.",
     );
@@ -648,7 +661,9 @@ async function readLiveProviderCredential(
         apiKeyIndex: plan.apiKeyIndex,
       }, FRESH_PUBLIC_READ),
     ]);
-  } catch {
+  } catch (error) {
+    // Unreachable Lighter is restated plainly by the execution's before-send wrapper.
+    if (isLighterUnreachable(error)) throw error;
     throw blockedBeforeSubmit(
       "Lighter API-key identity or next nonce is unavailable. No trading key was loaded and no order was signed or submitted.",
     );
@@ -707,7 +722,9 @@ async function assertProviderOutcomeRepairReady(
         sortBy: "timestamp",
       }, privilegedAuth),
     ]);
-  } catch {
+  } catch (error) {
+    // Unreachable Lighter is restated plainly by the execution's before-send wrapper.
+    if (isLighterUnreachable(error)) throw error;
     throw blockedBeforeSubmit(
       "Lighter provider outcome repair is unavailable before submission. No order was signed or submitted.",
     );

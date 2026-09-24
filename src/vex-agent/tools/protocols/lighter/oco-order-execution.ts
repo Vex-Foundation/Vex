@@ -53,6 +53,7 @@ import {
   runLighterNonceRecovery,
   type LighterNonceRecoveryRunner,
 } from "./nonce-commit-recovery.js";
+import { isLighterUnreachable, withLighterBeforeSendFailures, type LighterSendPhase } from "./before-send.js";
 
 const FRESH = { fresh: true } as const;
 const AUTH_TTL_SECONDS = 10 * 60;
@@ -157,6 +158,15 @@ export async function executeApprovedLighterOco(input: {
   readonly deps: LighterOcoExecutionDeps;
   readonly abortSignal?: AbortSignal;
 }): Promise<ExecuteApprovedLighterOcoResult> {
+  return withLighterBeforeSendFailures((sendPhase) => runApprovedLighterOco(input, sendPhase));
+}
+
+async function runApprovedLighterOco(input: {
+  readonly plan: LighterOcoExecutionPlan;
+  readonly group: LighterUnsignedOcoRequest;
+  readonly deps: LighterOcoExecutionDeps;
+  readonly abortSignal?: AbortSignal;
+}, sendPhase: LighterSendPhase): Promise<ExecuteApprovedLighterOcoResult> {
   const { plan, group, deps } = input;
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
     assertIntentAuthority(plan.expiresAt, deps.now(), phase, input.abortSignal);
@@ -196,6 +206,7 @@ export async function executeApprovedLighterOco(input: {
     );
   }
   assertAuthority("before_reservation");
+  sendPhase.reserving = true;
   const reservation = await reserveNonce(plan, deps);
   let signerTxHash: string | null = null;
   let signingStarted = false;
@@ -359,7 +370,9 @@ async function revalidate(plan: LighterOcoExecutionPlan, deps: LighterOcoExecuti
       deps.client.getOrderBookOrders(plan.environment, { marketId: plan.marketIndex, limit: 250 }, FRESH),
       deps.client.getAccount(plan.environment, { by: "index", value: plan.accountIndex }, FRESH),
     ]);
-  } catch {
+  } catch (error) {
+    // Unreachable Lighter is restated plainly by the execution's before-send wrapper.
+    if (isLighterUnreachable(error)) throw error;
     throw blocked("Fresh Lighter market, book, or position evidence is unavailable for OCO revalidation.");
   }
   const market = marketResponse.order_book_details.find((row) => row.market_id === plan.marketIndex);
@@ -399,7 +412,9 @@ async function readCredential(plan: LighterOcoExecutionPlan, deps: LighterOcoExe
       deps.client.getApiKeys(plan.environment, { accountIndex: plan.accountIndex, apiKeyIndex: plan.apiKeyIndex }, FRESH),
       deps.client.getNextNonce(plan.environment, { accountIndex: plan.accountIndex, apiKeyIndex: plan.apiKeyIndex }, FRESH),
     ]);
-  } catch {
+  } catch (error) {
+    // Unreachable Lighter is restated plainly by the execution's before-send wrapper.
+    if (isLighterUnreachable(error)) throw error;
     throw blocked("Lighter API-key identity or next nonce is unavailable.");
   }
   const matches = keys.api_keys.filter((key) =>
@@ -425,7 +440,9 @@ async function assertNoExistingChildren(
       deps.client.getAccountInactiveOrders(plan.environment, { accountIndex: plan.accountIndex, marketId: plan.marketIndex, marketType: "all", limit: 100 }, auth),
       deps.client.getAccountTrades(plan.environment, { accountIndex: plan.accountIndex, limit: 100, sortBy: "timestamp" }, auth),
     ]);
-  } catch {
+  } catch (error) {
+    // Unreachable Lighter is restated plainly by the execution's before-send wrapper.
+    if (isLighterUnreachable(error)) throw error;
     throw blocked("Authenticated OCO outcome repair is unavailable before submission.");
   }
   for (const order of group.orders) {
