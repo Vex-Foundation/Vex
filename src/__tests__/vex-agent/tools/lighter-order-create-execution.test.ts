@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as feePolicy from "@tools/lighter/fee-policy.js";
+import { configureLighterReadOnlyAccountAuthResolver } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
 
 // The capital-share boundary at execute-time re-admission. `null` limits is the
 // DEFAULT INSTALL: no share is set, so no ceiling applies and the ledger is
@@ -997,6 +998,50 @@ describe("Lighter approved create execution pipeline", () => {
     expect(d.reserveNonce).not.toHaveBeenCalled();
     expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
     expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("says nothing was sent when Lighter cannot be reached before the nonce is reserved", async () => {
+    // 2026-09-24: approved, then Wi-Fi off. The pre-send read timed out after
+    // 32 seconds and the desk showed the transport's own text.
+    const base = deps();
+    const offline = new VexError(ErrorCodes.LIGHTER_TIMEOUT, "Request timed out after 10000ms");
+    const d = deps({ client: { ...base.client, getMarketDetails: vi.fn(async () => { throw offline; }) } });
+
+    await expect(executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    })).rejects.toThrow("Vex couldn't reach Lighter before sending, so nothing was signed or sent.");
+
+    expect(d.reserveNonce).not.toHaveBeenCalled();
+    expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("says nothing was sent when the fee revalidation cannot reach Lighter", async () => {
+    // The same offline approval, failing in the fee check rather than the market read.
+    vi.mocked(feePolicy.getLighterFeePolicy).mockRestore();
+    configureLighterReadOnlyAccountAuthResolver(async () => ({ accountIndex: PLAN.accountIndex, token: "read-only" }));
+    try {
+      const base = deps();
+      const offline = new VexError(ErrorCodes.LIGHTER_API_ERROR, "fetch failed", "Check network connectivity");
+      const d = deps({
+        client: {
+          ...base.client,
+          getSystemConfig: vi.fn(async () => { throw offline; }),
+          getAccountLimits: vi.fn(async () => ({ code: 200, user_tier: "premium", user_tier_name: "Premium", current_maker_fee_tick: 120, current_taker_fee_tick: 350 })),
+        },
+      });
+
+      const refusal = executeApprovedLighterCreateOrder({ plan: PLAN, deps: d });
+      await expect(refusal).rejects.toThrow("Vex couldn't reach Lighter before sending, so nothing was signed or sent.");
+      await expect(refusal).rejects.not.toThrow("fee setup is required");
+
+      expect(d.reserveNonce).not.toHaveBeenCalled();
+      expect(d.client.sendTx).not.toHaveBeenCalled();
+    } finally {
+      configureLighterReadOnlyAccountAuthResolver(null);
+    }
   });
 
   it("tries recovery once, then explains a still-held nonce without asking the user to act", async () => {

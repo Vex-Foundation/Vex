@@ -23,6 +23,7 @@ import {
   hardBoundShortLabel,
   leverageLabel,
   sideLabel,
+  ticketTakesPricePick,
   type DeskOutcome,
   type LimitTimeInForce,
   type TicketMargin,
@@ -153,7 +154,9 @@ export function TradeTicket({
     }
   }, [pendingApprovalCount, showNotice]);
   useEffect(() => {
-    if ((prefill ?? null) !== null || (pricePick ?? null) !== null) setTouched(true);
+    // A chart click the ticket ignores leaves it untouched, so it raises no validation notice.
+    const picked = pricePick !== null && pricePick !== undefined && ticketTakesPricePick(pricePick, mode);
+    if ((prefill ?? null) !== null || picked) setTouched(true);
   }, [prefill, pricePick]);
   const problem = touched ? form.validation : null;
   useEffect(() => {

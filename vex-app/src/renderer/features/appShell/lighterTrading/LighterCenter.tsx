@@ -82,6 +82,7 @@ export function LighterCenter({ zenMode, onOpenZenAssistant }: {
           snapshot={desk.snapshot}
           liveStats={desk.publicMarketStream.stats}
           streamStatus={desk.publicMarketStream.statsStatus}
+          onReload={desk.reloadMarketData}
           streamReceivedAt={desk.publicMarketStream.statsReceivedAt}
         />
         {/* The shell strip's notices/approvals/export land here; see shellStripSlot.ts. */}
@@ -291,6 +292,7 @@ function DeskBody({ desk, theme }: {
               onRetry={() => { void desk.snapshotQuery.refetch(); }}
               onChooseMarket={() => desk.setMarketPickerOpen(true)}
               onDragOrder={(price, side) => desk.setPricePick({ key: Date.now(), price, kind: "limit", side })}
+              onPricePick={(price) => desk.setPricePick({ key: Date.now(), price, kind: "limit", source: "chart" })}
               onLoadOlder={desk.candleStream.loadOlder}
               historyStatus={desk.candleStream.history}
               toolbarStart={(

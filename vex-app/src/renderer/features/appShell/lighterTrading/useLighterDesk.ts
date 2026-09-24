@@ -90,6 +90,7 @@ export function useLighterDesk() {
     book,
     lastPrice,
     dataFresh,
+    reload: reloadMarketData,
   } = useDeskStreams({ environment, market, resolution });
 
   // The same read the bottom dock makes; TanStack dedupes it by key.
@@ -421,6 +422,7 @@ export function useLighterDesk() {
     snapshot,
     candleStream,
     publicMarketStream,
+    reloadMarketData,
     book,
     lastPrice,
     dataFresh,

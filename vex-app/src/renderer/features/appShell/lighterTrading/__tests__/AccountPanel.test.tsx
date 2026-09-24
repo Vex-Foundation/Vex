@@ -245,8 +245,9 @@ describe("TradingBottomPanel", () => {
     mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: account } }));
     render(panel({ closingPositions: new Map([["1-long", "checking"]]) }));
 
-    expect(screen.getByText("Confirming close")).toBeTruthy();
     const close = screen.getByRole("button", { name: "Close BTC position" }) as HTMLButtonElement;
+    // The status reads under the close control that started it, not under the market.
+    expect(screen.getByText("Confirming close").closest('[role="cell"]')).toBe(close.closest('[role="cell"]'));
     expect(close.disabled).toBe(true);
     fireEvent.click(close);
     expect(screen.queryByRole("dialog", { name: "Close BTC long" })).toBeNull();
@@ -286,7 +287,7 @@ describe("TradingBottomPanel", () => {
     expect(pending.disabled).toBe(true);
     expect(other.disabled).toBe(false);
     expect((screen.getByRole("button", { name: "Cancel all" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText("Confirming cancellation")).toBeTruthy();
+    expect(screen.getByText("Confirming cancellation").closest('[role="cell"]')).toBe(pending.closest('[role="cell"]'));
     expect(pending.closest('[role="row"]')?.hasAttribute("data-cancel-pending")).toBe(true);
     fireEvent.click(pending);
     expect(mocks.actions.onCancelOrder).not.toHaveBeenCalled();

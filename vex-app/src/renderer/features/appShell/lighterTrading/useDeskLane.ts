@@ -31,6 +31,13 @@ import {
   type TradeTicketPricePick,
 } from "./ticket-model.js";
 
+/**
+ * How long past a desk card's own expiry the lane waits before asking what
+ * became of it, so an approval clicked in its last second is already marked
+ * approved when the lane looks.
+ */
+const DESK_CARD_EXPIRY_GRACE_MS = 5_000;
+
 /** Fallback poll only; the live sync pushes new approvals the moment they enqueue. */
 const APPROVALS_REFETCH_INTERVAL_MS = 60_000;
 
@@ -178,7 +185,33 @@ function canceledOrderMessage(order: DeskOrderExecution): string {
   return `${orderLabel(order.orderId)} was canceled with no fill.${reason} This order did not open a position. Check Positions and Trade History before placing another order.`;
 }
 
-function deskFailureMessage(message: string): string {
+/**
+ * The refusal itself, without the plumbing the agent lane wraps around it: a
+ * margin or capital refusal at approval time reached the ticket as "Lighter
+ * order preview was created, but its approval card could not be prepared
+ * (INSUFFICIENT_BALANCE - ...)".
+ */
+function unwrapApprovalPreparationFailure(message: string): string {
+  const wrapped = /^Lighter order preview was created, but its approval card could not be prepared \((.*)\)$/s.exec(message.trim());
+  if (wrapped === null) return message;
+  const inner = wrapped[1] ?? "";
+  // The agent's failure text leads with the error code: "CODE - detail" or "CODE: hint - detail".
+  const coded = /^[A-Z][A-Z0-9_]+(?::[^\n]*?)? - (.+)$/s.exec(inner);
+  return coded?.[1] ?? inner;
+}
+
+/**
+ * Preparing a card only reads from Lighter. When those reads could not reach
+ * it (a timeout, a network failure or a 5xx), nothing was prepared or sent;
+ * the ticket says so instead of showing "LIGHTER_API_ERROR: ... fetch failed".
+ */
+const PREPARE_UNREACHABLE = /^Lighter [a-z -]+ unavailable \((?:LIGHTER_TIMEOUT|LIGHTER_API_ERROR)\b/;
+
+function deskFailureMessage(rawMessage: string): string {
+  if (PREPARE_UNREACHABLE.test(rawMessage.trim())) {
+    return "Couldn't reach Lighter, so nothing was prepared or sent. Check your connection and try again.";
+  }
+  const message = unwrapApprovalPreparationFailure(rawMessage);
   // Execution has already tried to clear the earlier action by the time this
   // arrives, and the background repair keeps trying: nothing is asked of the
   // trader but a later retry.
@@ -267,6 +300,56 @@ export function useDeskLane({
   useEffect(() => {
     seenApprovalIds.current = new Set(approvals.map((row) => row.id));
   }, [approvals]);
+
+  // A card that times out is neither approved nor rejected by the trader, so
+  // the dialog never reports it, and the row it locked stayed on "Awaiting
+  // approval" for good (2026-09-24). Once a desk card's own expiry has passed,
+  // or it has left the pending list, ask what became of it: a card nobody
+  // approved releases its row; an approved one is executing and reports
+  // through onApprovalResolved as before.
+  const deskCardExpiry = useRef(new Map<string, number>());
+  const [deskCardCheck, setDeskCardCheck] = useState(0);
+  useEffect(() => {
+    if (approvalsQuery.data?.ok !== true) return undefined;
+    const listed = new Set(approvals.map((row) => row.id));
+    for (const row of approvals) {
+      const expiresAtMs = row.expiresAt === null ? Number.NaN : Date.parse(row.expiresAt);
+      if (pendingDesk.current.has(row.id) && Number.isFinite(expiresAtMs)) deskCardExpiry.current.set(row.id, expiresAtMs);
+    }
+    const now = Date.now();
+    let nextCheckAt = Number.POSITIVE_INFINITY;
+    let stale = false;
+    for (const id of pendingDesk.current.keys()) {
+      const expiresAtMs = deskCardExpiry.current.get(id);
+      if (expiresAtMs === undefined) continue;
+      const dueAt = expiresAtMs + DESK_CARD_EXPIRY_GRACE_MS;
+      if (listed.has(id) && now < dueAt) {
+        nextCheckAt = Math.min(nextCheckAt, dueAt);
+        continue;
+      }
+      void window.vex.approvals.get({ id }).then((result) => {
+        if (stale || !result.ok || result.data === null) return;
+        const card = result.data;
+        const expired = card.decisionReason === "expired_ttl" || (card.status === "pending" && Date.now() >= dueAt);
+        if (card.status === "approved" || !expired) return;
+        const pending = pendingDesk.current.get(id);
+        if (pending === undefined) return;
+        pendingDesk.current.delete(id);
+        deskCardExpiry.current.delete(id);
+        clearClose(pending.closeKey);
+        clearCancel(pending.cancelKey);
+        const request = pending.action.kind === "close" ? "close" : pending.action.kind === "cancel" ? "cancel" : "order";
+        setDeskOutcome({ tone: "warn", text: `The ${request} request expired before it was approved. Nothing was sent.` });
+      }, () => undefined);
+    }
+    const timer = Number.isFinite(nextCheckAt)
+      ? setTimeout(() => setDeskCardCheck((count) => count + 1), Math.max(0, nextCheckAt - now))
+      : undefined;
+    return () => {
+      stale = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [approvals, approvalsQuery.data, deskCardCheck]);
 
   useEffect(() => {
     setHandoffError(null);
@@ -435,6 +518,7 @@ export function useDeskLane({
     const pending = pendingDesk.current.get(result.id);
     if (pending === undefined) return;
     pendingDesk.current.delete(result.id);
+    deskCardExpiry.current.delete(result.id);
     if (decision === "rejected") {
       clearClose(pending.closeKey);
       clearCancel(pending.cancelKey);

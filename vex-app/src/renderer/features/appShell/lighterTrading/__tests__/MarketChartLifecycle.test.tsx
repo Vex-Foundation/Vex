@@ -4,16 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MarketChart } from "../MarketChart.js";
 import type { LighterTradingCandle } from "@shared/schemas/lighter-trading.js";
 const harness = vi.hoisted(() => {
-  const makeSeries = () => ({ setData: vi.fn(), update: vi.fn(), applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }), createPriceLine: vi.fn((options: { price: number }) => ({ options })), removePriceLine: vi.fn(), priceToCoordinate: (price: number) => 300 - price, coordinateToPrice: (y: number) => 300 - y });
+  const makeSeries = () => ({ setData: vi.fn(), update: vi.fn(), applyOptions: vi.fn(), priceScale: () => ({ applyOptions: vi.fn() }), createPriceLine: vi.fn((options: { price: number }) => ({ options })), removePriceLine: vi.fn(), priceToCoordinate: (price: number) => 300 - price, coordinateToPrice: vi.fn((y: number) => 300 - y) });
   const candles = makeSeries(); const volume = makeSeries(); const line = makeSeries();
   const range = vi.fn((): { from: number; to: number } | null => ({ from: 400, to: 506 })); const setRange = vi.fn();
   const rangeHandlers: Array<(range: { from: number; to: number } | null) => void> = [];
   const markers = { detach: vi.fn() };
   const createSeriesMarkers = vi.fn(() => markers);
   const priceScale = { applyOptions: vi.fn() };
-  return { candles, volume, line, range, setRange, rangeHandlers, markers, createSeriesMarkers, priceScale, chart: { priceScale: () => priceScale, paneSize: () => ({ width: 500, height: 300 }), addSeries: vi.fn((type: string) => type === "candles" ? candles : type === "line" ? line : volume), applyOptions: vi.fn(), subscribeCrosshairMove: vi.fn(), unsubscribeCrosshairMove: vi.fn(), remove: vi.fn(), timeScale: () => ({ getVisibleLogicalRange: range, setVisibleLogicalRange: setRange, subscribeVisibleLogicalRangeChange: (handler: (range: { from: number; to: number } | null) => void) => { rangeHandlers.push(handler); }, unsubscribeVisibleLogicalRangeChange: (handler: (range: { from: number; to: number } | null) => void) => { rangeHandlers.splice(rangeHandlers.indexOf(handler), 1); } }) } };
+  const clickHandlers: Array<(param: { point?: { x: number; y: number } }) => void> = [];
+  const chartOptions: unknown[] = [];
+  return { candles, volume, line, range, setRange, rangeHandlers, markers, createSeriesMarkers, priceScale, clickHandlers, chartOptions, chart: { priceScale: () => priceScale, paneSize: () => ({ width: 500, height: 300 }), addSeries: vi.fn((type: string) => type === "candles" ? candles : type === "line" ? line : volume), applyOptions: vi.fn(), subscribeCrosshairMove: vi.fn(), unsubscribeCrosshairMove: vi.fn(), subscribeClick: (handler: (param: { point?: { x: number; y: number } }) => void) => { clickHandlers.push(handler); }, unsubscribeClick: (handler: (param: { point?: { x: number; y: number } }) => void) => { clickHandlers.splice(clickHandlers.indexOf(handler), 1); }, remove: vi.fn(), timeScale: () => ({ getVisibleLogicalRange: range, setVisibleLogicalRange: setRange, subscribeVisibleLogicalRangeChange: (handler: (range: { from: number; to: number } | null) => void) => { rangeHandlers.push(handler); }, unsubscribeVisibleLogicalRangeChange: (handler: (range: { from: number; to: number } | null) => void) => { rangeHandlers.splice(rangeHandlers.indexOf(handler), 1); } }) } };
 });
-vi.mock("lightweight-charts", () => ({ CandlestickSeries: "candles", HistogramSeries: "volume", LineSeries: "line", ColorType: { Solid: "solid" }, LineStyle: { Solid: 0, Dotted: 1, Dashed: 2 }, TickMarkType: {}, PriceScaleMode: { Normal: 0, Logarithmic: 1 }, createChart: () => harness.chart, createSeriesMarkers: harness.createSeriesMarkers }));
+vi.mock("lightweight-charts", () => ({ CandlestickSeries: "candles", HistogramSeries: "volume", LineSeries: "line", ColorType: { Solid: "solid" }, LineStyle: { Solid: 0, Dotted: 1, Dashed: 2 }, TickMarkType: {}, PriceScaleMode: { Normal: 0, Logarithmic: 1 }, CrosshairMode: { Normal: 0 }, createChart: (_host: unknown, options: unknown) => { harness.chartOptions.push(options); return harness.chart; }, createSeriesMarkers: harness.createSeriesMarkers }));
 vi.mock("../ChartTools.js", () => ({
   ChartTools: ({ onChartType, onVolume, onFills, onScale }: {
     onChartType: (type: "line" | "candles") => void;
@@ -31,7 +33,7 @@ vi.mock("../ChartTools.js", () => ({
   </>,
 }));
 function candles(count: number, start = 1_700_000_000): LighterTradingCandle[] { return Array.from({ length: count }, (_, i) => ({ timestamp: start + i * 60, open: 10 + i, high: 12 + i, low: 9 + i, close: 11 + i, volumeBase: 100, volumeQuote: 1000 })); }
-beforeEach(() => { vi.clearAllMocks(); harness.rangeHandlers.length = 0; harness.createSeriesMarkers.mockReturnValue(harness.markers); harness.range.mockReturnValue({ from: 400, to: 506 }); });
+beforeEach(() => { vi.clearAllMocks(); harness.rangeHandlers.length = 0; harness.clickHandlers.length = 0; harness.chartOptions.length = 0; harness.createSeriesMarkers.mockReturnValue(harness.markers); harness.range.mockReturnValue({ from: 400, to: 506 }); });
 afterEach(cleanup);
 describe("Chart timeline continuity", () => {
   it("keeps native history beyond 5000 bars and follows a new live bar", () => {
@@ -122,6 +124,28 @@ describe("Chart timeline continuity", () => {
     const onDragOrder = vi.fn();
     view.rerender(<MarketChart candles={candles(40)} symbol="ETH" theme="chronos" marketId={1} resolution="1m" onDragOrder={onDragOrder} />);
     expect(screen.getByRole("button", { name: "Drag to place a limit order" })).toBeTruthy();
+  });
+  it("hands a chart click's tick-rounded price to the desk from whichever series is showing", () => {
+    const view = render(<MarketChart candles={candles(40)} symbol="ETH" theme="chronos" marketId={1} resolution="1m" pricePrecision={2} />);
+    // The crosshair follows the pointer, so its axis label is the price a click picks.
+    expect(harness.chartOptions.at(-1)).toMatchObject({ crosshair: { mode: 0 } });
+    expect(harness.clickHandlers).toHaveLength(0);
+    const onPricePick = vi.fn();
+    view.rerender(<MarketChart candles={candles(40)} symbol="ETH" theme="chronos" marketId={1} resolution="1m" pricePrecision={2} onPricePick={onPricePick} />);
+    expect(harness.clickHandlers).toHaveLength(1);
+    requireValue(harness.clickHandlers[0])({ point: { x: 120, y: 287.456 } });
+    expect(harness.candles.coordinateToPrice).toHaveBeenLastCalledWith(287.456);
+    expect(onPricePick).toHaveBeenLastCalledWith("12.54");
+    // Below zero on the scale, or a click the chart reports without a point, picks nothing.
+    requireValue(harness.clickHandlers[0])({ point: { x: 120, y: 320 } });
+    requireValue(harness.clickHandlers[0])({});
+    expect(onPricePick).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Use line" }));
+    expect(harness.clickHandlers).toHaveLength(1);
+    requireValue(harness.clickHandlers[0])({ point: { x: 120, y: 200 } });
+    expect(harness.line.coordinateToPrice).toHaveBeenLastCalledWith(200);
+    expect(onPricePick).toHaveBeenLastCalledWith("100.00");
+    view.unmount();
   });
   it("moves the account's price lines onto whichever series is showing", () => {
     const levels = [{ key: "entry:1", kind: "entry" as const, price: 64_000, title: "Entry", side: "buy" as const }];

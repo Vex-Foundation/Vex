@@ -61,14 +61,20 @@ export function useLighterPublicMarketStream({
   marketId,
   marketType,
   restSnapshot,
+  reloadKey = 0,
 }: {
   readonly enabled: boolean;
   readonly environment: LighterTradingEnvironment;
   readonly marketId: number | null;
   readonly marketType: LighterTradingMarketType | null;
   readonly restSnapshot: LighterTradingSnapshot | null;
+  /**
+   * Bumped to rebuild the subscription on demand. An exhausted public stream
+   * never rearms itself in main; a fresh subscriber is what restarts it.
+   */
+  readonly reloadKey?: number;
 }): LighterPublicMarketStreamState {
-  const identity = `${environment}:${marketType ?? "none"}:${marketId ?? "none"}`;
+  const identity = `${environment}:${marketType ?? "none"}:${marketId ?? "none"}:${reloadKey}`;
   const [state, setState] = useState<InternalState>(() => ({
     identity,
     status: enabled && marketId !== null && marketType !== null ? "connecting" : "stopped",

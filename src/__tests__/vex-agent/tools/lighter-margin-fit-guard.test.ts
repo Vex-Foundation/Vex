@@ -222,6 +222,18 @@ describe("assertLighterOrderFitsAccountMargin", () => {
     })).resolves.toBeUndefined();
   });
 
+  it("admits a short that flips a long when the long's freed margin covers the new side", async () => {
+    // 0.10 USDG available with a 0.06 ETH long open: shorting 0.066 closes the
+    // long (freeing about 7.70 USDG) and opens only 0.006 short.
+    await expect(assertLighterOrderFitsAccountMargin({
+      environment: "rhc",
+      accountIndex: 31824,
+      account: account({ available_balance: "0.100000", positions: [ethPosition(1, "0.0600")] }),
+      preview: preview({ side: "sell", baseAmountInteger: "660", priceInteger: "267720" }),
+      client: client().typed,
+    })).resolves.toBeUndefined();
+  });
+
   it("leaves reduce-only orders to Lighter", async () => {
     const { reads, typed } = client();
     await assertLighterOrderFitsAccountMargin({

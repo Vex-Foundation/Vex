@@ -81,6 +81,7 @@ vi.mock("lightweight-charts", () => ({
   LineStyle: { Dotted: 1 },
   TickMarkType: { Year: 0, Month: 1, DayOfMonth: 2, Time: 3, TimeWithSeconds: 4 },
   PriceScaleMode: { Normal: 0, Logarithmic: 1 },
+  CrosshairMode: { Normal: 0 },
   createChart: chartHarness.createChart,
   createSeriesMarkers: vi.fn(() => ({ detach: vi.fn() })),
 }));

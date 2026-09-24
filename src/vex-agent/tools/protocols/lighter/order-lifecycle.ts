@@ -66,6 +66,7 @@ import {
   runLighterNonceRecovery,
   type LighterNonceRecoveryRunner,
 } from "./nonce-commit-recovery.js";
+import { withLighterBeforeSendFailures, type LighterSendPhase } from "./before-send.js";
 
 const AUTH_TTL_SECONDS = 10 * 60;
 const SIGNER_EXPIRY_MS = 60_000;
@@ -577,6 +578,15 @@ export async function executeApprovedLighterCancelOne(
   deps: LighterOrderLifecycleExecutionDeps,
   abortSignal?: AbortSignal,
 ): Promise<ExecuteApprovedLighterCancelOneResult> {
+  return withLighterBeforeSendFailures((sendPhase) => runApprovedLighterCancelOne(intent, deps, abortSignal, sendPhase));
+}
+
+async function runApprovedLighterCancelOne(
+  intent: LighterOrderLifecycleIntentRow,
+  deps: LighterOrderLifecycleExecutionDeps,
+  abortSignal: AbortSignal | undefined,
+  sendPhase: LighterSendPhase,
+): Promise<ExecuteApprovedLighterCancelOneResult> {
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
     assertIntentAuthority(intent.expiresAt, deps.now(), phase, abortSignal);
   assertAuthority("before_reservation");
@@ -670,6 +680,7 @@ export async function executeApprovedLighterCancelOne(
 
   const reservationId = `lighter-lifecycle:${intent.intentId}`;
   assertAuthority("before_reservation");
+  sendPhase.reserving = true;
   const reserved = await deps.transaction(async (client) => {
     const nonce = await deps.nonceState.reserveObservedWith(client, {
       environment: intent.environment,
@@ -828,6 +839,15 @@ export async function executeApprovedLighterModifyOrder(
   deps: LighterOrderLifecycleExecutionDeps,
   abortSignal?: AbortSignal,
 ): Promise<ExecuteApprovedLighterModifyOrderResult> {
+  return withLighterBeforeSendFailures((sendPhase) => runApprovedLighterModifyOrder(intent, deps, abortSignal, sendPhase));
+}
+
+async function runApprovedLighterModifyOrder(
+  intent: LighterOrderLifecycleIntentRow,
+  deps: LighterOrderLifecycleExecutionDeps,
+  abortSignal: AbortSignal | undefined,
+  sendPhase: LighterSendPhase,
+): Promise<ExecuteApprovedLighterModifyOrderResult> {
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
     assertIntentAuthority(intent.expiresAt, deps.now(), phase, abortSignal);
   assertAuthority("before_reservation");
@@ -955,6 +975,7 @@ export async function executeApprovedLighterModifyOrder(
 
   const reservationId = `lighter-lifecycle:${intent.intentId}`;
   assertAuthority("before_reservation");
+  sendPhase.reserving = true;
   const reserved = await deps.transaction(async (client) => {
     const nonce = await deps.nonceState.reserveObservedWith(client, {
       environment: intent.environment,
@@ -1138,6 +1159,15 @@ export async function executeApprovedLighterCancelAll(
   deps: LighterOrderLifecycleExecutionDeps,
   abortSignal?: AbortSignal,
 ): Promise<ExecuteApprovedLighterCancelAllResult> {
+  return withLighterBeforeSendFailures((sendPhase) => runApprovedLighterCancelAll(intent, deps, abortSignal, sendPhase));
+}
+
+async function runApprovedLighterCancelAll(
+  intent: LighterOrderLifecycleIntentRow,
+  deps: LighterOrderLifecycleExecutionDeps,
+  abortSignal: AbortSignal | undefined,
+  sendPhase: LighterSendPhase,
+): Promise<ExecuteApprovedLighterCancelAllResult> {
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
     assertIntentAuthority(intent.expiresAt, deps.now(), phase, abortSignal);
   assertAuthority("before_reservation");
@@ -1225,6 +1255,7 @@ export async function executeApprovedLighterCancelAll(
 
   const reservationId = `lighter-lifecycle:${intent.intentId}`;
   assertAuthority("before_reservation");
+  sendPhase.reserving = true;
   const reserved = await deps.transaction(async (client) => {
     const nonce = await deps.nonceState.reserveObservedWith(client, {
       environment: intent.environment,
@@ -1387,6 +1418,15 @@ export async function executeApprovedLighterClosePosition(
   deps: LighterOrderLifecycleExecutionDeps,
   abortSignal?: AbortSignal,
 ): Promise<ExecuteApprovedLighterClosePositionResult> {
+  return withLighterBeforeSendFailures((sendPhase) => runApprovedLighterClosePosition(intent, deps, abortSignal, sendPhase));
+}
+
+async function runApprovedLighterClosePosition(
+  intent: LighterOrderLifecycleIntentRow,
+  deps: LighterOrderLifecycleExecutionDeps,
+  abortSignal: AbortSignal | undefined,
+  sendPhase: LighterSendPhase,
+): Promise<ExecuteApprovedLighterClosePositionResult> {
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
     assertIntentAuthority(intent.expiresAt, deps.now(), phase, abortSignal);
   assertAuthority("before_reservation");
@@ -1532,6 +1572,7 @@ export async function executeApprovedLighterClosePosition(
   }
   const reservationId = `lighter-lifecycle:${intent.intentId}`;
   assertAuthority("before_reservation");
+  sendPhase.reserving = true;
   const reserved = await deps.transaction(async (client) => {
     const nonce = await deps.nonceState.reserveObservedWith(client, {
       environment: intent.environment,

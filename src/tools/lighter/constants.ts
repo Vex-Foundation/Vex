@@ -93,6 +93,15 @@ export const LIGHTER_CANDLE_RESOLUTION_MS: Record<LighterCandleResolution, numbe
   "1w": 7 * 24 * 60 * 60_000,
 };
 
+/**
+ * How long one Lighter READ may wait. Reads normally answer in well under a
+ * second; with the network down, macOS can leave a connection hanging, and the
+ * general 30-second HTTP limit held an approved desk order on a spinner for 32
+ * seconds before it failed (2026-09-24). Sends keep the longer limit: cutting a
+ * send short would leave it unknown whether it reached the sequencer.
+ */
+export const LIGHTER_READ_TIMEOUT_MS = 10_000;
+
 export const LIGHTER_ORDER_BOOK_LIMIT_MIN = 1;
 export const LIGHTER_ORDER_BOOK_LIMIT_MAX = 250;
 export const LIGHTER_RECENT_TRADES_LIMIT_MIN = 1;

@@ -20,6 +20,11 @@
  * market's `taker_fee` read 0 while the account's Premium tier charged 0.035%.
  *
  * A resting order is margined at its own price, which is where it fills.
+ *
+ * An order that first closes an opposite position frees that position's
+ * initial margin in the same trade, while it pays fees and books the fill gap
+ * on everything it trades. Counting only the new exposure against the
+ * available balance refused flips Lighter accepts.
  */
 
 import { LIGHTER_CAPITAL_UNITS_DECIMALS } from "./capital-share.js";
@@ -46,6 +51,8 @@ export interface LighterOrderMarginFitInput {
   readonly side: "buy" | "sell";
   /** Base units that ADD exposure: the order size minus any opposite position it closes first. */
   readonly increasingBaseInteger: string;
+  /** Base units of an opposite position this order closes before adding exposure; "0" when none. */
+  readonly closingBaseInteger?: string;
   /** The approved price at the market's price decimals: a limit price or a market order's bound. */
   readonly approvedPriceInteger: string;
   /**
@@ -81,6 +88,8 @@ export interface LighterOrderMarginFit {
   readonly initialMarginUnits: string;
   readonly feeUnits: string;
   readonly markGapUnits: string;
+  /** Initial margin the closed opposite position frees in the same trade. */
+  readonly releasedMarginUnits: string;
   readonly availableUnits: string;
   /** Largest increasing base that fits, in base units; "0" when none does. */
   readonly maxIncreasingBaseInteger: string;
@@ -91,10 +100,12 @@ interface Requirement {
   readonly initialMargin: bigint;
   readonly fees: bigint;
   readonly markGap: bigint;
+  readonly released: bigint;
 }
 
 interface Terms {
   readonly side: "buy" | "sell";
+  readonly closing: bigint;
   readonly bound: bigint;
   readonly matchesNow: boolean;
   readonly levels: readonly { readonly price: bigint; readonly size: bigint }[];
@@ -117,6 +128,7 @@ export function assessLighterOrderMarginFit(input: LighterOrderMarginFitInput): 
     initialMarginUnits: requirement.initialMargin.toString(),
     feeUnits: requirement.fees.toString(),
     markGapUnits: requirement.markGap.toString(),
+    releasedMarginUnits: requirement.released.toString(),
     availableUnits: available.toString(),
     maxIncreasingBaseInteger: (fits ? base : largestFittingBase(terms, base, available)).toString(),
   };
@@ -150,6 +162,7 @@ function resolveTerms(input: LighterOrderMarginFitInput): Terms {
     .filter((level) => level.size > 0n && (input.side === "buy" ? level.price <= bound : level.price >= bound));
   return {
     side: input.side,
+    closing: parseUnsignedInteger(input.closingBaseInteger ?? "0", "closingBaseInteger"),
     bound,
     matchesNow: input.takesLiquidity ?? true,
     levels,
@@ -162,24 +175,30 @@ function resolveTerms(input: LighterOrderMarginFitInput): Terms {
 }
 
 function requirementFor(terms: Terms, base: bigint): Requirement {
-  if (base === 0n) return { total: 0n, initialMargin: 0n, fees: 0n, markGap: 0n };
-  // What the order trades, at the market's quote scale.
-  const traded = terms.matchesNow ? fillNotional(terms, base) : base * terms.bound;
+  if (base === 0n) return { total: 0n, initialMargin: 0n, fees: 0n, markGap: 0n, released: 0n };
+  // Everything the order trades, closing part included, at the market's quote scale.
+  const tradedBase = terms.closing + base;
+  const traded = terms.matchesNow ? fillNotional(terms, tradedBase) : tradedBase * terms.bound;
   // Initial margin follows the mark once the order has matched. Without a mark
   // a buy is priced at its bound, the most it can pay, and a sell at its
   // average fill, since its own price is only a floor.
   const marginPrice = !terms.matchesNow
     ? terms.bound
-    : terms.markUp ?? (terms.side === "buy" ? terms.bound : ceilDiv(traded, base));
+    : terms.markUp ?? (terms.side === "buy" ? terms.bound : ceilDiv(traded, tradedBase));
   let gap = 0n;
   if (terms.matchesNow && terms.markUp !== null && terms.markDown !== null) {
-    gap = terms.side === "buy" ? traded - base * terms.markDown : base * terms.markUp - traded;
+    gap = terms.side === "buy" ? traded - tradedBase * terms.markDown : tradedBase * terms.markUp - traded;
     if (gap < 0n) gap = 0n;
   }
   const initialMargin = toUnitsUp(ceilDiv(base * marginPrice * terms.imf, BigInt(LIGHTER_MARGIN_FRACTION_TICK)), terms.quoteDecimals);
   const fees = toUnitsUp(ceilDiv(traded * terms.feeTicks, FEE_TICK_DENOMINATOR), terms.quoteDecimals);
   const markGap = toUnitsUp(gap, terms.quoteDecimals);
-  return { total: initialMargin + fees + markGap, initialMargin, fees, markGap };
+  // The closed position's margin at the mark, rounded DOWN; unknown without a mark.
+  const released = terms.closing === 0n || terms.markDown === null
+    ? 0n
+    : toUnitsDown((terms.closing * terms.markDown * terms.imf) / BigInt(LIGHTER_MARGIN_FRACTION_TICK), terms.quoteDecimals);
+  const owed = initialMargin + fees + markGap - released;
+  return { total: owed > 0n ? owed : 0n, initialMargin, fees, markGap, released };
 }
 
 /** Walk the reachable levels; whatever the listed depth cannot fill is priced at the bound. */
@@ -219,6 +238,14 @@ function toUnitsUp(value: bigint, quoteDecimals: number): bigint {
     return value * 10n ** BigInt(LIGHTER_CAPITAL_UNITS_DECIMALS - quoteDecimals);
   }
   return ceilDiv(value, 10n ** BigInt(quoteDecimals - LIGHTER_CAPITAL_UNITS_DECIMALS));
+}
+
+function toUnitsDown(value: bigint, quoteDecimals: number): bigint {
+  if (value <= 0n) return 0n;
+  if (quoteDecimals <= LIGHTER_CAPITAL_UNITS_DECIMALS) {
+    return value * 10n ** BigInt(LIGHTER_CAPITAL_UNITS_DECIMALS - quoteDecimals);
+  }
+  return value / 10n ** BigInt(quoteDecimals - LIGHTER_CAPITAL_UNITS_DECIMALS);
 }
 
 function ceilDiv(numerator: bigint, denominator: bigint): bigint {

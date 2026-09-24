@@ -62,14 +62,17 @@ export function useLighterCandleStream({
   marketId,
   resolution,
   restCandles,
+  reloadKey = 0,
 }: {
   readonly enabled: boolean;
   readonly environment: LighterTradingEnvironment;
   readonly marketId: number | null;
   readonly resolution: LighterTradingLiveResolution;
   readonly restCandles: readonly LighterTradingCandle[];
+  /** Bumped to rebuild the subscription on demand, as the desk's reload does. */
+  readonly reloadKey?: number;
 }): LighterCandleStreamState {
-  const identity = `${environment}:${marketId ?? "none"}:${resolution}`;
+  const identity = `${environment}:${marketId ?? "none"}:${resolution}:${reloadKey}`;
   const [state, setState] = useState<InternalStreamState>(() => ({
     identity,
     candles: upsertChartCandles([], restRows(restCandles)),

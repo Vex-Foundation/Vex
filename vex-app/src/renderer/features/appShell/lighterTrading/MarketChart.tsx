@@ -4,6 +4,7 @@ import {
   ColorType,
   createChart,
   createSeriesMarkers,
+  CrosshairMode,
   HistogramSeries,
   LineSeries,
   LineStyle,
@@ -15,6 +16,7 @@ import {
   type IPriceLine,
   type IRange,
   type ISeriesApi,
+  type MouseEventParams,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
@@ -90,6 +92,11 @@ export interface MarketChartProps {
    * ticket. Placing still runs through the ticket and its approval card.
    */
   readonly onDragOrder?: (price: string, side: ChartOrderSide) => void;
+  /**
+   * Click-to-price: a click on the chart hands over the price under the
+   * pointer, rounded to the market's tick. The ticket decides whether it lands.
+   */
+  readonly onPricePick?: (price: string) => void;
   /** Called when the user scrolls near the earliest loaded bar. */
   readonly onLoadOlder?: () => void;
   /** Whether the provider has confirmed that no earlier page exists. */
@@ -190,6 +197,13 @@ function resolvePriceFormat(
     ? minMoveInput!
     : defaultMinMove;
   return { type: "price", precision, minMove };
+}
+
+/** The tick-rounded price a chart click picks, or null off the chart's price range. */
+function chartClickPrice(raw: number | null, minMove: number, precision: number): string | null {
+  if (raw === null || !Number.isFinite(raw)) return null;
+  const snapped = Math.round(raw / minMove) * minMove;
+  return snapped > 0 ? snapped.toFixed(precision) : null;
 }
 
 function initialVisibleRange(
@@ -294,6 +308,7 @@ export function MarketChart({
   onRetry,
   onChooseMarket,
   onDragOrder,
+  onPricePick,
   onLoadOlder,
   historyStatus = "idle",
   toolbarStart,
@@ -313,6 +328,9 @@ export function MarketChart({
   const crosshairActiveRef = useRef(false);
   const onLoadOlderRef = useRef(onLoadOlder);
   onLoadOlderRef.current = onLoadOlder;
+  const onPricePickRef = useRef(onPricePick);
+  onPricePickRef.current = onPricePick;
+  const pricePickable = onPricePick !== undefined;
   const [legend, setLegend] = useState<ChartLegendValues | null>(null);
   const [countdown, setCountdown] = useState<string | null>(null);
   const [nearHistoryStart, setNearHistoryStart] = useState(false);
@@ -407,6 +425,9 @@ export function MarketChart({
         tickMarkFormatter: formatLocalChartTick,
       },
       crosshair: {
+        // The horizontal line follows the pointer instead of snapping to the
+        // nearest close, so the axis label shows the price a click picks.
+        mode: CrosshairMode.Normal,
         vertLine: { color: colors.ink, labelBackgroundColor: colors.ink },
         horzLine: { color: colors.ink, labelBackgroundColor: colors.ink },
       },
@@ -702,6 +723,24 @@ export function MarketChart({
       if (chartRef.current !== null) markers.detach();
     };
   }, [fills, showFills, candles, chartType, theme]);
+
+  // Click-to-price. The chart only reports a click when the pointer barely
+  // moved, so panning never picks a price; the drawing tools and the order
+  // handle sit above the canvas and keep their own clicks.
+  useEffect(() => {
+    const series = chartType === "line" ? lineSeriesRef.current : candleSeriesRef.current;
+    if (!pricePickable || chartApi === null || series === null) return undefined;
+    const minMove = resolvePriceFormat(pricePrecision, priceMinMove).minMove;
+    const handleClick = (param: MouseEventParams<Time>): void => {
+      if (param.point === undefined) return;
+      const price = chartClickPrice(series.coordinateToPrice(param.point.y), minMove, precision);
+      if (price !== null) onPricePickRef.current?.(price);
+    };
+    chartApi.subscribeClick(handleClick);
+    return () => {
+      if (chartRef.current !== null) chartApi.unsubscribeClick(handleClick);
+    };
+  }, [pricePickable, chartApi, chartType, precision, pricePrecision, priceMinMove]);
 
   return (
     <>

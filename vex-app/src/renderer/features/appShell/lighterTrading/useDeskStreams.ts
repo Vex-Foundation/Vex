@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type {
   LighterTradingCandle,
   LighterTradingEnvironment,
@@ -26,6 +27,8 @@ export interface DeskStreamsInput {
  * the results down to the chart, book and ticket.
  */
 export function useDeskStreams({ environment, market, resolution }: DeskStreamsInput) {
+  const queryClient = useQueryClient();
+  const [reloadKey, setReloadKey] = useState(0);
   const snapshotQuery = useLighterTradingSnapshot(
     environment,
     market?.marketId ?? null,
@@ -39,6 +42,7 @@ export function useDeskStreams({ environment, market, resolution }: DeskStreamsI
     marketId: market?.marketId ?? null,
     resolution,
     restCandles: snapshot?.candles ?? EMPTY_CANDLES,
+    reloadKey,
   });
   const publicMarketStream = useLighterPublicMarketStream({
     enabled: market !== null,
@@ -46,6 +50,7 @@ export function useDeskStreams({ environment, market, resolution }: DeskStreamsI
     marketId: market?.marketId ?? null,
     marketType: market?.marketType ?? null,
     restSnapshot: snapshot,
+    reloadKey,
   });
 
   // A live stream that drops back to delayed or worse re-reads the snapshot
@@ -72,7 +77,16 @@ export function useDeskStreams({ environment, market, resolution }: DeskStreamsI
     && publicMarketStream.bookStatus !== "delayed"
     && publicMarketStream.bookStatus !== "unavailable";
 
-  return { snapshotQuery, snapshot, candleStream, publicMarketStream, book, lastPrice, dataFresh };
+  // The header's reload. After about two minutes without a connection the
+  // public stream gives up and never rearms on its own, so the desk stayed
+  // "Unavailable" after the network came back. Rebuild both streams and
+  // re-read every Lighter view the desk shows.
+  const reload = useCallback((): void => {
+    setReloadKey((key) => key + 1);
+    void queryClient.invalidateQueries({ queryKey: ["lighterTrading"] });
+  }, [queryClient]);
+
+  return { snapshotQuery, snapshot, candleStream, publicMarketStream, book, lastPrice, dataFresh, reload };
 }
 
 export type DeskStreams = ReturnType<typeof useDeskStreams>;

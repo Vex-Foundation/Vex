@@ -413,6 +413,39 @@ describe("Lighter public market stream", () => {
     h.supervisor.stop();
   });
 
+  it("takes a snapshot as deep as RHC's BTC book and goes live", async () => {
+    // 2026-09-24: RHC's BTC snapshot carried 2,401 asks and 2,903 bids. The old
+    // 5,000-level bound discarded it on every connect and the desk read
+    // "Unavailable" for good.
+    const h = makeHarness();
+    const socket = await connect(h);
+    const levels = (start: number, count: number, step: number) =>
+      Array.from({ length: count }, (_value, index) => ({ price: (start + index * step).toFixed(1), size: "0.01" }));
+
+    socket.message(bookFrame({
+      asks: levels(84_282.7, 2_401, 0.1),
+      bids: levels(84_282.6, 2_903, -0.1),
+    }));
+
+    expect(h.diagnostics.map((entry) => entry.event)).not.toContain("lighter.public_market.frame_invalid");
+    expect(h.events).toContainEqual(expect.objectContaining({ kind: "book" }));
+    expect(h.deps.createSocket).toHaveBeenCalledTimes(1);
+    h.supervisor.stop();
+  });
+
+  it("names the reason when it drops a frame", async () => {
+    const h = makeHarness();
+    const socket = await connect(h);
+
+    socket.message(bookFrame({ nonce: "not-a-nonce" }));
+
+    expect(h.diagnostics).toContainEqual(expect.objectContaining({
+      event: "lighter.public_market.frame_invalid",
+      detail: expect.objectContaining({ reason: "invalid_market_evidence" }),
+    }));
+    h.supervisor.stop();
+  });
+
   it("discards a reconstructed book that outgrows its retained bound and resnapshots", async () => {
     const h = makeHarness();
     const socket = await connect(h);
@@ -456,7 +489,7 @@ describe("Lighter public market stream", () => {
     h.supervisor.stop();
   });
 
-  it("stops retrying after the restart budget and reports the market unavailable", async () => {
+  it("stops retrying after the restart budget, and rearms only for a new subscriber", async () => {
     const h = makeHarness();
     const socket = await connect(h);
     h.events.length = 0;
@@ -482,8 +515,14 @@ describe("Lighter public market stream", () => {
     }));
     expect(h.events.at(-1)).toMatchObject({ kind: "status", status: "unavailable" });
 
-    // A later subscriber is told the truth instead of a "connecting" that will
-    // never resolve, and no new socket is opened for it.
+    // Nothing reconnects on a timer once the budget is spent...
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(h.sockets).toHaveLength(LIGHTER_PUBLIC_MARKET_MAX_RECONNECT_ATTEMPTS);
+
+    // ...but a new subscriber is a deliberate ask for this market (the desk's
+    // reload, a market switch). Reporting "unavailable" to it left the desk
+    // dead after the network came back; the budget is rebuilt and a socket
+    // opens at once.
     h.supervisor.subscribe(
       52,
       {
@@ -494,9 +533,9 @@ describe("Lighter public market stream", () => {
       },
       (event) => h.events.push(event),
     );
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(h.events.at(-1)).toMatchObject({ kind: "status", status: "unavailable" });
-    expect(h.sockets).toHaveLength(LIGHTER_PUBLIC_MARKET_MAX_RECONNECT_ATTEMPTS);
+    expect(h.events.at(-1)).toMatchObject({ kind: "status", status: "reconnecting" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.sockets).toHaveLength(LIGHTER_PUBLIC_MARKET_MAX_RECONNECT_ATTEMPTS + 1);
     h.supervisor.stop();
   });
 });

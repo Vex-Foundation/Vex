@@ -14,7 +14,7 @@ function finite(value: string | null): number | null {
 export interface PositionMetrics {
   /** Live mark for the active market; otherwise the snapshot's notional over size. */
   readonly mark: number | null;
-  /** Collateral the position holds: Lighter's allocation, else notional × IMF. */
+  /** Collateral the position holds: Lighter's allocation when isolated, else notional × IMF. */
   readonly margin: number | null;
   /** Position leverage as `10000 / IMF`, null when the row carried no terms. */
   readonly leverage: number | null;
@@ -26,7 +26,13 @@ export function positionMetrics(position: LighterPositionRow, liveMark: number |
   const size = finite(position.size);
   const value = finite(position.value);
   const mark = liveMark ?? (size !== null && size > 0 && value !== null ? value / size : null);
-  const allocated = finite(position.allocatedMargin);
+  // Lighter allocates margin only to isolated positions. A cross row reports
+  // `allocated_margin` 0, which read as "0.00 margin" and hid the ROE, so a
+  // cross position's margin is its notional times its fraction.
+  const allocatedValue = finite(position.allocatedMargin);
+  const allocated = position.marginMode !== "cross" && allocatedValue !== null && allocatedValue > 0
+    ? allocatedValue
+    : null;
   const imf = position.initialMarginFraction;
   const margin = allocated ?? (value !== null && imf !== null && imf > 0 ? (value * imf) / 10_000 : null);
   const pnl = finite(position.unrealizedPnl);

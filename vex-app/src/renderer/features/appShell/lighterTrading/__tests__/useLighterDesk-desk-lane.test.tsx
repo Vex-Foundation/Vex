@@ -29,6 +29,8 @@ const prepareDeskAction = vi.fn();
 const approve = vi.fn();
 const FILL = { tradeId: "t1", orderId: "9001", marketId: 7, symbol: "ETH", side: "buy", role: "taker", type: "trade", size: "0.5", price: "3200", value: null, realizedPnl: null, timestamp: 1 };
 const accountData = { value: undefined as unknown };
+const approvalsData = { value: [] as unknown[] };
+const approvalGet = vi.fn();
 const fillsData = { value: undefined as unknown };
 const funnelStep = vi.fn(async () => ({ ok: true, data: { recorded: false } }));
 
@@ -41,7 +43,7 @@ vi.mock("../../../../lib/api/lighter-trading.js", () => ({
   useLighterOnboardingChecklist: () => ({ data: undefined }),
 }));
 vi.mock("../../../../lib/api/approvals.js", () => ({
-  usePendingApprovals: () => ({ data: { ok: true, data: [] } }),
+  usePendingApprovals: () => ({ data: { ok: true, data: approvalsData.value } }),
 }));
 vi.mock("../useLighterCandleStream.js", () => ({
   useLighterCandleStream: () => ({ candles: [], status: "live", receivedAt: null }),
@@ -126,7 +128,9 @@ describe("desk lane", () => {
     funnelStep.mockClear();
     accountData.value = undefined;
     fillsData.value = undefined;
-    vi.stubGlobal("window", Object.assign(window, { vex: { lighterTrading: { prepareDeskAction }, approvals: { approve }, telemetry: { funnelStep } } }));
+    approvalsData.value = [];
+    approvalGet.mockReset();
+    vi.stubGlobal("window", Object.assign(window, { vex: { lighterTrading: { prepareDeskAction }, approvals: { approve, get: approvalGet }, telemetry: { funnelStep } } }));
     useUiStore.setState({ activeSessionId: "s1", createSessionOpen: false });
     useLighterAnalysisStore.getState().saveDesk({ environment: "rhc", marketId: 7, skipCloseConfirm: false });
   });
@@ -218,6 +222,50 @@ describe("desk lane", () => {
     expect(result.current.deskOutcome?.text).toContain("Check Trade History for any fill");
   });
 
+  describe("a desk card that times out", () => {
+    const closeCard = (expiresAt: string) => ({
+      id: "ap-exp",
+      origin: "desk",
+      status: "pending",
+      decisionReason: null,
+      expiresAt,
+      createdAt: new Date(Date.now() - 60_000).toISOString(),
+      preview: { namespace: "lighter", toolName: "position.close", criticalArgs: {} },
+    });
+
+    it("releases the close it locked once the card has expired unapproved", async () => {
+      // 2026-09-24: the close card expired at 15:47 and the row stayed "Awaiting approval".
+      accountData.value = { ok: true, data: positionAccount(Date.now()) };
+      prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-exp" } });
+      approvalGet.mockResolvedValue({ ok: true, data: { ...closeCard(new Date(Date.now() - 10_000).toISOString()), status: "rejected", decisionReason: "expired_ttl" } });
+      const { result, rerender } = renderDesk();
+
+      await act(async () => { result.current.accountActions.onClosePosition(OPEN_POSITION, 1); });
+      expect(result.current.closingPositions.get("7-long")).toBe("approval");
+
+      approvalsData.value = [closeCard(new Date(Date.now() - 10_000).toISOString())];
+      await act(async () => { rerender(); });
+
+      await vi.waitFor(() => expect(result.current.closingPositions.has("7-long")).toBe(false));
+      expect(approvalGet).toHaveBeenCalledWith({ id: "ap-exp" });
+      expect(result.current.deskOutcome?.text).toBe("The close request expired before it was approved. Nothing was sent.");
+    });
+
+    it("keeps the row locked when the card was approved in its last moments", async () => {
+      accountData.value = { ok: true, data: positionAccount(Date.now()) };
+      prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-exp" } });
+      approvalGet.mockResolvedValue({ ok: true, data: { ...closeCard(new Date(Date.now() - 10_000).toISOString()), status: "approved" } });
+      const { result, rerender } = renderDesk();
+
+      await act(async () => { result.current.accountActions.onClosePosition(OPEN_POSITION, 1); });
+      approvalsData.value = [closeCard(new Date(Date.now() - 10_000).toISOString())];
+      await act(async () => { rerender(); });
+
+      await vi.waitFor(() => expect(approvalGet).toHaveBeenCalled());
+      expect(result.current.closingPositions.get("7-long")).toBe("approval");
+    });
+  });
+
   it("unlocks a cancel when preparation is refused", async () => {
     const order = { marketId: 7, orderId: "9001" } as LighterOpenOrderRow;
     accountData.value = { ok: true, data: positionAccount(Date.now(), [], [order]) };
@@ -227,6 +275,38 @@ describe("desk lane", () => {
     await act(async () => { result.current.accountActions.onCancelOrder(order); });
     expect(result.current.cancellingOrders.has("7:9001")).toBe(false);
     expect(result.current.handoffError).toBe("Order is no longer active.");
+  });
+
+  it("says plainly that nothing was prepared when Lighter could not be reached", async () => {
+    // 2026-09-24, Wi-Fi off: the ticket read "Lighter order preview unavailable (LIGHTER_API_ERROR: ... fetch failed)".
+    const order = { marketId: 7, orderId: "9003" } as LighterOpenOrderRow;
+    accountData.value = { ok: true, data: positionAccount(Date.now(), [], [order]) };
+    prepareDeskAction.mockResolvedValue({
+      ok: true,
+      data: { kind: "refused", reason: "Lighter order preview unavailable (LIGHTER_API_ERROR: Check network connectivity - fetch failed)" },
+    });
+    const { result } = renderDesk();
+
+    await act(async () => { result.current.accountActions.onCancelOrder(order); });
+    expect(result.current.handoffError).toBe("Couldn't reach Lighter, so nothing was prepared or sent. Check your connection and try again.");
+  });
+
+  it("shows a refusal at approval time without the agent lane's wrapper and error code", async () => {
+    // Account 31824, 2026-09-24: the margin check's refusal reached the ticket wrapped.
+    const refusal = "Lighter would cancel this BTC order with no fill: it needs about 1.135142 USDG, but account 31824 has 0.103463 USDG available. Nothing was signed. Even Lighter's minimum of 0.00020 BTC does not fit. Add margin first.";
+    const order = { marketId: 7, orderId: "9002" } as LighterOpenOrderRow;
+    accountData.value = { ok: true, data: positionAccount(Date.now(), [], [order]) };
+    prepareDeskAction.mockResolvedValue({
+      ok: true,
+      data: {
+        kind: "refused",
+        reason: `Lighter order preview was created, but its approval card could not be prepared (INSUFFICIENT_BALANCE - ${refusal})`,
+      },
+    });
+    const { result } = renderDesk();
+
+    await act(async () => { result.current.accountActions.onCancelOrder(order); });
+    expect(result.current.handoffError).toBe(refusal);
   });
 
   it("unlocks a rejected close and keeps a resting reduce-only limit tied to its position", async () => {
