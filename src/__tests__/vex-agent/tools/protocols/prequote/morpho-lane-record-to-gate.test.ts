@@ -91,6 +91,12 @@ interface LaneModules {
  * Load the recorder, the registry and the gate's identity extractor, optionally
  * with the lane owner substituted. The reset is what makes the substitution
  * reach every module that read the owner at evaluation time.
+ *
+ * The owner is resolved FIRST and the three graphs load one after another.
+ * Loading them concurrently while the async mock factory was still resolving
+ * let one graph bind the original owner on a cold, busy runner, so a renamed or
+ * collapsed lane reached only some of the sites and the pair failed with
+ * "Cannot read properties of undefined (reading 'trim')".
  */
 async function loadModules(lane?: (actual: LaneOwner) => Record<string, string>): Promise<LaneModules> {
   vi.resetModules();
@@ -100,11 +106,10 @@ async function loadModules(lane?: (actual: LaneOwner) => Record<string, string>)
       return { ...actual, ...lane(actual) };
     });
   }
-  const [prequote, registry, gate] = await Promise.all([
-    import("@vex-agent/tools/protocols/swap-prequote.js"),
-    import("@vex-agent/tools/protocols/prequote/registry.js"),
-    import("@vex-agent/tools/protocols/prequote/gate/identity.js"),
-  ]);
+  await import(LANE_MODULE);
+  const prequote = await import("@vex-agent/tools/protocols/swap-prequote.js");
+  const registry = await import("@vex-agent/tools/protocols/prequote/registry.js");
+  const gate = await import("@vex-agent/tools/protocols/prequote/gate/identity.js");
   return { prequote, registry, gate };
 }
 
