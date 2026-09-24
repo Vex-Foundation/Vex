@@ -64,8 +64,8 @@ describe("MarketBar", () => {
 
     const reload = screen.getByRole("button", { name: "Reload market data from Lighter" });
     expect(screen.getByRole("status").textContent).toContain("Unavailable");
-    // The reload sits between the status and the time it was last updated.
-    expect(reload.nextElementSibling?.textContent).toMatch(/\d/);
+    // The reload follows the time the market was last updated.
+    expect(reload.previousElementSibling?.textContent).toMatch(/\d/);
     fireEvent.click(reload);
     expect(onReload).toHaveBeenCalledTimes(1);
 

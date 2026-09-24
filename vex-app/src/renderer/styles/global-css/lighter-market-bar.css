@@ -239,7 +239,7 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
 .lit-live-status[data-status="unavailable"] { color: var(--lit-negative); }
 .lit-live-status[data-status="stopped"] { color: var(--lit-ink-muted); }
 
-/* Status text and the dot stay together; the reload sits between the label and the time. */
+/* Status text and the dot stay together; the reload follows the time. */
 .lit-live-status > [role="status"] {
   display: inline-flex;
   align-items: center;

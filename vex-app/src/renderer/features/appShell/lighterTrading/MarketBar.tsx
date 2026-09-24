@@ -174,7 +174,12 @@ export function MarketBar({
         </span>
         {streamStatus === "live" ? null : (
           <>
-            {statsAsOf === null && onReload === undefined ? null : <span aria-hidden="true">·</span>}
+            {statsAsOf === null ? null : (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{formatRetrievedAt(statsAsOf)}</span>
+              </>
+            )}
             {onReload === undefined ? null : (
               <button type="button" className="lit-live-reload" onClick={onReload} aria-label="Reload market data from Lighter" title="Reload from Lighter">
                 <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -183,7 +188,6 @@ export function MarketBar({
                 </svg>
               </button>
             )}
-            {statsAsOf === null ? null : <span>{formatRetrievedAt(statsAsOf)}</span>}
           </>
         )}
       </span>
