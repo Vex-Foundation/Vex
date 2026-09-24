@@ -596,6 +596,32 @@
   animation: lit-ticket-status-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.lit-review-outcome-text {
+  display: block;
+  padding-right: 24px;
+}
+
+.lit-review-outcome-dismiss {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lit-review-outcome-dismiss::before { content: "×"; }
+.lit-review-outcome-dismiss:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
+.lit-review-outcome-dismiss:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+
 .lit-review-outcome-timer {
   position: absolute;
   right: 0;
@@ -604,7 +630,7 @@
   height: 3px;
   background: currentColor;
   transform-origin: left center;
-  animation: lit-review-outcome-drain 5s linear forwards;
+  animation: lit-review-outcome-drain 20s linear forwards;
 }
 
 @keyframes lit-review-outcome-drain {
@@ -612,7 +638,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lit-review-outcome-timer { animation-timing-function: steps(5, end); }
+  .lit-review-outcome-timer { animation: none; }
 }
 
 @keyframes lit-ticket-status-in {

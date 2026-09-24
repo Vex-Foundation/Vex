@@ -39,6 +39,7 @@ const ONBOARDING_STEPS = [
 ] as const;
 
 const STEP_STATE_TEXT = { done: "Done", todo: "To do", not_required: "Not needed" } as const;
+const TICKET_NOTICE_DURATION_MS = 20_000;
 const SETUP_ACTION_TEXT: Readonly<Record<LighterOnboardingChecklist["nextAction"], string>> = {
   start_setup: "Set up Lighter",
   continue_setup: "Continue setup",
@@ -163,7 +164,7 @@ export function TradeTicket({
     const sequence = visibleNotice.sequence;
     const timeout = window.setTimeout(() => {
       setVisibleNotice((current) => current?.sequence === sequence ? null : current);
-    }, 5_000);
+    }, TICKET_NOTICE_DURATION_MS);
     return () => window.clearTimeout(timeout);
   }, [visibleNotice]);
   // The inactive side's button is an order for that side: flip the side, then
@@ -581,7 +582,14 @@ export function TradeTicket({
         </p>
         {visibleNotice !== null ? (
           <div className="lit-review-outcome" data-tone={visibleNotice.value.tone} role={visibleNotice.value.tone === "error" ? "alert" : "status"} key={visibleNotice.sequence}>
-            <span>{visibleNotice.value.text}</span>
+            <span className="lit-review-outcome-text">{visibleNotice.value.text}</span>
+            <button
+              type="button"
+              className="lit-review-outcome-dismiss"
+              aria-label="Dismiss notification"
+              title="Dismiss notification"
+              onClick={() => setVisibleNotice((current) => current?.sequence === visibleNotice.sequence ? null : current)}
+            />
             <span className="lit-review-outcome-timer" aria-hidden="true" />
           </div>
         ) : null}

@@ -74,23 +74,23 @@ function renderTicket(overrides: Partial<Parameters<typeof TradeTicket>[0]> = {}
 }
 
 describe("Light it up trade ticket", () => {
-  it("shows each successful order notice below the side buttons for five seconds", () => {
+  it("shows each successful order notice below the side buttons for twenty seconds", () => {
     vi.useFakeTimers();
     try {
       const { rerender } = renderTicket({ outcome: { tone: "ok", text: "Close sent." } });
       const actions = screen.getByRole("group", { name: "Order side" });
       const first = document.querySelector(".lit-review-outcome");
       if (!first) throw new Error("expected the first order notice");
-      expect(first.textContent).toBe("Close sent.");
+      expect(first.querySelector(".lit-review-outcome-text")?.textContent).toBe("Close sent.");
       expect(actions.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(first.querySelector(".lit-review-outcome-timer")).not.toBeNull();
 
-      act(() => { vi.advanceTimersByTime(4_999); });
+      act(() => { vi.advanceTimersByTime(19_999); });
       expect(document.querySelector(".lit-review-outcome")).not.toBeNull();
       rerender({ outcome: { tone: "ok", text: "Order opened." } });
       act(() => { vi.advanceTimersByTime(1); });
       expect(document.querySelector(".lit-review-outcome")?.textContent).toBe("Order opened.");
-      act(() => { vi.advanceTimersByTime(4_998); });
+      act(() => { vi.advanceTimersByTime(19_998); });
       expect(document.querySelector(".lit-review-outcome")).not.toBeNull();
       act(() => { vi.advanceTimersByTime(1); });
       expect(document.querySelector(".lit-review-outcome")).toBeNull();
@@ -99,20 +99,38 @@ describe("Light it up trade ticket", () => {
     }
   });
 
-  it("shows uncertain order outcomes with the same five-second countdown", () => {
+  it("shows uncertain order outcomes with the same twenty-second countdown", () => {
     vi.useFakeTimers();
     try {
       renderTicket({ outcome: { tone: "warn", text: "Outcome unknown. Check Orders before retrying." } });
       expect(document.querySelector(".lit-review-outcome")?.textContent).toContain("Outcome unknown");
       expect(document.querySelector(".lit-review-outcome-timer")).not.toBeNull();
-      act(() => { vi.advanceTimersByTime(5_000); });
+      act(() => { vi.advanceTimersByTime(20_000); });
       expect(document.querySelector(".lit-review-outcome")).toBeNull();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("places preview errors below Long and Short, then clears them after five seconds", () => {
+  it("lets the trader dismiss a notice without hiding a later one", () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender } = renderTicket({ outcome: { tone: "ok", text: "Close sent." } });
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
+      expect(screen.queryByRole("status")).toBeNull();
+
+      rerender({ outcome: { tone: "error", text: "Order unavailable." } });
+      expect(screen.getByRole("alert").textContent).toContain("Order unavailable.");
+      act(() => { vi.advanceTimersByTime(19_999); });
+      expect(screen.getByRole("alert")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
+      expect(screen.queryByRole("alert")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("places preview errors below Long and Short, then clears them after twenty seconds", () => {
     vi.useFakeTimers();
     try {
       renderTicket({ handoffError: "Lighter order preview unavailable (fetch failed)" });
@@ -121,7 +139,7 @@ describe("Light it up trade ticket", () => {
       expect(actions.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(notice.textContent).toContain("Lighter order preview unavailable");
       expect(notice.querySelector(".lit-review-outcome-timer")).not.toBeNull();
-      act(() => { vi.advanceTimersByTime(5_000); });
+      act(() => { vi.advanceTimersByTime(20_000); });
       expect(screen.queryByRole("alert")).toBeNull();
     } finally {
       vi.useRealTimers();
@@ -149,7 +167,7 @@ describe("Light it up trade ticket", () => {
       expect(actions.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(notice.textContent).toContain("Minimum size is 0.001 ETH.");
       expect(notice.querySelector(".lit-review-outcome-timer")).not.toBeNull();
-      act(() => { vi.advanceTimersByTime(5_000); });
+      act(() => { vi.advanceTimersByTime(20_000); });
       expect(screen.queryByRole("status")).toBeNull();
       const long = screen.getByRole("button", { name: "Long 0.0005 ETH" });
       expect((long as HTMLButtonElement).disabled).toBe(true);
@@ -168,7 +186,7 @@ describe("Light it up trade ticket", () => {
       const notice = screen.getByRole("status");
       expect(notice.textContent).toContain("Approval waiting");
       expect(actions.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      act(() => { vi.advanceTimersByTime(5_000); });
+      act(() => { vi.advanceTimersByTime(20_000); });
       expect(screen.queryByRole("status")).toBeNull();
       fireEvent.click(screen.getByRole("button", { name: "Review pending approval" }));
       expect(onReviewApprovals).toHaveBeenCalledTimes(1);
