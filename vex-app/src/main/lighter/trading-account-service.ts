@@ -4,6 +4,7 @@ import {
   marginModeFromWire,
   positionInitialMarginFractionToProviderScale,
 } from "@tools/lighter/margin-fraction.js";
+import { LIGHTER_UNREAD_EXCHANGE_FEE_TICKS } from "@tools/lighter/order-margin-fit.js";
 import type {
   LighterAccount,
   LighterAccountAsset,
@@ -15,6 +16,7 @@ import type {
   LighterTradingAccount,
   LighterTradingAccountUnavailableReason,
   LighterTradingAsset,
+  LighterTradingExchangeFees,
   LighterTradingFill,
   LighterTradingFills,
   LighterTradingOpenOrder,
@@ -30,6 +32,7 @@ import {
   readLighterTradingMarketList,
 } from "./trading-panel-service.js";
 import { log } from "../logger/index.js";
+import { resolveLighterSessionAccount } from "./session-account.js";
 
 const MAX_ROWS = 200;
 const LIGHTER_TRADING_FILLS_MAX = 100;
@@ -40,6 +43,21 @@ const UNSIGNED_DECIMAL_PATTERN = /^(?:0|[1-9]\d*)(?:\.\d+)?$/;
 export interface LighterTradingAccountClient {
   getAccount: LighterClient["getAccount"];
   getAccountActiveOrders: LighterClient["getAccountActiveOrders"];
+  /** The account's own exchange fee tier; without it the ticket assumes the ceiling. */
+  getAccountLimits?: LighterClient["getAccountLimits"];
+}
+
+/** Stands in for a tier that could not be read, above every tier Lighter publishes for Vex accounts. */
+const ASSUMED_CEILING_FEES: LighterTradingExchangeFees = {
+  makerTicks: LIGHTER_UNREAD_EXCHANGE_FEE_TICKS.maker,
+  takerTicks: LIGHTER_UNREAD_EXCHANGE_FEE_TICKS.taker,
+  source: "assumed_ceiling",
+};
+
+function feeTick(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 1_000_000
+    ? value
+    : null;
 }
 
 export interface LighterTradingFillsClient {
@@ -313,13 +331,15 @@ function unavailable(
     assets: [],
     positions: [],
     marginTerms: [],
+    exchangeFees: null,
     openOrders: [],
   };
 }
 
 /**
  * Reads the authenticated Light it up account panel. The owning account is
- * resolved from the unlocked trading scope - the renderer never supplies an
+ * resolved from the session wallet and its unlocked trading scope; legacy
+ * unscoped reads require exactly one account. The renderer never supplies an
  * account identity and never receives auth tokens. Positions and balances come
  * from the public account-index read; open orders use a short-lived read-only
  * auth derived in the main process. When no unlocked trading scope exists (no
@@ -334,6 +354,8 @@ export interface LighterTradingAccountProjectionInput {
   readonly ordersNextCursor?: string;
   readonly openOrdersAvailable: boolean;
   readonly openOrdersUnavailableReason?: "no_read_auth" | "read_failed";
+  /** The account's own tier; absent or null when it could not be read. */
+  readonly exchangeFees?: LighterTradingExchangeFees | null;
   readonly symbolFor: (marketId: number) => string;
   readonly now: () => number;
 }
@@ -398,6 +420,7 @@ export function projectLighterTradingAccount(
     assets,
     positions,
     marginTerms,
+    exchangeFees: input.exchangeFees ?? ASSUMED_CEILING_FEES,
     openOrders,
   };
 }
@@ -407,6 +430,7 @@ export async function readLighterTradingAccount(
   client: LighterTradingAccountClient = getLighterClient(),
   now: () => number = Date.now,
   signal?: AbortSignal,
+  sessionId?: string,
 ): Promise<LighterTradingAccount> {
   throwIfAborted(signal);
   const scopes = listUnlockedLighterTradingCredentialScopes(environment);
@@ -421,12 +445,16 @@ export async function readLighterTradingAccount(
       requireUnlockedMasterPassword().ok ? "not_onboarded" : "locked_vault",
     );
   }
-  // Multiple API keys for one account are equivalent for this read-only
-  // projection. Multiple distinct accounts are not: the renderer supplies no
-  // account identity, so main must fail closed instead of choosing by sort
-  // order and displaying an arbitrary account.
-  const accountIndex = resolveUniqueLighterAccountIndex(scopes);
+  // Session-bound reads resolve public wallet ownership. Legacy readers may
+  // select only one distinct account; multiple keys for it are equivalent.
+  const accountIndex = sessionId === undefined
+    ? resolveUniqueLighterAccountIndex(scopes)
+    : await resolveLighterSessionAccount({ sessionId, environment, signal });
   if (accountIndex === null) return unavailable(environment, now, "ambiguous_account");
+  if (!scopes.some((scope) => scope.accountIndex === accountIndex)) {
+    return unavailable(environment, now, "not_onboarded");
+  }
+  throwIfAborted(signal);
 
   const symbolFor = await symbolResolver(environment, signal);
   const accountResponse = await client.getAccount(environment, {
@@ -445,6 +473,9 @@ export async function readLighterTradingAccount(
   let openOrdersAvailable = false;
   let openOrdersUnavailableReason: "no_read_auth" | "read_failed" = "no_read_auth";
   const auth = await resolveLighterReadOnlyAccountAuth(environment, accountIndex);
+  // Alongside the orders read, not after it: the tier is what the ticket sizes
+  // every order's fee against.
+  const exchangeFeesRead = auth === null ? Promise.resolve(null) : readExchangeFees(client, environment, accountIndex, auth);
   if (auth !== null) {
     try {
       const ordersResponse = await client.getAccountActiveOrders(
@@ -468,6 +499,9 @@ export async function readLighterTradingAccount(
     }
   }
 
+  const exchangeFees = await exchangeFeesRead;
+  throwIfAborted(signal);
+
   return projectLighterTradingAccount({
     environment,
     accountIndex,
@@ -476,9 +510,30 @@ export async function readLighterTradingAccount(
     ordersNextCursor,
     openOrdersAvailable,
     openOrdersUnavailableReason,
+    exchangeFees,
     symbolFor,
     now,
   });
+}
+
+/** The account's own exchange fee tier, or null when it cannot be read. Never throws. */
+async function readExchangeFees(
+  client: LighterTradingAccountClient,
+  environment: LighterEnvironment,
+  accountIndex: number,
+  auth: NonNullable<Awaited<ReturnType<typeof resolveLighterReadOnlyAccountAuth>>>,
+): Promise<LighterTradingExchangeFees | null> {
+  if (client.getAccountLimits === undefined) return null;
+  try {
+    const limits = await client.getAccountLimits(environment, { accountIndex }, auth);
+    const makerTicks = feeTick(limits.current_maker_fee_tick);
+    const takerTicks = feeTick(limits.current_taker_fee_tick);
+    if (limits.code !== 200 || makerTicks === null || takerTicks === null) return null;
+    return { makerTicks, takerTicks, source: "account" };
+  } catch {
+    log.warn("[lighter-trading] account fee tier read failed", { environment, accountIndex });
+    return null;
+  }
 }
 
 /**
@@ -570,6 +625,7 @@ export async function readLighterTradingFills(
   client: LighterTradingFillsClient = getLighterClient(),
   now: () => number = Date.now,
   signal?: AbortSignal,
+  sessionId?: string,
 ): Promise<LighterTradingFills> {
   throwIfAborted(signal);
   const unavailable = (accountIndex: number | null): LighterTradingFills => ({
@@ -582,8 +638,12 @@ export async function readLighterTradingFills(
   });
   const scopes = listUnlockedLighterTradingCredentialScopes(environment);
   if (scopes.length === 0) return unavailable(null);
-  const accountIndex = resolveUniqueLighterAccountIndex(scopes);
+  const accountIndex = sessionId === undefined
+    ? resolveUniqueLighterAccountIndex(scopes)
+    : await resolveLighterSessionAccount({ sessionId, environment, signal });
   if (accountIndex === null) return unavailable(null);
+  if (!scopes.some((scope) => scope.accountIndex === accountIndex)) return unavailable(null);
+  throwIfAborted(signal);
   const auth = await resolveLighterReadOnlyAccountAuth(environment, accountIndex);
   if (auth === null) return unavailable(accountIndex);
 

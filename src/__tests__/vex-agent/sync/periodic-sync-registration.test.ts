@@ -89,6 +89,18 @@ describe("every seeded periodic sync type is reachable", () => {
     expect(await seededPeriodicSyncTypes()).toContain("lighter_order_repair");
   });
 
+  it("includes the bounded Lighter lifecycle (close/cancel/modify) nonce recovery sweep", async () => {
+    expect(await seededPeriodicSyncTypes()).toContain("lighter_lifecycle_repair");
+  });
+
+  it("includes the bounded Lighter OCO nonce recovery sweep", async () => {
+    expect(await seededPeriodicSyncTypes()).toContain("lighter_oco_repair");
+  });
+
+  it("includes the bounded Lighter nonce-owner (leverage/fee) recovery sweep", async () => {
+    expect(await seededPeriodicSyncTypes()).toContain("lighter_nonce_owner_repair");
+  });
+
   it("includes the bounded, credential-gated Lighter position snapshot sweep", async () => {
     expect(await seededPeriodicSyncTypes()).toContain("lighter_position_snapshot");
   });

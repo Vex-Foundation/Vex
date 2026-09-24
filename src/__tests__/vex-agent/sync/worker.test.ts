@@ -78,6 +78,30 @@ vi.mock("@vex-agent/tools/protocols/lighter/order-repair.js", () => ({
     mockRepairLighterOrders(...args),
 }));
 
+const mockRepairLighterLifecycles = vi.fn().mockResolvedValue({
+  examined: 2, advanced: 1, awaiting: 0, degraded: 1, errors: 0,
+});
+vi.mock("@vex-agent/tools/protocols/lighter/order-lifecycle-repair.js", () => ({
+  repairUnresolvedLighterOrderLifecyclesInBackground: (...args: unknown[]) =>
+    mockRepairLighterLifecycles(...args),
+}));
+
+const mockRepairLighterOco = vi.fn().mockResolvedValue({
+  examined: 1, advanced: 1, awaiting: 0, degraded: 0, errors: 0,
+});
+vi.mock("@vex-agent/tools/protocols/lighter/oco-order-repair.js", () => ({
+  repairUnresolvedLighterOcoInBackground: (...args: unknown[]) =>
+    mockRepairLighterOco(...args),
+}));
+
+const mockRecoverLighterNonceOwners = vi.fn().mockResolvedValue({
+  examined: 1, advanced: 1, awaiting: 0, degraded: 0, errors: 0,
+});
+vi.mock("@vex-agent/tools/protocols/lighter/nonce-recovery.js", () => ({
+  recoverLighterForeignNonceOwnersInBackground: (...args: unknown[]) =>
+    mockRecoverLighterNonceOwners(...args),
+}));
+
 const { drainPendingRuns, processNextRun } = await import("../../../vex-agent/sync/worker.js");
 
 describe("sync worker", () => {
@@ -181,6 +205,72 @@ describe("sync worker", () => {
       expect(mockCompleteRun).toHaveBeenCalledWith(
         18,
         { examined: 3, advanced: 1, awaiting: 1, degraded: 1, errors: 0 },
+        1,
+      );
+    });
+
+    it("dispatches a recovered Lighter lifecycle nonce-repair run", async () => {
+      mockClaimAllPending.mockResolvedValueOnce([
+        { id: 19, syncJobId: 46, executionId: null, status: "running", startedAt: "", endedAt: null, error: null, rowsAffected: 0 },
+      ]);
+      mockGetJob.mockResolvedValueOnce({
+        id: 46,
+        syncType: "lighter_lifecycle_repair",
+        namespace: "_global",
+        strategy: "periodic",
+      });
+
+      const result = await drainPendingRuns();
+
+      expect(result.processed).toBe(1);
+      expect(mockRepairLighterLifecycles).toHaveBeenCalledTimes(1);
+      expect(mockCompleteRun).toHaveBeenCalledWith(
+        19,
+        { examined: 2, advanced: 1, awaiting: 0, degraded: 1, errors: 0 },
+        1,
+      );
+    });
+
+    it("dispatches a recovered Lighter OCO nonce-repair run", async () => {
+      mockClaimAllPending.mockResolvedValueOnce([
+        { id: 20, syncJobId: 47, executionId: null, status: "running", startedAt: "", endedAt: null, error: null, rowsAffected: 0 },
+      ]);
+      mockGetJob.mockResolvedValueOnce({
+        id: 47,
+        syncType: "lighter_oco_repair",
+        namespace: "_global",
+        strategy: "periodic",
+      });
+
+      const result = await drainPendingRuns();
+
+      expect(result.processed).toBe(1);
+      expect(mockRepairLighterOco).toHaveBeenCalledTimes(1);
+      expect(mockCompleteRun).toHaveBeenCalledWith(
+        20,
+        { examined: 1, advanced: 1, awaiting: 0, degraded: 0, errors: 0 },
+        1,
+      );
+    });
+
+    it("dispatches a recovered Lighter nonce-owner (leverage/fee) repair run", async () => {
+      mockClaimAllPending.mockResolvedValueOnce([
+        { id: 21, syncJobId: 48, executionId: null, status: "running", startedAt: "", endedAt: null, error: null, rowsAffected: 0 },
+      ]);
+      mockGetJob.mockResolvedValueOnce({
+        id: 48,
+        syncType: "lighter_nonce_owner_repair",
+        namespace: "_global",
+        strategy: "periodic",
+      });
+
+      const result = await drainPendingRuns();
+
+      expect(result.processed).toBe(1);
+      expect(mockRecoverLighterNonceOwners).toHaveBeenCalledTimes(1);
+      expect(mockCompleteRun).toHaveBeenCalledWith(
+        21,
+        { examined: 1, advanced: 1, awaiting: 0, degraded: 0, errors: 0 },
         1,
       );
     });

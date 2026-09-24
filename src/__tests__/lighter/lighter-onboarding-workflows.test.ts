@@ -59,7 +59,7 @@ const VALID_TRANSITIONS: Readonly<
     "key_verified",
     "failed",
   ],
-  failed: ["deposit_approval_pending", "key_generated_encrypted"],
+  failed: ["deposit_approval_pending", "account_resolved", "key_generated_encrypted"],
 };
 
 function row(state = "integration_enabled") {

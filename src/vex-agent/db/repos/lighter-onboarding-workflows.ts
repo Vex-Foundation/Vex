@@ -87,7 +87,7 @@ const ALLOWED_NEXT: Readonly<Record<LighterOnboardingWorkflowState, readonly Lig
   nonce_synchronized: ["ready_to_trade", "failed"],
   ready_to_trade: ["deposit_approval_pending", "failed"],
   ambiguous: ["approve_confirmed", "deposit_l1_confirmed", "deposit_l2_pending", "account_resolved", "key_verified", "failed"],
-  failed: ["deposit_approval_pending", "key_generated_encrypted"],
+  failed: ["deposit_approval_pending", "account_resolved", "key_generated_encrypted"],
 };
 
 export async function getLighterOnboardingWorkflow(
@@ -235,6 +235,96 @@ export async function transitionLighterOnboardingWorkflowWith(
       input.publicKeyFingerprint ?? null,
       input.failureCode ?? null,
     ],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : mapRow(row);
+}
+
+/**
+ * Let a wallet whose key registration failed start a fresh one.
+ *
+ * A failed registration left the workflow `failed`, and key-registration
+ * prepare accepts only `account_resolved` onward, so the setup modal's
+ * "Continue setup" refused forever: once a registration failed, that wallet
+ * could never be onboarded again.
+ *
+ * This returns the workflow to `account_resolved` - clearing the slot and key
+ * fingerprint so a fresh reservation can take them - only when the failure is
+ * provably a key registration that never executed and never can:
+ *  - no live (non-failed) registration exists for the account;
+ *  - the most recent registration for this wallet and account is `failed`,
+ *    names the same API-key slot the workflow does, and never verified or
+ *    activated a key;
+ *  - it either never attempted a send, or it was failed because its signed
+ *    transaction expired with the nonce unconsumed.
+ * A deposit failure, or any registration that may have reached Lighter, is
+ * left exactly as it is. Returns the restarted workflow, or `null`.
+ */
+export async function restartFailedLighterKeyRegistrationWorkflowWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly environment: LighterEnvironment;
+    readonly walletAddress: string;
+    readonly accountIndex: number;
+  },
+): Promise<LighterOnboardingWorkflowRow | null> {
+  assertWalletAddress(input.walletAddress);
+  if (!Number.isSafeInteger(input.accountIndex) || input.accountIndex < 0) {
+    throw new Error("Lighter key-registration restart requires a valid account index.");
+  }
+  const result = await client.query<WorkflowRow>(
+    `WITH workflow AS MATERIALIZED (
+       SELECT environment, wallet_address, api_key_index
+         FROM lighter_onboarding_workflows
+        WHERE environment = $1
+          AND wallet_address = LOWER($2)
+          AND workflow_state = 'failed'
+          AND resolved_account_index = $3
+          AND api_key_index IS NOT NULL
+        FOR UPDATE
+     ), latest AS MATERIALIZED (
+       SELECT execution_state, api_key_index, send_attempt_started_at,
+              registration_ambiguity_reason, registration_key_verified_at,
+              registration_activated_at
+         FROM lighter_onboarding_intents
+        WHERE environment = $1
+          AND LOWER(wallet_address) = LOWER($2)
+          AND resolved_account_index = $3
+          AND capability = 'key_registration'
+        ORDER BY updated_at DESC, created_at DESC
+        LIMIT 1
+     )
+     UPDATE lighter_onboarding_workflows w
+        SET workflow_state = 'account_resolved',
+            last_stable_state = 'account_resolved',
+            api_key_index = NULL,
+            public_key_fingerprint = NULL,
+            failure_code = NULL,
+            revision = w.revision + 1,
+            updated_at = NOW()
+       FROM workflow, latest
+      WHERE w.environment = workflow.environment
+        AND w.wallet_address = workflow.wallet_address
+        AND w.workflow_state = 'failed'
+        AND latest.execution_state = 'failed'
+        AND latest.api_key_index = workflow.api_key_index
+        AND latest.registration_key_verified_at IS NULL
+        AND latest.registration_activated_at IS NULL
+        AND (
+          latest.send_attempt_started_at IS NULL
+          OR latest.registration_ambiguity_reason = 'expired_without_nonce_consumption'
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM lighter_onboarding_intents live
+           WHERE live.environment = $1
+             AND live.resolved_account_index = $3
+             AND live.capability = 'key_registration'
+             AND live.execution_state <> 'failed'
+        )
+      RETURNING w.environment, w.wallet_address, w.workflow_state, w.last_stable_state,
+        w.active_deposit_intent_id, w.resolved_account_index, w.api_key_index,
+        w.public_key_fingerprint, w.failure_code, w.revision, w.created_at, w.updated_at`,
+    [input.environment, input.walletAddress, input.accountIndex],
   );
   const row = result.rows[0];
   return row === undefined ? null : mapRow(row);

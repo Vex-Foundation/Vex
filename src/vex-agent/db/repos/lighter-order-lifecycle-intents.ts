@@ -242,6 +242,12 @@ export function isSafelyExpirablePreSubmit(
   intent: LighterOrderLifecycleIntentRow,
   nowMs = Date.now(),
 ): boolean {
+  return hasPristinePreSubmitEvidence(intent)
+    && Number.isFinite(Date.parse(intent.expiresAt))
+    && Date.parse(intent.expiresAt) <= nowMs;
+}
+
+export function hasPristinePreSubmitEvidence(intent: LighterOrderLifecycleIntentRow): boolean {
   const pending = intent.approvalStatus === "approval_pending"
     && intent.executionState === "approval_pending"
     && intent.approvalId === null
@@ -249,7 +255,8 @@ export function isSafelyExpirablePreSubmit(
     && intent.preSubmitRevalidationJson === null
     && intent.preSubmitRevalidatedAt === null;
   const approved = intent.approvalStatus === "approved"
-    && intent.approvalId !== null
+    // Full-access decisions have no approval card. Retirement consumes no
+    // authority; both kinds of approved row keep their original decision.
     && intent.decidedAt !== null
     && (
       (intent.executionState === "approved"
@@ -260,6 +267,7 @@ export function isSafelyExpirablePreSubmit(
         && intent.preSubmitRevalidatedAt !== null)
     );
   return (pending || approved)
+    && intent.sendAttemptStartedAt == null
     && intent.nonceReservationId === null
     && intent.nonceValue === null
     && intent.signerExpiryMs === null
@@ -271,9 +279,30 @@ export function isSafelyExpirablePreSubmit(
     && intent.volumeQuotaRemaining === null
     && intent.providerOutcomeJson === null
     && intent.providerOutcomeCheckedAt === null
-    && intent.ambiguousReason === null
-    && Number.isFinite(Date.parse(intent.expiresAt))
-    && Date.parse(intent.expiresAt) <= nowMs;
+    && intent.ambiguousReason === null;
+}
+
+/** The exact identity `expireStalePreSubmitWith` matches before it retires a row. */
+export function lighterLifecycleRetirementIdentity(intent: LighterOrderLifecycleIntentRow): {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly matchHash: string;
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly actionType: LighterOrderLifecycleAction;
+  readonly marketIndex: number | null;
+  readonly providerOrderId: string | null;
+} {
+  return {
+    intentId: intent.intentId,
+    sessionId: intent.sessionId,
+    matchHash: intent.matchHash,
+    environment: intent.environment,
+    accountIndex: intent.accountIndex,
+    actionType: intent.actionType,
+    marketIndex: intent.marketIndex,
+    providerOrderId: intent.providerOrderId,
+  };
 }
 
 export async function expireStalePreSubmitWith(
@@ -314,7 +343,7 @@ export async function expireStalePreSubmitWith(
             AND approval_id IS NULL AND decided_at IS NULL
             AND pre_submit_revalidation_json IS NULL AND pre_submit_revalidated_at IS NULL)
           OR
-          (approval_status = 'approved' AND approval_id IS NOT NULL AND decided_at IS NOT NULL
+          (approval_status = 'approved' AND decided_at IS NOT NULL
             AND (
               (execution_state = 'approved'
                 AND pre_submit_revalidation_json IS NULL AND pre_submit_revalidated_at IS NULL)
@@ -323,6 +352,7 @@ export async function expireStalePreSubmitWith(
                 AND pre_submit_revalidation_json IS NOT NULL AND pre_submit_revalidated_at IS NOT NULL)
             ))
         )
+        AND send_attempt_started_at IS NULL
         AND nonce_reservation_id IS NULL AND nonce_value IS NULL
         AND signer_expiry_ms IS NULL AND signer_tx_hash IS NULL
         AND submitted_tx_hash IS NULL AND submit_code IS NULL AND submit_message IS NULL
@@ -365,6 +395,43 @@ export async function markClosePositionChangedBeforeSubmissionWith(
       RETURNING ${COLUMNS}`,
     [input.intentId, input.sessionId],
     client,
+  );
+}
+
+/**
+ * Retire a revalidated lifecycle intent whose execution bailed BEFORE reserving
+ * a nonce - the live nonce was still blocked by an unrelated reservation, so
+ * this action provably never reserved, signed, or submitted. Leaving it parked
+ * at `pre_submit_revalidated` would refuse every later prepare for the same
+ * target ("already exists"); retiring it lets the user or agent try again the
+ * moment the blocking reservation clears. The guard proves the pristine,
+ * never-reserved shape so a concurrently advancing execution can never lose its
+ * own row. Any action type; the executing call owns this intent.
+ */
+export async function abandonRevalidatedBeforeNonce(input: {
+  readonly intentId: string;
+  readonly sessionId: string;
+}): Promise<LighterOrderLifecycleIntentRow | null> {
+  return transition(
+    `UPDATE lighter_order_lifecycle_intents
+        SET execution_state = 'rejected',
+            provider_outcome_json = jsonb_build_object(
+              'kind', 'lighter_lifecycle_abandoned_before_nonce',
+              'transactionSubmitted', false
+            ),
+            provider_outcome_checked_at = NOW(), updated_at = NOW()
+      WHERE intent_id = $1 AND session_id = $2
+        AND approval_status = 'approved' AND execution_state = 'pre_submit_revalidated'
+        AND pre_submit_revalidation_json IS NOT NULL AND pre_submit_revalidated_at IS NOT NULL
+        AND nonce_reservation_id IS NULL AND nonce_value IS NULL
+        AND signer_expiry_ms IS NULL AND signer_tx_hash IS NULL
+        AND send_attempt_started_at IS NULL
+        AND submitted_tx_hash IS NULL AND submit_code IS NULL AND submit_message IS NULL
+        AND predicted_execution_time_ms IS NULL AND volume_quota_remaining IS NULL
+        AND provider_outcome_json IS NULL AND provider_outcome_checked_at IS NULL
+        AND ambiguous_reason IS NULL
+      RETURNING ${COLUMNS}`,
+    [input.intentId, input.sessionId],
   );
 }
 
@@ -800,4 +867,67 @@ export async function markUnsubmittedRefused(input: {
        RETURNING n.environment)
      SELECT intent_id FROM refused`, [input.intentId, input.sessionId, input.reservationId, input.reason]);
   return row !== null;
+}
+
+
+/**
+ * Retire an expired exact pre-send owner and release its nonce in one statement.
+ * Lock the owner before its nonce, matching the execution refusal transitions.
+ * The expected checkpoint excludes staged/submitted legacy rows even if they
+ * have no send marker, and a concurrent signer must lose the state CAS.
+ */
+export async function expirePreSendNonceReservation(input: {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly apiKeyIndex: number;
+  readonly reservationId: string;
+  readonly nonceValue: string;
+  readonly expectedState: "nonce_reserved" | "signed";
+  readonly signerTxHash: string | null;
+}): Promise<LighterOrderLifecycleIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `WITH owner AS MATERIALIZED (
+      SELECT intent_id FROM lighter_order_lifecycle_intents
+      WHERE intent_id=$1 AND session_id=$2 AND environment=$3 AND account_index=$4 AND api_key_index=$5
+      FOR UPDATE
+    ), reservation AS MATERIALIZED (
+      SELECT environment, account_index, api_key_index FROM lighter_nonce_state
+      WHERE environment=$3 AND account_index=$4 AND api_key_index=$5
+        AND status='reserved' AND reservation_id=$6 AND reserved_nonce=$7
+        AND EXISTS (SELECT 1 FROM owner)
+      FOR UPDATE
+    ), retired AS (
+      UPDATE lighter_order_lifecycle_intents SET
+        execution_state=CASE WHEN execution_state='signed' THEN 'expired_unsubmitted' ELSE 'rejected' END,
+        ambiguous_reason='consent_expired_before_submission', updated_at=clock_timestamp()
+      WHERE intent_id=$1 AND session_id=$2 AND environment=$3 AND account_index=$4 AND api_key_index=$5
+        AND approval_status='approved' AND decided_at IS NOT NULL
+        AND execution_state=$8 AND nonce_reservation_id=$6 AND nonce_value=$7
+        AND expires_at <= clock_timestamp()
+        AND pre_submit_revalidation_json IS NOT NULL AND pre_submit_revalidated_at IS NOT NULL
+        AND (
+          (execution_state='nonce_reserved' AND signer_tx_hash IS NULL AND $9::text IS NULL
+            AND signer_expiry_ms IS NULL)
+          OR (execution_state='signed' AND signer_tx_hash=$9 AND $9::text IS NOT NULL
+            )
+        )
+        AND send_attempt_started_at IS NULL AND submitted_tx_hash IS NULL
+        AND submit_code IS NULL AND submit_message IS NULL
+        AND predicted_execution_time_ms IS NULL AND volume_quota_remaining IS NULL
+        AND provider_outcome_json IS NULL AND provider_outcome_checked_at IS NULL AND ambiguous_reason IS NULL
+
+        AND EXISTS (SELECT 1 FROM reservation)
+      RETURNING ${COLUMNS}
+    ), released AS (
+      UPDATE lighter_nonce_state n SET status='observed', reserved_nonce=NULL, reservation_id=NULL, updated_at=clock_timestamp()
+      FROM retired r WHERE n.environment=r.environment AND n.account_index=r.account_index AND n.api_key_index=r.api_key_index
+        AND n.status='reserved' AND n.reservation_id=r.nonce_reservation_id AND n.reserved_nonce=r.nonce_value
+      RETURNING n.environment
+    ) SELECT ${COLUMNS} FROM retired`,
+    [input.intentId, input.sessionId, input.environment, input.accountIndex, input.apiKeyIndex,
+      input.reservationId, input.nonceValue, input.expectedState, input.signerTxHash],
+  );
+  return row === null ? null : mapRow(row);
 }

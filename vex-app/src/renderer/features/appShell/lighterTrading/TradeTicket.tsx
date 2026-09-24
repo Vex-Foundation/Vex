@@ -1,7 +1,9 @@
-import { useEffect, useState, type CSSProperties, type FormEvent, type JSX } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type JSX } from "react";
 import type {
+  LighterDeskPrepareProgressEvent,
   LighterOnboardingChecklist,
   LighterTradingAccountUnavailableReason,
+  LighterTradingExchangeFees,
   LighterTradingMarket,
 } from "@shared/schemas/lighter-trading.js";
 import { VexMark } from "../../../components/common/VexMark.js";
@@ -38,12 +40,20 @@ const ONBOARDING_STEPS = [
 ] as const;
 
 const STEP_STATE_TEXT = { done: "Done", todo: "To do", not_required: "Not needed" } as const;
+const TICKET_NOTICE_DURATION_MS = 20_000;
 const SETUP_ACTION_TEXT: Readonly<Record<LighterOnboardingChecklist["nextAction"], string>> = {
   start_setup: "Set up Lighter",
   continue_setup: "Continue setup",
   check_status: "Check setup",
   none: "Setup complete",
 };
+
+type NoticeSource = "approval" | "validation" | "outcome" | "handoff";
+interface TicketNotice {
+  readonly source: NoticeSource;
+  readonly value: DeskOutcome;
+  readonly sequence: number;
+}
 
 export function TradeTicket({
   market,
@@ -53,12 +63,15 @@ export function TradeTicket({
   baseAvailable,
   equity,
   margin,
+  exchangeFees = null,
+  markPrice = null,
   settlementSymbol,
   accountGap = null,
   checklist = null,
   activeSession,
   dataFresh,
   submitting,
+  prepareStage = null,
   handoffError,
   outcome = null,
   prefill,
@@ -81,6 +94,10 @@ export function TradeTicket({
   readonly equity: number | null;
   /** Margin terms for this market; null for spot or when Lighter reported none. */
   readonly margin: TicketMargin | null;
+  /** This account's exchange fee tier; null without an account. */
+  readonly exchangeFees?: LighterTradingExchangeFees | null;
+  /** The market's live mark price; null until the stream reports one. */
+  readonly markPrice?: number | null;
   readonly settlementSymbol: string;
   /** Why there is no account to trade from; the ticket offers setup instead of Long/Short. */
   readonly accountGap?: LighterTradingAccountUnavailableReason | null;
@@ -90,6 +107,7 @@ export function TradeTicket({
   readonly dataFresh: boolean;
   /** True while main derives the terms and enqueues the approval card. */
   readonly submitting: boolean;
+  readonly prepareStage?: LighterDeskPrepareProgressEvent["stage"] | "opening_approval" | null;
   readonly handoffError?: string | null;
   /** What the last desk card came to, once it resolved. */
   readonly outcome?: DeskOutcome | null;
@@ -108,16 +126,56 @@ export function TradeTicket({
   readonly pendingApprovalCount?: number;
   readonly onReviewApprovals?: () => void;
 }): JSX.Element {
-  const form = useTradeTicketForm({ market, book, lastPrice, available, baseAvailable, equity, margin, dataFresh, prefill, pricePick });
+  const form = useTradeTicketForm({
+    market, book, lastPrice, available, baseAvailable, equity, margin, exchangeFees, markPrice, dataFresh, prefill, pricePick,
+  });
   const { mode, side, protective, triggerLimit, perp, symbols } = form;
   const availableForSide = market.marketType === "spot" && side === "sell" ? (baseAvailable ?? null) : available;
   const availableSymbol = market.marketType === "spot" && side === "sell" ? symbols.base : settlementSymbol;
   // A fresh ticket is incomplete, not wrong: problems show once a field changes.
   const [touched, setTouched] = useState(false);
+  const [visibleNotice, setVisibleNotice] = useState<TicketNotice | null>(null);
+  const noticeSequence = useRef(0);
+  const handoffErrorRef = useRef(handoffError);
+  handoffErrorRef.current = handoffError;
+  const showNotice = useCallback((source: NoticeSource, value: DeskOutcome): void => {
+    noticeSequence.current += 1;
+    setVisibleNotice({ source, value, sequence: noticeSequence.current });
+  }, []);
+  useEffect(() => {
+    if (pendingApprovalCount > 0 && handoffErrorRef.current == null) {
+      showNotice("approval", {
+        tone: "warn",
+        text: pendingApprovalCount === 1 ? "Approval waiting. One action needs a decision." : `Approval waiting. ${pendingApprovalCount} actions need a decision.`,
+      });
+    } else if (pendingApprovalCount === 0) {
+      setVisibleNotice((current) => current?.source === "approval" ? null : current);
+    }
+  }, [pendingApprovalCount, showNotice]);
   useEffect(() => {
     if ((prefill ?? null) !== null || (pricePick ?? null) !== null) setTouched(true);
   }, [prefill, pricePick]);
   const problem = touched ? form.validation : null;
+  useEffect(() => {
+    if (problem !== null && handoffErrorRef.current == null) showNotice("validation", { tone: "warn", text: problem });
+    else if (problem === null) setVisibleNotice((current) => current?.source === "validation" ? null : current);
+  }, [problem, showNotice]);
+  useEffect(() => {
+    if (outcome !== null && handoffErrorRef.current == null) showNotice("outcome", outcome);
+    else if (outcome === null) setVisibleNotice((current) => current?.source === "outcome" ? null : current);
+  }, [outcome, showNotice]);
+  useEffect(() => {
+    if (handoffError) showNotice("handoff", { tone: "error", text: handoffError });
+    else setVisibleNotice((current) => current?.source === "handoff" ? null : current);
+  }, [handoffError, showNotice]);
+  useEffect(() => {
+    if (visibleNotice === null) return;
+    const sequence = visibleNotice.sequence;
+    const timeout = window.setTimeout(() => {
+      setVisibleNotice((current) => current?.sequence === sequence ? null : current);
+    }, TICKET_NOTICE_DURATION_MS);
+    return () => window.clearTimeout(timeout);
+  }, [visibleNotice]);
   // The inactive side's button is an order for that side: flip the side, then
   // review once the form has re-derived its prices for it.
   const [pendingSide, setPendingSide] = useState<TradeSide | null>(null);
@@ -482,19 +540,6 @@ export function TradeTicket({
       </div>
 
       <div className="lit-ticket-footer">
-        {pendingApprovalCount > 0 ? (
-          <div className="lit-ticket-approval-waiting" role="status">
-            <span><b>Approval waiting</b><small>{pendingApprovalCount === 1 ? "1 action needs a decision" : `${String(pendingApprovalCount)} actions need a decision`}</small></span>
-            {onReviewApprovals === undefined ? null : (
-              <button type="button" onClick={onReviewApprovals}>Review</button>
-            )}
-          </div>
-        ) : null}
-        {handoffError ? <p className="lit-review-error" role="alert">{handoffError}</p> : null}
-        {outcome !== null && handoffError == null ? (
-          <p className="lit-review-outcome" data-tone={outcome.tone} role="status">{outcome.text}</p>
-        ) : null}
-        {problem !== null ? <p className="lit-validation" role="status">{problem}</p> : null}
         {onAsk === undefined ? null : (
           <button
             type="button"
@@ -522,23 +567,45 @@ export function TradeTicket({
                 data-side={item}
                 data-active={active || undefined}
                 aria-label={`${sideLabel(item, market.marketType, protective)}${detail}`}
+                aria-description={active && form.validation !== null ? form.validation : undefined}
                 disabled={submitting || (active && form.validation !== null)}
                 onClick={active ? undefined : () => { form.setSide(item); setPendingSide(item); }}
               >
                 <b>{sideLabel(item, market.marketType, protective)}</b>
-                <small>{submitting && active ? "Preparing…" : detail.trim() || MODE_LABELS[form.mode]}</small>
+                <small>{submitting && active ? (
+                  prepareStage === "checking_account" ? "Checking account…"
+                    : prepareStage === "checking_market" ? "Checking live price…"
+                      : prepareStage === "creating_approval" ? "Creating approval…"
+                        : prepareStage === "opening_approval" ? "Opening approval…" : "Preparing…"
+                ) : detail.trim() || MODE_LABELS[form.mode]}</small>
               </button>
             );
           })}
         </div>
-        {problem === null ? (
-          <p className="lit-review-note" role="note">
-            <span>
-              {activeSession
-                ? "Nothing signs until you confirm."
-                : "Opens Vex first. Nothing signs until you confirm."}
-            </span>
-          </p>
+        <p className="lit-review-note" role="note">
+          <span>
+            {activeSession
+              ? "Nothing signs until you confirm."
+              : "Opens Vex first. Nothing signs until you confirm."}
+          </span>
+        </p>
+        {visibleNotice !== null ? (
+          <div className="lit-review-outcome" data-tone={visibleNotice.value.tone} role={visibleNotice.value.tone === "error" ? "alert" : "status"} key={visibleNotice.sequence}>
+            <span className="lit-review-outcome-text">{visibleNotice.value.text}</span>
+            <button
+              type="button"
+              className="lit-review-outcome-dismiss"
+              aria-label="Dismiss notification"
+              title="Dismiss notification"
+              onClick={() => setVisibleNotice((current) => current?.sequence === visibleNotice.sequence ? null : current)}
+            />
+            <span className="lit-review-outcome-timer" aria-hidden="true" />
+          </div>
+        ) : null}
+        {pendingApprovalCount > 0 && onReviewApprovals !== undefined ? (
+          <button type="button" className="lit-ticket-approval-action" onClick={onReviewApprovals}>
+            Review pending {pendingApprovalCount === 1 ? "approval" : `approvals (${pendingApprovalCount})`}
+          </button>
         ) : null}
       </div>
     </form>
@@ -551,7 +618,12 @@ export function TradeTicket({
  * whose provider fee is zero made Vex's own fee look like it did not exist.
  */
 function feeBreakdownTitle(fee: TradeTicketForm["feeRate"]): string {
-  const provider = `${fee.label} ${formatProviderPercent(fee.rate, fee.enabled)}`;
+  // The account's tier replaces the market's fee wherever it charges more.
+  const marketPercent = fee.enabled ? Number(fee.rate) : 0;
+  const tierPercent = fee.accountTicks === null ? 0 : fee.accountTicks / 10_000;
+  const provider = tierPercent > (Number.isFinite(marketPercent) ? marketPercent : 0)
+    ? `${fee.label} ${formatProviderPercent(String(tierPercent))} (${fee.accountAssumed ? "assumed tier" : "account tier"})`
+    : `${fee.label} ${formatProviderPercent(fee.rate, fee.enabled)}`;
   return fee.integrator === null
     ? provider
     : `${provider} + Vex ${formatProviderPercent(fee.integrator)}`;

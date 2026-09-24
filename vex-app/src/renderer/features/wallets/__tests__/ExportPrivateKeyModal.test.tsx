@@ -206,6 +206,87 @@ describe("ExportPrivateKeyModal", () => {
     expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
+  it("dismisses the copied-key dialog through Cancel, Escape, and backdrop under StrictMode", async () => {
+    mockExport.mockResolvedValue({
+      ok: true,
+      data: {
+        chain: "evm",
+        format: "hex",
+        copied: true,
+        clearAfterMs: 10_000,
+      },
+    });
+
+    for (const dismiss of ["cancel", "escape", "backdrop"] as const) {
+      mockOnClose.mockClear();
+      const view = render(
+        <React.StrictMode>
+          <ExportPrivateKeyModal chain="evm" onClose={mockOnClose} />
+        </React.StrictMode>,
+      );
+      ackAndType(view);
+      clickSubmit(view);
+      await waitFor(() => {
+        expect(
+          view.container.querySelector('[data-vex-export-status="copied"]'),
+        ).not.toBeNull();
+      });
+
+      const dialog = view.container.querySelector("dialog") as HTMLDialogElement;
+      if (dismiss === "cancel") {
+        fireEvent.click(
+          view.container.querySelector("[data-vex-export-cancel]") as HTMLButtonElement,
+        );
+      } else if (dismiss === "escape") {
+        fireEvent(
+          dialog,
+          new Event("cancel", { bubbles: true, cancelable: true }),
+        );
+      } else {
+        fireEvent.click(dialog);
+      }
+      expect(mockOnClose).toHaveBeenCalledTimes(1);
+      view.unmount();
+    }
+  });
+
+  it("keeps the dialog open while the clipboard export is still pending", async () => {
+    let finishExport!: (result: Result<ExportPrivateKeyResult>) => void;
+    mockExport.mockImplementation(
+      () => new Promise((resolve) => {
+        finishExport = resolve;
+      }),
+    );
+    const view = renderModal();
+    ackAndType(view);
+    clickSubmit(view);
+    expect(mockExport).toHaveBeenCalledTimes(1);
+
+    const dialog = view.container.querySelector("dialog") as HTMLDialogElement;
+    const cancel = view.container.querySelector(
+      "[data-vex-export-cancel]",
+    ) as HTMLButtonElement;
+    expect(cancel.disabled).toBe(true);
+    fireEvent.click(dialog);
+    fireEvent(
+      dialog,
+      new Event("cancel", { bubbles: true, cancelable: true }),
+    );
+    expect(mockOnClose).not.toHaveBeenCalled();
+
+    finishExport({
+      ok: true,
+      data: { chain: "evm", format: "hex", copied: true, clearAfterMs: 10_000 },
+    });
+    await waitFor(() => {
+      expect(
+        view.container.querySelector('[data-vex-export-status="copied"]'),
+      ).not.toBeNull();
+    });
+    fireEvent.click(cancel);
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+  });
+
   it("shows the copied banner with countdown after a successful export", async () => {
     mockExport.mockResolvedValue({
       ok: true,

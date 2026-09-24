@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LighterTradingAccount } from "@shared/schemas/lighter-trading.js";
+import type { OrderCancelStage, PositionCloseStage } from "../account-model.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import { TradingBottomPanel } from "../AccountPanel.js";
 import { formatRetrievedAt } from "../format.js";
@@ -62,10 +63,12 @@ const EMPTY_ACCOUNT: LighterTradingAccount = {
   assets: [],
   positions: [],
   marginTerms: [],
+  exchangeFees: { makerTicks: 120, takerTicks: 350, source: "account" },
   openOrders: [],
 };
 
 beforeEach(() => {
+  useUiStore.setState({ activeSessionId: "11111111-1111-4111-8111-111111111111" });
   mocks.refetch.mockReset();
   for (const action of Object.values(mocks.actions)) action.mockReset();
   mocks.useAccount.mockReset();
@@ -78,7 +81,7 @@ describe("TradingBottomPanel", () => {
   it("loads positions by default, keeps the tab order, and wires tab semantics", () => {
     renderPanel();
 
-    expect(mocks.useAccount).toHaveBeenLastCalledWith("rhc", true);
+    expect(mocks.useAccount).toHaveBeenLastCalledWith("rhc", true, "11111111-1111-4111-8111-111111111111");
     expect(screen.getAllByRole("tab").map((item) => item.textContent)).toEqual([
       "Positions",
       "Open Orders",
@@ -121,7 +124,7 @@ describe("TradingBottomPanel", () => {
 
   it("keeps the account read paused while the desk is closed", () => {
     render(panel({ open: false }));
-    expect(mocks.useAccount).toHaveBeenLastCalledWith("rhc", false);
+    expect(mocks.useAccount).toHaveBeenLastCalledWith("rhc", false, "11111111-1111-4111-8111-111111111111");
   });
 
   it("renders account loading, provider error, and unavailable states", () => {
@@ -230,6 +233,65 @@ describe("TradingBottomPanel", () => {
     expect(screen.getByText("No open orders.")).toBeTruthy();
   });
 
+  it("keeps a closing position visible but prevents another close from its row", () => {
+    const account: LighterTradingAccount = {
+      ...EMPTY_ACCOUNT,
+      positions: [{
+        marketId: 1, symbol: "BTC", side: "long", size: "0.25", entryPrice: "64000",
+        value: "16000", unrealizedPnl: "0", liquidationPrice: "41000",
+        initialMarginFraction: 1000, marginMode: "cross", allocatedMargin: "1600",
+      }],
+    };
+    mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: account } }));
+    render(panel({ closingPositions: new Map([["1-long", "checking"]]) }));
+
+    expect(screen.getByText("Confirming close")).toBeTruthy();
+    const close = screen.getByRole("button", { name: "Close BTC position" }) as HTMLButtonElement;
+    expect(close.disabled).toBe(true);
+    fireEvent.click(close);
+    expect(screen.queryByRole("dialog", { name: "Close BTC long" })).toBeNull();
+    expect(mocks.actions.onClosePosition).not.toHaveBeenCalled();
+    expect(screen.getByRole("row", { busy: true })).toBeTruthy();
+  });
+
+  it("formats a long liquidation price for the table while retaining the exact value", () => {
+    const account: LighterTradingAccount = {
+      ...EMPTY_ACCOUNT,
+      positions: [{
+        marketId: 1, symbol: "ETH", side: "long", size: "0.0086", entryPrice: "2701.04",
+        value: "23.219914", unrealizedPnl: "-0.009030",
+        liquidationPrice: "1358.164250076146", initialMarginFraction: 5000,
+        marginMode: "cross", allocatedMargin: "11.62",
+      }],
+    };
+    mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: account } }));
+    renderPanel();
+
+    const liquidation = screen.getAllByRole("cell")[4];
+    expect(liquidation?.textContent?.trim()).toBe("1,358.2");
+    expect(liquidation?.getAttribute("title")).toBe("1,358.164250076146");
+  });
+
+  it("dims only the cancelling order and prevents another cancel click", () => {
+    const account: LighterTradingAccount = {
+      ...EMPTY_ACCOUNT,
+      openOrders: [limitOrder(), limitOrder({ orderId: "order-2" })],
+    };
+    mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: account } }));
+    render(panel({ cancellingOrders: new Map([["1:order-1", "checking"]]) }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Open Orders ?\(2\)$/ }));
+
+    const pending = screen.getByRole("button", { name: "Cancel BTC order order-1" }) as HTMLButtonElement;
+    const other = screen.getByRole("button", { name: "Cancel BTC order order-2" }) as HTMLButtonElement;
+    expect(pending.disabled).toBe(true);
+    expect(other.disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Cancel all" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Confirming cancellation")).toBeTruthy();
+    expect(pending.closest('[role="row"]')?.hasAttribute("data-cancel-pending")).toBe(true);
+    fireEvent.click(pending);
+    expect(mocks.actions.onCancelOrder).not.toHaveBeenCalled();
+  });
+
   it("reads fills only on its own tab and renders them from the account's side", () => {
     mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: EMPTY_ACCOUNT } }));
     mocks.useFills.mockReturnValue({
@@ -265,7 +327,7 @@ describe("TradingBottomPanel", () => {
     expect(mocks.useFills).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("tab", { name: /^Trade History/ }));
-    expect(mocks.useFills).toHaveBeenLastCalledWith("rhc", true);
+    expect(mocks.useFills).toHaveBeenLastCalledWith("rhc", true, "11111111-1111-4111-8111-111111111111");
     const table = screen.getByRole("table", { name: "Recent Lighter fills" });
     expect(table.textContent).toContain("ETH");
     expect(table.textContent).toContain("Liquidation · Maker");
@@ -336,7 +398,7 @@ describe("TradingBottomPanel", () => {
 
     expect(screen.getByRole("tab", { name: /^Positions ?\(1\)$/ })).toBeTruthy();
     expect(screen.getByText("Long · 10x Cross")).toBeTruthy();
-    expect(screen.getByText("41,000")).toBeTruthy();
+    expect(screen.getByText("41,000.0")).toBeTruthy();
     expect(screen.getByText("Account #42 · " + formatRetrievedAt(EMPTY_ACCOUNT.retrievedAt))).toBeTruthy();
     // Live mark for the desk's market at its price decimals; margin and ROE
     // from the row's own terms.
@@ -557,7 +619,7 @@ function renderPanel(): ReturnType<typeof render> {
   return render(panel());
 }
 
-function panel({ open = true, collapsed = false, closeConfirmSkipped = false }: { readonly open?: boolean; readonly collapsed?: boolean; readonly closeConfirmSkipped?: boolean } = {}) {
+function panel({ open = true, collapsed = false, closeConfirmSkipped = false, closingPositions = new Map(), cancellingOrders = new Map() }: { readonly open?: boolean; readonly collapsed?: boolean; readonly closeConfirmSkipped?: boolean; readonly closingPositions?: ReadonlyMap<string, PositionCloseStage>; readonly cancellingOrders?: ReadonlyMap<string, OrderCancelStage> } = {}) {
   return (
     <TradingBottomPanel
       environment="rhc"
@@ -568,6 +630,8 @@ function panel({ open = true, collapsed = false, closeConfirmSkipped = false }: 
       activeMarkPrice={64_100}
       activePriceDecimals={1}
       closeConfirmSkipped={closeConfirmSkipped}
+      closingPositions={closingPositions}
+      cancellingOrders={cancellingOrders}
       actions={mocks.actions}
     />
   );

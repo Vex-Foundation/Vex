@@ -1,7 +1,9 @@
 /**
- * `listMessages` — cursor-paginated page for a session (older-above
- * scroll). Re-parses the cursor before composing SQL: a malformed cursor
- * resolves to "treat as no cursor" rather than poisoning the query.
+ * `listMessages` — cursor-paginated page across a session's live and compacted
+ * messages (older-above scroll). An archived giant-tool original wins over
+ * its live placeholder when both carry the same id. Re-parses the cursor
+ * before composing SQL: a malformed cursor resolves to "treat as no cursor"
+ * rather than poisoning the query.
  */
 
 import { ok, type Result, type VexError } from "@shared/ipc/result.js";
@@ -34,24 +36,26 @@ export async function listMessages(
   }
   return withClient(async (client) => {
     try {
-      const result = safeCursor === null
-        ? await client.query<MessageRow>(
-            `SELECT ${MESSAGE_ROW_COLUMNS}
-               FROM messages
-              WHERE session_id = $1
-              ORDER BY created_at DESC, id DESC
-              LIMIT $2`,
-            [sessionId, limit + 1],
-          )
-        : await client.query<MessageRow>(
-            `SELECT ${MESSAGE_ROW_COLUMNS}
-               FROM messages
-              WHERE session_id = $1
-                AND (created_at, id) < ($2::timestamptz, $3::integer)
-              ORDER BY created_at DESC, id DESC
-              LIMIT $4`,
-            [sessionId, safeCursor.createdAt, safeCursor.id, limit + 1],
-          );
+      const result = await client.query<MessageRow>(
+        `SELECT ${MESSAGE_ROW_COLUMNS}
+           FROM messages_archive a
+          WHERE a.session_id = $1
+            AND a.rewind_checkpoint_id IS NULL
+            AND ($2::timestamptz IS NULL OR (a.created_at, a.id) < ($2, $3::integer))
+         UNION ALL
+         SELECT ${MESSAGE_ROW_COLUMNS}
+           FROM messages m
+          WHERE m.session_id = $1
+            AND ($2::timestamptz IS NULL OR (m.created_at, m.id) < ($2, $3::integer))
+            AND NOT EXISTS (
+              SELECT 1 FROM messages_archive a
+               WHERE a.id = m.id AND a.session_id = m.session_id
+                 AND a.rewind_checkpoint_id IS NULL
+            )
+          ORDER BY created_at DESC, id DESC
+          LIMIT $4`,
+        [sessionId, safeCursor?.createdAt ?? null, safeCursor?.id ?? null, limit + 1],
+      );
       const rows = result.rows.map(toDto);
       const overflow = rows.length > limit;
       const trimmed = overflow ? rows.slice(0, limit) : rows;

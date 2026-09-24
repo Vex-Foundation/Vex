@@ -14,6 +14,11 @@ const secrets = vi.hoisted(() => ({
   listScopes: vi.fn<() => readonly { environment: string; accountIndex: number; apiKeyIndex: number }[]>(),
   vaultUnlocked: vi.fn<() => boolean>(),
   readOnlyAuth: vi.fn(),
+  sessionAccount: vi.fn(),
+}));
+
+vi.mock("../session-account.js", () => ({
+  resolveLighterSessionAccount: (...args: unknown[]) => secrets.sessionAccount(...args),
 }));
 
 vi.mock("../../secrets/lighter-trading-credential.js", () => ({
@@ -567,6 +572,66 @@ describe("Lighter account read: why there is nothing to show", () => {
     expect(lighterTradingAccountSchema.safeParse(failed).success).toBe(true);
   });
 
+  it("carries the account's own fee tier, and a ceiling rather than the market fee when it cannot be read", async () => {
+    // Account 31824 paid a 0.035% Premium taker tier on markets whose
+    // published fee read 0; the ticket sized on the 0 and Lighter cancelled
+    // every 100% order.
+    reset();
+    secrets.vaultUnlocked.mockReturnValue(true);
+    secrets.listScopes.mockReturnValue([scope]);
+    secrets.readOnlyAuth.mockResolvedValue({ authorization: "token" });
+    client.getAccount.mockResolvedValue({ accounts: [{ account_index: 42, positions: [] }] });
+    client.getAccountActiveOrders.mockResolvedValue({ orders: [] });
+    const getAccountLimits = vi.fn().mockResolvedValue({
+      code: 200,
+      user_tier: "premium",
+      user_tier_name: "Premium",
+      current_maker_fee_tick: 120,
+      current_taker_fee_tick: 350,
+    });
+
+    const read = await readLighterTradingAccount("core", { ...client, getAccountLimits }, () => 1);
+    expect(read.exchangeFees).toEqual({ makerTicks: 120, takerTicks: 350, source: "account" });
+    expect(lighterTradingAccountSchema.safeParse(read).success).toBe(true);
+
+    getAccountLimits.mockRejectedValue(new Error("provider 503"));
+    const unread = await readLighterTradingAccount("core", { ...client, getAccountLimits }, () => 1);
+    expect(unread.status).toBe("ready");
+    expect(unread.exchangeFees?.source).toBe("assumed_ceiling");
+    expect(unread.exchangeFees?.takerTicks).toBeGreaterThan(350);
+  });
+
+  it("selects only the session wallet's account when other accounts have saved keys", async () => {
+    reset();
+    secrets.listScopes.mockReturnValue([scope, { ...scope, accountIndex: 43 }]);
+    secrets.sessionAccount.mockResolvedValueOnce(43);
+    client.getAccount.mockResolvedValueOnce({ accounts: [
+      { account_index: 42, positions: [position({})] },
+      { account_index: 43, positions: [] },
+    ] });
+
+    const result = await readLighterTradingAccount("core", client, () => 1, undefined, "wallet-b-session");
+
+    expect(secrets.sessionAccount).toHaveBeenCalledWith({ sessionId: "wallet-b-session", environment: "core", signal: undefined });
+    expect(client.getAccount).toHaveBeenCalledWith("core", { by: "index", value: 43 }, { signal: undefined });
+    expect(result.accountIndex).toBe(43);
+    expect(result.positions).toEqual([]);
+    expect(secrets.readOnlyAuth).toHaveBeenCalledWith("core", 43);
+  });
+
+  it.each(["missing wallet", "no matching key"])("never falls back to another account for a session with %s", async (scenario) => {
+    reset();
+    secrets.listScopes.mockReturnValue([scope]);
+    if (scenario === "missing wallet") secrets.sessionAccount.mockRejectedValueOnce(new Error("No wallet selected"));
+    else secrets.sessionAccount.mockResolvedValueOnce(43);
+
+    const read = readLighterTradingAccount("core", client, () => 1, undefined, "wallet-b-session");
+    if (scenario === "missing wallet") await expect(read).rejects.toThrow("No wallet selected");
+    else await expect(read).resolves.toMatchObject({ status: "unavailable", unavailableReason: "not_onboarded", accountIndex: null });
+    expect(client.getAccount).not.toHaveBeenCalled();
+    expect(secrets.readOnlyAuth).not.toHaveBeenCalled();
+  });
+
   it("stops before the provider read when the caller already abandoned it", async () => {
     reset();
     secrets.vaultUnlocked.mockReturnValue(true);
@@ -666,6 +731,34 @@ describe("projectLighterTradingFills", () => {
 describe("readLighterTradingFills", () => {
   const scope = { environment: "core" as const, accountIndex: 42, apiKeyIndex: 5 };
   const client = { getAccountTrades: vi.fn() };
+
+  it("reads fills only for the session wallet's resolved account among multiple saved accounts", async () => {
+    vi.clearAllMocks();
+    secrets.listScopes.mockReturnValue([scope, { ...scope, accountIndex: 43 }]);
+    secrets.sessionAccount.mockResolvedValueOnce(43);
+    secrets.readOnlyAuth.mockResolvedValueOnce({ accountIndex: 43, token: "read-only" });
+    client.getAccountTrades.mockResolvedValueOnce({ trades: [] });
+
+    const fills = await readLighterTradingFills("core", 20, client, () => 1, undefined, "wallet-b-session");
+
+    expect(fills.accountIndex).toBe(43);
+    expect(secrets.readOnlyAuth).toHaveBeenCalledWith("core", 43);
+    expect(client.getAccountTrades).toHaveBeenCalledWith("core", { accountIndex: 43, limit: 20, sortBy: "timestamp" },
+      { accountIndex: 43, token: "read-only" }, { signal: undefined });
+  });
+
+  it.each(["missing wallet", "no matching key"])("does not read another account's fills for %s", async (scenario) => {
+    vi.clearAllMocks();
+    secrets.listScopes.mockReturnValue([scope]);
+    if (scenario === "missing wallet") secrets.sessionAccount.mockRejectedValueOnce(new Error("No wallet selected"));
+    else secrets.sessionAccount.mockResolvedValueOnce(43);
+
+    const read = readLighterTradingFills("core", 20, client, () => 1, undefined, "wallet-b-session");
+    if (scenario === "missing wallet") await expect(read).rejects.toThrow("No wallet selected");
+    else await expect(read).resolves.toMatchObject({ available: false, accountIndex: null, fills: [] });
+    expect(client.getAccountTrades).not.toHaveBeenCalled();
+    expect(secrets.readOnlyAuth).not.toHaveBeenCalled();
+  });
 
   it("reports unavailable without a provider read when no read-only auth can be derived", async () => {
     vi.clearAllMocks();

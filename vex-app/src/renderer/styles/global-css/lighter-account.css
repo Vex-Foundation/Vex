@@ -96,6 +96,38 @@
   font-variant-numeric: tabular-nums;
 }
 
+.lit-positions .lit-account-columns > [role="columnheader"],
+.lit-positions .lit-account-row > [role="cell"] {
+  min-width: 0;
+}
+
+.lit-positions .lit-account-row > [role="cell"]:not(.lit-order-cell, .lit-row-actions) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lit-positions .lit-order-cell > b,
+.lit-positions .lit-order-cell > small,
+.lit-positions .lit-market-link {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Keep position actions available when the dock is narrower than the table. */
+@container (max-width: 920px) {
+  .lit-positions .lit-account-columns { z-index: 3; }
+  .lit-positions .lit-account-columns > :last-child,
+  .lit-positions .lit-row-actions {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    background: var(--lit-panel);
+  }
+}
+
 /* Open orders: Market · Side · Price · Size · Filled · Time · actions */
 .lit-open-orders .lit-account-columns,
 .lit-open-orders .lit-account-row {
@@ -126,6 +158,47 @@
 }
 
 .lit-account-row:hover { background: color-mix(in srgb, var(--lit-hover) 55%, transparent); }
+
+.lit-positions .lit-account-row[data-close-pending],
+.lit-open-orders .lit-account-row[data-cancel-pending] {
+  background: color-mix(in srgb, var(--lit-ink-muted) 8%, transparent);
+  color: var(--lit-ink-muted);
+}
+
+.lit-positions .lit-account-row[data-close-pending] > [role="cell"]:not(:first-child),
+.lit-positions .lit-account-row[data-close-pending] .lit-order-cell > :not(.lit-position-close-status),
+.lit-open-orders .lit-account-row[data-cancel-pending] > [role="cell"]:not(:first-child),
+.lit-open-orders .lit-account-row[data-cancel-pending] .lit-order-cell > :not(.lit-order-cancel-status) {
+  opacity: 0.6;
+}
+
+.lit-position-close-status,
+.lit-order-cancel-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--lit-ink-secondary);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.lit-position-close-spinner,
+.lit-order-cancel-spinner {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border: 1.5px solid color-mix(in srgb, var(--lit-ink-secondary) 35%, transparent);
+  border-top-color: var(--lit-ink-secondary);
+  border-radius: 50%;
+  animation: lit-position-close-spin 900ms linear infinite;
+}
+
+@keyframes lit-position-close-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .lit-position-close-spinner,
+  .lit-order-cancel-spinner { animation: none; border-color: var(--lit-ink-secondary); }
+}
 
 .lit-account-row b { color: var(--lit-ink); font-weight: 600; }
 
@@ -219,6 +292,11 @@
   color: var(--lit-ink-secondary);
   font-size: 11px;
   font-weight: 600;
+}
+
+.lit-row-actions .lit-close-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 /* ============================================================ *

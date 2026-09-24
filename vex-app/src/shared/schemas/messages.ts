@@ -92,7 +92,7 @@ export const messageKindSchema = z.enum([
 export type MessageKind = z.infer<typeof messageKindSchema>;
 
 /**
- * Stable cursor for forward/backward pagination over live messages.
+ * Stable cursor for pagination over live and compacted messages.
  * Encoded as `(createdAt ISO, id)` so order is total even when two
  * messages share `created_at` (collisions are rare but possible under
  * batched writes; the SERIAL `id` is the tiebreaker).
@@ -390,7 +390,7 @@ export type SessionMessageDto = z.infer<typeof sessionMessageDtoSchema>;
 export const messagePageSchema = z
   .object({
     items: z.array(sessionMessageDtoSchema),
-    /** Cursor for the next older page; `null` when no more live history. */
+    /** Cursor for the next older page; `null` when no more history remains. */
     nextCursor: messageCursorSchema.nullable(),
     hasMore: z.boolean(),
   })

@@ -210,8 +210,10 @@ describe("resolveLighterTradingLimits capital share", () => {
   });
 
   it("points an unresolved leverage change at Reconcile, never at a retry", () => {
-    expect(resolve().unresolvedChangeGuidance).toMatch(/Settings -> Lighter -> Reconcile/);
-    expect(resolve().unresolvedChangeGuidance).toMatch(/do not retry or re-apply it from a tool/);
+    expect(resolve().unresolvedChangeGuidance).toMatch(/Settings -> Lighter -> Trading setup/);
+    expect(resolve().unresolvedChangeGuidance).toMatch(/market's Reconcile button/);
+    expect(resolve().unresolvedChangeGuidance).toMatch(/does not reconcile orders or nonce reservations/);
+    expect(resolve().unresolvedChangeGuidance).toMatch(/do not retry or re-apply the leverage change from a tool/);
   });
 });
 

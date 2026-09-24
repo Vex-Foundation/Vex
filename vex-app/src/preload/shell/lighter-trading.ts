@@ -10,7 +10,9 @@ import {
   lighterTradingCandleHistoryInputSchema,
   lighterAccountSetupStatusInputSchema,
   lighterKeyRegistrationReconcileInputSchema,
+  lighterSetupReconcileInputSchema,
   lighterDeskPrepareInputSchema,
+  lighterDeskPrepareProgressEventSchema,
   lighterOnboardingChecklistInputSchema,
   lighterTradingFillsInputSchema,
   lighterTradingListMarketsInputSchema,
@@ -124,6 +126,13 @@ export const lighterTrading = {
       lighterDeskPrepareInputSchema,
     );
   },
+  onDeskPrepareProgress(callback) {
+    return subscribe(
+      EV.lighterTrading.deskPrepareProgress,
+      lighterDeskPrepareProgressEventSchema,
+      callback,
+    );
+  },
   getOnboardingChecklist(input) {
     return abortableInvoke(
       CH.lighterTrading.getOnboardingChecklist,
@@ -143,6 +152,13 @@ export const lighterTrading = {
       CH.lighterTrading.reconcileKeyRegistration,
       input,
       lighterKeyRegistrationReconcileInputSchema,
+    );
+  },
+  reconcileSetup(input) {
+    return invokeWithSchema(
+      CH.lighterTrading.reconcileSetup,
+      input,
+      lighterSetupReconcileInputSchema,
     );
   },
   getPendingAgentSetup(input) {

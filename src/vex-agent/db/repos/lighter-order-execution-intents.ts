@@ -35,6 +35,11 @@ export type LighterOrderExecutionIntentState =
 export interface LighterOrderExecutionIntentRow {
   readonly integratorFees?: LighterIntegratorFees | null;
   readonly sendAttemptStartedAt?: string | null;
+  /**
+   * The signed transaction's wire expiry (`ExpiredAt`, epoch ms). Null before
+   * signing and on rows signed before migration 169 recorded it.
+   */
+  readonly signerExpiryMs?: number | null;
   readonly intentId: string;
   readonly sessionId: string;
   readonly previewId: string;
@@ -134,6 +139,8 @@ export interface MarkLighterOrderSignedInput {
   readonly nonceValue: string;
   readonly clientOrderIndex: string;
   readonly signerTxHash: string;
+  /** The signed transaction's own `ExpiredAt`; see `readLighterSignedTxExpiredAtMs`. */
+  readonly signerExpiryMs?: number | null;
 }
 
 export interface MarkLighterOrderSubmittedInput {
@@ -214,7 +221,7 @@ const SELECT_COLUMNS =
   "volume_quota_remaining, ambiguous_reason, signed_at, submitted_at, api_accepted_at, ambiguous_at, " +
   "provider_order_id, provider_order_status, provider_outcome_source, provider_outcome_json, provider_outcome_checked_at, " +
   "pre_submit_revalidation_json, pre_submit_revalidated_at, " +
-  "created_at, updated_at, expires_at, integrator_fees_json";
+  "created_at, updated_at, expires_at, integrator_fees_json, signer_expiry_ms";
 
 const INSERT_SQL = `INSERT INTO lighter_order_execution_intents (
   intent_id, session_id, preview_id, protocol_execution_id, approval_id, match_hash, environment,
@@ -271,6 +278,7 @@ const MARK_SIGNED_SQL = `UPDATE lighter_order_execution_intents
    SET execution_state = 'signed',
        client_order_index = $6,
        signer_tx_hash = $7,
+       signer_expiry_ms = $8,
        signed_at = NOW(),
        updated_at = NOW()
  WHERE intent_id = $1
@@ -618,7 +626,8 @@ export async function listUnresolved(
   const bounded = Number.isInteger(limit) && limit > 0 && limit <= 100 ? limit : 20;
   const rows = await query<Record<string, unknown>>(
     `SELECT ${SELECT_COLUMNS} FROM lighter_order_execution_intents
-      WHERE execution_state IN ('signed','submitted','api_accepted','sequencer_pending','ambiguous')
+      WHERE (execution_state IN ('signed','submitted','api_accepted','sequencer_pending','ambiguous')
+        OR (execution_state='approval_pending' AND approval_status='approved' AND nonce_reservation_id IS NOT NULL))
         AND ($1::text IS NULL OR environment = $1)
       ORDER BY created_at ASC
       LIMIT ${bounded}`,
@@ -779,7 +788,16 @@ function toMarkSignedParams(input: MarkLighterOrderSignedInput): unknown[] {
     requiredNonNegativeDecimal(input.nonceValue, "nonceValue"),
     requiredUint48Decimal(input.clientOrderIndex, "clientOrderIndex"),
     requiredSafeId(input.signerTxHash, "signerTxHash"),
+    optionalPositiveSafeInteger(input.signerExpiryMs, "signerExpiryMs"),
   ];
+}
+
+function optionalPositiveSafeInteger(value: number | null | undefined, field: string): number | null {
+  if (value === null || value === undefined) return null;
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`lighter_order_execution_intents: ${field} must be a positive safe integer`);
+  }
+  return value;
 }
 
 function toMarkSubmittedParams(input: MarkLighterOrderSubmittedInput): unknown[] {
@@ -1049,6 +1067,7 @@ function mapRow(row: Record<string, unknown>): LighterOrderExecutionIntentRow {
         : String(row.volume_quota_remaining),
     ambiguousReason: (row.ambiguous_reason as string | null) ?? null,
     signedAt: toIsoOrNull(row.signed_at as string | Date | null | undefined),
+    signerExpiryMs: row.signer_expiry_ms == null ? null : Number(row.signer_expiry_ms),
     submittedAt: toIsoOrNull(row.submitted_at as string | Date | null | undefined),
     apiAcceptedAt: toIsoOrNull(row.api_accepted_at as string | Date | null | undefined),
     ambiguousAt: toIsoOrNull(row.ambiguous_at as string | Date | null | undefined),
@@ -1130,4 +1149,68 @@ export async function markUnsubmittedRefused(input: {
        RETURNING n.environment)
      SELECT intent_id FROM refused`, [input.intentId, input.sessionId, input.reservationId, input.reason]);
   return row !== null;
+}
+
+
+/**
+ * Retire an expired exact pre-send owner and release its nonce in one statement.
+ * Lock the owner before its nonce, matching the execution refusal transitions.
+ * The expected checkpoint excludes staged/submitted legacy rows even if they
+ * have no send marker, and a concurrent signer must lose the state CAS.
+ */
+export async function expirePreSendNonceReservation(input: {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly apiKeyIndex: number;
+  readonly reservationId: string;
+  readonly nonceValue: string;
+  readonly expectedState: "approval_pending" | "signed";
+  readonly signerTxHash: string | null;
+}): Promise<LighterOrderExecutionIntentRow | null> {
+  const row = await queryOne<Record<string, unknown>>(
+    `WITH owner AS MATERIALIZED (
+      SELECT intent_id FROM lighter_order_execution_intents
+      WHERE intent_id=$1 AND session_id=$2 AND environment=$3 AND account_index=$4 AND api_key_index=$5
+      FOR UPDATE
+    ), reservation AS MATERIALIZED (
+      SELECT environment, account_index, api_key_index FROM lighter_nonce_state
+      WHERE environment=$3 AND account_index=$4 AND api_key_index=$5
+        AND status='reserved' AND reservation_id=$6 AND reserved_nonce=$7
+        AND EXISTS (SELECT 1 FROM owner)
+      FOR UPDATE
+    ), retired AS (
+      UPDATE lighter_order_execution_intents SET
+        execution_state=CASE WHEN execution_state='signed' THEN 'expired_unsubmitted' ELSE 'rejected' END,
+        ambiguous_reason='consent_expired_before_submission', updated_at=clock_timestamp()
+      WHERE intent_id=$1 AND session_id=$2 AND environment=$3 AND account_index=$4 AND api_key_index=$5
+        AND approval_status='approved' AND decided_at IS NOT NULL
+        AND execution_state=$8 AND nonce_reservation_id=$6 AND nonce_value=$7
+        AND expires_at <= clock_timestamp()
+        AND pre_submit_revalidation_json IS NOT NULL AND pre_submit_revalidated_at IS NOT NULL
+        AND (
+          (execution_state='approval_pending' AND signer_tx_hash IS NULL AND $9::text IS NULL
+            AND signed_at IS NULL AND client_order_index IS NULL)
+          OR (execution_state='signed' AND signer_tx_hash=$9 AND $9::text IS NOT NULL
+            AND signed_at IS NOT NULL AND client_order_index IS NOT NULL)
+        )
+        AND send_attempt_started_at IS NULL AND submitted_tx_hash IS NULL
+        AND submit_code IS NULL AND submit_message IS NULL
+        AND predicted_execution_time_ms IS NULL AND volume_quota_remaining IS NULL
+        AND provider_outcome_json IS NULL AND provider_outcome_checked_at IS NULL AND ambiguous_reason IS NULL
+        AND submitted_at IS NULL AND api_accepted_at IS NULL AND ambiguous_at IS NULL
+        AND provider_order_id IS NULL AND provider_order_status IS NULL AND provider_outcome_source IS NULL
+        AND EXISTS (SELECT 1 FROM reservation)
+      RETURNING ${SELECT_COLUMNS}
+    ), released AS (
+      UPDATE lighter_nonce_state n SET status='observed', reserved_nonce=NULL, reservation_id=NULL, updated_at=clock_timestamp()
+      FROM retired r WHERE n.environment=r.environment AND n.account_index=r.account_index AND n.api_key_index=r.api_key_index
+        AND n.status='reserved' AND n.reservation_id=r.nonce_reservation_id AND n.reserved_nonce=r.nonce_value
+      RETURNING n.environment
+    ) SELECT ${SELECT_COLUMNS} FROM retired`,
+    [input.intentId, input.sessionId, input.environment, input.accountIndex, input.apiKeyIndex,
+      input.reservationId, input.nonceValue, input.expectedState, input.signerTxHash],
+  );
+  return row === null ? null : mapRow(row);
 }

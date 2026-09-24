@@ -88,7 +88,7 @@ const AUTH_ACCOUNT_INDEX_PARAM: ProtocolParamDef = {
   key: "accountIndex",
   type: "number",
   description:
-    "Optional account index. Omit to use the account bound to the default saved Vex-managed Lighter trading credential. Derived read-only authorization refuses account mismatches.",
+    "Optional account index. In a session, omit it to use the Lighter account owned by the selected EVM wallet; an explicit index must match that wallet. Derived read-only authorization stays on the exact account.",
 };
 
 const REQUIRED_ACCOUNT_INDEX_PARAM: ProtocolParamDef = {
@@ -349,7 +349,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      `Read authenticated open Lighter orders using short-lived read-only authorization derived locally from the saved Core or Robinhood Chain trading credential. Use when the user asks for their active/resting orders, open bids/asks, or order exposure. Defaults to the saved credential's account when accountIndex is omitted and refuses account mismatches. Returns exact provider string order identifiers for future safety. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
+      `Read authenticated open Lighter orders using short-lived read-only authorization derived locally from the saved Core or Robinhood Chain trading credential. Use when the user asks for their active/resting orders, open bids/asks, or order exposure. In a session, the account follows the selected EVM wallet and an explicit accountIndex must match it. Returns exact provider string order identifiers for future safety. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
     mutating: false,
     actionKind: "read",
     params: [ENVIRONMENT_PARAM, AUTH_ACCOUNT_INDEX_PARAM, MARKET_ID_OPTIONAL_PARAM, MARKET_FILTER_PARAM, ACCOUNT_ORDER_LIMIT_PARAM],
@@ -362,7 +362,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      `Read authenticated inactive Lighter order history using short-lived read-only authorization derived locally from the saved Core or Robinhood Chain trading credential. Use when the user asks for filled, cancelled, inactive, or historical orders. Defaults to the saved credential's account when accountIndex is omitted and refuses account mismatches. Returns exact provider string order identifiers. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
+      `Read authenticated inactive Lighter order history using short-lived read-only authorization derived locally from the saved Core or Robinhood Chain trading credential. Use when the user asks for filled, cancelled, inactive, or historical orders. In a session, the account follows the selected EVM wallet and an explicit accountIndex must match it. Returns exact provider string order identifiers. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
     mutating: false,
     actionKind: "read",
     params: [ENVIRONMENT_PARAM, AUTH_ACCOUNT_INDEX_PARAM, MARKET_ID_OPTIONAL_PARAM, MARKET_FILTER_PARAM, ACCOUNT_ORDER_LIMIT_PARAM],
@@ -375,7 +375,7 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      `Read authenticated Lighter account trade history using short-lived read-only authorization derived locally from the saved Core or Robinhood Chain trading credential. Use when the user asks for their fills, personal account trades, or executed trades rather than public market tape. Defaults to the saved credential's account when accountIndex is omitted and refuses account mismatches. Returns exact provider string trade and order ids. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
+      `Read authenticated Lighter account trade history using short-lived read-only authorization derived locally from the saved Core or Robinhood Chain trading credential. Use when the user asks for their fills, personal account trades, or executed trades rather than public market tape. In a session, the account follows the selected EVM wallet and an explicit accountIndex must match it. Returns exact provider string trade and order ids. Read-only: no signing, order placement, cancellation, deposit, or withdrawal support.`,
     mutating: false,
     actionKind: "read",
     params: [ENVIRONMENT_PARAM, AUTH_ACCOUNT_INDEX_PARAM, ACCOUNT_ORDER_LIMIT_PARAM],
@@ -576,11 +576,16 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Check and reconcile the true state of Vex-submitted Lighter create orders and lifecycle actions (cancel one, modify, cancel all, and reduce-only close). Use when an action ended sequencer_pending or ambiguous, the user asks what happened, or a new action is blocked by an unresolved nonce reservation. Reads live nextNonce plus exact account order, trade, and position evidence, then updates durable records without signing or retrying. Returns each checked durable intent with its proven execution state and provider evidence; close results include executed amount, remaining order amount, average fill price, provider status, and resulting position when proven. A stuck nonce is released only when the signed transaction provably never left Vex or expired while its nonce remained unconsumed; a consumed nonce is unblocked without guessing the final action outcome. It never signs, submits, retries, cancels, modifies, or moves funds.",
+      "Check and reconcile the true state of Vex-submitted Lighter create orders and lifecycle actions (cancel one, modify, cancel all, and reduce-only close). Use when an action ended sequencer_pending or ambiguous, the user asks what happened, or a new action is blocked by an unresolved nonce reservation. Call this tool with the exact environment and intentId or accountIndex; there is no general Settings -> Lighter -> Reconcile control for orders or nonces. The Reconcile button in Trading setup applies only to leverage changes. Reads live nextNonce plus exact account order, trade, and position evidence, then updates durable records without signing or retrying. Returns each checked durable intent with its proven execution state and provider evidence; close results include executed amount, remaining order amount, average fill price, provider status, and resulting position when proven. A stuck nonce is released only when the signed transaction provably never left Vex or expired while its nonce remained unconsumed; a consumed nonce is unblocked without guessing the final action outcome. It never signs, submits, retries, cancels, modifies, or moves funds.",
     mutating: false,
     actionKind: "read",
     params: [
       ENVIRONMENT_PARAM,
+      {
+        key: "accountIndex",
+        type: "number",
+        description: "When trading is blocked, pass the exact account index from the error to check its actual nonce reservation owners across sessions instead of scanning an unrelated page of orders.",
+      },
       {
         key: "intentId",
         type: "string",

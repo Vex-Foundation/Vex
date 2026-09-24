@@ -39,6 +39,8 @@ export function toProtocolExecutionContext(
     preparationBypassesBarrier: context.preparationBypassesBarrier === true,
     walletResolution: context.walletResolution,
     walletPolicy: context.walletPolicy,
+    ...(context.deskPrepareProgress ? { deskPrepareProgress: context.deskPrepareProgress } : {}),
+    ...(context.deskPreparation ? { deskPreparation: true } : {}),
     // Trusted provenance (C0) - host-side evidence, never model input.
     missionId: context.missionId,
     missionRunId: context.missionRunId,

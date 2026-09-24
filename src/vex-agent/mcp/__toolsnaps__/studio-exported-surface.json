@@ -5682,13 +5682,13 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 503,
+      "descriptionBytes": 501,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "accountIndex": {
-            "description": "Optional account index. Omit to use the account bound to the default saved Vex-managed Lighter trading credential. Derived read-only authorization refuses account mismatches.",
+            "description": "Optional account index. In a session, omit it to use the Lighter account owned by the selected EVM wallet; an explicit index must match that wallet. Derived read-only authorization stays on the exact account.",
             "type": "number"
           },
           "dryRun": {
@@ -5799,7 +5799,7 @@
         "additionalProperties": false,
         "properties": {
           "accountIndex": {
-            "description": "Optional saved Lighter account index. Omit when exactly one managed account exists in the selected environment.",
+            "description": "Optional Lighter account index. In a session, omit it to use the account owned by the selected EVM wallet; an explicit index must match that wallet.",
             "type": "number"
           },
           "dryRun": {
@@ -5833,7 +5833,7 @@
         "additionalProperties": false,
         "properties": {
           "accountIndex": {
-            "description": "Optional saved Lighter account index. Omit when exactly one managed account exists in the selected environment.",
+            "description": "Optional Lighter account index. In a session, omit it to use the account owned by the selected EVM wallet; an explicit index must match that wallet.",
             "type": "number"
           },
           "dryRun": {
@@ -5938,13 +5938,13 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 483,
+      "descriptionBytes": 481,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "accountIndex": {
-            "description": "Optional account index. Omit to use the account bound to the default saved Vex-managed Lighter trading credential. Derived read-only authorization refuses account mismatches.",
+            "description": "Optional account index. In a session, omit it to use the Lighter account owned by the selected EVM wallet; an explicit index must match that wallet. Derived read-only authorization stays on the exact account.",
             "type": "number"
           },
           "dryRun": {
@@ -6025,7 +6025,7 @@
         "additionalProperties": false,
         "properties": {
           "accountIndex": {
-            "description": "Optional saved Lighter account index. Omit when exactly one managed account exists in the selected environment.",
+            "description": "Optional Lighter account index. In a session, omit it to use the account owned by the selected EVM wallet; an explicit index must match that wallet.",
             "type": "number"
           },
           "dryRun": {
@@ -6084,7 +6084,7 @@
         "additionalProperties": false,
         "properties": {
           "accountIndex": {
-            "description": "Optional account index. Omit to use the account bound to the default saved Vex-managed Lighter trading credential. Derived read-only authorization refuses account mismatches.",
+            "description": "Optional account index. In a session, omit it to use the Lighter account owned by the selected EVM wallet; an explicit index must match that wallet. Derived read-only authorization stays on the exact account.",
             "type": "number"
           },
           "apiKeyIndex": {
@@ -6192,11 +6192,15 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 936,
+      "descriptionBytes": 1163,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "accountIndex": {
+            "description": "When trading is blocked, pass the exact account index from the error to check its actual nonce reservation owners across sessions instead of scanning an unrelated page of orders.",
+            "type": "number"
+          },
           "dryRun": {
             "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
             "type": "boolean"
@@ -6303,7 +6307,7 @@
         "additionalProperties": false,
         "properties": {
           "accountIndex": {
-            "description": "Optional saved Lighter account index. Omit when exactly one managed account exists in the selected environment.",
+            "description": "Optional Lighter account index. In a session, omit it to use the account owned by the selected EVM wallet; an explicit index must match that wallet.",
             "type": "number"
           },
           "dryRun": {
@@ -6350,7 +6354,7 @@
         "additionalProperties": false,
         "properties": {
           "accountIndex": {
-            "description": "Optional account index. Omit to use the account bound to the default saved Vex-managed Lighter trading credential. Derived read-only authorization refuses account mismatches.",
+            "description": "Optional account index. In a session, omit it to use the Lighter account owned by the selected EVM wallet; an explicit index must match that wallet. Derived read-only authorization stays on the exact account.",
             "type": "number"
           },
           "apiKeyIndex": {
@@ -6552,13 +6556,13 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 522,
+      "descriptionBytes": 520,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "accountIndex": {
-            "description": "Optional account index. Omit to use the account bound to the default saved Vex-managed Lighter trading credential. Derived read-only authorization refuses account mismatches.",
+            "description": "Optional account index. In a session, omit it to use the Lighter account owned by the selected EVM wallet; an explicit index must match that wallet. Derived read-only authorization stays on the exact account.",
             "type": "number"
           },
           "dryRun": {

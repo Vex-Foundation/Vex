@@ -13,10 +13,13 @@ import {
   lighterAccountSetupStatusSchema,
   lighterKeyRegistrationReconcileInputSchema,
   lighterKeyRegistrationReconcileSchema,
+  lighterSetupReconcileInputSchema,
+  lighterSetupReconcileSchema,
   lighterOnboardingChecklistInputSchema,
   lighterOnboardingChecklistSchema,
   type LighterAccountSetupStatus,
   type LighterKeyRegistrationReconcile,
+  type LighterSetupReconcile,
   type LighterOnboardingChecklist,
 } from "@shared/schemas/lighter-trading.js";
 import {
@@ -38,6 +41,7 @@ import { log } from "../logger/index.js";
 import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import { resolveLighterAccountSetupStatus, resolveLighterOnboardingChecklist } from "../lighter/onboarding-checklist.js";
 import { reconcileSetupKeyRegistration } from "../lighter/key-registration-reconcile.js";
+import { reconcileSetupAttempt } from "../lighter/setup-reconcile.js";
 import { registerHandler } from "./register-handler.js";
 
 /**
@@ -145,6 +149,26 @@ export function registerLighterOnboardingHandlers(): ReadonlyArray<() => void> {
             "Lighter could not confirm the trading key just now.",
             ctx.requestId,
           );
+        }
+      },
+    }),
+    registerHandler({
+      channel: CH.lighterTrading.reconcileSetup,
+      domain: "market",
+      inputSchema: lighterSetupReconcileInputSchema,
+      outputSchema: lighterSetupReconcileSchema,
+      handle: async (input, ctx): Promise<Result<LighterSetupReconcile>> => {
+        const dbUrlOutcome = await ensureEngineDbUrl(ctx.requestId);
+        if (!dbUrlOutcome.ok) return dbUrlOutcome;
+        try {
+          return ok(await reconcileSetupAttempt(input));
+        } catch (cause) {
+          log.warn("[lighter-onboarding] setup reconcile failed", {
+            environment: input.environment,
+            cause: cause instanceof Error ? cause.message : String(cause),
+          });
+          return walletScopeRefusal(cause, ctx.requestId)
+            ?? unavailable("Lighter could not confirm the existing setup just now.", ctx.requestId);
         }
       },
     }),

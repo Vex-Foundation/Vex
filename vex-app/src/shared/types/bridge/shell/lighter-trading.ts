@@ -5,6 +5,8 @@ import type {
   LighterAccountSetupStatusInput,
   LighterKeyRegistrationReconcile,
   LighterKeyRegistrationReconcileInput,
+  LighterSetupReconcile,
+  LighterSetupReconcileInput,
   LighterTradingAccount,
   LighterTradingAccountActivityEvent,
   LighterTradingAccountInput,
@@ -20,6 +22,7 @@ import type {
   LighterTradingCandleSubscriptionStopResult,
   LighterTradingCandleUpdateEvent,
   LighterDeskPrepareInput,
+  LighterDeskPrepareProgressEvent,
   LighterDeskPrepareResult,
   LighterOnboardingChecklist,
   LighterOnboardingChecklistInput,
@@ -110,6 +113,9 @@ export interface LighterTradingBridge {
   readonly prepareDeskAction: (
     input: LighterDeskPrepareInput,
   ) => Promise<Result<LighterDeskPrepareResult>>;
+  readonly onDeskPrepareProgress: (
+    callback: (event: LighterDeskPrepareProgressEvent) => void,
+  ) => () => void;
   /**
    * The ticket gate's checklist: which of the three onboarding steps this
    * session's wallet has completed. Address-only reads; no key leaves main.
@@ -132,6 +138,10 @@ export interface LighterTradingBridge {
   readonly reconcileKeyRegistration: (
     input: LighterKeyRegistrationReconcileInput,
   ) => Promise<Result<LighterKeyRegistrationReconcile>>;
+  /** Check the saved deposit or key attempt from provider evidence; never sign or send. */
+  readonly reconcileSetup: (
+    input: LighterSetupReconcileInput,
+  ) => Promise<Result<LighterSetupReconcile>>;
   /** Recover an Agent-owned setup modal after a renderer reload/session switch. */
   readonly getPendingAgentSetup: (
     input: LighterSetupPendingInput,

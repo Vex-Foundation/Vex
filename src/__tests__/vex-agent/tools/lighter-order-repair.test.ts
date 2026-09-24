@@ -1,4 +1,6 @@
 import { requireValue } from "../../helpers/require-value.js";
+import { LIGHTER_SIGNED_TX_MAX_EXPIRY_LEAD_MS } from "@tools/lighter/signed-tx-expiry.js";
+import { LIGHTER_LOST_SEND_RELEASE_GRACE_MS } from "@vex-agent/tools/protocols/lighter/lost-send-release.js";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -35,6 +37,9 @@ vi.mock("@vex-agent/db/repos/lighter-capital-commitments.js", async (importOrigi
 
 const NOW = Date.parse("2026-08-14T12:00:00.000Z");
 const ORDER_EXPIRY_MS = NOW + 30 * 60 * 1000;
+/** The fixture's consent expiry (11:02) plus the SDK signing window plus the release grace. */
+const LEGACY_RELEASE_AT_MS = Date.parse("2026-08-14T11:02:00.000Z")
+  + LIGHTER_SIGNED_TX_MAX_EXPIRY_LEAD_MS + LIGHTER_LOST_SEND_RELEASE_GRACE_MS;
 const INTENT_ID = "lighter-exec-00000000-0000-4000-8000-000000000001";
 const RESERVATION_ID = `lighter-order:${INTENT_ID}`;
 
@@ -314,31 +319,80 @@ describe("Lighter order repair", () => {
     }));
   });
 
-  it("waits while a possibly-sent order is not yet past expiry, holding the reservation", async () => {
-    const deps = makeDeps({ nextNonce: 1200, now: NOW });
+  it("waits while a possibly-sent order is not yet past its release bound, holding the reservation", async () => {
+    const deps = makeDeps({ nextNonce: 1200, now: LEGACY_RELEASE_AT_MS });
 
     const report = await repairLighterOrderIntent(intentRow(), deps);
 
     expect(report.resolution).toBe("awaiting_provider");
     expect(report.nonceBlockedAfter).toBe(true);
     expect(report.guidance).toContain("Do not resubmit");
+    expect(report.guidance).toContain(`released automatically after ${new Date(LEGACY_RELEASE_AT_MS).toISOString()}`);
     expect(deps.nonceState.releaseReservation).not.toHaveBeenCalled();
     expect(deps.intents.markRepairResolved).not.toHaveBeenCalled();
   });
 
-  it("keeps an ambiguous IOC reservation after the local preview expiry", async () => {
-    const deps = makeDeps({
-      nextNonce: 1200,
-      now: ORDER_EXPIRY_MS + 24 * 60 * 60 * 1000,
-    });
+  it("does not trust a never-submitted reason when a send attempt is recorded", async () => {
+    const deps = makeDeps({ now: LEGACY_RELEASE_AT_MS });
+    const report = await repairLighterOrderIntent(intentRow({
+      executionState: "ambiguous",
+      ambiguousReason: "signed_state_persist_failed",
+      submittedAt: null,
+      submittedTxHash: null,
+      sendAttemptStartedAt: "2026-08-14T11:00:02.000Z",
+    }), deps);
+
+    expect(report.resolution).toBe("awaiting_provider");
+    expect(report.nonceBlockedAfter).toBe(true);
+    expect(deps.nonceState.releaseReservation).not.toHaveBeenCalled();
+  });
+
+  it("releases a possibly-sent order once its recorded signed expiry plus grace has passed unconsumed", async () => {
+    const signerExpiryMs = NOW - LIGHTER_LOST_SEND_RELEASE_GRACE_MS - 1;
+    const deps = makeDeps({ nextNonce: 1200, now: NOW });
+
+    const report = await repairLighterOrderIntent(intentRow({ signerExpiryMs }), deps);
+
+    expect(report.resolution).toBe("nonce_released_expired_unconsumed");
+    expect(report.stateAfter).toBe("rejected");
+    expect(report.nonceBlockedAfter).toBe(false);
+    expect(deps.nonceState.releaseReservation).toHaveBeenCalledWith(expect.objectContaining({
+      reservationId: RESERVATION_ID,
+      providerNonce: 1200,
+    }));
+    expect(deps.intents.markRepairResolved).toHaveBeenCalledWith(expect.objectContaining({
+      state: "rejected",
+      providerOutcomeJson: expect.objectContaining({ repair: "nonce_release_expired_unconsumed" }),
+    }));
+  });
+
+  it("holds a possibly-sent order until its recorded signed expiry plus grace, even past consent", async () => {
+    const signerExpiryMs = NOW - LIGHTER_LOST_SEND_RELEASE_GRACE_MS;
+    const deps = makeDeps({ nextNonce: 1200, now: NOW });
+
+    const report = await repairLighterOrderIntent(intentRow({ signerExpiryMs }), deps);
+
+    expect(report.resolution).toBe("awaiting_provider");
+    expect(deps.nonceState.releaseReservation).not.toHaveBeenCalled();
+  });
+
+  it("bounds a row signed before its expiry was recorded by consent expiry plus the SDK window", async () => {
+    const deps = makeDeps({ nextNonce: 1200, now: LEGACY_RELEASE_AT_MS + 1 });
+
+    const report = await repairLighterOrderIntent(intentRow({ signerExpiryMs: null }), deps);
+
+    expect(report.resolution).toBe("nonce_released_expired_unconsumed");
+    expect(deps.nonceState.releaseReservation).toHaveBeenCalledOnce();
+  });
+
+  it("never releases on the bound when Lighter already consumed the nonce", async () => {
+    const deps = makeDeps({ nextNonce: 1201, now: LEGACY_RELEASE_AT_MS + 1 });
 
     const report = await repairLighterOrderIntent(intentRow(), deps);
 
-    expect(report.resolution).toBe("awaiting_provider");
-    expect(report.stateAfter).toBe("submitted");
-    expect(report.nonceBlockedAfter).toBe(true);
-    expect(report.guidance).toContain("not a signed sequencer expiry");
+    expect(report.resolution).toBe("nonce_reset_consumed");
     expect(deps.nonceState.releaseReservation).not.toHaveBeenCalled();
+    expect(deps.intents.markRepairResolved).not.toHaveBeenCalled();
   });
 
   it("never frees a reservation held by a different intent", async () => {

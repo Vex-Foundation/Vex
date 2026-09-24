@@ -17,7 +17,7 @@
  *     (failure, success, and unexpected error).
  *   - Timers (countdown, post-clear auto-close, session-lock auto-close) are
  *     cancelled on unmount; a ref-based reentry guard prevents a double
- *     `onClose`.
+ *     `onClose` without blocking React StrictMode's effect replay.
  */
 
 import {
@@ -100,10 +100,13 @@ export function useExportPrivateKey({
   }, []);
 
   const safeClose = useCallback((): void => {
-    if (closedRef.current) return;
+    // Main may already be writing the key to the clipboard. Keep the dialog
+    // visible until that request settles so its result cannot arrive unseen.
+    if (closedRef.current || pending) return;
     closedRef.current = true;
+    if (passwordRef.current !== null) passwordRef.current.value = "";
     onClose();
-  }, [onClose]);
+  }, [onClose, pending]);
 
   // Countdown timer: ticks once per second while phase === "copied".
   // Stops when the countdown reaches 0 and transitions to "cleared".
@@ -142,11 +145,11 @@ export function useExportPrivateKey({
     };
   }, [phase, safeClose]);
 
-  // Final cleanup — guarantees no late `onClose` fires after unmount and
-  // cancels any in-flight session-lock auto-close timer.
+  // Cancel the session-lock timer on unmount. Do not mark the dialog closed
+  // here: StrictMode replays effect cleanup while the dialog remains mounted.
+  // Every other timer is cleaned up by its own effect.
   useEffect(() => {
     return () => {
-      closedRef.current = true;
       if (lockAutoCloseTimerRef.current !== null) {
         clearTimeout(lockAutoCloseTimerRef.current);
         lockAutoCloseTimerRef.current = null;

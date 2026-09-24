@@ -1,11 +1,15 @@
 {
   "definition": {
     "function": {
-      "description": "Check and reconcile the true state of Vex-submitted Lighter create orders and lifecycle actions (cancel one, modify, cancel all, and reduce-only close). Use when an action ended sequencer_pending or ambiguous, the user asks what happened, or a new action is blocked by an unresolved nonce reservation. Reads live nextNonce plus exact account order, trade, and position evidence, then updates durable records without signing or retrying. Returns each checked durable intent with its proven execution state and provider evidence; close results include executed amount, remaining order amount, average fill price, provider status, and resulting position when proven. A stuck nonce is released only when the signed transaction provably never left Vex or expired while its nonce remained unconsumed; a consumed nonce is unblocked without guessing the final action outcome. It never signs, submits, retries, cancels, modifies, or moves funds.",
+      "description": "Check and reconcile the true state of Vex-submitted Lighter create orders and lifecycle actions (cancel one, modify, cancel all, and reduce-only close). Use when an action ended sequencer_pending or ambiguous, the user asks what happened, or a new action is blocked by an unresolved nonce reservation. Call this tool with the exact environment and intentId or accountIndex; there is no general Settings -> Lighter -> Reconcile control for orders or nonces. The Reconcile button in Trading setup applies only to leverage changes. Reads live nextNonce plus exact account order, trade, and position evidence, then updates durable records without signing or retrying. Returns each checked durable intent with its proven execution state and provider evidence; close results include executed amount, remaining order amount, average fill price, provider status, and resulting position when proven. A stuck nonce is released only when the signed transaction provably never left Vex or expired while its nonce remained unconsumed; a consumed nonce is unblocked without guessing the final action outcome. It never signs, submits, retries, cancels, modifies, or moves funds.",
       "name": "lighter__order_status",
       "parameters": {
         "additionalProperties": false,
         "properties": {
+          "accountIndex": {
+            "description": "When trading is blocked, pass the exact account index from the error to check its actual nonce reservation owners across sessions instead of scanning an unrelated page of orders.",
+            "type": "number"
+          },
           "environment": {
             "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
             "enum": [

@@ -26,6 +26,7 @@ export type LighterAccountSetupPhase =
   | "idle"
   | "depositing"
   | "confirming_deposit"
+  | "checking_setup"
   | "registering_key"
   | "confirming_key"
   | "authorizing_fee"
@@ -251,6 +252,47 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     }
   };
 
+  /** Inspect an uncertain saved attempt. This route cannot sign or submit. */
+  const checkSavedSetup = async (env: LighterTradingEnvironment): Promise<void> => {
+    if (sessionId === null) return;
+    setResume(() => checkSavedSetup(env), true);
+    setPhase("checking_setup");
+    const deadline = Date.now() + CONFIRM_TIMEOUT_MS.confirming_key!;
+    for (;;) {
+      if (cancelled.current) return;
+      let manualReview = false;
+      try {
+        const result = await window.vex.lighterTrading.reconcileSetup({ sessionId, environment: env });
+        manualReview = result.ok && (
+          result.data.status === "manual_review"
+          || result.data.status === "registered_key_conflict"
+        );
+      } catch {
+        // A failed provider read is not proof that another attempt is safe.
+      }
+      if (cancelled.current) return;
+      const fresh = await refreshStatus(env);
+      if (cancelled.current) return;
+      if (fresh !== null && fresh.setupRecovery === "none") {
+        resumeStep.current = null;
+        resumeReconcileOnly.current = false;
+        setError(null);
+        if (fresh.accountExists && fresh.tradingKeyRegistered && fresh.feeAuthorized) finish(env);
+        else setPhase("idle");
+        return;
+      }
+      if (manualReview || fresh?.setupRecovery === "manual_review") {
+        setError("Vex cannot confirm the previous setup automatically. No new deposit or trading key was submitted. Please contact support before trying setup again.");
+        return;
+      }
+      if (Date.now() >= deadline) {
+        setError("Your previous setup is still being checked. No new deposit or trading key was submitted. Check again in a moment.");
+        return;
+      }
+      await sleep(POLL_INTERVAL_MS);
+    }
+  };
+
   const setResume = (step: () => Promise<void>, reconcileOnly = false): void => {
     resumeStep.current = step;
     resumeReconcileOnly.current = reconcileOnly;
@@ -369,6 +411,10 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     setResume(() => runKey(env));
     const before = await refreshStatus(env);
     if (cancelled.current) return;
+    if (before !== null && before.setupRecovery !== "none") {
+      await checkSavedSetup(env);
+      return;
+    }
     if (before !== null && before.tradingKeyRegistered) { await runFee(env); return; }
     // A registration whose transaction is already on chain is finished by
     // RECONCILING. Preparing a second one is refused by design - that refusal
@@ -436,7 +482,7 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
   // Deposit is the only step this modal cannot infer: an existing account
   // (any balance) is already the thing `lighter.key.register.prepare`
   // requires, so the amount field - and requiring it - only applies pre-account.
-  const needsDeposit = status === null || !status.accountExists;
+  const needsDeposit = status === null || (!status.accountExists && status.setupRecovery === "none");
 
   // The wallet cannot deposit what it does not hold. Caught here rather than
   // on-chain so the trader is told before a transaction is signed and burns
@@ -458,6 +504,11 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
 
   const start = (): void => {
     if (phase !== "idle" || sessionId === null || status === null) return;
+    if (status.setupRecovery !== "none") {
+      setError(null);
+      void checkSavedSetup(environment);
+      return;
+    }
     if (needsDeposit && !isPositiveDecimal(amountIn)) return;
     if (insufficientBalance) return;
     setError(null);
@@ -485,7 +536,15 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     if (cancelled.current) return;
     const step = resumeStep.current;
     if (fresh !== null) {
-      if (fresh.feeAuthorized) { finish(env); return; }
+      if (fresh.setupRecovery !== "none") { await checkSavedSetup(env); return; }
+      if (resumeReconcileOnly.current && fresh.setupRecovery === "none" && !fresh.keyRegistrationResumable) {
+        resumeStep.current = null;
+        resumeReconcileOnly.current = false;
+        setError(null);
+        setPhase("idle");
+        return;
+      }
+      if (fresh.accountExists && fresh.tradingKeyRegistered && fresh.feeAuthorized) { finish(env); return; }
       if (resumeReconcileOnly.current) {
         // A reconcile that got its key is done reconciling. Authorizing fees is
         // the operator's own click, here as much as on open.
@@ -517,6 +576,11 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
   useEffect(() => {
     if (!open || autoTriggered.current || sessionId === null) return;
     if (phase !== "idle" || error !== null || status === null) return;
+    if (status.setupRecovery !== "none") {
+      autoTriggered.current = true;
+      void checkSavedSetup(environment);
+      return;
+    }
     if (!status.accountExists || status.tradingKeyRegistered || !status.keyRegistrationResumable) return;
     autoTriggered.current = true;
     void autoReconcileKey(environment);
@@ -536,8 +600,8 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     error,
     needsDeposit,
     settlementShortfall,
-    canStart: phase === "idle" && status !== null && !insufficientBalance
-      && (!needsDeposit || isPositiveDecimal(amountIn)),
+    canStart: phase === "idle" && status !== null
+      && (status.setupRecovery !== "none" || (!insufficientBalance && (!needsDeposit || isPositiveDecimal(amountIn)))),
     start,
     retry,
   };

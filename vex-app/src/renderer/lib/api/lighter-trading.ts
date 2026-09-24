@@ -105,14 +105,18 @@ export function useLighterTradingSnapshot(
 export function useLighterTradingAccount(
   environment: LighterTradingEnvironment,
   enabled: boolean,
+  sessionId?: string | null,
 ): UseQueryResult<Result<LighterTradingAccount>> {
   return useQuery({
-    queryKey: ["lighterTrading", "account", environment],
-    queryFn: ({ signal }) =>
-      abortable(window.vex.lighterTrading.getAccount({ environment }), signal),
-    enabled,
+    queryKey: ["lighterTrading", "account", environment, sessionId === undefined ? "unscoped" : sessionId],
+    queryFn: ({ signal }) => {
+      if (sessionId === null) throw new Error("A Lighter session is required.");
+      return abortable(window.vex.lighterTrading.getAccount({ environment, ...(sessionId === undefined ? {} : { sessionId }) }), signal);
+    },
+    enabled: enabled && sessionId !== null,
+    placeholderData: () => undefined,
     staleTime: 5_000,
-    refetchInterval: enabled ? ACCOUNT_REFETCH_MS : false,
+    refetchInterval: enabled && sessionId !== null ? ACCOUNT_REFETCH_MS : false,
     refetchIntervalInBackground: false,
   });
 }
@@ -120,14 +124,18 @@ export function useLighterTradingAccount(
 export function useLighterTradingFills(
   environment: LighterTradingEnvironment,
   enabled: boolean,
+  sessionId?: string | null,
 ): UseQueryResult<Result<LighterTradingFills>> {
   return useQuery({
-    queryKey: ["lighterTrading", "fills", environment],
-    queryFn: ({ signal }) =>
-      abortable(window.vex.lighterTrading.listFills({ environment, limit: 50 }), signal),
-    enabled,
+    queryKey: ["lighterTrading", "fills", environment, sessionId === undefined ? "unscoped" : sessionId],
+    queryFn: ({ signal }) => {
+      if (sessionId === null) throw new Error("A Lighter session is required.");
+      return abortable(window.vex.lighterTrading.listFills({ environment, limit: 50, ...(sessionId === undefined ? {} : { sessionId }) }), signal);
+    },
+    enabled: enabled && sessionId !== null,
+    placeholderData: () => undefined,
     staleTime: 5_000,
-    refetchInterval: enabled ? ACCOUNT_REFETCH_MS : false,
+    refetchInterval: enabled && sessionId !== null ? ACCOUNT_REFETCH_MS : false,
     refetchIntervalInBackground: false,
   });
 }

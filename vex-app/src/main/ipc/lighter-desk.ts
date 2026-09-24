@@ -9,7 +9,7 @@
  * approve handler. No model turn is involved anywhere on this path.
  */
 
-import { CH } from "@shared/ipc/channels.js";
+import { CH, EV } from "@shared/ipc/channels.js";
 import { err, ok, type Result } from "@shared/ipc/result.js";
 import {
   lighterDeskPrepareInputSchema,
@@ -23,6 +23,7 @@ import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import { getSessionById } from "../database/sessions-db.js";
 import { registerHandler } from "./register-handler.js";
 import { approvalsUnexpectedError } from "./approvals/_errors.js";
+import { resolveLighterSessionAccount } from "../lighter/session-account.js";
 
 /** Market close walks the book at most this far; the AI lane's usual default. */
 const CLOSE_SLIPPAGE_BPS = 100;
@@ -87,18 +88,69 @@ function prepareDeskOnce(
     readonly environment: LighterIntegrationEnvironment;
     readonly action: LighterDeskAction;
   },
+  onProgress?: (stage: "checking_market" | "creating_approval") => void,
 ): Promise<LighterDeskPrepareResult> {
   const key = deskPrepareKey(input);
   const existing = deskPrepareFlights.get(key);
   if (existing !== undefined) return existing;
 
   const call = deskActionToPrepareCall(input.environment, input.action);
-  const flight = import("@vex-agent/engine/core/approval-runtime.js")
-    .then(({ prepareDeskApproval }) => prepareDeskApproval({
+  const flight = (async () => {
+    const startedAt = performance.now();
+    let marketStageMs: number | null = null;
+    let approvalStageMs: number | null = null;
+    const reportTimedProgress = (stage: "checking_market" | "creating_approval"): void => {
+      const elapsed = Math.round(performance.now() - startedAt);
+      if (stage === "checking_market") marketStageMs = elapsed;
+      else approvalStageMs = elapsed;
+      onProgress?.(stage);
+    };
+    // The ordinary order-preview handler resolves and verifies this session's
+    // wallet itself. Looking it up here repeats the same public provider read.
+    const accountIndex = (input.action.kind === "order" && call.toolId !== "lighter.order.preview") || input.action.kind === "close" || input.action.kind === "cancel"
+      ? await resolveLighterSessionAccount(input)
+      : undefined;
+    const accountMs = Math.round(performance.now() - startedAt);
+    if (accountIndex !== undefined) {
+      // Self-heal a slot locked by a prior pre-send reservation the provider
+      // never consumed before this card is prepared, so an expired stale lock
+      // clears itself instead of surfacing the block on the ticket. On the
+      // happy path this is two indexed reads; provider work runs only when a
+      // reservation is actually stuck, and one still inside consent is untouched.
+      try {
+        const { checkLighterNonceRecovery } = await import(
+          "@vex-agent/tools/protocols/lighter/nonce-recovery.js"
+        );
+        await checkLighterNonceRecovery({ environment: input.environment, accountIndex });
+      } catch {
+        // Best-effort; preparation and execution still enforce the nonce gate.
+      }
+    }
+    const recoveryMs = Math.round(performance.now() - startedAt) - accountMs;
+    const { prepareDeskApproval } = await import("@vex-agent/engine/core/approval-runtime.js");
+    const outcome = await prepareDeskApproval({
       sessionId: input.sessionId,
       toolId: call.toolId,
-      params: call.params,
-    }));
+      params: accountIndex === undefined ? call.params : { ...call.params, accountIndex },
+      onProgress: reportTimedProgress,
+    });
+    const totalMs = Math.round(performance.now() - startedAt);
+    const timings = {
+      action: input.action.kind,
+      outcome: outcome.kind,
+      accountMs,
+      recoveryMs,
+      engineMs: totalMs - accountMs - recoveryMs,
+      marketStageMs,
+      approvalStageMs,
+      totalMs,
+    };
+    // Packaged builds retain warning-level logs. Record only slow prepares,
+    // and only duration/count metadata, for real-account latency diagnosis.
+    if (totalMs >= 1500) log.warn("lighter.desk.slow_prepare", timings);
+    else log.info("lighter.desk.prepare_timing", timings);
+    return outcome;
+  })();
   deskPrepareFlights.set(key, flight);
   const clear = (): void => {
     if (deskPrepareFlights.get(key) === flight) deskPrepareFlights.delete(key);
@@ -260,7 +312,20 @@ export function registerLighterDeskHandlers(): ReadonlyArray<() => void> {
 
         try {
           const call = deskActionToPrepareCall(input.environment, input.action);
-          const outcome = await prepareDeskOnce(input);
+          const reportProgress = input.progressId === undefined ? undefined : (stage: "checking_account" | "checking_market" | "creating_approval") => {
+            try {
+              if (!ctx.event.sender?.isDestroyed()) {
+                ctx.event.sender.send(EV.lighterTrading.deskPrepareProgress, {
+                  progressId: input.progressId,
+                  stage,
+                });
+              }
+            } catch {
+              // A closed renderer must not change the approval outcome.
+            }
+          };
+          reportProgress?.("checking_account");
+          const outcome = await prepareDeskOnce(input, reportProgress);
           log.info(
             `[ipc:vex:lighterTrading:prepareDeskAction] ${outcome.kind} ` +
               `action=${input.action.kind} tool=${call.toolId} correlationId=${ctx.requestId}`,

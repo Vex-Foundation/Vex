@@ -93,7 +93,7 @@ export function useLighterDesk() {
   } = useDeskStreams({ environment, market, resolution });
 
   // The same read the bottom dock makes; TanStack dedupes it by key.
-  const accountQuery = useLighterTradingAccount(environment, true);
+  const accountQuery = useLighterTradingAccount(environment, true, activeSessionId);
   useLighterAccountActivityRefresh(environment, true);
   const account = accountQuery.data?.ok === true ? accountQuery.data.data : null;
   const available = account !== null && account.status !== "unavailable"
@@ -121,13 +121,15 @@ export function useLighterDesk() {
   }, [focusComposer, bookOpen]);
 
   const margin = market === null ? null : resolveTicketMargin(market, account?.marginTerms ?? null);
+  // The fee THIS account pays, which the ticket sizes every order against.
+  const exchangeFees = account !== null && account.status !== "unavailable" ? account.exchangeFees ?? null : null;
   const chartMarketId = market?.marketId ?? null;
   const chartLevels = useMemo(
     () => (chartMarketId === null || account === null ? [] : buildChartLevels(chartMarketId, account.positions, account.openOrders)),
     [chartMarketId, account],
   );
   // Same query the account panel's Fills tab reads, so this adds no request.
-  const fillsQuery = useLighterTradingFills(environment, chartMarketId !== null);
+  const fillsQuery = useLighterTradingFills(environment, chartMarketId !== null, activeSessionId);
   const fillsSnapshot = fillsQuery.data?.ok === true ? fillsQuery.data.data : null;
   const fills = fillsSnapshot?.fills ?? null;
   // Fill arrows only accompany an open position on this market; a flat chart stays clean.
@@ -147,7 +149,10 @@ export function useLighterDesk() {
     handoffError,
     setHandoffError,
     submitting,
+    prepareStage,
     deskOutcome,
+    closingPositions,
+    cancellingOrders,
     prepareOnDesk,
     onApprovalResolved,
   } = useDeskLane({
@@ -193,7 +198,11 @@ export function useLighterDesk() {
   // The ticket's Long/Short: the draft becomes a desk order card (design §7.11).
   const submitDraft = (draft: TradeDraft): void => {
     if (market === null) return;
-    void prepareOnDesk({ kind: "order", marketId: market.marketId, draft: toDeskOrderDraft(draft) }, draft);
+    const closePosition = (draft.mode === "market" || draft.mode === "limit") && draft.reduceOnly
+      ? account?.positions.find((position) => position.marketId === market.marketId
+        && position.side === (draft.side === "sell" ? "long" : "short")) ?? null
+      : null;
+    void prepareOnDesk({ kind: "order", marketId: market.marketId, draft: toDeskOrderDraft(draft) }, draft, closePosition);
   };
 
   // Open Vex via ⌘K: the rail's composer is the only
@@ -377,7 +386,7 @@ export function useLighterDesk() {
   const accountActions: AccountActions = {
     onReviewPosition: (position) => sendToChat(buildReviewPositionMessage({ environment, position })),
     onClosePosition: (position, portion) => {
-      if (portion === 1) void prepareOnDesk({ kind: "close", marketId: position.marketId }, null);
+      if (portion === 1) void prepareOnDesk({ kind: "close", marketId: position.marketId }, null, position);
       else prefillFromPosition(position, "market", portion);
     },
     onProtectPosition: (position) => prefillFromPosition(position, "oco"),
@@ -420,6 +429,7 @@ export function useLighterDesk() {
     equity,
     settlementSymbol,
     margin,
+    exchangeFees,
     chartLevels,
     chartFills,
     approvals,
@@ -429,7 +439,10 @@ export function useLighterDesk() {
     setPricePick,
     handoffError,
     submitting,
+    prepareStage,
     deskOutcome,
+    closingPositions,
+    cancellingOrders,
     submitDraft,
     onApprovalResolved,
     skipCloseConfirm,

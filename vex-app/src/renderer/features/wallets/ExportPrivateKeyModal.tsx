@@ -80,15 +80,13 @@ export function ExportPrivateKeyModal({
 
   return (
     <Dialog open={dialogOpen} onOpenChange={(next) => {
-      // Native dialog ESC / backdrop are disabled (closeOnBackdropClick=false)
-      // but the dialog still fires onOpenChange(false) on programmatic close.
-      // Only treat a true "open" intent as a no-op; we own the close path.
+      // Route Escape and backdrop dismissal through the same guarded close
+      // path as Cancel. Main owns the clipboard scrub timer after dismissal.
       if (!next) {
         safeClose();
       }
     }}>
       <DialogContent
-        closeOnBackdropClick={false}
         data-vex-export-private-key={chain}
       >
         <ExportPrivateKeyHeader chain={chain} />

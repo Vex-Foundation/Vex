@@ -27,6 +27,7 @@ vi.mock("@vex-agent/db/repos/lighter-capital-commitments.js", async (importOrigi
 import {
   LIGHTER_LIFECYCLE_REPAIR_EXPIRY_GRACE_MS,
   repairLighterOrderLifecycleIntent,
+  repairUnresolvedLighterOrderLifecyclesInBackground,
   type LighterOrderLifecycleRepairDeps,
 } from "@vex-agent/tools/protocols/lighter/order-lifecycle-repair.js";
 
@@ -80,6 +81,30 @@ function intent(overrides: Partial<LighterOrderLifecycleIntentRow> = {}): Lighte
     expiresAt: "2026-08-19T22:05:00.000Z",
     ...overrides,
   };
+}
+
+function pristinePreSubmitClose(
+  overrides: Partial<LighterOrderLifecycleIntentRow> = {},
+): LighterOrderLifecycleIntentRow {
+  return intent({
+    actionType: "close_position",
+    providerOrderId: null,
+    approvalId: null,
+    executionState: "pre_submit_revalidated",
+    preSubmitRevalidationJson: { checked: true },
+    preSubmitRevalidatedAt: "2026-08-19T21:56:00.000Z",
+    nonceReservationId: null,
+    nonceValue: null,
+    signerExpiryMs: null,
+    signerTxHash: null,
+    submittedTxHash: null,
+    submitCode: null,
+    submitMessage: null,
+    predictedExecutionTimeMs: null,
+    ambiguousReason: null,
+    expiresAt: "2026-08-19T21:59:00.000Z",
+    ...overrides,
+  });
 }
 
 function nonce(status: "reserved" | "observed" = "reserved") {
@@ -167,6 +192,7 @@ describe("Lighter order lifecycle repair", () => {
       submittedTxHash: null,
       submitCode: null,
       submitMessage: null,
+      predictedExecutionTimeMs: null,
       ambiguousReason: null,
       expiresAt: "2026-08-19T21:59:00.000Z",
     });
@@ -185,6 +211,130 @@ describe("Lighter order lifecycle repair", () => {
     expect(d.client.getNextNonce).not.toHaveBeenCalled();
     expect(d.resolveAuth).not.toHaveBeenCalled();
   });
+
+  it("background sweep reads status candidates and counts them without privileged auth", async () => {
+    const row = intent({
+      actionType: "close_position",
+      providerOrderId: null,
+      requestedBaseAmountInteger: "10000",
+      requestedPriceInteger: "4950",
+      requestedSide: "sell",
+      reduceOnly: true,
+      approvalStatus: "approved",
+      executionState: "approved",
+      nonceReservationId: null,
+      nonceValue: null,
+      signerExpiryMs: null,
+      signerTxHash: null,
+      submittedTxHash: null,
+      submitCode: null,
+      submitMessage: null,
+      predictedExecutionTimeMs: null,
+      ambiguousReason: null,
+      expiresAt: "2026-08-19T21:59:00.000Z",
+    });
+    const d = deps(row);
+
+    const report = await repairUnresolvedLighterOrderLifecyclesInBackground({}, d);
+
+    expect(d.lifecycleIntents.listStatusCandidates).toHaveBeenCalled();
+    // The background sweep swaps in its own null auth resolver, so the caller's
+    // privileged resolver is never invoked on the sweep's behalf.
+    expect(d.resolveAuth).not.toHaveBeenCalled();
+    expect(report).toMatchObject({ examined: 1, advanced: 0, awaiting: 1, degraded: 0, errors: 0 });
+  });
+
+  it.each([null, "approval-1"])(
+    "retires an expired revalidated close, approvalId %s, instead of only reporting it",
+    async (approvalId) => {
+      const row = pristinePreSubmitClose({ approvalId });
+      const retire = vi.fn(async (intent: LighterOrderLifecycleIntentRow) => ({ ...intent, executionState: "expired" as const }));
+      const d = { ...deps(row), retireStalePreSubmit: retire };
+
+      const result = await repairLighterOrderLifecycleIntent(row, d);
+
+      expect(retire).toHaveBeenCalledExactlyOnceWith(row);
+      expect(result).toMatchObject({
+        resolution: "stale_pre_submit_retired",
+        stateBefore: "pre_submit_revalidated",
+        stateAfter: "expired",
+        nonceBlockedAfter: false,
+      });
+      expect(d.client.getNextNonce).not.toHaveBeenCalled();
+    },
+  );
+
+  it("still reports the close when the guarded retirement refuses it", async () => {
+    const row = pristinePreSubmitClose();
+    const d = { ...deps(row), retireStalePreSubmit: vi.fn(async () => null) };
+
+    const result = await repairLighterOrderLifecycleIntent(row, d);
+
+    expect(result.resolution).toBe("stale_pre_submit");
+  });
+
+  it("never retires a close whose consent is still open", async () => {
+    const row = pristinePreSubmitClose({ expiresAt: "2026-08-19T22:05:00.000Z" });
+    const retire = vi.fn(async () => null);
+    const d = { ...deps(row), retireStalePreSubmit: retire };
+
+    const result = await repairLighterOrderLifecycleIntent(row, d);
+
+    expect(result.resolution).toBe("awaiting_submission");
+    expect(retire).not.toHaveBeenCalled();
+  });
+
+  it("counts a retired stale close as advanced in the background sweep", async () => {
+    const row = pristinePreSubmitClose();
+    const d = {
+      ...deps(row),
+      retireStalePreSubmit: vi.fn(async (intent: LighterOrderLifecycleIntentRow) => ({ ...intent, executionState: "expired" as const })),
+    };
+
+    const report = await repairUnresolvedLighterOrderLifecyclesInBackground({}, d);
+
+    expect(report).toMatchObject({ examined: 1, advanced: 1, awaiting: 0, degraded: 0, errors: 0 });
+  });
+
+  it.each([null, "approval-1"])(
+    "reports an expired revalidated close as replaceable with approvalId %s",
+    async (approvalId) => {
+      const row = pristinePreSubmitClose({ approvalId });
+      const d = deps(row);
+
+      const result = await repairLighterOrderLifecycleIntent(row, d);
+
+      expect(result.resolution).toBe("stale_pre_submit");
+      expect(result.guidance).toContain("Prepare a fresh action");
+      expect(d.client.getNextNonce).not.toHaveBeenCalled();
+      expect(d.lifecycleIntents.markStreamEvidence).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { sendAttemptStartedAt: "2026-08-19T21:58:00.000Z" },
+    { nonceReservationId: "reserved", nonceValue: "9" },
+    { signerTxHash: "signed" },
+    { submittedTxHash: "submitted" },
+    { predictedExecutionTimeMs: 10 },
+    { providerOutcomeJson: {} },
+    { decidedAt: null },
+    { preSubmitRevalidatedAt: null },
+    { expiresAt: "invalid" },
+  ] satisfies Partial<LighterOrderLifecycleIntentRow>[])(
+    "does not recommend a replacement for contradictory pre-submit evidence %j",
+    async (evidence) => {
+      const d = deps(pristinePreSubmitClose(evidence));
+      const result = await repairLighterOrderLifecycleIntent(pristinePreSubmitClose(evidence), d);
+
+      expect(result.resolution).toBe("degraded");
+      expect(result.guidance).toContain("do not prepare a replacement or retry");
+      expect(result.guidance).not.toContain("Prepare a fresh action");
+      expect(d.client.getNextNonce).not.toHaveBeenCalled();
+      expect(d.nonceState.releaseReservation).not.toHaveBeenCalled();
+      expect(d.lifecycleIntents.markStreamEvidence).not.toHaveBeenCalled();
+    },
+  );
 
   it("resolves a reduce-only close from exact terminal order and full flat account snapshot", async () => {
     const matchHash = "c".repeat(64);
@@ -236,9 +386,10 @@ describe("Lighter order lifecycle repair", () => {
     }));
   });
 
-  it("releases a signed lifecycle transaction that never reached submission", async () => {
+  it("keeps a signed lifecycle transaction reserved while its consent remains valid", async () => {
     const row = intent({
       executionState: "signed",
+      nonceReservationId: `lighter-lifecycle:${intent().intentId}`,
       ambiguousReason: null,
       submittedTxHash: null,
       signerExpiryMs: NOW + 60_000,
@@ -247,10 +398,11 @@ describe("Lighter order lifecycle repair", () => {
 
     const report = await repairLighterOrderLifecycleIntent(row, d);
 
-    expect(report.resolution).toBe("nonce_released_never_submitted");
-    expect(report.stateAfter).toBe("rejected");
-    expect(report.nonceBlockedAfter).toBe(false);
-    expect(d.nonceState.releaseReservation).toHaveBeenCalledOnce();
+    expect(report.resolution).toBe("awaiting_submission");
+    expect(report.stateAfter).toBe("signed");
+    expect(report.nonceBlockedAfter).toBe(true);
+    expect(d.nonceState.releaseReservation).not.toHaveBeenCalled();
+    expect(d.client.getNextNonce).not.toHaveBeenCalled();
   });
 
   it("releases an expired transaction only when the live nonce stayed unconsumed", async () => {
@@ -261,6 +413,69 @@ describe("Lighter order lifecycle repair", () => {
 
     expect(report.resolution).toBe("nonce_released_expired_unconsumed");
     expect(d.nonceState.releaseReservation).toHaveBeenCalledWith(expect.objectContaining({ providerNonce: 9 }));
+  });
+
+  it("bounds a lost close signed before its expiry was recorded by consent expiry plus the SDK window", async () => {
+    // Consent expired 21:39:59; + 10 min SDK window + 10 min grace = 21:59:59, before NOW (22:00).
+    const row = intent({
+      actionType: "close_position",
+      providerOrderId: null,
+      signerExpiryMs: null,
+      sendAttemptStartedAt: "2026-08-19T21:39:00.000Z",
+      expiresAt: "2026-08-19T21:39:59.000Z",
+    });
+    const d = deps(row, { readsFail: true, nextNonce: 9 });
+
+    const report = await repairLighterOrderLifecycleIntent(row, d);
+
+    expect(report.resolution).toBe("nonce_released_expired_unconsumed");
+    expect(d.nonceState.releaseReservation).toHaveBeenCalledWith(expect.objectContaining({ providerNonce: 9 }));
+  });
+
+  it("holds that lost close until the consent bound has passed", async () => {
+    const row = intent({
+      actionType: "close_position",
+      providerOrderId: null,
+      signerExpiryMs: null,
+      sendAttemptStartedAt: "2026-08-19T21:39:00.000Z",
+      expiresAt: "2026-08-19T21:40:00.000Z",
+    });
+    const d = deps(row, { readsFail: true, nextNonce: 9 });
+
+    const report = await repairLighterOrderLifecycleIntent(row, d);
+
+    expect(report.resolution).toBe("awaiting_provider");
+    expect(d.nonceState.releaseReservation).not.toHaveBeenCalled();
+  });
+
+  it("never applies the consent bound to a cancel, which always records its own signed expiry", async () => {
+    const row = intent({
+      actionType: "cancel_one",
+      signerExpiryMs: null,
+      sendAttemptStartedAt: "2026-08-19T21:00:00.000Z",
+      expiresAt: "2026-08-19T21:00:00.000Z",
+    });
+    const d = deps(row, { readsFail: true, nextNonce: 9 });
+
+    const report = await repairLighterOrderLifecycleIntent(row, d);
+
+    expect(report.resolution).toBe("awaiting_provider");
+    expect(d.nonceState.releaseReservation).not.toHaveBeenCalled();
+  });
+
+  it("preserves a possible send despite a never-submitted ambiguity reason", async () => {
+    const row = intent({
+      ambiguousReason: "signed_state_persist_failed",
+      sendAttemptStartedAt: "2026-08-19T21:58:00.000Z",
+      signerExpiryMs: null,
+    });
+    const d = deps(row, { readsFail: true });
+
+    const result = await repairLighterOrderLifecycleIntent(row, d);
+
+    expect(result.resolution).toBe("awaiting_provider");
+    expect(result.nonceBlockedAfter).toBe(true);
+    expect(d.nonceState.releaseReservation).not.toHaveBeenCalled();
   });
 
   it("retires a modify commitment only where the state proves it was never sent", async () => {

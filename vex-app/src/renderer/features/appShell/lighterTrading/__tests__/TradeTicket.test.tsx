@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
 import type { TicketMargin } from "../ticket-model.js";
@@ -74,6 +74,127 @@ function renderTicket(overrides: Partial<Parameters<typeof TradeTicket>[0]> = {}
 }
 
 describe("Light it up trade ticket", () => {
+  it("shows each successful order notice below the side buttons for twenty seconds", () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender } = renderTicket({ outcome: { tone: "ok", text: "Close sent." } });
+      const actions = screen.getByRole("group", { name: "Order side" });
+      const first = document.querySelector(".lit-review-outcome");
+      if (!first) throw new Error("expected the first order notice");
+      expect(first.querySelector(".lit-review-outcome-text")?.textContent).toBe("Close sent.");
+      expect(actions.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(first.querySelector(".lit-review-outcome-timer")).not.toBeNull();
+
+      act(() => { vi.advanceTimersByTime(19_999); });
+      expect(document.querySelector(".lit-review-outcome")).not.toBeNull();
+      rerender({ outcome: { tone: "ok", text: "Order opened." } });
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(document.querySelector(".lit-review-outcome")?.textContent).toBe("Order opened.");
+      act(() => { vi.advanceTimersByTime(19_998); });
+      expect(document.querySelector(".lit-review-outcome")).not.toBeNull();
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(document.querySelector(".lit-review-outcome")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows uncertain order outcomes with the same twenty-second countdown", () => {
+    vi.useFakeTimers();
+    try {
+      renderTicket({ outcome: { tone: "warn", text: "Outcome unknown. Check Orders before retrying." } });
+      expect(document.querySelector(".lit-review-outcome")?.textContent).toContain("Outcome unknown");
+      expect(document.querySelector(".lit-review-outcome-timer")).not.toBeNull();
+      act(() => { vi.advanceTimersByTime(20_000); });
+      expect(document.querySelector(".lit-review-outcome")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets the trader dismiss a notice without hiding a later one", () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender } = renderTicket({ outcome: { tone: "ok", text: "Close sent." } });
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
+      expect(screen.queryByRole("status")).toBeNull();
+
+      rerender({ outcome: { tone: "error", text: "Order unavailable." } });
+      expect(screen.getByRole("alert").textContent).toContain("Order unavailable.");
+      act(() => { vi.advanceTimersByTime(19_999); });
+      expect(screen.getByRole("alert")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
+      expect(screen.queryByRole("alert")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("places preview errors below Long and Short, then clears them after twenty seconds", () => {
+    vi.useFakeTimers();
+    try {
+      renderTicket({ handoffError: "Lighter order preview unavailable (fetch failed)" });
+      const actions = screen.getByRole("group", { name: "Order side" });
+      const notice = screen.getByRole("alert");
+      expect(actions.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(notice.textContent).toContain("Lighter order preview unavailable");
+      expect(notice.querySelector(".lit-review-outcome-timer")).not.toBeNull();
+      act(() => { vi.advanceTimersByTime(20_000); });
+      expect(screen.queryByRole("alert")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets a new error replace a success without reviving the old success", () => {
+    const success = { tone: "ok" as const, text: "Order opened." };
+    const { rerender } = renderTicket({ outcome: success });
+    expect(screen.getByRole("status").textContent).toContain("Order opened");
+    rerender({ handoffError: "Lighter order preview unavailable" });
+    expect(screen.getByRole("alert").textContent).toContain("preview unavailable");
+    rerender({ handoffError: null });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("times out validation feedback while keeping the disabled action's reason accessible", () => {
+    vi.useFakeTimers();
+    try {
+      renderTicket();
+      fireEvent.change(screen.getByLabelText("Size"), { target: { value: "0.0005" } });
+      const notice = screen.getByRole("status");
+      const actions = screen.getByRole("group", { name: "Order side" });
+      expect(actions.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(notice.textContent).toContain("Minimum size is 0.001 ETH.");
+      expect(notice.querySelector(".lit-review-outcome-timer")).not.toBeNull();
+      act(() => { vi.advanceTimersByTime(20_000); });
+      expect(screen.queryByRole("status")).toBeNull();
+      const long = screen.getByRole("button", { name: "Long 0.0005 ETH" });
+      expect((long as HTMLButtonElement).disabled).toBe(true);
+      expect(long.getAttribute("aria-description")).toBe("Minimum size is 0.001 ETH.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the approval review action available after its timed notice ends", () => {
+    vi.useFakeTimers();
+    try {
+      const onReviewApprovals = vi.fn();
+      renderTicket({ pendingApprovalCount: 1, onReviewApprovals });
+      const actions = screen.getByRole("group", { name: "Order side" });
+      const notice = screen.getByRole("status");
+      expect(notice.textContent).toContain("Approval waiting");
+      expect(actions.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      act(() => { vi.advanceTimersByTime(20_000); });
+      expect(screen.queryByRole("status")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Review pending approval" }));
+      expect(onReviewApprovals).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps account context and order actions outside the scrolling field body", () => {
     renderTicket();
     const ticket = document.querySelector<HTMLFormElement>("form.lit-ticket");
@@ -163,9 +284,8 @@ describe("Light it up trade ticket", () => {
     const onReviewApprovals = vi.fn();
     renderTicket({ pendingApprovalCount: 1, onReviewApprovals });
 
-    expect(screen.getByText("Approval waiting")).toBeTruthy();
-    expect(screen.getByText("1 action needs a decision")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    expect(screen.getByText(/Approval waiting/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Review pending approval" }));
     expect(onReviewApprovals).toHaveBeenCalledTimes(1);
   });
 
@@ -250,6 +370,23 @@ describe("Light it up trade ticket", () => {
     fireEvent.click(screen.getByRole("button", { name: "0%" }));
     expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("");
     expect(slider.value).toBe("0");
+  });
+
+  it("sizes against the account's own fee tier and the mark, and shows the tier it charges", () => {
+    renderTicket({ exchangeFees: { makerTicks: 120, takerTicks: 350, source: "account" }, markPrice: 3_200 });
+
+    // 15.3424 without them; the 0.035% tier, the gap between the 3210.50 ask
+    // and the 3200 mark, and walking past the ask's 4 ETH all come out of it.
+    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("14.3169 ETH");
+    expect(screen.getByText("Fee (Taker)").getAttribute("title")).toBe("Taker 0.035% (account tier) + Vex 0.1%");
+  });
+
+  it("ignores a mark left over from the previously selected market", () => {
+    // A BTC mark still in the stream for the render after switching to ETH.
+    renderTicket({ exchangeFees: { makerTicks: 120, takerTicks: 350, source: "account" }, markPrice: 84_000 });
+
+    // Sized as if no mark were known, not collapsed to margin at 84,000.
+    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("15.2899 ETH");
   });
 
   it("disables the size presets when the account balance is unknown", () => {

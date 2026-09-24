@@ -28,6 +28,7 @@ export const EV = {
     vex: "vex:event:market:vex",
   },
   lighterTrading: {
+    deskPrepareProgress: "vex:event:lighter:deskPrepareProgress",
     candleSnapshot: "vex:event:lighter:candleSnapshot",
     candleUpdate: "vex:event:lighter:candleUpdate",
     candleStatus: "vex:event:lighter:candleStatus",

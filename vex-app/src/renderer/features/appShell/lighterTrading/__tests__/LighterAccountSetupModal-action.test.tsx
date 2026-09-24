@@ -28,6 +28,7 @@ function readyStatus(
     accountCollateral: "10",
     tradingKeyRegistered: true,
     keyRegistrationResumable: false,
+    setupRecovery: "none",
     feePolicy: { perpFeePercent: 0.1, spotFeePercent: 0.25 },
     feeAuthorized: true,
   };

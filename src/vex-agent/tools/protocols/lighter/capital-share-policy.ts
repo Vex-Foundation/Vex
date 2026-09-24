@@ -83,6 +83,7 @@ import type {
   LighterMarketDetail,
 } from "@tools/lighter/types.js";
 import { resolveLighterReadOnlyAccountAuth } from "./read-account-auth.js";
+import { assertLighterOrderFitsAccountMargin } from "./margin-fit-guard.js";
 import { readLighterTradingLimits } from "@vex-agent/db/repos/lighter-trading-limits.js";
 import {
   admitLighterCapitalCommitment,
@@ -109,7 +110,7 @@ export type LighterCapitalShareEvidenceClient =
 /** The evidence client plus the reads an admission path performs for itself. */
 export type LighterCapitalShareAdmissionClient =
   Pick<LighterClient, "getAccount" | "getMarketDetails" | "getAccountActiveOrders">
-  & Partial<Pick<LighterClient, "getAccountLimits">>;
+  & Partial<Pick<LighterClient, "getAccountLimits" | "getOrderBookOrders">>;
 
 /** The share that governs one traded account, resolved from live evidence. */
 export interface LighterCapitalSharePolicy {
@@ -579,7 +580,7 @@ export async function admitLighterOrderCapitalCommitmentForPreview(input: {
     LighterOrderPreviewRow,
     "environment" | "accountIndex" | "marketIndex" | "side" | "baseAmountInteger"
     | "priceInteger" | "orderType" | "reduceOnly" | "integratorFees"
-  >;
+  > & Partial<Pick<LighterOrderPreviewRow, "previewJson">>;
   readonly client?: LighterCapitalShareAdmissionClient;
   readonly excludeIntentId?: string;
 }): Promise<LighterCapitalShareOutcome> {
@@ -588,10 +589,10 @@ export async function admitLighterOrderCapitalCommitmentForPreview(input: {
 
   // ORDER MATTERS. The account read comes first because the OWNING WALLET must
   // come from the provider's `l1_address` and never from a local guess; the
-  // market read comes only after a share is known to exist. On the default
-  // install, where the user has set no share, preparation therefore costs one
-  // account read and no market read, and derives nothing about the approval
-  // card from live data.
+  // share's market read comes only after a share is known to exist. On the
+  // default install, where the user has set no share, preparation costs one
+  // account read, plus the margin check's market, fee-tier and book reads only
+  // for an order near the account's available margin.
   const accountResponse = await client.getAccount(environment, {
     by: "index",
     value: accountIndex,
@@ -606,6 +607,15 @@ export async function admitLighterOrderCapitalCommitmentForPreview(input: {
       `Lighter did not return account ${accountIndex}, so the agent's capital share for it could not be checked. Nothing was prepared.`,
     );
   }
+  // Lighter's own margin check applies with or without a share, so it runs on
+  // this same fresh account read at prepare and again at execute.
+  await assertLighterOrderFitsAccountMargin({
+    environment,
+    accountIndex,
+    account,
+    preview: input.preview,
+    client,
+  });
   const earlyPolicy = await resolveLighterCapitalSharePolicy({
     environment,
     accountIndex,
@@ -668,7 +678,7 @@ export async function readmitLighterOrderCapitalCommitmentAtExecute(input: {
     LighterOrderPreviewRow,
     "environment" | "accountIndex" | "marketIndex" | "side" | "baseAmountInteger"
     | "priceInteger" | "orderType" | "reduceOnly" | "integratorFees"
-  >;
+  > & Partial<Pick<LighterOrderPreviewRow, "previewJson">>;
   readonly client?: LighterCapitalShareAdmissionClient;
 }): Promise<LighterCapitalShareOutcome> {
   return admitLighterOrderCapitalCommitmentForPreview({

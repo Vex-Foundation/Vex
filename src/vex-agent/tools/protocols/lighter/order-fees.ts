@@ -15,6 +15,8 @@ export interface ResolveLighterOrderFeesInput {
   readonly accountIndex: number;
   readonly market: Pick<LighterMarket, "market_type">;
   readonly account?: LighterAccountResponse;
+  /** Fresh account response from the same preparation; never supplied on execution revalidation. */
+  readonly freshAccount?: LighterAccountResponse;
   readonly reduceOnly: boolean;
   readonly side: "buy" | "sell";
   readonly auth?: LighterPrivilegedAccountAuth | null;
@@ -34,7 +36,7 @@ export async function resolveLighterOrderFees(input: ResolveLighterOrderFeesInpu
     const [systemConfig, collector, trader, accountLimits] = await Promise.all([
       input.client.getSystemConfig(input.environment, { fresh: true }),
       input.client.getAccount(input.environment, { by: "index", value: policy.collectorAccountIndex }, { fresh: true }),
-      input.client.getAccount(input.environment, { by: "index", value: input.accountIndex }, { fresh: true }),
+      input.freshAccount ?? input.client.getAccount(input.environment, { by: "index", value: input.accountIndex }, { fresh: true }),
       input.client.getAccountLimits(input.environment, { accountIndex: input.accountIndex }, auth),
     ]);
     const collectors = collector.accounts.filter((row) => (row.index ?? row.account_index) === policy.collectorAccountIndex);
@@ -59,7 +61,8 @@ export async function resolveLighterOrderFees(input: ResolveLighterOrderFeesInpu
 export async function revalidateLighterOrderFees(input: ResolveLighterOrderFeesInput & {
   readonly integratorFees?: LighterIntegratorFees | null;
 }): Promise<void> {
-  const current = await resolveLighterOrderFees(input);
+  // Consent-time validation must never rely on a response captured for preview.
+  const current = await resolveLighterOrderFees({ ...input, freshAccount: undefined });
   if (!lighterIntegratorFeesEqual(current, input.integratorFees)) {
     throw new VexError(ErrorCodes.LIGHTER_INVALID_REQUEST,
       "The Lighter fee policy or authorization changed after this preview. Prepare a fresh order and approval with the current fee terms.");

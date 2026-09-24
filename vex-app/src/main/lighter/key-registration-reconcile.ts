@@ -30,11 +30,27 @@ import { readSessionWalletFromEngine } from "./onboarding-checklist.js";
 
 /** States a registration can still be carried forward from, without signing. */
 const RECONCILABLE_STATES: ReadonlySet<string> = new Set([
+  "key_registration_tx_staged",
   "change_pub_key_submitted",
   "key_verified",
   "nonce_synchronized",
   "ambiguous",
 ]);
+
+/**
+ * A STAGED registration was signed and may or may not have been sent. While its
+ * signed transaction is still live, the executor that staged it may be about
+ * to send it, and reconciling it then would race that send. Once the signed
+ * expiry has passed the executor refuses to send it, so only then is it this
+ * path's business: it either landed (the slot shows the key) or never will.
+ * Before, nothing reconciled it at all, and a staged registration left by a
+ * closed session held the wallet's onboarding forever.
+ */
+function stagedStillSendable(intent: { readonly executionState: string; readonly registrationTxExpiredAt: string | null }, nowMs: number): boolean {
+  if (intent.executionState !== "key_registration_tx_staged") return false;
+  const expiredAtMs = intent.registrationTxExpiredAt === null ? Number.NaN : Number(intent.registrationTxExpiredAt);
+  return !Number.isSafeInteger(expiredAtMs) || nowMs <= expiredAtMs;
+}
 
 export async function reconcileSetupKeyRegistration(input: {
   readonly sessionId: string;
@@ -53,7 +69,11 @@ export async function reconcileSetupKeyRegistration(input: {
   );
   // Nothing on chain to carry forward: a registration that has not been
   // submitted is the prepare path's business, not this one's.
-  if (intent === null || !RECONCILABLE_STATES.has(intent.executionState)) {
+  if (
+    intent === null
+    || !RECONCILABLE_STATES.has(intent.executionState)
+    || stagedStillSendable(intent, Date.now())
+  ) {
     return { attempted: false, status: null };
   }
 

@@ -36,6 +36,16 @@ export interface LighterManagedTradingReadinessDeps {
   readonly keyChecker: LighterRegisteredKeyChecker;
   readonly client: Pick<LighterClient, "getApiKeys" | "getNextNonce">;
   readonly recordExecutionObserved: typeof nonceStateRepo.recordExecutionObserved;
+  /**
+   * Best-effort self-heal for a slot locked by a prior pre-send reservation the
+   * provider never consumed. It only retires an expired, never-submitted owner
+   * from provider evidence; a reservation still inside its consent window is
+   * never freed. The mission gate runs it before it reports `nonce_not_reservable`.
+   */
+  readonly recoverStuckReservations: (input: {
+    readonly environment: LighterEnvironment;
+    readonly accountIndex: number;
+  }) => Promise<unknown>;
 }
 
 export async function resolveManagedLighterTradingReadiness(
@@ -130,19 +140,36 @@ export async function resolveManagedLighterTradingReadiness(
     // keeps an unresolved reservation locked unless the live provider nonce is
     // strictly newer than the reserved nonce, so this can retire a consumed
     // transaction without ever freeing an action that may still execute.
-    const nonceState = await deps.recordExecutionObserved({
+    const observeInput = {
       environment,
       accountIndex,
       apiKeyIndex: scope.apiKeyIndex,
       nonce: Number(liveNonce),
       publicKey: exactRows[0]!.public_key,
       transactionTime: exactRows[0]!.transaction_time,
-    });
-    const nonceReservable = nonceState !== null
-      && nonceState.status === "observed"
-      && nonceState.providerNonce === liveNonce
-      && canonicalPublicKey(nonceState.publicKey) === livePublicKey;
-    if (!nonceReservable) {
+    };
+    const isReservable = (
+      state: Awaited<ReturnType<typeof deps.recordExecutionObserved>>,
+    ): boolean =>
+      state !== null
+      && state.status === "observed"
+      && state.providerNonce === liveNonce
+      && canonicalPublicKey(state.publicKey) === livePublicKey;
+    let nonceState = await deps.recordExecutionObserved(observeInput);
+    if (!isReservable(nonceState)) {
+      // A prior pre-send reservation whose transaction the provider never
+      // consumed keeps this slot locked. Retire the expired, never-submitted
+      // owner from provider evidence, then re-observe. A reservation still
+      // inside its consent window is never freed and stays reported below, so
+      // the mission self-heals a genuinely stale lock without a manual step.
+      try {
+        await deps.recoverStuckReservations({ environment, accountIndex });
+      } catch {
+        // Best-effort; fall through to the unchanged not-ready report.
+      }
+      nonceState = await deps.recordExecutionObserved(observeInput);
+    }
+    if (!isReservable(nonceState)) {
       return notReady("nonce_not_reservable", {
         ...activationChecks(),
         exactPublicKeyMatch: true,
@@ -217,5 +244,11 @@ function defaultDeps(): LighterManagedTradingReadinessDeps {
     keyChecker: createLighterRegisteredKeyCheckerBinary({ allowBinaryPathOverride: !app.isPackaged }),
     client: getLighterClient(),
     recordExecutionObserved: nonceStateRepo.recordExecutionObserved,
+    recoverStuckReservations: async (input) => {
+      const { checkLighterNonceRecovery } = await import(
+        "@vex-agent/tools/protocols/lighter/nonce-recovery.js"
+      );
+      return checkLighterNonceRecovery(input);
+    },
   };
 }

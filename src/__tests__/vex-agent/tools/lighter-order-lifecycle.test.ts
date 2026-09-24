@@ -264,6 +264,7 @@ function deps(overrides: Partial<LighterOrderLifecycleExecutionDeps> = {}): Ligh
       markProviderOutcome: vi.fn().mockResolvedValue(intent({ executionState: "completed" })),
       markAmbiguous: vi.fn().mockResolvedValue(intent({ executionState: "ambiguous" })),
       markClosePositionChangedBeforeSubmissionWith: vi.fn().mockResolvedValue(intent({ executionState: "rejected" })),
+      abandonRevalidatedBeforeNonce: vi.fn().mockResolvedValue(intent({ executionState: "rejected" })),
     },
     nonceState: {
       releaseUnsubmittedReservation: vi.fn(async () => null),
@@ -605,6 +606,37 @@ describe("Lighter reduce-only position close lifecycle", () => {
   });
 
   it.each([
+    {
+      name: "the position is absent",
+      positions: [],
+      message: "This position is no longer shown on Lighter or could not be identified safely.",
+    },
+    {
+      name: "the position is flat",
+      positions: [{ ...longPosition, position: "0.0000", sign: 0 }],
+      message: "This position appears to be closed, or Lighter returned a size Vex cannot verify.",
+    },
+    {
+      name: "the direction is invalid",
+      positions: [{ ...longPosition, sign: 0 }],
+      message: "Lighter did not confirm whether this position is long or short.",
+    },
+  ])("explains why $name cannot be closed again", async ({ positions, message }) => {
+    await expect(prepareLighterClosePosition({
+      environment: "rhc",
+      accountIndex: 42,
+      apiKeyIndex: 7,
+      marketIndex: 0,
+      maxSlippageBps: 100,
+      client: {
+        getAccount: vi.fn().mockResolvedValue({ code: 200, accounts: [{ index: 42, positions }] }),
+        getMarkets: vi.fn().mockResolvedValue({ code: 200, order_books: [market] }),
+        getOrderBookOrders: vi.fn().mockResolvedValue({ code: 200, total_asks: 0, asks: [], total_bids: 1, bids: [bid] }),
+      },
+    })).rejects.toThrow(`${message} Refresh Positions and check the current Lighter account before trying again. No close order was placed.`);
+  });
+
+  it.each([
     { name: "flat immediately", filled: "1.0000", position: "0.0000", lag: false, status: "closed" },
     { name: "flat after a lagging account response", filled: "1.0000", position: "0.0000", lag: true, status: "closed" },
     { name: "position never catches up", filled: "1.0000", position: "1.0000", lag: false, status: "sequencer_pending" },
@@ -770,6 +802,108 @@ describe("Lighter reduce-only position close lifecycle", () => {
     expect(dependencies.nonceState.reserveObservedWith).not.toHaveBeenCalled();
     expect(dependencies.authSigner.signCreateOrder).not.toHaveBeenCalled();
     expect(dependencies.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("retires the revalidated close and never wedges it when the live nonce is still blocked", async () => {
+    const dependencies = deps();
+    Object.assign(dependencies.client, {
+      getAccount: vi.fn().mockResolvedValue({
+        code: 200,
+        accounts: [{ index: 42, positions: [{ ...longPosition, position: "1.0000" }] }],
+      }),
+      getMarkets: vi.fn().mockResolvedValue({ code: 200, order_books: [market] }),
+      getOrderBookOrders: vi.fn().mockResolvedValue({
+        code: 200, total_asks: 0, asks: [], total_bids: 1, bids: [bid],
+      }),
+      getAccountTrades: vi.fn().mockResolvedValue({ code: 200, trades: [] }),
+    });
+    // A prior action's reservation still owns the slot: the observe cannot
+    // advance, and one recovery pass at the commit point does not free it.
+    vi.mocked(dependencies.nonceState.recordExecutionObserved).mockResolvedValue(null);
+    const recoverNonce = vi.fn(async () => ({}));
+    Object.assign(dependencies, { recoverNonce });
+    const closeIntent = intent({
+      actionType: "close_position",
+      marketIndex: 0,
+      providerOrderId: null,
+      requestedBaseAmountInteger: "10000",
+      requestedPriceInteger: "4950",
+      requestedSide: "sell",
+      reduceOnly: true,
+      providerSnapshotJson: {
+        position: {
+          marketIndex: 0, symbol: "ETH", sign: 1, side: "long", position: "1.0000",
+          averageEntryPrice: "45.00", positionValue: "50.000000", unrealizedPnl: "5.000000",
+          liquidationPrice: "30.00",
+        },
+        marketSizeDecimals: 4,
+        marketPriceDecimals: 2,
+        maxSlippageBps: 100,
+      },
+    });
+
+    await expect(executeApprovedLighterClosePosition(closeIntent, dependencies))
+      .rejects.toThrow(/has been retired/);
+
+    // It revalidated, tried recovery once, then bailed on the blocked nonce,
+    // retiring itself so the next prepare is not refused with "already exists".
+    expect(dependencies.intents.markPreSubmitRevalidated).toHaveBeenCalled();
+    expect(recoverNonce).toHaveBeenCalledTimes(1);
+    expect(recoverNonce).toHaveBeenCalledWith({ environment: closeIntent.environment, accountIndex: closeIntent.accountIndex });
+    expect(dependencies.nonceState.recordExecutionObserved).toHaveBeenCalledTimes(2);
+    expect(dependencies.intents.abandonRevalidatedBeforeNonce).toHaveBeenCalledWith({
+      intentId: closeIntent.intentId,
+      sessionId: closeIntent.sessionId,
+    });
+    expect(dependencies.nonceState.reserveObservedWith).not.toHaveBeenCalled();
+    expect(dependencies.authSigner.signCreateOrder).not.toHaveBeenCalled();
+    expect(dependencies.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("clears a stale earlier reservation at execute and goes on to reserve instead of retiring the close", async () => {
+    const dependencies = deps();
+    Object.assign(dependencies.client, {
+      getAccount: vi.fn().mockResolvedValue({
+        code: 200,
+        accounts: [{ index: 42, positions: [{ ...longPosition, position: "1.0000" }] }],
+      }),
+      getMarkets: vi.fn().mockResolvedValue({ code: 200, order_books: [market] }),
+      getOrderBookOrders: vi.fn().mockResolvedValue({
+        code: 200, total_asks: 0, asks: [], total_bids: 1, bids: [bid],
+      }),
+      getAccountTrades: vi.fn().mockResolvedValue({ code: 200, trades: [] }),
+    });
+    // A prior action's stale reservation owns the slot until recovery releases it.
+    let released = false;
+    Object.assign(dependencies.nonceState, {
+      recordExecutionObserved: vi.fn(async () => (released ? { status: "observed" } : null)),
+    });
+    const recoverNonce = vi.fn(async () => { released = true; return {}; });
+    const closeIntent = intent({
+      actionType: "close_position",
+      marketIndex: 0,
+      providerOrderId: null,
+      requestedBaseAmountInteger: "10000",
+      requestedPriceInteger: "4950",
+      requestedSide: "sell",
+      reduceOnly: true,
+      providerSnapshotJson: {
+        position: {
+          marketIndex: 0, symbol: "ETH", sign: 1, side: "long", position: "1.0000",
+          averageEntryPrice: "45.00", positionValue: "50.000000", unrealizedPnl: "5.000000",
+          liquidationPrice: "30.00",
+        },
+        marketSizeDecimals: 4,
+        marketPriceDecimals: 2,
+        maxSlippageBps: 100,
+      },
+    });
+
+    await executeApprovedLighterClosePosition(closeIntent, { ...dependencies, recoverNonce }).catch(() => undefined);
+
+    expect(recoverNonce).toHaveBeenCalledWith({ environment: closeIntent.environment, accountIndex: closeIntent.accountIndex });
+    expect(dependencies.intents.abandonRevalidatedBeforeNonce).not.toHaveBeenCalled();
+    expect(dependencies.nonceState.reserveObservedWith).toHaveBeenCalled();
   });
   for (const kind of ["expiry", "cancellation"] as const) {
     it.each(["signing", "staging", "send-admission"] as const)(`close refuses ${kind} during %s`, async (phase) => {

@@ -7,6 +7,7 @@ import * as intents from "@vex-agent/db/repos/lighter-fee-authorization-intents.
 import * as nonceState from "@vex-agent/db/repos/lighter-nonce-state.js";
 import { withTransaction } from "@vex-agent/db/client.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
+import { configureLighterForeignNonceOwner } from "@vex-agent/tools/protocols/lighter/foreign-nonce-owners.js";
 import {
   resolveSelectedAddress,
   resolveSigningWallet,
@@ -618,10 +619,108 @@ export function exactExecutedFeeTransaction(
 }
 
 export function installLighterFeeAuthorizationService(): () => void {
-  return configureLighterFeeAuthorizationService({
+  const uninstallService = configureLighterFeeAuthorizationService({
     inspect: inspectLighterFeeAuthorization,
     prepare: prepareLighterFeeAuthorization,
     execute: executeApprovedLighterFeeAuthorization,
     reconcile: reconcileLighterFeeAuthorization,
   });
+  const uninstallNonceOwner = configureLighterForeignNonceOwner(
+    "fees",
+    (reservation) => releaseExpiredLighterFeeReservation(reservation),
+  );
+  return () => {
+    uninstallService();
+    uninstallNonceOwner();
+  };
+}
+
+/**
+ * Unattended recovery for a nonce slot a fee authorization still holds.
+ *
+ * `reconcileLighterFeeAuthorization` is session- and wallet-bound, so nothing
+ * ran it for a fee setup interrupted mid-sign, and every order on the account
+ * stayed blocked behind its reservation. This is the nonce half of that
+ * reconcile only, and needs neither: the intent, the wire expiry and the live
+ * next nonce are the whole proof.
+ *
+ *  - Before the wire expiry plus the safety margin: nothing is read or changed.
+ *  - Live next nonce still equal to the reserved one: nothing carrying that
+ *    nonce can execute any more, so the reservation is released and the intent
+ *    fails, exactly as the full reconcile would.
+ *  - Live next nonce past it: something consumed it. The slot is freed; the
+ *    authorization's own outcome is left to the full reconcile.
+ *
+ * It never signs, submits, or reads the wallet. Returns `null` unless the intent
+ * owns this exact reservation.
+ */
+export async function releaseExpiredLighterFeeReservation(
+  reservation: nonceState.LighterNonceStateRow,
+  deps: LighterFeeAuthorizationExecutionDeps = defaultDeps(),
+): Promise<Record<string, unknown> | null> {
+  const prefix = "lighter-fees:";
+  if (!reservation.reservationId?.startsWith(prefix)) return null;
+  const intent = await deps.readIntent(reservation.reservationId.slice(prefix.length));
+  if (
+    intent === null
+    || `${prefix}${intent.intentId}` !== reservation.reservationId
+    || intent.environment !== reservation.environment
+    || intent.accountIndex !== reservation.accountIndex
+    || intent.apiKeyIndex !== reservation.apiKeyIndex
+    || intent.nonceValue === null
+    || intent.nonceValue !== reservation.reservedNonce
+  ) {
+    return null;
+  }
+  const base = { kind: "fee_authorization", intentId: intent.intentId, apiKeyIndex: intent.apiKeyIndex };
+  const releaseAfterMs = intent.txExpiryMs === null ? null : intent.txExpiryMs + EXPIRY_SAFETY_MS;
+  if (releaseAfterMs === null || deps.now() <= releaseAfterMs) {
+    return {
+      ...base,
+      resolution: "awaiting_expiry",
+      ...(releaseAfterMs === null ? {} : { releaseAfter: new Date(releaseAfterMs).toISOString() }),
+      guidance: "The fee authorization's signed transaction has not expired yet, so its nonce stays reserved. Do not retry the trade yet.",
+    };
+  }
+  const next = await deps.client.getNextNonce(intent.environment, {
+    accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex,
+  });
+  if (next.code !== 200 || !Number.isSafeInteger(next.nonce)) {
+    throw new Error("Lighter next nonce is unavailable; the fee reservation was left unchanged.");
+  }
+  if (String(next.nonce) === intent.nonceValue) {
+    await deps.releaseNonce({
+      environment: intent.environment,
+      accountIndex: intent.accountIndex,
+      apiKeyIndex: intent.apiKeyIndex,
+      reservationId: reservation.reservationId,
+      providerNonce: next.nonce,
+    });
+    await deps.transition(intent, "failed", { failureReason: "expired_without_nonce_consumption" });
+    return {
+      ...base,
+      resolution: "nonce_released_expired_unconsumed",
+      guidance: "The fee authorization expired without Lighter using its nonce. The reservation was released; fee setup must be approved again.",
+    };
+  }
+  if (BigInt(next.nonce) > BigInt(intent.nonceValue)) {
+    await deps.recordNonce({
+      environment: intent.environment,
+      accountIndex: intent.accountIndex,
+      apiKeyIndex: intent.apiKeyIndex,
+      nonce: next.nonce,
+      publicKey: intent.terms.publicKey,
+    });
+    return {
+      ...base,
+      resolution: "nonce_consumed_outcome_pending",
+      guidance: "Lighter consumed the fee authorization's nonce, so trading is unblocked. Its own outcome is confirmed separately.",
+    };
+  }
+  return {
+    ...base,
+    resolution: "degraded",
+    guidance: "Lighter's next nonce is behind the reserved one. Nothing was changed; verify the environment and account.",
+  };
 }

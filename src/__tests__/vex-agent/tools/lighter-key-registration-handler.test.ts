@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({
   findLive: vi.fn(),
   reserve: vi.fn(),
   findIntent: vi.fn(),
-  adoptPristineApproval: vi.fn(),
+  adoptPristinePreparation: vi.fn(),
   markApprovalPending: vi.fn(),
   markApproved: vi.fn(),
   renewPristineApproved: vi.fn(),
@@ -36,6 +36,8 @@ const mocks = vi.hoisted(() => ({
   assertApprovalBinding: vi.fn(),
   getExecutor: vi.fn(),
   executeRegistration: vi.fn(),
+  reconcileRegistration: vi.fn(),
+  restartWorkflow: vi.fn(),
   listUnresolvedDeposits: vi.fn(),
   repairDeposit: vi.fn(),
 }));
@@ -52,8 +54,8 @@ vi.mock("@vex-agent/db/repos/lighter-key-registration-intents.js", () => ({
   findLiveLighterKeyRegistrationIntentForAccount: mocks.findLive,
   reserveLighterApiKeySlotWith: (_client: unknown, input: unknown) => mocks.reserve(input),
   findLighterKeyRegistrationIntent: mocks.findIntent,
-  adoptPristineLighterKeyRegistrationApprovalWith: (_client: unknown, input: unknown) =>
-    mocks.adoptPristineApproval(input),
+  adoptResumableLighterKeyRegistrationPreparationWith: (_client: unknown, input: unknown) =>
+    mocks.adoptPristinePreparation(input),
   markLighterKeyRegistrationApprovalPendingWith: (_client: unknown, input: unknown) =>
     mocks.markApprovalPending(input),
   markLighterKeyRegistrationApprovedWith: (_client: unknown, input: unknown) =>
@@ -84,6 +86,8 @@ vi.mock("@vex-agent/db/repos/lighter-onboarding-workflows.js", () => ({
   getLighterOnboardingWorkflow: mocks.getWorkflow,
   transitionLighterOnboardingWorkflowWith: (_client: unknown, input: unknown) =>
     mocks.transitionWorkflow(input),
+  restartFailedLighterKeyRegistrationWorkflowWith: (_client: unknown, input: unknown) =>
+    mocks.restartWorkflow(input),
 }));
 
 vi.mock("@vex-agent/engine/runtime/lease-and-status/session-control-lock.js", () => ({
@@ -106,6 +110,7 @@ vi.mock("@vex-agent/tools/protocols/lighter/key-registration-approval-binding.js
 
 vi.mock("@vex-agent/tools/protocols/lighter/key-registration-execution.js", () => ({
   getConfiguredLighterKeyRegistrationExecutor: mocks.getExecutor,
+  LIGHTER_KEY_REGISTRATION_EXPIRY_GRACE_MS: 10 * 60_000,
 }));
 
 const { LIGHTER_KEY_REGISTRATION_HANDLERS } = await import(
@@ -205,11 +210,12 @@ beforeEach(() => {
   mocks.markApprovalPending.mockResolvedValue(row("approval_pending"));
   mocks.markApproved.mockResolvedValue(row("approved"));
   mocks.renewPristineApproved.mockResolvedValue(row("approved"));
-  mocks.adoptPristineApproval.mockResolvedValue(null);
+  mocks.adoptPristinePreparation.mockResolvedValue(null);
   mocks.assertApprovalBinding.mockResolvedValue(undefined);
   mocks.getExecutor.mockReturnValue(null);
   mocks.listUnresolvedDeposits.mockResolvedValue([]);
   mocks.repairDeposit.mockResolvedValue({ resolution: "awaiting_lighter" });
+  mocks.restartWorkflow.mockResolvedValue(null);
 });
 
 describe("lighter.key.register.prepare", () => {
@@ -437,8 +443,140 @@ describe("lighter.key.register.prepare", () => {
     expect(mocks.reserve).not.toHaveBeenCalled();
   });
 
-  it("refuses a durable reservation owned by another session", async () => {
-    mocks.findLive.mockResolvedValue({ ...row("slot_reserved"), sessionId: "session-2" });
+  it("adopts a slot reservation from another session and continues preparation", async () => {
+    const previous = { ...row("slot_reserved"), sessionId: "session-2" };
+    const adopted = { ...previous, sessionId: "session-1" };
+    mocks.findLive.mockResolvedValue(previous);
+    mocks.adoptPristinePreparation.mockResolvedValue(adopted);
+
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.adoptPristinePreparation).toHaveBeenCalledWith(expect.objectContaining({
+      intentId: INTENT_ID,
+      sessionId: "session-1",
+    }));
+    expect(mocks.prepareCredential).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      intentId: INTENT_ID,
+    });
+    expect(mocks.markApprovalPending).toHaveBeenCalled();
+  });
+
+  it("adopts an encrypted key from another session without generating a second key", async () => {
+    const previous = { ...row("key_generated_encrypted"), sessionId: "session-2" };
+    const adopted = { ...previous, sessionId: "session-1" };
+    mocks.getWorkflow.mockResolvedValue({
+      workflowState: "key_generated_encrypted",
+      resolvedAccountIndex: 42,
+    });
+    mocks.findLive.mockResolvedValue(previous);
+    mocks.adoptPristinePreparation.mockResolvedValue(adopted);
+    mocks.findIntent.mockResolvedValue(adopted);
+
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.prepareCredential).not.toHaveBeenCalled();
+    expect(mocks.getNextNonce).toHaveBeenCalledWith("core", {
+      accountIndex: 42,
+      apiKeyIndex: 6,
+    });
+    expect(mocks.markApprovalPending).toHaveBeenCalled();
+  });
+
+  describe("a registration stranded after it may have been sent", () => {
+    const GRACE_MS = 10 * 60_000;
+    const stranded = (expiredAgoMs: number) => ({
+      ...row("approved"),
+      sessionId: "session-2",
+      executionState: "ambiguous",
+      registrationTxType: 8,
+      registrationTxHash: "cd".repeat(40),
+      registrationTxExpiredAt: String(Date.now() - expiredAgoMs),
+      registrationAmbiguityReason: "send_tx_outcome_unknown",
+    });
+    const prepare = () => requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
+      { environment: "core" },
+      CONTEXT,
+    );
+    beforeEach(() => {
+      mocks.getExecutor.mockReturnValue({ execute: mocks.executeRegistration, reconcile: mocks.reconcileRegistration });
+      mocks.reconcileRegistration.mockResolvedValue({ status: "expired_unconsumed" });
+    });
+
+    it("reconciles it, restarts the failed workflow, and prepares a fresh registration", async () => {
+      mocks.findLive.mockResolvedValueOnce(stranded(GRACE_MS + 1_000)).mockResolvedValueOnce(null);
+      mocks.getWorkflow
+        .mockResolvedValueOnce({ workflowState: "ambiguous", resolvedAccountIndex: 42 })
+        .mockResolvedValueOnce({ workflowState: "failed", resolvedAccountIndex: 42 });
+      mocks.restartWorkflow.mockResolvedValueOnce({ workflowState: "account_resolved", resolvedAccountIndex: 42 });
+
+      const result = await prepare();
+
+      expect(mocks.reconcileRegistration).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        sessionId: "session-1",
+        intentId: INTENT_ID,
+        walletResolution: CONTEXT.walletResolution,
+        walletPolicy: CONTEXT.walletPolicy,
+      }));
+      expect(mocks.restartWorkflow).toHaveBeenCalledExactlyOnceWith({
+        environment: "core",
+        walletAddress: WALLET,
+        accountIndex: 42,
+      });
+      expect(mocks.reserve).toHaveBeenCalledOnce();
+      expect(mocks.prepareCredential).toHaveBeenCalledOnce();
+      expect(result.success).toBe(true);
+      expect(mocks.executeRegistration).not.toHaveBeenCalled();
+    });
+
+    it("leaves it alone until its signed expiry plus the grace has passed", async () => {
+      mocks.findLive.mockResolvedValue(stranded(GRACE_MS - 60_000));
+      mocks.getWorkflow.mockResolvedValue({ workflowState: "ambiguous", resolvedAccountIndex: 42 });
+
+      const result = await prepare();
+
+      expect(mocks.reconcileRegistration).not.toHaveBeenCalled();
+      expect(mocks.restartWorkflow).not.toHaveBeenCalled();
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("workflow is in ambiguous");
+    });
+
+    it("keeps the refusal when the reconcile cannot prove anything", async () => {
+      mocks.findLive.mockResolvedValue(stranded(GRACE_MS + 1_000));
+      mocks.getWorkflow.mockResolvedValue({ workflowState: "ambiguous", resolvedAccountIndex: 42 });
+      mocks.reconcileRegistration.mockRejectedValueOnce(new Error("provider unavailable"));
+
+      const result = await prepare();
+
+      expect(result.success).toBe(false);
+      expect(mocks.reserve).not.toHaveBeenCalled();
+    });
+  });
+
+  it("restarts a workflow left failed by a registration that never executed", async () => {
+    mocks.getWorkflow.mockResolvedValue({ workflowState: "failed", resolvedAccountIndex: 42 });
+    mocks.restartWorkflow.mockResolvedValueOnce({ workflowState: "account_resolved", resolvedAccountIndex: 42 });
+
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(mocks.restartWorkflow).toHaveBeenCalledOnce();
+    expect(mocks.reserve).toHaveBeenCalledOnce();
+    expect(result.success).toBe(true);
+  });
+
+  it("keeps refusing a failed workflow it cannot prove restartable", async () => {
+    mocks.getWorkflow.mockResolvedValue({ workflowState: "failed", resolvedAccountIndex: 42 });
 
     const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
       { environment: "core" },
@@ -446,8 +584,53 @@ describe("lighter.key.register.prepare", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.output).toContain("belongs to another session");
+    expect(result.output).toContain("workflow is in failed");
+    expect(mocks.reserve).not.toHaveBeenCalled();
+  });
+
+  it("still refuses a foreign registration that cannot be safely adopted", async () => {
+    mocks.findLive.mockResolvedValue({ ...row("approved"), sessionId: "session-2" });
+    mocks.getWorkflow.mockResolvedValue({
+      workflowState: "key_registration_approval_pending",
+      resolvedAccountIndex: 42,
+    });
+
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("has already staged or submitted a registration");
     expect(mocks.prepareCredential).not.toHaveBeenCalled();
+  });
+
+  it("adopts an approved-but-unsigned registration from another session", async () => {
+    const previous = { ...row("approval_pending"), sessionId: "session-2" };
+    // The resumable adoption resets the abandoned approved intent back to
+    // approval_pending under this session, so the user re-approves fresh.
+    const adopted = { ...previous, sessionId: "session-1" };
+    mocks.getWorkflow.mockResolvedValue({
+      workflowState: "key_registration_approval_pending",
+      resolvedAccountIndex: 42,
+    });
+    mocks.findLive.mockResolvedValue({ ...row("approved"), sessionId: "session-2" });
+    mocks.adoptPristinePreparation.mockResolvedValue(adopted);
+
+    const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
+      { environment: "core" },
+      CONTEXT,
+    );
+
+    expect(result.success, result.output).toBe(true);
+    expect(mocks.withSessionControlLocks).toHaveBeenCalledWith(
+      ["session-2", "session-1"],
+      expect.any(Function),
+    );
+    expect(mocks.adoptPristinePreparation).toHaveBeenCalledWith(expect.objectContaining({
+      intentId: INTENT_ID,
+      sessionId: "session-1",
+    }));
   });
 
   it("adopts an unsubmitted RHC approval preparation into the current session", async () => {
@@ -458,7 +641,7 @@ describe("lighter.key.register.prepare", () => {
       resolvedAccountIndex: 42,
     });
     mocks.findLive.mockResolvedValue(previous);
-    mocks.adoptPristineApproval.mockResolvedValue(adopted);
+    mocks.adoptPristinePreparation.mockResolvedValue(adopted);
 
     const result = await requireValue(LIGHTER_KEY_REGISTRATION_HANDLERS["lighter.key.register.prepare"])(
       { environment: "rhc" },
@@ -470,9 +653,8 @@ describe("lighter.key.register.prepare", () => {
       ["session-2", "session-1"],
       expect.any(Function),
     );
-    expect(mocks.adoptPristineApproval).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mocks.adoptPristinePreparation).toHaveBeenCalledWith(expect.objectContaining({
       intentId: INTENT_ID,
-      previousSessionId: "session-2",
       sessionId: "session-1",
       environment: "rhc",
       walletAddress: WALLET,

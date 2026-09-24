@@ -1,6 +1,7 @@
 import { persistLighterSigningEvidence, type LighterEvidenceWritePorts } from "./execution-boundary.js";
 import { assertIntentAuthority, assertIntentUnexpired, LighterIntentRefusal } from "./intent-expiry.js";
 import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js";
+import { readLighterSignedTxExpiredAtMs } from "@tools/lighter/signed-tx-expiry.js";
 import type { LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
 import { resolveLighterOrderFees, revalidateLighterOrderFees, type LighterOrderFeeClient } from "./order-fees.js";
 import { confirmedLighterCloseDisposition } from "./close-position-confirmation.js";
@@ -60,6 +61,11 @@ import {
   type LighterFillObservationDeps,
 } from "./fill-observation.js";
 import logger from "@utils/logger.js";
+import {
+  observeLighterNonceWithRecovery,
+  runLighterNonceRecovery,
+  type LighterNonceRecoveryRunner,
+} from "./nonce-commit-recovery.js";
 
 const AUTH_TTL_SECONDS = 10 * 60;
 const SIGNER_EXPIRY_MS = 60_000;
@@ -243,9 +249,15 @@ export interface LighterOrderLifecycleExecutionDeps {
   >;
   readonly intents: LighterEvidenceWritePorts<Pick<typeof intentsRepo,
     "markPreSubmitRevalidated" | "attachNonceReservationWith" | "markSigned" | "markSubmissionStaged" | "markApiAccepted" | "markProviderOutcome" | "markAmbiguous" | "markClosePositionChangedBeforeSubmissionWith">>
-    & Pick<typeof intentsRepo, "markSendAttemptStarted" | "markExpiredUnsubmitted" | "markUnsubmittedRefused">;
+    & Pick<typeof intentsRepo, "markSendAttemptStarted" | "markExpiredUnsubmitted" | "markUnsubmittedRefused" | "abandonRevalidatedBeforeNonce">;
   readonly nonceState: LighterEvidenceWritePorts<Pick<typeof nonceRepo, "recordExecutionObserved">>
     & Pick<typeof nonceRepo, "reserveObservedWith" | "releaseUnsubmittedReservation">;
+  /**
+   * One recovery pass for a nonce an earlier action still holds, run at the
+   * commit point before refusing. Absent in a caller's own deps, which then
+   * refuse on the first observation as before.
+   */
+  readonly recoverNonce?: LighterNonceRecoveryRunner;
   readonly transaction: typeof withTransaction;
   readonly acquireSessionControlLock: typeof acquireSessionControlLock;
   readonly now: () => number;
@@ -282,6 +294,7 @@ export function defaultLighterOrderLifecycleExecutionDeps(input: {
     client: input.client ?? getLighterClient(),
     intents: intentsRepo,
     nonceState: nonceRepo,
+    recoverNonce: runLighterNonceRecovery,
     transaction: withTransaction,
     acquireSessionControlLock,
     now: Date.now,
@@ -627,15 +640,33 @@ export async function executeApprovedLighterCancelOne(
     evidence,
   });
   if (revalidated === null) throw blocked("The cancel intent could not persist revalidation.");
-  const observed = await deps.nonceState.recordExecutionObserved({
-    environment: intent.environment,
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-    nonce: nextNonce.nonce,
-    publicKey: canonicalKey(providerKey.public_key),
-    transactionTime: providerKey.transaction_time,
+  const observed = await observeLighterNonceWithRecovery({
+    scope: { environment: intent.environment, accountIndex: intent.accountIndex },
+    observe: () => deps.nonceState.recordExecutionObserved({
+      environment: intent.environment,
+      accountIndex: intent.accountIndex,
+      apiKeyIndex: intent.apiKeyIndex,
+      nonce: nextNonce.nonce,
+      publicKey: canonicalKey(providerKey.public_key),
+      transactionTime: providerKey.transaction_time,
+    }),
+    recover: deps.recoverNonce,
   });
-  if (observed === null) throw blocked("A previous Lighter nonce remains unresolved.");
+  if (observed === null) {
+    // The live nonce is still blocked by an unrelated reservation. This action
+    // never reserved, signed, or submitted, so retire it now instead of leaving
+    // it parked at pre_submit_revalidated where it would refuse every later
+    // prepare for this target with "already exists". Recovery clears the
+    // blocking reservation separately; the user or agent can then try again.
+    await deps.intents.abandonRevalidatedBeforeNonce({
+      intentId: intent.intentId,
+      sessionId: intent.sessionId,
+    });
+    throw blocked(
+      "A previous Lighter action still holds this account's nonce and its outcome is not yet proven. "
+      + "This action was not signed or submitted and has been retired; Vex clears the blocking reservation automatically. Try again shortly.",
+    );
+  }
 
   const reservationId = `lighter-lifecycle:${intent.intentId}`;
   assertAuthority("before_reservation");
@@ -894,15 +925,33 @@ export async function executeApprovedLighterModifyOrder(
     evidence,
   });
   if (revalidated === null) throw blocked("The modify intent could not persist revalidation.");
-  const observed = await deps.nonceState.recordExecutionObserved({
-    environment: intent.environment,
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-    nonce: nextNonce.nonce,
-    publicKey: canonicalKey(providerKey.public_key),
-    transactionTime: providerKey.transaction_time,
+  const observed = await observeLighterNonceWithRecovery({
+    scope: { environment: intent.environment, accountIndex: intent.accountIndex },
+    observe: () => deps.nonceState.recordExecutionObserved({
+      environment: intent.environment,
+      accountIndex: intent.accountIndex,
+      apiKeyIndex: intent.apiKeyIndex,
+      nonce: nextNonce.nonce,
+      publicKey: canonicalKey(providerKey.public_key),
+      transactionTime: providerKey.transaction_time,
+    }),
+    recover: deps.recoverNonce,
   });
-  if (observed === null) throw blocked("A previous Lighter nonce remains unresolved.");
+  if (observed === null) {
+    // The live nonce is still blocked by an unrelated reservation. This action
+    // never reserved, signed, or submitted, so retire it now instead of leaving
+    // it parked at pre_submit_revalidated where it would refuse every later
+    // prepare for this target with "already exists". Recovery clears the
+    // blocking reservation separately; the user or agent can then try again.
+    await deps.intents.abandonRevalidatedBeforeNonce({
+      intentId: intent.intentId,
+      sessionId: intent.sessionId,
+    });
+    throw blocked(
+      "A previous Lighter action still holds this account's nonce and its outcome is not yet proven. "
+      + "This action was not signed or submitted and has been retired; Vex clears the blocking reservation automatically. Try again shortly.",
+    );
+  }
 
   const reservationId = `lighter-lifecycle:${intent.intentId}`;
   assertAuthority("before_reservation");
@@ -1146,15 +1195,33 @@ export async function executeApprovedLighterCancelAll(
     },
   });
   if (revalidated === null) throw blocked("The cancel-all intent could not persist revalidation.");
-  const observed = await deps.nonceState.recordExecutionObserved({
-    environment: intent.environment,
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-    nonce: nextNonce.nonce,
-    publicKey: canonicalKey(providerKey.public_key),
-    transactionTime: providerKey.transaction_time,
+  const observed = await observeLighterNonceWithRecovery({
+    scope: { environment: intent.environment, accountIndex: intent.accountIndex },
+    observe: () => deps.nonceState.recordExecutionObserved({
+      environment: intent.environment,
+      accountIndex: intent.accountIndex,
+      apiKeyIndex: intent.apiKeyIndex,
+      nonce: nextNonce.nonce,
+      publicKey: canonicalKey(providerKey.public_key),
+      transactionTime: providerKey.transaction_time,
+    }),
+    recover: deps.recoverNonce,
   });
-  if (observed === null) throw blocked("A previous Lighter nonce remains unresolved.");
+  if (observed === null) {
+    // The live nonce is still blocked by an unrelated reservation. This action
+    // never reserved, signed, or submitted, so retire it now instead of leaving
+    // it parked at pre_submit_revalidated where it would refuse every later
+    // prepare for this target with "already exists". Recovery clears the
+    // blocking reservation separately; the user or agent can then try again.
+    await deps.intents.abandonRevalidatedBeforeNonce({
+      intentId: intent.intentId,
+      sessionId: intent.sessionId,
+    });
+    throw blocked(
+      "A previous Lighter action still holds this account's nonce and its outcome is not yet proven. "
+      + "This action was not signed or submitted and has been retired; Vex clears the blocking reservation automatically. Try again shortly.",
+    );
+  }
 
   const reservationId = `lighter-lifecycle:${intent.intentId}`;
   assertAuthority("before_reservation");
@@ -1436,15 +1503,33 @@ export async function executeApprovedLighterClosePosition(
     },
   });
   if (revalidated === null) throw blocked("The close-position intent could not persist revalidation.");
-  const observed = await deps.nonceState.recordExecutionObserved({
-    environment: intent.environment,
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-    nonce: nextNonce.nonce,
-    publicKey: canonicalKey(providerKey.public_key),
-    transactionTime: providerKey.transaction_time,
+  const observed = await observeLighterNonceWithRecovery({
+    scope: { environment: intent.environment, accountIndex: intent.accountIndex },
+    observe: () => deps.nonceState.recordExecutionObserved({
+      environment: intent.environment,
+      accountIndex: intent.accountIndex,
+      apiKeyIndex: intent.apiKeyIndex,
+      nonce: nextNonce.nonce,
+      publicKey: canonicalKey(providerKey.public_key),
+      transactionTime: providerKey.transaction_time,
+    }),
+    recover: deps.recoverNonce,
   });
-  if (observed === null) throw blocked("A previous Lighter nonce remains unresolved.");
+  if (observed === null) {
+    // The live nonce is still blocked by an unrelated reservation. This action
+    // never reserved, signed, or submitted, so retire it now instead of leaving
+    // it parked at pre_submit_revalidated where it would refuse every later
+    // prepare for this target with "already exists". Recovery clears the
+    // blocking reservation separately; the user or agent can then try again.
+    await deps.intents.abandonRevalidatedBeforeNonce({
+      intentId: intent.intentId,
+      sessionId: intent.sessionId,
+    });
+    throw blocked(
+      "A previous Lighter action still holds this account's nonce and its outcome is not yet proven. "
+      + "This action was not signed or submitted and has been retired; Vex clears the blocking reservation automatically. Try again shortly.",
+    );
+  }
   const reservationId = `lighter-lifecycle:${intent.intentId}`;
   assertAuthority("before_reservation");
   const reserved = await deps.transaction(async (client) => {
@@ -1480,17 +1565,20 @@ export async function executeApprovedLighterClosePosition(
       deps.authSigner,
     );
     signerExited = lighterSignerRunExited({ kind: "resolved" });
+    // A close is a create-order transaction: Vex passes no ExpiredAt, and the
+    // official SDK fills one (signing time + 9m59s) that is part of the signed
+    // hash. It is read from the signer's own tx info so repair can release a
+    // lost send once it passes. Read before the hash is recorded, so an expiry
+    // that contradicts the SDK default refuses while the signature exists only
+    // in memory.
+    const signerExpiryMs = readLighterSignedTxExpiredAtMs(signed.txInfo, deps.now());
     signerTxHash = signed.txHash;
     const signedRow = await persistLighterSigningEvidence(() => deps.intents.markSigned({
       intentId: intent.intentId,
       sessionId: intent.sessionId,
       reservationId,
       signerTxHash: signed.txHash,
-      // Create-order transactions do not carry the lifecycle signer's
-      // ExpiredAt field. For market IOC close orders, wire OrderExpiry is nil,
-      // so there is no signed expiry that repair may safely use to release an
-      // ambiguous nonce reservation.
-      signerExpiryMs: null,
+      signerExpiryMs,
     }));
     if (signedRow === null) return markAndReturnAmbiguous(deps, intent, "signed_state_persist_failed", signed.txHash);
     assertAuthority("after_signing");
@@ -1729,11 +1817,14 @@ function exactOpenPosition(
 ): LighterAccountPosition {
   const matches = positions.filter((position) => position.market_id === marketIndex);
   if (matches.length !== 1 || matches[0] === undefined) {
-    throw blocked("The exact Lighter position could not be resolved uniquely.");
+    throw closePositionUnavailable("This position is no longer shown on Lighter or could not be identified safely.");
   }
   const position = matches[0];
-  if ((position.sign !== 1 && position.sign !== -1) || !isPositiveDecimal(position.position)) {
-    throw blocked("The exact Lighter position is flat or has invalid direction evidence.");
+  if (!isPositiveDecimal(position.position)) {
+    throw closePositionUnavailable("This position appears to be closed, or Lighter returned a size Vex cannot verify.");
+  }
+  if (position.sign !== 1 && position.sign !== -1) {
+    throw closePositionUnavailable("Lighter did not confirm whether this position is long or short.");
   }
   return position;
 }
@@ -2030,6 +2121,14 @@ function blocked(message: string): VexError {
     ErrorCodes.LIGHTER_INVALID_REQUEST,
     `${message} No lifecycle transaction was submitted.`,
     "Refresh the exact Lighter order and prepare a new approval-gated action.",
+  );
+}
+
+function closePositionUnavailable(message: string): VexError {
+  return new VexError(
+    ErrorCodes.LIGHTER_INVALID_REQUEST,
+    `${message} Refresh Positions and check the current Lighter account before trying again. No close order was placed.`,
+    "Refresh Positions and confirm the open position on Lighter before preparing another close.",
   );
 }
 

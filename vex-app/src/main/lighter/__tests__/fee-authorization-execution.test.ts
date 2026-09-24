@@ -5,7 +5,9 @@ import type { LighterFeeAuthorizationIntentRow } from "@vex-agent/db/repos/light
 import type { LighterNonceStateRow } from "@vex-agent/db/repos/lighter-nonce-state.js";
 import {
   executeApprovedLighterFeeAuthorization,
+  installLighterFeeAuthorizationService,
   reconcileLighterFeeAuthorization,
+  releaseExpiredLighterFeeReservation,
   type LighterFeeAuthorizationExecutionDeps,
 } from "../fee-authorization-execution.js";
 import {
@@ -26,6 +28,7 @@ import {
   signerRunnerRejectingWithoutEvidence,
 } from "../../../../../src/__tests__/helpers/lighter-scripted-signer.js";
 import { signApprovedLighterFeeAuthorization } from "../fee-authorization-signing.js";
+import { getConfiguredLighterForeignNonceOwner } from "@vex-agent/tools/protocols/lighter/foreign-nonce-owners.js";
 import { LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE } from "../../secrets/lighter-trading-credential.js";
 
 const NOW = Date.parse("2030-01-01T00:00:00Z"),
@@ -465,6 +468,82 @@ function controlledGate() {
   const promise = new Promise<void>((resolve) => { release = resolve; });
   return { promise, release };
 }
+describe("releaseExpiredLighterFeeReservation", () => {
+  const held = (overrides: Partial<LighterNonceStateRow> = {}): LighterNonceStateRow => ({
+    environment: "core",
+    accountIndex: 42,
+    apiKeyIndex: 4,
+    providerNonce: "7",
+    publicKey: KEY,
+    providerTransactionTime: null,
+    status: "reserved",
+    reservedNonce: "7",
+    reservationId: `lighter-fees:${input.intentId}`,
+    source: "fixture",
+    observedAt: "",
+    updatedAt: "",
+    ...overrides,
+  });
+
+  it("is installed as the fee nonce owner and removed on uninstall", () => {
+    const uninstall = installLighterFeeAuthorizationService();
+    expect(getConfiguredLighterForeignNonceOwner("fees")).not.toBeNull();
+    uninstall();
+    expect(getConfiguredLighterForeignNonceOwner("fees")).toBeNull();
+  });
+
+  it.each([
+    { reservedNonce: "8" },
+    { apiKeyIndex: 5 },
+    { accountIndex: 1 },
+    { environment: "rhc" as const },
+    { reservationId: "lighter-leverage:x" },
+  ])("does not claim a reservation it does not own exactly (%j)", async (mismatch) => {
+    const h = setup({ state: "submitted", now: NOW + 300001 });
+    expect(await releaseExpiredLighterFeeReservation(held(mismatch), h.deps)).toBeNull();
+    expect(h.deps.client.getNextNonce).not.toHaveBeenCalled();
+  });
+
+  it("reads and changes nothing before the wire expiry plus the safety margin", async () => {
+    const h = setup({ state: "submitted", now: NOW + 300000 });
+    const report = await releaseExpiredLighterFeeReservation(held(), h.deps);
+    expect(report).toMatchObject({ kind: "fee_authorization", resolution: "awaiting_expiry" });
+    expect(h.deps.client.getNextNonce).not.toHaveBeenCalled();
+    expect(h.deps.transition).not.toHaveBeenCalled();
+  });
+
+  it("releases an expired unconsumed nonce and fails the authorization without a session or wallet", async () => {
+    const h = setup({ state: "submitted", now: NOW + 300001 });
+    const report = await releaseExpiredLighterFeeReservation(held(), h.deps);
+    expect(report).toMatchObject({ resolution: "nonce_released_expired_unconsumed" });
+    expect(h.deps.releaseNonce).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      reservationId: `lighter-fees:${input.intentId}`, providerNonce: 7,
+    }));
+    expect(h.current()).toMatchObject({ executionState: "failed", failureReason: "expired_without_nonce_consumption" });
+    expect(h.deps.readSetup).not.toHaveBeenCalled();
+    expect(h.deps.resolveWallet).not.toHaveBeenCalled();
+    expect(h.deps.sign).not.toHaveBeenCalled();
+    expect(h.deps.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("frees a consumed nonce but leaves the authorization outcome to the full reconcile", async () => {
+    const h = setup({ state: "submitted", now: NOW + 300001, consumed: true });
+    const report = await releaseExpiredLighterFeeReservation(held(), h.deps);
+    expect(report).toMatchObject({ resolution: "nonce_consumed_outcome_pending" });
+    expect(h.deps.recordNonce).toHaveBeenCalledOnce();
+    expect(h.deps.releaseNonce).not.toHaveBeenCalled();
+    expect(h.current().executionState).toBe("submitted");
+  });
+
+  it("throws, changing nothing, when the next nonce is unavailable", async () => {
+    const h = setup({ state: "submitted", now: NOW + 300001 });
+    vi.mocked(h.deps.client.getNextNonce).mockResolvedValueOnce({ code: 500, nonce: 0 });
+    await expect(releaseExpiredLighterFeeReservation(held(), h.deps)).rejects.toThrow(/unavailable/);
+    expect(h.deps.releaseNonce).not.toHaveBeenCalled();
+    expect(h.deps.transition).not.toHaveBeenCalled();
+  });
+});
+
 describe("fee consent races", () => {
   for (const kind of ["expiry", "cancellation"] as const) {
     it.each(["reservation", "signing", "staging", "send-admission"] as const)(`${kind} at %s refuses a new fee submission`, async (phase) => {

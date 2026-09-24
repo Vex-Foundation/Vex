@@ -8,11 +8,16 @@ import {
   claimRegistrationSigning,
   findLighterKeyRegistrationIntent,
   markLighterKeyGeneratedEncryptedWith,
+  markLighterKeyRegistrationAmbiguousWith,
   markLighterKeyRegistrationApprovalPendingWith,
   markLighterKeyRegistrationApprovedWith,
+  markLighterKeyRegistrationExpiredUnconsumedWith,
+  markLighterKeyRegistrationTxStagedWith,
+  markRegistrationSendAttemptStarted,
   markRegistrationUnsubmitted,
   reserveLighterApiKeySlotWith,
 } from "@vex-agent/db/repos/lighter-key-registration-intents.js";
+import { restartFailedLighterKeyRegistrationWorkflowWith } from "@vex-agent/db/repos/lighter-onboarding-workflows.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { makeSession } from "../setup/fixtures.js";
 
@@ -155,5 +160,112 @@ describe("Lighter key-registration refusal against isolated PostgreSQL", () => {
       sessionId,
       reason: "consent_expired_after_signing",
     })).toBe(false);
+  });
+});
+
+describe("a failed key registration can start again (isolated PostgreSQL)", () => {
+  const TX_HASH = "cd".repeat(40);
+  const GRACE_MS = 10 * 60_000;
+
+  function observation(now = new Date()) {
+    return inspectLighterApiKeySlots({
+      code: 200,
+      api_keys: [{
+        account_index: ACCOUNT_INDEX,
+        api_key_index: 4,
+        nonce: 0,
+        public_key: "05".repeat(40),
+        transaction_time: 1,
+      }],
+    }, ACCOUNT_INDEX, now);
+  }
+  const restart = () => withSessionControlLock(sessionId, (client) =>
+    restartFailedLighterKeyRegistrationWorkflowWith(client, {
+      environment: "core", walletAddress: WALLET, accountIndex: ACCOUNT_INDEX,
+    }));
+  const reserveFresh = () => withSessionControlLock(sessionId, (client) => reserveLighterApiKeySlotWith(client, {
+    sessionId, environment: "core", walletAddress: WALLET, chainId: 1, accountIndex: ACCOUNT_INDEX,
+    observation: observation(), expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+  }));
+  async function workflow() {
+    return queryOne<{ workflow_state: string; api_key_index: number | null; public_key_fingerprint: string | null; failure_code: string | null }>(
+      `SELECT workflow_state, api_key_index, public_key_fingerprint, failure_code
+         FROM lighter_onboarding_workflows WHERE environment = 'core' AND wallet_address = LOWER($1)`,
+      [WALLET],
+    );
+  }
+  /** A registration whose signed transaction may have been sent and went ambiguous. */
+  async function sentAndAmbiguous(expiredAtMs: number): Promise<string> {
+    const intentId = await approvedRegistrationIntent();
+    expect(await claimRegistrationSigning({ intentId, sessionId })).toBe(true);
+    expect(await withSessionControlLock(sessionId, (client) => markLighterKeyRegistrationTxStagedWith(client, {
+      intentId, sessionId, txType: 8, txHash: TX_HASH, expiredAt: String(expiredAtMs), stagedAt: new Date(),
+    }))).toMatchObject({ executionState: "key_registration_tx_staged" });
+    expect(await markRegistrationSendAttemptStarted({ intentId, sessionId, txHash: TX_HASH })).toBe(true);
+    expect(await withSessionControlLock(sessionId, (client) => markLighterKeyRegistrationAmbiguousWith(client, {
+      intentId, sessionId, txHash: TX_HASH, reason: "send_tx_outcome_unknown",
+    }))).toMatchObject({ executionState: "ambiguous" });
+    return intentId;
+  }
+
+  it("returns a workflow failed by a refused registration to account_resolved, and a fresh slot can be reserved", async () => {
+    const intentId = await approvedRegistrationIntent();
+    expect(await claimRegistrationSigning({ intentId, sessionId })).toBe(true);
+    expect(await markRegistrationUnsubmitted({ intentId, sessionId, reason: "consent_expired_after_signing" })).toBe(true);
+
+    expect(await restart()).toMatchObject({ workflowState: "account_resolved", apiKeyIndex: null, resolvedAccountIndex: ACCOUNT_INDEX });
+    expect(await workflow()).toEqual({
+      workflow_state: "account_resolved", api_key_index: null, public_key_fingerprint: null, failure_code: null,
+    });
+    const fresh = await reserveFresh();
+    expect(fresh.outcome).toBe("created");
+    expect(fresh.reservation.intentId).not.toBe(intentId);
+  });
+
+  it("fails a sent registration only after its signed expiry plus the grace, then lets it start again", async () => {
+    const intentId = await sentAndAmbiguous(Date.now() - GRACE_MS - 60_000);
+
+    expect(await withSessionControlLock(sessionId, (client) =>
+      markLighterKeyRegistrationExpiredUnconsumedWith(client, { intentId, sessionId, graceMs: GRACE_MS })))
+      .toMatchObject({ executionState: "failed", registrationAmbiguityReason: "expired_without_nonce_consumption" });
+    expect(await workflow()).toMatchObject({ workflow_state: "failed", failure_code: "key_registration_expired_unconsumed" });
+
+    expect(await restart()).toMatchObject({ workflowState: "account_resolved", apiKeyIndex: null });
+    expect((await reserveFresh()).outcome).toBe("created");
+  });
+
+  it("refuses to fail a sent registration whose signed expiry plus the grace has not passed", async () => {
+    const intentId = await sentAndAmbiguous(Date.now() - GRACE_MS + 60_000);
+
+    expect(await withSessionControlLock(sessionId, (client) =>
+      markLighterKeyRegistrationExpiredUnconsumedWith(client, { intentId, sessionId, graceMs: GRACE_MS }))).toBeNull();
+    expect(await findLighterKeyRegistrationIntent(intentId)).toMatchObject({ executionState: "ambiguous" });
+    expect(await workflow()).toMatchObject({ workflow_state: "ambiguous" });
+  });
+
+  it("never restarts after a registration that may have been sent and was not proven expired unused", async () => {
+    const intentId = await sentAndAmbiguous(Date.now() - GRACE_MS - 60_000);
+    // A failure with a send attempt and no expiry proof: the key may be on chain.
+    await execute(
+      `UPDATE lighter_onboarding_intents SET execution_state = 'failed', registration_ambiguity_reason = 'send_tx_outcome_unknown'
+        WHERE intent_id = $1`,
+      [intentId],
+    );
+    await execute(
+      "UPDATE lighter_onboarding_workflows SET workflow_state = 'failed' WHERE environment = 'core' AND wallet_address = LOWER($1)",
+      [WALLET],
+    );
+
+    expect(await restart()).toBeNull();
+    expect(await workflow()).toMatchObject({ workflow_state: "failed" });
+  });
+
+  it("never restarts a workflow that failed without any key registration", async () => {
+    await execute(
+      `INSERT INTO lighter_onboarding_workflows (environment, wallet_address, workflow_state, resolved_account_index, api_key_index)
+       VALUES ('core', LOWER($1), 'failed', $2, 4)`,
+      [WALLET, ACCOUNT_INDEX],
+    );
+    expect(await restart()).toBeNull();
   });
 });

@@ -7,7 +7,7 @@
         "additionalProperties": false,
         "properties": {
           "accountIndex": {
-            "description": "Optional account index. Omit to use the account bound to the default saved Vex-managed Lighter trading credential. Derived read-only authorization refuses account mismatches.",
+            "description": "Optional account index. In a session, omit it to use the Lighter account owned by the selected EVM wallet; an explicit index must match that wallet. Derived read-only authorization stays on the exact account.",
             "type": "number"
           },
           "apiKeyIndex": {

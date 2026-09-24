@@ -190,7 +190,7 @@ export function resolveLighterTradingLimits(
         + `${LIGHTER_CAPITAL_SHARE_HOW_TO_CHANGE}.`,
     },
     unresolvedChangeGuidance:
-      "If a leverage change the user made is not reflected here, tell them to open Settings -> Lighter -> Reconcile; do not retry or re-apply it from a tool.",
+      "Only for an unresolved leverage change, tell the user to open Settings -> Lighter -> Trading setup and use that market's Reconcile button; do not retry or re-apply the leverage change from a tool. This control does not reconcile orders or nonce reservations: use lighter.order.status for those.",
   };
 }
 

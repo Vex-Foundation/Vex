@@ -12,9 +12,12 @@ import {
   withSessionControlLocks,
 } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import type { ApprovalPreviewScalar, PreparedActionFollowUp } from "../../../types.js";
-import type { ProtocolHandler } from "../../types.js";
+import type { ProtocolExecutionContext, ProtocolHandler } from "../../types.js";
 import { fail, ok } from "../../handler-helpers.js";
 import { getLighterClient } from "@tools/lighter/client.js";
+import { readUniqueLighterMasterAccount } from "@tools/lighter/wallet-funding/account-ownership.js";
+import { resolveSelectedAddress } from "@vex-agent/tools/internal/wallet/resolve.js";
+import { VexError } from "../../../../../errors.js";
 import { readEnvironment } from "../params.js";
 import { resolveLighterReadOnlyAccountAuth } from "../read-account-auth.js";
 import {
@@ -55,7 +58,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (!orderId.ok) return fail(orderId.reason);
     const accountIndex = readOptionalAccountIndex(params.accountIndex);
     if (!accountIndex.ok) return fail(accountIndex.reason);
-    const scope = resolveScope(environment.value, accountIndex.value);
+    const scope = await resolveScope(environment.value, accountIndex.value, context);
     if (!scope.ok) return fail(scope.reason);
     const readiness = evaluateLighterTradingCredentialReadiness({
       ...scope.value,
@@ -195,7 +198,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (!price.ok) return fail(price.reason);
     const accountIndex = readOptionalAccountIndex(params.accountIndex);
     if (!accountIndex.ok) return fail(accountIndex.reason);
-    const scope = resolveScope(environment.value, accountIndex.value);
+    const scope = await resolveScope(environment.value, accountIndex.value, context);
     if (!scope.ok) return fail(scope.reason);
     const readiness = evaluateLighterTradingCredentialReadiness({
       ...scope.value,
@@ -372,7 +375,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (!environment.ok) return fail(environment.reason);
     const accountIndex = readOptionalAccountIndex(params.accountIndex);
     if (!accountIndex.ok) return fail(accountIndex.reason);
-    const scope = resolveScope(environment.value, accountIndex.value);
+    const scope = await resolveScope(environment.value, accountIndex.value, context);
     if (!scope.ok) return fail(scope.reason);
     const readiness = evaluateLighterTradingCredentialReadiness({
       ...scope.value,
@@ -502,7 +505,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (!maxSlippageBps.ok) return fail(maxSlippageBps.reason);
     const accountIndex = readOptionalAccountIndex(params.accountIndex);
     if (!accountIndex.ok) return fail(accountIndex.reason);
-    const scope = resolveScope(environment.value, accountIndex.value);
+    const scope = await resolveScope(environment.value, accountIndex.value, context);
     if (!scope.ok) return fail(scope.reason);
     const readiness = evaluateLighterTradingCredentialReadiness({
       ...scope.value,
@@ -610,7 +613,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
         });
       } else if (intentsRepo.isSafelyExpirablePreSubmit(intent)) {
         await withSessionControlLock(context.sessionId, (dbClient) =>
-          intentsRepo.expireStalePreSubmitWith(dbClient, lifecycleIdentity(intent)));
+          intentsRepo.expireStalePreSubmitWith(dbClient, intentsRepo.lighterLifecycleRetirementIdentity(intent)));
       }
       return fail("The exact Lighter position-close approval expired. Prepare it again from fresh position and book state.");
     }
@@ -697,7 +700,7 @@ async function settleExistingLifecyclePreparation(input: {
       const replacement = await withSessionControlLocks(
         [existing.sessionId, input.sessionId],
         async (dbClient) => {
-          const retired = await intentsRepo.expireStalePreSubmitWith(dbClient, lifecycleIdentity(existing));
+          const retired = await intentsRepo.expireStalePreSubmitWith(dbClient, intentsRepo.lighterLifecycleRetirementIdentity(existing));
           if (retired === null) return null;
           const created = await intentsRepo.createApprovalPendingWith(dbClient, input.createInput);
           if (created === null) throw new Error(`Replacement ${input.actionType} intent was not created.`);
@@ -713,35 +716,14 @@ async function settleExistingLifecyclePreparation(input: {
     } catch {
       return fail(
         "The expired Lighter lifecycle action could not be safely retired. "
-        + "Nothing was signed or submitted; check its exact status before retrying.",
+        + `Check lighter.order.status with environment ${existing.environment} and intentId ${existing.intentId}; do not retry or invent a replacement intent id.`,
       );
     }
   }
   return fail(
-    `A live Lighter ${existing.actionType} action already exists for ${input.target} in state ${existing.executionState}.`,
+    `A live Lighter ${existing.actionType} action already exists for ${input.target} in state ${existing.executionState}. `
+    + `Check lighter.order.status with environment ${existing.environment} and intentId ${existing.intentId}; do not retry or invent a replacement intent id.`,
   );
-}
-
-function lifecycleIdentity(intent: LighterOrderLifecycleIntentRow): {
-  readonly intentId: string;
-  readonly sessionId: string;
-  readonly matchHash: string;
-  readonly environment: LighterOrderLifecycleIntentRow["environment"];
-  readonly accountIndex: number;
-  readonly actionType: LighterOrderLifecycleIntentRow["actionType"];
-  readonly marketIndex: number | null;
-  readonly providerOrderId: string | null;
-} {
-  return {
-    intentId: intent.intentId,
-    sessionId: intent.sessionId,
-    matchHash: intent.matchHash,
-    environment: intent.environment,
-    accountIndex: intent.accountIndex,
-    actionType: intent.actionType,
-    marketIndex: intent.marketIndex,
-    providerOrderId: intent.providerOrderId,
-  };
 }
 
 export function cancelFollowUp(intent: LighterOrderLifecycleIntentRow): PreparedActionFollowUp {
@@ -891,9 +873,38 @@ function preparedPayload(intent: LighterOrderLifecycleIntentRow, status: string)
   };
 }
 
-function resolveScope(environment: "core" | "rhc", accountIndex: number | null):
+async function resolveScope(
+  environment: "core" | "rhc",
+  accountIndex: number | null,
+  context: ProtocolExecutionContext,
+): Promise<
   | { readonly ok: true; readonly value: LighterSavedTradingCredentialScope }
-  | { readonly ok: false; readonly reason: string } {
+  | { readonly ok: false; readonly reason: string }
+> {
+  if (context.walletResolution.source === "session") {
+    let ownedAccount: number;
+    try {
+      const walletAddress = resolveSelectedAddress(
+        context.walletResolution,
+        context.walletPolicy,
+        "eip155",
+      );
+      ownedAccount = await readUniqueLighterMasterAccount(
+        getLighterClient(), environment, walletAddress,
+      );
+    } catch (error) {
+      return { ok: false, reason: error instanceof VexError
+        ? error.message
+        : "Unable to verify the selected wallet's Lighter account. Check the connection and try again." };
+    }
+    if (accountIndex !== null && accountIndex !== ownedAccount) {
+      return { ok: false, reason: `This session's selected wallet owns Lighter ${environment} account ${ownedAccount}, not the requested account ${accountIndex}.` };
+    }
+    const scope = resolveSavedLighterTradingCredentialScope(environment, ownedAccount);
+    return scope === null
+      ? { ok: false, reason: "No managed Lighter trading credential exists for this session's selected wallet." }
+      : { ok: true, value: scope };
+  }
   if (accountIndex !== null) {
     const scope = resolveSavedLighterTradingCredentialScope(environment, accountIndex);
     return scope === null
@@ -901,8 +912,9 @@ function resolveScope(environment: "core" | "rhc", accountIndex: number | null):
       : { ok: true, value: scope };
   }
   const scopes = listLighterTradingCredentialScopes(environment);
-  if (scopes.length !== 1) {
-    return { ok: false, reason: scopes.length === 0
+  const accountCount = new Set(scopes.map((scope) => scope.accountIndex)).size;
+  if (accountCount !== 1) {
+    return { ok: false, reason: accountCount === 0
       ? "No managed Lighter account exists in this environment."
       : "More than one managed Lighter account exists; specify accountIndex." };
   }

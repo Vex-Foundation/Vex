@@ -93,6 +93,29 @@ describe("reconcileSetupKeyRegistration", () => {
     expect(mocks.reconcile).not.toHaveBeenCalled();
   });
 
+  it("carries a staged registration forward once its signed transaction has expired", async () => {
+    mocks.findLiveIntent.mockResolvedValue({
+      intentId: "i",
+      executionState: "key_registration_tx_staged",
+      registrationTxExpiredAt: String(Date.now() - 1),
+    });
+    await expect(reconcileSetupKeyRegistration(INPUT)).resolves.toMatchObject({ attempted: true });
+    expect(mocks.reconcile).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["still live", () => String(Date.now() + 60_000)],
+    ["with no recorded expiry", () => null],
+  ])("leaves a staged registration %s to the executor that may still send it", async (_label, expiry) => {
+    mocks.findLiveIntent.mockResolvedValue({
+      intentId: "i",
+      executionState: "key_registration_tx_staged",
+      registrationTxExpiredAt: expiry(),
+    });
+    await expect(reconcileSetupKeyRegistration(INPUT)).resolves.toEqual({ attempted: false, status: null });
+    expect(mocks.reconcile).not.toHaveBeenCalled();
+  });
+
   it("has nothing to do without a Lighter account", async () => {
     mocks.readLighterAccount.mockResolvedValue(null);
     await expect(reconcileSetupKeyRegistration(INPUT)).resolves.toEqual({

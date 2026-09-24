@@ -54,8 +54,14 @@ describe("seedSyncJobs", () => {
     // (periodic 300s), the account-wide position observation AgentScan shows
     // beside Vex-authored fills - a projection, not activity, which is why it is
     // its own sweep rather than another arm of a repair - taking the total to 21.
+    // Lighter nonce-lock recovery then adds `lighter_lifecycle_repair` (periodic
+    // 60s, the close/cancel/modify twin of the order sweep) and
+    // `lighter_oco_repair` (periodic 300s), so a stuck reservation no one is
+    // retrying is released in the background - taking the total to 23.
+    // `lighter_nonce_owner_repair` (periodic 60s) then covers the leverage-change
+    // and fee-authorization reservations those sweeps do not - taking it to 24.
     await seedSyncJobs();
-    expect(mockExecute).toHaveBeenCalledTimes(21);
+    expect(mockExecute).toHaveBeenCalledTimes(24);
   });
 
   it("uses ON CONFLICT DO NOTHING (idempotent)", async () => {

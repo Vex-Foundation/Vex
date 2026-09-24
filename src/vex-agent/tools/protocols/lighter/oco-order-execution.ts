@@ -1,6 +1,7 @@
 import { persistLighterSigningEvidence, type LighterEvidenceWritePorts } from "./execution-boundary.js";
 import { assertIntentAuthority, LighterIntentRefusal } from "./intent-expiry.js";
 import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js";
+import { readLighterSignedTxExpiredAtMs } from "@tools/lighter/signed-tx-expiry.js";
 import { revalidateLighterOrderFees, type LighterOrderFeeClient } from "./order-fees.js";
 import { LIGHTER_ENDPOINTS, type LighterEnvironment } from "@tools/lighter/constants.js";
 import type { LighterClient } from "@tools/lighter/client.js";
@@ -47,6 +48,11 @@ import logger from "@utils/logger.js";
 import type { LighterOcoExecutionPlan } from "./oco-execution-plan.js";
 import { ocoLegRevalidationPlan } from "./oco-execution-plan.js";
 import { revalidateApprovedLighterOrder } from "./pre-submit-revalidation.js";
+import {
+  observeLighterNonceWithRecovery,
+  runLighterNonceRecovery,
+  type LighterNonceRecoveryRunner,
+} from "./nonce-commit-recovery.js";
 
 const FRESH = { fresh: true } as const;
 const AUTH_TTL_SECONDS = 10 * 60;
@@ -92,6 +98,12 @@ export interface LighterOcoExecutionDeps {
   readonly intents: LighterEvidenceWritePorts<Pick<typeof intentsRepo,
     "markPreSubmitRevalidated" | "attachNonceReservationWith" | "markSigned" | "markSubmitted" | "markApiAccepted" | "markSequencerPending" | "markProviderOutcome" | "markAmbiguous">>
     & Pick<typeof intentsRepo, "markSendAttemptStarted" | "markExpiredUnsubmitted" | "markUnsubmittedRefused">;
+  /**
+   * One recovery pass for a nonce an earlier action still holds, run at the
+   * commit point before refusing. Absent in a caller's own deps, which then
+   * refuse on the first observation as before.
+   */
+  readonly recoverNonce?: LighterNonceRecoveryRunner;
   readonly previews: Pick<typeof previewsRepo, "findFreshById">;
   readonly nonceState: LighterEvidenceWritePorts<Pick<typeof nonceRepo, "recordExecutionObserved">>
     & Pick<typeof nonceRepo, "releaseUnsubmittedReservation">
@@ -131,6 +143,7 @@ export function defaultLighterOcoExecutionDeps(input: {
     intents: intentsRepo,
     previews: previewsRepo,
     nonceState: nonceRepo,
+    recoverNonce: runLighterNonceRecovery,
     transaction: withTransaction,
     now: Date.now,
     wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -164,16 +177,23 @@ export async function executeApprovedLighterOco(input: {
     throw blocked("The local Lighter trading key does not match the registered account key.");
   }
   await assertNoExistingChildren(plan, group, auth.authToken, deps);
-  const observed = await deps.nonceState.recordExecutionObserved({
-    environment: plan.environment,
-    accountIndex: plan.accountIndex,
-    apiKeyIndex: plan.apiKeyIndex,
-    nonce: credential.nextNonce,
-    publicKey: credential.publicKey,
-    transactionTime: credential.transactionTime,
+  const observed = await observeLighterNonceWithRecovery({
+    scope: { environment: plan.environment, accountIndex: plan.accountIndex },
+    observe: () => deps.nonceState.recordExecutionObserved({
+      environment: plan.environment,
+      accountIndex: plan.accountIndex,
+      apiKeyIndex: plan.apiKeyIndex,
+      nonce: credential.nextNonce,
+      publicKey: credential.publicKey,
+      transactionTime: credential.transactionTime,
+    }),
+    recover: deps.recoverNonce,
   });
   if (observed === null) {
-    throw blocked("The live Lighter nonce is blocked by an unresolved local reservation.");
+    throw blocked(
+      "A previous Lighter action still holds this account's nonce and its outcome is not yet proven. "
+      + "This order was not signed or submitted; Vex clears the blocking reservation automatically. Try again shortly.",
+    );
   }
   assertAuthority("before_reservation");
   const reservation = await reserveNonce(plan, deps);
@@ -196,6 +216,10 @@ export async function executeApprovedLighterOco(input: {
       deps.groupedSigner,
     );
     signerExited = lighterSignerRunExited({ kind: "resolved" });
+    // Read before the hash is recorded: an expiry that contradicts the SDK
+    // default throws while this signature exists only in memory, so the
+    // refusal below releases the nonce as provably unsent.
+    const signerExpiryMs = readLighterSignedTxExpiredAtMs(signed.txInfo, deps.now());
     signerTxHash = signed.txHash;
     let persistedSigned;
     try {
@@ -208,6 +232,7 @@ export async function executeApprovedLighterOco(input: {
         stopLossClientOrderIndex: group.orders[0].clientOrderIndex,
         takeProfitClientOrderIndex: group.orders[1].clientOrderIndex,
         signerTxHash: signed.txHash,
+        signerExpiryMs,
       }));
     } catch {
       await markAmbiguous(plan, deps, "oco_signed_state_persist_failed");
@@ -689,7 +714,7 @@ function blocked(reason: string): VexError {
   return new VexError(
     ErrorCodes.LIGHTER_INVALID_REQUEST,
     `${reason} No grouped order was submitted.`,
-    "Run lighter.order.status for unresolved state, or restart from a fresh OCO preview when safe.",
+    "Ask Vex in chat to check a stuck Lighter action before starting a fresh grouped-order preview.",
   );
 }
 

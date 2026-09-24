@@ -18,6 +18,7 @@ import {
   retireLighterOrderCapitalCommitment,
 } from "./capital-share-policy.js";
 import { lighterOrderNonceReservationId } from "./nonce-reservation.js";
+import { lighterLostSendReleaseAtMs } from "./lost-send-release.js";
 import {
   defaultLighterFillObservationDeps,
   matchingLighterTrades,
@@ -102,6 +103,7 @@ const NEVER_SUBMITTED_AMBIGUOUS_REASONS: ReadonlySet<string> = new Set([
 
 export type LighterOrderRepairResolution =
   | "already_terminal"
+  | "awaiting_submission"
   | "expired_unsubmitted"
   | "provider_evidence"
   | "nonce_reset_consumed"
@@ -171,7 +173,7 @@ export interface LighterOrderRepairDeps {
   readonly intents: Pick<
     typeof lighterOrderExecutionIntentsRepo,
     "listUnresolved" | "findByIntentIdAnySession" | "markRepairResolved" | "markEvidenceConflict"
-  >;
+  > & Partial<Pick<typeof lighterOrderExecutionIntentsRepo, "expirePreSendNonceReservation">>;
   readonly nonceState: Pick<
     typeof lighterNonceStateRepo,
     "find" | "releaseReservation" | "recordExecutionObserved"
@@ -262,7 +264,7 @@ export async function repairUnresolvedLighterOrdersInBackground(
       const report = await repairLighterOrderIntent(intent, backgroundDeps);
       reports.push(report);
       if (isRepairAdvance(report.resolution)) advanced += 1;
-      else if (report.resolution === "awaiting_provider") awaiting += 1;
+      else if (report.resolution === "awaiting_provider" || report.resolution === "awaiting_submission") awaiting += 1;
       else if (report.resolution === "degraded") degraded += 1;
     } catch {
       errors += 1;
@@ -363,6 +365,29 @@ async function resolveLighterOrderIntentRepair(
       resolution: "expired_unsubmitted",
       guidance: LIGHTER_EXPIRED_UNSUBMITTED_GUIDANCE,
     };
+  }
+  if (intent.executionState === "signed"
+    || (intent.executionState === "approval_pending" && intent.nonceReservationId !== null)) {
+    const expiry = Date.parse(intent.expiresAt);
+    if (!Number.isFinite(expiry) || intent.nonceReservationId !== lighterOrderNonceReservationId(intent.intentId)
+      || intent.nonceValue === null) {
+      return { ...base, resolution: "degraded", guidance: "The pre-send reservation identity or consent expiry is incomplete. Keep this order blocked for reconciliation." };
+    }
+    if (expiry > deps.now()) {
+      return { ...base, resolution: "awaiting_submission", guidance: "This order still has valid consent and may be signing. Its nonce remains reserved; do not retry it." };
+    }
+    const retired = await deps.intents.expirePreSendNonceReservation?.({
+      intentId: intent.intentId, sessionId: intent.sessionId, environment: intent.environment,
+      accountIndex: intent.accountIndex, apiKeyIndex: intent.apiKeyIndex,
+      reservationId: intent.nonceReservationId, nonceValue: intent.nonceValue,
+      expectedState: intent.executionState, signerTxHash: intent.signerTxHash,
+    });
+    if (retired == null) {
+      return { ...base, resolution: "degraded", guidance: "The expired pre-send order could not be atomically retired. Its state or evidence changed; keep it blocked and refresh its exact status." };
+    }
+    return { ...base, stateAfter: retired.executionState, nonceBlockedAfter: false,
+      reservedNonce: intent.nonceValue, resolution: "nonce_released_never_submitted",
+      guidance: "The expired pre-send order was atomically retired and its exact nonce reservation released. No order was submitted or retried." };
   }
   if (!isUnresolvedState(intent.executionState)
     && intent.executionState !== "open"
@@ -734,14 +759,27 @@ async function resolveFromNonceFacts(
         detail: "The signed transaction never left Vex, so the reserved nonce could not have been consumed.",
       });
     }
+    // A send that may have left Vex and never landed. The nonce is still
+    // unconsumed, so it has not executed; once its signed expiry has passed it
+    // never can. Without this bound it held the account's nonce forever.
+    const releaseAt = lighterLostSendReleaseAtMs(intent);
+    if (releaseAt !== null && deps.now() > releaseAt) {
+      return releaseAndReject(intent, deps, base, reservedNonce, liveNextNonce, {
+        repair: "nonce_release_expired_unconsumed",
+        resolution: "nonce_released_expired_unconsumed",
+        detail: "The signed order transaction expired while Lighter had still not consumed its nonce, so it can no longer execute.",
+      });
+    }
     return {
       ...base,
       reservedNonce,
       resolution: "awaiting_provider",
       guidance:
-        "The submission may still reach the sequencer, so the nonce stays reserved. The approved preview expiry "
-        + "is not a signed sequencer expiry for ordinary IOC create orders. Wait for provider evidence or proof that the "
-        + "transaction never left Vex. Do not resubmit the order in the meantime.",
+        "The submission may still reach the sequencer, so the nonce stays reserved. "
+        + (releaseAt === null
+          ? "No usable expiry is recorded for it. "
+          : `It is released automatically after ${new Date(releaseAt).toISOString()} if Lighter still has not consumed it. `)
+        + "Do not resubmit the order in the meantime.",
     };
   }
 
@@ -810,9 +848,9 @@ async function releaseAndReject(
 }
 
 function neverLeftVex(intent: LighterOrderExecutionIntentRow): boolean {
-  if (intent.executionState === "signed") return true;
   return (
     intent.executionState === "ambiguous"
+    && intent.sendAttemptStartedAt == null
     && intent.ambiguousReason !== null
     && NEVER_SUBMITTED_AMBIGUOUS_REASONS.has(intent.ambiguousReason)
     && intent.submittedAt === null

@@ -383,11 +383,14 @@ function DeskBody({ desk, theme }: {
                 activeSession={activeSessionId !== null}
                 dataFresh={desk.dataFresh}
                 submitting={desk.submitting}
+                prepareStage={desk.prepareStage}
                 handoffError={desk.handoffError}
                 outcome={desk.deskOutcome}
                 prefill={desk.ticketPrefill}
                 pricePick={desk.pricePick}
                 margin={desk.margin}
+                exchangeFees={desk.exchangeFees}
+                markPrice={desk.publicMarketStream.stats?.markPrice ?? null}
                 onSend={desk.submitDraft}
                 onAsk={desk.askAboutDraft}
                 onConnect={desk.connectLighter}
@@ -423,6 +426,8 @@ function DeskBody({ desk, theme }: {
           activeMarkPrice={desk.publicMarketStream.stats?.markPrice ?? null}
           activePriceDecimals={desk.market?.decimals.price ?? null}
           closeConfirmSkipped={desk.skipCloseConfirm}
+          closingPositions={desk.closingPositions}
+          cancellingOrders={desk.cancellingOrders}
           actions={desk.accountActions}
         />
       </div>

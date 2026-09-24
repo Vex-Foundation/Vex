@@ -231,6 +231,86 @@ export function integratorFeeFraction(percent: string | null | undefined): numbe
   return Number.isFinite(value) && value > 0 ? value / 100 : 0;
 }
 
+/**
+ * The exchange's own fee as a FRACTION of notional: the larger of the market's
+ * published fee and THIS account's tier (Lighter fee ticks, hundredths of a
+ * basis point). The tier applies even where the market fee reads 0: a Robinhood
+ * Chain Premium account pays 0.035% taker there.
+ */
+export function exchangeFeeFraction(
+  marketPercent: string,
+  marketEnabled: boolean,
+  accountTicks: number | null,
+): number {
+  const market = Number(marketPercent);
+  const marketFraction = marketEnabled && Number.isFinite(market) && market > 0 ? market / 100 : 0;
+  const accountFraction = accountTicks !== null && Number.isFinite(accountTicks) && accountTicks > 0
+    ? accountTicks / 1_000_000
+    : 0;
+  return Math.max(marketFraction, accountFraction);
+}
+
+/**
+ * The average price a matching order fills at when it walks `levels` (best
+ * first), never past its own bound; size beyond the visible depth fills at the
+ * bound.
+ */
+export function averageFillPrice(
+  levels: readonly { readonly price: string; readonly size: string }[],
+  size: number,
+  bound: number,
+  side: TradeSide,
+): number {
+  if (!(size > 0)) return bound;
+  let remaining = size;
+  let notional = 0;
+  const reachable = levels
+    .map((level) => ({ price: Number(level.price), size: Number(level.size) }))
+    .filter((level) => level.price > 0 && level.size > 0 && (side === "buy" ? level.price <= bound : level.price >= bound))
+    .sort((left, right) => (side === "buy" ? left.price - right.price : right.price - left.price));
+  for (const level of reachable) {
+    if (remaining <= 0) break;
+    const take = Math.min(level.size, remaining);
+    notional += take * level.price;
+    remaining -= take;
+  }
+  return (notional + remaining * bound) / size;
+}
+
+/**
+ * What one unit of base takes out of the available balance under Lighter's own
+ * post-trade check, which cancels an order as `canceled-margin-not-allowed`
+ * when the account would end below initial margin at the MARK price. An order
+ * that matches now also books the gap between its fill and the mark as a loss.
+ * Priced a little above the main-process check in
+ * `src/tools/lighter/order-margin-fit.ts` (initial margin at the larger of the
+ * order's price and the mark), so a 100% ticket order clears that check.
+ */
+export function marginFitCostPerUnit(input: {
+  readonly side: TradeSide;
+  /** The order's own price: a market order's bound or the limit price. */
+  readonly price: number;
+  /** Where a matching order fills; null prices it at the bound. */
+  readonly fill: number | null;
+  readonly matchesNow: boolean;
+  readonly markPrice: number | null;
+  readonly initialMarginFraction: number;
+  readonly feeFraction: number;
+}): number {
+  const imf = input.initialMarginFraction / 10_000;
+  if (!input.matchesNow) return input.price * (imf + input.feeFraction);
+  const mark = input.markPrice !== null && input.markPrice > 0 ? input.markPrice : null;
+  if (input.side === "buy") {
+    const fill = Math.min(input.fill ?? input.price, input.price);
+    const gap = mark === null ? 0 : Math.max(0, fill - mark);
+    return Math.max(input.price, mark ?? 0) * imf + input.price * input.feeFraction + gap;
+  }
+  // A sell's price is a floor: it trades at the bid or better and is margined at the mark.
+  const traded = Math.max(input.fill ?? input.price, input.price);
+  const gap = mark === null ? 0 : Math.max(0, mark - traded);
+  return Math.max(traded, mark ?? 0) * imf + traded * input.feeFraction + gap;
+}
+
 /** Largest base size the available balance can open at this price. */
 export function maxBaseSize(available: number, initialMarginFraction: number, price: number): number {
   if (price <= 0) return 0;

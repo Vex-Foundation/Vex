@@ -444,12 +444,16 @@ export const lighterTradingCandleHistorySchema = z
   .strict();
 
 // Authenticated Light it up account panel. The renderer supplies only the
-// environment; the main process resolves the owning account from the unlocked
-// trading scope and never returns tokens or key material. Positions and
+// environment and optional session; main resolves the session wallet's account
+// and never returns tokens or key material. Legacy unscoped reads require one
+// distinct account across the unlocked trading scopes. Positions and
 // balances are public account-index reads; open orders use a short-lived
 // read-only auth derived in main.
 export const lighterTradingAccountInputSchema = z
-  .object({ environment: lighterIntegrationEnvironmentSchema })
+  .object({
+    environment: lighterIntegrationEnvironmentSchema,
+    sessionId: z.string().uuid().optional(),
+  })
   .strict();
 
 export const lighterTradingAccountStatusSchema = z.enum(["ready", "unavailable"]);
@@ -536,6 +540,7 @@ const lighterTradingOpenOrderSchema = z
 export const lighterTradingFillsInputSchema = z
   .object({
     environment: lighterIntegrationEnvironmentSchema,
+    sessionId: z.string().uuid().optional(),
     limit: z.number().int().min(1).max(100).optional(),
   })
   .strict();
@@ -585,6 +590,22 @@ const lighterTradingAssetSchema = z
   })
   .strict();
 
+/**
+ * The exchange fee THIS account pays, in Lighter fee ticks (hundredths of a
+ * basis point, so 350 is 0.035%). It can exceed the market's published fee: a
+ * Robinhood Chain Premium account pays 0.035% taker on markets whose
+ * `taker_fee` reads 0, and sizing on the market fee alone put every 100%
+ * ticket order past the account's margin. `assumed_ceiling` means the tier
+ * could not be read and a ceiling above every published tier stands in.
+ */
+const lighterTradingExchangeFeesSchema = z
+  .object({
+    makerTicks: z.number().int().min(0).max(1_000_000),
+    takerTicks: z.number().int().min(0).max(1_000_000),
+    source: z.enum(["account", "assumed_ceiling"]),
+  })
+  .strict();
+
 const lighterTradingAccountSummarySchema = z
   .object({
     collateral: decimalStringSchema.nullable(),
@@ -612,6 +633,8 @@ export const lighterTradingAccountSchema = z
     assets: z.array(lighterTradingAssetSchema).max(200),
     positions: z.array(lighterTradingPositionSchema).max(200),
     marginTerms: z.array(lighterTradingMarginTermSchema).max(200),
+    // Null exactly when `status` is "unavailable".
+    exchangeFees: lighterTradingExchangeFeesSchema.nullable(),
     openOrders: z.array(lighterTradingOpenOrderSchema).max(200),
   })
   .strict();
@@ -719,8 +742,14 @@ export const lighterDeskPrepareInputSchema = z
     sessionId: z.string().uuid(),
     environment: lighterIntegrationEnvironmentSchema,
     action: lighterDeskActionSchema,
+    progressId: z.string().uuid().optional(),
   })
   .strict();
+
+export const lighterDeskPrepareProgressEventSchema = z.object({
+  progressId: z.string().uuid(),
+  stage: z.enum(["checking_account", "checking_market", "creating_approval"]),
+}).strict();
 
 export const lighterDeskPrepareResultSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("enqueued"), approvalId: z.string().min(1) }).strict(),
@@ -819,12 +848,16 @@ export const lighterAccountSetupStatusSchema = z
     /**
      * True when a trading key is registered on-chain but its local credential
      * is not yet active - a live registration intent sits in a post-submission
-     * state (`change_pub_key_submitted` / `key_verified` / `nonce_synchronized`).
+     * state (`change_pub_key_submitted` / `key_verified` /
+     * `nonce_synchronized` / `ambiguous`). Ambiguous is checked against
+     * provider evidence before any new registration can be prepared.
      * The modal completes such a key by RECONCILING it (no funds, no new
      * signature), so it may finish that step automatically. Only ever true
      * while `tradingKeyRegistered` is false.
      */
     keyRegistrationResumable: z.boolean(),
+    /** A saved uncertain attempt must be checked before another setup action. */
+    setupRecovery: z.enum(["none", "deposit", "key", "manual_review"]),
     /** Static policy terms; null when this environment collects no VEX fee. */
     feePolicy: lighterAccountSetupFeePolicySchema.nullable(),
     /** True once no fee step remains: already authorized, or none is owed. */
@@ -835,6 +868,7 @@ export const lighterAccountSetupStatusSchema = z
 export type LighterDeskOrderDraft = z.infer<typeof lighterDeskOrderDraftSchema>;
 export type LighterDeskAction = z.infer<typeof lighterDeskActionSchema>;
 export type LighterDeskPrepareInput = z.infer<typeof lighterDeskPrepareInputSchema>;
+export type LighterDeskPrepareProgressEvent = z.infer<typeof lighterDeskPrepareProgressEventSchema>;
 export type LighterDeskPrepareResult = z.infer<typeof lighterDeskPrepareResultSchema>;
 export type LighterOnboardingChecklistInput = z.infer<typeof lighterOnboardingChecklistInputSchema>;
 export type LighterOnboardingChecklist = z.infer<typeof lighterOnboardingChecklistSchema>;
@@ -868,6 +902,12 @@ export type LighterKeyRegistrationReconcileInput =
   z.infer<typeof lighterKeyRegistrationReconcileInputSchema>;
 export type LighterKeyRegistrationReconcile =
   z.infer<typeof lighterKeyRegistrationReconcileSchema>;
+
+/** Evidence-only recovery of an uncertain deposit or trading-key setup. */
+export const lighterSetupReconcileInputSchema = lighterKeyRegistrationReconcileInputSchema;
+export const lighterSetupReconcileSchema = lighterKeyRegistrationReconcileSchema;
+export type LighterSetupReconcileInput = z.infer<typeof lighterSetupReconcileInputSchema>;
+export type LighterSetupReconcile = z.infer<typeof lighterSetupReconcileSchema>;
 
 export type LighterAccountSetupStatusInput = z.infer<typeof lighterAccountSetupStatusInputSchema>;
 export type LighterAccountSetupFeePolicy = z.infer<typeof lighterAccountSetupFeePolicySchema>;
@@ -964,6 +1004,7 @@ export type LighterTradingFillsInput = z.infer<typeof lighterTradingFillsInputSc
 export type LighterTradingFill = z.infer<typeof lighterTradingFillSchema>;
 export type LighterTradingFills = z.infer<typeof lighterTradingFillsSchema>;
 export type LighterTradingAccount = z.infer<typeof lighterTradingAccountSchema>;
+export type LighterTradingExchangeFees = z.infer<typeof lighterTradingExchangeFeesSchema>;
 export type LighterTradingAccountUnavailableReason = z.infer<
   typeof lighterTradingAccountUnavailableReasonSchema
 >;

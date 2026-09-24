@@ -130,11 +130,13 @@ function makeDeps(options: {
   readonly missingSlotResponse?: "empty" | "not_found" | "other_error";
   readonly environment?: LighterEnvironment;
   readonly apiKeyIndex?: number;
+  readonly ownerSessionId?: string;
 } = {}) {
   const environment = options.environment ?? "core";
   const apiKeyIndex = options.apiKeyIndex ?? 7;
   const initiallyApproved = (options.initialExecutionState ?? "approved") === "approved";
   let current = intent(options.initialExecutionState, environment, apiKeyIndex);
+  if (options.ownerSessionId !== undefined) current = { ...current, sessionId: options.ownerSessionId };
   let apiKeyReadCount = 0;
   let nonceReadCount = 0;
   const events: string[] = [];
@@ -202,6 +204,10 @@ function makeDeps(options: {
       })),
     },
     readIntent: vi.fn(async () => current),
+    adoptForReconcile: vi.fn(async (input: { readonly sessionId: string }) => {
+      current = { ...current, sessionId: input.sessionId };
+      return current;
+    }),
     integrationEnabled: vi.fn(async () => true),
     resolveWallet: vi.fn(() => WALLET),
     sign: vi.fn(async () => {
@@ -245,6 +251,15 @@ function makeDeps(options: {
       return current;
     }),
     markAmbiguous: markAmbiguous as LighterKeyRegistrationExecutionDeps["markAmbiguous"],
+    markExpiredUnconsumed: vi.fn(async () => {
+      events.push("expired-unconsumed");
+      current = {
+        ...current,
+        executionState: "failed",
+        registrationAmbiguityReason: "expired_without_nonce_consumption",
+      };
+      return current;
+    }),
     markKeyVerified: vi.fn(async () => {
       events.push("verified");
       current = { ...current, executionState: "key_verified" };
@@ -466,6 +481,52 @@ describe("Lighter key registration execution", () => {
     expect(setup.deps.sign).not.toHaveBeenCalled();
     expect(setup.deps.client.sendTx).not.toHaveBeenCalled();
   });
+
+  it("reconciles a submitted registration started by ANOTHER session for the same wallet", async () => {
+    const setup = makeDeps({
+      initialExecutionState: "change_pub_key_submitted",
+      reconciliationPublicKey: PUBLIC_KEY,
+      ownerSessionId: "session-2",
+    });
+
+    const result = await reconcileLighterKeyRegistration(EXECUTION_INPUT, setup.deps);
+
+    expect(result.status).toBe("active");
+    // It verified the resuming session's wallet and adopted the intent for the
+    // evidence-only marks - never signing or submitting.
+    expect(setup.deps.resolveWallet).toHaveBeenCalled();
+    expect(setup.deps.adoptForReconcile).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "session-1",
+    }));
+    expect(setup.deps.sign).not.toHaveBeenCalled();
+    expect(setup.deps.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("refuses to reconcile a submitted registration owned by a DIFFERENT wallet", async () => {
+    const setup = makeDeps({
+      initialExecutionState: "change_pub_key_submitted",
+      reconciliationPublicKey: PUBLIC_KEY,
+      ownerSessionId: "session-2",
+    });
+    vi.mocked(setup.deps.resolveWallet).mockReturnValue({
+      ...WALLET,
+      address: "0x0000000000000000000000000000000000000009",
+    });
+
+    await expect(reconcileLighterKeyRegistration(EXECUTION_INPUT, setup.deps))
+      .rejects.toThrow("a wallet this session does not control");
+    expect(setup.deps.adoptForReconcile).not.toHaveBeenCalled();
+    expect(setup.deps.sign).not.toHaveBeenCalled();
+  });
+
+  it("does not relax the same-session rule for signing execution", async () => {
+    const setup = makeDeps({ ownerSessionId: "session-2" });
+
+    await expect(executeApprovedLighterKeyRegistration(EXECUTION_INPUT, setup.deps))
+      .rejects.toThrow("unavailable in this session");
+    expect(setup.deps.adoptForReconcile).not.toHaveBeenCalled();
+    expect(setup.deps.sign).not.toHaveBeenCalled();
+  });
 });
 
 function controlledSigningGate() {
@@ -473,6 +534,54 @@ function controlledSigningGate() {
   const promise = new Promise<void>((resolve) => { release = resolve; });
   return { promise, release };
 }
+describe("a registration that expired without Lighter using its nonce", () => {
+  const SIGNED_EXPIRY_MS = 1_893_456_000_000;
+  const GRACE_MS = 10 * 60_000;
+  const stranded = (options: { readonly nonce?: number; readonly nowMs?: number } = {}) => {
+    const setup = makeDeps({
+      initialExecutionState: "ambiguous",
+      reconciliationPublicKey: null,
+      postRegistrationNonce: options.nonce ?? 0,
+    });
+    vi.mocked(setup.deps.now).mockReturnValue(new Date(options.nowMs ?? SIGNED_EXPIRY_MS + GRACE_MS + 1));
+    return setup;
+  };
+
+  it("fails it once the signed expiry plus the grace has passed, never signing or sending", async () => {
+    const setup = stranded();
+
+    const result = await reconcileLighterKeyRegistration(EXECUTION_INPUT, setup.deps);
+
+    expect(result).toMatchObject({ status: "expired_unconsumed", executionState: "failed" });
+    expect(setup.deps.markExpiredUnconsumed).toHaveBeenCalledExactlyOnceWith("session-1", "lighter-keyreg-1");
+    expect(setup.deps.sign).not.toHaveBeenCalled();
+    expect(setup.deps.client.sendTx).not.toHaveBeenCalled();
+    expect(setup.activateVaultCredential).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["the grace has not passed", { nowMs: SIGNED_EXPIRY_MS + GRACE_MS }],
+    ["Lighter consumed the nonce", { nonce: 1 }],
+  ])("keeps it ambiguous while %s", async (_label, options) => {
+    const setup = stranded(options);
+
+    const result = await reconcileLighterKeyRegistration(EXECUTION_INPUT, setup.deps);
+
+    expect(result.status).toBe("ambiguity_unresolved");
+    expect(setup.deps.markExpiredUnconsumed).not.toHaveBeenCalled();
+  });
+
+  it("keeps it ambiguous when the nonce cannot be read", async () => {
+    const setup = stranded();
+    vi.mocked(setup.deps.client.getNextNonce).mockRejectedValue(new Error("provider unavailable"));
+
+    const result = await reconcileLighterKeyRegistration(EXECUTION_INPUT, setup.deps);
+
+    expect(result.status).toBe("ambiguity_unresolved");
+    expect(setup.deps.markExpiredUnconsumed).not.toHaveBeenCalled();
+  });
+});
+
 describe("key registration consent races", () => {
   for (const kind of ["expiry", "cancellation"] as const) {
     it.each(["reservation", "signing", "staging", "send-admission"] as const)(`${kind} at %s refuses submission`, async (phase) => {

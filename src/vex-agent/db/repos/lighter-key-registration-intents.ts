@@ -465,10 +465,17 @@ export async function renewPristineApprovedLighterKeyRegistrationIntentWith(
 /**
  * Move an unapproved key-registration preparation to the current session only
  * when durable state proves that signing, staging, submission, and activation
- * never began. The encrypted credential and exact public approval scope stay
- * unchanged; any approval parked in the old session can no longer execute it.
+ * never began. The SAME slot reservation and encrypted credential (when one
+ * has already been generated) continue forward; no second key or slot is
+ * created. An approval parked in the old session can no longer execute it.
+ *
+ * All three pre-approval checkpoints are transferable. A process can stop
+ * after reserving the slot, after encrypting the key, or after binding the
+ * public nonce. Restricting adoption to the last checkpoint leaves the first
+ * two as permanent cross-session wedges even though neither carries consent or
+ * transaction evidence.
  */
-export async function adoptPristineLighterKeyRegistrationApprovalWith(
+export async function adoptPristineLighterKeyRegistrationPreparationWith(
   client: LighterOnboardingQueryClient,
   input: {
     readonly intentId: string;
@@ -504,7 +511,7 @@ export async function adoptPristineLighterKeyRegistrationApprovalWith(
         AND LOWER(wallet_address) = LOWER($5)
         AND resolved_account_index = $6
         AND approval_status = 'approval_pending'
-        AND execution_state = 'approval_pending'
+        AND execution_state IN ('slot_reserved','key_generated_encrypted','approval_pending')
         AND approval_id IS NULL
         AND protocol_execution_id IS NULL
         AND decided_at IS NULL
@@ -524,6 +531,35 @@ export async function adoptPristineLighterKeyRegistrationApprovalWith(
         AND post_registration_nonce IS NULL
         AND registration_nonce_synchronized_at IS NULL
         AND registration_activated_at IS NULL
+        AND (
+          (
+            execution_state = 'slot_reserved'
+            AND vault_credential_id IS NULL
+            AND public_key IS NULL
+            AND public_key_fingerprint IS NULL
+            AND key_generated_at IS NULL
+            AND registration_nonce IS NULL
+            AND registration_nonce_observed_at IS NULL
+          )
+          OR (
+            execution_state = 'key_generated_encrypted'
+            AND vault_credential_id IS NOT NULL
+            AND public_key IS NOT NULL
+            AND public_key_fingerprint IS NOT NULL
+            AND key_generated_at IS NOT NULL
+            AND registration_nonce IS NULL
+            AND registration_nonce_observed_at IS NULL
+          )
+          OR (
+            execution_state = 'approval_pending'
+            AND vault_credential_id IS NOT NULL
+            AND public_key IS NOT NULL
+            AND public_key_fingerprint IS NOT NULL
+            AND key_generated_at IS NOT NULL
+            AND registration_nonce IS NOT NULL
+            AND registration_nonce_observed_at IS NOT NULL
+          )
+        )
       RETURNING ${RETURNING}`,
     [
       input.intentId,
@@ -537,6 +573,153 @@ export async function adoptPristineLighterKeyRegistrationApprovalWith(
   );
   const row = result.rows[0];
   return row === undefined ? null : mapRow(row);
+}
+
+/**
+ * Adopt a never-signed key-registration intent to a resuming session, bound to
+ * the WALLET rather than the session that started it. The `session_id` on an
+ * onboarding intent only records who last drove it; the wallet is the ownership
+ * boundary, so any session whose selected wallet matches may resume it. It also
+ * covers the `approved`-but-unsigned state (the abandoned-mid-onboarding case)
+ * and resets it to `approval_pending`, so the resuming session re-consents
+ * instead of inheriting another session's approval.
+ *
+ * It refuses anything that ever staged, signed, submitted, or activated a
+ * registration (all `registration_*` evidence must be NULL) - those may already
+ * be live on-chain and must be reconciled from provider evidence, never blindly
+ * re-driven. A registration for a DIFFERENT wallet is never matched.
+ */
+export async function adoptResumableLighterKeyRegistrationPreparationWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly environment: LighterEnvironment;
+    readonly walletAddress: string;
+    readonly accountIndex: number;
+    readonly expiresAt: Date;
+  },
+): Promise<LighterKeyRegistrationReservationRow | null> {
+  if (input.sessionId.trim().length === 0) {
+    throw new Error("Lighter key-registration adoption requires a resuming session.");
+  }
+  if (!Number.isSafeInteger(input.accountIndex) || input.accountIndex <= 0) {
+    throw new Error("Lighter key-registration adoption requires a valid account index.");
+  }
+  assertTimestamp(input.expiresAt, "adopted approval expiry");
+
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET session_id = $2,
+            expires_at = $6,
+            approval_status = 'approval_pending',
+            execution_state = CASE WHEN execution_state = 'approved' THEN 'approval_pending' ELSE execution_state END,
+            approval_id = NULL,
+            decided_at = NULL,
+            decision_reason = NULL,
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND capability = 'key_registration'
+        AND environment = $3
+        AND LOWER(wallet_address) = LOWER($4)
+        AND resolved_account_index = $5
+        AND approval_status IN ('approval_pending','approved')
+        AND execution_state IN ('slot_reserved','key_generated_encrypted','approval_pending','approved')
+        AND protocol_execution_id IS NULL
+        AND failure_reason IS NULL
+        AND registration_tx_type IS NULL
+        AND registration_tx_hash IS NULL
+        AND registration_tx_expired_at IS NULL
+        AND registration_tx_staged_at IS NULL
+        AND registration_submitted_tx_hash IS NULL
+        AND registration_submit_code IS NULL
+        AND registration_predicted_execution_time_ms IS NULL
+        AND registration_submit_accepted_at IS NULL
+        AND registration_ambiguity_reason IS NULL
+        AND registration_key_verified_at IS NULL
+        AND registration_client_checked_at IS NULL
+        AND post_registration_nonce IS NULL
+        AND registration_nonce_synchronized_at IS NULL
+        AND registration_activated_at IS NULL
+        AND (
+          (
+            execution_state = 'slot_reserved'
+            AND vault_credential_id IS NULL
+            AND public_key IS NULL
+            AND public_key_fingerprint IS NULL
+            AND key_generated_at IS NULL
+            AND registration_nonce IS NULL
+            AND registration_nonce_observed_at IS NULL
+          )
+          OR (
+            execution_state = 'key_generated_encrypted'
+            AND vault_credential_id IS NOT NULL
+            AND public_key IS NOT NULL
+            AND public_key_fingerprint IS NOT NULL
+            AND key_generated_at IS NOT NULL
+            AND registration_nonce IS NULL
+            AND registration_nonce_observed_at IS NULL
+          )
+          OR (
+            execution_state IN ('approval_pending','approved')
+            AND vault_credential_id IS NOT NULL
+            AND public_key IS NOT NULL
+            AND public_key_fingerprint IS NOT NULL
+            AND key_generated_at IS NOT NULL
+            AND registration_nonce IS NOT NULL
+            AND registration_nonce_observed_at IS NOT NULL
+          )
+        )
+      RETURNING ${RETURNING}`,
+    [
+      input.intentId,
+      input.sessionId,
+      input.environment,
+      input.walletAddress,
+      input.accountIndex,
+      input.expiresAt,
+    ],
+  );
+  const row = result.rows[0];
+  return row === undefined ? null : mapRow(row);
+}
+
+/**
+ * Re-point a submitted/ambiguous registration to a resuming session for
+ * EVIDENCE-ONLY reconciliation, bound to the WALLET. The wallet is the owner;
+ * this only transfers which session carries the already-on-chain outcome
+ * forward so its durable marks can proceed - it signs and submits nothing. It
+ * never touches a pre-submission or terminal row, and a DIFFERENT wallet's
+ * intent is never matched.
+ */
+export async function adoptLighterKeyRegistrationForReconcile(input: {
+  readonly intentId: string;
+  readonly sessionId: string;
+  readonly environment: LighterEnvironment;
+  readonly walletAddress: string;
+  readonly accountIndex: number;
+}): Promise<LighterKeyRegistrationReservationRow | null> {
+  if (input.sessionId.trim().length === 0) {
+    throw new Error("Lighter key-registration reconcile adoption requires a resuming session.");
+  }
+  if (!Number.isSafeInteger(input.accountIndex) || input.accountIndex <= 0) {
+    throw new Error("Lighter key-registration reconcile adoption requires a valid account index.");
+  }
+  const row = await queryOne<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET session_id = $2, updated_at = clock_timestamp()
+      WHERE intent_id = $1
+        AND capability = 'key_registration'
+        AND environment = $3
+        AND LOWER(wallet_address) = LOWER($4)
+        AND resolved_account_index = $5
+        AND execution_state IN (
+          'key_registration_tx_staged','change_pub_key_submitted','key_verified','nonce_synchronized','ambiguous'
+        )
+      RETURNING ${RETURNING}`,
+    [input.intentId, input.sessionId, input.environment, input.walletAddress, input.accountIndex],
+  );
+  return row === null ? null : mapRow(row);
 }
 
 /** Persist public TxType/hash/expiry identity before sendTx can be called. */
@@ -679,6 +862,65 @@ export async function markLighterKeyRegistrationAmbiguousWith(
   });
   if (workflow === null) {
     throw new Error("Lighter workflow rejected ambiguous key-registration state.");
+  }
+  return intent;
+}
+
+/**
+ * Fail a registration whose signed change-pub-key transaction expired without
+ * Lighter ever using its nonce.
+ *
+ * The caller has read the key's live next nonce and found it still equal to
+ * `registration_nonce`: the transaction has not executed, and past its signed
+ * expiry the sequencer refuses it, so it never will. This statement re-proves
+ * the rest in SQL - the expiry plus `graceMs` has passed and no key was ever
+ * verified or activated - and settles the workflow as `failed`, from which
+ * `restartFailedLighterKeyRegistrationWorkflowWith` lets a fresh registration
+ * begin. Before this, such a registration stayed ambiguous and held the
+ * wallet's onboarding forever.
+ */
+export async function markLighterKeyRegistrationExpiredUnconsumedWith(
+  client: LighterOnboardingQueryClient,
+  input: {
+    readonly intentId: string;
+    readonly sessionId: string;
+    readonly graceMs: number;
+  },
+): Promise<LighterKeyRegistrationReservationRow | null> {
+  if (!Number.isSafeInteger(input.graceMs) || input.graceMs < 0) {
+    throw new Error("Lighter key registration expiry grace must be a non-negative safe integer.");
+  }
+  const result = await client.query<Record<string, unknown>>(
+    `UPDATE lighter_onboarding_intents
+        SET execution_state = 'failed',
+            registration_ambiguity_reason = 'expired_without_nonce_consumption',
+            updated_at = NOW()
+      WHERE intent_id = $1
+        AND session_id = $2
+        AND capability = 'key_registration'
+        AND approval_status = 'approved'
+        AND execution_state IN ('change_pub_key_submitted', 'ambiguous')
+        AND registration_tx_expired_at IS NOT NULL
+        AND registration_tx_expired_at + $3 < (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint
+        AND registration_key_verified_at IS NULL
+        AND registration_activated_at IS NULL
+      RETURNING ${RETURNING}`,
+    [input.intentId, input.sessionId, input.graceMs],
+  );
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  const intent = mapRow(row);
+  const workflow = await transitionLighterOnboardingWorkflowWith(client, {
+    environment: intent.environment,
+    walletAddress: intent.walletAddress,
+    expectedStates: ["key_registration_approval_pending", "change_pub_key_submitted", "ambiguous"],
+    nextState: "failed",
+    apiKeyIndex: intent.apiKeyIndex,
+    publicKeyFingerprint: intent.publicKeyFingerprint,
+    failureCode: "key_registration_expired_unconsumed",
+  });
+  if (workflow === null) {
+    throw new Error("Lighter workflow rejected the expired key-registration failure.");
   }
   return intent;
 }

@@ -48,10 +48,12 @@ const MEASURE_STYLE: CSSProperties = { visibility: "hidden", left: 0, top: 0 };
 
 export function ClosePositionPopover({
   position,
+  disabled = false,
   onCloseMarket,
   onCloseLimit,
 }: {
   readonly position: LighterPositionRow;
+  readonly disabled?: boolean;
   readonly onCloseMarket: (portion: ClosePortion) => void;
   readonly onCloseLimit: (portion: ClosePortion) => void;
 }): JSX.Element {
@@ -77,6 +79,10 @@ export function ClosePositionPopover({
     setFixedPos(null);
     if (returnFocus) triggerRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    if (disabled && open) close(false);
+  }, [close, disabled, open]);
 
   // DIRECTLY UNDER THE KEY, right edges aligned, so the card reads as that
   // button's own menu rather than as something that appeared elsewhere on the
@@ -221,6 +227,8 @@ export function ClosePositionPopover({
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={`Close ${position.symbol} position`}
+        disabled={disabled}
+        title={disabled ? "A close is already pending for this position." : undefined}
         onClick={() => (open ? close(true) : setOpen(true))}
       >
         {/* Drawn, not a multiplication sign standing in for an icon. */}
@@ -228,7 +236,7 @@ export function ClosePositionPopover({
           <path d="M2.5 2.5 L9.5 9.5 M9.5 2.5 L2.5 9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
       </button>
-      {open ? createPortal(card, document.body) : null}
+      {open && !disabled ? createPortal(card, document.body) : null}
     </>
   );
 }

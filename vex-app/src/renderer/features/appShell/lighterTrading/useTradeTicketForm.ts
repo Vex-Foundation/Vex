@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
+import type { LighterTradingExchangeFees, LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
 import { bestBookPrice, type LighterOrderBookData } from "./book-model.js";
 import { compareDecimalStrings, isPositiveDecimal, toDecimal } from "./decimal.js";
 import { formatDecimalString, marketSymbols } from "./format.js";
@@ -11,12 +11,15 @@ import {
   IOC_PREVIEW_EXPIRY_MINUTES,
   PROTECTION_BOUND_PERCENT,
   SIZE_DECIMALS_FALLBACK,
+  averageFillPrice,
   estimatedLiquidationPrice,
+  exchangeFeeFraction,
   hardBoundLabel,
   integratorFeeFraction,
   isPositionProtectionMode,
   isTriggerLimitMode,
   marginCost,
+  marginFitCostPerUnit,
   riskBaseSize,
   slippageBound,
   type LimitTimeInForce,
@@ -31,6 +34,9 @@ import {
 
 export type SizeMode = "qty" | "risk";
 
+/** How far the mark may sit from this market's own book before the ticket stops trusting it. */
+const MARK_PLAUSIBLE_FRACTION = 0.05;
+
 export interface TradeTicketFormInput {
   readonly market: LighterTradingMarket;
   readonly book: LighterOrderBookData;
@@ -41,6 +47,10 @@ export interface TradeTicketFormInput {
   /** Account equity (collateral plus open PnL) that Risk mode sizes against; null without an account. */
   readonly equity: number | null;
   readonly margin: TicketMargin | null;
+  /** THIS account's exchange fee tier, which can exceed the market's published fee. */
+  readonly exchangeFees?: LighterTradingExchangeFees | null;
+  /** The market's live mark price, where Lighter measures margin after a match. */
+  readonly markPrice?: number | null;
   readonly dataFresh: boolean;
   readonly prefill?: TradeTicketPrefill | null;
   readonly pricePick?: TradeTicketPricePick | null;
@@ -58,6 +68,8 @@ export function useTradeTicketForm({
   baseAvailable = null,
   equity,
   margin,
+  exchangeFees = null,
+  markPrice = null,
   dataFresh,
   prefill,
   pricePick,
@@ -195,21 +207,42 @@ export function useTradeTicketForm({
       return toDecimal(Math.floor(sizingBalance * (10 ** sizeDecimals)) / (10 ** sizeDecimals), sizeDecimals);
     }
     const fee = ((mode === "limit" || triggerLimit) && limitTimeInForce === "post-only")
-      ? { rate: market.fees.maker, enabled: market.fees.makerEnabled, integrator: market.fees.integratorMaker }
-      : { rate: market.fees.taker, enabled: market.fees.takerEnabled, integrator: market.fees.integratorTaker };
-    const feePercent = Number(fee.rate);
-    // BOTH legs, because both are charged against the same margin. Lighter's
-    // own fee is zero on some deployments, and sizing on it alone spent every
-    // last unit of available margin on the position - leaving nothing for
-    // Vex's integrator fee, which the exchange then refused the order over.
-    const feeFraction = (fee.enabled && Number.isFinite(feePercent) && feePercent > 0 ? feePercent / 100 : 0)
+      ? { rate: market.fees.maker, enabled: market.fees.makerEnabled, integrator: market.fees.integratorMaker, accountTicks: exchangeFees?.makerTicks ?? null }
+      : { rate: market.fees.taker, enabled: market.fees.takerEnabled, integrator: market.fees.integratorTaker, accountTicks: exchangeFees?.takerTicks ?? null };
+    // EVERY fee leg, because all are charged against the same margin: the
+    // exchange's, at this account's tier where that exceeds the market's
+    // published fee, and Vex's integrator fee. Sizing without either spent the
+    // last unit of margin on the position and Lighter cancelled the order.
+    const feeFraction = exchangeFeeFraction(fee.rate, fee.enabled, fee.accountTicks)
       + integratorFeeFraction(fee.integrator);
-    const size = margin === null
-      ? sizingBalance / (price * (1 + feeFraction))
-      : sizingBalance / (margin.initialMarginFraction / 10_000 + feeFraction) / price;
     const step = 10 ** sizeDecimals;
+    if (margin === null) {
+      return toDecimal(Math.floor((sizingBalance / (price * (1 + feeFraction))) * step) / step, sizeDecimals);
+    }
+    // Lighter margins a matched order at the mark and books its fill-to-mark
+    // gap as a loss. Size once at the top of the book, then again at the
+    // average fill that size would walk to: the second answer is never larger
+    // than what fits.
+    const matchesNow = mode === "market" || (mode === "limit" && limitPriceBookStatus === "marketable");
+    const levels = side === "buy" ? book.asks : book.bids;
+    // The stream keeps the previous market's stats for a render after a market
+    // switch; a mark far from this book belongs to another market, not this one.
+    const mark = markPrice !== null && Math.abs(markPrice - referencePrice) <= referencePrice * MARK_PLAUSIBLE_FRACTION
+      ? markPrice
+      : null;
+    const costAt = (fill: number | null): number => marginFitCostPerUnit({
+      side,
+      price,
+      fill,
+      matchesNow,
+      markPrice: mark,
+      initialMarginFraction: margin.initialMarginFraction,
+      feeFraction,
+    });
+    const atTop = sizingBalance / costAt(suggestedPrice === null ? null : Number(suggestedPrice));
+    const size = matchesNow ? sizingBalance / costAt(averageFillPrice(levels, atTop, price, side)) : atTop;
     return toDecimal(Math.floor(size * step) / step, sizeDecimals);
-  }, [canSizeFromBalance, limitPrice, limitTimeInForce, margin, market.fees.maker, market.fees.makerEnabled, market.fees.taker, market.fees.takerEnabled, market.marketType, mode, referencePrice, side, sizeDecimals, sizingBalance, triggerLimit, worstPrice]);
+  }, [book.asks, book.bids, canSizeFromBalance, exchangeFees?.makerTicks, exchangeFees?.takerTicks, limitPrice, limitPriceBookStatus, limitTimeInForce, margin, market.fees.integratorMaker, market.fees.integratorTaker, market.fees.maker, market.fees.makerEnabled, market.fees.taker, market.fees.takerEnabled, market.marketType, markPrice, mode, referencePrice, side, sizeDecimals, sizingBalance, suggestedPrice, triggerLimit, worstPrice]);
 
   const applySizePercent = (percent: number): void => {
     if (maxSize === null) return;
@@ -333,15 +366,14 @@ export function useTradeTicketForm({
   const orderValue = isPositiveDecimal(baseAmount) && valuationPrice !== null
     ? Number(baseAmount) * valuationPrice
     : null;
-  const feeRate = (mode === "limit" || triggerLimit) && limitTimeInForce === "post-only"
-    ? { rate: market.fees.maker, enabled: market.fees.makerEnabled, label: "Maker", integrator: market.fees.integratorMaker }
-    : { rate: market.fees.taker, enabled: market.fees.takerEnabled, label: "Taker", integrator: market.fees.integratorTaker };
-  // BOTH legs again: the provider's fee and Vex's own. On a deployment whose
-  // provider fee is disabled, the provider leg alone read "≈ 0" beside an
-  // order that was still charged 10 bps.
-  const providerFee = feeRate.enabled && Number.isFinite(Number(feeRate.rate))
-    ? Number(feeRate.rate) / 100
-    : 0;
+  const postOnly = (mode === "limit" || triggerLimit) && limitTimeInForce === "post-only";
+  const feeRate = postOnly
+    ? { rate: market.fees.maker, enabled: market.fees.makerEnabled, label: "Maker", integrator: market.fees.integratorMaker, accountTicks: exchangeFees?.makerTicks ?? null, accountAssumed: exchangeFees?.source === "assumed_ceiling" }
+    : { rate: market.fees.taker, enabled: market.fees.takerEnabled, label: "Taker", integrator: market.fees.integratorTaker, accountTicks: exchangeFees?.takerTicks ?? null, accountAssumed: exchangeFees?.source === "assumed_ceiling" };
+  // EVERY leg again: the exchange's at this account's tier, and Vex's own. On
+  // a deployment whose market fee reads 0, the market leg alone read "≈ 0"
+  // beside an order that was still charged the tier and Vex's 10 bps.
+  const providerFee = exchangeFeeFraction(feeRate.rate, feeRate.enabled, feeRate.accountTicks);
   const estimatedFee = orderValue === null
     ? null
     : orderValue * (providerFee + integratorFeeFraction(feeRate.integrator));
