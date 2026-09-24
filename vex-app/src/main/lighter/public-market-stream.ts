@@ -19,8 +19,15 @@ import { SocketWatcherReconnectState } from "./stream-supervisor.js";
 export const LIGHTER_PUBLIC_MARKET_HANDSHAKE_TIMEOUT_MS = 15_000;
 export const LIGHTER_PUBLIC_MARKET_KEEPALIVE_INTERVAL_MS = 30_000;
 export const LIGHTER_PUBLIC_MARKET_STALE_AFTER_MS = 90_000;
-export const LIGHTER_PUBLIC_MARKET_MAX_FRAME_BYTES = 1_048_576;
-export const LIGHTER_PUBLIC_MARKET_MAX_BOOK_LEVELS = 5_000;
+/**
+ * Bounds on one market's book. On 2026-09-24 RHC's BTC snapshot carried 5,304
+ * price levels (about 196 KB), past the original 5,000, so every snapshot was
+ * discarded, the stream restarted on the same snapshot, and after eight tries
+ * the desk read "Unavailable" for good. These leave about five times that
+ * depth; a snapshot at the level bound is about 1 MB.
+ */
+export const LIGHTER_PUBLIC_MARKET_MAX_FRAME_BYTES = 4_194_304;
+export const LIGHTER_PUBLIC_MARKET_MAX_BOOK_LEVELS = 25_000;
 export const LIGHTER_PUBLIC_MARKET_VISIBLE_BOOK_LEVELS = 40;
 export const LIGHTER_PUBLIC_MARKET_VISIBLE_TRADES = 40;
 /**
@@ -483,7 +490,8 @@ export class LighterPublicMarketSupervisor {
   }
 
   private invalidFrame(watcher: PublicMarketWatcher, reason: string): void {
-    this.deps.diagnostic("lighter.public_market.frame_invalid", targetDetail(watcher.target));
+    // The reason is what tells a provider change from a local bound apart.
+    this.deps.diagnostic("lighter.public_market.frame_invalid", { ...targetDetail(watcher.target), reason });
     this.restartWatcher(watcher, reason);
   }
 

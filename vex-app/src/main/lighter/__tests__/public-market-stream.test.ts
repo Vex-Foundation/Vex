@@ -413,6 +413,39 @@ describe("Lighter public market stream", () => {
     h.supervisor.stop();
   });
 
+  it("takes a snapshot as deep as RHC's BTC book and goes live", async () => {
+    // 2026-09-24: RHC's BTC snapshot carried 2,401 asks and 2,903 bids. The old
+    // 5,000-level bound discarded it on every connect and the desk read
+    // "Unavailable" for good.
+    const h = makeHarness();
+    const socket = await connect(h);
+    const levels = (start: number, count: number, step: number) =>
+      Array.from({ length: count }, (_value, index) => ({ price: (start + index * step).toFixed(1), size: "0.01" }));
+
+    socket.message(bookFrame({
+      asks: levels(84_282.7, 2_401, 0.1),
+      bids: levels(84_282.6, 2_903, -0.1),
+    }));
+
+    expect(h.diagnostics.map((entry) => entry.event)).not.toContain("lighter.public_market.frame_invalid");
+    expect(h.events).toContainEqual(expect.objectContaining({ kind: "book" }));
+    expect(h.deps.createSocket).toHaveBeenCalledTimes(1);
+    h.supervisor.stop();
+  });
+
+  it("names the reason when it drops a frame", async () => {
+    const h = makeHarness();
+    const socket = await connect(h);
+
+    socket.message(bookFrame({ nonce: "not-a-nonce" }));
+
+    expect(h.diagnostics).toContainEqual(expect.objectContaining({
+      event: "lighter.public_market.frame_invalid",
+      detail: expect.objectContaining({ reason: "invalid_market_evidence" }),
+    }));
+    h.supervisor.stop();
+  });
+
   it("discards a reconstructed book that outgrows its retained bound and resnapshots", async () => {
     const h = makeHarness();
     const socket = await connect(h);
