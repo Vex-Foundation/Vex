@@ -616,10 +616,13 @@ function managedReadinessRecoveryLeg(
   ) {
     return {
       kind: "reconcile_nonce_state",
-      reason: "A previous Lighter action is still being checked, so this account cannot place another order yet. "
-        + "Vex releases its reservation only after confirming it is safe. "
-        + "If it remains blocked, ask Vex in chat to check the stuck Lighter action. "
-        + "Do not retry until Vex confirms the account is ready.",
+      // The reader is the agent, often mid-mission: it runs the check itself
+      // rather than handing the user a step, and never names a Settings screen.
+      reason: "A previous Lighter action still holds this account's nonce, so it cannot place another order yet. "
+        + "Vex releases the reservation automatically once provider evidence proves that is safe. "
+        + "To check or release it now, call lighter.order.status with this environment and accountIndex "
+        + "(lighter.withdraw.status for a withdrawal); do not send the user to a Settings screen for it. "
+        + "Do not retry the trade until status reports the account ready.",
     };
   }
   return {

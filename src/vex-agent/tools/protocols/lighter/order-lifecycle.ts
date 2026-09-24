@@ -61,6 +61,11 @@ import {
   type LighterFillObservationDeps,
 } from "./fill-observation.js";
 import logger from "@utils/logger.js";
+import {
+  observeLighterNonceWithRecovery,
+  runLighterNonceRecovery,
+  type LighterNonceRecoveryRunner,
+} from "./nonce-commit-recovery.js";
 
 const AUTH_TTL_SECONDS = 10 * 60;
 const SIGNER_EXPIRY_MS = 60_000;
@@ -247,6 +252,12 @@ export interface LighterOrderLifecycleExecutionDeps {
     & Pick<typeof intentsRepo, "markSendAttemptStarted" | "markExpiredUnsubmitted" | "markUnsubmittedRefused" | "abandonRevalidatedBeforeNonce">;
   readonly nonceState: LighterEvidenceWritePorts<Pick<typeof nonceRepo, "recordExecutionObserved">>
     & Pick<typeof nonceRepo, "reserveObservedWith" | "releaseUnsubmittedReservation">;
+  /**
+   * One recovery pass for a nonce an earlier action still holds, run at the
+   * commit point before refusing. Absent in a caller's own deps, which then
+   * refuse on the first observation as before.
+   */
+  readonly recoverNonce?: LighterNonceRecoveryRunner;
   readonly transaction: typeof withTransaction;
   readonly acquireSessionControlLock: typeof acquireSessionControlLock;
   readonly now: () => number;
@@ -283,6 +294,7 @@ export function defaultLighterOrderLifecycleExecutionDeps(input: {
     client: input.client ?? getLighterClient(),
     intents: intentsRepo,
     nonceState: nonceRepo,
+    recoverNonce: runLighterNonceRecovery,
     transaction: withTransaction,
     acquireSessionControlLock,
     now: Date.now,
@@ -628,13 +640,17 @@ export async function executeApprovedLighterCancelOne(
     evidence,
   });
   if (revalidated === null) throw blocked("The cancel intent could not persist revalidation.");
-  const observed = await deps.nonceState.recordExecutionObserved({
-    environment: intent.environment,
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-    nonce: nextNonce.nonce,
-    publicKey: canonicalKey(providerKey.public_key),
-    transactionTime: providerKey.transaction_time,
+  const observed = await observeLighterNonceWithRecovery({
+    scope: { environment: intent.environment, accountIndex: intent.accountIndex },
+    observe: () => deps.nonceState.recordExecutionObserved({
+      environment: intent.environment,
+      accountIndex: intent.accountIndex,
+      apiKeyIndex: intent.apiKeyIndex,
+      nonce: nextNonce.nonce,
+      publicKey: canonicalKey(providerKey.public_key),
+      transactionTime: providerKey.transaction_time,
+    }),
+    recover: deps.recoverNonce,
   });
   if (observed === null) {
     // The live nonce is still blocked by an unrelated reservation. This action
@@ -909,13 +925,17 @@ export async function executeApprovedLighterModifyOrder(
     evidence,
   });
   if (revalidated === null) throw blocked("The modify intent could not persist revalidation.");
-  const observed = await deps.nonceState.recordExecutionObserved({
-    environment: intent.environment,
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-    nonce: nextNonce.nonce,
-    publicKey: canonicalKey(providerKey.public_key),
-    transactionTime: providerKey.transaction_time,
+  const observed = await observeLighterNonceWithRecovery({
+    scope: { environment: intent.environment, accountIndex: intent.accountIndex },
+    observe: () => deps.nonceState.recordExecutionObserved({
+      environment: intent.environment,
+      accountIndex: intent.accountIndex,
+      apiKeyIndex: intent.apiKeyIndex,
+      nonce: nextNonce.nonce,
+      publicKey: canonicalKey(providerKey.public_key),
+      transactionTime: providerKey.transaction_time,
+    }),
+    recover: deps.recoverNonce,
   });
   if (observed === null) {
     // The live nonce is still blocked by an unrelated reservation. This action
@@ -1175,13 +1195,17 @@ export async function executeApprovedLighterCancelAll(
     },
   });
   if (revalidated === null) throw blocked("The cancel-all intent could not persist revalidation.");
-  const observed = await deps.nonceState.recordExecutionObserved({
-    environment: intent.environment,
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-    nonce: nextNonce.nonce,
-    publicKey: canonicalKey(providerKey.public_key),
-    transactionTime: providerKey.transaction_time,
+  const observed = await observeLighterNonceWithRecovery({
+    scope: { environment: intent.environment, accountIndex: intent.accountIndex },
+    observe: () => deps.nonceState.recordExecutionObserved({
+      environment: intent.environment,
+      accountIndex: intent.accountIndex,
+      apiKeyIndex: intent.apiKeyIndex,
+      nonce: nextNonce.nonce,
+      publicKey: canonicalKey(providerKey.public_key),
+      transactionTime: providerKey.transaction_time,
+    }),
+    recover: deps.recoverNonce,
   });
   if (observed === null) {
     // The live nonce is still blocked by an unrelated reservation. This action
@@ -1479,13 +1503,17 @@ export async function executeApprovedLighterClosePosition(
     },
   });
   if (revalidated === null) throw blocked("The close-position intent could not persist revalidation.");
-  const observed = await deps.nonceState.recordExecutionObserved({
-    environment: intent.environment,
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-    nonce: nextNonce.nonce,
-    publicKey: canonicalKey(providerKey.public_key),
-    transactionTime: providerKey.transaction_time,
+  const observed = await observeLighterNonceWithRecovery({
+    scope: { environment: intent.environment, accountIndex: intent.accountIndex },
+    observe: () => deps.nonceState.recordExecutionObserved({
+      environment: intent.environment,
+      accountIndex: intent.accountIndex,
+      apiKeyIndex: intent.apiKeyIndex,
+      nonce: nextNonce.nonce,
+      publicKey: canonicalKey(providerKey.public_key),
+      transactionTime: providerKey.transaction_time,
+    }),
+    recover: deps.recoverNonce,
   });
   if (observed === null) {
     // The live nonce is still blocked by an unrelated reservation. This action

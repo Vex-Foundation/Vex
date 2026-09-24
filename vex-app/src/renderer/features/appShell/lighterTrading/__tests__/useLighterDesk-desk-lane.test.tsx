@@ -675,7 +675,7 @@ describe("desk lane", () => {
     expect(funnelStep).toHaveBeenLastCalledWith({ step: "desk_approval_rejected", environment: "rhc" });
   });
 
-  it("turns a stuck Lighter action into an in-app next step", async () => {
+  it("tells the trader a stuck Lighter action clears itself, without a manual step", async () => {
     prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-3" } });
     const { result } = renderDesk();
 
@@ -688,9 +688,27 @@ describe("desk lane", () => {
       }));
     });
 
-    expect(result.current.deskOutcome?.text).toContain("Ask Vex in chat");
+    expect(result.current.deskOutcome?.text).toContain("Vex clears it automatically");
+    expect(result.current.deskOutcome?.text).not.toContain("Ask Vex in chat");
     expect(result.current.deskOutcome?.text).not.toContain("lighter.order.status");
-    expect(result.current.deskOutcome?.text).not.toContain("try again");
+  });
+
+  it("maps the execution-time refusal wording to the same automatic message", async () => {
+    prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-4" } });
+    const { result } = renderDesk();
+
+    await act(async () => { result.current.accountActions.onClosePosition({ marketId: 7, side: "long", size: "0.25" } as LighterPositionRow, 1); });
+    act(() => {
+      result.current.onApprovalResolved("approved", resolved({
+        id: "ap-4",
+        executionStatus: "failed",
+        toolOutput: "A previous Lighter action on RHC account 42 still holds this account's nonce and its outcome is not yet proven. This order was not signed or submitted; Vex clears the blocking reservation automatically. Try again shortly.",
+      }));
+    });
+
+    expect(result.current.deskOutcome?.text).toBe(
+      "A previous Lighter action is still settling. No new order was placed. Vex clears it automatically; try again shortly.",
+    );
   });
 
   describe("Don't ask again for Market close", () => {

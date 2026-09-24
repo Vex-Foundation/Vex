@@ -63,6 +63,11 @@ import {
 } from "./capital-share-policy.js";
 import { assertLighterPhaseOneOrderPolicy } from "@tools/lighter/order-policy.js";
 import { assertLighterTradingApiKeyIndexAllowed } from "@tools/lighter/trading-credentials.js";
+import {
+  observeLighterNonceWithRecovery,
+  runLighterNonceRecovery,
+  type LighterNonceRecoveryRunner,
+} from "./nonce-commit-recovery.js";
 
 /**
  * The provider states that PROVE this create order can consume no more capital.
@@ -169,6 +174,12 @@ export interface ExecuteApprovedLighterCreateOrderDeps {
   >;
   readonly nonceState: LighterEvidenceWritePorts<Pick<typeof lighterNonceStateRepo, "recordExecutionObserved">>
     & Pick<typeof lighterNonceStateRepo, "releaseUnsubmittedReservation">;
+  /**
+   * One recovery pass for a nonce an earlier action still holds, run at the
+   * commit point before refusing. Absent in a caller's own deps, which then
+   * refuse on the first observation as before.
+   */
+  readonly recoverNonce?: LighterNonceRecoveryRunner;
   readonly previews: Pick<typeof lighterOrderPreviewsRepo, "findFreshById">;
   /**
    * The fill observation boundary. Optional so a caller that assembles its own
@@ -243,19 +254,23 @@ export async function executeApprovedLighterCreateOrder(input: {
   assertProviderPublicKeyMatches(providerCredential.publicKey, auth.publicKey);
   const [, observedNonce] = await Promise.all([
     assertProviderOutcomeRepairReady(plan, evidenceScope, unsignedOrder, auth.authToken, deps),
-    deps.nonceState.recordExecutionObserved({
-      environment: plan.environment,
-      accountIndex: plan.accountIndex,
-      apiKeyIndex: plan.apiKeyIndex,
-      nonce: providerCredential.nextNonce,
-      publicKey: providerCredential.publicKey,
-      transactionTime: providerCredential.transactionTime,
+    observeLighterNonceWithRecovery({
+      scope: { environment: plan.environment, accountIndex: plan.accountIndex },
+      observe: () => deps.nonceState.recordExecutionObserved({
+        environment: plan.environment,
+        accountIndex: plan.accountIndex,
+        apiKeyIndex: plan.apiKeyIndex,
+        nonce: providerCredential.nextNonce,
+        publicKey: providerCredential.publicKey,
+        transactionTime: providerCredential.transactionTime,
+      }),
+      recover: deps.recoverNonce,
     }),
   ]);
   if (observedNonce === null) {
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
-      `A previous Lighter action on ${plan.environment.toUpperCase()} account ${plan.accountIndex} is still being checked. This order was not signed or submitted. Ask Vex in chat to check the stuck Lighter action if it remains blocked. Do not retry until Vex confirms the account is ready.`,
+      `A previous Lighter action on ${plan.environment.toUpperCase()} account ${plan.accountIndex} still holds this account's nonce and its outcome is not yet proven. This order was not signed or submitted; Vex clears the blocking reservation automatically. Try again shortly.`,
       "Vex releases the earlier action's reservation only after it has enough evidence that doing so is safe.",
     );
   }
@@ -517,6 +532,7 @@ export function defaultLighterCreateOrderExecutionDeps(
     reserveNonce: reserveLighterOrderNonceForSigning,
     intents: lighterOrderExecutionIntentsRepo,
     nonceState: lighterNonceStateRepo,
+    recoverNonce: runLighterNonceRecovery,
     previews: lighterOrderPreviewsRepo,
     fills: defaultLighterFillObservationDeps(),
     now: Date.now,

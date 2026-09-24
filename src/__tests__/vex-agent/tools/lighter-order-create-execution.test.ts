@@ -999,23 +999,53 @@ describe("Lighter approved create execution pipeline", () => {
     expect(d.client.sendTx).not.toHaveBeenCalled();
   });
 
-  it("explains an unresolved prior action without asking the user to run an internal tool", async () => {
+  it("tries recovery once, then explains a still-held nonce without asking the user to act", async () => {
+    const recoverNonce = vi.fn(async () => ({}));
     const d = deps({
       nonceState: {
         releaseUnsubmittedReservation: vi.fn(async () => null),
         recordExecutionObserved: vi.fn(async () => null),
       },
+      recoverNonce,
     });
 
-    await expect(executeApprovedLighterCreateOrder({
+    const refusal = executeApprovedLighterCreateOrder({
       plan: PLAN,
       unsignedOrder: UNSIGNED_ORDER,
       deps: d,
-    })).rejects.toThrow("Ask Vex in chat to check the stuck Lighter action");
+    });
+    await expect(refusal).rejects.toThrow("Vex clears the blocking reservation automatically");
+    await expect(refusal).rejects.not.toThrow(/Ask Vex in chat|lighter\.order\.status/);
 
+    expect(recoverNonce).toHaveBeenCalledTimes(1);
+    expect(recoverNonce).toHaveBeenCalledWith({ environment: PLAN.environment, accountIndex: PLAN.accountIndex });
+    expect(d.nonceState.recordExecutionObserved).toHaveBeenCalledTimes(2);
     expect(d.reserveNonce).not.toHaveBeenCalled();
     expect(d.signer.signCreateOrder).not.toHaveBeenCalled();
     expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("proceeds after approval when recovery releases a stale earlier reservation", async () => {
+    // The v0.2.13 desk refusal: a lock that was stale by execute time failed
+    // the approved order and sent the trader to chat.
+    let released = false;
+    const recoverNonce = vi.fn(async () => { released = true; return {}; });
+    const d = deps({
+      nonceState: {
+        releaseUnsubmittedReservation: vi.fn(async () => null),
+        recordExecutionObserved: vi.fn(async () => (released ? { status: "observed" } : null)),
+      },
+      recoverNonce,
+    });
+
+    await executeApprovedLighterCreateOrder({
+      plan: PLAN,
+      unsignedOrder: UNSIGNED_ORDER,
+      deps: d,
+    }).catch(() => undefined);
+
+    expect(recoverNonce).toHaveBeenCalledTimes(1);
+    expect(d.reserveNonce).toHaveBeenCalledTimes(1);
   });
 
   it("overlaps duplicate-evidence readiness with nonce observation and gates reservation on both", async () => {

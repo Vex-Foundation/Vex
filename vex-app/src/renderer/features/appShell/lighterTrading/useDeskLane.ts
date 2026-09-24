@@ -179,8 +179,11 @@ function canceledOrderMessage(order: DeskOrderExecution): string {
 }
 
 function deskFailureMessage(message: string): string {
-  return /unresolved local reservation|previous Lighter nonce remains unresolved|Run lighter\.order\.status|A live Lighter .* action already exists|previous Lighter action .* still being checked/i.test(message)
-    ? "Vex is checking a previous Lighter action. No new order was placed. Ask Vex in chat to check the stuck action if this remains blocked, and wait for confirmation before retrying."
+  // Execution has already tried to clear the earlier action by the time this
+  // arrives, and the background repair keeps trying: nothing is asked of the
+  // trader but a later retry.
+  return /unresolved local reservation|previous Lighter nonce remains unresolved|Run lighter\.order\.status|A live Lighter .* action already exists|previous Lighter action .*(still being checked|still holds this account's nonce)/i.test(message)
+    ? "A previous Lighter action is still settling. No new order was placed. Vex clears it automatically; try again shortly."
     : message;
 }
 

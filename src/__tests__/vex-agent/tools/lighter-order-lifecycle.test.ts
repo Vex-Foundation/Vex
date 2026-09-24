@@ -817,8 +817,11 @@ describe("Lighter reduce-only position close lifecycle", () => {
       }),
       getAccountTrades: vi.fn().mockResolvedValue({ code: 200, trades: [] }),
     });
-    // A prior action's reservation still owns the slot: the observe cannot advance.
+    // A prior action's reservation still owns the slot: the observe cannot
+    // advance, and one recovery pass at the commit point does not free it.
     vi.mocked(dependencies.nonceState.recordExecutionObserved).mockResolvedValue(null);
+    const recoverNonce = vi.fn(async () => ({}));
+    Object.assign(dependencies, { recoverNonce });
     const closeIntent = intent({
       actionType: "close_position",
       marketIndex: 0,
@@ -842,9 +845,12 @@ describe("Lighter reduce-only position close lifecycle", () => {
     await expect(executeApprovedLighterClosePosition(closeIntent, dependencies))
       .rejects.toThrow(/has been retired/);
 
-    // It revalidated, then bailed on the blocked nonce, retiring itself so the
-    // next prepare is not refused with "already exists".
+    // It revalidated, tried recovery once, then bailed on the blocked nonce,
+    // retiring itself so the next prepare is not refused with "already exists".
     expect(dependencies.intents.markPreSubmitRevalidated).toHaveBeenCalled();
+    expect(recoverNonce).toHaveBeenCalledTimes(1);
+    expect(recoverNonce).toHaveBeenCalledWith({ environment: closeIntent.environment, accountIndex: closeIntent.accountIndex });
+    expect(dependencies.nonceState.recordExecutionObserved).toHaveBeenCalledTimes(2);
     expect(dependencies.intents.abandonRevalidatedBeforeNonce).toHaveBeenCalledWith({
       intentId: closeIntent.intentId,
       sessionId: closeIntent.sessionId,
@@ -852,6 +858,52 @@ describe("Lighter reduce-only position close lifecycle", () => {
     expect(dependencies.nonceState.reserveObservedWith).not.toHaveBeenCalled();
     expect(dependencies.authSigner.signCreateOrder).not.toHaveBeenCalled();
     expect(dependencies.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("clears a stale earlier reservation at execute and goes on to reserve instead of retiring the close", async () => {
+    const dependencies = deps();
+    Object.assign(dependencies.client, {
+      getAccount: vi.fn().mockResolvedValue({
+        code: 200,
+        accounts: [{ index: 42, positions: [{ ...longPosition, position: "1.0000" }] }],
+      }),
+      getMarkets: vi.fn().mockResolvedValue({ code: 200, order_books: [market] }),
+      getOrderBookOrders: vi.fn().mockResolvedValue({
+        code: 200, total_asks: 0, asks: [], total_bids: 1, bids: [bid],
+      }),
+      getAccountTrades: vi.fn().mockResolvedValue({ code: 200, trades: [] }),
+    });
+    // A prior action's stale reservation owns the slot until recovery releases it.
+    let released = false;
+    Object.assign(dependencies.nonceState, {
+      recordExecutionObserved: vi.fn(async () => (released ? { status: "observed" } : null)),
+    });
+    const recoverNonce = vi.fn(async () => { released = true; return {}; });
+    const closeIntent = intent({
+      actionType: "close_position",
+      marketIndex: 0,
+      providerOrderId: null,
+      requestedBaseAmountInteger: "10000",
+      requestedPriceInteger: "4950",
+      requestedSide: "sell",
+      reduceOnly: true,
+      providerSnapshotJson: {
+        position: {
+          marketIndex: 0, symbol: "ETH", sign: 1, side: "long", position: "1.0000",
+          averageEntryPrice: "45.00", positionValue: "50.000000", unrealizedPnl: "5.000000",
+          liquidationPrice: "30.00",
+        },
+        marketSizeDecimals: 4,
+        marketPriceDecimals: 2,
+        maxSlippageBps: 100,
+      },
+    });
+
+    await executeApprovedLighterClosePosition(closeIntent, { ...dependencies, recoverNonce }).catch(() => undefined);
+
+    expect(recoverNonce).toHaveBeenCalledWith({ environment: closeIntent.environment, accountIndex: closeIntent.accountIndex });
+    expect(dependencies.intents.abandonRevalidatedBeforeNonce).not.toHaveBeenCalled();
+    expect(dependencies.nonceState.reserveObservedWith).toHaveBeenCalled();
   });
   for (const kind of ["expiry", "cancellation"] as const) {
     it.each(["signing", "staging", "send-admission"] as const)(`close refuses ${kind} during %s`, async (phase) => {
