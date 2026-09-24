@@ -83,6 +83,51 @@ async function insertMessage(
 beforeEach(resetDb);
 
 describe("compacted transcript history", () => {
+  it("archives a Lighter setup result while retaining its resume marker", async () => {
+    const sessionId = await makeSession();
+    const resultMessageId = await insertMessage(sessionId, "tool", "Lighter setup complete", {
+      timestamp: "2026-04-17T00:00:01Z",
+      toolCallId: "lighter-setup-1",
+    });
+    const intentId = randomUUID();
+    await execute(
+      `INSERT INTO lighter_setup_interactions
+         (intent_id, session_id, tool_call_id, environment, status, result_message_id)
+       VALUES ($1, $2, $3, 'rhc', 'completed', $4)`,
+      [intentId, sessionId, "lighter-setup-1", resultMessageId],
+    );
+    await insertMessage(sessionId, "user", "Continue after setup", {
+      timestamp: "2026-04-17T00:00:02Z",
+    });
+
+    await archivePrefix(sessionId, resultMessageId, 1);
+
+    const interaction = await query<{ result_message_id: string }>(
+      "SELECT result_message_id FROM lighter_setup_interactions WHERE intent_id = $1",
+      [intentId],
+    );
+    expect(Number(interaction[0]?.result_message_id)).toBe(resultMessageId);
+    const live = await query<{ id: number }>(
+      "SELECT id FROM messages WHERE id = $1",
+      [resultMessageId],
+    );
+    expect(live).toHaveLength(0);
+    const archived = await query<{ id: number }>(
+      "SELECT id FROM messages_archive WHERE id = $1",
+      [resultMessageId],
+    );
+    expect(archived).toHaveLength(1);
+
+    const page = await listMessages(sessionId, null, 2);
+    expect(page.ok).toBe(true);
+    if (page.ok) {
+      expect(page.data.items.map((item) => item.content)).toEqual([
+        "Lighter setup complete",
+        "Continue after setup",
+      ]);
+    }
+  });
+
   it("pages from live messages into the archived prefix without skipping or repeating rows", async () => {
     const sessionId = await makeSession();
     const otherSessionId = await makeSession();
