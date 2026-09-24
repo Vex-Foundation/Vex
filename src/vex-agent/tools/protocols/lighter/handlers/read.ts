@@ -130,6 +130,23 @@ import { prepareLighterOrderCreateApproval } from "./write.js";
 // even if another wallet has the sole saved trading key. Trusted default
 // contexts retain the legacy saved-scope fallback. Any short-lived read-only
 // token is derived for that exact account, never for another saved scope.
+/**
+ * Outside a session nothing names the wallet, so a read that omits the account
+ * may use the only saved one, never whichever of several happens to list
+ * first. Several accounts refuse by name, as an order preview does.
+ */
+function resolveUnambiguousReadAccount(environment: LighterEnvironment): number | undefined {
+  const accounts = [...new Set(listLighterTradingCredentialScopes(environment).map((scope) => scope.accountIndex))];
+  if (accounts.length > 1) {
+    throw new VexError(
+      ErrorCodes.LIGHTER_INVALID_REQUEST,
+      `Multiple Lighter ${environment} trading accounts are configured (accounts ${accounts.join(", ")}); pass accountIndex to choose which one to read.`,
+      "Ask the user which Lighter account to read only because several are configured; do not ask them to choose an API-key index.",
+    );
+  }
+  return accounts[0] ?? resolveDefaultLighterTradingCredentialScope(environment)?.accountIndex;
+}
+
 async function resolveAuthenticatedAccountRead(
   environment: LighterEnvironment,
   requestedAccountIndex: number | undefined,
@@ -152,7 +169,7 @@ async function resolveAuthenticatedAccountRead(
   }
   const targetAccount =
     requestedAccountIndex
-    ?? resolveDefaultLighterTradingCredentialScope(environment)?.accountIndex;
+    ?? resolveUnambiguousReadAccount(environment);
   if (targetAccount === undefined) {
     return { accountIndex: requestedAccountIndex, privilegedAuth: undefined };
   }

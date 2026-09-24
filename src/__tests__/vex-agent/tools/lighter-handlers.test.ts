@@ -2621,6 +2621,31 @@ describe("Lighter agent read handlers", () => {
     },
   );
 
+  it.each(["lighter.openOrders", "lighter.orderHistory", "lighter.trades"])(
+    "%s outside a session refuses to guess between several saved accounts",
+    async (toolId) => {
+      // Two wallets, two accounts: a Studio or MCP read that names neither
+      // used to read whichever scope listed first.
+      const scopes = [
+        { environment: "rhc" as const, accountIndex: 31776, apiKeyIndex: 4 },
+        { environment: "rhc" as const, accountIndex: 31824, apiKeyIndex: 4 },
+      ];
+      configureLighterTradingCredentialScopeResolver({
+        findSavedScope: (environment, accountIndex) =>
+          scopes.find((scope) => scope.environment === environment && scope.accountIndex === accountIndex) ?? null,
+        findDefaultScope: (environment) => scopes.find((scope) => scope.environment === environment) ?? null,
+        listScopes: (environment) => scopes.filter((scope) => scope.environment === environment),
+      });
+
+      const output = await callFail(toolId, { environment: "rhc" });
+
+      expect(output).toContain("Multiple Lighter rhc trading accounts are configured (accounts 31776, 31824)");
+      expect(mocks.client.getAccountActiveOrders).not.toHaveBeenCalled();
+      expect(mocks.client.getAccountInactiveOrders).not.toHaveBeenCalled();
+      expect(mocks.client.getAccountTrades).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
     ["lighter.openOrders", "getAccountActiveOrders"],
     ["lighter.orderHistory", "getAccountInactiveOrders"],
