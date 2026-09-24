@@ -452,7 +452,12 @@ function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDec
               <span role="cell">{num(position.size)}</span>
               <span role="cell">{num(position.entryPrice)}</span>
               <span role="cell" title={live === null ? "From the last account snapshot" : "Live mark"}>{formatPrice(metrics.mark, live === null ? undefined : activePriceDecimals ?? undefined)}</span>
-              <span role="cell">{num(position.liquidationPrice)}</span>
+              <span role="cell" title={num(position.liquidationPrice)}>
+                {formatPrice(
+                  position.liquidationPrice === null ? null : Number(position.liquidationPrice),
+                  position.marketId === activeMarketId ? activePriceDecimals ?? undefined : undefined,
+                )}
+              </span>
               <span className="lit-order-cell" role="cell">
                 <b>{formatPrice(metrics.margin)}</b>
                 <small>of {num(position.value)}</small>

@@ -253,6 +253,24 @@ describe("TradingBottomPanel", () => {
     expect(screen.getByRole("row", { busy: true })).toBeTruthy();
   });
 
+  it("formats a long liquidation price for the table while retaining the exact value", () => {
+    const account: LighterTradingAccount = {
+      ...EMPTY_ACCOUNT,
+      positions: [{
+        marketId: 1, symbol: "ETH", side: "long", size: "0.0086", entryPrice: "2701.04",
+        value: "23.219914", unrealizedPnl: "-0.009030",
+        liquidationPrice: "1358.164250076146", initialMarginFraction: 5000,
+        marginMode: "cross", allocatedMargin: "11.62",
+      }],
+    };
+    mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: account } }));
+    renderPanel();
+
+    const liquidation = screen.getAllByRole("cell")[4];
+    expect(liquidation?.textContent?.trim()).toBe("1,358.2");
+    expect(liquidation?.getAttribute("title")).toBe("1,358.164250076146");
+  });
+
   it("dims only the cancelling order and prevents another cancel click", () => {
     const account: LighterTradingAccount = {
       ...EMPTY_ACCOUNT,
@@ -379,7 +397,7 @@ describe("TradingBottomPanel", () => {
 
     expect(screen.getByRole("tab", { name: /^Positions ?\(1\)$/ })).toBeTruthy();
     expect(screen.getByText("Long · 10x Cross")).toBeTruthy();
-    expect(screen.getByText("41,000")).toBeTruthy();
+    expect(screen.getByText("41,000.0")).toBeTruthy();
     expect(screen.getByText("Account #42 · " + formatRetrievedAt(EMPTY_ACCOUNT.retrievedAt))).toBeTruthy();
     // Live mark for the desk's market at its price decimals; margin and ROE
     // from the row's own terms.
