@@ -83,7 +83,6 @@
 }
 
 .lit-account-table { min-width: 920px; }
-.lit-positions { min-width: 1220px; }
 
 /* Positions: Market · Size · Entry · Mark · Liq. · Margin · uPnL (ROE) · TP / SL · actions */
 .lit-account-columns,
@@ -115,6 +114,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Keep position actions available when the dock is narrower than the table. */
+@container (max-width: 920px) {
+  .lit-positions .lit-account-columns { z-index: 3; }
+  .lit-positions .lit-account-columns > :last-child,
+  .lit-positions .lit-row-actions {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    background: var(--lit-panel);
+  }
 }
 
 /* Open orders: Market · Side · Price · Size · Filled · Time · actions */
