@@ -4,6 +4,7 @@ import {
   marginModeFromWire,
   positionInitialMarginFractionToProviderScale,
 } from "@tools/lighter/margin-fraction.js";
+import { LIGHTER_UNREAD_EXCHANGE_FEE_TICKS } from "@tools/lighter/order-margin-fit.js";
 import type {
   LighterAccount,
   LighterAccountAsset,
@@ -15,6 +16,7 @@ import type {
   LighterTradingAccount,
   LighterTradingAccountUnavailableReason,
   LighterTradingAsset,
+  LighterTradingExchangeFees,
   LighterTradingFill,
   LighterTradingFills,
   LighterTradingOpenOrder,
@@ -41,6 +43,21 @@ const UNSIGNED_DECIMAL_PATTERN = /^(?:0|[1-9]\d*)(?:\.\d+)?$/;
 export interface LighterTradingAccountClient {
   getAccount: LighterClient["getAccount"];
   getAccountActiveOrders: LighterClient["getAccountActiveOrders"];
+  /** The account's own exchange fee tier; without it the ticket assumes the ceiling. */
+  getAccountLimits?: LighterClient["getAccountLimits"];
+}
+
+/** Stands in for a tier that could not be read, above every tier Lighter publishes for Vex accounts. */
+const ASSUMED_CEILING_FEES: LighterTradingExchangeFees = {
+  makerTicks: LIGHTER_UNREAD_EXCHANGE_FEE_TICKS.maker,
+  takerTicks: LIGHTER_UNREAD_EXCHANGE_FEE_TICKS.taker,
+  source: "assumed_ceiling",
+};
+
+function feeTick(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 1_000_000
+    ? value
+    : null;
 }
 
 export interface LighterTradingFillsClient {
@@ -314,6 +331,7 @@ function unavailable(
     assets: [],
     positions: [],
     marginTerms: [],
+    exchangeFees: null,
     openOrders: [],
   };
 }
@@ -336,6 +354,8 @@ export interface LighterTradingAccountProjectionInput {
   readonly ordersNextCursor?: string;
   readonly openOrdersAvailable: boolean;
   readonly openOrdersUnavailableReason?: "no_read_auth" | "read_failed";
+  /** The account's own tier; absent or null when it could not be read. */
+  readonly exchangeFees?: LighterTradingExchangeFees | null;
   readonly symbolFor: (marketId: number) => string;
   readonly now: () => number;
 }
@@ -400,6 +420,7 @@ export function projectLighterTradingAccount(
     assets,
     positions,
     marginTerms,
+    exchangeFees: input.exchangeFees ?? ASSUMED_CEILING_FEES,
     openOrders,
   };
 }
@@ -452,6 +473,9 @@ export async function readLighterTradingAccount(
   let openOrdersAvailable = false;
   let openOrdersUnavailableReason: "no_read_auth" | "read_failed" = "no_read_auth";
   const auth = await resolveLighterReadOnlyAccountAuth(environment, accountIndex);
+  // Alongside the orders read, not after it: the tier is what the ticket sizes
+  // every order's fee against.
+  const exchangeFeesRead = auth === null ? Promise.resolve(null) : readExchangeFees(client, environment, accountIndex, auth);
   if (auth !== null) {
     try {
       const ordersResponse = await client.getAccountActiveOrders(
@@ -475,6 +499,9 @@ export async function readLighterTradingAccount(
     }
   }
 
+  const exchangeFees = await exchangeFeesRead;
+  throwIfAborted(signal);
+
   return projectLighterTradingAccount({
     environment,
     accountIndex,
@@ -483,9 +510,30 @@ export async function readLighterTradingAccount(
     ordersNextCursor,
     openOrdersAvailable,
     openOrdersUnavailableReason,
+    exchangeFees,
     symbolFor,
     now,
   });
+}
+
+/** The account's own exchange fee tier, or null when it cannot be read. Never throws. */
+async function readExchangeFees(
+  client: LighterTradingAccountClient,
+  environment: LighterEnvironment,
+  accountIndex: number,
+  auth: NonNullable<Awaited<ReturnType<typeof resolveLighterReadOnlyAccountAuth>>>,
+): Promise<LighterTradingExchangeFees | null> {
+  if (client.getAccountLimits === undefined) return null;
+  try {
+    const limits = await client.getAccountLimits(environment, { accountIndex }, auth);
+    const makerTicks = feeTick(limits.current_maker_fee_tick);
+    const takerTicks = feeTick(limits.current_taker_fee_tick);
+    if (limits.code !== 200 || makerTicks === null || takerTicks === null) return null;
+    return { makerTicks, takerTicks, source: "account" };
+  } catch {
+    log.warn("[lighter-trading] account fee tier read failed", { environment, accountIndex });
+    return null;
+  }
 }
 
 /**

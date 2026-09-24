@@ -590,6 +590,22 @@ const lighterTradingAssetSchema = z
   })
   .strict();
 
+/**
+ * The exchange fee THIS account pays, in Lighter fee ticks (hundredths of a
+ * basis point, so 350 is 0.035%). It can exceed the market's published fee: a
+ * Robinhood Chain Premium account pays 0.035% taker on markets whose
+ * `taker_fee` reads 0, and sizing on the market fee alone put every 100%
+ * ticket order past the account's margin. `assumed_ceiling` means the tier
+ * could not be read and a ceiling above every published tier stands in.
+ */
+const lighterTradingExchangeFeesSchema = z
+  .object({
+    makerTicks: z.number().int().min(0).max(1_000_000),
+    takerTicks: z.number().int().min(0).max(1_000_000),
+    source: z.enum(["account", "assumed_ceiling"]),
+  })
+  .strict();
+
 const lighterTradingAccountSummarySchema = z
   .object({
     collateral: decimalStringSchema.nullable(),
@@ -617,6 +633,8 @@ export const lighterTradingAccountSchema = z
     assets: z.array(lighterTradingAssetSchema).max(200),
     positions: z.array(lighterTradingPositionSchema).max(200),
     marginTerms: z.array(lighterTradingMarginTermSchema).max(200),
+    // Null exactly when `status` is "unavailable".
+    exchangeFees: lighterTradingExchangeFeesSchema.nullable(),
     openOrders: z.array(lighterTradingOpenOrderSchema).max(200),
   })
   .strict();
@@ -986,6 +1004,7 @@ export type LighterTradingFillsInput = z.infer<typeof lighterTradingFillsInputSc
 export type LighterTradingFill = z.infer<typeof lighterTradingFillSchema>;
 export type LighterTradingFills = z.infer<typeof lighterTradingFillsSchema>;
 export type LighterTradingAccount = z.infer<typeof lighterTradingAccountSchema>;
+export type LighterTradingExchangeFees = z.infer<typeof lighterTradingExchangeFeesSchema>;
 export type LighterTradingAccountUnavailableReason = z.infer<
   typeof lighterTradingAccountUnavailableReasonSchema
 >;

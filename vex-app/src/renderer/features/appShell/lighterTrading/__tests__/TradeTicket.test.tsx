@@ -372,6 +372,23 @@ describe("Light it up trade ticket", () => {
     expect(slider.value).toBe("0");
   });
 
+  it("sizes against the account's own fee tier and the mark, and shows the tier it charges", () => {
+    renderTicket({ exchangeFees: { makerTicks: 120, takerTicks: 350, source: "account" }, markPrice: 3_200 });
+
+    // 15.3424 without them; the 0.035% tier, the gap between the 3210.50 ask
+    // and the 3200 mark, and walking past the ask's 4 ETH all come out of it.
+    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("14.3169 ETH");
+    expect(screen.getByText("Fee (Taker)").getAttribute("title")).toBe("Taker 0.035% (account tier) + Vex 0.1%");
+  });
+
+  it("ignores a mark left over from the previously selected market", () => {
+    // A BTC mark still in the stream for the render after switching to ETH.
+    renderTicket({ exchangeFees: { makerTicks: 120, takerTicks: 350, source: "account" }, markPrice: 84_000 });
+
+    // Sized as if no mark were known, not collapsed to margin at 84,000.
+    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("15.2899 ETH");
+  });
+
   it("disables the size presets when the account balance is unknown", () => {
     renderTicket({ available: null });
 

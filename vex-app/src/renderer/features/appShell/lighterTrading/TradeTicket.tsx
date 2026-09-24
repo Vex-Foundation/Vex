@@ -3,6 +3,7 @@ import type {
   LighterDeskPrepareProgressEvent,
   LighterOnboardingChecklist,
   LighterTradingAccountUnavailableReason,
+  LighterTradingExchangeFees,
   LighterTradingMarket,
 } from "@shared/schemas/lighter-trading.js";
 import { VexMark } from "../../../components/common/VexMark.js";
@@ -62,6 +63,8 @@ export function TradeTicket({
   baseAvailable,
   equity,
   margin,
+  exchangeFees = null,
+  markPrice = null,
   settlementSymbol,
   accountGap = null,
   checklist = null,
@@ -91,6 +94,10 @@ export function TradeTicket({
   readonly equity: number | null;
   /** Margin terms for this market; null for spot or when Lighter reported none. */
   readonly margin: TicketMargin | null;
+  /** This account's exchange fee tier; null without an account. */
+  readonly exchangeFees?: LighterTradingExchangeFees | null;
+  /** The market's live mark price; null until the stream reports one. */
+  readonly markPrice?: number | null;
   readonly settlementSymbol: string;
   /** Why there is no account to trade from; the ticket offers setup instead of Long/Short. */
   readonly accountGap?: LighterTradingAccountUnavailableReason | null;
@@ -119,7 +126,9 @@ export function TradeTicket({
   readonly pendingApprovalCount?: number;
   readonly onReviewApprovals?: () => void;
 }): JSX.Element {
-  const form = useTradeTicketForm({ market, book, lastPrice, available, baseAvailable, equity, margin, dataFresh, prefill, pricePick });
+  const form = useTradeTicketForm({
+    market, book, lastPrice, available, baseAvailable, equity, margin, exchangeFees, markPrice, dataFresh, prefill, pricePick,
+  });
   const { mode, side, protective, triggerLimit, perp, symbols } = form;
   const availableForSide = market.marketType === "spot" && side === "sell" ? (baseAvailable ?? null) : available;
   const availableSymbol = market.marketType === "spot" && side === "sell" ? symbols.base : settlementSymbol;
@@ -609,7 +618,12 @@ export function TradeTicket({
  * whose provider fee is zero made Vex's own fee look like it did not exist.
  */
 function feeBreakdownTitle(fee: TradeTicketForm["feeRate"]): string {
-  const provider = `${fee.label} ${formatProviderPercent(fee.rate, fee.enabled)}`;
+  // The account's tier replaces the market's fee wherever it charges more.
+  const marketPercent = fee.enabled ? Number(fee.rate) : 0;
+  const tierPercent = fee.accountTicks === null ? 0 : fee.accountTicks / 10_000;
+  const provider = tierPercent > (Number.isFinite(marketPercent) ? marketPercent : 0)
+    ? `${fee.label} ${formatProviderPercent(String(tierPercent))} (${fee.accountAssumed ? "assumed tier" : "account tier"})`
+    : `${fee.label} ${formatProviderPercent(fee.rate, fee.enabled)}`;
   return fee.integrator === null
     ? provider
     : `${provider} + Vex ${formatProviderPercent(fee.integrator)}`;

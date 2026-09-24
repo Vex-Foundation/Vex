@@ -63,6 +63,7 @@ const EMPTY_ACCOUNT: LighterTradingAccount = {
   assets: [],
   positions: [],
   marginTerms: [],
+  exchangeFees: { makerTicks: 120, takerTicks: 350, source: "account" },
   openOrders: [],
 };
 

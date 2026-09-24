@@ -121,6 +121,8 @@ export function useLighterDesk() {
   }, [focusComposer, bookOpen]);
 
   const margin = market === null ? null : resolveTicketMargin(market, account?.marginTerms ?? null);
+  // The fee THIS account pays, which the ticket sizes every order against.
+  const exchangeFees = account !== null && account.status !== "unavailable" ? account.exchangeFees ?? null : null;
   const chartMarketId = market?.marketId ?? null;
   const chartLevels = useMemo(
     () => (chartMarketId === null || account === null ? [] : buildChartLevels(chartMarketId, account.positions, account.openOrders)),
@@ -427,6 +429,7 @@ export function useLighterDesk() {
     equity,
     settlementSymbol,
     margin,
+    exchangeFees,
     chartLevels,
     chartFills,
     approvals,

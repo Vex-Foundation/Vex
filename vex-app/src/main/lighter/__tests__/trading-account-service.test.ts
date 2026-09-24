@@ -572,6 +572,35 @@ describe("Lighter account read: why there is nothing to show", () => {
     expect(lighterTradingAccountSchema.safeParse(failed).success).toBe(true);
   });
 
+  it("carries the account's own fee tier, and a ceiling rather than the market fee when it cannot be read", async () => {
+    // Account 31824 paid a 0.035% Premium taker tier on markets whose
+    // published fee read 0; the ticket sized on the 0 and Lighter cancelled
+    // every 100% order.
+    reset();
+    secrets.vaultUnlocked.mockReturnValue(true);
+    secrets.listScopes.mockReturnValue([scope]);
+    secrets.readOnlyAuth.mockResolvedValue({ authorization: "token" });
+    client.getAccount.mockResolvedValue({ accounts: [{ account_index: 42, positions: [] }] });
+    client.getAccountActiveOrders.mockResolvedValue({ orders: [] });
+    const getAccountLimits = vi.fn().mockResolvedValue({
+      code: 200,
+      user_tier: "premium",
+      user_tier_name: "Premium",
+      current_maker_fee_tick: 120,
+      current_taker_fee_tick: 350,
+    });
+
+    const read = await readLighterTradingAccount("core", { ...client, getAccountLimits }, () => 1);
+    expect(read.exchangeFees).toEqual({ makerTicks: 120, takerTicks: 350, source: "account" });
+    expect(lighterTradingAccountSchema.safeParse(read).success).toBe(true);
+
+    getAccountLimits.mockRejectedValue(new Error("provider 503"));
+    const unread = await readLighterTradingAccount("core", { ...client, getAccountLimits }, () => 1);
+    expect(unread.status).toBe("ready");
+    expect(unread.exchangeFees?.source).toBe("assumed_ceiling");
+    expect(unread.exchangeFees?.takerTicks).toBeGreaterThan(350);
+  });
+
   it("selects only the session wallet's account when other accounts have saved keys", async () => {
     reset();
     secrets.listScopes.mockReturnValue([scope, { ...scope, accountIndex: 43 }]);

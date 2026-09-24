@@ -60,7 +60,7 @@ const OPEN_POSITION = { marketId: 7, symbol: "ETH", side: "long", size: "0.25" }
 function positionAccount(retrievedAt: number, positions: readonly LighterPositionRow[] = [OPEN_POSITION], openOrders: LighterTradingAccount["openOrders"] = []): LighterTradingAccount {
   return {
     environment: "rhc", retrievedAt, status: "ready", unavailableReason: null, accountIndex: 42,
-    summary: null, assets: [], positions: [...positions], marginTerms: [], openOrders,
+    summary: null, assets: [], positions: [...positions], marginTerms: [], exchangeFees: null, openOrders,
     openOrdersAvailable: true, openOrdersTruncated: false,
   };
 }

@@ -389,6 +389,8 @@ function DeskBody({ desk, theme }: {
                 prefill={desk.ticketPrefill}
                 pricePick={desk.pricePick}
                 margin={desk.margin}
+                exchangeFees={desk.exchangeFees}
+                markPrice={desk.publicMarketStream.stats?.markPrice ?? null}
                 onSend={desk.submitDraft}
                 onAsk={desk.askAboutDraft}
                 onConnect={desk.connectLighter}

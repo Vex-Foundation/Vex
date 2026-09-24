@@ -3,9 +3,12 @@ import type { LighterTradingAccount, LighterTradingMarket } from "../../../../..
 import { bookInside, groupTickLabel, groupedLevels } from "../book-model.js";
 import { addUnsignedDecimals, subtractUnsignedDecimals, toDecimal, trimDecimal } from "../decimal.js";
 import {
+  averageFillPrice,
   estimatedLiquidationPrice,
+  exchangeFeeFraction,
   leverageLabel,
   marginCost,
+  marginFitCostPerUnit,
   maxBaseSize,
   protectionPrefill,
   resolveTicketMargin,
@@ -186,5 +189,49 @@ describe("protection follow-up prefill", () => {
       { ...entry, side: "sell", protection: { stopLoss: null, takeProfit: { triggerPrice: "3000", price: "2970" } } },
       3,
     )).toEqual({ key: 3, mode: "take-profit", side: "buy", baseAmount: "0.5", reduceOnly: true, triggerPrice: "3000", price: "2970" });
+  });
+});
+
+describe("Lighter's post-trade margin check", () => {
+  // Account 31824's 06:48 ETH buy on 2026-09-24: 8.792317 USDG available,
+  // 4.77% initial margin, a 0.035% Premium tier on a market whose fee reads 0,
+  // Vex's 0.1%, bound 2704.61, ask 2691.15, mark 2690.88. The ticket offered
+  // 0.0667 and Lighter cancelled it with no fill.
+  const eth = {
+    side: "buy" as const,
+    price: 2704.61,
+    fill: 2691.15,
+    matchesNow: true,
+    markPrice: 2690.88,
+    initialMarginFraction: 477,
+    feeFraction: exchangeFeeFraction("0.0000", true, 350) + 0.001,
+  };
+
+  it("charges the account's tier where the market's published fee reads 0", () => {
+    expect(exchangeFeeFraction("0.0000", true, 350)).toBeCloseTo(0.00035, 10);
+    expect(exchangeFeeFraction("0.0500", true, 350)).toBeCloseTo(0.0005, 10);
+    expect(exchangeFeeFraction("0.0500", false, null)).toBe(0);
+  });
+
+  it("sizes the 06:48 order below both the refused 0.0667 and the main-process limit of 0.0664", () => {
+    const size = 8.792317 / marginFitCostPerUnit(eth);
+    expect(Math.floor(size * 10_000) / 10_000).toBe(0.0661);
+  });
+
+  it("books the fill-to-mark gap only for an order that matches now", () => {
+    const resting = marginFitCostPerUnit({ ...eth, matchesNow: false });
+    expect(resting).toBeCloseTo(2704.61 * (0.0477 + eth.feeFraction), 8);
+    expect(marginFitCostPerUnit(eth) - marginFitCostPerUnit({ ...eth, markPrice: 2691.15 })).toBeCloseTo(0.27, 8);
+  });
+
+  it("margins a short at the mark, never at its own floor", () => {
+    const short = marginFitCostPerUnit({ ...eth, side: "sell", price: 2678.95, fill: 2690.61, markPrice: 2690.88 });
+    expect(short).toBeCloseTo(2690.88 * 0.0477 + 2690.61 * eth.feeFraction + 0.27, 8);
+  });
+
+  it("walks the book and fills what the visible depth cannot at the bound", () => {
+    const asks = [{ price: "101", size: "10" }, { price: "100", size: "10" }, { price: "104", size: "5" }];
+    expect(averageFillPrice(asks, 15, 102, "buy")).toBeCloseTo((10 * 100 + 5 * 101) / 15, 10);
+    expect(averageFillPrice(asks, 25, 102, "buy")).toBeCloseTo((10 * 100 + 10 * 101 + 5 * 102) / 25, 10);
   });
 });

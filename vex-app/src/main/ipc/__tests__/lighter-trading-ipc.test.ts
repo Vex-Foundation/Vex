@@ -126,6 +126,7 @@ const account = {
   assets: [],
   positions: [],
   marginTerms: [],
+  exchangeFees: { makerTicks: 120, takerTicks: 350, source: "account" },
   openOrders: [],
 };
 
