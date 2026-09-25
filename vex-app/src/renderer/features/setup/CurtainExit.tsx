@@ -43,18 +43,30 @@ export function CurtainExit({
   const reduced = useReducedMotion() === true;
   const [revealing, setRevealing] = useState(false);
   const coveredRef = useRef(false);
+  const onCoveredRef = useRef(onCovered);
+  const onDoneRef = useRef(onDone);
+
+  // Flipping the view rerenders the parent with new callback identities.
+  // Updating these refs must not cancel the frame that removes the curtain.
+  useEffect(() => {
+    onCoveredRef.current = onCovered;
+    onDoneRef.current = onDone;
+  }, [onCovered, onDone]);
 
   // Reduced motion = instant swap: cover, flip, disappear. Driven by an
   // effect (not animation callbacks — a no-op animation may never fire
   // its completion), with one frame between flip and unmount so the
-  // target view paints beneath the plate first.
+  // target view paints beneath the plate first. Effect replay may cancel the
+  // first frame, so schedule another without repeating the view flip.
   useEffect(() => {
-    if (!reduced || coveredRef.current) return;
-    coveredRef.current = true;
-    onCovered();
-    const raf = requestAnimationFrame(() => onDone());
+    if (!reduced) return;
+    if (!coveredRef.current) {
+      coveredRef.current = true;
+      onCoveredRef.current();
+    }
+    const raf = requestAnimationFrame(() => onDoneRef.current());
     return () => cancelAnimationFrame(raf);
-  }, [reduced, onCovered, onDone]);
+  }, [reduced]);
 
   const handleCovered = (): void => {
     if (coveredRef.current) return;
