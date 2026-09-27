@@ -1,11 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { runStreamingInference } from "@vex-agent/inference/stream-consumer.js";
+import {
+  createInferenceAttemptTimer,
+  type InferenceAttemptTimer,
+} from "@vex-agent/inference/attempt-timing.js";
 import { hasActionableInferenceResponse } from "@vex-agent/inference/response-validation.js";
 import { OpenRouterEmptyStreamError } from "@vex-agent/inference/openrouter/non-empty-stream.js";
 import type {
   InferenceConfig,
   InferenceProvider,
+  InferenceRequestContext,
   InferenceResponse,
   ProviderMessage,
   StreamChunk,
@@ -538,5 +543,238 @@ describe("runStreamingInference — abort (9-5a)", () => {
       {},
     );
     expect(withoutUsage.usageObserved).toBe(false);
+  });
+});
+
+describe("runStreamingInference — attempt timing", () => {
+  const FALLBACK: InferenceResponse = {
+    content: "buffered",
+    toolCalls: null,
+    usage: USAGE,
+    reasoning: null,
+  };
+  const CONTEXT: InferenceRequestContext = { sessionId: "session-a", missionRunId: null };
+  type ChatCompletionMock = NonNullable<Parameters<typeof providerFrom>[1]>;
+
+  /** A clock the stream advances before each chunk, so every timing is exact. */
+  function timedStream(steps: Array<[advanceMs: number, chunk: StreamChunk]>) {
+    let t = 0;
+    const now = () => t;
+    const stream = async function* (): AsyncGenerator<StreamChunk> {
+      for (const [advance, chunk] of steps) {
+        t += advance;
+        yield chunk;
+      }
+    };
+    return { now, stream };
+  }
+
+  it("records first-chunk, first-reasoning, first-semantic, reasoning-only and max gap", async () => {
+    const clock = timedStream([
+      [100, { type: "reasoning", reasoningText: "think" }],
+      [40, { type: "reasoning", reasoningText: "more" }],
+      [600, { type: "content", text: "answer" }],
+      [20, { type: "usage", usage: USAGE }],
+      [5, { type: "done" }],
+    ]);
+    const timing = createInferenceAttemptTimer(clock.now);
+
+    const res = await runStreamingInference(providerFrom(clock.stream), MSGS, TOOLS, CFG, { timing });
+    expect(res.response.content).toBe("answer");
+    expect(timing.snapshot()).toEqual({
+      firstChunkMs: 100,
+      firstReasoningMs: 100,
+      firstSemanticMs: 740,
+      reasoningOnlyMs: 640,
+      maxInterChunkGapMs: 600,
+      totalMs: 765,
+      chunkCount: 5,
+      bufferedFallback: false,
+      fallbackReason: null,
+      capacityRetries: 0,
+      capacityRetryClasses: [],
+      toolCallCount: 0,
+      validToolCallCount: 0,
+    });
+  });
+
+  it("counts accumulated tool calls against the valid ones that assembled", async () => {
+    const timing = createInferenceAttemptTimer();
+    const res = await runStreamingInference(
+      providerFrom(
+        fromChunks([
+          { type: "tool_call_delta", toolCallIndex: 0, toolCallId: "a", toolCallName: "good", toolCallArgsDelta: "{}" },
+          { type: "tool_call_delta", toolCallIndex: 1, toolCallId: "b", toolCallName: "bad", toolCallArgsDelta: "{not json" },
+          { type: "tool_call_delta", toolCallIndex: 2, toolCallId: "c", toolCallName: "also_good", toolCallArgsDelta: '{"x":1}' },
+          { type: "done" },
+        ]),
+      ),
+      MSGS,
+      TOOLS,
+      CFG,
+      { timing },
+    );
+    expect(res.response.toolCalls).toHaveLength(2);
+    expect(timing.snapshot()).toMatchObject({ toolCallCount: 3, validToolCallCount: 2 });
+  });
+
+  it.each([
+    [
+      "no_stream_method",
+      (chatCompletion: ChatCompletionMock) =>
+        ({ id: "fake", chatCompletion }) as unknown as InferenceProvider,
+    ],
+    [
+      "not_async_iterable",
+      (chatCompletion: ChatCompletionMock) =>
+        ({ id: "fake", chatCompletionStream: () => ({}), chatCompletion }) as unknown as InferenceProvider,
+    ],
+    [
+      "setup_threw",
+      (chatCompletion: ChatCompletionMock) =>
+        ({
+          id: "fake",
+          chatCompletionStream: () => {
+            throw new Error("sync setup failure");
+          },
+          chatCompletion,
+        }) as unknown as InferenceProvider,
+    ],
+    [
+      "threw_before_first_chunk",
+      (chatCompletion: ChatCompletionMock) =>
+        providerFrom(async function* (): AsyncGenerator<StreamChunk> {
+          throw new Error("setup failed");
+        }, chatCompletion),
+    ],
+  ])("records the %s buffered fallback", async (reason, makeProvider) => {
+    const chatCompletion = vi.fn().mockResolvedValue(FALLBACK);
+    const timing = createInferenceAttemptTimer();
+    const res = await runStreamingInference(makeProvider(chatCompletion), MSGS, TOOLS, CFG, { timing });
+    expect(res.response).toBe(FALLBACK);
+    expect(timing.snapshot()).toMatchObject({ bufferedFallback: true, fallbackReason: reason });
+  });
+
+  it("forwards capacity failures from BOTH the stream and the buffered fallback", async () => {
+    const timing = createInferenceAttemptTimer();
+    const chatCompletion = vi.fn(
+      async (_m: unknown, _t: unknown, _c: unknown, context?: InferenceRequestContext) => {
+        context?.onCapacityFailure?.("buffered_class");
+        return FALLBACK;
+      },
+    );
+    const provider = {
+      id: "fake",
+      chatCompletionStream: async function* (
+        _m: unknown,
+        _t: unknown,
+        _c: unknown,
+        _s: unknown,
+        context?: InferenceRequestContext,
+      ): AsyncGenerator<StreamChunk> {
+        context?.onCapacityFailure?.("stream_class");
+        throw new Error("exhausted before first chunk");
+      },
+      chatCompletion,
+    } as unknown as InferenceProvider;
+
+    await runStreamingInference(provider, MSGS, TOOLS, CFG, { timing, context: CONTEXT });
+    // Routing identity is unchanged; only the observer is added.
+    expect(chatCompletion.mock.calls[0]![3]).toMatchObject(CONTEXT);
+    expect(timing.snapshot()).toMatchObject({
+      capacityRetries: 2,
+      capacityRetryClasses: ["stream_class", "buffered_class"],
+      fallbackReason: "threw_before_first_chunk",
+    });
+  });
+
+  it("a throwing timer never affects the result, the fallback, or error propagation", async () => {
+    const boom = () => {
+      throw new Error("boom");
+    };
+    const throwing: InferenceAttemptTimer = {
+      markRequestStart: boom,
+      markChunk: boom,
+      markBufferedFallback: boom,
+      markCapacityFailure: boom,
+      markToolCalls: boom,
+      snapshot: boom,
+    };
+    const chunks: StreamChunk[] = [
+      { type: "reasoning", reasoningText: "r" },
+      { type: "content", text: "hi" },
+      { type: "tool_call_delta", toolCallIndex: 0, toolCallId: "a", toolCallName: "t", toolCallArgsDelta: "{}" },
+      { type: "usage", usage: USAGE },
+      { type: "done" },
+    ];
+    const plain = await runStreamingInference(providerFrom(fromChunks(chunks)), MSGS, TOOLS, CFG);
+    const observed = await runStreamingInference(providerFrom(fromChunks(chunks)), MSGS, TOOLS, CFG, {
+      timing: throwing,
+    });
+    expect(observed).toEqual(plain);
+
+    // The fallback still happens, and the capacity hook it forwards is safe too.
+    const chatCompletion = vi.fn(
+      async (_m: unknown, _t: unknown, _c: unknown, context?: InferenceRequestContext) => {
+        context?.onCapacityFailure?.("x");
+        return FALLBACK;
+      },
+    );
+    const fallback = await runStreamingInference(
+      { id: "fake", chatCompletion } as unknown as InferenceProvider,
+      MSGS,
+      TOOLS,
+      CFG,
+      { timing: throwing, context: CONTEXT },
+    );
+    expect(fallback.response).toBe(FALLBACK);
+
+    // A provider error still propagates unchanged.
+    await expect(
+      runStreamingInference(
+        providerFrom(
+          fromChunks([
+            { type: "content", text: "x" },
+            { type: "error", errorMessage: "upstream failed", errorCode: 502 },
+          ]),
+        ),
+        MSGS,
+        TOOLS,
+        CFG,
+        { timing: throwing },
+      ),
+    ).rejects.toThrow("upstream failed");
+  });
+
+  it("without a timer the context is forwarded by identity and the result is unchanged", async () => {
+    const chunks: StreamChunk[] = [
+      { type: "content", text: "a" },
+      { type: "usage", usage: USAGE },
+      { type: "done", finishReason: "stop" },
+    ];
+    const seenContexts: Array<InferenceRequestContext | undefined> = [];
+    const provider = {
+      id: "fake",
+      chatCompletionStream: (
+        _m: unknown,
+        _t: unknown,
+        _c: unknown,
+        _s: unknown,
+        context?: InferenceRequestContext,
+      ) => {
+        seenContexts.push(context);
+        return fromChunks(chunks)();
+      },
+      chatCompletion: vi.fn(),
+    } as unknown as InferenceProvider;
+
+    const plain = await runStreamingInference(provider, MSGS, TOOLS, CFG, { context: CONTEXT });
+    const timed = await runStreamingInference(provider, MSGS, TOOLS, CFG, {
+      context: CONTEXT,
+      timing: createInferenceAttemptTimer(),
+    });
+    expect(seenContexts[0]).toBe(CONTEXT);
+    expect(seenContexts[1]).not.toBe(CONTEXT);
+    expect(timed).toEqual(plain);
   });
 });

@@ -35,6 +35,7 @@ import type {
 } from "./types.js";
 import logger from "@utils/logger.js";
 import { attachErrorType, attachStatus, scrubMessage } from "./openrouter/errors.js";
+import type { InferenceAttemptTimer } from "./attempt-timing.js";
 
 const ZERO_USAGE: InferenceUsage = {
   promptTokens: 0,
@@ -72,6 +73,14 @@ export interface RunStreamingInferenceOptions {
    * inference: it is recorded per request in `usage_log.serving_provider`.
    */
   readonly context?: InferenceRequestContext;
+  /**
+   * Runtime-measurement observer (Kairos Phase 1). Fed request start, every
+   * chunk's TYPE, the buffered-fallback reason, capacity failures absorbed by
+   * the endpoint failover, and tool-call counts. Observation only: a throwing
+   * timer never affects the result, the fallback choice or error propagation,
+   * and leaving it out changes nothing.
+   */
+  readonly timing?: InferenceAttemptTimer;
 }
 
 interface ToolCallAccumulator {
@@ -157,6 +166,41 @@ function safeOnDelta(
 }
 
 /**
+ * Invoke one timer mark, swallowing anything it throws — the `safeOnDelta`
+ * contract applied to the measurement observer.
+ */
+function safeTiming(
+  timing: InferenceAttemptTimer | undefined,
+  mark: (timer: InferenceAttemptTimer) => void,
+): void {
+  if (!timing) return;
+  try {
+    mark(timing);
+  } catch {
+    // Measurement must never affect inference.
+  }
+}
+
+/**
+ * The request context with the timer's capacity-failure hook added, so the
+ * endpoint failover reports each capacity failure it absorbs. Without a timer
+ * (or without a context — there is no session to attribute a retry to, and
+ * inventing one would change sticky routing) the context passes through as-is.
+ */
+function withCapacityHook(
+  context: InferenceRequestContext | undefined,
+  timing: InferenceAttemptTimer | undefined,
+): InferenceRequestContext | undefined {
+  if (!timing || context === undefined) return context;
+  return {
+    ...context,
+    onCapacityFailure: (reasonClass) => {
+      safeTiming(timing, (t) => t.markCapacityFailure(reasonClass));
+    },
+  };
+}
+
+/**
  * Wrap a buffered fallback completion in the streaming result shape.
  *
  * The turn's `signal` is forwarded: a fallback is still the same turn, so a
@@ -195,7 +239,9 @@ export async function runStreamingInference(
   config: InferenceConfig,
   options: RunStreamingInferenceOptions = {},
 ): Promise<StreamingInferenceResult> {
-  const { onDelta, signal, context } = options;
+  const { onDelta, signal, timing } = options;
+  safeTiming(timing, (t) => t.markRequestStart());
+  const context = withCapacityHook(options.context, timing);
 
   // Pre-aborted → no inference at all; empty partial, never a fallback.
   if (signal?.aborted) {
@@ -210,6 +256,7 @@ export async function runStreamingInference(
       reason: "no_stream_method",
       provider: provider.id,
     });
+    safeTiming(timing, (t) => t.markBufferedFallback("no_stream_method"));
     return bufferedFallback(provider, messages, tools, config, context, signal);
   }
 
@@ -224,6 +271,7 @@ export async function runStreamingInference(
         reason: "not_async_iterable",
         provider: provider.id,
       });
+      safeTiming(timing, (t) => t.markBufferedFallback("not_async_iterable"));
       return bufferedFallback(provider, messages, tools, config, context, signal);
     }
     stream = candidate;
@@ -236,6 +284,7 @@ export async function runStreamingInference(
       provider: provider.id,
       error: err instanceof Error ? err.message : String(err),
     });
+    safeTiming(timing, (t) => t.markBufferedFallback("setup_threw"));
     return bufferedFallback(provider, messages, tools, config, context, signal);
   }
 
@@ -262,6 +311,9 @@ export async function runStreamingInference(
 
   try {
     for await (const chunk of stream) {
+      // Arrival time, before the abort check: a chunk that lands after Stop
+      // still arrived, and the gap leading up to it is real latency.
+      safeTiming(timing, (t) => t.markChunk(chunk.type));
       // Check BEFORE processing so the abort is captured the moment it is
       // observed (race-free: the caller acts on `aborted`, not a later
       // signal read). An in-flight chunk at abort time is dropped.
@@ -345,6 +397,7 @@ export async function runStreamingInference(
         provider: provider.id,
         error: err instanceof Error ? err.message : String(err),
       });
+      safeTiming(timing, (t) => t.markBufferedFallback("threw_before_first_chunk"));
       return bufferedFallback(provider, messages, tools, config, context, signal);
     } else {
       throw err;
@@ -354,6 +407,7 @@ export async function runStreamingInference(
   const resolvedUsage = usage ?? ZERO_USAGE;
   const reasoning = reasoningSeen ? reasoningBuffer : null;
   const toolCalls = assembleToolCalls(toolCallAccumulator);
+  safeTiming(timing, (t) => t.markToolCalls(toolCallAccumulator.size, toolCalls.length));
 
   const response: InferenceResponse =
     toolCalls.length > 0
