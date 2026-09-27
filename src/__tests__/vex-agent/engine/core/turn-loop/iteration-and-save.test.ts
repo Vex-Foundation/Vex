@@ -699,6 +699,201 @@ describe("turn-loop", () => {
     });
   });
 
+  // ── Incomplete tool batches (Kairos R-1 / R-8) ──────────────
+  //
+  // A response carrying ANY tool call that could not be assembled - cut off by
+  // the output limit or simply malformed - is refused whole: none of its calls
+  // is dispatched, not even the valid ones, and no assistant tool-call row is
+  // written. In a financial agent a surviving call can be a fund-moving
+  // prepare from a plan the model never finished writing.
+  describe("a response with a truncated or malformed tool call dispatches nothing", () => {
+    // Argument text the logs must never carry.
+    const SECRET_ARGS = '{"to":"0xfeedfacecafe","amountRaw":"424242';
+
+    const validCall = (id: string): StreamChunk => ({
+      type: "tool_call_delta",
+      toolCallIndex: 0,
+      toolCallId: id,
+      toolCallName: "web_research",
+      toolCallArgsDelta: '{"query":"0xfeedfacecafe"}',
+    });
+    const truncatedCall: StreamChunk = {
+      type: "tool_call_delta",
+      toolCallIndex: 1,
+      toolCallId: "call-cut",
+      toolCallName: "kyberswap_swap",
+      toolCallArgsDelta: SECRET_ARGS,
+    };
+
+    function warnCalls(event: string): unknown[] {
+      return mockLoggerWarn.mock.calls.filter((c) => c[0] === event).map((c) => c[1]);
+    }
+
+    async function runRounds(rounds: ReadonlyArray<readonly StreamChunk[]>) {
+      let streamCalls = 0;
+      const provider = makeTypedProvider({
+        streamRounds: rounds,
+        onStream: () => { streamCalls += 1; },
+      });
+      const result = await runTurnLoop(
+        makeContext(), [], null, 0, provider, makeTypedConfig(), [],
+        { ...defaultLoopConfig, maxIterations: 50 },
+      );
+      return { result, streamCalls: () => streamCalls };
+    }
+
+    it("valid + truncated (length): no dispatch, no persisted tool-call row, counted as a stall", async () => {
+      const { result, streamCalls } = await runRounds([[
+        validCall("call-ok"),
+        truncatedCall,
+        { type: "done", finishReason: "length" },
+      ]]);
+
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      expect(mockAddMessage).not.toHaveBeenCalled();
+      expect(result.toolCallsMade).toBe(0);
+      // Three incomplete rounds in a row end the turn with the existing stop.
+      expect(result.stopReason).toBe("no_progress");
+      expect(streamCalls()).toBe(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS);
+
+      const logs = warnCalls("engine.turn.incomplete_inference");
+      expect(logs).toHaveLength(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS);
+      expect(logs[0]).toMatchObject({
+        classification: "incomplete_tool_batch",
+        truncated: true,
+        finishReason: "length",
+        validToolCalls: 1,
+        malformedToolCalls: 1,
+        iteration: 0,
+        consecutiveUnproductiveRounds: 1,
+      });
+      expect(warnCalls("engine.turn.no_progress_stop")[0]).toMatchObject({
+        lastUnproductiveKind: "incomplete_tool_batch",
+      });
+    });
+
+    it.each(["tool_calls", "stop"])(
+      "valid + malformed (finish %s): same refusal, classified malformed rather than truncated",
+      async (finishReason) => {
+        const { result } = await runRounds([[
+          validCall("call-ok"),
+          { ...truncatedCall, toolCallArgsDelta: "not json" },
+          { type: "done", finishReason },
+        ]]);
+
+        expect(mockDispatchTool).not.toHaveBeenCalled();
+        expect(mockAddMessage).not.toHaveBeenCalled();
+        expect(result.stopReason).toBe("no_progress");
+        expect(warnCalls("engine.turn.incomplete_inference")[0]).toMatchObject({
+          classification: "incomplete_tool_batch",
+          truncated: false,
+          finishReason,
+          validToolCalls: 1,
+          malformedToolCalls: 1,
+        });
+      },
+    );
+
+    it("all calls truncated with length: incomplete (truncated), not reasoning_exhausted", async () => {
+      await runRounds([[
+        { type: "reasoning", reasoningText: "planning" },
+        { ...truncatedCall, toolCallIndex: 0 },
+        { type: "done", finishReason: "length" },
+      ]]);
+
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      expect(warnCalls("engine.turn.incomplete_inference")[0]).toMatchObject({
+        classification: "incomplete_tool_batch",
+        truncated: true,
+        validToolCalls: 0,
+        malformedToolCalls: 1,
+      });
+      expect(warnCalls("engine.turn.unproductive_round")).toHaveLength(0);
+    });
+
+    it("length with no content and no calls is reasoning_exhausted, counted and logged as such", async () => {
+      const { result } = await runRounds([[
+        { type: "reasoning", reasoningText: "thinking until the limit" },
+        { type: "done", finishReason: "length" },
+      ]]);
+
+      expect(result.stopReason).toBe("no_progress");
+      const logs = warnCalls("engine.turn.unproductive_round");
+      expect(logs).toHaveLength(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS);
+      expect(logs[0]).toMatchObject({
+        classification: "reasoning_exhausted",
+        finishReason: "length",
+        reasoningOnly: true,
+      });
+      expect(warnCalls("engine.turn.incomplete_inference")).toHaveLength(0);
+    });
+
+    it("an empty stop round keeps the blank classification", async () => {
+      await runRounds([[{ type: "done", finishReason: "stop" }]]);
+      expect(warnCalls("engine.turn.unproductive_round")[0]).toMatchObject({
+        classification: "blank",
+      });
+    });
+
+    it("mixed classes still add up to one stall streak", async () => {
+      const { result, streamCalls } = await runRounds([
+        [validCall("call-ok"), truncatedCall, { type: "done", finishReason: "length" }],
+        [{ type: "reasoning", reasoningText: "x" }, { type: "done", finishReason: "length" }],
+        [{ type: "done", finishReason: "stop" }],
+        [{ type: "content", text: "unreachable" }, { type: "done", finishReason: "stop" }],
+      ]);
+      expect(result.stopReason).toBe("no_progress");
+      expect(streamCalls()).toBe(3);
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+    });
+
+    it("the model can still recover on the next round, and only that round is persisted", async () => {
+      const { result } = await runRounds([
+        [validCall("call-ok"), truncatedCall, { type: "done", finishReason: "length" }],
+        [{ type: "content", text: "Answered." }, { type: "done", finishReason: "stop" }],
+      ]);
+      expect(result.stopReason).toBe(null);
+      expect(result.text).toBe("Answered.");
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      // Exactly one row: the text answer. The refused batch left no trace.
+      expect(mockAddMessage).toHaveBeenCalledTimes(1);
+      expect(mockAddMessage.mock.calls[0][1]).toMatchObject({ role: "assistant", content: "Answered." });
+      expect(mockAddMessage.mock.calls[0][1].toolCalls).toBeUndefined();
+    });
+
+    it("a fully valid batch is dispatched and persisted exactly as before", async () => {
+      mockDispatchTool.mockResolvedValue({ success: true, output: '{"ok":true}' });
+      const { result } = await runRounds([
+        [
+          validCall("call-a"),
+          { ...validCall("call-b"), toolCallIndex: 1 },
+          { type: "done", finishReason: "tool_calls" },
+        ],
+        [{ type: "content", text: "Done." }, { type: "done", finishReason: "stop" }],
+      ]);
+
+      expect(result.stopReason).toBe(null);
+      expect(result.toolCallsMade).toBe(2);
+      expect(mockDispatchTool).toHaveBeenCalledTimes(2);
+      const first = mockAddMessage.mock.calls[0][1];
+      expect(first.role).toBe("assistant");
+      expect(first.toolCalls).toHaveLength(2);
+      expect(warnCalls("engine.turn.incomplete_inference")).toHaveLength(0);
+      expect(warnCalls("engine.turn.unproductive_round")).toHaveLength(0);
+    });
+
+    it("never logs tool-call argument text", async () => {
+      await runRounds([[
+        validCall("call-ok"),
+        truncatedCall,
+        { type: "done", finishReason: "length" },
+      ]]);
+      const everything = JSON.stringify(mockLoggerWarn.mock.calls);
+      expect(everything).not.toContain("0xfeedfacecafe");
+      expect(everything).not.toContain("424242");
+    });
+  });
+
   // ── Deferred save ──────────────────────────────────────────
 
   describe("deferred save", () => {
