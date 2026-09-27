@@ -3,8 +3,21 @@ import { describe, expect, it } from "vitest";
 import {
   classifyInferenceError,
   createInferenceAttemptTimer,
+  isInferenceTimeout,
 } from "@vex-agent/inference/attempt-timing.js";
-import { attachErrorType, attachStatus } from "@vex-agent/inference/openrouter/errors.js";
+import {
+  attachCauseCode,
+  attachErrorType,
+  attachStatus,
+  normalizeOpenRouterError,
+} from "@vex-agent/inference/openrouter/errors.js";
+
+/** An unnormalized SDK error: only its class name identifies it. */
+function sdkError(name: string, message: string, cause?: unknown): Error {
+  const err = new Error(message, cause === undefined ? undefined : { cause });
+  err.name = name;
+  return err;
+}
 
 function fakeClock(start = 1_000) {
   let t = start;
@@ -156,9 +169,64 @@ describe("classifyInferenceError", () => {
     expect(out).toBe("unknown");
   });
 
+  it("uses the SDK class a normalized error carries in place of the generic name", () => {
+    const normalized = normalizeOpenRouterError(
+      sdkError("RequestTimeoutError", SECRET),
+      "streaming chat completion",
+    );
+    expect(normalized.name).toBe("Error");
+    const out = classifyInferenceError(normalized);
+    expect(out).toBe("RequestTimeoutError");
+    expect(out).not.toContain("sk-or");
+  });
+
   it("non-objects are unknown", () => {
     expect(classifyInferenceError(SECRET)).toBe("unknown");
     expect(classifyInferenceError(null)).toBe("unknown");
     expect(classifyInferenceError(undefined)).toBe("unknown");
+  });
+});
+
+describe("isInferenceTimeout", () => {
+  const SECRET = "sk-or-v1-deadbeef timed out talking to https://example.com";
+
+  it("matches the AbortSignal.timeout deadline", async () => {
+    const signal = AbortSignal.timeout(1);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(signal.reason).toBeInstanceOf(DOMException);
+    expect(isInferenceTimeout(signal.reason)).toBe(true);
+  });
+
+  it("matches the SDK's request timeout, raw and normalized", () => {
+    const raw = sdkError("RequestTimeoutError", SECRET);
+    expect(isInferenceTimeout(raw)).toBe(true);
+    expect(isInferenceTimeout(normalizeOpenRouterError(raw, "chat completion"))).toBe(true);
+  });
+
+  it("matches upstream 408 and 524 timeout responses once normalized", () => {
+    for (const name of ["RequestTimeoutResponseError", "EdgeNetworkTimeoutResponseError"]) {
+      expect(isInferenceTimeout(normalizeOpenRouterError(sdkError(name, SECRET), "x"))).toBe(true);
+    }
+  });
+
+  it("matches a transport timeout cause code, own or one level down", () => {
+    expect(isInferenceTimeout(attachCauseCode(new Error(SECRET), "UND_ERR_HEADERS_TIMEOUT")))
+      .toBe(true);
+    expect(isInferenceTimeout(new Error(SECRET, { cause: { code: "ETIMEDOUT" } }))).toBe(true);
+  });
+
+  it("never matches a caller abort", () => {
+    const ctrl = new AbortController();
+    ctrl.abort();
+    expect(isInferenceTimeout(ctrl.signal.reason)).toBe(false);
+    expect(isInferenceTimeout(sdkError("RequestAbortedError", SECRET))).toBe(false);
+  });
+
+  it("never matches ordinary failures or message text", () => {
+    expect(isInferenceTimeout(new Error("TimeoutError: request timed out"))).toBe(false);
+    expect(isInferenceTimeout(Object.assign(new Error(SECRET), { status: 502 }))).toBe(false);
+    expect(isInferenceTimeout(sdkError("ServiceUnavailableResponseError", SECRET))).toBe(false);
+    expect(isInferenceTimeout(null)).toBe(false);
+    expect(isInferenceTimeout("TimeoutError")).toBe(false);
   });
 });

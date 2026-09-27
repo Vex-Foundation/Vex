@@ -19,9 +19,11 @@ export interface InferenceAttemptRecord {
   iteration: number;
   streamId: string | null;
   startedAt: Date;
-  outcome: "completed" | "aborted" | "error";
+  outcome: "completed" | "aborted" | "timeout" | "error";
   errorClass: string | null;
   model: string | null;
+  /** OpenRouter endpoint tag the attempt ran on; NULL when unpinned. */
+  endpointTag: string | null;
   servingProvider: string | null;
   requestedEffort: string | null;
   bufferedFallback: boolean;
@@ -87,16 +89,17 @@ export async function insertInferenceAttempt(r: InferenceAttemptRecord): Promise
   await execute(
     `INSERT INTO inference_attempts (
        session_id, mission_run_id, turn_run_id, iteration, stream_id, started_at,
-       outcome, error_class, model, serving_provider, requested_effort,
+       outcome, error_class, model, endpoint_tag, serving_provider, requested_effort,
        buffered_fallback, fallback_reason, capacity_retries, capacity_retry_classes,
        pre_inference_ms, prompt_stack_ms, first_chunk_ms, first_reasoning_ms,
        first_semantic_ms, reasoning_only_ms, max_inter_chunk_gap_ms, total_ms,
        chunk_count, finish_reason, content_empty, tool_call_count, valid_tool_call_count,
        prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, generation_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-             $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)`,
+             $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33,
+             $34)`,
     [r.sessionId, r.missionRunId, r.turnRunId, r.iteration, r.streamId, r.startedAt,
-     r.outcome, r.errorClass, r.model, r.servingProvider, r.requestedEffort,
+     r.outcome, r.errorClass, r.model, r.endpointTag, r.servingProvider, r.requestedEffort,
      r.bufferedFallback, r.fallbackReason, r.capacityRetries, [...r.capacityRetryClasses],
      msOrNull(r.preInferenceMs), msOrNull(r.promptStackMs), msOrNull(r.firstChunkMs),
      msOrNull(r.firstReasoningMs), msOrNull(r.firstSemanticMs), msOrNull(r.reasoningOnlyMs),

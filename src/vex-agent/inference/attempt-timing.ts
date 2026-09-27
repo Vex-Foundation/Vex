@@ -156,14 +156,22 @@ const ERROR_TYPE_RE = /^[\w.:-]{1,64}$/;
  * than recorded, so even an error whose `name` was set from user text cannot
  * carry that text into a row. Abort errors (`AbortError`, or Node's
  * `code: "ABORT_ERR"`) classify as `AbortError`.
+ *
+ * A normalized OpenRouter error is a plain `Error`, so its `name` says
+ * nothing; the SDK class it was built from survives only as the `errorClass`
+ * own-property (closed dictionary, see `openrouter/error-class.ts`). When the
+ * name is the generic `Error`, that class is used in its place.
  */
 export function classifyInferenceError(err: unknown): string {
   if (typeof err !== "object" || err === null) return "unknown";
   const record = err as Record<string, unknown>;
 
+  const sdkClass = ownErrorClass(err);
   let name: string;
   if (record.name === "AbortError" || record.code === "ABORT_ERR") {
     name = "AbortError";
+  } else if (record.name === "Error" && typeof sdkClass === "string" && NAME_RE.test(sdkClass)) {
+    name = sdkClass;
   } else if (typeof record.name === "string" && NAME_RE.test(record.name)) {
     name = record.name;
   } else {
@@ -184,4 +192,62 @@ export function classifyInferenceError(err: unknown): string {
     out += `:type=${errorType}`;
   }
   return out;
+}
+
+/** The SDK class a normalized OpenRouter error carries as an own-property. */
+function ownErrorClass(err: object): unknown {
+  return Object.prototype.hasOwnProperty.call(err, "errorClass")
+    ? (err as Record<string, unknown>).errorClass
+    : undefined;
+}
+
+/**
+ * Error names that mean "the attempt ran out of time", as opposed to "the
+ * operator stopped it". `TimeoutError` is what `AbortSignal.timeout` (and so
+ * `composeDeadline`) aborts with; `RequestTimeoutError` is the SDK's wrapper
+ * for the same deadline; the two `*ResponseError`s are the upstream's own
+ * 408 and edge 524 timeouts.
+ */
+const TIMEOUT_ERROR_NAMES: ReadonlySet<string> = new Set([
+  "TimeoutError",
+  "RequestTimeoutError",
+  "RequestTimeoutResponseError",
+  "EdgeNetworkTimeoutResponseError",
+]);
+
+/** Errno-shaped transport codes (`causeCode` / `code`) that are timeouts. */
+const TIMEOUT_CAUSE_CODES: ReadonlySet<string> = new Set([
+  "ETIMEDOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+]);
+
+/**
+ * True when a thrown inference error is a deadline or timeout rather than a
+ * caller abort or any other failure. Reads only names and closed-dictionary
+ * codes — the raw error's `name`, the normalized error's `errorClass` and
+ * `causeCode` own-properties, and one level of `.cause` for an unnormalized
+ * SDK wrapper — never message text.
+ *
+ * A user Stop is an `AbortError` and never matches, which is the distinction
+ * `cancellation.ts` keeps on purpose.
+ */
+export function isInferenceTimeout(err: unknown): boolean {
+  return matchesTimeout(err) || (
+    typeof err === "object" && err !== null && matchesTimeout((err as { cause?: unknown }).cause)
+  );
+}
+
+function matchesTimeout(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const record = err as Record<string, unknown>;
+  if (typeof record.name === "string" && TIMEOUT_ERROR_NAMES.has(record.name)) return true;
+  const errorClass = ownErrorClass(err);
+  if (typeof errorClass === "string" && TIMEOUT_ERROR_NAMES.has(errorClass)) return true;
+  for (const key of ["causeCode", "code"] as const) {
+    const code = record[key];
+    if (typeof code === "string" && TIMEOUT_CAUSE_CODES.has(code)) return true;
+  }
+  return false;
 }

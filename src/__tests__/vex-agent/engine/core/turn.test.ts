@@ -740,6 +740,88 @@ describe("turn — inference attempt timing", () => {
     expect(mockLogUsage).not.toHaveBeenCalled();
   });
 
+  async function recordThrown(err: Error, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    const provider = streaming([{ type: "content", text: SECRET_TEXT }], { throwAfter: err });
+    await expect(
+      executeTurn(
+        context(), [], null, provider as any, config() as any, [],
+        {}, signal, undefined, TELEMETRY,
+      ),
+    ).rejects.toBe(err);
+    expect(mockInsertInferenceAttempt).toHaveBeenCalledTimes(1);
+    return recordedRows()[0]!;
+  }
+
+  it("records a deadline breach as timeout, not error or aborted", async () => {
+    const deadline = AbortSignal.timeout(1);
+    await new Promise((r) => setTimeout(r, 5));
+    const row = await recordThrown(deadline.reason as Error);
+    expect(row).toMatchObject({ outcome: "timeout", errorClass: "TimeoutError" });
+  });
+
+  it("records the SDK request timeout as timeout with its class", async () => {
+    const sdk = Object.assign(new Error(SECRET_TEXT), { name: "RequestTimeoutError" });
+    const row = await recordThrown(sdk);
+    expect(row).toMatchObject({ outcome: "timeout", errorClass: "RequestTimeoutError" });
+    expectNoContentLeak(row);
+  });
+
+  it("records a Stop that lands during a buffered request and throws as aborted", async () => {
+    // A buffered request cancelled by the caller rejects rather than returning
+    // a partial, so the Stop reaches the recorder as a throw — with the
+    // caller's own signal aborted and no deadline involved.
+    const live = new AbortController();
+    const stopped = Object.assign(new Error("request cancelled"), { name: "RequestAbortedError" });
+    const provider = {
+      ...streaming([]),
+      chatCompletionStream: undefined,
+      chatCompletion: vi.fn(async () => {
+        live.abort();
+        throw stopped;
+      }),
+    };
+    await expect(
+      executeTurn(
+        context(), [], null, provider as any, config() as any, [],
+        {}, live.signal, undefined, TELEMETRY,
+      ),
+    ).rejects.toBe(stopped);
+    expect(recordedRows()[0]).toMatchObject({
+      outcome: "aborted",
+      errorClass: "RequestAbortedError",
+    });
+  });
+
+  it("a thrown error with the caller's signal untouched stays error", async () => {
+    const live = new AbortController();
+    const row = await recordThrown(
+      Object.assign(new Error("x"), { name: "ProviderError" }),
+      live.signal,
+    );
+    expect(row).toMatchObject({ outcome: "error", errorClass: "ProviderError" });
+  });
+
+  it("records the pinned endpoint tag, or NULL when unpinned", async () => {
+    await executeTurn(
+      context(), [], null, streaming(COMPLETED_CHUNKS) as any,
+      config({ endpointTag: "anthropic/fp8" }) as any, [],
+      {}, undefined, undefined, TELEMETRY,
+    );
+    await executeTurn(
+      context(), [], null, streaming(COMPLETED_CHUNKS) as any, config() as any, [],
+      {}, undefined, undefined, TELEMETRY,
+    );
+    expect(recordedRows().map((r) => r.endpointTag)).toEqual(["anthropic/fp8", null]);
+  });
+
+  it("records the endpoint the session switched to, not the pre-send pin", async () => {
+    commitEndpointSwitch("session-t", "google-vertex");
+    const boom = Object.assign(new Error("x"), { name: "ProviderError" });
+    const row = await recordThrown(boom);
+    // Thrown attempts carry it too — the recorder does no IO to find it.
+    expect(row.endpointTag).toBe("google-vertex");
+  });
+
   it("throws the same error with no row when telemetry is absent", async () => {
     const boom = new Error("nope");
     const provider = streaming([{ type: "content", text: "partial" }], { throwAfter: boom });

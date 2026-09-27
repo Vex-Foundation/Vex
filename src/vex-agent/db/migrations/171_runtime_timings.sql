@@ -36,6 +36,17 @@
 --
 --   turn_run_id           one `runTurnLoop` invocation; joins to
 --                         `turn_run_timings` and `tool_dispatch_timings`.
+--   outcome               'timeout' is kept apart from 'aborted' and 'error':
+--                         a deadline breach (`AbortSignal.timeout`, the SDK's
+--                         request timeout, an upstream 408/524) says the
+--                         provider hung, 'aborted' says the user pressed Stop.
+--                         Folding either into 'error' would hide the one
+--                         failure mode a latency budget can actually fix.
+--   endpoint_tag          the OpenRouter endpoint the session was on when the
+--                         attempt settled — after any failover switch made
+--                         during it. NULL means no pin ("Auto" routing).
+--                         `serving_provider` alone cannot answer this: it is
+--                         only known when a response arrived.
 --   stream_id             `executeTurn`'s streamId, to correlate with UI deltas.
 --   requested_effort      the reasoning effort actually sent; NULL means the
 --                         provider default was used.
@@ -59,9 +70,10 @@ CREATE TABLE IF NOT EXISTS inference_attempts (
   iteration                 INTEGER NOT NULL,
   stream_id                 TEXT,
   started_at                TIMESTAMPTZ NOT NULL,
-  outcome                   TEXT NOT NULL CHECK (outcome IN ('completed','aborted','error')),
+  outcome                   TEXT NOT NULL CHECK (outcome IN ('completed','aborted','timeout','error')),
   error_class               TEXT,
   model                     TEXT,
+  endpoint_tag              TEXT,
   serving_provider          TEXT,
   requested_effort          TEXT,
   buffered_fallback         BOOLEAN NOT NULL DEFAULT FALSE,

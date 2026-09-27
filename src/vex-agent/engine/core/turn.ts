@@ -24,11 +24,13 @@ import {
 import {
   classifyInferenceError,
   createInferenceAttemptTimer,
+  isInferenceTimeout,
   type InferenceAttemptTimer,
 } from "@vex-agent/inference/attempt-timing.js";
 import { toChatRequestEffort } from "@vex-agent/inference/openrouter/params.js";
 import {
   endpointFailoverDepsFrom,
+  getSwitchedEndpointTag,
   resolveSessionInferenceConfig,
 } from "@vex-agent/inference/openrouter/endpoint-failover.js";
 import type { Message } from "@vex-agent/db/repos/messages.js";
@@ -195,7 +197,7 @@ export async function executeTurn(
     if (telemetry && timing) {
       recordAttemptTiming(
         context, config, telemetry, timing, streamId, attemptStartedAt,
-        inference, inferenceError,
+        inference, inferenceError, signal,
       );
     }
   }
@@ -279,6 +281,12 @@ export async function executeTurn(
  * write goes through `recordInBackground`. Sanitised fields only — the
  * response contributes counts, ids, names and an emptiness flag, never its
  * text, and an error contributes only `classifyInferenceError`'s label.
+ *
+ * A thrown attempt is a `timeout` when the error is a deadline (see
+ * `isInferenceTimeout`), `aborted` when the caller's own signal fired (a user
+ * Stop that surfaced as a rejection rather than a partial), else `error`. The
+ * deadline is checked first: it never touches the caller's signal, so a
+ * timeout can only be mistaken for a Stop if both fired.
  */
 function recordAttemptTiming(
   context: EngineContext,
@@ -289,6 +297,7 @@ function recordAttemptTiming(
   startedAt: Date,
   inference: StreamingInferenceResult | undefined,
   error: unknown,
+  signal: AbortSignal | undefined,
 ): void {
   try {
     const snapshot = timing.snapshot();
@@ -307,9 +316,19 @@ function recordAttemptTiming(
       streamId,
       startedAt,
       outcome:
-        inference === undefined ? "error" : inference.aborted ? "aborted" : "completed",
+        inference !== undefined
+          ? inference.aborted ? "aborted" : "completed"
+          : isInferenceTimeout(error)
+            ? "timeout"
+            : signal?.aborted === true ? "aborted" : "error",
       errorClass: inference === undefined ? classifyInferenceError(error) : null,
       model: config.model ?? null,
+      // The endpoint the session is on once this attempt settled: a failover
+      // switch made during the attempt is adopted in memory before it returns
+      // or throws, so this is the endpoint that served (or last failed) it —
+      // the same answer `resolveSessionInferenceConfig` gives for pricing,
+      // read synchronously so the recorder does no IO.
+      endpointTag: getSwitchedEndpointTag(context.sessionId) ?? config.endpointTag ?? null,
       servingProvider: response?.servingProvider ?? null,
       requestedEffort,
       bufferedFallback: snapshot.bufferedFallback,

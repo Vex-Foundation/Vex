@@ -63,6 +63,7 @@ function attempt(overrides: Partial<InferenceAttemptRecord> = {}): InferenceAtte
     outcome: "completed",
     errorClass: null,
     model: "anthropic/claude-sonnet-4",
+    endpointTag: "anthropic/fp8",
     servingProvider: "Anthropic",
     requestedEffort: "high",
     bufferedFallback: false,
@@ -111,6 +112,7 @@ describe("runtime-timings repo — insertInferenceAttempt", () => {
       outcome: "completed",
       error_class: null,
       model: "anthropic/claude-sonnet-4",
+      endpoint_tag: "anthropic/fp8",
       serving_provider: "Anthropic",
       requested_effort: "high",
       buffered_fallback: false,
@@ -144,6 +146,7 @@ describe("runtime-timings repo — insertInferenceAttempt", () => {
       streamId: null,
       outcome: "error",
       errorClass: "APIError:429",
+      endpointTag: null,
       servingProvider: null,
       requestedEffort: null,
       capacityRetries: 0,
@@ -168,7 +171,7 @@ describe("runtime-timings repo — insertInferenceAttempt", () => {
     }));
     const row = boundRow();
     for (const col of [
-      "mission_run_id", "stream_id", "serving_provider", "requested_effort",
+      "mission_run_id", "stream_id", "endpoint_tag", "serving_provider", "requested_effort",
       "pre_inference_ms", "prompt_stack_ms", "first_chunk_ms", "first_reasoning_ms",
       "first_semantic_ms", "reasoning_only_ms", "max_inter_chunk_gap_ms",
       "finish_reason", "content_empty", "tool_call_count", "valid_tool_call_count",
@@ -180,6 +183,13 @@ describe("runtime-timings repo — insertInferenceAttempt", () => {
     expect(row.outcome).toBe("error");
     expect(row.error_class).toBe("APIError:429");
     expect(row.capacity_retry_classes).toEqual([]);
+  });
+
+  it("binds a timeout outcome with its error class", async () => {
+    await insertInferenceAttempt(attempt({ outcome: "timeout", errorClass: "RequestTimeoutError" }));
+    const row = boundRow();
+    expect(row.outcome).toBe("timeout");
+    expect(row.error_class).toBe("RequestTimeoutError");
   });
 
   it("passes a plain array copy of the readonly retry classes", async () => {
