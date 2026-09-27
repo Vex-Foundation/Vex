@@ -6,6 +6,8 @@
  *   - argument parsing: default window, `--since x` and `--since=x`, `--json`
  *   - query builder: read-only statements, window bound as `$1`, user input
  *     never spliced into SQL, all seven sections present
+ *   - retry attribution: capacity-retried attempts stay out of endpoint and
+ *     serving-provider latency and are reported as retry overhead
  *   - execution: missing tables and failing queries report per query and do
  *     not stop the rest
  *   - formatting: "no data" for empty results, populated tables, JSON shape
@@ -113,10 +115,11 @@ describe("buildReportQueries", () => {
   });
 
   it("computes percentiles with percentile_cont over an array and reports sample counts", () => {
-    const latency = queries.filter((q) => q.section === 3);
-    expect(latency.map((q) => q.key)).toEqual([
+    expect(queries.filter((q) => q.section === 3).map((q) => q.key)).toEqual([
       "latency_by_model", "latency_by_endpoint", "latency_by_serving_provider", "latency_by_prompt_size",
+      "retry_overhead_by_class", "retry_overhead_by_endpoint",
     ]);
+    const latency = queries.filter((q) => q.key.startsWith("latency_by_"));
     for (const q of latency) {
       expect(q.sql).toContain("percentile_cont(ARRAY[0.5, 0.95, 0.99]) WITHIN GROUP");
       expect(q.sql).toContain("outcome = 'completed'");
@@ -137,6 +140,36 @@ describe("buildReportQueries", () => {
     expect(q.sql).toContain("COALESCE(a.endpoint_tag, '(auto)')");
     const serving = requireValue(queries.find((entry) => entry.key === "latency_by_serving_provider"));
     expect(serving.sql).toContain("a.serving_provider");
+  });
+
+  it("keeps capacity-retried attempts out of the endpoint and serving-provider latency", () => {
+    for (const key of ["latency_by_endpoint", "latency_by_serving_provider"]) {
+      const q = requireValue(queries.find((entry) => entry.key === key));
+      expect(q.sql).toContain("a.capacity_retries = 0");
+      expect(q.title).toMatch(/without capacity retries/);
+    }
+    for (const key of ["latency_by_model", "latency_by_prompt_size"]) {
+      const q = requireValue(queries.find((entry) => entry.key === key));
+      expect(q.sql).not.toContain("capacity_retries");
+    }
+  });
+
+  it("reports retried attempts separately, by reason class and by final endpoint", () => {
+    const byClass = requireValue(queries.find((entry) => entry.key === "retry_overhead_by_class"));
+    const byEndpoint = requireValue(queries.find((entry) => entry.key === "retry_overhead_by_endpoint"));
+    for (const q of [byClass, byEndpoint]) {
+      expect(q.section).toBe(3);
+      expect(q.title).toMatch(/^Retry overhead/);
+      expect(q.sql).toContain("a.capacity_retries > 0");
+      // Any outcome: retry time is overhead whether or not the attempt then completed.
+      expect(q.sql).not.toContain("a.outcome = 'completed' AND");
+      expect(q.sql).toContain("percentile_cont(ARRAY[0.5, 0.95]) WITHIN GROUP (ORDER BY a.total_ms)");
+      expect(q.columns.map((c) => c.key)).toEqual(["grp", "n", "completed", "p50", "p95"]);
+    }
+    // One count per distinct class per attempt; a retry with no recorded class still shows up.
+    expect(byClass.sql).toContain("SELECT DISTINCT c");
+    expect(byClass.sql).toContain("unnest(COALESCE(NULLIF(a.capacity_retry_classes, '{}'), ARRAY['(unknown)']))");
+    expect(byEndpoint.sql).toContain("COALESCE(a.endpoint_tag, '(auto)')");
   });
 
   it("counts timeouts apart from aborts and errors", () => {

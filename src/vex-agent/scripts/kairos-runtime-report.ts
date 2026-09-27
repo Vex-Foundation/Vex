@@ -28,6 +28,11 @@
  * - "By endpoint tag" groups on the OpenRouter endpoint the session was on
  *   when the attempt settled, after any failover switch. `(auto)` means no pin:
  *   OpenRouter chose, and "By serving provider" shows where it went.
+ * - Both of those groupings EXCLUDE attempts with a capacity retry. Such an
+ *   attempt's `total_ms` includes the time spent failing on earlier endpoints,
+ *   and charging that to the endpoint that finally served would make a healthy
+ *   fallback look slow. Those attempts get their own "Retry overhead" tables
+ *   (any outcome, by retry reason class and by final endpoint).
  * - Section 7's queue wait is NULL for a turn whose entry point supplies no
  *   entry timestamp; its `n` counts only the turns that did. Persist time is
  *   part of the turn's total, not in addition to it.
@@ -126,7 +131,7 @@ export interface ReportQuery {
 export const SECTION_TITLES: Readonly<Record<number, string>> = {
   1: "Empty length-capped rounds",
   2: "Prompt cache hit ratio",
-  3: "Inference latency (completed attempts)",
+  3: "Inference latency (completed attempts) and retry overhead",
   4: "Outcomes, errors and retries",
   5: "Pre-inference and prompt-stack time",
   6: "Tool dispatch duration (top 20 tools by count)",
@@ -173,7 +178,23 @@ const LATENCY_COLUMNS = (groupLabel: string): readonly ReportColumn[] => [
   col("p99", "p99", "ms"),
 ];
 
-function latencyQuery(since: Date, key: string, title: string, groupLabel: string, groupExpr: string, orderExpr: string): ReportQuery {
+/**
+ * Endpoint and serving-provider groupings drop attempts that needed a capacity
+ * retry: their `total_ms` includes the time spent failing on earlier endpoints,
+ * which would otherwise be charged to the endpoint that finally served. Those
+ * attempts are reported on their own under "Retry overhead".
+ */
+const NO_CAPACITY_RETRY = " AND a.capacity_retries = 0";
+
+function latencyQuery(
+  since: Date,
+  key: string,
+  title: string,
+  groupLabel: string,
+  groupExpr: string,
+  orderExpr: string,
+  extraFilter = "",
+): ReportQuery {
   return {
     key,
     section: 3,
@@ -192,12 +213,20 @@ FROM (
   CROSS JOIN LATERAL (VALUES
         ${LATENCY_VALUES}
   ) AS m(ord, metric, v)
-  WHERE a.created_at >= $1 AND a.outcome = 'completed' AND m.v IS NOT NULL
+  WHERE a.created_at >= $1 AND a.outcome = 'completed' AND m.v IS NOT NULL${extraFilter}
   GROUP BY 1, m.ord, m.metric
 ) s
 ORDER BY grp_order, grp, ord`,
   };
 }
+
+const RETRY_OVERHEAD_COLUMNS = (groupLabel: string): readonly ReportColumn[] => [
+  col("grp", groupLabel, "text"),
+  col("n", "Attempts", "int"),
+  col("completed", "Completed", "int"),
+  col("p50", "p50 total", "ms"),
+  col("p95", "p95 total", "ms"),
+];
 
 /**
  * Every statement the report runs. The window start is the only input and it
@@ -280,9 +309,57 @@ GROUP BY 1
 ORDER BY prompt_tokens DESC, model`,
     },
     latencyQuery(since, "latency_by_model", "By model", "Model", "COALESCE(a.model, '(unknown)')", "0"),
-    latencyQuery(since, "latency_by_endpoint", "By endpoint tag", "Endpoint tag", "COALESCE(a.endpoint_tag, '(auto)')", "0"),
-    latencyQuery(since, "latency_by_serving_provider", "By serving provider", "Serving provider", "COALESCE(a.serving_provider, '(unknown)')", "0"),
+    latencyQuery(
+      since, "latency_by_endpoint", "By endpoint tag (attempts without capacity retries)", "Endpoint tag",
+      "COALESCE(a.endpoint_tag, '(auto)')", "0", NO_CAPACITY_RETRY,
+    ),
+    latencyQuery(
+      since, "latency_by_serving_provider", "By serving provider (attempts without capacity retries)", "Serving provider",
+      "COALESCE(a.serving_provider, '(unknown)')", "0", NO_CAPACITY_RETRY,
+    ),
     latencyQuery(since, "latency_by_prompt_size", "By prompt size (prompt_tokens)", "Prompt size", PROMPT_SIZE_LABEL, PROMPT_SIZE_ORDER),
+    {
+      key: "retry_overhead_by_class",
+      section: 3,
+      title: "Retry overhead by retry reason class (attempts with capacity retries, any outcome)",
+      params: p,
+      columns: RETRY_OVERHEAD_COLUMNS("Reason class"),
+      // An attempt counts once under each DISTINCT class it retried on, so the
+      // rows can sum to more than the number of attempts with retries.
+      sql: `SELECT grp, n, completed, pcts[1] AS p50, pcts[2] AS p95
+FROM (
+  SELECT r.reason_class AS grp,
+         COUNT(*)::int AS n,
+         COUNT(*) FILTER (WHERE a.outcome = 'completed')::int AS completed,
+         percentile_cont(ARRAY[0.5, 0.95]) WITHIN GROUP (ORDER BY a.total_ms) AS pcts
+  FROM inference_attempts a
+  CROSS JOIN LATERAL (
+    SELECT DISTINCT c
+    FROM unnest(COALESCE(NULLIF(a.capacity_retry_classes, '{}'), ARRAY['(unknown)'])) AS u(c)
+  ) AS r(reason_class)
+  WHERE a.created_at >= $1 AND a.capacity_retries > 0
+  GROUP BY 1
+) s
+ORDER BY n DESC, grp`,
+    },
+    {
+      key: "retry_overhead_by_endpoint",
+      section: 3,
+      title: "Retry overhead by final endpoint tag (attempts with capacity retries, any outcome)",
+      params: p,
+      columns: RETRY_OVERHEAD_COLUMNS("Final endpoint tag"),
+      sql: `SELECT grp, n, completed, pcts[1] AS p50, pcts[2] AS p95
+FROM (
+  SELECT COALESCE(a.endpoint_tag, '(auto)') AS grp,
+         COUNT(*)::int AS n,
+         COUNT(*) FILTER (WHERE a.outcome = 'completed')::int AS completed,
+         percentile_cont(ARRAY[0.5, 0.95]) WITHIN GROUP (ORDER BY a.total_ms) AS pcts
+  FROM inference_attempts a
+  WHERE a.created_at >= $1 AND a.capacity_retries > 0
+  GROUP BY 1
+) s
+ORDER BY n DESC, grp`,
+    },
     {
       key: "outcomes",
       section: 4,
