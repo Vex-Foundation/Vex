@@ -99,6 +99,14 @@ import {
   type UnproductiveRoundKind,
 } from "./runner/unproductive-rounds.js";
 import { createToolCallLoopDetector } from "./runner/tool-call-loop-detector.js";
+import {
+  STALL_RECOVERY_ENABLED,
+  createStallRecoveryTracker,
+  prepareStallRecoveryCall,
+  stallRecoveryLogFields,
+  type StallRecoveryCall,
+} from "./runner/stall-recovery.js";
+import { hasPendingForSession } from "@vex-agent/db/repos/approvals.js";
 
 /**
  * Runtime-measurement state for one `runTurnLoop` invocation (Kairos Phase 1).
@@ -238,6 +246,10 @@ async function runTurnLoopBody(
   // Class of the most recent unproductive round, reported when the stall bound
   // fires so the stop says HOW the model stalled, not only that it did.
   let lastUnproductiveKind: UnproductiveRoundKind | null = null;
+  // One recovery call per stall streak instead of an identical replay: a
+  // one-shot turn-state note plus, where safe, lower effort for that call
+  // only. See `runner/stall-recovery.ts`.
+  const stallRecovery = createStallRecoveryTracker(STALL_RECOVERY_ENABLED);
   // REPETITION detector, and a third bound distinct from both of the above:
   // `maxIterations` counts work, `consecutiveUnproductiveRounds` counts
   // silence, this counts a model doing the same productive thing forever. Its
@@ -412,10 +424,27 @@ async function runTurnLoopBody(
     const promptStackMs = performance.now() - promptStackStartMs;
     postCompactBridgeRemaining = stack.nextPostCompactBridgeRemaining;
 
+    // Stall recovery: the call after an unproductive round carries the note
+    // and (guarded) lower effort. Built before the envelope so the ceiling
+    // below measures the request that is actually sent.
+    const recoveringFrom = stallRecovery.pending();
+    const recoveryCall: StallRecoveryCall | null = recoveringFrom === null
+      ? null
+      : await prepareStallRecoveryCall({
+          from: recoveringFrom,
+          config: active.config,
+          promptOptions: stack.promptOptions,
+          liveMessages,
+          inLoopPendingApprovals: pendingApprovals.length,
+          hasPendingApproval: () => hasPendingForSession(context.sessionId),
+        });
+    const callConfig = recoveryCall?.config ?? active.config;
+    const callPromptOptions = recoveryCall?.promptOptions ?? stack.promptOptions;
+
     // Build the request envelope ONCE, here, so the ceiling below measures the
     // object that is then sent (see the module header — it is not reproducible).
     const envelope = buildTurnEnvelope(
-      context, liveMessages, currentSummary, stack.promptOptions,
+      context, liveMessages, currentSummary, callPromptOptions,
     );
 
     // ── Pre-inference byte ceiling (C8) ─────────────────────────────
@@ -428,7 +457,7 @@ async function runTurnLoopBody(
       preparationBypassesBarrier: stack.preparationBypassesBarrier,
       providerMessages: envelope.providerMessages,
       tools: stack.tools,
-      config: active.config,
+      config: callConfig,
       contextLimit: active.contextLimit,
       currentTokenCount,
       criticalNoopCounter,
@@ -444,11 +473,23 @@ async function runTurnLoopBody(
       continue;
     }
 
+    // The recovery is spent only once its request is really issued; a ceiling
+    // retry above leaves it armed for the next iteration.
+    if (recoveryCall !== null) {
+      stallRecovery.consume();
+      logger.info("engine.turn.stall_recovery", {
+        sessionId: context.sessionId,
+        missionRunId: context.missionRunId ?? null,
+        iteration,
+        ...stallRecoveryLogFields(recoveryCall),
+      });
+    }
+
     // Execute turn (no save yet — deferred save lives in tool-batch helper).
     // `inferenceAbortSignal` (chat-turn only) lets the streaming inference be
     // cancelled mid-response; mission callers leave it undefined.
     const turnResult = await executeTurn(
-      context, liveMessages, currentSummary, provider, active.config, stack.tools, stack.promptOptions,
+      context, liveMessages, currentSummary, provider, callConfig, stack.tools, callPromptOptions,
       inferenceAbortSignal,
       // THE measured object, not a rebuild.
       envelope,
@@ -537,6 +578,7 @@ async function runTurnLoopBody(
     // persisted, so the transcript never carries tool calls without results.
     // It then counts as a stall like any other unproductive round.
     const round = classifyInferenceRound(turnResult);
+    stallRecovery.observe(round);
     if (round.kind === "productive") {
       consecutiveUnproductiveRounds = 0;
     } else {
