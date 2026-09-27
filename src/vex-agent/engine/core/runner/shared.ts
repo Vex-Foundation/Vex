@@ -6,6 +6,7 @@ import { getOpenAITools } from "@vex-agent/tools/registry.js";
 import type { ToolDefinition } from "@vex-agent/inference/types.js";
 import type { RuntimeStopReason, StopReason } from "../../types.js";
 import type { TurnLoopConfig } from "../turn-loop.js";
+import type { UnproductiveRoundKind } from "./unproductive-rounds.js";
 
 /**
  * Convert OpenAITool[] to ToolDefinition[]. Type-level identity after
@@ -112,6 +113,25 @@ export const NO_PROGRESS_REPLY =
   "happening.";
 
 /**
+ * The sibling of `NO_PROGRESS_REPLY` for a stall streak whose LAST round was
+ * stopped by an inference bound (`stream_timeout`: no first chunk, a silent
+ * stream, reasoning that never turned into an answer, or the round deadline).
+ *
+ * `NO_PROGRESS_REPLY` would be wrong here: the model did not return an empty
+ * response, it stopped responding in time, and "lower the reasoning effort"
+ * is not the likely fix for a slow or overloaded provider. It keeps the same
+ * two honesty rules: no round count (the streak can end after one recovery
+ * call), and no claim that nothing ran, because earlier rounds of the turn
+ * can have dispatched real tool calls.
+ */
+export const STREAM_TIMEOUT_REPLY =
+  "I stopped this turn early: the model kept stalling, and its last attempt " +
+  "took too long without producing an answer or a tool call, so it was cut " +
+  "off. This usually means the provider is slow or overloaded right now. " +
+  "Check the transcript above for what did run, then send the request again, " +
+  "or try a different model if it keeps happening.";
+
+/**
  * The `tool_call_loop` sibling of `ITERATION_LIMIT_REPLY`.
  *
  * Says the one thing the user needs to decide what to do next: the model was
@@ -173,10 +193,19 @@ export function isRuntimeBoundStop(
  * The deterministic reply for a turn that exhausted a runtime bound without the
  * model ever emitting text. Honest about WHICH bound fired; never a generic
  * "budget" paragraph and never a cost figure.
+ *
+ * `lastUnproductiveKind` is the class of the round that ended a `no_progress`
+ * streak (`TurnLoopResult.lastUnproductiveKind`); it only picks between the
+ * two stall replies and is ignored for every other trigger.
  */
-export function runtimeBoundExhaustedReply(trigger: RuntimeBoundStop): string {
+export function runtimeBoundExhaustedReply(
+  trigger: RuntimeBoundStop,
+  lastUnproductiveKind: UnproductiveRoundKind | null = null,
+): string {
   if (trigger === "timeout") return TIMEOUT_REPLY;
-  if (trigger === "no_progress") return NO_PROGRESS_REPLY;
+  if (trigger === "no_progress") {
+    return lastUnproductiveKind === "stream_timeout" ? STREAM_TIMEOUT_REPLY : NO_PROGRESS_REPLY;
+  }
   if (trigger === "tool_call_loop") return TOOL_CALL_LOOP_REPLY;
   return ITERATION_LIMIT_REPLY;
 }

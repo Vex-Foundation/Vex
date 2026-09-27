@@ -45,6 +45,12 @@
 import { hasActionableInferenceResponse } from "@vex-agent/inference/response-validation.js";
 
 /**
+ * Which Kairos inference bound stopped a round. Mirrors the inference layer's
+ * `InferenceStallKind` (stream-consumer.ts) until that type is exported.
+ */
+export type InferenceStallKind = "first_chunk" | "idle" | "reasoning_only" | "round_deadline";
+
+/**
  * Consecutive rounds that may emit nothing before the turn stops with
  * `no_progress`. Not configurable and not permission-aware: an autonomous
  * session has no more use for a stalled model than a restricted one does.
@@ -88,6 +94,11 @@ export interface InferenceRoundFields {
   readonly finishReason: string | null;
   /** Tool calls the inference layer dropped as unassemblable. */
   readonly malformedToolCallCount: number;
+  /**
+   * The inference bound that stopped this round, or null when none fired.
+   * Absent reads as null.
+   */
+  readonly timedOut?: InferenceStallKind | null;
 }
 
 /**
@@ -103,6 +114,11 @@ export interface InferenceRoundFields {
  * - `reasoning_exhausted`: the output limit was hit with no answer and no tool
  *   call - the model spent its budget thinking.
  * - `blank`: nothing at all, for any other reason.
+ * - `stream_timeout`: an inference bound (first chunk, idle, reasoning-only or
+ *   the round deadline) stopped the stream. Whatever it streamed is a fragment
+ *   the model never finished: it carries no tool calls (the inference layer
+ *   drops in-flight ones) and its text is not persisted. `stall` says which
+ *   bound fired.
  *
  * Every class but `productive` counts toward
  * `MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS`.
@@ -116,7 +132,8 @@ export type InferenceRoundClassification =
       readonly malformedToolCalls: number;
     }
   | { readonly kind: "reasoning_exhausted" }
-  | { readonly kind: "blank" };
+  | { readonly kind: "blank" }
+  | { readonly kind: "stream_timeout"; readonly stall: InferenceStallKind };
 
 export type UnproductiveRoundKind = Exclude<InferenceRoundClassification["kind"], "productive">;
 
@@ -124,11 +141,16 @@ export type UnproductiveRoundKind = Exclude<InferenceRoundClassification["kind"]
  * Classify a completed round. Pure; the turn loop calls it once per round,
  * BEFORE any dispatch, and acts only on its answer.
  *
- * The incomplete-batch check comes first and is unconditional: a round that
+ * The timeout check comes first: a round a bound cut short is never
+ * productive, whatever text it streamed before it was stopped. The
+ * incomplete-batch check is next and just as unconditional: a round that
  * dropped a call is never productive, whatever else it carried. Only then
  * does the ordinary productive rule apply.
  */
 export function classifyInferenceRound(round: InferenceRoundFields): InferenceRoundClassification {
+  if (round.timedOut !== undefined && round.timedOut !== null) {
+    return { kind: "stream_timeout", stall: round.timedOut };
+  }
   if (round.malformedToolCallCount > 0) {
     return {
       kind: "incomplete_tool_batch",

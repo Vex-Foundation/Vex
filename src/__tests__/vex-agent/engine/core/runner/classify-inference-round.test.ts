@@ -61,4 +61,35 @@ describe("classifyInferenceRound", () => {
       kind: "productive",
     });
   });
+
+  describe("stream_timeout", () => {
+    it.each(["first_chunk", "idle", "reasoning_only", "round_deadline"] as const)(
+      "a round stopped by the %s bound is a timeout, carrying the stall kind",
+      (stall) => {
+        expect(classifyInferenceRound(round({ finishReason: null, timedOut: stall }))).toEqual({
+          kind: "stream_timeout",
+          stall,
+        });
+      },
+    );
+
+    it("streamed text never makes a timed-out round productive", () => {
+      expect(
+        classifyInferenceRound(round({ content: "I will now swap", finishReason: null, timedOut: "idle" })),
+      ).toEqual({ kind: "stream_timeout", stall: "idle" });
+    });
+
+    it("the timeout wins over every other class", () => {
+      expect(
+        classifyInferenceRound(
+          round({ toolCalls: [CALL], finishReason: "length", malformedToolCallCount: 1, timedOut: "round_deadline" }),
+        ),
+      ).toEqual({ kind: "stream_timeout", stall: "round_deadline" });
+    });
+
+    it("null or absent timedOut classifies exactly as before", () => {
+      expect(classifyInferenceRound(round({ content: "hi", timedOut: null }))).toEqual({ kind: "productive" });
+      expect(classifyInferenceRound(round({ content: "" }))).toEqual({ kind: "blank" });
+    });
+  });
 });

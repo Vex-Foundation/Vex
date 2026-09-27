@@ -584,7 +584,32 @@ async function runTurnLoopBody(
     } else {
       consecutiveUnproductiveRounds += 1;
       lastUnproductiveKind = round.kind;
-      if (round.kind === "incomplete_tool_batch") {
+      if (round.kind === "stream_timeout") {
+        // A bound stopped the stream. Its partial text is a fragment the model
+        // never finished, so nothing is persisted and no `transcriptAppend`
+        // will retire the preview: end it here with the terminal delta, the
+        // same signal the empty-abort path above sends. Correlated by
+        // `streamId`, best-effort like every emission on this bus.
+        streamDeltaBus.emit(
+          toStreamAbortedEvent(
+            context.sessionId,
+            turnResult.streamId,
+            turnResult.nextStreamSequence,
+          ),
+        );
+        logger.warn("engine.turn.unproductive_round", {
+          sessionId: context.sessionId,
+          missionRunId: context.missionRunId ?? null,
+          iteration,
+          classification: round.kind,
+          stallKind: round.stall,
+          consecutiveUnproductiveRounds,
+          limit: MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
+          // Lengths only, never the text: how much was streamed and dropped.
+          droppedContentChars: turnResult.content?.length ?? 0,
+          usageObserved: turnResult.usageObserved,
+        });
+      } else if (round.kind === "incomplete_tool_batch") {
         // Counts, the finish reason and the class only: never argument text.
         logger.warn("engine.turn.incomplete_inference", {
           sessionId: context.sessionId,
@@ -745,5 +770,11 @@ async function runTurnLoopBody(
     );
   }
 
-  return { text: lastText, toolCallsMade: totalToolCalls, pendingApprovals, stopReason };
+  return {
+    text: lastText,
+    toolCallsMade: totalToolCalls,
+    pendingApprovals,
+    stopReason,
+    ...(stopReason === "no_progress" && lastUnproductiveKind !== null ? { lastUnproductiveKind } : {}),
+  };
 }

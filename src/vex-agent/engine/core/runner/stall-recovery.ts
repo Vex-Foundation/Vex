@@ -3,7 +3,7 @@
  * produced nothing.
  *
  * An unproductive round (`incomplete_tool_batch`, `reasoning_exhausted`,
- * `blank`; see `unproductive-rounds.ts`) persists nothing, so the next round
+ * `blank`, `stream_timeout`; see `unproductive-rounds.ts`) persists nothing, so the next round
  * would otherwise see the identical input and is likely to fail the identical
  * way. Once per stall streak the next inference call is a RECOVERY call that
  * differs from the failed one in two bounded ways:
@@ -62,6 +62,8 @@ const NOTE_BODY: Readonly<Record<UnproductiveRoundKind, string>> = {
   incomplete_tool_batch:
     "Your last tool call arguments were cut off or malformed, so none of those calls ran. Re-issue only the calls you still need, with complete, valid arguments.",
   blank: "Your last reply was empty. Continue: call the next tool or give your answer.",
+  stream_timeout:
+    "Your last attempt took too long without producing an action and was stopped. Act now: call the next tool with complete arguments, or give your answer.",
 };
 
 /** The one-shot turn-state note for a recovery call after `kind`. */

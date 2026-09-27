@@ -60,6 +60,10 @@ describe("stall recovery", () => {
       ["reasoning_exhausted", "ran out of output room while reasoning"],
       ["incomplete_tool_batch", "cut off or malformed, so none of those calls ran"],
       ["blank", "Your last reply was empty."],
+      [
+        "stream_timeout",
+        "Your last attempt took too long without producing an action and was stopped. Act now: call the next tool with complete arguments, or give your answer.",
+      ],
     ] as const)("names what went wrong for %s", (kind, phrase) => {
       const note = buildStallRecoveryNote(kind);
       expect(note.startsWith("# Last Attempt Produced No Action\n")).toBe(true);
@@ -98,6 +102,16 @@ describe("stall recovery", () => {
         malformedToolCalls: 1,
       });
       expect(t.pending()).toBe("incomplete_tool_batch");
+    });
+
+    it("a timeout arms the recovery, and a timed-out recovery fails the streak", () => {
+      const t = createStallRecoveryTracker(true);
+      t.observe({ kind: "stream_timeout", stall: "first_chunk" });
+      expect(t.pending()).toBe("stream_timeout");
+      t.consume();
+      expect(t.recoveryFailed()).toBe(false);
+      t.observe({ kind: "stream_timeout", stall: "idle" });
+      expect(t.recoveryFailed()).toBe(true);
     });
 
     it("never arms when switched off", () => {

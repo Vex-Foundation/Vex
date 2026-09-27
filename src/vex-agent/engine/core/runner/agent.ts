@@ -484,7 +484,11 @@ export async function runAgentTurnUnderLease(
   let reportedStopReason = result.stopReason;
 
   if (result.stopReason === "no_progress" || result.stopReason === "tool_call_loop") {
-    if (!text) await persistSynthesisedReply(runtimeBoundExhaustedReply(result.stopReason));
+    if (!text) {
+      await persistSynthesisedReply(
+        runtimeBoundExhaustedReply(result.stopReason, result.lastUnproductiveKind ?? null),
+      );
+    }
   } else if (isContinuableRuntimeStop(result.stopReason)) {
     // The slice's own cancellation signal (a wake-driven slice carries it in
     // both positions). Handed to the scheduler, which re-reads it INSIDE the

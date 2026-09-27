@@ -197,7 +197,7 @@ export async function processMissionSetupTurn(
   // produced a silent setup turn.
   const boundHit = isRuntimeBoundStop(result.stopReason) && !result.text;
   const boundHitReply = isRuntimeBoundStop(result.stopReason)
-    ? runtimeBoundExhaustedReply(result.stopReason)
+    ? runtimeBoundExhaustedReply(result.stopReason, result.lastUnproductiveKind ?? null)
     : null;
   logger.info("engine.mission.setup_turn.timing", {
     sessionId,

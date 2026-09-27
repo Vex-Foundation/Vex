@@ -9,6 +9,7 @@
 
 import type { StopReason } from "../../types.js";
 import type { ToolVisibilityBase } from "@vex-agent/tools/registry.js";
+import type { UnproductiveRoundKind } from "../runner/unproductive-rounds.js";
 
 export interface TurnLoopConfig {
   maxIterations: number;
@@ -56,6 +57,12 @@ export interface TurnLoopResult {
   toolCallsMade: number;
   pendingApprovals: string[];
   stopReason: StopReason | null;
+  /**
+   * Class of the round that ended a `no_progress` streak, so the stop reply
+   * can say HOW the model stalled. Set only when `stopReason` is
+   * `no_progress`; absent otherwise.
+   */
+  lastUnproductiveKind?: UnproductiveRoundKind;
   /** Structured stop payload — summary/evidence from MissionStop. */
   stopPayload?: { summary?: string; evidence?: Record<string, unknown> };
 }

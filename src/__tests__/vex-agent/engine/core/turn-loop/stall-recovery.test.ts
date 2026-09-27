@@ -564,6 +564,9 @@ describe("turn loop stall recovery (R-5)", () => {
     const { result, seen } = await run([blankRound, exhaustedRound, blankRound, textRound("unreachable")]);
 
     expect(result.stopReason).toBe("no_progress");
+    // The class of the round that ended the streak rides on the result so the
+    // runner can pick the stop reply.
+    expect(result.lastUnproductiveKind).toBe("reasoning_exhausted");
     // Original request, then the one recovery call; no third, identical request.
     expect(seen).toHaveLength(2);
     expect(seen.map((s) => s.turnState.includes(NOTE_HEADING))).toEqual([false, true]);
@@ -602,6 +605,7 @@ describe("turn loop stall recovery (R-5)", () => {
     expect(result.toolCallsMade).toBe(1);
     expect(result.text).toBe("Done.");
     expect(result.stopReason).toBe(null);
+    expect(result.lastUnproductiveKind).toBeUndefined();
     const firstRow = requireValue(mockAddMessage.mock.calls[0])[1];
     expect(firstRow).toMatchObject({ role: "assistant" });
     expect(persistedText()).not.toContain(NOTE_HEADING);
