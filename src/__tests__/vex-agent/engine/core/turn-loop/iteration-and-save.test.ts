@@ -132,10 +132,11 @@ vi.mock("@vex-agent/db/repos/usage.js", () => ({
 // thunk runs synchronously so each test can read the rows it produced.
 const mockInsertTurnRunTiming = vi.fn().mockResolvedValue(undefined);
 const mockInsertInferenceAttempt = vi.fn().mockResolvedValue(undefined);
+const mockInsertToolDispatchTiming = vi.fn().mockResolvedValue(undefined);
 vi.mock("@vex-agent/db/repos/runtime-timings.js", () => ({
   insertTurnRunTiming: (...a: unknown[]) => mockInsertTurnRunTiming(...a),
   insertInferenceAttempt: (...a: unknown[]) => mockInsertInferenceAttempt(...a),
-  insertToolDispatchTiming: vi.fn().mockResolvedValue(undefined),
+  insertToolDispatchTiming: (...a: unknown[]) => mockInsertToolDispatchTiming(...a),
   recordInBackground: (_label: string, write: () => Promise<void>) => {
     void write();
   },
@@ -824,7 +825,16 @@ describe("turn-loop", () => {
         expect(row.preInferenceMs as number).toBeGreaterThanOrEqual(row.promptStackMs as number);
       }
 
-      const serialised = JSON.stringify([turnRow, ...attempts]);
+      // The tool batch receives the same turn run id and the round it ran in.
+      expect(mockInsertToolDispatchTiming).toHaveBeenCalledTimes(1);
+      const dispatchRow = mockInsertToolDispatchTiming.mock.calls[0]![0] as Record<string, unknown>;
+      expect(dispatchRow).toMatchObject({
+        turnRunId: turnRow.turnRunId,
+        iteration: 0,
+        toolName: "web_research",
+      });
+
+      const serialised = JSON.stringify([turnRow, ...attempts, dispatchRow]);
       expect(serialised).not.toContain("secret-arg-0xabc");
       expect(serialised).not.toContain("secret-content-0xdef");
     });

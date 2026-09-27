@@ -561,6 +561,8 @@ async function runTurnLoopBody(
         // Turn-scoped, so a repetition that starts in one batch is still
         // remembered when the model repeats it in the next one.
         loopDetector,
+        // Tags each dispatch timing row with this turn run and round.
+        telemetry: { turnRunId: run.turnRunId, iteration },
       });
       totalToolCalls += batchOutcome.toolCallsExecuted;
       run.progress.toolCallsMade = totalToolCalls;
