@@ -43,8 +43,10 @@ export const ANSWER_HEADROOM_ENABLED = true;
 /**
  * Minimum request `max_tokens` per reasoning effort.
  *
- * Sized against OpenRouter's documented Anthropic mapping, the tightest family
- * we route to: `budget_tokens = max(min(max_tokens × ratio, 128_000), 1024)`
+ * Families whose budget scales with `max_tokens` (Anthropic) are skipped —
+ * see `BUDGET_SCALES_WITH_MAX_TOKENS_PREFIXES` — so these floors apply only
+ * where a raise is pure answer room. The sizing still follows OpenRouter's
+ * documented Anthropic mapping, the tightest split we know of: `budget_tokens = max(min(max_tokens × ratio, 128_000), 1024)`
  * with ratios minimal 0.1, low 0.2, medium 0.5, high 0.8, xhigh/max 0.95. The
  * answer only gets what the budget leaves, `(1 − ratio) × max_tokens`:
  *
@@ -82,6 +84,13 @@ export type AnswerHeadroomReason =
   | "no_effort"
   /** Endpoint pinned: its own completion ceiling is not known here. */
   | "endpoint_pinned"
+  /**
+   * The family's thinking budget is a fraction of `max_tokens`, so a raise
+   * would also let the model think longer — the opposite of what the floor
+   * is for. Left at the configured value until an explicit reasoning budget
+   * replaces effort for these families.
+   */
+  | "budget_scales_with_max_tokens"
   /** Catalog did not advertise a max completion tokens for the model. */
   | "model_max_unknown"
   /** Configured value already meets the (capped) floor. */
@@ -93,9 +102,23 @@ export type AnswerHeadroomReason =
   /** Raised, but capped below the floor by the context room left after the prompt. */
   | "capped_by_context";
 
+/**
+ * Model families whose OpenRouter effort mapping sizes the thinking budget
+ * from `max_tokens` (`budget_tokens = max(min(max_tokens × ratio, 128_000),
+ * 1024)` — documented for Anthropic). Raising `max_tokens` there buys answer
+ * room only by buying proportionally more thinking, so the floor is skipped.
+ */
+const BUDGET_SCALES_WITH_MAX_TOKENS_PREFIXES = ["anthropic/"] as const;
+
+function budgetScalesWithMaxTokens(model: string): boolean {
+  return BUDGET_SCALES_WITH_MAX_TOKENS_PREFIXES.some((prefix) => model.startsWith(prefix));
+}
+
 export interface AnswerHeadroomInput {
   /** `AGENT_MAX_OUTPUT_TOKENS` — today's `max_tokens`. */
   readonly configuredMaxTokens: number;
+  /** OpenRouter model slug, e.g. `anthropic/claude-sonnet-5`. */
+  readonly model: string;
   /** The effort that WILL be sent, or `undefined` when none is sent. */
   readonly sentEffort: ReasoningEffort | undefined;
   /** Model's advertised max completion tokens, or `undefined` when unknown. */
@@ -141,6 +164,9 @@ export function resolveAnswerHeadroomMaxTokens(
   const floor = input.sentEffort === undefined ? null : ANSWER_HEADROOM_FLOORS[input.sentEffort];
   if (floor === null) return { maxTokens: configured, reason: "no_effort" };
   if (floor <= configured) return { maxTokens: configured, reason: "configured_sufficient" };
+  if (budgetScalesWithMaxTokens(input.model)) {
+    return { maxTokens: configured, reason: "budget_scales_with_max_tokens" };
+  }
   if (input.endpointPinned) return { maxTokens: configured, reason: "endpoint_pinned" };
 
   const modelMax = input.modelMaxCompletionTokens;

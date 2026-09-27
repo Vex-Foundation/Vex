@@ -44,6 +44,7 @@ import type {
 function makeInput(overrides: Partial<AnswerHeadroomInput> = {}): AnswerHeadroomInput {
   return {
     configuredMaxTokens: 16_384,
+    model: "openai/gpt-5",
     sentEffort: "high",
     modelMaxCompletionTokens: 128_000,
     contextLimit: 1_000_000,
@@ -56,7 +57,7 @@ function makeInput(overrides: Partial<AnswerHeadroomInput> = {}): AnswerHeadroom
 function makeConfig(overrides: Partial<InferenceConfig> = {}): InferenceConfig {
   return {
     provider: "openrouter",
-    model: "anthropic/claude-sonnet-4.5",
+    model: "openai/gpt-5",
     contextLimit: 256_000,
     maxOutputTokens: 16_384,
     inputPricePerM: 3,
@@ -162,6 +163,22 @@ describe("resolveAnswerHeadroomMaxTokens — policy", () => {
     ).toEqual({ maxTokens: 16_384, reason: "model_max_unknown" });
   });
 
+  it("does not raise for families whose thinking budget scales with max_tokens", () => {
+    let measured = 0;
+    const decision = resolveAnswerHeadroomMaxTokens(
+      makeInput({
+        model: "anthropic/claude-sonnet-4.5",
+        sentEffort: "xhigh",
+        promptTokensUpperBound: () => {
+          measured += 1;
+          return 1_000;
+        },
+      }),
+    );
+    expect(decision).toEqual({ maxTokens: 16_384, reason: "budget_scales_with_max_tokens" });
+    expect(measured).toBe(0);
+  });
+
   it("returns the configured value verbatim when switched off", () => {
     expect(resolveAnswerHeadroomMaxTokens(makeInput({ sentEffort: "max" }), false)).toEqual({
       maxTokens: 16_384,
@@ -201,7 +218,7 @@ describe("buildOpenRouterParams — answer headroom on the request", () => {
     expect(body["reasoning"]).toEqual({ effort: "high" });
   });
 
-  it("caps at the model max on the request (64k Anthropic ceiling at xhigh)", () => {
+  it("caps at the model max on the request (64k ceiling at xhigh)", () => {
     const params = buildOpenRouterParams(MESSAGES, [], makeConfig({ reasoningEffort: "xhigh" }), true);
     expect(params.maxTokens).toBe(64_000);
   });
@@ -249,6 +266,17 @@ describe("buildOpenRouterParams — answer headroom on the request", () => {
     );
     expect(params.maxTokens).toBe(16_384);
     expect("reasoning" in params).toBe(false);
+  });
+
+  it("leaves an Anthropic request at the configured max_tokens (budget = max_tokens x ratio)", () => {
+    const params = buildOpenRouterParams(
+      MESSAGES,
+      [],
+      makeConfig({ model: "anthropic/claude-sonnet-4.5", reasoningEffort: "high" }),
+      true,
+    );
+    expect(params.maxTokens).toBe(16_384);
+    expect(wireBody(params)["reasoning"]).toEqual({ effort: "high" });
   });
 
   it("keeps a higher configured value on the request", () => {

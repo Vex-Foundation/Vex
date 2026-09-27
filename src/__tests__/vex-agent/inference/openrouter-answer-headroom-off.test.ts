@@ -28,7 +28,7 @@ import type {
 
 const CONFIG: InferenceConfig = {
   provider: "openrouter",
-  model: "anthropic/claude-sonnet-4.5",
+  model: "openai/gpt-5",
   contextLimit: 256_000,
   maxOutputTokens: 16_384,
   inputPricePerM: 3,
@@ -105,7 +105,7 @@ describe("answer headroom switched off", () => {
           { content: "SYS", role: "system" },
           { content: "hello", role: "user" },
         ],
-        model: "anthropic/claude-sonnet-4.5",
+        model: "openai/gpt-5",
         reasoning: { effort: "xhigh" },
         stream: false,
       }),

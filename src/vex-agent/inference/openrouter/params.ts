@@ -181,6 +181,7 @@ export function buildOpenRouterParams(
   // off, `maxTokens` stays exactly `config.maxOutputTokens`.
   const headroom = resolveAnswerHeadroomMaxTokens({
     configuredMaxTokens: config.maxOutputTokens,
+    model: config.model,
     sentEffort: config.supportsReasoningEffort ? config.reasoningEffort : undefined,
     modelMaxCompletionTokens: config.modelMaxCompletionTokens,
     contextLimit: config.contextLimit,
