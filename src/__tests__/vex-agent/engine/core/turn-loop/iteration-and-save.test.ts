@@ -128,6 +128,19 @@ vi.mock("@vex-agent/db/repos/usage.js", () => ({
   logUsage: vi.fn(),
 }));
 
+// Runtime-timing writes are captured, not executed (Kairos Phase 1). The
+// thunk runs synchronously so each test can read the rows it produced.
+const mockInsertTurnRunTiming = vi.fn().mockResolvedValue(undefined);
+const mockInsertInferenceAttempt = vi.fn().mockResolvedValue(undefined);
+vi.mock("@vex-agent/db/repos/runtime-timings.js", () => ({
+  insertTurnRunTiming: (...a: unknown[]) => mockInsertTurnRunTiming(...a),
+  insertInferenceAttempt: (...a: unknown[]) => mockInsertInferenceAttempt(...a),
+  insertToolDispatchTiming: vi.fn().mockResolvedValue(undefined),
+  recordInBackground: (_label: string, write: () => Promise<void>) => {
+    void write();
+  },
+}));
+
 vi.mock("@vex-agent/db/client.js", () => ({
   execute: vi.fn(),
   query: vi.fn().mockResolvedValue([]),
@@ -756,6 +769,133 @@ describe("turn-loop", () => {
       expect(calls[0][1].role).toBe("assistant");
       expect(calls[1][1].role).toBe("tool");
       expect(calls[1][1].toolCallId).toBe("call-1");
+    });
+  });
+  // ── Runtime measurement (Kairos Phase 1) ─────────────────────
+
+  describe("runtime timing rows", () => {
+    function turnRunRows(): Array<Record<string, unknown>> {
+      return mockInsertTurnRunTiming.mock.calls.map((c) => c[0] as Record<string, unknown>);
+    }
+    function attemptRows(): Array<Record<string, unknown>> {
+      return mockInsertInferenceAttempt.mock.calls.map((c) => c[0] as Record<string, unknown>);
+    }
+
+    it("records one returned turn row and one attempt row per inference, sharing the turn run id", async () => {
+      const provider = makeProvider([
+        { toolCalls: [{ id: "call-1", name: "web_research", arguments: { query: "secret-arg-0xabc" } }] },
+        { content: "Done with secret-content-0xdef" },
+      ]);
+      mockDispatchTool.mockResolvedValue({ success: true, output: '{"ok":true}' });
+
+      const result = await runTurnLoop(
+        makeContext({ missionRunId: null }), [], null, 0, provider as any, makeConfig() as any, [],
+        defaultLoopConfig,
+      );
+
+      expect(result.text).toBe("Done with secret-content-0xdef");
+      expect(mockInsertTurnRunTiming).toHaveBeenCalledTimes(1);
+      const turnRow = turnRunRows()[0]!;
+      expect(turnRow).toMatchObject({
+        sessionId: "session-1",
+        missionRunId: null,
+        sessionKind: "agent",
+        outcome: "returned",
+        stopReason: null,
+        errorClass: null,
+        iterations: 2,
+        toolCalls: 1,
+      });
+      expect(typeof turnRow.turnRunId).toBe("string");
+      expect(turnRow.startedAt).toBeInstanceOf(Date);
+      expect(turnRow.totalMs as number).toBeGreaterThanOrEqual(0);
+
+      const attempts = attemptRows();
+      expect(attempts).toHaveLength(2);
+      expect(attempts.map((r) => r.iteration)).toEqual([0, 1]);
+      for (const row of attempts) {
+        expect(row.turnRunId).toBe(turnRow.turnRunId);
+        expect(row.outcome).toBe("completed");
+        expect(typeof row.preInferenceMs).toBe("number");
+        expect(row.preInferenceMs as number).toBeGreaterThanOrEqual(0);
+        expect(typeof row.promptStackMs).toBe("number");
+        expect(row.promptStackMs as number).toBeGreaterThanOrEqual(0);
+        // Pre-inference covers the prompt-stack build, so it can never be shorter.
+        expect(row.preInferenceMs as number).toBeGreaterThanOrEqual(row.promptStackMs as number);
+      }
+
+      const serialised = JSON.stringify([turnRow, ...attempts]);
+      expect(serialised).not.toContain("secret-arg-0xabc");
+      expect(serialised).not.toContain("secret-content-0xdef");
+    });
+
+    it("reports the stop reason on a bounded exit", async () => {
+      const provider = makeProvider([{ content: "Still working..." }]);
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-7" }),
+        [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, maxIterations: 3 },
+      );
+
+      expect(result.stopReason).toBe("iteration_limit");
+      expect(turnRunRows()).toHaveLength(1);
+      expect(turnRunRows()[0]).toMatchObject({
+        missionRunId: "run-7",
+        sessionKind: "mission",
+        outcome: "returned",
+        stopReason: "iteration_limit",
+        iterations: 3,
+        toolCalls: 0,
+      });
+      expect(attemptRows()).toHaveLength(3);
+    });
+
+    it("records an error turn row and rethrows the original error unchanged", async () => {
+      const boom = Object.assign(new Error("provider leaked secret-content-0xdef"), {
+        name: "ProviderError",
+        status: 500,
+      });
+      const provider = makeProvider([{ content: "unused" }]);
+      provider.chatCompletion.mockRejectedValue(boom);
+
+      let caught: unknown;
+      try {
+        await runTurnLoop(
+          makeContext(), [], null, 0, provider as any, makeConfig() as any, [],
+          defaultLoopConfig,
+        );
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBe(boom);
+      expect(turnRunRows()).toHaveLength(1);
+      const turnRow = turnRunRows()[0]!;
+      expect(turnRow).toMatchObject({
+        outcome: "error",
+        stopReason: null,
+        errorClass: "ProviderError:status=500",
+        iterations: 1,
+        toolCalls: 0,
+      });
+      // The failed attempt is measured too, under the same turn run.
+      expect(attemptRows()).toHaveLength(1);
+      expect(attemptRows()[0]).toMatchObject({
+        turnRunId: turnRow.turnRunId,
+        outcome: "error",
+        errorClass: "ProviderError:status=500",
+      });
+      expect(JSON.stringify([turnRow, ...attemptRows()])).not.toContain("secret-content-0xdef");
+    });
+
+    it("gives each runTurnLoop invocation its own turn run id", async () => {
+      const provider = makeProvider([{ content: "Hi" }]);
+      await runTurnLoop(makeContext(), [], null, 0, provider as any, makeConfig() as any, [], defaultLoopConfig);
+      await runTurnLoop(makeContext(), [], null, 0, provider as any, makeConfig() as any, [], defaultLoopConfig);
+
+      const ids = turnRunRows().map((r) => r.turnRunId);
+      expect(ids).toHaveLength(2);
+      expect(ids[0]).not.toBe(ids[1]);
     });
   });
 });

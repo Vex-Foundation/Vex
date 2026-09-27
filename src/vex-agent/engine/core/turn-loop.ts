@@ -44,6 +44,7 @@
  * sending another would make the ceiling a claim about a request nobody issued.
  */
 
+import { randomUUID } from "node:crypto";
 import type { EngineContext, StopReason } from "../types.js";
 import type { InferenceProvider, InferenceConfig, ToolDefinition } from "@vex-agent/inference/types.js";
 import type { Message } from "@vex-agent/db/repos/messages.js";
@@ -66,6 +67,11 @@ import {
   maxOperatorInstructionId,
 } from "./operator-instructions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
+import {
+  insertTurnRunTiming,
+  recordInBackground,
+} from "@vex-agent/db/repos/runtime-timings.js";
+import { classifyInferenceError } from "@vex-agent/inference/attempt-timing.js";
 
 // Per-iteration helpers (pure async; thread state explicitly through args/returns):
 import { runCriticalBandStep } from "./turn-loop/critical-band-step.js";
@@ -93,9 +99,24 @@ import {
 import { createToolCallLoopDetector } from "./runner/tool-call-loop-detector.js";
 
 /**
+ * Runtime-measurement state for one `runTurnLoop` invocation (Kairos Phase 1).
+ * `progress` is written by the loop as it goes so the wrapper can still report
+ * how far a turn got when it throws.
+ */
+interface TurnRunTelemetry {
+  readonly turnRunId: string;
+  readonly progress: { iterationsUsed: number; toolCallsMade: number };
+}
+
+/**
  * Run the turn loop.
  *
  * Iterates inference turns until a stop condition or chat response.
+ *
+ * This wrapper only measures: it tags the invocation with a `turnRunId` that
+ * every inference attempt and tool dispatch of this turn carries, and writes
+ * one `turn_run_timings` row in the background once the loop returns or
+ * throws. The result and any error pass through untouched.
  */
 export async function runTurnLoop(
   context: EngineContext,
@@ -113,6 +134,75 @@ export async function runTurnLoop(
   // mission boundary stop) — only the chat ingress passes this, so
   // mission callers are behaviour-preserving.
   inferenceAbortSignal?: AbortSignal,
+): Promise<TurnLoopResult> {
+  const run: TurnRunTelemetry = {
+    turnRunId: randomUUID(),
+    progress: { iterationsUsed: 0, toolCallsMade: 0 },
+  };
+  const startedAt = new Date();
+  const startedAtMs = performance.now();
+  let result: TurnLoopResult | undefined;
+  let error: unknown;
+  try {
+    result = await runTurnLoopBody(
+      context, messages, summary, tokenCount, provider, config, tools, loopConfig,
+      promptOptions, abortSignal, inferenceAbortSignal, run,
+    );
+    return result;
+  } catch (err) {
+    error = err;
+    throw err;
+  } finally {
+    recordTurnRunTiming(context, run, startedAt, performance.now() - startedAtMs, result, error);
+  }
+}
+
+/**
+ * Write the `turn_run_timings` row. Fire-and-forget and never throws, so it
+ * cannot change what `runTurnLoop` returns or throws. Sanitised: counts, the
+ * stop reason enum, and `classifyInferenceError`'s label — never message text.
+ */
+function recordTurnRunTiming(
+  context: EngineContext,
+  run: TurnRunTelemetry,
+  startedAt: Date,
+  totalMs: number,
+  result: TurnLoopResult | undefined,
+  error: unknown,
+): void {
+  try {
+    const row = {
+      turnRunId: run.turnRunId,
+      sessionId: context.sessionId,
+      missionRunId: context.missionRunId ?? null,
+      sessionKind: context.sessionKind ?? null,
+      startedAt,
+      totalMs,
+      iterations: run.progress.iterationsUsed,
+      toolCalls: result?.toolCallsMade ?? run.progress.toolCallsMade,
+      outcome: result === undefined ? ("error" as const) : ("returned" as const),
+      stopReason: result?.stopReason ?? null,
+      errorClass: result === undefined ? classifyInferenceError(error) : null,
+    };
+    recordInBackground("turn_run", () => insertTurnRunTiming(row));
+  } catch {
+    // Telemetry must never change what the turn returns or throws.
+  }
+}
+
+async function runTurnLoopBody(
+  context: EngineContext,
+  messages: Message[],
+  summary: string | null,
+  tokenCount: number,
+  provider: InferenceProvider,
+  config: InferenceConfig,
+  tools: ToolDefinition[],
+  loopConfig: TurnLoopConfig,
+  promptOptions: PromptStackOptions,
+  abortSignal: AbortSignal | undefined,
+  inferenceAbortSignal: AbortSignal | undefined,
+  run: TurnRunTelemetry,
 ): Promise<TurnLoopResult> {
   let lastText: string | null = null;
   let totalToolCalls = 0;
@@ -192,6 +282,8 @@ export async function runTurnLoop(
   }
 
   for (let iteration = 0; iteration < loopConfig.maxIterations; iteration++) {
+    // Runtime measurement: iteration top → just before `executeTurn`.
+    const iterationStartMs = performance.now();
     active = await resolveEffectiveInferenceConfig(config, loopConfig.contextLimit, context.sessionId, provider);
     // Hard mission deadline — the agent-independent time-box. Checked FIRST
     // each iteration, before any other guard or inference call, so an
@@ -243,6 +335,7 @@ export async function runTurnLoop(
     }
 
     iterationsUsed = iteration + 1;
+    run.progress.iterationsUsed = iterationsUsed;
 
     // Increment iteration counter for mission runs AFTER entry guards pass.
     if (context.missionRunId) {
@@ -283,6 +376,7 @@ export async function runTurnLoop(
     );
 
     // Per-turn prompt stack (banner + resume packet + tools).
+    const promptStackStartMs = performance.now();
     const stack = await buildTurnPromptStack({
       context,
       turnBand,
@@ -293,6 +387,7 @@ export async function runTurnLoop(
       baseVisibility: loopConfig.baseVisibility,
       preparationState,
     });
+    const promptStackMs = performance.now() - promptStackStartMs;
     postCompactBridgeRemaining = stack.nextPostCompactBridgeRemaining;
 
     // Build the request envelope ONCE, here, so the ceiling below measures the
@@ -335,6 +430,12 @@ export async function runTurnLoop(
       inferenceAbortSignal,
       // THE measured object, not a rebuild.
       envelope,
+      {
+        turnRunId: run.turnRunId,
+        iteration,
+        preInferenceMs: performance.now() - iterationStartMs,
+        promptStackMs,
+      },
     );
     currentTokenCount = turnResult.promptTokens;
     observeBand(currentTokenCount, "post_turn_text");
@@ -462,6 +563,7 @@ export async function runTurnLoop(
         loopDetector,
       });
       totalToolCalls += batchOutcome.toolCallsExecuted;
+      run.progress.toolCallsMade = totalToolCalls;
       lastText = batchOutcome.lastText;
 
       const batchStep = await applyToolBatchOutcome({
