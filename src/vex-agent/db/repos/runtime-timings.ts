@@ -136,15 +136,104 @@ export async function insertTurnRunTiming(r: TurnRunTimingRecord): Promise<void>
 }
 
 /**
+ * At most this many telemetry writes may be in flight at once. Each one holds a
+ * pool connection while it runs; if the database is slow, an unbounded backlog
+ * of timing rows would compete with the turn's own transcript writes for the
+ * same pool. Past the cap a row is DROPPED, never queued: a queue would only
+ * move the backlog into memory and replay it while the database is already
+ * struggling.
+ */
+export const MAX_IN_FLIGHT_TELEMETRY_WRITES = 4;
+
+/** `runtime_timings.dropped` is logged at most once per this window. */
+export const DROPPED_LOG_INTERVAL_MS = 60_000;
+
+let inFlightWrites = 0;
+let droppedTotal = 0;
+let droppedSinceLog = 0;
+let lastDropLogAtMs: number | null = null;
+let clock: () => number = () => performance.now();
+
+export interface TelemetryWriteStats {
+  readonly inFlight: number;
+  /** Rows dropped at the cap since the process started (or the last test reset). */
+  readonly dropped: number;
+}
+
+export function getTelemetryWriteStats(): TelemetryWriteStats {
+  return { inFlight: inFlightWrites, dropped: droppedTotal };
+}
+
+/** Test-only: clear the counters and optionally swap the monotonic clock. */
+export function resetTelemetryWriteStatsForTests(now?: () => number): void {
+  inFlightWrites = 0;
+  droppedTotal = 0;
+  droppedSinceLog = 0;
+  lastDropLogAtMs = null;
+  clock = now ?? (() => performance.now());
+}
+
+/**
+ * Logs the drops accumulated since the last log, if there are any and the
+ * interval has passed. Called on every drop and every settled write rather
+ * than from a timer, so nothing stays scheduled once telemetry goes quiet.
+ */
+function maybeLogDrops(): void {
+  if (droppedSinceLog === 0) return;
+  const now = clock();
+  if (lastDropLogAtMs !== null && now - lastDropLogAtMs < DROPPED_LOG_INTERVAL_MS) return;
+  const dropped = droppedSinceLog;
+  droppedSinceLog = 0;
+  lastDropLogAtMs = now;
+  try {
+    logger.warn("runtime_timings.dropped", {
+      dropped,
+      droppedTotal,
+      maxInFlight: MAX_IN_FLIGHT_TELEMETRY_WRITES,
+    });
+  } catch {
+    // Logging must not turn a dropped telemetry row into a turn failure.
+  }
+}
+
+/**
  * Fire-and-forget wrapper: never throws, never awaited by callers, logs
  * `runtime_timings.write_failed`.
  *
  * A synchronous throw from `write` is caught too, so a caller can pass any
  * thunk without guarding it. The log carries only the label and the error's
  * class name — a driver error message can echo bound parameter values.
+ *
+ * Bounded: with `MAX_IN_FLIGHT_TELEMETRY_WRITES` writes already running, the
+ * row is dropped without calling `write`, counted, and reported through a
+ * throttled `runtime_timings.dropped` warning. A slot is freed when its write
+ * settles, whether it succeeded or failed.
  */
 export function recordInBackground(label: string, write: () => Promise<void>): void {
+  if (inFlightWrites >= MAX_IN_FLIGHT_TELEMETRY_WRITES) {
+    droppedTotal += 1;
+    droppedSinceLog += 1;
+    try {
+      maybeLogDrops();
+    } catch {
+      // Never throws: the caller is on the turn path.
+    }
+    return;
+  }
+  inFlightWrites += 1;
+  let released = false;
+  const release = (): void => {
+    if (released) return;
+    released = true;
+    inFlightWrites = Math.max(0, inFlightWrites - 1);
+    try {
+      maybeLogDrops();
+    } catch {
+      // A settled write must never surface as an unhandled rejection.
+    }
+  };
   const onFailure = (err: unknown): void => {
+    release();
     try {
       logger.warn("runtime_timings.write_failed", {
         label,
@@ -155,7 +244,7 @@ export function recordInBackground(label: string, write: () => Promise<void>): v
     }
   };
   try {
-    void write().catch(onFailure);
+    void write().then(release, onFailure);
   } catch (err) {
     onFailure(err);
   }

@@ -1,7 +1,7 @@
 /**
  * runtime-timings repo — column/parameter wiring for the three telemetry
  * tables added by migration 171, and the fire-and-forget contract of
- * `recordInBackground`.
+ * `recordInBackground`, including its in-flight cap and throttled drop log.
  *
  * Parameters are asserted POSITIONALLY against the column list parsed out of
  * the SQL itself, so a column added without its parameter (or vice versa)
@@ -35,6 +35,10 @@ const {
   insertToolDispatchTiming,
   insertTurnRunTiming,
   recordInBackground,
+  getTelemetryWriteStats,
+  resetTelemetryWriteStatsForTests,
+  MAX_IN_FLIGHT_TELEMETRY_WRITES,
+  DROPPED_LOG_INTERVAL_MS,
 } = await import("@vex-agent/db/repos/runtime-timings.js");
 
 type InferenceAttemptRecord = Parameters<typeof insertInferenceAttempt>[0];
@@ -305,6 +309,7 @@ describe("runtime-timings repo — insertTurnRunTiming", () => {
 describe("runtime-timings repo — recordInBackground", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetTelemetryWriteStatsForTests();
   });
 
   it("returns synchronously without awaiting the write", () => {
@@ -363,5 +368,135 @@ describe("runtime-timings repo — recordInBackground", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(write).toHaveBeenCalledTimes(1);
     expect(mockWarn).not.toHaveBeenCalled();
+  });
+});
+
+describe("runtime-timings repo — recordInBackground in-flight cap", () => {
+  let nowMs = 0;
+
+  /** A write that stays pending until the test settles it. */
+  function pendingWrite(): { write: () => Promise<void>; resolve: () => void; reject: (err: Error) => void } {
+    let resolve: () => void = () => undefined;
+    let reject: (err: Error) => void = () => undefined;
+    const promise = new Promise<void>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { write: () => promise, resolve, reject };
+  }
+
+  function fillToCap(): Array<ReturnType<typeof pendingWrite>> {
+    const writes = Array.from({ length: MAX_IN_FLIGHT_TELEMETRY_WRITES }, () => pendingWrite());
+    for (const w of writes) recordInBackground("inference_attempt", w.write);
+    return writes;
+  }
+
+  const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+  const droppedLogs = (): unknown[][] => mockWarn.mock.calls.filter((c) => c[0] === "runtime_timings.dropped");
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    nowMs = 1_000;
+    resetTelemetryWriteStatsForTests(() => nowMs);
+  });
+
+  it("caps in-flight writes and drops, without calling or queueing, the ones past the cap", async () => {
+    expect(MAX_IN_FLIGHT_TELEMETRY_WRITES).toBe(4);
+    const writes = fillToCap();
+    expect(getTelemetryWriteStats()).toEqual({ inFlight: 4, dropped: 0 });
+
+    const overflow = vi.fn(() => Promise.resolve());
+    expect(() => recordInBackground("tool_dispatch", overflow)).not.toThrow();
+    recordInBackground("turn_run", overflow);
+
+    expect(overflow).not.toHaveBeenCalled();
+    expect(getTelemetryWriteStats()).toEqual({ inFlight: 4, dropped: 2 });
+
+    for (const w of writes) w.resolve();
+    await flush();
+    // Dropped rows are gone for good: settling the slots does not replay them.
+    expect(overflow).not.toHaveBeenCalled();
+    expect(getTelemetryWriteStats()).toEqual({ inFlight: 0, dropped: 2 });
+  });
+
+  it("frees a slot when a write succeeds and when it fails", async () => {
+    const writes = fillToCap();
+    const [first, second] = [requireValue(writes[0]), requireValue(writes[1])];
+
+    first.resolve();
+    await flush();
+    expect(getTelemetryWriteStats().inFlight).toBe(3);
+    const next = vi.fn(() => pendingWrite().write());
+    recordInBackground("inference_attempt", next);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(getTelemetryWriteStats()).toEqual({ inFlight: 4, dropped: 0 });
+
+    second.reject(new Error("db down"));
+    await flush();
+    expect(getTelemetryWriteStats().inFlight).toBe(3);
+    expect(mockWarn).toHaveBeenCalledWith("runtime_timings.write_failed", {
+      label: "inference_attempt",
+      errorClass: "Error",
+    });
+  });
+
+  it("frees the slot of a write that throws synchronously", () => {
+    recordInBackground("turn_run", () => {
+      throw new TypeError("bad");
+    });
+    expect(getTelemetryWriteStats()).toEqual({ inFlight: 0, dropped: 0 });
+  });
+
+  it("logs drops at most once per interval, carrying the count since the last log", async () => {
+    const writes = fillToCap();
+    const noop = (): Promise<void> => Promise.resolve();
+
+    recordInBackground("inference_attempt", noop);
+    expect(droppedLogs()).toEqual([
+      ["runtime_timings.dropped", { dropped: 1, droppedTotal: 1, maxInFlight: 4 }],
+    ]);
+
+    nowMs += DROPPED_LOG_INTERVAL_MS - 1;
+    recordInBackground("inference_attempt", noop);
+    recordInBackground("inference_attempt", noop);
+    expect(droppedLogs()).toHaveLength(1);
+
+    nowMs += 1;
+    recordInBackground("inference_attempt", noop);
+    expect(droppedLogs()).toHaveLength(2);
+    expect(droppedLogs()[1]).toEqual([
+      "runtime_timings.dropped", { dropped: 3, droppedTotal: 4, maxInFlight: 4 },
+    ]);
+
+    // Drops still unreported when telemetry goes quiet are logged on the next
+    // settled write once the interval has passed; no timer is involved.
+    recordInBackground("inference_attempt", noop);
+    expect(droppedLogs()).toHaveLength(2);
+    nowMs += DROPPED_LOG_INTERVAL_MS;
+    requireValue(writes[0]).resolve();
+    await flush();
+    expect(droppedLogs()).toHaveLength(3);
+    expect(droppedLogs()[2]).toEqual([
+      "runtime_timings.dropped", { dropped: 1, droppedTotal: 5, maxInFlight: 4 },
+    ]);
+
+    for (const w of writes.slice(1)) w.resolve();
+    await flush();
+    expect(droppedLogs()).toHaveLength(3);
+  });
+
+  it("stays silent about drops when nothing was dropped", async () => {
+    const writes = fillToCap();
+    nowMs += DROPPED_LOG_INTERVAL_MS * 5;
+    for (const w of writes) w.resolve();
+    await flush();
+    expect(droppedLogs()).toHaveLength(0);
+  });
+
+  it("does not throw when the drop log itself fails", () => {
+    fillToCap();
+    mockWarn.mockImplementationOnce(() => { throw new Error("logger down"); });
+    expect(() => recordInBackground("inference_attempt", () => Promise.resolve())).not.toThrow();
+    expect(getTelemetryWriteStats().dropped).toBe(1);
   });
 });
