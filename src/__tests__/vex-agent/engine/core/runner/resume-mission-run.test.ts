@@ -361,6 +361,28 @@ describe("runner", () => {
       );
     });
 
+    it("hands the resumed loop its entry timestamp for the queue-wait measurement", async () => {
+      mockGetRun.mockResolvedValueOnce({
+        id: "run-1", missionId: "mission-1", sessionId: "session-1",
+        status: "paused_wake", iterationCount: 5,
+      });
+      mockGetMission.mockResolvedValueOnce(makeReadyMission({ status: "running" }));
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission", missionId: "mission-1", missionRunId: "run-1",
+      }));
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
+      });
+
+      const before = performance.now();
+      await resumeMissionRun("run-1", RESUME_OWNER);
+
+      const [, , , , , , , loopConfig] = mockRunTurnLoop.mock.calls[0]!;
+      const entry = (loopConfig as { entryStartedAtMs?: number }).entryStartedAtMs;
+      expect(entry).toBeGreaterThanOrEqual(before);
+      expect(entry).toBeLessThanOrEqual(performance.now());
+    });
+
     // WP-I1: the hard deadline holds ACROSS resumes — it is recomputed from
     // the same immutable `missionRunStartedAt` each time, not reset to "now".
     // (No `contractSnapshotJson` on the run -> frozen duration null -> 60min.)

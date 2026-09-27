@@ -164,6 +164,8 @@ async function addMissionActivationMessage(
 export async function runPreparedMissionStart(
   prepared: PreparedMissionStart,
 ): Promise<TurnResult> {
+  // Runtime measurement: the loop records entry → loop start as queue wait.
+  const entryStartedAtMs = performance.now();
   const controller = registerMissionRunAbortController(prepared.runId);
   try {
     await addMissionActivationMessage({
@@ -226,6 +228,7 @@ export async function runPreparedMissionStart(
         hydrated.context.missionRunStartedAt,
         prepared.contractSnapshot,
       ),
+      entryStartedAtMs,
     };
 
     const result = await runTurnLoop(
@@ -328,6 +331,8 @@ export interface PreparedResumeRun {
 export async function resumePreparedMissionRun(
   prepared: PreparedResumeRun,
 ): Promise<TurnResult> {
+  // Runtime measurement: the loop records entry → loop start as queue wait.
+  const entryStartedAtMs = performance.now();
   const controller = registerMissionRunAbortController(prepared.runId);
   try {
     // GUARDED flip, not `updateStatus`. `resumeMissionRun` checks the run is
@@ -407,6 +412,7 @@ export async function resumePreparedMissionRun(
         hydrated.context.missionRunStartedAt,
         prepared.run.contractSnapshotJson,
       ),
+      entryStartedAtMs,
     };
 
     const result = await runTurnLoop(

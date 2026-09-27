@@ -898,6 +898,31 @@ describe("turn-loop", () => {
       expect(JSON.stringify([turnRow, ...attemptRows()])).not.toContain("secret-content-0xdef");
     });
 
+    it("records queue wait from the caller's entry timestamp, and NULL without one", async () => {
+      const provider = makeProvider([{ content: "Hi" }]);
+      const entryStartedAtMs = performance.now() - 250;
+      await runTurnLoop(
+        makeContext(), [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, entryStartedAtMs },
+      );
+      await runTurnLoop(makeContext(), [], null, 0, provider as any, makeConfig() as any, [], defaultLoopConfig);
+
+      const [withEntry, withoutEntry] = turnRunRows();
+      expect(withEntry!.queueWaitMs as number).toBeGreaterThanOrEqual(250);
+      // Queue wait ends where the loop starts; it is never part of total_ms.
+      expect(withEntry!.queueWaitMs as number).toBeLessThan(250 + 5_000);
+      expect(withoutEntry!.queueWaitMs).toBeNull();
+    });
+
+    it("never reports a negative queue wait for an entry stamp after the loop start", async () => {
+      const provider = makeProvider([{ content: "Hi" }]);
+      await runTurnLoop(
+        makeContext(), [], null, 0, provider as any, makeConfig() as any, [],
+        { ...defaultLoopConfig, entryStartedAtMs: performance.now() + 60_000 },
+      );
+      expect(turnRunRows()[0]!.queueWaitMs).toBe(0);
+    });
+
     it("gives each runTurnLoop invocation its own turn run id", async () => {
       const provider = makeProvider([{ content: "Hi" }]);
       await runTurnLoop(makeContext(), [], null, 0, provider as any, makeConfig() as any, [], defaultLoopConfig);

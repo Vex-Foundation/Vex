@@ -39,6 +39,8 @@ export async function processMissionSetupTurn(
   signal?: AbortSignal,
 ): Promise<TurnResult> {
   logger.info("engine.mission.setup_turn", { sessionId });
+  // Runtime measurement: the loop records entry → loop start as queue wait.
+  const entryStartedAtMs = performance.now();
 
   const provider = await resolveProvider();
   if (!provider) throw new Error("No inference provider available");
@@ -147,6 +149,7 @@ export async function processMissionSetupTurn(
     // boundary action can PROVE ownership (equality against the live lease)
     // rather than adopting whatever owner the row currently names.
     runnerOwnerId: ownerId,
+    entryStartedAtMs,
   };
 
   const promptOptions: PromptStackOptions = {

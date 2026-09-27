@@ -67,6 +67,8 @@ export async function processAgentTurn(
   options?: TurnRequestOptions,
 ): Promise<TurnResult> {
   logger.info("engine.agent.turn", { sessionId });
+  // Runtime measurement: the loop records entry → loop start as queue wait.
+  const entryStartedAtMs = performance.now();
 
   const provider = await resolveProvider();
   if (!provider) throw new Error("No inference provider available");
@@ -122,6 +124,7 @@ export async function processAgentTurn(
       undefined,
       // This function claimed the lease above — it can prove ownership.
       ownerId,
+      entryStartedAtMs,
     );
   } finally {
     // COMMITTED-WAKE CLEANUP. A foreground Stop is request-local by contract,
@@ -196,6 +199,8 @@ export async function continueAgentSessionUnderLease(
   runnerOwnerId: string,
 ): Promise<TurnResult> {
   logger.info("engine.agent.wake_continuation", { sessionId });
+  // Runtime measurement: the loop records entry → loop start as queue wait.
+  const entryStartedAtMs = performance.now();
 
   const { gateOnOperatorStopWithClient, withSessionControlLock } = await import(
     "../../runtime/lease-and-status.js"
@@ -258,6 +263,7 @@ export async function continueAgentSessionUnderLease(
       // The executor holds this session's lease for the whole slice, so the
       // turn loop can prove ownership for a compaction cutover.
       runnerOwnerId,
+      entryStartedAtMs,
     );
   } finally {
     // (3) CONSUME what stopped us. An applied stop is consumed exactly once —
@@ -333,6 +339,11 @@ export async function runAgentTurnUnderLease(
    * would be impersonation, not a check.
    */
   runnerOwnerId?: string,
+  /**
+   * `performance.now()` at the caller's entry, for the turn run's queue-wait
+   * measurement only (see `TurnLoopConfig.entryStartedAtMs`). Omitted ⇒ NULL.
+   */
+  entryStartedAtMs?: number,
 ): Promise<TurnResult> {
   // Hydrate
   const hydrated = await hydrateEngineSession(sessionId);
@@ -380,6 +391,7 @@ export async function runAgentTurnUnderLease(
     // boundary action can PROVE ownership (equality against the live lease)
     // rather than adopting whatever owner the row currently names.
     ...(runnerOwnerId === undefined ? {} : { runnerOwnerId }),
+    ...(entryStartedAtMs === undefined ? {} : { entryStartedAtMs }),
   };
 
   // The transcript (including whatever this turn was woken to observe) is

@@ -132,6 +132,12 @@ CREATE INDEX IF NOT EXISTS idx_tool_dispatch_timings_turn_run ON tool_dispatch_t
 -- invocation. `outcome` is 'returned' (with the loop's `stop_reason`) or
 -- 'error' (with a sanitised `error_class`); `session_kind` lets the report
 -- split interactive chat from mission turns.
+--
+--   queue_wait_ms   the entry point starting to handle the turn (the chat,
+--                   setup, wake or mission-run handler) to the moment
+--                   `runTurnLoop` starts: lease claim, provider/config load,
+--                   hydrate and the setup the loop itself never sees. NULL
+--                   when the caller did not supply an entry timestamp.
 CREATE TABLE IF NOT EXISTS turn_run_timings (
   turn_run_id     TEXT PRIMARY KEY,
   session_id      TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -141,6 +147,7 @@ CREATE TABLE IF NOT EXISTS turn_run_timings (
   total_ms        INTEGER NOT NULL,
   iterations      INTEGER NOT NULL,
   tool_calls      INTEGER NOT NULL,
+  queue_wait_ms   INTEGER,
   outcome         TEXT NOT NULL CHECK (outcome IN ('returned','error')),
   stop_reason     TEXT,
   error_class     TEXT,
