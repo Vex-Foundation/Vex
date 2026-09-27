@@ -73,6 +73,8 @@ export interface TurnRunTimingRecord {
   toolCalls: number;
   /** Entry point start → `runTurnLoop` start; NULL when the caller gave none. */
   queueWaitMs: number | null;
+  /** Total time the loop spent awaiting transcript writes. */
+  persistMs: number;
   outcome: "returned" | "error";
   stopReason: string | null;
   errorClass: string | null;
@@ -126,10 +128,10 @@ export async function insertTurnRunTiming(r: TurnRunTimingRecord): Promise<void>
   await execute(
     `INSERT INTO turn_run_timings (
        turn_run_id, session_id, mission_run_id, session_kind, started_at, total_ms,
-       iterations, tool_calls, queue_wait_ms, outcome, stop_reason, error_class)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+       iterations, tool_calls, queue_wait_ms, persist_ms, outcome, stop_reason, error_class)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [r.turnRunId, r.sessionId, r.missionRunId, r.sessionKind, r.startedAt, ms(r.totalMs),
-     r.iterations, r.toolCalls, msOrNull(r.queueWaitMs), r.outcome, r.stopReason, r.errorClass],
+     r.iterations, r.toolCalls, msOrNull(r.queueWaitMs), ms(r.persistMs), r.outcome, r.stopReason, r.errorClass],
   );
 }
 

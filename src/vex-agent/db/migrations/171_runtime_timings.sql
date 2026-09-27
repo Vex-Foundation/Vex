@@ -138,6 +138,10 @@ CREATE INDEX IF NOT EXISTS idx_tool_dispatch_timings_turn_run ON tool_dispatch_t
 --                   `runTurnLoop` starts: lease claim, provider/config load,
 --                   hydrate and the setup the loop itself never sees. NULL
 --                   when the caller did not supply an entry timestamp.
+--   persist_ms      total time the loop spent awaiting transcript writes
+--                   (assistant rows and tool results). Measured, not
+--                   inferred: a slow database shows up here instead of as an
+--                   unexplained gap between inference and tool time.
 CREATE TABLE IF NOT EXISTS turn_run_timings (
   turn_run_id     TEXT PRIMARY KEY,
   session_id      TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -148,6 +152,7 @@ CREATE TABLE IF NOT EXISTS turn_run_timings (
   iterations      INTEGER NOT NULL,
   tool_calls      INTEGER NOT NULL,
   queue_wait_ms   INTEGER,
+  persist_ms      INTEGER,
   outcome         TEXT NOT NULL CHECK (outcome IN ('returned','error')),
   stop_reason     TEXT,
   error_class     TEXT,

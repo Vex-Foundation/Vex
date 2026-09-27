@@ -37,6 +37,7 @@ import type { Message } from "@vex-agent/db/repos/messages.js";
 import type { BoardSpecV1 } from "../../../lib/board/index.js";
 import type { PromptStackOptions } from "../prompts/index.js";
 import { buildTurnEnvelope, type TurnEnvelope } from "./turn-envelope.js";
+import { timePersist } from "./turn-loop/persist-timing.js";
 import {
   appendMessage,
   streamDeltaBus,
@@ -451,7 +452,9 @@ export async function saveAssistantMessage(
     };
   }
 
-  await appendMessage(
+  // Timed toward the enclosing turn's `persist_ms`; the write itself is awaited
+  // and fails exactly as before.
+  await timePersist(() => appendMessage(
     sessionId,
     {
       role: "assistant",
@@ -462,5 +465,5 @@ export async function saveAssistantMessage(
       timestamp: new Date().toISOString(),
     },
     metadata,
-  );
+  ));
 }

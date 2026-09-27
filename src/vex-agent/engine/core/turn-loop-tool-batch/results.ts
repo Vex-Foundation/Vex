@@ -15,6 +15,7 @@ import { appendMessage } from "@vex-agent/engine/events/index.js";
 import type { ExplorerRef } from "../explorer-refs.js";
 import type { ToolDisplayStatus } from "../tool-display-status.js";
 import { saveAssistantMessage } from "../turn.js";
+import { timePersist } from "../turn-loop/persist-timing.js";
 import type { StopPayload, ToolBatchOutcome } from "./outcome.js";
 
 /** Synthetic tool-result emitted for batch tool calls skipped after a `compact_committed` signal. */
@@ -225,11 +226,12 @@ export async function persistBatchTranscript(args: {
       },
     };
 
-    await appendMessage(
+    // Timed toward the enclosing turn's `persist_ms`; same await, same failure.
+    await timePersist(() => appendMessage(
       sessionId,
       { role: "tool", content: output, toolCallId, timestamp: new Date().toISOString() },
       metadata,
-    );
+    ));
 
     liveMessages.push({
       role: "tool",

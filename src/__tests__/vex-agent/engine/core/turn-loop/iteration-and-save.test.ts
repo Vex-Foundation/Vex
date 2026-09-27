@@ -923,6 +923,31 @@ describe("turn-loop", () => {
       expect(turnRunRows()[0]!.queueWaitMs).toBe(0);
     });
 
+    it("accumulates the time spent awaiting assistant and tool-result writes as persistMs", async () => {
+      const provider = makeProvider([
+        { toolCalls: [{ id: "call-1", name: "web_research", arguments: { query: "q" } }] },
+        { content: "Done" },
+      ]);
+      mockDispatchTool.mockResolvedValue({ success: true, output: '{"ok":true}' });
+      // Every transcript write takes ~20 ms: assistant(tool call), tool result,
+      // final assistant text = three timed writes.
+      const slowWrite = () => new Promise<void>((r) => setTimeout(r, 20));
+      mockAddMessage
+        .mockImplementationOnce(slowWrite)
+        .mockImplementationOnce(slowWrite)
+        .mockImplementationOnce(slowWrite);
+
+      await runTurnLoop(
+        makeContext({ missionRunId: null }), [], null, 0, provider as any, makeConfig() as any, [],
+        defaultLoopConfig,
+      );
+
+      expect(mockAddMessage).toHaveBeenCalledTimes(3);
+      const row = turnRunRows()[0]!;
+      expect(row.persistMs as number).toBeGreaterThanOrEqual(55);
+      expect(row.persistMs as number).toBeLessThanOrEqual(row.totalMs as number);
+    });
+
     it("gives each runTurnLoop invocation its own turn run id", async () => {
       const provider = makeProvider([{ content: "Hi" }]);
       await runTurnLoop(makeContext(), [], null, 0, provider as any, makeConfig() as any, [], defaultLoopConfig);

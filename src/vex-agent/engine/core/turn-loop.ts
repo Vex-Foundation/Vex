@@ -72,6 +72,7 @@ import {
   recordInBackground,
 } from "@vex-agent/db/repos/runtime-timings.js";
 import { classifyInferenceError } from "@vex-agent/inference/attempt-timing.js";
+import { withPersistTiming } from "./turn-loop/persist-timing.js";
 
 // Per-iteration helpers (pure async; thread state explicitly through args/returns):
 import { runCriticalBandStep } from "./turn-loop/critical-band-step.js";
@@ -101,11 +102,12 @@ import { createToolCallLoopDetector } from "./runner/tool-call-loop-detector.js"
 /**
  * Runtime-measurement state for one `runTurnLoop` invocation (Kairos Phase 1).
  * `progress` is written by the loop as it goes so the wrapper can still report
- * how far a turn got when it throws.
+ * how far a turn got when it throws. `persistMs` is accumulated by the
+ * transcript write sites through the `withPersistTiming` scope.
  */
 interface TurnRunTelemetry {
   readonly turnRunId: string;
-  readonly progress: { iterationsUsed: number; toolCallsMade: number };
+  readonly progress: { iterationsUsed: number; toolCallsMade: number; persistMs: number };
 }
 
 /**
@@ -137,17 +139,17 @@ export async function runTurnLoop(
 ): Promise<TurnLoopResult> {
   const run: TurnRunTelemetry = {
     turnRunId: randomUUID(),
-    progress: { iterationsUsed: 0, toolCallsMade: 0 },
+    progress: { iterationsUsed: 0, toolCallsMade: 0, persistMs: 0 },
   };
   const startedAt = new Date();
   const startedAtMs = performance.now();
   let result: TurnLoopResult | undefined;
   let error: unknown;
   try {
-    result = await runTurnLoopBody(
+    result = await withPersistTiming(run.progress, () => runTurnLoopBody(
       context, messages, summary, tokenCount, provider, config, tools, loopConfig,
       promptOptions, abortSignal, inferenceAbortSignal, run,
-    );
+    ));
     return result;
   } catch (err) {
     error = err;
@@ -194,6 +196,7 @@ function recordTurnRunTiming(
       iterations: run.progress.iterationsUsed,
       toolCalls: result?.toolCallsMade ?? run.progress.toolCallsMade,
       queueWaitMs,
+      persistMs: run.progress.persistMs,
       outcome: result === undefined ? ("error" as const) : ("returned" as const),
       stopReason: result?.stopReason ?? null,
       errorClass: result === undefined ? classifyInferenceError(error) : null,
