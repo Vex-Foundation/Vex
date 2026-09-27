@@ -9,6 +9,16 @@ import type {
   StreamChunk,
 } from "@vex-agent/inference/types.js";
 import { OpenRouterEmptyStreamError } from "@vex-agent/inference/openrouter/non-empty-stream.js";
+import type {
+  InferenceAttemptRecord,
+  ToolDispatchTimingRecord,
+  TurnRunTimingRecord,
+} from "@vex-agent/db/repos/runtime-timings.js";
+import {
+  fakeInferenceProvider,
+  withoutStreamMethod,
+} from "../../../../helpers/inference-provider.js";
+import { requireValue } from "../../../../helpers/require-value.js";
 
 // ── Mocks ─────────────────────────────────────────────────────
 
@@ -130,13 +140,20 @@ vi.mock("@vex-agent/db/repos/usage.js", () => ({
 
 // Runtime-timing writes are captured, not executed (Kairos Phase 1). The
 // thunk runs synchronously so each test can read the rows it produced.
-const mockInsertTurnRunTiming = vi.fn().mockResolvedValue(undefined);
-const mockInsertInferenceAttempt = vi.fn().mockResolvedValue(undefined);
-const mockInsertToolDispatchTiming = vi.fn().mockResolvedValue(undefined);
+const mockInsertTurnRunTiming = vi
+  .fn<(record: TurnRunTimingRecord) => Promise<void>>()
+  .mockResolvedValue(undefined);
+const mockInsertInferenceAttempt = vi
+  .fn<(record: InferenceAttemptRecord) => Promise<void>>()
+  .mockResolvedValue(undefined);
+const mockInsertToolDispatchTiming = vi
+  .fn<(record: ToolDispatchTimingRecord) => Promise<void>>()
+  .mockResolvedValue(undefined);
 vi.mock("@vex-agent/db/repos/runtime-timings.js", () => ({
-  insertTurnRunTiming: (...a: unknown[]) => mockInsertTurnRunTiming(...a),
-  insertInferenceAttempt: (...a: unknown[]) => mockInsertInferenceAttempt(...a),
-  insertToolDispatchTiming: (...a: unknown[]) => mockInsertToolDispatchTiming(...a),
+  insertTurnRunTiming: (record: TurnRunTimingRecord) => mockInsertTurnRunTiming(record),
+  insertInferenceAttempt: (record: InferenceAttemptRecord) => mockInsertInferenceAttempt(record),
+  insertToolDispatchTiming: (record: ToolDispatchTimingRecord) =>
+    mockInsertToolDispatchTiming(record),
   recordInBackground: (_label: string, write: () => Promise<void>) => {
     void write();
   },
@@ -775,28 +792,42 @@ describe("turn-loop", () => {
   // ── Runtime measurement (Kairos Phase 1) ─────────────────────
 
   describe("runtime timing rows", () => {
-    function turnRunRows(): Array<Record<string, unknown>> {
-      return mockInsertTurnRunTiming.mock.calls.map((c) => c[0] as Record<string, unknown>);
+    function turnRunRows(): TurnRunTimingRecord[] {
+      return mockInsertTurnRunTiming.mock.calls.map((c) => c[0]);
     }
-    function attemptRows(): Array<Record<string, unknown>> {
-      return mockInsertInferenceAttempt.mock.calls.map((c) => c[0] as Record<string, unknown>);
+    function attemptRows(): InferenceAttemptRecord[] {
+      return mockInsertInferenceAttempt.mock.calls.map((c) => c[0]);
+    }
+    /**
+     * `makeProvider`'s scripted buffered rounds behind a complete, typed
+     * provider. No stream method, so every round takes the buffered path
+     * exactly as `makeProvider` does; `chatCompletion` is returned for the
+     * tests that re-script it.
+     */
+    function timedProvider(responses: Parameters<typeof makeProvider>[0]) {
+      const scripted = makeProvider(responses);
+      const provider = withoutStreamMethod(fakeInferenceProvider({
+        chatCompletion: scripted.chatCompletion,
+        calculateCost: scripted.calculateCost,
+      }));
+      return { provider, chatCompletion: scripted.chatCompletion };
     }
 
     it("records one returned turn row and one attempt row per inference, sharing the turn run id", async () => {
-      const provider = makeProvider([
+      const { provider } = timedProvider([
         { toolCalls: [{ id: "call-1", name: "web_research", arguments: { query: "secret-arg-0xabc" } }] },
         { content: "Done with secret-content-0xdef" },
       ]);
       mockDispatchTool.mockResolvedValue({ success: true, output: '{"ok":true}' });
 
       const result = await runTurnLoop(
-        makeContext({ missionRunId: null }), [], null, 0, provider as any, makeConfig() as any, [],
+        makeContext({ missionRunId: null }), [], null, 0, provider, makeTypedConfig(), [],
         defaultLoopConfig,
       );
 
       expect(result.text).toBe("Done with secret-content-0xdef");
       expect(mockInsertTurnRunTiming).toHaveBeenCalledTimes(1);
-      const turnRow = turnRunRows()[0]!;
+      const turnRow = requireValue(turnRunRows()[0]);
       expect(turnRow).toMatchObject({
         sessionId: "session-1",
         missionRunId: null,
@@ -827,7 +858,7 @@ describe("turn-loop", () => {
 
       // The tool batch receives the same turn run id and the round it ran in.
       expect(mockInsertToolDispatchTiming).toHaveBeenCalledTimes(1);
-      const dispatchRow = mockInsertToolDispatchTiming.mock.calls[0]![0] as Record<string, unknown>;
+      const dispatchRow = requireValue(mockInsertToolDispatchTiming.mock.calls[0])[0];
       expect(dispatchRow).toMatchObject({
         turnRunId: turnRow.turnRunId,
         iteration: 0,
@@ -840,10 +871,10 @@ describe("turn-loop", () => {
     });
 
     it("reports the stop reason on a bounded exit", async () => {
-      const provider = makeProvider([{ content: "Still working..." }]);
+      const { provider } = timedProvider([{ content: "Still working..." }]);
       const result = await runTurnLoop(
         makeContext({ sessionKind: "mission", missionRunId: "run-7" }),
-        [], null, 0, provider as any, makeConfig() as any, [],
+        [], null, 0, provider, makeTypedConfig(), [],
         { ...defaultLoopConfig, maxIterations: 3 },
       );
 
@@ -865,13 +896,13 @@ describe("turn-loop", () => {
         name: "ProviderError",
         status: 500,
       });
-      const provider = makeProvider([{ content: "unused" }]);
-      provider.chatCompletion.mockRejectedValue(boom);
+      const { provider, chatCompletion } = timedProvider([{ content: "unused" }]);
+      chatCompletion.mockRejectedValue(boom);
 
       let caught: unknown;
       try {
         await runTurnLoop(
-          makeContext(), [], null, 0, provider as any, makeConfig() as any, [],
+          makeContext(), [], null, 0, provider, makeTypedConfig(), [],
           defaultLoopConfig,
         );
       } catch (err) {
@@ -880,7 +911,7 @@ describe("turn-loop", () => {
 
       expect(caught).toBe(boom);
       expect(turnRunRows()).toHaveLength(1);
-      const turnRow = turnRunRows()[0]!;
+      const turnRow = requireValue(turnRunRows()[0]);
       expect(turnRow).toMatchObject({
         outcome: "error",
         stopReason: null,
@@ -899,32 +930,34 @@ describe("turn-loop", () => {
     });
 
     it("records queue wait from the caller's entry timestamp, and NULL without one", async () => {
-      const provider = makeProvider([{ content: "Hi" }]);
+      const { provider } = timedProvider([{ content: "Hi" }]);
       const entryStartedAtMs = performance.now() - 250;
       await runTurnLoop(
-        makeContext(), [], null, 0, provider as any, makeConfig() as any, [],
+        makeContext(), [], null, 0, provider, makeTypedConfig(), [],
         { ...defaultLoopConfig, entryStartedAtMs },
       );
-      await runTurnLoop(makeContext(), [], null, 0, provider as any, makeConfig() as any, [], defaultLoopConfig);
+      await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
 
-      const [withEntry, withoutEntry] = turnRunRows();
-      expect(withEntry!.queueWaitMs as number).toBeGreaterThanOrEqual(250);
+      const [first, second] = turnRunRows();
+      const withEntry = requireValue(first);
+      const withoutEntry = requireValue(second);
+      expect(withEntry.queueWaitMs as number).toBeGreaterThanOrEqual(250);
       // Queue wait ends where the loop starts; it is never part of total_ms.
-      expect(withEntry!.queueWaitMs as number).toBeLessThan(250 + 5_000);
-      expect(withoutEntry!.queueWaitMs).toBeNull();
+      expect(withEntry.queueWaitMs as number).toBeLessThan(250 + 5_000);
+      expect(withoutEntry.queueWaitMs).toBeNull();
     });
 
     it("never reports a negative queue wait for an entry stamp after the loop start", async () => {
-      const provider = makeProvider([{ content: "Hi" }]);
+      const { provider } = timedProvider([{ content: "Hi" }]);
       await runTurnLoop(
-        makeContext(), [], null, 0, provider as any, makeConfig() as any, [],
+        makeContext(), [], null, 0, provider, makeTypedConfig(), [],
         { ...defaultLoopConfig, entryStartedAtMs: performance.now() + 60_000 },
       );
-      expect(turnRunRows()[0]!.queueWaitMs).toBe(0);
+      expect(requireValue(turnRunRows()[0]).queueWaitMs).toBe(0);
     });
 
     it("accumulates the time spent awaiting assistant and tool-result writes as persistMs", async () => {
-      const provider = makeProvider([
+      const { provider } = timedProvider([
         { toolCalls: [{ id: "call-1", name: "web_research", arguments: { query: "q" } }] },
         { content: "Done" },
       ]);
@@ -938,20 +971,20 @@ describe("turn-loop", () => {
         .mockImplementationOnce(slowWrite);
 
       await runTurnLoop(
-        makeContext({ missionRunId: null }), [], null, 0, provider as any, makeConfig() as any, [],
+        makeContext({ missionRunId: null }), [], null, 0, provider, makeTypedConfig(), [],
         defaultLoopConfig,
       );
 
       expect(mockAddMessage).toHaveBeenCalledTimes(3);
-      const row = turnRunRows()[0]!;
+      const row = requireValue(turnRunRows()[0]);
       expect(row.persistMs as number).toBeGreaterThanOrEqual(55);
       expect(row.persistMs as number).toBeLessThanOrEqual(row.totalMs as number);
     });
 
     it("gives each runTurnLoop invocation its own turn run id", async () => {
-      const provider = makeProvider([{ content: "Hi" }]);
-      await runTurnLoop(makeContext(), [], null, 0, provider as any, makeConfig() as any, [], defaultLoopConfig);
-      await runTurnLoop(makeContext(), [], null, 0, provider as any, makeConfig() as any, [], defaultLoopConfig);
+      const { provider } = timedProvider([{ content: "Hi" }]);
+      await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
 
       const ids = turnRunRows().map((r) => r.turnRunId);
       expect(ids).toHaveLength(2);

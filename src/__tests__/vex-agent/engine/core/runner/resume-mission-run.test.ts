@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { requireValue } from "../../../../helpers/require-value.js";
 
 // ── Mocks ─────────────────────────────────────────────────────
 
@@ -377,7 +378,7 @@ describe("runner", () => {
       const before = performance.now();
       await resumeMissionRun("run-1", RESUME_OWNER);
 
-      const [, , , , , , , loopConfig] = mockRunTurnLoop.mock.calls[0]!;
+      const [, , , , , , , loopConfig] = requireValue(mockRunTurnLoop.mock.calls[0]);
       const entry = (loopConfig as { entryStartedAtMs?: number }).entryStartedAtMs;
       expect(entry).toBeGreaterThanOrEqual(before);
       expect(entry).toBeLessThanOrEqual(performance.now());

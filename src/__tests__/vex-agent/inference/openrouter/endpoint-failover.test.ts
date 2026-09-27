@@ -14,6 +14,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { requireValue } from "../../../helpers/require-value.js";
 
 import { normalizeOpenRouterError } from "@vex-agent/inference/openrouter/errors.js";
 import {
@@ -655,7 +656,7 @@ describe("sendWithEndpointFailover — capacity-failure observer", () => {
     const { attempt } = failingAttempt(2);
     const h = harness();
     const seen: string[] = [];
-    const reasonClass = classifyCapacityFailure(sharedPool429())!.reasonClass;
+    const reasonClass = requireValue(classifyCapacityFailure(sharedPool429())).reasonClass;
 
     await expect(
       sendWithEndpointFailover(

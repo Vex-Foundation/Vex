@@ -14,11 +14,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ToolDispatchTimingRecord } from "@vex-agent/db/repos/runtime-timings.js";
+import type { EngineContext } from "@vex-agent/engine/types/engine-context.js";
+
+import { requireValue } from "../../../helpers/require-value.js";
 
 const dispatchTool = vi.fn();
 const persistBatchTranscript = vi.fn().mockResolvedValue(undefined);
 const enqueueApprovalIntent = vi.fn();
-const insertToolDispatchTiming = vi.fn().mockResolvedValue(undefined);
+const insertToolDispatchTiming = vi
+  .fn<(record: ToolDispatchTimingRecord) => Promise<void>>()
+  .mockResolvedValue(undefined);
 const recordInBackground = vi.fn(
   (_label: string, write: () => Promise<void>): void => {
     void write();
@@ -26,7 +31,8 @@ const recordInBackground = vi.fn(
 );
 
 vi.mock("@vex-agent/db/repos/runtime-timings.js", () => ({
-  insertToolDispatchTiming: (...args: unknown[]) => insertToolDispatchTiming(...args),
+  insertToolDispatchTiming: (record: ToolDispatchTimingRecord) =>
+    insertToolDispatchTiming(record),
   recordInBackground: (label: string, write: () => Promise<void>) =>
     recordInBackground(label, write),
 }));
@@ -64,17 +70,18 @@ const TELEMETRY = { turnRunId: "turn-run-1", iteration: 3 } as const;
 const SECRET_ARG = "0xsecret-recipient-address";
 const SECRET_OUTPUT = "result body with amount twelve-thousand";
 
-function context(permission: "restricted" | "full" = "full") {
+function context(permission: "restricted" | "full" = "full"): EngineContext {
   return {
     sessionId: "session-1",
     sessionKind: "agent",
     sessionPermission: permission,
     missionId: null,
     missionRunId: null,
+    selectedEvmWallet: null,
+    selectedSolanaWallet: null,
     loadedDocuments: new Map(),
     walletPolicy: { kind: "none" },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any;
+  };
 }
 
 function toolCalls(n: number) {
@@ -110,9 +117,7 @@ async function runBatch(args: {
 }
 
 function rows(): ToolDispatchTimingRecord[] {
-  return insertToolDispatchTiming.mock.calls.map(
-    (call) => call[0] as ToolDispatchTimingRecord,
-  );
+  return insertToolDispatchTiming.mock.calls.map((call) => call[0]);
 }
 
 beforeEach(() => {
@@ -262,8 +267,9 @@ describe("processTurnToolBatch — tool dispatch timing", () => {
       ["WalletSendPrepare", "success"],
       ["WalletSendConfirm", "success"],
     ]);
-    expect(rows()[1]!.toolCallId).toMatch(/^prepared-follow-up-/);
-    expect(rows()[1]!.iteration).toBe(3);
+    const followUp = requireValue(rows()[1]);
+    expect(followUp.toolCallId).toMatch(/^prepared-follow-up-/);
+    expect(followUp.iteration).toBe(3);
   });
 
   it("records nothing and behaves identically when telemetry is absent", async () => {
@@ -274,13 +280,13 @@ describe("processTurnToolBatch — tool dispatch timing", () => {
     ];
     for (const r of results) dispatchTool.mockResolvedValueOnce(r);
     const withTelemetry = await runBatch({ telemetry: TELEMETRY });
-    const persistedWith = persistBatchTranscript.mock.calls[0]![0];
+    const persistedWith = requireValue(persistBatchTranscript.mock.calls[0])[0];
 
     vi.clearAllMocks();
     persistBatchTranscript.mockResolvedValue(undefined);
     for (const r of results) dispatchTool.mockResolvedValueOnce(r);
     const without = await runBatch({});
-    const persistedWithout = persistBatchTranscript.mock.calls[0]![0];
+    const persistedWithout = requireValue(persistBatchTranscript.mock.calls[0])[0];
 
     expect(recordInBackground).not.toHaveBeenCalled();
     expect(insertToolDispatchTiming).not.toHaveBeenCalled();
@@ -300,7 +306,7 @@ describe("processTurnToolBatch — tool dispatch timing", () => {
     await runBatch({ telemetry: TELEMETRY, calls: toolCalls(1) });
 
     expect(rows()).toHaveLength(1);
-    const row = rows()[0]!;
+    const row = requireValue(rows()[0]);
     expect(Object.keys(row).sort()).toEqual([
       "actionKind",
       "durationMs",

@@ -10,6 +10,8 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+import { requireValue } from "../../../helpers/require-value.js";
+
 const mockExecute = vi.fn();
 const mockWarn = vi.fn();
 
@@ -43,7 +45,7 @@ function boundRow(): Record<string, unknown> {
   const [sql, params] = mockExecute.mock.calls[0] as [string, unknown[]];
   const columnList = /\(([^)]*)\)\s*VALUES/s.exec(sql)?.[1];
   expect(columnList).toBeDefined();
-  const columns = columnList!.split(",").map((c) => c.trim());
+  const columns = requireValue(columnList).split(",").map((c) => c.trim());
   const placeholders = [...sql.matchAll(/\$(\d+)/g)].map((m) => Number(m[1]));
   expect(placeholders).toEqual(columns.map((_, i) => i + 1));
   expect(params).toHaveLength(columns.length);

@@ -17,6 +17,13 @@ import type {
   ToolDefinition,
 } from "@vex-agent/inference/types.js";
 
+import {
+  fakeInferenceProvider,
+  withNonIterableStream,
+  withoutStreamMethod,
+} from "../../helpers/inference-provider.js";
+import { requireValue } from "../../helpers/require-value.js";
+
 const MSGS: ProviderMessage[] = [];
 const TOOLS: ToolDefinition[] = [];
 const CFG = {} as InferenceConfig;
@@ -622,23 +629,22 @@ describe("runStreamingInference — attempt timing", () => {
     [
       "no_stream_method",
       (chatCompletion: ChatCompletionMock) =>
-        ({ id: "fake", chatCompletion }) as unknown as InferenceProvider,
+        withoutStreamMethod(fakeInferenceProvider({ chatCompletion })),
     ],
     [
       "not_async_iterable",
       (chatCompletion: ChatCompletionMock) =>
-        ({ id: "fake", chatCompletionStream: () => ({}), chatCompletion }) as unknown as InferenceProvider,
+        withNonIterableStream(fakeInferenceProvider({ chatCompletion })),
     ],
     [
       "setup_threw",
       (chatCompletion: ChatCompletionMock) =>
-        ({
-          id: "fake",
+        fakeInferenceProvider({
           chatCompletionStream: () => {
             throw new Error("sync setup failure");
           },
           chatCompletion,
-        }) as unknown as InferenceProvider,
+        }),
     ],
     [
       "threw_before_first_chunk",
@@ -663,8 +669,7 @@ describe("runStreamingInference — attempt timing", () => {
         return FALLBACK;
       },
     );
-    const provider = {
-      id: "fake",
+    const provider = fakeInferenceProvider({
       chatCompletionStream: async function* (
         _m: unknown,
         _t: unknown,
@@ -676,11 +681,11 @@ describe("runStreamingInference — attempt timing", () => {
         throw new Error("exhausted before first chunk");
       },
       chatCompletion,
-    } as unknown as InferenceProvider;
+    });
 
     await runStreamingInference(provider, MSGS, TOOLS, CFG, { timing, context: CONTEXT });
     // Routing identity is unchanged; only the observer is added.
-    expect(chatCompletion.mock.calls[0]![3]).toMatchObject(CONTEXT);
+    expect(requireValue(chatCompletion.mock.calls[0])[3]).toMatchObject(CONTEXT);
     expect(timing.snapshot()).toMatchObject({
       capacityRetries: 2,
       capacityRetryClasses: ["stream_class", "buffered_class"],
@@ -721,7 +726,7 @@ describe("runStreamingInference — attempt timing", () => {
       },
     );
     const fallback = await runStreamingInference(
-      { id: "fake", chatCompletion } as unknown as InferenceProvider,
+      withoutStreamMethod(fakeInferenceProvider({ chatCompletion })),
       MSGS,
       TOOLS,
       CFG,
@@ -753,8 +758,7 @@ describe("runStreamingInference — attempt timing", () => {
       { type: "done", finishReason: "stop" },
     ];
     const seenContexts: Array<InferenceRequestContext | undefined> = [];
-    const provider = {
-      id: "fake",
+    const provider = fakeInferenceProvider({
       chatCompletionStream: (
         _m: unknown,
         _t: unknown,
@@ -765,8 +769,7 @@ describe("runStreamingInference — attempt timing", () => {
         seenContexts.push(context);
         return fromChunks(chunks)();
       },
-      chatCompletion: vi.fn(),
-    } as unknown as InferenceProvider;
+    });
 
     const plain = await runStreamingInference(provider, MSGS, TOOLS, CFG, { context: CONTEXT });
     const timed = await runStreamingInference(provider, MSGS, TOOLS, CFG, {

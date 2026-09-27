@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { requireValue } from "../../../../helpers/require-value.js";
 
 // ── Mocks ─────────────────────────────────────────────────────
 
@@ -312,7 +313,7 @@ describe("runner", () => {
       await processAgentTurn("session-1", "Hi");
       const after = performance.now();
 
-      const loopConfig = mockRunTurnLoop.mock.calls[0]![7] as { entryStartedAtMs?: number };
+      const loopConfig = requireValue(mockRunTurnLoop.mock.calls[0])[7] as { entryStartedAtMs?: number };
       expect(loopConfig.entryStartedAtMs).toBeGreaterThanOrEqual(before);
       expect(loopConfig.entryStartedAtMs).toBeLessThanOrEqual(after);
     });
@@ -455,7 +456,7 @@ describe("runner", () => {
 
       await runAgentTurnUnderLease("session-1", provider(), config);
 
-      const loopConfig = mockRunTurnLoop.mock.calls[0]![7] as Record<string, unknown>;
+      const loopConfig = requireValue(mockRunTurnLoop.mock.calls[0])[7] as Record<string, unknown>;
       expect("entryStartedAtMs" in loopConfig).toBe(false);
     });
 

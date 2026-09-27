@@ -12,6 +12,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
+import { requireValue } from "../../helpers/require-value.js";
 
 vi.mock("@vex-agent/db/client.js", () => ({
   query: vi.fn(),
@@ -125,31 +126,31 @@ describe("buildReportQueries", () => {
       expect(q.columns.map((c) => c.key)).toEqual(["grp", "metric", "n", "p50", "p95", "p99"]);
     }
     for (const key of ["pre_inference", "tool_durations", "turn_totals_by_kind", "turn_overheads_by_kind"]) {
-      const q = queries.find((entry) => entry.key === key)!;
+      const q = requireValue(queries.find((entry) => entry.key === key));
       expect(q.sql).toContain("percentile_cont(ARRAY[0.5, 0.95]) WITHIN GROUP");
       expect(q.columns.map((c) => c.key)).toContain("n");
     }
   });
 
   it("groups endpoint latency on the recorded endpoint tag, NULL reading as auto routing", () => {
-    const q = queries.find((entry) => entry.key === "latency_by_endpoint")!;
+    const q = requireValue(queries.find((entry) => entry.key === "latency_by_endpoint"));
     expect(q.sql).toContain("COALESCE(a.endpoint_tag, '(auto)')");
-    const serving = queries.find((entry) => entry.key === "latency_by_serving_provider")!;
+    const serving = requireValue(queries.find((entry) => entry.key === "latency_by_serving_provider"));
     expect(serving.sql).toContain("a.serving_provider");
   });
 
   it("counts timeouts apart from aborts and errors", () => {
-    const totals = queries.find((entry) => entry.key === "fallback_retry_totals")!;
+    const totals = requireValue(queries.find((entry) => entry.key === "fallback_retry_totals"));
     expect(totals.sql).toContain("FILTER (WHERE outcome = 'timeout')");
     expect(totals.columns.map((c) => c.key)).toContain("timeouts");
-    const byEndpoint = queries.find((entry) => entry.key === "timeouts_by_endpoint")!;
+    const byEndpoint = requireValue(queries.find((entry) => entry.key === "timeouts_by_endpoint"));
     expect(byEndpoint.section).toBe(4);
     expect(byEndpoint.sql).toContain("outcome = 'timeout'");
     expect(byEndpoint.sql).toContain("COALESCE(endpoint_tag, '(auto)')");
   });
 
   it("reports queue wait and persist time percentiles per session kind, skipping NULL queue waits", () => {
-    const q = queries.find((entry) => entry.key === "turn_overheads_by_kind")!;
+    const q = requireValue(queries.find((entry) => entry.key === "turn_overheads_by_kind"));
     expect(q.section).toBe(7);
     expect(q.sql).toContain("t.queue_wait_ms");
     expect(q.sql).toContain("t.persist_ms");
@@ -158,12 +159,12 @@ describe("buildReportQueries", () => {
   });
 
   it("limits the tool table to the 20 most frequent tools", () => {
-    const q = queries.find((entry) => entry.key === "tool_durations")!;
+    const q = requireValue(queries.find((entry) => entry.key === "tool_durations"));
     expect(q.sql).toMatch(/ORDER BY n DESC, tool_name\s+LIMIT 20/);
   });
 
   it("defines the empty length-capped round exactly", () => {
-    const q = queries.find((entry) => entry.key === "empty_length_rounds")!;
+    const q = requireValue(queries.find((entry) => entry.key === "empty_length_rounds"));
     expect(q.sql).toContain("finish_reason = 'length'");
     expect(q.sql).toContain("content_empty IS TRUE");
     expect(q.sql).toContain("valid_tool_call_count = 0");
@@ -184,11 +185,13 @@ describe("runReportQueries", () => {
     const results = await runReportQueries(queries, run);
 
     expect(run).toHaveBeenCalledTimes(3);
-    expect(run.mock.calls[0]).toEqual([queries[0]!.sql, queries[0]!.params]);
+    const first = requireValue(queries[0]);
+    expect(run.mock.calls[0]).toEqual([first.sql, first.params]);
     expect(results.map((r) => r.status)).toEqual(["missing_table", "error", "ok"]);
-    expect(results[1]!.error).toBe("Error (42703)");
-    expect(results[1]!.error).not.toContain("secret_value");
-    expect(results[2]!.rows).toHaveLength(1);
+    const broke = requireValue(results[1]);
+    expect(broke.error).toBe("Error (42703)");
+    expect(broke.error).not.toContain("secret_value");
+    expect(requireValue(results[2]).rows).toHaveLength(1);
   });
 });
 

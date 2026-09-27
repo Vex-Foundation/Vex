@@ -1,6 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { StreamDeltaEvent } from "../../../../vex-agent/engine/events/index.js";
-import type { StreamChunk } from "../../../../vex-agent/inference/types.js";
+import type {
+  InferenceConfig,
+  InferenceProvider,
+  StreamChunk,
+} from "../../../../vex-agent/inference/types.js";
+import type { InferenceAttemptRecord } from "../../../../vex-agent/db/repos/runtime-timings.js";
+import type { EngineContext } from "../../../../vex-agent/engine/types/engine-context.js";
+import {
+  fakeInferenceProvider,
+  withoutStreamMethod,
+} from "../../../helpers/inference-provider.js";
+import { requireValue } from "../../../helpers/require-value.js";
 
 // ── Mocks ─────────────────────────────────────────────────────
 
@@ -26,12 +37,14 @@ vi.mock("@vex-agent/db/repos/sessions.js", () => ({
 // Runtime-timing writes are captured, not executed: each test inspects the
 // row `executeTurn` handed to the repo. `recordInBackground` runs the thunk
 // synchronously so the row is observable without awaiting anything.
-const mockInsertInferenceAttempt = vi.fn().mockResolvedValue(undefined);
+const mockInsertInferenceAttempt = vi
+  .fn<(record: InferenceAttemptRecord) => Promise<void>>()
+  .mockResolvedValue(undefined);
 const mockRecordInBackground = vi.fn((_label: string, write: () => Promise<void>) => {
   void write();
 });
 vi.mock("@vex-agent/db/repos/runtime-timings.js", () => ({
-  insertInferenceAttempt: (...a: unknown[]) => mockInsertInferenceAttempt(...a),
+  insertInferenceAttempt: (record: InferenceAttemptRecord) => mockInsertInferenceAttempt(record),
   insertTurnRunTiming: vi.fn(),
   insertToolDispatchTiming: vi.fn(),
   recordInBackground: (label: string, write: () => Promise<void>) =>
@@ -551,21 +564,21 @@ describe("turn — inference attempt timing", () => {
   const SECRET_TEXT = "send 4.2 ETH to 0xdeadbeef";
   const SECRET_ARG = "0xfeedface-private-arg";
 
-  function context(missionRunId: string | null = null) {
+  function context(missionRunId: string | null = null): EngineContext {
     return {
       sessionId: "session-t",
-      sessionKind: "agent" as const,
-      sessionPermission: "restricted" as const,
+      sessionKind: "agent",
+      sessionPermission: "restricted",
       missionId: null,
       missionRunId,
       selectedEvmWallet: null,
       selectedSolanaWallet: null,
-      walletPolicy: { kind: "none" as const },
+      walletPolicy: { kind: "none" },
       loadedDocuments: new Map<string, string>(),
     };
   }
 
-  function config(extra: Record<string, unknown> = {}) {
+  function config(extra: Partial<InferenceConfig> = {}): InferenceConfig {
     return {
       provider: "openrouter",
       model: "anthropic/claude-sonnet-4",
@@ -573,26 +586,27 @@ describe("turn — inference attempt timing", () => {
       maxOutputTokens: 4096,
       inputPricePerM: 3,
       outputPricePerM: 15,
+      priceCurrency: "USD",
+      cachePricePerM: null,
+      cacheWritePricePerM: null,
+      reasoningPricePerM: null,
       supportsReasoningEffort: false,
       ...extra,
     };
   }
 
-  function streaming(chunks: StreamChunk[], opts: { throwAfter?: Error } = {}) {
-    return {
-      id: "fake",
+  function streaming(chunks: StreamChunk[], opts: { throwAfter?: Error } = {}): InferenceProvider {
+    return fakeInferenceProvider({
       chatCompletionStream: async function* (): AsyncGenerator<StreamChunk> {
         for (const chunk of chunks) yield chunk;
         if (opts.throwAfter) throw opts.throwAfter;
       },
-      chatCompletion: vi.fn(),
-      chatCompletionSimple: vi.fn(),
-      calculateCost: vi.fn().mockReturnValue({
+      calculateCost: vi.fn<InferenceProvider["calculateCost"]>().mockReturnValue({
         totalCost: 0.001,
         currency: "USD",
         breakdown: { promptCost: 0, completionCost: 0, cachedSavings: 0, reasoningCost: 0 },
       }),
-    };
+    });
   }
 
   const TELEMETRY = { turnRunId: "run-1", iteration: 2, preInferenceMs: 3.5, promptStackMs: 1.25 };
@@ -617,11 +631,11 @@ describe("turn — inference attempt timing", () => {
     { type: "done", finishReason: "tool_calls", generationId: "gen-1", servingProvider: "Anthropic" },
   ];
 
-  function recordedRows(): Array<Record<string, unknown>> {
-    return mockInsertInferenceAttempt.mock.calls.map((c) => c[0] as Record<string, unknown>);
+  function recordedRows(): InferenceAttemptRecord[] {
+    return mockInsertInferenceAttempt.mock.calls.map((c) => c[0]);
   }
 
-  function expectNoContentLeak(row: Record<string, unknown>): void {
+  function expectNoContentLeak(row: InferenceAttemptRecord): void {
     const serialised = JSON.stringify(row);
     expect(serialised).not.toContain("0xdeadbeef");
     expect(serialised).not.toContain(SECRET_ARG);
@@ -630,13 +644,13 @@ describe("turn — inference attempt timing", () => {
 
   it("records exactly one completed row and returns the same result as without telemetry", async () => {
     const withoutTelemetry = await executeTurn(
-      context(), [], null, streaming(COMPLETED_CHUNKS) as any, config() as any, [],
+      context(), [], null, streaming(COMPLETED_CHUNKS), config(), [],
     );
     expect(mockInsertInferenceAttempt).not.toHaveBeenCalled();
     expect(mockRecordInBackground).not.toHaveBeenCalled();
 
     const withTelemetry = await executeTurn(
-      context("mrun-1"), [], null, streaming(COMPLETED_CHUNKS) as any, config() as any, [],
+      context("mrun-1"), [], null, streaming(COMPLETED_CHUNKS), config(), [],
       {}, undefined, undefined, TELEMETRY,
     );
 
@@ -646,7 +660,7 @@ describe("turn — inference attempt timing", () => {
 
     expect(mockRecordInBackground).toHaveBeenCalledTimes(1);
     expect(mockInsertInferenceAttempt).toHaveBeenCalledTimes(1);
-    const row = recordedRows()[0]!;
+    const row = requireValue(recordedRows()[0]);
     expect(row).toMatchObject({
       sessionId: "session-t",
       missionRunId: "mrun-1",
@@ -685,11 +699,11 @@ describe("turn — inference attempt timing", () => {
     const ctrl = new AbortController();
     ctrl.abort();
     const withoutTelemetry = await executeTurn(
-      context(), [], null, streaming(COMPLETED_CHUNKS) as any, config() as any, [],
+      context(), [], null, streaming(COMPLETED_CHUNKS), config(), [],
       {}, ctrl.signal,
     );
     const result = await executeTurn(
-      context(), [], null, streaming(COMPLETED_CHUNKS) as any, config() as any, [],
+      context(), [], null, streaming(COMPLETED_CHUNKS), config(), [],
       {}, ctrl.signal, undefined, TELEMETRY,
     );
 
@@ -714,7 +728,7 @@ describe("turn — inference attempt timing", () => {
     let caught: unknown;
     try {
       await executeTurn(
-        context(), [], null, provider as any, config() as any, [],
+        context(), [], null, provider, config(), [],
         {}, undefined, undefined, TELEMETRY,
       );
     } catch (err) {
@@ -723,7 +737,7 @@ describe("turn — inference attempt timing", () => {
 
     expect(caught).toBe(boom);
     expect(mockInsertInferenceAttempt).toHaveBeenCalledTimes(1);
-    const row = recordedRows()[0]!;
+    const row = requireValue(recordedRows()[0]);
     expect(row).toMatchObject({
       outcome: "error",
       errorClass: "ProviderError:status=502",
@@ -740,16 +754,16 @@ describe("turn — inference attempt timing", () => {
     expect(mockLogUsage).not.toHaveBeenCalled();
   });
 
-  async function recordThrown(err: Error, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  async function recordThrown(err: Error, signal?: AbortSignal): Promise<InferenceAttemptRecord> {
     const provider = streaming([{ type: "content", text: SECRET_TEXT }], { throwAfter: err });
     await expect(
       executeTurn(
-        context(), [], null, provider as any, config() as any, [],
+        context(), [], null, provider, config(), [],
         {}, signal, undefined, TELEMETRY,
       ),
     ).rejects.toBe(err);
     expect(mockInsertInferenceAttempt).toHaveBeenCalledTimes(1);
-    return recordedRows()[0]!;
+    return requireValue(recordedRows()[0]);
   }
 
   it("records a deadline breach as timeout, not error or aborted", async () => {
@@ -772,17 +786,16 @@ describe("turn — inference attempt timing", () => {
     // caller's own signal aborted and no deadline involved.
     const live = new AbortController();
     const stopped = Object.assign(new Error("request cancelled"), { name: "RequestAbortedError" });
-    const provider = {
+    const provider = withoutStreamMethod(fakeInferenceProvider({
       ...streaming([]),
-      chatCompletionStream: undefined,
       chatCompletion: vi.fn(async () => {
         live.abort();
         throw stopped;
       }),
-    };
+    }));
     await expect(
       executeTurn(
-        context(), [], null, provider as any, config() as any, [],
+        context(), [], null, provider, config(), [],
         {}, live.signal, undefined, TELEMETRY,
       ),
     ).rejects.toBe(stopped);
@@ -803,12 +816,12 @@ describe("turn — inference attempt timing", () => {
 
   it("records the pinned endpoint tag, or NULL when unpinned", async () => {
     await executeTurn(
-      context(), [], null, streaming(COMPLETED_CHUNKS) as any,
-      config({ endpointTag: "anthropic/fp8" }) as any, [],
+      context(), [], null, streaming(COMPLETED_CHUNKS),
+      config({ endpointTag: "anthropic/fp8" }), [],
       {}, undefined, undefined, TELEMETRY,
     );
     await executeTurn(
-      context(), [], null, streaming(COMPLETED_CHUNKS) as any, config() as any, [],
+      context(), [], null, streaming(COMPLETED_CHUNKS), config(), [],
       {}, undefined, undefined, TELEMETRY,
     );
     expect(recordedRows().map((r) => r.endpointTag)).toEqual(["anthropic/fp8", null]);
@@ -826,7 +839,7 @@ describe("turn — inference attempt timing", () => {
     const boom = new Error("nope");
     const provider = streaming([{ type: "content", text: "partial" }], { throwAfter: boom });
     await expect(
-      executeTurn(context(), [], null, provider as any, config() as any, []),
+      executeTurn(context(), [], null, provider, config(), []),
     ).rejects.toBe(boom);
     expect(mockInsertInferenceAttempt).not.toHaveBeenCalled();
     expect(mockRecordInBackground).not.toHaveBeenCalled();
@@ -837,7 +850,7 @@ describe("turn — inference attempt timing", () => {
       throw new Error("recorder exploded");
     });
     const result = await executeTurn(
-      context(), [], null, streaming(COMPLETED_CHUNKS) as any, config() as any, [],
+      context(), [], null, streaming(COMPLETED_CHUNKS), config(), [],
       {}, undefined, undefined, TELEMETRY,
     );
     expect(result.content).toBe(SECRET_TEXT);
@@ -846,8 +859,8 @@ describe("turn — inference attempt timing", () => {
 
   it("requestedEffort is null when an effort is chosen but the model does not advertise it", async () => {
     await executeTurn(
-      context(), [], null, streaming(COMPLETED_CHUNKS) as any,
-      config({ reasoningEffort: "high", supportsReasoningEffort: false }) as any, [],
+      context(), [], null, streaming(COMPLETED_CHUNKS),
+      config({ reasoningEffort: "high", supportsReasoningEffort: false }), [],
       {}, undefined, undefined, TELEMETRY,
     );
     expect(recordedRows()[0]?.requestedEffort).toBeNull();
@@ -855,8 +868,8 @@ describe("turn — inference attempt timing", () => {
 
   it("requestedEffort is null when no effort is chosen", async () => {
     await executeTurn(
-      context(), [], null, streaming(COMPLETED_CHUNKS) as any,
-      config({ supportsReasoningEffort: true }) as any, [],
+      context(), [], null, streaming(COMPLETED_CHUNKS),
+      config({ supportsReasoningEffort: true }), [],
       {}, undefined, undefined, TELEMETRY,
     );
     expect(recordedRows()[0]?.requestedEffort).toBeNull();
@@ -864,29 +877,28 @@ describe("turn — inference attempt timing", () => {
 
   it("requestedEffort is the effort actually sent when the model advertises it", async () => {
     await executeTurn(
-      context(), [], null, streaming(COMPLETED_CHUNKS) as any,
-      config({ reasoningEffort: "high", supportsReasoningEffort: true }) as any, [],
+      context(), [], null, streaming(COMPLETED_CHUNKS),
+      config({ reasoningEffort: "high", supportsReasoningEffort: true }), [],
       {}, undefined, undefined, TELEMETRY,
     );
     expect(recordedRows()[0]?.requestedEffort).toBe("high");
   });
 
   it("records the buffered fallback on a provider that cannot stream", async () => {
-    const provider = {
+    const provider = withoutStreamMethod(fakeInferenceProvider({
       chatCompletion: vi.fn().mockResolvedValue({
         content: "  ",
         toolCalls: null,
         usage: { promptTokens: 10, completionTokens: 0 },
         finishReason: "length",
       }),
-      chatCompletionSimple: vi.fn(),
       calculateCost: vi.fn().mockReturnValue({
         totalCost: 0, currency: "USD",
         breakdown: { promptCost: 0, completionCost: 0, cachedSavings: 0, reasoningCost: 0 },
       }),
-    };
+    }));
     await executeTurn(
-      context(), [], null, provider as any, config() as any, [],
+      context(), [], null, provider, config(), [],
       {}, undefined, undefined, TELEMETRY,
     );
     expect(recordedRows()[0]).toMatchObject({
