@@ -11,6 +11,7 @@
  *   - execution: missing tables and failing queries report per query and do
  *     not stop the rest
  *   - formatting: "no data" for empty results, populated tables, JSON shape
+ *   - caveats: the mid-stream timeout note prints in text and rides in JSON
  */
 
 import { describe, it, expect, vi } from "vitest";
@@ -34,6 +35,7 @@ const {
   renderResult,
   renderText,
   buildJsonReport,
+  MID_STREAM_TIMEOUT_NOTE,
 } = await import("@vex-agent/scripts/kairos-runtime-report.js");
 
 type QueryResult = Awaited<ReturnType<typeof runReportQueries>>[number];
@@ -182,6 +184,17 @@ describe("buildReportQueries", () => {
     expect(byEndpoint.sql).toContain("COALESCE(endpoint_tag, '(auto)')");
   });
 
+  it("attaches the mid-stream timeout caveat to the timeout table only", () => {
+    const byEndpoint = requireValue(queries.find((entry) => entry.key === "timeouts_by_endpoint"));
+    expect(byEndpoint.note).toBe(MID_STREAM_TIMEOUT_NOTE);
+    expect(MID_STREAM_TIMEOUT_NOTE).toContain("mid-stream");
+    expect(MID_STREAM_TIMEOUT_NOTE).toContain("'error'");
+    expect(MID_STREAM_TIMEOUT_NOTE).toContain("normalizeOpenRouterError");
+    expect(MID_STREAM_TIMEOUT_NOTE).toContain("TimeoutError");
+    expect(MID_STREAM_TIMEOUT_NOTE).toContain("Phase 2B");
+    expect(queries.filter((q) => q.note !== undefined).map((q) => q.key)).toEqual(["timeouts_by_endpoint"]);
+  });
+
   it("reports queue wait and persist time percentiles per session kind, skipping NULL queue waits", () => {
     const q = requireValue(queries.find((entry) => entry.key === "turn_overheads_by_kind"));
     expect(q.section).toBe(7);
@@ -226,6 +239,17 @@ describe("runReportQueries", () => {
     expect(broke.error).not.toContain("secret_value");
     expect(requireValue(results[2]).rows).toHaveLength(1);
   });
+
+  it("carries a query's note onto its result, including when the query fails", async () => {
+    const timeouts = requireValue(buildReportQueries(NOW).find((q) => q.key === "timeouts_by_endpoint"));
+    const missing = Object.assign(new Error("missing"), { code: "42P01" });
+    const run = vi.fn().mockRejectedValueOnce(missing).mockResolvedValueOnce([]);
+    const [failed, empty] = await runReportQueries([timeouts, timeouts], run);
+    expect(requireValue(failed).note).toBe(MID_STREAM_TIMEOUT_NOTE);
+    expect(requireValue(empty).note).toBe(MID_STREAM_TIMEOUT_NOTE);
+    const [plain] = await runReportQueries(queries.slice(0, 1), vi.fn().mockResolvedValueOnce([]));
+    expect(requireValue(plain)).not.toHaveProperty("note");
+  });
 });
 
 describe("formatting", () => {
@@ -260,6 +284,27 @@ describe("formatting", () => {
     expect(renderResult(result({}))).toContain("no data");
     expect(renderResult(result({ status: "missing_table" })).join("\n")).toMatch(/table missing/);
     expect(renderResult(result({ status: "error", error: "Error (42703)" })).join("\n")).toContain("query failed: Error (42703)");
+  });
+
+  it("prints a note above the table, and above the status line when there is no data", () => {
+    const withData = renderResult(result({ note: "caveat", rows: [{ model: "m/a", n: 1, p50: 1, share: 0 }] }));
+    expect(withData.slice(0, 4)).toEqual(["### Title", "", "> Note: caveat", ""]);
+    expect(withData).toContain("| Model | n | p50 | Share |");
+    const empty = renderResult(result({ note: "caveat" }));
+    expect(empty).toEqual(["### Title", "", "> Note: caveat", "", "no data", ""]);
+    expect(renderResult(result({ note: "caveat", status: "missing_table" }))).toContain("> Note: caveat");
+    expect(renderResult(result({})).join("\n")).not.toContain("Note:");
+  });
+
+  it("prints the mid-stream timeout caveat in the full text report", () => {
+    const results = buildReportQueries(NOW).map((q) => result({
+      key: q.key, section: q.section, title: q.title, columns: q.columns,
+      ...(q.note === undefined ? {} : { note: q.note }),
+    }));
+    const text = renderText(results, NOW, "7d");
+    expect(text).toContain(`> Note: ${MID_STREAM_TIMEOUT_NOTE}`);
+    const section4 = requireValue(text.split(/^## /m).find((part) => part.startsWith("4. ")));
+    expect(section4).toContain(MID_STREAM_TIMEOUT_NOTE);
   });
 
   it("renders populated rows as a markdown table", () => {
@@ -305,5 +350,15 @@ describe("formatting", () => {
       ],
     });
     expect(() => JSON.stringify(json)).not.toThrow();
+  });
+
+  it("includes a result's note in the JSON report", () => {
+    const json = buildJsonReport(
+      [result({ key: "timeouts_by_endpoint", section: 4, note: MID_STREAM_TIMEOUT_NOTE })],
+      NOW, "7d", NOW,
+    );
+    const entry = requireValue(requireValue(json.sections[0]).results[0]);
+    expect(entry.note).toBe(MID_STREAM_TIMEOUT_NOTE);
+    expect(JSON.parse(JSON.stringify(json)).sections[0].results[0].note).toBe(MID_STREAM_TIMEOUT_NOTE);
   });
 });

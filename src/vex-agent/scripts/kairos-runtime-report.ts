@@ -24,7 +24,9 @@
  *   cancel or a provider error does not drag a model's p95 around. Failed and
  *   cancelled attempts are counted, with their own median, in section 4.
  * - Section 4 separates `timeout` (a deadline or upstream timeout: the
- *   provider hung) from `aborted` (the user pressed Stop) and `error`.
+ *   provider hung) from `aborted` (the user pressed Stop) and `error`. It is
+ *   a lower bound for now: a deadline that fires mid-stream is recorded as
+ *   'error' (see `MID_STREAM_TIMEOUT_NOTE`, printed with the timeout table).
  * - "By endpoint tag" groups on the OpenRouter endpoint the session was on
  *   when the attempt settled, after any failover switch. `(auto)` means no pin:
  *   OpenRouter chose, and "By serving provider" shows where it went.
@@ -126,7 +128,21 @@ export interface ReportQuery {
   readonly sql: string;
   readonly params: readonly unknown[];
   readonly columns: readonly ReportColumn[];
+  /** A caveat printed above the table (and carried in `--json`), whatever the result. */
+  readonly note?: string;
 }
+
+/**
+ * Deadline breaches that fire AFTER the first chunk are not yet recorded as
+ * 'timeout': the mid-stream error path rebuilds the error through
+ * `normalizeOpenRouterError`, which drops the `TimeoutError` name, so those
+ * attempts land under outcome 'error'. Printed until Phase 2B fixes the
+ * classification, so nobody reads the timeout count as complete.
+ */
+export const MID_STREAM_TIMEOUT_NOTE =
+  "Deadlines that fire mid-stream (after the first chunk) are currently recorded as outcome 'error', "
+  + "not 'timeout': normalizeOpenRouterError drops the TimeoutError name on that path. "
+  + "Timeout counts here are a lower bound until Phase 2B.";
 
 export const SECTION_TITLES: Readonly<Record<number, string>> = {
   1: "Empty length-capped rounds",
@@ -405,6 +421,7 @@ HAVING COUNT(*) > 0`,
       key: "timeouts_by_endpoint",
       section: 4,
       title: "Timeouts by model and endpoint tag",
+      note: MID_STREAM_TIMEOUT_NOTE,
       params: p,
       columns: [
         col("model", "Model", "text"),
@@ -600,6 +617,7 @@ export interface QueryResult {
   readonly error: string | null;
   readonly columns: readonly ReportColumn[];
   readonly rows: readonly Record<string, unknown>[];
+  readonly note?: string;
 }
 
 type Runner = (sql: string, params: readonly unknown[]) => Promise<Record<string, unknown>[]>;
@@ -623,7 +641,10 @@ function errorCode(err: unknown): string | null {
 export async function runReportQueries(queries: readonly ReportQuery[], run: Runner): Promise<QueryResult[]> {
   const results: QueryResult[] = [];
   for (const q of queries) {
-    const base = { key: q.key, section: q.section, title: q.title, columns: q.columns };
+    const base = {
+      key: q.key, section: q.section, title: q.title, columns: q.columns,
+      ...(q.note === undefined ? {} : { note: q.note }),
+    };
     try {
       const rows = await run(q.sql, q.params);
       results.push({ ...base, status: "ok", error: null, rows });
@@ -667,6 +688,7 @@ export function formatCell(value: unknown, format: ColumnFormat): string {
 /** Renders one result as a markdown table, or a one-line status when there is nothing to show. */
 export function renderResult(result: QueryResult): string[] {
   const lines = [`### ${result.title}`, ""];
+  if (result.note !== undefined) lines.push(`> Note: ${result.note}`, "");
   if (result.status === "missing_table") {
     lines.push("table missing (migrations not applied to this database)");
   } else if (result.status === "error") {
@@ -722,6 +744,7 @@ export interface JsonReport {
       readonly title: string;
       readonly status: ResultStatus;
       readonly error: string | null;
+      readonly note?: string;
       readonly rows: ReadonlyArray<Record<string, unknown>>;
     }>;
   }>;
@@ -743,6 +766,7 @@ export function buildJsonReport(results: readonly QueryResult[], since: Date, si
           title: r.title,
           status: r.status,
           error: r.error,
+          ...(r.note === undefined ? {} : { note: r.note }),
           rows: r.rows.map((row) => normaliseRow(row, r.columns)),
         })),
     })),
