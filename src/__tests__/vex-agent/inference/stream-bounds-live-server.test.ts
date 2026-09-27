@@ -683,6 +683,34 @@ describe("stream bounds against a stalling OpenRouter-compatible server (real SD
     await expectTeardown(s, [false, false]);
   });
 
+  // (8b) A provider verdict with an HTTP status is not a stream
+  // incompatibility: exactly one request reaches the server, and the error
+  // leaves with its status for the mission auto-retry classifier.
+  it.each([
+    ["400 bad request", 400, {}],
+    ["401 unauthorized", 401, {}],
+    // A hint past the longest wait the failover honours and no session to
+    // switch: the failover gives up on the first answer (429 exhausted).
+    ["429 exhausted", 429, { "retry-after": "3600" }],
+  ] as const)("%s before the first chunk: no buffered fallback, one request", async (_label, status, headers) => {
+    const s = await serve([async (r) => r.json(status, errorBody(status, "refused"), headers)]);
+    const timing = createInferenceAttemptTimer();
+    const thrown = await runStreamingInference(newProvider(), MESSAGES, [], config({
+      ...NO_BOUNDS, firstChunkTimeoutMs: 2_000, inferenceRoundDeadlineMs: 3_000,
+    }), { timing }).then(() => null, (err: unknown) => err);
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect(Reflect.get(requireValue(thrown), "status")).toBe(status);
+    // Give a (wrong) late fallback the chance to reach the server.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(s.requests.map((q) => q.stream)).toEqual([true]);
+    expect(timing.snapshot().bufferedFallback).toBe(false);
+    expect(
+      loggerMock.warn.mock.calls.some(([event]) => event === "inference.stream.fallback"),
+    ).toBe(false);
+    await expectTeardown(s, [false]);
+  });
+
   it("the buffered fallback gets only the REMAINING round budget, never a fresh one", async () => {
     const s = await serve([
       async (r) => {

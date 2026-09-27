@@ -27,8 +27,10 @@
  * signal and the round is RETURNED (never thrown) with `timedOut` set: the
  * text that streamed, no tool calls, no finish reason. The buffered fallback
  * runs only on a genuine stream incompatibility (no stream method, a
- * non-iterable stream, or a setup / pre-first-chunk failure that is not a
- * timeout, deadline or abort) and gets only the round budget that is left.
+ * non-iterable stream, or a setup / pre-first-chunk failure that carries no
+ * HTTP status and is not a timeout, deadline or abort) and gets only the
+ * round budget that is left. A provider error with a status propagates as
+ * thrown.
  */
 
 import type {
@@ -44,6 +46,7 @@ import type {
 } from "./types.js";
 import logger from "@utils/logger.js";
 import { attachErrorType, attachStatus, scrubMessage } from "./openrouter/errors.js";
+import { OpenRouterEmptyStreamError } from "./openrouter/non-empty-stream.js";
 import { isInferenceTimeout, type InferenceAttemptTimer } from "./attempt-timing.js";
 import type { InferenceStallKind } from "./inference-timeout.js";
 import { createRoundGuard, roundBoundsFrom, STALLED, type RoundGuard } from "./round-guard.js";
@@ -282,15 +285,46 @@ const NOTHING_STREAMED = {
 } as const;
 
 /**
+ * The HTTP status a thrown provider error carries, or `null`. Read from the
+ * lean `status` / `statusCode` properties `attachStatus` puts on every
+ * normalized OpenRouter error (and that SDK / HTTP-client error classes carry
+ * natively).
+ */
+function httpStatusOf(err: unknown): number | null {
+  if (typeof err !== "object" || err === null) return null;
+  for (const key of ["status", "statusCode"]) {
+    const value: unknown = Reflect.get(err, key);
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+/**
  * True when a failure before the first chunk means the provider cannot stream
- * this request, so a buffered request is worth trying. A timeout, a deadline
- * or an abort is NOT: the provider was reachable and slow (or the request was
- * cancelled), and a buffered retry would only spend the same wait again.
+ * this request, so a buffered request is worth trying.
+ *
+ * Only a failure with NO HTTP status qualifies: the response could not be read
+ * as a stream (a buffered JSON body, a malformed event stream, a missing
+ * body). Everything else is NOT:
+ *  - a provider answer with a status (400/401/403, an exhausted 429 or 5xx):
+ *    the provider already decided, the same request buffered would get the
+ *    same verdict after a second (possibly paid) round trip, and the error
+ *    must reach the mission auto-retry classifier exactly as it was thrown;
+ *  - a timeout, a deadline or an abort: the provider was reachable and slow
+ *    (or the request was cancelled), and a buffered retry would only spend
+ *    the same wait again.
+ *
+ * One exemption: an exhausted EMPTY stream (`OpenRouterEmptyStreamError`).
+ * Its 502 is synthetic (the endpoint answered 200 and streamed nothing
+ * usable), so it is a stream failure, and the buffered request is how it
+ * degrades to an empty completion the turn loop has a policy for.
  */
 function isStreamIncompatibility(err: unknown): boolean {
   if (isInferenceTimeout(err) || isAbortError(err)) return false;
   const name = err instanceof Error ? err.name : undefined;
-  return name !== "RequestAbortedError";
+  if (name === "RequestAbortedError") return false;
+  if (err instanceof OpenRouterEmptyStreamError) return true;
+  return httpStatusOf(err) === null;
 }
 
 /**
@@ -588,7 +622,8 @@ async function runGuardedInference(
       // cut short). The bound is the verdict; handled below.
     } else if (!observedAnyChunk) {
       // Rejected before yielding anything. Only a genuine stream failure earns
-      // a buffered retry; a timeout or abort propagates as itself.
+      // a buffered retry; a provider status, a timeout or an abort propagates
+      // as itself.
       if (!isStreamIncompatibility(err)) throw err;
       return fallback("threw_before_first_chunk", err);
     } else {

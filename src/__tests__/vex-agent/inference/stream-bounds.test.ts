@@ -537,20 +537,36 @@ describe("buffered fallback only for genuine stream incompatibility", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("a genuine failure before the first chunk still falls back", async () => {
+  it("a genuine (status-less) stream failure before the first chunk still falls back", async () => {
     const chatCompletion = vi.fn<InferenceProvider["chatCompletion"]>(
       async () => bufferedAnswer("buffered"),
     );
     const provider = fakeInferenceProvider({
       chatCompletion,
       chatCompletionStream: async function* (): AsyncGenerator<StreamChunk> {
-        throw attachStatus(new Error("bad gateway"), 502);
+        throw new Error("response was not an event stream");
       },
     });
     const result = await runStreamingInference(provider, [], [], config(BOUNDS));
     expect(result.response.content).toBe("buffered");
     expect(result.timedOut).toBeNull();
     expect(chatCompletion).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("a provider status (502) before the first chunk propagates, never a fallback", async () => {
+    const chatCompletion = vi.fn<InferenceProvider["chatCompletion"]>(
+      async () => bufferedAnswer("buffered"),
+    );
+    const err = attachStatus(new Error("bad gateway"), 502);
+    const provider = fakeInferenceProvider({
+      chatCompletion,
+      chatCompletionStream: async function* (): AsyncGenerator<StreamChunk> {
+        throw err;
+      },
+    });
+    await expect(runStreamingInference(provider, [], [], config(BOUNDS))).rejects.toBe(err);
+    expect(chatCompletion).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
   });
 });

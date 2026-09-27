@@ -7,6 +7,9 @@ import {
 } from "@vex-agent/inference/attempt-timing.js";
 import { hasActionableInferenceResponse } from "@vex-agent/inference/response-validation.js";
 import { OpenRouterEmptyStreamError } from "@vex-agent/inference/openrouter/non-empty-stream.js";
+import { attachStatus } from "@vex-agent/inference/openrouter/errors.js";
+import { classifyMissionRunError } from "@vex-agent/engine/core/runner/mission-error-classifier.js";
+import { readMissionErrorSignal } from "@vex-agent/engine/core/runner/mission-error-signal.js";
 import type {
   InferenceConfig,
   InferenceProvider,
@@ -497,6 +500,94 @@ describe("runStreamingInference — fallback to chatCompletion", () => {
     expect(res.response).toBe(emptyCompletion);
     expect(res.aborted).toBe(false);
     expect(hasActionableInferenceResponse(res.response)).toBe(false);
+    expect(chatCompletion).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("runStreamingInference — a provider status before the first chunk never falls back", () => {
+  // Each shape is what reaches the consumer from `openrouter.ts`: a normalized
+  // error with the HTTP status as a lean own-property. The 429 and 503 are the
+  // EXHAUSTED forms (the failover / the 5xx retry already gave up).
+  const cases: ReadonlyArray<readonly [label: string, status: number]> = [
+    ["400 bad request", 400],
+    ["401 unauthorized", 401],
+    ["429 exhausted", 429],
+    ["503 exhausted", 503],
+  ];
+
+  function providerError(status: number): Error {
+    return attachStatus(new Error(`OpenRouter streaming chat completion failed: status=${status}`), status);
+  }
+
+  it.each(cases)("%s thrown by the generator propagates unchanged", async (_label, status) => {
+    const err = providerError(status);
+    const chatCompletion = vi.fn<InferenceProvider["chatCompletion"]>();
+    const timing = createInferenceAttemptTimer();
+    const provider = fakeInferenceProvider({
+      chatCompletionStream: async function* (): AsyncGenerator<StreamChunk> {
+        throw err;
+      },
+      chatCompletion,
+    });
+
+    const thrown = await runStreamingInference(provider, MSGS, TOOLS, CFG, { timing }).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(thrown).toBe(err);
+    expect(chatCompletion).not.toHaveBeenCalled();
+    expect(timing.snapshot()).toMatchObject({ bufferedFallback: false, fallbackReason: null });
+    // The mission auto-retry classifier sees exactly what it saw before.
+    expect(readMissionErrorSignal(thrown).status).toBe(status);
+    expect(classifyMissionRunError(thrown)).toBe(classifyMissionRunError(providerError(status)));
+  });
+
+  it.each(cases)("%s thrown synchronously by the stream setup propagates unchanged", async (_label, status) => {
+    const err = providerError(status);
+    const chatCompletion = vi.fn<InferenceProvider["chatCompletion"]>();
+    const provider = fakeInferenceProvider({
+      chatCompletionStream: () => {
+        throw err;
+      },
+      chatCompletion,
+    });
+
+    await expect(runStreamingInference(provider, MSGS, TOOLS, CFG)).rejects.toBe(err);
+    expect(chatCompletion).not.toHaveBeenCalled();
+  });
+
+  it("an SDK-style error carrying statusCode only is a provider verdict too", async () => {
+    const err = Object.assign(new Error("Unauthorized"), { statusCode: 401 });
+    const chatCompletion = vi.fn<InferenceProvider["chatCompletion"]>();
+    const provider = fakeInferenceProvider({
+      chatCompletionStream: async function* (): AsyncGenerator<StreamChunk> {
+        throw err;
+      },
+      chatCompletion,
+    });
+
+    await expect(runStreamingInference(provider, MSGS, TOOLS, CFG)).rejects.toBe(err);
+    expect(chatCompletion).not.toHaveBeenCalled();
+  });
+
+  it("a status-less stream-format failure still falls back", async () => {
+    const fallbackResponse: InferenceResponse = {
+      content: "buffered",
+      toolCalls: null,
+      usage: USAGE,
+      reasoning: null,
+      malformedToolCallCount: 0,
+    };
+    const chatCompletion = vi.fn<InferenceProvider["chatCompletion"]>().mockResolvedValue(fallbackResponse);
+    const provider = fakeInferenceProvider({
+      chatCompletionStream: async function* (): AsyncGenerator<StreamChunk> {
+        throw new Error("OpenRouter streaming chat completion failed: expected an event stream");
+      },
+      chatCompletion,
+    });
+
+    const res = await runStreamingInference(provider, MSGS, TOOLS, CFG);
+    expect(res.response).toBe(fallbackResponse);
     expect(chatCompletion).toHaveBeenCalledTimes(1);
   });
 });
