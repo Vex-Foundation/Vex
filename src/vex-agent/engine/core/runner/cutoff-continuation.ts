@@ -123,6 +123,52 @@ export type CutoffResolution =
       readonly reasoning: string | null;
     };
 
+/** How far back into the partial a restarted line is looked for. */
+const RESTART_SEARCH_WINDOW_CHARS = 4_000;
+/** Shortest restarted line or repeated tail treated as an overlap, not a coincidence. */
+const MIN_OVERLAP_CHARS = 12;
+
+/**
+ * Join a cut-off answer and its continuation without duplicating text.
+ *
+ * Models asked to "continue exactly where it stopped" do not always do so:
+ * some restart the section they were in. Three shapes are handled, checked in
+ * this order:
+ * - the continuation's first line already appears as a line near the end of
+ *   the partial (a restarted section): the partial is cut at that line and the
+ *   continuation replaces its tail;
+ * - the continuation opens by repeating the partial's last characters: the
+ *   repeat is dropped;
+ * - the continuation opens a markdown block (heading, list item, quote) right
+ *   after unfinished text: it starts on a new paragraph.
+ * Anything else is a mid-sentence continuation and is joined as-is.
+ */
+export function joinContinuation(partial: string, continuation: string): string {
+  const firstLine = continuation.trimStart().split("\n", 1)[0]?.trim() ?? "";
+  if (firstLine.length >= MIN_OVERLAP_CHARS) {
+    const windowStart = Math.max(0, partial.length - RESTART_SEARCH_WINDOW_CHARS);
+    const lineStart = partial.lastIndexOf(`\n${firstLine}`);
+    const at = lineStart >= windowStart ? lineStart + 1 : partial.startsWith(firstLine) ? 0 : -1;
+    // Only a true restart: the partial's whole tail from that line must be
+    // repeated at the start of the continuation, so nothing unique is dropped.
+    const restarted = continuation.trimStart();
+    if (at >= 0 && restarted.startsWith(partial.slice(at).trimEnd())) {
+      return partial.slice(0, at) + restarted;
+    }
+  }
+
+  const maxOverlap = Math.min(partial.length, continuation.length);
+  for (let k = maxOverlap; k >= MIN_OVERLAP_CHARS; k--) {
+    if (partial.endsWith(continuation.slice(0, k))) return partial + continuation.slice(k);
+  }
+
+  const opensBlock = /^\s*(#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s)/.test(continuation);
+  if (opensBlock && !/\n\s*$/.test(partial)) {
+    return `${partial.replace(/\s+$/, "")}\n\n${continuation.trimStart()}`;
+  }
+  return partial + continuation;
+}
+
 function joinReasoning(first: string | null, second: string | null): string | null {
   const parts = [first, second].filter((r): r is string => r !== null && r.trim().length > 0);
   return parts.length === 0 ? null : parts.join("\n\n");
@@ -145,7 +191,7 @@ export function resolveCutoffContinuation(
   if (!hasText(continuation.content)) {
     return { kind: "answer", outcome: "unproductive", content: marked, reasoning: partial.reasoning };
   }
-  const joined = partial.content + continuation.content;
+  const joined = joinContinuation(partial.content, continuation.content);
   const reasoning = joinReasoning(partial.reasoning, continuation.reasoning);
   if (continuation.finishReason === "length") {
     return { kind: "answer", outcome: "still_cut_off", content: joined + CUTOFF_ANSWER_SUFFIX, reasoning };
@@ -155,7 +201,7 @@ export function resolveCutoffContinuation(
 
 /** The row saved when the turn stops while the continuation is outstanding or in flight. */
 export function stoppedCutoffContent(partial: CutOffAnswer, streamed: string | null): string {
-  return partial.content + (streamed ?? "");
+  return streamed === null ? partial.content : joinContinuation(partial.content, streamed);
 }
 
 /** Reasoning for a stopped continuation row. */

@@ -6,6 +6,7 @@ import {
   CUTOFF_CONTINUATION_NOTE,
   continuationMessages,
   detectCutOffAnswer,
+  joinContinuation,
   resolveCutoffContinuation,
   type CutoffRoundFields,
 } from "@vex-agent/engine/core/runner/cutoff-continuation.js";
@@ -110,6 +111,54 @@ describe("cut-off answer continuation", () => {
         content: `The answer is${CUTOFF_ANSWER_SUFFIX}`,
         reasoning: "r1",
       });
+    });
+  });
+
+  describe("joinContinuation", () => {
+    it("joins a mid-sentence continuation as-is", () => {
+      expect(joinContinuation("L1 fees can spike to dollars-to-", "hundreds during congestion."))
+        .toBe("L1 fees can spike to dollars-to-hundreds during congestion.");
+    });
+
+    it("replaces a restarted section instead of duplicating it (live 2026-09-27 shape)", () => {
+      const partial =
+        "Verdict: ETH clearly ahead.\n\n## 2. Decentralization\n\n" +
+        "ETH - Highest degree of credible neutrality among large chains.";
+      const continuation =
+        "## 2. Decentralization\n\nETH - Highest degree of credible neutrality among large chains. " +
+        "No foundation-controlled block production.";
+      expect(joinContinuation(partial, continuation)).toBe(
+        "Verdict: ETH clearly ahead.\n\n## 2. Decentralization\n\n" +
+          "ETH - Highest degree of credible neutrality among large chains. " +
+          "No foundation-controlled block production.",
+      );
+    });
+
+    it("never drops text when a repeated line is not a true restart", () => {
+      const partial = "## Risks and caveats\n\nFirst point.\n\nSecond point unique to the partial";
+      const continuation = "## Risks and caveats\n\nA different body.";
+      const joined = joinContinuation(partial, continuation);
+      expect(joined).toContain("Second point unique to the partial");
+      expect(joined).toContain("A different body.");
+    });
+
+    it("drops characters the continuation repeats from the partial's end", () => {
+      expect(joinContinuation("The validator set is smaller and costlier", "smaller and costlier to join."))
+        .toBe("The validator set is smaller and costlier to join.");
+    });
+
+    it("starts a markdown block on a new paragraph after unfinished text", () => {
+      expect(joinContinuation("chains.", "## 3. Fees\n\nETH fees vary."))
+        .toBe("chains.\n\n## 3. Fees\n\nETH fees vary.");
+    });
+
+    it("resolves a completed continuation through the overlap-aware join", () => {
+      const partial = { content: "Intro.\n\n## Fees\n\nETH fees are", reasoning: null };
+      const result = resolveCutoffContinuation(
+        partial,
+        round({ content: "## Fees\n\nETH fees are volatile.", finishReason: "stop" }),
+      );
+      expect(result).toMatchObject({ kind: "answer", content: "Intro.\n\n## Fees\n\nETH fees are volatile." });
     });
   });
 });
