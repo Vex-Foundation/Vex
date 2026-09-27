@@ -11,8 +11,22 @@
 
 import { randomUUID } from "node:crypto";
 import type { EngineContext, TurnResult, MessageMetadata } from "../types.js";
-import type { InferenceProvider, InferenceConfig, ParsedToolCall, ToolDefinition } from "@vex-agent/inference/types.js";
-import { runStreamingInference } from "@vex-agent/inference/stream-consumer.js";
+import type {
+  InferenceProvider,
+  InferenceConfig,
+  ParsedToolCall,
+  ToolDefinition,
+} from "@vex-agent/inference/types.js";
+import {
+  runStreamingInference,
+  type StreamingInferenceResult,
+} from "@vex-agent/inference/stream-consumer.js";
+import {
+  classifyInferenceError,
+  createInferenceAttemptTimer,
+  type InferenceAttemptTimer,
+} from "@vex-agent/inference/attempt-timing.js";
+import { toChatRequestEffort } from "@vex-agent/inference/openrouter/params.js";
 import {
   endpointFailoverDepsFrom,
   resolveSessionInferenceConfig,
@@ -28,6 +42,25 @@ import {
 } from "@vex-agent/engine/events/index.js";
 import * as usageRepo from "@vex-agent/db/repos/usage.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
+import {
+  insertInferenceAttempt,
+  recordInBackground,
+  type InferenceAttemptRecord,
+} from "@vex-agent/db/repos/runtime-timings.js";
+
+/**
+ * Runtime-measurement correlation for one inference attempt (Kairos Phase 1).
+ * Supplied by the turn loop; its presence is what turns attempt recording on.
+ * The two ms fields are measured by the caller, which owns the work they time.
+ */
+export interface TurnAttemptTelemetry {
+  turnRunId: string;
+  iteration: number;
+  /** Iteration top → just before `executeTurn`. */
+  preInferenceMs: number | null;
+  /** Time spent in `buildTurnPromptStack` for this iteration. */
+  promptStackMs: number | null;
+}
 
 export interface SingleTurnResult {
   /** Text content from model — null when only tool calls. */
@@ -98,6 +131,7 @@ export async function executeTurn(
   promptOptions: PromptStackOptions = {},
   signal?: AbortSignal,
   prebuiltEnvelope?: TurnEnvelope,
+  telemetry?: TurnAttemptTelemetry,
 ): Promise<SingleTurnResult> {
   // Provider message array (D-LAYOUT segments + orphan repair + history-tail
   // marking) — see `turn-envelope.ts`.
@@ -123,28 +157,49 @@ export async function executeTurn(
   // Highest sequence emitted for this stream, so the terminal `aborted` delta
   // continues the same monotonic counter rather than restarting it.
   let lastSequence = -1;
-  const { response, aborted, usageObserved } = await runStreamingInference(
-    provider,
-    envelope.providerMessages,
-    tools,
-    config,
-    {
-      signal,
-      // Sticky provider routing: group every turn of this conversation (or
-      // mission run) onto one upstream provider so the prompt cache survives
-      // our compaction-driven prefix drift.
-      context: {
-        sessionId: context.sessionId,
-        missionRunId: context.missionRunId,
+  // Attempt timing is observation only: the timer never sees chunk text, and
+  // the row is written in the background once the attempt settles, so a
+  // completed, aborted or thrown attempt returns or throws exactly as before.
+  const timing = telemetry ? createInferenceAttemptTimer() : undefined;
+  const attemptStartedAt = new Date();
+  let inference: StreamingInferenceResult | undefined;
+  let inferenceError: unknown;
+  try {
+    inference = await runStreamingInference(
+      provider,
+      envelope.providerMessages,
+      tools,
+      config,
+      {
+        signal,
+        timing,
+        // Sticky provider routing: group every turn of this conversation (or
+        // mission run) onto one upstream provider so the prompt cache survives
+        // our compaction-driven prefix drift.
+        context: {
+          sessionId: context.sessionId,
+          missionRunId: context.missionRunId,
+        },
+        onDelta: (chunk, sequence) => {
+          lastSequence = sequence;
+          streamDeltaBus.emit(
+            toStreamDeltaEvent(context.sessionId, streamId, sequence, chunk),
+          );
+        },
       },
-      onDelta: (chunk, sequence) => {
-        lastSequence = sequence;
-        streamDeltaBus.emit(
-          toStreamDeltaEvent(context.sessionId, streamId, sequence, chunk),
-        );
-      },
-    },
-  );
+    );
+  } catch (err) {
+    inferenceError = err;
+    throw err;
+  } finally {
+    if (telemetry && timing) {
+      recordAttemptTiming(
+        context, config, telemetry, timing, streamId, attemptStartedAt,
+        inference, inferenceError,
+      );
+    }
+  }
+  const { response, aborted, usageObserved } = inference;
 
   // Log usage + update token count
   // NOTE: assistant message is NOT saved here — turn-loop handles deferred save
@@ -215,6 +270,76 @@ export async function executeTurn(
     streamId,
     nextStreamSequence: lastSequence + 1,
   };
+}
+
+/**
+ * Record one `inference_attempts` row for an attempt that has just settled.
+ *
+ * Fire-and-forget and never throws: building the row is guarded, and the
+ * write goes through `recordInBackground`. Sanitised fields only — the
+ * response contributes counts, ids, names and an emptiness flag, never its
+ * text, and an error contributes only `classifyInferenceError`'s label.
+ */
+function recordAttemptTiming(
+  context: EngineContext,
+  config: InferenceConfig,
+  telemetry: TurnAttemptTelemetry,
+  timing: InferenceAttemptTimer,
+  streamId: string,
+  startedAt: Date,
+  inference: StreamingInferenceResult | undefined,
+  error: unknown,
+): void {
+  try {
+    const snapshot = timing.snapshot();
+    const response = inference?.response;
+    // The effort actually sent — mirrors the gate in `buildOpenRouterParams`
+    // (openrouter/params.ts). NULL means the provider's default applied.
+    const requestedEffort =
+      config.reasoningEffort !== undefined && config.supportsReasoningEffort
+        ? toChatRequestEffort(config.reasoningEffort)
+        : null;
+    const row: InferenceAttemptRecord = {
+      sessionId: context.sessionId,
+      missionRunId: context.missionRunId ?? null,
+      turnRunId: telemetry.turnRunId,
+      iteration: telemetry.iteration,
+      streamId,
+      startedAt,
+      outcome:
+        inference === undefined ? "error" : inference.aborted ? "aborted" : "completed",
+      errorClass: inference === undefined ? classifyInferenceError(error) : null,
+      model: config.model ?? null,
+      servingProvider: response?.servingProvider ?? null,
+      requestedEffort,
+      bufferedFallback: snapshot.bufferedFallback,
+      fallbackReason: snapshot.fallbackReason,
+      capacityRetries: snapshot.capacityRetries,
+      capacityRetryClasses: snapshot.capacityRetryClasses,
+      preInferenceMs: telemetry.preInferenceMs,
+      promptStackMs: telemetry.promptStackMs,
+      firstChunkMs: snapshot.firstChunkMs,
+      firstReasoningMs: snapshot.firstReasoningMs,
+      firstSemanticMs: snapshot.firstSemanticMs,
+      reasoningOnlyMs: snapshot.reasoningOnlyMs,
+      maxInterChunkGapMs: snapshot.maxInterChunkGapMs,
+      totalMs: snapshot.totalMs,
+      chunkCount: snapshot.chunkCount,
+      finishReason: response?.finishReason ?? null,
+      contentEmpty:
+        response === undefined ? null : (response.content ?? "").trim().length === 0,
+      toolCallCount: snapshot.toolCallCount,
+      validToolCallCount: snapshot.validToolCallCount,
+      promptTokens: response?.usage.promptTokens ?? null,
+      completionTokens: response?.usage.completionTokens ?? null,
+      reasoningTokens: response?.usage.reasoningTokens ?? null,
+      cachedTokens: response?.usage.cachedTokens ?? null,
+      generationId: response?.generationId ?? null,
+    };
+    recordInBackground("inference_attempt", () => insertInferenceAttempt(row));
+  } catch {
+    // Telemetry must never change what the turn returns or throws.
+  }
 }
 
 /**
