@@ -158,7 +158,7 @@ export async function runTurnLoop(
   } finally {
     recordTurnRunTiming(
       context, run, startedAt, performance.now() - startedAtMs,
-      queueWaitMs(loopConfig.entryStartedAtMs, startedAtMs), result, error,
+      preLoopSetupMs(loopConfig.entryStartedAtMs, startedAtMs), result, error,
     );
   }
 }
@@ -167,7 +167,7 @@ export async function runTurnLoop(
  * Entry point start → loop start, or null when the caller supplied no entry
  * timestamp (or one that is not a usable monotonic reading).
  */
-function queueWaitMs(entryStartedAtMs: number | undefined, loopStartedAtMs: number): number | null {
+function preLoopSetupMs(entryStartedAtMs: number | undefined, loopStartedAtMs: number): number | null {
   if (entryStartedAtMs === undefined || !Number.isFinite(entryStartedAtMs)) return null;
   return Math.max(0, loopStartedAtMs - entryStartedAtMs);
 }
@@ -182,7 +182,7 @@ function recordTurnRunTiming(
   run: TurnRunTelemetry,
   startedAt: Date,
   totalMs: number,
-  queueWaitMs: number | null,
+  preLoopSetupMs: number | null,
   result: TurnLoopResult | undefined,
   error: unknown,
 ): void {
@@ -196,7 +196,7 @@ function recordTurnRunTiming(
       totalMs,
       iterations: run.progress.iterationsUsed,
       toolCalls: result?.toolCallsMade ?? run.progress.toolCallsMade,
-      queueWaitMs,
+      preLoopSetupMs,
       persistMs: run.progress.persistMs,
       outcome: result === undefined ? ("error" as const) : ("returned" as const),
       stopReason: result?.stopReason ?? null,

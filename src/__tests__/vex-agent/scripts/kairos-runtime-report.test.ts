@@ -195,10 +195,10 @@ describe("buildReportQueries", () => {
     expect(queries.filter((q) => q.note !== undefined).map((q) => q.key)).toEqual(["timeouts_by_endpoint"]);
   });
 
-  it("reports queue wait and persist time percentiles per session kind, skipping NULL queue waits", () => {
+  it("reports pre-loop setup and persist time percentiles per session kind, skipping NULL setups", () => {
     const q = requireValue(queries.find((entry) => entry.key === "turn_overheads_by_kind"));
     expect(q.section).toBe(7);
-    expect(q.sql).toContain("t.queue_wait_ms");
+    expect(q.sql).toContain("t.pre_loop_setup_ms");
     expect(q.sql).toContain("t.persist_ms");
     expect(q.sql).toContain("m.v IS NOT NULL");
     expect(q.columns.map((c) => c.key)).toEqual(["session_kind", "metric", "n", "p50", "p95"]);

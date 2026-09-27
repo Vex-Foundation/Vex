@@ -39,7 +39,7 @@ export async function processMissionSetupTurn(
   signal?: AbortSignal,
 ): Promise<TurnResult> {
   logger.info("engine.mission.setup_turn", { sessionId });
-  // Runtime measurement: the loop records entry → loop start as queue wait.
+  // Runtime measurement: the loop records entry → loop start as pre-loop setup.
   const entryStartedAtMs = performance.now();
 
   const provider = await resolveProvider();

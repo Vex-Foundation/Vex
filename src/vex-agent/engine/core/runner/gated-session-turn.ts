@@ -80,7 +80,7 @@ export interface GatedSessionTurnInput {
 export async function runStopGatedSessionTurn(
   input: GatedSessionTurnInput,
 ): Promise<TurnResult> {
-  // Runtime measurement: the loop records entry → loop start as queue wait.
+  // Runtime measurement: the loop records entry → loop start as pre-loop setup.
   const entryStartedAtMs = performance.now();
   const { gateOnOperatorStopWithClient, withSessionControlLock } = await import(
     "../../runtime/lease-and-status.js"

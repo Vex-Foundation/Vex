@@ -164,7 +164,7 @@ async function addMissionActivationMessage(
 export async function runPreparedMissionStart(
   prepared: PreparedMissionStart,
 ): Promise<TurnResult> {
-  // Runtime measurement: the loop records entry → loop start as queue wait.
+  // Runtime measurement: the loop records entry → loop start as pre-loop setup.
   const entryStartedAtMs = performance.now();
   const controller = registerMissionRunAbortController(prepared.runId);
   try {
@@ -331,7 +331,7 @@ export interface PreparedResumeRun {
 export async function resumePreparedMissionRun(
   prepared: PreparedResumeRun,
 ): Promise<TurnResult> {
-  // Runtime measurement: the loop records entry → loop start as queue wait.
+  // Runtime measurement: the loop records entry → loop start as pre-loop setup.
   const entryStartedAtMs = performance.now();
   const controller = registerMissionRunAbortController(prepared.runId);
   try {

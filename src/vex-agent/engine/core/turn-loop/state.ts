@@ -45,7 +45,7 @@ export interface TurnLoopConfig {
    * Runtime measurement only (Kairos Phase 1): `performance.now()` taken when
    * the entry point that leads to this loop started handling the turn — before
    * its lease claim, provider/config load and hydrate. The loop records the gap
-   * to its own start as `turn_run_timings.queue_wait_ms`. Monotonic, NOT an
+   * to its own start as `turn_run_timings.pre_loop_setup_ms`. Monotonic, NOT an
    * epoch like `missionDeadlineMs`; never read to decide anything. Unset ⇒ NULL.
    */
   entryStartedAtMs?: number;

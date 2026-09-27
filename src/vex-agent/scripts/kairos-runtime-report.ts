@@ -35,8 +35,11 @@
  *   and charging that to the endpoint that finally served would make a healthy
  *   fallback look slow. Those attempts get their own "Retry overhead" tables
  *   (any outcome, by retry reason class and by final endpoint).
- * - Section 7's queue wait is NULL for a turn whose entry point supplies no
- *   entry timestamp; its `n` counts only the turns that did. Persist time is
+ * - Section 7's pre-loop setup (`pre_loop_setup_ms`, migration 172) is the
+ *   entry point's own work before the loop starts (provider/config load, lease
+ *   claim, hydrate), not time spent in a queue. It is NULL for a turn whose
+ *   entry point supplies no entry timestamp; its `n` counts only the turns
+ *   that did. Persist time is
  *   part of the turn's total, not in addition to it.
  * - The "prompt size" breakdown buckets by absolute `prompt_tokens`. The
  *   engine's context band is relative to each model's context window, which
@@ -577,7 +580,7 @@ ORDER BY n DESC, session_kind`,
     {
       key: "turn_overheads_by_kind",
       section: 7,
-      title: "Queue wait and transcript persistence by session kind",
+      title: "Pre-loop setup and transcript persistence by session kind",
       params: p,
       columns: [
         col("session_kind", "Session kind", "text"),
@@ -594,7 +597,7 @@ FROM (
          percentile_cont(ARRAY[0.5, 0.95]) WITHIN GROUP (ORDER BY m.v) AS pcts
   FROM turn_run_timings t
   CROSS JOIN LATERAL (VALUES
-        (1, 'queue_wait_ms', t.queue_wait_ms),
+        (1, 'pre_loop_setup_ms', t.pre_loop_setup_ms),
         (2, 'persist_ms', t.persist_ms)
   ) AS m(ord, metric, v)
   WHERE t.created_at >= $1 AND m.v IS NOT NULL

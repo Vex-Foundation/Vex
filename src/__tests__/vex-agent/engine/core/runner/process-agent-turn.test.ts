@@ -303,7 +303,7 @@ describe("runner", () => {
       expect(result.missionStatus).toBeNull();
     });
 
-    it("hands the loop its entry timestamp so queue wait covers lease, config and hydrate", async () => {
+    it("hands the loop its entry timestamp so pre-loop setup covers lease, config and hydrate", async () => {
       mockHydrate.mockResolvedValueOnce(makeHydratedSession());
       mockRunTurnLoop.mockResolvedValueOnce({
         text: "Hello!", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
@@ -448,7 +448,7 @@ describe("runner", () => {
       expect(result).toMatchObject({ text: null, toolCallsMade: 0 });
     });
 
-    it("a caller that supplies no entry timestamp leaves queue wait unset", async () => {
+    it("a caller that supplies no entry timestamp leaves pre-loop setup unset", async () => {
       mockHydrate.mockResolvedValueOnce(makeHydratedSession());
       mockRunTurnLoop.mockResolvedValueOnce({
         text: "Hello!", toolCallsMade: 0, pendingApprovals: [], stopReason: null,

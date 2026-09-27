@@ -67,7 +67,7 @@ export async function processAgentTurn(
   options?: TurnRequestOptions,
 ): Promise<TurnResult> {
   logger.info("engine.agent.turn", { sessionId });
-  // Runtime measurement: the loop records entry → loop start as queue wait.
+  // Runtime measurement: the loop records entry → loop start as pre-loop setup.
   const entryStartedAtMs = performance.now();
 
   const provider = await resolveProvider();
@@ -199,7 +199,7 @@ export async function continueAgentSessionUnderLease(
   runnerOwnerId: string,
 ): Promise<TurnResult> {
   logger.info("engine.agent.wake_continuation", { sessionId });
-  // Runtime measurement: the loop records entry → loop start as queue wait.
+  // Runtime measurement: the loop records entry → loop start as pre-loop setup.
   const entryStartedAtMs = performance.now();
 
   const { gateOnOperatorStopWithClient, withSessionControlLock } = await import(
