@@ -166,6 +166,40 @@ describe("cut-off answer continuation", () => {
         .toBe("chains.\n\n## 3. Fees\n\nETH fees vary.");
     });
 
+    describe("a leading ellipsis at a mid-sentence seam", () => {
+      it("is dropped, restoring the space between two words (live 2026-09-27 shape)", () => {
+        expect(joinContinuation("The finality model is subtle", "…consensus is reached in two rounds."))
+          .toBe("The finality model is subtle consensus is reached in two rounds.");
+      });
+
+      it.each([
+        ["three dots after whitespace", "  ...consensus follows."],
+        ["a unicode ellipsis then a space", "… consensus follows."],
+      ])("is dropped for %s", (_label, continuation) => {
+        expect(joinContinuation("It is subtle", continuation)).toBe("It is subtle consensus follows.");
+      });
+
+      it("keeps the partial's own trailing space without doubling it", () => {
+        expect(joinContinuation("It is subtle ", "…consensus follows.")).toBe("It is subtle consensus follows.");
+      });
+
+      it("adds no space before punctuation", () => {
+        expect(joinContinuation("It is subtle", "…, and slow.")).toBe("It is subtle, and slow.");
+      });
+
+      it("is kept when the partial ended a sentence", () => {
+        expect(joinContinuation("It is subtle.", " …and slow.")).toBe("It is subtle. …and slow.");
+      });
+
+      it("is kept when it is part of a restarted line", () => {
+        const partial = "Intro.\n\n…and then the validator set rotates every";
+        const continuation = "…and then the validator set rotates every epoch.";
+        expect(joinContinuation(partial, continuation)).toBe(
+          "Intro.\n\n…and then the validator set rotates every epoch.",
+        );
+      });
+    });
+
     it("resolves a completed continuation through the overlap-aware join", () => {
       const partial = { content: "Intro.\n\n## Fees\n\nETH fees are", reasoning: null };
       const result = resolveCutoffContinuation(

@@ -154,7 +154,12 @@ const MIN_OVERLAP_CHARS = 12;
  *   repeat is dropped;
  * - the continuation opens a markdown block (heading, list item, quote) right
  *   after unfinished text: it starts on a new paragraph.
- * Anything else is a mid-sentence continuation and is joined as-is.
+ * Anything else is a mid-sentence continuation and is joined as-is, except
+ * that a leading ellipsis ("…" or "...") the model used to mark "carrying on"
+ * is dropped when the partial stopped mid-sentence, so the seam reads as one
+ * sentence ("subtle consensus", not "subtle…consensus"). A word run into the
+ * seam from both sides gets a single space back. Only this last branch strips
+ * it: an ellipsis inside a restarted line or a repeated tail is real text.
  */
 export function joinContinuation(partial: string, continuation: string): string {
   const firstLine = continuation.trimStart().split("\n", 1)[0]?.trim() ?? "";
@@ -179,7 +184,22 @@ export function joinContinuation(partial: string, continuation: string): string 
   if (opensBlock && !/\n\s*$/.test(partial)) {
     return `${partial.replace(/\s+$/, "")}\n\n${continuation.trimStart()}`;
   }
+  const leadingEllipsis = LEADING_ELLIPSIS.exec(continuation);
+  if (leadingEllipsis !== null && endsMidSentence(partial)) {
+    const rest = continuation.slice(leadingEllipsis[0].length);
+    const needsSpace = /[\p{L}\p{N}]$/u.test(partial) && /^[\p{L}\p{N}]/u.test(rest);
+    return partial + (needsSpace ? " " : "") + rest;
+  }
   return partial + continuation;
+}
+
+/** An ellipsis ("…" or three or more dots) at the very start, after optional whitespace. */
+const LEADING_ELLIPSIS = /^\s*(?:…|\.{3,})/u;
+
+/** True when the partial stops inside a sentence: not after terminal punctuation or a line break. */
+function endsMidSentence(partial: string): boolean {
+  if (partial.trim().length === 0 || /\n\s*$/.test(partial)) return false;
+  return !/[.!?:;…]["'”’)\]*_]*\s*$/u.test(partial);
 }
 
 function joinReasoning(first: string | null, second: string | null): string | null {
