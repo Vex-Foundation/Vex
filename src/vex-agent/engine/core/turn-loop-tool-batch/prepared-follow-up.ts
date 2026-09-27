@@ -4,6 +4,10 @@ import { randomUUID } from "node:crypto";
 import type { Message } from "@vex-agent/db/repos/messages.js";
 import type { ParsedToolCall } from "@vex-agent/inference/types.js";
 import { dispatchTool } from "@vex-agent/tools/dispatcher.js";
+import {
+  dispatchWithTiming,
+  type ToolDispatchTelemetry,
+} from "./dispatch-timing.js";
 import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
 import { resolveInjectedProtocolTool } from "@vex-agent/tools/registry/injected-protocol-tools.js";
 import { resolveToolName } from "@vex-agent/tools/registry/name-resolution.js";
@@ -141,6 +145,8 @@ export async function dispatchPreparedActionFollowUp(args: {
    * real window. Never checked mid-dispatch — a call in flight always finishes.
    */
   readonly abortSignal?: AbortSignal;
+  /** Runtime-measurement correlation; absent records no timing row. */
+  readonly telemetry?: ToolDispatchTelemetry;
 }): Promise<ToolBatchOutcome> {
   await persistBatchTranscript({
     sessionId: args.context.sessionId,
@@ -173,16 +179,21 @@ export async function dispatchPreparedActionFollowUp(args: {
     name: args.followUp.toolName,
     arguments: args.followUp.args,
   };
-  let result = await dispatchTool(
-    {
-      name: syntheticCall.name,
-      args: syntheticCall.arguments,
-      toolCallId: syntheticCall.id,
-    },
-    {
-      ...args.toolContext,
-      modelOriginated: undefined,
-    },
+  let result = await dispatchWithTiming(
+    args.telemetry,
+    args.context.sessionId,
+    syntheticCall,
+    () => dispatchTool(
+      {
+        name: syntheticCall.name,
+        args: syntheticCall.arguments,
+        toolCallId: syntheticCall.id,
+      },
+      {
+        ...args.toolContext,
+        modelOriginated: undefined,
+      },
+    ),
   );
 
   // Only one trusted hop is permitted. Never dispatch recursively.

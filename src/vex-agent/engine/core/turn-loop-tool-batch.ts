@@ -85,6 +85,10 @@ import {
   resolvePreparedActionFollowUp,
 } from "./turn-loop-tool-batch/prepared-follow-up.js";
 import { emitToolCallLoopCorrection } from "./turn-loop-tool-batch/loop-correction-emit.js";
+import {
+  dispatchWithTiming,
+  type ToolDispatchTelemetry,
+} from "./turn-loop-tool-batch/dispatch-timing.js";
 import type {
   ToolCallLoopDetector,
   ToolCallLoopFacts,
@@ -135,7 +139,7 @@ export async function processTurnToolBatch(args: {
    * invocation id and the loop iteration that produced these calls. Absent
    * means no timing rows are recorded and behaviour is otherwise identical.
    */
-  readonly telemetry?: { readonly turnRunId: string; readonly iteration: number };
+  readonly telemetry?: ToolDispatchTelemetry;
 }): Promise<ToolBatchOutcome> {
   const { context, turnResult, liveMessages } = args;
   const executedCalls: ParsedToolCall[] = [];
@@ -263,9 +267,14 @@ export async function processTurnToolBatch(args: {
       args.abortSignal,
     );
 
-    const result = await dispatchTool(
-      { name: toolCall.name, args: toolCall.arguments, toolCallId: toolCall.id },
-      toolContext,
+    const result = await dispatchWithTiming(
+      args.telemetry,
+      context.sessionId,
+      toolCall,
+      () => dispatchTool(
+        { name: toolCall.name, args: toolCall.arguments, toolCallId: toolCall.id },
+        toolContext,
+      ),
     );
 
     // Trusted prepare→execute handoff (see the registry allow-list): resolves
@@ -463,6 +472,7 @@ export async function processTurnToolBatch(args: {
         // approval, because the transcript write between here and there is a
         // real window.
         abortSignal: args.abortSignal,
+        telemetry: args.telemetry,
       });
     }
 
