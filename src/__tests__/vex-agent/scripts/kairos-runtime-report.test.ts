@@ -1,0 +1,245 @@
+/**
+ * Tests for src/vex-agent/scripts/kairos-runtime-report.ts.
+ *
+ * Coverage focus:
+ *   - `--since` parsing: relative durations, ISO dates, rejection of junk
+ *   - argument parsing: default window, `--since x` and `--since=x`, `--json`
+ *   - query builder: read-only statements, window bound as `$1`, user input
+ *     never spliced into SQL, all seven sections present
+ *   - execution: missing tables and failing queries report per query and do
+ *     not stop the rest
+ *   - formatting: "no data" for empty results, populated tables, JSON shape
+ */
+
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("@vex-agent/db/client.js", () => ({
+  query: vi.fn(),
+  queryOne: vi.fn(),
+  execute: vi.fn(),
+  closePool: vi.fn(),
+  getPool: vi.fn(),
+}));
+
+const {
+  DEFAULT_SINCE,
+  parseSince,
+  parseArgs,
+  buildReportQueries,
+  runReportQueries,
+  formatCell,
+  renderResult,
+  renderText,
+  buildJsonReport,
+} = await import("@vex-agent/scripts/kairos-runtime-report.js");
+
+type QueryResult = Awaited<ReturnType<typeof runReportQueries>>[number];
+
+const NOW = new Date("2026-09-27T12:00:00.000Z");
+const DAY_MS = 86_400_000;
+
+describe("parseSince", () => {
+  it("resolves day and hour durations relative to now", () => {
+    expect(parseSince("7d", NOW).getTime()).toBe(NOW.getTime() - 7 * DAY_MS);
+    expect(parseSince("1d", NOW).getTime()).toBe(NOW.getTime() - DAY_MS);
+    expect(parseSince("12h", NOW).getTime()).toBe(NOW.getTime() - 12 * 3_600_000);
+  });
+
+  it("accepts ISO dates and date-times", () => {
+    expect(parseSince("2026-09-01", NOW).toISOString()).toBe("2026-09-01T00:00:00.000Z");
+    expect(parseSince("2026-09-01T10:30:00Z", NOW).toISOString()).toBe("2026-09-01T10:30:00.000Z");
+    expect(parseSince("2026-09-01T10:30:00+02:00", NOW).toISOString()).toBe("2026-09-01T08:30:00.000Z");
+  });
+
+  it.each(["", "0d", "7", "7w", "-3d", "yesterday", "2026-13-45", "7d; DROP TABLE sessions", "'; --"])(
+    "rejects %j",
+    (value) => {
+      expect(() => parseSince(value, NOW)).toThrow(/--since/);
+    },
+  );
+});
+
+describe("parseArgs", () => {
+  it("defaults to a 7 day text report", () => {
+    const args = parseArgs([], NOW);
+    expect(DEFAULT_SINCE).toBe("7d");
+    expect(args.sinceLabel).toBe("7d");
+    expect(args.json).toBe(false);
+    expect(args.since.getTime()).toBe(NOW.getTime() - 7 * DAY_MS);
+  });
+
+  it("reads --since in both spellings and --json", () => {
+    expect(parseArgs(["--since", "2d", "--json"], NOW)).toMatchObject({ sinceLabel: "2d", json: true });
+    expect(parseArgs(["--since=2026-09-20"], NOW).since.toISOString()).toBe("2026-09-20T00:00:00.000Z");
+  });
+
+  it("rejects a missing value and unknown flags", () => {
+    expect(() => parseArgs(["--since"], NOW)).toThrow(/needs a value/);
+    expect(() => parseArgs(["--since", "--json"], NOW)).toThrow(/needs a value/);
+    expect(() => parseArgs(["--verbose"], NOW)).toThrow(/unknown argument/);
+  });
+});
+
+describe("buildReportQueries", () => {
+  const since = new Date("2026-09-20T00:00:00.000Z");
+  const queries = buildReportQueries(since);
+
+  it("covers all seven sections with unique keys", () => {
+    expect([...new Set(queries.map((q) => q.section))].sort()).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(new Set(queries.map((q) => q.key)).size).toBe(queries.length);
+  });
+
+  it("only issues read-only statements", () => {
+    for (const q of queries) {
+      expect(q.sql.trimStart()).toMatch(/^SELECT\b/);
+      expect(q.sql).not.toMatch(/\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT)\b/i);
+    }
+  });
+
+  it("binds the window start as $1 and never interpolates it", () => {
+    for (const q of queries) {
+      expect(q.params).toEqual([since]);
+      expect(q.sql).toMatch(/created_at >= \$1/);
+      expect(q.sql).not.toMatch(/\$2/);
+      expect(q.sql).not.toContain(since.toISOString());
+      expect(q.sql).not.toContain("2026");
+    }
+  });
+
+  it("produces identical SQL for any window, so only the parameter varies", () => {
+    const other = buildReportQueries(new Date("2020-01-01T00:00:00.000Z"));
+    expect(other.map((q) => q.sql)).toEqual(queries.map((q) => q.sql));
+  });
+
+  it("computes percentiles with percentile_cont over an array and reports sample counts", () => {
+    const latency = queries.filter((q) => q.section === 3);
+    expect(latency.map((q) => q.key)).toEqual(["latency_by_model", "latency_by_endpoint", "latency_by_prompt_size"]);
+    for (const q of latency) {
+      expect(q.sql).toContain("percentile_cont(ARRAY[0.5, 0.95, 0.99]) WITHIN GROUP");
+      expect(q.sql).toContain("outcome = 'completed'");
+      for (const metric of ["first_chunk_ms", "first_semantic_ms", "reasoning_only_ms", "max_inter_chunk_gap_ms", "total_ms"]) {
+        expect(q.sql).toContain(`a.${metric}`);
+      }
+      expect(q.columns.map((c) => c.key)).toEqual(["grp", "metric", "n", "p50", "p95", "p99"]);
+    }
+    for (const key of ["pre_inference", "tool_durations", "turn_totals_by_kind"]) {
+      const q = queries.find((entry) => entry.key === key)!;
+      expect(q.sql).toContain("percentile_cont(ARRAY[0.5, 0.95]) WITHIN GROUP");
+      expect(q.columns.map((c) => c.key)).toContain("n");
+    }
+  });
+
+  it("limits the tool table to the 20 most frequent tools", () => {
+    const q = queries.find((entry) => entry.key === "tool_durations")!;
+    expect(q.sql).toMatch(/ORDER BY n DESC, tool_name\s+LIMIT 20/);
+  });
+
+  it("defines the empty length-capped round exactly", () => {
+    const q = queries.find((entry) => entry.key === "empty_length_rounds")!;
+    expect(q.sql).toContain("finish_reason = 'length'");
+    expect(q.sql).toContain("content_empty IS TRUE");
+    expect(q.sql).toContain("valid_tool_call_count = 0");
+  });
+});
+
+describe("runReportQueries", () => {
+  const queries = buildReportQueries(NOW).slice(0, 3);
+
+  it("keeps going when one query fails and classifies the failure", async () => {
+    const missing = Object.assign(new Error('relation "inference_attempts" does not exist'), { code: "42P01" });
+    const broken = Object.assign(new Error("column secret_value does not exist"), { code: "42703" });
+    const run = vi.fn()
+      .mockRejectedValueOnce(missing)
+      .mockRejectedValueOnce(broken)
+      .mockResolvedValueOnce([{ model: "m/a", n: 1, prompt_tokens: "10", cached_tokens: "5", ratio: 0.5 }]);
+
+    const results = await runReportQueries(queries, run);
+
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(run.mock.calls[0]).toEqual([queries[0]!.sql, queries[0]!.params]);
+    expect(results.map((r) => r.status)).toEqual(["missing_table", "error", "ok"]);
+    expect(results[1]!.error).toBe("Error (42703)");
+    expect(results[1]!.error).not.toContain("secret_value");
+    expect(results[2]!.rows).toHaveLength(1);
+  });
+});
+
+describe("formatting", () => {
+  const columns = [
+    { key: "model", label: "Model", format: "text" as const },
+    { key: "n", label: "n", format: "int" as const },
+    { key: "p50", label: "p50", format: "ms" as const },
+    { key: "share", label: "Share", format: "pct" as const },
+  ];
+  const result = (overrides: Partial<QueryResult>): QueryResult => ({
+    key: "k",
+    section: 1,
+    title: "Title",
+    status: "ok",
+    error: null,
+    columns,
+    rows: [],
+    ...overrides,
+  });
+
+  it("formats cells by kind and tolerates null and string numerics", () => {
+    expect(formatCell("a|b", "text")).toBe("a\\|b");
+    expect(formatCell(null, "text")).toBe("-");
+    expect(formatCell("12345", "int")).toBe("12,345");
+    expect(formatCell(1234.6, "ms")).toBe("1,235 ms");
+    expect(formatCell(0.4666, "pct")).toBe("46.7%");
+    expect(formatCell(null, "ms")).toBe("-");
+    expect(formatCell("not a number", "int")).toBe("-");
+  });
+
+  it("prints a status line instead of a table for empty, missing and failed results", () => {
+    expect(renderResult(result({}))).toContain("no data");
+    expect(renderResult(result({ status: "missing_table" })).join("\n")).toMatch(/table missing/);
+    expect(renderResult(result({ status: "error", error: "Error (42703)" })).join("\n")).toContain("query failed: Error (42703)");
+  });
+
+  it("renders populated rows as a markdown table", () => {
+    const lines = renderResult(result({ rows: [{ model: "m/a", n: 22, p50: 130.4, share: 0.25 }] }));
+    expect(lines).toContain("| Model | n | p50 | Share |");
+    expect(lines).toContain("| --- | ---: | ---: | ---: |");
+    expect(lines).toContain("| m/a | 22 | 130 ms | 25.0% |");
+  });
+
+  it("renders every section of an all-empty report without throwing", () => {
+    const results = buildReportQueries(NOW).map((q) => result({
+      key: q.key, section: q.section, title: q.title, columns: q.columns,
+    }));
+    const text = renderText(results, NOW, "7d");
+    for (let section = 1; section <= 7; section += 1) {
+      expect(text).toMatch(new RegExp(`^## ${section}\\. `, "m"));
+    }
+    expect(text.match(/^no data$/gm)).toHaveLength(results.length);
+    expect(text).toContain("--since 7d");
+  });
+
+  it("builds the JSON report grouped by section with numeric values", () => {
+    const results: QueryResult[] = [
+      result({ rows: [{ model: "m/a", n: "3", p50: 10.5, share: null, extra: "dropped" }] }),
+      result({ key: "k2", section: 6, title: "Tools", status: "missing_table" }),
+    ];
+    const json = buildJsonReport(results, NOW, "7d", NOW);
+    expect(json).toEqual({
+      generatedAt: NOW.toISOString(),
+      since: NOW.toISOString(),
+      sinceLabel: "7d",
+      sections: [
+        {
+          section: 1,
+          title: "Empty length-capped rounds",
+          results: [{ key: "k", title: "Title", status: "ok", error: null, rows: [{ model: "m/a", n: 3, p50: 10.5, share: null }] }],
+        },
+        {
+          section: 6,
+          title: "Tool dispatch duration (top 20 tools by count)",
+          results: [{ key: "k2", title: "Tools", status: "missing_table", error: null, rows: [] }],
+        },
+      ],
+    });
+    expect(() => JSON.stringify(json)).not.toThrow();
+  });
+});

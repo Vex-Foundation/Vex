@@ -41,6 +41,7 @@
     "tool-reembed": "tsx src/vex-agent/scripts/tool-reembed.ts",
     "tool-embeddings:health": "tsx src/vex-agent/scripts/tool-embeddings-health.ts",
     "prompt-budget:report": "tsx src/vex-agent/scripts/prompt-budget-report.ts",
+    "kairos-runtime:report": "tsx src/vex-agent/scripts/kairos-runtime-report.ts",
     "measure:khalani-gas-ratio": "tsx src/vex-agent/scripts/measure-khalani-provider-gas-ratio.ts",
     "measure:solana-priority-fee": "tsx src/vex-agent/scripts/measure-solana-priority-fee-exposure.ts",
     "benchmark-cross-lingual": "tsx src/vex-agent/scripts/cross-lingual-benchmark.ts",
