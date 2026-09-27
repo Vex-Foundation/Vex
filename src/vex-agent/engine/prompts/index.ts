@@ -76,6 +76,13 @@ export interface PromptStackOptions {
    */
   stallRecoveryNote?: string;
   /**
+   * One-shot engine note for a cut-off answer continuation
+   * (`runner/cutoff-continuation.ts`): set by the turn loop for the single
+   * inference call that continues an answer the output limit cut short, never
+   * persisted. Empty/undefined omits it.
+   */
+  cutoffContinuationNote?: string;
+  /**
    * Pre-formatted `# $VEX (own token)` live-metrics banner from
    * `buildOwnTokenBanner` (DexScreener snapshot + best-effort Virtuals
    * holderCount). TURN-STATE (volatile live numbers) — sits right after the
@@ -306,6 +313,9 @@ export function buildPromptStack(
   }
   if (options.stallRecoveryNote && options.stallRecoveryNote.length > 0) {
     turnLayers.push(options.stallRecoveryNote);
+  }
+  if (options.cutoffContinuationNote && options.cutoffContinuationNote.length > 0) {
+    turnLayers.push(options.cutoffContinuationNote);
   }
 
   // Safety re-anchor — LITERALLY the last layer of the whole prompt, after the

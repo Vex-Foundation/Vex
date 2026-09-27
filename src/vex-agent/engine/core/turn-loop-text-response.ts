@@ -43,41 +43,7 @@ export async function handleTextResponse(args: {
   readonly reasoning: string | null;
   readonly mergeOperatorInstructions: () => Promise<void>;
 }): Promise<TextResponseOutcome> {
-  // ── Board consume: this row is the commit point ──
-  // A board staged by `BoardCompose` earlier in this turn is taken here and
-  // written INTO the same INSERT as the prose, so prose and board commit
-  // together or not at all. Eligibility is deliberately narrow: only a
-  // TEXT-ONLY assistant response (this function is reached on no tool calls)
-  // whose content is not blank. A blank or whitespace-only response is not a
-  // reply a board can annotate, so it leaves the board staged for the next
-  // one; the loop clears it if none comes.
-  //
-  // Taken BEFORE the write and cleared (never restaged) when the write throws:
-  // the row that would have carried it does not exist, and a later row must
-  // not silently inherit an analysis written for a message the user never saw.
-  const pending =
-    args.content.trim() === ""
-      ? null
-      : consumePendingPresentation(args.context.sessionId);
-
-  try {
-    // Deferred save: text-only assistant message
-    await saveAssistantMessage(args.context.sessionId, args.content, null, {
-      reasoning: args.reasoning,
-      ...(pending === null ? {} : { board: pending.spec }),
-    });
-  } catch (err) {
-    if (pending !== null) {
-      clearPendingPresentation(args.context.sessionId, "final_insert_failed");
-    }
-    throw err;
-  }
-
-  args.liveMessages.push({
-    role: "assistant",
-    content: args.content,
-    timestamp: new Date().toISOString(),
-  });
+  await persistTextAnswer({ ...args, attachBoard: true });
 
   // Active mission RUN: text does NOT end the loop — inject a continue
   // marker so the next iteration has the protocol cue. Mission SETUP
@@ -102,4 +68,60 @@ export async function handleTextResponse(args: {
 
   // Chat and mission setup: text ends the loop cleanly.
   return { kind: "break_on_text" };
+}
+
+/**
+ * Save one text-only assistant row and push it onto the live tape - the
+ * persistence half of `handleTextResponse`, without its loop-control half.
+ *
+ * Also used by the cut-off continuation (`runner/cutoff-continuation.ts`) for
+ * the rows it saves outside the normal text path: a held-back answer flushed
+ * when the turn ends before its continuation (`attachBoard: true` - it is the
+ * turn's final prose), and a fragment saved ahead of a continuation that
+ * called tools (`attachBoard: false` - the prose that ends the turn comes
+ * later and should carry the board).
+ */
+export async function persistTextAnswer(args: {
+  readonly context: EngineContext;
+  /** MUTATED: pushed with the assistant message. */
+  readonly liveMessages: Message[];
+  readonly content: string;
+  readonly reasoning: string | null;
+  readonly attachBoard: boolean;
+}): Promise<void> {
+  // ── Board consume: this row is the commit point ──
+  // A board staged by `BoardCompose` earlier in this turn is taken here and
+  // written INTO the same INSERT as the prose, so prose and board commit
+  // together or not at all. Eligibility is deliberately narrow: only a
+  // TEXT-ONLY assistant response (this function is reached on no tool calls)
+  // whose content is not blank. A blank or whitespace-only response is not a
+  // reply a board can annotate, so it leaves the board staged for the next
+  // one; the loop clears it if none comes.
+  //
+  // Taken BEFORE the write and cleared (never restaged) when the write throws:
+  // the row that would have carried it does not exist, and a later row must
+  // not silently inherit an analysis written for a message the user never saw.
+  const pending =
+    !args.attachBoard || args.content.trim() === ""
+      ? null
+      : consumePendingPresentation(args.context.sessionId);
+
+  try {
+    // Deferred save: text-only assistant message
+    await saveAssistantMessage(args.context.sessionId, args.content, null, {
+      reasoning: args.reasoning,
+      ...(pending === null ? {} : { board: pending.spec }),
+    });
+  } catch (err) {
+    if (pending !== null) {
+      clearPendingPresentation(args.context.sessionId, "final_insert_failed");
+    }
+    throw err;
+  }
+
+  args.liveMessages.push({
+    role: "assistant",
+    content: args.content,
+    timestamp: new Date().toISOString(),
+  });
 }

@@ -84,7 +84,18 @@ import { resolveEffectiveInferenceConfig } from "./turn-loop/effective-inference
 import { buildIterationBoundaryActions } from "./turn-loop/iteration-boundary-actions.js";
 import { applyIterationEntryOutcome } from "./turn-loop/iteration-entry-outcome.js";
 import { applyToolBatchOutcome } from "./turn-loop/tool-batch-step.js";
-import { handleTextResponse } from "./turn-loop-text-response.js";
+import { handleTextResponse, persistTextAnswer } from "./turn-loop-text-response.js";
+import {
+  CUTOFF_ANSWER_SUFFIX,
+  CUTOFF_CONTINUATION_ENABLED,
+  CUTOFF_CONTINUATION_NOTE,
+  continuationMessages,
+  detectCutOffAnswer,
+  resolveCutoffContinuation,
+  stoppedCutoffContent,
+  stoppedCutoffReasoning,
+  type CutOffAnswer,
+} from "./runner/cutoff-continuation.js";
 import {
   beginPresentationScope,
   endPresentationScope,
@@ -96,6 +107,7 @@ import {
 import {
   MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
   classifyInferenceRound,
+  type InferenceRoundClassification,
   type UnproductiveRoundKind,
 } from "./runner/unproductive-rounds.js";
 import { createToolCallLoopDetector } from "./runner/tool-call-loop-detector.js";
@@ -250,6 +262,9 @@ async function runTurnLoopBody(
   // one-shot turn-state note plus, where safe, lower effort for that call
   // only. See `runner/stall-recovery.ts`.
   const stallRecovery = createStallRecoveryTracker(STALL_RECOVERY_ENABLED);
+  // A text answer the output limit cut short, held back (not persisted) while
+  // ONE continuation call finishes it. See `runner/cutoff-continuation.ts`.
+  let cutoff: CutOffAnswer | null = null;
   // REPETITION detector, and a third bound distinct from both of the above:
   // `maxIterations` counts work, `consecutiveUnproductiveRounds` counts
   // silence, this counts a model doing the same productive thing forever. Its
@@ -427,7 +442,10 @@ async function runTurnLoopBody(
     // Stall recovery: the call after an unproductive round carries the note
     // and (guarded) lower effort. Built before the envelope so the ceiling
     // below measures the request that is actually sent.
-    const recoveringFrom = stallRecovery.pending();
+    // A held-back cut-off answer takes this call for its continuation instead.
+    // The two cannot both be pending (the cut-off round was productive and
+    // reset the stall streak); the guard only makes that explicit.
+    const recoveringFrom = cutoff === null ? stallRecovery.pending() : null;
     const recoveryCall: StallRecoveryCall | null = recoveringFrom === null
       ? null
       : await prepareStallRecoveryCall({
@@ -438,13 +456,19 @@ async function runTurnLoopBody(
           inLoopPendingApprovals: pendingApprovals.length,
           hasPendingApproval: () => hasPendingForSession(context.sessionId),
         });
+    // Cut-off continuation: the fragment rides as the last assistant message
+    // and the note in the turn state, for this request only. Effort is the
+    // configured one - never lowered for a continuation.
     const callConfig = recoveryCall?.config ?? active.config;
-    const callPromptOptions = recoveryCall?.promptOptions ?? stack.promptOptions;
+    const callPromptOptions = cutoff !== null
+      ? { ...stack.promptOptions, cutoffContinuationNote: CUTOFF_CONTINUATION_NOTE }
+      : recoveryCall?.promptOptions ?? stack.promptOptions;
+    const callMessages = cutoff !== null ? continuationMessages(liveMessages, cutoff) : liveMessages;
 
     // Build the request envelope ONCE, here, so the ceiling below measures the
     // object that is then sent (see the module header — it is not reproducible).
     const envelope = buildTurnEnvelope(
-      context, liveMessages, currentSummary, callPromptOptions,
+      context, callMessages, currentSummary, callPromptOptions,
     );
 
     // ── Pre-inference byte ceiling (C8) ─────────────────────────────
@@ -484,12 +508,21 @@ async function runTurnLoopBody(
         ...stallRecoveryLogFields(recoveryCall),
       });
     }
+    if (cutoff !== null) {
+      // Lengths only, never the answer text.
+      logger.info("engine.turn.cutoff_continuation", {
+        sessionId: context.sessionId,
+        missionRunId: context.missionRunId ?? null,
+        iteration,
+        partialChars: cutoff.content.length,
+      });
+    }
 
     // Execute turn (no save yet — deferred save lives in tool-batch helper).
     // `inferenceAbortSignal` (chat-turn only) lets the streaming inference be
     // cancelled mid-response; mission callers leave it undefined.
     const turnResult = await executeTurn(
-      context, liveMessages, currentSummary, provider, callConfig, stack.tools, callPromptOptions,
+      context, callMessages, currentSummary, provider, callConfig, stack.tools, callPromptOptions,
       inferenceAbortSignal,
       // THE measured object, not a rebuild.
       envelope,
@@ -515,6 +548,21 @@ async function runTurnLoopBody(
     // and MUST still persist what the model had produced. Testing the boundary
     // flag first would silently drop that partial row.
     if (turnResult.inferenceAborted) {
+      if (cutoff !== null) {
+        // Stopped mid-continuation: the held-back answer plus whatever the
+        // continuation streamed becomes the one `chat_stopped` row. It is
+        // never empty (the fragment has text), so its `transcriptAppend`
+        // retires the preview like any other persisted stop.
+        await saveAssistantMessage(
+          context.sessionId,
+          stoppedCutoffContent(cutoff, turnResult.content),
+          null,
+          { stopped: true, reasoning: stoppedCutoffReasoning(cutoff, turnResult.reasoning) },
+        );
+        cutoff = null;
+        stopReason = "user_stopped";
+        break;
+      }
       if (turnResult.content) {
         // Non-empty partial output becomes a durable `chat_stopped` row. Its
         // `transcriptAppend` is what retires the live preview — the same
@@ -577,7 +625,42 @@ async function runTurnLoopBody(
     // never finished writing - and the assistant tool-call message is not
     // persisted, so the transcript never carries tool calls without results.
     // It then counts as a stall like any other unproductive round.
-    const round = classifyInferenceRound(turnResult);
+    //
+    // A cut-off continuation round is resolved FIRST and is not classified on
+    // its own: whatever it produced, the held-back answer is saved now (see
+    // `runner/cutoff-continuation.ts`), so the round counts as productive. The
+    // one exception is a continuation that called tools - the fragment is
+    // saved on its own row and the round is classified and dispatched below
+    // like any other.
+    let resolvedAnswer: { content: string; reasoning: string | null } | null = null;
+    if (cutoff !== null) {
+      const resolution = resolveCutoffContinuation(cutoff, turnResult);
+      cutoff = null;
+      logger.info("engine.turn.cutoff_continuation_resolved", {
+        sessionId: context.sessionId,
+        missionRunId: context.missionRunId ?? null,
+        iteration,
+        outcome: resolution.outcome,
+        finishReason: turnResult.finishReason,
+        savedChars: resolution.content.length,
+      });
+      if (resolution.kind === "tool_round") {
+        await persistTextAnswer({
+          context,
+          liveMessages,
+          content: resolution.content,
+          reasoning: resolution.reasoning,
+          attachBoard: false,
+        });
+        lastText = resolution.content;
+      } else {
+        resolvedAnswer = { content: resolution.content, reasoning: resolution.reasoning };
+      }
+    }
+
+    const round: InferenceRoundClassification = resolvedAnswer !== null
+      ? { kind: "productive" }
+      : classifyInferenceRound(turnResult);
     stallRecovery.observe(round);
     if (round.kind === "productive") {
       consecutiveUnproductiveRounds = 0;
@@ -713,13 +796,26 @@ async function runTurnLoopBody(
       continue;
     }
 
-    if (turnResult.content) {
-      lastText = turnResult.content;
+    const answer = resolvedAnswer
+      ?? (turnResult.content ? { content: turnResult.content, reasoning: turnResult.reasoning } : null);
+    if (answer !== null) {
+      // R-9: an answer the output limit cut short is held back, not saved;
+      // the next iteration is its one continuation call. Never for the
+      // continuation's own result (`resolvedAnswer`), so there is at most one
+      // continuation per answer.
+      const cutOff = resolvedAnswer === null && CUTOFF_CONTINUATION_ENABLED
+        ? detectCutOffAnswer(turnResult)
+        : null;
+      if (cutOff !== null) {
+        cutoff = cutOff;
+        continue;
+      }
+      lastText = answer.content;
       const textOutcome = await handleTextResponse({
         context,
         liveMessages,
-        content: turnResult.content,
-        reasoning: turnResult.reasoning,
+        content: answer.content,
+        reasoning: answer.reasoning,
         mergeOperatorInstructions,
       });
       if (textOutcome.kind === "mission_run_continue") {
@@ -728,6 +824,30 @@ async function runTurnLoopBody(
       stoppedOnText = true;
       break;
     }
+  }
+
+  // A cut-off answer still held back means the loop ended before its
+  // continuation was issued (a stop, a deadline, the iteration bound, a
+  // refused request). It is still the turn's answer: save it, marked as
+  // incomplete, with any staged board - before the scope below discards it.
+  if (cutoff !== null) {
+    const content = cutoff.content + CUTOFF_ANSWER_SUFFIX;
+    await persistTextAnswer({
+      context,
+      liveMessages,
+      content,
+      reasoning: cutoff.reasoning,
+      attachBoard: true,
+    });
+    lastText = content;
+    logger.info("engine.turn.cutoff_continuation_resolved", {
+      sessionId: context.sessionId,
+      missionRunId: context.missionRunId ?? null,
+      outcome: "not_issued",
+      stopReason,
+      savedChars: content.length,
+    });
+    cutoff = null;
   }
 
   // Close the board scope for every remaining exit: a stop, a cancellation, a
