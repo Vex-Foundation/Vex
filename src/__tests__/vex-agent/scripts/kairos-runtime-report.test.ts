@@ -113,7 +113,9 @@ describe("buildReportQueries", () => {
 
   it("computes percentiles with percentile_cont over an array and reports sample counts", () => {
     const latency = queries.filter((q) => q.section === 3);
-    expect(latency.map((q) => q.key)).toEqual(["latency_by_model", "latency_by_endpoint", "latency_by_prompt_size"]);
+    expect(latency.map((q) => q.key)).toEqual([
+      "latency_by_model", "latency_by_endpoint", "latency_by_serving_provider", "latency_by_prompt_size",
+    ]);
     for (const q of latency) {
       expect(q.sql).toContain("percentile_cont(ARRAY[0.5, 0.95, 0.99]) WITHIN GROUP");
       expect(q.sql).toContain("outcome = 'completed'");
@@ -122,11 +124,37 @@ describe("buildReportQueries", () => {
       }
       expect(q.columns.map((c) => c.key)).toEqual(["grp", "metric", "n", "p50", "p95", "p99"]);
     }
-    for (const key of ["pre_inference", "tool_durations", "turn_totals_by_kind"]) {
+    for (const key of ["pre_inference", "tool_durations", "turn_totals_by_kind", "turn_overheads_by_kind"]) {
       const q = queries.find((entry) => entry.key === key)!;
       expect(q.sql).toContain("percentile_cont(ARRAY[0.5, 0.95]) WITHIN GROUP");
       expect(q.columns.map((c) => c.key)).toContain("n");
     }
+  });
+
+  it("groups endpoint latency on the recorded endpoint tag, NULL reading as auto routing", () => {
+    const q = queries.find((entry) => entry.key === "latency_by_endpoint")!;
+    expect(q.sql).toContain("COALESCE(a.endpoint_tag, '(auto)')");
+    const serving = queries.find((entry) => entry.key === "latency_by_serving_provider")!;
+    expect(serving.sql).toContain("a.serving_provider");
+  });
+
+  it("counts timeouts apart from aborts and errors", () => {
+    const totals = queries.find((entry) => entry.key === "fallback_retry_totals")!;
+    expect(totals.sql).toContain("FILTER (WHERE outcome = 'timeout')");
+    expect(totals.columns.map((c) => c.key)).toContain("timeouts");
+    const byEndpoint = queries.find((entry) => entry.key === "timeouts_by_endpoint")!;
+    expect(byEndpoint.section).toBe(4);
+    expect(byEndpoint.sql).toContain("outcome = 'timeout'");
+    expect(byEndpoint.sql).toContain("COALESCE(endpoint_tag, '(auto)')");
+  });
+
+  it("reports queue wait and persist time percentiles per session kind, skipping NULL queue waits", () => {
+    const q = queries.find((entry) => entry.key === "turn_overheads_by_kind")!;
+    expect(q.section).toBe(7);
+    expect(q.sql).toContain("t.queue_wait_ms");
+    expect(q.sql).toContain("t.persist_ms");
+    expect(q.sql).toContain("m.v IS NOT NULL");
+    expect(q.columns.map((c) => c.key)).toEqual(["session_kind", "metric", "n", "p50", "p95"]);
   });
 
   it("limits the tool table to the 20 most frequent tools", () => {

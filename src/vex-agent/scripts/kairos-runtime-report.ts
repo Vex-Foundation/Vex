@@ -23,6 +23,14 @@
  * - Latency percentiles (section 3) cover COMPLETED attempts only, so a user
  *   cancel or a provider error does not drag a model's p95 around. Failed and
  *   cancelled attempts are counted, with their own median, in section 4.
+ * - Section 4 separates `timeout` (a deadline or upstream timeout: the
+ *   provider hung) from `aborted` (the user pressed Stop) and `error`.
+ * - "By endpoint tag" groups on the OpenRouter endpoint the session was on
+ *   when the attempt settled, after any failover switch. `(auto)` means no pin:
+ *   OpenRouter chose, and "By serving provider" shows where it went.
+ * - Section 7's queue wait is NULL for a turn whose entry point supplies no
+ *   entry timestamp; its `n` counts only the turns that did. Persist time is
+ *   part of the turn's total, not in addition to it.
  * - The "prompt size" breakdown buckets by absolute `prompt_tokens`. The
  *   engine's context band is relative to each model's context window, which
  *   the tables do not store, so the two are not the same axis.
@@ -272,7 +280,8 @@ GROUP BY 1
 ORDER BY prompt_tokens DESC, model`,
     },
     latencyQuery(since, "latency_by_model", "By model", "Model", "COALESCE(a.model, '(unknown)')", "0"),
-    latencyQuery(since, "latency_by_endpoint", "By serving endpoint", "Endpoint", "COALESCE(a.serving_provider, '(unknown)')", "0"),
+    latencyQuery(since, "latency_by_endpoint", "By endpoint tag", "Endpoint tag", "COALESCE(a.endpoint_tag, '(auto)')", "0"),
+    latencyQuery(since, "latency_by_serving_provider", "By serving provider", "Serving provider", "COALESCE(a.serving_provider, '(unknown)')", "0"),
     latencyQuery(since, "latency_by_prompt_size", "By prompt size (prompt_tokens)", "Prompt size", PROMPT_SIZE_LABEL, PROMPT_SIZE_ORDER),
     {
       key: "outcomes",
@@ -301,17 +310,49 @@ ORDER BY n DESC, outcome, error_class`,
       params: p,
       columns: [
         col("attempts", "Attempts", "int"),
+        col("timeouts", "Timeouts", "int"),
         col("buffered_fallbacks", "Buffered fallbacks", "int"),
         col("attempts_with_capacity_retry", "Attempts with capacity retry", "int"),
         col("capacity_retries", "Capacity retries", "int"),
       ],
       sql: `SELECT COUNT(*)::int AS attempts,
+       COUNT(*) FILTER (WHERE outcome = 'timeout')::int AS timeouts,
        COUNT(*) FILTER (WHERE buffered_fallback)::int AS buffered_fallbacks,
        COUNT(*) FILTER (WHERE capacity_retries > 0)::int AS attempts_with_capacity_retry,
        COALESCE(SUM(capacity_retries), 0)::int AS capacity_retries
 FROM inference_attempts
 WHERE created_at >= $1
 HAVING COUNT(*) > 0`,
+    },
+    {
+      key: "timeouts_by_endpoint",
+      section: 4,
+      title: "Timeouts by model and endpoint tag",
+      params: p,
+      columns: [
+        col("model", "Model", "text"),
+        col("endpoint_tag", "Endpoint tag", "text"),
+        col("attempts", "Attempts", "int"),
+        col("timeouts", "Timeouts", "int"),
+        col("share", "Share of attempts", "pct"),
+        col("p50_timeout_ms", "p50 time to timeout", "ms"),
+      ],
+      sql: `SELECT model, endpoint_tag, attempts, timeouts,
+       timeouts::float8 / NULLIF(attempts, 0) AS share,
+       p50_timeout_ms
+FROM (
+  SELECT COALESCE(model, '(unknown)') AS model,
+         COALESCE(endpoint_tag, '(auto)') AS endpoint_tag,
+         COUNT(*)::int AS attempts,
+         COUNT(*) FILTER (WHERE outcome = 'timeout')::int AS timeouts,
+         percentile_cont(0.5) WITHIN GROUP (ORDER BY total_ms)
+           FILTER (WHERE outcome = 'timeout') AS p50_timeout_ms
+  FROM inference_attempts
+  WHERE created_at >= $1
+  GROUP BY 1, 2
+) s
+WHERE timeouts > 0
+ORDER BY timeouts DESC, model, endpoint_tag`,
     },
     {
       key: "fallback_reasons",
@@ -438,6 +479,34 @@ FROM (
   GROUP BY 1
 ) s
 ORDER BY n DESC, session_kind`,
+    },
+    {
+      key: "turn_overheads_by_kind",
+      section: 7,
+      title: "Queue wait and transcript persistence by session kind",
+      params: p,
+      columns: [
+        col("session_kind", "Session kind", "text"),
+        col("metric", "Metric", "text"),
+        col("n", "n", "int"),
+        col("p50", "p50", "ms"),
+        col("p95", "p95", "ms"),
+      ],
+      sql: `SELECT session_kind, metric, n, pcts[1] AS p50, pcts[2] AS p95
+FROM (
+  SELECT COALESCE(t.session_kind, '(unknown)') AS session_kind,
+         m.ord, m.metric,
+         COUNT(m.v)::int AS n,
+         percentile_cont(ARRAY[0.5, 0.95]) WITHIN GROUP (ORDER BY m.v) AS pcts
+  FROM turn_run_timings t
+  CROSS JOIN LATERAL (VALUES
+        (1, 'queue_wait_ms', t.queue_wait_ms),
+        (2, 'persist_ms', t.persist_ms)
+  ) AS m(ord, metric, v)
+  WHERE t.created_at >= $1 AND m.v IS NOT NULL
+  GROUP BY 1, m.ord, m.metric
+) s
+ORDER BY session_kind, ord`,
     },
   ];
 }
