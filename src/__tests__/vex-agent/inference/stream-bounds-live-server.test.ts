@@ -1020,7 +1020,7 @@ describe("abort propagation after a GC (real SDK, known gap)", () => {
     expect(s.outcomes.map((o) => o.clientAborted)).toEqual([true]);
   });
 
-  it.fails("a Stop during a silent stretch ends the round even after a GC", async () => {
+  it("a Stop during a silent stretch ends the round even after a GC", async () => {
     const s = await serve([
       async (r) => {
         r.event(contentChunk("partial"));

@@ -329,7 +329,12 @@ async function bufferedFallback(
     const response = await guard.race(
       provider.chatCompletion(messages, tools, config, context, guard.signal),
     );
-    if (response === STALLED) return stalledResult(guard);
+    if (response === STALLED) {
+      if (callerSignal?.aborted === true) {
+        return { response: emptyResponse(), aborted: true, usageObserved: false, timedOut: null };
+      }
+      return stalledResult(guard);
+    }
     return { response, aborted: false, usageObserved: true, timedOut: null };
   } catch (err) {
     // The round deadline firing mid-request surfaces as the SDK's timeout
@@ -483,6 +488,8 @@ async function runGuardedInference(
       if (next === STALLED) {
         released = true;
         releaseAbandoned(iterator);
+        // The race also settles on a caller Stop, not only on a bound.
+        if (signal?.aborted) aborted = true;
         break;
       }
       if (next.done) {
@@ -592,7 +599,7 @@ async function runGuardedInference(
     // release the source exactly as `for await` did on `break` / `throw`.
     if (!released) {
       released = true;
-      if (guard.timedOut !== null) releaseAbandoned(iterator);
+      if (guard.timedOut !== null || signal?.aborted) releaseAbandoned(iterator);
       else await iterator.return?.();
     }
   }

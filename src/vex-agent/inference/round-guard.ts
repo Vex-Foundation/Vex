@@ -10,16 +10,20 @@
  * budget is LEFT rather than starting a fresh 300 s.
  *
  * WHY A REQUEST-LOCAL CONTROLLER. A fired bound must stop the request without
- * pretending the user pressed Stop. The guard aborts only its own controller,
- * combined with the caller's signal through `AbortSignal.any` (the pattern in
- * `@utils/cancellation.ts`); the caller's signal is never touched, so
- * `aborted` keeps meaning "the user stopped". The abort reason is an
+ * pretending the user pressed Stop. The guard aborts only its own controller;
+ * the caller's signal is never touched, so `aborted` keeps meaning "the user
+ * stopped". A caller Stop is FORWARDED into the guard's controller (with the
+ * caller's own reason) by a listener on the caller's signal, rather than
+ * combined through `AbortSignal.any`: `any` links its result to its sources
+ * only weakly, and the whole chain from the caller's signal to the body
+ * teardown in `openrouter/round-fetch.ts` must survive a GC. The abort reason is an
  * `InferenceTimeoutError` (named `TimeoutError`), which the SDK maps to its
  * `RequestTimeoutError` and the attempt classifier records as `timeout`.
  *
  * WHY `race`. Aborting the signal asks the provider to stop; it cannot force a
  * pending `next()` to settle. A source that ignores its signal would otherwise
- * hold the round open forever. `race` returns the moment a bound fires. The
+ * hold the round open forever. `race` returns the moment a bound fires OR the
+ * caller stops. The
  * work it abandons is not left running with resources held: its signal is
  * already aborted, and the consumer releases the iterator.
  *
@@ -87,7 +91,10 @@ export interface RoundGuard {
    * round deadline still applies.
    */
   enterBuffered(): void;
-  /** Settle with the work, or with `STALLED` as soon as a bound fires. */
+  /**
+   * Settle with the work, or with `STALLED` as soon as a bound fires or the
+   * caller stops (check the caller's signal to tell which).
+   */
   race<T>(work: Promise<T>): Promise<T | typeof STALLED>;
   /** Clear every timer. Idempotent; must run on every exit path. */
   dispose(): void;
@@ -106,11 +113,7 @@ export function createRoundGuard(
     bounds.roundDeadlineMs > 0;
 
   const controller = new AbortController();
-  const signal = !enabled
-    ? callerSignal
-    : callerSignal === undefined
-      ? controller.signal
-      : AbortSignal.any([callerSignal, controller.signal]);
+  const signal = enabled ? controller.signal : callerSignal;
 
   const timers = new Map<InferenceStallKind, ReturnType<typeof setTimeout>>();
   let timedOut: InferenceStallKind | null = null;
@@ -133,6 +136,18 @@ export function createRoundGuard(
     for (const timer of timers.values()) clearTimeout(timer);
     timers.clear();
   };
+
+  // A caller Stop ends the round's request and any wait on it at once. The
+  // round is the user's to end, so no bound may fire after it.
+  const onCallerAbort = (): void => {
+    clearAll();
+    controller.abort(callerSignal?.reason);
+    resolveStalled();
+  };
+  if (enabled && callerSignal !== undefined) {
+    callerSignal.addEventListener("abort", onCallerAbort, { once: true });
+    if (callerSignal.aborted) onCallerAbort();
+  }
 
   const fire = (kind: InferenceStallKind): void => {
     timers.delete(kind);
@@ -184,7 +199,7 @@ export function createRoundGuard(
     },
     race<T>(work: Promise<T>): Promise<T | typeof STALLED> {
       if (!enabled) return work;
-      if (timedOut !== null) {
+      if (timedOut !== null || callerSignal?.aborted === true) {
         // Nobody will await the abandoned work; keep its rejection handled.
         work.catch(() => {});
         return Promise.resolve(STALLED);
@@ -193,6 +208,7 @@ export function createRoundGuard(
     },
     dispose() {
       clearAll();
+      callerSignal?.removeEventListener("abort", onCallerAbort);
     },
   };
 }
