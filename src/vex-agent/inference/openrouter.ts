@@ -50,6 +50,8 @@ import {
 
 import logger from "@utils/logger.js";
 import { normalizeOpenRouterError } from "./openrouter/errors.js";
+import { isInferenceTimeout } from "./attempt-timing.js";
+import { nameAsInferenceTimeout } from "./inference-timeout.js";
 import { extractUsage, parseNonStreamingResponse } from "./openrouter/mappers.js";
 import { buildOpenRouterParams } from "./openrouter/params.js";
 import { computeRequestCost } from "./openrouter/cost.js";
@@ -446,7 +448,13 @@ export class OpenRouterProvider implements InferenceProvider {
       // AND message redaction).
       yield* stream;
     } catch (err) {
-      throw normalizeOpenRouterError(err, "streaming chat completion (mid-stream)");
+      const normalized = normalizeOpenRouterError(err, "streaming chat completion (mid-stream)");
+      // A deadline that cuts the body off mid-stream reaches here as the
+      // signal's own `TimeoutError`, which the SDK never wraps, so the
+      // normalized error would be a plain `Error` and the attempt would be
+      // recorded as `error`, not `timeout` (Kairos R-10). Only its name
+      // changes; every own-property the mission classifier reads stays.
+      throw isInferenceTimeout(err) ? nameAsInferenceTimeout(normalized) : normalized;
     }
   }
 

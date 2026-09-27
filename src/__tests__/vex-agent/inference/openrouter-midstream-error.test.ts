@@ -40,6 +40,16 @@ vi.mock("@utils/logger.js", () => ({
 }));
 
 const { OpenRouterProvider } = await import("../../../vex-agent/inference/openrouter.js");
+const { classifyInferenceError, isInferenceTimeout } = await import(
+  "../../../vex-agent/inference/attempt-timing.js"
+);
+const { normalizeOpenRouterError } = await import(
+  "../../../vex-agent/inference/openrouter/errors.js"
+);
+const { classifyMissionRunError } = await import(
+  "../../../vex-agent/engine/core/runner/mission-error-classifier.js"
+);
+const { requireValue } = await import("../../helpers/require-value.js");
 
 import type {
   InferenceConfig,
@@ -138,5 +148,98 @@ describe("OpenRouterProvider.chatCompletionStream — mid-stream error normaliza
     expect(normalized.message).not.toContain("sk-or-leak");
     // causeCode preserved (own-property) for the mission classifier.
     expect(field(normalized, "causeCode")).toBe("ECONNRESET");
+  });
+});
+
+/**
+ * Kairos R-10: a deadline that cuts the body off mid-stream reaches the
+ * normalizer as the signal's own `TimeoutError`, which the SDK never wraps.
+ * Normalized, it used to be a plain `Error` recorded as `error`.
+ */
+describe("OpenRouterProvider.chatCompletionStream — mid-stream deadline is a typed timeout", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    sendMock.mockReset();
+    for (const key of Object.keys(process.env)) {
+      if (key.startsWith("AGENT_") || key.startsWith("OPENROUTER_")) {
+        delete process.env[key];
+      }
+    }
+    process.env.OPENROUTER_API_KEY = "sk-or-test";
+    process.env.AGENT_MODEL = "deepseek/deepseek-v4-flash";
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  function streamThatThrowsAfterOneChunk(failure: unknown) {
+    return {
+      [Symbol.asyncIterator]() {
+        let step = 0;
+        return {
+          next: async () => {
+            if (step === 0) {
+              step += 1;
+              return { value: { choices: [{ delta: { content: "partial" } }] }, done: false };
+            }
+            throw failure;
+          },
+        };
+      },
+    };
+  }
+
+  async function midStreamFailure(failure: unknown): Promise<unknown> {
+    sendMock.mockResolvedValue(streamThatThrowsAfterOneChunk(failure));
+    const provider = new OpenRouterProvider();
+    try {
+      for await (const _chunk of provider.chatCompletionStream(MESSAGES, [], makeConfig())) {
+        // drain
+      }
+    } catch (err) {
+      return err;
+    }
+    return null;
+  }
+
+  it("names a mid-stream deadline TimeoutError so the attempt classifies as timeout", async () => {
+    const caught = await midStreamFailure(new DOMException("signal timed out", "TimeoutError"));
+    expect(caught).toBeInstanceOf(Error);
+    expect(isInferenceTimeout(caught)).toBe(true);
+    expect(classifyInferenceError(caught)).toBe("TimeoutError");
+    // Mission auto-retry classification is unchanged: a status-less,
+    // cause-less failure stays permanent, exactly as the plain Error was.
+    expect(classifyMissionRunError(caught)).toBe("permanent");
+    expect(
+      classifyMissionRunError(
+        normalizeOpenRouterError(
+          new DOMException("signal timed out", "TimeoutError"),
+          "streaming chat completion (mid-stream)",
+        ),
+      ),
+    ).toBe("permanent");
+  });
+
+  it("keeps the transport cause code a timeout carries, so mission retry still sees it", async () => {
+    const bodyTimeout = new Error("body timeout");
+    Object.assign(bodyTimeout, { cause: { code: "UND_ERR_BODY_TIMEOUT" } });
+    const caught = await midStreamFailure(bodyTimeout);
+    expect(caught).toBeInstanceOf(Error);
+    const err = requireValue(caught instanceof Error ? caught : null);
+    expect(field(err, "causeCode")).toBe("UND_ERR_BODY_TIMEOUT");
+    expect(isInferenceTimeout(err)).toBe(true);
+    expect(classifyMissionRunError(err)).toBe("transient");
+  });
+
+  it("leaves a non-timeout mid-stream failure a plain normalized Error", async () => {
+    const reset = new Error("socket hang up");
+    Object.assign(reset, { cause: { code: "ECONNRESET" } });
+    const caught = await midStreamFailure(reset);
+    const err = requireValue(caught instanceof Error ? caught : null);
+    expect(err.name).toBe("Error");
+    expect(isInferenceTimeout(err)).toBe(false);
+    expect(classifyMissionRunError(err)).toBe("transient");
   });
 });
