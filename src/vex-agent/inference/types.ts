@@ -411,6 +411,12 @@ export interface InferenceRequestContext {
   readonly sessionId: string;
   /** Mission run this request belongs to, when the turn is part of one. */
   readonly missionRunId: string | null;
+  /**
+   * Observer for runtime measurement: called once per capacity failure the
+   * endpoint failover absorbs, with its bounded `reasonClass`. Observation
+   * only — the failover swallows anything it throws.
+   */
+  readonly onCapacityFailure?: (reasonClass: string) => void;
 }
 
 // ── Provider interface ───────────────────────────────────────────
