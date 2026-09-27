@@ -212,3 +212,15 @@ export async function getPendingCount(): Promise<number> {
   const r = await queryOne<{ c: string }>("SELECT COUNT(*) AS c FROM approval_queue WHERE status = 'pending'");
   return parseInt(r?.c ?? "0", 10);
 }
+
+/**
+ * Whether this session has any approval still waiting on the user. One indexed
+ * existence probe, not a row fetch: callers only need the yes/no.
+ */
+export async function hasPendingForSession(sessionId: string): Promise<boolean> {
+  const r = await queryOne<{ found: number }>(
+    "SELECT 1 AS found FROM approval_queue WHERE session_id = $1 AND status = 'pending' LIMIT 1",
+    [sessionId],
+  );
+  return r !== null;
+}

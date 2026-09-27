@@ -70,6 +70,12 @@ export interface PromptStackOptions {
    */
   planOffNotice?: string;
   /**
+   * One-shot engine note for a stall-recovery call (`runner/stall-recovery.ts`):
+   * set by the turn loop for the single inference call that follows an
+   * unproductive round, never persisted. Empty/undefined omits it.
+   */
+  stallRecoveryNote?: string;
+  /**
    * Pre-formatted `# $VEX (own token)` live-metrics banner from
    * `buildOwnTokenBanner` (DexScreener snapshot + best-effort Virtuals
    * holderCount). TURN-STATE (volatile live numbers) — sits right after the
@@ -297,6 +303,9 @@ export function buildPromptStack(
   // model-driven offer.)
   if (options.planOffNotice && options.planOffNotice.length > 0) {
     turnLayers.push(options.planOffNotice);
+  }
+  if (options.stallRecoveryNote && options.stallRecoveryNote.length > 0) {
+    turnLayers.push(options.stallRecoveryNote);
   }
 
   // Safety re-anchor — LITERALLY the last layer of the whole prompt, after the
