@@ -95,7 +95,8 @@ import {
 } from "./turn-loop-state-init.js";
 import {
   MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
-  isProductiveRound,
+  classifyInferenceRound,
+  type UnproductiveRoundKind,
 } from "./runner/unproductive-rounds.js";
 import { createToolCallLoopDetector } from "./runner/tool-call-loop-detector.js";
 
@@ -230,9 +231,13 @@ async function runTurnLoopBody(
   // exits via `iteration < maxIterations` becoming false → iteration_limit).
   let stoppedOnText = false;
   // STALL detector, not a budget. Counts rounds that emitted neither text nor a
-  // tool call; reset by every productive round. See `runner/unproductive-rounds.ts`
-  // for why it must stay separate from `maxIterations` and why the bound is small.
+  // complete tool batch; reset by every productive round. See
+  // `runner/unproductive-rounds.ts` for why it must stay separate from
+  // `maxIterations` and why the bound is small.
   let consecutiveUnproductiveRounds = 0;
+  // Class of the most recent unproductive round, reported when the stall bound
+  // fires so the stop says HOW the model stalled, not only that it did.
+  let lastUnproductiveKind: UnproductiveRoundKind | null = null;
   // REPETITION detector, and a third bound distinct from both of the above:
   // `maxIterations` counts work, `consecutiveUnproductiveRounds` counts
   // silence, this counts a model doing the same productive thing forever. Its
@@ -514,33 +519,59 @@ async function runTurnLoopBody(
       break;
     }
 
-    // ── Stall detection (WP1) ───────────────────────────────────────
+    // ── Stall detection (WP1) and the incomplete-batch rule ─────────
     // Evaluated on the SAME `turnResult` the two dispatch branches below read,
     // and BEFORE either of them, so the classification cannot drift from what
     // the loop actually does with the round.
     //
-    // An unproductive round takes neither branch: `toolCalls` is empty and
-    // `content` is `""`/`null`/whitespace, which the `if (turnResult.content)`
-    // guard treats as falsy. Before this counter existed the iteration body
-    // simply ended, the `for` continued, and the model was asked the identical
-    // question again - silently, with nothing logged and nothing persisted -
-    // until `maxIterations` ran out. That is the v0.2.6 report.
-    if (isProductiveRound(turnResult)) {
+    // An unproductive round takes neither branch. Before this counter existed
+    // a blank round simply ended the iteration body, the `for` continued, and
+    // the model was asked the identical question again - silently, with
+    // nothing logged and nothing persisted - until `maxIterations` ran out.
+    // That is the v0.2.6 report.
+    //
+    // An INCOMPLETE tool batch (any call dropped as truncated or malformed) is
+    // refused whole, ALWAYS: none of its calls is dispatched - not even the
+    // valid ones, which may include a fund-moving prepare from a plan the model
+    // never finished writing - and the assistant tool-call message is not
+    // persisted, so the transcript never carries tool calls without results.
+    // It then counts as a stall like any other unproductive round.
+    const round = classifyInferenceRound(turnResult);
+    if (round.kind === "productive") {
       consecutiveUnproductiveRounds = 0;
     } else {
       consecutiveUnproductiveRounds += 1;
-      logger.warn("engine.turn.unproductive_round", {
-        sessionId: context.sessionId,
-        missionRunId: context.missionRunId ?? null,
-        iteration,
-        consecutiveUnproductiveRounds,
-        limit: MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
-        // A reasoning-only response is the common shape of this failure and is
-        // worth distinguishing in the log: the model spent output tokens, it
-        // just never answered.
-        reasoningOnly: turnResult.reasoning !== null,
-        finalRoundPromptTokens: turnResult.promptTokens,
-      });
+      lastUnproductiveKind = round.kind;
+      if (round.kind === "incomplete_tool_batch") {
+        // Counts, the finish reason and the class only: never argument text.
+        logger.warn("engine.turn.incomplete_inference", {
+          sessionId: context.sessionId,
+          missionRunId: context.missionRunId ?? null,
+          iteration,
+          classification: round.kind,
+          truncated: round.truncated,
+          finishReason: turnResult.finishReason,
+          validToolCalls: round.validToolCalls,
+          malformedToolCalls: round.malformedToolCalls,
+          consecutiveUnproductiveRounds,
+          limit: MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
+        });
+      } else {
+        logger.warn("engine.turn.unproductive_round", {
+          sessionId: context.sessionId,
+          missionRunId: context.missionRunId ?? null,
+          iteration,
+          classification: round.kind,
+          finishReason: turnResult.finishReason,
+          consecutiveUnproductiveRounds,
+          limit: MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
+          // A reasoning-only response is the common shape of this failure and is
+          // worth distinguishing in the log: the model spent output tokens, it
+          // just never answered.
+          reasoningOnly: turnResult.reasoning !== null,
+          finalRoundPromptTokens: turnResult.promptTokens,
+        });
+      }
       if (consecutiveUnproductiveRounds >= MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS) {
         stopReason = "no_progress";
         break;
@@ -658,6 +689,7 @@ async function runTurnLoopBody(
         maxIterations: loopConfig.maxIterations,
         consecutiveUnproductiveRounds,
         unproductiveRoundLimit: MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
+        lastUnproductiveKind,
         toolCallsMade: totalToolCalls,
         producedText: lastText !== null,
         elapsedMs: Date.now() - startTime,

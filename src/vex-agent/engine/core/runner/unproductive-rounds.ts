@@ -75,3 +75,69 @@ export function isProductiveRound(round: {
 }): boolean {
   return hasActionableInferenceResponse(round);
 }
+
+/**
+ * The fields of a completed round the classification reads. Structural, like
+ * `isProductiveRound`'s input, so the rule can be tested without a full
+ * `SingleTurnResult`.
+ */
+export interface InferenceRoundFields {
+  readonly content: string | null;
+  readonly toolCalls: readonly unknown[] | null;
+  /** Provider finish reason, verbatim (open enum); `null` when unreported. */
+  readonly finishReason: string | null;
+  /** Tool calls the inference layer dropped as unassemblable. */
+  readonly malformedToolCallCount: number;
+}
+
+/**
+ * What a completed (not aborted) inference round amounted to.
+ *
+ * - `productive`: text or a COMPLETE tool batch - the normal paths.
+ * - `incomplete_tool_batch`: the provider returned at least one tool call that
+ *   could not be assembled, even if others survived. `truncated` is true when
+ *   the output limit cut it off (`finish_reason === "length"`), false when
+ *   the call was simply malformed. None of the batch may be dispatched: the
+ *   survivors are part of a plan the model did not finish writing, and in a
+ *   financial agent one of them may be a fund-moving prepare.
+ * - `reasoning_exhausted`: the output limit was hit with no answer and no tool
+ *   call - the model spent its budget thinking.
+ * - `blank`: nothing at all, for any other reason.
+ *
+ * Every class but `productive` counts toward
+ * `MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS`.
+ */
+export type InferenceRoundClassification =
+  | { readonly kind: "productive" }
+  | {
+      readonly kind: "incomplete_tool_batch";
+      readonly truncated: boolean;
+      readonly validToolCalls: number;
+      readonly malformedToolCalls: number;
+    }
+  | { readonly kind: "reasoning_exhausted" }
+  | { readonly kind: "blank" };
+
+export type UnproductiveRoundKind = Exclude<InferenceRoundClassification["kind"], "productive">;
+
+/**
+ * Classify a completed round. Pure; the turn loop calls it once per round,
+ * BEFORE any dispatch, and acts only on its answer.
+ *
+ * The incomplete-batch check comes first and is unconditional: a round that
+ * dropped a call is never productive, whatever else it carried. Only then
+ * does the ordinary productive rule apply.
+ */
+export function classifyInferenceRound(round: InferenceRoundFields): InferenceRoundClassification {
+  if (round.malformedToolCallCount > 0) {
+    return {
+      kind: "incomplete_tool_batch",
+      truncated: round.finishReason === "length",
+      validToolCalls: round.toolCalls?.length ?? 0,
+      malformedToolCalls: round.malformedToolCallCount,
+    };
+  }
+  if (isProductiveRound(round)) return { kind: "productive" };
+  if (round.finishReason === "length") return { kind: "reasoning_exhausted" };
+  return { kind: "blank" };
+}
