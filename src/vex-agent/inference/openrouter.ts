@@ -23,6 +23,12 @@ import type { ChatRequest } from "@openrouter/sdk/models/chatrequest.js";
 import type { ChatResult } from "@openrouter/sdk/models/chatresult.js";
 import type { ChatStreamChunk } from "@openrouter/sdk/models/chatstreamchunk.js";
 import type { EventStream } from "@openrouter/sdk/lib/event-streams.js";
+import { HTTPClient } from "@openrouter/sdk/lib/http.js";
+import type { RetryConfig } from "@openrouter/sdk/lib/retries.js";
+import type {
+  SendChatCompletionRequestRequest,
+  SendChatCompletionRequestResponse,
+} from "@openrouter/sdk/models/operations/sendchatcompletionrequest.js";
 
 import type {
   InferenceProvider,
@@ -57,6 +63,11 @@ import { buildOpenRouterParams } from "./openrouter/params.js";
 import { computeRequestCost } from "./openrouter/cost.js";
 import { consumeOpenRouterStream } from "./openrouter/stream.js";
 import { requireNonEmptyOpenRouterStream } from "./openrouter/non-empty-stream.js";
+import {
+  OPENROUTER_5XX_RETRY_BACKOFF,
+  roundFetch,
+  withRoundSignal,
+} from "./openrouter/round-fetch.js";
 import { asChatResult, asEventStream } from "./openrouter/chat-send.js";
 import {
   fetchModelInferenceConfig,
@@ -76,6 +87,9 @@ import { loadEndpointCandidates } from "./openrouter/endpoint-failover/endpoint-
  * the SDK is a compile error instead of a silently-ignored envelope field.
  */
 const ROUTING_METADATA_ENABLED = MetadataLevel.Enabled;
+
+/** Per-send override: the SDK does not retry; `roundFetch` does, abortably. */
+const SDK_RETRY_OFF: RetryConfig = { strategy: "none" };
 
 // ── Provider ─────────────────────────────────────────────────────
 
@@ -131,13 +145,11 @@ export class OpenRouterProvider implements InferenceProvider {
       timeoutMs: OPENROUTER_SDK_TIMEOUT_MS,
       retryConfig: {
         strategy: "backoff",
-        backoff: {
-          initialInterval: 2000,
-          maxInterval: 15000,
-          exponent: 2,
-          maxElapsedTime: 60000,
-        },
+        backoff: { ...OPENROUTER_5XX_RETRY_BACKOFF },
       },
+      // Tears a signal-carrying send's body down explicitly on abort, and runs
+      // its 5xx retries with abortable waits (see `openrouter/round-fetch.ts`).
+      httpClient: new HTTPClient({ fetcher: roundFetch }),
     });
   }
 
@@ -149,11 +161,30 @@ export class OpenRouterProvider implements InferenceProvider {
   // DISABLES the deadline outright — see `openrouter/request-deadline.ts` for
   // the SDK line numbers. Composing keeps both; no caller signal still means no
   // options object, leaving the SDK's own timeout in charge exactly as before.
+  //
+  // A signal-carrying send also switches the SDK's own 5xx retry off: its
+  // sleep ignores the signal and could outlive the inference round. The same
+  // policy runs instead inside `roundFetch`, whose waits the signal cancels.
   private sendOptions(
     signal: AbortSignal | undefined,
-  ): { signal: AbortSignal } | undefined {
+  ): { signal: AbortSignal; retries: RetryConfig } | undefined {
     const bounded = composeRequestDeadline(signal, OPENROUTER_SDK_TIMEOUT_MS);
-    return bounded ? { signal: bounded } : undefined;
+    return bounded ? { signal: bounded, retries: SDK_RETRY_OFF } : undefined;
+  }
+
+  /**
+   * Every `chat.send` goes through here. The CALLER's signal (not the composed
+   * copy the SDK sees) is put in scope for `roundFetch`: it is held by the
+   * caller for the life of the request, so the body teardown it drives
+   * survives a GC (see `openrouter/round-fetch.ts`).
+   */
+  private sendChat(
+    request: SendChatCompletionRequestRequest,
+    signal: AbortSignal | undefined,
+  ): Promise<SendChatCompletionRequestResponse> {
+    return withRoundSignal(signal, () =>
+      this.client.chat.send(request, this.sendOptions(signal)),
+    );
   }
 
   // ── endpoint failover (capacity retry + one sticky switch) ──────
@@ -295,7 +326,7 @@ export class OpenRouterProvider implements InferenceProvider {
           // SDK 1.1.13 no longer narrows the return type per `stream` literal —
           // `asChatResult` re-establishes it with a runtime guard (see chat-send.ts).
           return asChatResult(
-            await this.client.chat.send(
+            await this.sendChat(
               {
                 // Request-ENVELOPE field, a sibling of `chatRequest` — NOT part of
                 // `ChatRequest`, so it deliberately does not live in
@@ -305,7 +336,7 @@ export class OpenRouterProvider implements InferenceProvider {
                 xOpenRouterMetadata: ROUTING_METADATA_ENABLED,
                 chatRequest: { ...params, stream: false },
               },
-              this.sendOptions(signal),
+              signal,
             ),
             "chat completion",
           );
@@ -375,9 +406,9 @@ export class OpenRouterProvider implements InferenceProvider {
         );
         try {
           return asChatResult(
-            await this.client.chat.send(
+            await this.sendChat(
               { chatRequest: { ...params, stream: false } },
-              this.sendOptions(signal),
+              signal,
             ),
             "simple chat completion",
           );
@@ -488,7 +519,7 @@ export class OpenRouterProvider implements InferenceProvider {
       // SDK 1.1.13 no longer narrows the return type per `stream` literal —
       // `asEventStream` re-establishes it with a runtime guard.
       return asEventStream(
-        await this.client.chat.send(
+        await this.sendChat(
           {
             // The SECOND (and last) conversational send that opts into routing
             // provenance — envelope field, sibling of `chatRequest`. The
@@ -497,7 +528,7 @@ export class OpenRouterProvider implements InferenceProvider {
             xOpenRouterMetadata: ROUTING_METADATA_ENABLED,
             chatRequest: { ...params, stream: true },
           },
-          this.sendOptions(signal),
+          signal,
         ),
         "streaming chat completion",
       );

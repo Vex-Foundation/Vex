@@ -21,7 +21,7 @@
 import { createHook } from "node:async_hooks";
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
-import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 import type {
   InferenceConfig,
@@ -252,50 +252,33 @@ async function timed<T>(work: () => Promise<T>): Promise<{ value: T; elapsed: nu
   return { value, elapsed: performance.now() - started };
 }
 
-/** Exchanges left open by the known GC gap (reported, never failed on). */
-let gcLeaksTolerated = 0;
-
 /**
  * How the round left the wire: every exchange that finished normally ended
  * finished, every exchange the client had to abort ended aborted BY THE
  * CLIENT, no request socket is left open, and no ref'd timer outlives the
  * round. `abortedByClient[i]` is the expected ending of request `i`.
  *
- * KNOWN GAP, tolerated here and pinned deterministically in the
- * "abort propagation after a GC" block below: Node's fetch (undici 6.22) links
- * the request signal to the live connection through weakly-held internal
- * `Request` objects, so if a GC runs between the response head and the abort,
- * the abort never reaches the connection. The ROUND still ends on time (the
- * guard's `race` does not depend on it), but the HTTP exchange stays open.
- * When that happens here, the exchange must simply still be open (never
- * "finished"), and the server side is torn down so the check can continue.
+ * Strict: the teardown no longer depends on undici's weakly held signal link
+ * (a GC between the response head and the abort used to leave the exchange
+ * open), because `openrouter/round-fetch.ts` cancels the body explicitly. The
+ * "abort propagation after a GC" block below forces that GC deterministically.
  */
 async function expectTeardown(
   s: SseChatServer,
   abortedByClient: readonly boolean[],
 ): Promise<void> {
-  const mayLeak = abortedByClient.some(Boolean);
-  try {
-    await s.waitForOutcomes(abortedByClient.length, mayLeak ? 1_000 : 2_000);
-  } catch (err) {
-    if (!mayLeak) throw err;
-  }
+  await s.waitForOutcomes(abortedByClient.length, 2_000);
   for (const outcome of s.outcomes) {
     expect(outcome.clientAborted).toBe(requireValue(abortedByClient[outcome.index]));
   }
   abortedByClient.forEach((aborted, index) => {
     if (!aborted) expect(s.outcomes.some((o) => o.index === index)).toBe(true);
   });
-  if (s.outcomes.length === abortedByClient.length) {
-    await s.waitForSocketsClosed();
-    expect(s.openSockets()).toBe(0);
-    // At most one empty spare connection per aborted request (see the helper).
-    expect(s.idleSpareSockets()).toBeLessThanOrEqual(abortedByClient.filter(Boolean).length);
-  } else {
-    gcLeaksTolerated += 1;
-    await s.close();
-    server = null;
-  }
+  expect(s.outcomes).toHaveLength(abortedByClient.length);
+  await s.waitForSocketsClosed();
+  expect(s.openSockets()).toBe(0);
+  // At most one empty spare connection per aborted request (see the helper).
+  expect(s.idleSpareSockets()).toBeLessThanOrEqual(abortedByClient.filter(Boolean).length);
   expect(await pendingTimers()).toBe(0);
 }
 
@@ -501,7 +484,7 @@ describe("stream bounds against a stalling OpenRouter-compatible server (real SD
   });
 
   // (6) ──────────────────────────────────────────────────────────────────
-  it("503 forever: the SDK's own 5xx retries all end at the round deadline, none after it", async () => {
+  it("503 forever: the 5xx retries all end at the round deadline, none after it", async () => {
     const s = await serve([
       async (r) => {
         r.json(503, errorBody(503, "overloaded"), { "retry-after-ms": "60" });
@@ -517,7 +500,7 @@ describe("stream bounds against a stalling OpenRouter-compatible server (real SD
     expect(elapsed).toBeGreaterThanOrEqual(690);
     expect(elapsed).toBeLessThan(700 + SLACK_MS);
     const seenAtReturn = s.requests.length;
-    // The SDK retried in place (5xx is retried inside the SDK, below the
+    // Retried in place (5xx is retried in the HTTP layer, below the
     // endpoint failover), every attempt a streaming one.
     expect(seenAtReturn).toBeGreaterThanOrEqual(3);
     expect(s.requests.every((q) => q.stream)).toBe(true);
@@ -527,7 +510,7 @@ describe("stream bounds against a stalling OpenRouter-compatible server (real SD
     await expectTeardown(s, s.requests.map(() => false));
   });
 
-  it("503 twice then a stream: the SDK retries inside the deadline and the round completes", async () => {
+  it("503 twice then a stream: the 5xx retry runs inside the deadline and the round completes", async () => {
     const overloaded: ChatHandler = async (r) => {
       r.json(503, errorBody(503, "overloaded"), { "retry-after-ms": "50" });
     };
@@ -914,7 +897,7 @@ describe("stream bounds through executeTurn (real SDK): attempt recorded as time
   }
 });
 
-// ── Abort propagation after a GC (known gap, pinned with `it.fails`) ─────
+// ── Abort propagation after a GC ──────────────────────────────────────
 //
 // Node's fetch (undici 6.22, Node 22.21) follows the caller's signal through
 // internal `Request` objects it holds only weakly. Once the response head has
@@ -923,11 +906,12 @@ describe("stream bounds through executeTurn (real SDK): attempt recorded as time
 // `AbortController`, `global.gc()` after the head, then `abort()` → the body
 // read never rejects and the server never sees the client leave.
 //
-// For this engine that means a round a Kairos bound ended (or the user
-// stopped) can leave its OpenRouter stream open and generating. Each case
-// below forces a GC at the one moment that matters and asserts the CORRECT
-// behaviour; `it.fails` keeps the suite green while the gap exists and turns
-// red the moment it is fixed, so the marker is removed with the fix.
+// For this engine that meant a round a Kairos bound ended (or the user
+// stopped) could leave its OpenRouter stream open and generating. Fixed by
+// `openrouter/round-fetch.ts`, which reads every signal-carrying body through
+// a reader held by a listener on the caller's signal and cancels it on abort,
+// and by the round guard settling its race on a caller Stop. Each case below
+// forces a GC at the one moment that matters.
 
 function forceGc(): void {
   setFlagsFromString("--expose-gc");
@@ -948,7 +932,7 @@ async function gcAfterHead(s: SseChatServer, index = 0): Promise<void> {
   forceGc();
 }
 
-describe("abort propagation after a GC (real SDK, known gap)", () => {
+describe("abort propagation after a GC (real SDK)", () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
@@ -981,7 +965,7 @@ describe("abort propagation after a GC (real SDK, known gap)", () => {
     expect(s.outcomes.map((o) => o.clientAborted)).toEqual([true]);
   });
 
-  it.fails("a first-chunk stall after the head tears the connection down even after a GC", async () => {
+  it("a first-chunk stall after the head tears the connection down even after a GC", async () => {
     const s = await serve([
       async (r) => {
         r.sseHeaders();
@@ -1001,7 +985,7 @@ describe("abort propagation after a GC (real SDK, known gap)", () => {
     expect(s.outcomes.map((o) => o.clientAborted)).toEqual([true]);
   });
 
-  it.fails("an idle stall mid-answer tears the connection down even after a GC", async () => {
+  it("an idle stall mid-answer tears the connection down even after a GC", async () => {
     const s = await serve([
       async (r) => {
         r.event(contentChunk("partial"));
@@ -1034,16 +1018,20 @@ describe("abort propagation after a GC (real SDK, known gap)", () => {
     await gcAfterHead(s);
     stop.abort();
 
-    // After a Stop the guard deliberately stops firing ("a Stop that already
-    // landed wins"), and its `race` does not listen to the caller's signal,
-    // so the round's only way out is the SDK read rejecting, which the GC
-    // just unlinked: the round hangs until the provider sends another byte.
+    // After a Stop no bound may fire ("a Stop that already landed wins"), so
+    // the round must not depend on the SDK read rejecting (the link the GC
+    // just broke): the guard's `race` settles on the caller's signal itself.
     const TIMED_OUT = Symbol("round still running");
     const outcome = await Promise.race([
       round,
       new Promise<typeof TIMED_OUT>((resolve) => setTimeout(() => resolve(TIMED_OUT), 2_000)),
     ]);
-    // Let the hung round go once the verdict is in.
+    // The Stop also reaches the wire: the server sees the client leave.
+    const leftOnStop = await s.waitForOutcomes(1, 700).then(
+      () => s.outcomes.map((o) => o.clientAborted),
+      () => null,
+    );
+    // Let a hung round go once the verdict is in.
     await s.close();
     server = null;
     expect(outcome).not.toBe(TIMED_OUT);
@@ -1051,10 +1039,11 @@ describe("abort propagation after a GC (real SDK, known gap)", () => {
       expect(outcome.aborted).toBe(true);
       expect(outcome.timedOut).toBeNull();
     }
+    expect(leftOnStop).toEqual([true]);
   });
 });
 
-describe("SDK 5xx retry sleep vs the round (real SDK, known gap)", () => {
+describe("SDK 5xx retry sleep vs the round (real SDK)", () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
@@ -1070,12 +1059,12 @@ describe("SDK 5xx retry sleep vs the round (real SDK, known gap)", () => {
     server = null;
   });
 
-  // The SDK retries 5xx itself (`retryConfig` backoff in `openrouter.ts`) and
-  // sleeps between attempts with a plain `setTimeout` that ignores the request
-  // signal (`@openrouter/sdk/esm/lib/retries.js`, `delay`). The round ends on
-  // time, but that ref'd sleep (up to `maxInterval`, 15 s) outlives it, and
-  // then wakes only to issue a fetch whose signal is already aborted.
-  it.fails("503 with no retry hint: no SDK retry sleep outlives the round", async () => {
+  // The SDK's own 5xx retry sleeps with a plain `setTimeout` that ignores the
+  // request signal (`@openrouter/sdk/esm/lib/retries.js`, `delay`), so its
+  // sleep (up to `maxInterval`, 15 s) used to outlive the round. A
+  // signal-carrying send now switches the SDK retry off and runs the same
+  // policy in `openrouter/round-fetch.ts`, whose wait the signal cancels.
+  it("503 with no retry hint: no SDK retry sleep outlives the round", async () => {
     const s = await serve([async (r) => r.json(503, errorBody(503, "overloaded"))]);
     const result = await runStreamingInference(newProvider(), MESSAGES, [], config({
       ...NO_BOUNDS, inferenceRoundDeadlineMs: 300,
@@ -1084,13 +1073,4 @@ describe("SDK 5xx retry sleep vs the round (real SDK, known gap)", () => {
     await s.waitForOutcomes(s.requests.length);
     expect(await pendingTimers()).toBe(0);
   });
-});
-
-afterAll(() => {
-  // Visible in the run log when the gap was hit by chance above.
-  if (gcLeaksTolerated > 0) {
-    process.stderr.write(
-      `stream-bounds-live-server: ${gcLeaksTolerated} exchange(s) left open by the known GC abort gap\n`,
-    );
-  }
 });
