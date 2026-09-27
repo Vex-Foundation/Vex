@@ -560,18 +560,19 @@ describe("turn loop stall recovery (R-5)", () => {
     });
   });
 
-  it("a second unproductive round gets no second recovery; three end the turn with no_progress", async () => {
+  it("a failed recovery ends the turn with no_progress instead of replaying the original request", async () => {
     const { result, seen } = await run([blankRound, exhaustedRound, blankRound, textRound("unreachable")]);
 
     expect(result.stopReason).toBe("no_progress");
-    expect(seen).toHaveLength(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS);
-    expect(seen.map((s) => s.turnState.includes(NOTE_HEADING))).toEqual([false, true, false]);
-    expect(seen.map((s) => s.effort)).toEqual(["high", "low", "high"]);
+    // Original request, then the one recovery call; no third, identical request.
+    expect(seen).toHaveLength(2);
+    expect(seen.map((s) => s.turnState.includes(NOTE_HEADING))).toEqual([false, true]);
+    expect(seen.map((s) => s.effort)).toEqual(["high", "low"]);
     expect(infoCalls("engine.turn.stall_recovery")).toHaveLength(1);
     expect(mockAddMessage).not.toHaveBeenCalled();
     expect(mockLoggerWarn.mock.calls.find((c) => c[0] === "engine.turn.no_progress_stop")?.[1]).toMatchObject({
-      consecutiveUnproductiveRounds: MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
-      lastUnproductiveKind: "blank",
+      consecutiveUnproductiveRounds: 2,
+      lastUnproductiveKind: "reasoning_exhausted",
     });
   });
 

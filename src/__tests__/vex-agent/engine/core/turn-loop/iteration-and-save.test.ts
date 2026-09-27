@@ -38,6 +38,15 @@ const mockSetLastCheckpoint = vi.fn();
 // The turn loop's structured bound reporting (rule 05) is asserted below, so
 // the logger is a real spy rather than a silent stub.
 const mockLoggerWarn = vi.fn();
+// These suites pin the stall BOUND itself (three unproductive rounds, then
+// no_progress), which is the behaviour with stall recovery switched off.
+// Recovery's own flow (one recovery call, then a stop if it also fails) is
+// covered in stall-recovery.test.ts.
+vi.mock("@vex-agent/engine/core/runner/stall-recovery.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/engine/core/runner/stall-recovery.js")>()),
+  STALL_RECOVERY_ENABLED: false,
+}));
+
 vi.mock("@utils/logger.js", () => ({
   default: {
     warn: (...a: unknown[]) => mockLoggerWarn(...a),

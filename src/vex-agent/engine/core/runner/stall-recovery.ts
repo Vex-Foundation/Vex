@@ -81,22 +81,36 @@ export interface StallRecoveryTracker {
   observe(round: InferenceRoundClassification): void;
   pending(): UnproductiveRoundKind | null;
   consume(): void;
+  /**
+   * True once the streak's recovery call was issued and the round it produced
+   * was unproductive too. The turn ends there: the only thing left to send is
+   * the original request again, which is the identical replay recovery exists
+   * to prevent.
+   */
+  recoveryFailed(): boolean;
 }
 
 export function createStallRecoveryTracker(enabled: boolean): StallRecoveryTracker {
   let armed: UnproductiveRoundKind | null = null;
   let usedInStreak = false;
+  let failed = false;
   return {
     observe(round) {
       if (round.kind === "productive") {
         armed = null;
         usedInStreak = false;
+        failed = false;
         return;
       }
-      if (!enabled || usedInStreak) return;
+      if (usedInStreak) {
+        failed = true;
+        return;
+      }
+      if (!enabled) return;
       armed = round.kind;
     },
     pending: () => armed,
+    recoveryFailed: () => failed,
     consume() {
       if (armed === null) return;
       armed = null;

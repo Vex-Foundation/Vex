@@ -614,7 +614,13 @@ async function runTurnLoopBody(
           finalRoundPromptTokens: turnResult.promptTokens,
         });
       }
-      if (consecutiveUnproductiveRounds >= MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS) {
+      // A failed recovery ends the streak at once: the next request would be
+      // the original one again, and resending it is the replay recovery
+      // exists to prevent.
+      if (
+        consecutiveUnproductiveRounds >= MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS ||
+        stallRecovery.recoveryFailed()
+      ) {
         stopReason = "no_progress";
         break;
       }
