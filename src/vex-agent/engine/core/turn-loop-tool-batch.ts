@@ -130,6 +130,12 @@ export async function processTurnToolBatch(args: {
    * consulted, which is the pre-existing behaviour and never a stop.
    */
   readonly loopDetector?: ToolCallLoopDetector;
+  /**
+   * Runtime-measurement correlation for this batch: the `runTurnLoop`
+   * invocation id and the loop iteration that produced these calls. Absent
+   * means no timing rows are recorded and behaviour is otherwise identical.
+   */
+  readonly telemetry?: { readonly turnRunId: string; readonly iteration: number };
 }): Promise<ToolBatchOutcome> {
   const { context, turnResult, liveMessages } = args;
   const executedCalls: ParsedToolCall[] = [];
