@@ -625,8 +625,8 @@ async function runTurnLoopBody(
     // nothing logged and nothing persisted - until `maxIterations` ran out.
     // That is the v0.2.6 report.
     //
-    // An INCOMPLETE tool batch (any call dropped as truncated or malformed) is
-    // refused whole, ALWAYS: none of its calls is dispatched - not even the
+    // An INCOMPLETE tool batch (any call dropped as truncated or malformed, or
+    // any tool-call round the output limit ended) is refused whole, ALWAYS: none of its calls is dispatched - not even the
     // valid ones, which may include a fund-moving prepare from a plan the model
     // never finished writing - and the assistant tool-call message is not
     // persisted, so the transcript never carries tool calls without results.

@@ -354,6 +354,26 @@ function readToolRound(id: string, finishReason = "tool_calls"): readonly Stream
     { type: "done", finishReason },
   ];
 }
+/** Two complete read calls; `finishReason` decides whether the batch finished. */
+function twoReadToolsRound(finishReason: string): readonly StreamChunk[] {
+  return [
+    {
+      type: "tool_call_delta",
+      toolCallIndex: 0,
+      toolCallId: "call-a",
+      toolCallName: "ToolSearch",
+      toolCallArgsDelta: '{"query":"swap"}',
+    },
+    {
+      type: "tool_call_delta",
+      toolCallIndex: 1,
+      toolCallId: "call-b",
+      toolCallName: "ToolSearch",
+      toolCallArgsDelta: '{"query":"bridge"}',
+    },
+    { type: "done", finishReason },
+  ];
+}
 /** A tool call the output limit cut off mid-arguments: an incomplete batch. */
 const truncatedToolRound: readonly StreamChunk[] = [
   { type: "content", text: "Let me look that up" },
@@ -509,6 +529,10 @@ function infoCalls(event: string): unknown[] {
   return mockLoggerInfo.mock.calls.filter((c) => c[0] === event).map((c) => c[1]);
 }
 
+function warnCalls(event: string): unknown[] {
+  return mockLoggerWarn.mock.calls.filter((c) => c[0] === event).map((c) => c[1]);
+}
+
 function boardSpec(title: string): BoardSpecV1 {
   return {
     version: 1,
@@ -659,12 +683,44 @@ describe("turn loop cut-off answer continuation (R-9)", () => {
   });
 
   describe("tool-call rounds cut off by the output limit are never continued", () => {
-    it("a complete tool batch under length is dispatched as usual", async () => {
+    it("a complete tool batch under length is refused whole: nothing dispatched or saved, one recovery", async () => {
       const { result, seen } = await run([readToolRound("call-1", "length"), textRound("Done.")]);
 
-      expect(mockDispatchTool).toHaveBeenCalledTimes(1);
+      expect(mockDispatchTool).not.toHaveBeenCalled();
       expect(seen).toHaveLength(2);
       expect(seen.some((s) => s.turnState.includes(NOTE_HEADING))).toBe(false);
+      expect(seenAt(seen, 1).turnState).toContain(buildStallRecoveryNote("incomplete_tool_batch"));
+      // No tool-call message was persisted: the only row is the final answer.
+      expect(savedRows().map((r) => r.content)).toEqual(["Done."]);
+      expect(savedRows().some((r) => (r.toolCalls?.length ?? 0) > 0)).toBe(false);
+      expect(warnCalls("engine.turn.incomplete_inference")[0]).toMatchObject({
+        truncated: true,
+        validToolCalls: 1,
+        malformedToolCalls: 0,
+      });
+      expect(result.text).toBe("Done.");
+    });
+
+    it("two complete calls cut off exactly between them by length: neither is dispatched", async () => {
+      const { seen } = await run([twoReadToolsRound("length"), textRound("Done.")]);
+
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      expect(seen.some((s) => s.turnState.includes(NOTE_HEADING))).toBe(false);
+      expect(seenAt(seen, 1).turnState).toContain(buildStallRecoveryNote("incomplete_tool_batch"));
+      expect(savedRows().some((r) => (r.toolCalls?.length ?? 0) > 0)).toBe(false);
+      expect(warnCalls("engine.turn.incomplete_inference")[0]).toMatchObject({
+        truncated: true,
+        validToolCalls: 2,
+      });
+    });
+
+    it.each(["tool_calls", "stop"])("the same two calls finished by %s are dispatched as before", async (finish) => {
+      const { result, seen } = await run([twoReadToolsRound(finish), textRound("Done.")]);
+
+      expect(mockDispatchTool).toHaveBeenCalledTimes(2);
+      expect(seen).toHaveLength(2);
+      expect(seenAt(seen, 1).turnState).not.toContain(buildStallRecoveryNote("incomplete_tool_batch"));
+      expect(savedRows().filter((r) => (r.toolCalls?.length ?? 0) === 2)).toHaveLength(1);
       expect(result.text).toBe("Done.");
     });
 

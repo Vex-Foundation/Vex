@@ -98,11 +98,15 @@ export interface InferenceRoundFields {
  *
  * - `productive`: text or a COMPLETE tool batch - the normal paths.
  * - `incomplete_tool_batch`: the provider returned at least one tool call that
- *   could not be assembled, even if others survived. `truncated` is true when
+ *   could not be assembled, even if others survived, OR the output limit
+ *   ended a round that carried any tool call at all. `truncated` is true when
  *   the output limit cut it off (`finish_reason === "length"`), false when
  *   the call was simply malformed. None of the batch may be dispatched: the
  *   survivors are part of a plan the model did not finish writing, and in a
- *   financial agent one of them may be a fund-moving prepare.
+ *   financial agent one of them may be a fund-moving prepare. A cut that
+ *   lands exactly between two complete calls leaves nothing malformed, yet
+ *   the batch is still unfinished - the limit, not the model, ended it - so
+ *   `length` alone is enough to refuse it.
  * - `reasoning_exhausted`: the output limit was hit with no answer and no tool
  *   call - the model spent its budget thinking.
  * - `blank`: nothing at all, for any other reason.
@@ -136,18 +140,22 @@ export type UnproductiveRoundKind = Exclude<InferenceRoundClassification["kind"]
  * The timeout check comes first: a round a bound cut short is never
  * productive, whatever text it streamed before it was stopped. The
  * incomplete-batch check is next and just as unconditional: a round that
- * dropped a call is never productive, whatever else it carried. Only then
- * does the ordinary productive rule apply.
+ * dropped a call, or that carried any call when the output limit ended it, is
+ * never productive, whatever else it carried. Only then does the ordinary
+ * productive rule apply (a text-only `length` round stays productive: it is
+ * the cut-off answer `cutoff-continuation.ts` finishes).
  */
 export function classifyInferenceRound(round: InferenceRoundFields): InferenceRoundClassification {
   if (round.timedOut !== null) {
     return { kind: "stream_timeout", stall: round.timedOut };
   }
-  if (round.malformedToolCallCount > 0) {
+  const validToolCalls = round.toolCalls?.length ?? 0;
+  const truncated = round.finishReason === "length";
+  if (round.malformedToolCallCount > 0 || (truncated && validToolCalls > 0)) {
     return {
       kind: "incomplete_tool_batch",
-      truncated: round.finishReason === "length",
-      validToolCalls: round.toolCalls?.length ?? 0,
+      truncated,
+      validToolCalls,
       malformedToolCalls: round.malformedToolCallCount,
     };
   }

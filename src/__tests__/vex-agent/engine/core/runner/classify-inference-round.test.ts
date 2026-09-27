@@ -57,6 +57,24 @@ describe("classifyInferenceRound", () => {
     expect(classifyInferenceRound(round({ finishReason: null }))).toEqual({ kind: "blank" });
   });
 
+  it("any valid call under length is an incomplete (truncated) batch, even with no call dropped", () => {
+    expect(classifyInferenceRound(round({ toolCalls: [CALL], finishReason: "length" }))).toEqual({
+      kind: "incomplete_tool_batch",
+      truncated: true,
+      validToolCalls: 1,
+      malformedToolCalls: 0,
+    });
+    expect(
+      classifyInferenceRound(round({ content: "two reads", toolCalls: [CALL, CALL], finishReason: "length" })),
+    ).toEqual({ kind: "incomplete_tool_batch", truncated: true, validToolCalls: 2, malformedToolCalls: 0 });
+  });
+
+  it.each(["tool_calls", "stop"])("complete calls finished by %s stay productive", (finishReason) => {
+    expect(classifyInferenceRound(round({ toolCalls: [CALL, CALL], finishReason }))).toEqual({
+      kind: "productive",
+    });
+  });
+
   it("truncated text with no calls is still productive text", () => {
     expect(classifyInferenceRound(round({ content: "half a sen", finishReason: "length" }))).toEqual({
       kind: "productive",
