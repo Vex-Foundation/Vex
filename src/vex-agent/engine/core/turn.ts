@@ -303,6 +303,10 @@ function recordAttemptTiming(
   try {
     const snapshot = timing.snapshot();
     const response = inference?.response;
+    // Token counts only when the provider reported usage. An attempt stopped
+    // before its usage chunk carries a zero-filled placeholder, and recording
+    // those zeros would make it look like a zero-token call.
+    const usage = inference?.usageObserved === true ? response?.usage : undefined;
     // The effort actually sent — mirrors the gate in `buildOpenRouterParams`
     // (openrouter/params.ts). NULL means the provider's default applied.
     const requestedEffort =
@@ -350,10 +354,10 @@ function recordAttemptTiming(
         response === undefined ? null : (response.content ?? "").trim().length === 0,
       toolCallCount: snapshot.toolCallCount,
       validToolCallCount: snapshot.validToolCallCount,
-      promptTokens: response?.usage.promptTokens ?? null,
-      completionTokens: response?.usage.completionTokens ?? null,
-      reasoningTokens: response?.usage.reasoningTokens ?? null,
-      cachedTokens: response?.usage.cachedTokens ?? null,
+      promptTokens: usage?.promptTokens ?? null,
+      completionTokens: usage?.completionTokens ?? null,
+      reasoningTokens: usage?.reasoningTokens ?? null,
+      cachedTokens: usage?.cachedTokens ?? null,
       generationId: response?.generationId ?? null,
     };
     recordInBackground("inference_attempt", () => insertInferenceAttempt(row));

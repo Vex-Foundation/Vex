@@ -715,6 +715,12 @@ describe("turn — inference attempt timing", () => {
       errorClass: null,
       contentEmpty: true,
       chunkCount: 0,
+      // No usage chunk arrived, so the token columns stay unknown rather than
+      // recording the zero-filled placeholder as a zero-token call.
+      promptTokens: null,
+      completionTokens: null,
+      reasoningTokens: null,
+      cachedTokens: null,
     });
   });
 
