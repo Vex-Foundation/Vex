@@ -6,7 +6,6 @@ import { getOpenAITools } from "@vex-agent/tools/registry.js";
 import type { ToolDefinition } from "@vex-agent/inference/types.js";
 import type { RuntimeStopReason, StopReason } from "../../types.js";
 import type { TurnLoopConfig } from "../turn-loop.js";
-import { MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS } from "./unproductive-rounds.js";
 
 /**
  * Convert OpenAITool[] to ToolDefinition[]. Type-level identity after
@@ -93,8 +92,10 @@ export const TIMEOUT_REPLY =
  * times over. That is what this says, and it points at the two actions that can
  * actually change the outcome.
  *
- * The count is derived from the bound so the sentence cannot drift from the
- * value it claims.
+ * It names no round count. With stall recovery on, a streak ends after the
+ * original request plus one recovery call (a nudge, sometimes at lower
+ * effort); with it off, after the full bound. One sentence has to be true of
+ * both, so it states what happened, not how many times.
  *
  * It deliberately does NOT claim that nothing ran. The stall is only the tail
  * of the turn - rounds before it can have dispatched real tool calls - and a
@@ -103,11 +104,12 @@ export const TIMEOUT_REPLY =
  * the renderer's own notice gates one-click retry on the same fact.
  */
 export const NO_PROGRESS_REPLY =
-  `I stopped this turn early: the model returned ${MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS} ` +
-  "empty responses in a row - no answer and no tool call - so continuing would " +
-  "have re-sent the same request without producing anything. Check the " +
-  "transcript above for what did run, then send the request again, or try a " +
-  "different model if it keeps happening.";
+  "I stopped this turn early: the model kept returning empty responses - no " +
+  "answer and no tool call - so another attempt was unlikely to produce " +
+  "anything. This often means it ran out of room while reasoning; a lower " +
+  "reasoning effort usually helps. Check the transcript above for what did " +
+  "run, then send the request again, or try a different model if it keeps " +
+  "happening.";
 
 /**
  * The `tool_call_loop` sibling of `ITERATION_LIMIT_REPLY`.

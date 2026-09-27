@@ -442,8 +442,10 @@ describe("a stalled model is never continued and never silent", () => {
     expect(NO_PROGRESS_REPLY).not.toBe(TIMEOUT_REPLY);
     expect(NO_PROGRESS_REPLY).not.toMatch(/budget/i);
     expect(NO_PROGRESS_REPLY).toMatch(/empty responses/i);
-    // The count is derived from the bound, so the sentence cannot drift.
-    expect(NO_PROGRESS_REPLY).toContain(String(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS));
+    // With stall recovery the streak can end before the bound, so the copy
+    // names no round count and never claims the same request would be resent.
+    expect(NO_PROGRESS_REPLY).not.toMatch(/\d/);
+    expect(NO_PROGRESS_REPLY).not.toMatch(/same request/i);
   });
 
   // The reply must not promise a clean slate: the stall is only the TAIL of the
