@@ -1,0 +1,155 @@
+/**
+ * Runtime timings repo — per-attempt inference, per-dispatch tool, and
+ * per-turn-run timing rows (migration 171).
+ *
+ * Telemetry only: nothing in the runtime reads these rows to decide anything.
+ * Callers on the turn path must go through `recordInBackground` so a failed
+ * write can never slow or break a turn. Every field is sanitised by the
+ * caller — numbers, enums, IDs, tool/model/provider names, error classes;
+ * never message content, tool arguments/results, or raw error text.
+ */
+
+import logger from "@utils/logger.js";
+import { execute } from "../client.js";
+
+export interface InferenceAttemptRecord {
+  sessionId: string;
+  missionRunId: string | null;
+  turnRunId: string;
+  iteration: number;
+  streamId: string | null;
+  startedAt: Date;
+  outcome: "completed" | "aborted" | "error";
+  errorClass: string | null;
+  model: string | null;
+  servingProvider: string | null;
+  requestedEffort: string | null;
+  bufferedFallback: boolean;
+  fallbackReason: string | null;
+  capacityRetries: number;
+  capacityRetryClasses: readonly string[];
+  preInferenceMs: number | null;
+  promptStackMs: number | null;
+  firstChunkMs: number | null;
+  firstReasoningMs: number | null;
+  firstSemanticMs: number | null;
+  reasoningOnlyMs: number | null;
+  maxInterChunkGapMs: number | null;
+  totalMs: number;
+  chunkCount: number;
+  finishReason: string | null;
+  contentEmpty: boolean | null;
+  toolCallCount: number | null;
+  validToolCallCount: number | null;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  reasoningTokens: number | null;
+  cachedTokens: number | null;
+  generationId: string | null;
+}
+
+export interface ToolDispatchTimingRecord {
+  sessionId: string;
+  turnRunId: string;
+  iteration: number;
+  toolCallId: string | null;
+  toolName: string;
+  actionKind: string | null;
+  startedAt: Date;
+  durationMs: number;
+  outcome: "success" | "failure" | "error";
+}
+
+export interface TurnRunTimingRecord {
+  turnRunId: string;
+  sessionId: string;
+  missionRunId: string | null;
+  sessionKind: string | null;
+  startedAt: Date;
+  totalMs: number;
+  iterations: number;
+  toolCalls: number;
+  outcome: "returned" | "error";
+  stopReason: string | null;
+  errorClass: string | null;
+}
+
+/** Durations come from `performance.now()` deltas; the columns are INTEGER. */
+function ms(value: number): number {
+  return Math.round(value);
+}
+
+function msOrNull(value: number | null): number | null {
+  return value === null ? null : Math.round(value);
+}
+
+export async function insertInferenceAttempt(r: InferenceAttemptRecord): Promise<void> {
+  await execute(
+    `INSERT INTO inference_attempts (
+       session_id, mission_run_id, turn_run_id, iteration, stream_id, started_at,
+       outcome, error_class, model, serving_provider, requested_effort,
+       buffered_fallback, fallback_reason, capacity_retries, capacity_retry_classes,
+       pre_inference_ms, prompt_stack_ms, first_chunk_ms, first_reasoning_ms,
+       first_semantic_ms, reasoning_only_ms, max_inter_chunk_gap_ms, total_ms,
+       chunk_count, finish_reason, content_empty, tool_call_count, valid_tool_call_count,
+       prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, generation_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+             $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)`,
+    [r.sessionId, r.missionRunId, r.turnRunId, r.iteration, r.streamId, r.startedAt,
+     r.outcome, r.errorClass, r.model, r.servingProvider, r.requestedEffort,
+     r.bufferedFallback, r.fallbackReason, r.capacityRetries, [...r.capacityRetryClasses],
+     msOrNull(r.preInferenceMs), msOrNull(r.promptStackMs), msOrNull(r.firstChunkMs),
+     msOrNull(r.firstReasoningMs), msOrNull(r.firstSemanticMs), msOrNull(r.reasoningOnlyMs),
+     msOrNull(r.maxInterChunkGapMs), ms(r.totalMs),
+     r.chunkCount, r.finishReason, r.contentEmpty, r.toolCallCount, r.validToolCallCount,
+     r.promptTokens, r.completionTokens, r.reasoningTokens, r.cachedTokens, r.generationId],
+  );
+}
+
+export async function insertToolDispatchTiming(r: ToolDispatchTimingRecord): Promise<void> {
+  await execute(
+    `INSERT INTO tool_dispatch_timings (
+       session_id, turn_run_id, iteration, tool_call_id, tool_name, action_kind,
+       started_at, duration_ms, outcome)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [r.sessionId, r.turnRunId, r.iteration, r.toolCallId, r.toolName, r.actionKind,
+     r.startedAt, ms(r.durationMs), r.outcome],
+  );
+}
+
+export async function insertTurnRunTiming(r: TurnRunTimingRecord): Promise<void> {
+  await execute(
+    `INSERT INTO turn_run_timings (
+       turn_run_id, session_id, mission_run_id, session_kind, started_at, total_ms,
+       iterations, tool_calls, outcome, stop_reason, error_class)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [r.turnRunId, r.sessionId, r.missionRunId, r.sessionKind, r.startedAt, ms(r.totalMs),
+     r.iterations, r.toolCalls, r.outcome, r.stopReason, r.errorClass],
+  );
+}
+
+/**
+ * Fire-and-forget wrapper: never throws, never awaited by callers, logs
+ * `runtime_timings.write_failed`.
+ *
+ * A synchronous throw from `write` is caught too, so a caller can pass any
+ * thunk without guarding it. The log carries only the label and the error's
+ * class name — a driver error message can echo bound parameter values.
+ */
+export function recordInBackground(label: string, write: () => Promise<void>): void {
+  const onFailure = (err: unknown): void => {
+    try {
+      logger.warn("runtime_timings.write_failed", {
+        label,
+        errorClass: err instanceof Error ? err.name : typeof err,
+      });
+    } catch {
+      // Logging must not turn a dropped telemetry row into a turn failure.
+    }
+  };
+  try {
+    void write().catch(onFailure);
+  } catch (err) {
+    onFailure(err);
+  }
+}
