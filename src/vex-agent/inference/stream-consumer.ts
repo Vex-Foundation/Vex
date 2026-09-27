@@ -20,6 +20,15 @@
  * is NEVER a fallback: a pre-aborted signal short-circuits before every
  * `chatCompletion` fallback branch. Distinct from a provider error (rethrown)
  * and a setup failure before any chunk (buffered fallback).
+ *
+ * Stream bounds (Kairos Phase 2B, `round-guard.ts`): one guard per round
+ * enforces the first-chunk, idle, reasoning-only and round-deadline bounds
+ * from the config. A bound that fires aborts ONLY the guard's request-local
+ * signal and the round is RETURNED (never thrown) with `timedOut` set: the
+ * text that streamed, no tool calls, no finish reason. The buffered fallback
+ * runs only on a genuine stream incompatibility (no stream method, a
+ * non-iterable stream, or a setup / pre-first-chunk failure that is not a
+ * timeout, deadline or abort) and gets only the round budget that is left.
  */
 
 import type {
@@ -35,8 +44,10 @@ import type {
 } from "./types.js";
 import logger from "@utils/logger.js";
 import { attachErrorType, attachStatus, scrubMessage } from "./openrouter/errors.js";
-import type { InferenceAttemptTimer } from "./attempt-timing.js";
+import { isInferenceTimeout, type InferenceAttemptTimer } from "./attempt-timing.js";
 import type { InferenceStallKind } from "./inference-timeout.js";
+import { createRoundGuard, roundBoundsFrom, STALLED, type RoundGuard } from "./round-guard.js";
+import { isAbortError } from "@utils/cancellation.js";
 
 export type { InferenceStallKind } from "./inference-timeout.js";
 
@@ -229,14 +240,68 @@ function withCapacityHook(
 }
 
 /**
+ * The streaming result for a round a Kairos bound stopped: the text that
+ * streamed (possibly ""), NEVER a tool call (in-flight calls are dropped, as
+ * on a user Stop, because a truncated batch must not be dispatched), and no
+ * finish reason (the provider never finished). Usage is kept only when its
+ * chunk had already arrived.
+ */
+function timedOutResult(
+  kind: InferenceStallKind,
+  partial: {
+    readonly content: string;
+    readonly reasoning: string | null;
+    readonly usage: InferenceUsage | null;
+    readonly generationId: string | null;
+    readonly servingProvider: string | null;
+  },
+): StreamingInferenceResult {
+  return {
+    response: {
+      content: partial.content,
+      toolCalls: null,
+      usage: partial.usage ?? { ...ZERO_USAGE },
+      reasoning: partial.reasoning,
+      finishReason: null,
+      generationId: partial.generationId,
+      servingProvider: partial.servingProvider,
+      malformedToolCallCount: 0,
+    },
+    aborted: false,
+    usageObserved: partial.usage !== null,
+    timedOut: kind,
+  };
+}
+
+const NOTHING_STREAMED = {
+  content: "",
+  reasoning: null,
+  usage: null,
+  generationId: null,
+  servingProvider: null,
+} as const;
+
+/**
+ * True when a failure before the first chunk means the provider cannot stream
+ * this request, so a buffered request is worth trying. A timeout, a deadline
+ * or an abort is NOT: the provider was reachable and slow (or the request was
+ * cancelled), and a buffered retry would only spend the same wait again.
+ */
+function isStreamIncompatibility(err: unknown): boolean {
+  if (isInferenceTimeout(err) || isAbortError(err)) return false;
+  const name = err instanceof Error ? err.name : undefined;
+  return name !== "RequestAbortedError";
+}
+
+/**
  * Wrap a buffered fallback completion in the streaming result shape.
  *
- * The turn's `signal` is forwarded: a fallback is still the same turn, so a
+ * The round's `signal` is forwarded: a fallback is still the same round, so a
  * "stop generating" that lands after the stream degraded must cancel the
- * buffered request too. Without it the HTTP call ran to completion and billed
- * tokens for an answer nobody would read. Every caller below has already
- * short-circuited on a PRE-aborted signal, so this only covers an abort that
- * arrives DURING the fallback.
+ * buffered request too, and the round deadline keeps running — the fallback
+ * gets only the budget that is LEFT, never a fresh one (R-6). Every caller
+ * below has already short-circuited on a PRE-aborted signal, so this only
+ * covers an abort that arrives DURING the fallback.
  */
 async function bufferedFallback(
   provider: InferenceProvider,
@@ -244,21 +309,60 @@ async function bufferedFallback(
   tools: ToolDefinition[],
   config: InferenceConfig,
   context: InferenceRequestContext | undefined,
-  signal: AbortSignal | undefined,
+  guard: RoundGuard,
+  callerSignal: AbortSignal | undefined,
+  reason: string,
+  timing: InferenceAttemptTimer | undefined,
+  cause?: unknown,
 ): Promise<StreamingInferenceResult> {
-  const response = await provider.chatCompletion(
-    messages,
-    tools,
-    config,
-    context,
-    signal,
-  );
-  return { response, aborted: false, usageObserved: true, timedOut: null };
+  guard.enterBuffered();
+  if (guard.timedOut !== null) return timedOutResult(guard.timedOut, NOTHING_STREAMED);
+  logger.warn("inference.stream.fallback", {
+    reason,
+    provider: provider.id,
+    ...(cause !== undefined && {
+      error: cause instanceof Error ? cause.message : String(cause),
+    }),
+  });
+  safeTiming(timing, (t) => t.markBufferedFallback(reason));
+  try {
+    const response = await guard.race(
+      provider.chatCompletion(messages, tools, config, context, guard.signal),
+    );
+    if (response === STALLED) return stalledResult(guard);
+    return { response, aborted: false, usageObserved: true, timedOut: null };
+  } catch (err) {
+    // The round deadline firing mid-request surfaces as the SDK's timeout
+    // error; it is the bound's verdict, not a provider failure.
+    if (guard.timedOut !== null && callerSignal?.aborted !== true) {
+      return timedOutResult(guard.timedOut, NOTHING_STREAMED);
+    }
+    throw err;
+  }
+}
+
+/** Result for a `race` the guard won before anything streamed. */
+function stalledResult(guard: RoundGuard): StreamingInferenceResult {
+  return timedOutResult(guard.timedOut ?? "round_deadline", NOTHING_STREAMED);
+}
+
+/**
+ * Release an iterator the round abandoned. Never awaited when a bound fired:
+ * its pending `next()` may never settle, and waiting on it is exactly the
+ * hang the bound exists to end. Its signal is already aborted.
+ */
+function releaseAbandoned(iterator: AsyncIterator<StreamChunk>): void {
+  try {
+    const returned = iterator.return?.();
+    if (returned !== undefined) void Promise.resolve(returned).catch(() => {});
+  } catch {
+    // Releasing is best-effort; the round's outcome is already decided.
+  }
 }
 
 /**
  * Run inference via the streaming provider path. See module doc for the
- * fallback / abort / assembly contract.
+ * fallback / abort / assembly contract, and `round-guard.ts` for the bounds.
  */
 export async function runStreamingInference(
   provider: InferenceProvider,
@@ -267,53 +371,71 @@ export async function runStreamingInference(
   config: InferenceConfig,
   options: RunStreamingInferenceOptions = {},
 ): Promise<StreamingInferenceResult> {
-  const { onDelta, signal, timing } = options;
+  const { signal, timing } = options;
   safeTiming(timing, (t) => t.markRequestStart());
-  const context = withCapacityHook(options.context, timing);
 
   // Pre-aborted → no inference at all; empty partial, never a fallback.
   if (signal?.aborted) {
     return { response: emptyResponse(), aborted: true, usageObserved: false, timedOut: null };
   }
 
-  if (typeof provider.chatCompletionStream !== "function") {
-    if (signal?.aborted) {
-      return { response: emptyResponse(), aborted: true, usageObserved: false, timedOut: null };
+  // ONE guard for the whole round, created before the first send so the round
+  // deadline also covers failover retries, backoff sleeps and the fallback.
+  const guard = createRoundGuard(roundBoundsFrom(config), signal);
+  guard.start();
+  try {
+    const result = await runGuardedInference(provider, messages, tools, config, options, guard);
+    if (result.timedOut !== null) {
+      logger.warn("inference.stream.timed_out", {
+        provider: provider.id,
+        kind: result.timedOut,
+        contentChars: (result.response.content ?? "").length,
+        usageObserved: result.usageObserved,
+      });
     }
-    logger.warn("inference.stream.fallback", {
-      reason: "no_stream_method",
-      provider: provider.id,
-    });
-    safeTiming(timing, (t) => t.markBufferedFallback("no_stream_method"));
-    return bufferedFallback(provider, messages, tools, config, context, signal);
+    return result;
+  } finally {
+    // Every exit path: success, timeout, abort, fallback, throw.
+    guard.dispose();
+  }
+}
+
+async function runGuardedInference(
+  provider: InferenceProvider,
+  messages: ProviderMessage[],
+  tools: ToolDefinition[],
+  config: InferenceConfig,
+  options: RunStreamingInferenceOptions,
+  guard: RoundGuard,
+): Promise<StreamingInferenceResult> {
+  const { onDelta, signal, timing } = options;
+  const context = withCapacityHook(options.context, timing);
+  const fallback = (reason: string, cause?: unknown): Promise<StreamingInferenceResult> =>
+    bufferedFallback(
+      provider, messages, tools, config, context, guard, signal, reason, timing, cause,
+    );
+
+  if (typeof provider.chatCompletionStream !== "function") {
+    return fallback("no_stream_method");
   }
 
   let stream: AsyncIterable<StreamChunk>;
   try {
-    const candidate = provider.chatCompletionStream(messages, tools, config, signal, context);
+    const candidate = provider.chatCompletionStream(messages, tools, config, guard.signal, context);
     if (!isAsyncIterable(candidate)) {
       if (signal?.aborted) {
         return { response: emptyResponse(), aborted: true, usageObserved: false, timedOut: null };
       }
-      logger.warn("inference.stream.fallback", {
-        reason: "not_async_iterable",
-        provider: provider.id,
-      });
-      safeTiming(timing, (t) => t.markBufferedFallback("not_async_iterable"));
-      return bufferedFallback(provider, messages, tools, config, context, signal);
+      return fallback("not_async_iterable");
     }
     stream = candidate;
   } catch (err) {
     if (signal?.aborted) {
       return { response: emptyResponse(), aborted: true, usageObserved: false, timedOut: null };
     }
-    logger.warn("inference.stream.fallback", {
-      reason: "setup_threw",
-      provider: provider.id,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    safeTiming(timing, (t) => t.markBufferedFallback("setup_threw"));
-    return bufferedFallback(provider, messages, tools, config, context, signal);
+    if (guard.timedOut !== null) return timedOutResult(guard.timedOut, NOTHING_STREAMED);
+    if (!isStreamIncompatibility(err)) throw err;
+    return fallback("setup_threw", err);
   }
 
   let sequence = 0;
@@ -337,8 +459,37 @@ export async function runStreamingInference(
   let servingProvider: string | null = null;
   const toolCallAccumulator = new Map<number, ToolCallAccumulator>();
 
+  const partial = () => ({
+    content: contentBuffer,
+    reasoning: reasoningSeen ? reasoningBuffer : null,
+    usage,
+    generationId,
+    servingProvider,
+  });
+
+  // Iterated by hand rather than with `for await`, so a fired bound can end
+  // the wait on a `next()` the source never settles (see `RoundGuard.race`).
+  const iterator = stream[Symbol.asyncIterator]();
+  // True once the source is finished or released, so it is released once.
+  let released = false;
+  // True only while waiting on the source: a rejection there has already
+  // finished it, while a throw from the loop body (an error chunk) has not.
+  let awaitingSource = false;
   try {
-    for await (const chunk of stream) {
+    for (;;) {
+      awaitingSource = true;
+      const next = await guard.race(iterator.next());
+      awaitingSource = false;
+      if (next === STALLED) {
+        released = true;
+        releaseAbandoned(iterator);
+        break;
+      }
+      if (next.done) {
+        released = true;
+        break;
+      }
+      const chunk = next.value;
       // Arrival time, before the abort check: a chunk that lands after Stop
       // still arrived, and the gap leading up to it is real latency.
       safeTiming(timing, (t) => t.markChunk(chunk.type));
@@ -349,6 +500,10 @@ export async function runStreamingInference(
         aborted = true;
         break;
       }
+      // A bound fired while this chunk was in flight: the round is over, and
+      // a chunk that arrives after the verdict is dropped like one after Stop.
+      if (guard.timedOut !== null) break;
+      guard.onChunk(chunk.type);
       observedAnyChunk = true;
       safeOnDelta(onDelta, chunk, sequence++);
 
@@ -414,22 +569,39 @@ export async function runStreamingInference(
       }
     }
   } catch (err) {
+    // A rejected `next()` has already finished the source.
+    if (awaitingSource) released = true;
     if (signal?.aborted) {
       // The abort manifested as a thrown rejection (SDK cancelled the fetch).
       // Intentional — return the partial, never rethrow or fall back.
       aborted = true;
+    } else if (guard.timedOut !== null) {
+      // The bound's own abort surfaced as a rejection (the SDK's timeout
+      // error, or the failover's capacity error after its backoff sleep was
+      // cut short). The bound is the verdict; handled below.
     } else if (!observedAnyChunk) {
-      // Generator rejected before yielding anything → buffered fallback.
-      logger.warn("inference.stream.fallback", {
-        reason: "threw_before_first_chunk",
-        provider: provider.id,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      safeTiming(timing, (t) => t.markBufferedFallback("threw_before_first_chunk"));
-      return bufferedFallback(provider, messages, tools, config, context, signal);
+      // Rejected before yielding anything. Only a genuine stream failure earns
+      // a buffered retry; a timeout or abort propagates as itself.
+      if (!isStreamIncompatibility(err)) throw err;
+      return fallback("threw_before_first_chunk", err);
     } else {
       throw err;
     }
+  } finally {
+    // Every other early exit (Stop, a chunk after a bound, an error chunk):
+    // release the source exactly as `for await` did on `break` / `throw`.
+    if (!released) {
+      released = true;
+      if (guard.timedOut !== null) releaseAbandoned(iterator);
+      else await iterator.return?.();
+    }
+  }
+
+  if (!aborted && guard.timedOut !== null) {
+    // Tool calls in flight are dropped, never assembled, never counted as
+    // malformed: they were cut off, not written wrong.
+    safeTiming(timing, (t) => t.markToolCalls(toolCallAccumulator.size, 0));
+    return timedOutResult(guard.timedOut, partial());
   }
 
   const resolvedUsage = usage ?? ZERO_USAGE;

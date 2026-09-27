@@ -724,6 +724,52 @@ describe("turn — inference attempt timing", () => {
     });
   });
 
+  it("records a round a stream bound stopped as timeout / KairosStall and logs no usage", async () => {
+    const provider = fakeInferenceProvider({
+      chatCompletionStream: async function* (_m, _t, _c, signal): AsyncGenerator<StreamChunk> {
+        yield { type: "content", text: "partial" };
+        yield {
+          type: "tool_call_delta",
+          toolCallIndex: 0,
+          toolCallId: "call-1",
+          toolCallName: "balance_check",
+          toolCallArgsDelta: "{}",
+        };
+        // Then silence, until the idle bound aborts the request.
+        await new Promise<void>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      },
+    });
+    const result = await executeTurn(
+      context(), [], null, provider, config({ streamIdleTimeoutMs: 20 }), [],
+      {}, undefined, undefined, TELEMETRY,
+    );
+
+    expect(result.timedOut).toBe("idle");
+    expect(result.inferenceAborted).toBe(false);
+    expect(result.toolCalls).toBeNull();
+    expect(result.content).toBe("partial");
+    expect(result.finishReason).toBeNull();
+    // No usage chunk arrived: nothing to log, and token_count is not reset.
+    expect(mockLogUsage).not.toHaveBeenCalled();
+    expect(mockUpdateTokenCount).not.toHaveBeenCalled();
+    expect(recordedRows()[0]).toMatchObject({
+      outcome: "timeout",
+      errorClass: "KairosStall:idle",
+      toolCallCount: 1,
+      validToolCallCount: 0,
+      finishReason: null,
+    });
+  });
+
+  it("a round no bound stopped reports timedOut null", async () => {
+    const result = await executeTurn(
+      context(), [], null, streaming(COMPLETED_CHUNKS), config({ streamIdleTimeoutMs: 60_000 }), [],
+    );
+    expect(result.timedOut).toBeNull();
+  });
+
   it("records one error row and rethrows the ORIGINAL error unchanged", async () => {
     const boom = Object.assign(new Error(`upstream said ${SECRET_TEXT}`), {
       name: "ProviderError",
