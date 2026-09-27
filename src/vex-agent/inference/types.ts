@@ -210,8 +210,8 @@ export interface InferenceResponse {
    * not report one (or the turn was aborted before it arrived).
    *
    * Persisted to `usage_log.finish_reason` (migration 055) and logged. In THIS
-   * package it is record-only: nothing branches on `length` yet — acting on a
-   * truncated completion is a separate product decision.
+   * package it is record-only; the turn loop reads it to tell a truncated
+   * round (`length`) from a malformed or blank one (`classifyInferenceRound`).
    */
   finishReason?: string | null;
   /**
@@ -235,6 +235,19 @@ export interface InferenceResponse {
    * it.
    */
   servingProvider?: string | null;
+  /**
+   * How many tool calls the provider returned that could not be assembled
+   * into a `ParsedToolCall` and were therefore dropped: arguments that are
+   * not valid JSON (cut off by the output limit, or simply malformed), or a
+   * call with no id or no name. `0` on every response that dropped nothing.
+   *
+   * Dropped calls never appear in `toolCalls`, so without this count a batch
+   * that lost one of its calls is indistinguishable from a complete one. The
+   * turn loop reads it to refuse the WHOLE batch (`classifyInferenceRound`):
+   * dispatching the surviving calls of a batch the model did not finish
+   * writing would act on a plan that was never completed.
+   */
+  malformedToolCallCount: number;
 }
 
 // ── Streaming chunk ──────────────────────────────────────────────

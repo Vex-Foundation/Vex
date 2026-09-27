@@ -263,24 +263,44 @@ export function parseNonStreamingResponse(response: ChatResult): InferenceRespon
   const generationId = boundedGenerationId(response.id);
 
   // Tool calls
+  //
+  // A call that cannot be assembled is dropped and COUNTED — the same rule as
+  // the streaming consumer's `assembleToolCalls`, so the turn loop refuses the
+  // whole batch on either path. A call with no id or no name is malformed too:
+  // its result could not be paired with it, and no id is invented for it.
   const sdkToolCalls: ChatToolCall[] | undefined = msg?.toolCalls;
+  let malformedToolCallCount = 0;
   if (sdkToolCalls?.length) {
     const parsed: ParsedToolCall[] = [];
     for (const tc of sdkToolCalls) {
+      // The SDK's schema guarantees these are strings, not that they are
+      // non-empty.
+      const { id } = tc;
+      const { name, arguments: args } = tc.function;
+      if (id.length === 0 || name.length === 0) {
+        malformedToolCallCount += 1;
+        logger.warn("inference.openrouter.malformed_tool_args", {
+          name,
+          argsLength: args.length,
+          reason: id.length === 0 ? "missing_id" : "missing_name",
+        });
+        continue;
+      }
       try {
         parsed.push({
-          id: tc.id,
-          name: tc.function.name,
-          arguments: JSON.parse(tc.function.arguments),
+          id,
+          name,
+          arguments: JSON.parse(args),
         });
       } catch {
         // Never log the raw argument JSON — it can carry addresses, amounts,
         // or other user/transaction content. `JSON.parse`'s own error message
         // also echoes a fragment of the offending input, so we log a fixed
         // reason + the arg length only.
+        malformedToolCallCount += 1;
         logger.warn("inference.openrouter.malformed_tool_args", {
-          name: tc.function.name,
-          argsLength: tc.function.arguments.length,
+          name,
+          argsLength: args.length,
           reason: "invalid_json",
         });
       }
@@ -293,6 +313,7 @@ export function parseNonStreamingResponse(response: ChatResult): InferenceRespon
         reasoning: msg?.reasoning ?? null,
         finishReason,
         generationId,
+        malformedToolCallCount,
       };
     }
   }
@@ -306,6 +327,7 @@ export function parseNonStreamingResponse(response: ChatResult): InferenceRespon
     reasoning: msg?.reasoning ?? null,
     finishReason,
     generationId,
+    malformedToolCallCount,
   };
 }
 

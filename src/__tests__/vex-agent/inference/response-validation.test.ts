@@ -11,6 +11,7 @@ const BASE: InferenceResponse = {
   finishReason: "stop",
   generationId: "gen-1",
   servingProvider: "provider-a",
+  malformedToolCallCount: 0,
 };
 
 describe("actionable inference response predicate", () => {

@@ -383,6 +383,7 @@ describe("turn-loop", () => {
           finishReason: "stop",
           generationId: null,
           servingProvider: null,
+          malformedToolCallCount: 0,
         };
       },
       chatCompletionSimple: async () => ({ content: "", usage }),

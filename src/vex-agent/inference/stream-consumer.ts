@@ -105,6 +105,7 @@ function emptyResponse(): InferenceResponse {
     finishReason: null,
     generationId: null,
     servingProvider: null,
+    malformedToolCallCount: 0,
   };
 }
 
@@ -118,18 +119,33 @@ function isAsyncIterable(value: unknown): value is AsyncIterable<StreamChunk> {
 
 /**
  * Assemble parsed tool calls in numeric `toolCallIndex` order (NOT Map
- * insertion order). Malformed args warn + skip, mirroring
- * `parseNonStreamingResponse`; if every call is malformed the caller falls
- * through to text semantics. (On abort, an in-flight call's truncated JSON
- * fails to parse and is dropped here — partial tool calls are never assembled.)
+ * insertion order). Malformed calls warn + skip, mirroring
+ * `parseNonStreamingResponse`, and are COUNTED so the turn loop can refuse the
+ * whole batch; if every call is malformed the caller falls through to text
+ * semantics. (On abort, an in-flight call's truncated JSON fails to parse and
+ * is dropped here — partial tool calls are never assembled.)
+ *
+ * A call the stream never gave an id or a name is malformed too: its result
+ * could not be paired with it in the transcript, and there is nothing to
+ * dispatch. No id is invented for it.
  */
 function assembleToolCalls(
   accumulator: Map<number, ToolCallAccumulator>,
-): ParsedToolCall[] {
+): { parsed: ParsedToolCall[]; malformed: number } {
   const parsed: ParsedToolCall[] = [];
+  let malformed = 0;
   const indices = [...accumulator.keys()].sort((a, b) => a - b);
   for (const idx of indices) {
     const entry = accumulator.get(idx)!;
+    if (entry.id.length === 0 || entry.name.length === 0) {
+      malformed += 1;
+      logger.warn("inference.openrouter.malformed_tool_args", {
+        name: entry.name,
+        argsLength: entry.argsBuffer.length,
+        reason: entry.id.length === 0 ? "missing_id" : "missing_name",
+      });
+      continue;
+    }
     try {
       parsed.push({
         id: entry.id,
@@ -141,6 +157,7 @@ function assembleToolCalls(
       // other user/transaction content. `JSON.parse`'s own error message also
       // echoes a fragment of the offending input, so we log a fixed reason +
       // the arg length only.
+      malformed += 1;
       logger.warn("inference.openrouter.malformed_tool_args", {
         name: entry.name,
         argsLength: entry.argsBuffer.length,
@@ -148,7 +165,7 @@ function assembleToolCalls(
       });
     }
   }
-  return parsed;
+  return { parsed, malformed };
 }
 
 function safeOnDelta(
@@ -406,7 +423,8 @@ export async function runStreamingInference(
 
   const resolvedUsage = usage ?? ZERO_USAGE;
   const reasoning = reasoningSeen ? reasoningBuffer : null;
-  const toolCalls = assembleToolCalls(toolCallAccumulator);
+  const { parsed: toolCalls, malformed: malformedToolCallCount } =
+    assembleToolCalls(toolCallAccumulator);
   safeTiming(timing, (t) => t.markToolCalls(toolCallAccumulator.size, toolCalls.length));
 
   const response: InferenceResponse =
@@ -421,6 +439,7 @@ export async function runStreamingInference(
           finishReason,
           generationId,
           servingProvider,
+          malformedToolCallCount,
         }
       : {
           // Text path — content defaults to "" when no content delta arrived.
@@ -431,6 +450,7 @@ export async function runStreamingInference(
           finishReason,
           generationId,
           servingProvider,
+          malformedToolCallCount,
         };
 
   // A completion with no final text and no valid tool call is returned AS a

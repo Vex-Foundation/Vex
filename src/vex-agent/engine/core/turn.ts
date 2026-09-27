@@ -80,6 +80,20 @@ export interface SingleTurnResult {
   /** Token usage from this request. */
   promptTokens: number;
   /**
+   * Provider's terminal reason for this completion (`stop`, `tool_calls`,
+   * `length`, …), verbatim; `null` when none was reported. Read by the turn
+   * loop's round classification to tell a round cut off by the output limit
+   * from a malformed or blank one.
+   */
+  finishReason: string | null;
+  /**
+   * Tool calls the provider returned that were dropped as unassemblable
+   * (invalid JSON arguments, or no id / name) — see
+   * `InferenceResponse.malformedToolCallCount`. Non-zero means `toolCalls` is
+   * NOT the batch the model wrote, and the turn loop dispatches none of it.
+   */
+  malformedToolCallCount: number;
+  /**
    * True iff the streaming inference was stopped by `signal` (Stage 9-5a).
    * Captured at stream exit — the turn-loop acts on this, never on the live
    * signal (which could flip after a turn completes).
@@ -268,6 +282,8 @@ export async function executeTurn(
     toolCalls: response.toolCalls,
     reasoning: response.reasoning ?? null,
     promptTokens,
+    finishReason: response.finishReason ?? null,
+    malformedToolCallCount: response.malformedToolCallCount,
     inferenceAborted: aborted,
     usageObserved,
     streamId,

@@ -42,6 +42,9 @@ const NO_PROVENANCE = {
   finishReason: null,
   generationId: null,
   servingProvider: null,
+  // Not provenance, but part of every expected shape: nothing was dropped.
+  // The malformed-call cases override it.
+  malformedToolCallCount: 0,
 };
 
 function fromChunks(chunks: StreamChunk[]) {
@@ -180,6 +183,7 @@ describe("runStreamingInference — accumulation equivalence", () => {
       generationId: "gen-trunc",
       // No routing metadata on this stream — honestly unknown.
       servingProvider: null,
+      malformedToolCallCount: 0,
     });
   });
 
@@ -219,7 +223,15 @@ describe("runStreamingInference — accumulation equivalence", () => {
       { type: "tool_call_delta", toolCallIndex: 0, toolCallId: "c1", toolCallName: "t", toolCallArgsDelta: "not json" },
       { type: "done" },
     ]);
-    expect(res).toEqual({ content: "", toolCalls: null, usage: ZERO_USAGE, reasoning: null, ...NO_PROVENANCE });
+    expect(res).toEqual({
+      content: "",
+      toolCalls: null,
+      usage: ZERO_USAGE,
+      reasoning: null,
+      ...NO_PROVENANCE,
+      // The dropped call is COUNTED: without it this reads as a blank answer.
+      malformedToolCallCount: 1,
+    });
   });
 
   it("partially malformed tool args → only valid calls survive (tool path)", async () => {
@@ -234,7 +246,43 @@ describe("runStreamingInference — accumulation equivalence", () => {
       usage: ZERO_USAGE,
       reasoning: null,
       ...NO_PROVENANCE,
+      // The survivor is not the whole batch, and the count says so.
+      malformedToolCallCount: 1,
     });
+  });
+
+  it("counts a call cut off by the output limit as malformed", async () => {
+    // The shape of a `length` stop mid-arguments: one complete call, then one
+    // whose JSON never closed.
+    const res = await run([
+      { type: "tool_call_delta", toolCallIndex: 0, toolCallId: "c0", toolCallName: "good", toolCallArgsDelta: '{"ok":1}' },
+      { type: "tool_call_delta", toolCallIndex: 1, toolCallId: "c1", toolCallName: "cut", toolCallArgsDelta: '{"amount":"1' },
+      { type: "done", finishReason: "length" },
+    ]);
+    expect(res.toolCalls).toEqual([{ id: "c0", name: "good", arguments: { ok: 1 } }]);
+    expect(res.malformedToolCallCount).toBe(1);
+    expect(res.finishReason).toBe("length");
+  });
+
+  it("drops and counts a call the stream never gave an id or a name, without inventing one", async () => {
+    const res = await run([
+      { type: "tool_call_delta", toolCallIndex: 0, toolCallName: "no_id", toolCallArgsDelta: "{}" },
+      { type: "tool_call_delta", toolCallIndex: 1, toolCallId: "c1", toolCallArgsDelta: "{}" },
+      { type: "tool_call_delta", toolCallIndex: 2, toolCallId: "c2", toolCallName: "ok", toolCallArgsDelta: "{}" },
+      { type: "done" },
+    ]);
+    expect(res.toolCalls).toEqual([{ id: "c2", name: "ok", arguments: {} }]);
+    expect(res.malformedToolCallCount).toBe(2);
+  });
+
+  it("a complete batch reports zero malformed calls", async () => {
+    const res = await run([
+      { type: "tool_call_delta", toolCallIndex: 0, toolCallId: "c0", toolCallName: "a", toolCallArgsDelta: "{}" },
+      { type: "tool_call_delta", toolCallIndex: 1, toolCallId: "c1", toolCallName: "b", toolCallArgsDelta: "{}" },
+      { type: "done", finishReason: "tool_calls" },
+    ]);
+    expect(res.toolCalls).toHaveLength(2);
+    expect(res.malformedToolCallCount).toBe(0);
   });
 });
 
@@ -388,6 +436,7 @@ describe("runStreamingInference — fallback to chatCompletion", () => {
     toolCalls: null,
     usage: USAGE,
     reasoning: null,
+    malformedToolCallCount: 0,
   };
 
   it("falls back when the provider has no stream method", async () => {
@@ -559,6 +608,7 @@ describe("runStreamingInference — attempt timing", () => {
     toolCalls: null,
     usage: USAGE,
     reasoning: null,
+    malformedToolCallCount: 0,
   };
   const CONTEXT: InferenceRequestContext = { sessionId: "session-a", missionRunId: null };
   type ChatCompletionMock = NonNullable<Parameters<typeof providerFrom>[1]>;
