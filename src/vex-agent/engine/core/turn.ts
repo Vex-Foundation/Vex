@@ -19,12 +19,12 @@ import type {
 } from "@vex-agent/inference/types.js";
 import {
   runStreamingInference,
+  type InferenceStallKind,
   type StreamingInferenceResult,
 } from "@vex-agent/inference/stream-consumer.js";
 import {
-  classifyInferenceError,
   createInferenceAttemptTimer,
-  isInferenceTimeout,
+  settledAttemptOutcome,
   type InferenceAttemptTimer,
 } from "@vex-agent/inference/attempt-timing.js";
 import { toChatRequestEffort } from "@vex-agent/inference/openrouter/params.js";
@@ -99,6 +99,14 @@ export interface SingleTurnResult {
    * signal (which could flip after a turn completes).
    */
   inferenceAborted: boolean;
+  /**
+   * The Kairos stream bound that stopped this inference round (Phase 2B), or
+   * `null`. Captured at stream exit like `inferenceAborted`. A timed-out round
+   * never carries tool calls (`toolCalls` is null); `content` is whatever
+   * text streamed before the bound fired and is NOT a finished answer.
+   * Mutually exclusive with `inferenceAborted` (a caller Stop wins).
+   */
+  timedOut: InferenceStallKind | null;
   /** True iff a provider usage chunk was observed before the stream exited. */
   usageObserved: boolean;
   /**
@@ -216,7 +224,7 @@ export async function executeTurn(
       );
     }
   }
-  const { response, aborted, usageObserved } = inference;
+  const { response, aborted, usageObserved, timedOut } = inference;
 
   // Log usage + update token count
   // NOTE: assistant message is NOT saved here — turn-loop handles deferred save
@@ -232,7 +240,10 @@ export async function executeTurn(
   // token_count = SET, not accumulate. Stores the latest prompt size (total tokens
   // sent to provider including system prompt + messages). Used by checkpoint to
   // evaluate context window pressure: shouldCheckpoint(tokenCount, contextLimit).
-  if (!(aborted && !usageObserved)) {
+  //
+  // A round stopped by a Kairos stream bound is the same case as an abort: it
+  // ended before its usage chunk, so it has no usage to record either.
+  if (!((aborted || timedOut !== null) && !usageObserved)) {
     // Cost is priced against the endpoint that ACTUALLY served this turn, not
     // the one we set out to use. The failover can switch endpoints mid-send, and
     // sibling endpoints of one model differ in price, so pricing the response
@@ -285,6 +296,7 @@ export async function executeTurn(
     finishReason: response.finishReason ?? null,
     malformedToolCallCount: response.malformedToolCallCount,
     inferenceAborted: aborted,
+    timedOut,
     usageObserved,
     streamId,
     nextStreamSequence: lastSequence + 1,
@@ -299,11 +311,11 @@ export async function executeTurn(
  * response contributes counts, ids, names and an emptiness flag, never its
  * text, and an error contributes only `classifyInferenceError`'s label.
  *
- * A thrown attempt is a `timeout` when the error is a deadline (see
- * `isInferenceTimeout`), `aborted` when the caller's own signal fired (a user
- * Stop that surfaced as a rejection rather than a partial), else `error`. The
- * deadline is checked first: it never touches the caller's signal, so a
- * timeout can only be mistaken for a Stop if both fired.
+ * Outcome and error class come from `settledAttemptOutcome`: a returned
+ * round a Kairos bound stopped is a `timeout` with class
+ * `KairosStall:<kind>`; a thrown attempt is a `timeout` when the error is a
+ * deadline, `aborted` when the caller's own signal fired (a user Stop that
+ * surfaced as a rejection rather than a partial), else `error`.
  */
 function recordAttemptTiming(
   context: EngineContext,
@@ -329,6 +341,7 @@ function recordAttemptTiming(
       config.reasoningEffort !== undefined && config.supportsReasoningEffort
         ? toChatRequestEffort(config.reasoningEffort)
         : null;
+    const settled = settledAttemptOutcome({ inference, error, signal });
     const row: InferenceAttemptRecord = {
       sessionId: context.sessionId,
       missionRunId: context.missionRunId ?? null,
@@ -336,13 +349,8 @@ function recordAttemptTiming(
       iteration: telemetry.iteration,
       streamId,
       startedAt,
-      outcome:
-        inference !== undefined
-          ? inference.aborted ? "aborted" : "completed"
-          : isInferenceTimeout(error)
-            ? "timeout"
-            : signal?.aborted === true ? "aborted" : "error",
-      errorClass: inference === undefined ? classifyInferenceError(error) : null,
+      outcome: settled.outcome,
+      errorClass: settled.errorClass,
       model: config.model ?? null,
       // The endpoint the session is on once this attempt settled: a failover
       // switch made during the attempt is adopted in memory before it returns

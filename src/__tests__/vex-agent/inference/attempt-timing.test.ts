@@ -4,7 +4,13 @@ import {
   classifyInferenceError,
   createInferenceAttemptTimer,
   isInferenceTimeout,
+  settledAttemptOutcome,
 } from "@vex-agent/inference/attempt-timing.js";
+import {
+  InferenceTimeoutError,
+  nameAsInferenceTimeout,
+  type InferenceStallKind,
+} from "@vex-agent/inference/inference-timeout.js";
 import {
   attachCauseCode,
   attachErrorType,
@@ -228,5 +234,84 @@ describe("isInferenceTimeout", () => {
     expect(isInferenceTimeout(sdkError("ServiceUnavailableResponseError", SECRET))).toBe(false);
     expect(isInferenceTimeout(null)).toBe(false);
     expect(isInferenceTimeout("TimeoutError")).toBe(false);
+  });
+});
+
+describe("Kairos stall classification (Phase 2B, R-10)", () => {
+  const KINDS: readonly InferenceStallKind[] = [
+    "first_chunk",
+    "idle",
+    "reasoning_only",
+    "round_deadline",
+  ];
+
+  it("a returned round stopped by a bound is a timeout with a KairosStall class", () => {
+    for (const kind of KINDS) {
+      expect(
+        settledAttemptOutcome({
+          inference: { aborted: false, timedOut: kind },
+          error: undefined,
+          signal: undefined,
+        }),
+      ).toEqual({ outcome: "timeout", errorClass: `KairosStall:${kind}` });
+    }
+  });
+
+  it("a caller Stop stays aborted and a clean round stays completed", () => {
+    expect(
+      settledAttemptOutcome({
+        inference: { aborted: true, timedOut: null },
+        error: undefined,
+        signal: undefined,
+      }),
+    ).toEqual({ outcome: "aborted", errorClass: null });
+    expect(
+      settledAttemptOutcome({
+        inference: { aborted: false, timedOut: null },
+        error: undefined,
+        signal: undefined,
+      }),
+    ).toEqual({ outcome: "completed", errorClass: null });
+  });
+
+  it("thrown errors keep the Phase 1 mapping", () => {
+    const stopped = new AbortController();
+    stopped.abort();
+    expect(
+      settledAttemptOutcome({
+        inference: undefined,
+        error: sdkError("RequestTimeoutError", "x"),
+        signal: stopped.signal,
+      }).outcome,
+    ).toBe("timeout");
+    expect(
+      settledAttemptOutcome({
+        inference: undefined,
+        error: sdkError("RequestAbortedError", "x"),
+        signal: stopped.signal,
+      }),
+    ).toEqual({ outcome: "aborted", errorClass: "RequestAbortedError" });
+    expect(
+      settledAttemptOutcome({
+        inference: undefined,
+        error: attachStatus(new Error("x"), 502),
+        signal: undefined,
+      }),
+    ).toEqual({ outcome: "error", errorClass: "Error:status=502" });
+  });
+
+  it("the bound's abort reason and a timeout-named normalized error both classify as timeout", () => {
+    const reason = new InferenceTimeoutError("idle");
+    expect(reason.kind).toBe("idle");
+    expect(isInferenceTimeout(reason)).toBe(true);
+    expect(classifyInferenceError(reason)).toBe("TimeoutError");
+
+    const midStream = normalizeOpenRouterError(
+      new DOMException("signal timed out", "TimeoutError"),
+      "streaming chat completion (mid-stream)",
+    );
+    // The gap R-10 closes: once normalized, a mid-stream deadline is a plain Error.
+    expect(isInferenceTimeout(midStream)).toBe(false);
+    expect(isInferenceTimeout(nameAsInferenceTimeout(midStream))).toBe(true);
   });
 });

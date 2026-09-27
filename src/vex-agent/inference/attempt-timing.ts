@@ -17,6 +17,10 @@
  */
 
 import type { StreamChunk } from "./types.js";
+import {
+  kairosStallErrorClass,
+  type InferenceStallKind,
+} from "./inference-timeout.js";
 
 export interface InferenceAttemptTimer {
   /** Call at `runStreamingInference` entry. */
@@ -250,4 +254,42 @@ function matchesTimeout(err: unknown): boolean {
     if (typeof code === "string" && TIMEOUT_CAUSE_CODES.has(code)) return true;
   }
   return false;
+}
+
+/** The closed `inference_attempts.outcome` vocabulary (migration 171). */
+export type InferenceAttemptOutcome = "completed" | "aborted" | "timeout" | "error";
+
+/**
+ * How one settled attempt is recorded: its outcome and sanitised error class.
+ *
+ * - Returned, stopped by the caller's signal: `aborted`, no class.
+ * - Returned, stopped by a Kairos bound (Phase 2B): `timeout`, class
+ *   `KairosStall:<kind>`. The bound fired, so the round is a timeout even
+ *   though nothing was thrown.
+ * - Returned otherwise: `completed`, no class.
+ * - Thrown: `timeout` when the error is a deadline (`isInferenceTimeout`),
+ *   `aborted` when the caller's own signal fired, else `error`; the class is
+ *   `classifyInferenceError`'s label. The deadline is checked first: it never
+ *   touches the caller's signal, so a timeout can only be mistaken for a Stop
+ *   if both fired.
+ */
+export function settledAttemptOutcome(input: {
+  readonly inference:
+    | { readonly aborted: boolean; readonly timedOut: InferenceStallKind | null }
+    | undefined;
+  readonly error: unknown;
+  readonly signal: AbortSignal | undefined;
+}): { outcome: InferenceAttemptOutcome; errorClass: string | null } {
+  const { inference, error, signal } = input;
+  if (inference !== undefined) {
+    if (inference.aborted) return { outcome: "aborted", errorClass: null };
+    if (inference.timedOut !== null) {
+      return { outcome: "timeout", errorClass: kairosStallErrorClass(inference.timedOut) };
+    }
+    return { outcome: "completed", errorClass: null };
+  }
+  const outcome: InferenceAttemptOutcome = isInferenceTimeout(error)
+    ? "timeout"
+    : signal?.aborted === true ? "aborted" : "error";
+  return { outcome, errorClass: classifyInferenceError(error) };
 }

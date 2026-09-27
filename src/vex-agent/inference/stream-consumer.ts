@@ -36,6 +36,9 @@ import type {
 import logger from "@utils/logger.js";
 import { attachErrorType, attachStatus, scrubMessage } from "./openrouter/errors.js";
 import type { InferenceAttemptTimer } from "./attempt-timing.js";
+import type { InferenceStallKind } from "./inference-timeout.js";
+
+export type { InferenceStallKind } from "./inference-timeout.js";
 
 const ZERO_USAGE: InferenceUsage = {
   promptTokens: 0,
@@ -50,6 +53,14 @@ export interface StreamingInferenceResult {
   readonly aborted: boolean;
   /** True iff a provider `usage` chunk was consumed before exit. */
   readonly usageObserved: boolean;
+  /**
+   * The Kairos bound that stopped this round (Phase 2B), or `null` when none
+   * fired. A timed-out round is RETURNED, not thrown: `aborted` is false, the
+   * response is the partial text that streamed (possibly ""), it never
+   * carries tool calls, and `finishReason` is null. A caller Stop always wins:
+   * `aborted: true` with `timedOut: null`.
+   */
+  readonly timedOut: InferenceStallKind | null;
 }
 
 export interface RunStreamingInferenceOptions {
@@ -242,7 +253,7 @@ async function bufferedFallback(
     context,
     signal,
   );
-  return { response, aborted: false, usageObserved: true };
+  return { response, aborted: false, usageObserved: true, timedOut: null };
 }
 
 /**
@@ -262,12 +273,12 @@ export async function runStreamingInference(
 
   // Pre-aborted → no inference at all; empty partial, never a fallback.
   if (signal?.aborted) {
-    return { response: emptyResponse(), aborted: true, usageObserved: false };
+    return { response: emptyResponse(), aborted: true, usageObserved: false, timedOut: null };
   }
 
   if (typeof provider.chatCompletionStream !== "function") {
     if (signal?.aborted) {
-      return { response: emptyResponse(), aborted: true, usageObserved: false };
+      return { response: emptyResponse(), aborted: true, usageObserved: false, timedOut: null };
     }
     logger.warn("inference.stream.fallback", {
       reason: "no_stream_method",
@@ -282,7 +293,7 @@ export async function runStreamingInference(
     const candidate = provider.chatCompletionStream(messages, tools, config, signal, context);
     if (!isAsyncIterable(candidate)) {
       if (signal?.aborted) {
-        return { response: emptyResponse(), aborted: true, usageObserved: false };
+        return { response: emptyResponse(), aborted: true, usageObserved: false, timedOut: null };
       }
       logger.warn("inference.stream.fallback", {
         reason: "not_async_iterable",
@@ -294,7 +305,7 @@ export async function runStreamingInference(
     stream = candidate;
   } catch (err) {
     if (signal?.aborted) {
-      return { response: emptyResponse(), aborted: true, usageObserved: false };
+      return { response: emptyResponse(), aborted: true, usageObserved: false, timedOut: null };
     }
     logger.warn("inference.stream.fallback", {
       reason: "setup_threw",
@@ -460,5 +471,5 @@ export async function runStreamingInference(
   // counts this round as blank and stops the turn with `no_progress` on the
   // third in a row. Rejecting here would pre-empt that bound with a hard
   // error, which is why this layer stays a transport.
-  return { response, aborted, usageObserved };
+  return { response, aborted, usageObserved, timedOut: null };
 }
