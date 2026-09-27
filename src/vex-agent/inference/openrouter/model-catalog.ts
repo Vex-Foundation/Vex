@@ -12,6 +12,7 @@ import type { OpenRouter } from "@openrouter/sdk";
 
 import type { InferenceConfig } from "../types.js";
 import { resolveEffectiveContextLimit } from "../context-window.js";
+import { parseModelMaxCompletionTokens } from "./answer-headroom.js";
 import logger from "@utils/logger.js";
 import { extractCauseCode } from "../../../lib/error-cause.js";
 
@@ -106,6 +107,8 @@ interface CatalogModelRow {
       }
     | undefined;
   readonly supportedParameters?: unknown;
+  /** Top provider's limits; untrusted, validated in `answer-headroom.ts`. */
+  readonly topProvider?: { readonly maxCompletionTokens?: unknown } | undefined;
 }
 
 export async function fetchModelInferenceConfig(
@@ -218,6 +221,12 @@ export async function fetchModelInferenceConfig(
     });
   }
 
+  // Answer-headroom ceiling (R-2). Unknown ⇒ the policy never raises
+  // `max_tokens` for this model; the configured value is sent unchanged.
+  const modelMaxCompletionTokens = parseModelMaxCompletionTokens(
+    found.topProvider?.maxCompletionTokens,
+  );
+
   logger.info("inference.openrouter.config_loaded", {
     model: spec.model,
     contextLimit: contextLimit.effective,
@@ -227,6 +236,7 @@ export async function fetchModelInferenceConfig(
     hasCachePrice: cachePricePerM !== null,
     hasReasoningPrice: reasoningPricePerM !== null,
     supportsReasoningEffort,
+    modelMaxCompletionTokens: modelMaxCompletionTokens ?? null,
   });
 
   return {
@@ -237,6 +247,7 @@ export async function fetchModelInferenceConfig(
       contextLimit: contextLimit.effective,
       temperature: spec.temperature,
       maxOutputTokens: spec.maxOutputTokens,
+      ...(modelMaxCompletionTokens !== undefined && { modelMaxCompletionTokens }),
       ...(spec.endpointTag !== undefined && { endpointTag: spec.endpointTag }),
       inputPricePerM,
       outputPricePerM,

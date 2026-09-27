@@ -10,6 +10,10 @@ import type {
 import { normalizeToolSchemaForProvider } from "../schema-normalizer.js";
 import { mapMessages } from "./mappers.js";
 import { buildProviderPreferences } from "./provider-prefs.js";
+import {
+  ANSWER_HEADROOM_ENABLED,
+  resolveAnswerHeadroomMaxTokens,
+} from "./answer-headroom.js";
 
 /**
  * OpenRouter's documented cap on `session_id` (`chatrequest.d.ts`: "Maximum of
@@ -87,6 +91,18 @@ export function toChatRequestEffort(effort: ReasoningEffort): ChatRequestEffort 
   return effort === "max" ? unrecognized<string>("max") : effort;
 }
 
+/**
+ * Upper bound on the prompt tokens of a built request: its UTF-8 JSON size.
+ * No billed token is shorter than one byte, and every one is drawn from text
+ * this body contains — the same argument as the C8 pre-inference ceiling
+ * (`engine/core/inference-envelope-bytes.ts`). Deliberately loose: it may give
+ * up some headroom on a long prompt, but it can never let prompt + max_tokens
+ * overrun the window. Only computed when a raise is actually possible.
+ */
+function requestBodyBytes(params: ChatRequest): number {
+  return Buffer.byteLength(JSON.stringify(params), "utf8");
+}
+
 export function buildOpenRouterParams(
   messages: ProviderMessage[],
   tools: ToolDefinition[],
@@ -155,6 +171,23 @@ export function buildOpenRouterParams(
     }));
     params.toolChoice = "auto";
   }
+
+  // R-2 answer headroom: reasoning and the visible answer share `max_tokens`,
+  // so when an effort is actually sent (the SAME gate as the `reasoning`
+  // spread above) raise it to a per-effort floor, capped by the model's max
+  // completion tokens and the context room left after the prompt. Resolved
+  // AFTER the rest of the body so the prompt bound covers messages AND tool
+  // schemas. Never lowers the configured value; with no effort, or the switch
+  // off, `maxTokens` stays exactly `config.maxOutputTokens`.
+  const headroom = resolveAnswerHeadroomMaxTokens({
+    configuredMaxTokens: config.maxOutputTokens,
+    sentEffort: config.supportsReasoningEffort ? config.reasoningEffort : undefined,
+    modelMaxCompletionTokens: config.modelMaxCompletionTokens,
+    contextLimit: config.contextLimit,
+    endpointPinned: config.endpointTag !== undefined,
+    promptTokensUpperBound: () => requestBodyBytes(params),
+  }, ANSWER_HEADROOM_ENABLED);
+  params.maxTokens = headroom.maxTokens;
 
   return params;
 }

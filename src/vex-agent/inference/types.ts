@@ -104,6 +104,14 @@ export interface InferenceConfig {
   temperature?: number;
   /** Max output tokens per response — from AGENT_MAX_OUTPUT_TOKENS env */
   maxOutputTokens: number;
+  /**
+   * The model's advertised max completion tokens (the `/models` catalog's
+   * `top_provider.max_completion_tokens`, validated). Absent when the catalog
+   * does not report one. Only read by the answer-headroom policy
+   * (`openrouter/answer-headroom.ts`), which never raises `max_tokens` above it
+   * and does not raise at all when it is absent.
+   */
+  modelMaxCompletionTokens?: number;
   /** Price per 1M input tokens. */
   inputPricePerM: number;
   /** Price per 1M output tokens. */
