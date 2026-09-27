@@ -620,6 +620,22 @@ describe("turn loop cut-off answer continuation (R-9)", () => {
     });
   });
 
+  it("a continuation whose stream ends with no finish signal is saved joined but marked, not as complete", async () => {
+    const { result, seen } = await run([
+      cutRound("Consensus is sub"),
+      [{ type: "content", text: "tle and the stream just stops" }],
+      textRound("unreachable"),
+    ]);
+
+    expect(seen).toHaveLength(2);
+    expect(onlyRow().content).toBe(`Consensus is subtle and the stream just stops${CUTOFF_ANSWER_SUFFIX}`);
+    expect(result.text).toBe(`Consensus is subtle and the stream just stops${CUTOFF_ANSWER_SUFFIX}`);
+    expect(infoCalls("engine.turn.cutoff_continuation_resolved")[0]).toMatchObject({
+      outcome: "ambiguous_end",
+      finishReason: null,
+    });
+  });
+
   it.each<[string, readonly StreamChunk[]]>([
     ["blank", blankRound],
     ["reasoning-only", [

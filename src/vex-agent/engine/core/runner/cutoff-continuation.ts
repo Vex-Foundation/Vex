@@ -17,10 +17,11 @@
  *    lowered - the model is mid-answer, not stalled.
  * 3. Fragment + continuation are saved as ONE assistant row (which also takes
  *    a board staged earlier in the turn).
- * 4. If the continuation is cut off too, or produces nothing usable (blank,
- *    reasoning only, stopped by an inference bound), what exists is saved with
- *    a visible trailing marker, so a truncated answer is never presented as a
- *    complete one.
+ * 4. If the continuation is cut off too, ends without a clear completion
+ *    signal (no finish reason, or anything but `stop`), or produces nothing
+ *    usable (blank, reasoning only, stopped by an inference bound), what
+ *    exists is saved with a visible trailing marker, so a truncated answer is
+ *    never presented as a complete one.
  *
  * Never applied to a round with tool calls: a tool-call round cut off by the
  * output limit is an incomplete batch and is refused whole elsewhere
@@ -96,10 +97,22 @@ export function continuationMessages(liveMessages: readonly Message[], partial: 
   ];
 }
 
+/**
+ * The one finish reason that proves a text continuation finished. The only
+ * provider (OpenRouter) normalises every upstream to `tool_calls` | `stop` |
+ * `length` | `content_filter` | `error` (an open enum); of those only `stop`
+ * says the model ended its answer on its own. Anything else - including no
+ * finish reason at all, which is what a stream that simply stopped arriving
+ * leaves behind - is not proof of a complete answer.
+ */
+const COMPLETED_FINISH_REASON = "stop";
+
 /** How the continuation ended. Sanitised enum, safe to log. */
 export type CutoffContinuationOutcome =
   | "completed"
   | "still_cut_off"
+  /** Text arrived but the round ended with no finish reason or an unrecognised one. */
+  | "ambiguous_end"
   | "unproductive"
   | "timed_out"
   | "tool_round";
@@ -195,6 +208,10 @@ export function resolveCutoffContinuation(
   const reasoning = joinReasoning(partial.reasoning, continuation.reasoning);
   if (continuation.finishReason === "length") {
     return { kind: "answer", outcome: "still_cut_off", content: joined + CUTOFF_ANSWER_SUFFIX, reasoning };
+  }
+  if (continuation.finishReason !== COMPLETED_FINISH_REASON) {
+    // No clear completion: keep what arrived, but never present it as whole.
+    return { kind: "answer", outcome: "ambiguous_end", content: joined + CUTOFF_ANSWER_SUFFIX, reasoning };
   }
   return { kind: "answer", outcome: "completed", content: joined, reasoning };
 }

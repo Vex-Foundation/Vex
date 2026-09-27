@@ -80,6 +80,20 @@ describe("cut-off answer continuation", () => {
       });
     });
 
+    it.each<[string, string | null]>([
+      ["no finish signal", null],
+      ["content_filter", "content_filter"],
+      ["error", "error"],
+      ["an unrecognised label", "end_turn"],
+    ])("a continuation that ends with %s is joined but kept marked (ambiguous_end)", (_label, finishReason) => {
+      expect(resolveCutoffContinuation(PARTIAL, round({ content: " 42.", reasoning: "r2", finishReason }))).toEqual({
+        kind: "answer",
+        outcome: "ambiguous_end",
+        content: `The answer is 42.${CUTOFF_ANSWER_SUFFIX}`,
+        reasoning: "r1\n\nr2",
+      });
+    });
+
     it.each<[string, Partial<CutoffRoundFields>]>([
       ["blank", { content: "" }],
       ["reasoning only", { reasoning: "thinking", finishReason: "length" }],
