@@ -199,8 +199,10 @@ const LATENCY_COLUMNS = (groupLabel: string): readonly ReportColumn[] => [
 
 /**
  * Endpoint and serving-provider groupings drop attempts that needed a capacity
- * retry: their `total_ms` includes the time spent failing on earlier endpoints,
- * which would otherwise be charged to the endpoint that finally served. Those
+ * retry: their `total_ms` includes the time spent failing on earlier endpoints
+ * (or on the same endpoint, for a 5xx retried in place, class
+ * `server_error_5xx`), which would otherwise be charged to the endpoint that
+ * finally served. Those
  * attempts are reported on their own under "Retry overhead".
  */
 const NO_CAPACITY_RETRY = " AND a.capacity_retries = 0";

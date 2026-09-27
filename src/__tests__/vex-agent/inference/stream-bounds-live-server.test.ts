@@ -925,6 +925,100 @@ describe("stream bounds through executeTurn (real SDK): attempt recorded as time
   }
 });
 
+// ── 5xx retried in the HTTP layer counts as a capacity retry ────────────
+//
+// `openrouter/round-fetch.ts` retries a 5xx below the endpoint failover, so
+// the failover's capacity hook never sees it. Each such retry is reported
+// through the request context's `onCapacityFailure` as `server_error_5xx`,
+// so the attempt row's `capacity_retries` is non-zero and the runtime report
+// (which keeps only `capacity_retries = 0` in its retry-free endpoint and
+// serving-provider latency) no longer counts the retried send's wait there.
+
+describe("5xx retries inside a send are counted as capacity retries (real SDK)", () => {
+  const originalEnv = { ...process.env };
+  const CONTEXT = { sessionId: "session-5xx", missionRunId: null };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetAllSessionEndpointState();
+    process.env.OPENROUTER_API_KEY = "sk-or-local-test";
+    process.env.AGENT_MODEL = "test/model";
+  });
+
+  afterEach(async () => {
+    trackingTimers = false;
+    process.env = { ...originalEnv };
+    if (server !== null) await server.close();
+    server = null;
+  });
+
+  const overloaded: ChatHandler = async (r) => {
+    r.json(503, errorBody(503, "overloaded"), { "retry-after-ms": "50" });
+  };
+  const ROUND = { ...NO_BOUNDS, firstChunkTimeoutMs: 1_000, inferenceRoundDeadlineMs: 2_000 };
+
+  it("503 then a stream: the attempt timer records one server_error_5xx retry", async () => {
+    const s = await serve([overloaded, normalStream]);
+    const timing = createInferenceAttemptTimer();
+    const result = await runStreamingInference(newProvider(), MESSAGES, [], config(ROUND), {
+      timing,
+      context: CONTEXT,
+    });
+
+    expect(result.response.content).toBe("Hello, world");
+    expect(s.requests).toHaveLength(2);
+    expect(timing.snapshot()).toMatchObject({
+      capacityRetries: 1,
+      capacityRetryClasses: ["server_error_5xx"],
+      bufferedFallback: false,
+    });
+    await expectTeardown(s, [false, false]);
+  });
+
+  it("a clean send records no capacity retry", async () => {
+    const s = await serve([normalStream]);
+    const timing = createInferenceAttemptTimer();
+    const result = await runStreamingInference(newProvider(), MESSAGES, [], config(ROUND), {
+      timing,
+      context: CONTEXT,
+    });
+
+    expect(result.response.content).toBe("Hello, world");
+    expect(timing.snapshot()).toMatchObject({ capacityRetries: 0, capacityRetryClasses: [] });
+    await expectTeardown(s, [false]);
+  });
+
+  it("through executeTurn: the recorded attempt row carries the 5xx retries", async () => {
+    const s = await serve([overloaded, overloaded, normalStream]);
+    const result = await executeTurn(
+      engineContext("session-5xx-turn"), [], null, newProvider(), config(ROUND), [],
+      {}, undefined, undefined, TELEMETRY,
+    );
+
+    expect(result.content).toBe("Hello, world");
+    expect(mockInsertInferenceAttempt).toHaveBeenCalledTimes(1);
+    const row = requireValue(mockInsertInferenceAttempt.mock.calls[0]?.[0]);
+    // Non-zero, so the report's `a.capacity_retries = 0` filter keeps this
+    // attempt out of retry-free endpoint latency (and in "Retry overhead").
+    expect(row.capacityRetries).toBe(2);
+    expect(row.capacityRetryClasses).toEqual(["server_error_5xx", "server_error_5xx"]);
+    await expectTeardown(s, [false, false, false]);
+  });
+
+  it("through executeTurn: a clean send's row records zero capacity retries", async () => {
+    const s = await serve([normalStream]);
+    await executeTurn(
+      engineContext("session-clean-turn"), [], null, newProvider(), config(ROUND), [],
+      {}, undefined, undefined, TELEMETRY,
+    );
+
+    const row = requireValue(mockInsertInferenceAttempt.mock.calls[0]?.[0]);
+    expect(row.capacityRetries).toBe(0);
+    expect(row.capacityRetryClasses).toEqual([]);
+    await expectTeardown(s, [false]);
+  });
+});
+
 // ── Abort propagation after a GC ──────────────────────────────────────
 //
 // Node's fetch (undici 6.22, Node 22.21) follows the caller's signal through

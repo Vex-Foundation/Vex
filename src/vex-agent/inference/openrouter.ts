@@ -181,9 +181,14 @@ export class OpenRouterProvider implements InferenceProvider {
   private sendChat(
     request: SendChatCompletionRequestRequest,
     signal: AbortSignal | undefined,
+    context?: InferenceRequestContext,
   ): Promise<SendChatCompletionRequestResponse> {
-    return withRoundSignal(signal, () =>
-      this.client.chat.send(request, this.sendOptions(signal)),
+    return withRoundSignal(
+      signal,
+      () => this.client.chat.send(request, this.sendOptions(signal)),
+      // Each 5xx `roundFetch` retries counts as a capacity retry of this
+      // attempt, exactly like one the endpoint failover absorbs.
+      context?.onCapacityFailure,
     );
   }
 
@@ -337,6 +342,7 @@ export class OpenRouterProvider implements InferenceProvider {
                 chatRequest: { ...params, stream: false },
               },
               signal,
+              context,
             ),
             "chat completion",
           );
@@ -529,6 +535,7 @@ export class OpenRouterProvider implements InferenceProvider {
             chatRequest: { ...params, stream: true },
           },
           signal,
+          context,
         ),
         "streaming chat completion",
       );

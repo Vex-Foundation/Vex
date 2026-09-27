@@ -33,6 +33,13 @@
  * gap 1 is about. The caller's signal is held by the caller (the round guard,
  * or the turn's Stop controller), so the listener, and through it the reader,
  * lives as long as the round does. Sends without a signal are untouched.
+ *
+ * RETRY ACCOUNTING (Kairos Phase 2.1). A 5xx retried here happens below the
+ * endpoint failover, so the failover's capacity hook never sees it. The send's
+ * `onServerRetry` observer (the request context's `onCapacityFailure`, carried
+ * in the same `AsyncLocalStorage` scope) is called once per retried 5xx with
+ * `SERVER_ERROR_5XX_RETRY_CLASS`, so the attempt timer counts it and the
+ * runtime report keeps a retried send out of its retry-free latency.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -50,17 +57,36 @@ export const OPENROUTER_5XX_RETRY_BACKOFF = {
   maxElapsedTime: 60_000,
 } as const;
 
-const roundSignal = new AsyncLocalStorage<AbortSignal>();
+/** The capacity-retry class reported for each 5xx this module retries. */
+export const SERVER_ERROR_5XX_RETRY_CLASS = "server_error_5xx";
+
+interface RoundScope {
+  readonly signal: AbortSignal;
+  readonly onServerRetry: ((reasonClass: string) => void) | undefined;
+}
+
+const roundScope = new AsyncLocalStorage<RoundScope>();
 
 /**
  * Run one SDK send with `signal` as the signal this module tears the body down
- * on. `undefined` runs `send` unchanged.
+ * on, and `onServerRetry` as the observer told about each 5xx it retries.
+ * `undefined` signal runs `send` unchanged (the SDK then retries 5xx itself).
  */
 export function withRoundSignal<T>(
   signal: AbortSignal | undefined,
   send: () => Promise<T>,
+  onServerRetry?: (reasonClass: string) => void,
 ): Promise<T> {
-  return signal === undefined ? send() : roundSignal.run(signal, send);
+  return signal === undefined ? send() : roundScope.run({ signal, onServerRetry }, send);
+}
+
+/** Tell the send's observer about one retried 5xx. Observation only. */
+function reportServerRetry(scope: RoundScope): void {
+  try {
+    scope.onServerRetry?.(SERVER_ERROR_5XX_RETRY_CLASS);
+  } catch {
+    // Measurement must never change the retry.
+  }
 }
 
 /** Statuses that may not carry a body; `new Response` rejects one for them. */
@@ -220,8 +246,9 @@ function send(input: FetchInput, init: RequestInit | undefined, signal: AbortSig
  * in scope it is the SDK's default fetch, byte for byte.
  */
 export async function roundFetch(input: FetchInput, init?: RequestInit): Promise<Response> {
-  const signal = roundSignal.getStore();
-  if (signal === undefined) return init === undefined ? fetch(input) : fetch(input, init);
+  const scope = roundScope.getStore();
+  if (scope === undefined) return init === undefined ? fetch(input) : fetch(input, init);
+  const { signal } = scope;
 
   const { controller, unlink } = linkedController(signal, requestSignalOf(input, init));
   const linked = controller.signal;
@@ -235,6 +262,7 @@ export async function roundFetch(input: FetchInput, init?: RequestInit): Promise
         return bindBodyToSignal(response, linked, unlink);
       }
       const waitMs = retryDelayMs(response, x);
+      reportServerRetry(scope);
       // The failed response is discarded: release its connection now.
       await response.body?.cancel().catch(() => {});
       // Rejects with the signal's own reason (`TimeoutError` for a bound,
