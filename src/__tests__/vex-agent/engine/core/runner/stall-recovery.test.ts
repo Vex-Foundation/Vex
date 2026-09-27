@@ -40,8 +40,15 @@ function assistantCalling(...names: string[]): Message {
   };
 }
 
+function userAsks(content: string): Message {
+  return { role: "user", content, timestamp: "2026-09-27T00:00:00.000Z" };
+}
+
 const READ_TOOL = "ToolSearch";
 const BROADCAST_TOOL = "SwapExecute";
+
+/** A current request that has already made one pure read: the evidence lowering needs. */
+const READ_EVIDENCE: readonly Message[] = [userAsks("check the pools"), assistantCalling(READ_TOOL)];
 
 describe("stall recovery", () => {
   it("is switched on by default", () => {
@@ -134,14 +141,66 @@ describe("stall recovery", () => {
       expect(decision).toEqual({ lowered: true, from: "high", to: "low" });
     });
 
-    it("lowers with no prior tool calls at all", async () => {
+    it("keeps effort when there are no tool calls at all: no evidence the request is read-only", async () => {
+      const probe = vi.fn(async () => false);
       const decision = await decideRecoveryEffort({
         config: config({ reasoningEffort: "medium" }),
         liveMessages: [],
         inLoopPendingApprovals: 0,
+        hasPendingApproval: probe,
+      });
+      expect(decision).toEqual({ lowered: false, reason: "no_current_request_evidence" });
+      expect(probe).not.toHaveBeenCalled();
+    });
+
+    it("keeps effort for a fresh request with no calls yet, even after read-only history", async () => {
+      const decision = await decideRecoveryEffort({
+        config: config(),
+        liveMessages: [
+          userAsks("what is SOL at?"),
+          assistantCalling(READ_TOOL),
+          { role: "tool", content: "{}", toolCallId: "call-0", timestamp: "2026-09-27T00:00:01.000Z" },
+          { role: "assistant", content: "SOL is at 150.", timestamp: "2026-09-27T00:00:02.000Z" },
+          userAsks("swap 5 SOL to USDC"),
+          // An engine cue after the request is not a user message and not a call.
+          { role: "system", content: "cue", timestamp: "2026-09-27T00:00:03.000Z" },
+        ],
+        inLoopPendingApprovals: 0,
         hasPendingApproval: noPending,
       });
-      expect(decision).toEqual({ lowered: true, from: "medium", to: "low" });
+      expect(decision).toEqual({ lowered: false, reason: "no_current_request_evidence" });
+    });
+
+    it("lowers when the current request has made only read calls", async () => {
+      const decision = await decideRecoveryEffort({
+        config: config(),
+        liveMessages: [
+          userAsks("earlier"),
+          assistantCalling(BROADCAST_TOOL),
+          userAsks("now just look"),
+          assistantCalling(READ_TOOL),
+          { role: "tool", content: "{}", toolCallId: "call-0", timestamp: "2026-09-27T00:00:01.000Z" },
+          assistantCalling(READ_TOOL, READ_TOOL),
+        ],
+        inLoopPendingApprovals: 0,
+        hasPendingApproval: noPending,
+      });
+      expect(decision).toEqual({ lowered: true, from: "high", to: "low" });
+    });
+
+    it("keeps effort when any current-request call is not a read, even an earlier one", async () => {
+      const decision = await decideRecoveryEffort({
+        config: config(),
+        liveMessages: [
+          userAsks("swap then check"),
+          assistantCalling(BROADCAST_TOOL),
+          { role: "tool", content: "{}", toolCallId: "call-0", timestamp: "2026-09-27T00:00:01.000Z" },
+          assistantCalling(READ_TOOL),
+        ],
+        inLoopPendingApprovals: 0,
+        hasPendingApproval: noPending,
+      });
+      expect(decision).toEqual({ lowered: false, reason: "non_read_tool_call" });
     });
 
     it("keeps effort when the model does not support the parameter", async () => {
@@ -182,7 +241,7 @@ describe("stall recovery", () => {
       async (effort) => {
         const decision = await decideRecoveryEffort({
           config: config({ reasoningEffort: effort }),
-          liveMessages: [],
+          liveMessages: READ_EVIDENCE,
           inLoopPendingApprovals: 0,
           hasPendingApproval: noPending,
         });
@@ -229,7 +288,7 @@ describe("stall recovery", () => {
     it("keeps effort while the session has a pending approval", async () => {
       const decision = await decideRecoveryEffort({
         config: config(),
-        liveMessages: [],
+        liveMessages: READ_EVIDENCE,
         inLoopPendingApprovals: 0,
         hasPendingApproval: async () => true,
       });
@@ -240,7 +299,7 @@ describe("stall recovery", () => {
       const probe = vi.fn(async () => false);
       const decision = await decideRecoveryEffort({
         config: config(),
-        liveMessages: [],
+        liveMessages: READ_EVIDENCE,
         inLoopPendingApprovals: 1,
         hasPendingApproval: probe,
       });
@@ -250,7 +309,7 @@ describe("stall recovery", () => {
     it("fails closed when the approval state cannot be read", async () => {
       const decision = await decideRecoveryEffort({
         config: config(),
-        liveMessages: [],
+        liveMessages: READ_EVIDENCE,
         inLoopPendingApprovals: 0,
         hasPendingApproval: async () => {
           throw new Error("pool exhausted");
@@ -279,7 +338,7 @@ describe("stall recovery", () => {
         from: "reasoning_exhausted",
         config: base,
         promptOptions,
-        liveMessages: [],
+        liveMessages: READ_EVIDENCE,
         inLoopPendingApprovals: 0,
         hasPendingApproval: async () => false,
       });
@@ -303,7 +362,7 @@ describe("stall recovery", () => {
         from: "blank",
         config: base,
         promptOptions: {},
-        liveMessages: [],
+        liveMessages: READ_EVIDENCE,
         inLoopPendingApprovals: 0,
         hasPendingApproval: async () => true,
       });

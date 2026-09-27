@@ -13,10 +13,13 @@
  *    that one request only; it is never written to the transcript.
  * 2. For that one call only, reasoning effort drops to "low", so a model that
  *    spent its whole output budget thinking has room left to act. This is
- *    guarded: it never applies while an approval is pending or right after the
- *    model called anything that is not a pure read, because the next call in
- *    that position may be a fund-moving one and deserves full deliberation.
- *    When the guard refuses, the note is still sent.
+ *    guarded: it applies only once the CURRENT request (everything after the
+ *    latest user message) has shown itself to be read-only work - at least
+ *    one tool call since that message, every one of them a pure read - and
+ *    never while an approval is pending. A fresh request with no call yet
+ *    may be a fund-moving one, whatever tools earlier requests used, and
+ *    deserves full deliberation. When the guard refuses, the note is still
+ *    sent.
  *
  * If the recovery call is also unproductive the streak simply keeps counting
  * toward `MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS`; there is no second recovery in
@@ -126,6 +129,7 @@ export type EffortGuardReason =
   | "effort_unsupported"
   | "effort_provider_default"
   | "effort_not_above_low"
+  | "no_current_request_evidence"
   | "non_read_tool_call"
   | "pending_approval"
   | "pending_approval_unreadable";
@@ -135,17 +139,28 @@ export type RecoveryEffortDecision =
   | { readonly lowered: false; readonly reason: EffortGuardReason };
 
 /**
- * Tool names of the most recent assistant message that carried tool calls, or
- * an empty list when the live tape has none.
+ * Tool names of every assistant tool call made for the CURRENT request: the
+ * calls after the latest `user` row on the live tape. Operator messages and
+ * mid-run operator instructions are persisted as `user` rows; engine-injected
+ * notices and cues are `system` rows and tool results are `tool` rows, so
+ * neither starts a new request. With no `user` row on the tape at all (a
+ * compacted or engine-started run), the whole tape is the current request.
+ * Empty when the current request has not called anything yet.
  */
-function latestAssistantToolNames(messages: readonly Message[]): string[] {
+function currentRequestToolNames(messages: readonly Message[]): string[] {
+  let start = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i];
-    if (message === undefined || message.role !== "assistant") continue;
-    const calls = message.toolCalls;
-    if (calls !== undefined && calls.length > 0) return calls.map((c) => c.command);
+    if (messages[i]?.role === "user") {
+      start = i + 1;
+      break;
+    }
   }
-  return [];
+  const names: string[] = [];
+  for (const message of messages.slice(start)) {
+    if (message.role !== "assistant") continue;
+    for (const call of message.toolCalls ?? []) names.push(call.command);
+  }
+  return names;
 }
 
 /** A pure read: registered, classified `read`, and not flagged mutating. Unknown names are not. */
@@ -174,7 +189,11 @@ export async function decideRecoveryEffort(input: {
   if (EFFORT_RANK[current] <= EFFORT_RANK[STALL_RECOVERY_EFFORT]) {
     return { lowered: false, reason: "effort_not_above_low" };
   }
-  if (!latestAssistantToolNames(input.liveMessages).every(isReadOnlyTool)) {
+  const currentCalls = currentRequestToolNames(input.liveMessages);
+  // No call yet for this request = no evidence it is read-only work; earlier
+  // requests' history says nothing about what this one will do.
+  if (currentCalls.length === 0) return { lowered: false, reason: "no_current_request_evidence" };
+  if (!currentCalls.every(isReadOnlyTool)) {
     return { lowered: false, reason: "non_read_tool_call" };
   }
   if (input.inLoopPendingApprovals > 0) return { lowered: false, reason: "pending_approval" };

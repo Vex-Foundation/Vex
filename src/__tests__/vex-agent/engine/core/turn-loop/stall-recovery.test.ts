@@ -453,13 +453,18 @@ function makeContext() {
 
 const loopConfig = { maxIterations: 50, timeoutMs: 60000, contextLimit: 128000 };
 
+/**
+ * Default live tape: the current request has already made one pure read, so
+ * the effort guard has the evidence it needs to lower. Tests of the guard's
+ * refusals pass their own history.
+ */
 async function run(
   rounds: ReadonlyArray<readonly StreamChunk[]>,
   options: { config?: InferenceConfig; history?: Message[] } = {},
 ) {
   const { provider, seen } = recordingProvider(rounds);
   const result = await runTurnLoop(
-    makeContext(), options.history ?? [], null, 0, provider, options.config ?? makeConfig(), [],
+    makeContext(), options.history ?? historyWith("ToolSearch"), null, 0, provider, options.config ?? makeConfig(), [],
     loopConfig,
   );
   return { result, seen };
@@ -587,6 +592,23 @@ describe("turn loop stall recovery (R-5)", () => {
         guardReason: "non_read_tool_call",
       });
       // Decided without touching the DB.
+      expect(mockHasPendingForSession).not.toHaveBeenCalled();
+    });
+
+    it("a fresh request with no calls yet keeps effort, even after read-only history", async () => {
+      const { seen } = await run([exhaustedRound, textRound("Done.")], {
+        history: [
+          ...historyWith("ToolSearch"),
+          { role: "assistant", content: "Pools look fine.", timestamp: "2026-09-27T00:00:03.000Z" },
+          { role: "user", content: "now swap 5 SOL", timestamp: "2026-09-27T00:00:04.000Z" },
+        ],
+      });
+      expect(seen.map((s) => s.effort)).toEqual(["high", "high"]);
+      expect(seenAt(seen, 1).turnState).toContain(buildStallRecoveryNote("reasoning_exhausted"));
+      expect(infoCalls("engine.turn.stall_recovery")[0]).toMatchObject({
+        effortLowered: false,
+        guardReason: "no_current_request_evidence",
+      });
       expect(mockHasPendingForSession).not.toHaveBeenCalled();
     });
 
