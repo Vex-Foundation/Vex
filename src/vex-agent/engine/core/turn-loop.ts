@@ -533,7 +533,13 @@ async function runTurnLoopBody(
         promptStackMs,
       },
     );
-    currentTokenCount = turnResult.promptTokens;
+    // A round a bound stopped before its usage chunk reports zero prompt
+    // tokens; it did not shrink the context, so keep the last real reading
+    // (`executeTurn` skips the usage row and the session update for the same
+    // reason).
+    if (turnResult.timedOut === null || turnResult.usageObserved) {
+      currentTokenCount = turnResult.promptTokens;
+    }
     observeBand(currentTokenCount, "post_turn_text");
 
     // Stop-during-inference (9-5a): the consumer CAPTURED the abort at stream

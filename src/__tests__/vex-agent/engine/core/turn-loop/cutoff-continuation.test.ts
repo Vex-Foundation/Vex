@@ -87,7 +87,32 @@ vi.mock("@vex-agent/engine/events/index.js", () => ({
   // a streaming provider used in these tests doesn't crash on `emit`.
   streamDeltaBus: { emit: vi.fn(), subscribe: vi.fn(), size: vi.fn(), clear: vi.fn() },
   toStreamDeltaEvent: vi.fn(),
+  toStreamAbortedEvent: vi.fn(),
 }));
+
+// Scripted inference-bound stops: the REAL `runStreamingInference` runs, then
+// the chosen call is reported as timed out, shaped as the contract returns it.
+const timeoutScript = vi.hoisted(() => ({ byCall: new Set<number>(), calls: 0 }));
+vi.mock("@vex-agent/inference/stream-consumer.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@vex-agent/inference/stream-consumer.js")>();
+  return {
+    ...actual,
+    runStreamingInference: async (
+      ...args: Parameters<typeof actual.runStreamingInference>
+    ): ReturnType<typeof actual.runStreamingInference> => {
+      const call = timeoutScript.calls;
+      timeoutScript.calls += 1;
+      const result = await actual.runStreamingInference(...args);
+      if (!timeoutScript.byCall.has(call)) return result;
+      return {
+        response: { ...result.response, toolCalls: null, finishReason: null, malformedToolCallCount: 0 },
+        aborted: false,
+        usageObserved: result.usageObserved,
+        timedOut: "idle",
+      };
+    },
+  };
+});
 
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   incrementIterations: (...a: unknown[]) => mockIncrementIterations(...a),
@@ -504,6 +529,8 @@ function boardSpec(title: string): BoardSpecV1 {
 describe("turn loop cut-off answer continuation (R-9)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    timeoutScript.byCall.clear();
+    timeoutScript.calls = 0;
     cutoffSwitch.enabled = true;
     mockHasPendingForSession.mockResolvedValue(false);
     mockGetSessionForLoop.mockResolvedValue({ tokenCount: 0 });
@@ -583,6 +610,27 @@ describe("turn loop cut-off answer continuation (R-9)", () => {
     expect(result.stopReason).toBe(null);
     // Not treated as a stall: no recovery note was ever sent.
     expect(seen.some((s) => s.turnState.includes("# Last Attempt Produced No Action"))).toBe(false);
+  });
+
+  it("a continuation stopped by an inference bound saves only the fragment, marked", async () => {
+    timeoutScript.byCall.add(1);
+    const { result, seen } = await run([cutRound("Before the stall"), textRound(" NEVER SAVED"), textRound("unreachable")]);
+
+    expect(seen).toHaveLength(2);
+    expect(onlyRow().content).toBe(`Before the stall${CUTOFF_ANSWER_SUFFIX}`);
+    expect(JSON.stringify(mockAddMessage.mock.calls)).not.toContain("NEVER SAVED");
+    expect(result.stopReason).toBe(null);
+    expect(infoCalls("engine.turn.cutoff_continuation_resolved")[0]).toMatchObject({ outcome: "timed_out" });
+  });
+
+  it("a timed-out first round is a stall, never a cut-off answer", async () => {
+    timeoutScript.byCall.add(0);
+    const { seen } = await run([cutRound("Half"), textRound("Done.")]);
+
+    expect(seen).toHaveLength(2);
+    expect(seenAt(seen, 1).turnState).not.toContain(NOTE_HEADING);
+    expect(seenAt(seen, 1).turnState).toContain(buildStallRecoveryNote("stream_timeout"));
+    expect(savedRows().map((r) => r.content)).toEqual(["Done."]);
   });
 
   it("a continuation that calls tools saves the marked fragment first, then runs the round normally", async () => {

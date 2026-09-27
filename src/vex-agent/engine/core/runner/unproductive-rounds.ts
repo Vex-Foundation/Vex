@@ -43,12 +43,7 @@
  */
 
 import { hasActionableInferenceResponse } from "@vex-agent/inference/response-validation.js";
-
-/**
- * Which Kairos inference bound stopped a round. Mirrors the inference layer's
- * `InferenceStallKind` (stream-consumer.ts) until that type is exported.
- */
-export type InferenceStallKind = "first_chunk" | "idle" | "reasoning_only" | "round_deadline";
+import type { InferenceStallKind } from "@vex-agent/inference/stream-consumer.js";
 
 /**
  * Consecutive rounds that may emit nothing before the turn stops with
@@ -94,11 +89,8 @@ export interface InferenceRoundFields {
   readonly finishReason: string | null;
   /** Tool calls the inference layer dropped as unassemblable. */
   readonly malformedToolCallCount: number;
-  /**
-   * The inference bound that stopped this round, or null when none fired.
-   * Absent reads as null.
-   */
-  readonly timedOut?: InferenceStallKind | null;
+  /** The inference bound that stopped this round, or null when none fired. */
+  readonly timedOut: InferenceStallKind | null;
 }
 
 /**
@@ -148,7 +140,7 @@ export type UnproductiveRoundKind = Exclude<InferenceRoundClassification["kind"]
  * does the ordinary productive rule apply.
  */
 export function classifyInferenceRound(round: InferenceRoundFields): InferenceRoundClassification {
-  if (round.timedOut !== undefined && round.timedOut !== null) {
+  if (round.timedOut !== null) {
     return { kind: "stream_timeout", stall: round.timedOut };
   }
   if (round.malformedToolCallCount > 0) {

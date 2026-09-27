@@ -26,6 +26,7 @@ import { requireValue } from "../../../../helpers/require-value.js";
 
 const mockAddMessage = vi.fn();
 const mockAddEngineMessage = vi.fn();
+const mockStreamEmit = vi.fn<(event: unknown) => void>();
 const mockGetLiveMessages = vi.fn().mockResolvedValue([]);
 const mockGetOperatorInstructionsAfter = vi.fn().mockResolvedValue([]);
 const mockDispatchTool = vi.fn();
@@ -84,9 +85,59 @@ vi.mock("@vex-agent/engine/events/index.js", () => ({
   emitTranscriptAppend: vi.fn(),
   // 9-5a: executeTurn emits stream deltas through this barrel. Stub the bus so
   // a streaming provider used in these tests doesn't crash on `emit`.
-  streamDeltaBus: { emit: vi.fn(), subscribe: vi.fn(), size: vi.fn(), clear: vi.fn() },
+  streamDeltaBus: {
+    emit: (event: unknown) => mockStreamEmit(event),
+    subscribe: vi.fn(),
+    size: vi.fn(),
+    clear: vi.fn(),
+  },
   toStreamDeltaEvent: vi.fn(),
+  // The terminal delta a timed-out round ends its preview with: recorded as a
+  // plain, typed value so the test can check which stream it closes.
+  toStreamAbortedEvent: (sessionId: string, streamId: string, sequence: number) => ({
+    kind: "aborted" as const,
+    sessionId,
+    streamId,
+    sequence,
+  }),
 }));
+
+// Timed-out rounds (Kairos R-3/R-4). The bounds themselves live in the
+// inference layer; here the REAL `runStreamingInference` runs and a scripted
+// round's result is then reported as stopped by a bound, exactly as the
+// contract shapes it: returned (not thrown), not aborted, the streamed text as
+// the partial, no tool calls, no finish reason.
+const timeoutScript = vi.hoisted(() => ({
+  byCall: new Map<number, { kind: "first_chunk" | "idle" | "reasoning_only" | "round_deadline"; usage: boolean }>(),
+  calls: 0,
+}));
+vi.mock("@vex-agent/inference/stream-consumer.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@vex-agent/inference/stream-consumer.js")>();
+  return {
+    ...actual,
+    runStreamingInference: async (
+      ...args: Parameters<typeof actual.runStreamingInference>
+    ): ReturnType<typeof actual.runStreamingInference> => {
+      const call = timeoutScript.calls;
+      timeoutScript.calls += 1;
+      const result = await actual.runStreamingInference(...args);
+      const scripted = timeoutScript.byCall.get(call);
+      if (scripted === undefined) return result;
+      return {
+        response: {
+          ...result.response,
+          toolCalls: null,
+          finishReason: null,
+          malformedToolCallCount: 0,
+          usage: scripted.usage ? result.response.usage : { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        },
+        aborted: false,
+        usageObserved: scripted.usage,
+        timedOut: scripted.kind,
+      };
+    },
+  };
+});
 
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
   incrementIterations: (...a: unknown[]) => mockIncrementIterations(...a),
@@ -443,6 +494,8 @@ function historyWith(toolName: string): Message[] {
 describe("turn loop stall recovery (R-5)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    timeoutScript.byCall.clear();
+    timeoutScript.calls = 0;
     recoverySwitch.enabled = true;
     mockHasPendingForSession.mockResolvedValue(false);
     mockGetSessionForLoop.mockResolvedValue({ tokenCount: 0 });
@@ -611,6 +664,129 @@ describe("turn loop stall recovery (R-5)", () => {
     expect(persistedText()).not.toContain(NOTE_HEADING);
     expect(seenAt(seen, 2).turnState).not.toContain(NOTE_HEADING);
     expect(seenAt(seen, 2).effort).toBe("high");
+  });
+
+  describe("a round stopped by an inference bound (stream_timeout)", () => {
+    /** Mark call `index` (0-based) as stopped by `kind`. */
+    function timeOut(
+      index: number,
+      kind: "first_chunk" | "idle" | "reasoning_only" | "round_deadline",
+      usage = false,
+    ): void {
+      timeoutScript.byCall.set(index, { kind, usage });
+    }
+
+    function abortedDeltas(): unknown[] {
+      return mockStreamEmit.mock.calls
+        .map((c) => c[0])
+        .filter((e) => typeof e === "object" && e !== null && "kind" in e && e.kind === "aborted");
+    }
+
+    const partialRound: readonly StreamChunk[] = [
+      { type: "content", text: "I will now swap 5 SOL for" },
+      { type: "done", finishReason: "stop" },
+    ];
+
+    it.each(["first_chunk", "idle", "reasoning_only", "round_deadline"] as const)(
+      "%s: recovery note on the next request only, partial never persisted, preview closed",
+      async (kind) => {
+        timeOut(0, kind);
+        const { result, seen } = await run([partialRound, textRound("Done."), textRound("unreachable")]);
+
+        expect(seen).toHaveLength(2);
+        expect(seenAt(seen, 0).turnState).not.toContain(NOTE_HEADING);
+        expect(seenAt(seen, 1).turnState).toContain(buildStallRecoveryNote("stream_timeout"));
+        expect(buildStallRecoveryNote("stream_timeout")).toContain(
+          "Your last attempt took too long without producing an action and was stopped. Act now: call the next tool with complete arguments, or give your answer.",
+        );
+        // Same effort guard as every other recovery: all guards pass here.
+        expect(seen.map((s) => s.effort)).toEqual(["high", "low"]);
+        // The timed-out fragment is never persisted and never enters history.
+        expect(persistedText()).not.toContain("I will now swap");
+        expect(seenAt(seen, 1).history).not.toContain("I will now swap");
+        expect(mockAddMessage).toHaveBeenCalledTimes(1);
+        expect(result.text).toBe("Done.");
+        expect(result.stopReason).toBe(null);
+        // The terminal delta closes exactly the timed-out stream, after its
+        // two deltas (content + done).
+        expect(abortedDeltas()).toEqual([
+          expect.objectContaining({ kind: "aborted", sessionId: "session-1", sequence: 2 }),
+        ]);
+        expect(mockLoggerWarn.mock.calls.find((c) => c[0] === "engine.turn.unproductive_round")?.[1]).toMatchObject({
+          classification: "stream_timeout",
+          stallKind: kind,
+          droppedContentChars: "I will now swap 5 SOL for".length,
+        });
+        expect(infoCalls("engine.turn.stall_recovery")[0]).toMatchObject({
+          previousClassification: "stream_timeout",
+        });
+      },
+    );
+
+    it("a timed-out round never dispatches a tool call, even one that streamed in full", async () => {
+      timeOut(0, "round_deadline");
+      const { result } = await run([readToolRound("call-1"), textRound("Done.")]);
+
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      expect(result.toolCallsMade).toBe(0);
+      expect(persistedText()).not.toContain("call-1");
+    });
+
+    it("a timed-out recovery ends the turn with no_progress and the timeout class", async () => {
+      timeOut(0, "first_chunk");
+      timeOut(1, "idle");
+      const { result, seen } = await run([partialRound, partialRound, textRound("unreachable")]);
+
+      expect(seen).toHaveLength(2);
+      expect(result.stopReason).toBe("no_progress");
+      expect(result.lastUnproductiveKind).toBe("stream_timeout");
+      expect(mockAddMessage).not.toHaveBeenCalled();
+      expect(abortedDeltas()).toHaveLength(2);
+      expect(mockLoggerWarn.mock.calls.find((c) => c[0] === "engine.turn.no_progress_stop")?.[1]).toMatchObject({
+        lastUnproductiveKind: "stream_timeout",
+      });
+    });
+
+    it("a streak that ENDS in a timeout reports the timeout class, whatever started it", async () => {
+      timeOut(1, "reasoning_only");
+      const { result } = await run([blankRound, partialRound, textRound("unreachable")]);
+
+      expect(result.stopReason).toBe("no_progress");
+      expect(result.lastUnproductiveKind).toBe("stream_timeout");
+    });
+
+    it("a timeout after a timeout-free stall reports that stall's class instead", async () => {
+      timeOut(0, "idle");
+      const { result } = await run([partialRound, blankRound, textRound("unreachable")]);
+
+      expect(result.stopReason).toBe("no_progress");
+      expect(result.lastUnproductiveKind).toBe("blank");
+    });
+
+    it("a timed-out round without usage does not reset the context reading", async () => {
+      // Pre-loop reading 850 of 1000 is the warning band. The timed-out round
+      // reports no usage (a zero-filled placeholder), so the next round must
+      // still be projected at "warning", not at an empty context.
+      timeOut(0, "idle", false);
+      mockGetOpenAITools.mockClear();
+      const { provider } = recordingProvider([partialRound, textRound("Done.")]);
+      const result = await runTurnLoop(
+        makeContext(), [], null, 850, provider, makeConfig(), [],
+        {
+          ...loopConfig,
+          contextLimit: 1000,
+          baseVisibility: { permission: "restricted", sessionKind: "agent", missionRunActive: false, planMode: false },
+        },
+      );
+      expect(result.text).toBe("Done.");
+      const bands: unknown[] = mockGetOpenAITools.mock.calls.map((c: unknown[]) => {
+        const ctx = c[0];
+        return typeof ctx === "object" && ctx !== null && "contextUsageBand" in ctx ? ctx.contextUsageBand : null;
+      });
+      expect(bands).toEqual(["warning", "warning"]);
+      const attempts = mockInsertInferenceAttempt.mock.calls.map((c) => c[0]);
+      expect(attempts.map((a) => a.outcome)).toEqual(["timeout", "completed"]);
+    });
   });
 
   it("switched off: no note, no effort change, no approval read, same stall stop as before", async () => {

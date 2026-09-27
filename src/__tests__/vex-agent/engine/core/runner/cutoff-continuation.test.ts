@@ -20,6 +20,7 @@ function round(overrides: Partial<CutoffRoundFields>): CutoffRoundFields {
     reasoning: null,
     finishReason: "stop",
     malformedToolCallCount: 0,
+    timedOut: null,
     ...overrides,
   };
 }

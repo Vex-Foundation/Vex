@@ -13,6 +13,7 @@ function round(overrides: Partial<InferenceRoundFields>): InferenceRoundFields {
     toolCalls: null,
     finishReason: "stop",
     malformedToolCallCount: 0,
+    timedOut: null,
     ...overrides,
   };
 }
@@ -87,7 +88,7 @@ describe("classifyInferenceRound", () => {
       ).toEqual({ kind: "stream_timeout", stall: "round_deadline" });
     });
 
-    it("null or absent timedOut classifies exactly as before", () => {
+    it("a null timedOut classifies exactly as before", () => {
       expect(classifyInferenceRound(round({ content: "hi", timedOut: null }))).toEqual({ kind: "productive" });
       expect(classifyInferenceRound(round({ content: "" }))).toEqual({ kind: "blank" });
     });

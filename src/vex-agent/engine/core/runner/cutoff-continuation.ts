@@ -33,7 +33,7 @@
  */
 
 import type { Message } from "@vex-agent/db/repos/messages.js";
-import type { InferenceStallKind } from "./unproductive-rounds.js";
+import type { InferenceStallKind } from "@vex-agent/inference/stream-consumer.js";
 
 /** Switch for the whole mechanism. `false` = save the cut-off fragment as-is. */
 export const CUTOFF_CONTINUATION_ENABLED = true;
@@ -60,7 +60,7 @@ export interface CutoffRoundFields {
   readonly reasoning: string | null;
   readonly finishReason: string | null;
   readonly malformedToolCallCount: number;
-  readonly timedOut?: InferenceStallKind | null;
+  readonly timedOut: InferenceStallKind | null;
 }
 
 function hasToolCalls(round: CutoffRoundFields): boolean {
@@ -78,7 +78,7 @@ function hasText(content: string | null): content is string {
  */
 export function detectCutOffAnswer(round: CutoffRoundFields): CutOffAnswer | null {
   if (round.finishReason !== "length") return null;
-  if (round.timedOut !== undefined && round.timedOut !== null) return null;
+  if (round.timedOut !== null) return null;
   if (hasToolCalls(round)) return null;
   if (!hasText(round.content)) return null;
   return { content: round.content, reasoning: round.reasoning };
@@ -134,7 +134,7 @@ export function resolveCutoffContinuation(
   continuation: CutoffRoundFields,
 ): CutoffResolution {
   const marked = partial.content + CUTOFF_ANSWER_SUFFIX;
-  if (continuation.timedOut !== undefined && continuation.timedOut !== null) {
+  if (continuation.timedOut !== null) {
     // A bound stopped it: its text is an unfinished fragment of a fragment and
     // is never persisted, exactly as for any timed-out round.
     return { kind: "answer", outcome: "timed_out", content: marked, reasoning: partial.reasoning };
