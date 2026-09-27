@@ -38,6 +38,7 @@ import type {
 } from "./types.js";
 
 import { loadEnvConfig } from "./config.js";
+import type { AgentStreamBounds } from "../../lib/agent-config.js";
 import {
   OPENROUTER_APP_URL,
   OPENROUTER_APP_TITLE,
@@ -85,6 +86,8 @@ export class OpenRouterProvider implements InferenceProvider {
   private readonly contextLimit: number;
   private readonly temperature: number | undefined;
   private readonly maxOutputTokens: number;
+  /** Kairos stream bounds (Phase 2B), stamped onto every loaded config. */
+  private readonly streamBounds: AgentStreamBounds;
   /** Pinned endpoint tag from `OPENROUTER_ENDPOINT_TAG`; undefined ⇒ Auto. */
   private readonly endpointTag: string | undefined;
   private readonly client: OpenRouter;
@@ -117,6 +120,7 @@ export class OpenRouterProvider implements InferenceProvider {
     this.endpointTag = env.openrouterEndpointTag ?? undefined;
     this.temperature = env.temperature ?? undefined;
     this.maxOutputTokens = env.maxOutputTokens;
+    this.streamBounds = env.streamBounds;
 
     this.client = new OpenRouter({
       apiKey: this.apiKey,
@@ -257,6 +261,7 @@ export class OpenRouterProvider implements InferenceProvider {
       contextLimit: this.contextLimit,
       temperature: this.temperature,
       maxOutputTokens: this.maxOutputTokens,
+      streamBounds: this.streamBounds,
       endpointTag: this.endpointTag,
     });
   }

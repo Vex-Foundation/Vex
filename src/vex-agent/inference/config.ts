@@ -17,6 +17,8 @@ import {
   AGENT_MAX_OUTPUT_TOKENS,
   AGENT_TEMPERATURE,
   parseAgentEnv,
+  parseAgentStreamBoundsEnv,
+  type AgentStreamBounds,
 } from "../../lib/agent-config.js";
 import logger from "@utils/logger.js";
 
@@ -61,6 +63,8 @@ export interface EnvConfig {
   temperature: number | null;
   /** Max output tokens per response */
   maxOutputTokens: number;
+  /** Kairos stream bounds (Phase 2B), ms; 0 disables a bound. */
+  streamBounds: AgentStreamBounds;
 }
 
 const VALID_PROVIDERS = new Set<string>(["openrouter"]);
@@ -95,7 +99,8 @@ export function loadEnvConfig(): EnvConfig {
   // delegated to shared parser (returns collected ParseErrors so we
   // preserve the "throw all at once" engine contract).
   const agentParse = parseAgentEnv(process.env);
-  for (const e of agentParse.errors) {
+  const boundsParse = parseAgentStreamBoundsEnv(process.env);
+  for (const e of [...agentParse.errors, ...boundsParse.errors]) {
     if (e.reason === "out_of_range") {
       errors.push(
         `${e.key}="${e.raw}" is invalid. Must be ${e.detail?.min ?? "?"}-${e.detail?.max ?? "?"}`,
@@ -120,6 +125,7 @@ export function loadEnvConfig(): EnvConfig {
     openrouterEndpointTag,
     temperature: agentParse.value.temperature,
     maxOutputTokens: agentParse.value.maxOutputTokens,
+    streamBounds: boundsParse.value,
   };
 }
 

@@ -155,4 +155,49 @@ describe("loadEnvConfig", () => {
 
     expect(() => loadEnvConfig()).toThrow(/AGENT_PROVIDER.*AGENT_CONTEXT_LIMIT.*AGENT_TEMPERATURE/s);
   });
+
+  // ── Kairos stream bounds (Phase 2B) ──────────────────────────────
+
+  it("defaults the stream bounds to the owner's conservative values", () => {
+    expect(loadEnvConfig().streamBounds).toEqual({
+      firstChunkTimeoutMs: 90_000,
+      streamIdleTimeoutMs: 60_000,
+      reasoningOnlyTimeoutMs: 150_000,
+      inferenceRoundDeadlineMs: 300_000,
+    });
+  });
+
+  it("accepts 0 for every stream bound (disabled)", () => {
+    process.env.AGENT_FIRST_CHUNK_TIMEOUT_MS = "0";
+    process.env.AGENT_STREAM_IDLE_TIMEOUT_MS = "0";
+    process.env.AGENT_REASONING_ONLY_TIMEOUT_MS = "0";
+    process.env.AGENT_INFERENCE_ROUND_DEADLINE_MS = "0";
+    expect(loadEnvConfig().streamBounds).toEqual({
+      firstChunkTimeoutMs: 0,
+      streamIdleTimeoutMs: 0,
+      reasoningOnlyTimeoutMs: 0,
+      inferenceRoundDeadlineMs: 0,
+    });
+  });
+
+  it("parses explicit stream bounds and treats blank as the default", () => {
+    process.env.AGENT_STREAM_IDLE_TIMEOUT_MS = "30000";
+    process.env.AGENT_INFERENCE_ROUND_DEADLINE_MS = "  ";
+    const bounds = loadEnvConfig().streamBounds;
+    expect(bounds.streamIdleTimeoutMs).toBe(30_000);
+    expect(bounds.inferenceRoundDeadlineMs).toBe(300_000);
+  });
+
+  it("rejects negative, fractional, non-numeric and over-ceiling stream bounds", () => {
+    for (const raw of ["-1", "1500.5", "soon", "3600001"]) {
+      process.env.AGENT_REASONING_ONLY_TIMEOUT_MS = raw;
+      expect(() => loadEnvConfig()).toThrow("AGENT_REASONING_ONLY_TIMEOUT_MS");
+    }
+  });
+
+  it("aggregates a stream-bound error with the other AGENT_ errors", () => {
+    process.env.AGENT_CONTEXT_LIMIT = "5";
+    process.env.AGENT_FIRST_CHUNK_TIMEOUT_MS = "-5";
+    expect(() => loadEnvConfig()).toThrow(/AGENT_CONTEXT_LIMIT.*AGENT_FIRST_CHUNK_TIMEOUT_MS/s);
+  });
 });

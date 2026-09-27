@@ -69,6 +69,70 @@ export const AGENT_FIELDS = [
   AGENT_TEMPERATURE,
 ] as const;
 
+// ── Kairos stream bounds (Phase 2B) ─────────────────────────────
+//
+// Wall-clock bounds on ONE model inference round, in milliseconds. `0`
+// disables a bound. They never apply to a tool dispatch. The defaults are the
+// owner's conservative 2026-09-27 values (2-6x the worst observed live gaps),
+// to be tightened from the representative baseline. The ceiling (1 h) is a
+// sanity bound, not a recommendation.
+
+const STREAM_BOUND_MAX_MS = 3_600_000;
+
+/** Request start → first chunk of any type. */
+export const AGENT_FIRST_CHUNK_TIMEOUT_MS: FieldWithDefault = {
+  key: "AGENT_FIRST_CHUNK_TIMEOUT_MS",
+  kind: "int",
+  min: 0,
+  max: STREAM_BOUND_MAX_MS,
+  default: 90_000,
+};
+
+/** Longest silence allowed between two chunks after the first. */
+export const AGENT_STREAM_IDLE_TIMEOUT_MS: FieldWithDefault = {
+  key: "AGENT_STREAM_IDLE_TIMEOUT_MS",
+  kind: "int",
+  min: 0,
+  max: STREAM_BOUND_MAX_MS,
+  default: 60_000,
+};
+
+/** First reasoning chunk → first content or tool-call delta. */
+export const AGENT_REASONING_ONLY_TIMEOUT_MS: FieldWithDefault = {
+  key: "AGENT_REASONING_ONLY_TIMEOUT_MS",
+  kind: "int",
+  min: 0,
+  max: STREAM_BOUND_MAX_MS,
+  default: 150_000,
+};
+
+/**
+ * TOTAL wall clock for one inference round, including SDK retries, endpoint
+ * failover backoff and the buffered fallback.
+ */
+export const AGENT_INFERENCE_ROUND_DEADLINE_MS: FieldWithDefault = {
+  key: "AGENT_INFERENCE_ROUND_DEADLINE_MS",
+  kind: "int",
+  min: 0,
+  max: STREAM_BOUND_MAX_MS,
+  default: 300_000,
+};
+
+export const AGENT_STREAM_BOUND_FIELDS = [
+  AGENT_FIRST_CHUNK_TIMEOUT_MS,
+  AGENT_STREAM_IDLE_TIMEOUT_MS,
+  AGENT_REASONING_ONLY_TIMEOUT_MS,
+  AGENT_INFERENCE_ROUND_DEADLINE_MS,
+] as const;
+
+/** Effective stream bounds, in ms; `0` means the bound is disabled. */
+export interface AgentStreamBounds {
+  readonly firstChunkTimeoutMs: number;
+  readonly streamIdleTimeoutMs: number;
+  readonly reasoningOnlyTimeoutMs: number;
+  readonly inferenceRoundDeadlineMs: number;
+}
+
 export interface ParseError {
   readonly key: string;
   readonly raw: string;
@@ -99,6 +163,27 @@ export function parseAgentEnv(env: EnvLike): ParseResult<AgentEffective> {
       contextLimit: contextLimit ?? AGENT_CONTEXT_LIMIT.default!,
       maxOutputTokens: maxOutputTokens ?? AGENT_MAX_OUTPUT_TOKENS.default!,
       temperature,
+    },
+    errors,
+  };
+}
+
+/**
+ * Parse the Kairos stream bounds. Kept apart from `parseAgentEnv` so the
+ * wizard's agent-core writer, which validates only the fields it writes, is
+ * unaffected. Same contract: blank = default, invalid = collected error and
+ * the default applies.
+ */
+export function parseAgentStreamBoundsEnv(env: EnvLike): ParseResult<AgentStreamBounds> {
+  const errors: ParseError[] = [];
+  const read = (field: FieldWithDefault): number =>
+    parseFieldOrDefault(field, env[field.key], errors) ?? field.default ?? 0;
+  return {
+    value: {
+      firstChunkTimeoutMs: read(AGENT_FIRST_CHUNK_TIMEOUT_MS),
+      streamIdleTimeoutMs: read(AGENT_STREAM_IDLE_TIMEOUT_MS),
+      reasoningOnlyTimeoutMs: read(AGENT_REASONING_ONLY_TIMEOUT_MS),
+      inferenceRoundDeadlineMs: read(AGENT_INFERENCE_ROUND_DEADLINE_MS),
     },
     errors,
   };

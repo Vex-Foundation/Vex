@@ -45,6 +45,8 @@ const { MODEL_CONFIG_CACHE_TTL_MS, MODEL_CONFIG_STALE_RETRY_MS } = await import(
   "../../../vex-agent/inference/config.js"
 );
 
+const { requireValue } = await import("../../helpers/require-value.js");
+
 const MODEL_ID = "test/model";
 
 /**
@@ -131,6 +133,18 @@ describe("OpenRouterProvider.loadConfig caching (F4)", () => {
     expect(first?.cachePricePerM).toBeCloseTo(0.5, 9);
     expect(first?.cacheWritePricePerM).toBeCloseTo(1.25, 9);
     expect(first?.reasoningPricePerM).toBeCloseTo(3, 9);
+  });
+
+  it("stamps the Kairos stream bounds from env onto every loaded config", async () => {
+    process.env.AGENT_FIRST_CHUNK_TIMEOUT_MS = "45000";
+    process.env.AGENT_STREAM_IDLE_TIMEOUT_MS = "0";
+    listMock.mockResolvedValue(catalog(PRICING_A));
+    const provider = new OpenRouterProvider();
+    const config = requireValue(await provider.loadConfig());
+    expect(config.firstChunkTimeoutMs).toBe(45_000);
+    expect(config.streamIdleTimeoutMs).toBe(0);
+    expect(config.reasoningOnlyTimeoutMs).toBe(150_000);
+    expect(config.inferenceRoundDeadlineMs).toBe(300_000);
   });
 
   it("(a2) cacheWritePricePerM is null when the catalog has no inputCacheWrite", async () => {

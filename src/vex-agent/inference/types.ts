@@ -104,6 +104,19 @@ export interface InferenceConfig {
   temperature?: number;
   /** Max output tokens per response — from AGENT_MAX_OUTPUT_TOKENS env */
   maxOutputTokens: number;
+  // Kairos stream bounds (Phase 2B), in ms, from the `AGENT_*_TIMEOUT_MS` /
+  // `AGENT_INFERENCE_ROUND_DEADLINE_MS` env fields (`src/lib/agent-config.ts`).
+  // Enforced by `runStreamingInference` on model inference only. `0` or
+  // ABSENT disables a bound, so a config built without them behaves exactly
+  // as before; `loadConfig()` always sets all four.
+  /** Request start → first chunk of any type. */
+  firstChunkTimeoutMs?: number;
+  /** Longest silence between two chunks after the first. */
+  streamIdleTimeoutMs?: number;
+  /** First reasoning chunk → first content or tool-call delta. */
+  reasoningOnlyTimeoutMs?: number;
+  /** Total wall clock for the round: stream, failover retries, fallback. */
+  inferenceRoundDeadlineMs?: number;
   /**
    * The model's advertised max completion tokens (the `/models` catalog's
    * `top_provider.max_completion_tokens`, validated). Absent when the catalog

@@ -15,6 +15,7 @@ import { resolveEffectiveContextLimit } from "../context-window.js";
 import { parseModelMaxCompletionTokens } from "./answer-headroom.js";
 import logger from "@utils/logger.js";
 import { extractCauseCode } from "../../../lib/error-cause.js";
+import type { AgentStreamBounds } from "../../../lib/agent-config.js";
 
 // ── Pricing parse ────────────────────────────────────────────────
 //
@@ -71,6 +72,11 @@ export interface ModelConfigSpec {
   readonly contextLimit: number;
   readonly temperature: number | undefined;
   readonly maxOutputTokens: number;
+  /**
+   * Kairos stream bounds (Phase 2B), copied onto the config verbatim. Absent
+   * leaves every bound off.
+   */
+  readonly streamBounds?: AgentStreamBounds;
   /** Optional pinned endpoint tag (`OPENROUTER_ENDPOINT_TAG`). */
   readonly endpointTag: string | undefined;
 }
@@ -247,6 +253,7 @@ export async function fetchModelInferenceConfig(
       contextLimit: contextLimit.effective,
       temperature: spec.temperature,
       maxOutputTokens: spec.maxOutputTokens,
+      ...spec.streamBounds,
       ...(modelMaxCompletionTokens !== undefined && { modelMaxCompletionTokens }),
       ...(spec.endpointTag !== undefined && { endpointTag: spec.endpointTag }),
       inputPricePerM,
