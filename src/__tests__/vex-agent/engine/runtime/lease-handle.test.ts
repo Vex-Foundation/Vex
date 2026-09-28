@@ -106,10 +106,14 @@ describe("LeaseHandle", () => {
       renewFn,
       releaseFn,
       onLeaseLost,
+      // The row is still there under another claim's token: a takeover.
+      probeFn: vi.fn().mockResolvedValue(SAMPLE_LEASE),
     });
 
     await timer.trigger();
-    expect(onLeaseLost).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(onLeaseLost).toHaveBeenCalledTimes(1));
+    expect(handle.lostSignal.aborted).toBe(true);
+    expect(handle.lostReason()).toBe("taken_over");
     expect(onLeaseLost).toHaveBeenCalledWith(expect.stringContaining("stolen"));
     expect(timer.clearInterval).toHaveBeenCalledTimes(1);
     await handle.release();
