@@ -2,11 +2,10 @@
  * Unit tests for the loop-wake repo. Pool / PoolClient are mocked; no DB.
  *
  * Scripted-client pattern matches `knowledge-lifecycle.test.ts` for
- * consistency: each claim/cancel/enqueue test declares the sequence of SQL
- * statements expected against the mock client (for `claimDue` we verify
- * BEGIN → UPDATE → COMMIT order and release), and structural assertions
- * check the SQL contains the load-bearing fragments (`FOR UPDATE SKIP
- * LOCKED`, `ON CONFLICT DO NOTHING`, partial-index predicate, etc.).
+ * consistency: structural assertions check the SQL contains the load-bearing
+ * fragments (`ON CONFLICT DO NOTHING`, partial-index predicate, the
+ * non-destructive candidate read, etc.). The atomic claim itself is proved
+ * against real Postgres in `integration/engine/mission-wake-claim.int.test.ts`.
  */
 
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
@@ -248,75 +247,43 @@ describe("loop-wake repo — monotonic promotion", () => {
   });
 });
 
-// ── claimDue ────────────────────────────────────────────────────────
+// ── Mission-scoped candidates (non-destructive) ─────────────────────
 
-describe("loop-wake repo — claimDue (exactly-once)", () => {
+describe("loop-wake repo — mission-scoped candidates", () => {
   beforeEach(() => {
     resetMocks();
     mockPoolQueryOne = makePoolQueryOneMock();
     mockPoolExecute = makePoolExecuteMock();
   });
 
-  it("uses a dedicated connection with BEGIN/COMMIT wrapping the UPDATE", async () => {
-    mockClientResponses = [
-      { rows: [] }, // BEGIN
-      { rows: [makeRow({ status: "consumed", consumed_at: NOW.toISOString() })] }, // UPDATE
-      { rows: [] }, // COMMIT
-    ];
-
-    const result = await loopWake.claimDue(NOW, 10);
-
-    expect(result).toHaveLength(1);
-    expect(result[0].status).toBe("consumed");
-    expect(result[0].consumedAt).toBe(NOW.toISOString());
-
-    // Query order: BEGIN → UPDATE → COMMIT.
-    expect(clientQueryLog.map((c) => c.sql.trim().split(/\s+/)[0]?.toUpperCase()))
-      .toEqual(["BEGIN", "UPDATE", "COMMIT"]);
-
-    // Structural assertions on the UPDATE body — race-safety contract.
-    const updateSql = clientQueryLog[1].sql;
-    expect(updateSql).toContain("UPDATE loop_wake_requests");
-    expect(updateSql).toContain("SET status = 'consumed'");
-    expect(updateSql).toContain("FOR UPDATE SKIP LOCKED");
-    expect(updateSql).toContain("WHERE status = 'pending'");
-    expect(updateSql).toContain("due_at <= $1::timestamptz");
-    expect(updateSql).toContain("LIMIT $2");
-    expect(updateSql).toContain("RETURNING *");
-
-    // Connection released on success.
-    expect(clientReleaseSpy).toHaveBeenCalledTimes(1);
+  /**
+   * The destructive batch claim consumed every due row before any run started,
+   * so a crash after the first start stranded the rest. It must not come back:
+   * the only mission-scoped read is a plain SELECT.
+   */
+  it("no longer exposes the destructive batch claim", () => {
+    expect("claimDue" in loopWake).toBe(false);
   });
 
-  it("rolls back and releases when the UPDATE throws, then rethrows", async () => {
-    const boom = new Error("connection reset");
-    mockClientResponses = [
-      { rows: [] }, // BEGIN
-      boom,          // UPDATE throws
-      { rows: [] }, // ROLLBACK
-    ];
+  it("lists due mission rows with a plain SELECT that consumes nothing", async () => {
+    const client = await import("@vex-agent/db/client.js");
+    const queryMock = vi.mocked(client.query);
+    queryMock.mockClear();
+    queryMock.mockResolvedValueOnce([makeRow({ id: "22222222-2222-2222-2222-222222222222" })]);
 
-    await expect(loopWake.claimDue(NOW, 10)).rejects.toThrow("connection reset");
+    const result = await loopWake.listDueMissionScoped(NOW, 10);
 
-    // Order: BEGIN → UPDATE (throws) → ROLLBACK.
-    const ops = clientQueryLog.map((c) => c.sql.trim().split(/\s+/)[0]?.toUpperCase());
-    expect(ops[0]).toBe("BEGIN");
-    expect(ops[1]).toBe("UPDATE");
-    expect(ops[2]).toBe("ROLLBACK");
-
-    // Connection released even on error (defensive finally).
-    expect(clientReleaseSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it("returns an empty array when no rows are due", async () => {
-    mockClientResponses = [
-      { rows: [] }, // BEGIN
-      { rows: [] }, // UPDATE — nothing claimed
-      { rows: [] }, // COMMIT
-    ];
-    const result = await loopWake.claimDue(NOW, 10);
-    expect(result).toEqual([]);
-    expect(clientReleaseSpy).toHaveBeenCalledTimes(1);
+    expect(result.map((row) => row.id)).toEqual(["22222222-2222-2222-2222-222222222222"]);
+    const [sql, params] = queryMock.mock.calls[0] ?? [];
+    expect(sql).toContain("SELECT * FROM loop_wake_requests");
+    expect(sql).toContain("status = 'pending'");
+    expect(sql).toContain("mission_run_id IS NOT NULL");
+    expect(sql).toContain("due_at <= $1::timestamptz");
+    expect(sql).not.toContain("UPDATE");
+    expect(sql).not.toContain("consumed");
+    expect(params).toEqual([NOW.toISOString(), 10]);
+    // No dedicated transaction connection is taken for a read.
+    expect(clientQueryLog).toHaveLength(0);
   });
 });
 

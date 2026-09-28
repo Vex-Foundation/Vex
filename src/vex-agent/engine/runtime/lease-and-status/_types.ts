@@ -33,6 +33,14 @@ export interface ClaimRunInput {
    * under any other token - including the same owner id - is `lease_busy`.
    */
   readonly claimToken?: string;
+  /**
+   * The pending wake row that CAUSED this resume, already locked by the caller.
+   * When the run is flipped from `paused_wake`, that row is marked `consumed`
+   * in this commit instead of being swept up by the `consumed_by_resume`
+   * cancellation; every other pending wake for the session is still cancelled.
+   * Only the wake executor's atomic claim passes it.
+   */
+  readonly consumeWakeId?: string;
 }
 
 export type ClaimRunOutcome =

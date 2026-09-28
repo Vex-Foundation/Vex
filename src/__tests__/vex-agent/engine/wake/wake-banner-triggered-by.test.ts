@@ -22,7 +22,6 @@ import {
 } from "@vex-agent/engine/wake/executor/wake-banner.js";
 import { handleClaimed } from "@vex-agent/engine/wake/executor/claimed.js";
 import { handleAgentSessionClaimed } from "@vex-agent/engine/wake/executor/agent-session.js";
-import { handleAutoRetryClaimed } from "@vex-agent/engine/wake/executor/auto-retry.js";
 import type { WakeDeps } from "@vex-agent/engine/wake/executor/deps.js";
 import type { LoopWakeRequest } from "@vex-agent/db/repos/loop-wake.js";
 
@@ -127,14 +126,18 @@ function wake(overrides: Partial<LoopWakeRequest> = {}): LoopWakeRequest {
 
 function deps(overrides: Partial<WakeDeps> = {}): WakeDeps {
   return {
-    claimDue: vi.fn(),
+    listDueMissionWakes: vi.fn(),
+    claimMissionWake: vi.fn().mockResolvedValue({
+      kind: "claimed",
+      route: "continuation",
+      runId: "run-1",
+      lease: { id: "lease-1" },
+    }),
     listDueSessionWakes: vi.fn(),
     claimSessionWake: vi.fn().mockResolvedValue({
       kind: "claimed",
       lease: { id: "lease-1" },
     }),
-    getMissionRun: vi.fn().mockResolvedValue({ id: "run-1", status: "paused_wake" }),
-    casFlipToRunning: vi.fn(),
     injectWakeBanner,
     resumeMissionRun: vi.fn(),
     continueAgentSession: vi.fn(),
@@ -186,10 +189,10 @@ describe("every wake path forwards the cause to the banner", () => {
   });
 
   it("auto-retry resume", async () => {
-    await handleAutoRetryClaimed(
-      wake({ payload: { attempt: 1, triggeredBy: TRIGGER } }),
-      { id: "run-1", status: "paused_error" } as never,
+    await handleClaimed(
+      wake({ payload: { trigger: "error_retry", attempt: 1, triggeredBy: TRIGGER } }),
       deps(),
+      new Date("2026-08-10T12:00:00.000Z"),
     );
     expect(injectWakeBanner).toHaveBeenCalledWith(
       "session-1", "re-check the exit", "2026-08-10T12:30:00.000Z", TRIGGER,

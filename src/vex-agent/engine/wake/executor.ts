@@ -3,30 +3,30 @@
  *
  * Contract:
  *   - Exactly ONE process runs the executor per deployment. Race safety
- *     across ticks is provided by `loopWakeRepo.claimDue` (FOR UPDATE SKIP
- *     LOCKED). Mission-run wake resumes also claim the run row with a CAS
- *     before injecting the wake banner, so `/retry` and wake cannot both
- *     resume the same stale `paused_wake` snapshot.
+ *     across ticks does not depend on that: every row is claimed under the
+ *     session control lock with a locked revalidation, so two concurrent ticks
+ *     can list the same row and still start it at most once.
  *   - The desktop-agent host should start one process-local executor with
  *     hardcoded defaults (interval=2000ms, batchSize=10) after DB bootstrap.
  *     Wake is an installed-runtime concern, not a renderer concern.
  *
- * Tick semantics — TWO reads, because the two wake shapes are claimed
- * differently:
- *   1a. MISSION-SCOPED: `claimDue(now, batchSize)` atomically flips the
- *       pending rows to `consumed` and returns them. Rows the executor cannot
- *       handle (e.g. run status drifted to `running` because a user preempted)
- *       are SKIPPED but NOT unclaimed — the row is terminal once consumed, and
- *       the race is accepted (the user already resumed, so no banner is owed).
- *   1b. SESSION-SCOPED: `listDueSessionWakes` returns CANDIDATES without
- *       consuming anything. Each is then claimed by `claimSessionWake`, which
- *       revalidates the row, acquires the session lease and consumes the row as
- *       ONE transaction under the session control lock. A session has no run
- *       row to serve as backup evidence, so the destructive-first order would
- *       (and did) throw the continuation away on a busy lease — and left a
- *       window in which an operator Stop found nothing to stop.
+ * Tick semantics — both wake shapes are LISTED without consuming anything and
+ * then claimed ONE AT A TIME, each claim followed by its run before the next:
+ *   1a. MISSION-SCOPED: `claimMissionWake` consumes the row, flips the run
+ *       `paused_wake → running` (or re-verifies an auto-retry) and takes the
+ *       run/session lease as ONE transaction under the session control lock. A
+ *       busy lease, or a run whose own turn loop has not parked yet, leaves the
+ *       row pending with a bounded backoff; a run the wake can no longer resume
+ *       has its row retired as `cancelled`.
+ *   1b. SESSION-SCOPED: `claimSessionWake` revalidates the row, acquires the
+ *       session lease and consumes the row as ONE transaction under the same
+ *       lock.
+ *   A crash between two claims therefore leaves every later row pending, and
+ *   `consumed` always means "a runner started from this row".
  *   2.  Every outcome is reported on the returned `ClaimedWake` so tests and
  *       operators can see what the pass actually did.
+ *   3.  The stuck-wake repair (`stuck-wake-repair.ts`) re-arms runs left in
+ *       `paused_wake` with no pending row by the old batch claim.
  *
  * Post-M12 simplification: `full_autonomous` mode is gone. A wake row targets
  * either a mission run or a Full-Autonomous agent SESSION; the executor
@@ -37,10 +37,11 @@
  *
  *   deps.ts       — `WakeDeps` + production default deps wiring.
  *   tick.ts       — `tick` + `ClaimedWake` / `ClaimedWakeOutcome`.
- *   claimed.ts    — normal claimed-job handling (`handleClaimed`).
+ *   claimed.ts    — per-candidate claim + run (`handleClaimed`).
  *   agent-session.ts     — Full-Autonomous agent SESSION continuation.
  *   claim-session-wake.ts — the atomic session wake/lease claim + backoff.
- *   auto-retry.ts — auto-retry handling (`handleAutoRetryClaimed`).
+ *   claim-mission-wake.ts — the atomic mission wake/run/lease claim,
+ *                           including the auto-retry route.
  *   provider.ts   — `isWakeProviderConfigured`.
  *
  * `startWakeExecutor` + `WakeExecutorHandle` + `StartOptions` stay here as the

@@ -45,11 +45,10 @@ type _AssertTypes = [
 
 function makeDeps(overrides: Partial<WakeDeps> = {}): WakeDeps {
   return {
-    claimDue: vi.fn().mockResolvedValue([]),
+    listDueMissionWakes: vi.fn().mockResolvedValue([]),
+    claimMissionWake: vi.fn().mockResolvedValue({ kind: "not_claimable" }),
     listDueSessionWakes: vi.fn().mockResolvedValue([]),
     claimSessionWake: vi.fn().mockResolvedValue({ kind: "not_claimable" }),
-    getMissionRun: vi.fn().mockResolvedValue(null),
-    casFlipToRunning: vi.fn().mockResolvedValue("paused_wake"),
     injectWakeBanner: vi.fn().mockResolvedValue(undefined),
     resumeMissionRun: vi.fn().mockResolvedValue(undefined),
     continueAgentSession: vi.fn().mockResolvedValue(undefined),
@@ -91,28 +90,28 @@ describe("startWakeExecutor — self-scheduling lifecycle (fake timers)", () => 
   it("does not overlap ticks while inFlight is unresolved, and stop() clears the timer + drains the active tick", async () => {
     vi.useFakeTimers();
 
-    // A claimDue we control: the first tick blocks on this deferred so the tick
+    // A candidate list we control: the first tick blocks on this deferred so the tick
     // stays in-flight and we can prove the chain never fires a second timer.
     let releaseClaim: (rows: never[]) => void = () => {};
     const claimGate = new Promise<never[]>((resolve) => {
       releaseClaim = resolve;
     });
-    const claimDue = vi.fn().mockReturnValueOnce(claimGate).mockResolvedValue([]);
-    const deps = makeDeps({ claimDue });
+    const listDueMissionWakes = vi.fn().mockReturnValueOnce(claimGate).mockResolvedValue([]);
+    const deps = makeDeps({ listDueMissionWakes });
 
     const handle = startWakeExecutor({ intervalMs: 2000, batchSize: 5, deps });
 
     // Nothing runs until the initial timeout fires.
-    expect(claimDue).not.toHaveBeenCalled();
+    expect(listDueMissionWakes).not.toHaveBeenCalled();
 
     // Fire the initial timeout → first tick starts and blocks on claimGate.
     await vi.advanceTimersByTimeAsync(2000);
-    expect(claimDue).toHaveBeenCalledTimes(1);
+    expect(listDueMissionWakes).toHaveBeenCalledTimes(1);
 
     // No overlap: advancing more time while the tick is still in-flight must
     // NOT start a second tick (the next timer is only armed in the finally).
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(claimDue).toHaveBeenCalledTimes(1);
+    expect(listDueMissionWakes).toHaveBeenCalledTimes(1);
 
     // stop() while the tick is active: it must clear any pending timer and
     // await the in-flight tick. We resolve the gate shortly after to prove the
@@ -134,7 +133,7 @@ describe("startWakeExecutor — self-scheduling lifecycle (fake timers)", () => 
     // After stop(): the stopped flag short-circuits any rescheduling, so even
     // if a timer had been armed, advancing time triggers no further ticks.
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(claimDue).toHaveBeenCalledTimes(1);
+    expect(listDueMissionWakes).toHaveBeenCalledTimes(1);
   });
 
   it("owns the restart-orphan reclaim handle and drains it on stop()", async () => {

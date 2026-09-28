@@ -13,7 +13,8 @@ export type ClaimedWakeOutcome =
   | { kind: "resumed"; runId: string }
   | { kind: "agent_session_continued"; sessionId: string }
   /**
-   * The session lease was held by unrelated work. The SAME pending row stays
+   * The session lease was held by unrelated work (or, for a mission wake, the
+   * run's own turn loop had not parked yet). The SAME pending row stays
    * pending with a pushed-out `due_at` and incremented attempt metadata —
    * nothing was consumed and nothing was lost. `attempt` is telemetry only; the
    * retry is unbounded by design and only the DELAY is bounded.
@@ -41,17 +42,17 @@ export interface ClaimedWake {
  * outcome so callers (scheduler loop, tests, health endpoints) can observe what
  * the executor actually did.
  *
- * TWO reads, because the two wake shapes are claimed differently:
+ * Both wake shapes are only LISTED here - one non-destructive read each - and
+ * then processed ONE CANDIDATE AT A TIME: claim, run the slice, and only then
+ * claim the next. Each claim revalidates its row and consumes it in the same
+ * transaction that gives a runner the lease (`claim-mission-wake.ts`,
+ * `claim-session-wake.ts`), under the session control lock. The pass therefore
+ * never holds a consumed row that no runner started: a process that dies
+ * mid-pass leaves every later candidate pending, and the first tick after
+ * restart claims it.
  *
- *   - MISSION-SCOPED rows are consumed by the batch `claimDue`, whose
- *     `FOR UPDATE SKIP LOCKED` exactly-once contract is unchanged;
- *   - SESSION-SCOPED rows are only LISTED here. Each is then claimed atomically
- *     under the session control lock (`claim-session-wake.ts`), which is why
- *     this read must be non-destructive: the session identity has to be known
- *     before the per-session lock can be taken.
- *
- * A listed candidate is not a claim. Every one of them is revalidated under the
- * lock, so a row cancelled by an operator Stop between the two simply yields
+ * A listed candidate is not a claim. A row cancelled by an operator Stop, or
+ * claimed by a concurrent tick, between the list and the claim simply yields
  * `skipped_claim_lost`.
  */
 export async function tick(
@@ -59,18 +60,18 @@ export async function tick(
   limit: number,
   deps: WakeDeps,
 ): Promise<ClaimedWake[]> {
-  // Pre-claim provider/config gate. `claimDue` is destructive
-  // (pending→consumed) and the resume below needs the inference provider, so
-  // skip the entire pass (no row consumed) when provider config is absent.
+  // Pre-claim provider/config gate. A claim is destructive (pending→consumed)
+  // and the resume below needs the inference provider, so skip the entire pass
+  // (no row consumed) when provider config is absent.
   if (!deps.isProviderReady()) return [];
 
-  const claimed = [
-    ...await deps.claimDue(now, limit),
+  const candidates = [
+    ...await deps.listDueMissionWakes(now, limit),
     ...await deps.listDueSessionWakes(now, limit),
   ];
   const results: ClaimedWake[] = [];
 
-  for (const wake of claimed) {
+  for (const wake of candidates) {
     try {
       const outcome = await handleClaimed(wake, deps, now);
       results.push({ wake, outcome });

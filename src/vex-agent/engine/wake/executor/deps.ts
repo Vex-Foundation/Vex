@@ -1,10 +1,12 @@
 import type { LoopWakeRequest } from "@vex-agent/db/repos/loop-wake.js";
-import type { MissionRun } from "@vex-agent/db/repos/mission-runs.js";
-import type { MissionRunStatus } from "../../types.js";
 import type {
   ClaimSessionWakeInput,
   ClaimSessionWakeOutcome,
 } from "./claim-session-wake.js";
+import type {
+  ClaimMissionWakeInput,
+  ClaimMissionWakeOutcome,
+} from "./claim-mission-wake.js";
 
 /**
  * Dependencies hoisted out of concrete imports so tests can inject fakes
@@ -14,10 +16,21 @@ import type {
  */
 export interface WakeDeps {
   /**
-   * Claim up to `limit` due MISSION-SCOPED rows, atomically flipping them to
-   * `consumed`. Session-scoped rows are excluded — see `listDueSessionWakes`.
+   * List up to `limit` due MISSION-SCOPED candidates WITHOUT consuming them.
+   * Non-destructive by contract: each row is only claimed by
+   * `claimMissionWake`, one at a time, so a crash between two claims leaves
+   * every later row pending.
    */
-  claimDue(now: Date, limit: number): Promise<LoopWakeRequest[]>;
+  listDueMissionWakes(now: Date, limit: number): Promise<LoopWakeRequest[]>;
+  /**
+   * Revalidate + lease-claim + run flip + consume ONE mission-scoped wake as a
+   * single transaction under the session control lock. A busy lease or a run
+   * still unwinding toward its park leaves the row pending with a bounded
+   * backoff.
+   */
+  claimMissionWake(
+    input: ClaimMissionWakeInput,
+  ): Promise<ClaimMissionWakeOutcome>;
   /**
    * List up to `limit` due SESSION-SCOPED candidates WITHOUT consuming them.
    * Non-destructive by contract: the row is only claimed by
@@ -32,13 +45,6 @@ export interface WakeDeps {
   claimSessionWake(
     input: ClaimSessionWakeInput,
   ): Promise<ClaimSessionWakeOutcome>;
-  /** Fetch a mission run by id (used to re-check status before resume). */
-  getMissionRun(runId: string): Promise<MissionRun | null>;
-  /** Claim a paused run before injecting a wake banner and resuming. */
-  casFlipToRunning(
-    runId: string,
-    fromStatuses: readonly MissionRunStatus[],
-  ): Promise<MissionRunStatus | null>;
   /**
    * Persist a `wake_due` banner for the resume path to pick up.
    *
@@ -68,7 +74,7 @@ export interface WakeDeps {
    */
   continueAgentSession(sessionId: string, runnerOwnerId: string): Promise<void>;
   /**
-   * Pre-claim provider/config gate. `claimDue` is destructive
+   * Pre-claim provider/config gate. A claim is destructive
    * (pending→consumed) and the subsequent resume runs the agent turn loop,
    * which needs the inference provider. The executor must NOT claim wake rows
    * when provider config is absent (e.g. before the vault injects the key on
@@ -84,21 +90,20 @@ export interface WakeDeps {
 // Tests that just want `tick` call it directly with a handcrafted `WakeDeps`.
 
 import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";
-import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import { appendEngineMessage } from "@vex-agent/engine/events/index.js";
 import { isWakeProviderConfigured } from "./provider.js";
 import { claimSessionWakeAtomically } from "./claim-session-wake.js";
+import { claimMissionWakeAtomically } from "./claim-mission-wake.js";
 import { formatWakeBanner, parseWakeTrigger } from "./wake-banner.js";
 
 export function buildProductionDeps(): WakeDeps {
   return {
-    claimDue: (now, limit) => loopWakeRepo.claimDue(now, limit),
+    listDueMissionWakes: (now, limit) =>
+      loopWakeRepo.listDueMissionScoped(now, limit),
+    claimMissionWake: (input) => claimMissionWakeAtomically(input),
     listDueSessionWakes: (now, limit) =>
       loopWakeRepo.listDueSessionScoped(now, limit),
     claimSessionWake: (input) => claimSessionWakeAtomically(input),
-    getMissionRun: (runId) => missionRunsRepo.getRun(runId),
-    casFlipToRunning: (runId, fromStatuses) =>
-      missionRunsRepo.casFlipToRunning(runId, fromStatuses),
     injectWakeBanner: async (sessionId, reason, dueAt, triggeredBy) => {
       const trigger = parseWakeTrigger(triggeredBy);
       await appendEngineMessage(

@@ -45,6 +45,7 @@ import {
 } from "@vex-agent/engine/runtime/session-slice-abort.js";
 import { tick, type WakeDeps } from "@vex-agent/engine/wake/executor.js";
 import { claimSessionWakeAtomically } from "@vex-agent/engine/wake/executor/claim-session-wake.js";
+import { claimMissionWakeAtomically } from "@vex-agent/engine/wake/executor/claim-mission-wake.js";
 import { makeSession, resetDb } from "../setup/fixtures.js";
 
 interface WakeRow {
@@ -79,12 +80,12 @@ async function openStopRequests(sessionId: string): Promise<{ id: string }[]> {
 
 function makeDeps(overrides: Partial<WakeDeps> = {}): WakeDeps {
   return {
-    claimDue: (now, limit) => loopWakeRepo.claimDue(now, limit),
+    listDueMissionWakes: (now, limit) =>
+      loopWakeRepo.listDueMissionScoped(now, limit),
+    claimMissionWake: (input) => claimMissionWakeAtomically(input),
     listDueSessionWakes: (now, limit) =>
       loopWakeRepo.listDueSessionScoped(now, limit),
     claimSessionWake: (input) => claimSessionWakeAtomically(input),
-    getMissionRun: vi.fn().mockResolvedValue(null),
-    casFlipToRunning: vi.fn().mockResolvedValue(null),
     injectWakeBanner: vi.fn().mockResolvedValue(undefined),
     resumeMissionRun: vi.fn().mockResolvedValue(undefined),
     continueAgentSession: vi.fn().mockResolvedValue(undefined),
@@ -450,7 +451,7 @@ describe("agent-session continuation (integration)", () => {
 
     await enqueueSessionStopRequest({ sessionId, correlationId: "req-stop-3" });
 
-    // The row was cancelled in the stop transaction, so claimDue finds nothing.
+    // The row was cancelled in the stop transaction, so no list finds it.
     const deps = makeDeps();
     const results = await tick(new Date(), 10, deps);
 
