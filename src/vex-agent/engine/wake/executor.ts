@@ -65,6 +65,10 @@ import {
   startRestartOrphanReclaim,
   type RestartOrphanReclaimHandle,
 } from "../runtime/restart-orphan-reclaim.js";
+import {
+  startStuckWakeRepair,
+  type StuckWakeRepairHandle,
+} from "./stuck-wake-repair.js";
 
 export type { ClaimedWakeOutcome, ClaimedWake } from "./executor/tick.js";
 export { tick } from "./executor/tick.js";
@@ -108,6 +112,12 @@ export interface StartOptions {
    * Postgres teardown.
    */
   startRestartOrphanReclaim?: () => RestartOrphanReclaimHandle;
+  /**
+   * Stuck-wake repair override for tests. It re-arms runs left `paused_wake`
+   * with no pending wake by the old batch claim; the wake it writes is only
+   * ever claimed by THIS executor, so its lifetime is bound to the executor's.
+   */
+  startStuckWakeRepair?: () => StuckWakeRepairHandle;
 }
 
 /**
@@ -128,6 +138,9 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
   const pricePoller = (options.startPriceWatchPoller ?? (() => startPriceWatchPoller()))();
   const orphanReclaim = (
     options.startRestartOrphanReclaim ?? (() => startRestartOrphanReclaim())
+  )();
+  const stuckWakeRepair = (
+    options.startStuckWakeRepair ?? (() => startStuckWakeRepair())
   )();
 
   let stopped = false;
@@ -166,6 +179,8 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
       // Drains its in-flight pass; a reclaim transaction must finish against a
       // live DB, and quit sequences this stop() before Postgres teardown.
       await orphanReclaim.stop();
+      // Same drain rule: a repair transaction finishes against a live DB.
+      await stuckWakeRepair.stop();
       if (timer) clearTimeout(timer);
       if (inFlight) {
         try {

@@ -2,7 +2,7 @@
  * Façade-surface guard for the wake-executor structural split (A-020).
  *
  * `src/vex-agent/engine/wake/executor.ts` was split into nested modules under
- * `./executor/` (deps, tick, claimed, auto-retry, provider) while the original
+ * `./executor/` (deps, tick, claimed, claim-mission-wake, provider) while the original
  * path stays a compatibility façade + lifecycle owner. This test pins the EXACT
  * public runtime surface so a later edit cannot silently drop, rename, or add an
  * export. The tick behavior is covered by `executor.test.ts`; here we assert
@@ -156,5 +156,26 @@ describe("startWakeExecutor — self-scheduling lifecycle (fake timers)", () => 
 
     await handle.stop();
     expect(stopReclaim).toHaveBeenCalledTimes(1);
+  });
+
+  it("owns the stuck-wake repair handle and drains it on stop()", async () => {
+    // The repair writes wakes only this executor claims, so it lives and dies
+    // with it; stop() must drain an in-flight repair before Postgres teardown.
+    vi.useFakeTimers();
+    const stopRepair = vi.fn().mockResolvedValue(undefined);
+    const startRepair = vi.fn(() => ({ stop: stopRepair }));
+
+    const handle = startWakeExecutor({
+      intervalMs: 2000,
+      deps: makeDeps(),
+      startRestartOrphanReclaim: () => ({ stop: vi.fn().mockResolvedValue(undefined) }),
+      startStuckWakeRepair: startRepair,
+    });
+
+    expect(startRepair).toHaveBeenCalledTimes(1);
+    expect(stopRepair).not.toHaveBeenCalled();
+
+    await handle.stop();
+    expect(stopRepair).toHaveBeenCalledTimes(1);
   });
 });
