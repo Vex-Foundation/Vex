@@ -68,6 +68,9 @@ export default defineConfig({
       // The snapshot group record: applied as an increment on a schema at 100.
       "src/__tests__/integration/migrations/101-portfolio-snapshot-groups.int.test.ts",
       "src/__tests__/integration/engine/studio-*.int.test.ts",
+      // The atomic mission wake claim + stuck-wake repair: crash, concurrency
+      // and lock proofs that need real transactions, not embeddings.
+      "src/__tests__/integration/engine/mission-wake-claim.int.test.ts",
       // vex-app's live-Postgres tests. They live with the composition they
       // drive; only this lane starts a database for them.
       "vex-app/src/main/**/__tests__/*.int.test.ts",
