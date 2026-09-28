@@ -84,6 +84,8 @@ export async function tryCriticalBandFallback(args: {
   /** Forwarded to the ladder so a forced apply can prove lease ownership. */
   readonly runnerOwnerId?: string;
   readonly sessionPermission: "restricted" | "full";
+  /** The run's Stop signal; ends the ladder's bounded wait promptly (S-5). */
+  readonly signal?: AbortSignal;
   /** Test seams for the shared ladder; production passes neither. */
   readonly criticalCompactionOverrides?: Pick<
     CriticalCompactionInput,
@@ -114,6 +116,7 @@ export async function tryCriticalBandFallback(args: {
     missionRunId: args.missionRunId,
     sessionPermission: args.sessionPermission,
     ...(args.runnerOwnerId === undefined ? {} : { runnerOwnerId: args.runnerOwnerId }),
+    ...(args.signal === undefined ? {} : { signal: args.signal }),
     ...args.criticalCompactionOverrides,
   });
 

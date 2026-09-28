@@ -40,6 +40,8 @@ export async function runCriticalBandStep(args: {
    */
   readonly readCurrentTokenCount: () => number;
   readonly handlePostCompactBookkeeping: () => Promise<void>;
+  /** The run's Stop signal; ends the ladder's bounded wait promptly (S-5). */
+  readonly signal?: AbortSignal;
 }): Promise<CriticalBandStep> {
   let turnBand = args.observeBand(args.readCurrentTokenCount(), "iteration_start");
   let criticalNoopCounter = args.criticalNoopCounter;
@@ -57,6 +59,7 @@ export async function runCriticalBandStep(args: {
     ...(args.runnerOwnerId === undefined
       ? {}
       : { runnerOwnerId: args.runnerOwnerId }),
+    ...(args.signal === undefined ? {} : { signal: args.signal }),
   });
 
   switch (criticalOutcome.kind) {
