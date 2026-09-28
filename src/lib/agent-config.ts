@@ -133,6 +133,78 @@ export interface AgentStreamBounds {
   readonly inferenceRoundDeadlineMs: number;
 }
 
+// ── Kairos DB bounds (Phase 3, S-4) ─────────────────────────────
+//
+// Bounds on the engine's own Postgres pools, in milliseconds (the control
+// pool size is a connection count). Always enforced: every minimum is above
+// zero, so no value turns a bound off. A statement that legitimately runs
+// longer (migrations, compaction commits) raises its own limit with
+// `SET LOCAL statement_timeout` to AGENT_DB_LONG_STATEMENT_TIMEOUT_MS.
+
+const DB_BOUND_MAX_MS = 3_600_000;
+
+/** Server-side cap on one SQL statement on the engine pools. */
+export const AGENT_DB_STATEMENT_TIMEOUT_MS: FieldWithDefault = {
+  key: "AGENT_DB_STATEMENT_TIMEOUT_MS",
+  kind: "int",
+  min: 1_000,
+  max: DB_BOUND_MAX_MS,
+  default: 30_000,
+};
+
+/** Cap on waiting for a pooled connection (pool full or server slow to accept). */
+export const AGENT_DB_CONNECTION_TIMEOUT_MS: FieldWithDefault = {
+  key: "AGENT_DB_CONNECTION_TIMEOUT_MS",
+  kind: "int",
+  min: 1_000,
+  max: 300_000,
+  default: 10_000,
+};
+
+/** Server ends a session that sits idle inside an open transaction this long. */
+export const AGENT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: FieldWithDefault = {
+  key: "AGENT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS",
+  kind: "int",
+  min: 1_000,
+  max: DB_BOUND_MAX_MS,
+  default: 60_000,
+};
+
+/** The raised per-transaction cap for known long statements. */
+export const AGENT_DB_LONG_STATEMENT_TIMEOUT_MS: FieldWithDefault = {
+  key: "AGENT_DB_LONG_STATEMENT_TIMEOUT_MS",
+  kind: "int",
+  min: 1_000,
+  max: DB_BOUND_MAX_MS,
+  default: 300_000,
+};
+
+/** Connections in the reserved control pool (Stop, lease renewal/release, reconciliation). */
+export const AGENT_DB_CONTROL_POOL_MAX: FieldWithDefault = {
+  key: "AGENT_DB_CONTROL_POOL_MAX",
+  kind: "int",
+  min: 1,
+  max: 5,
+  default: 2,
+};
+
+export const AGENT_DB_BOUND_FIELDS = [
+  AGENT_DB_STATEMENT_TIMEOUT_MS,
+  AGENT_DB_CONNECTION_TIMEOUT_MS,
+  AGENT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+  AGENT_DB_LONG_STATEMENT_TIMEOUT_MS,
+  AGENT_DB_CONTROL_POOL_MAX,
+] as const;
+
+/** Effective DB bounds. Every value is positive; none can be disabled. */
+export interface AgentDbBounds {
+  readonly statementTimeoutMs: number;
+  readonly connectionTimeoutMs: number;
+  readonly idleInTransactionTimeoutMs: number;
+  readonly longStatementTimeoutMs: number;
+  readonly controlPoolMax: number;
+}
+
 export interface ParseError {
   readonly key: string;
   readonly raw: string;
@@ -184,6 +256,29 @@ export function parseAgentStreamBoundsEnv(env: EnvLike): ParseResult<AgentStream
       streamIdleTimeoutMs: read(AGENT_STREAM_IDLE_TIMEOUT_MS),
       reasoningOnlyTimeoutMs: read(AGENT_REASONING_ONLY_TIMEOUT_MS),
       inferenceRoundDeadlineMs: read(AGENT_INFERENCE_ROUND_DEADLINE_MS),
+    },
+    errors,
+  };
+}
+
+/**
+ * Parse the Kairos DB bounds. Same contract as the stream bounds: blank =
+ * default, invalid = collected error and the default applies. A long
+ * statement budget below the ordinary statement cap is raised to it, so the
+ * override can only ever widen the bound.
+ */
+export function parseAgentDbBoundsEnv(env: EnvLike): ParseResult<AgentDbBounds> {
+  const errors: ParseError[] = [];
+  const read = (field: FieldWithDefault): number =>
+    parseFieldOrDefault(field, env[field.key], errors) ?? field.default ?? field.min;
+  const statementTimeoutMs = read(AGENT_DB_STATEMENT_TIMEOUT_MS);
+  return {
+    value: {
+      statementTimeoutMs,
+      connectionTimeoutMs: read(AGENT_DB_CONNECTION_TIMEOUT_MS),
+      idleInTransactionTimeoutMs: read(AGENT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS),
+      longStatementTimeoutMs: Math.max(read(AGENT_DB_LONG_STATEMENT_TIMEOUT_MS), statementTimeoutMs),
+      controlPoolMax: read(AGENT_DB_CONTROL_POOL_MAX),
     },
     errors,
   };

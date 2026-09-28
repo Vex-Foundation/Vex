@@ -200,4 +200,13 @@ describe("loadEnvConfig", () => {
     process.env.AGENT_FIRST_CHUNK_TIMEOUT_MS = "-5";
     expect(() => loadEnvConfig()).toThrow(/AGENT_CONTEXT_LIMIT.*AGENT_FIRST_CHUNK_TIMEOUT_MS/s);
   });
+
+  it("fails startup on an invalid DB bound, including an attempt to disable one", () => {
+    for (const raw of ["0", "soon", "3600001"]) {
+      process.env.AGENT_DB_STATEMENT_TIMEOUT_MS = raw;
+      expect(() => loadEnvConfig()).toThrow("AGENT_DB_STATEMENT_TIMEOUT_MS");
+    }
+    process.env.AGENT_DB_STATEMENT_TIMEOUT_MS = "45000";
+    expect(() => loadEnvConfig()).not.toThrow();
+  });
 });

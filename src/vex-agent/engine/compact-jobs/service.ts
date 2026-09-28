@@ -43,7 +43,7 @@
 import * as messagesRepo from "@vex-agent/db/repos/messages.js";
 import { archivePrefix, forkToolMessageToArchive } from "@vex-agent/db/repos/sessions-archive.js";
 import { enqueueJob } from "@vex-agent/db/repos/compact-jobs/index.js";
-import { getPool } from "@vex-agent/db/client.js";
+import { getPool, setLocalLongStatementTimeout } from "@vex-agent/db/client.js";
 import { selectPrefixWithGiantFallback } from "@vex-agent/engine/checkpoint/prefix.js";
 import { withCheckpointMutex } from "./state.js";
 import {
@@ -122,6 +122,8 @@ async function executeCompactNowInner(
   const tx = await pool.connect();
   try {
     await tx.query("BEGIN");
+    // Known long statement (S-4): archive + fork scale with the session.
+    await setLocalLongStatementTimeout(tx);
 
     // Lock the session row and read the current generation FIRST — see
     // `lockSessionAndReadGeneration` for why the order is load-bearing.

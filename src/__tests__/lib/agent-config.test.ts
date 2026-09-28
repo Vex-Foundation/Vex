@@ -15,7 +15,9 @@ import {
   AGENT_CONTEXT_LIMIT,
   AGENT_MAX_OUTPUT_TOKENS,
   AGENT_TEMPERATURE,
+  AGENT_DB_BOUND_FIELDS,
   formatParseErrors,
+  parseAgentDbBoundsEnv,
   parseAgentEnv,
 } from "../../lib/agent-config.js";
 
@@ -148,5 +150,66 @@ describe("formatParseErrors", () => {
     ]);
     const lines = out.split("\n");
     expect(lines.length).toBe(3);
+  });
+});
+
+describe("parseAgentDbBoundsEnv (Kairos S-4)", () => {
+  it("returns the always-on defaults when unset", () => {
+    const r = parseAgentDbBoundsEnv({});
+    expect(r.errors).toEqual([]);
+    expect(r.value).toEqual({
+      statementTimeoutMs: 30_000,
+      connectionTimeoutMs: 10_000,
+      idleInTransactionTimeoutMs: 60_000,
+      longStatementTimeoutMs: 300_000,
+      controlPoolMax: 2,
+    });
+  });
+
+  it("every field has a positive minimum, so no value disables a bound", () => {
+    for (const field of AGENT_DB_BOUND_FIELDS) {
+      expect(field.min).toBeGreaterThan(0);
+      const r = parseAgentDbBoundsEnv({ [field.key]: "0" });
+      expect(r.errors).toEqual([
+        { key: field.key, raw: "0", reason: "out_of_range", detail: { min: field.min, max: field.max } },
+      ]);
+    }
+  });
+
+  it("accepts valid overrides", () => {
+    const r = parseAgentDbBoundsEnv({
+      AGENT_DB_STATEMENT_TIMEOUT_MS: "20000",
+      AGENT_DB_CONNECTION_TIMEOUT_MS: "3000",
+      AGENT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: "90000",
+      AGENT_DB_LONG_STATEMENT_TIMEOUT_MS: "600000",
+      AGENT_DB_CONTROL_POOL_MAX: "4",
+    });
+    expect(r.errors).toEqual([]);
+    expect(r.value).toEqual({
+      statementTimeoutMs: 20_000,
+      connectionTimeoutMs: 3_000,
+      idleInTransactionTimeoutMs: 90_000,
+      longStatementTimeoutMs: 600_000,
+      controlPoolMax: 4,
+    });
+  });
+
+  it("an invalid value is reported and its default applies", () => {
+    const r = parseAgentDbBoundsEnv({ AGENT_DB_CONTROL_POOL_MAX: "many", AGENT_DB_STATEMENT_TIMEOUT_MS: "1.5" });
+    expect(r.errors.map((e) => [e.key, e.reason])).toEqual([
+      ["AGENT_DB_STATEMENT_TIMEOUT_MS", "not_a_number"],
+      ["AGENT_DB_CONTROL_POOL_MAX", "not_a_number"],
+    ]);
+    expect(r.value.controlPoolMax).toBe(2);
+    expect(r.value.statementTimeoutMs).toBe(30_000);
+  });
+
+  it("the long-statement budget is never below the ordinary statement cap", () => {
+    const r = parseAgentDbBoundsEnv({
+      AGENT_DB_STATEMENT_TIMEOUT_MS: "120000",
+      AGENT_DB_LONG_STATEMENT_TIMEOUT_MS: "60000",
+    });
+    expect(r.errors).toEqual([]);
+    expect(r.value.longStatementTimeoutMs).toBe(120_000);
   });
 });

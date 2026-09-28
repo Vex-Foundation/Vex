@@ -75,7 +75,11 @@ import * as runnerLeasesRepo from "@vex-agent/db/repos/runner-leases.js";
 import { archivePrefix } from "@vex-agent/db/repos/sessions-archive.js";
 import { getUnresolvedMoneyStateForSession } from "@vex-agent/db/repos/approval-intents/money-state.js";
 import type { MoneyStateReason } from "@vex-agent/db/repos/approval-intents/money-state.js";
-import { getPool, queryOneWith } from "@vex-agent/db/client.js";
+import {
+  getPool,
+  queryOneWith,
+  setLocalLongStatementTimeout,
+} from "@vex-agent/db/client.js";
 import {
   acquireSessionControlLock,
   gateOnOperatorStopWithClient,
@@ -201,6 +205,9 @@ async function runCutoverTransaction(
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    // Known long statement (S-4): the prefix archive move scales with the
+    // session, so this transaction gets the raised statement cap.
+    await setLocalLongStatementTimeout(client);
 
     // ── 1. session advisory lock ────────────────────────────────────
     await acquireSessionControlLock(client, input.sessionId);

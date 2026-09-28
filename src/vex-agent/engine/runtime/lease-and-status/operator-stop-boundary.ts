@@ -42,7 +42,10 @@
  */
 
 import type { PoolClient } from "pg";
-import { executeWith, queryOneWith, withTransaction } from "../../../db/client.js";
+import { executeWith, queryOneWith } from "../../../db/client.js";
+// Stop writes use the reserved control pool (Kairos S-4) so a saturated main
+// pool cannot queue the user's Stop behind ordinary work.
+import { withControlTransaction } from "../../../db/control-pool.js";
 import * as controlRequestsRepo from "../../../db/repos/runtime-control-requests.js";
 import { INCOMPLETE_APPROVAL_LIFECYCLE_PREDICATE } from "../../../db/contracts/approval-lifecycle-predicates.js";
 import { OUTSTANDING_USER_FORM_PREDICATE } from "../../../db/contracts/user-form-lifecycle-predicates.js";
@@ -204,7 +207,7 @@ export interface EnqueueOperatorStopInput {
 export async function enqueueOperatorStopRequest(
   input: EnqueueOperatorStopInput,
 ): Promise<EnqueueOperatorStopOutcome> {
-  return withTransaction(async (client): Promise<EnqueueOperatorStopOutcome> => {
+  return withControlTransaction(async (client): Promise<EnqueueOperatorStopOutcome> => {
     await acquireSessionControlLock(client, input.sessionId);
     await lockOpenControlRequests(client, input.sessionId);
 
@@ -393,7 +396,7 @@ async function lockActiveRunForSession(
 export async function enqueueSessionStopRequest(
   input: EnqueueSessionStopInput,
 ): Promise<EnqueueSessionStopOutcome> {
-  return withTransaction(async (client): Promise<EnqueueSessionStopOutcome> => {
+  return withControlTransaction(async (client): Promise<EnqueueSessionStopOutcome> => {
     await acquireSessionControlLock(client, input.sessionId);
     const openRequests = await lockOpenControlRequests(client, input.sessionId);
 

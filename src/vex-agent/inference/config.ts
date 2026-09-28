@@ -17,6 +17,7 @@ import {
   AGENT_MAX_OUTPUT_TOKENS,
   AGENT_TEMPERATURE,
   parseAgentEnv,
+  parseAgentDbBoundsEnv,
   parseAgentStreamBoundsEnv,
   type AgentStreamBounds,
 } from "../../lib/agent-config.js";
@@ -100,7 +101,11 @@ export function loadEnvConfig(): EnvConfig {
   // preserve the "throw all at once" engine contract).
   const agentParse = parseAgentEnv(process.env);
   const boundsParse = parseAgentStreamBoundsEnv(process.env);
-  for (const e of [...agentParse.errors, ...boundsParse.errors]) {
+  // DB bounds are consumed by the pool modules (`db/pool-config.ts`), which
+  // fall back to defaults on their own; validating them here makes a bad
+  // value fail startup loudly like every other AGENT_* field.
+  const dbBoundsParse = parseAgentDbBoundsEnv(process.env);
+  for (const e of [...agentParse.errors, ...boundsParse.errors, ...dbBoundsParse.errors]) {
     if (e.reason === "out_of_range") {
       errors.push(
         `${e.key}="${e.raw}" is invalid. Must be ${e.detail?.min ?? "?"}-${e.detail?.max ?? "?"}`,
