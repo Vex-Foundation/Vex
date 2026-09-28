@@ -1,4 +1,5 @@
 import type { LoopWakeRequest } from "@vex-agent/db/repos/loop-wake.js";
+import type { RunnerLeaseGuard } from "../../runtime/lease-guard.js";
 import type {
   ClaimSessionWakeInput,
   ClaimSessionWakeOutcome,
@@ -62,17 +63,18 @@ export interface WakeDeps {
   ): Promise<void>;
   /**
    * Resume a mission run, under the run/session lease the executor already
-   * holds. `runnerOwnerId` is REQUIRED: the resumed turn loop can only force a
-   * prepared compaction apply by proving lease ownership, and an optional
-   * parameter is exactly how that proof got dropped before.
+   * holds. `runnerLease` (the executor's `LeaseHandle`) is REQUIRED: the
+   * resumed turn loop proves lease ownership with it, fences its writes on it
+   * and ends on `lease_lost` through it, and an optional parameter is exactly
+   * how that proof got dropped before.
    */
-  resumeMissionRun(runId: string, runnerOwnerId: string): Promise<void>;
+  resumeMissionRun(runId: string, runnerLease: RunnerLeaseGuard): Promise<void>;
   /**
    * Continue a Full-Autonomous agent session whose runtime slice was exhausted.
    * Called with the session lease ALREADY HELD by the executor, exactly like
    * `resumeMissionRun` is called under the run lease.
    */
-  continueAgentSession(sessionId: string, runnerOwnerId: string): Promise<void>;
+  continueAgentSession(sessionId: string, runnerLease: RunnerLeaseGuard): Promise<void>;
   /**
    * Pre-claim provider/config gate. A claim is destructive
    * (pending→consumed) and the subsequent resume runs the agent turn loop,
@@ -117,7 +119,7 @@ export function buildProductionDeps(): WakeDeps {
         },
       );
     },
-    resumeMissionRun: async (runId, runnerOwnerId) => {
+    resumeMissionRun: async (runId, runnerLease) => {
       // Lazy dynamic import so wake/executor.ts doesn't introduce a circular
       // dependency through the engine barrel. The ESM runtime caches the
       // promise after the first resolve, so there's no per-tick cost.
@@ -125,9 +127,9 @@ export function buildProductionDeps(): WakeDeps {
       // so every caller — wake executor, ingress preempt, approval resume —
       // gets it idempotently.
       const engine = await import("@vex-agent/engine/index.js");
-      await engine.resumeMissionRun(runId, runnerOwnerId);
+      await engine.resumeMissionRun(runId, runnerLease);
     },
-    continueAgentSession: async (sessionId, runnerOwnerId) => {
+    continueAgentSession: async (sessionId, runnerLease) => {
       // Same lazy-import rationale as `resumeMissionRun` above. Imported from
       // the runner module directly (not the engine barrel) because this entry
       // point is deliberately lease-held — the barrel's `processAgentTurn`
@@ -135,7 +137,7 @@ export function buildProductionDeps(): WakeDeps {
       const { continueAgentSessionUnderLease } = await import(
         "../../core/runner/agent.js"
       );
-      await continueAgentSessionUnderLease(sessionId, runnerOwnerId);
+      await continueAgentSessionUnderLease(sessionId, runnerLease);
     },
     isProviderReady: isWakeProviderConfigured,
   };

@@ -38,6 +38,11 @@ import {
   TranscriptEventBus,
   transcriptEventBus,
 } from "./transcript-bus.js";
+import {
+  guardedWrite,
+  type RunnerLeaseGuard,
+} from "../runtime/lease-guard.js";
+import type { LeaseFenceSite } from "../../db/lease-fence.js";
 
 export interface AppendOptions {
   /**
@@ -144,4 +149,49 @@ export function emitTranscriptAppend(
   bus: TranscriptEventBus = transcriptEventBus,
 ): void {
   bus.emit(event);
+}
+
+/** One row of a fenced multi-row append. */
+export interface FencedAppendEntry {
+  readonly msg: Message;
+  readonly metadata?: MessageMetadata;
+}
+
+/**
+ * Persist `entries` IN ORDER, in ONE transaction that commits only while the
+ * runner's lease claim still holds (`db/lease-fence.ts`), then emit one
+ * `TranscriptAppendEvent` per row after the COMMIT.
+ *
+ * All or nothing: an assistant tool-call row and its tool results either all
+ * land or none do, so a lease lost between two of them can never leave a
+ * tool_call without its result on the tape.
+ *
+ * A refused write returns `null` — nothing was written and nothing is emitted —
+ * and never throws: the caller's loop sees the lease as lost at its next check.
+ * Storage errors still throw, exactly like `appendMessage`.
+ */
+export async function appendMessagesUnderLease(
+  sessionId: string,
+  entries: readonly FencedAppendEntry[],
+  guard: RunnerLeaseGuard,
+  site: LeaseFenceSite,
+  opts?: Pick<AppendOptions, "correlationId" | "bus">,
+): Promise<MessageWithId[] | null> {
+  if (entries.length === 0) return [];
+  const outcome = await guardedWrite(guard, site, async (client) => {
+    const inserted: MessageWithId[] = [];
+    for (const entry of entries) {
+      inserted.push(
+        await addMessageReturningId(sessionId, entry.msg, entry.metadata, client),
+      );
+    }
+    return inserted;
+  });
+  if (!outcome.fenced) return null;
+  const correlationId = opts?.correlationId ?? null;
+  const bus = opts?.bus ?? transcriptEventBus;
+  outcome.value.forEach((row, i) => {
+    bus.emit(buildEvent(sessionId, row, entries[i]?.metadata, correlationId));
+  });
+  return outcome.value;
 }

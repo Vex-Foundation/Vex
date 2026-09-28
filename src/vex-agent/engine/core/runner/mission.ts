@@ -25,6 +25,7 @@ import {
 import { resolveProvider } from "@vex-agent/inference/registry.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as missionsRepo from "@vex-agent/db/repos/missions.js";
+import type { RunnerLeaseGuard } from "../../runtime/lease-guard.js";
 import logger from "@utils/logger.js";
 import { finalizeMissionRunError } from "./mission-finalize.js";
 
@@ -133,13 +134,14 @@ export async function startMission(missionId: string): Promise<TurnResult> {
 export async function resumeMissionRun(
   runId: string,
   /**
-   * The lease owner id the CALLER claimed and holds around this call. Required,
-   * not optional — every resume entry point (wake executor, auto-retry,
-   * approval continuation, ingress preempt, IPC resume/retry) claims a named
-   * lease first, and an optional parameter is precisely how that proof used to
-   * be dropped, leaving a resumed run unable to consume a prepared compaction.
+   * The lease the CALLER claimed and holds around this call (its `LeaseHandle`).
+   * Required, not optional — every resume entry point (wake executor,
+   * auto-retry, approval continuation, ingress preempt, IPC resume/retry)
+   * claims a lease first, and an optional parameter is precisely how that proof
+   * used to be dropped. It carries the compaction ownership proof (`ownerId`),
+   * the write fence and the lease-lost signal.
    */
-  runnerOwnerId: string,
+  runnerLease: RunnerLeaseGuard,
   claimTurn?: ResumedTurnClaim,
 ): Promise<TurnResult> {
   logger.info("engine.mission.resume", { runId });
@@ -182,7 +184,7 @@ export async function resumeMissionRun(
     // rather than throwing here mid-resume.
     return await resumePreparedMissionRun({
       runId,
-      runnerOwnerId,
+      runnerLease,
       run,
       mission,
       provider,
@@ -201,7 +203,9 @@ export async function resumeMissionRun(
     // the caller already flipped the run to `running`. Finalize as
     // `paused_error` so the row doesn't stay stranded at `running`.
     try {
-      await finalizeMissionRunError(run.missionId, runId, run.sessionId, err);
+      await finalizeMissionRunError(run.missionId, runId, run.sessionId, err, {
+        leaseGuard: runnerLease,
+      });
     } catch (finalizeErr) {
       logger.warn("engine.mission.resume.finalize_failed", {
         runId,

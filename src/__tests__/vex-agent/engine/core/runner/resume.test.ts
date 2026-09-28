@@ -21,6 +21,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MissionRunPausedError } from "../../../../../vex-agent/engine/types.js";
+import { fakeLeaseHandle } from "../../../../helpers/lease-guard.js";
+
+const OWNER_LEASE = fakeLeaseHandle({ ownerId: "owner-test" });
 
 const mockGetRun = vi.fn();
 const mockGetMission = vi.fn();
@@ -187,7 +190,7 @@ describe("resumeMissionRun safety", () => {
       status: "completed",
       iterationCount: 5,
     });
-    await expect(resumeMissionRun("run-1", "owner-test")).rejects.toThrow(/terminal/);
+    await expect(resumeMissionRun("run-1", OWNER_LEASE)).rejects.toThrow(/terminal/);
     expect(mockUpdateRunStatus).not.toHaveBeenCalledWith(
       "run-1",
       "paused_error",
@@ -210,7 +213,7 @@ describe("resumeMissionRun safety", () => {
     });
     mockRunTurnLoop.mockRejectedValueOnce(new Error("provider exploded"));
 
-    await expect(resumeMissionRun("run-1", "owner-test")).rejects.toBeInstanceOf(
+    await expect(resumeMissionRun("run-1", OWNER_LEASE)).rejects.toBeInstanceOf(
       MissionRunPausedError,
     );
 

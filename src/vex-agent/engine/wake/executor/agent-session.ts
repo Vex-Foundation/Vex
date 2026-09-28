@@ -87,7 +87,7 @@ export async function handleAgentSessionClaimed(
       wake.dueAt,
       wake.payload?.triggeredBy,
     );
-    await deps.continueAgentSession(wake.sessionId, ownerId);
+    await deps.continueAgentSession(wake.sessionId, handle);
     return { kind: "agent_session_continued", sessionId: wake.sessionId };
   } finally {
     await releaseLeaseAndEmitControlState(handle, wake.sessionId);

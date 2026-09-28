@@ -33,6 +33,7 @@ import {
   snapshotAutoRetryEnabled,
 } from "./mission-auto-retry-policy.js";
 import logger from "@utils/logger.js";
+import { fenceRunWriteWith, type LeaseFence } from "../../../db/lease-fence.js";
 
 /** Backoff per attempt (1-indexed): attempt 1 → 2s, 2 → 4s, … 5 → 32s. */
 const BACKOFF_MS: readonly number[] = [2_000, 4_000, 8_000, 16_000, 32_000];
@@ -53,6 +54,12 @@ export interface ErrorPausePersistInput {
   readonly err: unknown;
   readonly summary: string;
   readonly evidenceBase: Record<string, unknown>;
+  /**
+   * The claim of the lease-holding runner persisting this pause. When set, the
+   * park commits only while that claim holds; after a takeover nothing is
+   * written and no retry is scheduled (the run belongs to the new owner).
+   */
+  readonly leaseFence?: LeaseFence;
 }
 
 export interface ErrorPauseDecision {
@@ -66,6 +73,8 @@ export interface ErrorPauseDecision {
    * park. The caller must not then report the run as `paused_error`.
    */
   readonly persisted: boolean;
+  /** Set when nothing was written because the lease fence refused it. */
+  readonly refusedByLeaseFence?: true;
 }
 
 /**
@@ -117,6 +126,14 @@ export async function persistErrorPauseWithMaybeAutoRetry(
         classified,
       });
       return { scheduled: null, persisted: false };
+    }
+
+    // Lease fence, AFTER the gate (control lock → requests → run → lease).
+    if (
+      input.leaseFence !== undefined
+      && !(await fenceRunWriteWith(client, input.leaseFence, input.runId, "mission_finalize"))
+    ) {
+      return { scheduled: null, persisted: false, refusedByLeaseFence: true };
     }
 
     const row = await queryOneWith<LockedRunRow>(

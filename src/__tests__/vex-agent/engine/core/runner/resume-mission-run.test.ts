@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { fakeLeaseHandle } from "../../../../helpers/lease-guard.js";
 import { requireValue } from "../../../../helpers/require-value.js";
 
 // ── Mocks ─────────────────────────────────────────────────────
@@ -156,14 +157,13 @@ vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
   observeAndApplyControl: vi.fn().mockResolvedValue({ outcome: "no_request" }),
 }));
 
-vi.mock("@vex-agent/engine/runtime/lease-handle.js", () => ({
-  createLeaseHandle: vi.fn().mockReturnValue({
-    lease: { sessionId: "s", missionRunId: null, ownerId: "test-owner", processKind: "electron_main", acquiredAt: new Date(), heartbeatAt: new Date(), expiresAt: new Date() },
-    ownerId: "test-owner",
-    release: vi.fn().mockResolvedValue(undefined),
-    onLeaseLost: vi.fn(),
-  }),
-}));
+vi.mock("@vex-agent/engine/runtime/lease-handle.js", async () => {
+  const { fakeLeaseHandle } = await import("../../../../helpers/lease-guard.js");
+  return {
+    createLeaseHandle: vi.fn((opts: { readonly ownerId: string }) =>
+      fakeLeaseHandle({ ownerId: opts.ownerId })),
+  };
+});
 
 vi.mock("@vex-agent/engine/runtime/release-and-emit.js", () => ({
   releaseLeaseAndEmitControlState: vi.fn().mockResolvedValue(undefined),
@@ -306,6 +306,8 @@ describe("runner", () => {
    * here so the propagation assertion below reads against a single value.
    */
   const RESUME_OWNER = "resume-owner-run-1";
+  /** The caller's lease handle, as every resume entry point passes it. */
+  const RESUME_LEASE = fakeLeaseHandle({ ownerId: RESUME_OWNER, sessionId: "session-1" });
 
   // ── resumeMissionRun ────────────────────────────────────────
 
@@ -329,7 +331,7 @@ describe("runner", () => {
         text: "Resumed", toolCallsMade: 1, pendingApprovals: [], stopReason: null,
       });
 
-      const result = await resumeMissionRun("run-1", RESUME_OWNER);
+      const result = await resumeMissionRun("run-1", RESUME_LEASE);
 
       expect(result.text).toBe("Resumed");
       expect(result.missionStatus).toBe("running");
@@ -354,7 +356,7 @@ describe("runner", () => {
         text: "Resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
       });
 
-      await resumeMissionRun("run-1", RESUME_OWNER);
+      await resumeMissionRun("run-1", RESUME_LEASE);
 
       const [, , , , , , , loopConfig] = mockRunTurnLoop.mock.calls[0]!;
       expect((loopConfig as { runnerOwnerId?: string }).runnerOwnerId).toBe(
@@ -376,7 +378,7 @@ describe("runner", () => {
       });
 
       const before = performance.now();
-      await resumeMissionRun("run-1", RESUME_OWNER);
+      await resumeMissionRun("run-1", RESUME_LEASE);
 
       const [, , , , , , , loopConfig] = requireValue(mockRunTurnLoop.mock.calls[0]);
       const entry = (loopConfig as { entryStartedAtMs?: number }).entryStartedAtMs;
@@ -407,7 +409,7 @@ describe("runner", () => {
         text: "Resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
       });
 
-      await resumeMissionRun("run-1", RESUME_OWNER);
+      await resumeMissionRun("run-1", RESUME_LEASE);
 
       const [context, , , , , , , loopConfig] = mockRunTurnLoop.mock.calls[0]!;
       const expectedMs = Date.parse("2026-01-01T00:00:00.000Z") + 60 * 60_000;
@@ -445,7 +447,7 @@ describe("runner", () => {
         text: "Resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
       });
 
-      await resumeMissionRun("run-1", RESUME_OWNER);
+      await resumeMissionRun("run-1", RESUME_LEASE);
 
       const [context, , , , , , , loopConfig] = mockRunTurnLoop.mock.calls[0]!;
       const expectedMs = Date.parse("2026-01-01T00:00:00.000Z") + 5 * 60_000; // frozen 5, NOT live 999
@@ -466,7 +468,7 @@ describe("runner", () => {
       }));
       mockRunTurnLoop.mockRejectedValueOnce(new Error("provider exploded"));
 
-      await expect(resumeMissionRun("run-1", RESUME_OWNER)).rejects.toBeInstanceOf(MissionRunPausedError);
+      await expect(resumeMissionRun("run-1", RESUME_LEASE)).rejects.toBeInstanceOf(MissionRunPausedError);
 
       // The resume's running flip goes through the terminal-guarded CAS.
       expect(mockStartRunIfNotTerminal).toHaveBeenCalledWith("run-1");

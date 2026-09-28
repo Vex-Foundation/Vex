@@ -40,9 +40,12 @@ import { buildTurnEnvelope, type TurnEnvelope } from "./turn-envelope.js";
 import { timePersist } from "./turn-loop/persist-timing.js";
 import {
   appendMessage,
+  appendMessagesUnderLease,
   streamDeltaBus,
   toStreamDeltaEvent,
+  type FencedAppendEntry,
 } from "@vex-agent/engine/events/index.js";
+import type { RunnerLeaseGuard } from "../runtime/lease-guard.js";
 import * as usageRepo from "@vex-agent/db/repos/usage.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
 import {
@@ -411,37 +414,41 @@ function reasoningForPayload(reasoning: string | null | undefined): string | nul
   return reasoning.slice(-REASONING_PAYLOAD_CAP);
 }
 
+/** Options for one assistant row. */
+export interface AssistantRowOptions {
+  readonly stopped?: boolean;
+  readonly systemOriginated?: boolean;
+  /** Provider reasoning trace for this turn; capped + tail-kept on persist. */
+  readonly reasoning?: string | null;
+  /**
+   * A board staged by `BoardCompose` earlier in THIS turn, consumed by the
+   * row being written here. Runtime-authored: it is the validated, hydrated
+   * spec the engine built, never model output re-read from anywhere.
+   *
+   * Passing it is what makes prose and board ONE commit. Only
+   * `handleTextResponse` sets it, and only after taking the board out of the
+   * session's pending slot; every other caller omits it.
+   */
+  readonly board?: BoardSpecV1;
+}
+
 /**
- * Save an assistant message to DB.
- *
- * Exported for use by turn-loop (deferred save after canonical batch prefix
- * is determined). Accepts ParsedToolCall[] directly — converts to Message format.
+ * Build (without writing) the assistant row `saveAssistantMessage` persists,
+ * or `null` when there is nothing to persist. Exposed so the tool-batch
+ * persistence can write the assistant row and its tool results in ONE fenced
+ * transaction.
  */
-export async function saveAssistantMessage(
-  sessionId: string,
+export function buildAssistantRow(
   content: string | null,
   toolCalls: ParsedToolCall[] | null,
-  opts?: {
-    readonly stopped?: boolean;
-    readonly systemOriginated?: boolean;
-    /** Provider reasoning trace for this turn; capped + tail-kept on persist. */
-    readonly reasoning?: string | null;
-    /**
-     * A board staged by `BoardCompose` earlier in THIS turn, consumed by the
-     * row being written here. Runtime-authored: it is the validated, hydrated
-     * spec the engine built, never model output re-read from anywhere.
-     *
-     * Passing it is what makes prose and board ONE commit. Only
-     * `handleTextResponse` sets it, and only after taking the board out of the
-     * session's pending slot; every other caller omits it.
-     */
-    readonly board?: BoardSpecV1;
-  },
-): Promise<void> {
+  opts?: AssistantRowOptions,
+): FencedAppendEntry | null {
   const hasContent = content !== null && content !== undefined;
-  const hasToolCalls = toolCalls !== null && toolCalls !== undefined && toolCalls.length > 0;
+  const calls = toolCalls !== null && toolCalls !== undefined && toolCalls.length > 0
+    ? toolCalls
+    : null;
 
-  if (!hasContent && !hasToolCalls) return;
+  if (!hasContent && calls === null) return null;
 
   const metadata: MessageMetadata = {
     // `role` stays "assistant" even for a system-synthesized call (below) —
@@ -480,18 +487,45 @@ export async function saveAssistantMessage(
     };
   }
 
-  // Timed toward the enclosing turn's `persist_ms`; the write itself is awaited
-  // and fails exactly as before.
-  await timePersist(() => appendMessage(
-    sessionId,
-    {
+  return {
+    msg: {
       role: "assistant",
       content: content ?? "",
-      toolCalls: hasToolCalls
-        ? toolCalls!.map(tc => ({ id: tc.id, command: tc.name, args: tc.arguments }))
-        : undefined,
+      toolCalls: calls === null
+        ? undefined
+        : calls.map(tc => ({ id: tc.id, command: tc.name, args: tc.arguments })),
       timestamp: new Date().toISOString(),
     },
     metadata,
-  ));
+  };
+}
+
+/**
+ * Save an assistant message to DB.
+ *
+ * Exported for use by turn-loop (deferred save after canonical batch prefix
+ * is determined). Accepts ParsedToolCall[] directly — converts to Message format.
+ *
+ * With `leaseGuard` (a lease-holding runner) the write is FENCED on the claim:
+ * after a takeover it writes nothing and returns normally — the loop ends on
+ * `lease_lost` at its next check. Without one it writes exactly as before.
+ */
+export async function saveAssistantMessage(
+  sessionId: string,
+  content: string | null,
+  toolCalls: ParsedToolCall[] | null,
+  opts?: AssistantRowOptions & { readonly leaseGuard?: RunnerLeaseGuard },
+): Promise<void> {
+  const row = buildAssistantRow(content, toolCalls, opts);
+  if (row === null) return;
+  const guard = opts?.leaseGuard;
+
+  // Timed toward the enclosing turn's `persist_ms`; the write itself is awaited
+  // and fails exactly as before.
+  if (guard !== undefined) {
+    await timePersist(() =>
+      appendMessagesUnderLease(sessionId, [row], guard, "assistant_message"));
+    return;
+  }
+  await timePersist(() => appendMessage(sessionId, row.msg, row.metadata));
 }

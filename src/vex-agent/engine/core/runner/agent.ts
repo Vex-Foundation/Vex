@@ -21,6 +21,7 @@ import { getOpenAITools, type ToolVisibilityBase } from "@vex-agent/tools/regist
 import { computeBand } from "../context-band.js";
 import { resolveProvider } from "@vex-agent/inference/registry.js";
 import { appendMessage } from "@vex-agent/engine/events/index.js";
+import type { RunnerLeaseGuard } from "../../runtime/lease-guard.js";
 import logger from "@utils/logger.js";
 import { releaseLeaseAndEmitControlState } from "../../runtime/release-and-emit.js";
 import { toToolDefinitions, DEFAULT_LOOP_CONFIG, runtimeBoundExhaustedReply } from "./shared.js";
@@ -122,8 +123,9 @@ export async function processAgentTurn(
       signal,
       undefined,
       undefined,
-      // This function claimed the lease above — it can prove ownership.
-      ownerId,
+      // This function claimed the lease above — it can prove ownership, and
+      // the loop fences its writes on this claim.
+      sessionLease,
       entryStartedAtMs,
     );
   } finally {
@@ -191,12 +193,12 @@ export async function processAgentTurn(
 export async function continueAgentSessionUnderLease(
   sessionId: string,
   /**
-   * The session lease owner id the WAKE EXECUTOR claimed and holds around this
-   * whole call. Required, not optional: the slice runs a full turn loop, and
-   * without the owner its compaction cutover cannot prove ownership, so
-   * Full-Autonomous auto-apply silently never runs during a wake slice.
+   * The session lease the WAKE EXECUTOR claimed and holds around this whole
+   * call (its `LeaseHandle`). Required, not optional: the slice runs a full
+   * turn loop, and without it the compaction cutover cannot prove ownership,
+   * the loop's writes are not fenced, and a lost lease is not noticed.
    */
-  runnerOwnerId: string,
+  runnerLease: RunnerLeaseGuard,
 ): Promise<TurnResult> {
   logger.info("engine.agent.wake_continuation", { sessionId });
   // Runtime measurement: the loop records entry → loop start as pre-loop setup.
@@ -261,8 +263,8 @@ export async function continueAgentSessionUnderLease(
       // iteration, not only mid-stream.
       controller.signal,
       // The executor holds this session's lease for the whole slice, so the
-      // turn loop can prove ownership for a compaction cutover.
-      runnerOwnerId,
+      // turn loop can prove ownership for a compaction cutover and fence on it.
+      runnerLease,
       entryStartedAtMs,
     );
   } finally {
@@ -329,16 +331,18 @@ export async function runAgentTurnUnderLease(
    */
   boundarySignal?: AbortSignal,
   /**
-   * The lease owner id the CALLER holds for this session. Threaded so the turn
-   * loop's compaction-apply boundary action can prove ownership by equality
-   * against the live lease.
+   * The lease the CALLER holds for this session (its `LeaseHandle`). Its owner
+   * id lets the turn loop's compaction-apply boundary action prove ownership by
+   * equality against the live lease; its fence guards the loop's transcript
+   * writes; its lost signal ends the turn on `lease_lost`.
    *
    * Omitted only by callers that hold no lease of their own. That is
    * fail-closed by design: no proven ownership ⇒ the action is not registered
-   * and no cutover is consumed. Reading the row's current owner and adopting it
-   * would be impersonation, not a check.
+   * and no cutover is consumed, and writes are unfenced exactly as before.
+   * Reading the row's current owner and adopting it would be impersonation,
+   * not a check.
    */
-  runnerOwnerId?: string,
+  runnerLease?: RunnerLeaseGuard,
   /**
    * `performance.now()` at the caller's entry, for the turn run's queue-wait
    * measurement only (see `TurnLoopConfig.entryStartedAtMs`). Omitted ⇒ NULL.
@@ -351,7 +355,11 @@ export async function runAgentTurnUnderLease(
 
   // Force agent semantics — even if session has a mission attached, this
   // entry point always processes a single agent turn (no mission loop).
-  const agentContext = { ...hydrated.context, sessionKind: "agent" as const };
+  const agentContext = {
+    ...hydrated.context,
+    sessionKind: "agent" as const,
+    ...(runnerLease === undefined ? {} : { leaseGuard: runnerLease }),
+  };
 
   const baseVisibility: ToolVisibilityBase = {
     sessionId,
@@ -390,7 +398,7 @@ export async function runAgentTurnUnderLease(
     // The lease this runner actually holds. Threaded so the compaction-apply
     // boundary action can PROVE ownership (equality against the live lease)
     // rather than adopting whatever owner the row currently names.
-    ...(runnerOwnerId === undefined ? {} : { runnerOwnerId }),
+    ...(runnerLease === undefined ? {} : { runnerOwnerId: runnerLease.ownerId }),
     ...(entryStartedAtMs === undefined ? {} : { entryStartedAtMs }),
   };
 
@@ -440,6 +448,19 @@ export async function runAgentTurnUnderLease(
   // empty — a partial earlier reply is preserved as-is. The turn-loop persists
   // real assistant text itself, so nothing was saved on this path; we persist
   // the synthesised reply as a normal user-visible assistant message.
+  // Lease lost: another runner owns the session. Nothing below may run — a
+  // synthesised reply and a continuation wake are both writes. Reported as
+  // `lease_lost`, never as the user's Stop.
+  if (result.stopReason === "lease_lost") {
+    return {
+      text: null,
+      toolCallsMade: result.toolCallsMade,
+      pendingApprovals: result.pendingApprovals,
+      stopReason: "lease_lost",
+      missionStatus: null,
+    };
+  }
+
   let text = result.text;
 
   /** Persist the deterministic reply for a bound that left the turn silent. */

@@ -103,7 +103,7 @@ export async function handleClaimed(
       wake.dueAt,
       wake.payload?.triggeredBy,
     );
-    await deps.resumeMissionRun(claim.runId, ownerId);
+    await deps.resumeMissionRun(claim.runId, handle);
     return { kind: "resumed", runId: claim.runId };
   } finally {
     await releaseLeaseAndEmitControlState(handle, wake.sessionId, {

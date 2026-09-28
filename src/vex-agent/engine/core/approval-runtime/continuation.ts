@@ -297,7 +297,7 @@ async function runMissionRunResume(
   claimTurn: ResumedTurnClaim,
 ): Promise<TurnResult> {
   const { resumeMissionRun } = await import("../runner/mission.js");
-  return resumeMissionRun(cont.missionRunId, cont.ownerId, claimTurn);
+  return resumeMissionRun(cont.missionRunId, cont.leaseHandle, claimTurn);
 }
 
 /**
@@ -376,7 +376,7 @@ async function runChatSessionResume(
     sessionId: cont.sessionId,
     // The continuation carries the lease this resume runs under, so the turn
     // loop can prove ownership for a compaction cutover.
-    runnerOwnerId: cont.ownerId,
+    runnerLease: cont.leaseHandle,
     claimTurn,
     logScope: "approval_resume",
     // Ordered AFTER the gate on purpose: a stopped session must not have a cue

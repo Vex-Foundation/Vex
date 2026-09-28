@@ -47,6 +47,7 @@ import type {
 import type { LoopWakeRequest } from "../../../../vex-agent/db/repos/loop-wake.js";
 import type { RunnerLease } from "../../../../vex-agent/db/repos/runner-leases.js";
 import { requireValue } from "../../../helpers/require-value.js";
+import { fakeLeaseHandle } from "../../../helpers/lease-guard.js";
 
 function makeStubLease(missionRunId: string | null = "run-1"): RunnerLease {
   return {
@@ -115,11 +116,8 @@ function outcomeAt(results: Awaited<ReturnType<typeof tick>>, index: number) {
 describe("wake.executor.tick", () => {
   beforeEach(() => {
     mockCreateLeaseHandle.mockReset();
-    mockCreateLeaseHandle.mockReturnValue({
-      lease: makeStubLease(),
-      ownerId: "test-owner",
-      release: vi.fn().mockResolvedValue(undefined),
-    });
+    mockCreateLeaseHandle.mockImplementation((opts: { readonly ownerId: string }) =>
+      fakeLeaseHandle({ ownerId: opts.ownerId }));
     mockReleaseLease.mockReset();
     mockReleaseLease.mockResolvedValue(undefined);
     mockScheduleAgentSessionContinuation.mockReset();
@@ -180,7 +178,7 @@ describe("wake.executor.tick", () => {
       );
       expect(deps.continueAgentSession).toHaveBeenCalledWith(
         "sess-1",
-        "wake-executor-wake-agent-1",
+        expect.objectContaining({ ownerId: "wake-executor-wake-agent-1" }),
       );
     });
 
@@ -299,7 +297,7 @@ describe("wake.executor.tick", () => {
       );
       expect(deps.resumeMissionRun).toHaveBeenCalledWith(
         "run-1",
-        "wake-executor-wake-1",
+        expect.objectContaining({ ownerId: "wake-executor-wake-1" }),
       );
       expect(mockReleaseLease).toHaveBeenCalledWith(
         expect.anything(),
@@ -328,7 +326,10 @@ describe("wake.executor.tick", () => {
       expect(claimMissionWake).toHaveBeenCalledWith(
         expect.objectContaining({ ownerId: "auto-retry-wake-9" }),
       );
-      expect(deps.resumeMissionRun).toHaveBeenCalledWith("run-1", "auto-retry-wake-9");
+      expect(deps.resumeMissionRun).toHaveBeenCalledWith(
+        "run-1",
+        expect.objectContaining({ ownerId: "auto-retry-wake-9" }),
+      );
     });
 
     it("an auto-retry the claim refused starts nothing", async () => {

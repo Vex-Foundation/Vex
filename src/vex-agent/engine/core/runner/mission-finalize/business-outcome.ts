@@ -9,6 +9,7 @@ import * as missionsRepo from "@vex-agent/db/repos/missions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import logger from "@utils/logger.js";
 import { emitFinalizeControlState } from "./control-state-emit.js";
+import { guardedWrite, type RunnerLeaseGuard } from "../../../runtime/lease-guard.js";
 
 export async function finalizeBusinessOutcome(
   missionId: string,
@@ -16,6 +17,7 @@ export async function finalizeBusinessOutcome(
   sessionId: string,
   stopReason: StopReason,
   stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
+  leaseGuard?: RunnerLeaseGuard,
 ): Promise<MissionStatus> {
   const status: MissionStatus = stopReason === "goal_reached"
     ? "completed"
@@ -33,12 +35,41 @@ export async function finalizeBusinessOutcome(
   // if it wins. The previous order (mission, then run) could mark the mission
   // `completed` even when the run write lost the race - the mission row and
   // its run row then disagreed about what happened.
-  const landed = await missionRunsRepo.updateStatusIfNotTerminal(
-    runId,
-    status,
-    stopReason,
-    stopPayload,
-  );
+  //
+  // FENCED for a lease-holding runner: the run write and the mission write
+  // commit together, and only while this runner's claim holds. A refused
+  // write leaves both rows to the runner that owns the session now.
+  if (leaseGuard !== undefined) {
+    const fenced = await guardedWrite(
+      leaseGuard,
+      "mission_finalize",
+      async (client) => {
+        const won = await missionRunsRepo.updateStatusIfNotTerminal(
+          runId,
+          status,
+          stopReason,
+          stopPayload,
+          client,
+        );
+        if (won) await missionsRepo.setStatus(missionId, status, client);
+        return won;
+      },
+      { lockMissionRunId: runId },
+    );
+    if (!fenced.fenced) return "running";
+    if (fenced.value) {
+      await emitFinalizeControlState(sessionId, runId);
+      return status;
+    }
+  }
+  const landed = leaseGuard !== undefined
+    ? false
+    : await missionRunsRepo.updateStatusIfNotTerminal(
+      runId,
+      status,
+      stopReason,
+      stopPayload,
+    );
   if (!landed) {
     // The outcome is NOT silently dropped: it is recorded here as the one
     // durable statement this path may make. Writing it onto the run row

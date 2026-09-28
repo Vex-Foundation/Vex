@@ -100,6 +100,9 @@ export async function processMissionSetupTurn(
   // immutable per session and read from the hydrated context.
   const setupContext = {
     ...hydrated.context,
+    // Fences the loop's writes on this claim; its lost signal ends the turn on
+    // `lease_lost` (never the Stop).
+    leaseGuard: sessionLease,
     sessionKind: "mission" as const,
     missionId,
     missionRunId: null,
@@ -195,6 +198,19 @@ export async function processMissionSetupTurn(
   // (`no_progress`) is never auto-continued but still owes the user a reply.
   // Asking the continuation question here is what returned `text: null` and
   // produced a silent setup turn.
+  // Lease lost: another runner owns the session. No synthesised reply, no
+  // mission patch, no notice — every one of those is a write, and the draft
+  // belongs to the new owner now. Reported as `lease_lost`, never as a Stop.
+  if (result.stopReason === "lease_lost") {
+    return {
+      text: null,
+      toolCallsMade: result.toolCallsMade,
+      pendingApprovals: [],
+      stopReason: "lease_lost",
+      missionStatus: null,
+    };
+  }
+
   const boundHit = isRuntimeBoundStop(result.stopReason) && !result.text;
   const boundHitReply = isRuntimeBoundStop(result.stopReason)
     ? runtimeBoundExhaustedReply(result.stopReason, result.lastUnproductiveKind ?? null)

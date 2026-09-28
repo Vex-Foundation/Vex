@@ -335,7 +335,7 @@ export async function runRetryDispatch(
     void (async () => {
       try {
         const { resumeMissionRun } = await import("@vex-agent/engine/index.js");
-        await resumeMissionRun(runId, ownerId);
+        await resumeMissionRun(runId, handle);
         await markCleared(auditRequest.id, "resumed");
       } catch (cause) {
         log.warn(

@@ -44,6 +44,7 @@
  * already holds and never touches it.
  */
 
+import type { RunnerLeaseGuard } from "../../runtime/lease-guard.js";
 import logger from "@utils/logger.js";
 
 import type { ResumedTurnClaim, TurnResult } from "../../types.js";
@@ -60,11 +61,11 @@ const STOPPED_RESULT: TurnResult = {
 export interface GatedSessionTurnInput {
   readonly sessionId: string;
   /**
-   * The session-lease owner id the CALLER holds for this turn. Threaded so the
-   * turn loop's compaction-apply boundary can prove ownership by equality
-   * against the live lease.
+   * The session lease the CALLER holds for this turn (its `LeaseHandle`).
+   * Threaded so the turn loop can prove ownership for a compaction cutover,
+   * fence its writes on the claim, and end on `lease_lost` if the claim goes.
    */
-  readonly runnerOwnerId: string;
+  readonly runnerLease: RunnerLeaseGuard;
   /**
    * Caller preparation that must run only on a session that was NOT stopped —
    * an idempotent transcript cue, for instance. Runs after the gate and after
@@ -132,7 +133,7 @@ export async function runStopGatedSessionTurn(
       // Boundary position too: the turn must stop at the next iteration, not
       // only mid-stream.
       controller.signal,
-      input.runnerOwnerId,
+      input.runnerLease,
       entryStartedAtMs,
     );
   } finally {

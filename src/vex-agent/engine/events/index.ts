@@ -19,8 +19,10 @@ export {
 export {
   appendMessage,
   appendEngineMessage,
+  appendMessagesUnderLease,
   emitTranscriptAppend,
   type AppendOptions,
+  type FencedAppendEntry,
 } from "./append-transcript.js";
 
 export {

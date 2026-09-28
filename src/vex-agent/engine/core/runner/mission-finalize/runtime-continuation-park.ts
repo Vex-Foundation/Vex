@@ -20,6 +20,8 @@
 import type { MissionStatus } from "../../../types.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import logger from "@utils/logger.js";
+import { fenceRunWriteWith } from "@vex-agent/db/lease-fence.js";
+import type { RunnerLeaseGuard } from "../../../runtime/lease-guard.js";
 import {
   scheduleRuntimeContinuation,
   type ContinuableRuntimeStop,
@@ -30,6 +32,7 @@ export async function finalizeRuntimeContinuationPark(
   runId: string,
   sessionId: string,
   stopReason: ContinuableRuntimeStop,
+  leaseGuard?: RunnerLeaseGuard,
 ): Promise<MissionStatus> {
   const continuation = await scheduleRuntimeContinuation({
     sessionId,
@@ -51,6 +54,16 @@ export async function finalizeRuntimeContinuationPark(
     });
     // Fail-closed: a stopped run gets no park write at all.
     if (gate.kind === "stopped") return false;
+    // Lease fence, AFTER the gate (control lock → requests → run → lease is
+    // the lock order): a runner whose claim was taken over parks nothing;
+    // the run belongs to the new owner.
+    if (
+      leaseGuard !== undefined
+      && !(await fenceRunWriteWith(client, leaseGuard.fence, runId, "mission_park"))
+    ) {
+      leaseGuard.markLost("taken_over", "fence");
+      return false;
+    }
     return missionRunsRepo.updateStatusIfNotTerminal(
       runId,
       "paused_wake",

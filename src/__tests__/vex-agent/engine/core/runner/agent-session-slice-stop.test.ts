@@ -16,6 +16,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { fakeLeaseHandle } from "../../../../helpers/lease-guard.js";
 
 const mockResolveProvider = vi.fn();
 const mockHydrate = vi.fn();
@@ -117,6 +118,8 @@ function makeHydratedSession() {
  * (`wake-executor-<wakeId>` in production).
  */
 const WAKE_OWNER = "wake-executor-wake-1";
+/** The executor's lease handle, as the wake executor passes it. */
+const WAKE_LEASE = fakeLeaseHandle({ ownerId: WAKE_OWNER, sessionId: "session-1" });
 
 /** `runTurnLoop` positional args: 10 = boundary signal, 11 = inference signal. */
 function capturedSignals(): {
@@ -153,7 +156,7 @@ describe("wake-driven slice — lease ownership", () => {
    * this is asserted on the exact value rather than on "some owner".
    */
   it("threads the executor's lease owner id into the slice's turn loop config", async () => {
-    await continueAgentSessionUnderLease("session-1", WAKE_OWNER);
+    await continueAgentSessionUnderLease("session-1", WAKE_LEASE);
 
     const loopConfig = mockRunTurnLoop.mock.calls[0]![7] as {
       runnerOwnerId?: string;
@@ -169,7 +172,7 @@ describe("wake-driven slice — durable pre-slice gate", () => {
       runStatus: "stopped",
     });
 
-    const result = await continueAgentSessionUnderLease("session-1", WAKE_OWNER);
+    const result = await continueAgentSessionUnderLease("session-1", WAKE_LEASE);
 
     expect(result.stopReason).toBe("user_stopped");
     expect(result.toolCallsMade).toBe(0);
@@ -179,7 +182,7 @@ describe("wake-driven slice — durable pre-slice gate", () => {
   });
 
   it("takes the gate under the session control lock", async () => {
-    await continueAgentSessionUnderLease("session-1", WAKE_OWNER);
+    await continueAgentSessionUnderLease("session-1", WAKE_LEASE);
 
     expect(mockWithSessionControlLock).toHaveBeenCalledWith(
       "session-1",
@@ -194,7 +197,7 @@ describe("wake-driven slice — durable pre-slice gate", () => {
 
 describe("wake-driven slice — live cancellation owner", () => {
   it("threads ONE live signal into BOTH turn-loop positions", async () => {
-    await continueAgentSessionUnderLease("session-1", WAKE_OWNER);
+    await continueAgentSessionUnderLease("session-1", WAKE_LEASE);
 
     const { boundary, inference } = capturedSignals();
     expect(boundary).toBeInstanceOf(AbortSignal);
@@ -219,18 +222,18 @@ describe("wake-driven slice — live cancellation owner", () => {
       };
     });
 
-    const result = await continueAgentSessionUnderLease("session-1", WAKE_OWNER);
+    const result = await continueAgentSessionUnderLease("session-1", WAKE_LEASE);
 
     expect(observed?.aborted).toBe(true);
     expect(result.stopReason).toBe("user_stopped");
   });
 
   it("unregisters the controller after the slice, including on throw", async () => {
-    await continueAgentSessionUnderLease("session-1", WAKE_OWNER);
+    await continueAgentSessionUnderLease("session-1", WAKE_LEASE);
     expect(hasSessionSliceAbortController("session-1")).toBe(false);
 
     mockRunTurnLoop.mockRejectedValueOnce(new Error("provider down"));
-    await expect(continueAgentSessionUnderLease("session-1", WAKE_OWNER)).rejects.toThrow(
+    await expect(continueAgentSessionUnderLease("session-1", WAKE_LEASE)).rejects.toThrow(
       "provider down",
     );
     expect(hasSessionSliceAbortController("session-1")).toBe(false);
@@ -252,7 +255,7 @@ describe("wake-driven slice — live cancellation owner", () => {
       };
     });
 
-    await continueAgentSessionUnderLease("session-1", WAKE_OWNER);
+    await continueAgentSessionUnderLease("session-1", WAKE_LEASE);
 
     expect(loopWake.enqueue).not.toHaveBeenCalled();
   });
@@ -289,7 +292,7 @@ describe("wake-driven slice — no window between gate and registration", () => 
       return { kind: "clear" };
     });
 
-    await continueAgentSessionUnderLease("session-1", WAKE_OWNER);
+    await continueAgentSessionUnderLease("session-1", WAKE_LEASE);
 
     expect(order).toEqual(["controller_exists"]);
   });
@@ -303,7 +306,7 @@ describe("wake-driven slice — no window between gate and registration", () => 
       return { kind: "clear" };
     });
 
-    await continueAgentSessionUnderLease("session-1", WAKE_OWNER);
+    await continueAgentSessionUnderLease("session-1", WAKE_LEASE);
 
     const { boundary, inference } = capturedSignals();
     // The loop is handed an ALREADY-aborted signal in both positions, so it
@@ -319,7 +322,7 @@ describe("wake-driven slice — no window between gate and registration", () => 
       scope: "session",
     });
 
-    const result = await continueAgentSessionUnderLease("session-1", WAKE_OWNER);
+    const result = await continueAgentSessionUnderLease("session-1", WAKE_LEASE);
 
     expect(result.stopReason).toBe("user_stopped");
     expect(mockRunTurnLoop).not.toHaveBeenCalled();
@@ -350,7 +353,7 @@ describe("wake-driven slice — the stop row is consumed on the aborted exit", (
       };
     });
 
-    await continueAgentSessionUnderLease("session-1", WAKE_OWNER);
+    await continueAgentSessionUnderLease("session-1", WAKE_LEASE);
 
     // Gate consulted twice: once to admit the slice, once on the aborted exit
     // to consume what stopped it. The gate IS the shared consumer — reusing it
@@ -363,7 +366,7 @@ describe("wake-driven slice — the stop row is consumed on the aborted exit", (
   });
 
   it("does NOT re-consume when the slice ended normally", async () => {
-    await continueAgentSessionUnderLease("session-1", WAKE_OWNER);
+    await continueAgentSessionUnderLease("session-1", WAKE_LEASE);
 
     // No abort happened, so there is nothing to consume — and consulting the
     // gate again would be a pointless transaction on every healthy slice.
@@ -377,7 +380,7 @@ describe("wake-driven slice — the stop row is consumed on the aborted exit", (
     });
 
     await expect(
-      continueAgentSessionUnderLease("session-1", WAKE_OWNER),
+      continueAgentSessionUnderLease("session-1", WAKE_LEASE),
     ).rejects.toThrow("provider died mid-abort");
 
     expect(mockGateOnOperatorStop).toHaveBeenCalledTimes(2);
@@ -399,7 +402,7 @@ describe("wake-driven slice — the stop row is consumed on the aborted exit", (
       .mockResolvedValueOnce({ kind: "clear" })
       .mockRejectedValueOnce(new Error("db blip"));
 
-    const result = await continueAgentSessionUnderLease("session-1", WAKE_OWNER);
+    const result = await continueAgentSessionUnderLease("session-1", WAKE_LEASE);
 
     expect(result.text).toBe("partial work");
     expect(hasSessionSliceAbortController("session-1")).toBe(false);
