@@ -3,11 +3,12 @@
  * affordance in the header's right flank.
  *
  * A quiet amber pin badge (`AWAITING <n>`) that opens a centered review dialog
- * listing EVERY pending approval across all sessions. The badge renders
- * `null` when nothing is pending (so the flank stays empty when idle) and also
- * when the query is loading or errored (A4 — the inline `ApprovalsRegion`
- * still surfaces errors for the active session; the global badge stays silent
- * rather than showing a broken count).
+ * listing EVERY pending approval across all sessions. The flank stays empty
+ * ONLY after a successful read listed nothing (Kairos U-2). While the first
+ * read is in flight it shows a quiet "checking" status, and when the read
+ * fails (`data.ok === false` or a query error) it shows "couldn't check" with
+ * a read-only Retry — an empty flank after a failed read would be a false
+ * all-clear on a surface that exists to say "something needs your signature".
  *
  * Freshness: push first — `useMissionUpdateLiveSync` invalidates `pendingAll`
  * on `approval_enqueued`, which is emitted post-commit for chat AND mission
@@ -35,6 +36,7 @@ import {
 } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogBody } from "../../components/ui/dialog.js";
 import type { ApprovalPendingGlobalDto } from "@shared/schemas/approvals.js";
+import type { Result } from "@shared/ipc/result.js";
 import {
   useGlobalApprovalsLiveSync,
   usePendingApprovalsAll,
@@ -58,6 +60,32 @@ const IDLE_POLL_MS = 60_000;
 const PANEL_OPEN_POLL_MS = 15_000;
 /** LIMIT 100 in SQL; the badge collapses anything past this to "99+". */
 const MAX_BADGE_COUNT = 99;
+
+/**
+ * What the badge may honestly say (Kairos U-2). "none" is claimed only from a
+ * successful read that listed nothing; a failed read is "unknown", never a
+ * clear. A failed REFETCH over an earlier non-empty read keeps the last known
+ * count (an approval that may since have resolved is a safe overstatement); a
+ * failed refetch over an earlier EMPTY read is "unknown", because repeating
+ * that empty answer would be a clear nobody verified.
+ */
+export type GlobalApprovalsStatus =
+  | { readonly kind: "loading" }
+  | { readonly kind: "none" }
+  | { readonly kind: "pending"; readonly count: number }
+  | { readonly kind: "unknown" };
+
+export function globalApprovalsStatus(
+  data: Result<ReadonlyArray<ApprovalPendingGlobalDto>> | undefined,
+  queryErrored: boolean,
+  rows: ReadonlyArray<ApprovalPendingGlobalDto> | null,
+): GlobalApprovalsStatus {
+  if (data !== undefined && data.ok === false) return { kind: "unknown" };
+  if (rows !== null && rows.length > 0) return { kind: "pending", count: rows.length };
+  if (queryErrored) return { kind: "unknown" };
+  if (data === undefined) return { kind: "loading" };
+  return { kind: "none" };
+}
 
 export function GlobalApprovals(): JSX.Element | null {
   useGlobalApprovalsLiveSync();
@@ -94,11 +122,58 @@ export function GlobalApprovals(): JSX.Element | null {
     triggerRef.current?.focus();
   }, []);
 
-  useEffect(() => {
-    if (rows?.length === 0) setOpen(false);
-  }, [rows]);
+  const status = globalApprovalsStatus(query.data, query.isError === true, rows);
 
-  if (rows === null || rows.length === 0) return null;
+  useEffect(() => {
+    if (status.kind !== "pending") setOpen(false);
+  }, [status.kind]);
+
+  if (status.kind === "loading") {
+    return (
+      <span
+        role="status"
+        data-vex-area="global-approvals-status"
+        data-state="loading"
+        className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-tertiary"
+      >
+        <span aria-hidden="true">APPROVALS …</span>
+        <span className="sr-only">Checking for pending approvals</span>
+      </span>
+    );
+  }
+
+  if (status.kind === "unknown") {
+    const retrying = query.isFetching === true;
+    return (
+      <div
+        role="status"
+        data-vex-area="global-approvals-status"
+        data-state="unknown"
+        className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-pin)]"
+      >
+        <span aria-hidden="true">APPROVALS ?</span>
+        <span className="sr-only">
+          Couldn&apos;t check for pending approvals. Some may be waiting for your signature.
+        </span>
+        <button
+          type="button"
+          data-vex-area="global-approvals-retry"
+          disabled={retrying}
+          aria-label={retrying ? "Checking approvals again" : "Retry checking approvals"}
+          onClick={() => {
+            void query.refetch();
+          }}
+          className="rounded-[3px] border border-[var(--vex-pin-border)] px-1.5 py-0.5 hover:bg-[var(--vex-pin-fill-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:opacity-60"
+        >
+          {retrying ? "CHECKING" : "RETRY"}
+        </button>
+      </div>
+    );
+  }
+
+  // A confirmed empty inbox: the flank stays empty. Reached ONLY after a
+  // successful read, so an empty flank is never a guess.
+  if (status.kind === "none" || rows === null) return null;
 
   const count = rows.length;
   const badgeLabel =
