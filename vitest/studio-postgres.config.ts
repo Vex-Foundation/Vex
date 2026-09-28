@@ -83,6 +83,8 @@ export default defineConfig({
       // F-EVM: the pending-debit compensation's in-flight SQL against the real schema.
       "src/__tests__/integration/repos/pending-debit-compensation.int.test.ts",
       "src/__tests__/integration/repos/session-control-state-wake.int.test.ts",
+      // Kairos S-1: the claim-token contract and the FOR SHARE write fence.
+      "src/__tests__/integration/repos/runner-lease-fence.int.test.ts",
       "src/__tests__/integration/repos/recovery-money-gate-race.int.test.ts",
       "src/__tests__/integration/repos/recovery-reverse-lock-order.int.test.ts",
       "src/__tests__/integration/repos/wallet-transaction-*.int.test.ts",
