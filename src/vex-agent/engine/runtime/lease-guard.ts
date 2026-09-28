@@ -47,6 +47,12 @@ export interface RunnerLeaseGuard {
   /** The claim fenced writes are conditional on. */
   readonly fence: LeaseFence;
   /**
+   * This claim replaced an expired claim of another runner (a takeover). The
+   * turn loop reconciles the session's unresolved money state before its
+   * first dispatch when it is set.
+   */
+  readonly tookOverExpiredClaim: boolean;
+  /**
    * Aborts once this runner's claim is known to be lost. Distinct from, and
    * never combined into, the Stop signal a tool receives.
    */
@@ -60,6 +66,7 @@ export interface RunnerLeaseGuard {
 export function createRunnerLeaseGuard(input: {
   readonly ownerId: string;
   readonly fence: LeaseFence;
+  readonly tookOverExpiredClaim?: boolean;
   readonly onLost?: (reason: LeaseLostReason) => void;
 }): RunnerLeaseGuard {
   const controller = new AbortController();
@@ -67,6 +74,7 @@ export function createRunnerLeaseGuard(input: {
   return {
     ownerId: input.ownerId,
     fence: input.fence,
+    tookOverExpiredClaim: input.tookOverExpiredClaim === true,
     lostSignal: controller.signal,
     lostReason: () => reason,
     markLost(next, source) {

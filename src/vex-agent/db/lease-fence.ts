@@ -73,7 +73,8 @@ export type LeaseFenceSite =
   | "tool_batch_transcript"
   | "mission_finalize"
   | "mission_park"
-  | "dispatch_check";
+  | "dispatch_check"
+  | "takeover_notice";
 
 export type LeaseFenceOutcome<T> =
   | { readonly fenced: true; readonly state: "held" | "released"; readonly value: T }

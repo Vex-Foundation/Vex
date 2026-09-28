@@ -120,6 +120,7 @@ import {
 } from "./runner/stall-recovery.js";
 import { hasPendingForSession } from "@vex-agent/db/repos/approvals.js";
 import { isLeaseLost } from "../runtime/lease-guard.js";
+import { reconcileAfterTakeover } from "./turn-loop/takeover-reconcile.js";
 
 /**
  * The inference call is aborted by EITHER the caller's inference signal (the
@@ -316,6 +317,19 @@ async function runTurnLoopBody(
   // at every exit below) is the whole clearing mechanism for stop, cancel,
   // exhaustion, parking, and a failed turn.
   beginPresentationScope(context.sessionId);
+
+  // Reconcile-before-dispatch after a TAKEOVER: before the first inference
+  // (and so before any dispatch), surface the session's unresolved money state
+  // to the new runner so nothing in flight under the old runner is repeated.
+  // See `turn-loop/takeover-reconcile.ts`. Reads and informs; never replays.
+  if (leaseGuard?.tookOverExpiredClaim === true) {
+    await reconcileAfterTakeover({
+      sessionId: context.sessionId,
+      missionRunId: context.missionRunId ?? null,
+      leaseGuard,
+      liveMessages,
+    });
+  }
 
   let postCompactBridgeRemaining = await armPostCompactBridge({
     sessionId: context.sessionId,

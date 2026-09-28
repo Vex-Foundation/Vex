@@ -40,6 +40,7 @@ import {
   type RunnerLease,
 } from "../../db/repos/runner-leases.js";
 import logger from "@utils/logger.js";
+import { withControlClient } from "../../db/control-pool.js";
 import {
   createRunnerLeaseGuard,
   type LeaseLostReason,
@@ -93,6 +94,13 @@ const DEFAULT_TIMER = {
   },
 };
 
+const controlRenew: typeof renewLease = (sessionId, claimToken, ttlMs) =>
+  withControlClient((client) => renewLease(sessionId, claimToken, ttlMs, client));
+const controlRelease: typeof releaseLease = (sessionId, claimToken) =>
+  withControlClient((client) => releaseLease(sessionId, claimToken, client));
+const controlProbe: typeof getLease = (sessionId) =>
+  withControlClient((client) => getLease(sessionId, client));
+
 const LOST_CALLBACK_REASON: Readonly<Record<LeaseLostReason, string>> = {
   taken_over: "lease_stolen_after_expiry",
   released: "lease_released_externally",
@@ -101,9 +109,12 @@ const LOST_CALLBACK_REASON: Readonly<Record<LeaseLostReason, string>> = {
 
 export function createLeaseHandle(opts: CreateLeaseHandleOptions): LeaseHandle {
   const timer = opts.timer ?? DEFAULT_TIMER;
-  const renew = opts.renewFn ?? renewLease;
-  const release = opts.releaseFn ?? releaseLease;
-  const probe = opts.probeFn ?? getLease;
+  // Renewal, release and the loss probe run on the reserved CONTROL pool
+  // (`db/control-pool.ts`): a lease must stay renewable, and releasable, while
+  // the main pool is saturated by the very work the lease protects.
+  const renew = opts.renewFn ?? controlRenew;
+  const release = opts.releaseFn ?? controlRelease;
+  const probe = opts.probeFn ?? controlProbe;
   const heartbeatIntervalMs = Math.max(1_000, Math.floor(opts.ttlMs / 3));
 
   let released = false;
@@ -112,6 +123,7 @@ export function createLeaseHandle(opts: CreateLeaseHandleOptions): LeaseHandle {
   const guard = createRunnerLeaseGuard({
     ownerId: opts.ownerId,
     fence: { sessionId: opts.lease.sessionId, claimToken: opts.lease.claimToken },
+    tookOverExpiredClaim: opts.lease.tookOver === true,
     onLost: (reason) => {
       if (opts.onLeaseLost !== undefined) opts.onLeaseLost(LOST_CALLBACK_REASON[reason]);
     },
@@ -166,6 +178,7 @@ export function createLeaseHandle(opts: CreateLeaseHandleOptions): LeaseHandle {
     ownerId: opts.ownerId,
     claimToken: opts.lease.claimToken,
     fence: guard.fence,
+    tookOverExpiredClaim: guard.tookOverExpiredClaim,
     lostSignal: guard.lostSignal,
     lostReason: () => guard.lostReason(),
     markLost: (reason, source) => {

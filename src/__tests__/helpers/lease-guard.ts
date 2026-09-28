@@ -26,6 +26,8 @@ export interface FakeLeaseHandleInput {
   readonly ownerId: string;
   readonly sessionId?: string;
   readonly claimToken?: string;
+  /** Simulate a claim that took over an expired claim. */
+  readonly tookOver?: boolean;
 }
 
 export function fakeLeaseHandle(input: FakeLeaseHandleInput): LeaseHandle {
@@ -49,6 +51,7 @@ export function fakeLeaseHandle(input: FakeLeaseHandleInput): LeaseHandle {
     ownerId: input.ownerId,
     claimToken,
     fence: { sessionId, claimToken },
+    tookOverExpiredClaim: input.tookOver === true,
     lostSignal: controller.signal,
     lostReason: () => reason,
     markLost: (next: LeaseLostReason) => {

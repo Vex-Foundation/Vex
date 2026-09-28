@@ -47,6 +47,14 @@ export interface RunnerLeaseInfo {
 /** A lease as its HOLDER sees it: the row plus the token of this claim. */
 export interface RunnerLease extends RunnerLeaseInfo {
   readonly claimToken: string;
+  /**
+   * True when THIS claim replaced an expired claim held under another token —
+   * a takeover. The previous holder may have had a tool call in flight whose
+   * result never reached the transcript, so the new runner reconciles before
+   * its first dispatch (`turn-loop/takeover-reconcile.ts`). Absent/false for a
+   * first claim or a refresh.
+   */
+  readonly tookOver?: boolean;
 }
 
 interface RunnerLeaseRow {
@@ -61,6 +69,8 @@ interface RunnerLeaseRow {
 
 interface RunnerLeaseRowWithToken extends RunnerLeaseRow {
   readonly claim_token: string;
+  /** Present only on `acquireLease`'s RETURNING: the conflict path ran. */
+  readonly replaced?: boolean;
 }
 
 function mapInfo(r: RunnerLeaseRow): RunnerLeaseInfo {
@@ -77,6 +87,15 @@ function mapInfo(r: RunnerLeaseRow): RunnerLeaseInfo {
 
 function mapHeld(r: RunnerLeaseRowWithToken): RunnerLease {
   return { ...mapInfo(r), claimToken: r.claim_token };
+}
+
+/**
+ * A claim that went through the conflict path and did NOT keep the presented
+ * token replaced somebody else's (expired) claim.
+ */
+function mapAcquired(r: RunnerLeaseRowWithToken, presented: string | undefined): RunnerLease {
+  const tookOver = r.replaced === true && r.claim_token !== presented;
+  return { ...mapHeld(r), ...(tookOver ? { tookOver: true } : {}) };
 }
 
 /** A fresh claim token. Random and unguessable; never derived from the owner id. */
@@ -137,7 +156,8 @@ export async function acquireLease(
           OR (runner_leases.owner_id = EXCLUDED.owner_id
               AND runner_leases.claim_token = $7::text)
      RETURNING session_id, mission_run_id, owner_id, process_kind,
-               acquired_at, heartbeat_at, expires_at, claim_token`,
+               acquired_at, heartbeat_at, expires_at, claim_token,
+               (xmax::text <> '0') AS replaced`,
     [
       input.sessionId,
       input.missionRunId ?? null,
@@ -148,7 +168,7 @@ export async function acquireLease(
       input.claimToken ?? null,
     ],
   );
-  return inserted === null ? null : mapHeld(inserted);
+  return inserted === null ? null : mapAcquired(inserted, input.claimToken);
 }
 
 export { leaseBlocksClaim } from "./runner-lease-rules.js";
