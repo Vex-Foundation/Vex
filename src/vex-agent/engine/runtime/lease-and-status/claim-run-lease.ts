@@ -35,6 +35,8 @@ import {
   type MissionRunRow,
   type RunnerLeaseRow,
   mapLease,
+  LOCK_LEASE_COLUMNS,
+  lockedLeaseBlocks,
 } from "./_row-shapes.js";
 
 export async function claimRunLeaseAndFlipToRunning(
@@ -83,8 +85,7 @@ export async function claimRunLeaseAndFlipToRunningWith(
     // 2. Lock + validate the lease row (if present).
     const existingLease = await queryOneWith<RunnerLeaseRow>(
       client,
-      `SELECT session_id, mission_run_id, owner_id, process_kind,
-              acquired_at, heartbeat_at, expires_at
+      `SELECT ${LOCK_LEASE_COLUMNS}
          FROM runner_leases
         WHERE session_id = $1
         FOR UPDATE`,
@@ -92,8 +93,7 @@ export async function claimRunLeaseAndFlipToRunningWith(
     );
     if (
       existingLease !== null
-      && existingLease.expires_at >= new Date()
-      && existingLease.owner_id !== input.ownerId
+    && lockedLeaseBlocks(existingLease, input.ownerId, input.claimToken)
     ) {
       return { outcome: "lease_busy", currentLease: mapLease(existingLease) };
     }
@@ -132,6 +132,7 @@ export async function claimRunLeaseAndFlipToRunningWith(
         ownerId: input.ownerId,
         processKind: input.processKind,
         ttlMs: input.ttlMs,
+        claimToken: input.claimToken,
       },
       client,
     );

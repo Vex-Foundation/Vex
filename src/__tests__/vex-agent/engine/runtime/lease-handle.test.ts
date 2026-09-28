@@ -13,6 +13,7 @@ const SAMPLE_LEASE: RunnerLease = {
   acquiredAt: new Date("2026-05-21T12:00:00Z"),
   heartbeatAt: new Date("2026-05-21T12:00:00Z"),
   expiresAt: new Date("2026-05-21T12:05:00Z"),
+  claimToken: "token-1",
 };
 
 /** The injectable timer contract `createLeaseHandle` actually accepts. */
@@ -87,7 +88,7 @@ describe("LeaseHandle", () => {
     });
 
     await timer.trigger();
-    expect(renewFn).toHaveBeenCalledWith("session-1", "owner-1", 60_000);
+    expect(renewFn).toHaveBeenCalledWith("session-1", "token-1", 60_000);
     await handle.release();
   });
 

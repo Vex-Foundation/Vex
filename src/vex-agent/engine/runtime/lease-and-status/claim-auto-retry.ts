@@ -26,9 +26,18 @@ import {
   executeWith,
 } from "../../../db/client.js";
 import { acquireLease } from "../../../db/repos/runner-leases.js";
-import type { LeaseProcessKind, RunnerLease } from "../../../db/repos/runner-leases.js";
+import type {
+  LeaseProcessKind,
+  RunnerLease,
+  RunnerLeaseInfo,
+} from "../../../db/repos/runner-leases.js";
 import { snapshotAutoRetryEnabled } from "../../core/runner/mission-auto-retry-policy.js";
-import { type RunnerLeaseRow, mapLease } from "./_row-shapes.js";
+import {
+  type RunnerLeaseRow,
+  mapLease,
+  LOCK_LEASE_COLUMNS,
+  lockedLeaseBlocks,
+} from "./_row-shapes.js";
 
 export interface ClaimAutoRetryInput {
   readonly sessionId: string;
@@ -38,6 +47,8 @@ export interface ClaimAutoRetryInput {
   readonly ownerId: string;
   readonly processKind: LeaseProcessKind;
   readonly ttlMs: number;
+  /** Token of a claim the caller already holds (refresh only); omit for a new claim. */
+  readonly claimToken?: string;
 }
 
 export type AutoRetryIneligibleReason =
@@ -52,7 +63,7 @@ export type AutoRetryIneligibleReason =
 
 export type ClaimAutoRetryOutcome =
   | { readonly outcome: "claimed"; readonly lease: RunnerLease }
-  | { readonly outcome: "lease_busy"; readonly currentLease: RunnerLease }
+  | { readonly outcome: "lease_busy"; readonly currentLease: RunnerLeaseInfo }
   | { readonly outcome: "ineligible"; readonly reason: AutoRetryIneligibleReason };
 
 interface AutoRetryClaimRow {
@@ -108,17 +119,15 @@ export async function claimRunForAutoRetry(
     // 3. Lock + validate the lease row (absent / expired / same-owner).
     const existingLease = await queryOneWith<RunnerLeaseRow>(
       client,
-      `SELECT session_id, mission_run_id, owner_id, process_kind,
-              acquired_at, heartbeat_at, expires_at
+      `SELECT ${LOCK_LEASE_COLUMNS}
          FROM runner_leases
         WHERE session_id = $1
         FOR UPDATE`,
       [input.sessionId],
     );
     if (
-      existingLease !== null &&
-      existingLease.expires_at >= new Date() &&
-      existingLease.owner_id !== input.ownerId
+      existingLease !== null
+    && lockedLeaseBlocks(existingLease, input.ownerId, input.claimToken)
     ) {
       return { outcome: "lease_busy", currentLease: mapLease(existingLease) };
     }
@@ -140,6 +149,7 @@ export async function claimRunForAutoRetry(
         ownerId: input.ownerId,
         processKind: input.processKind,
         ttlMs: input.ttlMs,
+        claimToken: input.claimToken,
       },
       client,
     );

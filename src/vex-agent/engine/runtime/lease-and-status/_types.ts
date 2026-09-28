@@ -11,6 +11,7 @@ import type { MissionRunStatus } from "../../types.js";
 import type {
   LeaseProcessKind,
   RunnerLease,
+  RunnerLeaseInfo,
 } from "../../../db/repos/runner-leases.js";
 import type {
   ControlRequest,
@@ -26,6 +27,12 @@ export interface ClaimRunInput {
   readonly ownerId: string;
   readonly processKind: LeaseProcessKind;
   readonly ttlMs: number;
+  /**
+   * The token of a claim this caller ALREADY holds, presented to refresh it.
+   * Omit for a new claim (every production caller today). A live lease held
+   * under any other token - including the same owner id - is `lease_busy`.
+   */
+  readonly claimToken?: string;
 }
 
 export type ClaimRunOutcome =
@@ -37,7 +44,7 @@ export type ClaimRunOutcome =
   }
   | {
     readonly outcome: "lease_busy";
-    readonly currentLease: RunnerLease;
+    readonly currentLease: RunnerLeaseInfo;
   }
   | {
     readonly outcome: "status_mismatch";
@@ -51,11 +58,17 @@ export interface ClaimSessionLeaseInput {
   readonly ownerId: string;
   readonly processKind: LeaseProcessKind;
   readonly ttlMs: number;
+  /**
+   * The token of a claim this caller ALREADY holds, presented to refresh it.
+   * Omit for a new claim (every production caller today). A live lease held
+   * under any other token - including the same owner id - is `lease_busy`.
+   */
+  readonly claimToken?: string;
 }
 
 export type ClaimSessionLeaseOutcome =
   | { readonly outcome: "claimed"; readonly lease: RunnerLease }
-  | { readonly outcome: "lease_busy"; readonly currentLease: RunnerLease };
+  | { readonly outcome: "lease_busy"; readonly currentLease: RunnerLeaseInfo };
 
 // ── observeAndApplyControl ──────────────────────────────────────────
 

@@ -16,8 +16,13 @@
  * forced-terminated.
  *
  * `release()` is idempotent — repeated calls are safe (heartbeat
- * cleared once, DELETE matches the owner_id so a stale call after
+ * cleared once, DELETE matches the claim token so a stale call after
  * eviction is a no-op).
+ *
+ * The handle carries `claimToken` — the token THIS claim was issued
+ * (migration 173). Renewal and release present it, never the owner id, so
+ * two runners that share an owner id cannot renew or release each other's
+ * claim.
  */
 
 import {
@@ -30,6 +35,8 @@ import logger from "@utils/logger.js";
 export interface LeaseHandle {
   readonly lease: RunnerLease;
   readonly ownerId: string;
+  /** The token of this claim — the only credential renewal and release accept. */
+  readonly claimToken: string;
   /** Idempotent. Safe to call multiple times. */
   release(): Promise<void>;
 }
@@ -85,7 +92,7 @@ export function createLeaseHandle(opts: CreateLeaseHandleOptions): LeaseHandle {
   async function heartbeatTick(): Promise<void> {
     if (released) return;
     try {
-      const renewed = await renew(opts.lease.sessionId, opts.ownerId, opts.ttlMs);
+      const renewed = await renew(opts.lease.sessionId, opts.lease.claimToken, opts.ttlMs);
       if (renewed === null) {
         // Lease stolen — somebody else claimed after our expiry. Stop
         // the heartbeat and notify the runner; the runner is expected
@@ -121,12 +128,13 @@ export function createLeaseHandle(opts: CreateLeaseHandleOptions): LeaseHandle {
   return {
     lease: opts.lease,
     ownerId: opts.ownerId,
+    claimToken: opts.lease.claimToken,
     async release(): Promise<void> {
       if (released) return;
       released = true;
       stopHeartbeat();
       try {
-        await release(opts.lease.sessionId, opts.ownerId);
+        await release(opts.lease.sessionId, opts.lease.claimToken);
       } catch (err) {
         // Swallow — releasing on top of an already-stolen lease is
         // best-effort. The next claimant won't be blocked by our row.

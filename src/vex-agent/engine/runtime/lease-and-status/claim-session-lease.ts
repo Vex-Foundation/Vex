@@ -12,7 +12,12 @@ import type {
   ClaimSessionLeaseInput,
   ClaimSessionLeaseOutcome,
 } from "./_types.js";
-import { type RunnerLeaseRow, mapLease } from "./_row-shapes.js";
+import {
+  type RunnerLeaseRow,
+  mapLease,
+  LOCK_LEASE_COLUMNS,
+  lockedLeaseBlocks,
+} from "./_row-shapes.js";
 
 /**
  * ACQUIRE ROOT #1 of two. Every ordinary session-lease caller routes through
@@ -62,8 +67,7 @@ export async function claimSessionLeaseWithClient(
   // `expires_at` for `retryAfterMs` on busy.
   const existingLease = await queryOneWith<RunnerLeaseRow>(
     client,
-    `SELECT session_id, mission_run_id, owner_id, process_kind,
-            acquired_at, heartbeat_at, expires_at
+    `SELECT ${LOCK_LEASE_COLUMNS}
        FROM runner_leases
       WHERE session_id = $1
       FOR UPDATE`,
@@ -71,8 +75,7 @@ export async function claimSessionLeaseWithClient(
   );
   if (
     existingLease !== null
-    && existingLease.expires_at >= new Date()
-    && existingLease.owner_id !== input.ownerId
+    && lockedLeaseBlocks(existingLease, input.ownerId, input.claimToken)
   ) {
     return { outcome: "lease_busy", currentLease: mapLease(existingLease) };
   }
@@ -83,6 +86,7 @@ export async function claimSessionLeaseWithClient(
       ownerId: input.ownerId,
       processKind: input.processKind,
       ttlMs: input.ttlMs,
+      claimToken: input.claimToken,
     },
     client,
   );
