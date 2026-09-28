@@ -119,6 +119,22 @@ import {
   type StallRecoveryCall,
 } from "./runner/stall-recovery.js";
 import { hasPendingForSession } from "@vex-agent/db/repos/approvals.js";
+import { isLeaseLost } from "../runtime/lease-guard.js";
+
+/**
+ * The inference call is aborted by EITHER the caller's inference signal (the
+ * Stop) or the runner's lease-lost signal. Only the inference: the combined
+ * signal is never handed to a tool, and the loop tells the two causes apart
+ * afterwards by reading each signal on its own.
+ */
+function inferenceSignalFor(
+  inferenceAbortSignal: AbortSignal | undefined,
+  leaseLostSignal: AbortSignal | undefined,
+): AbortSignal | undefined {
+  if (leaseLostSignal === undefined) return inferenceAbortSignal;
+  if (inferenceAbortSignal === undefined) return leaseLostSignal;
+  return AbortSignal.any([inferenceAbortSignal, leaseLostSignal]);
+}
 
 /**
  * Runtime-measurement state for one `runTurnLoop` invocation (Kairos Phase 1).
@@ -283,6 +299,18 @@ async function runTurnLoopBody(
   const liveMessages = [...messages];
   let lastSeenOperatorMessageId = maxOperatorInstructionId(messages);
 
+  // Lease loss (S-1). `leaseLost()` is the runner's claim being gone; it is
+  // checked only where the Stop is also checked and always AFTER it, so a Stop
+  // is never reported as anything but the Stop.
+  const leaseGuard = context.leaseGuard;
+  const leaseLost = (): boolean => isLeaseLost(leaseGuard);
+  const stopRequested = (): boolean =>
+    abortSignal?.aborted === true || inferenceAbortSignal?.aborted === true;
+  const turnInferenceSignal = inferenceSignalFor(
+    inferenceAbortSignal,
+    leaseGuard?.lostSignal,
+  );
+
   // Board presentation scope: staging is possible only while this is open, and
   // closing it discards anything still pending. Opening it here (and closing it
   // at every exit below) is the whole clearing mechanism for stop, cancel,
@@ -334,6 +362,13 @@ async function runTurnLoopBody(
     // Runtime measurement: iteration top → just before `executeTurn`.
     const iterationStartMs = performance.now();
     active = await resolveEffectiveInferenceConfig(config, loopConfig.contextLimit, context.sessionId, provider);
+    // Lease lost: another runner owns the session. Checked before every other
+    // guard of the iteration (the control observer and the iteration counter
+    // both write), but never ahead of a Stop, which the entry guards own.
+    if (leaseLost() && !stopRequested()) {
+      stopReason = "lease_lost";
+      break;
+    }
     // Hard mission deadline — the agent-independent time-box. Checked FIRST
     // each iteration, before any other guard or inference call, so an
     // expired run stops with `deadline_reached` no matter what the agent is
@@ -523,7 +558,7 @@ async function runTurnLoopBody(
     // cancelled mid-response; mission callers leave it undefined.
     const turnResult = await executeTurn(
       context, callMessages, currentSummary, provider, callConfig, stack.tools, callPromptOptions,
-      inferenceAbortSignal,
+      turnInferenceSignal,
       // THE measured object, not a rebuild.
       envelope,
       {
@@ -553,6 +588,21 @@ async function runTurnLoopBody(
     // same signal in BOTH positions, so an operator Stop cancels the stream
     // and MUST still persist what the model had produced. Testing the boundary
     // flag first would silently drop that partial row.
+    // Inference aborted by the LEASE, not by a Stop: nothing of this stream is
+    // persisted (the session belongs to another runner now); the preview is
+    // retired with the terminal delta, and the turn ends on `lease_lost`.
+    if (turnResult.inferenceAborted && !stopRequested() && leaseLost()) {
+      streamDeltaBus.emit(
+        toStreamAbortedEvent(
+          context.sessionId,
+          turnResult.streamId,
+          turnResult.nextStreamSequence,
+        ),
+      );
+      cutoff = null;
+      stopReason = "lease_lost";
+      break;
+    }
     if (turnResult.inferenceAborted) {
       if (cutoff !== null) {
         // Stopped mid-continuation: the held-back answer plus whatever the
@@ -563,7 +613,11 @@ async function runTurnLoopBody(
           context.sessionId,
           stoppedCutoffContent(cutoff, turnResult.content),
           null,
-          { stopped: true, reasoning: stoppedCutoffReasoning(cutoff, turnResult.reasoning) },
+          {
+            stopped: true,
+            reasoning: stoppedCutoffReasoning(cutoff, turnResult.reasoning),
+            ...(leaseGuard === undefined ? {} : { leaseGuard }),
+          },
         );
         cutoff = null;
         stopReason = "user_stopped";
@@ -579,6 +633,7 @@ async function runTurnLoopBody(
         await saveAssistantMessage(context.sessionId, turnResult.content, null, {
           stopped: true,
           reasoning: turnResult.reasoning,
+          ...(leaseGuard === undefined ? {} : { leaseGuard }),
         });
       } else {
         // Nothing was persisted and nothing ever will be for this stream, so
@@ -611,6 +666,12 @@ async function runTurnLoopBody(
     // the normal text/tool paths below are what would have saved it).
     if (abortSignal?.aborted) {
       stopReason = "user_stopped";
+      break;
+    }
+    // A round that completed while the lease was lost: dispatch none of its
+    // calls and persist none of its text.
+    if (leaseLost()) {
+      stopReason = "lease_lost";
       break;
     }
 
@@ -778,6 +839,22 @@ async function runTurnLoopBody(
       run.progress.toolCallsMade = totalToolCalls;
       lastText = batchOutcome.lastText;
 
+      // Lease lost during the batch: the post-batch arms below write run state
+      // (wake park, plan park) and merge operator input for a session another
+      // runner owns now, so none of them run. Kept: an operator Stop (reported
+      // as the Stop) and the parks whose durable state the batch already
+      // committed in its own transaction (approval, user form, lighter setup).
+      if (
+        leaseLost()
+        && !(batchOutcome.kind === "engine_stop" && batchOutcome.stopReason === "user_stopped")
+        && batchOutcome.kind !== "approval_break"
+        && batchOutcome.kind !== "user_form_pause"
+        && batchOutcome.kind !== "lighter_setup_pause"
+      ) {
+        stopReason = "lease_lost";
+        break;
+      }
+
       const batchStep = await applyToolBatchOutcome({
         batchOutcome,
         sessionId: context.sessionId,
@@ -827,6 +904,10 @@ async function runTurnLoopBody(
       if (textOutcome.kind === "mission_run_continue") {
         continue;
       }
+      if (textOutcome.kind === "lease_lost") {
+        stopReason = "lease_lost";
+        break;
+      }
       stoppedOnText = true;
       break;
     }
@@ -836,7 +917,7 @@ async function runTurnLoopBody(
   // continuation was issued (a stop, a deadline, the iteration bound, a
   // refused request). It is still the turn's answer: save it, marked as
   // incomplete, with any staged board - before the scope below discards it.
-  if (cutoff !== null) {
+  if (cutoff !== null && stopReason !== "lease_lost") {
     const content = cutoff.content + CUTOFF_ANSWER_SUFFIX;
     await persistTextAnswer({
       context,
@@ -868,6 +949,19 @@ async function runTurnLoopBody(
   // transport can see why.
   if (!stopReason && !stoppedOnText) {
     stopReason = "iteration_limit";
+  }
+
+  // The distinct lease-loss record for the TURN (the guard logged the moment
+  // of detection). Counts and ids only.
+  if (stopReason === "lease_lost") {
+    logger.warn("runtime.lease.lost", {
+      sessionId: context.sessionId,
+      missionRunId: context.missionRunId ?? null,
+      stage: "turn_ended",
+      reason: leaseGuard?.lostReason() ?? null,
+      iterationsUsed,
+      toolCallsMade: totalToolCalls,
+    });
   }
 
   // Rule 05: the owner of a bound REPORTS what was consumed when it fires.

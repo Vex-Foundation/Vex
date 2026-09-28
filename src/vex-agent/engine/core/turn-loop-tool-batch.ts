@@ -67,6 +67,8 @@ import {
   BATCH_ABORTED_BY_DEADLINE_OUTPUT,
   BATCH_ABORTED_BY_TIMEOUT_OUTPUT,
   BATCH_ABORTED_BY_USER_STOP_OUTPUT,
+  BATCH_ABORTED_BY_LEASE_LOST_OUTPUT,
+  APPROVAL_SKIPPED_BY_LEASE_LOST_OUTPUT,
   mapBatchOutcome,
   persistBatchTranscript,
 } from "./turn-loop-tool-batch/results.js";
@@ -76,6 +78,7 @@ import { parkTurnOnLighterSetup } from "./turn-loop-tool-batch/lighter-setup-sto
 import { evaluatePresentationGate } from "./turn-loop-tool-batch/presentation-gate.js";
 import { hasPendingPresentation } from "./board-presentation.js";
 import logger from "@utils/logger.js";
+import { isLeaseLost, leaseHeldForDispatch } from "../runtime/lease-guard.js";
 import {
   evaluateBatchDeadlines,
   type BatchDeadlines,
@@ -142,6 +145,10 @@ export async function processTurnToolBatch(args: {
   readonly telemetry?: ToolDispatchTelemetry;
 }): Promise<ToolBatchOutcome> {
   const { context, turnResult, liveMessages } = args;
+  // The runner's lease guard (absent for a caller that holds no lease). Its
+  // `lostSignal` is read here ONLY to decide whether a NEW call may start; it
+  // is never put on the tool context, so an in-flight dispatch always settles.
+  const leaseGuard = context.leaseGuard;
   const executedCalls: ParsedToolCall[] = [];
   const executedResults: Array<{
     toolCallId: string;
@@ -240,6 +247,15 @@ export async function processTurnToolBatch(args: {
       break;
     }
 
+    // ── Lease loss, checked right after the Stop ──
+    // Another runner owns the session now: start nothing new. Ordered after
+    // the Stop so an operator's Stop is always reported as their Stop.
+    if (isLeaseLost(leaseGuard)) {
+      drainUndispatchedCalls(i, BATCH_ABORTED_BY_LEASE_LOST_OUTPUT);
+      batchStopReason = "lease_lost";
+      break;
+    }
+
     // ── Wall-clock bounds, also at the TOP of the iteration ──
     // Ordered AFTER the Stop (an operator's explicit request outranks a bound
     // that merely expired) and, like it, never mid-dispatch. This is the only
@@ -255,6 +271,16 @@ export async function processTurnToolBatch(args: {
           : BATCH_ABORTED_BY_TIMEOUT_OUTPUT,
       );
       batchStopReason = isMissionDeadline ? "deadline_reached" : "timeout";
+      break;
+    }
+
+    // ── Fenced token check, immediately before a NEW dispatch ──
+    // The heartbeat only notices a takeover on its next tick; this read closes
+    // that window for the one step that can move funds. Anything but our own
+    // token on the lease row marks the guard lost and nothing is dispatched.
+    if (leaseGuard !== undefined && !(await leaseHeldForDispatch(leaseGuard))) {
+      drainUndispatchedCalls(i, BATCH_ABORTED_BY_LEASE_LOST_OUTPUT);
+      batchStopReason = "lease_lost";
       break;
     }
 
@@ -323,6 +349,34 @@ export async function processTurnToolBatch(args: {
       });
       drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_USER_STOP_OUTPUT);
       batchStopReason = "user_stopped";
+      break;
+    }
+
+    // ── Lease loss, re-checked AFTER the dispatch returned ──
+    // Same shape as the Stop re-check above: the call that was in flight
+    // settled and its result is recorded truthfully (the write is fenced, so
+    // after a takeover it affects zero rows); nothing after it runs — no
+    // approval is parked, no follow-up signs, no further call dispatches.
+    if (isLeaseLost(leaseGuard)) {
+      executedCalls.push(toolCall);
+      executedResults.push({
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        output: resultForTranscript.pendingApproval
+          ? APPROVAL_SKIPPED_BY_LEASE_LOST_OUTPUT
+          : resultForTranscript.output,
+        success: resultForTranscript.pendingApproval
+          ? false
+          : resultForTranscript.success,
+        explorerRefs: resultForTranscript.pendingApproval
+          ? []
+          : deriveExplorerRefs(resultForTranscript.data),
+        ...(resultForTranscript.pendingApproval
+          ? {}
+          : displayStatusPayload(resultForTranscript.data)),
+      });
+      drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_LEASE_LOST_OUTPUT);
+      batchStopReason = "lease_lost";
       break;
     }
 
@@ -610,6 +664,7 @@ export async function processTurnToolBatch(args: {
     executedResults,
     liveMessages,
     reasoning: turnResult.reasoning,
+    ...(leaseGuard === undefined ? {} : { leaseGuard }),
   });
 
   // Emit only after the status and all synthetic batch results are durable.

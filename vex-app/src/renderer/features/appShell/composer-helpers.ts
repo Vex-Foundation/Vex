@@ -198,6 +198,17 @@ export function submitFailureNotice(
           + "Review the transcript before trying again; earlier steps may have completed.",
         retryable: false,
       };
+    case "lease_lost":
+      // NOT the user's Stop, and never presented as one: another runner took
+      // over this session while the turn was running, so this turn ended
+      // without starting any new action. Never one-click retryable - the new
+      // runner owns the session, and earlier steps may have completed.
+      return {
+        text:
+          "This turn ended because another run took over the session. "
+          + "Review the transcript before trying again; earlier steps may have completed.",
+        retryable: false,
+      };
     case "compact_unable_at_critical":
       return {
         text: "Vex stopped because this conversation ran out of usable context. Start a new session or try a narrower request.",
