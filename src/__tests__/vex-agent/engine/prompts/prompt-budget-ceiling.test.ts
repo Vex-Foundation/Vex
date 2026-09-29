@@ -193,20 +193,27 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  * every action, which cost rounds; the scoped rule keeps the hedge the memory
  * manager derives provenance from and says it is not a reason to pause.
  *
- *   agent / restricted          61,748 -> 61,933
- *   agent / full                62,449 -> 62,634
- *   mission setup / restricted  68,225 -> 68,410
- *   mission setup / full        68,244 -> 68,429
- *   mission run / restricted    66,949 -> 67,134
- *   mission run / full          66,764 -> 66,949
+ * B-4 + T-2: two constants in `# Execution Policy`, rendered once per mode
+ * (+595 in every mode): "act, don't narrate" (every response calls the next
+ * tool(s) or delivers the answer; waiting for approval or a reply is a valid
+ * end) and "batch independent reads" (issue independent reads together).
+ * WHAT THE BYTES BUY: a promise-only reply and a one-read-per-round habit each
+ * cost a full provider round (~6-7 s first chunk in the Phase 4 live data).
+ *
+ *   agent / restricted          61,748 -> 61,933 -> 62,528
+ *   agent / full                62,449 -> 62,634 -> 63,229
+ *   mission setup / restricted  68,225 -> 68,410 -> 69,005
+ *   mission setup / full        68,244 -> 68,429 -> 69,024
+ *   mission run / restricted    66,949 -> 67,134 -> 67,729
+ *   mission run / full          66,764 -> 66,949 -> 67,544
  */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 61_933 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 62_634 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 68_410 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 68_429 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 67_134 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 66_949 },
+  { name: "agent / restricted", context: context({}), ceiling: 62_528 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 63_229 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 69_005 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 69_024 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 67_729 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 67_544 },
 ] as const;
 
 beforeAll(() => {

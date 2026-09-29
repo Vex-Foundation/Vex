@@ -90,6 +90,14 @@ Rules:
   the second time, and the retry spends the user's money on inference. Read what the
   error actually said, change something (the arguments, the tool, the approach), or
   present the error and the next step to the user or the mission loop.
+- Act, don't narrate: every response either calls the next tool(s) or delivers the
+  answer. Never end a response with only a promise such as "Let me check..." or
+  "I'll fetch..." and no tool call: nothing runs until you call it. Waiting for the
+  user's approval or reply is a valid end.
+- Batch independent reads: when several read calls do not depend on each other's
+  results (prices, balances, safety checks for different tokens), issue them together
+  in one response instead of one per round. A call that needs an earlier result waits
+  for it, and mutating calls go one step at a time.
 
 ---
 
