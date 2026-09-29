@@ -50,7 +50,7 @@ const { createTokenPriceEvaluator, readWatchedTokenPools } = await import(
 const { buildProductionPriceWatchDeps } = await import(
   "../../vex-agent/engine/wake/price-watch-poller.js"
 );
-const { buildOwnTokenBanner } = await import(
+const { buildOwnTokenBanner, resetOwnTokenBannerStateForTest, triggerOwnTokenBannerRefresh } = await import(
   "../../vex-agent/engine/prompts/own-token-banner.js"
 );
 const { checkOutputLiquidity } = await import(
@@ -142,6 +142,7 @@ let unregisterTransport: (() => void) | null = null;
 
 beforeEach(() => {
   resetPriceReadCacheForTests();
+  resetOwnTokenBannerStateForTest();
   unregisterTransport = installFakeTransport();
 });
 
@@ -297,6 +298,9 @@ describe("$VEX own-token banner: default snapshot wiring", () => {
       },
     });
 
+    // The prompt seam never waits on the network: the refresh runs in the
+    // background, so the characterization awaits it before reading the banner.
+    await triggerOwnTokenBannerRefresh();
     const banner = await buildOwnTokenBanner();
 
     expect(banner).toContain("# $VEX (own token)");
@@ -316,6 +320,7 @@ describe("$VEX own-token banner: default snapshot wiring", () => {
 
     // Fail-soft is the whole contract here: this string lands in a system
     // prompt, so a provider failure must cost the layer, never the turn.
+    await triggerOwnTokenBannerRefresh();
     await expect(buildOwnTokenBanner()).resolves.toBe("");
   });
 });

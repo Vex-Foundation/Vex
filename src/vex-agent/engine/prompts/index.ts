@@ -85,10 +85,11 @@ export interface PromptStackOptions {
   /**
    * Pre-formatted `# $VEX (own token)` live-metrics banner from
    * `buildOwnTokenBanner` (DexScreener snapshot + best-effort Virtuals
-   * holderCount). TURN-STATE (volatile live numbers) — sits right after the
-   * runtime clock. Built async + fail-soft in `buildTurnPromptStack`; any fetch
-   * error yields "" so the banner is omitted (never blocks a turn). Empty/
-   * undefined omits the section.
+   * holderCount). TURN-STATE (volatile numbers), sits right after the runtime
+   * clock. Read from a stale-while-revalidate snapshot in
+   * `buildTurnPromptStack` (never blocks a turn on the network); the text
+   * states the snapshot's age, and no snapshot or one past its max age yields
+   * "" so the banner is omitted. Empty/undefined omits the section.
    */
   ownTokenBanner?: string;
   /**

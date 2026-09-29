@@ -104,9 +104,10 @@ export async function buildTurnPromptStack(args: {
     preparationState,
   );
 
-  // $VEX live-metrics banner (turn-state). Fully fail-soft inside the builder:
-  // any fetch error yields "" so the banner is omitted and the turn is never
-  // blocked. Throttled + cached at the client, so repeated turns hit cache.
+  // $VEX market banner (turn-state). Stale-while-revalidate: rendered at once
+  // from the last good snapshot with its age stated, while a single-flight
+  // refresh runs in the background. Never waits on the network; "" (omitted)
+  // when there is no snapshot yet or it is past its max age.
   promptOptions.ownTokenBanner = await buildOwnTokenBanner();
 
   // Mission capital (turn-state). Fully fail-soft inside the builder: any error

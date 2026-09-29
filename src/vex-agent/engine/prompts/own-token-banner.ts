@@ -10,15 +10,19 @@
  * Robinhood Chain via Virtuals, trading on Uniswap V2 vs VIRTUAL") stays in the
  * static Identity layer; this banner is the ephemeral market read on top.
  *
- * FAIL-SOFT: the core market snapshot comes from DexScreener (throttled + cached
- * ~8s). Any error fetching it → the banner is OMITTED entirely (return "") so it
- * never blocks a turn and never emits partial garbage. The Virtuals holderCount
- * is a best-effort, null-safe enrichment: its failure degrades to "no holders
- * line", it does NOT drop the banner.
+ * STALE-WHILE-REVALIDATE, FAIL-SOFT: the core market snapshot comes from
+ * DexScreener and is refreshed in the BACKGROUND (single-flight); the prompt
+ * build only reads the last good snapshot and never waits on the network. The
+ * banner states the snapshot's age, and is OMITTED (return "") when there is no
+ * snapshot yet or it is older than the max age, so old numbers are never
+ * presented as live and a failing upstream never emits partial garbage. The
+ * Virtuals holderCount is a best-effort, null-safe enrichment: its failure
+ * degrades to "no holders line", it does NOT drop the banner.
  */
 
 import { readPair } from "@tools/dexscreener/price-read.js";
 import { getVirtualsClient } from "@tools/virtuals/client.js";
+import logger from "@utils/logger.js";
 
 /** $VEX Uniswap V2 pool on Robinhood Chain (VEX/VIRTUAL). DexScreener chain slug + pair. */
 const VEX_CHAIN_SLUG = "robinhood";
@@ -84,8 +88,14 @@ function boundedHolders(v: number | null): number | null {
  * market data — a snapshot with no (valid) price AND no market cap is treated
  * as absent. Every line is formatted from parsed, bounds-checked numbers.
  */
-export function renderOwnTokenBanner(data: OwnTokenBannerData | null): string {
+/**
+ * `ageMs` is how old the snapshot is. It is rendered in the banner text so an
+ * old read is never presented as live, and a snapshot that is not a finite
+ * age inside OWN_TOKEN_BANNER_MAX_AGE_MS is omitted outright.
+ */
+export function renderOwnTokenBanner(data: OwnTokenBannerData | null, ageMs: number): string {
   if (!data) return "";
+  if (!Number.isFinite(ageMs) || ageMs > OWN_TOKEN_BANNER_MAX_AGE_MS) return "";
   const price = parsePriceUsd(data.priceUsd);
   const pct = boundedPct(data.priceChange24h);
   const marketCap = boundedUsdAmount(data.marketCapUsd);
@@ -98,7 +108,9 @@ export function renderOwnTokenBanner(data: OwnTokenBannerData | null): string {
   const lines: string[] = [];
   lines.push("# $VEX (own token)");
   lines.push("");
-  lines.push("Robinhood Chain · Uniswap V2 vs VIRTUAL. Live market snapshot (volatile):");
+  lines.push(
+    `Robinhood Chain · Uniswap V2 vs VIRTUAL. Market snapshot as of ${formatAge(ageMs)} (volatile, refreshed in the background):`,
+  );
   if (price !== null) {
     lines.push(`- Price: ${formatParsedPrice(price)}${pct !== null ? ` (24h ${formatSignedPct(pct)})` : ""}`);
   } else if (pct !== null) {
@@ -110,58 +122,162 @@ export function renderOwnTokenBanner(data: OwnTokenBannerData | null): string {
   return lines.join("\n");
 }
 
-// ── Async loader (fail-soft) ────────────────────────────────────────
+// ── Stale-while-revalidate snapshot (never blocks a turn) ──────────
+//
+// The banner used to be fetched INSIDE the prompt build with a 3 s budget, so
+// every turn could wait up to 3 s on DexScreener before the first token. The
+// prompt seam now only reads a process-local snapshot and kicks a background,
+// single-flight refresh; the network is never on the turn's critical path.
 
 /**
- * Hard time budget for the whole banner build. A SLOW upstream (not just a
- * failing one) must never hold a turn: past the budget the banner is omitted
- * for this turn while the in-flight fetch settles into the client throttle
- * cache and serves the next turn instantly.
+ * A snapshot at least this old triggers a background refresh on the next
+ * prompt build. It is only a refresh trigger: the snapshot keeps rendering,
+ * with its age, until OWN_TOKEN_BANNER_MAX_AGE_MS.
  */
-const BANNER_BUDGET_MS = 3_000;
+export const OWN_TOKEN_BANNER_REFRESH_TTL_MS = 10_000;
 
 /**
- * Build the banner string for the current turn. Fully fail-soft: any error
- * fetching the core snapshot — or exceeding the time budget — yields ""
- * (omit). The holderCount is best-effort.
+ * Past this age the banner is OMITTED. An old read labelled with its age is
+ * still honest, but a price this old is no longer a useful market read.
  */
-export async function buildOwnTokenBanner(deps: OwnTokenBannerDeps = defaultDeps()): Promise<string> {
-  return withBudget(buildUnbudgeted(deps), BANNER_BUDGET_MS);
+export const OWN_TOKEN_BANNER_MAX_AGE_MS = 10 * 60_000;
+
+/**
+ * Hard ceiling on one refresh attempt. The fetches carry their own request
+ * timeouts well inside this; the ceiling only guarantees that a fetch which
+ * never settles cannot hold the single-flight slot forever. A result that
+ * lands after a NEWER attempt started is discarded, so an old read can never
+ * overwrite a newer snapshot.
+ */
+const REFRESH_CEILING_MS = 60_000;
+
+interface OwnTokenBannerSnapshot {
+  readonly data: OwnTokenBannerData;
+  /**
+   * When the refresh that produced `data` STARTED. The rendered age is
+   * measured from here, so it never understates how old the numbers are
+   * relative to this process's request.
+   */
+  readonly observedAtMs: number;
 }
 
-async function buildUnbudgeted(deps: OwnTokenBannerDeps): Promise<string> {
+let currentSnapshot: OwnTokenBannerSnapshot | null = null;
+let refreshInFlight: Promise<void> | null = null;
+let refreshGeneration = 0;
+let depsOverride: OwnTokenBannerDeps | null = null;
+
+/**
+ * One refresh attempt. NEVER throws: a core snapshot failure keeps the last
+ * good snapshot untouched (it keeps aging toward MAX_AGE and then stops
+ * rendering); the holderCount is best-effort and its failure only drops the
+ * holders line.
+ */
+async function performRefresh(
+  deps: OwnTokenBannerDeps,
+  startedAtMs: number,
+  generation: number,
+): Promise<void> {
   let snapshot: OwnTokenBannerData;
   try {
     snapshot = await deps.fetchSnapshot();
-  } catch {
-    return "";
+  } catch (err) {
+    logger.debug("own_token_banner.refresh_failed", { errorName: errorName(err) });
+    return;
   }
   let holderCount = snapshot.holderCount;
   if (holderCount === null) {
     try {
       holderCount = await deps.fetchHolderCount();
-    } catch {
+    } catch (err) {
+      logger.debug("own_token_banner.holders_unavailable", { errorName: errorName(err) });
       holderCount = null;
     }
   }
-  return renderOwnTokenBanner({ ...snapshot, holderCount });
+  if (generation !== refreshGeneration) return; // a newer attempt owns the snapshot
+  currentSnapshot = { data: { ...snapshot, holderCount }, observedAtMs: startedAtMs };
 }
 
-/** Resolve to "" (omit) when `promise` exceeds `budgetMs`. Never rejects. */
-async function withBudget(promise: Promise<string>, budgetMs: number): Promise<string> {
+/**
+ * Trigger a single-flight refresh when the snapshot is absent or at least
+ * OWN_TOKEN_BANNER_REFRESH_TTL_MS old. Returns the shared in-flight promise and
+ * NEVER rejects; concurrent callers share one fetch. Awaitable for warm-up and
+ * tests.
+ */
+export function triggerOwnTokenBannerRefresh(nowMs: number = Date.now()): Promise<void> {
+  const age =
+    currentSnapshot === null ? Number.POSITIVE_INFINITY : nowMs - currentSnapshot.observedAtMs;
+  if (age < OWN_TOKEN_BANNER_REFRESH_TTL_MS) return Promise.resolve();
+  if (refreshInFlight !== null) return refreshInFlight;
+  refreshGeneration += 1;
+  const generation = refreshGeneration;
+  const run = withCeiling(
+    performRefresh(depsOverride ?? defaultDeps(), nowMs, generation),
+    REFRESH_CEILING_MS,
+  ).finally(() => {
+    if (refreshInFlight === run) refreshInFlight = null;
+  });
+  refreshInFlight = run;
+  return run;
+}
+
+/**
+ * Build the banner for the current turn. Returns IMMEDIATELY from the last good
+ * snapshot (stale-while-revalidate) and kicks a background single-flight
+ * refresh when one is due: it never waits on the network and never throws.
+ * Renders "" (omit) when there is no snapshot yet (the first turn in a process
+ * may therefore carry no banner) or when the snapshot is older than
+ * OWN_TOKEN_BANNER_MAX_AGE_MS. A rendered banner always states its age.
+ */
+export async function buildOwnTokenBanner(nowMs: number = Date.now()): Promise<string> {
+  try {
+    void triggerOwnTokenBannerRefresh(nowMs);
+    if (currentSnapshot === null) return "";
+    return renderOwnTokenBanner(currentSnapshot.data, nowMs - currentSnapshot.observedAtMs);
+  } catch {
+    return "";
+  }
+}
+
+/** Resolve (never reject) when `promise` settles or `ceilingMs` passes. */
+async function withCeiling(promise: Promise<void>, ceilingMs: number): Promise<void> {
   let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<string>((resolve) => {
-    timer = setTimeout(() => resolve(""), budgetMs);
+  const ceiling = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ceilingMs);
     // Do not keep the process alive for a prompt-banner timer.
     timer.unref?.();
   });
   try {
-    return await Promise.race([promise, timeout]);
+    await Promise.race([promise, ceiling]);
   } catch {
-    return "";
+    // performRefresh never rejects; nothing to surface here.
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }
+}
+
+/** Only the error class name is logged: telemetry never carries provider text. */
+function errorName(err: unknown): string {
+  return err instanceof Error ? err.name : "unknown";
+}
+
+// ── Test/support hooks ──────────────────────────────────────────────
+
+export function setOwnTokenBannerDepsForTest(next: OwnTokenBannerDeps | null): void {
+  depsOverride = next;
+}
+
+export function setOwnTokenBannerSnapshotForTest(
+  snapshot: { readonly data: OwnTokenBannerData; readonly observedAtMs: number } | null,
+): void {
+  currentSnapshot = snapshot;
+}
+
+/** Drops the snapshot, the deps override and any in-flight attempt's right to write. */
+export function resetOwnTokenBannerStateForTest(): void {
+  currentSnapshot = null;
+  refreshInFlight = null;
+  refreshGeneration += 1;
+  depsOverride = null;
 }
 
 function defaultDeps(): OwnTokenBannerDeps {
@@ -185,6 +301,13 @@ function defaultDeps(): OwnTokenBannerDeps {
 }
 
 // ── Formatting helpers (parsed values ONLY — never upstream strings) ─
+
+/** "42 s ago" under a minute, "3 min ago" after. A negative age (clock step) reads as 0 s. */
+function formatAge(ageMs: number): string {
+  const seconds = Math.max(0, Math.floor(ageMs / 1_000));
+  if (seconds < 60) return `${seconds} s ago`;
+  return `${Math.floor(seconds / 60)} min ago`;
+}
 
 function formatSignedPct(pct: number): string {
   const sign = pct >= 0 ? "+" : "";
