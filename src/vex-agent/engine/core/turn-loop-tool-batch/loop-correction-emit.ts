@@ -44,6 +44,7 @@ export async function emitToolCallLoopCorrection(input: {
     toolName: input.facts.toolName,
     cycleLength: input.facts.cycleLength,
     repeatCount: input.facts.repeatCount,
+    ...(input.facts.trigger === undefined ? {} : { trigger: input.facts.trigger }),
   });
 
   const metadata = {
@@ -57,6 +58,7 @@ export async function emitToolCallLoopCorrection(input: {
       repeatCount: input.facts.repeatCount,
       toolCallIds: input.facts.toolCallIds,
       strike: input.facts.strike,
+      trigger: input.facts.trigger ?? "cycle",
       missionRunId: input.missionRunId,
     },
   };

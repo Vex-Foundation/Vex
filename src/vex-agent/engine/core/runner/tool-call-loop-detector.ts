@@ -36,6 +36,36 @@
  * accumulates a repeat, and a poll whose result is frozen is, after five
  * identical answers, indistinguishable from the incident.
  *
+ * ## Volatile fields, and why the rule is PER TOOL
+ *
+ * Including the result has a blind spot: many reads stamp every answer with
+ * something that moves on every call and is not progress - `fetchedAt`,
+ * `observedAt`, `retrievedAt`, `asOf`, a request id, a Solana `blockId`, a
+ * wall-clock age derived from `Date.now()`. Such a result is never
+ * byte-identical twice, so a model polling a frozen price was never caught.
+ *
+ * The fix is NOT a global "ignore timestamps and prices". A changed price, a
+ * changed balance, a changed order status can be exactly the progress a
+ * market mission is waiting for, and hiding it would turn correct polling into
+ * a false loop. So normalisation is an ALLOW-LIST keyed by tool name
+ * (`TOOL_RESULT_VOLATILE_KEYS`): for a listed tool, the output is parsed as
+ * JSON and the named keys are dropped at every depth before hashing; every
+ * other field, prices and balances included, stays in the signature. A tool
+ * that is not listed, or an output that is not JSON, is hashed verbatim,
+ * exactly as before.
+ *
+ * ## The read-polling cap
+ *
+ * Normalisation cannot catch a model that polls a price that really IS moving:
+ * each answer differs, so no cycle forms, and the turn can spend its whole
+ * budget re-reading one quote. For the same listed reads, the detector also
+ * counts calls with identical name and canonical arguments across the turn,
+ * whatever they returned. The call that takes one tool past
+ * `TOOL_READ_POLL_CAP` identical-argument calls earns a strike on the same
+ * graduated ladder, with a cue that says "proceed with what you have, or wait
+ * with LoopDefer". Only listed reads are capped: an unknown tool, or a status
+ * tool whose answer is the thing being waited on, keeps the old behaviour.
+ *
  * ## The bound, and why the first strike only corrects
  *
  * Five identical repeats of a cycle of length k, k in [1,5]. The history is
@@ -91,6 +121,86 @@ export const TOOL_CALL_SIGNATURE_HISTORY_LIMIT =
   TOOL_CALL_LOOP_THRESHOLD * MAX_TOOL_CALL_CYCLE_LENGTH;
 
 /**
+ * Identical-argument calls to one listed read allowed per turn. The call that
+ * exceeds it (the sixth) is the strike. Five reads of one quote in one turn is
+ * already generous: a value worth waiting for is waited for with LoopDefer.
+ */
+export const TOOL_READ_POLL_CAP = 5;
+
+/**
+ * Provenance stamps that change on every call and carry no market state:
+ * wall-clock fetch times, provider request ids, edge-cache bookkeeping.
+ */
+const READ_PROVENANCE_KEYS = [
+  "fetchedAt",
+  "fetchedAtMs",
+  "observedAt",
+  "retrievedAt",
+  "asOf",
+  "requestId",
+  "cacheState",
+  "cacheAgeMs",
+] as const;
+
+/**
+ * Per-tool volatile result keys. A listed tool's JSON output has these keys
+ * removed at every depth before it is hashed, and the tool is subject to the
+ * read-polling cap. Everything NOT named here (prices, balances, sizes,
+ * statuses, candles) stays in the signature, because a change in it can be the
+ * very progress the model is waiting for.
+ *
+ * Only reads belong here. A tool is added when its real handler is known to
+ * stamp the listed keys; guessing would only widen what counts as "the same".
+ */
+export const TOOL_RESULT_VOLATILE_KEYS: ReadonlyMap<string, ReadonlySet<string>> = (() => {
+  const rules: [readonly string[], readonly string[]][] = [
+    // Jupiter price/v3 entries carry the slot they were read at; a new slot
+    // with the same `usdPrice` is not a new price.
+    [["solana__token_prices_get"], ["blockId"]],
+    // DexScreener answers carry `sourceObservation` (fetch time, edge cache
+    // state and age) and ages computed from the wall clock at shaping time.
+    [
+      [
+        "dexscreener__pair_get",
+        "dexscreener__pairs_batch_get",
+        "dexscreener__pairs_search",
+        "dexscreener__token_pairs_list",
+        "dexscreener__spotlight_get",
+        "dexscreener__pair_details_get",
+      ],
+      ["pairAgeSeconds", "blurbAgeMs", "blurbAgeNote"],
+    ],
+    // pools.fun rows carry an age in hours computed from the wall clock.
+    [["pools__token_get"], ["ageHours"]],
+    // Pendle, Morpho, Lighter and wallet balance reads stamp `asOf`,
+    // `retrievedAt` or `observedAt` with the time of the read.
+    [
+      [
+        "pendle__asset_prices_get",
+        "pendle__market_get",
+        "pendle__market_orderbook_get",
+        "morpho__market_get",
+        "morpho__wallet_balance_get",
+        "morpho__positions_get",
+        "lighter__market_get",
+        "lighter__markets_list",
+        "lighter__orderbook_get",
+        "lighter__positions_list",
+        "khalani__token_balances_get",
+        "WalletBalances",
+      ],
+      [],
+    ],
+  ];
+  const map = new Map<string, ReadonlySet<string>>();
+  for (const [tools, extra] of rules) {
+    const keys = new Set<string>([...READ_PROVENANCE_KEYS, ...extra]);
+    for (const tool of tools) map.set(tool, keys);
+  }
+  return map;
+})();
+
+/**
  * One completed, ORDINARY tool call. The caller filters: approval breaks,
  * user-form parks, prepared-action follow-ups and engine signals carry
  * stronger semantics of their own and are never observed here.
@@ -126,6 +236,13 @@ export interface ToolCallLoopFacts {
   readonly toolCallIds: readonly string[];
   /** 1 = corrected, 2 = stopped. */
   readonly strike: number;
+  /**
+   * What fired. `cycle` (also assumed when absent): identical results in a
+   * repeating cycle. `read_poll`: one listed read called with identical
+   * arguments more than `TOOL_READ_POLL_CAP` times this turn, whatever it
+   * returned; `repeatCount` is then the number of those calls.
+   */
+  readonly trigger?: "cycle" | "read_poll";
 }
 
 export type ToolCallLoopVerdict =
@@ -194,8 +311,38 @@ export function canonicalize(value: unknown): string {
 }
 
 /**
+ * The model-visible output as it enters the signature.
+ *
+ * Unlisted tools: verbatim. Listed tools: parsed as JSON, the tool's volatile
+ * keys dropped at every depth, and re-serialised canonically. An output that
+ * does not parse (a failure message, a wrapped or truncated body) falls back
+ * to verbatim, which is never looser than the old behaviour.
+ */
+export function normalizeToolResultOutput(toolName: string, output: string): string {
+  const volatileKeys = TOOL_RESULT_VOLATILE_KEYS.get(toolName);
+  if (volatileKeys === undefined) return output;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return output;
+  }
+  const strip = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(strip);
+    if (node === null || typeof node !== "object") return node;
+    const kept: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      if (!volatileKeys.has(key)) kept[key] = strip(value);
+    }
+    return kept;
+  };
+  return canonicalize(strip(parsed));
+}
+
+/**
  * The signature of a completed call: a sha256 over the tool name, its canonical
- * arguments, the success flag and the model-visible output.
+ * arguments, the success flag and the model-visible output (normalised per
+ * tool, see `normalizeToolResultOutput`).
  *
  * ## Why it is HASHED and not the joined string
  *
@@ -228,7 +375,7 @@ export function toolCallSignature(observation: CompletedToolCallObservation): st
     observation.toolName,
     canonicalize(observation.args),
     observation.success ? "ok" : "err",
-    observation.output,
+    normalizeToolResultOutput(observation.toolName, observation.output),
   ].join("\u0000");
   return createHash("sha256").update(canonical, "utf8").digest("hex");
 }
@@ -261,10 +408,26 @@ export function createToolCallLoopDetector(): ToolCallLoopDetector {
   const signatures: string[] = [];
   const callIds: string[] = [];
   const names: string[] = [];
+  // Per-turn identical-argument counts for listed reads, keyed by a digest of
+  // name + canonical args (never the args themselves, for the same reason
+  // signatures are digests). Ids are kept only for the last CAP + 1 calls.
+  const polls = new Map<string, { count: number; ids: string[] }>();
   let strikes = 0;
 
   return {
     observe(observation: CompletedToolCallObservation): ToolCallLoopVerdict {
+      let poll: { count: number; ids: string[] } | undefined;
+      if (TOOL_RESULT_VOLATILE_KEYS.has(observation.toolName)) {
+        const pollKey = createHash("sha256")
+          .update(`${observation.toolName}\u0000${canonicalize(observation.args)}`, "utf8")
+          .digest("hex");
+        poll = polls.get(pollKey) ?? { count: 0, ids: [] };
+        poll.count += 1;
+        poll.ids.push(observation.toolCallId);
+        if (poll.ids.length > TOOL_READ_POLL_CAP + 1) poll.ids.shift();
+        polls.set(pollKey, poll);
+      }
+
       signatures.push(toolCallSignature(observation));
       callIds.push(observation.toolCallId);
       names.push(observation.toolName);
@@ -297,6 +460,25 @@ export function createToolCallLoopDetector(): ToolCallLoopDetector {
           repeatCount: TOOL_CALL_LOOP_THRESHOLD,
           toolCallIds: callIds.slice(start),
           strike: strikes,
+          trigger: "cycle",
+        };
+        return strikes >= 2
+          ? { kind: "stop", facts }
+          : { kind: "correct", facts };
+      }
+
+      // Checked AFTER the cycle scan: when both fire on one call, the cycle is
+      // the more specific fact (the result did not move either). Every call
+      // past the cap strikes, so a read repeated after its correction stops.
+      if (poll !== undefined && poll.count > TOOL_READ_POLL_CAP) {
+        strikes += 1;
+        const facts: ToolCallLoopFacts = {
+          toolName: observation.toolName,
+          cycleLength: 1,
+          repeatCount: poll.count,
+          toolCallIds: [...poll.ids],
+          strike: strikes,
+          trigger: "read_poll",
         };
         return strikes >= 2
           ? { kind: "stop", facts }

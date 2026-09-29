@@ -50,7 +50,27 @@ export function buildToolCallLoopCorrectionCue(input: {
   readonly toolName: string;
   readonly cycleLength: number;
   readonly repeatCount: number;
+  /**
+   * `read_poll`: the same read was called with identical arguments more times
+   * this turn than the detector's polling cap allows, with results that may
+   * have changed. The cue then says to proceed or to wait with LoopDefer,
+   * because "it will not change the answer" would be false for a moving price.
+   * Absent or `cycle`: the identical-result shapes above.
+   */
+  readonly trigger?: "cycle" | "read_poll";
 }): string {
+  if (input.trigger === "read_poll") {
+    return [
+      `[Engine: tool_call_loop_correction - you have now called ${input.toolName} ${input.repeatCount} times in this turn with identical arguments.`,
+      "You have repeated this read enough. Do not re-issue that call in this turn.",
+      "Proceed with what you already have: act on the latest result, or tell the user what it shows.",
+      "If you are waiting for the value to change, wait with LoopDefer (when it is available to you)"
+      + " instead of polling, or tell the user what you are waiting for.",
+      "The remaining tool calls from your last message were not executed."
+      + " If you call it again with the same arguments, the turn will be ended for you.]",
+    ].join(" ");
+  }
+
   const observation = input.cycleLength === 1
     ? `you have now called ${input.toolName} ${input.repeatCount} times in a row with identical arguments and received an identical result every time`
     : `your last ${input.cycleLength * input.repeatCount} tool calls are the same cycle of ${input.cycleLength} calls repeated ${input.repeatCount} times, starting with ${input.toolName}, each returning an identical result`;

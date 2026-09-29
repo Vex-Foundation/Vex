@@ -369,4 +369,34 @@ describe("polling is not a loop, inside the batch too", () => {
     expect(outcome.kind).toBe("normal_complete");
     expect(appendEngineMessage).not.toHaveBeenCalled();
   });
+
+  it("a listed price read past the polling cap gets the read-polling cue", async () => {
+    let n = 0;
+    dispatchTool.mockImplementation(async () => {
+      n += 1;
+      return { success: true, output: JSON.stringify({ prices: { So111: { usdPrice: 100 + n } } }) };
+    });
+    const liveMessages: Message[] = [];
+    const outcome = await runBatch({
+      calls: Array.from({ length: 8 }, (_, i) => ({
+        id: `call-${i}`,
+        name: "solana__token_prices_get",
+        arguments: { mints: ["So111"] },
+      })),
+      detector: createToolCallLoopDetector(),
+      liveMessages,
+    });
+
+    // The sixth identical-args read trips the cap; the rest is drained.
+    expect(dispatchTool).toHaveBeenCalledTimes(6);
+    expect(outcome.kind).toBe("normal_complete");
+    const [, cue, metadata] = appendEngineMessage.mock.calls[0] as [
+      string, string, { payload: Record<string, unknown> },
+    ];
+    expect(cue).toContain("Proceed with what you already have");
+    expect(cue).toContain("LoopDefer");
+    expect(metadata.payload).toMatchObject({ trigger: "read_poll", repeatCount: 6, strike: 1 });
+    expect(JSON.stringify(metadata.payload)).not.toContain("So111");
+    expect(liveMessages.at(-1)?.content).toBe(cue);
+  });
 });
