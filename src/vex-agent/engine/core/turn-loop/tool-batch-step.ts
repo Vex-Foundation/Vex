@@ -35,6 +35,11 @@ export async function applyToolBatchOutcome(args: {
   readonly lastText: string | null;
   readonly handlePostCompactBookkeeping: () => Promise<void>;
   readonly mergeOperatorInstructions: () => Promise<void>;
+  /**
+   * The run's Stop signal (S-5), forwarded into the wake park's
+   * critical-compaction wait so a Stop ends that wait promptly.
+   */
+  readonly signal?: AbortSignal;
 }): Promise<ToolBatchStep> {
   const { batchOutcome } = args;
 
@@ -79,6 +84,7 @@ export async function applyToolBatchOutcome(args: {
         ? {}
         : { runnerOwnerId: args.runnerOwnerId }),
       handlePostCompactBookkeeping: args.handlePostCompactBookkeeping,
+      ...(args.signal === undefined ? {} : { signal: args.signal }),
     });
     return {
       kind: "return",

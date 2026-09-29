@@ -307,6 +307,10 @@ async function runTurnLoopBody(
   const leaseLost = (): boolean => isLeaseLost(leaseGuard);
   const stopRequested = (): boolean =>
     abortSignal?.aborted === true || inferenceAbortSignal?.aborted === true;
+  // The run's Stop, whichever position the caller threaded it in (mission runs
+  // pass it in both; chat turns only as the inference signal). Handed to the
+  // critical-compaction waits (S-5) — never the lease-lost signal.
+  const stopSignal = abortSignal ?? inferenceAbortSignal;
   const turnInferenceSignal = inferenceSignalFor(
     inferenceAbortSignal,
     leaseGuard?.lostSignal,
@@ -453,6 +457,8 @@ async function runTurnLoopBody(
       observeBand,
       readCurrentTokenCount: () => currentTokenCount,
       handlePostCompactBookkeeping,
+      // S-5: a Stop ends the critical ladder's bounded wait promptly.
+      ...(stopSignal === undefined ? {} : { signal: stopSignal }),
     });
     if (criticalStep.kind === "stop") {
       stopReason = criticalStep.stopReason;
@@ -535,6 +541,8 @@ async function runTurnLoopBody(
       currentTokenCount,
       criticalNoopCounter,
       runnerOwnerId: loopConfig.runnerOwnerId,
+      // S-5: a Stop ends the ceiling ladder's bounded wait promptly.
+      ...(stopSignal === undefined ? {} : { signal: stopSignal }),
     });
     if (gate.kind === "escalated") {
       stopReason = gate.stopReason;
@@ -882,6 +890,8 @@ async function runTurnLoopBody(
         lastText,
         handlePostCompactBookkeeping,
         mergeOperatorInstructions,
+        // S-5: forwarded into the wake park's critical-compaction wait.
+        ...(stopSignal === undefined ? {} : { signal: stopSignal }),
       });
       if (batchStep.kind === "return") {
         // Every one of these exits (approval park, user-form park, wake pause,
