@@ -327,7 +327,7 @@ export async function virtualsLaunchCancel(
       : {}),
     _executionId: executionId,
   };
-  return { success: true, output: JSON.stringify(payload, null, 2), data: payload };
+  return { success: true, output: JSON.stringify(payload), data: payload };
 }
 
 type ResolveTargetResult =

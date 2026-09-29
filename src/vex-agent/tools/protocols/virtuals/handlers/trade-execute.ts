@@ -628,7 +628,7 @@ async function finalizeConfirmedTrade(x: {
 
   return {
     success: true,
-    output: JSON.stringify(payload, null, 2),
+    output: JSON.stringify(payload),
     data: { ...payload, _executionId: x.executionId },
   };
 }

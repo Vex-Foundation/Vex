@@ -715,5 +715,5 @@ async function finalizeConfirmedLaunch(x: {
     _executionId: x.executionId,
   };
 
-  return { success: true, output: JSON.stringify(payload, null, 2), data: payload };
+  return { success: true, output: JSON.stringify(payload), data: payload };
 }
