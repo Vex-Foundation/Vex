@@ -85,6 +85,13 @@ export default defineConfig({
       "src/__tests__/integration/repos/session-control-state-wake.int.test.ts",
       // Kairos S-1: the claim-token contract and the FOR SHARE write fence.
       "src/__tests__/integration/repos/runner-lease-fence.int.test.ts",
+      // Kairos S-4: the statement / connect bounds and the control pool, and
+      // Stop + lease renewal under pool saturation, row and advisory lock
+      // contention and DB-wide connection exhaustion.
+      "src/__tests__/integration/repos/db-bounds-control-pool.int.test.ts",
+      "src/__tests__/integration/repos/db-contention-stop-lease.int.test.ts",
+      // Kairos S-1: a lease stolen while a tool is in flight, end to end.
+      "src/__tests__/integration/engine/lease-stolen-mid-turn.int.test.ts",
       "src/__tests__/integration/repos/recovery-money-gate-race.int.test.ts",
       "src/__tests__/integration/repos/recovery-reverse-lock-order.int.test.ts",
       "src/__tests__/integration/repos/wallet-transaction-*.int.test.ts",

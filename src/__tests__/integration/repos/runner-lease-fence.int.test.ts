@@ -5,8 +5,8 @@
  *   - the token contract: a new token per new claim, kept on renewal and on a
  *     token-presenting refresh, a fresh one on an expired takeover; a
  *     same-owner claim WITHOUT the token is busy while the lease is live;
- *   - renew / release require the token: two runners with the SAME owner id,
- *     only the token holder renews or releases;
+ *   - renew / release / fenced writes require the token: two runners with the
+ *     SAME owner id, only the token holder renews, releases or writes;
  *   - the FOR SHARE fence: a takeover issued while a fenced write transaction
  *     is open WAITS for it; after the takeover the stale runner's fenced write
  *     affects zero rows and does not throw.
@@ -109,7 +109,7 @@ describe("S-1 lease fencing on a disposable Postgres", () => {
     expect(takeover.tookOver).toBe(true);
   });
 
-  it("two runners with the SAME owner id: only the token holder renews or releases", async () => {
+  it("two runners with the SAME owner id: only the token holder renews, releases or writes", async () => {
     const sessionId = await newSession();
     const old = requireLease(await claim(sessionId, "wake-executor-w1"));
     await expireLease(sessionId);
@@ -119,6 +119,28 @@ describe("S-1 lease fencing on a disposable Postgres", () => {
     expect(await leases.renewLease(sessionId, old.claimToken, TTL_MS)).toBeNull();
     expect(await leases.releaseLease(sessionId, old.claimToken)).toBe(0);
     expect(await leases.getLease(sessionId)).not.toBeNull();
+
+    // Writes follow the token too: the same owner id without the current
+    // token is refused by the fence (zero rows), the token holder's lands.
+    const write = (claimToken: string, content: string) =>
+      fence.withLeaseFence(
+        { sessionId, claimToken },
+        async (tx) =>
+          addMessageReturningId(
+            sessionId,
+            { role: "assistant", content, timestamp: new Date().toISOString() },
+            { source: "assistant", messageType: "chat", visibility: "user" },
+            tx,
+          ),
+        { site: "tool_batch_transcript" },
+      );
+    expect(await write(old.claimToken, "stale same-owner write")).toEqual({
+      fenced: false,
+      state: "taken_over",
+    });
+    expect(await messageCount(sessionId)).toBe(0);
+    expect((await write(current.claimToken, "token holder write")).fenced).toBe(true);
+    expect(await messageCount(sessionId)).toBe(1);
 
     expect(await leases.renewLease(sessionId, current.claimToken, TTL_MS)).not.toBeNull();
     expect(await leases.releaseLease(sessionId, current.claimToken)).toBe(1);
