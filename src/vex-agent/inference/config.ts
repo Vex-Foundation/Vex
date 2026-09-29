@@ -20,6 +20,7 @@ import {
   parseAgentDbBoundsEnv,
   parseAgentStreamBoundsEnv,
   parseAuxReasoningEffortEnv,
+  parseAgentToolReadEnv,
   type AgentStreamBounds,
 } from "../../lib/agent-config.js";
 import logger from "@utils/logger.js";
@@ -106,7 +107,15 @@ export function loadEnvConfig(): EnvConfig {
   // fall back to defaults on their own; validating them here makes a bad
   // value fail startup loudly like every other AGENT_* field.
   const dbBoundsParse = parseAgentDbBoundsEnv(process.env);
-  for (const e of [...agentParse.errors, ...boundsParse.errors, ...dbBoundsParse.errors]) {
+  // Same for the read-dispatch bounds, consumed per dispatch by
+  // `tools/read-dispatch-bounds.ts`.
+  const toolReadParse = parseAgentToolReadEnv(process.env);
+  for (const e of [
+    ...agentParse.errors,
+    ...boundsParse.errors,
+    ...dbBoundsParse.errors,
+    ...toolReadParse.errors,
+  ]) {
     if (e.reason === "out_of_range") {
       errors.push(
         `${e.key}="${e.raw}" is invalid. Must be ${e.detail?.min ?? "?"}-${e.detail?.max ?? "?"}`,

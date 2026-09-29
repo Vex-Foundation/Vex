@@ -19,6 +19,7 @@ import {
   formatParseErrors,
   parseAgentDbBoundsEnv,
   parseAgentEnv,
+  parseAgentToolReadEnv,
 } from "../../lib/agent-config.js";
 
 describe("agent-config field metadata", () => {
@@ -211,5 +212,35 @@ describe("parseAgentDbBoundsEnv (Kairos S-4)", () => {
     });
     expect(r.errors).toEqual([]);
     expect(r.value.longStatementTimeoutMs).toBe(120_000);
+  });
+});
+
+describe("parseAgentToolReadEnv (Kairos T-1 + T-3)", () => {
+  it("defaults to three concurrent reads, a 45 s read cap and a 120 s extended cap", () => {
+    const r = parseAgentToolReadEnv({});
+    expect(r.errors).toEqual([]);
+    expect(r.value).toEqual({
+      readConcurrency: 3,
+      readTimeoutMs: 45_000,
+      extendedReadTimeoutMs: 120_000,
+    });
+  });
+
+  it("accepts 1 (strictly serial) and 0 for either timeout (disabled)", () => {
+    const r = parseAgentToolReadEnv({
+      AGENT_TOOL_READ_CONCURRENCY: "1",
+      AGENT_TOOL_READ_TIMEOUT_MS: "0",
+      AGENT_TOOL_READ_EXTENDED_TIMEOUT_MS: "0",
+    });
+    expect(r.errors).toEqual([]);
+    expect(r.value).toEqual({ readConcurrency: 1, readTimeoutMs: 0, extendedReadTimeoutMs: 0 });
+  });
+
+  it("refuses a concurrency of 0 or above 8, and the default applies", () => {
+    for (const raw of ["0", "9", "two"]) {
+      const r = parseAgentToolReadEnv({ AGENT_TOOL_READ_CONCURRENCY: raw });
+      expect(r.errors.map((e) => e.key)).toEqual(["AGENT_TOOL_READ_CONCURRENCY"]);
+      expect(r.value.readConcurrency).toBe(3);
+    }
   });
 });

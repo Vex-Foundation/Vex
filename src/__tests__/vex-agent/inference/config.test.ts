@@ -201,6 +201,18 @@ describe("loadEnvConfig", () => {
     expect(() => loadEnvConfig()).toThrow(/AGENT_CONTEXT_LIMIT.*AGENT_FIRST_CHUNK_TIMEOUT_MS/s);
   });
 
+  it("fails startup on an invalid read-dispatch bound", () => {
+    for (const raw of ["0", "9", "many"]) {
+      process.env.AGENT_TOOL_READ_CONCURRENCY = raw;
+      expect(() => loadEnvConfig()).toThrow("AGENT_TOOL_READ_CONCURRENCY");
+    }
+    process.env.AGENT_TOOL_READ_CONCURRENCY = "1";
+    process.env.AGENT_TOOL_READ_TIMEOUT_MS = "-1";
+    expect(() => loadEnvConfig()).toThrow("AGENT_TOOL_READ_TIMEOUT_MS");
+    process.env.AGENT_TOOL_READ_TIMEOUT_MS = "0";
+    expect(() => loadEnvConfig()).not.toThrow();
+  });
+
   it("fails startup on an invalid DB bound, including an attempt to disable one", () => {
     for (const raw of ["0", "soon", "3600001"]) {
       process.env.AGENT_DB_STATEMENT_TIMEOUT_MS = raw;

@@ -258,6 +258,59 @@ export function parseAuxReasoningEffortEnv(env: EnvLike): {
   };
 }
 
+// ── Kairos tool read dispatch (Phase 5, T-1 + T-3) ──────────────
+//
+// How the engine runs the AUDITED parallel-safe reads
+// (`src/vex-agent/tools/parallel-safe-reads.ts`). Nothing here ever applies
+// to a call outside that allowlist: approval, wallet, signing and broadcast
+// tools stay strictly serial and are never wrapped in a timeout.
+
+/**
+ * Most allowlisted reads one batch runs at once. `1` is the previous strictly
+ * serial behaviour, exactly.
+ */
+export const AGENT_TOOL_READ_CONCURRENCY: FieldWithDefault = {
+  key: "AGENT_TOOL_READ_CONCURRENCY",
+  kind: "int",
+  min: 1,
+  max: 8,
+  default: 3,
+};
+
+/** Wall-clock cap on one allowlisted read, in ms. `0` disables it. */
+export const AGENT_TOOL_READ_TIMEOUT_MS: FieldWithDefault = {
+  key: "AGENT_TOOL_READ_TIMEOUT_MS",
+  kind: "int",
+  min: 0,
+  max: 600_000,
+  default: 45_000,
+};
+
+/**
+ * The same cap for the allowlisted reads that legitimately run longer (web
+ * research, the multi-chain wallet scan), in ms. `0` disables it.
+ */
+export const AGENT_TOOL_READ_EXTENDED_TIMEOUT_MS: FieldWithDefault = {
+  key: "AGENT_TOOL_READ_EXTENDED_TIMEOUT_MS",
+  kind: "int",
+  min: 0,
+  max: 600_000,
+  default: 120_000,
+};
+
+export const AGENT_TOOL_READ_FIELDS = [
+  AGENT_TOOL_READ_CONCURRENCY,
+  AGENT_TOOL_READ_TIMEOUT_MS,
+  AGENT_TOOL_READ_EXTENDED_TIMEOUT_MS,
+] as const;
+
+/** Effective read-dispatch bounds. Timeouts of `0` are disabled. */
+export interface AgentToolReadBounds {
+  readonly readConcurrency: number;
+  readonly readTimeoutMs: number;
+  readonly extendedReadTimeoutMs: number;
+}
+
 export interface ParseError {
   readonly key: string;
   readonly raw: string;
@@ -332,6 +385,24 @@ export function parseAgentDbBoundsEnv(env: EnvLike): ParseResult<AgentDbBounds> 
       idleInTransactionTimeoutMs: read(AGENT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS),
       longStatementTimeoutMs: Math.max(read(AGENT_DB_LONG_STATEMENT_TIMEOUT_MS), statementTimeoutMs),
       controlPoolMax: read(AGENT_DB_CONTROL_POOL_MAX),
+    },
+    errors,
+  };
+}
+
+/**
+ * Parse the Kairos read-dispatch bounds. Same contract as the stream bounds:
+ * blank = default, invalid = collected error and the default applies.
+ */
+export function parseAgentToolReadEnv(env: EnvLike): ParseResult<AgentToolReadBounds> {
+  const errors: ParseError[] = [];
+  const read = (field: FieldWithDefault): number =>
+    parseFieldOrDefault(field, env[field.key], errors) ?? field.default ?? field.min;
+  return {
+    value: {
+      readConcurrency: read(AGENT_TOOL_READ_CONCURRENCY),
+      readTimeoutMs: read(AGENT_TOOL_READ_TIMEOUT_MS),
+      extendedReadTimeoutMs: read(AGENT_TOOL_READ_EXTENDED_TIMEOUT_MS),
     },
     errors,
   };
