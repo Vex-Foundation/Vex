@@ -10,6 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { fakeLeaseHandle } from "../../../helpers/lease-guard.js";
 
 const updateStatus = vi.fn();
 const updateStatusIfNotTerminal = vi.fn();
@@ -260,6 +261,7 @@ describe("closing the continuation leaves no orphaned Stop", () => {
     typeof closeUserFormContinuation
   >[0]["leaseHandle"] {
     return {
+      ...fakeLeaseHandle({ ownerId: "owner_1", sessionId: "s1", claimToken: "token_1" }),
       lease: {
         sessionId: "s1",
         missionRunId: null,
@@ -268,6 +270,7 @@ describe("closing the continuation leaves no orphaned Stop", () => {
         acquiredAt: new Date(),
         heartbeatAt: new Date(),
         expiresAt: new Date(Date.now() + 60_000),
+        claimToken: "token_1",
       },
       ownerId: "owner_1",
       release: vi.fn().mockResolvedValue(undefined),

@@ -28,6 +28,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fakeLeaseHandle } from "../../../../helpers/lease-guard.js";
+import { requireValue } from "../../../../helpers/require-value.js";
 
 const SESSION_ID = "00000000-0000-4000-8000-0000000000a4";
 const APPROVAL_ID = "approval-chat-resume-001";
@@ -594,7 +595,7 @@ describe("runResumeAfterDecision — chat session", () => {
     await runResumeAfterDecision(missionContinuation());
 
     expect(mockResumeMissionRun).toHaveBeenCalledTimes(1);
-    const [runId, runnerLease, claim] = mockResumeMissionRun.mock.calls[0]!;
+    const [runId, runnerLease, claim] = requireValue(mockResumeMissionRun.mock.calls[0]);
     expect(runId).toBe("run-1");
     // The continuation's own lease — the resumed loop proves ownership with it
     // before consuming a prepared compaction cutover, and fences on it.

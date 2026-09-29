@@ -47,6 +47,7 @@ import { tick, type WakeDeps } from "@vex-agent/engine/wake/executor.js";
 import { claimSessionWakeAtomically } from "@vex-agent/engine/wake/executor/claim-session-wake.js";
 import { claimMissionWakeAtomically } from "@vex-agent/engine/wake/executor/claim-mission-wake.js";
 import { makeSession, resetDb } from "../setup/fixtures.js";
+import type { RunnerLeaseGuard } from "@vex-agent/engine/runtime/lease-guard.js";
 
 interface WakeRow {
   readonly id: string;
@@ -240,12 +241,12 @@ describe("agent-session continuation (integration)", () => {
      */
     const observedOwners: { passed: string; live: string | undefined }[] = [];
     const deps = makeDeps({
-      continueAgentSession: vi.fn(async (_sessionId: string, ownerId: string) => {
+      continueAgentSession: vi.fn(async (_sessionId: string, runnerLease: RunnerLeaseGuard) => {
         const rows = await query<{ owner_id: string }>(
           "SELECT owner_id FROM runner_leases WHERE session_id = $1",
           [sessionId],
         );
-        observedOwners.push({ passed: ownerId, live: rows[0]?.owner_id });
+        observedOwners.push({ passed: runnerLease.ownerId, live: rows[0]?.owner_id });
       }),
     });
     await tick(new Date(), 10, deps);

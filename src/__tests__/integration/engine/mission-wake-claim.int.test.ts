@@ -39,6 +39,7 @@ import {
   runStuckWakeRepairPass,
 } from "@vex-agent/engine/wake/stuck-wake-repair.js";
 import { requireValue } from "../../helpers/require-value.js";
+import type { RunnerLeaseGuard } from "@vex-agent/engine/runtime/lease-guard.js";
 import { makeSession, resetDb } from "../setup/fixtures.js";
 
 interface Seeded {
@@ -181,11 +182,11 @@ describe("mission wake claim (integration)", () => {
     const frozen = new Promise<void>((resolve) => {
       unfreeze = resolve;
     });
-    const crashedResume = vi.fn((_runId: string, _owner: string) => frozen);
+    const crashedResume = vi.fn((_runId: string, _owner: RunnerLeaseGuard) => frozen);
     const crashedPass = tick(new Date(), 10, makeDeps({ resumeMissionRun: crashedResume }));
     await vi.waitFor(() => expect(crashedResume).toHaveBeenCalledTimes(1));
 
-    expect(crashedResume).toHaveBeenCalledWith(first.runId, `wake-executor-${firstWake}`);
+    expect(crashedResume).toHaveBeenCalledWith(first.runId, expect.objectContaining({ ownerId: `wake-executor-${firstWake}` }));
     expect(await wakeStatus(firstWake)).toBe("consumed");
     expect(await runStatus(first.runId)).toBe("running");
     // The rows the old batch claim would have consumed are untouched.
@@ -196,7 +197,7 @@ describe("mission wake claim (integration)", () => {
     expect(await leaseOwner(second.sessionId)).toBeNull();
 
     // Restart: a fresh executor pass.
-    const restartedResume = vi.fn((_runId: string, _owner: string) => Promise.resolve());
+    const restartedResume = vi.fn((_runId: string, _owner: RunnerLeaseGuard) => Promise.resolve());
     const results = await tick(new Date(), 10, makeDeps({ resumeMissionRun: restartedResume }));
 
     expect(results.map((r) => r.outcome)).toEqual([
@@ -204,8 +205,8 @@ describe("mission wake claim (integration)", () => {
       { kind: "resumed", runId: third.runId },
     ]);
     expect(restartedResume.mock.calls).toEqual([
-      [second.runId, `wake-executor-${secondWake}`],
-      [third.runId, `wake-executor-${thirdWake}`],
+      [second.runId, expect.objectContaining({ ownerId: `wake-executor-${secondWake}` })],
+      [third.runId, expect.objectContaining({ ownerId: `wake-executor-${thirdWake}` })],
     ]);
     expect(await wakeStatus(secondWake)).toBe("consumed");
     expect(await wakeStatus(thirdWake)).toBe("consumed");
@@ -250,7 +251,7 @@ describe("mission wake claim (integration)", () => {
        FOR EACH ROW EXECUTE FUNCTION ${FAIL_LEASE_TRIGGER}()`,
     );
 
-    const resume = vi.fn((_runId: string, _owner: string) => Promise.resolve());
+    const resume = vi.fn((_runId: string, _owner: RunnerLeaseGuard) => Promise.resolve());
     const results = await tick(new Date(), 10, makeDeps({ resumeMissionRun: resume }));
 
     expect(results.map((r) => r.outcome.kind)).toEqual(["error", "resumed"]);
@@ -258,7 +259,7 @@ describe("mission wake claim (integration)", () => {
     expect(await runStatus(broken.runId)).toBe("paused_wake");
     expect(await leaseOwner(broken.sessionId)).toBeNull();
     expect(await wakeStatus(healthyWake)).toBe("consumed");
-    expect(resume.mock.calls).toEqual([[healthy.runId, `wake-executor-${healthyWake}`]]);
+    expect(resume.mock.calls).toEqual([[healthy.runId, expect.objectContaining({ ownerId: `wake-executor-${healthyWake}` })]]);
 
     // Once the fault clears, the untouched row is claimed normally.
     await dropFailLeaseTrigger();
@@ -282,7 +283,7 @@ describe("mission wake claim (integration)", () => {
     }
 
     const started: string[] = [];
-    const resume = vi.fn(async (runId: string, _owner: string) => {
+    const resume = vi.fn(async (runId: string, _owner: RunnerLeaseGuard) => {
       started.push(runId);
       await new Promise((resolve) => setTimeout(resolve, 25));
     });
@@ -308,7 +309,7 @@ describe("mission wake claim (integration)", () => {
     await seedLease(seeded, "turn-loop-owner");
     const wakeId = await seedWake(seeded, 1, { attempt: 2 });
 
-    const resume = vi.fn((_runId: string, _owner: string) => Promise.resolve());
+    const resume = vi.fn((_runId: string, _owner: RunnerLeaseGuard) => Promise.resolve());
     const now = new Date();
     const results = await tick(now, 10, makeDeps({ resumeMissionRun: resume }));
 
@@ -326,7 +327,7 @@ describe("mission wake claim (integration)", () => {
     await execute("DELETE FROM runner_leases WHERE session_id = $1", [seeded.sessionId]);
     const later = await tick(new Date(now.getTime() + 6_000), 10, makeDeps({ resumeMissionRun: resume }));
     expect(later.map((r) => r.outcome)).toEqual([{ kind: "resumed", runId: seeded.runId }]);
-    expect(resume.mock.calls).toEqual([[seeded.runId, `wake-executor-${wakeId}`]]);
+    expect(resume.mock.calls).toEqual([[seeded.runId, expect.objectContaining({ ownerId: `wake-executor-${wakeId}` })]]);
   });
 
   it("a busy lease on a parked run defers the wake instead of dropping it", async () => {
@@ -347,7 +348,7 @@ describe("mission wake claim (integration)", () => {
   it("a terminal run's wake is retired as cancelled, never consumed", async () => {
     const seeded = await seedRun("completed");
     const wakeId = await seedWake(seeded, 1);
-    const resume = vi.fn((_runId: string, _owner: string) => Promise.resolve());
+    const resume = vi.fn((_runId: string, _owner: RunnerLeaseGuard) => Promise.resolve());
 
     const results = await tick(new Date(), 10, makeDeps({ resumeMissionRun: resume }));
 
@@ -414,7 +415,7 @@ describe("stuck-wake repair (integration)", () => {
     });
 
     // The ordinary executor claims the re-armed row.
-    const resume = vi.fn((_runId: string, _owner: string) => Promise.resolve());
+    const resume = vi.fn((_runId: string, _owner: RunnerLeaseGuard) => Promise.resolve());
     const results = await tick(new Date(), 10, makeDeps({ resumeMissionRun: resume }));
     expect(results.map((r) => r.outcome)).toEqual([{ kind: "resumed", runId: stuck.runId }]);
     expect(resume).toHaveBeenCalledTimes(1);

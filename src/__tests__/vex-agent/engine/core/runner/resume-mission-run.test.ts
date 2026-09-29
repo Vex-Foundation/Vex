@@ -488,7 +488,7 @@ describe("runner", () => {
 
     it("throws if run not found", async () => {
       mockGetRun.mockResolvedValueOnce(null);
-      await expect(resumeMissionRun("nonexistent", RESUME_OWNER)).rejects.toThrow("not found");
+      await expect(resumeMissionRun("nonexistent", RESUME_LEASE)).rejects.toThrow("not found");
     });
 
     // ── Resumed-turn claim hook ──────────────────────────────
@@ -533,7 +533,7 @@ describe("runner", () => {
           return { text: "resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null };
         });
 
-        await resumeMissionRun("run-1", RESUME_OWNER, async () => {
+        await resumeMissionRun("run-1", RESUME_LEASE, async () => {
           order.push("claim");
           return true;
         });
@@ -549,7 +549,7 @@ describe("runner", () => {
         });
         mockResolveProvider.mockResolvedValueOnce(null);
 
-        await expect(resumeMissionRun("run-1", RESUME_OWNER, claim)).rejects.toThrow(
+        await expect(resumeMissionRun("run-1", RESUME_LEASE, claim)).rejects.toThrow(
           "No inference provider",
         );
 
@@ -560,7 +560,7 @@ describe("runner", () => {
       it("a losing claim abandons the resume without running the turn", async () => {
         readyRun();
 
-        const result = await resumeMissionRun("run-1", RESUME_OWNER, async () => false);
+        const result = await resumeMissionRun("run-1", RESUME_LEASE, async () => false);
 
         expect(mockRunTurnLoop).not.toHaveBeenCalled();
         expect(result).toMatchObject({ text: null, toolCallsMade: 0 });
