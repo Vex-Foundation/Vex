@@ -72,7 +72,7 @@ describe("S-1 lease fencing on a disposable Postgres", () => {
   });
 
   it("migration 173 adds a NOT NULL, defaulted claim_token", async () => {
-    // Disposable testcontainers database only — never the owner's app DB.
+    // Disposable testcontainers database only - never the owner's app DB.
     const db = await client.query<{ name: string }>(`SELECT current_database() AS name`);
     expect(db[0]?.name).toBe("vex_test");
     const rows = await client.query<{ is_nullable: string; column_default: string | null }>(

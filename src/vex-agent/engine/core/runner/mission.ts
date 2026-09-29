@@ -135,7 +135,7 @@ export async function resumeMissionRun(
   runId: string,
   /**
    * The lease the CALLER claimed and holds around this call (its `LeaseHandle`).
-   * Required, not optional — every resume entry point (wake executor,
+   * Required, not optional - every resume entry point (wake executor,
    * auto-retry, approval continuation, ingress preempt, IPC resume/retry)
    * claims a lease first, and an optional parameter is precisely how that proof
    * used to be dropped. It carries the compaction ownership proof (`ownerId`),

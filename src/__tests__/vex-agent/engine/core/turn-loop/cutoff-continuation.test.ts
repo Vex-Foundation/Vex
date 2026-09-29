@@ -151,7 +151,7 @@ vi.mock("@vex-agent/engine/compact-jobs/forced-fallback.js", () => ({
 // turn loop via `buildResumePacket`. The implementation runs SQL queries via
 // `@vex-agent/db/client.js` (already mocked above) and falls back to "" on
 // any failure / empty result, so the default mocks keep the resume packet
-// empty by design — tests that exercise the bridge counter add their own
+// empty by design - tests that exercise the bridge counter add their own
 // db client mocks to inject content.
 
 // The recovery guard's one DB read. Scripted per test; defaults to "none".
@@ -209,7 +209,7 @@ vi.mock("@vex-agent/db/client.js", () => ({
   execute: vi.fn(),
   query: vi.fn().mockResolvedValue([]),
   queryOne: vi.fn().mockResolvedValue(null),
-  // Puzzle 2 / puzzle 3 additions — production code now goes through these.
+  // Puzzle 2 / puzzle 3 additions - production code now goes through these.
   getPool: vi.fn().mockReturnValue({
     connect: vi.fn().mockResolvedValue({
       query: vi.fn().mockResolvedValue({ rows: [] }),
@@ -219,7 +219,7 @@ vi.mock("@vex-agent/db/client.js", () => ({
   queryWith: vi.fn().mockResolvedValue([]),
   // SQL-aware: only the message INSERT...RETURNING gets a fabricated row so
   // `addMessageReturningId` does not throw "no row". Lease / control SQL
-  // queries default to null — those paths are covered by the dedicated
+  // queries default to null - those paths are covered by the dedicated
   // `lease-and-status` mock below.
   queryOneWith: vi.fn().mockImplementation(async (_exec: unknown, sql: string) => {
     if (typeof sql === "string" && sql.includes("INSERT INTO messages") && sql.includes("RETURNING id, created_at")) {
@@ -237,7 +237,7 @@ vi.mock("@vex-agent/db/client.js", () => ({
   }),
 }));
 
-// Puzzle 3 atomic lease helpers — production calls these via dynamic imports
+// Puzzle 3 atomic lease helpers - production calls these via dynamic imports
 // from runner/turn-loop/wake paths. Default outcomes: claimed lease + no
 // pending control request. Per-test overrides via `mockImplementationOnce`.
 vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
@@ -292,7 +292,7 @@ vi.mock("@vex-agent/engine/runtime/release-and-emit.js", () => ({
 }));
 
 // Wave 3: the $VEX own-token banner inside buildTurnPromptStack reaches the
-// public DexScreener/Virtuals APIs — stub it so the turn loop stays hermetic
+// public DexScreener/Virtuals APIs - stub it so the turn loop stays hermetic
 // ("" = banner omitted, the fail-soft contract).
 vi.mock("@vex-agent/engine/prompts/own-token-banner.js", () => ({
   buildOwnTokenBanner: vi.fn().mockResolvedValue(""),
@@ -305,7 +305,7 @@ vi.mock("@vex-agent/tools/protocols/catalog.js", () => ({
 
 // Spy on getOpenAITools (real impl preserved) so band-recompute tests can
 // observe the per-turn ToolVisibilityContext that buildTurnPromptStack now
-// projects the tools array from — replacing the removed per-band callback.
+// projects the tools array from - replacing the removed per-band callback.
 const mockGetOpenAITools = vi.hoisted(() => vi.fn());
 vi.mock("@vex-agent/tools/registry.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@vex-agent/tools/registry.js")>();

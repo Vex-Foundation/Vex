@@ -148,7 +148,7 @@ function isAsyncIterable(value: unknown): value is AsyncIterable<StreamChunk> {
  * `parseNonStreamingResponse`, and are COUNTED so the turn loop can refuse the
  * whole batch; if every call is malformed the caller falls through to text
  * semantics. (On abort, an in-flight call's truncated JSON fails to parse and
- * is dropped here — partial tool calls are never assembled.)
+ * is dropped here - partial tool calls are never assembled.)
  *
  * A call the stream never gave an id or a name is malformed too: its result
  * could not be paired with it in the transcript, and there is nothing to
@@ -208,7 +208,7 @@ function safeOnDelta(
 }
 
 /**
- * Invoke one timer mark, swallowing anything it throws — the `safeOnDelta`
+ * Invoke one timer mark, swallowing anything it throws - the `safeOnDelta`
  * contract applied to the measurement observer.
  */
 function safeTiming(
@@ -226,7 +226,7 @@ function safeTiming(
 /**
  * The request context with the timer's capacity-failure hook added, so the
  * endpoint failover reports each capacity failure it absorbs. Without a timer
- * (or without a context — there is no session to attribute a retry to, and
+ * (or without a context - there is no session to attribute a retry to, and
  * inventing one would change sticky routing) the context passes through as-is.
  */
 function withCapacityHook(
@@ -332,7 +332,7 @@ function isStreamIncompatibility(err: unknown): boolean {
  *
  * The round's `signal` is forwarded: a fallback is still the same round, so a
  * "stop generating" that lands after the stream degraded must cancel the
- * buffered request too, and the round deadline keeps running — the fallback
+ * buffered request too, and the round deadline keeps running - the fallback
  * gets only the budget that is LEFT, never a fresh one (R-6). Every caller
  * below has already short-circuited on a PRE-aborted signal, so this only
  * covers an abort that arrives DURING the fallback.

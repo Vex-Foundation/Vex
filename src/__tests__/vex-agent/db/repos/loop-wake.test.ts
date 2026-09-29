@@ -249,7 +249,7 @@ describe("loop-wake repo — monotonic promotion", () => {
 
 // ── Mission-scoped candidates (non-destructive) ─────────────────────
 
-describe("loop-wake repo — mission-scoped candidates", () => {
+describe("loop-wake repo - mission-scoped candidates", () => {
   beforeEach(() => {
     resetMocks();
     mockPoolQueryOne = makePoolQueryOneMock();

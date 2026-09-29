@@ -130,7 +130,7 @@ export interface EngineContext {
    * claims a lease sets it; a caller without a lease leaves it unset and its
    * writes behave exactly as before). The turn loop fences its transcript and
    * run-state writes on `leaseGuard.fence`, and treats `leaseGuard.lostSignal`
-   * as the distinct `lease_lost` stop — never as the operator Stop, and never
+   * as the distinct `lease_lost` stop - never as the operator Stop, and never
    * handed to a tool. TYPE-ONLY import: no runtime edge out of `engine/types/`.
    */
   leaseGuard?: RunnerLeaseGuard;

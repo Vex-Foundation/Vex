@@ -355,7 +355,7 @@ export async function processTurnToolBatch(args: {
     // ── Lease loss, re-checked AFTER the dispatch returned ──
     // Same shape as the Stop re-check above: the call that was in flight
     // settled and its result is recorded truthfully (the write is fenced, so
-    // after a takeover it affects zero rows); nothing after it runs — no
+    // after a takeover it affects zero rows); nothing after it runs - no
     // approval is parked, no follow-up signs, no further call dispatches.
     if (isLeaseLost(leaseGuard)) {
       executedCalls.push(toolCall);

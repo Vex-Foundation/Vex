@@ -18,7 +18,7 @@
  * cleared once, DELETE matches the claim token so a stale call after
  * eviction is a no-op).
  *
- * The handle carries `claimToken` — the token THIS claim was issued
+ * The handle carries `claimToken` - the token THIS claim was issued
  * (migration 173). Renewal and release present it, never the owner id, so
  * two runners that share an owner id cannot renew or release each other's
  * claim.
@@ -27,7 +27,7 @@
  *
  * `LeaseHandle` extends `RunnerLeaseGuard` (`lease-guard.ts`), so every
  * runner that creates a handle has a lease-lost signal wired to its
- * heartbeat by construction — there is no opt-in callback a runner could
+ * heartbeat by construction - there is no opt-in callback a runner could
  * forget. The runner threads the handle into its turn loop as
  * `EngineContext.leaseGuard`; the loop fences its writes on `fence` and
  * treats `lostSignal` as the distinct `lease_lost` stop (never the Stop).
@@ -50,7 +50,7 @@ import {
 export interface LeaseHandle extends RunnerLeaseGuard {
   readonly lease: RunnerLease;
   readonly ownerId: string;
-  /** The token of this claim — the only credential renewal and release accept. */
+  /** The token of this claim - the only credential renewal and release accept. */
   readonly claimToken: string;
   /** Idempotent. Safe to call multiple times. */
   release(): Promise<void>;
@@ -151,7 +151,7 @@ export function createLeaseHandle(opts: CreateLeaseHandleOptions): LeaseHandle {
     try {
       const renewed = await renew(opts.lease.sessionId, opts.lease.claimToken, opts.ttlMs);
       if (renewed === null) {
-        // Our token matches no row — another claim took the lease after our
+        // Our token matches no row - another claim took the lease after our
         // expiry, or the row was deleted. Stop the heartbeat and fire the
         // lost signal; the runner starts no new work and ends the turn.
         released = true;

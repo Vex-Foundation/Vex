@@ -1,5 +1,5 @@
 /**
- * R-2 — model-aware answer headroom.
+ * R-2 - model-aware answer headroom.
  *
  * Reasoning and the visible answer share `max_tokens` on OpenRouter, so when
  * an effort is sent the request's `max_tokens` is raised to a per-effort floor,
@@ -86,7 +86,7 @@ function wireBody(params: ReturnType<typeof buildOpenRouterParams>): Record<stri
   return Object.fromEntries(Object.entries(body));
 }
 
-describe("resolveAnswerHeadroomMaxTokens — policy", () => {
+describe("resolveAnswerHeadroomMaxTokens - policy", () => {
   it("ships switched on", () => {
     expect(ANSWER_HEADROOM_ENABLED).toBe(true);
   });
@@ -208,7 +208,7 @@ describe("resolveAnswerHeadroomMaxTokens — policy", () => {
   });
 });
 
-describe("buildOpenRouterParams — answer headroom on the request", () => {
+describe("buildOpenRouterParams - answer headroom on the request", () => {
   it("raises max_tokens at high effort and keeps reasoning to effort only", () => {
     const params = buildOpenRouterParams(MESSAGES, [], makeConfig({ reasoningEffort: "high" }), true);
     expect(params.maxTokens).toBe(32_768);
@@ -290,7 +290,7 @@ describe("buildOpenRouterParams — answer headroom on the request", () => {
   });
 });
 
-describe("fetchModelInferenceConfig — model max completion tokens", () => {
+describe("fetchModelInferenceConfig - model max completion tokens", () => {
   const FIXTURE_BODY = readFileSync(
     fileURLToPath(new URL("./fixtures/openrouter-models/models-subset.json", import.meta.url)),
     "utf8",

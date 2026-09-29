@@ -1,5 +1,5 @@
 /**
- * Vex Agent — shared Postgres pool configuration (Kairos S-4).
+ * Vex Agent - shared Postgres pool configuration (Kairos S-4).
  *
  * One place that turns the connection string and the AGENT_DB_* bounds into
  * `pg.PoolConfig` for the engine's two pools:
@@ -10,7 +10,7 @@
  *
  * Both pools carry the same server-side bounds: `statement_timeout` and
  * `idle_in_transaction_session_timeout` are sent as connection startup
- * parameters, so they are the session defaults — a `SET LOCAL` override ends
+ * parameters, so they are the session defaults - a `SET LOCAL` override ends
  * with its transaction and a `RESET ALL` (the migration runner's cleanup)
  * returns to them rather than to "no limit". `connectionTimeoutMillis` bounds
  * the client-side wait for a pooled connection.
@@ -26,7 +26,7 @@ import {
 /**
  * Single source of truth for the dev-convenience fallback connection string,
  * used both as the actual `connectionString` and as the input to the redacted
- * warning hint. Embeds dev credentials (`vex:vex`) by necessity — those
+ * warning hint. Embeds dev credentials (`vex:vex`) by necessity - those
  * credentials MUST NOT be emitted to logs/support bundles, so anything derived
  * for logging goes through `redactConnectionString()` first.
  */
@@ -47,7 +47,7 @@ const APPLICATION_NAME: Readonly<Record<PoolKind, string>> = {
 
 /**
  * Strip credential material from a Postgres connection string for safe logging.
- * Returns a `host:port/db` descriptor only — never the username, password, or
+ * Returns a `host:port/db` descriptor only - never the username, password, or
  * the credential-bearing URL. Parsing failures fall back to the literal
  * `"<unparseable url>"` so we never echo the raw (possibly secret) input.
  */
@@ -74,7 +74,7 @@ export function resolveConnectionString(): { connectionString: string; usingFall
 
 /**
  * Effective DB bounds from the environment. An invalid value never disables
- * a bound: it is logged (key and reason only — never the raw value) and the
+ * a bound: it is logged (key and reason only - never the raw value) and the
  * field's default applies. `loadConfig` in `inference/config.ts` validates
  * the same fields and fails startup on them.
  */

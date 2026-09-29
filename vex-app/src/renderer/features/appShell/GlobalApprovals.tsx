@@ -7,7 +7,7 @@
  * ONLY after a successful read listed nothing (Kairos U-2). While the first
  * read is in flight it shows a quiet "checking" status, and when the read
  * fails (`data.ok === false` or a query error) it shows "couldn't check" with
- * a read-only Retry — an empty flank after a failed read would be a false
+ * a read-only Retry - an empty flank after a failed read would be a false
  * all-clear on a surface that exists to say "something needs your signature".
  *
  * Freshness: push first — `useMissionUpdateLiveSync` invalidates `pendingAll`

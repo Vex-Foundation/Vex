@@ -4,7 +4,7 @@
  * Records one `tool_dispatch_timings` row per dispatch that actually ran, in
  * the background: the write is never awaited and can never fail the call. The
  * row carries only correlation ids, the tool NAME, the result's action kind,
- * timing and an outcome enum — never the call's arguments or its result.
+ * timing and an outcome enum - never the call's arguments or its result.
  *
  * The wrapper adds no ordering of its own: the caller's Stop / deadline /
  * approval checks sit exactly where they were, and a throwing dispatch is

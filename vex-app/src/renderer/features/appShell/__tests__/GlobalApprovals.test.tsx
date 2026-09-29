@@ -4,7 +4,7 @@
  * Pins:
  *   - four distinct states (U-2): loading, none pending (empty flank only
  *     after a successful empty read), pending (n), and "couldn't check" with
- *     a read-only Retry — a failed read is never shown as a clear;
+ *     a read-only Retry - a failed read is never shown as a clear;
  *   - badge count + panel lists items across sessions with their titles;
  *   - session-less row → "Background approval" fallback, no "Open session";
  *   - "Open session" navigates the UI store and closes the panel;

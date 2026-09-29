@@ -5,7 +5,7 @@
  * inference attempt runs: when the request started, when each chunk arrived,
  * whether it degraded to the buffered path, how many capacity failures the
  * endpoint failover absorbed, and how many tool calls survived assembly. The
- * caller snapshots it once the attempt ends — completed, aborted or thrown —
+ * caller snapshots it once the attempt ends - completed, aborted or thrown -
  * so failed and retried attempts are measured the same way as successful ones.
  *
  * It records numbers, chunk TYPES and bounded reason labels only. It never
@@ -230,9 +230,9 @@ const TIMEOUT_CAUSE_CODES: ReadonlySet<string> = new Set([
 /**
  * True when a thrown inference error is a deadline or timeout rather than a
  * caller abort or any other failure. Reads only names and closed-dictionary
- * codes — the raw error's `name`, the normalized error's `errorClass` and
+ * codes - the raw error's `name`, the normalized error's `errorClass` and
  * `causeCode` own-properties, and one level of `.cause` for an unnormalized
- * SDK wrapper — never message text.
+ * SDK wrapper - never message text.
  *
  * A user Stop is an `AbortError` and never matches, which is the distinction
  * `cancellation.ts` keeps on purpose.

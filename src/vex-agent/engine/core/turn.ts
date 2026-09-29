@@ -91,7 +91,7 @@ export interface SingleTurnResult {
   finishReason: string | null;
   /**
    * Tool calls the provider returned that were dropped as unassemblable
-   * (invalid JSON arguments, or no id / name) — see
+   * (invalid JSON arguments, or no id / name) - see
    * `InferenceResponse.malformedToolCallCount`. Non-zero means `toolCalls` is
    * NOT the batch the model wrote, and the turn loop dispatches none of it.
    */
@@ -310,7 +310,7 @@ export async function executeTurn(
  * Record one `inference_attempts` row for an attempt that has just settled.
  *
  * Fire-and-forget and never throws: building the row is guarded, and the
- * write goes through `recordInBackground`. Sanitised fields only — the
+ * write goes through `recordInBackground`. Sanitised fields only - the
  * response contributes counts, ids, names and an emptiness flag, never its
  * text, and an error contributes only `classifyInferenceError`'s label.
  *
@@ -338,7 +338,7 @@ function recordAttemptTiming(
     // before its usage chunk carries a zero-filled placeholder, and recording
     // those zeros would make it look like a zero-token call.
     const usage = inference?.usageObserved === true ? response?.usage : undefined;
-    // The effort actually sent — mirrors the gate in `buildOpenRouterParams`
+    // The effort actually sent - mirrors the gate in `buildOpenRouterParams`
     // (openrouter/params.ts). NULL means the provider's default applied.
     const requestedEffort =
       config.reasoningEffort !== undefined && config.supportsReasoningEffort
@@ -357,7 +357,7 @@ function recordAttemptTiming(
       model: config.model ?? null,
       // The endpoint the session is on once this attempt settled: a failover
       // switch made during the attempt is adopted in memory before it returns
-      // or throws, so this is the endpoint that served (or last failed) it —
+      // or throws, so this is the endpoint that served (or last failed) it -
       // the same answer `resolveSessionInferenceConfig` gives for pricing,
       // read synchronously so the recorder does no IO.
       endpointTag: getSwitchedEndpointTag(context.sessionId) ?? config.endpointTag ?? null,
@@ -504,10 +504,10 @@ export function buildAssistantRow(
  * Save an assistant message to DB.
  *
  * Exported for use by turn-loop (deferred save after canonical batch prefix
- * is determined). Accepts ParsedToolCall[] directly — converts to Message format.
+ * is determined). Accepts ParsedToolCall[] directly - converts to Message format.
  *
  * With `leaseGuard` (a lease-holding runner) the write is FENCED on the claim:
- * after a takeover it writes nothing and returns normally — the loop ends on
+ * after a takeover it writes nothing and returns normally - the loop ends on
  * `lease_lost` at its next check. Without one it writes exactly as before.
  */
 export async function saveAssistantMessage(

@@ -12,7 +12,7 @@
  *
  * Effort is a behavioural signal, not a token reservation, so nothing else in
  * the request protects the answer. This module raises the request's
- * `max_tokens` to a per-effort floor — only when an effort is actually sent —
+ * `max_tokens` to a per-effort floor - only when an effort is actually sent -
  * so the model has room to think AND still answer or emit complete tool-call
  * arguments.
  *
@@ -28,7 +28,7 @@
  *   field on the wire (OpenRouter accepts `effort` OR `reasoning.max_tokens`,
  *   never both).
  *
- * Pure module — no logger, no I/O. The caller (`params.ts`) supplies the prompt
+ * Pure module - no logger, no I/O. The caller (`params.ts`) supplies the prompt
  * size bound so this stays trivially testable.
  */
 
@@ -43,8 +43,8 @@ export const ANSWER_HEADROOM_ENABLED = true;
 /**
  * Minimum request `max_tokens` per reasoning effort.
  *
- * Families whose budget scales with `max_tokens` (Anthropic) are skipped —
- * see `BUDGET_SCALES_WITH_MAX_TOKENS_PREFIXES` — so these floors apply only
+ * Families whose budget scales with `max_tokens` (Anthropic) are skipped -
+ * see `BUDGET_SCALES_WITH_MAX_TOKENS_PREFIXES` - so these floors apply only
  * where a raise is pure answer room. The sizing still follows OpenRouter's
  * documented Anthropic mapping, the tightest split we know of: `budget_tokens = max(min(max_tokens × ratio, 128_000), 1024)`
  * with ratios minimal 0.1, low 0.2, medium 0.5, high 0.8, xhigh/max 0.95. The
@@ -76,7 +76,7 @@ export const ANSWER_HEADROOM_FLOORS: Readonly<Record<ReasoningEffort, number | n
   max: 65_536,
 };
 
-/** Why the resolved `max_tokens` is what it is — asserted by tests. */
+/** Why the resolved `max_tokens` is what it is - asserted by tests. */
 export type AnswerHeadroomReason =
   /** Policy switched off. */
   | "disabled"
@@ -86,7 +86,7 @@ export type AnswerHeadroomReason =
   | "endpoint_pinned"
   /**
    * The family's thinking budget is a fraction of `max_tokens`, so a raise
-   * would also let the model think longer — the opposite of what the floor
+   * would also let the model think longer - the opposite of what the floor
    * is for. Left at the configured value until an explicit reasoning budget
    * replaces effort for these families.
    */
@@ -105,7 +105,7 @@ export type AnswerHeadroomReason =
 /**
  * Model families whose OpenRouter effort mapping sizes the thinking budget
  * from `max_tokens` (`budget_tokens = max(min(max_tokens × ratio, 128_000),
- * 1024)` — documented for Anthropic). Raising `max_tokens` there buys answer
+ * 1024)` - documented for Anthropic). Raising `max_tokens` there buys answer
  * room only by buying proportionally more thinking, so the floor is skipped.
  */
 const BUDGET_SCALES_WITH_MAX_TOKENS_PREFIXES = ["anthropic/"] as const;
@@ -115,7 +115,7 @@ function budgetScalesWithMaxTokens(model: string): boolean {
 }
 
 export interface AnswerHeadroomInput {
-  /** `AGENT_MAX_OUTPUT_TOKENS` — today's `max_tokens`. */
+  /** `AGENT_MAX_OUTPUT_TOKENS` - today's `max_tokens`. */
   readonly configuredMaxTokens: number;
   /** OpenRouter model slug, e.g. `anthropic/claude-sonnet-5`. */
   readonly model: string;
@@ -145,7 +145,7 @@ export interface AnswerHeadroomDecision {
  * Result = `max(configured, min(floor, modelMax, contextLimit − promptBound))`.
  *
  * The prompt bound must be an UPPER bound. Undershooting it would let
- * prompt + max_tokens overrun the window, which OpenRouter rejects outright —
+ * prompt + max_tokens overrun the window, which OpenRouter rejects outright -
  * a hard failure the configured value alone would not have caused. Over-
  * shooting only means less headroom, never less than today.
  *

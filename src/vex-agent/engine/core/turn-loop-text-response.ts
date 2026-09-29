@@ -53,7 +53,7 @@ export async function handleTextResponse(args: {
   // belongs to whichever runner owns the session now.
   if (isLeaseLost(args.context.leaseGuard)) return { kind: "lease_lost" };
 
-  // Active mission RUN: text does NOT end the loop — inject a continue
+  // Active mission RUN: text does NOT end the loop - inject a continue
   // marker so the next iteration has the protocol cue. Mission SETUP
   // (`sessionKind=mission` but no missionRunId) ends on text like agent.
   if (args.context.missionRunId) {
@@ -61,13 +61,13 @@ export async function handleTextResponse(args: {
 
     await appendEngineMessage(
       args.context.sessionId,
-      "[Engine: continue — no stop condition met. Proceed with next action.]",
+      "[Engine: continue - no stop condition met. Proceed with next action.]",
       { source: "engine", messageType: "continue", visibility: "internal" },
     );
 
     args.liveMessages.push({
       role: "system",
-      content: "[Engine: continue — no stop condition met. Proceed with next action.]",
+      content: "[Engine: continue - no stop condition met. Proceed with next action.]",
       timestamp: new Date().toISOString(),
     });
 

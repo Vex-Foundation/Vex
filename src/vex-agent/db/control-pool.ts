@@ -1,5 +1,5 @@
 /**
- * Vex Agent — the reserved CONTROL pool (Kairos S-4).
+ * Vex Agent - the reserved CONTROL pool (Kairos S-4).
  *
  * A small, separate Postgres pool (AGENT_DB_CONTROL_POOL_MAX, default 2) used
  * ONLY for the writes that must still get through when the main pool is busy:

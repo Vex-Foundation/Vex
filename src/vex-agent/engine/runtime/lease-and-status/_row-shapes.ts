@@ -30,7 +30,7 @@ export interface RunnerLeaseRow {
   readonly acquired_at: Date;
   readonly heartbeat_at: Date;
   readonly expires_at: Date;
-  /** Read for the busy check ONLY — never mapped onto a returned lease. */
+  /** Read for the busy check ONLY - never mapped onto a returned lease. */
   readonly claim_token: string;
 }
 
@@ -43,7 +43,7 @@ export const LOCK_LEASE_COLUMNS = `session_id, mission_run_id, owner_id, process
 
 /**
  * The shared busy rule for a locked lease row (see `leaseBlocksClaim`): a
- * live lease blocks every claim except a refresh of the SAME claim — same
+ * live lease blocks every claim except a refresh of the SAME claim - same
  * owner AND the current token. A same-owner call without the token is busy.
  */
 export function lockedLeaseBlocks(

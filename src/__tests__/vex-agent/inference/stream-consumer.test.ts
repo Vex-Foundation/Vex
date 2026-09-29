@@ -504,7 +504,7 @@ describe("runStreamingInference — fallback to chatCompletion", () => {
   });
 });
 
-describe("runStreamingInference — a provider status before the first chunk never falls back", () => {
+describe("runStreamingInference - a provider status before the first chunk never falls back", () => {
   // Each shape is what reaches the consumer from `openrouter.ts`: a normalized
   // error with the HTTP status as a lean own-property. The 429 and 503 are the
   // EXHAUSTED forms (the failover / the 5xx retry already gave up).
@@ -693,7 +693,7 @@ describe("runStreamingInference — abort (9-5a)", () => {
   });
 });
 
-describe("runStreamingInference — attempt timing", () => {
+describe("runStreamingInference - attempt timing", () => {
   const FALLBACK: InferenceResponse = {
     content: "buffered",
     toolCalls: null,

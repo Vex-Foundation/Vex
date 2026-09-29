@@ -44,7 +44,7 @@ function result(toolCalls: ChatToolCall[], finishReason: "stop" | "length" | "to
   };
 }
 
-describe("parseNonStreamingResponse — malformed tool calls", () => {
+describe("parseNonStreamingResponse - malformed tool calls", () => {
   beforeEach(() => {
     mockLoggerWarn.mockClear();
   });

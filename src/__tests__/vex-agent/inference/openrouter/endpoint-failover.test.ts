@@ -651,7 +651,7 @@ describe("sendWithEndpointFailover — the switch is recorded", () => {
 
 // ── cost + context re-resolve (owner decision 7) ─────────────────
 
-describe("sendWithEndpointFailover — capacity-failure observer", () => {
+describe("sendWithEndpointFailover - capacity-failure observer", () => {
   it("fires once per capacity failure with its reason class", async () => {
     const { attempt } = failingAttempt(2);
     const h = harness();

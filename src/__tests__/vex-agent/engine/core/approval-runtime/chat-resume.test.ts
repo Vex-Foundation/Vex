@@ -597,7 +597,7 @@ describe("runResumeAfterDecision — chat session", () => {
     expect(mockResumeMissionRun).toHaveBeenCalledTimes(1);
     const [runId, runnerLease, claim] = requireValue(mockResumeMissionRun.mock.calls[0]);
     expect(runId).toBe("run-1");
-    // The continuation's own lease — the resumed loop proves ownership with it
+    // The continuation's own lease - the resumed loop proves ownership with it
     // before consuming a prepared compaction cutover, and fences on it.
     expect(runnerLease).toEqual(expect.objectContaining({ ownerId: "approve-x" }));
     expect(typeof claim).toBe("function");

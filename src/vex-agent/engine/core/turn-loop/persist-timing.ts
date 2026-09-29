@@ -8,7 +8,7 @@
  * path, the tool batch and every prepared-action follow-up branch. Threading
  * an accumulator through each of those call sites would widen half a dozen
  * signatures for a number nothing reads at runtime. Instead the turn loop
- * opens a scope and the two write sites add their own elapsed time to it —
+ * opens a scope and the two write sites add their own elapsed time to it -
  * the same `AsyncLocalStorage` idiom `nonce-reservation-scope.ts` uses.
  *
  * Measurement only: `timePersist` awaits exactly the promise it is given and
@@ -37,7 +37,7 @@ export function withPersistTiming<T>(
 /**
  * Await one transcript write, adding its duration to the enclosing turn's
  * accumulator (if any). The time is added whether the write resolves or
- * throws — a slow failing write is still time the turn spent.
+ * throws - a slow failing write is still time the turn spent.
  */
 export async function timePersist<T>(write: () => Promise<T>): Promise<T> {
   const accumulator = persistScope.getStore();

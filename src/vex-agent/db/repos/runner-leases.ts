@@ -8,12 +8,12 @@
  * lifecycle; this repo just exposes the DB primitives.
  *
  * Race-safe claim: `INSERT ... ON CONFLICT (session_id) DO UPDATE
- * WHERE expired OR (same owner AND same claim token)` — the PK uniqueness
+ * WHERE expired OR (same owner AND same claim token)` - the PK uniqueness
  * closes the race between two concurrent first claimants (one INSERT wins,
  * the other folds into the conflict path and re-checks).
  *
- * Claim tokens (migration 173). Every NEW claim — a first insert or a
- * takeover of an expired lease — mints a fresh random `claim_token`. The
+ * Claim tokens (migration 173). Every NEW claim - a first insert or a
+ * takeover of an expired lease - mints a fresh random `claim_token`. The
  * token, not the owner id, identifies the holder: renewal, release and
  * fenced writes (`db/lease-fence.ts`) all match `session_id + claim_token`.
  * Owner ids are not unique per claim (several runners use a fixed
@@ -48,7 +48,7 @@ export interface RunnerLeaseInfo {
 export interface RunnerLease extends RunnerLeaseInfo {
   readonly claimToken: string;
   /**
-   * True when THIS claim replaced an expired claim held under another token —
+   * True when THIS claim replaced an expired claim held under another token -
    * a takeover. The previous holder may have had a tool call in flight whose
    * result never reached the transcript, so the new runner reconciles before
    * its first dispatch (`turn-loop/takeover-reconcile.ts`). Absent/false for a
@@ -126,8 +126,8 @@ export interface AcquireInput {
  * - Stale lease (current `expires_at < NOW()`): conflict path takes over,
  *   rewrites owner_id and mints a NEW token, so the previous holder's token
  *   stops matching and it can no longer renew, release or write.
- * - Otherwise (live, and not the presented token — including the same
- *   owner id with no or a wrong token): RETURNING is empty — caller
+ * - Otherwise (live, and not the presented token - including the same
+ *   owner id with no or a wrong token): RETURNING is empty - caller
  *   observes `lease_busy` and queries `getLease` for `retryAfterMs`.
  */
 export async function acquireLease(
@@ -195,7 +195,7 @@ export async function renewLease(
 }
 
 /**
- * Release the lease held under `claimToken`. Idempotent — returns
+ * Release the lease held under `claimToken`. Idempotent - returns
  * rowsAffected. If the lease has already been taken over (a new claim
  * minted a new token), the WHERE clause skips the DELETE.
  */
@@ -211,7 +211,7 @@ export async function releaseLease(
   );
 }
 
-/** Read-only — current lease for a session (or null). Never carries the token. */
+/** Read-only - current lease for a session (or null). Never carries the token. */
 export async function getLease(
   sessionId: string,
   exec?: Executor,

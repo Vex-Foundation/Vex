@@ -1,5 +1,5 @@
 /**
- * Kairos S-1 — the runner lease guard, the heartbeat's loss classification,
+ * Kairos S-1 - the runner lease guard, the heartbeat's loss classification,
  * the finalizer's stale-runner short circuit and the takeover reconcile.
  */
 
@@ -119,7 +119,7 @@ describe("RunnerLeaseGuard", () => {
   });
 });
 
-describe("LeaseHandle heartbeat — loss classification", () => {
+describe("LeaseHandle heartbeat - loss classification", () => {
   it("a failed renewal with the row still present is a TAKEOVER", async () => {
     const timer = manualTimer();
     const handle = createLeaseHandle({
@@ -172,7 +172,7 @@ describe("LeaseHandle heartbeat — loss classification", () => {
   });
 });
 
-describe("finalizer — stale runner short circuit", () => {
+describe("finalizer - stale runner short circuit", () => {
   it("skips a lease_lost outcome and a known takeover, never the operator Stop", () => {
     const guard = fakeLeaseHandle({ ownerId: "o" });
     expect(finalizeSkippedForLease("s", "r", "lease_lost", { leaseGuard: guard })).toBe(true);

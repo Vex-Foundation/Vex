@@ -166,7 +166,7 @@ export interface FencedAppendEntry {
  * land or none do, so a lease lost between two of them can never leave a
  * tool_call without its result on the tape.
  *
- * A refused write returns `null` — nothing was written and nothing is emitted —
+ * A refused write returns `null` - nothing was written and nothing is emitted -
  * and never throws: the caller's loop sees the lease as lost at its next check.
  * Storage errors still throw, exactly like `appendMessage`.
  */

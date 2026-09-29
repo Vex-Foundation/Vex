@@ -448,7 +448,7 @@ export interface InferenceRequestContext {
   /**
    * Observer for runtime measurement: called once per capacity failure the
    * endpoint failover absorbs, with its bounded `reasonClass`. Observation
-   * only — the failover swallows anything it throws.
+   * only - the failover swallows anything it throws.
    */
   readonly onCapacityFailure?: (reasonClass: string) => void;
 }

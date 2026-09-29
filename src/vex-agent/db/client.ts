@@ -192,7 +192,7 @@ export async function withLongStatementTransaction<T>(
   });
 }
 
-/** Graceful shutdown — drain the main pool and the reserved control pool. */
+/** Graceful shutdown - drain the main pool and the reserved control pool. */
 export async function closePool(): Promise<void> {
   if (pool) {
     await pool.end();

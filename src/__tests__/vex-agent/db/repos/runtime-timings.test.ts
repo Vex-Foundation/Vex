@@ -1,5 +1,5 @@
 /**
- * runtime-timings repo — column/parameter wiring for the three telemetry
+ * runtime-timings repo - column/parameter wiring for the three telemetry
  * tables added by migration 171, and the fire-and-forget contract of
  * `recordInBackground`, including its in-flight cap and throttled drop log.
  *
@@ -98,7 +98,7 @@ function attempt(overrides: Partial<InferenceAttemptRecord> = {}): InferenceAtte
   };
 }
 
-describe("runtime-timings repo — insertInferenceAttempt", () => {
+describe("runtime-timings repo - insertInferenceAttempt", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockExecute.mockResolvedValue(undefined);
@@ -212,7 +212,7 @@ describe("runtime-timings repo — insertInferenceAttempt", () => {
   });
 });
 
-describe("runtime-timings repo — insertToolDispatchTiming", () => {
+describe("runtime-timings repo - insertToolDispatchTiming", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockExecute.mockResolvedValue(undefined);
@@ -264,7 +264,7 @@ describe("runtime-timings repo — insertToolDispatchTiming", () => {
   });
 });
 
-describe("runtime-timings repo — insertTurnRunTiming", () => {
+describe("runtime-timings repo - insertTurnRunTiming", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockExecute.mockResolvedValue(undefined);
@@ -306,7 +306,7 @@ describe("runtime-timings repo — insertTurnRunTiming", () => {
   });
 });
 
-describe("runtime-timings repo — recordInBackground", () => {
+describe("runtime-timings repo - recordInBackground", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetTelemetryWriteStatsForTests();
@@ -371,7 +371,7 @@ describe("runtime-timings repo — recordInBackground", () => {
   });
 });
 
-describe("runtime-timings repo — recordInBackground in-flight cap", () => {
+describe("runtime-timings repo - recordInBackground in-flight cap", () => {
   let nowMs = 0;
 
   /** A write that stays pending until the test settles it. */

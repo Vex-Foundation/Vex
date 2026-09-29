@@ -1,11 +1,11 @@
 /**
- * Runtime timings repo — per-attempt inference, per-dispatch tool, and
+ * Runtime timings repo - per-attempt inference, per-dispatch tool, and
  * per-turn-run timing rows (migration 171).
  *
  * Telemetry only: nothing in the runtime reads these rows to decide anything.
  * Callers on the turn path must go through `recordInBackground` so a failed
  * write can never slow or break a turn. Every field is sanitised by the
- * caller — numbers, enums, IDs, tool/model/provider names, error classes;
+ * caller - numbers, enums, IDs, tool/model/provider names, error classes;
  * never message content, tool arguments/results, or raw error text.
  */
 
@@ -206,7 +206,7 @@ function maybeLogDrops(): void {
  *
  * A synchronous throw from `write` is caught too, so a caller can pass any
  * thunk without guarding it. The log carries only the label and the error's
- * class name — a driver error message can echo bound parameter values.
+ * class name - a driver error message can echo bound parameter values.
  *
  * Bounded: with `MAX_IN_FLIGHT_TELEMETRY_WRITES` writes already running, the
  * row is dropped without calling `write`, counted, and reported through a

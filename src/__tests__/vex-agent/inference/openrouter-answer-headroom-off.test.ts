@@ -79,7 +79,7 @@ describe("answer headroom switched off", () => {
       expect(params.maxTokens).toBe(16_384);
 
       // Pre-R-2 shape: the same request with no catalog max at all (the
-      // metadata R-2 added) — the only input the policy reads to raise.
+      // metadata R-2 added) - the only input the policy reads to raise.
       const { modelMaxCompletionTokens: _unused, ...legacyConfig } = CONFIG;
       const legacy = buildOpenRouterParams(
         MESSAGES,

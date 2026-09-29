@@ -94,7 +94,7 @@ export function toChatRequestEffort(effort: ReasoningEffort): ChatRequestEffort 
 /**
  * Upper bound on the prompt tokens of a built request: its UTF-8 JSON size.
  * No billed token is shorter than one byte, and every one is drawn from text
- * this body contains — the same argument as the C8 pre-inference ceiling
+ * this body contains - the same argument as the C8 pre-inference ceiling
  * (`engine/core/inference-envelope-bytes.ts`). Deliberately loose: it may give
  * up some headroom on a long prompt, but it can never let prompt + max_tokens
  * overrun the window. Only computed when a raise is actually possible.

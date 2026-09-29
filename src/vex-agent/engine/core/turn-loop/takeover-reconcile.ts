@@ -2,8 +2,8 @@
  * Reconcile-before-dispatch for a runner that TOOK OVER a session (S-1).
  *
  * A takeover means the previous runner's lease expired while it was still
- * alive or had just died. Whatever it had in flight — a signed transfer, an
- * approved dispatch, a protocol order — keeps its DURABLE record (wallet /
+ * alive or had just died. Whatever it had in flight - a signed transfer, an
+ * approved dispatch, a protocol order - keeps its DURABLE record (wallet /
  * transaction / wrap intents, approval intents, protocol executions, Lighter
  * onboarding intents), but its tool result may never have reached the
  * transcript: after the takeover the old runner's fenced write affects zero
@@ -16,14 +16,14 @@
  *     replayed by anyone.
  *   - The approval lifecycle reconciler (`approval-runtime/reconcile.ts`) is
  *     the durable floor for approvals; it is lease-aware and waits while a live
- *     lease exists, then settles `dispatching` rows as `indeterminate` — never
+ *     lease exists, then settles `dispatching` rows as `indeterminate` - never
  *     re-dispatching.
  *   - Wallet / transaction / wrap repair lanes settle `broadcast_unconfirmed`
  *     outcomes from the chain; Recover's money gate refuses to resume over an
  *     unproven outcome.
  *
  * What was missing: nothing told the NEW runner, before its first inference
- * and dispatch, that unresolved money state exists — so a model reading a
+ * and dispatch, that unresolved money state exists - so a model reading a
  * transcript without the old result could re-issue an equivalent NEW action.
  * This step reads the same fail-closed gate the compaction cutover uses
  * (`getUnresolvedMoneyStateForSession`) and, when anything is unresolved,
@@ -56,7 +56,7 @@ export interface TakeoverReconcileResult {
 
 export function takeoverNoticeText(kinds: readonly TakeoverUnresolvedKind[]): string {
   return [
-    "[Engine: runner_takeover — this session was taken over from a previous runner whose lease expired.",
+    "[Engine: runner_takeover - this session was taken over from a previous runner whose lease expired.",
     `Actions it had in flight may be unresolved (${kinds.join(", ")}), and their results may be missing from this transcript.`,
     "Do NOT repeat any fund-moving action.",
     "Check the status of earlier actions first (wallet activity, approvals, open orders or positions) and reconcile before acting.]",

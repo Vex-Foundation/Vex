@@ -555,7 +555,7 @@ describe("turn — cost is priced against the switched endpoint (owner decision 
 
 // ── Kairos Phase 1: one inference_attempts row per settled attempt ──
 
-describe("turn — inference attempt timing", () => {
+describe("turn - inference attempt timing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetAllSessionEndpointState();
@@ -834,7 +834,7 @@ describe("turn — inference attempt timing", () => {
 
   it("records a Stop that lands during a buffered request and throws as aborted", async () => {
     // A buffered request cancelled by the caller rejects rather than returning
-    // a partial, so the Stop reaches the recorder as a throw — with the
+    // a partial, so the Stop reaches the recorder as a throw - with the
     // caller's own signal aborted and no deadline involved.
     const live = new AbortController();
     const stopped = Object.assign(new Error("request cancelled"), { name: "RequestAbortedError" });
@@ -883,7 +883,7 @@ describe("turn — inference attempt timing", () => {
     commitEndpointSwitch("session-t", "google-vertex");
     const boom = Object.assign(new Error("x"), { name: "ProviderError" });
     const row = await recordThrown(boom);
-    // Thrown attempts carry it too — the recorder does no IO to find it.
+    // Thrown attempts carry it too - the recorder does no IO to find it.
     expect(row.endpointTag).toBe("google-vertex");
   });
 

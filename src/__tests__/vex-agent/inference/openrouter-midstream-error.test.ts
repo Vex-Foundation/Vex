@@ -156,7 +156,7 @@ describe("OpenRouterProvider.chatCompletionStream — mid-stream error normaliza
  * normalizer as the signal's own `TimeoutError`, which the SDK never wraps.
  * Normalized, it used to be a plain `Error` recorded as `error`.
  */
-describe("OpenRouterProvider.chatCompletionStream — mid-stream deadline is a typed timeout", () => {
+describe("OpenRouterProvider.chatCompletionStream - mid-stream deadline is a typed timeout", () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {

@@ -1,5 +1,5 @@
 /**
- * Runner lease guard — what a lease-holding runner threads into its turn loop
+ * Runner lease guard - what a lease-holding runner threads into its turn loop
  * so the loop can (a) fence its writes on the claim and (b) notice that the
  * claim is gone.
  *
@@ -15,12 +15,12 @@
  *
  * ## Reasons
  *
- * - `taken_over`  — another claim's token is on the lease row. Every later
+ * - `taken_over`  - another claim's token is on the lease row. Every later
  *                   fenced write is refused locally, without a round trip.
- * - `released`    — the row is gone (released, or deleted by an operator
+ * - `released`    - the row is gone (released, or deleted by an operator
  *                   Stop's transaction). No new dispatch; closing writes still
  *                   go to the DB fence, which permits a released lease.
- * - `unconfirmed` — the heartbeat's renewal failed and the follow-up read
+ * - `unconfirmed` - the heartbeat's renewal failed and the follow-up read
  *                   could not say why. No new dispatch; writes are left to
  *                   the DB fence, which decides authoritatively.
  */
@@ -134,8 +134,8 @@ export async function guardedWrite<T>(
 /**
  * Pre-dispatch token check: may this runner start a NEW tool call? Only a
  * lease row carrying our token says yes. Any other answer marks the guard
- * lost. A failed read is NOT a loss — the call is allowed and the write fence
- * still guards its result — because a transient DB error must not turn into a
+ * lost. A failed read is NOT a loss - the call is allowed and the write fence
+ * still guards its result - because a transient DB error must not turn into a
  * silently dropped tool call.
  */
 export async function leaseHeldForDispatch(

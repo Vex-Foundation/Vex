@@ -20,9 +20,9 @@
  * reuse.
  *
  * Sockets that never carried a request are counted separately. Node's fetch
- * (undici) opens one such spare connection right after a request it aborted —
+ * (undici) opens one such spare connection right after a request it aborted -
  * plain `fetch` + `AbortController` against this server does the same, with no
- * SDK involved — and parks it, unref'd and empty, until the server's
+ * SDK involved - and parks it, unref'd and empty, until the server's
  * keep-alive timeout closes it. It holds no request and nothing of ours, so it
  * is reported, not treated as a leak.
  *

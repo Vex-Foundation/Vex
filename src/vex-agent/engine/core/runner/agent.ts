@@ -123,7 +123,7 @@ export async function processAgentTurn(
       signal,
       undefined,
       undefined,
-      // This function claimed the lease above — it can prove ownership, and
+      // This function claimed the lease above - it can prove ownership, and
       // the loop fences its writes on this claim.
       sessionLease,
       entryStartedAtMs,
@@ -448,7 +448,7 @@ export async function runAgentTurnUnderLease(
   // empty — a partial earlier reply is preserved as-is. The turn-loop persists
   // real assistant text itself, so nothing was saved on this path; we persist
   // the synthesised reply as a normal user-visible assistant message.
-  // Lease lost: another runner owns the session. Nothing below may run — a
+  // Lease lost: another runner owns the session. Nothing below may run - a
   // synthesised reply and a continuation wake are both writes. Reported as
   // `lease_lost`, never as the user's Stop.
   if (result.stopReason === "lease_lost") {

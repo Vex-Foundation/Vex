@@ -115,7 +115,7 @@ export const APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT =
  * Synthetic tool-result for batch tool calls never dispatched because this
  * runner's session lease was lost mid-batch (another runner took the session
  * over). Distinct from the Stop drain: nobody asked the run to end. These rows
- * land only when the lease was released rather than taken over — after a
+ * land only when the lease was released rather than taken over - after a
  * takeover the fence refuses the whole batch write.
  */
 export const BATCH_ABORTED_BY_LEASE_LOST_OUTPUT =
@@ -196,7 +196,7 @@ export async function persistBatchTranscript(args: {
   readonly reasoning?: string | null;
   /**
    * The lease this runner holds. When present the assistant row and every
-   * tool result are written in ONE fenced transaction — all or nothing, so a
+   * tool result are written in ONE fenced transaction - all or nothing, so a
    * takeover can never leave a tool_call without its result, and a stale
    * runner's batch affects zero rows. Absent ⇒ written exactly as before.
    */

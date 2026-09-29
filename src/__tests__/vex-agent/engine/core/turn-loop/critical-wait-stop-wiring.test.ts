@@ -6,7 +6,7 @@
  * LOOP hands it the run's Stop:
  *   - a Stop landing DURING the critical-band wait ends it promptly and the
  *     step proceeds with the noop counter passed through (the next iteration
- *     guard consumes the Stop — no escalation, no cutover);
+ *     guard consumes the Stop - no escalation, no cutover);
  *   - the wake park after a `waiting_for_wake` batch forwards the Stop too;
  *   - `turn-loop.ts` threads the Stop (never the lease-lost signal) into all
  *     three call sites.
@@ -43,10 +43,10 @@ beforeEach(() => {
   seenSignals.length = 0;
 });
 
-describe("critical-band wait — Stop from the loop (S-5)", () => {
+describe("critical-band wait - Stop from the loop (S-5)", () => {
   it("a Stop during the wait ends it promptly; the step proceeds with the counter passed through", async () => {
     // The ladder is mid-wait: it settles only when the Stop aborts it, and
-    // then answers exactly what the real ladder answers — deferred / aborted.
+    // then answers exactly what the real ladder answers - deferred / aborted.
     mockResolveCriticalCompaction.mockImplementation(
       async (input: { signal?: AbortSignal }) => {
         seenSignals.push(input.signal);

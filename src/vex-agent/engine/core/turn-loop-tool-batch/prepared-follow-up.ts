@@ -179,7 +179,7 @@ export async function dispatchPreparedActionFollowUp(args: {
 
   // ── Lease check immediately BEFORE the signing dispatch ──
   // Same rule as the Stop above: the confirm is engine-synthesized, so there
-  // is nothing to pair — it simply is not dispatched on a session this
+  // is nothing to pair - it simply is not dispatched on a session this
   // runner no longer owns. The underlying wallet intent expires on its own.
   if (
     args.context.leaseGuard !== undefined

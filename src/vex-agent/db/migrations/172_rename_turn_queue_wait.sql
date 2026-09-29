@@ -3,7 +3,7 @@
 -- WHY THIS EXISTS. Migration 171 called `turn_run_timings.queue_wait_ms` the
 -- gap from the entry point starting to handle a turn (the chat, setup, wake or
 -- mission-run handler) to `runTurnLoop` starting. Nothing in that span waits in
--- a queue: it is the entry point's own work before the loop — provider/config
+-- a queue: it is the entry point's own work before the loop - provider/config
 -- load, the lease claim and hydrating the session. Reading it as queue wait
 -- would send a slow turn's investigation to the wrong place, so the column is
 -- renamed to `pre_loop_setup_ms`. The values are unchanged: same clock, same

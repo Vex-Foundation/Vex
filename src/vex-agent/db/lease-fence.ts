@@ -1,11 +1,11 @@
 /**
- * Lease fence — makes a runner's write conditional on it STILL holding the
+ * Lease fence - makes a runner's write conditional on it STILL holding the
  * session lease, race-free.
  *
  * A runner can be slow enough (a long tool call, a stalled event loop) that
  * its lease expires and another runner takes the session over. The old runner
- * does not know yet, and whatever it writes next — an assistant row, a tool
- * result, a run status — lands on a session the new owner is driving. The
+ * does not know yet, and whatever it writes next - an assistant row, a tool
+ * result, a run status - lands on a session the new owner is driving. The
  * heartbeat notices only on its next tick; the fence closes the gap at the
  * write itself.
  *
@@ -13,7 +13,7 @@
  *
  * One transaction on a pooled client:
  *
- *   1. (optional) lock the `mission_runs` row `FOR UPDATE` — see lock order;
+ *   1. (optional) lock the `mission_runs` row `FOR UPDATE` - see lock order;
  *   2. read the session's `runner_leases` row `FOR SHARE`;
  *   3. only if the row still carries OUR claim token, run the write on the
  *      same client, then COMMIT.
@@ -25,11 +25,11 @@
  *
  * ## The three states
  *
- * - `held`       — the row carries our token. The write runs.
- * - `taken_over` — the row carries another claim's token. The write is
+ * - `held`       - the row carries our token. The write runs.
+ * - `taken_over` - the row carries another claim's token. The write is
  *                  REFUSED: nothing runs, nothing commits, and the caller gets
  *                  `{ fenced: false }` instead of an exception.
- * - `released`   — there is no row. The write runs. A lease row disappears
+ * - `released`   - there is no row. The write runs. A lease row disappears
  *                  only when its holder releases it or an operator Stop's
  *                  transaction deletes it (`apply-user-stop.ts`), and in the
  *                  Stop case the stopped turn still has closing writes to make
@@ -44,7 +44,7 @@
  *
  * Claimers lock `mission_runs` before `runner_leases` (`claim-run-lease.ts`),
  * so a fenced write that also touches `mission_runs` must take the run row
- * FIRST (`lockMissionRunId`) — taking the lease share lock first and the run
+ * FIRST (`lockMissionRunId`) - taking the lease share lock first and the run
  * row second is the reverse order and could deadlock against a claimer.
  * Transcript writes touch `messages` and `sessions`, which no claimer locks
  * after the lease row, so they need no pre-lock. A caller already inside a
@@ -117,7 +117,7 @@ export function logFencedWriteRefused(
 /**
  * Fence a mission-run write on a transaction the caller already owns (a
  * session-control-lock park, for example). Locks the run row, then reads the
- * fence, in the documented order. Returns `false` — and logs the refusal —
+ * fence, in the documented order. Returns `false` - and logs the refusal -
  * when another claim holds the lease; the caller must then write nothing.
  */
 export async function fenceRunWriteWith(
@@ -141,7 +141,7 @@ export async function fenceRunWriteWith(
 
 /**
  * Run `fn` in a transaction that commits only while `fence` still holds the
- * session lease (or the lease was released — see the module header). Never
+ * session lease (or the lease was released - see the module header). Never
  * throws for a refusal: a refused write returns `{ fenced: false }` without
  * running `fn`. Errors thrown by `fn` itself propagate exactly as an unfenced
  * write's would, and roll the transaction back.

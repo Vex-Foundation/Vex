@@ -11,7 +11,7 @@
 -- TELEMETRY, NOT STATE. Nothing in the runtime reads these tables to make a
 -- decision. Rows are written fire-and-forget off the turn's critical path; a
 -- failed INSERT is logged and dropped. That is why:
---   * `mission_run_id` carries NO foreign key — telemetry must never block, or
+--   * `mission_run_id` carries NO foreign key - telemetry must never block, or
 --     be blocked by, deleting a mission run.
 --   * the CHECK constraints cover only the closed outcome enums the runtime
 --     owns; open provider vocabularies (finish reasons, error classes, fallback
@@ -43,7 +43,7 @@
 --                         Folding either into 'error' would hide the one
 --                         failure mode a latency budget can actually fix.
 --   endpoint_tag          the OpenRouter endpoint the session was on when the
---                         attempt settled — after any failover switch made
+--                         attempt settled - after any failover switch made
 --                         during it. NULL means no pin ("Auto" routing).
 --                         `serving_provider` alone cannot answer this: it is
 --                         only known when a response arrived.

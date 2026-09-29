@@ -41,7 +41,7 @@ export interface FinalizeOptions {
   /**
    * The lease the finalizing runner holds. When present, the non-Stop arms
    * write the run state only while the claim still holds (`db/lease-fence.ts`),
-   * and a runner whose lease was taken over writes nothing at all — the run
+   * and a runner whose lease was taken over writes nothing at all - the run
    * belongs to the new owner. Absent ⇒ exactly the previous behaviour.
    */
   readonly leaseGuard?: RunnerLeaseGuard;
@@ -50,7 +50,7 @@ export interface FinalizeOptions {
 /**
  * The stale-runner short circuit shared by both entry points: a `lease_lost`
  * outcome, or a claim KNOWN to be taken over, writes no run state. The
- * operator Stop is exempt — it is the user's authority over the run, not the
+ * operator Stop is exempt - it is the user's authority over the run, not the
  * runner's, and its own transaction releases whatever lease exists.
  */
 export function finalizeSkippedForLease(

@@ -1,5 +1,5 @@
 /**
- * Kairos S-1 — lease loss observed INSIDE a tool batch.
+ * Kairos S-1 - lease loss observed INSIDE a tool batch.
  *
  * What is pinned here:
  *   - a lost lease starts NO new dispatch (checked at the top of every call,
@@ -135,7 +135,7 @@ beforeEach(() => {
   });
 });
 
-describe("processTurnToolBatch — lease loss (S-1)", () => {
+describe("processTurnToolBatch - lease loss (S-1)", () => {
   it("dispatches the whole batch and writes it in ONE fenced transaction while the lease holds", async () => {
     const outcome = await runBatch(fakeLeaseHandle({ ownerId: "runner-a", sessionId: "session-1" }));
 
@@ -197,7 +197,7 @@ describe("processTurnToolBatch — lease loss (S-1)", () => {
     ]);
   });
 
-  it("an operator Stop outranks lease loss — Stop semantics are unchanged", async () => {
+  it("an operator Stop outranks lease loss - Stop semantics are unchanged", async () => {
     const guard = fakeLeaseHandle({ ownerId: "runner-a", sessionId: "session-1" });
     guard.markLost("released", "heartbeat");
     const stop = new AbortController();

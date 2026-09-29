@@ -1,5 +1,5 @@
 /**
- * Kairos S-4 — engine DB bounds and the reserved control pool.
+ * Kairos S-4 - engine DB bounds and the reserved control pool.
  *
  * Pins, without a database:
  *   - the main pool is built with statement / idle-in-transaction / connect
@@ -31,7 +31,7 @@ class FakePool {
   static instances: FakePool[] = [];
   readonly config: pg.PoolConfig;
   readonly clients: FakeClient[] = [];
-  /** When set, connect() never settles — a saturated pool. */
+  /** When set, connect() never settles - a saturated pool. */
   saturated = false;
   ended = false;
   constructor(config: pg.PoolConfig) {

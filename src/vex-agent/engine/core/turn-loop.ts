@@ -212,7 +212,7 @@ function preLoopSetupMs(entryStartedAtMs: number | undefined, loopStartedAtMs: n
 /**
  * Write the `turn_run_timings` row. Fire-and-forget and never throws, so it
  * cannot change what `runTurnLoop` returns or throws. Sanitised: counts, the
- * stop reason enum, and `classifyInferenceError`'s label — never message text.
+ * stop reason enum, and `classifyInferenceError`'s label - never message text.
  */
 function recordTurnRunTiming(
   context: EngineContext,
@@ -309,7 +309,7 @@ async function runTurnLoopBody(
     abortSignal?.aborted === true || inferenceAbortSignal?.aborted === true;
   // The run's Stop, whichever position the caller threaded it in (mission runs
   // pass it in both; chat turns only as the inference signal). Handed to the
-  // critical-compaction waits (S-5) — never the lease-lost signal.
+  // critical-compaction waits (S-5) - never the lease-lost signal.
   const stopSignal = abortSignal ?? inferenceAbortSignal;
   const turnInferenceSignal = inferenceSignalFor(
     inferenceAbortSignal,

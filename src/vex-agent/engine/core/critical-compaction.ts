@@ -103,8 +103,8 @@ export interface CriticalCompactionInput {
   /** Injectable sleep so the bounded wait is testable without real time. */
   readonly sleep?: (ms: number) => Promise<void>;
   /**
-   * The run's abort signal (Stop). An abort ends the bounded wait promptly —
-   * mid-sleep, not at the next 2 s poll — and the ladder returns `deferred`
+   * The run's abort signal (Stop). An abort ends the bounded wait promptly -
+   * mid-sleep, not at the next 2 s poll - and the ladder returns `deferred`
    * with reason `aborted` without starting a forced apply or the fallback: the
    * loop's next iteration guard consumes the Stop, and a deferral passes the
    * noop counter through unchanged. Absent ⇒ the wait is bounded by time only.

@@ -176,7 +176,7 @@ async function signStageEvmLeg(
   try {
     // EXPLICIT bound (Kairos S-5): the shared per-chain receipt deadline
     // (15-120 s), never viem's implicit 180 s default. Reaching it lands in the
-    // `ambiguous`/`confirm` arm below — a pending leg the handler records and
+    // `ambiguous`/`confirm` arm below - a pending leg the handler records and
     // reconciliation resolves. It never leads to a resend.
     const receipt = await publicClient.waitForTransactionReceipt({
       hash: txHash,

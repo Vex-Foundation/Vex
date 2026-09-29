@@ -1,5 +1,5 @@
 /**
- * persist-timing — the scope `runTurnLoop` opens so transcript writes can add
+ * persist-timing - the scope `runTurnLoop` opens so transcript writes can add
  * their own duration to the turn's `persist_ms` without changing what the
  * write returns or throws.
  */

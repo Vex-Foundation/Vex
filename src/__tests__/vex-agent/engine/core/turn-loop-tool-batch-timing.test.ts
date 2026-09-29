@@ -4,7 +4,7 @@
  *
  * What is pinned here:
  *   - one row per dispatched call, with the outcome taken from the result's
- *     success flag (or `error` when the dispatch threw — rethrown unchanged);
+ *     success flag (or `error` when the dispatch threw - rethrown unchanged);
  *   - calls that never dispatched (Stop, deadline, approval break) get no row;
  *   - the prepared-action follow-up's confirm dispatch gets its own row;
  *   - without `telemetry` nothing is recorded and the batch behaves identically;
@@ -53,7 +53,7 @@ vi.mock("@vex-agent/engine/core/turn-loop-tool-batch/approval-stop.js", () => ({
   },
   enqueueApprovalIntent: (...args: unknown[]) => enqueueApprovalIntent(...args),
 }));
-// Only the DB write is stubbed — the real synthetic outputs and the real
+// Only the DB write is stubbed - the real synthetic outputs and the real
 // `mapBatchOutcome` stay in play.
 vi.mock("@vex-agent/engine/core/turn-loop-tool-batch/results.js", async (
   importOriginal,
@@ -127,7 +127,7 @@ beforeEach(() => {
   dispatchTool.mockResolvedValue({ success: true, output: SECRET_OUTPUT });
 });
 
-describe("processTurnToolBatch — tool dispatch timing", () => {
+describe("processTurnToolBatch - tool dispatch timing", () => {
   it("records one row per dispatched call with the result's outcome", async () => {
     dispatchTool
       .mockResolvedValueOnce({ success: true, output: SECRET_OUTPUT, actionKind: "read" })

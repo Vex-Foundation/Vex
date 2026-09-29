@@ -199,7 +199,7 @@ export async function processMissionSetupTurn(
   // Asking the continuation question here is what returned `text: null` and
   // produced a silent setup turn.
   // Lease lost: another runner owns the session. No synthesised reply, no
-  // mission patch, no notice — every one of those is a write, and the draft
+  // mission patch, no notice - every one of those is a write, and the draft
   // belongs to the new owner now. Reported as `lease_lost`, never as a Stop.
   if (result.stopReason === "lease_lost") {
     return {

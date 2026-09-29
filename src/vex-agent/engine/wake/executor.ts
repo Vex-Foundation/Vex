@@ -10,7 +10,7 @@
  *     hardcoded defaults (interval=2000ms, batchSize=10) after DB bootstrap.
  *     Wake is an installed-runtime concern, not a renderer concern.
  *
- * Tick semantics — both wake shapes are LISTED without consuming anything and
+ * Tick semantics - both wake shapes are LISTED without consuming anything and
  * then claimed ONE AT A TIME, each claim followed by its run before the next:
  *   1a. MISSION-SCOPED: `claimMissionWake` consumes the row, flips the run
  *       `paused_wake → running` (or re-verifies an auto-retry) and takes the
@@ -37,10 +37,10 @@
  *
  *   deps.ts       — `WakeDeps` + production default deps wiring.
  *   tick.ts       — `tick` + `ClaimedWake` / `ClaimedWakeOutcome`.
- *   claimed.ts    — per-candidate claim + run (`handleClaimed`).
+ *   claimed.ts    - per-candidate claim + run (`handleClaimed`).
  *   agent-session.ts     — Full-Autonomous agent SESSION continuation.
  *   claim-session-wake.ts — the atomic session wake/lease claim + backoff.
- *   claim-mission-wake.ts — the atomic mission wake/run/lease claim,
+ *   claim-mission-wake.ts - the atomic mission wake/run/lease claim,
  *                           including the auto-retry route.
  *   provider.ts   — `isWakeProviderConfigured`.
  *

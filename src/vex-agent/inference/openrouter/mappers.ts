@@ -264,7 +264,7 @@ export function parseNonStreamingResponse(response: ChatResult): InferenceRespon
 
   // Tool calls
   //
-  // A call that cannot be assembled is dropped and COUNTED — the same rule as
+  // A call that cannot be assembled is dropped and COUNTED - the same rule as
   // the streaming consumer's `assembleToolCalls`, so the turn loop refuses the
   // whole batch on either path. A call with no id or no name is malformed too:
   // its result could not be paired with it, and no id is invented for it.

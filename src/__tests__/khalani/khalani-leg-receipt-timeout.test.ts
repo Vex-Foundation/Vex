@@ -1,5 +1,5 @@
 /**
- * Kairos S-5 — the Khalani leg's receipt wait has an EXPLICIT bound.
+ * Kairos S-5 - the Khalani leg's receipt wait has an EXPLICIT bound.
  *
  * viem's implicit default is 180 s. The leg now passes the shared per-chain
  * receipt deadline, and a wait that reaches it ends as `ambiguous` at the

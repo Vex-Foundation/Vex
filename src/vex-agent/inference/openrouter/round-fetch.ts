@@ -3,7 +3,7 @@
  * down EXPLICITLY when its signal aborts, and its 5xx retry waits are
  * abortable (Kairos Phase 2B).
  *
- * WHY THIS EXISTS — two gaps the fault-injection suite
+ * WHY THIS EXISTS - two gaps the fault-injection suite
  * (`stream-bounds-live-server.test.ts`) reproduced through the real SDK:
  *
  *  1. Node's fetch (undici) follows a `Request`'s signal, and every signal
