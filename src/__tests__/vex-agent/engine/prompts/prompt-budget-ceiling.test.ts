@@ -185,14 +185,28 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  *   mission run / full          65,954 -> 66,764
  *
  * The coordinator reviews this raise.
+ *
+ * REVIEWED CEILING MOVE, Kairos Phase 5 fewer rounds (2026-09-29).
+ * B-3: "Mark uncertainty" in `# Memory & Learning` is scoped to memory and
+ * lesson claims (+185 in every mode, one static rule rendered once per mode).
+ * WHAT THE BYTES BUY: the unscoped rule asked for doubt to be narrated before
+ * every action, which cost rounds; the scoped rule keeps the hedge the memory
+ * manager derives provenance from and says it is not a reason to pause.
+ *
+ *   agent / restricted          61,748 -> 61,933
+ *   agent / full                62,449 -> 62,634
+ *   mission setup / restricted  68,225 -> 68,410
+ *   mission setup / full        68,244 -> 68,429
+ *   mission run / restricted    66,949 -> 67,134
+ *   mission run / full          66,764 -> 66,949
  */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 61_748 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 62_449 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 68_225 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 68_244 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 66_949 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 66_764 },
+  { name: "agent / restricted", context: context({}), ceiling: 61_933 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 62_634 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 68_410 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 68_429 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 67_134 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 66_949 },
 ] as const;
 
 beforeAll(() => {
