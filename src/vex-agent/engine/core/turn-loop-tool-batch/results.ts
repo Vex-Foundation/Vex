@@ -149,7 +149,7 @@ export const TOOL_ABORTED_BY_USER_STOP_OUTPUT =
   + "running. It was cancelled mid-flight and did NOT complete. Nothing was signed or "
   + "broadcast by this call.";
 
-interface ExecutedResult {
+export interface ExecutedResult {
   toolCallId: string;
   toolName: string;
   output: string;

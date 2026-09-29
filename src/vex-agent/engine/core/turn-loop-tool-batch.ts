@@ -99,6 +99,8 @@ import type {
   ToolCallLoopDetector,
   ToolCallLoopFacts,
 } from "./runner/tool-call-loop-detector.js";
+import { planReadSegment, runReadSegment } from "./turn-loop-tool-batch/read-segment.js";
+import { readToolReadBounds } from "@vex-agent/tools/read-dispatch-bounds.js";
 
 export type { StopPayload, ToolBatchOutcome } from "./turn-loop-tool-batch/outcome.js";
 
@@ -178,6 +180,9 @@ export async function processTurnToolBatch(args: {
   let loopCorrectionFacts: ToolCallLoopFacts | null = null;
 
   const dispatchBand = computeBand(args.currentTokenCount, args.contextLimit);
+  // Kairos T-1: how many audited parallel-safe reads may run at once. `1` never
+  // plans a segment, so the loop below is exactly the previous serial path.
+  const readConcurrency = readToolReadBounds().readConcurrency;
 
   /**
    * Pair every call from `fromIndex` onward with a synthetic result so the
@@ -237,6 +242,65 @@ export async function processTurnToolBatch(args: {
     // stricter tsconfig type-checks this file too) and narrows `toolCall` for
     // every use below.
     if (toolCall === undefined) continue;
+
+    // ── Parallel read segment (Kairos T-1), BEFORE the serial per-call path ──
+    // Two or more consecutive AUDITED parallel-safe reads run concurrently;
+    // every other call is a barrier and takes the unchanged serial path below.
+    // The segment applies the same Stop / lease / deadline / fenced-token
+    // checks before EACH call it starts, lets in-flight reads settle, and
+    // hands back results in the original call order, so the single fenced
+    // transcript write below still pairs every call with one result. See
+    // `./turn-loop-tool-batch/read-segment.ts`.
+    const readSegment = planReadSegment(turnResult.toolCalls, i, readConcurrency);
+    if (readSegment !== null) {
+      const segmentOutcome = await runReadSegment({
+        toolCalls: turnResult.toolCalls,
+        start: i,
+        segment: readSegment,
+        limit: readConcurrency,
+        sessionId: context.sessionId,
+        missionRunId: context.missionRunId ?? null,
+        ...(args.abortSignal === undefined ? {} : { abortSignal: args.abortSignal }),
+        ...(leaseGuard === undefined ? {} : { leaseGuard }),
+        ...(args.deadlines === undefined ? {} : { deadlines: args.deadlines }),
+        ...(args.loopDetector === undefined ? {} : { loopDetector: args.loopDetector }),
+        dispatch: (call) => {
+          const readContext = buildToolContext(
+            context,
+            dispatchBand,
+            args.preparationBypassesBarrier === true,
+            args.abortSignal,
+          );
+          return dispatchWithTiming(
+            args.telemetry,
+            context.sessionId,
+            call,
+            () => dispatchTool(
+              { name: call.name, args: call.arguments, toolCallId: call.id },
+              readContext,
+            ),
+          );
+        },
+      });
+      toolCallsExecuted += segmentOutcome.started;
+      for (const { call, result } of segmentOutcome.executed) {
+        executedCalls.push(call);
+        executedResults.push(result);
+      }
+      const segmentStop = segmentOutcome.stop;
+      if (segmentStop !== null) {
+        drainUndispatchedCalls(segmentStop.drainFrom, segmentStop.drainOutput);
+        if (segmentStop.stopReason !== null) batchStopReason = segmentStop.stopReason;
+        if (segmentStop.stopPayload !== undefined) batchStopPayload = segmentStop.stopPayload;
+        if (segmentStop.loopCorrectionFacts !== undefined) {
+          loopCorrectionFacts = segmentStop.loopCorrectionFacts;
+        }
+        break;
+      }
+      // Resume the serial loop at the first call after the segment.
+      i = readSegment.end - 1;
+      continue;
+    }
 
     // ── Operator Stop, checked at the TOP of the iteration ──
     // Deliberately BEFORE `dispatchTool` and never inside it: a call already
