@@ -121,6 +121,7 @@ import {
   type StallRecoveryCall,
 } from "./runner/stall-recovery.js";
 import { hasPendingForSession } from "@vex-agent/db/repos/approvals.js";
+import { decidePromiseNudge, PROMISE_NUDGE_NOTE } from "./runner/promise-nudge.js";
 import { isLeaseLost } from "../runtime/lease-guard.js";
 import { reconcileAfterTakeover } from "./turn-loop/takeover-reconcile.js";
 
@@ -297,6 +298,11 @@ async function runTurnLoopBody(
   // pending wake instead of earning a continue cue. See
   // `turn-loop-text-response.ts`.
   let loopDeferCalledThisSlice = false;
+  // Act, don't narrate (Kairos B-4): a reply that only announced an action
+  // earns ONE one-shot turn-state note on the next call, at most once per
+  // turn. See `runner/promise-nudge.ts`.
+  let promiseNudgeUsed = false;
+  let promiseNudgePending = false;
   // Rounds actually entered, so the exhaustion events can report what the turn
   // consumed rather than only which bound fired (rule 05).
   let iterationsUsed = 0;
@@ -522,9 +528,15 @@ async function runTurnLoopBody(
     // and the note in the turn state, for this request only. Effort is the
     // configured one - never lowered for a continuation.
     const callConfig = recoveryCall?.config ?? active.config;
+    // A cut-off continuation or a stall recovery takes precedence; neither can
+    // follow a promise-only reply in practice (both need a different round).
+    const nudgeThisCall = promiseNudgePending && cutoff === null && recoveryCall === null;
     const callPromptOptions = cutoff !== null
       ? { ...stack.promptOptions, cutoffContinuationNote: CUTOFF_CONTINUATION_NOTE }
-      : recoveryCall?.promptOptions ?? stack.promptOptions;
+      : recoveryCall?.promptOptions
+        ?? (nudgeThisCall
+          ? { ...stack.promptOptions, promiseNudgeNote: PROMISE_NUDGE_NOTE }
+          : stack.promptOptions);
     const callMessages = cutoff !== null ? continuationMessages(liveMessages, cutoff) : liveMessages;
 
     // Build the request envelope ONCE, here, so the ceiling below measures the
@@ -572,6 +584,8 @@ async function runTurnLoopBody(
         ...stallRecoveryLogFields(recoveryCall),
       });
     }
+    // Spent only once its request is really issued, like the recovery above.
+    if (nudgeThisCall) promiseNudgePending = false;
     if (cutoff !== null) {
       // Lengths only, never the answer text.
       logger.info("engine.turn.cutoff_continuation", {
@@ -936,6 +950,34 @@ async function runTurnLoopBody(
         mergeOperatorInstructions,
         loopDeferCalledThisSlice,
       });
+      // Act, don't narrate (B-4). Never for a cut-off answer's continuation
+      // result, and never on a lease loss or an idle park.
+      if (
+        resolvedAnswer === null
+        && (textOutcome.kind === "mission_run_continue" || textOutcome.kind === "break_on_text")
+      ) {
+        const nudge = await decidePromiseNudge({
+          context,
+          content: answer.content,
+          liveMessages,
+          alreadyNudged: promiseNudgeUsed,
+          inLoopPendingApprovals: pendingApprovals.length,
+          hasPendingApproval: () => hasPendingForSession(context.sessionId),
+        });
+        if (nudge.nudge) {
+          promiseNudgeUsed = true;
+          promiseNudgePending = true;
+          // Lengths and enums only, never the reply text.
+          logger.info("engine.turn.promise_nudge", {
+            sessionId: context.sessionId,
+            missionRunId: context.missionRunId ?? null,
+            sessionKind: context.sessionKind,
+            iteration,
+            replyChars: answer.content.length,
+          });
+          continue;
+        }
+      }
       if (textOutcome.kind === "mission_run_continue") {
         continue;
       }

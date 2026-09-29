@@ -6,6 +6,11 @@
  * whose wake is pending, parks on that wake when it next replies in prose,
  * with no continue cue. A `LoopDefer` that scheduled nothing leaves real work
  * continuing with the cue.
+ *
+ * B-4 act, don't narrate: a reply that only announces an action earns ONE
+ * one-shot turn-state note on the next call (never persisted, never a user
+ * message), at most once per turn, never while an approval is pending, and
+ * never for a real answer that merely mentions future steps.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type {
@@ -201,6 +206,7 @@ const loopDeferRound = toolRound("defer-1", "LoopDefer", { after_ms: 600_000, re
 
 interface SeenRequest {
   readonly turnState: string;
+  readonly history: string;
 }
 
 function recordingProvider(rounds: ReadonlyArray<readonly StreamChunk[]>): {
@@ -214,7 +220,10 @@ function recordingProvider(rounds: ReadonlyArray<readonly StreamChunk[]>): {
       messages: ProviderMessage[],
     ): AsyncGenerator<StreamChunk> {
       const turnState = messages.filter((m) => m.cacheHint === "turn_state");
-      seen.push({ turnState: turnState.map((m) => m.content).join("\n") });
+      seen.push({
+        turnState: turnState.map((m) => m.content).join("\n"),
+        history: JSON.stringify(messages.filter((m) => m.cacheHint !== "turn_state")),
+      });
       const round = rounds[index] ?? rounds[rounds.length - 1] ?? textRound("Done.");
       index += 1;
       for (const chunk of round) yield chunk;
@@ -380,5 +389,118 @@ describe("B-1 mission honest idle", () => {
     expect(result.stopReason).toBe("iteration_limit");
     expect(persistedCueCount()).toBe(1);
     expect(mockGetPendingWake).not.toHaveBeenCalled();
+  });
+});
+
+const NOTE_HEADING = "# Last Reply Announced An Action";
+
+function agentContext(overrides: Partial<EngineContext> = {}): EngineContext {
+  return { ...missionContext(), sessionKind: "agent", missionId: null, missionRunId: null, ...overrides };
+}
+
+const askHistory: Message[] = [{ role: "user", content: "What is ETH at?", timestamp: "2026-09-29T11:00:00.000Z" }];
+
+function persistedText(): string {
+  return JSON.stringify([...mockAddMessage.mock.calls, ...mockAddEngineMessage.mock.calls]);
+}
+
+function nudgeLogs(): unknown[] {
+  return mockLoggerInfo.mock.calls.filter((c) => c[0] === "engine.turn.promise_nudge").map((c) => c[1]);
+}
+
+describe("B-4 promise-only nudge", () => {
+  beforeEach(() => {
+    mockDispatchTool.mockResolvedValue({ success: true, output: "{\"ok\":true}", actionKind: "read" });
+  });
+
+  it("chat: a promise-only reply gets one note on the next call, which then acts", async () => {
+    const { result, seen } = await run(
+      agentContext(),
+      [
+        textRound("Let me check the current ETH price."),
+        toolRound("read-1", "ToolSearch", { query: "eth price" }),
+        textRound("ETH is at $3,012."),
+      ],
+      { history: askHistory },
+    );
+
+    expect(seen).toHaveLength(3);
+    expect(seen[0]?.turnState).not.toContain(NOTE_HEADING);
+    expect(seen[1]?.turnState).toContain(NOTE_HEADING);
+    expect(seen[2]?.turnState).not.toContain(NOTE_HEADING);
+    // Turn state only: never in the history, never persisted, never a user row.
+    expect(seen[1]?.history).not.toContain(NOTE_HEADING);
+    expect(persistedText()).not.toContain(NOTE_HEADING);
+    expect(result.stopReason).toBe(null);
+    expect(result.text).toBe("ETH is at $3,012.");
+    expect(nudgeLogs()).toEqual([
+      { sessionId: "session-1", missionRunId: null, sessionKind: "agent", iteration: 0, replyChars: 35 },
+    ]);
+  });
+
+  it("at most one nudge per turn: a second promise-only reply is accepted as the answer", async () => {
+    const { result, seen } = await run(
+      agentContext(),
+      [textRound("Let me check the current ETH price."), textRound("I'll fetch it now.")],
+      { history: askHistory },
+    );
+
+    expect(seen).toHaveLength(2);
+    expect(result.stopReason).toBe(null);
+    expect(result.text).toBe("I'll fetch it now.");
+    expect(nudgeLogs()).toHaveLength(1);
+  });
+
+  it("false-positive guard: a legitimate final answer that mentions future steps ends the turn", async () => {
+    const answer =
+      "ETH is trading at $3,012, up 2.1% today. Next steps: once your bridge settles, I'll check the balance and then place the swap.";
+    const { result, seen } = await run(agentContext(), [textRound(answer), textRound("never reached")], {
+      history: askHistory,
+    });
+
+    expect(seen).toHaveLength(1);
+    expect(result.text).toBe(answer);
+    expect(nudgeLogs()).toHaveLength(0);
+  });
+
+  it("waiting for approval is a valid end state: no nudge while an approval is pending", async () => {
+    mockHasPendingForSession.mockResolvedValue(true);
+    const { seen } = await run(
+      agentContext(),
+      [textRound("Let me check the current ETH price."), textRound("never reached")],
+      { history: askHistory },
+    );
+
+    expect(seen).toHaveLength(1);
+    expect(nudgeLogs()).toHaveLength(0);
+  });
+
+  it("mission setup is never nudged", async () => {
+    const { seen } = await run(
+      agentContext({ sessionKind: "mission", missionId: "mission-1" }),
+      [textRound("Let me check the current ETH price."), textRound("never reached")],
+      { history: askHistory },
+    );
+
+    expect(seen).toHaveLength(1);
+    expect(nudgeLogs()).toHaveLength(0);
+  });
+
+  it("mission run: the note rides with the continue round it already had, once", async () => {
+    const { seen } = await run(
+      missionContext(),
+      [
+        textRound("Let me check the current ETH price."),
+        textRound("I'll fetch it now."),
+        textRound("Still here."),
+      ],
+      { maxIterations: 3 },
+    );
+
+    expect(seen).toHaveLength(3);
+    expect(seen[1]?.turnState).toContain(NOTE_HEADING);
+    expect(seen[2]?.turnState).not.toContain(NOTE_HEADING);
+    expect(persistedCueCount()).toBe(1);
+    expect(nudgeLogs()).toHaveLength(1);
   });
 });

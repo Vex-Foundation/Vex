@@ -83,6 +83,13 @@ export interface PromptStackOptions {
    */
   cutoffContinuationNote?: string;
   /**
+   * One-shot engine note after a promise-only reply (`runner/promise-nudge.ts`):
+   * set by the turn loop for the single inference call that follows a reply
+   * which announced an action but called no tool, at most once per turn, never
+   * persisted. Empty/undefined omits it.
+   */
+  promiseNudgeNote?: string;
+  /**
    * Pre-formatted `# $VEX (own token)` live-metrics banner from
    * `buildOwnTokenBanner` (DexScreener snapshot + best-effort Virtuals
    * holderCount). TURN-STATE (volatile numbers), sits right after the runtime
@@ -317,6 +324,9 @@ export function buildPromptStack(
   }
   if (options.cutoffContinuationNote && options.cutoffContinuationNote.length > 0) {
     turnLayers.push(options.cutoffContinuationNote);
+  }
+  if (options.promiseNudgeNote && options.promiseNudgeNote.length > 0) {
+    turnLayers.push(options.promiseNudgeNote);
   }
 
   // Safety re-anchor — LITERALLY the last layer of the whole prompt, after the
