@@ -213,9 +213,13 @@ export interface ProtocolDiscoveryListItem {
  * and the dispatcher's `toModelDiscoveryResult`). The model uses `method` and
  * `denseFailed` to interpret weak matches (lexical fallback often signals
  * embedding-sidecar issues, not query problems).
+ *
+ * `exact`: the query was one candidate's exact `toolId` or `publicName`, so it
+ * was resolved locally at rank 0 without an embedding call; any rows after it
+ * are lexical neighbours.
  */
 export interface ProtocolDiscoveryRetrievalMeta {
-  method: "catalog" | "dense" | "lexical" | "list";
+  method: "catalog" | "dense" | "lexical" | "list" | "exact";
   /** True when dense retrieval was attempted but lexical fallback produced the result. */
   denseFailed: boolean;
   /** Provider-reported embedding model (only set when dense retrieval ran). Telemetry-only. */

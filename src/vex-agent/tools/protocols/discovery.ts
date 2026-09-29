@@ -12,7 +12,8 @@ import {
 } from "../registry/discovered-tools.js";
 import { buildDiscoverNamespaceDescription } from "./descriptions.js";
 import { denseScore } from "./dense-score.js";
-import { pinExactToolIdMatch } from "./toolid-pin.js";
+import { lexicalScore } from "./lexical-score.js";
+import { pinExactToolIdMatch, resolveUniqueExactNameMatch } from "./toolid-pin.js";
 import { describeParamGroupConstraints } from "./runtime/params.js";
 import type {
   DiscoveryAvailabilityMode,
@@ -419,11 +420,27 @@ export async function discoverProtocolCapabilities(
 
   let scoredTools: ScoredManifest[];
   let retrievalMeta: ProtocolDiscoveryRetrievalMeta;
+  let exactMatch: ScoredManifest | null = null;
 
   if (query.length === 0) {
     scoredTools = filteredTools.map((manifest) => ({ manifest, score: 0, whyMatched: [] }));
     retrievalMeta = {
       method: "catalog",
+      denseFailed: false,
+      candidateCount: filteredTools.length,
+    };
+  } else if ((exactMatch = resolveUniqueExactNameMatch(query, filteredTools)) !== null) {
+    // A query that IS one tool's exact name (toolId or publicName) names its
+    // answer, so it is resolved locally and the embedding round trip is
+    // skipped entirely. Same candidate set as the ranked path, so no gate is
+    // relaxed. The rows after the named tool are its lexical neighbours: cheap,
+    // local, and flagged by `method: "exact"` rather than passed off as dense.
+    const pinned = exactMatch;
+    const rest = lexicalScore(query, filteredTools).scored
+      .filter((entry) => entry.manifest.toolId !== pinned.manifest.toolId);
+    scoredTools = [pinned, ...rest];
+    retrievalMeta = {
+      method: "exact",
       denseFailed: false,
       candidateCount: filteredTools.length,
     };
