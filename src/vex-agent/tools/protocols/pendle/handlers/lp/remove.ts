@@ -189,7 +189,7 @@ export async function executePendleLpRemove(p: Record<string, unknown>, context:
         executedAmountOut: humanAmount(outAmount, outDec).toString(),
         quotedAmountOut: humanAmount(quotedOutRaw, outDec).toString(),
         fullExit,
-      }, null, 2),
+      }),
       data: {
         txHash,
         _executionId: broadcast.executionId,

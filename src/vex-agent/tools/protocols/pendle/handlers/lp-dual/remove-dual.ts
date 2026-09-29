@@ -270,7 +270,7 @@ export async function executePendleLpRemoveDual(
         ptOut: ptAddress,
         executedPtOut: humanAmount(executedPtRaw, ptDec).toString(),
         quotedPtOut: quotedPtHuman.toString(),
-      }, null, 2),
+      }),
       // NO `_tradeCapture`: this tool's durable truth is the `agent_activity` row
       // written by `sendPendleRouterTx`, so the legacy projection pipeline must
       // not also run for it.

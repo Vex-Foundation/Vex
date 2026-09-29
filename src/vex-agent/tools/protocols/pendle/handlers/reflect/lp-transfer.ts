@@ -256,7 +256,7 @@ export async function executePendleLpTransfer(
         executedAmountIn: amountTriplet(executedInRaw, lpIn.decimals),
         executedAmountOut: amountTriplet(executedOutRaw, outDecimals),
         quotedAmountOut: amountTriplet(quotedOutRaw, outDecimals),
-      }, null, 2),
+      }),
       data: { txHash, _executionId: broadcast.executionId },
     };
   } catch (err) {

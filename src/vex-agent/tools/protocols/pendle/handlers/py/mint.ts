@@ -185,7 +185,7 @@ export async function executePendleMint(p: Record<string, unknown>, context: Pro
         executedYtOut: humanAmount(ytOut, ytDec).toString(),
         quotedPtOut: humanAmount(quotedPtOut, ptDec).toString(),
         quotedYtOut: humanAmount(quotedYtOut, ytDec).toString(),
-      }, null, 2),
+      }),
       data: {
         txHash,
         _executionId: broadcast.executionId,

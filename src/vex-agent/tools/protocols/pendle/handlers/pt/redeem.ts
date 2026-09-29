@@ -254,7 +254,7 @@ export async function executePendleRedeem(p: Record<string, unknown>, context: P
         // The discriminant an agent needs to know WHAT it now holds (P1-13).
         deliveredAsset, deliveredAssetKind: usedFallback ? "sy" : "underlying", deliveredPath,
         ...(deliveredNote ? { note: deliveredNote } : {}),
-      }, null, 2),
+      }),
       data: {
         txHash,
         _executionId: broadcast.executionId,

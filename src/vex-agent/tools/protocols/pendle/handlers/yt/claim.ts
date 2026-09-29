@@ -193,7 +193,7 @@ export async function pendleClaim(p: Record<string, unknown>, context: ProtocolE
         marketCap: targets.marketCap,
         skippedMarkets: targets.skipped,
         ...(skipNote ? { skippedNote: skipNote } : {}),
-      }, null, 2),
+      }),
       data: {
         txHash,
         _executionId: broadcast.executionId,

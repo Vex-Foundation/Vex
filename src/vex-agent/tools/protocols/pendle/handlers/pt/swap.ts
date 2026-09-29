@@ -215,7 +215,7 @@ export async function executePendleSwap(
         executedAmountIn: executedInHuman.toString(),
         executedAmountOut: executedOutHuman.toString(),
         quotedAmountOut: quotedOutHuman.toString(),
-      }, null, 2),
+      }),
       data: {
         txHash,
         _executionId: broadcast.executionId,

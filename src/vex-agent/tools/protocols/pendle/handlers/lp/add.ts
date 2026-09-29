@@ -181,7 +181,7 @@ export async function executePendleLpAdd(p: Record<string, unknown>, context: Pr
         amountIn: amountInRaw,
         executedLpOut: humanAmount(lpOut, lpDec).toString(),
         quotedLpOut: humanAmount(quotedLpOut, lpDec).toString(),
-      }, null, 2),
+      }),
       data: {
         txHash,
         _executionId: broadcast.executionId,

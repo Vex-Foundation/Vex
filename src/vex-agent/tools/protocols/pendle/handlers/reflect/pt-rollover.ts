@@ -286,7 +286,7 @@ export async function executePendlePtRollover(
         executedAmountIn: amountTriplet(executedInRaw, ptIn.decimals),
         executedAmountOut: amountTriplet(executedOutRaw, outDecimals),
         quotedAmountOut: amountTriplet(quotedOutRaw, outDecimals),
-      }, null, 2),
+      }),
       // NO `_tradeCapture`: this tool's durable truth is the `agent_activity` row
       // written by `sendPendleRouterTx`.
       data: { txHash, _executionId: broadcast.executionId },
