@@ -201,7 +201,9 @@ describe("mission.retry", () => {
     // paused_error-only wake cancellation must not fire here.
     expect(mockCancelForSession).not.toHaveBeenCalled();
     await vi.waitFor(() =>
-      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-dead", "owner-y"),
+      // The runner hands its LEASE HANDLE (which carries the claim token) to the
+      // resume, never a bare owner id: exactly the handle it created.
+      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-dead", mockCreateLeaseHandle.mock.results[0]?.value),
     );
   });
 
@@ -261,7 +263,9 @@ describe("mission.retry", () => {
     );
     // Fire-and-forget continuation (dynamic-imports the engine) — poll for it.
     await vi.waitFor(() =>
-      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-err", "owner-x"),
+      // The runner hands its LEASE HANDLE (which carries the claim token) to the
+      // resume, never a bare owner id: exactly the handle it created.
+      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-err", mockCreateLeaseHandle.mock.results[0]?.value),
     );
   });
 
