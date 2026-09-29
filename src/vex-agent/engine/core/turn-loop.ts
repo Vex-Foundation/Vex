@@ -84,6 +84,8 @@ import { resolveEffectiveInferenceConfig } from "./turn-loop/effective-inference
 import { buildIterationBoundaryActions } from "./turn-loop/iteration-boundary-actions.js";
 import { applyIterationEntryOutcome } from "./turn-loop/iteration-entry-outcome.js";
 import { applyToolBatchOutcome } from "./turn-loop/tool-batch-step.js";
+import { applyWaitingForWakePostBatch } from "./turn-loop-waiting-for-wake.js";
+import { resolveToolName } from "@vex-agent/tools/registry/name-resolution.js";
 import { handleTextResponse, persistTextAnswer } from "./turn-loop-text-response.js";
 import {
   CUTOFF_ANSWER_SUFFIX,
@@ -290,6 +292,11 @@ async function runTurnLoopBody(
   // never carrying one turn's history into the next. See
   // `runner/tool-call-loop-detector.ts`.
   const loopDetector = createToolCallLoopDetector();
+  // Honest idle (Kairos B-1): set once any batch of THIS slice carried a
+  // `LoopDefer` call. A later text reply then ends the slice on the run's
+  // pending wake instead of earning a continue cue. See
+  // `turn-loop-text-response.ts`.
+  let loopDeferCalledThisSlice = false;
   // Rounds actually entered, so the exhaustion events can report what the turn
   // consumed rather than only which bound fired (rule 05).
   let iterationsUsed = 0;
@@ -825,6 +832,9 @@ async function runTurnLoopBody(
     }
 
     if (turnResult.toolCalls && turnResult.toolCalls.length > 0) {
+      if (turnResult.toolCalls.some((call) => resolveToolName(call.name) === "LoopDefer")) {
+        loopDeferCalledThisSlice = true;
+      }
       const batchOutcome = await processTurnToolBatch({
         context,
         turnResult: {
@@ -924,9 +934,42 @@ async function runTurnLoopBody(
         content: answer.content,
         reasoning: answer.reasoning,
         mergeOperatorInstructions,
+        loopDeferCalledThisSlice,
       });
       if (textOutcome.kind === "mission_run_continue") {
         continue;
+      }
+      if (textOutcome.kind === "deferred_idle") {
+        // Same park a successful `LoopDefer` gets from the batch step: the
+        // wake row already exists, so only the run status moves.
+        logger.info("engine.mission.idle_defer_parked", {
+          sessionId: context.sessionId,
+          missionRunId: context.missionRunId ?? null,
+          iteration,
+        });
+        await applyWaitingForWakePostBatch({
+          sessionId: context.sessionId,
+          missionRunId: context.missionRunId ?? null,
+          currentTokenCount,
+          contextLimit: active.contextLimit,
+          sessionPermission: context.sessionPermission,
+          ...(loopConfig.runnerOwnerId === undefined
+            ? {}
+            : { runnerOwnerId: loopConfig.runnerOwnerId }),
+          handlePostCompactBookkeeping,
+          ...(stopSignal === undefined ? {} : { signal: stopSignal }),
+        });
+        endPresentationScope(context.sessionId);
+        return {
+          text: lastText,
+          toolCallsMade: totalToolCalls,
+          pendingApprovals,
+          stopReason: "waiting_for_wake",
+          stopPayload: {
+            summary: `Deferred until ${textOutcome.wake.dueAt}`,
+            evidence: { dueAt: textOutcome.wake.dueAt, reason: textOutcome.wake.reason },
+          },
+        };
       }
       if (textOutcome.kind === "lease_lost") {
         stopReason = "lease_lost";

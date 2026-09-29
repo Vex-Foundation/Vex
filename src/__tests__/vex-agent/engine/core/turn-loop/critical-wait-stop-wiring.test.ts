@@ -115,7 +115,7 @@ describe("critical-band wait - Stop from the loop (S-5)", () => {
     );
   });
 
-  it("turn-loop.ts threads the Stop into the critical step, the ceiling gate and the wake park", () => {
+  it("turn-loop.ts threads the Stop into the critical step, the ceiling gate and both wake parks", () => {
     const source = readFileSync(
       new URL("../../../../../vex-agent/engine/core/turn-loop.ts", import.meta.url),
       "utf8",
@@ -124,7 +124,9 @@ describe("critical-band wait - Stop from the loop (S-5)", () => {
     const threaded = source.match(
       /\.\.\.\(stopSignal === undefined \? \{\} : \{ signal: stopSignal \}\)/g,
     );
-    expect(threaded).toHaveLength(3);
+    // Four sites: the critical step, the ceiling gate, the batch wake park and
+    // the honest-idle wake park (Kairos B-1).
+    expect(threaded).toHaveLength(4);
     // The lease-lost signal is never what the waits are handed.
     expect(source).not.toMatch(/signal: leaseGuard/);
   });

@@ -15,6 +15,13 @@
  *     one followed by nothing but text-only assistant rows (see
  *     `tailAlreadyCarriesContinueCue`), so consecutive text replies leave
  *     ONE marker instead of one per reply. The loop continues either way.
+ *   - Mission RUN honest idle (Kairos B-1): when this slice already called
+ *     `LoopDefer`, no operator instruction arrived, and a wake for THIS run
+ *     is pending, text ends the slice with NO continue cue. The caller parks
+ *     the run on that wake (`deferred_idle`), exactly as a successful
+ *     `LoopDefer` would have. A `LoopDefer` that scheduled nothing (refused
+ *     arguments, a watch condition already true) leaves no pending wake, so
+ *     real work continues with the cue as before.
  *   - Mission SETUP (`sessionKind=mission` but no `missionRunId`) and
  *     chat: text ends the loop cleanly. Signal `break_on_text` so
  *     the caller sets `stoppedOnText = true` and breaks.
@@ -30,6 +37,8 @@ import type { Message } from "@vex-agent/db/repos/messages.js";
 import { saveAssistantMessage } from "./turn.js";
 import { appendEngineMessage } from "@vex-agent/engine/events/index.js";
 import { isLeaseLost } from "../runtime/lease-guard.js";
+import * as loopWakeRepo from "@vex-agent/db/repos/loop-wake.js";
+import logger from "@utils/logger.js";
 import {
   clearPendingPresentation,
   consumePendingPresentation,
@@ -42,6 +51,11 @@ export const MISSION_CONTINUE_CUE =
 export type TextResponseOutcome =
   | { kind: "mission_run_continue" }
   | { kind: "break_on_text" }
+  /**
+   * Mission run, honest idle: the slice already deferred and the run's wake is
+   * pending. No continue cue was written; the caller parks the run on it.
+   */
+  | { kind: "deferred_idle"; wake: { readonly dueAt: string; readonly reason: string | null } }
   /** The runner's lease was lost: write no continue marker, end on `lease_lost`. */
   | { kind: "lease_lost" };
 
@@ -53,6 +67,12 @@ export async function handleTextResponse(args: {
   /** Provider reasoning trace for this turn; persisted on the assistant row. */
   readonly reasoning: string | null;
   readonly mergeOperatorInstructions: () => Promise<void>;
+  /**
+   * True when a `LoopDefer` call was part of a tool batch earlier in THIS turn
+   * loop (this slice). Scopes the honest-idle check: a defer from an earlier
+   * slice says nothing about now. Absent = false.
+   */
+  readonly loopDeferCalledThisSlice?: boolean;
 }): Promise<TextResponseOutcome> {
   await persistTextAnswer({ ...args, attachBoard: true });
 
@@ -65,7 +85,16 @@ export async function handleTextResponse(args: {
   // marker so the next iteration has the protocol cue. Mission SETUP
   // (`sessionKind=mission` but no missionRunId) ends on text like agent.
   if (args.context.missionRunId) {
+    const tapeBeforeMerge = args.liveMessages.length;
     await args.mergeOperatorInstructions();
+    const operatorSpoke = args.liveMessages.length > tapeBeforeMerge;
+
+    // Honest idle (B-1). An operator instruction that just arrived is new work,
+    // so it always wins over parking.
+    if (args.loopDeferCalledThisSlice === true && !operatorSpoke) {
+      const wake = await pendingWakeForRun(args.context.sessionId, args.context.missionRunId);
+      if (wake !== null) return { kind: "deferred_idle", wake };
+    }
 
     // One cue per run of consecutive text replies: every append would
     // otherwise be re-sent on every later round. The tape is only ever
@@ -90,6 +119,29 @@ export async function handleTextResponse(args: {
 
   // Chat and mission setup: text ends the loop cleanly.
   return { kind: "break_on_text" };
+}
+
+/**
+ * The pending wake that belongs to this run, or null. Read failures return
+ * null: the run then keeps its continue cue, which is the behaviour before
+ * honest idle existed, rather than parking on a wake nobody verified.
+ */
+async function pendingWakeForRun(
+  sessionId: string,
+  missionRunId: string,
+): Promise<{ dueAt: string; reason: string | null } | null> {
+  try {
+    const wake = await loopWakeRepo.getPendingForSession(sessionId);
+    if (wake === null || wake.missionRunId !== missionRunId) return null;
+    return { dueAt: wake.dueAt, reason: wake.reason };
+  } catch (err) {
+    logger.warn("engine.mission.idle_defer_wake_read_failed", {
+      sessionId,
+      missionRunId,
+      error: err instanceof Error ? err.name : "unknown",
+    });
+    return null;
+  }
 }
 
 /**

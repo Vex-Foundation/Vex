@@ -200,20 +200,25 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  * WHAT THE BYTES BUY: a promise-only reply and a one-read-per-round habit each
  * cost a full provider round (~6-7 s first chunk in the Phase 4 live data).
  *
+ * B-1: two `# Mission Execution` lines reworded from "never stop" to "never
+ * abandon; defer with a reason when nothing is actionable" (+222 on the two
+ * mission-run modes only). WHAT THE BYTES BUY: an idle run now ends its slice
+ * on a wake instead of spinning on prose continue rounds.
+ *
  *   agent / restricted          61,748 -> 61,933 -> 62,528
  *   agent / full                62,449 -> 62,634 -> 63,229
  *   mission setup / restricted  68,225 -> 68,410 -> 69,005
  *   mission setup / full        68,244 -> 68,429 -> 69,024
- *   mission run / restricted    66,949 -> 67,134 -> 67,729
- *   mission run / full          66,764 -> 66,949 -> 67,544
+ *   mission run / restricted    66,949 -> 67,134 -> 67,729 -> 67,951
+ *   mission run / full          66,764 -> 66,949 -> 67,544 -> 67,766
  */
 const MODES = [
   { name: "agent / restricted", context: context({}), ceiling: 62_528 },
   { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 63_229 },
   { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 69_005 },
   { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 69_024 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 67_729 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 67_544 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 67_951 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 67_766 },
 ] as const;
 
 beforeAll(() => {
