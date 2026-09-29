@@ -87,7 +87,10 @@ import {
   dispatchPreparedActionFollowUp,
   resolvePreparedActionFollowUp,
 } from "./turn-loop-tool-batch/prepared-follow-up.js";
-import { emitToolCallLoopCorrection } from "./turn-loop-tool-batch/loop-correction-emit.js";
+import {
+  emitToolCallLoopCorrection,
+  toolCallLoopStopPayload,
+} from "./turn-loop-tool-batch/loop-correction-emit.js";
 import {
   dispatchWithTiming,
   type ToolDispatchTelemetry,
@@ -641,18 +644,9 @@ export async function processTurnToolBatch(args: {
       });
       drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_TOOL_CALL_LOOP_OUTPUT);
       batchStopReason = "tool_call_loop";
-      batchStopPayload = {
-        summary:
-          "The model repeated the same completed tool call after being corrected once.",
-        // Shape of the repetition only - `ToolCallLoopFacts` carries no raw
-        // arguments by construction, and this evidence is durable.
-        evidence: {
-          toolName: verdict.facts.toolName,
-          cycleLength: verdict.facts.cycleLength,
-          repeatCount: verdict.facts.repeatCount,
-          toolCallIds: verdict.facts.toolCallIds,
-        },
-      };
+      // Trigger-aware wording; shape of the repetition only - no raw
+      // arguments, and this evidence is durable.
+      batchStopPayload = toolCallLoopStopPayload(verdict.facts);
       break;
     }
   }

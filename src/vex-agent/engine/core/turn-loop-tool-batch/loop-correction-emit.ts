@@ -30,8 +30,32 @@ import type { Message } from "@vex-agent/db/repos/messages.js";
 import { appendEngineMessage } from "@vex-agent/engine/events/index.js";
 import { buildToolCallLoopCorrectionCue } from "../../prompts/tool-call-loop-correction.js";
 import type { ToolCallLoopFacts } from "../runner/tool-call-loop-detector.js";
+import type { StopPayload } from "./outcome.js";
 
 export const TOOL_CALL_LOOP_CORRECTION_MESSAGE_TYPE = "tool_call_loop_correction";
+
+/**
+ * The durable STRIKE-2 stop payload, worded for what actually fired: a
+ * repeating cycle of identical results, or polling the same read with
+ * identical arguments past the per-turn cap (whose results may well have
+ * changed, so "repeated the same completed call" would be untrue). Shape of
+ * the repetition only: `ToolCallLoopFacts` carries no raw arguments.
+ */
+export function toolCallLoopStopPayload(facts: ToolCallLoopFacts): StopPayload {
+  const trigger = facts.trigger ?? "cycle";
+  return {
+    summary: trigger === "read_poll"
+      ? "The model kept polling the same read with identical arguments after being corrected once."
+      : "The model repeated the same completed tool call after being corrected once.",
+    evidence: {
+      toolName: facts.toolName,
+      cycleLength: facts.cycleLength,
+      repeatCount: facts.repeatCount,
+      toolCallIds: facts.toolCallIds,
+      trigger,
+    },
+  };
+}
 
 export async function emitToolCallLoopCorrection(input: {
   readonly sessionId: string;
