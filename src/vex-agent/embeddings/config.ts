@@ -16,6 +16,7 @@
  */
 
 import logger from "@utils/logger.js";
+import type { EmbeddingCallPolicy } from "./call-policy.js";
 
 /** Minimum sane embedding dimension (rejects 0 / negative). */
 export const MIN_EMBEDDING_DIM = 1;
@@ -106,3 +107,16 @@ export const EMBEDDING_BASE_DELAY_MS = 1000;
 
 /** Max backoff delay. */
 export const EMBEDDING_MAX_DELAY_MS = 5000;
+
+/**
+ * The default for every caller that does not choose: memory and knowledge
+ * writes, recall, re-embed jobs, health probes. Unchanged values (30 s per
+ * attempt, 2 retries) - these paths prefer a slow answer to a missing vector.
+ */
+export const BACKGROUND_EMBEDDING_POLICY: EmbeddingCallPolicy = {
+  attemptTimeoutMs: EMBEDDING_REQUEST_TIMEOUT_MS,
+  maxRetries: EMBEDDING_MAX_RETRIES,
+  baseDelayMs: EMBEDDING_BASE_DELAY_MS,
+  maxDelayMs: EMBEDDING_MAX_DELAY_MS,
+  jitter: true,
+};

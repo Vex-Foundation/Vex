@@ -25,12 +25,10 @@
 
 import {
   loadEmbeddingConfig,
-  EMBEDDING_REQUEST_TIMEOUT_MS,
-  EMBEDDING_MAX_RETRIES,
-  EMBEDDING_BASE_DELAY_MS,
-  EMBEDDING_MAX_DELAY_MS,
+  BACKGROUND_EMBEDDING_POLICY,
   type EmbeddingConfig,
 } from "./config.js";
+import { EmbeddingTimeoutError, type EmbeddingCallPolicy } from "./call-policy.js";
 import {
   retryWithBackoff,
   isRetryableError,
@@ -112,14 +110,18 @@ export async function embedDocument(
 /**
  * Embed a recall query.
  * Throws on missing config or sidecar failure (after retries).
+ *
+ * `policy` defaults to {@link BACKGROUND_EMBEDDING_POLICY}; only the
+ * interactive discovery path passes a tighter one.
  */
 export async function embedQuery(
   query: string,
   configOverride?: EmbeddingConfig,
+  policy: EmbeddingCallPolicy = BACKGROUND_EMBEDDING_POLICY,
 ): Promise<EmbedResult> {
   const config = configOverride ?? loadEmbeddingConfig();
   const input = formatQueryInput(query);
-  return embedSingle(input, config);
+  return embedSingle(input, config, policy);
 }
 
 /**
@@ -143,29 +145,51 @@ interface OpenAIEmbeddingsResponse {
   model?: string;
 }
 
-async function embedSingle(input: string, config: EmbeddingConfig): Promise<EmbedResult> {
+async function embedSingle(
+  input: string,
+  config: EmbeddingConfig,
+  policy: EmbeddingCallPolicy = BACKGROUND_EMBEDDING_POLICY,
+): Promise<EmbedResult> {
+  const deadline = policy.totalBudgetMs === undefined ? undefined : Date.now() + policy.totalBudgetMs;
+  const remainingMs = (): number => (deadline === undefined ? Infinity : deadline - Date.now());
   return retryWithBackoff(
     // Per ATTEMPT, and a REAL fetch signal rather than a `Promise.race` against
     // a timer. The race settled on time but ABANDONED the HTTP request with its
-    // socket still held — the failure this repo already documented inline at
+    // socket still held - the failure this repo already documented inline at
     // `compact-jobs/chunker-call.ts` and `memory/manager/judge.ts`. A timeout
-    // signal tears the request down.
-    () => callEmbeddingsEndpoint(input, config, AbortSignal.timeout(EMBEDDING_REQUEST_TIMEOUT_MS)),
+    // signal tears the request down. Under a total budget the attempt timeout
+    // is clipped to what is left, so the budget is a real ceiling.
+    () => {
+      const left = remainingMs();
+      if (left <= 0) {
+        return Promise.reject(new EmbeddingTimeoutError(
+          `embeddings.request budget of ${formatSeconds(policy.totalBudgetMs ?? 0)} exhausted`,
+        ));
+      }
+      const timeoutMs = Math.min(policy.attemptTimeoutMs, left);
+      return callEmbeddingsEndpoint(input, config, AbortSignal.timeout(timeoutMs), timeoutMs);
+    },
     {
-      maxRetries: EMBEDDING_MAX_RETRIES,
-      baseDelayMs: EMBEDDING_BASE_DELAY_MS,
-      maxDelayMs: EMBEDDING_MAX_DELAY_MS,
-      jitter: true,
-      shouldRetry: isRetryableError,
+      maxRetries: policy.maxRetries,
+      baseDelayMs: policy.baseDelayMs,
+      maxDelayMs: policy.maxDelayMs,
+      jitter: policy.jitter,
+      // A retry that could not start before the deadline is not a retry.
+      shouldRetry: (err) => isRetryableError(err) && remainingMs() > policy.baseDelayMs,
     },
     "embeddings.embed",
   );
+}
+
+function formatSeconds(ms: number): string {
+  return `${ms / 1000}s`;
 }
 
 async function callEmbeddingsEndpoint(
   input: string,
   config: EmbeddingConfig,
   signal: AbortSignal,
+  timeoutMs: number,
 ): Promise<EmbedResult> {
   const url = `${config.baseUrl}/embeddings`;
   const body = JSON.stringify({ input, model: config.model });
@@ -182,8 +206,8 @@ async function callEmbeddingsEndpoint(
     // Name the deadline the way the replaced `withTimeout` did — "aborted due
     // to timeout" tells a reader nothing about which call gave up or when.
     if (err instanceof Error && err.name === "TimeoutError") {
-      throw new Error(
-        `embeddings.request timed out after ${EMBEDDING_REQUEST_TIMEOUT_MS / 1000}s`,
+      throw new EmbeddingTimeoutError(
+        `embeddings.request timed out after ${formatSeconds(timeoutMs)}`,
         { cause: err },
       );
     }

@@ -228,7 +228,20 @@ export interface ProtocolDiscoveryRetrievalMeta {
   embeddingDim?: number;
   /** Number of candidates before scoring (post env/advertised/lifecycle filters). */
   candidateCount: number;
+  /**
+   * Present (and true) only when dense retrieval failed and the rows are a
+   * lexical fallback: keyword overlap, not semantic ranking. Model-facing, so a
+   * weak keyword match is never presented as a confident one.
+   */
+  lowConfidence?: true;
+  /**
+   * Why dense retrieval failed: the embedding call ran out of time, errored,
+   * or returned no usable rows. Telemetry-only.
+   */
+  denseFailureReason?: DenseFailureReason;
 }
+
+export type DenseFailureReason = "timeout" | "error" | "no_rows";
 
 /**
  * Model-facing projection of {@link ProtocolDiscoveryRetrievalMeta}: the same
@@ -239,7 +252,7 @@ export interface ProtocolDiscoveryRetrievalMeta {
  */
 export type ProtocolDiscoveryModelRetrievalMeta = Omit<
   ProtocolDiscoveryRetrievalMeta,
-  "embeddingModel" | "embeddingDim"
+  "embeddingModel" | "embeddingDim" | "denseFailureReason"
 >;
 
 export interface ProtocolDiscoveryResult {

@@ -83,6 +83,15 @@ export const MAX_DISCOVERY_LIMIT = 20;
  */
 export const MAX_SELECT_TOOL_NAMES = 40;
 
+/**
+ * Said whenever ranked rows are a lexical fallback for a failed dense attempt
+ * (`retrieval.lowConfidence`). Keyword overlap is a weaker signal than the
+ * semantic ranking the model normally gets, and it must not read as certain.
+ */
+export const LOW_CONFIDENCE_WARNING =
+  "Semantic search was unavailable, so these rows are keyword matches only and are LOWER CONFIDENCE. "
+  + "Check that a tool's summary fits the task before calling it.";
+
 /** The manifest's required param keys, in declaration order. */
 function requiredParamKeys(manifest: ProtocolToolManifest): string[] {
   return manifest.params.filter((param) => param.required === true).map((param) => param.key);
@@ -462,6 +471,9 @@ export async function discoverProtocolCapabilities(
   const warnings: string[] = [];
   if (tools.length === 0) {
     warnings.push("No protocol capabilities matched the query/filter.");
+  }
+  if (retrievalMeta.lowConfidence === true && tools.length > 0) {
+    warnings.push(LOW_CONFIDENCE_WARNING);
   }
   if (scoredTools.length > tools.length) {
     // A2 (live test 2026-09-03): this warning used to say only "Increase limit

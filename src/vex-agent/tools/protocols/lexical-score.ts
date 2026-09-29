@@ -5,6 +5,7 @@ import {
 } from "./descriptions.js";
 import { compileToolDiscoveryMetadata } from "./metadata-compile.js";
 import type {
+  DenseFailureReason,
   ProtocolDiscoveryRetrievalMeta,
   ProtocolToolManifest,
   ToolDiscoveryMetadata,
@@ -181,10 +182,12 @@ export function lexicalScore(
   candidates: ProtocolToolManifest[],
   options?: {
     denseFailed?: boolean;
+    denseFailureReason?: DenseFailureReason;
     embeddingModel?: string;
     embeddingDim?: number;
   },
 ): DiscoveryScoreOutcome {
+  const denseFailed = options?.denseFailed ?? false;
   const scored = candidates
     .map((manifest): ScoredManifest => ({ manifest, ...scoreManifest(manifest, query) }))
     .filter((entry) => entry.score > 0)
@@ -194,10 +197,16 @@ export function lexicalScore(
     scored,
     meta: {
       method: "lexical",
-      denseFailed: options?.denseFailed ?? false,
+      denseFailed,
       embeddingModel: options?.embeddingModel,
       embeddingDim: options?.embeddingDim,
       candidateCount: candidates.length,
+      // A fallback for a failed dense attempt is keyword overlap standing in
+      // for semantic ranking: say so, rather than let it read as certain.
+      ...(denseFailed ? { lowConfidence: true as const } : {}),
+      ...(denseFailed && options?.denseFailureReason !== undefined
+        ? { denseFailureReason: options.denseFailureReason }
+        : {}),
     },
   };
 }
