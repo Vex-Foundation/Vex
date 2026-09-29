@@ -273,7 +273,7 @@ async function finalizeConfirmed(
   // `_explorerRefs`, both model-invisible.
   return {
     success: true,
-    output: JSON.stringify(formatWalletSendOutput(outcome.txHash, outcome.data), null, 2),
+    output: JSON.stringify(formatWalletSendOutput(outcome.txHash, outcome.data)),
     data: outcome.data,
   };
 }

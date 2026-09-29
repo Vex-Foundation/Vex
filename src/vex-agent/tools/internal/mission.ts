@@ -121,7 +121,7 @@ export async function handleMissionDraftUpdate(
 
   return {
     success: true,
-    output: JSON.stringify(outputPayload, null, 2),
+    output: JSON.stringify(outputPayload),
     data: {
       missionId: result.missionId,
       status: result.status,

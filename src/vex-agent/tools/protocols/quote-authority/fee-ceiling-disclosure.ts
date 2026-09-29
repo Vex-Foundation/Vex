@@ -14,7 +14,7 @@ export function withApprovedGasFees(result: ToolResult, plan: BoundDebitPlan): T
   return {
     ...result,
     output: typeof payload === "object" && payload !== null && !Array.isArray(payload)
-      ? JSON.stringify({ ...payload, approvedGasFees }, null, 2)
+      ? JSON.stringify({ ...payload, approvedGasFees })
       : `${result.output}\nApproved gas fee ceilings: ${JSON.stringify(approvedGasFees)}`,
     data: { ...result.data, approvedGasFees },
   };
