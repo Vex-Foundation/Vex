@@ -19,6 +19,7 @@ import {
   parseAgentEnv,
   parseAgentDbBoundsEnv,
   parseAgentStreamBoundsEnv,
+  parseAuxReasoningEffortEnv,
   type AgentStreamBounds,
 } from "../../lib/agent-config.js";
 import logger from "@utils/logger.js";
@@ -114,6 +115,11 @@ export function loadEnvConfig(): EnvConfig {
       errors.push(`${e.key}="${e.raw}" is invalid. Must be a number`);
     }
   }
+
+  // Background-call reasoning effort (E-1). Read per call by
+  // `reasoning-effort.ts`; validated here so a typo fails startup loudly.
+  const auxEffortParse = parseAuxReasoningEffortEnv(process.env);
+  if (auxEffortParse.error !== null) errors.push(auxEffortParse.error);
 
   if (errors.length > 0) {
     for (const err of errors) {

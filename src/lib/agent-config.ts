@@ -205,6 +205,59 @@ export interface AgentDbBounds {
   readonly controlPoolMax: number;
 }
 
+// ── Kairos background-call reasoning effort (Phase 5, E-1) ──────
+//
+// The reasoning effort sent by background model calls (compaction summary and
+// chunker, memory judge, entity extraction, regime worker). An enum, not a
+// number, so it has its own parser.
+//
+//   lowest   (default) the lowest effort the model accepts: `none` where the
+//            model allows reasoning off, else its lowest positive effort,
+//            `low` when the supported set is unknown.
+//   provider send no effort; the provider's model default applies (the
+//            behaviour before this field existed).
+//   <effort> that effort, clamped down to what the model supports.
+
+export const AUX_REASONING_EFFORT_KEY = "AUX_REASONING_EFFORT";
+
+export const AUX_REASONING_EFFORT_OPTIONS = [
+  "lowest",
+  "provider",
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
+
+export type AuxReasoningEffortSetting = (typeof AUX_REASONING_EFFORT_OPTIONS)[number];
+
+export const AUX_REASONING_EFFORT_DEFAULT: AuxReasoningEffortSetting = "lowest";
+
+function isAuxReasoningEffortSetting(value: string): value is AuxReasoningEffortSetting {
+  return (AUX_REASONING_EFFORT_OPTIONS as readonly string[]).includes(value);
+}
+
+/**
+ * Parse `AUX_REASONING_EFFORT`. Blank = default; an unknown value is reported
+ * in `error` and the default applies. Case-insensitive.
+ */
+export function parseAuxReasoningEffortEnv(env: EnvLike): {
+  readonly value: AuxReasoningEffortSetting;
+  readonly error: string | null;
+} {
+  const raw = env[AUX_REASONING_EFFORT_KEY];
+  const trimmed = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (trimmed.length === 0) return { value: AUX_REASONING_EFFORT_DEFAULT, error: null };
+  if (isAuxReasoningEffortSetting(trimmed)) return { value: trimmed, error: null };
+  return {
+    value: AUX_REASONING_EFFORT_DEFAULT,
+    error: `${AUX_REASONING_EFFORT_KEY}=${JSON.stringify(trimmed)} is invalid. Must be one of: ${AUX_REASONING_EFFORT_OPTIONS.join(", ")}`,
+  };
+}
+
 export interface ParseError {
   readonly key: string;
   readonly raw: string;

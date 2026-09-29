@@ -13,6 +13,7 @@ import type { OpenRouter } from "@openrouter/sdk";
 import type { InferenceConfig } from "../types.js";
 import { resolveEffectiveContextLimit } from "../context-window.js";
 import { parseModelMaxCompletionTokens } from "./answer-headroom.js";
+import { normalizeReasoningSupport } from "../reasoning-effort.js";
 import logger from "@utils/logger.js";
 import { extractCauseCode } from "../../../lib/error-cause.js";
 import type { AgentStreamBounds } from "../../../lib/agent-config.js";
@@ -113,6 +114,8 @@ interface CatalogModelRow {
       }
     | undefined;
   readonly supportedParameters?: unknown;
+  /** Reasoning capability block; untrusted, normalized in `reasoning-effort.ts`. */
+  readonly reasoning?: unknown;
   /** Top provider's limits; untrusted, validated in `answer-headroom.ts`. */
   readonly topProvider?: { readonly maxCompletionTokens?: unknown } | undefined;
 }
@@ -208,6 +211,10 @@ export async function fetchModelInferenceConfig(
     supportedParameters.includes("reasoning") ||
     supportedParameters.includes("reasoning_effort");
 
+  // Which efforts the model accepts (E-1 clamp). Unknown stays `null`, and a
+  // clamp against an unknown set leaves the request unchanged.
+  const reasoningSupport = normalizeReasoningSupport(found.reasoning);
+
   // Effective context limit = min(configured, the model's REAL window). The
   // configured value is an operator throttle; the catalog row is the only
   // place the provider's actual window is known. Unknown/implausible window ⇒
@@ -263,6 +270,7 @@ export async function fetchModelInferenceConfig(
       cacheWritePricePerM,
       reasoningPricePerM,
       supportsReasoningEffort,
+      reasoningSupport,
     },
   };
 }

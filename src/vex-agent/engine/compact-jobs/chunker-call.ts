@@ -26,6 +26,7 @@ import {
   renderRedactedArchivedTranscript,
   type ArchivedPrefixRow,
 } from "./archived-prefix.js";
+import { withAuxReasoningEffort } from "@vex-agent/inference/reasoning-effort.js";
 
 export const ChunkerOutputSchema = z.object({
   chunks: z.array(
@@ -146,7 +147,8 @@ export async function callChunkerLLM(
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      config,
+      // Background call: the aux reasoning effort (E-1), never the chat pick.
+      withAuxReasoningEffort(config),
       undefined,
       timeoutSignal,
     );

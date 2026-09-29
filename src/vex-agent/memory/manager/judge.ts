@@ -34,6 +34,7 @@ import type { InferenceConfig } from "@vex-agent/inference/types.js";
 import { buildJudgeSystemPrompt, buildJudgeUserPrompt } from "./judge-prompt.js";
 import { judgeVerdictSchema, type JudgeVerdict } from "./judge-schema.js";
 import type { JudgeContext } from "./context-builder.js";
+import { withAuxReasoningEffort } from "@vex-agent/inference/reasoning-effort.js";
 
 /**
  * The provider surface the judge needs — a structural supertype of
@@ -139,7 +140,8 @@ export async function callJudge(
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      config,
+      // Background call: the aux reasoning effort (E-1), never the chat pick.
+      withAuxReasoningEffort(config),
       undefined,
       timeoutSignal,
     );

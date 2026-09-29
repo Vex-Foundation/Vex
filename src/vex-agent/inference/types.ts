@@ -28,6 +28,15 @@ export type ReasoningEffort =
   | "max";
 
 /**
+ * The efforts a model accepts, from the `/models` catalog's `reasoning` block
+ * (normalized in `reasoning-effort.ts`). `none` is a member exactly when the
+ * model allows reasoning to be switched off.
+ */
+export interface ReasoningEffortSupport {
+  readonly efforts: readonly ReasoningEffort[];
+}
+
+/**
  * One routable endpoint of the configured model, as the failover ranker needs
  * it. This is the PRODUCER CONTRACT between the app's endpoint catalogue (which
  * lives in the Electron main process and may not be imported here — the
@@ -152,6 +161,12 @@ export interface InferenceConfig {
    * `reasoning.effort` value at all; independent of `reasoningPricePerM`.
    */
   supportsReasoningEffort: boolean;
+  /**
+   * The model's supported effort set, when the catalog reports one. `null` or
+   * absent means unknown: a clamp then leaves the requested effort unchanged.
+   * Only read by `reasoning-effort.ts` (mission clamp, background-call effort).
+   */
+  reasoningSupport?: ReasoningEffortSupport | null;
   /**
    * Per-TURN reasoning effort requested by the operator (S6/D6). NEVER set
    * by `loadConfig()` — the engine entry point stamps it onto its
