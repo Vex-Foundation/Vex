@@ -262,7 +262,7 @@ export async function executeKhalaniBridge(
         tokenMetadata: tokenIdentity,
         vexFee,
         nativeCost: nativeCostPreview(nativeCost, plannedLegs === null),
-      }, null, 2),
+      }),
     };
   }
 
