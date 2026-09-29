@@ -11,6 +11,10 @@
  *     instructions, append `[Engine: continue ...]` marker message
  *     via `appendEngineMessage`, push the marker into `liveMessages`,
  *     signal `mission_run_continue` so the caller continues the loop.
+ *     The marker is written only when the tape does not already end in
+ *     one followed by nothing but text-only assistant rows (see
+ *     `tailAlreadyCarriesContinueCue`), so consecutive text replies leave
+ *     ONE marker instead of one per reply. The loop continues either way.
  *   - Mission SETUP (`sessionKind=mission` but no `missionRunId`) and
  *     chat: text ends the loop cleanly. Signal `break_on_text` so
  *     the caller sets `stoppedOnText = true` and breaks.
@@ -30,6 +34,10 @@ import {
   clearPendingPresentation,
   consumePendingPresentation,
 } from "./board-presentation.js";
+
+/** The persisted system cue that keeps an active mission run going after text. */
+export const MISSION_CONTINUE_CUE =
+  "[Engine: continue - no stop condition met. Proceed with next action.]";
 
 export type TextResponseOutcome =
   | { kind: "mission_run_continue" }
@@ -59,23 +67,50 @@ export async function handleTextResponse(args: {
   if (args.context.missionRunId) {
     await args.mergeOperatorInstructions();
 
-    await appendEngineMessage(
-      args.context.sessionId,
-      "[Engine: continue - no stop condition met. Proceed with next action.]",
-      { source: "engine", messageType: "continue", visibility: "internal" },
-    );
+    // One cue per run of consecutive text replies: every append would
+    // otherwise be re-sent on every later round. The tape is only ever
+    // appended to (never rewritten), so the cached prompt prefix stays
+    // stable and the persisted rows match the live tape.
+    if (!tailAlreadyCarriesContinueCue(args.liveMessages)) {
+      await appendEngineMessage(
+        args.context.sessionId,
+        MISSION_CONTINUE_CUE,
+        { source: "engine", messageType: "continue", visibility: "internal" },
+      );
 
-    args.liveMessages.push({
-      role: "system",
-      content: "[Engine: continue - no stop condition met. Proceed with next action.]",
-      timestamp: new Date().toISOString(),
-    });
+      args.liveMessages.push({
+        role: "system",
+        content: MISSION_CONTINUE_CUE,
+        timestamp: new Date().toISOString(),
+      });
+    }
 
     return { kind: "mission_run_continue" };
   }
 
   // Chat and mission setup: text ends the loop cleanly.
   return { kind: "break_on_text" };
+}
+
+/**
+ * True when the most recent row that is not a text-only assistant reply is
+ * already the continue cue: the model has been told to continue and has only
+ * answered in prose since, so another cue would add nothing but tokens.
+ *
+ * Anything else in between (a tool call or result, an operator instruction,
+ * an approval or correction cue, a user message) means the cue is no longer
+ * the latest thing the model was told, and a fresh one is written.
+ */
+export function tailAlreadyCarriesContinueCue(messages: readonly Message[]): boolean {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const row = messages[i];
+    if (row === undefined) return false;
+    if (row.role === "assistant" && (row.toolCalls === undefined || row.toolCalls.length === 0)) {
+      continue;
+    }
+    return row.role === "system" && row.content === MISSION_CONTINUE_CUE;
+  }
+  return false;
 }
 
 /**

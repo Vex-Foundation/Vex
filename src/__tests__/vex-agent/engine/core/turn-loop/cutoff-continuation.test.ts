@@ -778,7 +778,9 @@ describe("turn loop cut-off answer continuation (R-9)", () => {
     const continueMarkers = mockAddEngineMessage.mock.calls.filter(
       (c: unknown[]) => isRecord(c[2]) && c[2]["messageType"] === "continue",
     );
-    expect(continueMarkers).toHaveLength(2);
+    // Two consecutive text replies share ONE marker: the second finds the tape
+    // already ending in the cue followed only by prose, so it adds none.
+    expect(continueMarkers).toHaveLength(1);
   });
 
   it("a turn that ends before the continuation still saves the fragment, marked", async () => {
