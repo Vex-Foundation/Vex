@@ -73,6 +73,8 @@ import {
 } from "@vex-agent/db/repos/runtime-timings.js";
 import { classifyInferenceError } from "@vex-agent/inference/attempt-timing.js";
 import { withPersistTiming } from "./turn-loop/persist-timing.js";
+import { createReasoningReplayStore } from "./turn-loop/reasoning-replay-store.js";
+import { REASONING_REPLAY_ENABLED } from "@vex-agent/inference/openrouter/reasoning-replay.js";
 
 // Per-iteration helpers (pure async; thread state explicitly through args/returns):
 import { runCriticalBandStep } from "./turn-loop/critical-band-step.js";
@@ -282,6 +284,10 @@ async function runTurnLoopBody(
   // one-shot turn-state note plus, where safe, lower effort for that call
   // only. See `runner/stall-recovery.ts`.
   const stallRecovery = createStallRecoveryTracker(STALL_RECOVERY_ENABLED);
+  // Provider reasoning handed back within THIS run's tool loop (Kairos R-7).
+  // Memory only and scoped to this loop; switched off it records nothing and
+  // leaves every envelope untouched. See `turn-loop/reasoning-replay-store.ts`.
+  const reasoningReplay = createReasoningReplayStore(REASONING_REPLAY_ENABLED);
   // A text answer the output limit cut short, held back (not persisted) while
   // ONE continuation call finishes it. See `runner/cutoff-continuation.ts`.
   let cutoff: CutOffAnswer | null = null;
@@ -541,9 +547,23 @@ async function runTurnLoopBody(
 
     // Build the request envelope ONCE, here, so the ceiling below measures the
     // object that is then sent (see the module header — it is not reproducible).
-    const envelope = buildTurnEnvelope(
-      context, callMessages, currentSummary, callPromptOptions,
+    // R-7: replays are attached BEFORE the ceiling, so it measures the bytes
+    // that are actually sent. Switched off, this is the built envelope itself.
+    const replayAttach = reasoningReplay.attach(
+      buildTurnEnvelope(context, callMessages, currentSummary, callPromptOptions),
+      callConfig.model,
     );
+    const envelope = replayAttach.envelope;
+    if (replayAttach.attachedMessages > 0) {
+      // Counts only; the payload itself is never logged.
+      logger.info("engine.turn.reasoning_replay", {
+        sessionId: context.sessionId,
+        missionRunId: context.missionRunId ?? null,
+        iteration,
+        attachedMessages: replayAttach.attachedMessages,
+        attachedBytes: replayAttach.attachedBytes,
+      });
+    }
 
     // ── Pre-inference byte ceiling (C8) ─────────────────────────────
     // Runs only while the barrier is bypassed. On a breach the request is
@@ -618,6 +638,12 @@ async function runTurnLoopBody(
     if (turnResult.timedOut === null || turnResult.usageObserved) {
       currentTokenCount = turnResult.promptTokens;
     }
+    reasoningReplay.observeRound({
+      model: callConfig.model,
+      toolCalls: turnResult.toolCalls,
+      reasoningReplay: turnResult.reasoningReplay,
+      servingProvider: turnResult.servingProvider,
+    });
     observeBand(currentTokenCount, "post_turn_text");
 
     // Stop-during-inference (9-5a): the consumer CAPTURED the abort at stream

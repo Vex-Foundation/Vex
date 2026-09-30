@@ -15,6 +15,7 @@ import type {
   InferenceProvider,
   InferenceConfig,
   ParsedToolCall,
+  ReasoningReplayPayload,
   ToolDefinition,
 } from "@vex-agent/inference/types.js";
 import {
@@ -129,6 +130,19 @@ export interface SingleTurnResult {
    */
   streamId: string;
   nextStreamSequence: number;
+  /**
+   * Upstream provider that served this round (routing provenance), or `null`
+   * when unreported. Read by the reasoning-replay store (Kairos R-7), which
+   * never replays across a provider switch.
+   */
+  servingProvider?: string | null;
+  /**
+   * Opaque replayable reasoning for this round's tool calls (Kairos R-7).
+   * Present only when replay is switched on for the model's family. Memory
+   * only: the turn loop's replay store holds it for the rest of the run; it is
+   * never saved with the assistant row.
+   */
+  reasoningReplay?: ReasoningReplayPayload | null;
 }
 
 /**
@@ -303,6 +317,8 @@ export async function executeTurn(
     usageObserved,
     streamId,
     nextStreamSequence: lastSequence + 1,
+    servingProvider: response.servingProvider ?? null,
+    ...(response.reasoningReplay != null && { reasoningReplay: response.reasoningReplay }),
   };
 }
 
