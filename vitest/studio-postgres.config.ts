@@ -73,6 +73,10 @@ export default defineConfig({
       // The atomic mission wake claim + stuck-wake repair: crash, concurrency
       // and lock proofs that need real transactions, not embeddings.
       "src/__tests__/integration/engine/mission-wake-claim.int.test.ts",
+      // Kairos S-3: the concurrent wake pool through the real claims, leases
+      // and wallet lookup (prompt starts, exactly once, session and wallet
+      // exclusion).
+      "src/__tests__/integration/engine/wake-concurrency.int.test.ts",
       // vex-app's live-Postgres tests. They live with the composition they
       // drive; only this lane starts a database for them.
       "vex-app/src/main/**/__tests__/*.int.test.ts",
