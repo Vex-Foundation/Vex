@@ -269,6 +269,8 @@ interface Envelope {
   partial?: boolean;
   partialNote?: string;
   wallets: Snapshot[];
+  /** The rest of the tool's answer; this suite reads only the fields above. */
+  [field: string]: unknown;
 }
 
 async function run(
