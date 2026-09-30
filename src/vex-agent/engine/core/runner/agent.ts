@@ -15,6 +15,8 @@ import type {
   ReasoningEffort,
 } from "@vex-agent/inference/types.js";
 import { hydrateEngineSession } from "../hydrate.js";
+import * as sessionEffortRepo from "@vex-agent/db/repos/session-reasoning-effort.js";
+import { clampReasoningEffort } from "@vex-agent/inference/reasoning-effort.js";
 import type { TurnLoopConfig } from "../turn-loop.js";
 import { runTurnLoop } from "../turn-loop.js";
 import { getOpenAITools, type ToolVisibilityBase } from "@vex-agent/tools/registry.js";
@@ -35,6 +37,38 @@ import {
   registerSessionSliceAbortController,
   unregisterSessionSliceAbortController,
 } from "../../runtime/session-slice-abort.js";
+
+// ── Session reasoning effort (E-1) ──────────────────────────────
+
+/**
+ * The config a turn runs with. A turn that carries its own pick (an
+ * interactive chat turn) keeps it. A turn without one (wake continuation,
+ * approval or form resume) inherits the session's persisted pick, clamped to
+ * what the current model supports in case the model changed since the pick.
+ * A session that never picked keeps sending no effort (provider default).
+ */
+export async function withSessionReasoningEffort(
+  config: InferenceConfig,
+  sessionId: string,
+): Promise<InferenceConfig> {
+  if (config.reasoningEffort !== undefined) return config;
+  // Best-effort: a preference read must never fail the turn. On a failed read
+  // the turn runs exactly as it did before this column existed.
+  let persisted: ReasoningEffort | null = null;
+  try {
+    persisted = await sessionEffortRepo.getSessionReasoningEffort(sessionId);
+  } catch (cause) {
+    logger.warn("engine.agent.session_reasoning_effort_read_failed", {
+      sessionId,
+      error: cause instanceof Error ? cause.message : String(cause),
+    });
+  }
+  if (persisted === null) return config;
+  return {
+    ...config,
+    reasoningEffort: clampReasoningEffort(persisted, config.reasoningSupport),
+  };
+}
 
 // ── processAgentTurn ────────────────────────────────────────────
 
@@ -109,6 +143,13 @@ export async function processAgentTurn(
   });
 
   try {
+    // Persist the operator's pick (E-1, migration 174) so the turns nobody
+    // types in this session (wake continuations, approval and form resumes)
+    // run at the same effort instead of the provider default.
+    if (options?.reasoningEffort !== undefined) {
+      await sessionEffortRepo.setSessionReasoningEffort(sessionId, options.reasoningEffort);
+    }
+
     // Save user message (FIRST state mutation, under lease)
     await appendMessage(
       sessionId,
@@ -423,7 +464,7 @@ export async function runAgentTurnUnderLease(
     hydrated.summary,
     hydrated.tokenCount,
     provider,
-    config,
+    await withSessionReasoningEffort(config, sessionId),
     tools,
     loopConfig,
     {}, // promptOptions

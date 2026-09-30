@@ -67,6 +67,8 @@ export default defineConfig({
       "src/__tests__/integration/migrations/096-wallet-wrap-intents.int.test.ts",
       // The snapshot group record: applied as an increment on a schema at 100.
       "src/__tests__/integration/migrations/101-portfolio-snapshot-groups.int.test.ts",
+      // Kairos E-1: 174 applied on top of a populated 173 schema.
+      "src/__tests__/integration/migrations/174-sessions-reasoning-effort.int.test.ts",
       "src/__tests__/integration/engine/studio-*.int.test.ts",
       // The atomic mission wake claim + stuck-wake repair: crash, concurrency
       // and lock proofs that need real transactions, not embeddings.
