@@ -5,11 +5,8 @@ import {
   isAdvertisedProtocolNamespace,
   isKnownProtocolNamespace,
 } from "./catalog.js";
-import {
-  MAX_DISCOVERED_TOOLS_PER_SESSION,
-  getDiscoveredToolIds,
-  recordDiscoveredTools,
-} from "../registry/discovered-tools.js";
+import { discoveredToolCapacity } from "../registry/discovered-tools.js";
+import { DISCOVERED_TOOL_LRU_CAP } from "../registry/discovery-policy.js";
 import { buildDiscoverNamespaceDescription } from "./descriptions.js";
 import { denseScore } from "./dense-score.js";
 import { lexicalScore } from "./lexical-score.js";
@@ -341,13 +338,21 @@ function resolveRequestedNamespace(
  * as-is rather than dropped: a warning about a vanished tool must not itself
  * vanish.
  */
-export function buildDisplacementWarning(displaced: readonly string[]): string | null {
+export function buildDisplacementWarning(
+  displaced: readonly string[],
+  lruCap: number | null = DISCOVERED_TOOL_LRU_CAP,
+): string | null {
   if (displaced.length === 0) return null;
   const names = displaced.map((id) => getProtocolManifest(id)?.publicName ?? id);
+  // The retention rule is stated as it runs: FIFO keeps the most recently
+  // DISCOVERED, the P-3 LRU policy keeps the most recently USED. The FIFO
+  // sentence is the pre-P-3 text, unchanged.
+  const kept = lruCap === null
+    ? `the most recent ${discoveredToolCapacity(lruCap)} discovered tools`
+    : `the ${discoveredToolCapacity(lruCap)} most recently used discovered tools`;
   return (
     `${names.map((name) => `"${name}"`).join(", ")} ${displaced.length === 1 ? "is" : "are"} `
-    + "no longer callable by name - this session keeps the most recent "
-    + `${MAX_DISCOVERED_TOOLS_PER_SESSION} discovered tools. Search for or select them again if `
+    + `no longer callable by name - this session keeps ${kept}. Search for or select them again if `
     + "you still need them."
   );
 }

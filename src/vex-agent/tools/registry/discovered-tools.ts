@@ -17,7 +17,15 @@
  *     discovered evicted first). Re-discovering an id refreshes its position.
  *   - globally: `MAX_TRACKED_SESSIONS` sessions, least-recently-updated
  *     evicted first, so an abandoned session cannot linger forever.
+ *
+ * P-3 (Kairos Phase 6) adds an OPTIONAL per-session policy behind
+ * `DISCOVERED_TOOL_LRU_CAP` (`./discovery-policy.ts`): least recently USED
+ * first, pins for pending approvals and prepared actions, and a soft cap that
+ * never displaces the round being recorded. With the switch off (`null`) the
+ * FIFO path above is the only path that runs.
  */
+
+import { DISCOVERED_TOOL_LRU_CAP } from "./discovery-policy.js";
 
 /**
  * How many discovered toolIds stay injected - and therefore callable by name -
@@ -54,8 +62,50 @@ export const MAX_DISCOVERED_TOOLS_PER_SESSION = 40;
 /** Memory-bounding guard on tracked sessions - a dropped entry just re-fails-closed to "nothing discovered". */
 const MAX_TRACKED_SESSIONS = 10_000;
 
+/**
+ * How long a pin taken by a pending approval or a prepared action protects a
+ * tool from P-3 displacement. Equal to the approval queue TTL
+ * (`engine/core/approval-runtime/enqueue.ts` `APPROVAL_TTL_MS`, one hour; a test
+ * pins the equality): after it the approval has expired and the pin has nothing
+ * left to protect.
+ */
+export const DISCOVERED_TOOL_PIN_TTL_MS = 60 * 60 * 1000;
+
 /** sessionId → discovered toolIds, oldest first. Map iteration order doubles as the session LRU. */
 const discoveredBySession = new Map<string, string[]>();
+
+/**
+ * P-3 bookkeeping, per session. Read ONLY when the LRU switch is on, so the
+ * FIFO path's behaviour cannot depend on it. `lastUse` is a monotonic tick
+ * (discovery and every injected-lane call refresh it); `pins` maps a toolId to
+ * the wall-clock ms its protection lapses.
+ */
+interface SessionUseState {
+  readonly lastUse: Map<string, number>;
+  readonly pins: Map<string, number>;
+}
+const useBySession = new Map<string, SessionUseState>();
+let useTick = 0;
+
+function useState(sessionId: string): SessionUseState {
+  let state = useBySession.get(sessionId);
+  if (!state) {
+    state = { lastUse: new Map(), pins: new Map() };
+    useBySession.set(sessionId, state);
+  }
+  return state;
+}
+
+/**
+ * The cap a caller should STATE to the model: the P-3 LRU cap when that switch
+ * is on, else `MAX_DISCOVERED_TOOLS_PER_SESSION`. One owner, so the displacement
+ * sentence, the unknown-tool refusal and select's `sessionCapacity` agree.
+ */
+export function discoveredToolCapacity(
+  lruCap: number | null = DISCOVERED_TOOL_LRU_CAP,
+): number {
+  return lruCap ?? MAX_DISCOVERED_TOOLS_PER_SESSION;
+}
 
 /**
  * Record toolIds a `ToolSearch` or its select list call just returned for
@@ -69,25 +119,109 @@ const discoveredBySession = new Map<string, string[]>();
  * meant a tool the model had been told was callable simply stopped being
  * callable with no signal; its select list names them back to the agent
  * (owner decree: nothing is ever silently dropped).
+ *
+ * `lruCap` is the P-3 switch (`discovery-policy.ts`); `null` runs the FIFO
+ * path below unchanged.
  */
 export function recordDiscoveredTools(
   sessionId: string | undefined,
   toolIds: readonly string[],
+  lruCap: number | null = DISCOVERED_TOOL_LRU_CAP,
 ): string[] {
   if (sessionId === undefined || toolIds.length === 0) return [];
 
   const existing = discoveredBySession.get(sessionId) ?? [];
   const fresh = new Set(toolIds);
   const next = [...existing.filter((id) => !fresh.has(id)), ...toolIds];
-  const overflow = next.length - MAX_DISCOVERED_TOOLS_PER_SESSION;
-  const displaced = overflow > 0 ? next.slice(0, overflow) : [];
-  const bounded = overflow > 0 ? next.slice(overflow) : next;
+  const { bounded, displaced } = lruCap === null
+    ? boundFifo(next)
+    : boundLru(sessionId, next, fresh, lruCap);
 
   // Delete-then-set keeps Map insertion order as a true LRU for the session cap.
   discoveredBySession.delete(sessionId);
   discoveredBySession.set(sessionId, bounded);
   boundTrackedSessions();
   return displaced;
+}
+
+/** The pre-P-3 policy, byte for byte: drop the oldest-discovered overflow. */
+function boundFifo(next: string[]): { bounded: string[]; displaced: string[] } {
+  const overflow = next.length - MAX_DISCOVERED_TOOLS_PER_SESSION;
+  const displaced = overflow > 0 ? next.slice(0, overflow) : [];
+  const bounded = overflow > 0 ? next.slice(overflow) : next;
+  return { bounded, displaced };
+}
+
+/**
+ * P-3: displace the least recently USED tools until the set fits `cap`, never
+ * touching (a) a toolId of the round being recorded, or (b) a toolId pinned by
+ * a pending approval / prepared action whose pin has not lapsed. When only
+ * protected tools remain the set stays ABOVE the cap: a soft cap is the price
+ * of never taking back a row the model was just shown, or a tool an approval
+ * still references.
+ *
+ * The kept order is the discovery order (`next`), not the use order, so the
+ * injected tools array does not reshuffle on every call (a reorder would churn
+ * a provider's prefix cache for nothing).
+ */
+function boundLru(
+  sessionId: string,
+  next: string[],
+  fresh: ReadonlySet<string>,
+  cap: number,
+): { bounded: string[]; displaced: string[] } {
+  const state = useState(sessionId);
+  for (const id of fresh) state.lastUse.set(id, ++useTick);
+
+  const overflow = next.length - cap;
+  if (overflow <= 0) return { bounded: next, displaced: [] };
+
+  const now = Date.now();
+  const evictable = next
+    .filter((id) => !fresh.has(id) && !isPinned(state, id, now))
+    // Stable: equal ticks (never recorded as used) keep discovery order.
+    .map((id, order) => ({ id, order, tick: state.lastUse.get(id) ?? 0 }))
+    .sort((a, b) => a.tick - b.tick || a.order - b.order);
+  const displaced = evictable.slice(0, overflow).map((entry) => entry.id);
+  const gone = new Set(displaced);
+  for (const id of displaced) state.lastUse.delete(id);
+  return { bounded: next.filter((id) => !gone.has(id)), displaced };
+}
+
+function isPinned(state: SessionUseState, toolId: string, now: number): boolean {
+  const until = state.pins.get(toolId);
+  if (until === undefined) return false;
+  if (until > now) return true;
+  state.pins.delete(toolId);
+  return false;
+}
+
+/**
+ * P-3 "LRU by USE": a call through the injected lane refreshes the tool's
+ * recency. Only the LRU path reads it; a toolId the session never recorded is
+ * ignored, so this can never ADD a tool to the working set.
+ */
+export function touchDiscoveredTool(sessionId: string | undefined, toolId: string): void {
+  if (sessionId === undefined) return;
+  if (!(discoveredBySession.get(sessionId) ?? []).includes(toolId)) return;
+  useState(sessionId).lastUse.set(toolId, ++useTick);
+}
+
+/**
+ * Protect a tool from P-3 displacement while a pending approval or a prepared
+ * action references it. Taken by the injected lane when a call returns
+ * `pendingApproval` or a `preparedActionFollowUp`; lapses after
+ * `DISCOVERED_TOOL_PIN_TTL_MS` (or the prepared action's later expiry). A pin
+ * never makes a tool callable - admission still reads only the recorded set.
+ */
+export function pinDiscoveredTool(
+  sessionId: string | undefined,
+  toolId: string,
+  untilMs: number = Date.now() + DISCOVERED_TOOL_PIN_TTL_MS,
+): void {
+  if (sessionId === undefined) return;
+  const pins = useState(sessionId).pins;
+  pins.set(toolId, Math.max(untilMs, pins.get(toolId) ?? 0));
 }
 
 /** Discovered toolIds for this session, oldest first. Empty for an unknown/absent session. */
@@ -99,6 +233,7 @@ export function getDiscoveredToolIds(sessionId: string | undefined): readonly st
 /** Drop a session's discovered set - used by tests and by session teardown. */
 export function clearDiscoveredTools(sessionId: string): void {
   discoveredBySession.delete(sessionId);
+  useBySession.delete(sessionId);
 }
 
 function boundTrackedSessions(): void {
@@ -108,6 +243,7 @@ function boundTrackedSessions(): void {
   for (const sessionId of discoveredBySession.keys()) {
     if (dropped >= overflow) break;
     discoveredBySession.delete(sessionId);
+    useBySession.delete(sessionId);
     dropped += 1;
   }
 }
