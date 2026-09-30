@@ -63,11 +63,11 @@ free. Both texts live on the tool
 | ChainRead | Read raw EVM chain data | internal | yes | no | yes | - | 1326 | yes | none |
 | SwapExecute | Execute a token swap | internal | no | yes | yes | - | 2047 | yes | 25 bps |
 | SwapExecuteUniswap | Execute a Uniswap swap | internal | no | yes | yes | - | 2046 | yes | 25 bps |
-| SwapQuote | Quote a token swap | internal | yes | no | yes | - | 2046 | yes | none |
-| SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 1959 | yes | none |
+| SwapQuote | Quote a token swap | internal | yes | no | yes | - | 2019 | yes | none |
+| SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 2011 | yes | none |
 | TokenCheck | Check an EVM token for honeypot and tax | internal | yes | no | yes | - | 953 | yes | none |
 | TokenFind | Find a token's address and decimals | internal | yes | no | yes | - | 1956 | yes | none |
-| TwitterAccount | Read Twitter accounts and posts | internal | yes | no | yes | RETTIWT_API_KEY | 2039 | yes | none |
+| TwitterAccount | Read Twitter accounts and posts | internal | yes | no | yes | RETTIWT_API_KEY | 1901 | yes | none |
 | UnitsConvert | Convert token amounts and units | internal | yes | no | yes | - | 1393 | yes | none |
 | WalletBalances | Read wallet balances across chains | internal | yes | no | yes | - | 2032 | yes | none |
 | WalletEvmTransactionConfirm | Broadcast a prepared EVM transaction | internal | no | yes | yes | - | 2030 | yes | 25 bps |
