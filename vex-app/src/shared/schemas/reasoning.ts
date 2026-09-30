@@ -194,3 +194,27 @@ export function selectDefaultReasoningEffort(
       "normalizeReasoningCapability invariant violated",
   );
 }
+
+/**
+ * The effort a MISSION actually runs at on a model (Kairos E-1): the request
+ * itself when the model supports it, else the nearest HIGHER supported effort,
+ * else the model's highest. Mirrors the engine's `raiseReasoningEffort` so the
+ * contract card shows exactly what the run will send. A mission never thinks
+ * less than its contract asked for.
+ */
+export function missionRunReasoningEffort(
+  requested: ReasoningEffort,
+  capability: ReasoningCapability,
+): ReasoningEffort {
+  const supported = capability.supportedEfforts;
+  if (supported.length === 0 || supported.includes(requested)) return requested;
+  const rank = REASONING_EFFORT_VALUES.indexOf(requested);
+  let higher: ReasoningEffort | null = null;
+  let highest: ReasoningEffort | null = null;
+  for (const effort of supported) {
+    const r = REASONING_EFFORT_VALUES.indexOf(effort);
+    if (r > rank && (higher === null || r < REASONING_EFFORT_VALUES.indexOf(higher))) higher = effort;
+    if (highest === null || r > REASONING_EFFORT_VALUES.indexOf(highest)) highest = effort;
+  }
+  return higher ?? highest ?? requested;
+}

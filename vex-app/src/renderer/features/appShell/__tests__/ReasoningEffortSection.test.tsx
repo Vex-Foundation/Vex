@@ -1,7 +1,9 @@
 /**
  * Kairos E-1: the mission contract card's reasoning-effort field.
  *
- *   - An unset effort shows Medium, the default the run would use.
+ *   - An unset effort shows High, the default the run would use.
+ *   - When the current model lacks the chosen level, the card names the higher
+ *     level the run will actually use.
  *   - Picking and saving sends the effort through `mission.setReasoningEffort`,
  *     and the user is told that acceptance was cleared.
  *   - A started mission shows its effort but offers no editor: the run uses the
@@ -15,6 +17,7 @@ import type { ReactNode } from "react";
 import { createElement } from "react";
 
 import type { MissionConstraints } from "@shared/schemas/mission.js";
+import type { ReasoningCapability } from "@shared/schemas/reasoning.js";
 
 const { ReasoningEffortSection } = await import(
   "../MissionContractModal/ReasoningEffortSection.js"
@@ -42,7 +45,22 @@ afterEach(() => {
   Reflect.deleteProperty(window, "vex");
 });
 
-function renderSection(constraints: MissionConstraints = {}, editable = true): void {
+// The live deepseek-v4.1-flash catalog row: low, high, max, and off.
+const DEEPSEEK_FLASH = {
+  modelId: "deepseek/deepseek-v4.1-flash",
+  capability: {
+    supportedEfforts: ["max", "high", "low", "none"],
+    defaultEffort: "high",
+    defaultEnabled: true,
+    mandatory: false,
+  } satisfies ReasoningCapability,
+};
+
+function renderSection(
+  constraints: MissionConstraints = {},
+  editable = true,
+  model: typeof DEEPSEEK_FLASH | null = null,
+): void {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -54,6 +72,7 @@ function renderSection(constraints: MissionConstraints = {}, editable = true): v
       missionId={MISSION}
       constraints={constraints}
       editable={editable}
+      model={model}
     />,
     { wrapper },
   );
@@ -64,9 +83,21 @@ function storedLabel(): string | null {
 }
 
 describe("ReasoningEffortSection", () => {
-  it("shows Medium when the contract names no effort", () => {
+  it("shows High when the contract names no effort", () => {
     renderSection();
+    expect(storedLabel()).toBe("High");
+  });
+
+  it("names the higher level the run uses when the model lacks the chosen one", () => {
+    renderSection({ reasoningEffort: "medium" }, true, DEEPSEEK_FLASH);
     expect(storedLabel()).toBe("Medium");
+    const runs = document.querySelector('[data-vex-field="run-reasoning-effort"]')?.textContent ?? "";
+    expect(runs).toBe("runs as High on deepseek-v4.1-flash");
+  });
+
+  it("says nothing extra when the model supports the chosen level", () => {
+    renderSection({ reasoningEffort: "low" }, true, DEEPSEEK_FLASH);
+    expect(document.querySelector('[data-vex-field="run-reasoning-effort"]')).toBeNull();
   });
 
   it("shows the stored effort", () => {
