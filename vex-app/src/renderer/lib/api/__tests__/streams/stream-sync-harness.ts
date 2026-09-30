@@ -53,7 +53,7 @@ export function setupStreamEnv(): void {
   offDelta.mockReset();
   offAppend.mockReset();
   offControlState.mockReset();
-  useStreamStore.setState({ bySessionId: {} });
+  useStreamStore.setState({ bySessionId: {}, leaseBySessionId: {} });
   Object.defineProperty(window, "vex", {
     configurable: true,
     writable: true,

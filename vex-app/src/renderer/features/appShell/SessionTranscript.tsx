@@ -45,7 +45,10 @@ import {
   flattenTranscriptPages,
   useTranscriptInfinite,
 } from "../../lib/api/messages.js";
-import { useStreamPreview } from "../../stores/streamStore.js";
+import {
+  useSessionLeaseHeld,
+  useStreamPreview,
+} from "../../stores/streamStore.js";
 import { StreamingBubble } from "./StreamingBubble.js";
 import { findWorkingAgentEntryKey } from "./agentActivity.js";
 import {
@@ -85,6 +88,7 @@ export function SessionTranscript({
 }): JSX.Element {
   const query = useTranscriptInfinite(sessionId);
   const streamPreview = useStreamPreview(sessionId);
+  const leaseHeld = useSessionLeaseHeld(sessionId);
   const chatSubmitting = useIsChatSubmitting(sessionId);
 
   const pages = query.data?.pages;
@@ -165,7 +169,7 @@ export function SessionTranscript({
   const previewSig =
     preview === null
       ? null
-      : `${preview.streamId}:${preview.phase}:${preview.status}:${preview.toolName ?? ""}:${preview.text.length}:${preview.reasoningSegments.length}:${preview.reasoningText.length}`;
+      : `${preview.streamId}:${preview.phase}:${preview.status}:${preview.toolName ?? ""}:${preview.text.length}:${preview.reasoningSegments.length}:${preview.reasoningText.length}:${leaseHeld ? "lease" : ""}`;
 
   // The newest steering mark. A change is the reader's own words entering a
   // running turn, so the scroll model force-scrolls to it exactly as it does
@@ -276,6 +280,7 @@ export function SessionTranscript({
           <StreamingBubble
             preview={preview}
             awaitingApproval={hasPendingApproval}
+            leaseHeld={leaseHeld}
           />
         ) : null}
         </div>

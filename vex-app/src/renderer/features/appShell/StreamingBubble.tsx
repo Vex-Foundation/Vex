@@ -29,10 +29,13 @@ import { TurnIsland } from "./TurnIsland/index.js";
 export function StreamingBubble({
   preview,
   awaitingApproval = false,
+  leaseHeld = false,
 }: {
   readonly preview: StreamPreview;
   /** Pending approval in the active session — freezes the island (S5). */
   readonly awaitingApproval?: boolean;
+  /** The engine reported the session's runner lease as held (U-3 caption). */
+  readonly leaseHeld?: boolean;
 }): JSX.Element {
   const streaming = preview.phase === "streaming";
 
@@ -65,7 +68,11 @@ export function StreamingBubble({
       aria-busy={streaming}
       className="relative flex flex-col gap-2 pl-9"
     >
-      <TurnIsland preview={preview} awaitingApproval={awaitingApproval} />
+      <TurnIsland
+        preview={preview}
+        awaitingApproval={awaitingApproval}
+        leaseHeld={leaseHeld}
+      />
       {/* The raw provider text never renders on the error path. */}
       {preview.phase === "error" ? null : answerBody}
     </div>

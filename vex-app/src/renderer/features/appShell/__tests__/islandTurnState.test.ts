@@ -9,7 +9,12 @@
 
 import { describe, expect, it } from "vitest";
 import type { StreamPreview } from "../../../stores/streamStore.js";
-import { resolveTurnIslandView } from "../TurnIsland/islandTurnState.js";
+import {
+  PREPARING_DETAIL,
+  WAITING_PROVIDER_DETAIL,
+  resolveTurnIslandView,
+} from "../TurnIsland/islandTurnState.js";
+import { PENDING_TURN_STREAM_ID } from "../SessionTranscript/turnPreview.js";
 
 function preview(overrides: Partial<StreamPreview> = {}): StreamPreview {
   return {
@@ -165,5 +170,82 @@ describe("resolveTurnIslandView - precedence", () => {
     expect(
       resolveTurnIslandView(preview({ phase: "error" }), false).showElapsed,
     ).toBe(false);
+  });
+});
+
+describe("resolveTurnIslandView - the turn phase (U-3)", () => {
+  it("the send's placeholder with no lease reported is PREPARING", () => {
+    const view = resolveTurnIslandView(
+      preview({ streamId: PENDING_TURN_STREAM_ID }),
+      false,
+      false,
+    );
+    expect(view.state).toBe("working");
+    expect(view.phase).toBe("preparing");
+    expect(view.label).toBe("vexing…");
+    expect(view.detail).toBe(PREPARING_DETAIL);
+  });
+
+  it("the placeholder once the engine holds the lease is WAITING FOR THE MODEL", () => {
+    const view = resolveTurnIslandView(
+      preview({ streamId: PENDING_TURN_STREAM_ID }),
+      false,
+      true,
+    );
+    expect(view.phase).toBe("waiting_provider");
+    expect(view.detail).toBe(WAITING_PROVIDER_DETAIL);
+    expect(view.label).toBe("vexing…");
+  });
+
+  it("a real round that has not spoken yet (after a tool batch) waits for the model, lease or not", () => {
+    for (const lease of [true, false]) {
+      const view = resolveTurnIslandView(preview({ streamId: "s2" }), false, lease);
+      expect(view.phase).toBe("waiting_provider");
+    }
+  });
+
+  it("reasoning, calling and writing map to their phases, with no caption", () => {
+    const thinking = resolveTurnIslandView(preview({ status: "thinking" }), false, true);
+    expect(thinking.phase).toBe("reasoning");
+    expect(thinking.detail).toBeUndefined();
+    const calling = resolveTurnIslandView(
+      preview({ status: "calling", toolName: "swap_quote" }),
+      false,
+      true,
+    );
+    expect(calling.phase).toBe("calling_tool");
+    const writing = resolveTurnIslandView(
+      preview({ status: "writing", text: "a" }),
+      false,
+      true,
+    );
+    expect(writing.phase).toBe("writing");
+  });
+
+  it("a tool round whose stream is done is RUNNING the named tool, with the clock", () => {
+    const view = resolveTurnIslandView(
+      preview({ phase: "done", status: "calling", toolName: "swap_quote" }),
+      false,
+      true,
+    );
+    expect(view.state).toBe("running");
+    expect(view.phase).toBe("running_tool");
+    expect(view.label.startsWith("Running ")).toBe(true);
+    expect(view.label.length).toBeGreaterThan("Running ".length);
+    expect(view.showElapsed).toBe(true);
+    expect(view.animated).toBe(true);
+  });
+
+  it("awaiting approval and error still win over a running tool", () => {
+    const running = preview({ phase: "done", status: "calling", toolName: "swap_quote" });
+    expect(resolveTurnIslandView(running, true, true).phase).toBe("awaiting_approval");
+    expect(
+      resolveTurnIslandView({ ...running, phase: "error" }, false, true).phase,
+    ).toBe("error");
+  });
+
+  it("a finished round with no tool is settled, not running", () => {
+    const view = resolveTurnIslandView(preview({ phase: "done" }), false, true);
+    expect(view.phase).toBe("settled");
   });
 });

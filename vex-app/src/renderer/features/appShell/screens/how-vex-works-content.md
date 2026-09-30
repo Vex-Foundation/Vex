@@ -176,8 +176,9 @@ Three columns on one screen. Both side columns fold away to a thin strip when yo
 
 | You see | It means |
 | --- | --- |
-| **vexing…** with a particle cloud and a timer | Vex is working. It steps aside the moment words start arriving. |
+| **vexing…** with a particle cloud and a timer | Vex is working. It steps aside the moment words start arriving. The line under it says which step: "Preparing the turn", then "Waiting for the model" once the request is on its way. |
 | **Thinking** | The model is reasoning before it speaks. |
+| **Calling …** / **Running …** | The model is naming a tool, then the tool is running. The row stays until the result is saved. |
 | **Awaiting signature** | Something is waiting for your approval. Click the stamp to jump to the card. |
 | **AWAITING** (amber pin, header) | How many approvals are pending across *all* sessions. |
 | **PREVIEW** (under the mark) | Pre-1.0 software, with its version number. |

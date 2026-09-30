@@ -10,9 +10,20 @@
  *     visibly: pin tone, no animation, "Awaiting signature". Trust is
  *     stillness; the island must never keep dancing while it waits for the
  *     user's pen, because motion here reads as progress that is not happening.
- *  3. `phase !== "streaming"` — the turn settled; only the reasoning stamp
+ *  3. A tool round whose stream is `done` with a tool name - the tool is
+ *     RUNNING. The engine executes the batch after the provider stream ends
+ *     and persists the round only afterwards, so this is exactly the window
+ *     in which the tool runs.
+ *  4. `phase !== "streaming"` - the turn settled; only the reasoning stamp
  *     (if any reasoning happened at all) survives.
- *  4. The derived working status: thinking → calling → writing → working.
+ *  5. The derived working status: thinking → calling → writing → working,
+ *     where `working` is split by what the engine has reported: no lease yet
+ *     on the send's placeholder is PREPARING, anything else is WAITING FOR
+ *     THE MODEL (the next provider round).
+ *
+ * Every phase is derived from events that already exist (stream deltas, the
+ * transcript append, the control-state lease). No timer, no poll, and no
+ * provider text: labels are fixed copy plus the resolved tool title.
  */
 
 import type { IslandSizePreset } from "../../../components/ui/dynamic-island.js";
@@ -21,18 +32,44 @@ import { engineErrorCopy } from "@shared/engine-error-copy.js";
 import type { StreamPreview } from "../../../stores/streamStore.js";
 import { reasonedStampLabel } from "../reasoning-stamp.js";
 import { resolveToolIdentity } from "../ToolLedger/toolIdentity.js";
+import { PENDING_TURN_STREAM_ID } from "../SessionTranscript/turnPreview.js";
 
 export type TurnIslandState =
   | "working"
   | "thinking"
   | "calling"
+  | "running"
   | "writing"
   | "awaiting"
   | "error"
   | "settled";
 
+/**
+ * WHAT THE TURN IS DOING, as one machine label (U-3). Stamped on the island as
+ * `data-vex-turn-phase` and announced to assistive tech. "Waiting for a wake"
+ * is deliberately not here: a parked run has released its lease and has no
+ * turn in flight, and `SessionSleepBanner` owns that state.
+ */
+export type TurnPhase =
+  | "preparing"
+  | "waiting_provider"
+  | "reasoning"
+  | "calling_tool"
+  | "running_tool"
+  | "writing"
+  | "awaiting_approval"
+  | "error"
+  | "settled";
+
 export interface TurnIslandView {
   readonly state: TurnIslandState;
+  readonly phase: TurnPhase;
+  /**
+   * A quiet caption under the compact pill naming the step (working state
+   * only): the pill keeps its "vexing…" word, the caption says which part of
+   * the wait this is.
+   */
+  readonly detail?: string;
   readonly size: IslandSizePreset;
   /** The visible (and announced) status line. */
   readonly label: string;
@@ -55,9 +92,14 @@ export interface TurnIslandView {
  */
 const VEXING_LABEL = "vexing…";
 
+export const PREPARING_DETAIL = "Preparing the turn";
+export const WAITING_PROVIDER_DETAIL = "Waiting for the model";
+
 export function resolveTurnIslandView(
   preview: StreamPreview,
   awaitingApproval: boolean,
+  /** The engine reported this session's runner lease as held. */
+  leaseHeld = false,
 ): TurnIslandView {
   // Reasoning is TURN-scoped: a turn that thought, called a tool, and is now
   // writing has an empty ACTIVE buffer but a settled segment behind it. Both
@@ -78,6 +120,7 @@ export function resolveTurnIslandView(
     );
     return {
       state: "error",
+      phase: "error",
       size: "row",
       label: copy.title,
       errorBody: copy.body,
@@ -98,6 +141,7 @@ export function resolveTurnIslandView(
   if (awaitingApproval) {
     return {
       state: "awaiting",
+      phase: "awaiting_approval",
       size: "row",
       label: "Awaiting signature",
       tone: "pin",
@@ -106,9 +150,22 @@ export function resolveTurnIslandView(
     };
   }
 
+  if (preview.phase === "done" && preview.toolName !== null) {
+    return {
+      state: "running",
+      phase: "running_tool",
+      size: "row",
+      label: `Running ${resolveToolIdentity(preview.toolName, null).title}`,
+      tone: "neutral",
+      animated: true,
+      showElapsed: true,
+    };
+  }
+
   if (preview.phase !== "streaming") {
     return {
       state: "settled",
+      phase: "settled",
       size: hasReasoning ? "stamp" : "hidden",
       label: hasReasoning ? reasonedStampLabel(preview.reasoningTokens) : "",
       tone: "neutral",
@@ -121,6 +178,7 @@ export function resolveTurnIslandView(
     case "thinking":
       return {
         state: "thinking",
+        phase: "reasoning",
         size: "panel",
         label: "Thinking",
         tone: "accent",
@@ -135,6 +193,7 @@ export function resolveTurnIslandView(
       // `CallingMark` resolves the same identity for the logo.
       return {
         state: "calling",
+        phase: "calling_tool",
         size: "row",
         label:
           preview.toolName === null
@@ -149,6 +208,7 @@ export function resolveTurnIslandView(
       // thinking left behind so live→persisted reads as one object.
       return {
         state: "writing",
+        phase: "writing",
         size: "stamp",
         label: hasReasoning
           ? reasonedStampLabel(preview.reasoningTokens)
@@ -162,8 +222,16 @@ export function resolveTurnIslandView(
       // centred viewport scene it used to stand down for is retired - its
       // viewport-tall child inflated the scrollport's scrollable overflow and
       // lifted the sticky composer seat off the floor.
+      // The send's placeholder before the engine has taken the lease is
+      // still being PREPARED (admission, provider load, the lease itself).
+      // Once the lease is held, or on a real round that has not spoken yet
+      // (the round after a tool batch), the engine is at the provider.
+      const preparing =
+        preview.streamId === PENDING_TURN_STREAM_ID && !leaseHeld;
       return {
         state: "working",
+        phase: preparing ? "preparing" : "waiting_provider",
+        detail: preparing ? PREPARING_DETAIL : WAITING_PROVIDER_DETAIL,
         size: "pill",
         label: VEXING_LABEL,
         tone: "neutral",

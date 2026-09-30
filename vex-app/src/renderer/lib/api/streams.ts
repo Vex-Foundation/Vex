@@ -59,8 +59,10 @@
  *    This is NOT the reverted `leaseActive` clear above. That one blanked a
  *    preview still holding the final answer's text before its row reached the
  *    cache. This one clears ONLY a preview with no text of its own: a round
- *    that `settleRound` already handed to the canonical transcript. A preview
- *    that still shows answer text is left to its append, exactly as before;
+ *    that `settleRound` already handed to the canonical transcript, or a tool
+ *    round whose stream is `done` and whose append has not settled yet. A
+ *    preview that still shows answer text is left to its append, exactly as
+ *    before;
  *  - the idle timer catches everything else (a dropped connection, a lost
  *    event). It is the dropped-event safety net and is never removed.
  *
@@ -87,6 +89,7 @@ export function useStreamPreviewSync(sessionId: string | null): void {
   const applyDelta = useStreamStore((s) => s.applyDelta);
   const settleRound = useStreamStore((s) => s.settleRound);
   const clear = useStreamStore((s) => s.clear);
+  const setLeaseActive = useStreamStore((s) => s.setLeaseActive);
   const submitting = useIsChatSubmitting(sessionId);
 
   // TURN-SETTLED BACKSTOP. Keeping a mid-turn preview alive (above) means a
@@ -212,13 +215,28 @@ export function useStreamPreviewSync(sessionId: string | null): void {
     });
 
     const offControlState = window.vex.engine.onControlState((event) => {
-      if (event.sessionId !== sessionId || event.leaseActive) return;
+      if (event.sessionId !== sessionId) return;
+      // The lease as the engine reported it: the island's only input for
+      // "preparing" versus "waiting for the model" (U-3). Recorded BEFORE the
+      // release check below, and never clears or creates a preview itself.
+      setLeaseActive(sessionId, event.leaseActive);
+      if (event.leaseActive) return;
       // Land any queued deltas first, so the text check reads what the user
       // actually sees.
       flushStreamDeltas(sessionId);
       const current = useStreamStore.getState().bySessionId[sessionId];
-      if (current === undefined || current.phase !== "streaming") return;
-      if (current.text.length > 0) return;
+      if (current === undefined || current.text.length > 0) return;
+      // Two shapes of "the turn ended on a tool round", both with no answer
+      // text of their own: a round `settleRound` already handed to the
+      // transcript (`streaming`), and a tool round whose stream finished
+      // (`done` with a tool name) whose persisted append has not been settled
+      // yet when the release lands. The second one used to survive the release
+      // and keep the clock running until the idle net; it is exactly the
+      // "running a tool" preview, so the release must retire it too.
+      const settledToolRound = current.phase === "streaming";
+      const unsettledToolRound =
+        current.phase === "done" && current.toolName !== null;
+      if (!settledToolRound && !unsettledToolRound) return;
       clearAll();
     });
 
@@ -228,6 +246,10 @@ export function useStreamPreviewSync(sessionId: string | null): void {
       offAppend();
       offControlState();
       clearAll();
+      // Unsubscribed, so any lease fact from here on would go unseen: forget
+      // it rather than keep a value that can go stale ("unknown" reads as
+      // "preparing", the honest default).
+      setLeaseActive(sessionId, null);
     };
-  }, [sessionId, queryClient, applyDelta, settleRound, clear]);
+  }, [sessionId, queryClient, applyDelta, settleRound, clear, setLeaseActive]);
 }
