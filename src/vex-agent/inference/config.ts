@@ -22,6 +22,7 @@ import {
   parseAuxReasoningEffortEnv,
   parseAgentToolReadEnv,
   parseAgentWakeEnv,
+  parseAgentWalletReadEnv,
   type AgentStreamBounds,
 } from "../../lib/agent-config.js";
 import logger from "@utils/logger.js";
@@ -113,12 +114,16 @@ export function loadEnvConfig(): EnvConfig {
   const toolReadParse = parseAgentToolReadEnv(process.env);
   // Same for the wake concurrency, read once by the wake executor at start.
   const wakeParse = parseAgentWakeEnv(process.env);
+  // And the WalletBalances leg bounds, read per call by
+  // `tools/internal/wallet/leg-bounds.ts`.
+  const walletReadParse = parseAgentWalletReadEnv(process.env);
   for (const e of [
     ...agentParse.errors,
     ...boundsParse.errors,
     ...dbBoundsParse.errors,
     ...toolReadParse.errors,
     ...wakeParse.errors,
+    ...walletReadParse.errors,
   ]) {
     if (e.reason === "out_of_range") {
       errors.push(

@@ -83,6 +83,15 @@ import { fail, ok } from "../types.js";
 import { formatZodIssueForModel } from "../arg-validation.js";
 import { mapWithConcurrency } from "@utils/concurrency.js";
 import { throwIfAborted } from "@utils/cancellation.js";
+import { runWithinDeadline } from "@utils/deadline.js";
+import type { KhalaniChainScanTiming } from "@tools/khalani/balances/scan.js";
+import type { KhalaniToken } from "@tools/khalani/types.js";
+import {
+  WALLET_READ_KHALANI_CONCURRENCY,
+  WALLET_READ_PRICING_CHAIN_CONCURRENCY,
+  readWalletReadBounds,
+  type AgentWalletReadBounds,
+} from "./leg-bounds.js";
 
 /** Entries -> the CSV the chain resolver reads; all-empty reads as omitted. */
 function joinChainList(entries: readonly unknown[]): string | undefined {
@@ -215,6 +224,12 @@ interface WalletSnapshot extends CompletenessEnvelope {
   truncated: boolean;
   /** The recovery instruction. Present only when `truncated` is true. */
   truncationNote?: string;
+  /**
+   * Read legs that missed the per-leg deadline, by chain. Present only when a
+   * deadline fired; each named chain is ALSO in `chainErrors` (and, for a
+   * balance leg, `failedChainIds`), so its holdings read as unknown, not zero.
+   */
+  legsNotAnswered?: LegNotAnswered[];
   tokens: WalletTokenRow[];
 }
 
@@ -277,12 +292,73 @@ async function partitionBalanceChainScope(raw: string | undefined): Promise<Bala
 // ── Solana live snapshot ────────────────────────────────────────
 
 /**
- * The narrow, optional dependency this handler takes so a test can drive the
- * REAL handler over a scripted RPC. Production callers pass nothing.
+ * The narrow, optional dependencies this handler takes so a test can drive the
+ * REAL handler over a scripted RPC and pinned leg bounds. Production callers
+ * pass nothing.
  */
 export interface WalletBalancesDependencies {
   readonly readSolanaSnapshot?: SolanaWalletSnapshotReader;
+  /** Leg bounds; production reads them from the environment per call. */
+  readonly legBounds?: AgentWalletReadBounds;
 }
+
+// ── Legs (Kairos Phase 6, W-1) ─────────────────────────────────
+
+/**
+ * One read leg that missed its deadline. Named so the agent can say WHICH
+ * chain or price pass is missing: its holdings (or prices) are UNKNOWN, never
+ * zero. Present on a snapshot only when a deadline fired.
+ */
+interface LegNotAnswered {
+  leg: "khalani_scan" | "native_balance" | "price_enrichment" | "solana_rpc" | "local_chain_rpc";
+  chainId: number;
+  timeoutMs: number;
+}
+
+/** The recovery note that travels with any leg that missed its deadline. */
+const PARTIAL_LEGS_NOTE =
+  "Partial result: some read legs did not answer in time (see wallets[].legsNotAnswered). "
+  + "Holdings on a chain listed there are UNKNOWN, not zero, and a price pass listed there "
+  + "left its rows unpriced; totalUsd counts only what answered. Retry WalletBalances "
+  + "with chainIds set to the missing chains for their balances.";
+
+/** Sanitized per-leg timings for one family: numbers, chain ids, provider names. */
+interface FamilyLegTimings {
+  family: ChainFamily;
+  khalaniScanMs?: number;
+  khalaniChains?: number;
+  khalaniSlowestChainId?: number;
+  khalaniSlowestChainMs?: number;
+  nativeSlowestChainId?: number;
+  nativeSlowestChainMs?: number;
+  pricingMs?: number;
+  pricingChains?: number;
+  pricingSlowestChainId?: number;
+  pricingSlowestChainMs?: number;
+  solanaMs?: number;
+  localChainsMs?: number;
+  localChainIds?: number[];
+  timedOutLegs: number;
+}
+
+type SolanaLane =
+  | { kind: "read"; snapshot: Awaited<ReturnType<SolanaWalletSnapshotReader>> }
+  | { kind: "failed"; message: string }
+  | { kind: "deadline" };
+
+type LocalLaneResult = LocalChainSnapshot | { kind: "deadline" } | undefined;
+
+interface FamilyPlan {
+  family: ChainFamily;
+  khalaniChainIds: readonly number[] | undefined;
+  localChainIds: number[];
+  khalaniRequested: boolean;
+  solanaRequested: boolean;
+}
+
+type FamilyOutcome =
+  | { kind: "snapshot"; snapshot: WalletSnapshot }
+  | { kind: "error"; family: ChainFamily; message: string };
 
 // ── WalletBalances ─────────────────────────────────────────────
 
@@ -302,11 +378,13 @@ export async function handleWalletBalances(
   } catch (err) {
     return fail(`WalletBalances: ${err instanceof Error ? err.message : String(err)}`);
   }
-  const walletFamilies = requestedWalletFamilies(parsed.data.walletFamily);
-  const snapshots: WalletSnapshot[] = [];
-  const walletErrors: Array<{ wallet: ChainFamily; message: string }> = [];
+  const bounds = dependencies.legBounds ?? readWalletReadBounds();
+  const startedAt = Date.now();
 
-  for (const family of walletFamilies) {
+  // Which families read, decided up front from the scope alone (no I/O), so the
+  // one early failure below can never land after another family already read.
+  const plans: FamilyPlan[] = [];
+  for (const family of requestedWalletFamilies(parsed.data.walletFamily)) {
     const khalaniChainIds = getSelectedChainIdsForFamily(scope.selection, family);
     const localChainIds = family === "eip155" ? scope.localChainIds : [];
     // With a filter present, the scan runs only when the filter kept chains for
@@ -324,9 +402,95 @@ export async function handleWalletBalances(
       }
       continue;
     }
+    plans.push({ family, khalaniChainIds, localChainIds, khalaniRequested, solanaRequested });
+  }
 
-    try {
-      const address = resolveSelectedAddressForRead(context.walletResolution, context.walletPolicy, family);
+  const timings: FamilyLegTimings[] = [];
+  const readPlan = (plan: FamilyPlan): Promise<FamilyOutcome> =>
+    readFamilySnapshot(plan, parsed.data, context, dependencies, bounds, timings);
+  // Families are independent reads of different chains: with parallel legs
+  // they run together, and the answer is still assembled in family order.
+  const outcomes: FamilyOutcome[] = [];
+  if (bounds.parallelLegs) {
+    outcomes.push(...(await Promise.all(plans.map(readPlan))));
+  } else {
+    for (const plan of plans) outcomes.push(await readPlan(plan));
+  }
+
+  const snapshots: WalletSnapshot[] = [];
+  const walletErrors: Array<{ wallet: ChainFamily; message: string }> = [];
+  for (const outcome of outcomes) {
+    if (outcome.kind === "snapshot") {
+      snapshots.push(outcome.snapshot);
+      continue;
+    }
+    if (parsed.data.walletFamily === outcome.family) {
+      return fail(`${outcome.family} wallet error: ${outcome.message}`);
+    }
+    walletErrors.push({ wallet: outcome.family, message: outcome.message });
+  }
+
+  logger.info("wallet.balances.timing", {
+    parallelLegs: bounds.parallelLegs,
+    legTimeoutMs: bounds.legTimeoutMs,
+    totalMs: Date.now() - startedAt,
+    families: timings,
+  });
+
+  if (snapshots.length === 0) {
+    return fail(`WalletBalances: no requested wallet snapshots were available.${formatWalletErrors(walletErrors)}`);
+  }
+
+  const anyLegNotAnswered = snapshots.some((snapshot) => (snapshot.legsNotAnswered?.length ?? 0) > 0);
+  return ok({
+    // Echoes the PARAM the caller filled in, under the same name.
+    walletFamily: parsed.data.walletFamily,
+    walletCount: snapshots.length,
+    // Kept a NUMBER for compatibility, and it now always travels with the
+    // basis that says what it counted: an unknown slice never silently reads
+    // as a complete portfolio value (C3.2, C3.3).
+    totalUsd: snapshots.reduce((sum, snapshot) => sum + snapshot.totalUsd, 0),
+    // A family that produced no snapshot at all is the ENVELOPE's inventory
+    // failure, and outranks every per-wallet reason.
+    ...combineWalletCompleteness(snapshots, walletErrors.length),
+    // Present only when a leg missed its deadline: the answer is PARTIAL, and
+    // the note says so in words next to the numbers it qualifies.
+    ...(anyLegNotAnswered ? { partial: true, partialNote: PARTIAL_LEGS_NOTE } : {}),
+    walletErrors,
+    wallets: snapshots,
+  });
+}
+
+/**
+ * Read ONE wallet family into its snapshot.
+ *
+ * Its three lanes (Khalani scan plus its price pass, Solana RPC, local-chain
+ * RPC) are independent reads of different chains. With `parallelLegs` they run
+ * together; without, in the original order. Either way their results are
+ * MERGED in the original order (Khalani, then Solana, then local), so the
+ * snapshot is identical whatever finished first.
+ */
+async function readFamilySnapshot(
+  plan: FamilyPlan,
+  args: z.infer<typeof WalletReadArgs>,
+  context: InternalToolContext,
+  dependencies: WalletBalancesDependencies,
+  bounds: AgentWalletReadBounds,
+  timings: FamilyLegTimings[],
+): Promise<FamilyOutcome> {
+  const { family, khalaniChainIds, localChainIds, khalaniRequested, solanaRequested } = plan;
+  const legTimeoutMs = bounds.legTimeoutMs;
+  const legsNotAnswered: LegNotAnswered[] = [];
+  const timing: FamilyLegTimings = { family, timedOutLegs: 0 };
+  timings.push(timing);
+  try {
+    const address = resolveSelectedAddressForRead(context.walletResolution, context.walletPolicy, family);
+
+    // ── Lane 1: Khalani scan, then its price pass (the pass needs the rows).
+    const khalaniLane = async (): Promise<{
+      scan: TokenBalanceScanResult;
+      enrichedTokens: KhalaniToken[];
+    }> => {
       // Live read: opt into the EVM native-coin top-up. The sync/projection path
       // (syncWalletBalances) deliberately does NOT, to avoid deleting cached
       // native rows on a transient RPC failure.
@@ -339,12 +503,42 @@ export async function handleWalletBalances(
         totalUsd: 0,
       };
       if (khalaniRequested) {
+        const scanStartedAt = Date.now();
+        const chainTimings: KhalaniChainScanTiming[] = [];
         scan = await getTokenBalancesAcrossChains({
           address,
           family,
           chainIds: khalaniChainIds,
           includeNative: true,
+          // The legacy read passes none of these, so its scan is the exact call
+          // it always made.
+          ...(bounds.parallelLegs ? { concurrency: WALLET_READ_KHALANI_CONCURRENCY } : {}),
+          ...(legTimeoutMs > 0 ? { legTimeoutMs, signal: context.abortSignal } : {}),
+          onChainTiming: (chainTiming) => chainTimings.push(chainTiming),
         });
+        timing.khalaniScanMs = Date.now() - scanStartedAt;
+        timing.khalaniChains = chainTimings.length;
+        const slowest = slowestBy(chainTimings, (entry) => entry.khalaniMs);
+        if (slowest !== undefined) {
+          timing.khalaniSlowestChainId = slowest.chainId;
+          timing.khalaniSlowestChainMs = slowest.khalaniMs;
+        }
+        const slowestNative = slowestBy(
+          chainTimings.filter((entry) => entry.nativeMs !== null),
+          (entry) => entry.nativeMs ?? 0,
+        );
+        if (slowestNative !== undefined) {
+          timing.nativeSlowestChainId = slowestNative.chainId;
+          timing.nativeSlowestChainMs = slowestNative.nativeMs ?? 0;
+        }
+        for (const chainTiming of chainTimings) {
+          if (chainTiming.timedOut === null) continue;
+          legsNotAnswered.push({
+            leg: chainTiming.timedOut === "khalani" ? "khalani_scan" : "native_balance",
+            chainId: chainTiming.chainId,
+            timeoutMs: legTimeoutMs,
+          });
+        }
       }
       // Fill the prices Khalani left null, through the SAME pass the background
       // sync runs (`tools/khalani/balance-price-enrichment.ts`). It ran only on
@@ -353,204 +547,277 @@ export async function handleWalletBalances(
       // Before the projection, so a filled row counts as PRICED for the
       // valuation axis; Khalani's own prices are untouched, row order is the
       // scan's, and provider failures are fail-soft per chain.
-      const enrichedTokens = (
-        await enrichKhalaniBalancePrices(scan.tokens, { signal: context.abortSignal })
-      ).rows.map((row) => row.token);
-      // Slim each row at the handler seam (P1-7): reuse the Khalani projector so
-      // the model sees identity + lifted priceUsd/balance, not the heavy logoURI
-      // / open `extensions` bag. `tokenCount` / `totalUsd` stay computed off the
-      // FULL scan so an optional `limit` trim never distorts the held totals.
-      const projected: ProjectedTokenRow[] = projectTokens(enrichedTokens);
-      // Recomputed off the ENRICHED rows through the scan's own reduce, so the
-      // compatibility number cannot disagree with `pricedTotalUsd`, which the
-      // completeness axis derives from the projected rows.
-      let totalUsd = calculateTokensTotalUsd(enrichedTokens);
-      const scannedChainIds = [...scan.scannedChainIds];
-      const chainErrors = [...scan.chainErrors];
-      const tokenErrors: TokenReadError[] = [];
-      let tokenErrorsOmitted = 0;
-      const accountErrors: AccountReadError[] = [];
-      let accountErrorsOmitted = 0;
-      // The inventory axis is evidence, not inference: every lane records what
-      // its own enumeration did, and a FAILED read is never stamped with a
-      // fresh observation time (C3.5) - that is how a gap gets renamed fresh
-      // and the retry is suppressed.
-      const inventorySources: InventorySource[] = [];
-      const rejectedEntries: KhalaniRejectedTokenBalanceEntry[] = [...(scan.rejectedEntries ?? [])];
-      if (khalaniRequested) {
-        const khalaniObservedAt = new Date().toISOString();
-        for (const scannedChainId of scan.scannedChainIds) {
-          inventorySources.push({
-            chainId: scannedChainId,
-            source: "khalani_registry_scan",
-            result: "read",
-            exhaustive: true,
-            observedAt: khalaniObservedAt,
-          });
-        }
-        for (const chainError of scan.chainErrors) {
-          inventorySources.push({
-            chainId: chainError.chainId,
-            source: "khalani_registry_scan",
-            result: "failed",
-            exhaustive: true,
-            observedAt: null,
-          });
+      const pricingStartedAt = Date.now();
+      const pricingTimings: Array<{ chainId: number; ms: number }> = [];
+      const enrichment = await enrichKhalaniBalancePrices(scan.tokens, {
+        signal: context.abortSignal,
+        ...(bounds.parallelLegs ? { chainConcurrency: WALLET_READ_PRICING_CHAIN_CONCURRENCY } : {}),
+        ...(legTimeoutMs > 0 ? { chainTimeoutMs: legTimeoutMs } : {}),
+        onChainTiming: (chainTiming) => pricingTimings.push(chainTiming),
+      });
+      if (pricingTimings.length > 0) {
+        timing.pricingMs = Date.now() - pricingStartedAt;
+        timing.pricingChains = pricingTimings.length;
+        const slowestPricing = slowestBy(pricingTimings, (entry) => entry.ms);
+        if (slowestPricing !== undefined) {
+          timing.pricingSlowestChainId = slowestPricing.chainId;
+          timing.pricingSlowestChainMs = slowestPricing.ms;
         }
       }
-
-      // Solana - direct RPC through the shared snapshot service, never Khalani.
-      // A failure here is a per-chain error like any other, so the family
-      // snapshot survives it rather than the whole call failing.
-      if (solanaRequested) {
-        throwIfAborted(context.abortSignal);
-        const readSnapshot = dependencies.readSolanaSnapshot ?? readSolanaWalletSnapshot;
-        try {
-          const snapshot = await readSnapshot(address, { signal: context.abortSignal });
-          projected.push(...snapshot.rows.map(solanaRowToWalletToken));
-          totalUsd += snapshot.totalUsd;
-          scannedChainIds.push(SOLANA_SYNTHETIC_CHAIN_ID);
-          // Exhaustive: the snapshot service enumerates every token ACCOUNT the
-          // wallet owns plus the account balance, so a holding is never outside
-          // the set it looked at.
-          inventorySources.push({
-            chainId: SOLANA_SYNTHETIC_CHAIN_ID,
-            source: "solana_rpc_accounts",
-            result: "read",
-            exhaustive: true,
-            observedAt: new Date().toISOString(),
-          });
-          // A partial read still returns its readable rows. The sync lane's
-          // skip-the-chain policy is deliberately NOT copied: it exists because
-          // the sync REPLACES the whole chain, and this tool has nothing to
-          // destroy. Copying it would recreate the $0 answer under a new
-          // mechanism.
-          for (const failure of snapshot.accountFailures) {
-            if (accountErrors.length < MAX_ACCOUNT_ERRORS_PER_SNAPSHOT) {
-              accountErrors.push({
-                chainId: SOLANA_SYNTHETIC_CHAIN_ID,
-                accountAddress: failure.pubkey,
-                reason: failure.reason,
-              });
-            } else accountErrorsOmitted += 1;
-          }
-        } catch (err) {
-          // An operator Stop is the caller's, not this chain's: it must abort
-          // the whole call rather than be filed as a Solana chain error.
-          throwIfAborted(context.abortSignal);
-          // SECURITY: a raw Solana RPC error can carry the configured RPC URL
-          // (with its key) and HTML bodies. Only the scrubbed summary is
-          // returned, exactly as the local-EVM branch does.
-          const summary = summarizeProtocolError(err);
-          logger.warn("wallet.solana_read.failed", {
-            chainId: SOLANA_SYNTHETIC_CHAIN_ID,
-            category: summary.category,
-            error: summary.message,
-          });
-          chainErrors.push({
-            chainId: SOLANA_SYNTHETIC_CHAIN_ID,
-            chainName: "Solana",
-            message: `Solana RPC read failed: ${summary.message}`,
-          });
-          inventorySources.push({
-            chainId: SOLANA_SYNTHETIC_CHAIN_ID,
-            source: "solana_rpc_accounts",
-            result: "failed",
-            exhaustive: true,
-            observedAt: null,
-          });
-        }
+      for (const chainId of enrichment.timedOutChainIds ?? []) {
+        legsNotAnswered.push({ leg: "price_enrichment", chainId, timeoutMs: legTimeoutMs });
       }
+      return { scan, enrichedTokens: enrichment.rows.map((row) => row.token) };
+    };
 
-      // Local (non-Khalani) chains - direct RPC, same failure surface as a
-      // Khalani per-chain error (the family snapshot survives a dead chain).
-      //
-      // Bounded-concurrency, not serial: each chain costs a scan-set build, an
-      // RPC read and a DexScreener price batch, and running N of them one after
-      // another is the `WalletBalances` latency complaint. The bound matches
-      // the Khalani scan's own (4) so the provider rate limits are not the new
-      // failure mode, and results are written into slots keyed by index so the
-      // output order stays chain order rather than completion order.
+    // ── Lane 2: Solana, direct RPC through the shared snapshot service, never
+    // Khalani. A failure here is a per-chain error like any other, so the
+    // family snapshot survives it rather than the whole call failing.
+    const solanaLane = async (): Promise<SolanaLane | null> => {
+      if (!solanaRequested) return null;
       throwIfAborted(context.abortSignal);
-      const localResults = new Array<LocalChainSnapshot | undefined>(localChainIds.length);
+      const readSnapshot = dependencies.readSolanaSnapshot ?? readSolanaWalletSnapshot;
+      const solanaStartedAt = Date.now();
+      try {
+        const outcome = await runWithinDeadline(legTimeoutMs, context.abortSignal, (signal) =>
+          readSnapshot(address, { signal }));
+        timing.solanaMs = Date.now() - solanaStartedAt;
+        if (outcome.kind === "deadline") return { kind: "deadline" };
+        return { kind: "read", snapshot: outcome.value };
+      } catch (err) {
+        timing.solanaMs = Date.now() - solanaStartedAt;
+        // An operator Stop is the caller's, not this chain's: it must abort
+        // the whole call rather than be filed as a Solana chain error.
+        throwIfAborted(context.abortSignal);
+        // SECURITY: a raw Solana RPC error can carry the configured RPC URL
+        // (with its key) and HTML bodies. Only the scrubbed summary is
+        // returned, exactly as the local-EVM branch does.
+        const summary = summarizeProtocolError(err);
+        logger.warn("wallet.solana_read.failed", {
+          chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+          category: summary.category,
+          error: summary.message,
+        });
+        return { kind: "failed", message: summary.message };
+      }
+    };
+
+    // ── Lane 3: local (non-Khalani) chains - direct RPC, same failure surface
+    // as a Khalani per-chain error (the family snapshot survives a dead chain).
+    //
+    // Bounded-concurrency, not serial: each chain costs a scan-set build, an
+    // RPC read and a DexScreener price batch, and running N of them one after
+    // another is the `WalletBalances` latency complaint. The bound matches
+    // the Khalani scan's own (4) so the provider rate limits are not the new
+    // failure mode, and results are written into slots keyed by index so the
+    // output order stays chain order rather than completion order.
+    const localLane = async (): Promise<LocalLaneResult[]> => {
+      throwIfAborted(context.abortSignal);
+      const localResults = new Array<LocalLaneResult>(localChainIds.length);
+      if (localChainIds.length === 0) return localResults;
+      const localStartedAt = Date.now();
       await mapWithConcurrency(localChainIds, LOCAL_CHAIN_SCAN_CONCURRENCY, async (localChainId, index) => {
         throwIfAborted(context.abortSignal);
-        localResults[index] = await readLocalChainSnapshot(address, localChainId, context.abortSignal);
+        const outcome = await runWithinDeadline(legTimeoutMs, context.abortSignal, (signal) =>
+          readLocalChainSnapshot(address, localChainId, signal));
+        localResults[index] = outcome.kind === "settled" ? outcome.value : { kind: "deadline" };
       });
+      timing.localChainsMs = Date.now() - localStartedAt;
+      timing.localChainIds = [...localChainIds];
+      return localResults;
+    };
 
-      localChainIds.forEach((localChainId, index) => {
-        const local = localResults[index];
-        // Unreachable while `mapWithConcurrency` visits every index; treated as
-        // a per-chain failure rather than asserted, because the alternative is
-        // losing a whole family snapshot to a bookkeeping slip.
-        if (local === undefined) {
-          chainErrors.push({ chainId: localChainId, message: "local chain scan produced no result" });
-          inventorySources.push({
-            chainId: localChainId,
-            source: "local_chain_seed_and_pins",
-            result: "failed",
-            exhaustive: false,
-            observedAt: null,
+    let khalani: Awaited<ReturnType<typeof khalaniLane>>;
+    let solana: SolanaLane | null;
+    let localResults: LocalLaneResult[];
+    if (bounds.parallelLegs) {
+      [khalani, solana, localResults] = await Promise.all([khalaniLane(), solanaLane(), localLane()]);
+    } else {
+      khalani = await khalaniLane();
+      solana = await solanaLane();
+      localResults = await localLane();
+    }
+    const { scan, enrichedTokens } = khalani;
+
+    // Slim each row at the handler seam (P1-7): reuse the Khalani projector so
+    // the model sees identity + lifted priceUsd/balance, not the heavy logoURI
+    // / open `extensions` bag. `tokenCount` / `totalUsd` stay computed off the
+    // FULL scan so an optional `limit` trim never distorts the held totals.
+    const projected: ProjectedTokenRow[] = projectTokens(enrichedTokens);
+    // Recomputed off the ENRICHED rows through the scan's own reduce, so the
+    // compatibility number cannot disagree with `pricedTotalUsd`, which the
+    // completeness axis derives from the projected rows.
+    let totalUsd = calculateTokensTotalUsd(enrichedTokens);
+    const scannedChainIds = [...scan.scannedChainIds];
+    const chainErrors = [...scan.chainErrors];
+    const tokenErrors: TokenReadError[] = [];
+    let tokenErrorsOmitted = 0;
+    const accountErrors: AccountReadError[] = [];
+    let accountErrorsOmitted = 0;
+    // The inventory axis is evidence, not inference: every lane records what
+    // its own enumeration did, and a FAILED read is never stamped with a
+    // fresh observation time (C3.5) - that is how a gap gets renamed fresh
+    // and the retry is suppressed.
+    const inventorySources: InventorySource[] = [];
+    const rejectedEntries: KhalaniRejectedTokenBalanceEntry[] = [...(scan.rejectedEntries ?? [])];
+    if (khalaniRequested) {
+      const khalaniObservedAt = new Date().toISOString();
+      for (const scannedChainId of scan.scannedChainIds) {
+        inventorySources.push({
+          chainId: scannedChainId,
+          source: "khalani_registry_scan",
+          result: "read",
+          exhaustive: true,
+          observedAt: khalaniObservedAt,
+        });
+      }
+      for (const chainError of scan.chainErrors) {
+        inventorySources.push({
+          chainId: chainError.chainId,
+          source: "khalani_registry_scan",
+          result: "failed",
+          exhaustive: true,
+          observedAt: null,
+        });
+      }
+    }
+
+    if (solana !== null && solana.kind === "read") {
+      const snapshot = solana.snapshot;
+      projected.push(...snapshot.rows.map(solanaRowToWalletToken));
+      totalUsd += snapshot.totalUsd;
+      scannedChainIds.push(SOLANA_SYNTHETIC_CHAIN_ID);
+      // Exhaustive: the snapshot service enumerates every token ACCOUNT the
+      // wallet owns plus the account balance, so a holding is never outside
+      // the set it looked at.
+      inventorySources.push({
+        chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+        source: "solana_rpc_accounts",
+        result: "read",
+        exhaustive: true,
+        observedAt: new Date().toISOString(),
+      });
+      // A partial read still returns its readable rows. The sync lane's
+      // skip-the-chain policy is deliberately NOT copied: it exists because
+      // the sync REPLACES the whole chain, and this tool has nothing to
+      // destroy. Copying it would recreate the $0 answer under a new
+      // mechanism.
+      for (const failure of snapshot.accountFailures) {
+        if (accountErrors.length < MAX_ACCOUNT_ERRORS_PER_SNAPSHOT) {
+          accountErrors.push({
+            chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+            accountAddress: failure.pubkey,
+            reason: failure.reason,
           });
-          return;
-        }
-        // The enumeration owner decides what this chain may CLAIM: seeds and
-        // pins alone are never exhaustive (a token outside them is invisible
-        // here, not absent), and only a complete indexer answer lets 4663 say
-        // it saw every holding. A scan set that never got built (the chain
-        // failed before enumeration) reports the bounded source it fell back
-        // to, never a fresh claim.
-        inventorySources.push(
-          ...(local.scan === null
-            ? [{
-                chainId: localChainId,
-                source: "local_chain_seed_and_pins" as const,
-                result: "failed" as const,
-                exhaustive: false,
-                observedAt: null,
-              }]
-            : localChainInventorySources({
-                scan: local.scan,
-                chainRead: local.ok ? "read" : "failed",
-                observedAt: new Date().toISOString(),
-              })),
-        );
-        if (local.ok) {
-          projected.push(...local.tokens);
-          totalUsd += local.totalUsd;
-          scannedChainIds.push(localChainId);
-          for (const tokenError of local.tokenErrors) {
-            if (tokenErrors.length < MAX_TOKEN_ERRORS_PER_SNAPSHOT) tokenErrors.push(tokenError);
-            else tokenErrorsOmitted += 1;
-          }
-        } else {
-          chainErrors.push({ chainId: localChainId, chainName: local.chainName, message: local.message });
-        }
+        } else accountErrorsOmitted += 1;
+      }
+    } else if (solana !== null) {
+      if (solana.kind === "deadline") {
+        legsNotAnswered.push({ leg: "solana_rpc", chainId: SOLANA_SYNTHETIC_CHAIN_ID, timeoutMs: legTimeoutMs });
+      }
+      chainErrors.push({
+        chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+        chainName: "Solana",
+        message: solana.kind === "deadline"
+          ? `Solana RPC read timed out after ${legTimeoutMs}ms; holdings on this chain are unknown (not zero)`
+          : `Solana RPC read failed: ${solana.message}`,
       });
+      inventorySources.push({
+        chainId: SOLANA_SYNTHETIC_CHAIN_ID,
+        source: "solana_rpc_accounts",
+        result: "failed",
+        exhaustive: true,
+        observedAt: null,
+      });
+    }
 
-      const trimmed = trimTokens(projected, parsed.data.limit, parsed.data.response_format);
-      // Both axes are computed off the FULL PRE-TRIM row set: a display trim
-      // must never be able to move a completeness field, or "I asked for fewer
-      // rows" would read as "the wallet became fully priced".
-      const completeness = computeWalletCompleteness({
-        rows: projected,
-        sources: inventorySources,
-        tokenErrorCount: tokenErrors.length + tokenErrorsOmitted,
-        accountErrorCount: accountErrors.length + accountErrorsOmitted,
-        rejectedEntries,
-      });
-      const bounded = boundRejectedEntries(rejectedEntries);
-      // Rows measured against the FULL projected set, so it covers all three
-      // ways a row can be missing: the priced overflow past `limit`, the 20-row
-      // unpriced cap, and the zero-balance unpriced rows the trim drops (which
-      // `unpricedOmitted` deliberately does not count). Every note that applies
-      // is carried; a bound that reported only the first would hide the other.
-      const truncationNotes = [
-        ...(trimmed.tokens.length < projected.length ? [TRUNCATION_NOTE] : []),
-        ...(bounded.rejectedEntriesOmitted !== undefined ? [REJECTED_ENTRIES_NOTE] : []),
-      ];
-      const truncated = truncationNotes.length > 0;
-      snapshots.push({
+    localChainIds.forEach((localChainId, index) => {
+      const local = localResults[index];
+      // `undefined` is unreachable while `mapWithConcurrency` visits every
+      // index; treated as a per-chain failure rather than asserted, because the
+      // alternative is losing a whole family snapshot to a bookkeeping slip. A
+      // missed deadline takes the same failed-chain shape with its own words.
+      if (local === undefined || "kind" in local) {
+        const timedOut = local !== undefined;
+        if (timedOut) {
+          legsNotAnswered.push({ leg: "local_chain_rpc", chainId: localChainId, timeoutMs: legTimeoutMs });
+        }
+        chainErrors.push({
+          chainId: localChainId,
+          message: timedOut
+            ? `local chain RPC read timed out after ${legTimeoutMs}ms; holdings on this chain are unknown (not zero)`
+            : "local chain scan produced no result",
+        });
+        inventorySources.push({
+          chainId: localChainId,
+          source: "local_chain_seed_and_pins",
+          result: "failed",
+          exhaustive: false,
+          observedAt: null,
+        });
+        return;
+      }
+      // The enumeration owner decides what this chain may CLAIM: seeds and
+      // pins alone are never exhaustive (a token outside them is invisible
+      // here, not absent), and only a complete indexer answer lets 4663 say
+      // it saw every holding. A scan set that never got built (the chain
+      // failed before enumeration) reports the bounded source it fell back
+      // to, never a fresh claim.
+      inventorySources.push(
+        ...(local.scan === null
+          ? [{
+              chainId: localChainId,
+              source: "local_chain_seed_and_pins" as const,
+              result: "failed" as const,
+              exhaustive: false,
+              observedAt: null,
+            }]
+          : localChainInventorySources({
+              scan: local.scan,
+              chainRead: local.ok ? "read" : "failed",
+              observedAt: new Date().toISOString(),
+            })),
+      );
+      if (local.ok) {
+        projected.push(...local.tokens);
+        totalUsd += local.totalUsd;
+        scannedChainIds.push(localChainId);
+        for (const tokenError of local.tokenErrors) {
+          if (tokenErrors.length < MAX_TOKEN_ERRORS_PER_SNAPSHOT) tokenErrors.push(tokenError);
+          else tokenErrorsOmitted += 1;
+        }
+      } else {
+        chainErrors.push({ chainId: localChainId, chainName: local.chainName, message: local.message });
+      }
+    });
+
+    const trimmed = trimTokens(projected, args.limit, args.response_format);
+    // Both axes are computed off the FULL PRE-TRIM row set: a display trim
+    // must never be able to move a completeness field, or "I asked for fewer
+    // rows" would read as "the wallet became fully priced".
+    const completeness = computeWalletCompleteness({
+      rows: projected,
+      sources: inventorySources,
+      tokenErrorCount: tokenErrors.length + tokenErrorsOmitted,
+      accountErrorCount: accountErrors.length + accountErrorsOmitted,
+      rejectedEntries,
+    });
+    const bounded = boundRejectedEntries(rejectedEntries);
+    // Rows measured against the FULL projected set, so it covers all three
+    // ways a row can be missing: the priced overflow past `limit`, the 20-row
+    // unpriced cap, and the zero-balance unpriced rows the trim drops (which
+    // `unpricedOmitted` deliberately does not count). Every note that applies
+    // is carried; a bound that reported only the first would hide the other.
+    const truncationNotes = [
+      ...(trimmed.tokens.length < projected.length ? [TRUNCATION_NOTE] : []),
+      ...(bounded.rejectedEntriesOmitted !== undefined ? [REJECTED_ENTRIES_NOTE] : []),
+    ];
+    const truncated = truncationNotes.length > 0;
+    timing.timedOutLegs = legsNotAnswered.length;
+    legsNotAnswered.sort((left, right) => left.chainId - right.chainId || compareLeg(left.leg, right.leg));
+    return {
+      kind: "snapshot",
+      snapshot: {
         ...completeness,
         wallet: family,
         address,
@@ -566,42 +833,34 @@ export async function handleWalletBalances(
         ...bounded,
         truncated,
         ...(truncated ? { truncationNote: truncationNotes.join(" ") } : {}),
+        ...(legsNotAnswered.length > 0 ? { legsNotAnswered } : {}),
         tokens: trimmed.tokens,
-      });
-    } catch (err) {
-      // An operator Stop is the TURN's outcome, not this family's. It leaves
-      // the handler as a THROW so the dispatcher produces its one canonical
-      // user-stop result. Converting it here would report a cancellation to
-      // the model as a wallet FAILURE it might retry, and under
-      // `walletFamily: "all"` would bury it in `walletErrors` while the other
-      // family's snapshot was returned as a success.
-      throwIfAborted(context.abortSignal);
-      const message = err instanceof Error ? err.message : String(err);
-      if (parsed.data.walletFamily === family) {
-        return fail(`${family} wallet error: ${message}`);
-      }
-      walletErrors.push({ wallet: family, message });
-    }
+      },
+    };
+  } catch (err) {
+    // An operator Stop is the TURN's outcome, not this family's. It leaves
+    // the handler as a THROW so the dispatcher produces its one canonical
+    // user-stop result. Converting it here would report a cancellation to
+    // the model as a wallet FAILURE it might retry, and under
+    // `walletFamily: "all"` would bury it in `walletErrors` while the other
+    // family's snapshot was returned as a success.
+    throwIfAborted(context.abortSignal);
+    return { kind: "error", family, message: err instanceof Error ? err.message : String(err) };
   }
+}
 
-  if (snapshots.length === 0) {
-    return fail(`WalletBalances: no requested wallet snapshots were available.${formatWalletErrors(walletErrors)}`);
+function slowestBy<T>(entries: readonly T[], ms: (entry: T) => number): T | undefined {
+  let slowest: T | undefined;
+  for (const entry of entries) {
+    if (slowest === undefined || ms(entry) > ms(slowest)) slowest = entry;
   }
+  return slowest;
+}
 
-  return ok({
-    // Echoes the PARAM the caller filled in, under the same name.
-    walletFamily: parsed.data.walletFamily,
-    walletCount: snapshots.length,
-    // Kept a NUMBER for compatibility, and it now always travels with the
-    // basis that says what it counted: an unknown slice never silently reads
-    // as a complete portfolio value (C3.2, C3.3).
-    totalUsd: snapshots.reduce((sum, snapshot) => sum + snapshot.totalUsd, 0),
-    // A family that produced no snapshot at all is the ENVELOPE's inventory
-    // failure, and outranks every per-wallet reason.
-    ...combineWalletCompleteness(snapshots, walletErrors.length),
-    walletErrors,
-    wallets: snapshots,
-  });
+function compareLeg(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
 
 function requestedWalletFamilies(wallet: "eip155" | "solana" | "all"): ChainFamily[] {

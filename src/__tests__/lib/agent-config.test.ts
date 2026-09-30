@@ -21,6 +21,7 @@ import {
   parseAgentEnv,
   parseAgentToolReadEnv,
   parseAgentWakeEnv,
+  parseAgentWalletReadEnv,
 } from "../../lib/agent-config.js";
 
 describe("agent-config field metadata", () => {
@@ -268,5 +269,34 @@ describe("parseAgentWakeEnv (Kairos S-3)", () => {
       expect(r.errors.map((e) => e.key)).toEqual(["AGENT_WAKE_CONCURRENCY"]);
       expect(r.value.wakeConcurrency).toBe(1);
     }
+  });
+});
+
+describe("parseAgentWalletReadEnv (Kairos W-1)", () => {
+  it("defaults to parallel legs with a 25 s per-leg deadline", () => {
+    const r = parseAgentWalletReadEnv({});
+    expect(r.errors).toEqual([]);
+    expect(r.value).toEqual({ parallelLegs: true, legTimeoutMs: 25_000 });
+  });
+
+  it("0 and 0 is the pre-Phase-6 read: serial legs, no deadline", () => {
+    const r = parseAgentWalletReadEnv({
+      AGENT_WALLET_READ_PARALLEL: "0",
+      AGENT_WALLET_READ_LEG_TIMEOUT_MS: "0",
+    });
+    expect(r.errors).toEqual([]);
+    expect(r.value).toEqual({ parallelLegs: false, legTimeoutMs: 0 });
+  });
+
+  it("refuses values out of range, and the default applies", () => {
+    const r = parseAgentWalletReadEnv({
+      AGENT_WALLET_READ_PARALLEL: "2",
+      AGENT_WALLET_READ_LEG_TIMEOUT_MS: "999999",
+    });
+    expect(r.errors.map((e) => e.key)).toEqual([
+      "AGENT_WALLET_READ_PARALLEL",
+      "AGENT_WALLET_READ_LEG_TIMEOUT_MS",
+    ]);
+    expect(r.value).toEqual({ parallelLegs: true, legTimeoutMs: 25_000 });
   });
 });

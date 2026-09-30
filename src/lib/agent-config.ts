@@ -340,6 +340,49 @@ export interface AgentWakeBounds {
   readonly wakeConcurrency: number;
 }
 
+// ── WalletBalances legs (Kairos Phase 6, W-1) ─────────────────────
+//
+// The live wallet read has independent legs (the Khalani EVM scan and its
+// price pass, the local-chain RPC lane, the Solana RPC lane). Setting BOTH
+// fields to 0 restores the pre-Phase-6 behaviour exactly: legs in series,
+// Khalani at 4 chains in flight, pricing one chain at a time, no leg deadline.
+
+/**
+ * `1`: run the independent legs concurrently (per-provider caps still apply).
+ * `0`: the previous serial order, exactly.
+ */
+export const AGENT_WALLET_READ_PARALLEL: FieldWithDefault = {
+  key: "AGENT_WALLET_READ_PARALLEL",
+  kind: "int",
+  min: 0,
+  max: 1,
+  default: 1,
+};
+
+/**
+ * Deadline for ONE leg of the live wallet read, in ms. A leg that misses it
+ * is reported by name as not answered (its chain's holdings UNKNOWN, never
+ * zero, and the totals marked partial). `0` disables it.
+ */
+export const AGENT_WALLET_READ_LEG_TIMEOUT_MS: FieldWithDefault = {
+  key: "AGENT_WALLET_READ_LEG_TIMEOUT_MS",
+  kind: "int",
+  min: 0,
+  max: 120_000,
+  default: 25_000,
+};
+
+export const AGENT_WALLET_READ_FIELDS = [
+  AGENT_WALLET_READ_PARALLEL,
+  AGENT_WALLET_READ_LEG_TIMEOUT_MS,
+] as const;
+
+export interface AgentWalletReadBounds {
+  readonly parallelLegs: boolean;
+  /** `0` is disabled. */
+  readonly legTimeoutMs: number;
+}
+
 export interface ParseError {
   readonly key: string;
   readonly raw: string;
@@ -448,6 +491,23 @@ export function parseAgentWakeEnv(env: EnvLike): ParseResult<AgentWakeBounds> {
     ?? AGENT_WAKE_CONCURRENCY.default
     ?? AGENT_WAKE_CONCURRENCY.min;
   return { value: { wakeConcurrency }, errors };
+}
+
+/**
+ * Parse the WalletBalances leg bounds. Same contract as the stream bounds:
+ * blank = default, invalid = collected error and the default applies.
+ */
+export function parseAgentWalletReadEnv(env: EnvLike): ParseResult<AgentWalletReadBounds> {
+  const errors: ParseError[] = [];
+  const read = (field: FieldWithDefault): number =>
+    parseFieldOrDefault(field, env[field.key], errors) ?? field.default ?? field.min;
+  return {
+    value: {
+      parallelLegs: read(AGENT_WALLET_READ_PARALLEL) === 1,
+      legTimeoutMs: read(AGENT_WALLET_READ_LEG_TIMEOUT_MS),
+    },
+    errors,
+  };
 }
 
 function parseFieldOrDefault(
