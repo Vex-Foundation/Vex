@@ -38,6 +38,7 @@ import {
   getDiscoveredToolIds,
 } from "@vex-agent/tools/registry/discovered-tools.js";
 import { defaultVisibilityContext } from "@vex-agent/tools/registry/visibility.js";
+import { getAdmittedProtocolToolIds } from "@vex-agent/tools/registry/core-market-reads.js";
 import type { ToolVisibilityContext } from "@vex-agent/tools/registry/visibility.js";
 
 const SESSION = "fresh-model-surface-session";
@@ -247,8 +248,18 @@ describe("fresh model surface teaches no protocol publicName", () => {
         // NO protocol name is callable for it.
         expect(getDiscoveredToolIds(SESSION)).toEqual([]);
 
+        // A name the dispatcher ADMITS is callable, so naming it teaches nothing
+        // false. With the T-5 preload off (the shipped value) the admitted set
+        // is the empty discovered set and this filter removes nothing; with it
+        // on, only the preloaded reads are admitted and every OTHER name a
+        // description prints is still an offence.
+        const admitted = new Set(
+          getAdmittedProtocolToolIds(SESSION, subject.visibility).map(
+            (toolId) => PROTOCOL_TOOLS.find((manifest) => manifest.toolId === toolId)?.publicName ?? toolId,
+          ),
+        );
         const offences = getOpenAITools(subject.visibility).flatMap((tool) =>
-          namesTaughtIn(tool.function.description).map(
+          namesTaughtIn(tool.function.description).filter((name) => !admitted.has(name)).map(
             (name) => `description of "${tool.function.name}" teaches "${name}"`,
           ),
         );

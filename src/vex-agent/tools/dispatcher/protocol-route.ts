@@ -21,9 +21,12 @@ import {
   type ResolvedAliasTarget,
 } from "../mutating-aliases.js";
 import {
-  MAX_DISCOVERED_TOOLS_PER_SESSION,
-  getDiscoveredToolIds,
+  DISCOVERED_TOOL_PIN_TTL_MS,
+  discoveredToolCapacity,
+  pinDiscoveredTool,
+  touchDiscoveredTool,
 } from "../registry/discovered-tools.js";
+import { getAdmittedProtocolToolIds } from "../registry/core-market-reads.js";
 import {
   isInjectedToolNameShape,
   resolveInjectedProtocolTool,
@@ -113,7 +116,14 @@ export async function routeToolCall(
     // Fail closed on a name this session was never offered: an evicted,
     // stale-from-another-session, or hallucinated dotted id. The message names
     // the real cause and both ways forward (rule 04, 2026-08-02).
-    if (!manifest || !getDiscoveredToolIds(context.sessionId).includes(manifest.toolId)) {
+    // The admitted set is the one `buildInjectedProtocolTools` projects from:
+    // the discovered working set plus, when T-5 is on, the audited read-only
+    // core market reads (`registry/core-market-reads.ts`).
+    const admitted = getAdmittedProtocolToolIds(context.sessionId, {
+      sessionKind: context.sessionKind,
+      missionRunActive: context.missionRunId !== null,
+    });
+    if (!manifest || !admitted.includes(manifest.toolId)) {
       return {
         success: false,
         output:
@@ -131,16 +141,34 @@ export async function routeToolCall(
           // the retired mechanical spellings, and this by-name answer plus
           // re-selection IS the migration path.
           `Unknown tool: ${call.name}. It is not among the protocol tools this session has made `
-          + `callable (only the most recent ${MAX_DISCOVERED_TOOLS_PER_SESSION} stay callable by name). `
+          + `callable (only the most recent ${discoveredToolCapacity()} stay callable by name). `
           + (manifest
             ? `Call ToolSearch(query="select:${manifest.publicName}") to get it back, then call it again.`
             : `Call ToolSearch with a query describing what you need, then call the name it returns.`),
       };
     }
-    return executeProtocolTool(
+    // P-3 bookkeeping (read only when that switch is on): a call is a USE, and
+    // a call that leaves a pending approval or a prepared action behind pins
+    // the tool so the working-set cap can never displace it while that
+    // reference is live. Neither ever makes a tool callable.
+    touchDiscoveredTool(context.sessionId, manifest.toolId);
+    const result = await executeProtocolTool(
       { toolId: manifest.toolId, params: call.args },
       toProtocolExecutionContext(call, context, "in_app_form"),
     );
+    if (result.pendingApproval === true || result.preparedActionFollowUp !== undefined) {
+      const preparedExpiry = result.preparedActionFollowUp === undefined
+        ? Number.NaN
+        : Date.parse(result.preparedActionFollowUp.expiresAt);
+      // Whichever lapses LATER: the approval queue TTL or the prepared action.
+      const pinTtlEnd = Date.now() + DISCOVERED_TOOL_PIN_TTL_MS;
+      pinDiscoveredTool(
+        context.sessionId,
+        manifest.toolId,
+        Number.isFinite(preparedExpiry) ? Math.max(pinTtlEnd, preparedExpiry) : pinTtlEnd,
+      );
+    }
+    return result;
   }
 
   // Mutating protocol-alias branch (Stage 8b - e.g. `SwapExecute`). DEDICATED path:
