@@ -39,6 +39,11 @@ interface RequestOptions {
   method?: "GET" | "POST" | "PUT";
   query?: Record<string, string | undefined>;
   body?: unknown;
+  /**
+   * Cancels the request (a caller Stop or a per-leg deadline). Absent keeps
+   * the transport's own 30 s ceiling as the only bound, exactly as before.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -120,6 +125,7 @@ export class KhalaniClient {
           ? KHALANI_REQUEST_HEADERS
           : { ...KHALANI_REQUEST_HEADERS, "Content-Type": "application/json" },
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        ...(options.signal !== undefined ? { signal: options.signal } : {}),
       });
 
       if (!response.ok) {
@@ -180,11 +186,18 @@ export class KhalaniClient {
    * boundary: entries refused for their `decimals` alone come back in
    * `rejectedEntries` instead of failing the whole call.
    */
-  getTokenBalances(address: string, chainIds?: number[]): Promise<KhalaniTokenBalancesResponse> {
+  getTokenBalances(
+    address: string,
+    chainIds?: number[],
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<KhalaniTokenBalancesResponse> {
     return this.request(
       `/v1/tokens/balances/${encodeURIComponent(address)}`,
       validateTokenBalancesResponse,
-      { query: { chainIds: chainIds?.join(",") } },
+      {
+        query: { chainIds: chainIds?.join(",") },
+        ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+      },
     );
   }
 

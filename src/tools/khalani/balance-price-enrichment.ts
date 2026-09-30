@@ -53,8 +53,12 @@
  * One batched `tokens/v1` read per chain per pass, 30 addresses per request
  * (the provider's cap), issued sequentially, and the chain's wrapped native is
  * ALWAYS one of those addresses - it anchors every tier-1 price and is the only
- * source of a native row's own value. Chains are processed SEQUENTIALLY: one
- * wallet's valuation is not worth fanning out on a shared provider budget.
+ * source of a native row's own value. Chains are processed SEQUENTIALLY by
+ * default. The live `WalletBalances` read may opt into a small chain
+ * concurrency and a per-chain deadline (`chainConcurrency`, `chainTimeoutMs`,
+ * Kairos W-1): serial pricing of a many-chain wallet was a measured share of
+ * that tool's latency, and every request still draws on the ONE shared
+ * throttle budget, so the burst rises but the per-minute budget does not.
  *
  * Fail-soft per chain for a PROVIDER failure: the chain's rows stay exactly as
  * Khalani sent them. The one thing that is never fail-soft is the caller's own
@@ -82,6 +86,8 @@ import { addPoolListsForUnpricedAddresses } from "../dexscreener/unpriced-pool-f
 import { isKhalaniNativeAlias } from "./native-token-identity.js";
 import type { KhalaniToken } from "./types.js";
 import logger from "../../utils/logger.js";
+import { mapWithConcurrency } from "../../utils/concurrency.js";
+import { runWithinDeadline } from "../../utils/deadline.js";
 
 /** The provider's own cap for `tokens/v1`. */
 const DEXSCREENER_TOKENS_BATCH = 30;
@@ -115,6 +121,11 @@ export interface KhalaniPriceEnrichmentResult {
   readonly rows: readonly EnrichedKhalaniToken[];
   /** One entry per chain present in the input, in first-appearance order. */
   readonly counts: readonly KhalaniPriceEnrichmentCounts[];
+  /**
+   * Chains whose pricing missed `chainTimeoutMs`, ascending. Present only when
+   * non-empty. Their rows are exactly as Khalani sent them.
+   */
+  readonly timedOutChainIds?: readonly number[];
 }
 
 export interface KhalaniPriceEnrichmentOptions {
@@ -126,6 +137,24 @@ export interface KhalaniPriceEnrichmentOptions {
    * unpriced.
    */
   readonly signal?: AbortSignal;
+  /**
+   * How many chains are priced at once. Absent or `1`: sequential, today's
+   * behaviour. Every request still goes through the ONE shared DexScreener
+   * throttle, so this can raise the burst but never the per-minute budget.
+   */
+  readonly chainConcurrency?: number;
+  /**
+   * Per-chain deadline in ms (`0` or absent: none). A chain that misses it
+   * keeps EXACTLY the rows Khalani sent, the same fail-soft outcome as a
+   * provider failure, and is named in the result's `timedOutChainIds`.
+   */
+  readonly chainTimeoutMs?: number;
+  /** Per-chain wall time, for the caller's sanitized timing log. */
+  readonly onChainTiming?: (timing: {
+    readonly chainId: number;
+    readonly ms: number;
+    readonly timedOut: boolean;
+  }) => void;
 }
 
 /**
@@ -362,15 +391,78 @@ export async function enrichKhalaniBalancePrices(
     slices.set(token.chainId, slice);
   });
 
-  const counts: KhalaniPriceEnrichmentCounts[] = [];
-  for (const slice of slices.values()) {
+  const chainConcurrency = Math.max(1, Math.floor(options.chainConcurrency ?? 1));
+  const chainTimeoutMs = options.chainTimeoutMs ?? 0;
+  if (chainConcurrency === 1 && !(chainTimeoutMs > 0)) {
+    // Today's pass, unchanged: sequential, no per-chain deadline.
+    const counts: KhalaniPriceEnrichmentCounts[] = [];
+    for (const slice of slices.values()) {
+      options.signal?.throwIfAborted();
+      const chainStartedAt = Date.now();
+      const chainCounts = await enrichChain(slice, out, options.signal);
+      options.onChainTiming?.({ chainId: slice.chainId, ms: Date.now() - chainStartedAt, timedOut: false });
+      counts.push(chainCounts);
+      if (chainCounts.dexscreenerPriced > 0 || chainCounts.unpriced > 0) {
+        logger.info("khalani.balance_price_enrichment", chainCounts);
+      }
+    }
+    return { rows: out, counts };
+  }
+
+  // Bounded-concurrency pass. Each chain writes into its OWN scratch array and
+  // is copied into `out` only when it settled in time, so a chain abandoned at
+  // its deadline can never write a late price into the caller's rows. Counts
+  // are slotted by chain order, so the result is identical to the sequential
+  // pass whatever the completion order.
+  const sliceList = [...slices.values()];
+  const slotted = new Array<KhalaniPriceEnrichmentCounts | undefined>(sliceList.length);
+  const timedOutChainIds: number[] = [];
+  await mapWithConcurrency(sliceList, chainConcurrency, async (slice, index) => {
     options.signal?.throwIfAborted();
-    const chainCounts = await enrichChain(slice, out, options.signal);
+    const chainStartedAt = Date.now();
+    const scratch = new Array<EnrichedKhalaniToken>(tokens.length);
+    const outcome = await runWithinDeadline(chainTimeoutMs, options.signal, (signal) =>
+      enrichChain(slice, scratch, signal));
+    options.onChainTiming?.({
+      chainId: slice.chainId,
+      ms: Date.now() - chainStartedAt,
+      timedOut: outcome.kind === "deadline",
+    });
+    if (outcome.kind === "settled") {
+      for (const entry of slice.entries) {
+        const row = scratch[entry.index];
+        if (row !== undefined) out[entry.index] = row;
+      }
+      slotted[index] = outcome.value;
+      return;
+    }
+    // Missed the deadline: the chain keeps exactly Khalani's rows, the same
+    // fail-soft outcome as a provider failure. Khalani's own prices stay.
+    timedOutChainIds.push(slice.chainId);
+    let khalaniPriced = 0;
+    let unpriced = 0;
+    for (const entry of slice.entries) {
+      const hasPrice = readKhalaniPriceUsd(entry.token) !== null;
+      if (hasPrice) khalaniPriced += 1;
+      else unpriced += 1;
+      out[entry.index] = { token: entry.token, priceSource: hasPrice ? "khalani" : null };
+    }
+    slotted[index] = { chainId: slice.chainId, khalaniPriced, dexscreenerPriced: 0, unpriced };
+  });
+
+  const counts: KhalaniPriceEnrichmentCounts[] = [];
+  for (const chainCounts of slotted) {
+    if (chainCounts === undefined) continue;
     counts.push(chainCounts);
     if (chainCounts.dexscreenerPriced > 0 || chainCounts.unpriced > 0) {
       logger.info("khalani.balance_price_enrichment", chainCounts);
     }
   }
-
-  return { rows: out, counts };
+  return {
+    rows: out,
+    counts,
+    ...(timedOutChainIds.length > 0
+      ? { timedOutChainIds: timedOutChainIds.sort((left, right) => left - right) }
+      : {}),
+  };
 }
