@@ -8,6 +8,7 @@
 import { z } from "zod";
 import { sessionIdField, missionIdField } from "./_common.js";
 import { MISSION_MAX_LAUNCH_COUNT } from "./draft.js";
+import { reasoningEffortSchema } from "../reasoning.js";
 
 // ── acceptContract ──────────────────────────────────────────────
 
@@ -231,6 +232,46 @@ export const missionSetLaunchCeilingsResultSchema = z.discriminatedUnion(
 );
 export type MissionSetLaunchCeilingsResult = z.infer<
   typeof missionSetLaunchCeilingsResultSchema
+>;
+
+// ── setReasoningEffort (Kairos E-1) ──────────────────────────────
+
+/**
+ * The mission's reasoning effort, set on the contract card before acceptance.
+ * Contract-hash material (v8), so a write clears a prior acceptance, and a
+ * started mission refuses the write (`blocked_status`): its run uses the
+ * effort frozen in its own contract snapshot. `null` clears it (medium).
+ */
+export const missionSetReasoningEffortInputSchema = z
+  .object({
+    sessionId: sessionIdField,
+    missionId: missionIdField,
+    reasoningEffort: reasoningEffortSchema.nullable(),
+  })
+  .strict();
+export type MissionSetReasoningEffortInput = z.infer<
+  typeof missionSetReasoningEffortInputSchema
+>;
+
+export const missionSetReasoningEffortResultSchema = z.discriminatedUnion(
+  "outcome",
+  [
+    z
+      .object({
+        outcome: z.literal("updated"),
+        reasoningEffort: reasoningEffortSchema.nullable(),
+        acceptanceCleared: z.boolean(),
+      })
+      .strict(),
+    z.object({ outcome: z.literal("not_found") }).strict(),
+    z
+      .object({ outcome: z.literal("blocked_status"), status: z.string() })
+      .strict(),
+    z.object({ outcome: z.literal("invalid"), reason: z.string() }).strict(),
+  ],
+);
+export type MissionSetReasoningEffortResult = z.infer<
+  typeof missionSetReasoningEffortResultSchema
 >;
 
 // ── setAutoRetry (phase 4d-5) ────────────────────────────────────

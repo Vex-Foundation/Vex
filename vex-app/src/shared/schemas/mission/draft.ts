@@ -12,6 +12,8 @@
 
 import { z } from "zod";
 
+import { reasoningEffortSchema } from "../reasoning.js";
+
 export const MISSION_DRAFT_TITLE_MAX = 200;
 export const MISSION_DRAFT_GOAL_MAX = 4000;
 export const MISSION_DRAFT_LIST_MAX = 32;
@@ -68,6 +70,12 @@ export const missionConstraintsSchema = z
      * authority (see `engine/mission/launch-ceiling.ts`).
      */
     maxLaunchCount: z.number().int().min(0).max(MISSION_MAX_LAUNCH_COUNT).nullable().optional(),
+    /**
+     * Kairos E-1 - the reasoning effort every model call of the run uses.
+     * Contract-hash material (v8). Absent or null runs at medium. Written by
+     * the agent's draft tool or the host through `mission.setReasoningEffort`.
+     */
+    reasoningEffort: reasoningEffortSchema.nullable().optional(),
   })
   .strict();
 export type MissionConstraints = z.infer<typeof missionConstraintsSchema>;

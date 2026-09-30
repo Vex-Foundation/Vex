@@ -49,6 +49,8 @@ import type {
   MissionSetAutoRetryInput,
   MissionSetLaunchCeilingsInput,
   MissionSetLaunchCeilingsResult,
+  MissionSetReasoningEffortInput,
+  MissionSetReasoningEffortResult,
   MissionSetAutoRetryResult,
   MissionStartInput,
   MissionStartResult,
@@ -278,6 +280,27 @@ export function useSetLaunchCeilings(): UseMutationResult<
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input) => window.vex.mission.setLaunchCeilings(input),
+    retry: false,
+    onSettled: (_result, _error, input) => {
+      qc.invalidateQueries({ queryKey: missionKeys.draft(input.sessionId) });
+      qc.invalidateQueries({ queryKey: missionKeys.diffsForSession(input.sessionId) });
+    },
+  });
+}
+
+/**
+ * The mission contract's reasoning effort (Kairos E-1). Contract-hash
+ * material, so both the draft and the diff queries are invalidated, exactly
+ * as for the launch ceilings.
+ */
+export function useSetReasoningEffort(): UseMutationResult<
+  Result<MissionSetReasoningEffortResult>,
+  Error,
+  MissionSetReasoningEffortInput
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input) => window.vex.mission.setReasoningEffort(input),
     retry: false,
     onSettled: (_result, _error, input) => {
       qc.invalidateQueries({ queryKey: missionKeys.draft(input.sessionId) });

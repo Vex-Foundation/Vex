@@ -61,6 +61,7 @@ import {
   refuseMissionContractRequest,
 } from "./mission-contract-request.js";
 import { LaunchCeilingsSection } from "./MissionContractModal/LaunchCeilingsSection.js";
+import { ReasoningEffortSection } from "./MissionContractModal/ReasoningEffortSection.js";
 import {
   readPlan,
   resolvePlanGate,
@@ -213,6 +214,13 @@ export function MissionContractModal({
                * mission is still editable — a started run enforces the ceilings
                * frozen in its own contract snapshot. */}
               <LaunchCeilingsSection
+                sessionId={sessionId}
+                missionId={state.draft.missionId}
+                constraints={state.draft.constraints}
+                editable={state.draft.status === "draft" || state.draft.status === "ready"}
+              />
+              {/* Kairos E-1: the run's reasoning effort, contract material. */}
+              <ReasoningEffortSection
                 sessionId={sessionId}
                 missionId={state.draft.missionId}
                 constraints={state.draft.constraints}

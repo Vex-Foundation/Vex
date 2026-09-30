@@ -390,6 +390,28 @@ export async function mergeConstraintAutoRetry(
  * contract-hash material (v5), so the caller must also invalidate acceptance —
  * see `engine/mission/set-launch-ceilings.ts`, the only caller.
  */
+/**
+ * Merge the E-1 reasoning effort into `constraints_json` without clobbering
+ * siblings. Same lock contract as {@link mergeConstraintLaunchCeilings}: the
+ * caller holds the row lock (`getMissionForUpdate`). `null` clears it.
+ */
+export async function mergeConstraintReasoningEffort(
+  client: PoolClient,
+  id: string,
+  reasoningEffort: string | null,
+): Promise<void> {
+  await executeWith(
+    client,
+    `UPDATE missions
+        SET constraints_json =
+              COALESCE(constraints_json, '{}'::jsonb)
+              || jsonb_build_object('reasoningEffort', $2::text),
+            updated_at = NOW()
+      WHERE id = $1`,
+    [id, reasoningEffort],
+  );
+}
+
 export async function mergeConstraintLaunchCeilings(
   client: PoolClient,
   id: string,
