@@ -211,12 +211,21 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  *   mission setup / full        68,244 -> 68,429 -> 69,024
  *   mission run / restricted    66,949 -> 67,134 -> 67,729 -> 67,951
  *   mission run / full          66,764 -> 66,949 -> 67,544 -> 67,766
+ *
+ * E-1: one `## Required Fields` line in mission setup naming the new contract
+ * field `reasoningEffort` (+152 on the two mission-setup modes only). WHAT THE
+ * BYTES BUY: missions run at medium by default instead of the model's declared
+ * default (High for deepseek-v4.1-flash, 40-54 s of reasoning per action), and
+ * the model can honour a user who asks for faster or deeper thinking.
+ *
+ *   mission setup / restricted  69,005 -> 69,157
+ *   mission setup / full        69,024 -> 69,176
  */
 const MODES = [
   { name: "agent / restricted", context: context({}), ceiling: 62_528 },
   { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 63_229 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 69_005 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 69_024 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 69_157 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 69_176 },
   { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 67_951 },
   { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 67_766 },
 ] as const;

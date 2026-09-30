@@ -457,6 +457,60 @@ describe("runner", () => {
       );
     });
 
+    // E-1: the run's reasoning effort comes from the FROZEN contract snapshot,
+    // never the live row, and a pre-E-1 snapshot runs at medium.
+    it("runs every call at the FROZEN contract effort, ignoring a later live-row edit", async () => {
+      mockGetRun.mockResolvedValueOnce({
+        id: "run-1", missionId: "mission-1", sessionId: "session-1",
+        status: "running", iterationCount: 5,
+        contractSnapshotJson: { frozenMission: { draft: { reasoningEffort: "low" } } },
+      });
+      mockGetMission.mockResolvedValueOnce({
+        id: "mission-1", rootSessionId: "session-1", status: "running",
+        title: "SOL DCA", goal: "Accumulate", capitalSourceJson: {},
+        allowedWallets: ["sol"], allowedChains: ["sol"], allowedProtocols: ["sol"],
+        riskProfile: "conservative", successCriteriaJson: [], stopConditionsJson: [],
+        constraintsJson: { reasoningEffort: "max" }, createdAt: "", updatedAt: "", approvedAt: "",
+      });
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission", missionId: "mission-1", missionRunId: "run-1",
+      }));
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
+      });
+
+      await resumeMissionRun("run-1", RESUME_LEASE);
+
+      const config: unknown = requireValue(mockRunTurnLoop.mock.calls[0])[5];
+      expect(config).toMatchObject({ reasoningEffort: "low" });
+    });
+
+    it("runs a run committed before E-1 (no effort in its snapshot) at medium", async () => {
+      mockGetRun.mockResolvedValueOnce({
+        id: "run-1", missionId: "mission-1", sessionId: "session-1",
+        status: "running", iterationCount: 5,
+        contractSnapshotJson: { frozenMission: { draft: { durationMinutes: 5 } } },
+      });
+      mockGetMission.mockResolvedValueOnce({
+        id: "mission-1", rootSessionId: "session-1", status: "running",
+        title: "SOL DCA", goal: "Accumulate", capitalSourceJson: {},
+        allowedWallets: ["sol"], allowedChains: ["sol"], allowedProtocols: ["sol"],
+        riskProfile: "conservative", successCriteriaJson: [], stopConditionsJson: [],
+        constraintsJson: {}, createdAt: "", updatedAt: "", approvedAt: "",
+      });
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission", missionId: "mission-1", missionRunId: "run-1",
+      }));
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
+      });
+
+      await resumeMissionRun("run-1", RESUME_LEASE);
+
+      const config: unknown = requireValue(mockRunTurnLoop.mock.calls[0])[5];
+      expect(config).toMatchObject({ reasoningEffort: "medium" });
+    });
+
     it("pauses the run with evidence when resume throws inside the loop", async () => {
       mockGetRun.mockResolvedValueOnce({
         id: "run-1", missionId: "mission-1", sessionId: "session-1",

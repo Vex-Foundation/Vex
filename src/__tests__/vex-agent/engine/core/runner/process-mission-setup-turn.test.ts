@@ -386,6 +386,26 @@ describe("runner", () => {
       ]);
     });
 
+    it("runs setup at the draft's reasoning effort, never the provider default (E-1)", async () => {
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission",
+        missionId: "mission-1",
+      }));
+      const draft = makeMission({ constraintsJson: { reasoningEffort: "low" } });
+      mockGetMission.mockResolvedValueOnce(draft).mockResolvedValueOnce(draft);
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Noted.",
+        toolCallsMade: 0,
+        pendingApprovals: [],
+        stopReason: null,
+      });
+
+      await processMissionSetupTurn("session-1", "keep it quick");
+
+      const config: unknown = mockRunTurnLoop.mock.calls.at(0)?.[5];
+      expect(config).toMatchObject({ reasoningEffort: "low" });
+    });
+
     it("adds a DB-not-ready correction when setup text suggests starting a draft", async () => {
       mockHydrate.mockResolvedValueOnce(makeHydratedSession({
         sessionKind: "mission",

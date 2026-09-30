@@ -32,6 +32,10 @@ import logger from "@utils/logger.js";
 import { releaseLeaseAndEmitControlState } from "../../runtime/release-and-emit.js";
 import { emitMissionUpdate } from "../../runtime/mission-bus.js";
 import { toToolDefinitions, DEFAULT_LOOP_CONFIG, runtimeBoundExhaustedReply, isRuntimeBoundStop } from "./shared.js";
+import {
+  effectiveMissionReasoningEffort,
+  withMissionReasoningEffort,
+} from "../../mission/reasoning-effort.js";
 
 export async function processMissionSetupTurn(
   sessionId: string,
@@ -170,7 +174,12 @@ export async function processMissionSetupTurn(
     hydrated.summary,
     hydrated.tokenCount,
     provider,
-    config,
+    // E-1: a mission session never runs at the provider default or a composer
+    // pick. Setup runs at the draft's effort (default medium), clamped.
+    withMissionReasoningEffort(
+      config,
+      effectiveMissionReasoningEffort(setupState?.currentDraft.reasoningEffort),
+    ),
     tools,
     loopConfig,
     promptOptions,

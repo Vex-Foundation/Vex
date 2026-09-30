@@ -84,9 +84,15 @@
  *     The declaration is hashed as ONE OBJECT, not five keys: a partial object
  *     has no readable meaning, and `canonicalStringify` sorts nested keys at
  *     every depth, so a nested shape hashes deterministically.
- *   - v7 - CURRENT. Adds `deployedCapital.assetKind`, the structural
+ *   - v7 - FROZEN. Adds `deployedCapital.assetKind`, the structural
  *     native-versus-token discriminator. Native SOL and wSOL share a route
  *     mint, so address plus display symbol cannot safely select a balance row.
+ *   - v8 - CURRENT (Kairos E-1). Adds `reasoningEffort`, the effort every
+ *     model call of the run uses. Hashed as the EFFECTIVE value: a draft that
+ *     never set it hashes as `medium`, the value it runs at, so "not set" and
+ *     "medium" are the same contract. A mission accepted under v7 or earlier
+ *     still verifies against its recorded version (the field is absent from
+ *     that material) and runs at `medium`.
  *
  * Normalization rules:
  *
@@ -111,6 +117,8 @@ import { z } from "zod";
 
 import type { MissionDraft } from "../types.js";
 import { normalizeDeployedCapital } from "./deployed-capital.js";
+import { effectiveMissionReasoningEffort } from "./reasoning-effort.js";
+import { MISSION_REASONING_EFFORTS } from "../types.js";
 import {
   CanonicalContractMaterialLegacyV2Schema,
   normalizeLegacyHyperliquidRiskV2,
@@ -118,7 +126,7 @@ import {
 } from "./contract-hash-legacy-v2.js";
 
 /** Bumped when the canonical shape or hashing rules change. Produced for every new draft. */
-export const CONTRACT_HASH_VERSION = 7;
+export const CONTRACT_HASH_VERSION = 8;
 export const LEGACY_CONTRACT_HASH_VERSION = 1;
 /**
  * Frozen historical version — see the "Version history" note above. Accepted
@@ -146,6 +154,8 @@ export const LEGACY_V4_CONTRACT_HASH_VERSION = 4;
 export const LEGACY_V5_CONTRACT_HASH_VERSION = 5;
 /** Frozen five-field deployed-capital contract, before structural assetKind. */
 export const LEGACY_V6_CONTRACT_HASH_VERSION = 6;
+/** Frozen six-field deployed-capital contract, before the E-1 reasoning effort. */
+export const LEGACY_V7_CONTRACT_HASH_VERSION = 7;
 export type ContractHashVersion =
   | typeof LEGACY_CONTRACT_HASH_VERSION
   | typeof LEGACY_V2_CONTRACT_HASH_VERSION
@@ -153,6 +163,7 @@ export type ContractHashVersion =
   | typeof LEGACY_V4_CONTRACT_HASH_VERSION
   | typeof LEGACY_V5_CONTRACT_HASH_VERSION
   | typeof LEGACY_V6_CONTRACT_HASH_VERSION
+  | typeof LEGACY_V7_CONTRACT_HASH_VERSION
   | typeof CONTRACT_HASH_VERSION;
 
 /**
@@ -173,6 +184,7 @@ export function isKnownContractHashVersion(
     || version === LEGACY_V4_CONTRACT_HASH_VERSION
     || version === LEGACY_V5_CONTRACT_HASH_VERSION
     || version === LEGACY_V6_CONTRACT_HASH_VERSION
+    || version === LEGACY_V7_CONTRACT_HASH_VERSION
     || version === CONTRACT_HASH_VERSION;
 }
 
@@ -241,8 +253,12 @@ const CanonicalContractMaterialV6Schema = CanonicalContractMaterialV5Schema.omit
   }).strict().nullable(),
 }).strict();
 
+/**
+ * v7 - FROZEN by the E-1 bump; anchored to its own pinned const so a v7
+ * acceptance stays byte-reproducible.
+ */
 const CanonicalContractMaterialV7Schema = CanonicalContractMaterialV6Schema.omit({ v: true }).extend({
-  v: z.literal(CONTRACT_HASH_VERSION),
+  v: z.literal(LEGACY_V7_CONTRACT_HASH_VERSION),
   deployedCapital: z.object({
     amountRaw: z.string(),
     decimals: z.number().int(),
@@ -253,6 +269,12 @@ const CanonicalContractMaterialV7Schema = CanonicalContractMaterialV6Schema.omit
   }).strict().nullable(),
 }).strict();
 
+/** v8 - v7's fields plus the run's reasoning effort, always a concrete value. */
+const CanonicalContractMaterialV8Schema = CanonicalContractMaterialV7Schema.omit({ v: true }).extend({
+  v: z.literal(CONTRACT_HASH_VERSION),
+  reasoningEffort: z.enum(MISSION_REASONING_EFFORTS),
+}).strict();
+
 export type CanonicalContractMaterial =
   | z.infer<typeof CanonicalContractMaterialV1Schema>
   | CanonicalContractMaterialLegacyV2
@@ -260,7 +282,8 @@ export type CanonicalContractMaterial =
   | z.infer<typeof CanonicalContractMaterialV4Schema>
   | z.infer<typeof CanonicalContractMaterialV5Schema>
   | z.infer<typeof CanonicalContractMaterialV6Schema>
-  | z.infer<typeof CanonicalContractMaterialV7Schema>;
+  | z.infer<typeof CanonicalContractMaterialV7Schema>
+  | z.infer<typeof CanonicalContractMaterialV8Schema>;
 
 function normalizeNullableString(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
@@ -395,7 +418,16 @@ export function buildContractMaterial(
       deployedCapital: normalizeLegacyDeployedCapitalV6(draft.deployedCapital),
     });
   }
-  return CanonicalContractMaterialV7Schema.parse({
+  if (version === LEGACY_V7_CONTRACT_HASH_VERSION) {
+    return CanonicalContractMaterialV7Schema.parse({
+      v: LEGACY_V7_CONTRACT_HASH_VERSION,
+      ...base,
+      ...normalizeLaunchCeiling(draft.maxLaunchValueRaw, draft.maxLaunchValueDecimals),
+      maxLaunchCount: normalizeLaunchCount(draft.maxLaunchCount),
+      deployedCapital: normalizeDeployedCapital(draft.deployedCapital),
+    });
+  }
+  return CanonicalContractMaterialV8Schema.parse({
     v: CONTRACT_HASH_VERSION,
     ...base,
     ...normalizeLaunchCeiling(draft.maxLaunchValueRaw, draft.maxLaunchValueDecimals),
@@ -404,6 +436,8 @@ export function buildContractMaterial(
     // acceptance is bound to can never diverge from what the mapper reads back
     // or what the patch parser was allowed to write.
     deployedCapital: normalizeDeployedCapital(draft.deployedCapital),
+    // E-1 - the effective effort: not set hashes as the default it runs at.
+    reasoningEffort: effectiveMissionReasoningEffort(draft.reasoningEffort),
   });
 }
 

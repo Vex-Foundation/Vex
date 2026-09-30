@@ -37,6 +37,10 @@ import {
   resolveMissionPromptContext,
 } from "../../mission/run-contract.js";
 import { resolveFrozenDeadlineMs } from "../../mission/mission-deadline.js";
+import {
+  frozenMissionReasoningEffort,
+  withMissionReasoningEffort,
+} from "../../mission/reasoning-effort.js";
 import type { PromptStackOptions } from "../../prompts/index.js";
 import { getOpenAITools, type ToolVisibilityBase } from "@vex-agent/tools/registry.js";
 import {
@@ -246,7 +250,10 @@ export async function runPreparedMissionStart(
       hydrated.summary,
       hydrated.tokenCount,
       prepared.provider,
-      prepared.config,
+      // E-1: the FROZEN contract effort (default medium), clamped to the
+      // model, on every inference call of this slice. Read from the same
+      // immutable snapshot as the deadline, never the live mission row.
+      withMissionReasoningEffort(prepared.config, frozenMissionReasoningEffort(prepared.contractSnapshot)),
       tools,
       loopConfig,
       promptOptions,
@@ -433,7 +440,10 @@ export async function resumePreparedMissionRun(
       hydrated.summary,
       hydrated.tokenCount,
       prepared.provider,
-      prepared.config,
+      // E-1: the FROZEN contract effort (default medium), clamped to the
+      // model, on every inference call of this slice. Read from the same
+      // immutable snapshot as the deadline, never the live mission row.
+      withMissionReasoningEffort(prepared.config, frozenMissionReasoningEffort(prepared.run.contractSnapshotJson)),
       tools,
       loopConfig,
       promptOptions,

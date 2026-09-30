@@ -86,6 +86,19 @@
             "description": "Mission goal or objective",
             "type": "string"
           },
+          "reasoningEffort": {
+            "description": "Reasoning effort for every model call of the run. Default medium; set it only when the user asks for faster (lower) or deeper (higher) thinking. The user can change it on the contract card.",
+            "enum": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "type": "string"
+          },
           "response_format": {
             "description": "Response shape, 'concise' or 'detailed'. Default 'concise'. 'detailed' also echoes the full currentDraft on top of the status, missingFields and nextAction 'concise' returns.",
             "enum": [
