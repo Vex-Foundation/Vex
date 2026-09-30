@@ -15,6 +15,7 @@ import {
   clampReasoningEffort,
   lowestSupportedReasoningEffort,
   normalizeReasoningSupport,
+  raiseReasoningEffort,
   readAuxReasoningEffortSetting,
   resolveAuxReasoningEffort,
   withAuxReasoningEffort,
@@ -87,6 +88,33 @@ describe("clampReasoningEffort", () => {
   it("leaves the request unchanged when support is unknown", () => {
     expect(clampReasoningEffort("xhigh", null)).toBe("xhigh");
     expect(clampReasoningEffort("xhigh", undefined)).toBe("xhigh");
+  });
+});
+
+describe("raiseReasoningEffort (mission path)", () => {
+  // The live deepseek-v4.1-flash catalog row: low, high, max (and off).
+  const DEEPSEEK_FLASH: ReasoningEffortSupport = { efforts: ["none", "low", "high", "max"] };
+
+  it("keeps a supported request", () => {
+    expect(raiseReasoningEffort("low", DEEPSEEK_FLASH)).toBe("low");
+    expect(raiseReasoningEffort("high", DEEPSEEK_FLASH)).toBe("high");
+  });
+
+  it("raises UP to the nearest higher supported effort, never down", () => {
+    expect(raiseReasoningEffort("medium", DEEPSEEK_FLASH)).toBe("high");
+    expect(raiseReasoningEffort("xhigh", DEEPSEEK_FLASH)).toBe("max");
+    expect(raiseReasoningEffort("minimal", DEEPSEEK_FLASH)).toBe("low");
+    expect(raiseReasoningEffort("medium", MANDATORY)).toBe("high");
+  });
+
+  it("uses the highest supported effort only when nothing at or above the request exists", () => {
+    expect(raiseReasoningEffort("max", OPTIONAL)).toBe("high");
+    expect(raiseReasoningEffort("max", HIGH_ONLY)).toBe("xhigh");
+  });
+
+  it("leaves the request unchanged when support is unknown", () => {
+    expect(raiseReasoningEffort("medium", null)).toBe("medium");
+    expect(raiseReasoningEffort("medium", undefined)).toBe("medium");
   });
 });
 

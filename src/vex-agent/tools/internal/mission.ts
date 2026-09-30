@@ -53,7 +53,7 @@ const MissionDraftUpdateArgs = z
     stopConditions: z.array(z.string().trim().min(1).max(MAX_ARRAY_ITEM_LENGTH)).max(MAX_ARRAY_ITEMS).nullable().optional(),
     deadline: z.string().trim().min(1).max(MAX_STRING_LENGTH).nullable().optional(),
     durationMinutes: z.number().int().positive().max(1440).nullable().optional(),
-    // E-1 - the run's reasoning effort; null clears it (medium applies).
+    // E-1 - the run's reasoning effort; null clears it (the default applies).
     reasoningEffort: z.enum(MISSION_REASONING_EFFORTS).nullable().optional(),
   })
   .strict()

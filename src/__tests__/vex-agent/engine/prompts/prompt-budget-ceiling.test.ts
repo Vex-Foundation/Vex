@@ -220,14 +220,25 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  *
  *   mission setup / restricted  69,005 -> 69,157
  *   mission setup / full        69,024 -> 69,176
+ *
+ * REVIEWED CEILING MOVE, Kairos E-1 follow-up (2026-09-30). One
+ * `## Critical Rules` line in mission run: when calling `MissionStop`, write
+ * the final report as text in the same response (+210 on the two mission-run
+ * modes only). WHAT THE BYTES BUY: the owner's live mission ended with a
+ * tool-only `MissionStop`, so the result (the price move) reached the stop
+ * summary but never the chat. The setup line's default word changes
+ * (medium -> high, high -> max as the "deeper" example) at equal length.
+ *
+ *   mission run / restricted    67,951 -> 68,161
+ *   mission run / full          67,766 -> 67,976
  */
 const MODES = [
   { name: "agent / restricted", context: context({}), ceiling: 62_528 },
   { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 63_229 },
   { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 69_157 },
   { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 69_176 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 67_951 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 67_766 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 68_161 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 67_976 },
 ] as const;
 
 beforeAll(() => {

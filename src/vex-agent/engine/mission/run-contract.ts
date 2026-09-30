@@ -9,6 +9,10 @@
 import { z } from "zod";
 import type { Mission } from "@vex-agent/db/repos/missions.js";
 import { draftToPromptContext, freezeDraft } from "./mapper.js";
+import {
+  effectiveMissionReasoningEffort,
+  missionDefaultReasoningEffortFor,
+} from "./reasoning-effort.js";
 
 const ContractSnapshotSchema = z.object({
   version: z.literal(1),
@@ -20,11 +24,24 @@ const ContractSnapshotSchema = z.object({
 export type MissionRunContractSnapshot = z.infer<typeof ContractSnapshotSchema>;
 
 export function buildMissionRunContractSnapshot(mission: Mission): MissionRunContractSnapshot {
+  const frozen = freezeDraft(mission);
   return {
     version: 1,
     capturedAt: new Date().toISOString(),
     missionPromptContext: draftToPromptContext(mission),
-    frozenMission: freezeDraft(mission),
+    // Kairos E-1: freeze the EFFECTIVE effort, resolved against the default the
+    // acceptance was bound to (by its hash version), so the run never depends
+    // on whatever the unset default is when it later resumes.
+    frozenMission: {
+      ...frozen,
+      draft: {
+        ...frozen.draft,
+        reasoningEffort: effectiveMissionReasoningEffort(
+          frozen.draft.reasoningEffort,
+          missionDefaultReasoningEffortFor(mission.contractHashVersion),
+        ),
+      },
+    },
   };
 }
 

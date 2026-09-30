@@ -87,7 +87,7 @@
             "type": "string"
           },
           "reasoningEffort": {
-            "description": "Reasoning effort for every model call of the run. Default medium; set it only when the user asks for faster (lower) or deeper (higher) thinking. The user can change it on the contract card.",
+            "description": "Reasoning effort for every model call of the run. Default high; set it only when the user asks for faster (lower) or deeper (higher) thinking. The user can change it on the contract card.",
             "enum": [
               "none",
               "minimal",

@@ -82,11 +82,19 @@ export const MISSION_REASONING_EFFORTS = [
 export type MissionReasoningEffort = (typeof MISSION_REASONING_EFFORTS)[number];
 
 /**
- * The effort a mission runs at when its contract does not name one: every
- * draft without the field, and every contract accepted before contract hash
- * v8 (which did not carry it).
+ * The effort a mission runs at when its contract does not name one, for a
+ * contract accepted under hash v9 or later and for every new draft. A mission
+ * moves money, so the default favours care over speed; the run still rounds
+ * an unsupported level UP to what the model offers, never down.
  */
-export const MISSION_DEFAULT_REASONING_EFFORT: MissionReasoningEffort = "medium";
+export const MISSION_DEFAULT_REASONING_EFFORT: MissionReasoningEffort = "high";
+
+/**
+ * The default for a contract accepted under hash v8 or earlier, and for a run
+ * snapshot frozen before the default moved: those users accepted `medium`
+ * (v8 hashed an unset effort as `medium`), so that is what they run at.
+ */
+export const LEGACY_MISSION_DEFAULT_REASONING_EFFORT: MissionReasoningEffort = "medium";
 
 /** Required fields for a mission to transition from draft → ready. */
 export interface MissionDraft {

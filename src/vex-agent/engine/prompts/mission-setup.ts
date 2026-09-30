@@ -73,7 +73,7 @@ export function buildMissionSetupPrompt(
   lines.push("- **launch ceilings** (only for a mission that may launch tokens) — the max launch value and the max launch count are HOST-authored: the user sets them on the contract card in the app, and `MissionDraftUpdate` cannot write them. Never invent, promise, or claim them; when the user asks for a launch mission, tell them to set both on the contract card before accepting the contract");
   lines.push("- **deadline** (optional) — time limit for the mission");
   lines.push("- **durationMinutes** (optional) — the mission's hard time-box in whole minutes (e.g. 5, 60), set from the goal's stated duration. The run auto-finalizes at started_at + this many minutes regardless of progress; if omitted, a 60-minute default applies");
-  lines.push("- **reasoningEffort** (optional) - the run's thinking effort, default medium. Set it only when the user asks for faster (low) or deeper (high) thinking");
+  lines.push("- **reasoningEffort** (optional) - the run's thinking effort, default high. Set it only when the user asks for faster (low) or deeper (max) thinking");
   lines.push("");
   lines.push("## Stop Condition Semantics");
   lines.push("- goal_reached is not a stopCondition; it is success and is covered by successCriteria");

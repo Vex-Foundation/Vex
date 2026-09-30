@@ -6,8 +6,8 @@
  *
  *   - Chat: the operator's per-session composer pick (unchanged; never clamped
  *     here, the composer only offers what the model supports).
- *   - Missions: the accepted contract's `reasoningEffort` (default `medium`),
- *     clamped by {@link clampReasoningEffort}. See
+ *   - Missions: the accepted contract's `reasoningEffort` (default `high`),
+ *     raised to a supported level by {@link raiseReasoningEffort}. See
  *     `engine/mission/reasoning-effort.ts`.
  *   - Background calls (compaction summary and chunker, memory judge, entity
  *     extraction, regime worker): {@link withAuxReasoningEffort}, driven by the
@@ -113,6 +113,32 @@ export function clampReasoningEffort(
     if (lowest === null || r < EFFORT_RANK[lowest]) lowest = effort;
   }
   return lower ?? lowest ?? requested;
+}
+
+/**
+ * Raise a requested effort to the model's supported set: the request itself
+ * when supported, else the NEAREST HIGHER supported effort, so a mission never
+ * thinks less than its contract asked for. Only when the model supports
+ * nothing at or above the request is its highest supported effort used, the
+ * closest value the model accepts at all. Unknown support leaves the request
+ * unchanged. The mission path uses this; background calls keep
+ * {@link clampReasoningEffort}, where spending less is the point.
+ */
+export function raiseReasoningEffort(
+  requested: ReasoningEffort,
+  support: ReasoningEffortSupport | null | undefined,
+): ReasoningEffort {
+  if (support === null || support === undefined || support.efforts.length === 0) return requested;
+  if (support.efforts.includes(requested)) return requested;
+  const rank = EFFORT_RANK[requested];
+  let higher: ReasoningEffort | null = null;
+  let highest: ReasoningEffort | null = null;
+  for (const effort of support.efforts) {
+    const r = EFFORT_RANK[effort];
+    if (r > rank && (higher === null || r < EFFORT_RANK[higher])) higher = effort;
+    if (highest === null || r > EFFORT_RANK[highest]) highest = effort;
+  }
+  return higher ?? highest ?? requested;
 }
 
 /**
