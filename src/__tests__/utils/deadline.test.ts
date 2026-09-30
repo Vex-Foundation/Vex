@@ -58,11 +58,12 @@ describe("runWithinDeadline", () => {
   it("bounds the wait on a leg that ignores its signal", async () => {
     const startedAt = Date.now();
     const outcome = await runWithinDeadline(30, undefined, async () => {
-      await sleep(400);
+      await sleep(2_000);
       return "late";
     });
     expect(outcome).toEqual({ kind: "deadline" });
-    expect(Date.now() - startedAt).toBeLessThan(250);
+    // Well under the leg's own 2 s: the wait ended at the deadline.
+    expect(Date.now() - startedAt).toBeLessThan(1_500);
   });
 
   it("rethrows a leg's own failure that is not the deadline", async () => {

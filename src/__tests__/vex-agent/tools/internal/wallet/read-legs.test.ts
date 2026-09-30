@@ -319,7 +319,10 @@ describe("WalletBalances legs: OFF is today, ON is the same answer sooner", () =
     // Parallel: Khalani 8 in flight (120 ms) then both chains priced at once
     // (100 ms), beside local (150 ms) and Solana (300 ms): the slowest leg.
     expect(parallel.ms).toBeGreaterThanOrEqual(300);
-    expect(parallel.ms).toBeLessThan(500);
+    // Relative, not absolute, so a loaded machine slowing both runs cannot
+    // flip it: the legacy read sleeps about 590 ms more than the parallel one.
+    // Measured unloaded: 908 ms vs 302 ms.
+    expect(parallel.ms).toBeLessThan(legacy.ms - 250);
     // Nothing about the answer is partial.
     expect(parallel.envelope.partial).toBeUndefined();
     expect(parallel.envelope.failedChainIds).toEqual([]);
@@ -335,13 +338,24 @@ describe("WalletBalances legs: OFF is today, ON is the same answer sooner", () =
 });
 
 describe("WalletBalances legs: a leg that misses its deadline is named, never zero", () => {
-  const bounded: AgentWalletReadBounds = { parallelLegs: true, legTimeoutMs: 200 };
+  // The healthy legs answer in 5 ms against a 1000 ms deadline, so only the
+  // leg a test hangs can miss it, even on a loaded machine. The wall bound
+  // (4 s) only proves the call returns: a hung leg never settles on its own.
+  const bounded: AgentWalletReadBounds = { parallelLegs: true, legTimeoutMs: 1000 };
+
+  beforeEach(() => {
+    delays.khalaniPerChain = 5;
+    delays.nativePerChain = 5;
+    delays.pricingPerRequest = 5;
+    delays.local = 5;
+    delays.solana = 5;
+  });
 
   it("a hung Solana RPC read yields a PARTIAL answer naming Solana, bounded by the deadline", async () => {
     solanaHangs = true;
     const { envelope, ms } = await run(bounded);
 
-    expect(ms).toBeLessThan(600);
+    expect(ms).toBeLessThan(4_000);
     const solana = walletOf(envelope, "solana");
     expect(solana.tokens).toEqual([]);
     expect(solana.scannedChainIds).toEqual([]);
@@ -349,9 +363,9 @@ describe("WalletBalances legs: a leg that misses its deadline is named, never ze
     expect(solana.chainErrors).toEqual([{
       chainId: SOLANA_CHAIN_ID,
       chainName: "Solana",
-      message: "Solana RPC read timed out after 200ms; holdings on this chain are unknown (not zero)",
+      message: "Solana RPC read timed out after 1000ms; holdings on this chain are unknown (not zero)",
     }]);
-    expect(solana.legsNotAnswered).toEqual([{ leg: "solana_rpc", chainId: SOLANA_CHAIN_ID, timeoutMs: 200 }]);
+    expect(solana.legsNotAnswered).toEqual([{ leg: "solana_rpc", chainId: SOLANA_CHAIN_ID, timeoutMs: 1000 }]);
     expect(solana.totalUsdBasis).toBe("priced_only");
     expect(solana.inventoryComplete).toBe(false);
     // Totals say they are partial, in fields and in words.
@@ -369,7 +383,7 @@ describe("WalletBalances legs: a leg that misses its deadline is named, never ze
     hungKhalaniChains.add(137);
     const { envelope, ms } = await run(bounded);
 
-    expect(ms).toBeLessThan(700);
+    expect(ms).toBeLessThan(4_000);
     const evm = walletOf(envelope, "eip155");
     expect(evm.scannedChainIds).not.toContain(137);
     expect(evm.scannedChainIds).toContain(BASE);
@@ -378,9 +392,9 @@ describe("WalletBalances legs: a leg that misses its deadline is named, never ze
     expect(evm.chainErrors).toContainEqual({
       chainId: 137,
       chainName: "Chain 137",
-      message: "timed out after 200ms; holdings on this chain are unknown (not zero)",
+      message: "timed out after 1000ms; holdings on this chain are unknown (not zero)",
     });
-    expect(evm.legsNotAnswered).toEqual([{ leg: "khalani_scan", chainId: 137, timeoutMs: 200 }]);
+    expect(evm.legsNotAnswered).toEqual([{ leg: "khalani_scan", chainId: 137, timeoutMs: 1000 }]);
     expect(evm.totalUsdBasis).toBe("priced_only");
     expect(envelope.partial).toBe(true);
   });
@@ -389,16 +403,16 @@ describe("WalletBalances legs: a leg that misses its deadline is named, never ze
     localHangs = true;
     const { envelope, ms } = await run(bounded);
 
-    expect(ms).toBeLessThan(700);
+    expect(ms).toBeLessThan(4_000);
     const evm = walletOf(envelope, "eip155");
     expect(evm.scannedChainIds).not.toContain(LOCAL_CHAIN_ID);
     expect(evm.failedChainIds).toEqual([LOCAL_CHAIN_ID]);
     expect(evm.tokens.some((token) => token.chainId === LOCAL_CHAIN_ID)).toBe(false);
     expect(evm.chainErrors).toContainEqual({
       chainId: LOCAL_CHAIN_ID,
-      message: "local chain RPC read timed out after 200ms; holdings on this chain are unknown (not zero)",
+      message: "local chain RPC read timed out after 1000ms; holdings on this chain are unknown (not zero)",
     });
-    expect(evm.legsNotAnswered).toEqual([{ leg: "local_chain_rpc", chainId: LOCAL_CHAIN_ID, timeoutMs: 200 }]);
+    expect(evm.legsNotAnswered).toEqual([{ leg: "local_chain_rpc", chainId: LOCAL_CHAIN_ID, timeoutMs: 1000 }]);
     expect(envelope.partial).toBe(true);
   });
 
@@ -406,13 +420,13 @@ describe("WalletBalances legs: a leg that misses its deadline is named, never ze
     pricingHangs = true;
     const { envelope, ms } = await run(bounded);
 
-    expect(ms).toBeLessThan(700);
+    expect(ms).toBeLessThan(4_000);
     const evm = walletOf(envelope, "eip155");
     expect(evm.failedChainIds).toEqual([]);
     expect(evm.scannedChainIds).toEqual(expect.arrayContaining([...KHALANI_CHAIN_IDS, LOCAL_CHAIN_ID]));
     expect(evm.legsNotAnswered).toEqual([
-      { leg: "price_enrichment", chainId: BASE, timeoutMs: 200 },
-      { leg: "price_enrichment", chainId: ARBITRUM, timeoutMs: 200 },
+      { leg: "price_enrichment", chainId: BASE, timeoutMs: 1000 },
+      { leg: "price_enrichment", chainId: ARBITRUM, timeoutMs: 1000 },
     ]);
     expect(evm.valuationComplete).toBe(false);
     expect(evm.totalUsdBasis).toBe("priced_only");
@@ -422,12 +436,12 @@ describe("WalletBalances legs: a leg that misses its deadline is named, never ze
   });
 
   it("a price that arrives after the deadline never lands in the answer", async () => {
-    pricingLateAnswerMs = 350;
-    const { envelope } = await run({ parallelLegs: true, legTimeoutMs: 150 });
+    pricingLateAnswerMs = 1_500;
+    const { envelope } = await run({ parallelLegs: true, legTimeoutMs: 500 });
     const evm = walletOf(envelope, "eip155");
     const before = JSON.stringify(evm.tokens);
     // Let the late answers resolve; the returned rows must not move.
-    await sleep(400);
+    await sleep(1_600);
     expect(JSON.stringify(evm.tokens)).toBe(before);
     for (const token of evm.tokens.filter((row) => row.address === UNPRICED_TOKEN)) {
       expect(token.priceUsd ?? null).toBeNull();
