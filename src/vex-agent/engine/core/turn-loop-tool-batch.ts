@@ -216,6 +216,7 @@ export async function processTurnToolBatch(args: {
   const presentationGate = evaluatePresentationGate({
     toolCalls: turnResult.toolCalls,
     hasPendingPresentation: hasPendingPresentation(context.sessionId),
+    missionRun: Boolean(context.missionRunId),
   });
   if (presentationGate.kind === "refuse_batch") {
     logger.info("board.presentation.batch_refused", {

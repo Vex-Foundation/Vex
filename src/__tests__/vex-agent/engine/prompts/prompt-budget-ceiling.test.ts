@@ -231,14 +231,23 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  *
  *   mission run / restricted    67,951 -> 68,161
  *   mission run / full          67,766 -> 67,976
+ *
+ * Same line, second live finding (+175 on the two mission-run modes): after a
+ * `BoardCompose` the board gate refuses every tool call until the report is
+ * written, `MissionStop` included, so the line names the order (report as its
+ * own reply, then `MissionStop`). WHAT THE BYTES BUY: the owner's rerun spent
+ * a refused stop, a prose round and a misleading continue cue finding it.
+ *
+ *   mission run / restricted    68,161 -> 68,336
+ *   mission run / full          67,976 -> 68,151
  */
 const MODES = [
   { name: "agent / restricted", context: context({}), ceiling: 62_528 },
   { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 63_229 },
   { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 69_157 },
   { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 69_176 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 68_161 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 67_976 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 68_336 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 68_151 },
 ] as const;
 
 beforeAll(() => {

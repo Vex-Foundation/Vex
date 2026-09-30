@@ -48,6 +48,16 @@ import {
 export const MISSION_CONTINUE_CUE =
   "[Engine: continue - no stop condition met. Proceed with next action.]";
 
+/**
+ * The cue after a mission report that carried a staged board. The board rule
+ * refuses every tool call until that report is written, including
+ * `MissionStop`, so a finished mission reaches its stop only on the round after
+ * the report. "No stop condition met" would be false there and invited another
+ * round of prose; this cue names the next action instead.
+ */
+export const MISSION_BOARD_DELIVERED_CUE =
+  "[Engine: report and board delivered. If a stop condition is met, call MissionStop now; otherwise proceed with the next action.]";
+
 export type TextResponseOutcome =
   | { kind: "mission_run_continue" }
   | { kind: "break_on_text" }
@@ -74,7 +84,7 @@ export async function handleTextResponse(args: {
    */
   readonly loopDeferCalledThisSlice?: boolean;
 }): Promise<TextResponseOutcome> {
-  await persistTextAnswer({ ...args, attachBoard: true });
+  const boardAttached = await persistTextAnswer({ ...args, attachBoard: true });
 
   // A fenced save refused after a takeover (or a loss seen by the heartbeat)
   // ends the turn here: the continue marker below is a write too, and it
@@ -101,15 +111,16 @@ export async function handleTextResponse(args: {
     // appended to (never rewritten), so the cached prompt prefix stays
     // stable and the persisted rows match the live tape.
     if (!tailAlreadyCarriesContinueCue(args.liveMessages)) {
+      const cue = boardAttached ? MISSION_BOARD_DELIVERED_CUE : MISSION_CONTINUE_CUE;
       await appendEngineMessage(
         args.context.sessionId,
-        MISSION_CONTINUE_CUE,
+        cue,
         { source: "engine", messageType: "continue", visibility: "internal" },
       );
 
       args.liveMessages.push({
         role: "system",
-        content: MISSION_CONTINUE_CUE,
+        content: cue,
         timestamp: new Date().toISOString(),
       });
     }
@@ -160,7 +171,8 @@ export function tailAlreadyCarriesContinueCue(messages: readonly Message[]): boo
     if (row.role === "assistant" && (row.toolCalls === undefined || row.toolCalls.length === 0)) {
       continue;
     }
-    return row.role === "system" && row.content === MISSION_CONTINUE_CUE;
+    return row.role === "system"
+      && (row.content === MISSION_CONTINUE_CUE || row.content === MISSION_BOARD_DELIVERED_CUE);
   }
   return false;
 }
@@ -175,6 +187,8 @@ export function tailAlreadyCarriesContinueCue(messages: readonly Message[]): boo
  * turn's final prose), and a fragment saved ahead of a continuation that
  * called tools (`attachBoard: false` - the prose that ends the turn comes
  * later and should carry the board).
+ *
+ * Returns whether this row carried a staged board.
  */
 export async function persistTextAnswer(args: {
   readonly context: EngineContext;
@@ -183,7 +197,7 @@ export async function persistTextAnswer(args: {
   readonly content: string;
   readonly reasoning: string | null;
   readonly attachBoard: boolean;
-}): Promise<void> {
+}): Promise<boolean> {
   // ── Board consume: this row is the commit point ──
   // A board staged by `BoardCompose` earlier in this turn is taken here and
   // written INTO the same INSERT as the prose, so prose and board commit
@@ -222,4 +236,5 @@ export async function persistTextAnswer(args: {
     content: args.content,
     timestamp: new Date().toISOString(),
   });
+  return pending !== null;
 }

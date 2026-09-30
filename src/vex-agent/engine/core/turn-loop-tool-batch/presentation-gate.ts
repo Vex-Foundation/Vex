@@ -33,6 +33,21 @@ export const BOARD_PENDING_TOOL_REFUSED_OUTPUT =
   + "dispatched and had no effect. Write your final reply now as plain prose with no tool calls; "
   + "the staged board is attached to that message.";
 
+/**
+ * The same refusal inside an active mission run. A mission ends only through
+ * `MissionStop`, which this gate also refuses while a board is pending, so the
+ * refusal names the whole ending in order: the report first (the board
+ * attaches to it), then `MissionStop` in the next response. Without this the
+ * model retried the stop, was refused again, and spent rounds finding the
+ * order itself.
+ */
+export const BOARD_PENDING_MISSION_TOOL_REFUSED_OUTPUT =
+  "board_pending_write_final_reply: a board is already staged for this turn and is waiting for "
+  + "your report. No further tool calls run until it is attached, so this call was NOT "
+  + "dispatched and had no effect. Write your report now as plain prose with no tool calls; "
+  + "the staged board is attached to that message. If the mission is complete, call MissionStop "
+  + "in your next response, after the report.";
+
 export type PresentationGateDecision =
   | { readonly kind: "proceed" }
   | {
@@ -53,6 +68,8 @@ export type PresentationGateDecision =
 export function evaluatePresentationGate(args: {
   readonly toolCalls: readonly { readonly name: string }[];
   readonly hasPendingPresentation: boolean;
+  /** True inside an active mission run: the refusal then names the mission ending. */
+  readonly missionRun?: boolean;
 }): PresentationGateDecision {
   if (args.toolCalls.length === 0) return { kind: "proceed" };
 
@@ -60,7 +77,9 @@ export function evaluatePresentationGate(args: {
     return {
       kind: "refuse_batch",
       reason: "pending_presentation",
-      output: BOARD_PENDING_TOOL_REFUSED_OUTPUT,
+      output: args.missionRun === true
+        ? BOARD_PENDING_MISSION_TOOL_REFUSED_OUTPUT
+        : BOARD_PENDING_TOOL_REFUSED_OUTPUT,
     };
   }
 

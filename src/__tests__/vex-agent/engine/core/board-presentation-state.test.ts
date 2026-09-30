@@ -30,6 +30,7 @@ import { makeEngineContext } from "../_engine-context.js";
 
 import {
   BOARD_COMPOSE_NOT_SOLE_CALL_OUTPUT,
+  BOARD_PENDING_MISSION_TOOL_REFUSED_OUTPUT,
   BOARD_PENDING_TOOL_REFUSED_OUTPUT,
   evaluatePresentationGate,
 } from "@vex-agent/engine/core/turn-loop-tool-batch/presentation-gate.js";
@@ -124,6 +125,24 @@ describe("evaluatePresentationGate", () => {
         output: BOARD_PENDING_TOOL_REFUSED_OUTPUT,
       });
     }
+  });
+
+  it("names the mission ending in a mission run: report first, then MissionStop", () => {
+    const decision = evaluatePresentationGate({
+      toolCalls: [{ name: "MissionStop" }],
+      hasPendingPresentation: true,
+      missionRun: true,
+    });
+    expect(decision).toEqual({
+      kind: "refuse_batch",
+      reason: "pending_presentation",
+      output: BOARD_PENDING_MISSION_TOOL_REFUSED_OUTPUT,
+    });
+    expect(BOARD_PENDING_MISSION_TOOL_REFUSED_OUTPUT).toMatch(/call MissionStop in your next response/);
+    // Outside a mission run the refusal is unchanged.
+    expect(
+      evaluatePresentationGate({ toolCalls: [{ name: "MissionStop" }], hasPendingPresentation: true }),
+    ).toMatchObject({ output: BOARD_PENDING_TOOL_REFUSED_OUTPUT });
   });
 
   it("names the pending board rather than the sole-call rule when both apply", () => {

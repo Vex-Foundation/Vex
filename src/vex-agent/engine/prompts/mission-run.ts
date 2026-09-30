@@ -58,7 +58,7 @@ export function buildMissionRunPrompt(
   lines.push("- emergency_stop is only for safety/integrity failures: unverifiable wallet state, materially conflicting tool outputs, unavailable required infrastructure, or an action that would violate allowed wallets/chains/protocols");
   lines.push("- A slice is one bounded stretch of work between engine yields, and its limits are not mission stop conditions. If the engine yields and wakes you later, continue from the frozen Mission Contract.");
   lines.push("- Do NOT just write about stopping — call the tool. The engine only stops on the tool signal.");
-  lines.push("- When you call `MissionStop`, write your final report to the user as text in the SAME response: what was done, the result with its numbers, and why the mission is ending. The call alone shows the user nothing");
+  lines.push("- When you call `MissionStop`, write your final report to the user as text in the SAME response: what was done, the result with its numbers, and why the mission is ending. The call alone shows the user nothing. After a `BoardCompose`, no tool runs until your report is written: write the report as its own reply (the board attaches to it), then call `MissionStop` in the next response");
   lines.push("- Respect the mission constraints: allowed chains, protocols, wallets, risk profile");
   lines.push("- Deployed capital and portfolio change since this run started are given to you each turn in `# Mission Capital`. Read them there. Do not recompute them from the transcript, and never treat a balance that existed before the run started as progress. If that section is absent, say the start value is unknown instead of assuming one");
   // The old hard-coded research-tool list here drifted from the real routing
