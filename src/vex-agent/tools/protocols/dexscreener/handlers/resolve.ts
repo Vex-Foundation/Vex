@@ -105,6 +105,7 @@ import {
   siteError,
 } from "@tools/dexscreener/site-errors.js";
 import { fail, num, ok, str } from "../../handler-helpers.js";
+import { withReadProjection } from "../row-projection.js";
 import { liquidityInterpretation } from "./liquidity-interpretation.js";
 import { readStringList } from "../../runtime/list-params.js";
 import type { ProtocolHandler } from "../../types.js";
@@ -2502,7 +2503,7 @@ function guarded(
 ): ProtocolHandler {
   return async (params, context) => {
     try {
-      return await run(params, context.abortSignal);
+      return withReadProjection(await run(params, context.abortSignal));
     } catch (error) {
       if (isDexScreenerSiteError(error)) {
         return fail(

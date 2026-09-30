@@ -22,6 +22,7 @@ import {
   parseAgentToolReadEnv,
   parseAgentWakeEnv,
   parseAgentWalletReadEnv,
+  parseAgentReadProjectionEnv,
 } from "../../lib/agent-config.js";
 
 describe("agent-config field metadata", () => {
@@ -269,6 +270,16 @@ describe("parseAgentWakeEnv (Kairos S-3)", () => {
       expect(r.errors.map((e) => e.key)).toEqual(["AGENT_WAKE_CONCURRENCY"]);
       expect(r.value.wakeConcurrency).toBe(1);
     }
+  });
+});
+
+describe("parseAgentReadProjectionEnv (Kairos P-6)", () => {
+  it("defaults OFF, turns on with 1, and refuses anything else", () => {
+    expect(parseAgentReadProjectionEnv({})).toEqual({ value: false, errors: [] });
+    expect(parseAgentReadProjectionEnv({ AGENT_READ_PROJECTION: "1" }).value).toBe(true);
+    const bad = parseAgentReadProjectionEnv({ AGENT_READ_PROJECTION: "yes" });
+    expect(bad.value).toBe(false);
+    expect(bad.errors.map((e) => e.key)).toEqual(["AGENT_READ_PROJECTION"]);
   });
 });
 

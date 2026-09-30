@@ -377,6 +377,28 @@ export const AGENT_WALLET_READ_FIELDS = [
   AGENT_WALLET_READ_LEG_TIMEOUT_MS,
 ] as const;
 
+/**
+ * Kairos Phase 6, P-6: source-side projection of large READ answers
+ * (DexScreener row answers) for the MODEL-facing text only. `0` (default) is
+ * today's output, byte for byte. `1` removes values restated elsewhere in the
+ * same answer; no money-critical value is dropped or rewritten.
+ */
+export const AGENT_READ_PROJECTION: FieldWithDefault = {
+  key: "AGENT_READ_PROJECTION",
+  kind: "int",
+  min: 0,
+  max: 1,
+  default: 0,
+};
+
+/** Whether P-6 projection is on. Blank or invalid reads as the default (off). */
+export function parseAgentReadProjectionEnv(env: EnvLike): ParseResult<boolean> {
+  const errors: ParseError[] = [];
+  const value = parseFieldOrDefault(AGENT_READ_PROJECTION, env[AGENT_READ_PROJECTION.key], errors)
+    ?? AGENT_READ_PROJECTION.default ?? 0;
+  return { value: value === 1, errors };
+}
+
 export interface AgentWalletReadBounds {
   readonly parallelLegs: boolean;
   /** `0` is disabled. */

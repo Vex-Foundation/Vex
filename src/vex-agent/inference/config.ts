@@ -23,6 +23,7 @@ import {
   parseAgentToolReadEnv,
   parseAgentWakeEnv,
   parseAgentWalletReadEnv,
+  parseAgentReadProjectionEnv,
   type AgentStreamBounds,
 } from "../../lib/agent-config.js";
 import logger from "@utils/logger.js";
@@ -117,7 +118,11 @@ export function loadEnvConfig(): EnvConfig {
   // And the WalletBalances leg bounds, read per call by
   // `tools/internal/wallet/leg-bounds.ts`.
   const walletReadParse = parseAgentWalletReadEnv(process.env);
+  // And the P-6 read projection switch, read per answer by
+  // `tools/protocols/dexscreener/row-projection.ts`.
+  const readProjectionParse = parseAgentReadProjectionEnv(process.env);
   for (const e of [
+    ...readProjectionParse.errors,
     ...agentParse.errors,
     ...boundsParse.errors,
     ...dbBoundsParse.errors,
