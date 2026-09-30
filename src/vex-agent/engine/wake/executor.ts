@@ -43,6 +43,14 @@
  *   claim-mission-wake.ts - the atomic mission wake/run/lease claim,
  *                           including the auto-retry route.
  *   provider.ts   — `isWakeProviderConfigured`.
+ *   pool.ts       - the concurrent pool, used only when
+ *                   `AGENT_WAKE_CONCURRENCY` > 1: passes keep claiming while
+ *                   slices run, never two slices of one session or of one
+ *                   selected wallet at once.
+ *   wallet-keys.ts - the wallet identities a slice can mutate.
+ *
+ * With the default concurrency of 1 the pool is never built and the executor
+ * is exactly the serial `tick` chain described above.
  *
  * `startWakeExecutor` + `WakeExecutorHandle` + `StartOptions` stay here as the
  * self-scheduling lifecycle owner so the setTimeout chain, in-flight drain, and
@@ -51,8 +59,11 @@
 
 import logger from "@utils/logger.js";
 
-import { tick } from "./executor/tick.js";
+import { parseAgentWakeEnv } from "../../../lib/agent-config.js";
+import { tick, type ClaimedWake } from "./executor/tick.js";
 import { buildProductionDeps, type WakeDeps } from "./executor/deps.js";
+import { createWakePool } from "./executor/pool.js";
+import { sessionWalletKeys, type WalletKeysFor } from "./executor/wallet-keys.js";
 import {
   startWakeWatchPromoter,
   type WakeWatchPromoterHandle,
@@ -118,6 +129,34 @@ export interface StartOptions {
    * ever claimed by THIS executor, so its lifetime is bound to the executor's.
    */
   startStuckWakeRepair?: () => StuckWakeRepairHandle;
+  /**
+   * Most wake slices in flight at once. Defaults to the validated
+   * `AGENT_WAKE_CONCURRENCY` (`src/lib/agent-config.ts`, default 1). `1` is
+   * the serial executor, unchanged: one `tick` at a time, each claim followed
+   * by its whole slice, then the interval. Above 1 the concurrent pool
+   * (`./executor/pool.ts`) keeps claiming while slices run.
+   */
+  concurrency?: number;
+  /** Wallet-key lookup override for tests (concurrent pool only). */
+  walletKeysFor?: WalletKeysFor;
+  /** Observer for each settled slice (concurrent pool only). Must not throw. */
+  onSliceSettled?: (result: ClaimedWake) => void;
+}
+
+/**
+ * The effective wake concurrency. An invalid value was already refused at
+ * startup by `loadEnvConfig`; here it only falls back to the serial default,
+ * logged by key and reason, never widened.
+ */
+function readWakeConcurrency(): number {
+  const parsed = parseAgentWakeEnv(process.env);
+  for (const error of parsed.errors) {
+    logger.warn("wake.executor.concurrency_invalid_using_default", {
+      key: error.key,
+      reason: error.reason,
+    });
+  }
+  return parsed.value.wakeConcurrency;
 }
 
 /**
@@ -134,6 +173,11 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
   const limit = options.batchSize ?? 10;
   const now = options.now ?? (() => new Date());
   const deps = options.deps ?? buildProductionDeps();
+  // Checked before anything below starts, so a bad value leaves nothing running.
+  const concurrency = options.concurrency ?? readWakeConcurrency();
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
+    throw new Error("startWakeExecutor: concurrency must be a positive integer");
+  }
   const promoter = (options.startWatchPromoter ?? startWakeWatchPromoter)();
   const pricePoller = (options.startPriceWatchPoller ?? (() => startPriceWatchPoller()))();
   const orphanReclaim = (
@@ -147,9 +191,26 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
   let inFlight: Promise<void> | null = null;
   let timer: NodeJS.Timeout | null = null;
 
+  // Concurrent pool, only above 1. At 1 it is never built and the serial
+  // chain below runs exactly as before.
+  const pool = concurrency > 1
+    ? createWakePool({
+        concurrency,
+        limit,
+        deps,
+        walletKeysFor: options.walletKeysFor ?? sessionWalletKeys,
+        onSettled: options.onSliceSettled,
+      })
+    : null;
+
   const runOne = async (): Promise<void> => {
     try {
-      await tick(now(), limit, deps);
+      if (pool !== null) {
+        // Awaits only the listing and the wallet lookups, never a slice.
+        await pool.pass(now());
+      } else {
+        await tick(now(), limit, deps);
+      }
     } catch (err) {
       logger.error("wake.executor.tick_failed", {
         error: err instanceof Error ? err.message : String(err),
@@ -168,7 +229,11 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
   };
 
   timer = setTimeout(schedule, interval);
-  logger.info("wake.executor.started", { intervalMs: interval, batchSize: limit });
+  logger.info("wake.executor.started", {
+    intervalMs: interval,
+    batchSize: limit,
+    concurrency,
+  });
 
   return {
     async stop(): Promise<void> {
@@ -189,6 +254,10 @@ export function startWakeExecutor(options: StartOptions = {}): WakeExecutorHandl
           // Already logged inside runOne — swallow so shutdown doesn't throw.
         }
       }
+      // The concurrent pool's slices outlive the pass that started them, so
+      // they are drained here, after the last pass: each ends on its own
+      // lease release against a live DB, and no new slice can start.
+      if (pool !== null) await pool.drain();
       logger.info("wake.executor.stopped");
     },
   };
