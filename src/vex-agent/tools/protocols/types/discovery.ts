@@ -310,6 +310,11 @@ export interface ToolSearchQueryRow {
   actionKind: ActionKind;
   /** Present only when true - same contract as {@link ProtocolDiscoveryItem}. */
   unavailable_at_pressure?: boolean;
+  /**
+   * P-2 only (`registry/discovery-policy.ts`), present only when true: the row
+   * was SHOWN but not recorded, so it is not callable until selected.
+   */
+  notLoaded?: boolean;
 }
 
 /**
