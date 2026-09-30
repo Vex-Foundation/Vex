@@ -60,6 +60,7 @@ import { isInferenceTimeout } from "./attempt-timing.js";
 import { nameAsInferenceTimeout } from "./inference-timeout.js";
 import { extractUsage, parseNonStreamingResponse } from "./openrouter/mappers.js";
 import { buildOpenRouterParams } from "./openrouter/params.js";
+import { REASONING_REPLAY_ENABLED, shouldReplayReasoning } from "./openrouter/reasoning-replay.js";
 import { computeRequestCost } from "./openrouter/cost.js";
 import { consumeOpenRouterStream } from "./openrouter/stream.js";
 import { requireNonEmptyOpenRouterStream } from "./openrouter/non-empty-stream.js";
@@ -366,7 +367,7 @@ export class OpenRouterProvider implements InferenceProvider {
       : null;
 
     return {
-      ...parseNonStreamingResponse(response),
+      ...parseNonStreamingResponse(response, shouldReplayReasoning(config.model, REASONING_REPLAY_ENABLED)),
       servingProvider: routing?.provider ?? null,
     };
   }
@@ -464,7 +465,7 @@ export class OpenRouterProvider implements InferenceProvider {
         // stream is safe to retry because no user-visible delta was emitted.
         // The wait itself is bounded (see `non-empty-stream.ts`).
         return requireNonEmptyOpenRouterStream(
-          consumeOpenRouterStream(opened),
+          consumeOpenRouterStream(opened, shouldReplayReasoning(attemptConfig.model, REASONING_REPLAY_ENABLED)),
           signal,
         );
       },

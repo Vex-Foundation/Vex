@@ -276,6 +276,28 @@ export interface InferenceResponse {
    * writing would act on a plan that was never completed.
    */
   malformedToolCallCount: number;
+  /**
+   * Provider reasoning to hand back on this round's assistant tool-call
+   * message within the same turn-loop run (Kairos R-7). Present only when
+   * reasoning replay is switched on for the model's family and the round's
+   * details were replayable; absent otherwise. Opaque and memory-only: never
+   * persisted, logged, or sent to the renderer.
+   */
+  reasoningReplay?: ReasoningReplayPayload | null;
+}
+
+/**
+ * Opaque, memory-only carrier of one round's provider reasoning for replay
+ * within the live tool loop (Kairos R-7). The inference provider that created
+ * it is the only code that can read its content; everything else sees a
+ * count. Its JSON form is a count, so an accidental log or dump cannot leak
+ * encrypted or raw reasoning.
+ */
+export interface ReasoningReplayPayload {
+  readonly detailCount: number;
+  /** UTF-8 bytes of the details' JSON, for bounds and sanitised telemetry. */
+  readonly byteLength: number;
+  toJSON(): string;
 }
 
 // ── Streaming chunk ──────────────────────────────────────────────
@@ -339,6 +361,13 @@ export interface StreamChunk {
    * inspect every chunk to attribute the completion.
    */
   servingProvider?: string;
+
+  /**
+   * Replayable reasoning for the completion, on `done` chunks only (Kairos
+   * R-7, switched). Never forwarded to the stream bus: `toStreamDeltaEvent`
+   * maps a `done` chunk to `{kind: "done"}` and nothing else.
+   */
+  reasoningReplay?: ReasoningReplayPayload;
 }
 
 // ── Provider balance ─────────────────────────────────────────────
@@ -412,6 +441,12 @@ export interface ProviderMessage {
   toolCalls?: ProviderToolCallRef[];
   /** Cache-segment marker — see {@link ProviderMessageCacheHint}. */
   cacheHint?: ProviderMessageCacheHint;
+  /**
+   * Reasoning replay for an assistant tool-call message (Kairos R-7). Set
+   * only by the turn loop's in-memory replay store, and only emitted on the
+   * wire when the provider's family gate allows it.
+   */
+  reasoningReplay?: ReasoningReplayPayload;
 }
 
 export interface ProviderToolCallRef {

@@ -41,6 +41,7 @@ import type {
   InferenceUsage,
   ParsedToolCall,
   ProviderMessage,
+  ReasoningReplayPayload,
   StreamChunk,
   ToolDefinition,
 } from "./types.js";
@@ -496,6 +497,9 @@ async function runGuardedInference(
   // 059). Like `generationId`, the FIRST value reported wins: a provider that
   // varied it mid-stream could otherwise re-attribute our usage row.
   let servingProvider: string | null = null;
+  // R-7 replay payload off the `done` chunk (switched; absent when off). LAST
+  // wins, like the finish reason: the final `done` saw the most blocks.
+  let reasoningReplay: ReasoningReplayPayload | null = null;
   const toolCallAccumulator = new Map<number, ToolCallAccumulator>();
 
   const partial = () => ({
@@ -606,6 +610,7 @@ async function runGuardedInference(
           if (servingProvider === null && chunk.servingProvider !== undefined) {
             servingProvider = chunk.servingProvider;
           }
+          if (chunk.reasoningReplay !== undefined) reasoningReplay = chunk.reasoningReplay;
           break;
       }
     }
@@ -665,6 +670,8 @@ async function runGuardedInference(
           generationId,
           servingProvider,
           malformedToolCallCount,
+          // Replay is only ever needed for a tool round (R-7).
+          ...(reasoningReplay !== null && { reasoningReplay }),
         }
       : {
           // Text path — content defaults to "" when no content delta arrived.

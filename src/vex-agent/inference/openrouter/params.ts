@@ -9,6 +9,7 @@ import type {
 } from "../types.js";
 import { normalizeToolSchemaForProvider } from "../schema-normalizer.js";
 import { mapMessages } from "./mappers.js";
+import { REASONING_REPLAY_ENABLED, shouldReplayReasoning } from "./reasoning-replay.js";
 import { buildProviderPreferences } from "./provider-prefs.js";
 import {
   ANSWER_HEADROOM_ENABLED,
@@ -134,11 +135,17 @@ export function buildOpenRouterParams(
 
   const params: ChatRequest = {
     model: config.model,
-    messages: mapMessages(messages, {
-      applyBreakpoints,
-      mergeTurnStateIntoStaticPrefix:
-        applyBreakpoints && MERGE_TURN_STATE_FALLBACK_ENABLED,
-    }),
+    messages: mapMessages(
+      messages,
+      {
+        applyBreakpoints,
+        mergeTurnStateIntoStaticPrefix:
+          applyBreakpoints && MERGE_TURN_STATE_FALLBACK_ENABLED,
+      },
+      // R-7 family gate: a replay reaches the wire only for an allow-listed
+      // family with the switch on, whatever the engine attached.
+      shouldReplayReasoning(config.model, REASONING_REPLAY_ENABLED),
+    ),
     maxTokens: config.maxOutputTokens,
     ...(config.temperature !== undefined && { temperature: config.temperature }),
     ...(stream && { stream: true }),
