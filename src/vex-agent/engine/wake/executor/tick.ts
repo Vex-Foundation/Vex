@@ -72,86 +72,101 @@ export async function tick(
   const results: ClaimedWake[] = [];
 
   for (const wake of candidates) {
-    try {
-      const outcome = await handleClaimed(wake, deps, now);
-      results.push({ wake, outcome });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.error("wake.executor.handle_failed", {
-        wakeId: wake.id,
-        sessionId: wake.sessionId,
-        missionRunId: wake.missionRunId,
-        error: message,
-      });
-      // Bounded push FIRST — it needs no I/O and must not be lost if the
-      // support DB behind the bug-report sink below is unreachable. Before
-      // this, a failed wake tick was a log line and nothing else: the user saw
-      // a scheduled continuation simply never happen.
-      //
-      // ONE emit site covers the whole executor. `handleClaimed` and the
-      // agent-session continuation path neither catch nor rethrow, so every
-      // failure in either arrives here.
-      //
-      // `readMissionErrorSignal` reads own-properties only and never walks
-      // `.cause`; the raw message rides separately as `detail` and is
-      // sanitized at the main-side bridge (owner decree 2026-08-02).
-      try {
-        const signal = readMissionErrorSignal(err);
-        emitEngineError({
-          sessionId: wake.sessionId,
-          missionRunId: wake.missionRunId,
-          scope: "wake",
-          errorType: signal.errorType,
-          errorClass: signal.errorClass,
-          statusCode: signal.status,
-          causeCode: signal.causeCode,
-          retryAfterSeconds: signal.retryAfterSeconds,
-          detail: errorDetailOf(err),
-        });
-      } catch (emitErr) {
-        logger.warn("wake.executor.error_emit_failed", {
-          wakeId: wake.id,
-          errorClass:
-            emitErr instanceof Error ? emitErr.constructor.name : typeof emitErr,
-        });
-      }
-
-      // Phase 2 BUG-REPORTING emit (puzzle 03): wake resume failures
-      // surface as `wake_resume_failure` automatic reports. Fail-closed
-      // through `emitBugReportSafe` — a support DB outage cannot break
-      // the wake executor.
-      const { getBugReportSink } = await import(
-        "../../support/bug-report-registry.js"
-      );
-      const { emitBugReportSafe } = await import(
-        "../../../../lib/diagnostics/bug-report-sink.js"
-      );
-      await emitBugReportSafe(
-        getBugReportSink(),
-        {
-          source: "agent",
-          category: "wake_resume_failure",
-          severity: "error",
-          title: "wake.executor.handle_failed",
-          description: message,
-          refs: {
-            sessionId: wake.sessionId,
-            // A session-scoped agent continuation has no run. `refs` takes an
-            // absent ref as `undefined`, so omit the key rather than asserting
-            // a null run id the schema does not model.
-            ...(wake.missionRunId !== null
-              ? { missionRunId: wake.missionRunId }
-              : {}),
-          },
-          agentContext: {
-            stopReason: "system_error",
-          },
-        },
-        logger,
-      );
-      results.push({ wake, outcome: { kind: "error", message } });
-    }
+    results.push(await runWakeCandidate(wake, deps, now));
   }
 
   return results;
+}
+
+/**
+ * Claim ONE listed candidate and run its slice to the end, reporting the
+ * outcome. A failure anywhere in the claim or the slice is reported as an
+ * `error` outcome (with the engine error push and the bug report) and never
+ * thrown, so one broken wake cannot poison the rest of a pass, or the other
+ * slots of the concurrent pool (`pool.ts`), which runs this same function.
+ */
+export async function runWakeCandidate(
+  wake: LoopWakeRequest,
+  deps: WakeDeps,
+  now: Date,
+): Promise<ClaimedWake> {
+  try {
+    const outcome = await handleClaimed(wake, deps, now);
+    return { wake, outcome };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error("wake.executor.handle_failed", {
+      wakeId: wake.id,
+      sessionId: wake.sessionId,
+      missionRunId: wake.missionRunId,
+      error: message,
+    });
+    // Bounded push FIRST - it needs no I/O and must not be lost if the
+    // support DB behind the bug-report sink below is unreachable. Before
+    // this, a failed wake tick was a log line and nothing else: the user saw
+    // a scheduled continuation simply never happen.
+    //
+    // ONE emit site covers the whole executor. `handleClaimed` and the
+    // agent-session continuation path neither catch nor rethrow, so every
+    // failure in either arrives here.
+    //
+    // `readMissionErrorSignal` reads own-properties only and never walks
+    // `.cause`; the raw message rides separately as `detail` and is
+    // sanitized at the main-side bridge (owner decree 2026-08-02).
+    try {
+      const signal = readMissionErrorSignal(err);
+      emitEngineError({
+        sessionId: wake.sessionId,
+        missionRunId: wake.missionRunId,
+        scope: "wake",
+        errorType: signal.errorType,
+        errorClass: signal.errorClass,
+        statusCode: signal.status,
+        causeCode: signal.causeCode,
+        retryAfterSeconds: signal.retryAfterSeconds,
+        detail: errorDetailOf(err),
+      });
+    } catch (emitErr) {
+      logger.warn("wake.executor.error_emit_failed", {
+        wakeId: wake.id,
+        errorClass:
+          emitErr instanceof Error ? emitErr.constructor.name : typeof emitErr,
+      });
+    }
+
+    // Phase 2 BUG-REPORTING emit (puzzle 03): wake resume failures
+    // surface as `wake_resume_failure` automatic reports. Fail-closed
+    // through `emitBugReportSafe` - a support DB outage cannot break
+    // the wake executor.
+    const { getBugReportSink } = await import(
+      "../../support/bug-report-registry.js"
+    );
+    const { emitBugReportSafe } = await import(
+      "../../../../lib/diagnostics/bug-report-sink.js"
+    );
+    await emitBugReportSafe(
+      getBugReportSink(),
+      {
+        source: "agent",
+        category: "wake_resume_failure",
+        severity: "error",
+        title: "wake.executor.handle_failed",
+        description: message,
+        refs: {
+          sessionId: wake.sessionId,
+          // A session-scoped agent continuation has no run. `refs` takes an
+          // absent ref as `undefined`, so omit the key rather than asserting
+          // a null run id the schema does not model.
+          ...(wake.missionRunId !== null
+            ? { missionRunId: wake.missionRunId }
+            : {}),
+        },
+        agentContext: {
+          stopReason: "system_error",
+        },
+      },
+      logger,
+    );
+    return { wake, outcome: { kind: "error", message } };
+  }
 }
