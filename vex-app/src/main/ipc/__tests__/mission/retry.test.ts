@@ -8,6 +8,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { openExecutionGate } from "../../../lifecycle/execution-gate.js";
 import type { IpcMainInvokeEvent } from "electron";
 import { CH } from "@shared/ipc/channels.js";
 import {
@@ -362,4 +363,11 @@ describe("mission.retry", () => {
     expect(JSON.stringify(r.data)).not.toContain("secret-owner");
     expect(mockResumeMissionRun).not.toHaveBeenCalled();
   });
+});
+
+// These handlers run as they do in a READY process: the execution gate
+// (`lifecycle/execution-gate.ts`) is closed until the runtime is up, and its
+// own suite covers the refusal.
+beforeEach(() => {
+  openExecutionGate();
 });

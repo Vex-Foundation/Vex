@@ -70,6 +70,7 @@ describe("result barrel surface", () => {
       "services.port_in_use",
       "services.healthcheck_failed",
       "services.compose_failed",
+      "services.runtime_starting",
       "data.search_unavailable",
       "data.migration_failed",
       "update.check_failed",

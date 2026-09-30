@@ -13,6 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { openExecutionGate } from "../../lifecycle/execution-gate.js";
 
 import { createTestWebContents, createTrustedSender, type TestIpcEvent } from "./test-sender.js";
 
@@ -382,4 +383,11 @@ describe("desk prepare self-heals a stuck nonce reservation", () => {
     expect(result.ok).toBe(true);
     expect(JSON.stringify(result)).not.toContain("internal-provider-response");
   });
+});
+
+// These handlers run as they do in a READY process: the execution gate
+// (`lifecycle/execution-gate.ts`) is closed until the runtime is up, and its
+// own suite covers the refusal.
+beforeEach(() => {
+  openExecutionGate();
 });

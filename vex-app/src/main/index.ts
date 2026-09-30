@@ -11,10 +11,26 @@
  *   4b. Evaluate the e2e database door (inert unless an e2e run asked for it).
  *   5. Install permission handlers (deny-all default).
  *   6. Install app://vex/ protocol handler.
- *   7. Register IPC handlers (Phase 1 surface).
- *   8. Open main window.
+ *   7. Register IPC handlers (Phase 1 surface), then arm the execution gate.
+ *   8. Open main window, AT ONCE: it does not wait for Docker, Postgres or the
+ *      Studio readiness barrier. Execution is held by the gate instead.
+ *   9. In the background: the bounded Studio barrier wait, then the Studio
+ *      MCP host.
+ *
+ * Step 0, before every one of these, is the EXECUTION GATE
+ * (`lifecycle/execution-gate.ts`). It is the FIRST import below and its state
+ * is CLOSED when the module is evaluated, so it is installed synchronously
+ * before any other module of this process runs, before any IPC handler exists
+ * and before any window exists. Every agent, tool and wallet execution request
+ * is refused until the local runtime is ready (`armExecutionGate`).
  */
 
+// THE EXECUTION GATE, FIRST. See step 0 above; the ordering test
+// (`lifecycle/__tests__/startup-order.test.ts`) pins this import's position.
+import {
+  armExecutionGate,
+  closeExecutionGateForShutdown,
+} from "./lifecycle/execution-gate.js";
 import { reapOrphanedPtyHosts } from "./studio/pty-host-reaper.js";
 import { app } from "electron";
 import { mkdirSync, readFileSync } from "node:fs";
@@ -36,7 +52,9 @@ import {
 import {
   awaitStudioRuntimeReady,
   disposeStudioWriteRepairOwner,
+  whenStudioRuntimeSettled,
 } from "./agent/studio-settlement-bridge.js";
+import { whenEngineDbReady } from "./database/engine-db-readiness.js";
 import { openE2eConnectionDoor } from "./database/e2e-connection-door.js";
 import { registerAllIpcHandlers } from "./ipc/register-all.js";
 import {
@@ -301,6 +319,22 @@ async function initializeMainRuntime(): Promise<void> {
   // to the ORDERED quit task below, not to a concurrent globalCleanup task.
   const teardownAgentBridges = registerAllIpcHandlers();
 
+  // 7b. ARM THE EXECUTION GATE. It has been CLOSED since this module was
+  // imported; this only starts the wait that opens it. It waits for the SAME
+  // two facts the Studio bridge already waits for (no new poll): the engine
+  // database with this build's migrations, then the Studio readiness barrier
+  // SETTLED, unbounded, so no approval can reach a dispatch while the
+  // abandoned-dispatch reconciler runs. Quit closes it one way and ends the
+  // wait.
+  const executionGateArm = armExecutionGate({
+    whenEngineDbReady: (options) => whenEngineDbReady(options),
+    whenStudioRuntimeSettled,
+  });
+  globalCleanup.add(() => {
+    closeExecutionGateForShutdown();
+    executionGateArm.abort();
+  }, "execution-gate");
+
   // 6-updater. User-triggered updater (M13): own the electron-updater event
   // stream so the renderer's update card reflects live status. Download +
   // restart are always explicit user actions (autoDownload=false). Teardown
@@ -530,36 +564,47 @@ async function initializeMainRuntime(): Promise<void> {
   // a minimal macOS template that preserves clipboard accelerators).
   installMinimalMenu();
 
-  // 6d. THE VEX STUDIO READINESS BARRIER, and its position is the point.
-  //
-  // Studio's abandoned-dispatch reconciler declares every row still marked
-  // `dispatching` indeterminate, on the premise that this process is the only
-  // writer that could own them and has just started. A dispatch that begins
-  // while it runs breaks that premise. The only thing in THIS process that can
-  // start one is the approvals IPC handler (`applyStudioApproveSideEffects`),
-  // and an IPC handler cannot be invoked before a renderer exists to invoke it.
-  // So awaiting here - after `registerAllIpcHandlers` installed the handlers,
-  // BEFORE `createMainWindow` creates the only thing that can call them - is
-  // what makes "no dispatch during reconciliation" an ordering fact rather than
-  // a hope. The bounded wait inside never leaves Studio open: a barrier that is
-  // still running when the deadline elapses keeps Studio UNREADY, and both the
-  // engine preflight and `runStudioCall` refuse on that.
-  await awaitStudioRuntimeReady();
-
-  // THE ONE BIND, and it is independent of the vault and of the barrier above.
-  // The listener comes up here because the executor is configured by now
-  // (`registerAllIpcHandlers`), and it stays up until quit: a locked or unready
-  // Vex answers a connect with a typed refusal that carries no project bytes,
-  // which is the honest answer a bridge cannot derive from `ECONNREFUSED`.
-  // ADMISSION starts locked regardless of what happens here.
-  void startStudioMcpHost();
-  // A session that was already unlocked before the host existed (a restored
-  // session, a fast wizard) has no other site that would open admission. The
-  // secret-session owner still decides whether opening is safe.
-  reopenStudioHostIfSafe();
-
-  // 7. Main window
+  // 7. Main window, AT ONCE. It used to wait here for the Studio readiness
+  // barrier (bounded at 15 s), because an approval IPC handler cannot be
+  // invoked before a renderer exists to invoke it. On a cold start that bound
+  // was always spent: the barrier waits for the engine database, and the
+  // database only starts when the RENDERER asks for Docker, which it could not
+  // do before this window existed. The property the wait carried ("nothing
+  // dispatches while the reconciler runs") is now carried by the execution
+  // gate armed above, which refuses the approvals IPC (and every other
+  // execution request) until the barrier has settled. With Docker stopped the
+  // window shows the launch pipeline's own starting state, and every execution
+  // request is refused, typed, with nothing run.
   await createMainWindow();
+
+  // 7c. THE VEX STUDIO READINESS BARRIER, then the Studio MCP host, off the
+  // window's critical path and in the same relative order as before.
+  void startStudioHostAfterBarrier();
+}
+
+/**
+ * The bounded barrier wait, then the ONE BIND.
+ *
+ * The listener comes up after the barrier because the executor is configured
+ * by now (`registerAllIpcHandlers`), and it stays up until quit: a locked or
+ * unready Vex answers a connect with a typed refusal that carries no project
+ * bytes, which is the honest answer a bridge cannot derive from
+ * `ECONNREFUSED`. ADMISSION starts locked regardless of what happens here. The
+ * bounded wait inside never leaves Studio open: a barrier that is still
+ * running when the deadline elapses keeps Studio UNREADY, and both the engine
+ * preflight and `runStudioCall` refuse on that.
+ *
+ * A session that was unlocked before the host existed (a restored session, a
+ * fast wizard, or an unlock in the window that now opens before this runs) has
+ * no other site that would open admission, so `reopenStudioHostIfSafe` follows.
+ * The secret-session owner still decides whether opening is safe. Never
+ * throws: `awaitStudioRuntimeReady` never rejects and the host start is
+ * fire-and-forget.
+ */
+async function startStudioHostAfterBarrier(): Promise<void> {
+  await awaitStudioRuntimeReady();
+  void startStudioMcpHost();
+  reopenStudioHostIfSafe();
 }
 
 let bootRuntimeInitialized = false;

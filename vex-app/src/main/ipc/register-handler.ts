@@ -29,6 +29,11 @@ import {
   type VexDomain,
 } from "@shared/ipc/result.js";
 import { globalCleanup } from "../lifecycle/cleanup-registry.js";
+import {
+  executionGateRefusal,
+  isExecutionGateOpen,
+  isExecutionGatedChannel,
+} from "../lifecycle/execution-gate.js";
 import { log } from "../logger/index.js";
 import { cancelledError, isAbortError } from "./cancel-helpers.js";
 import {
@@ -98,6 +103,17 @@ export function registerHandler<I, O>(args: HandlerArgs<I, O>): () => void {
         });
       }
       requestId = parsed.data.requestId;
+      // THE EXECUTION GATE. After the sender and the envelope are proven, and
+      // BEFORE the handler body: a request that would start agent, tool or
+      // wallet work is refused, typed and without side effects, until the
+      // local runtime is ready (`lifecycle/execution-gate.ts`). Read per call,
+      // so the gate that opens later admits the next request.
+      if (isExecutionGatedChannel(args.channel) && !isExecutionGateOpen()) {
+        log.info(
+          `[ipc:${args.channel}] correlationId=${requestId} refused: execution gate closed`,
+        );
+        return err(executionGateRefusal(args.domain, requestId));
+      }
       const controller = new AbortController();
       cancelRegistry.set(requestId, controller);
       let result: Result<O>;
