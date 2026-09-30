@@ -15,7 +15,87 @@ interface NamespaceAvailability {
   readonly requiredEnvironmentNames: readonly string[];
 }
 
-let cached: { readonly fingerprint: string; readonly text: string } | null = null;
+/**
+ * Kairos P-5 switch: the `# Protocols` layer as a compact index.
+ *
+ * ON (the default) renders each namespace as its identity, its Act line, its
+ * characteristics and limits, its coverage and its availability, which carry
+ * every money-path, approval, chain and identity rule the layer states. The
+ * Read, Quote and When-it-applies lines are capability catalogue: the tools
+ * ToolSearch returns describe the same reads and quotes in full, so the
+ * index keeps only the sentences in `LEAN_KEPT_SENTENCES`, verbatim. The task
+ * shapes drop their Trigger lines, which restate the shape heading.
+ *
+ * OFF restores the full declaration render byte for byte; the prompt tests
+ * prove it against `__promptsnaps__/protocols-legacy.*.md`.
+ */
+export const PROTOCOLS_PROMPT_LEAN = true;
+
+type LeanDeclarationField = "read" | "quote" | "whenItApplies";
+
+/**
+ * Sentences of the catalogue fields the lean index still renders, verbatim.
+ * "all" keeps the whole field. Each entry is a rule (approval scope, token
+ * identity, "not an executable price", settings the agent cannot change) or a
+ * sentence an existing prompt test pins. A kept sentence that no longer
+ * appears in its declaration fails the render loudly, so the index can never
+ * drift from the declaration it abbreviates.
+ */
+const LEAN_KEPT_SENTENCES: Partial<Record<
+  ProtocolNamespace,
+  Partial<Record<LeanDeclarationField, readonly string[] | "all">>
+>> = {
+  uniswap: {
+    read: ["Resolve exact token addresses first; no symbol search."],
+  },
+  morpho: {
+    quote: ["A quote signs nothing and authorizes only the same direction."],
+  },
+  solana: {
+    read: "all",
+    quote: [
+      "Lending and prediction actions have no separate generic quote surface, so read their market and position state before acting.",
+    ],
+  },
+  pendle: {
+    quote: ["Some actions quote internally through a dry run before broadcast."],
+  },
+  dexscreener: {
+    read: [
+      "Resolve a name or ticker symbol to an exact chain and contract address, screen the population server-side, list one token's pools, read a pool address live, refresh known addresses, aggregate narratives per chain, read paid boosts, and list the chain and dex catalog.",
+    ],
+    quote: "all",
+  },
+  lighter: {
+    read: "all",
+    quote: [
+      "Preview exact Lighter orders from live market and account data before any approval; a Lighter order preview reviews exact terms.",
+    ],
+    whenItApplies: "all",
+  },
+  virtuals: {
+    quote: ["Research alone still establishes no executable price."],
+  },
+  pools: {
+    read: "all",
+    quote: [
+      "The preview is advisory and cannot predict the final token address.",
+      "This namespace has no trading quote; acquiring a token requires a separate trading quote on a swap venue.",
+    ],
+  },
+};
+
+const LEAN_FIELD_LABELS: Readonly<Record<LeanDeclarationField, string>> = {
+  read: "Read",
+  quote: "Quote",
+  whenItApplies: "When it applies",
+};
+
+let cached: {
+  readonly fingerprint: string;
+  readonly lean: boolean;
+  readonly text: string;
+} | null = null;
 
 function advertisedTools(): readonly ProtocolToolManifest[] {
   return PROTOCOL_TOOLS.filter((tool) =>
@@ -54,7 +134,25 @@ export function protocolAvailabilityFingerprint(): string {
     .join(",");
 }
 
-function renderDeclaration(namespace: ProtocolNamespace): string[] {
+function leanKeptLine(
+  namespace: ProtocolNamespace,
+  field: LeanDeclarationField,
+  prose: string,
+): string[] {
+  const kept = LEAN_KEPT_SENTENCES[namespace]?.[field];
+  if (kept === undefined) return [];
+  if (kept === "all") return [`${LEAN_FIELD_LABELS[field]}: ${prose}`];
+  for (const sentence of kept) {
+    if (!prose.includes(sentence)) {
+      throw new Error(
+        `Lean protocols index for "${namespace}" keeps a ${field} sentence its declaration no longer states: ${sentence}`,
+      );
+    }
+  }
+  return [`${LEAN_FIELD_LABELS[field]}: ${kept.join(" ")}`];
+}
+
+function renderDeclaration(namespace: ProtocolNamespace, lean: boolean): string[] {
   const navigation = getAdvertisedProtocolNavigation().find((entry) => entry.namespace === namespace);
   if (!navigation) return [];
 
@@ -78,17 +176,29 @@ function renderDeclaration(namespace: ProtocolNamespace): string[] {
       ]
     : [];
 
-  const lines = [
-    `### ${namespace}`,
-    declaration.identity,
-    ...facetLines,
-    `Read: ${declaration.read}`,
-    `Quote: ${declaration.quote}`,
-    `Act: ${declaration.act}`,
-    `When it applies: ${declaration.whenItApplies}`,
-    `Characteristics and limits: ${declaration.characteristicAndLimits}`,
-    coverageLine,
-  ];
+  const lines = lean
+    ? [
+        `### ${namespace}`,
+        declaration.identity,
+        ...facetLines,
+        ...leanKeptLine(namespace, "read", declaration.read),
+        ...leanKeptLine(namespace, "quote", declaration.quote),
+        `Act: ${declaration.act}`,
+        ...leanKeptLine(namespace, "whenItApplies", declaration.whenItApplies),
+        `Characteristics and limits: ${declaration.characteristicAndLimits}`,
+        coverageLine,
+      ]
+    : [
+        `### ${namespace}`,
+        declaration.identity,
+        ...facetLines,
+        `Read: ${declaration.read}`,
+        `Quote: ${declaration.quote}`,
+        `Act: ${declaration.act}`,
+        `When it applies: ${declaration.whenItApplies}`,
+        `Characteristics and limits: ${declaration.characteristicAndLimits}`,
+        coverageLine,
+      ];
 
   if (availability.availableCount === 0 && availability.requiredEnvironmentNames.length > 0) {
     lines.push(
@@ -100,10 +210,12 @@ function renderDeclaration(namespace: ProtocolNamespace): string[] {
   return lines;
 }
 
-export function buildProtocolsPrompt(): string {
-  const fingerprint = protocolAvailabilityFingerprint();
-  if (cached?.fingerprint === fingerprint) return cached.text;
-
+/**
+ * Renders the layer with the lean index ON or OFF, uncached. Production reads
+ * `buildProtocolsPrompt`, which uses `PROTOCOLS_PROMPT_LEAN`; this exists so
+ * the OFF render can be proved identical to the pre-P-5 layer.
+ */
+export function renderProtocolsPrompt(lean: boolean): string {
   const lines = [
     "# Protocols",
     "",
@@ -114,7 +226,7 @@ export function buildProtocolsPrompt(): string {
   ];
 
   for (const navigation of getAdvertisedProtocolNavigation()) {
-    lines.push(...renderDeclaration(navigation.namespace), "");
+    lines.push(...renderDeclaration(navigation.namespace, lean), "");
   }
 
   const webResearchEnvironment = getToolDef("WebResearch")?.requiresEnv;
@@ -123,9 +235,16 @@ export function buildProtocolsPrompt(): string {
       ? Boolean(process.env[webResearchEnvironment]?.trim())
       : true,
     solana: namespaceAvailability("solana").availableCount > 0,
-  }));
+  }, { lean }));
 
-  cached = { fingerprint, text: lines.join("\n") };
+  return lines.join("\n");
+}
+
+export function buildProtocolsPrompt(): string {
+  const fingerprint = protocolAvailabilityFingerprint();
+  const lean = PROTOCOLS_PROMPT_LEAN;
+  if (cached?.fingerprint === fingerprint && cached.lean === lean) return cached.text;
+  cached = { fingerprint, lean, text: renderProtocolsPrompt(lean) };
   return cached.text;
 }
 

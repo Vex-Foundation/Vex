@@ -240,14 +240,39 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  *
  *   mission run / restricted    68,161 -> 68,336
  *   mission run / full          67,976 -> 68,151
+ *
+ * REVIEWED CEILING MOVE (LOWER), Kairos P-5 lean protocols index
+ * (2026-09-30). NET -6,535 bytes in every mode, identical in all six because
+ * the whole change is inside the `# Protocols` layer, rendered once per mode
+ * (30,411 -> 23,876 bytes in this posture). Behind `PROTOCOLS_PROMPT_LEAN`
+ * (ON); OFF renders the old layer byte for byte, proved against
+ * `__promptsnaps__/protocols-legacy.*.md` by `protocols-lean-index.test.ts`.
+ * WHAT WAS CUT: each namespace's Read, Quote and When-it-applies lines, which
+ * catalogue the reads and quotes that ToolSearch results describe in full,
+ * except the sentences that state a rule or that a prompt test pins (kept
+ * verbatim, listed in `LEAN_KEPT_SENTENCES`), and the six task-shape Trigger
+ * lines, which restate the shape heading. WHAT STAYS VERBATIM: every identity,
+ * Act line, characteristics-and-limits line, coverage line, availability and
+ * mutating marker, and every other task-shape line (money paths, approvals,
+ * chain reach, anti-sniper, launch authority, report duties).
+ *
+ *   agent / restricted          62,528 -> 55,993
+ *   agent / full                63,229 -> 56,694
+ *   mission setup / restricted  69,154 -> 62,619 (ceiling was 69,157)
+ *   mission setup / full        69,173 -> 62,638 (ceiling was 69,176)
+ *   mission run / restricted    68,336 -> 61,801
+ *   mission run / full          68,151 -> 61,616
+ *
+ * The two mission-setup ceilings sat 3 bytes above their measurement before
+ * this change; they are lowered to the measurement here.
  */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 62_528 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 63_229 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 69_157 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 69_176 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 68_336 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 68_151 },
+  { name: "agent / restricted", context: context({}), ceiling: 55_993 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 56_694 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 62_619 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 62_638 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 61_801 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 61_616 },
 ] as const;
 
 beforeAll(() => {
