@@ -22,6 +22,7 @@ import {
 import { createElement, type ReactNode } from "react";
 import type { StreamDeltaEvent } from "@shared/schemas/stream.js";
 import type { TranscriptAppendEvent } from "@shared/schemas/messages.js";
+import type { ControlStateEvent } from "@shared/schemas/runtime.js";
 import {
   STREAM_FLUSH_MS,
   useStreamStore,
@@ -35,17 +36,23 @@ export const SESSION_B = "00000000-0000-4000-8000-00000000000b";
 export type DeltaCb = (e: StreamDeltaEvent) => void;
 export type AppendCb = (e: TranscriptAppendEvent) => void;
 
+export type ControlStateCb = (e: ControlStateEvent) => void;
+
 let deltaCb: DeltaCb | null = null;
 let appendCb: AppendCb | null = null;
+let controlStateCb: ControlStateCb | null = null;
 export const offDelta = vi.fn();
 export const offAppend = vi.fn();
+export const offControlState = vi.fn();
 
 /** Per-test setup: fresh subscription capture + a stubbed engine bridge. */
 export function setupStreamEnv(): void {
   deltaCb = null;
   appendCb = null;
+  controlStateCb = null;
   offDelta.mockReset();
   offAppend.mockReset();
+  offControlState.mockReset();
   useStreamStore.setState({ bySessionId: {} });
   Object.defineProperty(window, "vex", {
     configurable: true,
@@ -59,6 +66,10 @@ export function setupStreamEnv(): void {
         onTranscriptAppend: (cb) => {
           appendCb = cb;
           return offAppend;
+        },
+        onControlState: (cb) => {
+          controlStateCb = cb;
+          return offControlState;
         },
       }),
     },
@@ -211,4 +222,28 @@ export function emitAppend(event: TranscriptAppendEvent): void {
 /** Whether the hook subscribed at all (the null-sessionId no-op case). */
 export function hasDeltaSubscription(): boolean {
   return deltaCb !== null;
+}
+
+/**
+ * The post-release control state every runner emits from its `finally`
+ * (`releaseLeaseAndEmitControlState`): here, a mission run that just completed.
+ */
+export function leaseReleased(sessionId: string, leaseActive = false): ControlStateEvent {
+  return {
+    type: "engine.control.state",
+    sessionId,
+    missionRunId: "run-1",
+    runStatus: "completed",
+    stopReason: "goal_reached",
+    pendingControlKind: null,
+    leaseActive,
+    leaseExpiresAt: null,
+    correlationId: "c-1",
+  };
+}
+
+/** The engine's control-state callback for the mounted hook. */
+export function emitControlState(event: ControlStateEvent): void {
+  if (controlStateCb === null) throw new Error("no control-state subscription");
+  controlStateCb(event);
 }

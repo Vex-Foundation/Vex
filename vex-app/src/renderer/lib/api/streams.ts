@@ -48,6 +48,19 @@
  *    itself at `lastSequence + 1` with the same `streamId`, and is never
  *    emitted for a boundary abort where no inference ran, so it means exactly
  *    "this stream ended without producing a message" and nothing else;
+ *  - a LEASE RELEASE ends a turn whose last round called a tool (Kairos,
+ *    owner report 2026-09-30). A mission or wake turn that ends on a tool
+ *    round (`MissionStop`, a `LoopDefer` park) emits no final assistant append
+ *    and never opens a chat mutation, so its settled preview kept the
+ *    `vexing` clock running until the idle net fired, up to 60 s after the
+ *    run had finished. Every runner releases its lease in a `finally` and
+ *    emits `leaseActive: false` (`releaseLeaseAndEmitControlState`).
+ *
+ *    This is NOT the reverted `leaseActive` clear above. That one blanked a
+ *    preview still holding the final answer's text before its row reached the
+ *    cache. This one clears ONLY a preview with no text of its own: a round
+ *    that `settleRound` already handed to the canonical transcript. A preview
+ *    that still shows answer text is left to its append, exactly as before;
  *  - the idle timer catches everything else (a dropped connection, a lost
  *    event). It is the dropped-event safety net and is never removed.
  *
@@ -198,10 +211,22 @@ export function useStreamPreviewSync(sessionId: string | null): void {
       })();
     });
 
+    const offControlState = window.vex.engine.onControlState((event) => {
+      if (event.sessionId !== sessionId || event.leaseActive) return;
+      // Land any queued deltas first, so the text check reads what the user
+      // actually sees.
+      flushStreamDeltas(sessionId);
+      const current = useStreamStore.getState().bySessionId[sessionId];
+      if (current === undefined || current.phase !== "streaming") return;
+      if (current.text.length > 0) return;
+      clearAll();
+    });
+
     return () => {
       alive = false;
       offDelta();
       offAppend();
+      offControlState();
       clearAll();
     };
   }, [sessionId, queryClient, applyDelta, settleRound, clear]);

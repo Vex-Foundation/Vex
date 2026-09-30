@@ -26,6 +26,9 @@ import {
   startChatTurn,
   textDelta,
   toolCallDelta,
+  SESSION_B,
+  emitControlState,
+  leaseReleased,
 } from "./stream-sync-harness.js";
 
 beforeEach(setupStreamEnv);
@@ -116,5 +119,48 @@ describe("useStreamPreviewSync turn continuity", () => {
     expect(useStreamStore.getState().bySessionId[SESSION_A]?.text).toBe(
       "mission progress",
     );
+  });
+
+  /**
+   * Kairos, owner report 2026-09-30: a mission that ends on MissionStop (or
+   * parks on LoopDefer) ends on a TOOL round, so no final append comes and no
+   * chat mutation settles. The runner's lease release is the end of the turn.
+   */
+  it("clears a settled preview when the runner releases the lease (mission ended on a tool)", async () => {
+    renderHook(() => useStreamPreviewSync(SESSION_A), {
+      wrapper: makeWrapper(new QueryClient()),
+    });
+    emitDelta(toolCallDelta(SESSION_A, "s1", "MissionStop"));
+    emitAppend(append(SESSION_A, "assistant"));
+    await flush();
+    expect(useStreamStore.getState().bySessionId[SESSION_A]?.phase).toBe("streaming");
+
+    emitControlState(leaseReleased(SESSION_A));
+    expect(useStreamStore.getState().bySessionId[SESSION_A]).toBeUndefined();
+  });
+
+  it("leaves a preview that still shows answer text to its own append", async () => {
+    renderHook(() => useStreamPreviewSync(SESSION_A), {
+      wrapper: makeWrapper(new QueryClient()),
+    });
+    emitDelta(textDelta(SESSION_A, "s1", "final answer"));
+    await flush();
+
+    // The reverted leaseActive clear blanked exactly this before the row landed.
+    emitControlState(leaseReleased(SESSION_A));
+    expect(useStreamStore.getState().bySessionId[SESSION_A]?.text).toBe("final answer");
+  });
+
+  it("ignores an active lease and another session's release", async () => {
+    renderHook(() => useStreamPreviewSync(SESSION_A), {
+      wrapper: makeWrapper(new QueryClient()),
+    });
+    emitDelta(toolCallDelta(SESSION_A, "s1"));
+    emitAppend(append(SESSION_A, "assistant"));
+    await flush();
+
+    emitControlState(leaseReleased(SESSION_A, true));
+    emitControlState(leaseReleased(SESSION_B));
+    expect(useStreamStore.getState().bySessionId[SESSION_A]).toBeDefined();
   });
 });
