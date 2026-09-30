@@ -238,6 +238,7 @@ function makeConfig(): InferenceConfig {
     model: "test-model",
     contextLimit: 128000,
     maxOutputTokens: 4096,
+    supportsReasoningEffort: false,
     inputPricePerM: 3,
     outputPricePerM: 15,
     priceCurrency: "USD",

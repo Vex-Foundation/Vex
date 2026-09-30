@@ -22,6 +22,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ParsedToolCall } from "@vex-agent/inference/types.js";
 
 import { definedValue } from "../../../_test-value-guards.js";
 
@@ -123,7 +124,7 @@ function identicalCalls(n: number) {
 }
 
 async function runBatch(args: {
-  readonly calls: ReturnType<typeof identicalCalls>;
+  readonly calls: ParsedToolCall[];
   readonly detector: ToolCallLoopDetector;
   readonly liveMessages?: Message[];
   readonly abortSignal?: AbortSignal;
