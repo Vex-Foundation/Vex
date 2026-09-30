@@ -20,6 +20,7 @@ import {
   parseAgentDbBoundsEnv,
   parseAgentEnv,
   parseAgentToolReadEnv,
+  parseAgentWakeEnv,
 } from "../../lib/agent-config.js";
 
 describe("agent-config field metadata", () => {
@@ -241,6 +242,31 @@ describe("parseAgentToolReadEnv (Kairos T-1 + T-3)", () => {
       const r = parseAgentToolReadEnv({ AGENT_TOOL_READ_CONCURRENCY: raw });
       expect(r.errors.map((e) => e.key)).toEqual(["AGENT_TOOL_READ_CONCURRENCY"]);
       expect(r.value.readConcurrency).toBe(3);
+    }
+  });
+});
+
+describe("parseAgentWakeEnv (Kairos S-3)", () => {
+  it("defaults to one wake slice at a time, the serial executor", () => {
+    const r = parseAgentWakeEnv({});
+    expect(r.errors).toEqual([]);
+    expect(r.value).toEqual({ wakeConcurrency: 1 });
+    expect(parseAgentWakeEnv({ AGENT_WAKE_CONCURRENCY: "  " }).value.wakeConcurrency).toBe(1);
+  });
+
+  it("accepts 1 through 4", () => {
+    for (const n of [1, 2, 3, 4]) {
+      const r = parseAgentWakeEnv({ AGENT_WAKE_CONCURRENCY: String(n) });
+      expect(r.errors).toEqual([]);
+      expect(r.value.wakeConcurrency).toBe(n);
+    }
+  });
+
+  it("refuses 0, above 4 or a non-number, and the serial default applies", () => {
+    for (const raw of ["0", "5", "1.5", "two"]) {
+      const r = parseAgentWakeEnv({ AGENT_WAKE_CONCURRENCY: raw });
+      expect(r.errors.map((e) => e.key)).toEqual(["AGENT_WAKE_CONCURRENCY"]);
+      expect(r.value.wakeConcurrency).toBe(1);
     }
   });
 });

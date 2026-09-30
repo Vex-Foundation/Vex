@@ -21,6 +21,7 @@ import {
   parseAgentStreamBoundsEnv,
   parseAuxReasoningEffortEnv,
   parseAgentToolReadEnv,
+  parseAgentWakeEnv,
   type AgentStreamBounds,
 } from "../../lib/agent-config.js";
 import logger from "@utils/logger.js";
@@ -110,11 +111,14 @@ export function loadEnvConfig(): EnvConfig {
   // Same for the read-dispatch bounds, consumed per dispatch by
   // `tools/read-dispatch-bounds.ts`.
   const toolReadParse = parseAgentToolReadEnv(process.env);
+  // Same for the wake concurrency, read once by the wake executor at start.
+  const wakeParse = parseAgentWakeEnv(process.env);
   for (const e of [
     ...agentParse.errors,
     ...boundsParse.errors,
     ...dbBoundsParse.errors,
     ...toolReadParse.errors,
+    ...wakeParse.errors,
   ]) {
     if (e.reason === "out_of_range") {
       errors.push(

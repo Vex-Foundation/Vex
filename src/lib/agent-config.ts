@@ -311,6 +311,35 @@ export interface AgentToolReadBounds {
   readonly extendedReadTimeoutMs: number;
 }
 
+// ── Kairos wake concurrency (Phase 6, S-3) ──────────────────────
+//
+// How many wake slices (mission resumes and Full-Autonomous session
+// continuations) the wake executor runs at once
+// (`src/vex-agent/engine/wake/executor.ts`).
+
+/**
+ * Most wake slices in flight at once. `1` is the previous strictly serial
+ * executor, exactly: claim, run to the end of the slice, then the next. Above
+ * 1, two slices of one session never overlap (the session lease) and two
+ * slices whose sessions select the same wallet never overlap either (the
+ * executor's per-wallet exclusion). The ceiling keeps the slices well inside
+ * the main DB pool.
+ */
+export const AGENT_WAKE_CONCURRENCY: FieldWithDefault = {
+  key: "AGENT_WAKE_CONCURRENCY",
+  kind: "int",
+  min: 1,
+  max: 4,
+  default: 1,
+};
+
+export const AGENT_WAKE_FIELDS = [AGENT_WAKE_CONCURRENCY] as const;
+
+/** Effective wake executor bounds. */
+export interface AgentWakeBounds {
+  readonly wakeConcurrency: number;
+}
+
 export interface ParseError {
   readonly key: string;
   readonly raw: string;
@@ -406,6 +435,19 @@ export function parseAgentToolReadEnv(env: EnvLike): ParseResult<AgentToolReadBo
     },
     errors,
   };
+}
+
+/**
+ * Parse the Kairos wake executor bounds. Same contract as the stream bounds:
+ * blank = default, invalid = collected error and the default applies.
+ */
+export function parseAgentWakeEnv(env: EnvLike): ParseResult<AgentWakeBounds> {
+  const errors: ParseError[] = [];
+  const wakeConcurrency =
+    parseFieldOrDefault(AGENT_WAKE_CONCURRENCY, env[AGENT_WAKE_CONCURRENCY.key], errors)
+    ?? AGENT_WAKE_CONCURRENCY.default
+    ?? AGENT_WAKE_CONCURRENCY.min;
+  return { value: { wakeConcurrency }, errors };
 }
 
 function parseFieldOrDefault(

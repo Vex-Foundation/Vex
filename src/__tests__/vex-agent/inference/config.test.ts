@@ -213,6 +213,15 @@ describe("loadEnvConfig", () => {
     expect(() => loadEnvConfig()).not.toThrow();
   });
 
+  it("fails startup on an invalid wake concurrency", () => {
+    for (const raw of ["0", "5", "many"]) {
+      process.env.AGENT_WAKE_CONCURRENCY = raw;
+      expect(() => loadEnvConfig()).toThrow("AGENT_WAKE_CONCURRENCY");
+    }
+    process.env.AGENT_WAKE_CONCURRENCY = "3";
+    expect(() => loadEnvConfig()).not.toThrow();
+  });
+
   it("fails startup on an invalid DB bound, including an attempt to disable one", () => {
     for (const raw of ["0", "soon", "3600001"]) {
       process.env.AGENT_DB_STATEMENT_TIMEOUT_MS = raw;
