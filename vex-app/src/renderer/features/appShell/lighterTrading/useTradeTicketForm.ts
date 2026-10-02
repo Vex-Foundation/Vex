@@ -107,6 +107,7 @@ export function useTradeTicketForm({
   const triggerLimit = isTriggerLimitMode(mode);
   const perp = market.marketType === "perp";
   const draftReduceOnly = perp && reduceOnly;
+  const noVexFee = protective || draftReduceOnly;
   const symbols = marketSymbols(market.symbol, market.marketType);
   const sizeDecimals = market.decimals.size ?? SIZE_DECIMALS_FALLBACK;
   const priceDecimals = market.decimals.price;
@@ -210,12 +211,10 @@ export function useTradeTicketForm({
     const fee = ((mode === "limit" || triggerLimit) && limitTimeInForce === "post-only")
       ? { rate: market.fees.maker, enabled: market.fees.makerEnabled, integrator: market.fees.integratorMaker, accountTicks: exchangeFees?.makerTicks ?? null }
       : { rate: market.fees.taker, enabled: market.fees.takerEnabled, integrator: market.fees.integratorTaker, accountTicks: exchangeFees?.takerTicks ?? null };
-    // EVERY fee leg, because all are charged against the same margin: the
-    // exchange's, at this account's tier where that exceeds the market's
-    // published fee, and Vex's integrator fee. Sizing without either spent the
-    // last unit of margin on the position and Lighter cancelled the order.
+    // Reserve the exchange fee at this account's tier and Vex's fee on new
+    // exposure. Reduce-only and protective exits carry no Vex fee.
     const feeFraction = exchangeFeeFraction(fee.rate, fee.enabled, fee.accountTicks)
-      + integratorFeeFraction(fee.integrator);
+      + (noVexFee ? 0 : integratorFeeFraction(fee.integrator));
     const step = 10 ** sizeDecimals;
     if (margin === null) {
       return toDecimal(Math.floor((sizingBalance / (price * (1 + feeFraction))) * step) / step, sizeDecimals);
@@ -243,7 +242,7 @@ export function useTradeTicketForm({
     const atTop = sizingBalance / costAt(suggestedPrice === null ? null : Number(suggestedPrice));
     const size = matchesNow ? sizingBalance / costAt(averageFillPrice(levels, atTop, price, side)) : atTop;
     return toDecimal(Math.floor(size * step) / step, sizeDecimals);
-  }, [book.asks, book.bids, canSizeFromBalance, exchangeFees?.makerTicks, exchangeFees?.takerTicks, limitPrice, limitPriceBookStatus, limitTimeInForce, margin, market.fees.integratorMaker, market.fees.integratorTaker, market.fees.maker, market.fees.makerEnabled, market.fees.taker, market.fees.takerEnabled, market.marketType, markPrice, mode, referencePrice, side, sizeDecimals, sizingBalance, suggestedPrice, triggerLimit, worstPrice]);
+  }, [book.asks, book.bids, canSizeFromBalance, exchangeFees?.makerTicks, exchangeFees?.takerTicks, limitPrice, limitPriceBookStatus, limitTimeInForce, margin, market.fees.integratorMaker, market.fees.integratorTaker, market.fees.maker, market.fees.makerEnabled, market.fees.taker, market.fees.takerEnabled, market.marketType, markPrice, mode, noVexFee, referencePrice, side, sizeDecimals, sizingBalance, suggestedPrice, triggerLimit, worstPrice]);
 
   const applySizePercent = (percent: number): void => {
     if (maxSize === null) return;
@@ -373,11 +372,10 @@ export function useTradeTicketForm({
     : null;
   const postOnly = (mode === "limit" || triggerLimit) && limitTimeInForce === "post-only";
   const feeRate = postOnly
-    ? { rate: market.fees.maker, enabled: market.fees.makerEnabled, label: "Maker", integrator: market.fees.integratorMaker, accountTicks: exchangeFees?.makerTicks ?? null, accountAssumed: exchangeFees?.source === "assumed_ceiling" }
-    : { rate: market.fees.taker, enabled: market.fees.takerEnabled, label: "Taker", integrator: market.fees.integratorTaker, accountTicks: exchangeFees?.takerTicks ?? null, accountAssumed: exchangeFees?.source === "assumed_ceiling" };
-  // EVERY leg again: the exchange's at this account's tier, and Vex's own. On
-  // a deployment whose market fee reads 0, the market leg alone read "≈ 0"
-  // beside an order that was still charged the tier and Vex's 2 bps.
+    ? { rate: market.fees.maker, enabled: market.fees.makerEnabled, label: "Maker", integrator: noVexFee ? null : market.fees.integratorMaker, accountTicks: exchangeFees?.makerTicks ?? null, accountAssumed: exchangeFees?.source === "assumed_ceiling" }
+    : { rate: market.fees.taker, enabled: market.fees.takerEnabled, label: "Taker", integrator: noVexFee ? null : market.fees.integratorTaker, accountTicks: exchangeFees?.takerTicks ?? null, accountAssumed: exchangeFees?.source === "assumed_ceiling" };
+  // Include the exchange tier fee and, on new exposure, Vex's fee. A market
+  // fee of zero can still leave both the account tier fee and Vex's 2 bps.
   const providerFee = exchangeFeeFraction(feeRate.rate, feeRate.enabled, feeRate.accountTicks);
   const estimatedFee = orderValue === null
     ? null

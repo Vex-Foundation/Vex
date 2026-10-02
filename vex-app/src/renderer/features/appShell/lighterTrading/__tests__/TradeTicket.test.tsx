@@ -21,7 +21,7 @@ const PERP: LighterTradingMarket = {
   minQuoteAmount: "10",
   orderQuoteLimit: "100000",
   decimals: { size: 4, price: 2, quote: 6 },
-  fees: { maker: "0", taker: "0.0003", makerEnabled: false, takerEnabled: true, integratorMaker: "0.1", integratorTaker: "0.1" },
+  fees: { maker: "0", taker: "0.0003", makerEnabled: false, takerEnabled: true, integratorMaker: "0.02", integratorTaker: "0.02" },
   activity24h: { tradesCount: 120, quoteVolume: 1_600_000 },
 };
 
@@ -30,6 +30,7 @@ const SPOT: LighterTradingMarket = {
   marketId: 2048,
   symbol: "ETH/USDG",
   marketType: "spot",
+  fees: { ...PERP.fees, integratorMaker: "0.25", integratorTaker: "0.25" },
 };
 
 /** 10x cross with a 4% maintenance requirement. */
@@ -298,7 +299,8 @@ describe("Light it up trade ticket", () => {
 
     fireEvent.change(screen.getByLabelText("Size"), { target: { value: "0.5" } });
     expect(screen.getByText("Order Value").nextElementSibling?.textContent).toBe("1,613.28 USD");
-    expect(screen.getByText("Fee (Taker)").getAttribute("title")).toBe("Taker 0.0003% + Vex 0.1%");
+    expect(screen.getByText("Fee (Taker)").getAttribute("title")).toBe("Taker 0.0003% + Vex 0.02%");
+    expect(screen.getByText("Fee (Taker)").nextElementSibling?.textContent).toBe("≈ 0.3275 USD");
     fireEvent.click(screen.getByRole("button", { name: "Long 0.5 ETH" }));
     expect(onSend).toHaveBeenLastCalledWith({
       mode: "market",
@@ -349,10 +351,10 @@ describe("Light it up trade ticket", () => {
     expect(onSend).toHaveBeenLastCalledWith(expect.objectContaining({ baseAmount: "0.3099" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Size unit: USD. Switch" }));
-    // Max reserves BOTH fee legs, so Vex's 0.1% shrinks it alongside the provider's.
-    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("15.3424 ETH");
+    // Max reserves both fee legs, including Vex's 0.02%.
+    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("15.4649 ETH");
     fireEvent.click(screen.getByRole("button", { name: "50%" }));
-    expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("7.6712");
+    expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("7.7324");
     expect(screen.getByRole("button", { name: "50%", pressed: true })).toBeTruthy();
     expect(screen.getByText("5,000 USDG")).toBeTruthy();
   });
@@ -363,7 +365,7 @@ describe("Light it up trade ticket", () => {
     const slider = screen.getByRole("slider", { name: "Size as percent of maximum" }) as HTMLInputElement;
     expect(slider.value).toBe("0");
     fireEvent.change(slider, { target: { value: "40" } });
-    expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("6.1369");
+    expect((screen.getByLabelText("Size") as HTMLInputElement).value).toBe("6.1859");
     // Typing moves the thumb to the nearest whole percent of the maximum.
     fireEvent.change(screen.getByLabelText("Size"), { target: { value: "7.71" } });
     expect(slider.value).toBe("50");
@@ -375,10 +377,23 @@ describe("Light it up trade ticket", () => {
   it("sizes against the account's own fee tier and the mark, and shows the tier it charges", () => {
     renderTicket({ exchangeFees: { makerTicks: 120, takerTicks: 350, source: "account" }, markPrice: 3_200 });
 
-    // 15.3424 without them; the 0.035% tier, the gap between the 3210.50 ask
+    // 15.4649 without them; the 0.035% tier, the gap between the 3210.50 ask
     // and the 3200 mark, and walking past the ask's 4 ETH all come out of it.
-    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("14.3169 ETH");
-    expect(screen.getByText("Fee (Taker)").getAttribute("title")).toBe("Taker 0.035% (account tier) + Vex 0.1%");
+    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("14.4222 ETH");
+    expect(screen.getByText("Fee (Taker)").getAttribute("title")).toBe("Taker 0.035% (account tier) + Vex 0.02%");
+  });
+
+  it("excludes Vex's fee from reduce-only and protective exit estimates", () => {
+    const { rerender } = renderTicket({ exchangeFees: { makerTicks: 120, takerTicks: 350, source: "account" } });
+    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "0.5" } });
+    expect(screen.getByText("Fee (Taker)").getAttribute("title")).toBe("Taker 0.035% (account tier) + Vex 0.02%");
+
+    fireEvent.click(screen.getByLabelText("Reduce-Only"));
+    expect(screen.getByText("Fee (Taker)").getAttribute("title")).toBe("Taker 0.035% (account tier)");
+    expect(screen.getByText("Fee (Taker)").nextElementSibling?.textContent).toBe("≈ 0.5646 USD");
+
+    rerender({ prefill: { key: 1, mode: "stop-loss", side: "sell", baseAmount: "0.5", reduceOnly: true } });
+    expect(screen.getByText("Fee (Taker)").getAttribute("title")).toBe("Taker 0.035% (account tier)");
   });
 
   it("ignores a mark left over from the previously selected market", () => {
@@ -386,7 +401,7 @@ describe("Light it up trade ticket", () => {
     renderTicket({ exchangeFees: { makerTicks: 120, takerTicks: 350, source: "account" }, markPrice: 84_000 });
 
     // Sized as if no mark were known, not collapsed to margin at 84,000.
-    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("15.2899 ETH");
+    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("15.4116 ETH");
   });
 
   it("disables the size presets when the account balance is unknown", () => {
@@ -451,7 +466,7 @@ describe("Light it up trade ticket", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Limit" }));
     fireEvent.change(screen.getByLabelText("Limit price"), { target: { value: "4000" } });
-    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("12.3758 ETH");
+    expect(screen.getByText("Max Size").nextElementSibling?.textContent).toBe("12.4746 ETH");
     fireEvent.click(screen.getByRole("button", { name: "Size unit: ETH. Switch" }));
     fireEvent.change(screen.getByLabelText("Size in quote"), { target: { value: "1000" } });
     expect(screen.getByText("≈ 0.25 ETH")).toBeTruthy();
@@ -588,7 +603,7 @@ describe("Light it up trade ticket", () => {
     expect(screen.getByRole("status").textContent).toBe("Maker-only buy price must stay below the best ask.");
     expect((screen.getByRole("button", { name: "Long 0.25 ETH" }) as HTMLButtonElement).disabled).toBe(true);
     // A disabled provider fee does not make the order free: Vex still takes its own.
-    expect(screen.getByText("Fee (Maker)").getAttribute("title")).toBe("Maker Disabled + Vex 0.1%");
+    expect(screen.getByText("Fee (Maker)").getAttribute("title")).toBe("Maker Disabled + Vex 0.02%");
 
     fireEvent.change(screen.getByLabelText("Limit price"), { target: { value: "3200" } });
     expect(screen.queryByRole("status")).toBeNull();
