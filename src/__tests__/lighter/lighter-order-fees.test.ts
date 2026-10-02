@@ -122,12 +122,22 @@ describe("native Lighter order fees", () => {
     await expect(revalidateLighterOrderFees({ ...scope, client: client(), integratorFees: fees })).rejects.toThrow("changed after this preview");
   });
 
+  it("refuses an old 1,000-tick preview after the perp rate falls to 200 ticks", async () => {
+    vi.spyOn(policyModule, "getLighterFeePolicy").mockReturnValue(policy);
+    configureLighterReadOnlyAccountAuthResolver(async () => ({ accountIndex: 42, token: "test-read-auth" }));
+    await expect(revalidateLighterOrderFees({
+      ...scope,
+      client: client(),
+      integratorFees: { ...fees, integratorMakerFee: 1000, integratorTakerFee: 1000 },
+    })).rejects.toThrow("changed after this preview");
+  });
+
   it("strictly decodes durable fee terms and computes exact decimal estimates", () => {
     expect(readLighterOrderFeeTerms(fees)).toEqual(fees);
     expect(() => readLighterOrderFeeTerms({ ...fees, collectorOverride: 1 })).toThrow();
     expect(() => readLighterOrderFeeTerms({ ...fees, integratorMakerFee: "1000" })).toThrow();
-    expect(lighterOrderFeeCriticalArgs(fees).vexFeeSummary).toContain("0.1% maker / 0.1% taker");
-    expect(estimateLighterOrderFee("1000000000", 6, 1000)).toBe("1");
+    expect(lighterOrderFeeCriticalArgs(fees).vexFeeSummary).toContain("0.02% maker / 0.02% taker");
+    expect(estimateLighterOrderFee("1000000000", 6, 200)).toBe("0.2");
     expect(estimateLighterOrderFee("1", 18, 2500)).toBe("0.0000000000000000000025");
   });
 

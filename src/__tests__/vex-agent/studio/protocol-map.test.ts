@@ -20,7 +20,7 @@ describe("inline protocol map", () => {
       expect(row).toContain(`\`${namespace}__\``);
     }
     expect(map).toContain("morpho: variable-rate lending/Morpho vaults; ethereum");
-    expect(map).toContain("10 bps perps; 25 bps spot");
+    expect(map).toContain("2 bps perps; 25 bps spot");
     expect(map).toContain("proven sell proceeds");
     expect(map).toContain("JUPITER_API_KEY missing");
     expect(Buffer.byteLength(map, "utf8")).toBeLessThanOrEqual(STUDIO_PROTOCOL_MAP_MAX_BYTES);

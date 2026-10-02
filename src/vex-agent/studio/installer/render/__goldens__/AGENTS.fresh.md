@@ -1,4 +1,4 @@
-<!-- vex:studio:begin vex=0.2.6 hash=dbbbf242762eb099 -->
+<!-- vex:studio:begin vex=0.2.6 hash=0cce707198b83172 -->
 # Vex Studio - project "acme-trading"
 
 This repository is connected to Vex, a self-custodial crypto agent whose tools
@@ -16,7 +16,7 @@ companion guide for protocol details before acting.
 - pendle: term-yield; Ethereum,Optimism,BNB Smart Chain,Monad,Sonic,HyperEVM,Mantle,Base,Plasma,Arbitrum One,Berachain; fee none; key not required; `pendle__`.
 - solana: swaps/lending/borrowing/prediction markets; Solana; fee 25 bps swap input; lend/predict free; key JUPITER_API_KEY missing; `solana__`.
 - dexscreener: read-only market research; provider-indexed chains; fee none; key not required; `dexscreener__`.
-- lighter: perp-trading/onboarding; Lighter Core and Lighter on Robinhood Chain; fee 10 bps perps; 25 bps spot; key not required; `lighter__`.
+- lighter: perp-trading/onboarding; Lighter Core and Lighter on Robinhood Chain; fee 2 bps perps; 25 bps spot; key not required; `lighter__`.
 - virtuals: agent tokens/bonding-curve trading; base, solana, robinhood, ethereum; buy/sell/launch base and robinhood only; fee 25 bps VIRTUAL buy/launch input or proven sell proceeds; late launch waived; key not required; `virtuals__`.
 - pools: no-curve launchpad; Robinhood Chain; fee 25 bps native value; key not required; `pools__`.
 - launchpads: image locker/public content-addressed host; chain-agnostic; fee none; key not required; `launchpads__`.
@@ -211,7 +211,7 @@ origin deposit, transaction or fill described below.
   ERC-20 transfer and every approve - pays NOTHING, and nothing is charged
   when the fee would cost more to collect than it is worth.
 - pools.fun launches: 25 bps of the native value the launch sends.
-- Lighter: 10 bps perpetual and 25 bps spot fees on fills, maker and taker,
+- Lighter: 2 bps perpetual and 25 bps spot fees on fills, maker and taker,
   separate from exchange fees; fee authorization is required before trading.
 - Virtuals curve buys: 25 bps of committed VIRTUAL, deducted before the curve
   and transferred after confirmation. Sells: 25 bps of proven VIRTUAL proceeds

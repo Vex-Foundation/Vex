@@ -390,6 +390,11 @@ describe("Lighter fee authorization lifecycle", () => {
     expect(feePolicyForStoredIntent(h.current()).collectorAccountIndex).toBe(
       99,
     );
+    expect(feePolicyForStoredIntent(h.current()).perpsMakerFee).toBe(1000);
+    expect(feePolicyForStoredIntent({
+      ...h.current(),
+      terms: { ...h.current().terms, maxPerpsMakerFee: 200, maxPerpsTakerFee: 200 },
+    }).perpsMakerFee).toBe(200);
     expect(() =>
       feePolicyForStoredIntent({
         ...h.current(),
@@ -403,6 +408,10 @@ describe("Lighter fee authorization lifecycle", () => {
         terms: { ...h.current().terms, maxSpotMakerFee: 9000 },
       }),
     ).toThrow("host-approved");
+    expect(() => feePolicyForStoredIntent({
+      ...h.current(),
+      terms: { ...h.current().terms, maxPerpsMakerFee: 1000, maxPerpsTakerFee: 200 },
+    })).toThrow("host-approved");
   });
   it("refuses reconciliation for a different selected wallet before provider reads", async () => {
     const h = setup({ state: "submitted" });

@@ -454,7 +454,7 @@ export const STUDIO_FEE_NOTE = [
   "  ERC-20 transfer and every approve - pays NOTHING, and nothing is charged",
   "  when the fee would cost more to collect than it is worth.",
   "- pools.fun launches: 25 bps of the native value the launch sends.",
-  "- Lighter: 10 bps perpetual and 25 bps spot fees on fills, maker and taker,",
+  "- Lighter: 2 bps perpetual and 25 bps spot fees on fills, maker and taker,",
   "  separate from exchange fees; fee authorization is required before trading.",
   "- Virtuals curve buys: 25 bps of committed VIRTUAL, deducted before the curve",
   "  and transferred after confirmation. Sells: 25 bps of proven VIRTUAL proceeds",

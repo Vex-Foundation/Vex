@@ -70,14 +70,14 @@ function intentRow(
 
 describe("Lighter order approval disclosure", () => {
   it("discloses approved fee rates, collector and exact estimate and refuses changed fee terms", () => {
-    const integratorFees = { integratorAccountIndex: 99, integratorMakerFee: 1000, integratorTakerFee: 1000 };
+    const integratorFees = { integratorAccountIndex: 99, integratorMakerFee: 200, integratorTakerFee: 200 };
     const approved = intentRow({ integratorFees, expiresAt: "2030-01-01T00:00:00.000Z" });
     const disclosure = buildLighterOrderApprovalDisclosure(approved, previewRow({ integratorFees }));
     const followUp = buildCreateApprovalFollowUp(approved, previewRow({ integratorFees }));
-    expect(followUp.approvalPreview.criticalArgs.vexFeeSummary).toContain("0.1% maker / 0.1% taker");
+    expect(followUp.approvalPreview.criticalArgs.vexFeeSummary).toContain("0.02% maker / 0.02% taker");
     expect(followUp.approvalPreview.criticalArgs.vexFeeSummary).toContain("account 99");
     expect(validatePreparedActionFollowUp("lighter.order.create.prepare", followUp).ok).toBe(true);
-    expect(disclosure.orderSummary).toContain("3.7499875 in quote-value terms");
+    expect(disclosure.orderSummary).toContain("0.7499975 in quote-value terms");
     expect(followUp.approvalPreview.criticalArgs.vexFeeSummary).toContain("Lighter exchange fees are separate");
     expect(() => buildLighterOrderApprovalDisclosure(approved, previewRow({ integratorFees: { ...integratorFees, integratorAccountIndex: 98 } }))).toThrow("no longer matches");
   });

@@ -155,7 +155,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Prepare the selected wallet's Lighter trading-fee authorization inside Vex onboarding after funding and key registration. Vex resolves the trader and configured collector internally and shows one trusted card for 0.10% perpetual and 0.25% spot fees, permission expiry, and any required account-tier change with its exchange costs. Use revoke=true only when the user asks to revoke Vex fee authorization. Disabled collection produces no authorization. Returns a trusted approval card with the exact fee rates, permission expiry, and any account-tier change; this preparation never signs, changes the account tier, or submits a transaction. Never ask the user for account indexes, API keys, nonces, or another chat confirmation; the host card is consent.",
+      "Prepare the selected wallet's Lighter trading-fee authorization inside Vex onboarding after funding and key registration. Vex resolves the trader and configured collector internally and shows one trusted card for 0.02% perpetual and 0.25% spot fees, permission expiry, and any required account-tier change with its exchange costs. Use revoke=true only when the user asks to revoke Vex fee authorization. Disabled collection produces no authorization. Returns a trusted approval card with the exact fee rates, permission expiry, and any account-tier change; this preparation never signs, changes the account tier, or submits a transaction. Never ask the user for account indexes, API keys, nonces, or another chat confirmation; the host card is consent.",
     mutating: false,
     actionKind: "approval_prepare",
     params: [ENVIRONMENT_PARAM, {

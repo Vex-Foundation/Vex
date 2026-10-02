@@ -377,7 +377,7 @@ export function useTradeTicketForm({
     : { rate: market.fees.taker, enabled: market.fees.takerEnabled, label: "Taker", integrator: market.fees.integratorTaker, accountTicks: exchangeFees?.takerTicks ?? null, accountAssumed: exchangeFees?.source === "assumed_ceiling" };
   // EVERY leg again: the exchange's at this account's tier, and Vex's own. On
   // a deployment whose market fee reads 0, the market leg alone read "≈ 0"
-  // beside an order that was still charged the tier and Vex's 10 bps.
+  // beside an order that was still charged the tier and Vex's 2 bps.
   const providerFee = exchangeFeeFraction(feeRate.rate, feeRate.enabled, feeRate.accountTicks);
   const estimatedFee = orderValue === null
     ? null
