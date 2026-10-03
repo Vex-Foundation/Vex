@@ -38,6 +38,7 @@ import {
   configureLighterCreateOrderExecutionDeps,
   executeApprovedLighterCreateOrder,
   getConfiguredLighterCreateOrderExecutionDeps,
+  LIGHTER_ORDER_PARALLEL_PREFLIGHT,
   type ExecuteApprovedLighterCreateOrderDeps,
 } from "@vex-agent/tools/protocols/lighter/order-create-execution.js";
 import type { LighterOrderReadyForSignerPlan } from "@vex-agent/tools/protocols/lighter/execution-plan.js";
@@ -2689,5 +2690,305 @@ describe("Lighter create execution: an ORDER-evidence fill still reaches the led
     // One preflight read plus the trade branch's own read, and no third.
     expect(d.client.getAccountTrades).toHaveBeenCalledTimes(2);
     expect([...rows.keys()]).toEqual(["lighter:rhc:42:0:491032980"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 7 preflight switches. Every OFF value must be today's path exactly,
+// and every ON value must refuse and record exactly what OFF does.
+// ---------------------------------------------------------------------------
+
+function delayedRejection(error: unknown, delayMs: number): () => Promise<never> {
+  return async () => {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    throw error;
+  };
+}
+
+interface PreflightObservation {
+  readonly outcome: Record<string, unknown>;
+  readonly effects: Record<string, unknown>;
+}
+
+async function observeCreateOrder(d: ExecuteApprovedLighterCreateOrderDeps): Promise<PreflightObservation> {
+  let outcome: Record<string, unknown>;
+  try {
+    outcome = { resolved: await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d }) };
+  } catch (error) {
+    outcome = error instanceof VexError
+      ? { rejected: { name: error.name, code: error.code, message: error.message, hint: error.hint, retryable: error.retryable } }
+      : { rejected: { message: error instanceof Error ? error.message : String(error) } };
+  }
+  return {
+    outcome,
+    effects: {
+      findFreshById: vi.mocked(d.previews.findFreshById).mock.calls,
+      markPreSubmitRevalidated: vi.mocked(d.intents.markPreSubmitRevalidated).mock.calls,
+      readTradingApiPrivateKey: vi.mocked(d.secretReader.readTradingApiPrivateKey).mock.calls,
+      createAccountAuth: vi.mocked(d.signer.createAccountAuth).mock.calls.length,
+      accountActiveOrders: vi.mocked(d.client.getAccountActiveOrders).mock.calls,
+      accountInactiveOrders: vi.mocked(d.client.getAccountInactiveOrders).mock.calls,
+      accountTrades: vi.mocked(d.client.getAccountTrades).mock.calls,
+      recordExecutionObserved: vi.mocked(d.nonceState.recordExecutionObserved).mock.calls,
+      reserveNonce: vi.mocked(d.reserveNonce).mock.calls,
+      signCreateOrder: vi.mocked(d.signer.signCreateOrder).mock.calls.length,
+      markSigned: vi.mocked(d.intents.markSigned).mock.calls,
+      markSubmitted: vi.mocked(d.intents.markSubmitted).mock.calls,
+      sendTx: vi.mocked(d.client.sendTx).mock.calls,
+      markAmbiguous: vi.mocked(d.intents.markAmbiguous).mock.calls,
+      markUnsubmittedRefused: vi.mocked(d.intents.markUnsubmittedRefused).mock.calls,
+      releaseUnsubmittedReservation: vi.mocked(d.nonceState.releaseUnsubmittedReservation).mock.calls,
+      markProviderOutcome: vi.mocked(d.intents.markProviderOutcome).mock.calls,
+    },
+  };
+}
+
+const PREFLIGHT_CASES: readonly {
+  readonly label: string;
+  readonly build: () => ExecuteApprovedLighterCreateOrderDeps;
+  readonly expected: RegExp;
+}[] = [
+  {
+    label: "the approved preview is unavailable",
+    build: () => deps({ previews: { findFreshById: vi.fn(async () => null) } }),
+    expected: /no longer fresh or available/,
+  },
+  {
+    label: "the live price moved beyond the approved worst price",
+    build: () => {
+      const base = deps();
+      return deps({
+        client: {
+          ...base.client,
+          getOrderBookOrders: vi.fn(async () => ({ ...ORDER_BOOK, asks: [{ ...first(ORDER_BOOK.asks), price: "3002.01" }] })),
+        },
+      });
+    },
+    expected: /moved beyond the approved market-order worst price/,
+  },
+  {
+    label: "revalidation evidence cannot persist",
+    build: () => {
+      const base = deps();
+      return deps({ intents: { ...base.intents, markPreSubmitRevalidated: vi.fn(async () => null) } });
+    },
+    expected: /evidence could not be persisted/,
+  },
+  {
+    label: "the market read fails",
+    build: () => {
+      const base = deps();
+      return deps({ client: { ...base.client, getMarketDetails: vi.fn(async () => { throw new Error("market down"); }) } });
+    },
+    expected: /unavailable for post-approval revalidation/,
+  },
+  {
+    label: "Lighter is unreachable during revalidation",
+    build: () => {
+      const base = deps();
+      const offline = new VexError(ErrorCodes.LIGHTER_TIMEOUT, "Request timed out after 10000ms");
+      return deps({ client: { ...base.client, getMarketDetails: vi.fn(async () => { throw offline; }) } });
+    },
+    expected: /couldn't reach Lighter before sending/,
+  },
+  {
+    label: "the next nonce is unavailable",
+    build: () => {
+      const base = deps();
+      return deps({ client: { ...base.client, getNextNonce: vi.fn(async () => { throw new Error("nonce down"); }) } });
+    },
+    expected: /next nonce is unavailable/,
+  },
+  {
+    label: "the trading key is not registered",
+    build: () => {
+      const base = deps();
+      return deps({ client: { ...base.client, getApiKeys: vi.fn(async () => ({ code: 200, api_keys: [] })) } });
+    },
+    expected: /not registered for the approved account scope/,
+  },
+  {
+    label: "Lighter is unreachable during the credential read",
+    build: () => {
+      const base = deps();
+      const offline = new VexError(ErrorCodes.LIGHTER_TIMEOUT, "Request timed out after 10000ms");
+      return deps({ client: { ...base.client, getApiKeys: vi.fn(async () => { throw offline; }) } });
+    },
+    expected: /couldn't reach Lighter before sending/,
+  },
+  {
+    label: "both fail, the credential first: the revalidation refusal wins",
+    build: () => {
+      const base = deps();
+      return deps({
+        client: {
+          ...base.client,
+          getMarketDetails: vi.fn(delayedRejection(new Error("market down"), 5)),
+          getNextNonce: vi.fn(async () => { throw new Error("nonce down"); }),
+        },
+      });
+    },
+    expected: /unavailable for post-approval revalidation/,
+  },
+  {
+    label: "both fail: an unreachable revalidation wins over a credential refusal",
+    build: () => {
+      const base = deps();
+      return deps({
+        client: {
+          ...base.client,
+          getMarketDetails: vi.fn(delayedRejection(new VexError(ErrorCodes.LIGHTER_TIMEOUT, "market timed out"), 5)),
+          getApiKeys: vi.fn(async () => ({ code: 200, api_keys: [] })),
+        },
+      });
+    },
+    expected: /couldn't reach Lighter before sending/,
+  },
+  {
+    label: "both fail: a revalidation refusal wins over an unreachable credential read",
+    build: () => {
+      const base = deps();
+      return deps({
+        client: {
+          ...base.client,
+          getMarketDetails: vi.fn(delayedRejection(new Error("market down"), 5)),
+          getNextNonce: vi.fn(async () => { throw new VexError(ErrorCodes.LIGHTER_TIMEOUT, "nonce timed out"); }),
+        },
+      });
+    },
+    expected: /unavailable for post-approval revalidation/,
+  },
+  {
+    label: "both unreachable: the revalidation's own transport text is the one restated",
+    build: () => {
+      const base = deps();
+      return deps({
+        client: {
+          ...base.client,
+          getMarketDetails: vi.fn(delayedRejection(new VexError(ErrorCodes.LIGHTER_TIMEOUT, "market timed out"), 5)),
+          getNextNonce: vi.fn(async () => { throw new VexError(ErrorCodes.LIGHTER_API_ERROR, "nonce fetch failed"); }),
+        },
+      });
+    },
+    expected: /market timed out/,
+  },
+  {
+    label: "the vault key does not match the registered key",
+    build: () => {
+      const base = deps();
+      return deps({
+        signer: {
+          ...base.signer,
+          createAccountAuth: vi.fn<ExecuteApprovedLighterCreateOrderDeps["signer"]["createAccountAuth"]>(async (input) => ({
+            ...(await base.signer.createAccountAuth(input)),
+            publicKey: "c".repeat(80),
+          })),
+        },
+      });
+    },
+    expected: /does not match the public key/,
+  },
+  {
+    label: "the client order id already has provider evidence",
+    build: () => {
+      const base = deps();
+      return deps({
+        client: {
+          ...base.client,
+          getAccountInactiveOrders: vi.fn(async () => ({
+            code: 200,
+            orders: [accountOrder({ status: "filled", filled_base_amount: "1", remaining_base_amount: "0" })],
+          })),
+        },
+      });
+    },
+    expected: /same Vex client order id/,
+  },
+  {
+    label: "an earlier action still holds the nonce",
+    build: () => deps({
+      nonceState: {
+        releaseUnsubmittedReservation: vi.fn(async () => null),
+        recordExecutionObserved: vi.fn(async () => null),
+      },
+      recoverNonce: vi.fn(async () => ({})),
+    }),
+    expected: /Vex clears the blocking reservation automatically/,
+  },
+];
+
+describe("LIGHTER_ORDER_PARALLEL_PREFLIGHT", () => {
+  it("ships OFF, and absent from the deps the sequential path runs", () => {
+    expect(LIGHTER_ORDER_PARALLEL_PREFLIGHT).toBe(false);
+  });
+
+  it.each(PREFLIGHT_CASES)("refuses and records exactly what OFF does when $label", async ({ build, expected }) => {
+    const off = await observeCreateOrder({ ...build(), parallelPreflight: false });
+    const absent = await observeCreateOrder(build());
+    const on = await observeCreateOrder({ ...build(), parallelPreflight: true });
+
+    expect(JSON.stringify(off.outcome)).toMatch(expected);
+    expect(absent).toEqual(off);
+    expect(on).toEqual(off);
+  });
+
+  it("returns the same result and persists the same revalidation evidence on success", async () => {
+    const off = await observeCreateOrder({ ...deps(), parallelPreflight: false });
+    const on = await observeCreateOrder({ ...deps(), parallelPreflight: true });
+
+    expect(off.outcome).toMatchObject({ resolved: { status: "sequencer_pending" } });
+    expect(on).toEqual(off);
+  });
+
+  it("overlaps the credential read with revalidation and loads the key only after both", async () => {
+    const revalidationGate = createGate();
+    const credentialGate = createGate();
+    const base = deps();
+    const markPreSubmitRevalidated = vi.fn(async () => {
+      await revalidationGate.promise;
+      return APPROVED_INTENT_ROW;
+    });
+    const getNextNonce = vi.fn(async () => {
+      await credentialGate.promise;
+      return { code: 200, nonce: 0 };
+    });
+    const d = deps({
+      client: { ...base.client, getNextNonce },
+      intents: { ...base.intents, markPreSubmitRevalidated },
+      parallelPreflight: true,
+    });
+
+    const execution = executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+
+    await vi.waitFor(() => {
+      expect(markPreSubmitRevalidated).toHaveBeenCalledTimes(1);
+      expect(getNextNonce).toHaveBeenCalledTimes(1);
+    });
+    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+
+    credentialGate.release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(d.signer.createAccountAuth).not.toHaveBeenCalled();
+
+    revalidationGate.release();
+    const result = await execution;
+    expect(d.secretReader.readTradingApiPrivateKey).toHaveBeenCalledTimes(1);
+    expect(result.status).toBe("sequencer_pending");
+  });
+
+  it("never loads the key when revalidation fails after the credential read succeeded", async () => {
+    const base = deps();
+    const d = deps({
+      client: { ...base.client, getMarketDetails: vi.fn(delayedRejection(new Error("market down"), 5)) },
+      parallelPreflight: true,
+    });
+
+    await expect(executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d }))
+      .rejects.toThrow("unavailable for post-approval revalidation");
+    expect(d.client.getNextNonce).toHaveBeenCalledTimes(1);
+    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(d.nonceState.recordExecutionObserved).not.toHaveBeenCalled();
+    expect(d.reserveNonce).not.toHaveBeenCalled();
   });
 });

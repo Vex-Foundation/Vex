@@ -116,6 +116,23 @@ const PROVIDER_OUTCOME_MAX_DELAY_MS = 2_000;
 const FRESH_PUBLIC_READ = { fresh: true } as const;
 const MIN_WIRE_ORDER_EXPIRY_REMAINING_MS = 5 * 60 * 1_000;
 
+/**
+ * SWITCH `LIGHTER_ORDER_PARALLEL_PREFLIGHT` (default OFF).
+ *
+ * ON reads the provider credential (registered key and `/nextNonce`) while the
+ * post-approval revalidation runs, instead of after it. The trading key is
+ * still loaded only after BOTH have succeeded, and when both fail the refusal
+ * is the one the sequential path gives (revalidation first, then the
+ * credential), so every refusal and every durable write is unchanged.
+ *
+ * It ships OFF because `/nextNonce` is then read earlier than today, by the
+ * length of the revalidation. A concurrent Vex action on the same API key that
+ * consumes a nonce inside that wider window leaves this order signed with a
+ * stale nonce, which Lighter refuses (recorded ambiguous and reconciled, never
+ * resent). Only a live canary can show that window is immaterial in practice.
+ */
+export const LIGHTER_ORDER_PARALLEL_PREFLIGHT = false;
+
 export type ExecuteApprovedLighterCreateOrderResult =
   | {
       readonly status: "sequencer_pending";
@@ -194,6 +211,8 @@ export interface ExecuteApprovedLighterCreateOrderDeps {
     "markSigned" | "markPreSubmitRevalidated" | "markSubmitted" | "markSequencerPending" | "markProviderOutcome" | "markAmbiguous">>
     & Pick<typeof lighterOrderExecutionIntentsRepo, "markSendAttemptStarted" | "markExpiredUnsubmitted" | "markUnsubmittedRefused" | "findByIntentIdAnySession">
     & { readonly markApiAccepted: (...args: Parameters<typeof lighterOrderExecutionIntentsRepo.markApiAccepted>) => Promise<{ readonly volumeQuotaRemaining: string | null } | null> };
+  /** Overrides {@link LIGHTER_ORDER_PARALLEL_PREFLIGHT}; absent uses the constant. */
+  readonly parallelPreflight?: boolean;
 }
 
 let configuredDeps: ExecuteApprovedLighterCreateOrderDeps | null = null;
@@ -236,18 +255,9 @@ async function runApprovedLighterCreateOrder(input: {
   }
   assertLighterTradingApiKeyIndexAllowed(plan.environment, plan.apiKeyIndex);
   assertLighterPhaseOneOrderPolicy(plan.orderType, plan.timeInForce);
-  const revalidationEvidence = await revalidateLiveOrderState(plan, deps);
-  const evidenceScope = buildLighterOrderEvidenceScope({
-    approved: plan,
-    baseDecimals: revalidationEvidence.baseDecimals,
-    priceDecimals: revalidationEvidence.priceDecimals,
-    signedOrderExpiryMs: unsignedOrder.orderExpiryMs,
-  });
-  // Prove the exact registered provider key and current nonce before asking
-  // the encrypted vault for private key material. Besides minimizing secret
-  // exposure time, this keeps every provider-read refusal truthful: no private
-  // trading key has been loaded when public identity evidence is unavailable.
-  const providerCredential = await readLiveProviderCredential(plan, deps);
+  const { evidenceScope, providerCredential } = (deps.parallelPreflight ?? LIGHTER_ORDER_PARALLEL_PREFLIGHT)
+    ? await runParallelPreflightReads(plan, unsignedOrder, deps)
+    : await runSequentialPreflightReads(plan, unsignedOrder, deps);
   const secret = await loadLighterTradingSecretMaterial(
     plan.credentialReference,
     deps.secretReader,
@@ -690,6 +700,60 @@ function assertProviderPublicKeyMatches(providerPublicKey: string, signerPublicK
       "The encrypted Lighter trading key does not match the public key registered for the approved account scope. No nonce was reserved and no order was signed or submitted.",
     );
   }
+}
+
+interface PreflightReads {
+  readonly evidenceScope: LighterOrderEvidenceScope;
+  readonly providerCredential: Awaited<ReturnType<typeof readLiveProviderCredential>>;
+}
+
+/** Today's order: revalidate, build the evidence scope, then read the credential. */
+async function runSequentialPreflightReads(
+  plan: LighterOrderReadyForSignerPlan,
+  unsignedOrder: LighterUnsignedCreateOrderRequest,
+  deps: ExecuteApprovedLighterCreateOrderDeps,
+): Promise<PreflightReads> {
+  const revalidationEvidence = await revalidateLiveOrderState(plan, deps);
+  const evidenceScope = buildLighterOrderEvidenceScope({
+    approved: plan,
+    baseDecimals: revalidationEvidence.baseDecimals,
+    priceDecimals: revalidationEvidence.priceDecimals,
+    signedOrderExpiryMs: unsignedOrder.orderExpiryMs,
+  });
+  // Prove the exact registered provider key and current nonce before asking
+  // the encrypted vault for private key material. Besides minimizing secret
+  // exposure time, this keeps every provider-read refusal truthful: no private
+  // trading key has been loaded when public identity evidence is unavailable.
+  const providerCredential = await readLiveProviderCredential(plan, deps);
+  return { evidenceScope, providerCredential };
+}
+
+/**
+ * `LIGHTER_ORDER_PARALLEL_PREFLIGHT` ON: the same two steps, overlapped.
+ *
+ * Both are awaited to settlement before anything else happens, so the trading
+ * key is still loaded only after BOTH succeeded. The refusal precedence is the
+ * sequential one: a revalidation or evidence-scope failure wins over a
+ * credential failure, whichever settled first, so two failures report exactly
+ * what today's order would.
+ */
+async function runParallelPreflightReads(
+  plan: LighterOrderReadyForSignerPlan,
+  unsignedOrder: LighterUnsignedCreateOrderRequest,
+  deps: ExecuteApprovedLighterCreateOrderDeps,
+): Promise<PreflightReads> {
+  const [revalidation, credential] = await Promise.allSettled([
+    revalidateLiveOrderState(plan, deps).then((revalidationEvidence) => buildLighterOrderEvidenceScope({
+      approved: plan,
+      baseDecimals: revalidationEvidence.baseDecimals,
+      priceDecimals: revalidationEvidence.priceDecimals,
+      signedOrderExpiryMs: unsignedOrder.orderExpiryMs,
+    })),
+    readLiveProviderCredential(plan, deps),
+  ]);
+  if (revalidation.status === "rejected") throw revalidation.reason;
+  if (credential.status === "rejected") throw credential.reason;
+  return { evidenceScope: revalidation.value, providerCredential: credential.value };
 }
 
 async function assertProviderOutcomeRepairReady(
