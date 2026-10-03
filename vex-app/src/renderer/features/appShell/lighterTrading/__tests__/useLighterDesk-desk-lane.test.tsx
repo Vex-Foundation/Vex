@@ -812,6 +812,26 @@ describe("desk lane", () => {
       expect(result.current.handoffError).toBeNull();
     });
 
+    it("shows the close outcome from the approve reply without waiting on the query refresh", async () => {
+      useLighterAnalysisStore.getState().saveDesk({ skipCloseConfirm: true });
+      accountData.value = { ok: true, data: positionAccount(Date.now(), [OPEN_POSITION]) };
+      prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-6" } });
+      approve.mockResolvedValue({ ok: true, data: resolved({
+        id: "ap-6",
+        toolOutput: JSON.stringify({ source: "vex_lighter_position_close", status: "closed" }),
+      }) });
+      const { result, invalidate } = renderDesk();
+      // A refresh that never settles: the outcome must not wait on it.
+      invalidate.mockReturnValue(new Promise<void>(() => undefined));
+
+      await act(async () => { result.current.accountActions.onClosePosition(OPEN_POSITION, 1); });
+
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: approvalsKeys.pending("s1") });
+      expect(result.current.closingPositions.get("7-long")).toBe("checking");
+      expect(result.current.submitting).toBe(false);
+      expect(result.current.handoffError).toBeNull();
+    });
+
     it("keeps the card for orders and cancels even while close skips it", async () => {
       useLighterAnalysisStore.getState().saveDesk({ skipCloseConfirm: true });
       prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-8" } });

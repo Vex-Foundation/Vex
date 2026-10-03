@@ -691,10 +691,12 @@ export function useDeskLane({
 
   // "Don't ask again" for Market close: the card still goes through main's
   // prepare -> approve lane; the desk just answers it in the user's stead
-  // before the pending list is pulled, so no dialog flashes.
+  // before the pending list is pulled, so no dialog flashes. The outcome is
+  // shown from the reply itself; the five-query refresh follows in the
+  // background instead of standing between the reply and the ticket.
   const approveOnDesk = async (sessionId: string, approvalId: string): Promise<void> => {
     const result = await window.vex.approvals.approve({ id: approvalId });
-    await invalidateOnApprovalResolve(queryClient, sessionId);
+    void invalidateOnApprovalResolve(queryClient, sessionId);
     if (!result.ok) {
       const pending = pendingDesk.current.get(approvalId);
       pendingDesk.current.delete(approvalId);

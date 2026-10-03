@@ -217,6 +217,36 @@ describe("useLighterAccountSetup resume rules", () => {
     expect(prepared.filter((action) => action.kind === "onboarding_deposit")).toHaveLength(1);
   });
 
+  it("a double click on Set up starts one chain, and the key is busy from the click", async () => {
+    // Key registered, fee pending: the chain re-reads the account before it
+    // sets its own phase, which is the window a second click used to land in.
+    live = status({ accountExists: true, accountCollateral: "12", tradingKeyRegistered: true });
+    const { result } = mount();
+
+    act(() => {
+      result.current.start();
+      result.current.start();
+    });
+    expect(result.current.starting).toBe(true);
+    expect(result.current.canStart).toBe(false);
+    await tick();
+
+    expect(prepared.filter((a) => a.kind === "onboarding_fee")).toHaveLength(1);
+    expect(prepared).toHaveLength(1);
+  });
+
+  it("releases the starting lock once the chain it started settles", async () => {
+    live = status({ accountExists: true, accountCollateral: "12", tradingKeyRegistered: true, feeAuthorized: true });
+    const { result } = mount();
+
+    act(() => { result.current.start(); });
+    await tick();
+
+    expect(result.current.starting).toBe(false);
+    expect(result.current.phase).toBe("done");
+    expect(prepared).toHaveLength(0);
+  });
+
   it("retries a refused submit on its own, with no click and no error shown", async () => {
     // The refusal that sent this whole investigation: the deposit is credited
     // on Lighter but not yet proven locally, so the key step is refused for an

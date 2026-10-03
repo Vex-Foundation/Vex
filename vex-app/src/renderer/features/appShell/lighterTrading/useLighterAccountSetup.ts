@@ -132,6 +132,13 @@ export interface LighterAccountSetupState {
    */
   readonly settlementShortfall: boolean;
   readonly canStart: boolean;
+  /**
+   * True from the click on Set up until the chain it started settles. The
+   * first step re-reads the account before it sets its own phase, and during
+   * that read the phase is still `idle`: without this the key stayed live and
+   * a second click could start a second chain.
+   */
+  readonly starting: boolean;
   readonly start: () => void;
   readonly retry: () => void;
 }
@@ -158,6 +165,10 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
   const autoRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Fires the on-open auto-reconcile at most once per opening.
   const autoTriggered = useRef(false);
+  // Set synchronously by `start`, so a second click in the same frame is
+  // refused before React has rendered the first one.
+  const startingRef = useRef(false);
+  const [starting, setStarting] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -170,6 +181,8 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     cancelled.current = false;
     autoTriggered.current = false;
     autoRetries.current = 0;
+    startingRef.current = false;
+    setStarting(false);
     return () => {
       cancelled.current = true;
       // A pending auto-retry must not outlive the modal and fire a submit at a
@@ -502,11 +515,27 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     && requiredSettlement !== null
     && compareUnsignedDecimals(requiredSettlement, status.walletSettlementBalance) > 0;
 
+  const launch = (chain: () => Promise<void>): void => {
+    startingRef.current = true;
+    setStarting(true);
+    const settle = (): void => {
+      startingRef.current = false;
+      setStarting(false);
+    };
+    // A chain that throws still releases the key, and the rejection is left
+    // unhandled exactly as the bare `void runX()` it replaces left it.
+    void chain().then(settle, (cause: unknown) => {
+      settle();
+      throw cause;
+    });
+  };
+
   const start = (): void => {
+    if (startingRef.current) return;
     if (phase !== "idle" || sessionId === null || status === null) return;
     if (status.setupRecovery !== "none") {
       setError(null);
-      void checkSavedSetup(environment);
+      launch(() => checkSavedSetup(environment));
       return;
     }
     if (needsDeposit && !isPositiveDecimal(amountIn)) return;
@@ -514,12 +543,12 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     setError(null);
     autoRetries.current = 0;
     if (!needsDeposit) {
-      if (status.tradingKeyRegistered) void runFee(environment);
-      else void runKey(environment);
+      if (status.tradingKeyRegistered) launch(() => runFee(environment));
+      else launch(() => runKey(environment));
       return;
     }
     const baseline = Number(status.accountCollateral);
-    void runDeposit(environment, amountIn, baseline);
+    launch(() => runDeposit(environment, amountIn, baseline));
   };
 
   /**
@@ -600,8 +629,9 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     error,
     needsDeposit,
     settlementShortfall,
-    canStart: phase === "idle" && status !== null
+    canStart: phase === "idle" && !starting && status !== null
       && (status.setupRecovery !== "none" || (!insufficientBalance && (!needsDeposit || isPositiveDecimal(amountIn)))),
+    starting,
     start,
     retry,
   };
