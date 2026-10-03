@@ -47,6 +47,12 @@ import {
   LighterReadAuthCache,
   lighterReadAuthCache,
 } from "@vex-agent/tools/protocols/lighter/read-auth-cache.js";
+import {
+  LIGHTER_STREAM_REVALIDATION,
+  LIGHTER_STREAM_REVALIDATION_MAX_AGE_MS,
+  type LighterStreamOrderBookReader,
+  type LighterStreamOrderBookSnapshot,
+} from "@vex-agent/tools/protocols/lighter/stream-revalidation.js";
 import type { LighterOrderReadyForSignerPlan } from "@vex-agent/tools/protocols/lighter/execution-plan.js";
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import type { LighterOrderPreviewRow } from "@vex-agent/db/repos/lighter-order-previews.js";
@@ -3201,5 +3207,173 @@ describe("LIGHTER_READ_AUTH_CACHE", () => {
     const on = await observeCreateOrder({ ...build(), readAuthCache: primedCache(), parallelPreflight: true });
     expect(on.outcome).toEqual(off.outcome);
     expect(withoutAccountReads(on.effects)).toEqual(withoutAccountReads(off.effects));
+  });
+});
+
+describe("LIGHTER_STREAM_REVALIDATION", () => {
+  const FRESH_STREAM_BOOK: LighterStreamOrderBookSnapshot = {
+    environment: PLAN.environment,
+    marketId: PLAN.marketIndex,
+    marketType: "perp",
+    receivedAtMs: NOW - 200,
+    bestAsk: "3001.00",
+    bestBid: "2999.00",
+  };
+
+  function streamReader(snapshot: LighterStreamOrderBookSnapshot | null = FRESH_STREAM_BOOK) {
+    return vi.fn<LighterStreamOrderBookReader>(() => snapshot);
+  }
+
+  function persistedEvidence(d: ExecuteApprovedLighterCreateOrderDeps): Record<string, unknown> {
+    return first(vi.mocked(d.intents.markPreSubmitRevalidated).mock.calls)[0].evidence;
+  }
+
+  /** Revalidation's own book read (limit 250); the margin-fit depth read stays REST. */
+  function revalidationBookReads(d: ExecuteApprovedLighterCreateOrderDeps): number {
+    return vi.mocked(d.client.getOrderBookOrders).mock.calls
+      .filter((call) => call[1].limit === 250)
+      .length;
+  }
+
+  function withoutRevalidationWrite(effects: Record<string, unknown>): Record<string, unknown> {
+    const { markPreSubmitRevalidated: _write, ...rest } = effects;
+    return rest;
+  }
+
+  it("ships OFF, and OFF never consults the stream", async () => {
+    expect(LIGHTER_STREAM_REVALIDATION).toBe(false);
+    expect(LIGHTER_STREAM_REVALIDATION_MAX_AGE_MS).toBe(1_500);
+    const reader = streamReader();
+    const d = deps({ streamOrderBook: reader });
+
+    const result = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+
+    expect(result.status).toBe("sequencer_pending");
+    expect(reader).not.toHaveBeenCalled();
+    expect(revalidationBookReads(d)).toBe(1);
+    expect(persistedEvidence(d)).not.toHaveProperty("orderBookSource");
+  });
+
+  it("revalidates from a live book younger than the max age, and names the source in the evidence", async () => {
+    const off = deps({ streamRevalidation: false });
+    const on = deps({ streamRevalidation: true, streamOrderBook: streamReader() });
+
+    const offResult = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: off });
+    const onResult = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: on });
+
+    expect(onResult).toEqual(offResult);
+    expect(revalidationBookReads(on)).toBe(0);
+    expect(revalidationBookReads(off)).toBe(1);
+    // Market, account, API key and nonce reads stay REST, call for call.
+    for (const read of ["getMarketDetails", "getAccount", "getApiKeys", "getNextNonce"] as const) {
+      expect(vi.mocked(on.client[read]).mock.calls).toEqual(vi.mocked(off.client[read]).mock.calls);
+    }
+    expect(persistedEvidence(on)).toEqual({
+      ...persistedEvidence(off),
+      orderBookSource: "public_stream",
+      orderBookAgeMs: 200,
+    });
+  });
+
+  it("uses a book exactly at the max age", async () => {
+    const d = deps({
+      streamRevalidation: true,
+      streamOrderBook: streamReader({ ...FRESH_STREAM_BOOK, receivedAtMs: NOW - LIGHTER_STREAM_REVALIDATION_MAX_AGE_MS }),
+    });
+
+    await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+
+    expect(revalidationBookReads(d)).toBe(0);
+    expect(persistedEvidence(d)).toMatchObject({ orderBookAgeMs: LIGHTER_STREAM_REVALIDATION_MAX_AGE_MS });
+  });
+
+  const UNUSABLE_STREAM_BOOKS: readonly {
+    readonly label: string;
+    readonly reader: () => LighterStreamOrderBookReader;
+  }[] = [
+    { label: "absent", reader: () => streamReader(null) },
+    { label: "one millisecond past the max age", reader: () => streamReader({ ...FRESH_STREAM_BOOK, receivedAtMs: NOW - LIGHTER_STREAM_REVALIDATION_MAX_AGE_MS - 1 }) },
+    { label: "stamped in the future", reader: () => streamReader({ ...FRESH_STREAM_BOOK, receivedAtMs: NOW + 1 }) },
+    { label: "missing its bid side", reader: () => streamReader({ ...FRESH_STREAM_BOOK, bestBid: null }) },
+    { label: "missing its ask side", reader: () => streamReader({ ...FRESH_STREAM_BOOK, bestAsk: null }) },
+    { label: "crossed", reader: () => streamReader({ ...FRESH_STREAM_BOOK, bestBid: "3001.00" }) },
+    { label: "not a decimal", reader: () => streamReader({ ...FRESH_STREAM_BOOK, bestAsk: "3,001.00" }) },
+    { label: "for another market", reader: () => streamReader({ ...FRESH_STREAM_BOOK, marketId: PLAN.marketIndex + 1 }) },
+    { label: "for another environment", reader: () => streamReader({ ...FRESH_STREAM_BOOK, environment: "core" }) },
+    { label: "for another market type", reader: () => streamReader({ ...FRESH_STREAM_BOOK, marketType: "spot" }) },
+    {
+      label: "unreadable",
+      reader: () => vi.fn<LighterStreamOrderBookReader>(() => { throw new Error("stream supervisor stopped"); }),
+    },
+  ];
+
+  it.each(UNUSABLE_STREAM_BOOKS)("reads REST and records exactly what OFF does when the stream book is $label", async ({ reader }) => {
+    const off = await observeCreateOrder(deps({ streamRevalidation: false }));
+    const onDeps = deps({ streamRevalidation: true, streamOrderBook: reader() });
+    const on = await observeCreateOrder(onDeps);
+
+    expect(on).toEqual(off);
+    expect(revalidationBookReads(onDeps)).toBe(1);
+  });
+
+  it("refuses exactly as OFF when the late REST book read after a market-type mismatch fails", async () => {
+    const failingBook = () => {
+      const base = deps();
+      return { ...base.client, getOrderBookOrders: vi.fn(async () => { throw new Error("book down"); }) };
+    };
+    const off = await observeCreateOrder(deps({ client: failingBook(), streamRevalidation: false }));
+    const on = await observeCreateOrder(deps({
+      client: failingBook(),
+      streamRevalidation: true,
+      streamOrderBook: streamReader({ ...FRESH_STREAM_BOOK, marketType: "spot" }),
+    }));
+
+    expect(JSON.stringify(off.outcome)).toMatch(/unavailable for post-approval revalidation/);
+    expect(on).toEqual(off);
+  });
+
+  it("refuses a stream price beyond the approved worst price exactly as REST refuses the same price", async () => {
+    const base = deps();
+    const off = await observeCreateOrder(deps({
+      client: {
+        ...base.client,
+        getOrderBookOrders: vi.fn(async () => ({ ...ORDER_BOOK, asks: [{ ...first(ORDER_BOOK.asks), price: "3002.01" }] })),
+      },
+      streamRevalidation: false,
+    }));
+    const onDeps = deps({ streamRevalidation: true, streamOrderBook: streamReader({ ...FRESH_STREAM_BOOK, bestAsk: "3002.01" }) });
+    const on = await observeCreateOrder(onDeps);
+
+    expect(JSON.stringify(off.outcome)).toMatch(/moved beyond the approved market-order worst price/);
+    expect(on).toEqual(off);
+    expect(revalidationBookReads(onDeps)).toBe(0);
+    expect(onDeps.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+  });
+
+  it.each(PREFLIGHT_CASES.filter(({ label }) => label !== "the live price moved beyond the approved worst price"))(
+    "ON with a fresh stream book refuses as OFF when $label",
+    async ({ build }) => {
+      const off = await observeCreateOrder({ ...build(), streamRevalidation: false });
+      const on = await observeCreateOrder({ ...build(), streamRevalidation: true, streamOrderBook: streamReader() });
+
+      expect(on.outcome).toEqual(off.outcome);
+      // Only the revalidation row may differ, by naming the stream as its source.
+      expect(withoutRevalidationWrite(on.effects)).toEqual(withoutRevalidationWrite(off.effects));
+    },
+  );
+
+  it("composes with the parallel preflight and the read-auth cache", async () => {
+    const d = deps({
+      streamRevalidation: true,
+      streamOrderBook: streamReader(),
+      parallelPreflight: true,
+      readAuthCache: new LighterReadAuthCache(),
+    });
+
+    const result = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+
+    expect(result.status).toBe("sequencer_pending");
+    expect(revalidationBookReads(d)).toBe(0);
+    expect(persistedEvidence(d)).toMatchObject({ orderBookSource: "public_stream" });
   });
 });

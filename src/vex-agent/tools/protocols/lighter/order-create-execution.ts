@@ -76,6 +76,12 @@ import {
   type LighterReadAuthCache,
   type LighterReadAuthCacheScope,
 } from "./read-auth-cache.js";
+import {
+  LIGHTER_STREAM_REVALIDATION,
+  lighterOrderBookFromStream,
+  takeFreshLighterStreamOrderBook,
+  type LighterStreamOrderBookReader,
+} from "./stream-revalidation.js";
 
 /**
  * The provider states that PROVE this create order can consume no more capital.
@@ -225,6 +231,10 @@ export interface ExecuteApprovedLighterCreateOrderDeps {
    * `LIGHTER_READ_AUTH_CACHE` is ON and none when it is OFF; null disables it.
    */
   readonly readAuthCache?: LighterReadAuthCache | null;
+  /** Overrides `LIGHTER_STREAM_REVALIDATION`; absent uses the constant. */
+  readonly streamRevalidation?: boolean;
+  /** The main-process public book reader; absent or null always reads REST. */
+  readonly streamOrderBook?: LighterStreamOrderBookReader | null;
 }
 
 let configuredDeps: ExecuteApprovedLighterCreateOrderDeps | null = null;
@@ -606,19 +616,25 @@ async function revalidateLiveOrderState(
     );
   }
 
+  // `LIGHTER_STREAM_REVALIDATION`: decided once, before any read, so OFF (or
+  // no live book young enough) issues exactly today's three REST reads.
+  const streamBook = takeFreshLighterStreamOrderBook({
+    enabled: deps.streamRevalidation ?? LIGHTER_STREAM_REVALIDATION,
+    reader: deps.streamOrderBook,
+    environment: plan.environment,
+    marketId: plan.marketIndex,
+    nowMs: deps.now(),
+  });
   let market: Awaited<ReturnType<LighterClient["getMarketDetails"]>>;
-  let orderBook: Awaited<ReturnType<LighterClient["getOrderBookOrders"]>>;
+  let restOrderBook: Awaited<ReturnType<LighterClient["getOrderBookOrders"]>> | null;
   let account: Awaited<ReturnType<LighterClient["getAccount"]>>;
   try {
-    [market, orderBook, account] = await Promise.all([
+    [market, restOrderBook, account] = await Promise.all([
       deps.client.getMarketDetails(plan.environment, {
         marketId: plan.marketIndex,
         filter: "all",
       }, FRESH_PUBLIC_READ),
-      deps.client.getOrderBookOrders(plan.environment, {
-        marketId: plan.marketIndex,
-        limit: 250,
-      }, FRESH_PUBLIC_READ),
+      streamBook === null ? readRevalidationOrderBook(plan, deps) : null,
       deps.client.getAccount(plan.environment, {
         by: "index",
         value: plan.accountIndex,
@@ -631,11 +647,7 @@ async function revalidateLiveOrderState(
       }, FRESH_PUBLIC_READ),
     ]);
   } catch (error) {
-    // Unreachable Lighter is restated plainly by the execution's before-send wrapper.
-    if (isLighterUnreachable(error)) throw error;
-    throw blockedBeforeSubmit(
-      "Live Lighter market or account state is unavailable for post-approval revalidation. No trading key was loaded and no order was signed or submitted.",
-    );
+    restateRevalidationReadFailure(error);
   }
   const marketDetail = [
     ...market.order_book_details,
@@ -645,6 +657,23 @@ async function revalidateLiveOrderState(
     throw blockedBeforeSubmit(
       "Lighter did not return the approved market during post-approval revalidation. No trading key was loaded and no order was signed or submitted.",
     );
+  }
+  // The stream book stands in only for the market type REST just reported;
+  // any other answer reads the REST book now, refusing as today on failure.
+  const streamBookUsed = streamBook !== null && streamBook.snapshot.marketType === marketDetail.market_type
+    ? streamBook
+    : null;
+  let orderBook: Awaited<ReturnType<LighterClient["getOrderBookOrders"]>>;
+  if (restOrderBook !== null) {
+    orderBook = restOrderBook;
+  } else if (streamBookUsed !== null) {
+    orderBook = lighterOrderBookFromStream(streamBookUsed.snapshot);
+  } else {
+    try {
+      orderBook = await readRevalidationOrderBook(plan, deps);
+    } catch (error) {
+      restateRevalidationReadFailure(error);
+    }
   }
 
   await revalidateLighterOrderFees({ client: deps.client, environment: plan.environment, accountIndex: plan.accountIndex, market: marketDetail, account, reduceOnly: plan.reduceOnly, side: plan.side, integratorFees: plan.integratorFees });
@@ -669,7 +698,11 @@ async function revalidateLiveOrderState(
     intentId: plan.intentId,
     sessionId: plan.sessionId,
     environment: plan.environment,
-    evidence: { ...evidence },
+    evidence: {
+      ...evidence,
+      // Named only when the stream supplied the book, so OFF writes today's row.
+      ...(streamBookUsed === null ? {} : { orderBookSource: "public_stream", orderBookAgeMs: streamBookUsed.ageMs }),
+    },
   });
   if (persisted === null) {
     throw blockedBeforeSubmit(
@@ -677,6 +710,24 @@ async function revalidateLiveOrderState(
     );
   }
   return evidence;
+}
+
+function readRevalidationOrderBook(
+  plan: LighterOrderReadyForSignerPlan,
+  deps: ExecuteApprovedLighterCreateOrderDeps,
+): Promise<Awaited<ReturnType<LighterClient["getOrderBookOrders"]>>> {
+  return deps.client.getOrderBookOrders(plan.environment, {
+    marketId: plan.marketIndex,
+    limit: 250,
+  }, FRESH_PUBLIC_READ);
+}
+
+function restateRevalidationReadFailure(error: unknown): never {
+  // Unreachable Lighter is restated plainly by the execution's before-send wrapper.
+  if (isLighterUnreachable(error)) throw error;
+  throw blockedBeforeSubmit(
+    "Live Lighter market or account state is unavailable for post-approval revalidation. No trading key was loaded and no order was signed or submitted.",
+  );
 }
 
 async function readLiveProviderCredential(

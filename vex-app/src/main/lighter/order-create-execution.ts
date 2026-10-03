@@ -44,6 +44,7 @@ import {
 import { isSecretSessionUnlocked, onSecretSessionLifecycle } from "../secrets/session.js";
 import { resolveManagedLighterTradingReadiness } from "./managed-trading-readiness.js";
 import { installLighterOrderStreamSupervisor } from "./order-stream.js";
+import { readLighterPublicMarketBookSnapshot } from "./public-market-stream.js";
 import {
   configureLighterCoreWithdrawalExecutionDeps,
   defaultLighterCoreWithdrawalExecutionDeps,
@@ -105,11 +106,15 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
     invalidateLighterReadAuthCache();
   });
   const uninstallExecutionDeps = configureLighterCreateOrderExecutionDeps(
-    defaultLighterCreateOrderExecutionDeps({
-      secretReader,
-      signer,
-      client: lighterClient,
-    }),
+    {
+      ...defaultLighterCreateOrderExecutionDeps({
+        secretReader,
+        signer,
+        client: lighterClient,
+      }),
+      // Consulted only while LIGHTER_STREAM_REVALIDATION is ON.
+      streamOrderBook: readLighterPublicMarketBookSnapshot,
+    },
   );
   const uninstallOcoExecutionDeps = configureLighterOcoExecutionDeps(
     defaultLighterOcoExecutionDeps({

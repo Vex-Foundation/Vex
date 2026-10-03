@@ -13,6 +13,7 @@ import type {
   LighterTradingPublicStatsEvent,
   LighterTradingPublicTradesEvent,
 } from "@shared/schemas/lighter-trading.js";
+import type { LighterStreamOrderBookSnapshot } from "@vex-agent/tools/protocols/lighter/stream-revalidation.js";
 import { log } from "../logger/index.js";
 import { SocketWatcherReconnectState } from "./stream-supervisor.js";
 
@@ -215,6 +216,38 @@ export class LighterPublicMarketSupervisor {
     }
     for (const watcher of this.watchers.values()) this.deactivateWatcher(watcher, "runtime_stopped");
     this.watchers.clear();
+  }
+
+  /**
+   * The live top of book for one market, for post-approval order revalidation
+   * (`LIGHTER_STREAM_REVALIDATION`). Read-only: it never subscribes, connects
+   * or waits. Null unless exactly one watcher for that environment and market
+   * id holds an established, live book on an open socket; the caller judges
+   * its age.
+   */
+  readBookSnapshot(
+    environment: LighterEnvironment,
+    marketId: number,
+  ): LighterStreamOrderBookSnapshot | null {
+    if (this.stopped) return null;
+    const live = [...this.watchers.values()].filter((watcher) =>
+      watcher.target.environment === environment
+      && watcher.target.marketId === marketId
+      && !watcher.stopped
+      && watcher.socket !== null
+      && watcher.bookReady
+      && watcher.bookNonce !== null
+      && watcher.bookStatus === "live");
+    const watcher = live.length === 1 ? live[0] : undefined;
+    if (watcher === undefined) return null;
+    return {
+      environment,
+      marketId,
+      marketType: watcher.target.marketType,
+      receivedAtMs: watcher.bookReceivedAt,
+      bestAsk: bestLevelPrice(watcher.asks, "lowest"),
+      bestBid: bestLevelPrice(watcher.bids, "highest"),
+    };
   }
 
   private scheduleConnect(watcher: PublicMarketWatcher, delayMs?: number): void {
@@ -677,6 +710,30 @@ export function cleanupLighterPublicMarketsForOwner(ownerId: string | number): v
 
 export function shutdownLighterPublicMarkets(): void {
   defaultSupervisor.stop();
+}
+
+export function readLighterPublicMarketBookSnapshot(
+  environment: LighterEnvironment,
+  marketId: number,
+): LighterStreamOrderBookSnapshot | null {
+  return defaultSupervisor.readBookSnapshot(environment, marketId);
+}
+
+/** Levels hold only non-zero sizes (`applyBookChanges` drops zero rows). */
+function bestLevelPrice(
+  levels: ReadonlyMap<string, string>,
+  pick: "lowest" | "highest",
+): string | null {
+  let best: string | null = null;
+  for (const price of levels.keys()) {
+    if (best === null) {
+      best = price;
+      continue;
+    }
+    const order = compareUnsignedDecimals(price, best);
+    if (pick === "lowest" ? order < 0 : order > 0) best = price;
+  }
+  return best;
 }
 
 function canonicalTarget(
