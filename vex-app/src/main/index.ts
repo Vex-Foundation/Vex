@@ -57,6 +57,8 @@ import {
 import { whenEngineDbReady } from "./database/engine-db-readiness.js";
 import { openE2eConnectionDoor } from "./database/e2e-connection-door.js";
 import { closeMainIpcPgPool } from "./database/main-ipc-pg-pool.js";
+import { recordEventLoopWindow } from "./database/event-loop-samples-db.js";
+import { startEventLoopTelemetry } from "./telemetry/event-loop-delay.js";
 import { registerAllIpcHandlers } from "./ipc/register-all.js";
 import {
   configureUpdater,
@@ -278,6 +280,21 @@ async function initializeMainRuntime(): Promise<void> {
   globalCleanup.add(() => {
     closeE2eDbDoor();
   }, "e2e-db-door");
+
+  // 3c. Event loop delay telemetry (K-5, measurement only): p50/p99/max delay
+  // and a count of perceptible stalls per window, logged and written to
+  // `main_event_loop_samples` for `pnpm kairos-runtime:report`. Started this
+  // early so startup stalls are measured too; its timers are unref'd.
+  const stopEventLoopTelemetry = startEventLoopTelemetry({
+    log: (level, line) => {
+      if (level === "warn") log.warn(line);
+      else log.info(line);
+    },
+    record: (window) => recordEventLoopWindow(window),
+  });
+  globalCleanup.add(() => {
+    stopEventLoopTelemetry();
+  }, "event-loop-telemetry");
 
   // 4. Security: deny-all permission handlers
   installPermissionHandlers();

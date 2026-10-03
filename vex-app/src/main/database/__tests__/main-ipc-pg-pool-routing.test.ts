@@ -32,6 +32,7 @@ const ROUTED = [
   "bug-reports/connection.ts",
   "compaction-db.ts",
   "compaction-preparation-db.ts",
+  "event-loop-samples-db.ts",
   "long-memory-db.ts",
   "memory-db.ts",
   "memory-inspector-db.ts",
