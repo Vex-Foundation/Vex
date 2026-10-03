@@ -187,7 +187,7 @@ const feeAuthorization: import("@vex-agent/db/repos/lighter-fee-authorization-in
   nonceValue: null, txHash: null, txExpiryMs: null, failureReason: null,
   expiresAt: new Date("2030-01-01T00:00:00.000Z"), verifiedAt: null,
   terms: { collectorAccountIndex: 999, collectorL1Address: "0x" + "2".repeat(40),
-    maxPerpsMakerFee: 1000, maxPerpsTakerFee: 1000, maxSpotMakerFee: 2500, maxSpotTakerFee: 2500,
+    maxPerpsMakerFee: 200, maxPerpsTakerFee: 200, maxSpotMakerFee: 2500, maxSpotTakerFee: 2500,
     authorizationExpiryMs: Date.parse("2036-01-01T00:00:00.000Z"), revoke: false,
     publicKey: "a".repeat(80), currentTier: "standard", targetTier: "plus",
     exchangeMakerFeeTick: 50, exchangeTakerFeeTick: 50, currentExchangeMakerFeeTick: null, currentExchangeTakerFeeTick: null },
