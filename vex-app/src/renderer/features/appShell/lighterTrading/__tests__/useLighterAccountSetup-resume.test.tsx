@@ -28,6 +28,7 @@ import type {
   LighterAccountSetupStatus,
   LighterDeskAction,
 } from "@shared/schemas/lighter-trading.js";
+import type { ApprovalDispatchEvent } from "@shared/schemas/approvals.js";
 
 const mocks = vi.hoisted(() => ({
   useLighterAccountSetupStatus: vi.fn(),
@@ -84,6 +85,11 @@ let reconcileCalls: number;
 let reconcileActivatesKey: boolean;
 /** Refusals the fake bridge hands back, one per `prepareDeskAction`, then none. */
 let refusals: Array<string>;
+/** K-2 B2: the approve reply says `dispatching` and the outcome is an event. */
+let backgroundDispatch: boolean;
+/** What the background event says once released; `null` means no event. */
+let backgroundEvent: ApprovalDispatchEvent | null;
+const dispatchListeners = new Set<(event: ApprovalDispatchEvent) => void>();
 
 function wrapper({ children }: { children: ReactNode }) {
   return (
@@ -123,6 +129,9 @@ beforeEach(() => {
   approveToolOutput = null;
   reconcileCalls = 0;
   reconcileActivatesKey = false;
+  backgroundDispatch = false;
+  backgroundEvent = null;
+  dispatchListeners.clear();
   mocks.useLighterAccountSetupStatus.mockImplementation(() => ({
     data: { ok: true, data: live },
     isLoading: false,
@@ -159,15 +168,31 @@ beforeEach(() => {
       },
     },
     approvals: {
-      approve: () =>
-        Promise.resolve({
+      approve: () => {
+        if (backgroundDispatch) {
+          // The outcome follows the reply on a later tick, as it does in main.
+          const event = backgroundEvent;
+          if (event !== null) {
+            setTimeout(() => { for (const cb of dispatchListeners) cb(event); }, 1_000);
+          }
+          return Promise.resolve({
+            ok: true,
+            data: { id: "appr-1", executionStatus: "dispatching", message: "Approved. Sending now; the outcome follows." },
+          });
+        }
+        return Promise.resolve({
           ok: true,
           data: {
             executionStatus: approveExecutionStatus,
             toolOutput: approveToolOutput,
             message: "approve reply message",
           },
-        }),
+        });
+      },
+      onDispatchEvent: (cb: (event: ApprovalDispatchEvent) => void) => {
+        dispatchListeners.add(cb);
+        return () => { dispatchListeners.delete(cb); };
+      },
     },
     },
   });
@@ -245,6 +270,67 @@ describe("useLighterAccountSetup resume rules", () => {
     expect(result.current.starting).toBe(false);
     expect(result.current.phase).toBe("done");
     expect(prepared).toHaveLength(0);
+  });
+
+  it("background approve: waits for the outcome event and walks on exactly as the awaited reply would", async () => {
+    live = status({ accountExists: true, accountCollateral: "12", tradingKeyRegistered: true });
+    backgroundDispatch = true;
+    backgroundEvent = {
+      phase: "settled",
+      approvalId: "appr-1",
+      occurredAt: "2026-10-03T09:00:00.000Z",
+      result: {
+        id: "appr-1",
+        status: "approved",
+        resolvedAt: null,
+        runtimeOutcome: "stopped",
+        executionStatus: "succeeded",
+        missionRunId: null,
+        cached: false,
+        message: "Approved. Tool executed.",
+      },
+    };
+    const { result } = mount();
+
+    act(() => { result.current.start(); });
+    await tick();
+    // Still on the submit half: the reply only said the fee grant went out.
+    expect(result.current.phase).toBe("authorizing_fee");
+
+    await tick(1_000);
+    expect(result.current.phase).toBe("confirming_fee");
+    expect(result.current.error).toBeNull();
+    expect(prepared).toHaveLength(1);
+    expect(dispatchListeners.size).toBe(0);
+  });
+
+  it("background approve: a failed event stops the step with its message and is never re-sent", async () => {
+    live = status({ accountExists: true, accountCollateral: "12", tradingKeyRegistered: true });
+    backgroundDispatch = true;
+    backgroundEvent = { phase: "failed", approvalId: "appr-1", occurredAt: "2026-10-03T09:00:00.000Z", message: "Tool execution failed after approval." };
+    const { result } = mount();
+
+    act(() => { result.current.start(); });
+    await tick();
+    await tick(1_000);
+    await tick(AUTO_RETRY_MS[0] + AUTO_RETRY_MS[1]);
+
+    expect(result.current.error).toBe("Tool execution failed after approval.");
+    expect(prepared).toHaveLength(1);
+  });
+
+  it("background approve: a missed event is unproven, so the step only polls and never submits again", async () => {
+    live = status({ accountExists: true, accountCollateral: "12", tradingKeyRegistered: true });
+    backgroundDispatch = true;
+    backgroundEvent = null;
+    const { result } = mount();
+
+    act(() => { result.current.start(); });
+    await tick();
+    await tick(3 * 60_000);
+
+    expect(result.current.phase).toBe("confirming_fee");
+    expect(prepared).toHaveLength(1);
   });
 
   it("retries a refused submit on its own, with no click and no error shown", async () => {

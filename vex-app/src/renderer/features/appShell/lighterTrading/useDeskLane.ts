@@ -42,6 +42,14 @@ const DESK_CARD_EXPIRY_GRACE_MS = 5_000;
 const APPROVALS_REFETCH_INTERVAL_MS = 60_000;
 
 /**
+ * With `APPROVAL_DISPATCH_BACKGROUND` on, an approve answers `dispatching` and
+ * its outcome arrives on `EV.approvals.dispatch`. An event can be missed (a
+ * reloaded window, a payload dropped at the preload gate), so a card still
+ * waiting this long asks main for its durable status. It never re-sends.
+ */
+const DISPATCH_OUTCOME_FALLBACK_MS = 90_000;
+
+/**
  * The ticket's own Long/Short, Close and Cancel - never the account-setup
  * modal's deposit/key/fee chain, which has its own auto-approve driver
  * (`useLighterAccountSetup`) and never reaches this lane's approval dialog.
@@ -512,11 +520,65 @@ export function useDeskLane({
     });
   }, [account, awaitedOrder, fills, finishFilledOrder]);
 
+  // Background approve (K-2 B2): approvals answered `dispatching`, waiting for
+  // their outcome event, with the fallback check each one has scheduled.
+  const dispatchFallbacks = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const clearDispatchFallback = (approvalId: string): void => {
+    const timer = dispatchFallbacks.current.get(approvalId);
+    if (timer !== undefined) clearTimeout(timer);
+    dispatchFallbacks.current.delete(approvalId);
+  };
+  const scheduleDispatchFallback = (approvalId: string): void => {
+    clearDispatchFallback(approvalId);
+    dispatchFallbacks.current.set(approvalId, setTimeout(() => {
+      dispatchFallbacks.current.delete(approvalId);
+      if (!pendingDesk.current.has(approvalId)) return;
+      void window.vex.approvals.get({ id: approvalId }).then((read) => {
+        if (!pendingDesk.current.has(approvalId)) return;
+        const status = read.ok ? read.data?.executionStatus ?? null : null;
+        if (status === "succeeded" || status === "failed" || status === "indeterminate") {
+          // The outcome event never came, so the tool's own words are not here
+          // to read. The durable row says the dispatch ended; the one honest
+          // thing to tell the trader is to check before acting again.
+          resolvedRef.current("approved", {
+            id: approvalId,
+            status: "approved",
+            resolvedAt: null,
+            runtimeOutcome: "stopped",
+            executionStatus: "indeterminate",
+            missionRunId: null,
+            cached: true,
+            message: "Outcome not received.",
+          });
+          return;
+        }
+        scheduleDispatchFallback(approvalId);
+      }, () => scheduleDispatchFallback(approvalId));
+    }, DISPATCH_OUTCOME_FALLBACK_MS));
+  };
+  useEffect(() => () => {
+    for (const timer of dispatchFallbacks.current.values()) clearTimeout(timer);
+    dispatchFallbacks.current.clear();
+  }, []);
+
   // A desk card resolved. Protection remains a separate approval, and it is
   // loaded only after the provider proves the amount that actually filled.
   const onApprovalResolved = (decision: "approved" | "rejected", result: ApprovalActionResult): void => {
     const pending = pendingDesk.current.get(result.id);
     if (pending === undefined) return;
+    if (decision === "approved" && result.executionStatus === "dispatching") {
+      // The slot is claimed and the order is going out; its outcome follows
+      // as an event and lands back here through the same handler. The card
+      // stays tracked until then, so its row stays locked.
+      scheduleDispatchFallback(result.id);
+      const dispatchingScopeIsCurrent = pending.action.kind === "cancel"
+        ? pending.scope.sessionId === currentScope.current.sessionId
+          && pending.scope.environment === currentScope.current.environment
+        : sameDeskScope(pending.scope, currentScope.current);
+      if (dispatchingScopeIsCurrent) setDeskOutcome({ tone: "warn", text: "Approved. Sending to Lighter..." });
+      return;
+    }
+    clearDispatchFallback(result.id);
     pendingDesk.current.delete(result.id);
     deskCardExpiry.current.delete(result.id);
     if (decision === "rejected") {
@@ -689,6 +751,38 @@ export function useDeskLane({
     setDeskOutcome({ tone: "error", text: deskFailureMessage(result.toolOutput ?? result.message) });
   };
 
+  const resolvedRef = useRef(onApprovalResolved);
+  resolvedRef.current = onApprovalResolved;
+
+  // A failed decision the desk itself must report: the card that would have
+  // shown it is gone (auto-approved, or answered `dispatching`).
+  const failDeskApproval = (approvalId: string, message: string): void => {
+    clearDispatchFallback(approvalId);
+    const pending = pendingDesk.current.get(approvalId);
+    pendingDesk.current.delete(approvalId);
+    clearClose(pending?.closeKey ?? null);
+    clearCancel(pending?.cancelKey ?? null);
+    setHandoffError(message);
+  };
+  const failRef = useRef(failDeskApproval);
+  failRef.current = failDeskApproval;
+
+  // The background approve's outcome (`EV.approvals.dispatch`). Silent while
+  // the switch is off. Only cards this desk is tracking are touched, and a
+  // card is settled once: whichever of the event and the reply comes second
+  // finds nothing left to settle.
+  useEffect(() => {
+    const off = window.vex.approvals.onDispatchEvent?.((event) => {
+      if (event.phase === "dispatching") return;
+      const pending = pendingDesk.current.get(event.approvalId);
+      if (pending === undefined) return;
+      if (event.phase === "settled") resolvedRef.current("approved", event.result);
+      else failRef.current(event.approvalId, event.message);
+      void invalidateOnApprovalResolve(queryClient, pending.scope.sessionId);
+    });
+    return () => off?.();
+  }, [queryClient]);
+
   // "Don't ask again" for Market close: the card still goes through main's
   // prepare -> approve lane; the desk just answers it in the user's stead
   // before the pending list is pulled, so no dialog flashes. The outcome is
@@ -698,11 +792,7 @@ export function useDeskLane({
     const result = await window.vex.approvals.approve({ id: approvalId });
     void invalidateOnApprovalResolve(queryClient, sessionId);
     if (!result.ok) {
-      const pending = pendingDesk.current.get(approvalId);
-      pendingDesk.current.delete(approvalId);
-      clearClose(pending?.closeKey ?? null);
-      clearCancel(pending?.cancelKey ?? null);
-      setHandoffError(result.error.message);
+      failDeskApproval(approvalId, result.error.message);
       return;
     }
     onApprovalResolved("approved", result.data);

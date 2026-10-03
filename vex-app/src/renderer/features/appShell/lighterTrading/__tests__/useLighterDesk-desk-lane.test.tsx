@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ApprovalActionResult } from "@shared/schemas/approvals.js";
+import type { ApprovalActionResult, ApprovalDispatchEvent } from "@shared/schemas/approvals.js";
 import type { LighterTradingAccount, LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
 import { approvalsKeys } from "../../../../lib/api/queryKeys.js";
 import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
@@ -33,6 +33,15 @@ const approvalsData = { value: [] as unknown[] };
 const approvalGet = vi.fn();
 const fillsData = { value: undefined as unknown };
 const funnelStep = vi.fn(async () => ({ ok: true, data: { recorded: false } }));
+/** Listeners on `EV.approvals.dispatch`; a test emits through `emitDispatch`. */
+const dispatchListeners = new Set<(event: ApprovalDispatchEvent) => void>();
+const onDispatchEvent = vi.fn((cb: (event: ApprovalDispatchEvent) => void) => {
+  dispatchListeners.add(cb);
+  return () => { dispatchListeners.delete(cb); };
+});
+function emitDispatch(event: ApprovalDispatchEvent): void {
+  for (const cb of dispatchListeners) cb(event);
+}
 
 vi.mock("../../../../lib/api/lighter-trading.js", () => ({
   useLighterTradingMarkets: () => ({ data: { ok: true, data: { retrievedAt: 0, markets: [MARKET] } } }),
@@ -130,7 +139,8 @@ describe("desk lane", () => {
     fillsData.value = undefined;
     approvalsData.value = [];
     approvalGet.mockReset();
-    vi.stubGlobal("window", Object.assign(window, { vex: { lighterTrading: { prepareDeskAction }, approvals: { approve, get: approvalGet }, telemetry: { funnelStep } } }));
+    dispatchListeners.clear();
+    vi.stubGlobal("window", Object.assign(window, { vex: { lighterTrading: { prepareDeskAction }, approvals: { approve, get: approvalGet, onDispatchEvent }, telemetry: { funnelStep } } }));
     useUiStore.setState({ activeSessionId: "s1", createSessionOpen: false });
     useLighterAnalysisStore.getState().saveDesk({ environment: "rhc", marketId: 7, skipCloseConfirm: false });
   });
@@ -789,6 +799,110 @@ describe("desk lane", () => {
     expect(result.current.deskOutcome?.text).toBe(
       "A previous Lighter action is still settling. No new order was placed. Vex clears it automatically; try again shortly.",
     );
+  });
+
+  describe("background approve (APPROVAL_DISPATCH_BACKGROUND)", () => {
+    const AT = "2026-10-03T09:00:00.000Z";
+
+    async function enqueueOrder(result: { current: ReturnType<typeof useLighterDesk> }, approvalId: string): Promise<void> {
+      prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId } });
+      await act(async () => { result.current.submitDraft(ENTRY); });
+    }
+
+    it("a dispatching reply keeps the card tracked and says it is sending, then the event settles it like the awaited reply", async () => {
+      const { result } = renderDesk();
+      await enqueueOrder(result, "ap-bg1");
+
+      act(() => result.current.onApprovalResolved("approved", resolved({ id: "ap-bg1", executionStatus: "dispatching" })));
+      expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Approved. Sending to Lighter..." });
+
+      act(() => emitDispatch({
+        phase: "settled",
+        approvalId: "ap-bg1",
+        occurredAt: AT,
+        result: resolved({ id: "ap-bg1", toolOutput: providerOrderOutput({ state: "open", source: "active_order", orderId: "123456789" }) }),
+      }));
+      expect(result.current.deskOutcome).toEqual({ tone: "ok", text: "Order …23456789 is open on Lighter. Track it in Orders below." });
+      // The approve is counted once, when the outcome lands.
+      expect(funnelStep.mock.calls.filter((call) => JSON.stringify(call).includes("desk_approve"))).toHaveLength(1);
+    });
+
+    it("an event that beats the reply settles the card once; the late reply finds nothing to settle", async () => {
+      const { result } = renderDesk();
+      await enqueueOrder(result, "ap-bg2");
+
+      act(() => emitDispatch({
+        phase: "settled",
+        approvalId: "ap-bg2",
+        occurredAt: AT,
+        result: resolved({ id: "ap-bg2", executionStatus: "indeterminate" }),
+      }));
+      expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Outcome unknown. Open Orders below and refresh before retrying." });
+      act(() => result.current.onApprovalResolved("approved", resolved({ id: "ap-bg2", executionStatus: "dispatching" })));
+      expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Outcome unknown. Open Orders below and refresh before retrying." });
+    });
+
+    it("a failed event reports on the ticket and releases the row, exactly like a failed awaited approve", async () => {
+      useLighterAnalysisStore.getState().saveDesk({ skipCloseConfirm: true });
+      accountData.value = { ok: true, data: positionAccount(Date.now()) };
+      prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-bg3" } });
+      approve.mockResolvedValue({ ok: true, data: resolved({ id: "ap-bg3", executionStatus: "dispatching" }) });
+      const { result } = renderDesk();
+
+      await act(async () => { result.current.accountActions.onClosePosition(OPEN_POSITION, 1); });
+      expect(result.current.closingPositions.get("7-long")).toBe("approval");
+
+      act(() => emitDispatch({ phase: "failed", approvalId: "ap-bg3", occurredAt: AT, message: "Tool execution failed after approval." }));
+      expect(result.current.handoffError).toBe("Tool execution failed after approval.");
+      expect(result.current.closingPositions.has("7-long")).toBe(false);
+    });
+
+    it("ignores events for cards it is not tracking", async () => {
+      const { result } = renderDesk();
+      act(() => emitDispatch({ phase: "failed", approvalId: "someone-else", occurredAt: AT, message: "nope" }));
+      expect(result.current.handoffError).toBeNull();
+      expect(result.current.deskOutcome).toBeNull();
+    });
+
+    it("a missed event falls back to the durable status and says only that the outcome is unknown", async () => {
+      vi.useFakeTimers();
+      try {
+        const { result } = renderDesk();
+        await enqueueOrder(result, "ap-bg4");
+        approvalGet.mockResolvedValue({ ok: true, data: { executionStatus: "succeeded", status: "approved" } });
+
+        act(() => result.current.onApprovalResolved("approved", resolved({ id: "ap-bg4", executionStatus: "dispatching" })));
+        await act(async () => { await vi.advanceTimersByTimeAsync(90_000); });
+
+        expect(approvalGet).toHaveBeenCalledWith({ id: "ap-bg4" });
+        expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Outcome unknown. Open Orders below and refresh before retrying." });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps waiting while the durable row is still dispatching", async () => {
+      vi.useFakeTimers();
+      try {
+        const { result } = renderDesk();
+        await enqueueOrder(result, "ap-bg5");
+        approvalGet.mockResolvedValue({ ok: true, data: { executionStatus: "dispatching", status: "approved" } });
+
+        act(() => result.current.onApprovalResolved("approved", resolved({ id: "ap-bg5", executionStatus: "dispatching" })));
+        await act(async () => { await vi.advanceTimersByTimeAsync(90_000); });
+        expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Approved. Sending to Lighter..." });
+
+        act(() => emitDispatch({
+          phase: "settled",
+          approvalId: "ap-bg5",
+          occurredAt: AT,
+          result: resolved({ id: "ap-bg5", executionStatus: "failed", toolOutput: "Order rejected: too small." }),
+        }));
+        expect(result.current.deskOutcome).toEqual({ tone: "error", text: "Order rejected: too small." });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe("Don't ask again for Market close", () => {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import type { ApprovalActionResult } from "@shared/schemas/approvals.js";
 import type {
   LighterAccountSetupStatus,
   LighterDeskAction,
@@ -55,6 +56,50 @@ const CONFIRM_TIMEOUT_MS: Readonly<Record<string, number>> = {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
+/**
+ * How long a step answered `dispatching` (K-2 B2, `APPROVAL_DISPATCH_BACKGROUND`)
+ * waits for its outcome event before treating the outcome as unproven. An
+ * unproven step hands over to its confirm half, which only polls, so a missed
+ * event can never turn into a second submit.
+ */
+const DISPATCH_OUTCOME_WAIT_MS = 3 * 60_000;
+
+type DispatchOutcome =
+  | { readonly kind: "settled"; readonly result: ApprovalActionResult }
+  | { readonly kind: "failed"; readonly message: string }
+  | { readonly kind: "unknown" };
+
+/**
+ * Listen for one approval's background outcome. Subscribed BEFORE the approve
+ * call, so an event that beats the reply is kept rather than lost.
+ */
+function watchDispatchOutcome(approvalId: string): {
+  readonly next: () => Promise<DispatchOutcome>;
+  readonly dispose: () => void;
+} {
+  let settled: DispatchOutcome | null = null;
+  let deliver: ((outcome: DispatchOutcome) => void) | null = null;
+  const off = window.vex.approvals.onDispatchEvent?.((event) => {
+    if (event.approvalId !== approvalId || event.phase === "dispatching" || settled !== null) return;
+    settled = event.phase === "settled"
+      ? { kind: "settled", result: event.result }
+      : { kind: "failed", message: event.message };
+    deliver?.(settled);
+  });
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return {
+    next: () => new Promise<DispatchOutcome>((resolve) => {
+      if (settled !== null) { resolve(settled); return; }
+      deliver = resolve;
+      timer = setTimeout(() => resolve({ kind: "unknown" }), DISPATCH_OUTCOME_WAIT_MS);
+    }),
+    dispose: () => {
+      off?.();
+      if (timer !== null) clearTimeout(timer);
+    },
+  };
 }
 
 /**
@@ -323,7 +368,22 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     if (prepared.data.kind === "refused") {
       return { ok: false, retryable: true, reason: prepared.data.reason };
     }
-    const approved = await window.vex.approvals.approve({ id: prepared.data.approvalId });
+    const watch = watchDispatchOutcome(prepared.data.approvalId);
+    let approved: Awaited<ReturnType<typeof window.vex.approvals.approve>>;
+    try {
+      approved = await window.vex.approvals.approve({ id: prepared.data.approvalId });
+      if (approved.ok && approved.data.executionStatus === "dispatching") {
+        // The submit is out; its outcome follows as an event.
+        const outcome = await watch.next();
+        if (outcome.kind === "unknown") {
+          return { ok: false, unproven: true, reason: "The outcome is uncertain. Check status before retrying." };
+        }
+        if (outcome.kind === "failed") return { ok: false, reason: outcome.message };
+        approved = { ok: true, data: outcome.result };
+      }
+    } finally {
+      watch.dispose();
+    }
     if (!approved.ok) return { ok: false, reason: approved.error.message };
     if (approved.data.executionStatus === "failed") {
       return { ok: false, reason: stepFailureReason(approved.data) };
