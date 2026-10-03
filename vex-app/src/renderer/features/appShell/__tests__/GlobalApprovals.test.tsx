@@ -378,6 +378,23 @@ describe("GlobalApprovals - panel", () => {
       expect.any(Object),
     );
   });
+
+  it("a panel card says it is working and locks on the click itself", () => {
+    pendingState = {
+      data: {
+        ok: true,
+        data: [makeRow({ id: "g-a", riskLevel: "info", actionKind: "read" })],
+      },
+    };
+    renderBadge();
+    fireEvent.click(getBadge());
+    const approveKey = screen.getByRole("button", { name: /^approve$/i });
+    fireEvent.click(approveKey);
+    fireEvent.click(approveKey);
+    expect(mockApproveMutate).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: /working, please wait/i }).getAttribute("disabled")).not.toBeNull();
+    expect(screen.getByRole("button", { name: /^reject$/i }).getAttribute("disabled")).not.toBeNull();
+  });
 });
 
 describe("GlobalApprovals - dismissal + focus (A6)", () => {
@@ -498,8 +515,9 @@ describe("GlobalApprovals - inbox order and the keyboard's landing", () => {
     renderBadge();
     fireEvent.click(getBadge());
     const panel = screen.getByRole("dialog");
+    // The flag marks a rejection in flight too, so the key names that.
     expect(
-      screen.getAllByRole("button", { name: "Reject" })[0]?.hasAttribute("disabled"),
+      screen.getAllByRole("button", { name: /^(Reject|Rejecting, please wait)$/ })[0]?.hasAttribute("disabled"),
     ).toBe(true);
     expect(document.activeElement).toBe(panel);
   });
