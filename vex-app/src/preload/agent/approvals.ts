@@ -1,6 +1,7 @@
-import { CH } from "../../shared/ipc/channels.js";
+import { CH, EV } from "../../shared/ipc/channels.js";
 import {
   approvalActionInputSchema,
+  approvalDispatchEventSchema,
   approvalGetHistoryInputSchema,
   approvalGetInputSchema,
   approvalListPendingAllInputSchema,
@@ -14,7 +15,7 @@ import type {
   ApprovalListPendingInput,
 } from "../../shared/schemas/approvals.js";
 import type { ApprovalsBridge } from "../../shared/types/bridge/agent/approvals.js";
-import { invokeWithSchema } from "../_dispatch.js";
+import { invokeWithSchema, subscribe } from "../_dispatch.js";
 
 export const approvals = {
   listPending(input: ApprovalListPendingInput) {
@@ -56,5 +57,8 @@ export const approvals = {
       input,
       approvalGetHistoryInputSchema
     );
+  },
+  onDispatchEvent(callback) {
+    return subscribe(EV.approvals.dispatch, approvalDispatchEventSchema, callback);
   },
 } satisfies ApprovalsBridge;

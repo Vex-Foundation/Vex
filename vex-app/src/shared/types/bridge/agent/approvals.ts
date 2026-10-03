@@ -2,6 +2,7 @@ import type { Result } from "../../../ipc/result.js";
 import type {
   ApprovalActionInput,
   ApprovalActionResult,
+  ApprovalDispatchEvent,
   ApprovalGetHistoryInput,
   ApprovalGetInput,
   ApprovalListPendingAllInput,
@@ -41,4 +42,12 @@ export interface ApprovalsBridge {
   readonly getHistory: (
     input: ApprovalGetHistoryInput
   ) => Promise<Result<ReadonlyArray<ApprovalSummaryDto>>>;
+  /**
+   * Background approve progress and outcome (`EV.approvals.dispatch`, Kairos
+   * K-2 B2). Silent while `APPROVAL_DISPATCH_BACKGROUND` is off. Returns the
+   * unsubscribe.
+   */
+  readonly onDispatchEvent: (
+    callback: (event: ApprovalDispatchEvent) => void
+  ) => () => void;
 }

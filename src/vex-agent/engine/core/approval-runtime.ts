@@ -52,6 +52,7 @@ import {
   TOOL_RESULT_REJECTED_DEFAULT_REASON,
 } from "./approval-runtime/helpers.js";
 import type {
+  ApproveDispatchOptions,
   ApprovePrepareOutcome,
   RejectPrepareOutcome,
 } from "./approval-runtime/types.js";
@@ -61,6 +62,7 @@ export {
   ApprovalDecisionInconsistencyError,
   ApprovalPostDecisionError,
   continuationMissionRunId,
+  type ApproveDispatchOptions,
   type ApprovePrepareOutcome,
   type RejectPrepareOutcome,
   type PreparedContinuation,
@@ -159,6 +161,7 @@ export { resumePendingApprovalsForSession } from "./approval-runtime/deferred-re
 
 export async function prepareApprove(
   approvalId: string,
+  options?: ApproveDispatchOptions,
 ): Promise<ApprovePrepareOutcome> {
   const snapshot = await withApprovalDecisionTransaction(approvalId, (client) =>
     buildApproveSnapshot(client, approvalId),
@@ -178,7 +181,7 @@ export async function prepareApprove(
             row: snapshot.row,
             queueResolvedAt:
               toIsoOrNull(snapshot.row.queue_resolved_at) ?? toIsoNow(),
-          });
+          }, options);
         }
       }
       return {
@@ -239,7 +242,7 @@ export async function prepareApprove(
       );
 
     case "approved_in_tx":
-      return applyApproveSideEffects(approvalId, snapshot);
+      return applyApproveSideEffects(approvalId, snapshot, options);
   }
 }
 

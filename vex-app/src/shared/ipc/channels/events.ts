@@ -188,6 +188,19 @@ export const EV = {
   files: {
     changed: "vex:event:files:changed",
   },
+  /**
+   * Background approve (Kairos K-2 B2, `APPROVAL_DISPATCH_BACKGROUND`, default
+   * off). When on, a desk approve answers with `executionStatus: "dispatching"`
+   * once its dispatch slot is committed, and this channel carries what the
+   * awaited reply would have carried: `dispatching` at the claim, then ONE
+   * terminal `settled` (the exact `ApprovalActionResult`) or `failed` (the
+   * reply's public error message). Broadcast to every window; validated with
+   * `approvalDispatchEventSchema` at the preload boundary. Never emitted while
+   * the switch is off.
+   */
+  approvals: {
+    dispatch: "vex:event:approvals:dispatch",
+  },
   engine: {
     transcriptAppend: "vex:event:engine:transcriptAppend",
     controlState: "vex:event:engine:controlState",

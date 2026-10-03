@@ -250,3 +250,80 @@ describe("applyApproveSideEffects - desk origin", () => {
     });
   });
 });
+
+describe("applyApproveSideEffects - desk dispatch-started notice (K-2 B2)", () => {
+  it("announces once, after the slot claim committed and before the tool call, and changes nothing else", async () => {
+    const order: string[] = [];
+    mockCasMarkDispatching.mockImplementation(async () => {
+      order.push("slot");
+      return true;
+    });
+    mockDispatchTool.mockImplementation(async () => {
+      order.push("dispatch");
+      return { success: true, output: "Order 5 filled.", data: {} };
+    });
+    const onDispatchStarted = vi.fn((started: { readonly resolvedAt: string }) => {
+      order.push(`started:${started.resolvedAt}`);
+    });
+
+    const withListener = await applyApproveSideEffects("appr-desk", deskSnapshot(), { onDispatchStarted });
+
+    expect(onDispatchStarted).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["slot", "started:2026-09-18T00:00:00.000Z", "dispatch"]);
+
+    resetDeskApprovalDispatchesForTests();
+    const withoutListener = await applyApproveSideEffects("appr-desk", deskSnapshot());
+    expect(withListener).toEqual(withoutListener);
+    expect(mockDispatchTool).toHaveBeenCalledTimes(2);
+    expect(mockCommitDeskSettlement).toHaveBeenCalledTimes(2);
+  });
+
+  it("never announces a dispatch an operator stop refused", async () => {
+    mockPreDispatchGate.mockResolvedValue({ kind: "stopped", runStatus: "stopped" });
+    const onDispatchStarted = vi.fn();
+
+    await applyApproveSideEffects("appr-desk", deskSnapshot(), { onDispatchStarted });
+
+    expect(onDispatchStarted).not.toHaveBeenCalled();
+    expect(mockDispatchTool).not.toHaveBeenCalled();
+  });
+
+  it("never announces when another writer holds the slot", async () => {
+    mockCasMarkDispatching.mockResolvedValue(false);
+    const onDispatchStarted = vi.fn();
+
+    await expect(
+      applyApproveSideEffects("appr-desk", deskSnapshot(), { onDispatchStarted }),
+    ).rejects.toThrow();
+
+    expect(onDispatchStarted).not.toHaveBeenCalled();
+    expect(mockDispatchTool).not.toHaveBeenCalled();
+  });
+
+  it("a listener that throws cannot reach the dispatch or its settlement", async () => {
+    const outcome = await applyApproveSideEffects("appr-desk", deskSnapshot(), {
+      onDispatchStarted: () => {
+        throw new Error("renderer gone");
+      },
+    });
+
+    expect(mockDispatchTool).toHaveBeenCalledTimes(1);
+    expect(mockCommitDeskSettlement).toHaveBeenCalledTimes(1);
+    expect(outcome).toMatchObject({ kind: "dispatched", executionStatus: "succeeded" });
+  });
+
+  it("the agent lane ignores the listener", async () => {
+    mockClaimResumeContinuation.mockResolvedValue({ outcome: "busy" });
+    const onDispatchStarted = vi.fn();
+    const snapshot = deskSnapshot();
+
+    const outcome = await applyApproveSideEffects(
+      "appr-desk",
+      { ...snapshot, row: { ...snapshot.row, origin: "agent" } },
+      { onDispatchStarted },
+    );
+
+    expect(outcome).toMatchObject({ kind: "deferred_busy" });
+    expect(onDispatchStarted).not.toHaveBeenCalled();
+  });
+});

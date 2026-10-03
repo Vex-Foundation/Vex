@@ -13,10 +13,14 @@
  *   3. Fires the continuation via `dispatchPreparedMission` (background)
  *      so the IPC handler returns immediately — Codex puzzle-5 phase-3
  *      review point 5: no blocking the renderer on a full resumed loop.
+ *
+ * With `APPROVAL_DISPATCH_BACKGROUND` on (K-2 B2, default off), a desk
+ * approve answers at its committed dispatch-slot claim and its outcome follows
+ * as an event; see `approveWithBackgroundDispatch`.
  */
 
 import { CH } from "@shared/ipc/channels.js";
-import { err, type Result } from "@shared/ipc/result.js";
+import { err, ok, type Result } from "@shared/ipc/result.js";
 import {
   approvalActionInputSchema,
   approvalActionResultSchema,
@@ -34,8 +38,166 @@ import {
   mapApproveOutcome,
   mapRejectOutcome,
 } from "./_map-outcomes.js";
+import {
+  approvalDispatchBackgroundEnabled,
+  emitApprovalDispatchEvent,
+} from "./_dispatch-background.js";
 
 // ── Approve handler ─────────────────────────────────────────────────────
+
+type ApprovalRuntimeModule = typeof import("@vex-agent/engine/core/approval-runtime.js");
+type ApproveOutcome = Awaited<ReturnType<ApprovalRuntimeModule["prepareApprove"]>>;
+
+/**
+ * A `prepareApprove` throw, mapped to the reply. An unrecognised throw is
+ * re-thrown for the caller's catch-all, exactly as before.
+ */
+function mapApproveThrow(
+  runtime: ApprovalRuntimeModule,
+  cause: unknown,
+  id: string,
+  requestId: string,
+): Result<ApprovalActionResult> {
+  if (cause instanceof runtime.ApprovalDispatchError) {
+    log.warn(
+      `[ipc:vex:approvals:approve] dispatch_failed id=${id} ` +
+        `errorKind=${cause.errorKind} errorHash=${cause.errorHash} ` +
+        `correlationId=${requestId}`,
+    );
+    return err(approvalsDispatchFailedError(requestId));
+  }
+  if (cause instanceof runtime.ApprovalPostDecisionError) {
+    log.warn(
+      `[ipc:vex:approvals:approve] post_decision_failed id=${id} ` +
+        `errorKind=${cause.errorKind} errorHash=${cause.errorHash} ` +
+        `correlationId=${requestId}`,
+    );
+    return err(approvalsDispatchFailedError(requestId));
+  }
+  if (cause instanceof runtime.ApprovalDecisionInconsistencyError) {
+    log.warn(
+      `[ipc:vex:approvals:approve] decision_inconsistency id=${id} ` +
+        `detail=${cause.detail} correlationId=${requestId}`,
+    );
+    return err(approvalsUnexpectedError(requestId));
+  }
+  throw cause;
+}
+
+/** A settled `prepareApprove` outcome: fire its continuation, map the reply. */
+function finishApprove(
+  runtime: ApprovalRuntimeModule,
+  outcome: ApproveOutcome,
+  id: string,
+  requestId: string,
+): Result<ApprovalActionResult> {
+  // Dispatch the background continuation when a resume was claimed. This
+  // now covers CHAT sessions too (`kind: 'chat_session'`), which is the
+  // whole point of the fix: a chat approval used to carry no
+  // continuation, so the tool ran and the agent was never re-invoked.
+  // Cached/already_*/run_terminated NEVER carry a continuation by design.
+  // `policy_drift_blocked` (B-001) is a fail-closed rejection that still
+  // resumes so the agent observes the auto-rejection.
+  const continuation =
+    outcome.kind === "dispatched"
+      ? outcome.continuation
+      : outcome.kind === "policy_drift_blocked"
+        ? outcome.continuation
+        : outcome.kind === "expired"
+          && outcome.autoRejection.kind === "rejected"
+          ? outcome.autoRejection.continuation
+          : null;
+  if (continuation !== null) {
+    const missionRunId = runtime.continuationMissionRunId(continuation);
+    dispatchPreparedMission(
+      () => runtime.runResumeAfterDecision(continuation),
+      {
+        sessionId: continuation.sessionId,
+        ...(missionRunId !== undefined ? { missionRunId } : {}),
+        correlationId: requestId,
+        channelLabel: "vex:approvals:approve",
+        scope: "approval",
+      },
+    );
+  }
+
+  return mapApproveOutcome(outcome, id, requestId);
+}
+
+function logApproveFailure(requestId: string, cause: unknown): void {
+  log.warn(
+    `[ipc:vex:approvals:approve] failed correlationId=${requestId}`,
+    cause,
+  );
+}
+
+/**
+ * `APPROVAL_DISPATCH_BACKGROUND` on (K-2 B2). The SAME `prepareApprove` call
+ * runs to its end under the same owner; this only changes when the click is
+ * answered. A desk dispatch announces its committed slot claim, and the reply
+ * goes back then with `executionStatus: "dispatching"`; the outcome the
+ * awaited reply would have carried follows on `EV.approvals.dispatch`, mapped
+ * by the very functions the awaited path uses. Every other lane never
+ * announces, so it is awaited and answered exactly as with the switch off.
+ *
+ * Nothing here can stop or repeat the dispatch: the reply does not cancel the
+ * engine promise, and a quit mid-flight ends it the way it always ended an
+ * awaited one, leaving a `dispatching` row for the desk reconciler.
+ */
+async function approveWithBackgroundDispatch(
+  runtime: ApprovalRuntimeModule,
+  id: string,
+  requestId: string,
+): Promise<Result<ApprovalActionResult>> {
+  let announce: (started: { readonly resolvedAt: string }) => void = () => undefined;
+  const started = new Promise<{ readonly resolvedAt: string }>((resolve) => {
+    announce = resolve;
+  });
+  const flight = runtime
+    .prepareApprove(id, { onDispatchStarted: (event) => announce(event) })
+    .then(
+      (outcome) => ({ kind: "outcome", outcome }) as const,
+      (cause: unknown) => ({ kind: "threw", cause }) as const,
+    );
+  const first = await Promise.race([
+    flight,
+    started.then((event) => ({ kind: "started", event }) as const),
+  ]);
+  if (first.kind === "outcome") return finishApprove(runtime, first.outcome, id, requestId);
+  if (first.kind === "threw") return mapApproveThrow(runtime, first.cause, id, requestId);
+
+  log.info(
+    `[ipc:vex:approvals:approve] dispatching id=${id} background=1 ` +
+      `correlationId=${requestId}`,
+  );
+  emitApprovalDispatchEvent({ phase: "dispatching", approvalId: id });
+  void flight.then((settled) => {
+    let result: Result<ApprovalActionResult>;
+    try {
+      result = settled.kind === "outcome"
+        ? finishApprove(runtime, settled.outcome, id, requestId)
+        : mapApproveThrow(runtime, settled.cause, id, requestId);
+    } catch (cause) {
+      logApproveFailure(requestId, cause);
+      result = err(approvalsUnexpectedError(requestId));
+    }
+    emitApprovalDispatchEvent(result.ok
+      ? { phase: "settled", approvalId: id, result: result.data }
+      : { phase: "failed", approvalId: id, error: result.error });
+  });
+  return ok({
+    id,
+    status: "approved",
+    resolvedAt: first.event.resolvedAt,
+    // A desk row never carries a continuation, so this is what the settled
+    // outcome will say too.
+    runtimeOutcome: "stopped",
+    executionStatus: "dispatching",
+    missionRunId: null,
+    cached: false,
+    message: "Approved. Sending now; the outcome follows.",
+  });
+}
 
 export function registerApproveHandler(): () => void {
   return registerHandler({
@@ -48,81 +210,24 @@ export function registerApproveHandler(): () => void {
       if (!dbUrlOutcome.ok) return dbUrlOutcome;
 
       try {
-        const {
-          prepareApprove,
-          runResumeAfterDecision,
-          continuationMissionRunId,
-          ApprovalDispatchError,
-          ApprovalPostDecisionError,
-          ApprovalDecisionInconsistencyError,
-        } = await import("@vex-agent/engine/core/approval-runtime.js");
+        const runtime = await import("@vex-agent/engine/core/approval-runtime.js");
 
-        let outcome: Awaited<ReturnType<typeof prepareApprove>>;
+        if (approvalDispatchBackgroundEnabled()) {
+          return await approveWithBackgroundDispatch(runtime, input.id, ctx.requestId);
+        }
+
+        // Switch off: today's awaited approve. No dispatch-started listener
+        // is passed, so the engine call is the one it always was.
+        let outcome: ApproveOutcome;
         try {
-          outcome = await prepareApprove(input.id);
+          outcome = await runtime.prepareApprove(input.id);
         } catch (cause) {
-          if (cause instanceof ApprovalDispatchError) {
-            log.warn(
-              `[ipc:vex:approvals:approve] dispatch_failed id=${input.id} ` +
-                `errorKind=${cause.errorKind} errorHash=${cause.errorHash} ` +
-                `correlationId=${ctx.requestId}`,
-            );
-            return err(approvalsDispatchFailedError(ctx.requestId));
-          }
-          if (cause instanceof ApprovalPostDecisionError) {
-            log.warn(
-              `[ipc:vex:approvals:approve] post_decision_failed id=${input.id} ` +
-                `errorKind=${cause.errorKind} errorHash=${cause.errorHash} ` +
-                `correlationId=${ctx.requestId}`,
-            );
-            return err(approvalsDispatchFailedError(ctx.requestId));
-          }
-          if (cause instanceof ApprovalDecisionInconsistencyError) {
-            log.warn(
-              `[ipc:vex:approvals:approve] decision_inconsistency id=${input.id} ` +
-                `detail=${cause.detail} correlationId=${ctx.requestId}`,
-            );
-            return err(approvalsUnexpectedError(ctx.requestId));
-          }
-          throw cause;
+          return mapApproveThrow(runtime, cause, input.id, ctx.requestId);
         }
 
-        // Dispatch the background continuation when a resume was claimed. This
-        // now covers CHAT sessions too (`kind: 'chat_session'`), which is the
-        // whole point of the fix — a chat approval used to carry no
-        // continuation, so the tool ran and the agent was never re-invoked.
-        // Cached/already_*/run_terminated NEVER carry a continuation by design.
-        // `policy_drift_blocked` (B-001) is a fail-closed rejection that still
-        // resumes so the agent observes the auto-rejection.
-        const continuation =
-          outcome.kind === "dispatched"
-            ? outcome.continuation
-            : outcome.kind === "policy_drift_blocked"
-              ? outcome.continuation
-              : outcome.kind === "expired"
-                && outcome.autoRejection.kind === "rejected"
-                ? outcome.autoRejection.continuation
-                : null;
-        if (continuation !== null) {
-          const missionRunId = continuationMissionRunId(continuation);
-          dispatchPreparedMission(
-            () => runResumeAfterDecision(continuation),
-            {
-              sessionId: continuation.sessionId,
-              ...(missionRunId !== undefined ? { missionRunId } : {}),
-              correlationId: ctx.requestId,
-              channelLabel: "vex:approvals:approve",
-              scope: "approval",
-            },
-          );
-        }
-
-        return mapApproveOutcome(outcome, input.id, ctx.requestId);
+        return finishApprove(runtime, outcome, input.id, ctx.requestId);
       } catch (cause) {
-        log.warn(
-          `[ipc:vex:approvals:approve] failed correlationId=${ctx.requestId}`,
-          cause,
-        );
+        logApproveFailure(ctx.requestId, cause);
         return err(approvalsUnexpectedError(ctx.requestId));
       }
     },

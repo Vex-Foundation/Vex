@@ -23,6 +23,7 @@ import {
   parseAgentWakeEnv,
   parseAgentWalletReadEnv,
   parseAgentReadProjectionEnv,
+  parseApprovalDispatchBackgroundEnv,
 } from "../../lib/agent-config.js";
 
 describe("agent-config field metadata", () => {
@@ -280,6 +281,17 @@ describe("parseAgentReadProjectionEnv (Kairos P-6)", () => {
     const bad = parseAgentReadProjectionEnv({ AGENT_READ_PROJECTION: "yes" });
     expect(bad.value).toBe(false);
     expect(bad.errors.map((e) => e.key)).toEqual(["AGENT_READ_PROJECTION"]);
+  });
+});
+
+describe("parseApprovalDispatchBackgroundEnv (Kairos K-2 B2)", () => {
+  it("defaults OFF, turns on with 1, and refuses anything else", () => {
+    expect(parseApprovalDispatchBackgroundEnv({})).toEqual({ value: false, errors: [] });
+    expect(parseApprovalDispatchBackgroundEnv({ APPROVAL_DISPATCH_BACKGROUND: "0" })).toEqual({ value: false, errors: [] });
+    expect(parseApprovalDispatchBackgroundEnv({ APPROVAL_DISPATCH_BACKGROUND: "1" }).value).toBe(true);
+    const bad = parseApprovalDispatchBackgroundEnv({ APPROVAL_DISPATCH_BACKGROUND: "2" });
+    expect(bad.value).toBe(false);
+    expect(bad.errors.map((e) => e.key)).toEqual(["APPROVAL_DISPATCH_BACKGROUND"]);
   });
 });
 

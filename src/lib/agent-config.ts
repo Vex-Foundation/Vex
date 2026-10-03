@@ -399,6 +399,32 @@ export function parseAgentReadProjectionEnv(env: EnvLike): ParseResult<boolean> 
   return { value: value === 1, errors };
 }
 
+/**
+ * Kairos Phase 7, K-2 B2: a desk approval answers the click as soon as its
+ * dispatch slot is committed (`executionStatus: "dispatching"`), and the
+ * dispatch, its settlement write and its outcome continue in the background
+ * under the same owner, reaching the renderer as an event. `0` (default) is
+ * today's awaited approve, byte for byte. Only the desk lane honours it.
+ */
+export const APPROVAL_DISPATCH_BACKGROUND: FieldWithDefault = {
+  key: "APPROVAL_DISPATCH_BACKGROUND",
+  kind: "int",
+  min: 0,
+  max: 1,
+  default: 0,
+};
+
+/** Whether K-2 B2 is on. Blank or invalid reads as the default (off). */
+export function parseApprovalDispatchBackgroundEnv(env: EnvLike): ParseResult<boolean> {
+  const errors: ParseError[] = [];
+  const value = parseFieldOrDefault(
+    APPROVAL_DISPATCH_BACKGROUND,
+    env[APPROVAL_DISPATCH_BACKGROUND.key],
+    errors,
+  ) ?? APPROVAL_DISPATCH_BACKGROUND.default ?? 0;
+  return { value: value === 1, errors };
+}
+
 export interface AgentWalletReadBounds {
   readonly parallelLegs: boolean;
   /** `0` is disabled. */

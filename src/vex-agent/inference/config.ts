@@ -24,6 +24,7 @@ import {
   parseAgentWakeEnv,
   parseAgentWalletReadEnv,
   parseAgentReadProjectionEnv,
+  parseApprovalDispatchBackgroundEnv,
   type AgentStreamBounds,
 } from "../../lib/agent-config.js";
 import logger from "@utils/logger.js";
@@ -121,8 +122,12 @@ export function loadEnvConfig(): EnvConfig {
   // And the P-6 read projection switch, read per answer by
   // `tools/protocols/dexscreener/row-projection.ts`.
   const readProjectionParse = parseAgentReadProjectionEnv(process.env);
+  // And the K-2 B2 background approve switch, read per approve by the
+  // approvals IPC handler (`vex-app/src/main/ipc/approvals/_dispatch-background.ts`).
+  const dispatchBackgroundParse = parseApprovalDispatchBackgroundEnv(process.env);
   for (const e of [
     ...readProjectionParse.errors,
+    ...dispatchBackgroundParse.errors,
     ...agentParse.errors,
     ...boundsParse.errors,
     ...dbBoundsParse.errors,
