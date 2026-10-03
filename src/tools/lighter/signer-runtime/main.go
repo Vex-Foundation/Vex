@@ -129,55 +129,80 @@ type signerResponse struct {
 	Error         string `json:"error,omitempty"`
 }
 
+// serveFlag selects the resident serve mode (see serve.go). Any other
+// invocation, including no arguments at all, is the original one-shot mode.
+const serveFlag = "--serve"
+
+const panicMessage = "Lighter signer runtime failed before producing a transaction."
+const signingFailedMessage = "Lighter signer runtime could not complete the requested operation."
+
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == serveFlag {
+		os.Exit(serve(os.Stdin, os.Stdout))
+	}
+	os.Exit(runOneShot(os.Stdin, os.Stdout))
+}
+
+// runOneShot reads ONE request, answers it with ONE JSON document and returns
+// the process exit code: 0 for a produced result, 1 for any failure. This is
+// the helper's original contract and serve mode does not change it.
+func runOneShot(input io.Reader, output io.Writer) (exitCode int) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			writeFailure("panic", "Lighter signer runtime failed before producing a transaction.")
+			_ = writeResponse(output, failureResponse("panic", panicMessage))
+			exitCode = 1
 		}
 	}()
 
-	request, err := readRequest(os.Stdin)
+	request, err := readRequest(input)
 	if err != nil {
-		writeFailure("invalid_input", err.Error())
-		return
+		_ = writeResponse(output, failureResponse("invalid_input", err.Error()))
+		return 1
 	}
+	response, err := executeRequest(request)
+	if err != nil {
+		_ = writeResponse(output, failureResponse("signing_failed", signingFailedMessage))
+		return 1
+	}
+	if err := writeResponse(output, response); err != nil {
+		return 1
+	}
+	return 0
+}
 
-	var response signerResponse
+// executeRequest runs one request that readRequest already validated. Both
+// modes call it, so the operations a request can reach are identical in each.
+func executeRequest(request signerRequest) (signerResponse, error) {
 	switch request.Operation {
 	case "generateApiKey":
-		response, err = generateAPIKey()
+		return generateAPIKey()
 	case "derivePublicKey":
-		response, err = derivePublicKey(request)
+		return derivePublicKey(request)
 	case "createAccountAuth":
-		response, err = createAccountAuth(request)
+		return createAccountAuth(request)
 	case "signCreateOrder":
-		response, err = signCreateOrder(request)
+		return signCreateOrder(request)
 	case "signCreateGroupedOrders":
-		response, err = signCreateGroupedOrders(request)
+		return signCreateGroupedOrders(request)
 	case "signCancelOrder":
-		response, err = signCancelOrder(request)
+		return signCancelOrder(request)
 	case "signModifyOrder":
-		response, err = signModifyOrder(request)
+		return signModifyOrder(request)
 	case "signCancelAllOrders":
-		response, err = signCancelAllOrders(request)
+		return signCancelAllOrders(request)
 	case "signUpdateLeverage":
-		response, err = signUpdateLeverage(request)
+		return signUpdateLeverage(request)
 	case "signWithdraw":
-		response, err = signWithdraw(request)
+		return signWithdraw(request)
 	case "signApproveIntegrator":
-		response, err = signApproveIntegrator(request)
+		return signApproveIntegrator(request)
 	case "signChangePubKey":
-		response, err = signChangePubKey(request)
+		return signChangePubKey(request)
 	case "checkClient":
-		response, err = checkClient(request)
+		return checkClient(request)
 	default:
-		err = fmt.Errorf("unsupported signer operation")
+		return signerResponse{}, fmt.Errorf("unsupported signer operation")
 	}
-	if err != nil {
-		writeFailure("signing_failed", "Lighter signer runtime could not complete the requested operation.")
-		return
-	}
-	writeJSON(response)
 }
 
 func readRequest(reader io.Reader) (signerRequest, error) {
@@ -1099,19 +1124,17 @@ func parsePositiveUint64(value string, field string) (uint64, error) {
 	return parsed, nil
 }
 
-func writeFailure(code string, message string) {
-	writeJSON(signerResponse{
+func failureResponse(code string, message string) signerResponse {
+	return signerResponse{
 		OK:        false,
 		ErrorCode: code,
 		Error:     message,
-	})
-	os.Exit(1)
+	}
 }
 
-func writeJSON(response signerResponse) {
-	encoder := json.NewEncoder(os.Stdout)
+// writeResponse writes one JSON document followed by a newline.
+func writeResponse(output io.Writer, response any) error {
+	encoder := json.NewEncoder(output)
 	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(response); err != nil {
-		os.Exit(1)
-	}
+	return encoder.Encode(response)
 }
