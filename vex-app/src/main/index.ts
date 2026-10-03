@@ -56,6 +56,7 @@ import {
 } from "./agent/studio-settlement-bridge.js";
 import { whenEngineDbReady } from "./database/engine-db-readiness.js";
 import { openE2eConnectionDoor } from "./database/e2e-connection-door.js";
+import { closeMainIpcPgPool } from "./database/main-ipc-pg-pool.js";
 import { registerAllIpcHandlers } from "./ipc/register-all.js";
 import {
   configureUpdater,
@@ -538,6 +539,10 @@ async function initializeMainRuntime(): Promise<void> {
       // must be closed before compose/Postgres teardown begins. The disposer
       // is memoized in `setupAgentBridges`, so this is the only execution.
       await runQuitStage("agent-bridges", QUIT_TASK_DEADLINE_MS, teardownAgentBridges);
+      // The shared main-process IPC pool (K-4) closes after every reader above
+      // has drained and before Compose stops Postgres, so no pooled
+      // connection is left for the server shutdown to sever.
+      await runQuitStage("main-ipc-pg-pool", QUIT_TASK_DEADLINE_MS, closeMainIpcPgPool);
     }, async () => {
       // `docker compose stop` on a live Postgres is the one participant that
       // is legitimately slow, so it gets the quit's largest single budget.
