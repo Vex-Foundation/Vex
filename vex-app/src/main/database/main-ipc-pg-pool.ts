@@ -12,7 +12,8 @@
  * WHO USES IT. Every IPC connection wrapper in `src/main/database` (the
  * sessions, messages and bug-reports `withClient`, the private `withClient`
  * copies of the approvals, missions, portfolio, usage, memory, compaction,
- * agent-scan and token-history modules, and `withRuntimeDbClient`). Readiness
+ * agent-scan and token-history modules, and `withRuntimeDbClient`, which this
+ * module installs itself into on load rather than being imported by it). Readiness
  * probes keep their own client; `__tests__/main-ipc-pg-pool-routing.test.ts`
  * pins both lists.
  *
@@ -57,6 +58,7 @@ import { Client, Pool, type ClientConfig, type PoolClient } from "pg";
 
 import { subscribeDbConnection } from "./connection-state.js";
 import type { DbPoolConfig } from "./db-config.js";
+import { installRuntimeDbClientRunner } from "./runtime-db-client.js";
 import { log } from "../logger/index.js";
 
 /** K-4 switch. `false` restores the fresh-`Client`-per-call path exactly. */
@@ -264,6 +266,11 @@ async function runWithPooledClient<R>(
     }
   }
 }
+
+// `withRuntimeDbClient` does not import this module (see its header): the
+// seam installs itself there on load, so the control-plane reads follow the
+// same switch as every other wrapper.
+installRuntimeDbClientRunner(runWithMainDbClient);
 
 /** Retire the live pool (if any). New callers get a fresh pool. */
 export function resetMainIpcPgPool(): void {

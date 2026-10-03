@@ -12,7 +12,16 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../../logger/index.js", () => ({
+  log: {
+    debug: (): void => undefined,
+    info: (): void => undefined,
+    warn: (): void => undefined,
+    error: (): void => undefined,
+  },
+}));
 
 const DATABASE_DIR = path.resolve(__dirname, "..");
 
@@ -21,6 +30,9 @@ const OWN_CLIENT_ALLOWED = [
   "memory-jobs-db.ts",
   "mission-runs-db.ts",
   "regime-db.ts",
+  // Its default runner is the old fresh-client path; the pool installs
+  // itself as the runner on load (pinned below).
+  "runtime-db-client.ts",
   "sync-db.ts",
   "tool-embeddings-db.ts",
   "wake-db.ts",
@@ -39,7 +51,6 @@ const ROUTED = [
   "messages/connection.ts",
   "missions-db.ts",
   "portfolio-db.ts",
-  "runtime-db-client.ts",
   "sessions/connection.ts",
   "token-history-db-query.ts",
   "usage-db.ts",
@@ -75,5 +86,16 @@ describe("main-process DB connection routing", () => {
   it("routes every IPC connection wrapper through runWithMainDbClient", () => {
     const routed = files.filter((rel) => read(rel).includes("runWithMainDbClient(")).sort();
     expect(routed).toEqual(ROUTED);
+  });
+
+  it("installs the pool as the runtime-db runner when the pool module loads", async () => {
+    const runtime = await import("../runtime-db-client.js");
+    runtime.installRuntimeDbClientRunner(null);
+    expect(runtime.runtimeDbClientRunnerIsDefault()).toBe(true);
+    vi.resetModules();
+    const fresh = await import("../runtime-db-client.js");
+    expect(fresh.runtimeDbClientRunnerIsDefault()).toBe(true);
+    await import("../main-ipc-pg-pool.js");
+    expect(fresh.runtimeDbClientRunnerIsDefault()).toBe(false);
   });
 });
