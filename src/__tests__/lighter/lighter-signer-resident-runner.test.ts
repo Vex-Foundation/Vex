@@ -20,16 +20,18 @@ import { ScriptedResidentSignerChild } from "../helpers/lighter-scripted-signer.
 
 const PRIVATE_KEY = `0x${"1".repeat(80)}`;
 
+const AUTH_PAYLOAD = {
+  operation: "createAccountAuth",
+  privateKey: PRIVATE_KEY,
+  chainId: 466324,
+  accountIndex: "42",
+  apiKeyIndex: 7,
+  deadlineUnixSeconds: "1893456600",
+} as const;
+
 const AUTH_REQUEST: LighterSignerBinaryRunRequest = {
   binaryPath: "/nonexistent/vex-lighter-signer",
-  payload: {
-    operation: "createAccountAuth",
-    privateKey: PRIVATE_KEY,
-    chainId: 466324,
-    accountIndex: "42",
-    apiKeyIndex: 7,
-    deadlineUnixSeconds: "1893456600",
-  },
+  payload: AUTH_PAYLOAD,
   timeoutMs: 5_000,
 };
 
@@ -401,11 +403,11 @@ describe.skipIf(!existsSync(builtHelper))("Lighter resident signer runner over t
 
       const refusal = await runner.run({
         ...request,
-        payload: { ...AUTH_REQUEST.payload, apiKeyIndex: 2 },
+        payload: { ...AUTH_PAYLOAD, apiKeyIndex: 2 },
       }).catch((caught: unknown) => caught);
       const oneShotRefusal = await runLighterSignerBinary({
         ...request,
-        payload: { ...AUTH_REQUEST.payload, apiKeyIndex: 2 },
+        payload: { ...AUTH_PAYLOAD, apiKeyIndex: 2 },
       }).catch((caught: unknown) => caught);
       expect(refusal).toMatchObject({ message: "Lighter signer helper failed (invalid_input)." });
       expect(oneShotRefusal).toMatchObject({ message: "Lighter signer helper failed (invalid_input)." });
