@@ -285,8 +285,8 @@ describe("parseAgentReadProjectionEnv (Kairos P-6)", () => {
 });
 
 describe("parseApprovalDispatchBackgroundEnv (Kairos K-2 B2)", () => {
-  it("defaults OFF, turns on with 1, and refuses anything else", () => {
-    expect(parseApprovalDispatchBackgroundEnv({})).toEqual({ value: false, errors: [] });
+  it("defaults ON, turns off with 0, and reads anything else as OFF with an error", () => {
+    expect(parseApprovalDispatchBackgroundEnv({})).toEqual({ value: true, errors: [] });
     expect(parseApprovalDispatchBackgroundEnv({ APPROVAL_DISPATCH_BACKGROUND: "0" })).toEqual({ value: false, errors: [] });
     expect(parseApprovalDispatchBackgroundEnv({ APPROVAL_DISPATCH_BACKGROUND: "1" }).value).toBe(true);
     const bad = parseApprovalDispatchBackgroundEnv({ APPROVAL_DISPATCH_BACKGROUND: "2" });

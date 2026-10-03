@@ -138,13 +138,14 @@ const MIN_WIRE_ORDER_EXPIRY_REMAINING_MS = 5 * 60 * 1_000;
  * is the one the sequential path gives (revalidation first, then the
  * credential), so every refusal and every durable write is unchanged.
  *
- * It ships OFF because `/nextNonce` is then read earlier than today, by the
- * length of the revalidation. A concurrent Vex action on the same API key that
+ * ON for the owner's live canary; `false` is the rollback. The risk:
+ * `/nextNonce` is read earlier than the sequential path, by the length of the
+ * revalidation. A concurrent Vex action on the same API key that
  * consumes a nonce inside that wider window leaves this order signed with a
  * stale nonce, which Lighter refuses (recorded ambiguous and reconciled, never
  * resent). Only a live canary can show that window is immaterial in practice.
  */
-export const LIGHTER_ORDER_PARALLEL_PREFLIGHT = false;
+export const LIGHTER_ORDER_PARALLEL_PREFLIGHT = true;
 
 export type ExecuteApprovedLighterCreateOrderResult =
   | {

@@ -20,9 +20,9 @@ import {
  * routes every adapter that was not handed an explicit runner to ONE resident
  * helper child (`--serve` mode) that answers newline-delimited requests.
  *
- * Ships OFF: it sits on the order path and needs the owner's live canary.
+ * ON for the owner's live canary: it sits on the order path, so `false` is the rollback.
  */
-export const LIGHTER_SIGNER_RESIDENT = false;
+export const LIGHTER_SIGNER_RESIDENT = true;
 
 /**
  * An idle resident helper is stopped after this long. Bounds how long a

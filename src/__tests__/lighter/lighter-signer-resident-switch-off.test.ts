@@ -1,17 +1,21 @@
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createLighterRegisteredKeyCheckerBinary } from "@tools/lighter/signer-binary-adapter.js";
 import { LIGHTER_SIGNER_RESIDENT } from "@tools/lighter/signer-resident-runner.js";
 import { materialFromSecret } from "@tools/lighter/trading-secret.js";
 
 /**
- * LIGHTER_SIGNER_RESIDENT OFF (the shipped default) is today's one-shot path:
- * an adapter built without an injected runner spawns one helper per signature,
- * with no arguments, which reads one payload and exits.
+ * LIGHTER_SIGNER_RESIDENT OFF (forced here; it ships on) is the one-shot
+ * rollback path: an adapter built without an injected runner spawns one helper
+ * per signature, with no arguments, which reads one payload and exits.
  */
+vi.mock("@tools/lighter/signer-resident-runner.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tools/lighter/signer-resident-runner.js")>();
+  return { ...actual, LIGHTER_SIGNER_RESIDENT: false };
+});
 const roots: string[] = [];
 
 afterEach(() => {

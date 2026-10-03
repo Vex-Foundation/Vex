@@ -388,8 +388,16 @@ function accountOrder(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * The pipeline suites pin the K-3 switches OFF so they keep asserting the
+ * sequential path (the rollback); each switch's own suite below passes ON
+ * explicitly and proves it matches OFF.
+ */
 function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): ExecuteApprovedLighterCreateOrderDeps {
   return {
+    parallelPreflight: false,
+    readAuthCache: null,
+    streamRevalidation: false,
     secretReader: {
       readTradingApiPrivateKey: vi.fn(async () => PRIVATE_KEY),
     },
@@ -2937,13 +2945,14 @@ const PREFLIGHT_CASES: readonly {
 ];
 
 describe("LIGHTER_ORDER_PARALLEL_PREFLIGHT", () => {
-  it("ships OFF, and absent from the deps the sequential path runs", () => {
-    expect(LIGHTER_ORDER_PARALLEL_PREFLIGHT).toBe(false);
+  it("ships ON", () => {
+    expect(LIGHTER_ORDER_PARALLEL_PREFLIGHT).toBe(true);
   });
 
   it.each(PREFLIGHT_CASES)("refuses and records exactly what OFF does when $label", async ({ build, expected }) => {
     const off = await observeCreateOrder({ ...build(), parallelPreflight: false });
-    const absent = await observeCreateOrder(build());
+    const { parallelPreflight: _pinned, ...unpinned } = build();
+    const absent = await observeCreateOrder(unpinned);
     const on = await observeCreateOrder({ ...build(), parallelPreflight: true });
 
     expect(JSON.stringify(off.outcome)).toMatch(expected);
@@ -3074,10 +3083,10 @@ describe("LIGHTER_READ_AUTH_CACHE", () => {
     return rest;
   }
 
-  it("ships OFF and leaves the process cache untouched by a whole order", async () => {
-    expect(LIGHTER_READ_AUTH_CACHE).toBe(false);
+  it("ships ON, and OFF (null) leaves the process cache untouched by a whole order", async () => {
+    expect(LIGHTER_READ_AUTH_CACHE).toBe(true);
     lighterReadAuthCache.invalidate();
-    const result = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: deps() });
+    const result = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: deps({ readAuthCache: null }) });
     expect(result.status).toBe("sequencer_pending");
     expect(lighterReadAuthCache.size).toBe(0);
   });
@@ -3240,11 +3249,11 @@ describe("LIGHTER_STREAM_REVALIDATION", () => {
     return rest;
   }
 
-  it("ships OFF, and OFF never consults the stream", async () => {
-    expect(LIGHTER_STREAM_REVALIDATION).toBe(false);
+  it("ships ON, and OFF never consults the stream", async () => {
+    expect(LIGHTER_STREAM_REVALIDATION).toBe(true);
     expect(LIGHTER_STREAM_REVALIDATION_MAX_AGE_MS).toBe(1_500);
     const reader = streamReader();
-    const d = deps({ streamOrderBook: reader });
+    const d = deps({ streamRevalidation: false, streamOrderBook: reader });
 
     const result = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
 

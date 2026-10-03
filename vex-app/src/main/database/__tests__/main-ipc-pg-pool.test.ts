@@ -184,9 +184,21 @@ afterEach(() => {
 });
 
 describe("MAIN_IPC_PG_POOL switch", () => {
-  it("ships OFF until real-Postgres parity is proven on the owner's machine", () => {
-    expect(pool.MAIN_IPC_PG_POOL).toBe(false);
-    expect(pool.mainIpcPgPoolEnabled()).toBe(false);
+  it("ships ON after real-Postgres parity, and VEX_MAIN_IPC_PG_POOL=0 rolls it back at runtime", () => {
+    const saved = process.env[pool.MAIN_IPC_PG_POOL_ENV_KEY];
+    try {
+      expect(pool.MAIN_IPC_PG_POOL).toBe(true);
+      pool.setMainIpcPgPoolOverrideForTests(null);
+      delete process.env[pool.MAIN_IPC_PG_POOL_ENV_KEY];
+      expect(pool.mainIpcPgPoolEnabled()).toBe(true);
+      process.env[pool.MAIN_IPC_PG_POOL_ENV_KEY] = " 0 ";
+      expect(pool.mainIpcPgPoolEnabled()).toBe(false);
+      process.env[pool.MAIN_IPC_PG_POOL_ENV_KEY] = "off";
+      expect(pool.mainIpcPgPoolEnabled()).toBe(true);
+    } finally {
+      if (saved === undefined) delete process.env[pool.MAIN_IPC_PG_POOL_ENV_KEY];
+      else process.env[pool.MAIN_IPC_PG_POOL_ENV_KEY] = saved;
+    }
   });
 });
 

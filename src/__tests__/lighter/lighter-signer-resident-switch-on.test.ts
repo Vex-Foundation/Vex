@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 /**
- * LIGHTER_SIGNER_RESIDENT ON (forced here; it ships off): an adapter built
+ * LIGHTER_SIGNER_RESIDENT ON (forced here; it also ships on): an adapter built
  * without an injected runner sends every signature to ONE `--serve` child.
  */
 vi.mock("@tools/lighter/signer-resident-runner.js", async (importOriginal) => {

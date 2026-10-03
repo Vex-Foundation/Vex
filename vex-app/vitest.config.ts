@@ -79,6 +79,14 @@ export default defineConfig({
           name: "node",
           environment: "node",
           globals: true,
+          /**
+           * K-4: the main-process pg pool ships ON, but the database unit
+           * suites mock `pg.Client` per call to assert their SQL. They run on
+           * the per-call path; the pool's own suite forces each mode through
+           * its override, and the studio-postgres lane proves both modes
+           * against a real database.
+           */
+          env: { VEX_MAIN_IPC_PG_POOL: "0" },
           include: [
             "src/main/**/__tests__/**/*.test.ts",
             "src/preload/**/__tests__/**/*.test.ts",

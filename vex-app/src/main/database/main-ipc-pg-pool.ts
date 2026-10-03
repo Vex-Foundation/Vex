@@ -61,8 +61,15 @@ import type { DbPoolConfig } from "./db-config.js";
 import { installRuntimeDbClientRunner } from "./runtime-db-client.js";
 import { log } from "../logger/index.js";
 
-/** K-4 switch. `false` restores the fresh-`Client`-per-call path exactly. */
-export const MAIN_IPC_PG_POOL = false;
+/**
+ * K-4 switch. `false` restores the fresh-`Client`-per-call path exactly.
+ * `VEX_MAIN_IPC_PG_POOL=0` in the environment does the same at runtime without
+ * a rebuild (the rollback for the owner's live check).
+ */
+export const MAIN_IPC_PG_POOL = true;
+
+/** Runtime rollback for {@link MAIN_IPC_PG_POOL}: only the exact value `0` turns the pool off. */
+export const MAIN_IPC_PG_POOL_ENV_KEY = "VEX_MAIN_IPC_PG_POOL";
 
 /** Upper bound on pooled connections the main-process IPC reads may hold. */
 export const MAIN_IPC_PG_POOL_MAX = 4;
@@ -94,7 +101,9 @@ export function setMainIpcPgPoolOverrideForTests(value: boolean | null): void {
 }
 
 export function mainIpcPgPoolEnabled(): boolean {
-  return override ?? MAIN_IPC_PG_POOL;
+  if (override !== null) return override;
+  if (process.env[MAIN_IPC_PG_POOL_ENV_KEY]?.trim() === "0") return false;
+  return MAIN_IPC_PG_POOL;
 }
 
 export function toMainDbClientConfig(

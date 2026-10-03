@@ -80,8 +80,8 @@ afterEach(() => {
 });
 
 describe("LIGHTER_SIGNER_RESIDENT switch", () => {
-  it("ships off", () => {
-    expect(LIGHTER_SIGNER_RESIDENT).toBe(false);
+  it("ships on", () => {
+    expect(LIGHTER_SIGNER_RESIDENT).toBe(true);
   });
 
   it("off selects the one-shot runner itself, on selects the resident runner", () => {

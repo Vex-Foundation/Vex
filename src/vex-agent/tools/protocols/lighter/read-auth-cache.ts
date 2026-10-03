@@ -1,7 +1,7 @@
 import type { LighterEnvironment } from "@tools/lighter/constants.js";
 
 /**
- * SWITCH `LIGHTER_READ_AUTH_CACHE` (default OFF).
+ * SWITCH `LIGHTER_READ_AUTH_CACHE` (ON for the owner's live canary; `false` is the rollback).
  *
  * ON lets an approved create order start its duplicate-evidence reads
  * (active orders, inactive orders, trades) in the FIRST parallel batch, with a
@@ -20,7 +20,7 @@ import type { LighterEnvironment } from "@tools/lighter/constants.js";
  * key must match the provider's registered key before any nonce is reserved;
  * the cache only moves a read earlier, it never stands in for that proof.
  */
-export const LIGHTER_READ_AUTH_CACHE = false;
+export const LIGHTER_READ_AUTH_CACHE = true;
 
 /** How long a proven token is reused after it was stored. */
 export const LIGHTER_READ_AUTH_CACHE_TTL_MS = 4 * 60 * 1_000;

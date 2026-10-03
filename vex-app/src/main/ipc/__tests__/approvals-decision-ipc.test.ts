@@ -676,10 +676,19 @@ describe("approve handler with APPROVAL_DISPATCH_BACKGROUND", () => {
     delete process.env.APPROVAL_DISPATCH_BACKGROUND;
   });
 
-  it("OFF (unset, 0, or invalid): the engine is called with the id alone and nothing is broadcast", async () => {
-    for (const value of [undefined, "0", "yes"]) {
-      if (value === undefined) delete process.env.APPROVAL_DISPATCH_BACKGROUND;
-      else process.env.APPROVAL_DISPATCH_BACKGROUND = value;
+  it("unset is ON: the engine is handed the dispatch listener", async () => {
+    delete process.env.APPROVAL_DISPATCH_BACKGROUND;
+    mocks.prepareApprove.mockResolvedValue(deskDispatched("on-0", "Order 0 filled."));
+
+    await call(CH.approvals.approve, { id: "on-0" });
+
+    expect(mocks.prepareApprove).toHaveBeenCalledTimes(1);
+    expect(mocks.prepareApprove.mock.calls[0]?.[1]).toEqual({ onDispatchStarted: expect.any(Function) });
+  });
+
+  it("OFF (0 or invalid): the engine is called with the id alone and nothing is broadcast", async () => {
+    for (const value of ["0", "yes"]) {
+      process.env.APPROVAL_DISPATCH_BACKGROUND = value;
       mocks.prepareApprove.mockReset();
       mocks.prepareApprove.mockResolvedValue(deskDispatched("off-1", "Order 1 filled."));
 
@@ -706,6 +715,7 @@ describe("approve handler with APPROVAL_DISPATCH_BACKGROUND", () => {
   });
 
   it("OFF: a desk dispatch that would announce is still awaited to its outcome", async () => {
+    process.env.APPROVAL_DISPATCH_BACKGROUND = "0";
     const held = holdDeskDispatch();
     let replied = false;
     const pending = call(CH.approvals.approve, { id: "off-2" }).then((r) => {

@@ -13,11 +13,11 @@ import type { LighterMarketType, LighterOrderBookOrdersResponse } from "@tools/l
  * REST exactly as today. Market details, the account, fees, the API key and
  * the nonce always stay REST. OFF never consults the stream.
  *
- * It ships OFF because a stream book can lag the provider by up to the max age
- * plus transit, and only a live canary can show that is immaterial next to the
- * REST read it replaces.
+ * ON for the owner's live canary; `false` is the rollback. The risk: a stream
+ * book can lag the provider by up to the max age plus transit, and only a live
+ * canary can show that is immaterial next to the REST read it replaces.
  */
-export const LIGHTER_STREAM_REVALIDATION = false;
+export const LIGHTER_STREAM_REVALIDATION = true;
 
 /** A stream book older than this is never used for revalidation. */
 export const LIGHTER_STREAM_REVALIDATION_MAX_AGE_MS = 1_500;
