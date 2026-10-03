@@ -86,6 +86,7 @@ import { setupRegimeWorker } from "./agent/regime-worker.js";
 import { setupToolEmbeddingReconcileWorker } from "./agent/tool-embedding-reconcile-worker.js";
 import { setupVexMarketService } from "./market/vex-market-service.js";
 import { installLighterOrderCreateExecutionDeps } from "./lighter/order-create-execution.js";
+import { shutdownLighterResidentSigner } from "@tools/lighter/signer-resident-runner.js";
 import { installLighterKeyRegistrationCredentialPreparer } from "./lighter/key-registration-credential.js";
 import { installLighterKeyRegistrationExecutor } from "./lighter/key-registration-execution.js";
 import { installLighterFeeAuthorizationService } from "./lighter/fee-authorization-execution.js";
@@ -221,6 +222,15 @@ app.on("before-quit", () => {
 });
 app.on("will-quit", () => {
   void lockSecretSession("vex_quit");
+});
+
+// The resident Lighter signer helper (LIGHTER_SIGNER_RESIDENT, ships off) is
+// stopped once the app is truly leaving: `will-quit`, after any active-mission
+// gate on `before-quit` has resolved. Synchronous and a no-op when no helper
+// runs. A helper that outlives a crashed main process still ends on its own:
+// its stdin closes and serve mode exits at end of input.
+app.on("will-quit", () => {
+  shutdownLighterResidentSigner();
 });
 
 /**
