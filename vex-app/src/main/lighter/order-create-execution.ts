@@ -209,7 +209,7 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
           detail: "Vex is locked, so the saved Lighter trading credential cannot be read.",
         };
       }
-      const unlockedScopes = listUnlockedLighterTradingCredentialScopes(environment);
+      const unlockedScopes = await listUnlockedLighterTradingCredentialScopes(environment);
       const scope = unlockedScopes.find((candidate) => candidate.accountIndex === accountIndex);
       if (scope === undefined) {
         log.warn("[lighter] read-only auth resolver: no matching unlocked scope", {
@@ -245,11 +245,11 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
     },
   );
   const uninstallScopeResolver = configureLighterTradingCredentialScopeResolver({
-    findSavedScope: (environment, accountIndex) =>
-      listUnlockedLighterTradingCredentialScopes(environment)
+    findSavedScope: async (environment, accountIndex) =>
+      (await listUnlockedLighterTradingCredentialScopes(environment))
         .find((scope) => scope.accountIndex === accountIndex) ?? null,
-    findDefaultScope: (environment) =>
-      listUnlockedLighterTradingCredentialScopes(environment)[0] ?? null,
+    findDefaultScope: async (environment) =>
+      (await listUnlockedLighterTradingCredentialScopes(environment))[0] ?? null,
     // Expose the full list so preview resolution refuses to guess when more than
     // one account is configured, instead of silently picking the lowest index.
     listScopes: (environment) => listUnlockedLighterTradingCredentialScopes(environment),

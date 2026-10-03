@@ -900,18 +900,18 @@ async function resolveScope(
     if (accountIndex !== null && accountIndex !== ownedAccount) {
       return { ok: false, reason: `This session's selected wallet owns Lighter ${environment} account ${ownedAccount}, not the requested account ${accountIndex}.` };
     }
-    const scope = resolveSavedLighterTradingCredentialScope(environment, ownedAccount);
+    const scope = await resolveSavedLighterTradingCredentialScope(environment, ownedAccount);
     return scope === null
       ? { ok: false, reason: "No managed Lighter trading credential exists for this session's selected wallet." }
       : { ok: true, value: scope };
   }
   if (accountIndex !== null) {
-    const scope = resolveSavedLighterTradingCredentialScope(environment, accountIndex);
+    const scope = await resolveSavedLighterTradingCredentialScope(environment, accountIndex);
     return scope === null
       ? { ok: false, reason: "No managed Lighter trading credential exists for that account." }
       : { ok: true, value: scope };
   }
-  const scopes = listLighterTradingCredentialScopes(environment);
+  const scopes = await listLighterTradingCredentialScopes(environment);
   const accountCount = new Set(scopes.map((scope) => scope.accountIndex)).size;
   if (accountCount !== 1) {
     return { ok: false, reason: accountCount === 0

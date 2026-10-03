@@ -166,9 +166,9 @@ export async function readLighterFeeAuthorizationSetup(
       "The previous fee approval does not belong to the selected wallet and deployment.",
     );
   }
-  const scopes = deps
-    .listScopes(input.environment)
-    .filter((scope) => scope.accountIndex === accountIndex);
+  const scopes = (await deps.listScopes(input.environment)).filter(
+    (scope) => scope.accountIndex === accountIndex,
+  );
   if (scopes.length !== 1)
     throw new Error(
       "Complete secure Lighter trading-key setup before authorizing fees.",

@@ -77,7 +77,7 @@ export async function writeProvider(
 
   try {
     if (rotatedApiKey !== undefined) {
-      const secretWrite = writeUnlockedSecrets({
+      const secretWrite = await writeUnlockedSecrets({
         OPENROUTER_API_KEY: rotatedApiKey,
       });
       if (!secretWrite.ok) return secretWrite;

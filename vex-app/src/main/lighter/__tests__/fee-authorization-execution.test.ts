@@ -629,8 +629,8 @@ describe("Lighter fee authorization signer settlement contract", () => {
     signRunner: LighterSignerBinaryRunner,
   ): LighterFeeAuthorizationExecutionDeps["sign"] {
     return (args) => signApprovedLighterFeeAuthorization(args, {
-      readVaultPrivateKey: () => `0x${"1".repeat(80)}`,
-      readVaultRegistrationState: () => LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE,
+      readVaultPrivateKey: async () => `0x${"1".repeat(80)}`,
+      readVaultRegistrationState: async () => LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE,
       keyGenerator: createLighterApiKeyGeneratorBinary({
         binaryPath: "/tmp/vex-lighter-signer-test",
         runner: signerRunnerEmitting({ ok: true, publicKey: h.current().terms.publicKey }),

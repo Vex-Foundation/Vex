@@ -154,7 +154,7 @@ export async function restoreFromBackupArchive(
     // only — applying secrets to process.env is the vex-app handler's job.)
     let vaultLocked = false;
     if (stagedVault) {
-      vaultLocked = detectVaultLocked(password);
+      vaultLocked = await detectVaultLocked(password);
     }
 
     return {

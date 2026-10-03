@@ -45,7 +45,7 @@ beforeEach(() => {
 describe("Lighter trading credential vault reader", () => {
   it("reads a matching Lighter trading key from vault extraSecrets only", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockUnlockSecretVault.mockReturnValue({
+    mockUnlockSecretVault.mockResolvedValue({
       version: 1,
       secrets: {},
       extraSecrets: {
@@ -71,19 +71,19 @@ describe("Lighter trading credential vault reader", () => {
   it("does not fall back to environment variables", async () => {
     process.env[REFERENCE.vaultCredentialId] = PRIVATE_KEY;
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockUnlockSecretVault.mockReturnValue({
+    mockUnlockSecretVault.mockResolvedValue({
       version: 1,
       secrets: {},
       extraSecrets: {},
     });
     const { readUnlockedLighterTradingApiPrivateKey } = await loadModule();
 
-    expect(readUnlockedLighterTradingApiPrivateKey(REFERENCE)).toBeNull();
+    expect(await readUnlockedLighterTradingApiPrivateKey(REFERENCE)).toBeNull();
   });
 
   it("does not expose a pending generated key to the order-signing reader", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockUnlockSecretVault.mockReturnValue({
+    mockUnlockSecretVault.mockResolvedValue({
       version: 1,
       secrets: {},
       extraSecrets: {
@@ -103,24 +103,24 @@ describe("Lighter trading credential vault reader", () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
     const { readUnlockedLighterTradingApiPrivateKey } = await loadModule();
 
-    expect(() => readUnlockedLighterTradingApiPrivateKey({
+    await expect(readUnlockedLighterTradingApiPrivateKey({
       ...REFERENCE,
       vaultCredentialId: "lighter/rhc/account-42/api-key-8",
-    })).toThrow("does not match");
+    })).rejects.toThrow("does not match");
     expect(mockUnlockSecretVault).not.toHaveBeenCalled();
   });
 
   it("fails closed without echoing credential material when the vault cannot be read", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockUnlockSecretVault.mockImplementation(() => {
+    mockUnlockSecretVault.mockImplementation(async () => {
       throw new Error(`raw secret ${PRIVATE_KEY}`);
     });
     const { readUnlockedLighterTradingApiPrivateKey } = await loadModule();
 
-    expect(() => readUnlockedLighterTradingApiPrivateKey(REFERENCE))
-      .toThrow("privileged vault boundary");
-    expect(() => readUnlockedLighterTradingApiPrivateKey(REFERENCE))
-      .not.toThrow(PRIVATE_KEY);
+    await expect(readUnlockedLighterTradingApiPrivateKey(REFERENCE))
+      .rejects.toThrow("privileged vault boundary");
+    await expect(readUnlockedLighterTradingApiPrivateKey(REFERENCE))
+      .rejects.not.toThrow(PRIVATE_KEY);
   });
 
   it("fails closed while the vault is locked", async () => {
@@ -133,8 +133,8 @@ describe("Lighter trading credential vault reader", () => {
     });
     const { readUnlockedLighterTradingApiPrivateKey } = await loadModule();
 
-    expect(() => readUnlockedLighterTradingApiPrivateKey(REFERENCE))
-      .toThrow("local vault is locked");
+    await expect(readUnlockedLighterTradingApiPrivateKey(REFERENCE))
+      .rejects.toThrow("local vault is locked");
     expect(mockUnlockSecretVault).not.toHaveBeenCalled();
   });
 });
@@ -142,14 +142,14 @@ describe("Lighter trading credential vault reader", () => {
 describe("Lighter trading credential vault import", () => {
   it("atomically stores a generated key with its pending-registration marker", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockUnlockSecretVault.mockReturnValue({ version: 1, secrets: {}, extraSecrets: {} });
-    mockWriteSecretVaultExtraSecrets.mockReturnValue({ version: 1, secrets: {} });
+    mockUnlockSecretVault.mockResolvedValue({ version: 1, secrets: {}, extraSecrets: {} });
+    mockWriteSecretVaultExtraSecrets.mockResolvedValue({ version: 1, secrets: {} });
     const {
       LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE,
       writeUnlockedPendingLighterTradingApiPrivateKey,
     } = await loadModule();
 
-    const status = writeUnlockedPendingLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY);
+    const status = await writeUnlockedPendingLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY);
 
     expect(status).toEqual({
       present: true,
@@ -169,7 +169,7 @@ describe("Lighter trading credential vault import", () => {
 
   it("resumes an identical pending credential without rewriting the vault", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockUnlockSecretVault.mockReturnValue({
+    mockUnlockSecretVault.mockResolvedValue({
       version: 1,
       secrets: {},
       extraSecrets: {
@@ -180,14 +180,14 @@ describe("Lighter trading credential vault import", () => {
     });
     const { writeUnlockedPendingLighterTradingApiPrivateKey } = await loadModule();
 
-    expect(writeUnlockedPendingLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY))
+    expect(await writeUnlockedPendingLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY))
       .toMatchObject({ present: true, registrationState: "key_generated_pending_registration" });
     expect(mockWriteSecretVaultExtraSecrets).not.toHaveBeenCalled();
   });
 
   it("never overwrites conflicting pending vault material", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockUnlockSecretVault.mockReturnValue({
+    mockUnlockSecretVault.mockResolvedValue({
       version: 1,
       secrets: {},
       extraSecrets: {
@@ -198,14 +198,50 @@ describe("Lighter trading credential vault import", () => {
     });
     const { writeUnlockedPendingLighterTradingApiPrivateKey } = await loadModule();
 
-    expect(() => writeUnlockedPendingLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY))
-      .toThrow("conflicts with existing local vault state");
+    await expect(writeUnlockedPendingLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY))
+      .rejects.toThrow("conflicts with existing local vault state");
     expect(mockWriteSecretVaultExtraSecrets).not.toHaveBeenCalled();
+  });
+
+  it("runs concurrent pending saves one at a time so only one passes the conflict check", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    // A tiny in-memory vault: each read sees every write that finished before it.
+    let extraSecrets: Record<string, string> = {};
+    mockUnlockSecretVault.mockImplementation(async () => ({
+      version: 1,
+      secrets: {},
+      extraSecrets: { ...extraSecrets },
+    }));
+    mockWriteSecretVaultExtraSecrets.mockImplementation(
+      async (_password: string, updates: Record<string, string | null>) => {
+        const next = { ...extraSecrets };
+        for (const [key, value] of Object.entries(updates)) {
+          if (value === null) delete next[key];
+          else next[key] = value;
+        }
+        extraSecrets = next;
+        return { version: 1, secrets: {}, extraSecrets: next };
+      },
+    );
+    const { writeUnlockedPendingLighterTradingApiPrivateKey } = await loadModule();
+
+    const [first, second] = await Promise.allSettled([
+      writeUnlockedPendingLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY),
+      writeUnlockedPendingLighterTradingApiPrivateKey(REFERENCE, `0x${"2".repeat(80)}`),
+    ]);
+
+    expect(first.status).toBe("fulfilled");
+    expect(second.status).toBe("rejected");
+    if (second.status === "rejected") {
+      expect(String(second.reason)).toContain("conflicts with existing local vault state");
+    }
+    expect(mockWriteSecretVaultExtraSecrets).toHaveBeenCalledTimes(1);
+    expect(extraSecrets[REFERENCE.vaultCredentialId]).toBe(PRIVATE_KEY);
   });
 
   it("writes a validated key into vault extraSecrets only", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockWriteSecretVaultExtraSecrets.mockReturnValue({
+    mockWriteSecretVaultExtraSecrets.mockResolvedValue({
       version: 1,
       secrets: {},
       extraSecrets: {
@@ -214,7 +250,7 @@ describe("Lighter trading credential vault import", () => {
     });
     const { writeUnlockedLighterTradingApiPrivateKey } = await loadModule();
 
-    const status = writeUnlockedLighterTradingApiPrivateKey(
+    const status = await writeUnlockedLighterTradingApiPrivateKey(
       REFERENCE,
       `  ${PRIVATE_KEY}  `,
     );
@@ -232,12 +268,12 @@ describe("Lighter trading credential vault import", () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
     const { writeUnlockedLighterTradingApiPrivateKey } = await loadModule();
 
-    expect(() =>
+    await expect(
       writeUnlockedLighterTradingApiPrivateKey(
         REFERENCE,
         "ro:42:single:4102444800:abcdef",
       ),
-    ).toThrow("Read-only Lighter tokens cannot sign");
+    ).rejects.toThrow("Read-only Lighter tokens cannot sign");
     expect(mockWriteSecretVaultExtraSecrets).not.toHaveBeenCalled();
     expect(mockUnlockSecretVault).not.toHaveBeenCalled();
   });
@@ -246,25 +282,25 @@ describe("Lighter trading credential vault import", () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
     const { writeUnlockedLighterTradingApiPrivateKey } = await loadModule();
 
-    expect(() =>
+    await expect(
       writeUnlockedLighterTradingApiPrivateKey(
         { ...REFERENCE, vaultCredentialId: "lighter/rhc/account-42/api-key-8" },
         PRIVATE_KEY,
       ),
-    ).toThrow("does not match");
+    ).rejects.toThrow("does not match");
     expect(mockWriteSecretVaultExtraSecrets).not.toHaveBeenCalled();
   });
 
   it("fails closed without echoing credential material when import fails", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockWriteSecretVaultExtraSecrets.mockImplementation(() => {
+    mockWriteSecretVaultExtraSecrets.mockImplementation(async () => {
       throw new Error(`raw secret ${PRIVATE_KEY}`);
     });
     const { writeUnlockedLighterTradingApiPrivateKey } = await loadModule();
 
     let caught: unknown = null;
     try {
-      writeUnlockedLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY);
+      await writeUnlockedLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY);
     } catch (error) {
       caught = error;
     }
@@ -284,9 +320,9 @@ describe("Lighter trading credential vault import", () => {
     });
     const { writeUnlockedLighterTradingApiPrivateKey } = await loadModule();
 
-    expect(() =>
+    await expect(
       writeUnlockedLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY),
-    ).toThrow("local vault is locked");
+    ).rejects.toThrow("local vault is locked");
     expect(mockWriteSecretVaultExtraSecrets).not.toHaveBeenCalled();
   });
 });
@@ -294,7 +330,7 @@ describe("Lighter trading credential vault import", () => {
 describe("Lighter trading credential vault status and removal", () => {
   it("reads the pending-registration marker without returning key material", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockUnlockSecretVault.mockReturnValue({
+    mockUnlockSecretVault.mockResolvedValue({
       version: 1,
       secrets: {},
       extraSecrets: {
@@ -305,14 +341,14 @@ describe("Lighter trading credential vault status and removal", () => {
     });
     const { getUnlockedLighterTradingCredentialRegistrationState } = await loadModule();
 
-    const state = getUnlockedLighterTradingCredentialRegistrationState(REFERENCE);
+    const state = await getUnlockedLighterTradingCredentialRegistrationState(REFERENCE);
     expect(state).toBe("key_generated_pending_registration");
     expect(JSON.stringify(state)).not.toContain(PRIVATE_KEY);
   });
 
   it("reports presence without returning key material", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockUnlockSecretVault.mockReturnValue({
+    mockUnlockSecretVault.mockResolvedValue({
       version: 1,
       secrets: {},
       extraSecrets: {
@@ -321,7 +357,7 @@ describe("Lighter trading credential vault status and removal", () => {
     });
     const { getUnlockedLighterTradingCredentialStatus } = await loadModule();
 
-    const status = getUnlockedLighterTradingCredentialStatus(REFERENCE);
+    const status = await getUnlockedLighterTradingCredentialStatus(REFERENCE);
 
     expect(status).toEqual({ present: true, reference: REFERENCE });
     expect(JSON.stringify(status)).not.toContain(PRIVATE_KEY);
@@ -329,7 +365,7 @@ describe("Lighter trading credential vault status and removal", () => {
 
   it("promotes a pending key marker to active without rewriting key material", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockUnlockSecretVault.mockReturnValue({
+    mockUnlockSecretVault.mockResolvedValue({
       version: 1,
       secrets: {},
       extraSecrets: {
@@ -340,7 +376,7 @@ describe("Lighter trading credential vault status and removal", () => {
     });
     const { activateUnlockedLighterTradingCredential } = await loadModule();
 
-    expect(activateUnlockedLighterTradingCredential(REFERENCE)).toEqual({
+    expect(await activateUnlockedLighterTradingCredential(REFERENCE)).toEqual({
       present: true,
       reference: REFERENCE,
       registrationState: "key_registered_active",
@@ -355,14 +391,14 @@ describe("Lighter trading credential vault status and removal", () => {
 
   it("reports absence when the matching extra secret is missing", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockUnlockSecretVault.mockReturnValue({
+    mockUnlockSecretVault.mockResolvedValue({
       version: 1,
       secrets: {},
       extraSecrets: {},
     });
     const { getUnlockedLighterTradingCredentialStatus } = await loadModule();
 
-    expect(getUnlockedLighterTradingCredentialStatus(REFERENCE)).toEqual({
+    expect(await getUnlockedLighterTradingCredentialStatus(REFERENCE)).toEqual({
       present: false,
       reference: REFERENCE,
     });
@@ -370,7 +406,7 @@ describe("Lighter trading credential vault status and removal", () => {
 
   it("reports environment-level presence without returning key material", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockUnlockSecretVault.mockReturnValue({
+    mockUnlockSecretVault.mockResolvedValue({
       version: 1,
       secrets: {},
       extraSecrets: {
@@ -381,13 +417,13 @@ describe("Lighter trading credential vault status and removal", () => {
     });
     const { hasUnlockedLighterTradingCredential } = await loadModule();
 
-    expect(hasUnlockedLighterTradingCredential("rhc")).toBe(true);
-    expect(hasUnlockedLighterTradingCredential("core")).toBe(false);
+    expect(await hasUnlockedLighterTradingCredential("rhc")).toBe(true);
+    expect(await hasUnlockedLighterTradingCredential("core")).toBe(false);
   });
 
   it("lists saved trading credential scopes without returning key material", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockUnlockSecretVault.mockReturnValue({
+    mockUnlockSecretVault.mockResolvedValue({
       version: 1,
       secrets: {},
       extraSecrets: {
@@ -405,15 +441,15 @@ describe("Lighter trading credential vault status and removal", () => {
     });
     const { listUnlockedLighterTradingCredentialScopes } = await loadModule();
 
-    expect(listUnlockedLighterTradingCredentialScopes("rhc")).toEqual([
+    expect(await listUnlockedLighterTradingCredentialScopes("rhc")).toEqual([
       { environment: "rhc", accountIndex: 1171, apiKeyIndex: 10 },
     ]);
-    expect(JSON.stringify(listUnlockedLighterTradingCredentialScopes())).not.toContain(PRIVATE_KEY);
+    expect(JSON.stringify(await listUnlockedLighterTradingCredentialScopes())).not.toContain(PRIVATE_KEY);
   });
 
   it("lists only Vex-managed active credential scopes", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockUnlockSecretVault.mockReturnValue({
+    mockUnlockSecretVault.mockResolvedValue({
       version: 1,
       secrets: {},
       extraSecrets: {
@@ -427,11 +463,11 @@ describe("Lighter trading credential vault status and removal", () => {
     });
     const { listUnlockedManagedLighterTradingCredentialScopes } = await loadModule();
 
-    expect(listUnlockedManagedLighterTradingCredentialScopes("core")).toEqual([
+    expect(await listUnlockedManagedLighterTradingCredentialScopes("core")).toEqual([
       { environment: "core", accountIndex: 737810, apiKeyIndex: 4 },
     ]);
-    expect(listUnlockedManagedLighterTradingCredentialScopes("rhc")).toEqual([]);
-    expect(JSON.stringify(listUnlockedManagedLighterTradingCredentialScopes())).not
+    expect(await listUnlockedManagedLighterTradingCredentialScopes("rhc")).toEqual([]);
+    expect(JSON.stringify(await listUnlockedManagedLighterTradingCredentialScopes())).not
       .toContain(PRIVATE_KEY);
   });
 
@@ -442,19 +478,19 @@ describe("Lighter trading credential vault status and removal", () => {
     });
     const { hasUnlockedLighterTradingCredential } = await loadModule();
 
-    expect(hasUnlockedLighterTradingCredential("rhc")).toBe(false);
+    expect(await hasUnlockedLighterTradingCredential("rhc")).toBe(false);
     expect(mockUnlockSecretVault).not.toHaveBeenCalled();
   });
 
   it("deletes the matching key from vault extraSecrets", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockWriteSecretVaultExtraSecrets.mockReturnValue({
+    mockWriteSecretVaultExtraSecrets.mockResolvedValue({
       version: 1,
       secrets: {},
     });
     const { deleteUnlockedLighterTradingApiPrivateKey } = await loadModule();
 
-    const status = deleteUnlockedLighterTradingApiPrivateKey(REFERENCE);
+    const status = await deleteUnlockedLighterTradingApiPrivateKey(REFERENCE);
 
     expect(status).toEqual({ present: false, reference: REFERENCE });
     expect(mockWriteSecretVaultExtraSecrets).toHaveBeenCalledWith(
@@ -485,7 +521,7 @@ describe("Lighter trading credential vault status and removal", () => {
     };
     const { deleteUnlockedLighterTradingApiPrivateKeys } = await loadModule();
 
-    expect(deleteUnlockedLighterTradingApiPrivateKeys([
+    expect(await deleteUnlockedLighterTradingApiPrivateKeys([
       coreReference,
       rhcReference,
     ])).toEqual([
@@ -525,7 +561,7 @@ describe("Lighter trading credential vault writes drop cached read-only order to
     }, nowMs);
     expect(lighterReadAuthCache.size).toBe(1);
     const sizes: number[] = [];
-    mockWriteSecretVaultExtraSecrets.mockImplementation(() => {
+    mockWriteSecretVaultExtraSecrets.mockImplementation(async () => {
       sizes.push(lighterReadAuthCache.size);
       return { version: 1, secrets: {} };
     });
@@ -536,24 +572,24 @@ describe("Lighter trading credential vault writes drop cached read-only order to
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
     const { module, cacheSizeAtWrite } = await loadWithPrimedCache();
 
-    module.writeUnlockedLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY);
+    await module.writeUnlockedLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY);
 
     expect(cacheSizeAtWrite()).toEqual([0]);
   });
 
   it("on a generated pending key save", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockUnlockSecretVault.mockReturnValue({ version: 1, secrets: {}, extraSecrets: {} });
+    mockUnlockSecretVault.mockResolvedValue({ version: 1, secrets: {}, extraSecrets: {} });
     const { module, cacheSizeAtWrite } = await loadWithPrimedCache();
 
-    module.writeUnlockedPendingLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY);
+    await module.writeUnlockedPendingLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY);
 
     expect(cacheSizeAtWrite()).toEqual([0]);
   });
 
   it("on activation after registration", async () => {
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
-    mockUnlockSecretVault.mockReturnValue({
+    mockUnlockSecretVault.mockResolvedValue({
       version: 1,
       secrets: {},
       extraSecrets: {
@@ -564,7 +600,7 @@ describe("Lighter trading credential vault writes drop cached read-only order to
     });
     const { module, cacheSizeAtWrite } = await loadWithPrimedCache();
 
-    module.activateUnlockedLighterTradingCredential(REFERENCE);
+    await module.activateUnlockedLighterTradingCredential(REFERENCE);
 
     expect(cacheSizeAtWrite()).toEqual([0]);
   });
@@ -573,7 +609,7 @@ describe("Lighter trading credential vault writes drop cached read-only order to
     mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
     const { module, cacheSizeAtWrite } = await loadWithPrimedCache();
 
-    module.deleteUnlockedLighterTradingApiPrivateKey(REFERENCE);
+    await module.deleteUnlockedLighterTradingApiPrivateKey(REFERENCE);
 
     expect(cacheSizeAtWrite()).toEqual([0]);
   });

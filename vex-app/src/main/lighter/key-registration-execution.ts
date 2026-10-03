@@ -293,14 +293,14 @@ async function reconcileRegistration(
   }
 
   const reference = credentialReference(intent);
-  const registrationState = deps.readVaultRegistrationState(reference);
+  const registrationState = await deps.readVaultRegistrationState(reference);
   if (
     registrationState !== LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE
     && registrationState !== LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE
   ) {
     throw executionError("the encrypted trading credential has an invalid activation marker");
   }
-  const privateKey = deps.readVaultPrivateKey(reference);
+  const privateKey = await deps.readVaultPrivateKey(reference);
   if (privateKey === null) {
     throw executionError("the encrypted trading credential is unavailable");
   }
@@ -367,7 +367,7 @@ async function reconcileRegistration(
   if (intent.executionState !== "active") {
     throw executionError("the registration lifecycle cannot be activated from its current state");
   }
-  const activated = deps.activateVaultCredential(reference);
+  const activated = await deps.activateVaultCredential(reference);
   if (activated.registrationState !== LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE) {
     throw executionError("the encrypted trading credential was not activated");
   }

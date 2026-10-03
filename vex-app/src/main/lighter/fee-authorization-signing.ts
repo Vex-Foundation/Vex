@@ -70,12 +70,12 @@ export async function signApprovedLighterFeeAuthorization(
       vaultCredentialId: defaultLighterTradingVaultCredentialId(intent),
     };
     if (
-      deps.readVaultRegistrationState(reference) !==
+      (await deps.readVaultRegistrationState(reference)) !==
       LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE
     ) {
       throw new Error("The Lighter trading credential is not active.");
     }
-    const privateKey = deps.readVaultPrivateKey(reference);
+    const privateKey = await deps.readVaultPrivateKey(reference);
     if (!privateKey)
       throw new Error(
         "Unlock the local trading credential before authorizing fees.",

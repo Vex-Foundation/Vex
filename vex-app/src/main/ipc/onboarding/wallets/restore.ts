@@ -281,10 +281,10 @@ export function registerRestoreHandlers(handlers: Array<() => void>): void {
               // process.env from the RESTORED vault and adopt it as the unlocked
               // session. `applySecretVaultToProcessEnv` re-reads the new file;
               // `adoptUnlockedPassword` mirrors the in-memory unlock state.
-              applySecretVaultToProcessEnv(input.password, {
+              await applySecretVaultToProcessEnv(input.password, {
                 filePath: SECRETS_VAULT_FILE,
               });
-              adoptUnlockedPassword(input.password);
+              await adoptUnlockedPassword(input.password);
             }
           }
           // If no vault was restored, the current vault/session is untouched —

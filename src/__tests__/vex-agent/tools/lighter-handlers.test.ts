@@ -607,8 +607,8 @@ beforeEach(() => {
   delete process.env.LIGHTER_RHC_READ_ONLY_AUTH_TOKEN;
   delete process.env.LIGHTER_CORE_READ_ONLY_AUTH_TOKEN;
   configureLighterTradingCredentialScopeResolver({
-    findSavedScope: () => null,
-    findDefaultScope: () => null,
+    findSavedScope: async () => null,
+    findDefaultScope: async () => null,
   });
   configureLighterManagedTradingReadinessResolver(null);
   configureLighterReadOnlyAccountAuthResolver(null);
@@ -677,8 +677,8 @@ describe("Lighter agent read handlers", () => {
 
     it("prepares approval with the first saved key when all keys belong to one account", async () => {
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: () => null,
-        listScopes: (environment) => [
+        findSavedScope: async () => null,
+        listScopes: async (environment) => [
           { environment, accountIndex: 42, apiKeyIndex: 7 },
           { environment, accountIndex: 42, apiKeyIndex: 4 },
         ],
@@ -705,11 +705,11 @@ describe("Lighter agent read handlers", () => {
 
     it("does not prepare against a saved account when this session has no EVM wallet", async () => {
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: (environment, accountIndex) =>
+        findSavedScope: async (environment, accountIndex) =>
           environment === "rhc" && accountIndex === 42
             ? { environment, accountIndex, apiKeyIndex: 7 }
             : null,
-        listScopes: (environment) =>
+        listScopes: async (environment) =>
           environment === "rhc" ? [{ environment, accountIndex: 42, apiKeyIndex: 7 }] : [],
       });
 
@@ -726,11 +726,11 @@ describe("Lighter agent read handlers", () => {
 
     it("prepares for the selected session wallet when another wallet also has a key", async () => {
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: (environment, accountIndex) =>
+        findSavedScope: async (environment, accountIndex) =>
           environment === "rhc" && accountIndex === 42
             ? { environment, accountIndex, apiKeyIndex: 7 }
             : null,
-        listScopes: (environment) =>
+        listScopes: async (environment) =>
           environment === "rhc" ? [
             { environment, accountIndex: 736778, apiKeyIndex: 4 },
             { environment, accountIndex: 42, apiKeyIndex: 7 },
@@ -756,11 +756,11 @@ describe("Lighter agent read handlers", () => {
 
     it("refuses another wallet's requested Lighter account", async () => {
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: (environment, accountIndex) =>
+        findSavedScope: async (environment, accountIndex) =>
           environment === "rhc" && accountIndex === 736778
             ? { environment, accountIndex, apiKeyIndex: 4 }
             : null,
-        listScopes: (environment) =>
+        listScopes: async (environment) =>
           environment === "rhc" ? [
             { environment, accountIndex: 736778, apiKeyIndex: 4 },
             { environment, accountIndex: 42, apiKeyIndex: 7 },
@@ -786,8 +786,8 @@ describe("Lighter agent read handlers", () => {
 
     it.each([false, true])("refuses absent or ambiguous accounts before reading provider data (ambiguous=%s)", async (ambiguous) => {
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: () => null,
-        listScopes: (environment) => ambiguous ? [
+        findSavedScope: async () => null,
+        listScopes: async (environment) => ambiguous ? [
           { environment, accountIndex: 42, apiKeyIndex: 7 },
           { environment, accountIndex: 42, apiKeyIndex: 4 },
           { environment, accountIndex: 43, apiKeyIndex: 7 },
@@ -808,10 +808,10 @@ describe("Lighter agent read handlers", () => {
 
     it("honors an explicit account and its saved key despite other configured accounts", async () => {
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: (environment, accountIndex) =>
+        findSavedScope: async (environment, accountIndex) =>
           environment === "rhc" && accountIndex === 42
             ? { environment, accountIndex, apiKeyIndex: 4 } : null,
-        listScopes: (environment) => [
+        listScopes: async (environment) => [
           { environment, accountIndex: 43, apiKeyIndex: 7 },
           { environment, accountIndex: 42, apiKeyIndex: 4 },
         ],
@@ -835,8 +835,8 @@ describe("Lighter agent read handlers", () => {
     ["lighter.order.cancelAll.prepare", "lighter.order.cancelAll", "cancel_all"],
   ])("%s persists exact provider identity and returns the matching approval", async (toolId, executeId, actionType) => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) => ({ environment, accountIndex, apiKeyIndex: 7 }),
-      listScopes: (environment) => [{ environment, accountIndex: 42, apiKeyIndex: 7 }],
+      findSavedScope: async (environment, accountIndex) => ({ environment, accountIndex, apiKeyIndex: 7 }),
+      listScopes: async (environment) => [{ environment, accountIndex: 42, apiKeyIndex: 7 }],
     });
     const providerOrder = { ...accountOrder(), type: "limit", time_in_force: "good-till-time" };
     mocks.client.getAccountActiveOrders.mockResolvedValue({ code: 200, orders: [providerOrder] });
@@ -1994,11 +1994,11 @@ describe("Lighter agent read handlers", () => {
 
     beforeEach(async () => {
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: (environment, accountIndex) =>
+        findSavedScope: async (environment, accountIndex) =>
           environment === "rhc" && accountIndex === 42
             ? { environment, accountIndex, apiKeyIndex: 7 }
             : null,
-        listScopes: (environment) =>
+        listScopes: async (environment) =>
           environment === "rhc" ? [{ environment, accountIndex: 42, apiKeyIndex: 7 }] : [],
       });
       mocks.client.getMarkets.mockResolvedValue({ code: 200, order_books: [MARKET] });
@@ -2598,11 +2598,11 @@ describe("Lighter agent read handlers", () => {
     "%s does not read another wallet's saved account from a session without an EVM wallet",
     async (toolId) => {
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: (environment, accountIndex) =>
+        findSavedScope: async (environment, accountIndex) =>
           environment === "core" && accountIndex === 42
             ? { environment, accountIndex, apiKeyIndex: 4 }
             : null,
-        findDefaultScope: (environment) =>
+        findDefaultScope: async (environment) =>
           environment === "core" ? { environment, accountIndex: 42, apiKeyIndex: 4 } : null,
       });
       const result = await requireValue(LIGHTER_HANDLERS[toolId])({
@@ -2631,10 +2631,10 @@ describe("Lighter agent read handlers", () => {
         { environment: "rhc" as const, accountIndex: 31824, apiKeyIndex: 4 },
       ];
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: (environment, accountIndex) =>
+        findSavedScope: async (environment, accountIndex) =>
           scopes.find((scope) => scope.environment === environment && scope.accountIndex === accountIndex) ?? null,
-        findDefaultScope: (environment) => scopes.find((scope) => scope.environment === environment) ?? null,
-        listScopes: (environment) => scopes.filter((scope) => scope.environment === environment),
+        findDefaultScope: async (environment) => scopes.find((scope) => scope.environment === environment) ?? null,
+        listScopes: async (environment) => scopes.filter((scope) => scope.environment === environment),
       });
 
       const output = await callFail(toolId, { environment: "rhc" });
@@ -2652,11 +2652,11 @@ describe("Lighter agent read handlers", () => {
     ["lighter.trades", "getAccountTrades"],
   ] as const)("%s follows the session wallet instead of the sole saved key", async (toolId, clientMethod) => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 42
           ? { environment, accountIndex, apiKeyIndex: 4 }
           : null,
-      findDefaultScope: (environment) =>
+      findDefaultScope: async (environment) =>
         environment === "core" ? { environment, accountIndex: 42, apiKeyIndex: 4 } : null,
     });
     mocks.client.getAccountsByL1Address.mockImplementation(async (_environment: string, input: { readonly l1Address: string }) => ({
@@ -2693,13 +2693,13 @@ describe("Lighter agent read handlers", () => {
     // token. The derived-auth resolver mints a short-lived read-only token so
     // the read hits the live account API instead of falling back to inference.
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 736778
           ? { environment, accountIndex, apiKeyIndex: 4 }
           : null,
-      findDefaultScope: (environment) =>
+      findDefaultScope: async (environment) =>
         environment === "core" ? { environment, accountIndex: 736778, apiKeyIndex: 4 } : null,
-      listScopes: (environment) =>
+      listScopes: async (environment) =>
         environment === "core" ? [{ environment, accountIndex: 736778, apiKeyIndex: 4 }] : [],
     });
     const resolver = vi.fn(async (environment: string, accountIndex: number) =>
@@ -3319,11 +3319,11 @@ describe("Lighter agent read handlers", () => {
 
   it("creates a conversational RHC ETH preview without ids or internal policy params", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "rhc" && accountIndex === 42
           ? { environment, accountIndex, apiKeyIndex: 7 }
           : null,
-      findDefaultScope: (environment) =>
+      findDefaultScope: async (environment) =>
         environment === "rhc"
           ? { environment, accountIndex: 42, apiKeyIndex: 7 }
           : null,
@@ -3524,9 +3524,9 @@ describe("Lighter agent read handlers", () => {
 
   it("refuses a requested account the session wallet does not own", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 42 ? { environment, accountIndex, apiKeyIndex: 4 } : null,
-      listScopes: (environment) =>
+      listScopes: async (environment) =>
         environment === "core" ? [{ environment, accountIndex: 42, apiKeyIndex: 4 }] : [],
     });
     // The default lookup has this session's wallet owning account 42.
@@ -3549,11 +3549,11 @@ describe("Lighter agent read handlers", () => {
 
   it("does not use the sole saved account when the session has no selected EVM wallet", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 42
           ? { environment, accountIndex, apiKeyIndex: 4 }
           : null,
-      listScopes: (environment) =>
+      listScopes: async (environment) =>
         environment === "core" ? [{ environment, accountIndex: 42, apiKeyIndex: 4 }] : [],
     });
     const result = await requireValue(LIGHTER_HANDLERS["lighter.order.preview"])({
@@ -3576,11 +3576,11 @@ describe("Lighter agent read handlers", () => {
 
   it("does not use the sole saved account when the session wallet is stale", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 42
           ? { environment, accountIndex, apiKeyIndex: 4 }
           : null,
-      listScopes: (environment) =>
+      listScopes: async (environment) =>
         environment === "core" ? [{ environment, accountIndex: 42, apiKeyIndex: 4 }] : [],
     });
     const result = await requireValue(LIGHTER_HANDLERS["lighter.order.preview"])({
@@ -3607,11 +3607,11 @@ describe("Lighter agent read handlers", () => {
 
   it("uses the wallet-owned account even when a different account is the only saved scope", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 42
           ? { environment, accountIndex, apiKeyIndex: 4 }
           : null,
-      listScopes: (environment) =>
+      listScopes: async (environment) =>
         environment === "core" ? [{ environment, accountIndex: 42, apiKeyIndex: 4 }] : [],
     });
     mocks.client.getAccountsByL1Address.mockImplementation(async (_environment: string, input: { readonly l1Address: string }) => ({
@@ -3663,14 +3663,14 @@ describe("Lighter agent read handlers", () => {
 
   it("binds to the session wallet's account when multiple Lighter trading keys are configured", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 736778
           ? { environment, accountIndex, apiKeyIndex: 4 }
           : null,
       // Two DISTINCT Core accounts are configured - the multi-wallet case. Vex
       // must neither refuse nor guess: it resolves the account owned by THIS
       // session's own wallet, never the other wallet's account.
-      listScopes: (environment) =>
+      listScopes: async (environment) =>
         environment === "core"
           ? [
               { environment, accountIndex: 736758, apiKeyIndex: 7 },
@@ -3720,13 +3720,13 @@ describe("Lighter agent read handlers", () => {
 
   it("proceeds when multiple keys are saved for a single account", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 736778
           ? { environment, accountIndex, apiKeyIndex: 4 }
           : null,
       // Two saved Core scopes on the SAME account: any key signs for that
       // account, so this is not ambiguous and must resolve, not refuse.
-      listScopes: (environment) =>
+      listScopes: async (environment) =>
         environment === "core"
           ? [
               { environment, accountIndex: 736778, apiKeyIndex: 4 },
@@ -3788,11 +3788,11 @@ describe("Lighter agent read handlers", () => {
 
   it("resolves the account from a single saved scope via listScopes", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 42
           ? { environment, accountIndex, apiKeyIndex: 4 }
           : null,
-      listScopes: (environment) =>
+      listScopes: async (environment) =>
         environment === "core" ? [{ environment, accountIndex: 42, apiKeyIndex: 4 }] : [],
     });
     mocks.client.getMarkets.mockResolvedValue({
@@ -3836,11 +3836,11 @@ describe("Lighter agent read handlers", () => {
 
   it("uses the saved Lighter trading credential scope instead of asking the user for an API-key index", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "rhc" && accountIndex === 42
           ? { environment, accountIndex, apiKeyIndex: 9 }
           : null,
-      findDefaultScope: (environment) =>
+      findDefaultScope: async (environment) =>
         environment === "rhc"
           ? { environment, accountIndex: 42, apiKeyIndex: 9 }
           : null,
@@ -3976,11 +3976,11 @@ describe("Lighter agent read handlers", () => {
 
   it("uses the saved Lighter trading credential scope as the default preview account", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "rhc" && accountIndex === 42
           ? { environment, accountIndex, apiKeyIndex: 9 }
           : null,
-      findDefaultScope: (environment) =>
+      findDefaultScope: async (environment) =>
         environment === "rhc"
           ? { environment, accountIndex: 42, apiKeyIndex: 9 }
           : null,
@@ -4333,8 +4333,8 @@ describe("Lighter lifecycle prepare: a live action already exists for the same t
   // pre-submit one, the way the position-close prepare already does.
   function readyScope(): void {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) => ({ environment, accountIndex, apiKeyIndex: 7 }),
-      listScopes: (environment) => [{ environment, accountIndex: 42, apiKeyIndex: 7 }],
+      findSavedScope: async (environment, accountIndex) => ({ environment, accountIndex, apiKeyIndex: 7 }),
+      listScopes: async (environment) => [{ environment, accountIndex: 42, apiKeyIndex: 7 }],
     });
   }
 

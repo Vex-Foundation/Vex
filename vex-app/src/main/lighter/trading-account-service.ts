@@ -433,7 +433,7 @@ export async function readLighterTradingAccount(
   sessionId?: string,
 ): Promise<LighterTradingAccount> {
   throwIfAborted(signal);
-  const scopes = listUnlockedLighterTradingCredentialScopes(environment);
+  const scopes = await listUnlockedLighterTradingCredentialScopes(environment);
   if (scopes.length === 0) {
     // The scope list is empty for two different reasons and the person needs
     // to be told which: a locked vault is one unlock away, while an
@@ -636,7 +636,7 @@ export async function readLighterTradingFills(
     truncated: false,
     fills: [],
   });
-  const scopes = listUnlockedLighterTradingCredentialScopes(environment);
+  const scopes = await listUnlockedLighterTradingCredentialScopes(environment);
   if (scopes.length === 0) return unavailable(null);
   const accountIndex = sessionId === undefined
     ? resolveUniqueLighterAccountIndex(scopes)

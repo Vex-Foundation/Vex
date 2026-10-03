@@ -32,9 +32,9 @@ function capLabel(value: string | null): string | null {
 }
 
 export async function probeProvider(envPath: string): Promise<ProviderState> {
-  const secretPresence = getUnlockedSecretPresence();
-  const [modelValue, agentProvider, endpointTagValue] =
+  const [secretPresence, modelValue, agentProvider, endpointTagValue] =
     await Promise.all([
+      getUnlockedSecretPresence(),
       readEnvValue(envPath, "AGENT_MODEL"),
       readEnvValue(envPath, "AGENT_PROVIDER"),
       readEnvValue(envPath, PROVIDER_ENDPOINT_TAG_ENV_KEY),

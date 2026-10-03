@@ -38,12 +38,12 @@ export class LighterCredentialCleanupError extends Error {
 interface LighterCredentialConnectionCleanupDeps {
   readonly client: Pick<LighterClient, "getAccount">;
   readonly isVaultUnlocked: () => boolean;
-  readonly listScopes: () => readonly UnlockedLighterTradingCredentialScope[];
-  readonly listManagedScopes: () => readonly UnlockedLighterTradingCredentialScope[];
+  readonly listScopes: () => Promise<readonly UnlockedLighterTradingCredentialScope[]>;
+  readonly listManagedScopes: () => Promise<readonly UnlockedLighterTradingCredentialScope[]>;
   readonly getPrimaryEvmAddress: () => string | null;
   readonly deleteCredentials: (
     references: readonly LighterTradingCredentialVaultReference[],
-  ) => void;
+  ) => Promise<void>;
 }
 
 const productionDeps: LighterCredentialConnectionCleanupDeps = {
@@ -52,8 +52,8 @@ const productionDeps: LighterCredentialConnectionCleanupDeps = {
   listScopes: () => listUnlockedLighterTradingCredentialScopes(),
   listManagedScopes: () => listUnlockedManagedLighterTradingCredentialScopes(),
   getPrimaryEvmAddress: () => getPrimaryEvmAddress(),
-  deleteCredentials: (references) => {
-    deleteUnlockedLighterTradingApiPrivateKeys(references);
+  deleteCredentials: async (references) => {
+    await deleteUnlockedLighterTradingApiPrivateKeys(references);
   },
 };
 
@@ -138,10 +138,10 @@ export async function inspectLighterCredentialConnections(
     throw new LighterCredentialCleanupError("vault_locked");
   }
 
-  const rawScopes = deps.listScopes();
+  const rawScopes = await deps.listScopes();
   if (rawScopes.length === 0) return { connections: [] };
 
-  const managedKeys = new Set(deps.listManagedScopes().map(scopeKey));
+  const managedKeys = new Set((await deps.listManagedScopes()).map(scopeKey));
   const ownedScopes = await Promise.all(
     rawScopes.map((scope) => resolveOwnedScope(scope, managedKeys, deps)),
   );
@@ -225,7 +225,7 @@ export async function forgetLighterCredentialConnection(
   }
 
   try {
-    deps.deleteCredentials(connection.scopes.map(credentialReference));
+    await deps.deleteCredentials(connection.scopes.map(credentialReference));
   } catch {
     throw new LighterCredentialCleanupError("vault_write_failed");
   }

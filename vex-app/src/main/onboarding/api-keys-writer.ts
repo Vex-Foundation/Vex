@@ -159,7 +159,7 @@ export async function writeApiKeys(
 
   for (const action of tradingActions) {
     const registrationState =
-      getUnlockedLighterTradingCredentialRegistrationState(action.reference);
+      await getUnlockedLighterTradingCredentialRegistrationState(action.reference);
     if (registrationState !== null) {
       return invalidTradingInput(
         `Vex manages the registered Lighter ${action.reference.environment.toUpperCase()} credential for account ${action.reference.accountIndex}, API-key index ${action.reference.apiKeyIndex}. Manual replacement or removal is disabled because it would orphan the registered key.`,
@@ -180,15 +180,15 @@ export async function writeApiKeys(
   }
 
   if (writes.length > 0) {
-    const writeResult = writeUnlockedSecrets(updates);
+    const writeResult = await writeUnlockedSecrets(updates);
     if (!writeResult.ok) return writeResult;
   }
 
   for (const action of tradingActions) {
     if (action.privateKey === null) {
-      deleteUnlockedLighterTradingApiPrivateKey(action.reference);
+      await deleteUnlockedLighterTradingApiPrivateKey(action.reference);
     } else {
-      writeUnlockedLighterTradingApiPrivateKey(
+      await writeUnlockedLighterTradingApiPrivateKey(
         action.reference,
         action.privateKey,
       );

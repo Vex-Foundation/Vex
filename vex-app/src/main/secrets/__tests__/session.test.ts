@@ -123,7 +123,7 @@ describe("lockSecretSession", () => {
       events.push(state);
     });
 
-    session.unlockSecretSession("correct-password");
+    await session.unlockSecretSession("correct-password");
     const lock = session.lockSecretSession();
     // The capability-revocation event happens before lockSecretSession's first
     // await, so streams close even when quit hooks fire-and-forget the promise.
@@ -131,8 +131,56 @@ describe("lockSecretSession", () => {
     await lock;
     unsubscribe();
 
-    session.unlockSecretSession("correct-password");
+    await session.unlockSecretSession("correct-password");
     expect(events).toEqual(["unlocked", "locked"]);
+  });
+
+  it("a lock that lands while an unlock is deriving wins: the unlock reports locked", async () => {
+    mockGetSecretVaultStatus.mockReturnValue({ configured: true });
+    let releaseUnlock: (value: unknown) => void = () => {};
+    mockUnlockSecretVault.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        releaseUnlock = resolve;
+      }),
+    );
+
+    const session = await loadSession();
+    const unlocking = session.unlockSecretSession("correct-password");
+    await session.lockSecretSession();
+    releaseUnlock({ version: 1, secrets: {} });
+    const result = await unlocking;
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("wallet.keystore_locked");
+    expect(session.getSecretSessionStatus().unlocked).toBe(false);
+    expect(mockApplySecretVaultToProcessEnv).not.toHaveBeenCalled();
+  });
+
+  it("a lock that lands while the unlock is loading secrets into env scrubs them again", async () => {
+    mockGetSecretVaultStatus.mockReturnValue({ configured: true });
+    mockUnlockSecretVault.mockResolvedValue({ version: 1, secrets: {} });
+    let releaseApply: () => void = () => {};
+    mockApplySecretVaultToProcessEnv.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        releaseApply = () => {
+          // What the real apply does once its own vault read finishes.
+          process.env.JUPITER_API_KEY = "jk-loaded-after-lock";
+          resolve({ version: 1, secrets: { JUPITER_API_KEY: "jk-loaded-after-lock" } });
+        };
+      }),
+    );
+
+    const session = await loadSession();
+    const unlocking = session.unlockSecretSession("correct-password");
+    await vi.waitFor(() => expect(mockApplySecretVaultToProcessEnv).toHaveBeenCalled());
+    await session.lockSecretSession();
+    releaseApply();
+    const result = await unlocking;
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("wallet.keystore_locked");
+    expect(session.getSecretSessionStatus().unlocked).toBe(false);
+    expect(process.env.JUPITER_API_KEY).toBeUndefined();
   });
 
   it("flips status.unlocked back to false after a successful unlock", async () => {
@@ -239,7 +287,7 @@ describe("lockSecretSession", () => {
 
     process.env.JUPITER_API_KEY = "jk-should-be-cleared";
 
-    const presence = session.getUnlockedSecretPresence();
+    const presence = await session.getUnlockedSecretPresence();
     expect(presence.unlocked).toBe(false);
     expect(process.env.JUPITER_API_KEY).toBeUndefined();
   });

@@ -135,8 +135,12 @@ import { prepareLighterOrderCreateApproval } from "./write.js";
  * may use the only saved one, never whichever of several happens to list
  * first. Several accounts refuse by name, as an order preview does.
  */
-function resolveUnambiguousReadAccount(environment: LighterEnvironment): number | undefined {
-  const accounts = [...new Set(listLighterTradingCredentialScopes(environment).map((scope) => scope.accountIndex))];
+async function resolveUnambiguousReadAccount(
+  environment: LighterEnvironment,
+): Promise<number | undefined> {
+  const accounts = [
+    ...new Set((await listLighterTradingCredentialScopes(environment)).map((scope) => scope.accountIndex)),
+  ];
   if (accounts.length > 1) {
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
@@ -144,7 +148,7 @@ function resolveUnambiguousReadAccount(environment: LighterEnvironment): number 
       "Ask the user which Lighter account to read only because several are configured; do not ask them to choose an API-key index.",
     );
   }
-  return accounts[0] ?? resolveDefaultLighterTradingCredentialScope(environment)?.accountIndex;
+  return accounts[0] ?? (await resolveDefaultLighterTradingCredentialScope(environment))?.accountIndex;
 }
 
 async function resolveAuthenticatedAccountRead(
@@ -169,7 +173,7 @@ async function resolveAuthenticatedAccountRead(
   }
   const targetAccount =
     requestedAccountIndex
-    ?? resolveUnambiguousReadAccount(environment);
+    ?? (await resolveUnambiguousReadAccount(environment));
   if (targetAccount === undefined) {
     return { accountIndex: requestedAccountIndex, privilegedAuth: undefined };
   }
@@ -493,12 +497,12 @@ async function resolveOnboardingTradeMarket(
   return selected;
 }
 
-export function resolvePreviewAccountIndex(
+export async function resolvePreviewAccountIndex(
   environment: LighterEnvironment,
   requestedAccountIndex?: number,
-): number {
+): Promise<number> {
   if (requestedAccountIndex !== undefined) return requestedAccountIndex;
-  const scopes = listLighterTradingCredentialScopes(environment);
+  const scopes = await listLighterTradingCredentialScopes(environment);
   // Ambiguity is about which *account* to trade, not how many keys are saved.
   // Several api-key-index entries can be registered to a single L2 account; any
   // of them signs for that account, so multiple keys on one account is not
@@ -512,7 +516,7 @@ export function resolvePreviewAccountIndex(
       "Ask the user which Lighter account they intend to trade from only because multiple accounts are configured; do not ask them to choose an API-key index.",
     );
   }
-  const savedScope = scopes[0] ?? resolveDefaultLighterTradingCredentialScope(environment);
+  const savedScope = scopes[0] ?? (await resolveDefaultLighterTradingCredentialScope(environment));
   if (!savedScope) {
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
@@ -584,7 +588,7 @@ export async function resolvePreviewApiKeyIndex(
       apiKeyLookupStatus: "caller_supplied",
     };
   }
-  const savedScope = resolveSavedLighterTradingCredentialScope(environment, accountIndex);
+  const savedScope = await resolveSavedLighterTradingCredentialScope(environment, accountIndex);
   if (savedScope !== null) {
     return {
       apiKeyIndex: savedScope.apiKeyIndex,

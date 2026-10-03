@@ -6,7 +6,7 @@ import {
   renameSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   VAULT_SECRET_KEYS,
   isVaultSecretKey,
@@ -28,11 +28,49 @@ import {
   vaultFileNeedsKdfUpgrade,
 } from "./crypto.js";
 
+/**
+ * Per-vault-file serialisation.
+ *
+ * The KDF is async (it runs on the libuv threadpool so a ~400ms derive never
+ * freezes the main thread), which means a vault operation now yields to the
+ * event loop between reading the file and writing it back. When the KDF was
+ * synchronous every create / unlock (with its KDF-upgrade rewrite) / write was
+ * one uninterrupted read-modify-write. This queue keeps exactly that: the
+ * operations that read and then (may) rewrite a given vault file run one at a
+ * time, in call order, so two concurrent writes can never both read the old
+ * contents and have the later rename silently drop the other's update.
+ *
+ * A failed operation never blocks the next one (the chain does not poison).
+ * `verifySecretVaultPassword` stays outside the queue: it never writes, and
+ * the atomic rename means it always reads one whole file.
+ */
+const vaultFileQueues = new Map<string, Promise<void>>();
+
+function withVaultFileLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
+  const key = resolve(filePath);
+  const previous = vaultFileQueues.get(key) ?? Promise.resolve();
+  const result = previous.then(fn, fn);
+  const tail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  vaultFileQueues.set(key, tail);
+  void tail.then(() => {
+    if (vaultFileQueues.get(key) === tail) vaultFileQueues.delete(key);
+  });
+  return result;
+}
+
+let atomicWriteSeq = 0;
+
 function atomicWriteJson(filePath: string, value: unknown): void {
   const dir = dirname(filePath);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 
-  const tmp = join(dir, `.secrets.vault.${process.pid}.${Date.now()}.tmp`);
+  // The sequence keeps two writes in the same millisecond (two vault files in
+  // one directory, now that writes interleave) from sharing a temp path.
+  atomicWriteSeq += 1;
+  const tmp = join(dir, `.secrets.vault.${process.pid}.${Date.now()}.${atomicWriteSeq}.tmp`);
   try {
     writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, {
       encoding: "utf8",
@@ -48,14 +86,23 @@ function atomicWriteJson(filePath: string, value: unknown): void {
 export function createSecretVault(
   password: string,
   options: LocalSecretVaultOptions = {},
-): LocalSecretVaultContents {
+): Promise<LocalSecretVaultContents> {
+  return withVaultFileLock(resolveVaultPath(options), () =>
+    createSecretVaultLocked(password, options),
+  );
+}
+
+async function createSecretVaultLocked(
+  password: string,
+  options: LocalSecretVaultOptions,
+): Promise<LocalSecretVaultContents> {
   const filePath = resolveVaultPath(options);
   if (existsSync(filePath)) {
-    return unlockSecretVault(password, options);
+    return unlockSecretVaultLocked(password, options);
   }
 
   const contents = emptyContents();
-  atomicWriteJson(filePath, encryptContents(contents, password));
+  atomicWriteJson(filePath, await encryptContents(contents, password));
   return contents;
 }
 
@@ -83,10 +130,10 @@ export function createSecretVault(
  * Returns `undefined` on success — by design no secrets are returned.
  * No disk write on success or failure (no opportunistic KDF upgrade).
  */
-export function verifySecretVaultPassword(
+export async function verifySecretVaultPassword(
   password: string,
   options: LocalSecretVaultOptions = {},
-): void {
+): Promise<void> {
   const filePath = resolveVaultPath(options);
   if (!existsSync(filePath)) {
     throw new LocalSecretVaultError("Secret vault is not configured.", "missing");
@@ -108,13 +155,22 @@ export function verifySecretVaultPassword(
   // failures are `unavailable` (retryable); structural issues are `corrupt`.
   // Discard the decrypted payload — verification only needs to confirm the
   // password unwraps the vault; callers MUST NOT use this to harvest secrets.
-  decryptContents(parsedFile, password);
+  await decryptContents(parsedFile, password);
 }
 
 export function unlockSecretVault(
   password: string,
   options: LocalSecretVaultOptions = {},
-): LocalSecretVaultContents {
+): Promise<LocalSecretVaultContents> {
+  return withVaultFileLock(resolveVaultPath(options), () =>
+    unlockSecretVaultLocked(password, options),
+  );
+}
+
+async function unlockSecretVaultLocked(
+  password: string,
+  options: LocalSecretVaultOptions,
+): Promise<LocalSecretVaultContents> {
   const filePath = resolveVaultPath(options);
   if (!existsSync(filePath)) {
     throw new LocalSecretVaultError("Secret vault is not configured.", "missing");
@@ -127,7 +183,7 @@ export function unlockSecretVault(
     throw new LocalSecretVaultError("Could not read secret vault.", "io", cause);
   }
   const parsedFile = parseVaultFile(raw);
-  const contents = decryptContents(parsedFile, password);
+  const contents = await decryptContents(parsedFile, password);
 
   // Opportunistically re-encrypt with CURRENT_KDF_PARAMS when the on-disk
   // params are weaker (or otherwise drift from the current scheme). A failure
@@ -135,7 +191,7 @@ export function unlockSecretVault(
   // secrets; the next successful unlock or write will retry the rewrite.
   if (vaultFileNeedsKdfUpgrade(parsedFile)) {
     try {
-      atomicWriteJson(filePath, encryptContents(contents, password));
+      atomicWriteJson(filePath, await encryptContents(contents, password));
     } catch (cause) {
       // Surface via process.emitWarning instead of pulling in a logger
       // dependency at this layer; secret-session.ts already wraps callers
@@ -157,10 +213,20 @@ export function writeSecretVaultSecrets(
   password: string,
   updates: Partial<Record<VaultSecretKey, string | null>>,
   options: LocalSecretVaultOptions = {},
-): LocalSecretVaultContents {
+): Promise<LocalSecretVaultContents> {
+  return withVaultFileLock(resolveVaultPath(options), () =>
+    writeSecretVaultSecretsLocked(password, updates, options),
+  );
+}
+
+async function writeSecretVaultSecretsLocked(
+  password: string,
+  updates: Partial<Record<VaultSecretKey, string | null>>,
+  options: LocalSecretVaultOptions,
+): Promise<LocalSecretVaultContents> {
   const current = secretVaultExists(options)
-    ? unlockSecretVault(password, options)
-    : createSecretVault(password, options);
+    ? await unlockSecretVaultLocked(password, options)
+    : await createSecretVaultLocked(password, options);
   const nextSecrets: Partial<Record<VaultSecretKey, string>> = {
     ...current.secrets,
   };
@@ -181,7 +247,7 @@ export function writeSecretVaultSecrets(
       ? { extraSecrets: current.extraSecrets }
       : {}),
   };
-  atomicWriteJson(resolveVaultPath(options), encryptContents(next, password));
+  atomicWriteJson(resolveVaultPath(options), await encryptContents(next, password));
   return next;
 }
 
@@ -189,10 +255,20 @@ export function writeSecretVaultExtraSecrets(
   password: string,
   updates: Readonly<Record<string, string | null>>,
   options: LocalSecretVaultOptions = {},
-): LocalSecretVaultContents {
+): Promise<LocalSecretVaultContents> {
+  return withVaultFileLock(resolveVaultPath(options), () =>
+    writeSecretVaultExtraSecretsLocked(password, updates, options),
+  );
+}
+
+async function writeSecretVaultExtraSecretsLocked(
+  password: string,
+  updates: Readonly<Record<string, string | null>>,
+  options: LocalSecretVaultOptions,
+): Promise<LocalSecretVaultContents> {
   const current = secretVaultExists(options)
-    ? unlockSecretVault(password, options)
-    : createSecretVault(password, options);
+    ? await unlockSecretVaultLocked(password, options)
+    : await createSecretVaultLocked(password, options);
   const nextExtraSecrets: Record<string, string> = {
     ...(current.extraSecrets ?? {}),
   };
@@ -213,6 +289,6 @@ export function writeSecretVaultExtraSecrets(
       ? { extraSecrets: nextExtraSecrets }
       : {}),
   };
-  atomicWriteJson(resolveVaultPath(options), encryptContents(next, password));
+  atomicWriteJson(resolveVaultPath(options), await encryptContents(next, password));
   return next;
 }

@@ -179,7 +179,7 @@ function deps(options: {
     listResolvedAccounts: vi.fn(async () => [
       { environment: "rhc" as const, walletAddress: WALLET.toLowerCase(), accountIndex: ACCOUNT },
     ]),
-    listCredentialScopes: vi.fn(() => [{ environment: "rhc" as const, accountIndex: ACCOUNT, apiKeyIndex: 4 }]),
+    listCredentialScopes: vi.fn(async () => [{ environment: "rhc" as const, accountIndex: ACCOUNT, apiKeyIndex: 4 }]),
     derivePublicKey: vi.fn(async () => "ab".repeat(20)),
     vaultUnlocked: () => true,
     now: () => Date.parse("2030-01-01T00:00:00Z"),

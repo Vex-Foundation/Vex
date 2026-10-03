@@ -35,10 +35,10 @@ const SIGNED_TX_TTL_MS = 9 * 60 * 1_000;
 export interface SignApprovedLighterKeyRegistrationDeps {
   readonly readVaultPrivateKey: (
     reference: LighterTradingCredentialVaultReference,
-  ) => string | null;
+  ) => Promise<string | null>;
   readonly readVaultRegistrationState: (
     reference: LighterTradingCredentialVaultReference,
-  ) => string | null;
+  ) => Promise<string | null>;
   readonly keyGenerator: LighterApiKeyGenerator;
   readonly signer: LighterChangePubKeySignerAdapter;
   readonly signWalletMessage: (wallet: EvmWallet, message: string) => Promise<string>;
@@ -83,8 +83,8 @@ export async function signApprovedLighterKeyRegistration(input: {
   let privateKey: string | null;
   let registrationState: string | null;
   try {
-    privateKey = deps.readVaultPrivateKey(reference);
-    registrationState = deps.readVaultRegistrationState(reference);
+    privateKey = await deps.readVaultPrivateKey(reference);
+    registrationState = await deps.readVaultRegistrationState(reference);
   } catch {
     throw signingError("the encrypted credential could not be read");
   }

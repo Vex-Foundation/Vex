@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-// Passthrough mock of node:crypto with a ONE-SHOT forced scryptSync failure —
-// simulates an allocation/crypto-runtime error during key derivation so the
+// Passthrough mock of node:crypto with a ONE-SHOT forced scrypt failure (the
+// vault derives through the async `scrypt`; `scryptSync` is kept for the
+// forged-vault helpers below). It simulates an allocation/crypto-runtime
+// error during key derivation so the
 // classifier's "setup failure with a CORRECT password is `unavailable`
 // (retryable), never invalid_password and never corrupt" contract is
 // testable. Every other call passes through.
@@ -16,6 +18,19 @@ vi.mock("node:crypto", async (importOriginal) => {
         throw new Error("forced scrypt allocation failure (test)");
       }
       return actual.scryptSync(...args);
+    },
+    scrypt: (
+      password: string,
+      salt: Uint8Array,
+      keylen: number,
+      options: import("node:crypto").ScryptOptions,
+      callback: (err: Error | null, derivedKey: Buffer) => void,
+    ) => {
+      if (forcedScryptFailure.armed) {
+        forcedScryptFailure.armed = false;
+        throw new Error("forced scrypt allocation failure (test)");
+      }
+      actual.scrypt(password, salt, keylen, options, callback);
     },
   };
 });
@@ -133,11 +148,11 @@ function readVaultKdf(path: string): { readonly N: number; readonly r: number; r
 }
 
 describe("local secret vault", () => {
-  it("creates an encrypted vault and unlocks stored secrets", () => {
+  it("creates an encrypted vault and unlocks stored secrets", async () => {
     expect(secretVaultExists({ filePath: vaultFile })).toBe(false);
 
-    createSecretVault("master-password", { filePath: vaultFile });
-    writeSecretVaultSecrets(
+    await createSecretVault("master-password", { filePath: vaultFile });
+    await writeSecretVaultSecrets(
       "master-password",
       {
         OPENROUTER_API_KEY: "sk-or-test",
@@ -153,39 +168,39 @@ describe("local secret vault", () => {
       expect(statSync(vaultFile).mode & 0o777).toBe(0o600);
     }
 
-    const unlocked = unlockSecretVault("master-password", { filePath: vaultFile });
+    const unlocked = await unlockSecretVault("master-password", { filePath: vaultFile });
     expect(unlocked.secrets.OPENROUTER_API_KEY).toBe("sk-or-test");
     expect(unlocked.secrets.JUPITER_API_KEY).toBe("jup-test");
   });
 
-  it("rejects the wrong password", () => {
-    createSecretVault("master-password", { filePath: vaultFile });
-    expect(() => unlockSecretVault("wrong-password", { filePath: vaultFile }))
-      .toThrow(LocalSecretVaultError);
+  it("rejects the wrong password", async () => {
+    await createSecretVault("master-password", { filePath: vaultFile });
+    await expect(unlockSecretVault("wrong-password", { filePath: vaultFile }))
+      .rejects.toThrow(LocalSecretVaultError);
   });
 
-  it("loads vault secrets into process.env only after unlock", () => {
-    createSecretVault("master-password", { filePath: vaultFile });
-    writeSecretVaultSecrets(
+  it("loads vault secrets into process.env only after unlock", async () => {
+    await createSecretVault("master-password", { filePath: vaultFile });
+    await writeSecretVaultSecrets(
       "master-password",
       { OPENROUTER_API_KEY: "sk-or-test" },
       { filePath: vaultFile },
     );
 
     expect(process.env.OPENROUTER_API_KEY).toBeUndefined();
-    applySecretVaultToProcessEnv("master-password", { filePath: vaultFile });
+    await applySecretVaultToProcessEnv("master-password", { filePath: vaultFile });
     expect(process.env.OPENROUTER_API_KEY).toBe("sk-or-test");
   });
 
-  it("writes extra secrets without mirroring them to process.env", () => {
-    createSecretVault("master-password", { filePath: vaultFile });
-    writeSecretVaultSecrets(
+  it("writes extra secrets without mirroring them to process.env", async () => {
+    await createSecretVault("master-password", { filePath: vaultFile });
+    await writeSecretVaultSecrets(
       "master-password",
       { OPENROUTER_API_KEY: "sk-or-test" },
       { filePath: vaultFile },
     );
 
-    writeSecretVaultExtraSecrets(
+    await writeSecretVaultExtraSecrets(
       "master-password",
       { [EXTRA_SECRET_KEY]: EXTRA_SECRET_VALUE },
       { filePath: vaultFile },
@@ -193,23 +208,23 @@ describe("local secret vault", () => {
 
     const raw = readFileSync(vaultFile, "utf8");
     expect(raw).not.toContain(EXTRA_SECRET_VALUE);
-    const unlocked = unlockSecretVault("master-password", { filePath: vaultFile });
+    const unlocked = await unlockSecretVault("master-password", { filePath: vaultFile });
     expect(unlocked.secrets.OPENROUTER_API_KEY).toBe("sk-or-test");
     expect(unlocked.extraSecrets?.[EXTRA_SECRET_KEY]).toBe(EXTRA_SECRET_VALUE);
 
-    applySecretVaultToProcessEnv("master-password", { filePath: vaultFile });
+    await applySecretVaultToProcessEnv("master-password", { filePath: vaultFile });
     expect(process.env.OPENROUTER_API_KEY).toBe("sk-or-test");
     expect(process.env[EXTRA_SECRET_KEY]).toBeUndefined();
   });
 
-  it("deletes extra secrets without touching managed secrets or neighboring extras", () => {
-    createSecretVault("master-password", { filePath: vaultFile });
-    writeSecretVaultSecrets(
+  it("deletes extra secrets without touching managed secrets or neighboring extras", async () => {
+    await createSecretVault("master-password", { filePath: vaultFile });
+    await writeSecretVaultSecrets(
       "master-password",
       { JUPITER_API_KEY: "jup-test" },
       { filePath: vaultFile },
     );
-    writeSecretVaultExtraSecrets(
+    await writeSecretVaultExtraSecrets(
       "master-password",
       {
         [EXTRA_SECRET_KEY]: EXTRA_SECRET_VALUE,
@@ -218,19 +233,67 @@ describe("local secret vault", () => {
       { filePath: vaultFile },
     );
 
-    writeSecretVaultExtraSecrets(
+    await writeSecretVaultExtraSecrets(
       "master-password",
       { [EXTRA_SECRET_KEY]: null },
       { filePath: vaultFile },
     );
 
-    const unlocked = unlockSecretVault("master-password", { filePath: vaultFile });
+    const unlocked = await unlockSecretVault("master-password", { filePath: vaultFile });
     expect(unlocked.secrets.JUPITER_API_KEY).toBe("jup-test");
     expect(unlocked.extraSecrets?.[EXTRA_SECRET_KEY]).toBeUndefined();
     expect(unlocked.extraSecrets?.["future/provider/key"]).toBe("future-value");
   });
 
-  it("strips managed secrets from legacy dotenv files", () => {
+  it("keeps every update when writes to one vault file run concurrently", async () => {
+    await createSecretVault("master-password", { filePath: vaultFile });
+
+    // Each write reads the current contents and rewrites the file. With an
+    // async KDF they would interleave and the later rename would drop the
+    // earlier update; the per-file queue runs them one after another.
+    await Promise.all([
+      writeSecretVaultSecrets(
+        "master-password",
+        { OPENROUTER_API_KEY: "sk-or-test" },
+        { filePath: vaultFile },
+      ),
+      writeSecretVaultSecrets(
+        "master-password",
+        { JUPITER_API_KEY: "jup-test" },
+        { filePath: vaultFile },
+      ),
+      writeSecretVaultExtraSecrets(
+        "master-password",
+        { [EXTRA_SECRET_KEY]: EXTRA_SECRET_VALUE },
+        { filePath: vaultFile },
+      ),
+    ]);
+
+    const unlocked = await unlockSecretVault("master-password", { filePath: vaultFile });
+    expect(unlocked.secrets.OPENROUTER_API_KEY).toBe("sk-or-test");
+    expect(unlocked.secrets.JUPITER_API_KEY).toBe("jup-test");
+    expect(unlocked.extraSecrets?.[EXTRA_SECRET_KEY]).toBe(EXTRA_SECRET_VALUE);
+  });
+
+  it("does not let a failed vault operation block the next one on the same file", async () => {
+    await createSecretVault("master-password", { filePath: vaultFile });
+
+    const [wrong, write] = await Promise.allSettled([
+      unlockSecretVault("wrong-password", { filePath: vaultFile }),
+      writeSecretVaultSecrets(
+        "master-password",
+        { OPENROUTER_API_KEY: "sk-or-test" },
+        { filePath: vaultFile },
+      ),
+    ]);
+
+    expect(wrong.status).toBe("rejected");
+    expect(write.status).toBe("fulfilled");
+    const unlocked = await unlockSecretVault("master-password", { filePath: vaultFile });
+    expect(unlocked.secrets.OPENROUTER_API_KEY).toBe("sk-or-test");
+  });
+
+  it("strips managed secrets from legacy dotenv files", async () => {
     writeFileSync(
       envFile,
       [
@@ -253,7 +316,7 @@ describe("local secret vault", () => {
     expect(raw).toContain('AGENT_MODEL="openai/test"');
   });
 
-  it("keeps retired Lighter tokens scrub-only and never vault-injected", () => {
+  it("keeps retired Lighter tokens scrub-only and never vault-injected", async () => {
     expect(RETIRED_SECRET_ENV_KEYS).toEqual([
       "LIGHTER_CORE_READ_ONLY_AUTH_TOKEN",
       "LIGHTER_RHC_READ_ONLY_AUTH_TOKEN",
@@ -264,8 +327,8 @@ describe("local secret vault", () => {
     }
   });
 
-  it("creates fresh vaults with CURRENT_KDF_PARAMS", () => {
-    createSecretVault("master-password", { filePath: vaultFile });
+  it("creates fresh vaults with CURRENT_KDF_PARAMS", async () => {
+    await createSecretVault("master-password", { filePath: vaultFile });
     expect(readVaultKdf(vaultFile)).toEqual({
       N: CURRENT_KDF_PARAMS.N,
       r: CURRENT_KDF_PARAMS.r,
@@ -274,7 +337,7 @@ describe("local secret vault", () => {
     expect(CURRENT_KDF_PARAMS.N).toBe(131072); // 2^17 — OWASP scrypt minimum
   });
 
-  it("opportunistically re-encrypts stale-KDF vaults on successful unlock", () => {
+  it("opportunistically re-encrypts stale-KDF vaults on successful unlock", async () => {
     // Forge a vault that mirrors the pre-upgrade N=16384 format.
     writeLegacyVault(
       vaultFile,
@@ -284,7 +347,7 @@ describe("local secret vault", () => {
     );
     expect(readVaultKdf(vaultFile).N).toBe(16384);
 
-    const unlocked = unlockSecretVault("master-password", { filePath: vaultFile });
+    const unlocked = await unlockSecretVault("master-password", { filePath: vaultFile });
     expect(unlocked.secrets.OPENROUTER_API_KEY).toBe("sk-or-test");
 
     const afterKdf = readVaultKdf(vaultFile);
@@ -293,7 +356,7 @@ describe("local secret vault", () => {
     expect(afterKdf.p).toBe(CURRENT_KDF_PARAMS.p);
 
     // Second unlock should succeed against the upgraded file too.
-    const reUnlocked = unlockSecretVault("master-password", { filePath: vaultFile });
+    const reUnlocked = await unlockSecretVault("master-password", { filePath: vaultFile });
     expect(reUnlocked.secrets.OPENROUTER_API_KEY).toBe("sk-or-test");
   });
 
@@ -304,7 +367,7 @@ describe("local secret vault", () => {
   // is cross-platform.
   it.skipIf(process.platform === "win32")(
     "returns decrypted secrets even when the KDF upgrade rewrite fails",
-    () => {
+    async () => {
       writeLegacyVault(
         vaultFile,
         "master-password",
@@ -326,7 +389,7 @@ describe("local secret vault", () => {
       // memory by the time the rewrite runs, so decrypt still succeeds.
       chmodSync(testDir, 0o500);
       try {
-        const unlocked = unlockSecretVault("master-password", { filePath: vaultFile });
+        const unlocked = await unlockSecretVault("master-password", { filePath: vaultFile });
         expect(unlocked.secrets.JUPITER_API_KEY).toBe("jup-test");
       } finally {
         // Restore write so afterEach cleanup can `rm -rf` the dir.
@@ -340,13 +403,13 @@ describe("local secret vault", () => {
     },
   );
 
-  it("does not rewrite when on-disk params already match CURRENT_KDF_PARAMS", () => {
-    createSecretVault("master-password", { filePath: vaultFile });
+  it("does not rewrite when on-disk params already match CURRENT_KDF_PARAMS", async () => {
+    await createSecretVault("master-password", { filePath: vaultFile });
     // Sanity: fresh vault is already at current params.
     expect(readVaultKdf(vaultFile).N).toBe(CURRENT_KDF_PARAMS.N);
     const beforeRaw = readFileSync(vaultFile, "utf8");
 
-    unlockSecretVault("master-password", { filePath: vaultFile });
+    await unlockSecretVault("master-password", { filePath: vaultFile });
 
     // Byte-identity is the cleanest assertion here: opportunistic rewrite
     // regenerates salt+iv on every call, so any rewrite would change the
@@ -355,21 +418,21 @@ describe("local secret vault", () => {
   });
 
   describe("verifySecretVaultPassword", () => {
-    it("returns undefined on correct password without throwing", () => {
-      createSecretVault("master-password", { filePath: vaultFile });
+    it("returns undefined on correct password without throwing", async () => {
+      await createSecretVault("master-password", { filePath: vaultFile });
       // The function signature is `void`; the runtime confirms no value
       // is returned even though the implementation discards decrypted secrets.
-      const result: void = verifySecretVaultPassword("master-password", {
+      const result: void = await verifySecretVaultPassword("master-password", {
         filePath: vaultFile,
       });
       expect(result).toBeUndefined();
     });
 
-    it("throws LocalSecretVaultError with code 'invalid_password' on wrong password", () => {
-      createSecretVault("master-password", { filePath: vaultFile });
+    it("throws LocalSecretVaultError with code 'invalid_password' on wrong password", async () => {
+      await createSecretVault("master-password", { filePath: vaultFile });
       let caught: unknown = null;
       try {
-        verifySecretVaultPassword("wrong-password", { filePath: vaultFile });
+        await verifySecretVaultPassword("wrong-password", { filePath: vaultFile });
       } catch (e) {
         caught = e;
       }
@@ -379,11 +442,11 @@ describe("local secret vault", () => {
       }
     });
 
-    it("throws with code 'missing' when the vault file does not exist", () => {
+    it("throws with code 'missing' when the vault file does not exist", async () => {
       // Don't create the vault.
       let caught: unknown = null;
       try {
-        verifySecretVaultPassword("master-password", { filePath: vaultFile });
+        await verifySecretVaultPassword("master-password", { filePath: vaultFile });
       } catch (e) {
         caught = e;
       }
@@ -393,14 +456,14 @@ describe("local secret vault", () => {
       }
     });
 
-    it("throws with code 'corrupt' when the vault file is structurally invalid JSON", () => {
+    it("throws with code 'corrupt' when the vault file is structurally invalid JSON", async () => {
       writeFileSync(vaultFile, "{not valid json", {
         encoding: "utf8",
         mode: 0o600,
       });
       let caught: unknown = null;
       try {
-        verifySecretVaultPassword("master-password", { filePath: vaultFile });
+        await verifySecretVaultPassword("master-password", { filePath: vaultFile });
       } catch (e) {
         caught = e;
       }
@@ -410,7 +473,7 @@ describe("local secret vault", () => {
       }
     });
 
-    it("does not rewrite the file on successful verify (no opportunistic upgrade)", () => {
+    it("does not rewrite the file on successful verify (no opportunistic upgrade)", async () => {
       // Use a legacy-KDF vault — unlockSecretVault WOULD rewrite this on
       // successful unlock. verifySecretVaultPassword MUST NOT.
       writeLegacyVault(
@@ -424,7 +487,7 @@ describe("local secret vault", () => {
       const beforeMtime = statSync(vaultFile).mtimeMs;
       const beforeKdf = readVaultKdf(vaultFile);
 
-      verifySecretVaultPassword("master-password", { filePath: vaultFile });
+      await verifySecretVaultPassword("master-password", { filePath: vaultFile });
 
       // Disk write assertion: byte-identical + mtime unchanged + KDF unchanged.
       expect(readFileSync(vaultFile, "utf8")).toBe(beforeRaw);
@@ -435,14 +498,14 @@ describe("local secret vault", () => {
       expect(readVaultKdf(vaultFile).N).toBe(16384);
     });
 
-    it("does not rewrite the file on wrong-password failure either", () => {
-      createSecretVault("master-password", { filePath: vaultFile });
+    it("does not rewrite the file on wrong-password failure either", async () => {
+      await createSecretVault("master-password", { filePath: vaultFile });
       const beforeRaw = readFileSync(vaultFile, "utf8");
       const beforeMtime = statSync(vaultFile).mtimeMs;
 
-      expect(() =>
+      await expect(
         verifySecretVaultPassword("wrong-password", { filePath: vaultFile }),
-      ).toThrow(LocalSecretVaultError);
+      ).rejects.toThrow(LocalSecretVaultError);
 
       expect(readFileSync(vaultFile, "utf8")).toBe(beforeRaw);
       expect(statSync(vaultFile).mtimeMs).toBe(beforeMtime);
@@ -501,10 +564,10 @@ describe("local secret vault", () => {
     }
 
     /** Reads back a real, valid vault file and overwrites specific fields. */
-    function writeVaultWithFieldOverrides(
+    async function writeVaultWithFieldOverrides(
       overrides: Record<string, unknown>,
-    ): void {
-      createSecretVault(PASSWORD, { filePath: vaultFile });
+    ): Promise<void> {
+      await createSecretVault(PASSWORD, { filePath: vaultFile });
       const file = JSON.parse(readFileSync(vaultFile, "utf8")) as Record<string, unknown>;
       const kdfOverrides = overrides.kdf as Record<string, unknown> | undefined;
       const merged = {
@@ -520,10 +583,10 @@ describe("local secret vault", () => {
       });
     }
 
-    function expectCode(fn: () => void, code: string): void {
+    async function expectCode(fn: () => Promise<unknown>, code: string): Promise<void> {
       let caught: unknown = null;
       try {
-        fn();
+        await fn();
       } catch (e) {
         caught = e;
       }
@@ -532,69 +595,69 @@ describe("local secret vault", () => {
     }
 
     describe("envelope validation (corrupt, never invalid_password)", () => {
-      it("rejects a non-canonical base64 iv", () => {
-        writeVaultWithFieldOverrides({ iv: "not-valid-base64-!!!" });
-        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      it("rejects a non-canonical base64 iv", async () => {
+        await writeVaultWithFieldOverrides({ iv: "not-valid-base64-!!!" });
+        await expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
       });
 
-      it("rejects an iv that decodes to the wrong byte length", () => {
-        writeVaultWithFieldOverrides({ iv: Buffer.alloc(8).toString("base64") });
-        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      it("rejects an iv that decodes to the wrong byte length", async () => {
+        await writeVaultWithFieldOverrides({ iv: Buffer.alloc(8).toString("base64") });
+        await expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
       });
 
-      it("rejects a tag that decodes to the wrong byte length", () => {
-        writeVaultWithFieldOverrides({ tag: Buffer.alloc(4).toString("base64") });
-        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      it("rejects a tag that decodes to the wrong byte length", async () => {
+        await writeVaultWithFieldOverrides({ tag: Buffer.alloc(4).toString("base64") });
+        await expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
       });
 
-      it("rejects a salt shorter than the minimum bound", () => {
-        writeVaultWithFieldOverrides({ salt: Buffer.alloc(4).toString("base64") });
-        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      it("rejects a salt shorter than the minimum bound", async () => {
+        await writeVaultWithFieldOverrides({ salt: Buffer.alloc(4).toString("base64") });
+        await expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
       });
 
-      it("rejects a ciphertext larger than the maximum bound", () => {
+      it("rejects a ciphertext larger than the maximum bound", async () => {
         // 10 MiB + 1 byte — a real vault (small API secrets) never gets close.
-        writeVaultWithFieldOverrides({
+        await writeVaultWithFieldOverrides({
           ciphertext: randomBytes(10 * 1024 * 1024 + 1).toString("base64"),
         });
-        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+        await expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
       });
     });
 
     describe("KDF bounds validation (corrupt, before scrypt runs)", () => {
-      it("rejects N below the supported minimum", () => {
-        writeVaultWithFieldOverrides({ kdf: { N: 2 ** 10 } });
-        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      it("rejects N below the supported minimum", async () => {
+        await writeVaultWithFieldOverrides({ kdf: { N: 2 ** 10 } });
+        await expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
       });
 
-      it("rejects N above the supported maximum", () => {
-        writeVaultWithFieldOverrides({ kdf: { N: 2 ** 20 } });
-        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      it("rejects N above the supported maximum", async () => {
+        await writeVaultWithFieldOverrides({ kdf: { N: 2 ** 20 } });
+        await expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
       });
 
-      it("rejects a non-power-of-two N inside the numeric range", () => {
-        writeVaultWithFieldOverrides({ kdf: { N: 100000 } });
-        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      it("rejects a non-power-of-two N inside the numeric range", async () => {
+        await writeVaultWithFieldOverrides({ kdf: { N: 100000 } });
+        await expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
       });
 
-      it("rejects r != 8", () => {
-        writeVaultWithFieldOverrides({ kdf: { r: 16 } });
-        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      it("rejects r != 8", async () => {
+        await writeVaultWithFieldOverrides({ kdf: { r: 16 } });
+        await expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
       });
 
-      it("rejects p != 1", () => {
-        writeVaultWithFieldOverrides({ kdf: { p: 2 } });
-        expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
+      it("rejects p != 1", async () => {
+        await writeVaultWithFieldOverrides({ kdf: { p: 2 } });
+        await expectCode(() => unlockSecretVault(PASSWORD, { filePath: vaultFile }), "corrupt");
       });
 
-      it("rejects an out-of-bounds N BEFORE the synchronous scrypt derivation runs (never invalid_password, even with the WRONG password)", () => {
+      it("rejects an out-of-bounds N BEFORE the synchronous scrypt derivation runs (never invalid_password, even with the WRONG password)", async () => {
         // If the bounds check ran after (or inside) the crypto try/catch, a
         // wrong password against this file would surface as
         // `invalid_password` once scrypt/AES-GCM failed. Getting `corrupt`
         // here — with a password that was never even tried — proves the
         // rejection happens strictly before any scrypt call.
-        writeVaultWithFieldOverrides({ kdf: { N: 2 ** 22 } });
-        expectCode(
+        await writeVaultWithFieldOverrides({ kdf: { N: 2 ** 22 } });
+        await expectCode(
           () => unlockSecretVault("definitely-the-wrong-password", { filePath: vaultFile }),
           "corrupt",
         );
@@ -602,13 +665,13 @@ describe("local secret vault", () => {
     });
 
     describe("contents version + unknown secret keys", () => {
-      it("a scrypt derivation failure with a CORRECT password throws 'unavailable' (retryable) — never invalid_password, never corrupt", () => {
+      it("a scrypt derivation failure with a CORRECT password throws 'unavailable' (retryable), never invalid_password, never corrupt", async () => {
         // 'corrupt' would tell the user to restore from a backup; a transient
         // crypto-runtime failure needs a RETRY, so it gets its own code.
         writeForgedContentsVault({ version: 1, secrets: { OPENROUTER_API_KEY: "sk-known" } });
         forcedScryptFailure.armed = true; // arm AFTER the write (writing derives a key too)
         try {
-          expectCode(
+          await expectCode(
             () => unlockSecretVault(PASSWORD, { filePath: vaultFile }),
             "unavailable",
           );
@@ -617,18 +680,18 @@ describe("local secret vault", () => {
         }
       });
 
-      it("throws 'incompatible' (never invalid_password) when contents.version is newer than this build supports", () => {
+      it("throws 'incompatible' (never invalid_password) when contents.version is newer than this build supports", async () => {
         writeForgedContentsVault({
           version: 2,
           secrets: { OPENROUTER_API_KEY: "sk-known" },
         });
-        expectCode(
+        await expectCode(
           () => unlockSecretVault(PASSWORD, { filePath: vaultFile }),
           "incompatible",
         );
       });
 
-      it("throws 'incompatible' (never corrupt) for a future OUTER envelope version, even with an unrecognized shape", () => {
+      it("throws 'incompatible' (never corrupt) for a future OUTER envelope version, even with an unrecognized shape", async () => {
         // A future build may change the envelope itself (fields, KDF family) —
         // the outer-version gate must classify BEFORE the strict shape parse,
         // or every outer-2 vault would misreport as corrupt.
@@ -637,13 +700,13 @@ describe("local secret vault", () => {
           JSON.stringify({ version: 2, kdf: { name: "argon2id" }, blob: "AAAA" }),
           "utf8",
         );
-        expectCode(
+        await expectCode(
           () => unlockSecretVault(PASSWORD, { filePath: vaultFile }),
           "incompatible",
         );
       });
 
-      it("unlocks with a correct password despite an unknown secret key, preserving it as extraSecrets", () => {
+      it("unlocks with a correct password despite an unknown secret key, preserving it as extraSecrets", async () => {
         writeForgedContentsVault({
           version: 1,
           secrets: {
@@ -652,22 +715,22 @@ describe("local secret vault", () => {
           },
         });
 
-        const unlocked = unlockSecretVault(PASSWORD, { filePath: vaultFile });
+        const unlocked = await unlockSecretVault(PASSWORD, { filePath: vaultFile });
         expect(unlocked.secrets.OPENROUTER_API_KEY).toBe("sk-known");
         expect(unlocked.extraSecrets?.FUTURE_SECRET_KEY_FROM_NEWER_BUILD).toBe(
           "future-value",
         );
       });
 
-      it("still throws 'invalid_password' for a genuinely wrong password on an otherwise valid vault", () => {
-        createSecretVault(PASSWORD, { filePath: vaultFile });
-        expectCode(
+      it("still throws 'invalid_password' for a genuinely wrong password on an otherwise valid vault", async () => {
+        await createSecretVault(PASSWORD, { filePath: vaultFile });
+        await expectCode(
           () => unlockSecretVault("wrong-password", { filePath: vaultFile }),
           "invalid_password",
         );
       });
 
-      it("round-trips an unknown secret key through unlock + write + unlock again", () => {
+      it("round-trips an unknown secret key through unlock + write + unlock again", async () => {
         writeForgedContentsVault({
           version: 1,
           secrets: {
@@ -676,13 +739,13 @@ describe("local secret vault", () => {
           },
         });
 
-        writeSecretVaultSecrets(
+        await writeSecretVaultSecrets(
           PASSWORD,
           { JUPITER_API_KEY: "jup-added" },
           { filePath: vaultFile },
         );
 
-        const unlocked = unlockSecretVault(PASSWORD, { filePath: vaultFile });
+        const unlocked = await unlockSecretVault(PASSWORD, { filePath: vaultFile });
         expect(unlocked.secrets.OPENROUTER_API_KEY).toBe("sk-known");
         expect(unlocked.secrets.JUPITER_API_KEY).toBe("jup-added");
         expect(unlocked.extraSecrets?.FUTURE_SECRET_KEY_FROM_NEWER_BUILD).toBe(

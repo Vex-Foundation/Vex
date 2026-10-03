@@ -222,13 +222,24 @@ export async function gatherWalletProbe(
 }
 
 export async function gatherEnvState(): Promise<EnvState> {
-  const secretPresence = getUnlockedSecretPresence();
+  // The vault reads below each derive the vault key off the main thread; the
+  // vault serialises them per file, so they queue rather than race.
   const [
+    secretPresence,
+    hasLighterCoreTrading,
+    hasLighterRhcTrading,
+    coreManagedScopes,
+    rhcManagedScopes,
     wallets,
     setupFlag,
     embeddings,
     provider,
   ] = await Promise.all([
+    getUnlockedSecretPresence(),
+    hasUnlockedLighterTradingCredential("core"),
+    hasUnlockedLighterTradingCredential("rhc"),
+    listUnlockedManagedLighterTradingCredentialScopes("core"),
+    listUnlockedManagedLighterTradingCredentialScopes("rhc"),
     gatherWalletProbe(),
     fileExists(SETUP_COMPLETE_FILE),
     probeEmbeddings(ENV_FILE),
@@ -239,15 +250,13 @@ export async function gatherEnvState(): Promise<EnvState> {
   const hasTavily = secretPresence.secrets.TAVILY_API_KEY === true;
   const hasRettiwt = secretPresence.secrets.RETTIWT_API_KEY === true;
   const hasRelay = secretPresence.secrets.RELAY_API_KEY === true;
-  const hasLighterCoreTrading = hasUnlockedLighterTradingCredential("core");
-  const hasLighterRhcTrading = hasUnlockedLighterTradingCredential("rhc");
   const lighterCoreManagedTradingScopes =
-    listUnlockedManagedLighterTradingCredentialScopes("core").map((scope) => ({
+    coreManagedScopes.map((scope) => ({
       accountIndex: scope.accountIndex,
       apiKeyIndex: scope.apiKeyIndex,
     }));
   const lighterRhcManagedTradingScopes =
-    listUnlockedManagedLighterTradingCredentialScopes("rhc").map((scope) => ({
+    rhcManagedScopes.map((scope) => ({
       accountIndex: scope.accountIndex,
       apiKeyIndex: scope.apiKeyIndex,
     }));
