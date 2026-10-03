@@ -12,6 +12,10 @@ import {
   writeSecretVaultExtraSecrets,
 } from "@vex-lib/local-secret-vault.js";
 import { SECRETS_VAULT_FILE } from "../paths/config-dir.js";
+// Every Lighter credential save, activation and removal drops the order path's
+// cached READ-ONLY account auth tokens first, so a token minted for a key that
+// is being replaced or removed is never reused (LIGHTER_READ_AUTH_CACHE).
+import { invalidateLighterReadAuthCache } from "@vex-agent/tools/protocols/lighter/read-auth-cache.js";
 import { requireUnlockedMasterPassword } from "./session.js";
 
 export interface UnlockedLighterTradingCredentialStatus {
@@ -61,6 +65,7 @@ export function writeUnlockedLighterTradingApiPrivateKey(
   }
 
   try {
+    invalidateLighterReadAuthCache();
     writeSecretVaultExtraSecrets(
       password.data,
       { [reference.vaultCredentialId]: material.privateKey },
@@ -119,6 +124,7 @@ export function writeUnlockedPendingLighterTradingApiPrivateKey(
   }
 
   try {
+    invalidateLighterReadAuthCache();
     writeSecretVaultExtraSecrets(
       password.data,
       {
@@ -196,6 +202,7 @@ export function activateUnlockedLighterTradingCredential(
     throw pendingCredentialError("cannot be activated from its current state");
   }
   try {
+    invalidateLighterReadAuthCache();
     writeSecretVaultExtraSecrets(
       password.data,
       { [registrationStateVaultId(reference)]: LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE },
@@ -244,6 +251,7 @@ export function deleteUnlockedLighterTradingApiPrivateKeys(
       updates[reference.vaultCredentialId] = null;
       updates[registrationStateVaultId(reference)] = null;
     }
+    invalidateLighterReadAuthCache();
     writeSecretVaultExtraSecrets(
       password.data,
       updates,

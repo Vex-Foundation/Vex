@@ -27,6 +27,7 @@ import {
 } from "@vex-agent/tools/protocols/lighter/order-lifecycle.js";
 import { configureLighterRepairPrivilegedAccountAuthResolver } from "@vex-agent/tools/protocols/lighter/order-repair.js";
 import { configureLighterReadOnlyAccountAuthOutcomeResolver } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
+import { invalidateLighterReadAuthCache } from "@vex-agent/tools/protocols/lighter/read-auth-cache.js";
 import { configureLighterTradingCredentialScopeResolver } from "@vex-agent/tools/protocols/lighter/trading-credential-scope.js";
 import { configureLighterManagedTradingReadinessResolver } from "@vex-agent/tools/protocols/lighter/managed-trading-readiness.js";
 import {
@@ -40,7 +41,7 @@ import {
   createUnlockedVaultLighterTradingSecretReader,
   listUnlockedLighterTradingCredentialScopes,
 } from "../secrets/lighter-trading-credential.js";
-import { isSecretSessionUnlocked } from "../secrets/session.js";
+import { isSecretSessionUnlocked, onSecretSessionLifecycle } from "../secrets/session.js";
 import { resolveManagedLighterTradingReadiness } from "./managed-trading-readiness.js";
 import { installLighterOrderStreamSupervisor } from "./order-stream.js";
 import {
@@ -98,6 +99,11 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
   const withdrawalSigner = createLighterWithdrawalSignerBinary({ allowBinaryPathOverride: !app.isPackaged });
   const lifecycleSigner = createLighterOrderLifecycleSignerBinary({ allowBinaryPathOverride: !app.isPackaged });
   const lighterClient = getLighterClient();
+  // A vault lock or unlock drops every cached READ-ONLY order-path token
+  // (LIGHTER_READ_AUTH_CACHE), exactly as it revokes the authenticated streams.
+  const offReadAuthCacheLifecycle = onSecretSessionLifecycle(() => {
+    invalidateLighterReadAuthCache();
+  });
   const uninstallExecutionDeps = configureLighterCreateOrderExecutionDeps(
     defaultLighterCreateOrderExecutionDeps({
       secretReader,
@@ -257,5 +263,7 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
     uninstallLifecycleExecutionDeps();
     uninstallOcoExecutionDeps();
     uninstallExecutionDeps();
+    offReadAuthCacheLifecycle();
+    invalidateLighterReadAuthCache();
   };
 }

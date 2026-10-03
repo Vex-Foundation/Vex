@@ -41,6 +41,12 @@ import {
   LIGHTER_ORDER_PARALLEL_PREFLIGHT,
   type ExecuteApprovedLighterCreateOrderDeps,
 } from "@vex-agent/tools/protocols/lighter/order-create-execution.js";
+import {
+  LIGHTER_READ_AUTH_CACHE,
+  LIGHTER_READ_AUTH_CACHE_TTL_MS,
+  LighterReadAuthCache,
+  lighterReadAuthCache,
+} from "@vex-agent/tools/protocols/lighter/read-auth-cache.js";
 import type { LighterOrderReadyForSignerPlan } from "@vex-agent/tools/protocols/lighter/execution-plan.js";
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import type { LighterOrderPreviewRow } from "@vex-agent/db/repos/lighter-order-previews.js";
@@ -2698,6 +2704,13 @@ describe("Lighter create execution: an ORDER-evidence fill still reaches the led
 // and every ON value must refuse and record exactly what OFF does.
 // ---------------------------------------------------------------------------
 
+const CACHED_AUTH_TOKEN = `1893456300:42:7:${"c".repeat(128)}`;
+const READ_AUTH_SCOPE = {
+  environment: PLAN.environment,
+  accountIndex: PLAN.accountIndex,
+  apiKeyIndex: PLAN.apiKeyIndex,
+};
+
 function delayedRejection(error: unknown, delayMs: number): () => Promise<never> {
   return async () => {
     await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -2990,5 +3003,203 @@ describe("LIGHTER_ORDER_PARALLEL_PREFLIGHT", () => {
     expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
     expect(d.nonceState.recordExecutionObserved).not.toHaveBeenCalled();
     expect(d.reserveNonce).not.toHaveBeenCalled();
+  });
+});
+
+describe("LighterReadAuthCache", () => {
+  it("hands out a token only inside its TTL and well before its own deadline", () => {
+    const cache = new LighterReadAuthCache();
+    const deadlineUnixSeconds = Math.floor(NOW / 1_000) + 600;
+    cache.remember(READ_AUTH_SCOPE, { token: CACHED_AUTH_TOKEN, publicKey: `0x${PUBLIC_KEY.toUpperCase()}`, deadlineUnixSeconds }, NOW);
+
+    expect(cache.get(READ_AUTH_SCOPE, NOW)).toEqual({
+      token: CACHED_AUTH_TOKEN,
+      publicKey: PUBLIC_KEY,
+      storedAtMs: NOW,
+      deadlineMs: deadlineUnixSeconds * 1_000,
+    });
+    expect(cache.get(READ_AUTH_SCOPE, NOW + LIGHTER_READ_AUTH_CACHE_TTL_MS - 1)).not.toBeNull();
+    expect(cache.get(READ_AUTH_SCOPE, NOW + LIGHTER_READ_AUTH_CACHE_TTL_MS)).toBeNull();
+    expect(cache.size).toBe(0);
+  });
+
+  it("refuses to remember a token with too little life left, and never serves one stored in the future", () => {
+    const cache = new LighterReadAuthCache();
+    cache.remember(READ_AUTH_SCOPE, { token: CACHED_AUTH_TOKEN, publicKey: PUBLIC_KEY, deadlineUnixSeconds: Math.floor(NOW / 1_000) + 120 }, NOW);
+    expect(cache.size).toBe(0);
+
+    cache.remember(READ_AUTH_SCOPE, { token: CACHED_AUTH_TOKEN, publicKey: PUBLIC_KEY, deadlineUnixSeconds: Math.floor(NOW / 1_000) + 600 }, NOW);
+    expect(cache.get(READ_AUTH_SCOPE, NOW - 1)).toBeNull();
+  });
+
+  it("invalidates by environment, account and key index", () => {
+    const cache = new LighterReadAuthCache();
+    const deadlineUnixSeconds = Math.floor(NOW / 1_000) + 600;
+    const other = { ...READ_AUTH_SCOPE, apiKeyIndex: 8 };
+    cache.remember(READ_AUTH_SCOPE, { token: CACHED_AUTH_TOKEN, publicKey: PUBLIC_KEY, deadlineUnixSeconds }, NOW);
+    cache.remember(other, { token: CACHED_AUTH_TOKEN, publicKey: PUBLIC_KEY, deadlineUnixSeconds }, NOW);
+
+    cache.invalidate({ environment: "core" });
+    expect(cache.size).toBe(2);
+    cache.invalidate({ environment: "rhc", accountIndex: 42, apiKeyIndex: 8 });
+    expect(cache.get(other, NOW)).toBeNull();
+    expect(cache.get(READ_AUTH_SCOPE, NOW)).not.toBeNull();
+    cache.invalidate();
+    expect(cache.size).toBe(0);
+  });
+});
+
+describe("LIGHTER_READ_AUTH_CACHE", () => {
+  function primedCache(publicKey = PUBLIC_KEY): LighterReadAuthCache {
+    const cache = new LighterReadAuthCache();
+    cache.remember(READ_AUTH_SCOPE, { token: CACHED_AUTH_TOKEN, publicKey, deadlineUnixSeconds: Math.floor(NOW / 1_000) + 600 }, NOW);
+    return cache;
+  }
+
+  function tokensUsedBy(calls: readonly (readonly unknown[])[]): unknown[] {
+    return calls.map((call) => {
+      const auth = call[2];
+      return typeof auth === "object" && auth !== null && "token" in auth ? auth.token : null;
+    });
+  }
+
+  function withoutAccountReads(effects: Record<string, unknown>): Record<string, unknown> {
+    const { accountActiveOrders: _active, accountInactiveOrders: _inactive, accountTrades: _trades, ...rest } = effects;
+    return rest;
+  }
+
+  it("ships OFF and leaves the process cache untouched by a whole order", async () => {
+    expect(LIGHTER_READ_AUTH_CACHE).toBe(false);
+    lighterReadAuthCache.invalidate();
+    const result = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: deps() });
+    expect(result.status).toBe("sequencer_pending");
+    expect(lighterReadAuthCache.size).toBe(0);
+  });
+
+  it.each(PREFLIGHT_CASES)("ON with an empty cache refuses and records exactly what OFF does when $label", async ({ build }) => {
+    const off = await observeCreateOrder({ ...build(), readAuthCache: null });
+    const on = await observeCreateOrder({ ...build(), readAuthCache: new LighterReadAuthCache() });
+    expect(on).toEqual(off);
+  });
+
+  it.each(PREFLIGHT_CASES)("ON with a primed cache refuses with exactly what OFF does when $label", async ({ build }) => {
+    const off = await observeCreateOrder({ ...build(), readAuthCache: null });
+    const on = await observeCreateOrder({ ...build(), readAuthCache: primedCache() });
+    expect(on.outcome).toEqual(off.outcome);
+    // Every durable write and every key, nonce and send step is identical;
+    // only which token the duplicate-evidence reads carried may differ.
+    expect(withoutAccountReads(on.effects)).toEqual(withoutAccountReads(off.effects));
+  });
+
+  it("remembers the fresh token only after Lighter accepted it for the duplicate-evidence reads", async () => {
+    const cache = new LighterReadAuthCache();
+    const result = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: deps({ readAuthCache: cache }) });
+
+    expect(result.status).toBe("sequencer_pending");
+    expect(cache.get(READ_AUTH_SCOPE, NOW)).toMatchObject({ token: AUTH_TOKEN, publicKey: PUBLIC_KEY });
+    expect(JSON.stringify(cache.get(READ_AUTH_SCOPE, NOW))).not.toContain(PRIVATE_KEY.slice(2));
+  });
+
+  it("runs the duplicate-evidence reads in the first batch with the cached token, and still proves the fresh key", async () => {
+    const revalidationGate = createGate();
+    const base = deps();
+    const markPreSubmitRevalidated = vi.fn(async () => {
+      await revalidationGate.promise;
+      return APPROVED_INTENT_ROW;
+    });
+    const d = deps({
+      intents: { ...base.intents, markPreSubmitRevalidated },
+      readAuthCache: primedCache(),
+    });
+
+    const execution = executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+    await vi.waitFor(() => {
+      expect(markPreSubmitRevalidated).toHaveBeenCalledTimes(1);
+      expect(d.client.getAccountActiveOrders).toHaveBeenCalledTimes(1);
+      expect(d.client.getAccountInactiveOrders).toHaveBeenCalledTimes(1);
+      expect(d.client.getAccountTrades).toHaveBeenCalledTimes(1);
+    });
+    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+
+    revalidationGate.release();
+    const result = await execution;
+
+    expect(result.status).toBe("sequencer_pending");
+    expect(d.secretReader.readTradingApiPrivateKey).toHaveBeenCalledTimes(1);
+    expect(d.signer.createAccountAuth).toHaveBeenCalledTimes(1);
+    // One cached-token read per list before sending; the settlement reads after
+    // sendTx carry the freshly minted token exactly as today.
+    expect(tokensUsedBy(vi.mocked(d.client.getAccountTrades).mock.calls)).toEqual([CACHED_AUTH_TOKEN, AUTH_TOKEN]);
+    expect(tokensUsedBy(vi.mocked(d.client.getAccountActiveOrders).mock.calls).slice(0, 2)).toEqual([CACHED_AUTH_TOKEN, AUTH_TOKEN]);
+  });
+
+  it("drops the entry and reads again with the fresh token after any cached-token read failure", async () => {
+    const cache = primedCache();
+    const base = deps();
+    const unauthorized = new VexError(ErrorCodes.LIGHTER_INVALID_REQUEST, "Lighter request failed: 401");
+    const getAccountTrades = vi.fn(async (_environment: unknown, _params: unknown, auth?: { readonly token: string }) => {
+      if (auth?.token === CACHED_AUTH_TOKEN) throw unauthorized;
+      return { code: 200, trades: [] };
+    });
+    const d = deps({ client: { ...base.client, getAccountTrades }, readAuthCache: cache });
+
+    const result = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+
+    expect(result.status).toBe("sequencer_pending");
+    expect(tokensUsedBy(getAccountTrades.mock.calls).slice(0, 2)).toEqual([CACHED_AUTH_TOKEN, AUTH_TOKEN]);
+    expect(cache.get(READ_AUTH_SCOPE, NOW)).toMatchObject({ token: AUTH_TOKEN });
+  });
+
+  it("never trusts a cached answer read for a key other than the one the fresh mint proved", async () => {
+    const cache = primedCache("d".repeat(80));
+    const d = deps({ readAuthCache: cache });
+
+    const result = await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
+
+    expect(result.status).toBe("sequencer_pending");
+    expect(tokensUsedBy(vi.mocked(d.client.getAccountTrades).mock.calls).slice(0, 2)).toEqual([CACHED_AUTH_TOKEN, AUTH_TOKEN]);
+    expect(cache.get(READ_AUTH_SCOPE, NOW)).toMatchObject({ token: AUTH_TOKEN, publicKey: PUBLIC_KEY });
+  });
+
+  it("drops the entry when the fresh-token reads fail, refusing exactly as today", async () => {
+    const cache = primedCache();
+    const base = deps();
+    const d = deps({
+      client: { ...base.client, getAccountActiveOrders: vi.fn(async () => { throw new Error("canonical auth unavailable"); }) },
+      readAuthCache: cache,
+    });
+
+    await expect(executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d }))
+      .rejects.toThrow("provider outcome repair is unavailable");
+    expect(cache.size).toBe(0);
+    expect(d.reserveNonce).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("refuses a duplicate seen with the cached token only at today's point, after the key proof", async () => {
+    const base = deps();
+    const d = deps({
+      client: {
+        ...base.client,
+        getAccountInactiveOrders: vi.fn(async () => ({
+          code: 200,
+          orders: [accountOrder({ status: "filled", filled_base_amount: "1", remaining_base_amount: "0" })],
+        })),
+      },
+      readAuthCache: primedCache(),
+    });
+
+    await expect(executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d }))
+      .rejects.toThrow("same Vex client order id");
+    expect(d.signer.createAccountAuth).toHaveBeenCalledTimes(1);
+    expect(d.client.getAccountInactiveOrders).toHaveBeenCalledTimes(1);
+    expect(d.reserveNonce).not.toHaveBeenCalled();
+  });
+
+  it.each(PREFLIGHT_CASES)("composes with the parallel preflight and still refuses as OFF when $label", async ({ build }) => {
+    const off = await observeCreateOrder({ ...build(), readAuthCache: null, parallelPreflight: false });
+    const on = await observeCreateOrder({ ...build(), readAuthCache: primedCache(), parallelPreflight: true });
+    expect(on.outcome).toEqual(off.outcome);
+    expect(withoutAccountReads(on.effects)).toEqual(withoutAccountReads(off.effects));
   });
 });

@@ -505,3 +505,76 @@ describe("Lighter trading credential vault status and removal", () => {
     );
   });
 });
+
+describe("Lighter trading credential vault writes drop cached read-only order tokens", () => {
+  const SCOPE = { environment: "rhc", accountIndex: 42, apiKeyIndex: 7 } as const;
+
+  async function loadWithPrimedCache(): Promise<{
+    readonly module: typeof import("../lighter-trading-credential.js");
+    readonly cacheSizeAtWrite: () => readonly number[];
+  }> {
+    const module = await loadModule();
+    // Imported after loadModule's resetModules, so this is the very instance
+    // the module under test invalidates.
+    const { lighterReadAuthCache } = await import("@vex-agent/tools/protocols/lighter/read-auth-cache.js");
+    const nowMs = Date.now();
+    lighterReadAuthCache.remember(SCOPE, {
+      token: "read-only-token",
+      publicKey: "a".repeat(80),
+      deadlineUnixSeconds: Math.floor(nowMs / 1_000) + 600,
+    }, nowMs);
+    expect(lighterReadAuthCache.size).toBe(1);
+    const sizes: number[] = [];
+    mockWriteSecretVaultExtraSecrets.mockImplementation(() => {
+      sizes.push(lighterReadAuthCache.size);
+      return { version: 1, secrets: {} };
+    });
+    return { module, cacheSizeAtWrite: () => sizes };
+  }
+
+  it("on an imported key save", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    const { module, cacheSizeAtWrite } = await loadWithPrimedCache();
+
+    module.writeUnlockedLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY);
+
+    expect(cacheSizeAtWrite()).toEqual([0]);
+  });
+
+  it("on a generated pending key save", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockUnlockSecretVault.mockReturnValue({ version: 1, secrets: {}, extraSecrets: {} });
+    const { module, cacheSizeAtWrite } = await loadWithPrimedCache();
+
+    module.writeUnlockedPendingLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY);
+
+    expect(cacheSizeAtWrite()).toEqual([0]);
+  });
+
+  it("on activation after registration", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockUnlockSecretVault.mockReturnValue({
+      version: 1,
+      secrets: {},
+      extraSecrets: {
+        [REFERENCE.vaultCredentialId]: PRIVATE_KEY,
+        [`${REFERENCE.vaultCredentialId}/registration-state`]:
+          "key_generated_pending_registration",
+      },
+    });
+    const { module, cacheSizeAtWrite } = await loadWithPrimedCache();
+
+    module.activateUnlockedLighterTradingCredential(REFERENCE);
+
+    expect(cacheSizeAtWrite()).toEqual([0]);
+  });
+
+  it("on removal", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    const { module, cacheSizeAtWrite } = await loadWithPrimedCache();
+
+    module.deleteUnlockedLighterTradingApiPrivateKey(REFERENCE);
+
+    expect(cacheSizeAtWrite()).toEqual([0]);
+  });
+});

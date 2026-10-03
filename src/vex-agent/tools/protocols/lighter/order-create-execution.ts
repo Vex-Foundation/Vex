@@ -69,6 +69,13 @@ import {
   type LighterNonceRecoveryRunner,
 } from "./nonce-commit-recovery.js";
 import { isLighterUnreachable, withLighterBeforeSendFailures, type LighterSendPhase } from "./before-send.js";
+import {
+  LIGHTER_READ_AUTH_CACHE,
+  lighterReadAuthCache,
+  normalizeLighterPublicKey,
+  type LighterReadAuthCache,
+  type LighterReadAuthCacheScope,
+} from "./read-auth-cache.js";
 
 /**
  * The provider states that PROVE this create order can consume no more capital.
@@ -213,6 +220,11 @@ export interface ExecuteApprovedLighterCreateOrderDeps {
     & { readonly markApiAccepted: (...args: Parameters<typeof lighterOrderExecutionIntentsRepo.markApiAccepted>) => Promise<{ readonly volumeQuotaRemaining: string | null } | null> };
   /** Overrides {@link LIGHTER_ORDER_PARALLEL_PREFLIGHT}; absent uses the constant. */
   readonly parallelPreflight?: boolean;
+  /**
+   * The read-only token cache. Absent uses the process cache when
+   * `LIGHTER_READ_AUTH_CACHE` is ON and none when it is OFF; null disables it.
+   */
+  readonly readAuthCache?: LighterReadAuthCache | null;
 }
 
 let configuredDeps: ExecuteApprovedLighterCreateOrderDeps | null = null;
@@ -255,6 +267,11 @@ async function runApprovedLighterCreateOrder(input: {
   }
   assertLighterTradingApiKeyIndexAllowed(plan.environment, plan.apiKeyIndex);
   assertLighterPhaseOneOrderPolicy(plan.orderType, plan.timeInForce);
+  const readAuthCache = resolveReadAuthCache(deps);
+  // Started now, judged later at exactly the point the sequential path reads:
+  // a cached-token answer is used only after the fresh key proof below, and
+  // any doubt about it falls back to today's read with the fresh token.
+  const cachedRepairReads = startCachedRepairReads(plan, deps, readAuthCache);
   const { evidenceScope, providerCredential } = (deps.parallelPreflight ?? LIGHTER_ORDER_PARALLEL_PREFLIGHT)
     ? await runParallelPreflightReads(plan, unsignedOrder, deps)
     : await runSequentialPreflightReads(plan, unsignedOrder, deps);
@@ -263,17 +280,29 @@ async function runApprovedLighterCreateOrder(input: {
     deps.secretReader,
   );
   assertAuthority("before_reservation");
+  const authDeadlineUnixSeconds = Math.floor(deps.now() / 1_000) + ACCOUNT_AUTH_TTL_SECONDS;
   const auth = await createLighterAccountAuthWithAdapter(
     buildLighterAccountAuthSigningInput({
       order: unsignedOrder,
       secret,
-      deadlineUnixSeconds: Math.floor(deps.now() / 1_000) + ACCOUNT_AUTH_TTL_SECONDS,
+      deadlineUnixSeconds: authDeadlineUnixSeconds,
     }),
     deps.signer,
   );
   assertProviderPublicKeyMatches(providerCredential.publicKey, auth.publicKey);
   const [, observedNonce] = await Promise.all([
-    assertProviderOutcomeRepairReady(plan, evidenceScope, unsignedOrder, auth.authToken, deps),
+    readAuthCache === null
+      ? assertProviderOutcomeRepairReady(plan, evidenceScope, unsignedOrder, auth.authToken, deps)
+      : assertProviderOutcomeRepairReadyWithCache({
+        plan,
+        evidenceScope,
+        unsignedOrder,
+        auth,
+        authDeadlineUnixSeconds,
+        deps,
+        cache: readAuthCache,
+        cached: cachedRepairReads,
+      }),
     observeLighterNonceWithRecovery({
       scope: { environment: plan.environment, accountIndex: plan.accountIndex },
       observe: () => deps.nonceState.recordExecutionObserved({
@@ -756,6 +785,119 @@ async function runParallelPreflightReads(
   return { evidenceScope: revalidation.value, providerCredential: credential.value };
 }
 
+function resolveReadAuthCache(deps: ExecuteApprovedLighterCreateOrderDeps): LighterReadAuthCache | null {
+  if (deps.readAuthCache !== undefined) return deps.readAuthCache;
+  return LIGHTER_READ_AUTH_CACHE ? lighterReadAuthCache : null;
+}
+
+function readAuthCacheScope(plan: LighterOrderReadyForSignerPlan): LighterReadAuthCacheScope {
+  return { environment: plan.environment, accountIndex: plan.accountIndex, apiKeyIndex: plan.apiKeyIndex };
+}
+
+interface ProviderOutcomeRepairLists {
+  readonly activeOrders: Awaited<ReturnType<LighterClient["getAccountActiveOrders"]>>;
+  readonly inactiveOrders: Awaited<ReturnType<LighterClient["getAccountInactiveOrders"]>>;
+  readonly trades: Awaited<ReturnType<LighterClient["getAccountTrades"]>>;
+}
+
+type CachedRepairReadOutcome =
+  | { readonly ok: true; readonly publicKey: string; readonly lists: ProviderOutcomeRepairLists }
+  | { readonly ok: false };
+
+interface CachedRepairReads {
+  /** Never rejects: a failed read is an `ok: false` answer, never a refusal. */
+  readonly outcome: Promise<CachedRepairReadOutcome>;
+}
+
+/**
+ * `LIGHTER_READ_AUTH_CACHE` ON with a usable entry: start the duplicate
+ * evidence reads with the cached READ-ONLY token now, beside revalidation.
+ * Nothing is decided here; the answer is judged after the fresh key proof.
+ */
+function startCachedRepairReads(
+  plan: LighterOrderReadyForSignerPlan,
+  deps: ExecuteApprovedLighterCreateOrderDeps,
+  cache: LighterReadAuthCache | null,
+): CachedRepairReads | null {
+  if (cache === null) return null;
+  const entry = cache.get(readAuthCacheScope(plan), deps.now());
+  if (entry === null) return null;
+  return {
+    outcome: readProviderOutcomeRepairLists(plan, entry.token, deps).then(
+      (lists): CachedRepairReadOutcome => ({ ok: true, publicKey: entry.publicKey, lists }),
+      (): CachedRepairReadOutcome => ({ ok: false }),
+    ),
+  };
+}
+
+/**
+ * The cached-token answer is used only when every read succeeded AND the token
+ * was minted for the very key the fresh mint just proved against the
+ * provider's registered key. Anything else (an auth error, any other failure,
+ * a rotated key) drops the entry and runs today's read with the fresh token,
+ * so a refusal can only ever come from the path that exists today.
+ */
+async function assertProviderOutcomeRepairReadyWithCache(input: {
+  readonly plan: LighterOrderReadyForSignerPlan;
+  readonly evidenceScope: LighterOrderEvidenceScope;
+  readonly unsignedOrder: LighterUnsignedCreateOrderRequest;
+  readonly auth: { readonly authToken: string; readonly publicKey: string };
+  readonly authDeadlineUnixSeconds: number;
+  readonly deps: ExecuteApprovedLighterCreateOrderDeps;
+  readonly cache: LighterReadAuthCache;
+  readonly cached: CachedRepairReads | null;
+}): Promise<void> {
+  const { plan, evidenceScope, unsignedOrder, auth, deps, cache } = input;
+  const scope = readAuthCacheScope(plan);
+  if (input.cached !== null) {
+    const cached = await input.cached.outcome;
+    if (cached.ok && cached.publicKey === normalizeLighterPublicKey(auth.publicKey)) {
+      assertNoExistingClientOrderEvidence(cached.lists, evidenceScope, unsignedOrder);
+      return;
+    }
+    cache.invalidate(scope);
+  }
+  try {
+    await assertProviderOutcomeRepairReady(plan, evidenceScope, unsignedOrder, auth.authToken, deps);
+  } catch (error) {
+    cache.invalidate(scope);
+    throw error;
+  }
+  // Lighter just accepted this token for all three reads: only now is it
+  // remembered, and only the read-only token, never the key it came from.
+  cache.remember(scope, {
+    token: auth.authToken,
+    publicKey: auth.publicKey,
+    deadlineUnixSeconds: input.authDeadlineUnixSeconds,
+  }, deps.now());
+}
+
+async function readProviderOutcomeRepairLists(
+  plan: LighterOrderReadyForSignerPlan,
+  accountAuthToken: string,
+  deps: ExecuteApprovedLighterCreateOrderDeps,
+): Promise<ProviderOutcomeRepairLists> {
+  const privilegedAuth = { token: accountAuthToken, accountIndex: plan.accountIndex };
+  return await Promise.all([
+    deps.client.getAccountActiveOrders(plan.environment, {
+      accountIndex: plan.accountIndex,
+      marketId: plan.marketIndex,
+      marketType: "all",
+    }, privilegedAuth),
+    deps.client.getAccountInactiveOrders(plan.environment, {
+      accountIndex: plan.accountIndex,
+      marketId: plan.marketIndex,
+      marketType: "all",
+      limit: 100,
+    }, privilegedAuth),
+    deps.client.getAccountTrades(plan.environment, {
+      accountIndex: plan.accountIndex,
+      limit: 100,
+      sortBy: "timestamp",
+    }, privilegedAuth),
+  ]).then(([activeOrders, inactiveOrders, trades]) => ({ activeOrders, inactiveOrders, trades }));
+}
+
 async function assertProviderOutcomeRepairReady(
   plan: LighterOrderReadyForSignerPlan,
   evidenceScope: LighterOrderEvidenceScope,
@@ -763,29 +905,9 @@ async function assertProviderOutcomeRepairReady(
   accountAuthToken: string,
   deps: ExecuteApprovedLighterCreateOrderDeps,
 ): Promise<void> {
-  const privilegedAuth = { token: accountAuthToken, accountIndex: plan.accountIndex };
-  let activeOrders: Awaited<ReturnType<LighterClient["getAccountActiveOrders"]>>;
-  let inactiveOrders: Awaited<ReturnType<LighterClient["getAccountInactiveOrders"]>>;
-  let trades: Awaited<ReturnType<LighterClient["getAccountTrades"]>>;
+  let lists: ProviderOutcomeRepairLists;
   try {
-    [activeOrders, inactiveOrders, trades] = await Promise.all([
-      deps.client.getAccountActiveOrders(plan.environment, {
-        accountIndex: plan.accountIndex,
-        marketId: plan.marketIndex,
-        marketType: "all",
-      }, privilegedAuth),
-      deps.client.getAccountInactiveOrders(plan.environment, {
-        accountIndex: plan.accountIndex,
-        marketId: plan.marketIndex,
-        marketType: "all",
-        limit: 100,
-      }, privilegedAuth),
-      deps.client.getAccountTrades(plan.environment, {
-        accountIndex: plan.accountIndex,
-        limit: 100,
-        sortBy: "timestamp",
-      }, privilegedAuth),
-    ]);
+    lists = await readProviderOutcomeRepairLists(plan, accountAuthToken, deps);
   } catch (error) {
     // Unreachable Lighter is restated plainly by the execution's before-send wrapper.
     if (isLighterUnreachable(error)) throw error;
@@ -793,14 +915,21 @@ async function assertProviderOutcomeRepairReady(
       "Lighter provider outcome repair is unavailable before submission. No order was signed or submitted.",
     );
   }
+  assertNoExistingClientOrderEvidence(lists, evidenceScope, unsignedOrder);
+}
 
+function assertNoExistingClientOrderEvidence(
+  lists: ProviderOutcomeRepairLists,
+  evidenceScope: LighterOrderEvidenceScope,
+  unsignedOrder: LighterUnsignedCreateOrderRequest,
+): void {
   const existingOrder = findMatchingLighterOrder(
-    [...activeOrders.orders, ...inactiveOrders.orders],
+    [...lists.activeOrders.orders, ...lists.inactiveOrders.orders],
     evidenceScope,
     unsignedOrder.clientOrderIndex,
   );
   const existingTrade = findMatchingLighterTrade(
-    trades.trades,
+    lists.trades.trades,
     evidenceScope,
     unsignedOrder.clientOrderIndex,
     "__vex_preflight_no_tx_hash__",
