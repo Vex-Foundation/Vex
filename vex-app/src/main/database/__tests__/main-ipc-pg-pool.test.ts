@@ -233,6 +233,23 @@ describe("OFF: today's fresh client per call", () => {
     expect(state.warn).toEqual(["[test-db] client.connect failed"]);
   });
 
+  it("hands the connect cause to onConnectFailed so a caller can rethrow it", async () => {
+    const refused = new Error("ECONNREFUSED");
+    state.connectError = refused;
+    await expect(
+      pool.runWithMainDbClient(
+        CFG,
+        {
+          ...CALL,
+          onConnectFailed: (cause): never => {
+            throw cause;
+          },
+        },
+        async () => "never",
+      ),
+    ).rejects.toBe(refused);
+  });
+
   it("ends the client when the callback throws and rethrows", async () => {
     await expect(
       pool.runWithMainDbClient(CFG, CALL, async () => {

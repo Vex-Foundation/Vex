@@ -7,15 +7,17 @@
  * is unavailable". The renderer classifies from the error `code`, so a second
  * variant would become a second contract.
  *
- * Own short-lived `pg.Client` per call, mirroring `sessions-db.ts`: these reads
- * are on the IPC path, must not queue behind engine work, and must fail fast
- * with a bounded timeout rather than hang a control surface.
+ * Own short-lived `pg.Client` per call (or a client from the separate
+ * main-process IPC pool when `MAIN_IPC_PG_POOL` is on), never the engine
+ * pool: these reads are on the IPC path, must not queue behind engine work,
+ * and must fail fast with a bounded timeout rather than hang a control surface.
  */
 
-import { Client, type ClientConfig } from "pg";
+import type { Client } from "pg";
 
 import { err, type Result, type VexError } from "@shared/ipc/result.js";
 import { buildPoolConfig } from "./db-config.js";
+import { runWithMainDbClient } from "./main-ipc-pg-pool.js";
 import { log } from "../logger/index.js";
 
 const CONNECT_TIMEOUT_MS = 2_000;
@@ -73,29 +75,15 @@ export async function withRuntimeDbClient<T>(
   }
   if (cfg === null) return runtimeDbUnavailable(correlationId);
 
-  const clientConfig: ClientConfig = {
-    host: cfg.host,
-    port: cfg.port,
-    database: cfg.database,
-    user: cfg.user,
-    password: cfg.password,
-    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
-    statement_timeout: QUERY_TIMEOUT_MS,
-  };
-  const client = new Client(clientConfig);
-  try {
-    await client.connect();
-  } catch (cause) {
-    log.warn("[runtime-db] client.connect failed", cause);
-    return runtimeDbUnavailable(correlationId);
-  }
-  try {
-    return await fn(client);
-  } finally {
-    try {
-      await client.end();
-    } catch (cause) {
-      log.warn("[runtime-db] client.end failed (non-fatal)", cause);
-    }
-  }
+  // Fresh client per call, or a pooled one when MAIN_IPC_PG_POOL is on
+  // (`main-ipc-pg-pool.ts`): same config, timeouts and failure results.
+  return runWithMainDbClient(
+    cfg,
+    {
+      logPrefix: "[runtime-db]",
+      timeouts: { connectTimeoutMs: CONNECT_TIMEOUT_MS, statementTimeoutMs: QUERY_TIMEOUT_MS },
+      onConnectFailed: () => runtimeDbUnavailable(correlationId),
+    },
+    fn,
+  );
 }

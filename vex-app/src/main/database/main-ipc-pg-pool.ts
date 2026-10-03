@@ -9,6 +9,13 @@
  * the WSL2 port proxy). `scripts/probes/pg-connect-latency.mjs` measures that
  * per-call cost on the owner's machine.
  *
+ * WHO USES IT. Every IPC connection wrapper in `src/main/database` (the
+ * sessions, messages and bug-reports `withClient`, the private `withClient`
+ * copies of the approvals, missions, portfolio, usage, memory, compaction,
+ * agent-scan and token-history modules, and `withRuntimeDbClient`). Readiness
+ * probes keep their own client; `__tests__/main-ipc-pg-pool-routing.test.ts`
+ * pins both lists.
+ *
  * WHAT CHANGES WHEN ON. A caller checks one client out of a small pool for the
  * whole of its callback, so a caller that runs BEGIN ... COMMIT keeps one
  * dedicated connection for its transaction, exactly as before. The client is
@@ -70,8 +77,11 @@ export interface MainDbClientCall<R> {
   /** Log prefix of the calling module, e.g. `[sessions-db]`. */
   readonly logPrefix: string;
   readonly timeouts: MainDbClientTimeouts;
-  /** What the caller returns when no connection could be obtained. */
-  readonly onConnectFailed: () => R;
+  /**
+   * What the caller returns (or throws) when no connection could be obtained,
+   * after the `client.connect failed` line is logged.
+   */
+  readonly onConnectFailed: (cause: unknown) => R;
 }
 
 let override: boolean | null = null;
@@ -103,7 +113,7 @@ export function toMainDbClientConfig(
 /**
  * Runs `fn` with a connected client: pooled when the switch is on and the call
  * is not nested inside another pooled callback, fresh per call otherwise.
- * Never throws for a failed connect (returns `onConnectFailed()`); rethrows
+ * A failed connect returns `onConnectFailed(cause)`; rethrows
  * whatever `fn` throws, after the client is released.
  */
 export async function runWithMainDbClient<R>(
@@ -130,7 +140,7 @@ async function runWithFreshClient<R>(
     await client.connect();
   } catch (cause) {
     log.warn(`${call.logPrefix} client.connect failed`, cause);
-    return call.onConnectFailed();
+    return call.onConnectFailed(cause);
   }
   try {
     return await fn(client);
@@ -229,12 +239,13 @@ async function runWithPooledClient<R>(
     pooled = await poolFor(clientConfig).connect();
   } catch (cause) {
     log.warn(`${call.logPrefix} client.connect failed`, cause);
-    return call.onConnectFailed();
+    return call.onConnectFailed(cause);
   }
   if (!(pooled instanceof Client)) {
     pooled.release(true);
-    log.warn(`${call.logPrefix} client.connect failed`, new Error("pool returned a non-Client"));
-    return call.onConnectFailed();
+    const cause = new Error("pool returned a non-Client");
+    log.warn(`${call.logPrefix} client.connect failed`, cause);
+    return call.onConnectFailed(cause);
   }
   const client = pooled;
   trackTxStatus(client);
