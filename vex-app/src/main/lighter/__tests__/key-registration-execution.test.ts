@@ -209,7 +209,7 @@ function makeDeps(options: {
       return current;
     }),
     integrationEnabled: vi.fn(async () => true),
-    resolveWallet: vi.fn(() => WALLET),
+    resolveWallet: vi.fn(async () => WALLET),
     sign: vi.fn(async () => {
       events.push("sign");
       return signedResult(environment, apiKeyIndex);
@@ -508,7 +508,7 @@ describe("Lighter key registration execution", () => {
       reconciliationPublicKey: PUBLIC_KEY,
       ownerSessionId: "session-2",
     });
-    vi.mocked(setup.deps.resolveWallet).mockReturnValue({
+    vi.mocked(setup.deps.resolveWallet).mockResolvedValue({
       ...WALLET,
       address: "0x0000000000000000000000000000000000000009",
     });

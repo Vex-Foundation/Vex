@@ -390,7 +390,7 @@ export async function executeKhalaniBridge(
   // 12. Resolve the source-family signing wallet (decrypts) - only now.
   let signer: ChainWallet;
   try {
-    signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, fromFamily);
+    signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, fromFamily);
   } catch (err) {
     await abortRemaining(executionId, 0, "signer resolution failed");
     return walletScopeErrorToResult(err);

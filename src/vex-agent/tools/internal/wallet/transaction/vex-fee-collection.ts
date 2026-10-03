@@ -253,7 +253,7 @@ export function buildFeeLegDeferredSigner(args: {
   readonly walletAddress: string;
   readonly chain: DeferredEvmSigner["chain"];
   readonly anchor: AuthorityAnchor;
-  readonly loadSigner: () => SignerLoad;
+  readonly loadSigner: () => Promise<SignerLoad>;
   readonly createWalletClient: (
     wallet: EvmWallet,
   ) => Awaited<ReturnType<DeferredEvmSigner["createSigner"]>>;
@@ -267,7 +267,7 @@ export function buildFeeLegDeferredSigner(args: {
       if (!fenced.ok) throw new FeeFenceRefused("authority fence refused before signing the fee leg");
     },
     createSigner: async () => {
-      const loaded = args.loadSigner();
+      const loaded = await args.loadSigner();
       if (loaded.kind === "return") {
         throw new FeeFenceRefused("the wallet could not be resolved for signing the fee leg");
       }

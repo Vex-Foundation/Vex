@@ -130,7 +130,7 @@ export async function executePendleLpTransfer(
       wallet = getAddress(resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155"));
     } else {
       try {
-        signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+        signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
       } catch (err) {
         return walletScopeErrorToResult(err);
       }

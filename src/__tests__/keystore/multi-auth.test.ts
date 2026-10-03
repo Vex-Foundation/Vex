@@ -63,35 +63,35 @@ describe("multi-auth", () => {
   });
 
   describe("requireEvmWallet", () => {
-    it("returns EVM wallet when config and keystore are present", () => {
-      saveKeystore(encryptPrivateKey(TEST_EVM_PRIVATE_KEY, TEST_PASSWORD));
+    it("returns EVM wallet when config and keystore are present", async () => {
+      saveKeystore(await encryptPrivateKey(TEST_EVM_PRIVATE_KEY, TEST_PASSWORD));
       registerPrimaryLegacyWallet("evm", TEST_EVM_ADDRESS);
 
-      const wallet = requireEvmWallet();
+      const wallet = await requireEvmWallet();
 
       expect(wallet.family).toBe("eip155");
       expect(wallet.address).toBe(TEST_EVM_ADDRESS);
       expect(wallet.privateKey).toBe(TEST_EVM_PRIVATE_KEY.toLowerCase());
     });
 
-    it("throws WALLET_NOT_CONFIGURED when no EVM address in config", () => {
+    it("throws WALLET_NOT_CONFIGURED when no EVM address in config", async () => {
       const cfg = getDefaultConfig();
       saveConfig(cfg);
 
-      expect(() => requireEvmWallet()).toThrow();
+      await expect(requireEvmWallet()).rejects.toThrow();
       try {
-        requireEvmWallet();
+        await requireEvmWallet();
       } catch (err: unknown) {
         expect((err as { code: string }).code).toBe(ErrorCodes.WALLET_NOT_CONFIGURED);
       }
     });
 
-    it("throws KEYSTORE_NOT_FOUND when no keystore file exists", () => {
+    it("throws KEYSTORE_NOT_FOUND when no keystore file exists", async () => {
       registerPrimaryLegacyWallet("evm", TEST_EVM_ADDRESS);
 
-      expect(() => requireEvmWallet()).toThrow();
+      await expect(requireEvmWallet()).rejects.toThrow();
       try {
-        requireEvmWallet();
+        await requireEvmWallet();
       } catch (err: unknown) {
         expect((err as { code: string }).code).toBe(ErrorCodes.KEYSTORE_NOT_FOUND);
       }
@@ -99,14 +99,14 @@ describe("multi-auth", () => {
   });
 
   describe("requireSolanaWallet", () => {
-    it("returns Solana wallet when config and keystore are present", () => {
+    it("returns Solana wallet when config and keystore are present", async () => {
       const keypair = Keypair.generate();
       const address = deriveSolanaAddress(keypair.secretKey);
 
-      saveSolanaKeystore(encryptSolanaSecretKey(keypair.secretKey, TEST_PASSWORD));
+      saveSolanaKeystore(await encryptSolanaSecretKey(keypair.secretKey, TEST_PASSWORD));
       registerPrimaryLegacyWallet("solana", address);
 
-      const wallet = requireSolanaWallet();
+      const wallet = await requireSolanaWallet();
 
       expect(wallet.family).toBe("solana");
       expect(wallet.address).toBe(address);
@@ -114,38 +114,38 @@ describe("multi-auth", () => {
       expect(wallet.secretKey.length).toBe(64);
     });
 
-    it("throws WALLET_NOT_CONFIGURED when no Solana address in config", () => {
+    it("throws WALLET_NOT_CONFIGURED when no Solana address in config", async () => {
       const cfg = getDefaultConfig();
       saveConfig(cfg);
 
-      expect(() => requireSolanaWallet()).toThrow();
+      await expect(requireSolanaWallet()).rejects.toThrow();
       try {
-        requireSolanaWallet();
+        await requireSolanaWallet();
       } catch (err: unknown) {
         expect((err as { code: string }).code).toBe(ErrorCodes.WALLET_NOT_CONFIGURED);
       }
     });
 
-    it("throws KHALANI_SOLANA_KEYSTORE_NOT_FOUND when no Solana keystore file", () => {
+    it("throws KHALANI_SOLANA_KEYSTORE_NOT_FOUND when no Solana keystore file", async () => {
       registerPrimaryLegacyWallet("solana", "11111111111111111111111111111111");
 
-      expect(() => requireSolanaWallet()).toThrow();
+      await expect(requireSolanaWallet()).rejects.toThrow();
       try {
-        requireSolanaWallet();
+        await requireSolanaWallet();
       } catch (err: unknown) {
         expect((err as { code: string }).code).toBe(ErrorCodes.KHALANI_SOLANA_KEYSTORE_NOT_FOUND);
       }
     });
 
-    it("throws KHALANI_ADDRESS_MISMATCH when keystore address differs from config", () => {
+    it("throws KHALANI_ADDRESS_MISMATCH when keystore address differs from config", async () => {
       const keypair = Keypair.generate();
 
-      saveSolanaKeystore(encryptSolanaSecretKey(keypair.secretKey, TEST_PASSWORD));
+      saveSolanaKeystore(await encryptSolanaSecretKey(keypair.secretKey, TEST_PASSWORD));
       registerPrimaryLegacyWallet("solana", "FakeSolanaAddressDoesNotMatchKeystore111111111");
 
-      expect(() => requireSolanaWallet()).toThrow();
+      await expect(requireSolanaWallet()).rejects.toThrow();
       try {
-        requireSolanaWallet();
+        await requireSolanaWallet();
       } catch (err: unknown) {
         expect((err as { code: string }).code).toBe(ErrorCodes.KHALANI_ADDRESS_MISMATCH);
       }
@@ -153,23 +153,23 @@ describe("multi-auth", () => {
   });
 
   describe("requireWalletForChain", () => {
-    it("routes eip155 to requireEvmWallet", () => {
-      saveKeystore(encryptPrivateKey(TEST_EVM_PRIVATE_KEY, TEST_PASSWORD));
+    it("routes eip155 to requireEvmWallet", async () => {
+      saveKeystore(await encryptPrivateKey(TEST_EVM_PRIVATE_KEY, TEST_PASSWORD));
       registerPrimaryLegacyWallet("evm", TEST_EVM_ADDRESS);
 
-      const wallet = requireWalletForChain("eip155");
+      const wallet = await requireWalletForChain("eip155");
 
       expect(wallet.family).toBe("eip155");
     });
 
-    it("routes solana to requireSolanaWallet", () => {
+    it("routes solana to requireSolanaWallet", async () => {
       const keypair = Keypair.generate();
       const address = deriveSolanaAddress(keypair.secretKey);
 
-      saveSolanaKeystore(encryptSolanaSecretKey(keypair.secretKey, TEST_PASSWORD));
+      saveSolanaKeystore(await encryptSolanaSecretKey(keypair.secretKey, TEST_PASSWORD));
       registerPrimaryLegacyWallet("solana", address);
 
-      const wallet = requireWalletForChain("solana");
+      const wallet = await requireWalletForChain("solana");
 
       expect(wallet.family).toBe("solana");
     });

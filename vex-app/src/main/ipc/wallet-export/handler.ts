@@ -200,7 +200,7 @@ export function registerWalletExportHandler(): () => void {
       let secret: string;
       let format: "hex" | "base58";
       try {
-        const decrypted = decryptExportSecret({
+        const decrypted = await decryptExportSecret({
           family: input.chain,
           entry,
           password: input.password,

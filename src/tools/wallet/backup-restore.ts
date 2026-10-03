@@ -96,7 +96,7 @@ export async function restoreFromBackupArchive(
 
   // 5. Decrypt-verify every keystore. Wrong password → KEYSTORE_DECRYPT_FAILED
   //    and STOP. Address mismatch → SIGNER_MISMATCH (Class A, always hard fail).
-  const validatedWallets = verifyKeystores(manifest, resolved, password, walletsById);
+  const validatedWallets = await verifyKeystores(manifest, resolved, password, walletsById);
 
   // 6. Cap check: restore REPLACES the inventory, so the effective per-family
   //    count is just the manifest count. > MAX → reject before any write.

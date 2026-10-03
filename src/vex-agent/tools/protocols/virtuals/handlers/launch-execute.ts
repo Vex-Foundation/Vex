@@ -281,7 +281,7 @@ export async function virtualsLaunchExecute(
   // The signing key, resolved only now that every refusal above has passed.
   let signer: ChainWallet;
   try {
-    signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+    signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
   } catch (err) {
     await settleLaunchFailure(intentId, sessionId, "wallet_scope_refused");
     return walletScopeErrorToResult(err);

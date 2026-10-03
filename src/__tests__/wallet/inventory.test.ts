@@ -73,6 +73,15 @@ function codeOf(fn: () => unknown): string | undefined {
   return undefined;
 }
 
+async function codeOfAsync(fn: () => Promise<unknown>): Promise<string | undefined> {
+  try {
+    await fn();
+  } catch (err: unknown) {
+    return (err as { code?: string }).code;
+  }
+  return undefined;
+}
+
 describe("wallet inventory (stage 1)", () => {
   beforeEach(() => {
     if (existsSync(testDir)) rmSync(testDir, { recursive: true });
@@ -83,30 +92,30 @@ describe("wallet inventory (stage 1)", () => {
   });
 
   describe("create / import + caps", () => {
-    it("appends up to the per-family cap and rejects the overflow", () => {
-      createEvmWalletEntry();
-      createEvmWalletEntry();
-      createEvmWalletEntry();
+    it("appends up to the per-family cap and rejects the overflow", async () => {
+      await createEvmWalletEntry();
+      await createEvmWalletEntry();
+      await createEvmWalletEntry();
       expect(loadConfig().wallet.evm).toHaveLength(inv.MAX_WALLETS_PER_FAMILY);
-      expect(codeOf(() => createEvmWalletEntry())).toBe(ErrorCodes.WALLET_INVENTORY_FULL);
+      expect(await codeOfAsync(() => createEvmWalletEntry())).toBe(ErrorCodes.WALLET_INVENTORY_FULL);
     });
 
-    it("rejects a duplicate address (case-insensitive for EVM)", () => {
-      importEvmWalletEntry(KEY_A);
-      expect(codeOf(() => importEvmWalletEntry(KEY_A))).toBe(ErrorCodes.WALLET_DUPLICATE_ADDRESS);
+    it("rejects a duplicate address (case-insensitive for EVM)", async () => {
+      await importEvmWalletEntry(KEY_A);
+      expect(await codeOfAsync(() => importEvmWalletEntry(KEY_A))).toBe(ErrorCodes.WALLET_DUPLICATE_ADDRESS);
     });
 
-    it("EVM and Solana caps are independent", () => {
-      createEvmWalletEntry();
-      createSolanaWalletEntry();
+    it("EVM and Solana caps are independent", async () => {
+      await createEvmWalletEntry();
+      await createSolanaWalletEntry();
       expect(loadConfig().wallet.evm).toHaveLength(1);
       expect(loadConfig().wallet.solana).toHaveLength(1);
     });
   });
 
   describe("derivePath traversal + legacy guards", () => {
-    it("derives CONFIG_DIR/wallet-<id>.json for normal entries", () => {
-      const e = createEvmWalletEntry();
+    it("derives CONFIG_DIR/wallet-<id>.json for normal entries", async () => {
+      const e = await createEvmWalletEntry();
       expect(inv.derivePath("evm", e)).toBe(`${testDir}/wallet-${e.id}.json`);
     });
 
@@ -136,19 +145,19 @@ describe("wallet inventory (stage 1)", () => {
       ).toBe(ErrorCodes.WALLET_ID_INVALID);
     });
 
-    it("rejects cross-family ids (prefix must match family)", () => {
-      const evm = createEvmWalletEntry();
-      const sol = createSolanaWalletEntry();
+    it("rejects cross-family ids (prefix must match family)", async () => {
+      const evm = await createEvmWalletEntry();
+      const sol = await createSolanaWalletEntry();
       expect(codeOf(() => inv.derivePath("solana", evm))).toBe(ErrorCodes.WALLET_ID_INVALID);
       expect(codeOf(() => inv.derivePath("evm", sol))).toBe(ErrorCodes.WALLET_ID_INVALID);
     });
   });
 
   describe("primary resolution / back-compat", () => {
-    it("requireEvmWallet (zero-arg) resolves the first inventory entry", () => {
-      const first = importEvmWalletEntry(KEY_A);
-      importEvmWalletEntry(KEY_B);
-      const wallet = requireEvmWallet();
+    it("requireEvmWallet (zero-arg) resolves the first inventory entry", async () => {
+      const first = await importEvmWalletEntry(KEY_A);
+      await importEvmWalletEntry(KEY_B);
+      const wallet = await requireEvmWallet();
       expect(wallet.address.toLowerCase()).toBe(first.address.toLowerCase());
     });
 
@@ -156,32 +165,32 @@ describe("wallet inventory (stage 1)", () => {
       expect(inv.getPrimaryEvmAddress()).toBeNull();
     });
 
-    it("fails closed when the primary keystore file is missing", () => {
-      const e = createEvmWalletEntry();
+    it("fails closed when the primary keystore file is missing", async () => {
+      const e = await createEvmWalletEntry();
       rmSync(inv.derivePath("evm", e));
-      expect(codeOf(() => requireEvmWallet())).toBe(ErrorCodes.KEYSTORE_NOT_FOUND);
+      expect(await codeOfAsync(() => requireEvmWallet())).toBe(ErrorCodes.KEYSTORE_NOT_FOUND);
     });
 
-    it("fails closed when the EVM key does not match the recorded address", () => {
+    it("fails closed when the EVM key does not match the recorded address", async () => {
       // Record address(KEY_A) as the legacy primary, but write a keystore that
       // actually holds KEY_B → signer/address mismatch must fail closed.
       inv.registerPrimaryLegacyWallet("evm", privateKeyToAddress(KEY_A as `0x${string}`));
-      saveKeystore(encryptPrivateKey(KEY_B, TEST_PASSWORD));
-      expect(codeOf(() => requireEvmWallet())).toBe(ErrorCodes.SIGNER_MISMATCH);
+      saveKeystore(await encryptPrivateKey(KEY_B, TEST_PASSWORD));
+      expect(await codeOfAsync(() => requireEvmWallet())).toBe(ErrorCodes.SIGNER_MISMATCH);
     });
   });
 
   describe("resolveWalletForFamily (session scope)", () => {
-    it("default source returns the primary wallet", () => {
-      const e = importEvmWalletEntry(KEY_A);
-      const wallet = resolveWalletForFamily("eip155", { source: "default" });
+    it("default source returns the primary wallet", async () => {
+      const e = await importEvmWalletEntry(KEY_A);
+      const wallet = await resolveWalletForFamily("eip155", { source: "default" });
       expect(wallet.address.toLowerCase()).toBe(e.address.toLowerCase());
     });
 
-    it("session source resolves the selected entry by id + address", () => {
-      importEvmWalletEntry(KEY_A);
-      const target = importEvmWalletEntry(KEY_B);
-      const wallet = resolveWalletForFamily("eip155", {
+    it("session source resolves the selected entry by id + address", async () => {
+      await importEvmWalletEntry(KEY_A);
+      const target = await importEvmWalletEntry(KEY_B);
+      const wallet = await resolveWalletForFamily("eip155", {
         source: "session",
         evm: { id: target.id, address: target.address },
         solana: null,
@@ -189,17 +198,17 @@ describe("wallet inventory (stage 1)", () => {
       expect(wallet.address.toLowerCase()).toBe(target.address.toLowerCase());
     });
 
-    it("fails closed when the family is not selected", () => {
-      importEvmWalletEntry(KEY_A);
-      const code = codeOf(() =>
+    it("fails closed when the family is not selected", async () => {
+      await importEvmWalletEntry(KEY_A);
+      const code = await codeOfAsync(() =>
         resolveWalletForFamily("eip155", { source: "session", evm: null, solana: null }),
       );
       expect(code).toBe(ErrorCodes.WALLET_NOT_SELECTED);
     });
 
-    it("fails closed on address drift under the same id", () => {
-      const e = importEvmWalletEntry(KEY_A);
-      const code = codeOf(() =>
+    it("fails closed on address drift under the same id", async () => {
+      const e = await importEvmWalletEntry(KEY_A);
+      const code = await codeOfAsync(() =>
         resolveWalletForFamily("eip155", {
           source: "session",
           evm: { id: e.id, address: "0x0000000000000000000000000000000000000000" },
@@ -209,9 +218,9 @@ describe("wallet inventory (stage 1)", () => {
       expect(code).toBe(ErrorCodes.WALLET_SCOPE_MISMATCH);
     });
 
-    it("fails closed when the selected wallet was removed", () => {
-      importEvmWalletEntry(KEY_A);
-      const code = codeOf(() =>
+    it("fails closed when the selected wallet was removed", async () => {
+      await importEvmWalletEntry(KEY_A);
+      const code = await codeOfAsync(() =>
         resolveWalletForFamily("eip155", {
           source: "session",
           evm: { id: "evm_00000000-0000-0000-0000-000000000000", address: "0xabc" },
@@ -223,8 +232,8 @@ describe("wallet inventory (stage 1)", () => {
   });
 
   describe("exportAll", () => {
-    it("writes a sanitized manifest + encrypted keystores, never config.json or its secrets", () => {
-      const a = importEvmWalletEntry(KEY_A);
+    it("writes a sanitized manifest + encrypted keystores, never config.json or its secrets", async () => {
+      const a = await importEvmWalletEntry(KEY_A);
 
       // Inject a non-wallet secret into config.json on disk (the kind of value
       // the OLD whole-config export leaked). Done AFTER the import so the
@@ -273,59 +282,59 @@ describe("wallet inventory (stage 1)", () => {
   });
 
   describe("decryptExportSecret (sudo export)", () => {
-    it("EVM: returns the hex private key and verifies it derives the recorded address", () => {
-      const e = importEvmWalletEntry(KEY_A);
-      const out = inv.decryptExportSecret({ family: "evm", entry: e, password: TEST_PASSWORD });
+    it("EVM: returns the hex private key and verifies it derives the recorded address", async () => {
+      const e = await importEvmWalletEntry(KEY_A);
+      const out = await inv.decryptExportSecret({ family: "evm", entry: e, password: TEST_PASSWORD });
       expect(out.format).toBe("hex");
       expect(out.secret.toLowerCase()).toBe(KEY_A.toLowerCase());
     });
 
-    it("EVM: fails closed (SIGNER_MISMATCH) when the decrypted key does not derive the recorded address", () => {
+    it("EVM: fails closed (SIGNER_MISMATCH) when the decrypted key does not derive the recorded address", async () => {
       // Record address(KEY_A) as the legacy primary but write a keystore that
       // actually holds KEY_B → the export verify must reject before returning.
       inv.registerPrimaryLegacyWallet("evm", privateKeyToAddress(KEY_A as `0x${string}`));
-      saveKeystore(encryptPrivateKey(KEY_B, TEST_PASSWORD));
+      saveKeystore(await encryptPrivateKey(KEY_B, TEST_PASSWORD));
       const [legacy] = loadConfig().wallet.evm;
       if (!legacy) throw new Error("expected a legacy EVM entry");
       expect(
-        codeOf(() => inv.decryptExportSecret({ family: "evm", entry: legacy, password: TEST_PASSWORD })),
+        await codeOfAsync(() => inv.decryptExportSecret({ family: "evm", entry: legacy, password: TEST_PASSWORD })),
       ).toBe(ErrorCodes.SIGNER_MISMATCH);
     });
 
-    it("EVM: fails closed (KEYSTORE_NOT_FOUND) when the keystore file is missing", () => {
-      const e = createEvmWalletEntry();
+    it("EVM: fails closed (KEYSTORE_NOT_FOUND) when the keystore file is missing", async () => {
+      const e = await createEvmWalletEntry();
       rmSync(inv.derivePath("evm", e));
       expect(
-        codeOf(() => inv.decryptExportSecret({ family: "evm", entry: e, password: TEST_PASSWORD })),
+        await codeOfAsync(() => inv.decryptExportSecret({ family: "evm", entry: e, password: TEST_PASSWORD })),
       ).toBe(ErrorCodes.KEYSTORE_NOT_FOUND);
     });
 
-    it("EVM: throws on the wrong password (decrypt failure, never returns a bogus secret)", () => {
-      const e = importEvmWalletEntry(KEY_A);
-      expect(() =>
+    it("EVM: throws on the wrong password (decrypt failure, never returns a bogus secret)", async () => {
+      const e = await importEvmWalletEntry(KEY_A);
+      await expect(
         inv.decryptExportSecret({ family: "evm", entry: e, password: "wrong-password-xx" }),
-      ).toThrow();
+      ).rejects.toThrow();
     });
 
-    it("Solana: returns a base58 secret and verifies it derives the recorded address", () => {
-      const e = createSolanaWalletEntry();
-      const out = inv.decryptExportSecret({ family: "solana", entry: e, password: TEST_PASSWORD });
+    it("Solana: returns a base58 secret and verifies it derives the recorded address", async () => {
+      const e = await createSolanaWalletEntry();
+      const out = await inv.decryptExportSecret({ family: "solana", entry: e, password: TEST_PASSWORD });
       expect(out.format).toBe("base58");
       expect(typeof out.secret).toBe("string");
       expect(out.secret.length).toBeGreaterThan(0);
     });
 
-    it("Solana: fails closed (KHALANI_SOLANA_KEYSTORE_NOT_FOUND) when the keystore file is missing", () => {
-      const e = createSolanaWalletEntry();
+    it("Solana: fails closed (KHALANI_SOLANA_KEYSTORE_NOT_FOUND) when the keystore file is missing", async () => {
+      const e = await createSolanaWalletEntry();
       rmSync(inv.derivePath("solana", e));
       expect(
-        codeOf(() => inv.decryptExportSecret({ family: "solana", entry: e, password: TEST_PASSWORD })),
+        await codeOfAsync(() => inv.decryptExportSecret({ family: "solana", entry: e, password: TEST_PASSWORD })),
       ).toBe(ErrorCodes.KHALANI_SOLANA_KEYSTORE_NOT_FOUND);
     });
 
-    it("Solana: fails closed (SIGNER_MISMATCH) when the keystore holds a different wallet's key", () => {
-      const e1 = createSolanaWalletEntry();
-      const e2 = createSolanaWalletEntry();
+    it("Solana: fails closed (SIGNER_MISMATCH) when the keystore holds a different wallet's key", async () => {
+      const e1 = await createSolanaWalletEntry();
+      const e2 = await createSolanaWalletEntry();
       // Overwrite e1's keystore with e2's encrypted key → decrypt yields e2's
       // address, which no longer matches e1's recorded address.
       writeFileSync(
@@ -334,7 +343,7 @@ describe("wallet inventory (stage 1)", () => {
         "utf-8",
       );
       expect(
-        codeOf(() => inv.decryptExportSecret({ family: "solana", entry: e1, password: TEST_PASSWORD })),
+        await codeOfAsync(() => inv.decryptExportSecret({ family: "solana", entry: e1, password: TEST_PASSWORD })),
       ).toBe(ErrorCodes.SIGNER_MISMATCH);
     });
   });
@@ -351,10 +360,10 @@ describe("wallet inventory (stage 1)", () => {
     it("each create/import (all 4) triggers a backup containing the new wallet-<id>.json", async () => {
       const spy = vi.spyOn(backupMod, "autoBackup");
 
-      const e = createEvmWalletEntry();
-      const ei = importEvmWalletEntry(KEY_A);
-      const s = createSolanaWalletEntry();
-      const si = importSolanaWalletEntry(
+      const e = await createEvmWalletEntry();
+      const ei = await importEvmWalletEntry(KEY_A);
+      const s = await createSolanaWalletEntry();
+      const si = await importSolanaWalletEntry(
         // 64-byte base58 secret from a generated keypair via the keystore path.
         // Reuse an EVM-free Solana import: encode a fresh keypair's secret.
         (await import("bs58")).default.encode(
@@ -386,7 +395,7 @@ describe("wallet inventory (stage 1)", () => {
     it("backup failure does NOT roll back the just-added wallet (kept in config + on disk)", async () => {
       const spy = vi.spyOn(backupMod, "autoBackup").mockRejectedValue(new Error("backup boom"));
 
-      const e = createEvmWalletEntry();
+      const e = await createEvmWalletEntry();
       await settleBackups();
 
       expect(spy).toHaveBeenCalled();

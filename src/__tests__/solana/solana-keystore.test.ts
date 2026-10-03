@@ -20,10 +20,10 @@ describe("solana keystore helpers", () => {
     expect(Array.from(normalizeSolanaSecretKey(jsonSecret))).toEqual(Array.from(keypair.secretKey));
   });
 
-  it("encrypts and decrypts Solana secret keys without changing the derived address", () => {
+  it("encrypts and decrypts Solana secret keys without changing the derived address", async () => {
     const keypair = Keypair.generate();
-    const keystore = encryptSolanaSecretKey(keypair.secretKey, "test-password");
-    const decrypted = decryptSolanaSecretKey(keystore, "test-password");
+    const keystore = await encryptSolanaSecretKey(keypair.secretKey, "test-password");
+    const decrypted = await decryptSolanaSecretKey(keystore, "test-password");
 
     expect(Array.from(decrypted)).toEqual(Array.from(keypair.secretKey));
     expect(deriveSolanaAddress(decrypted)).toBe(keypair.publicKey.toBase58());
@@ -84,13 +84,13 @@ describe("solana keystore helpers", () => {
   });
 
   describe("decrypt with wrong password", () => {
-    it("throws KEYSTORE_DECRYPT_FAILED for wrong password", () => {
+    it("throws KEYSTORE_DECRYPT_FAILED for wrong password", async () => {
       const keypair = Keypair.generate();
-      const keystore = encryptSolanaSecretKey(keypair.secretKey, "correct-password");
+      const keystore = await encryptSolanaSecretKey(keypair.secretKey, "correct-password");
 
-      expect(() => decryptSolanaSecretKey(keystore, "wrong-password")).toThrow();
+      await expect(decryptSolanaSecretKey(keystore, "wrong-password")).rejects.toThrow();
       try {
-        decryptSolanaSecretKey(keystore, "wrong-password");
+        await decryptSolanaSecretKey(keystore, "wrong-password");
       } catch (err: unknown) {
         expect((err as { code: string }).code).toBe(ErrorCodes.KEYSTORE_DECRYPT_FAILED);
       }
@@ -98,16 +98,16 @@ describe("solana keystore helpers", () => {
   });
 
   describe("decrypt with correct password but structurally bad payload", () => {
-    it("throws KEYSTORE_CORRUPT (not KEYSTORE_DECRYPT_FAILED) when a successful decrypt yields a non-64-byte payload", () => {
+    it("throws KEYSTORE_CORRUPT (not KEYSTORE_DECRYPT_FAILED) when a successful decrypt yields a non-64-byte payload", async () => {
       // Encrypt a payload of the wrong length directly (bypassing encryptSolanaSecretKey's
       // own length guard) so the password/crypto succeeds and the post-decrypt length
       // check is the only thing that fails. This is a structural/corrupt condition,
       // not a wrong-password condition, and must not be mislabeled as one.
-      const keystore = encryptSecretBytes(new Uint8Array(32), "correct-password");
+      const keystore = await encryptSecretBytes(new Uint8Array(32), "correct-password");
 
-      expect(() => decryptSolanaSecretKey(keystore, "correct-password")).toThrow();
+      await expect(decryptSolanaSecretKey(keystore, "correct-password")).rejects.toThrow();
       try {
-        decryptSolanaSecretKey(keystore, "correct-password");
+        await decryptSolanaSecretKey(keystore, "correct-password");
       } catch (err: unknown) {
         expect((err as { code: string }).code).toBe(ErrorCodes.KEYSTORE_CORRUPT);
         expect((err as { code: string }).code).not.toBe(ErrorCodes.KEYSTORE_DECRYPT_FAILED);
@@ -122,8 +122,8 @@ describe("solana keystore helpers", () => {
   });
 
   describe("encryptSolanaSecretKey", () => {
-    it("throws for wrong-length key", () => {
-      expect(() => encryptSolanaSecretKey(new Uint8Array(32), "password")).toThrow();
+    it("throws for wrong-length key", async () => {
+      await expect(encryptSolanaSecretKey(new Uint8Array(32), "password")).rejects.toThrow();
     });
   });
 });

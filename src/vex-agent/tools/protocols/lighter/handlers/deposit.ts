@@ -1066,7 +1066,7 @@ export const LIGHTER_DEPOSIT_HANDLERS: Record<string, ProtocolHandler> = {
 
       let signer: ChainWallet;
       try {
-        signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+        signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
       } catch (err) {
         return walletScopeErrorToResult(err);
       }

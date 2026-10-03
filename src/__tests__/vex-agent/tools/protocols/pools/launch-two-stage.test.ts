@@ -150,7 +150,7 @@ beforeEach(() => {
   broadcastCalls = 0;
   signerAddress = WALLET;
 
-  vi.spyOn(signingClients, "openLaunchSigningClients").mockImplementation(() => ({
+  vi.spyOn(signingClients, "openLaunchSigningClients").mockImplementation(async () => ({
     ok: true,
     clients: {
       publicClient: {} as never,

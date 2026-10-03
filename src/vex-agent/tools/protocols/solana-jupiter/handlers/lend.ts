@@ -420,7 +420,7 @@ export const LEND_HANDLERS: Record<string, ProtocolHandler> = {
     let addr: string, secret: Uint8Array;
     try {
       addr = walletAddress(p, ctx);
-      secret = walletSecret(ctx);
+      secret = await walletSecret(ctx);
     } catch (err) {
       return walletScopeErrorToResult(err);
     }
@@ -443,7 +443,7 @@ export const LEND_HANDLERS: Record<string, ProtocolHandler> = {
     let addr: string, secret: Uint8Array;
     try {
       addr = walletAddress(p, ctx);
-      secret = walletSecret(ctx);
+      secret = await walletSecret(ctx);
     } catch (err) {
       return walletScopeErrorToResult(err);
     }

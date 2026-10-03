@@ -57,15 +57,21 @@ export function normalizeSolanaSecretKey(input: string): Uint8Array {
   return decoded;
 }
 
-export function encryptSolanaSecretKey(secretKey: Uint8Array, password: string): KeystoreV1 {
+export async function encryptSolanaSecretKey(
+  secretKey: Uint8Array,
+  password: string,
+): Promise<KeystoreV1> {
   if (secretKey.length !== SOLANA_SECRET_KEY_LENGTH) {
     throw new VexError(ErrorCodes.INVALID_PRIVATE_KEY, `Solana secret key must be ${SOLANA_SECRET_KEY_LENGTH} bytes`);
   }
   return encryptSecretBytes(secretKey, password);
 }
 
-export function decryptSolanaSecretKey(keystore: KeystoreV1, password: string): Uint8Array {
-  const secretKey = decryptSecretBytes(keystore, password);
+export async function decryptSolanaSecretKey(
+  keystore: KeystoreV1,
+  password: string,
+): Promise<Uint8Array> {
+  const secretKey = await decryptSecretBytes(keystore, password);
   if (secretKey.length !== SOLANA_SECRET_KEY_LENGTH) {
     // Decrypt already succeeded (right password, valid AES-GCM auth tag) — a
     // wrong-length payload past that point is a structural/corrupt keystore,

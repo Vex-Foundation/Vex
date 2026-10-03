@@ -234,9 +234,9 @@ describe("wallet-backup", () => {
     }
 
     it("enumerates 2 EVM + 1 Solana with correct roles/ids/addresses (V2 shape)", async () => {
-      const e1 = createEvmWalletEntry();
-      const e2 = importEvmWalletEntry("0x" + "ab".repeat(32));
-      const s1 = createSolanaWalletEntry();
+      const e1 = await createEvmWalletEntry();
+      const e2 = await importEvmWalletEntry("0x" + "ab".repeat(32));
+      const s1 = await createSolanaWalletEntry();
 
       const dir = await autoBackup();
       expect(dir).not.toBeNull();
@@ -268,7 +268,7 @@ describe("wallet-backup", () => {
     });
 
     it("includes the vault and .env when present, omits them when absent", async () => {
-      createEvmWalletEntry();
+      await createEvmWalletEntry();
 
       // No vault/.env yet.
       const dir1 = await autoBackup();
@@ -289,7 +289,7 @@ describe("wallet-backup", () => {
     });
 
     it("creates a durable-purpose vault-reset archive with the canonical shared name", async () => {
-      createEvmWalletEntry();
+      await createEvmWalletEntry();
       writeFileSync(testVaultFile, "encrypted-vault", "utf8");
       const dir = await autoBackup({ purpose: "vault-reset" });
       expect(dir).not.toBeNull();
@@ -332,7 +332,7 @@ describe("wallet-backup", () => {
     });
 
     it("writes manifest.json LAST — a copy failure leaves no manifest", async () => {
-      const e = createEvmWalletEntry();
+      const e = await createEvmWalletEntry();
       // Let any fire-and-forget post-add backup settle, then wipe the backups
       // dir so the next (failing) run is the ONLY producer of backup dirs.
       await new Promise((r) => setTimeout(r, 20));
@@ -359,7 +359,7 @@ describe("wallet-backup", () => {
     });
 
     it("skips a wallet whose LOCAL id is non-canonical (warn, no abort)", async () => {
-      createEvmWalletEntry(); // valid
+      await createEvmWalletEntry(); // valid
       // Inject a corrupt non-canonical id directly into config on disk.
       const cfg = loadConfig();
       // saveConfig normalizer would drop a bad id, so we write raw JSON.
@@ -384,7 +384,7 @@ describe("wallet-backup", () => {
     });
 
     it("enforces retention (MAX_BACKUPS) unchanged", async () => {
-      createEvmWalletEntry();
+      await createEvmWalletEntry();
       // Pre-seed 25 fake backup dirs.
       mkdirSync(testBackupsDir, { recursive: true });
       for (let i = 0; i < 25; i += 1) {
@@ -403,7 +403,7 @@ describe("wallet-backup", () => {
     });
 
     it("ordinary retention never evicts a vault-reset archive", async () => {
-      createEvmWalletEntry();
+      await createEvmWalletEntry();
       const resetName = "vault-reset-2020-01-01T000000Z";
       mkdirSync(join(testBackupsDir, resetName), { recursive: true });
       for (let i = 0; i < 25; i += 1) {
@@ -414,10 +414,10 @@ describe("wallet-backup", () => {
     });
 
     it("listAvailableBackups returns metadata only, newest first", async () => {
-      createEvmWalletEntry();
+      await createEvmWalletEntry();
       await autoBackup();
       await new Promise((r) => setTimeout(r, 5));
-      createSolanaWalletEntry();
+      await createSolanaWalletEntry();
       await autoBackup();
 
       const list = listAvailableBackups();

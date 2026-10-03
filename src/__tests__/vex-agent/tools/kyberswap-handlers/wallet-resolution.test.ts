@@ -14,7 +14,7 @@ const SESSION_EVM: EvmWallet = {
   address: "0x1234567890abcdef1234567890abcdef12345678",
   privateKey: ("0x" + "ab".repeat(32)) as `0x${string}`,
 };
-const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => SESSION_EVM);
+const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(async () => SESSION_EVM);
 const mockResolveSelectedAddress = vi.fn<WalletResolveModule["resolveSelectedAddress"]>(() => SESSION_EVM.address);
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({

@@ -117,7 +117,7 @@ export async function poolsClaimFeesHandler(
 
   // A dry run never needs a key. Only the signing path decrypts one.
   const publicClient = dryRun ? getLocalPublicClient(chainConfig) : null;
-  const signing = dryRun ? null : openLaunchSigningClients(context, chainConfig);
+  const signing = dryRun ? null : await openLaunchSigningClients(context, chainConfig);
   if (signing !== null && !signing.ok) return signing.result;
   const reader: PublicClient<Transport, Chain> = publicClient ?? signing!.clients.publicClient;
 

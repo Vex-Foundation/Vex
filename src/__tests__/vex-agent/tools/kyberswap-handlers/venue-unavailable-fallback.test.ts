@@ -25,7 +25,7 @@ const SESSION_EVM = {
 };
 
 const mockResolveSelectedAddress = vi.fn<WalletResolveModule["resolveSelectedAddress"]>(() => SESSION_EVM.address);
-const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => SESSION_EVM);
+const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(async () => SESSION_EVM);
 
 vi.mock("@tools/dexscreener/price-read.js", () => ({ readTokenPools: vi.fn(async () => []), readTokensPairs: vi.fn(async () => []) }));
 
@@ -171,7 +171,7 @@ const APPROVED_CLAIM = approvedClaim(
 function resetScaffold(): void {
   vi.clearAllMocks();
   mockResolveSelectedAddress.mockReturnValue(SESSION_EVM.address);
-  mockResolveSigningWallet.mockReturnValue(SESSION_EVM);
+  mockResolveSigningWallet.mockResolvedValue(SESSION_EVM);
   mockReadErc20Metadata.mockImplementation(async (_slug: string, address: string) => ({
     address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
   }));

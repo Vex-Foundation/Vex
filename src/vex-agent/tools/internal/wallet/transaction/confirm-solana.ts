@@ -291,7 +291,7 @@ async function revalidateSolanaAtCommit(
 async function executeSolanaTransaction(args: {
   readonly intent: WalletTransactionIntent;
   readonly payload: SolanaTransactionPayload;
-  readonly loadSigner: () => SignerLoad;
+  readonly loadSigner: () => Promise<SignerLoad>;
   readonly anchor: AuthorityAnchor;
   readonly chain: SolanaPrepareChain;
   readonly activity: TransactionActivity;
@@ -332,7 +332,7 @@ async function executeSolanaTransaction(args: {
 
   // The key is decrypted HERE, after the fence passed and immediately before
   // the signature.
-  const loaded = loadSigner();
+  const loaded = await loadSigner();
   if (loaded.kind === "return") {
     return {
       kind: "pre_broadcast_failed",

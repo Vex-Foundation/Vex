@@ -19,7 +19,7 @@ type SolanaTokenProgramModule = typeof import("@tools/solana-ecosystem/shared/so
 const SIGNER = Keypair.generate();
 const WALLET_ADDRESS = SIGNER.publicKey.toBase58();
 
-const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => ({
+const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(async () => ({
   family: "solana" as const, address: WALLET_ADDRESS, secretKey: SIGNER.secretKey,
 }));
 const mockResolveSelectedAddress = vi.fn<WalletResolveModule["resolveSelectedAddress"]>(() => WALLET_ADDRESS);
@@ -220,7 +220,7 @@ describe("solana.lend.borrowVaults / .borrowPositions (reads)", () => {
 describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockResolveSigningWallet.mockReturnValue({ family: "solana", address: WALLET_ADDRESS, secretKey: SIGNER.secretKey });
+    mockResolveSigningWallet.mockResolvedValue({ family: "solana", address: WALLET_ADDRESS, secretKey: SIGNER.secretKey });
     mockResolveSelectedAddress.mockReturnValue(WALLET_ADDRESS);
     mockGetVaults.mockResolvedValue([VAULT]);
     mockRequestOperate.mockResolvedValue({ nftId: 9062, transaction: "unsigned-operate-tx-b64" });
@@ -447,7 +447,7 @@ describe("solana.lend.borrowOperate — staged Solana seam (B1)", () => {
 describe("solana.lend.borrowOperate — native-SOL/WSOL pre-broadcast funding check (B3)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockResolveSigningWallet.mockReturnValue({ family: "solana", address: WALLET_ADDRESS, secretKey: SIGNER.secretKey });
+    mockResolveSigningWallet.mockResolvedValue({ family: "solana", address: WALLET_ADDRESS, secretKey: SIGNER.secretKey });
     mockResolveSelectedAddress.mockReturnValue(WALLET_ADDRESS);
     mockGetVaults.mockResolvedValue([WSOL_VAULT]);
     mockRequestOperate.mockResolvedValue({ nftId: 1, transaction: "unsigned-operate-tx-b64" });

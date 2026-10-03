@@ -109,7 +109,7 @@ async function runLighterKeyRegistration(
     if (allowSubmission) {
       throw executionError("the approved registration intent is unavailable in this session");
     }
-    const resumingWallet = deps.resolveWallet(input.walletResolution, input.walletPolicy, "eip155");
+    const resumingWallet = await deps.resolveWallet(input.walletResolution, input.walletPolicy, "eip155");
     if (
       resumingWallet.family !== "eip155"
       || getAddress(resumingWallet.address) !== getAddress(intent.walletAddress)
@@ -175,7 +175,7 @@ async function runLighterKeyRegistration(
       throw executionError("the live API-key nonce changed after approval");
     }
 
-    const wallet = deps.resolveWallet(input.walletResolution, input.walletPolicy, "eip155");
+    const wallet = await deps.resolveWallet(input.walletResolution, input.walletPolicy, "eip155");
     if (wallet.family !== "eip155") {
       throw executionError("the selected wallet is not an EVM signing wallet");
     }

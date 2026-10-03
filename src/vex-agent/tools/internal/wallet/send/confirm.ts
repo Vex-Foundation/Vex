@@ -74,7 +74,7 @@ export async function handleWalletSendConfirm(
   // and expires; no markFailed (which requires `consuming`). Codex 5B review.
   let signer: ChainWallet;
   try {
-    signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, network);
+    signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, network);
   } catch (err) {
     return walletScopeErrorToResult(err);
   }

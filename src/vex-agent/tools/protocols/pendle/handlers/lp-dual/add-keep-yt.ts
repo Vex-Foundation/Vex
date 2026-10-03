@@ -122,7 +122,7 @@ export async function executePendleLpAddKeepYt(
       wallet = getAddress(legs.walletAddress);
     } else {
       try {
-        signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+        signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
       } catch (err) {
         return walletScopeErrorToResult(err);
       }

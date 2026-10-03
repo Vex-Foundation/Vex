@@ -161,7 +161,7 @@ export async function poolsHolderRewardsDistributeHandler(
     return fail(`Robinhood Chain (${POOLS_CHAIN_ID}) is not in the local chain registry.`);
   }
 
-  const signing = dryRun || simulateOnly ? null : openLaunchSigningClients(context, chainConfig);
+  const signing = dryRun || simulateOnly ? null : await openLaunchSigningClients(context, chainConfig);
   if (signing !== null && !signing.ok) return signing.result;
   const reader: PublicClient<Transport, Chain> = signing === null
     ? getLocalPublicClient(chainConfig)
@@ -391,7 +391,7 @@ async function estimateDistributeGas(
 // ── Execution ──────────────────────────────────────────────────────
 
 interface ExecuteDistributeInput {
-  readonly signing: Extract<ReturnType<typeof openLaunchSigningClients>, { ok: true }>;
+  readonly signing: Extract<Awaited<ReturnType<typeof openLaunchSigningClients>>, { ok: true }>;
   readonly token: Address;
   readonly walletAddress: Address;
   readonly sessionId: string;

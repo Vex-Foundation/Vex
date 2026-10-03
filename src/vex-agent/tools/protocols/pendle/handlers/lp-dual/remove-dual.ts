@@ -135,7 +135,7 @@ export async function executePendleLpRemoveDual(
       wallet = getAddress(legs.walletAddress);
     } else {
       try {
-        signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+        signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
       } catch (err) {
         return walletScopeErrorToResult(err);
       }

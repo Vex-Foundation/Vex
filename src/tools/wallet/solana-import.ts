@@ -37,7 +37,20 @@ export async function importSolanaWallet(
   const password = requireKeystorePassword();
   const address = deriveSolanaAddress(normalizedKey);
 
-  saveSolanaKeystore(encryptSolanaSecretKey(normalizedKey, password));
+  const keystore = await encryptSolanaSecretKey(normalizedKey, password);
+
+  // The derive above yields to the event loop. If no keystore existed when this
+  // call started but one exists now, a concurrent create/import wrote it while
+  // we were deriving: refuse exactly as the up-front check would have, so a
+  // non-forced call can never overwrite (or skip the backup of) a keystore.
+  if (!existed && solanaKeystoreExists()) {
+    throw new VexError(
+      ErrorCodes.KEYSTORE_ALREADY_EXISTS,
+      "Solana keystore already exists.",
+      "Use --force to overwrite. Existing keystore will be backed up automatically.",
+    );
+  }
+  saveSolanaKeystore(keystore);
   registerPrimaryLegacyWallet("solana", address);
 
   return { address, overwritten: existed };

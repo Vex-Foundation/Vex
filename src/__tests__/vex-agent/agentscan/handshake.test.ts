@@ -74,9 +74,9 @@ describe("signAgentscanChallenge", () => {
   });
 
   it("signs one proof per wallet, covering every EVM + Solana entry, with a single shared issuedAt", async () => {
-    const evm1 = createEvmWalletEntry();
-    const evm2 = createEvmWalletEntry();
-    const sol1 = createSolanaWalletEntry();
+    const evm1 = await createEvmWalletEntry();
+    const evm2 = await createEvmWalletEntry();
+    const sol1 = await createSolanaWalletEntry();
 
     const result = await signAgentscanChallenge(CHALLENGE_INPUT);
     expect(result.kind).toBe("signed");
@@ -104,9 +104,9 @@ describe("signAgentscanChallenge", () => {
   });
 
   it("every proof is cryptographically valid against the exact binding template", async () => {
-    const evm = createEvmWalletEntry();
+    const evm = await createEvmWalletEntry();
     const keypair = Keypair.generate();
-    const sol = importSolanaWalletEntry(bs58.encode(keypair.secretKey));
+    const sol = await importSolanaWalletEntry(bs58.encode(keypair.secretKey));
 
     const result = await signAgentscanChallenge(CHALLENGE_INPUT);
     expect(result.kind).toBe("signed");
@@ -154,8 +154,8 @@ describe("signAgentscanChallenge", () => {
   });
 
   it("returns vault_locked with zero decrypt attempts when the keystore password is absent", async () => {
-    createEvmWalletEntry();
-    createSolanaWalletEntry();
+    await createEvmWalletEntry();
+    await createSolanaWalletEntry();
 
     const evmSpy = vi.spyOn(handshakeSigningMod, "signHandshakeEvm");
     const solSpy = vi.spyOn(handshakeSigningMod, "signHandshakeSolana");
@@ -172,8 +172,8 @@ describe("signAgentscanChallenge", () => {
   });
 
   it("maps a mid-loop vault lock (KEYSTORE_PASSWORD_NOT_SET) to vault_locked rather than a raw throw", async () => {
-    createEvmWalletEntry();
-    createSolanaWalletEntry();
+    await createEvmWalletEntry();
+    await createSolanaWalletEntry();
 
     const { VexError, ErrorCodes } = await import("../../../errors.js");
     const evmSpy = vi
@@ -190,7 +190,7 @@ describe("signAgentscanChallenge", () => {
   });
 
   it("propagates any OTHER signing error typed, rather than swallowing it", async () => {
-    createEvmWalletEntry();
+    await createEvmWalletEntry();
 
     const { VexError, ErrorCodes } = await import("../../../errors.js");
     const evmSpy = vi
@@ -206,8 +206,8 @@ describe("signAgentscanChallenge", () => {
   });
 
   it("a hostile-server nonce (embedded newline) is rejected typed, before any keystore is touched", async () => {
-    createEvmWalletEntry();
-    createSolanaWalletEntry();
+    await createEvmWalletEntry();
+    await createSolanaWalletEntry();
 
     const { ErrorCodes } = await import("../../../errors.js");
     const evmSpy = vi.spyOn(handshakeSigningMod, "signHandshakeEvm");

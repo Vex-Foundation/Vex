@@ -45,7 +45,7 @@ const closeAll = (minSellPriceSlippageBps: unknown) => runCloseAll({ minSellPric
 describe("solana.predict.closeAll — the Vex slippage ceiling binds on the batch sell too", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockResolveSigningWallet.mockReturnValue({ family: "solana", address: WALLET_ADDRESS, secretKey: SIGNER.secretKey });
+    mockResolveSigningWallet.mockResolvedValue({ family: "solana", address: WALLET_ADDRESS, secretKey: SIGNER.secretKey });
     mockResolveSelectedAddress.mockReturnValue(WALLET_ADDRESS);
     // No open positions — the success shape for any value that PASSES the gate.
     mockRequestCloseAll.mockResolvedValue({ data: [] });

@@ -113,9 +113,9 @@ afterEach(() => {
 
 describe("restoreFromBackupArchive", () => {
   it("happy-path round-trip: 2 EVM + 1 Solana + vault + .env", async () => {
-    const e1 = invCreate.createEvmWalletEntry();
-    const e2 = invCreate.importEvmWalletEntry("0x" + "ab".repeat(32));
-    const s1 = invCreate.createSolanaWalletEntry();
+    const e1 = await invCreate.createEvmWalletEntry();
+    const e2 = await invCreate.importEvmWalletEntry("0x" + "ab".repeat(32));
+    const s1 = await invCreate.createSolanaWalletEntry();
     writeFileSync(testVaultFile, JSON.stringify({ version: 1 }), "utf-8");
     writeFileSync(testEnvFile, "AGENT_MODEL=foo\n", "utf-8");
 
@@ -147,7 +147,7 @@ describe("restoreFromBackupArchive", () => {
     expect(result.backupDir).not.toBeNull();
 
     // Decrypts to the recorded addresses (key material round-tripped).
-    const out1 = inv.decryptExportSecret({
+    const out1 = await inv.decryptExportSecret({
       family: "evm",
       entry: cfg.wallet.evm.find((w) => w.id === e1.id)!,
       password: TEST_PASSWORD,
@@ -156,7 +156,7 @@ describe("restoreFromBackupArchive", () => {
   });
 
   it("Class-A signer mismatch → SIGNER_MISMATCH (confirmReplace NOT called)", async () => {
-    const e1 = invCreate.createEvmWalletEntry();
+    const e1 = await invCreate.createEvmWalletEntry();
     await settleAndClearBackups();
     const archive = await backupMod.autoBackup();
 
@@ -395,7 +395,7 @@ describe("restoreFromBackupArchive", () => {
   });
 
   it("missing referenced file → ARCHIVE_INCOMPLETE", async () => {
-    invCreate.createEvmWalletEntry();
+    await invCreate.createEvmWalletEntry();
     await settleAndClearBackups();
     const archive = await backupMod.autoBackup();
     // Delete a referenced keystore from the archive.
@@ -410,7 +410,7 @@ describe("restoreFromBackupArchive", () => {
 
   it("wrong password → KEYSTORE_DECRYPT_FAILED, NO backup, NO writes", async () => {
     const { readdirSync } = await import("node:fs");
-    const e1 = invCreate.createEvmWalletEntry();
+    const e1 = await invCreate.createEvmWalletEntry();
     await settleAndClearBackups();
     const archive = await backupMod.autoBackup();
     const liveKsBefore = readFileSync(inv.derivePath("evm", e1), "utf-8");
@@ -449,7 +449,7 @@ describe("restoreFromBackupArchive", () => {
       const addr = privateKeyToAddress(pk);
       const id = `evm_1111111${i}-1111-1111-1111-111111111111`;
       const fn = `wallet-${id}.json`;
-      writeFileSync(join(dir, fn), JSON.stringify(ks.encryptPrivateKey(pk, TEST_PASSWORD)), "utf-8");
+      writeFileSync(join(dir, fn), JSON.stringify(await ks.encryptPrivateKey(pk, TEST_PASSWORD)), "utf-8");
       wallets.push({ id, family: "evm", address: addr, label: `W${i}`, createdAt: "", legacy: false });
       files.push({ filename: fn, role: "wallet-evm", walletId: id, walletFamily: "evm", address: addr });
     }
@@ -474,7 +474,7 @@ describe("restoreFromBackupArchive", () => {
     const KEY_A = ("0x" + "aa".repeat(32)) as `0x${string}`;
     const addrA = privateKeyToAddress(KEY_A);
     inv.registerPrimaryLegacyWallet("evm", addrA);
-    ks.saveKeystore(ks.encryptPrivateKey(KEY_A, TEST_PASSWORD));
+    ks.saveKeystore(await ks.encryptPrivateKey(KEY_A, TEST_PASSWORD));
 
     // Build an archive whose legacy EVM wallet = KEY_B (a real replacement).
     await settleAndClearBackups();
@@ -483,7 +483,7 @@ describe("restoreFromBackupArchive", () => {
     mkdirSync(dir);
     const KEY_B = ("0x" + "bb".repeat(32)) as `0x${string}`;
     const addrB = privateKeyToAddress(KEY_B);
-    writeFileSync(join(dir, "keystore.json"), JSON.stringify(ks.encryptPrivateKey(KEY_B, TEST_PASSWORD)), "utf-8");
+    writeFileSync(join(dir, "keystore.json"), JSON.stringify(await ks.encryptPrivateKey(KEY_B, TEST_PASSWORD)), "utf-8");
     writeFileSync(
       join(dir, "manifest.json"),
       JSON.stringify({
@@ -527,7 +527,7 @@ describe("restoreFromBackupArchive", () => {
     mkdirSync(testBackupsDir, { recursive: true });
     const dir = join(testBackupsDir, "forged-env");
     mkdirSync(dir);
-    writeFileSync(join(dir, `wallet-${id}.json`), JSON.stringify(ks.encryptPrivateKey(KEY, TEST_PASSWORD)), "utf-8");
+    writeFileSync(join(dir, `wallet-${id}.json`), JSON.stringify(await ks.encryptPrivateKey(KEY, TEST_PASSWORD)), "utf-8");
     writeFileSync(
       join(dir, ".env"),
       [
@@ -565,7 +565,7 @@ describe("restoreFromBackupArchive", () => {
   });
 
   it("retention trap: restoring the OLDEST archive still works (staged before backup)", async () => {
-    const e1 = invCreate.createEvmWalletEntry();
+    const e1 = await invCreate.createEvmWalletEntry();
     await settleAndClearBackups();
     const oldest = await backupMod.autoBackup();
     expect(oldest).not.toBeNull();
@@ -589,7 +589,7 @@ describe("restoreFromBackupArchive", () => {
   });
 
   it("pre-backup fails → aborts with AUTO_BACKUP_FAILED, no live writes", async () => {
-    const e1 = invCreate.createEvmWalletEntry();
+    const e1 = await invCreate.createEvmWalletEntry();
     await settleAndClearBackups();
     const archive = await backupMod.autoBackup();
     const liveBefore = readFileSync(inv.derivePath("evm", e1), "utf-8");
@@ -608,8 +608,8 @@ describe("restoreFromBackupArchive", () => {
   });
 
   it("commit failure rolls back live files to preimage", async () => {
-    const e1 = invCreate.createEvmWalletEntry();
-    const s1 = invCreate.createSolanaWalletEntry();
+    const e1 = await invCreate.createEvmWalletEntry();
+    const s1 = await invCreate.createSolanaWalletEntry();
     await settleAndClearBackups();
     const archive = await backupMod.autoBackup();
 
@@ -637,7 +637,7 @@ describe("restoreFromBackupArchive", () => {
   });
 
   it("memory hygiene: thrown errors never embed plaintext key material", async () => {
-    const e1 = invCreate.createEvmWalletEntry();
+    const e1 = await invCreate.createEvmWalletEntry();
     await settleAndClearBackups();
     const archive = await backupMod.autoBackup();
     // Tamper to force SIGNER_MISMATCH and capture the message.
@@ -648,7 +648,7 @@ describe("restoreFromBackupArchive", () => {
     writeFileSync(manifestPath, JSON.stringify(m), "utf-8");
 
     // Decrypt the real key so we know what must NOT appear in the message.
-    const secret = inv.decryptExportSecret({ family: "evm", entry: e1, password: TEST_PASSWORD }).secret;
+    const secret = (await inv.decryptExportSecret({ family: "evm", entry: e1, password: TEST_PASSWORD })).secret;
 
     let message = "";
     try {

@@ -192,7 +192,7 @@ function setup(
     admitSend: vi.fn(async () => true),
     releaseUnsubmittedNonce: vi.fn(async () => null),
     releaseNonce: vi.fn(async () => nonce),
-    resolveWallet: vi.fn(() => wallet),
+    resolveWallet: vi.fn(async () => wallet),
     selectedAddress: vi.fn(() => wallet.address),
     sign: vi.fn(async () => {
       events.push("sign");
