@@ -41,6 +41,12 @@
  *   entry point supplies no entry timestamp; its `n` counts only the turns
  *   that did. Persist time is
  *   part of the turn's total, not in addition to it.
+ * - Section 8 reads `main_event_loop_samples` (migration 175, Kairos K-5):
+ *   one row per ~60 s window of the Electron main process. A "stall" is a
+ *   timer tick that ran at least the row's `stall_threshold_ms` late (100 ms
+ *   when written): a freeze every click and window felt. The p50/p99 columns
+ *   are percentiles OVER WINDOWS of each window's own p50/p99, so read them
+ *   as "a typical minute" and "a bad minute", not as per-sample percentiles.
  * - The "prompt size" breakdown buckets by absolute `prompt_tokens`. The
  *   engine's context band is relative to each model's context window, which
  *   the tables do not store, so the two are not the same axis.
@@ -155,6 +161,7 @@ export const SECTION_TITLES: Readonly<Record<number, string>> = {
   5: "Pre-inference and prompt-stack time",
   6: "Tool dispatch duration (top 20 tools by count)",
   7: "Turn runs",
+  8: "Main process event loop",
 };
 
 const col = (key: string, label: string, format: ColumnFormat): ReportColumn => ({ key, label, format });
@@ -606,6 +613,55 @@ FROM (
   GROUP BY 1, m.ord, m.metric
 ) s
 ORDER BY session_kind, ord`,
+    },
+    {
+      key: "event_loop_summary",
+      section: 8,
+      title: "Event loop delay and stalls (whole window)",
+      params: p,
+      columns: [
+        col("windows", "Windows", "int"),
+        col("windows_with_stalls", "Windows with a stall", "int"),
+        col("stalls", "Stalls", "int"),
+        col("stall_threshold_ms", "Stall threshold", "ms"),
+        col("p50_of_p50", "Typical p50", "ms"),
+        col("p95_of_p99", "p95 of window p99", "ms"),
+        col("max_ms", "Max delay", "ms"),
+        col("longest_stall_ms", "Longest stall", "ms"),
+      ],
+      sql: `SELECT COUNT(*)::int AS windows,
+       COUNT(*) FILTER (WHERE stall_count > 0)::int AS windows_with_stalls,
+       COALESCE(SUM(stall_count), 0)::int AS stalls,
+       MAX(stall_threshold_ms) AS stall_threshold_ms,
+       percentile_cont(0.5) WITHIN GROUP (ORDER BY p50_ms) AS p50_of_p50,
+       percentile_cont(0.95) WITHIN GROUP (ORDER BY p99_ms) AS p95_of_p99,
+       MAX(max_ms) AS max_ms,
+       MAX(longest_stall_ms) AS longest_stall_ms
+FROM main_event_loop_samples
+WHERE created_at >= $1
+HAVING COUNT(*) > 0`,
+    },
+    {
+      key: "event_loop_by_day",
+      section: 8,
+      title: "Event loop stalls by day (UTC)",
+      params: p,
+      columns: [
+        col("day", "Day", "text"),
+        col("windows", "Windows", "int"),
+        col("stalls", "Stalls", "int"),
+        col("p50_of_p99", "Typical p99", "ms"),
+        col("max_ms", "Max delay", "ms"),
+      ],
+      sql: `SELECT to_char(date_trunc('day', created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
+       COUNT(*)::int AS windows,
+       COALESCE(SUM(stall_count), 0)::int AS stalls,
+       percentile_cont(0.5) WITHIN GROUP (ORDER BY p99_ms) AS p50_of_p99,
+       MAX(max_ms) AS max_ms
+FROM main_event_loop_samples
+WHERE created_at >= $1
+GROUP BY 1
+ORDER BY 1`,
     },
   ];
 }

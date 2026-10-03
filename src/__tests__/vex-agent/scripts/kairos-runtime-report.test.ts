@@ -89,8 +89,8 @@ describe("buildReportQueries", () => {
   const since = new Date("2026-09-20T00:00:00.000Z");
   const queries = buildReportQueries(since);
 
-  it("covers all seven sections with unique keys", () => {
-    expect([...new Set(queries.map((q) => q.section))].sort()).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  it("covers all eight sections with unique keys", () => {
+    expect([...new Set(queries.map((q) => q.section))].sort()).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(new Set(queries.map((q) => q.key)).size).toBe(queries.length);
   });
 
@@ -109,6 +109,21 @@ describe("buildReportQueries", () => {
       expect(q.sql).not.toContain(since.toISOString());
       expect(q.sql).not.toContain("2026");
     }
+  });
+
+  it("reads the main-process event loop windows (migration 175) in section 8", () => {
+    const section8 = queries.filter((q) => q.section === 8);
+    expect(section8.map((q) => q.key)).toEqual(["event_loop_summary", "event_loop_by_day"]);
+    for (const q of section8) {
+      expect(q.sql).toContain("FROM main_event_loop_samples");
+      expect(q.sql).toContain("stall_count");
+    }
+    const summary = requireValue(section8[0]);
+    expect(summary.columns.map((c) => c.key)).toEqual([
+      "windows", "windows_with_stalls", "stalls", "stall_threshold_ms",
+      "p50_of_p50", "p95_of_p99", "max_ms", "longest_stall_ms",
+    ]);
+    expect(summary.sql).toContain("HAVING COUNT(*) > 0");
   });
 
   it("produces identical SQL for any window, so only the parameter varies", () => {
