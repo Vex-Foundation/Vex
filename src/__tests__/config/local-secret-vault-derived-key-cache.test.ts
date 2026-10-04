@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * VAULT_DERIVED_KEY_CACHE proof suite (fastLighterClick FLC-0), against the
@@ -49,6 +49,13 @@ import {
 } from "../../lib/local-secret-vault/derived-key-cache.js";
 import { requireValue } from "../helpers/require-value.js";
 
+/**
+ * Every case below (except the in-memory single-flight one) runs real scrypt
+ * derives at N=2^17. Alone the slowest case takes about 6 s, but when several
+ * suites run at once on the same machine each derive can take seconds, so the
+ * default 10 s timeout is not enough. The cap only matters if a case hangs.
+ */
+const REAL_KDF_TIMEOUT_MS = 120_000;
 const PASSWORD = "correct-horse-battery-staple";
 const WRONG_PASSWORD = "correct-horse-battery-stapler";
 const EXTRA_KEY = "lighter/rhc/account-42/api-key-7";
@@ -56,6 +63,39 @@ const EXTRA_VALUE = `0x${"1".repeat(80)}`;
 
 let testDir = "";
 let vaultFile = "";
+/**
+ * The seeded vault (one managed secret, one Lighter extra secret, at
+ * CURRENT_KDF_PARAMS), encrypted ONCE per file with the uncounted
+ * `scryptSync` and written fresh for each case. It mirrors `encryptContents`
+ * (known and extra secrets share one on-disk map), so each case starts from
+ * a real vault without paying five counted derives to build it.
+ */
+let seedFileText = "";
+
+beforeAll(() => {
+  const salt = randomBytes(16);
+  const iv = randomBytes(12);
+  const key = scryptSync(PASSWORD, salt, CURRENT_KDF_PARAMS.dkLen, {
+    N: CURRENT_KDF_PARAMS.N,
+    r: CURRENT_KDF_PARAMS.r,
+    p: CURRENT_KDF_PARAMS.p,
+    maxmem: 256 * 1024 * 1024,
+  });
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const plaintext = JSON.stringify({
+    version: 1,
+    secrets: { OPENROUTER_API_KEY: "sk-or-test", [EXTRA_KEY]: EXTRA_VALUE },
+  });
+  const ciphertext = Buffer.concat([cipher.update(Buffer.from(plaintext, "utf8")), cipher.final()]);
+  seedFileText = `${JSON.stringify({
+    version: 1,
+    kdf: CURRENT_KDF_PARAMS,
+    salt: salt.toString("base64"),
+    iv: iv.toString("base64"),
+    tag: cipher.getAuthTag().toString("base64"),
+    ciphertext: ciphertext.toString("base64"),
+  }, null, 2)}\n`;
+}, REAL_KDF_TIMEOUT_MS);
 
 beforeEach(() => {
   testDir = join(tmpdir(), `vex-vault-key-cache-${Date.now()}-${Math.random()}`);
@@ -98,9 +138,7 @@ async function failureOf(fn: () => Promise<unknown>): Promise<{
 }
 
 async function seedVault(): Promise<void> {
-  await createSecretVault(PASSWORD, { filePath: vaultFile });
-  await writeSecretVaultSecrets(PASSWORD, { OPENROUTER_API_KEY: "sk-or-test" }, { filePath: vaultFile });
-  await writeSecretVaultExtraSecrets(PASSWORD, { [EXTRA_KEY]: EXTRA_VALUE }, { filePath: vaultFile });
+  writeFileSync(vaultFile, seedFileText, { encoding: "utf8", mode: 0o600 });
 }
 
 interface RawVaultFile {
@@ -151,7 +189,7 @@ describe("VAULT_DERIVED_KEY_CACHE: cached reads", () => {
     expect(warm.value).toEqual(uncached.value);
     expect(warm.value.extraSecrets?.[EXTRA_KEY]).toBe(EXTRA_VALUE);
     expect(cache.size).toBe(1);
-  });
+  }, REAL_KDF_TIMEOUT_MS);
 
   it("N concurrent cold reads derive once", async () => {
     await seedVault();
@@ -165,7 +203,7 @@ describe("VAULT_DERIVED_KEY_CACHE: cached reads", () => {
     for (const contents of reads.value) {
       expect(contents.secrets.OPENROUTER_API_KEY).toBe("sk-or-test");
     }
-  });
+  }, REAL_KDF_TIMEOUT_MS);
 
   it("the cache's own derive is single flight and hands every caller a private copy", async () => {
     const cache = new VaultDerivedKeyCache();
@@ -218,7 +256,7 @@ describe("VAULT_DERIVED_KEY_CACHE: authentication paths never use it", () => {
     expect(cache.size).toBe(1);
     const stillWarm = await counted(() => unlockSecretVault(PASSWORD, cachedOptions(cache)));
     expect(stillWarm.derives).toBe(0);
-  });
+  }, REAL_KDF_TIMEOUT_MS);
 
   it("verify, an uncached unlock and create always run the full KDF, even with a warm cache", async () => {
     await seedVault();
@@ -239,7 +277,7 @@ describe("VAULT_DERIVED_KEY_CACHE: authentication paths never use it", () => {
     expect(verifyWrong).toMatchObject({ code: "invalid_password", derives: 1 });
     expect(unlockUncached.derives).toBe(1);
     expect(createExisting.derives).toBe(1);
-  });
+  }, REAL_KDF_TIMEOUT_MS);
 });
 
 describe("VAULT_DERIVED_KEY_CACHE: drop and generation", () => {
@@ -254,7 +292,7 @@ describe("VAULT_DERIVED_KEY_CACHE: drop and generation", () => {
     expect(cache.size).toBe(0);
     const afterClear = await counted(() => unlockSecretVault(PASSWORD, cachedOptions(cache)));
     expect(afterClear.derives).toBe(1);
-  });
+  }, REAL_KDF_TIMEOUT_MS);
 
   it("a clear that lands while a cached read or write is in flight stops it storing a key", async () => {
     await seedVault();
@@ -275,7 +313,7 @@ describe("VAULT_DERIVED_KEY_CACHE: drop and generation", () => {
     expect(fresh.derives).toBe(1);
     expect(fresh.value.secrets.JUPITER_API_KEY).toBe("jup");
     expect(cache.size).toBe(1);
-  });
+  }, REAL_KDF_TIMEOUT_MS);
 });
 
 describe("VAULT_DERIVED_KEY_CACHE: writes rotate the salt", () => {
@@ -307,7 +345,7 @@ describe("VAULT_DERIVED_KEY_CACHE: writes rotate the salt", () => {
     decipher.setAuthTag(Buffer.from(newFile.tag, "base64"));
     decipher.update(Buffer.from(newFile.ciphertext, "base64"));
     expect(() => decipher.final()).toThrow();
-  });
+  }, REAL_KDF_TIMEOUT_MS);
 
   it("an uncached write by someone else is simply a miss for the new salt", async () => {
     await seedVault();
@@ -319,7 +357,7 @@ describe("VAULT_DERIVED_KEY_CACHE: writes rotate the salt", () => {
 
     expect(read.derives).toBe(1);
     expect(read.value.secrets.JUPITER_API_KEY).toBe("outside");
-  });
+  }, REAL_KDF_TIMEOUT_MS);
 
   it("a KDF-upgrade rewrite keeps the key for the upgraded file", async () => {
     const salt = randomBytes(16);
@@ -348,7 +386,7 @@ describe("VAULT_DERIVED_KEY_CACHE: writes rotate the salt", () => {
     expect(readRaw().kdf.N).toBe(CURRENT_KDF_PARAMS.N);
     expect(after.derives).toBe(0);
     expect(after.value.secrets.OPENROUTER_API_KEY).toBe("sk-legacy");
-  });
+  }, REAL_KDF_TIMEOUT_MS);
 });
 
 describe("VAULT_DERIVED_KEY_CACHE: tampering fails exactly as today", () => {
@@ -388,7 +426,7 @@ describe("VAULT_DERIVED_KEY_CACHE: tampering fails exactly as today", () => {
       expect(record.tagRetry).toBe(sameSalt ? 1 : 0);
       expect(record.cacheHit).toBe(sameSalt ? 1 : 0);
       if (sameSalt) expect(cache.size).toBe(0);
-    });
+    }, REAL_KDF_TIMEOUT_MS);
   }
 });
 
@@ -445,7 +483,7 @@ describe("VAULT_DERIVED_KEY_CACHE: OFF is today's path", () => {
     // still derive.
     expect(on.derives).toEqual([1, 2, 0, 0, 1, 0, 1, 1, 0]);
     expect(on.results).toEqual(off.results);
-  });
+  }, REAL_KDF_TIMEOUT_MS);
 });
 
 describe("VAULT_DERIVED_KEY_CACHE: [vault-timing] records", () => {
@@ -481,7 +519,7 @@ describe("VAULT_DERIVED_KEY_CACHE: [vault-timing] records", () => {
       expect(serialized).not.toContain(vaultFile);
     }
     expect(requireValue(records[0]).deriveMs).toBeGreaterThan(0);
-  });
+  }, REAL_KDF_TIMEOUT_MS);
 
   it("a throwing timing sink never fails the vault operation", async () => {
     await seedVault();
@@ -494,7 +532,7 @@ describe("VAULT_DERIVED_KEY_CACHE: [vault-timing] records", () => {
     const contents: LocalSecretVaultContents = await unlockSecretVault(PASSWORD, cachedOptions(cache));
 
     expect(contents.secrets.OPENROUTER_API_KEY).toBe("sk-or-test");
-  });
+  }, REAL_KDF_TIMEOUT_MS);
 
   it("the cache never exposes a key, fingerprint or path when serialised or inspected", async () => {
     await seedVault();
@@ -505,5 +543,5 @@ describe("VAULT_DERIVED_KEY_CACHE: [vault-timing] records", () => {
     const inspected = (await import("node:util")).inspect(cache, { depth: 5, showHidden: true });
     expect(inspected).not.toContain(vaultFile);
     expect(inspected).not.toMatch(/[0-9a-f]{2} [0-9a-f]{2} [0-9a-f]{2}/);
-  });
+  }, REAL_KDF_TIMEOUT_MS);
 });

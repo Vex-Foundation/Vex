@@ -128,7 +128,9 @@ beforeEach(async () => {
   handlers.clear();
   logInfo.mockClear();
   kdf.calls = 0;
-});
+  // Seeding runs five real N=2^17 derives; the default 10 s hook timeout is
+  // too tight when other suites load the machine.
+}, 120_000);
 
 afterEach(() => {
   vi.restoreAllMocks();
