@@ -11,12 +11,14 @@ import {
   unlockSecretVault,
   writeSecretVaultExtraSecrets,
 } from "@vex-lib/local-secret-vault.js";
-import { SECRETS_VAULT_FILE } from "../paths/config-dir.js";
 // Every Lighter credential save, activation and removal drops the order path's
 // cached READ-ONLY account auth tokens first, so a token minted for a key that
 // is being replaced or removed is never reused (LIGHTER_READ_AUTH_CACHE).
 import { invalidateLighterReadAuthCache } from "@vex-agent/tools/protocols/lighter/read-auth-cache.js";
 import { requireUnlockedMasterPassword } from "./session.js";
+// Every vault call here uses the session's own held password, so each passes
+// the session's derived-key cache options (`VAULT_DERIVED_KEY_CACHE`).
+import { unlockedSessionVaultOptions } from "./vault-key-cache.js";
 
 export interface UnlockedLighterTradingCredentialStatus {
   readonly present: boolean;
@@ -100,7 +102,7 @@ async function writeUnlockedLighterTradingApiPrivateKeyNow(
     await writeSecretVaultExtraSecrets(
       password.data,
       { [reference.vaultCredentialId]: material.privateKey },
-      { filePath: SECRETS_VAULT_FILE },
+      unlockedSessionVaultOptions("lighter_write"),
     );
     return { present: true, reference };
   } catch {
@@ -139,9 +141,10 @@ async function writeUnlockedPendingLighterTradingApiPrivateKeyNow(
   let existingPrivateKey: string | undefined;
   let existingState: string | undefined;
   try {
-    const contents = await unlockSecretVault(password.data, {
-      filePath: SECRETS_VAULT_FILE,
-    });
+    const contents = await unlockSecretVault(
+      password.data,
+      unlockedSessionVaultOptions("lighter_pending_check"),
+    );
     existingPrivateKey = contents.extraSecrets?.[reference.vaultCredentialId];
     existingState = contents.extraSecrets?.[registrationStateVaultId(reference)];
   } catch {
@@ -172,7 +175,7 @@ async function writeUnlockedPendingLighterTradingApiPrivateKeyNow(
         [registrationStateVaultId(reference)]:
           LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE,
       },
-      { filePath: SECRETS_VAULT_FILE },
+      unlockedSessionVaultOptions("lighter_write"),
     );
     return {
       present: true,
@@ -193,9 +196,10 @@ export async function getUnlockedLighterTradingCredentialRegistrationState(
 
   let state: string | undefined;
   try {
-    const contents = await unlockSecretVault(password.data, {
-      filePath: SECRETS_VAULT_FILE,
-    });
+    const contents = await unlockSecretVault(
+      password.data,
+      unlockedSessionVaultOptions("lighter_registration_state"),
+    );
     state = contents.extraSecrets?.[registrationStateVaultId(reference)];
   } catch {
     throw pendingCredentialError("registration state is not readable");
@@ -227,7 +231,10 @@ async function activateUnlockedLighterTradingCredentialNow(
   let privateKey: string | undefined;
   let state: string | undefined;
   try {
-    const contents = await unlockSecretVault(password.data, { filePath: SECRETS_VAULT_FILE });
+    const contents = await unlockSecretVault(
+      password.data,
+      unlockedSessionVaultOptions("lighter_activation_check"),
+    );
     privateKey = contents.extraSecrets?.[reference.vaultCredentialId];
     state = contents.extraSecrets?.[registrationStateVaultId(reference)];
   } catch {
@@ -252,7 +259,7 @@ async function activateUnlockedLighterTradingCredentialNow(
     await writeSecretVaultExtraSecrets(
       password.data,
       { [registrationStateVaultId(reference)]: LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE },
-      { filePath: SECRETS_VAULT_FILE },
+      unlockedSessionVaultOptions("lighter_write"),
     );
     return {
       present: true,
@@ -307,7 +314,7 @@ async function deleteUnlockedLighterTradingApiPrivateKeysNow(
     await writeSecretVaultExtraSecrets(
       password.data,
       updates,
-      { filePath: SECRETS_VAULT_FILE },
+      unlockedSessionVaultOptions("lighter_write"),
     );
     return references.map((reference) => ({ present: false, reference }));
   } catch {
@@ -329,9 +336,10 @@ export async function getUnlockedLighterTradingCredentialStatus(
   }
 
   try {
-    const contents = await unlockSecretVault(password.data, {
-      filePath: SECRETS_VAULT_FILE,
-    });
+    const contents = await unlockSecretVault(
+      password.data,
+      unlockedSessionVaultOptions("lighter_status"),
+    );
     const value = contents.extraSecrets?.[reference.vaultCredentialId];
     return {
       present: typeof value === "string" && value.trim().length > 0,
@@ -377,9 +385,10 @@ async function listUnlockedLighterTradingCredentialScopesByManagement(
   if (!password.ok) return [];
 
   try {
-    const contents = await unlockSecretVault(password.data, {
-      filePath: SECRETS_VAULT_FILE,
-    });
+    const contents = await unlockSecretVault(
+      password.data,
+      unlockedSessionVaultOptions("lighter_scopes"),
+    );
     const extraSecrets = contents.extraSecrets ?? {};
     const scopes: UnlockedLighterTradingCredentialScope[] = [];
     for (const [key, value] of Object.entries(extraSecrets)) {
@@ -439,9 +448,10 @@ export async function readUnlockedLighterTradingApiPrivateKey(
   }
 
   try {
-    const contents = await unlockSecretVault(password.data, {
-      filePath: SECRETS_VAULT_FILE,
-    });
+    const contents = await unlockSecretVault(
+      password.data,
+      unlockedSessionVaultOptions("lighter_key"),
+    );
     const value = contents.extraSecrets?.[reference.vaultCredentialId];
     return typeof value === "string" && value.trim().length > 0 ? value : null;
   } catch {

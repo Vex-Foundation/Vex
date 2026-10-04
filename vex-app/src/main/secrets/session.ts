@@ -7,6 +7,7 @@ import {
   unlockSecretVault,
   writeSecretVaultSecrets,
 } from "@vex-lib/local-secret-vault.js";
+import type { LocalSecretVaultCacheOptions } from "@vex-lib/local-secret-vault/derived-key-cache.js";
 import {
   MANAGED_SECRET_ENV_KEYS,
   MASTER_PASSWORD_ENV_KEY,
@@ -27,6 +28,11 @@ import {
 import { log } from "../logger/index.js";
 import { ensureEngineDbUrl } from "../database/engine-db-readiness.js";
 import { requestStudioRuntimeRetry } from "../studio/readiness.js";
+import {
+  dropVaultDerivedKeys,
+  setVaultTimingSink,
+  unlockedSessionVaultOptions,
+} from "./vault-key-cache.js";
 import {
   beginStudioSessionTransition,
   cancelStudioSessionTransition,
@@ -61,6 +67,20 @@ export {
 } from "../studio/session-dispatch-fence.js";
 
 let unlockedMasterPassword: string | null = null;
+
+/**
+ * `[vault-timing]`: one line per vault operation that ran with the derived-key
+ * cache (`VAULT_DERIVED_KEY_CACHE`). Numbers, the operation kind and the
+ * caller's label only, never a key, password or path.
+ */
+setVaultTimingSink((record) => {
+  log.info("[vault-timing]", record);
+});
+
+/** The vault options of an authentication path: never the derived-key cache. */
+const AUTHENTICATION_VAULT_OPTIONS: LocalSecretVaultCacheOptions = {
+  filePath: SECRETS_VAULT_FILE,
+};
 
 /**
  * Advances on every relock (inside `scrubUnlockedRuntime`).
@@ -109,6 +129,8 @@ export function onSecretSessionLifecycle(
 }
 
 function emitSecretSessionLifecycle(state: SecretSessionLifecycleState): void {
+  // Every session transition drops the cached derived vault keys first.
+  dropVaultDerivedKeys();
   for (const listener of secretSessionLifecycleListeners) {
     try {
       listener(state);
@@ -257,9 +279,17 @@ function toPublicError(cause: unknown): Result<never> {
  * its own vault work: if a lock landed while the vault was being read, the
  * secrets this just applied are scrubbed again at once and the call throws, so
  * a lock is never undone by an unlock or write that was already in flight.
+ *
+ * `vaultOptions` is {@link AUTHENTICATION_VAULT_OPTIONS} on the unlock,
+ * create and restore paths (a typed password: full KDF), and the session's
+ * cached options only after a write with the held password.
  */
-async function applyUnlockedRuntime(password: string, epoch: number): Promise<void> {
-  await applySecretVaultToProcessEnv(password, { filePath: SECRETS_VAULT_FILE });
+async function applyUnlockedRuntime(
+  password: string,
+  epoch: number,
+  vaultOptions: LocalSecretVaultCacheOptions,
+): Promise<void> {
+  await applySecretVaultToProcessEnv(password, vaultOptions);
   if (epoch !== sessionEpoch) {
     scrubManagedSecretEnv();
     throw new SecretSessionLockedDuringOperationError();
@@ -294,12 +324,13 @@ export async function initializeMasterPassword(
   password: string,
 ): Promise<Result<{ readonly kind: "set" | "unchanged" }>> {
   try {
+    dropVaultDerivedKeys();
     const epoch = sessionEpoch;
     const existed = getSecretVaultStatus({ filePath: SECRETS_VAULT_FILE }).configured;
     await createSecretVault(password, { filePath: SECRETS_VAULT_FILE });
     assertSessionEpoch(epoch);
     unlockedMasterPassword = password;
-    await applyUnlockedRuntime(password, epoch);
+    await applyUnlockedRuntime(password, epoch, AUTHENTICATION_VAULT_OPTIONS);
     stripManagedSecretsFromDotenvFile(ENV_FILE);
     emitSecretSessionLifecycle("unlocked");
     // First-time setup also establishes an unlocked session, so admission
@@ -326,12 +357,15 @@ export async function unlockSecretSession(
   beginStudioSessionTransition();
   let unlockedRuntimeChanged = false;
   try {
+    // An unlock attempt never consults the derived-key cache (the typed
+    // password always runs the full KDF below) and starts from an empty one.
+    dropVaultDerivedKeys();
     const epoch = sessionEpoch;
     await unlockSecretVault(password, { filePath: SECRETS_VAULT_FILE });
     assertSessionEpoch(epoch);
     unlockedMasterPassword = password;
     unlockedRuntimeChanged = true;
-    await applyUnlockedRuntime(password, epoch);
+    await applyUnlockedRuntime(password, epoch, AUTHENTICATION_VAULT_OPTIONS);
     stripManagedSecretsFromDotenvFile(ENV_FILE);
     emitSecretSessionLifecycle("unlocked");
     // Vex Studio: the dispatch generation is MONOTONIC in both directions, so
@@ -500,6 +534,9 @@ function scrubUnlockedRuntime(): void {
   const wasUnlocked = unlockedMasterPassword !== null;
   sessionEpoch += 1;
   unlockedMasterPassword = null;
+  // Unconditional and synchronous, with the password scrub: no derived vault
+  // key outlives a relock, and no read already in flight can store one again.
+  dropVaultDerivedKeys();
   scrubManagedSecretEnv();
   // Revoke the signing capability atomically with the env scrub: after this the
   // chokepoint falls back to env-only, which is also scrubbed → signing fails
@@ -636,7 +673,9 @@ async function refuseStudioIntentsSafely(
  * `toPublicError`. NEVER logs the password.
  */
 export async function adoptUnlockedPassword(password: string): Promise<void> {
-  await applyUnlockedRuntime(password, sessionEpoch);
+  // The vault file was swapped underneath the session: start from no cache.
+  dropVaultDerivedKeys();
+  await applyUnlockedRuntime(password, sessionEpoch, AUTHENTICATION_VAULT_OPTIONS);
   unlockedMasterPassword = password;
   stripManagedSecretsFromDotenvFile(ENV_FILE);
   emitSecretSessionLifecycle("unlocked");
@@ -657,10 +696,16 @@ export async function writeUnlockedSecrets(
 
   try {
     const epoch = sessionEpoch;
-    await writeSecretVaultSecrets(passwordResult.data, updates, {
-      filePath: SECRETS_VAULT_FILE,
-    });
-    await applyUnlockedRuntime(passwordResult.data, epoch);
+    await writeSecretVaultSecrets(
+      passwordResult.data,
+      updates,
+      unlockedSessionVaultOptions("secrets_write"),
+    );
+    await applyUnlockedRuntime(
+      passwordResult.data,
+      epoch,
+      unlockedSessionVaultOptions("runtime_env"),
+    );
     stripManagedSecretsFromDotenvFile(ENV_FILE);
     return ok(undefined);
   } catch (cause) {
@@ -689,9 +734,10 @@ export async function readUnlockedSecret(
 
   try {
     const epoch = sessionEpoch;
-    const contents = await unlockSecretVault(passwordResult.data, {
-      filePath: SECRETS_VAULT_FILE,
-    });
+    const contents = await unlockSecretVault(
+      passwordResult.data,
+      unlockedSessionVaultOptions("secret_read"),
+    );
     // Never hand a secret out of a session that was locked mid-read.
     assertSessionEpoch(epoch);
     const value = contents.secrets[key];
@@ -710,9 +756,10 @@ export async function getUnlockedSecretPresence(): Promise<SecretPresence> {
 
   const epoch = sessionEpoch;
   try {
-    const contents = await unlockSecretVault(unlockedMasterPassword, {
-      filePath: SECRETS_VAULT_FILE,
-    });
+    const contents = await unlockSecretVault(
+      unlockedMasterPassword,
+      unlockedSessionVaultOptions("secret_presence"),
+    );
     if (epoch !== sessionEpoch) {
       // Locked while the probe was reading: report what is true now.
       return { vaultConfigured: status.vaultConfigured, unlocked: false, secrets: {} };

@@ -35,6 +35,18 @@ async function loadModule(): Promise<typeof import("../lighter-trading-credentia
   return import("../lighter-trading-credential.js");
 }
 
+/**
+ * The session's own vault options (`VAULT_DERIVED_KEY_CACHE`), taken from the
+ * same module graph `loadModule` just loaded, so the cache instance compares
+ * equal to the one the code under test passed.
+ */
+async function sessionVaultOptions(
+  label: import("../vault-key-cache.js").UnlockedVaultOperationLabel,
+): Promise<import("@vex-lib/local-secret-vault/derived-key-cache.js").LocalSecretVaultCacheOptions> {
+  const { unlockedSessionVaultOptions } = await import("../vault-key-cache.js");
+  return unlockedSessionVaultOptions(label);
+}
+
 beforeEach(() => {
   mockRequireUnlockedMasterPassword.mockReset();
   mockUnlockSecretVault.mockReset();
@@ -60,9 +72,17 @@ describe("Lighter trading credential vault reader", () => {
     );
 
     expect(material.privateKey).toBe(PRIVATE_KEY);
-    expect(mockUnlockSecretVault).toHaveBeenCalledWith("correct-password", {
-      filePath: "/tmp/vex-test-vault",
-    });
+    expect(mockUnlockSecretVault).toHaveBeenCalledTimes(2);
+    expect(mockUnlockSecretVault).toHaveBeenNthCalledWith(
+      1,
+      "correct-password",
+      await sessionVaultOptions("lighter_registration_state"),
+    );
+    expect(mockUnlockSecretVault).toHaveBeenNthCalledWith(
+      2,
+      "correct-password",
+      await sessionVaultOptions("lighter_key"),
+    );
     expect(JSON.stringify(material)).toBe(
       "{\"kind\":\"lighter_api_private_key_secret\",\"privateKey\":\"[redacted]\"}",
     );
@@ -163,7 +183,7 @@ describe("Lighter trading credential vault import", () => {
         [`${REFERENCE.vaultCredentialId}/registration-state`]:
           "key_generated_pending_registration",
       },
-      { filePath: "/tmp/vex-test-vault" },
+      await sessionVaultOptions("lighter_write"),
     );
   });
 
@@ -259,7 +279,7 @@ describe("Lighter trading credential vault import", () => {
     expect(mockWriteSecretVaultExtraSecrets).toHaveBeenCalledWith(
       "correct-password",
       { [REFERENCE.vaultCredentialId]: PRIVATE_KEY },
-      { filePath: "/tmp/vex-test-vault" },
+      await sessionVaultOptions("lighter_write"),
     );
     expect(mockUnlockSecretVault).not.toHaveBeenCalled();
   });
@@ -384,7 +404,7 @@ describe("Lighter trading credential vault status and removal", () => {
     expect(mockWriteSecretVaultExtraSecrets).toHaveBeenCalledWith(
       "correct-password",
       { [`${REFERENCE.vaultCredentialId}/registration-state`]: "key_registered_active" },
-      { filePath: "/tmp/vex-test-vault" },
+      await sessionVaultOptions("lighter_write"),
     );
     expect(JSON.stringify(mockWriteSecretVaultExtraSecrets.mock.calls)).not.toContain(PRIVATE_KEY);
   });
@@ -499,7 +519,7 @@ describe("Lighter trading credential vault status and removal", () => {
         [REFERENCE.vaultCredentialId]: null,
         [`${REFERENCE.vaultCredentialId}/registration-state`]: null,
       },
-      { filePath: "/tmp/vex-test-vault" },
+      await sessionVaultOptions("lighter_write"),
     );
   });
 
@@ -537,7 +557,7 @@ describe("Lighter trading credential vault status and removal", () => {
         [rhcReference.vaultCredentialId]: null,
         [`${rhcReference.vaultCredentialId}/registration-state`]: null,
       },
-      { filePath: "/tmp/vex-test-vault" },
+      await sessionVaultOptions("lighter_write"),
     );
   });
 });
@@ -612,5 +632,61 @@ describe("Lighter trading credential vault writes drop cached read-only order to
     await module.deleteUnlockedLighterTradingApiPrivateKey(REFERENCE);
 
     expect(cacheSizeAtWrite()).toEqual([0]);
+  });
+});
+
+describe("VAULT_DERIVED_KEY_CACHE on the Lighter credential vault calls", () => {
+  it("passes the session's derived-key cache to every read and write while ON", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockUnlockSecretVault.mockResolvedValue({
+      version: 1,
+      secrets: {},
+      extraSecrets: { [REFERENCE.vaultCredentialId]: PRIVATE_KEY },
+    });
+    mockWriteSecretVaultExtraSecrets.mockResolvedValue({ version: 1, secrets: {} });
+    const module = await loadModule();
+    const { VAULT_DERIVED_KEY_CACHE } = await import("../vault-key-cache.js");
+    expect(VAULT_DERIVED_KEY_CACHE).toBe(true);
+
+    await module.getUnlockedLighterTradingCredentialStatus(REFERENCE);
+    await module.listUnlockedLighterTradingCredentialScopes("rhc");
+    await module.writeUnlockedLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY);
+
+    expect(mockUnlockSecretVault.mock.calls.map((call) => call[1])).toEqual([
+      await sessionVaultOptions("lighter_status"),
+      await sessionVaultOptions("lighter_scopes"),
+    ]);
+    for (const call of mockUnlockSecretVault.mock.calls) {
+      expect(call[1]).toHaveProperty("derivedKeyCache");
+    }
+    expect(mockWriteSecretVaultExtraSecrets.mock.calls[0]?.[2]).toHaveProperty("derivedKeyCache");
+  });
+
+  it("passes exactly today's options (no cache) when switched OFF", async () => {
+    mockRequireUnlockedMasterPassword.mockReturnValue({ ok: true, data: "correct-password" });
+    mockUnlockSecretVault.mockResolvedValue({
+      version: 1,
+      secrets: {},
+      extraSecrets: { [REFERENCE.vaultCredentialId]: PRIVATE_KEY },
+    });
+    mockWriteSecretVaultExtraSecrets.mockResolvedValue({ version: 1, secrets: {} });
+    const module = await loadModule();
+    const { configureVaultDerivedKeyCacheDeps } = await import("../vault-key-cache.js");
+    const restore = configureVaultDerivedKeyCacheDeps({ derivedKeyCache: false });
+    try {
+      const reader = module.createUnlockedVaultLighterTradingSecretReader();
+      await expect(reader.readTradingApiPrivateKey(REFERENCE)).resolves.toBe(PRIVATE_KEY);
+      await module.writeUnlockedLighterTradingApiPrivateKey(REFERENCE, PRIVATE_KEY);
+    } finally {
+      restore();
+    }
+
+    expect(mockUnlockSecretVault.mock.calls).toEqual([
+      ["correct-password", { filePath: "/tmp/vex-test-vault" }],
+      ["correct-password", { filePath: "/tmp/vex-test-vault" }],
+    ]);
+    expect(mockWriteSecretVaultExtraSecrets.mock.calls[0]?.[2]).toEqual({
+      filePath: "/tmp/vex-test-vault",
+    });
   });
 });
