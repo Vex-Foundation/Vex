@@ -25,6 +25,7 @@ import type {
 } from "@shared/schemas/lighter-trading.js";
 import { isAbortError, throwIfAborted } from "../../../../src/utils/cancellation.js";
 import { resolveLighterReadOnlyAccountAuth } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
+import { recordLighterDeskPanelAccountLimits } from "@vex-agent/tools/protocols/lighter/preview-snapshot.js";
 import { listUnlockedLighterTradingCredentialScopes } from "../secrets/lighter-trading-credential.js";
 import { requireUnlockedMasterPassword } from "../secrets/session.js";
 import {
@@ -525,10 +526,15 @@ async function readExchangeFees(
 ): Promise<LighterTradingExchangeFees | null> {
   if (client.getAccountLimits === undefined) return null;
   try {
+    const readAtMs = Date.now();
     const limits = await client.getAccountLimits(environment, { accountIndex }, auth);
     const makerTicks = feeTick(limits.current_maker_fee_tick);
     const takerTicks = feeTick(limits.current_taker_fee_tick);
     if (limits.code !== 200 || makerTicks === null || takerTicks === null) return null;
+    // LIGHTER_DESK_PREWARM: this panel read, already made with this account's
+    // own read-only auth, stands in for the next desk preview's tier read
+    // while it is young. No-op while the switch is OFF.
+    recordLighterDeskPanelAccountLimits({ environment, accountIndex, response: limits, atMs: readAtMs });
     return { makerTicks, takerTicks, source: "account" };
   } catch {
     log.warn("[lighter-trading] account fee tier read failed", { environment, accountIndex });

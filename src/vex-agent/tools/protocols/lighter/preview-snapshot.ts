@@ -6,6 +6,7 @@ import type {
   LighterAccountResponse,
   LighterEnvironment,
   LighterMarketDetailsResponse,
+  LighterMarketType,
   LighterOrderBookOrdersResponse,
   LighterSystemConfigResponse,
 } from "@tools/lighter/types.js";
@@ -14,6 +15,14 @@ import type { LighterCapitalShareExecuteSnapshot } from "./capital-share-policy.
 import { lighterOrderMarginFitNeedsLiveReads, readLighterMarginFitDepthBook } from "./margin-fit-guard.js";
 import type { LighterOrderFeeClient, LighterOrderFeeReadSnapshot } from "./order-fees.js";
 import { resolveLighterReadOnlyAccountAuth } from "./read-account-auth.js";
+import {
+  LIGHTER_DESK_PREWARM,
+  recordLighterDeskPrewarmAccountLimits,
+  recordLighterDeskPrewarmFeeConfig,
+  takeLighterDeskPrewarmAccountLimits,
+  takeLighterDeskPrewarmBookDepth,
+  takeLighterDeskPrewarmFeeConfig,
+} from "./desk-prewarm.js";
 
 /**
  * SWITCH `LIGHTER_PREVIEW_SINGLE_SNAPSHOT`.
@@ -48,6 +57,8 @@ export const LIGHTER_PREVIEW_SINGLE_SNAPSHOT = true;
 export interface LighterOrderPreviewDeps {
   /** Overrides {@link LIGHTER_PREVIEW_SINGLE_SNAPSHOT}; absent uses the constant. */
   readonly previewSingleSnapshot?: boolean;
+  /** Overrides `LIGHTER_DESK_PREWARM` (`desk-prewarm.ts`); absent uses the constant. */
+  readonly deskPrewarm?: boolean;
 }
 
 let configuredDeps: LighterOrderPreviewDeps | null = null;
@@ -62,6 +73,25 @@ export function configureLighterOrderPreviewDeps(deps: LighterOrderPreviewDeps |
 
 export function lighterPreviewSingleSnapshotEnabled(): boolean {
   return configuredDeps?.previewSingleSnapshot ?? LIGHTER_PREVIEW_SINGLE_SNAPSHOT;
+}
+
+/** `LIGHTER_DESK_PREWARM`; it only ever rides on the single snapshot. */
+export function lighterDeskPrewarmEnabled(): boolean {
+  return configuredDeps?.deskPrewarm ?? LIGHTER_DESK_PREWARM;
+}
+
+/**
+ * The desk account panel's own fee-tier read, kept for the next desk preview
+ * (`LIGHTER_DESK_PREWARM`). Records nothing while the switch is OFF.
+ */
+export function recordLighterDeskPanelAccountLimits(input: {
+  readonly environment: LighterEnvironment;
+  readonly accountIndex: number;
+  readonly response: LighterAccountLimitsResponse;
+  readonly atMs: number;
+}): void {
+  if (!lighterDeskPrewarmEnabled()) return;
+  recordLighterDeskPrewarmAccountLimits(input);
 }
 
 export type LighterPreviewSnapshotClient =
@@ -96,6 +126,9 @@ export function lighterPreviewAdmissionSnapshotFits(
 interface FeePublicReads {
   readonly systemConfig: () => Promise<LighterSystemConfigResponse>;
   readonly collectorAccount: () => Promise<LighterAccountResponse>;
+  readonly collectorAccountIndex: number;
+  /** Wall clock (ms) at which the REST reads started; null when they came from the desk pre-warm. */
+  readonly readAtMs: number | null;
 }
 
 interface SnapshotReads {
@@ -112,6 +145,11 @@ type SnapshotTimingField =
   | "accountLimitsReadMs"
   | "marginDepthReadMs";
 
+type PrewarmTimingField =
+  | "prewarmFeeConfigHit"
+  | "prewarmAccountLimitsHit"
+  | "prewarmDepthHit";
+
 /**
  * The prepare's snapshot, started beside the first batch. Holds nothing that
  * signs: the only secret-derived value is the read-only auth, which the
@@ -120,6 +158,7 @@ type SnapshotTimingField =
 export class LighterPreviewSnapshot {
   private readonly startedAtMs = performance.now();
   private readonly durations = new Map<SnapshotTimingField, number>();
+  private readonly prewarmHits = new Map<PrewarmTimingField, number>();
   private readonly feeReads: FeePublicReads | null;
   private reads: SnapshotReads | null = null;
   private earlyMarginDepth = false;
@@ -129,6 +168,8 @@ export class LighterPreviewSnapshot {
     private readonly environment: LighterEnvironment,
     private readonly accountIndex: number,
     private readonly marketIndex: number,
+    /** `LIGHTER_DESK_PREWARM` for this prepare: a desk preview with the switch ON. */
+    private readonly prewarm: boolean,
   ) {
     this.feeReads = this.startFeePublicReads();
   }
@@ -142,8 +183,16 @@ export class LighterPreviewSnapshot {
     readonly environment: LighterEnvironment;
     readonly accountIndex: number;
     readonly marketIndex: number;
+    /** `LIGHTER_DESK_PREWARM` for this prepare; absent is OFF. */
+    readonly prewarm?: boolean;
   }): LighterPreviewSnapshot {
-    return new LighterPreviewSnapshot(input.client, input.environment, input.accountIndex, input.marketIndex);
+    return new LighterPreviewSnapshot(
+      input.client,
+      input.environment,
+      input.accountIndex,
+      input.marketIndex,
+      input.prewarm === true,
+    );
   }
 
   /**
@@ -160,18 +209,42 @@ export class LighterPreviewSnapshot {
   afterFirstBatch(input: {
     readonly marketDetails: LighterMarketDetailsResponse;
     readonly account: LighterAccountResponse;
+    /** The proven market's type, which a stream book must match. */
+    readonly marketType: LighterMarketType;
   }): void {
-    const { client, environment, accountIndex, marketIndex } = this;
+    const { client, environment, accountIndex, marketIndex, prewarm } = this;
     const resolveAuth = this.sharedRead("readAuthMs", () => resolveLighterReadOnlyAccountAuth(environment, accountIndex));
     const accountLimits = this.sharedRead("accountLimitsReadMs", async () => {
+      // The auth is resolved and checked first even when a pre-warmed tier is
+      // at hand, so a locked vault or a failed mint refuses exactly as today.
       const auth = await resolveAuth();
       // Unreachable through the checks, which each test both before reading.
       if (auth === null || !client.getAccountLimits) {
         throw new Error("Lighter account limits were requested without a read-only account auth.");
       }
-      return client.getAccountLimits(environment, { accountIndex }, auth);
+      if (prewarm) {
+        const warm = takeLighterDeskPrewarmAccountLimits(environment, accountIndex, Date.now());
+        this.prewarmHits.set("prewarmAccountLimitsHit", warm === null ? 0 : 1);
+        if (warm !== null) return warm;
+      }
+      const readAtMs = Date.now();
+      const response = await client.getAccountLimits(environment, { accountIndex }, auth);
+      if (prewarm) recordLighterDeskPrewarmAccountLimits({ environment, accountIndex, response, atMs: readAtMs });
+      return response;
     });
-    const depthBook = this.sharedRead("marginDepthReadMs", () => readLighterMarginFitDepthBook(client, environment, marketIndex));
+    const depthBook = this.sharedRead("marginDepthReadMs", async () => {
+      if (prewarm) {
+        const warm = takeLighterDeskPrewarmBookDepth({
+          environment,
+          marketId: marketIndex,
+          marketType: input.marketType,
+          nowMs: Date.now(),
+        });
+        this.prewarmHits.set("prewarmDepthHit", warm === null ? 0 : 1);
+        if (warm !== null) return warm;
+      }
+      return readLighterMarginFitDepthBook(client, environment, marketIndex);
+    });
     this.reads = { account: input.account, marketDetails: input.marketDetails, resolveAuth, accountLimits, depthBook };
     if (this.feeReads !== null) {
       // The fee check resolves the auth next and, when it is non-null, reads
@@ -193,6 +266,27 @@ export class LighterPreviewSnapshot {
       resolveAuth: reads.resolveAuth,
       accountLimits: reads.accountLimits,
     };
+  }
+
+  /**
+   * `LIGHTER_DESK_PREWARM`: keep the fee config a passing fee check just used,
+   * for the next desk preview. Called only after the fee check returned this
+   * environment's fees, so an answer it refused is never kept. Nothing is
+   * kept from the pre-warm itself, so an entry never outlives its first read.
+   */
+  keepFeeConfigAfterPassingFeeCheck(): void {
+    const feeReads = this.feeReads;
+    const readAtMs = feeReads?.readAtMs ?? null;
+    if (!this.prewarm || feeReads === null || readAtMs === null) return;
+    void Promise.all([feeReads.systemConfig(), feeReads.collectorAccount()]).then(([systemConfig, collectorAccount]) => {
+      recordLighterDeskPrewarmFeeConfig({
+        environment: this.environment,
+        collectorAccountIndex: feeReads.collectorAccountIndex,
+        systemConfig,
+        collectorAccount,
+        atMs: readAtMs,
+      });
+    }, () => undefined);
   }
 
   /** The auth and limits the fee-tier check and the capital-share advisory share. */
@@ -263,6 +357,8 @@ export class LighterPreviewSnapshot {
     return {
       ...Object.fromEntries(this.durations),
       earlyMarginDepth: this.earlyMarginDepth ? 1 : 0,
+      deskPrewarm: this.prewarm ? 1 : 0,
+      ...Object.fromEntries(this.prewarmHits),
     };
   }
 
@@ -284,6 +380,19 @@ export class LighterPreviewSnapshot {
     }
     const { client, environment } = this;
     if (!client.getAccount || !client.getSystemConfig || !client.getAccountLimits) return null;
+    if (this.prewarm) {
+      const warm = takeLighterDeskPrewarmFeeConfig(environment, collectorAccountIndex, Date.now());
+      this.prewarmHits.set("prewarmFeeConfigHit", warm === null ? 0 : 1);
+      if (warm !== null) {
+        return {
+          systemConfig: () => Promise.resolve(warm.systemConfig),
+          collectorAccount: () => Promise.resolve(warm.collectorAccount),
+          collectorAccountIndex,
+          readAtMs: null,
+        };
+      }
+    }
+    const readAtMs = Date.now();
     const systemConfig = settledLater(client.getSystemConfig(environment, { fresh: true }));
     const collectorAccount = settledLater(client.getAccount(environment, {
       by: "index",
@@ -293,7 +402,12 @@ export class LighterPreviewSnapshot {
     void Promise.allSettled([systemConfig, collectorAccount]).then(() => {
       this.durations.set("feeConfigReadMs", Math.round(performance.now() - startedAtMs));
     });
-    return { systemConfig: () => systemConfig, collectorAccount: () => collectorAccount };
+    return {
+      systemConfig: () => systemConfig,
+      collectorAccount: () => collectorAccount,
+      collectorAccountIndex,
+      readAtMs,
+    };
   }
 
   /** Started on first use, then the same promise for every consumer. */

@@ -44,7 +44,11 @@ import {
 import { isSecretSessionUnlocked, onSecretSessionLifecycle } from "../secrets/session.js";
 import { resolveManagedLighterTradingReadiness } from "./managed-trading-readiness.js";
 import { installLighterOrderStreamSupervisor } from "./order-stream.js";
-import { readLighterPublicMarketBookSnapshot } from "./public-market-stream.js";
+import { readLighterPublicMarketBookDepth, readLighterPublicMarketBookSnapshot } from "./public-market-stream.js";
+import {
+  clearLighterDeskPrewarm,
+  configureLighterDeskPrewarmBookDepth,
+} from "@vex-agent/tools/protocols/lighter/desk-prewarm.js";
 import {
   configureLighterCoreWithdrawalExecutionDeps,
   defaultLighterCoreWithdrawalExecutionDeps,
@@ -104,7 +108,12 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
   // (LIGHTER_READ_AUTH_CACHE), exactly as it revokes the authenticated streams.
   const offReadAuthCacheLifecycle = onSecretSessionLifecycle(() => {
     invalidateLighterReadAuthCache();
+    // LIGHTER_DESK_PREWARM keeps no secret, but a lock or unlock is where the
+    // account it described may change hands, so it starts empty again.
+    clearLighterDeskPrewarm();
   });
+  // Consulted only while LIGHTER_DESK_PREWARM is ON, for desk previews.
+  const uninstallDeskPrewarmBookDepth = configureLighterDeskPrewarmBookDepth(readLighterPublicMarketBookDepth);
   const uninstallExecutionDeps = configureLighterCreateOrderExecutionDeps(
     {
       ...defaultLighterCreateOrderExecutionDeps({
@@ -270,5 +279,7 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
     uninstallExecutionDeps();
     offReadAuthCacheLifecycle();
     invalidateLighterReadAuthCache();
+    uninstallDeskPrewarmBookDepth();
+    clearLighterDeskPrewarm();
   };
 }

@@ -11,6 +11,8 @@
  * exercised.
  */
 
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 import type { LighterClient } from "@tools/lighter/client.js";
@@ -117,6 +119,17 @@ import {
   configureLighterOrderPreviewDeps,
   LIGHTER_PREVIEW_SINGLE_SNAPSHOT,
 } from "@vex-agent/tools/protocols/lighter/preview-snapshot.js";
+import {
+  clearLighterDeskPrewarm,
+  configureLighterDeskPrewarmBookDepth,
+  LIGHTER_DESK_PREWARM,
+  LIGHTER_DESK_PREWARM_ACCOUNT_LIMITS_MAX_AGE_MS,
+  LIGHTER_DESK_PREWARM_BOOK_MAX_AGE_MS,
+  LIGHTER_DESK_PREWARM_FEE_CONFIG_MAX_AGE_MS,
+  takeLighterDeskPrewarmAccountLimits,
+  takeLighterDeskPrewarmFeeConfig,
+  type LighterStreamBookDepth,
+} from "@vex-agent/tools/protocols/lighter/desk-prewarm.js";
 
 const NOW = Date.parse("2026-10-04T12:00:00.000Z");
 const ACCOUNT_INDEX = 42;
@@ -505,9 +518,11 @@ async function observePreview(
   scenario: PreviewScenario,
   previewSingleSnapshot: boolean | "constant",
   context: ProtocolExecutionContext = READ_CTX,
+  /** `LIGHTER_DESK_PREWARM`, pinned OFF unless a desk pre-warm case turns it on. */
+  deskPrewarm = false,
 ): Promise<PreviewRun> {
   const { client, resolver } = armScenario(scenario);
-  configureLighterOrderPreviewDeps(previewSingleSnapshot === "constant" ? null : { previewSingleSnapshot });
+  configureLighterOrderPreviewDeps(previewSingleSnapshot === "constant" ? null : { previewSingleSnapshot, deskPrewarm });
   try {
     const handler = requireValue(LIGHTER_READ_HANDLERS["lighter.order.preview"]);
     const result = await handler(previewParams(scenario), context);
@@ -823,6 +838,8 @@ function createGate() {
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"], now: NOW });
+  clearLighterDeskPrewarm();
+  configureLighterDeskPrewarmBookDepth(null);
   configureLighterTradingCredentialScopeResolver({
     findSavedScope: async () => null,
     findDefaultScope: async () => null,
@@ -831,6 +848,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  clearLighterDeskPrewarm();
+  configureLighterDeskPrewarmBookDepth(null);
   configureLighterReadOnlyAccountAuthResolver(null);
   configureLighterOrderPreviewDeps(null);
   state.client = null;
@@ -1033,6 +1052,7 @@ describe("LIGHTER_PREVIEW_SINGLE_SNAPSHOT", () => {
       "accountLimitsReadMs",
       "approvalMs",
       "capitalMs",
+      "deskPrewarm",
       "earlyMarginDepth",
       "feeConfigReadMs",
       "feeMs",
@@ -1071,5 +1091,249 @@ describe("LIGHTER_PREVIEW_SINGLE_SNAPSHOT", () => {
     const fees = getLighterIntegratorFees(FEE_POLICY, "perp");
     expect(JSON.stringify(off.observation.intentWrites)).toContain(`"integratorTakerFee":${fees.integratorTakerFee}`);
     expect(on.observation.intentWrites).toEqual(off.observation.intentWrites);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LIGHTER_DESK_PREWARM: a desk preview fed from data Vex already holds.
+// ---------------------------------------------------------------------------
+
+/**
+ * The scenario's own REST depth answer, as the public stream would hold it at
+ * this instant, or null when that read fails (the stream then has nothing to
+ * offer either, so the comparison stays on identical provider answers).
+ */
+async function streamDepthMirroring(scenario: PreviewScenario): Promise<LighterStreamBookDepth | null> {
+  const market = scenario.market ?? PERP_MARKET;
+  let book: LighterOrderBookOrdersResponse;
+  try {
+    book = await buildClient(scenario).getOrderBookOrders("rhc", { marketId: market.market_id, limit: DEPTH_LIMIT });
+  } catch {
+    return null;
+  }
+  return {
+    environment: "rhc",
+    marketId: market.market_id,
+    marketType: market.market_type,
+    receivedAtMs: Date.now(),
+    asks: book.asks.map((order) => ({ price: order.price, size: order.remaining_base_amount })),
+    bids: book.bids.map((order) => ({ price: order.price, size: order.remaining_base_amount })),
+  };
+}
+
+/** A desk click after an earlier desk click on the same provider answers primed the pre-warm. */
+async function observeWarmDeskPreview(scenario: PreviewScenario): Promise<PreviewRun> {
+  const depth = await streamDepthMirroring(scenario);
+  configureLighterDeskPrewarmBookDepth(() => depth);
+  await observePreview(scenario, true, DESK_CTX, true);
+  return observePreview(scenario, true, DESK_CTX, true);
+}
+
+function deskTimingLine(): Record<string, unknown> {
+  const line = state.logger.info.mock.calls.find((call) => call[0] === "lighter.desk.order_preview_timing");
+  const meta: unknown = requireValue(line)[1];
+  return typeof meta === "object" && meta !== null ? { ...meta } : {};
+}
+
+describe("LIGHTER_DESK_PREWARM", () => {
+  it("ships ON", () => {
+    expect(LIGHTER_DESK_PREWARM).toBe(true);
+  });
+
+  it.each(PREVIEW_CASES)("with nothing warm, refuses, writes and admits exactly what OFF does when $label", async ({ scenario, expected }) => {
+    const off = await observePreview(scenario, false, DESK_CTX);
+    const on = await observePreview(scenario, true, DESK_CTX, true);
+    expect(JSON.stringify(off.observation.result)).toMatch(expected);
+    expect(on.observation).toEqual(off.observation);
+  });
+
+  const warmHits = { prewarmFeeConfigHit: 0, prewarmAccountLimitsHit: 0, prewarmDepthHit: 0 };
+
+  it.each(PREVIEW_CASES)("warmed by the same provider answers, refuses, writes and admits exactly what OFF does when $label", async ({ scenario, expected }) => {
+    const off = await observePreview(scenario, false, DESK_CTX);
+    const warm = await observeWarmDeskPreview(scenario);
+    expect(JSON.stringify(off.observation.result)).toMatch(expected);
+    expect(warm.observation).toEqual(off.observation);
+    const timing = state.logger.info.mock.calls.find((call) => call[0] === "lighter.desk.order_preview_timing");
+    const meta: unknown = timing?.[1];
+    if (typeof meta === "object" && meta !== null) {
+      for (const key of Object.keys(warmHits) as (keyof typeof warmHits)[]) {
+        if (key in meta && Reflect.get(meta, key) === 1) warmHits[key] += 1;
+      }
+    }
+  });
+
+  it("the warm cases above really ran on warm data", () => {
+    // Counted from the timing line, which only a prepared preview logs; the
+    // warm refusals (for example a cached Standard tier) are not counted here.
+    expect(warmHits).toEqual({ prewarmFeeConfigHit: 6, prewarmAccountLimitsHit: 9, prewarmDepthHit: 4 });
+  });
+
+  it("a warm desk click reads only the account, the preview book and the market, and still mints its own token", async () => {
+    const scenario: PreviewScenario = { feesEnabled: true, account: NEAR_MARGIN };
+    const cold = await observePreview(scenario, true, DESK_CTX, false);
+    const warm = await observeWarmDeskPreview(scenario);
+
+    expect(JSON.stringify(warm.observation.result)).toMatch(/"approvalReady\\":true/);
+    expect(cold.reads).toEqual({
+      readOnlyAuth: 1,
+      getAccount: 2,
+      getMarketDetails: 1,
+      getSystemConfig: 1,
+      getAccountLimits: 1,
+      getOrderBookOrders: 2,
+      marginDepthReads: 1,
+      getAccountActiveOrders: 0,
+    });
+    expect(warm.reads).toEqual({
+      readOnlyAuth: 1,
+      getAccount: 1,
+      getMarketDetails: 1,
+      getSystemConfig: 0,
+      getAccountLimits: 0,
+      getOrderBookOrders: 1,
+      marginDepthReads: 0,
+      getAccountActiveOrders: 0,
+    });
+    // The one account read left is the trader's own, fresh.
+    expect(warm.client.getAccount).toHaveBeenCalledWith(
+      "rhc",
+      { by: "index", value: ACCOUNT_INDEX, activeOnly: false },
+      { fresh: true },
+    );
+  });
+
+  it("checks the read-only auth before any warm tier, so a locked vault or a failed mint refuses as OFF", async () => {
+    for (const auth of ["none", "throws"] as const) {
+      await observePreview({ feesEnabled: true }, true, DESK_CTX, true);
+      expect(takeLighterDeskPrewarmAccountLimits("rhc", ACCOUNT_INDEX, Date.now())).not.toBeNull();
+      const off = await observePreview({ feesEnabled: true, auth }, false, DESK_CTX);
+      const warm = await observePreview({ feesEnabled: true, auth }, true, DESK_CTX, true);
+      expect(JSON.stringify(off.observation.result)).toMatch(/fee setup is required before this trade/);
+      expect(warm.observation).toEqual(off.observation);
+      expect(warm.reads.readOnlyAuth).toBe(1);
+    }
+  });
+
+  it("uses each warm value up to its named max age and reads Lighter once it is older", async () => {
+    const scenario: PreviewScenario = { feesEnabled: true, account: NEAR_MARGIN };
+    const depth = await streamDepthMirroring(scenario);
+    configureLighterDeskPrewarmBookDepth(() => depth);
+    await observePreview(scenario, true, DESK_CTX, true);
+
+    vi.setSystemTime(NOW + LIGHTER_DESK_PREWARM_BOOK_MAX_AGE_MS);
+    const atBookAge = await observePreview(scenario, true, DESK_CTX, true);
+    expect(atBookAge.reads).toMatchObject({ getSystemConfig: 0, getAccountLimits: 0, marginDepthReads: 0 });
+
+    vi.setSystemTime(NOW + LIGHTER_DESK_PREWARM_BOOK_MAX_AGE_MS + 1);
+    const pastBookAge = await observePreview(scenario, true, DESK_CTX, true);
+    expect(pastBookAge.reads).toMatchObject({ getSystemConfig: 0, getAccountLimits: 0, marginDepthReads: 1 });
+
+    clearLighterDeskPrewarm();
+    vi.setSystemTime(NOW);
+    await observePreview(scenario, true, DESK_CTX, true);
+    vi.setSystemTime(NOW + LIGHTER_DESK_PREWARM_ACCOUNT_LIMITS_MAX_AGE_MS);
+    expect((await observePreview(scenario, true, DESK_CTX, true)).reads.getAccountLimits).toBe(0);
+
+    clearLighterDeskPrewarm();
+    vi.setSystemTime(NOW);
+    await observePreview(scenario, true, DESK_CTX, true);
+    vi.setSystemTime(NOW + LIGHTER_DESK_PREWARM_ACCOUNT_LIMITS_MAX_AGE_MS + 1);
+    const pastTierAge = await observePreview(scenario, true, DESK_CTX, true);
+    expect(pastTierAge.reads).toMatchObject({ getSystemConfig: 0, getAccountLimits: 1 });
+
+    clearLighterDeskPrewarm();
+    vi.setSystemTime(NOW);
+    await observePreview(scenario, true, DESK_CTX, true);
+    vi.setSystemTime(NOW + LIGHTER_DESK_PREWARM_FEE_CONFIG_MAX_AGE_MS);
+    expect((await observePreview(scenario, true, DESK_CTX, true)).reads.getSystemConfig).toBe(0);
+    vi.setSystemTime(NOW + LIGHTER_DESK_PREWARM_FEE_CONFIG_MAX_AGE_MS + 1);
+    expect((await observePreview(scenario, true, DESK_CTX, true)).reads.getSystemConfig).toBe(1);
+  });
+
+  it("is consumed by desk previews only, and only with the single snapshot on", async () => {
+    await observePreview({ feesEnabled: true }, true, DESK_CTX, true);
+    const chat = await observePreview({ feesEnabled: true }, true, READ_CTX, true);
+    expect(chat.reads).toMatchObject({ getSystemConfig: 1, getAccountLimits: 1 });
+
+    await observePreview({ feesEnabled: true }, true, DESK_CTX, true);
+    const noSnapshot = await observePreview({ feesEnabled: true }, false, DESK_CTX, true);
+    expect(noSnapshot.reads).toMatchObject({ getSystemConfig: 1, getAccountLimits: 1 });
+  });
+
+  it("records nothing while OFF", async () => {
+    configureLighterDeskPrewarmBookDepth(() => null);
+    await observePreview({ feesEnabled: true }, true, DESK_CTX, false);
+    expect(takeLighterDeskPrewarmAccountLimits("rhc", ACCOUNT_INDEX, Date.now())).toBeNull();
+    expect(takeLighterDeskPrewarmFeeConfig("rhc", FEE_COLLECTOR_INDEX, Date.now())).toBeNull();
+  });
+
+  it("keeps fee config only after a fee check passed on it", async () => {
+    const otherWallet: PreviewScenario = {
+      feesEnabled: true,
+      client: (client) => ({
+        getAccount: vi.fn<LighterClient["getAccount"]>(async (environment, params, options) => (
+          Number(params.value) === FEE_COLLECTOR_INDEX
+            ? { ...COLLECTOR_ACCOUNT, accounts: [{ index: FEE_COLLECTOR_INDEX, status: 1, l1_address: `0x${"3".repeat(40)}` }] }
+            : client.getAccount(environment, params, options)
+        )),
+      }),
+    };
+    await observePreview(otherWallet, true, DESK_CTX, true);
+    expect(takeLighterDeskPrewarmFeeConfig("rhc", FEE_COLLECTOR_INDEX, Date.now())).toBeNull();
+    // A later click therefore reads the fee config again and refuses as OFF.
+    const off = await observePreview(otherWallet, false, DESK_CTX);
+    const again = await observePreview(otherWallet, true, DESK_CTX, true);
+    expect(again.reads.getSystemConfig).toBe(1);
+    expect(again.observation).toEqual(off.observation);
+
+    await observePreview({ feesEnabled: true }, true, DESK_CTX, true);
+    expect(takeLighterDeskPrewarmFeeConfig("rhc", FEE_COLLECTOR_INDEX, Date.now())).toEqual({
+      systemConfig: SYSTEM_CONFIG,
+      collectorAccount: COLLECTOR_ACCOUNT,
+    });
+  });
+
+  it("reads the depth from Lighter when the stream book is for another market type", async () => {
+    const scenario: PreviewScenario = { account: NEAR_MARGIN };
+    const depth = requireValue(await streamDepthMirroring(scenario));
+    configureLighterDeskPrewarmBookDepth(() => ({ ...depth, marketType: "spot" }));
+    const run = await observePreview(scenario, true, DESK_CTX, true);
+    expect(run.reads.marginDepthReads).toBe(1);
+  });
+
+  it("logs the pre-warm hits on the desk timing line, numbers only", async () => {
+    const warm = await observeWarmDeskPreview({ feesEnabled: true, account: NEAR_MARGIN });
+    expect(JSON.stringify(warm.observation.result)).toMatch(/"approvalReady\\":true/);
+    const line = deskTimingLine();
+    expect(line).toMatchObject({
+      deskPrewarm: 1,
+      prewarmFeeConfigHit: 1,
+      prewarmAccountLimitsHit: 1,
+      prewarmDepthHit: 1,
+    });
+    for (const value of Object.values(line)) expect(typeof value).toBe("number");
+
+    await observePreview({ feesEnabled: true, account: NEAR_MARGIN }, true, DESK_CTX, false);
+    expect(deskTimingLine()).toMatchObject({ deskPrewarm: 0 });
+    expect(Object.keys(deskTimingLine()).filter((key) => key.startsWith("prewarm"))).toEqual([]);
+  });
+
+  it("is consulted by the preview snapshot alone, never by the post-approval revalidation", () => {
+    const root = path.resolve(process.cwd(), "src/vex-agent");
+    const importers: string[] = [];
+    const visit = (directory: string): void => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const full = path.join(directory, entry.name);
+        if (entry.isDirectory()) visit(full);
+        else if (entry.name.endsWith(".ts") && readFileSync(full, "utf8").includes("/desk-prewarm.js\"")) {
+          importers.push(path.relative(root, full));
+        }
+      }
+    };
+    visit(root);
+    expect(importers).toEqual(["tools/protocols/lighter/preview-snapshot.ts"]);
+    const execution = readFileSync(path.join(root, "tools/protocols/lighter/order-create-execution.ts"), "utf8");
+    expect(execution).not.toContain("preview-snapshot");
   });
 });

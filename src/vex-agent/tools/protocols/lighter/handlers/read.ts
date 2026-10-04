@@ -128,6 +128,7 @@ import {
 import { prepareLighterOrderCreateApprovalWith } from "./write.js";
 import {
   LighterPreviewSnapshot,
+  lighterDeskPrewarmEnabled,
   lighterPreviewSingleSnapshotEnabled,
 } from "../preview-snapshot.js";
 
@@ -1390,8 +1391,15 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       ]);
       // `LIGHTER_PREVIEW_SINGLE_SNAPSHOT`: the fee check's two public reads
       // join the first batch. Nothing here is awaited until the fee check.
+      // `LIGHTER_DESK_PREWARM` rides on it, for desk previews only.
       const snapshot = lighterPreviewSingleSnapshotEnabled()
-        ? LighterPreviewSnapshot.begin({ client, environment: environment.value, accountIndex, marketIndex: marketId })
+        ? LighterPreviewSnapshot.begin({
+            client,
+            environment: environment.value,
+            accountIndex,
+            marketIndex: marketId,
+            prewarm: context.deskPreparation === true && lighterDeskPrewarmEnabled(),
+          })
         : null;
       const [marketDetails, orderBook, account] = await firstBatch;
       const marketReadsMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs;
@@ -1448,7 +1456,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       });
       // Started only now, after the first batch proved the market: the
       // read-only auth is resolved no earlier than the checks below resolve it.
-      snapshot?.afterFirstBatch({ marketDetails, account });
+      snapshot?.afterFirstBatch({ marketDetails, account, marketType: market.market_type });
       if (snapshot !== null && apiKeyIndex !== null) {
         snapshot.startMarginFitDepthWhenNeeded(() => buildLighterOrderPreview(previewInput(null), {
           market,
@@ -1462,6 +1470,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         reduceOnly: previewParams.value.reduceOnly, side: previewParams.value.side,
         ...(snapshot?.fees === undefined ? {} : { snapshot: snapshot.fees }),
       });
+      if (integratorFees !== null) snapshot?.keepFeeConfigAfterPassingFeeCheck();
       const accountTakerFeeTicks = market.market_type === "spot" && previewParams.value.side === "buy"
         ? await readLighterOrderAccountFeeTicks(client, environment.value, accountIndex, snapshot?.accountReads)
         : undefined;
