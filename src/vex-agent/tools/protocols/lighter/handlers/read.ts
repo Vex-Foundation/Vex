@@ -16,6 +16,7 @@ import {
   buildLighterOrderPreview,
   isProtectiveOrderType,
   type LighterOrderPreview,
+  type LighterOrderPreviewInput,
 } from "@tools/lighter/order-preview.js";
 import {
   LIGHTER_TRADING_API_KEY_INDEX_MAX,
@@ -114,7 +115,7 @@ import {
 } from "../trading-credential-scope.js";
 import { resolveLighterReadOnlyAccountAuth } from "../read-account-auth.js";
 import { getConfiguredLighterKeyRegistrationExecutor } from "../key-registration-execution.js";
-import { getLighterFeePolicy } from "@tools/lighter/fee-policy.js";
+import { getLighterFeePolicy, type LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
 import {
   getConfiguredLighterFeeAuthorizationService,
   type LighterFeeAuthorizationReadiness,
@@ -124,7 +125,11 @@ import {
   readLighterManagedTradingReadiness,
   type LighterManagedTradingReadiness,
 } from "../managed-trading-readiness.js";
-import { prepareLighterOrderCreateApproval } from "./write.js";
+import { prepareLighterOrderCreateApprovalWith } from "./write.js";
+import {
+  LighterPreviewSnapshot,
+  lighterPreviewSingleSnapshotEnabled,
+} from "../preview-snapshot.js";
 
 // An engine session reads only its selected wallet's provider-owned account,
 // even if another wallet has the sole saved trading key. Trusted default
@@ -1363,7 +1368,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       ]);
       const { apiKeyIndex, apiKeyLookupStatus } = apiKeyResolution;
       const scopeMs = Math.round(performance.now() - timingStart) - ownershipMs;
-      const [marketDetails, orderBook, account] = await Promise.all([
+      const firstBatch = Promise.all([
         client.getMarketDetails(environment.value, {
           marketId,
           filter: "all",
@@ -1383,6 +1388,12 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           activeOnly: false,
         }, { fresh: true }),
       ]);
+      // `LIGHTER_PREVIEW_SINGLE_SNAPSHOT`: the fee check's two public reads
+      // join the first batch. Nothing here is awaited until the fee check.
+      const snapshot = lighterPreviewSingleSnapshotEnabled()
+        ? LighterPreviewSnapshot.begin({ client, environment: environment.value, accountIndex, marketIndex: marketId })
+        : null;
+      const [marketDetails, orderBook, account] = await firstBatch;
       const marketReadsMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs;
       const market = findMarketDetail(marketDetails, marketId);
       if (!market) {
@@ -1415,34 +1426,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         authenticated: false,
         persistedPreview: true,
       });
-      const integratorFees = await resolveLighterOrderFees({
-        client, environment: environment.value, accountIndex, market, account,
-        freshAccount: account,
-        reduceOnly: previewParams.value.reduceOnly, side: previewParams.value.side,
-      });
-      const accountTakerFeeTicks = market.market_type === "spot" && previewParams.value.side === "buy"
-        ? await readLighterOrderAccountFeeTicks(client, environment.value, accountIndex)
-        : undefined;
-      const feeMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs - marketReadsMs;
-      // ADVISORY, never a veto: the preview is a read, and the capital share is
-      // ENFORCED at `lighter.order.create.prepare` where the intent row and its
-      // commitment are admitted in one transaction. Showing the ceiling here is
-      // what lets the user see the number before the refusal explains it.
-      const capitalShare = await resolveLighterPreviewCapitalShareAdvisory({
-        client,
-        environment: environment.value,
-        accountIndex,
-        account,
-        market,
-        baseAmount: previewParams.value.baseAmount,
-        price: previewParams.value.price,
-        side: previewParams.value.side,
-        orderType: previewParams.value.orderType,
-        reduceOnly: previewParams.value.reduceOnly,
-        integratorFees,
-      });
-      const capitalMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs - marketReadsMs - feeMs;
-      const preview = buildLighterOrderPreview({
+      const previewInput = (integratorFees: LighterIntegratorFees | null): LighterOrderPreviewInput => ({
         sessionId,
         environment: environment.value,
         accountIndex,
@@ -1461,7 +1445,47 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         clientOrderIndexPolicy: previewParams.value.clientOrderIndexPolicy,
         integratorFees,
         nowMs,
-      }, {
+      });
+      // Started only now, after the first batch proved the market: the
+      // read-only auth is resolved no earlier than the checks below resolve it.
+      snapshot?.afterFirstBatch({ marketDetails, account });
+      if (snapshot !== null && apiKeyIndex !== null) {
+        snapshot.startMarginFitDepthWhenNeeded(() => buildLighterOrderPreview(previewInput(null), {
+          market,
+          orderBook,
+          account,
+        }));
+      }
+      const integratorFees = await resolveLighterOrderFees({
+        client, environment: environment.value, accountIndex, market, account,
+        freshAccount: account,
+        reduceOnly: previewParams.value.reduceOnly, side: previewParams.value.side,
+        ...(snapshot?.fees === undefined ? {} : { snapshot: snapshot.fees }),
+      });
+      const accountTakerFeeTicks = market.market_type === "spot" && previewParams.value.side === "buy"
+        ? await readLighterOrderAccountFeeTicks(client, environment.value, accountIndex, snapshot?.accountReads)
+        : undefined;
+      const feeMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs - marketReadsMs;
+      // ADVISORY, never a veto: the preview is a read, and the capital share is
+      // ENFORCED at `lighter.order.create.prepare` where the intent row and its
+      // commitment are admitted in one transaction. Showing the ceiling here is
+      // what lets the user see the number before the refusal explains it.
+      const capitalShare = await resolveLighterPreviewCapitalShareAdvisory({
+        client,
+        environment: environment.value,
+        accountIndex,
+        account,
+        market,
+        baseAmount: previewParams.value.baseAmount,
+        price: previewParams.value.price,
+        side: previewParams.value.side,
+        orderType: previewParams.value.orderType,
+        reduceOnly: previewParams.value.reduceOnly,
+        integratorFees,
+        ...(snapshot === null ? {} : { snapshot: snapshot.accountReads }),
+      });
+      const capitalMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs - marketReadsMs - feeMs;
+      const preview = buildLighterOrderPreview(previewInput(integratorFees), {
         market,
         orderBook,
         account,
@@ -1475,10 +1499,10 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       const previewMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs - marketReadsMs - feeMs - capitalMs;
       const approvalReady = apiKeyIndex !== null;
       const approvalPreparation = approvalReady
-        ? await prepareLighterOrderCreateApproval({
+        ? await prepareLighterOrderCreateApprovalWith({
             environment: environment.value,
             previewId: preview.previewId,
-          }, context)
+          }, context, snapshot?.admissionFor(preview.previewId))
         : null;
       if (approvalPreparation !== null && !approvalPreparation.success) {
         return fail(
@@ -1489,6 +1513,8 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         ownershipMs, marketIdKeyAndRecoveryMs: scopeMs, marketReadsMs, feeMs, capitalMs, previewMs,
         approvalMs: Math.round(performance.now() - timingStart) - ownershipMs - scopeMs - marketReadsMs - feeMs - capitalMs - previewMs,
         totalMs: Math.round(performance.now() - timingStart),
+        singleSnapshot: snapshot === null ? 0 : 1,
+        ...snapshot?.timingFields(),
       });
       const result = ok({
         ...source,

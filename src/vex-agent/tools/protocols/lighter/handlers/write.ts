@@ -23,6 +23,10 @@ import {
   admitLighterOrderCapitalCommitmentForPreview,
   retireLighterOrderCapitalCommitment,
 } from "../capital-share-policy.js";
+import {
+  lighterPreviewAdmissionSnapshotFits,
+  type LighterPreviewAdmissionSnapshot,
+} from "../preview-snapshot.js";
 import { describeFailureForAgent } from "../../runtime/errors.js";
 import { assertLighterOrderCreateApprovalBinding } from "../approval-binding.js";
 import { buildLighterOrderApprovalDisclosure } from "../approval-disclosure.js";
@@ -164,7 +168,20 @@ export function lighterLiveOrderCreateUserGuidance(
   }
 }
 
-export const prepareLighterOrderCreateApproval: ProtocolHandler = async (params, context) => {
+export const prepareLighterOrderCreateApproval: ProtocolHandler = async (params, context) =>
+  prepareLighterOrderCreateApprovalWith(params, context);
+
+/**
+ * {@link prepareLighterOrderCreateApproval}, optionally handed the reads the
+ * same prepare's preview already made (`LIGHTER_PREVIEW_SINGLE_SNAPSHOT`). The
+ * snapshot is used only for the exact preview id and scope it was read for;
+ * any other preview is admitted with its own reads, exactly as without it.
+ */
+export async function prepareLighterOrderCreateApprovalWith(
+  params: Parameters<ProtocolHandler>[0],
+  context: Parameters<ProtocolHandler>[1],
+  snapshot?: LighterPreviewAdmissionSnapshot,
+): ReturnType<ProtocolHandler> {
     const sessionId = context.sessionId;
     if (!sessionId) return fail("Lighter order create preparation requires a host session id.");
 
@@ -261,8 +278,15 @@ export const prepareLighterOrderCreateApproval: ProtocolHandler = async (params,
     // preparing at once serialize and only the budget-fitting total proceeds. A
     // breach throws `LIGHTER_CAPITAL_SHARE_EXCEEDED` naming both numbers; the
     // order is never resized to fit.
+    const admissionReads = snapshot !== undefined && lighterPreviewAdmissionSnapshotFits(snapshot, preview)
+      ? snapshot.reads
+      : undefined;
     try {
-      await admitLighterOrderCapitalCommitmentForPreview({ intentId, preview });
+      await admitLighterOrderCapitalCommitmentForPreview({
+        intentId,
+        preview,
+        ...(admissionReads === undefined ? {} : { snapshot: admissionReads }),
+      });
     } catch (error) {
       return fail(describeFailureForAgent(error));
     }
@@ -292,7 +316,7 @@ export const prepareLighterOrderCreateApproval: ProtocolHandler = async (params,
       })),
       preparedActionFollowUp: followUp,
     };
-};
+}
 
 export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
   "lighter.order.create.prepare": prepareLighterOrderCreateApproval,

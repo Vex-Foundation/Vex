@@ -383,6 +383,8 @@ export async function buildLighterCapitalShareAdvisory(input: {
   readonly order: LighterCapitalShareOrderFacts;
   readonly client: LighterCapitalShareEvidenceClient;
   readonly auth: LighterPrivilegedAccountAuth | null;
+  /** `LIGHTER_PREVIEW_SINGLE_SNAPSHOT`: the prepare's shared account-limits read, made with `auth`. */
+  readonly accountLimits?: () => Promise<LighterAccountLimitsResponse>;
 }): Promise<LighterCapitalShareAdvisory> {
   try {
     const policy = await resolveLighterCapitalSharePolicy(input);
@@ -398,6 +400,7 @@ export async function buildLighterCapitalShareAdvisory(input: {
       client: input.client,
       auth: input.auth,
       includeLiveCommitments: true,
+      ...(input.accountLimits === undefined ? {} : { accountLimits: input.accountLimits }),
     });
     const { outcome } = evaluation;
     if (!outcome.applies) {
@@ -452,6 +455,15 @@ export async function resolveLighterPreviewCapitalShareAdvisory(input: {
   readonly orderType: LighterOrderType;
   readonly reduceOnly: boolean;
   readonly integratorFees: LighterIntegratorFees | null;
+  /**
+   * `LIGHTER_PREVIEW_SINGLE_SNAPSHOT`: the prepare's one read-only auth and its
+   * account-limits read, each awaited only where this advisory reads them
+   * today. Absent reads everything here, as before.
+   */
+  readonly snapshot?: {
+    readonly resolveAuth: () => Promise<LighterPrivilegedAccountAuth | null>;
+    readonly accountLimits: () => Promise<LighterAccountLimitsResponse>;
+  };
 }): Promise<LighterCapitalShareAdvisory | null> {
   const account = input.account.accounts.find(
     (row) => (row.index ?? row.account_index) === input.accountIndex,
@@ -475,13 +487,16 @@ export async function resolveLighterPreviewCapitalShareAdvisory(input: {
     // advisory simply has nothing to say about an order that will not exist.
     return null;
   }
-  const auth = await resolveLighterReadOnlyAccountAuth(input.environment, input.accountIndex);
+  const auth = input.snapshot === undefined
+    ? await resolveLighterReadOnlyAccountAuth(input.environment, input.accountIndex)
+    : await input.snapshot.resolveAuth();
   return buildLighterCapitalShareAdvisory({
     environment: input.environment,
     accountIndex: input.accountIndex,
     account,
     client: input.client,
     auth,
+    ...(input.snapshot === undefined ? {} : { accountLimits: input.snapshot.accountLimits }),
     order: {
       market: input.market,
       baseAmountInteger,
@@ -593,7 +608,11 @@ export async function admitLighterOrderCapitalCommitmentForPreview(input: {
   > & Partial<Pick<LighterOrderPreviewRow, "previewJson">>;
   readonly client?: LighterCapitalShareAdmissionClient;
   readonly excludeIntentId?: string;
-  /** Execute-time only; absent reads everything here, as before. */
+  /**
+   * The reads an execute-time revalidation (`LIGHTER_REVALIDATION_SINGLE_SNAPSHOT`)
+   * or the same prepare's preview (`LIGHTER_PREVIEW_SINGLE_SNAPSHOT`) already
+   * made for this preview's own scope; absent reads everything here, as before.
+   */
   readonly snapshot?: LighterCapitalShareExecuteSnapshot;
 }): Promise<LighterCapitalShareOutcome> {
   const client = input.client ?? getLighterClient();
