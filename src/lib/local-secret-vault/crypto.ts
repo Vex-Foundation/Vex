@@ -1,7 +1,8 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes, type DecipherGCM } from "node:crypto";
 import { z } from "zod";
 import { scryptAsync } from "../../utils/scrypt-async.js";
 import { isVaultSecretKey, type VaultSecretKey } from "../secret-keys.js";
+import type { VaultKeyCacheOperation } from "./derived-key-cache.js";
 import { LocalSecretVaultError } from "./status.js";
 import type { LocalSecretVaultContents } from "./status.js";
 
@@ -252,6 +253,17 @@ export async function encryptContents(
   contents: LocalSecretVaultContents,
   password: string,
 ): Promise<VaultFile> {
+  return (await encryptContentsKeepingKey(contents, password)).file;
+}
+
+/**
+ * `encryptContents`, also returning the key it derived for the fresh salt so a
+ * cached write can keep it for the next read (`VAULT_DERIVED_KEY_CACHE`).
+ */
+export async function encryptContentsKeepingKey(
+  contents: LocalSecretVaultContents,
+  password: string,
+): Promise<{ readonly file: VaultFile; readonly salt: Buffer; readonly key: Buffer }> {
   const salt = randomBytes(16);
   const iv = randomBytes(12);
   const key = await deriveKey(password, salt, CURRENT_KDF_PARAMS);
@@ -273,12 +285,16 @@ export async function encryptContents(
   const tag = cipher.getAuthTag();
 
   return {
-    version: VAULT_VERSION,
-    kdf: CURRENT_KDF_PARAMS,
-    salt: salt.toString("base64"),
-    iv: iv.toString("base64"),
-    tag: tag.toString("base64"),
-    ciphertext: ciphertext.toString("base64"),
+    file: {
+      version: VAULT_VERSION,
+      kdf: CURRENT_KDF_PARAMS,
+      salt: salt.toString("base64"),
+      iv: iv.toString("base64"),
+      tag: tag.toString("base64"),
+      ciphertext: ciphertext.toString("base64"),
+    },
+    salt,
+    key,
   };
 }
 
@@ -291,9 +307,18 @@ export function vaultFileNeedsKdfUpgrade(file: VaultFile): boolean {
   );
 }
 
+/**
+ * Decrypt a parsed vault file.
+ *
+ * `keyCache` is the opt-in `VAULT_DERIVED_KEY_CACHE` path, passed ONLY by an
+ * unlocked-session read that uses the session's own held password. Without
+ * it (every unlock attempt, password verification and vault creation) the key
+ * is derived from scratch, exactly as before the cache existed.
+ */
 export async function decryptContents(
   file: VaultFile,
   password: string,
+  keyCache?: VaultKeyCacheOperation,
 ): Promise<LocalSecretVaultContents> {
   // Phase 0: envelope + KDF-bounds validation. Both run BEFORE any crypto, so
   // a structurally invalid or out-of-bounds file is always `corrupt` and
@@ -301,6 +326,90 @@ export async function decryptContents(
   const envelope = validateVaultEnvelope(file);
   validateKdfParamsBounds(file.kdf);
 
+  if (keyCache === undefined) {
+    return decryptEnvelope(envelope, () => deriveKey(password, envelope.salt, file.kdf), false);
+  }
+  return decryptEnvelopeWithKeyCache(envelope, file.kdf, password, keyCache);
+}
+
+/**
+ * The cached read. A hit skips the derive but still runs the full GCM
+ * authentication below. A cached key that fails the tag (the file was
+ * replaced or tampered under the same salt) is dropped and the read derives
+ * ONCE from scratch, so it ends exactly where the uncached read would. Only
+ * a key that has just opened this file (tag and contents both accepted) is
+ * stored, and never after the cache was cleared.
+ */
+async function decryptEnvelopeWithKeyCache(
+  envelope: VaultEnvelope,
+  params: VaultFile["kdf"],
+  password: string,
+  op: VaultKeyCacheOperation,
+): Promise<LocalSecretVaultContents> {
+  const cached = op.current
+    ? op.cache.lookup(op.filePath, envelope.salt, params, password)
+    : null;
+  if (cached === null) {
+    op.cacheMiss += 1;
+  } else {
+    op.cacheHit += 1;
+    try {
+      return await decryptEnvelope(envelope, () => Promise.resolve(cached), true);
+    } catch (error) {
+      if (!(error instanceof LocalSecretVaultError) || error.code !== "invalid_password") {
+        throw error;
+      }
+      op.cache.drop(op.filePath);
+      op.tagRetry += 1;
+    }
+  }
+
+  const derived: { key: Buffer | null } = { key: null };
+  try {
+    const contents = await decryptEnvelope(
+      envelope,
+      async () => {
+        derived.key = await deriveForCachedOperation(op, envelope.salt, params, password);
+        return derived.key;
+      },
+      false,
+    );
+    if (derived.key !== null && op.current) {
+      op.cache.store(op.filePath, envelope.salt, params, password, derived.key, op.generation);
+    }
+    return contents;
+  } finally {
+    derived.key?.fill(0);
+  }
+}
+
+async function deriveForCachedOperation(
+  op: VaultKeyCacheOperation,
+  salt: Buffer,
+  params: VaultFile["kdf"],
+  password: string,
+): Promise<Buffer> {
+  const started = performance.now();
+  try {
+    if (!op.current) {
+      op.derives += 1;
+      return await deriveKey(password, salt, params);
+    }
+    const result = await op.cache.derive(op.filePath, salt, params, password, () =>
+      deriveKey(password, salt, params),
+    );
+    if (result.started) op.derives += 1;
+    return result.key;
+  } finally {
+    op.deriveMs += performance.now() - started;
+  }
+}
+
+async function decryptEnvelope(
+  envelope: VaultEnvelope,
+  obtainKey: () => Promise<Buffer>,
+  wipeKeyAfterSetup: boolean,
+): Promise<LocalSecretVaultContents> {
   // Phase 1a: key derivation + decipher setup + ciphertext pass. NONE of
   // this authenticates the password — scrypt derives bytes from whatever
   // password it was given, and GCM's update() decrypts without verifying.
@@ -311,8 +420,14 @@ export async function decryptContents(
   let pending: Buffer;
   let decipherFinal: () => Buffer;
   try {
-    const key = await deriveKey(password, envelope.salt, file.kdf);
-    const decipher = createDecipheriv("aes-256-gcm", key, envelope.iv);
+    const key = await obtainKey();
+    let decipher: DecipherGCM;
+    try {
+      decipher = createDecipheriv("aes-256-gcm", key, envelope.iv);
+    } finally {
+      // The cipher holds its own copy of the key once it is set up.
+      if (wipeKeyAfterSetup) key.fill(0);
+    }
     decipher.setAuthTag(envelope.tag);
     pending = decipher.update(envelope.ciphertext);
     decipherFinal = () => decipher.final();
