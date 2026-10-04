@@ -1132,3 +1132,1026 @@ describe("Lighter lifecycle signer settlement contract", () => {
     expect(d.intents.markUnsubmittedRefused).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// LIGHTER_LIFECYCLE_PARALLEL_READS. OFF is today's sequential path; ON must
+// refuse, write, sign and send exactly what OFF does, in every case below.
+// ---------------------------------------------------------------------------
+
+import { ErrorCodes, VexError } from "../../../errors.js";
+import logger from "@utils/logger.js";
+import type { LighterClient } from "@tools/lighter/client.js";
+import type {
+  LighterAccountLimitsResponse,
+  LighterApprovedIntegrator,
+  LighterSystemConfigResponse,
+} from "@tools/lighter/types.js";
+import { LighterIntentRefusal } from "@vex-agent/tools/protocols/lighter/intent-expiry.js";
+import {
+  LIGHTER_LIFECYCLE_PARALLEL_READS,
+  lifecycleRead,
+  prefetchLighterLifecycleFeeReads,
+} from "@vex-agent/tools/protocols/lighter/lifecycle-parallel-reads.js";
+import { requireValue } from "../../helpers/require-value.js";
+
+type LifecycleAction = "cancel_one" | "modify" | "cancel_all" | "close_position";
+type LifecycleExecutor = (
+  intent: LighterOrderLifecycleIntentRow,
+  deps: LighterOrderLifecycleExecutionDeps,
+  abortSignal?: AbortSignal,
+) => Promise<unknown>;
+
+const LIFECYCLE_EXECUTORS: Record<LifecycleAction, LifecycleExecutor> = {
+  cancel_one: executeApprovedLighterCancelOne,
+  modify: executeApprovedLighterModifyOrder,
+  cancel_all: executeApprovedLighterCancelAll,
+  close_position: executeApprovedLighterClosePosition,
+};
+
+const FEE_WALLET = `0x${"1".repeat(40)}`;
+const FEE_POLICY = requireValue(feePolicy.resolveLighterFeePolicy("rhc", { enabled: true, accountIndex: 99, l1Address: FEE_WALLET }));
+const PERP_FEES = feePolicy.getLighterIntegratorFees(FEE_POLICY, "perp");
+const FEE_INTEGRATORS: LighterApprovedIntegrator[] = [{
+  account_index: 99, name: "VEX", max_perps_maker_fee: 1000, max_perps_taker_fee: 1000,
+  max_spot_maker_fee: 2500, max_spot_taker_fee: 2500, approval_expiry: Date.parse("2100-01-01T00:00:00.000Z"),
+}];
+const FEE_SYSTEM_CONFIG: LighterSystemConfigResponse = {
+  code: 200, liquidity_pool_index: 0, staking_pool_index: 0, funding_fee_rebate_account_index: 0,
+  market_maker_incentive_account_index: 0, liquidity_pool_cooldown_period: 0, staking_pool_lockup_period: 0,
+  max_integrator_perps_maker_fee: 1000, max_integrator_perps_taker_fee: 1000,
+  max_integrator_spot_maker_fee: 10_000, max_integrator_spot_taker_fee: 10_000,
+};
+const FEE_LIMITS: LighterAccountLimitsResponse = {
+  code: 200, user_tier: "plus", user_tier_name: "Plus", current_maker_fee_tick: 50, current_taker_fee_tick: 50,
+};
+const OFFLINE = (message: string) => new VexError(ErrorCodes.LIGHTER_TIMEOUT, message);
+
+function rejectAfter(error: unknown, delayMs: number): () => Promise<never> {
+  return async () => {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    throw error;
+  };
+}
+
+function resolveAfter<T>(value: T, delayMs: number): () => Promise<T> {
+  return async () => {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    return value;
+  };
+}
+
+function rejectNow(error: unknown): () => Promise<never> {
+  return async () => { throw error; };
+}
+
+/** One account read for every caller: the collector, the trader before the send, and the trader after it. */
+function accountReads(input: {
+  readonly positions?: () => LighterAccountPosition[];
+  readonly integrators?: LighterApprovedIntegrator[];
+} = {}) {
+  return vi.fn<LighterClient["getAccount"]>(async (_environment, params) => {
+    if (String(params.value) === "99") {
+      return { code: 200, total: 1, accounts: [{ index: 99, status: 1, l1_address: FEE_WALLET }] };
+    }
+    return {
+      code: 200,
+      total: 1,
+      accounts: [{
+        index: 42,
+        l1_address: "0x1111111111111111111111111111111111111111",
+        collateral: "1000",
+        available_balance: "900",
+        cross_initial_margin_requirement: "0.000000",
+        positions: input.positions?.() ?? [],
+        approved_integrators: input.integrators ?? FEE_INTEGRATORS,
+      }],
+    };
+  });
+}
+
+/** Fee collection ON for this environment, with a live, fully authorized fee setup. */
+function withFees(d: LighterOrderLifecycleExecutionDeps): void {
+  vi.mocked(feePolicy.getLighterFeePolicy).mockReturnValue(FEE_POLICY);
+  Object.assign(d.client, {
+    getSystemConfig: vi.fn<LighterClient["getSystemConfig"]>(async () => FEE_SYSTEM_CONFIG),
+    getAccountLimits: vi.fn<LighterClient["getAccountLimits"]>(async () => FEE_LIMITS),
+  });
+}
+
+interface LifecycleScenario {
+  readonly intent: LighterOrderLifecycleIntentRow;
+  readonly deps: LighterOrderLifecycleExecutionDeps;
+}
+
+function cancelOneScenario(): LifecycleScenario {
+  return { intent: intent(), deps: deps() };
+}
+
+const MODIFIED_ORDER: LighterAccountOrder = {
+  ...openOrder, initial_base_amount: "0.75", remaining_base_amount: "0.25", price: "51.25",
+};
+
+function modifyScenario(options: { readonly fees?: boolean } = {}): LifecycleScenario {
+  const d = deps();
+  vi.mocked(d.client.getAccountActiveOrders)
+    .mockReset()
+    .mockResolvedValueOnce({ code: 200, orders: [openOrder] })
+    .mockResolvedValue({ code: 200, orders: [MODIFIED_ORDER] });
+  vi.mocked(d.client.getAccountInactiveOrders).mockResolvedValue({ code: 200, orders: [] });
+  vi.mocked(d.client.sendTx).mockResolvedValue({
+    code: 200, tx_hash: "hash-17", predicted_execution_time_ms: 100, volume_quota_remaining: 99,
+  });
+  Object.assign(d.client, {
+    getAccount: accountReads(),
+    getMarkets: vi.fn(async () => ({
+      code: 200,
+      order_books: [{ market_id: 0, market_type: "perp", status: "active", supported_size_decimals: 4, supported_price_decimals: 2 }],
+    })),
+  });
+  if (options.fees === true) withFees(d);
+  return {
+    intent: intent({
+      actionType: "modify",
+      requestedBaseAmountInteger: "7500",
+      requestedPriceInteger: "5125",
+      providerSnapshotJson: { ...lifecycleSnapshot(openOrder), marketSizeDecimals: 4, marketPriceDecimals: 2 },
+      ...(options.fees === true ? { integratorFees: PERP_FEES } : {}),
+    }),
+    deps: d,
+  };
+}
+
+const CANCEL_ALL_SECOND_ORDER: LighterAccountOrder = {
+  ...openOrder,
+  order_id: "281474976710657",
+  client_order_id: "124",
+  client_order_index: 124,
+  market_index: 1,
+  initial_base_amount: "2",
+  remaining_base_amount: "2",
+  filled_base_amount: "0",
+  filled_quote_amount: "0",
+  price: "25",
+};
+
+function cancelAllScenario(): LifecycleScenario {
+  const d = deps();
+  vi.mocked(d.client.getAccountActiveOrders)
+    .mockReset()
+    .mockResolvedValueOnce({ code: 200, orders: [CANCEL_ALL_SECOND_ORDER, openOrder] })
+    .mockResolvedValue({ code: 200, orders: [] });
+  vi.mocked(d.client.getAccountInactiveOrders).mockResolvedValue({
+    code: 200,
+    orders: [
+      { ...openOrder, status: "canceled" },
+      { ...CANCEL_ALL_SECOND_ORDER, status: "filled", remaining_base_amount: "0", filled_base_amount: "2", filled_quote_amount: "50" },
+    ],
+  });
+  vi.mocked(d.client.sendTx).mockResolvedValue({
+    code: 200, tx_hash: "hash-16", predicted_execution_time_ms: 100, volume_quota_remaining: 99,
+  });
+  const approvedOrders = [lifecycleSnapshot(openOrder), lifecycleSnapshot(CANCEL_ALL_SECOND_ORDER)];
+  return {
+    intent: intent({
+      actionType: "cancel_all",
+      marketIndex: null,
+      providerOrderId: null,
+      providerSnapshotJson: { orders: approvedOrders, orderCount: approvedOrders.length },
+    }),
+    deps: d,
+  };
+}
+
+const CLOSE_MARKET = {
+  symbol: "ETH", market_id: 0, market_type: "perp" as const, base_asset_id: 1, quote_asset_id: 3,
+  status: "active" as const, taker_fee: "0.00045", maker_fee: "0.00010", liquidation_fee: "0.005",
+  min_base_amount: "0.0001", min_quote_amount: "10", supported_size_decimals: 4, supported_price_decimals: 2,
+  supported_quote_decimals: 6, order_quote_limit: "1000000", is_maker_fee_enabled: true, is_taker_fee_enabled: true,
+};
+const CLOSE_BID = {
+  order_index: 1, order_id: "281474976710657", owner_account_index: 99, initial_base_amount: "2.0000",
+  remaining_base_amount: "2.0000", price: "50.00", order_expiry: 0, transaction_time: NOW,
+};
+const CLOSE_MATCH_HASH = "d".repeat(64);
+
+function closeScenario(options: { readonly fees?: boolean } = {}): LifecycleScenario {
+  const d = deps();
+  const clientOrderId = deriveVexAssignedClientOrderIndex(CLOSE_MATCH_HASH);
+  const closeOrder: LighterAccountOrder = {
+    ...openOrder,
+    order_id: "281474976710658",
+    client_order_id: clientOrderId,
+    client_order_index: Number(clientOrderId),
+    initial_base_amount: "1.0000",
+    remaining_base_amount: "0.0000",
+    filled_base_amount: "1.0000",
+    filled_quote_amount: "49.75",
+    price: "49.50",
+    side: "sell",
+    type: "market",
+    time_in_force: "immediate-or-cancel",
+    reduce_only: true,
+    status: "filled",
+  };
+  let sent = false;
+  Object.assign(d.client, {
+    getAccount: accountReads({ positions: () => [sent ? { ...longPosition, position: "0.0000" } : longPosition] }),
+    getMarkets: vi.fn(async () => ({ code: 200, order_books: [CLOSE_MARKET] })),
+    getOrderBookOrders: vi.fn(async () => ({ code: 200, total_asks: 0, asks: [], total_bids: 1, bids: [CLOSE_BID] })),
+    getAccountInactiveOrders: vi.fn(async () => ({ code: 200, orders: [closeOrder] })),
+    sendTx: vi.fn(async () => {
+      sent = true;
+      return { code: 200, tx_hash: "hash-14", predicted_execution_time_ms: 100, volume_quota_remaining: 99 };
+    }),
+  });
+  vi.mocked(d.authSigner.signCreateOrder).mockImplementation(async (input) => ({
+    kind: "lighter_create_order_signer_result",
+    environment: "rhc",
+    accountIndex: 42,
+    apiKeyIndex: 7,
+    nonce: "9",
+    clientOrderIndex: input.order.clientOrderIndex,
+    matchHash: input.order.matchHash,
+    txType: 14,
+    txInfo: "signed-close",
+    txHash: "hash-14",
+  }));
+  if (options.fees === true) withFees(d);
+  return {
+    intent: intent({
+      actionType: "close_position",
+      matchHash: CLOSE_MATCH_HASH,
+      marketIndex: 0,
+      providerOrderId: null,
+      requestedBaseAmountInteger: "10000",
+      requestedPriceInteger: "4950",
+      requestedSide: "sell",
+      reduceOnly: true,
+      providerSnapshotJson: {
+        position: {
+          marketIndex: 0, symbol: "ETH", sign: 1, side: "long", position: "1.0000",
+          averageEntryPrice: "45.00", positionValue: "50.000000", unrealizedPnl: "5.000000",
+          liquidationPrice: "30.00",
+        },
+        marketSizeDecimals: 4,
+        marketPriceDecimals: 2,
+        maxSlippageBps: 100,
+      },
+      ...(options.fees === true ? { integratorFees: PERP_FEES } : {}),
+    }),
+    deps: d,
+  };
+}
+
+/** Build a scenario, then change its client or deps for one case. */
+function scenario(
+  base: () => LifecycleScenario,
+  change: (scenario: LifecycleScenario) => void,
+): () => LifecycleScenario {
+  return () => {
+    const built = base();
+    change(built);
+    return built;
+  };
+}
+
+const ROTATED_KEY = { code: 200, api_keys: [{
+  account_index: 42, api_key_index: 7, nonce: 9, public_key: "c".repeat(80), transaction_time: NOW,
+}] };
+const CHANGED_ORDER: LighterAccountOrder = { ...openOrder, remaining_base_amount: "0.4" };
+
+interface LifecycleCase {
+  readonly label: string;
+  readonly action: LifecycleAction;
+  readonly build: () => LifecycleScenario;
+  /** The OFF outcome, so each case provably exercises what it names. */
+  readonly expected: RegExp;
+}
+
+const LIFECYCLE_CASES: readonly LifecycleCase[] = [
+  // Cancel one.
+  { label: "cancel one succeeds", action: "cancel_one", build: cancelOneScenario, expected: /"status":"canceled"/ },
+  {
+    label: "cancel one: the order is no longer open", action: "cancel_one", expected: /no longer active and open/,
+    build: scenario(cancelOneScenario, ({ deps: d }) => {
+      vi.mocked(d.client.getAccountActiveOrders).mockReset().mockResolvedValue({ code: 200, orders: [] });
+    }),
+  },
+  {
+    label: "cancel one: the order changed", action: "cancel_one", expected: /changed before cancel submission/,
+    build: scenario(cancelOneScenario, ({ deps: d }) => {
+      vi.mocked(d.client.getAccountActiveOrders).mockReset().mockResolvedValue({ code: 200, orders: [CHANGED_ORDER] });
+    }),
+  },
+  {
+    label: "cancel one: the active-order read fails", action: "cancel_one", expected: /active down/,
+    build: scenario(cancelOneScenario, ({ deps: d }) => {
+      Object.assign(d.client, { getAccountActiveOrders: vi.fn(rejectNow(new Error("active down"))) });
+    }),
+  },
+  {
+    label: "cancel one: Lighter is unreachable on the active-order read", action: "cancel_one", expected: /couldn't reach Lighter before sending/,
+    build: scenario(cancelOneScenario, ({ deps: d }) => {
+      Object.assign(d.client, { getAccountActiveOrders: vi.fn(rejectNow(OFFLINE("active timed out"))) });
+    }),
+  },
+  {
+    label: "cancel one: the key is no longer registered", action: "cancel_one", expected: /trading credential changed/,
+    build: scenario(cancelOneScenario, ({ deps: d }) => {
+      Object.assign(d.client, { getApiKeys: vi.fn(async () => ({ code: 200, api_keys: [] })) });
+    }),
+  },
+  {
+    label: "cancel one: the key rotated", action: "cancel_one", expected: /trading credential changed/,
+    build: scenario(cancelOneScenario, ({ deps: d }) => {
+      Object.assign(d.client, { getApiKeys: vi.fn(async () => ROTATED_KEY) });
+    }),
+  },
+  {
+    label: "cancel one: the key read fails", action: "cancel_one", expected: /keys down/,
+    build: scenario(cancelOneScenario, ({ deps: d }) => {
+      Object.assign(d.client, { getApiKeys: vi.fn(rejectNow(new Error("keys down"))) });
+    }),
+  },
+  {
+    label: "cancel one: the nonce evidence is inconsistent", action: "cancel_one", expected: /inconsistent nonce evidence/,
+    build: scenario(cancelOneScenario, ({ deps: d }) => {
+      Object.assign(d.client, { getNextNonce: vi.fn(async () => ({ code: 200, nonce: 10 })) });
+    }),
+  },
+  {
+    label: "cancel one: the nonce read fails", action: "cancel_one", expected: /nonce down/,
+    build: scenario(cancelOneScenario, ({ deps: d }) => {
+      Object.assign(d.client, { getNextNonce: vi.fn(rejectNow(new Error("nonce down"))) });
+    }),
+  },
+  {
+    label: "cancel one: the order changed while the key and nonce reads failed first", action: "cancel_one",
+    expected: /changed before cancel submission/,
+    build: scenario(cancelOneScenario, ({ deps: d }) => {
+      Object.assign(d.client, {
+        getAccountActiveOrders: vi.fn(resolveAfter({ code: 200, orders: [CHANGED_ORDER] }, 5)),
+        getApiKeys: vi.fn(rejectNow(new Error("keys down"))),
+        getNextNonce: vi.fn(rejectNow(OFFLINE("nonce timed out"))),
+      });
+    }),
+  },
+  {
+    label: "cancel one: the key rotated while the nonce read failed first", action: "cancel_one", expected: /trading credential changed/,
+    build: scenario(cancelOneScenario, ({ deps: d }) => {
+      Object.assign(d.client, {
+        getApiKeys: vi.fn(resolveAfter(ROTATED_KEY, 5)),
+        getNextNonce: vi.fn(rejectNow(new Error("nonce down"))),
+      });
+    }),
+  },
+  {
+    label: "cancel one: the active-order read fails last, after an unreachable key read", action: "cancel_one", expected: /active down/,
+    build: scenario(cancelOneScenario, ({ deps: d }) => {
+      Object.assign(d.client, {
+        getAccountActiveOrders: vi.fn(rejectAfter(new Error("active down"), 5)),
+        getApiKeys: vi.fn(rejectNow(OFFLINE("keys timed out"))),
+      });
+    }),
+  },
+  {
+    label: "cancel one: revalidation evidence cannot persist", action: "cancel_one", expected: /could not persist revalidation/,
+    build: scenario(cancelOneScenario, ({ deps: d }) => {
+      vi.mocked(d.intents.markPreSubmitRevalidated).mockResolvedValue(null);
+    }),
+  },
+  {
+    label: "cancel one: an earlier action still holds the nonce", action: "cancel_one", expected: /has been retired/,
+    build: scenario(cancelOneScenario, ({ deps: d }) => {
+      vi.mocked(d.nonceState.recordExecutionObserved).mockResolvedValue(null);
+      Object.assign(d, { recoverNonce: vi.fn(async () => ({})) });
+    }),
+  },
+  {
+    label: "cancel one: the trading key is not in the vault", action: "cancel_one", expected: /not present in the encrypted local vault/,
+    build: scenario(cancelOneScenario, ({ deps: d }) => {
+      vi.mocked(d.secretReader.readTradingApiPrivateKey).mockResolvedValue(null);
+    }),
+  },
+  {
+    label: "cancel one: the send is ambiguous", action: "cancel_one", expected: /send_tx_transport_ambiguous/,
+    build: scenario(cancelOneScenario, ({ deps: d }) => {
+      vi.mocked(d.client.sendTx).mockRejectedValue(new Error("timeout"));
+    }),
+  },
+
+  // Cancel all.
+  { label: "cancel all succeeds", action: "cancel_all", build: cancelAllScenario, expected: /"status":"cancel_all_completed"/ },
+  {
+    label: "cancel all: the active-order set changed", action: "cancel_all", expected: /active-order set changed/,
+    build: scenario(cancelAllScenario, ({ deps: d }) => {
+      vi.mocked(d.client.getAccountActiveOrders).mockReset().mockResolvedValue({ code: 200, orders: [openOrder] });
+    }),
+  },
+  {
+    label: "cancel all: the active-order read fails", action: "cancel_all", expected: /active down/,
+    build: scenario(cancelAllScenario, ({ deps: d }) => {
+      Object.assign(d.client, { getAccountActiveOrders: vi.fn(rejectNow(new Error("active down"))) });
+    }),
+  },
+  {
+    label: "cancel all: the key rotated", action: "cancel_all", expected: /trading credential changed/,
+    build: scenario(cancelAllScenario, ({ deps: d }) => {
+      Object.assign(d.client, { getApiKeys: vi.fn(async () => ROTATED_KEY) });
+    }),
+  },
+  {
+    label: "cancel all: the nonce evidence is inconsistent", action: "cancel_all", expected: /inconsistent nonce evidence/,
+    build: scenario(cancelAllScenario, ({ deps: d }) => {
+      Object.assign(d.client, { getNextNonce: vi.fn(async () => ({ code: 200, nonce: 10 })) });
+    }),
+  },
+  {
+    label: "cancel all: the nonce read fails", action: "cancel_all", expected: /nonce down/,
+    build: scenario(cancelAllScenario, ({ deps: d }) => {
+      Object.assign(d.client, { getNextNonce: vi.fn(rejectNow(new Error("nonce down"))) });
+    }),
+  },
+  {
+    label: "cancel all: the set changed while the key and nonce reads failed first", action: "cancel_all", expected: /active-order set changed/,
+    build: scenario(cancelAllScenario, ({ deps: d }) => {
+      Object.assign(d.client, {
+        getAccountActiveOrders: vi.fn(resolveAfter({ code: 200, orders: [openOrder] }, 5)),
+        getApiKeys: vi.fn(rejectNow(new Error("keys down"))),
+        getNextNonce: vi.fn(rejectNow(new Error("nonce down"))),
+      });
+    }),
+  },
+  {
+    label: "cancel all: revalidation evidence cannot persist", action: "cancel_all", expected: /could not persist revalidation/,
+    build: scenario(cancelAllScenario, ({ deps: d }) => {
+      vi.mocked(d.intents.markPreSubmitRevalidated).mockResolvedValue(null);
+    }),
+  },
+
+  // Modify.
+  { label: "modify succeeds", action: "modify", build: () => modifyScenario(), expected: /"status":"modified"/ },
+  { label: "modify succeeds with fees", action: "modify", build: () => modifyScenario({ fees: true }), expected: /"status":"modified"/ },
+  {
+    label: "modify: the market precision changed", action: "modify", expected: /precision or active status changed/,
+    build: scenario(() => modifyScenario(), ({ deps: d }) => {
+      Object.assign(d.client, { getMarkets: vi.fn(async () => ({
+        code: 200, order_books: [{ market_id: 0, market_type: "perp", status: "active", supported_size_decimals: 3, supported_price_decimals: 2 }],
+      })) });
+    }),
+  },
+  {
+    label: "modify: the market read fails", action: "modify", expected: /markets down/,
+    build: scenario(() => modifyScenario(), ({ deps: d }) => {
+      Object.assign(d.client, { getMarkets: vi.fn(rejectNow(new Error("markets down"))) });
+    }),
+  },
+  {
+    label: "modify: the market is gone while every later read failed first", action: "modify", expected: /precision or active status changed/,
+    build: scenario(() => modifyScenario({ fees: true }), ({ deps: d }) => {
+      Object.assign(d.client, {
+        getMarkets: vi.fn(resolveAfter({ code: 200, order_books: [] }, 5)),
+        getAccountActiveOrders: vi.fn(rejectNow(new Error("active down"))),
+        getSystemConfig: vi.fn(rejectNow(OFFLINE("config timed out"))),
+        getApiKeys: vi.fn(rejectNow(new Error("keys down"))),
+        getNextNonce: vi.fn(rejectNow(new Error("nonce down"))),
+      });
+    }),
+  },
+  {
+    label: "modify: the order is no longer open", action: "modify", expected: /no longer active and open/,
+    build: scenario(() => modifyScenario(), ({ deps: d }) => {
+      vi.mocked(d.client.getAccountActiveOrders).mockReset().mockResolvedValue({ code: 200, orders: [] });
+    }),
+  },
+  {
+    label: "modify: the order changed while the fee reads failed first", action: "modify", expected: /changed before modify submission/,
+    build: scenario(() => modifyScenario({ fees: true }), ({ deps: d }) => {
+      Object.assign(d.client, {
+        getAccountActiveOrders: vi.fn(resolveAfter({ code: 200, orders: [CHANGED_ORDER] }, 5)),
+        getSystemConfig: vi.fn(rejectNow(new Error("config down"))),
+        getAccountLimits: vi.fn(rejectNow(OFFLINE("limits timed out"))),
+      });
+    }),
+  },
+  {
+    label: "modify: the fee authorization is missing", action: "modify", expected: /Lighter fee setup is required/,
+    build: scenario(() => modifyScenario({ fees: true }), ({ deps: d }) => {
+      Object.assign(d.client, { getAccount: accountReads({ integrators: [] }) });
+    }),
+  },
+  {
+    label: "modify: the approved fee terms no longer match", action: "modify", expected: /fee policy or authorization changed/,
+    build: scenario(() => modifyScenario({ fees: true }), (built) => {
+      Object.assign(built, { intent: { ...built.intent, integratorFees: null } });
+    }),
+  },
+  {
+    label: "modify: a fee read fails", action: "modify", expected: /config down/,
+    build: scenario(() => modifyScenario({ fees: true }), ({ deps: d }) => {
+      Object.assign(d.client, { getSystemConfig: vi.fn(rejectNow(new Error("config down"))) });
+    }),
+  },
+  {
+    label: "modify: Lighter is unreachable on a fee read", action: "modify", expected: /couldn't reach Lighter before sending/,
+    build: scenario(() => modifyScenario({ fees: true }), ({ deps: d }) => {
+      Object.assign(d.client, { getAccountLimits: vi.fn(rejectNow(OFFLINE("limits timed out"))) });
+    }),
+  },
+  {
+    label: "modify: a fee read fails last, after the key and nonce reads failed", action: "modify", expected: /config down/,
+    build: scenario(() => modifyScenario({ fees: true }), ({ deps: d }) => {
+      Object.assign(d.client, {
+        getSystemConfig: vi.fn(rejectAfter(new Error("config down"), 5)),
+        getApiKeys: vi.fn(rejectNow(OFFLINE("keys timed out"))),
+        getNextNonce: vi.fn(rejectNow(new Error("nonce down"))),
+      });
+    }),
+  },
+  {
+    label: "modify: the key rotated", action: "modify", expected: /trading credential changed/,
+    build: scenario(() => modifyScenario(), ({ deps: d }) => {
+      Object.assign(d.client, { getApiKeys: vi.fn(async () => ROTATED_KEY) });
+    }),
+  },
+  {
+    label: "modify: the nonce evidence is inconsistent", action: "modify", expected: /inconsistent nonce evidence/,
+    build: scenario(() => modifyScenario(), ({ deps: d }) => {
+      Object.assign(d.client, { getNextNonce: vi.fn(async () => ({ code: 200, nonce: 10 })) });
+    }),
+  },
+  {
+    label: "modify: the nonce read fails", action: "modify", expected: /nonce down/,
+    build: scenario(() => modifyScenario(), ({ deps: d }) => {
+      Object.assign(d.client, { getNextNonce: vi.fn(rejectNow(new Error("nonce down"))) });
+    }),
+  },
+  {
+    label: "modify: the capital re-admission cannot see the account", action: "modify", expected: /capital share could not be checked/,
+    build: scenario(() => modifyScenario(), ({ deps: d }) => {
+      Object.assign(d.client, { getAccount: vi.fn(async () => ({ code: 200, total: 0, accounts: [] })) });
+    }),
+  },
+  {
+    label: "modify: the key rotated before a capital re-admission that would refuse", action: "modify", expected: /trading credential changed/,
+    build: scenario(() => modifyScenario(), ({ deps: d }) => {
+      Object.assign(d.client, {
+        getAccount: vi.fn(async () => ({ code: 200, total: 0, accounts: [] })),
+        getApiKeys: vi.fn(resolveAfter(ROTATED_KEY, 5)),
+      });
+    }),
+  },
+
+  // Close.
+  { label: "close succeeds", action: "close_position", build: () => closeScenario(), expected: /"status":"closed"/ },
+  { label: "close succeeds with fees", action: "close_position", build: () => closeScenario({ fees: true }), expected: /"status":"closed"/ },
+  {
+    label: "close: the account is not unique", action: "close_position", expected: /changed or is unavailable/,
+    build: scenario(() => closeScenario(), ({ deps: d }) => {
+      Object.assign(d.client, { getAccount: vi.fn(async () => ({
+        code: 200, accounts: [{ index: 42, positions: [longPosition] }, { index: 42, positions: [longPosition] }],
+      })) });
+    }),
+  },
+  {
+    label: "close: the market precision changed", action: "close_position", expected: /close market or precision changed/,
+    build: scenario(() => closeScenario(), ({ deps: d }) => {
+      Object.assign(d.client, { getMarkets: vi.fn(async () => ({ code: 200, order_books: [{ ...CLOSE_MARKET, supported_price_decimals: 3 }] })) });
+    }),
+  },
+  {
+    label: "close: the book read fails", action: "close_position", expected: /book down/,
+    build: scenario(() => closeScenario(), ({ deps: d }) => {
+      Object.assign(d.client, { getOrderBookOrders: vi.fn(rejectNow(new Error("book down"))) });
+    }),
+  },
+  {
+    label: "close: Lighter is unreachable on the batch", action: "close_position", expected: /couldn't reach Lighter before sending/,
+    build: scenario(() => closeScenario(), ({ deps: d }) => {
+      Object.assign(d.client, { getMarkets: vi.fn(rejectNow(OFFLINE("markets timed out"))) });
+    }),
+  },
+  {
+    label: "close: the batch fails last, after every other read failed", action: "close_position", expected: /book down/,
+    build: scenario(() => closeScenario({ fees: true }), ({ deps: d }) => {
+      Object.assign(d.client, {
+        getOrderBookOrders: vi.fn(rejectAfter(new Error("book down"), 5)),
+        getSystemConfig: vi.fn(rejectNow(OFFLINE("config timed out"))),
+        getApiKeys: vi.fn(rejectNow(new Error("keys down"))),
+        getNextNonce: vi.fn(rejectNow(new Error("nonce down"))),
+      });
+    }),
+  },
+  {
+    label: "close: the position is gone", action: "close_position", expected: /no longer shown on Lighter/,
+    build: scenario(() => closeScenario(), ({ deps: d }) => {
+      Object.assign(d.client, { getAccount: accountReads({ positions: () => [] }) });
+    }),
+  },
+  {
+    label: "close: the position size drifted, recorded durably, while every later read failed first", action: "close_position",
+    expected: /position size, side, or entry changed/,
+    build: scenario(() => closeScenario({ fees: true }), ({ deps: d }) => {
+      Object.assign(d.client, {
+        getMarkets: vi.fn(resolveAfter({ code: 200, order_books: [CLOSE_MARKET] }, 5)),
+        getAccount: accountReads({ positions: () => [{ ...longPosition, position: "0.9000" }] }),
+        getSystemConfig: vi.fn(rejectNow(new Error("config down"))),
+        getApiKeys: vi.fn(rejectNow(new Error("keys down"))),
+        getNextNonce: vi.fn(rejectNow(OFFLINE("nonce timed out"))),
+      });
+    }),
+  },
+  {
+    label: "close: the position drift races a concurrent lifecycle transition", action: "close_position",
+    expected: /lifecycle state advanced concurrently/,
+    build: scenario(() => closeScenario(), ({ deps: d }) => {
+      Object.assign(d.client, { getAccount: accountReads({ positions: () => [{ ...longPosition, position: "0.9000" }] }) });
+      vi.mocked(d.intents.markClosePositionChangedBeforeSubmissionWith).mockResolvedValue(null);
+    }),
+  },
+  {
+    label: "close: the book can no longer close at the approved price", action: "close_position",
+    expected: /cannot close the full position at the approved worst price/,
+    build: scenario(() => closeScenario(), ({ deps: d }) => {
+      Object.assign(d.client, { getOrderBookOrders: vi.fn(async () => ({
+        code: 200, total_asks: 0, asks: [], total_bids: 1, bids: [{ ...CLOSE_BID, remaining_base_amount: "0.5000" }],
+      })) });
+    }),
+  },
+  {
+    label: "close: the fee authorization was revoked", action: "close_position", expected: /fee policy or authorization changed/,
+    build: scenario(() => closeScenario({ fees: true }), ({ deps: d }) => {
+      Object.assign(d.client, { getAccount: accountReads({ positions: () => [longPosition], integrators: [] }) });
+    }),
+  },
+  {
+    label: "close: a fee read fails", action: "close_position", expected: /fee policy or authorization changed/,
+    build: scenario(() => closeScenario({ fees: true }), ({ deps: d }) => {
+      Object.assign(d.client, { getAccountLimits: vi.fn(rejectNow(new Error("limits down"))) });
+    }),
+  },
+  {
+    label: "close: a fee read is unreachable", action: "close_position", expected: /fee policy or authorization changed/,
+    build: scenario(() => closeScenario({ fees: true }), ({ deps: d }) => {
+      Object.assign(d.client, { getSystemConfig: vi.fn(rejectNow(OFFLINE("config timed out"))) });
+    }),
+  },
+  {
+    label: "close: the fee check refuses last, after the nonce read failed", action: "close_position",
+    expected: /fee policy or authorization changed/,
+    build: scenario(() => closeScenario({ fees: true }), ({ deps: d }) => {
+      Object.assign(d.client, {
+        getSystemConfig: vi.fn(rejectAfter(new Error("config down"), 5)),
+        getNextNonce: vi.fn(rejectNow(new Error("nonce down"))),
+      });
+    }),
+  },
+  {
+    label: "close: the key rotated", action: "close_position", expected: /trading credential changed/,
+    build: scenario(() => closeScenario(), ({ deps: d }) => {
+      Object.assign(d.client, { getApiKeys: vi.fn(async () => ROTATED_KEY) });
+    }),
+  },
+  {
+    label: "close: the nonce evidence is inconsistent", action: "close_position", expected: /inconsistent nonce evidence/,
+    build: scenario(() => closeScenario(), ({ deps: d }) => {
+      Object.assign(d.client, { getNextNonce: vi.fn(async () => ({ code: 200, nonce: 10 })) });
+    }),
+  },
+  {
+    label: "close: the nonce read fails", action: "close_position", expected: /nonce down/,
+    build: scenario(() => closeScenario(), ({ deps: d }) => {
+      Object.assign(d.client, { getNextNonce: vi.fn(rejectNow(new Error("nonce down"))) });
+    }),
+  },
+  {
+    label: "close: an earlier action still holds the nonce", action: "close_position", expected: /has been retired/,
+    build: scenario(() => closeScenario(), ({ deps: d }) => {
+      vi.mocked(d.nonceState.recordExecutionObserved).mockResolvedValue(null);
+      Object.assign(d, { recoverNonce: vi.fn(async () => ({})) });
+    }),
+  },
+];
+
+function describeLifecycleFailure(error: unknown): Record<string, unknown> {
+  if (error instanceof VexError) {
+    return {
+      name: error.name,
+      code: error.code,
+      message: error.message,
+      hint: error.hint,
+      retryable: error.retryable,
+      ...(error instanceof LighterIntentRefusal ? { reason: error.reason } : {}),
+    };
+  }
+  return { message: error instanceof Error ? error.message : String(error) };
+}
+
+const PROVIDER_READS = [
+  "getAccount", "getMarkets", "getOrderBookOrders", "getAccountActiveOrders", "getApiKeys", "getNextNonce",
+  "getSystemConfig", "getAccountLimits",
+] as const;
+
+interface LifecycleObservation {
+  readonly outcome: Record<string, unknown>;
+  readonly effects: Record<string, unknown>;
+  /** Every provider read before and after the send, by method, in call order. */
+  readonly reads: Record<string, string[]>;
+}
+
+async function observeLifecycle(
+  action: LifecycleAction,
+  built: LifecycleScenario,
+  lifecycleParallelReads: boolean | "constant",
+): Promise<LifecycleObservation> {
+  ledger.retired.length = 0;
+  ledger.settled.length = 0;
+  const { lifecycleParallelReads: _pinned, ...unpinned } = built.deps;
+  const d: LighterOrderLifecycleExecutionDeps = lifecycleParallelReads === "constant"
+    ? unpinned
+    : { ...unpinned, lifecycleParallelReads };
+  let outcome: Record<string, unknown>;
+  try {
+    outcome = { resolved: await LIFECYCLE_EXECUTORS[action](built.intent, d) };
+  } catch (error) {
+    outcome = { rejected: describeLifecycleFailure(error) };
+  }
+  const client: Record<string, unknown> = d.client;
+  const reads: Record<string, string[]> = {};
+  for (const method of PROVIDER_READS) {
+    const read = client[method];
+    if (vi.isMockFunction(read)) reads[method] = read.mock.calls.map((call) => JSON.stringify(call));
+  }
+  return {
+    outcome,
+    effects: {
+      secretReads: vi.mocked(d.secretReader.readTradingApiPrivateKey).mock.calls,
+      authMints: vi.mocked(d.authSigner.createAccountAuth).mock.calls.length,
+      markPreSubmitRevalidated: vi.mocked(d.intents.markPreSubmitRevalidated).mock.calls,
+      markClosePositionChanged: vi.mocked(d.intents.markClosePositionChangedBeforeSubmissionWith).mock.calls.map((call) => call[1]),
+      acquireSessionControlLock: vi.mocked(d.acquireSessionControlLock).mock.calls.map((call) => call[1]),
+      abandonRevalidatedBeforeNonce: vi.mocked(d.intents.abandonRevalidatedBeforeNonce).mock.calls,
+      recordExecutionObserved: vi.mocked(d.nonceState.recordExecutionObserved).mock.calls,
+      reserveObservedWith: vi.mocked(d.nonceState.reserveObservedWith).mock.calls.map((call) => call[1]),
+      attachNonceReservationWith: vi.mocked(d.intents.attachNonceReservationWith).mock.calls.map((call) => call[1]),
+      signCancelOrder: vi.mocked(d.lifecycleSigner.signCancelOrder).mock.calls,
+      signModifyOrder: vi.mocked(d.lifecycleSigner.signModifyOrder).mock.calls,
+      signCancelAllOrders: vi.mocked(d.lifecycleSigner.signCancelAllOrders).mock.calls,
+      signCreateOrder: vi.mocked(d.authSigner.signCreateOrder).mock.calls,
+      markSigned: vi.mocked(d.intents.markSigned).mock.calls,
+      markSubmissionStaged: vi.mocked(d.intents.markSubmissionStaged).mock.calls,
+      markSendAttemptStarted: vi.mocked(d.intents.markSendAttemptStarted).mock.calls,
+      sendTx: vi.mocked(d.client.sendTx).mock.calls,
+      markApiAccepted: vi.mocked(d.intents.markApiAccepted).mock.calls,
+      markProviderOutcome: vi.mocked(d.intents.markProviderOutcome).mock.calls,
+      markAmbiguous: vi.mocked(d.intents.markAmbiguous).mock.calls,
+      markUnsubmittedRefused: vi.mocked(d.intents.markUnsubmittedRefused).mock.calls,
+      markExpiredUnsubmitted: vi.mocked(d.intents.markExpiredUnsubmitted).mock.calls,
+      releaseUnsubmittedReservation: vi.mocked(d.nonceState.releaseUnsubmittedReservation).mock.calls,
+      inactiveOrderReads: vi.mocked(d.client.getAccountInactiveOrders).mock.calls,
+      capitalRetired: [...ledger.retired],
+      capitalSettled: [...ledger.settled],
+    },
+    reads,
+  };
+}
+
+/** Every read OFF made, ON made too (ON may add the reads an earlier refusal made moot). */
+function expectReadsCovered(off: Record<string, string[]>, on: Record<string, string[]>): void {
+  for (const [method, calls] of Object.entries(off)) {
+    const remaining = [...(on[method] ?? [])];
+    for (const call of calls) {
+      const index = remaining.indexOf(call);
+      expect(index, `${method} ${call}`).toBeGreaterThanOrEqual(0);
+      remaining.splice(index, 1);
+    }
+  }
+}
+
+function createReadGate() {
+  let release: () => void = () => undefined;
+  const promise = new Promise<void>((resolve) => { release = resolve; });
+  return { promise, release: () => release() };
+}
+
+describe("LIGHTER_LIFECYCLE_PARALLEL_READS", () => {
+  it("ships ON", () => {
+    expect(LIGHTER_LIFECYCLE_PARALLEL_READS).toBe(true);
+  });
+
+  it.each(LIFECYCLE_CASES)("refuses, writes, signs and sends exactly what OFF does: $label", async ({ action, build, expected }) => {
+    const off = await observeLifecycle(action, build(), false);
+    const absent = await observeLifecycle(action, build(), "constant");
+    const on = await observeLifecycle(action, build(), true);
+
+    expect(JSON.stringify(off.outcome)).toMatch(expected);
+    expect(absent.outcome).toEqual(off.outcome);
+    expect(absent.effects).toEqual(off.effects);
+    expect(on.outcome).toEqual(off.outcome);
+    expect(on.effects).toEqual(off.effects);
+    expectReadsCovered(off.reads, on.reads);
+    if ("resolved" in off.outcome) expect(on.reads).toEqual(off.reads);
+  });
+
+  it("starts the fee, key and nonce reads beside the close batch, and signs only after every read", async () => {
+    const built = closeScenario({ fees: true });
+    const d = built.deps;
+    const gate = createReadGate();
+    Object.assign(d.client, {
+      getMarkets: vi.fn(async () => {
+        await gate.promise;
+        return { code: 200, order_books: [CLOSE_MARKET] };
+      }),
+    });
+    const execution = executeApprovedLighterClosePosition(built.intent, { ...d, lifecycleParallelReads: true });
+
+    await vi.waitFor(() => {
+      expect(d.client.getNextNonce).toHaveBeenCalledTimes(1);
+      expect(d.client.getApiKeys).toHaveBeenCalledTimes(1);
+      expect(d.client.getAccountLimits).toHaveBeenCalledTimes(1);
+      expect(d.client.getSystemConfig).toHaveBeenCalledTimes(1);
+    });
+    // The signing secret was read once, where it is read today: before any provider read.
+    expect(d.secretReader.readTradingApiPrivateKey).toHaveBeenCalledTimes(1);
+    expect(d.intents.markPreSubmitRevalidated).not.toHaveBeenCalled();
+    expect(d.nonceState.recordExecutionObserved).not.toHaveBeenCalled();
+    expect(d.authSigner.signCreateOrder).not.toHaveBeenCalled();
+
+    gate.release();
+    await expect(execution).resolves.toMatchObject({ status: "closed" });
+    expect(d.secretReader.readTradingApiPrivateKey).toHaveBeenCalledTimes(1);
+    expect(d.client.sendTx).toHaveBeenCalledTimes(1);
+  });
+
+  it("OFF reads nothing past the close batch until it settles", async () => {
+    const built = closeScenario({ fees: true });
+    const d = built.deps;
+    const gate = createReadGate();
+    Object.assign(d.client, {
+      getMarkets: vi.fn(async () => {
+        await gate.promise;
+        return { code: 200, order_books: [CLOSE_MARKET] };
+      }),
+    });
+    const execution = executeApprovedLighterClosePosition(built.intent, { ...d, lifecycleParallelReads: false });
+
+    await vi.waitFor(() => expect(d.client.getMarkets).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(d.client.getSystemConfig).not.toHaveBeenCalled();
+    expect(d.client.getApiKeys).not.toHaveBeenCalled();
+    expect(d.client.getNextNonce).not.toHaveBeenCalled();
+
+    gate.release();
+    await expect(execution).resolves.toMatchObject({ status: "closed" });
+  });
+
+  it("keeps the fee check's trader account its own fresh read beside the close batch", async () => {
+    const built = closeScenario({ fees: true });
+    await executeApprovedLighterClosePosition(built.intent, { ...built.deps, lifecycleParallelReads: true });
+
+    const calls = vi.mocked(built.deps.client.getAccount).mock.calls;
+    // The batch's own account read, unchanged and not fresh.
+    expect(calls[0]).toEqual(["rhc", { by: "index", value: "42" }]);
+    // The fee check's collector and trader reads, both fresh, never the batch's answer.
+    expect(calls).toContainEqual(["rhc", { by: "index", value: 99 }, { fresh: true }]);
+    expect(calls).toContainEqual(["rhc", { by: "index", value: 42 }, { fresh: true }]);
+    expect(calls.filter((call) => call[1].activeOnly === undefined)).toHaveLength(3);
+  });
+
+  /** The action's first revalidation read answers only once the gate opens. */
+  function gateActiveOrders(first: LighterAccountOrder[]) {
+    return (d: LighterOrderLifecycleExecutionDeps, gate: Promise<void>): void => {
+      let calls = 0;
+      Object.assign(d.client, {
+        getAccountActiveOrders: vi.fn(async () => {
+          calls += 1;
+          if (calls > 1) return { code: 200, orders: [] };
+          await gate;
+          return { code: 200, orders: first };
+        }),
+      });
+    };
+  }
+
+  it.each([
+    ["cancel_one", cancelOneScenario, gateActiveOrders([openOrder])],
+    ["cancel_all", cancelAllScenario, gateActiveOrders([CANCEL_ALL_SECOND_ORDER, openOrder])],
+    ["modify", () => modifyScenario({ fees: true }), (d: LighterOrderLifecycleExecutionDeps, gate: Promise<void>): void => {
+      Object.assign(d.client, {
+        getMarkets: vi.fn(async () => {
+          await gate;
+          return {
+            code: 200,
+            order_books: [{ market_id: 0, market_type: "perp", status: "active", supported_size_decimals: 4, supported_price_decimals: 2 }],
+          };
+        }),
+      });
+    }],
+  ] as const)("%s starts its key and nonce reads before its first read settles", async (action, build, gateFirstRead) => {
+    const built = build();
+    const d = built.deps;
+    const gate = createReadGate();
+    gateFirstRead(d, gate.promise);
+    const execution = LIFECYCLE_EXECUTORS[action](built.intent, { ...d, lifecycleParallelReads: true });
+
+    await vi.waitFor(() => {
+      expect(d.client.getApiKeys).toHaveBeenCalledTimes(1);
+      expect(d.client.getNextNonce).toHaveBeenCalledTimes(1);
+    });
+    expect(d.intents.markPreSubmitRevalidated).not.toHaveBeenCalled();
+    expect(d.nonceState.reserveObservedWith).not.toHaveBeenCalled();
+
+    gate.release();
+    await expect(execution).resolves.toBeDefined();
+    expect(d.client.sendTx).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs one numbers-only [lighter-lifecycle-timing] line per execution, sent or refused", async () => {
+    const info = vi.spyOn(logger, "info");
+    const sent = closeScenario({ fees: true });
+    await executeApprovedLighterClosePosition(sent.intent, { ...sent.deps, lifecycleParallelReads: true });
+    const refused = cancelOneScenario();
+    vi.mocked(refused.deps.client.getAccountActiveOrders).mockReset().mockResolvedValue({ code: 200, orders: [] });
+    await expect(executeApprovedLighterCancelOne(refused.intent, { ...refused.deps, lifecycleParallelReads: false }))
+      .rejects.toThrow("no longer active and open");
+
+    const lines = info.mock.calls
+      .map((call) => Array.from<unknown>(call))
+      .filter((args) => args[0] === "[lighter-lifecycle-timing]")
+      .map((args) => args[1]);
+    expect(lines).toHaveLength(2);
+    const [closeLine, cancelLine] = lines;
+    expect(closeLine).toMatchObject({ action: "close_position", intentId: sent.intent.intentId, parallelReads: 1, apiAccepted: 1 });
+    expect(Object.keys(requireValue(closeLine))).toEqual(expect.arrayContaining([
+      "secretMs", "authMs", "readsMs", "persistMs", "nonceReserveMs", "signMs", "sendMs",
+      "reconcileMs", "decisionToApiAcceptedMs", "totalMs",
+    ]));
+    expect(cancelLine).toMatchObject({ action: "cancel_one", intentId: refused.intent.intentId, parallelReads: 0, apiAccepted: 0 });
+    expect(cancelLine).not.toHaveProperty("sendMs");
+    for (const line of lines) {
+      for (const [key, value] of Object.entries(requireValue(line))) {
+        if (key === "action" || key === "intentId") continue;
+        expect(typeof value, key).toBe("number");
+      }
+    }
+  });
+});
+
+describe("lifecycle parallel read helpers", () => {
+  const auth = { token: "auth-token", accountIndex: 42 };
+
+  function feeClient() {
+    return {
+      getSystemConfig: vi.fn<LighterClient["getSystemConfig"]>(async () => FEE_SYSTEM_CONFIG),
+      getAccount: accountReads(),
+      getAccountLimits: vi.fn<LighterClient["getAccountLimits"]>(async () => FEE_LIMITS),
+    };
+  }
+
+  it("starts no fee read when OFF, when fee collection is off, or when the fee policy cannot be read", () => {
+    const client = feeClient();
+    expect(prefetchLighterLifecycleFeeReads({ parallel: false, client, environment: "rhc", accountIndex: 42, auth })).toBe(client);
+    vi.mocked(feePolicy.getLighterFeePolicy).mockReturnValue(null);
+    expect(prefetchLighterLifecycleFeeReads({ parallel: true, client, environment: "rhc", accountIndex: 42, auth })).toBe(client);
+    vi.mocked(feePolicy.getLighterFeePolicy).mockImplementationOnce(() => { throw new Error("collector misconfigured"); });
+    expect(prefetchLighterLifecycleFeeReads({ parallel: true, client, environment: "rhc", accountIndex: 42, auth })).toBe(client);
+    expect(client.getSystemConfig).not.toHaveBeenCalled();
+    expect(client.getAccount).not.toHaveBeenCalled();
+    expect(client.getAccountLimits).not.toHaveBeenCalled();
+  });
+
+  it("answers each matching fee call once from the started reads, and anything else from the real client", async () => {
+    vi.mocked(feePolicy.getLighterFeePolicy).mockReturnValue(FEE_POLICY);
+    const client = feeClient();
+    const prefetched = prefetchLighterLifecycleFeeReads({ parallel: true, client, environment: "rhc", accountIndex: 42, auth });
+    expect(client.getSystemConfig).toHaveBeenCalledTimes(1);
+    expect(client.getAccount).toHaveBeenCalledTimes(2);
+    expect(client.getAccountLimits).toHaveBeenCalledTimes(1);
+
+    await requireValue(prefetched.getSystemConfig)("rhc", { fresh: true });
+    await requireValue(prefetched.getAccount)("rhc", { value: 42, by: "index" }, { fresh: true });
+    await requireValue(prefetched.getAccount)("rhc", { by: "index", value: 99 }, { fresh: true });
+    await requireValue(prefetched.getAccountLimits)("rhc", { accountIndex: 42 }, auth);
+    expect(client.getSystemConfig).toHaveBeenCalledTimes(1);
+    expect(client.getAccount).toHaveBeenCalledTimes(2);
+    expect(client.getAccountLimits).toHaveBeenCalledTimes(1);
+
+    // Used once each; a repeat, or a different query, reaches the provider.
+    await requireValue(prefetched.getSystemConfig)("rhc", { fresh: true });
+    await requireValue(prefetched.getAccount)("rhc", { by: "index", value: 42 });
+    expect(client.getSystemConfig).toHaveBeenCalledTimes(2);
+    expect(client.getAccount).toHaveBeenCalledTimes(3);
+    expect(client.getAccount).toHaveBeenLastCalledWith("rhc", { by: "index", value: 42 });
+  });
+
+  it("issues an OFF read only when awaited, and surfaces an ON read's synchronous failure at its await", async () => {
+    const start = vi.fn(async () => "value");
+    const off = lifecycleRead(false, start);
+    expect(start).not.toHaveBeenCalled();
+    await expect(off()).resolves.toBe("value");
+    expect(start).toHaveBeenCalledTimes(1);
+
+    const throwing = lifecycleRead<string>(true, () => { throw new Error("thrown at start"); });
+    await expect(throwing()).rejects.toThrow("thrown at start");
+  });
+});

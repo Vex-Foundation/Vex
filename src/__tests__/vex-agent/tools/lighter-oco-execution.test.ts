@@ -422,3 +422,241 @@ describe("OCO fills reach the ledger", () => {
     expect(levelTrades).toHaveBeenCalledTimes(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// LIGHTER_LIFECYCLE_PARALLEL_READS for OCO: the credential read runs beside
+// revalidation. OFF is today's order; ON must refuse, write, sign and send
+// exactly what OFF does.
+// ---------------------------------------------------------------------------
+
+import { ErrorCodes, VexError } from "../../../errors.js";
+import logger from "@utils/logger.js";
+import { LighterIntentRefusal } from "@vex-agent/tools/protocols/lighter/intent-expiry.js";
+
+const OCO_OFFLINE = (message: string) => new VexError(ErrorCodes.LIGHTER_TIMEOUT, message);
+
+function ocoRejectNow(error: unknown): () => Promise<never> {
+  return async () => { throw error; };
+}
+
+function ocoRejectAfter(error: unknown, delayMs: number): () => Promise<never> {
+  return async () => {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    throw error;
+  };
+}
+
+function ocoDepsWith(change: (d: LighterOcoExecutionDeps) => void): () => LighterOcoExecutionDeps {
+  return () => {
+    const d = ocoDeps();
+    change(d);
+    return d;
+  };
+}
+
+const OCO_CASES: readonly {
+  readonly label: string;
+  readonly build: () => LighterOcoExecutionDeps;
+  /** The OFF outcome, so each case provably exercises what it names. */
+  readonly expected: RegExp;
+}[] = [
+  { label: "the group is submitted", build: ocoDeps, expected: /"status":"active"/ },
+  {
+    label: "a child preview is no longer fresh", expected: /no longer fresh/,
+    build: ocoDepsWith((d) => { Object.assign(d.previews, { findFreshById: vi.fn(async () => null) }); }),
+  },
+  {
+    label: "the market read fails", expected: /evidence is unavailable for OCO revalidation/,
+    build: ocoDepsWith((d) => { Object.assign(d.client, { getMarketDetails: vi.fn(ocoRejectNow(new Error("market down"))) }); }),
+  },
+  {
+    label: "Lighter is unreachable during revalidation", expected: /couldn't reach Lighter before sending/,
+    build: ocoDepsWith((d) => { Object.assign(d.client, { getOrderBookOrders: vi.fn(ocoRejectNow(OCO_OFFLINE("book timed out"))) }); }),
+  },
+  {
+    label: "revalidation evidence cannot persist", expected: /could not be persisted/,
+    build: ocoDepsWith((d) => { Object.assign(d.intents, { markPreSubmitRevalidated: vi.fn(async () => null) }); }),
+  },
+  {
+    label: "the next nonce is unavailable", expected: /API-key identity or next nonce is unavailable/,
+    build: ocoDepsWith((d) => { Object.assign(d.client, { getNextNonce: vi.fn(ocoRejectNow(new Error("nonce down"))) }); }),
+  },
+  {
+    label: "the key is not registered", expected: /exact registered Lighter API key is unavailable/,
+    build: ocoDepsWith((d) => { Object.assign(d.client, { getApiKeys: vi.fn(async () => ({ code: 200, api_keys: [] })) }); }),
+  },
+  {
+    label: "Lighter is unreachable during the credential read", expected: /couldn't reach Lighter before sending/,
+    build: ocoDepsWith((d) => { Object.assign(d.client, { getApiKeys: vi.fn(ocoRejectNow(OCO_OFFLINE("keys timed out"))) }); }),
+  },
+  {
+    label: "both fail, the credential first: the revalidation refusal wins", expected: /evidence is unavailable for OCO revalidation/,
+    build: ocoDepsWith((d) => {
+      Object.assign(d.client, {
+        getMarketDetails: vi.fn(ocoRejectAfter(new Error("market down"), 5)),
+        getNextNonce: vi.fn(ocoRejectNow(new Error("nonce down"))),
+      });
+    }),
+  },
+  {
+    label: "both fail: an unreachable revalidation wins over a credential refusal", expected: /market timed out/,
+    build: ocoDepsWith((d) => {
+      Object.assign(d.client, {
+        getMarketDetails: vi.fn(ocoRejectAfter(OCO_OFFLINE("market timed out"), 5)),
+        getApiKeys: vi.fn(async () => ({ code: 200, api_keys: [] })),
+      });
+    }),
+  },
+  {
+    label: "both fail: a revalidation refusal wins over an unreachable credential read", expected: /could not be persisted/,
+    build: ocoDepsWith((d) => {
+      Object.assign(d.intents, { markPreSubmitRevalidated: vi.fn(async () => null) });
+      Object.assign(d.client, { getNextNonce: vi.fn(ocoRejectNow(OCO_OFFLINE("nonce timed out"))) });
+    }),
+  },
+  {
+    label: "the local key does not match the registered key", expected: /does not match the registered account key/,
+    build: ocoDepsWith((d) => {
+      Object.assign(d.client, { getApiKeys: vi.fn(async () => ({
+        code: 200, api_keys: [{ account_index: 42, api_key_index: 7, nonce: 0, public_key: "c".repeat(80), transaction_time: 1 }],
+      })) });
+    }),
+  },
+  {
+    label: "a child client order id already exists", expected: /already exists before OCO submission/,
+    build: ocoDepsWith((d) => {
+      Object.assign(d.client, { getAccountInactiveOrders: vi.fn(async () => ({ code: 200, orders: [{ ...active(0), status: "canceled" }] })) });
+    }),
+  },
+  {
+    label: "an earlier action still holds the nonce", expected: /Vex clears the blocking reservation automatically/,
+    build: ocoDepsWith((d) => {
+      Object.assign(d.nonceState, { recordExecutionObserved: vi.fn(async () => null) });
+      Object.assign(d, { recoverNonce: vi.fn(async () => ({})) });
+    }),
+  },
+  {
+    label: "the send is ambiguous", expected: /"status":"ambiguous"/,
+    build: ocoDepsWith((d) => { Object.assign(d.client, { sendTx: vi.fn(ocoRejectNow(new Error("socket hang up"))) }); }),
+  },
+];
+
+function describeOcoFailure(error: unknown): Record<string, unknown> {
+  if (error instanceof VexError) {
+    return {
+      name: error.name, code: error.code, message: error.message, hint: error.hint, retryable: error.retryable,
+      ...(error instanceof LighterIntentRefusal ? { reason: error.reason } : {}),
+    };
+  }
+  return { message: error instanceof Error ? error.message : String(error) };
+}
+
+async function observeOco(built: LighterOcoExecutionDeps, lifecycleParallelReads: boolean | "constant") {
+  const { lifecycleParallelReads: _pinned, ...unpinned } = built;
+  const d: LighterOcoExecutionDeps = lifecycleParallelReads === "constant" ? unpinned : { ...unpinned, lifecycleParallelReads };
+  let outcome: Record<string, unknown>;
+  try {
+    outcome = { resolved: await executeApprovedLighterOco({ plan: PLAN, group: GROUP, deps: d }) };
+  } catch (error) {
+    outcome = { rejected: describeOcoFailure(error) };
+  }
+  return {
+    outcome,
+    effects: {
+      findFreshById: vi.mocked(d.previews.findFreshById).mock.calls,
+      markPreSubmitRevalidated: vi.mocked(d.intents.markPreSubmitRevalidated).mock.calls,
+      readTradingApiPrivateKey: vi.mocked(d.secretReader.readTradingApiPrivateKey).mock.calls,
+      createAccountAuth: vi.mocked(d.authSigner.createAccountAuth).mock.calls.length,
+      accountActiveOrders: vi.mocked(d.client.getAccountActiveOrders).mock.calls,
+      accountInactiveOrders: vi.mocked(d.client.getAccountInactiveOrders).mock.calls,
+      accountTrades: vi.mocked(d.client.getAccountTrades).mock.calls,
+      recordExecutionObserved: vi.mocked(d.nonceState.recordExecutionObserved).mock.calls,
+      reserveObservedWith: vi.mocked(d.nonceState.reserveObservedWith).mock.calls.map((call) => call[1]),
+      attachNonceReservationWith: vi.mocked(d.intents.attachNonceReservationWith).mock.calls.map((call) => call[1]),
+      signCreateGroupedOrders: vi.mocked(d.groupedSigner.signCreateGroupedOrders).mock.calls,
+      markSigned: vi.mocked(d.intents.markSigned).mock.calls,
+      markSubmitted: vi.mocked(d.intents.markSubmitted).mock.calls,
+      markSendAttemptStarted: vi.mocked(d.intents.markSendAttemptStarted).mock.calls,
+      sendTx: vi.mocked(d.client.sendTx).mock.calls,
+      markApiAccepted: vi.mocked(d.intents.markApiAccepted).mock.calls,
+      markSequencerPending: vi.mocked(d.intents.markSequencerPending).mock.calls,
+      markProviderOutcome: vi.mocked(d.intents.markProviderOutcome).mock.calls,
+      markAmbiguous: vi.mocked(d.intents.markAmbiguous).mock.calls,
+      markUnsubmittedRefused: vi.mocked(d.intents.markUnsubmittedRefused).mock.calls,
+      markExpiredUnsubmitted: vi.mocked(d.intents.markExpiredUnsubmitted).mock.calls,
+      releaseUnsubmittedReservation: vi.mocked(d.nonceState.releaseUnsubmittedReservation).mock.calls,
+    },
+  };
+}
+
+describe("LIGHTER_LIFECYCLE_PARALLEL_READS for OCO", () => {
+  it.each(OCO_CASES)("refuses, writes, signs and sends exactly what OFF does when $label", async ({ build, expected }) => {
+    const off = await observeOco(build(), false);
+    const absent = await observeOco(build(), "constant");
+    const on = await observeOco(build(), true);
+
+    expect(JSON.stringify(off.outcome)).toMatch(expected);
+    expect(absent).toEqual(off);
+    expect(on).toEqual(off);
+  });
+
+  it("overlaps the credential read with revalidation and loads the key only after both", async () => {
+    const info = vi.spyOn(logger, "info");
+    let releaseRevalidation: () => void = () => undefined;
+    let releaseCredential: () => void = () => undefined;
+    const revalidationGate = new Promise<void>((resolve) => { releaseRevalidation = resolve; });
+    const credentialGate = new Promise<void>((resolve) => { releaseCredential = resolve; });
+    const d = ocoDeps();
+    Object.assign(d.intents, { markPreSubmitRevalidated: vi.fn(async () => { await revalidationGate; return {}; }) });
+    Object.assign(d.client, { getNextNonce: vi.fn(async () => { await credentialGate; return { code: 200, nonce: 0 }; }) });
+
+    const execution = executeApprovedLighterOco({ plan: PLAN, group: GROUP, deps: { ...d, lifecycleParallelReads: true } });
+
+    await vi.waitFor(() => {
+      expect(d.intents.markPreSubmitRevalidated).toHaveBeenCalledTimes(1);
+      expect(d.client.getNextNonce).toHaveBeenCalledTimes(1);
+    });
+    releaseCredential();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(d.authSigner.createAccountAuth).not.toHaveBeenCalled();
+
+    releaseRevalidation();
+    await expect(execution).resolves.toMatchObject({ status: "active" });
+    expect(d.secretReader.readTradingApiPrivateKey).toHaveBeenCalledTimes(1);
+    const line = info.mock.calls.map((call) => Array.from<unknown>(call)).find((args) => args[0] === "[lighter-lifecycle-timing]")?.[1];
+    expect(line).toMatchObject({ action: "oco", intentId: PLAN.intentId, parallelReads: 1, apiAccepted: 1 });
+    expect(Object.keys(requireValue(line))).toEqual(expect.arrayContaining([
+      "readsMs", "revalidationMs", "credentialMs", "secretMs", "authMs", "childCheckMs", "nonceReserveMs", "signMs", "sendMs", "totalMs",
+    ]));
+    info.mockRestore();
+  });
+
+  it("OFF reads the credential only after revalidation", async () => {
+    let releaseRevalidation: () => void = () => undefined;
+    const revalidationGate = new Promise<void>((resolve) => { releaseRevalidation = resolve; });
+    const d = ocoDeps();
+    Object.assign(d.intents, { markPreSubmitRevalidated: vi.fn(async () => { await revalidationGate; return {}; }) });
+
+    const execution = executeApprovedLighterOco({ plan: PLAN, group: GROUP, deps: { ...d, lifecycleParallelReads: false } });
+
+    await vi.waitFor(() => expect(d.intents.markPreSubmitRevalidated).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(d.client.getNextNonce).not.toHaveBeenCalled();
+    expect(d.client.getApiKeys).not.toHaveBeenCalled();
+    releaseRevalidation();
+    await expect(execution).resolves.toMatchObject({ status: "active" });
+  });
+
+  it("never loads the key when revalidation fails after the credential read succeeded", async () => {
+    const d = ocoDeps();
+    Object.assign(d.client, { getMarketDetails: vi.fn(ocoRejectAfter(new Error("market down"), 5)) });
+
+    await expect(executeApprovedLighterOco({ plan: PLAN, group: GROUP, deps: { ...d, lifecycleParallelReads: true } }))
+      .rejects.toThrow("evidence is unavailable for OCO revalidation");
+    expect(d.client.getNextNonce).toHaveBeenCalledTimes(1);
+    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(d.nonceState.recordExecutionObserved).not.toHaveBeenCalled();
+    expect(d.nonceState.reserveObservedWith).not.toHaveBeenCalled();
+  });
+});

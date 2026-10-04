@@ -54,6 +54,7 @@ import {
   type LighterNonceRecoveryRunner,
 } from "./nonce-commit-recovery.js";
 import { isLighterUnreachable, withLighterBeforeSendFailures, type LighterSendPhase } from "./before-send.js";
+import { LighterLifecycleTiming, lighterLifecycleParallelReads } from "./lifecycle-parallel-reads.js";
 
 const FRESH = { fresh: true } as const;
 const AUTH_TTL_SECONDS = 10 * 60;
@@ -120,6 +121,8 @@ export interface LighterOcoExecutionDeps {
    * assembles its own deps never writes to the fill ledger by accident.
    */
   readonly fills?: LighterFillObservationDeps;
+  /** Overrides `LIGHTER_LIFECYCLE_PARALLEL_READS`; absent uses the constant. */
+  readonly lifecycleParallelReads?: boolean;
 }
 
 let configuredDeps: LighterOcoExecutionDeps | null = null;
@@ -158,7 +161,12 @@ export async function executeApprovedLighterOco(input: {
   readonly deps: LighterOcoExecutionDeps;
   readonly abortSignal?: AbortSignal;
 }): Promise<ExecuteApprovedLighterOcoResult> {
-  return withLighterBeforeSendFailures((sendPhase) => runApprovedLighterOco(input, sendPhase));
+  const timing = new LighterLifecycleTiming("oco", lighterLifecycleParallelReads(input.deps.lifecycleParallelReads));
+  try {
+    return await withLighterBeforeSendFailures((sendPhase) => runApprovedLighterOco(input, sendPhase, timing));
+  } finally {
+    timing.log(input.plan.intentId);
+  }
 }
 
 async function runApprovedLighterOco(input: {
@@ -166,27 +174,30 @@ async function runApprovedLighterOco(input: {
   readonly group: LighterUnsignedOcoRequest;
   readonly deps: LighterOcoExecutionDeps;
   readonly abortSignal?: AbortSignal;
-}, sendPhase: LighterSendPhase): Promise<ExecuteApprovedLighterOcoResult> {
+}, sendPhase: LighterSendPhase, timing: LighterLifecycleTiming): Promise<ExecuteApprovedLighterOcoResult> {
   const { plan, group, deps } = input;
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
     assertIntentAuthority(plan.expiresAt, deps.now(), phase, input.abortSignal);
   assertAuthority("before_reservation");
-  await revalidate(plan, deps);
-  const credential = await readCredential(plan, deps);
-  const secret = await loadLighterTradingSecretMaterial(plan.credentialReference, deps.secretReader);
+  timing.start("readsMs");
+  const credential = await revalidateThenReadCredential(plan, deps, timing);
+  timing.stop("readsMs");
+  const secret = await timing.measure("secretMs", () =>
+    loadLighterTradingSecretMaterial(plan.credentialReference, deps.secretReader));
   assertAuthority("before_reservation");
-  const auth = await createLighterAccountAuthWithAdapter(
+  const auth = await timing.measure("authMs", () => createLighterAccountAuthWithAdapter(
     buildLighterAccountAuthSigningInput({
       order: group.orders[0],
       secret,
       deadlineUnixSeconds: Math.floor(deps.now() / 1000) + AUTH_TTL_SECONDS,
     }),
     deps.authSigner,
-  );
+  ));
   if (normalizeKey(credential.publicKey) !== normalizeKey(auth.publicKey)) {
     throw blocked("The local Lighter trading key does not match the registered account key.");
   }
-  await assertNoExistingChildren(plan, group, auth.authToken, deps);
+  await timing.measure("childCheckMs", () => assertNoExistingChildren(plan, group, auth.authToken, deps));
+  timing.start("nonceReserveMs");
   const observed = await observeLighterNonceWithRecovery({
     scope: { environment: plan.environment, accountIndex: plan.accountIndex },
     observe: () => deps.nonceState.recordExecutionObserved({
@@ -208,6 +219,7 @@ async function runApprovedLighterOco(input: {
   assertAuthority("before_reservation");
   sendPhase.reserving = true;
   const reservation = await reserveNonce(plan, deps);
+  timing.stop("nonceReserveMs");
   let signerTxHash: string | null = null;
   let signingStarted = false;
   let signerExited = false;
@@ -217,6 +229,7 @@ async function runApprovedLighterOco(input: {
     assertAuthority("before_signing");
     assertOcoWireExpiry(group, deps.now());
     signingStarted = true;
+    timing.start("signMs");
     const signed = await signLighterCreateGroupedOrdersWithAdapter(
       buildLighterCreateGroupedOrdersSigningInput({
         group,
@@ -226,6 +239,7 @@ async function runApprovedLighterOco(input: {
       }),
       deps.groupedSigner,
     );
+    timing.stop("signMs");
     signerExited = lighterSignerRunExited({ kind: "resolved" });
     // Read before the hash is recorded: an expiry that contradicts the SDK
     // default throws while this signature exists only in memory, so the
@@ -281,10 +295,10 @@ async function runApprovedLighterOco(input: {
 
     let response: Awaited<ReturnType<LighterClient["sendTx"]>>;
     try {
-      response = await deps.client.sendTx(plan.environment, {
+      response = await timing.measure("sendMs", () => deps.client.sendTx(plan.environment, {
         txType: signed.txType,
         txInfo: signed.txInfo,
-      });
+      }));
     } catch (error) {
       const reason = structuralSendFailure(error);
       await markAmbiguous(plan, deps, reason);
@@ -295,6 +309,7 @@ async function runApprovedLighterOco(input: {
       await markAmbiguous(plan, deps, reason);
       return ambiguous(plan, reason, signed.txHash);
     }
+    timing.recordApiAccepted(null);
     let accepted;
     try {
       accepted = await deps.intents.markApiAccepted({
@@ -351,6 +366,36 @@ async function runApprovedLighterOco(input: {
     }
     throw error;
   }
+}
+
+/**
+ * Today's order (`LIGHTER_LIFECYCLE_PARALLEL_READS` OFF): revalidate both legs,
+ * then read the registered key and next nonce.
+ *
+ * ON: the same two, overlapped, in the pattern of
+ * `LIGHTER_ORDER_PARALLEL_PREFLIGHT`. Both are awaited to settlement before
+ * anything else happens, so the trading key still loads only after BOTH
+ * succeeded, and a revalidation refusal wins over a credential refusal
+ * whichever settled first, so two failures report exactly what today's order
+ * would. The credential read writes nothing; the revalidation evidence is
+ * written by the revalidation alone, exactly when it is written today.
+ */
+async function revalidateThenReadCredential(
+  plan: LighterOcoExecutionPlan,
+  deps: LighterOcoExecutionDeps,
+  timing: LighterLifecycleTiming,
+): Promise<Awaited<ReturnType<typeof readCredential>>> {
+  if (!timing.parallelReads) {
+    await timing.measure("revalidationMs", () => revalidate(plan, deps));
+    return timing.measure("credentialMs", () => readCredential(plan, deps));
+  }
+  const [revalidation, credential] = await Promise.allSettled([
+    timing.measure("revalidationMs", () => revalidate(plan, deps)),
+    timing.measure("credentialMs", () => readCredential(plan, deps)),
+  ]);
+  if (revalidation.status === "rejected") throw revalidation.reason;
+  if (credential.status === "rejected") throw credential.reason;
+  return credential.value;
 }
 
 async function revalidate(plan: LighterOcoExecutionPlan, deps: LighterOcoExecutionDeps): Promise<void> {
