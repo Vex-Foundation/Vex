@@ -2,8 +2,15 @@ import { persistLighterSigningEvidence, type LighterEvidenceWritePorts } from ".
 import { assertIntentAuthority, LighterIntentRefusal } from "./intent-expiry.js";
 import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js";
 import { readLighterSignedTxExpiredAtMs } from "@tools/lighter/signed-tx-expiry.js";
-import { revalidateLighterOrderFees, readLighterOrderAccountFeeTicks, type LighterOrderFeeClient } from "./order-fees.js";
-import { lighterIntegratorFeesEqual } from "@tools/lighter/fee-policy.js";
+import {
+  revalidateLighterOrderFees,
+  readLighterOrderAccountFeeTicks,
+  type LighterOrderFeeClient,
+  type LighterOrderFeeReadSnapshot,
+} from "./order-fees.js";
+import { getLighterFeePolicy, lighterIntegratorFeesEqual } from "@tools/lighter/fee-policy.js";
+import { resolveLighterReadOnlyAccountAuth } from "./read-account-auth.js";
+import { lighterOrderMarginFitNeedsLiveReads, readLighterMarginFitDepthBook } from "./margin-fit-guard.js";
 import type { LighterClient } from "@tools/lighter/client.js";
 import type { LighterAccountOrder, LighterTrade } from "@tools/lighter/types.js";
 import {
@@ -26,6 +33,7 @@ import logger from "@utils/logger.js";
 import * as lighterOrderExecutionIntentsRepo from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import type { LighterOrderExecutionIntentState } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import * as lighterOrderPreviewsRepo from "@vex-agent/db/repos/lighter-order-previews.js";
+import type { LighterOrderPreviewRow } from "@vex-agent/db/repos/lighter-order-previews.js";
 import * as lighterNonceStateRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
 import {
   reserveLighterOrderNonceForSigning,
@@ -60,6 +68,7 @@ import {
   markLighterOrderCapitalCommitmentSettled,
   readmitLighterOrderCapitalCommitmentAtExecute,
   retireLighterOrderCapitalCommitment,
+  type LighterCapitalShareExecuteSnapshot,
 } from "./capital-share-policy.js";
 import { assertLighterPhaseOneOrderPolicy } from "@tools/lighter/order-policy.js";
 import { assertLighterTradingApiKeyIndexAllowed } from "@tools/lighter/trading-credentials.js";
@@ -146,6 +155,33 @@ const MIN_WIRE_ORDER_EXPIRY_REMAINING_MS = 5 * 60 * 1_000;
  * resent). Only a live canary can show that window is immaterial in practice.
  */
 export const LIGHTER_ORDER_PARALLEL_PREFLIGHT = true;
+
+/**
+ * SWITCH `LIGHTER_REVALIDATION_SINGLE_SNAPSHOT`.
+ *
+ * ON gathers the post-approval revalidation's reads into one snapshot instead
+ * of letting the fee, fee-tier and capital-share checks each read again:
+ *
+ * - the fee check's system config and collector account join the first batch
+ *   (market details, order book, account), because they are public reads;
+ * - the read-only account auth is resolved ONCE, at the point the fee check
+ *   resolves it today (after the first batch proved the market), and its
+ *   account-limits read is shared by the fee check, the spot fee-tier check,
+ *   the margin-fit check and the capital share;
+ * - the fee check's trader account, the capital share's account and market
+ *   details, and the margin-fit check's market details are the first batch's
+ *   `fresh` reads of the same query;
+ * - the margin-fit book depth read starts beside the auth, only for an order
+ *   that check would read for.
+ *
+ * Every check still runs in today's order over those values, and each shared
+ * read is awaited only where today's code issues it, so a read that fails
+ * refuses exactly where, and with exactly what, it refuses today. No secret is
+ * touched earlier than today: the auth is never resolved before the first
+ * batch succeeded, and the trading key still loads only after revalidation
+ * and the credential read both succeed. OFF (`false`) is today's path.
+ */
+export const LIGHTER_REVALIDATION_SINGLE_SNAPSHOT = true;
 
 export type ExecuteApprovedLighterCreateOrderResult =
   | {
@@ -236,6 +272,8 @@ export interface ExecuteApprovedLighterCreateOrderDeps {
   readonly streamRevalidation?: boolean;
   /** The main-process public book reader; absent or null always reads REST. */
   readonly streamOrderBook?: LighterStreamOrderBookReader | null;
+  /** Overrides {@link LIGHTER_REVALIDATION_SINGLE_SNAPSHOT}; absent uses the constant. */
+  readonly revalidationSingleSnapshot?: boolean;
 }
 
 let configuredDeps: ExecuteApprovedLighterCreateOrderDeps | null = null;
@@ -283,24 +321,26 @@ async function runApprovedLighterCreateOrder(input: {
   // a cached-token answer is used only after the fresh key proof below, and
   // any doubt about it falls back to today's read with the fresh token.
   const cachedRepairReads = startCachedRepairReads(plan, deps, readAuthCache);
+  const timing = new LighterOrderTiming();
   const { evidenceScope, providerCredential } = (deps.parallelPreflight ?? LIGHTER_ORDER_PARALLEL_PREFLIGHT)
-    ? await runParallelPreflightReads(plan, unsignedOrder, deps)
-    : await runSequentialPreflightReads(plan, unsignedOrder, deps);
-  const secret = await loadLighterTradingSecretMaterial(
+    ? await runParallelPreflightReads(plan, unsignedOrder, deps, timing)
+    : await runSequentialPreflightReads(plan, unsignedOrder, deps, timing);
+  const secret = await timing.measure("keyLoadMs", () => loadLighterTradingSecretMaterial(
     plan.credentialReference,
     deps.secretReader,
-  );
+  ));
   assertAuthority("before_reservation");
   const authDeadlineUnixSeconds = Math.floor(deps.now() / 1_000) + ACCOUNT_AUTH_TTL_SECONDS;
-  const auth = await createLighterAccountAuthWithAdapter(
+  const auth = await timing.measure("authMs", () => createLighterAccountAuthWithAdapter(
     buildLighterAccountAuthSigningInput({
       order: unsignedOrder,
       secret,
       deadlineUnixSeconds: authDeadlineUnixSeconds,
     }),
     deps.signer,
-  );
+  ));
   assertProviderPublicKeyMatches(providerCredential.publicKey, auth.publicKey);
+  timing.start("nonceReserveMs");
   const [, observedNonce] = await Promise.all([
     readAuthCache === null
       ? assertProviderOutcomeRepairReady(plan, evidenceScope, unsignedOrder, auth.authToken, deps)
@@ -338,6 +378,7 @@ async function runApprovedLighterCreateOrder(input: {
   assertAuthority("before_reservation");
   sendPhase.reserving = true;
   const nonce = await deps.reserveNonce(plan);
+  timing.stop("nonceReserveMs");
   let signerTxHash: string | null = null;
   let signingStarted = false;
   let signerExited = false;
@@ -353,7 +394,9 @@ async function runApprovedLighterCreateOrder(input: {
       secret,
       nonce: nonce.nonceValue,
     });
+    timing.start("signMs");
     const signed = await signLighterCreateOrderWithAdapter(signingInput, deps.signer);
+    timing.stop("signMs");
     signerExited = lighterSignerRunExited({ kind: "resolved" });
     // Read before the hash is recorded: an expiry that contradicts the SDK
     // default throws here, while this signature still exists only in memory,
@@ -410,10 +453,12 @@ async function runApprovedLighterCreateOrder(input: {
 
     let response: Awaited<ReturnType<LighterClient["sendTx"]>>;
     try {
+      timing.start("sendMs");
       response = await deps.client.sendTx(plan.environment, {
         txType: signed.txType,
         txInfo: signed.txInfo,
       });
+      timing.stop("sendMs");
     } catch (error) {
       const reason = sendTxAmbiguousReason(error);
       await markAmbiguous(deps, plan, reason);
@@ -450,6 +495,7 @@ async function runApprovedLighterCreateOrder(input: {
       await markAmbiguous(deps, plan, API_ACCEPTED_PERSIST_AMBIGUOUS_REASON);
       return ambiguous(plan, API_ACCEPTED_PERSIST_AMBIGUOUS_REASON, signed.txHash);
     }
+    timing.log(plan.intentId);
 
     const pending = await deps.intents.markSequencerPending({
       intentId: plan.intentId,
@@ -605,6 +651,7 @@ export function defaultLighterCreateOrderExecutionDeps(
 async function revalidateLiveOrderState(
   plan: LighterOrderReadyForSignerPlan,
   deps: ExecuteApprovedLighterCreateOrderDeps,
+  timing?: LighterOrderTiming,
 ): Promise<LighterOrderPreSubmitRevalidationEvidence> {
   const approvedPreview = await deps.previews.findFreshById(
     plan.sessionId,
@@ -616,6 +663,11 @@ async function revalidateLiveOrderState(
       "The exact approved Lighter preview is no longer fresh or available. No trading key was loaded and no order was signed or submitted.",
     );
   }
+  // `LIGHTER_REVALIDATION_SINGLE_SNAPSHOT`: the fee check's two public reads
+  // join the first batch. Nothing here is awaited until the fee check itself.
+  const snapshotFeeReads = (deps.revalidationSingleSnapshot ?? LIGHTER_REVALIDATION_SINGLE_SNAPSHOT)
+    ? startSnapshotFeePublicReads(plan, deps)
+    : undefined;
 
   // `LIGHTER_STREAM_REVALIDATION`: decided once, before any read, so OFF (or
   // no live book young enough) issues exactly today's three REST reads.
@@ -677,9 +729,18 @@ async function revalidateLiveOrderState(
     }
   }
 
-  await revalidateLighterOrderFees({ client: deps.client, environment: plan.environment, accountIndex: plan.accountIndex, market: marketDetail, account, reduceOnly: plan.reduceOnly, side: plan.side, integratorFees: plan.integratorFees });
+  // Started only now, after the first batch proved the market: the read-only
+  // auth is resolved no earlier than the fee check below resolves it today.
+  const snapshot = snapshotFeeReads === undefined
+    ? null
+    : startRevalidationSnapshot({ plan, deps, approvedPreview, market, account, feeReads: snapshotFeeReads });
+  await revalidateLighterOrderFees({
+    client: deps.client, environment: plan.environment, accountIndex: plan.accountIndex, market: marketDetail, account,
+    reduceOnly: plan.reduceOnly, side: plan.side, integratorFees: plan.integratorFees,
+    ...(snapshot?.fees === undefined ? {} : { snapshot: snapshot.fees }),
+  });
   const accountTakerFeeTicks = marketDetail.market_type === "spot" && plan.side === "buy"
-    ? await readLighterOrderAccountFeeTicks(deps.client, plan.environment, plan.accountIndex) : undefined;
+    ? await readLighterOrderAccountFeeTicks(deps.client, plan.environment, plan.accountIndex, snapshot?.feeTier) : undefined;
   // RE-ADMISSION at the commit point, against the account and the limits row as
   // they are NOW. `excludeIntentId` keeps this intent's own commitment from
   // counting against itself; the user may have withdrawn collateral or lowered
@@ -688,6 +749,7 @@ async function revalidateLiveOrderState(
     intentId: plan.intentId,
     preview: approvedPreview,
     client: deps.client,
+    ...(snapshot?.capital === undefined ? {} : { snapshot: snapshot.capital }),
   });
   const evidence = revalidateApprovedLighterOrder({
     plan,
@@ -710,7 +772,188 @@ async function revalidateLiveOrderState(
       "Lighter pre-submit revalidation evidence could not be persisted. No trading key was loaded and no order was signed or submitted.",
     );
   }
+  timing?.recordDecision(persisted);
   return evidence;
+}
+
+interface SnapshotFeePublicReads {
+  readonly systemConfig: () => Promise<Awaited<ReturnType<NonNullable<LighterOrderFeeClient["getSystemConfig"]>>>>;
+  readonly collectorAccount: () => Promise<Awaited<ReturnType<LighterClient["getAccount"]>>>;
+}
+
+/**
+ * The fee check's public reads, started beside the first batch. Null (start
+ * nothing) exactly when the fee check would read nothing: no fee policy for
+ * this environment, or a client without the live fee reads, which the fee
+ * check refuses or skips before any read.
+ */
+function startSnapshotFeePublicReads(
+  plan: LighterOrderReadyForSignerPlan,
+  deps: ExecuteApprovedLighterCreateOrderDeps,
+): SnapshotFeePublicReads | null {
+  const policy = getLighterFeePolicy(plan.environment);
+  const { client } = deps;
+  if (policy === null || !client.getAccount || !client.getSystemConfig || !client.getAccountLimits) return null;
+  const systemConfig = settledLater(client.getSystemConfig(plan.environment, FRESH_PUBLIC_READ));
+  const collectorAccount = settledLater(client.getAccount(plan.environment, {
+    by: "index",
+    value: policy.collectorAccountIndex,
+  }, FRESH_PUBLIC_READ));
+  return { systemConfig: () => systemConfig, collectorAccount: () => collectorAccount };
+}
+
+interface RevalidationSnapshot {
+  /** Absent when the fee check reads nothing; it then runs exactly as today. */
+  readonly fees?: LighterOrderFeeReadSnapshot;
+  readonly feeTier: Pick<LighterOrderFeeReadSnapshot, "resolveAuth" | "accountLimits">;
+  /** Absent when the preview names another scope than the plan (refused later). */
+  readonly capital?: LighterCapitalShareExecuteSnapshot;
+}
+
+/**
+ * The rest of the snapshot, started once the first batch proved the market.
+ *
+ * The auth and the account limits are shared and resolved at most once; each
+ * consumer awaits the same promise at its own point, so a failure reaches
+ * every consumer with that consumer's own handling. They start eagerly only
+ * when the fee check will read them anyway (a fee policy applies); otherwise
+ * the first consumer that reads them today starts them.
+ */
+function startRevalidationSnapshot(input: {
+  readonly plan: LighterOrderReadyForSignerPlan;
+  readonly deps: ExecuteApprovedLighterCreateOrderDeps;
+  readonly approvedPreview: LighterOrderPreviewRow;
+  readonly market: Awaited<ReturnType<LighterClient["getMarketDetails"]>>;
+  readonly account: Awaited<ReturnType<LighterClient["getAccount"]>>;
+  readonly feeReads: SnapshotFeePublicReads | null;
+}): RevalidationSnapshot {
+  const { plan, deps, approvedPreview, feeReads } = input;
+  const resolveAuth = sharedRead(() => resolveLighterReadOnlyAccountAuth(plan.environment, plan.accountIndex));
+  const accountLimits = sharedRead(async () => {
+    const auth = await resolveAuth();
+    // Unreachable through the checks, which each test both before reading.
+    if (auth === null || !deps.client.getAccountLimits) {
+      throw new Error("Lighter account limits were requested without a read-only account auth.");
+    }
+    return deps.client.getAccountLimits(plan.environment, { accountIndex: plan.accountIndex }, auth);
+  });
+  const depthBook = sharedRead(() => readLighterMarginFitDepthBook(deps.client, plan.environment, plan.marketIndex));
+
+  if (feeReads !== null) {
+    // The fee check resolves the auth next and, when it is non-null, reads the
+    // limits with it: both start now instead of one after the other.
+    void resolveAuth().then((auth) => {
+      if (auth !== null) void accountLimits();
+    }, () => undefined);
+  }
+
+  // The re-admission reads the preview's own scope. When that differs from the
+  // plan (the pure revalidation refuses such a row afterwards) it keeps every
+  // one of its own reads, exactly as today.
+  const sameScope = approvedPreview.environment === plan.environment
+    && approvedPreview.accountIndex === plan.accountIndex
+    && approvedPreview.marketIndex === plan.marketIndex;
+  if (sameScope) {
+    const accountRow = input.account.accounts.find(
+      (row) => (row.index ?? row.account_index) === plan.accountIndex,
+    );
+    if (accountRow !== undefined && lighterOrderMarginFitNeedsLiveReads(accountRow, approvedPreview)) {
+      void depthBook();
+    }
+  }
+
+  return {
+    ...(feeReads === null ? {} : {
+      fees: {
+        traderAccount: input.account,
+        systemConfig: feeReads.systemConfig,
+        collectorAccount: feeReads.collectorAccount,
+        resolveAuth,
+        accountLimits,
+      },
+    }),
+    feeTier: { resolveAuth, accountLimits },
+    ...(sameScope
+      ? { capital: { account: input.account, marketDetails: input.market, resolveAuth, accountLimits, depthBook } }
+      : {}),
+  };
+}
+
+/**
+ * A read started now and awaited later, maybe never: its rejection is marked
+ * handled here so an unconsumed failure is not an unhandled rejection, while
+ * every consumer that awaits it still receives that rejection.
+ */
+function settledLater<T>(promise: Promise<T>): Promise<T> {
+  promise.catch(() => undefined);
+  return promise;
+}
+
+/** Started on first use, then the same promise for every consumer. */
+function sharedRead<T>(start: () => Promise<T>): () => Promise<T> {
+  let started: Promise<T> | null = null;
+  return () => {
+    started ??= settledLater(start());
+    return started;
+  };
+}
+
+type LighterOrderTimingPhase =
+  | "revalidationMs"
+  | "credentialMs"
+  | "keyLoadMs"
+  | "authMs"
+  | "nonceReserveMs"
+  | "signMs"
+  | "sendMs";
+
+/**
+ * `[lighter-order-timing]`: one line per order that reached API acceptance,
+ * numbers only beside the intent id (no prices, keys, tokens or other ids), so
+ * the owner can compare phases before and after a speed switch.
+ * `nonceReserveMs` runs from the key proof to the reserved nonce (duplicate
+ * evidence check, nonce observation and reservation). Purely observational:
+ * nothing here can change or fail an order.
+ */
+class LighterOrderTiming {
+  private readonly started = new Map<LighterOrderTimingPhase, number>();
+  private readonly durations = new Map<LighterOrderTimingPhase, number>();
+  private decidedAtMs: number | null = null;
+
+  start(phase: LighterOrderTimingPhase): void {
+    this.started.set(phase, performance.now());
+  }
+
+  stop(phase: LighterOrderTimingPhase): void {
+    const started = this.started.get(phase);
+    if (started !== undefined) this.durations.set(phase, Math.round(performance.now() - started));
+  }
+
+  async measure<T>(phase: LighterOrderTimingPhase, run: () => Promise<T>): Promise<T> {
+    this.start(phase);
+    const value = await run();
+    this.stop(phase);
+    return value;
+  }
+
+  /** The intent row the revalidation write returned carries the approval instant. */
+  recordDecision(row: object): void {
+    const decidedAt = "decidedAt" in row ? row.decidedAt : null;
+    const parsed = typeof decidedAt === "string" ? Date.parse(decidedAt) : Number.NaN;
+    this.decidedAtMs = Number.isFinite(parsed) ? parsed : null;
+  }
+
+  log(intentId: string): void {
+    try {
+      logger.info("[lighter-order-timing]", {
+        intentId,
+        ...Object.fromEntries(this.durations),
+        ...(this.decidedAtMs === null ? {} : { decisionToApiAcceptedMs: Date.now() - this.decidedAtMs }),
+      });
+    } catch {
+      // A log sink failure must never turn an accepted order into an error.
+    }
+  }
 }
 
 function readRevalidationOrderBook(
@@ -793,8 +1036,9 @@ async function runSequentialPreflightReads(
   plan: LighterOrderReadyForSignerPlan,
   unsignedOrder: LighterUnsignedCreateOrderRequest,
   deps: ExecuteApprovedLighterCreateOrderDeps,
+  timing: LighterOrderTiming,
 ): Promise<PreflightReads> {
-  const revalidationEvidence = await revalidateLiveOrderState(plan, deps);
+  const revalidationEvidence = await timing.measure("revalidationMs", () => revalidateLiveOrderState(plan, deps, timing));
   const evidenceScope = buildLighterOrderEvidenceScope({
     approved: plan,
     baseDecimals: revalidationEvidence.baseDecimals,
@@ -805,7 +1049,7 @@ async function runSequentialPreflightReads(
   // the encrypted vault for private key material. Besides minimizing secret
   // exposure time, this keeps every provider-read refusal truthful: no private
   // trading key has been loaded when public identity evidence is unavailable.
-  const providerCredential = await readLiveProviderCredential(plan, deps);
+  const providerCredential = await timing.measure("credentialMs", () => readLiveProviderCredential(plan, deps));
   return { evidenceScope, providerCredential };
 }
 
@@ -822,15 +1066,16 @@ async function runParallelPreflightReads(
   plan: LighterOrderReadyForSignerPlan,
   unsignedOrder: LighterUnsignedCreateOrderRequest,
   deps: ExecuteApprovedLighterCreateOrderDeps,
+  timing: LighterOrderTiming,
 ): Promise<PreflightReads> {
   const [revalidation, credential] = await Promise.allSettled([
-    revalidateLiveOrderState(plan, deps).then((revalidationEvidence) => buildLighterOrderEvidenceScope({
+    timing.measure("revalidationMs", () => revalidateLiveOrderState(plan, deps, timing)).then((revalidationEvidence) => buildLighterOrderEvidenceScope({
       approved: plan,
       baseDecimals: revalidationEvidence.baseDecimals,
       priceDecimals: revalidationEvidence.priceDecimals,
       signedOrderExpiryMs: unsignedOrder.orderExpiryMs,
     })),
-    readLiveProviderCredential(plan, deps),
+    timing.measure("credentialMs", () => readLiveProviderCredential(plan, deps)),
   ]);
   if (revalidation.status === "rejected") throw revalidation.reason;
   if (credential.status === "rejected") throw credential.reason;

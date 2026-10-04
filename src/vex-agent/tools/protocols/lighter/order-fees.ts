@@ -1,6 +1,8 @@
 import { ErrorCodes, VexError } from "../../../../errors.js";
 import type { LighterClient, LighterPrivilegedAccountAuth } from "@tools/lighter/client.js";
-import type { LighterAccountResponse, LighterEnvironment, LighterMarket } from "@tools/lighter/types.js";
+import type {
+  LighterAccountLimitsResponse, LighterAccountResponse, LighterEnvironment, LighterMarket, LighterSystemConfigResponse,
+} from "@tools/lighter/types.js";
 import {
   getLighterFeePolicy, getLighterIntegratorFees, assertLighterFeePolicyLive,
   assertLighterFeeAllowance, lighterIntegratorFeesEqual, type LighterIntegratorFees,
@@ -9,6 +11,24 @@ import { resolveLighterReadOnlyAccountAuth } from "./read-account-auth.js";
 import { isLighterUnreachable } from "./before-send.js";
 
 export type LighterOrderFeeClient = Partial<Pick<LighterClient, "getAccount" | "getSystemConfig" | "getAccountLimits">>;
+
+/**
+ * `LIGHTER_REVALIDATION_SINGLE_SNAPSHOT`: the reads one execute-time
+ * revalidation has already started, handed to the fee checks so nothing is
+ * read twice. Each read is AWAITED only where the check without a snapshot
+ * would issue it, so its failure counts exactly where that read's failure
+ * counts today.
+ */
+export interface LighterOrderFeeReadSnapshot {
+  /** The execute-time `fresh` account read this revalidation already made. */
+  readonly traderAccount: LighterAccountResponse;
+  readonly systemConfig: () => Promise<LighterSystemConfigResponse>;
+  readonly collectorAccount: () => Promise<LighterAccountResponse>;
+  /** The one read-only auth this order resolves; null exactly when the resolver says so. */
+  readonly resolveAuth: () => Promise<LighterPrivilegedAccountAuth | null>;
+  /** Read with the auth above; called only once that auth is known to be non-null. */
+  readonly accountLimits: () => Promise<LighterAccountLimitsResponse>;
+}
 
 export interface ResolveLighterOrderFeesInput {
   readonly client: LighterOrderFeeClient;
@@ -23,6 +43,8 @@ export interface ResolveLighterOrderFeesInput {
   readonly auth?: LighterPrivilegedAccountAuth | null;
   readonly nowMs?: number;
   readonly allowUnattributedExit?: boolean;
+  /** Absent reads everything here, as before; see {@link LighterOrderFeeReadSnapshot}. */
+  readonly snapshot?: LighterOrderFeeReadSnapshot;
 }
 
 /** Called only for orders whose inventory or reduce-only amount is also proven. */
@@ -32,14 +54,26 @@ export async function resolveLighterOrderFees(input: ResolveLighterOrderFeesInpu
   const reducing = input.allowUnattributedExit !== false && (input.market.market_type === "perp" ? input.reduceOnly : input.side === "sell");
   try {
     if (!input.client.getAccount || !input.client.getSystemConfig || !input.client.getAccountLimits) throw new Error("Live fee checks are unavailable.");
-    const auth = input.auth ?? await resolveLighterReadOnlyAccountAuth(input.environment, input.accountIndex);
+    // A caller's own auth keeps every read here; the snapshot is only ever
+    // paired with the auth it resolved itself.
+    const snapshot = input.auth === undefined ? input.snapshot : undefined;
+    const auth = input.auth ?? (snapshot === undefined
+      ? await resolveLighterReadOnlyAccountAuth(input.environment, input.accountIndex)
+      : await snapshot.resolveAuth());
     if (auth === null) throw new Error("Unlock the local vault to check the account's fee authorization.");
-    const [systemConfig, collector, trader, accountLimits] = await Promise.all([
-      input.client.getSystemConfig(input.environment, { fresh: true }),
-      input.client.getAccount(input.environment, { by: "index", value: policy.collectorAccountIndex }, { fresh: true }),
-      input.freshAccount ?? input.client.getAccount(input.environment, { by: "index", value: input.accountIndex }, { fresh: true }),
-      input.client.getAccountLimits(input.environment, { accountIndex: input.accountIndex }, auth),
-    ]);
+    const [systemConfig, collector, trader, accountLimits] = await Promise.all(snapshot === undefined
+      ? [
+        input.client.getSystemConfig(input.environment, { fresh: true }),
+        input.client.getAccount(input.environment, { by: "index", value: policy.collectorAccountIndex }, { fresh: true }),
+        input.freshAccount ?? input.client.getAccount(input.environment, { by: "index", value: input.accountIndex }, { fresh: true }),
+        input.client.getAccountLimits(input.environment, { accountIndex: input.accountIndex }, auth),
+      ] as const
+      : [
+        snapshot.systemConfig(),
+        snapshot.collectorAccount(),
+        input.freshAccount ?? snapshot.traderAccount,
+        snapshot.accountLimits(),
+      ] as const);
     const collectors = collector.accounts.filter((row) => (row.index ?? row.account_index) === policy.collectorAccountIndex);
     const traders = trader.accounts.filter((row) => (row.index ?? row.account_index) === input.accountIndex);
     if (collector.code !== 200 || trader.code !== 200 || collector.accounts.length !== 1
@@ -80,13 +114,18 @@ export async function readLighterOrderAccountFeeTicks(
   client: LighterOrderFeeClient,
   environment: LighterEnvironment,
   accountIndex: number,
+  snapshot?: Pick<LighterOrderFeeReadSnapshot, "resolveAuth" | "accountLimits">,
 ): Promise<number | undefined> {
   if (getLighterFeePolicy(environment) === null) return undefined;
-  const auth = await resolveLighterReadOnlyAccountAuth(environment, accountIndex);
+  const auth = snapshot === undefined
+    ? await resolveLighterReadOnlyAccountAuth(environment, accountIndex)
+    : await snapshot.resolveAuth();
   if (!client.getAccountLimits || auth === null) {
     throw new VexError(ErrorCodes.LIGHTER_INVALID_REQUEST, "The current Lighter account fee could not be checked before this spot buy. Unlock VEX and refresh the preview.");
   }
-  const limits = await client.getAccountLimits(environment, { accountIndex }, auth);
+  const limits = snapshot === undefined
+    ? await client.getAccountLimits(environment, { accountIndex }, auth)
+    : await snapshot.accountLimits();
   const ticks = limits.current_taker_fee_tick;
   if (limits.code !== 200 || !Number.isSafeInteger(ticks) || ticks < 0 || ticks > 1_000_000) {
     throw new VexError(ErrorCodes.LIGHTER_INVALID_REQUEST, "The current Lighter account taker fee is invalid.");

@@ -7,8 +7,12 @@ import { configureLighterReadOnlyAccountAuthResolver } from "@vex-agent/tools/pr
 // never reached. Enforcement with a share set, including the refusal when the
 // live account shrank after approval, is proved in
 // `lighter-capital-share-policy.test.ts`.
+// `null` unless a single-snapshot capital-share case sets a share for one run.
+const tradingLimits = vi.hoisted(() => ({
+  current: null as { readonly agentCapitalSharePercent: number } | null,
+}));
 vi.mock("@vex-agent/db/repos/lighter-trading-limits.js", () => ({
-  readLighterTradingLimits: async () => null,
+  readLighterTradingLimits: async () => tradingLimits.current,
 }));
 // Both ledger exits are RECORDED rather than stubbed away, because the outcome
 // paths must not confuse them: a commitment that outlives its intent shrinks
@@ -18,13 +22,16 @@ vi.mock("@vex-agent/db/repos/lighter-trading-limits.js", () => ({
 const ledger = vi.hoisted(() => ({
   retired: [] as { intentId: string; reason: string }[],
   settled: [] as string[],
+  admitted: [] as unknown[],
+  refuseAdmission: false,
 }));
 vi.mock("@vex-agent/db/repos/lighter-capital-commitments.js", () => ({
-  admitLighterCapitalCommitment: async () => ({
-    admitted: true,
-    commitmentId: "commitment-test",
-    liveCommittedUnits: "0",
-  }),
+  admitLighterCapitalCommitment: async (input: unknown) => {
+    ledger.admitted.push(input);
+    return ledger.refuseAdmission
+      ? { admitted: false, remainingUnits: "5000000", liveCommittedUnits: "1000000" }
+      : { admitted: true, commitmentId: "commitment-test", liveCommittedUnits: "0" };
+  },
   listLiveLighterCapitalCommitments: async () => [],
   retireLighterCapitalCommitment: async (input: { intentId: string; reason: string }) => {
     ledger.retired.push(input);
@@ -39,8 +46,12 @@ import {
   executeApprovedLighterCreateOrder,
   getConfiguredLighterCreateOrderExecutionDeps,
   LIGHTER_ORDER_PARALLEL_PREFLIGHT,
+  LIGHTER_REVALIDATION_SINGLE_SNAPSHOT,
   type ExecuteApprovedLighterCreateOrderDeps,
 } from "@vex-agent/tools/protocols/lighter/order-create-execution.js";
+import type { LighterClient } from "@tools/lighter/client.js";
+import logger from "@utils/logger.js";
+import { requireValue } from "../../helpers/require-value.js";
 import {
   LIGHTER_READ_AUTH_CACHE,
   LIGHTER_READ_AUTH_CACHE_TTL_MS,
@@ -68,7 +79,14 @@ import {
   signerRunnerRejectingWithoutEvidence,
 } from "../../helpers/lighter-scripted-signer.js";
 import { buildLighterOrderPreview } from "@tools/lighter/order-preview.js";
-import type { LighterAccountResponse, LighterMarketDetail, LighterTrade } from "@tools/lighter/types.js";
+import type {
+  LighterAccountAsset,
+  LighterAccountLimitsResponse,
+  LighterAccountResponse,
+  LighterMarketDetail,
+  LighterSystemConfigResponse,
+  LighterTrade,
+} from "@tools/lighter/types.js";
 import { ErrorCodes, VexError } from "../../../errors.js";
 import type { LighterFillRecord } from "@vex-agent/tools/protocols/lighter/agentscan-activity.js";
 import {
@@ -398,6 +416,7 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
     parallelPreflight: false,
     readAuthCache: null,
     streamRevalidation: false,
+    revalidationSingleSnapshot: false,
     secretReader: {
       readTradingApiPrivateKey: vi.fn(async () => PRIVATE_KEY),
     },
@@ -2737,10 +2756,15 @@ interface PreflightObservation {
   readonly effects: Record<string, unknown>;
 }
 
-async function observeCreateOrder(d: ExecuteApprovedLighterCreateOrderDeps): Promise<PreflightObservation> {
+async function observeCreateOrder(
+  d: ExecuteApprovedLighterCreateOrderDeps,
+  plan: LighterOrderReadyForSignerPlan = PLAN,
+): Promise<PreflightObservation> {
   let outcome: Record<string, unknown>;
   try {
-    outcome = { resolved: await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d }) };
+    outcome = {
+      resolved: await executeApprovedLighterCreateOrder({ plan, unsignedOrder: buildLighterUnsignedCreateOrderRequest(plan), deps: d }),
+    };
   } catch (error) {
     outcome = error instanceof VexError
       ? { rejected: { name: error.name, code: error.code, message: error.message, hint: error.hint, retryable: error.retryable } }
@@ -3384,5 +3408,625 @@ describe("LIGHTER_STREAM_REVALIDATION", () => {
     expect(result.status).toBe("sequencer_pending");
     expect(revalidationBookReads(d)).toBe(0);
     expect(persistedEvidence(d)).toMatchObject({ orderBookSource: "public_stream" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LIGHTER_REVALIDATION_SINGLE_SNAPSHOT: one snapshot of reads, today's checks.
+// ---------------------------------------------------------------------------
+
+const FEE_COLLECTOR_INDEX = 99;
+const FEE_COLLECTOR_WALLET = `0x${"2".repeat(40)}`;
+const FEE_POLICY = requireValue(feePolicy.resolveLighterFeePolicy("rhc", {
+  enabled: true,
+  accountIndex: FEE_COLLECTOR_INDEX,
+  l1Address: FEE_COLLECTOR_WALLET,
+}));
+const READ_ONLY_AUTH = { accountIndex: PLAN.accountIndex, token: "read-only-test-token" } as const;
+/** A perpetual market whose margin fraction the margin-fit and capital-share checks can price. */
+const PRICED_MARKET: LighterMarketDetail = { ...MARKET, default_initial_margin_fraction: 500 };
+const SPOT_MARKET: LighterMarketDetail = {
+  ...MARKET,
+  symbol: "ETH/USDC",
+  market_id: 2048,
+  market_type: "spot",
+  quote_asset_id: 3,
+};
+const SPOT_ASSETS: LighterAccountAsset[] = [{
+  symbol: "USDC",
+  asset_id: 3,
+  balance: "5000.000000",
+  locked_balance: "0.000000",
+  margin_balance: "5000.000000",
+  margin_mode: "enabled",
+  multiplier: "1.000000000000000000",
+}];
+const VEX_FEE_APPROVAL = [{
+  account_index: FEE_COLLECTOR_INDEX,
+  name: "VEX",
+  max_perps_maker_fee: 1_000_000,
+  max_perps_taker_fee: 1_000_000,
+  max_spot_maker_fee: 1_000_000,
+  max_spot_taker_fee: 1_000_000,
+  approval_expiry: NOW + 3_600_000,
+}];
+const COLLECTOR_ACCOUNT: LighterAccountResponse = {
+  code: 200,
+  total: 1,
+  accounts: [{ index: FEE_COLLECTOR_INDEX, status: 1, l1_address: FEE_COLLECTOR_WALLET }],
+};
+const SYSTEM_CONFIG: LighterSystemConfigResponse = {
+  code: 200,
+  liquidity_pool_index: 1,
+  staking_pool_index: 2,
+  funding_fee_rebate_account_index: 3,
+  market_maker_incentive_account_index: 4,
+  liquidity_pool_cooldown_period: 0,
+  staking_pool_lockup_period: 0,
+  max_integrator_perps_maker_fee: 1_000_000,
+  max_integrator_perps_taker_fee: 1_000_000,
+  max_integrator_spot_maker_fee: 1_000_000,
+  max_integrator_spot_taker_fee: 1_000_000,
+};
+const ACCOUNT_LIMITS: LighterAccountLimitsResponse = {
+  code: 200,
+  user_tier: "premium",
+  user_tier_name: "Premium",
+  current_maker_fee_tick: 120,
+  current_taker_fee_tick: 350,
+};
+
+type SnapshotClient = ExecuteApprovedLighterCreateOrderDeps["client"];
+type SnapshotAccountRow = LighterAccountResponse["accounts"][number];
+
+interface SnapshotScenario {
+  readonly market?: LighterMarketDetail;
+  /** Overrides on the account row every execute-time account read returns. */
+  readonly account?: Partial<SnapshotAccountRow>;
+  /** Collection enabled for RHC. */
+  readonly feesEnabled?: boolean;
+  /** The approval carries the fee terms collection implies; default: when enabled. */
+  readonly approvedWithFees?: boolean;
+  readonly share?: number;
+  readonly auth?: "token" | "none" | "throws";
+  readonly refuseAdmission?: boolean;
+  /** The last word on the provider reads. */
+  readonly client?: (client: SnapshotClient) => Partial<SnapshotClient>;
+}
+
+interface SnapshotFixture {
+  readonly plan: LighterOrderReadyForSignerPlan;
+  readonly build: () => ExecuteApprovedLighterCreateOrderDeps;
+}
+
+function snapshotFixture(scenario: SnapshotScenario = {}): SnapshotFixture {
+  const market = scenario.market ?? MARKET;
+  const spot = market.market_type === "spot";
+  const feesEnabled = scenario.feesEnabled === true;
+  const integratorFees = (scenario.approvedWithFees ?? feesEnabled)
+    ? feePolicy.getLighterIntegratorFees(FEE_POLICY, market.market_type)
+    : null;
+  const previewRow: SnapshotAccountRow = {
+    ...first(ACCOUNT.accounts),
+    ...(spot ? { assets: SPOT_ASSETS } : {}),
+    ...(feesEnabled ? { approved_integrators: VEX_FEE_APPROVAL } : {}),
+  };
+  const liveRow: SnapshotAccountRow = { ...previewRow, ...scenario.account };
+  const preview = buildLighterOrderPreview({
+    sessionId: PLAN.sessionId,
+    environment: PLAN.environment,
+    accountIndex: PLAN.accountIndex,
+    apiKeyIndex: PLAN.apiKeyIndex,
+    marketId: market.market_id,
+    side: "buy",
+    baseAmount: "1",
+    price: "3002",
+    orderType: "market",
+    timeInForce: "immediate-or-cancel",
+    reduceOnly: false,
+    orderExpiry: ORDER_EXPIRY,
+    clientOrderIndexPolicy: "vex_assigned_uint48",
+    nowMs: NOW,
+    integratorFees,
+  }, { market, orderBook: ORDER_BOOK, account: { ...ACCOUNT, accounts: [previewRow] } });
+  const plan: LighterOrderReadyForSignerPlan = {
+    ...PLAN,
+    previewId: preview.previewId,
+    matchHash: preview.matchHash,
+    marketIndex: market.market_id,
+    baseAmountInteger: preview.identity.baseAmountInteger,
+    priceInteger: preview.identity.priceInteger,
+    ...(integratorFees === null ? {} : { integratorFees }),
+  };
+  const row: LighterOrderPreviewRow = {
+    ...APPROVED_PREVIEW_ROW,
+    previewId: plan.previewId,
+    matchHash: plan.matchHash,
+    marketIndex: plan.marketIndex,
+    baseAmountInteger: plan.baseAmountInteger,
+    priceInteger: plan.priceInteger,
+    previewJson: { ...preview.preview },
+    expiresAt: preview.expiresAt,
+    ...(integratorFees === null ? {} : { integratorFees }),
+  };
+  return {
+    plan,
+    build: () => {
+      const base = deps();
+      const client: SnapshotClient = {
+        ...base.client,
+        getMarketDetails: vi.fn(async () => ({
+          code: 200,
+          order_book_details: spot ? [] : [market],
+          spot_order_book_details: spot ? [market] : [],
+        })),
+        getAccount: vi.fn<LighterClient["getAccount"]>(async (_environment, params) => (
+          Number(params.value) === FEE_COLLECTOR_INDEX ? COLLECTOR_ACCOUNT : { ...ACCOUNT, accounts: [liveRow] }
+        )),
+        getSystemConfig: vi.fn(async () => SYSTEM_CONFIG),
+        getAccountLimits: vi.fn(async () => ACCOUNT_LIMITS),
+      };
+      return deps({
+        client: { ...client, ...scenario.client?.(client) },
+        previews: { findFreshById: vi.fn(async () => row) },
+      });
+    },
+  };
+}
+
+/** The process-wide state a scenario needs; armed afresh before every run. */
+function armSnapshotScenario(scenario: SnapshotScenario) {
+  vi.mocked(feePolicy.getLighterFeePolicy).mockReturnValue(scenario.feesEnabled === true ? FEE_POLICY : null);
+  tradingLimits.current = scenario.share === undefined ? null : { agentCapitalSharePercent: scenario.share };
+  ledger.refuseAdmission = scenario.refuseAdmission === true;
+  ledger.admitted.length = 0;
+  ledger.retired.length = 0;
+  const resolver = vi.fn(async () => {
+    if (scenario.auth === "throws") throw new Error("vault read failed");
+    return scenario.auth === "none" ? null : READ_ONLY_AUTH;
+  });
+  configureLighterReadOnlyAccountAuthResolver(resolver);
+  return resolver;
+}
+
+interface SnapshotRun {
+  readonly observation: PreflightObservation & { readonly ledger: Record<string, unknown> };
+  readonly reads: Record<string, number>;
+}
+
+async function observeSnapshotRun(
+  scenario: SnapshotScenario,
+  revalidationSingleSnapshot: boolean | "constant",
+): Promise<SnapshotRun> {
+  const fixture = snapshotFixture(scenario);
+  const resolver = armSnapshotScenario(scenario);
+  const { revalidationSingleSnapshot: _pinned, ...unpinned } = fixture.build();
+  const d: ExecuteApprovedLighterCreateOrderDeps = revalidationSingleSnapshot === "constant"
+    ? unpinned
+    : { ...unpinned, revalidationSingleSnapshot };
+  const observation = await observeCreateOrder(d, fixture.plan);
+  return {
+    observation: {
+      ...observation,
+      ledger: { admitted: [...ledger.admitted], retired: [...ledger.retired] },
+    },
+    reads: {
+      readOnlyAuth: resolver.mock.calls.length,
+      getAccount: vi.mocked(d.client.getAccount).mock.calls.length,
+      getMarketDetails: vi.mocked(d.client.getMarketDetails).mock.calls.length,
+      getSystemConfig: d.client.getSystemConfig === undefined ? 0 : vi.mocked(d.client.getSystemConfig).mock.calls.length,
+      getAccountLimits: d.client.getAccountLimits === undefined ? 0 : vi.mocked(d.client.getAccountLimits).mock.calls.length,
+      getOrderBookOrders: vi.mocked(d.client.getOrderBookOrders).mock.calls.length,
+    },
+  };
+}
+
+function failing(message: string) {
+  return async (): Promise<never> => {
+    throw new Error(message);
+  };
+}
+
+const SNAPSHOT_CASES: readonly {
+  readonly label: string;
+  readonly scenario: SnapshotScenario;
+  /** The OFF outcome, so each case provably exercises what it names. */
+  readonly expected: RegExp;
+}[] = [
+  // The fee check.
+  {
+    label: "fees pass and the order is sent",
+    scenario: { feesEnabled: true },
+    expected: /"status":"sequencer_pending"/,
+  },
+  {
+    label: "the read-only auth is unavailable",
+    scenario: { feesEnabled: true, auth: "none" },
+    expected: /fee setup is required before this trade\. Unlock the local vault/,
+  },
+  {
+    label: "the read-only auth resolver throws",
+    scenario: { feesEnabled: true, auth: "throws" },
+    expected: /fee setup is required before this trade\. vault read failed/,
+  },
+  {
+    label: "the system config read fails",
+    scenario: { feesEnabled: true, client: () => ({ getSystemConfig: vi.fn(failing("config down")) }) },
+    expected: /fee setup is required before this trade\. config down/,
+  },
+  {
+    label: "the system config read cannot reach Lighter",
+    scenario: {
+      feesEnabled: true,
+      client: () => ({
+        getSystemConfig: vi.fn(async () => { throw new VexError(ErrorCodes.LIGHTER_TIMEOUT, "config timed out"); }),
+      }),
+    },
+    expected: /couldn't reach Lighter before sending/,
+  },
+  {
+    label: "the collector account read fails",
+    scenario: {
+      feesEnabled: true,
+      client: (client) => ({
+        getAccount: vi.fn<LighterClient["getAccount"]>(async (environment, params, options) => {
+          if (Number(params.value) === FEE_COLLECTOR_INDEX) throw new Error("collector down");
+          return client.getAccount(environment, params, options);
+        }),
+      }),
+    },
+    expected: /fee setup is required before this trade\. collector down/,
+  },
+  {
+    label: "the collector belongs to another wallet",
+    scenario: {
+      feesEnabled: true,
+      client: (client) => ({
+        getAccount: vi.fn<LighterClient["getAccount"]>(async (environment, params, options) => (
+          Number(params.value) === FEE_COLLECTOR_INDEX
+            ? { ...COLLECTOR_ACCOUNT, accounts: [{ ...first(COLLECTOR_ACCOUNT.accounts), l1_address: `0x${"3".repeat(40)}` }] }
+            : client.getAccount(environment, params, options)
+        )),
+      }),
+    },
+    expected: /does not belong to VEX's configured wallet/,
+  },
+  {
+    label: "the provider fee cap fell below Vex's fee",
+    scenario: {
+      feesEnabled: true,
+      client: () => ({ getSystemConfig: vi.fn(async () => ({ ...SYSTEM_CONFIG, max_integrator_perps_taker_fee: 0 })) }),
+    },
+    expected: /exceeds the current provider limit/,
+  },
+  {
+    label: "the account limits read fails",
+    scenario: { feesEnabled: true, client: () => ({ getAccountLimits: vi.fn(failing("limits down")) }) },
+    expected: /fee setup is required before this trade\. limits down/,
+  },
+  {
+    label: "the account is not on a Plus or Premium tier",
+    scenario: {
+      feesEnabled: true,
+      client: () => ({ getAccountLimits: vi.fn(async () => ({ ...ACCOUNT_LIMITS, user_tier: "standard" })) }),
+    },
+    expected: /require a Plus or Premium account/,
+  },
+  {
+    label: "the trading account no longer approves Vex's fee",
+    scenario: { feesEnabled: true, account: { approved_integrators: [] } },
+    expected: /Approve VEX's Lighter trading fees/,
+  },
+  {
+    label: "the system config and the account limits both fail: the earlier read's refusal wins",
+    scenario: {
+      feesEnabled: true,
+      client: () => ({ getSystemConfig: vi.fn(failing("config down")), getAccountLimits: vi.fn(failing("limits down")) }),
+    },
+    expected: /config down/,
+  },
+  {
+    label: "the order was approved before collection was enabled",
+    scenario: { feesEnabled: true, approvedWithFees: false },
+    expected: /fee policy or authorization changed after this preview/,
+  },
+  {
+    label: "the market read fails while the fee reads also fail",
+    scenario: {
+      feesEnabled: true,
+      client: () => ({
+        getMarketDetails: vi.fn(delayedRejection(new Error("market down"), 5)),
+        getSystemConfig: vi.fn(failing("config down")),
+        getAccountLimits: vi.fn(failing("limits down")),
+      }),
+    },
+    expected: /unavailable for post-approval revalidation/,
+  },
+  {
+    label: "the account read cannot reach Lighter while the fee reads are in flight",
+    scenario: {
+      feesEnabled: true,
+      client: (client) => ({
+        getAccount: vi.fn<LighterClient["getAccount"]>(async (environment, params, options) => {
+          if (Number(params.value) === PLAN.accountIndex) throw new VexError(ErrorCodes.LIGHTER_TIMEOUT, "account timed out");
+          return client.getAccount(environment, params, options);
+        }),
+      }),
+    },
+    expected: /couldn't reach Lighter before sending/,
+  },
+  // The spot fee-tier check.
+  {
+    label: "a spot buy with fees passes its account fee tier",
+    scenario: { feesEnabled: true, market: SPOT_MARKET },
+    expected: /"status":"sequencer_pending"/,
+  },
+  {
+    label: "a spot buy's account taker fee tier is invalid",
+    scenario: {
+      feesEnabled: true,
+      market: SPOT_MARKET,
+      client: () => ({ getAccountLimits: vi.fn(async () => ({ ...ACCOUNT_LIMITS, current_taker_fee_tick: -1 })) }),
+    },
+    expected: /current Lighter account taker fee is invalid/,
+  },
+  {
+    label: "a spot buy's account limits read fails",
+    scenario: { feesEnabled: true, market: SPOT_MARKET, client: () => ({ getAccountLimits: vi.fn(failing("limits down")) }) },
+    expected: /limits down/,
+  },
+  // The margin-fit check inside the re-admission.
+  {
+    label: "the order no longer fits the account's available margin",
+    scenario: { market: PRICED_MARKET, account: { available_balance: "10", collateral: "10" } },
+    expected: /would cancel this ETH order with no fill/,
+  },
+  {
+    label: "the margin-fit depth and tier reads fail, which lets the order through as today",
+    scenario: {
+      market: PRICED_MARKET,
+      client: (client) => ({
+        getOrderBookOrders: vi.fn<LighterClient["getOrderBookOrders"]>(async (environment, params, options) => {
+          if (params.limit !== 250) throw new Error("depth down");
+          return client.getOrderBookOrders(environment, params, options);
+        }),
+        getAccountLimits: vi.fn(failing("limits down")),
+      }),
+    },
+    expected: /"status":"sequencer_pending"/,
+  },
+  {
+    label: "the margin-fit check finds no read-only auth",
+    scenario: { market: PRICED_MARKET, auth: "none" },
+    expected: /"status":"sequencer_pending"/,
+  },
+  // The capital-share re-admission.
+  {
+    label: "the account reports no owning wallet",
+    scenario: { account: { l1_address: "not-a-wallet" } },
+    expected: /reported no owning L1 address/,
+  },
+  {
+    // The ledger (recorded above) receives the very same budget and requirement.
+    label: "the capital share hands the ledger the live budget and requirement",
+    scenario: { market: PRICED_MARKET, share: 1 },
+    expected: /"status":"sequencer_pending"/,
+  },
+  {
+    label: "the capital share cannot read the account's exchange fee tier",
+    scenario: { market: PRICED_MARKET, share: 50, client: () => ({ getAccountLimits: vi.fn(failing("limits down")) }) },
+    expected: /could not read this Lighter account's exchange fee tier \(limits down\)/,
+  },
+  {
+    label: "the capital share has no read-only auth",
+    scenario: { market: PRICED_MARKET, share: 50, auth: "none" },
+    expected: /could not read this Lighter account's exchange fee tier, so the charge/,
+  },
+  {
+    label: "the capital share cannot read the account's resting orders",
+    scenario: {
+      market: PRICED_MARKET,
+      share: 50,
+      account: { total_order_count: 1 },
+      client: () => ({
+        getAccountActiveOrders: vi.fn<LighterClient["getAccountActiveOrders"]>(async (_environment, params) => {
+          if (params.marketId === undefined) throw new Error("orders down");
+          return { code: 200, orders: [] };
+        }),
+      }),
+    },
+    expected: /could not read this Lighter account's resting orders \(orders down\)/,
+  },
+  {
+    label: "the ledger refuses the re-admission",
+    scenario: { market: PRICED_MARKET, share: 50, refuseAdmission: true },
+    expected: /still available under the agent's 50% capital share/,
+  },
+  {
+    label: "the market has no margin fraction to price the capital share",
+    scenario: { share: 50 },
+    expected: /default_initial_margin_fraction/,
+  },
+  {
+    label: "a fee-bearing order is re-admitted under the capital share",
+    scenario: { feesEnabled: true, market: PRICED_MARKET, share: 50, account: { total_order_count: 1 } },
+    expected: /"status":"sequencer_pending"/,
+  },
+];
+
+describe("LIGHTER_REVALIDATION_SINGLE_SNAPSHOT", () => {
+  afterEach(() => {
+    configureLighterReadOnlyAccountAuthResolver(null);
+    tradingLimits.current = null;
+    ledger.refuseAdmission = false;
+    ledger.admitted.length = 0;
+    ledger.retired.length = 0;
+  });
+
+  it("ships ON", () => {
+    expect(LIGHTER_REVALIDATION_SINGLE_SNAPSHOT).toBe(true);
+  });
+
+  it.each(PREFLIGHT_CASES)("refuses and records exactly what OFF does when $label", async ({ build, expected }) => {
+    const off = await observeCreateOrder({ ...build(), revalidationSingleSnapshot: false });
+    const { revalidationSingleSnapshot: _pinned, ...unpinned } = build();
+    const absent = await observeCreateOrder(unpinned);
+    const on = await observeCreateOrder({ ...build(), revalidationSingleSnapshot: true });
+
+    expect(JSON.stringify(off.outcome)).toMatch(expected);
+    expect(absent).toEqual(off);
+    expect(on).toEqual(off);
+  });
+
+  it.each(PREFLIGHT_CASES)("composes with the other K-3 switches and still refuses as OFF when $label", async ({ build }) => {
+    const off = await observeCreateOrder({ ...build(), revalidationSingleSnapshot: false });
+    const on = await observeCreateOrder({
+      ...build(),
+      revalidationSingleSnapshot: true,
+      parallelPreflight: true,
+      readAuthCache: new LighterReadAuthCache(),
+    });
+    expect(on).toEqual(off);
+  });
+
+  it.each(SNAPSHOT_CASES)("refuses, writes and admits exactly what OFF does when $label", async ({ scenario, expected }) => {
+    const off = await observeSnapshotRun(scenario, false);
+    const absent = await observeSnapshotRun(scenario, "constant");
+    const on = await observeSnapshotRun(scenario, true);
+
+    expect(JSON.stringify(off.observation.outcome)).toMatch(expected);
+    expect(absent.observation).toEqual(off.observation);
+    expect(on.observation).toEqual(off.observation);
+  });
+
+  it.each(SNAPSHOT_CASES)("still matches OFF beside the parallel preflight when $label", async ({ scenario }) => {
+    const off = await observeSnapshotRun(scenario, false);
+    const fixture = snapshotFixture(scenario);
+    armSnapshotScenario(scenario);
+    const on = await observeCreateOrder({ ...fixture.build(), revalidationSingleSnapshot: true, parallelPreflight: true }, fixture.plan);
+    expect(on).toEqual({ outcome: off.observation.outcome, effects: off.observation.effects });
+  });
+
+  it("reads each value once: the call map of a fee-bearing order under a capital share", async () => {
+    const scenario: SnapshotScenario = { feesEnabled: true, market: PRICED_MARKET, share: 50, account: { total_order_count: 1 } };
+    const off = await observeSnapshotRun(scenario, false);
+    const on = await observeSnapshotRun(scenario, true);
+
+    expect(off.observation.outcome).toMatchObject({ resolved: { status: "sequencer_pending" } });
+    // Today: the trader account four times (revalidation, fee check, collector
+    // aside, re-admission), the market three times, the auth and the limits
+    // once per check that needs them.
+    expect(off.reads).toEqual({
+      readOnlyAuth: 3,
+      getAccount: 4,
+      getMarketDetails: 3,
+      getSystemConfig: 1,
+      getAccountLimits: 3,
+      getOrderBookOrders: 2,
+    });
+    expect(on.reads).toEqual({
+      readOnlyAuth: 1,
+      getAccount: 2,
+      getMarketDetails: 1,
+      getSystemConfig: 1,
+      getAccountLimits: 1,
+      getOrderBookOrders: 2,
+    });
+  });
+
+  it("starts the fee reads beside the first batch but resolves no auth until that batch succeeded", async () => {
+    const scenario: SnapshotScenario = { feesEnabled: true };
+    const fixture = snapshotFixture(scenario);
+    const resolver = armSnapshotScenario(scenario);
+    const marketGate = createGate();
+    const base = fixture.build();
+    const getMarketDetails = vi.fn(async () => {
+      await marketGate.promise;
+      return { code: 200, order_book_details: [MARKET], spot_order_book_details: [] };
+    });
+    const d = deps({ ...base, client: { ...base.client, getMarketDetails }, revalidationSingleSnapshot: true });
+
+    const execution = executeApprovedLighterCreateOrder({
+      plan: fixture.plan,
+      unsignedOrder: buildLighterUnsignedCreateOrderRequest(fixture.plan),
+      deps: d,
+    });
+    await vi.waitFor(() => {
+      expect(getMarketDetails).toHaveBeenCalledTimes(1);
+      expect(d.client.getSystemConfig).toHaveBeenCalledTimes(1);
+      expect(d.client.getAccount).toHaveBeenCalledWith(PLAN.environment, { by: "index", value: FEE_COLLECTOR_INDEX }, { fresh: true });
+    });
+    expect(resolver).not.toHaveBeenCalled();
+    expect(d.client.getAccountLimits).not.toHaveBeenCalled();
+    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+
+    marketGate.release();
+    const result = await execution;
+    expect(result.status).toBe("sequencer_pending");
+    expect(resolver).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs the re-admission's margin-fit reads beside the fee reads instead of after them", async () => {
+    for (const revalidationSingleSnapshot of [false, true]) {
+      const scenario: SnapshotScenario = { feesEnabled: true, market: PRICED_MARKET };
+      const fixture = snapshotFixture(scenario);
+      armSnapshotScenario(scenario);
+      const configGate = createGate();
+      const base = fixture.build();
+      const getSystemConfig = vi.fn(async () => {
+        await configGate.promise;
+        return SYSTEM_CONFIG;
+      });
+      const d = deps({ ...base, client: { ...base.client, getSystemConfig }, revalidationSingleSnapshot });
+      const depthReads = () => vi.mocked(d.client.getOrderBookOrders).mock.calls.filter((call) => call[1].limit !== 250).length;
+
+      const execution = executeApprovedLighterCreateOrder({
+        plan: fixture.plan,
+        unsignedOrder: buildLighterUnsignedCreateOrderRequest(fixture.plan),
+        deps: d,
+      });
+      await vi.waitFor(() => expect(getSystemConfig).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(d.client.getAccountLimits).toHaveBeenCalledTimes(1));
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(depthReads()).toBe(revalidationSingleSnapshot ? 1 : 0);
+      expect(d.intents.markPreSubmitRevalidated).not.toHaveBeenCalled();
+
+      configGate.release();
+      expect((await execution).status).toBe("sequencer_pending");
+      expect(depthReads()).toBe(1);
+    }
+  });
+
+  it("logs one numbers-only timing line per accepted order, and none for a refusal", async () => {
+    const info = vi.spyOn(logger, "info");
+    const timingLines = (): (readonly unknown[])[] => {
+      const calls: readonly (readonly unknown[])[] = info.mock.calls;
+      return calls.filter((call) => call[0] === "[lighter-order-timing]");
+    };
+    await observeSnapshotRun({ feesEnabled: true }, true);
+    const lines = timingLines();
+    expect(lines).toHaveLength(1);
+    const meta: unknown = first(lines)[1];
+    expect(typeof meta === "object" && meta !== null).toBe(true);
+    const fields = Object.entries(typeof meta === "object" && meta !== null ? meta : {});
+    expect(Object.fromEntries(fields.filter(([key]) => key === "intentId"))).toEqual({ intentId: PLAN.intentId });
+    expect(fields.map(([key]) => key).sort()).toEqual([
+      "authMs",
+      "credentialMs",
+      "decisionToApiAcceptedMs",
+      "intentId",
+      "keyLoadMs",
+      "nonceReserveMs",
+      "revalidationMs",
+      "sendMs",
+      "signMs",
+    ]);
+    for (const [key, value] of fields) {
+      if (key !== "intentId") expect(typeof value).toBe("number");
+    }
+
+    info.mockClear();
+    await observeSnapshotRun({ feesEnabled: true, auth: "none" }, true);
+    expect(timingLines()).toHaveLength(0);
   });
 });

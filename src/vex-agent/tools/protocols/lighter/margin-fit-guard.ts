@@ -13,14 +13,17 @@ import {
   formatLighterIntegerAmount,
   isProtectiveOrderType,
 } from "@tools/lighter/order-preview.js";
-import type { LighterClient } from "@tools/lighter/client.js";
+import type { LighterClient, LighterPrivilegedAccountAuth } from "@tools/lighter/client.js";
 import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
 import type { LighterOrderPreviewRow } from "@vex-agent/db/repos/lighter-order-previews.js";
 import type {
   LighterAccount,
+  LighterAccountLimitsResponse,
   LighterAccountPosition,
   LighterEnvironment,
   LighterMarketDetail,
+  LighterMarketDetailsResponse,
+  LighterOrderBookOrdersResponse,
   LighterSimpleOrder,
 } from "@tools/lighter/types.js";
 import { resolveLighterReadOnlyAccountAuth } from "./read-account-auth.js";
@@ -57,34 +60,83 @@ export type LighterMarginFitPreview = Pick<
  * through rather than refusing it; the refusal names the largest size that
  * fits so the trader or agent can resize.
  */
+/**
+ * `LIGHTER_REVALIDATION_SINGLE_SNAPSHOT`: the reads an execute-time
+ * revalidation has already made or started. Each is consumed exactly where
+ * this check would otherwise issue it, with the same failure handling.
+ */
+export interface LighterMarginFitReadSnapshot {
+  /** The execute-time market details read, standing in for this check's own. */
+  readonly marketDetails: LighterMarketDetailsResponse;
+  readonly resolveAuth: () => Promise<LighterPrivilegedAccountAuth | null>;
+  /** Read with the auth above; called only once that auth is known to be non-null. */
+  readonly accountLimits: () => Promise<LighterAccountLimitsResponse>;
+  /** {@link readLighterMarginFitDepthBook}, started early. */
+  readonly depthBook: () => Promise<LighterOrderBookOrdersResponse>;
+}
+
+/**
+ * Whether {@link assertLighterOrderFitsAccountMargin} would read anything for
+ * this account and preview. The check itself decides with this same function,
+ * so a caller that starts the reads early can never start them for an order
+ * the check would have let through without reading.
+ */
+export function lighterOrderMarginFitNeedsLiveReads(
+  account: LighterAccount,
+  preview: LighterMarginFitPreview,
+): boolean {
+  if (preview.reduceOnly || isProtectiveOrderType(preview.orderType)) return false;
+  const available = account.available_balance;
+  if (typeof available !== "string") return false;
+  const positionRow = account.positions?.find((row) => row.market_id === preview.marketIndex) ?? null;
+  return !clearlyFits(preview, positionRow, available);
+}
+
+/** The book depth read this check prices a matching order against. */
+export function readLighterMarginFitDepthBook(
+  client: Pick<LighterClient, "getOrderBookOrders">,
+  environment: LighterEnvironment,
+  marketIndex: number,
+): Promise<LighterOrderBookOrdersResponse> {
+  return client.getOrderBookOrders(environment, { marketId: marketIndex, limit: BOOK_DEPTH_READ });
+}
+
 export async function assertLighterOrderFitsAccountMargin(input: {
   readonly environment: LighterEnvironment;
   readonly accountIndex: number;
   readonly account: LighterAccount;
   readonly preview: LighterMarginFitPreview;
   readonly client: LighterMarginFitClient;
+  /** Absent reads everything here, as before; see {@link LighterMarginFitReadSnapshot}. */
+  readonly snapshot?: LighterMarginFitReadSnapshot;
 }): Promise<void> {
-  const { environment, accountIndex, account, preview } = input;
-  if (preview.reduceOnly || isProtectiveOrderType(preview.orderType)) return;
+  const { environment, accountIndex, account, preview, snapshot } = input;
+  if (!lighterOrderMarginFitNeedsLiveReads(account, preview)) return;
   const available = account.available_balance;
   if (typeof available !== "string") return;
   const positionRow = account.positions?.find((row) => row.market_id === preview.marketIndex) ?? null;
-  if (clearlyFits(preview, positionRow, available)) return;
 
   let market: LighterMarketDetail | undefined;
   let accountTakerTicks: number;
   let levels: readonly LighterSimpleOrder[] | null;
   try {
-    const auth = await resolveLighterReadOnlyAccountAuth(environment, accountIndex);
+    const auth = snapshot === undefined
+      ? await resolveLighterReadOnlyAccountAuth(environment, accountIndex)
+      : await snapshot.resolveAuth();
     const [details, limits, book] = await Promise.all([
-      input.client.getMarketDetails(environment, { marketId: preview.marketIndex, filter: "all" }),
+      snapshot === undefined
+        ? input.client.getMarketDetails(environment, { marketId: preview.marketIndex, filter: "all" })
+        : snapshot.marketDetails,
       auth === null || input.client.getAccountLimits === undefined
         ? Promise.resolve(null)
-        : input.client.getAccountLimits(environment, { accountIndex }, auth).catch(() => null),
+        : (snapshot === undefined
+          ? input.client.getAccountLimits(environment, { accountIndex }, auth)
+          : snapshot.accountLimits()).catch(() => null),
       input.client.getOrderBookOrders === undefined
         ? Promise.resolve(null)
-        : input.client.getOrderBookOrders(environment, { marketId: preview.marketIndex, limit: BOOK_DEPTH_READ })
-          .catch(() => null),
+        : (snapshot === undefined
+          ? input.client.getOrderBookOrders(environment, { marketId: preview.marketIndex, limit: BOOK_DEPTH_READ })
+          : snapshot.depthBook()).catch(() => null),
     ]);
     market = [...details.order_book_details, ...details.spot_order_book_details]
       .find((detail) => detail.market_id === preview.marketIndex);
