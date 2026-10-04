@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   completeRun: vi.fn(),
   repairDeposits: vi.fn(),
   repairOrders: vi.fn(),
+  retireExpiredOrders: vi.fn(),
   repairWithdrawals: vi.fn(),
 }));
 
@@ -41,6 +42,7 @@ vi.mock("../../../vex-agent/sync/lighter-withdrawal-repair.js", () => ({
 }));
 vi.mock("@vex-agent/tools/protocols/lighter/order-repair.js", () => ({
   repairUnresolvedLighterOrdersInBackground: mocks.repairOrders,
+  retireExpiredLighterOrdersBeforeReservation: mocks.retireExpiredOrders,
 }));
 vi.mock("@utils/logger.js", () => ({
   default: {
@@ -84,6 +86,7 @@ beforeEach(() => {
   mocks.rearmPendingFastLanes.mockResolvedValue(undefined);
   mocks.repairDeposits.mockResolvedValue(REPAIR_REPORT);
   mocks.repairOrders.mockResolvedValue(ORDER_REPAIR_REPORT);
+  mocks.retireExpiredOrders.mockResolvedValue({ retired: 0, failed: false });
   mocks.repairWithdrawals.mockResolvedValue({
     examined: 2, advanced: 1, awaitingVault: 1, awaitingEvidence: 0, errors: 0,
   });
