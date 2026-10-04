@@ -14,6 +14,7 @@ import type {
   LighterTradingPublicTradesEvent,
 } from "@shared/schemas/lighter-trading.js";
 import type { LighterStreamOrderBookSnapshot } from "@vex-agent/tools/protocols/lighter/stream-revalidation.js";
+import type { LighterStreamBookDepth } from "@vex-agent/tools/protocols/lighter/desk-prewarm.js";
 import { log } from "../logger/index.js";
 import { SocketWatcherReconnectState } from "./stream-supervisor.js";
 
@@ -229,16 +230,7 @@ export class LighterPublicMarketSupervisor {
     environment: LighterEnvironment,
     marketId: number,
   ): LighterStreamOrderBookSnapshot | null {
-    if (this.stopped) return null;
-    const live = [...this.watchers.values()].filter((watcher) =>
-      watcher.target.environment === environment
-      && watcher.target.marketId === marketId
-      && !watcher.stopped
-      && watcher.socket !== null
-      && watcher.bookReady
-      && watcher.bookNonce !== null
-      && watcher.bookStatus === "live");
-    const watcher = live.length === 1 ? live[0] : undefined;
+    const watcher = this.liveBookWatcher(environment, marketId);
     if (watcher === undefined) return null;
     return {
       environment,
@@ -248,6 +240,43 @@ export class LighterPublicMarketSupervisor {
       bestAsk: bestLevelPrice(watcher.asks, "lowest"),
       bestBid: bestLevelPrice(watcher.bids, "highest"),
     };
+  }
+
+  /**
+   * The live book's depth for one market, at most `maxLevels` per side, best
+   * level first, for a desk preview's margin-fit check (`LIGHTER_DESK_PREWARM`).
+   * Same liveness rule and same read-only contract as {@link readBookSnapshot};
+   * the caller judges its age.
+   */
+  readBookDepth(
+    environment: LighterEnvironment,
+    marketId: number,
+    maxLevels: number,
+  ): LighterStreamBookDepth | null {
+    const watcher = this.liveBookWatcher(environment, marketId);
+    if (watcher === undefined || !Number.isSafeInteger(maxLevels) || maxLevels <= 0) return null;
+    return {
+      environment,
+      marketId,
+      marketType: watcher.target.marketType,
+      receivedAtMs: watcher.bookReceivedAt,
+      asks: sortedBookLevels(watcher.asks, "ascending", maxLevels),
+      bids: sortedBookLevels(watcher.bids, "descending", maxLevels),
+    };
+  }
+
+  /** Exactly one watcher holding an established, live book on an open socket, or none. */
+  private liveBookWatcher(environment: LighterEnvironment, marketId: number): PublicMarketWatcher | undefined {
+    if (this.stopped) return undefined;
+    const live = [...this.watchers.values()].filter((watcher) =>
+      watcher.target.environment === environment
+      && watcher.target.marketId === marketId
+      && !watcher.stopped
+      && watcher.socket !== null
+      && watcher.bookReady
+      && watcher.bookNonce !== null
+      && watcher.bookStatus === "live");
+    return live.length === 1 ? live[0] : undefined;
   }
 
   private scheduleConnect(watcher: PublicMarketWatcher, delayMs?: number): void {
@@ -719,6 +748,14 @@ export function readLighterPublicMarketBookSnapshot(
   return defaultSupervisor.readBookSnapshot(environment, marketId);
 }
 
+export function readLighterPublicMarketBookDepth(
+  environment: LighterEnvironment,
+  marketId: number,
+  maxLevels: number,
+): LighterStreamBookDepth | null {
+  return defaultSupervisor.readBookDepth(environment, marketId, maxLevels);
+}
+
 /** Levels hold only non-zero sizes (`applyBookChanges` drops zero rows). */
 function bestLevelPrice(
   levels: ReadonlyMap<string, string>,
@@ -994,10 +1031,18 @@ function visibleBookLevels(
   levels: ReadonlyMap<string, string>,
   direction: "ascending" | "descending",
 ): Array<{ readonly price: string; readonly size: string }> {
+  return sortedBookLevels(levels, direction, LIGHTER_PUBLIC_MARKET_VISIBLE_BOOK_LEVELS);
+}
+
+function sortedBookLevels(
+  levels: ReadonlyMap<string, string>,
+  direction: "ascending" | "descending",
+  maxLevels: number,
+): Array<{ readonly price: string; readonly size: string }> {
   const multiplier = direction === "ascending" ? 1 : -1;
   return [...levels.entries()]
     .sort(([left], [right]) => compareUnsignedDecimals(left, right) * multiplier)
-    .slice(0, LIGHTER_PUBLIC_MARKET_VISIBLE_BOOK_LEVELS)
+    .slice(0, maxLevels)
     .map(([price, size]) => ({ price, size }));
 }
 

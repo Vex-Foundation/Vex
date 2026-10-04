@@ -593,3 +593,39 @@ describe("Lighter public market stream: order revalidation snapshot", () => {
     h.supervisor.stop();
   });
 });
+
+describe("Lighter public market stream: desk pre-warm depth", () => {
+  it("reads the live book's depth best level first, capped per side, and nothing before a book, after a gap or once stopped", async () => {
+    const h = makeHarness();
+    expect(h.supervisor.readBookDepth("core", 1, 50)).toBeNull();
+    const socket = await connect(h);
+    expect(h.supervisor.readBookDepth("core", 1, 50)).toBeNull();
+
+    socket.message(bookFrame({
+      asks: [{ price: "101.20", size: "1" }, { price: "101.10", size: "2" }, { price: "101.30", size: "4" }],
+      bids: [{ price: "100.80", size: "1" }, { price: "100.90", size: "3" }],
+    }));
+    expect(h.supervisor.readBookDepth("core", 1, 50)).toEqual({
+      environment: "core",
+      marketId: 1,
+      marketType: "perp",
+      receivedAtMs: NOW,
+      asks: [{ price: "101.10", size: "2" }, { price: "101.20", size: "1" }, { price: "101.30", size: "4" }],
+      bids: [{ price: "100.90", size: "3" }, { price: "100.80", size: "1" }],
+    });
+    expect(h.supervisor.readBookDepth("core", 1, 2)).toMatchObject({
+      asks: [{ price: "101.10", size: "2" }, { price: "101.20", size: "1" }],
+      bids: [{ price: "100.90", size: "3" }, { price: "100.80", size: "1" }],
+    });
+    expect(h.supervisor.readBookDepth("core", 1, 0)).toBeNull();
+    expect(h.supervisor.readBookDepth("rhc", 1, 50)).toBeNull();
+    expect(h.supervisor.readBookDepth("core", 2, 50)).toBeNull();
+
+    socket.message(bookFrame({ type: "update/order_book", nonce: "20128432700", beginNonce: "20128432674" }));
+    expect(socket.closes.at(-1)?.reason).toBe("order_book_gap");
+    expect(h.supervisor.readBookDepth("core", 1, 50)).toBeNull();
+
+    h.supervisor.stop();
+    expect(h.supervisor.readBookDepth("core", 1, 50)).toBeNull();
+  });
+});
