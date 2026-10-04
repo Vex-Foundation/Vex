@@ -8,6 +8,7 @@ import {
   repairLighterOrderIntent,
   repairUnresolvedLighterOrders,
   repairUnresolvedLighterOrdersInBackground,
+  retireExpiredLighterOrdersBeforeReservation,
   type LighterOrderRepairDeps,
 } from "@vex-agent/tools/protocols/lighter/order-repair.js";
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
@@ -568,5 +569,53 @@ describe("Lighter order repair", () => {
       errors: 1,
     });
     expect(sweep.reports).toHaveLength(1);
+  });
+});
+
+describe("startup finalization of approved orders whose consent expired before any nonce reservation", () => {
+  const SECOND_INTENT_ID = "lighter-exec-00000000-0000-4000-8000-000000000002";
+
+  function finalized(intentId: string): LighterOrderExecutionIntentRow {
+    return intentRow({
+      intentId,
+      executionState: "rejected",
+      ambiguousReason: "consent_expired_before_reservation",
+      nonceReservationId: null,
+      nonceValue: null,
+      signerTxHash: null,
+    });
+  }
+
+  it("retires each finalized order's capital commitment at once, since none of them reached Lighter", async () => {
+    ledger.retired.length = 0;
+    ledger.settled.length = 0;
+    const retireIntents = vi.fn(async () => [finalized(INTENT_ID), finalized(SECOND_INTENT_ID)]);
+
+    await expect(retireExpiredLighterOrdersBeforeReservation({ retireIntents }))
+      .resolves.toEqual({ retired: 2, failed: false });
+
+    expect(retireIntents).toHaveBeenCalledTimes(1);
+    expect(ledger.retired).toEqual([
+      { intentId: INTENT_ID, reason: "expired_before_reservation" },
+      { intentId: SECOND_INTENT_ID, reason: "expired_before_reservation" },
+    ]);
+    expect(ledger.settled).toEqual([]);
+  });
+
+  it("writes nothing when there is nothing to finalize", async () => {
+    ledger.retired.length = 0;
+    await expect(retireExpiredLighterOrdersBeforeReservation({ retireIntents: vi.fn(async () => []) }))
+      .resolves.toEqual({ retired: 0, failed: false });
+    expect(ledger.retired).toEqual([]);
+  });
+
+  it("never throws into the startup sync when the finalization itself fails", async () => {
+    ledger.retired.length = 0;
+    const retireIntents = vi.fn(async (): Promise<LighterOrderExecutionIntentRow[]> => {
+      throw new Error("database unavailable");
+    });
+    await expect(retireExpiredLighterOrdersBeforeReservation({ retireIntents }))
+      .resolves.toEqual({ retired: 0, failed: true });
+    expect(ledger.retired).toEqual([]);
   });
 });

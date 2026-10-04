@@ -283,6 +283,50 @@ export async function repairUnresolvedLighterOrdersInBackground(
   };
 }
 
+export interface LighterExpiredBeforeReservationDeps {
+  readonly retireIntents: typeof lighterOrderExecutionIntentsRepo.retireExpiredApprovedBeforeReservation;
+  readonly retireCommitment: typeof retireLighterOrderCapitalCommitment;
+}
+
+/**
+ * STARTUP: finalize approved create intents whose consent expired before they
+ * reserved a nonce. An approval interrupted before signing (an app quit, a
+ * crash, an aborted dispatch) leaves its row `approved / approval_pending`
+ * after expiry, where nothing else ever revisits it: the repair sweep only
+ * lists approved rows that already hold a reservation.
+ *
+ * The repository guard touches only a row with no nonce reservation, no
+ * signature, no send attempt, no submission and no provider outcome, and
+ * moves it to the executor's own pre-reservation refusal. Nothing is signed,
+ * resent or read from the provider. Each retired order provably never reached
+ * Lighter, so its capital commitment is retired at once, exactly as the
+ * executor's own refusal path retires it.
+ *
+ * Never throws: a failure is logged and reported, and the startup sync goes on.
+ */
+export async function retireExpiredLighterOrdersBeforeReservation(
+  overrides: Partial<LighterExpiredBeforeReservationDeps> = {},
+): Promise<{ readonly retired: number; readonly failed: boolean }> {
+  const deps: LighterExpiredBeforeReservationDeps = {
+    retireIntents: lighterOrderExecutionIntentsRepo.retireExpiredApprovedBeforeReservation,
+    retireCommitment: retireLighterOrderCapitalCommitment,
+    ...overrides,
+  };
+  let retired: readonly LighterOrderExecutionIntentRow[];
+  try {
+    retired = await deps.retireIntents();
+  } catch (error) {
+    logger.warn("lighter.order_repair.expired_before_reservation_failed", {
+      reason: error instanceof Error ? error.name : "unknown",
+    });
+    return { retired: 0, failed: true };
+  }
+  for (const intent of retired) {
+    await deps.retireCommitment({ intentId: intent.intentId, reason: "expired_before_reservation" });
+  }
+  return { retired: retired.length, failed: false };
+}
+
 /**
  * Fair selection inside the candidate window. Oldest-first is the right order
  * for a first pass, but repeated oldest-first sweeps starve every row after
