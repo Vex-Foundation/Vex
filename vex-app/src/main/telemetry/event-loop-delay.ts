@@ -20,7 +20,9 @@
  * so packaged builds, whose file log keeps warn and above, keep it too) and
  * handed to `record`, which writes one row to `main_event_loop_samples`
  * (migration 175) for `pnpm kairos-runtime:report`. Every value is a number;
- * no session, path or message content is ever part of a window.
+ * no session, path or message content is ever part of a window. When the
+ * caller passes `takeKdfStats` (FLC-6), the log line also carries what the
+ * scrypt KDF cost this thread in the window; the row is unchanged.
  *
  * Both timers are `unref`ed: telemetry never keeps the process alive.
  */
@@ -136,6 +138,26 @@ export function summariseWindow(
   };
 }
 
+/**
+ * FLC-6 attribution: what the scrypt KDF (vault opens, keystore decrypts) cost
+ * this thread during the same window, from `takeScryptKdfStats` in
+ * `src/utils/scrypt-async.ts`. Numbers only. Log line only: the
+ * `main_event_loop_samples` row is unchanged.
+ */
+export interface EventLoopKdfStats {
+  /** Derives started. */
+  readonly derives: number;
+  /** Derives a worker thread completed, so none of their KDF ran here. */
+  readonly offMainDerives: number;
+  /** Time this thread spent inside the calls that started them, in ms. */
+  readonly callerBlockedMs: number;
+}
+
+/** The suffix appended to a window's line, e.g. ` kdf=6 kdfOffMain=6 kdfMainMs=0.14`. */
+export function formatKdfStats(stats: EventLoopKdfStats): string {
+  return ` kdf=${stats.derives} kdfOffMain=${stats.offMainDerives} kdfMainMs=${round2(stats.callerBlockedMs)}`;
+}
+
 export function formatWindow(window: EventLoopWindow): string {
   return (
     `[event-loop] window=${window.windowMs}ms samples=${window.sampleCount} ` +
@@ -170,6 +192,8 @@ export function startEventLoopTelemetry(options: {
   readonly record: EventLoopTelemetryDeps["record"];
   readonly enabled?: boolean;
   readonly deps?: Partial<EventLoopTelemetryDeps>;
+  /** FLC-6: read-and-reset KDF numbers, appended to each window's log line. */
+  readonly takeKdfStats?: () => EventLoopKdfStats;
 }): () => void {
   if (!(options.enabled ?? EVENT_LOOP_TELEMETRY_ENABLED)) return () => undefined;
   const deps: EventLoopTelemetryDeps = {
@@ -197,6 +221,15 @@ export function startEventLoopTelemetry(options: {
     stalls.observeTick(deps.now());
   }, EVENT_LOOP_STALL_TICK_MS);
 
+  const takeKdfStatsSafely = (): EventLoopKdfStats | null => {
+    if (options.takeKdfStats === undefined) return null;
+    try {
+      return options.takeKdfStats();
+    } catch {
+      return null;
+    }
+  };
+
   const flush = (): void => {
     const now = deps.now();
     const window = summariseWindow(
@@ -207,9 +240,14 @@ export function startEventLoopTelemetry(options: {
     );
     windowStartedAt = now;
     histogram.reset();
+    // Taken every window, logged or not, so a count never spills into the next.
+    const kdf = takeKdfStatsSafely();
     if (window.sampleCount === 0 && window.stallCount === 0) return;
     try {
-      deps.log(window.stallCount > 0 ? "warn" : "info", formatWindow(window));
+      deps.log(
+        window.stallCount > 0 ? "warn" : "info",
+        formatWindow(window) + (kdf === null ? "" : formatKdfStats(kdf)),
+      );
       deps.record(window);
     } catch {
       // Telemetry must never surface as a main-process error.

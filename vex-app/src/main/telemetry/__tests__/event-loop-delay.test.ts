@@ -8,10 +8,12 @@ import {
   EVENT_LOOP_TELEMETRY_ENABLED,
   EVENT_LOOP_WINDOW_MS,
   StallCounter,
+  formatKdfStats,
   formatWindow,
   startEventLoopTelemetry,
   summariseWindow,
   type DelayHistogram,
+  type EventLoopKdfStats,
   type EventLoopWindow,
 } from "../event-loop-delay.js";
 
@@ -50,7 +52,7 @@ interface Scheduled {
   cancelled: boolean;
 }
 
-function harness(): {
+function harness(takeKdfStats?: () => EventLoopKdfStats): {
   clock: { now: number };
   histogram: FakeHistogram;
   scheduled: Scheduled[];
@@ -68,6 +70,7 @@ function harness(): {
     enabled: true,
     log: (level, line) => lines.push({ level, line }),
     record: (window) => recorded.push(window),
+    ...(takeKdfStats === undefined ? {} : { takeKdfStats }),
     deps: {
       now: () => clock.now,
       createHistogram: () => histogram,
@@ -243,6 +246,67 @@ describe("startEventLoopTelemetry", () => {
     });
     stop();
     h.stop();
+  });
+
+  it("FLC-6: appends the window's KDF numbers to the line and leaves the row unchanged", () => {
+    const takes: EventLoopKdfStats[] = [
+      { derives: 6, offMainDerives: 0, callerBlockedMs: 1326.184 },
+      { derives: 0, offMainDerives: 0, callerBlockedMs: 0 },
+      { derives: 2, offMainDerives: 2, callerBlockedMs: 0.04 },
+    ];
+    let taken = 0;
+    const h = harness(() => {
+      const next = takes[taken] ?? { derives: 0, offMainDerives: 0, callerBlockedMs: 0 };
+      taken += 1;
+      return next;
+    });
+    h.histogram.count = 5;
+    h.clock.now += 60_000;
+    h.run(EVENT_LOOP_WINDOW_MS);
+    // An empty window is skipped but still takes (and so resets) the count.
+    h.histogram.count = 0;
+    h.clock.now += 60_000;
+    h.run(EVENT_LOOP_WINDOW_MS);
+    h.histogram.count = 5;
+    h.clock.now += 60_000;
+    h.run(EVENT_LOOP_WINDOW_MS);
+    expect(taken).toBe(3);
+    expect(h.lines.map((l) => l.line)).toEqual([
+      expect.stringMatching(/ longestStall=0ms kdf=6 kdfOffMain=0 kdfMainMs=1326\.18$/),
+      expect.stringMatching(/ longestStall=0ms kdf=2 kdfOffMain=2 kdfMainMs=0\.04$/),
+    ]);
+    expect(h.recorded).toHaveLength(2);
+    for (const row of h.recorded) {
+      expect(Object.keys(row).sort()).toEqual([
+        "longestStallMs",
+        "maxMs",
+        "p50Ms",
+        "p99Ms",
+        "sampleCount",
+        "stallCount",
+        "stallThresholdMs",
+        "windowMs",
+      ]);
+    }
+    h.stop();
+  });
+
+  it("FLC-6: a KDF reader that throws leaves today's line", () => {
+    const h = harness(() => {
+      throw new Error("not available");
+    });
+    h.histogram.count = 5;
+    h.clock.now += 60_000;
+    h.run(EVENT_LOOP_WINDOW_MS);
+    expect(h.lines).toHaveLength(1);
+    expect(h.lines[0]?.line).toMatch(/ longestStall=0ms$/);
+    h.stop();
+  });
+
+  it("FLC-6: formats the KDF suffix in numbers only", () => {
+    expect(formatKdfStats({ derives: 3, offMainDerives: 3, callerBlockedMs: 0.123 })).toBe(
+      " kdf=3 kdfOffMain=3 kdfMainMs=0.12",
+    );
   });
 
   it("stops idempotently: both timers cancelled and the histogram disabled", () => {

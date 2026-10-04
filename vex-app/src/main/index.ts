@@ -59,6 +59,7 @@ import { openE2eConnectionDoor } from "./database/e2e-connection-door.js";
 import { closeMainIpcPgPool } from "./database/main-ipc-pg-pool.js";
 import { recordEventLoopWindow } from "./database/event-loop-samples-db.js";
 import { startEventLoopTelemetry } from "./telemetry/event-loop-delay.js";
+import { takeScryptKdfStats } from "@utils/scrypt-async.js";
 import { registerAllIpcHandlers } from "./ipc/register-all.js";
 import {
   configureUpdater,
@@ -291,6 +292,8 @@ async function initializeMainRuntime(): Promise<void> {
       else log.info(line);
     },
     record: (window) => recordEventLoopWindow(window),
+    // FLC-6: each line also says what the scrypt KDF cost this thread.
+    takeKdfStats: takeScryptKdfStats,
   });
   globalCleanup.add(() => {
     stopEventLoopTelemetry();
