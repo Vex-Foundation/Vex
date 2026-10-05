@@ -54,9 +54,18 @@ describe("cheap main-thread diagnostics", () => {
     h.gc({ startTime: 190, duration: 40, kind: 4 });
     h.gc({ startTime: 0, duration: Number.NaN, kind: 4 });
     h.gc({ startTime: 0, duration: 300, kind: 999 });
+    h.gc({ startTime: 0, duration: 300, kind: 2 });
     h.set(1200); h.details.tick();
     expect(h.lines[0]).toContain("lateMs=100 intervalMs=150");
     expect(h.lines[0]).toContain("gcMs=35 gcCount=2 gcKinds=1,4");
+  });
+  it("retains weak-callback GC overlap and explicit unknown observations", () => {
+    const h = harness();
+    h.set(250); h.details.tick();
+    h.gc({ startTime: 100, duration: 80, kind: 16 });
+    h.gc({ startTime: 200, duration: 10, kind: 0 });
+    h.set(1250); h.details.tick();
+    expect(h.lines[0]).toContain("gcMs=90 gcCount=2 gcKinds=0,16 gcObserved=1 gcDropped=0");
   });
   it("marks unavailable ELU rather than interpreting zero as an idle interval", () => {
     const h = harness(); h.set(250, 0, 0); h.details.tick(); h.set(1250, 0, 0); h.details.tick();

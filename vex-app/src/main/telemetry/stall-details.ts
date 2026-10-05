@@ -5,7 +5,7 @@
  * proof that an unobserved GC did not occur. Detailed lines share a rate cap;
  * the existing minute counter still records every detected stall.
  */
-import { performance, PerformanceObserver } from "node:perf_hooks";
+import { constants, performance, PerformanceObserver } from "node:perf_hooks";
 
 export const EVENT_LOOP_STALL_DETAILS = true;
 export const MAIN_THREAD_SLOW_STAGES = true;
@@ -14,6 +14,13 @@ export const STALL_DETAIL_WINDOW_MS = 60_000;
 export const STALL_DETAIL_GC_LIMIT = 64;
 const THRESHOLD_MS = 100;
 const DELIVERY_GRACE_MS = 1_000;
+const GC_KINDS: ReadonlySet<number> = new Set([
+  0, // Unknown kind when the runtime does not provide detail.
+  constants.NODE_PERFORMANCE_GC_MINOR,
+  constants.NODE_PERFORMANCE_GC_MAJOR,
+  constants.NODE_PERFORMANCE_GC_INCREMENTAL,
+  constants.NODE_PERFORMANCE_GC_WEAKCB,
+]);
 
 type Stage = "dexscreener_window_create" | "lighter_public_frame";
 interface Utilization { readonly active: number; readonly idle: number }
@@ -95,7 +102,7 @@ export function startStallDetails(options: {
   try {
     disconnectGc = deps.observeGc((sample) => {
       try {
-        if (stopped || !valid(sample.startTime) || !valid(sample.duration) || ![0, 1, 2, 4, 8].includes(sample.kind)) return;
+        if (stopped || !valid(sample.startTime) || !valid(sample.duration) || !GC_KINDS.has(sample.kind)) return;
         gc.push(sample);
         if (gc.length > STALL_DETAIL_GC_LIMIT) { gc.shift(); gcDropped += 1; }
       } catch { /* Malformed observations cannot escape asynchronous delivery. */ }
