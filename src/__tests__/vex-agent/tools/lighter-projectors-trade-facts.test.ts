@@ -28,6 +28,7 @@ import {
   classifyLighterPositionEffect,
   lighterCampaignTradeType,
   readLighterAccountFillFacts,
+  LIGHTER_FILL_POSITION_FACTS_WITHOUT_PNL,
   type LighterPositionEffect,
 } from "@vex-agent/tools/protocols/lighter/fill-position-effect.js";
 import {
@@ -159,15 +160,41 @@ describe("projectTrade for one account", () => {
     expect(view.campaignType).toBe("open");
   });
 
-  it("keeps the side and role but no knowledge when the row is the public one", () => {
+  it("classifies complete public position facts independently of absent realized PnL", () => {
     const view = account(projectTrade(PUBLIC_TRADE, ASK_ACCOUNT));
     expect(view.side).toBe("sell");
     expect(view.role).toBe("taker");
-    // The public row has the taker's size and flag but no realized PnL, and
-    // three of four fields is not a classification.
+    expect(view.known).toBe(true);
+    expect(view.positionSizeBefore).toBe("0.00000");
+    expect(view.positionEffect).toBe("open");
+    expect(view.realizedPnl).toBeNull();
+  });
+
+  it("keeps the old complete-PnL requirement with the switch off", () => {
+    const view = account(projectTrade(PUBLIC_TRADE, ASK_ACCOUNT, { positionFactsWithoutPnl: false }));
     expect(view.known).toBe(false);
-    expect(view.positionSizeBefore).toBeNull();
     expect(view.positionEffect).toBe("unknown");
+    expect(view.realizedPnl).toBeNull();
+  });
+
+  it.each([
+    { taker_position_size_before: undefined },
+    { taker_position_size_before: null },
+    { taker_position_sign_changed: undefined },
+    { taker_position_sign_changed: null },
+  ])("keeps public records with absent position evidence unknown: %j", (missing) => {
+    const view = account(projectTrade({ ...PUBLIC_TRADE, ...missing }, ASK_ACCOUNT));
+    expect(view.known).toBe(false);
+    expect(view.positionEffect).toBe("unknown");
+  });
+
+  it("keeps a contradictory sign-change flag unknown even when PnL is absent", () => {
+    const view = account(projectTrade({
+      ...PUBLIC_TRADE, taker_position_size_before: "2.5", taker_position_sign_changed: false, size: "4",
+    }, ASK_ACCOUNT));
+    expect(view.known).toBe(true);
+    expect(view.positionEffect).toBe("unknown");
+    expect(view.realizedPnl).toBeNull();
   });
 
   it("reports nothing for an account that is on neither side", () => {
@@ -186,8 +213,29 @@ describe("projectTrade for one account", () => {
 });
 
 describe("readLighterAccountFillFacts", () => {
-  it("returns nothing while the realized PnL for the account's side is absent", () => {
-    expect(readLighterAccountFillFacts({ trade: PUBLIC_TRADE, role: "taker", side: "sell" })).toBeNull();
+  it("returns complete position facts and unknown PnL when the provider omits it", () => {
+    expect(LIGHTER_FILL_POSITION_FACTS_WITHOUT_PNL).toBe(true);
+    expect(readLighterAccountFillFacts({ trade: PUBLIC_TRADE, role: "taker", side: "sell" }))
+      .toMatchObject({ positionSizeBefore: "0.00000", positionSignChanged: true, accountPnl: null });
+    expect(readLighterAccountFillFacts({ trade: PUBLIC_TRADE, role: "taker", side: "sell" }, { positionFactsWithoutPnl: false })).toBeNull();
+  });
+
+  it.each(["", "not-pnl", "NaN", "+1", "1e3"])("refuses malformed present account PnL %s", (pnl) => {
+    expect(readLighterAccountFillFacts({ trade: { ...PUBLIC_TRADE, ask_account_pnl: pnl }, role: "taker", side: "sell" })).toBeNull();
+  });
+
+  it("accepts an explicitly null PnL without taking the counterparty PnL", () => {
+    expect(readLighterAccountFillFacts({
+      trade: { ...AUTHENTICATED_TRADE, ask_account_pnl: null }, role: "taker", side: "sell",
+    })?.accountPnl).toBeNull();
+  });
+
+  it.each([
+    { accountIndex: 999_999, role: "taker" as const, side: "sell" as const },
+    { accountIndex: ASK_ACCOUNT, role: "maker" as const, side: "sell" as const },
+    { accountIndex: ASK_ACCOUNT, role: "taker" as const, side: "buy" as const },
+  ])("refuses facts for a mismatched participant, role or side $accountIndex/$role/$side", (scope) => {
+    expect(readLighterAccountFillFacts({ trade: AUTHENTICATED_TRADE, ...scope })).toBeNull();
   });
 
   it("returns the whole half once every field is present", () => {

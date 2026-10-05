@@ -91,6 +91,8 @@ import logger from "@utils/logger.js";
 import {
   classifyLighterPositionEffect,
   readLighterAccountFillFacts,
+  lighterFillPositionFactsWithoutPnl,
+  type LighterFillPositionFactsOptions,
   type LighterAccountFillFacts,
   type LighterPositionEffect,
 } from "./fill-position-effect.js";
@@ -203,10 +205,9 @@ export interface LighterFillRecord {
    */
   readonly usdAmount: string;
   /**
-   * The account's own half of the trade record, or null when the observation
-   * was a public row that does not carry it. Established ONCE: a later
-   * authenticated observation fills it through the merge rule and nothing ever
-   * revises it.
+   * The account's position facts, or null when the observation omits them.
+   * Position facts establish once. Matching provider PnL may independently
+   * fill an unknown value later; established facts are never revised.
    */
   readonly accountFacts: LighterAccountFillFacts | null;
   /** Null exactly when {@link accountFacts} is null. Established with it, once. */
@@ -307,6 +308,7 @@ export function buildLighterFillRecord(input: {
   readonly observation?: LighterFillObservationScope;
   readonly market: LighterMarketAssets;
   readonly feeTerms: LighterFillFeeTerms;
+  readonly positionFactsWithoutPnl?: boolean;
 }): LighterFillRecord | LighterFillBuildFailure {
   const { trade, intent, market, feeTerms } = input;
   const scope: LighterFillObservationScope | undefined = intent === null
@@ -342,11 +344,9 @@ export function buildLighterFillRecord(input: {
   const providerOrderId = nonEmpty(side === "buy" ? trade.bid_id_str : trade.ask_id_str);
   const spot = scope.marketIndex >= LIGHTER_SPOT_MARKET_INDEX_FLOOR;
 
-  // THE ACCOUNT'S OWN HALF, or nothing. A public row carries the position
-  // sizes but neither the sign-changed flag nor the realized PnL, and half the
-  // fields is not a classification - so the effect stays NULL and a later
-  // authenticated observation establishes it once, through the merge rule.
-  const accountFacts = readLighterAccountFillFacts({ trade, role: feeSide, side });
+  // Position evidence is independent of PnL. Its exact account, role and side
+  // must agree with the provider before any account-relative facts are taken.
+  const accountFacts = readLighterAccountFillFacts({ trade, role: feeSide, side, accountIndex: scope.accountIndex }, input);
   const positionEffect = accountFacts === null
     ? null
     : classifyLighterPositionEffect({
@@ -515,9 +515,14 @@ function storableInitialMarginFraction(value: number | null | undefined): number
  * resnapshot, a replayed frame) records nothing new and reports `duplicate`.
  */
 export async function recordLighterFillActivity(
-  record: LighterFillRecord,
+  observed: LighterFillRecord,
   client?: PoolClient,
+  options: LighterFillPositionFactsOptions = {},
 ): Promise<LighterFillWriteOutcome> {
+  const independentPnl = lighterFillPositionFactsWithoutPnl(options);
+  const record = !independentPnl && observed.accountFacts?.accountPnl === null
+    ? { ...observed, accountFacts: null, positionEffect: null }
+    : observed;
   const params = [
     record.canonicalIdentity,
     record.environment,
@@ -641,12 +646,11 @@ export async function recordLighterFillActivity(
     }
   };
 
-  // THE ECONOMICS AGREE. If this observation knows the account's own half and
-  // the held row does not, that is knowledge arriving, not a revision: fill it
-  // once and move the revision so it reaches a server that already has the
-  // fill. If the row already knows, or this observation does not, nothing
-  // happens and the report is an ordinary duplicate.
-  if (record.accountFacts === null || existing.position_size_before !== null) {
+  // Once economics agree, establish missing position facts or matching PnL.
+  // Each accepted enrichment moves the revision for delivery; no established
+  // fact is replaced. Rows with no new knowledge remain duplicates.
+  if (record.accountFacts === null || (existing.position_size_before !== null
+    && (!independentPnl || existing.account_pnl !== null || record.accountFacts.accountPnl === null))) {
     if (fractionIsNews) await fillFraction();
     return { kind: "duplicate", fillId };
   }
@@ -658,13 +662,14 @@ export async function recordLighterFillActivity(
     record.accountFacts.accountPnl,
     record.positionEffect,
     fraction,
+    independentPnl,
+    record.feeSide,
   ];
   const merged = client === undefined
     ? await queryOne<{ id: string | number; revision: number }>(MERGE_FILL_ACCOUNT_FACTS_SQL, mergeParams)
     : await queryOneWith<{ id: string | number; revision: number }>(client, MERGE_FILL_ACCOUNT_FACTS_SQL, mergeParams);
-  // A concurrent observation won the race and established the same knowledge
-  // first. Nothing was lost and nothing is claimed twice - but the winner may
-  // have had no fraction to give, so this observation still offers its own.
+  // No admissible news remains, including when a concurrent observation won.
+  // The fraction has its own one-way fill, independent of the delivery revision.
   if (merged === null) {
     if (fractionIsNews) await fillFraction();
     return { kind: "duplicate", fillId };
@@ -851,17 +856,16 @@ const INSERT_FILL_SQL = `
 const SELECT_FILL_BY_IDENTITY_SQL = `
   SELECT id, side, price, base_size, quote_notional, block_height,
          trade_type, usd_amount, to_char(traded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS traded_at,
-         position_size_before, initial_margin_fraction_before, execution_intent_id
+         position_size_before, account_pnl, initial_margin_fraction_before, execution_intent_id
     FROM lighter_fills WHERE canonical_identity = $1`;
 
 /**
  * THE KNOWLEDGE MERGE, and the whole of it.
  *
- * Fills the account-relative columns ONLY while they are null, all five in one
- * statement, so the account's own view of a fill is established atomically and
- * once. `position_size_before IS NULL` is the marker for "this row has no
- * own-account knowledge yet": the five arrive together from one authenticated
- * observation and are never partially present.
+ * Position facts establish once, atomically. PnL may independently fill a null
+ * only when the stored position facts, effect and account role match exactly.
+ * The predicate is checked again after a concurrent update, so a richer
+ * observation can still supply PnL if a null-PnL position merge won first.
  *
  * Economics are not in this statement AT ALL - there is no column here through
  * which a second observation could revise a price, a size or a notional - and
@@ -876,17 +880,23 @@ const SELECT_FILL_BY_IDENTITY_SQL = `
  */
 const MERGE_FILL_ACCOUNT_FACTS_SQL = `
   UPDATE lighter_fills
-     SET position_size_before = $2,
-         position_sign_changed = $3,
-         entry_quote_before = $4,
-         account_pnl = $5,
-         position_effect = $6,
+     SET position_size_before = COALESCE(position_size_before, $2),
+         position_sign_changed = COALESCE(position_sign_changed, $3),
+         entry_quote_before = CASE WHEN position_size_before IS NULL THEN $4 ELSE entry_quote_before END,
+         account_pnl = COALESCE(account_pnl, $5),
+         position_effect = COALESCE(position_effect, $6),
          initial_margin_fraction_before = COALESCE(initial_margin_fraction_before, $7),
          revision = revision + 1,
          updated_at = NOW()
    WHERE canonical_identity = $1
-     AND position_size_before IS NULL
      AND $2::text IS NOT NULL
+     AND fee_side=$9
+     AND (position_size_before IS NULL
+       OR ($8::boolean AND account_pnl IS NULL AND $5::text IS NOT NULL
+         AND position_size_before=$2 AND position_sign_changed=$3
+         AND (entry_quote_before IS NULL OR $4::text IS NULL OR entry_quote_before=$4)
+         AND (initial_margin_fraction_before IS NULL OR $7::integer IS NULL OR initial_margin_fraction_before=$7)
+         AND position_effect=$6))
   RETURNING id, revision`;
 
 /**
