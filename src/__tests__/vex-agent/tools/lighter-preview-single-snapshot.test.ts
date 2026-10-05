@@ -1388,6 +1388,70 @@ function ownershipTimingHit(): unknown {
   return deskTimingLine().prewarmOwnershipHit;
 }
 
+const DESK_TICKET_MODES = [
+  { orderType: "market", timeInForce: "immediate-or-cancel" },
+  { orderType: "limit", timeInForce: "good-till-time" },
+  { orderType: "limit", timeInForce: "immediate-or-cancel" },
+  { orderType: "limit", timeInForce: "post-only" },
+  { orderType: "stop-loss", timeInForce: "immediate-or-cancel" },
+  { orderType: "take-profit", timeInForce: "immediate-or-cancel" },
+  { orderType: "stop-loss-limit", timeInForce: "good-till-time" },
+  { orderType: "take-profit-limit", timeInForce: "good-till-time" },
+] as const;
+
+describe("desk ticket speed coverage", () => {
+  it.each(DESK_TICKET_MODES.flatMap((mode) => ["buy", "sell"].map((side) => ({ ...mode, side }))))(
+    "preserves approval terms for warmed $side $orderType $timeInForce",
+    async ({ orderType, timeInForce, side }) => {
+      const protective = orderType !== "market" && orderType !== "limit";
+      const below = (orderType.startsWith("stop-loss") && side === "sell")
+        || (orderType.startsWith("take-profit") && side === "buy");
+      const scenario: PreviewScenario = {
+        feesEnabled: true,
+        share: 50,
+        account: { positions: [{ ...POSITION, sign: side === "buy" ? -1 : 1 }] },
+        params: {
+          side,
+          orderType,
+          timeInForce,
+          reduceOnly: protective,
+          price: protective
+            ? (side === "buy" ? (below ? "3400" : "3800") : (below ? "3200" : "3600"))
+            : orderType === "limit" ? (side === "buy" ? "3490" : "3510") : (side === "buy" ? "3510" : "3490"),
+          ...(protective ? { triggerPrice: below ? "3300" : "3700" } : {}),
+        },
+      };
+      const off = await observePreview(scenario, false, DESK_CTX);
+      const depth = await streamDepthMirroring(scenario);
+      configureLighterDeskPrewarmBookDepth(() => depth);
+      await observePreview(scenario, true, DESK_CTX, true, true);
+      const warm = await observePreview(scenario, true, DESK_CTX, true, true);
+
+      expect(off.observation.result).toMatchObject({
+        success: true,
+        preparedActionFollowUp: { args: { toolId: "lighter.order.create" } },
+      });
+      expect(warm.observation).toEqual(off.observation);
+      expect(warm.reads.ownershipReads).toBe(0);
+      expect(warm.reads.getMarketDetails).toBe(1);
+      expect(warm.reads.getAccount).toBe(1);
+      expect(warm.reads.getSystemConfig).toBe(0);
+      expect(warm.reads.getAccountLimits).toBe(0);
+      expect(warm.reads.readOnlyAuth).toBe(1);
+      expect(warm.client.getAccount).toHaveBeenCalledWith(
+        "rhc", { by: "index", value: ACCOUNT_INDEX, activeOnly: false }, { fresh: true },
+      );
+      expect(deskTimingLine()).toMatchObject({
+        singleSnapshot: 1,
+        deskPrewarm: 1,
+        prewarmOwnershipHit: 1,
+        prewarmFeeConfigHit: 1,
+        prewarmAccountLimitsHit: 1,
+      });
+    },
+  );
+});
+
 describe("LIGHTER_DESK_PREWARM_OWNERSHIP", () => {
   it("ships ON", () => {
     expect(LIGHTER_DESK_PREWARM_OWNERSHIP).toBe(true);
