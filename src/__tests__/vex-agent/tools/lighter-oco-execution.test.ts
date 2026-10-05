@@ -104,6 +104,7 @@ function ocoDeps(): LighterOcoExecutionDeps {
       .mockResolvedValueOnce({ code: 200, orders: [] })
       .mockResolvedValueOnce({ code: 200, orders: [active(0), active(1)] });
     return {
+      signingOwnershipRecheck: false,
       secretReader: { readTradingApiPrivateKey: vi.fn(async () => `0x${"1".repeat(80)}`) },
       authSigner: { source: "official_lighter_signer", createAccountAuth: vi.fn<LighterOcoExecutionDeps["authSigner"]["createAccountAuth"]>(async (input) => ({
         kind: "lighter_account_auth_signer_result", environment: input.environment,
@@ -551,12 +552,17 @@ function describeOcoFailure(error: unknown): Record<string, unknown> {
   return { message: error instanceof Error ? error.message : String(error) };
 }
 
-async function observeOco(built: LighterOcoExecutionDeps, lifecycleParallelReads: boolean | "constant") {
+async function observeOco(
+  built: LighterOcoExecutionDeps,
+  lifecycleParallelReads: boolean | "constant",
+  ownership?: { readonly enabled: boolean; readonly wallet?: import("@vex-agent/tools/protocols/lighter/signing-ownership.js").LighterSigningOwnershipWallet },
+) {
   const { lifecycleParallelReads: _pinned, ...unpinned } = built;
-  const d: LighterOcoExecutionDeps = lifecycleParallelReads === "constant" ? unpinned : { ...unpinned, lifecycleParallelReads };
+  const parallelDeps: LighterOcoExecutionDeps = lifecycleParallelReads === "constant" ? unpinned : { ...unpinned, lifecycleParallelReads };
+  const d = ownership === undefined ? parallelDeps : { ...parallelDeps, signingOwnershipRecheck: ownership.enabled };
   let outcome: Record<string, unknown>;
   try {
-    outcome = { resolved: await executeApprovedLighterOco({ plan: PLAN, group: GROUP, deps: d }) };
+    outcome = { resolved: await executeApprovedLighterOco({ plan: PLAN, group: GROUP, deps: d, ...(ownership?.wallet === undefined ? {} : { sessionWallet: ownership.wallet }) }) };
   } catch (error) {
     outcome = { rejected: describeOcoFailure(error) };
   }
@@ -658,5 +664,96 @@ describe("LIGHTER_LIFECYCLE_PARALLEL_READS for OCO", () => {
     expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
     expect(d.nonceState.recordExecutionObserved).not.toHaveBeenCalled();
     expect(d.nonceState.reserveObservedWith).not.toHaveBeenCalled();
+  });
+});
+
+
+const OCO_WALLET = { kind: "wallet" as const, address: `0x${"1".repeat(40)}` };
+function withOwnedOcoAccount(d: LighterOcoExecutionDeps): LighterOcoExecutionDeps {
+  const original = requireValue(vi.mocked(d.client.getAccount).getMockImplementation());
+  vi.mocked(d.client.getAccount).mockImplementation(async (...args) => {
+    const response = await original(...args);
+    return { ...response, accounts: response.accounts.map((account) => ({ ...account, l1_address: OCO_WALLET.address, account_type: 0 })) };
+  });
+  return d;
+}
+
+describe("LIGHTER_OCO_SIGNING_OWNERSHIP_RECHECK", () => {
+  it.each(OCO_CASES)("preserves existing outcomes and effects for the selected owner when $label", async ({ build }) => {
+    const off = await observeOco(withOwnedOcoAccount(build()), true, { enabled: false, wallet: OCO_WALLET });
+    const on = await observeOco(withOwnedOcoAccount(build()), true, { enabled: true, wallet: OCO_WALLET });
+    expect(on).toEqual(off);
+  });
+
+  it.each([
+    { label: "another wallet", wallet: { kind: "wallet" as const, address: `0x${"2".repeat(40)}` }, row: {}, reason: "no longer belongs" },
+    { label: "no session wallet", wallet: undefined, row: {}, reason: "no longer available" },
+    { label: "unavailable session wallet", wallet: { kind: "unavailable" as const }, row: {}, reason: "no longer available" },
+    { label: "a sub-account", wallet: OCO_WALLET, row: { account_type: 1 }, reason: "not the selected wallet's master account" },
+    { label: "no provider owner", wallet: OCO_WALLET, row: { l1_address: undefined }, reason: "no longer belongs" },
+  ])("refuses $label before passed evidence, execution secret load and nonce", async ({ wallet, row: changedRow, reason }) => {
+    const d = withOwnedOcoAccount(ocoDeps());
+    const original = requireValue(vi.mocked(d.client.getAccount).getMockImplementation());
+    vi.mocked(d.client.getAccount).mockImplementation(async (...args) => {
+      const response = await original(...args);
+      return { ...response, accounts: response.accounts.map((account) => ({ ...account, ...changedRow })) };
+    });
+    const off = await observeOco(d, true, { enabled: false, ...(wallet === undefined ? {} : { wallet }) });
+    expect(off.outcome).toMatchObject({ resolved: { status: "active" } });
+    const onDeps = withOwnedOcoAccount(ocoDeps());
+    const read = requireValue(vi.mocked(onDeps.client.getAccount).getMockImplementation());
+    vi.mocked(onDeps.client.getAccount).mockImplementation(async (...args) => {
+      const response = await read(...args);
+      return { ...response, accounts: response.accounts.map((account) => ({ ...account, ...changedRow })) };
+    });
+    const on = await observeOco(onDeps, true, { enabled: true, ...(wallet === undefined ? {} : { wallet }) });
+    expect(on.outcome).toMatchObject({ rejected: { message: expect.stringContaining(reason) } });
+    expect(JSON.stringify(on.outcome)).not.toContain("No trading key was loaded");
+    expect(on.effects.markPreSubmitRevalidated).toEqual([]);
+    expect(on.effects.readTradingApiPrivateKey).toEqual([]);
+    expect(on.effects.createAccountAuth).toBe(0);
+    expect(on.effects.recordExecutionObserved).toEqual([]);
+    expect(on.effects.reserveObservedWith).toEqual([]);
+    expect(on.effects.signCreateGroupedOrders).toEqual([]);
+    expect(on.effects.sendTx).toEqual([]);
+  });
+
+  it.each([false, true])("refuses a failed fresh account read before secret load and nonce when parallel reads are %s", async (parallelReads) => {
+    const d = ocoDeps();
+    vi.mocked(d.client.getAccount).mockRejectedValue(OCO_OFFLINE("account timed out"));
+    const on = await observeOco(d, parallelReads, { enabled: true, wallet: OCO_WALLET });
+    expect(on.outcome).toMatchObject({ rejected: { message: expect.stringContaining("nothing was signed or sent") } });
+    expect(on.effects.markPreSubmitRevalidated).toEqual([]);
+    expect(on.effects.readTradingApiPrivateKey).toEqual([]);
+    expect(on.effects.recordExecutionObserved).toEqual([]);
+    expect(on.effects.signCreateGroupedOrders).toEqual([]);
+    expect(on.effects.sendTx).toEqual([]);
+  });
+
+  it("uses its named default and reuses the fresh revalidation account without another read", async () => {
+    const { signingOwnershipRecheck: _override, ...d } = withOwnedOcoAccount(ocoDeps());
+    await expect(executeApprovedLighterOco({ plan: PLAN, group: GROUP, deps: d, sessionWallet: OCO_WALLET })).resolves.toMatchObject({ status: "active" });
+    expect(d.client.getAccount).toHaveBeenCalledExactlyOnceWith("rhc", { by: "index", value: 42 }, { fresh: true });
+  });
+
+  it("preserves a trusted default without a wallet", async () => {
+    const off = await observeOco(ocoDeps(), false, { enabled: false });
+    const on = await observeOco(ocoDeps(), false, { enabled: true, wallet: { kind: "trusted_default_without_wallet" } });
+    expect(on).toEqual(off);
+  });
+
+  it("keeps a child revalidation refusal ahead of missing ownership and concurrent credential failure", async () => {
+    const d = withOwnedOcoAccount(ocoDeps());
+    const position = requireValue(requireValue(ACCOUNT.accounts[0]).positions?.[0]);
+    vi.mocked(d.client.getAccount).mockResolvedValue({ ...ACCOUNT, accounts: [{ index: 42, positions: [{ ...position, sign: -1 }] }] });
+    vi.mocked(d.client.getApiKeys).mockRejectedValue(new Error("keys down"));
+    const off = await observeOco(d, true, { enabled: false });
+    const onDeps = withOwnedOcoAccount(ocoDeps());
+    vi.mocked(onDeps.client.getAccount).mockResolvedValue({ ...ACCOUNT, accounts: [{ index: 42, positions: [{ ...position, sign: -1 }] }] });
+    vi.mocked(onDeps.client.getApiKeys).mockRejectedValue(new Error("keys down"));
+    const on = await observeOco(onDeps, true, { enabled: true });
+    expect(on).toEqual(off);
+    expect(on.effects.readTradingApiPrivateKey).toEqual([]);
+    expect(on.effects.markPreSubmitRevalidated).toEqual([]);
   });
 });

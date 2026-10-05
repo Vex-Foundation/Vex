@@ -350,7 +350,7 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
         intentId.value,
       );
       if (ocoIntent !== null) {
-        return executePreparedLighterOco(ocoIntent, context.approvalId ?? null, fullAccess, context.abortSignal);
+        return executePreparedLighterOco(ocoIntent, context.approvalId ?? null, fullAccess, context.abortSignal, resolveLighterSigningOwnershipWallet(context));
       }
       return fail(`No Lighter order execution intent ${intentId.value} found in this session.`);
     }

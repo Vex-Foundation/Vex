@@ -56,6 +56,11 @@ import {
 import { isLighterUnreachable, withLighterBeforeSendFailures, type LighterSendPhase } from "./before-send.js";
 import { LighterLifecycleTiming, lighterLifecycleParallelReads } from "./lifecycle-parallel-reads.js";
 
+import { judgeLighterSigningOwnership, type LighterSigningOwnershipWallet } from "./signing-ownership.js";
+
+/** Fresh session ownership for both OCO legs; false keeps the prior path. */
+export const LIGHTER_OCO_SIGNING_OWNERSHIP_RECHECK = true;
+
 const FRESH = { fresh: true } as const;
 const AUTH_TTL_SECONDS = 10 * 60;
 const ACTIVE_ATTEMPTS = 3;
@@ -123,6 +128,8 @@ export interface LighterOcoExecutionDeps {
   readonly fills?: LighterFillObservationDeps;
   /** Overrides `LIGHTER_LIFECYCLE_PARALLEL_READS`; absent uses the constant. */
   readonly lifecycleParallelReads?: boolean;
+  /** Overrides `LIGHTER_OCO_SIGNING_OWNERSHIP_RECHECK`; absent uses the constant. */
+  readonly signingOwnershipRecheck?: boolean;
 }
 
 let configuredDeps: LighterOcoExecutionDeps | null = null;
@@ -160,6 +167,7 @@ export async function executeApprovedLighterOco(input: {
   readonly group: LighterUnsignedOcoRequest;
   readonly deps: LighterOcoExecutionDeps;
   readonly abortSignal?: AbortSignal;
+  readonly sessionWallet?: LighterSigningOwnershipWallet;
 }): Promise<ExecuteApprovedLighterOcoResult> {
   const timing = new LighterLifecycleTiming("oco", lighterLifecycleParallelReads(input.deps.lifecycleParallelReads));
   try {
@@ -174,13 +182,14 @@ async function runApprovedLighterOco(input: {
   readonly group: LighterUnsignedOcoRequest;
   readonly deps: LighterOcoExecutionDeps;
   readonly abortSignal?: AbortSignal;
+  readonly sessionWallet?: LighterSigningOwnershipWallet;
 }, sendPhase: LighterSendPhase, timing: LighterLifecycleTiming): Promise<ExecuteApprovedLighterOcoResult> {
   const { plan, group, deps } = input;
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
     assertIntentAuthority(plan.expiresAt, deps.now(), phase, input.abortSignal);
   assertAuthority("before_reservation");
   timing.start("readsMs");
-  const credential = await revalidateThenReadCredential(plan, deps, timing);
+  const credential = await revalidateThenReadCredential(plan, deps, timing, input.sessionWallet);
   timing.stop("readsMs");
   const secret = await timing.measure("secretMs", () =>
     loadLighterTradingSecretMaterial(plan.credentialReference, deps.secretReader));
@@ -384,13 +393,14 @@ async function revalidateThenReadCredential(
   plan: LighterOcoExecutionPlan,
   deps: LighterOcoExecutionDeps,
   timing: LighterLifecycleTiming,
+  sessionWallet: LighterSigningOwnershipWallet | undefined,
 ): Promise<Awaited<ReturnType<typeof readCredential>>> {
   if (!timing.parallelReads) {
-    await timing.measure("revalidationMs", () => revalidate(plan, deps));
+    await timing.measure("revalidationMs", () => revalidate(plan, deps, sessionWallet));
     return timing.measure("credentialMs", () => readCredential(plan, deps));
   }
   const [revalidation, credential] = await Promise.allSettled([
-    timing.measure("revalidationMs", () => revalidate(plan, deps)),
+    timing.measure("revalidationMs", () => revalidate(plan, deps, sessionWallet)),
     timing.measure("credentialMs", () => readCredential(plan, deps)),
   ]);
   if (revalidation.status === "rejected") throw revalidation.reason;
@@ -398,7 +408,11 @@ async function revalidateThenReadCredential(
   return credential.value;
 }
 
-async function revalidate(plan: LighterOcoExecutionPlan, deps: LighterOcoExecutionDeps): Promise<void> {
+async function revalidate(
+  plan: LighterOcoExecutionPlan,
+  deps: LighterOcoExecutionDeps,
+  sessionWallet: LighterSigningOwnershipWallet | undefined,
+): Promise<void> {
   const [stopLoss, takeProfit] = await Promise.all([
     deps.previews.findFreshById(plan.sessionId, plan.environment, plan.stopLossPreviewId),
     deps.previews.findFreshById(plan.sessionId, plan.environment, plan.takeProfitPreviewId),
@@ -434,6 +448,24 @@ async function revalidate(plan: LighterOcoExecutionPlan, deps: LighterOcoExecuti
     plan: ocoLegRevalidationPlan(plan, "take-profit"), approvedPreview: takeProfit,
     context: { market, orderBook, account }, nowMs: previewNowMs,
   });
+  // Last of the revalidation checks, before passed evidence. This is the
+  // account fetched fresh above, never preview or pre-warm ownership evidence.
+  if (deps.signingOwnershipRecheck ?? LIGHTER_OCO_SIGNING_OWNERSHIP_RECHECK) {
+    const outcome = judgeLighterSigningOwnership({
+      accountIndex: plan.accountIndex, account, wallet: sessionWallet,
+      // The fee check may already have loaded material for read-only auth.
+      signingMaterialAlreadyLoaded: true,
+    });
+    if (outcome.kind === "refused") throw blocked(outcome.reason);
+    try {
+      logger.info("lighter.oco.signing_ownership_recheck", {
+        outcome: outcome.kind,
+        ...(outcome.kind === "matched" ? { accountTypeReported: outcome.accountTypeReported ? 1 : 0 } : {}),
+      });
+    } catch {
+      // Diagnostics cannot change execution.
+    }
+  }
   const persisted = await deps.intents.markPreSubmitRevalidated({
     intentId: plan.intentId, sessionId: plan.sessionId, environment: plan.environment,
     evidence: {

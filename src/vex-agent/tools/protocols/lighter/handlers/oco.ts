@@ -1,3 +1,4 @@
+import type { LighterSigningOwnershipWallet } from "../signing-ownership.js";
 import { resolveLighterOrderFees } from "../order-fees.js";
 import { randomUUID } from "node:crypto";
 
@@ -130,6 +131,7 @@ export async function executePreparedLighterOco(
   approvalId: string | null,
   fullAccess: boolean,
   abortSignal?: AbortSignal,
+  sessionWallet?: LighterSigningOwnershipWallet,
 ) {
   const [stopLoss, takeProfit] = await Promise.all([
     previewsRepo.findById(intent.sessionId, intent.environment, intent.stopLossPreviewId),
@@ -181,6 +183,7 @@ export async function executePreparedLighterOco(
       plan,
       group: buildLighterUnsignedOcoRequest(plan),
       deps,
+      ...(sessionWallet === undefined ? {} : { sessionWallet }),
     });
     return ok({ source: "vex_lighter_native_oco", ...result, userGuidance: executionGuidance(result) });
   } catch (error) {

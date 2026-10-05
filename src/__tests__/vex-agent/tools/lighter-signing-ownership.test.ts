@@ -25,6 +25,7 @@ vi.mock("@tools/wallet/inventory.js", async (importOriginal) => ({
 const executor = vi.hoisted(() => ({
   execute: vi.fn(),
   intent: null as Record<string, unknown> | null,
+  ocoIntent: null as Record<string, unknown> | null,
 }));
 
 vi.mock("@vex-agent/tools/protocols/lighter/order-create-execution.js", async (importOriginal) => ({
@@ -52,6 +53,21 @@ vi.mock("@vex-agent/db/repos/lighter-order-lifecycle-intents.js", async (importO
   markApprovalDecision: async () => ({ ...executor.intent, approvalStatus: "approved" }),
 }));
 
+vi.mock("@vex-agent/tools/protocols/lighter/oco-order-execution.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/tools/protocols/lighter/oco-order-execution.js")>()),
+  executeApprovedLighterOco: executor.execute,
+  getConfiguredLighterOcoExecutionDeps: () => ({}),
+}));
+vi.mock("@vex-agent/db/repos/lighter-oco-execution-intents.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/db/repos/lighter-oco-execution-intents.js")>()),
+  findByIntentId: async () => executor.ocoIntent,
+  markApprovalDecision: async () => ({ ...executor.ocoIntent, approvalStatus: "approved" }),
+}));
+vi.mock("@vex-agent/db/repos/lighter-order-previews.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/db/repos/lighter-order-previews.js")>()),
+  findById: async () => ({}),
+}));
+
 import {
   judgeLighterSigningOwnership,
   LIGHTER_SIGNING_OWNERSHIP_NOT_MASTER,
@@ -75,6 +91,7 @@ function account(row: Partial<LighterAccountResponse["accounts"][number]> = {}):
 beforeEach(() => {
   WALLETS.primary = null;
   executor.execute.mockReset();
+  executor.ocoIntent = null;
 });
 
 describe("resolveLighterSigningOwnershipWallet", () => {
@@ -221,6 +238,28 @@ describe("lighter.order.create hands the executor its own session wallet", () =>
     const input: unknown = call[0];
     return typeof input === "object" && input !== null && "sessionWallet" in input ? input.sessionWallet : "absent";
   }
+
+  it("passes the current session wallet through the OCO approve handler to execution", async () => {
+    for (const walletContext of [SESSION_CTX, {
+      walletResolution: { source: "session" as const, evm: null, solana: null },
+      walletPolicy: { kind: "none" as const },
+    }]) {
+      executor.intent = null;
+      executor.ocoIntent = {
+        ...INTENT, intentId: "lighter-oco-00000000-0000-4000-8000-000000000001", side: "sell",
+        stopLossPreviewId: "sl", stopLossMatchHash: "b".repeat(64), stopLossPriceInteger: "285000", stopLossTriggerPriceInteger: "290000",
+        takeProfitPreviewId: "tp", takeProfitMatchHash: "c".repeat(64), takeProfitPriceInteger: "325000", takeProfitTriggerPriceInteger: "330000",
+      };
+      executor.execute.mockReset().mockResolvedValue({ status: "sequencer_pending" });
+      const result = await requireValue(LIGHTER_WRITE_HANDLERS["lighter.order.create"])({ intentId: executor.ocoIntent.intentId }, {
+        sessionId: "session-1", sessionPermission: "full", approved: false, ...walletContext,
+      });
+      expect(executor.execute, result.output).toHaveBeenCalledTimes(1);
+      const input: unknown = requireValue(executor.execute.mock.calls[0])[0];
+      expect(typeof input === "object" && input !== null && "sessionWallet" in input ? input.sessionWallet : "absent")
+        .toEqual(resolveLighterSigningOwnershipWallet(walletContext));
+    }
+  });
 
   it.each(["lighter.order.cancel", "lighter.order.modify", "lighter.order.cancelAll", "lighter.position.close"])(
     "%s hands lifecycle execution the current selected wallet or its unavailability", async (toolId) => {
