@@ -28,6 +28,7 @@
  */
 
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
+import { startStallDetails, type StallDetailsDeps } from "./stall-details.js";
 
 /** K-5 switch. Default ON: measurement only, negligible cost. */
 export const EVENT_LOOP_TELEMETRY_ENABLED = true;
@@ -194,6 +195,8 @@ export function startEventLoopTelemetry(options: {
   readonly deps?: Partial<EventLoopTelemetryDeps>;
   /** FLC-6: read-and-reset KDF numbers, appended to each window's log line. */
   readonly takeKdfStats?: () => EventLoopKdfStats;
+  readonly stallDetails?: boolean;
+  readonly stallDetailsDeps?: Partial<StallDetailsDeps>;
 }): () => void {
   if (!(options.enabled ?? EVENT_LOOP_TELEMETRY_ENABLED)) return () => undefined;
   const deps: EventLoopTelemetryDeps = {
@@ -217,8 +220,17 @@ export function startEventLoopTelemetry(options: {
     EVENT_LOOP_STALL_THRESHOLD_MS,
   );
 
+  let details: ReturnType<typeof startStallDetails> | undefined;
+  try {
+    details = startStallDetails({
+      log: (line) => deps.log("warn", line),
+      enabled: options.stallDetails, deps: options.stallDetailsDeps,
+    });
+  } catch { /* Detailed diagnostics cannot disable the existing counter. */ }
+
   const cancelTick = deps.every(() => {
     stalls.observeTick(deps.now());
+    details?.tick();
   }, EVENT_LOOP_STALL_TICK_MS);
 
   const takeKdfStatsSafely = (): EventLoopKdfStats | null => {
@@ -262,6 +274,7 @@ export function startEventLoopTelemetry(options: {
     stopped = true;
     cancelTick();
     cancelReport();
+    details?.stop();
     try {
       histogram.disable();
     } catch {

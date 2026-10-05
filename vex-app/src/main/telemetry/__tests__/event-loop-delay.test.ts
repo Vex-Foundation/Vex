@@ -68,6 +68,7 @@ function harness(takeKdfStats?: () => EventLoopKdfStats): {
   const recorded: EventLoopWindow[] = [];
   const stop = startEventLoopTelemetry({
     enabled: true,
+    stallDetails: false,
     log: (level, line) => lines.push({ level, line }),
     record: (window) => recorded.push(window),
     ...(takeKdfStats === undefined ? {} : { takeKdfStats }),
@@ -324,5 +325,44 @@ describe("startEventLoopTelemetry", () => {
       record: () => undefined,
     });
     stop();
+  });
+});
+
+describe("cheap stall detail integration", () => {
+  it("shares the existing tick and stops observer delivery with telemetry", () => {
+    let now = 1000;
+    let disconnects = 0;
+    const scheduled: Scheduled[] = [];
+    const lines: string[] = [];
+    const stop = startEventLoopTelemetry({
+      log: (_level, line) => { lines.push(line); }, record: () => undefined,
+      stallDetails: true,
+      deps: {
+        now: () => now, createHistogram: () => new FakeHistogram(),
+        every: (fn, ms) => {
+          const entry: Scheduled = { fn, ms, cancelled: false };
+          scheduled.push(entry);
+          return () => { entry.cancelled = true; };
+        },
+      },
+      stallDetailsDeps: {
+        now: () => now, wallNow: () => 1_800_000_000_000 + now,
+        utilization: () => ({ active: now, idle: 0 }), slowStages: false,
+        observeGc: () => () => { disconnects += 1; },
+      },
+    });
+    expect(scheduled.map((entry) => entry.ms)).toEqual([50, 60000]);
+    now = 1250;
+    for (const entry of scheduled) if (entry.ms === 50) entry.fn();
+    now = 2250;
+    for (const entry of scheduled) if (entry.ms === 50) entry.fn();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("[event-loop-stall-detail] observedAtMs=1800000001250 lateMs=200");
+    stop(); stop();
+    expect(disconnects).toBe(1);
+    expect(scheduled.every((entry) => entry.cancelled)).toBe(true);
+    now = 4000;
+    for (const entry of scheduled) if (entry.ms === 50) entry.fn();
+    expect(lines).toHaveLength(1);
   });
 });

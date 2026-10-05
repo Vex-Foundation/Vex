@@ -16,6 +16,7 @@ import type {
 import type { LighterStreamOrderBookSnapshot } from "@vex-agent/tools/protocols/lighter/stream-revalidation.js";
 import type { LighterStreamBookDepth } from "@vex-agent/tools/protocols/lighter/desk-prewarm.js";
 import { log } from "../logger/index.js";
+import { measureMainThreadStage } from "../telemetry/stall-details.js";
 import { SocketWatcherReconnectState } from "./stream-supervisor.js";
 
 export const LIGHTER_PUBLIC_MARKET_HANDSHAKE_TIMEOUT_MS = 15_000;
@@ -364,6 +365,14 @@ export class LighterPublicMarketSupervisor {
   }
 
   private handleMessage(
+    watcher: PublicMarketWatcher,
+    socket: LighterPublicMarketSocket,
+    event: unknown,
+  ): void {
+    measureMainThreadStage("lighter_public_frame", () => this.processMessage(watcher, socket, event));
+  }
+
+  private processMessage(
     watcher: PublicMarketWatcher,
     socket: LighterPublicMarketSocket,
     event: unknown,
