@@ -1,3 +1,4 @@
+import { protectSigningOperation } from "../secrets/signing-lock.js";
 import { assertIntentAuthority, LighterIntentRefusal } from "@vex-agent/tools/protocols/lighter/intent-expiry.js";
 import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js";
 import { getAddress } from "viem";
@@ -210,6 +211,13 @@ export function lighterFeeAuthorizationObserved(
 export async function executeApprovedLighterFeeAuthorization(
   input: LighterFeeAuthorizationExecutionInput,
   deps: LighterFeeAuthorizationExecutionDeps = defaultDeps(),
+): Promise<LighterFeeAuthorizationResult> {
+  return protectSigningOperation("lighter_fee_authorization", () => runApprovedLighterFeeAuthorization(input, deps));
+}
+
+async function runApprovedLighterFeeAuthorization(
+  input: LighterFeeAuthorizationExecutionInput,
+  deps: LighterFeeAuthorizationExecutionDeps,
 ): Promise<LighterFeeAuthorizationResult> {
   let intent = await readOwnedIntent(input, deps);
   if (!["approved", "tier_ready"].includes(intent.executionState))

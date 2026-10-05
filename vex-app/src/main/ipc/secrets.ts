@@ -28,6 +28,7 @@ import {
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
 import { writeVaultResetJournal } from "../secrets/vault-reset-journal.js";
+import { guardUserLock } from "../secrets/signing-lock.js";
 
 let resetRequestFlight: Promise<Result<ResetToFreshVaultResult>> | null = null;
 
@@ -165,7 +166,18 @@ export function registerSecretsHandlers(): Array<() => void> {
         // Await so the provider-cache invalidation is provably done before we
         // report locked — a cached provider would otherwise keep serving the
         // old credentials after lock (FINDING-security-003).
-        await lockSecretSession();
+        const outcome = await guardUserLock(() => lockSecretSession());
+        if (outcome.kind === "busy") {
+          return err({
+            code: "secrets.lock_busy",
+            domain: "wallet",
+            message: "A transaction or protected operation is still in progress. Wait for it to finish, then lock Vex.",
+            retryable: true,
+            userActionable: true,
+            redacted: true,
+            correlationId: ctx.requestId,
+          });
+        }
         log.info(
           `[ipc:vex:secrets:lock] ok=true correlationId=${ctx.requestId}`,
         );

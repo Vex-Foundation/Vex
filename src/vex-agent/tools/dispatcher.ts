@@ -35,6 +35,9 @@ import {
 } from "@utils/error-summary.js";
 import { TOOL_ABORTED_BY_USER_STOP_OUTPUT } from "@vex-agent/engine/core/turn-loop-tool-batch/results.js";
 import logger from "@utils/logger.js";
+import { dispatchTargetMaySign } from "./dispatcher/signing-targets.js";
+import { LOCK_BUTTON } from "../../lib/lock-button.js";
+import { trackInFlightSigning } from "@vex-agent/engine/core/in-flight-signing.js";
 
 // Compatibility façade re-exports - preserve the dispatcher's public surface.
 export { checkPressureDeny } from "./dispatcher/pressure-gate.js";
@@ -174,9 +177,12 @@ export async function dispatchTool(
     : readTimeoutMsFor(allowlistedRead, readToolReadBounds());
 
   try {
-    const result = readTimeoutMs > 0
-      ? await routeWithReadTimeout(routeToolCall, call, context, readTimeoutMs)
-      : await routeToolCall(call, context);
+    const route = () => readTimeoutMs > 0
+      ? routeWithReadTimeout(routeToolCall, call, context, readTimeoutMs)
+      : routeToolCall(call, context);
+    const result = LOCK_BUTTON && dispatchTargetMaySign(call)
+      ? await trackInFlightSigning("mutating_tool", route)
+      : await route();
     const durationMs = Date.now() - startTime;
     if (result.failure?.kind === "tool_timeout") {
       logger.warn("tools.dispatch.read_timeout", {

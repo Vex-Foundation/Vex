@@ -1,3 +1,4 @@
+import { protectSigningOperation } from "../secrets/signing-lock.js";
 import { persistLighterSigningEvidence } from "@vex-agent/tools/protocols/lighter/execution-boundary.js";
 import { app } from "electron";
 import { assertIntentAuthority, LighterIntentRefusal } from "@vex-agent/tools/protocols/lighter/intent-expiry.js";
@@ -81,7 +82,7 @@ export async function executeApprovedLighterKeyRegistration(
   input: Parameters<LighterKeyRegistrationExecutor["execute"]>[0],
   deps: LighterKeyRegistrationExecutionDeps = defaultDeps(),
 ): Promise<LighterKeyRegistrationExecutionResult> {
-  return runLighterKeyRegistration(input, deps, true);
+  return protectSigningOperation("lighter_key_registration", () => runLighterKeyRegistration(input, deps, true));
 }
 
 export async function reconcileLighterKeyRegistration(

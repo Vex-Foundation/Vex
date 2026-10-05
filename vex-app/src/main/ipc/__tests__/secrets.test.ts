@@ -12,6 +12,8 @@ import {
   type TestIpcEvent,
 } from "./test-sender.js";
 
+import { trackInFlightSigning } from "@vex-agent/engine/core/in-flight-signing.js";
+
 type Handler = (
   event: TestIpcEvent,
   raw: unknown,
@@ -190,6 +192,24 @@ describe("vex.secrets.status handler", () => {
 });
 
 describe("vex.secrets.lock handler", () => {
+  it("refuses an admitted transaction with a bounded retryable message", async () => {
+    registerSecretsHandlers();
+    const handler = handlers.get(CH.secrets.lock);
+    if (handler === undefined) throw new Error("lock handler missing");
+    let finish: () => void = () => undefined;
+    const transaction = trackInFlightSigning("mutating_tool", () => new Promise<void>((resolve) => { finish = resolve; }));
+    try {
+      expect(await handler(trustedSender, { requestId: "busy-lock", payload: {} })).toMatchObject({
+        ok: false,
+        error: { code: "secrets.lock_busy", retryable: true, redacted: true },
+      });
+      expect(mockLockSecretSession).not.toHaveBeenCalled();
+    } finally {
+      finish();
+      await transaction;
+    }
+  });
+
   it("invokes lockSecretSession and returns {locked:true}", async () => {
     registerSecretsHandlers();
     const fn = handlers.get(CH.secrets.lock)!;

@@ -59,6 +59,8 @@ const rootAgentDir = path.resolve(root, "..", "src", "vex-agent");
 // import nothing; bug-report-schema imports only zod). Anything else fails the
 // gate.
 const PURE_VEX_LIB_MODULES = new Set([
+  // One dependency-free rollback flag shared with the privileged signing guard.
+  "@vex-lib/lock-button.js",
   "@vex-lib/agent-config.js",
   "@vex-lib/embedding-constants.js",
   "@vex-lib/diagnostics/bug-report-schema.js",
