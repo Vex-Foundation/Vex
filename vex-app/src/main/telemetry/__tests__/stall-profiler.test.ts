@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   EVENT_LOOP_STALL_PROFILER,
+  EVENT_LOOP_STALL_PROFILER_OVERHEAD_GUARD,
+  STALL_PROFILER_COLLECTION_BUDGET_MS,
   STALL_PROFILER_MAX_LINES_PER_SEGMENT,
   STALL_PROFILER_MIN_RUN_MS,
   STALL_PROFILER_SAMPLING_INTERVAL_US,
@@ -16,6 +18,7 @@ import {
   type CpuProfile,
   type ProfileNode,
   type ProfilerSession,
+  type StallProfilerDeps,
 } from "../stall-profiler.js";
 
 const APP = "file:///Users/alice/Documents/projects/Vex/vex-app/dist/main/index.js";
@@ -55,6 +58,8 @@ function profileOf(runs: ReadonlyArray<readonly [number, number]>): CpuProfile {
 describe("FLC-8 switch and constants", () => {
   it("is on, samples every millisecond and reports K-5's stall threshold", () => {
     expect(EVENT_LOOP_STALL_PROFILER).toBe(true);
+    expect(EVENT_LOOP_STALL_PROFILER_OVERHEAD_GUARD).toBe(true);
+    expect(STALL_PROFILER_COLLECTION_BUDGET_MS).toBeLessThan(STALL_PROFILER_MIN_RUN_MS);
     expect(STALL_PROFILER_SAMPLING_INTERVAL_US).toBe(1_000);
     expect(STALL_PROFILER_SEGMENT_MS).toBe(10_000);
     expect(STALL_PROFILER_MIN_RUN_MS).toBe(100);
@@ -158,7 +163,7 @@ async function settle(): Promise<void> {
   for (let i = 0; i < 10; i += 1) await Promise.resolve();
 }
 
-function harness(session: FakeSession): {
+function harness(session: FakeSession, overrides: Partial<StallProfilerDeps> = {}): {
   lines: string[];
   tick: () => void;
   cancelled: () => boolean;
@@ -179,6 +184,7 @@ function harness(session: FakeSession): {
           cancelled = true;
         };
       },
+      ...overrides,
     },
   });
   return { lines, tick: () => segment?.(), cancelled: () => cancelled, stop };
@@ -279,5 +285,157 @@ describe("startStallProfiler", () => {
     await settle();
     expect(h.lines).toHaveLength(1);
     h.stop();
+  });
+
+  it("stops expensive collection once without collecting or restarting again", async () => {
+    const session = fakeSession([profileOf([[2, 50], [7, 150], [2, 50]])]);
+    let time = 0;
+    const h = harness(session, {
+      now: () => { const value = time; time += 150; return value; },
+    });
+    await settle();
+    h.tick();
+    await settle();
+    expect(h.lines[1]).toBe("[event-loop-stall] collectionBlockedMs=150 budgetMs=50; attribution off");
+    expect(h.cancelled()).toBe(true);
+    expect(session.disconnected).toBe(1);
+    expect(session.posts.filter((post) => post === "Profiler.stop")).toHaveLength(1);
+    expect(session.posts.filter((post) => post === "Profiler.start")).toHaveLength(1);
+    h.tick();
+    h.stop();
+    await settle();
+    expect(session.posts.filter((post) => post === "Profiler.stop")).toHaveLength(1);
+    expect(h.lines).toHaveLength(2);
+  });
+
+  it("keeps the prior continuous capture path when the collection guard is off", async () => {
+    const session = fakeSession([profileOf([[2, 50], [7, 150], [2, 50]])]);
+    let time = 0;
+    const h = harness(session, {
+      collectionGuard: false,
+      now: () => { const value = time; time += 150; return value; },
+    });
+    await settle();
+    h.tick();
+    await settle();
+    expect(h.cancelled()).toBe(false);
+    expect(session.posts.filter((post) => post === "Profiler.start")).toHaveLength(2);
+    expect(h.lines[1]).toContain("parseAccountSnapshot@pg/lib/client.js");
+    h.stop();
+  });
+
+  it.each([{ cost: 50, stopped: false }, { cost: 50.1, stopped: true }])("enforces the collection budget at $cost ms", async ({ cost, stopped }) => {
+    const session = fakeSession([]);
+    let time = 0;
+    const h = harness(session, {
+      now: () => { const value = time; time += cost; return value; },
+    });
+    await settle();
+    h.tick();
+    await settle();
+    expect(h.cancelled()).toBe(stopped);
+    h.stop();
+    await settle();
+  });
+
+  it("does not treat waiting for an asynchronous response as synchronous collection cost", async () => {
+    const session = fakeSession([]);
+    let deliver: (value: unknown) => void = () => undefined;
+    const priorPost = session.post;
+    session.post = (method, params) => {
+      if (method !== "Profiler.stop") return priorPost(method, params);
+      session.posts.push(method);
+      return new Promise((resolve) => { deliver = resolve; });
+    };
+    let time = 0;
+    const h = harness(session, { now: () => time });
+    await settle();
+    h.tick();
+    time = 1_000;
+    deliver({ profile: profileOf([[2, 50], [7, 150], [2, 50]]) });
+    await settle();
+    expect(h.cancelled()).toBe(false);
+    expect(session.posts.filter((post) => post === "Profiler.start")).toHaveLength(2);
+    h.stop();
+    deliver({});
+    await settle();
+  });
+
+  it.each(["Profiler.enable", "Profiler.setSamplingInterval"])("cannot start after shutdown during %s", async (heldMethod) => {
+    const session = fakeSession([]);
+    let release: (value: unknown) => void = () => undefined;
+    const priorPost = session.post;
+    session.post = (method, params) => {
+      if (method !== heldMethod) return priorPost(method, params);
+      session.posts.push(method);
+      return new Promise((resolve) => { release = resolve; });
+    };
+    const h = harness(session);
+    await settle();
+    h.stop();
+    release({});
+    await settle();
+    expect(session.posts).not.toContain("Profiler.start");
+    expect(session.disconnected).toBe(1);
+    expect(h.lines).toEqual([]);
+  });
+
+  it("does not restart after shutdown during a pending rotation", async () => {
+    const session = fakeSession([]);
+    let release: (value: unknown) => void = () => undefined;
+    const priorPost = session.post;
+    let stops = 0;
+    session.post = (method, params) => {
+      if (method !== "Profiler.stop" || ++stops !== 1) return priorPost(method, params);
+      session.posts.push(method);
+      return new Promise((resolve) => { release = resolve; });
+    };
+    const h = harness(session);
+    await settle();
+    h.tick();
+    h.stop();
+    release({ profile: profileOf([[2, 50], [7, 150], [2, 50]]) });
+    await settle();
+    expect(session.posts.filter((post) => post === "Profiler.start")).toHaveLength(1);
+    expect(h.lines).toHaveLength(1);
+  });
+
+  it("does not report a profile after shutdown during a pending restart", async () => {
+    const session = fakeSession([profileOf([[2, 50], [7, 150], [2, 50]])]);
+    let release: (value: unknown) => void = () => undefined;
+    let starts = 0;
+    const priorPost = session.post;
+    session.post = (method, params) => {
+      if (method !== "Profiler.start" || ++starts !== 2) return priorPost(method, params);
+      session.posts.push(method);
+      return new Promise((resolve) => { release = resolve; });
+    };
+    const h = harness(session);
+    await settle();
+    h.tick();
+    await settle();
+    h.stop();
+    release({});
+    await settle();
+    expect(h.lines).toHaveLength(1);
+    expect(session.disconnected).toBe(1);
+  });
+
+  it("disconnects once if collection rejects, including after expensive submission", async () => {
+    const session = fakeSession([], "Profiler.stop");
+    let time = 0;
+    const h = harness(session, {
+      now: () => { const value = time; time += 150; return value; },
+    });
+    await settle();
+    h.tick();
+    await settle();
+    h.tick();
+    h.stop();
+    await settle();
+    expect(h.lines[1]).toBe("[event-loop-stall] profiler failed; attribution off");
+    expect(h.lines).toHaveLength(2);
+    expect(h.cancelled()).toBe(true);
+    expect(session.disconnected).toBe(1);
   });
 });

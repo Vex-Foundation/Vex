@@ -22,7 +22,10 @@
  * are cut so no home directory reaches the log.
  *
  * Off in packaged builds; the caller passes `enabled`. The segment timer is
- * unref'd: the profiler never keeps the process alive.
+ * unref'd: the profiler never keeps the process alive. If collecting a
+ * profile blocks this thread beyond its budget, attribution stops rather
+ * than repeating a pause created by the diagnostic itself. The separate
+ * event-loop-delay telemetry remains active.
  */
 
 import { Session } from "node:inspector";
@@ -32,6 +35,12 @@ import { Session } from "node:inspector";
  * log each stall's call path. `false`: no profiler, no session.
  */
 export const EVENT_LOOP_STALL_PROFILER = true;
+
+/** False preserves continuous capture even when collection is expensive. */
+export const EVENT_LOOP_STALL_PROFILER_OVERHEAD_GUARD = true;
+
+/** Stop capture before collection becomes a recurring perceptible pause. */
+export const STALL_PROFILER_COLLECTION_BUDGET_MS = 50;
 
 /** Sampling interval of the CPU profiler, in microseconds. */
 export const STALL_PROFILER_SAMPLING_INTERVAL_US = 1_000;
@@ -243,6 +252,9 @@ export interface StallProfilerDeps {
   /** Runs `fn` every `ms` without keeping the process alive; returns a cancel. */
   readonly every: (fn: () => void, ms: number) => () => void;
   readonly log: (line: string) => void;
+  readonly now: () => number;
+  /** Defaults to EVENT_LOOP_STALL_PROFILER_OVERHEAD_GUARD. */
+  readonly collectionGuard: boolean;
 }
 
 function connectInspector(): ProfilerSession {
@@ -299,6 +311,8 @@ export function startStallProfiler(options: {
       return () => clearInterval(handle);
     },
     log: options.log,
+    now: () => performance.now(),
+    collectionGuard: EVENT_LOOP_STALL_PROFILER_OVERHEAD_GUARD,
     ...options.deps,
   };
 
@@ -314,17 +328,20 @@ export function startStallProfiler(options: {
   let busy = false;
   let cancelSegment: () => void = () => undefined;
 
-  const shutDown = (): void => {
+  const disconnect = (): void => {
+    try {
+      session.disconnect();
+    } catch {
+      // Already gone.
+    }
+  };
+
+  const shutDown = (alreadyCollected = false): void => {
     if (stopped) return;
     stopped = true;
     cancelSegment();
-    void session.post("Profiler.stop").catch(() => undefined).finally(() => {
-      try {
-        session.disconnect();
-      } catch {
-        // Already gone.
-      }
-    });
+    if (alreadyCollected) disconnect();
+    else void session.post("Profiler.stop").catch(() => undefined).finally(disconnect);
   };
 
   const fail = (): void => {
@@ -348,11 +365,24 @@ export function startStallProfiler(options: {
   const rotate = (): void => {
     if (stopped || busy) return;
     busy = true;
-    session
-      .post("Profiler.stop")
+    const started = deps.now();
+    const collected = session.post("Profiler.stop");
+    // Measure synchronous inspector work only. A delayed response alone
+    // does not prove the profiler blocked the caller.
+    const blockedMs = deps.now() - started;
+    void collected
       .then(async (result) => {
         if (stopped) return;
+        if (deps.collectionGuard && blockedMs > STALL_PROFILER_COLLECTION_BUDGET_MS) {
+          deps.log(
+            `[event-loop-stall] collectionBlockedMs=${round1(blockedMs)} ` +
+            `budgetMs=${STALL_PROFILER_COLLECTION_BUDGET_MS}; attribution off`,
+          );
+          shutDown(true);
+          return;
+        }
         await session.post("Profiler.start");
+        if (stopped) return;
         const profile = profileOf(result);
         if (profile !== null) report(profile);
       })
@@ -362,23 +392,22 @@ export function startStallProfiler(options: {
       });
   };
 
-  session
-    .post("Profiler.enable")
-    .then(() =>
-      session.post("Profiler.setSamplingInterval", {
-        interval: STALL_PROFILER_SAMPLING_INTERVAL_US,
-      }),
-    )
-    .then(() => session.post("Profiler.start"))
-    .then(() => {
-      if (stopped) return;
-      deps.log(
-        `[event-loop-stall] profiler on intervalUs=${STALL_PROFILER_SAMPLING_INTERVAL_US} ` +
-          `segmentMs=${STALL_PROFILER_SEGMENT_MS} minMs=${STALL_PROFILER_MIN_RUN_MS}`,
-      );
-      cancelSegment = deps.every(rotate, STALL_PROFILER_SEGMENT_MS);
-    })
-    .catch(fail);
+  const initialize = async (): Promise<void> => {
+    await session.post("Profiler.enable");
+    if (stopped) return;
+    await session.post("Profiler.setSamplingInterval", {
+      interval: STALL_PROFILER_SAMPLING_INTERVAL_US,
+    });
+    if (stopped) return;
+    await session.post("Profiler.start");
+    if (stopped) return;
+    deps.log(
+      `[event-loop-stall] profiler on intervalUs=${STALL_PROFILER_SAMPLING_INTERVAL_US} ` +
+        `segmentMs=${STALL_PROFILER_SEGMENT_MS} minMs=${STALL_PROFILER_MIN_RUN_MS}`,
+    );
+    cancelSegment = deps.every(rotate, STALL_PROFILER_SEGMENT_MS);
+  };
+  void initialize().catch(fail);
 
-  return shutDown;
+  return () => shutDown();
 }
