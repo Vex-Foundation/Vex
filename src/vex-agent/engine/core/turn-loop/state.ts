@@ -22,6 +22,8 @@ export interface TurnLoopConfig {
    * `ToolVisibilityContext` that drives BOTH the tools array and the Tool Map.
    */
   baseVisibility?: ToolVisibilityBase;
+  /** Overrides DISCOVERED_TOOLS_REBUILD; false keeps the previous empty recovery set. */
+  discoveredToolsRebuild?: boolean;
   /**
    * The owner id THIS runner acquired the session lease with.
    *

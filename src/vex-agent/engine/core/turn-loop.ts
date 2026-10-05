@@ -509,6 +509,8 @@ async function runTurnLoopBody(
       basePromptOptions: promptOptions,
       baseVisibility: loopConfig.baseVisibility,
       preparationState,
+      transcript: liveMessages,
+      discoveredToolsRebuild: loopConfig.discoveredToolsRebuild,
     });
     const promptStackMs = performance.now() - promptStackStartMs;
     postCompactBridgeRemaining = stack.nextPostCompactBridgeRemaining;

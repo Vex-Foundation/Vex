@@ -12,6 +12,18 @@
  * persisted, never shared across processes, fail-closed to "nothing
  * discovered" for an unknown or absent session.
  *
+ * REBUILT, NOT PERSISTED (FLC-7b, switch `DISCOVERED_TOOLS_REBUILD` in
+ * `./discovered-tools-rebuild.ts`). A process that serves a session for the
+ * first time - after an app restart, or when it takes over a session another
+ * process ran - replays, once, the `ToolSearch` rounds that session's hydrated
+ * transcript shows were RECORDED, through {@link recordDiscoveredTools}. Every
+ * name is re-resolved against the current registry and re-checked against the
+ * session's current context (discoverability, pressure barrier, `ToolSearch`
+ * visibility); anything unknown or now disallowed is dropped. Nothing is
+ * written anywhere: the Map is still the only state, and a set already
+ * recorded in this process is never overwritten. With the switch off a fresh
+ * process starts the set empty, as it always did.
+ *
  * BOUNDS - two independent caps, both required:
  *   - per session: `MAX_DISCOVERED_TOOLS_PER_SESSION` toolIds, FIFO (oldest
  *     discovered evicted first). Re-discovering an id refreshes its position.

@@ -14,11 +14,14 @@
  * the same suite passing on the concurrent build is the parity proof.
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MissionBaseline } from "@vex-agent/engine/mission/baseline.js";
 import type { PromptStackOptions } from "@vex-agent/engine/prompts/index.js";
 import { makeEngineContext } from "../_engine-context.js";
+
+import { clearDiscoveredTools, getDiscoveredToolIds } from "@vex-agent/tools/registry/discovered-tools.js";
+import { forgetDiscoveredToolsRebuild } from "@vex-agent/tools/registry/discovered-tools-rebuild.js";
 
 const events: string[] = [];
 
@@ -284,5 +287,48 @@ describe("buildTurnPromptStack: the one-shot off-notice", () => {
   it("the resume packet is built from the FRESH session read, never before it", async () => {
     await buildTurnPromptStack(stackArgs({ bridge: 1 }));
     expect(events.indexOf("start:resume")).toBeGreaterThan(events.indexOf("end:session"));
+  });
+});
+
+afterEach(() => {
+  clearDiscoveredTools("s-1");
+  forgetDiscoveredToolsRebuild("s-1");
+});
+
+describe("buildTurnPromptStack: recovered discovery", () => {
+  it("does not rebuild into a visibility context for a different session", async () => {
+    await buildTurnPromptStack({
+      ...stackArgs({}),
+      baseVisibility: {
+        sessionId: "different-session",
+        permission: "restricted",
+        sessionKind: "agent",
+        missionRunActive: false,
+        planMode: false,
+      },
+      transcript: [
+        { role: "assistant", content: "", toolCalls: [{ id: "discover", command: "ToolSearch" }] },
+        { role: "tool", toolCallId: "discover", content: JSON.stringify({
+          success: true, tools: [{ publicName: "lighter__positions_list", status: "callable_next_request" }],
+        }) },
+      ],
+    });
+    expect(getDiscoveredToolIds("different-session")).toEqual([]);
+  });
+
+  it.each([false, true])("rebuilds before tool projection only with switch %s", async (enabled) => {
+    mockGetOpenAITools.mockImplementation(() => getDiscoveredToolIds("s-1").map((id) => ({ name: id })));
+    const result = await buildTurnPromptStack({
+      ...stackArgs({}),
+      discoveredToolsRebuild: enabled,
+      transcript: [
+        { role: "assistant", content: "", toolCalls: [{ id: "discover", command: "ToolSearch" }] },
+        { role: "tool", toolCallId: "discover", content: JSON.stringify({
+          success: true,
+          tools: [{ publicName: "lighter__positions_list", status: "callable_next_request" }],
+        }) },
+      ],
+    });
+    expect(result.tools).toEqual(enabled ? [{ def: "lighter.positions" }] : []);
   });
 });

@@ -56,6 +56,10 @@ import {
   type ToolVisibilityBase,
 } from "@vex-agent/tools/registry.js";
 import { toToolDefinitions } from "./runner/shared.js";
+import {
+  rebuildDiscoveredToolsOnce,
+  type TranscriptMessageLike,
+} from "@vex-agent/tools/registry/discovered-tools-rebuild.js";
 import logger from "@utils/logger.js";
 
 export interface TurnPromptStackResult {
@@ -92,6 +96,15 @@ export async function buildTurnPromptStack(args: {
    * Defaults to `none` so non-loop callers keep today's behaviour exactly.
    */
   readonly preparationState?: PreparationPressureState;
+  /**
+   * The session's transcript as the loop hydrated it. When present, a process
+   * serving this session for the first time rebuilds the discovered-tool
+   * working set from it before the tools array is projected
+   * (`DISCOVERED_TOOLS_REBUILD`). Absent: nothing is rebuilt, as before.
+   */
+  readonly transcript?: readonly TranscriptMessageLike[];
+  /** Overrides `DISCOVERED_TOOLS_REBUILD`; absent uses the constant. */
+  readonly discoveredToolsRebuild?: boolean;
 }): Promise<TurnPromptStackResult> {
   const preparationState: PreparationPressureState =
     args.preparationState ?? { kind: "none" };
@@ -220,6 +233,23 @@ export async function buildTurnPromptStack(args: {
     preparationBypassesBarrier,
     hasCompactionSummaryReady: hasCompactionSummaryReady(preparationState),
   };
+
+  // After a restart or a takeover the process-local working set starts empty;
+  // rebuild it once from the hydrated transcript, re-validated against this
+  // turn's context, BEFORE the tools array and the Tool Map are projected.
+  if (args.transcript !== undefined && visibilityCtx.sessionId === sessionId) {
+    const rebuild = rebuildDiscoveredToolsOnce(visibilityCtx, args.transcript, {
+      ...(args.discoveredToolsRebuild === undefined ? {} : { enabled: args.discoveredToolsRebuild }),
+    });
+    if (rebuild.status === "rebuilt") {
+      logger.info("tools.discovered_rebuild", {
+        sessionId,
+        rounds: rebuild.rounds,
+        restored: rebuild.restored,
+        dropped: rebuild.dropped,
+      });
+    }
+  }
 
   // Project the tools array AND the Tool Map from the SAME visibilityCtx —
   // unconditional, so the two cannot drift (no stale defaultTools path).
