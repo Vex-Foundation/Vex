@@ -27,7 +27,10 @@ import {
 } from "@vex-agent/tools/protocols/lighter/order-lifecycle.js";
 import { configureLighterRepairPrivilegedAccountAuthResolver } from "@vex-agent/tools/protocols/lighter/order-repair.js";
 import { configureLighterReadOnlyAccountAuthOutcomeResolver } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
-import { invalidateLighterReadAuthCache } from "@vex-agent/tools/protocols/lighter/read-auth-cache.js";
+import {
+  invalidateLighterReadAuthCache,
+  onLighterReadAuthCacheInvalidated,
+} from "@vex-agent/tools/protocols/lighter/read-auth-cache.js";
 import { configureLighterTradingCredentialScopeResolver } from "@vex-agent/tools/protocols/lighter/trading-credential-scope.js";
 import { configureLighterManagedTradingReadinessResolver } from "@vex-agent/tools/protocols/lighter/managed-trading-readiness.js";
 import {
@@ -114,6 +117,9 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
   });
   // Consulted only while LIGHTER_DESK_PREWARM is ON, for desk previews.
   const uninstallDeskPrewarmBookDepth = configureLighterDeskPrewarmBookDepth(readLighterPublicMarketBookDepth);
+  // Every Lighter credential save or removal invalidates the read-auth cache;
+  // the desk pre-warm (ownership included) starts empty again with it.
+  const offDeskPrewarmCredentialChange = onLighterReadAuthCacheInvalidated(clearLighterDeskPrewarm);
   const uninstallExecutionDeps = configureLighterCreateOrderExecutionDeps(
     {
       ...defaultLighterCreateOrderExecutionDeps({
@@ -280,6 +286,7 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
     offReadAuthCacheLifecycle();
     invalidateLighterReadAuthCache();
     uninstallDeskPrewarmBookDepth();
+    offDeskPrewarmCredentialChange();
     clearLighterDeskPrewarm();
   };
 }

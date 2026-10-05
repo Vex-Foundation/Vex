@@ -123,6 +123,28 @@ export class LighterReadAuthCache {
 /** The one process-wide cache the production order path uses when ON. */
 export const lighterReadAuthCache = new LighterReadAuthCache();
 
+const invalidationListeners = new Set<() => void>();
+
+/**
+ * Called after every invalidation: a vault lock or unlock and every Lighter
+ * trading credential save or removal invalidate this cache, so holders of
+ * other credential-derived answers (the desk pre-warm) listen here instead of
+ * at each of those sites.
+ */
+export function onLighterReadAuthCacheInvalidated(listener: () => void): () => void {
+  invalidationListeners.add(listener);
+  return () => {
+    invalidationListeners.delete(listener);
+  };
+}
+
 export function invalidateLighterReadAuthCache(filter: Partial<LighterReadAuthCacheScope> = {}): void {
   lighterReadAuthCache.invalidate(filter);
+  for (const listener of invalidationListeners) {
+    try {
+      listener();
+    } catch {
+      // A listener must never make a credential change or a lock fail.
+    }
+  }
 }

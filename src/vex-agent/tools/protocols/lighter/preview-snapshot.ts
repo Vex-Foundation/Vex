@@ -17,6 +17,8 @@ import type { LighterOrderFeeClient, LighterOrderFeeReadSnapshot } from "./order
 import { resolveLighterReadOnlyAccountAuth } from "./read-account-auth.js";
 import {
   LIGHTER_DESK_PREWARM,
+  LIGHTER_DESK_PREWARM_OWNERSHIP,
+  recordLighterDeskPrewarmOwnership,
   recordLighterDeskPrewarmAccountLimits,
   recordLighterDeskPrewarmFeeConfig,
   takeLighterDeskPrewarmAccountLimits,
@@ -59,6 +61,8 @@ export interface LighterOrderPreviewDeps {
   readonly previewSingleSnapshot?: boolean;
   /** Overrides `LIGHTER_DESK_PREWARM` (`desk-prewarm.ts`); absent uses the constant. */
   readonly deskPrewarm?: boolean;
+  /** Overrides `LIGHTER_DESK_PREWARM_OWNERSHIP` (`desk-prewarm.ts`); absent uses the constant. */
+  readonly deskPrewarmOwnership?: boolean;
 }
 
 let configuredDeps: LighterOrderPreviewDeps | null = null;
@@ -78,6 +82,26 @@ export function lighterPreviewSingleSnapshotEnabled(): boolean {
 /** `LIGHTER_DESK_PREWARM`; it only ever rides on the single snapshot. */
 export function lighterDeskPrewarmEnabled(): boolean {
   return configuredDeps?.deskPrewarm ?? LIGHTER_DESK_PREWARM;
+}
+
+/** `LIGHTER_DESK_PREWARM_OWNERSHIP`; only ever on while `LIGHTER_DESK_PREWARM` is. */
+export function lighterDeskPrewarmOwnershipEnabled(): boolean {
+  return lighterDeskPrewarmEnabled() && (configuredDeps?.deskPrewarmOwnership ?? LIGHTER_DESK_PREWARM_OWNERSHIP);
+}
+
+/**
+ * A fresh ownership read of the session wallet's master account, kept for the
+ * next desk preview (`LIGHTER_DESK_PREWARM_OWNERSHIP`). Records nothing while
+ * the switch is OFF.
+ */
+export function recordLighterDeskOwnership(input: {
+  readonly environment: LighterEnvironment;
+  readonly walletAddress: string;
+  readonly accountIndex: number;
+  readonly atMs: number;
+}): void {
+  if (!lighterDeskPrewarmOwnershipEnabled()) return;
+  recordLighterDeskPrewarmOwnership(input);
 }
 
 /**

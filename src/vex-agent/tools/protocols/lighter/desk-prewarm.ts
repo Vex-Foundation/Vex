@@ -59,6 +59,37 @@ export const LIGHTER_DESK_PREWARM_BOOK_MAX_AGE_MS = 1_500;
 /** Levels per side handed to the margin-fit check, at least the REST read's depth. */
 export const LIGHTER_DESK_PREWARM_BOOK_LEVELS = 50;
 
+/**
+ * SWITCH `LIGHTER_DESK_PREWARM_OWNERSHIP` (deps override `deskPrewarmOwnership`,
+ * see `preview-snapshot.ts`; it only applies while `LIGHTER_DESK_PREWARM` is
+ * ON).
+ *
+ * ON lets a DESK order preview take the session wallet's Lighter master
+ * account (the `readUniqueLighterMasterAccount` round) from the desk
+ * pre-warm, while younger than {@link LIGHTER_DESK_PREWARM_OWNERSHIP_MAX_AGE_MS}.
+ * The pre-warm keeps only answers that ownership reads which already happen
+ * produced: the desk account panel's own 15 s session-account read and a desk
+ * preview's own ownership read, so it adds no REST call.
+ *
+ * Three guards keep a stale entry from mattering. The session wallet itself
+ * is still resolved fresh on every preview, so a deselected, removed or
+ * drifted wallet refuses exactly as before. The preview checks the cached
+ * account against its own fresh account read (owner is this wallet, and a
+ * master account when Lighter says), and on any mismatch, or if that first
+ * batch fails, it drops the entry and prepares again with a fresh ownership
+ * read, so the outcome is today's. And before signing,
+ * `LIGHTER_SIGNING_OWNERSHIP_RECHECK` re-proves ownership from a fresh read.
+ * OFF records nothing and consults nothing.
+ */
+export const LIGHTER_DESK_PREWARM_OWNERSHIP = true;
+
+/**
+ * The session wallet's master account. Short, as the account limits: the desk
+ * account panel re-proves ownership every 15 seconds while the desk is
+ * visible, so a visible desk keeps it warm and a closed one lets it lapse.
+ */
+export const LIGHTER_DESK_PREWARM_OWNERSHIP_MAX_AGE_MS = 20_000;
+
 interface FeeConfigEntry {
   readonly collectorAccountIndex: number;
   readonly systemConfig: LighterSystemConfigResponse;
@@ -73,6 +104,14 @@ interface AccountLimitsEntry {
 
 const feeConfigByEnvironment = new Map<LighterEnvironment, FeeConfigEntry>();
 const accountLimitsByAccount = new Map<string, AccountLimitsEntry>();
+const ownershipByWallet = new Map<string, { readonly accountIndex: number; readonly atMs: number }>();
+
+const WALLET_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
+function walletKey(environment: LighterEnvironment, walletAddress: string): string | null {
+  const address = walletAddress.trim();
+  return WALLET_ADDRESS.test(address) ? `${environment}:${address.toLowerCase()}` : null;
+}
 
 function accountKey(environment: LighterEnvironment, accountIndex: number): string {
   return `${environment}:${accountIndex}`;
@@ -149,10 +188,44 @@ export function takeLighterDeskPrewarmAccountLimits(
   return entry.response;
 }
 
-/** Drop everything; the main process calls this on every vault lock or unlock. */
+/** Record a wallet's master account that a fresh ownership read just proved. */
+export function recordLighterDeskPrewarmOwnership(input: {
+  readonly environment: LighterEnvironment;
+  readonly walletAddress: string;
+  readonly accountIndex: number;
+  readonly atMs: number;
+}): void {
+  const key = walletKey(input.environment, input.walletAddress);
+  if (key === null || !Number.isSafeInteger(input.accountIndex) || input.accountIndex <= 0) return;
+  ownershipByWallet.set(key, { accountIndex: input.accountIndex, atMs: input.atMs });
+}
+
+export function takeLighterDeskPrewarmOwnership(
+  environment: LighterEnvironment,
+  walletAddress: string,
+  nowMs: number,
+): number | null {
+  const key = walletKey(environment, walletAddress);
+  const entry = key === null ? undefined : ownershipByWallet.get(key);
+  if (entry === undefined) return null;
+  if (!fresh(entry.atMs, nowMs, LIGHTER_DESK_PREWARM_OWNERSHIP_MAX_AGE_MS)) return null;
+  return entry.accountIndex;
+}
+
+/** Drop one wallet's entry, when a preview found it no longer matches Lighter. */
+export function forgetLighterDeskPrewarmOwnership(environment: LighterEnvironment, walletAddress: string): void {
+  const key = walletKey(environment, walletAddress);
+  if (key !== null) ownershipByWallet.delete(key);
+}
+
+/**
+ * Drop everything. The main process calls this on every vault lock or unlock,
+ * every Lighter credential save or removal, and every session wallet change.
+ */
 export function clearLighterDeskPrewarm(): void {
   feeConfigByEnvironment.clear();
   accountLimitsByAccount.clear();
+  ownershipByWallet.clear();
 }
 
 /** One side's levels as the main-process stream holds them: price and size, both as the provider wrote them. */

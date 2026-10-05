@@ -24,8 +24,16 @@ import {
   takeLighterDeskPrewarmAccountLimits,
   takeLighterDeskPrewarmBookDepth,
   takeLighterDeskPrewarmFeeConfig,
+  forgetLighterDeskPrewarmOwnership,
+  LIGHTER_DESK_PREWARM_OWNERSHIP_MAX_AGE_MS,
+  recordLighterDeskPrewarmOwnership,
+  takeLighterDeskPrewarmOwnership,
   type LighterStreamBookDepth,
 } from "@vex-agent/tools/protocols/lighter/desk-prewarm.js";
+import {
+  invalidateLighterReadAuthCache,
+  onLighterReadAuthCacheInvalidated,
+} from "@vex-agent/tools/protocols/lighter/read-auth-cache.js";
 import { LIGHTER_ORDER_PREVIEW_FRESHNESS_MS } from "@tools/lighter/order-preview.js";
 import { requireValue } from "../../helpers/require-value.js";
 
@@ -207,5 +215,51 @@ describe("desk pre-warm book depth", () => {
     configureLighterDeskPrewarmBookDepth(() => depth({ marketId: 1 }));
     first();
     expect(take()).toBeNull();
+  });
+});
+
+describe("desk pre-warm ownership", () => {
+  const WALLET = `0x${"a".repeat(40)}`;
+
+  it("keeps a wallet's master account briefly, per environment and wallet, whatever the address case", () => {
+    recordLighterDeskPrewarmOwnership({ environment: "rhc", walletAddress: WALLET.toUpperCase().replace("0X", "0x"), accountIndex: 42, atMs: NOW });
+    expect(takeLighterDeskPrewarmOwnership("rhc", WALLET, NOW + LIGHTER_DESK_PREWARM_OWNERSHIP_MAX_AGE_MS)).toBe(42);
+    expect(takeLighterDeskPrewarmOwnership("rhc", WALLET, NOW + LIGHTER_DESK_PREWARM_OWNERSHIP_MAX_AGE_MS + 1)).toBeNull();
+    expect(takeLighterDeskPrewarmOwnership("rhc", WALLET, NOW - 1)).toBeNull();
+    expect(takeLighterDeskPrewarmOwnership("core", WALLET, NOW)).toBeNull();
+    expect(takeLighterDeskPrewarmOwnership("rhc", `0x${"b".repeat(40)}`, NOW)).toBeNull();
+  });
+
+  it("keeps nothing for a malformed wallet or account, and forgets one wallet or everything on request", () => {
+    recordLighterDeskPrewarmOwnership({ environment: "rhc", walletAddress: "not-a-wallet", accountIndex: 42, atMs: NOW });
+    recordLighterDeskPrewarmOwnership({ environment: "rhc", walletAddress: WALLET, accountIndex: 0, atMs: NOW });
+    expect(takeLighterDeskPrewarmOwnership("rhc", WALLET, NOW)).toBeNull();
+
+    recordLighterDeskPrewarmOwnership({ environment: "rhc", walletAddress: WALLET, accountIndex: 42, atMs: NOW });
+    forgetLighterDeskPrewarmOwnership("rhc", WALLET.toUpperCase().replace("0X", "0x"));
+    expect(takeLighterDeskPrewarmOwnership("rhc", WALLET, NOW)).toBeNull();
+
+    recordLighterDeskPrewarmOwnership({ environment: "rhc", walletAddress: WALLET, accountIndex: 42, atMs: NOW });
+    clearLighterDeskPrewarm();
+    expect(takeLighterDeskPrewarmOwnership("rhc", WALLET, NOW)).toBeNull();
+  });
+
+  it("is dropped with the read-auth cache, which every credential save, removal and vault lock or unlock invalidates", () => {
+    const off = onLighterReadAuthCacheInvalidated(clearLighterDeskPrewarm);
+    recordLighterDeskPrewarmOwnership({ environment: "rhc", walletAddress: WALLET, accountIndex: 42, atMs: NOW });
+    invalidateLighterReadAuthCache();
+    expect(takeLighterDeskPrewarmOwnership("rhc", WALLET, NOW)).toBeNull();
+    off();
+    recordLighterDeskPrewarmOwnership({ environment: "rhc", walletAddress: WALLET, accountIndex: 42, atMs: NOW });
+    invalidateLighterReadAuthCache();
+    expect(takeLighterDeskPrewarmOwnership("rhc", WALLET, NOW)).toBe(42);
+  });
+
+  it("lets a failing invalidation listener never break the invalidation", () => {
+    const off = onLighterReadAuthCacheInvalidated(() => {
+      throw new Error("listener failed");
+    });
+    expect(() => invalidateLighterReadAuthCache()).not.toThrow();
+    off();
   });
 });

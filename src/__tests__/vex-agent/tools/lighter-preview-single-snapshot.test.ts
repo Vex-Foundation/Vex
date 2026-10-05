@@ -128,6 +128,10 @@ import {
   LIGHTER_DESK_PREWARM_FEE_CONFIG_MAX_AGE_MS,
   takeLighterDeskPrewarmAccountLimits,
   takeLighterDeskPrewarmFeeConfig,
+  LIGHTER_DESK_PREWARM_OWNERSHIP,
+  LIGHTER_DESK_PREWARM_OWNERSHIP_MAX_AGE_MS,
+  recordLighterDeskPrewarmOwnership,
+  takeLighterDeskPrewarmOwnership,
   type LighterStreamBookDepth,
 } from "@vex-agent/tools/protocols/lighter/desk-prewarm.js";
 
@@ -499,6 +503,7 @@ function normalized(value: unknown): unknown {
 
 function readMap(client: PreviewClient, resolver: Mock): Record<string, number> {
   return {
+    ownershipReads: client.getAccountsByL1Address.mock.calls.length,
     readOnlyAuth: resolver.mock.calls.length,
     getAccount: client.getAccount.mock.calls.length,
     getMarketDetails: client.getMarketDetails.mock.calls.length,
@@ -520,9 +525,15 @@ async function observePreview(
   context: ProtocolExecutionContext = READ_CTX,
   /** `LIGHTER_DESK_PREWARM`, pinned OFF unless a desk pre-warm case turns it on. */
   deskPrewarm = false,
+  /** `LIGHTER_DESK_PREWARM_OWNERSHIP`; absent uses the constant (it only applies with `deskPrewarm`). */
+  deskPrewarmOwnership?: boolean,
 ): Promise<PreviewRun> {
   const { client, resolver } = armScenario(scenario);
-  configureLighterOrderPreviewDeps(previewSingleSnapshot === "constant" ? null : { previewSingleSnapshot, deskPrewarm });
+  configureLighterOrderPreviewDeps(previewSingleSnapshot === "constant" ? null : {
+    previewSingleSnapshot,
+    deskPrewarm,
+    ...(deskPrewarmOwnership === undefined ? {} : { deskPrewarmOwnership }),
+  });
   try {
     const handler = requireValue(LIGHTER_READ_HANDLERS["lighter.order.preview"]);
     const result = await handler(previewParams(scenario), context);
@@ -888,6 +899,7 @@ describe("LIGHTER_PREVIEW_SINGLE_SNAPSHOT", () => {
     // fit and the admission; the account limits are read by each of them; the
     // admission re-reads the account and, with the margin fit, the market.
     expect(off.reads).toEqual({
+      ownershipReads: 1,
       readOnlyAuth: 4,
       getAccount: 3,
       getMarketDetails: 3,
@@ -898,6 +910,7 @@ describe("LIGHTER_PREVIEW_SINGLE_SNAPSHOT", () => {
       getAccountActiveOrders: 2,
     });
     expect(on.reads).toEqual({
+      ownershipReads: 1,
       readOnlyAuth: 1,
       getAccount: 2,
       getMarketDetails: 1,
@@ -1176,6 +1189,7 @@ describe("LIGHTER_DESK_PREWARM", () => {
 
     expect(JSON.stringify(warm.observation.result)).toMatch(/"approvalReady\\":true/);
     expect(cold.reads).toEqual({
+      ownershipReads: 1,
       readOnlyAuth: 1,
       getAccount: 2,
       getMarketDetails: 1,
@@ -1186,6 +1200,7 @@ describe("LIGHTER_DESK_PREWARM", () => {
       getAccountActiveOrders: 0,
     });
     expect(warm.reads).toEqual({
+      ownershipReads: 0,
       readOnlyAuth: 1,
       getAccount: 1,
       getMarketDetails: 1,
@@ -1319,7 +1334,7 @@ describe("LIGHTER_DESK_PREWARM", () => {
     expect(Object.keys(deskTimingLine()).filter((key) => key.startsWith("prewarm"))).toEqual([]);
   });
 
-  it("is consulted by the preview snapshot alone, never by the post-approval revalidation", () => {
+  it("is consulted by the preview alone, never by the post-approval revalidation", () => {
     const root = path.resolve(process.cwd(), "src/vex-agent");
     const importers: string[] = [];
     const visit = (directory: string): void => {
@@ -1332,8 +1347,171 @@ describe("LIGHTER_DESK_PREWARM", () => {
       }
     };
     visit(root);
-    expect(importers).toEqual(["tools/protocols/lighter/preview-snapshot.ts"]);
+    expect(importers.sort()).toEqual([
+      "tools/protocols/lighter/handlers/read.ts",
+      "tools/protocols/lighter/preview-snapshot.ts",
+    ]);
     const execution = readFileSync(path.join(root, "tools/protocols/lighter/order-create-execution.ts"), "utf8");
     expect(execution).not.toContain("preview-snapshot");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LIGHTER_DESK_PREWARM_OWNERSHIP: the session wallet's master account, warm.
+// ---------------------------------------------------------------------------
+
+const OTHER_OWNER = `0x${"6".repeat(40)}`;
+
+function warmOwnership(accountIndex = ACCOUNT_INDEX, walletAddress = TEST_EVM_WALLET.address, atMs = NOW): void {
+  recordLighterDeskPrewarmOwnership({ environment: "rhc", walletAddress, accountIndex, atMs });
+}
+
+/** Lighter now says the wallet's master is account 43, and account 42 belongs to another wallet. */
+const MOVED: PreviewScenario = {
+  params: { accountIndex: undefined },
+  client: (client) => ({
+    getAccountsByL1Address: vi.fn<LighterClient["getAccountsByL1Address"]>(async (_environment, input) => ({
+      code: 200,
+      l1_address: input.l1Address,
+      sub_accounts: [{ index: 43, account_type: 0, l1_address: input.l1Address }],
+    })),
+    getAccount: vi.fn<LighterClient["getAccount"]>(async (environment, params, options) => {
+      const value = Number(params.value);
+      if (value === 42) return { code: 200, total: 1, accounts: [{ ...liveAccount(false), index: 42, l1_address: OTHER_OWNER }] };
+      if (value === 43) return { code: 200, total: 1, accounts: [{ ...liveAccount(false), index: 43 }] };
+      return client.getAccount(environment, params, options);
+    }),
+  }),
+};
+
+function ownershipTimingHit(): unknown {
+  return deskTimingLine().prewarmOwnershipHit;
+}
+
+describe("LIGHTER_DESK_PREWARM_OWNERSHIP", () => {
+  it("ships ON", () => {
+    expect(LIGHTER_DESK_PREWARM_OWNERSHIP).toBe(true);
+  });
+
+  it.each(PREVIEW_CASES)("with only the ownership warm, refuses, writes and admits exactly what OFF does when $label", async ({ scenario, expected }) => {
+    const off = await observePreview(scenario, false, DESK_CTX);
+    clearLighterDeskPrewarm();
+    warmOwnership();
+    const on = await observePreview(scenario, true, DESK_CTX, true, true);
+    expect(JSON.stringify(off.observation.result)).toMatch(expected);
+    expect(on.observation).toEqual(off.observation);
+  });
+
+  it("skips the ownership read on a warm desk click, and logs the hit", async () => {
+    warmOwnership();
+    const warm = await observePreview({}, true, DESK_CTX, true, true);
+    expect(warm.reads.ownershipReads).toBe(0);
+    expect(ownershipTimingHit()).toBe(1);
+
+    clearLighterDeskPrewarm();
+    const cold = await observePreview({}, true, DESK_CTX, true, true);
+    expect(cold.reads.ownershipReads).toBe(1);
+    expect(ownershipTimingHit()).toBe(0);
+    expect(takeLighterDeskPrewarmOwnership("rhc", TEST_EVM_WALLET.address, NOW)).toBe(ACCOUNT_INDEX);
+
+    await observePreview({}, true, DESK_CTX, true, false);
+    expect(deskTimingLine()).not.toHaveProperty("prewarmOwnershipHit");
+  });
+
+  it("prepares again from a fresh ownership read when the warm account moved to another wallet", async () => {
+    const off = await observePreview(MOVED, false, DESK_CTX);
+    expect(JSON.stringify(off.observation.result)).toMatch(/"accountIndex\\":43/);
+
+    warmOwnership(42);
+    const on = await observePreview(MOVED, true, DESK_CTX, true, true);
+    expect(on.observation).toEqual(off.observation);
+    expect(on.reads.ownershipReads).toBe(1);
+    expect(on.client.getAccount).toHaveBeenCalledWith("rhc", { by: "index", value: 42, activeOnly: false }, { fresh: true });
+    expect(takeLighterDeskPrewarmOwnership("rhc", TEST_EVM_WALLET.address, NOW)).toBe(43);
+  });
+
+  it("prepares again when the warm account is no longer a master account", async () => {
+    const subAccount: PreviewScenario = {
+      ...MOVED,
+      client: (client) => ({
+        ...requireValue(MOVED.client)(client),
+        getAccount: vi.fn<LighterClient["getAccount"]>(async (environment, params, options) => {
+          const value = Number(params.value);
+          if (value === 42) return { code: 200, total: 1, accounts: [{ ...liveAccount(false), index: 42, account_type: 1 }] };
+          if (value === 43) return { code: 200, total: 1, accounts: [{ ...liveAccount(false), index: 43 }] };
+          return client.getAccount(environment, params, options);
+        }),
+      }),
+    };
+    const off = await observePreview(subAccount, false, DESK_CTX);
+    warmOwnership(42);
+    const on = await observePreview(subAccount, true, DESK_CTX, true, true);
+    expect(on.observation).toEqual(off.observation);
+    expect(on.reads.ownershipReads).toBe(1);
+  });
+
+  it("prepares again when the first batch fails on a warm account, and then fails as OFF", async () => {
+    const down: PreviewScenario = { client: () => ({ getMarketDetails: vi.fn(failing("market down")) }) };
+    const off = await observePreview(down, false, DESK_CTX);
+    warmOwnership();
+    const on = await observePreview(down, true, DESK_CTX, true, true);
+    expect(on.observation).toEqual(off.observation);
+    expect(on.reads.ownershipReads).toBe(1);
+  });
+
+  it("never uses another wallet's entry (wrong owner)", async () => {
+    warmOwnership(7, OTHER_OWNER);
+    const off = await observePreview({}, false, DESK_CTX);
+    const on = await observePreview({}, true, DESK_CTX, true, true);
+    expect(on.observation).toEqual(off.observation);
+    expect(on.reads.ownershipReads).toBe(1);
+  });
+
+  it("uses an entry up to its max age and reads Lighter once it is older (stale entry)", async () => {
+    warmOwnership(ACCOUNT_INDEX, TEST_EVM_WALLET.address, NOW - LIGHTER_DESK_PREWARM_OWNERSHIP_MAX_AGE_MS);
+    expect((await observePreview({}, true, DESK_CTX, true, true)).reads.ownershipReads).toBe(0);
+
+    clearLighterDeskPrewarm();
+    warmOwnership(ACCOUNT_INDEX, TEST_EVM_WALLET.address, NOW - LIGHTER_DESK_PREWARM_OWNERSHIP_MAX_AGE_MS - 1);
+    const off = await observePreview({}, false, DESK_CTX);
+    const stale = await observePreview({}, true, DESK_CTX, true, true);
+    expect(stale.reads.ownershipReads).toBe(1);
+    expect(stale.observation).toEqual(off.observation);
+  });
+
+  it("refuses a requested account the warm owner does not hold exactly as OFF", async () => {
+    const other: PreviewScenario = { params: { accountIndex: 99 } };
+    const off = await observePreview(other, false, DESK_CTX);
+    expect(JSON.stringify(off.observation.result)).toMatch(/owns Lighter rhc account 42, not the requested account 99/);
+    warmOwnership();
+    const on = await observePreview(other, true, DESK_CTX, true, true);
+    expect(on.observation).toEqual(off.observation);
+    expect(on.reads.ownershipReads).toBe(0);
+  });
+
+  it("still resolves the session wallet fresh, so a deselected wallet refuses as OFF", async () => {
+    const deselected: ProtocolExecutionContext = {
+      ...DESK_CTX,
+      walletResolution: { source: "session", evm: null, solana: null },
+    };
+    const off = await observePreview({}, false, deselected);
+    warmOwnership();
+    const on = await observePreview({}, true, deselected, true, true);
+    expect(JSON.stringify(off.observation.result)).toMatch(/No evm wallet is selected/);
+    expect(on.observation).toEqual(off.observation);
+  });
+
+  it("is consumed by desk previews only, and records nothing while OFF or while the desk pre-warm is OFF", async () => {
+    warmOwnership();
+    expect((await observePreview({}, true, READ_CTX, true, true)).reads.ownershipReads).toBe(1);
+
+    clearLighterDeskPrewarm();
+    await observePreview({}, true, DESK_CTX, true, false);
+    expect(takeLighterDeskPrewarmOwnership("rhc", TEST_EVM_WALLET.address, NOW)).toBeNull();
+    await observePreview({}, true, DESK_CTX, false, true);
+    expect(takeLighterDeskPrewarmOwnership("rhc", TEST_EVM_WALLET.address, NOW)).toBeNull();
+
+    warmOwnership();
+    expect((await observePreview({}, true, DESK_CTX, false, true)).reads.ownershipReads).toBe(1);
   });
 });

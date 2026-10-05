@@ -129,8 +129,15 @@ import { prepareLighterOrderCreateApprovalWith } from "./write.js";
 import {
   LighterPreviewSnapshot,
   lighterDeskPrewarmEnabled,
+  lighterDeskPrewarmOwnershipEnabled,
   lighterPreviewSingleSnapshotEnabled,
+  recordLighterDeskOwnership,
 } from "../preview-snapshot.js";
+import {
+  forgetLighterDeskPrewarmOwnership,
+  takeLighterDeskPrewarmOwnership,
+} from "../desk-prewarm.js";
+import { judgeLighterSigningOwnership } from "../signing-ownership.js";
 
 // An engine session reads only its selected wallet's provider-owned account,
 // even if another wallet has the sole saved trading key. Trusted default
@@ -553,6 +560,25 @@ export async function resolveSessionBoundPreviewAccountIndex(input: {
   readonly requestedAccountIndex: number | undefined;
   readonly client: LighterAccountOwnershipReader;
 }): Promise<number> {
+  return (await resolveSessionBoundPreviewOwnership({ ...input, consultPrewarm: false, recordPrewarm: false })).accountIndex;
+}
+
+/**
+ * {@link resolveSessionBoundPreviewAccountIndex}, also saying which wallet it
+ * proved ownership for and whether the master account came from the desk
+ * pre-warm (`LIGHTER_DESK_PREWARM_OWNERSHIP`, only when `consultPrewarm`);
+ * a fresh read is kept for the next desk preview when `recordPrewarm`. The
+ * wallet is always resolved fresh; only the provider's answer may be warm.
+ */
+async function resolveSessionBoundPreviewOwnership(input: {
+  readonly walletResolution: Parameters<typeof resolveSelectedAddressForRead>[0];
+  readonly walletPolicy: Parameters<typeof resolveSelectedAddressForRead>[1];
+  readonly environment: LighterEnvironment;
+  readonly requestedAccountIndex: number | undefined;
+  readonly client: LighterAccountOwnershipReader;
+  readonly consultPrewarm: boolean;
+  readonly recordPrewarm: boolean;
+}): Promise<{ readonly accountIndex: number; readonly walletAddress: string | null; readonly fromPrewarm: boolean }> {
   // Saved credential count cannot establish which wallet this session chose.
   // Verify ownership even when only one Lighter account is configured.
   let walletAddress: string;
@@ -564,11 +590,25 @@ export async function resolveSessionBoundPreviewAccountIndex(input: {
       && error.code === ErrorCodes.WALLET_NOT_CONFIGURED) {
       // Trusted maintenance callers can still use one saved account when no
       // EVM wallet exists. A session selection never takes this fallback.
-      return resolvePreviewAccountIndex(input.environment, input.requestedAccountIndex);
+      return {
+        accountIndex: await resolvePreviewAccountIndex(input.environment, input.requestedAccountIndex),
+        walletAddress: null,
+        fromPrewarm: false,
+      };
     }
     throw error;
   }
-  const owned = await readUniqueLighterMasterAccount(input.client, input.environment, walletAddress);
+  const warm = input.consultPrewarm ? takeLighterDeskPrewarmOwnership(input.environment, walletAddress, Date.now()) : null;
+  let owned: number;
+  if (warm === null) {
+    const readAtMs = Date.now();
+    owned = await readUniqueLighterMasterAccount(input.client, input.environment, walletAddress);
+    if (input.recordPrewarm) {
+      recordLighterDeskOwnership({ environment: input.environment, walletAddress, accountIndex: owned, atMs: readAtMs });
+    }
+  } else {
+    owned = warm;
+  }
   if (input.requestedAccountIndex !== undefined && input.requestedAccountIndex !== owned) {
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
@@ -576,8 +616,23 @@ export async function resolveSessionBoundPreviewAccountIndex(input: {
       "Trade from the account owned by this session's selected wallet, or switch the session wallet; Vex will not sign for an account this wallet does not own.",
     );
   }
-  return owned;
+  return { accountIndex: owned, walletAddress, fromPrewarm: warm !== null };
 }
+
+/**
+ * A desk preview whose pre-warmed master account did not hold up against its
+ * own fresh reads. The entry is already dropped; the preview runs once more
+ * with a fresh ownership read, so its outcome is exactly today's.
+ */
+class LighterPreviewOwnershipPrewarmStale extends Error {}
+
+function dropWarmOwnership(environment: LighterEnvironment, walletAddress: string | null): LighterPreviewOwnershipPrewarmStale {
+  if (walletAddress !== null) forgetLighterDeskPrewarmOwnership(environment, walletAddress);
+  return new LighterPreviewOwnershipPrewarmStale("The pre-warmed Lighter account ownership no longer matches.");
+}
+
+/** Params objects of previews being prepared again; they never consult the ownership pre-warm. */
+const previewsPreparedAgain = new WeakSet<Record<string, unknown>>();
 
 export async function resolvePreviewApiKeyIndex(
   client: LighterClient,
@@ -1341,16 +1396,23 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     const previewParams = readLighterOrderPreviewParams(params, nowMs);
     if (!previewParams.ok) return fail(previewParams.reason);
 
+    // `LIGHTER_DESK_PREWARM_OWNERSHIP`: desk previews only. A preview being
+    // prepared again after its warm ownership did not hold up reads fresh,
+    // and keeps that fresh answer for the next click.
+    const ownershipPrewarm = context.deskPreparation === true && lighterDeskPrewarmOwnershipEnabled();
     try {
       const timingStart = performance.now();
       const client = getLighterClient();
-      const accountIndex = await resolveSessionBoundPreviewAccountIndex({
+      const ownership = await resolveSessionBoundPreviewOwnership({
         walletResolution: context.walletResolution,
         walletPolicy: context.walletPolicy,
         environment: environment.value,
         requestedAccountIndex: previewParams.value.accountIndex,
         client,
+        consultPrewarm: ownershipPrewarm && !previewsPreparedAgain.has(params),
+        recordPrewarm: ownershipPrewarm,
       });
+      const { accountIndex } = ownership;
       const ownershipMs = Math.round(performance.now() - timingStart);
       context.deskPrepareProgress?.("checking_market");
       const [marketId, apiKeyResolution] = await Promise.all([
@@ -1401,7 +1463,26 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
             prewarm: context.deskPreparation === true && lighterDeskPrewarmEnabled(),
           })
         : null;
-      const [marketDetails, orderBook, account] = await firstBatch;
+      let firstBatchReads: Awaited<typeof firstBatch>;
+      try {
+        firstBatchReads = await firstBatch;
+      } catch (error) {
+        // A warm account that the provider no longer answers for may simply
+        // be the wrong one: prepare again from a fresh ownership read.
+        if (ownership.fromPrewarm) throw dropWarmOwnership(environment.value, ownership.walletAddress);
+        throw error;
+      }
+      const [marketDetails, orderBook, account] = firstBatchReads;
+      if (ownership.fromPrewarm && ownership.walletAddress !== null) {
+        // The warm master account must still be this wallet's, by this
+        // preview's own fresh account read (the rule signing re-checks).
+        const verdict = judgeLighterSigningOwnership({
+          accountIndex,
+          account,
+          wallet: { kind: "wallet", address: ownership.walletAddress },
+        });
+        if (verdict.kind !== "matched") throw dropWarmOwnership(environment.value, ownership.walletAddress);
+      }
       const marketReadsMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs;
       const market = findMarketDetail(marketDetails, marketId);
       if (!market) {
@@ -1524,6 +1605,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         totalMs: Math.round(performance.now() - timingStart),
         singleSnapshot: snapshot === null ? 0 : 1,
         ...snapshot?.timingFields(),
+        ...(ownershipPrewarm ? { prewarmOwnershipHit: ownership.fromPrewarm ? 1 : 0 } : {}),
       });
       const result = ok({
         ...source,
@@ -1570,6 +1652,17 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
             preparedActionFollowUp: approvalPreparation.preparedActionFollowUp,
           };
     } catch (err) {
+      if (err instanceof LighterPreviewOwnershipPrewarmStale) {
+        const preview = LIGHTER_READ_HANDLERS["lighter.order.preview"];
+        if (preview !== undefined) {
+          previewsPreparedAgain.add(params);
+          try {
+            return await preview(params, context);
+          } finally {
+            previewsPreparedAgain.delete(params);
+          }
+        }
+      }
       return fail(`Lighter order preview unavailable (${failureDetail("lighter.order.preview", err)})`);
     }
   },
