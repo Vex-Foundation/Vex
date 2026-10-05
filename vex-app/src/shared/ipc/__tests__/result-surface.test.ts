@@ -65,6 +65,7 @@ describe("result barrel surface", () => {
       "wallet.cap_reached",
       "wallet.address_exists",
       "wallet.not_found",
+      "secrets.lock_busy",
       "secrets.unlock_throttled",
       "services.docker_unavailable",
       "services.port_in_use",
