@@ -1,4 +1,4 @@
-import { CH } from "../../shared/ipc/channels.js";
+import { CH, EV } from "../../shared/ipc/channels.js";
 import {
   secretsLockInputSchema,
   secretsUnlockInputSchema,
@@ -6,7 +6,7 @@ import {
 } from "../../shared/schemas/secrets.js";
 import type { SecretsUnlockInput } from "../../shared/schemas/secrets.js";
 import type { SecretsBridge } from "../../shared/types/bridge/shell/secrets.js";
-import { invokeWithSchema } from "../_dispatch.js";
+import { invokeWithSchema, subscribe } from "../_dispatch.js";
 
 export const secrets = {
   status() {
@@ -14,6 +14,9 @@ export const secrets = {
   },
   unlock(input: SecretsUnlockInput) {
     return invokeWithSchema(CH.secrets.unlock, input, secretsUnlockInputSchema);
+  },
+  onLockRequested(callback) {
+    return subscribe(EV.secrets.lockRequested, secretsLockInputSchema, () => callback());
   },
   lock() {
     return invokeWithSchema(CH.secrets.lock, {}, secretsLockInputSchema);

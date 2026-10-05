@@ -24,6 +24,7 @@ import {
 import {
   IconChevronUp,
   IconInspect,
+  IconLock,
   IconNewChat,
   IconQuestion,
   IconSettings,
@@ -42,6 +43,8 @@ import { useSystemHealth } from "../../lib/api/system.js";
 import { useMemoryFeatureEnabled } from "../../lib/api/capabilities.js";
 import { useUserProfile } from "../../lib/api/user-profile.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { LOCK_BUTTON } from "@shared/lock-button.js";
+import { useLockVexControl } from "./LockVexControl.js";
 import { VexSetupDialog } from "./VexSetupDialog.js";
 
 /** The Vex mark doubling as the local "profile" picture. */
@@ -117,6 +120,7 @@ export function SidebarProfile({
   readonly sidebarOpen: boolean;
   readonly menuSide?: "top" | "bottom";
 }): JSX.Element {
+  const { pending: locking, requestLock } = useLockVexControl();
   const setShellRoute = useUiStore((s) => s.setShellRoute);
   const memoryEnabled = useMemoryFeatureEnabled();
   const healthQuery = useSystemHealth();
@@ -185,6 +189,15 @@ export function SidebarProfile({
       icon: entryIcon(IconSettings),
       label: entryLabel("Settings", "Wallets, keys, model"),
     },
+    ...(LOCK_BUTTON ? [
+      { type: "separator" as const, id: "lock-separator" },
+      {
+        id: "lock-vex",
+        icon: entryIcon(IconLock),
+        label: entryLabel(locking ? "Locking Vex..." : "Lock Vex", "Require your password to return"),
+        disabled: locking,
+      },
+    ] : []),
   ];
 
   // Runtime provenance row — read-only, pinned behind the footer hairline.
@@ -241,6 +254,10 @@ export function SidebarProfile({
   const onSelect = useCallback(
     (id: string): void => {
       closeMenu();
+      if (id === "lock-vex") {
+        requestLock();
+        return;
+      }
       if (id === "personalize") {
         setSetupOpen(true);
         return;
@@ -258,7 +275,7 @@ export function SidebarProfile({
         openScreen(id);
       }
     },
-    [closeMenu, openScreen, openSettings],
+    [closeMenu, openScreen, openSettings, requestLock],
   );
 
   const trigger = (

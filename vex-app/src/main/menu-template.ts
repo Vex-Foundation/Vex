@@ -18,10 +18,13 @@
  */
 
 import type { MenuItemConstructorOptions } from "electron";
+import { LOCK_BUTTON } from "@shared/lock-button.js";
 
 export interface MenuTemplateOpts {
   readonly isMac: boolean;
   readonly isDev: boolean;
+  readonly requestLock?: () => void;
+  readonly lockEnabled?: boolean;
 }
 
 export function buildMacMenuTemplate(
@@ -29,7 +32,24 @@ export function buildMacMenuTemplate(
 ): MenuItemConstructorOptions[] | null {
   if (!opts.isMac) return null;
   return [
-    { role: "appMenu" as const },
+    {
+      role: "appMenu" as const,
+      ...((opts.lockEnabled ?? LOCK_BUTTON) ? {
+        submenu: [
+          { role: "about" as const },
+          { type: "separator" as const },
+          { label: "Lock Vex", accelerator: "CommandOrControl+Shift+L", click: opts.requestLock },
+          { type: "separator" as const },
+          { role: "services" as const },
+          { type: "separator" as const },
+          { role: "hide" as const },
+          { role: "hideOthers" as const },
+          { role: "unhide" as const },
+          { type: "separator" as const },
+          { role: "quit" as const },
+        ],
+      } : {}),
+    },
     { role: "editMenu" as const },
     ...(opts.isDev ? [{ role: "viewMenu" as const }] : []),
   ];

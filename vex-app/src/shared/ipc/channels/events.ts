@@ -5,6 +5,9 @@
  */
 
 export const EV = {
+  secrets: {
+    lockRequested: "vex:event:secrets:lockRequested",
+  },
   system: {
     logLine: "vex:event:system:logLine",
     resume: "vex:event:system:resume",

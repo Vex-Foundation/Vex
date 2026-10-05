@@ -15,17 +15,28 @@
  * Must be called inside `app.whenReady()` before any BrowserWindow opens.
  */
 
-import { Menu, app } from "electron";
+import { BrowserWindow, Menu, app } from "electron";
+import { EV } from "@shared/ipc/channels.js";
+import { LOCK_BUTTON } from "@shared/lock-button.js";
+import { secretsLockInputSchema } from "@shared/schemas/secrets.js";
 import { buildMacMenuTemplate } from "./menu-template.js";
 
 export function installMinimalMenu(): void {
   const isMac = process.platform === "darwin";
   const isDev = !app.isPackaged;
   if (isMac) {
-    const template = buildMacMenuTemplate({ isMac, isDev });
+    const template = buildMacMenuTemplate({ isMac, isDev, requestLock: requestFocusedWindowLock });
     if (template === null) return;
     Menu.setApplicationMenu(Menu.buildFromTemplate(template));
     return;
   }
   Menu.setApplicationMenu(null);
+}
+
+/** Only asks the focused renderer; secret teardown remains in the existing IPC. */
+export function requestFocusedWindowLock(): void {
+  if (!LOCK_BUTTON) return;
+  const window = BrowserWindow.getFocusedWindow();
+  if (window === null || window.isDestroyed() || window.webContents.isDestroyed()) return;
+  window.webContents.send(EV.secrets.lockRequested, secretsLockInputSchema.parse({}));
 }
