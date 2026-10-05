@@ -59,6 +59,7 @@ import { openE2eConnectionDoor } from "./database/e2e-connection-door.js";
 import { closeMainIpcPgPool } from "./database/main-ipc-pg-pool.js";
 import { recordEventLoopWindow } from "./database/event-loop-samples-db.js";
 import { startEventLoopTelemetry } from "./telemetry/event-loop-delay.js";
+import { EVENT_LOOP_STALL_PROFILER, startStallProfiler } from "./telemetry/stall-profiler.js";
 import { takeScryptKdfStats } from "@utils/scrypt-async.js";
 import { registerAllIpcHandlers } from "./ipc/register-all.js";
 import {
@@ -298,6 +299,17 @@ async function initializeMainRuntime(): Promise<void> {
   globalCleanup.add(() => {
     stopEventLoopTelemetry();
   }, "event-loop-telemetry");
+
+  // 3d. Stall attribution (FLC-8, diagnostic): samples the main thread's call
+  // stack and logs one `[event-loop-stall]` line per freeze of 100 ms or more
+  // with the code path that held it. Development builds only.
+  const stopStallProfiler = startStallProfiler({
+    enabled: EVENT_LOOP_STALL_PROFILER && !app.isPackaged,
+    log: (line) => log.warn(line),
+  });
+  globalCleanup.add(() => {
+    stopStallProfiler();
+  }, "event-loop-stall-profiler");
 
   // 4. Security: deny-all permission handlers
   installPermissionHandlers();
