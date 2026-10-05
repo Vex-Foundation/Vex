@@ -404,33 +404,41 @@ export class LighterPreviewSnapshot {
     }
     const { client, environment } = this;
     if (!client.getAccount || !client.getSystemConfig || !client.getAccountLimits) return null;
-    if (this.prewarm) {
-      const warm = takeLighterDeskPrewarmFeeConfig(environment, collectorAccountIndex, Date.now());
-      this.prewarmHits.set("prewarmFeeConfigHit", warm === null ? 0 : 1);
-      if (warm !== null) {
-        return {
-          systemConfig: () => Promise.resolve(warm.systemConfig),
-          collectorAccount: () => Promise.resolve(warm.collectorAccount),
-          collectorAccountIndex,
-          readAtMs: null,
+    const warm = this.prewarm ? takeLighterDeskPrewarmFeeConfig(environment, collectorAccountIndex, Date.now()) : null;
+    if (this.prewarm) this.prewarmHits.set("prewarmFeeConfigHit", 0);
+    const getSystemConfig = client.getSystemConfig.bind(client);
+    const getAccount = client.getAccount.bind(client);
+    const startFresh = (): FeePublicReads => {
+      const readAtMs = Date.now();
+      const systemConfig = settledLater(getSystemConfig(environment, { fresh: true }));
+      const collectorAccount = settledLater(getAccount(environment, {
+        by: "index", value: collectorAccountIndex,
+      }, { fresh: true }));
+      const startedAtMs = this.startedAtMs;
+      void Promise.allSettled([systemConfig, collectorAccount]).then(() => {
+        this.durations.set("feeConfigReadMs", Math.round(performance.now() - startedAtMs));
+      });
+      return { systemConfig: () => systemConfig, collectorAccount: () => collectorAccount, collectorAccountIndex, readAtMs };
+    };
+    if (warm === null) return startFresh();
+    let selected: FeePublicReads | null = null;
+    const select = () => {
+      if (selected === null) {
+        const current = takeLighterDeskPrewarmFeeConfig(environment, collectorAccountIndex, Date.now());
+        this.prewarmHits.set("prewarmFeeConfigHit", current === null ? 0 : 1);
+        selected = current === null ? startFresh() : {
+          systemConfig: () => Promise.resolve(current.systemConfig),
+          collectorAccount: () => Promise.resolve(current.collectorAccount),
+          collectorAccountIndex, readAtMs: null,
         };
       }
-    }
-    const readAtMs = Date.now();
-    const systemConfig = settledLater(client.getSystemConfig(environment, { fresh: true }));
-    const collectorAccount = settledLater(client.getAccount(environment, {
-      by: "index",
-      value: collectorAccountIndex,
-    }, { fresh: true }));
-    const startedAtMs = this.startedAtMs;
-    void Promise.allSettled([systemConfig, collectorAccount]).then(() => {
-      this.durations.set("feeConfigReadMs", Math.round(performance.now() - startedAtMs));
-    });
+      return selected;
+    };
     return {
-      systemConfig: () => systemConfig,
-      collectorAccount: () => collectorAccount,
+      systemConfig: () => select().systemConfig(),
+      collectorAccount: () => select().collectorAccount(),
       collectorAccountIndex,
-      readAtMs,
+      get readAtMs() { return selected?.readAtMs ?? null; },
     };
   }
 

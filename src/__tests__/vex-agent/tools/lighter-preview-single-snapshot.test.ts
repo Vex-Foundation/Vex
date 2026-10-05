@@ -1266,6 +1266,38 @@ describe("LIGHTER_DESK_PREWARM", () => {
     expect((await observePreview(scenario, true, DESK_CTX, true)).reads.getSystemConfig).toBe(1);
   });
 
+  it.each(["expired", "cleared"] as const)("rechecks the warm fee pair after a blocked first batch when it was %s", async (change) => {
+    await observePreview({ feesEnabled: true }, true, DESK_CTX, true);
+    const run = async (enabled: boolean) => {
+      vi.setSystemTime(NOW + LIGHTER_DESK_PREWARM_FEE_CONFIG_MAX_AGE_MS - 100);
+      let enter: () => void = () => undefined;
+      let release: () => void = () => undefined;
+      const entered = new Promise<void>((resolve) => { enter = resolve; });
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const scenario: PreviewScenario = {
+        feesEnabled: true,
+        client: (client) => ({ getOrderBookOrders: vi.fn<LighterClient["getOrderBookOrders"]>(async (...args) => {
+          enter();
+          await gate;
+          return client.getOrderBookOrders(...args);
+        }) }),
+      };
+      const pending = observePreview(scenario, enabled, DESK_CTX, true);
+      await entered;
+      expect(requireValue(state.client).getSystemConfig).not.toHaveBeenCalled();
+      if (change === "expired") vi.setSystemTime(NOW + LIGHTER_DESK_PREWARM_FEE_CONFIG_MAX_AGE_MS + 1);
+      else clearLighterDeskPrewarm();
+      release();
+      return pending;
+    };
+    const on = await run(true);
+    expect(on.reads.getSystemConfig).toBe(1);
+    expect(requireValue(state.client).getAccount.mock.calls.filter((call) => Number(call[1].value) === FEE_COLLECTOR_INDEX)).toHaveLength(1);
+    expect(deskTimingLine()).toMatchObject({ prewarmFeeConfigHit: 0 });
+    const off = await run(false);
+    expect(on.observation).toEqual(off.observation);
+  });
+
   it("is consumed by desk previews only, and only with the single snapshot on", async () => {
     await observePreview({ feesEnabled: true }, true, DESK_CTX, true);
     const chat = await observePreview({ feesEnabled: true }, true, READ_CTX, true);
@@ -1334,7 +1366,7 @@ describe("LIGHTER_DESK_PREWARM", () => {
     expect(Object.keys(deskTimingLine()).filter((key) => key.startsWith("prewarm"))).toEqual([]);
   });
 
-  it("is consulted by the preview alone, never by the post-approval revalidation", () => {
+  it("is consulted by preparation alone, never by the post-approval revalidation", () => {
     const root = path.resolve(process.cwd(), "src/vex-agent");
     const importers: string[] = [];
     const visit = (directory: string): void => {
@@ -1348,11 +1380,18 @@ describe("LIGHTER_DESK_PREWARM", () => {
     };
     visit(root);
     expect(importers.sort()).toEqual([
+      "tools/protocols/lighter/desk-preparation-fees.ts",
       "tools/protocols/lighter/handlers/read.ts",
       "tools/protocols/lighter/preview-snapshot.ts",
     ]);
     const execution = readFileSync(path.join(root, "tools/protocols/lighter/order-create-execution.ts"), "utf8");
     expect(execution).not.toContain("preview-snapshot");
+    expect(execution).not.toContain("desk-preparation-fees");
+    const oco = readFileSync(path.join(root, "tools/protocols/lighter/oco-order-execution.ts"), "utf8");
+    expect(oco).not.toContain("desk-preparation-fees");
+    const lifecycle = readFileSync(path.join(root, "tools/protocols/lighter/order-lifecycle.ts"), "utf8");
+    expect(lifecycle).toContain('import type { LighterDeskPreparationFees } from "./desk-preparation-fees.js"');
+    expect(lifecycle.slice(lifecycle.indexOf("export async function executeApprovedLighterCancelOne"))).not.toContain("feeSnapshot");
   });
 });
 

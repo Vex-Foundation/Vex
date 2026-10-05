@@ -1154,6 +1154,22 @@ import {
   prefetchLighterLifecycleFeeReads,
 } from "@vex-agent/tools/protocols/lighter/lifecycle-parallel-reads.js";
 import { requireValue } from "../../helpers/require-value.js";
+import {
+  beginLighterDeskPreparationFees,
+  configureLighterDeskPreparationFeeDeps,
+  LIGHTER_DESK_PREPARATION_FEE_SNAPSHOT,
+} from "@vex-agent/tools/protocols/lighter/desk-preparation-fees.js";
+import { configureLighterReadOnlyAccountAuthResolver } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
+import { configureLighterOrderPreviewDeps } from "@vex-agent/tools/protocols/lighter/preview-snapshot.js";
+import {
+  clearLighterDeskPrewarm,
+  LIGHTER_DESK_PREWARM_ACCOUNT_LIMITS_MAX_AGE_MS,
+  LIGHTER_DESK_PREWARM_FEE_CONFIG_MAX_AGE_MS,
+  recordLighterDeskPrewarmAccountLimits,
+  recordLighterDeskPrewarmFeeConfig,
+  takeLighterDeskPrewarmAccountLimits,
+  takeLighterDeskPrewarmFeeConfig,
+} from "@vex-agent/tools/protocols/lighter/desk-prewarm.js";
 
 type LifecycleAction = "cancel_one" | "modify" | "cancel_all" | "close_position";
 type LifecycleExecutor = (
@@ -2168,6 +2184,199 @@ const OWNERSHIP_SCENARIOS: readonly { action: LifecycleAction; build: () => Life
   { action: "close_position", build: closeScenario },
 ];
 const SELECTED_WALLET = { kind: "wallet" as const, address: FEE_WALLET };
+
+describe("desk close preparation fee snapshot", () => {
+  const auth = vi.fn(async () => ({ token: "read-only-token", accountIndex: 42 }));
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    clearLighterDeskPrewarm();
+    configureLighterOrderPreviewDeps({ deskPrewarm: true });
+    configureLighterReadOnlyAccountAuthResolver(auth);
+    auth.mockClear();
+  });
+  afterEach(() => {
+    clearLighterDeskPrewarm();
+    configureLighterDeskPreparationFeeDeps(null);
+    configureLighterOrderPreviewDeps(null);
+    configureLighterReadOnlyAccountAuthResolver(null);
+    vi.useRealTimers();
+  });
+
+  async function prepare(d: LighterOrderLifecycleExecutionDeps, enabled: boolean, desk = true) {
+    configureLighterDeskPreparationFeeDeps({ deskPreparationFeeSnapshot: enabled });
+    const snapshot = beginLighterDeskPreparationFees({ deskPreparation: desk, client: d.client, environment: "rhc", accountIndex: 42 });
+    try {
+      return { resolved: await prepareLighterClosePosition({
+        environment: "rhc", accountIndex: 42, apiKeyIndex: 7, marketIndex: 0, maxSlippageBps: 100,
+        client: d.client, ...(snapshot === undefined ? {} : { feeSnapshot: snapshot }),
+      }) };
+    } catch (error) {
+      return { rejected: describeLifecycleFailure(error) };
+    } finally {
+      snapshot?.log("close_position");
+    }
+  }
+
+  const cases: readonly { label: string; expected: "fees" | "unattributed" | RegExp; change: (d: LighterOrderLifecycleExecutionDeps) => void }[] = [
+    { label: "live authorized fees", expected: "fees", change: () => undefined },
+    { label: "fee collection off", expected: "unattributed", change: () => vi.mocked(feePolicy.getLighterFeePolicy).mockReturnValue(null) },
+    { label: "locked vault", expected: "unattributed", change: () => configureLighterReadOnlyAccountAuthResolver(async () => null) },
+    { label: "auth unavailable", expected: "unattributed", change: () => configureLighterReadOnlyAccountAuthResolver(rejectNow(new Error("auth down"))) },
+    { label: "fee config unavailable", expected: "unattributed", change: (d) => vi.mocked(requireValue(d.client.getSystemConfig)).mockRejectedValue(new Error("config down")) },
+    { label: "synchronous fee config failure", expected: "unattributed", change: (d) => vi.mocked(requireValue(d.client.getSystemConfig)).mockImplementation(() => { throw new Error("config down"); }) },
+    { label: "fee limits unavailable", expected: "unattributed", change: (d) => vi.mocked(requireValue(d.client.getAccountLimits)).mockRejectedValue(new Error("limits down")) },
+    { label: "unapproved trader", expected: "unattributed", change: (d) => Object.assign(d.client, { getAccount: accountReads({ positions: () => [longPosition], integrators: [] }) }) },
+    { label: "account read unavailable", expected: /account down/, change: (d) => vi.mocked(d.client.getAccount).mockRejectedValue(new Error("account down")) },
+    { label: "market read unavailable", expected: /market down/, change: (d) => vi.mocked(d.client.getMarkets).mockRejectedValue(new Error("market down")) },
+    { label: "book read unavailable", expected: /book down/, change: (d) => vi.mocked(d.client.getOrderBookOrders).mockRejectedValue(new Error("book down")) },
+    { label: "inactive market", expected: /active Lighter perpetual market/, change: (d) => vi.mocked(d.client.getMarkets).mockResolvedValue({ code: 200, order_books: [{ ...CLOSE_MARKET, status: "inactive" }] }) },
+    { label: "missing position", expected: /no longer shown/, change: (d) => Object.assign(d.client, { getAccount: accountReads() }) },
+    { label: "insufficient depth", expected: /no executable close liquidity/, change: (d) => vi.mocked(d.client.getOrderBookOrders).mockResolvedValue({ code: 200, total_asks: 0, asks: [], total_bids: 0, bids: [] }) },
+  ];
+
+  it.each(cases)("preserves cold OFF/ON result and no signing for $label", async ({ change, expected }) => {
+    const off = closeScenario({ fees: true }).deps;
+    change(off);
+    const outcome = await prepare(off, false);
+    if (expected instanceof RegExp) expect(JSON.stringify(outcome)).toMatch(expected);
+    else expect(outcome).toMatchObject({ resolved: { integratorFees: expected === "fees" ? PERP_FEES : null } });
+    clearLighterDeskPrewarm();
+    const on = closeScenario({ fees: true }).deps;
+    change(on);
+    expect(await prepare(on, true)).toEqual(outcome);
+    expect(on.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(on.authSigner.createAccountAuth).not.toHaveBeenCalled();
+    expect(on.authSigner.signCreateOrder).not.toHaveBeenCalled();
+    expect(on.nonceState.recordExecutionObserved).not.toHaveBeenCalled();
+    expect(on.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it("warms only bounded fee inputs and rereads the live position with its own auth", async () => {
+    expect(LIGHTER_DESK_PREPARATION_FEE_SNAPSHOT).toBe(true);
+    const off = await prepare(closeScenario({ fees: true }).deps, false);
+    const cold = closeScenario({ fees: true }).deps;
+    expect(await prepare(cold, true)).toEqual(off);
+    expect(cold.client.getAccount).toHaveBeenCalledTimes(2);
+    expect(cold.client.getAccount).toHaveBeenCalledWith("rhc", { by: "index", value: "42" }, { fresh: true });
+    const warm = closeScenario({ fees: true }).deps;
+    auth.mockClear();
+    expect(await prepare(warm, true)).toEqual(off);
+    expect(warm.client.getSystemConfig).not.toHaveBeenCalled();
+    expect(warm.client.getAccountLimits).not.toHaveBeenCalled();
+    expect(warm.client.getAccount).toHaveBeenCalledTimes(1);
+    expect(auth).toHaveBeenCalledTimes(1);
+    const drift = closeScenario({ fees: true }).deps;
+    Object.assign(drift.client, { getAccount: accountReads({ positions: () => [{ ...longPosition, position: "0.5" }] }) });
+    expect(await prepare(drift, true)).toMatchObject({ resolved: { baseAmount: "0.5" } });
+  });
+
+  it("never uses warm limits to bypass a locked vault, and does not record failed fees", async () => {
+    await prepare(closeScenario({ fees: true }).deps, true);
+    configureLighterReadOnlyAccountAuthResolver(async () => null);
+    const locked = closeScenario({ fees: true }).deps;
+    expect(await prepare(locked, true)).toMatchObject({ resolved: { integratorFees: null } });
+    expect(locked.client.getAccountLimits).not.toHaveBeenCalled();
+    clearLighterDeskPrewarm();
+    const failed = closeScenario({ fees: true }).deps;
+    await prepare(failed, true);
+    expect(takeLighterDeskPrewarmFeeConfig("rhc", 99, NOW)).toBeNull();
+    expect(takeLighterDeskPrewarmAccountLimits("rhc", 42, NOW)).toBeNull();
+  });
+
+  it("expires tier and fee config independently without extending warmed timestamps", async () => {
+    await prepare(closeScenario({ fees: true }).deps, true);
+    vi.setSystemTime(NOW + LIGHTER_DESK_PREWARM_ACCOUNT_LIMITS_MAX_AGE_MS + 1);
+    const tier = closeScenario({ fees: true }).deps;
+    await prepare(tier, true);
+    expect(tier.client.getAccountLimits).toHaveBeenCalledTimes(1);
+    expect(tier.client.getSystemConfig).not.toHaveBeenCalled();
+    vi.setSystemTime(NOW + LIGHTER_DESK_PREWARM_FEE_CONFIG_MAX_AGE_MS + 1);
+    const config = closeScenario({ fees: true }).deps;
+    await prepare(config, true);
+    expect(config.client.getSystemConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["expired", "cleared"] as const)("rechecks a warm fee pair after the first batch, when it was %s in flight", async (change) => {
+    await prepare(closeScenario({ fees: true }).deps, true);
+    vi.setSystemTime(NOW + LIGHTER_DESK_PREWARM_FEE_CONFIG_MAX_AGE_MS - 100);
+    const d = closeScenario({ fees: true }).deps;
+    const gate = createReadGate();
+    vi.mocked(d.client.getOrderBookOrders).mockImplementation(async () => {
+      await gate.promise;
+      return { code: 200, total_asks: 0, asks: [], total_bids: 1, bids: [CLOSE_BID] };
+    });
+    const currentConfig = { ...FEE_SYSTEM_CONFIG, liquidity_pool_index: 9 };
+    vi.mocked(requireValue(d.client.getSystemConfig)).mockResolvedValue(currentConfig);
+    const account = requireValue(vi.mocked(d.client.getAccount).getMockImplementation());
+    vi.mocked(d.client.getAccount).mockImplementation(async (...args) => Number(args[1].value) === 99
+      ? { code: 200, accounts: [{ index: 99, status: 7, l1_address: FEE_WALLET }] }
+      : account(...args));
+    const info = vi.spyOn(logger, "info");
+    const pending = prepare(d, true);
+    await vi.waitFor(() => expect(d.client.getOrderBookOrders).toHaveBeenCalledTimes(1));
+    expect(d.client.getSystemConfig).not.toHaveBeenCalled();
+    expect(auth).toHaveBeenCalledTimes(1);
+    if (change === "expired") vi.setSystemTime(NOW + LIGHTER_DESK_PREWARM_FEE_CONFIG_MAX_AGE_MS + 1);
+    else clearLighterDeskPrewarm();
+    const readAtMs = Date.now();
+    gate.release();
+    expect(await pending).toHaveProperty("resolved.integratorFees", PERP_FEES);
+    expect(d.client.getSystemConfig).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(d.client.getAccount).mock.calls.filter((call) => Number(call[1].value) === 99)).toHaveLength(1);
+    expect(takeLighterDeskPrewarmFeeConfig("rhc", 99, readAtMs + 1)).toMatchObject({
+      systemConfig: currentConfig, collectorAccount: { accounts: [{ status: 7 }] },
+    });
+    expect(takeLighterDeskPrewarmFeeConfig("rhc", 99, readAtMs + LIGHTER_DESK_PREWARM_FEE_CONFIG_MAX_AGE_MS + 1)).toBeNull();
+    const line = info.mock.calls.map((call) => Array.from<unknown>(call)).find((call) => call[0] === "lighter.desk.preparation_fee_timing")?.[1];
+    expect(line).toMatchObject({ prewarmFeeConfigHit: 0 });
+  });
+
+  it("does not use another account, environment or collector's warm inputs", async () => {
+    recordLighterDeskPrewarmAccountLimits({ environment: "rhc", accountIndex: 43, response: FEE_LIMITS, atMs: NOW });
+    recordLighterDeskPrewarmFeeConfig({ environment: "rhc", collectorAccountIndex: 98, systemConfig: FEE_SYSTEM_CONFIG, collectorAccount: { code: 200, accounts: [{ index: 98 }] }, atMs: NOW });
+    recordLighterDeskPrewarmAccountLimits({ environment: "core", accountIndex: 42, response: FEE_LIMITS, atMs: NOW });
+    const d = closeScenario({ fees: true }).deps;
+    await prepare(d, true);
+    expect(d.client.getSystemConfig).toHaveBeenCalledTimes(1);
+    expect(d.client.getAccountLimits).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps OFF and chat on the prior read path even while fee inputs are warm", async () => {
+    await prepare(closeScenario({ fees: true }).deps, true);
+    for (const [enabled, desk] of [[false, true], [true, false]]) {
+      const d = closeScenario({ fees: true }).deps;
+      await prepare(d, requireValue(enabled), requireValue(desk));
+      expect(d.client.getSystemConfig).toHaveBeenCalledTimes(1);
+      expect(d.client.getAccountLimits).toHaveBeenCalledTimes(1);
+      expect(d.client.getAccount).toHaveBeenCalledWith("rhc", { by: "index", value: "42" });
+    }
+  });
+
+  it("starts only public fee reads before the book settles, and logs numeric timing safely", async () => {
+    const d = closeScenario({ fees: true }).deps;
+    const gate = createReadGate();
+    vi.mocked(d.client.getOrderBookOrders).mockImplementation(async () => {
+      await gate.promise;
+      return { code: 200, total_asks: 0, asks: [], total_bids: 1, bids: [CLOSE_BID] };
+    });
+    const info = vi.spyOn(logger, "info");
+    const execution = prepare(d, true);
+    await vi.waitFor(() => expect(d.client.getSystemConfig).toHaveBeenCalledTimes(1));
+    expect(auth).not.toHaveBeenCalled();
+    expect(d.client.getAccountLimits).not.toHaveBeenCalled();
+    gate.release();
+    await execution;
+    const line = requireValue(info.mock.calls.map((call) => Array.from<unknown>(call)).find((call) => call[0] === "lighter.desk.preparation_fee_timing")?.[1]);
+    expect(line).toMatchObject({ action: "close_position", prewarmFeeConfigHit: 0, prewarmAccountLimitsHit: 0 });
+    if (typeof line !== "object" || line === null) throw new Error("Expected timing fields.");
+    for (const [key, value] of Object.entries(line)) if (key !== "action") expect(typeof value).toBe("number");
+    vi.spyOn(globalThis, "structuredClone").mockImplementation(() => { throw new Error("clone failed"); });
+    info.mockImplementation(() => { throw new Error("log sink failed"); });
+    clearLighterDeskPrewarm();
+    expect(await prepare(closeScenario({ fees: true }).deps, true)).toHaveProperty("resolved.integratorFees", PERP_FEES);
+  });
+});
 
 describe("LIGHTER_LIFECYCLE_SIGNING_OWNERSHIP_RECHECK", () => {
   it.each(LIFECYCLE_CASES)("keeps parallel ownership outcomes and durable effects equal to sequential: $label", async ({ action, build }) => {

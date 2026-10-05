@@ -25,6 +25,9 @@ import type {
  *   ({@link LIGHTER_DESK_PREWARM_ACCOUNT_LIMITS_MAX_AGE_MS});
  * - the margin-fit book depth, from the main-process public order book stream
  *   for that market ({@link LIGHTER_DESK_PREWARM_BOOK_MAX_AGE_MS}).
+ * Desk close and OCO preparation also reuse the fee config and account tier
+ * under `LIGHTER_DESK_PREPARATION_FEE_SNAPSHOT`. Their own account/position
+ * stays fresh, and neither preparation reuses the ownership or book cache.
  *
  * Nothing here reads REST, runs a timer or touches a secret: the cache only
  * keeps answers that reads which already happen produced, so the desk adds no
@@ -33,7 +36,7 @@ import type {
  * click, and the read-only account auth is still minted per prepare (with a
  * null or failed auth refusing exactly as before any cached tier is used).
  * Anything missing, older than its max age, or not plainly well formed falls
- * back to the `LIGHTER_PREVIEW_SINGLE_SNAPSHOT` reads. The post-approval
+ * back to the preparation's provider reads. The post-approval
  * revalidation never consults this cache: it re-reads Lighter before any
  * signing. OFF records nothing and consults nothing.
  */

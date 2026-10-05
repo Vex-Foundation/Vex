@@ -1,5 +1,6 @@
 import type { LighterSigningOwnershipWallet } from "../signing-ownership.js";
 import { resolveLighterOrderFees } from "../order-fees.js";
+import { beginLighterDeskPreparationFees, type LighterDeskPreparationFees } from "../desk-preparation-fees.js";
 import { randomUUID } from "node:crypto";
 
 import { getLighterClient } from "@tools/lighter/client.js";
@@ -199,6 +200,7 @@ export const LIGHTER_OCO_HANDLERS: Record<string, ProtocolHandler> = {
     if (!environment.ok) return fail(environment.reason);
     const parsed = readLighterOcoProtectionParams(params);
     if (!parsed.ok) return fail(parsed.reason);
+    let feeSnapshot: LighterDeskPreparationFees | undefined;
     try {
       const client = getLighterClient();
       const accountIndex = await resolveSessionBoundPreviewAccountIndex({
@@ -216,13 +218,16 @@ export const LIGHTER_OCO_HANDLERS: Record<string, ProtocolHandler> = {
         }),
         resolvePreviewApiKeyIndex(client, environment.value, accountIndex, parsed.value.apiKeyIndex),
       ]);
+      feeSnapshot = beginLighterDeskPreparationFees({
+        deskPreparation: context.deskPreparation, client, environment: environment.value, accountIndex,
+      });
       const [details, orderBook, account] = await Promise.all([
         client.getMarketDetails(environment.value, { marketId, filter: "perp" }),
         client.getOrderBookOrders(environment.value, { marketId, limit: 10 }),
         // activeOnly: false, as every other leverage-relevant account read: the
         // provider's activeOnly hides markets whose leverage was set but hold no
         // position, and the protection preview reads the position's margin terms.
-        client.getAccount(environment.value, { by: "index", value: accountIndex, activeOnly: false }),
+        client.getAccount(environment.value, { by: "index", value: accountIndex, activeOnly: false }, ...(feeSnapshot === undefined ? [] : [{ fresh: true }] as const)),
       ]);
       const market = findMarketDetail(details, marketId);
       if (market === null || market.market_type !== "perp") {
@@ -234,7 +239,8 @@ export const LIGHTER_OCO_HANDLERS: Record<string, ProtocolHandler> = {
         LIGHTER_ENDPOINT_PATHS.orderBookOrders,
         LIGHTER_ENDPOINT_PATHS.account,
       ], { marketId, accountIndex, apiKeyIndex: apiKey.apiKeyIndex, groupedOrderType: "oco" });
-      const integratorFees = await resolveLighterOrderFees({ client, environment: environment.value, accountIndex, market, account, reduceOnly: true, side: parsed.value.side });
+      const integratorFees = await resolveLighterOrderFees({ client, environment: environment.value, accountIndex, market, account, reduceOnly: true, side: parsed.value.side, ...(feeSnapshot === undefined ? {} : { snapshot: feeSnapshot.feesFor(account) }) });
+      if (feeSnapshot !== undefined) await feeSnapshot.keepAfterPassingFeeCheck(integratorFees);
       const preview = buildLighterOcoPreview({
         integratorFees,
         sessionId,
@@ -271,6 +277,8 @@ export const LIGHTER_OCO_HANDLERS: Record<string, ProtocolHandler> = {
       return prepared === null ? result : { ...result, preparedActionFollowUp: prepared.preparedActionFollowUp };
     } catch (error) {
       return fail(`Lighter OCO protection preview unavailable (${failureDetail("lighter.position.protect", error)})`);
+    } finally {
+      feeSnapshot?.log("oco");
     }
   },
 };

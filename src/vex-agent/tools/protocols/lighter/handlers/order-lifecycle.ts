@@ -39,6 +39,7 @@ import {
 import { admitLighterModifyCapitalCommitment } from "../capital-share-policy.js";
 import { resolveLighterSigningOwnershipWallet } from "../signing-ownership.js";
 import { describeFailureForAgent } from "../../runtime/errors.js";
+import { beginLighterDeskPreparationFees } from "../desk-preparation-fees.js";
 import {
   assertLighterCancelAllApprovalBinding,
   assertLighterCancelOneApprovalBinding,
@@ -513,6 +514,11 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
       vaultCredentialId: defaultLighterTradingVaultCredentialId(scope.value),
     });
     if (!readiness.ready) return fail("Managed Lighter trading access is not ready for this account.");
+    const client = getLighterClient();
+    const feeSnapshot = beginLighterDeskPreparationFees({
+      deskPreparation: context.deskPreparation, client,
+      environment: environment.value, accountIndex: scope.value.accountIndex,
+    });
     let prepared;
     try {
       prepared = await prepareLighterClosePosition({
@@ -521,10 +527,13 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
         apiKeyIndex: scope.value.apiKeyIndex,
         marketIndex: marketId.value,
         maxSlippageBps: maxSlippageBps.value,
-        client: getLighterClient(),
+        client,
+        ...(feeSnapshot === undefined ? {} : { feeSnapshot }),
       });
     } catch (error) {
       return fail(error instanceof Error ? error.message : String(error));
+    } finally {
+      feeSnapshot?.log("close_position");
     }
     const createInput: intentsRepo.CreateLighterOrderLifecycleIntentInput = {
       intentId: `lighter-lifecycle-${randomUUID()}`,

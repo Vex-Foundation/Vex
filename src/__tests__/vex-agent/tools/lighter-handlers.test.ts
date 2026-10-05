@@ -6,6 +6,8 @@ import type {
   CreateLighterOrderLifecycleIntentInput,
   LighterOrderLifecycleIntentRow,
 } from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
+import type { CreateLighterOrderPreviewInput, LighterOrderPreviewRow } from "@vex-agent/db/repos/lighter-order-previews.js";
+import type { LighterOcoExecutionIntentRow } from "@vex-agent/db/repos/lighter-oco-execution-intents.js";
 import type {
   LighterAccount,
   LighterAccountOrder,
@@ -41,6 +43,7 @@ const mocks = vi.hoisted(() => ({
     getMarkets: vi.fn(),
     getMarketDetails: vi.fn(),
     getAccount: vi.fn(),
+    getAccountLimits: vi.fn(),
     getAccountActiveOrders: vi.fn(),
     getAccountInactiveOrders: vi.fn(),
     getAccountTrades: vi.fn(),
@@ -262,6 +265,10 @@ const { configureLighterManagedTradingReadinessResolver } = await import(
 const { validatePreparedActionFollowUp } = await import(
   "@vex-agent/tools/registry/prepared-action-follow-ups.js"
 );
+const { configureLighterDeskPreparationFeeDeps } = await import("@vex-agent/tools/protocols/lighter/desk-preparation-fees.js");
+const { configureLighterOrderPreviewDeps } = await import("@vex-agent/tools/protocols/lighter/preview-snapshot.js");
+const { clearLighterDeskPrewarm } = await import("@vex-agent/tools/protocols/lighter/desk-prewarm.js");
+const { resolveLighterFeePolicy } = await import("@tools/lighter/fee-policy.js");
 
 const READ_CTX: ProtocolExecutionContext = {
   sessionPermission: "restricted",
@@ -895,6 +902,199 @@ describe("Lighter agent read handlers", () => {
       });
     }
     expect(mocks.ocoIntentsRepo.createApprovalPendingWith).not.toHaveBeenCalled();
+  });
+
+  describe.each(["close_position", "oco"] as const)("%s desk fee preparation", (action) => {
+    const now = Date.parse("2026-10-05T12:00:00.000Z");
+    const feeLimits = { code: 200, user_tier: "plus", user_tier_name: "Plus", current_maker_fee_tick: 50, current_taker_fee_tick: 50 };
+    const systemConfig = {
+      code: 200, liquidity_pool_index: 0, staking_pool_index: 0, funding_fee_rebate_account_index: 0,
+      market_maker_incentive_account_index: 0, liquidity_pool_cooldown_period: 0, staking_pool_lockup_period: 0,
+      max_integrator_perps_maker_fee: 1000, max_integrator_perps_taker_fee: 1000,
+      max_integrator_spot_maker_fee: 10000, max_integrator_spot_taker_fee: 10000,
+    };
+    const authorized = { ...ACCOUNT, approved_integrators: [{
+      account_index: 99, name: "VEX", max_perps_maker_fee: 1000, max_perps_taker_fee: 1000,
+      max_spot_maker_fee: 2500, max_spot_taker_fee: 2500, approval_expiry: Date.parse("2100-01-01T00:00:00.000Z"),
+    }] };
+    const auth = vi.fn(async () => ({ token: "read-only-token", accountIndex: 42 }));
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(now);
+      clearLighterDeskPrewarm();
+      configureLighterOrderPreviewDeps({ deskPrewarm: true });
+      onTestFinished(() => {
+        clearLighterDeskPrewarm();
+        configureLighterDeskPreparationFeeDeps(null);
+        configureLighterOrderPreviewDeps(null);
+        configureLighterReadOnlyAccountAuthResolver(null);
+        vi.useRealTimers();
+      });
+    });
+
+    function setup(managed = false) {
+      vi.clearAllMocks();
+      mocks.feePolicy.mockReturnValue(requireValue(resolveLighterFeePolicy("rhc", { enabled: true, accountIndex: 99, l1Address: TEST_EVM_WALLET.address })));
+      mocks.client.getMarkets.mockResolvedValue({ code: 200, order_books: [MARKET] });
+      mocks.client.getMarketDetails.mockResolvedValue({ code: 200, order_book_details: [DETAIL], spot_order_book_details: [] });
+      mocks.client.getOrderBookOrders.mockResolvedValue({
+        code: 200, total_asks: 1, asks: [{ ...order(1, "3500.50"), remaining_base_amount: "2" }],
+        total_bids: 1, bids: [{ ...order(2, "3499.50"), remaining_base_amount: "2" }],
+      });
+      mocks.client.getAccount.mockImplementation(async (_env: string, params: { readonly value: number | string }) => ({
+        code: 200, accounts: [Number(params.value) === 99 ? { index: 99, l1_address: TEST_EVM_WALLET.address } : authorized],
+      }));
+      mocks.client.getSystemConfig.mockResolvedValue(systemConfig);
+      mocks.client.getAccountLimits.mockResolvedValue(feeLimits);
+      mocks.client.getApiKeys.mockResolvedValue({ code: 200, api_keys: [] });
+      mocks.lifecycleIntentsRepo.findAnyLiveOrderMutation.mockResolvedValue(null);
+      mocks.lifecycleIntentsRepo.createApprovalPendingWith.mockImplementation(async (_db, input) => ({
+        ...input, approvalStatus: "approval_pending", executionState: "approval_pending",
+      }));
+      mocks.previewsRepo.create.mockResolvedValue(undefined);
+      configureLighterTradingCredentialScopeResolver({
+        findSavedScope: async () => action === "close_position" || managed ? { environment: "rhc", accountIndex: 42, apiKeyIndex: 7 } : null,
+        findDefaultScope: async () => null,
+      });
+      configureLighterReadOnlyAccountAuthResolver(auth);
+      if (managed) {
+        const stored = new Map<string, LighterOrderPreviewRow>();
+        mocks.previewsRepo.create.mockImplementation(async (input: CreateLighterOrderPreviewInput) => {
+          const p = input.preview;
+          stored.set(p.previewId, {
+            integratorFees: p.preview.integratorFees, previewId: p.previewId, sessionId: p.identity.sessionId,
+            matchHash: p.matchHash, environment: p.identity.environment,
+            accountIndex: Number(p.identity.accountIndex), apiKeyIndex: Number(p.identity.apiKeyIndex),
+            marketIndex: Number(p.identity.marketIndex), side: p.identity.side,
+            baseAmountInteger: p.identity.baseAmountInteger, priceInteger: p.identity.priceInteger,
+            orderType: p.identity.orderType, timeInForce: p.identity.timeInForce, reduceOnly: p.identity.reduceOnly === "1",
+            triggerPriceInteger: p.identity.triggerPriceInteger, orderExpiryMs: Number(p.identity.expiryMs),
+            clientOrderIndexPolicy: p.identity.clientOrderIndexPolicy, providerVersion: p.identity.providerVersion,
+            previewJson: { ...p.preview }, liveSourceJson: input.liveSourceJson,
+            createdAt: new Date(now).toISOString(), expiresAt: p.expiresAt,
+          });
+        });
+        mocks.previewsRepo.findFreshById.mockImplementation(async (_session: string, _env: string, id: string) => stored.get(id) ?? null);
+        mocks.ocoIntentsRepo.createApprovalPendingWith.mockImplementation(async (_db,
+          input: Parameters<typeof import("@vex-agent/db/repos/lighter-oco-execution-intents.js").createApprovalPendingWith>[1],
+        ): Promise<LighterOcoExecutionIntentRow> => {
+          const p = input.preview;
+          return {
+            intentId: input.intentId, sessionId: p.identity.sessionId, approvalId: null, matchHash: p.matchHash,
+            environment: p.identity.environment, accountIndex: Number(p.identity.accountIndex), apiKeyIndex: Number(p.identity.apiKeyIndex),
+            marketIndex: Number(p.identity.marketIndex), side: p.identity.side, baseAmountInteger: p.identity.baseAmountInteger,
+            stopLossPreviewId: p.stopLoss.previewId, stopLossMatchHash: p.stopLoss.matchHash,
+            stopLossPriceInteger: p.stopLoss.identity.priceInteger, stopLossTriggerPriceInteger: p.stopLoss.identity.triggerPriceInteger,
+            takeProfitPreviewId: p.takeProfit.previewId, takeProfitMatchHash: p.takeProfit.matchHash,
+            takeProfitPriceInteger: p.takeProfit.identity.priceInteger, takeProfitTriggerPriceInteger: p.takeProfit.identity.triggerPriceInteger,
+            integratorFees: p.preview.integratorFees, orderExpiryMs: Number(p.identity.expiryMs),
+            clientOrderIndexPolicy: p.stopLoss.identity.clientOrderIndexPolicy, providerVersion: p.identity.providerVersion,
+            previewJson: { ...p.preview }, liveSourceJson: input.liveSourceJson, credentialRefJson: input.credentialReadiness.reference,
+            approvalStatus: "approval_pending", executionState: "approval_pending", decisionReason: null, decidedAt: null,
+            preSubmitRevalidationJson: null, preSubmitRevalidatedAt: null, nonceReservationId: null, nonceValue: null,
+            stopLossClientOrderIndex: null, takeProfitClientOrderIndex: null, signerTxHash: null, submittedTxHash: null,
+            submitCode: null, submitMessage: null, predictedExecutionTimeMs: null, volumeQuotaRemaining: null,
+            providerOutcomeJson: null, providerOutcomeCheckedAt: null, ambiguousReason: null,
+            createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString(), expiresAt: input.expiresAt,
+          };
+        });
+      }
+    }
+
+    async function observe(enabled: boolean, desk = true, expectedSuccess = true) {
+      configureLighterDeskPreparationFeeDeps({ deskPreparationFeeSnapshot: enabled });
+      const params = action === "close_position"
+        ? { environment: "rhc", accountIndex: 42, marketId: 0, slippageBps: 100 }
+        : { environment: "rhc", accountIndex: 42, marketId: 0, side: "sell", baseAmountIn: "0.25",
+          stopLossTriggerPrice: "3400", stopLossPrice: "3300", takeProfitTriggerPrice: "3800",
+          takeProfitPrice: "3700", orderExpiryOffsetMinutes: 30 };
+      const result = await executeProtocolTool({ toolId: action === "close_position" ? "lighter.position.close.prepare" : "lighter.position.protect", params }, { ...READ_CTX, ...(desk ? { deskPreparation: true as const } : {}) });
+      expect(result.success, result.output).toBe(expectedSuccess);
+      return JSON.stringify({
+        result,
+        previewWrites: mocks.previewsRepo.create.mock.calls,
+        intentWrites: mocks.lifecycleIntentsRepo.createApprovalPendingWith.mock.calls,
+        ocoIntentWrites: mocks.ocoIntentsRepo.createApprovalPendingWith.mock.calls,
+      }).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "<id>");
+    }
+
+    const cases = [
+      { label: "authorized fees", change: () => undefined },
+      { label: "locked vault", change: () => configureLighterReadOnlyAccountAuthResolver(async () => null) },
+      { label: "unapproved fresh trader", change: () => mocks.client.getAccount.mockImplementation(async (_env: string, params: { readonly value: number | string }) => ({ code: 200, accounts: [Number(params.value) === 99 ? { index: 99, l1_address: TEST_EVM_WALLET.address } : ACCOUNT] })) },
+      { label: "failed fee config", change: () => mocks.client.getSystemConfig.mockRejectedValue(new Error("config down")) },
+      { label: "failed first batch", change: () => mocks.client.getOrderBookOrders.mockRejectedValue(new Error("book down")) },
+      { label: "wrong account", change: () => mocks.client.getAccount.mockImplementation(async (_env: string, params: { readonly value: number | string }) => ({ code: 200, accounts: [Number(params.value) === 99 ? { index: 99, l1_address: TEST_EVM_WALLET.address } : { ...authorized, index: 43 }] })) },
+    ];
+
+    it.each(cases)("keeps cold OFF==ON result and exact preparation writes for $label", async ({ label, change }) => {
+      const expectedSuccess = label !== "failed first batch" && label !== "wrong account";
+      setup(); change();
+      const off = await observe(false, true, expectedSuccess);
+      clearLighterDeskPrewarm();
+      setup(); change();
+      expect(await observe(true, true, expectedSuccess)).toEqual(off);
+      expect(mocks.client.getNextNonce).not.toHaveBeenCalled();
+      expect(mocks.ocoIntentsRepo.markApprovalDecision).not.toHaveBeenCalled();
+    });
+
+    it.each(["authorized fees", "locked vault", "unapproved fresh trader", "failed first batch", "wrong account"])("keeps warm OFF==ON writes for %s", async (label) => {
+      const change = requireValue(cases.find((item) => item.label === label)).change;
+      const expectedSuccess = label !== "failed first batch" && label !== "wrong account";
+      setup(); change();
+      const off = await observe(false, true, expectedSuccess);
+      setup(); await observe(true);
+      setup(); change();
+      expect(await observe(true, true, expectedSuccess)).toEqual(off);
+    });
+
+    if (action === "oco") {
+      it("keeps both managed child previews, intent and exact approval terms equal OFF/cold/warm", async () => {
+        setup(true);
+        const off = await observe(false);
+        expect(JSON.parse(off)).toMatchObject({ result: {
+          success: true, preparedActionFollowUp: { approvalPreview: { criticalArgs: {
+            accountIndex: 42, apiKeyIndex: 7, baseAmountInteger: "2500", reduceOnly: true,
+            groupingType: "one-cancels-the-other", stopLossPriceInteger: "330000", stopLossTriggerPriceInteger: "340000",
+            takeProfitPriceInteger: "370000", takeProfitTriggerPriceInteger: "380000",
+          } } },
+        } });
+        expect(mocks.previewsRepo.create).toHaveBeenCalledTimes(2);
+        expect(mocks.ocoIntentsRepo.createApprovalPendingWith).toHaveBeenCalledTimes(1);
+        setup(true);
+        expect(await observe(true)).toEqual(off);
+        setup(true);
+        expect(await observe(true)).toEqual(off);
+        expect(mocks.previewsRepo.create).toHaveBeenCalledTimes(2);
+        expect(mocks.ocoIntentsRepo.createApprovalPendingWith).toHaveBeenCalledTimes(1);
+        expect(mocks.client.getAccount).toHaveBeenCalledTimes(1);
+        expect(mocks.client.getAccountLimits).not.toHaveBeenCalled();
+        expect(mocks.client.getSystemConfig).not.toHaveBeenCalled();
+        expect(auth).toHaveBeenCalledTimes(1);
+        expect(mocks.client.getNextNonce).not.toHaveBeenCalled();
+        expect(mocks.ocoIntentsRepo.markApprovalDecision).not.toHaveBeenCalled();
+      });
+    }
+
+    it("consumes warm fees for the desk only, with a fresh account and a new read-only token", async () => {
+      setup();
+      const off = await observe(false);
+      setup();
+      expect(await observe(true)).toEqual(off);
+      setup();
+      expect(await observe(true)).toEqual(off);
+      expect(mocks.client.getSystemConfig).not.toHaveBeenCalled();
+      expect(mocks.client.getAccountLimits).not.toHaveBeenCalled();
+      expect(mocks.client.getAccount).toHaveBeenCalledTimes(1);
+      expect(auth).toHaveBeenCalledTimes(1);
+      expect(mocks.client.getAccount).toHaveBeenCalledWith("rhc", action === "close_position"
+        ? { by: "index", value: "42" } : { by: "index", value: 42, activeOnly: false }, { fresh: true });
+      setup();
+      expect(await observe(true, false)).toEqual(off);
+      expect(mocks.client.getSystemConfig).toHaveBeenCalledTimes(1);
+      expect(mocks.client.getAccountLimits).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("asks a new user only for their desired USDC deposit amount", async () => {

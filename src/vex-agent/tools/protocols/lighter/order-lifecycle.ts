@@ -4,6 +4,7 @@ import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js"
 import { readLighterSignedTxExpiredAtMs } from "@tools/lighter/signed-tx-expiry.js";
 import type { LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
 import { resolveLighterOrderFees, revalidateLighterOrderFees, type LighterOrderFeeClient } from "./order-fees.js";
+import type { LighterDeskPreparationFees } from "./desk-preparation-fees.js";
 import { confirmedLighterCloseDisposition } from "./close-position-confirmation.js";
 import { lighterDecimalGreaterThanZero } from "./order-evidence.js";
 import {
@@ -508,6 +509,7 @@ export async function prepareLighterClosePosition(input: {
   readonly apiKeyIndex: number;
   readonly marketIndex: number;
   readonly maxSlippageBps: number;
+  readonly feeSnapshot?: LighterDeskPreparationFees;
   readonly client?: LighterOrderFeeClient & Pick<LighterClient, "getAccount" | "getMarkets" | "getOrderBookOrders">;
 }): Promise<LighterClosePositionPreparation> {
   if (!Number.isInteger(input.maxSlippageBps) || input.maxSlippageBps < 1 || input.maxSlippageBps > 500) {
@@ -515,7 +517,7 @@ export async function prepareLighterClosePosition(input: {
   }
   const client = input.client ?? getLighterClient();
   const [accountResponse, markets, orderBook] = await Promise.all([
-    client.getAccount(input.environment, { by: "index", value: String(input.accountIndex) }),
+    client.getAccount(input.environment, { by: "index", value: String(input.accountIndex) }, ...(input.feeSnapshot === undefined ? [] : [{ fresh: true }] as const)),
     client.getMarkets(input.environment, { filter: "perp", marketId: input.marketIndex }),
     client.getOrderBookOrders(input.environment, { marketId: input.marketIndex, limit: 100 }),
   ]);
@@ -547,7 +549,8 @@ export async function prepareLighterClosePosition(input: {
     priceDecimals: market.supported_price_decimals,
     maxSlippageBps: input.maxSlippageBps,
   });
-  const integratorFees = await resolveLighterOrderFees({ client, environment: input.environment, accountIndex: input.accountIndex, market, account: accountResponse, reduceOnly: true, side: closingSide });
+  const integratorFees = await resolveLighterOrderFees({ client, environment: input.environment, accountIndex: input.accountIndex, market, account: accountResponse, reduceOnly: true, side: closingSide, ...(input.feeSnapshot === undefined ? {} : { snapshot: input.feeSnapshot.feesFor(accountResponse) }) });
+  if (input.feeSnapshot !== undefined) await input.feeSnapshot.keepAfterPassingFeeCheck(integratorFees);
   const positionSnapshot = positionSnapshotOf(position);
   const baseAmount = formatLighterIntegerAmount(baseAmountInteger, market.supported_size_decimals);
   const worstAcceptablePrice = formatLighterIntegerAmount(book.worstAcceptablePriceInteger, market.supported_price_decimals);
