@@ -60,7 +60,7 @@ function deskPrepareKey(input: {
   const { action } = input;
   switch (action.kind) {
     case "close":
-      return `${input.sessionId}|${input.environment}|close|${action.marketId}`;
+      return `${input.sessionId}|${input.environment}|close|${action.marketId}|${action.closePercent ?? 100}`;
     case "cancel":
       return `${input.sessionId}|${input.environment}|cancel|${action.marketId}|${action.orderId}`;
     case "cancel_all":
@@ -140,6 +140,7 @@ function prepareDeskOnce(
     const totalMs = Math.round(performance.now() - startedAt);
     const timings = {
       action: input.action.kind,
+      closePercent: input.action.kind === "close" ? input.action.closePercent ?? 100 : null,
       outcome: outcome.kind,
       accountMs,
       recoveryMs,
@@ -184,6 +185,7 @@ export function deskActionToPrepareCall(
           environment,
           marketId: action.marketId,
           slippageBps: CLOSE_SLIPPAGE_BPS,
+          ...(action.closePercent === undefined ? {} : { closePercent: action.closePercent }),
         },
       };
     case "cancel":

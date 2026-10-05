@@ -12,7 +12,7 @@ import { usePendingApprovals } from "../../../lib/api/approvals.js";
 import { approvalsKeys } from "../../../lib/api/queryKeys.js";
 import { selectFreshApprovals } from "../approvals/fresh-approvals.js";
 import { invalidateOnApprovalResolve } from "../approvals/invalidate-on-resolve.js";
-import { isLighterOrderApproval } from "./desk-approvals.js";
+import { isDeskCloseApproval, isLighterOrderApproval } from "./desk-approvals.js";
 import {
   filledAmountSentence,
   fillsForOrder,
@@ -20,7 +20,7 @@ import {
   totalFillSize,
   type DeskOrderExecution,
 } from "./desk-fill-outcome.js";
-import { isPositiveDecimal } from "./decimal.js";
+import { compareDecimalStrings, isPositiveDecimal } from "./decimal.js";
 import type { LighterPositionRow, OrderCancelStage, PositionCloseStage } from "./account-model.js";
 import { recordFunnelStep } from "./funnel.js";
 import {
@@ -134,6 +134,9 @@ interface PendingClose {
   readonly marketId: number;
   readonly side: LighterPositionRow["side"];
   readonly sizeBefore: string;
+  /** Partial-close completion waits for the fresh original position bound on its card. */
+  readonly approvalPositionBound: boolean;
+  readonly partialClose: boolean;
   readonly startedAt: number;
   readonly stage: PositionCloseStage;
   readonly orderId: string | null;
@@ -315,7 +318,9 @@ export function useDeskLane({
   const setCloseStage = (key: string | null, stage: PositionCloseStage, orderId: string | null = null): void => {
     if (key === null) return;
     const current = closeAttempts.current.get(key);
-    if (current !== undefined) updateClose(key, { ...current, stage, orderId });
+    if (current !== undefined) updateClose(key, { ...current, stage, orderId,
+      ...(current.partialClose && stage !== "approval" ? { startedAt: Date.now() } : {}),
+    });
   };
   const clearClose = (key: string | null): void => {
     if (key !== null && closeAttempts.current.has(key)) updateClose(key, null);
@@ -355,6 +360,33 @@ export function useDeskLane({
     if (approvalsQuery.data?.ok !== true) return [];
     return approvalsQuery.data.data.filter(isLighterOrderApproval);
   }, [approvalsQuery.data]);
+  useEffect(() => {
+    for (const approval of approvals) {
+      const pending = pendingDesk.current.get(approval.id);
+      if (pending?.action.kind !== "close" || (pending.action.closePercent ?? 100) === 100
+        || pending.closeKey === null || !isDeskCloseApproval(approval) || approval.sessionId !== pending.scope.sessionId) continue;
+      const current = closeAttempts.current.get(pending.closeKey);
+      const args = approval.preview?.criticalArgs;
+      if (current === undefined || current.approvalPositionBound || args === undefined
+        || args.environment !== pending.scope.environment || args.marketIndex !== pending.action.marketId
+        || typeof args.accountIndex !== "number" || !Number.isSafeInteger(args.accountIndex) || args.accountIndex < 0
+        || (args.positionSide !== "long" && args.positionSide !== "short")
+        || typeof args.positionAmount !== "string" || !isPositiveDecimal(args.positionAmount)
+        || typeof args.baseAmount !== "string" || !isPositiveDecimal(args.baseAmount)
+        || compareDecimalStrings(args.baseAmount, args.positionAmount) !== -1
+        || args.closingSide !== (args.positionSide === "long" ? "sell" : "buy") || args.reduceOnly !== true) continue;
+      const bound: PendingClose = { ...current, accountIndex: args.accountIndex, side: args.positionSide,
+        sizeBefore: args.positionAmount, approvalPositionBound: true };
+      const key = closeAttemptKey(bound);
+      if (key !== pending.closeKey && closeAttempts.current.has(key)) continue;
+      const next = new Map(closeAttempts.current);
+      next.delete(pending.closeKey);
+      next.set(key, bound);
+      closeAttempts.current = next;
+      setPendingCloses(next);
+      pendingDesk.current.set(approval.id, { ...pending, closeKey: key });
+    }
+  }, [approvals, pendingCloses]);
   useEffect(() => {
     for (const approval of approvals) {
       const pending = pendingDesk.current.get(approval.id);
@@ -445,11 +477,11 @@ export function useDeskLane({
   // shows the exact position reduced/absent, or a finished resting order,
   // releases its row for another close.
   useEffect(() => {
-    if (account === null || account.status === "unavailable" || activeSessionId === null) return;
+    if (account === null || account.environment !== environment || account.status === "unavailable" || activeSessionId === null) return;
     for (const [key, close] of closeAttempts.current) {
       if ((close.accountIndex === null && close.sessionId !== activeSessionId) || close.environment !== environment
         || close.accountIndex !== account.accountIndex || account.retrievedAt <= close.startedAt) continue;
-      if (close.stage === "preparing" || close.stage === "approval") continue;
+      if (close.stage === "preparing" || close.stage === "approval" || !close.approvalPositionBound) continue;
       const position = account.positions.find((row) => row.marketId === close.marketId && row.side === close.side);
       if (position === undefined) {
         updateClose(key, null);
@@ -462,17 +494,17 @@ export function useDeskLane({
       if (orderStillOpen && !close.orderSeen) updateClose(key, { ...close, orderSeen: true });
       if (close.stage === "resting" && close.orderSeen && account.openOrdersAvailable && !account.openOrdersTruncated && !orderStillOpen) {
         updateClose(key, null);
-        if (Math.abs(Number(position.size)) < Math.abs(Number(close.sizeBefore))) {
+        if (compareDecimalStrings(position.size.replace(/^-/, ""), close.sizeBefore.replace(/^-/, "")) === -1) {
           setDeskOutcome({ tone: "ok", text: "Position reduced." });
         }
         continue;
       }
-      if (!orderStillOpen && Math.abs(Number(position.size)) < Math.abs(Number(close.sizeBefore))) {
+      if (!orderStillOpen && compareDecimalStrings(position.size.replace(/^-/, ""), close.sizeBefore.replace(/^-/, "")) === -1) {
         updateClose(key, null);
         setDeskOutcome({ tone: "ok", text: "Position reduced." });
       }
     }
-  }, [account, activeSessionId, environment]);
+  }, [account, activeSessionId, environment, pendingCloses]);
 
   // Account-wide acceptance alone cannot prove that every order was canceled.
   // Wait for a complete, newer provider snapshot in the exact initiating scope.
@@ -932,6 +964,8 @@ export function useDeskLane({
       marketId: closePosition.marketId,
       side: closePosition.side,
       sizeBefore: closePosition.size,
+      approvalPositionBound: action.kind !== "close" || (action.closePercent ?? 100) === 100,
+      partialClose: action.kind === "close" && (action.closePercent ?? 100) !== 100,
       startedAt: Date.now(),
       stage: "preparing" as const,
       orderId: null,
@@ -996,7 +1030,7 @@ export function useDeskLane({
       setCancelStage(cancelKey, "approval");
       setCancelAllStage(cancelAllKey, "approval");
       recordFunnelStep("desk_card", environment);
-      if (action.kind === "close" && skipCloseConfirm) {
+      if (action.kind === "close" && (action.closePercent ?? 100) === 100 && skipCloseConfirm) {
         await approveOnDesk(activeSessionId, result.data.approvalId);
         return;
       }

@@ -25,7 +25,7 @@ function approval(id: string, toolName = "order.create"): ApprovalSummaryDto {
     reasoningPreview: "",
     actionKind: "user_wallet_broadcast",
     riskLevel: "high",
-    preview: { toolName, namespace: "lighter", criticalArgs: {} },
+    preview: { toolName, namespace: "lighter", criticalArgs: toolName === "position.close" ? { baseAmount: "0.2500", positionAmount: "0.25" } : {} },
     expiresAt: null,
     decision: null,
     decisionReason: null,
@@ -92,7 +92,7 @@ describe("DeskApprovalDialog", () => {
     expect(dialogOf(container).textContent).toContain("a1");
   });
 
-  it("offers Don't ask again only on a Market close card and reports the tick", () => {
+  it("offers Don't ask again only on a full Market close card and reports the tick", () => {
     const onSkipCloseConfirm = vi.fn();
     const { container, rerender } = render(
       <DeskApprovalDialog
@@ -124,6 +124,17 @@ describe("DeskApprovalDialog", () => {
     // The card that offered the box still waits for Confirm.
     expect(dialogOf(container).open).toBe(true);
     expect(container.querySelector("dialog h2")?.textContent).toBe("Review close");
+  });
+
+  it.each(["0.1875", "0.125", "0.0625"])("keeps explicit confirmation for a partial %s close", (baseAmount) => {
+    const full = approval("partial", "position.close");
+    const partial = { ...full, preview: { toolName: "position.close", namespace: "lighter", criticalArgs: { baseAmount, positionAmount: "0.25" } } };
+    const { container } = render(
+      <DeskApprovalDialog approvals={[partial]} sessionId="s1" focusApprovalId={null} onResolved={vi.fn()} {...skip} skipCloseConfirm={true} />,
+    );
+    expect(dialogOf(container).open).toBe(true);
+    expect(container.querySelector("dialog h2")?.textContent).toBe("Review close");
+    expect(container.querySelector(".lit-desk-skip-confirm")).toBeNull();
   });
 
   it.each([

@@ -114,6 +114,13 @@ describe("deskActionToPrepareCall", () => {
     });
   });
 
+  it.each([25, 50, 75, 100] as const)("carries the %s percent close selector without renderer order terms", (closePercent) => {
+    expect(deskActionToPrepareCall("rhc", { kind: "close", marketId: 7, closePercent })).toEqual({
+      toolId: "lighter.position.close.prepare",
+      params: { environment: "rhc", marketId: 7, slippageBps: 100, closePercent },
+    });
+  });
+
   it("a market entry is an IOC preview at the worst price", () => {
     expect(
       deskActionToPrepareCall("rhc", {
@@ -289,7 +296,7 @@ describe("vex:lighterTrading:prepareDeskAction", () => {
     });
   });
 
-  it.each([{ kind: "close" as const, marketId: 7 }, { kind: "cancel_all" as const }])("joins concurrent identical $kind submits so they cannot create two approval cards", async (action) => {
+  it.each([{ kind: "close" as const, marketId: 7 }, { kind: "close" as const, marketId: 7, closePercent: 75 as const }, { kind: "cancel_all" as const }])("joins concurrent identical $kind submits so they cannot create two approval cards", async (action) => {
     let release: ((value: { kind: "enqueued"; approvalId: string }) => void) | undefined;
     mocks.prepareDeskApproval.mockImplementationOnce(
       () => new Promise((resolve) => { release = resolve; }),
@@ -310,6 +317,20 @@ describe("vex:lighterTrading:prepareDeskAction", () => {
       { ok: true, data: { kind: "enqueued", approvalId: "appr-joined" } },
     ]);
     expect(mocks.prepareDeskApproval).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not join distinct close percentages into one approval with the wrong amount", async () => {
+    let release: ((value: { kind: "enqueued"; approvalId: string }) => void) | undefined;
+    mocks.prepareDeskApproval.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const payload = { sessionId: SESSION, environment: "rhc", action: { kind: "close", marketId: 7, closePercent: 75 } };
+    const first = call(payload);
+    await vi.waitFor(() => expect(mocks.prepareDeskApproval).toHaveBeenCalledTimes(1));
+    const second = await call({ ...payload, action: { ...payload.action, closePercent: 50 } });
+    expect(second).toEqual({ ok: true, data: { kind: "enqueued", approvalId: "appr-1" } });
+    expect(mocks.prepareDeskApproval).toHaveBeenCalledTimes(2);
+    expect(mocks.prepareDeskApproval).toHaveBeenLastCalledWith(expect.objectContaining({ params: { environment: "rhc", marketId: 7, slippageBps: 100, closePercent: 50, accountIndex: 42 } }));
+    release?.({ kind: "enqueued", approvalId: "appr-75" });
+    await expect(first).resolves.toEqual({ ok: true, data: { kind: "enqueued", approvalId: "appr-75" } });
   });
 
   it("refuses a session that no longer exists, before preparing", async () => {
@@ -356,6 +377,12 @@ describe("vex:lighterTrading:prepareDeskAction", () => {
       environment: "rhc",
       action: { kind: "close", marketId: 7, slippageBps: 500 },
     });
+    expect(result.ok).toBe(false);
+    expect(mocks.prepareDeskApproval).not.toHaveBeenCalled();
+  });
+
+  it.each([0, 1, 33, 101, "75", null])("rejects an invalid close percentage %s before preparing", async (closePercent) => {
+    const result = await call({ sessionId: SESSION, environment: "rhc", action: { kind: "close", marketId: 7, closePercent } });
     expect(result.ok).toBe(false);
     expect(mocks.prepareDeskApproval).not.toHaveBeenCalled();
   });

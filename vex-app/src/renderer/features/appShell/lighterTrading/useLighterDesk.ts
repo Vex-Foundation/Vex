@@ -32,9 +32,11 @@ import { useDeskLane } from "./useDeskLane.js";
 import { useDeskStreams } from "./useDeskStreams.js";
 
 export const LIGHTER_DESK_DIRECT_CANCEL_ALL = true;
+export const LIGHTER_DESK_DIRECT_PARTIAL_CLOSE = true;
 
 export interface LighterDeskDeps {
   readonly directCancelAll?: boolean;
+  readonly directPartialClose?: boolean;
 }
 
 /**
@@ -352,9 +354,7 @@ export function useLighterDesk(deps: LighterDeskDeps = {}) {
   };
 
   // A limit close rests at the mark: the live one on this desk, else the
-  // snapshot's. Reduce-only, so it can only ever shrink the position. A
-  // partial market close also loads here: main's close selector is the whole
-  // position, so a portion goes out as a reduce-only market order instead.
+  // snapshot's. Reduce-only, so it can only ever shrink the position.
   const prefillFromPosition = (position: LighterPositionRow, mode: "market" | "limit" | "oco", portion: ClosePortion = 1): void => {
     const target = openPositionMarket(position);
     if (target === null) return;
@@ -400,7 +400,10 @@ export function useLighterDesk(deps: LighterDeskDeps = {}) {
     onReviewPosition: (position) => sendToChat(buildReviewPositionMessage({ environment, position })),
     onClosePosition: (position, portion) => {
       if (portion === 1) void prepareOnDesk({ kind: "close", marketId: position.marketId }, null, position);
-      else prefillFromPosition(position, "market", portion);
+      else if (deps.directPartialClose ?? LIGHTER_DESK_DIRECT_PARTIAL_CLOSE) {
+        const closePercent = portion === 0.75 ? 75 : portion === 0.5 ? 50 : 25;
+        void prepareOnDesk({ kind: "close", marketId: position.marketId, closePercent }, null, position);
+      } else prefillFromPosition(position, "market", portion);
     },
     onProtectPosition: (position) => prefillFromPosition(position, "oco"),
     onCloseLimit: (position, portion) => prefillFromPosition(position, "limit", portion),
