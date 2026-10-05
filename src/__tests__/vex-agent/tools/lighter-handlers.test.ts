@@ -682,6 +682,38 @@ describe("Lighter agent read handlers", () => {
       }));
     });
 
+    if (actionType === "close_position") {
+      it.each([0, 1, 24, 26, 49, 76, 101, -25, 25.5, "75", null, true, [], {}])("rejects invalid close percent %j before any provider read", async (closePercent) => {
+        const result = await requireValue(LIGHTER_HANDLERS[toolId])({ ...params, closePercent }, READ_CTX);
+        expect(result).toMatchObject({ success: false });
+        expect(result.output).toContain("closePercent must be one of 25, 50, 75, or 100");
+        expect(mocks.client.getAccount).not.toHaveBeenCalled();
+        expect(mocks.client.getMarkets).not.toHaveBeenCalled();
+        expect(mocks.lifecycleIntentsRepo.createApprovalPendingWith).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        { closePercent: 75, amount: "0.9375", integer: "9375" },
+        { closePercent: 50, amount: "0.625", integer: "6250" },
+        { closePercent: 25, amount: "0.3125", integer: "3125" },
+      ])("persists and discloses the exact $closePercent percent amount while binding the full position", async ({ closePercent, amount, integer }) => {
+        configureLighterTradingCredentialScopeResolver({
+          findSavedScope: async () => ({ environment: "rhc", accountIndex: 42, apiKeyIndex: 7 }),
+          listScopes: async () => [{ environment: "rhc", accountIndex: 42, apiKeyIndex: 7 }],
+        });
+        const result = await executeProtocolTool({ toolId, params: { ...params, closePercent } }, READ_CTX);
+        expect(result.success, result.output).toBe(true);
+        expect(mocks.lifecycleIntentsRepo.createApprovalPendingWith).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+          requestedBaseAmountInteger: integer, requestedSide: "sell", reduceOnly: true,
+          providerSnapshotJson: expect.objectContaining({ position: expect.objectContaining({ position: "1.25" }), baseAmount: amount }),
+        }));
+        const critical = result.preparedActionFollowUp?.approvalPreview?.criticalArgs;
+        expect(critical).toMatchObject({ positionAmount: "1.25", baseAmount: amount, baseAmountInteger: integer, reduceOnly: true });
+        expect(critical?.summary).toContain(`Close ${amount} ETH from the 1.25 ETH long position`);
+        expect(mocks.client.getNextNonce).not.toHaveBeenCalled();
+      });
+    }
+
     it("prepares approval with the first saved key when all keys belong to one account", async () => {
       configureLighterTradingCredentialScopeResolver({
         findSavedScope: async () => null,

@@ -159,6 +159,7 @@ type LighterLifecycleTimingPhase =
   | "secretMs"
   | "authMs"
   | "readsMs"
+  | "partialMinimumReadsMs"
   | "revalidationMs"
   | "credentialMs"
   | "capitalMs"

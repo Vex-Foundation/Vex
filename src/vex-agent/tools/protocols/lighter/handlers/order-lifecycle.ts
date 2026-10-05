@@ -1,4 +1,5 @@
 import { lighterOrderFeeCriticalArgs } from "@tools/lighter/order-fee-terms.js";
+import { decimalToLighterInteger } from "@tools/lighter/order-preview.js";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -35,6 +36,7 @@ import {
   prepareLighterCancelOne,
   prepareLighterClosePosition,
   prepareLighterModifyOrder,
+  type LighterClosePercent,
 } from "../order-lifecycle.js";
 import { admitLighterModifyCapitalCommitment } from "../capital-share-policy.js";
 import { resolveLighterSigningOwnershipWallet } from "../signing-ownership.js";
@@ -505,6 +507,8 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     if (!marketId.ok) return fail(marketId.reason);
     const maxSlippageBps = readSlippageBps(params.slippageBps);
     if (!maxSlippageBps.ok) return fail(maxSlippageBps.reason);
+    const closePercent = readClosePercent(params.closePercent);
+    if (!closePercent.ok) return fail(closePercent.reason);
     const accountIndex = readOptionalAccountIndex(params.accountIndex);
     if (!accountIndex.ok) return fail(accountIndex.reason);
     const scope = await resolveScope(environment.value, accountIndex.value, context);
@@ -527,6 +531,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
         apiKeyIndex: scope.value.apiKeyIndex,
         marketIndex: marketId.value,
         maxSlippageBps: maxSlippageBps.value,
+        closePercent: closePercent.value,
         client,
         ...(feeSnapshot === undefined ? {} : { feeSnapshot }),
       });
@@ -833,6 +838,11 @@ export function closePositionFollowUp(intent: LighterOrderLifecycleIntentRow): P
   const snapshot = intent.providerSnapshotJson;
   const position = snapshot.position !== null && typeof snapshot.position === "object" && !Array.isArray(snapshot.position)
     ? snapshot.position as Record<string, unknown> : {};
+  const fullClose = decimalToLighterInteger(scalarString(snapshot.baseAmount), 18, "close amount")
+    === decimalToLighterInteger(scalarString(position.position), 18, "position amount");
+  const closeDescription = fullClose
+    ? `Close the entire ${scalarString(position.position)} ${scalarString(position.symbol)} ${scalarString(position.side)} position`
+    : `Close ${scalarString(snapshot.baseAmount)} ${scalarString(position.symbol)} from the ${scalarString(position.position)} ${scalarString(position.symbol)} ${scalarString(position.side)} position`;
   const criticalArgs: Record<string, ApprovalPreviewScalar> = {
     ...lighterOrderFeeCriticalArgs(intent.integratorFees),
     toolId: "lighter.position.close",
@@ -856,7 +866,7 @@ export function closePositionFollowUp(intent: LighterOrderLifecycleIntentRow): P
     orderType: "market",
     timeInForce: "immediate-or-cancel",
     matchHash: intent.matchHash,
-    summary: `Close the entire ${scalarString(position.position)} ${scalarString(position.symbol)} ${scalarString(position.side)} position with one reduce-only market IOC ${intent.requestedSide} order. Worst acceptable price ${scalarString(snapshot.worstAcceptablePrice)}; maximum slippage ${String(snapshot.maxSlippageBps)} bps. No automatic retry.`,
+    summary: `${closeDescription} with one reduce-only market IOC ${intent.requestedSide} order. Worst acceptable price ${scalarString(snapshot.worstAcceptablePrice)}; maximum slippage ${String(snapshot.maxSlippageBps)} bps. No automatic retry.`,
   };
   return {
     toolName: "execute_tool",
@@ -970,6 +980,12 @@ function readSlippageBps(value: unknown): { ok: true; value: number } | { ok: fa
   return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 500
     ? { ok: true, value }
     : { ok: false, reason: "maxSlippageBps must be an explicit integer from 1 through 500." };
+}
+
+function readClosePercent(value: unknown): { ok: true; value: LighterClosePercent } | { ok: false; reason: string } {
+  if (value === undefined) return { ok: true, value: 100 };
+  if (value === 25 || value === 50 || value === 75 || value === 100) return { ok: true, value };
+  return { ok: false, reason: "closePercent must be one of 25, 50, 75, or 100." };
 }
 
 function scalarString(value: unknown): string { return typeof value === "string" ? value : ""; }

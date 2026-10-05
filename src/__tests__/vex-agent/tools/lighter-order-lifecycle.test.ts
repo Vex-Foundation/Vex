@@ -606,6 +606,80 @@ describe("Lighter reduce-only position close lifecycle", () => {
     })).rejects.toThrow("cannot close the full position");
   });
 
+  function preparePortion(closePercent: 25 | 50 | 75 | 100 | undefined, options: {
+    readonly position?: string;
+    readonly sign?: 1 | -1;
+    readonly market?: Partial<typeof market>;
+    readonly depth?: string;
+  } = {}) {
+    const sign = options.sign ?? 1;
+    const getAccount = vi.fn().mockResolvedValue({ code: 200, accounts: [{ index: 42,
+      positions: [{ ...longPosition, position: options.position ?? "1.0001", sign }] }] });
+    const level = { ...bid, remaining_base_amount: options.depth ?? "2.0000" };
+    const prepared = prepareLighterClosePosition({
+      environment: "rhc", accountIndex: 42, apiKeyIndex: 7, marketIndex: 0, maxSlippageBps: 100,
+      ...(closePercent === undefined ? {} : { closePercent }),
+      client: {
+        getAccount,
+        getMarkets: vi.fn().mockResolvedValue({ code: 200, order_books: [{ ...market, ...options.market }] }),
+        getOrderBookOrders: vi.fn().mockResolvedValue({ code: 200,
+          total_asks: sign === -1 ? 1 : 0, asks: sign === -1 ? [level] : [],
+          total_bids: sign === 1 ? 1 : 0, bids: sign === 1 ? [level] : [] }),
+      },
+    });
+    return { prepared, getAccount };
+  }
+
+  it.each([
+    { percent: 75, amount: "0.75", integer: "7500" },
+    { percent: 50, amount: "0.5", integer: "5000" },
+    { percent: 25, amount: "0.25", integer: "2500" },
+  ] as const)("floors $percent percent from the fresh original position on both sides", async ({ percent, amount, integer }) => {
+    for (const sign of [1, -1] as const) {
+      const { prepared, getAccount } = preparePortion(percent, { sign });
+      expect(await prepared).toMatchObject({
+        position: { position: "1.0001", sign }, baseAmount: amount, baseAmountInteger: integer,
+        closingSide: sign === 1 ? "sell" : "buy", priceInteger: sign === 1 ? "4950" : "5050",
+        bookEvidence: { requiredBaseAmountInteger: integer },
+      });
+      expect(getAccount).toHaveBeenCalledWith("rhc", { by: "index", value: "42" }, { fresh: true });
+    }
+  });
+
+  it("keeps default and explicit full closes identical and binds every distinct requested amount", async () => {
+    const full = await preparePortion(undefined).prepared;
+    expect(await preparePortion(100).prepared).toEqual(full);
+    const hashes = [full.matchHash];
+    for (const percent of [75, 50, 25] as const) hashes.push((await preparePortion(percent).prepared).matchHash);
+    expect(new Set(hashes).size).toBe(4);
+  });
+
+  it("requires depth for the requested partial amount while retaining the full position snapshot", async () => {
+    expect(await preparePortion(50, { position: "1.0000", depth: "0.5000" }).prepared).toMatchObject({
+      position: { position: "1.0000" }, baseAmountInteger: "5000",
+    });
+    await expect(preparePortion(75, { depth: "0.5000" }).prepared).rejects.toThrow("cannot fill the requested close amount");
+  });
+
+  it.each([
+    { position: "0.0001", market: {}, message: "smallest size increment" },
+    { position: "1", market: { min_base_amount: "0.3" }, message: "size is below market minimum" },
+    { position: "0.7", market: {}, message: "order value is below market minimum" },
+  ])("refuses unusable partial size/minimums: $message", async ({ position, market: changedMarket, message }) => {
+    await expect(preparePortion(25, { position, market: changedMarket }).prepared).rejects.toThrow(message);
+  });
+
+  it("keeps existing full-close dust behavior while enforcing partial minimums at the approved bound", async () => {
+    expect(await preparePortion(100, { position: "0.0001" }).prepared).toHaveProperty("baseAmountInteger", "1");
+    await expect(preparePortion(25, { position: "0.8" }).prepared).rejects.toThrow("order value is below market minimum");
+  });
+
+  it.each([2, 7])("compares partial notional against independent quote precision %i exactly", async (supported_quote_decimals) => {
+    expect(await preparePortion(25, { market: { supported_quote_decimals } }).prepared).toHaveProperty("baseAmountInteger", "2500");
+    await expect(preparePortion(25, { position: "0.8", market: { supported_quote_decimals } }).prepared)
+      .rejects.toThrow("order value is below market minimum");
+  });
+
   it.each([
     {
       name: "the position is absent",
@@ -1421,6 +1495,69 @@ function closeScenario(options: { readonly fees?: boolean } = {}): LifecycleScen
   };
 }
 
+describe("approved partial position close", () => {
+  function partialScenario(): LifecycleScenario {
+    const built = closeScenario();
+    const clientOrderId = deriveVexAssignedClientOrderIndex(CLOSE_MATCH_HASH);
+    let sent = false;
+    Object.assign(built.deps.client, {
+      getAccount: accountReads({ positions: () => [{ ...longPosition, position: sent ? "0.2500" : "1.0000" }] }),
+      getAccountInactiveOrders: vi.fn(async () => ({ code: 200, orders: [{ ...openOrder,
+        order_id: "281474976710658", client_order_id: clientOrderId, client_order_index: Number(clientOrderId),
+        initial_base_amount: "0.7500", remaining_base_amount: "0.0000", filled_base_amount: "0.7500",
+        filled_quote_amount: "37.312500", price: "49.50", side: "sell", type: "market",
+        time_in_force: "immediate-or-cancel", reduce_only: true, status: "filled",
+      }] })),
+      sendTx: vi.fn(async () => {
+        sent = true;
+        return { code: 200, tx_hash: "hash-14", predicted_execution_time_ms: 100, volume_quota_remaining: 99 };
+      }),
+    });
+    return { ...built, intent: { ...built.intent, requestedBaseAmountInteger: "7500" } };
+  }
+
+  it("signs the exact scaled quantity once and confirms the matching remaining position", async () => {
+    const { intent: partialIntent, deps: d } = partialScenario();
+    expect(await executeApprovedLighterClosePosition(partialIntent, d)).toMatchObject({
+      status: "partially_closed", executedAmount: "0.7500", resultingPosition: { position: "0.2500" },
+    });
+    expect(d.client.getAccount).toHaveBeenCalledWith("rhc", { by: "index", value: "42" }, { fresh: true });
+    expect(d.authSigner.signCreateOrder).toHaveBeenCalledTimes(1);
+    expect(d.authSigner.signCreateOrder).toHaveBeenCalledWith(expect.objectContaining({ order: expect.objectContaining({
+      baseAmountInteger: "7500", priceInteger: "4950", reduceOnly: true, orderTypeCode: 1, timeInForceCode: 0,
+    }) }));
+    expect(d.client.sendTx).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { label: "size", position: { position: "0.9000" } },
+    { label: "side", position: { sign: -1 } },
+    { label: "entry", position: { avg_entry_price: "46.00" } },
+  ])("refuses changed $label even when the requested amount still fits", async ({ position }) => {
+    const { intent: partialIntent, deps: d } = partialScenario();
+    Object.assign(d.client, { getAccount: accountReads({ positions: () => [{ ...longPosition, ...position }] }) });
+    await expect(executeApprovedLighterClosePosition(partialIntent, d)).rejects.toThrow("position size, side, or entry changed");
+    expect(d.nonceState.reserveObservedWith).not.toHaveBeenCalled();
+    expect(d.authSigner.signCreateOrder).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { label: "base", market: { min_base_amount: "0.8" }, message: "size is below market minimum" },
+    { label: "quote", market: { min_quote_amount: "40" }, message: "order value is below market minimum" },
+    { label: "independent quote precision", market: { min_quote_amount: "37.1250001", supported_quote_decimals: 7 }, message: "order value is below market minimum" },
+  ])("refuses changed $label minimum before loading a key or reserving/signing/sending", async ({ market, message }) => {
+    const { intent: partialIntent, deps: d } = partialScenario();
+    vi.mocked(d.client.getMarkets).mockResolvedValue({ code: 200, order_books: [{ ...CLOSE_MARKET, ...market }] });
+    await expect(executeApprovedLighterClosePosition(partialIntent, d)).rejects.toThrow(message);
+    expect(d.secretReader.readTradingApiPrivateKey).not.toHaveBeenCalled();
+    expect(d.authSigner.createAccountAuth).not.toHaveBeenCalled();
+    expect(d.nonceState.reserveObservedWith).not.toHaveBeenCalled();
+    expect(d.authSigner.signCreateOrder).not.toHaveBeenCalled();
+    expect(d.client.sendTx).not.toHaveBeenCalled();
+  });
+});
+
 /** Build a scenario, then change its client or deps for one case. */
 function scenario(
   base: () => LifecycleScenario,
@@ -2203,13 +2340,14 @@ describe("desk close preparation fee snapshot", () => {
     vi.useRealTimers();
   });
 
-  async function prepare(d: LighterOrderLifecycleExecutionDeps, enabled: boolean, desk = true) {
+  async function prepare(d: LighterOrderLifecycleExecutionDeps, enabled: boolean, desk = true, closePercent?: 25 | 50 | 75 | 100) {
     configureLighterDeskPreparationFeeDeps({ deskPreparationFeeSnapshot: enabled });
     const snapshot = beginLighterDeskPreparationFees({ deskPreparation: desk, client: d.client, environment: "rhc", accountIndex: 42 });
     try {
       return { resolved: await prepareLighterClosePosition({
         environment: "rhc", accountIndex: 42, apiKeyIndex: 7, marketIndex: 0, maxSlippageBps: 100,
         client: d.client, ...(snapshot === undefined ? {} : { feeSnapshot: snapshot }),
+        ...(closePercent === undefined ? {} : { closePercent }),
       }) };
     } catch (error) {
       return { rejected: describeLifecycleFailure(error) };
@@ -2217,6 +2355,18 @@ describe("desk close preparation fee snapshot", () => {
       snapshot?.log("close_position");
     }
   }
+
+  it("preserves exact partial terms with fee snapshots OFF, cold and warm while rereading exposure", async () => {
+    const off = await prepare(closeScenario({ fees: true }).deps, false, true, 75);
+    const cold = await prepare(closeScenario({ fees: true }).deps, true, true, 75);
+    const warm = closeScenario({ fees: true }).deps;
+    expect(await prepare(warm, true, true, 75)).toEqual(off);
+    expect(cold).toEqual(off);
+    expect(off).toHaveProperty("resolved.baseAmountInteger", "7500");
+    expect(warm.client.getAccount).toHaveBeenCalledWith("rhc", { by: "index", value: "42" }, { fresh: true });
+    expect(warm.authSigner.signCreateOrder).not.toHaveBeenCalled();
+    expect(warm.client.sendTx).not.toHaveBeenCalled();
+  });
 
   const cases: readonly { label: string; expected: "fees" | "unattributed" | RegExp; change: (d: LighterOrderLifecycleExecutionDeps) => void }[] = [
     { label: "live authorized fees", expected: "fees", change: () => undefined },

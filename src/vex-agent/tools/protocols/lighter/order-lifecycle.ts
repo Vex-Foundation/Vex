@@ -17,6 +17,7 @@ import { createHash } from "node:crypto";
 import type {
   LighterAccountOrder,
   LighterAccountPosition,
+  LighterMarket,
   LighterSimpleOrder,
 } from "@tools/lighter/types.js";
 import {
@@ -161,6 +162,8 @@ export interface LighterClosePositionPreparation {
   readonly bookEvidence: Record<string, unknown>;
   readonly matchHash: string;
 }
+
+export type LighterClosePercent = 25 | 50 | 75 | 100;
 
 type LighterLifecycleUnresolvedResult = {
   readonly status: "sequencer_pending" | "ambiguous";
@@ -509,15 +512,20 @@ export async function prepareLighterClosePosition(input: {
   readonly apiKeyIndex: number;
   readonly marketIndex: number;
   readonly maxSlippageBps: number;
+  readonly closePercent?: LighterClosePercent;
   readonly feeSnapshot?: LighterDeskPreparationFees;
   readonly client?: LighterOrderFeeClient & Pick<LighterClient, "getAccount" | "getMarkets" | "getOrderBookOrders">;
 }): Promise<LighterClosePositionPreparation> {
   if (!Number.isInteger(input.maxSlippageBps) || input.maxSlippageBps < 1 || input.maxSlippageBps > 500) {
     throw blocked("maxSlippageBps must be an explicit integer from 1 through 500.");
   }
+  const closePercent = input.closePercent === undefined ? 100 : input.closePercent;
+  if (closePercent !== 25 && closePercent !== 50 && closePercent !== 75 && closePercent !== 100) {
+    throw blocked("closePercent must be one of 25, 50, 75, or 100.");
+  }
   const client = input.client ?? getLighterClient();
   const [accountResponse, markets, orderBook] = await Promise.all([
-    client.getAccount(input.environment, { by: "index", value: String(input.accountIndex) }, ...(input.feeSnapshot === undefined ? [] : [{ fresh: true }] as const)),
+    client.getAccount(input.environment, { by: "index", value: String(input.accountIndex) }, ...(input.feeSnapshot === undefined && closePercent === 100 ? [] : [{ fresh: true }] as const)),
     client.getMarkets(input.environment, { filter: "perp", marketId: input.marketIndex }),
     client.getOrderBookOrders(input.environment, { marketId: input.marketIndex, limit: 100 }),
   ]);
@@ -532,11 +540,15 @@ export async function prepareLighterClosePosition(input: {
     throw blocked("The exact active Lighter perpetual market could not be resolved.");
   }
   const position = exactOpenPosition(account.positions ?? [], input.marketIndex);
-  const baseAmountInteger = decimalToLighterInteger(
+  const positionAmountInteger = decimalToLighterInteger(
     position.position,
     market.supported_size_decimals,
     "provider position",
   );
+  const baseAmountInteger = (positionAmountInteger * BigInt(closePercent)) / 100n;
+  if (baseAmountInteger === 0n) {
+    throw blocked("The requested partial close rounds below this market's smallest size increment.");
+  }
   if (baseAmountInteger > (1n << 48n) - 1n) {
     throw blocked("The live position exceeds Lighter's official create-order amount range.");
   }
@@ -548,7 +560,11 @@ export async function prepareLighterClosePosition(input: {
     sizeDecimals: market.supported_size_decimals,
     priceDecimals: market.supported_price_decimals,
     maxSlippageBps: input.maxSlippageBps,
+    fullPosition: closePercent === 100,
   });
+  if (baseAmountInteger < positionAmountInteger) {
+    assertPartialCloseMinimums(market, baseAmountInteger, book.worstAcceptablePriceInteger);
+  }
   const integratorFees = await resolveLighterOrderFees({ client, environment: input.environment, accountIndex: input.accountIndex, market, account: accountResponse, reduceOnly: true, side: closingSide, ...(input.feeSnapshot === undefined ? {} : { snapshot: input.feeSnapshot.feesFor(accountResponse) }) });
   if (input.feeSnapshot !== undefined) await input.feeSnapshot.keepAfterPassingFeeCheck(integratorFees);
   const positionSnapshot = positionSnapshotOf(position);
@@ -1583,6 +1599,28 @@ async function runApprovedLighterClosePosition(
   assertAuthority("before_reservation");
   assertClosePositionIntent(intent, deps.now());
   const context = readStoredCloseContext(intent);
+  const approvedPositionAmountInteger = decimalToLighterInteger(context.position.position, context.sizeDecimals, "approved position");
+  const requestedAmountInteger = BigInt(intent.requestedBaseAmountInteger!);
+  const partialClose = requestedAmountInteger < approvedPositionAmountInteger;
+  const readPublicBatch = () => Promise.all([
+    (partialClose || (deps.signingOwnershipRecheck ?? LIGHTER_LIFECYCLE_SIGNING_OWNERSHIP_RECHECK))
+      ? deps.client.getAccount(intent.environment, { by: "index", value: String(intent.accountIndex) }, FRESH_PUBLIC_READ)
+      : deps.client.getAccount(intent.environment, { by: "index", value: String(intent.accountIndex) }),
+    deps.client.getMarkets(intent.environment, { filter: "perp", marketId: intent.marketIndex! }),
+    deps.client.getOrderBookOrders(intent.environment, { marketId: intent.marketIndex!, limit: 100 }),
+  ]);
+  // Partial minima are public facts and must refuse before any key is loaded.
+  // Reuse this exact fresh batch at the existing position/depth judgment below.
+  const partialBatch = partialClose ? await timing.measure("partialMinimumReadsMs", readPublicBatch) : null;
+  if (partialBatch !== null) {
+    const partialMarket = partialBatch[1].order_books.find((candidate) => candidate.market_id === intent.marketIndex);
+    if (partialMarket === undefined || partialMarket.status !== "active" || partialMarket.market_type !== "perp"
+      || partialMarket.supported_size_decimals !== context.sizeDecimals
+      || partialMarket.supported_price_decimals !== context.priceDecimals) {
+      throw blocked("The Lighter close market or precision changed before submission.");
+    }
+    assertPartialCloseMinimums(partialMarket, requestedAmountInteger, BigInt(intent.requestedPriceInteger!));
+  }
   const secret = await timing.measure("secretMs", () =>
     loadLighterTradingSecretMaterial(intent.credentialRefJson, deps.secretReader));
   assertAuthority("before_reservation");
@@ -1598,13 +1636,7 @@ async function runApprovedLighterClosePosition(
   ));
   const auth: LighterPrivilegedAccountAuth = { token: authResult.authToken, accountIndex: intent.accountIndex };
   timing.start("readsMs");
-  const batch = Promise.all([
-    (deps.signingOwnershipRecheck ?? LIGHTER_LIFECYCLE_SIGNING_OWNERSHIP_RECHECK)
-      ? deps.client.getAccount(intent.environment, { by: "index", value: String(intent.accountIndex) }, FRESH_PUBLIC_READ)
-      : deps.client.getAccount(intent.environment, { by: "index", value: String(intent.accountIndex) }),
-    deps.client.getMarkets(intent.environment, { filter: "perp", marketId: intent.marketIndex! }),
-    deps.client.getOrderBookOrders(intent.environment, { marketId: intent.marketIndex!, limit: 100 }),
-  ]);
+  const batch = partialBatch === null ? readPublicBatch() : Promise.resolve(partialBatch);
   // LIGHTER_LIFECYCLE_PARALLEL_READS: ON starts the fee, key and nonce reads
   // beside the batch; each is still judged below in today's order, and the
   // fee check's trader account stays its own fresh read, never the batch's
@@ -1654,6 +1686,13 @@ async function runApprovedLighterClosePosition(
       "The approved Lighter position size, side, or entry changed before close submission. "
       + "No lifecycle transaction was signed or submitted. Prepare a fresh close from current position and book state.",
     );
+  }
+  const positionAmountInteger = decimalToLighterInteger(position.position, context.sizeDecimals, "provider position");
+  if (requestedAmountInteger < 1n || requestedAmountInteger > positionAmountInteger) {
+    throw blocked("The approved close amount is outside the exact live position size.");
+  }
+  if (requestedAmountInteger < positionAmountInteger) {
+    assertPartialCloseMinimums(market, requestedAmountInteger, BigInt(intent.requestedPriceInteger!));
   }
   assertCloseDepthAtApprovedPrice({
     side: intent.requestedSide!,
@@ -2086,6 +2125,7 @@ function computeCloseBookEvidence(input: {
   readonly sizeDecimals: number;
   readonly priceDecimals: number;
   readonly maxSlippageBps: number;
+  readonly fullPosition: boolean;
 }): { readonly worstAcceptablePriceInteger: bigint; readonly evidence: Record<string, unknown> } {
   const levels = input.orders.map((order) => ({
     priceInteger: decimalToLighterInteger(order.price, input.priceDecimals, "order book price"),
@@ -2116,7 +2156,9 @@ function computeCloseBookEvidence(input: {
     0n,
   );
   if (availableBaseAmountInteger < input.requiredBaseAmountInteger) {
-    throw blocked("The live order book cannot close the full position within the explicitly approved slippage ceiling.");
+    throw blocked(input.fullPosition
+      ? "The live order book cannot close the full position within the explicitly approved slippage ceiling."
+      : "The live order book cannot fill the requested close amount within the explicitly approved slippage ceiling.");
   }
   return {
     worstAcceptablePriceInteger,
@@ -2130,6 +2172,24 @@ function computeCloseBookEvidence(input: {
       maxSlippageBps: input.maxSlippageBps,
     },
   };
+}
+
+/** Full closes retain their existing dust policy; partial orders meet live minima. */
+function assertPartialCloseMinimums(market: LighterMarket, baseAmountInteger: bigint, priceInteger: bigint): void {
+  const minBaseAmount = decimalToLighterInteger(market.min_base_amount, market.supported_size_decimals,
+    "market min_base_amount", { allowZero: true });
+  const minQuoteAmount = decimalToLighterInteger(market.min_quote_amount, market.supported_quote_decimals,
+    "market min_quote_amount", { allowZero: true });
+  if (baseAmountInteger < minBaseAmount) {
+    throw blocked(`Partial close size is below market minimum ${market.min_base_amount}.`);
+  }
+  const notionalDecimals = market.supported_size_decimals + market.supported_price_decimals;
+  const commonDecimals = Math.max(notionalDecimals, market.supported_quote_decimals);
+  const notional = baseAmountInteger * priceInteger * (10n ** BigInt(commonDecimals - notionalDecimals));
+  const minimum = minQuoteAmount * (10n ** BigInt(commonDecimals - market.supported_quote_decimals));
+  if (notional < minimum) {
+    throw blocked(`Partial close order value is below market minimum ${market.min_quote_amount}.`);
+  }
 }
 
 function assertCloseDepthAtApprovedPrice(input: {
