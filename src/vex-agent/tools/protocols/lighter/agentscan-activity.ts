@@ -98,7 +98,7 @@ import {
 } from "./fill-position-effect.js";
 
 /** Spot markets start here; below it a market is a perpetual. */
-const LIGHTER_SPOT_MARKET_INDEX_FLOOR = 2048;
+export const LIGHTER_SPOT_MARKET_INDEX_FLOOR = 2048;
 
 /** The venue asset id namespace. Lighter assets have no EVM address and none is invented. */
 export function lighterVenueAssetId(environment: LighterEnvironment, assetId: string | number): string {
@@ -785,6 +785,25 @@ export async function recordedLighterFillBaseSizeForIntent(executionIntentId: st
   );
   const total = row?.base_size_total ?? null;
   return typeof total === "string" && total.length > 0 ? total : "0";
+}
+
+/** One exact intent's recorded perpetual fills may still lack provider position facts. */
+export async function hasMissingLighterFillPositionEffect(intent: LighterFillIntentFacts): Promise<boolean> {
+  if (intent.clientOrderIndex === null || intent.marketIndex >= LIGHTER_SPOT_MARKET_INDEX_FLOOR) return false;
+  const row = await queryOne<{ missing: boolean }>(
+    `SELECT EXISTS (
+      SELECT 1 FROM lighter_fills
+       WHERE execution_intent_id=$1 AND environment=$2 AND account_index=$3
+         AND market_index=$4 AND side=$5 AND client_order_id=$6
+         AND position_effect IS NULL
+       LIMIT 1
+    ) AS missing`,
+    [intent.intentId, intent.environment, intent.accountIndex, intent.marketIndex, intent.side, intent.clientOrderIndex],
+  );
+  if (row === null || typeof row.missing !== "boolean") {
+    throw new Error("Lighter missing-effect query returned no boolean evidence");
+  }
+  return row.missing;
 }
 
 const SELECT_FILL_BASE_SIZE_TOTAL_FOR_INTENT_SQL = `

@@ -30,6 +30,7 @@ import * as reportingRepo from "@vex-agent/db/repos/agentscan-reporting.js";
 import {
   attachLighterFillToIntent,
   lighterFillIdentity,
+  hasMissingLighterFillPositionEffect,
   recordedLighterFillBaseSizeForIntent,
   recordLighterFillActivity,
   type LighterFillRecord,
@@ -618,6 +619,31 @@ describe("position knowledge independently of realized PnL", () => {
     const complete = authenticatedRow();
     return { ...complete, accountFacts: { ...requireValue(complete.accountFacts), accountPnl: null }, ...overrides };
   }
+
+  const exactIntent = {
+    intentId: "intent-1", environment: ENVIRONMENT, accountIndex: ACCOUNT, marketIndex: MARKET,
+    side: "buy" as const, clientOrderIndex: "555",
+  };
+  it("finds missing perpetual position effects only within the exact intent's account, side, market and client order", async () => {
+    await recordLighterFillActivity(publicRow());
+    expect(await hasMissingLighterFillPositionEffect(exactIntent)).toBe(true);
+    for (const different of [
+      { intentId: "intent-2" }, { environment: "rhc" as const }, { accountIndex: ACCOUNT + 1 },
+      { marketIndex: MARKET + 1 }, { side: "sell" as const }, { clientOrderIndex: "556" },
+      { clientOrderIndex: null }, { marketIndex: 2048 },
+    ]) expect(await hasMissingLighterFillPositionEffect({ ...exactIntent, ...different })).toBe(false);
+    await recordLighterFillActivity(positionOnly());
+    expect(await stored()).toMatchObject({ position_effect: "reduce", account_pnl: null });
+    expect(await hasMissingLighterFillPositionEffect(exactIntent)).toBe(false);
+  });
+
+  it("does not reread a stored contradictory effect or attribute a held fill to the intent", async () => {
+    await recordLighterFillActivity(publicRow({ executionIntentId: null }));
+    expect(await hasMissingLighterFillPositionEffect(exactIntent)).toBe(false);
+    await query("TRUNCATE lighter_fills RESTART IDENTITY CASCADE");
+    await recordLighterFillActivity(positionOnly({ positionEffect: "unknown" }));
+    expect(await hasMissingLighterFillPositionEffect(exactIntent)).toBe(false);
+  });
 
   it("stores position effect while PnL stays unknown and never fabricates zero", async () => {
     expect(await recordLighterFillActivity(positionOnly())).toMatchObject({ kind: "recorded" });

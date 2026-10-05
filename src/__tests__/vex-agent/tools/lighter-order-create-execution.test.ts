@@ -2637,13 +2637,10 @@ describe("Lighter create execution: an ORDER-evidence fill still reaches the led
     expect(recorded?.executionIntentId).toBe(PLAN.intentId);
     expect(recorded?.tradeType).toBe("trade");
     expect(recorded?.usdAmount).toBe("12.424850");
-    // MEASURED, not assumed: the authenticated trades page carries the
-    // position "before" fields but no realized PnL for either side, so the
-    // account half of the record is incomplete and the position effect stays
-    // NULL rather than being guessed. It is established later, once, by an
-    // observation that carries the PnL.
-    expect(recorded?.positionEffect).toBeNull();
-    expect(recorded?.accountFacts).toBeNull();
+    // The measured before-size and sign flag establish the effect even though
+    // the provider omitted realized PnL. That independent value stays unknown.
+    expect(recorded?.positionEffect).toBe("open");
+    expect(recorded?.accountFacts).toMatchObject({ positionSizeBefore: "0.0000", positionSignChanged: true, accountPnl: null });
     expect(recorded?.integratorFeeTickObserved).toBe(1000);
     expect(recorded?.exchangeFeeTickObserved).toBe(350);
   });
