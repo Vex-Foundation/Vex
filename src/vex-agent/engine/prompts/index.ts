@@ -89,6 +89,8 @@ export interface PromptStackOptions {
    * persisted. Empty/undefined omits it.
    */
   promiseNudgeNote?: string;
+  /** One-request feedback after explicit tool-call markup was refused as text. */
+  textToolCallGuardNote?: string;
   /**
    * Pre-formatted `# $VEX (own token)` live-metrics banner from
    * `buildOwnTokenBanner` (DexScreener snapshot + best-effort Virtuals
@@ -324,6 +326,9 @@ export function buildPromptStack(
   }
   if (options.cutoffContinuationNote && options.cutoffContinuationNote.length > 0) {
     turnLayers.push(options.cutoffContinuationNote);
+  }
+  if (options.textToolCallGuardNote && options.textToolCallGuardNote.length > 0) {
+    turnLayers.push(options.textToolCallGuardNote);
   }
   if (options.promiseNudgeNote && options.promiseNudgeNote.length > 0) {
     turnLayers.push(options.promiseNudgeNote);

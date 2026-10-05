@@ -7,6 +7,7 @@ import type {
   InferenceResponse,
   InferenceUsage,
   StreamChunk,
+  ProviderMessage,
 } from "@vex-agent/inference/types.js";
 import { OpenRouterEmptyStreamError } from "@vex-agent/inference/openrouter/non-empty-stream.js";
 import type {
@@ -18,6 +19,7 @@ import {
   fakeInferenceProvider,
   withoutStreamMethod,
 } from "../../../../helpers/inference-provider.js";
+import { toStreamAbortedEvent } from "@vex-agent/engine/events/stream-bus.js";
 import { requireValue } from "../../../../helpers/require-value.js";
 
 // ── Mocks ─────────────────────────────────────────────────────
@@ -27,6 +29,10 @@ const mockAddEngineMessage = vi.fn();
 const mockGetLiveMessages = vi.fn().mockResolvedValue([]);
 const mockGetOperatorInstructionsAfter = vi.fn().mockResolvedValue([]);
 const mockDispatchTool = vi.fn();
+const mockStreamEmit = vi.fn();
+const mockToStreamDeltaEvent = vi.fn((sessionId: string, streamId: string, sequence: number, chunk: StreamChunk) => ({
+  sessionId, streamId, sequence, chunk,
+}));
 const mockIncrementIterations = vi.fn().mockResolvedValue(1);
 const mockUpdateStatus = vi.fn();
 const mockSetLastCheckpoint = vi.fn();
@@ -90,8 +96,10 @@ vi.mock("@vex-agent/engine/events/index.js", () => ({
   emitTranscriptAppend: vi.fn(),
   // 9-5a: executeTurn emits stream deltas through this barrel. Stub the bus so
   // a streaming provider used in these tests doesn't crash on `emit`.
-  streamDeltaBus: { emit: vi.fn(), subscribe: vi.fn(), size: vi.fn(), clear: vi.fn() },
-  toStreamDeltaEvent: vi.fn(),
+  streamDeltaBus: { emit: (...a: unknown[]) => mockStreamEmit(...a), subscribe: vi.fn(), size: vi.fn(), clear: vi.fn() },
+  toStreamAbortedEvent,
+  toStreamDeltaEvent: (sessionId: string, streamId: string, sequence: number, chunk: StreamChunk) =>
+    mockToStreamDeltaEvent(sessionId, streamId, sequence, chunk),
 }));
 
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
@@ -203,7 +211,8 @@ vi.mock("@vex-agent/db/client.js", () => ({
 // Puzzle 3 atomic lease helpers — production calls these via dynamic imports
 // from runner/turn-loop/wake paths. Default outcomes: claimed lease + no
 // pending control request. Per-test overrides via `mockImplementationOnce`.
-vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
+vi.mock("@vex-agent/engine/runtime/lease-and-status.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/engine/runtime/lease-and-status.js")>()),
   claimRunLeaseAndFlipToRunning: vi.fn().mockResolvedValue({
     outcome: "claimed",
     previousStatus: "paused_wake",
@@ -367,6 +376,7 @@ describe("turn-loop", () => {
     readonly streamThrows?: () => Error;
     readonly onChatCompletion?: () => void;
     readonly onStream?: () => void;
+    readonly onRequest?: (messages: readonly ProviderMessage[]) => void;
   }): InferenceProvider {
     let completionIndex = 0;
     let streamIndex = 0;
@@ -396,7 +406,8 @@ describe("turn-loop", () => {
         };
       },
       chatCompletionSimple: async () => ({ content: "", usage }),
-      chatCompletionStream: async function* (): AsyncGenerator<StreamChunk> {
+      chatCompletionStream: async function* (messages): AsyncGenerator<StreamChunk> {
+        parts.onRequest?.(messages);
         parts.onStream?.();
         if (parts.streamThrows) throw parts.streamThrows();
         const scripted = parts.streamRounds ?? [];
@@ -446,6 +457,244 @@ describe("turn-loop", () => {
     timeoutMs: 60000,
     contextLimit: 128000,
   };
+
+  describe("text-only tool-call guard", () => {
+    const markup = '<｜DSML｜function_calls><｜DSML｜invoke name="lighter__order_cancel">';
+    const feedback = "Your last reply wrote a tool call as text";
+    const notice = "Tool call written as text, not run";
+    const searchCall: StreamChunk = {
+      type: "tool_call_delta", toolCallIndex: 0, toolCallId: "reissued",
+      toolCallName: "ToolSearch", toolCallArgsDelta: '{"query":"select:lighter__positions_list"}',
+    };
+
+    it("withholds raw preview markup, saves a notice and gives one structured recovery request", async () => {
+      const requests: string[] = [];
+      const provider = makeTypedProvider({
+        onRequest: (messages) => requests.push(JSON.stringify(messages)),
+        streamRounds: [
+          [...[...markup].map((text) => ({ type: "content" as const, text })), { type: "done", finishReason: "stop" }],
+          [searchCall, { type: "done", finishReason: "tool_calls" }],
+          [{ type: "content", text: "Done." }, { type: "done", finishReason: "stop" }],
+        ],
+      });
+      mockDispatchTool.mockResolvedValue({ success: true, output: '{}' });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      expect(result.text).toBe("Done.");
+      expect(result.toolCallsMade).toBe(1);
+      expect(mockDispatchTool).toHaveBeenCalledTimes(1);
+      expect(requireValue(requests[1])).toContain(feedback);
+      expect(requireValue(requests[1])).not.toContain(markup);
+      expect(requireValue(requests[2])).not.toContain(feedback);
+      expect(requireValue(mockAddMessage.mock.calls[0])[1]).toMatchObject({ role: "assistant", content: notice });
+      const previewText = mockToStreamDeltaEvent.mock.calls.map((call) => call[3].text ?? "").join("");
+      expect(previewText).not.toContain("DSML");
+      expect(previewText).not.toContain("lighter__order_cancel");
+    });
+
+    it("parks a structured recovery that still requires approval", async () => {
+      const provider = makeTypedProvider({ streamRounds: [
+        [{ type: "content", text: markup }, { type: "done", finishReason: "stop" }],
+        [{ type: "tool_call_delta", toolCallIndex: 0, toolCallId: "cancel-approval",
+          toolCallName: "lighter__order_cancel", toolCallArgsDelta: '{"environment":"rhc","orderId":"123"}' },
+        { type: "done", finishReason: "tool_calls" }],
+      ] });
+      mockDispatchTool.mockResolvedValue({
+        success: false, output: "Approval required", pendingApproval: true,
+        actionKind: "user_wallet_broadcast",
+      });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      expect(result.stopReason).toBe("approval_required");
+      expect(result.pendingApprovals).toHaveLength(1);
+      expect(mockDispatchTool).toHaveBeenCalledTimes(1);
+    });
+
+    it("OFF preserves the old reply and does not add a recovery request", async () => {
+      let requests = 0;
+      const provider = makeTypedProvider({ onStream: () => { requests += 1; }, streamRounds: [
+        [{ type: "content", text: markup }, { type: "done", finishReason: "stop" }],
+      ] });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], {
+        ...defaultLoopConfig, textToolCallGuard: false,
+      });
+      expect(result.text).toBe(markup);
+      expect(requests).toBe(1);
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      expect(requireValue(mockAddMessage.mock.calls[0])[1]).toMatchObject({ content: markup });
+      expect(mockToStreamDeltaEvent.mock.calls.map((call) => call[3].text ?? "").join("")).toBe(markup);
+    });
+
+    it("leaves a real structured batch on the normal dispatch path", async () => {
+      const requests: string[] = [];
+      const provider = makeTypedProvider({ onRequest: (messages) => requests.push(JSON.stringify(messages)), streamRounds: [
+        [{ type: "content", text: markup }, searchCall, { type: "done", finishReason: "tool_calls" }],
+        [{ type: "content", text: "Done." }, { type: "done", finishReason: "stop" }],
+      ] });
+      mockDispatchTool.mockResolvedValue({ success: true, output: '{}' });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      expect(result.toolCallsMade).toBe(1);
+      expect(requireValue(requests[1])).not.toContain(feedback);
+      expect(requireValue(mockAddMessage.mock.calls[0])[1]).toMatchObject({ content: markup });
+    });
+
+    it("stops a repeated text-only call after one correction, without dispatch", async () => {
+      let requests = 0;
+      const provider = makeTypedProvider({ onStream: () => { requests += 1; }, streamRounds: [
+        [{ type: "content", text: markup }, { type: "done", finishReason: "stop" }],
+      ] });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      expect(result).toMatchObject({ text: notice, toolCallsMade: 0, stopReason: "no_progress" });
+      expect(requests).toBe(2);
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      expect(mockAddMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it("preserves quoted documentation without a correction request", async () => {
+      const content = '```xml\n<function_calls><invoke name="ToolSearch">\n```';
+      let requests = 0;
+      const provider = makeTypedProvider({ onStream: () => { requests += 1; }, streamRounds: [
+        [...[...content].map((text) => ({ type: "content" as const, text })), { type: "done", finishReason: "stop" }],
+      ] });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      expect(result.text).toBe(content);
+      expect(requests).toBe(1);
+      expect(mockToStreamDeltaEvent.mock.calls.map((call) => call[3].text ?? "").join("")).toBe(content);
+    });
+
+    it("guards markup assembled across a cut-off answer and its continuation", async () => {
+      const requests: string[] = [];
+      const provider = makeTypedProvider({ onRequest: (messages) => requests.push(JSON.stringify(messages)), streamRounds: [
+        [{ type: "content", text: "<tool" }, { type: "done", finishReason: "length" }],
+        [{ type: "content", text: '_call name="ToolSearch">' }, { type: "done", finishReason: "stop" }],
+        [{ type: "content", text: "Done." }, { type: "done", finishReason: "stop" }],
+      ] });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      expect(result.text).toBe("Done.");
+      expect(requests).toHaveLength(3);
+      expect(requireValue(requests[2])).toContain(feedback);
+      expect(requireValue(mockAddMessage.mock.calls[0])[1]).toMatchObject({ content: notice });
+      expect(mockAddMessage).toHaveBeenCalledTimes(2);
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+    });
+
+    it("preserves a fenced example whose markup arrives in the continuation", async () => {
+      const prefix = "Example:\n```xml\n";
+      const continuation = '<function_calls><invoke name="ToolSearch">\n```';
+      const requests: string[] = [];
+      const provider = makeTypedProvider({ onRequest: (messages) => requests.push(JSON.stringify(messages)), streamRounds: [
+        [{ type: "content", text: prefix }, { type: "done", finishReason: "length" }],
+        [{ type: "content", text: continuation }, { type: "done", finishReason: "stop" }],
+      ] });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      expect(result.text).toBe(prefix + continuation);
+      expect(requests).toHaveLength(2);
+      expect(requests.join("")).not.toContain(feedback);
+      expect(mockAddMessage).toHaveBeenCalledTimes(1);
+      expect(requireValue(mockAddMessage.mock.calls[0])[1]).toMatchObject({ content: prefix + continuation });
+      expect(mockToStreamDeltaEvent.mock.calls.map((call) => call[3].text ?? "").join("")).toBe(prefix + continuation);
+    });
+
+    it("saves only the notice if Stop interrupts markup in a continuation", async () => {
+      const controller = new AbortController();
+      let requests = 0;
+      const provider = fakeInferenceProvider({ chatCompletionStream: async function* () {
+        requests += 1;
+        if (requests === 1) {
+          yield { type: "content", text: "<｜DS" };
+          yield { type: "done", finishReason: "length" };
+        } else {
+          yield { type: "content", text: 'ML｜function_calls><｜DSML｜invoke name="ToolSearch">' };
+          controller.abort();
+          yield { type: "done", finishReason: "stop" };
+        }
+      } });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [],
+        defaultLoopConfig, {}, undefined, controller.signal);
+      expect(result.stopReason).toBe("user_stopped");
+      expect(requests).toBe(2);
+      expect(mockAddMessage).toHaveBeenCalledTimes(1);
+      expect(requireValue(mockAddMessage.mock.calls[0])[1]).toMatchObject({ content: notice });
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+    });
+
+    it("keeps cutoff timeout handling and never corrects a timed-out continuation", async () => {
+      const requests: string[] = [];
+      const provider = fakeInferenceProvider({ chatCompletionStream: async function* (messages) {
+        requests.push(JSON.stringify(messages));
+        if (requests.length === 1) {
+          yield { type: "content", text: "<tool" };
+          yield { type: "done", finishReason: "length" };
+        } else {
+          yield { type: "content", text: '_call name="ToolSearch">' };
+          await new Promise<void>((resolve) => setTimeout(resolve, 30));
+          yield { type: "done", finishReason: "stop" };
+        }
+      } });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, {
+        ...makeTypedConfig(), streamIdleTimeoutMs: 5,
+      }, [], defaultLoopConfig);
+      expect(requests).toHaveLength(2);
+      expect(requests.join("")).not.toContain(feedback);
+      expect(result.text).toBe("<tool\n\n_(Answer cut off at the output limit.)_");
+      expect(mockAddMessage).toHaveBeenCalledTimes(1);
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+    });
+
+    it("drops pending markup from malformed batches and spends only the existing stall bound", async () => {
+      const requests: string[] = [];
+      const provider = makeTypedProvider({ onRequest: (messages) => requests.push(JSON.stringify(messages)), streamRounds: [
+        [{ type: "content", text: markup }, searchCall,
+          { type: "tool_call_delta", toolCallIndex: 1, toolCallId: "malformed", toolCallName: "ToolSearch", toolCallArgsDelta: "not-json" },
+          { type: "done", finishReason: "tool_calls" }],
+      ] });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      expect(result.stopReason).toBe("no_progress");
+      expect(requests).toHaveLength(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS);
+      expect(requests.join("")).not.toContain(feedback);
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      expect(mockAddMessage).not.toHaveBeenCalled();
+      expect(mockToStreamDeltaEvent.mock.calls.map((call) => call[3].text ?? "").join("")).not.toContain("DSML");
+    });
+
+    it("drops a pending opener on timeout without spending a text-guard correction", async () => {
+      let requests = 0;
+      const requestMessages: string[] = [];
+      const provider = fakeInferenceProvider({ chatCompletionStream: async function* (messages) {
+        requests += 1;
+        requestMessages.push(JSON.stringify(messages));
+        yield { type: "content", text: "<｜DS" };
+        await new Promise<void>((resolve) => setTimeout(resolve, 30));
+        yield { type: "done", finishReason: "stop" };
+      } });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, {
+        ...makeTypedConfig(), streamIdleTimeoutMs: 5,
+      }, [], defaultLoopConfig);
+      expect(result.stopReason).toBe("no_progress");
+      expect(requests).toBe(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS);
+      expect(requestMessages.join("")).not.toContain(feedback);
+      expect(mockAddMessage).not.toHaveBeenCalled();
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      expect(mockToStreamDeltaEvent.mock.calls.map((call) => call[3].text ?? "").join("")).toBe("");
+    });
+
+    it("sanitizes a stopped partial reply and never spends a correction request after Stop", async () => {
+      const controller = new AbortController();
+      let requests = 0;
+      const provider = fakeInferenceProvider({
+        chatCompletionStream: async function* () {
+          requests += 1;
+          yield { type: "content", text: markup };
+          controller.abort();
+          yield { type: "done", finishReason: "stop" };
+        },
+      });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [],
+        defaultLoopConfig, {}, undefined, controller.signal);
+      expect(result.stopReason).toBe("user_stopped");
+      expect(requests).toBe(1);
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      expect(requireValue(mockAddMessage.mock.calls[0])[1]).toMatchObject({ content: notice });
+    });
+  });
 
   // ── Iteration limit ─────────────────────────────────────────
 

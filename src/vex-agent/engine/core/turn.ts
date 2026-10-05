@@ -55,6 +55,12 @@ import {
   type InferenceAttemptRecord,
 } from "@vex-agent/db/repos/runtime-timings.js";
 
+import {
+  createTextToolCallPreviewGuard,
+  guardTextToolCall,
+  TEXT_TOOL_CALL_GUARD,
+} from "./runner/text-tool-call-guard.js";
+
 /**
  * Runtime-measurement correlation for one inference attempt (Kairos Phase 1).
  * Supplied by the turn loop; its presence is what turns attempt recording on.
@@ -70,6 +76,8 @@ export interface TurnAttemptTelemetry {
 }
 
 export interface SingleTurnResult {
+  /** Explicit tool markup was replaced with a notice; no call was parsed or run. */
+  textToolCallGuarded?: boolean;
   /** Text content from model — null when only tool calls. */
   content: string | null;
   /** Tool calls from model — null when text only. */
@@ -174,6 +182,11 @@ export async function executeTurn(
   signal?: AbortSignal,
   prebuiltEnvelope?: TurnEnvelope,
   telemetry?: TurnAttemptTelemetry,
+  options: {
+    readonly textToolCallGuard?: boolean;
+    /** A held cut-off answer supplies Markdown context for its continuation. */
+    readonly textToolCallPresentationPrefix?: string;
+  } = {},
 ): Promise<SingleTurnResult> {
   // Provider message array (D-LAYOUT segments + orphan repair + history-tail
   // marking) — see `turn-envelope.ts`.
@@ -199,6 +212,8 @@ export async function executeTurn(
   // Highest sequence emitted for this stream, so the terminal `aborted` delta
   // continues the same monotonic counter rather than restarting it.
   let lastSequence = -1;
+  const guardEnabled = options.textToolCallGuard ?? TEXT_TOOL_CALL_GUARD;
+  const previewGuard = createTextToolCallPreviewGuard(guardEnabled);
   // Attempt timing is observation only: the timer never sees chunk text, and
   // the row is written in the background once the attempt settles, so a
   // completed, aborted or thrown attempt returns or throws exactly as before.
@@ -224,6 +239,11 @@ export async function executeTurn(
         },
         onDelta: (chunk, sequence) => {
           lastSequence = sequence;
+          if (guardEnabled && chunk.type === "content") {
+            const text = previewGuard.push(chunk.text ?? "");
+            if (text.length === 0) return;
+            chunk = { ...chunk, text };
+          }
           streamDeltaBus.emit(
             toStreamDeltaEvent(context.sessionId, streamId, sequence, chunk),
           );
@@ -242,6 +262,22 @@ export async function executeTurn(
     }
   }
   const { response, aborted, usageObserved, timedOut } = inference;
+  const textGuard = guardTextToolCall(
+    response.content,
+    (response.toolCalls?.length ?? 0) > 0,
+    guardEnabled,
+    options.textToolCallPresentationPrefix,
+  );
+  const previewTail = previewGuard.finish(
+    textGuard.guarded || aborted || timedOut !== null || response.malformedToolCallCount > 0,
+    response.content,
+  );
+  if (previewTail.length > 0) {
+    lastSequence += 1;
+    streamDeltaBus.emit(toStreamDeltaEvent(context.sessionId, streamId, lastSequence, {
+      type: "content", text: previewTail,
+    }));
+  }
 
   // Log usage + update token count
   // NOTE: assistant message is NOT saved here — turn-loop handles deferred save
@@ -306,7 +342,8 @@ export async function executeTurn(
   }
 
   return {
-    content: response.content,
+    content: textGuard.content,
+    ...(textGuard.guarded ? { textToolCallGuarded: true } : {}),
     toolCalls: response.toolCalls,
     reasoning: response.reasoning ?? null,
     promptTokens,

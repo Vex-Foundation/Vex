@@ -24,6 +24,8 @@ export interface TurnLoopConfig {
   baseVisibility?: ToolVisibilityBase;
   /** Overrides DISCOVERED_TOOLS_REBUILD; false keeps the previous empty recovery set. */
   discoveredToolsRebuild?: boolean;
+  /** Overrides TEXT_TOOL_CALL_GUARD; false preserves text-only replies and streaming. */
+  textToolCallGuard?: boolean;
   /**
    * The owner id THIS runner acquired the session lease with.
    *

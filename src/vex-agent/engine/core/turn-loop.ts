@@ -50,6 +50,7 @@ import type { InferenceProvider, InferenceConfig, ToolDefinition } from "@vex-ag
 import type { Message } from "@vex-agent/db/repos/messages.js";
 import type { PromptStackOptions } from "../prompts/index.js";
 import logger from "@utils/logger.js";
+import { TEXT_TOOL_CALL_FEEDBACK, TEXT_TOOL_CALL_NOTICE } from "./runner/text-tool-call-guard.js";
 import { executeTurn, saveAssistantMessage } from "./turn.js";
 import { buildTurnEnvelope } from "./turn-envelope.js";
 import { checkPreInferenceGate } from "./turn-loop/pre-inference-ceiling.js";
@@ -309,6 +310,8 @@ async function runTurnLoopBody(
   // turn. See `runner/promise-nudge.ts`.
   let promiseNudgeUsed = false;
   let promiseNudgePending = false;
+  let textToolCallFeedbackUsed = false;
+  let textToolCallFeedbackPending = false;
   // Rounds actually entered, so the exhaustion events can report what the turn
   // consumed rather than only which bound fired (rule 05).
   let iterationsUsed = 0;
@@ -539,12 +542,15 @@ async function runTurnLoopBody(
     // A cut-off continuation or a stall recovery takes precedence; neither can
     // follow a promise-only reply in practice (both need a different round).
     const nudgeThisCall = promiseNudgePending && cutoff === null && recoveryCall === null;
-    const callPromptOptions = cutoff !== null
+    const baseCallPromptOptions = cutoff !== null
       ? { ...stack.promptOptions, cutoffContinuationNote: CUTOFF_CONTINUATION_NOTE }
       : recoveryCall?.promptOptions
         ?? (nudgeThisCall
           ? { ...stack.promptOptions, promiseNudgeNote: PROMISE_NUDGE_NOTE }
           : stack.promptOptions);
+    const callPromptOptions = textToolCallFeedbackPending
+      ? { ...baseCallPromptOptions, textToolCallGuardNote: TEXT_TOOL_CALL_FEEDBACK }
+      : baseCallPromptOptions;
     const callMessages = cutoff !== null ? continuationMessages(liveMessages, cutoff) : liveMessages;
 
     // Build the request envelope ONCE, here, so the ceiling below measures the
@@ -608,6 +614,7 @@ async function runTurnLoopBody(
     }
     // Spent only once its request is really issued, like the recovery above.
     if (nudgeThisCall) promiseNudgePending = false;
+    textToolCallFeedbackPending = false;
     if (cutoff !== null) {
       // Lengths only, never the answer text.
       logger.info("engine.turn.cutoff_continuation", {
@@ -631,6 +638,10 @@ async function runTurnLoopBody(
         iteration,
         preInferenceMs: performance.now() - iterationStartMs,
         promptStackMs,
+      },
+      {
+        textToolCallGuard: loopConfig.textToolCallGuard,
+        textToolCallPresentationPrefix: cutoff?.content,
       },
     );
     // A round a bound stopped before its usage chunk reports zero prompt
@@ -682,7 +693,9 @@ async function runTurnLoopBody(
         // retires the preview like any other persisted stop.
         await saveAssistantMessage(
           context.sessionId,
-          stoppedCutoffContent(cutoff, turnResult.content),
+          turnResult.textToolCallGuarded === true
+            ? TEXT_TOOL_CALL_NOTICE
+            : stoppedCutoffContent(cutoff, turnResult.content),
           null,
           {
             stopped: true,
@@ -771,6 +784,11 @@ async function runTurnLoopBody(
     // saved on its own row and the round is classified and dispatched below
     // like any other.
     let resolvedAnswer: { content: string; reasoning: string | null } | null = null;
+    if (cutoff !== null && turnResult.textToolCallGuarded === true && turnResult.timedOut === null) {
+      // The final scan included the held fragment. Its notice replaces the
+      // complete attempted text call, rather than joining the fragment back.
+      cutoff = null;
+    }
     if (cutoff !== null) {
       const resolution = resolveCutoffContinuation(cutoff, turnResult);
       cutoff = null;
@@ -958,6 +976,32 @@ async function runTurnLoopBody(
     const answer = resolvedAnswer
       ?? (turnResult.content ? { content: turnResult.content, reasoning: turnResult.reasoning } : null);
     if (answer !== null) {
+      if (turnResult.textToolCallGuarded === true && turnResult.timedOut === null) {
+        // Text never becomes a call. Save the notice without consuming a board
+        // intended for a real report, then offer one normal inference recovery.
+        await persistTextAnswer({
+          context, liveMessages, content: TEXT_TOOL_CALL_NOTICE,
+          reasoning: answer.reasoning, attachBoard: false,
+        });
+        lastText = TEXT_TOOL_CALL_NOTICE;
+        if (leaseLost()) {
+          stopReason = "lease_lost";
+          break;
+        }
+        logger.info("engine.turn.text_tool_call_guard", {
+          sessionId: context.sessionId, iteration,
+          feedbackIssued: textToolCallFeedbackUsed ? 0 : 1,
+        });
+        if (!textToolCallFeedbackUsed) {
+          textToolCallFeedbackUsed = true;
+          textToolCallFeedbackPending = true;
+          continue;
+        }
+        // A second text-only attempt is not a reason to keep spending rounds.
+        stopReason = "no_progress";
+        lastUnproductiveKind = null;
+        break;
+      }
       // R-9: an answer the output limit cut short is held back, not saved;
       // the next iteration is its one continuation call. Never for the
       // continuation's own result (`resolvedAnswer`), so there is at most one
