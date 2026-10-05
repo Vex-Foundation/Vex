@@ -711,6 +711,75 @@ describe("Light it up trade ticket", () => {
     expect(screen.getByLabelText("Stop loss trigger price")).toBeTruthy();
   });
 
+  it("explains a valid partial close without submitting it and clears the hint when the amount changes", () => {
+    const hint = "75% ETH close loaded. Click Short to review the reduce-only order.";
+    const { onSend } = renderTicket({ prefill: {
+      key: 101, mode: "market", side: "sell", baseAmount: "0.1315", reduceOnly: true, reviewHint: hint,
+    } });
+    expect(screen.getByText(hint)).toBeTruthy();
+    expect(onSend).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "0.2" } });
+    expect(screen.queryByText(hint)).toBeNull();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it.each(["0.0877", "0.0438"])("shows the current minimum warning for %s after an earlier action error clears", (amount) => {
+    const market = { ...PERP, symbol: "BABA", minBaseAmount: "0.04" };
+    const hint = "Partial BABA close loaded. Click Short to review the reduce-only order.";
+    const prefill = { key: 101, mode: "market" as const, side: "sell" as const, baseAmount: amount, reduceOnly: true, reviewHint: hint };
+    const { onSend, rerender } = renderTicket({
+      market, lastPrice: 110.5,
+      book: { asks: [{ orderId: "a", price: "110.51", size: "1" }], bids: [{ orderId: "b", price: "110.50", size: "1" }] },
+      prefill, handoffError: "A previous Lighter action is still settling.",
+    });
+    expect(screen.getByText("A previous Lighter action is still settling.")).toBeTruthy();
+    rerender({ handoffError: null, prefill: { ...prefill, key: 102 } });
+    expect(screen.queryByText("A previous Lighter action is still settling.")).toBeNull();
+    expect(screen.getByText("Minimum order value is 10 USD.")).toBeTruthy();
+    expect(screen.queryByText(hint)).toBeNull();
+    expect(screen.getByRole("button", { name: /^Short/ }).hasAttribute("disabled")).toBe(true);
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("clears the partial close hint if reduce-only is turned off", () => {
+    const hint = "75% ETH close loaded. Click Short to review the reduce-only order.";
+    const { onSend } = renderTicket({ prefill: {
+      key: 101, mode: "market", side: "sell", baseAmount: "0.1315", reduceOnly: true, reviewHint: hint,
+    } });
+    expect(screen.getByText(hint)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Reduce-Only"));
+    expect(screen.queryByText(hint)).toBeNull();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("does not direct a sessionless ticket to a close submit button", () => {
+    const hint = "75% ETH close loaded. Click Short to review the reduce-only order.";
+    const { onSend } = renderTicket({ activeSession: false, prefill: {
+      key: 101, mode: "market", side: "sell", baseAmount: "0.1315", reduceOnly: true, reviewHint: hint,
+    } });
+    expect(screen.queryByText(hint)).toBeNull();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { tone: "warn" as const, text: "Approved. Sending to Lighter." },
+    { tone: "ok" as const, text: "Position reduced." },
+  ])("keeps $text visible when a partial close approval finishes", (outcome) => {
+    const hint = "75% ETH close loaded. Click Short to review the reduce-only order.";
+    const { onSend, rerender } = renderTicket({ prefill: {
+      key: 101, mode: "market", side: "sell", baseAmount: "0.1315", reduceOnly: true, reviewHint: hint,
+    } });
+    expect(screen.getByText(hint)).toBeTruthy();
+    rerender({ pendingApprovalCount: 1 });
+    expect(screen.queryByText(hint)).toBeNull();
+    rerender({ pendingApprovalCount: 1, outcome });
+    expect(screen.getByText(outcome.text)).toBeTruthy();
+    rerender({ pendingApprovalCount: 0, outcome });
+    expect(screen.getByText(outcome.text)).toBeTruthy();
+    expect(screen.queryByText(hint)).toBeNull();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
   it("fills the limit price from a chart click only while Limit is selected", () => {
     const { rerender } = renderTicket();
 

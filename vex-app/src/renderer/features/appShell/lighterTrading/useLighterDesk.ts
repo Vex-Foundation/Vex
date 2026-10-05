@@ -158,6 +158,7 @@ export function useLighterDesk(deps: LighterDeskDeps = {}) {
     submitting,
     prepareStage,
     deskOutcome,
+    clearDeskFeedback,
     closingPositions,
     cancellingOrders,
     cancelAllPending,
@@ -359,12 +360,16 @@ export function useLighterDesk(deps: LighterDeskDeps = {}) {
     if (target === null) return;
     const size = position.size.startsWith("-") ? position.size.slice(1) : position.size;
     const mark = positionMetrics(position, target === market ? publicMarketStream.stats?.markPrice ?? null : null).mark;
+    clearDeskFeedback();
     setTicketPrefill({
       key: Date.now(),
       mode,
       side: position.side === "long" ? "sell" : "buy",
       baseAmount: portionOfSize(size, portion, target.decimals.size),
       reduceOnly: mode !== "oco",
+      ...(mode === "oco" ? {} : {
+        reviewHint: `${portion * 100}% ${position.symbol ?? target.symbol} close loaded. Click ${position.side === "long" ? "Short" : "Long"} to review the reduce-only order.`,
+      }),
       ...(mode === "limit" && mark !== null ? { price: mark.toFixed(target.decimals.price) } : {}),
     });
   };

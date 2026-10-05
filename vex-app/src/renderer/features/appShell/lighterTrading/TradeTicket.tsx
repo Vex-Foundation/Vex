@@ -49,7 +49,7 @@ const SETUP_ACTION_TEXT: Readonly<Record<LighterOnboardingChecklist["nextAction"
   none: "Setup complete",
 };
 
-type NoticeSource = "approval" | "validation" | "outcome" | "handoff";
+type NoticeSource = "approval" | "validation" | "outcome" | "handoff" | "prefill";
 interface TicketNotice {
   readonly source: NoticeSource;
   readonly value: DeskOutcome;
@@ -162,7 +162,17 @@ export function TradeTicket({
   useEffect(() => {
     if (problem !== null && handoffErrorRef.current == null) showNotice("validation", { tone: "warn", text: problem });
     else if (problem === null) setVisibleNotice((current) => current?.source === "validation" ? null : current);
-  }, [problem, showNotice]);
+  }, [problem, handoffError, showNotice]);
+  useEffect(() => {
+    const ready = prefill?.reviewHint !== undefined && prefill.reduceOnly && form.reduceOnly
+      && form.mode === prefill.mode && form.side === prefill.side
+      && form.baseAmount === prefill.baseAmount;
+    if (ready && activeSession && problem === null && handoffError == null && pendingApprovalCount === 0 && outcome === null) {
+      showNotice("prefill", { tone: "warn", text: prefill.reviewHint });
+    } else {
+      setVisibleNotice((current) => current?.source === "prefill" ? null : current);
+    }
+  }, [prefill, form.mode, form.side, form.baseAmount, form.reduceOnly, activeSession, problem, handoffError, pendingApprovalCount, outcome, showNotice]);
   useEffect(() => {
     if (outcome !== null && handoffErrorRef.current == null) showNotice("outcome", outcome);
     else if (outcome === null) setVisibleNotice((current) => current?.source === "outcome" ? null : current);

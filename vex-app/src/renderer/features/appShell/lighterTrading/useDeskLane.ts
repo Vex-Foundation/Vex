@@ -1025,6 +1025,10 @@ export function useDeskLane({
     submitting,
     prepareStage,
     deskOutcome,
+    clearDeskFeedback: () => {
+      setHandoffError(null);
+      setDeskOutcome(null);
+    },
     closingPositions,
     cancellingOrders,
     cancelAllPending,

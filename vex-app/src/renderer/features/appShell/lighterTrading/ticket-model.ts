@@ -477,6 +477,8 @@ export interface TradeTicketPrefill {
   readonly reduceOnly: boolean;
   /** Limit price for limit and trigger-limit modes; the hard execution bound for market triggers. */
   readonly price?: string;
+  /** Explains the next manual review step after loading a position close. */
+  readonly reviewHint?: string;
   readonly triggerPrice?: string;
   readonly timeInForce?: LimitTimeInForce;
   readonly expiryMinutes?: number;

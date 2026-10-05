@@ -634,6 +634,25 @@ describe("desk lane", () => {
     expect(invalidate).not.toHaveBeenCalled();
   });
 
+  it.each(["long", "short"] as const)("makes the partial %s close review step explicit and clears an earlier refusal", async (side) => {
+    accountData.value = { ok: true, data: positionAccount(Date.now()) };
+    prepareDeskAction.mockResolvedValueOnce({ ok: true, data: {
+      kind: "refused", reason: "A live Lighter close action already exists.",
+    } });
+    const { result } = renderDesk();
+    const position = { ...OPEN_POSITION, side, size: "0.1754" };
+    await act(async () => result.current.accountActions.onClosePosition(position, 1));
+    expect(result.current.handoffError).toContain("still settling");
+    await act(async () => result.current.accountActions.onClosePosition(position, 0.75));
+    expect(result.current.handoffError).toBeNull();
+    expect(result.current.ticketPrefill).toMatchObject({
+      mode: "market", side: side === "long" ? "sell" : "buy", baseAmount: "0.1315", reduceOnly: true,
+      reviewHint: `75% ${position.symbol} close loaded. Click ${side === "long" ? "Short" : "Long"} to review the reduce-only order.`,
+    });
+    expect(prepareDeskAction).toHaveBeenCalledTimes(1);
+    expect(approve).not.toHaveBeenCalled();
+  });
+
   it("opens the session sheet instead of preparing when there is no session", async () => {
     useUiStore.setState({ activeSessionId: null });
     const { result } = renderDesk();
