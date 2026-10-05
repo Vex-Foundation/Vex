@@ -22,10 +22,10 @@
  * are cut so no home directory reaches the log.
  *
  * Off in packaged builds; the caller passes `enabled`. The segment timer is
- * unref'd: the profiler never keeps the process alive. If collecting a
- * profile blocks this thread beyond its budget, attribution stops rather
- * than repeating a pause created by the diagnostic itself. The separate
- * event-loop-delay telemetry remains active.
+ * unref'd: the profiler never keeps the process alive. If starting or
+ * collecting a profile blocks this thread beyond its budget, attribution
+ * stops rather than repeating a pause created by the diagnostic itself.
+ * The separate event-loop-delay telemetry remains active.
  */
 
 import { Session } from "node:inspector";
@@ -36,10 +36,10 @@ import { Session } from "node:inspector";
  */
 export const EVENT_LOOP_STALL_PROFILER = true;
 
-/** False preserves continuous capture even when collection is expensive. */
+/** False preserves continuous capture even when inspector work is expensive. */
 export const EVENT_LOOP_STALL_PROFILER_OVERHEAD_GUARD = true;
 
-/** Stop capture before collection becomes a recurring perceptible pause. */
+/** Stop capture before inspector work becomes a recurring perceptible pause. */
 export const STALL_PROFILER_COLLECTION_BUDGET_MS = 50;
 
 /** Sampling interval of the CPU profiler, in microseconds. */
@@ -350,6 +350,24 @@ export function startStallProfiler(options: {
     shutDown();
   };
 
+  const startCapture = async (): Promise<boolean> => {
+    const started = deps.now();
+    const response = session.post("Profiler.start");
+    const blockedMs = deps.now() - started;
+    await response;
+    if (stopped) return false;
+    if (deps.collectionGuard && blockedMs > STALL_PROFILER_COLLECTION_BUDGET_MS) {
+      deps.log(
+        `[event-loop-stall] startBlockedMs=${round1(blockedMs)} ` +
+        `budgetMs=${STALL_PROFILER_COLLECTION_BUDGET_MS}; attribution off`,
+      );
+      // Capture is active after start, so stop it once before disconnecting.
+      shutDown();
+      return false;
+    }
+    return true;
+  };
+
   const report = (profile: CpuProfile): void => {
     const stalls = findStalls(profile);
     for (const stall of stalls.slice(0, STALL_PROFILER_MAX_LINES_PER_SEGMENT)) {
@@ -381,8 +399,7 @@ export function startStallProfiler(options: {
           shutDown(true);
           return;
         }
-        await session.post("Profiler.start");
-        if (stopped) return;
+        if (!(await startCapture()) || stopped) return;
         const profile = profileOf(result);
         if (profile !== null) report(profile);
       })
@@ -399,8 +416,7 @@ export function startStallProfiler(options: {
       interval: STALL_PROFILER_SAMPLING_INTERVAL_US,
     });
     if (stopped) return;
-    await session.post("Profiler.start");
-    if (stopped) return;
+    if (!(await startCapture()) || stopped) return;
     deps.log(
       `[event-loop-stall] profiler on intervalUs=${STALL_PROFILER_SAMPLING_INTERVAL_US} ` +
         `segmentMs=${STALL_PROFILER_SEGMENT_MS} minMs=${STALL_PROFILER_MIN_RUN_MS}`,

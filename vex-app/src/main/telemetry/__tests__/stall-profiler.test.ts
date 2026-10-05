@@ -163,6 +163,19 @@ async function settle(): Promise<void> {
   for (let i = 0; i < 10; i += 1) await Promise.resolve();
 }
 
+/** Charge the synchronous submission being tested, not promise delivery. */
+function submissionClock(session: FakeSession, method: string, cost: number, fromCall = 1): () => number {
+  const post = session.post;
+  let time = 0;
+  let calls = 0;
+  session.post = (submitted, params) => {
+    const response = post(submitted, params);
+    if (submitted === method && ++calls >= fromCall) time += cost;
+    return response;
+  };
+  return () => time;
+}
+
 function harness(session: FakeSession, overrides: Partial<StallProfilerDeps> = {}): {
   lines: string[];
   tick: () => void;
@@ -289,9 +302,8 @@ describe("startStallProfiler", () => {
 
   it("stops expensive collection once without collecting or restarting again", async () => {
     const session = fakeSession([profileOf([[2, 50], [7, 150], [2, 50]])]);
-    let time = 0;
     const h = harness(session, {
-      now: () => { const value = time; time += 150; return value; },
+      now: submissionClock(session, "Profiler.stop", 150),
     });
     await settle();
     h.tick();
@@ -310,10 +322,9 @@ describe("startStallProfiler", () => {
 
   it("keeps the prior continuous capture path when the collection guard is off", async () => {
     const session = fakeSession([profileOf([[2, 50], [7, 150], [2, 50]])]);
-    let time = 0;
     const h = harness(session, {
       collectionGuard: false,
-      now: () => { const value = time; time += 150; return value; },
+      now: submissionClock(session, "Profiler.stop", 150),
     });
     await settle();
     h.tick();
@@ -326,9 +337,8 @@ describe("startStallProfiler", () => {
 
   it.each([{ cost: 50, stopped: false }, { cost: 50.1, stopped: true }])("enforces the collection budget at $cost ms", async ({ cost, stopped }) => {
     const session = fakeSession([]);
-    let time = 0;
     const h = harness(session, {
-      now: () => { const value = time; time += cost; return value; },
+      now: submissionClock(session, "Profiler.stop", cost),
     });
     await settle();
     h.tick();
@@ -423,9 +433,8 @@ describe("startStallProfiler", () => {
 
   it("disconnects once if collection rejects, including after expensive submission", async () => {
     const session = fakeSession([], "Profiler.stop");
-    let time = 0;
     const h = harness(session, {
-      now: () => { const value = time; time += 150; return value; },
+      now: submissionClock(session, "Profiler.stop", 150),
     });
     await settle();
     h.tick();
@@ -437,5 +446,160 @@ describe("startStallProfiler", () => {
     expect(h.lines).toHaveLength(2);
     expect(h.cancelled()).toBe(true);
     expect(session.disconnected).toBe(1);
+  });
+
+  it.each([1, 2])("stops an expensive start at call %s without further rotation", async (fromCall) => {
+    const session = fakeSession([profileOf([[2, 50], [7, 150], [2, 50]])]);
+    const h = harness(session, { now: submissionClock(session, "Profiler.start", 150, fromCall) });
+    await settle();
+    if (fromCall === 2) {
+      h.tick();
+      await settle();
+      expect(h.cancelled()).toBe(true);
+    }
+    expect(h.lines[h.lines.length - 1]).toBe("[event-loop-stall] startBlockedMs=150 budgetMs=50; attribution off");
+    expect(h.lines.some((line) => line.includes("parseAccountSnapshot"))).toBe(false);
+    expect(h.lines.some((line) => line.includes("profiler on"))).toBe(fromCall === 2);
+    expect(session.posts.filter((post) => post === "Profiler.start")).toHaveLength(fromCall);
+    expect(session.posts.filter((post) => post === "Profiler.stop")).toHaveLength(fromCall);
+    expect(session.disconnected).toBe(1);
+    const posts = session.posts.slice();
+    const lines = h.lines.slice();
+    h.tick();
+    h.stop();
+    h.stop();
+    await settle();
+    expect(session.posts).toEqual(posts);
+    expect(h.lines).toEqual(lines);
+    expect(session.disconnected).toBe(1);
+  });
+
+  it.each([1, 2])("preserves expensive start call %s when the guard is off", async (fromCall) => {
+    const session = fakeSession([profileOf([[2, 50], [7, 150], [2, 50]])]);
+    const h = harness(session, {
+      collectionGuard: false,
+      now: submissionClock(session, "Profiler.start", 150, fromCall),
+    });
+    await settle();
+    h.tick();
+    await settle();
+    expect(h.cancelled()).toBe(false);
+    expect(session.posts.filter((post) => post === "Profiler.start")).toHaveLength(2);
+    expect(h.lines.some((line) => line.includes("startBlockedMs"))).toBe(false);
+    expect(h.lines.some((line) => line.includes("parseAccountSnapshot"))).toBe(true);
+    h.stop();
+    await settle();
+  });
+
+  it.each([{ cost: 50, stopped: false }, { cost: 50.1, stopped: true }])("enforces the initial start budget at $cost ms", async ({ cost, stopped }) => {
+    const session = fakeSession([]);
+    const h = harness(session, { now: submissionClock(session, "Profiler.start", cost) });
+    await settle();
+    expect(session.disconnected === 1).toBe(stopped);
+    expect(h.lines.some((line) => line.includes("profiler on"))).toBe(!stopped);
+    h.stop();
+    await settle();
+  });
+
+  it.each([1, 2])("excludes asynchronous wait for start call %s from the budget", async (heldCall) => {
+    const session = fakeSession([]);
+    let release: (value: unknown) => void = () => undefined;
+    let starts = 0;
+    let time = 0;
+    const post = session.post;
+    session.post = (method, params) => {
+      if (method !== "Profiler.start" || ++starts !== heldCall) return post(method, params);
+      session.posts.push(method);
+      return new Promise((resolve) => { release = resolve; });
+    };
+    const h = harness(session, { now: () => time });
+    await settle();
+    if (heldCall === 2) {
+      h.tick();
+      await settle();
+    }
+    time = 1_000;
+    release({});
+    await settle();
+    expect(session.disconnected).toBe(0);
+    expect(h.lines.some((line) => line.includes("startBlockedMs"))).toBe(false);
+    h.stop();
+    await settle();
+  });
+
+  it("disconnects even when cleanup after an expensive start rejects", async () => {
+    const session = fakeSession([], "Profiler.stop");
+    const h = harness(session, { now: submissionClock(session, "Profiler.start", 150) });
+    await settle();
+    expect(h.lines).toEqual(["[event-loop-stall] startBlockedMs=150 budgetMs=50; attribution off"]);
+    expect(session.disconnected).toBe(1);
+    h.stop();
+    await settle();
+    expect(session.posts.filter((post) => post === "Profiler.stop")).toHaveLength(1);
+  });
+
+  it("cannot register rotation after shutdown during initial start", async () => {
+    const session = fakeSession([]);
+    let release: (value: unknown) => void = () => undefined;
+    const post = session.post;
+    session.post = (method, params) => {
+      if (method !== "Profiler.start") return post(method, params);
+      session.posts.push(method);
+      return new Promise((resolve) => { release = resolve; });
+    };
+    const h = harness(session);
+    await settle();
+    h.stop();
+    release({});
+    await settle();
+    h.tick();
+    expect(h.lines).toEqual([]);
+    expect(session.disconnected).toBe(1);
+    expect(session.posts.filter((post) => post === "Profiler.start")).toHaveLength(1);
+  });
+
+  it.each([1, 2])("keeps shutdown between start call %s and its caller continuation", async (heldCall) => {
+    const session = fakeSession([profileOf([[2, 50], [7, 150], [2, 50]])]);
+    let release: (value: unknown) => void = () => undefined;
+    const response = new Promise((resolve) => { release = resolve; });
+    let starts = 0;
+    let timers = 0;
+    const post = session.post;
+    session.post = (method, params) => {
+      if (method !== "Profiler.start" || ++starts !== heldCall) return post(method, params);
+      session.posts.push(method);
+      return response;
+    };
+    let tick: () => void = () => undefined;
+    const lines: string[] = [];
+    const stop = startStallProfiler({
+      enabled: true,
+      log: (line) => lines.push(line),
+      deps: {
+        connect: () => session,
+        every: (fn) => {
+          timers += 1;
+          tick = fn;
+          return () => undefined;
+        },
+      },
+    });
+    await settle();
+    if (heldCall === 2) {
+      tick();
+      await settle();
+    }
+    void response.then(stop);
+    release({});
+    await settle();
+    expect(timers).toBe(heldCall - 1);
+    expect(lines).toHaveLength(heldCall - 1);
+    expect(lines.some((line) => line.includes("parseAccountSnapshot"))).toBe(false);
+    expect(session.disconnected).toBe(1);
+    const posts = session.posts.slice();
+    tick();
+    stop();
+    await settle();
+    expect(session.posts).toEqual(posts);
   });
 });
