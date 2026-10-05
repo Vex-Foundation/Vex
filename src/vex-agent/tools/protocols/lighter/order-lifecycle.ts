@@ -599,19 +599,32 @@ export async function executeApprovedLighterCancelOne(
     withLighterBeforeSendFailures((sendPhase) => runApprovedLighterCancelOne(intent, deps, abortSignal, sendPhase, timing, sessionWallet)));
 }
 
+/** Starts only the fresh ownership read; its judgment stays after prior checks. */
+function prefetchLifecycleSigningOwnership(
+  intent: LighterOrderLifecycleIntentRow,
+  deps: LighterOrderLifecycleExecutionDeps,
+  parallel: boolean,
+): (() => Promise<Awaited<ReturnType<LighterClient["getAccount"]>>>) | undefined {
+  if (!parallel || !(deps.signingOwnershipRecheck ?? LIGHTER_LIFECYCLE_SIGNING_OWNERSHIP_RECHECK)) return undefined;
+  return lifecycleRead(true, () => deps.client.getAccount(intent.environment, {
+    by: "index", value: String(intent.accountIndex),
+  }, FRESH_PUBLIC_READ));
+}
+
 /** Runs after all prior checks, before passed evidence and any nonce write. */
 async function recheckLifecycleSigningOwnership(
   intent: LighterOrderLifecycleIntentRow,
   deps: LighterOrderLifecycleExecutionDeps,
   wallet: LighterSigningOwnershipWallet | undefined,
   freshAccount?: Awaited<ReturnType<LighterClient["getAccount"]>>,
+  readAccount?: () => Promise<Awaited<ReturnType<LighterClient["getAccount"]>>>,
 ): Promise<void> {
   if (!(deps.signingOwnershipRecheck ?? LIGHTER_LIFECYCLE_SIGNING_OWNERSHIP_RECHECK)) return;
-  // Close already read this account fresh. Other lifecycle paths need their
-  // own fresh read: active orders and registered keys do not prove L1 ownership.
-  const account = freshAccount ?? await deps.client.getAccount(intent.environment, {
+  // Close already read this account fresh. Other lifecycle paths may have
+  // prefetched their own fresh read; active orders and keys do not prove ownership.
+  const account = freshAccount ?? await (readAccount?.() ?? deps.client.getAccount(intent.environment, {
     by: "index", value: String(intent.accountIndex),
-  }, FRESH_PUBLIC_READ);
+  }, FRESH_PUBLIC_READ));
   const outcome = judgeLighterSigningOwnership({
     accountIndex: intent.accountIndex, account, wallet, signingMaterialAlreadyLoaded: true,
   });
@@ -668,7 +681,7 @@ async function runApprovedLighterCancelOne(
     deps.authSigner,
   ));
   const auth: LighterPrivilegedAccountAuth = { token: authResult.authToken, accountIndex: intent.accountIndex };
-  // LIGHTER_LIFECYCLE_PARALLEL_READS: ON starts all three reads here; each is
+  // LIGHTER_LIFECYCLE_PARALLEL_READS: ON also starts fresh ownership here; each is
   // still judged below in today's order. OFF issues each at its await.
   timing.start("readsMs");
   const readActive = lifecycleRead(timing.parallelReads, () => deps.client.getAccountActiveOrders(intent.environment, {
@@ -683,6 +696,7 @@ async function runApprovedLighterCancelOne(
     accountIndex: intent.accountIndex,
     apiKeyIndex: intent.apiKeyIndex,
   }));
+  const readOwnership = prefetchLifecycleSigningOwnership(intent, deps, timing.parallelReads);
   const active = await readActive();
   const liveOrder = findExactOrder(active.orders, {
     accountIndex: intent.accountIndex,
@@ -707,7 +721,7 @@ async function runApprovedLighterCancelOne(
   if (nextNonce.nonce !== providerKey.nonce) {
     throw blocked("Lighter returned inconsistent nonce evidence.");
   }
-  await recheckLifecycleSigningOwnership(intent, deps, sessionWallet);
+  await recheckLifecycleSigningOwnership(intent, deps, sessionWallet, undefined, readOwnership);
   timing.stop("readsMs");
   const evidence = {
     kind: "lighter_cancel_one_pre_submit_revalidation",
@@ -949,7 +963,7 @@ async function runApprovedLighterModifyOrder(
   ));
   const auth: LighterPrivilegedAccountAuth = { token: authResult.authToken, accountIndex: intent.accountIndex };
   // LIGHTER_LIFECYCLE_PARALLEL_READS: ON starts the market, active-order, fee,
-  // key and nonce reads here; each is still judged below in today's order,
+  // key, nonce and fresh ownership reads here; each is judged in today's order,
   // and the fee check's trader account stays its own fresh read. OFF issues
   // each read at its await.
   timing.start("readsMs");
@@ -973,6 +987,7 @@ async function runApprovedLighterModifyOrder(
     accountIndex: intent.accountIndex,
     apiKeyIndex: intent.apiKeyIndex,
   }));
+  const readOwnership = prefetchLifecycleSigningOwnership(intent, deps, timing.parallelReads);
   const markets = await readMarkets();
   const market = markets.order_books.find((candidate) => candidate.market_id === intent.marketIndex);
   if (
@@ -1032,7 +1047,7 @@ async function runApprovedLighterModifyOrder(
     client: deps.client,
   });
   timing.stop("capitalMs");
-  await recheckLifecycleSigningOwnership(intent, deps, sessionWallet);
+  await recheckLifecycleSigningOwnership(intent, deps, sessionWallet, undefined, readOwnership);
   const evidence = {
     kind: "lighter_modify_order_pre_submit_revalidation",
     checkedAt: new Date(deps.now()).toISOString(),
@@ -1300,7 +1315,7 @@ async function runApprovedLighterCancelAll(
     deps.authSigner,
   ));
   const auth: LighterPrivilegedAccountAuth = { token: authResult.authToken, accountIndex: intent.accountIndex };
-  // LIGHTER_LIFECYCLE_PARALLEL_READS: ON starts all three reads here; each is
+  // LIGHTER_LIFECYCLE_PARALLEL_READS: ON also starts fresh ownership here; each is
   // still judged below in today's order. OFF issues each at its await.
   timing.start("readsMs");
   const readActive = lifecycleRead(timing.parallelReads, () => deps.client.getAccountActiveOrders(intent.environment, {
@@ -1315,6 +1330,7 @@ async function runApprovedLighterCancelAll(
     accountIndex: intent.accountIndex,
     apiKeyIndex: intent.apiKeyIndex,
   }));
+  const readOwnership = prefetchLifecycleSigningOwnership(intent, deps, timing.parallelReads);
   const active = await readActive();
   const liveOrders = active.orders.map((order) => lifecycleSnapshot(order)).sort(compareLifecycleOrders);
   if (lifecycleMatchHash(liveOrders) !== lifecycleMatchHash(approvedOrders)) {
@@ -1331,7 +1347,7 @@ async function runApprovedLighterCancelAll(
   if (nextNonce.nonce !== providerKey.nonce) {
     throw blocked("Lighter returned inconsistent nonce evidence.");
   }
-  await recheckLifecycleSigningOwnership(intent, deps, sessionWallet);
+  await recheckLifecycleSigningOwnership(intent, deps, sessionWallet, undefined, readOwnership);
   timing.stop("readsMs");
   const revalidated = await timing.measure("persistMs", () => deps.intents.markPreSubmitRevalidated({
     intentId: intent.intentId,

@@ -2170,6 +2170,115 @@ const OWNERSHIP_SCENARIOS: readonly { action: LifecycleAction; build: () => Life
 const SELECTED_WALLET = { kind: "wallet" as const, address: FEE_WALLET };
 
 describe("LIGHTER_LIFECYCLE_SIGNING_OWNERSHIP_RECHECK", () => {
+  it.each(LIFECYCLE_CASES)("keeps parallel ownership outcomes and durable effects equal to sequential: $label", async ({ action, build }) => {
+    const ownership = { enabled: true, wallet: SELECTED_WALLET };
+    const off = await observeLifecycle(action, build(), false, ownership);
+    const on = await observeLifecycle(action, build(), true, ownership);
+    expect(on.outcome).toEqual(off.outcome);
+    expect(on.effects).toEqual(off.effects);
+    expectReadsCovered(off.reads, on.reads);
+  });
+
+  const prefetchedActions = OWNERSHIP_SCENARIOS.filter(({ action }) => action !== "close_position");
+
+  it.each(prefetchedActions)("overlaps $action fresh ownership with active orders and still waits before nonce writes", async ({ action, build }) => {
+    for (const parallel of [false, true]) {
+      const { intent: approved, deps: d } = build();
+      const activeGate = createReadGate();
+      const ownershipGate = createReadGate();
+      const active = d.client.getAccountActiveOrders;
+      const account = requireValue(vi.mocked(d.client.getAccount).getMockImplementation());
+      Object.assign(d.client, {
+        getAccountActiveOrders: vi.fn<LighterClient["getAccountActiveOrders"]>(async (...args) => {
+          await activeGate.promise;
+          return active(...args);
+        }),
+      });
+      vi.mocked(d.client.getAccount).mockImplementation(async (...args) => {
+        if (args[2]?.fresh === true) await ownershipGate.promise;
+        return account(...args);
+      });
+      const execution = LIFECYCLE_EXECUTORS[action](approved, {
+        ...d, lifecycleParallelReads: parallel, signingOwnershipRecheck: true,
+      }, undefined, SELECTED_WALLET);
+      await vi.waitFor(() => expect(d.client.getAccountActiveOrders).toHaveBeenCalledTimes(1));
+      const freshCalls = () => vi.mocked(d.client.getAccount).mock.calls.filter((call) => call[2]?.fresh === true);
+      expect(freshCalls()).toHaveLength(parallel ? 1 : 0);
+      expect(d.secretReader.readTradingApiPrivateKey).toHaveBeenCalledTimes(1);
+      expect(d.authSigner.createAccountAuth).toHaveBeenCalledTimes(1);
+      expect(requireValue(vi.mocked(d.authSigner.createAccountAuth).mock.invocationCallOrder[0]))
+        .toBeLessThan(requireValue(vi.mocked(d.client.getAccountActiveOrders).mock.invocationCallOrder[0]));
+      activeGate.release();
+      await vi.waitFor(() => expect(freshCalls()).toHaveLength(1));
+      expect(d.client.getAccount).toHaveBeenCalledWith("rhc", { by: "index", value: "42" }, { fresh: true });
+      expect(d.intents.markPreSubmitRevalidated).not.toHaveBeenCalled();
+      expect(d.nonceState.recordExecutionObserved).not.toHaveBeenCalled();
+      expect(d.lifecycleSigner.signCancelOrder).not.toHaveBeenCalled();
+      expect(d.lifecycleSigner.signModifyOrder).not.toHaveBeenCalled();
+      expect(d.lifecycleSigner.signCancelAllOrders).not.toHaveBeenCalled();
+      ownershipGate.release();
+      await expect(execution).resolves.toBeDefined();
+      expect(freshCalls()).toHaveLength(1);
+      expect(d.secretReader.readTradingApiPrivateKey).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it.each(prefetchedActions)("contains failed unused $action ownership reads while preserving earlier refusal", async ({ action, build }) => {
+    for (const synchronous of [false, true]) {
+      const prepare = () => {
+        const built = build();
+        vi.mocked(built.deps.client.getApiKeys).mockImplementation(rejectAfter(new Error("credential unavailable"), 5));
+        vi.mocked(built.deps.client.getAccount).mockImplementation(() => {
+          if (synchronous) throw new Error("ownership unavailable");
+          return Promise.reject(new Error("ownership unavailable"));
+        });
+        return built;
+      };
+      const ownership = { enabled: true, wallet: SELECTED_WALLET };
+      const off = await observeLifecycle(action, prepare(), false, ownership);
+      const on = await observeLifecycle(action, prepare(), true, ownership);
+      expect(on.outcome).toEqual(off.outcome);
+      expect(on.outcome).toMatchObject({ rejected: { message: "credential unavailable" } });
+      expect(on.effects).toEqual(off.effects);
+      expect(off.reads.getAccount).toEqual([]);
+      expect(on.reads.getAccount).toEqual([JSON.stringify(["rhc", { by: "index", value: "42" }, { fresh: true }])]);
+    }
+  });
+
+  it.each(prefetchedActions)("keeps $action ownership-switch OFF free of speculative account reads", async ({ action, build }) => {
+    const built = build();
+    vi.mocked(built.deps.client.getApiKeys).mockRejectedValue(new Error("credential unavailable"));
+    await observeLifecycle(action, built, true, { enabled: false, wallet: SELECTED_WALLET });
+    expect(built.deps.client.getAccount).not.toHaveBeenCalled();
+  });
+
+  it.each(prefetchedActions)("refuses $action locked during ownership reads before reservation or signing", async ({ action, build }) => {
+    for (const parallel of [false, true]) {
+      const { intent: approved, deps: d } = build();
+      const controller = new AbortController();
+      const gate = createReadGate();
+      const account = requireValue(vi.mocked(d.client.getAccount).getMockImplementation());
+      vi.mocked(d.client.getAccount).mockImplementation(async (...args) => {
+        if (args[2]?.fresh === true) await gate.promise;
+        return account(...args);
+      });
+      const execution = LIFECYCLE_EXECUTORS[action](approved, {
+        ...d, lifecycleParallelReads: parallel, signingOwnershipRecheck: true,
+      }, controller.signal, SELECTED_WALLET);
+      const refused = expect(execution).rejects.toMatchObject({ reason: "cancelled_before_reservation" });
+      await vi.waitFor(() => expect(vi.mocked(d.client.getAccount).mock.calls.filter((call) => call[2]?.fresh === true)).toHaveLength(1));
+      controller.abort("lock");
+      gate.release();
+      await refused;
+      expect(d.secretReader.readTradingApiPrivateKey).toHaveBeenCalledTimes(1);
+      expect(d.nonceState.reserveObservedWith).not.toHaveBeenCalled();
+      expect(d.lifecycleSigner.signCancelOrder).not.toHaveBeenCalled();
+      expect(d.lifecycleSigner.signModifyOrder).not.toHaveBeenCalled();
+      expect(d.lifecycleSigner.signCancelAllOrders).not.toHaveBeenCalled();
+      expect(d.client.sendTx).not.toHaveBeenCalled();
+    }
+  });
+
   it.each(LIFECYCLE_CASES)("preserves prior outcomes, writes and signing with a matching wallet: $label", async ({ action, build }) => {
     const off = await observeLifecycle(action, build(), true, { enabled: false, wallet: SELECTED_WALLET });
     const on = await observeLifecycle(action, build(), true, { enabled: true, wallet: SELECTED_WALLET });
