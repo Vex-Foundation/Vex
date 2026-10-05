@@ -53,7 +53,7 @@ vi.mock("@utils/logger.js", () => ({
   },
 }));
 
-const { initSync, syncTick } = await import("../../../vex-agent/sync/index.js");
+const { initSync, syncTick, LIGHTER_STARTUP_RETIRE_STALE_INTENTS } = await import("../../../vex-agent/sync/index.js");
 
 const REPAIR_REPORT = {
   examined: 2,
@@ -214,5 +214,30 @@ describe("Lighter startup repair one-shot", () => {
     expect(mocks.repairWithdrawals).toHaveBeenCalledTimes(1);
     expect(mocks.repairOrders).toHaveBeenCalledTimes(1);
     expect(mocks.fullBalanceSync).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("LIGHTER_STARTUP_RETIRE_STALE_INTENTS", () => {
+  it("ships ON and finalizes stale approved orders once, before the order repair sweep", async () => {
+    expect(LIGHTER_STARTUP_RETIRE_STALE_INTENTS).toBe(true);
+    await initSync();
+
+    expect(mocks.retireExpiredOrders).toHaveBeenCalledTimes(1);
+    expect(mocks.repairOrders).toHaveBeenCalledTimes(1);
+    expect(mocks.retireExpiredOrders.mock.invocationCallOrder[0])
+      .toBeLessThan(requireValue(mocks.repairOrders.mock.invocationCallOrder[0]));
+  });
+
+  it("OFF skips the finalizer entirely and still runs the order repair sweep", async () => {
+    await initSync({ retireStaleLighterIntents: false });
+
+    expect(mocks.retireExpiredOrders).not.toHaveBeenCalled();
+    expect(mocks.repairOrders).toHaveBeenCalledTimes(1);
+  });
+
+  it("an explicit ON override runs the finalizer like the constant", async () => {
+    await initSync({ retireStaleLighterIntents: true });
+
+    expect(mocks.retireExpiredOrders).toHaveBeenCalledTimes(1);
   });
 });
