@@ -9,6 +9,7 @@ import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 const DESK_CARD_TOOL_IDS: ReadonlySet<string> = new Set([
   "lighter.order.create",
   "lighter.order.cancel",
+  "lighter.order.cancelAll",
   "lighter.position.close",
   "lighter.position.protect",
 ]);

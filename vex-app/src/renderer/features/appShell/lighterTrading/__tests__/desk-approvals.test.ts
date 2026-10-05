@@ -29,6 +29,8 @@ function approval(origin: ApprovalSummaryDto["origin"], toolName: string): Appro
 describe("desk approval routing", () => {
   it("keeps agent proposals in chat and only routes direct desk actions to the modal", () => {
     expect(isLighterOrderApproval(approval("desk", "order.create"))).toBe(true);
+    expect(isLighterOrderApproval(approval("desk", "order.cancelAll"))).toBe(true);
+    expect(isLighterOrderApproval(approval("agent", "order.cancelAll"))).toBe(false);
     expect(isLighterOrderApproval(approval("agent", "order.create"))).toBe(false);
     expect(isLighterOrderApproval(approval("desk", "account.get"))).toBe(false);
   });

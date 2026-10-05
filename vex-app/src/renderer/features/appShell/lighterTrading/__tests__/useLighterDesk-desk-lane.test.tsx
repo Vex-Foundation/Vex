@@ -8,6 +8,8 @@ import { approvalsKeys } from "../../../../lib/api/queryKeys.js";
 import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import type { LighterOpenOrderRow, LighterPositionRow } from "../account-model.js";
+import { useDeskSendIntentStore } from "../desk-send-intent.js";
+import type { LighterDeskDeps } from "../useLighterDesk.js";
 
 const MARKET = {
   marketId: 7,
@@ -30,6 +32,7 @@ const approve = vi.fn();
 const FILL = { tradeId: "t1", orderId: "9001", marketId: 7, symbol: "ETH", side: "buy", role: "taker", type: "trade", size: "0.5", price: "3200", value: null, realizedPnl: null, timestamp: 1 };
 const accountData = { value: undefined as unknown };
 const approvalsData = { value: [] as unknown[] };
+let approvalsResponse = { ok: true, data: approvalsData.value };
 const approvalGet = vi.fn();
 const fillsData = { value: undefined as unknown };
 const funnelStep = vi.fn(async () => ({ ok: true, data: { recorded: false } }));
@@ -52,7 +55,10 @@ vi.mock("../../../../lib/api/lighter-trading.js", () => ({
   useLighterOnboardingChecklist: () => ({ data: undefined }),
 }));
 vi.mock("../../../../lib/api/approvals.js", () => ({
-  usePendingApprovals: () => ({ data: { ok: true, data: approvalsData.value } }),
+  usePendingApprovals: () => {
+    if (approvalsResponse.data !== approvalsData.value) approvalsResponse = { ok: true, data: approvalsData.value };
+    return { data: approvalsResponse };
+  },
 }));
 vi.mock("../useLighterCandleStream.js", () => ({
   useLighterCandleStream: () => ({ candles: [], status: "live", receivedAt: null }),
@@ -121,13 +127,13 @@ function providerOrderOutput(input: {
   });
 }
 
-function renderDesk() {
+function renderDesk(deps: LighterDeskDeps = {}) {
   const queryClient = new QueryClient();
   const invalidate = vi.spyOn(queryClient, "invalidateQueries");
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-  return { invalidate, ...renderHook(() => useLighterDesk(), { wrapper }) };
+  return { invalidate, ...renderHook(() => useLighterDesk(deps), { wrapper }) };
 }
 
 describe("desk lane", () => {
@@ -141,8 +147,182 @@ describe("desk lane", () => {
     approvalGet.mockReset();
     dispatchListeners.clear();
     vi.stubGlobal("window", Object.assign(window, { vex: { lighterTrading: { prepareDeskAction }, approvals: { approve, get: approvalGet, onDispatchEvent }, telemetry: { funnelStep } } }));
-    useUiStore.setState({ activeSessionId: "s1", createSessionOpen: false });
+    useUiStore.setState({ activeSessionId: "s1", createSessionOpen: false, bookOpen: false });
+    useDeskSendIntentStore.getState().clearDeskSendIntent();
     useLighterAnalysisStore.getState().saveDesk({ environment: "rhc", marketId: 7, skipCloseConfirm: false });
+  });
+
+  describe("account-wide direct cancellation", () => {
+    const firstOrder = { marketId: 7, orderId: "9001" } as LighterOpenOrderRow;
+    const orders = [
+      firstOrder,
+      { marketId: 8, orderId: "9002" } as LighterOpenOrderRow,
+    ];
+    const approval = {
+      id: "ap-all", origin: "desk", expiresAt: null,
+      preview: { namespace: "lighter", toolName: "order.cancelAll", criticalArgs: {
+        environment: "rhc", accountIndex: 42, orderCount: 2, orderIdentities: "7:9001,8:9002",
+      } },
+    };
+    function ready(): void {
+      accountData.value = { ok: true, data: positionAccount(Date.now(), [], orders) };
+      prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-all" } });
+    }
+
+    it("removes the model roundtrip, deduplicates and preserves explicit confirmation even when close skips it", async () => {
+      ready();
+      useLighterAnalysisStore.getState().saveDesk({ skipCloseConfirm: true });
+      const { result } = renderDesk();
+      await act(async () => {
+        result.current.accountActions.onCancelAllOrders(orders);
+        result.current.accountActions.onCancelAllOrders(orders);
+        result.current.accountActions.onCancelOrder(firstOrder);
+      });
+      expect(prepareDeskAction).toHaveBeenCalledTimes(1);
+      expect(prepareDeskAction).toHaveBeenCalledWith({
+        sessionId: "s1", environment: "rhc", action: { kind: "cancel_all" }, progressId: expect.any(String),
+      });
+      expect([...result.current.cancellingOrders]).toEqual([["7:9001", "approval"], ["8:9002", "approval"]]);
+      expect(approve).not.toHaveBeenCalled();
+      expect(useDeskSendIntentStore.getState().intent).toBeNull();
+      expect(useUiStore.getState().bookOpen).toBe(false);
+    });
+
+    it("retains the previous chat handoff when the switch is off", async () => {
+      ready();
+      const { result } = renderDesk({ directCancelAll: false });
+      await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+      expect(prepareDeskAction).not.toHaveBeenCalled();
+      expect(approve).not.toHaveBeenCalled();
+      expect(useDeskSendIntentStore.getState().intent).toMatchObject({
+        sessionId: "s1",
+        message: "Cancel all 2 of my open Lighter orders across every market with one account-wide cancellation, prepared with lighter__order_cancel_all_prepare.; environment=rhc; Display the approval card directly. Nothing may execute without my explicit approval on that card.",
+      });
+      expect(useUiStore.getState().bookOpen).toBe(true);
+    });
+
+    it("matches canonical facts even when the card arrives before the prepare reply, and does not lock later unrelated orders", async () => {
+      ready();
+      approvalsData.value = [approval];
+      let release: ((value: unknown) => void) | undefined;
+      prepareDeskAction.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+      const { result, rerender } = renderDesk();
+      act(() => result.current.accountActions.onCancelAllOrders(orders));
+      await act(async () => {
+        if (release === undefined) throw new Error("prepare was not started");
+        release({ ok: true, data: { kind: "enqueued", approvalId: "ap-all" } });
+      });
+      const laterOrder = { marketId: 9, orderId: "9003" } as LighterOpenOrderRow;
+      accountData.value = { ok: true, data: positionAccount(Date.now(), [], [...orders, laterOrder]) };
+      rerender();
+      expect(result.current.cancellingOrders.has("9:9003")).toBe(false);
+      expect(result.current.cancelAllPending).toBe(true);
+      act(() => result.current.onApprovalResolved("approved", resolved({
+        id: "ap-all", toolOutput: JSON.stringify({ source: "vex_lighter_order_cancel_all", status: "cancel_all_completed" }),
+      })));
+      expect(result.current.cancellingOrders.get("7:9001")).toBe("checking");
+      expect(result.current.deskOutcome?.text).not.toContain("all orders canceled");
+      accountData.value = { ok: true, data: positionAccount(Date.now() + 1_000, [], [laterOrder]) };
+      rerender();
+      expect(result.current.cancellingOrders.size).toBe(0);
+      expect(result.current.cancelAllPending).toBe(false);
+      expect(result.current.deskOutcome?.text).toContain("Requested orders are no longer open");
+      expect(result.current.deskOutcome?.text).toContain("fills before cancellation");
+    });
+
+    it("requires a newer complete provider list in the exact environment, account and initiating session", async () => {
+      ready();
+      const { result, rerender } = renderDesk();
+      await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+      act(() => result.current.onApprovalResolved("approved", resolved({
+        id: "ap-all", toolOutput: JSON.stringify({ source: "vex_lighter_order_cancel_all", status: "cancel_all_completed" }),
+      })));
+      accountData.value = { ok: true, data: positionAccount(0, [], []) };
+      rerender();
+      accountData.value = { ok: true, data: positionAccount(Date.now() + 1_000, [], orders) };
+      rerender();
+      expect(result.current.cancellingOrders.size).toBe(2);
+      for (const partial of [{ openOrdersTruncated: true }, { openOrdersAvailable: false }]) {
+        accountData.value = { ok: true, data: { ...positionAccount(Date.now() + 2_000, [], []), ...partial } };
+        rerender();
+      }
+      accountData.value = { ok: true, data: positionAccount(Date.now() + 3_000, [], orders) };
+      rerender();
+      expect(result.current.cancellingOrders.size).toBe(2);
+      act(() => useUiStore.setState({ activeSessionId: "s2" }));
+      accountData.value = { ok: true, data: positionAccount(Date.now() + 4_000, [], []) };
+      rerender();
+      expect(result.current.deskOutcome).toBeNull();
+      accountData.value = { ok: true, data: { ...positionAccount(Date.now() + 5_000, [], []), accountIndex: 43 } };
+      act(() => useUiStore.setState({ activeSessionId: "s1" }));
+      rerender();
+      act(() => useLighterAnalysisStore.getState().saveDesk({ environment: "core" }));
+      accountData.value = { ok: true, data: { ...positionAccount(Date.now() + 6_000, [], []), environment: "core" } };
+      rerender();
+      act(() => useLighterAnalysisStore.getState().saveDesk({ environment: "rhc" }));
+      accountData.value = { ok: true, data: positionAccount(Date.now() + 7_000, [], orders) };
+      rerender();
+      expect(result.current.cancellingOrders.size).toBe(2);
+      accountData.value = { ok: true, data: positionAccount(Date.now() + 8_000, [], []) };
+      rerender();
+      expect(result.current.deskOutcome?.text).toContain("Requested orders are no longer open");
+    });
+
+    it.each(["sequencer_pending", "ambiguous"])("keeps %s success uncertain and never offers a replay", async (status) => {
+      ready();
+      const { result } = renderDesk();
+      await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+      act(() => result.current.onApprovalResolved("approved", resolved({
+        id: "ap-all", toolOutput: JSON.stringify({ source: "vex_lighter_order_cancel_all", status }),
+      })));
+      expect(result.current.cancellingOrders.get("7:9001")).toBe("uncertain");
+      expect(result.current.deskOutcome?.text).toContain("before retrying");
+      await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+      expect(prepareDeskAction).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(["rejected", "failed", "indeterminate"] as const)("handles %s with truthful row locks", async (status) => {
+      ready();
+      const { result } = renderDesk();
+      await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+      act(() => result.current.onApprovalResolved(status === "rejected" ? "rejected" : "approved", resolved({
+        id: "ap-all", executionStatus: status === "rejected" ? null : status, toolOutput: "Provider refused cancellation.",
+      })));
+      if (status === "indeterminate") {
+        expect(result.current.cancellingOrders.get("7:9001")).toBe("uncertain");
+        expect(result.current.deskOutcome?.text).toContain("outcome is uncertain");
+      } else {
+        expect(result.current.cancellingOrders.size).toBe(0);
+        await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+        expect(prepareDeskAction).toHaveBeenCalledTimes(2);
+      }
+    });
+
+    it("releases preparation refusals and thrown errors for a deliberate retry", async () => {
+      ready();
+      prepareDeskAction.mockResolvedValueOnce({ ok: true, data: { kind: "refused", reason: "No open orders." } })
+        .mockRejectedValueOnce(new Error("Preparation unavailable."));
+      const { result } = renderDesk();
+      await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+      expect(result.current.handoffError).toBe("No open orders.");
+      expect(result.current.cancellingOrders.size).toBe(0);
+      await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+      expect(result.current.handoffError).toBe("Preparation unavailable.");
+      expect(result.current.cancellingOrders.size).toBe(0);
+    });
+
+    it("releases an unapproved expired cancel-all card even when its stable query arrived before prepare returned", async () => {
+      ready();
+      const expiredCard = { ...approval, expiresAt: new Date(Date.now() - 10_000).toISOString() };
+      approvalsData.value = [expiredCard];
+      approvalGet.mockResolvedValue({ ok: true, data: { ...expiredCard, status: "rejected", decisionReason: "expired_ttl" } });
+      const { result } = renderDesk();
+      await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+      await waitFor(() => expect(result.current.cancelAllPending).toBe(false));
+      expect(result.current.cancellingOrders.size).toBe(0);
+      expect(result.current.deskOutcome?.text).toBe("The cancel-all request expired before it was approved. Nothing was sent.");
+      expect(approve).not.toHaveBeenCalled();
+    });
   });
 
   it("locks only the selected position until a fresh account snapshot proves it closed", async () => {

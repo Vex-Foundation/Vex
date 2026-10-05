@@ -293,6 +293,21 @@ describe("TradingBottomPanel", () => {
     expect(mocks.actions.onCancelOrder).not.toHaveBeenCalled();
   });
 
+  it("keeps cancellation controls disabled when the approved order set has disappeared but its card is still pending", () => {
+    mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: { ...EMPTY_ACCOUNT, openOrders: [limitOrder({ orderId: "later-order" })] } } }));
+    render(panel({ cancelAllPending: true }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Open Orders/ }));
+    const cancelAll = screen.getByRole("button", { name: "Cancel all" });
+    const cancel = screen.getByRole("button", { name: "Cancel BTC order later-order" });
+    expect(cancelAll.hasAttribute("disabled")).toBe(true);
+    expect(cancel.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("Account-wide cancellation is pending. Wait for its approval or order status.")).toBeTruthy();
+    fireEvent.click(cancelAll);
+    fireEvent.click(cancel);
+    expect(mocks.actions.onCancelAllOrders).not.toHaveBeenCalled();
+    expect(mocks.actions.onCancelOrder).not.toHaveBeenCalled();
+  });
+
   it("reads fills only on its own tab and renders them from the account's side", () => {
     mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: EMPTY_ACCOUNT } }));
     mocks.useFills.mockReturnValue({
@@ -620,7 +635,7 @@ function renderPanel(): ReturnType<typeof render> {
   return render(panel());
 }
 
-function panel({ open = true, collapsed = false, closeConfirmSkipped = false, closingPositions = new Map(), cancellingOrders = new Map() }: { readonly open?: boolean; readonly collapsed?: boolean; readonly closeConfirmSkipped?: boolean; readonly closingPositions?: ReadonlyMap<string, PositionCloseStage>; readonly cancellingOrders?: ReadonlyMap<string, OrderCancelStage> } = {}) {
+function panel({ open = true, collapsed = false, closeConfirmSkipped = false, closingPositions = new Map(), cancellingOrders = new Map(), cancelAllPending = false }: { readonly open?: boolean; readonly collapsed?: boolean; readonly closeConfirmSkipped?: boolean; readonly closingPositions?: ReadonlyMap<string, PositionCloseStage>; readonly cancellingOrders?: ReadonlyMap<string, OrderCancelStage>; readonly cancelAllPending?: boolean } = {}) {
   return (
     <TradingBottomPanel
       environment="rhc"
@@ -633,6 +648,7 @@ function panel({ open = true, collapsed = false, closeConfirmSkipped = false, cl
       closeConfirmSkipped={closeConfirmSkipped}
       closingPositions={closingPositions}
       cancellingOrders={cancellingOrders}
+      cancelAllPending={cancelAllPending}
       actions={mocks.actions}
     />
   );

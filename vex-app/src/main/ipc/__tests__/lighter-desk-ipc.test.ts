@@ -96,6 +96,11 @@ afterEach(() => {
 });
 
 describe("deskActionToPrepareCall", () => {
+  it("cancel-all carries only the environment until main resolves the session's account", () => {
+    expect(deskActionToPrepareCall("core", { kind: "cancel_all" })).toEqual({
+      toolId: "lighter.order.cancelAll.prepare", params: { environment: "core" },
+    });
+  });
   it("close and cancel map to their prepare tools with main-owned defaults", () => {
     expect(deskActionToPrepareCall("rhc", { kind: "close", marketId: 7 })).toEqual({
       toolId: "lighter.position.close.prepare",
@@ -191,6 +196,33 @@ describe("deskActionToPrepareCall", () => {
 });
 
 describe("vex:lighterTrading:prepareDeskAction", () => {
+  it("prepares cancel-all for the main-resolved account without approving or supplying order terms", async () => {
+    const result = await call({ sessionId: SESSION, environment: "rhc", action: { kind: "cancel_all" } });
+    expect(result).toEqual({ ok: true, data: { kind: "enqueued", approvalId: "appr-1" } });
+    expect(mocks.resolveSessionAccount).toHaveBeenCalledWith(expect.objectContaining({ sessionId: SESSION, environment: "rhc" }));
+    expect(mocks.prepareDeskApproval).toHaveBeenCalledWith({
+      sessionId: SESSION, toolId: "lighter.order.cancelAll.prepare",
+      params: { environment: "rhc", accountIndex: 42 }, onProgress: expect.any(Function),
+    });
+    expect(mocks.prepareApprove).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { accountIndex: 99 }, { marketId: 7 }, { orderCount: 1 },
+    { orderIdentities: "7:9001" }, { cancelAtMs: "0" }, { approved: true },
+  ])("rejects renderer-owned cancel-all terms %j", async (extra) => {
+    const result = await call({ sessionId: SESSION, environment: "rhc", action: { kind: "cancel_all", ...extra } });
+    expect(result.ok).toBe(false);
+    expect(mocks.resolveSessionAccount).not.toHaveBeenCalled();
+    expect(mocks.prepareDeskApproval).not.toHaveBeenCalled();
+  });
+
+  it("refuses account-resolution failure without preparing cancel-all", async () => {
+    mocks.resolveSessionAccount.mockRejectedValueOnce(new Error("Selected session wallet is unavailable."));
+    const result = await call({ sessionId: SESSION, environment: "rhc", action: { kind: "cancel_all" } });
+    expect(result.ok).toBe(false);
+    expect(mocks.prepareDeskApproval).not.toHaveBeenCalled();
+  });
   it("prepares a standard order without a second main-process ownership lookup and reports real stages", async () => {
     const webContents = createTestWebContents();
     const progressId = "77777777-7777-4777-8777-777777777777";
@@ -257,7 +289,7 @@ describe("vex:lighterTrading:prepareDeskAction", () => {
     });
   });
 
-  it("joins concurrent identical submits so they cannot create two approval cards", async () => {
+  it.each([{ kind: "close" as const, marketId: 7 }, { kind: "cancel_all" as const }])("joins concurrent identical $kind submits so they cannot create two approval cards", async (action) => {
     let release: ((value: { kind: "enqueued"; approvalId: string }) => void) | undefined;
     mocks.prepareDeskApproval.mockImplementationOnce(
       () => new Promise((resolve) => { release = resolve; }),
@@ -265,7 +297,7 @@ describe("vex:lighterTrading:prepareDeskAction", () => {
     const payload = {
       sessionId: SESSION,
       environment: "rhc",
-      action: { kind: "close" as const, marketId: 7 },
+      action,
     };
 
     const first = call(payload);

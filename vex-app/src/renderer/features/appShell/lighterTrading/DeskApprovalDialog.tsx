@@ -27,6 +27,7 @@ function approvalTitle(approvals: ReadonlyArray<ApprovalSummaryDto>): string {
     case "lighter.order.create": return "Review order";
     case "lighter.position.close": return "Review close";
     case "lighter.order.cancel": return "Review cancellation";
+    case "lighter.order.cancelAll": return "Review account-wide cancellation";
     case "lighter.position.protect": return "Review protection";
     default: return "Review action";
   }

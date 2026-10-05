@@ -128,12 +128,14 @@ describe("DeskApprovalDialog", () => {
 
   it.each([
     ["order.cancel", "Review cancellation"],
+    ["order.cancelAll", "Review account-wide cancellation"],
     ["position.protect", "Review protection"],
   ])("names %s approvals", (toolName, title) => {
     const { container } = render(
       <DeskApprovalDialog approvals={[approval("a1", toolName)]} sessionId="s1" focusApprovalId={null} onResolved={vi.fn()} {...skip} />,
     );
     expect(container.querySelector("dialog h2")?.textContent).toBe(title);
+    expect(container.querySelector(".lit-desk-skip-confirm")).toBeNull();
   });
 
   it("names mixed approval cards as mixed actions", () => {
