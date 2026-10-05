@@ -416,7 +416,7 @@ function deps(overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}): E
     parallelPreflight: false,
     readAuthCache: null,
     streamRevalidation: false,
-    revalidationSingleSnapshot: false,
+    revalidationSingleSnapshot: false, signingOwnershipRecheck: false,
     secretReader: {
       readTradingApiPrivateKey: vi.fn(async () => PRIVATE_KEY),
     },
@@ -2759,11 +2759,17 @@ interface PreflightObservation {
 async function observeCreateOrder(
   d: ExecuteApprovedLighterCreateOrderDeps,
   plan: LighterOrderReadyForSignerPlan = PLAN,
+  sessionWallet?: LighterSigningOwnershipWallet,
 ): Promise<PreflightObservation> {
   let outcome: Record<string, unknown>;
   try {
     outcome = {
-      resolved: await executeApprovedLighterCreateOrder({ plan, unsignedOrder: buildLighterUnsignedCreateOrderRequest(plan), deps: d }),
+      resolved: await executeApprovedLighterCreateOrder({
+        plan,
+        unsignedOrder: buildLighterUnsignedCreateOrderRequest(plan),
+        deps: d,
+        ...(sessionWallet === undefined ? {} : { sessionWallet }),
+      }),
     };
   } catch (error) {
     outcome = error instanceof VexError
@@ -4028,5 +4034,194 @@ describe("LIGHTER_REVALIDATION_SINGLE_SNAPSHOT", () => {
     info.mockClear();
     await observeSnapshotRun({ feesEnabled: true, auth: "none" }, true);
     expect(timingLines()).toHaveLength(0);
+  });
+});
+
+import {
+  LIGHTER_SIGNING_OWNERSHIP_NOT_MASTER,
+  LIGHTER_SIGNING_OWNERSHIP_NOT_OWNED,
+  LIGHTER_SIGNING_OWNERSHIP_RECHECK,
+  LIGHTER_SIGNING_OWNERSHIP_WALLET_UNAVAILABLE,
+  type LighterSigningOwnershipWallet,
+} from "@vex-agent/tools/protocols/lighter/signing-ownership.js";
+
+// ---------------------------------------------------------------------------
+// LIGHTER_SIGNING_OWNERSHIP_RECHECK: the session wallet must still own the
+// approved account, judged from the revalidation's own fresh account read.
+// ---------------------------------------------------------------------------
+
+const OWNER_WALLET: LighterSigningOwnershipWallet = { kind: "wallet", address: "0x1111111111111111111111111111111111111111" };
+const OTHER_WALLET: LighterSigningOwnershipWallet = { kind: "wallet", address: `0x${"4".repeat(40)}` };
+
+/** deps() whose every account read reports the given row changes. */
+function depsWithAccount(row: Partial<LighterAccountResponse["accounts"][number]>, overrides: Partial<ExecuteApprovedLighterCreateOrderDeps> = {}) {
+  const base = deps(overrides);
+  return {
+    ...base,
+    client: {
+      ...base.client,
+      getAccount: vi.fn<LighterClient["getAccount"]>(async () => ({ ...ACCOUNT, accounts: [{ ...first(ACCOUNT.accounts), ...row }] })),
+    },
+  };
+}
+
+function nothingLoadedOrSent(observation: PreflightObservation): void {
+  expect(observation.effects).toMatchObject({
+    markPreSubmitRevalidated: [],
+    readTradingApiPrivateKey: [],
+    createAccountAuth: 0,
+    reserveNonce: [],
+    signCreateOrder: 0,
+    markSigned: [],
+    sendTx: [],
+  });
+}
+
+describe("LIGHTER_SIGNING_OWNERSHIP_RECHECK", () => {
+  afterEach(() => {
+    configureLighterReadOnlyAccountAuthResolver(null);
+    tradingLimits.current = null;
+    ledger.refuseAdmission = false;
+    ledger.admitted.length = 0;
+    ledger.retired.length = 0;
+  });
+
+  it("ships ON", () => {
+    expect(LIGHTER_SIGNING_OWNERSHIP_RECHECK).toBe(true);
+  });
+
+  it.each(PREFLIGHT_CASES)("matches OFF when the session wallet still owns the account and $label", async ({ build, expected }) => {
+    const off = await observeCreateOrder({ ...build(), signingOwnershipRecheck: false }, PLAN, OWNER_WALLET);
+    const { signingOwnershipRecheck: _pinned, ...unpinned } = build();
+    const absent = await observeCreateOrder(unpinned, PLAN, OWNER_WALLET);
+    const on = await observeCreateOrder({ ...build(), signingOwnershipRecheck: true }, PLAN, OWNER_WALLET);
+
+    expect(JSON.stringify(off.outcome)).toMatch(expected);
+    expect(absent).toEqual(off);
+    expect(on).toEqual(off);
+  });
+
+  it.each(PREFLIGHT_CASES)("matches OFF beside every other order-path speed switch when $label", async ({ build }) => {
+    const speed = { parallelPreflight: true, revalidationSingleSnapshot: true } as const;
+    const off = await observeCreateOrder({ ...build(), ...speed, signingOwnershipRecheck: false }, PLAN, OWNER_WALLET);
+    const on = await observeCreateOrder({ ...build(), ...speed, signingOwnershipRecheck: true }, PLAN, OWNER_WALLET);
+    expect(on).toEqual(off);
+  });
+
+  it.each(SNAPSHOT_CASES)("refuses, writes and admits exactly what OFF does when $label", async ({ scenario, expected }) => {
+    const runs: (PreflightObservation & { readonly ledger: unknown })[] = [];
+    for (const signingOwnershipRecheck of [false, true]) {
+      const fixture = snapshotFixture(scenario);
+      armSnapshotScenario(scenario);
+      const observation = await observeCreateOrder(
+        { ...fixture.build(), revalidationSingleSnapshot: true, signingOwnershipRecheck },
+        fixture.plan,
+        OWNER_WALLET,
+      );
+      runs.push({ ...observation, ledger: { admitted: [...ledger.admitted], retired: [...ledger.retired] } });
+    }
+    expect(JSON.stringify(requireValue(runs[0]).outcome)).toMatch(expected);
+    expect(runs[1]).toEqual(runs[0]);
+  });
+
+  it.each([
+    {
+      label: "the session's selected wallet changed between preview and approval",
+      wallet: OTHER_WALLET,
+      account: {},
+      reason: LIGHTER_SIGNING_OWNERSHIP_NOT_OWNED,
+    },
+    {
+      label: "the account now reports another owner (account moved)",
+      wallet: OWNER_WALLET,
+      account: { l1_address: `0x${"5".repeat(40)}` },
+      reason: LIGHTER_SIGNING_OWNERSHIP_NOT_OWNED,
+    },
+    {
+      label: "the account is not the wallet's master account",
+      wallet: OWNER_WALLET,
+      account: { account_type: 1 },
+      reason: LIGHTER_SIGNING_OWNERSHIP_NOT_MASTER,
+    },
+    {
+      label: "the session wallet is no longer available at execute",
+      wallet: { kind: "unavailable" } as const,
+      account: {},
+      reason: LIGHTER_SIGNING_OWNERSHIP_WALLET_UNAVAILABLE,
+    },
+    {
+      label: "no session wallet reached the executor at all",
+      wallet: undefined,
+      account: {},
+      reason: LIGHTER_SIGNING_OWNERSHIP_WALLET_UNAVAILABLE,
+    },
+  ])("refuses before any key, auth or nonce when $label, where OFF would send", async ({ wallet, account, reason }) => {
+    const off = await observeCreateOrder(depsWithAccount(account, { signingOwnershipRecheck: false }), PLAN, wallet);
+    expect(off.outcome).toMatchObject({ resolved: { status: "sequencer_pending" } });
+
+    const on = await observeCreateOrder(depsWithAccount(account, { signingOwnershipRecheck: true }), PLAN, wallet);
+    expect(on.outcome).toEqual({
+      rejected: {
+        name: "VexError",
+        code: ErrorCodes.LIGHTER_INVALID_REQUEST,
+        message: reason,
+        hint: "Restart from a fresh Lighter preview and approval before attempting submission.",
+        // Never marked retryable, like every other pre-submit refusal.
+        retryable: undefined,
+      },
+    });
+    nothingLoadedOrSent(on);
+  });
+
+  it("refuses the same way beside the parallel preflight, ahead of a credential refusal", async () => {
+    const base = depsWithAccount({ l1_address: `0x${"5".repeat(40)}` }, { parallelPreflight: true, signingOwnershipRecheck: true });
+    const unregistered = { ...base, client: { ...base.client, getApiKeys: vi.fn(async () => ({ code: 200, api_keys: [] })) } };
+    const on = await observeCreateOrder(unregistered, PLAN, OWNER_WALLET);
+    expect(on.outcome).toMatchObject({ rejected: { message: LIGHTER_SIGNING_OWNERSHIP_NOT_OWNED } });
+    nothingLoadedOrSent(on);
+  });
+
+  it("keeps an existing revalidation refusal first when ownership also fails", async () => {
+    const moved = (recheck: boolean) => {
+      const base = depsWithAccount({ l1_address: `0x${"5".repeat(40)}` }, { signingOwnershipRecheck: recheck });
+      return {
+        ...base,
+        client: {
+          ...base.client,
+          getOrderBookOrders: vi.fn(async () => ({ ...ORDER_BOOK, asks: [{ ...first(ORDER_BOOK.asks), price: "3002.01" }] })),
+        },
+      };
+    };
+    const off = await observeCreateOrder(moved(false), PLAN, OWNER_WALLET);
+    const on = await observeCreateOrder(moved(true), PLAN, OWNER_WALLET);
+    expect(JSON.stringify(off.outcome)).toMatch(/moved beyond the approved market-order worst price/);
+    expect(on).toEqual(off);
+  });
+
+  it("lets the existing capital-share refusal speak first for an account with no owner at all", async () => {
+    tradingLimits.current = null;
+    const off = await observeCreateOrder(depsWithAccount({ l1_address: undefined }, { signingOwnershipRecheck: false }), PLAN, OWNER_WALLET);
+    const on = await observeCreateOrder(depsWithAccount({ l1_address: undefined }, { signingOwnershipRecheck: true }), PLAN, OWNER_WALLET);
+    expect(JSON.stringify(off.outcome)).toMatch(/reported no owning L1 address/);
+    expect(on).toEqual(off);
+  });
+
+  it("matches the owner without regard to address case, and accepts a reported master account", async () => {
+    const info = vi.spyOn(logger, "info");
+    const checksummed = depsWithAccount({ l1_address: "0x1111111111111111111111111111111111111111".toUpperCase().replace("0X", "0x"), account_type: 0 }, { signingOwnershipRecheck: true });
+    const on = await observeCreateOrder(checksummed, PLAN, OWNER_WALLET);
+    expect(on.outcome).toMatchObject({ resolved: { status: "sequencer_pending" } });
+    const calls: readonly (readonly unknown[])[] = info.mock.calls;
+    const lines = calls.filter((call) => call[0] === "lighter.order.signing_ownership_recheck");
+    expect(lines.map((call) => call[1])).toEqual([{ outcome: "matched", accountTypeReported: 1 }]);
+    info.mockRestore();
+  });
+
+  it("lets a trusted default context with no EVM wallet through, as its preview did", async () => {
+    const trusted: LighterSigningOwnershipWallet = { kind: "trusted_default_without_wallet" };
+    const off = await observeCreateOrder(deps({ signingOwnershipRecheck: false }), PLAN, trusted);
+    const on = await observeCreateOrder(deps({ signingOwnershipRecheck: true }), PLAN, trusted);
+    expect(on.outcome).toMatchObject({ resolved: { status: "sequencer_pending" } });
+    expect(on).toEqual(off);
   });
 });

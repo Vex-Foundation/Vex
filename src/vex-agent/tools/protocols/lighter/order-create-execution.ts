@@ -11,6 +11,11 @@ import {
 import { getLighterFeePolicy, lighterIntegratorFeesEqual } from "@tools/lighter/fee-policy.js";
 import { resolveLighterReadOnlyAccountAuth } from "./read-account-auth.js";
 import { lighterOrderMarginFitNeedsLiveReads, readLighterMarginFitDepthBook } from "./margin-fit-guard.js";
+import {
+  judgeLighterSigningOwnership,
+  LIGHTER_SIGNING_OWNERSHIP_RECHECK,
+  type LighterSigningOwnershipWallet,
+} from "./signing-ownership.js";
 import type { LighterClient } from "@tools/lighter/client.js";
 import type { LighterAccountOrder, LighterTrade } from "@tools/lighter/types.js";
 import {
@@ -274,6 +279,8 @@ export interface ExecuteApprovedLighterCreateOrderDeps {
   readonly streamOrderBook?: LighterStreamOrderBookReader | null;
   /** Overrides {@link LIGHTER_REVALIDATION_SINGLE_SNAPSHOT}; absent uses the constant. */
   readonly revalidationSingleSnapshot?: boolean;
+  /** Overrides `LIGHTER_SIGNING_OWNERSHIP_RECHECK` (`signing-ownership.ts`); absent uses the constant. */
+  readonly signingOwnershipRecheck?: boolean;
 }
 
 let configuredDeps: ExecuteApprovedLighterCreateOrderDeps | null = null;
@@ -296,6 +303,12 @@ export async function executeApprovedLighterCreateOrder(input: {
   readonly unsignedOrder?: LighterUnsignedCreateOrderRequest;
   readonly deps: ExecuteApprovedLighterCreateOrderDeps;
   readonly abortSignal?: AbortSignal;
+  /**
+   * The approve call's own session wallet, resolved as the preview resolves
+   * it (`resolveLighterSigningOwnershipWallet`). Read only while
+   * `LIGHTER_SIGNING_OWNERSHIP_RECHECK` is ON, which refuses without it.
+   */
+  readonly sessionWallet?: LighterSigningOwnershipWallet;
 }): Promise<ExecuteApprovedLighterCreateOrderResult> {
   return withLighterBeforeSendFailures((sendPhase) => runApprovedLighterCreateOrder(input, sendPhase));
 }
@@ -305,6 +318,7 @@ async function runApprovedLighterCreateOrder(input: {
   readonly unsignedOrder?: LighterUnsignedCreateOrderRequest;
   readonly deps: ExecuteApprovedLighterCreateOrderDeps;
   readonly abortSignal?: AbortSignal;
+  readonly sessionWallet?: LighterSigningOwnershipWallet;
 }, sendPhase: LighterSendPhase): Promise<ExecuteApprovedLighterCreateOrderResult> {
   const { plan, deps } = input;
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
@@ -323,8 +337,8 @@ async function runApprovedLighterCreateOrder(input: {
   const cachedRepairReads = startCachedRepairReads(plan, deps, readAuthCache);
   const timing = new LighterOrderTiming();
   const { evidenceScope, providerCredential } = (deps.parallelPreflight ?? LIGHTER_ORDER_PARALLEL_PREFLIGHT)
-    ? await runParallelPreflightReads(plan, unsignedOrder, deps, timing)
-    : await runSequentialPreflightReads(plan, unsignedOrder, deps, timing);
+    ? await runParallelPreflightReads(plan, unsignedOrder, deps, timing, input.sessionWallet)
+    : await runSequentialPreflightReads(plan, unsignedOrder, deps, timing, input.sessionWallet);
   const secret = await timing.measure("keyLoadMs", () => loadLighterTradingSecretMaterial(
     plan.credentialReference,
     deps.secretReader,
@@ -652,6 +666,7 @@ async function revalidateLiveOrderState(
   plan: LighterOrderReadyForSignerPlan,
   deps: ExecuteApprovedLighterCreateOrderDeps,
   timing?: LighterOrderTiming,
+  sessionWallet?: LighterSigningOwnershipWallet,
 ): Promise<LighterOrderPreSubmitRevalidationEvidence> {
   const approvedPreview = await deps.previews.findFreshById(
     plan.sessionId,
@@ -757,6 +772,12 @@ async function revalidateLiveOrderState(
     context: { market: marketDetail, orderBook, account, ...(accountTakerFeeTicks === undefined ? {} : { accountTakerFeeTicks }) },
     nowMs: deps.now(),
   });
+  // `LIGHTER_SIGNING_OWNERSHIP_RECHECK`: last of the revalidation's checks, so
+  // every existing refusal keeps its precedence, and before the evidence is
+  // written, so a refused order records no passed revalidation.
+  if (deps.signingOwnershipRecheck ?? LIGHTER_SIGNING_OWNERSHIP_RECHECK) {
+    assertSessionWalletStillOwnsAccount(plan, account, sessionWallet);
+  }
   const persisted = await deps.intents.markPreSubmitRevalidated({
     intentId: plan.intentId,
     sessionId: plan.sessionId,
@@ -774,6 +795,27 @@ async function revalidateLiveOrderState(
   }
   timing?.recordDecision(persisted);
   return evidence;
+}
+
+/**
+ * The session wallet must still own the approved account, judged from the
+ * revalidation's own fresh account read. Numbers and enums only are logged.
+ */
+function assertSessionWalletStillOwnsAccount(
+  plan: LighterOrderReadyForSignerPlan,
+  account: Awaited<ReturnType<LighterClient["getAccount"]>>,
+  sessionWallet: LighterSigningOwnershipWallet | undefined,
+): void {
+  const outcome = judgeLighterSigningOwnership({ accountIndex: plan.accountIndex, account, wallet: sessionWallet });
+  if (outcome.kind === "refused") throw blockedBeforeSubmit(outcome.reason);
+  try {
+    logger.info("lighter.order.signing_ownership_recheck", {
+      outcome: outcome.kind,
+      ...(outcome.kind === "matched" ? { accountTypeReported: outcome.accountTypeReported ? 1 : 0 } : {}),
+    });
+  } catch {
+    // A log sink failure must never change an order's outcome.
+  }
 }
 
 interface SnapshotFeePublicReads {
@@ -1037,8 +1079,9 @@ async function runSequentialPreflightReads(
   unsignedOrder: LighterUnsignedCreateOrderRequest,
   deps: ExecuteApprovedLighterCreateOrderDeps,
   timing: LighterOrderTiming,
+  sessionWallet?: LighterSigningOwnershipWallet,
 ): Promise<PreflightReads> {
-  const revalidationEvidence = await timing.measure("revalidationMs", () => revalidateLiveOrderState(plan, deps, timing));
+  const revalidationEvidence = await timing.measure("revalidationMs", () => revalidateLiveOrderState(plan, deps, timing, sessionWallet));
   const evidenceScope = buildLighterOrderEvidenceScope({
     approved: plan,
     baseDecimals: revalidationEvidence.baseDecimals,
@@ -1067,9 +1110,10 @@ async function runParallelPreflightReads(
   unsignedOrder: LighterUnsignedCreateOrderRequest,
   deps: ExecuteApprovedLighterCreateOrderDeps,
   timing: LighterOrderTiming,
+  sessionWallet?: LighterSigningOwnershipWallet,
 ): Promise<PreflightReads> {
   const [revalidation, credential] = await Promise.allSettled([
-    timing.measure("revalidationMs", () => revalidateLiveOrderState(plan, deps, timing)).then((revalidationEvidence) => buildLighterOrderEvidenceScope({
+    timing.measure("revalidationMs", () => revalidateLiveOrderState(plan, deps, timing, sessionWallet)).then((revalidationEvidence) => buildLighterOrderEvidenceScope({
       approved: plan,
       baseDecimals: revalidationEvidence.baseDecimals,
       priceDecimals: revalidationEvidence.priceDecimals,

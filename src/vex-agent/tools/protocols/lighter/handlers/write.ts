@@ -27,6 +27,7 @@ import {
   lighterPreviewAdmissionSnapshotFits,
   type LighterPreviewAdmissionSnapshot,
 } from "../preview-snapshot.js";
+import { resolveLighterSigningOwnershipWallet } from "../signing-ownership.js";
 import { describeFailureForAgent } from "../../runtime/errors.js";
 import { assertLighterOrderCreateApprovalBinding } from "../approval-binding.js";
 import { buildLighterOrderApprovalDisclosure } from "../approval-disclosure.js";
@@ -409,6 +410,9 @@ export const LIGHTER_WRITE_HANDLERS: Record<string, ProtocolHandler> = {
         abortSignal: context?.abortSignal,
         plan,
         deps,
+        // `LIGHTER_SIGNING_OWNERSHIP_RECHECK`: this call's own session wallet,
+        // resolved as the preview resolved it, re-checked before signing.
+        sessionWallet: resolveLighterSigningOwnershipWallet(context),
       });
       return ok({
         source: "vex_lighter_live_order_create",
