@@ -331,6 +331,41 @@ export async function listUnresolved(
   return rows.map(mapRow);
 }
 
+/**
+ * End spent consent that expired before any grouped transaction was reserved.
+ * Repeat the predicate at the update so a concurrent nonce attachment wins
+ * safely. Approval remains consumed; this never releases a nonce or retries.
+ */
+export async function retireExpiredApprovedBeforeReservation(input: {
+  readonly environment?: LighterEnvironment;
+  readonly limit?: number;
+} = {}): Promise<LighterOcoExecutionIntentRow[]> {
+  const limit = input.limit ?? 50;
+  const bounded = Number.isInteger(limit) && limit > 0 && limit <= 200 ? limit : 50;
+  const pristine = `approval_status='approved' AND decided_at IS NOT NULL
+        AND execution_state='approval_pending' AND expires_at <= clock_timestamp()
+        AND ($2::text IS NULL OR environment=$2)
+        AND nonce_reservation_id IS NULL AND nonce_value IS NULL
+        AND signer_tx_hash IS NULL AND signer_expiry_ms IS NULL
+        AND stop_loss_client_order_index IS NULL AND take_profit_client_order_index IS NULL
+        AND send_attempt_started_at IS NULL AND submitted_tx_hash IS NULL
+        AND submit_code IS NULL AND submit_message IS NULL
+        AND predicted_execution_time_ms IS NULL AND volume_quota_remaining IS NULL
+        AND provider_outcome_json IS NULL AND provider_outcome_checked_at IS NULL
+        AND ambiguous_reason IS NULL`;
+  const rows = await query<Record<string, unknown>>(
+    `UPDATE lighter_oco_execution_intents
+      SET execution_state='rejected', ambiguous_reason=$1, updated_at=clock_timestamp()
+      WHERE intent_id IN (
+        SELECT intent_id FROM lighter_oco_execution_intents WHERE ${pristine}
+        ORDER BY expires_at ASC, intent_id ASC LIMIT ${bounded}
+      ) AND ${pristine}
+      RETURNING ${COLUMNS}`,
+    ["consent_expired_before_reservation", input.environment ?? null],
+  );
+  return rows.map(mapRow);
+}
+
 async function transition(
   sql: string,
   values: readonly unknown[],
