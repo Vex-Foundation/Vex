@@ -37,6 +37,7 @@ import {
   prepareLighterModifyOrder,
 } from "../order-lifecycle.js";
 import { admitLighterModifyCapitalCommitment } from "../capital-share-policy.js";
+import { resolveLighterSigningOwnershipWallet } from "../signing-ownership.js";
 import { describeFailureForAgent } from "../../runtime/errors.js";
 import {
   assertLighterCancelAllApprovalBinding,
@@ -171,7 +172,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     const deps = getConfiguredLighterOrderLifecycleExecutionDeps();
     if (deps === null) return fail("Privileged Lighter cancellation dependencies are unavailable. Nothing was signed or submitted.");
     try {
-      const result = await executeApprovedLighterCancelOne(approved, deps, context?.abortSignal);
+      const result = await executeApprovedLighterCancelOne(approved, deps, context?.abortSignal, resolveLighterSigningOwnershipWallet(context));
       return ok({
         source: "vex_lighter_order_cancel",
         ...result,
@@ -356,7 +357,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     const deps = getConfiguredLighterOrderLifecycleExecutionDeps();
     if (deps === null) return fail("Privileged Lighter modification dependencies are unavailable. Nothing was signed or submitted.");
     try {
-      const result = await executeApprovedLighterModifyOrder(approved, deps, context?.abortSignal);
+      const result = await executeApprovedLighterModifyOrder(approved, deps, context?.abortSignal, resolveLighterSigningOwnershipWallet(context));
       return ok({
         source: "vex_lighter_order_modify",
         ...result,
@@ -482,7 +483,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
     const deps = getConfiguredLighterOrderLifecycleExecutionDeps();
     if (deps === null) return fail("Privileged Lighter cancel-all dependencies are unavailable. Nothing was signed or submitted.");
     try {
-      const result = await executeApprovedLighterCancelAll(approved, deps, context?.abortSignal);
+      const result = await executeApprovedLighterCancelAll(approved, deps, context?.abortSignal, resolveLighterSigningOwnershipWallet(context));
       return ok({
         source: "vex_lighter_order_cancel_all",
         ...result,
@@ -635,7 +636,7 @@ export const LIGHTER_ORDER_LIFECYCLE_HANDLERS: Record<string, ProtocolHandler> =
       ? "This full-access session auto-approved the action."
       : "The user approved this action in Vex.";
     try {
-      const result = await executeApprovedLighterClosePosition(approved, deps, context?.abortSignal);
+      const result = await executeApprovedLighterClosePosition(approved, deps, context?.abortSignal, resolveLighterSigningOwnershipWallet(context));
       return ok({
         source: "vex_lighter_position_close",
         approval: {

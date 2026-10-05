@@ -186,6 +186,7 @@ function deps(overrides: Partial<LighterOrderLifecycleExecutionDeps> = {}): Ligh
     .mockResolvedValue({ code: 200, orders: [] });
   const canceledOrder = { ...openOrder, status: "canceled", remaining_base_amount: "0.5" };
   return {
+    signingOwnershipRecheck: false,
     secretReader: { readTradingApiPrivateKey: vi.fn().mockResolvedValue(PRIVATE_KEY) },
     authSigner: {
       source: "official_lighter_signer",
@@ -1159,6 +1160,7 @@ type LifecycleExecutor = (
   intent: LighterOrderLifecycleIntentRow,
   deps: LighterOrderLifecycleExecutionDeps,
   abortSignal?: AbortSignal,
+  sessionWallet?: import("@vex-agent/tools/protocols/lighter/signing-ownership.js").LighterSigningOwnershipWallet,
 ) => Promise<unknown>;
 
 const LIFECYCLE_EXECUTORS: Record<LifecycleAction, LifecycleExecutor> = {
@@ -1863,16 +1865,18 @@ async function observeLifecycle(
   action: LifecycleAction,
   built: LifecycleScenario,
   lifecycleParallelReads: boolean | "constant",
+  ownership?: { readonly enabled: boolean; readonly wallet?: import("@vex-agent/tools/protocols/lighter/signing-ownership.js").LighterSigningOwnershipWallet },
 ): Promise<LifecycleObservation> {
   ledger.retired.length = 0;
   ledger.settled.length = 0;
   const { lifecycleParallelReads: _pinned, ...unpinned } = built.deps;
-  const d: LighterOrderLifecycleExecutionDeps = lifecycleParallelReads === "constant"
+  const parallelDeps: LighterOrderLifecycleExecutionDeps = lifecycleParallelReads === "constant"
     ? unpinned
     : { ...unpinned, lifecycleParallelReads };
+  const d = ownership === undefined ? parallelDeps : { ...parallelDeps, signingOwnershipRecheck: ownership.enabled };
   let outcome: Record<string, unknown>;
   try {
-    outcome = { resolved: await LIFECYCLE_EXECUTORS[action](built.intent, d) };
+    outcome = { resolved: await LIFECYCLE_EXECUTORS[action](built.intent, d, undefined, ownership?.wallet) };
   } catch (error) {
     outcome = { rejected: describeLifecycleFailure(error) };
   }
@@ -2153,5 +2157,93 @@ describe("lifecycle parallel read helpers", () => {
 
     const throwing = lifecycleRead<string>(true, () => { throw new Error("thrown at start"); });
     await expect(throwing()).rejects.toThrow("thrown at start");
+  });
+});
+
+
+const OWNERSHIP_SCENARIOS: readonly { action: LifecycleAction; build: () => LifecycleScenario }[] = [
+  { action: "cancel_one", build: cancelOneScenario },
+  { action: "modify", build: modifyScenario },
+  { action: "cancel_all", build: cancelAllScenario },
+  { action: "close_position", build: closeScenario },
+];
+const SELECTED_WALLET = { kind: "wallet" as const, address: FEE_WALLET };
+
+describe("LIGHTER_LIFECYCLE_SIGNING_OWNERSHIP_RECHECK", () => {
+  it.each(LIFECYCLE_CASES)("preserves prior outcomes, writes and signing with a matching wallet: $label", async ({ action, build }) => {
+    const off = await observeLifecycle(action, build(), true, { enabled: false, wallet: SELECTED_WALLET });
+    const on = await observeLifecycle(action, build(), true, { enabled: true, wallet: SELECTED_WALLET });
+    expect(on.outcome).toEqual(off.outcome);
+    expect(on.effects).toEqual(off.effects);
+  });
+
+  it.each(OWNERSHIP_SCENARIOS)("refuses $action after auth, before passed evidence or nonce writes when the wallet drifted", async ({ action, build }) => {
+    const built = build();
+    const outcome = await observeLifecycle(action, built, true, {
+      enabled: true, wallet: { kind: "wallet", address: `0x${"2".repeat(40)}` },
+    });
+    expect(outcome.outcome).toMatchObject({ rejected: { message: expect.stringContaining("no longer belongs to the selected wallet") } });
+    expect(JSON.stringify(outcome.outcome)).toContain("No lifecycle transaction was signed or submitted.");
+    expect(JSON.stringify(outcome.outcome)).not.toContain("No trading key was loaded");
+    expect(built.deps.secretReader.readTradingApiPrivateKey).toHaveBeenCalledTimes(1);
+    expect(built.deps.authSigner.createAccountAuth).toHaveBeenCalledTimes(1);
+    expect(built.deps.intents.markPreSubmitRevalidated).not.toHaveBeenCalled();
+    expect(built.deps.nonceState.recordExecutionObserved).not.toHaveBeenCalled();
+    expect(built.deps.nonceState.reserveObservedWith).not.toHaveBeenCalled();
+    expect(built.deps.lifecycleSigner.signCancelOrder).not.toHaveBeenCalled();
+    expect(built.deps.lifecycleSigner.signModifyOrder).not.toHaveBeenCalled();
+    expect(built.deps.lifecycleSigner.signCancelAllOrders).not.toHaveBeenCalled();
+    expect(built.deps.authSigner.signCreateOrder).not.toHaveBeenCalled();
+    expect(built.deps.client.sendTx).not.toHaveBeenCalled();
+  });
+
+  it.each(OWNERSHIP_SCENARIOS)("fails closed for $action with absent or unavailable session wallet", async ({ action, build }) => {
+    for (const wallet of [undefined, { kind: "unavailable" as const }]) {
+      const on = await observeLifecycle(action, build(), false, { enabled: true, ...(wallet === undefined ? {} : { wallet }) });
+      expect(on.outcome).toMatchObject({ rejected: { message: expect.stringContaining("wallet selected for this session is no longer available") } });
+      expect(on.effects.recordExecutionObserved).toEqual([]);
+      expect(on.effects.sendTx).toEqual([]);
+    }
+  });
+
+  it.each(OWNERSHIP_SCENARIOS)("uses the named default and a fresh account for $action", async ({ action, build }) => {
+    const built = build();
+    const { signingOwnershipRecheck: _override, ...d } = built.deps;
+    await expect(LIFECYCLE_EXECUTORS[action](built.intent, d, undefined, SELECTED_WALLET)).resolves.toBeDefined();
+    const accountMock = vi.mocked(d.client.getAccount);
+    const sendOrder = requireValue(vi.mocked(d.client.sendTx).mock.invocationCallOrder[0]);
+    const freshReads = accountMock.mock.calls.filter((call, index) =>
+      call[2]?.fresh === true && requireValue(accountMock.mock.invocationCallOrder[index]) < sendOrder);
+    expect(freshReads).toHaveLength(1);
+    expect(freshReads[0]).toEqual(["rhc", { by: "index", value: "42" }, { fresh: true }]);
+  });
+
+  it.each(OWNERSHIP_SCENARIOS)("preserves trusted default without a wallet for $action", async ({ action, build }) => {
+    const off = await observeLifecycle(action, build(), false, { enabled: false });
+    const on = await observeLifecycle(action, build(), false, { enabled: true, wallet: { kind: "trusted_default_without_wallet" } });
+    expect(on.outcome).toEqual(off.outcome);
+    expect(on.effects).toEqual(off.effects);
+  });
+
+  it.each(OWNERSHIP_SCENARIOS)("keeps existing credential refusal ahead of ownership on $action", async ({ action, build }) => {
+    const built = build();
+    vi.mocked(built.deps.client.getApiKeys).mockResolvedValue({ code: 200, api_keys: [] });
+    const on = await observeLifecycle(action, built, true, { enabled: true });
+    expect(on.outcome).toMatchObject({ rejected: { message: expect.stringContaining("registered Lighter trading credential changed") } });
+    expect(on.effects.recordExecutionObserved).toEqual([]);
+  });
+
+  it.each(OWNERSHIP_SCENARIOS)("refuses a fresh ownership read failure before nonce or signing on $action", async ({ action, build }) => {
+    const built = build();
+    const read = requireValue(vi.mocked(built.deps.client.getAccount).getMockImplementation());
+    vi.mocked(built.deps.client.getAccount).mockImplementation(async (...args) => {
+      if (args[2]?.fresh === true) throw OFFLINE("ownership timed out");
+      return read(...args);
+    });
+    const on = await observeLifecycle(action, built, true, { enabled: true, wallet: SELECTED_WALLET });
+    expect(on.outcome).toMatchObject({ rejected: { message: expect.stringContaining("nothing was signed or sent") } });
+    expect(on.effects.markPreSubmitRevalidated).toEqual([]);
+    expect(on.effects.recordExecutionObserved).toEqual([]);
+    expect(on.effects.sendTx).toEqual([]);
   });
 });

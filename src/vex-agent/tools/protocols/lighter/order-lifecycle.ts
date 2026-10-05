@@ -74,6 +74,12 @@ import {
   prefetchLighterLifecycleFeeReads,
 } from "./lifecycle-parallel-reads.js";
 
+import { judgeLighterSigningOwnership, type LighterSigningOwnershipWallet } from "./signing-ownership.js";
+
+/** Fresh session ownership before lifecycle nonce writes; false keeps the prior path. */
+export const LIGHTER_LIFECYCLE_SIGNING_OWNERSHIP_RECHECK = true;
+const FRESH_PUBLIC_READ = { fresh: true } as const;
+
 const AUTH_TTL_SECONDS = 10 * 60;
 const SIGNER_EXPIRY_MS = 60_000;
 const MAX_RECONCILIATION_ATTEMPTS = 4;
@@ -277,6 +283,8 @@ export interface LighterOrderLifecycleExecutionDeps {
   readonly fills?: LighterFillObservationDeps;
   /** Overrides `LIGHTER_LIFECYCLE_PARALLEL_READS`; absent uses the constant. */
   readonly lifecycleParallelReads?: boolean;
+  /** Overrides `LIGHTER_LIFECYCLE_SIGNING_OWNERSHIP_RECHECK`; absent uses the constant. */
+  readonly signingOwnershipRecheck?: boolean;
 }
 
 let configuredDeps: LighterOrderLifecycleExecutionDeps | null = null;
@@ -585,9 +593,38 @@ export async function executeApprovedLighterCancelOne(
   intent: LighterOrderLifecycleIntentRow,
   deps: LighterOrderLifecycleExecutionDeps,
   abortSignal?: AbortSignal,
+  sessionWallet?: LighterSigningOwnershipWallet,
 ): Promise<ExecuteApprovedLighterCancelOneResult> {
   return withLifecycleTiming("cancel_one", intent, deps, (timing) =>
-    withLighterBeforeSendFailures((sendPhase) => runApprovedLighterCancelOne(intent, deps, abortSignal, sendPhase, timing)));
+    withLighterBeforeSendFailures((sendPhase) => runApprovedLighterCancelOne(intent, deps, abortSignal, sendPhase, timing, sessionWallet)));
+}
+
+/** Runs after all prior checks, before passed evidence and any nonce write. */
+async function recheckLifecycleSigningOwnership(
+  intent: LighterOrderLifecycleIntentRow,
+  deps: LighterOrderLifecycleExecutionDeps,
+  wallet: LighterSigningOwnershipWallet | undefined,
+  freshAccount?: Awaited<ReturnType<LighterClient["getAccount"]>>,
+): Promise<void> {
+  if (!(deps.signingOwnershipRecheck ?? LIGHTER_LIFECYCLE_SIGNING_OWNERSHIP_RECHECK)) return;
+  // Close already read this account fresh. Other lifecycle paths need their
+  // own fresh read: active orders and registered keys do not prove L1 ownership.
+  const account = freshAccount ?? await deps.client.getAccount(intent.environment, {
+    by: "index", value: String(intent.accountIndex),
+  }, FRESH_PUBLIC_READ);
+  const outcome = judgeLighterSigningOwnership({
+    accountIndex: intent.accountIndex, account, wallet, signingMaterialAlreadyLoaded: true,
+  });
+  if (outcome.kind === "refused") throw blocked(outcome.reason);
+  try {
+    logger.info("lighter.lifecycle.signing_ownership_recheck", {
+      action: intent.actionType,
+      outcome: outcome.kind,
+      ...(outcome.kind === "matched" ? { accountTypeReported: outcome.accountTypeReported ? 1 : 0 } : {}),
+    });
+  } catch {
+    // Diagnostics cannot change execution.
+  }
 }
 
 /** One `[lighter-lifecycle-timing]` line per execution, whatever it returns or throws. */
@@ -611,6 +648,7 @@ async function runApprovedLighterCancelOne(
   abortSignal: AbortSignal | undefined,
   sendPhase: LighterSendPhase,
   timing: LighterLifecycleTiming,
+  sessionWallet: LighterSigningOwnershipWallet | undefined,
 ): Promise<ExecuteApprovedLighterCancelOneResult> {
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
     assertIntentAuthority(intent.expiresAt, deps.now(), phase, abortSignal);
@@ -669,6 +707,7 @@ async function runApprovedLighterCancelOne(
   if (nextNonce.nonce !== providerKey.nonce) {
     throw blocked("Lighter returned inconsistent nonce evidence.");
   }
+  await recheckLifecycleSigningOwnership(intent, deps, sessionWallet);
   timing.stop("readsMs");
   const evidence = {
     kind: "lighter_cancel_one_pre_submit_revalidation",
@@ -877,9 +916,10 @@ export async function executeApprovedLighterModifyOrder(
   intent: LighterOrderLifecycleIntentRow,
   deps: LighterOrderLifecycleExecutionDeps,
   abortSignal?: AbortSignal,
+  sessionWallet?: LighterSigningOwnershipWallet,
 ): Promise<ExecuteApprovedLighterModifyOrderResult> {
   return withLifecycleTiming("modify", intent, deps, (timing) =>
-    withLighterBeforeSendFailures((sendPhase) => runApprovedLighterModifyOrder(intent, deps, abortSignal, sendPhase, timing)));
+    withLighterBeforeSendFailures((sendPhase) => runApprovedLighterModifyOrder(intent, deps, abortSignal, sendPhase, timing, sessionWallet)));
 }
 
 async function runApprovedLighterModifyOrder(
@@ -888,6 +928,7 @@ async function runApprovedLighterModifyOrder(
   abortSignal: AbortSignal | undefined,
   sendPhase: LighterSendPhase,
   timing: LighterLifecycleTiming,
+  sessionWallet: LighterSigningOwnershipWallet | undefined,
 ): Promise<ExecuteApprovedLighterModifyOrderResult> {
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
     assertIntentAuthority(intent.expiresAt, deps.now(), phase, abortSignal);
@@ -991,6 +1032,7 @@ async function runApprovedLighterModifyOrder(
     client: deps.client,
   });
   timing.stop("capitalMs");
+  await recheckLifecycleSigningOwnership(intent, deps, sessionWallet);
   const evidence = {
     kind: "lighter_modify_order_pre_submit_revalidation",
     checkedAt: new Date(deps.now()).toISOString(),
@@ -1225,9 +1267,10 @@ export async function executeApprovedLighterCancelAll(
   intent: LighterOrderLifecycleIntentRow,
   deps: LighterOrderLifecycleExecutionDeps,
   abortSignal?: AbortSignal,
+  sessionWallet?: LighterSigningOwnershipWallet,
 ): Promise<ExecuteApprovedLighterCancelAllResult> {
   return withLifecycleTiming("cancel_all", intent, deps, (timing) =>
-    withLighterBeforeSendFailures((sendPhase) => runApprovedLighterCancelAll(intent, deps, abortSignal, sendPhase, timing)));
+    withLighterBeforeSendFailures((sendPhase) => runApprovedLighterCancelAll(intent, deps, abortSignal, sendPhase, timing, sessionWallet)));
 }
 
 async function runApprovedLighterCancelAll(
@@ -1236,6 +1279,7 @@ async function runApprovedLighterCancelAll(
   abortSignal: AbortSignal | undefined,
   sendPhase: LighterSendPhase,
   timing: LighterLifecycleTiming,
+  sessionWallet: LighterSigningOwnershipWallet | undefined,
 ): Promise<ExecuteApprovedLighterCancelAllResult> {
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
     assertIntentAuthority(intent.expiresAt, deps.now(), phase, abortSignal);
@@ -1287,6 +1331,7 @@ async function runApprovedLighterCancelAll(
   if (nextNonce.nonce !== providerKey.nonce) {
     throw blocked("Lighter returned inconsistent nonce evidence.");
   }
+  await recheckLifecycleSigningOwnership(intent, deps, sessionWallet);
   timing.stop("readsMs");
   const revalidated = await timing.measure("persistMs", () => deps.intents.markPreSubmitRevalidated({
     intentId: intent.intentId,
@@ -1500,9 +1545,10 @@ export async function executeApprovedLighterClosePosition(
   intent: LighterOrderLifecycleIntentRow,
   deps: LighterOrderLifecycleExecutionDeps,
   abortSignal?: AbortSignal,
+  sessionWallet?: LighterSigningOwnershipWallet,
 ): Promise<ExecuteApprovedLighterClosePositionResult> {
   return withLifecycleTiming("close_position", intent, deps, (timing) =>
-    withLighterBeforeSendFailures((sendPhase) => runApprovedLighterClosePosition(intent, deps, abortSignal, sendPhase, timing)));
+    withLighterBeforeSendFailures((sendPhase) => runApprovedLighterClosePosition(intent, deps, abortSignal, sendPhase, timing, sessionWallet)));
 }
 
 async function runApprovedLighterClosePosition(
@@ -1511,6 +1557,7 @@ async function runApprovedLighterClosePosition(
   abortSignal: AbortSignal | undefined,
   sendPhase: LighterSendPhase,
   timing: LighterLifecycleTiming,
+  sessionWallet: LighterSigningOwnershipWallet | undefined,
 ): Promise<ExecuteApprovedLighterClosePositionResult> {
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
     assertIntentAuthority(intent.expiresAt, deps.now(), phase, abortSignal);
@@ -1533,7 +1580,9 @@ async function runApprovedLighterClosePosition(
   const auth: LighterPrivilegedAccountAuth = { token: authResult.authToken, accountIndex: intent.accountIndex };
   timing.start("readsMs");
   const batch = Promise.all([
-    deps.client.getAccount(intent.environment, { by: "index", value: String(intent.accountIndex) }),
+    (deps.signingOwnershipRecheck ?? LIGHTER_LIFECYCLE_SIGNING_OWNERSHIP_RECHECK)
+      ? deps.client.getAccount(intent.environment, { by: "index", value: String(intent.accountIndex) }, FRESH_PUBLIC_READ)
+      : deps.client.getAccount(intent.environment, { by: "index", value: String(intent.accountIndex) }),
     deps.client.getMarkets(intent.environment, { filter: "perp", marketId: intent.marketIndex! }),
     deps.client.getOrderBookOrders(intent.environment, { marketId: intent.marketIndex!, limit: 100 }),
   ]);
@@ -1605,6 +1654,7 @@ async function runApprovedLighterClosePosition(
   }
   const nextNonce = await readNextNonce();
   if (nextNonce.nonce !== providerKey.nonce) throw blocked("Lighter returned inconsistent nonce evidence.");
+  await recheckLifecycleSigningOwnership(intent, deps, sessionWallet, accountResponse);
   timing.stop("readsMs");
   const unsignedOrder: LighterUnsignedCreateOrderRequest = {
     kind: "lighter_unsigned_create_order",

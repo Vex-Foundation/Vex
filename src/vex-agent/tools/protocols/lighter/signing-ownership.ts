@@ -5,7 +5,8 @@ import type { ProtocolExecutionContext } from "../types.js";
 
 /**
  * SWITCH `LIGHTER_SIGNING_OWNERSHIP_RECHECK` (deps override
- * `signingOwnershipRecheck` on the create-order execution deps).
+ * `signingOwnershipRecheck` on the create-order execution deps). Lifecycle
+ * and OCO use independent switches with the same judgment.
  *
  * The preview binds an order to the account the SESSION'S selected wallet
  * owns (`resolveSessionBoundPreviewAccountIndex`, through
@@ -20,9 +21,9 @@ import type { ProtocolExecutionContext } from "../types.js";
  * Lighter reports the account's type, it must be a master account (type 0),
  * the rule the preview applies. It runs after every existing revalidation
  * check, before the revalidation evidence is written, so every existing
- * refusal keeps its precedence and nothing (key, auth, nonce) is touched when
- * it refuses. The refusal is final for that intent: the intent has left
- * approval and can never be sent; the user prepares a fresh order.
+ * refusal keeps its precedence and no signing load or nonce write follows
+ * an ownership refusal. The approved pristine row remains until existing
+ * expiry recovery retires it; the approve-handler decision CAS cannot replay it.
  *
  * A trusted default context with no EVM wallet configured at all is the one
  * lane the preview lets through without proving ownership (it trades the
@@ -87,20 +88,28 @@ export function judgeLighterSigningOwnership(input: {
   readonly accountIndex: number;
   readonly account: LighterAccountResponse;
   readonly wallet: LighterSigningOwnershipWallet | undefined;
+  /** Lifecycle material is already loaded for read-only auth, before signing. */
+  readonly signingMaterialAlreadyLoaded?: boolean;
 }): LighterSigningOwnershipOutcome {
   const { wallet } = input;
+  const refused = (reason: string): LighterSigningOwnershipOutcome => ({
+    kind: "refused",
+    reason: input.signingMaterialAlreadyLoaded === true
+      ? reason.replace("No trading key was loaded and no order was signed or submitted.", "No lifecycle transaction was signed or submitted.")
+      : reason,
+  });
   if (wallet?.kind === "trusted_default_without_wallet") return { kind: "skipped_trusted_default" };
   if (wallet === undefined || wallet.kind === "unavailable" || !ADDRESS.test(wallet.address.trim())) {
-    return { kind: "refused", reason: LIGHTER_SIGNING_OWNERSHIP_WALLET_UNAVAILABLE };
+    return refused(LIGHTER_SIGNING_OWNERSHIP_WALLET_UNAVAILABLE);
   }
   const rows = input.account.accounts.filter((row) => (row.index ?? row.account_index) === input.accountIndex);
   const row = rows.length === 1 ? rows[0] : undefined;
   const owner = typeof row?.l1_address === "string" ? row.l1_address.trim() : "";
   if (row === undefined || !ADDRESS.test(owner) || owner.toLowerCase() !== wallet.address.trim().toLowerCase()) {
-    return { kind: "refused", reason: LIGHTER_SIGNING_OWNERSHIP_NOT_OWNED };
+    return refused(LIGHTER_SIGNING_OWNERSHIP_NOT_OWNED);
   }
   const accountType: unknown = row.account_type;
   if (accountType === undefined || accountType === null) return { kind: "matched", accountTypeReported: false };
-  if (accountType !== 0) return { kind: "refused", reason: LIGHTER_SIGNING_OWNERSHIP_NOT_MASTER };
+  if (accountType !== 0) return refused(LIGHTER_SIGNING_OWNERSHIP_NOT_MASTER);
   return { kind: "matched", accountTypeReported: true };
 }

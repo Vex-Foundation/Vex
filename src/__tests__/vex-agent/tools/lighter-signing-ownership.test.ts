@@ -38,6 +38,20 @@ vi.mock("@vex-agent/db/repos/lighter-order-execution-intents.js", async (importO
   markApprovalDecision: async () => ({ ...executor.intent, approvalStatus: "approved" }),
 }));
 
+vi.mock("@vex-agent/tools/protocols/lighter/order-lifecycle.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/tools/protocols/lighter/order-lifecycle.js")>()),
+  executeApprovedLighterCancelOne: executor.execute,
+  executeApprovedLighterModifyOrder: executor.execute,
+  executeApprovedLighterCancelAll: executor.execute,
+  executeApprovedLighterClosePosition: executor.execute,
+  getConfiguredLighterOrderLifecycleExecutionDeps: () => ({}),
+}));
+vi.mock("@vex-agent/db/repos/lighter-order-lifecycle-intents.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/db/repos/lighter-order-lifecycle-intents.js")>()),
+  findByIntentId: async () => executor.intent,
+  markApprovalDecision: async () => ({ ...executor.intent, approvalStatus: "approved" }),
+}));
+
 import {
   judgeLighterSigningOwnership,
   LIGHTER_SIGNING_OWNERSHIP_NOT_MASTER,
@@ -45,6 +59,7 @@ import {
   LIGHTER_SIGNING_OWNERSHIP_WALLET_UNAVAILABLE,
   resolveLighterSigningOwnershipWallet,
 } from "@vex-agent/tools/protocols/lighter/signing-ownership.js";
+import { LIGHTER_ORDER_LIFECYCLE_HANDLERS } from "@vex-agent/tools/protocols/lighter/handlers/order-lifecycle.js";
 import { LIGHTER_WRITE_HANDLERS } from "@vex-agent/tools/protocols/lighter/handlers/write.js";
 import { requireValue } from "../../helpers/require-value.js";
 
@@ -114,6 +129,20 @@ describe("judgeLighterSigningOwnership", () => {
     { label: "a sub-account", row: { account_type: 1 }, reason: LIGHTER_SIGNING_OWNERSHIP_NOT_MASTER },
   ])("refuses $label", ({ row, reason }) => {
     expect(judgeLighterSigningOwnership({ accountIndex: 42, account: account(row), wallet })).toEqual({ kind: "refused", reason });
+  });
+
+  it("uses accurate refusal wording after lifecycle material was read for authentication", () => {
+    for (const input of [
+      { wallet, account: account({ l1_address: `0x${"5".repeat(40)}` }) },
+      { wallet, account: account({ account_type: 1 }) },
+      { wallet: undefined, account: account() },
+    ]) {
+      const outcome = judgeLighterSigningOwnership({ accountIndex: 42, ...input, signingMaterialAlreadyLoaded: true });
+      expect(outcome.kind).toBe("refused");
+      if (outcome.kind !== "refused") throw new Error("Expected an ownership refusal");
+      expect(outcome.reason).toContain("No lifecycle transaction was signed or submitted.");
+      expect(outcome.reason).not.toContain("No trading key was loaded");
+    }
   });
 
   it("refuses an account answer without exactly one row for the approved index", () => {
@@ -192,6 +221,23 @@ describe("lighter.order.create hands the executor its own session wallet", () =>
     const input: unknown = call[0];
     return typeof input === "object" && input !== null && "sessionWallet" in input ? input.sessionWallet : "absent";
   }
+
+  it.each(["lighter.order.cancel", "lighter.order.modify", "lighter.order.cancelAll", "lighter.position.close"])(
+    "%s hands lifecycle execution the current selected wallet or its unavailability", async (toolId) => {
+      for (const walletContext of [SESSION_CTX, {
+        walletResolution: { source: "session" as const, evm: null, solana: null },
+        walletPolicy: { kind: "none" as const },
+      }]) {
+        executor.intent = { ...INTENT, intentId: "lighter-lifecycle-00000000-0000-4000-8000-000000000001" };
+        executor.execute.mockReset().mockResolvedValue({ status: "sequencer_pending" });
+        const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS[toolId])({ intentId: executor.intent.intentId }, {
+          sessionId: "session-1", sessionPermission: "full", approved: false, ...walletContext,
+        });
+        expect(executor.execute, result.output).toHaveBeenCalledTimes(1);
+        expect(requireValue(executor.execute.mock.calls[0])[3]).toEqual(resolveLighterSigningOwnershipWallet(walletContext));
+      }
+    },
+  );
 
   it("passes the selected wallet, or says it is unavailable", async () => {
     expect(await approve(SESSION_CTX)).toEqual({ kind: "wallet", address: WALLETS.selected.address });
