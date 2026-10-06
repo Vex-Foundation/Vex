@@ -14,7 +14,11 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["src/__tests__/integration/**/*.int.test.ts"],
+    include: [
+      "src/__tests__/integration/**/*.int.test.ts",
+      // This existing suite also needs the isolated PostgreSQL and embeddings setup.
+      "src/__tests__/integration/memory/long-mission.test.ts",
+    ],
     globals: false,
     environment: "node",
     globalSetup: ["src/__tests__/integration/setup/globalSetup.ts"],
