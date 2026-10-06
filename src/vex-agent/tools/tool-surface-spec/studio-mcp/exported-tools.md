@@ -129,7 +129,7 @@ free. Both texts live on the tool
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | kyberswap__chains_list | List KyberSwap chains | protocol | yes | no | no | - | 776 | - | none (read) |
 | kyberswap__swap_execute | Execute a KyberSwap swap | protocol | no | yes | no | - | 4087 | yes | 25 bps |
-| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 3965 | - | none (read) |
+| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 4018 | - | none (read) |
 | kyberswap__token_safety_check | Audit an EVM token with KyberSwap | protocol | yes | no | no | - | 1138 | - | none (read) |
 
 ### launchpads

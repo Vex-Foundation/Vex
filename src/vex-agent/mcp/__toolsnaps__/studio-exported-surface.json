@@ -4956,7 +4956,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 3965,
+      "descriptionBytes": 4018,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,

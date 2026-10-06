@@ -21,7 +21,7 @@ export const SWAP_TOOLS: readonly ProtocolToolManifest[] = [
     description:
       "Price an exact-input EVM swap through the KyberSwap aggregator (400+ DEXs, on the chains "
       + "`kyberswap__chains_list` returns) without signing anything, and seed the prequote "
-      + "`kyberswap__swap_execute` is matched against. Use this before every KyberSwap execute, and whenever the user "
+      + "`kyberswap__swap_execute` is matched against. Use this before every KyberSwap execute: the aggregator compares routes across many DEXes. Use it whenever the user "
       + "asks what a trade would return, what the rate or the price impact is, or which venues a route crosses. "
       + `${SWAP_VENUE_GUIDANCE} `
       + `${KYBERSWAP_EDGE_BLOCK_GUIDANCE} `
