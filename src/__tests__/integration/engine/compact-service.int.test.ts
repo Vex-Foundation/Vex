@@ -38,6 +38,7 @@ import { resetCompactMutexForTests } from "@vex-agent/engine/compact-jobs/state.
 import { GIANT_TOOL_THRESHOLD } from "@vex-agent/engine/checkpoint/prefix.js";
 import { getAllMessages } from "@vex-agent/db/repos/messages.js";
 import { insertMessage, makeSession, resetDb } from "../setup/fixtures.js";
+import { requireValue } from "../../helpers/require-value.js";
 
 function newJob(sessionId: string, gen: number, overrides: Partial<NewCompactJob> = {}): NewCompactJob {
   return {
@@ -307,7 +308,7 @@ describe("executeCompactNow giant_tool plan (integration)", () => {
 
     // Small head conversation + one bloated tool message + small tail.
     await insertMessage(sid, "user", "fetch a big dump");
-    await insertMessage(sid, "assistant", "calling tool", { toolCalls: [{ id: "tc-bloat-1", type: "function", function: { name: "demo", arguments: "{}" } }] });
+    await insertMessage(sid, "assistant", "calling tool", { toolCalls: [{ id: "tc-bloat-1", command: "demo", args: {} }] });
     const bloatedId = await insertMessage(
       sid,
       "tool",
@@ -338,14 +339,14 @@ describe("executeCompactNow giant_tool plan (integration)", () => {
     expect(archivedRow!.content.length).toBeGreaterThan(GIANT_TOOL_THRESHOLD);
     expect(archivedRow!.content.startsWith("xxxx")).toBe(true);
 
-    // Live row replaced by placeholder mentioning compact_job_id + session_memory_search.
+    // Live row replaced by placeholder mentioning compact_job_id + SessionMemorySearch.
     const liveRow = await queryOne<{ content: string }>(
       `SELECT content FROM messages WHERE id = $1`,
       [bloatedId],
     );
     expect(liveRow).not.toBeNull();
     expect(liveRow!.content).toContain(String(result.jobId));
-    expect(liveRow!.content.toLowerCase()).toContain("session_memory_search");
+    expect(requireValue(liveRow).content).toContain("SessionMemorySearch");
     // Placeholder is bounded — much smaller than the original payload.
     expect(liveRow!.content.length).toBeLessThan(GIANT_TOOL_THRESHOLD);
 

@@ -75,7 +75,10 @@ describe("agent_activity — CAS transitions", () => {
     // Deliberately NO markActivityBroadcast call — tx_hash stays NULL.
     const outcome = await repo
       .confirmActivityEvent(event.id, { executedAmountInRaw: "1", executedAmountOutRaw: "1" })
-      .catch((err: unknown) => err);
+      .catch((err: unknown): Error => {
+        if (!(err instanceof Error)) throw err;
+        return err;
+      });
 
     if (outcome instanceof Error) {
       expect(outcome.message).not.toBe("");

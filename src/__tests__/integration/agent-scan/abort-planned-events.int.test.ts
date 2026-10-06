@@ -67,7 +67,7 @@ describe("abortPlannedEvents — C17 downstream finalization", () => {
     // shape — pending, no submit_attempted_at — so they are ALREADY
     // invisible to the repair candidate query (nothing to repair; nothing
     // was ever staged for them).
-    const beforeCandidates = await repo.listPendingOlderThan(0);
+    const beforeCandidates = await repo.listPendingOlderThan(0, 100, "eip155");
     expect(beforeCandidates.some((r) => r.id === allowanceEvent.id)).toBe(false);
     expect(beforeCandidates.some((r) => r.id === swapEvent.id)).toBe(false);
 
@@ -86,7 +86,7 @@ describe("abortPlannedEvents — C17 downstream finalization", () => {
 
     // No phantom pendings remain — and still invisible to the repair query
     // (they are terminal now, not merely absent-because-unstaged).
-    const afterCandidates = await repo.listPendingOlderThan(0);
+    const afterCandidates = await repo.listPendingOlderThan(0, 100, "eip155");
     expect(afterCandidates.some((r) => r.id === allowanceEvent.id)).toBe(false);
     expect(afterCandidates.some((r) => r.id === swapEvent.id)).toBe(false);
 

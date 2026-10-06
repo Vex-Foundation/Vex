@@ -7,10 +7,14 @@ export default defineConfig({
   root,
   resolve: {
     alias: {
+      // Root-side tests and app imports must share the actual Electron module identity.
+      electron: resolve(root, "vex-app/node_modules/electron"),
       "@tools": resolve(root, "src/tools"),
       "@utils": resolve(root, "src/utils"),
       "@config": resolve(root, "src/config"),
       "@vex-agent": resolve(root, "src/vex-agent"),
+      "@shared": resolve(root, "vex-app/src/shared"),
+      "@vex-lib": resolve(root, "src/lib"),
     },
   },
   test: {
