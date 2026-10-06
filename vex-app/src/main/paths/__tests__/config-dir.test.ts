@@ -15,6 +15,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 import {
+  CONFIG_DIR,
   ELECTRON_STATE_DIR,
   ENV_FILE,
   INSTALL_ID_FILE,
@@ -153,7 +154,7 @@ describe("the override contract", () => {
 
 describe("derived path constants", () => {
   it("places the Electron-private state nested under CONFIG_DIR", () => {
-    expect(ELECTRON_STATE_DIR.endsWith(path.join("vex", ".electron-state"))).toBe(true);
+    expect(ELECTRON_STATE_DIR).toBe(path.join(CONFIG_DIR, ".electron-state"));
   });
 
   it("places shared resources at CONFIG_DIR root, not under .electron-state", () => {

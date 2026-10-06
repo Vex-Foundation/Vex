@@ -79,6 +79,7 @@ export default defineConfig({
           name: "node",
           environment: "node",
           globals: true,
+          setupFiles: [path.resolve(__dirname, "src/main/test/setup.ts")],
           /**
            * K-4: the main-process pg pool ships ON, but the database unit
            * suites mock `pg.Client` per call to assert their SQL. They run on
