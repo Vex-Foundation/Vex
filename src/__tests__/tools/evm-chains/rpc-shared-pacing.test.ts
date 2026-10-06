@@ -45,7 +45,7 @@ it("does not reserve expired HTTP waiters ahead of a fresh client on the same qu
       result: body.method === "eth_chainId" ? "0x2105" : "0x1" }));
   }));
   state.endpoints = [{ url: "http://rpc-one.invalid", tier: "bundled", retryCount: 0,
-    timeoutMs: 50, minRequestSpacingMs: 250, requestPacingGroup: "test-shared-quota" }];
+    timeoutMs: 50, broadcastSafe: false, minRequestSpacingMs: 250, requestPacingGroup: "test-shared-quota" }];
   const short = createPublicClient({ chain, transport: buildEvmTransport(8453) });
   let completed = 0;
   const expired = Promise.all(Array.from({ length: 40 }, (_, index) => short.request({

@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 import { DELETED_TEST_ALLOWLIST_PATHS } from "./deleted-test-allowlist.mjs";
+import { assertTestTypeConfigContract } from "./test-type-config-contract.mjs";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "..");
@@ -255,14 +256,19 @@ function main() {
   assertDetectorSelfTest();
   const base = argumentValue("--base") ?? deriveMergeBase();
   console.log(`• comparing against base ${base}`);
-  const forbiddenPaths = new Set(["tsconfig.json", "tsconfig.test.json", "scripts/test-type-baseline.json", "scripts/test-type-baseline-allowlist.json"]);
+  try {
+    assertTestTypeConfigContract(repositoryRoot, ts.version);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
+  const forbiddenPaths = new Set(["tsconfig.json", "scripts/test-type-baseline.json", "scripts/test-type-baseline-allowlist.json"]);
   const changedForbidden = changedPaths(base).filter((file) => forbiddenPaths.has(file));
-  if (changedForbidden.length > 0) fail(`this remediation patch may not edit type config or ratchet baseline files: ${changedForbidden.join(", ")}`);
+  if (changedForbidden.length > 0) fail(`this remediation patch may not edit production type config or ratchet baseline files: ${changedForbidden.join(", ")}`);
 
   const addedLines = addedLinesByFile(base);
   const findings = changedTestFiles(base).flatMap((file) => inspectFile(file, addedLines.get(file) ?? new Set()));
   if (findings.length > 0) fail(`unsafe test escape(s) added:\n${findings.join("\n")}`);
-  console.log("✓ no unsafe escapes, focused tests, deletions, or config/baseline edits in changed test files");
+  console.log("✓ no unsafe escapes, focused tests, prohibited deletions, or production config/baseline edits; reviewed test config verified");
 }
 
 main();

@@ -1,6 +1,19 @@
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": { "noEmit": true },
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "rootDir": ".",
+    "paths": {
+      "@tools/*": ["tools/*"],
+      "@utils/*": ["utils/*"],
+      "@config/*": ["config/*"],
+      "@vex-agent/*": ["vex-agent/*"],
+      "@shared/*": ["../vex-app/src/shared/*"],
+      "@vex-lib/*": ["lib/*"]
+    }
+  },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
