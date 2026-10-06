@@ -225,7 +225,7 @@ describe("syncSolanaWalletBalances", () => {
       expect(logger.warn).toHaveBeenLastCalledWith("sync.solana_chain.failed", expect.objectContaining({ suppressedCount: 1 }));
       await syncSolanaWalletBalances(WALLET, { rpc: scriptedRpc() });
       await syncSolanaWalletBalances(WALLET, { rpc });
-      expect(vi.mocked(logger.warn).mock.calls.filter(([event]) => event === "sync.solana_chain.failed")).toHaveLength(3);
+      expect(vi.mocked(logger.warn).mock.calls.map((call) => Array.from<unknown>(call)).filter(([event]) => event === "sync.solana_chain.failed")).toHaveLength(3);
     } finally {
       vi.useRealTimers();
     }

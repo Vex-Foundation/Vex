@@ -56,6 +56,7 @@ describe("launch-tool approval surface", () => {
       const pending = evaluateApprovalGate(
         launchManifest(toolId), { toolId }, {}, context,
         undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined,
       );
       // No card: the dispatch is allowed through to the handler, which refuses
       // BY NAME and points at the launch form.
@@ -74,6 +75,7 @@ describe("launch-tool approval surface", () => {
       const pending = evaluateApprovalGate(
         launchManifest(toolId), { toolId }, {}, context,
         undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined,
       );
       expect(pending).toBeUndefined();
     },
@@ -88,6 +90,7 @@ describe("launch-tool approval surface", () => {
     const pending = evaluateApprovalGate(
       launchManifest(toolId), { toolId }, {}, context,
       undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, undefined, undefined,
     );
     expect(pending?.pendingApproval).toBe(true);
     expect(pending?.success).toBe(false);
@@ -100,6 +103,7 @@ describe("launch-tool approval surface", () => {
         launchManifest(toolId), { toolId }, {},
         makeProtocolContext({ sessionPermission: "full", approvalSurface: "studio_mcp" }),
         undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, undefined, undefined,
       );
       expect(pending).toBeUndefined();
     }

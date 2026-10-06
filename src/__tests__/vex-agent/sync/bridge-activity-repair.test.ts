@@ -306,7 +306,7 @@ describe("repairPendingBridges — orchestration", () => {
     const result = await repairPendingBridges(deps);
     expect(deps.confirmExpectedFill).not.toHaveBeenCalled();
     expect(result.stillPending).toBe(1);
-    expect(warnSpy.mock.calls.some((c) => c[0] === "bridge.repair.filled_without_hash")).toBe(true);
+    expect(warnSpy.mock.calls.some((c: readonly unknown[]) => c[0] === "bridge.repair.filled_without_hash")).toBe(true);
     warnSpy.mockRestore();
   });
 
@@ -319,7 +319,7 @@ describe("repairPendingBridges — orchestration", () => {
     const result = await repairPendingBridges(deps);
     expect(deps.confirmExpectedFill).not.toHaveBeenCalled();
     expect(result.stillPending).toBe(1);
-    expect(warnSpy.mock.calls.some((c) => c[0] === "bridge.repair.chain_id_mismatch")).toBe(true);
+    expect(warnSpy.mock.calls.some((c: readonly unknown[]) => c[0] === "bridge.repair.chain_id_mismatch")).toBe(true);
     warnSpy.mockRestore();
   });
 

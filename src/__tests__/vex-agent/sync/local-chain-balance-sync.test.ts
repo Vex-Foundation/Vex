@@ -404,7 +404,8 @@ describe("syncLocalChainForWallet", () => {
       vi.mocked(logger.warn).mockClear();
       let status = 403;
       mountBlockscout(async () => ({ finalUrl: buildBlockscoutTokenBalancesUrl(4663, WALLET).toString(), status, contentType: "text/html", body: encoder.encode("refused") }));
-      const warnings = () => vi.mocked(logger.warn).mock.calls.filter(([event]) => event === "sync.local_chain.enumeration_not_exhaustive");
+      const warnings = () => vi.mocked(logger.warn).mock.calls.map((call) => Array.from<unknown>(call))
+        .filter(([event]) => event === "sync.local_chain.enumeration_not_exhaustive");
       await syncLocalChainForWallet("eip155", WALLET, 4663);
       await syncLocalChainForWallet("eip155", WALLET, 4663);
       expect(warnings()).toHaveLength(1);

@@ -156,6 +156,7 @@ describe("engine types", () => {
           decimals: 6,
           chainId: 4663,
           assetAddress: "0x0f9f0000000000000000000000000000000000ee",
+          assetKind: "token",
           assetSymbol: "USDC",
         },
         allowedWallets: ["solana"],
@@ -169,6 +170,7 @@ describe("engine types", () => {
         maxLaunchValueRaw: "1000000000000000000",
         maxLaunchValueDecimals: 18,
         maxLaunchCount: 3,
+        reasoningEffort: null,
       };
       expect(draft.title).toBe("SOL DCA Strategy");
       expect(draft.allowedChains).toEqual(["solana"]);

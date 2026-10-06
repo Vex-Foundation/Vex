@@ -508,6 +508,9 @@ describe("contract-hash", () => {
           assetSymbol: DECLARED.assetSymbol,
         },
       });
+      if (material.v !== LEGACY_V6_CONTRACT_HASH_VERSION) {
+        throw new Error("Expected frozen v6 contract material");
+      }
       expect(material.deployedCapital).not.toHaveProperty("assetKind");
     });
 
