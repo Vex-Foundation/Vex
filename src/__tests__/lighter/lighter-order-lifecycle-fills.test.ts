@@ -319,6 +319,7 @@ function closeDeps(input: {
       markSendAttemptStarted: vi.fn<Intents["markSendAttemptStarted"]>(async () => true),
       markExpiredUnsubmitted: vi.fn<Intents["markExpiredUnsubmitted"]>(async () => true),
       markUnsubmittedRefused: vi.fn<Intents["markUnsubmittedRefused"]>(async () => true),
+      abandonRevalidatedBeforeNonce: vi.fn<Intents["abandonRevalidatedBeforeNonce"]>(async () => null),
       markPreSubmitRevalidated: vi.fn<Intents["markPreSubmitRevalidated"]>(async () => staged),
       attachNonceReservationWith: vi.fn<Intents["attachNonceReservationWith"]>(async () => staged),
       markSigned: vi.fn<Intents["markSigned"]>(async () => staged),

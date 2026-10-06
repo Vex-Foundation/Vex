@@ -14,6 +14,8 @@
  * boundary are scripted.
  */
 
+import { z } from "zod";
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { makeProtocolContext } from "../_test-context.js";
@@ -102,7 +104,15 @@ function priceOf(rows: TokenRow[], symbol: string): string | undefined {
 async function read(): Promise<Payload> {
   const res = await handleTokenBalances({ wallet: "eip155" }, CONTEXT);
   expect(res.success).toBe(true);
-  return res.data as Payload;
+  return z.object({
+    totalUsd: z.number(),
+    tokens: z.array(z.object({
+      symbol: z.string(),
+      extensions: z.object({
+        price: z.object({ usd: z.string().optional() }).optional(),
+      }).optional(),
+    })),
+  }).parse(res.data);
 }
 
 beforeEach(() => {

@@ -14,6 +14,7 @@ interface GoldenFixture {
   expectedAny: readonly string[];
   k?: number;
   notes?: string;
+  disabled?: boolean;
 }
 
 const FIXTURES: readonly GoldenFixture[] = [

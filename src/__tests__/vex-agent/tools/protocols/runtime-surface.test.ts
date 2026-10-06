@@ -11,7 +11,7 @@
  * `protocol.execute.capture_failed` redaction path the split must preserve.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from "vitest";
 
 import logger from "@utils/logger.js";
 import type { ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
@@ -116,11 +116,11 @@ const mutatingCtx = {
 };
 
 describe("executeProtocolTool — capture_failed redaction (A-003 split pin)", () => {
-  let warnSpy: ReturnType<typeof vi.spyOn>;
+  let warnSpy: MockInstance<typeof logger.warn>;
 
   beforeEach(() => {
-    warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger as never);
-    vi.spyOn(logger, "info").mockImplementation(() => logger as never);
+    warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+    vi.spyOn(logger, "info").mockImplementation(() => logger);
     vi.mocked(catalog.getProtocolManifest).mockReset().mockReturnValue(mutatingManifest());
     vi.mocked(catalog.getProtocolHandler).mockReset().mockReturnValue(async () => ({
       success: true,
@@ -138,7 +138,8 @@ describe("executeProtocolTool — capture_failed redaction (A-003 split pin)", (
     // Handler succeeded — capture failure must NOT change the success result.
     expect(result.success).toBe(true);
 
-    const captureCall = warnSpy.mock.calls.find((c) => c[0] === "protocol.execute.capture_failed");
+    const captureCall = warnSpy.mock.calls.map((call) => Array.from<unknown>(call))
+      .find((call) => call[0] === "protocol.execute.capture_failed");
     expect(captureCall).toBeDefined();
     const payload = captureCall?.[1] as Record<string, unknown> | undefined;
     expect(payload).toMatchObject({ toolId: "test.capture.mutate" });

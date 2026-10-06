@@ -1217,13 +1217,17 @@ describe("Lighter approved create execution pipeline", () => {
   });
 
   it("records the signed transaction's own ExpiredAt with the signed state", async () => {
-    const d = deps();
     const signedExpiry = NOW + 599_000;
-    const original = d.signer.signCreateOrder;
-    d.signer.signCreateOrder = vi.fn(async (input) => ({
-      ...(await original(input)),
-      txInfo: `{"AccountIndex":42,"OrderExpiry":0,"ExpiredAt":${signedExpiry},"Nonce":0}`,
-    }));
+    const signer = deps().signer;
+    const d = deps({
+      signer: {
+        ...signer,
+        signCreateOrder: vi.fn<ExecuteApprovedLighterCreateOrderDeps["signer"]["signCreateOrder"]>(async (input) => ({
+          ...(await signer.signCreateOrder(input)),
+          txInfo: `{"AccountIndex":42,"OrderExpiry":0,"ExpiredAt":${signedExpiry},"Nonce":0}`,
+        })),
+      },
+    });
 
     await executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d });
 
@@ -1231,12 +1235,16 @@ describe("Lighter approved create execution pipeline", () => {
   });
 
   it("refuses to send, and releases the nonce, when the signed expiry lies beyond the SDK window", async () => {
-    const d = deps();
-    const original = d.signer.signCreateOrder;
-    d.signer.signCreateOrder = vi.fn(async (input) => ({
-      ...(await original(input)),
-      txInfo: `{"ExpiredAt":${NOW + 10 * 60_000 + 1},"Nonce":0}`,
-    }));
+    const signer = deps().signer;
+    const d = deps({
+      signer: {
+        ...signer,
+        signCreateOrder: vi.fn<ExecuteApprovedLighterCreateOrderDeps["signer"]["signCreateOrder"]>(async (input) => ({
+          ...(await signer.signCreateOrder(input)),
+          txInfo: `{"ExpiredAt":${NOW + 10 * 60_000 + 1},"Nonce":0}`,
+        })),
+      },
+    });
 
     await expect(executeApprovedLighterCreateOrder({ plan: PLAN, unsignedOrder: UNSIGNED_ORDER, deps: d }))
       .rejects.toThrow(/beyond the signer's default window/);

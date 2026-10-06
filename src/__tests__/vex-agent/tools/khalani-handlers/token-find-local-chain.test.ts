@@ -18,7 +18,7 @@ function robinhood(): InclusiveEvmChain {
 
 describe("TokenFind local EVM capability route", () => {
   it("exact address bypasses provider ranking and uses contract symbol and decimals", async () => {
-    const search = vi.fn<TokenFindDependencies["executeDexScreenerSearch"]>();
+    const search = vi.fn<NonNullable<TokenFindDependencies["executeDexScreenerSearch"]>>();
     const result = await handleTokenFind(
       { query: VEX, chainIds: "robinhood" },
       makeTestContext(),
@@ -161,8 +161,8 @@ describe("TokenFind local EVM capability route", () => {
   it("propagates operator cancellation before provider or RPC work", async () => {
     const controller = new AbortController();
     controller.abort();
-    const search = vi.fn<TokenFindDependencies["executeDexScreenerSearch"]>();
-    const readIdentity = vi.fn<TokenFindDependencies["readContractIdentity"]>();
+    const search = vi.fn<NonNullable<TokenFindDependencies["executeDexScreenerSearch"]>>();
+    const readIdentity = vi.fn<NonNullable<TokenFindDependencies["readContractIdentity"]>>();
 
     await expect(handleTokenFind(
       { query: "VEX", chainIds: "4663" },
