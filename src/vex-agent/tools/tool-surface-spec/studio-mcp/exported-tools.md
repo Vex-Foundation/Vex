@@ -170,8 +170,8 @@ free. Both texts live on the tool
 | lighter__order_preview | Preview a Lighter order | protocol | no | no | no | - | 2078 | - | - |
 | lighter__order_status | Check a Lighter order action's status | protocol | yes | no | no | - | 1163 | - | none (read) |
 | lighter__orderbook_get | Read a Lighter order book | protocol | yes | no | no | - | 537 | - | none (read) |
-| lighter__position_close | Close an approved Lighter position | protocol | no | yes | no | - | 631 | - | - |
-| lighter__position_close_prepare | Prepare a Lighter position-close approval | protocol | no | no | no | - | 602 | - | - |
+| lighter__position_close | Close an approved Lighter position | protocol | no | yes | no | - | 690 | - | - |
+| lighter__position_close_prepare | Prepare a Lighter position-close approval | protocol | no | no | no | - | 796 | - | - |
 | lighter__position_protect | Preview Lighter position protection | protocol | no | no | no | - | 1108 | - | - |
 | lighter__positions_list | List Lighter positions | protocol | yes | no | no | - | 709 | - | none (read) |
 | lighter__recent_trades_list | Read recent public Lighter trades | protocol | yes | no | no | - | 472 | - | none (read) |

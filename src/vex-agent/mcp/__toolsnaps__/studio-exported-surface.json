@@ -6271,7 +6271,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 631,
+      "descriptionBytes": 690,
       "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
@@ -6301,13 +6301,17 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 602,
+      "descriptionBytes": 796,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "accountIndex": {
             "description": "Optional Lighter account index. In a session, omit it to use the account owned by the selected EVM wallet; an explicit index must match that wallet.",
+            "type": "number"
+          },
+          "closePercent": {
+            "description": "Optional percentage of the exact live position to close: 25, 50, 75, or 100. Defaults to 100. Partial amounts are floored to market size precision and must meet live order minimums.",
             "type": "number"
           },
           "dryRun": {
@@ -6327,7 +6331,7 @@
             "type": "number"
           },
           "slippageBps": {
-            "description": "Explicit maximum slippage in basis points from 1 through 500. Vex refuses the close unless visible live depth can fill the entire position inside this bound.",
+            "description": "Explicit maximum slippage in basis points from 1 through 500. Vex refuses the close unless visible live depth can fill the requested close amount inside this bound.",
             "minimum": 0,
             "type": "integer"
           }

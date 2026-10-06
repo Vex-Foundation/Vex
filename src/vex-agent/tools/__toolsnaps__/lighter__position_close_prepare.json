@@ -1,7 +1,7 @@
 {
   "definition": {
     "function": {
-      "description": "Prepare one explicit approval to close 25, 50, 75, or 100 percent of the exact current position in one active Lighter perpetual market. Omit closePercent for the entire position. It reads the exact live account position, market precision, and up to 100 order-book levels; floors partial size to market precision and enforces live partial-order minimums; requires a user-specified slippage ceiling; refuses insufficient visible depth; and binds the exact position and reduce-only market IOC amount with a worst acceptable price. Returns the durable intent, exact close terms, and trusted approval card; it never loads a private key, reserves a nonce, signs, or submits.",
+      "description": "Prepare one explicit approval to close 25, 50, 75, or 100 percent of the exact current position in one active Lighter perpetual market. Use when the user explicitly asks to close the full position or a supported percentage and supplies a maximum slippage ceiling. Omit closePercent for the entire position. It reads the exact live account position, market precision, and up to 100 order-book levels; floors partial size to market precision and enforces live partial-order minimums; requires a user-specified slippage ceiling; refuses insufficient visible depth; and binds the exact position and reduce-only market IOC amount with a worst acceptable price. Returns the durable intent, exact close terms, and trusted approval card; it never loads a private key, reserves a nonce, signs, or submits.",
       "name": "lighter__position_close_prepare",
       "parameters": {
         "additionalProperties": false,
