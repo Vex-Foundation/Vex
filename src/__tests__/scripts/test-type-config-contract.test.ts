@@ -27,8 +27,8 @@ const reviewed = {
 type Guard = "assertReviewedTestTypeConfig" | "assertHistoricalCompilerProtection" | "assertZeroTestTypeDiagnostics";
 function runGuard(guard: Guard, args: readonly unknown[]) {
   return execFileSync(process.execPath, ["--input-type=module", "-e",
-    `import { ${guard} } from "./scripts/test-type-config-contract.mjs"; ${guard}(...JSON.parse(process.argv[1]));`,
-    JSON.stringify(args)], { cwd: repositoryRoot, encoding: "utf8", stdio: "pipe" });
+    `import { readFileSync } from "node:fs"; import { ${guard} } from "./scripts/test-type-config-contract.mjs"; ${guard}(...JSON.parse(readFileSync(0, "utf8")));`],
+    { cwd: repositoryRoot, encoding: "utf8", stdio: "pipe", input: JSON.stringify(args) });
 }
 function withOptions(options: Record<string, unknown>) {
   return { ...reviewed, compilerOptions: { ...reviewed.compilerOptions, ...options } };
@@ -67,6 +67,16 @@ describe("reviewed test compiler topology", () => {
 });
 
 describe("immutable production compiler protections", () => {
+  it("accepts historical metadata larger than the Linux single-argument limit", () => {
+    const metadata = { schemaVersion: 1, diagnostics: { "fixture.ts": ["historical diagnostic".repeat(16_384)] },
+      tscVersion: ts.version, extendsConfigSha256: createHash("sha256").update(productionConfig).digest("hex") };
+    const args = [metadata, productionConfig, ts.version];
+    expect(Buffer.byteLength(JSON.stringify(args), "utf8")).toBeGreaterThan(128 * 1024);
+    expect(() => runGuard("assertHistoricalCompilerProtection", args)).not.toThrow();
+    expect(() => runGuard("assertHistoricalCompilerProtection", [metadata, productionConfig, "0.0.0"]))
+      .toThrow("TypeScript version changed");
+  });
+
   it("rejects a changed compiler version", () => {
     expect(() => runGuard("assertHistoricalCompilerProtection", [historicalBaseline, productionConfig, "0.0.0"])).toThrow("TypeScript version changed");
   });
