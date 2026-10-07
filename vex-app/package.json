@@ -92,6 +92,7 @@
     "react-hook-form": "~7.75.0",
     "shiki": "~4.4.3",
     "tailwind-merge": "~3.5.0",
+    "undici": "7.29.1",
     "viem": "2.54.3",
     "zod": "~4.4.3",
     "zustand": "~5.0.13"
@@ -148,6 +149,7 @@
     "overrides": {
       "electron-updater>js-yaml": "4.3.2",
       "jayson>ws": "7.5.13",
+      "@solana/web3.js>jayson": "5.0.0",
       "rpc-websockets>ws": "8.21.3"
     }
   }

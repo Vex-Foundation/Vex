@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { WebSocket as UndiciWebSocket } from "undici";
 
 import {
   LIGHTER_CANDLE_RESOLUTION_MS,
@@ -145,7 +146,7 @@ interface CandleWatcher {
 
 export function defaultLighterCandleStreamSupervisorDeps(): LighterCandleStreamSupervisorDeps {
   return {
-    createSocket: (url) => new WebSocket(url) as unknown as LighterCandleStreamSocket,
+    createSocket: (url) => new UndiciWebSocket(url),
     readHistory: (target, count, endTimestamp) =>
       readLighterTradingCandleHistory({ ...target, count, endTimestamp }),
     now: Date.now,
