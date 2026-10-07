@@ -48,9 +48,11 @@ import {
   decodeDexScreenerMessageToJson,
   getDexScreenerMessageDescriptor,
 } from "@tools/dexscreener/codec/protobuf.js";
+import { readFeedRequest } from "@tools/dexscreener/codec/feed-envelope.js";
 import { DexScreenerSiteErrorCodes } from "@tools/dexscreener/site-errors.js";
 import { CHANNEL_TIMEOUT_MS } from "@vex-agent/tools/protocols/dexscreener/handlers/deep-dive/_shared.js";
 import { loadFixture } from "./_fixtures.js";
+import { feedResponseFrame } from "./_feed-envelope.js";
 
 const CHAIN = "ethereum";
 const AMM = "uniswap";
@@ -62,14 +64,19 @@ const HTTP_BARS = loadFixture("bars-uniswap-ethereum-h1").bytes;
 const HTTP_BARS_ANCHORED = loadFixture("bars-http-bbn-anchored-uniswap-ethereum").bytes;
 const HTTP_BARS_CANONICAL = loadFixture("bars-http-inversion-canonical").bytes;
 const HTTP_BARS_WRONG_QUOTE = loadFixture("bars-http-inversion-wrong-quote").bytes;
-const WS_BARS_D1 = loadFixture("bars-ws-d1-uniswap-ethereum").bytes;
-const WS_BARS_MARKETCAP = loadFixture("bars-ws-marketcap-uniswap-ethereum").bytes;
-const WS_TRADES = loadFixture("ws-trades-baseline-uniswap").bytes;
-const WS_TRADES_PAGE2 = loadFixture("ws-trades-exact-cursor-page2").bytes;
+// The feed socket's `util_envelope` answers, captured 2026-10-07 under the
+// envelope ids named at each use (41, 42, 43, 11, 12, 30).
+const WS_BARS_D1 = loadFixture("feed-envelope-bars-d1-uniswap-ethereum.response").bytes;
+const WS_BARS_MARKETCAP = loadFixture("feed-envelope-bars-marketcap-uniswap-ethereum.response").bytes;
+const WS_BARS_UNINDEXED = loadFixture("feed-envelope-bars-unindexed-pair.response").bytes;
+const WS_TRADES = loadFixture("feed-envelope-trades-swap-uniswap.response").bytes;
+const WS_TRADES_PAGE2 = loadFixture("feed-envelope-trades-cursor-page2-uniswap.response").bytes;
+/** The exact `before` triple the page-two capture was requested with. */
+const PAGE2_CURSOR = { blockNumber: 26_140_443, transactionIndex: 154, eventIndex: 606 };
 const CONNECT_TRADES = loadFixture("connect-gettransactions-uniswap").bytes;
 const CONNECT_ANCHOR = loadFixture("connect-trades-anchor-timestamp-end").bytes;
 const TOP_MAKERS = loadFixture("topmakers-uniswap-ethereum").bytes;
-const INSIGHT_NOT_FOUND = loadFixture("token-insight-not-found").bytes;
+const INSIGHT_NOT_FOUND = loadFixture("feed-envelope-insight-not-found-ethereum-pepe.response").bytes;
 
 interface Recorded {
   readonly httpUrls: string[];
@@ -212,7 +219,7 @@ describe("bars decode identically from both transports", () => {
       barsOptions(transport, {
         resolution: "1d",
         countBack: 60,
-        // The capture's own correlation id, so the dispatch under test is the
+        // The capture's own envelope id, so the dispatch under test is the
         // real one rather than a relaxed match.
         correlationId: 41,
       })
@@ -230,22 +237,74 @@ describe("bars decode identically from both transports", () => {
   });
 
   it("decodes market-cap bars, which carry no supply argument", () => {
-    // The capture is the socket's answer to a BAR_TYPE_MARKET_CAP command that
+    // The capture is the socket's answer to a BAR_TYPE_MARKET_CAP request that
     // carried no circulating-supply field at all, and the provider answered OK
     // with a full page. That is the whole contract: market-cap series need no
     // supply argument on this transport.
     const page = readBarsFrames([WS_BARS_MARKETCAP], 42);
+    expect(page?.status).toBe("STATUS_OK");
     expect(page?.bars).toHaveLength(60);
     expect(page?.bars[0]?.closeUsd).not.toBeNull();
     expect(page?.bars[0]?.closeNative).not.toBeNull();
   });
 
-  it("dispatches on the oneof and the correlation id, never on frame position", () => {
-    // A latestBlock-style frame first, then the answer: the measured ordering.
+  it("dispatches on the envelope arm and id, never on frame position", () => {
+    // An undecodable frame and a keepalive first, then the answer.
     const noise = new Uint8Array([0x00]);
-    expect(readBarsFrames([noise, WS_BARS_D1], 41)?.bars).toHaveLength(60);
-    // Somebody else's correlation id is not this call's answer.
+    expect(
+      readBarsFrames([noise, new Uint8Array(0), WS_BARS_D1], 41)?.bars
+    ).toHaveLength(60);
+    // Somebody else's envelope id is not this call's answer.
     expect(readBarsFrames([WS_BARS_D1], 999)).toBeNull();
+  });
+
+  it("reads an unindexed pair's OK-and-empty answer as an empty page, which the walk reports as ambiguous", async () => {
+    // Measured 2026-10-07: 0x...dEaD answers STATUS_OK with an empty payload,
+    // not STATUS_NOT_FOUND, exactly as the HTTP chart endpoint answers a wrong
+    // identity with an empty page.
+    expect(readBarsFrames([WS_BARS_UNINDEXED], 43)).toStrictEqual({
+      status: "STATUS_OK",
+      bars: [],
+    });
+    const { transport } = scripted({ ws: [[WS_BARS_UNINDEXED]] });
+    const page = await fetchBarsPage(
+      barsOptions(transport, { resolution: "1d", countBack: 10, correlationId: 43 })
+    );
+    expect(page.bars).toHaveLength(0);
+  });
+
+  it("turns a non-OK status into a typed refusal that says whether to retry", async () => {
+    for (const [status, code] of [
+      ["STATUS_INTERNAL", DexScreenerSiteErrorCodes.BARS_PROVIDER_TRANSIENT],
+      ["STATUS_TIMEOUT", DexScreenerSiteErrorCodes.BARS_PROVIDER_TRANSIENT],
+      ["STATUS_INVALID_ARGUMENT", DexScreenerSiteErrorCodes.BARS_INVALID],
+      ["STATUS_NOT_FOUND", DexScreenerSiteErrorCodes.BARS_INVALID],
+    ] as const) {
+      const { transport } = scripted({
+        ws: [[feedResponseFrame(7, "GetHistoricalBars", null, status)]],
+      });
+      await expect(
+        fetchBarsPage(barsOptions(transport, { resolution: "1d", correlationId: 7 }))
+      ).rejects.toMatchObject({ code });
+    }
+  });
+
+  it("names a missing answer BARS_NO_RESULT_FRAME rather than an empty history", async () => {
+    const { transport } = scripted({ ws: [[WS_BARS_D1]] });
+    await expect(
+      fetchBarsPage(barsOptions(transport, { resolution: "1d", correlationId: 999 }))
+    ).rejects.toMatchObject({ code: DexScreenerSiteErrorCodes.BARS_NO_RESULT_FRAME });
+  });
+
+  it("sends the feed request the provider answered, byte for byte", async () => {
+    const captured = loadFixture("feed-envelope-bars-d1-uniswap-ethereum.request").bytes;
+    const recorded = scripted({ ws: [[WS_BARS_D1]] });
+    await fetchBarsPage(
+      barsOptions(recorded.transport, { resolution: "1d", countBack: 60, correlationId: 41 })
+    );
+    expect(Buffer.from(recorded.wsFrames[0] ?? new Uint8Array(0)).toString("hex")).toBe(
+      Buffer.from(captured).toString("hex")
+    );
   });
 });
 
@@ -595,32 +654,82 @@ describe("the continuation cursor is the exact triple", () => {
   });
 
   it("offers no cursor on a short page, which is the end of this filter", () => {
-    const trades = readTradesFrames([WS_TRADES], 11) ?? [];
+    const trades = readTradesFrames([WS_TRADES], 11)?.trades ?? [];
     expect(trades).toHaveLength(TRADES_PER_PAGE);
     // The projection's own rule, exercised through a page below the page size.
     expect(trades.length).toBeGreaterThanOrEqual(TRADES_PER_PAGE);
   });
 
-  it("resumes into the same block rather than past it", async () => {
+  it("resumes strictly before the cursor event, with no gap and no overlap", async () => {
     const { transport, wsFrames } = scripted({ ws: [[WS_TRADES_PAGE2]] });
     const page = await fetchTradesPage(
       tradesOptions(transport, {
         filters: { eventType: "swap" },
         correlationId: 12,
-        cursor: { blockNumber: 25_823_281, transactionIndex: 5, eventIndex: 59 },
+        cursor: PAGE2_CURSOR,
       })
     );
     expect(page.channel).toBe("feed_ws");
     expect(page.trades).toHaveLength(TRADES_PER_PAGE);
     expect(wsFrames).toHaveLength(1);
     // The captured page-two body is the provider's real answer to exactly this
-    // cursor, so its first row is what an exact continuation returns.
-    expect(page.trades[0]?.blockNumber).toBeLessThanOrEqual(25_823_281);
+    // cursor (the oldest row of the page-one capture), so its first row is what
+    // an exact continuation returns: at or below the cursor block, and strictly
+    // older than the cursor event in (block, transaction, event) order.
+    const first = page.trades[0];
+    expect(first?.blockNumber).toBeLessThanOrEqual(PAGE2_CURSOR.blockNumber);
+    const key = (t: { blockNumber: number | null; transactionIndex: number | null; eventIndex: number | null }): [number, number, number] =>
+      [t.blockNumber ?? 0, t.transactionIndex ?? 0, t.eventIndex ?? 0];
+    const [b, ti, ei] = key(first ?? { blockNumber: null, transactionIndex: null, eventIndex: null });
+    const olderThanCursor =
+      b < PAGE2_CURSOR.blockNumber
+      || (b === PAGE2_CURSOR.blockNumber && (ti < PAGE2_CURSOR.transactionIndex
+        || (ti === PAGE2_CURSOR.transactionIndex && ei < PAGE2_CURSOR.eventIndex)));
+    expect(olderThanCursor).toBe(true);
+    // And page one's own cursor is that exact triple: the two captures chain.
+    const pageOne = readTradesFrames([WS_TRADES], 11)?.trades ?? [];
+    expect(key(pageOne[pageOne.length - 1] ?? first ?? { blockNumber: null, transactionIndex: null, eventIndex: null }))
+      .toStrictEqual([PAGE2_CURSOR.blockNumber, PAGE2_CURSOR.transactionIndex, PAGE2_CURSOR.eventIndex]);
+    const pageOneIds = new Set(pageOne.map((t) => `${t.transactionId}:${t.eventIndex}`));
+    expect(page.trades.filter((t) => pageOneIds.has(`${t.transactionId}:${t.eventIndex}`))).toHaveLength(0);
   });
 
-  it("dispatches trade frames on the correlation id", () => {
-    expect(readTradesFrames([WS_TRADES], 11)).not.toBeNull();
+  it("dispatches trade frames on the envelope id", () => {
+    expect(readTradesFrames([WS_TRADES], 11)?.status).toBe("STATUS_OK");
     expect(readTradesFrames([WS_TRADES], 4242)).toBeNull();
+  });
+
+  it("sends the socket request the provider answered, byte for byte, on page one and page two", async () => {
+    for (const [name, response, id, cursor] of [
+      ["feed-envelope-trades-swap-uniswap", WS_TRADES, 11, undefined],
+      ["feed-envelope-trades-cursor-page2-uniswap", WS_TRADES_PAGE2, 12, PAGE2_CURSOR],
+    ] as const) {
+      const captured = loadFixture(`${name}.request`).bytes;
+      const recorded = scripted({ ws: [[response]] });
+      await fetchTradesPage(
+        tradesOptions(recorded.transport, {
+          filters: { eventType: "swap" },
+          correlationId: id,
+          ...(cursor === undefined ? {} : { cursor }),
+        })
+      );
+      expect(Buffer.from(recorded.wsFrames[0] ?? new Uint8Array(0)).toString("hex")).toBe(
+        Buffer.from(captured).toString("hex")
+      );
+    }
+  });
+
+  it("turns a non-OK status into TRADES_INVALID and an unanswered request into TRADES_NO_RESULT_FRAME", async () => {
+    const refused = scripted({
+      ws: [[feedResponseFrame(5, "GetHistoricalTransactions", null, "STATUS_INVALID_ARGUMENT")]],
+    });
+    await expect(
+      fetchTradesPage(tradesOptions(refused.transport, { filters: { eventType: "swap" }, correlationId: 5 }))
+    ).rejects.toMatchObject({ code: DexScreenerSiteErrorCodes.TRADES_INVALID });
+    const unanswered = scripted({ ws: [[WS_TRADES]] });
+    await expect(
+      fetchTradesPage(tradesOptions(unanswered.transport, { filters: { eventType: "swap" }, correlationId: 5 }))
+    ).rejects.toMatchObject({ code: DexScreenerSiteErrorCodes.TRADES_NO_RESULT_FRAME });
   });
 });
 
@@ -852,12 +961,9 @@ describe("no provider identity is normalized on any deep-dive request", () => {
     );
     const frame = recorded.wsFrames[0];
     expect(frame).toBeDefined();
-    const command = decodeDexScreenerMessageToJson(
-      "dex_feed.WSCommand",
-      frame ?? new Uint8Array(0),
-      { maxBytes: 4096 }
-    ) as Record<string, Record<string, unknown>>;
-    const arm = command["getHistoricalTransactions"];
+    const sent = readFeedRequest(frame ?? new Uint8Array(0), 4096);
+    expect(sent?.knownMethod).toBe("GetHistoricalTransactions");
+    const arm = sent?.request as Record<string, unknown> | undefined;
     expect(arm?.["quoteTokenId"]).toBe(QUOTE);
     expect(arm?.["pairId"]).toBe(PAIR);
   });
@@ -872,13 +978,11 @@ describe("no provider identity is normalized on any deep-dive request", () => {
     });
     const frame = recorded.wsFrames[0];
     expect(frame).toBeDefined();
-    const command = decodeDexScreenerMessageToJson(
-      "dex_feed.WSCommand",
-      frame ?? new Uint8Array(0),
-      { maxBytes: 4096 }
-    ) as Record<string, Record<string, unknown>>;
-    expect(command["getTokenInsight"]?.["tokenId"]).toBe(BASE);
-    expect(command["getTokenInsight"]?.["tokenId"]).not.toBe(BASE.toLowerCase());
+    const sent = readFeedRequest(frame ?? new Uint8Array(0), 4096);
+    expect(sent?.knownMethod).toBe("GetTokenInsight");
+    const request = sent?.request as Record<string, unknown> | undefined;
+    expect(request?.["tokenId"]).toBe(BASE);
+    expect(request?.["tokenId"]).not.toBe(BASE.toLowerCase());
   });
 });
 
@@ -970,14 +1074,9 @@ describe("afterBlock is the provider's own forward bound, spelled from the descr
     );
     const frame = recorded.wsFrames[0];
     expect(frame).toBeDefined();
-    const command = decodeDexScreenerMessageToJson(
-      "dex_feed.WSCommand",
-      frame ?? new Uint8Array(0),
-      { maxBytes: 4096 }
-    ) as Record<string, Record<string, unknown>>;
-    const after = command["getHistoricalTransactions"]?.["after"] as
-      | Record<string, unknown>
-      | undefined;
+    const request = readFeedRequest(frame ?? new Uint8Array(0), 4096)
+      ?.request as Record<string, unknown> | undefined;
+    const after = request?.["after"] as Record<string, unknown> | undefined;
     // Anchored at the LARGEST index pair, which is what drops the boundary
     // block. `(block, 0, 0)` would keep it and disagree with Connect.
     expect(after).toStrictEqual({
@@ -998,12 +1097,8 @@ describe("afterBlock is the provider's own forward bound, spelled from the descr
     );
     const frame = recorded.wsFrames[0];
     expect(frame).toBeDefined();
-    const command = decodeDexScreenerMessageToJson(
-      "dex_feed.WSCommand",
-      frame ?? new Uint8Array(0),
-      { maxBytes: 4096 }
-    ) as Record<string, Record<string, unknown>>;
-    const arm = command["getHistoricalTransactions"] ?? {};
+    const arm = (readFeedRequest(frame ?? new Uint8Array(0), 4096)?.request ??
+      {}) as Record<string, unknown>;
     // Both bounds, in one command. Measured live composing into a 56-row
     // window bounded above by the cursor and below by the anchor.
     expect(arm["before"]).toStrictEqual({
@@ -1022,12 +1117,10 @@ describe("afterBlock is the provider's own forward bound, spelled from the descr
         correlationId: 11,
       })
     );
-    const command = decodeDexScreenerMessageToJson(
-      "dex_feed.WSCommand",
-      recorded.wsFrames[0] ?? new Uint8Array(0),
-      { maxBytes: 4096 }
-    ) as Record<string, Record<string, unknown>>;
-    expect(command["getHistoricalTransactions"]?.["after"]).toBeUndefined();
+    const request = readFeedRequest(recorded.wsFrames[0] ?? new Uint8Array(0), 4096)
+      ?.request as Record<string, unknown> | undefined;
+    expect(request).toBeDefined();
+    expect(request?.["after"]).toBeUndefined();
   });
 
   it("allows afterBlock on every event type Connect expresses", async () => {
@@ -1061,12 +1154,15 @@ describe("every feed-socket frame budget is reachable inside the caller's deadli
    * blocks to the deadline and throws TRANSPORT_TIMEOUT while holding an
    * answer that arrived in under a second.
    *
-   * `feed/ws` is strictly request-response. Measured live 2026-08-25 with the
-   * bridge's own frame accounting: bars `[13873, 0, 0]` with the answer at
-   * t=0.38 s, trades `[27484, 0, 0]` at t=0.54 s, insight `[6, 0, 0]` at
-   * t=0.15 s. ONE countable frame per command, and it is the answer. Both
-   * budgets below were 4, which is why every socket-served candle resolution
-   * and every trades continuation page timed out.
+   * `feed/ws` is strictly request-response for the unary envelope RPCs.
+   * Measured live 2026-08-25 on the retired protocol with the bridge's own
+   * frame accounting (bars `[13873, 0, 0]`, trades `[27484, 0, 0]`, insight
+   * `[6, 0, 0]`), and again 2026-10-07 on the `util_envelope` protocol
+   * live: the first non-empty frame was the response every
+   * time, and an idle socket carried one zero-length keepalive at 15.4 s.
+   * ONE countable frame per request, and it is the answer. Both budgets below
+   * were 4 once, which is why every socket-served candle resolution and every
+   * trades continuation page timed out.
    *
    * The arithmetic a future change must satisfy is frames x inter-frame
    * interval < deadline. After the answer that interval is INFINITE here, so

@@ -520,5 +520,51 @@ describe("dexscreener manifest", () => {
       expect(description).toContain("repeats are flagged by token");
       expect(description).not.toContain("deduplicated by base token");
     });
+
+    // Measured 2026-10-07: the channel bounds a summed metric per POOL and sums
+    // only the pools inside the bound, so the row value is not what a bare
+    // threshold description implies, and a maximum does not hold on the row.
+    it("notes the per-pool bound on all ten summed-metric thresholds", () => {
+      for (const metric of ["LiquidityUsd", "VolumeUsd", "TxnCount", "BuyCount", "SellCount"]) {
+        expect(paramOf(TOKENS, `min${metric}`).description).toContain("minimum to each POOL");
+        const ceiling = paramOf(TOKENS, `max${metric}`).description;
+        expect(ceiling).toContain("maximum to each POOL");
+        expect(ceiling).toContain("enforces the maximum again on the row's summed value");
+      }
+      // Not a summed metric, so no per-pool note.
+      expect(paramOf(TOKENS, "maxMarketCapUsd").description).not.toContain("each POOL");
+      // And the pair boards, whose rows ARE pools, carry none of it.
+      expect(paramOf("dexscreener.pairs.top", "maxVolumeUsd").description).not.toContain("each POOL");
+    });
+  });
+
+  /* ---------------------------------------------------------------- */
+  /* Boost amounts and ascending order (live verification 2026-10-07)  */
+  /* ---------------------------------------------------------------- */
+
+  describe("boost thresholds are AMOUNTS, and asc puts missing values first", () => {
+    it("describes boostsActive as the summed pack amount, not a count", () => {
+      for (const key of ["minBoostCount", "maxBoostCount"]) {
+        const description = paramOf("dexscreener.pairs.top", key).description;
+        expect(description).toContain("packs of 10, 30, 50, 100 and 500");
+        expect(description).not.toContain("as a COUNT");
+      }
+      const ceiling = paramOf("dexscreener.pairs.top", "maxBoostCount").description;
+      expect(ceiling).toContain("A ceiling under 10 therefore matches NOTHING");
+      // The old worked example bounded a count of 3, which matches no pair.
+      expect(ceiling).not.toContain("maxBoostCount 3");
+      expect(paramOf("dexscreener.pairs.top", "sortBy").description).toContain("ACTIVE BOOST AMOUNT");
+    });
+
+    it("says asc opens with valueless rows and names the ceiling that avoids it", () => {
+      for (const toolId of ["dexscreener.pairs.top", "dexscreener.launchpad.pairs"]) {
+        const sortDir = paramOf(toolId, "sortDir").description;
+        expect(sortDir).toContain("ASCENDING PUTS MISSING VALUES FIRST");
+        expect(sortDir).toContain("pair asc with that metric's ceiling");
+      }
+      expect(paramOf("dexscreener.launchpad.pairs", "sortBy").description).toContain(
+        "opens with the rows that carry NO value"
+      );
+    });
   });
 });

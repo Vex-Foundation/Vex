@@ -94,6 +94,63 @@ describe("ProtocolParamDef.enum", () => {
     expect(result.reason).toContain("base, solana");
   });
 
+  // Measured 2026-10-07: `dexscreener.pair.get` advertised
+  // `include: "reactions,insight"` in its description and `exampleParams`, and
+  // the gate compared the whole string to the closed set and refused it.
+  describe("comma-separated STRING on an acceptsStringArray param", () => {
+    const listManifest = manifest({
+      params: [
+        {
+          key: "include",
+          type: "string",
+          description: "side reads",
+          acceptsStringArray: true,
+          enum: ["reactions", "insight"],
+        },
+      ],
+    });
+
+    it("accepts every member on the list, trimmed, with empty members dropped", () => {
+      expect(validateProtocolParams(listManifest, { include: "reactions,insight" })).toEqual({ ok: true });
+      expect(validateProtocolParams(listManifest, { include: " reactions , insight ," })).toEqual({ ok: true });
+      expect(validateProtocolParams(listManifest, { include: "insight" })).toEqual({ ok: true });
+    });
+
+    it("names the offending member by position, never by its text", () => {
+      const result = validateProtocolParams(listManifest, { include: "reactions, secretleak" });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.reason).toContain("member 2 of 2 (index 1)");
+      expect(result.reason).toContain("reactions, insight");
+      expect(result.reason).not.toContain("secretleak");
+    });
+
+    it("keeps member matching case-sensitive on a non-chain param", () => {
+      const result = validateProtocolParams(listManifest, { include: "reactions,Insight" });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.reason).toContain("index 1");
+      expect(result.reason).toContain("case-sensitive");
+    });
+
+    it("refuses a string with no members at all", () => {
+      const result = validateProtocolParams(listManifest, { include: " , ," });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.reason).toContain("contained no values");
+    });
+
+    it("does not split a string on a param that is NOT acceptsStringArray", () => {
+      const single = manifest({
+        params: [{ key: "window", type: "string", description: "window", enum: ["h1", "h6"] }],
+      });
+      const result = validateProtocolParams(single, { window: "h1,h6" });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.reason).toContain('has an unsupported value. Allowed values for "window"');
+    });
+  });
+
   it("compiles into the JSON schema enum keyword", () => {
     const property = paramsToJsonSchema(ENUM_MANIFEST.params).properties.chain;
     expect(property).toEqual({ type: "string", description: "chain", enum: ["BASE", "SOLANA"] });

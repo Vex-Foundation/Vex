@@ -1,0 +1,26 @@
+{
+  "fixture": "feed-envelope-trades-swap-uniswap.response.bin.b64",
+  "encoding": "protobuf",
+  "endpoint": "wss://io.dexscreener.com/feed/ws util_envelope (/dex_feed.PublicWSService/GetHistoricalTransactions)",
+  "requestParams": {
+    "envelopeId": 11,
+    "method": "/dex_feed.PublicWSService/GetHistoricalTransactions",
+    "request": {
+      "chainId": "ethereum",
+      "ammId": "uniswap",
+      "pairId": "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f",
+      "quoteTokenId": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "type": "TYPE_BUY_OR_SELL"
+    }
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-10-07T18:47:47.959Z",
+  "httpStatus": 101,
+  "capturedBy": "live capture for the feed/ws migration (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-10-07T18:47:47.959Z; raw frames archived in the local capture run 2026-10-07T18-47-41.605Z-feedws (exchanges.jsonl)",
+  "protobufMessage": "util_envelope.ServerEnvelope",
+  "note": "GetHistoricalTransactions with type TYPE_BUY_OR_SELL (the combined filter Connect refuses), first page of 100 rows on ethereum PEPE/WETH.",
+  "bytes": 27112,
+  "sha256": "51739f058a89d73393b1bd2af02e9b1ee2955a27ade92797ffed870712724cf5"
+}

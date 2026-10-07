@@ -1,0 +1,23 @@
+{
+  "fixture": "feed-envelope-insight-ok-solana.response.bin.b64",
+  "encoding": "protobuf",
+  "endpoint": "wss://io.dexscreener.com/feed/ws util_envelope (/dex_feed.PublicWSService/GetTokenInsight)",
+  "requestParams": {
+    "envelopeId": 32,
+    "method": "/dex_feed.PublicWSService/GetTokenInsight",
+    "request": {
+      "chainId": "solana",
+      "tokenId": "DwcXyhEcSvzWgakDKpetZLFvbAHutpGpzhbU4iempump"
+    }
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-10-07T18:47:57.513Z",
+  "httpStatus": 101,
+  "capturedBy": "live capture for the feed/ws migration (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-10-07T18:47:57.513Z; raw frames archived in the local capture run 2026-10-07T18-47-41.605Z-feedws (exchanges.jsonl)",
+  "protobufMessage": "util_envelope.ServerEnvelope",
+  "note": "GetTokenInsight for a solana token taken from the SubscribeTokenInsights stream of the same run (98 of 98 insights on solana): STATUS_OK with a dex_feed.TokenInsight payload.",
+  "bytes": 1189,
+  "sha256": "3ef82e6a44cd1d0f527957291de5a2f7b8efa59aaf4d70ea44bc01bfab181538"
+}

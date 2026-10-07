@@ -23,7 +23,8 @@
  *     `tsc` + `tsc-alias` unchanged.
  *  2. The descriptors are lifted out of a minified bundle where protobuf-es
  *     inlines each file individually: every `FileDescriptorProto.dependency`
- *     list is EMPTY (measured: zero `google/*` entries across all 25 files).
+ *     list is EMPTY (measured: zero `google/*` entries across all 25 files in
+ *     2026-08, and across all 38 files of the 2026-10-07 bundle).
  *     `createFileRegistry(set)` adds files in array order and resolves type
  *     references against what is already added, so an unordered set throws
  *     `type_name .google.protobuf.Timestamp not found`. This generator

@@ -36,7 +36,10 @@ import {
   type DexScreenerTransport,
 } from "../../../tools/dexscreener/transport.js";
 import { CLIENT_THRESHOLD_KEYS } from "../../../vex-agent/tools/protocols/dexscreener/manifests/resolve-params.js";
-import { SCREEN_THRESHOLD_PARAMS } from "../../../vex-agent/tools/protocols/dexscreener/manifests/screen-params/thresholds.js";
+import {
+  MAX_PRESENCE_CLAUSE,
+  SCREEN_THRESHOLD_PARAMS,
+} from "../../../vex-agent/tools/protocols/dexscreener/manifests/screen-params/thresholds.js";
 import { loadFixture } from "../../dexscreener-site/_fixtures.js";
 import { makeProtocolContext } from "./_test-context.js";
 import { readFileSync } from "node:fs";
@@ -55,7 +58,7 @@ const FIXTURE_DIR = path.join(
 
 const PAIR_FRAME = loadFixture("pair-ws-ethereum-pepe").bytes;
 const REACTIONS_BODY = loadFixture("reactions-ethereum-pepe").bytes;
-const INSIGHT_FRAME = loadFixture("token-insight-not-found").bytes;
+const INSIGHT_FRAME = loadFixture("feed-envelope-insight-not-found-ethereum-pepe.response").bytes;
 const SPOTLIGHT_BODY = loadFixture("spotlight-v10").bytes;
 const SEARCH_BODY = loadFixture("search-cat-plain").bytes;
 const BATCH_FRAME = loadFixture("v8-batch-invalid-and-duplicate.frame").bytes;
@@ -332,6 +335,25 @@ describe("B3 threshold family and spotlight fields", () => {
       const keys = paramKeys(toolId);
       for (const key of CLIENT_THRESHOLD_KEYS) expect(keys).toContain(key);
     });
+
+    /**
+     * Measured 2026-10-07: each local ceiling inherited the screening boards'
+     * presence clause ("a row the provider reported no value for is excluded")
+     * and then the client clause said the row is kept. Only the second is true
+     * here, so the first must be gone, not merely contradicted.
+     */
+    it(`${toolId} states the LOCAL presence rule on every ceiling, never the provider one`, () => {
+      const params = manifestFor(toolId).params;
+      for (const key of CLIENT_THRESHOLD_KEYS.filter((one) => one.startsWith("max"))) {
+        const description = params.find((param) => param.key === key)?.description ?? "";
+        expect(description, key).not.toContain(MAX_PRESENCE_CLAUSE);
+        expect(description, key).not.toContain("is excluded, not kept");
+        expect(description, key).toContain("a maximum here does NOT require the field");
+        expect(description, key).toContain("clientFiltering.notEvaluated");
+      }
+      const boost = params.find((param) => param.key === "minBoostCount")?.description ?? "";
+      expect(boost).toContain("compared as 0");
+    });
   }
 
   it("batch applies a CEILING threshold, which it could not express before", async () => {
@@ -431,6 +453,34 @@ describe("B4 a row without the metric is not_evaluated, never below_min", () => 
     expect(
       (filtering["droppedByFilter"] as Record<string, number>)["minLiquidityUsd"]
     ).toBe(1);
+    expect(filtering["notEvaluated"]).toEqual({});
+  });
+
+  /**
+   * The ONE metric whose absence is a measurement. The provider sends a
+   * `boosts` block only on a pair that has active boosts, so a row without one
+   * has zero of them. Measured 2026-10-07: reading it as unknown kept every
+   * unboosted pair under a boost floor and counted it in notEvaluated, so
+   * `minBoostCount` could not remove the very rows it exists to remove.
+   */
+  it("compares a row with no boosts block as zero active boosts under minBoostCount", async () => {
+    mount({ ws: [BATCH_FRAME] });
+    // The precondition, proven rather than assumed: this pair carries no boosts
+    // block, so its projected amount is null and only the `?? 0` reads it.
+    const plain = await call("dexscreener.pairs.batch", { pairs: KNOWN, fields: "core" });
+    const plainRows = plain["rows"] as Record<string, unknown>[];
+    expect(plainRows).toHaveLength(1);
+    expect(plainRows[0]?.["boostsActive"]).toBeNull();
+
+    mount({ ws: [BATCH_FRAME] });
+    const out = await call("dexscreener.pairs.batch", {
+      pairs: KNOWN,
+      fields: "core",
+      minBoostCount: 10,
+    });
+    const filtering = out["clientFiltering"] as Record<string, unknown>;
+    expect(filtering["returned"]).toBe(0);
+    expect(filtering["droppedByFilter"]).toEqual({ minBoostCount: 1 });
     expect(filtering["notEvaluated"]).toEqual({});
   });
 

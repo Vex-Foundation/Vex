@@ -47,8 +47,13 @@ const THRESHOLD_STATE_CLAUSE =
  * The class it silently removes is exactly the class an agent is usually
  * hunting: a ceiling meant to find SMALL pools also deletes every pair whose
  * pool size the provider never reported.
+ *
+ * EXPORTED so a tool that reuses these declarations but filters LOCALLY
+ * (`../resolve-params.ts::clientThresholdParams`) can replace this sentence by
+ * its exact text: the local rule is the opposite one, and inheriting it word
+ * for word told the agent a missing value was dropped when it is kept.
  */
-const MAX_PRESENCE_CLAUSE =
+export const MAX_PRESENCE_CLAUSE =
   "PRESENCE RULE, measured, and it applies to every ceiling on this surface: a maximum matches "
   + "only rows that CARRY the field. A row the provider reported no value for is excluded, not "
   + "kept as if it were below the bound. Measured on a 64,420-row solana population: a liquidity "
@@ -72,6 +77,24 @@ const WINDOWED_CLAUSE =
   + "them (a 1,000,000 USD h24 volume floor combined with a 1,000 USD m5 volume floor was measured "
   + "returning 104 rows), but this surface carries a single thresholdWindow, so a two-window "
   + "condition on one metric has to be checked against the returned rows instead of filtered for.";
+
+/**
+ * What `activeBoosts` measures, which the `...BoostCount` key names get wrong.
+ *
+ * Measured 2026-10-07 in a live verification: `boostsActive` is the active
+ * boost AMOUNT, the sum of the boost packs currently running on the pair, and
+ * packs are sold in sizes 10, 30, 50, 100 and 500. It is not a count of
+ * purchases, so a bound written as a count ("at most 3 boosts") matches
+ * nothing. The keys keep their names because renaming a param is a contract
+ * break; the descriptions carry the unit instead.
+ */
+const BOOST_AMOUNT_SUBJECT =
+  "the ACTIVE BOOST AMOUNT on the pair, as boost UNITS and not a count of purchases";
+
+const BOOST_AMOUNT_RULE =
+  "Despite the key name this is an AMOUNT: boosts are sold in packs of 10, 30, 50, 100 and 500, "
+  + "and the packs running at once add up, so one 30 pack plus one 10 pack reads 40. The smallest "
+  + "non-zero amount is 10.";
 
 function bound(
   key: string,
@@ -215,22 +238,26 @@ export const SCREEN_THRESHOLD_PARAMS: readonly ProtocolParamDef[] = [
   bound(
     "minBoostCount",
     "Floor",
-    "the number of paid boosts ACTIVE on the pair, as a COUNT",
-    "A boost is bought visibility, never demand or safety. This is more specific than onlyBoosted "
-      + "and wins over it when both are sent."
+    BOOST_AMOUNT_SUBJECT,
+    `${BOOST_AMOUNT_RULE} Any floor from 1 to 10 therefore selects the same rows: every pair `
+      + "with at least one pack running. A boost is bought visibility, never demand or safety. "
+      + "This is more specific than onlyBoosted and wins over it when both are sent."
   ),
   bound(
     "maxBoostCount",
     "Ceiling",
-    "the number of paid boosts ACTIVE on the pair, as a COUNT",
-    "It bounds WITHIN the boosted population and does not select against it. The presence rule "
-      + "below is the whole story here: an active-boost count exists only on a boosted pair, so "
-      + "maxBoostCount 3 means \"is boosted AND has at most 3 boosts\", never \"is not heavily "
-      + "advertised\". Measured 2026-08-24 on solana: min 1 gave 105 rows (the boosted "
-      + "population), max 10 gave 51, max 1000000 gave 105 again rather than the 64,420-row "
-      + "baseline, and max 0 gave 0. THIS IS NOT A WAY TO EXCLUDE ADS: an agent setting it to "
-      + "avoid ad-pumped pairs receives only ad-carrying pairs. To judge advertising, leave it "
-      + "unset and read boostsActive per row, which is on every row by default."
+    BOOST_AMOUNT_SUBJECT,
+    `${BOOST_AMOUNT_RULE} A ceiling under 10 therefore matches NOTHING: no running pack is that `
+      + "small, and a pair with no pack carries no amount at all. It bounds WITHIN the boosted "
+      + "population and does not select against it. The presence rule below is the whole story "
+      + "here: an active boost amount exists only on a boosted pair, so maxBoostCount 50 means "
+      + "\"is boosted AND carries at most 50 boost units\" (one 50 pack, or a 10 and a 30), never "
+      + "\"is not heavily advertised\". Measured 2026-08-24 on solana: min 1 gave 105 rows (the "
+      + "boosted population), max 10 gave 51, max 1000000 gave 105 again rather than the "
+      + "64,420-row baseline, and max 0 gave 0. THIS IS NOT A WAY TO EXCLUDE ADS: an agent setting "
+      + "it to avoid ad-pumped pairs receives only ad-carrying pairs. To judge advertising, leave it "
+      + "unset and read boostsActive per row; it is in the default projection and is null on a "
+      + "pair with no active boost."
   ),
 ];
 
@@ -277,7 +304,8 @@ export const SCREEN_QUALITY_PARAMS: readonly ProtocolParamDef[] = [
     description:
       "Keep only pairs carrying at least one ACTIVE paid boost. This is an advertising signal and "
       + "not a quality signal: it says the project paid DexScreener for visibility. Use "
-      + "minBoostCount when you want a specific number rather than at least one.",
+      + "minBoostCount when you want a minimum active boost AMOUNT (packs of 10 to 500, summed) "
+      + "rather than any boost at all.",
   },
   {
     key: "onlyAds",
