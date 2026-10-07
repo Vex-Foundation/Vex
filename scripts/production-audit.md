@@ -21,6 +21,11 @@ Files:
   holding. Every current exception has one.
 - `scripts/production-audit-allowlist.json` (root),
   `vex-app/scripts/production-audit-allowlist.json` (desktop).
+- `scripts/verify-solana-rpc-dependency.mjs` - unconditional installed graph and
+  parser check for both workspaces. The reviewed Jayson major override requires
+  Solana to keep using only its browser HTTP client, not the changed TCP/TLS
+  framing. Generated identifiers, native JSON parsing, malformed input,
+  prototype keys, notifications and batch callbacks are exercised.
 
 ## Current exceptions
 
@@ -35,10 +40,40 @@ turns the calendar expiry back on.
 | Package | Version | Advisory | Workspaces | Why it is tolerated | Removal condition |
 | --- | --- | --- | --- | --- | --- |
 | bigint-buffer | 1.1.5 | GHSA-3gc7-fjrx-p6mg (high) | root | No patched release upstream. The overflow is in the NATIVE binding, which is never built here (`pnpm.ignoredBuiltDependencies`), so the pure-JavaScript fallback runs. Reached only through fixed-width Solana SPL layouts (8 to 32 bytes). Verified mechanically: no compiled `.node` artifact, the install-script ban still in `package.json`, literal widths in the installed `@solana/buffer-layout-utils`, and a real 8 and 32 byte round trip. | Solana removes or patches bigint-buffer. |
-| uuid | 8.3.2 | GHSA-w5hq-g745-h8pq (moderate) | root, vex-app | The advisory covers v3, v5 and v6 with a caller-provided output buffer. Jayson binds `require("uuid").v4` and calls it with no arguments. Verified mechanically. | Jayson or Solana accepts uuid 11.1.1 or newer. |
-| stream-json | 1.9.1 | GHSA-528h-pc64-c93x (moderate) | root, vex-app | The advisory covers the pick/ignore/filter/replace path filters and excludes StreamValues. Jayson 4.3.0 imports StreamValues and Verifier only. Verified mechanically, including that no filter module is loaded. 3.5.0 changes module exports and is not a compatible replacement. | Jayson accepts a patched release, or its reachable imports change. |
 
-## Overrides and bumps
+The former uuid 8.3.2 and stream-json 1.9.1 exceptions were removed on
+2026-10-07 after actual production audits confirmed those dependencies were
+absent. The desktop allowlist is now empty. The old exception verifiers remain
+available for historical coverage; they do not excuse the newer parser findings.
+
+## Security refresh, 2026-10-07
+
+Actual npm production reports found 29 new core advisories and two desktop
+advisories, with the desktop parser findings also present in core. Scoped
+lockfile updates preserve unrelated dependency versions and native build policy.
+Fresh reports after the updates contain only the existing bigint-buffer finding
+in core and zero desktop findings.
+
+| Dependency | Workspace | Previous | Patched version or replacement |
+| --- | --- | --- | --- |
+| undici | root | 7.29.0 | 7.29.1 |
+| axios override | root | 1.18.0 | 1.20.0 |
+| ip-address override | root | 10.3.1 | 10.7.1 |
+| smol-toml | root | 1.8.0 | 1.9.0 |
+| @solana/web3.js > jayson override | both | 4.3.0 | 5.0.0, removing stream-json and uuid 8 |
+| undici | desktop | no direct dependency | 7.29.1 for Lighter's main-process WebSocket factories |
+
+Solana's distributed SDK imports only `jayson/lib/client/browser`, whose JSON
+request/response behavior remains compatible. Both installed SDKs passed real
+loopback HTTP checks with split UTF-8 responses, batching and errors, and public
+mainnet version/slot reads. The audit now verifies that import boundary even
+when a workspace has no exceptions.
+
+Electron 42.0.0 bundles Undici 7.24.4 separately from npm dependencies. Updating
+the npm package does not patch Electron globals. Runtime transport remediation
+must verify the constructor used by the main process separately.
+
+## Historical overrides and bumps, 2026-09-07
 
 Every row below was MEASURED on 2026-09-07 by installing the pre-change
 lockfile (`c01f1a4eb`) with `--frozen-lockfile` and running
