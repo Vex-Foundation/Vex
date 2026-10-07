@@ -614,12 +614,13 @@ export async function measureReverseVideo(
   const gridBox = await grid.boundingBox();
   expect(gridBox, "no terminal grid to sample").not.toBeNull();
   if (gridBox === null) throw new Error("unreachable");
-  // The sample sits in the first rows after a `clear`; the upper half is enough.
+  // Shell prompts and resize reflow can leave the sample in the lower rows
+  // even after `clear`. Scan the whole visible grid, including those rows.
   const clip = {
     x: Math.round(gridBox.x),
     y: Math.round(gridBox.y),
     width: Math.round(gridBox.width),
-    height: Math.round(gridBox.height * 0.5),
+    height: Math.round(gridBox.height),
   };
   const png = await capture(clip);
   const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
