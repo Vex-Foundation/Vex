@@ -8,7 +8,7 @@
  * Three properties are contract, not implementation detail:
  *
  *  1. ALLOWLIST. Only the message names in `DEXSCREENER_MESSAGES` may be
- *     decoded. The descriptor set carries 109 messages, most of them internal
+ *     decoded. The descriptor set carries 122 messages, most of them internal
  *     request/filter types; an endpoint module must not be able to decode an
  *     arbitrary name it computed from provider input.
  *  2. BYTE CAP BEFORE DECODE. `maxBytes` is required and caller-supplied.
@@ -87,9 +87,21 @@ export const DEXSCREENER_MESSAGES = [
    */
   "dex_trending.GetTrendingPairsRequest",
   "dex_trending.GetTrendingPairsResponse",
-  /** The pair feed WebSocket command and frame envelopes. */
-  "dex_feed.WSCommand",
-  "dex_feed.WSMessage",
+  /**
+   * The `feed/ws` envelope protocol (`./feed-envelope.ts`), which replaced
+   * `dex_feed.WSCommand` / `dex_feed.WSMessage` on the site in 2026-10: the
+   * frame the client sends, the frame the server answers with, and the
+   * request and response message of each unary `dex_feed.PublicWSService`
+   * method a tool calls. Fixtures: `feed-envelope-*`.
+   */
+  "util_envelope.ClientEnvelope",
+  "util_envelope.ServerEnvelope",
+  "dex_feed.GetHistoricalBarsRequest",
+  "dex_feed.GetHistoricalBarsResponse",
+  "dex_feed.GetHistoricalTransactionsRequest",
+  "dex_feed.GetHistoricalTransactionsResponse",
+  "dex_feed.GetTokenInsightRequest",
+  "dex_feed.GetTokenInsightResponse",
 ] as const;
 
 /** A message name a caller is allowed to decode. */

@@ -50,6 +50,23 @@ const BOARD_EXAMPLE = { chainIds: "solana", window: "h24", limit: 20 };
 /* Tool-specific params                                                */
 /* ------------------------------------------------------------------ */
 
+/**
+ * What `asc` does on a pair board, measured in the 2026-10-07 live
+ * verification: the provider sorts a row with NO value for the rank key as the
+ * smallest, so an ascending board opens with the rows it knows least about.
+ * The remedy is already on the surface: every ceiling on this channel is
+ * PRESENCE PLUS BOUND (`screen-params/thresholds.ts::MAX_PRESENCE_CLAUSE`), so
+ * a ceiling on the ranked metric removes exactly the valueless rows.
+ */
+const ASC_MISSING_FIRST_CLAUSE =
+  "ASCENDING PUTS MISSING VALUES FIRST, measured: a row that carries no value for the sort key "
+  + "ranks as the smallest, so an asc board can open with pairs whose metric the provider never "
+  + "reported (a pool with no liquidity figure, say) instead of the thinnest real ones. To rank "
+  + "only rows that carry the metric, pair asc with that metric's ceiling (maxLiquidityUsd for "
+  + "liquidity, maxVolumeUsd for volume, maxTxnCount for txns, and so on): a ceiling on this "
+  + "channel matches only rows that carry the field, so a generous one removes the valueless rows "
+  + "without bounding the rest.";
+
 const TOP_SORT_BY: ProtocolParamDef = {
   key: "sortBy",
   type: "string",
@@ -57,10 +74,11 @@ const TOP_SORT_BY: ProtocolParamDef = {
   description:
     "Which hard metric ranks the board: volume, txns, buys, sells, liquidity or "
     + "boosts. Defaults to volume. volume, txns, buys and sells are measured over the selected "
-    + "window; liquidity is point-in-time and ignores it. boosts ranks by the count "
-    + "of ACTIVE paid boosts (measured live: 100 rows served from a 54,051 population) and is an "
-    + "advertising ranking, never a demand or safety one; pair it with maxBoostCount to bound the "
-    + "other end. Sorting by fdv is deliberately "
+    + "window; liquidity is point-in-time and ignores it. boosts ranks by the ACTIVE BOOST "
+    + "AMOUNT, the sum of the boost packs running on the pair (packs of 10, 30, 50, 100 and 500), "
+    + "not by a count of purchases (measured live: 100 rows served from a 54,051 population), and "
+    + "is an advertising ranking, never a demand or safety one; pair it with maxBoostCount, which "
+    + "is in the same units, to bound the other end. Sorting by fdv is deliberately "
     + "not offered: the provider returns the txns ordering for it, identical on 100 of 100 "
     + "measured rows. Ranking by marketCap is deliberately NOT offered either, for the same "
     + "reason it was withdrawn from dexscreener__tokens_screen: the provider accepts the key and "
@@ -78,7 +96,7 @@ const TOP_SORT_DIR: ProtocolParamDef = {
   description:
     "Ranking direction: desc for the largest values first, asc for the smallest. Defaults to "
     + "desc, which is the league-table reading. asc is how you find the thinnest pools that still "
-    + "pass your filters.",
+    + `pass your filters. ${ASC_MISSING_FIRST_CLAUSE}`,
 };
 
 const LAUNCHPAD_STAGE: ProtocolParamDef = {
@@ -102,7 +120,9 @@ const LAUNCHPAD_SORT_BY: ProtocolParamDef = {
     + "near-graduation question, and to trendingScore on the graduated stage, where progress is "
     + "100 for every row and would rank nothing. This board takes sortDir like the other boards: "
     + "every key defaults to descending EXCEPT pairAge, which defaults to ascending so that the "
-    + "newest bonding tokens come first, and sortDir overrides either way.",
+    + "newest bonding tokens come first, and sortDir overrides either way. On a metric key an "
+    + "ascending order opens with the rows that carry NO value for that key, not the smallest "
+    + "ones; see sortDir for the ceiling that avoids it.",
 };
 
 const TOKENS_SORT_BY: ProtocolParamDef = {
@@ -136,6 +156,41 @@ const TOKENS_SORT_DIR: ProtocolParamDef = {
     + "created the same day. Note that asc on a metric key surfaces the bottom of the population, "
     + "where the metric is frequently absent rather than small.",
 };
+
+/**
+ * What a threshold on a SUMMED metric means on the token board.
+ *
+ * Measured 2026-10-07 in a live verification: the token channel applies a
+ * liquidity, volume, txns, buys or sells bound to each POOL of a token and sums
+ * only the pools inside it, so the row's number is a sum of in-bound pools. A
+ * floor therefore holds on the row but drops the token's small pools from the
+ * sum; a ceiling does NOT hold on the row, which is why the handler enforces it
+ * again on the summed value (`handlers/screening.ts::checkSummedCeilings`).
+ */
+const TOKEN_SUMMED_FLOOR_NOTE =
+  "ON THIS TOOL the row's value is a SUM over the token's pools, and the provider applies this "
+  + "minimum to each POOL and sums only the pools that clear it: the row's sum is at least the "
+  + "floor, but it leaves out the token's smaller pools, so it is not the token's full total.";
+
+const TOKEN_SUMMED_CEILING_NOTE =
+  "ON THIS TOOL the row's value is a SUM over the token's pools, and the provider applies this "
+  + "maximum to each POOL and sums only the pools inside it, so a row's sum can come back ABOVE "
+  + "the bound. This tool enforces the maximum again on the row's summed value, over the window "
+  + "the bound measures (thresholdWindow, defaulting to window), and counts the rows it removed in "
+  + "clientFiltering.droppedByReason; a kept row's sum still leaves out the pools above the bound.";
+
+const TOKEN_SUMMED_THRESHOLD_NOTES: ReadonlyArray<readonly [string, string]> = [
+  ["minLiquidityUsd", TOKEN_SUMMED_FLOOR_NOTE],
+  ["maxLiquidityUsd", TOKEN_SUMMED_CEILING_NOTE],
+  ["minVolumeUsd", TOKEN_SUMMED_FLOOR_NOTE],
+  ["maxVolumeUsd", TOKEN_SUMMED_CEILING_NOTE],
+  ["minTxnCount", TOKEN_SUMMED_FLOOR_NOTE],
+  ["maxTxnCount", TOKEN_SUMMED_CEILING_NOTE],
+  ["minBuyCount", TOKEN_SUMMED_FLOOR_NOTE],
+  ["maxBuyCount", TOKEN_SUMMED_CEILING_NOTE],
+  ["minSellCount", TOKEN_SUMMED_FLOOR_NOTE],
+  ["maxSellCount", TOKEN_SUMMED_CEILING_NOTE],
+];
 
 const CHAINS_CHAIN: ProtocolParamDef = {
   key: "chain",
@@ -186,7 +241,7 @@ export const SCREENING_TOOLS: readonly ProtocolToolManifest[] = [
       + "envelope carries the provider's total match estimate and `marketStats` for the "
       + "whole filtered set. All screening filters (liquidity, volume, age, dex, "
       + "narrative, launchpad) apply. Trending order mixes organic activity with paid "
-      + "boosts; boost counts are shown per row so the agent can judge. "
+      + "boosts; the active boost amount is shown per row so the agent can judge. "
       + "This board applies no default quality floor, so every threshold is yours to set. "
       + BOARD_TAIL,
     mutating: false,
@@ -203,14 +258,15 @@ export const SCREENING_TOOLS: readonly ProtocolToolManifest[] = [
     lifecycle: "active",
     description:
       "List pairs ordered by a chosen `sortBy` metric (volume, txns, buys, sells, "
-      + "liquidity, marketCap, boosts) within the selected `window`. Use this for league-table "
+      + "liquidity, boosts) within the selected `window`. Use this for league-table "
       + "questions with measurable answers. Returns metric-complete rows plus derived "
       + "ratios (turnover, net flow, transactions per maker) and the filtered set's "
       + "aggregate stats. `fdv` sorting is not offered because the provider returns a "
-      + "wrong ordering for it (measured defect); filter by `minFdvUsd`/`maxFdvUsd` and "
-      + "sort by marketCap instead. Use this when the user names a measurable quantity (most "
-      + "volume, most trades, deepest liquidity, largest market cap) rather than asking what is "
-      + "hot. "
+      + "wrong ordering for it (measured defect), and marketCap sorting is not offered either "
+      + "(the provider answers it with mispriced pools); filter by `minMarketCapUsd`/`maxMarketCapUsd` "
+      + "or `minFdvUsd`/`maxFdvUsd` and sort by liquidity or volume instead. Use this when the user "
+      + "names a measurable quantity (most volume, most trades, deepest liquidity) rather than "
+      + "asking what is hot. "
       + "Ranking by volume or txns applies a default floor so the board is not led by "
       + "untradeable rows; the other sorts apply none. "
       + FLOORED_BOARD_TAIL,
@@ -442,9 +498,12 @@ export const SCREENING_TOOLS: readonly ProtocolToolManifest[] = [
     // something. The channel is profile-only regardless, so the filter has
     // nothing left to express here.
     params: [
-      ...withSortBy(
-        withSortBy(withoutParam([...SCREEN_PARAMS], "requireProfile"), TOKENS_SORT_BY),
-        TOKENS_SORT_DIR
+      ...withParamNotes(
+        withSortBy(
+          withSortBy(withoutParam([...SCREEN_PARAMS], "requireProfile"), TOKENS_SORT_BY),
+          TOKENS_SORT_DIR
+        ),
+        TOKEN_SUMMED_THRESHOLD_NOTES
       ),
     ],
     rejectedParams: {

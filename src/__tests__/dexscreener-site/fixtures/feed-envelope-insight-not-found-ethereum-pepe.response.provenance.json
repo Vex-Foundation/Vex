@@ -1,0 +1,23 @@
+{
+  "fixture": "feed-envelope-insight-not-found-ethereum-pepe.response.bin.b64",
+  "encoding": "protobuf",
+  "endpoint": "wss://io.dexscreener.com/feed/ws util_envelope (/dex_feed.PublicWSService/GetTokenInsight)",
+  "requestParams": {
+    "envelopeId": 30,
+    "method": "/dex_feed.PublicWSService/GetTokenInsight",
+    "request": {
+      "chainId": "ethereum",
+      "tokenId": "0x6982508145454Ce325dDbE47a25d4ec3d2311933"
+    }
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-10-07T18:47:52.819Z",
+  "httpStatus": 101,
+  "capturedBy": "live capture for the feed/ws migration (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-10-07T18:47:52.819Z; raw frames archived in the local capture run 2026-10-07T18-47-41.605Z-feedws (exchanges.jsonl)",
+  "protobufMessage": "util_envelope.ServerEnvelope",
+  "note": "GetTokenInsight for a token the provider has written nothing about: a 6-byte frame, STATUS_NOT_FOUND, no payload. The site client maps exactly this status to 'no insight'.",
+  "bytes": 6,
+  "sha256": "a5989890b3e9d32af70eb4c0fd2f4544f77aa17d3b3f4a63b567bd81a243e057"
+}

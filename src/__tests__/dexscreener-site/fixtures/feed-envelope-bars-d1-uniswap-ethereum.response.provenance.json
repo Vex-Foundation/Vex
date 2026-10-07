@@ -1,0 +1,28 @@
+{
+  "fixture": "feed-envelope-bars-d1-uniswap-ethereum.response.bin.b64",
+  "encoding": "protobuf",
+  "endpoint": "wss://io.dexscreener.com/feed/ws util_envelope (/dex_feed.PublicWSService/GetHistoricalBars)",
+  "requestParams": {
+    "envelopeId": 41,
+    "method": "/dex_feed.PublicWSService/GetHistoricalBars",
+    "request": {
+      "limit": 60,
+      "chainId": "ethereum",
+      "pairId": "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f",
+      "ammId": "uniswap",
+      "resolution": "BAR_RESOLUTION_D1",
+      "type": "BAR_TYPE_PRICE",
+      "quoteTokenId": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    }
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-10-07T18:47:41.617Z",
+  "httpStatus": 101,
+  "capturedBy": "live capture for the feed/ws migration (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-10-07T18:47:41.617Z; raw frames archived in the local capture run 2026-10-07T18-47-41.605Z-feedws (exchanges.jsonl)",
+  "protobufMessage": "util_envelope.ServerEnvelope",
+  "note": "GetHistoricalBars, BAR_RESOLUTION_D1, BAR_TYPE_PRICE, limit 60 on ethereum PEPE/WETH (uniswap). Daily bars exist only on this socket: the HTTP chart endpoint answers 400 for D and above.",
+  "bytes": 16688,
+  "sha256": "493678466a61c96d36e9c80ebb81de17638b3bee01e1c14620c67d092ced229a"
+}

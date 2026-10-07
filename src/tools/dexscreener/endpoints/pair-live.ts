@@ -30,7 +30,7 @@
  *    not a market fact, and nothing in the surface routes on eligibility, so
  *    it is not projected.
  *  - `isDEXFeedStreamEnabled` (measured `false` on 4 of 4): the gate on the
- *    `subscribeTransactions` live push this surface does not consume. Shipping
+ *    `SubscribeTransactions` live push this surface does not consume. Shipping
  *    a flag about a capability we deliberately do not use would invite the
  *    model to reason about it.
  *  - `baseToken.totalSupply` / `quoteToken.totalSupply`: in the descriptor,
@@ -59,39 +59,48 @@
  *    not. Nothing downstream may read it as either; the pair snapshot beside it
  *    is what establishes that the pair is real.
  *  - `fetchTokenInsight` asks the feed socket for a provider-generated
- *    paragraph. The measured answer for a token that has none is the code
- *    `WS_COMMAND_CODE_NOT_FOUND`, which is an ABSENT FIELD and never an error:
- *    an optional blurb that does not exist must not turn a working pair
- *    snapshot into a failed tool call.
+ *    paragraph, as the unary envelope RPC
+ *    `/dex_feed.PublicWSService/GetTokenInsight` (`../codec/feed-envelope.ts`;
+ *    the `dex_feed.WSCommand.getTokenInsight` command it replaced was retired
+ *    by the site in 2026-10 and goes unanswered). The measured answer for a
+ *    token that has none is `STATUS_NOT_FOUND`, which is an ABSENT FIELD and
+ *    never an error: an optional blurb that does not exist must not turn a
+ *    working pair snapshot into a failed tool call. The site's own client
+ *    reads that status the same way (its `getTokenInsight` catches NOT_FOUND
+ *    and returns no insight).
  *
- * THE INSIGHT COMMAND HAS THREE MEASURED OUTCOMES, not two, and they are three
- * different facts: `WS_COMMAND_CODE_OK` carries a blurb;
- * `WS_COMMAND_CODE_NOT_FOUND` is a real absence (the provider has written
- * nothing about this token); `WS_COMMAND_CODE_INTERNAL` is a PROVIDER FAULT
- * (measured on an empty chainId plus tokenId) and says nothing about whether a
- * blurb exists. This module reports the code verbatim; collapsing the last two
- * into one "no blurb" reading is the caller's bug to avoid, and the caller
- * does distinguish them.
+ * THE INSIGHT REQUEST HAS THREE MEASURED OUTCOMES, not two, and they are three
+ * different facts (2026-10-07, fixtures `feed-envelope-insight-*`):
+ * `STATUS_OK` carries a blurb; `STATUS_NOT_FOUND` is a real absence (the
+ * provider has written nothing about this token); any other status is the
+ * provider REFUSING or FAULTING (`STATUS_INVALID_ARGUMENT` measured on an empty
+ * chainId plus tokenId, which the retired protocol answered with an INTERNAL
+ * code) and says nothing about whether a blurb exists. This module reports the
+ * status verbatim as `code` and states the distinction as `faulted`;
+ * collapsing a fault into one "no blurb" reading is the caller's bug to avoid.
  *
- * COVERAGE, measured through `subscribeTokenInsights`: 1,218 of 1,218 insights
- * are `solana`. No other chain has any, and majors do not either. An insight
- * request on a non-Solana token is therefore hopeless before it is sent, which
- * is a fact the tool description owes the model.
+ * COVERAGE, measured through the `SubscribeTokenInsights` stream: 98 of 98
+ * insights on 2026-10-07 were `solana` (1,218 of 1,218 on 2026-08-25). No
+ * other chain has any, and majors do not either. An insight request on a
+ * non-Solana token is therefore hopeless before it is sent, which is a fact
+ * the tool description owes the model. The pair row now says so itself:
+ * `dex_screener_schema.Pair.Token.hasInsights` was added in the same deploy.
  *
  * TWO OPPOSITE CASE INVARIANTS, both measured, neither guessable:
  *
  *  - the reactions id is CASE-INSENSITIVE, so `fetchPairReactions` may and
  *    does lowercase it;
- *  - `getTokenInsight.tokenId` is CASE-SENSITIVE: the lowercased spelling of a
- *    solana token that HAS an insight answers `WS_COMMAND_CODE_NOT_FOUND`.
- *    `fetchTokenInsight` passes the address verbatim and must keep doing so. A
- *    future "normalize addresses everywhere" edit would turn every Solana
- *    insight into a silent absence.
- *  - `getTokenInsight.chainId` is case-sensitive TOO, and this is the trap of
- *    the pair: the failure it produces is the SAME `WS_COMMAND_CODE_NOT_FOUND`
- *    that a token with no blurb produces, so a wrongly-cased chain slug is
- *    indistinguishable from a real absence in the answer. Both fields are
- *    passed through exactly as the caller's resolved subject spelled them.
+ *  - `GetTokenInsight.tokenId` is CASE-SENSITIVE: the lowercased spelling of a
+ *    solana token that HAS an insight answers `STATUS_NOT_FOUND` (re-measured
+ *    on the envelope protocol 2026-10-07). `fetchTokenInsight` passes the
+ *    address verbatim and must keep doing so. A future "normalize addresses
+ *    everywhere" edit would turn every Solana insight into a silent absence.
+ *  - `GetTokenInsight.chainId` is case-sensitive TOO, and this is the trap of
+ *    the pair: `Solana` for `solana` produces the SAME `STATUS_NOT_FOUND` that a
+ *    token with no blurb produces (re-measured 2026-10-07), so a wrongly-cased
+ *    chain slug is indistinguishable from a real absence in the answer. Both
+ *    fields are passed through exactly as the caller's resolved subject spelled
+ *    them.
  */
 
 import {
@@ -99,19 +108,28 @@ import {
   type DexScreenerMessageName,
 } from "../codec/protobuf.js";
 import {
+  DEXSCREENER_FEED_WS_URL,
+  encodeFeedRequest,
+  nextFeedRequestId,
+  readFeedResponse,
+} from "../codec/feed-envelope.js";
+import {
   DexScreenerSiteErrorCodes,
   isDexScreenerSiteError,
   siteError,
 } from "../site-errors.js";
 import type { DexScreenerTransport } from "../transport.js";
-import { encodeDexScreenerCommand } from "../codec/encode.js";
 
 /** The site host that serves the pair channel and the reactions endpoint. */
 export const DEXSCREENER_SITE_WS_ORIGIN = "wss://io.dexscreener.com";
 export const DEXSCREENER_SITE_HTTP_ORIGIN = "https://io.dexscreener.com";
 
-/** The feed socket the token-insight command is sent on. */
-export const DEXSCREENER_FEED_WS_URL = "wss://io.dexscreener.com/feed/ws";
+/**
+ * The feed socket the token-insight request is sent on. Owned by
+ * `../codec/feed-envelope.ts`; re-exported because bars, trades and the board
+ * services have always imported it from here.
+ */
+export { DEXSCREENER_FEED_WS_URL };
 
 /**
  * Frames to collect while looking for the snapshot.
@@ -168,19 +186,20 @@ export const INSIGHT_MAX_TOTAL_BYTES = 256_000;
 /**
  * Frames to collect on the feed socket while looking for the insight answer.
  *
- * ONE, and the reduction from four is forced by the transport contract, not by
- * taste. `WsExpectation.binaryFrames` now excludes zero-length keepalives, and
- * the keepalives were the ONLY other binary traffic this socket produces: a
- * measured `getTokenInsight` session is one real answer frame (6 bytes for
- * NOT_FOUND, ~1.1 KB for OK) followed by zero-length keepalives every ~15 s.
- * Asking for four countable frames on a socket that will only ever produce one
- * is a guaranteed `TRANSPORT_TIMEOUT` with the answer already in hand - the
- * exact failure the keepalive fix was made to end.
+ * ONE, because `GetTokenInsight` is a unary envelope RPC: one request frame,
+ * one `ServerEnvelope.response` frame with the same id, and that frame IS the
+ * answer. Measured live 2026-10-07: the first non-empty frame
+ * was the response on every request (6 bytes for `STATUS_NOT_FOUND`, 1,189
+ * bytes for `STATUS_OK`, at ~0.6 s), and an idle socket otherwise carries only
+ * zero-length keepalives (one at 15.4 s), which do not count toward
+ * `WsExpectation.binaryFrames`. Asking for more countable frames than the
+ * socket will ever produce is a guaranteed `TRANSPORT_TIMEOUT` with the answer
+ * already in hand.
  *
- * This module opens its OWN socket and sends its OWN single command, so it is
+ * This module opens its OWN socket and sends its OWN single request, so it is
  * not multiplexed with anything; `readTokenInsightFrames` still dispatches by
- * correlation id, which now costs nothing and keeps the reader correct if a
- * caller ever shares a socket with it.
+ * envelope id, which costs nothing and keeps the reader correct if a caller
+ * ever shares a socket with it.
  */
 export const INSIGHT_FRAMES = 1;
 
@@ -406,9 +425,9 @@ export function parsePairReactions(body: Uint8Array): PairReactions | null {
  * The provider-generated blurb, or the measured reason there is none.
  *
  * Both text fields null with `code` set is the NORMAL outcome for a token the
- * provider has written nothing about (measured: `WS_COMMAND_CODE_NOT_FOUND` in
- * a 6-byte frame). It is reported, never converted into an error and never
- * replaced with prose of our own.
+ * provider has written nothing about (measured: `STATUS_NOT_FOUND` in a 6-byte
+ * frame). It is reported, never converted into an error and never replaced
+ * with prose of our own.
  */
 export interface TokenInsight {
   /** `dex_feed.TokenInsight.title`, issuer-independent but model-generated. */
@@ -417,8 +436,22 @@ export interface TokenInsight {
   readonly content: string | null;
   /** When the provider says it wrote the blurb. */
   readonly createdAtMs: number | null;
-  /** The provider's own status code for the command, when it sent one. */
+  /**
+   * The provider's own status for the request, verbatim: a
+   * `util_envelope.Status` name (`STATUS_OK`, `STATUS_NOT_FOUND`,
+   * `STATUS_INVALID_ARGUMENT`, ...). The retired protocol spelled these
+   * `WS_COMMAND_CODE_*`; that vocabulary no longer arrives. Typed as a plain
+   * string because it is the provider's spelling, not ours.
+   */
   readonly code: string | null;
+  /**
+   * True when the provider answered with neither a blurb nor a real absence:
+   * any status other than `STATUS_OK` and `STATUS_NOT_FOUND` (an invalid
+   * argument, a timeout, an internal fault, an authorization refusal). Such an
+   * answer says NOTHING about whether a blurb exists, and must not be read as
+   * "none written".
+   */
+  readonly faulted: boolean;
   readonly fetchedAtMs: number;
 }
 
@@ -428,34 +461,37 @@ export interface TokenInsightOptions {
   readonly transport: DexScreenerTransport;
   readonly timeoutMs: number;
   readonly signal?: AbortSignal;
+  /**
+   * The envelope id for the request. Defaults to a fresh process-wide id per
+   * call; settable so a test can replay a capture under the id it was taken
+   * with.
+   */
+  readonly correlationId?: number;
 }
-
-/** The correlation id this module puts on its own command. */
-const INSIGHT_CID = 1;
 
 /**
  * Ask the feed socket for one token's insight paragraph.
  *
  * Returns null only when the exchange itself could not be made (transport
- * down, no decodable answer). A provider answer of "I have none" comes back as
- * a `TokenInsight` with `text: null` and the code, which is a different fact
- * and is reported as one.
+ * down, no answer for this request, an OK answer whose payload does not
+ * decode). A provider answer of "I have none" comes back as a `TokenInsight`
+ * with null text and the code, which is a different fact and is reported as
+ * one.
  */
 export async function fetchTokenInsight(
   options: TokenInsightOptions
 ): Promise<TokenInsight | null> {
-  const command = encodeDexScreenerCommand("dex_feed.WSCommand", {
-    getTokenInsight: {
-      cid: INSIGHT_CID,
-      chainId: options.chainId,
-      tokenId: options.tokenAddress,
-    },
-  });
+  const id = options.correlationId ?? nextFeedRequestId();
+  const request = encodeFeedRequest(
+    "GetTokenInsight",
+    { chainId: options.chainId, tokenId: options.tokenAddress },
+    id
+  );
 
   let frames: Uint8Array[];
   try {
     frames = await options.transport.wsExchange(DEXSCREENER_FEED_WS_URL, {
-      send: [command],
+      send: [request],
       expect: {
         binaryFrames: INSIGHT_FRAMES,
         maxTotalBytes: INSIGHT_MAX_TOTAL_BYTES,
@@ -473,7 +509,15 @@ export async function fetchTokenInsight(
     return null;
   }
 
-  return readTokenInsightFrames(frames, INSIGHT_CID);
+  try {
+    return readTokenInsightFrames(frames, id);
+  } catch (error) {
+    // The answer arrived and could not be read (over the cap, or an OK payload
+    // that is not a `GetTokenInsightResponse`). The blurb is optional, so this
+    // degrades to "no answer" rather than failing the pair snapshot it rides on.
+    if (isDexScreenerSiteError(error)) return null;
+    throw error;
+  }
 }
 
 /**
@@ -482,48 +526,40 @@ export async function fetchTokenInsight(
  * Exported because it, not the socket, is where the two contracts that matter
  * live, and both are provable from captured bytes alone:
  *
- *  - CORRELATION ID, NOT FRAME POSITION. The feed socket multiplexes several
- *    commands, so an answer carrying somebody else's `cid` is not this call's
- *    answer and is skipped rather than returned.
- *  - NOT_FOUND IS AN ABSENT FIELD. A frame whose arm carries a `code` and no
- *    payload is a normal answer meaning "the provider has written nothing
- *    about this token". It comes back as a `TokenInsight` with null text and
- *    the code, never as an error and never as invented prose.
+ *  - ENVELOPE ID, NOT FRAME POSITION. An answer carrying somebody else's id is
+ *    not this call's answer and is skipped rather than returned.
+ *  - NOT_FOUND IS AN ABSENT FIELD. A response whose status is
+ *    `STATUS_NOT_FOUND` carries no payload and means "the provider has written
+ *    nothing about this token". It comes back as a `TokenInsight` with null
+ *    text and the status, never as an error and never as invented prose.
  *
- * Returns null when no frame answers this `cid` at all.
+ * Returns null when no frame answers this id at all.
  */
 export function readTokenInsightFrames(
   frames: readonly Uint8Array[],
-  cid: number
+  id: number
 ): TokenInsight | null {
-  const seen: FrameCensus = { cases: [], byteSizes: [], undecodable: 0 };
-  for (const bytes of frames) {
-    if (bytes.byteLength === 0) continue;
-    const decoded = decodeFrame(
-      "dex_feed.WSMessage",
-      bytes,
-      INSIGHT_MAX_TOTAL_BYTES,
-      seen
-    );
-    if (decoded === null) continue;
-    const arm = asObject(decoded["tokenInsight"]);
-    if (arm === null) continue;
-    if (readNumber(arm["cid"]) !== cid) continue;
-    // The arm nests the payload under its own `tokenInsight` key; the code
-    // sits beside it and is present exactly when the payload is not.
-    const payload = asObject(arm["tokenInsight"]);
-    const createdAt = payload === null ? null : payload["createdAt"];
-    const parsedCreatedAt =
-      typeof createdAt === "string" ? Date.parse(createdAt) : NaN;
-    return {
-      title: payload === null ? null : readString(payload["title"]),
-      content: payload === null ? null : readString(payload["content"]),
-      createdAtMs: Number.isNaN(parsedCreatedAt) ? null : parsedCreatedAt,
-      code: readString(arm["code"]),
-      fetchedAtMs: Date.now(),
-    };
-  }
-  return null;
+  const answer = readFeedResponse(
+    frames,
+    id,
+    "GetTokenInsight",
+    INSIGHT_MAX_TOTAL_BYTES
+  );
+  if (answer === null) return null;
+  const payload =
+    answer.payload === null ? null : asObject(asObject(answer.payload)?.["tokenInsight"]);
+  const createdAt = payload === null ? null : payload["createdAt"];
+  const parsedCreatedAt =
+    typeof createdAt === "string" ? Date.parse(createdAt) : NaN;
+  return {
+    title: payload === null ? null : readString(payload["title"]),
+    content: payload === null ? null : readString(payload["content"]),
+    createdAtMs: Number.isNaN(parsedCreatedAt) ? null : parsedCreatedAt,
+    code: answer.status,
+    faulted:
+      answer.status !== "STATUS_OK" && answer.status !== "STATUS_NOT_FOUND",
+    fetchedAtMs: Date.now(),
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -585,16 +621,6 @@ function asObject(value: unknown): JsonObject | null {
 
 function readString(value: unknown): string | null {
   return typeof value === "string" && value !== "" ? value : null;
-}
-
-/** uint32 renders as a number in protobuf JSON; a string form is parsed exactly. */
-function readNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isSafeInteger(value)) return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isSafeInteger(parsed) ? parsed : null;
-  }
-  return null;
 }
 
 function throwIfAborted(signal: AbortSignal | undefined, url: string): void {

@@ -1,0 +1,31 @@
+{
+  "fixture": "feed-envelope-trades-cursor-page2-uniswap.request.bin.b64",
+  "encoding": "protobuf",
+  "endpoint": "wss://io.dexscreener.com/feed/ws util_envelope (/dex_feed.PublicWSService/GetHistoricalTransactions) (request frame)",
+  "requestParams": {
+    "envelopeId": 12,
+    "method": "/dex_feed.PublicWSService/GetHistoricalTransactions",
+    "request": {
+      "chainId": "ethereum",
+      "ammId": "uniswap",
+      "pairId": "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f",
+      "quoteTokenId": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "type": "TYPE_BUY_OR_SELL",
+      "before": {
+        "blockNumber": "26140443",
+        "transactionIndex": 154,
+        "eventIndex": 606
+      }
+    }
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-10-07T18:47:50.367Z",
+  "httpStatus": 101,
+  "capturedBy": "live capture for the feed/ws migration (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-10-07T18:47:50.367Z; raw frames archived in the local capture run 2026-10-07T18-47-41.605Z-feedws (exchanges.jsonl)",
+  "protobufMessage": "util_envelope.ClientEnvelope",
+  "note": "The exact request frame this build sent and the provider answered with feed-envelope-trades-cursor-page2-uniswap.response.",
+  "bytes": 182,
+  "sha256": "c41cab25e7f4ee77f47b5d09e06dddabd62d25aa18f44b1d2ce046c1bd3fd991"
+}

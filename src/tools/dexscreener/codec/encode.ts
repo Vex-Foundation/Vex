@@ -11,8 +11,9 @@
  *
  * Three channels need bytes we author rather than a query string:
  *
- *  - the pair FEED socket (`dex_feed.WSCommand`), for the optional token
- *    insight;
+ *  - the FEED socket's envelope protocol (`./feed-envelope.ts`): the
+ *    `util_envelope.ClientEnvelope` frame and, inside it, the request message
+ *    of the RPC it names (bars, trade history, token insight);
  *  - the v8 explicit-identity pairs channel
  *    (`dex_screener.PairsSearchChannelCommand`), whose subscription IS the
  *    caller's `{chainId, id}` list and cannot be expressed in a URL;
@@ -46,7 +47,13 @@ import {
 
 /** The command messages a caller may encode. */
 export const DEXSCREENER_COMMAND_MESSAGES = [
-  "dex_feed.WSCommand",
+  // The feed socket's envelope and the three request payloads it may carry.
+  // Only `./feed-envelope.ts` builds these; it resolves the RPC path from the
+  // descriptor so a request can never be wrapped under the wrong method.
+  "util_envelope.ClientEnvelope",
+  "dex_feed.GetHistoricalBarsRequest",
+  "dex_feed.GetHistoricalTransactionsRequest",
+  "dex_feed.GetTokenInsightRequest",
   "dex_screener.PairsSearchChannelCommand",
   // The Connect trade-history request. Its encoded bytes are the `message`
   // query parameter of a GET, so this is a command in exactly the sense above:
