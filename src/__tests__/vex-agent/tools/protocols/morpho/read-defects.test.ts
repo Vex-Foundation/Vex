@@ -158,16 +158,19 @@ describe("D1: `fields` works in every documented form", () => {
         }
       });
 
-      it("is refused at the boundary again the moment an `enum` is re-declared", () => {
-        // The root cause, pinned rather than described: the runtime's enum gate
-        // is a whole-string exact match, so re-declaring `enum` on a param whose
-        // documented form is a comma list breaks it again, silently.
+      it("would still refuse 'all' if an `enum` were re-declared, which is why `fields` declares none", () => {
+        // The original root cause was a whole-string enum gate that refused the
+        // comma form. Since 2026-10-07 the gate reads a comma string on an
+        // `acceptsStringArray` param member by member, so the comma list now
+        // survives a re-declared enum. The `all` keyword is not a field group,
+        // though, and an enum of the groups would refuse it at the boundary,
+        // silently retiring a documented form. That is what this pins.
         const base = manifest(item.toolId);
         const withEnum = {
           ...base,
           params: base.params.map((p) => (p.key === "fields" ? { ...p, enum: MORPHO_MARKET_FIELD_GROUPS } : p)),
         };
-        expect(validateProtocolParams(withEnum, { fields: item.comma }).ok).toBe(false);
+        expect(validateProtocolParams(withEnum, { fields: item.comma }).ok).toBe(true);
         expect(validateProtocolParams(withEnum, { fields: "all" }).ok).toBe(false);
       });
 

@@ -1,0 +1,28 @@
+{
+  "fixture": "feed-envelope-bars-marketcap-uniswap-ethereum.response.bin.b64",
+  "encoding": "protobuf",
+  "endpoint": "wss://io.dexscreener.com/feed/ws util_envelope (/dex_feed.PublicWSService/GetHistoricalBars)",
+  "requestParams": {
+    "envelopeId": 42,
+    "method": "/dex_feed.PublicWSService/GetHistoricalBars",
+    "request": {
+      "limit": 60,
+      "chainId": "ethereum",
+      "pairId": "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f",
+      "ammId": "uniswap",
+      "resolution": "BAR_RESOLUTION_D1",
+      "type": "BAR_TYPE_MARKET_CAP",
+      "quoteTokenId": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    }
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-10-07T18:47:45.100Z",
+  "httpStatus": 101,
+  "capturedBy": "live capture for the feed/ws migration (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-10-07T18:47:45.100Z; raw frames archived in the local capture run 2026-10-07T18-47-41.605Z-feedws (exchanges.jsonl)",
+  "protobufMessage": "util_envelope.ServerEnvelope",
+  "note": "GetHistoricalBars with BAR_TYPE_MARKET_CAP and NO supply argument, answered STATUS_OK with a full 60-bar page.",
+  "bytes": 16965,
+  "sha256": "f8f4f631cdbb217e0473f4d90be2f238f6e2926e8312b0cfa0b3034f465f0549"
+}

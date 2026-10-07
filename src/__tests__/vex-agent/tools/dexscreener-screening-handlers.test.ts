@@ -1061,6 +1061,132 @@ describe("the token channel's honesty contract", () => {
     expect(data.honesty).toEqual(TOKENS_CHANNEL_HONESTY);
   });
 
+  /**
+   * Measured 2026-10-07: the channel bounds liquidity, volume, txns, buys and
+   * sells per POOL and sums only the pools inside the bound, so a token row's
+   * sum came back ABOVE the maximum asked for. The fake transport replays the
+   * same frame whatever was sent, which is exactly the provider behaviour
+   * under test: rows over the bound arrive, and the tool must not ship them.
+   */
+  describe("maxima on SUMMED metrics are enforced on the row's sum", () => {
+    type TokenRow = {
+      baseTokenAddress: string;
+      providerRank: number;
+      volumeUsd: number | null;
+      buys: string | null;
+      sells: string | null;
+      windows?: Record<string, { volumeUsd: number | null }>;
+    };
+
+    async function baseline(fields?: string): Promise<TokenRow[]> {
+      mount(TOKEN_FRAMES);
+      const data = await call("dexscreener.tokens.screen", {
+        chainIds: "solana",
+        limit: 100,
+        ...(fields === undefined ? {} : { fields }),
+      });
+      release?.();
+      release = null;
+      return data.rows as TokenRow[];
+    }
+
+    function median(values: readonly number[]): number {
+      const sorted = [...values].sort((a, b) => a - b);
+      return sorted[Math.floor(sorted.length / 2)] ?? 0;
+    }
+
+    it("drops every row whose summed volume is above maxVolumeUsd, and accounts for it", async () => {
+      const all = await baseline();
+      const volumes = all.flatMap((row) => (row.volumeUsd === null ? [] : [row.volumeUsd]));
+      const bound = median(volumes);
+      const above = all.filter((row) => row.volumeUsd !== null && row.volumeUsd > bound);
+      expect(above.length).toBeGreaterThan(0);
+
+      const recorded = mount(TOKEN_FRAMES);
+      const data = await call("dexscreener.tokens.screen", {
+        chainIds: "solana",
+        limit: 100,
+        maxVolumeUsd: bound,
+      });
+      // The provider-side bound still goes on the wire: it is what keeps the
+      // over-bound pools out of each sum.
+      expect(recorded.wsUrls[0]).toContain("[max]=");
+      const rows = data.rows as TokenRow[];
+      for (const row of rows) {
+        if (row.volumeUsd !== null) expect(row.volumeUsd).toBeLessThanOrEqual(bound);
+      }
+      const filtering = data.clientFiltering as Record<string, unknown>;
+      expect(filtering.providerReturned).toBe(all.length);
+      expect(filtering.droppedByReason).toEqual({ maxVolumeUsd: above.length });
+      expect(rows.length + above.length).toBe(all.length);
+      // A kept row keeps the PROVIDER's ordinal, not its position after the drop.
+      const ranks = new Map(all.map((row) => [row.baseTokenAddress, row.providerRank]));
+      for (const row of rows) expect(row.providerRank).toBe(ranks.get(row.baseTokenAddress));
+      const check = data.summedCeilingCheck as Record<string, unknown>;
+      expect(check.enforced).toEqual([{ param: "maxVolumeUsd", bound, window: "h24" }]);
+      expect(String(check.note)).toContain("every POOL");
+      expect(String(data.summary)).toContain(`${above.length} provider row`);
+    });
+
+    it("compares a txns ceiling with buys plus sells", async () => {
+      const all = await baseline();
+      const txns = all.flatMap((row) =>
+        row.buys === null || row.sells === null ? [] : [Number(row.buys) + Number(row.sells)]
+      );
+      const bound = median(txns);
+      mount(TOKEN_FRAMES);
+      const data = await call("dexscreener.tokens.screen", {
+        chainIds: "solana",
+        limit: 100,
+        maxTxnCount: bound,
+      });
+      for (const row of data.rows as TokenRow[]) {
+        if (row.buys === null || row.sells === null) continue;
+        expect(Number(row.buys) + Number(row.sells)).toBeLessThanOrEqual(bound);
+      }
+      const dropped = (data.clientFiltering as { droppedByReason: Record<string, number> })
+        .droppedByReason.maxTxnCount ?? 0;
+      expect(dropped).toBe(txns.filter((value) => value > bound).length);
+    });
+
+    it("measures a windowed maximum over thresholdWindow, not the ranking window", async () => {
+      const all = await baseline("allWindows");
+      const h1 = all.flatMap((row) => {
+        const value = row.windows?.["h1"]?.volumeUsd;
+        return value === undefined || value === null ? [] : [value];
+      });
+      const bound = median(h1);
+      mount(TOKEN_FRAMES);
+      const data = await call("dexscreener.tokens.screen", {
+        chainIds: "solana",
+        limit: 100,
+        window: "h24",
+        thresholdWindow: "h1",
+        maxVolumeUsd: bound,
+        fields: "allWindows",
+      });
+      for (const row of data.rows as TokenRow[]) {
+        const value = row.windows?.["h1"]?.volumeUsd;
+        if (value !== undefined && value !== null) expect(value).toBeLessThanOrEqual(bound);
+      }
+      const check = data.summedCeilingCheck as { enforced: { window: string }[] };
+      expect(check.enforced[0]?.window).toBe("h1");
+      expect(
+        (data.clientFiltering as { droppedByReason: Record<string, number> }).droppedByReason
+      ).toEqual({ maxVolumeUsd: h1.filter((value) => value > bound).length });
+    });
+
+    it("adds no client-filtering block when no summed maximum is set", async () => {
+      mount(TOKEN_FRAMES);
+      const data = await call("dexscreener.tokens.screen", {
+        chainIds: "solana",
+        minVolumeUsd: 1,
+      });
+      expect(data.clientFiltering).toBeUndefined();
+      expect(data.summedCeilingCheck).toBeUndefined();
+    });
+  });
+
   it("says in words that traversal is not exhaustive", async () => {
     mount(TOKEN_FRAMES);
     const data = await call("dexscreener.tokens.screen", { chainIds: "solana" });

@@ -673,7 +673,15 @@ async function runBoard(
   const sanitized = new Set<string>();
   const isTokens = spec.channel === "tokens";
   const shareBasis = resolveShareBasis(chainIds, window, query);
-  const rows = wanted.map((raw, index) =>
+  // The token channel bounds a summed metric per POOL, so its rows can exceed
+  // the maximum that was asked for; see `checkSummedCeilings`. `null` when the
+  // board is not the token board or no such maximum is in force, and then
+  // every row in the window is a candidate exactly as before.
+  const ceilingCheck = isTokens
+    ? checkSummedCeilings(wanted, summedCeilings(floored.request), window, nowMs)
+    : null;
+  const candidates = ceilingCheck?.kept ?? wanted.map((raw, index) => ({ raw, index }));
+  const rows = candidates.map(({ raw, index }) =>
     shapeOne(raw, {
       groups,
       window,
@@ -701,15 +709,18 @@ async function runBoard(
       floors: describeFloors(accounting, query),
       scope: describeScope(chainIds),
       rankApplied: query.rankApplied,
-    }),
+    }) + describeSummedCeilingDrops(ceilingCheck),
     rows,
     offset,
     providerCount: totalApprox,
     ...(isTokens ? { totalUnavailable: true } : {}),
     // Only the rows inside the offset window were asked for; the rest of the
     // fetched pages were never candidates, so they are not "dropped" and must
-    // not be accounted as such.
-    providerReturned: rows.length,
+    // not be accounted as such. The rows the token board's summed-ceiling check
+    // removed from that window ARE dropped, by reason, so the window is the
+    // provider count and `returned + dropped` still equals it.
+    providerReturned: wanted.length,
+    ...(ceilingCheck === null ? {} : { droppedByReason: ceilingCheck.droppedByReason }),
     filtersApplied: query.filtersApplied,
     // The ordering is an input like any other, and the only one that decides
     // the whole answer; it had no echo at all before this.
@@ -785,6 +796,9 @@ async function runBoard(
     // The token channel's measured limits, verbatim from the client so the
     // wording of an honesty claim has one owner.
     ...(isTokens ? { honesty: TOKENS_CHANNEL_HONESTY } : {}),
+    // Which summed maxima were enforced here, over which window, and how many
+    // rows could not be judged. Absent when none was in force.
+    ...(ceilingCheck === null ? {} : { summedCeilingCheck: ceilingCheck.report }),
     // S10-31b. The population is every row the fetched pages carried, before
     // the offset window was sliced out of them, so that `limit` and `offset`
     // cannot move the median a flag is measured against. Assessing the emitted
@@ -826,6 +840,182 @@ function divergencePopulation(
       priceUsd: row.priceUsd,
     };
   });
+}
+
+/* ------------------------------------------------------------------ */
+/* Token channel: maxima on SUMMED metrics                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The token-row metrics that are SUMS over the token's pools and that the
+ * caller can put a maximum on, in the order a removal is attributed.
+ *
+ * WHY THE CEILING IS CHECKED AGAIN HERE. Measured 2026-10-07 in a live
+ * verification: the token channel applies `filters[liquidity][max]`,
+ * `filters[volume][..][max]`, `txns`, `buys` and `sells` to each POOL and then
+ * sums only the pools inside the bound, so a token whose in-bound pools add up
+ * past the maximum comes back with a row value ABOVE the maximum the caller
+ * asked for. The provider-side bound stays on the wire (it is what keeps
+ * over-bound pools out of the sum); this check enforces the bound on the
+ * number the row actually shows. Floors need no second pass: a sum of pools
+ * that each clear a floor clears it too.
+ */
+type SummedCeilingKey =
+  | "maxLiquidityUsd"
+  | "maxVolumeUsd"
+  | "maxTxnCount"
+  | "maxBuyCount"
+  | "maxSellCount";
+
+const SUMMED_CEILING_KEYS: readonly SummedCeilingKey[] = [
+  "maxLiquidityUsd",
+  "maxVolumeUsd",
+  "maxTxnCount",
+  "maxBuyCount",
+  "maxSellCount",
+];
+
+interface SummedCeiling {
+  readonly param: SummedCeilingKey;
+  readonly bound: number;
+  /** The window the bound measures over; null for liquidity, which has none. */
+  readonly window: ScreenWindow | null;
+}
+
+interface SummedCeilingCheck {
+  /** The surviving rows, each with its position in the offset window. */
+  readonly kept: ReadonlyArray<{ readonly raw: unknown; readonly index: number }>;
+  readonly droppedByReason: Readonly<Record<string, number>>;
+  readonly report: {
+    readonly enforced: readonly SummedCeiling[];
+    /** Per maximum, rows whose summed value was not reported. KEPT, never compared. */
+    readonly notEvaluated: Readonly<Record<string, number>>;
+    readonly note: string;
+  };
+}
+
+const SUMMED_CEILING_NOTE =
+  "The provider applies each maximum on a summed metric (liquidity, volume, txns, buys, sells) to "
+  + "every POOL of a token and sums only the pools inside the bound, so a token row's sum can be "
+  + "larger than the maximum you asked for. Each maximum is therefore enforced again here, on the "
+  + "row's summed value over the window it names, and the rows it removed are counted in "
+  + "clientFiltering.droppedByReason. Even a kept row's sum leaves out the token's pools that were "
+  + "above the bound, so it is not the token's full total. A row whose summed value the provider "
+  + "did not report is kept and counted in notEvaluated.";
+
+/**
+ * The summed maxima in force on the wire, each with the window its bound was
+ * sent for: an explicitly anchored value keeps its own window, a bare number
+ * measures over `thresholdWindow`, falling back to `window`, exactly as
+ * `buildScreenQuery` resolves it.
+ */
+function summedCeilings(request: ScreenRequest): readonly SummedCeiling[] {
+  const fallback = request.thresholdWindow ?? request.window;
+  const ceilings: SummedCeiling[] = [];
+  for (const param of SUMMED_CEILING_KEYS) {
+    const raw = request[param];
+    if (raw === undefined) continue;
+    if (param === "maxLiquidityUsd") {
+      ceilings.push({ param, bound: typeof raw === "number" ? raw : raw.value, window: null });
+      continue;
+    }
+    ceilings.push(
+      typeof raw === "number"
+        ? { param, bound: raw, window: fallback }
+        : { param, bound: raw.value, window: raw.window ?? fallback }
+    );
+  }
+  return ceilings;
+}
+
+/** A uint64 count lexeme as a number, or null when absent or unparseable. */
+function summedCount(raw: string | null): number | null {
+  if (raw === null || raw.trim() === "") return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+function summedValue(row: ProjectedPairRow, param: SummedCeilingKey): number | null {
+  switch (param) {
+    case "maxLiquidityUsd":
+      return row.liquidityUsd;
+    case "maxVolumeUsd":
+      return row.volumeUsd;
+    case "maxBuyCount":
+      return summedCount(row.buys);
+    case "maxSellCount":
+      return summedCount(row.sells);
+    case "maxTxnCount": {
+      // Either half missing makes the SUM unknown, not smaller.
+      const buys = summedCount(row.buys);
+      const sells = summedCount(row.sells);
+      return buys === null || sells === null ? null : buys + sells;
+    }
+  }
+}
+
+/**
+ * Enforce the summed maxima on the token rows of the offset window.
+ *
+ * Reads each row through `projectPairRow`, the same projection the emitted
+ * rows go through, once per window a maximum names: when `thresholdWindow`
+ * differs from `window` the row's displayed metrics are the ranking window's,
+ * and the bound must be compared with the sum over the window it was sent for.
+ * Returns null when no summed maximum is in force, so a call without one
+ * carries no client-filtering block at all.
+ */
+function checkSummedCeilings(
+  wanted: readonly unknown[],
+  ceilings: readonly SummedCeiling[],
+  window: ScreenWindow,
+  nowMs: number
+): SummedCeilingCheck | null {
+  if (ceilings.length === 0) return null;
+  const kept: { raw: unknown; index: number }[] = [];
+  const droppedByReason: Record<string, number> = {};
+  const notEvaluated: Record<string, number> = {};
+  wanted.forEach((raw, index) => {
+    const projected = new Map<ScreenWindow, ProjectedPairRow>();
+    const at = (measured: ScreenWindow): ProjectedPairRow => {
+      const cached = projected.get(measured);
+      if (cached !== undefined) return cached;
+      const row = projectPairRow(raw, { window: measured, nowMs });
+      projected.set(measured, row);
+      return row;
+    };
+    let removedBy: SummedCeilingKey | null = null;
+    for (const ceiling of ceilings) {
+      const value = summedValue(at(ceiling.window ?? window), ceiling.param);
+      if (value === null) {
+        notEvaluated[ceiling.param] = (notEvaluated[ceiling.param] ?? 0) + 1;
+        continue;
+      }
+      if (value > ceiling.bound) {
+        removedBy = ceiling.param;
+        break;
+      }
+    }
+    if (removedBy === null) {
+      kept.push({ raw, index });
+      return;
+    }
+    droppedByReason[removedBy] = (droppedByReason[removedBy] ?? 0) + 1;
+  });
+  return {
+    kept,
+    droppedByReason,
+    report: { enforced: ceilings, notEvaluated, note: SUMMED_CEILING_NOTE },
+  };
+}
+
+/** The summary's sentence about rows the summed-ceiling check removed, if any. */
+function describeSummedCeilingDrops(check: SummedCeilingCheck | null): string {
+  if (check === null) return "";
+  const dropped = Object.values(check.droppedByReason).reduce((sum, count) => sum + count, 0);
+  if (dropped === 0) return "";
+  return ` ${dropped} provider row${dropped === 1 ? " was" : "s were"} removed here because the `
+    + "token's SUMMED value exceeded a maximum you set; the provider bounds each pool, not the sum "
+    + "(see clientFiltering and summedCeilingCheck).";
 }
 
 const EXTERNAL_ROW_FIELDS: readonly string[] = [

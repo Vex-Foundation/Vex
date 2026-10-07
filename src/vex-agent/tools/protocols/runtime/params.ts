@@ -210,6 +210,15 @@ export function describeParamGroupConstraints(manifest: ProtocolToolManifest): s
  * them costs the agent another call - and never echoes what was sent, which is
  * untrusted string content (rule 06). Arrays are checked member-wise, by
  * position, for the same reason `checkStringArrayParam` names the index.
+ *
+ * A STRING on an `acceptsStringArray` param is the comma-separated spelling of
+ * the same list, and is checked the way the handler reads it
+ * (`list-params.ts::readStringList`): split on commas, each member trimmed,
+ * empty members dropped, every remaining member on the list. Measured
+ * 2026-10-07: `dexscreener.pair.get` advertised `include: "reactions,insight"`
+ * in its description AND its `exampleParams`, and this gate refused it because
+ * it compared the whole string to the closed set. The offending member is named
+ * by its POSITION in the split list, never by its text.
  */
 function checkEnumParam(
   toolName: string,
@@ -232,6 +241,18 @@ function checkEnumParam(
     return null;
   }
   if (typeof value === "string" && allowed.includes(value)) return null;
+  if (typeof value === "string" && param.acceptsStringArray === true) {
+    const members = value.split(",").map((member) => member.trim()).filter((member) => member !== "");
+    if (members.length === 0) {
+      return `Parameter "${param.key}" for ${toolName} was supplied but contained no values. ${suffix}`;
+    }
+    for (const [index, member] of members.entries()) {
+      if (allowed.includes(member)) continue;
+      return `Parameter "${param.key}" for ${toolName} has an unsupported value at comma-separated `
+        + `member ${index + 1} of ${members.length} (index ${index}). ${suffix}`;
+    }
+    return null;
+  }
   return `Parameter "${param.key}" for ${toolName} has an unsupported value. ${suffix}`;
 }
 

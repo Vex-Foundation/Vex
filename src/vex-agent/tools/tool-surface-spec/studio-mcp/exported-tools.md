@@ -101,8 +101,8 @@ free. Both texts live on the tool
 | dexscreener__pairs_batch_get | Batch-read pairs or tokens | protocol | yes | no | no | - | 2623 | - | none (read) |
 | dexscreener__pairs_new_list | List newest DEX pairs | protocol | yes | no | no | - | 2352 | - | none (read) |
 | dexscreener__pairs_search | Search DEX pairs | protocol | yes | no | no | - | 2417 | - | none (read) |
-| dexscreener__pairs_top_list | Rank DEX pairs by a metric | protocol | yes | no | no | - | 2470 | - | none (read) |
-| dexscreener__pairs_trending_list | List trending DEX pairs | protocol | yes | no | no | - | 2189 | - | none (read) |
+| dexscreener__pairs_top_list | Rank DEX pairs by a metric | protocol | yes | no | no | - | 2580 | - | none (read) |
+| dexscreener__pairs_trending_list | List trending DEX pairs | protocol | yes | no | no | - | 2199 | - | none (read) |
 | dexscreener__spotlight_get | Read the DEX Screener spotlight feeds | protocol | yes | no | no | - | 2808 | - | none (read) |
 | dexscreener__token_pairs_list | List a token's DEX pools | protocol | yes | no | no | - | 3038 | - | none (read) |
 | dexscreener__tokens_screen | Screen tokens across chains | protocol | yes | no | no | - | 1994 | - | none (read) |

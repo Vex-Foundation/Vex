@@ -10,7 +10,10 @@
  */
 
 import type { ProtocolParamDef } from "../../types.js";
-import { SCREEN_THRESHOLD_PARAMS } from "./screen-params/thresholds.js";
+import {
+  MAX_PRESENCE_CLAUSE,
+  SCREEN_THRESHOLD_PARAMS,
+} from "./screen-params/thresholds.js";
 
 /** The feeds the spotlight document carries, plus the combined selector. */
 export const SPOTLIGHT_FEED_VALUES = [
@@ -177,7 +180,11 @@ export const TOKEN_PAIRS_CLIENT_FILTER_CLAUSE =
  * heavy `profile` group fetched for every row just to filter it away. A
  * parameter that cannot be answered from the rows in hand would have to guess,
  * and a guessed filter is the failure the whole echo contract exists to
- * prevent. `minBoostCount` is offered because `boostsActive` is on every row.
+ * prevent. `minBoostCount` is offered because it is answerable on every row
+ * without a guess: the provider sends a `boosts` block only on a pair that has
+ * active boosts, so a row WITHOUT one has an active boost amount of zero and is
+ * compared as 0 (`thresholdSubject` in `handlers/resolve.ts`), not kept as
+ * not-evaluated. `boostsActive` itself is null on such a row.
  */
 export const CLIENT_THRESHOLD_KEYS = [
   "minLiquidityUsd",
@@ -228,6 +235,58 @@ export function clientThresholdParams(
         + "the local evaluator would answer for a parameter no tool advertises"
       );
     }
-    return { ...param, description: `${param.description} ${clause}` };
+    const inherited = localPresenceRule(key, param.description);
+    const note = CLIENT_KEY_NOTES[key];
+    return {
+      ...param,
+      description: `${inherited} ${clause}${note === undefined ? "" : ` ${note}`}`,
+    };
   });
 }
+
+/**
+ * The ceiling sentence a LOCAL filter states in place of the provider's.
+ *
+ * Measured 2026-10-07: every `max...` param here inherited
+ * `MAX_PRESENCE_CLAUSE` ("a row the provider reported no value for is
+ * excluded"), and then the client clause said the opposite ("kept and counted
+ * in notEvaluated"). Both were in one description and only the second is true
+ * on these tools, so the first is REPLACED rather than contradicted.
+ */
+const CLIENT_CEILING_PRESENCE_CLAUSE =
+  "PRESENCE ON THIS TOOL is the opposite of the screening boards: a maximum here does NOT require "
+  + "the field. A row whose value the provider did not report is KEPT and counted in "
+  + "clientFiltering.notEvaluated; only a row whose reported value is above the ceiling is "
+  + "dropped.";
+
+/**
+ * Swap the provider presence clause for the local one. Throws when a ceiling no
+ * longer carries the clause it is meant to replace: that is a reworded
+ * `MAX_PRESENCE_CLAUSE`, and a silent miss would put the contradiction back.
+ */
+function localPresenceRule(key: ClientThresholdKey, description: string): string {
+  if (!key.startsWith("max")) return description;
+  if (!description.includes(MAX_PRESENCE_CLAUSE)) {
+    throw new Error(
+      `clientThresholdParams: "${key}" no longer carries MAX_PRESENCE_CLAUSE, so the local `
+      + "presence rule cannot replace it; update localPresenceRule with the new wording"
+    );
+  }
+  return description.replace(MAX_PRESENCE_CLAUSE, CLIENT_CEILING_PRESENCE_CLAUSE);
+}
+
+/**
+ * Per-key exceptions to the client clause, appended AFTER it because each one
+ * narrows a rule the clause states for the whole family.
+ *
+ * `minBoostCount`: the provider sends a `boosts` block only on a pair that has
+ * active boosts, so a row without one is compared as zero (see the omission
+ * note above and `thresholdSubject` in `handlers/resolve.ts`), which is the one
+ * place "missing is not zero" does not apply.
+ */
+const CLIENT_KEY_NOTES: Partial<Record<ClientThresholdKey, string>> = {
+  minBoostCount:
+    "EXCEPTION for this key: a row with no boosts block has an active boost amount of ZERO, which "
+    + "is a measurement, so it is compared as 0 and dropped by any floor above 0 rather than "
+    + "counted in notEvaluated.",
+};

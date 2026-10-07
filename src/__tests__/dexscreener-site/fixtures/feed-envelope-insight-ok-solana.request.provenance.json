@@ -1,0 +1,23 @@
+{
+  "fixture": "feed-envelope-insight-ok-solana.request.bin.b64",
+  "encoding": "protobuf",
+  "endpoint": "wss://io.dexscreener.com/feed/ws util_envelope (/dex_feed.PublicWSService/GetTokenInsight) (request frame)",
+  "requestParams": {
+    "envelopeId": 32,
+    "method": "/dex_feed.PublicWSService/GetTokenInsight",
+    "request": {
+      "chainId": "solana",
+      "tokenId": "DwcXyhEcSvzWgakDKpetZLFvbAHutpGpzhbU4iempump"
+    }
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-10-07T18:47:57.513Z",
+  "httpStatus": 101,
+  "capturedBy": "live capture for the feed/ws migration (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-10-07T18:47:57.513Z; raw frames archived in the local capture run 2026-10-07T18-47-41.605Z-feedws (exchanges.jsonl)",
+  "protobufMessage": "util_envelope.ClientEnvelope",
+  "note": "The exact request frame this build sent and the provider answered with feed-envelope-insight-ok-solana.response.",
+  "bytes": 103,
+  "sha256": "f78f3f4e5facfa8f12ef7063cdd402dbece91f3a04b7f229631e821a3773f2f0"
+}

@@ -1,0 +1,23 @@
+{
+  "fixture": "feed-envelope-insight-invalid-argument.response.bin.b64",
+  "encoding": "protobuf",
+  "endpoint": "wss://io.dexscreener.com/feed/ws util_envelope (/dex_feed.PublicWSService/GetTokenInsight)",
+  "requestParams": {
+    "envelopeId": 31,
+    "method": "/dex_feed.PublicWSService/GetTokenInsight",
+    "request": {
+      "chainId": "",
+      "tokenId": ""
+    }
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-10-07T18:48:03.888Z",
+  "httpStatus": 101,
+  "capturedBy": "live capture for the feed/ws migration (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-10-07T18:48:03.888Z; raw frames archived in the local capture run 2026-10-07T18-47-41.605Z-feedws (exchanges.jsonl)",
+  "protobufMessage": "util_envelope.ServerEnvelope",
+  "note": "GetTokenInsight with empty chainId and tokenId: STATUS_INVALID_ARGUMENT (the retired WSCommand protocol answered WS_COMMAND_CODE_INTERNAL for the same request).",
+  "bytes": 6,
+  "sha256": "d1a7131ffeebad16806346d178316bb0f4293c1a1761604247ae81e9f64c250f"
+}

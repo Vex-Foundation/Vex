@@ -244,6 +244,13 @@ interface JsonSchemaPropertyShape {
   multipleOf?: number;
   minItems?: number;
   minLength?: number;
+  /**
+   * An anchored regular expression (JSON Schema `pattern`, ECMA-262 with the
+   * `u` flag under Ajv). Strict MCP projection only, same contract as the bounds
+   * above: it states the comma-separated spelling of a closed-list param that
+   * `validateProtocolParams` admits member by member.
+   */
+  pattern?: string;
 }
 
 /** The ordinary single-`type` property - what almost every param compiles to. */

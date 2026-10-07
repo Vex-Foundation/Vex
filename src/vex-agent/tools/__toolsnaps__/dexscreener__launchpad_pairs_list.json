@@ -111,7 +111,7 @@
             "type": "number"
           },
           "maxBoostCount": {
-            "description": "Ceiling on the number of paid boosts ACTIVE on the pair, as a COUNT. It bounds WITHIN the boosted population and does not select against it. The presence rule below is the whole story here: an active-boost count exists only on a boosted pair, so maxBoostCount 3 means \"is boosted AND has at most 3 boosts\", never \"is not heavily advertised\". Measured 2026-08-24 on solana: min 1 gave 105 rows (the boosted population), max 10 gave 51, max 1000000 gave 105 again rather than the 64,420-row baseline, and max 0 gave 0. THIS IS NOT A WAY TO EXCLUDE ADS: an agent setting it to avoid ad-pumped pairs receives only ad-carrying pairs. To judge advertising, leave it unset and read boostsActive per row, which is on every row by default. PRESENCE RULE, measured, and it applies to every ceiling on this surface: a maximum matches only rows that CARRY the field. A row the provider reported no value for is excluded, not kept as if it were below the bound. Measured on a 64,420-row solana population: a liquidity ceiling removed 1,687 rows that carry no liquidity figure, an FDV ceiling removed 3,286, and a launchpad-progress ceiling reduced the set to launchpad pairs only. So a ceiling narrows on two axes at once, and the second one is silent. Omit it to leave the tool's default in place, or send a number to set your own; whichever happens is echoed in filtersApplied. null is not accepted here: send disableQualityFloor: true to drop every default floor at once.",
+            "description": "Ceiling on the ACTIVE BOOST AMOUNT on the pair, as boost UNITS and not a count of purchases. Despite the key name this is an AMOUNT: boosts are sold in packs of 10, 30, 50, 100 and 500, and the packs running at once add up, so one 30 pack plus one 10 pack reads 40. The smallest non-zero amount is 10. A ceiling under 10 therefore matches NOTHING: no running pack is that small, and a pair with no pack carries no amount at all. It bounds WITHIN the boosted population and does not select against it. The presence rule below is the whole story here: an active boost amount exists only on a boosted pair, so maxBoostCount 50 means \"is boosted AND carries at most 50 boost units\" (one 50 pack, or a 10 and a 30), never \"is not heavily advertised\". Measured 2026-08-24 on solana: min 1 gave 105 rows (the boosted population), max 10 gave 51, max 1000000 gave 105 again rather than the 64,420-row baseline, and max 0 gave 0. THIS IS NOT A WAY TO EXCLUDE ADS: an agent setting it to avoid ad-pumped pairs receives only ad-carrying pairs. To judge advertising, leave it unset and read boostsActive per row; it is in the default projection and is null on a pair with no active boost. PRESENCE RULE, measured, and it applies to every ceiling on this surface: a maximum matches only rows that CARRY the field. A row the provider reported no value for is excluded, not kept as if it were below the bound. Measured on a 64,420-row solana population: a liquidity ceiling removed 1,687 rows that carry no liquidity figure, an FDV ceiling removed 3,286, and a launchpad-progress ceiling reduced the set to launchpad pairs only. So a ceiling narrows on two axes at once, and the second one is silent. Omit it to leave the tool's default in place, or send a number to set your own; whichever happens is echoed in filtersApplied. null is not accepted here: send disableQualityFloor: true to drop every default floor at once.",
             "type": "number"
           },
           "maxBuyCount": {
@@ -169,7 +169,7 @@
             "description": "Narrative IDs to keep, taken from dexscreener__narratives_list. Send the ID and not the human-readable name: the provider accepts a name, matches nothing, and answers with zero rows, which reads as an empty market rather than as a wrong value. Accepts either a comma-separated string (\"a,b\") or an array of strings ([\"a\",\"b\"]); the two are equivalent."
           },
           "minBoostCount": {
-            "description": "Floor on the number of paid boosts ACTIVE on the pair, as a COUNT. A boost is bought visibility, never demand or safety. This is more specific than onlyBoosted and wins over it when both are sent. Omit it to leave the tool's default in place, or send a number to set your own; whichever happens is echoed in filtersApplied. null is not accepted here: send disableQualityFloor: true to drop every default floor at once.",
+            "description": "Floor on the ACTIVE BOOST AMOUNT on the pair, as boost UNITS and not a count of purchases. Despite the key name this is an AMOUNT: boosts are sold in packs of 10, 30, 50, 100 and 500, and the packs running at once add up, so one 30 pack plus one 10 pack reads 40. The smallest non-zero amount is 10. Any floor from 1 to 10 therefore selects the same rows: every pair with at least one pack running. A boost is bought visibility, never demand or safety. This is more specific than onlyBoosted and wins over it when both are sent. Omit it to leave the tool's default in place, or send a number to set your own; whichever happens is echoed in filtersApplied. null is not accepted here: send disableQualityFloor: true to drop every default floor at once.",
             "type": "number"
           },
           "minBuyCount": {
@@ -221,7 +221,7 @@
             "type": "boolean"
           },
           "onlyBoosted": {
-            "description": "Keep only pairs carrying at least one ACTIVE paid boost. This is an advertising signal and not a quality signal: it says the project paid DexScreener for visibility. Use minBoostCount when you want a specific number rather than at least one.",
+            "description": "Keep only pairs carrying at least one ACTIVE paid boost. This is an advertising signal and not a quality signal: it says the project paid DexScreener for visibility. Use minBoostCount when you want a minimum active boost AMOUNT (packs of 10 to 500, summed) rather than any boost at all.",
             "type": "boolean"
           },
           "onlyRecentAds": {
@@ -233,7 +233,7 @@
             "type": "boolean"
           },
           "sortBy": {
-            "description": "Which metric ranks the board: launchpadProgress, trendingScore, priceChange, volume, txns, marketCap or pairAge. Defaults to launchpadProgress on the bonding stage, which is the near-graduation question, and to trendingScore on the graduated stage, where progress is 100 for every row and would rank nothing. This board takes sortDir like the other boards: every key defaults to descending EXCEPT pairAge, which defaults to ascending so that the newest bonding tokens come first, and sortDir overrides either way.",
+            "description": "Which metric ranks the board: launchpadProgress, trendingScore, priceChange, volume, txns, marketCap or pairAge. Defaults to launchpadProgress on the bonding stage, which is the near-graduation question, and to trendingScore on the graduated stage, where progress is 100 for every row and would rank nothing. This board takes sortDir like the other boards: every key defaults to descending EXCEPT pairAge, which defaults to ascending so that the newest bonding tokens come first, and sortDir overrides either way. On a metric key an ascending order opens with the rows that carry NO value for that key, not the smallest ones; see sortDir for the ceiling that avoids it.",
             "enum": [
               "launchpadProgress",
               "trendingScore",
@@ -246,7 +246,7 @@
             "type": "string"
           },
           "sortDir": {
-            "description": "Ranking direction: desc for the largest values first, asc for the smallest. Defaults to desc, which is the league-table reading. asc is how you find the thinnest pools that still pass your filters.",
+            "description": "Ranking direction: desc for the largest values first, asc for the smallest. Defaults to desc, which is the league-table reading. asc is how you find the thinnest pools that still pass your filters. ASCENDING PUTS MISSING VALUES FIRST, measured: a row that carries no value for the sort key ranks as the smallest, so an asc board can open with pairs whose metric the provider never reported (a pool with no liquidity figure, say) instead of the thinnest real ones. To rank only rows that carry the metric, pair asc with that metric's ceiling (maxLiquidityUsd for liquidity, maxVolumeUsd for volume, maxTxnCount for txns, and so on): a ceiling on this channel matches only rows that carry the field, so a generous one removes the valueless rows without bounding the rest.",
             "enum": [
               "desc",
               "asc"

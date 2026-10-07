@@ -31,9 +31,13 @@
  *
  *  - HTTP `/dex/chart/amm/v3/{ammId}/bars/{chain}/{pairId}` serves `1S` through
  *    `720` and answers HTTP 400 for `5S` and for daily and above (measured).
- *  - The feed WebSocket `getHistoricalBars` serves every one of the 18
- *    resolutions including `S5`, `D1`, `W1` and `MO1`, and serves market-cap
- *    bars with NO supply argument.
+ *  - The feed WebSocket RPC `/dex_feed.PublicWSService/GetHistoricalBars`
+ *    (the `util_envelope` protocol, `../codec/feed-envelope.ts`) serves every
+ *    one of the 18 resolutions including `S5`, `D1`, `W1` and `MO1`, and serves
+ *    market-cap bars with NO supply argument (re-measured on the envelope
+ *    protocol 2026-10-07: a 60-bar D1 market-cap page, STATUS_OK). The retired
+ *    `dex_feed.WSCommand.getHistoricalBars` command it replaced goes
+ *    unanswered since the site's 2026-10 deploy.
  *
  * So the resolution decides the transport. Both were measured agreeing exactly:
  * across 999 H1 bars, all 998 COMPLETED bars matched on native close, USD close
@@ -55,6 +59,14 @@
  * `abn` (afterBlockNumber) is MEASURED DEAD as a forward anchor: with a block
  * from 2024 it returned the newest 48 bars, 88 days past the target. It appears
  * nowhere in this module by design.
+ *
+ * NAMED OMISSION 3 (provider-depth decree). `GetHistoricalBarsRequest` gained
+ * `beforeTimestampInMs` (field 10) in the 2026-10 deploy, which reads like an
+ * exact time anchor that would replace the trade-based one above. It is NOT
+ * sent: measured 2026-10-07, D1 with `beforeTimestampInMs` thirty days back
+ * answered the NEWEST five bars (2026-10-03 to 10-07), so the field is ignored
+ * on its own, and the HTTP transport has no equivalent at all. The block
+ * anchor stays the one cursor both transports share.
  */
 
 import {
@@ -62,15 +74,21 @@ import {
   type PlBar,
 } from "../codec/dsavro-schemas.js";
 import { decodeDsAvro } from "../codec/dsavro.js";
-import { encodeDexScreenerCommand } from "../codec/encode.js";
-import { decodeDexScreenerMessageToJson } from "../codec/protobuf.js";
+import {
+  DEXSCREENER_FEED_WS_URL,
+  encodeFeedRequest,
+  isTransientFeedStatus,
+  nextFeedRequestId,
+  readFeedResponse,
+  type FeedResponse,
+  type FeedStatus,
+} from "../codec/feed-envelope.js";
 import {
   DexScreenerSiteErrorCodes,
   isDexScreenerSiteError,
   siteError,
 } from "../site-errors.js";
 import type { DexScreenerTransport } from "../transport.js";
-import { DEXSCREENER_FEED_WS_URL } from "./pair-live.js";
 
 /** The site host that serves the HTTP chart endpoint. */
 export const DEXSCREENER_CHART_ORIGIN = "https://io.dexscreener.com";
@@ -85,7 +103,11 @@ export const DEXSCREENER_CHART_ORIGIN = "https://io.dexscreener.com";
  *
  * THE LOWER BOUND IS LOAD-BEARING AND MUST STAY. A `limit` of -1 TEARS THE
  * SOCKET DOWN with no answer at all (measured 4 of 4 attempts across two
- * spaced sessions), and `limit` of 0 returns an empty page that is
+ * spaced sessions on the retired protocol, and again once on the envelope
+ * protocol 2026-10-07: close 1006 with nothing sent, after which the next two
+ * upgrades were refused with HTTP 520 and 503 for about eight seconds, so the
+ * request appears to take the provider's feed backend down with it; do not
+ * re-probe it), and `limit` of 0 returns an empty page that is
  * indistinguishable from a genuine end of history. Nothing in this module ever
  * sends a negative count today, because the walk always asks for
  * `BARS_PER_CALL` and the tool's own `limit` is floored at 1; that floor is
@@ -106,29 +128,26 @@ export const BARS_MAX_BYTES = 2_000_000;
 /**
  * COUNTABLE frames to collect on the feed socket while looking for the answer.
  *
- * ONE, because `feed/ws` is strictly request-response: one command produces
- * exactly one countable frame and that frame IS the answer. Measured 2026-08-25
- * against the live endpoint, with the bridge's own frame accounting: a bars
- * command produced `[13873, 0, 0]` with the 13,873-byte `historicalBars`
- * answer arriving at t=0.38 s and every later frame a zero-length keepalive.
- * The same shape on trades (`[27484, 0, 0]`, answer at 0.54 s) and on token
- * insight (`[6, 0, 0]`, answer at 0.15 s), and a rejected argument answers with
- * a 6-byte frame that is likewise the first and only countable one.
+ * ONE, because `GetHistoricalBars` is a unary envelope RPC: one request frame
+ * produces exactly one `ServerEnvelope.response` frame carrying the request's
+ * id, and that frame IS the answer. Measured live 2026-10-07:
+ * the first non-empty frame was the 16,688-byte response at ~1-2 s (the
+ * retired protocol measured `[13873, 0, 0]` the same way); everything else
+ * the socket sends is a zero-length keepalive, about every 15 s.
  *
  * THIS VALUE WAS 4 AND THAT WAS A GUARANTEED TIMEOUT. A zero-length binary
  * frame is a keepalive and does not count toward `binaryFrames` (the
  * `WsExpectation` contract), so a budget above the number of countable frames
  * the channel actually emits can never be met: the exchange blocks until
  * `CHANNEL_TIMEOUT_MS` and throws `TRANSPORT_TIMEOUT` while holding the answer
- * that arrived in under a second. The keepalives used to pad the count and
- * mask it; they no longer do.
+ * that arrived in under a second.
  *
  * The arithmetic any change must satisfy: frames x inter-frame interval must
  * stay under the caller's deadline. On this channel the interval after the
  * answer is INFINITE, because no further countable frame is ever sent, so any
  * value above 1 fails that test outright rather than merely being slow.
- * Dispatch is on the protobuf oneof and the correlation id, never on frame
- * index, so a lead frame would still be handled correctly if one ever appeared.
+ * Dispatch is on the envelope arm and id, never on frame index, so a lead
+ * frame would still be handled correctly if one ever appeared.
  */
 export const BARS_FRAMES = 1;
 
@@ -295,12 +314,13 @@ export interface BarsPageOptions {
   /** Anchor: return bars strictly BEFORE this block. Omit for the newest page. */
   readonly beforeBlockNumber?: number;
   /**
-   * Correlation id for the socket command.
+   * The envelope id of the socket request (`util_envelope.ClientEnvelope.id`).
    *
-   * The feed socket MULTIPLEXES: an answer is this call's answer only when its
-   * `cid` matches, and a module-wide constant would make two concurrent calls
-   * indistinguishable. It defaults to a fresh value per call, and is settable
-   * so a test can replay a capture taken under the id the site itself used.
+   * An answer is this call's answer only when its `ServerEnvelope.id` matches,
+   * and a module-wide constant would make two concurrent calls on one socket
+   * indistinguishable. It defaults to a fresh process-wide value per call
+   * (`nextFeedRequestId`), and is settable so a test can replay a capture
+   * under the id it was taken with.
    */
   readonly correlationId?: number;
   readonly timeoutMs: number;
@@ -459,37 +479,18 @@ function orderExtremes(
 
 /* --- Feed WebSocket transport ---------------------------------------- */
 
-/**
- * A fresh correlation id per command, in 1..1,000,000.
- *
- * Per CALL, never per module: the socket multiplexes, so two concurrent bars
- * requests sharing one id could each read the other's answer.
- *
- * The range starts at 1 rather than 0 because dispatch is by id and 0 is the
- * value an OMITTED cid decodes to, so a zero would make "this call's answer"
- * and "an answer to a command that named no call" the same match. That an
- * omitted cid goes UNANSWERED was recorded once as a provider property and is
- * NOT one: the same shape was answered on a later measurement, with 2,747
- * bytes at 0.79 s. It is an observation, not a contract, and nothing here
- * depends on it either way.
- */
-let barsCidCounter = 0;
-
-function nextBarsCid(): number {
-  barsCidCounter = (barsCidCounter % 1_000_000) + 1;
-  return barsCidCounter;
-}
-
 async function fetchBarsPageWs(options: BarsPageOptions): Promise<BarsPage> {
   const spec = RESOLUTIONS[options.resolution];
-  const cid = options.correlationId ?? nextBarsCid();
+  // Per CALL, never per module: an answer belongs to a request only by its
+  // envelope id, and the id counter is shared with trades and insight.
+  const id = options.correlationId ?? nextFeedRequestId();
   // `inverted` is expressed by SWAPPING the quote token on this transport: the
-  // command carries a quoteTokenId and no inversion flag. The caller therefore
+  // request carries a quoteTokenId and no inversion flag. The caller therefore
   // gets an inverted series only when it can name the other side of the pair,
   // which the subject resolver always can.
-  const command = encodeDexScreenerCommand("dex_feed.WSCommand", {
-    getHistoricalBars: {
-      cid,
+  const request = encodeFeedRequest(
+    "GetHistoricalBars",
+    {
       limit: options.countBack,
       chainId: options.chainId,
       pairId: options.pairAddress,
@@ -502,25 +503,39 @@ async function fetchBarsPageWs(options: BarsPageOptions): Promise<BarsPage> {
         ? {}
         : { beforeBlockNumber: String(options.beforeBlockNumber) }),
     },
-  });
+    id
+  );
 
   const frames = await options.transport.wsExchange(DEXSCREENER_FEED_WS_URL, {
-    send: [command],
+    send: [request],
     expect: { binaryFrames: BARS_FRAMES, maxTotalBytes: BARS_MAX_BYTES },
     timeoutMs: options.timeoutMs,
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
 
-  const page = readBarsFrames(frames, cid);
-  if (page === null) {
+  const answer = readBarsFrames(frames, id);
+  const subject = `${options.resolution} bars on ${options.chainId}:${options.pairAddress}`;
+  if (answer === null) {
     throw siteError(
       DexScreenerSiteErrorCodes.BARS_NO_RESULT_FRAME,
-      `The DexScreener feed socket sent ${frames.length} binary frames without a historicalBars answer for ${options.resolution} bars on ${options.chainId}:${options.pairAddress}`,
+      `The DexScreener feed socket sent ${frames.length} binary frames without a response to the GetHistoricalBars request for ${subject}`,
       "The socket answered, so this is neither an outage nor proof the pool has no history. Retry once; if it repeats, check the AMM id and quote token with dexscreener__pair_get."
     );
   }
+  if (answer.status !== "STATUS_OK") {
+    const transient = isTransientFeedStatus(answer.status);
+    throw siteError(
+      transient
+        ? DexScreenerSiteErrorCodes.BARS_PROVIDER_TRANSIENT
+        : DexScreenerSiteErrorCodes.BARS_INVALID,
+      `The DexScreener feed socket answered ${answer.status} to the GetHistoricalBars request for ${subject}`,
+      transient
+        ? "This is a provider-side failure on a read-only request, and RETRYING IS APPROPRIATE: retry once or twice with a short pause. Nothing here says the pool has no price history, and there is no parameter for you to correct: the AMM id and quote token were resolved by this tool, not supplied by you."
+        : "The provider rejected this request rather than failing on it, and the identical request will be rejected again. Confirm the pair identity with dexscreener__pair_get. An unknown pool is NOT this case: it answers OK with no bars."
+    );
+  }
   return {
-    ...page,
+    bars: answer.bars,
     transport: "feed_ws",
     url: DEXSCREENER_FEED_WS_URL,
     bytes: frames.reduce((sum, frame) => sum + frame.byteLength, 0),
@@ -528,41 +543,51 @@ async function fetchBarsPageWs(options: BarsPageOptions): Promise<BarsPage> {
   };
 }
 
+/** The feed socket's answer to one bars request. */
+export interface BarsFeedAnswer {
+  /** `util_envelope.Status` of the response, verbatim. */
+  readonly status: FeedStatus;
+  /** Empty unless `status` is `STATUS_OK`; an OK answer may itself be empty. */
+  readonly bars: readonly ProjectedBar[];
+}
+
 /**
  * Find this call's bars among the frames the feed socket sent.
  *
  * Exported because the two contracts that matter here are provable from
- * captured bytes alone: dispatch is on the protobuf ONEOF and the CORRELATION
- * ID, never on frame position, and a frame carrying a non-OK command code is
- * an answer of "none" rather than a decode failure.
+ * captured bytes alone: dispatch is on the envelope ARM and ID, never on frame
+ * position, and a response carrying a non-OK status is an answer with a status
+ * rather than a decode failure. An OK payload that is not a
+ * `GetHistoricalBarsResponse` is `BARS_INVALID`.
+ *
+ * Returns null when no frame answers this id.
  */
 export function readBarsFrames(
   frames: readonly Uint8Array[],
-  cid: number
-): { readonly bars: readonly ProjectedBar[] } | null {
-  for (const bytes of frames) {
-    if (bytes.byteLength === 0) continue;
-    let decoded: unknown;
-    try {
-      decoded = decodeDexScreenerMessageToJson("dex_feed.WSMessage", bytes, {
-        maxBytes: BARS_MAX_BYTES,
-      });
-    } catch (error) {
-      if (
-        isDexScreenerSiteError(error) &&
-        error.code === DexScreenerSiteErrorCodes.RESPONSE_OVER_CAP
-      ) {
-        throw error;
-      }
-      continue;
+  id: number
+): BarsFeedAnswer | null {
+  let answer: FeedResponse | null;
+  try {
+    answer = readFeedResponse(frames, id, "GetHistoricalBars", BARS_MAX_BYTES);
+  } catch (error) {
+    if (
+      isDexScreenerSiteError(error) &&
+      error.code === DexScreenerSiteErrorCodes.RESPONSE_OVER_CAP
+    ) {
+      throw error;
     }
-    const arm = asObject(asObject(decoded)?.["historicalBars"]);
-    if (arm === null) continue;
-    if (readNumber(arm["cid"]) !== cid) continue;
-    const bars = Array.isArray(arm["bars"]) ? arm["bars"] : [];
-    return { bars: bars.map(projectWsBar) };
+    throw siteError(
+      DexScreenerSiteErrorCodes.BARS_INVALID,
+      "The feed socket's OK response to a GetHistoricalBars request did not decode as dex_feed.GetHistoricalBarsResponse",
+      "The wire schema may have changed. Re-run the descriptor drift test and re-capture the feed-envelope fixtures before trusting this channel."
+    );
   }
-  return null;
+  if (answer === null) return null;
+  const raw = asObject(answer.payload)?.["bars"];
+  return {
+    status: answer.status,
+    bars: (Array.isArray(raw) ? raw : []).map(projectWsBar),
+  };
 }
 
 function projectWsBar(value: unknown): ProjectedBar {

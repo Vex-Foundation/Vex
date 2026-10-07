@@ -1,3 +1,22 @@
+// ===== dex_feed/bar.proto (package dex_feed)
+enum BarResolution { BAR_RESOLUTION_UNSPECIFIED=0; BAR_RESOLUTION_S1=1; BAR_RESOLUTION_S5=2; BAR_RESOLUTION_S15=3; BAR_RESOLUTION_S30=4; BAR_RESOLUTION_M1=5; BAR_RESOLUTION_M3=6; BAR_RESOLUTION_M5=7; BAR_RESOLUTION_M15=8; BAR_RESOLUTION_M30=9; BAR_RESOLUTION_H1=10; BAR_RESOLUTION_H2=11; BAR_RESOLUTION_H4=12; BAR_RESOLUTION_H8=13; BAR_RESOLUTION_H12=14; BAR_RESOLUTION_D1=15; BAR_RESOLUTION_D3=16; BAR_RESOLUTION_W1=17; BAR_RESOLUTION_MO1=18; }
+enum BarType { BAR_TYPE_UNSPECIFIED=0; BAR_TYPE_PRICE=1; BAR_TYPE_MARKET_CAP=2; }
+message Bar {
+  optional google.protobuf.Timestamp timestamp = 1;
+  optional string openNative = 2;
+  optional google.protobuf.StringValue openUSD = 3;
+  optional string highNative = 4;
+  optional google.protobuf.StringValue highUSD = 5;
+  optional string lowNative = 6;
+  optional google.protobuf.StringValue lowUSD = 7;
+  optional string closeNative = 8;
+  optional google.protobuf.StringValue closeUSD = 9;
+  optional string volumeToken0 = 13;
+  optional string volumeToken1 = 14;
+  optional google.protobuf.StringValue volumeUSD = 10;
+  optional uint64 minBlockNumber = 11;
+  optional uint64 maxBlockNumber = 12;
+}
 
 // ===== dex_feed/mark.proto (package dex_feed)
 message Mark {
@@ -22,6 +41,154 @@ message Mark {
     optional google.protobuf.Timestamp timestamp = 9;
   }
   optional dex_feed.Mark.TransactionMark transactionMark = 1; [oneof type]
+}
+
+// ===== dex_feed/public_service.proto (package dex_feed)
+message GetTransactionsRequest {
+  optional string chainId = 1;
+  optional string ammId = 2;
+  optional string pairId = 3;
+  optional bool invert = 4;
+  optional string quoteTokenAddress = 5;
+  optional google.protobuf.UInt64Value beforeBlockNumber = 6;
+  optional google.protobuf.UInt64Value afterBlockNumber = 7;
+  optional google.protobuf.Timestamp timestampStart = 8;
+  optional google.protobuf.Timestamp timestampEnd = 9;
+  optional google.protobuf.StringValue type = 10;
+  optional google.protobuf.StringValue maker = 11;
+  optional google.protobuf.StringValue volumeUSDMin = 12;
+  optional google.protobuf.StringValue volumeUSDMax = 13;
+  optional google.protobuf.StringValue amount0Min = 14;
+  optional google.protobuf.StringValue amount0Max = 15;
+  optional google.protobuf.StringValue amount1Min = 16;
+  optional google.protobuf.StringValue amount1Max = 17;
+}
+message GetTransactionsResponse {
+  repeated dex_feed.Transaction transactions = 1;
+}
+service PublicService { rpc GetTransactions(dex_feed.GetTransactionsRequest) returns (dex_feed.GetTransactionsResponse); }
+
+// ===== dex_feed/public_ws_service.proto (package dex_feed)
+message GetHistoricalTransactionsRequest {
+  enum Type { TYPE_UNSPECIFIED=0; TYPE_BUY=1; TYPE_SELL=2; TYPE_BUY_OR_SELL=3; TYPE_ADD=4; TYPE_REMOVE=5; TYPE_ADD_OR_REMOVE=6; }
+  optional string chainId = 1;
+  optional string ammId = 2;
+  optional string pairId = 3;
+  optional string quoteTokenId = 4;
+  optional dex_feed.GetHistoricalTransactionsRequest.Type type = 5;
+  optional google.protobuf.StringValue volumeUSDMin = 6;
+  optional google.protobuf.StringValue volumeUSDMax = 7;
+  optional google.protobuf.StringValue amount0Min = 8;
+  optional google.protobuf.StringValue amount0Max = 9;
+  optional google.protobuf.StringValue amount1Min = 10;
+  optional google.protobuf.StringValue amount1Max = 11;
+  optional google.protobuf.Timestamp timestampStart = 12;
+  optional google.protobuf.Timestamp timestampEnd = 13;
+  optional google.protobuf.StringValue maker = 14;
+  optional dex_feed.TransactionIdentity before = 15;
+  optional dex_feed.TransactionIdentity after = 16;
+}
+message GetHistoricalTransactionsResponse {
+  repeated dex_feed.Transaction transactions = 1;
+}
+message SubscribeTransactionsRequest {
+  optional string chainId = 1;
+  optional string ammId = 2;
+  optional string pairId = 3;
+  optional string quoteTokenId = 4;
+}
+message SubscribeTransactionsResponse {
+  repeated dex_feed.Transaction transactions = 1;
+}
+message GetHistoricalBarsRequest {
+  optional int32 limit = 1;
+  optional string chainId = 2;
+  optional string pairId = 3;
+  optional string ammId = 4;
+  optional dex_feed.BarResolution resolution = 5;
+  optional dex_feed.BarType type = 6;
+  optional string quoteTokenId = 7;
+  optional google.protobuf.UInt64Value beforeBlockNumber = 8;
+  optional google.protobuf.UInt64Value beforeTimestampInMs = 10;
+}
+message GetHistoricalBarsResponse {
+  repeated dex_feed.Bar bars = 1;
+}
+message GetTokenInsightRequest {
+  optional string chainId = 1;
+  optional string tokenId = 2;
+}
+message GetTokenInsightResponse {
+  optional dex_feed.TokenInsight tokenInsight = 1;
+}
+message SubscribeTokenInsightsByTokenRequest {
+  optional string chainId = 1;
+  optional string tokenId = 2;
+}
+message SubscribeTokenInsightsByTokenResponse {
+  repeated dex_feed.TokenInsight tokenInsights = 1;
+}
+message SubscribeTokenInsightsRequest {
+}
+message SubscribeTokenInsightsResponse {
+  repeated dex_feed.TokenInsight tokenInsights = 1;
+}
+message SubscribeLatestBlockRequest {
+  optional string chainId = 1;
+}
+message SubscribeLatestBlockResponse {
+  optional dex_screener_schema.Block latestBlock = 1;
+}
+message SubscribePairsRequest {
+  message Identity {
+    optional string chainId = 1;
+    optional string caseInsensitivePairIdOrTokenId = 2;
+  }
+  optional dex_screener_query.Filters filters = 2;
+  optional dex_screener_schema.RankBy rankBy = 3;
+  optional dex_screener_schema.TimeframeKey timeframe = 4;
+  optional uint32 page = 5;
+  repeated dex_feed.SubscribePairsRequest.Identity identities = 6;
+}
+message SubscribePairsResponse {
+  optional dex_screener_schema.Stats stats = 1;
+  repeated dex_screener_schema.Pair pairs = 2;
+  optional uint32 pairsCount = 3;
+}
+message SubscribeAggregatedPairsRequest {
+  optional dex_screener_query.Filters filters = 1;
+  optional dex_screener_schema.RankBy rankBy = 2;
+  optional dex_screener_schema.TimeframeKey timeframe = 3;
+  optional uint32 page = 4;
+}
+message SubscribeAggregatedPairsResponse {
+  optional dex_screener_schema.Stats stats = 1;
+  repeated dex_screener_schema.Pair pairs = 2;
+  optional uint32 pairsCount = 3;
+}
+service PublicWSService { rpc SubscribeTransactions(dex_feed.SubscribeTransactionsRequest) returns (stream dex_feed.SubscribeTransactionsResponse); rpc GetHistoricalTransactions(dex_feed.GetHistoricalTransactionsRequest) returns (dex_feed.GetHistoricalTransactionsResponse); rpc GetHistoricalBars(dex_feed.GetHistoricalBarsRequest) returns (dex_feed.GetHistoricalBarsResponse); rpc GetTokenInsight(dex_feed.GetTokenInsightRequest) returns (dex_feed.GetTokenInsightResponse); rpc SubscribeTokenInsightsByToken(dex_feed.SubscribeTokenInsightsByTokenRequest) returns (dex_feed.SubscribeTokenInsightsByTokenResponse); rpc SubscribeTokenInsights(dex_feed.SubscribeTokenInsightsRequest) returns (stream dex_feed.SubscribeTokenInsightsResponse); rpc SubscribeLatestBlock(dex_feed.SubscribeLatestBlockRequest) returns (stream dex_feed.SubscribeLatestBlockResponse); rpc SubscribePairs(dex_feed.SubscribePairsRequest) returns (stream dex_feed.SubscribePairsResponse); rpc SubscribeAggregatedPairs(dex_feed.SubscribeAggregatedPairsRequest) returns (stream dex_feed.SubscribeAggregatedPairsResponse); }
+
+// ===== dex_feed/token_insight.proto (package dex_feed)
+message TokenInsight {
+  message Token {
+    optional google.protobuf.StringValue name = 1;
+    optional google.protobuf.StringValue symbol = 2;
+    optional google.protobuf.StringValue iconId = 3;
+    optional google.protobuf.StringValue headerId = 4;
+  }
+  message Pair {
+    optional google.protobuf.DoubleValue volumeH24 = 1;
+    optional google.protobuf.DoubleValue priceChangeH24 = 2;
+    optional google.protobuf.DoubleValue marketCap = 3;
+    optional google.protobuf.Timestamp createdAt = 4;
+  }
+  optional string tokenId = 1;
+  optional string chainId = 2;
+  optional string title = 3;
+  optional string content = 4;
+  optional google.protobuf.Timestamp createdAt = 5;
+  optional dex_feed.TokenInsight.Token token = 6;
+  optional dex_feed.TokenInsight.Pair pair = 7;
 }
 
 // ===== dex_feed/trader_screener.proto (package dex_feed)
@@ -79,234 +246,150 @@ message TransactionIdentity {
   optional uint32 eventIndex = 3;
 }
 
-// ===== dex_feed/public_service.proto (package dex_feed)
-message GetTransactionsRequest {
-  optional string chainId = 1;
-  optional string ammId = 2;
-  optional string pairId = 3;
-  optional bool invert = 4;
-  optional string quoteTokenAddress = 5;
-  optional google.protobuf.UInt64Value beforeBlockNumber = 6;
-  optional google.protobuf.UInt64Value afterBlockNumber = 7;
-  optional google.protobuf.Timestamp timestampStart = 8;
-  optional google.protobuf.Timestamp timestampEnd = 9;
-  optional google.protobuf.StringValue type = 10;
-  optional google.protobuf.StringValue maker = 11;
-  optional google.protobuf.StringValue volumeUSDMin = 12;
-  optional google.protobuf.StringValue volumeUSDMax = 13;
-  optional google.protobuf.StringValue amount0Min = 14;
-  optional google.protobuf.StringValue amount0Max = 15;
-  optional google.protobuf.StringValue amount1Min = 16;
-  optional google.protobuf.StringValue amount1Max = 17;
-}
-message GetTransactionsResponse {
-  repeated dex_feed.Transaction transactions = 1;
-}
-service PublicService { rpc GetTransactions(dex_feed.GetTransactionsRequest) returns (dex_feed.GetTransactionsResponse); }
-
-// ===== dex_feed/token_insight.proto (package dex_feed)
-message TokenInsight {
-  message Token {
-    optional google.protobuf.StringValue name = 1;
-    optional google.protobuf.StringValue symbol = 2;
-    optional google.protobuf.StringValue iconId = 3;
-    optional google.protobuf.StringValue headerId = 4;
-  }
-  message Pair {
-    optional google.protobuf.DoubleValue volumeH24 = 1;
-    optional google.protobuf.DoubleValue priceChangeH24 = 2;
-    optional google.protobuf.DoubleValue marketCap = 3;
-    optional google.protobuf.Timestamp createdAt = 4;
-  }
-  optional string tokenId = 1;
-  optional string chainId = 2;
-  optional string title = 3;
-  optional string content = 4;
-  optional google.protobuf.Timestamp createdAt = 5;
-  optional dex_feed.TokenInsight.Token token = 6;
-  optional dex_feed.TokenInsight.Pair pair = 7;
-}
-
-// ===== dex_feed/ws.proto (package dex_feed)
-enum WSCommandCode { WS_COMMAND_CODE_UNSPECIFIED=0; WS_COMMAND_CODE_OK=1; WS_COMMAND_CODE_INVALID_ARGUMENT=2; WS_COMMAND_CODE_DEADLINE_EXCEEDED=3; WS_COMMAND_CODE_NOT_FOUND=4; WS_COMMAND_CODE_INTERNAL=5; WS_COMMAND_CODE_CANCELED=6; }
-message TransactionsParams {
-  optional string chainId = 1;
-  optional string ammId = 2;
-  optional string pairId = 3;
-  optional string quoteTokenId = 4;
-}
-message TokenInsightsParams {
-}
-message WSCommand {
-  message Cancel {
-    optional uint32 cid = 1;
-  }
-  message GetHistoricalBars {
-    optional uint32 cid = 1;
-    optional int32 limit = 2;
-    optional string chainId = 3;
-    optional string pairId = 4;
-    optional string ammId = 5;
-    optional dex_feed.BarResolution resolution = 6;
-    optional dex_feed.BarType type = 7;
-    optional string quoteTokenId = 8;
-    optional google.protobuf.UInt64Value beforeBlockNumber = 9;
-  }
-  message SubscribeTransactions {
-    optional dex_feed.TransactionsParams params = 1;
-  }
-  message UnsubscribeTransactions {
-    optional dex_feed.TransactionsParams params = 1;
-  }
-  message GetHistoricalTransactions {
-    enum Type { TYPE_UNSPECIFIED=0; TYPE_BUY=1; TYPE_SELL=2; TYPE_BUY_OR_SELL=3; TYPE_ADD=4; TYPE_REMOVE=5; TYPE_ADD_OR_REMOVE=6; }
-    optional uint32 cid = 1;
-    optional string chainId = 2;
-    optional string ammId = 3;
-    optional string pairId = 4;
-    optional string quoteTokenId = 5;
-    optional dex_feed.WSCommand.GetHistoricalTransactions.Type type = 6;
-    optional google.protobuf.StringValue volumeUSDMin = 7;
-    optional google.protobuf.StringValue volumeUSDMax = 8;
-    optional google.protobuf.StringValue amount0Min = 9;
-    optional google.protobuf.StringValue amount0Max = 10;
-    optional google.protobuf.StringValue amount1Min = 11;
-    optional google.protobuf.StringValue amount1Max = 12;
-    optional google.protobuf.Timestamp timestampStart = 15;
-    optional google.protobuf.Timestamp timestampEnd = 16;
-    optional google.protobuf.StringValue maker = 17;
-    optional dex_feed.TransactionIdentity before = 18;
-    optional dex_feed.TransactionIdentity after = 19;
-  }
-  message SubscribeTokenInsights {
-    optional dex_feed.TokenInsightsParams params = 1;
-  }
-  message UnsubscribeTokenInsights {
-    optional dex_feed.TokenInsightsParams params = 1;
-  }
-  message GetTokenInsight {
-    optional uint32 cid = 1;
-    optional string chainId = 2;
-    optional string tokenId = 3;
-  }
-  optional dex_feed.WSCommand.Cancel cancel = 15; [oneof payload]
-  optional dex_feed.WSCommand.GetHistoricalBars getHistoricalBars = 8; [oneof payload]
-  optional dex_feed.WSCommand.SubscribeTransactions subscribeTransactions = 9; [oneof payload]
-  optional dex_feed.WSCommand.UnsubscribeTransactions unsubscribeTransactions = 10; [oneof payload]
-  optional dex_feed.WSCommand.GetHistoricalTransactions getHistoricalTransactions = 11; [oneof payload]
-  optional dex_feed.WSCommand.SubscribeTokenInsights subscribeTokenInsights = 12; [oneof payload]
-  optional dex_feed.WSCommand.UnsubscribeTokenInsights unsubscribeTokenInsights = 13; [oneof payload]
-  optional dex_feed.WSCommand.GetTokenInsight getTokenInsight = 14; [oneof payload]
-}
-message WSMessage {
-  message HistoricalBars {
-    optional uint32 cid = 1;
-    repeated dex_feed.Bar bars = 3;
-    optional dex_feed.WSCommandCode code = 4;
-  }
-  message Transactions {
-    optional dex_feed.TransactionsParams params = 1;
-    repeated dex_feed.Transaction transactions = 2;
-  }
-  message TransactionsComplete {
-    optional dex_feed.TransactionsParams params = 1;
-    optional dex_feed.WSCommandCode code = 2;
-  }
-  message HistoricalTransactions {
-    optional uint32 cid = 1;
-    repeated dex_feed.Transaction transactions = 3;
-    optional dex_feed.WSCommandCode code = 4;
-  }
-  message TokenInsights {
-    optional dex_feed.TokenInsightsParams params = 1;
-    repeated dex_feed.TokenInsight tokenInsights = 3;
-  }
-  message TokenInsightsComplete {
-    optional dex_feed.TokenInsightsParams params = 1;
-    optional dex_feed.WSCommandCode code = 2;
-  }
-  message TokenInsight {
-    optional uint32 cid = 1;
-    optional dex_feed.WSCommandCode code = 3;
-    optional dex_feed.TokenInsight tokenInsight = 4;
-  }
-  optional dex_feed.WSMessage.HistoricalBars historicalBars = 5; [oneof payload]
-  optional dex_feed.WSMessage.Transactions transactions = 6; [oneof payload]
-  optional dex_feed.WSMessage.TransactionsComplete transactionsComplete = 10; [oneof payload]
-  optional dex_feed.WSMessage.HistoricalTransactions historicalTransactions = 7; [oneof payload]
-  optional dex_feed.WSMessage.TokenInsights tokenInsights = 8; [oneof payload]
-  optional dex_feed.WSMessage.TokenInsightsComplete tokenInsightsComplete = 11; [oneof payload]
-  optional dex_feed.WSMessage.TokenInsight tokenInsight = 9; [oneof payload]
-}
-
-// ===== dexscreener_cms/cms_token.proto (package dexscreener_cms)
-message TokenLink {
-  optional google.protobuf.StringValue label = 1;
-  optional string url = 2;
-  optional dex_screener_schema.LinkType type = 3;
-}
-message TokenLinkWithType {
-  optional google.protobuf.StringValue label = 1;
-  optional google.protobuf.StringValue type = 2;
-  optional string url = 3;
-}
-message TokenAsset {
-  optional string id = 1;
-}
-message PartialToken {
-  optional string id = 1;
-  optional string chainId = 2;
-  optional string address = 3;
-  optional google.protobuf.StringValue description = 4;
-  repeated dexscreener_cms.TokenLinkWithType links = 5;
-  optional google.protobuf.StringValue name = 6;
-  optional google.protobuf.StringValue symbol = 7;
-  optional google.protobuf.Timestamp createdAt = 8;
-  optional bool nsfw = 9;
-  optional dexscreener_cms.TokenAsset icon = 10;
-  optional dexscreener_cms.TokenAsset header = 11;
-}
-
-// ===== dex_search/server.proto (package dex_search)
-message SearchPairsResponse {
-  repeated dex_screener_schema.Pair pairs = 1;
-}
-message SpotlightResponse {
-  message Boosts {
-    message Top {
-      optional string chainId = 1;
-      optional string tokenAddress = 2;
-      optional string tokenSymbol = 3;
-      optional int32 totalAmount = 4;
-      optional google.protobuf.StringValue tokenImageURL = 5;
-    }
-    message Recent {
-      optional string chainId = 1;
-      optional string tokenAddress = 2;
-      optional string tokenSymbol = 3;
-      optional int32 totalAmount = 4;
-      optional int32 amount = 5;
-      optional google.protobuf.StringValue tokenImageURL = 6;
-    }
-    repeated dex_search.SpotlightResponse.Boosts.Top top = 1;
-    repeated dex_search.SpotlightResponse.Boosts.Recent recent = 2;
-  }
-  message LatestProfile {
-    message Boosts {
-      optional int32 legacyActive = 1;
-      optional uint64 active = 2;
-    }
-    optional dexscreener_cms.PartialToken token = 1;
-    optional dex_search.SpotlightResponse.LatestProfile.Boosts boosts = 2;
-  }
-  optional dex_search.SpotlightResponse.Boosts boosts = 1;
-  repeated dex_search.SpotlightResponse.LatestProfile latestProfiles = 2;
-}
-
 // ===== dex_metas/dex_metas.proto (package dex_metas)
 message GetTrendingMetasFilter {
   optional google.protobuf.StringValue chainId = 1;
   optional google.protobuf.UInt32Value limit = 2;
+}
+
+// ===== dex_screener/server.proto (package dex_screener)
+message PairChannelResponse {
+  optional dex_screener_schema.Pair pair = 2;
+}
+message PairChannelMessage {
+  message Pair {
+    optional dex_screener_schema.Pair pair = 2;
+  }
+  optional dex_screener.PairChannelMessage.Pair pair = 1; [oneof payload]
+}
+message PairsChannelResponse {
+  optional dex_screener_schema.Stats stats = 1;
+  repeated dex_screener_schema.Pair pairs = 2;
+  optional uint32 pairsCount = 3;
+  optional dex_screener_schema.Block latestBlock = 4;
+}
+message PairsChannelMessage {
+  message Pairs {
+    optional dex_screener_schema.Stats stats = 1;
+    repeated dex_screener_schema.Pair pairs = 2;
+    optional uint32 pairsCount = 3;
+  }
+  message LatestBlock {
+    optional dex_screener_schema.Block latestBlock = 1;
+  }
+  optional dex_screener.PairsChannelMessage.Pairs pairs = 1; [oneof payload]
+  optional dex_screener.PairsChannelMessage.LatestBlock latestBlock = 2; [oneof payload]
+}
+message TokensChannelResponse {
+  optional dex_screener_schema.Stats stats = 1;
+  repeated dex_screener_schema.Pair pairs = 2;
+  optional uint32 pairsCount = 3;
+  optional dex_screener_schema.Block latestBlock = 4;
+}
+message TokensChannelMessage {
+  message Pairs {
+    optional dex_screener_schema.Stats stats = 1;
+    repeated dex_screener_schema.Pair pairs = 2;
+    optional uint32 pairsCount = 3;
+  }
+  message LatestBlock {
+    optional dex_screener_schema.Block latestBlock = 1;
+  }
+  optional dex_screener.TokensChannelMessage.Pairs pairs = 1; [oneof payload]
+  optional dex_screener.TokensChannelMessage.LatestBlock latestBlock = 2; [oneof payload]
+}
+message PairsSearchChannelCommand {
+  message Subscribe {
+    message Id {
+      optional string chainId = 1;
+      optional string id = 2;
+    }
+    repeated dex_screener.PairsSearchChannelCommand.Subscribe.Id ids = 1;
+    optional dex_screener_query.Filters filters = 2;
+    optional dex_screener_schema.RankBy rankBy = 3;
+    optional dex_screener_schema.TimeframeKey timeframe = 4;
+    optional uint32 page = 5;
+  }
+  optional dex_screener.PairsSearchChannelCommand.Subscribe subscribe = 1; [oneof payload]
+}
+message PairsSearchChannelMessage {
+  message LatestBlock {
+    optional dex_screener_schema.Block latestBlock = 1;
+  }
+  message Pairs {
+    optional dex_screener_schema.Stats stats = 1;
+    repeated dex_screener_schema.Pair pairs = 2;
+    optional uint32 pairsCount = 3;
+  }
+  optional dex_screener.PairsSearchChannelMessage.LatestBlock latestBlock = 1; [oneof payload]
+  optional dex_screener.PairsSearchChannelMessage.Pairs pairs = 2; [oneof payload]
+}
+
+// ===== dex_screener_query/filters.proto (package dex_screener_query)
+message MinMaxInt {
+  optional google.protobuf.Int32Value min = 1;
+  optional google.protobuf.Int32Value max = 2;
+}
+message MinMaxDouble {
+  optional google.protobuf.DoubleValue min = 1;
+  optional google.protobuf.DoubleValue max = 2;
+}
+message Filters {
+  message TxnsEntry {
+    optional string key = 1;
+    optional dex_screener_query.MinMaxInt value = 2;
+  }
+  message BuysEntry {
+    optional string key = 1;
+    optional dex_screener_query.MinMaxInt value = 2;
+  }
+  message SellsEntry {
+    optional string key = 1;
+    optional dex_screener_query.MinMaxInt value = 2;
+  }
+  message VolumeEntry {
+    optional string key = 1;
+    optional dex_screener_query.MinMaxDouble value = 2;
+  }
+  message PriceChangeEntry {
+    optional string key = 1;
+    optional dex_screener_query.MinMaxDouble value = 2;
+  }
+  optional google.protobuf.BoolValue includePairsInactiveInTimeframe = 1;
+  repeated string chainIds = 2;
+  repeated string dexIds = 3;
+  repeated dex_screener_query.Filters.TxnsEntry txns = 4;
+  repeated dex_screener_query.Filters.BuysEntry buys = 5;
+  repeated dex_screener_query.Filters.SellsEntry sells = 6;
+  repeated dex_screener_query.Filters.VolumeEntry volume = 7;
+  repeated dex_screener_query.Filters.PriceChangeEntry priceChange = 8;
+  optional dex_screener_query.MinMaxDouble liquidity = 9;
+  optional dex_screener_query.MinMaxDouble marketCap = 10;
+  optional dex_screener_query.MinMaxDouble fdv = 11;
+  optional dex_screener_query.MinMaxDouble pairAge = 12;
+  optional google.protobuf.BoolValue enhancedTokenInfo = 13;
+  optional google.protobuf.BoolValue isOpenSource = 14;
+  optional google.protobuf.BoolValue isHoneyPot = 15;
+  optional google.protobuf.BoolValue isRenounced = 16;
+  optional dex_screener_query.MinMaxInt holderCount = 18;
+  optional dex_screener_query.MinMaxInt lpHolderCount = 19;
+  optional dex_screener_query.MinMaxDouble buyTax = 20;
+  optional dex_screener_query.MinMaxDouble sellTax = 21;
+  repeated string categories = 23;
+  repeated string excludedDEXIds = 24;
+  repeated string pairCreator = 25;
+  repeated string moonshotPairCreator = 26;
+  optional dex_screener_query.MinMaxDouble moonshotProgress = 27;
+  repeated string moonshotMigrationDEXIds = 28;
+  optional dex_screener_query.MinMaxDouble launchpadProgress = 29;
+  optional dex_screener_query.MinMaxDouble activeBoosts = 30;
+  optional dex_screener_query.MinMaxDouble currentPurchasedImpressions = 31;
+  optional dex_screener_query.MinMaxDouble recentPurchasedImpressions = 32;
+  repeated string launchpadIds = 33;
+  repeated string labels = 34;
+  repeated string baseTokenSuffixes = 35;
+  repeated string metaIds = 36;
+  optional dex_screener_query.MinMaxDouble circulatingSupply = 37;
 }
 
 // ===== dex_screener_schema/block.proto (package dex_screener_schema)
@@ -340,6 +423,7 @@ message Pair {
     optional string symbol = 3;
     optional google.protobuf.UInt32Value decimals = 4;
     optional google.protobuf.StringValue totalSupply = 5;
+    optional bool hasInsights = 6;
   }
   message Txns {
     message Stats {
@@ -446,6 +530,9 @@ message Pair {
   optional bool isDEXFeedStreamEnabled = 30;
 }
 
+// ===== dex_screener_schema/pricing_mode.proto (package dex_screener_schema)
+enum PricingMode { PRICING_MODE_UNSPECIFIED=0; PRICING_MODE_USD=1; PRICING_MODE_QUOTE=2; }
+
 // ===== dex_screener_schema/query_ranking.proto (package dex_screener_schema)
 enum RankByOrder { RANK_BY_ORDER_UNSPECIFIED=0; RANK_BY_ORDER_ASC=1; RANK_BY_ORDER_DESC=2; }
 enum RankByKey { RANK_BY_KEY_UNSPECIFIED=0; RANK_BY_KEY_TXNS=1; RANK_BY_KEY_BUYS=2; RANK_BY_KEY_SELLS=3; RANK_BY_KEY_VOLUME=4; RANK_BY_KEY_PRICE_CHANGE_H24=5; RANK_BY_KEY_PRICE_CHANGE_H6=6; RANK_BY_KEY_PRICE_CHANGE_H1=7; RANK_BY_KEY_PRICE_CHANGE_M5=8; RANK_BY_KEY_TRENDING_SCORE_M5=9; RANK_BY_KEY_TRENDING_SCORE_H1=10; RANK_BY_KEY_TRENDING_SCORE_H6=11; RANK_BY_KEY_TRENDING_SCORE_H24=12; RANK_BY_KEY_LIQUIDITY=13; RANK_BY_KEY_MARKETCAP=14; RANK_BY_KEY_FDV=15; RANK_BY_KEY_PAIR_AGE=16; RANK_BY_KEY_MOONSHOT_PROGRESS=17; RANK_BY_KEY_LAUNCHPAD_PROGRESS=18; RANK_BY_KEY_ACTIVE_BOOSTS=19; }
@@ -468,6 +555,42 @@ message Stats {
 
 // ===== dex_screener_schema/timeframe.proto (package dex_screener_schema)
 enum TimeframeKey { TIMEFRAME_KEY_UNSPECIFIED=0; TIMEFRAME_KEY_M5=1; TIMEFRAME_KEY_H1=2; TIMEFRAME_KEY_H6=3; TIMEFRAME_KEY_H24=4; }
+
+// ===== dex_search/server.proto (package dex_search)
+message SearchPairsResponse {
+  repeated dex_screener_schema.Pair pairs = 1;
+}
+message SpotlightResponse {
+  message Boosts {
+    message Top {
+      optional string chainId = 1;
+      optional string tokenAddress = 2;
+      optional string tokenSymbol = 3;
+      optional int32 totalAmount = 4;
+      optional google.protobuf.StringValue tokenImageURL = 5;
+    }
+    message Recent {
+      optional string chainId = 1;
+      optional string tokenAddress = 2;
+      optional string tokenSymbol = 3;
+      optional int32 totalAmount = 4;
+      optional int32 amount = 5;
+      optional google.protobuf.StringValue tokenImageURL = 6;
+    }
+    repeated dex_search.SpotlightResponse.Boosts.Top top = 1;
+    repeated dex_search.SpotlightResponse.Boosts.Recent recent = 2;
+  }
+  message LatestProfile {
+    message Boosts {
+      optional int32 legacyActive = 1;
+      optional uint64 active = 2;
+    }
+    optional dexscreener_cms.PartialToken token = 1;
+    optional dex_search.SpotlightResponse.LatestProfile.Boosts boosts = 2;
+  }
+  optional dex_search.SpotlightResponse.Boosts boosts = 1;
+  repeated dex_search.SpotlightResponse.LatestProfile latestProfiles = 2;
+}
 
 // ===== dex_trending/pair.proto (package dex_trending)
 message Pair {
@@ -494,168 +617,7 @@ message GetTrendingPairsResponse {
 }
 service PublicService { rpc GetTrendingPairs(dex_trending.GetTrendingPairsRequest) returns (dex_trending.GetTrendingPairsResponse); }
 
-// ===== dex_feed/bar.proto (package dex_feed)
-enum BarResolution { BAR_RESOLUTION_UNSPECIFIED=0; BAR_RESOLUTION_S1=1; BAR_RESOLUTION_S5=2; BAR_RESOLUTION_S15=3; BAR_RESOLUTION_S30=4; BAR_RESOLUTION_M1=5; BAR_RESOLUTION_M3=6; BAR_RESOLUTION_M5=7; BAR_RESOLUTION_M15=8; BAR_RESOLUTION_M30=9; BAR_RESOLUTION_H1=10; BAR_RESOLUTION_H2=11; BAR_RESOLUTION_H4=12; BAR_RESOLUTION_H8=13; BAR_RESOLUTION_H12=14; BAR_RESOLUTION_D1=15; BAR_RESOLUTION_D3=16; BAR_RESOLUTION_W1=17; BAR_RESOLUTION_MO1=18; }
-enum BarType { BAR_TYPE_UNSPECIFIED=0; BAR_TYPE_PRICE=1; BAR_TYPE_MARKET_CAP=2; }
-message Bar {
-  optional google.protobuf.Timestamp timestamp = 1;
-  optional string openNative = 2;
-  optional google.protobuf.StringValue openUSD = 3;
-  optional string highNative = 4;
-  optional google.protobuf.StringValue highUSD = 5;
-  optional string lowNative = 6;
-  optional google.protobuf.StringValue lowUSD = 7;
-  optional string closeNative = 8;
-  optional google.protobuf.StringValue closeUSD = 9;
-  optional string volumeToken0 = 13;
-  optional string volumeToken1 = 14;
-  optional google.protobuf.StringValue volumeUSD = 10;
-  optional uint64 minBlockNumber = 11;
-  optional uint64 maxBlockNumber = 12;
-}
-
-// ===== dex_screener_query/filters.proto (package dex_screener_query)
-message MinMaxInt {
-  optional google.protobuf.Int32Value min = 1;
-  optional google.protobuf.Int32Value max = 2;
-}
-message MinMaxDouble {
-  optional google.protobuf.DoubleValue min = 1;
-  optional google.protobuf.DoubleValue max = 2;
-}
-message Filters {
-  message TxnsEntry {
-    optional string key = 1;
-    optional dex_screener_query.MinMaxInt value = 2;
-  }
-  message BuysEntry {
-    optional string key = 1;
-    optional dex_screener_query.MinMaxInt value = 2;
-  }
-  message SellsEntry {
-    optional string key = 1;
-    optional dex_screener_query.MinMaxInt value = 2;
-  }
-  message VolumeEntry {
-    optional string key = 1;
-    optional dex_screener_query.MinMaxDouble value = 2;
-  }
-  message PriceChangeEntry {
-    optional string key = 1;
-    optional dex_screener_query.MinMaxDouble value = 2;
-  }
-  optional google.protobuf.BoolValue includePairsInactiveInTimeframe = 1;
-  repeated string chainIds = 2;
-  repeated string dexIds = 3;
-  repeated dex_screener_query.Filters.TxnsEntry txns = 4;
-  repeated dex_screener_query.Filters.BuysEntry buys = 5;
-  repeated dex_screener_query.Filters.SellsEntry sells = 6;
-  repeated dex_screener_query.Filters.VolumeEntry volume = 7;
-  repeated dex_screener_query.Filters.PriceChangeEntry priceChange = 8;
-  optional dex_screener_query.MinMaxDouble liquidity = 9;
-  optional dex_screener_query.MinMaxDouble marketCap = 10;
-  optional dex_screener_query.MinMaxDouble fdv = 11;
-  optional dex_screener_query.MinMaxDouble pairAge = 12;
-  optional google.protobuf.BoolValue enhancedTokenInfo = 13;
-  optional google.protobuf.BoolValue isOpenSource = 14;
-  optional google.protobuf.BoolValue isHoneyPot = 15;
-  optional google.protobuf.BoolValue isRenounced = 16;
-  optional dex_screener_query.MinMaxInt holderCount = 18;
-  optional dex_screener_query.MinMaxInt lpHolderCount = 19;
-  optional dex_screener_query.MinMaxDouble buyTax = 20;
-  optional dex_screener_query.MinMaxDouble sellTax = 21;
-  repeated string categories = 23;
-  repeated string excludedDEXIds = 24;
-  repeated string pairCreator = 25;
-  repeated string moonshotPairCreator = 26;
-  optional dex_screener_query.MinMaxDouble moonshotProgress = 27;
-  repeated string moonshotMigrationDEXIds = 28;
-  optional dex_screener_query.MinMaxDouble launchpadProgress = 29;
-  optional dex_screener_query.MinMaxDouble activeBoosts = 30;
-  optional dex_screener_query.MinMaxDouble currentPurchasedImpressions = 31;
-  optional dex_screener_query.MinMaxDouble recentPurchasedImpressions = 32;
-  repeated string launchpadIds = 33;
-  repeated string labels = 34;
-  repeated string baseTokenSuffixes = 35;
-  repeated string metaIds = 36;
-  optional dex_screener_query.MinMaxDouble circulatingSupply = 37;
-}
-
-// ===== dex_screener/server.proto (package dex_screener)
-message PairChannelResponse {
-  optional dex_screener_schema.Pair pair = 2;
-}
-message PairChannelMessage {
-  message Pair {
-    optional dex_screener_schema.Pair pair = 2;
-  }
-  optional dex_screener.PairChannelMessage.Pair pair = 1; [oneof payload]
-}
-message PairsChannelResponse {
-  optional dex_screener_schema.Stats stats = 1;
-  repeated dex_screener_schema.Pair pairs = 2;
-  optional uint32 pairsCount = 3;
-  optional dex_screener_schema.Block latestBlock = 4;
-}
-message PairsChannelMessage {
-  message Pairs {
-    optional dex_screener_schema.Stats stats = 1;
-    repeated dex_screener_schema.Pair pairs = 2;
-    optional uint32 pairsCount = 3;
-  }
-  message LatestBlock {
-    optional dex_screener_schema.Block latestBlock = 1;
-  }
-  optional dex_screener.PairsChannelMessage.Pairs pairs = 1; [oneof payload]
-  optional dex_screener.PairsChannelMessage.LatestBlock latestBlock = 2; [oneof payload]
-}
-message TokensChannelResponse {
-  optional dex_screener_schema.Stats stats = 1;
-  repeated dex_screener_schema.Pair pairs = 2;
-  optional uint32 pairsCount = 3;
-  optional dex_screener_schema.Block latestBlock = 4;
-}
-message TokensChannelMessage {
-  message Pairs {
-    optional dex_screener_schema.Stats stats = 1;
-    repeated dex_screener_schema.Pair pairs = 2;
-    optional uint32 pairsCount = 3;
-  }
-  message LatestBlock {
-    optional dex_screener_schema.Block latestBlock = 1;
-  }
-  optional dex_screener.TokensChannelMessage.Pairs pairs = 1; [oneof payload]
-  optional dex_screener.TokensChannelMessage.LatestBlock latestBlock = 2; [oneof payload]
-}
-message PairsSearchChannelCommand {
-  message Subscribe {
-    message Id {
-      optional string chainId = 1;
-      optional string id = 2;
-    }
-    repeated dex_screener.PairsSearchChannelCommand.Subscribe.Id ids = 1;
-    optional dex_screener_query.Filters filters = 2;
-    optional dex_screener_schema.RankBy rankBy = 3;
-    optional dex_screener_schema.TimeframeKey timeframe = 4;
-    optional uint32 page = 5;
-  }
-  optional dex_screener.PairsSearchChannelCommand.Subscribe subscribe = 1; [oneof payload]
-}
-message PairsSearchChannelMessage {
-  message LatestBlock {
-    optional dex_screener_schema.Block latestBlock = 1;
-  }
-  message Pairs {
-    optional dex_screener_schema.Stats stats = 1;
-    repeated dex_screener_schema.Pair pairs = 2;
-    optional uint32 pairsCount = 3;
-  }
-  optional dex_screener.PairsSearchChannelMessage.LatestBlock latestBlock = 1; [oneof payload]
-  optional dex_screener.PairsSearchChannelMessage.Pairs pairs = 2; [oneof payload]
-}
-
 // ===== dex_web/chart.proto (package dex_web)
-enum ChartPricingMode { CHART_PRICING_MODE_UNSPECIFIED=0; CHART_PRICING_MODE_USD=1; CHART_PRICING_MODE_NATIVE=2; }
 message ChartIdentity {
   optional string chainId = 1;
   optional string pairId = 2;
@@ -663,7 +625,7 @@ message ChartIdentity {
   optional string quoteTokenId = 4;
   optional bool isInverted = 5;
   optional dex_feed.BarType barType = 6;
-  optional dex_web.ChartPricingMode chartPricingMode = 7;
+  optional dex_screener_schema.PricingMode chartPricingMode = 7;
   optional bool isDEXFeedStreamEnabled = 8;
 }
 message ChartTokenMetadata {
@@ -678,4 +640,79 @@ message ChartTokenMetadata {
   optional string dexId = 9;
   optional google.protobuf.DoubleValue priceScaleUSD = 10;
   optional double priceScaleNative = 11;
+}
+
+// ===== dexscreener_cms/cms_token.proto (package dexscreener_cms)
+message TokenLink {
+  optional google.protobuf.StringValue label = 1;
+  optional string url = 2;
+  optional dex_screener_schema.LinkType type = 3;
+}
+message TokenLinkWithType {
+  optional google.protobuf.StringValue label = 1;
+  optional google.protobuf.StringValue type = 2;
+  optional string url = 3;
+}
+message TokenAsset {
+  optional string id = 1;
+}
+message PartialToken {
+  optional string id = 1;
+  optional string chainId = 2;
+  optional string address = 3;
+  optional google.protobuf.StringValue description = 4;
+  repeated dexscreener_cms.TokenLinkWithType links = 5;
+  optional google.protobuf.StringValue name = 6;
+  optional google.protobuf.StringValue symbol = 7;
+  optional google.protobuf.Timestamp createdAt = 8;
+  optional bool nsfw = 9;
+  optional dexscreener_cms.TokenAsset icon = 10;
+  optional dexscreener_cms.TokenAsset header = 11;
+}
+
+// ===== util_envelope/protocol.proto (package util_envelope)
+enum Status { STATUS_UNSPECIFIED=0; STATUS_OK=1; STATUS_NOT_FOUND=2; STATUS_UNAUTHORIZED=3; STATUS_TIMEOUT=4; STATUS_INTERNAL=5; STATUS_INVALID_ARGUMENT=6; }
+message ClientEnvelope {
+  optional uint32 id = 1;
+  optional util_envelope.Request request = 2; [oneof payload]
+  optional util_envelope.Subscribe subscribe = 3; [oneof payload]
+  optional util_envelope.Unsubscribe unsubscribe = 4; [oneof payload]
+  optional util_envelope.Cancel cancel = 5; [oneof payload]
+}
+message Request {
+  message TraceEntry {
+    optional string key = 1;
+    optional string value = 2;
+  }
+  optional string method = 1;
+  optional bytes payload = 2;
+  repeated util_envelope.Request.TraceEntry trace = 6;
+}
+message Subscribe {
+  optional string method = 1;
+  optional bytes payload = 2;
+}
+message Unsubscribe {
+}
+message Cancel {
+}
+message ServerEnvelope {
+  optional uint32 id = 1;
+  optional util_envelope.Response response = 2; [oneof payload]
+  optional util_envelope.StreamMessage stream_message = 3; [oneof payload]
+  optional util_envelope.StreamDelta stream_delta = 5; [oneof payload]
+  optional util_envelope.StreamEnd stream_end = 4; [oneof payload]
+}
+message Response {
+  optional util_envelope.Status status = 1;
+  optional bytes payload = 2;
+}
+message StreamMessage {
+  optional bytes payload = 1;
+}
+message StreamDelta {
+  optional bytes payload = 1;
+}
+message StreamEnd {
+  optional util_envelope.Status status = 1;
 }
