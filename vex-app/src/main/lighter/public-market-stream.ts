@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { WebSocket as UndiciWebSocket } from "undici";
 
 import {
   LIGHTER_ENDPOINTS,
@@ -121,7 +122,7 @@ interface PublicMarketWatcher {
 
 export function defaultLighterPublicMarketSupervisorDeps(): LighterPublicMarketSupervisorDeps {
   return {
-    createSocket: (url) => new WebSocket(url) as unknown as LighterPublicMarketSocket,
+    createSocket: (url) => new UndiciWebSocket(url),
     now: Date.now,
     random: Math.random,
     diagnostic: (event, detail) => {

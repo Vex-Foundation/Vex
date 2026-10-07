@@ -70,8 +70,14 @@ mainnet version/slot reads. The audit now verifies that import boundary even
 when a workspace has no exceptions.
 
 Electron 42.0.0 bundles Undici 7.24.4 separately from npm dependencies. Updating
-the npm package does not patch Electron globals. Runtime transport remediation
-must verify the constructor used by the main process separately.
+the npm package does not patch Electron globals. Lighter's three main-process
+socket factories explicitly use the pinned npm WebSocket; their injected
+factory interfaces and approval boundaries remain unchanged. Real normal and
+malformed handshakes passed through every default factory, including actual
+Electron startup. Public Core/RHC market streams passed through the default
+supervisor, and each factory received public order-book data in Electron.
+Authenticated account streams were not exercised. Chromium page WebSockets use
+a different runtime and retain their existing implementation.
 
 ## Historical overrides and bumps, 2026-09-07
 
