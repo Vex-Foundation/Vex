@@ -15,7 +15,7 @@
  * the tokenizer and the library in one contract.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   CODE_THEME_SLOTS,
   CODE_VARIABLE_PREFIX,
@@ -507,45 +507,21 @@ describe("the per-line budget reports WHICH lines it stopped on", () => {
  * about COLOUR, so it is pinned as an experiment on colour rather than on the
  * shape of a state object nobody can see.
  *
- * ## The fixture is deterministic in the one way this experiment needs
+ * The real grammar opens a template scope at character 0. The clock lets that
+ * first match finish, then expires before the next match. It stays fixed while
+ * line 2 runs, so this assertion tests state propagation independently of CPU
+ * load. A real one-millisecond clock can abandon even the short second line
+ * before its first match on a busy Windows runner, producing plain text and
+ * hiding which state it started from.
  *
- * The pathological line the suites above use is the WRONG fixture here, and the
- * reason is worth writing down because it looks right. Where a line is abandoned
- * decides which stack the rejected policy would have handed on, and that line's
- * cost is dominated by the grammar's LAZY pattern compilation on a fresh
- * highlighter (MEASURED at 24 to 114 ms cold, and about 30 ms once the process
- * has done it a few times). Cold, it is abandoned after roughly one match; warm,
- * it is not abandoned at all. So the state it would propagate is a function of
- * how many suites ran before it - which is a flake, not an experiment.
- *
- * This fixture removes the question instead of hoping about it:
- *
- *  - the abandoned line OPENS ITS SCOPE AT CHARACTER 0 (a backtick, an
- *    unterminated template literal). vscode-textmate always performs the first
- *    match before it looks at its clock (`@shikijs/vscode-textmate/dist/
- *    index.js:1810-1820`, the check at the top of the loop), so the template is
- *    on the stack whatever the clock does next;
- *  - its body is 20,000 `\x41` ESCAPES, and an escape is a match rule, not a
- *    begin/end rule. Nothing is pushed and nothing is popped for the rest of the
- *    line, so EVERY point at which the clock could stop carries the same stack:
- *    inside the template literal, one frame deep. The rejected policy therefore
- *    has exactly one outcome to produce, not a range of them;
- *  - and the escapes are what make it expensive without a pathological grammar:
- *    80,001 characters and 20,000 matches cost 31 to 51 ms WARM, thirty times
- *    the one-millisecond budget, so the line is abandoned whether the process
- *    is cold or hot.
- *
- * MEASURED over twenty fresh highlighters, each run under both policies, cold
- * core and warm: the rewind produced `const` in the keyword colour with no
- * string colour on the line, 20/20; propagating the half-walked stack produced
- * the whole line as ONE token in the template-string colour, 20/20. A
- * millisecond of machine load would have turned the rest of that file into a
- * string.
+ * The budget suites above still exercise the real wall clock. Only this state
+ * experiment controls Date.now; its grammar, partial tokens, stoppedEarly flag
+ * and next-line colours all come from the installed library.
  */
 describe("the line after an abandoned one is coloured from the PRE-LINE state", () => {
   /**
    * Opens a template literal at character 0, then 80,000 characters that push
-   * nothing. See the note above for why both halves matter.
+   * nothing, preserving the open template scope wherever scanning stops.
    */
   const OPENS_A_SCOPE = `\`${"\\x41".repeat(20_000)}`;
   /** Short, ordinary, and unambiguous under either policy. */
@@ -556,12 +532,28 @@ describe("the line after an abandoned one is coloured from the PRE-LINE state", 
   const ONE_MS = 1;
 
   it("does not inherit the scope the abandoned line was standing in", async () => {
-    const result = await tokenizeAll(SOURCE, ONE_MS);
+    const tokenizer = createTokenizer({ lineTimeBudgetMs: ONE_MS });
+    // Load the real grammar before controlling the scanner's clock.
+    const loaded = await tokenizer.tokenize("", "typescript", NO_LINE_BOUND, NO_TOKEN_BOUND);
+    expect(loaded.ok).toBe(true);
+    const clock = vi.spyOn(Date, "now")
+      .mockReturnValue(ONE_MS + 1)
+      .mockReturnValueOnce(0) // line 1 starts
+      .mockReturnValueOnce(0) // its opening backtick is scanned
+      .mockReturnValueOnce(ONE_MS + 1); // abandon the open scope; line 2's clock stays fixed
+    let outcome: TokenizeOutcome;
+    try {
+      outcome = await tokenizer.tokenize(SOURCE, "typescript", NO_LINE_BOUND, NO_TOKEN_BOUND);
+    } finally {
+      clock.mockRestore();
+      tokenizer.dispose();
+    }
+    if (!outcome.ok) throw new Error(`tokenizing refused: ${outcome.reason}`);
+    const result = outcome.result;
 
-    // The premise: line 1 really was abandoned. Asserted first so a machine
-    // fast enough to finish it fails HERE, with the reason legible, instead of
-    // failing the colour assertions for an unrelated reason.
-    expect(result.budgetExceededLines).toContain(1);
+    // Only line 1 was abandoned: line 2 must finish to reveal its initial state.
+    expect(result.budgetExceededLines).toEqual([1]);
+    expect(result.budgetExceededTotal).toBe(1);
     // Bytes are untouched by any of this, as they are on every other path.
     expect(flatten(result)).toBe(SOURCE);
 
