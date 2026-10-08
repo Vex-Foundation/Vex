@@ -2,7 +2,7 @@
  * CurtainExit — the reusable pre-shell exit curtain (Phase 2b, decree C.3).
  *
  * jsdom pins the REDUCED-MOTION contract (the animated path is visual):
- *   - `onCovered` fires exactly once, on mount, while the cobalt plate is
+ *   - `onCovered` fires exactly once, on mount, while the gate plate is
  *     rendered (the caller flips the view machine here),
  *   - `onDone` fires one frame later — never before `onCovered`,
  *   - the plate carries the gate chrome hooks (`data-vex-screen`,
@@ -12,6 +12,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
+import { StrictMode, useState } from "react";
 
 beforeEach(() => {
   // Force the reduced-motion (instant swap) path — deterministic in jsdom.
@@ -60,6 +61,35 @@ describe("CurtainExit (reduced motion)", () => {
     });
     // The view flip always precedes the unmount signal.
     expect(calls).toEqual(["covered", "done"]);
+    expect(onCovered).toHaveBeenCalledTimes(1);
+  });
+
+  it("finishes after the view flip rerenders its parent", async () => {
+    const onDone = vi.fn();
+    const onCovered = vi.fn();
+
+    function Harness() {
+      const [, forceRender] = useState(0);
+      return (
+        <CurtainExit
+          onCovered={() => {
+            onCovered();
+            forceRender((value) => value + 1);
+          }}
+          onDone={() => onDone()}
+        />
+      );
+    }
+
+    render(
+      <StrictMode>
+        <Harness />
+      </StrictMode>,
+    );
+
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1), {
+      timeout: 1000,
+    });
     expect(onCovered).toHaveBeenCalledTimes(1);
   });
 });
