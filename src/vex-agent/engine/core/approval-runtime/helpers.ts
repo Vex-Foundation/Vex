@@ -111,19 +111,24 @@ export const APPROVAL_RESOLVED_CUE =
  * "Do not repeat it" is stated explicitly because the failure mode of a
  * success the model does not recognise is a duplicate on-chain action.
  *
- * The verification pointer is hedged with "if available": tool availability is
- * per-session, and naming a tool the session cannot call would be another
- * small untruth in a banner whose entire value is that it does not contain
- * any.
+ * It deliberately does NOT suggest a follow-up verification call. The outcome
+ * is already authoritative in the transcript: this variant is chosen only when
+ * the row was durably settled `succeeded` (`selectResumeCue`), and that status
+ * is committed in the SAME transaction as a tool-result row whose content is
+ * the dispatched tool's own output (`commitApprovedToolResult` in
+ * `post-tx/result-message.ts`, called from `post-tx/dispatch-approved.ts` step
+ * 5). Results that are not final never reach this variant: an ambiguous
+ * broadcast or a pending bridge is `success: false` and settles `failed`, and a
+ * Lighter pending or reverted result settles `indeterminate` or `failed`
+ * (`deriveApprovedDispatchExecutionStatus`). A pointer to re-read the chain
+ * only bought the model an extra round trip before it could continue.
  */
 export const APPROVAL_RESOLVED_EXECUTED_CUE =
   "[Engine: approval_resolved — the pending approval was APPROVED and the " +
   "action executed successfully. Its result is recorded in this conversation " +
   "as the tool result for the tool call that was awaiting approval; other " +
   "messages may have been recorded after it. The transaction has already " +
-  "happened — do not repeat it. You can verify the resulting on-chain / " +
-  "portfolio state with the `AgentScan` tool if it is available to you. " +
-  "Continue.]";
+  "happened - do not repeat it. Continue.]";
 
 /**
  * How old a `dispatching` stamp must be before the reconciler will even

@@ -6,6 +6,8 @@ import type {
   CreateLighterOrderLifecycleIntentInput,
   LighterOrderLifecycleIntentRow,
 } from "@vex-agent/db/repos/lighter-order-lifecycle-intents.js";
+import type { CreateLighterOrderPreviewInput, LighterOrderPreviewRow } from "@vex-agent/db/repos/lighter-order-previews.js";
+import type { LighterOcoExecutionIntentRow } from "@vex-agent/db/repos/lighter-oco-execution-intents.js";
 import type {
   LighterAccount,
   LighterAccountOrder,
@@ -41,6 +43,7 @@ const mocks = vi.hoisted(() => ({
     getMarkets: vi.fn(),
     getMarketDetails: vi.fn(),
     getAccount: vi.fn(),
+    getAccountLimits: vi.fn(),
     getAccountActiveOrders: vi.fn(),
     getAccountInactiveOrders: vi.fn(),
     getAccountTrades: vi.fn(),
@@ -262,6 +265,10 @@ const { configureLighterManagedTradingReadinessResolver } = await import(
 const { validatePreparedActionFollowUp } = await import(
   "@vex-agent/tools/registry/prepared-action-follow-ups.js"
 );
+const { configureLighterDeskPreparationFeeDeps } = await import("@vex-agent/tools/protocols/lighter/desk-preparation-fees.js");
+const { configureLighterOrderPreviewDeps } = await import("@vex-agent/tools/protocols/lighter/preview-snapshot.js");
+const { clearLighterDeskPrewarm } = await import("@vex-agent/tools/protocols/lighter/desk-prewarm.js");
+const { resolveLighterFeePolicy } = await import("@tools/lighter/fee-policy.js");
 
 const READ_CTX: ProtocolExecutionContext = {
   sessionPermission: "restricted",
@@ -607,8 +614,8 @@ beforeEach(() => {
   delete process.env.LIGHTER_RHC_READ_ONLY_AUTH_TOKEN;
   delete process.env.LIGHTER_CORE_READ_ONLY_AUTH_TOKEN;
   configureLighterTradingCredentialScopeResolver({
-    findSavedScope: () => null,
-    findDefaultScope: () => null,
+    findSavedScope: async () => null,
+    findDefaultScope: async () => null,
   });
   configureLighterManagedTradingReadinessResolver(null);
   configureLighterReadOnlyAccountAuthResolver(null);
@@ -675,10 +682,42 @@ describe("Lighter agent read handlers", () => {
       }));
     });
 
+    if (actionType === "close_position") {
+      it.each([0, 1, 24, 26, 49, 76, 101, -25, 25.5, "75", null, true, [], {}])("rejects invalid close percent %j before any provider read", async (closePercent) => {
+        const result = await requireValue(LIGHTER_HANDLERS[toolId])({ ...params, closePercent }, READ_CTX);
+        expect(result).toMatchObject({ success: false });
+        expect(result.output).toContain("closePercent must be one of 25, 50, 75, or 100");
+        expect(mocks.client.getAccount).not.toHaveBeenCalled();
+        expect(mocks.client.getMarkets).not.toHaveBeenCalled();
+        expect(mocks.lifecycleIntentsRepo.createApprovalPendingWith).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        { closePercent: 75, amount: "0.9375", integer: "9375" },
+        { closePercent: 50, amount: "0.625", integer: "6250" },
+        { closePercent: 25, amount: "0.3125", integer: "3125" },
+      ])("persists and discloses the exact $closePercent percent amount while binding the full position", async ({ closePercent, amount, integer }) => {
+        configureLighterTradingCredentialScopeResolver({
+          findSavedScope: async () => ({ environment: "rhc", accountIndex: 42, apiKeyIndex: 7 }),
+          listScopes: async () => [{ environment: "rhc", accountIndex: 42, apiKeyIndex: 7 }],
+        });
+        const result = await executeProtocolTool({ toolId, params: { ...params, closePercent } }, READ_CTX);
+        expect(result.success, result.output).toBe(true);
+        expect(mocks.lifecycleIntentsRepo.createApprovalPendingWith).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+          requestedBaseAmountInteger: integer, requestedSide: "sell", reduceOnly: true,
+          providerSnapshotJson: expect.objectContaining({ position: expect.objectContaining({ position: "1.25" }), baseAmount: amount }),
+        }));
+        const critical = result.preparedActionFollowUp?.approvalPreview?.criticalArgs;
+        expect(critical).toMatchObject({ positionAmount: "1.25", baseAmount: amount, baseAmountInteger: integer, reduceOnly: true });
+        expect(critical?.summary).toContain(`Close ${amount} ETH from the 1.25 ETH long position`);
+        expect(mocks.client.getNextNonce).not.toHaveBeenCalled();
+      });
+    }
+
     it("prepares approval with the first saved key when all keys belong to one account", async () => {
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: () => null,
-        listScopes: (environment) => [
+        findSavedScope: async () => null,
+        listScopes: async (environment) => [
           { environment, accountIndex: 42, apiKeyIndex: 7 },
           { environment, accountIndex: 42, apiKeyIndex: 4 },
         ],
@@ -705,11 +744,11 @@ describe("Lighter agent read handlers", () => {
 
     it("does not prepare against a saved account when this session has no EVM wallet", async () => {
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: (environment, accountIndex) =>
+        findSavedScope: async (environment, accountIndex) =>
           environment === "rhc" && accountIndex === 42
             ? { environment, accountIndex, apiKeyIndex: 7 }
             : null,
-        listScopes: (environment) =>
+        listScopes: async (environment) =>
           environment === "rhc" ? [{ environment, accountIndex: 42, apiKeyIndex: 7 }] : [],
       });
 
@@ -726,11 +765,11 @@ describe("Lighter agent read handlers", () => {
 
     it("prepares for the selected session wallet when another wallet also has a key", async () => {
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: (environment, accountIndex) =>
+        findSavedScope: async (environment, accountIndex) =>
           environment === "rhc" && accountIndex === 42
             ? { environment, accountIndex, apiKeyIndex: 7 }
             : null,
-        listScopes: (environment) =>
+        listScopes: async (environment) =>
           environment === "rhc" ? [
             { environment, accountIndex: 736778, apiKeyIndex: 4 },
             { environment, accountIndex: 42, apiKeyIndex: 7 },
@@ -756,11 +795,11 @@ describe("Lighter agent read handlers", () => {
 
     it("refuses another wallet's requested Lighter account", async () => {
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: (environment, accountIndex) =>
+        findSavedScope: async (environment, accountIndex) =>
           environment === "rhc" && accountIndex === 736778
             ? { environment, accountIndex, apiKeyIndex: 4 }
             : null,
-        listScopes: (environment) =>
+        listScopes: async (environment) =>
           environment === "rhc" ? [
             { environment, accountIndex: 736778, apiKeyIndex: 4 },
             { environment, accountIndex: 42, apiKeyIndex: 7 },
@@ -786,8 +825,8 @@ describe("Lighter agent read handlers", () => {
 
     it.each([false, true])("refuses absent or ambiguous accounts before reading provider data (ambiguous=%s)", async (ambiguous) => {
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: () => null,
-        listScopes: (environment) => ambiguous ? [
+        findSavedScope: async () => null,
+        listScopes: async (environment) => ambiguous ? [
           { environment, accountIndex: 42, apiKeyIndex: 7 },
           { environment, accountIndex: 42, apiKeyIndex: 4 },
           { environment, accountIndex: 43, apiKeyIndex: 7 },
@@ -808,10 +847,10 @@ describe("Lighter agent read handlers", () => {
 
     it("honors an explicit account and its saved key despite other configured accounts", async () => {
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: (environment, accountIndex) =>
+        findSavedScope: async (environment, accountIndex) =>
           environment === "rhc" && accountIndex === 42
             ? { environment, accountIndex, apiKeyIndex: 4 } : null,
-        listScopes: (environment) => [
+        listScopes: async (environment) => [
           { environment, accountIndex: 43, apiKeyIndex: 7 },
           { environment, accountIndex: 42, apiKeyIndex: 4 },
         ],
@@ -835,8 +874,8 @@ describe("Lighter agent read handlers", () => {
     ["lighter.order.cancelAll.prepare", "lighter.order.cancelAll", "cancel_all"],
   ])("%s persists exact provider identity and returns the matching approval", async (toolId, executeId, actionType) => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) => ({ environment, accountIndex, apiKeyIndex: 7 }),
-      listScopes: (environment) => [{ environment, accountIndex: 42, apiKeyIndex: 7 }],
+      findSavedScope: async (environment, accountIndex) => ({ environment, accountIndex, apiKeyIndex: 7 }),
+      listScopes: async (environment) => [{ environment, accountIndex: 42, apiKeyIndex: 7 }],
     });
     const providerOrder = { ...accountOrder(), type: "limit", time_in_force: "good-till-time" };
     mocks.client.getAccountActiveOrders.mockResolvedValue({ code: 200, orders: [providerOrder] });
@@ -895,6 +934,199 @@ describe("Lighter agent read handlers", () => {
       });
     }
     expect(mocks.ocoIntentsRepo.createApprovalPendingWith).not.toHaveBeenCalled();
+  });
+
+  describe.each(["close_position", "oco"] as const)("%s desk fee preparation", (action) => {
+    const now = Date.parse("2026-10-05T12:00:00.000Z");
+    const feeLimits = { code: 200, user_tier: "plus", user_tier_name: "Plus", current_maker_fee_tick: 50, current_taker_fee_tick: 50 };
+    const systemConfig = {
+      code: 200, liquidity_pool_index: 0, staking_pool_index: 0, funding_fee_rebate_account_index: 0,
+      market_maker_incentive_account_index: 0, liquidity_pool_cooldown_period: 0, staking_pool_lockup_period: 0,
+      max_integrator_perps_maker_fee: 1000, max_integrator_perps_taker_fee: 1000,
+      max_integrator_spot_maker_fee: 10000, max_integrator_spot_taker_fee: 10000,
+    };
+    const authorized = { ...ACCOUNT, approved_integrators: [{
+      account_index: 99, name: "VEX", max_perps_maker_fee: 1000, max_perps_taker_fee: 1000,
+      max_spot_maker_fee: 2500, max_spot_taker_fee: 2500, approval_expiry: Date.parse("2100-01-01T00:00:00.000Z"),
+    }] };
+    const auth = vi.fn(async () => ({ token: "read-only-token", accountIndex: 42 }));
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(now);
+      clearLighterDeskPrewarm();
+      configureLighterOrderPreviewDeps({ deskPrewarm: true });
+      onTestFinished(() => {
+        clearLighterDeskPrewarm();
+        configureLighterDeskPreparationFeeDeps(null);
+        configureLighterOrderPreviewDeps(null);
+        configureLighterReadOnlyAccountAuthResolver(null);
+        vi.useRealTimers();
+      });
+    });
+
+    function setup(managed = false) {
+      vi.clearAllMocks();
+      mocks.feePolicy.mockReturnValue(requireValue(resolveLighterFeePolicy("rhc", { enabled: true, accountIndex: 99, l1Address: TEST_EVM_WALLET.address })));
+      mocks.client.getMarkets.mockResolvedValue({ code: 200, order_books: [MARKET] });
+      mocks.client.getMarketDetails.mockResolvedValue({ code: 200, order_book_details: [DETAIL], spot_order_book_details: [] });
+      mocks.client.getOrderBookOrders.mockResolvedValue({
+        code: 200, total_asks: 1, asks: [{ ...order(1, "3500.50"), remaining_base_amount: "2" }],
+        total_bids: 1, bids: [{ ...order(2, "3499.50"), remaining_base_amount: "2" }],
+      });
+      mocks.client.getAccount.mockImplementation(async (_env: string, params: { readonly value: number | string }) => ({
+        code: 200, accounts: [Number(params.value) === 99 ? { index: 99, l1_address: TEST_EVM_WALLET.address } : authorized],
+      }));
+      mocks.client.getSystemConfig.mockResolvedValue(systemConfig);
+      mocks.client.getAccountLimits.mockResolvedValue(feeLimits);
+      mocks.client.getApiKeys.mockResolvedValue({ code: 200, api_keys: [] });
+      mocks.lifecycleIntentsRepo.findAnyLiveOrderMutation.mockResolvedValue(null);
+      mocks.lifecycleIntentsRepo.createApprovalPendingWith.mockImplementation(async (_db, input) => ({
+        ...input, approvalStatus: "approval_pending", executionState: "approval_pending",
+      }));
+      mocks.previewsRepo.create.mockResolvedValue(undefined);
+      configureLighterTradingCredentialScopeResolver({
+        findSavedScope: async () => action === "close_position" || managed ? { environment: "rhc", accountIndex: 42, apiKeyIndex: 7 } : null,
+        findDefaultScope: async () => null,
+      });
+      configureLighterReadOnlyAccountAuthResolver(auth);
+      if (managed) {
+        const stored = new Map<string, LighterOrderPreviewRow>();
+        mocks.previewsRepo.create.mockImplementation(async (input: CreateLighterOrderPreviewInput) => {
+          const p = input.preview;
+          stored.set(p.previewId, {
+            integratorFees: p.preview.integratorFees, previewId: p.previewId, sessionId: p.identity.sessionId,
+            matchHash: p.matchHash, environment: p.identity.environment,
+            accountIndex: Number(p.identity.accountIndex), apiKeyIndex: Number(p.identity.apiKeyIndex),
+            marketIndex: Number(p.identity.marketIndex), side: p.identity.side,
+            baseAmountInteger: p.identity.baseAmountInteger, priceInteger: p.identity.priceInteger,
+            orderType: p.identity.orderType, timeInForce: p.identity.timeInForce, reduceOnly: p.identity.reduceOnly === "1",
+            triggerPriceInteger: p.identity.triggerPriceInteger, orderExpiryMs: Number(p.identity.expiryMs),
+            clientOrderIndexPolicy: p.identity.clientOrderIndexPolicy, providerVersion: p.identity.providerVersion,
+            previewJson: { ...p.preview }, liveSourceJson: input.liveSourceJson,
+            createdAt: new Date(now).toISOString(), expiresAt: p.expiresAt,
+          });
+        });
+        mocks.previewsRepo.findFreshById.mockImplementation(async (_session: string, _env: string, id: string) => stored.get(id) ?? null);
+        mocks.ocoIntentsRepo.createApprovalPendingWith.mockImplementation(async (_db,
+          input: Parameters<typeof import("@vex-agent/db/repos/lighter-oco-execution-intents.js").createApprovalPendingWith>[1],
+        ): Promise<LighterOcoExecutionIntentRow> => {
+          const p = input.preview;
+          return {
+            intentId: input.intentId, sessionId: p.identity.sessionId, approvalId: null, matchHash: p.matchHash,
+            environment: p.identity.environment, accountIndex: Number(p.identity.accountIndex), apiKeyIndex: Number(p.identity.apiKeyIndex),
+            marketIndex: Number(p.identity.marketIndex), side: p.identity.side, baseAmountInteger: p.identity.baseAmountInteger,
+            stopLossPreviewId: p.stopLoss.previewId, stopLossMatchHash: p.stopLoss.matchHash,
+            stopLossPriceInteger: p.stopLoss.identity.priceInteger, stopLossTriggerPriceInteger: p.stopLoss.identity.triggerPriceInteger,
+            takeProfitPreviewId: p.takeProfit.previewId, takeProfitMatchHash: p.takeProfit.matchHash,
+            takeProfitPriceInteger: p.takeProfit.identity.priceInteger, takeProfitTriggerPriceInteger: p.takeProfit.identity.triggerPriceInteger,
+            integratorFees: p.preview.integratorFees, orderExpiryMs: Number(p.identity.expiryMs),
+            clientOrderIndexPolicy: p.stopLoss.identity.clientOrderIndexPolicy, providerVersion: p.identity.providerVersion,
+            previewJson: { ...p.preview }, liveSourceJson: input.liveSourceJson, credentialRefJson: input.credentialReadiness.reference,
+            approvalStatus: "approval_pending", executionState: "approval_pending", decisionReason: null, decidedAt: null,
+            preSubmitRevalidationJson: null, preSubmitRevalidatedAt: null, nonceReservationId: null, nonceValue: null,
+            stopLossClientOrderIndex: null, takeProfitClientOrderIndex: null, signerTxHash: null, submittedTxHash: null,
+            submitCode: null, submitMessage: null, predictedExecutionTimeMs: null, volumeQuotaRemaining: null,
+            providerOutcomeJson: null, providerOutcomeCheckedAt: null, ambiguousReason: null,
+            createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString(), expiresAt: input.expiresAt,
+          };
+        });
+      }
+    }
+
+    async function observe(enabled: boolean, desk = true, expectedSuccess = true) {
+      configureLighterDeskPreparationFeeDeps({ deskPreparationFeeSnapshot: enabled });
+      const params = action === "close_position"
+        ? { environment: "rhc", accountIndex: 42, marketId: 0, slippageBps: 100 }
+        : { environment: "rhc", accountIndex: 42, marketId: 0, side: "sell", baseAmountIn: "0.25",
+          stopLossTriggerPrice: "3400", stopLossPrice: "3300", takeProfitTriggerPrice: "3800",
+          takeProfitPrice: "3700", orderExpiryOffsetMinutes: 30 };
+      const result = await executeProtocolTool({ toolId: action === "close_position" ? "lighter.position.close.prepare" : "lighter.position.protect", params }, { ...READ_CTX, ...(desk ? { deskPreparation: true as const } : {}) });
+      expect(result.success, result.output).toBe(expectedSuccess);
+      return JSON.stringify({
+        result,
+        previewWrites: mocks.previewsRepo.create.mock.calls,
+        intentWrites: mocks.lifecycleIntentsRepo.createApprovalPendingWith.mock.calls,
+        ocoIntentWrites: mocks.ocoIntentsRepo.createApprovalPendingWith.mock.calls,
+      }).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "<id>");
+    }
+
+    const cases = [
+      { label: "authorized fees", change: () => undefined },
+      { label: "locked vault", change: () => configureLighterReadOnlyAccountAuthResolver(async () => null) },
+      { label: "unapproved fresh trader", change: () => mocks.client.getAccount.mockImplementation(async (_env: string, params: { readonly value: number | string }) => ({ code: 200, accounts: [Number(params.value) === 99 ? { index: 99, l1_address: TEST_EVM_WALLET.address } : ACCOUNT] })) },
+      { label: "failed fee config", change: () => mocks.client.getSystemConfig.mockRejectedValue(new Error("config down")) },
+      { label: "failed first batch", change: () => mocks.client.getOrderBookOrders.mockRejectedValue(new Error("book down")) },
+      { label: "wrong account", change: () => mocks.client.getAccount.mockImplementation(async (_env: string, params: { readonly value: number | string }) => ({ code: 200, accounts: [Number(params.value) === 99 ? { index: 99, l1_address: TEST_EVM_WALLET.address } : { ...authorized, index: 43 }] })) },
+    ];
+
+    it.each(cases)("keeps cold OFF==ON result and exact preparation writes for $label", async ({ label, change }) => {
+      const expectedSuccess = label !== "failed first batch" && label !== "wrong account";
+      setup(); change();
+      const off = await observe(false, true, expectedSuccess);
+      clearLighterDeskPrewarm();
+      setup(); change();
+      expect(await observe(true, true, expectedSuccess)).toEqual(off);
+      expect(mocks.client.getNextNonce).not.toHaveBeenCalled();
+      expect(mocks.ocoIntentsRepo.markApprovalDecision).not.toHaveBeenCalled();
+    });
+
+    it.each(["authorized fees", "locked vault", "unapproved fresh trader", "failed first batch", "wrong account"])("keeps warm OFF==ON writes for %s", async (label) => {
+      const change = requireValue(cases.find((item) => item.label === label)).change;
+      const expectedSuccess = label !== "failed first batch" && label !== "wrong account";
+      setup(); change();
+      const off = await observe(false, true, expectedSuccess);
+      setup(); await observe(true);
+      setup(); change();
+      expect(await observe(true, true, expectedSuccess)).toEqual(off);
+    });
+
+    if (action === "oco") {
+      it("keeps both managed child previews, intent and exact approval terms equal OFF/cold/warm", async () => {
+        setup(true);
+        const off = await observe(false);
+        expect(JSON.parse(off)).toMatchObject({ result: {
+          success: true, preparedActionFollowUp: { approvalPreview: { criticalArgs: {
+            accountIndex: 42, apiKeyIndex: 7, baseAmountInteger: "2500", reduceOnly: true,
+            groupingType: "one-cancels-the-other", stopLossPriceInteger: "330000", stopLossTriggerPriceInteger: "340000",
+            takeProfitPriceInteger: "370000", takeProfitTriggerPriceInteger: "380000",
+          } } },
+        } });
+        expect(mocks.previewsRepo.create).toHaveBeenCalledTimes(2);
+        expect(mocks.ocoIntentsRepo.createApprovalPendingWith).toHaveBeenCalledTimes(1);
+        setup(true);
+        expect(await observe(true)).toEqual(off);
+        setup(true);
+        expect(await observe(true)).toEqual(off);
+        expect(mocks.previewsRepo.create).toHaveBeenCalledTimes(2);
+        expect(mocks.ocoIntentsRepo.createApprovalPendingWith).toHaveBeenCalledTimes(1);
+        expect(mocks.client.getAccount).toHaveBeenCalledTimes(1);
+        expect(mocks.client.getAccountLimits).not.toHaveBeenCalled();
+        expect(mocks.client.getSystemConfig).not.toHaveBeenCalled();
+        expect(auth).toHaveBeenCalledTimes(1);
+        expect(mocks.client.getNextNonce).not.toHaveBeenCalled();
+        expect(mocks.ocoIntentsRepo.markApprovalDecision).not.toHaveBeenCalled();
+      });
+    }
+
+    it("consumes warm fees for the desk only, with a fresh account and a new read-only token", async () => {
+      setup();
+      const off = await observe(false);
+      setup();
+      expect(await observe(true)).toEqual(off);
+      setup();
+      expect(await observe(true)).toEqual(off);
+      expect(mocks.client.getSystemConfig).not.toHaveBeenCalled();
+      expect(mocks.client.getAccountLimits).not.toHaveBeenCalled();
+      expect(mocks.client.getAccount).toHaveBeenCalledTimes(1);
+      expect(auth).toHaveBeenCalledTimes(1);
+      expect(mocks.client.getAccount).toHaveBeenCalledWith("rhc", action === "close_position"
+        ? { by: "index", value: "42" } : { by: "index", value: 42, activeOnly: false }, { fresh: true });
+      setup();
+      expect(await observe(true, false)).toEqual(off);
+      expect(mocks.client.getSystemConfig).toHaveBeenCalledTimes(1);
+      expect(mocks.client.getAccountLimits).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("asks a new user only for their desired USDC deposit amount", async () => {
@@ -1994,11 +2226,11 @@ describe("Lighter agent read handlers", () => {
 
     beforeEach(async () => {
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: (environment, accountIndex) =>
+        findSavedScope: async (environment, accountIndex) =>
           environment === "rhc" && accountIndex === 42
             ? { environment, accountIndex, apiKeyIndex: 7 }
             : null,
-        listScopes: (environment) =>
+        listScopes: async (environment) =>
           environment === "rhc" ? [{ environment, accountIndex: 42, apiKeyIndex: 7 }] : [],
       });
       mocks.client.getMarkets.mockResolvedValue({ code: 200, order_books: [MARKET] });
@@ -2598,11 +2830,11 @@ describe("Lighter agent read handlers", () => {
     "%s does not read another wallet's saved account from a session without an EVM wallet",
     async (toolId) => {
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: (environment, accountIndex) =>
+        findSavedScope: async (environment, accountIndex) =>
           environment === "core" && accountIndex === 42
             ? { environment, accountIndex, apiKeyIndex: 4 }
             : null,
-        findDefaultScope: (environment) =>
+        findDefaultScope: async (environment) =>
           environment === "core" ? { environment, accountIndex: 42, apiKeyIndex: 4 } : null,
       });
       const result = await requireValue(LIGHTER_HANDLERS[toolId])({
@@ -2631,10 +2863,10 @@ describe("Lighter agent read handlers", () => {
         { environment: "rhc" as const, accountIndex: 31824, apiKeyIndex: 4 },
       ];
       configureLighterTradingCredentialScopeResolver({
-        findSavedScope: (environment, accountIndex) =>
+        findSavedScope: async (environment, accountIndex) =>
           scopes.find((scope) => scope.environment === environment && scope.accountIndex === accountIndex) ?? null,
-        findDefaultScope: (environment) => scopes.find((scope) => scope.environment === environment) ?? null,
-        listScopes: (environment) => scopes.filter((scope) => scope.environment === environment),
+        findDefaultScope: async (environment) => scopes.find((scope) => scope.environment === environment) ?? null,
+        listScopes: async (environment) => scopes.filter((scope) => scope.environment === environment),
       });
 
       const output = await callFail(toolId, { environment: "rhc" });
@@ -2652,11 +2884,11 @@ describe("Lighter agent read handlers", () => {
     ["lighter.trades", "getAccountTrades"],
   ] as const)("%s follows the session wallet instead of the sole saved key", async (toolId, clientMethod) => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 42
           ? { environment, accountIndex, apiKeyIndex: 4 }
           : null,
-      findDefaultScope: (environment) =>
+      findDefaultScope: async (environment) =>
         environment === "core" ? { environment, accountIndex: 42, apiKeyIndex: 4 } : null,
     });
     mocks.client.getAccountsByL1Address.mockImplementation(async (_environment: string, input: { readonly l1Address: string }) => ({
@@ -2693,13 +2925,13 @@ describe("Lighter agent read handlers", () => {
     // token. The derived-auth resolver mints a short-lived read-only token so
     // the read hits the live account API instead of falling back to inference.
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 736778
           ? { environment, accountIndex, apiKeyIndex: 4 }
           : null,
-      findDefaultScope: (environment) =>
+      findDefaultScope: async (environment) =>
         environment === "core" ? { environment, accountIndex: 736778, apiKeyIndex: 4 } : null,
-      listScopes: (environment) =>
+      listScopes: async (environment) =>
         environment === "core" ? [{ environment, accountIndex: 736778, apiKeyIndex: 4 }] : [],
     });
     const resolver = vi.fn(async (environment: string, accountIndex: number) =>
@@ -3319,11 +3551,11 @@ describe("Lighter agent read handlers", () => {
 
   it("creates a conversational RHC ETH preview without ids or internal policy params", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "rhc" && accountIndex === 42
           ? { environment, accountIndex, apiKeyIndex: 7 }
           : null,
-      findDefaultScope: (environment) =>
+      findDefaultScope: async (environment) =>
         environment === "rhc"
           ? { environment, accountIndex: 42, apiKeyIndex: 7 }
           : null,
@@ -3524,9 +3756,9 @@ describe("Lighter agent read handlers", () => {
 
   it("refuses a requested account the session wallet does not own", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 42 ? { environment, accountIndex, apiKeyIndex: 4 } : null,
-      listScopes: (environment) =>
+      listScopes: async (environment) =>
         environment === "core" ? [{ environment, accountIndex: 42, apiKeyIndex: 4 }] : [],
     });
     // The default lookup has this session's wallet owning account 42.
@@ -3549,11 +3781,11 @@ describe("Lighter agent read handlers", () => {
 
   it("does not use the sole saved account when the session has no selected EVM wallet", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 42
           ? { environment, accountIndex, apiKeyIndex: 4 }
           : null,
-      listScopes: (environment) =>
+      listScopes: async (environment) =>
         environment === "core" ? [{ environment, accountIndex: 42, apiKeyIndex: 4 }] : [],
     });
     const result = await requireValue(LIGHTER_HANDLERS["lighter.order.preview"])({
@@ -3576,11 +3808,11 @@ describe("Lighter agent read handlers", () => {
 
   it("does not use the sole saved account when the session wallet is stale", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 42
           ? { environment, accountIndex, apiKeyIndex: 4 }
           : null,
-      listScopes: (environment) =>
+      listScopes: async (environment) =>
         environment === "core" ? [{ environment, accountIndex: 42, apiKeyIndex: 4 }] : [],
     });
     const result = await requireValue(LIGHTER_HANDLERS["lighter.order.preview"])({
@@ -3607,11 +3839,11 @@ describe("Lighter agent read handlers", () => {
 
   it("uses the wallet-owned account even when a different account is the only saved scope", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 42
           ? { environment, accountIndex, apiKeyIndex: 4 }
           : null,
-      listScopes: (environment) =>
+      listScopes: async (environment) =>
         environment === "core" ? [{ environment, accountIndex: 42, apiKeyIndex: 4 }] : [],
     });
     mocks.client.getAccountsByL1Address.mockImplementation(async (_environment: string, input: { readonly l1Address: string }) => ({
@@ -3663,14 +3895,14 @@ describe("Lighter agent read handlers", () => {
 
   it("binds to the session wallet's account when multiple Lighter trading keys are configured", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 736778
           ? { environment, accountIndex, apiKeyIndex: 4 }
           : null,
       // Two DISTINCT Core accounts are configured - the multi-wallet case. Vex
       // must neither refuse nor guess: it resolves the account owned by THIS
       // session's own wallet, never the other wallet's account.
-      listScopes: (environment) =>
+      listScopes: async (environment) =>
         environment === "core"
           ? [
               { environment, accountIndex: 736758, apiKeyIndex: 7 },
@@ -3720,13 +3952,13 @@ describe("Lighter agent read handlers", () => {
 
   it("proceeds when multiple keys are saved for a single account", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 736778
           ? { environment, accountIndex, apiKeyIndex: 4 }
           : null,
       // Two saved Core scopes on the SAME account: any key signs for that
       // account, so this is not ambiguous and must resolve, not refuse.
-      listScopes: (environment) =>
+      listScopes: async (environment) =>
         environment === "core"
           ? [
               { environment, accountIndex: 736778, apiKeyIndex: 4 },
@@ -3788,11 +4020,11 @@ describe("Lighter agent read handlers", () => {
 
   it("resolves the account from a single saved scope via listScopes", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "core" && accountIndex === 42
           ? { environment, accountIndex, apiKeyIndex: 4 }
           : null,
-      listScopes: (environment) =>
+      listScopes: async (environment) =>
         environment === "core" ? [{ environment, accountIndex: 42, apiKeyIndex: 4 }] : [],
     });
     mocks.client.getMarkets.mockResolvedValue({
@@ -3836,11 +4068,11 @@ describe("Lighter agent read handlers", () => {
 
   it("uses the saved Lighter trading credential scope instead of asking the user for an API-key index", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "rhc" && accountIndex === 42
           ? { environment, accountIndex, apiKeyIndex: 9 }
           : null,
-      findDefaultScope: (environment) =>
+      findDefaultScope: async (environment) =>
         environment === "rhc"
           ? { environment, accountIndex: 42, apiKeyIndex: 9 }
           : null,
@@ -3976,11 +4208,11 @@ describe("Lighter agent read handlers", () => {
 
   it("uses the saved Lighter trading credential scope as the default preview account", async () => {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) =>
+      findSavedScope: async (environment, accountIndex) =>
         environment === "rhc" && accountIndex === 42
           ? { environment, accountIndex, apiKeyIndex: 9 }
           : null,
-      findDefaultScope: (environment) =>
+      findDefaultScope: async (environment) =>
         environment === "rhc"
           ? { environment, accountIndex: 42, apiKeyIndex: 9 }
           : null,
@@ -4333,8 +4565,8 @@ describe("Lighter lifecycle prepare: a live action already exists for the same t
   // pre-submit one, the way the position-close prepare already does.
   function readyScope(): void {
     configureLighterTradingCredentialScopeResolver({
-      findSavedScope: (environment, accountIndex) => ({ environment, accountIndex, apiKeyIndex: 7 }),
-      listScopes: (environment) => [{ environment, accountIndex: 42, apiKeyIndex: 7 }],
+      findSavedScope: async (environment, accountIndex) => ({ environment, accountIndex, apiKeyIndex: 7 }),
+      listScopes: async (environment) => [{ environment, accountIndex: 42, apiKeyIndex: 7 }],
     });
   }
 

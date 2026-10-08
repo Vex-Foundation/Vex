@@ -35,6 +35,10 @@ import { ReasonedBlock } from "./ReasonedBlock.js";
 import { BoardRowCard } from "./Board/BoardRowCard.js";
 import type { BoardArrival } from "./Board/board-surface-contracts.js";
 import { ToolActRow } from "./ToolLedger/ToolActRow.js";
+import {
+  MissionStopResult,
+  readMissionStopResult,
+} from "./ToolLedger/MissionStopResult.js";
 import { ExplorerRefLinks } from "./ToolLedger/ExplorerRefLinks.js";
 import { ToolGroupRow } from "./ToolLedger/ToolGroupRow.js";
 import { ToolDisclosure } from "./ToolDisclosure.js";
@@ -427,16 +431,22 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           ) : null}
           {/* One registered act per executed call — collapsed by default. Each
               hangs in the 36px gutter so it aligns right of the tape spine. */}
-          {resolveActs(row).map((act) => (
-            <div key={act.toolCallId} className="pl-9">
-              <ToolActRow
-                act={act}
-                pendingApprovalId={
-                  pendingApprovals?.get(act.toolCallId) ?? null
-                }
-              />
-            </div>
-          ))}
+          {resolveActs(row).map((act) => {
+            const stopResult = readMissionStopResult(act);
+            return (
+              <div key={act.toolCallId} className="pl-9">
+                <ToolActRow
+                  act={act}
+                  pendingApprovalId={
+                    pendingApprovals?.get(act.toolCallId) ?? null
+                  }
+                />
+                {/* An accepted MissionStop's result stays visible, not
+                    folded behind the collapsed act. */}
+                {stopResult !== null ? <MissionStopResult result={stopResult} /> : null}
+              </div>
+            );
+          })}
         </div>
       );
     case "tool_group":
@@ -454,6 +464,13 @@ export const TranscriptMessage = memo(function TranscriptMessage({
             <ReasonedBlock key={`${row.id}-${index}`} reasoning={trace} />
           ))}
           <ToolGroupRow group={row} pendingApprovals={pendingApprovals} />
+          {/* A group folds its acts; a mission result must not fold with them. */}
+          {(row.calls ?? []).map((call) => {
+            const stopResult = readMissionStopResult(call);
+            return stopResult !== null ? (
+              <MissionStopResult key={call.toolCallId} result={stopResult} />
+            ) : null;
+          })}
         </div>
       );
     case "notice":

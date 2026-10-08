@@ -463,12 +463,12 @@ export function LighterAccountSetupModal({
             <button
               type="button"
               className="lit-setup-cta"
-              data-busy={running || undefined}
-              disabled={!setup.canStart || running || settling}
+              data-busy={running || setup.starting || undefined}
+              disabled={!setup.canStart || running || setup.starting || settling}
               onClick={setup.start}
             >
-              {running ? <span className="lit-loader" aria-hidden="true" /> : null}
-              {running ? "Setting up…" : status !== null && status.setupRecovery !== "none" ? "Check existing setup" : "Set up my account"}
+              {running || setup.starting ? <span className="lit-loader" aria-hidden="true" /> : null}
+              {running || setup.starting ? "Setting up…" : status !== null && status.setupRecovery !== "none" ? "Check existing setup" : "Set up my account"}
             </button>
           )}
         </DialogFooter>

@@ -35,7 +35,8 @@
  * project row, so no project means no pty and nothing below is reachable.
  */
 
-import type { Page, TestInfo } from "@playwright/test";
+import fs from "node:fs";
+import type { TestInfo } from "@playwright/test";
 import {
   test,
   expect,
@@ -64,32 +65,6 @@ const ECHO_TIMEOUT_MS = 30_000;
  */
 const TYPE_DELAY_MS = 25;
 
-/**
- * Everything the terminal's buffer holds, as ONE string.
- *
- * xterm's DOM renderer emits one `div` per SCREEN row, so a shell line long
- * enough to wrap is two divs; joining them with a newline would put a break
- * inside the very echo this spec matches on. The rows are joined with nothing
- * and each one's trailing pad is dropped, so a wrapped line reads back
- * contiguous.
- *
- * The read is only possible because this build renders through xterm's DOM
- * renderer: `.xterm-rows` belongs to it, and a terminal that got the WebGL
- * addon has no text in the DOM at all. The renderer is asserted before the
- * poll rather than assumed, so a machine whose GPU changes the answer fails
- * with the reason instead of timing out on an empty buffer.
- */
-async function terminalText(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    const rows = document.querySelectorAll(
-      ".vex-terminal-surface--active .xterm-rows > div",
-    );
-    return [...rows]
-      .map((row) => (row.textContent ?? "").replace(/\s+$/u, ""))
-      .join("");
-  });
-}
-
 test("Studio terminal: a space reaches the shell, the grid fills the pane, a link asks main", async ({
   vexDb,
 }: {
@@ -114,26 +89,29 @@ test("Studio terminal: a space reaches the shell, the grid fills the pane, a lin
   // a user's keystroke lands, so every listener between the document and xterm
   // gets its chance to swallow the key exactly as it would in production.
   await focusTerminalGrid(page);
+  await expect(page.locator(".vex-terminal-surface--active .xterm-screen")).toBeVisible();
   await expect(
     page.locator(".vex-terminal-surface--active textarea").first(),
   ).toBeFocused();
   const marker = `vexspace${Date.now().toString(36)}`;
-  await page.keyboard.type(`echo ${marker} one two`, { delay: TYPE_DELAY_MS });
-
-  // The evidence below is read out of the DOM rows, which exist only under
-  // xterm's DOM renderer. Say so here: an environment that hands out WebGL
-  // would otherwise turn this claim into a 30-second timeout on an empty
-  // string, with nothing in the failure naming the renderer as the reason.
-  await expect(
-    page.locator(".vex-terminal-surface--active .xterm-rows"),
-    "the buffer is read from the DOM rows, and this terminal renders through WebGL",
-  ).toBeAttached();
-
-  // THE SHELL'S ECHO IS THE EVIDENCE, not our own write counter: the question
-  // is whether the bytes reached the pty, and only the pty can answer it.
+  const echoFile = testInfo.outputPath("shell-space-echo.txt");
+  fs.mkdirSync(testInfo.outputDir, { recursive: true });
+  // Read the shell's own `echo` output from a file, since WebGL paints text
+  // into a canvas and has no DOM rows. Only the real keyboard -> xterm ->
+  // preload -> pty -> shell path can execute this command and write it.
+  const quotedFile = process.platform === "win32"
+    ? `"${echoFile}"`
+    : `'${echoFile.replaceAll("'", "'\\''")}'`;
+  await page.keyboard.type(`echo ${marker} one two > ${quotedFile}`, { delay: TYPE_DELAY_MS });
+  await page.keyboard.press("Enter");
   await expect
-    .poll(async () => await terminalText(page), { timeout: ECHO_TIMEOUT_MS })
-    .toContain(`${marker} one two`);
+    .poll(() => fs.existsSync(echoFile) ? fs.readFileSync(echoFile, "utf8").trim() : "", {
+      timeout: ECHO_TIMEOUT_MS,
+    })
+    .toBe(`${marker} one two`);
+  await page.locator(".vex-terminal-surface--active").screenshot({
+    path: testInfo.outputPath("shell-space-terminal.png"),
+  });
 
   /* ---- 2. THE GRID FILLS THE PANE -------------------------------------- */
 

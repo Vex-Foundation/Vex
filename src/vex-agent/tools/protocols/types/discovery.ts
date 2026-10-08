@@ -213,9 +213,13 @@ export interface ProtocolDiscoveryListItem {
  * and the dispatcher's `toModelDiscoveryResult`). The model uses `method` and
  * `denseFailed` to interpret weak matches (lexical fallback often signals
  * embedding-sidecar issues, not query problems).
+ *
+ * `exact`: the query was one candidate's exact `toolId` or `publicName`, so it
+ * was resolved locally at rank 0 without an embedding call; any rows after it
+ * are lexical neighbours.
  */
 export interface ProtocolDiscoveryRetrievalMeta {
-  method: "catalog" | "dense" | "lexical" | "list";
+  method: "catalog" | "dense" | "lexical" | "list" | "exact";
   /** True when dense retrieval was attempted but lexical fallback produced the result. */
   denseFailed: boolean;
   /** Provider-reported embedding model (only set when dense retrieval ran). Telemetry-only. */
@@ -224,7 +228,20 @@ export interface ProtocolDiscoveryRetrievalMeta {
   embeddingDim?: number;
   /** Number of candidates before scoring (post env/advertised/lifecycle filters). */
   candidateCount: number;
+  /**
+   * Present (and true) only when dense retrieval failed and the rows are a
+   * lexical fallback: keyword overlap, not semantic ranking. Model-facing, so a
+   * weak keyword match is never presented as a confident one.
+   */
+  lowConfidence?: true;
+  /**
+   * Why dense retrieval failed: the embedding call ran out of time, errored,
+   * or returned no usable rows. Telemetry-only.
+   */
+  denseFailureReason?: DenseFailureReason;
 }
+
+export type DenseFailureReason = "timeout" | "error" | "no_rows";
 
 /**
  * Model-facing projection of {@link ProtocolDiscoveryRetrievalMeta}: the same
@@ -235,7 +252,7 @@ export interface ProtocolDiscoveryRetrievalMeta {
  */
 export type ProtocolDiscoveryModelRetrievalMeta = Omit<
   ProtocolDiscoveryRetrievalMeta,
-  "embeddingModel" | "embeddingDim"
+  "embeddingModel" | "embeddingDim" | "denseFailureReason"
 >;
 
 export interface ProtocolDiscoveryResult {
@@ -293,6 +310,11 @@ export interface ToolSearchQueryRow {
   actionKind: ActionKind;
   /** Present only when true - same contract as {@link ProtocolDiscoveryItem}. */
   unavailable_at_pressure?: boolean;
+  /**
+   * P-2 only (`registry/discovery-policy.ts`), present only when true: the row
+   * was SHOWN but not recorded, so it is not callable until selected.
+   */
+  notLoaded?: boolean;
 }
 
 /**

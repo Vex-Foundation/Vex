@@ -4,7 +4,10 @@ import {
   buildMissionCapitalBanner,
   renderMissionCapitalBanner,
 } from "../../../../vex-agent/engine/prompts/mission-capital-banner.js";
-import type { MissionBaseline } from "../../../../vex-agent/engine/mission/baseline.js";
+import type {
+  MissionBaseline,
+  MissionBaselineDeployedCapital,
+} from "../../../../vex-agent/engine/mission/baseline.js";
 import type { PortfolioValuation } from "../../../../vex-agent/db/repos/balances.js";
 
 const START: PortfolioValuation = {
@@ -23,7 +26,19 @@ const NOW: PortfolioValuation = {
   newestSyncedAt: "2026-08-10T13:42:04.000Z",
 };
 
-const RECORDED: MissionBaseline = {
+const DECLARED: MissionBaselineDeployedCapital = {
+  chainId: 4663,
+  assetAddress: "0x0f9f000000000000000000000000000000000b6ee",
+  assetKind: "token",
+  assetSymbol: "VEX",
+  declaredAmountRaw: "3044000000000000000000",
+  declaredDecimals: 18,
+  heldAmountRaw: "6802264854000000000000",
+  heldDecimals: 18,
+  heldUsdEstimate: 1.98,
+};
+
+const RECORDED: Extract<MissionBaseline, { status: "recorded" }> = {
   version: 1,
   capturedAt: "2026-08-10T13:12:30.000Z",
   status: "recorded",
@@ -31,23 +46,7 @@ const RECORDED: MissionBaseline = {
   source: "proj_balances",
   scope: { addresses: ["0xAAA", "0xBBB"] },
   portfolio: START,
-  deployedCapitalAtStart: {
-    chainId: 4663,
-    assetAddress: "0x0f9f000000000000000000000000000000000b6ee",
-    assetSymbol: "VEX",
-    declaredAmountRaw: "3044000000000000000000",
-    declaredDecimals: 18,
-    heldAmountRaw: "6802264854000000000000",
-    heldDecimals: 18,
-    heldUsdEstimate: 1.98,
-  },
-};
-
-/** The declaration under test, named once so no read site needs an assertion. */
-const DECLARED = RECORDED.deployedCapitalAtStart ?? {
-  chainId: 0, assetAddress: "", assetSymbol: "",
-  declaredAmountRaw: "0", declaredDecimals: 0,
-  heldAmountRaw: null, heldDecimals: null, heldUsdEstimate: null,
+  deployedCapitalAtStart: DECLARED,
 };
 
 const ABSENT: MissionBaseline = {

@@ -26,7 +26,7 @@ const SESSION_EVM = {
 };
 
 const mockResolveSelectedAddress = vi.fn<WalletResolveModule["resolveSelectedAddress"]>(() => SESSION_EVM.address);
-const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => SESSION_EVM);
+const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(async () => SESSION_EVM);
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddress: (...args: Parameters<WalletResolveModule["resolveSelectedAddress"]>) => mockResolveSelectedAddress(...args),
@@ -152,7 +152,7 @@ function execute(params: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockResolveSelectedAddress.mockReturnValue(SESSION_EVM.address);
-  mockResolveSigningWallet.mockReturnValue(SESSION_EVM);
+  mockResolveSigningWallet.mockResolvedValue(SESSION_EVM);
   mockReadErc20Metadata.mockImplementation(async (_slug: string, address: string) => ({
     address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
   }));

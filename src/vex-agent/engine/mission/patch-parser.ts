@@ -13,8 +13,9 @@
  * the security regression guard.
  */
 
-import type { DeployedCapital, MissionDraft, MissionPatch } from "../types.js";
+import type { DeployedCapital, MissionDraft, MissionPatch, MissionReasoningEffort } from "../types.js";
 import { normalizeDeployedCapital } from "./deployed-capital.js";
+import { normalizeMissionReasoningEffort } from "./reasoning-effort.js";
 
 // ── Allowed keys ────────────────────────────────────────────────
 
@@ -51,6 +52,14 @@ const ALLOWED_NUMBER_KEYS = new Set<keyof MissionDraft>(["durationMinutes"]);
 const ALLOWED_OBJECT_KEYS = new Set<keyof MissionDraft>(["deployedCapital"]);
 
 /**
+ * `reasoningEffort` (E-1) is an ENUM: a string, but not free text, so it has
+ * its own sanitizer. Model-writable like `durationMinutes`: it is a runtime
+ * setting, not a fee, limit or destination, and any write clears acceptance
+ * so the user re-reads it on the contract card.
+ */
+const ALLOWED_ENUM_KEYS = new Set<keyof MissionDraft>(["reasoningEffort"]);
+
+/**
  * DELIBERATELY NOT ALLOWED — do not add these, whatever a later task seems to
  * need (contract C6).
  *
@@ -78,6 +87,7 @@ const ALL_ALLOWED_KEYS = new Set<string>(
     ...ALLOWED_ARRAY_KEYS,
     ...ALLOWED_NUMBER_KEYS,
     ...ALLOWED_OBJECT_KEYS,
+    ...ALLOWED_ENUM_KEYS,
   ].filter((key) => !MODEL_FORBIDDEN_KEYS.has(key)),
 );
 
@@ -148,6 +158,11 @@ export function sanitizePatch(patch: MissionPatch): Partial<MissionDraft> {
       if (sanitized !== undefined) {
         (result as Record<string, unknown>)[key] = sanitized;
       }
+    } else if (ALLOWED_ENUM_KEYS.has(key as keyof MissionDraft)) {
+      const sanitized = sanitizeReasoningEffort(value);
+      if (sanitized !== undefined) {
+        (result as Record<string, unknown>)[key] = sanitized;
+      }
     }
   }
 
@@ -196,6 +211,17 @@ function sanitizeDeployedCapital(value: unknown): DeployedCapital | null | undef
   if (value === null) return null;
   if (typeof value !== "object" || Array.isArray(value)) return undefined;
   return normalizeDeployedCapital(value);
+}
+
+/**
+ * Sanitize the E-1 reasoning effort: `null` clears it (the default applies),
+ * a known effort is kept (case-insensitive, trimmed), anything else is
+ * rejected (no key, no write) rather than silently mapped to a level.
+ */
+function sanitizeReasoningEffort(value: unknown): MissionReasoningEffort | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "string") return undefined;
+  return normalizeMissionReasoningEffort(value.trim().toLowerCase()) ?? undefined;
 }
 
 // ── Model output parser ─────────────────────────────────────────

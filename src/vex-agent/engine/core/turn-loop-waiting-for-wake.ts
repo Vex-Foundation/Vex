@@ -33,6 +33,8 @@ export async function applyWaitingForWakePostBatch(args: {
   /** Forwarded to the ladder so a forced apply can prove lease ownership. */
   readonly runnerOwnerId?: string;
   readonly sessionPermission: "restricted" | "full";
+  /** The run's Stop signal; ends the ladder's bounded wait promptly (S-5). */
+  readonly signal?: AbortSignal;
   readonly handlePostCompactBookkeeping: () => Promise<void>;
 }): Promise<void> {
   const freshSession = await sessionsRepo.getSession(args.sessionId);
@@ -49,6 +51,7 @@ export async function applyWaitingForWakePostBatch(args: {
       ...(args.runnerOwnerId === undefined
         ? {}
         : { runnerOwnerId: args.runnerOwnerId }),
+      ...(args.signal === undefined ? {} : { signal: args.signal }),
     });
     if (outcome.kind === "committed") {
       await args.handlePostCompactBookkeeping();

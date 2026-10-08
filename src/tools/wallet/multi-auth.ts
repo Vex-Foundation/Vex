@@ -31,12 +31,12 @@ export type ChainWallet = EvmWallet | SolanaWallet;
 
 // ── Entry → wallet loaders (engine/main only) ──────────────────────────────
 
-function loadEvmWalletFromEntry(entry: WalletInventoryEntry): EvmWallet {
-  return { family: "eip155", ...loadEvmKey(entry) };
+async function loadEvmWalletFromEntry(entry: WalletInventoryEntry): Promise<EvmWallet> {
+  return { family: "eip155", ...(await loadEvmKey(entry)) };
 }
 
-function loadSolanaWalletFromEntry(entry: WalletInventoryEntry): SolanaWallet {
-  const secretKey = loadSolanaSecret(entry);
+async function loadSolanaWalletFromEntry(entry: WalletInventoryEntry): Promise<SolanaWallet> {
+  const secretKey = await loadSolanaSecret(entry);
   const derivedAddress = deriveSolanaAddress(secretKey);
   if (derivedAddress !== entry.address) {
     throw new VexError(
@@ -50,12 +50,12 @@ function loadSolanaWalletFromEntry(entry: WalletInventoryEntry): SolanaWallet {
 
 // ── Primary resolution (no session-scoped wallet selection) ────────────────
 
-export function requireEvmWallet(): EvmWallet {
-  const { address, privateKey } = requireWalletAndKeystore();
+export async function requireEvmWallet(): Promise<EvmWallet> {
+  const { address, privateKey } = await requireWalletAndKeystore();
   return { family: "eip155", address, privateKey };
 }
 
-export function requireSolanaWallet(): SolanaWallet {
+export async function requireSolanaWallet(): Promise<SolanaWallet> {
   const entry = getPrimarySolanaEntry();
   if (!entry) {
     throw new VexError(
@@ -67,7 +67,7 @@ export function requireSolanaWallet(): SolanaWallet {
   return loadSolanaWalletFromEntry(entry);
 }
 
-export function requireWalletForChain(family: ChainFamily): ChainWallet {
+export async function requireWalletForChain(family: ChainFamily): Promise<ChainWallet> {
   return family === "solana" ? requireSolanaWallet() : requireEvmWallet();
 }
 
@@ -148,10 +148,10 @@ export function resolveSelectedEntry(
 }
 
 /** Decrypt + build a ChainWallet from an already-resolved inventory entry. */
-export function loadWalletFromEntry(
+export async function loadWalletFromEntry(
   family: InventoryFamily,
   entry: WalletInventoryEntry,
-): ChainWallet {
+): Promise<ChainWallet> {
   return family === "solana" ? loadSolanaWalletFromEntry(entry) : loadEvmWalletFromEntry(entry);
 }
 
@@ -160,10 +160,10 @@ export function loadWalletFromEntry(
  * Composition of `resolveSelectedEntry` + `loadWalletFromEntry`. Kept for the
  * engine signing path and trusted maintenance callers.
  */
-export function resolveWalletForFamily(
+export async function resolveWalletForFamily(
   family: ChainFamily,
   resolution: WalletResolution,
-): ChainWallet {
+): Promise<ChainWallet> {
   const { family: inv, entry } = resolveSelectedEntry(family, resolution);
   return loadWalletFromEntry(inv, entry);
 }

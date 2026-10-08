@@ -446,3 +446,253 @@ describe("the signed transaction expiry recorded at signing (migration 169)", ()
     expect(await orders.findByIntentIdAnySession(fixture.input.intentId)).toMatchObject({ executionState: "approval_pending" });
   });
 });
+
+describe("approved create intents whose consent expired before any nonce reservation", () => {
+  /** An approved create row as an interrupted execution leaves it: nothing reserved, signed or sent. */
+  async function seedApprovedCreate(overrides: Record<string, unknown> = {}): Promise<string> {
+    const intentId = `lighter-create-${randomUUID()}`;
+    await insertFixture("lighter_order_execution_intents", {
+      intent_id: intentId,
+      session_id: sessionId,
+      preview_id: await seedPreview("a".repeat(64)),
+      match_hash: "c".repeat(64),
+      environment: SCOPE.environment,
+      account_index: SCOPE.accountIndex,
+      api_key_index: SCOPE.apiKeyIndex,
+      market_index: 0,
+      side: "buy",
+      base_amount_integer: "1000",
+      price_integer: "200000",
+      order_type: "market",
+      time_in_force: "immediate-or-cancel",
+      reduce_only: false,
+      order_expiry_ms: 0,
+      client_order_index_policy: "vex_assigned_uint48",
+      provider_version: "integration-fixture",
+      credential_ref_json: {
+        kind: "encrypted_vault_reference", ...SCOPE,
+        vaultCredentialId: "lighter/rhc/account-4242/api-key-7",
+      },
+      approval_status: "approved",
+      decided_at: new Date(Date.now() - 120_000),
+      decision_reason: "user approved",
+      execution_state: "approval_pending",
+      expires_at: new Date(Date.now() - 60_000),
+      ...overrides,
+    });
+    return intentId;
+  }
+
+  function readCreate(intentId: string) {
+    return queryOne<Record<string, unknown>>("SELECT * FROM lighter_order_execution_intents WHERE intent_id=$1", [intentId]);
+  }
+
+  it("finalizes only the expired approved rows that never reserved, signed or sent, and keeps their approval", async () => {
+    const neverRevalidated = await seedApprovedCreate();
+    const revalidated = await seedApprovedCreate({
+      pre_submit_revalidation_json: { checked: true },
+      pre_submit_revalidated_at: new Date(Date.now() - 90_000),
+    });
+    const untouched = {
+      unexpired: await seedApprovedCreate({ expires_at: new Date(Date.now() + 3_600_000) }),
+      awaitingApproval: await seedApprovedCreate({ approval_status: "approval_pending", decided_at: null, decision_reason: null }),
+      nonceReserved: await seedApprovedCreate({ nonce_reservation_id: "lighter-order:reserved", nonce_value: "12" }),
+      sendAttemptStarted: await seedApprovedCreate({ send_attempt_started_at: new Date(Date.now() - 30_000) }),
+      signed: await seedApprovedCreate({
+        execution_state: "signed", signed_at: new Date(Date.now() - 75_000), signer_tx_hash: "fixture-hash-signed",
+        client_order_index: "1001", nonce_reservation_id: "lighter-order:signed", nonce_value: "13",
+      }),
+      ambiguous: await seedApprovedCreate({
+        execution_state: "ambiguous", ambiguous_at: new Date(Date.now() - 30_000), ambiguous_reason: "send_tx_transport_ambiguous",
+      }),
+      rejectedByProvider: await seedApprovedCreate({ execution_state: "rejected" }),
+    };
+    const before = new Map<string, Record<string, unknown>>();
+    for (const intentId of Object.values(untouched)) before.set(intentId, requireValue(await readCreate(intentId)));
+    const beforeRetired = requireValue(await readCreate(neverRevalidated));
+
+    const retired = await orders.retireExpiredApprovedBeforeReservation();
+
+    expect(retired.map((row) => row.intentId).sort()).toEqual([neverRevalidated, revalidated].sort());
+    for (const row of retired) {
+      expect(row).toMatchObject({
+        approvalStatus: "approved",
+        executionState: "rejected",
+        ambiguousReason: "consent_expired_before_reservation",
+        nonceReservationId: null,
+        nonceValue: null,
+        signerTxHash: null,
+        submittedTxHash: null,
+      });
+    }
+    // The approval decision is kept as history; only the execution state ends.
+    expect(await readCreate(neverRevalidated)).toMatchObject({
+      approval_status: "approved",
+      decided_at: beforeRetired.decided_at,
+      decision_reason: beforeRetired.decision_reason,
+      execution_state: "rejected",
+      send_attempt_started_at: null,
+    });
+    for (const [intentId, row] of before) expect(await readCreate(intentId)).toEqual(row);
+
+    // Idempotent: a second startup finds nothing left to finalize.
+    expect(await orders.retireExpiredApprovedBeforeReservation()).toEqual([]);
+  });
+
+  it("loses to a concurrent nonce attach and never retires a row that reserved first", async () => {
+    const intentId = await seedApprovedCreate({ expires_at: new Date(Date.now() - 1_000) });
+    const pool = getPool();
+    const attaching = await pool.connect();
+    try {
+      await attaching.query("BEGIN");
+      await attaching.query(
+        `UPDATE lighter_order_execution_intents SET nonce_reservation_id=$2, nonce_value='12', updated_at=NOW()
+          WHERE intent_id=$1 AND execution_state='approval_pending' AND nonce_reservation_id IS NULL`,
+        [intentId, `lighter-order:${intentId}`],
+      );
+      const pid = requireValue((await attaching.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]).pid;
+      const retiring = orders.retireExpiredApprovedBeforeReservation();
+      await expectBlockedBy(pid, "lighter_order_execution_intents");
+      await attaching.query("COMMIT");
+      expect(await retiring).toEqual([]);
+    } finally {
+      attaching.release();
+    }
+    expect(await readCreate(intentId)).toMatchObject({
+      execution_state: "approval_pending",
+      nonce_reservation_id: `lighter-order:${intentId}`,
+      ambiguous_reason: null,
+    });
+  });
+});
+
+describe("approved OCO consent that expired before any nonce reservation", () => {
+  async function seedApprovedOco(overrides: Record<string, unknown> = {}): Promise<string> {
+    const intentId = `lighter-oco-${randomUUID()}`;
+    await insertFixture("lighter_oco_execution_intents", {
+      intent_id: intentId, session_id: sessionId,
+      match_hash: randomUUID().replaceAll("-", "").repeat(2),
+      environment: SCOPE.environment,
+      account_index: SCOPE.accountIndex, api_key_index: SCOPE.apiKeyIndex,
+      market_index: 0, side: "sell", base_amount_integer: "1000",
+      stop_loss_preview_id: await seedPreview("a".repeat(64)), stop_loss_match_hash: "a".repeat(64),
+      stop_loss_price_integer: "190000", stop_loss_trigger_price_integer: "190000",
+      take_profit_preview_id: await seedPreview("b".repeat(64)), take_profit_match_hash: "b".repeat(64),
+      take_profit_price_integer: "210000", take_profit_trigger_price_integer: "210000",
+      order_expiry_ms: Date.now() + 3_600_000,
+      client_order_index_policy: "vex_assigned_uint48", provider_version: "integration-fixture",
+      preview_json: {}, live_source_json: { source: "integration_fixture" },
+      credential_ref_json: {
+        kind: "encrypted_vault_reference", ...SCOPE,
+        vaultCredentialId: "lighter/rhc/account-4242/api-key-7",
+      },
+      approval_status: "approved", decided_at: new Date(Date.now() - 120_000),
+      decision_reason: "user approved", execution_state: "approval_pending",
+      expires_at: new Date(Date.now() - 60_000),
+      ...overrides,
+    });
+    return intentId;
+  }
+
+  function readOco(intentId: string) {
+    return queryOne<Record<string, unknown>>("SELECT * FROM lighter_oco_execution_intents WHERE intent_id=$1", [intentId]);
+  }
+
+  it("ends pristine and revalidated expired consent while keeping approval consumed and nonce state untouched", async () => {
+    const approvalId = randomUUID();
+    await insertFixture("approval_queue", {
+      id: approvalId, session_id: sessionId, status: "approved",
+      tool_call: { namespace: "lighter", toolName: "oco.create" }, reasoning: "integration fixture",
+    });
+    const pristine = await seedApprovedOco({ approval_id: approvalId });
+    const revalidated = await seedApprovedOco({
+      pre_submit_revalidation_json: { checked: true }, pre_submit_revalidated_at: new Date(Date.now() - 90_000),
+    });
+    const before = requireValue(await readOco(pristine));
+    expect(await oco.listUnresolved()).toEqual([]);
+    const retired = await oco.retireExpiredApprovedBeforeReservation();
+    expect(retired.map((row) => row.intentId).sort()).toEqual([pristine, revalidated].sort());
+    expect(await readOco(pristine)).toMatchObject({
+      approval_status: "approved", approval_id: before.approval_id, decided_at: before.decided_at,
+      decision_reason: before.decision_reason, execution_state: "rejected",
+      ambiguous_reason: "consent_expired_before_reservation",
+      nonce_reservation_id: null, nonce_value: null, signer_tx_hash: null,
+      submitted_tx_hash: null, send_attempt_started_at: null,
+    });
+    expect(await readNonce()).toBeNull();
+    expect(await oco.markApprovalDecision({ intentId: pristine, decision: "approved", approvalId: null, reason: "retry" })).toBeNull();
+    expect(await oco.markPreSubmitRevalidated({ intentId: pristine, sessionId, environment: "rhc", evidence: { checked: true } })).toBeNull();
+    const attaching = await getPool().connect();
+    try {
+      expect(await oco.attachNonceReservationWith(attaching, {
+        intentId: revalidated, sessionId, ...SCOPE, reservationId: `lighter-oco:${revalidated}`, nonceValue: "12",
+      })).toBeNull();
+    } finally {
+      attaching.release();
+    }
+    expect(await oco.retireExpiredApprovedBeforeReservation()).toEqual([]);
+  });
+
+  const evidenceGuards: readonly [string, Record<string, unknown>][] = [
+    ["unexpired consent", { expires_at: new Date(Date.now() + 3_600_000) }],
+    ["undecided approval", { approval_status: "approval_pending", decided_at: null, decision_reason: null }],
+    ["rejected approval", { approval_status: "rejected", execution_state: "rejected" }],
+    ["expired approval", { approval_status: "expired", execution_state: "rejected" }],
+    ["reserved nonce", { nonce_reservation_id: "fixture-reserved", nonce_value: "12" }],
+    ["partial nonce identity", { nonce_value: "12" }],
+    ["signature hash", { signer_tx_hash: "fixture-hash" }],
+    ["signed expiry", { signer_expiry_ms: Date.now() + 3_600_000 }],
+    ["child order identities", { stop_loss_client_order_index: "1001", take_profit_client_order_index: "1002" }],
+    ["send attempt", { send_attempt_started_at: new Date(Date.now() - 30_000) }],
+    ["submitted hash", { submitted_tx_hash: "fixture-submitted" }],
+    ["submission code", { submit_code: 200 }],
+    ["submission message", { submit_message: "fixture-accepted" }],
+    ["predicted execution", { predicted_execution_time_ms: 1 }],
+    ["volume quota", { volume_quota_remaining: "1" }],
+    ["provider evidence", { provider_outcome_json: { accepted: true } }],
+    ["provider checked timestamp", { provider_outcome_checked_at: new Date(Date.now() - 30_000) }],
+    ["uncertainty reason", { ambiguous_reason: "fixture-uncertain" }],
+    ...["signed", "submitted", "api_accepted", "sequencer_pending", "active", "resolved", "rejected", "ambiguous"]
+      .map((execution_state): [string, Record<string, unknown>] => [execution_state, { execution_state }]),
+  ];
+
+  it.each(evidenceGuards)("preserves every field after expiry when there is %s", async (_name, evidence) => {
+    const intentId = await seedApprovedOco(evidence);
+    const before = requireValue(await readOco(intentId));
+    expect(await oco.retireExpiredApprovedBeforeReservation()).toEqual([]);
+    expect(await readOco(intentId)).toEqual(before);
+  });
+
+  it("bounds each batch and keeps a different environment untouched", async () => {
+    const wrongEnvironment = await seedApprovedOco({ environment: "core" });
+    const before = requireValue(await readOco(wrongEnvironment));
+    const oldest = await seedApprovedOco({ expires_at: new Date(Date.now() - 120_000) });
+    const newer = await seedApprovedOco();
+    expect((await oco.retireExpiredApprovedBeforeReservation({ environment: "rhc", limit: 1 })).map((row) => row.intentId)).toEqual([oldest]);
+    expect((await oco.retireExpiredApprovedBeforeReservation({ environment: "rhc", limit: 1 })).map((row) => row.intentId)).toEqual([newer]);
+    expect(await readOco(wrongEnvironment)).toEqual(before);
+  });
+
+  it("loses the retirement CAS to an in-flight exact nonce attachment", async () => {
+    const intentId = await seedApprovedOco({
+      pre_submit_revalidation_json: { checked: true }, pre_submit_revalidated_at: new Date(Date.now() - 90_000),
+    });
+    const attaching = await getPool().connect();
+    try {
+      await attaching.query("BEGIN");
+      expect(await oco.attachNonceReservationWith(attaching, {
+        intentId, sessionId, ...SCOPE, reservationId: `lighter-oco:${intentId}`, nonceValue: "12",
+      })).toMatchObject({ executionState: "approval_pending", nonceValue: "12" });
+      const pid = requireValue((await attaching.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]).pid;
+      const retiring = oco.retireExpiredApprovedBeforeReservation();
+      await expectBlockedBy(pid, "lighter_oco_execution_intents");
+      await attaching.query("COMMIT");
+      expect(await retiring).toEqual([]);
+    } finally {
+      attaching.release();
+    }
+    expect(await readOco(intentId)).toMatchObject({
+      execution_state: "approval_pending", nonce_reservation_id: `lighter-oco:${intentId}`, ambiguous_reason: null,
+    });
+  });
+});

@@ -12,7 +12,7 @@ import { usePendingApprovals } from "../../../lib/api/approvals.js";
 import { approvalsKeys } from "../../../lib/api/queryKeys.js";
 import { selectFreshApprovals } from "../approvals/fresh-approvals.js";
 import { invalidateOnApprovalResolve } from "../approvals/invalidate-on-resolve.js";
-import { isLighterOrderApproval } from "./desk-approvals.js";
+import { isDeskCloseApproval, isLighterOrderApproval } from "./desk-approvals.js";
 import {
   filledAmountSentence,
   fillsForOrder,
@@ -20,7 +20,7 @@ import {
   totalFillSize,
   type DeskOrderExecution,
 } from "./desk-fill-outcome.js";
-import { isPositiveDecimal } from "./decimal.js";
+import { compareDecimalStrings, isPositiveDecimal } from "./decimal.js";
 import type { LighterPositionRow, OrderCancelStage, PositionCloseStage } from "./account-model.js";
 import { recordFunnelStep } from "./funnel.js";
 import {
@@ -42,11 +42,19 @@ const DESK_CARD_EXPIRY_GRACE_MS = 5_000;
 const APPROVALS_REFETCH_INTERVAL_MS = 60_000;
 
 /**
+ * With `APPROVAL_DISPATCH_BACKGROUND` on, an approve answers `dispatching` and
+ * its outcome arrives on `EV.approvals.dispatch`. An event can be missed (a
+ * reloaded window, a payload dropped at the preload gate), so a card still
+ * waiting this long asks main for its durable status. It never re-sends.
+ */
+const DISPATCH_OUTCOME_FALLBACK_MS = 90_000;
+
+/**
  * The ticket's own Long/Short, Close and Cancel - never the account-setup
  * modal's deposit/key/fee chain, which has its own auto-approve driver
  * (`useLighterAccountSetup`) and never reaches this lane's approval dialog.
  */
-type DeskLaneAction = Extract<LighterDeskAction, { kind: "order" | "close" | "cancel" }>;
+type DeskLaneAction = Extract<LighterDeskAction, { kind: "order" | "close" | "cancel" | "cancel_all" }>;
 
 function closeDisposition(output: string | undefined): "closed" | "partially_closed" | "not_closed" | "sequencer_pending" | "ambiguous" | null {
   if (output === undefined) return null;
@@ -75,6 +83,19 @@ function cancelDisposition(output: string | undefined): "canceled" | "sequencer_
   }
 }
 
+function cancelAllDisposition(output: string | undefined): "cancel_all_completed" | "sequencer_pending" | "ambiguous" | null {
+  if (output === undefined) return null;
+  try {
+    const parsed: unknown = JSON.parse(output);
+    if (parsed === null || typeof parsed !== "object" || !("source" in parsed) || parsed.source !== "vex_lighter_order_cancel_all"
+      || !("status" in parsed)) return null;
+    return parsed.status === "cancel_all_completed" || parsed.status === "sequencer_pending" || parsed.status === "ambiguous"
+      ? parsed.status : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface DeskLaneInput {
   activeSessionId: string | null;
   environment: LighterTradingEnvironment;
@@ -93,7 +114,7 @@ export interface DeskLaneInput {
 interface DeskScope {
   readonly sessionId: string;
   readonly environment: LighterTradingEnvironment;
-  readonly marketId: number;
+  readonly marketId: number | null;
 }
 
 interface PendingDeskAction {
@@ -103,6 +124,7 @@ interface PendingDeskAction {
   readonly symbol: string | null;
   readonly closeKey: string | null;
   readonly cancelKey: string | null;
+  readonly cancelAllKey: string | null;
 }
 
 interface PendingClose {
@@ -112,6 +134,9 @@ interface PendingClose {
   readonly marketId: number;
   readonly side: LighterPositionRow["side"];
   readonly sizeBefore: string;
+  /** Partial-close completion waits for the fresh original position bound on its card. */
+  readonly approvalPositionBound: boolean;
+  readonly partialClose: boolean;
   readonly startedAt: number;
   readonly stage: PositionCloseStage;
   readonly orderId: string | null;
@@ -127,6 +152,20 @@ interface PendingCancel {
   /** Refreshed when the approval resolves, so an earlier snapshot cannot settle it. */
   readonly startedAt: number;
   readonly stage: OrderCancelStage;
+}
+
+interface PendingCancelAll {
+  readonly sessionId: string;
+  readonly environment: LighterTradingEnvironment;
+  readonly accountIndex: number | null;
+  readonly startedAt: number;
+  readonly stage: OrderCancelStage;
+  /** Canonical approval identities; null until the card's main-authored facts arrive. */
+  readonly orderKeys: readonly string[] | null;
+}
+
+function sameCancelAllScope(pending: PendingCancelAll, sessionId: string | null, environment: LighterTradingEnvironment, accountIndex: number | null): boolean {
+  return pending.sessionId === sessionId && pending.environment === environment && pending.accountIndex === accountIndex;
 }
 
 function closeRowKey(marketId: number, side: LighterPositionRow["side"]): string {
@@ -252,6 +291,23 @@ export function useDeskLane({
   const [pendingCloses, setPendingCloses] = useState<ReadonlyMap<string, PendingClose>>(() => new Map());
   const cancelAttempts = useRef<Map<string, PendingCancel>>(new Map());
   const [pendingCancels, setPendingCancels] = useState<ReadonlyMap<string, PendingCancel>>(() => new Map());
+  const cancelAllAttempts = useRef<Map<string, PendingCancelAll>>(new Map());
+  const [pendingCancelAlls, setPendingCancelAlls] = useState<ReadonlyMap<string, PendingCancelAll>>(() => new Map());
+  const updateCancelAll = (key: string, update: PendingCancelAll | null): void => {
+    const next = new Map(cancelAllAttempts.current);
+    if (update === null) next.delete(key);
+    else next.set(key, update);
+    cancelAllAttempts.current = next;
+    setPendingCancelAlls(next);
+  };
+  const setCancelAllStage = (key: string | null, stage: OrderCancelStage): void => {
+    if (key === null) return;
+    const current = cancelAllAttempts.current.get(key);
+    if (current !== undefined) updateCancelAll(key, { ...current, stage, startedAt: Date.now() });
+  };
+  const clearCancelAll = (key: string | null): void => {
+    if (key !== null && cancelAllAttempts.current.has(key)) updateCancelAll(key, null);
+  };
   const updateClose = (key: string, update: PendingClose | null): void => {
     const next = new Map(closeAttempts.current);
     if (update === null) next.delete(key);
@@ -262,7 +318,9 @@ export function useDeskLane({
   const setCloseStage = (key: string | null, stage: PositionCloseStage, orderId: string | null = null): void => {
     if (key === null) return;
     const current = closeAttempts.current.get(key);
-    if (current !== undefined) updateClose(key, { ...current, stage, orderId });
+    if (current !== undefined) updateClose(key, { ...current, stage, orderId,
+      ...(current.partialClose && stage !== "approval" ? { startedAt: Date.now() } : {}),
+    });
   };
   const clearClose = (key: string | null): void => {
     if (key !== null && closeAttempts.current.has(key)) updateClose(key, null);
@@ -282,8 +340,18 @@ export function useDeskLane({
   const clearCancel = (key: string | null): void => {
     if (key !== null && cancelAttempts.current.has(key)) updateCancel(key, null);
   };
-  const currentScope = useRef({ sessionId: activeSessionId, environment, marketId });
-  currentScope.current = { sessionId: activeSessionId, environment, marketId };
+  const currentAccountIndex = account?.environment === environment ? account.accountIndex : null;
+  const currentScope = useRef({ sessionId: activeSessionId, environment, marketId, accountIndex: currentAccountIndex });
+  currentScope.current = { sessionId: activeSessionId, environment, marketId, accountIndex: currentAccountIndex };
+  const pendingScopeIsCurrent = (pending: PendingDeskAction): boolean => {
+    if (pending.action.kind === "cancel_all") {
+      const attempt = pending.cancelAllKey === null ? undefined : cancelAllAttempts.current.get(pending.cancelAllKey);
+      return attempt !== undefined && sameCancelAllScope(attempt, currentScope.current.sessionId, currentScope.current.environment, currentScope.current.accountIndex);
+    }
+    return pending.action.kind === "cancel"
+      ? pending.scope.sessionId === currentScope.current.sessionId && pending.scope.environment === currentScope.current.environment
+      : sameDeskScope(pending.scope, currentScope.current);
+  };
 
   const approvalsQuery = usePendingApprovals(activeSessionId, {
     refetchInterval: APPROVALS_REFETCH_INTERVAL_MS,
@@ -292,6 +360,50 @@ export function useDeskLane({
     if (approvalsQuery.data?.ok !== true) return [];
     return approvalsQuery.data.data.filter(isLighterOrderApproval);
   }, [approvalsQuery.data]);
+  useEffect(() => {
+    for (const approval of approvals) {
+      const pending = pendingDesk.current.get(approval.id);
+      if (pending?.action.kind !== "close" || (pending.action.closePercent ?? 100) === 100
+        || pending.closeKey === null || !isDeskCloseApproval(approval) || approval.sessionId !== pending.scope.sessionId) continue;
+      const current = closeAttempts.current.get(pending.closeKey);
+      const args = approval.preview?.criticalArgs;
+      if (current === undefined || current.approvalPositionBound || args === undefined
+        || args.environment !== pending.scope.environment || args.marketIndex !== pending.action.marketId
+        || typeof args.accountIndex !== "number" || !Number.isSafeInteger(args.accountIndex) || args.accountIndex < 0
+        || (args.positionSide !== "long" && args.positionSide !== "short")
+        || typeof args.positionAmount !== "string" || !isPositiveDecimal(args.positionAmount)
+        || typeof args.baseAmount !== "string" || !isPositiveDecimal(args.baseAmount)
+        || compareDecimalStrings(args.baseAmount, args.positionAmount) !== -1
+        || args.closingSide !== (args.positionSide === "long" ? "sell" : "buy") || args.reduceOnly !== true) continue;
+      const bound: PendingClose = { ...current, accountIndex: args.accountIndex, side: args.positionSide,
+        sizeBefore: args.positionAmount, approvalPositionBound: true };
+      const key = closeAttemptKey(bound);
+      if (key !== pending.closeKey && closeAttempts.current.has(key)) continue;
+      const next = new Map(closeAttempts.current);
+      next.delete(pending.closeKey);
+      next.set(key, bound);
+      closeAttempts.current = next;
+      setPendingCloses(next);
+      pendingDesk.current.set(approval.id, { ...pending, closeKey: key });
+    }
+  }, [approvals, pendingCloses]);
+  useEffect(() => {
+    for (const approval of approvals) {
+      const pending = pendingDesk.current.get(approval.id);
+      if (pending?.action.kind !== "cancel_all" || pending.cancelAllKey === null) continue;
+      const current = cancelAllAttempts.current.get(pending.cancelAllKey);
+      const args = approval.preview?.criticalArgs;
+      if (current === undefined || args === undefined || args.environment !== pending.scope.environment
+        || typeof args.accountIndex !== "number" || !Number.isSafeInteger(args.accountIndex) || args.accountIndex < 0
+        || typeof args.orderIdentities !== "string") continue;
+      const orderKeys = args.orderIdentities.split(",");
+      if (orderKeys.length === 0 || orderKeys.length !== args.orderCount
+        || new Set(orderKeys).size !== orderKeys.length
+        || orderKeys.some((key) => !/^(?:0|[1-9][0-9]*):[1-9][0-9]*$/.test(key))) continue;
+      if (current.accountIndex === args.accountIndex && current.orderKeys?.join(",") === args.orderIdentities) continue;
+      updateCancelAll(pending.cancelAllKey, { ...current, accountIndex: args.accountIndex, orderKeys });
+    }
+  }, [approvals, pendingCancelAlls]);
   const seenApprovalIds = useRef<Set<string>>(new Set());
   const focusApprovalId = useMemo(
     () => selectFreshApprovals(approvals, seenApprovalIds.current)[0]?.id ?? null,
@@ -336,10 +448,12 @@ export function useDeskLane({
         if (pending === undefined) return;
         pendingDesk.current.delete(id);
         deskCardExpiry.current.delete(id);
+        const scopeIsCurrent = pendingScopeIsCurrent(pending);
         clearClose(pending.closeKey);
         clearCancel(pending.cancelKey);
-        const request = pending.action.kind === "close" ? "close" : pending.action.kind === "cancel" ? "cancel" : "order";
-        setDeskOutcome({ tone: "warn", text: `The ${request} request expired before it was approved. Nothing was sent.` });
+        clearCancelAll(pending.cancelAllKey);
+        const request = pending.action.kind === "close" ? "close" : pending.action.kind === "cancel_all" ? "cancel-all" : pending.action.kind === "cancel" ? "cancel" : "order";
+        if (pending.action.kind !== "cancel_all" || scopeIsCurrent) setDeskOutcome({ tone: "warn", text: `The ${request} request expired before it was approved. Nothing was sent.` });
       }, () => undefined);
     }
     const timer = Number.isFinite(nextCheckAt)
@@ -349,7 +463,7 @@ export function useDeskLane({
       stale = true;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [approvals, approvalsQuery.data, deskCardCheck]);
+  }, [approvals, approvalsQuery.data, deskCardCheck, pendingCancelAlls]);
 
   useEffect(() => {
     setHandoffError(null);
@@ -363,11 +477,11 @@ export function useDeskLane({
   // shows the exact position reduced/absent, or a finished resting order,
   // releases its row for another close.
   useEffect(() => {
-    if (account === null || account.status === "unavailable" || activeSessionId === null) return;
+    if (account === null || account.environment !== environment || account.status === "unavailable" || activeSessionId === null) return;
     for (const [key, close] of closeAttempts.current) {
       if ((close.accountIndex === null && close.sessionId !== activeSessionId) || close.environment !== environment
         || close.accountIndex !== account.accountIndex || account.retrievedAt <= close.startedAt) continue;
-      if (close.stage === "preparing" || close.stage === "approval") continue;
+      if (close.stage === "preparing" || close.stage === "approval" || !close.approvalPositionBound) continue;
       const position = account.positions.find((row) => row.marketId === close.marketId && row.side === close.side);
       if (position === undefined) {
         updateClose(key, null);
@@ -380,17 +494,33 @@ export function useDeskLane({
       if (orderStillOpen && !close.orderSeen) updateClose(key, { ...close, orderSeen: true });
       if (close.stage === "resting" && close.orderSeen && account.openOrdersAvailable && !account.openOrdersTruncated && !orderStillOpen) {
         updateClose(key, null);
-        if (Math.abs(Number(position.size)) < Math.abs(Number(close.sizeBefore))) {
+        if (compareDecimalStrings(position.size.replace(/^-/, ""), close.sizeBefore.replace(/^-/, "")) === -1) {
           setDeskOutcome({ tone: "ok", text: "Position reduced." });
         }
         continue;
       }
-      if (!orderStillOpen && Math.abs(Number(position.size)) < Math.abs(Number(close.sizeBefore))) {
+      if (!orderStillOpen && compareDecimalStrings(position.size.replace(/^-/, ""), close.sizeBefore.replace(/^-/, "")) === -1) {
         updateClose(key, null);
         setDeskOutcome({ tone: "ok", text: "Position reduced." });
       }
     }
-  }, [account, activeSessionId, environment]);
+  }, [account, activeSessionId, environment, pendingCloses]);
+
+  // Account-wide acceptance alone cannot prove that every order was canceled.
+  // Wait for a complete, newer provider snapshot in the exact initiating scope.
+  useEffect(() => {
+    if (account === null || account.environment !== environment || account.status === "unavailable" || !account.openOrdersAvailable
+      || account.openOrdersTruncated) return;
+    for (const [key, cancelAll] of cancelAllAttempts.current) {
+      if (!sameCancelAllScope(cancelAll, activeSessionId, environment, account.accountIndex)
+        || cancelAll.stage === "preparing" || cancelAll.stage === "approval"
+        || account.retrievedAt <= cancelAll.startedAt) continue;
+      if (cancelAll.orderKeys === null ? account.openOrders.length !== 0
+        : account.openOrders.some((order) => cancelAll.orderKeys?.includes(cancelRowKey(order.marketId, order.orderId)))) continue;
+      updateCancelAll(key, null);
+      setDeskOutcome({ tone: "ok", text: "Requested orders are no longer open. Check Trade History for any fills before cancellation." });
+    }
+  }, [account, activeSessionId, environment, pendingCancelAlls]);
 
   // A successful cancel response is not enough to remove a row from a cached
   // account view. Only a newer, complete provider order list can release it.
@@ -431,8 +561,18 @@ export function useDeskLane({
         rows.set(cancelRowKey(cancel.marketId, cancel.orderId), cancel.stage);
       }
     }
+    for (const cancelAll of pendingCancelAlls.values()) {
+      if (account.environment !== environment || !sameCancelAllScope(cancelAll, activeSessionId, environment, account.accountIndex)) continue;
+      for (const order of account.openOrders) {
+        const key = cancelRowKey(order.marketId, order.orderId);
+        if (cancelAll.orderKeys === null || cancelAll.orderKeys.includes(key)) rows.set(key, cancelAll.stage);
+      }
+    }
     return rows;
-  }, [account, activeSessionId, environment, pendingCancels]);
+  }, [account, activeSessionId, environment, pendingCancels, pendingCancelAlls]);
+  const cancelAllPending = account !== null && account.environment === environment && [...pendingCancelAlls.values()].some((pending) => (
+    sameCancelAllScope(pending, activeSessionId, environment, account.accountIndex)
+  ));
 
   const finishFilledOrder = useCallback((input: {
     readonly draft: TradeDraft | null;
@@ -456,7 +596,7 @@ export function useDeskLane({
   // fills. This handles full fills and partial-fill-then-cancel without sizing
   // protection from the originally requested amount.
   useEffect(() => {
-    if (awaitedOrder === null || fills === null) return;
+    if (awaitedOrder === null || awaitedOrder.scope.marketId === null || fills === null) return;
     const exactFills = fills.available
       ? fillsForOrder(fills.fills, awaitedOrder.scope.marketId, awaitedOrder.orderId)
       : [];
@@ -512,26 +652,86 @@ export function useDeskLane({
     });
   }, [account, awaitedOrder, fills, finishFilledOrder]);
 
+  // Background approve (K-2 B2): approvals answered `dispatching`, waiting for
+  // their outcome event, with the fallback check each one has scheduled.
+  const dispatchFallbacks = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const clearDispatchFallback = (approvalId: string): void => {
+    const timer = dispatchFallbacks.current.get(approvalId);
+    if (timer !== undefined) clearTimeout(timer);
+    dispatchFallbacks.current.delete(approvalId);
+  };
+  const scheduleDispatchFallback = (approvalId: string): void => {
+    clearDispatchFallback(approvalId);
+    dispatchFallbacks.current.set(approvalId, setTimeout(() => {
+      dispatchFallbacks.current.delete(approvalId);
+      if (!pendingDesk.current.has(approvalId)) return;
+      void window.vex.approvals.get({ id: approvalId }).then((read) => {
+        if (!pendingDesk.current.has(approvalId)) return;
+        const status = read.ok ? read.data?.executionStatus ?? null : null;
+        if (status === "succeeded" || status === "failed" || status === "indeterminate") {
+          // The outcome event never came, so the tool's own words are not here
+          // to read. The durable row says the dispatch ended; the one honest
+          // thing to tell the trader is to check before acting again.
+          resolvedRef.current("approved", {
+            id: approvalId,
+            status: "approved",
+            resolvedAt: null,
+            runtimeOutcome: "stopped",
+            executionStatus: "indeterminate",
+            missionRunId: null,
+            cached: true,
+            message: "Outcome not received.",
+          });
+          return;
+        }
+        scheduleDispatchFallback(approvalId);
+      }, () => scheduleDispatchFallback(approvalId));
+    }, DISPATCH_OUTCOME_FALLBACK_MS));
+  };
+  useEffect(() => () => {
+    for (const timer of dispatchFallbacks.current.values()) clearTimeout(timer);
+    dispatchFallbacks.current.clear();
+  }, []);
+
   // A desk card resolved. Protection remains a separate approval, and it is
   // loaded only after the provider proves the amount that actually filled.
   const onApprovalResolved = (decision: "approved" | "rejected", result: ApprovalActionResult): void => {
     const pending = pendingDesk.current.get(result.id);
     if (pending === undefined) return;
+    if (decision === "approved" && result.executionStatus === "dispatching") {
+      // The slot is claimed and the order is going out; its outcome follows
+      // as an event and lands back here through the same handler. The card
+      // stays tracked until then, so its row stays locked.
+      scheduleDispatchFallback(result.id);
+      const dispatchingScopeIsCurrent = pendingScopeIsCurrent(pending);
+      if (dispatchingScopeIsCurrent) setDeskOutcome({ tone: "warn", text: "Approved. Sending to Lighter..." });
+      return;
+    }
+    clearDispatchFallback(result.id);
     pendingDesk.current.delete(result.id);
     deskCardExpiry.current.delete(result.id);
     if (decision === "rejected") {
       clearClose(pending.closeKey);
       clearCancel(pending.cancelKey);
+      clearCancelAll(pending.cancelAllKey);
       recordFunnelStep("desk_approval_rejected", pending.scope.environment);
       return;
     }
     recordFunnelStep("desk_approve", pending.scope.environment);
-    const scopeIsCurrent = pending.action.kind === "cancel"
-      ? pending.scope.sessionId === currentScope.current.sessionId
-        && pending.scope.environment === currentScope.current.environment
-      : sameDeskScope(pending.scope, currentScope.current);
+    const scopeIsCurrent = pendingScopeIsCurrent(pending);
     if (result.executionStatus === "succeeded") {
       if (pending.action.kind !== "order") {
+        if (pending.action.kind === "cancel_all") {
+          const disposition = cancelAllDisposition(result.toolOutput);
+          setCancelAllStage(pending.cancelAllKey, disposition === "cancel_all_completed" ? "checking" : "uncertain");
+          void queryClient.invalidateQueries({ queryKey: ["lighterTrading", "account", pending.scope.environment] });
+          if (scopeIsCurrent) setDeskOutcome({ tone: "warn", text: disposition === "cancel_all_completed"
+            ? "Cancellation confirmed. Refreshing the requested order list..."
+            : disposition === "sequencer_pending"
+              ? "Cancellation accepted and still confirming on Lighter. Wait for order status before retrying."
+              : "Cancel-all outcome is uncertain. Wait for the account's order status before retrying." });
+          return;
+        }
         if (pending.action.kind === "close") {
           const disposition = closeDisposition(result.toolOutput);
           if (disposition === "not_closed") {
@@ -672,12 +872,15 @@ export function useDeskLane({
     if (result.executionStatus === "indeterminate") {
       setCloseStage(pending.closeKey, "uncertain");
       setCancelStage(pending.cancelKey, "uncertain");
-      if (pending.cancelKey !== null) {
+      setCancelAllStage(pending.cancelAllKey, "uncertain");
+      if (pending.cancelKey !== null || pending.cancelAllKey !== null) {
         void queryClient.invalidateQueries({ queryKey: ["lighterTrading", "account", pending.scope.environment] });
       }
       if (pending.action.kind === "order") recordFunnelStep("desk_order_unknown", pending.scope.environment);
       if (!scopeIsCurrent) return;
-      setDeskOutcome({ tone: "warn", text: pending.action.kind === "cancel"
+      setDeskOutcome({ tone: "warn", text: pending.action.kind === "cancel_all"
+        ? "Cancel-all outcome is uncertain. Wait for the account's order status before retrying."
+        : pending.action.kind === "cancel"
         ? "Cancel outcome is uncertain. Wait for order status before retrying."
         : "Outcome unknown. Open Orders below and refresh before retrying." });
       return;
@@ -685,22 +888,55 @@ export function useDeskLane({
     if (pending.action.kind === "order") recordFunnelStep("desk_order_rejected", pending.scope.environment);
     clearClose(pending.closeKey);
     clearCancel(pending.cancelKey);
+    clearCancelAll(pending.cancelAllKey);
     if (!scopeIsCurrent) return;
     setDeskOutcome({ tone: "error", text: deskFailureMessage(result.toolOutput ?? result.message) });
   };
 
+  const resolvedRef = useRef(onApprovalResolved);
+  resolvedRef.current = onApprovalResolved;
+
+  // A failed decision the desk itself must report: the card that would have
+  // shown it is gone (auto-approved, or answered `dispatching`).
+  const failDeskApproval = (approvalId: string, message: string): void => {
+    clearDispatchFallback(approvalId);
+    const pending = pendingDesk.current.get(approvalId);
+    const scopeIsCurrent = pending === undefined || pending.action.kind !== "cancel_all" || pendingScopeIsCurrent(pending);
+    pendingDesk.current.delete(approvalId);
+    clearClose(pending?.closeKey ?? null);
+    clearCancel(pending?.cancelKey ?? null);
+    clearCancelAll(pending?.cancelAllKey ?? null);
+    if (scopeIsCurrent) setHandoffError(message);
+  };
+  const failRef = useRef(failDeskApproval);
+  failRef.current = failDeskApproval;
+
+  // The background approve's outcome (`EV.approvals.dispatch`). Silent while
+  // the switch is off. Only cards this desk is tracking are touched, and a
+  // card is settled once: whichever of the event and the reply comes second
+  // finds nothing left to settle.
+  useEffect(() => {
+    const off = window.vex.approvals.onDispatchEvent?.((event) => {
+      if (event.phase === "dispatching") return;
+      const pending = pendingDesk.current.get(event.approvalId);
+      if (pending === undefined) return;
+      if (event.phase === "settled") resolvedRef.current("approved", event.result);
+      else failRef.current(event.approvalId, event.message);
+      void invalidateOnApprovalResolve(queryClient, pending.scope.sessionId);
+    });
+    return () => off?.();
+  }, [queryClient]);
+
   // "Don't ask again" for Market close: the card still goes through main's
   // prepare -> approve lane; the desk just answers it in the user's stead
-  // before the pending list is pulled, so no dialog flashes.
+  // before the pending list is pulled, so no dialog flashes. The outcome is
+  // shown from the reply itself; the five-query refresh follows in the
+  // background instead of standing between the reply and the ticket.
   const approveOnDesk = async (sessionId: string, approvalId: string): Promise<void> => {
     const result = await window.vex.approvals.approve({ id: approvalId });
-    await invalidateOnApprovalResolve(queryClient, sessionId);
+    void invalidateOnApprovalResolve(queryClient, sessionId);
     if (!result.ok) {
-      const pending = pendingDesk.current.get(approvalId);
-      pendingDesk.current.delete(approvalId);
-      clearClose(pending?.closeKey ?? null);
-      clearCancel(pending?.cancelKey ?? null);
-      setHandoffError(result.error.message);
+      failDeskApproval(approvalId, result.error.message);
       return;
     }
     onApprovalResolved("approved", result.data);
@@ -711,6 +947,16 @@ export function useDeskLane({
       onNoSession();
       return;
     }
+    const accountIndex = account?.accountIndex ?? null;
+    if ((action.kind === "cancel" || action.kind === "cancel_all")
+      && [...cancelAllAttempts.current.values()].some((pending) => sameCancelAllScope(pending, activeSessionId, environment, accountIndex))) return;
+    if (action.kind === "cancel_all" && [...cancelAttempts.current.values()].some((pending) => (
+      pending.sessionId === activeSessionId && pending.environment === environment && pending.accountIndex === accountIndex
+    ))) return;
+    const cancelAllKey = action.kind === "cancel_all" ? `${environment}:${activeSessionId}:${accountIndex}` : null;
+    if (cancelAllKey !== null) updateCancelAll(cancelAllKey, {
+      sessionId: activeSessionId, environment, accountIndex, startedAt: Date.now(), stage: "preparing", orderKeys: null,
+    });
     const close = closePosition === null ? null : {
       sessionId: activeSessionId,
       environment,
@@ -718,6 +964,8 @@ export function useDeskLane({
       marketId: closePosition.marketId,
       side: closePosition.side,
       sizeBefore: closePosition.size,
+      approvalPositionBound: action.kind !== "close" || (action.closePercent ?? 100) === 100,
+      partialClose: action.kind === "close" && (action.closePercent ?? 100) !== 100,
       startedAt: Date.now(),
       stage: "preparing" as const,
       orderId: null,
@@ -754,7 +1002,7 @@ export function useDeskLane({
     const scope: DeskScope = {
       sessionId: activeSessionId,
       environment,
-      marketId: action.marketId,
+      marketId: action.kind === "cancel_all" ? null : action.marketId,
     };
     let enqueued = false;
     try {
@@ -772,15 +1020,17 @@ export function useDeskLane({
         action,
         draft,
         scope,
-        symbol: action.marketId === marketId ? marketSymbol : null,
+        symbol: action.kind !== "cancel_all" && action.marketId === marketId ? marketSymbol : null,
         closeKey,
         cancelKey,
+        cancelAllKey,
       });
       enqueued = true;
       setCloseStage(closeKey, "approval");
       setCancelStage(cancelKey, "approval");
+      setCancelAllStage(cancelAllKey, "approval");
       recordFunnelStep("desk_card", environment);
-      if (action.kind === "close" && skipCloseConfirm) {
+      if (action.kind === "close" && (action.closePercent ?? 100) === 100 && skipCloseConfirm) {
         await approveOnDesk(activeSessionId, result.data.approvalId);
         return;
       }
@@ -790,6 +1040,7 @@ export function useDeskLane({
     } finally {
       if (!enqueued) clearClose(closeKey);
       if (!enqueued) clearCancel(cancelKey);
+      if (!enqueued) clearCancelAll(cancelAllKey);
       offProgress?.();
       setPrepareStage(null);
       setSubmitting(false);
@@ -808,8 +1059,13 @@ export function useDeskLane({
     submitting,
     prepareStage,
     deskOutcome,
+    clearDeskFeedback: () => {
+      setHandoffError(null);
+      setDeskOutcome(null);
+    },
     closingPositions,
     cancellingOrders,
+    cancelAllPending,
     prepareOnDesk,
     onApprovalResolved,
   };

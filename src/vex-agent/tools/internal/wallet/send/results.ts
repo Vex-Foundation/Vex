@@ -9,7 +9,7 @@ import type { ToolResult } from "../../../types.js";
 export function ok(data: unknown): ToolResult {
   return {
     success: true,
-    output: JSON.stringify(data, null, 2),
+    output: JSON.stringify(data),
     data: data as Record<string, unknown>,
   };
 }

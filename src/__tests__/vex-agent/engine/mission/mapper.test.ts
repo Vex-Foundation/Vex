@@ -57,7 +57,20 @@ describe("mission mapper", () => {
         maxLaunchValueRaw: null,
         maxLaunchValueDecimals: null,
         maxLaunchCount: null,
+        reasoningEffort: null,
       });
+    });
+
+    it("reads a stored reasoning effort, and an unknown one as not set (E-1)", () => {
+      const withEffort = { ...makeMission(), constraintsJson: { reasoningEffort: "high" } };
+      expect(missionToDraft(withEffort).reasoningEffort).toBe("high");
+      const bogus = { ...makeMission(), constraintsJson: { reasoningEffort: "turbo" } };
+      expect(missionToDraft(bogus).reasoningEffort).toBeNull();
+    });
+
+    it("writes the effort into constraints_json and a clear as null (E-1)", () => {
+      expect(domainToRow({ reasoningEffort: "low" }).constraints_json).toEqual({ reasoningEffort: "low" });
+      expect(domainToRow({ reasoningEffort: null }).constraints_json).toEqual({ reasoningEffort: null });
     });
 
     it("converts Mission row to domain MissionDraft", () => {

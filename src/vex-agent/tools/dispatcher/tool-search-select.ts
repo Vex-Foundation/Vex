@@ -36,7 +36,7 @@
  */
 
 import {
-  MAX_DISCOVERED_TOOLS_PER_SESSION,
+  discoveredToolCapacity,
   getDiscoveredToolIds,
   recordDiscoveredTools,
 } from "../registry/discovered-tools.js";
@@ -168,7 +168,7 @@ export function selectProtocolTools(
     warnings,
     sessionCapacity: {
       used: getDiscoveredToolIds(ctx.sessionId).length,
-      max: MAX_DISCOVERED_TOOLS_PER_SESSION,
+      max: discoveredToolCapacity(),
     },
   };
 }

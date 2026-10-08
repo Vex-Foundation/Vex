@@ -38,7 +38,7 @@ type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resol
 const SIGNER = Keypair.generate();
 const WALLET_ADDRESS = SIGNER.publicKey.toBase58();
 
-const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => ({
+const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(async () => ({
   family: "solana" as const, address: WALLET_ADDRESS, secretKey: SIGNER.secretKey,
 }));
 const mockResolveSelectedAddress = vi.fn<WalletResolveModule["resolveSelectedAddress"]>(() => WALLET_ADDRESS);
@@ -184,7 +184,7 @@ function expectJupUsdPayoutLeg(event: IntentEvent): void {
 describe("prediction payout leg — JupUSD identity, never a USD estimate as a token amount", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockResolveSigningWallet.mockReturnValue({ family: "solana", address: WALLET_ADDRESS, secretKey: SIGNER.secretKey });
+    mockResolveSigningWallet.mockResolvedValue({ family: "solana", address: WALLET_ADDRESS, secretKey: SIGNER.secretKey });
     mockResolveSelectedAddress.mockReturnValue(WALLET_ADDRESS);
     mockRequestSell.mockResolvedValue(structuredClone(SELL_ORDER));
     mockRequestClaim.mockResolvedValue(structuredClone(CLAIM_POSITION));

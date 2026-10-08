@@ -189,11 +189,11 @@ export async function poolsLaunchExecuteHandler(
   //     the read-only client here is what makes "no signer was opened" a
   //     structural property of the leg rather than a promise in a comment.
   let publicClient;
-  let signing: ReturnType<typeof openLaunchSigningClients> | null = null;
+  let signing: Awaited<ReturnType<typeof openLaunchSigningClients>> | null = null;
   if (simulateOnly) {
     publicClient = getLocalPublicClient(chainConfig);
   } else {
-    signing = openLaunchSigningClients(context, chainConfig);
+    signing = await openLaunchSigningClients(context, chainConfig);
     if (!signing.ok) return signing.result;
     publicClient = signing.clients.publicClient;
   }

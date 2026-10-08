@@ -443,7 +443,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 2046,
+      "descriptionBytes": 2019,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -484,7 +484,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 1959,
+      "descriptionBytes": 2011,
       "destructiveHint": false,
       "inputSchema": {
         "properties": {
@@ -588,7 +588,7 @@
     },
     {
       "alwaysLoad": true,
-      "descriptionBytes": 2039,
+      "descriptionBytes": 1901,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -978,15 +978,15 @@
             "type": "string"
           },
           "gasPriceWei": {
-            "description": "LEGACY cap on the price per gas unit, in RAW wei as a decimal integer string, for chains without EIP-1559. Mutually exclusive with the 1559 pair. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint you choose from. That refusal is the first call of the two-call workflow.",
+            "description": "LEGACY cap on the price per gas unit, in RAW wei as a decimal integer string, for chains without EIP-1559. Mutually exclusive with the 1559 pair. REQUIRED IN EFFECT, optional in the schema, for the reason `gasLimit` gives.",
             "type": "string"
           },
           "maxFeePerGasWei": {
-            "description": "EIP-1559 cap on the total price per gas unit, in RAW wei as a decimal integer string. Pass this with maxPriorityFeePerGasWei, or pass gasPriceWei instead, never both. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint you choose from. That refusal is the first call of the two-call workflow.",
+            "description": "EIP-1559 cap on the total price per gas unit, in RAW wei as a decimal integer string. Pass this with maxPriorityFeePerGasWei, or pass gasPriceWei instead, never both. REQUIRED IN EFFECT, optional in the schema, for the reason `gasLimit` gives.",
             "type": "string"
           },
           "maxPriorityFeePerGasWei": {
-            "description": "EIP-1559 cap on the validator tip per gas unit, in RAW wei as a decimal integer string. Cannot exceed maxFeePerGasWei. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint you choose from. That refusal is the first call of the two-call workflow.",
+            "description": "EIP-1559 cap on the validator tip per gas unit, in RAW wei as a decimal integer string. Cannot exceed maxFeePerGasWei. REQUIRED IN EFFECT, optional in the schema, for the reason `gasLimit` gives.",
             "type": "string"
           },
           "to": {
@@ -1222,15 +1222,15 @@
             "type": "string"
           },
           "gasPriceWei": {
-            "description": "LEGACY cap on the price per gas unit, in RAW wei as a decimal integer string, for chains without EIP-1559. Mutually exclusive with the 1559 pair. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint. That refusal is the first call of the two-call workflow.",
+            "description": "LEGACY cap on the price per gas unit, in RAW wei as a decimal integer string, for chains without EIP-1559. Mutually exclusive with the 1559 pair. REQUIRED IN EFFECT, optional in the schema, for the reason `gasLimit` gives.",
             "type": "string"
           },
           "maxFeePerGasWei": {
-            "description": "EIP-1559 cap on the total price per gas unit, in RAW wei as a decimal integer string. Pass this with maxPriorityFeePerGasWei, or pass gasPriceWei instead, never both. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint. That refusal is the first call of the two-call workflow.",
+            "description": "EIP-1559 cap on the total price per gas unit, in RAW wei as a decimal integer string. Pass this with maxPriorityFeePerGasWei, or pass gasPriceWei instead, never both. REQUIRED IN EFFECT, optional in the schema, for the reason `gasLimit` gives.",
             "type": "string"
           },
           "maxPriorityFeePerGasWei": {
-            "description": "EIP-1559 cap on the validator tip per gas unit, in RAW wei as a decimal integer string. Cannot exceed maxFeePerGasWei. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint. That refusal is the first call of the two-call workflow.",
+            "description": "EIP-1559 cap on the validator tip per gas unit, in RAW wei as a decimal integer string. Cannot exceed maxFeePerGasWei. REQUIRED IN EFFECT, optional in the schema, for the reason `gasLimit` gives.",
             "type": "string"
           }
         },
@@ -4953,7 +4953,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 3965,
+      "descriptionBytes": 4018,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
@@ -6268,7 +6268,7 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 631,
+      "descriptionBytes": 690,
       "destructiveHint": true,
       "inputSchema": {
         "additionalProperties": false,
@@ -6298,13 +6298,17 @@
     },
     {
       "alwaysLoad": false,
-      "descriptionBytes": 602,
+      "descriptionBytes": 796,
       "destructiveHint": false,
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "accountIndex": {
             "description": "Optional Lighter account index. In a session, omit it to use the account owned by the selected EVM wallet; an explicit index must match that wallet.",
+            "type": "number"
+          },
+          "closePercent": {
+            "description": "Optional percentage of the exact live position to close: 25, 50, 75, or 100. Defaults to 100. Partial amounts are floored to market size precision and must meet live order minimums.",
             "type": "number"
           },
           "dryRun": {
@@ -6324,7 +6328,7 @@
             "type": "number"
           },
           "slippageBps": {
-            "description": "Explicit maximum slippage in basis points from 1 through 500. Vex refuses the close unless visible live depth can fill the entire position inside this bound.",
+            "description": "Explicit maximum slippage in basis points from 1 through 500. Vex refuses the close unless visible live depth can fill the requested close amount inside this bound.",
             "minimum": 0,
             "type": "integer"
           }

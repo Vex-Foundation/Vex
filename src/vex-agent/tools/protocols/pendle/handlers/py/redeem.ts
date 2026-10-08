@@ -101,7 +101,7 @@ export async function executePendleRedeemPy(p: Record<string, unknown>, context:
 
     let signer: ChainWallet;
     try {
-      signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+      signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
     } catch (err) {
       return walletScopeErrorToResult(err);
     }
@@ -177,7 +177,7 @@ export async function executePendleRedeemPy(p: Record<string, unknown>, context:
         amountIn: amountInRaw,
         executedAmountOut: humanAmount(outAmount, outDec).toString(),
         quotedAmountOut: humanAmount(quotedOutRaw, outDec).toString(),
-      }, null, 2),
+      }),
       data: {
         txHash,
         _executionId: broadcast.executionId,

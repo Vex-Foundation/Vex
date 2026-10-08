@@ -24,6 +24,9 @@ import { resolveToolName } from "./registry/name-resolution.js";
 import { checkPressureDeny } from "./dispatcher/pressure-gate.js";
 import { checkPlanAcceptanceDeny } from "./dispatcher/plan-acceptance-gate.js";
 import { routeToolCall } from "./dispatcher/protocol-route.js";
+import { readTimeoutMsFor, routeWithReadTimeout } from "./dispatcher/read-timeout.js";
+import { resolveParallelSafeRead } from "./parallel-safe-reads.js";
+import { readToolReadBounds } from "./read-dispatch-bounds.js";
 import { isAbortError } from "@utils/cancellation.js";
 import {
   describeFailureForLog,
@@ -32,6 +35,9 @@ import {
 } from "@utils/error-summary.js";
 import { TOOL_ABORTED_BY_USER_STOP_OUTPUT } from "@vex-agent/engine/core/turn-loop-tool-batch/results.js";
 import logger from "@utils/logger.js";
+import { dispatchTargetMaySign } from "./dispatcher/signing-targets.js";
+import { LOCK_BUTTON } from "../../lib/lock-button.js";
+import { trackInFlightSigning } from "@vex-agent/engine/core/in-flight-signing.js";
 
 // Compatibility façade re-exports - preserve the dispatcher's public surface.
 export { checkPressureDeny } from "./dispatcher/pressure-gate.js";
@@ -162,9 +168,29 @@ export async function dispatchTool(
     return withActionKindFallback(planDenied, call.name);
   }
 
+  // Read timeout (Kairos T-3): ONLY an audited parallel-safe read is bounded.
+  // Every other call, and above all anything that may sign or broadcast, runs
+  // unwrapped to completion. See `./dispatcher/read-timeout.ts`.
+  const allowlistedRead = resolveParallelSafeRead(call.name);
+  const readTimeoutMs = allowlistedRead === null
+    ? 0
+    : readTimeoutMsFor(allowlistedRead, readToolReadBounds());
+
   try {
-    const result = await routeToolCall(call, context);
+    const route = () => readTimeoutMs > 0
+      ? routeWithReadTimeout(routeToolCall, call, context, readTimeoutMs)
+      : routeToolCall(call, context);
+    const result = LOCK_BUTTON && dispatchTargetMaySign(call)
+      ? await trackInFlightSigning("mutating_tool", route)
+      : await route();
     const durationMs = Date.now() - startTime;
+    if (result.failure?.kind === "tool_timeout") {
+      logger.warn("tools.dispatch.read_timeout", {
+        tool: call.name,
+        timeoutMs: result.failure.timeoutMs,
+        durationMs,
+      });
+    }
 
     logger.debug("tools.dispatch.completed", {
       tool: call.name,

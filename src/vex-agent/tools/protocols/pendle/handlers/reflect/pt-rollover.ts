@@ -141,7 +141,7 @@ export async function executePendlePtRollover(
       wallet = getAddress(resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155"));
     } else {
       try {
-        signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+        signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
       } catch (err) {
         return walletScopeErrorToResult(err);
       }
@@ -286,7 +286,7 @@ export async function executePendlePtRollover(
         executedAmountIn: amountTriplet(executedInRaw, ptIn.decimals),
         executedAmountOut: amountTriplet(executedOutRaw, outDecimals),
         quotedAmountOut: amountTriplet(quotedOutRaw, outDecimals),
-      }, null, 2),
+      }),
       // NO `_tradeCapture`: this tool's durable truth is the `agent_activity` row
       // written by `sendPendleRouterTx`.
       data: { txHash, _executionId: broadcast.executionId },

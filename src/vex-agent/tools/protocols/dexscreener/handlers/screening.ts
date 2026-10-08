@@ -92,6 +92,7 @@ import {
   siteError,
 } from "@tools/dexscreener/site-errors.js";
 import { bool, fail, num, ok, str } from "../../handler-helpers.js";
+import { withReadProjection } from "../row-projection.js";
 import { readStringList } from "../../runtime/list-params.js";
 import type { ProtocolHandler } from "../../types.js";
 import {
@@ -1589,7 +1590,7 @@ function guarded(
 ): ProtocolHandler {
   return async (params, context) => {
     try {
-      return await run(params, context.abortSignal);
+      return withReadProjection(await run(params, context.abortSignal));
     } catch (error) {
       if (isDexScreenerSiteError(error)) {
         return fail(

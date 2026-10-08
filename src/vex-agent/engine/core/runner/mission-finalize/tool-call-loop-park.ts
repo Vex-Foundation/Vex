@@ -34,6 +34,8 @@
 import type { MissionStatus } from "../../../types.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import logger from "@utils/logger.js";
+import { fenceRunWriteWith } from "@vex-agent/db/lease-fence.js";
+import type { RunnerLeaseGuard } from "../../../runtime/lease-guard.js";
 
 /**
  * Truthful default when the batch did not supply its own summary. It names the
@@ -50,6 +52,7 @@ export async function finalizeToolCallLoopPark(
   runId: string,
   sessionId: string,
   stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
+  leaseGuard?: RunnerLeaseGuard,
 ): Promise<MissionStatus> {
   const { gateOnOperatorStopWithClient, withSessionControlLock } = await import(
     "../../../runtime/lease-and-status.js"
@@ -62,6 +65,16 @@ export async function finalizeToolCallLoopPark(
     // Fail-closed: the gate only COMPLETES the stop; it never resumes or
     // dispatches anything. A stopped run gets no park write at all.
     if (gate.kind === "stopped") return false;
+    // Lease fence, AFTER the gate (control lock → requests → run → lease is
+    // the lock order): a runner whose claim was taken over parks nothing;
+    // the run belongs to the new owner.
+    if (
+      leaseGuard !== undefined
+      && !(await fenceRunWriteWith(client, leaseGuard.fence, runId, "mission_park"))
+    ) {
+      leaseGuard.markLost("taken_over", "fence");
+      return false;
+    }
     return missionRunsRepo.updateStatusIfNotTerminal(
       runId,
       "paused_error",

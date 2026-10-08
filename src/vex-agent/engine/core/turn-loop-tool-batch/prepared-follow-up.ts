@@ -4,6 +4,10 @@ import { randomUUID } from "node:crypto";
 import type { Message } from "@vex-agent/db/repos/messages.js";
 import type { ParsedToolCall } from "@vex-agent/inference/types.js";
 import { dispatchTool } from "@vex-agent/tools/dispatcher.js";
+import {
+  dispatchWithTiming,
+  type ToolDispatchTelemetry,
+} from "./dispatch-timing.js";
 import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
 import { resolveInjectedProtocolTool } from "@vex-agent/tools/registry/injected-protocol-tools.js";
 import { resolveToolName } from "@vex-agent/tools/registry/name-resolution.js";
@@ -24,9 +28,11 @@ import type { ToolBatchOutcome } from "./outcome.js";
 import {
   APPROVAL_AUTO_REJECTED_RUN_TERMINAL_OUTPUT,
   APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT,
+  APPROVAL_SKIPPED_BY_LEASE_LOST_OUTPUT,
   mapBatchOutcome,
   persistBatchTranscript,
 } from "./results.js";
+import { isLeaseLost, leaseHeldForDispatch } from "../../runtime/lease-guard.js";
 
 export interface PreparedFollowUpResolution {
   readonly resultForTranscript: ToolResult;
@@ -141,6 +147,8 @@ export async function dispatchPreparedActionFollowUp(args: {
    * real window. Never checked mid-dispatch — a call in flight always finishes.
    */
   readonly abortSignal?: AbortSignal;
+  /** Runtime-measurement correlation; absent records no timing row. */
+  readonly telemetry?: ToolDispatchTelemetry;
 }): Promise<ToolBatchOutcome> {
   await persistBatchTranscript({
     sessionId: args.context.sessionId,
@@ -148,6 +156,7 @@ export async function dispatchPreparedActionFollowUp(args: {
     executedCalls: args.executedCalls,
     executedResults: args.executedResults,
     liveMessages: args.liveMessages,
+    ...(args.context.leaseGuard === undefined ? {} : { leaseGuard: args.context.leaseGuard }),
     reasoning: args.reasoning,
   });
 
@@ -168,21 +177,45 @@ export async function dispatchPreparedActionFollowUp(args: {
     });
   }
 
+  // ── Lease check immediately BEFORE the signing dispatch ──
+  // Same rule as the Stop above: the confirm is engine-synthesized, so there
+  // is nothing to pair - it simply is not dispatched on a session this
+  // runner no longer owns. The underlying wallet intent expires on its own.
+  if (
+    args.context.leaseGuard !== undefined
+    && !(await leaseHeldForDispatch(args.context.leaseGuard))
+  ) {
+    return mapBatchOutcome({
+      batchStopReason: "lease_lost",
+      batchStopOutput: null,
+      batchStopPayload: undefined,
+      compactCommittedThisBatch: false,
+      approvalId: null,
+      toolCallsExecuted: args.toolCallsExecuted,
+      lastText: args.lastText,
+    });
+  }
+
   const syntheticCall: ParsedToolCall = {
     id: `prepared-follow-up-${randomUUID()}`,
     name: args.followUp.toolName,
     arguments: args.followUp.args,
   };
-  let result = await dispatchTool(
-    {
-      name: syntheticCall.name,
-      args: syntheticCall.arguments,
-      toolCallId: syntheticCall.id,
-    },
-    {
-      ...args.toolContext,
-      modelOriginated: undefined,
-    },
+  let result = await dispatchWithTiming(
+    args.telemetry,
+    args.context.sessionId,
+    syntheticCall,
+    () => dispatchTool(
+      {
+        name: syntheticCall.name,
+        args: syntheticCall.arguments,
+        toolCallId: syntheticCall.id,
+      },
+      {
+        ...args.toolContext,
+        modelOriginated: undefined,
+      },
+    ),
   );
 
   // Only one trusted hop is permitted. Never dispatch recursively.
@@ -220,11 +253,42 @@ export async function dispatchPreparedActionFollowUp(args: {
           },
         ],
         liveMessages: args.liveMessages,
+      ...(args.context.leaseGuard === undefined ? {} : { leaseGuard: args.context.leaseGuard }),
+    ...(args.context.leaseGuard === undefined ? {} : { leaseGuard: args.context.leaseGuard }),
         systemOriginated: true,
       });
       return mapBatchOutcome({
         batchStopReason: "user_stopped",
         batchStopOutput: APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT,
+        batchStopPayload: undefined,
+        compactCommittedThisBatch: false,
+        approvalId: null,
+        toolCallsExecuted,
+        lastText: args.lastText,
+      });
+    }
+    // ── Lease loss after the confirm returned, before the enqueue ──
+    if (isLeaseLost(args.context.leaseGuard)) {
+      await persistBatchTranscript({
+        sessionId: args.context.sessionId,
+        content: null,
+        executedCalls: [syntheticCall],
+        executedResults: [
+          {
+            toolCallId: syntheticCall.id,
+            toolName: syntheticCall.name,
+            output: APPROVAL_SKIPPED_BY_LEASE_LOST_OUTPUT,
+            success: false,
+            explorerRefs: [],
+          },
+        ],
+        liveMessages: args.liveMessages,
+        systemOriginated: true,
+        ...(args.context.leaseGuard === undefined ? {} : { leaseGuard: args.context.leaseGuard }),
+      });
+      return mapBatchOutcome({
+        batchStopReason: "lease_lost",
+        batchStopOutput: APPROVAL_SKIPPED_BY_LEASE_LOST_OUTPUT,
         batchStopPayload: undefined,
         compactCommittedThisBatch: false,
         approvalId: null,
@@ -261,6 +325,8 @@ export async function dispatchPreparedActionFollowUp(args: {
           },
         ],
         liveMessages: args.liveMessages,
+      ...(args.context.leaseGuard === undefined ? {} : { leaseGuard: args.context.leaseGuard }),
+    ...(args.context.leaseGuard === undefined ? {} : { leaseGuard: args.context.leaseGuard }),
         systemOriginated: true,
       });
       return mapBatchOutcome({
@@ -284,6 +350,8 @@ export async function dispatchPreparedActionFollowUp(args: {
       executedCalls: [syntheticCall],
       executedResults: [],
       liveMessages: args.liveMessages,
+      ...(args.context.leaseGuard === undefined ? {} : { leaseGuard: args.context.leaseGuard }),
+    ...(args.context.leaseGuard === undefined ? {} : { leaseGuard: args.context.leaseGuard }),
       systemOriginated: true,
     });
     return mapBatchOutcome({
@@ -316,6 +384,7 @@ export async function dispatchPreparedActionFollowUp(args: {
       },
     ],
     liveMessages: args.liveMessages,
+    ...(args.context.leaseGuard === undefined ? {} : { leaseGuard: args.context.leaseGuard }),
     systemOriginated: true,
   });
   return mapBatchOutcome({

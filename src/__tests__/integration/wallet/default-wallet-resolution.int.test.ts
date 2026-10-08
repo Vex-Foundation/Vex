@@ -175,7 +175,7 @@ describe("default-source resolution over a real on-disk wallet inventory", () =>
   it("flags the real primary wallet's own launch once one is configured", async () => {
     // Generated, never a literal key: the fixture owns a fresh wallet whose
     // material lives and dies inside this temp dir.
-    const entry = createEvmWalletEntry({ label: "fixture" });
+    const entry = await createEvmWalletEntry({ label: "fixture" });
     // The inventory read the handler will perform, performed here first: this
     // assertion is what makes the flag below evidence about REAL resolution.
     expect(getPrimaryEvmEntry()?.address.toLowerCase()).toBe(entry.address.toLowerCase());

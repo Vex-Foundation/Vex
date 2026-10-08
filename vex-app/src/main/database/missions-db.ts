@@ -26,7 +26,7 @@
  *     against latest mission_run).
  */
 
-import { Client, type ClientConfig } from "pg";
+import type { Client } from "pg";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import type {
   MissionDraftDto,
@@ -35,6 +35,7 @@ import type {
 } from "@shared/schemas/mission.js";
 import { getMissingDraftFields } from "@vex-agent/engine/mission/validator.js";
 import { buildPoolConfig } from "./db-config.js";
+import { runWithMainDbClient } from "./main-ipc-pg-pool.js";
 import { log } from "../logger/index.js";
 import {
   MISSION_ROW_COLUMNS,
@@ -90,31 +91,17 @@ async function withClient<T>(
   }
   if (cfg === null) return dbUnavailable();
 
-  const clientConfig: ClientConfig = {
-    host: cfg.host,
-    port: cfg.port,
-    database: cfg.database,
-    user: cfg.user,
-    password: cfg.password,
-    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
-    statement_timeout: QUERY_TIMEOUT_MS,
-  };
-  const client = new Client(clientConfig);
-  try {
-    await client.connect();
-  } catch (cause) {
-    log.warn("[missions-db] client.connect failed", cause);
-    return dbUnavailable();
-  }
-  try {
-    return await fn(client);
-  } finally {
-    try {
-      await client.end();
-    } catch (cause) {
-      log.warn("[missions-db] client.end failed (non-fatal)", cause);
-    }
-  }
+  // Fresh client per call, or a pooled one when MAIN_IPC_PG_POOL is on
+  // (`main-ipc-pg-pool.ts`): same config, timeouts and failure results.
+  return runWithMainDbClient(
+    cfg,
+    {
+      logPrefix: "[missions-db]",
+      timeouts: { connectTimeoutMs: CONNECT_TIMEOUT_MS, statementTimeoutMs: QUERY_TIMEOUT_MS },
+      onConnectFailed: () => dbUnavailable(),
+    },
+    fn,
+  );
 }
 
 /** `contract_hash_version` value historically used while Hyperliquid mutations were live. */

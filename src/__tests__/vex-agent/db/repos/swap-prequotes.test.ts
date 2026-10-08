@@ -13,6 +13,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+import type { CreatePrequoteInput } from "@vex-agent/db/repos/swap-prequotes.js";
 
 type PoolQueryOneMock = Mock<
   (sql: string, params?: unknown[]) => Promise<Record<string, unknown> | null>
@@ -80,8 +81,8 @@ function fullRow(overrides: Partial<Record<string, unknown>> = {}): Record<strin
 }
 
 function buildCreateInput(
-  overrides: Partial<repo.CreatePrequoteInput> = {},
-): repo.CreatePrequoteInput {
+  overrides: Partial<CreatePrequoteInput> = {},
+): CreatePrequoteInput {
   return {
     prequoteId: PREQUOTE_ID,
     sessionId: SESSION_ID,
@@ -98,12 +99,9 @@ function buildCreateInput(
     safetyVerdict: "pass",
     safetyDetail: { tokenIn: { native: true }, tokenOut: { isHoneypot: false, isFOT: false, tax: 0 } },
     routeRef: null,
-    // Migration 095: a row that predates the claim lane reads as an
-    // executable, unclaimed quote. It authorizes nothing on its own - the
-    // claim additionally requires a stored route snapshot.
+    // Newly created executable quotes start unclaimed in the database;
+    // claim state is read from the stored row rather than supplied on creation.
     eligibilityKind: "executable",
-    claimedAt: null,
-    claimedBy: null,
     expiresAt: EXPIRES_AT,
     ...overrides,
   };

@@ -117,7 +117,7 @@ export const executePredictCloseAll: ProtocolHandler = async (p, ctx) => {
   );
   if (slippageViolation) return fail(slippageViolation);
 
-  const resolved = resolveSessionAndWallet(toolId, p, ctx);
+  const resolved = await resolveSessionAndWallet(toolId, p, ctx);
   if (isToolResult(resolved)) return resolved;
   const { sessionId, addr, secret } = resolved;
   const shared: SharedEventInput = { eventRole: "predict_close", walletAddress: addr, sessionId };

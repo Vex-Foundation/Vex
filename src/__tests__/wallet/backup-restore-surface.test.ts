@@ -126,23 +126,23 @@ describe("backup-restore façade surface", () => {
   });
 
   it("rollback on commit failure leaks NO secret material to the logger", async () => {
-    const e1 = invCreate.createEvmWalletEntry();
-    const s1 = invCreate.createSolanaWalletEntry();
+    const e1 = await invCreate.createEvmWalletEntry();
+    const s1 = await invCreate.createSolanaWalletEntry();
     await settleAndClearBackups();
     const archive = await backupMod.autoBackup();
     expect(archive).not.toBeNull();
 
     // The real decrypted private key — what must NEVER appear in any log line.
-    const secret = inv.decryptExportSecret({
+    const secret = (await inv.decryptExportSecret({
       family: "evm",
       entry: e1,
       password: TEST_PASSWORD,
-    }).secret;
-    const solSecret = inv.decryptExportSecret({
+    })).secret;
+    const solSecret = (await inv.decryptExportSecret({
       family: "solana",
       entry: s1,
       password: TEST_PASSWORD,
-    }).secret;
+    })).secret;
 
     // Force a Phase-4 commit failure AFTER keystores are written so the
     // journaled rollback path runs (and the logger emits on any rollback error).

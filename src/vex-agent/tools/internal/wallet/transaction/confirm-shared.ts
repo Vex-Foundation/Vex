@@ -253,7 +253,7 @@ export type GateOutcome =
        * authority fence has passed. It re-proves the wallet is the approved one,
        * because the address check above happened at gate time.
        */
-      readonly loadSigner: () => SignerLoad;
+      readonly loadSigner: () => Promise<SignerLoad>;
       /** The authority this dispatch was authorized under. See `./authority-fence.ts`. */
       readonly anchor: AuthorityAnchor;
       readonly binding: PreparedApprovalBinding;
@@ -372,10 +372,10 @@ export async function gateConfirm(
   if (!anchored.ok) return { kind: "return", result: refusalToResult(anchored.refusal) };
   const anchor = anchored.value;
 
-  const loadSigner = (): SignerLoad => {
+  const loadSigner = async (): Promise<SignerLoad> => {
     let signer: ChainWallet;
     try {
-      signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, intent.family);
+      signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, intent.family);
     } catch (err) {
       return { kind: "return", result: walletScopeErrorToResult(err) };
     }

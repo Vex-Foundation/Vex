@@ -389,6 +389,7 @@ export async function searchExportedTools(
             method: retrieval.method,
             denseFailed: retrieval.denseFailed,
             candidateCount: retrieval.candidateCount,
+            ...(retrieval.lowConfidence === true ? { lowConfidence: true } : {}),
           },
         }),
     },

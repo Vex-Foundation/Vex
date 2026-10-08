@@ -10,6 +10,18 @@ export interface TaskShapeAvailability {
   readonly solana: boolean;
 }
 
+export interface TaskShapeRenderOptions {
+  /**
+   * Kairos P-5 lean index: drop each shape's Trigger line, which restates the
+   * shape heading and carries no rule. False renders today's full shapes.
+   */
+  readonly lean: boolean;
+}
+
+function withoutTrigger(lines: readonly string[], lean: boolean): readonly string[] {
+  return lean ? lines.filter((line) => !line.startsWith("Trigger: ")) : lines;
+}
+
 function buildResearchShape(webResearchAvailable: boolean): string[] {
   const lines = [
     "### Research",
@@ -98,20 +110,24 @@ function buildLaunchesShape(): string[] {
   ];
 }
 
-export function buildTaskShapesPrompt(availability: TaskShapeAvailability): string {
+export function buildTaskShapesPrompt(
+  availability: TaskShapeAvailability,
+  options: TaskShapeRenderOptions = { lean: false },
+): string {
+  const shape = (lines: readonly string[]): readonly string[] => withoutTrigger(lines, options.lean);
   return [
     "## How Vex works a task",
     "",
-    ...buildResearchShape(availability.webResearch),
+    ...shape(buildResearchShape(availability.webResearch)),
     "",
-    ...buildSwapShape(),
+    ...shape(buildSwapShape()),
     "",
-    ...buildBridgeShape(),
+    ...shape(buildBridgeShape()),
     "",
-    ...buildYieldShape(availability.solana),
+    ...shape(buildYieldShape(availability.solana)),
     "",
-    ...buildPositionsShape(),
+    ...shape(buildPositionsShape()),
     "",
-    ...buildLaunchesShape(),
+    ...shape(buildLaunchesShape()),
   ].join("\n");
 }

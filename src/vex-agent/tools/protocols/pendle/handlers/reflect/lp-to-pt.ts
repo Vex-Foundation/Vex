@@ -146,7 +146,7 @@ export async function executePendleLpToPt(
       wallet = getAddress(resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155"));
     } else {
       try {
-        signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+        signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
       } catch (err) {
         return walletScopeErrorToResult(err);
       }
@@ -269,7 +269,7 @@ export async function executePendleLpToPt(
         executedAmountIn: amountTriplet(executedInRaw, lpIn.decimals),
         executedAmountOut: amountTriplet(executedOutRaw, outDecimals),
         quotedAmountOut: amountTriplet(quotedOutRaw, outDecimals),
-      }, null, 2),
+      }),
       data: { txHash, _executionId: broadcast.executionId },
     };
   } catch (err) {

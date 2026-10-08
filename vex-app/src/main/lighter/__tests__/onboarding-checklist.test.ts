@@ -7,6 +7,7 @@ import {
   type LighterOnboardingChecklistDeps,
 } from "../onboarding-checklist.js";
 import type { LighterOnboardingWorkflowRow } from "@vex-agent/db/repos/lighter-onboarding-workflows.js";
+import { getLighterFeePolicy } from "@tools/lighter/fee-policy.js";
 
 const WALLET = "0x1111111111111111111111111111111111111111";
 const SESSION = "11111111-1111-4111-8111-111111111111";
@@ -170,6 +171,16 @@ function setupDeps(
 }
 
 describe("resolveLighterAccountSetupStatus key gate", () => {
+  it("shows the current perp and spot rates in setup on both deployments", async () => {
+    for (const environment of ["core", "rhc"] as const) {
+      const status = await resolveLighterAccountSetupStatus(
+        { sessionId: SESSION, environment },
+        setupDeps({ feePolicy: getLighterFeePolicy }),
+      );
+      expect(status.feePolicy).toEqual({ perpFeePercent: 0.02, spotFeePercent: 0.25 });
+    }
+  });
+
   it("marks a submitted-but-inactive key resumable (reconcile completes it, no signing)", async () => {
     for (const state of ["change_pub_key_submitted", "key_verified", "nonce_synchronized", "ambiguous"]) {
       const status = await resolveLighterAccountSetupStatus(

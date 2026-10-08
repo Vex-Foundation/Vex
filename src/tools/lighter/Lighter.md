@@ -604,10 +604,10 @@ argument or a user request:
 
 | Market | Maker | Taker | Ticks |
 |---|---|---|---|
-| Perpetuals | 0.10% | 0.10% | 1,000 |
+| Perpetuals | 0.02% | 0.02% | 200 |
 | Spot | 0.25% | 0.25% | 2,500 |
 
-One tick is one millionth of executed trade value. 10 bps is Lighter's
+One tick is one millionth of executed trade value. The 2 bps Vex perp fee is below Lighter's
 documented maximum integrator fee on perps; the spot maximum is 1%. The
 authorization lasts ten years from approval and is revocable at any time through
 `lighter__fees_approve_prepare` with `revoke: true`, which sets all four caps and

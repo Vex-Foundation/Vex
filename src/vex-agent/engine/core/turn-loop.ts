@@ -44,11 +44,13 @@
  * sending another would make the ceiling a claim about a request nobody issued.
  */
 
+import { randomUUID } from "node:crypto";
 import type { EngineContext, StopReason } from "../types.js";
 import type { InferenceProvider, InferenceConfig, ToolDefinition } from "@vex-agent/inference/types.js";
 import type { Message } from "@vex-agent/db/repos/messages.js";
 import type { PromptStackOptions } from "../prompts/index.js";
 import logger from "@utils/logger.js";
+import { TEXT_TOOL_CALL_FEEDBACK, TEXT_TOOL_CALL_NOTICE } from "./runner/text-tool-call-guard.js";
 import { executeTurn, saveAssistantMessage } from "./turn.js";
 import { buildTurnEnvelope } from "./turn-envelope.js";
 import { checkPreInferenceGate } from "./turn-loop/pre-inference-ceiling.js";
@@ -66,6 +68,14 @@ import {
   maxOperatorInstructionId,
 } from "./operator-instructions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
+import {
+  insertTurnRunTiming,
+  recordInBackground,
+} from "@vex-agent/db/repos/runtime-timings.js";
+import { classifyInferenceError } from "@vex-agent/inference/attempt-timing.js";
+import { withPersistTiming } from "./turn-loop/persist-timing.js";
+import { createReasoningReplayStore } from "./turn-loop/reasoning-replay-store.js";
+import { REASONING_REPLAY_ENABLED } from "@vex-agent/inference/openrouter/reasoning-replay.js";
 
 // Per-iteration helpers (pure async; thread state explicitly through args/returns):
 import { runCriticalBandStep } from "./turn-loop/critical-band-step.js";
@@ -77,7 +87,20 @@ import { resolveEffectiveInferenceConfig } from "./turn-loop/effective-inference
 import { buildIterationBoundaryActions } from "./turn-loop/iteration-boundary-actions.js";
 import { applyIterationEntryOutcome } from "./turn-loop/iteration-entry-outcome.js";
 import { applyToolBatchOutcome } from "./turn-loop/tool-batch-step.js";
-import { handleTextResponse } from "./turn-loop-text-response.js";
+import { applyWaitingForWakePostBatch } from "./turn-loop-waiting-for-wake.js";
+import { resolveToolName } from "@vex-agent/tools/registry/name-resolution.js";
+import { handleTextResponse, persistTextAnswer } from "./turn-loop-text-response.js";
+import {
+  CUTOFF_ANSWER_SUFFIX,
+  CUTOFF_CONTINUATION_ENABLED,
+  CUTOFF_CONTINUATION_NOTE,
+  continuationMessages,
+  detectCutOffAnswer,
+  resolveCutoffContinuation,
+  stoppedCutoffContent,
+  stoppedCutoffReasoning,
+  type CutOffAnswer,
+} from "./runner/cutoff-continuation.js";
 import {
   beginPresentationScope,
   endPresentationScope,
@@ -88,14 +111,58 @@ import {
 } from "./turn-loop-state-init.js";
 import {
   MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
-  isProductiveRound,
+  classifyInferenceRound,
+  type InferenceRoundClassification,
+  type UnproductiveRoundKind,
 } from "./runner/unproductive-rounds.js";
 import { createToolCallLoopDetector } from "./runner/tool-call-loop-detector.js";
+import {
+  STALL_RECOVERY_ENABLED,
+  createStallRecoveryTracker,
+  prepareStallRecoveryCall,
+  stallRecoveryLogFields,
+  type StallRecoveryCall,
+} from "./runner/stall-recovery.js";
+import { hasPendingForSession } from "@vex-agent/db/repos/approvals.js";
+import { decidePromiseNudge, PROMISE_NUDGE_NOTE } from "./runner/promise-nudge.js";
+import { isLeaseLost } from "../runtime/lease-guard.js";
+import { reconcileAfterTakeover } from "./turn-loop/takeover-reconcile.js";
+
+/**
+ * The inference call is aborted by EITHER the caller's inference signal (the
+ * Stop) or the runner's lease-lost signal. Only the inference: the combined
+ * signal is never handed to a tool, and the loop tells the two causes apart
+ * afterwards by reading each signal on its own.
+ */
+function inferenceSignalFor(
+  inferenceAbortSignal: AbortSignal | undefined,
+  leaseLostSignal: AbortSignal | undefined,
+): AbortSignal | undefined {
+  if (leaseLostSignal === undefined) return inferenceAbortSignal;
+  if (inferenceAbortSignal === undefined) return leaseLostSignal;
+  return AbortSignal.any([inferenceAbortSignal, leaseLostSignal]);
+}
+
+/**
+ * Runtime-measurement state for one `runTurnLoop` invocation (Kairos Phase 1).
+ * `progress` is written by the loop as it goes so the wrapper can still report
+ * how far a turn got when it throws. `persistMs` is accumulated by the
+ * transcript write sites through the `withPersistTiming` scope.
+ */
+interface TurnRunTelemetry {
+  readonly turnRunId: string;
+  readonly progress: { iterationsUsed: number; toolCallsMade: number; persistMs: number };
+}
 
 /**
  * Run the turn loop.
  *
  * Iterates inference turns until a stop condition or chat response.
+ *
+ * This wrapper only measures: it tags the invocation with a `turnRunId` that
+ * every inference attempt and tool dispatch of this turn carries, and writes
+ * one `turn_run_timings` row in the background once the loop returns or
+ * throws. The result and any error pass through untouched.
  */
 export async function runTurnLoop(
   context: EngineContext,
@@ -114,6 +181,90 @@ export async function runTurnLoop(
   // mission callers are behaviour-preserving.
   inferenceAbortSignal?: AbortSignal,
 ): Promise<TurnLoopResult> {
+  const run: TurnRunTelemetry = {
+    turnRunId: randomUUID(),
+    progress: { iterationsUsed: 0, toolCallsMade: 0, persistMs: 0 },
+  };
+  const startedAt = new Date();
+  const startedAtMs = performance.now();
+  let result: TurnLoopResult | undefined;
+  let error: unknown;
+  try {
+    result = await withPersistTiming(run.progress, () => runTurnLoopBody(
+      context, messages, summary, tokenCount, provider, config, tools, loopConfig,
+      promptOptions, abortSignal, inferenceAbortSignal, run,
+    ));
+    return result;
+  } catch (err) {
+    error = err;
+    throw err;
+  } finally {
+    recordTurnRunTiming(
+      context, run, startedAt, performance.now() - startedAtMs,
+      preLoopSetupMs(loopConfig.entryStartedAtMs, startedAtMs), result, error,
+    );
+  }
+}
+
+/**
+ * Entry point start → loop start, or null when the caller supplied no entry
+ * timestamp (or one that is not a usable monotonic reading).
+ */
+function preLoopSetupMs(entryStartedAtMs: number | undefined, loopStartedAtMs: number): number | null {
+  if (entryStartedAtMs === undefined || !Number.isFinite(entryStartedAtMs)) return null;
+  return Math.max(0, loopStartedAtMs - entryStartedAtMs);
+}
+
+/**
+ * Write the `turn_run_timings` row. Fire-and-forget and never throws, so it
+ * cannot change what `runTurnLoop` returns or throws. Sanitised: counts, the
+ * stop reason enum, and `classifyInferenceError`'s label - never message text.
+ */
+function recordTurnRunTiming(
+  context: EngineContext,
+  run: TurnRunTelemetry,
+  startedAt: Date,
+  totalMs: number,
+  preLoopSetupMs: number | null,
+  result: TurnLoopResult | undefined,
+  error: unknown,
+): void {
+  try {
+    const row = {
+      turnRunId: run.turnRunId,
+      sessionId: context.sessionId,
+      missionRunId: context.missionRunId ?? null,
+      sessionKind: context.sessionKind ?? null,
+      startedAt,
+      totalMs,
+      iterations: run.progress.iterationsUsed,
+      toolCalls: result?.toolCallsMade ?? run.progress.toolCallsMade,
+      preLoopSetupMs,
+      persistMs: run.progress.persistMs,
+      outcome: result === undefined ? ("error" as const) : ("returned" as const),
+      stopReason: result?.stopReason ?? null,
+      errorClass: result === undefined ? classifyInferenceError(error) : null,
+    };
+    recordInBackground("turn_run", () => insertTurnRunTiming(row));
+  } catch {
+    // Telemetry must never change what the turn returns or throws.
+  }
+}
+
+async function runTurnLoopBody(
+  context: EngineContext,
+  messages: Message[],
+  summary: string | null,
+  tokenCount: number,
+  provider: InferenceProvider,
+  config: InferenceConfig,
+  tools: ToolDefinition[],
+  loopConfig: TurnLoopConfig,
+  promptOptions: PromptStackOptions,
+  abortSignal: AbortSignal | undefined,
+  inferenceAbortSignal: AbortSignal | undefined,
+  run: TurnRunTelemetry,
+): Promise<TurnLoopResult> {
   let lastText: string | null = null;
   let totalToolCalls = 0;
   const pendingApprovals: string[] = [];
@@ -123,9 +274,24 @@ export async function runTurnLoop(
   // exits via `iteration < maxIterations` becoming false → iteration_limit).
   let stoppedOnText = false;
   // STALL detector, not a budget. Counts rounds that emitted neither text nor a
-  // tool call; reset by every productive round. See `runner/unproductive-rounds.ts`
-  // for why it must stay separate from `maxIterations` and why the bound is small.
+  // complete tool batch; reset by every productive round. See
+  // `runner/unproductive-rounds.ts` for why it must stay separate from
+  // `maxIterations` and why the bound is small.
   let consecutiveUnproductiveRounds = 0;
+  // Class of the most recent unproductive round, reported when the stall bound
+  // fires so the stop says HOW the model stalled, not only that it did.
+  let lastUnproductiveKind: UnproductiveRoundKind | null = null;
+  // One recovery call per stall streak instead of an identical replay: a
+  // one-shot turn-state note plus, where safe, lower effort for that call
+  // only. See `runner/stall-recovery.ts`.
+  const stallRecovery = createStallRecoveryTracker(STALL_RECOVERY_ENABLED);
+  // Provider reasoning handed back within THIS run's tool loop (Kairos R-7).
+  // Memory only and scoped to this loop; switched off it records nothing and
+  // leaves every envelope untouched. See `turn-loop/reasoning-replay-store.ts`.
+  const reasoningReplay = createReasoningReplayStore(REASONING_REPLAY_ENABLED);
+  // A text answer the output limit cut short, held back (not persisted) while
+  // ONE continuation call finishes it. See `runner/cutoff-continuation.ts`.
+  let cutoff: CutOffAnswer | null = null;
   // REPETITION detector, and a third bound distinct from both of the above:
   // `maxIterations` counts work, `consecutiveUnproductiveRounds` counts
   // silence, this counts a model doing the same productive thing forever. Its
@@ -134,6 +300,18 @@ export async function runTurnLoop(
   // never carrying one turn's history into the next. See
   // `runner/tool-call-loop-detector.ts`.
   const loopDetector = createToolCallLoopDetector();
+  // Honest idle (Kairos B-1): set once any batch of THIS slice carried a
+  // `LoopDefer` call. A later text reply then ends the slice on the run's
+  // pending wake instead of earning a continue cue. See
+  // `turn-loop-text-response.ts`.
+  let loopDeferCalledThisSlice = false;
+  // Act, don't narrate (Kairos B-4): a reply that only announced an action
+  // earns ONE one-shot turn-state note on the next call, at most once per
+  // turn. See `runner/promise-nudge.ts`.
+  let promiseNudgeUsed = false;
+  let promiseNudgePending = false;
+  let textToolCallFeedbackUsed = false;
+  let textToolCallFeedbackPending = false;
   // Rounds actually entered, so the exhaustion events can report what the turn
   // consumed rather than only which bound fired (rule 05).
   let iterationsUsed = 0;
@@ -144,11 +322,40 @@ export async function runTurnLoop(
   const liveMessages = [...messages];
   let lastSeenOperatorMessageId = maxOperatorInstructionId(messages);
 
+  // Lease loss (S-1). `leaseLost()` is the runner's claim being gone; it is
+  // checked only where the Stop is also checked and always AFTER it, so a Stop
+  // is never reported as anything but the Stop.
+  const leaseGuard = context.leaseGuard;
+  const leaseLost = (): boolean => isLeaseLost(leaseGuard);
+  const stopRequested = (): boolean =>
+    abortSignal?.aborted === true || inferenceAbortSignal?.aborted === true;
+  // The run's Stop, whichever position the caller threaded it in (mission runs
+  // pass it in both; chat turns only as the inference signal). Handed to the
+  // critical-compaction waits (S-5) - never the lease-lost signal.
+  const stopSignal = abortSignal ?? inferenceAbortSignal;
+  const turnInferenceSignal = inferenceSignalFor(
+    inferenceAbortSignal,
+    leaseGuard?.lostSignal,
+  );
+
   // Board presentation scope: staging is possible only while this is open, and
   // closing it discards anything still pending. Opening it here (and closing it
   // at every exit below) is the whole clearing mechanism for stop, cancel,
   // exhaustion, parking, and a failed turn.
   beginPresentationScope(context.sessionId);
+
+  // Reconcile-before-dispatch after a TAKEOVER: before the first inference
+  // (and so before any dispatch), surface the session's unresolved money state
+  // to the new runner so nothing in flight under the old runner is repeated.
+  // See `turn-loop/takeover-reconcile.ts`. Reads and informs; never replays.
+  if (leaseGuard?.tookOverExpiredClaim === true) {
+    await reconcileAfterTakeover({
+      sessionId: context.sessionId,
+      missionRunId: context.missionRunId ?? null,
+      leaseGuard,
+      liveMessages,
+    });
+  }
 
   let postCompactBridgeRemaining = await armPostCompactBridge({
     sessionId: context.sessionId,
@@ -192,7 +399,16 @@ export async function runTurnLoop(
   }
 
   for (let iteration = 0; iteration < loopConfig.maxIterations; iteration++) {
+    // Runtime measurement: iteration top → just before `executeTurn`.
+    const iterationStartMs = performance.now();
     active = await resolveEffectiveInferenceConfig(config, loopConfig.contextLimit, context.sessionId, provider);
+    // Lease lost: another runner owns the session. Checked before every other
+    // guard of the iteration (the control observer and the iteration counter
+    // both write), but never ahead of a Stop, which the entry guards own.
+    if (leaseLost() && !stopRequested()) {
+      stopReason = "lease_lost";
+      break;
+    }
     // Hard mission deadline — the agent-independent time-box. Checked FIRST
     // each iteration, before any other guard or inference call, so an
     // expired run stops with `deadline_reached` no matter what the agent is
@@ -243,6 +459,7 @@ export async function runTurnLoop(
     }
 
     iterationsUsed = iteration + 1;
+    run.progress.iterationsUsed = iterationsUsed;
 
     // Increment iteration counter for mission runs AFTER entry guards pass.
     if (context.missionRunId) {
@@ -262,6 +479,8 @@ export async function runTurnLoop(
       observeBand,
       readCurrentTokenCount: () => currentTokenCount,
       handlePostCompactBookkeeping,
+      // S-5: a Stop ends the critical ladder's bounded wait promptly.
+      ...(stopSignal === undefined ? {} : { signal: stopSignal }),
     });
     if (criticalStep.kind === "stop") {
       stopReason = criticalStep.stopReason;
@@ -283,6 +502,7 @@ export async function runTurnLoop(
     );
 
     // Per-turn prompt stack (banner + resume packet + tools).
+    const promptStackStartMs = performance.now();
     const stack = await buildTurnPromptStack({
       context,
       turnBand,
@@ -292,14 +512,66 @@ export async function runTurnLoop(
       basePromptOptions: promptOptions,
       baseVisibility: loopConfig.baseVisibility,
       preparationState,
+      transcript: liveMessages,
+      discoveredToolsRebuild: loopConfig.discoveredToolsRebuild,
     });
+    const promptStackMs = performance.now() - promptStackStartMs;
     postCompactBridgeRemaining = stack.nextPostCompactBridgeRemaining;
+
+    // Stall recovery: the call after an unproductive round carries the note
+    // and (guarded) lower effort. Built before the envelope so the ceiling
+    // below measures the request that is actually sent.
+    // A held-back cut-off answer takes this call for its continuation instead.
+    // The two cannot both be pending (the cut-off round was productive and
+    // reset the stall streak); the guard only makes that explicit.
+    const recoveringFrom = cutoff === null ? stallRecovery.pending() : null;
+    const recoveryCall: StallRecoveryCall | null = recoveringFrom === null
+      ? null
+      : await prepareStallRecoveryCall({
+          from: recoveringFrom,
+          config: active.config,
+          promptOptions: stack.promptOptions,
+          liveMessages,
+          inLoopPendingApprovals: pendingApprovals.length,
+          hasPendingApproval: () => hasPendingForSession(context.sessionId),
+        });
+    // Cut-off continuation: the fragment rides as the last assistant message
+    // and the note in the turn state, for this request only. Effort is the
+    // configured one - never lowered for a continuation.
+    const callConfig = recoveryCall?.config ?? active.config;
+    // A cut-off continuation or a stall recovery takes precedence; neither can
+    // follow a promise-only reply in practice (both need a different round).
+    const nudgeThisCall = promiseNudgePending && cutoff === null && recoveryCall === null;
+    const baseCallPromptOptions = cutoff !== null
+      ? { ...stack.promptOptions, cutoffContinuationNote: CUTOFF_CONTINUATION_NOTE }
+      : recoveryCall?.promptOptions
+        ?? (nudgeThisCall
+          ? { ...stack.promptOptions, promiseNudgeNote: PROMISE_NUDGE_NOTE }
+          : stack.promptOptions);
+    const callPromptOptions = textToolCallFeedbackPending
+      ? { ...baseCallPromptOptions, textToolCallGuardNote: TEXT_TOOL_CALL_FEEDBACK }
+      : baseCallPromptOptions;
+    const callMessages = cutoff !== null ? continuationMessages(liveMessages, cutoff) : liveMessages;
 
     // Build the request envelope ONCE, here, so the ceiling below measures the
     // object that is then sent (see the module header — it is not reproducible).
-    const envelope = buildTurnEnvelope(
-      context, liveMessages, currentSummary, stack.promptOptions,
+    // R-7: replays are attached BEFORE the ceiling, so it measures the bytes
+    // that are actually sent. Switched off, this is the built envelope itself.
+    const replayAttach = reasoningReplay.attach(
+      buildTurnEnvelope(context, callMessages, currentSummary, callPromptOptions),
+      callConfig.model,
     );
+    const envelope = replayAttach.envelope;
+    if (replayAttach.attachedMessages > 0) {
+      // Counts only; the payload itself is never logged.
+      logger.info("engine.turn.reasoning_replay", {
+        sessionId: context.sessionId,
+        missionRunId: context.missionRunId ?? null,
+        iteration,
+        attachedMessages: replayAttach.attachedMessages,
+        attachedBytes: replayAttach.attachedBytes,
+      });
+    }
 
     // ── Pre-inference byte ceiling (C8) ─────────────────────────────
     // Runs only while the barrier is bypassed. On a breach the request is
@@ -311,11 +583,13 @@ export async function runTurnLoop(
       preparationBypassesBarrier: stack.preparationBypassesBarrier,
       providerMessages: envelope.providerMessages,
       tools: stack.tools,
-      config: active.config,
+      config: callConfig,
       contextLimit: active.contextLimit,
       currentTokenCount,
       criticalNoopCounter,
       runnerOwnerId: loopConfig.runnerOwnerId,
+      // S-5: a Stop ends the ceiling ladder's bounded wait promptly.
+      ...(stopSignal === undefined ? {} : { signal: stopSignal }),
     });
     if (gate.kind === "escalated") {
       stopReason = gate.stopReason;
@@ -327,16 +601,62 @@ export async function runTurnLoop(
       continue;
     }
 
+    // The recovery is spent only once its request is really issued; a ceiling
+    // retry above leaves it armed for the next iteration.
+    if (recoveryCall !== null) {
+      stallRecovery.consume();
+      logger.info("engine.turn.stall_recovery", {
+        sessionId: context.sessionId,
+        missionRunId: context.missionRunId ?? null,
+        iteration,
+        ...stallRecoveryLogFields(recoveryCall),
+      });
+    }
+    // Spent only once its request is really issued, like the recovery above.
+    if (nudgeThisCall) promiseNudgePending = false;
+    textToolCallFeedbackPending = false;
+    if (cutoff !== null) {
+      // Lengths only, never the answer text.
+      logger.info("engine.turn.cutoff_continuation", {
+        sessionId: context.sessionId,
+        missionRunId: context.missionRunId ?? null,
+        iteration,
+        partialChars: cutoff.content.length,
+      });
+    }
+
     // Execute turn (no save yet — deferred save lives in tool-batch helper).
     // `inferenceAbortSignal` (chat-turn only) lets the streaming inference be
     // cancelled mid-response; mission callers leave it undefined.
     const turnResult = await executeTurn(
-      context, liveMessages, currentSummary, provider, active.config, stack.tools, stack.promptOptions,
-      inferenceAbortSignal,
+      context, callMessages, currentSummary, provider, callConfig, stack.tools, callPromptOptions,
+      turnInferenceSignal,
       // THE measured object, not a rebuild.
       envelope,
+      {
+        turnRunId: run.turnRunId,
+        iteration,
+        preInferenceMs: performance.now() - iterationStartMs,
+        promptStackMs,
+      },
+      {
+        textToolCallGuard: loopConfig.textToolCallGuard,
+        textToolCallPresentationPrefix: cutoff?.content,
+      },
     );
-    currentTokenCount = turnResult.promptTokens;
+    // A round a bound stopped before its usage chunk reports zero prompt
+    // tokens; it did not shrink the context, so keep the last real reading
+    // (`executeTurn` skips the usage row and the session update for the same
+    // reason).
+    if (turnResult.timedOut === null || turnResult.usageObserved) {
+      currentTokenCount = turnResult.promptTokens;
+    }
+    reasoningReplay.observeRound({
+      model: callConfig.model,
+      toolCalls: turnResult.toolCalls,
+      reasoningReplay: turnResult.reasoningReplay,
+      servingProvider: turnResult.servingProvider,
+    });
     observeBand(currentTokenCount, "post_turn_text");
 
     // Stop-during-inference (9-5a): the consumer CAPTURED the abort at stream
@@ -350,7 +670,43 @@ export async function runTurnLoop(
     // same signal in BOTH positions, so an operator Stop cancels the stream
     // and MUST still persist what the model had produced. Testing the boundary
     // flag first would silently drop that partial row.
+    // Inference aborted by the LEASE, not by a Stop: nothing of this stream is
+    // persisted (the session belongs to another runner now); the preview is
+    // retired with the terminal delta, and the turn ends on `lease_lost`.
+    if (turnResult.inferenceAborted && !stopRequested() && leaseLost()) {
+      streamDeltaBus.emit(
+        toStreamAbortedEvent(
+          context.sessionId,
+          turnResult.streamId,
+          turnResult.nextStreamSequence,
+        ),
+      );
+      cutoff = null;
+      stopReason = "lease_lost";
+      break;
+    }
     if (turnResult.inferenceAborted) {
+      if (cutoff !== null) {
+        // Stopped mid-continuation: the held-back answer plus whatever the
+        // continuation streamed becomes the one `chat_stopped` row. It is
+        // never empty (the fragment has text), so its `transcriptAppend`
+        // retires the preview like any other persisted stop.
+        await saveAssistantMessage(
+          context.sessionId,
+          turnResult.textToolCallGuarded === true
+            ? TEXT_TOOL_CALL_NOTICE
+            : stoppedCutoffContent(cutoff, turnResult.content),
+          null,
+          {
+            stopped: true,
+            reasoning: stoppedCutoffReasoning(cutoff, turnResult.reasoning),
+            ...(leaseGuard === undefined ? {} : { leaseGuard }),
+          },
+        );
+        cutoff = null;
+        stopReason = "user_stopped";
+        break;
+      }
       if (turnResult.content) {
         // Non-empty partial output becomes a durable `chat_stopped` row. Its
         // `transcriptAppend` is what retires the live preview — the same
@@ -361,6 +717,7 @@ export async function runTurnLoop(
         await saveAssistantMessage(context.sessionId, turnResult.content, null, {
           stopped: true,
           reasoning: turnResult.reasoning,
+          ...(leaseGuard === undefined ? {} : { leaseGuard }),
         });
       } else {
         // Nothing was persisted and nothing ever will be for this stream, so
@@ -395,35 +752,139 @@ export async function runTurnLoop(
       stopReason = "user_stopped";
       break;
     }
+    // A round that completed while the lease was lost: dispatch none of its
+    // calls and persist none of its text.
+    if (leaseLost()) {
+      stopReason = "lease_lost";
+      break;
+    }
 
-    // ── Stall detection (WP1) ───────────────────────────────────────
+    // ── Stall detection (WP1) and the incomplete-batch rule ─────────
     // Evaluated on the SAME `turnResult` the two dispatch branches below read,
     // and BEFORE either of them, so the classification cannot drift from what
     // the loop actually does with the round.
     //
-    // An unproductive round takes neither branch: `toolCalls` is empty and
-    // `content` is `""`/`null`/whitespace, which the `if (turnResult.content)`
-    // guard treats as falsy. Before this counter existed the iteration body
-    // simply ended, the `for` continued, and the model was asked the identical
-    // question again - silently, with nothing logged and nothing persisted -
-    // until `maxIterations` ran out. That is the v0.2.6 report.
-    if (isProductiveRound(turnResult)) {
-      consecutiveUnproductiveRounds = 0;
-    } else {
-      consecutiveUnproductiveRounds += 1;
-      logger.warn("engine.turn.unproductive_round", {
+    // An unproductive round takes neither branch. Before this counter existed
+    // a blank round simply ended the iteration body, the `for` continued, and
+    // the model was asked the identical question again - silently, with
+    // nothing logged and nothing persisted - until `maxIterations` ran out.
+    // That is the v0.2.6 report.
+    //
+    // An INCOMPLETE tool batch (any call dropped as truncated or malformed, or
+    // any tool-call round the output limit ended) is refused whole, ALWAYS: none of its calls is dispatched - not even the
+    // valid ones, which may include a fund-moving prepare from a plan the model
+    // never finished writing - and the assistant tool-call message is not
+    // persisted, so the transcript never carries tool calls without results.
+    // It then counts as a stall like any other unproductive round.
+    //
+    // A cut-off continuation round is resolved FIRST and is not classified on
+    // its own: whatever it produced, the held-back answer is saved now (see
+    // `runner/cutoff-continuation.ts`), so the round counts as productive. The
+    // one exception is a continuation that called tools - the fragment is
+    // saved on its own row and the round is classified and dispatched below
+    // like any other.
+    let resolvedAnswer: { content: string; reasoning: string | null } | null = null;
+    if (cutoff !== null && turnResult.textToolCallGuarded === true && turnResult.timedOut === null) {
+      // The final scan included the held fragment. Its notice replaces the
+      // complete attempted text call, rather than joining the fragment back.
+      cutoff = null;
+    }
+    if (cutoff !== null) {
+      const resolution = resolveCutoffContinuation(cutoff, turnResult);
+      cutoff = null;
+      logger.info("engine.turn.cutoff_continuation_resolved", {
         sessionId: context.sessionId,
         missionRunId: context.missionRunId ?? null,
         iteration,
-        consecutiveUnproductiveRounds,
-        limit: MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
-        // A reasoning-only response is the common shape of this failure and is
-        // worth distinguishing in the log: the model spent output tokens, it
-        // just never answered.
-        reasoningOnly: turnResult.reasoning !== null,
-        finalRoundPromptTokens: turnResult.promptTokens,
+        outcome: resolution.outcome,
+        finishReason: turnResult.finishReason,
+        savedChars: resolution.content.length,
       });
-      if (consecutiveUnproductiveRounds >= MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS) {
+      if (resolution.kind === "tool_round") {
+        await persistTextAnswer({
+          context,
+          liveMessages,
+          content: resolution.content,
+          reasoning: resolution.reasoning,
+          attachBoard: false,
+        });
+        lastText = resolution.content;
+      } else {
+        resolvedAnswer = { content: resolution.content, reasoning: resolution.reasoning };
+      }
+    }
+
+    const round: InferenceRoundClassification = resolvedAnswer !== null
+      ? { kind: "productive" }
+      : classifyInferenceRound(turnResult);
+    stallRecovery.observe(round);
+    if (round.kind === "productive") {
+      consecutiveUnproductiveRounds = 0;
+    } else {
+      consecutiveUnproductiveRounds += 1;
+      lastUnproductiveKind = round.kind;
+      if (round.kind === "stream_timeout") {
+        // A bound stopped the stream. Its partial text is a fragment the model
+        // never finished, so nothing is persisted and no `transcriptAppend`
+        // will retire the preview: end it here with the terminal delta, the
+        // same signal the empty-abort path above sends. Correlated by
+        // `streamId`, best-effort like every emission on this bus.
+        streamDeltaBus.emit(
+          toStreamAbortedEvent(
+            context.sessionId,
+            turnResult.streamId,
+            turnResult.nextStreamSequence,
+          ),
+        );
+        logger.warn("engine.turn.unproductive_round", {
+          sessionId: context.sessionId,
+          missionRunId: context.missionRunId ?? null,
+          iteration,
+          classification: round.kind,
+          stallKind: round.stall,
+          consecutiveUnproductiveRounds,
+          limit: MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
+          // Lengths only, never the text: how much was streamed and dropped.
+          droppedContentChars: turnResult.content?.length ?? 0,
+          usageObserved: turnResult.usageObserved,
+        });
+      } else if (round.kind === "incomplete_tool_batch") {
+        // Counts, the finish reason and the class only: never argument text.
+        logger.warn("engine.turn.incomplete_inference", {
+          sessionId: context.sessionId,
+          missionRunId: context.missionRunId ?? null,
+          iteration,
+          classification: round.kind,
+          truncated: round.truncated,
+          finishReason: turnResult.finishReason,
+          validToolCalls: round.validToolCalls,
+          malformedToolCalls: round.malformedToolCalls,
+          consecutiveUnproductiveRounds,
+          limit: MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
+        });
+      } else {
+        logger.warn("engine.turn.unproductive_round", {
+          sessionId: context.sessionId,
+          missionRunId: context.missionRunId ?? null,
+          iteration,
+          classification: round.kind,
+          finishReason: turnResult.finishReason,
+          consecutiveUnproductiveRounds,
+          limit: MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
+          // A reasoning-only response is the common shape of this failure and is
+          // worth distinguishing in the log: the model spent output tokens, it
+          // just never answered.
+          reasoningOnly: turnResult.reasoning !== null,
+          finalRoundPromptTokens: turnResult.promptTokens,
+        });
+      }
+      // A failed recovery ends the streak at once: the next request would be
+      // the original one again, and resending it is the replay recovery
+      // exists to prevent.
+      if (
+        consecutiveUnproductiveRounds >= MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS ||
+        stallRecovery.recoveryFailed()
+      ) {
         stopReason = "no_progress";
         break;
       }
@@ -431,6 +892,9 @@ export async function runTurnLoop(
     }
 
     if (turnResult.toolCalls && turnResult.toolCalls.length > 0) {
+      if (turnResult.toolCalls.some((call) => resolveToolName(call.name) === "LoopDefer")) {
+        loopDeferCalledThisSlice = true;
+      }
       const batchOutcome = await processTurnToolBatch({
         context,
         turnResult: {
@@ -460,9 +924,28 @@ export async function runTurnLoop(
         // Turn-scoped, so a repetition that starts in one batch is still
         // remembered when the model repeats it in the next one.
         loopDetector,
+        // Tags each dispatch timing row with this turn run and round.
+        telemetry: { turnRunId: run.turnRunId, iteration },
       });
       totalToolCalls += batchOutcome.toolCallsExecuted;
+      run.progress.toolCallsMade = totalToolCalls;
       lastText = batchOutcome.lastText;
+
+      // Lease lost during the batch: the post-batch arms below write run state
+      // (wake park, plan park) and merge operator input for a session another
+      // runner owns now, so none of them run. Kept: an operator Stop (reported
+      // as the Stop) and the parks whose durable state the batch already
+      // committed in its own transaction (approval, user form, lighter setup).
+      if (
+        leaseLost()
+        && !(batchOutcome.kind === "engine_stop" && batchOutcome.stopReason === "user_stopped")
+        && batchOutcome.kind !== "approval_break"
+        && batchOutcome.kind !== "user_form_pause"
+        && batchOutcome.kind !== "lighter_setup_pause"
+      ) {
+        stopReason = "lease_lost";
+        break;
+      }
 
       const batchStep = await applyToolBatchOutcome({
         batchOutcome,
@@ -477,6 +960,8 @@ export async function runTurnLoop(
         lastText,
         handlePostCompactBookkeeping,
         mergeOperatorInstructions,
+        // S-5: forwarded into the wake park's critical-compaction wait.
+        ...(stopSignal === undefined ? {} : { signal: stopSignal }),
       });
       if (batchStep.kind === "return") {
         // Every one of these exits (approval park, user-form park, wake pause,
@@ -488,21 +973,149 @@ export async function runTurnLoop(
       continue;
     }
 
-    if (turnResult.content) {
-      lastText = turnResult.content;
+    const answer = resolvedAnswer
+      ?? (turnResult.content ? { content: turnResult.content, reasoning: turnResult.reasoning } : null);
+    if (answer !== null) {
+      if (turnResult.textToolCallGuarded === true && turnResult.timedOut === null) {
+        // Text never becomes a call. Save the notice without consuming a board
+        // intended for a real report, then offer one normal inference recovery.
+        await persistTextAnswer({
+          context, liveMessages, content: TEXT_TOOL_CALL_NOTICE,
+          reasoning: answer.reasoning, attachBoard: false,
+        });
+        lastText = TEXT_TOOL_CALL_NOTICE;
+        if (leaseLost()) {
+          stopReason = "lease_lost";
+          break;
+        }
+        logger.info("engine.turn.text_tool_call_guard", {
+          sessionId: context.sessionId, iteration,
+          feedbackIssued: textToolCallFeedbackUsed ? 0 : 1,
+        });
+        if (!textToolCallFeedbackUsed) {
+          textToolCallFeedbackUsed = true;
+          textToolCallFeedbackPending = true;
+          continue;
+        }
+        // A second text-only attempt is not a reason to keep spending rounds.
+        stopReason = "no_progress";
+        lastUnproductiveKind = null;
+        break;
+      }
+      // R-9: an answer the output limit cut short is held back, not saved;
+      // the next iteration is its one continuation call. Never for the
+      // continuation's own result (`resolvedAnswer`), so there is at most one
+      // continuation per answer.
+      const cutOff = resolvedAnswer === null && CUTOFF_CONTINUATION_ENABLED
+        ? detectCutOffAnswer(turnResult)
+        : null;
+      if (cutOff !== null) {
+        cutoff = cutOff;
+        continue;
+      }
+      lastText = answer.content;
       const textOutcome = await handleTextResponse({
         context,
         liveMessages,
-        content: turnResult.content,
-        reasoning: turnResult.reasoning,
+        content: answer.content,
+        reasoning: answer.reasoning,
         mergeOperatorInstructions,
+        loopDeferCalledThisSlice,
       });
+      // Act, don't narrate (B-4). Never for a cut-off answer's continuation
+      // result, and never on a lease loss or an idle park.
+      if (
+        resolvedAnswer === null
+        && (textOutcome.kind === "mission_run_continue" || textOutcome.kind === "break_on_text")
+      ) {
+        const nudge = await decidePromiseNudge({
+          context,
+          content: answer.content,
+          liveMessages,
+          alreadyNudged: promiseNudgeUsed,
+          inLoopPendingApprovals: pendingApprovals.length,
+          hasPendingApproval: () => hasPendingForSession(context.sessionId),
+        });
+        if (nudge.nudge) {
+          promiseNudgeUsed = true;
+          promiseNudgePending = true;
+          // Lengths and enums only, never the reply text.
+          logger.info("engine.turn.promise_nudge", {
+            sessionId: context.sessionId,
+            missionRunId: context.missionRunId ?? null,
+            sessionKind: context.sessionKind,
+            iteration,
+            replyChars: answer.content.length,
+          });
+          continue;
+        }
+      }
       if (textOutcome.kind === "mission_run_continue") {
         continue;
+      }
+      if (textOutcome.kind === "deferred_idle") {
+        // Same park a successful `LoopDefer` gets from the batch step: the
+        // wake row already exists, so only the run status moves.
+        logger.info("engine.mission.idle_defer_parked", {
+          sessionId: context.sessionId,
+          missionRunId: context.missionRunId ?? null,
+          iteration,
+        });
+        await applyWaitingForWakePostBatch({
+          sessionId: context.sessionId,
+          missionRunId: context.missionRunId ?? null,
+          currentTokenCount,
+          contextLimit: active.contextLimit,
+          sessionPermission: context.sessionPermission,
+          ...(loopConfig.runnerOwnerId === undefined
+            ? {}
+            : { runnerOwnerId: loopConfig.runnerOwnerId }),
+          handlePostCompactBookkeeping,
+          ...(stopSignal === undefined ? {} : { signal: stopSignal }),
+        });
+        endPresentationScope(context.sessionId);
+        return {
+          text: lastText,
+          toolCallsMade: totalToolCalls,
+          pendingApprovals,
+          stopReason: "waiting_for_wake",
+          stopPayload: {
+            summary: `Deferred until ${textOutcome.wake.dueAt}`,
+            evidence: { dueAt: textOutcome.wake.dueAt, reason: textOutcome.wake.reason },
+          },
+        };
+      }
+      if (textOutcome.kind === "lease_lost") {
+        stopReason = "lease_lost";
+        break;
       }
       stoppedOnText = true;
       break;
     }
+  }
+
+  // A cut-off answer still held back means the loop ended before its
+  // continuation was issued (a stop, a deadline, the iteration bound, a
+  // refused request). It is still the turn's answer: save it, marked as
+  // incomplete, with any staged board - before the scope below discards it.
+  if (cutoff !== null && stopReason !== "lease_lost") {
+    const content = cutoff.content + CUTOFF_ANSWER_SUFFIX;
+    await persistTextAnswer({
+      context,
+      liveMessages,
+      content,
+      reasoning: cutoff.reasoning,
+      attachBoard: true,
+    });
+    lastText = content;
+    logger.info("engine.turn.cutoff_continuation_resolved", {
+      sessionId: context.sessionId,
+      missionRunId: context.missionRunId ?? null,
+      outcome: "not_issued",
+      stopReason,
+      savedChars: content.length,
+    });
+    cutoff = null;
   }
 
   // Close the board scope for every remaining exit: a stop, a cancellation, a
@@ -517,6 +1130,19 @@ export async function runTurnLoop(
   // transport can see why.
   if (!stopReason && !stoppedOnText) {
     stopReason = "iteration_limit";
+  }
+
+  // The distinct lease-loss record for the TURN (the guard logged the moment
+  // of detection). Counts and ids only.
+  if (stopReason === "lease_lost") {
+    logger.warn("runtime.lease.lost", {
+      sessionId: context.sessionId,
+      missionRunId: context.missionRunId ?? null,
+      stage: "turn_ended",
+      reason: leaseGuard?.lostReason() ?? null,
+      iterationsUsed,
+      toolCallsMade: totalToolCalls,
+    });
   }
 
   // Rule 05: the owner of a bound REPORTS what was consumed when it fires.
@@ -537,6 +1163,7 @@ export async function runTurnLoop(
         maxIterations: loopConfig.maxIterations,
         consecutiveUnproductiveRounds,
         unproductiveRoundLimit: MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS,
+        lastUnproductiveKind,
         toolCallsMade: totalToolCalls,
         producedText: lastText !== null,
         elapsedMs: Date.now() - startTime,
@@ -544,5 +1171,11 @@ export async function runTurnLoop(
     );
   }
 
-  return { text: lastText, toolCallsMade: totalToolCalls, pendingApprovals, stopReason };
+  return {
+    text: lastText,
+    toolCallsMade: totalToolCalls,
+    pendingApprovals,
+    stopReason,
+    ...(stopReason === "no_progress" && lastUnproductiveKind !== null ? { lastUnproductiveKind } : {}),
+  };
 }

@@ -25,7 +25,7 @@ import {
 const RECEIVER = "0x1111111111111111111111111111111111111111";
 
 /** A charged statement as the Uniswap and KyberSwap builders emit one. */
-function charged(overrides: Record<string, unknown> = {}): VexFeePreview {
+function charged(overrides: Record<string, unknown> = {}): Extract<VexFeePreview, { charged: true }> {
   const block = toVexFeePreview("uniswap.swap.quote", {
     charged: true,
     bps: 25,
@@ -42,11 +42,12 @@ function charged(overrides: Record<string, unknown> = {}): VexFeePreview {
     ...overrides,
   });
   if (block === undefined) throw new Error("fixture charged block does not project");
+  if (!block.charged) throw new Error("fixture charged block must charge a fee");
   return block;
 }
 
 /** A skipped statement: a dust amount, or a token Vex declines to skim. */
-function skipped(overrides: Record<string, unknown> = {}): VexFeePreview {
+function skipped(overrides: Record<string, unknown> = {}): Extract<VexFeePreview, { charged: false }> {
   const block = toVexFeePreview("uniswap.swap.quote", {
     charged: false,
     bps: 0,
@@ -57,6 +58,7 @@ function skipped(overrides: Record<string, unknown> = {}): VexFeePreview {
     ...overrides,
   });
   if (block === undefined) throw new Error("fixture skipped block does not project");
+  if (block.charged) throw new Error("fixture skipped block must not charge a fee");
   return block;
 }
 

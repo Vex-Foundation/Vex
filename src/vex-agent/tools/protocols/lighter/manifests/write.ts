@@ -71,7 +71,13 @@ const MAX_SLIPPAGE_BPS_PARAM: ProtocolParamDef = {
   type: "number",
   unit: "bps",
   required: true,
-  description: "Explicit maximum slippage in basis points from 1 through 500. Vex refuses the close unless visible live depth can fill the entire position inside this bound.",
+  description: "Explicit maximum slippage in basis points from 1 through 500. Vex refuses the close unless visible live depth can fill the requested close amount inside this bound.",
+};
+
+const CLOSE_PERCENT_PARAM: ProtocolParamDef = {
+  key: "closePercent",
+  type: "number",
+  description: "Optional percentage of the exact live position to close: 25, 50, 75, or 100. Defaults to 100. Partial amounts are floored to market size precision and must meet live order minimums.",
 };
 
 const DEPOSIT_AMOUNT_PARAM: ProtocolParamDef = {
@@ -155,7 +161,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Prepare the selected wallet's Lighter trading-fee authorization inside Vex onboarding after funding and key registration. Vex resolves the trader and configured collector internally and shows one trusted card for 0.10% perpetual and 0.25% spot fees, permission expiry, and any required account-tier change with its exchange costs. Use revoke=true only when the user asks to revoke Vex fee authorization. Disabled collection produces no authorization. Returns a trusted approval card with the exact fee rates, permission expiry, and any account-tier change; this preparation never signs, changes the account tier, or submits a transaction. Never ask the user for account indexes, API keys, nonces, or another chat confirmation; the host card is consent.",
+      "Prepare the selected wallet's Lighter trading-fee authorization inside Vex onboarding after funding and key registration. Vex resolves the trader and configured collector internally and shows one trusted card for 0.02% perpetual and 0.25% spot fees, permission expiry, and any required account-tier change with its exchange costs. Use revoke=true only when the user asks to revoke Vex fee authorization. Disabled collection produces no authorization. Returns a trusted approval card with the exact fee rates, permission expiry, and any account-tier change; this preparation never signs, changes the account tier, or submits a transaction. Never ask the user for account indexes, API keys, nonces, or another chat confirmation; the host card is consent.",
     mutating: false,
     actionKind: "approval_prepare",
     params: [ENVIRONMENT_PARAM, {
@@ -289,10 +295,10 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Prepare one explicit approval to close the entire current position in one active Lighter perpetual market. Use when the user wants to close the full current position, not place a separate directional order. It reads the exact live account position, market precision, and up to 100 order-book levels; requires a user-specified slippage ceiling; refuses insufficient visible depth; and binds a full-size reduce-only market IOC order with a worst acceptable price. Returns the durable intent, exact close terms, and trusted approval card; it never loads a private key, reserves a nonce, signs, or submits.",
+      "Prepare one explicit approval to close 25, 50, 75, or 100 percent of the exact current position in one active Lighter perpetual market. Use when the user explicitly asks to close the full position or a supported percentage and supplies a maximum slippage ceiling. Omit closePercent for the entire position. It reads the exact live account position, market precision, and up to 100 order-book levels; floors partial size to market precision and enforces live partial-order minimums; requires a user-specified slippage ceiling; refuses insufficient visible depth; and binds the exact position and reduce-only market IOC amount with a worst acceptable price. Returns the durable intent, exact close terms, and trusted approval card; it never loads a private key, reserves a nonce, signs, or submits.",
     mutating: false,
     actionKind: "approval_prepare",
-    params: [ENVIRONMENT_PARAM, LIFECYCLE_ACCOUNT_PARAM, LIFECYCLE_MARKET_PARAM, MAX_SLIPPAGE_BPS_PARAM],
+    params: [ENVIRONMENT_PARAM, LIFECYCLE_ACCOUNT_PARAM, LIFECYCLE_MARKET_PARAM, MAX_SLIPPAGE_BPS_PARAM, CLOSE_PERCENT_PARAM],
     exampleParams: { environment: "rhc", marketId: 0, slippageBps: 100 },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.position.close.prepare"],
   },
@@ -302,7 +308,7 @@ export const LIGHTER_WRITE_TOOLS: readonly ProtocolToolManifest[] = [
     namespace: "lighter",
     lifecycle: "active",
     description:
-      "Execute one exact approved full-position close using a reduce-only Lighter market IOC order. Direct calls are refused. The privileged runtime revalidates the unchanged position, market precision, full visible depth at the approved worst price, registered key, and nonce; signs TxType 14 locally; stages identity before one submission; and never retries ambiguity. An executed close is irreversible: it realises the position's profit or loss at the fill price. Returns the exact fill and resulting position, including partial closes without automatic resubmission, or a pending or ambiguous state when final evidence is unavailable.",
+      "Execute one exact approved full or partial position close using a reduce-only Lighter market IOC order. Direct calls are refused. The privileged runtime revalidates the unchanged position, market precision, live partial-order minimums, visible depth for the approved amount at the approved worst price, registered key, and nonce; signs TxType 14 locally; stages identity before one submission; and never retries ambiguity. An executed close is irreversible: it realises the position's profit or loss at the fill price. Returns the exact fill and resulting position, including partial closes without automatic resubmission, or a pending or ambiguous state when final evidence is unavailable.",
     mutating: true,
     actionKind: "external_post",
     destructive: true,

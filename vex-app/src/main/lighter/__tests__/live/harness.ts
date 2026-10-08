@@ -328,7 +328,7 @@ export async function unlockSecretSessionFromEnvironment(): Promise<void> {
   // place before this module graph loads - the same reason `secrets/session.ts`
   // itself dynamically imports the engine.
   const { adoptUnlockedPassword } = await import("../../../secrets/session.js");
-  adoptUnlockedPassword(password);
+  await adoptUnlockedPassword(password);
 }
 
 // ── Gate 2: the privileged Lighter seams the app installs at boot ───────

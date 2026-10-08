@@ -318,7 +318,7 @@ async function revalidateEvmAtCommit(
 async function executeEvmTransaction(args: {
   readonly intent: WalletTransactionIntent;
   readonly payload: EvmTransactionPayload;
-  readonly loadSigner: () => SignerLoad;
+  readonly loadSigner: () => Promise<SignerLoad>;
   readonly anchor: AuthorityAnchor;
   readonly bounds: StagedFeeBounds;
   readonly activity: TransactionActivity;
@@ -366,7 +366,7 @@ async function executeEvmTransaction(args: {
     // The key is decrypted HERE and nowhere earlier, immediately before the
     // signature, with no provider call in between.
     createSigner: async () => {
-      const loaded = loadSigner();
+      const loaded = await loadSigner();
       if (loaded.kind === "return") {
         fenceRefusal = {
           code: "forbidden_field",
@@ -544,7 +544,7 @@ async function collectFeeOnConfirmed(args: {
   readonly feePlan: WalletTransactionVexFeePlan | null;
   readonly activity: TransactionActivity;
   readonly anchor: AuthorityAnchor;
-  readonly loadSigner: () => SignerLoad;
+  readonly loadSigner: () => Promise<SignerLoad>;
   readonly clients: EvmSignerClients;
   readonly chainId: number;
   readonly walletAddress: string;

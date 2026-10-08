@@ -302,7 +302,7 @@ export async function importSolanaWalletRunner(
 
 export async function addEvmWallet(label?: string): Promise<Result<WalletAddResult>> {
   try {
-    const e = createEvmWalletEntry({ label });
+    const e = await createEvmWalletEntry({ label });
     return ok({ id: e.id, address: e.address, label: e.label });
   } catch (cause) {
     return mapWalletEngineError(cause);
@@ -314,7 +314,7 @@ export async function importEvmWalletInventory(
   label?: string,
 ): Promise<Result<WalletAddResult>> {
   try {
-    const e = importEvmWalletEntry(rawKey, { label });
+    const e = await importEvmWalletEntry(rawKey, { label });
     return ok({ id: e.id, address: e.address, label: e.label });
   } catch (cause) {
     return mapWalletEngineError(cause);
@@ -323,7 +323,7 @@ export async function importEvmWalletInventory(
 
 export async function addSolanaWallet(label?: string): Promise<Result<WalletAddResult>> {
   try {
-    const e = createSolanaWalletEntry({ label });
+    const e = await createSolanaWalletEntry({ label });
     return ok({ id: e.id, address: e.address, label: e.label });
   } catch (cause) {
     return mapWalletEngineError(cause);
@@ -335,7 +335,7 @@ export async function importSolanaWalletInventory(
   label?: string,
 ): Promise<Result<WalletAddResult>> {
   try {
-    const e = importSolanaWalletEntry(rawKey, { label });
+    const e = await importSolanaWalletEntry(rawKey, { label });
     return ok({ id: e.id, address: e.address, label: e.label });
   } catch (cause) {
     return mapWalletEngineError(cause);

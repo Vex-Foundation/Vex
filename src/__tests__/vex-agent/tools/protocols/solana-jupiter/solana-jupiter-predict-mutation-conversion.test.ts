@@ -11,7 +11,7 @@ import {
 describe("solana.predict.buy/.sell/.claim/.closeAll — staged Solana seam (K5)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockResolveSigningWallet.mockReturnValue({ family: "solana", address: WALLET_ADDRESS, secretKey: SIGNER.secretKey });
+    mockResolveSigningWallet.mockResolvedValue({ family: "solana", address: WALLET_ADDRESS, secretKey: SIGNER.secretKey });
     mockResolveSelectedAddress.mockReturnValue(WALLET_ADDRESS);
     mockRequestBuy.mockResolvedValue(structuredClone(BUY_ORDER));
     mockRequestSell.mockResolvedValue(structuredClone(SELL_ORDER));

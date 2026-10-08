@@ -192,7 +192,7 @@ describe("handshake-signing", () => {
 
   describe("signHandshakeEvm — round trip (AC1)", () => {
     it("produces a personal_sign signature that verifies with viem verifyMessage", async () => {
-      const entry = importEvmWalletEntry(KEY_A);
+      const entry = await importEvmWalletEntry(KEY_A);
       const template = buildHandshakeTemplate({
         ...BASE_TEMPLATE_INPUT,
         address: entry.address,
@@ -218,7 +218,7 @@ describe("handshake-signing", () => {
     });
 
     it("still signs successfully with a valid 43-char base64url nonce end-to-end", async () => {
-      const entry = importEvmWalletEntry(KEY_A);
+      const entry = await importEvmWalletEntry(KEY_A);
       const template = buildHandshakeTemplate({ ...BASE_TEMPLATE_INPUT, address: entry.address, chainFamily: "eip155" });
       await expect(signHandshakeEvm(entry, template)).resolves.toEqual(expect.stringMatching(/^0x/));
     });
@@ -313,7 +313,7 @@ describe("handshake-signing", () => {
     });
 
     it("signHandshakeEvm fails closed (SIGNER_MISMATCH) when the entry's address does not match the decrypted key", async () => {
-      const entry = importEvmWalletEntry(KEY_A);
+      const entry = await importEvmWalletEntry(KEY_A);
       const mismatched = { ...entry, address: KEY_B_ADDRESS };
       const template = buildHandshakeTemplate({
         ...BASE_TEMPLATE_INPUT,
@@ -326,7 +326,7 @@ describe("handshake-signing", () => {
 
     it("signHandshakeSolana fails closed (SIGNER_MISMATCH) when the entry's address does not match the decrypted key", async () => {
       const keypair = Keypair.generate();
-      const entry = importSolanaWalletEntry(bs58.encode(keypair.secretKey));
+      const entry = await importSolanaWalletEntry(bs58.encode(keypair.secretKey));
       const otherKeypair = Keypair.generate();
       const mismatched = { ...entry, address: otherKeypair.publicKey.toBase58() };
       const template = buildHandshakeTemplate({

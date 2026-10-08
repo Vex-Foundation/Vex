@@ -393,3 +393,39 @@ export const approvalActionResultSchema = z
   })
   .strict();
 export type ApprovalActionResult = z.infer<typeof approvalActionResultSchema>;
+
+/** Public error text is bounded like every other model-free string here. */
+export const APPROVAL_DISPATCH_FAILURE_MESSAGE_MAX = 1_000;
+
+/**
+ * `EV.approvals.dispatch` payload (Kairos K-2 B2). Exists only for an approve
+ * that answered `dispatching`; the terminal phase carries exactly what the
+ * awaited approve would have returned, so a consumer handles it with the same
+ * code it handles the reply with.
+ */
+export const approvalDispatchEventSchema = z.discriminatedUnion("phase", [
+  z
+    .object({
+      phase: z.literal("dispatching"),
+      approvalId: z.string().min(1),
+      occurredAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+  z
+    .object({
+      phase: z.literal("settled"),
+      approvalId: z.string().min(1),
+      occurredAt: z.string().datetime({ offset: true }),
+      result: approvalActionResultSchema,
+    })
+    .strict(),
+  z
+    .object({
+      phase: z.literal("failed"),
+      approvalId: z.string().min(1),
+      occurredAt: z.string().datetime({ offset: true }),
+      message: z.string().min(1).max(APPROVAL_DISPATCH_FAILURE_MESSAGE_MAX),
+    })
+    .strict(),
+]);
+export type ApprovalDispatchEvent = z.infer<typeof approvalDispatchEventSchema>;

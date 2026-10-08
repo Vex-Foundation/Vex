@@ -17,6 +17,15 @@ import {
   AGENT_MAX_OUTPUT_TOKENS,
   AGENT_TEMPERATURE,
   parseAgentEnv,
+  parseAgentDbBoundsEnv,
+  parseAgentStreamBoundsEnv,
+  parseAuxReasoningEffortEnv,
+  parseAgentToolReadEnv,
+  parseAgentWakeEnv,
+  parseAgentWalletReadEnv,
+  parseAgentReadProjectionEnv,
+  parseApprovalDispatchBackgroundEnv,
+  type AgentStreamBounds,
 } from "../../lib/agent-config.js";
 import logger from "@utils/logger.js";
 
@@ -61,6 +70,8 @@ export interface EnvConfig {
   temperature: number | null;
   /** Max output tokens per response */
   maxOutputTokens: number;
+  /** Kairos stream bounds (Phase 2B), ms; 0 disables a bound. */
+  streamBounds: AgentStreamBounds;
 }
 
 const VALID_PROVIDERS = new Set<string>(["openrouter"]);
@@ -95,7 +106,35 @@ export function loadEnvConfig(): EnvConfig {
   // delegated to shared parser (returns collected ParseErrors so we
   // preserve the "throw all at once" engine contract).
   const agentParse = parseAgentEnv(process.env);
-  for (const e of agentParse.errors) {
+  const boundsParse = parseAgentStreamBoundsEnv(process.env);
+  // DB bounds are consumed by the pool modules (`db/pool-config.ts`), which
+  // fall back to defaults on their own; validating them here makes a bad
+  // value fail startup loudly like every other AGENT_* field.
+  const dbBoundsParse = parseAgentDbBoundsEnv(process.env);
+  // Same for the read-dispatch bounds, consumed per dispatch by
+  // `tools/read-dispatch-bounds.ts`.
+  const toolReadParse = parseAgentToolReadEnv(process.env);
+  // Same for the wake concurrency, read once by the wake executor at start.
+  const wakeParse = parseAgentWakeEnv(process.env);
+  // And the WalletBalances leg bounds, read per call by
+  // `tools/internal/wallet/leg-bounds.ts`.
+  const walletReadParse = parseAgentWalletReadEnv(process.env);
+  // And the P-6 read projection switch, read per answer by
+  // `tools/protocols/dexscreener/row-projection.ts`.
+  const readProjectionParse = parseAgentReadProjectionEnv(process.env);
+  // And the K-2 B2 background approve switch, read per approve by the
+  // approvals IPC handler (`vex-app/src/main/ipc/approvals/_dispatch-background.ts`).
+  const dispatchBackgroundParse = parseApprovalDispatchBackgroundEnv(process.env);
+  for (const e of [
+    ...readProjectionParse.errors,
+    ...dispatchBackgroundParse.errors,
+    ...agentParse.errors,
+    ...boundsParse.errors,
+    ...dbBoundsParse.errors,
+    ...toolReadParse.errors,
+    ...wakeParse.errors,
+    ...walletReadParse.errors,
+  ]) {
     if (e.reason === "out_of_range") {
       errors.push(
         `${e.key}="${e.raw}" is invalid. Must be ${e.detail?.min ?? "?"}-${e.detail?.max ?? "?"}`,
@@ -104,6 +143,11 @@ export function loadEnvConfig(): EnvConfig {
       errors.push(`${e.key}="${e.raw}" is invalid. Must be a number`);
     }
   }
+
+  // Background-call reasoning effort (E-1). Read per call by
+  // `reasoning-effort.ts`; validated here so a typo fails startup loudly.
+  const auxEffortParse = parseAuxReasoningEffortEnv(process.env);
+  if (auxEffortParse.error !== null) errors.push(auxEffortParse.error);
 
   if (errors.length > 0) {
     for (const err of errors) {
@@ -120,6 +164,7 @@ export function loadEnvConfig(): EnvConfig {
     openrouterEndpointTag,
     temperature: agentParse.value.temperature,
     maxOutputTokens: agentParse.value.maxOutputTokens,
+    streamBounds: boundsParse.value,
   };
 }
 

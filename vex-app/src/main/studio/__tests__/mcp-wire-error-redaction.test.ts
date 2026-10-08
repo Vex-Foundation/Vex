@@ -64,6 +64,13 @@ const {
   resetStudioMcpHostForTests,
 } = await import("../mcp-host.js");
 
+// Load the real MCP implementation before opening a peer. Cold transforms
+// belong to fixture readiness, before the bounded wire/lifecycle assertions.
+await Promise.all([
+  import("@vex-agent/mcp/socket-transport.js"),
+  import("@vex-agent/mcp/server.js"),
+]);
+
 /**
  * The sentinel. Deliberately not a word that appears anywhere else, so a hit is
  * unambiguous evidence that peer bytes reached the log.

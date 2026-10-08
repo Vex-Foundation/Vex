@@ -71,6 +71,8 @@ import logger from "@utils/logger.js";
 import {
   buildLighterFillRecord,
   isLighterFillBuildFailure,
+  hasMissingLighterFillPositionEffect,
+  LIGHTER_SPOT_MARKET_INDEX_FLOOR,
   lighterPerpVenueAssetId,
   lighterVenueAssetId,
   recordedLighterFillBaseSizeForIntent,
@@ -92,6 +94,9 @@ import type { LighterOrderEvidenceScope } from "./order-evidence.js";
  */
 export const LIGHTER_MARKET_ASSETS_TTL_MS = 10 * 60 * 1000;
 
+/** Reuse bounded follow-up reads for recorded perpetual fills still missing their effect. */
+export const LIGHTER_FILL_REOBSERVE_MISSING_POSITION_EFFECT = true;
+
 /**
  * The observation boundary's own dependencies.
  *
@@ -109,10 +114,14 @@ export interface LighterFillObservationDeps {
    * How much base quantity the ledger already holds for a given intent. Read
    * ONLY by {@link observeLighterFillsFromAccountTrades} when its caller asked
    * for the self-healing form, so a trigger for an intent the ledger is
-   * already level with costs one local query instead of a privileged provider
+   * already level with costs local queries instead of a privileged provider
    * request.
    */
   readonly recordedFillBaseSize: typeof recordedLighterFillBaseSizeForIntent;
+  /** Optional outside the production factory, so custom deps keep their prior reads. */
+  readonly missingPositionEffect?: typeof hasMissingLighterFillPositionEffect;
+  /** Overrides `LIGHTER_FILL_REOBSERVE_MISSING_POSITION_EFFECT`. */
+  readonly reobserveMissingPositionEffect?: boolean;
 }
 
 export function defaultLighterFillObservationDeps(): LighterFillObservationDeps {
@@ -121,6 +130,7 @@ export function defaultLighterFillObservationDeps(): LighterFillObservationDeps 
     recordFill: recordLighterFillActivity,
     findFeeAuthorization: feeAuthorizationsRepo.findLatestApprovedLighterFeeAuthorization,
     recordedFillBaseSize: recordedLighterFillBaseSizeForIntent,
+    missingPositionEffect: hasMissingLighterFillPositionEffect,
   };
 }
 
@@ -315,6 +325,10 @@ export async function observeLighterFills(input: {
  * order, and the read runs while the recorded sum is below it. A caller whose
  * evidence carries no filled quantity passes null and the read runs: an
  * unknown is not evidence of completeness.
+ * A quantity-complete perpetual ledger also needs established position
+ * effects when the production reader is installed. Missing PnL alone never
+ * invalidates completeness. The same bounded authenticated page supplies
+ * provider facts for a missing effect; no label is inferred from the intent.
  *
  * The terminal-transition sites leave the gate off entirely, because there the
  * read happens exactly once per transition.
@@ -333,7 +347,7 @@ export async function observeLighterFillsFromAccountTrades(input: {
   if (intent.clientOrderIndex === null) return NOTHING_OBSERVED;
 
   const gate = input.onlyWhenLedgerIncomplete;
-  if (gate !== undefined && await ledgerIsLevelWithVenue(intent.intentId, gate, input.deps)) {
+  if (gate !== undefined && await ledgerIsLevelWithVenue(intent, gate, input.deps)) {
     return NOTHING_OBSERVED;
   }
 
@@ -392,10 +406,11 @@ export interface LighterFillLedgerCompletenessGate {
  * idempotent by canonical identity and a skipped read is a fill lost for good.
  */
 async function ledgerIsLevelWithVenue(
-  intentId: string,
+  intent: LighterFillIntentFacts,
   gate: LighterFillLedgerCompletenessGate,
   deps: LighterFillObservationDeps,
 ): Promise<boolean> {
+  const { intentId } = intent;
   const reported = gate.reportedFilledBaseSize;
   if (reported === null) return false;
   let recorded: string;
@@ -413,7 +428,19 @@ async function ledgerIsLevelWithVenue(
     logger.warn("lighter.fill_observation.follow_up_quantity_unreadable", { intentId });
     return false;
   }
-  return comparison >= 0;
+  if (comparison < 0) return false;
+  if (!(deps.reobserveMissingPositionEffect ?? LIGHTER_FILL_REOBSERVE_MISSING_POSITION_EFFECT)
+    || deps.missingPositionEffect === undefined || intent.marketIndex >= LIGHTER_SPOT_MARKET_INDEX_FLOOR) return true;
+  try {
+    // Missing PnL alone is never queried: provider-null PnL must not cause
+    // quantity-complete fills with established effects to keep rereading.
+    return !await deps.missingPositionEffect(intent);
+  } catch (error) {
+    logger.warn("lighter.fill_observation.follow_up_position_facts_unreadable", {
+      intentId, reason: error instanceof Error ? error.name : "unknown",
+    });
+    return false;
+  }
 }
 
 /**

@@ -6,8 +6,9 @@
  * present, the user has either:
  *   - completed Step 4 manually (don't overwrite their override), or
  *   - is mid-rotate via Settings (don't introduce inconsistency).
- * Either way, the wizard surface is responsible for repairing partial
- * state; this helper never overwrites.
+ * The wizard remains responsible for partial and custom state. An exact
+ * bundled tuple may relocate its URL to an explicitly overridden local port
+ * after the old port refuses connections and the new runtime is verified.
  *
  * Distinguishing from `writeEmbeddingConfig` (Step 4 IPC handler):
  *   - No dim-lock check. Bundled defaults represent a fresh-setup
@@ -36,6 +37,10 @@ import { log } from "../logger/index.js";
 import { withEnvWriteLock } from "./env-write-mutex.js";
 import { defaultEmbeddingEnv } from "./embedding-defaults.js";
 import { resolveEmbedPort } from "../paths/service-ports.js";
+import {
+  BUNDLED_EMBEDDING_PORT_REPAIR,
+  canRepairBundledEmbeddingPort,
+} from "./bundled-embedding-port.js";
 
 const EMBEDDING_KEYS = [
   "EMBEDDING_BASE_URL",
@@ -46,17 +51,21 @@ const EMBEDDING_KEYS = [
 
 export interface EnsureEmbeddingDefaultsOptions {
   /**
-   * Embed port published by the compose stack. Defaults to
-   * `DEFAULT_EMBED_PORT` (27134). Phase 1 hardcodes this; Phase 2
-   * may surface a Settings → Advanced override and call this with
-   * the live `composeUp` result port.
+   * Embed port published by the compose stack. Defaults to the validated
+   * VEX_EMBED_PORT override, or DEFAULT_EMBED_PORT (27134).
    */
   readonly embedPort?: number;
   /** Override env file path (tests only). */
   readonly envFile?: string;
+  /** Default ON; false keeps the original preserve-first behavior. */
+  readonly repairBundledPort?: boolean;
+  /** Process config override for isolated tests. Explicit provider overrides win. */
+  readonly env?: NodeJS.ProcessEnv;
+  /** Real bounded probe by default. Tests can control transport outcomes. */
+  readonly fetchImpl?: typeof fetch;
 }
 
-export type EnsureEmbeddingDefaultsKind = "written" | "preserved";
+export type EnsureEmbeddingDefaultsKind = "written" | "preserved" | "relocated";
 
 export interface EnsureEmbeddingDefaultsResult {
   readonly kind: EnsureEmbeddingDefaultsKind;
@@ -76,13 +85,32 @@ export async function ensureEmbeddingDefaults(
   options: EnsureEmbeddingDefaultsOptions = {}
 ): Promise<EnsureEmbeddingDefaultsResult> {
   const envFile = options.envFile ?? ENV_FILE;
-  const embedPort = options.embedPort ?? resolveEmbedPort();
+  const env = options.env ?? process.env;
+  const embedPort = options.embedPort ?? resolveEmbedPort(env);
 
   return withEnvWriteLock(async () => {
     const existing = EMBEDDING_KEYS.map((k) => readKey(envFile, k));
     const anyPresent = existing.some((v) => v !== null && v.length > 0);
 
     if (anyPresent) {
+      const bundled = defaultEmbeddingEnv();
+      const exactBundled = EMBEDDING_KEYS.every((key, index) => existing[index] === bundled[key]);
+      const processCompatible = EMBEDDING_KEYS.every((key) => env[key] === undefined || env[key] === bundled[key]);
+      if (
+        (options.repairBundledPort ?? BUNDLED_EMBEDDING_PORT_REPAIR) &&
+        exactBundled && processCompatible &&
+        await canRepairBundledEmbeddingPort(embedPort, options.fetchImpl) &&
+        // Recheck after transport awaits so a manual edit or runtime override
+        // cannot be replaced using a stale snapshot.
+        EMBEDDING_KEYS.every((key) => readKey(envFile, key) === bundled[key] &&
+          (env[key] === undefined || env[key] === bundled[key]))
+      ) {
+        const targetUrl = defaultEmbeddingEnv(embedPort).EMBEDDING_BASE_URL;
+        appendMultipleToDotenvFile({ EMBEDDING_BASE_URL: targetUrl }, envFile);
+        env.EMBEDDING_BASE_URL = targetUrl;
+        log.info(`[ensure-embedding-defaults] relocated unavailable bundled runtime (port=${embedPort})`);
+        return { kind: "relocated", writtenKeys: ["EMBEDDING_BASE_URL"] };
+      }
       log.info(
         "[ensure-embedding-defaults] preserve-first: at least one EMBEDDING_* key already set, skipping bundled defaults write"
       );

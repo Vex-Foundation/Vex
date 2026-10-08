@@ -357,8 +357,14 @@ async function dispatchContinuation(
   missionLease: LeaseHandle | null,
 ): Promise<DispatchOutcome> {
   if (ref.missionRunId !== null) {
+    // A mission-run form is always claimed WITH its run lease
+    // (`claimUserFormResume`); a missing handle is a broken invariant, and
+    // resuming without a lease would run an unfenced turn.
+    if (missionLease === null) {
+      throw new Error("launch-form resume: mission run continuation has no run lease");
+    }
     const { resumeMissionRun } = await import("./runner/mission.js");
-    await resumeMissionRun(ref.missionRunId, ownerId);
+    await resumeMissionRun(ref.missionRunId, missionLease);
     // The RUN lease the claim acquired, handed straight back — this function
     // never owned it and must not release it.
     return { kind: "dispatched", leaseHandle: missionLease };
@@ -392,7 +398,7 @@ async function dispatchContinuation(
   );
   await runStopGatedSessionTurn({
     sessionId: ref.sessionId,
-    runnerOwnerId: ownerId,
+    runnerLease: handle,
     logScope: "launch_form_resume",
   });
   return { kind: "dispatched", leaseHandle: handle };

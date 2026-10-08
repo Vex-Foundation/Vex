@@ -74,6 +74,12 @@ export type BusinessStopReason = (typeof BUSINESS_STOP_REASONS)[number];
  *   out, the model is repeating itself. See
  *   `runner/tool-call-loop-detector.ts` for the signature, the bound, and why
  *   the first strike only corrects.
+ * - `lease_lost`: this runner's session lease was taken over by another
+ *   runner (or released) while the turn was running. The turn started no
+ *   new tool call, aborted its inference, let an in-flight dispatch settle,
+ *   and wrote nothing the lease fence refused. It is NOT the operator's Stop
+ *   and must never be presented as one; the run belongs to the new owner, so
+ *   the stale runner writes no terminal or park status for it.
  */
 export const RUNTIME_STOP_REASONS = [
   "approval_required",
@@ -90,6 +96,7 @@ export const RUNTIME_STOP_REASONS = [
   "no_progress",
   "restart_orphan",
   "tool_call_loop",
+  "lease_lost",
 ] as const;
 
 export type RuntimeStopReason = (typeof RUNTIME_STOP_REASONS)[number];

@@ -261,6 +261,86 @@ describe("resolveCriticalCompaction", () => {
     expect(r.seen).toHaveLength(1);
   });
 
+  describe("Stop during the bounded wait (S-5)", () => {
+    it("an abort ends the wait mid-sleep, even when the sleep never settles", async () => {
+      const controller = new AbortController();
+      let sleeps = 0;
+      const neverSettles = (): Promise<void> => {
+        sleeps += 1;
+        return new Promise<void>(() => undefined);
+      };
+
+      const r = run([preparing()], { sleep: neverSettles, signal: controller.signal });
+      await vi.waitFor(() => expect(sleeps).toBe(1));
+      controller.abort();
+
+      await expect(r.promise).resolves.toEqual({ kind: "deferred", reason: "aborted" });
+      // A stopped run starts no transcript rewrite of either kind.
+      expect(mockForcePreparedApply).not.toHaveBeenCalled();
+      expect(mockForcedFallback).not.toHaveBeenCalled();
+      expect(r.seen).toHaveLength(1);
+    });
+
+    it("the production timer sleep stops promptly, not at the next 2 s poll", async () => {
+      const controller = new AbortController();
+      const startedAt = performance.now();
+      const r = run([preparing()], { signal: controller.signal });
+      setTimeout(() => controller.abort(), 20);
+
+      await expect(r.promise).resolves.toEqual({ kind: "deferred", reason: "aborted" });
+      expect(performance.now() - startedAt).toBeLessThan(1_000);
+    });
+
+    it("an already-aborted signal skips the ladder entirely", async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      const r = run([READY], { signal: controller.signal });
+
+      await expect(r.promise).resolves.toEqual({ kind: "deferred", reason: "aborted" });
+      expect(r.seen).toHaveLength(0);
+      expect(mockForcePreparedApply).not.toHaveBeenCalled();
+    });
+
+    it("an abort that lands during the post-sleep read starts no cutover", async () => {
+      const { sleep } = fakeClock();
+      const controller = new AbortController();
+      let reads = 0;
+
+      const outcome = await resolveCriticalCompaction({
+        sessionId: "s-1",
+        missionRunId: null,
+        sessionPermission: "restricted",
+        runnerOwnerId: "runner-1",
+        sleep,
+        signal: controller.signal,
+        readPreparationState: async () => {
+          reads += 1;
+          if (reads === 2) {
+            controller.abort();
+            return READY;
+          }
+          return preparing();
+        },
+      });
+
+      expect(outcome).toEqual({ kind: "deferred", reason: "aborted" });
+      expect(mockForcePreparedApply).not.toHaveBeenCalled();
+    });
+
+    it("without an abort the signal changes nothing", async () => {
+      const { sleep } = fakeClock();
+      mockForcePreparedApply.mockResolvedValue({ kind: "applied", generation: 4, archivedMessages: 1 });
+
+      const outcome = await run([preparing(), READY], {
+        sleep,
+        signal: new AbortController().signal,
+      }).promise;
+
+      expect(outcome).toEqual({ kind: "committed", via: "prepared_apply", generation: 4 });
+    });
+  });
+
   it("an unreadable preparation state fails CLOSED into the fallback, never throws", async () => {
     mockForcedFallback.mockResolvedValue({ kind: "noop", reason: "no_compactable" });
 

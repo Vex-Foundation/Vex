@@ -29,7 +29,7 @@ function readyStatus(
     tradingKeyRegistered: true,
     keyRegistrationResumable: false,
     setupRecovery: "none",
-    feePolicy: { perpFeePercent: 0.1, spotFeePercent: 0.25 },
+    feePolicy: { perpFeePercent: 0.02, spotFeePercent: 0.25 },
     feeAuthorized: true,
   };
 }
@@ -75,6 +75,8 @@ describe("LighterAccountSetupModal ready action", () => {
     ["core", "Start Trading on Lighter Core"],
   ] as const)("enters the ready %s environment immediately", async (environment, label) => {
     const { onDone, onOpenChange } = renderReady(environment);
+    expect(screen.getByText("0.02%")).toBeTruthy();
+    expect(screen.getByText("0.25%")).toBeTruthy();
     const button = screen.getByRole("button", { name: label });
 
     expect(button.hasAttribute("disabled")).toBe(false);

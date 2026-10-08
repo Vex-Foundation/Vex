@@ -20,10 +20,15 @@ import {
   boundedGenerationId,
 } from "./provider-signals.js";
 import { observeRoutingMetadata } from "./routing-metadata.js";
+import { ReasoningDetailsAccumulator } from "./reasoning-replay.js";
 
 export async function* consumeOpenRouterStream(
   stream: EventStream<ChatStreamChunk>,
+  captureReasoningReplay = false,
 ): AsyncGenerator<StreamChunk> {
+  // R-7: streamed `reasoning_details` fragments, merged per block. Created
+  // only when replay is on for the model's family; OFF reads nothing new.
+  const reasoningDetails = captureReasoningReplay ? new ReasoningDetailsAccumulator() : null;
   // Accumulate tool call deltas by index
   const toolCallAccumulator = new Map<number, {
     id: string;
@@ -78,6 +83,7 @@ export async function* consumeOpenRouterStream(
     if (delta?.reasoning) {
       yield { type: "reasoning", reasoningText: delta.reasoning };
     }
+    reasoningDetails?.add(delta?.reasoningDetails);
 
     // Tool call deltas — accumulate by index
     if (delta?.toolCalls) {
@@ -101,12 +107,16 @@ export async function* consumeOpenRouterStream(
     // logged (acting on `length` is a separate product decision).
     const finishReason = boundedFinishReason(chunk.choices?.[0]?.finishReason);
     if (finishReason !== null) {
+      // R-7: the blocks gathered so far. Fragments that arrive after the
+      // finish reason are not part of the payload the `done` chunk carries.
+      const reasoningReplay = reasoningDetails?.finish() ?? null;
       // done signals completion — the engine assembles final tool calls.
       yield {
         type: "done",
         finishReason,
         ...(generationId !== null && { generationId }),
         ...(servingProvider !== null && { servingProvider }),
+        ...(reasoningReplay !== null && { reasoningReplay }),
       };
     }
   }

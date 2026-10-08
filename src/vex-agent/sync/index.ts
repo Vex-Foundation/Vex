@@ -19,7 +19,22 @@ import logger from "@utils/logger.js";
  * 2. Drain pending runs from previous process (selective, no snapshot)
  * 3. Full balance sync + authoritative startup snapshot
  */
+/**
+ * SWITCH `LIGHTER_STARTUP_RETIRE_STALE_INTENTS` (deps override
+ * `retireStaleLighterIntents` on {@link InitSyncOptions}).
+ *
+ * ON: the startup sync first finalizes approved Lighter create intents whose
+ * consent expired before they reserved a nonce
+ * (`retireExpiredLighterOrdersBeforeReservation`, `order-repair.ts`). Only a
+ * row with no nonce reservation, no signature and no send attempt is touched;
+ * nothing is resent. OFF (`false`) skips that call entirely, which is the
+ * startup sync before the finalizer existed.
+ */
+export const LIGHTER_STARTUP_RETIRE_STALE_INTENTS = true;
+
 export interface InitSyncOptions {
+  /** Overrides {@link LIGHTER_STARTUP_RETIRE_STALE_INTENTS}; absent uses the constant. */
+  readonly retireStaleLighterIntents?: boolean;
   /**
    * The RUNNING fast-lane registry's active-lane count, injected by the caller
    * that owns the handle (`startSyncExecutor`). It is what makes the re-arm
@@ -79,9 +94,21 @@ export async function initSync(options: InitSyncOptions = {}): Promise<void> {
   //    bounded background path uses public nextNonce evidence only: no vault
   //    unlock, account-auth derivation, signing, submission, or blind retry.
   try {
-    const { repairUnresolvedLighterOrdersInBackground } = await import(
-      "@vex-agent/tools/protocols/lighter/order-repair.js"
-    );
+    const {
+      repairUnresolvedLighterOrdersInBackground,
+      retireExpiredLighterOrdersBeforeReservation,
+    } = await import("@vex-agent/tools/protocols/lighter/order-repair.js");
+    // Approved orders whose consent expired before they reserved a nonce are
+    // finalized first: they provably never left Vex, so nothing is resent.
+    if (options.retireStaleLighterIntents ?? LIGHTER_STARTUP_RETIRE_STALE_INTENTS) {
+      const expiredBeforeReservation = await retireExpiredLighterOrdersBeforeReservation();
+      if (expiredBeforeReservation.retired > 0 || expiredBeforeReservation.failed) {
+        logger.info("sync.init.lighter_order_expired_before_reservation", {
+          retired: expiredBeforeReservation.retired,
+          failed: expiredBeforeReservation.failed,
+        });
+      }
+    }
     const lighterOrders = await repairUnresolvedLighterOrdersInBackground();
     if (lighterOrders.examined > 0 || lighterOrders.errors > 0) {
       logger.info("sync.init.lighter_order_repair", {

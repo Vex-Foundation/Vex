@@ -162,9 +162,9 @@ export async function readLighterLeverageAccountSetup(
 ): Promise<LighterLeverageAccountSetup> {
   const walletAddress = normalizeWallet(input.walletAddress);
   const accountIndex = await resolveOwnAccountIndex(input.environment, walletAddress, deps);
-  const scopes = deps
-    .listCredentialScopes(input.environment)
-    .filter((scope) => scope.accountIndex === accountIndex);
+  const scopes = (await deps.listCredentialScopes(input.environment)).filter(
+    (scope) => scope.accountIndex === accountIndex,
+  );
   if (scopes.length !== 1) {
     throw leverageRefusal(
       "This wallet has no single saved Lighter trading key on this machine.",

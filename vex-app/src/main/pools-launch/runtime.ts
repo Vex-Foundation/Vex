@@ -27,6 +27,7 @@ import type {
   PreparePoolsLaunch,
   PreviewPoolsClaim,
 } from "@vex-agent/tools/protocols/pools/launch/runtime-contract.js";
+import { protectSigningOperation } from "../secrets/signing-lock.js";
 
 /** The eight entry points, exactly as the runtime contract types them. */
 export interface PoolsLaunchRuntime {
@@ -68,7 +69,8 @@ export function getPoolsLaunchRuntime(): PoolsLaunchRuntime {
     prepare: async (session, inputs) =>
       (await loadPoolsLaunchModule()).preparePoolsLaunch(session, inputs),
     deploy: async (session, inputs) =>
-      (await loadPoolsLaunchModule()).deployPoolsLaunch(session, inputs),
+      protectSigningOperation("pools_launch_deploy", async () =>
+        (await loadPoolsLaunchModule()).deployPoolsLaunch(session, inputs)),
     cancel: async (session, inputs) =>
       (await loadPoolsLaunchModule()).cancelPoolsLaunch(session, inputs),
     cancelAwaitingForm: async (session, inputs) =>
@@ -76,7 +78,8 @@ export function getPoolsLaunchRuntime(): PoolsLaunchRuntime {
     previewClaim: async (session, inputs) =>
       (await loadPoolsLaunchModule()).previewPoolsClaim(session, inputs),
     claim: async (session, inputs) =>
-      (await loadPoolsLaunchModule()).claimPoolsFees(session, inputs),
+      protectSigningOperation("pools_launch_claim", async () =>
+        (await loadPoolsLaunchModule()).claimPoolsFees(session, inputs)),
     myLaunches: async (session, inputs) =>
       (await loadPoolsLaunchModule()).listPoolsMyLaunches(session, inputs),
     getAwaiting: async (session) =>

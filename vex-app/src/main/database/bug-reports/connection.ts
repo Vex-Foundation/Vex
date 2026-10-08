@@ -15,8 +15,9 @@
  * fail identically when compose state is missing.
  */
 
-import { Client, type ClientConfig } from "pg";
+import type { Client } from "pg";
 import { buildPoolConfig } from "../db-config.js";
+import { runWithMainDbClient } from "../main-ipc-pg-pool.js";
 import { log } from "../../logger/index.js";
 
 const CONNECT_TIMEOUT_MS = 2_000;
@@ -42,29 +43,17 @@ export async function withClient<T>(
   if (cfg === null) {
     throw new BugReportsDbUnavailableError();
   }
-  const clientConfig: ClientConfig = {
-    host: cfg.host,
-    port: cfg.port,
-    database: cfg.database,
-    user: cfg.user,
-    password: cfg.password,
-    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
-    statement_timeout: QUERY_TIMEOUT_MS,
-  };
-  const client = new Client(clientConfig);
-  try {
-    await client.connect();
-  } catch (cause) {
-    log.warn("[bug-reports-db] client.connect failed", cause);
-    throw cause;
-  }
-  try {
-    return await fn(client);
-  } finally {
-    try {
-      await client.end();
-    } catch (cause) {
-      log.warn("[bug-reports-db] client.end failed (non-fatal)", cause);
-    }
-  }
+  // Fresh client per call, or a pooled one when MAIN_IPC_PG_POOL is on
+  // (`main-ipc-pg-pool.ts`): same config, timeouts and failure results.
+  return runWithMainDbClient(
+    cfg,
+    {
+      logPrefix: "[bug-reports-db]",
+      timeouts: { connectTimeoutMs: CONNECT_TIMEOUT_MS, statementTimeoutMs: QUERY_TIMEOUT_MS },
+      onConnectFailed: (cause): never => {
+        throw cause;
+      },
+    },
+    fn,
+  );
 }

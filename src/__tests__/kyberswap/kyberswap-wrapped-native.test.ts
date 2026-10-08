@@ -41,11 +41,11 @@ describe("getKyberWrappedNativeAddress", () => {
   });
 
   it("throws a VexError for a non-aggregator chain (scroll)", () => {
-    expect(() => getKyberWrappedNativeAddress("scroll")).toThrow(VexError);
+    expect(() => Reflect.apply(getKyberWrappedNativeAddress, undefined, ["scroll"])).toThrow(VexError);
   });
 
   it("throws a VexError for a non-aggregator chain (zksync)", () => {
-    expect(() => getKyberWrappedNativeAddress("zksync")).toThrow(VexError);
+    expect(() => Reflect.apply(getKyberWrappedNativeAddress, undefined, ["zksync"])).toThrow(VexError);
   });
 
   it("covers EXACTLY the aggregator: true chains from the chain registry", () => {

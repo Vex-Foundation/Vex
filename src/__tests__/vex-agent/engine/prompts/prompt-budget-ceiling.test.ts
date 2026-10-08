@@ -185,14 +185,94 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  *   mission run / full          65,954 -> 66,764
  *
  * The coordinator reviews this raise.
+ *
+ * REVIEWED CEILING MOVE, Kairos Phase 5 fewer rounds (2026-09-29).
+ * B-3: "Mark uncertainty" in `# Memory & Learning` is scoped to memory and
+ * lesson claims (+185 in every mode, one static rule rendered once per mode).
+ * WHAT THE BYTES BUY: the unscoped rule asked for doubt to be narrated before
+ * every action, which cost rounds; the scoped rule keeps the hedge the memory
+ * manager derives provenance from and says it is not a reason to pause.
+ *
+ * B-4 + T-2: two constants in `# Execution Policy`, rendered once per mode
+ * (+595 in every mode): "act, don't narrate" (every response calls the next
+ * tool(s) or delivers the answer; waiting for approval or a reply is a valid
+ * end) and "batch independent reads" (issue independent reads together).
+ * WHAT THE BYTES BUY: a promise-only reply and a one-read-per-round habit each
+ * cost a full provider round (~6-7 s first chunk in the Phase 4 live data).
+ *
+ * B-1: two `# Mission Execution` lines reworded from "never stop" to "never
+ * abandon; defer with a reason when nothing is actionable" (+222 on the two
+ * mission-run modes only). WHAT THE BYTES BUY: an idle run now ends its slice
+ * on a wake instead of spinning on prose continue rounds.
+ *
+ *   agent / restricted          61,748 -> 61,933 -> 62,528
+ *   agent / full                62,449 -> 62,634 -> 63,229
+ *   mission setup / restricted  68,225 -> 68,410 -> 69,005
+ *   mission setup / full        68,244 -> 68,429 -> 69,024
+ *   mission run / restricted    66,949 -> 67,134 -> 67,729 -> 67,951
+ *   mission run / full          66,764 -> 66,949 -> 67,544 -> 67,766
+ *
+ * E-1: one `## Required Fields` line in mission setup naming the new contract
+ * field `reasoningEffort` (+152 on the two mission-setup modes only). WHAT THE
+ * BYTES BUY: missions run at medium by default instead of the model's declared
+ * default (High for deepseek-v4.1-flash, 40-54 s of reasoning per action), and
+ * the model can honour a user who asks for faster or deeper thinking.
+ *
+ *   mission setup / restricted  69,005 -> 69,157
+ *   mission setup / full        69,024 -> 69,176
+ *
+ * REVIEWED CEILING MOVE, Kairos E-1 follow-up (2026-09-30). One
+ * `## Critical Rules` line in mission run: when calling `MissionStop`, write
+ * the final report as text in the same response (+210 on the two mission-run
+ * modes only). WHAT THE BYTES BUY: the owner's live mission ended with a
+ * tool-only `MissionStop`, so the result (the price move) reached the stop
+ * summary but never the chat. The setup line's default word changes
+ * (medium -> high, high -> max as the "deeper" example) at equal length.
+ *
+ *   mission run / restricted    67,951 -> 68,161
+ *   mission run / full          67,766 -> 67,976
+ *
+ * Same line, second live finding (+175 on the two mission-run modes): after a
+ * `BoardCompose` the board gate refuses every tool call until the report is
+ * written, `MissionStop` included, so the line names the order (report as its
+ * own reply, then `MissionStop`). WHAT THE BYTES BUY: the owner's rerun spent
+ * a refused stop, a prose round and a misleading continue cue finding it.
+ *
+ *   mission run / restricted    68,161 -> 68,336
+ *   mission run / full          67,976 -> 68,151
+ *
+ * REVIEWED CEILING MOVE (LOWER), Kairos P-5 lean protocols index
+ * (2026-09-30). NET -6,535 bytes in every mode, identical in all six because
+ * the whole change is inside the `# Protocols` layer, rendered once per mode
+ * (30,411 -> 23,876 bytes in this posture). Behind `PROTOCOLS_PROMPT_LEAN`
+ * (ON); OFF renders the old layer byte for byte, proved against
+ * `__promptsnaps__/protocols-legacy.*.md` by `protocols-lean-index.test.ts`.
+ * WHAT WAS CUT: each namespace's Read, Quote and When-it-applies lines, which
+ * catalogue the reads and quotes that ToolSearch results describe in full,
+ * except the sentences that state a rule or that a prompt test pins (kept
+ * verbatim, listed in `LEAN_KEPT_SENTENCES`), and the six task-shape Trigger
+ * lines, which restate the shape heading. WHAT STAYS VERBATIM: every identity,
+ * Act line, characteristics-and-limits line, coverage line, availability and
+ * mutating marker, and every other task-shape line (money paths, approvals,
+ * chain reach, anti-sniper, launch authority, report duties).
+ *
+ *   agent / restricted          62,528 -> 55,993
+ *   agent / full                63,229 -> 56,694
+ *   mission setup / restricted  69,154 -> 62,619 (ceiling was 69,157)
+ *   mission setup / full        69,173 -> 62,638 (ceiling was 69,176)
+ *   mission run / restricted    68,336 -> 61,801
+ *   mission run / full          68,151 -> 61,616
+ *
+ * The two mission-setup ceilings sat 3 bytes above their measurement before
+ * this change; they are lowered to the measurement here.
  */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 61_748 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 62_449 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 68_225 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 68_244 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 66_949 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 66_764 },
+  { name: "agent / restricted", context: context({}), ceiling: 55_993 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 56_694 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 62_619 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 62_638 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 61_801 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 61_616 },
 ] as const;
 
 beforeAll(() => {

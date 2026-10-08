@@ -56,6 +56,10 @@ import {
   type ToolVisibilityBase,
 } from "@vex-agent/tools/registry.js";
 import { toToolDefinitions } from "./runner/shared.js";
+import {
+  rebuildDiscoveredToolsOnce,
+  type TranscriptMessageLike,
+} from "@vex-agent/tools/registry/discovered-tools-rebuild.js";
 import logger from "@utils/logger.js";
 
 export interface TurnPromptStackResult {
@@ -92,6 +96,15 @@ export async function buildTurnPromptStack(args: {
    * Defaults to `none` so non-loop callers keep today's behaviour exactly.
    */
   readonly preparationState?: PreparationPressureState;
+  /**
+   * The session's transcript as the loop hydrated it. When present, a process
+   * serving this session for the first time rebuilds the discovered-tool
+   * working set from it before the tools array is projected
+   * (`DISCOVERED_TOOLS_REBUILD`). Absent: nothing is rebuilt, as before.
+   */
+  readonly transcript?: readonly TranscriptMessageLike[];
+  /** Overrides `DISCOVERED_TOOLS_REBUILD`; absent uses the constant. */
+  readonly discoveredToolsRebuild?: boolean;
 }): Promise<TurnPromptStackResult> {
   const preparationState: PreparationPressureState =
     args.preparationState ?? { kind: "none" };
@@ -104,57 +117,75 @@ export async function buildTurnPromptStack(args: {
     preparationState,
   );
 
-  // $VEX live-metrics banner (turn-state). Fully fail-soft inside the builder:
-  // any fetch error yields "" so the banner is omitted and the turn is never
-  // blocked. Throttled + cached at the client, so repeated turns hit cache.
-  promptOptions.ownTokenBanner = await buildOwnTokenBanner();
+  const sessionId = args.context.sessionId;
+  const bridgeActive = args.postCompactBridgeRemaining > 0;
+  const planBlockSource =
+    args.context.planMode && args.context.planMd && args.context.planMd.length > 0
+      ? args.context.planMd
+      : null;
+  const readsOffNotice = planBlockSource === null && !args.context.planMode;
 
-  // Mission capital (turn-state). Fully fail-soft inside the builder: any error
-  // yields "" so the banner is omitted and the turn is never blocked. Skipped
-  // entirely outside a mission run, and when the run has no baseline.
-  promptOptions.missionCapitalBanner = args.context.missionRunId
-    ? await buildMissionCapitalBanner(args.context.missionBaseline ?? null)
-    : "";
+  // The independent reads run CONCURRENTLY: none of them feeds another, so the
+  // turn pays the slowest one instead of their sum. Each keeps its own
+  // fail-soft handling and budget exactly as when they ran one after another.
+  // Results are assigned below in the original order, so the options object
+  // (keys included) is identical to the sequential build. The one side effect,
+  // consuming the plan off-notice, is NOT in this batch: it runs once, after
+  // its own plan read and after every read here succeeded.
+  const [ownTokenBanner, missionCapitalBanner, bridgeView, resumePacket, memoryCtx, offNotice] =
+    await Promise.all([
+      // $VEX market banner (turn-state). Stale-while-revalidate: rendered at
+      // once from the last good snapshot with its age stated, while a
+      // single-flight refresh runs in the background. Never waits on the
+      // network; "" (omitted) when there is no snapshot yet or it is past its
+      // max age.
+      buildOwnTokenBanner(),
+      // Mission capital (turn-state). Fully fail-soft inside the builder with
+      // its own time budget: any error yields "" so the banner is omitted and
+      // the turn is never blocked. Skipped entirely outside a mission run, and
+      // when the run has no baseline.
+      args.context.missionRunId
+        ? buildMissionCapitalBanner(args.context.missionBaseline ?? null)
+        : Promise.resolve(""),
+      // Bridge-routing capability layer (DYNAMIC): the live Khalani
+      // `/v1/chains` list + the Relay-health-gated Robinhood line.
+      // Stale-while-revalidate single-flight snapshot: the accessor returns
+      // instantly (never blocks the turn on the network) and never throws; a
+      // cold/absent snapshot renders the conservative "verify by quoting"
+      // fallback. Kept out of buildProtocolsPrompt's permanent cache so nothing
+      // mutable sits behind it (R13/B7).
+      getBridgeCapabilityView(),
+      // Post-compact resume packet, built from a FRESH session read (the
+      // packet needs its checkpoint generation, so those two stay in order).
+      bridgeActive
+        ? readResumePacket(sessionId, args.postCompactBridgeRemaining)
+        : Promise.resolve(null),
+      // Memory facade: the SINGLE pre-inference memory read (knowledge hot
+      // context + session-memory stats, each branch fail-soft to null inside
+      // the facade; never crashes the turn). One object feeds BOTH the
+      // `# Memory` section AND the `hasSessionMemory` tool-visibility gate. A
+      // FAILED stats fetch (null branch) keeps memory tools hidden, same
+      // fail-closed behavior as before.
+      getTurnContext({ sessionId }),
+      // Plan-mode OFF: the one-shot "switched off" note. A targeted read only
+      // on the off path, so the common (plan-mode-off, no prior plan) case is
+      // one cheap PK lookup that returns null.
+      readsOffNotice ? readPlanOffNotice(sessionId) : Promise.resolve(null),
+    ]);
 
-  // Bridge-routing capability layer (DYNAMIC): the live Khalani `/v1/chains`
-  // list + the Relay-health-gated Robinhood line. Stale-while-revalidate
-  // single-flight snapshot — the accessor returns instantly (never blocks the
-  // turn on the network) and never throws; a cold/absent snapshot renders the
-  // conservative "verify by quoting" fallback. Kept out of buildProtocolsPrompt's
-  // permanent cache so nothing mutable sits behind it (R13/B7).
-  promptOptions.bridgeCapabilityPrompt = buildBridgeCapabilityPrompt(await getBridgeCapabilityView());
+  promptOptions.ownTokenBanner = ownTokenBanner;
+  promptOptions.missionCapitalBanner = missionCapitalBanner;
+  promptOptions.bridgeCapabilityPrompt = buildBridgeCapabilityPrompt(bridgeView);
 
-  let nextPostCompactBridgeRemaining = args.postCompactBridgeRemaining;
-  if (args.postCompactBridgeRemaining > 0) {
-    try {
-      const freshSession = await sessionsRepo.getSession(args.context.sessionId);
-      const generation = freshSession?.checkpointGeneration ?? 0;
-      const packet = await buildResumePacket(args.context.sessionId, generation);
-      if (packet.length > 0) {
-        logger.info("compact.resume_packet.rendered", {
-          sessionId: args.context.sessionId,
-          generation,
-          packetLengthChars: packet.length,
-          bridgeRemainingBeforeDecrement: args.postCompactBridgeRemaining,
-        });
-        promptOptions.resumePacket = packet;
-      }
-    } catch (err) {
-      logger.warn("turn.resume_packet.fetch_failed", {
-        sessionId: args.context.sessionId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-    nextPostCompactBridgeRemaining = args.postCompactBridgeRemaining - 1;
+  // Bridge counter: decremented on every turn the bridge is still active,
+  // whether or not the packet fetch succeeded (see module header).
+  const nextPostCompactBridgeRemaining = bridgeActive
+    ? args.postCompactBridgeRemaining - 1
+    : args.postCompactBridgeRemaining;
+  if (resumePacket !== null && resumePacket.length > 0) {
+    promptOptions.resumePacket = resumePacket;
   }
 
-  // Memory façade — the SINGLE pre-inference memory read (knowledge hot
-  // context + session-memory stats, each branch fail-soft to null inside the
-  // façade; never crashes the turn). One object feeds BOTH the `# Memory`
-  // section AND the `hasSessionMemory` tool-visibility gate. A FAILED stats
-  // fetch (null branch) keeps memory tools hidden — same fail-closed
-  // behavior as before.
-  const memoryCtx = await getTurnContext({ sessionId: args.context.sessionId });
   const hasSessionMemory =
     memoryCtx.sessionStats !== null && memoryCtx.sessionStats.activeCount > 0;
   promptOptions.memorySection = buildMemorySection(memoryCtx);
@@ -162,27 +193,21 @@ export async function buildTurnPromptStack(args: {
   // Plan-mode prompt layers (session-scoped). When plan-mode is ON and a plan
   // exists, inject the advisory "# Active Plan" layer (turn-start snapshot from
   // hydration). When plan-mode is OFF, surface the one-shot "switched off" note
-  // exactly once (consume the off_notice flag) — a targeted read only on the
-  // off path, so the common (plan-mode-off, no prior plan) case is one cheap
-  // PK lookup that returns null.
-  if (args.context.planMode && args.context.planMd && args.context.planMd.length > 0) {
+  // exactly once: the flag is consumed HERE, once, only after its own plan read
+  // and only once every other read above has succeeded, so a failed stack build
+  // never swallows the note.
+  if (planBlockSource !== null) {
     promptOptions.activePlanBlock = buildActivePlanBlock(
-      args.context.planMd,
+      planBlockSource,
       args.context.planAccepted ?? false,
     );
-  } else if (!args.context.planMode) {
+  } else if (offNotice !== null && offNotice.pending) {
+    promptOptions.planOffNotice = PLAN_OFF_NOTICE;
     try {
-      const { getActivePlan, consumeOffNotice } = await import(
-        "@vex-agent/db/repos/session-plans.js"
-      );
-      const plan = await getActivePlan(args.context.sessionId);
-      if (plan?.offNoticePending) {
-        promptOptions.planOffNotice = PLAN_OFF_NOTICE;
-        await consumeOffNotice(args.context.sessionId);
-      }
+      await offNotice.consume();
     } catch (err) {
       logger.warn("turn.plan_off_notice.fetch_failed", {
-        sessionId: args.context.sessionId,
+        sessionId,
         error: err instanceof Error ? err.message : String(err),
       });
     }
@@ -209,6 +234,23 @@ export async function buildTurnPromptStack(args: {
     hasCompactionSummaryReady: hasCompactionSummaryReady(preparationState),
   };
 
+  // After a restart or a takeover the process-local working set starts empty;
+  // rebuild it once from the hydrated transcript, re-validated against this
+  // turn's context, BEFORE the tools array and the Tool Map are projected.
+  if (args.transcript !== undefined && visibilityCtx.sessionId === sessionId) {
+    const rebuild = rebuildDiscoveredToolsOnce(visibilityCtx, args.transcript, {
+      ...(args.discoveredToolsRebuild === undefined ? {} : { enabled: args.discoveredToolsRebuild }),
+    });
+    if (rebuild.status === "rebuilt") {
+      logger.info("tools.discovered_rebuild", {
+        sessionId,
+        rounds: rebuild.rounds,
+        restored: rebuild.restored,
+        dropped: rebuild.dropped,
+      });
+    }
+  }
+
   // Project the tools array AND the Tool Map from the SAME visibilityCtx —
   // unconditional, so the two cannot drift (no stale defaultTools path).
   const tools = toToolDefinitions(getOpenAITools(visibilityCtx));
@@ -220,4 +262,67 @@ export async function buildTurnPromptStack(args: {
     nextPostCompactBridgeRemaining,
     preparationBypassesBarrier,
   };
+}
+
+/**
+ * Fresh session read, then the resume packet for that checkpoint generation.
+ * NEVER rejects: a failure is logged and yields null (no packet this turn).
+ */
+async function readResumePacket(
+  sessionId: string,
+  bridgeRemainingBeforeDecrement: number,
+): Promise<string | null> {
+  try {
+    const freshSession = await sessionsRepo.getSession(sessionId);
+    const generation = freshSession?.checkpointGeneration ?? 0;
+    const packet = await buildResumePacket(sessionId, generation);
+    if (packet.length > 0) {
+      logger.info("compact.resume_packet.rendered", {
+        sessionId,
+        generation,
+        packetLengthChars: packet.length,
+        bridgeRemainingBeforeDecrement,
+      });
+    }
+    return packet;
+  } catch (err) {
+    logger.warn("turn.resume_packet.fetch_failed", {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+interface PlanOffNoticeRead {
+  readonly pending: boolean;
+  /** Clears the one-shot flag. Called at most once, by the stack builder. */
+  readonly consume: () => Promise<void>;
+}
+
+/**
+ * READ-ONLY half of the plan off-notice: whether the one-shot note is pending.
+ * Consuming it is left to the caller so it happens once, after this read, and
+ * only when the whole stack build succeeded. NEVER rejects: a failed read is
+ * logged and yields null (no note this turn, flag left pending).
+ */
+async function readPlanOffNotice(sessionId: string): Promise<PlanOffNoticeRead | null> {
+  try {
+    const { getActivePlan, consumeOffNotice } = await import(
+      "@vex-agent/db/repos/session-plans.js"
+    );
+    const plan = await getActivePlan(sessionId);
+    return {
+      pending: plan?.offNoticePending === true,
+      consume: async () => {
+        await consumeOffNotice(sessionId);
+      },
+    };
+  } catch (err) {
+    logger.warn("turn.plan_off_notice.fetch_failed", {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
 }

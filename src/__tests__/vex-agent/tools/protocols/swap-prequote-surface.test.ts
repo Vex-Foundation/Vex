@@ -29,6 +29,8 @@ vi.mock("@tools/solana-ecosystem/jupiter/jupiter-tokens/service.js", () => ({
   requireJupiterResolvedToken: vi.fn(),
 }));
 
+import { approvedPrequoteAuthorityFrom } from "@vex-agent/tools/protocols/prequote/approved-row-authority.js";
+
 import * as facade from "@vex-agent/tools/protocols/swap-prequote.js";
 
 // Type-only imports — these must compile against the façade re-exports. If a
@@ -92,6 +94,7 @@ describe("swap-prequote façade surface", () => {
     // fails to compile if any type were dropped from the façade.
     const swap: SwapMatchInput = {
       kind: "swap",
+      provider: "kyberswap",
       sessionId: "s",
       family: "eip155",
       chainId: 1,
@@ -106,6 +109,7 @@ describe("swap-prequote façade surface", () => {
     const tradeType: BridgeTradeType = "EXACT_INPUT";
     const bridge: BridgeMatchInput = {
       kind: "bridge",
+      provider: "khalani",
       sessionId: "s",
       sourceFamily: "eip155",
       destFamily: "solana",
@@ -125,7 +129,10 @@ describe("swap-prequote façade surface", () => {
     };
     const match: PrequoteMatchInput = swap;
     const gateReg: ExecuteGateRegistration = { kind: "bridge", provider: "relay" };
-    const decision: GateDecision = { kind: "allow", verdict: "pass", prequoteId: "p" };
+    const decision: GateDecision = {
+      kind: "allow", verdict: "pass", prequoteId: "p",
+      prequoteAuthority: approvedPrequoteAuthorityFrom("p", { verdict: "pass" }),
+    };
 
     expect(swap.kind).toBe("swap");
     expect(bridge.kind).toBe("bridge");

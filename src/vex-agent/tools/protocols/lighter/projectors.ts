@@ -23,6 +23,7 @@ import {
   classifyLighterPositionEffect,
   lighterCampaignTradeType,
   readLighterAccountFillFacts,
+  type LighterFillPositionFactsOptions,
   type LighterPositionEffect,
 } from "./fill-position-effect.js";
 import {
@@ -466,11 +467,11 @@ export function projectOrderBook(response: LighterOrderBookOrdersResponse, limit
  * position effect as unknown - the public `recentTrades` surface, where the
  * rows belong to strangers.
  */
-export function projectTrade(trade: LighterTrade, accountIndex?: number): Record<string, unknown> {
+export function projectTrade(trade: LighterTrade, accountIndex?: number, options: LighterFillPositionFactsOptions = {}): Record<string, unknown> {
   const tradeIdNumeric = safeIntegerOrNull(trade.trade_id);
   const askOrderIdNumeric = safeIntegerOrNull(trade.ask_id);
   const bidOrderIdNumeric = safeIntegerOrNull(trade.bid_id);
-  const account = projectTradeAccountView(trade, accountIndex);
+  const account = projectTradeAccountView(trade, accountIndex, options);
   return {
     tradeId: trade.trade_id_str,
     tradeIdPrecision: "provider_string_canonical",
@@ -530,6 +531,7 @@ export function projectTrade(trade: LighterTrade, accountIndex?: number): Record
 function projectTradeAccountView(
   trade: LighterTrade,
   accountIndex?: number,
+  options: LighterFillPositionFactsOptions = {},
 ): Record<string, unknown> {
   const absent = {
     known: false,
@@ -552,7 +554,7 @@ function projectTradeAccountView(
   if (isAsk === isBid) return absent;
   const side = isAsk ? "sell" : "buy";
   const role = (side === "sell" ? trade.is_maker_ask : !trade.is_maker_ask) ? "maker" : "taker";
-  const facts = readLighterAccountFillFacts({ trade, role, side });
+  const facts = readLighterAccountFillFacts({ trade, role, side, accountIndex }, options);
   if (facts === null) return { ...absent, side, role };
   const effect = classifyLighterPositionEffect({
     positionSizeBefore: facts.positionSizeBefore,
@@ -587,8 +589,9 @@ export function projectRecentTrades(
   response: LighterRecentTradesResponse,
   limit: number,
   accountIndex?: number,
+  options: LighterFillPositionFactsOptions = {},
 ): Record<string, unknown> {
-  const trades = takeFirst(response.trades.map((trade) => projectTrade(trade, accountIndex)), limit);
+  const trades = takeFirst(response.trades.map((trade) => projectTrade(trade, accountIndex, options)), limit);
   return {
     count: trades.count,
     totalProviderRows: trades.total,

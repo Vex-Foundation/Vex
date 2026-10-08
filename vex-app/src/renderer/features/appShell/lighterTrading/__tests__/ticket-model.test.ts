@@ -28,7 +28,7 @@ const MARKET: LighterTradingMarket = {
   minQuoteAmount: "10",
   orderQuoteLimit: "100000",
   decimals: { size: 4, price: 2, quote: 6 },
-  fees: { maker: "0", taker: "0.0003", makerEnabled: false, takerEnabled: true, integratorMaker: "0.1", integratorTaker: "0.1" },
+  fees: { maker: "0", taker: "0.0003", makerEnabled: false, takerEnabled: true, integratorMaker: "0.02", integratorTaker: "0.02" },
   activity24h: { tradesCount: 120, quoteVolume: 1_600_000 },
   margin: { defaultInitialMarginFraction: 1_000, minInitialMarginFraction: 200, maintenanceMarginFraction: 400 },
 };

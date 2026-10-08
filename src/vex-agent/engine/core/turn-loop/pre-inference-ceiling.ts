@@ -73,6 +73,8 @@ export interface PreInferenceGateInput {
    * genuinely holds no lease, not a default.
    */
   readonly runnerOwnerId: string | undefined;
+  /** The run's Stop signal; ends the ladder's bounded wait promptly (S-5). */
+  readonly signal?: AbortSignal;
 }
 
 export async function checkPreInferenceGate(
@@ -126,6 +128,7 @@ export async function checkPreInferenceGate(
     ...(input.runnerOwnerId === undefined
       ? {}
       : { runnerOwnerId: input.runnerOwnerId }),
+    ...(input.signal === undefined ? {} : { signal: input.signal }),
   });
 
   if (outcome.kind === "escalated") {

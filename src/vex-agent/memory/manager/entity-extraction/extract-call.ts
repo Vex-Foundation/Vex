@@ -17,6 +17,7 @@ import {
 } from "../entity-extraction-schema.js";
 import { buildExtractionSystemPrompt, buildExtractionUserPrompt } from "./prompt.js";
 import type { ExtractionLesson } from "./types.js";
+import { withAuxReasoningEffort } from "@vex-agent/inference/reasoning-effort.js";
 
 /**
  * Default provider factory — the SAME env-driven OpenRouter provider the judge
@@ -54,7 +55,8 @@ export async function extractEntities(
         { role: "system", content: buildExtractionSystemPrompt() },
         { role: "user", content: buildExtractionUserPrompt(lesson) },
       ],
-      config,
+      // Background call: the aux reasoning effort (E-1), never the chat pick.
+      withAuxReasoningEffort(config),
       undefined,
       timeoutSignal,
     );

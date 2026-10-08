@@ -45,3 +45,39 @@ describe("desk session account ownership", () => {
     if (scenario === "missing wallet") expect(getAccountsByL1Address).not.toHaveBeenCalled();
   });
 });
+
+describe("desk session account ownership feeds the desk pre-warm", () => {
+  it("keeps a proven master account for the next desk preview only while LIGHTER_DESK_PREWARM_OWNERSHIP is on, and nothing for a refused proof", async () => {
+    const { clearLighterDeskPrewarm, takeLighterDeskPrewarmOwnership } = await import(
+      "@vex-agent/tools/protocols/lighter/desk-prewarm.js"
+    );
+    const { configureLighterOrderPreviewDeps } = await import(
+      "@vex-agent/tools/protocols/lighter/preview-snapshot.js"
+    );
+    clearLighterDeskPrewarm();
+    const readSessionWallet = vi.fn().mockResolvedValue(walletScope);
+    const owned = vi.fn().mockResolvedValue({
+      code: 200, l1_address: WALLET, sub_accounts: [{ account_type: 0, index: 42, l1_address: WALLET }],
+    });
+    const deps = { readSessionWallet, client: { getAccountsByL1Address: owned } };
+
+    configureLighterOrderPreviewDeps({ deskPrewarm: true, deskPrewarmOwnership: false });
+    await resolveLighterSessionAccount({ sessionId: "session-1", environment: "rhc" }, deps);
+    expect(takeLighterDeskPrewarmOwnership("rhc", WALLET, Date.now())).toBeNull();
+
+    configureLighterOrderPreviewDeps({ deskPrewarm: true, deskPrewarmOwnership: true });
+    const foreign = vi.fn().mockResolvedValue({
+      code: 200, l1_address: WALLET, sub_accounts: [{ account_type: 0, index: 42, l1_address: OTHER }],
+    });
+    await expect(resolveLighterSessionAccount(
+      { sessionId: "session-1", environment: "rhc" },
+      { readSessionWallet, client: { getAccountsByL1Address: foreign } },
+    )).rejects.toThrow();
+    expect(takeLighterDeskPrewarmOwnership("rhc", WALLET, Date.now())).toBeNull();
+
+    await resolveLighterSessionAccount({ sessionId: "session-1", environment: "rhc" }, deps);
+    expect(takeLighterDeskPrewarmOwnership("rhc", WALLET, Date.now())).toBe(42);
+    configureLighterOrderPreviewDeps(null);
+    clearLighterDeskPrewarm();
+  });
+});

@@ -424,6 +424,11 @@ export async function sendWithEndpointFailover<T>(
       if (failure === null) throw err;
 
       attemptsMade += 1;
+      try {
+        context?.onCapacityFailure?.(failure.reasonClass);
+      } catch {
+        // Measurement must never change the failover decision.
+      }
       const consecutiveFailures =
         sessionId !== null ? recordCapacityFailure(sessionId) : (localFailures += 1);
 

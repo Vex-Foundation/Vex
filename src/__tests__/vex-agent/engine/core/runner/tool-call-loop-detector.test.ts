@@ -17,12 +17,17 @@ import {
   MAX_TOOL_CALL_CYCLE_LENGTH,
   TOOL_CALL_LOOP_THRESHOLD,
   TOOL_CALL_SIGNATURE_HISTORY_LIMIT,
+  TOOL_READ_POLL_CAP,
+  TOOL_RESULT_VOLATILE_KEYS,
   canonicalize,
   createToolCallLoopDetector,
+  normalizeToolResultOutput,
   toolCallSignature,
   type CompletedToolCallObservation,
   type ToolCallLoopVerdict,
 } from "@vex-agent/engine/core/runner/tool-call-loop-detector.js";
+
+import { requireValue } from "../../../../helpers/require-value.js";
 
 let nextId = 0;
 
@@ -281,5 +286,165 @@ describe("boundedness", () => {
     expect(verdict.kind).toBe("correct");
     if (verdict.kind === "clear") throw new Error("expected a correction");
     expect(verdict.facts.toolCallIds).toEqual(ids);
+  });
+});
+
+describe("per-tool volatile-field normalisation", () => {
+  /** A Jupiter price answer shaped like the handler's, plus a read stamp. */
+  function priceOutput(usdPrice: number, blockId: number, asOf: string): string {
+    return JSON.stringify({
+      prices: { So111: { usdPrice, blockId, decimals: 9, priceChange24h: 1.5 } },
+      missing: [],
+      asOf,
+    });
+  }
+
+  function priceRead(usdPrice: number, i: number): CompletedToolCallObservation {
+    return call({
+      toolName: "solana__token_prices_get",
+      args: { mints: ["So111"] },
+      output: priceOutput(usdPrice, 300_000_000 + i, `2026-09-29T10:00:0${i}.000Z`),
+    });
+  }
+
+  it("is per tool and never names a price, balance or status field", () => {
+    for (const keys of TOOL_RESULT_VOLATILE_KEYS.values()) {
+      for (const kept of ["usdPrice", "price", "priceUsd", "balance", "amount", "status"]) {
+        expect(keys.has(kept)).toBe(false);
+      }
+    }
+    expect(TOOL_RESULT_VOLATILE_KEYS.get("solana__token_prices_get")?.has("blockId")).toBe(true);
+  });
+
+  it("catches a price poll whose result differs only in its fetch stamps", () => {
+    const polls = Array.from({ length: 5 }, (_, i) => priceRead(142.5, i));
+    // The raw outputs really do differ on every call.
+    expect(new Set(polls.map((p) => p.output)).size).toBe(5);
+    expect(verdicts(polls)).toEqual(["clear", "clear", "clear", "clear", "correct"]);
+  });
+
+  it("does NOT treat the same read as a loop when the PRICE moved", () => {
+    const polls = Array.from({ length: 5 }, (_, i) => priceRead(142.5 + i, i));
+    expect(verdicts(polls)).toEqual(Array(5).fill("clear"));
+  });
+
+  it("strips volatile keys at any depth and ignores key order", () => {
+    const a = JSON.stringify({
+      pair: { priceUsd: "1.2", sourceObservation: { fetchedAtMs: 1, cacheState: "cache_hit", cacheAgeMs: 4000 } },
+    });
+    const b = JSON.stringify({
+      pair: { sourceObservation: { cacheState: "cache_miss", fetchedAtMs: 2 }, priceUsd: "1.2" },
+    });
+    const moved = JSON.stringify({ pair: { priceUsd: "1.3", sourceObservation: { fetchedAtMs: 3 } } });
+    expect(normalizeToolResultOutput("dexscreener__pair_get", a))
+      .toBe(normalizeToolResultOutput("dexscreener__pair_get", b));
+    expect(normalizeToolResultOutput("dexscreener__pair_get", moved))
+      .not.toBe(normalizeToolResultOutput("dexscreener__pair_get", a));
+  });
+
+  it("keeps balances: a WalletBalances answer whose balance moved is a different result", () => {
+    const out = (amount: string, observedAt: string) =>
+      JSON.stringify({ balances: [{ symbol: "USDC", amount }], sources: [{ observedAt }] });
+    expect(normalizeToolResultOutput("WalletBalances", out("10", "t1")))
+      .toBe(normalizeToolResultOutput("WalletBalances", out("10", "t2")));
+    expect(normalizeToolResultOutput("WalletBalances", out("10", "t1")))
+      .not.toBe(normalizeToolResultOutput("WalletBalances", out("11", "t1")));
+  });
+
+  it("leaves an unknown tool's output verbatim, as before", () => {
+    const output = JSON.stringify({ value: 1, fetchedAt: "2026-09-29T10:00:00.000Z" });
+    expect(normalizeToolResultOutput("some_unknown_read", output)).toBe(output);
+    const polls = Array.from({ length: 5 }, (_, i) =>
+      call({ toolName: "some_unknown_read", output: JSON.stringify({ value: 1, fetchedAt: `t${i}` }) }));
+    expect(verdicts(polls)).toEqual(Array(5).fill("clear"));
+  });
+
+  it("falls back to verbatim when a listed tool's output is not JSON", () => {
+    expect(normalizeToolResultOutput("solana__token_prices_get", "provider timeout"))
+      .toBe("provider timeout");
+  });
+});
+
+describe("per-turn read-polling cap", () => {
+  function movingPriceRead(
+    i: number,
+    mints: readonly string[] = ["So111"],
+  ): CompletedToolCallObservation {
+    return call({
+      toolName: "solana__token_prices_get",
+      args: { mints },
+      output: JSON.stringify({ prices: { So111: { usdPrice: 100 + i } } }),
+    });
+  }
+
+  it("corrects the call that exceeds the cap, even when every price moved", () => {
+    expect(TOOL_READ_POLL_CAP).toBe(5);
+    const detector = createToolCallLoopDetector();
+    const results = Array.from({ length: TOOL_READ_POLL_CAP + 1 }, (_, i) =>
+      detector.observe(movingPriceRead(i)));
+    expect(results.slice(0, TOOL_READ_POLL_CAP).map((r) => r.kind))
+      .toEqual(Array(TOOL_READ_POLL_CAP).fill("clear"));
+    const last = requireValue(results[TOOL_READ_POLL_CAP]);
+    if (last.kind !== "correct") throw new Error(`expected a correction, got ${last.kind}`);
+    expect(last.facts).toMatchObject({
+      toolName: "solana__token_prices_get",
+      cycleLength: 1,
+      repeatCount: TOOL_READ_POLL_CAP + 1,
+      strike: 1,
+      trigger: "read_poll",
+    });
+    expect(last.facts.toolCallIds).toHaveLength(TOOL_READ_POLL_CAP + 1);
+    // Facts carry the shape, never the arguments.
+    expect(JSON.stringify(last.facts)).not.toContain("So111");
+  });
+
+  it("stops when the same read is issued again after the correction", () => {
+    const kinds = verdicts(
+      Array.from({ length: TOOL_READ_POLL_CAP + 2 }, (_, i) => movingPriceRead(i)),
+    );
+    expect(kinds.slice(-2)).toEqual(["correct", "stop"]);
+  });
+
+  it("counts identical arguments only: different arguments are different reads", () => {
+    const detector = createToolCallLoopDetector();
+    const kinds: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      kinds.push(detector.observe(movingPriceRead(i, [i % 2 === 0 ? "So111" : "Jup222"])).kind);
+    }
+    // Six of each, interleaved: each key crosses the cap on its own sixth call.
+    expect(kinds.slice(0, 10).every((k) => k === "clear")).toBe(true);
+    expect(kinds.slice(10)).toEqual(["correct", "stop"]);
+  });
+
+  it("counts across the turn, not only back-to-back", () => {
+    const detector = createToolCallLoopDetector();
+    const kinds: string[] = [];
+    for (let i = 0; i < TOOL_READ_POLL_CAP + 1; i++) {
+      kinds.push(detector.observe(movingPriceRead(i)).kind);
+      kinds.push(detector.observe(call({ toolName: `other_${i}`, output: `o${i}` })).kind);
+    }
+    expect(kinds.filter((k) => k !== "clear")).toEqual(["correct"]);
+  });
+
+  it("does not cap an unknown tool, however often it is polled", () => {
+    const polls = Array.from({ length: 40 }, (_, i) =>
+      call({ toolName: "some_unknown_read", args: { id: 1 }, output: `v${i}` }));
+    expect(verdicts(polls).every((k) => k === "clear")).toBe(true);
+  });
+
+  it("reports the cycle, not the cap, when both fire on one call", () => {
+    const detector = createToolCallLoopDetector();
+    const frozen = () => call({
+      toolName: "solana__token_prices_get",
+      args: { mints: ["So111"] },
+      output: JSON.stringify({ prices: { So111: { usdPrice: 1 } } }),
+    });
+    const results = Array.from({ length: 6 }, () => detector.observe(frozen()));
+    const fifth = requireValue(results[4]);
+    const sixth = requireValue(results[5]);
+    if (fifth.kind === "clear" || sixth.kind === "clear") throw new Error("expected strikes");
+    expect(fifth.facts.trigger).toBe("cycle");
+    expect(sixth.kind).toBe("stop");
+    expect(sixth.facts.trigger).toBe("cycle");
   });
 });

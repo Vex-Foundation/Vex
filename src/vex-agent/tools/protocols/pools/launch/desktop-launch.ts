@@ -229,7 +229,7 @@ export const preparePoolsLaunch: PreparePoolsLaunch = async (session, inputs) =>
   // the plan's balance and gas checks must describe the wallet that will
   // actually sign, and a wallet that cannot be opened should refuse before an
   // image is uploaded and metadata is pinned.
-  const signing = openDesktopSigner(chainConfig);
+  const signing = await openDesktopSigner(chainConfig);
   if (!signing.ok) {
     return refusal("wallet_unavailable", signing.result.output);
   }
@@ -333,7 +333,7 @@ export const deployPoolsLaunch: DeployPoolsLaunch = async (session, inputs) => {
     return refusal("provider_unavailable", `Robinhood Chain (${POOLS_CHAIN_ID}) is not in the local chain registry.`);
   }
 
-  const signing = openDesktopSigner(chainConfig);
+  const signing = await openDesktopSigner(chainConfig);
   if (!signing.ok) return refusal("wallet_unavailable", signing.result.output);
   const signerAddress = getAddress(signing.clients.walletClient.account.address);
   if (signerAddress !== entry.walletAddress) {

@@ -217,6 +217,7 @@ describe("mission state prompts", () => {
             decimals: 18,
             chainId: 4663,
             assetAddress: "0x0f9f0000000000000000000000000000000000ee",
+            assetKind: "token",
             assetSymbol: "VEX",
           },
         },

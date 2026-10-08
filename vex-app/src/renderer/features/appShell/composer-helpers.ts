@@ -168,9 +168,12 @@ export function submitFailureNotice(
       // stays gated on `toolCallsMade` exactly as everywhere else. Only when
       // the count is zero - the reported v0.2.6 shape - is one-click retry
       // offered, and there it is genuinely safe: nothing ran.
+      // One banner for every stall shape the engine reports as no_progress:
+      // empty replies, reasoning that ran out of room, and rounds a stream
+      // bound cut off. The chat reply names the specific cause.
       return incompleteTurnNotice(
         data,
-        "Vex stopped early because the model returned only empty responses.",
+        "Vex stopped early because the model stopped producing an answer.",
       );
     case "timeout":
       return incompleteTurnNotice(
@@ -192,6 +195,17 @@ export function submitFailureNotice(
       return {
         text:
           "Vex stopped because it repeated the same tool call without making progress. "
+          + "Review the transcript before trying again; earlier steps may have completed.",
+        retryable: false,
+      };
+    case "lease_lost":
+      // NOT the user's Stop, and never presented as one: another runner took
+      // over this session while the turn was running, so this turn ended
+      // without starting any new action. Never one-click retryable - the new
+      // runner owns the session, and earlier steps may have completed.
+      return {
+        text:
+          "This turn ended because another run took over the session. "
           + "Review the transcript before trying again; earlier steps may have completed.",
         retryable: false,
       };

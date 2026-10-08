@@ -24,6 +24,7 @@ import {
   type EndpointFailoverDeps,
 } from "@vex-agent/inference/openrouter/endpoint-failover.js";
 import logger from "@utils/logger.js";
+import { withAuxReasoningEffort } from "@vex-agent/inference/reasoning-effort.js";
 
 /**
  * The provider surface a branch needs.
@@ -173,13 +174,16 @@ export async function callBranchProvider<T>(
 
   // Run against the session's CURRENT effective endpoint, not the operator's
   // pin. A no-op until the session has actually switched.
-  const config = isInferenceConfig(loaded)
-    ? await resolveSessionInferenceConfig(
-        loaded,
-        input.sessionId,
-        input.failoverDeps ?? endpointFailoverDepsFrom(provider),
-      )
-    : loaded;
+  // Background call: the aux reasoning effort (E-1), not the chat pick.
+  const config = withAuxReasoningEffort(
+    isInferenceConfig(loaded)
+      ? await resolveSessionInferenceConfig(
+          loaded,
+          input.sessionId,
+          input.failoverDeps ?? endpointFailoverDepsFrom(provider),
+        )
+      : loaded,
+  );
 
   // A real deadline, not a race the loser ignores: `AbortSignal.timeout`
   // cancels the fetch itself, so an overdue call stops streaming and stops

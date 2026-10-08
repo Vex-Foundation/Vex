@@ -72,6 +72,7 @@ import {
   type RegimeTweet,
   type RegimeWebResult,
 } from "./regime-prompt.js";
+import { withAuxReasoningEffort } from "@vex-agent/inference/reasoning-effort.js";
 
 // ── Injectable IO ────────────────────────────────────────────────────
 
@@ -343,7 +344,8 @@ export async function runRegimeTick(
         { role: "system", content: buildRegimeSystemPrompt() },
         { role: "user", content: buildRegimeUserPrompt({ webResults, tweets }) },
       ],
-      config,
+      // Background call: the aux reasoning effort (E-1), never the chat pick.
+      withAuxReasoningEffort(config),
       undefined,
       timeoutSignal,
     );

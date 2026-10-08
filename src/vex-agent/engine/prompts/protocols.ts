@@ -2,7 +2,9 @@
 
 export {
   buildProtocolsPrompt,
+  PROTOCOLS_PROMPT_LEAN,
   protocolAvailabilityFingerprint,
+  renderProtocolsPrompt,
   resetProtocolsPromptCache,
 } from "./protocol-capabilities.js";
 export { buildBridgeCapabilityPrompt } from "./bridge-capability.js";

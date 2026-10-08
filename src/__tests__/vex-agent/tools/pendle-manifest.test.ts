@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { requireValue } from "../../helpers/require-value.js";
 import { PENDLE_TOOLS } from "../../../vex-agent/tools/protocols/pendle/manifest.js";
 
 describe("pendle manifest", () => {
@@ -202,7 +203,7 @@ describe("pendle manifest", () => {
     for (const tool of PENDLE_TOOLS) {
       expect(tool.description.length).toBeGreaterThan(15);
       expect(tool.discovery).toBeDefined();
-      expect(tool.discovery.embeddingText.length).toBeGreaterThan(0);
+      expect(requireValue(requireValue(tool.discovery).embeddingText).length).toBeGreaterThan(0);
     }
   });
 

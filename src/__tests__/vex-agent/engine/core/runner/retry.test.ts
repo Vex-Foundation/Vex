@@ -32,18 +32,13 @@ vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
   observeAndApplyControl: vi.fn().mockResolvedValue({ outcome: "no_request" }),
 }));
 
-vi.mock("@vex-agent/engine/runtime/lease-handle.js", () => ({
-  createLeaseHandle: vi.fn().mockReturnValue({
-    lease: {
-      sessionId: "s-1", missionRunId: "run-1", ownerId: "test-owner",
-      processKind: "electron_main",
-      acquiredAt: new Date(), heartbeatAt: new Date(), expiresAt: new Date(),
-    },
-    ownerId: "test-owner",
-    release: vi.fn().mockResolvedValue(undefined),
-    onLeaseLost: vi.fn(),
-  }),
-}));
+vi.mock("@vex-agent/engine/runtime/lease-handle.js", async () => {
+  const { fakeLeaseHandle } = await import("../../../../helpers/lease-guard.js");
+  return {
+    createLeaseHandle: vi.fn((opts: { readonly ownerId: string }) =>
+      fakeLeaseHandle({ ownerId: opts.ownerId })),
+  };
+});
 
 vi.mock("@vex-agent/engine/runtime/release-and-emit.js", () => ({
   releaseLeaseAndEmitControlState: (...a: unknown[]) => mockReleaseLease(...a),
@@ -138,7 +133,10 @@ describe("retryActiveMissionRun", () => {
   it("flips paused_error → running and resumes the run", async () => {
     mockGetActiveRunBySession.mockResolvedValue(activeRun("paused_error"));
     const result = await retryActiveMissionRun("s-1");
-    expect(mockResumeMissionRun).toHaveBeenCalledWith("run-1", "retry-run-1");
+    expect(mockResumeMissionRun).toHaveBeenCalledWith(
+      "run-1",
+      expect.objectContaining({ ownerId: "retry-run-1" }),
+    );
     expect(result).toEqual(okTurnResult);
     // Phase 4d: a human Recover cancels any pending error_retry wake first.
     expect(mockCancelForSession).toHaveBeenCalledWith(
@@ -159,7 +157,10 @@ describe("retryActiveMissionRun", () => {
       wakeCancelledCount: 1,
     });
     const result = await retryActiveMissionRun("s-1");
-    expect(mockResumeMissionRun).toHaveBeenCalledWith("run-1", "retry-run-1");
+    expect(mockResumeMissionRun).toHaveBeenCalledWith(
+      "run-1",
+      expect.objectContaining({ ownerId: "retry-run-1" }),
+    );
     expect(result).toEqual(okTurnResult);
   });
 

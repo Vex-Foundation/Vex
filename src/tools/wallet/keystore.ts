@@ -1,4 +1,4 @@
-import { randomBytes, scryptSync, createCipheriv, createDecipheriv } from "node:crypto";
+import { randomBytes, createCipheriv, createDecipheriv } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync, chmodSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { Hex } from "viem";
@@ -6,6 +6,7 @@ import { KEYSTORE_FILE } from "../../config/paths.js";
 import { ensureConfigDir } from "../../config/store.js";
 import { VexError, ErrorCodes } from "../../errors.js";
 import { minLogger as logger } from "../../utils/logger-shim.js";
+import { scryptAsync } from "../../utils/scrypt-async.js";
 
 export interface KeystoreV1 {
   version: 1;
@@ -32,7 +33,12 @@ const KDF_PARAMS = {
   dkLen: 32,
 };
 
-function deriveKey(password: string, salt: Uint8Array, dkLen: number, params = KDF_PARAMS): Buffer {
+async function deriveKey(
+  password: string,
+  salt: Uint8Array,
+  dkLen: number,
+  params = KDF_PARAMS,
+): Promise<Buffer> {
   // Node's scrypt enforces a soft memory cap of 32 MiB by default; once N exceeds
   // 2^15 (with r=8, p=1) the buffer requirement (128*N*r bytes) passes that cap and
   // the call fails with `memory limit exceeded`. Raise the ceiling to 256 MiB — our
@@ -43,7 +49,7 @@ function deriveKey(password: string, salt: Uint8Array, dkLen: number, params = K
   // covers encrypt AND decrypt; decrypt passes the file's own `kdf` params, so keystores
   // written at any supported N still open.
   const maxmem = 256 * 1024 * 1024;
-  return scryptSync(password, salt, dkLen, {
+  return scryptAsync(password, salt, dkLen, {
     N: params.N,
     r: params.r,
     p: params.p,
@@ -63,12 +69,15 @@ export function normalizePrivateKey(pk: string): Hex {
   return `0x${cleaned.toLowerCase()}` as Hex;
 }
 
-export function encryptPrivateKey(plainPk: string, password: string): KeystoreV1 {
+export async function encryptPrivateKey(plainPk: string, password: string): Promise<KeystoreV1> {
   const normalizedPk = normalizePrivateKey(plainPk);
   return encryptSecretBytes(Buffer.from(normalizedPk.slice(2), "hex"), password);
 }
 
-export function encryptSecretBytes(secret: Uint8Array, password: string): KeystoreV1 {
+export async function encryptSecretBytes(
+  secret: Uint8Array,
+  password: string,
+): Promise<KeystoreV1> {
   const secretBuffer = Buffer.from(secret);
 
   // Generate random salt and IV
@@ -76,7 +85,7 @@ export function encryptSecretBytes(secret: Uint8Array, password: string): Keysto
   const iv = randomBytes(12); // 96 bits for GCM
 
   // Derive key using scrypt
-  const key = deriveKey(password, salt, KDF_PARAMS.dkLen);
+  const key = await deriveKey(password, salt, KDF_PARAMS.dkLen);
 
   // Encrypt with AES-256-GCM
   const cipher = createCipheriv("aes-256-gcm", key, iv);
@@ -93,12 +102,15 @@ export function encryptSecretBytes(secret: Uint8Array, password: string): Keysto
   };
 }
 
-export function decryptPrivateKey(keystore: KeystoreV1, password: string): Hex {
-  const decrypted = decryptSecretBytes(keystore, password);
+export async function decryptPrivateKey(keystore: KeystoreV1, password: string): Promise<Hex> {
+  const decrypted = await decryptSecretBytes(keystore, password);
   return `0x${Buffer.from(decrypted).toString("hex")}` as Hex;
 }
 
-export function decryptSecretBytes(keystore: KeystoreV1, password: string): Uint8Array {
+export async function decryptSecretBytes(
+  keystore: KeystoreV1,
+  password: string,
+): Promise<Uint8Array> {
   if (keystore.version !== 1) {
     throw new Error(`Unsupported keystore version: ${keystore.version}`);
   }
@@ -109,7 +121,7 @@ export function decryptSecretBytes(keystore: KeystoreV1, password: string): Uint
   const tag = Buffer.from(keystore.tag, "base64");
 
   // Derive key using scrypt
-  const key = deriveKey(password, salt, keystore.kdf.dkLen, keystore.kdf);
+  const key = await deriveKey(password, salt, keystore.kdf.dkLen, keystore.kdf);
 
   // Decrypt with AES-256-GCM
   const decipher = createDecipheriv("aes-256-gcm", key, iv);

@@ -35,6 +35,7 @@ import {
   useSetAutoRetry,
 } from "../../lib/api/mission.js";
 import { useSessionPlan } from "../../lib/api/sessions.js";
+import { useAvailableModels } from "../../lib/api/models.js";
 import {
   Dialog,
   DialogBody,
@@ -61,6 +62,7 @@ import {
   refuseMissionContractRequest,
 } from "./mission-contract-request.js";
 import { LaunchCeilingsSection } from "./MissionContractModal/LaunchCeilingsSection.js";
+import { ReasoningEffortSection } from "./MissionContractModal/ReasoningEffortSection.js";
 import {
   readPlan,
   resolvePlanGate,
@@ -97,6 +99,15 @@ export function MissionContractModal({
   const planGate = resolvePlanGate(readPlan(planQuery.data), planReadState);
   const accept = useAcceptMissionContract();
   const autoRetry = useSetAutoRetry();
+  // Kairos E-1: the current model and its efforts, so the effort section can
+  // say which level the run will actually use (the same source the composer
+  // reads). `null` until known: the section then shows the pick alone.
+  const modelsQuery = useAvailableModels();
+  const currentModel = modelsQuery.data?.ok === true ? modelsQuery.data.data.models[0] : undefined;
+  const effortModel =
+    currentModel !== undefined && currentModel.reasoning !== null
+      ? { modelId: currentModel.modelId, capability: currentModel.reasoning }
+      : null;
 
   const state = useMemo<CardState | null>(
     () => resolveCardState(draft, diff),
@@ -217,6 +228,14 @@ export function MissionContractModal({
                 missionId={state.draft.missionId}
                 constraints={state.draft.constraints}
                 editable={state.draft.status === "draft" || state.draft.status === "ready"}
+              />
+              {/* Kairos E-1: the run's reasoning effort, contract material. */}
+              <ReasoningEffortSection
+                sessionId={sessionId}
+                missionId={state.draft.missionId}
+                constraints={state.draft.constraints}
+                editable={state.draft.status === "draft" || state.draft.status === "ready"}
+                model={effortModel}
               />
               {showAutoRetry ? (
                 <AutoRetrySection

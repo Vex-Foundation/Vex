@@ -9,6 +9,7 @@ import type { MissionBaseline } from "../mission/baseline.js";
 import type { MissionStatus } from "./mission-lifecycle.js";
 import type { Permission, SessionKind } from "./session.js";
 import type { StopReason } from "./stop-reasons.js";
+import type { RunnerLeaseGuard } from "../runtime/lease-guard.js";
 
 // ── Engine context ──────────────────────────────────────────────
 
@@ -124,6 +125,15 @@ export interface EngineContext {
    * runtime edge out of `engine/types/`.
    */
   missionBaseline?: MissionBaseline | null;
+  /**
+   * The session lease THIS runner holds, when it holds one (every runner that
+   * claims a lease sets it; a caller without a lease leaves it unset and its
+   * writes behave exactly as before). The turn loop fences its transcript and
+   * run-state writes on `leaseGuard.fence`, and treats `leaseGuard.lostSignal`
+   * as the distinct `lease_lost` stop - never as the operator Stop, and never
+   * handed to a tool. TYPE-ONLY import: no runtime edge out of `engine/types/`.
+   */
+  leaseGuard?: RunnerLeaseGuard;
 }
 
 // ── Turn result ─────────────────────────────────────────────────

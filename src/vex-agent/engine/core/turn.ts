@@ -11,25 +11,73 @@
 
 import { randomUUID } from "node:crypto";
 import type { EngineContext, TurnResult, MessageMetadata } from "../types.js";
-import type { InferenceProvider, InferenceConfig, ParsedToolCall, ToolDefinition } from "@vex-agent/inference/types.js";
-import { runStreamingInference } from "@vex-agent/inference/stream-consumer.js";
+import type {
+  InferenceProvider,
+  InferenceConfig,
+  ParsedToolCall,
+  ReasoningReplayPayload,
+  ToolDefinition,
+} from "@vex-agent/inference/types.js";
+import {
+  runStreamingInference,
+  type InferenceStallKind,
+  type StreamingInferenceResult,
+} from "@vex-agent/inference/stream-consumer.js";
+import {
+  createInferenceAttemptTimer,
+  settledAttemptOutcome,
+  type InferenceAttemptTimer,
+} from "@vex-agent/inference/attempt-timing.js";
+import { toChatRequestEffort } from "@vex-agent/inference/openrouter/params.js";
 import {
   endpointFailoverDepsFrom,
+  getSwitchedEndpointTag,
   resolveSessionInferenceConfig,
 } from "@vex-agent/inference/openrouter/endpoint-failover.js";
 import type { Message } from "@vex-agent/db/repos/messages.js";
 import type { BoardSpecV1 } from "../../../lib/board/index.js";
 import type { PromptStackOptions } from "../prompts/index.js";
 import { buildTurnEnvelope, type TurnEnvelope } from "./turn-envelope.js";
+import { timePersist } from "./turn-loop/persist-timing.js";
 import {
   appendMessage,
+  appendMessagesUnderLease,
   streamDeltaBus,
   toStreamDeltaEvent,
+  type FencedAppendEntry,
 } from "@vex-agent/engine/events/index.js";
+import type { RunnerLeaseGuard } from "../runtime/lease-guard.js";
 import * as usageRepo from "@vex-agent/db/repos/usage.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
+import {
+  insertInferenceAttempt,
+  recordInBackground,
+  type InferenceAttemptRecord,
+} from "@vex-agent/db/repos/runtime-timings.js";
+
+import {
+  createTextToolCallPreviewGuard,
+  guardTextToolCall,
+  TEXT_TOOL_CALL_GUARD,
+} from "./runner/text-tool-call-guard.js";
+
+/**
+ * Runtime-measurement correlation for one inference attempt (Kairos Phase 1).
+ * Supplied by the turn loop; its presence is what turns attempt recording on.
+ * The two ms fields are measured by the caller, which owns the work they time.
+ */
+export interface TurnAttemptTelemetry {
+  turnRunId: string;
+  iteration: number;
+  /** Iteration top → just before `executeTurn`. */
+  preInferenceMs: number | null;
+  /** Time spent in `buildTurnPromptStack` for this iteration. */
+  promptStackMs: number | null;
+}
 
 export interface SingleTurnResult {
+  /** Explicit tool markup was replaced with a notice; no call was parsed or run. */
+  textToolCallGuarded?: boolean;
   /** Text content from model — null when only tool calls. */
   content: string | null;
   /** Tool calls from model — null when text only. */
@@ -44,11 +92,33 @@ export interface SingleTurnResult {
   /** Token usage from this request. */
   promptTokens: number;
   /**
+   * Provider's terminal reason for this completion (`stop`, `tool_calls`,
+   * `length`, …), verbatim; `null` when none was reported. Read by the turn
+   * loop's round classification to tell a round cut off by the output limit
+   * from a malformed or blank one.
+   */
+  finishReason: string | null;
+  /**
+   * Tool calls the provider returned that were dropped as unassemblable
+   * (invalid JSON arguments, or no id / name) - see
+   * `InferenceResponse.malformedToolCallCount`. Non-zero means `toolCalls` is
+   * NOT the batch the model wrote, and the turn loop dispatches none of it.
+   */
+  malformedToolCallCount: number;
+  /**
    * True iff the streaming inference was stopped by `signal` (Stage 9-5a).
    * Captured at stream exit — the turn-loop acts on this, never on the live
    * signal (which could flip after a turn completes).
    */
   inferenceAborted: boolean;
+  /**
+   * The Kairos stream bound that stopped this inference round (Phase 2B), or
+   * `null`. Captured at stream exit like `inferenceAborted`. A timed-out round
+   * never carries tool calls (`toolCalls` is null); `content` is whatever
+   * text streamed before the bound fired and is NOT a finished answer.
+   * Mutually exclusive with `inferenceAborted` (a caller Stop wins).
+   */
+  timedOut: InferenceStallKind | null;
   /** True iff a provider usage chunk was observed before the stream exited. */
   usageObserved: boolean;
   /**
@@ -68,6 +138,19 @@ export interface SingleTurnResult {
    */
   streamId: string;
   nextStreamSequence: number;
+  /**
+   * Upstream provider that served this round (routing provenance), or `null`
+   * when unreported. Read by the reasoning-replay store (Kairos R-7), which
+   * never replays across a provider switch.
+   */
+  servingProvider?: string | null;
+  /**
+   * Opaque replayable reasoning for this round's tool calls (Kairos R-7).
+   * Present only when replay is switched on for the model's family. Memory
+   * only: the turn loop's replay store holds it for the rest of the run; it is
+   * never saved with the assistant row.
+   */
+  reasoningReplay?: ReasoningReplayPayload | null;
 }
 
 /**
@@ -98,6 +181,12 @@ export async function executeTurn(
   promptOptions: PromptStackOptions = {},
   signal?: AbortSignal,
   prebuiltEnvelope?: TurnEnvelope,
+  telemetry?: TurnAttemptTelemetry,
+  options: {
+    readonly textToolCallGuard?: boolean;
+    /** A held cut-off answer supplies Markdown context for its continuation. */
+    readonly textToolCallPresentationPrefix?: string;
+  } = {},
 ): Promise<SingleTurnResult> {
   // Provider message array (D-LAYOUT segments + orphan repair + history-tail
   // marking) — see `turn-envelope.ts`.
@@ -123,28 +212,72 @@ export async function executeTurn(
   // Highest sequence emitted for this stream, so the terminal `aborted` delta
   // continues the same monotonic counter rather than restarting it.
   let lastSequence = -1;
-  const { response, aborted, usageObserved } = await runStreamingInference(
-    provider,
-    envelope.providerMessages,
-    tools,
-    config,
-    {
-      signal,
-      // Sticky provider routing: group every turn of this conversation (or
-      // mission run) onto one upstream provider so the prompt cache survives
-      // our compaction-driven prefix drift.
-      context: {
-        sessionId: context.sessionId,
-        missionRunId: context.missionRunId,
+  const guardEnabled = options.textToolCallGuard ?? TEXT_TOOL_CALL_GUARD;
+  const previewGuard = createTextToolCallPreviewGuard(guardEnabled);
+  // Attempt timing is observation only: the timer never sees chunk text, and
+  // the row is written in the background once the attempt settles, so a
+  // completed, aborted or thrown attempt returns or throws exactly as before.
+  const timing = telemetry ? createInferenceAttemptTimer() : undefined;
+  const attemptStartedAt = new Date();
+  let inference: StreamingInferenceResult | undefined;
+  let inferenceError: unknown;
+  try {
+    inference = await runStreamingInference(
+      provider,
+      envelope.providerMessages,
+      tools,
+      config,
+      {
+        signal,
+        timing,
+        // Sticky provider routing: group every turn of this conversation (or
+        // mission run) onto one upstream provider so the prompt cache survives
+        // our compaction-driven prefix drift.
+        context: {
+          sessionId: context.sessionId,
+          missionRunId: context.missionRunId,
+        },
+        onDelta: (chunk, sequence) => {
+          lastSequence = sequence;
+          if (guardEnabled && chunk.type === "content") {
+            const text = previewGuard.push(chunk.text ?? "");
+            if (text.length === 0) return;
+            chunk = { ...chunk, text };
+          }
+          streamDeltaBus.emit(
+            toStreamDeltaEvent(context.sessionId, streamId, sequence, chunk),
+          );
+        },
       },
-      onDelta: (chunk, sequence) => {
-        lastSequence = sequence;
-        streamDeltaBus.emit(
-          toStreamDeltaEvent(context.sessionId, streamId, sequence, chunk),
-        );
-      },
-    },
+    );
+  } catch (err) {
+    inferenceError = err;
+    throw err;
+  } finally {
+    if (telemetry && timing) {
+      recordAttemptTiming(
+        context, config, telemetry, timing, streamId, attemptStartedAt,
+        inference, inferenceError, signal,
+      );
+    }
+  }
+  const { response, aborted, usageObserved, timedOut } = inference;
+  const textGuard = guardTextToolCall(
+    response.content,
+    (response.toolCalls?.length ?? 0) > 0,
+    guardEnabled,
+    options.textToolCallPresentationPrefix,
   );
+  const previewTail = previewGuard.finish(
+    textGuard.guarded || aborted || timedOut !== null || response.malformedToolCallCount > 0,
+    response.content,
+  );
+  if (previewTail.length > 0) {
+    lastSequence += 1;
+    streamDeltaBus.emit(toStreamDeltaEvent(context.sessionId, streamId, lastSequence, {
+      type: "content", text: previewTail,
+    }));
+  }
 
   // Log usage + update token count
   // NOTE: assistant message is NOT saved here — turn-loop handles deferred save
@@ -160,7 +293,10 @@ export async function executeTurn(
   // token_count = SET, not accumulate. Stores the latest prompt size (total tokens
   // sent to provider including system prompt + messages). Used by checkpoint to
   // evaluate context window pressure: shouldCheckpoint(tokenCount, contextLimit).
-  if (!(aborted && !usageObserved)) {
+  //
+  // A round stopped by a Kairos stream bound is the same case as an abort: it
+  // ended before its usage chunk, so it has no usage to record either.
+  if (!((aborted || timedOut !== null) && !usageObserved)) {
     // Cost is priced against the endpoint that ACTUALLY served this turn, not
     // the one we set out to use. The failover can switch endpoints mid-send, and
     // sibling endpoints of one model differ in price, so pricing the response
@@ -206,15 +342,108 @@ export async function executeTurn(
   }
 
   return {
-    content: response.content,
+    content: textGuard.content,
+    ...(textGuard.guarded ? { textToolCallGuarded: true } : {}),
     toolCalls: response.toolCalls,
     reasoning: response.reasoning ?? null,
     promptTokens,
+    finishReason: response.finishReason ?? null,
+    malformedToolCallCount: response.malformedToolCallCount,
     inferenceAborted: aborted,
+    timedOut,
     usageObserved,
     streamId,
     nextStreamSequence: lastSequence + 1,
+    servingProvider: response.servingProvider ?? null,
+    ...(response.reasoningReplay != null && { reasoningReplay: response.reasoningReplay }),
   };
+}
+
+/**
+ * Record one `inference_attempts` row for an attempt that has just settled.
+ *
+ * Fire-and-forget and never throws: building the row is guarded, and the
+ * write goes through `recordInBackground`. Sanitised fields only - the
+ * response contributes counts, ids, names and an emptiness flag, never its
+ * text, and an error contributes only `classifyInferenceError`'s label.
+ *
+ * Outcome and error class come from `settledAttemptOutcome`: a returned
+ * round a Kairos bound stopped is a `timeout` with class
+ * `KairosStall:<kind>`; a thrown attempt is a `timeout` when the error is a
+ * deadline, `aborted` when the caller's own signal fired (a user Stop that
+ * surfaced as a rejection rather than a partial), else `error`.
+ */
+function recordAttemptTiming(
+  context: EngineContext,
+  config: InferenceConfig,
+  telemetry: TurnAttemptTelemetry,
+  timing: InferenceAttemptTimer,
+  streamId: string,
+  startedAt: Date,
+  inference: StreamingInferenceResult | undefined,
+  error: unknown,
+  signal: AbortSignal | undefined,
+): void {
+  try {
+    const snapshot = timing.snapshot();
+    const response = inference?.response;
+    // Token counts only when the provider reported usage. An attempt stopped
+    // before its usage chunk carries a zero-filled placeholder, and recording
+    // those zeros would make it look like a zero-token call.
+    const usage = inference?.usageObserved === true ? response?.usage : undefined;
+    // The effort actually sent - mirrors the gate in `buildOpenRouterParams`
+    // (openrouter/params.ts). NULL means the provider's default applied.
+    const requestedEffort =
+      config.reasoningEffort !== undefined && config.supportsReasoningEffort
+        ? toChatRequestEffort(config.reasoningEffort)
+        : null;
+    const settled = settledAttemptOutcome({ inference, error, signal });
+    const row: InferenceAttemptRecord = {
+      sessionId: context.sessionId,
+      missionRunId: context.missionRunId ?? null,
+      turnRunId: telemetry.turnRunId,
+      iteration: telemetry.iteration,
+      streamId,
+      startedAt,
+      outcome: settled.outcome,
+      errorClass: settled.errorClass,
+      model: config.model ?? null,
+      // The endpoint the session is on once this attempt settled: a failover
+      // switch made during the attempt is adopted in memory before it returns
+      // or throws, so this is the endpoint that served (or last failed) it -
+      // the same answer `resolveSessionInferenceConfig` gives for pricing,
+      // read synchronously so the recorder does no IO.
+      endpointTag: getSwitchedEndpointTag(context.sessionId) ?? config.endpointTag ?? null,
+      servingProvider: response?.servingProvider ?? null,
+      requestedEffort,
+      bufferedFallback: snapshot.bufferedFallback,
+      fallbackReason: snapshot.fallbackReason,
+      capacityRetries: snapshot.capacityRetries,
+      capacityRetryClasses: snapshot.capacityRetryClasses,
+      preInferenceMs: telemetry.preInferenceMs,
+      promptStackMs: telemetry.promptStackMs,
+      firstChunkMs: snapshot.firstChunkMs,
+      firstReasoningMs: snapshot.firstReasoningMs,
+      firstSemanticMs: snapshot.firstSemanticMs,
+      reasoningOnlyMs: snapshot.reasoningOnlyMs,
+      maxInterChunkGapMs: snapshot.maxInterChunkGapMs,
+      totalMs: snapshot.totalMs,
+      chunkCount: snapshot.chunkCount,
+      finishReason: response?.finishReason ?? null,
+      contentEmpty:
+        response === undefined ? null : (response.content ?? "").trim().length === 0,
+      toolCallCount: snapshot.toolCallCount,
+      validToolCallCount: snapshot.validToolCallCount,
+      promptTokens: usage?.promptTokens ?? null,
+      completionTokens: usage?.completionTokens ?? null,
+      reasoningTokens: usage?.reasoningTokens ?? null,
+      cachedTokens: usage?.cachedTokens ?? null,
+      generationId: response?.generationId ?? null,
+    };
+    recordInBackground("inference_attempt", () => insertInferenceAttempt(row));
+  } catch {
+    // Telemetry must never change what the turn returns or throws.
+  }
 }
 
 /**
@@ -238,37 +467,41 @@ function reasoningForPayload(reasoning: string | null | undefined): string | nul
   return reasoning.slice(-REASONING_PAYLOAD_CAP);
 }
 
+/** Options for one assistant row. */
+export interface AssistantRowOptions {
+  readonly stopped?: boolean;
+  readonly systemOriginated?: boolean;
+  /** Provider reasoning trace for this turn; capped + tail-kept on persist. */
+  readonly reasoning?: string | null;
+  /**
+   * A board staged by `BoardCompose` earlier in THIS turn, consumed by the
+   * row being written here. Runtime-authored: it is the validated, hydrated
+   * spec the engine built, never model output re-read from anywhere.
+   *
+   * Passing it is what makes prose and board ONE commit. Only
+   * `handleTextResponse` sets it, and only after taking the board out of the
+   * session's pending slot; every other caller omits it.
+   */
+  readonly board?: BoardSpecV1;
+}
+
 /**
- * Save an assistant message to DB.
- *
- * Exported for use by turn-loop (deferred save after canonical batch prefix
- * is determined). Accepts ParsedToolCall[] directly — converts to Message format.
+ * Build (without writing) the assistant row `saveAssistantMessage` persists,
+ * or `null` when there is nothing to persist. Exposed so the tool-batch
+ * persistence can write the assistant row and its tool results in ONE fenced
+ * transaction.
  */
-export async function saveAssistantMessage(
-  sessionId: string,
+export function buildAssistantRow(
   content: string | null,
   toolCalls: ParsedToolCall[] | null,
-  opts?: {
-    readonly stopped?: boolean;
-    readonly systemOriginated?: boolean;
-    /** Provider reasoning trace for this turn; capped + tail-kept on persist. */
-    readonly reasoning?: string | null;
-    /**
-     * A board staged by `BoardCompose` earlier in THIS turn, consumed by the
-     * row being written here. Runtime-authored: it is the validated, hydrated
-     * spec the engine built, never model output re-read from anywhere.
-     *
-     * Passing it is what makes prose and board ONE commit. Only
-     * `handleTextResponse` sets it, and only after taking the board out of the
-     * session's pending slot; every other caller omits it.
-     */
-    readonly board?: BoardSpecV1;
-  },
-): Promise<void> {
+  opts?: AssistantRowOptions,
+): FencedAppendEntry | null {
   const hasContent = content !== null && content !== undefined;
-  const hasToolCalls = toolCalls !== null && toolCalls !== undefined && toolCalls.length > 0;
+  const calls = toolCalls !== null && toolCalls !== undefined && toolCalls.length > 0
+    ? toolCalls
+    : null;
 
-  if (!hasContent && !hasToolCalls) return;
+  if (!hasContent && calls === null) return null;
 
   const metadata: MessageMetadata = {
     // `role` stays "assistant" even for a system-synthesized call (below) —
@@ -307,16 +540,45 @@ export async function saveAssistantMessage(
     };
   }
 
-  await appendMessage(
-    sessionId,
-    {
+  return {
+    msg: {
       role: "assistant",
       content: content ?? "",
-      toolCalls: hasToolCalls
-        ? toolCalls!.map(tc => ({ id: tc.id, command: tc.name, args: tc.arguments }))
-        : undefined,
+      toolCalls: calls === null
+        ? undefined
+        : calls.map(tc => ({ id: tc.id, command: tc.name, args: tc.arguments })),
       timestamp: new Date().toISOString(),
     },
     metadata,
-  );
+  };
+}
+
+/**
+ * Save an assistant message to DB.
+ *
+ * Exported for use by turn-loop (deferred save after canonical batch prefix
+ * is determined). Accepts ParsedToolCall[] directly - converts to Message format.
+ *
+ * With `leaseGuard` (a lease-holding runner) the write is FENCED on the claim:
+ * after a takeover it writes nothing and returns normally - the loop ends on
+ * `lease_lost` at its next check. Without one it writes exactly as before.
+ */
+export async function saveAssistantMessage(
+  sessionId: string,
+  content: string | null,
+  toolCalls: ParsedToolCall[] | null,
+  opts?: AssistantRowOptions & { readonly leaseGuard?: RunnerLeaseGuard },
+): Promise<void> {
+  const row = buildAssistantRow(content, toolCalls, opts);
+  if (row === null) return;
+  const guard = opts?.leaseGuard;
+
+  // Timed toward the enclosing turn's `persist_ms`; the write itself is awaited
+  // and fails exactly as before.
+  if (guard !== undefined) {
+    await timePersist(() =>
+      appendMessagesUnderLease(sessionId, [row], guard, "assistant_message"));
+    return;
+  }
+  await timePersist(() => appendMessage(sessionId, row.msg, row.metadata));
 }

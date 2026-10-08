@@ -647,4 +647,118 @@ describe("ApprovalCard", () => {
     expect(approve.className).not.toContain("vex-ring-working");
     expect(approve.getAttribute("aria-busy")).toBe("false");
   });
+  describe("click responsiveness (K-2 B1)", () => {
+    const LOW = { riskLevel: "info", actionKind: "read" } as const;
+
+    it("locks both keys on the click itself and sends exactly one decision on a double click", () => {
+      // The mutation never reports back, and the mocked `isPending` stays
+      // false: the lock comes from the click alone.
+      renderCard(makeSummary(LOW), false);
+      const approveKey = screen.getByRole("button", { name: /^approve$/i });
+      fireEvent.click(approveKey);
+      fireEvent.click(approveKey);
+      expect(mockApproveMutate).toHaveBeenCalledTimes(1);
+      const working = screen.getByRole("button", { name: /working, please wait/i });
+      expect(working.getAttribute("disabled")).not.toBeNull();
+      expect(working.getAttribute("aria-busy")).toBe("true");
+      const rejectKey = screen.getByRole("button", { name: /^reject$/i });
+      expect(rejectKey.getAttribute("disabled")).not.toBeNull();
+      fireEvent.click(rejectKey);
+      expect(mockRejectMutate).not.toHaveBeenCalled();
+    });
+
+    it("names a running rejection on the reject key", () => {
+      renderCard(makeSummary(LOW), false);
+      fireEvent.click(screen.getByRole("button", { name: /^reject$/i }));
+      fireEvent.click(screen.getByRole("button", { name: /rejecting, please wait/i }));
+      expect(mockRejectMutate).toHaveBeenCalledTimes(1);
+      const rejecting = screen.getByRole("button", { name: /rejecting, please wait/i });
+      expect(rejecting.textContent).toBe("Rejecting");
+      expect(rejecting.getAttribute("aria-busy")).toBe("true");
+      expect(screen.getByRole("button", { name: /^approve$/i }).getAttribute("disabled")).not.toBeNull();
+    });
+
+    it("hands the outcome over before the query refresh has finished", () => {
+      // A refresh that never settles: the outcome must not wait on it.
+      const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries")
+        .mockReturnValue(new Promise<void>(() => undefined));
+      const onResolved = vi.fn();
+      const data = {
+        id: "appr-1",
+        status: "approved",
+        resolvedAt: null,
+        runtimeOutcome: "stopped",
+        executionStatus: "succeeded",
+        missionRunId: null,
+        cached: false,
+        message: "Approved. Tool executed.",
+      } as const;
+      mockApproveMutate.mockImplementation((_input, options) => {
+        void options?.onSuccess?.({ ok: true, data });
+      });
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ApprovalCard summary={makeSummary(LOW)} sessionId={SESSION} focusOnMount={false} onResolved={onResolved} />
+        </QueryClientProvider>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+      expect(onResolved).toHaveBeenCalledWith("approved", data);
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ["approvals", "pending", SESSION] });
+      // The card stays inert until the refreshed list removes it.
+      const settled = screen.getByRole("button", { name: /^approved$/i });
+      expect(settled.getAttribute("disabled")).not.toBeNull();
+      expect(screen.getByRole("button", { name: /^reject$/i }).getAttribute("disabled")).not.toBeNull();
+      invalidate.mockRestore();
+    });
+
+    it("hands a rejection over before the query refresh has finished", () => {
+      const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries")
+        .mockReturnValue(new Promise<void>(() => undefined));
+      const onResolved = vi.fn();
+      mockRejectMutate.mockImplementation((_input, options) => {
+        void options?.onSuccess?.({ ok: true, data: { id: "appr-1" } });
+      });
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ApprovalCard summary={makeSummary(LOW)} sessionId={SESSION} focusOnMount={false} onResolved={onResolved} />
+        </QueryClientProvider>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^reject$/i }));
+      expect(onResolved).toHaveBeenCalledWith("rejected", { id: "appr-1" });
+      expect(screen.getByRole("button", { name: /^rejected$/i }).getAttribute("disabled")).not.toBeNull();
+      invalidate.mockRestore();
+    });
+
+    it("unlocks the keys again when the decision fails, with the error shown as before", () => {
+      mockApproveMutate.mockImplementation((_input, options) => {
+        void options?.onSuccess?.({
+          ok: false,
+          error: {
+            code: "approvals.dispatch_failed",
+            domain: "approvals",
+            message: "Dispatch failed.",
+            retryable: true,
+            userActionable: true,
+            redacted: true,
+            correlationId: "req-z",
+          },
+        });
+      });
+      renderCard(makeSummary(LOW), false);
+      fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+      expect(screen.getByRole("alert").textContent).toContain("Dispatch failed.");
+      expect(screen.getByRole("button", { name: /^approve$/i }).getAttribute("disabled")).toBeNull();
+      expect(screen.getByRole("button", { name: /^reject$/i }).getAttribute("disabled")).toBeNull();
+    });
+
+    it("unlocks the keys again when the transport itself throws", () => {
+      mockRejectMutate.mockImplementation((_input, options) => {
+        options?.onError?.(new Error("IPC channel closed."));
+      });
+      renderCard(makeSummary(LOW), false);
+      fireEvent.click(screen.getByRole("button", { name: /^reject$/i }));
+      expect(screen.getByRole("alert").textContent).toContain("IPC channel closed.");
+      expect(screen.getByRole("button", { name: /^reject$/i }).getAttribute("disabled")).toBeNull();
+    });
+  });
 });

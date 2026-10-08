@@ -1,16 +1,31 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { runStreamingInference } from "@vex-agent/inference/stream-consumer.js";
+import {
+  createInferenceAttemptTimer,
+  type InferenceAttemptTimer,
+} from "@vex-agent/inference/attempt-timing.js";
 import { hasActionableInferenceResponse } from "@vex-agent/inference/response-validation.js";
 import { OpenRouterEmptyStreamError } from "@vex-agent/inference/openrouter/non-empty-stream.js";
+import { attachStatus } from "@vex-agent/inference/openrouter/errors.js";
+import { classifyMissionRunError } from "@vex-agent/engine/core/runner/mission-error-classifier.js";
+import { readMissionErrorSignal } from "@vex-agent/engine/core/runner/mission-error-signal.js";
 import type {
   InferenceConfig,
   InferenceProvider,
+  InferenceRequestContext,
   InferenceResponse,
   ProviderMessage,
   StreamChunk,
   ToolDefinition,
 } from "@vex-agent/inference/types.js";
+
+import {
+  fakeInferenceProvider,
+  withNonIterableStream,
+  withoutStreamMethod,
+} from "../../helpers/inference-provider.js";
+import { requireValue } from "../../helpers/require-value.js";
 
 const MSGS: ProviderMessage[] = [];
 const TOOLS: ToolDefinition[] = [];
@@ -30,6 +45,9 @@ const NO_PROVENANCE = {
   finishReason: null,
   generationId: null,
   servingProvider: null,
+  // Not provenance, but part of every expected shape: nothing was dropped.
+  // The malformed-call cases override it.
+  malformedToolCallCount: 0,
 };
 
 function fromChunks(chunks: StreamChunk[]) {
@@ -168,6 +186,7 @@ describe("runStreamingInference — accumulation equivalence", () => {
       generationId: "gen-trunc",
       // No routing metadata on this stream — honestly unknown.
       servingProvider: null,
+      malformedToolCallCount: 0,
     });
   });
 
@@ -207,7 +226,15 @@ describe("runStreamingInference — accumulation equivalence", () => {
       { type: "tool_call_delta", toolCallIndex: 0, toolCallId: "c1", toolCallName: "t", toolCallArgsDelta: "not json" },
       { type: "done" },
     ]);
-    expect(res).toEqual({ content: "", toolCalls: null, usage: ZERO_USAGE, reasoning: null, ...NO_PROVENANCE });
+    expect(res).toEqual({
+      content: "",
+      toolCalls: null,
+      usage: ZERO_USAGE,
+      reasoning: null,
+      ...NO_PROVENANCE,
+      // The dropped call is COUNTED: without it this reads as a blank answer.
+      malformedToolCallCount: 1,
+    });
   });
 
   it("partially malformed tool args → only valid calls survive (tool path)", async () => {
@@ -222,7 +249,43 @@ describe("runStreamingInference — accumulation equivalence", () => {
       usage: ZERO_USAGE,
       reasoning: null,
       ...NO_PROVENANCE,
+      // The survivor is not the whole batch, and the count says so.
+      malformedToolCallCount: 1,
     });
+  });
+
+  it("counts a call cut off by the output limit as malformed", async () => {
+    // The shape of a `length` stop mid-arguments: one complete call, then one
+    // whose JSON never closed.
+    const res = await run([
+      { type: "tool_call_delta", toolCallIndex: 0, toolCallId: "c0", toolCallName: "good", toolCallArgsDelta: '{"ok":1}' },
+      { type: "tool_call_delta", toolCallIndex: 1, toolCallId: "c1", toolCallName: "cut", toolCallArgsDelta: '{"amount":"1' },
+      { type: "done", finishReason: "length" },
+    ]);
+    expect(res.toolCalls).toEqual([{ id: "c0", name: "good", arguments: { ok: 1 } }]);
+    expect(res.malformedToolCallCount).toBe(1);
+    expect(res.finishReason).toBe("length");
+  });
+
+  it("drops and counts a call the stream never gave an id or a name, without inventing one", async () => {
+    const res = await run([
+      { type: "tool_call_delta", toolCallIndex: 0, toolCallName: "no_id", toolCallArgsDelta: "{}" },
+      { type: "tool_call_delta", toolCallIndex: 1, toolCallId: "c1", toolCallArgsDelta: "{}" },
+      { type: "tool_call_delta", toolCallIndex: 2, toolCallId: "c2", toolCallName: "ok", toolCallArgsDelta: "{}" },
+      { type: "done" },
+    ]);
+    expect(res.toolCalls).toEqual([{ id: "c2", name: "ok", arguments: {} }]);
+    expect(res.malformedToolCallCount).toBe(2);
+  });
+
+  it("a complete batch reports zero malformed calls", async () => {
+    const res = await run([
+      { type: "tool_call_delta", toolCallIndex: 0, toolCallId: "c0", toolCallName: "a", toolCallArgsDelta: "{}" },
+      { type: "tool_call_delta", toolCallIndex: 1, toolCallId: "c1", toolCallName: "b", toolCallArgsDelta: "{}" },
+      { type: "done", finishReason: "tool_calls" },
+    ]);
+    expect(res.toolCalls).toHaveLength(2);
+    expect(res.malformedToolCallCount).toBe(0);
   });
 });
 
@@ -376,6 +439,7 @@ describe("runStreamingInference — fallback to chatCompletion", () => {
     toolCalls: null,
     usage: USAGE,
     reasoning: null,
+    malformedToolCallCount: 0,
   };
 
   it("falls back when the provider has no stream method", async () => {
@@ -436,6 +500,94 @@ describe("runStreamingInference — fallback to chatCompletion", () => {
     expect(res.response).toBe(emptyCompletion);
     expect(res.aborted).toBe(false);
     expect(hasActionableInferenceResponse(res.response)).toBe(false);
+    expect(chatCompletion).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("runStreamingInference - a provider status before the first chunk never falls back", () => {
+  // Each shape is what reaches the consumer from `openrouter.ts`: a normalized
+  // error with the HTTP status as a lean own-property. The 429 and 503 are the
+  // EXHAUSTED forms (the failover / the 5xx retry already gave up).
+  const cases: ReadonlyArray<readonly [label: string, status: number]> = [
+    ["400 bad request", 400],
+    ["401 unauthorized", 401],
+    ["429 exhausted", 429],
+    ["503 exhausted", 503],
+  ];
+
+  function providerError(status: number): Error {
+    return attachStatus(new Error(`OpenRouter streaming chat completion failed: status=${status}`), status);
+  }
+
+  it.each(cases)("%s thrown by the generator propagates unchanged", async (_label, status) => {
+    const err = providerError(status);
+    const chatCompletion = vi.fn<InferenceProvider["chatCompletion"]>();
+    const timing = createInferenceAttemptTimer();
+    const provider = fakeInferenceProvider({
+      chatCompletionStream: async function* (): AsyncGenerator<StreamChunk> {
+        throw err;
+      },
+      chatCompletion,
+    });
+
+    const thrown = await runStreamingInference(provider, MSGS, TOOLS, CFG, { timing }).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(thrown).toBe(err);
+    expect(chatCompletion).not.toHaveBeenCalled();
+    expect(timing.snapshot()).toMatchObject({ bufferedFallback: false, fallbackReason: null });
+    // The mission auto-retry classifier sees exactly what it saw before.
+    expect(readMissionErrorSignal(thrown).status).toBe(status);
+    expect(classifyMissionRunError(thrown)).toBe(classifyMissionRunError(providerError(status)));
+  });
+
+  it.each(cases)("%s thrown synchronously by the stream setup propagates unchanged", async (_label, status) => {
+    const err = providerError(status);
+    const chatCompletion = vi.fn<InferenceProvider["chatCompletion"]>();
+    const provider = fakeInferenceProvider({
+      chatCompletionStream: () => {
+        throw err;
+      },
+      chatCompletion,
+    });
+
+    await expect(runStreamingInference(provider, MSGS, TOOLS, CFG)).rejects.toBe(err);
+    expect(chatCompletion).not.toHaveBeenCalled();
+  });
+
+  it("an SDK-style error carrying statusCode only is a provider verdict too", async () => {
+    const err = Object.assign(new Error("Unauthorized"), { statusCode: 401 });
+    const chatCompletion = vi.fn<InferenceProvider["chatCompletion"]>();
+    const provider = fakeInferenceProvider({
+      chatCompletionStream: async function* (): AsyncGenerator<StreamChunk> {
+        throw err;
+      },
+      chatCompletion,
+    });
+
+    await expect(runStreamingInference(provider, MSGS, TOOLS, CFG)).rejects.toBe(err);
+    expect(chatCompletion).not.toHaveBeenCalled();
+  });
+
+  it("a status-less stream-format failure still falls back", async () => {
+    const fallbackResponse: InferenceResponse = {
+      content: "buffered",
+      toolCalls: null,
+      usage: USAGE,
+      reasoning: null,
+      malformedToolCallCount: 0,
+    };
+    const chatCompletion = vi.fn<InferenceProvider["chatCompletion"]>().mockResolvedValue(fallbackResponse);
+    const provider = fakeInferenceProvider({
+      chatCompletionStream: async function* (): AsyncGenerator<StreamChunk> {
+        throw new Error("OpenRouter streaming chat completion failed: expected an event stream");
+      },
+      chatCompletion,
+    });
+
+    const res = await runStreamingInference(provider, MSGS, TOOLS, CFG);
+    expect(res.response).toBe(fallbackResponse);
     expect(chatCompletion).toHaveBeenCalledTimes(1);
   });
 });
@@ -538,5 +690,235 @@ describe("runStreamingInference — abort (9-5a)", () => {
       {},
     );
     expect(withoutUsage.usageObserved).toBe(false);
+  });
+});
+
+describe("runStreamingInference - attempt timing", () => {
+  const FALLBACK: InferenceResponse = {
+    content: "buffered",
+    toolCalls: null,
+    usage: USAGE,
+    reasoning: null,
+    malformedToolCallCount: 0,
+  };
+  const CONTEXT: InferenceRequestContext = { sessionId: "session-a", missionRunId: null };
+  type ChatCompletionMock = NonNullable<Parameters<typeof providerFrom>[1]>;
+
+  /** A clock the stream advances before each chunk, so every timing is exact. */
+  function timedStream(steps: Array<[advanceMs: number, chunk: StreamChunk]>) {
+    let t = 0;
+    const now = () => t;
+    const stream = async function* (): AsyncGenerator<StreamChunk> {
+      for (const [advance, chunk] of steps) {
+        t += advance;
+        yield chunk;
+      }
+    };
+    return { now, stream };
+  }
+
+  it("records first-chunk, first-reasoning, first-semantic, reasoning-only and max gap", async () => {
+    const clock = timedStream([
+      [100, { type: "reasoning", reasoningText: "think" }],
+      [40, { type: "reasoning", reasoningText: "more" }],
+      [600, { type: "content", text: "answer" }],
+      [20, { type: "usage", usage: USAGE }],
+      [5, { type: "done" }],
+    ]);
+    const timing = createInferenceAttemptTimer(clock.now);
+
+    const res = await runStreamingInference(providerFrom(clock.stream), MSGS, TOOLS, CFG, { timing });
+    expect(res.response.content).toBe("answer");
+    expect(timing.snapshot()).toEqual({
+      firstChunkMs: 100,
+      firstReasoningMs: 100,
+      firstSemanticMs: 740,
+      reasoningOnlyMs: 640,
+      maxInterChunkGapMs: 600,
+      totalMs: 765,
+      chunkCount: 5,
+      bufferedFallback: false,
+      fallbackReason: null,
+      capacityRetries: 0,
+      capacityRetryClasses: [],
+      toolCallCount: 0,
+      validToolCallCount: 0,
+    });
+  });
+
+  it("counts accumulated tool calls against the valid ones that assembled", async () => {
+    const timing = createInferenceAttemptTimer();
+    const res = await runStreamingInference(
+      providerFrom(
+        fromChunks([
+          { type: "tool_call_delta", toolCallIndex: 0, toolCallId: "a", toolCallName: "good", toolCallArgsDelta: "{}" },
+          { type: "tool_call_delta", toolCallIndex: 1, toolCallId: "b", toolCallName: "bad", toolCallArgsDelta: "{not json" },
+          { type: "tool_call_delta", toolCallIndex: 2, toolCallId: "c", toolCallName: "also_good", toolCallArgsDelta: '{"x":1}' },
+          { type: "done" },
+        ]),
+      ),
+      MSGS,
+      TOOLS,
+      CFG,
+      { timing },
+    );
+    expect(res.response.toolCalls).toHaveLength(2);
+    expect(timing.snapshot()).toMatchObject({ toolCallCount: 3, validToolCallCount: 2 });
+  });
+
+  it.each([
+    [
+      "no_stream_method",
+      (chatCompletion: ChatCompletionMock) =>
+        withoutStreamMethod(fakeInferenceProvider({ chatCompletion })),
+    ],
+    [
+      "not_async_iterable",
+      (chatCompletion: ChatCompletionMock) =>
+        withNonIterableStream(fakeInferenceProvider({ chatCompletion })),
+    ],
+    [
+      "setup_threw",
+      (chatCompletion: ChatCompletionMock) =>
+        fakeInferenceProvider({
+          chatCompletionStream: () => {
+            throw new Error("sync setup failure");
+          },
+          chatCompletion,
+        }),
+    ],
+    [
+      "threw_before_first_chunk",
+      (chatCompletion: ChatCompletionMock) =>
+        providerFrom(async function* (): AsyncGenerator<StreamChunk> {
+          throw new Error("setup failed");
+        }, chatCompletion),
+    ],
+  ])("records the %s buffered fallback", async (reason, makeProvider) => {
+    const chatCompletion = vi.fn().mockResolvedValue(FALLBACK);
+    const timing = createInferenceAttemptTimer();
+    const res = await runStreamingInference(makeProvider(chatCompletion), MSGS, TOOLS, CFG, { timing });
+    expect(res.response).toBe(FALLBACK);
+    expect(timing.snapshot()).toMatchObject({ bufferedFallback: true, fallbackReason: reason });
+  });
+
+  it("forwards capacity failures from BOTH the stream and the buffered fallback", async () => {
+    const timing = createInferenceAttemptTimer();
+    const chatCompletion = vi.fn(
+      async (_m: unknown, _t: unknown, _c: unknown, context?: InferenceRequestContext) => {
+        context?.onCapacityFailure?.("buffered_class");
+        return FALLBACK;
+      },
+    );
+    const provider = fakeInferenceProvider({
+      chatCompletionStream: async function* (
+        _m: unknown,
+        _t: unknown,
+        _c: unknown,
+        _s: unknown,
+        context?: InferenceRequestContext,
+      ): AsyncGenerator<StreamChunk> {
+        context?.onCapacityFailure?.("stream_class");
+        throw new Error("exhausted before first chunk");
+      },
+      chatCompletion,
+    });
+
+    await runStreamingInference(provider, MSGS, TOOLS, CFG, { timing, context: CONTEXT });
+    // Routing identity is unchanged; only the observer is added.
+    expect(requireValue(chatCompletion.mock.calls[0])[3]).toMatchObject(CONTEXT);
+    expect(timing.snapshot()).toMatchObject({
+      capacityRetries: 2,
+      capacityRetryClasses: ["stream_class", "buffered_class"],
+      fallbackReason: "threw_before_first_chunk",
+    });
+  });
+
+  it("a throwing timer never affects the result, the fallback, or error propagation", async () => {
+    const boom = () => {
+      throw new Error("boom");
+    };
+    const throwing: InferenceAttemptTimer = {
+      markRequestStart: boom,
+      markChunk: boom,
+      markBufferedFallback: boom,
+      markCapacityFailure: boom,
+      markToolCalls: boom,
+      snapshot: boom,
+    };
+    const chunks: StreamChunk[] = [
+      { type: "reasoning", reasoningText: "r" },
+      { type: "content", text: "hi" },
+      { type: "tool_call_delta", toolCallIndex: 0, toolCallId: "a", toolCallName: "t", toolCallArgsDelta: "{}" },
+      { type: "usage", usage: USAGE },
+      { type: "done" },
+    ];
+    const plain = await runStreamingInference(providerFrom(fromChunks(chunks)), MSGS, TOOLS, CFG);
+    const observed = await runStreamingInference(providerFrom(fromChunks(chunks)), MSGS, TOOLS, CFG, {
+      timing: throwing,
+    });
+    expect(observed).toEqual(plain);
+
+    // The fallback still happens, and the capacity hook it forwards is safe too.
+    const chatCompletion = vi.fn(
+      async (_m: unknown, _t: unknown, _c: unknown, context?: InferenceRequestContext) => {
+        context?.onCapacityFailure?.("x");
+        return FALLBACK;
+      },
+    );
+    const fallback = await runStreamingInference(
+      withoutStreamMethod(fakeInferenceProvider({ chatCompletion })),
+      MSGS,
+      TOOLS,
+      CFG,
+      { timing: throwing, context: CONTEXT },
+    );
+    expect(fallback.response).toBe(FALLBACK);
+
+    // A provider error still propagates unchanged.
+    await expect(
+      runStreamingInference(
+        providerFrom(
+          fromChunks([
+            { type: "content", text: "x" },
+            { type: "error", errorMessage: "upstream failed", errorCode: 502 },
+          ]),
+        ),
+        MSGS,
+        TOOLS,
+        CFG,
+        { timing: throwing },
+      ),
+    ).rejects.toThrow("upstream failed");
+  });
+
+  it("without a timer the context is forwarded by identity and the result is unchanged", async () => {
+    const chunks: StreamChunk[] = [
+      { type: "content", text: "a" },
+      { type: "usage", usage: USAGE },
+      { type: "done", finishReason: "stop" },
+    ];
+    const seenContexts: Array<InferenceRequestContext | undefined> = [];
+    const provider = fakeInferenceProvider({
+      chatCompletionStream: (
+        _m: unknown,
+        _t: unknown,
+        _c: unknown,
+        _s: unknown,
+        context?: InferenceRequestContext,
+      ) => {
+        seenContexts.push(context);
+        return fromChunks(chunks)();
+      },
+    });
+
+    const plain = await runStreamingInference(provider, MSGS, TOOLS, CFG, { context: CONTEXT });
+    const timed = await runStreamingInference(provider, MSGS, TOOLS, CFG, {
+      context: CONTEXT,
+      timing: createInferenceAttemptTimer(),
+    });
+    expect(seenContexts[0]).toBe(CONTEXT);
+    expect(seenContexts[1]).not.toBe(CONTEXT);
+    expect(timed).toEqual(plain);
   });
 });

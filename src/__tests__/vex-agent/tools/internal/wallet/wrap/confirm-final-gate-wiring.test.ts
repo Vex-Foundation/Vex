@@ -35,7 +35,7 @@ import type { FinalSignedRequest } from "@tools/evm-chains/staged-broadcast.js";
 import type { WalletWrapIntent } from "@vex-agent/db/repos/wallet-wrap-intents.js";
 import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
 
-import { consistentWrapIntent } from "./_wrap-row-fixture.js";
+import { consistentWrapIntent, FIXTURE_FEE_BOUNDS } from "./_wrap-row-fixture.js";
 
 const INTENT: WalletWrapIntent = consistentWrapIntent();
 
@@ -192,6 +192,9 @@ function goodRequest(overrides: Partial<FinalSignedRequest> = {}): FinalSignedRe
     value: BigInt(INTENT.payload.valueWei),
     gas: 50_000n,
     nonce: 7,
+    gasPrice: undefined,
+    maxFeePerGas: BigInt(FIXTURE_FEE_BOUNDS.maxFeePerGasWei),
+    maxPriorityFeePerGas: BigInt(FIXTURE_FEE_BOUNDS.maxPriorityFeePerGasWei),
     ...overrides,
   };
 }

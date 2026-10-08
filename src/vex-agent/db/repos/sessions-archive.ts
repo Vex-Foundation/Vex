@@ -29,7 +29,7 @@
  */
 
 import type { PoolClient } from "pg";
-import { getPool } from "../client.js";
+import { getPool, setLocalLongStatementTimeout } from "../client.js";
 import { MESSAGE_DB_COLUMNS } from "./messages.js";
 
 const MESSAGE_COLS = MESSAGE_DB_COLUMNS.join(", ");
@@ -55,6 +55,8 @@ export async function archivePrefix(
   const own = await getPool().connect();
   try {
     await own.query("BEGIN");
+    // Known long statement (S-4): a bulk row move that scales with the session.
+    await setLocalLongStatementTimeout(own);
     await runArchivePrefixStatements(own, sessionId, cutoffMessageId, remainingCount);
     await own.query("COMMIT");
   } catch (err) {
@@ -118,6 +120,8 @@ export async function forkToolMessageToArchive(
   const own = await getPool().connect();
   try {
     await own.query("BEGIN");
+    // Known long statement (S-4): a bulk row move that scales with the session.
+    await setLocalLongStatementTimeout(own);
     await runForkToolStatements(own, sessionId, messageId, placeholderContent);
     await own.query("COMMIT");
   } catch (err) {

@@ -42,6 +42,13 @@ const EVM_FEE_BOUNDS_SENTENCE =
   + "estimate, so a call without the caps is refused by name and returns the current estimate as a "
   + "labelled hint you choose from. That refusal is the first call of the two-call workflow.";
 
+/**
+ * The same fact for the three price caps, which sit beside `gasLimit` in one
+ * schema: the full reason is stated once, on `gasLimit`, instead of four times.
+ */
+const EVM_FEE_BOUNDS_SENTENCE_SHORT =
+  "REQUIRED IN EFFECT, optional in the schema, for the reason `gasLimit` gives.";
+
 export const WALLET_TRANSACTION_TOOLS: readonly ToolDef[] = [
   {
     name: "WalletEvmTransactionPrepare",
@@ -116,19 +123,19 @@ export const WALLET_TRANSACTION_TOOLS: readonly ToolDef[] = [
           type: "string",
           description:
             "EIP-1559 cap on the total price per gas unit, in RAW wei as a decimal integer string. "
-            + `Pass this with maxPriorityFeePerGasWei, or pass gasPriceWei instead, never both. ${EVM_FEE_BOUNDS_SENTENCE}`,
+            + `Pass this with maxPriorityFeePerGasWei, or pass gasPriceWei instead, never both. ${EVM_FEE_BOUNDS_SENTENCE_SHORT}`,
         },
         maxPriorityFeePerGasWei: {
           type: "string",
           description:
             "EIP-1559 cap on the validator tip per gas unit, in RAW wei as a decimal integer string. "
-            + `Cannot exceed maxFeePerGasWei. ${EVM_FEE_BOUNDS_SENTENCE}`,
+            + `Cannot exceed maxFeePerGasWei. ${EVM_FEE_BOUNDS_SENTENCE_SHORT}`,
         },
         gasPriceWei: {
           type: "string",
           description:
             "LEGACY cap on the price per gas unit, in RAW wei as a decimal integer string, for chains "
-            + `without EIP-1559. Mutually exclusive with the 1559 pair. ${EVM_FEE_BOUNDS_SENTENCE}`,
+            + `without EIP-1559. Mutually exclusive with the 1559 pair. ${EVM_FEE_BOUNDS_SENTENCE_SHORT}`,
         },
       },
       required: ["chain", "to"],

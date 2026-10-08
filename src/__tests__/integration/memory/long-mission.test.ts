@@ -72,28 +72,30 @@ const chunkerMockHandle = vi.hoisted(() => {
 });
 
 vi.mock("@vex-agent/inference/openrouter.js", () => ({
-  OpenRouterProvider: vi.fn().mockImplementation(() => ({
-    loadConfig: vi.fn().mockResolvedValue({
-      provider: "openrouter",
-      model: "test-model",
-      contextLimit: 128_000,
-      maxOutputTokens: 4096,
-      inputPricePerM: 0,
-      outputPricePerM: 0,
-      priceCurrency: "USD",
-    }),
-    chatCompletionSimple: vi.fn().mockImplementation(
-      async (messages: ReadonlyArray<{ role: string; content: string }>) => {
-        chunkerMockHandle.setLastMessages(messages);
-        const failure = chunkerMockHandle.takeFailure();
-        if (failure) throw failure;
-        return {
-          content: JSON.stringify(chunkerMockHandle.getChunkerResponse()),
-          usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-        };
-      },
-    ),
-  })),
+  OpenRouterProvider: vi.fn().mockImplementation(function () {
+    return {
+      loadConfig: vi.fn().mockResolvedValue({
+        provider: "openrouter",
+        model: "test-model",
+        contextLimit: 128_000,
+        maxOutputTokens: 4096,
+        inputPricePerM: 0,
+        outputPricePerM: 0,
+        priceCurrency: "USD",
+      }),
+      chatCompletionSimple: vi.fn().mockImplementation(
+        async (messages: ReadonlyArray<{ role: string; content: string }>) => {
+          chunkerMockHandle.setLastMessages(messages);
+          const failure = chunkerMockHandle.takeFailure();
+          if (failure) throw failure;
+          return {
+            content: JSON.stringify(chunkerMockHandle.getChunkerResponse()),
+            usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+          };
+        },
+      ),
+    };
+  }),
 }));
 
 import { randomUUID } from "node:crypto";
@@ -293,8 +295,9 @@ describe("PR4 eval — knowledge source filter (Active Memory hot-context)", () 
         tags: [],
         sourceRefs: {},
         confidence: null,
-        pinned: false,
+        pinned: true,
         validUntil: null,
+        maturityState: "established",
         contentHash: computeContentHash({ kind: "kyber_quote_timeout", title, summary, contentMd: summary }),
         embeddingModel: embedded.providerModel,
         embeddingDim: embedded.embedding.length,
@@ -309,7 +312,12 @@ describe("PR4 eval — knowledge source filter (Active Memory hot-context)", () 
 
     // Active-knowledge surface — must include only observed + user_confirmed.
     const hotEntries = await knowledgeRepo.listActiveForHotContext({ limit: 20 });
-    const hotSources = new Set(hotEntries.map((e) => e.source));
+    const sourcesById = new Map(created.map((entry) => [entry.id, entry.source]));
+    const hotSources = new Set(hotEntries.map((entry) => {
+      const source = sourcesById.get(entry.id);
+      if (source === undefined) throw new Error("Unexpected knowledge entry in isolated fixture");
+      return source;
+    }));
     expect(hotSources.has("observed")).toBe(true);
     expect(hotSources.has("user_confirmed")).toBe(true);
     expect(hotSources.has("inferred")).toBe(false);

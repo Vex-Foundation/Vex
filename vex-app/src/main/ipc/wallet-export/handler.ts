@@ -102,7 +102,7 @@ export function registerWalletExportHandler(): () => void {
       //    upgrade KDF params or rewrite the vault on disk, and does
       //    not return the decrypted payload. ───────────────────────
       try {
-        verifySecretVaultPassword(input.password, {
+        await verifySecretVaultPassword(input.password, {
           filePath: SECRETS_VAULT_FILE,
         });
       } catch (cause: unknown) {
@@ -200,7 +200,7 @@ export function registerWalletExportHandler(): () => void {
       let secret: string;
       let format: "hex" | "base58";
       try {
-        const decrypted = decryptExportSecret({
+        const decrypted = await decryptExportSecret({
           family: input.chain,
           entry,
           password: input.password,

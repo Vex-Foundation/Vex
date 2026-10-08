@@ -28,7 +28,8 @@ import type {
   LighterTrade,
 } from "@tools/lighter/types.js";
 import type { LighterOrderExecutionIntentRow } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
-import type { LighterFillRecord } from "@vex-agent/tools/protocols/lighter/agentscan-activity.js";
+import * as dbClient from "@vex-agent/db/client.js";
+import { hasMissingLighterFillPositionEffect, type LighterFillRecord } from "@vex-agent/tools/protocols/lighter/agentscan-activity.js";
 import {
   reconcileLighterAccountStreamMessage,
   type LighterAccountStreamReconciliationDeps,
@@ -39,6 +40,8 @@ import {
 } from "@vex-agent/tools/protocols/lighter/order-repair.js";
 import {
   LIGHTER_FILL_FOLLOW_UP_TRADES_LIMIT,
+  LIGHTER_FILL_REOBSERVE_MISSING_POSITION_EFFECT,
+  defaultLighterFillObservationDeps,
   observeLighterFills,
   observeLighterFillsFromAccountTrades,
   resetLighterMarketAssetsCache,
@@ -818,6 +821,76 @@ describe("order repair: a terminal intent whose fills never reached the ledger",
     expect(report.resolution).toBe("already_terminal");
     expect(getAccountTrades).not.toHaveBeenCalled();
     expect(recordFill).not.toHaveBeenCalled();
+  });
+
+  it("installs the missing-effect reader only in the production factory by default", () => {
+    expect(LIGHTER_FILL_REOBSERVE_MISSING_POSITION_EFFECT).toBe(true);
+    expect(defaultLighterFillObservationDeps().missingPositionEffect).toBe(hasMissingLighterFillPositionEffect);
+    expect(fillDeps(vi.fn<LighterFillObservationDeps["recordFill"]>()).missingPositionEffect).toBeUndefined();
+  });
+
+  it.each([null, {}, { missing: null }, { missing: "false" }])("refuses an unreadable missing-effect query result: %j", async (result) => {
+    const query = vi.spyOn(dbClient, "queryOne").mockResolvedValue(result);
+    try {
+      await expect(hasMissingLighterFillPositionEffect({
+        intentId: "intent-1", environment: "core", accountIndex: ACCOUNT_INDEX,
+        marketIndex: 0, side: "buy", clientOrderIndex: CLIENT_ORDER_INDEX,
+      })).rejects.toThrow(/no boolean evidence/);
+    } finally {
+      query.mockRestore();
+    }
+  });
+
+  it("re-observes an old quantity-complete terminal create fill once while its position effect is missing", async () => {
+    const intent = executionIntent({ executionState: "filled", providerOutcomeJson: { filledBaseAmount: "0.0050" } });
+    const missing = vi.fn<typeof hasMissingLighterFillPositionEffect>().mockResolvedValueOnce(true).mockResolvedValue(false);
+    const recordFill = vi.fn<LighterFillObservationDeps["recordFill"]>(async () => ({ kind: "enriched", fillId: 1, revision: 1 }));
+    const fills = {
+      ...fillDeps(recordFill, vi.fn<LighterFillObservationDeps["recordedFillBaseSize"]>(async () => "0.0050")),
+      missingPositionEffect: missing,
+    };
+    const getAccountTrades = tradesReader([{ ...LIVE_TRADE, taker_position_size_before: "0", taker_position_sign_changed: true, bid_account_pnl: null }]);
+    const deps = repairDeps(intent, fills, getAccountTrades);
+    expect((await repairLighterOrderIntent(intent, deps)).resolution).toBe("already_terminal");
+    expect((await repairLighterOrderIntent(intent, deps)).resolution).toBe("already_terminal");
+    expect(getAccountTrades).toHaveBeenCalledTimes(1);
+    expect(getAccountTrades).toHaveBeenCalledWith("core", {
+      accountIndex: ACCOUNT_INDEX, limit: LIGHTER_FILL_FOLLOW_UP_TRADES_LIMIT, sortBy: "timestamp",
+    }, { token: "read-token", accountIndex: ACCOUNT_INDEX });
+    expect(missing).toHaveBeenCalledWith({
+      intentId: intent.intentId, environment: "core", accountIndex: ACCOUNT_INDEX,
+      marketIndex: 0, side: "buy", clientOrderIndex: CLIENT_ORDER_INDEX,
+    });
+    expect(recordFill).toHaveBeenCalledTimes(1);
+    expect(recordFill.mock.calls[0]?.[0]).toMatchObject({ positionEffect: "open", accountFacts: { accountPnl: null } });
+    expect(deps.intents.markRepairResolved).not.toHaveBeenCalled();
+    expect(deps.client.getNextNonce).not.toHaveBeenCalled();
+  });
+
+  it("keeps quantity-complete reads suppressed when the missing-effect switch is off", async () => {
+    const { recordFill } = ledger();
+    const intent = executionIntent({ executionState: "filled", providerOutcomeJson: { filledBaseAmount: "0.0050" } });
+    const missing = vi.fn<typeof hasMissingLighterFillPositionEffect>().mockResolvedValue(true);
+    const fills = {
+      ...fillDeps(recordFill, vi.fn<LighterFillObservationDeps["recordedFillBaseSize"]>(async () => "0.0050")),
+      missingPositionEffect: missing, reobserveMissingPositionEffect: false,
+    };
+    const getAccountTrades = tradesReader([LIVE_TRADE]);
+    await repairLighterOrderIntent(intent, repairDeps(intent, fills, getAccountTrades));
+    expect(missing).not.toHaveBeenCalled();
+    expect(getAccountTrades).not.toHaveBeenCalled();
+  });
+
+  it("uses one existing bounded follow-up read when the local missing-effect query fails", async () => {
+    const { recordFill } = ledger();
+    const intent = executionIntent({ executionState: "filled", providerOutcomeJson: { filledBaseAmount: "0.0050" } });
+    const fills = {
+      ...fillDeps(recordFill, vi.fn<LighterFillObservationDeps["recordedFillBaseSize"]>(async () => "0.0050")),
+      missingPositionEffect: vi.fn<typeof hasMissingLighterFillPositionEffect>().mockRejectedValue(new Error("fixture database failure")),
+    };
+    const getAccountTrades = tradesReader([LIVE_TRADE]);
+    expect((await repairLighterOrderIntent(intent, repairDeps(intent, fills, getAccountTrades))).resolution).toBe("already_terminal");
+    expect(getAccountTrades).toHaveBeenCalledTimes(1);
   });
 
   it("a terminal intent that moved no money is never read for", async () => {

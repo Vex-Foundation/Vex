@@ -217,7 +217,7 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
       await lease.handle.assertOwned();
       let signer;
       try {
-        signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+        signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
       } catch (error) {
         return walletScopeErrorToResult(error);
       }
@@ -501,7 +501,7 @@ export const LIGHTER_WITHDRAWAL_HANDLERS: Record<string, ProtocolHandler> = {
       return walletScopeErrorToResult(error);
     }
     const client = getLighterClient();
-    const scopes = listLighterTradingCredentialScopes(environment);
+    const scopes = await listLighterTradingCredentialScopes(environment);
     const distinctScopes = [...new Map(scopes.map((scope) => [`${scope.accountIndex}:${scope.apiKeyIndex}`, scope])).values()];
     const owned: typeof distinctScopes = [];
     for (const scope of distinctScopes) {

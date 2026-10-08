@@ -130,6 +130,19 @@ function fakeClient(): LighterTradingPanelClient {
 }
 
 describe("Lighter trading panel service", () => {
+  it("projects the current Vex fee into both Lighter trading desks", () => {
+    for (const environment of ["core", "rhc"] as const) {
+      expect(projectLighterTradingMarket(environment, market).fees).toMatchObject({
+        integratorMaker: "0.02",
+        integratorTaker: "0.02",
+      });
+      expect(projectLighterTradingMarket(environment, { ...market, market_type: "spot" }).fees).toMatchObject({
+        integratorMaker: "0.25",
+        integratorTaker: "0.25",
+      });
+    }
+  });
+
   it("keeps price changes signed, rejects invalid metrics, and never assigns open interest to spot", () => {
     const projected = projectLighterTradingMarket("rhc", market, {
       ...market, last_trade_price: -1, daily_price_change: -5,

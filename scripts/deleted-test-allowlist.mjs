@@ -25,36 +25,10 @@
  * here; they merged with PR #165 (`7890245fa`) and were consumed by that
  * merge. The Lighter shell migration entries were also consumed after their
  * deleted test files landed on the base branch.
+ * The 12 retired feed/ws fixture entries were consumed when the replacement
+ * envelope protocol landed in main through PR #205 (`1dc37f68f`).
  */
-const RETIRED_FEED_WS_REASON =
-  "Capture of the retired dex_feed.WSCommand/WSMessage feed/ws protocol, which the site removed (drift test against the 2026-10-07 bundle); the subject no longer exists.";
-const FEED_ENVELOPE_TEST = "src/__tests__/dexscreener-site/feed-envelope.test.ts";
-
-/**
- * The feed/ws migration to the util_envelope protocol retires every capture of
- * the old command protocol. Each is replaced by a feed-envelope-* capture of the
- * same exchange on the new protocol, decoded by FEED_ENVELOPE_TEST.
- */
-const RETIRED_FEED_WS_FIXTURES = [
-  "bars-ws-d1-uniswap-ethereum.bin.b64",
-  "bars-ws-d1-uniswap-ethereum.provenance.json",
-  "bars-ws-marketcap-uniswap-ethereum.bin.b64",
-  "bars-ws-marketcap-uniswap-ethereum.provenance.json",
-  "token-insight-not-found.bin.b64",
-  "token-insight-not-found.provenance.json",
-  "ws-trades-baseline-uniswap.bin.b64",
-  "ws-trades-baseline-uniswap.provenance.json",
-  "ws-trades-exact-cursor-page2.bin.b64",
-  "ws-trades-exact-cursor-page2.command.bin.b64",
-  "ws-trades-exact-cursor-page2.command.provenance.json",
-  "ws-trades-exact-cursor-page2.provenance.json",
-];
-
-export const DELETED_TEST_ALLOWLIST = RETIRED_FEED_WS_FIXTURES.map((name) => ({
-  path: `src/__tests__/dexscreener-site/fixtures/${name}`,
-  reason: RETIRED_FEED_WS_REASON,
-  coveredBy: FEED_ENVELOPE_TEST,
-}));
+export const DELETED_TEST_ALLOWLIST = [];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(
   DELETED_TEST_ALLOWLIST.map((entry) => entry.path),

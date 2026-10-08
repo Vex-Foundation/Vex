@@ -50,6 +50,7 @@ import {
   ORIGIN_INJECTION_URL_PATTERNS,
 } from "./allowlist.js";
 import { CHROME_USER_AGENT } from "./http.js";
+import { measureMainThreadStage } from "../telemetry/stall-details.js";
 
 /** Partition name. Its own jar, its own header hook, shared with nothing. */
 export const BRIDGE_PARTITION = "dexscreener-bridge";
@@ -609,7 +610,7 @@ export class DexScreenerWsBridge {
     this.loading = (async () => {
       const session = this.session ?? this.createSession();
       this.session = session;
-      const window = this.runtime.createWindow(session);
+      const window = measureMainThreadStage("dexscreener_window_create", () => this.runtime.createWindow(session));
       try {
         await withTimeout(
           window.load(BRIDGE_URL),

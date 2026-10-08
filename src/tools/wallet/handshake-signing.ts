@@ -145,7 +145,7 @@ export async function signHandshakeEvm(
   template: string,
 ): Promise<`0x${string}`> {
   assertHandshakeTemplate(template);
-  const { privateKey } = loadEvmKey(entry);
+  const { privateKey } = await loadEvmKey(entry);
   const account = privateKeyToAccount(privateKey);
   return account.signMessage({ message: template });
 }
@@ -173,7 +173,7 @@ export async function signHandshakeSolana(
   template: string,
 ): Promise<string> {
   assertHandshakeTemplate(template);
-  const secretKey = loadSolanaSecret(entry);
+  const secretKey = await loadSolanaSecret(entry);
   try {
     if (!walletAddressesEqual("solana", deriveSolanaAddress(secretKey), entry.address)) {
       throw new VexError(

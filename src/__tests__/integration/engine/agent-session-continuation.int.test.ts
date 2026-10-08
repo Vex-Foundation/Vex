@@ -45,7 +45,9 @@ import {
 } from "@vex-agent/engine/runtime/session-slice-abort.js";
 import { tick, type WakeDeps } from "@vex-agent/engine/wake/executor.js";
 import { claimSessionWakeAtomically } from "@vex-agent/engine/wake/executor/claim-session-wake.js";
+import { claimMissionWakeAtomically } from "@vex-agent/engine/wake/executor/claim-mission-wake.js";
 import { makeSession, resetDb } from "../setup/fixtures.js";
+import type { RunnerLeaseGuard } from "@vex-agent/engine/runtime/lease-guard.js";
 
 interface WakeRow {
   readonly id: string;
@@ -79,12 +81,12 @@ async function openStopRequests(sessionId: string): Promise<{ id: string }[]> {
 
 function makeDeps(overrides: Partial<WakeDeps> = {}): WakeDeps {
   return {
-    claimDue: (now, limit) => loopWakeRepo.claimDue(now, limit),
+    listDueMissionWakes: (now, limit) =>
+      loopWakeRepo.listDueMissionScoped(now, limit),
+    claimMissionWake: (input) => claimMissionWakeAtomically(input),
     listDueSessionWakes: (now, limit) =>
       loopWakeRepo.listDueSessionScoped(now, limit),
     claimSessionWake: (input) => claimSessionWakeAtomically(input),
-    getMissionRun: vi.fn().mockResolvedValue(null),
-    casFlipToRunning: vi.fn().mockResolvedValue(null),
     injectWakeBanner: vi.fn().mockResolvedValue(undefined),
     resumeMissionRun: vi.fn().mockResolvedValue(undefined),
     continueAgentSession: vi.fn().mockResolvedValue(undefined),
@@ -239,12 +241,12 @@ describe("agent-session continuation (integration)", () => {
      */
     const observedOwners: { passed: string; live: string | undefined }[] = [];
     const deps = makeDeps({
-      continueAgentSession: vi.fn(async (_sessionId: string, ownerId: string) => {
+      continueAgentSession: vi.fn(async (_sessionId: string, runnerLease: RunnerLeaseGuard) => {
         const rows = await query<{ owner_id: string }>(
           "SELECT owner_id FROM runner_leases WHERE session_id = $1",
           [sessionId],
         );
-        observedOwners.push({ passed: ownerId, live: rows[0]?.owner_id });
+        observedOwners.push({ passed: runnerLease.ownerId, live: rows[0]?.owner_id });
       }),
     });
     await tick(new Date(), 10, deps);
@@ -450,7 +452,7 @@ describe("agent-session continuation (integration)", () => {
 
     await enqueueSessionStopRequest({ sessionId, correlationId: "req-stop-3" });
 
-    // The row was cancelled in the stop transaction, so claimDue finds nothing.
+    // The row was cancelled in the stop transaction, so no list finds it.
     const deps = makeDeps();
     const results = await tick(new Date(), 10, deps);
 

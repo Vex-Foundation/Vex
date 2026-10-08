@@ -719,7 +719,13 @@ export const lighterDeskActionSchema = z.discriminatedUnion("kind", [
       draft: lighterDeskOrderDraftSchema,
     })
     .strict(),
-  z.object({ kind: z.literal("close"), marketId: marketIdSchema }).strict(),
+  z.object({
+    kind: z.literal("close"),
+    marketId: marketIdSchema,
+    closePercent: z.union([z.literal(25), z.literal(50), z.literal(75), z.literal(100)]).optional(),
+  }).strict(),
+  // Account-wide scope is resolved from the session by main, never supplied by the renderer.
+  z.object({ kind: z.literal("cancel_all") }).strict(),
   z
     .object({
       kind: z.literal("cancel"),

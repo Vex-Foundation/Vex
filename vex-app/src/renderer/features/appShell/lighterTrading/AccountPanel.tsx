@@ -132,6 +132,7 @@ export function TradingBottomPanel({
   closeConfirmSkipped,
   closingPositions,
   cancellingOrders,
+  cancelAllPending = false,
   actions,
 }: {
   readonly environment: LighterTradingEnvironment;
@@ -148,6 +149,7 @@ export function TradingBottomPanel({
   readonly closeConfirmSkipped: boolean;
   readonly closingPositions: ReadonlyMap<string, PositionCloseStage>;
   readonly cancellingOrders: ReadonlyMap<string, OrderCancelStage>;
+  readonly cancelAllPending?: boolean;
   readonly actions: AccountActions;
 }): JSX.Element {
   const [tab, setTab] = useState<BottomTab>("positions");
@@ -256,7 +258,7 @@ export function TradingBottomPanel({
         ) : tab === "positions" ? (
           <PositionsTab account={account} activeMarketId={activeMarketId} activeMarkPrice={activeMarkPrice} activePriceDecimals={activePriceDecimals} closeConfirmSkipped={closeConfirmSkipped} closingPositions={closingPositions} actions={actions} />
         ) : tab === "orders" ? (
-          <OpenOrdersTab account={account} cancellingOrders={cancellingOrders} actions={actions} />
+          <OpenOrdersTab account={account} cancellingOrders={cancellingOrders} cancelAllPending={cancelAllPending} actions={actions} />
         ) : tab === "fills" ? (
           <FillsTab environment={environment} />
         ) : (
@@ -494,9 +496,10 @@ function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDec
   );
 }
 
-function OpenOrdersTab({ account, cancellingOrders, actions }: {
+function OpenOrdersTab({ account, cancellingOrders, cancelAllPending, actions }: {
   readonly account: LighterTradingAccount;
   readonly cancellingOrders: ReadonlyMap<string, OrderCancelStage>;
+  readonly cancelAllPending: boolean;
   readonly actions: AccountActions;
 }): JSX.Element {
   if (!account.openOrdersAvailable) {
@@ -514,12 +517,13 @@ function OpenOrdersTab({ account, cancellingOrders, actions }: {
   return (
     <>
       <div className="lit-open-orders-toolbar">
+        {cancelAllPending ? <p className="lit-open-orders-note" role="status">Account-wide cancellation is pending. Wait for its approval or order status.</p> : null}
         {account.openOrdersTruncated ? (
           <p className="lit-open-orders-note" role="status">
             Showing a partial active-order list (up to 200).
           </p>
         ) : null}
-        <button type="button" className="lit-cancel-all" disabled={cancellingOrders.size > 0} onClick={() => actions.onCancelAllOrders(account.openOrders)}>
+        <button type="button" className="lit-cancel-all" disabled={cancelAllPending || cancellingOrders.size > 0} onClick={() => actions.onCancelAllOrders(account.openOrders)}>
           Cancel all
         </button>
       </div>
@@ -583,7 +587,7 @@ function OpenOrdersTab({ account, cancellingOrders, actions }: {
                   {expiry === null ? null : <time dateTime={expiry.iso}>Expires {expiry.label}</time>}
                 </span>
                 <span role="cell" className="lit-row-actions">
-                  <button type="button" data-danger disabled={cancelStage !== null} onClick={() => actions.onCancelOrder(order)} aria-label={`Cancel ${order.symbol} order ${shortOrderId(order.orderId)}`}>
+                  <button type="button" data-danger disabled={cancelAllPending || cancelStage !== null} onClick={() => actions.onCancelOrder(order)} aria-label={`Cancel ${order.symbol} order ${shortOrderId(order.orderId)}`}>
                     Cancel
                   </button>
                   {/* Under the Cancel button that started it. */}

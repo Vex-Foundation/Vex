@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { fakeLeaseHandle } from "../../../../helpers/lease-guard.js";
+import { requireValue } from "../../../../helpers/require-value.js";
 
 // ── Mocks ─────────────────────────────────────────────────────
 
@@ -155,14 +157,13 @@ vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
   observeAndApplyControl: vi.fn().mockResolvedValue({ outcome: "no_request" }),
 }));
 
-vi.mock("@vex-agent/engine/runtime/lease-handle.js", () => ({
-  createLeaseHandle: vi.fn().mockReturnValue({
-    lease: { sessionId: "s", missionRunId: null, ownerId: "test-owner", processKind: "electron_main", acquiredAt: new Date(), heartbeatAt: new Date(), expiresAt: new Date() },
-    ownerId: "test-owner",
-    release: vi.fn().mockResolvedValue(undefined),
-    onLeaseLost: vi.fn(),
-  }),
-}));
+vi.mock("@vex-agent/engine/runtime/lease-handle.js", async () => {
+  const { fakeLeaseHandle } = await import("../../../../helpers/lease-guard.js");
+  return {
+    createLeaseHandle: vi.fn((opts: { readonly ownerId: string }) =>
+      fakeLeaseHandle({ ownerId: opts.ownerId })),
+  };
+});
 
 vi.mock("@vex-agent/engine/runtime/release-and-emit.js", () => ({
   releaseLeaseAndEmitControlState: vi.fn().mockResolvedValue(undefined),
@@ -305,6 +306,8 @@ describe("runner", () => {
    * here so the propagation assertion below reads against a single value.
    */
   const RESUME_OWNER = "resume-owner-run-1";
+  /** The caller's lease handle, as every resume entry point passes it. */
+  const RESUME_LEASE = fakeLeaseHandle({ ownerId: RESUME_OWNER, sessionId: "session-1" });
 
   // ── resumeMissionRun ────────────────────────────────────────
 
@@ -328,7 +331,7 @@ describe("runner", () => {
         text: "Resumed", toolCallsMade: 1, pendingApprovals: [], stopReason: null,
       });
 
-      const result = await resumeMissionRun("run-1", RESUME_OWNER);
+      const result = await resumeMissionRun("run-1", RESUME_LEASE);
 
       expect(result.text).toBe("Resumed");
       expect(result.missionStatus).toBe("running");
@@ -353,12 +356,34 @@ describe("runner", () => {
         text: "Resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
       });
 
-      await resumeMissionRun("run-1", RESUME_OWNER);
+      await resumeMissionRun("run-1", RESUME_LEASE);
 
       const [, , , , , , , loopConfig] = mockRunTurnLoop.mock.calls[0]!;
       expect((loopConfig as { runnerOwnerId?: string }).runnerOwnerId).toBe(
         RESUME_OWNER,
       );
+    });
+
+    it("hands the resumed loop its entry timestamp for the queue-wait measurement", async () => {
+      mockGetRun.mockResolvedValueOnce({
+        id: "run-1", missionId: "mission-1", sessionId: "session-1",
+        status: "paused_wake", iterationCount: 5,
+      });
+      mockGetMission.mockResolvedValueOnce(makeReadyMission({ status: "running" }));
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission", missionId: "mission-1", missionRunId: "run-1",
+      }));
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
+      });
+
+      const before = performance.now();
+      await resumeMissionRun("run-1", RESUME_LEASE);
+
+      const [, , , , , , , loopConfig] = requireValue(mockRunTurnLoop.mock.calls[0]);
+      const entry = (loopConfig as { entryStartedAtMs?: number }).entryStartedAtMs;
+      expect(entry).toBeGreaterThanOrEqual(before);
+      expect(entry).toBeLessThanOrEqual(performance.now());
     });
 
     // WP-I1: the hard deadline holds ACROSS resumes — it is recomputed from
@@ -384,7 +409,7 @@ describe("runner", () => {
         text: "Resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
       });
 
-      await resumeMissionRun("run-1", RESUME_OWNER);
+      await resumeMissionRun("run-1", RESUME_LEASE);
 
       const [context, , , , , , , loopConfig] = mockRunTurnLoop.mock.calls[0]!;
       const expectedMs = Date.parse("2026-01-01T00:00:00.000Z") + 60 * 60_000;
@@ -422,7 +447,7 @@ describe("runner", () => {
         text: "Resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
       });
 
-      await resumeMissionRun("run-1", RESUME_OWNER);
+      await resumeMissionRun("run-1", RESUME_LEASE);
 
       const [context, , , , , , , loopConfig] = mockRunTurnLoop.mock.calls[0]!;
       const expectedMs = Date.parse("2026-01-01T00:00:00.000Z") + 5 * 60_000; // frozen 5, NOT live 999
@@ -430,6 +455,60 @@ describe("runner", () => {
       expect((context as { missionDeadline: string }).missionDeadline).toBe(
         new Date(expectedMs).toISOString(),
       );
+    });
+
+    // E-1: the run's reasoning effort comes from the FROZEN contract snapshot,
+    // never the live row, and a pre-E-1 snapshot runs at medium.
+    it("runs every call at the FROZEN contract effort, ignoring a later live-row edit", async () => {
+      mockGetRun.mockResolvedValueOnce({
+        id: "run-1", missionId: "mission-1", sessionId: "session-1",
+        status: "running", iterationCount: 5,
+        contractSnapshotJson: { frozenMission: { draft: { reasoningEffort: "low" } } },
+      });
+      mockGetMission.mockResolvedValueOnce({
+        id: "mission-1", rootSessionId: "session-1", status: "running",
+        title: "SOL DCA", goal: "Accumulate", capitalSourceJson: {},
+        allowedWallets: ["sol"], allowedChains: ["sol"], allowedProtocols: ["sol"],
+        riskProfile: "conservative", successCriteriaJson: [], stopConditionsJson: [],
+        constraintsJson: { reasoningEffort: "max" }, createdAt: "", updatedAt: "", approvedAt: "",
+      });
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission", missionId: "mission-1", missionRunId: "run-1",
+      }));
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
+      });
+
+      await resumeMissionRun("run-1", RESUME_LEASE);
+
+      const config: unknown = requireValue(mockRunTurnLoop.mock.calls[0])[5];
+      expect(config).toMatchObject({ reasoningEffort: "low" });
+    });
+
+    it("runs a run committed before E-1 (no effort in its snapshot) at medium", async () => {
+      mockGetRun.mockResolvedValueOnce({
+        id: "run-1", missionId: "mission-1", sessionId: "session-1",
+        status: "running", iterationCount: 5,
+        contractSnapshotJson: { frozenMission: { draft: { durationMinutes: 5 } } },
+      });
+      mockGetMission.mockResolvedValueOnce({
+        id: "mission-1", rootSessionId: "session-1", status: "running",
+        title: "SOL DCA", goal: "Accumulate", capitalSourceJson: {},
+        allowedWallets: ["sol"], allowedChains: ["sol"], allowedProtocols: ["sol"],
+        riskProfile: "conservative", successCriteriaJson: [], stopConditionsJson: [],
+        constraintsJson: {}, createdAt: "", updatedAt: "", approvedAt: "",
+      });
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission", missionId: "mission-1", missionRunId: "run-1",
+      }));
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
+      });
+
+      await resumeMissionRun("run-1", RESUME_LEASE);
+
+      const config: unknown = requireValue(mockRunTurnLoop.mock.calls[0])[5];
+      expect(config).toMatchObject({ reasoningEffort: "medium" });
     });
 
     it("pauses the run with evidence when resume throws inside the loop", async () => {
@@ -443,7 +522,7 @@ describe("runner", () => {
       }));
       mockRunTurnLoop.mockRejectedValueOnce(new Error("provider exploded"));
 
-      await expect(resumeMissionRun("run-1", RESUME_OWNER)).rejects.toBeInstanceOf(MissionRunPausedError);
+      await expect(resumeMissionRun("run-1", RESUME_LEASE)).rejects.toBeInstanceOf(MissionRunPausedError);
 
       // The resume's running flip goes through the terminal-guarded CAS.
       expect(mockStartRunIfNotTerminal).toHaveBeenCalledWith("run-1");
@@ -463,7 +542,7 @@ describe("runner", () => {
 
     it("throws if run not found", async () => {
       mockGetRun.mockResolvedValueOnce(null);
-      await expect(resumeMissionRun("nonexistent", RESUME_OWNER)).rejects.toThrow("not found");
+      await expect(resumeMissionRun("nonexistent", RESUME_LEASE)).rejects.toThrow("not found");
     });
 
     // ── Resumed-turn claim hook ──────────────────────────────
@@ -508,7 +587,7 @@ describe("runner", () => {
           return { text: "resumed", toolCallsMade: 0, pendingApprovals: [], stopReason: null };
         });
 
-        await resumeMissionRun("run-1", RESUME_OWNER, async () => {
+        await resumeMissionRun("run-1", RESUME_LEASE, async () => {
           order.push("claim");
           return true;
         });
@@ -524,7 +603,7 @@ describe("runner", () => {
         });
         mockResolveProvider.mockResolvedValueOnce(null);
 
-        await expect(resumeMissionRun("run-1", RESUME_OWNER, claim)).rejects.toThrow(
+        await expect(resumeMissionRun("run-1", RESUME_LEASE, claim)).rejects.toThrow(
           "No inference provider",
         );
 
@@ -535,7 +614,7 @@ describe("runner", () => {
       it("a losing claim abandons the resume without running the turn", async () => {
         readyRun();
 
-        const result = await resumeMissionRun("run-1", RESUME_OWNER, async () => false);
+        const result = await resumeMissionRun("run-1", RESUME_LEASE, async () => false);
 
         expect(mockRunTurnLoop).not.toHaveBeenCalled();
         expect(result).toMatchObject({ text: null, toolCallsMade: 0 });

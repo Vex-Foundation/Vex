@@ -42,14 +42,14 @@ export interface PrepareLighterRegistrationCredentialDeps {
   readonly generator: LighterApiKeyGenerator;
   readonly readVaultPrivateKey: (
     reference: LighterTradingCredentialVaultReference,
-  ) => string | null;
+  ) => Promise<string | null>;
   readonly readVaultRegistrationState: (
     reference: LighterTradingCredentialVaultReference,
-  ) => string | null;
+  ) => Promise<string | null>;
   readonly writePendingVaultPrivateKey: (
     reference: LighterTradingCredentialVaultReference,
     privateKey: string,
-  ) => unknown;
+  ) => Promise<unknown>;
   readonly persistGeneratedMetadata: (
     sessionId: string,
     input: {
@@ -92,8 +92,8 @@ export async function prepareLighterRegistrationCredential(
   let privateKey: string | null;
   let registrationState: string | null;
   try {
-    privateKey = deps.readVaultPrivateKey(reference);
-    registrationState = deps.readVaultRegistrationState(reference);
+    privateKey = await deps.readVaultPrivateKey(reference);
+    registrationState = await deps.readVaultRegistrationState(reference);
   } catch {
     throw preparationError("could not inspect the encrypted local vault");
   }
@@ -107,7 +107,7 @@ export async function prepareLighterRegistrationCredential(
     try {
       const generated = await deps.generator.generate();
       publicKey = generated.publicKey;
-      deps.writePendingVaultPrivateKey(reference, generated.secret.privateKey);
+      await deps.writePendingVaultPrivateKey(reference, generated.secret.privateKey);
     } catch {
       throw preparationError("could not generate and encrypt the local key");
     }

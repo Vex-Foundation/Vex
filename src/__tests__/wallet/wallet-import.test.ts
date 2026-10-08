@@ -50,9 +50,9 @@ describe("normalizePrivateKey", () => {
 });
 
 describe("wallet import flow (unit)", () => {
-  it("should encrypt a normalized key and produce valid keystore", () => {
+  it("should encrypt a normalized key and produce valid keystore", async () => {
     const normalized = normalizePrivateKey(TEST_PK);
-    const keystore = encryptPrivateKey(normalized, TEST_PASSWORD);
+    const keystore = await encryptPrivateKey(normalized, TEST_PASSWORD);
 
     expect(keystore.version).toBe(1);
     expect(keystore.ciphertext).toBeTruthy();
@@ -61,10 +61,10 @@ describe("wallet import flow (unit)", () => {
     expect(keystore.tag).toBeTruthy();
   });
 
-  it("should produce different ciphertexts for same key (random salt)", () => {
+  it("should produce different ciphertexts for same key (random salt)", async () => {
     const normalized = normalizePrivateKey(TEST_PK);
-    const k1 = encryptPrivateKey(normalized, TEST_PASSWORD);
-    const k2 = encryptPrivateKey(normalized, TEST_PASSWORD);
+    const k1 = await encryptPrivateKey(normalized, TEST_PASSWORD);
+    const k2 = await encryptPrivateKey(normalized, TEST_PASSWORD);
 
     expect(k1.ciphertext).not.toBe(k2.ciphertext);
     expect(k1.salt).not.toBe(k2.salt);

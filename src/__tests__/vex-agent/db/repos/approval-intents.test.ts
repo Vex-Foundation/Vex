@@ -12,6 +12,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+import type { CreateIntentInput } from "@vex-agent/db/repos/approval-intents.js";
 
 interface QueryCall {
   sql: string;
@@ -76,7 +77,7 @@ const SESSION_ID = "00000000-0000-4000-8000-00000000bbbb";
 const MISSION_RUN_ID = "run-abc-123";
 const TOOL_CALL_ID = "call_xyz";
 
-function makeCreateInput(): intents.CreateIntentInput {
+function makeCreateInput(): CreateIntentInput {
   return {
     approvalId: APPROVAL_ID,
     sessionId: SESSION_ID,

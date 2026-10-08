@@ -109,6 +109,48 @@ describe("native Lighter order fees", () => {
     expect(failure).toBe(offline);
   });
 
+  it("consumes an execute-time snapshot instead of reading, and gives the same fee", async () => {
+    vi.spyOn(policyModule, "getLighterFeePolicy").mockReturnValue(policy);
+    const resolver = vi.fn(async () => ({ accountIndex: 42, token: "test-read-auth" }));
+    configureLighterReadOnlyAccountAuthResolver(resolver);
+    const provider = client();
+    const resolveAuth = vi.fn(async () => ({ accountIndex: 42, token: "snapshot-read-auth" }));
+    const snapshot = {
+      traderAccount: { code: 200, total: 1, accounts: [trader] },
+      systemConfig: vi.fn(() => provider.getSystemConfig()),
+      collectorAccount: vi.fn(async () => ({ code: 200, total: 1, accounts: [collector] })),
+      resolveAuth,
+      accountLimits: vi.fn(async () => limits),
+    };
+
+    await revalidateLighterOrderFees({ ...scope, client: provider, integratorFees: fees, snapshot });
+
+    expect(resolver).not.toHaveBeenCalled();
+    expect(resolveAuth).toHaveBeenCalledTimes(1);
+    expect(provider.getAccount).not.toHaveBeenCalled();
+    expect(provider.getAccountLimits).not.toHaveBeenCalled();
+    expect(snapshot.collectorAccount).toHaveBeenCalledTimes(1);
+    expect(snapshot.accountLimits).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a snapshot when the caller brings its own auth", async () => {
+    vi.spyOn(policyModule, "getLighterFeePolicy").mockReturnValue(policy);
+    const provider = client();
+    const snapshot = {
+      traderAccount: { code: 200, total: 1, accounts: [trader] },
+      systemConfig: vi.fn(async () => { throw new Error("snapshot must not be read"); }),
+      collectorAccount: vi.fn(async () => { throw new Error("snapshot must not be read"); }),
+      resolveAuth: vi.fn(async () => null),
+      accountLimits: vi.fn(async () => { throw new Error("snapshot must not be read"); }),
+    };
+
+    expect(await resolveLighterOrderFees({
+      ...scope, client: provider, auth: { accountIndex: 42, token: "caller-auth" }, snapshot,
+    })).toEqual(fees);
+    expect(snapshot.resolveAuth).not.toHaveBeenCalled();
+    expect(provider.getAccountLimits).toHaveBeenCalledWith("core", { accountIndex: 42 }, { accountIndex: 42, token: "caller-auth" });
+  });
+
   it("permits freshly disclosed no-fee exits but never drops an already approved fee", async () => {
     vi.spyOn(policyModule, "getLighterFeePolicy").mockReturnValue(policy);
     const provider = client({ ...trader, approved_integrators: [] });
@@ -122,12 +164,22 @@ describe("native Lighter order fees", () => {
     await expect(revalidateLighterOrderFees({ ...scope, client: client(), integratorFees: fees })).rejects.toThrow("changed after this preview");
   });
 
+  it("refuses an old 1,000-tick preview after the perp rate falls to 200 ticks", async () => {
+    vi.spyOn(policyModule, "getLighterFeePolicy").mockReturnValue(policy);
+    configureLighterReadOnlyAccountAuthResolver(async () => ({ accountIndex: 42, token: "test-read-auth" }));
+    await expect(revalidateLighterOrderFees({
+      ...scope,
+      client: client(),
+      integratorFees: { ...fees, integratorMakerFee: 1000, integratorTakerFee: 1000 },
+    })).rejects.toThrow("changed after this preview");
+  });
+
   it("strictly decodes durable fee terms and computes exact decimal estimates", () => {
     expect(readLighterOrderFeeTerms(fees)).toEqual(fees);
     expect(() => readLighterOrderFeeTerms({ ...fees, collectorOverride: 1 })).toThrow();
     expect(() => readLighterOrderFeeTerms({ ...fees, integratorMakerFee: "1000" })).toThrow();
-    expect(lighterOrderFeeCriticalArgs(fees).vexFeeSummary).toContain("0.1% maker / 0.1% taker");
-    expect(estimateLighterOrderFee("1000000000", 6, 1000)).toBe("1");
+    expect(lighterOrderFeeCriticalArgs(fees).vexFeeSummary).toContain("0.02% maker / 0.02% taker");
+    expect(estimateLighterOrderFee("1000000000", 6, 200)).toBe("0.2");
     expect(estimateLighterOrderFee("1", 18, 2500)).toBe("0.0000000000000000000025");
   });
 

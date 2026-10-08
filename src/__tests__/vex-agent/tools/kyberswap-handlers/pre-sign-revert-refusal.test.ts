@@ -40,7 +40,7 @@ const SESSION_EVM = {
 };
 
 const mockResolveSelectedAddress = vi.fn<WalletResolveModule["resolveSelectedAddress"]>(() => SESSION_EVM.address);
-const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => SESSION_EVM);
+const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(async () => SESSION_EVM);
 
 vi.mock("@vex-agent/tools/internal/wallet/resolve.js", () => ({
   resolveSelectedAddress: (...args: Parameters<WalletResolveModule["resolveSelectedAddress"]>) => mockResolveSelectedAddress(...args),
@@ -187,7 +187,7 @@ describe("kyberswap.swap.execute — pre-sign estimate revert (no prior leg)", (
   beforeEach(() => {
     vi.clearAllMocks();
     mockResolveSelectedAddress.mockReturnValue(SESSION_EVM.address);
-    mockResolveSigningWallet.mockReturnValue(SESSION_EVM);
+    mockResolveSigningWallet.mockResolvedValue(SESSION_EVM);
     mockReadErc20Metadata.mockImplementation(async (_slug: string, address: string) => ({
       address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
     }));
@@ -388,7 +388,7 @@ const FALLBACK_SENTENCE = SWAP_VENUE_PEER_NUDGE_SUFFIX.trim();
   beforeEach(() => {
     vi.clearAllMocks();
     mockResolveSelectedAddress.mockReturnValue(SESSION_EVM.address);
-    mockResolveSigningWallet.mockReturnValue(SESSION_EVM);
+    mockResolveSigningWallet.mockResolvedValue(SESSION_EVM);
     mockReadErc20Metadata.mockImplementation(async (_slug: string, address: string) => ({
       address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
     }));
@@ -495,7 +495,7 @@ describe("kyberswap.swap.execute — the genuinely-ambiguous paths are NOT colla
   beforeEach(() => {
     vi.clearAllMocks();
     mockResolveSelectedAddress.mockReturnValue(SESSION_EVM.address);
-    mockResolveSigningWallet.mockReturnValue(SESSION_EVM);
+    mockResolveSigningWallet.mockResolvedValue(SESSION_EVM);
     mockReadErc20Metadata.mockImplementation(async (_slug: string, address: string) => ({
       address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
     }));
@@ -577,7 +577,7 @@ describe("kyberswap.swap.execute — the prior-leg (DependentLegGasEstimateError
   beforeEach(() => {
     vi.clearAllMocks();
     mockResolveSelectedAddress.mockReturnValue(SESSION_EVM.address);
-    mockResolveSigningWallet.mockReturnValue(SESSION_EVM);
+    mockResolveSigningWallet.mockResolvedValue(SESSION_EVM);
     mockReadErc20Metadata.mockImplementation(async (_slug: string, address: string) => ({
       address, symbol: "TKN", name: "Token", decimals: 18, isNative: false as const,
     }));

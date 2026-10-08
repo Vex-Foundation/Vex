@@ -58,6 +58,9 @@ function finalRequestFor(
     value: BigInt(intent.payload.valueWei),
     gas: BOUNDS.gasLimit - 1n,
     nonce: 7,
+    gasPrice: undefined,
+    maxFeePerGas: BigInt(FIXTURE_FEE_BOUNDS.maxFeePerGasWei),
+    maxPriorityFeePerGas: BigInt(FIXTURE_FEE_BOUNDS.maxPriorityFeePerGasWei),
     ...overrides,
   };
 }

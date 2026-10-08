@@ -246,7 +246,7 @@ beforeEach(() => {
   // The signing seam is STUBBED, never exercised: this suite must be incapable
   // of reaching a real key, and the public client the plan reads from is the
   // fake below.
-  vi.spyOn(signingClients, "openLaunchSigningClients").mockImplementation(() => ({
+  vi.spyOn(signingClients, "openLaunchSigningClients").mockImplementation(async () => ({
     ok: true,
     clients: {
       publicClient: evmClient.getLocalPublicClient({} as never),
@@ -526,7 +526,7 @@ describe("the verifier gates BEFORE any authorization exists", () => {
     // The signing seam is STUBBED, never exercised: this suite must be incapable
   // of reaching a real key, and the public client the plan reads from is the
   // fake below.
-  vi.spyOn(signingClients, "openLaunchSigningClients").mockImplementation(() => ({
+  vi.spyOn(signingClients, "openLaunchSigningClients").mockImplementation(async () => ({
     ok: true,
     clients: {
       publicClient: evmClient.getLocalPublicClient({} as never),

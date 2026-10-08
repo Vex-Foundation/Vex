@@ -124,7 +124,7 @@ afterEach(() => {
 /** Seed one EVM wallet entry so `listWallets("evm")` is non-empty (the lane's own gate). */
 async function seedWallet(): Promise<void> {
   const { createEvmWalletEntry } = await import("@tools/wallet/inventory-create.js");
-  createEvmWalletEntry();
+  await createEvmWalletEntry();
 }
 
 async function resetAgentscanTables(): Promise<void> {

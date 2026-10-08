@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { requireValue } from "../../helpers/require-value.js";
 
 // Capture `logger.warn` so we can assert the missing-VEX_DB_URL warning never
 // carries credential material. The mock is hoisted by vitest before the client
@@ -96,7 +97,7 @@ describe("withTransaction", () => {
     await expect(
       withTransaction(async (client) => {
         await client.query("BEGIN-ish");
-        client.query.mockRejectedValueOnce(new Error("rollback failed"));
+        requireValue(currentClient).query.mockRejectedValueOnce(new Error("rollback failed"));
         throw new Error("original failure");
       }),
     ).rejects.toThrow("original failure");

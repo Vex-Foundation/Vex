@@ -27,6 +27,10 @@ import {
 } from "@vex-agent/tools/protocols/lighter/order-lifecycle.js";
 import { configureLighterRepairPrivilegedAccountAuthResolver } from "@vex-agent/tools/protocols/lighter/order-repair.js";
 import { configureLighterReadOnlyAccountAuthOutcomeResolver } from "@vex-agent/tools/protocols/lighter/read-account-auth.js";
+import {
+  invalidateLighterReadAuthCache,
+  onLighterReadAuthCacheInvalidated,
+} from "@vex-agent/tools/protocols/lighter/read-auth-cache.js";
 import { configureLighterTradingCredentialScopeResolver } from "@vex-agent/tools/protocols/lighter/trading-credential-scope.js";
 import { configureLighterManagedTradingReadinessResolver } from "@vex-agent/tools/protocols/lighter/managed-trading-readiness.js";
 import {
@@ -40,9 +44,14 @@ import {
   createUnlockedVaultLighterTradingSecretReader,
   listUnlockedLighterTradingCredentialScopes,
 } from "../secrets/lighter-trading-credential.js";
-import { isSecretSessionUnlocked } from "../secrets/session.js";
+import { isSecretSessionUnlocked, onSecretSessionLifecycle } from "../secrets/session.js";
 import { resolveManagedLighterTradingReadiness } from "./managed-trading-readiness.js";
 import { installLighterOrderStreamSupervisor } from "./order-stream.js";
+import { readLighterPublicMarketBookDepth, readLighterPublicMarketBookSnapshot } from "./public-market-stream.js";
+import {
+  clearLighterDeskPrewarm,
+  configureLighterDeskPrewarmBookDepth,
+} from "@vex-agent/tools/protocols/lighter/desk-prewarm.js";
 import {
   configureLighterCoreWithdrawalExecutionDeps,
   defaultLighterCoreWithdrawalExecutionDeps,
@@ -98,12 +107,29 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
   const withdrawalSigner = createLighterWithdrawalSignerBinary({ allowBinaryPathOverride: !app.isPackaged });
   const lifecycleSigner = createLighterOrderLifecycleSignerBinary({ allowBinaryPathOverride: !app.isPackaged });
   const lighterClient = getLighterClient();
+  // A vault lock or unlock drops every cached READ-ONLY order-path token
+  // (LIGHTER_READ_AUTH_CACHE), exactly as it revokes the authenticated streams.
+  const offReadAuthCacheLifecycle = onSecretSessionLifecycle(() => {
+    invalidateLighterReadAuthCache();
+    // LIGHTER_DESK_PREWARM keeps no secret, but a lock or unlock is where the
+    // account it described may change hands, so it starts empty again.
+    clearLighterDeskPrewarm();
+  });
+  // Consulted only while LIGHTER_DESK_PREWARM is ON, for desk previews.
+  const uninstallDeskPrewarmBookDepth = configureLighterDeskPrewarmBookDepth(readLighterPublicMarketBookDepth);
+  // Every Lighter credential save or removal invalidates the read-auth cache;
+  // the desk pre-warm (ownership included) starts empty again with it.
+  const offDeskPrewarmCredentialChange = onLighterReadAuthCacheInvalidated(clearLighterDeskPrewarm);
   const uninstallExecutionDeps = configureLighterCreateOrderExecutionDeps(
-    defaultLighterCreateOrderExecutionDeps({
-      secretReader,
-      signer,
-      client: lighterClient,
-    }),
+    {
+      ...defaultLighterCreateOrderExecutionDeps({
+        secretReader,
+        signer,
+        client: lighterClient,
+      }),
+      // Consulted only while LIGHTER_STREAM_REVALIDATION is ON.
+      streamOrderBook: readLighterPublicMarketBookSnapshot,
+    },
   );
   const uninstallOcoExecutionDeps = configureLighterOcoExecutionDeps(
     defaultLighterOcoExecutionDeps({
@@ -198,7 +224,7 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
           detail: "Vex is locked, so the saved Lighter trading credential cannot be read.",
         };
       }
-      const unlockedScopes = listUnlockedLighterTradingCredentialScopes(environment);
+      const unlockedScopes = await listUnlockedLighterTradingCredentialScopes(environment);
       const scope = unlockedScopes.find((candidate) => candidate.accountIndex === accountIndex);
       if (scope === undefined) {
         log.warn("[lighter] read-only auth resolver: no matching unlocked scope", {
@@ -234,11 +260,11 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
     },
   );
   const uninstallScopeResolver = configureLighterTradingCredentialScopeResolver({
-    findSavedScope: (environment, accountIndex) =>
-      listUnlockedLighterTradingCredentialScopes(environment)
+    findSavedScope: async (environment, accountIndex) =>
+      (await listUnlockedLighterTradingCredentialScopes(environment))
         .find((scope) => scope.accountIndex === accountIndex) ?? null,
-    findDefaultScope: (environment) =>
-      listUnlockedLighterTradingCredentialScopes(environment)[0] ?? null,
+    findDefaultScope: async (environment) =>
+      (await listUnlockedLighterTradingCredentialScopes(environment))[0] ?? null,
     // Expose the full list so preview resolution refuses to guess when more than
     // one account is configured, instead of silently picking the lowest index.
     listScopes: (environment) => listUnlockedLighterTradingCredentialScopes(environment),
@@ -257,5 +283,10 @@ export function installLighterOrderCreateExecutionDeps(): () => void {
     uninstallLifecycleExecutionDeps();
     uninstallOcoExecutionDeps();
     uninstallExecutionDeps();
+    offReadAuthCacheLifecycle();
+    invalidateLighterReadAuthCache();
+    uninstallDeskPrewarmBookDepth();
+    offDeskPrewarmCredentialChange();
+    clearLighterDeskPrewarm();
   };
 }

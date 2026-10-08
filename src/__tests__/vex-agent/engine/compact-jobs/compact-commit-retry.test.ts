@@ -74,6 +74,11 @@ vi.mock("@vex-agent/db/client.js", () => ({
   execute: vi.fn(),
   query: vi.fn().mockResolvedValue([]),
   queryOne: vi.fn().mockResolvedValue(null),
+  // The raised long-statement cap is a SET LOCAL on the same client; recorded
+  // so the statement order stays observable.
+  setLocalLongStatementTimeout: vi.fn(async (client: { query: (sql: string) => Promise<unknown> }) => {
+    await client.query("SET LOCAL statement_timeout = 300000");
+  }),
 }));
 
 vi.mock("@vex-agent/db/repos/messages.js", () => ({

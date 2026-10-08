@@ -15,7 +15,8 @@
  *      — a `["paused_error", "paused_wake"]` caller might be flipping
  *      from `paused_error`, in which case the wake row belongs to a
  *      different scheduling cycle and must be left alone (codex v4
- *      acceptance criterion #1).
+ *      acceptance criterion #1). A caller that passes `consumeWakeId`
+ *      (the wake executor) has that one row marked `consumed` instead.
  *   7. INSERT/UPSERT runner_leases via the same primitive as
  *      `acquireLease` but inside this transaction.
  *
@@ -35,6 +36,8 @@ import {
   type MissionRunRow,
   type RunnerLeaseRow,
   mapLease,
+  LOCK_LEASE_COLUMNS,
+  lockedLeaseBlocks,
 } from "./_row-shapes.js";
 
 export async function claimRunLeaseAndFlipToRunning(
@@ -83,8 +86,7 @@ export async function claimRunLeaseAndFlipToRunningWith(
     // 2. Lock + validate the lease row (if present).
     const existingLease = await queryOneWith<RunnerLeaseRow>(
       client,
-      `SELECT session_id, mission_run_id, owner_id, process_kind,
-              acquired_at, heartbeat_at, expires_at
+      `SELECT ${LOCK_LEASE_COLUMNS}
          FROM runner_leases
         WHERE session_id = $1
         FOR UPDATE`,
@@ -92,8 +94,7 @@ export async function claimRunLeaseAndFlipToRunningWith(
     );
     if (
       existingLease !== null
-      && existingLease.expires_at >= new Date()
-      && existingLease.owner_id !== input.ownerId
+    && lockedLeaseBlocks(existingLease, input.ownerId, input.claimToken)
     ) {
       return { outcome: "lease_busy", currentLease: mapLease(existingLease) };
     }
@@ -112,6 +113,26 @@ export async function claimRunLeaseAndFlipToRunningWith(
     //    not on the static `fromStatuses` (codex acceptance criterion).
     let wakeCancelledCount = 0;
     if (previousStatus === "paused_wake") {
+      if (input.consumeWakeId !== undefined) {
+        // The wake that caused this resume is consumed, not cancelled: it is
+        // the one row that did its job, and `consumed` must keep meaning "a
+        // runner started from this row". The caller locked it, so zero rows
+        // here means an invariant broke; refuse rather than claim without it.
+        const consumed = await executeWith(
+          client,
+          `UPDATE loop_wake_requests
+              SET status = 'consumed', consumed_at = NOW()
+            WHERE id = $1
+              AND session_id = $2
+              AND status = 'pending'`,
+          [input.consumeWakeId, input.sessionId],
+        );
+        if (consumed !== 1) {
+          throw new Error(
+            "claimRunLeaseAndFlipToRunning: the causing wake row was not pending",
+          );
+        }
+      }
       wakeCancelledCount = await executeWith(
         client,
         `UPDATE loop_wake_requests
@@ -132,6 +153,7 @@ export async function claimRunLeaseAndFlipToRunningWith(
         ownerId: input.ownerId,
         processKind: input.processKind,
         ttlMs: input.ttlMs,
+        claimToken: input.claimToken,
       },
       client,
     );

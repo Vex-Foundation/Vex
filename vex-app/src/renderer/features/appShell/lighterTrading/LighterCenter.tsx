@@ -430,6 +430,7 @@ function DeskBody({ desk, theme }: {
           closeConfirmSkipped={desk.skipCloseConfirm}
           closingPositions={desk.closingPositions}
           cancellingOrders={desk.cancellingOrders}
+          cancelAllPending={desk.cancelAllPending}
           actions={desk.accountActions}
         />
       </div>

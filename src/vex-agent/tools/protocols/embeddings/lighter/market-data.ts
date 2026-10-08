@@ -271,9 +271,9 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   },
   "lighter.position.close.prepare": {
     embeddingText: embeddingText(
-      `Prepare an approval-gated close of the entire current position in one Lighter perpetual market. ` +
-      `Use when: the user explicitly asks to close a specific long or short and supplies a maximum slippage ceiling. Vex reads the exact live position, market precision, and visible book depth, then binds a full-size reduce-only market IOC order at a worst acceptable price. ` +
-      `Preparation never reads private-key bytes, reserves a nonce, signs, or submits. Example queries: close my Lighter ETH position with 100 bps max slippage, prepare my full RHC position close.`,
+      `Prepare an approval-gated close of 25, 50, 75, or 100 percent of the exact current position in one Lighter perpetual market. ` +
+      `Use when: the user explicitly asks to close a specific long or short and supplies a maximum slippage ceiling. Vex reads the exact live position, market precision, and visible book depth, then binds the unchanged position and exact reduce-only market IOC amount at a worst acceptable price. Partial amounts are floored and must meet live minimums. ` +
+      `Preparation never reads private-key bytes, reserves a nonce, signs, or submits. Example queries: close 75 percent of my Lighter ETH position with 100 bps max slippage, prepare my full RHC position close.`,
     ),
     aliases: ["prepare lighter position close", "close lighter long", "close lighter short"],
     exampleIntents: ["close my Lighter ETH position with 100 bps max slippage"],
@@ -284,7 +284,7 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
   "lighter.position.close": {
     embeddingText: embeddingText(
       `Execute one exact prepared Lighter position close after approval. ` +
-      `Use when: the trusted approval card from lighter.position.close.prepare resumes. The privileged runtime revalidates position and depth, submits one full-size reduce-only market IOC order, never retries ambiguity, and reports exact fill, average fill price, and resulting position. ` +
+      `Use when: the trusted approval card from lighter.position.close.prepare resumes. The privileged runtime revalidates the unchanged position, exact amount, partial-order minimums and depth, submits one reduce-only market IOC order, never retries ambiguity, and reports exact fill, average fill price, and resulting position. ` +
       `Direct model calls without the matching approval are refused. Example queries: execute the approved Lighter position close, resume my approved full close.`,
     ),
     aliases: ["execute lighter close", "approved position close"],

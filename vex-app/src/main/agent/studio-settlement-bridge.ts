@@ -201,7 +201,9 @@ export function setupStudioSettlementBridge(): () => void {
 }
 
 /**
- * The barrier main awaits before it opens a window. `null` means setup has not
+ * The barrier main awaits (bounded) before it starts the Studio MCP host, and
+ * the execution gate awaits (unbounded) before it admits execution requests.
+ * The window no longer waits for it. `null` means setup has not
  * run, which in main only happens in tests; those callers get an immediately
  * resolved promise and a Studio that is still unready, which is the safe
  * answer.
@@ -212,12 +214,12 @@ let readyBarrier: Promise<void> | null = null;
  * Wait for the barrier, BOUNDED.
  *
  * The bound is not a shortcut around the safety property: it is main's own
- * deadline for opening a window. If the barrier is still running when it
- * elapses, boot continues and Studio stays UNREADY, which the registered
- * preflight enforces durably on every dispatch and `runStudioCall` enforces on
- * every enqueue. The barrier keeps running and opens Studio when it finishes.
- * Without the bound, a database that is slow to answer would hold the whole
- * application at a blank screen.
+ * deadline for starting the Studio MCP host. If the barrier is still running
+ * when it elapses, boot continues and Studio stays UNREADY, which the
+ * registered preflight enforces durably on every dispatch and `runStudioCall`
+ * enforces on every enqueue. The barrier keeps running and opens Studio when
+ * it finishes. The window never waits for this: it opens at once, and the
+ * execution gate (`whenStudioRuntimeSettled`) holds execution instead.
  */
 export async function awaitStudioRuntimeReady(
   timeoutMs = STUDIO_BARRIER_TIMEOUT_MS,
@@ -242,6 +244,21 @@ export async function awaitStudioRuntimeReady(
 }
 
 const STUDIO_BARRIER_TIMEOUT_MS = 15_000;
+
+/**
+ * Wait for the barrier to SETTLE, UNBOUNDED: the reconciler finished and Studio
+ * is ready, or the initialization gave up and left Studio closed through the
+ * preflight. Never rejects (`initializeStudioRuntime` catches everything).
+ *
+ * This is what the main-process EXECUTION GATE waits for
+ * (`lifecycle/execution-gate.ts`), and it is unbounded on purpose: the window
+ * no longer waits for the barrier, so the property "no dispatch starts while
+ * the abandoned-dispatch scan runs" is carried by the gate refusing the
+ * approvals IPC until this resolves, not by the renderer not existing yet.
+ */
+export function whenStudioRuntimeSettled(): Promise<void> {
+  return readyBarrier ?? Promise.resolve();
+}
 
 /**
  * Register the fence, WAIT FOR THE DATABASE, reconcile, then open Studio. The
@@ -290,7 +307,7 @@ async function initializeStudioRuntime(
  *
  * UNBOUNDED on purpose, and cancellable: giving up here would decide, for the
  * user, that a slow database is a dead one. The boot deadline lives in
- * `awaitStudioRuntimeReady`, which opens the window without opening the fence.
+ * `awaitStudioRuntimeReady`, which starts the MCP host without opening the fence.
  */
 async function awaitEngineDbThenComplete(
   epoch: number,

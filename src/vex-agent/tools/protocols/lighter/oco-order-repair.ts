@@ -222,6 +222,15 @@ export async function repairUnresolvedLighterOco(
 
 const LIGHTER_OCO_BACKGROUND_REPAIR_LIMIT = 5;
 
+/** Retire expired approved OCO consent before reservation; false keeps the prior sweep. */
+export const LIGHTER_OCO_RETIRE_EXPIRED_APPROVED_BEFORE_RESERVATION = true;
+
+export interface LighterOcoRepairSweepDeps {
+  readonly retireIntents: typeof intentsRepo.retireExpiredApprovedBeforeReservation;
+  /** Overrides `LIGHTER_OCO_RETIRE_EXPIRED_APPROVED_BEFORE_RESERVATION`. */
+  readonly retireApprovedBeforeReservation?: boolean;
+}
+
 export interface LighterOcoRepairSweepReport {
   readonly examined: number;
   readonly advanced: number;
@@ -244,19 +253,31 @@ const LIGHTER_OCO_ADVANCE_RESOLUTIONS: ReadonlySet<LighterOcoRepairReport["resol
  * and lifecycle background sweeps. It frees only what provable, expiry-gated
  * facts allow and never signs, submits, or retries; a stuck OCO reservation no
  * one is actively retrying is released here instead of blocking the account.
+ * Expired approvals without a reservation get their own bounded batch, so
+ * their cleanup cannot starve reconciliation of an existing nonce owner.
  */
 export async function repairUnresolvedLighterOcoInBackground(
   input: { readonly environment?: LighterEnvironment; readonly limit?: number } = {},
+  overrides: Partial<LighterOcoRepairSweepDeps> = {},
 ): Promise<LighterOcoRepairSweepReport> {
   const limit = Math.max(
     1,
     Math.min(input.limit ?? LIGHTER_OCO_BACKGROUND_REPAIR_LIMIT, LIGHTER_OCO_BACKGROUND_REPAIR_LIMIT),
   );
+  const deps = { retireIntents: intentsRepo.retireExpiredApprovedBeforeReservation, ...overrides };
+  let retired = 0;
+  let errors = 0;
+  if (deps.retireApprovedBeforeReservation ?? LIGHTER_OCO_RETIRE_EXPIRED_APPROVED_BEFORE_RESERVATION) {
+    try {
+      retired = (await deps.retireIntents({ environment: input.environment, limit })).length;
+    } catch {
+      errors += 1;
+    }
+  }
   const rows = await intentsRepo.listUnresolved(input.environment, limit);
-  let advanced = 0;
+  let advanced = retired;
   let awaiting = 0;
   let degraded = 0;
-  let errors = 0;
   for (const row of rows) {
     try {
       const report = await repairLighterOcoIntent(row);
@@ -267,7 +288,7 @@ export async function repairUnresolvedLighterOcoInBackground(
       errors += 1;
     }
   }
-  return { examined: rows.length, advanced, awaiting, degraded, errors };
+  return { examined: rows.length + retired, advanced, awaiting, degraded, errors };
 }
 
 async function refreshConsumedNonce(intent: LighterOcoExecutionIntentRow, nextNonce: number): Promise<boolean> {

@@ -11,6 +11,7 @@ const BASE: InferenceResponse = {
   finishReason: "stop",
   generationId: "gen-1",
   servingProvider: "provider-a",
+  malformedToolCallCount: 0,
 };
 
 describe("actionable inference response predicate", () => {
@@ -28,9 +29,9 @@ describe("actionable inference response predicate", () => {
   it("rejects empty, whitespace-only, and reasoning-only completions", () => {
     expect(hasActionableInferenceResponse(BASE)).toBe(false);
     expect(hasActionableInferenceResponse({ ...BASE, content: " \n\t" })).toBe(false);
-    expect(
-      hasActionableInferenceResponse({ ...BASE, reasoning: "private reasoning" }),
-    ).toBe(false);
+    // A reasoning-only completion carries extra fields the predicate ignores.
+    const reasoningOnly = { ...BASE, reasoning: "private reasoning" };
+    expect(hasActionableInferenceResponse(reasoningOnly)).toBe(false);
   });
 
   it("reads the turn loop's round shape, not only a provider response", () => {

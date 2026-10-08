@@ -120,7 +120,7 @@ const CHAINS = [
 
 const PARAMS = { fromChain: "base", fromToken: "native", toChain: "robinhood", toToken: ERC20, amountRaw: "1714000000000000" };
 
-function executeRelay(params = PARAMS, context: ProtocolExecutionContext = CTX) {
+function executeRelay(params: Record<string, unknown> = PARAMS, context: ProtocolExecutionContext = CTX) {
   const handler = RELAY_BRIDGE_HANDLERS["relay.bridge"];
   if (!handler) throw new Error("relay.bridge handler missing");
   return handler(params, context);

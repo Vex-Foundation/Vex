@@ -26,6 +26,7 @@ import {
   type HyperliquidMissionRiskTransport,
   type MissionDeployedCapital,
 } from "@shared/schemas/mission.js";
+import { reasoningEffortSchema } from "@shared/schemas/reasoning.js";
 import { SOLANA_CHAIN_ID } from "@shared/chains/display.js";
 import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
 import { formatExecutedAmountHuman } from "./agent-activity-amount.js";
@@ -184,6 +185,11 @@ export function normaliseConstraints(raw: unknown): MissionConstraints {
     rec["maxLaunchCount"] >= 0
   ) {
     projection.maxLaunchCount = rec["maxLaunchCount"];
+  }
+  // E-1 reasoning effort: only a known effort projects; anything else is
+  // omitted and the card shows the medium default the run would use.
+  if (reasoningEffortSchema.safeParse(rec["reasoningEffort"]).success) {
+    projection.reasoningEffort = reasoningEffortSchema.parse(rec["reasoningEffort"]);
   }
   // Phase 4d-5 — host-only auto-retry opt-in. Boolean-only; absent/wrong
   // type leaves the key off the DTO (the renderer treats absence as off).

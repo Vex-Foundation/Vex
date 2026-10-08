@@ -76,7 +76,7 @@ function deps(
   overrides: Partial<LighterManagedTradingReadinessDeps> = {},
 ): LighterManagedTradingReadinessDeps {
   return {
-    listManagedScopes: () => [{ environment: "core", accountIndex: 42, apiKeyIndex: 4 }],
+    listManagedScopes: async () => [{ environment: "core", accountIndex: 42, apiKeyIndex: 4 }],
     findRegistrationIntent: vi.fn(async () => activeIntent()),
     secretReader: {
       readTradingApiPrivateKey: vi.fn(async () => PRIVATE_KEY),
@@ -123,7 +123,7 @@ describe("managed Lighter trading readiness", () => {
 
   it("proves Robinhood Chain readiness through the exact RHC key and nonce scope", async () => {
     const setup = deps({
-      listManagedScopes: vi.fn((_environment: "core" | "rhc") => [{
+      listManagedScopes: vi.fn(async (_environment: "core" | "rhc") => [{
         environment: "rhc" as const,
         accountIndex: 42,
         apiKeyIndex: 4,
@@ -156,7 +156,7 @@ describe("managed Lighter trading readiness", () => {
 
   it("rejects a legacy RHC scope at provider-reserved index 157 before verification or vault access", async () => {
     const setup = deps({
-      listManagedScopes: vi.fn(() => [{
+      listManagedScopes: vi.fn(async () => [{
         environment: "rhc" as const,
         accountIndex: 42,
         apiKeyIndex: 157,
@@ -179,7 +179,7 @@ describe("managed Lighter trading readiness", () => {
   });
 
   it("does not accept an imported or pending credential as managed readiness", async () => {
-    const setup = deps({ listManagedScopes: () => [] });
+    const setup = deps({ listManagedScopes: async () => [] });
 
     const result = await resolveManagedLighterTradingReadiness("core", 42, setup);
 
@@ -261,7 +261,7 @@ describe("managed Lighter trading readiness", () => {
 
   it("retires a consumed local reservation from exact live nonce evidence", async () => {
     const setup = deps({
-      listManagedScopes: vi.fn(() => [{
+      listManagedScopes: vi.fn(async () => [{
         environment: "rhc" as const,
         accountIndex: 42,
         apiKeyIndex: 4,

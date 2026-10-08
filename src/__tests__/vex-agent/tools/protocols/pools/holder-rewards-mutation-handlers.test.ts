@@ -322,7 +322,7 @@ beforeEach(() => {
   vi.spyOn(evmClient, "getLocalPublicClient").mockReturnValue(
     publicClientDouble({ estimateGas: async () => 180_000n }, POOLS_CHAIN_ID),
   );
-  vi.spyOn(signingClients, "openLaunchSigningClients").mockImplementation(() => {
+  vi.spyOn(signingClients, "openLaunchSigningClients").mockImplementation(async () => {
     signerOpened += 1;
     return {
       ok: true,

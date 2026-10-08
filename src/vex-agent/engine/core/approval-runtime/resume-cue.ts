@@ -18,8 +18,8 @@
  *
  * The wording is chosen from the DURABLE outcome read under the same row lock
  * (`selectResumeCue`): a proven `approved` + `succeeded` pair says the
- * transaction executed and points at verification; everything else — including
- * `indeterminate` — keeps the neutral cue that claims nothing.
+ * transaction executed and must not be repeated; everything else, including
+ * `indeterminate`, keeps the neutral cue that claims nothing.
  *
  * This also removes the orphan the chat path used to accept. An attempt that
  * loses the race no longer needs to be ordered behind the winner — it simply

@@ -23,6 +23,7 @@
  */
 
 import { CH } from "@shared/ipc/channels.js";
+import { clearLighterDeskPrewarm } from "@vex-agent/tools/protocols/lighter/desk-prewarm.js";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import {
   availableWalletsDtoSchema,
@@ -134,6 +135,8 @@ function registerSetScopeHandler(): () => void {
       // allowed_wallets recompute, atomically (sessions-db).
       const outcome = await initializeSessionWalletScope(input.sessionId, evm, solana);
       if (!outcome.ok) return outcome;
+      // A wallet change starts the Lighter desk pre-warm (ownership included) empty.
+      if (outcome.data.status === "updated") clearLighterDeskPrewarm();
       log.info(
         `[ipc:vex:wallets:setSessionWalletScope] ${outcome.data.status} ` +
           `sessionId=${input.sessionId} correlationId=${ctx.requestId}`,

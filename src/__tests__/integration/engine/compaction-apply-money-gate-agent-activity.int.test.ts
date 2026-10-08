@@ -25,10 +25,9 @@
  *     - `confirmActivityEvent`, `failActivityEvent`, `abortPlannedEvents`
  *     - `confirmBridgeExpectedFill`
  *
- * `recoverStaleHashlessIntents` is deliberately NOT a participant — a global,
- * removal-only sweep with no session to key on. Its module header carries the
- * reasoning, and the LAST case here pins the consequence so the exclusion stays
- * a decision rather than an oversight.
+ * `recoverStaleHashlessIntents` discovers candidates globally, then serializes
+ * each terminal write on the candidate's session control lock through the
+ * linked-row settlement coordinator. The last case pins that participation.
  *
  * The first case is the NON-PARTICIPATING BASELINE, proving this file's harness
  * detects a writer that skips the lock.
@@ -362,14 +361,11 @@ describe("agent-activity money-state writers participate in the session control 
     expect(outcome.gateKinds).toEqual([]);
   });
 
-  // ── the deliberate non-participant ──────────────────────────────────
+  // ── global recovery, session-scoped terminal writes ──────────────────
 
-  it("recoverStaleHashlessIntents does NOT serialize — a documented, removal-only exclusion", async () => {
-    // PINS the exclusion. This global sweep has no session to key on, and it
-    // only ever REMOVES rows from the gate's set, so it cannot make the gate
-    // wrongly answer `clear`. If it ever gains a transition INTO `pending`,
-    // this test must be replaced by a participating one — see the module
-    // header of `db/repos/agent-activity/hashless-recovery.ts`.
+  it("recoverStaleHashlessIntents blocks until the gate transaction commits", async () => {
+    // Discovery is global, but each candidate has a session for its atomic
+    // terminal write, including settlement of any linked wallet intent.
     const { executionId, eventId } = await seedPendingSwap(sessionId);
     await settleExecutionRow(executionId);
     await execute(
@@ -377,16 +373,18 @@ describe("agent-activity money-state writers participate in the session control 
       [eventId],
     );
 
-    const outcome = await raceGateAgainstWriter(sessionId, () =>
-      agentActivityRepo.recoverStaleHashlessIntents(60_000, 10),
-    );
+    const outcome = await raceGateAgainstWriter(sessionId, async () => {
+      const recovered = await agentActivityRepo.recoverStaleHashlessIntents(60_000, 10);
+      expect(recovered.map((row) => row.id)).toEqual([eventId]);
+    });
 
-    expect(outcome.writerBlockedUntilCommit).toBe(false);
-    // Unblocked, it finalizes INSIDE the gate's window, so the gate no longer
-    // sees the pending row. That is the benign direction and the whole reason
-    // this writer may stay out: removing money state can only make a cutover
-    // proceed that would otherwise have deferred — never the reverse.
-    expect(outcome.gateKinds).toEqual([]);
+    expect(outcome.writerBlockedUntilCommit).toBe(true);
+    // The pending row stays visible throughout the gate's transaction.
+    expect(outcome.gateKinds).toEqual(["agent_activity_pending"]);
     expect(await statusOfEvent(eventId)).toBe("definitively_failed");
+    const after = await withSessionControlLock(sessionId, (client) =>
+      getUnresolvedMoneyStateForSession(client, sessionId),
+    );
+    expect(after).toEqual({ clear: true });
   });
 });

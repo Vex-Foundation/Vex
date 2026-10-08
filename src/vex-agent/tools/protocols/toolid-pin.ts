@@ -84,6 +84,42 @@ function resolvePinnedManifest(
 }
 
 /**
+ * The ONE manifest a name-shaped query names EXACTLY, or `null`.
+ *
+ * Exact only: the query equals a candidate's `toolId` or its `publicName`
+ * (case-insensitive, trimmed). A prefix is never enough here, and neither is
+ * a name that matches more than one distinct candidate - both stay on the
+ * normal ranked path, where {@link pinExactToolIdMatch} still applies its own
+ * rules after retrieval.
+ *
+ * Discovery calls this BEFORE dense scoring, on the SAME filtered candidate
+ * set (namespace, advertised, lifecycle and env gates already applied), so a
+ * hit resolves locally with no embedding round trip. A manifest the filters
+ * excluded can never be returned: it is not in `candidates`.
+ */
+export function resolveUniqueExactNameMatch(
+  query: string,
+  candidates: readonly ProtocolToolManifest[],
+): ScoredManifest | null {
+  const nameQuery = asNameQuery(query);
+  if (!nameQuery) return null;
+
+  const matches = new Map<string, PinnedMatch>();
+  for (const manifest of candidates) {
+    if (manifest.toolId.toLowerCase() === nameQuery) {
+      matches.set(manifest.toolId, { manifest, identity: "toolId" });
+    } else if (manifest.publicName.toLowerCase() === nameQuery) {
+      matches.set(manifest.toolId, { manifest, identity: "publicName" });
+    }
+  }
+  if (matches.size !== 1) return null;
+
+  const [only] = matches.values();
+  if (only === undefined) return null;
+  return { manifest: only.manifest, score: PINNED_SCORE, whyMatched: [only.identity] };
+}
+
+/**
  * Move the manifest named by a name-shaped query to rank 0, with `whyMatched`
  * naming the identity that actually matched (`toolId` or `publicName`). The
  * relative order of every other row is preserved. Returns `scored` unchanged

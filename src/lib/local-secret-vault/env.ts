@@ -1,14 +1,15 @@
 import { ENV_FILE } from "../../config/paths.js";
 import { removeFromDotenvFile } from "../../utils/dotenv.js";
 import { MANAGED_SECRET_ENV_KEYS, VAULT_SECRET_KEYS } from "../secret-keys.js";
-import type { LocalSecretVaultContents, LocalSecretVaultOptions } from "./status.js";
+import type { LocalSecretVaultContents } from "./status.js";
+import type { LocalSecretVaultCacheOptions } from "./derived-key-cache.js";
 import { unlockSecretVault } from "./lifecycle.js";
 
-export function applySecretVaultToProcessEnv(
+export async function applySecretVaultToProcessEnv(
   password: string,
-  options: LocalSecretVaultOptions = {},
-): LocalSecretVaultContents {
-  const contents = unlockSecretVault(password, options);
+  options: LocalSecretVaultCacheOptions = {},
+): Promise<LocalSecretVaultContents> {
+  const contents = await unlockSecretVault(password, options);
   for (const key of VAULT_SECRET_KEYS) {
     const value = contents.secrets[key];
     if (value) process.env[key] = value;

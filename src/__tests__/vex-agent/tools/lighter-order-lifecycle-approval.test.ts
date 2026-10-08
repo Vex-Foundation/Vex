@@ -420,6 +420,21 @@ describe("Lighter close-position approval binding", () => {
     })).rejects.toThrow("approval does not match the exact live position");
   });
 
+  it("binds an exact partial amount separately from the unchanged full position", async () => {
+    const partialIntent = { ...closeIntent, requestedBaseAmountInteger: "7500",
+      providerSnapshotJson: { ...closeIntent.providerSnapshotJson, baseAmount: "0.75" } };
+    const partialCritical = { ...closeCritical, baseAmount: "0.75", baseAmountInteger: "7500",
+      summary: "Close 0.75 ETH from the 1 ETH long position." };
+    useCloseApproval(partialCritical);
+    await expect(assertLighterClosePositionApprovalBinding({
+      approvalId: "approval-1", sessionId: "session-1", intent: partialIntent,
+    })).resolves.toBeUndefined();
+    useCloseApproval({ ...partialCritical, baseAmountInteger: "10000" });
+    await expect(assertLighterClosePositionApprovalBinding({
+      approvalId: "approval-1", sessionId: "session-1", intent: partialIntent,
+    })).rejects.toThrow("approval does not match the exact live position");
+  });
+
   it("still refuses a full-access close call for an intent nothing prepared", async () => {
     const result = await requireValue(LIGHTER_ORDER_LIFECYCLE_HANDLERS["lighter.position.close"])(
       { intentId },

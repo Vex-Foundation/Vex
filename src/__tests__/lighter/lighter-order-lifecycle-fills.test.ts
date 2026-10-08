@@ -38,6 +38,7 @@ import { testPoolClient } from "../helpers/pool-client.js";
 
 const NOW = Date.parse("2030-01-01T00:00:00.000Z");
 const ACCOUNT_INDEX = 42;
+const WALLET_ADDRESS = `0x${"a".repeat(40)}`;
 const MATCH_HASH = "d".repeat(64);
 const CLIENT_ORDER_INDEX = deriveVexAssignedClientOrderIndex(MATCH_HASH);
 const PUBLIC_KEY = "b".repeat(80);
@@ -265,6 +266,8 @@ function closeDeps(input: {
           total: 1,
           accounts: [{
             index: ACCOUNT_INDEX,
+            l1_address: WALLET_ADDRESS,
+            account_type: 0,
             positions: [accountReads === 1 ? LONG_POSITION : { ...LONG_POSITION, position: "0.0000", sign: 0 }],
           }],
         };
@@ -316,6 +319,7 @@ function closeDeps(input: {
       markSendAttemptStarted: vi.fn<Intents["markSendAttemptStarted"]>(async () => true),
       markExpiredUnsubmitted: vi.fn<Intents["markExpiredUnsubmitted"]>(async () => true),
       markUnsubmittedRefused: vi.fn<Intents["markUnsubmittedRefused"]>(async () => true),
+      abandonRevalidatedBeforeNonce: vi.fn<Intents["abandonRevalidatedBeforeNonce"]>(async () => null),
       markPreSubmitRevalidated: vi.fn<Intents["markPreSubmitRevalidated"]>(async () => staged),
       attachNonceReservationWith: vi.fn<Intents["attachNonceReservationWith"]>(async () => staged),
       markSigned: vi.fn<Intents["markSigned"]>(async () => staged),
@@ -355,6 +359,8 @@ describe("close position: the confirmed close reaches the fill ledger", () => {
     const result = await executeApprovedLighterClosePosition(
       intent,
       closeDeps({ fills: fillDeps(recordFill), getAccountTrades }),
+      undefined,
+      { kind: "wallet", address: WALLET_ADDRESS },
     );
 
     expect(result.status).toBe("closed");
@@ -378,9 +384,27 @@ describe("close position: the confirmed close reaches the fill ledger", () => {
     const result = await executeApprovedLighterClosePosition(
       closeIntent(),
       closeDeps({ fills: fillDeps(recordFill), getAccountTrades }),
+      undefined,
+      { kind: "wallet", address: WALLET_ADDRESS },
     );
 
     expect(result.status).toBe("closed");
     expect(recordFill).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses another wallet before signing or recording a close fill", async () => {
+    const { recordFill } = ledger();
+    const getAccountTrades = vi.fn<Client["getAccountTrades"]>(
+      async () => ({ code: 200, trades: [CLOSE_TRADE] }),
+    );
+    const deps = closeDeps({ fills: fillDeps(recordFill), getAccountTrades });
+    await expect(executeApprovedLighterClosePosition(
+      closeIntent(), deps, undefined,
+      { kind: "wallet", address: `0x${"c".repeat(40)}` },
+    )).rejects.toThrow("no longer belongs to the selected wallet");
+    expect(deps.authSigner.signCreateOrder).not.toHaveBeenCalled();
+    expect(deps.client.sendTx).not.toHaveBeenCalled();
+    expect(getAccountTrades).not.toHaveBeenCalled();
+    expect(recordFill).not.toHaveBeenCalled();
   });
 });

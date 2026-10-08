@@ -38,7 +38,7 @@ function khalaniSearchResult(tokens: readonly Record<string, unknown>[]) {
 
 describe("TokenFind capability routing", () => {
   it("routes a Khalani-covered chain to Khalani and replaces provider metadata with contract facts", async () => {
-    const executeKhalaniSearch = vi.fn<TokenFindDependencies["executeKhalaniSearch"]>(
+    const executeKhalaniSearch = vi.fn<NonNullable<TokenFindDependencies["executeKhalaniSearch"]>>(
       async () => khalaniSearchResult([{
         address: USDC,
         chainId: 8453,
@@ -125,7 +125,7 @@ describe("TokenFind capability routing", () => {
       symbol: `T${index + 1}`,
       decimals: 18,
     }));
-    const readContractIdentity = vi.fn<TokenFindDependencies["readContractIdentity"]>(
+    const readContractIdentity = vi.fn<NonNullable<TokenFindDependencies["readContractIdentity"]>>(
       async (_chain, address) => ({ address, symbol: "TOKEN", decimals: 18 }),
     );
 

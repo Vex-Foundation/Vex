@@ -13,9 +13,13 @@ export const SWAP_VENUE_STANDING =
   + "Other DEX liquidity may be unavailable there. "
   + ROBINHOOD_SWAP_VENUE_GUIDANCE;
 
-/** Compact default policy for bounded always-loaded descriptions. */
+/**
+ * Compact default policy for bounded always-loaded descriptions. It carries
+ * the Robinhood exception, so a quote description never contradicts the
+ * protocols layer's `ROBINHOOD_SWAP_VENUE_GUIDANCE`.
+ */
 export const SWAP_VENUE_STANDING_COMPACT =
-  "KyberSwap is default; Uniswap is the direct fallback";
+  "KyberSwap is default (on Robinhood Chain, prefer Uniswap when it routes); Uniswap is the direct fallback";
 
 /** What resolves the choice when neither venue is obviously the right one. */
 export const SWAP_VENUE_QUOTE_BOTH = "Quote both when unsure.";
@@ -66,7 +70,8 @@ export const SWAP_VENUE_GUIDANCE_COMPACT =
  * parenthetical rather than a clause because that description sits four
  * characters under the 2048-character client cut (measured 2026-09-07), and
  * the alternative was deleting a money fact from the same string to make room
- * for grammar.
+ * for grammar. The Robinhood clause (2026-09-30) was paid for by pointing the
+ * token-identity sentence at the tokenIn/tokenOut fields, which state it in full.
  */
 export const SWAP_VENUE_GUIDANCE_COMPACT_ROUTER =
   `${SWAP_VENUE_STANDING_COMPACT} (SwapQuoteUniswap); quote both when unsure.`;

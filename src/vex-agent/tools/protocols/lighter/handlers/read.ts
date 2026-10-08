@@ -16,6 +16,7 @@ import {
   buildLighterOrderPreview,
   isProtectiveOrderType,
   type LighterOrderPreview,
+  type LighterOrderPreviewInput,
 } from "@tools/lighter/order-preview.js";
 import {
   LIGHTER_TRADING_API_KEY_INDEX_MAX,
@@ -114,7 +115,7 @@ import {
 } from "../trading-credential-scope.js";
 import { resolveLighterReadOnlyAccountAuth } from "../read-account-auth.js";
 import { getConfiguredLighterKeyRegistrationExecutor } from "../key-registration-execution.js";
-import { getLighterFeePolicy } from "@tools/lighter/fee-policy.js";
+import { getLighterFeePolicy, type LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
 import {
   getConfiguredLighterFeeAuthorizationService,
   type LighterFeeAuthorizationReadiness,
@@ -124,7 +125,19 @@ import {
   readLighterManagedTradingReadiness,
   type LighterManagedTradingReadiness,
 } from "../managed-trading-readiness.js";
-import { prepareLighterOrderCreateApproval } from "./write.js";
+import { prepareLighterOrderCreateApprovalWith } from "./write.js";
+import {
+  LighterPreviewSnapshot,
+  lighterDeskPrewarmEnabled,
+  lighterDeskPrewarmOwnershipEnabled,
+  lighterPreviewSingleSnapshotEnabled,
+  recordLighterDeskOwnership,
+} from "../preview-snapshot.js";
+import {
+  forgetLighterDeskPrewarmOwnership,
+  takeLighterDeskPrewarmOwnership,
+} from "../desk-prewarm.js";
+import { judgeLighterSigningOwnership } from "../signing-ownership.js";
 
 // An engine session reads only its selected wallet's provider-owned account,
 // even if another wallet has the sole saved trading key. Trusted default
@@ -135,8 +148,12 @@ import { prepareLighterOrderCreateApproval } from "./write.js";
  * may use the only saved one, never whichever of several happens to list
  * first. Several accounts refuse by name, as an order preview does.
  */
-function resolveUnambiguousReadAccount(environment: LighterEnvironment): number | undefined {
-  const accounts = [...new Set(listLighterTradingCredentialScopes(environment).map((scope) => scope.accountIndex))];
+async function resolveUnambiguousReadAccount(
+  environment: LighterEnvironment,
+): Promise<number | undefined> {
+  const accounts = [
+    ...new Set((await listLighterTradingCredentialScopes(environment)).map((scope) => scope.accountIndex)),
+  ];
   if (accounts.length > 1) {
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
@@ -144,7 +161,7 @@ function resolveUnambiguousReadAccount(environment: LighterEnvironment): number 
       "Ask the user which Lighter account to read only because several are configured; do not ask them to choose an API-key index.",
     );
   }
-  return accounts[0] ?? resolveDefaultLighterTradingCredentialScope(environment)?.accountIndex;
+  return accounts[0] ?? (await resolveDefaultLighterTradingCredentialScope(environment))?.accountIndex;
 }
 
 async function resolveAuthenticatedAccountRead(
@@ -169,7 +186,7 @@ async function resolveAuthenticatedAccountRead(
   }
   const targetAccount =
     requestedAccountIndex
-    ?? resolveUnambiguousReadAccount(environment);
+    ?? (await resolveUnambiguousReadAccount(environment));
   if (targetAccount === undefined) {
     return { accountIndex: requestedAccountIndex, privilegedAuth: undefined };
   }
@@ -493,12 +510,12 @@ async function resolveOnboardingTradeMarket(
   return selected;
 }
 
-export function resolvePreviewAccountIndex(
+export async function resolvePreviewAccountIndex(
   environment: LighterEnvironment,
   requestedAccountIndex?: number,
-): number {
+): Promise<number> {
   if (requestedAccountIndex !== undefined) return requestedAccountIndex;
-  const scopes = listLighterTradingCredentialScopes(environment);
+  const scopes = await listLighterTradingCredentialScopes(environment);
   // Ambiguity is about which *account* to trade, not how many keys are saved.
   // Several api-key-index entries can be registered to a single L2 account; any
   // of them signs for that account, so multiple keys on one account is not
@@ -512,7 +529,7 @@ export function resolvePreviewAccountIndex(
       "Ask the user which Lighter account they intend to trade from only because multiple accounts are configured; do not ask them to choose an API-key index.",
     );
   }
-  const savedScope = scopes[0] ?? resolveDefaultLighterTradingCredentialScope(environment);
+  const savedScope = scopes[0] ?? (await resolveDefaultLighterTradingCredentialScope(environment));
   if (!savedScope) {
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
@@ -543,6 +560,25 @@ export async function resolveSessionBoundPreviewAccountIndex(input: {
   readonly requestedAccountIndex: number | undefined;
   readonly client: LighterAccountOwnershipReader;
 }): Promise<number> {
+  return (await resolveSessionBoundPreviewOwnership({ ...input, consultPrewarm: false, recordPrewarm: false })).accountIndex;
+}
+
+/**
+ * {@link resolveSessionBoundPreviewAccountIndex}, also saying which wallet it
+ * proved ownership for and whether the master account came from the desk
+ * pre-warm (`LIGHTER_DESK_PREWARM_OWNERSHIP`, only when `consultPrewarm`);
+ * a fresh read is kept for the next desk preview when `recordPrewarm`. The
+ * wallet is always resolved fresh; only the provider's answer may be warm.
+ */
+async function resolveSessionBoundPreviewOwnership(input: {
+  readonly walletResolution: Parameters<typeof resolveSelectedAddressForRead>[0];
+  readonly walletPolicy: Parameters<typeof resolveSelectedAddressForRead>[1];
+  readonly environment: LighterEnvironment;
+  readonly requestedAccountIndex: number | undefined;
+  readonly client: LighterAccountOwnershipReader;
+  readonly consultPrewarm: boolean;
+  readonly recordPrewarm: boolean;
+}): Promise<{ readonly accountIndex: number; readonly walletAddress: string | null; readonly fromPrewarm: boolean }> {
   // Saved credential count cannot establish which wallet this session chose.
   // Verify ownership even when only one Lighter account is configured.
   let walletAddress: string;
@@ -554,11 +590,25 @@ export async function resolveSessionBoundPreviewAccountIndex(input: {
       && error.code === ErrorCodes.WALLET_NOT_CONFIGURED) {
       // Trusted maintenance callers can still use one saved account when no
       // EVM wallet exists. A session selection never takes this fallback.
-      return resolvePreviewAccountIndex(input.environment, input.requestedAccountIndex);
+      return {
+        accountIndex: await resolvePreviewAccountIndex(input.environment, input.requestedAccountIndex),
+        walletAddress: null,
+        fromPrewarm: false,
+      };
     }
     throw error;
   }
-  const owned = await readUniqueLighterMasterAccount(input.client, input.environment, walletAddress);
+  const warm = input.consultPrewarm ? takeLighterDeskPrewarmOwnership(input.environment, walletAddress, Date.now()) : null;
+  let owned: number;
+  if (warm === null) {
+    const readAtMs = Date.now();
+    owned = await readUniqueLighterMasterAccount(input.client, input.environment, walletAddress);
+    if (input.recordPrewarm) {
+      recordLighterDeskOwnership({ environment: input.environment, walletAddress, accountIndex: owned, atMs: readAtMs });
+    }
+  } else {
+    owned = warm;
+  }
   if (input.requestedAccountIndex !== undefined && input.requestedAccountIndex !== owned) {
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
@@ -566,8 +616,23 @@ export async function resolveSessionBoundPreviewAccountIndex(input: {
       "Trade from the account owned by this session's selected wallet, or switch the session wallet; Vex will not sign for an account this wallet does not own.",
     );
   }
-  return owned;
+  return { accountIndex: owned, walletAddress, fromPrewarm: warm !== null };
 }
+
+/**
+ * A desk preview whose pre-warmed master account did not hold up against its
+ * own fresh reads. The entry is already dropped; the preview runs once more
+ * with a fresh ownership read, so its outcome is exactly today's.
+ */
+class LighterPreviewOwnershipPrewarmStale extends Error {}
+
+function dropWarmOwnership(environment: LighterEnvironment, walletAddress: string | null): LighterPreviewOwnershipPrewarmStale {
+  if (walletAddress !== null) forgetLighterDeskPrewarmOwnership(environment, walletAddress);
+  return new LighterPreviewOwnershipPrewarmStale("The pre-warmed Lighter account ownership no longer matches.");
+}
+
+/** Params objects of previews being prepared again; they never consult the ownership pre-warm. */
+const previewsPreparedAgain = new WeakSet<Record<string, unknown>>();
 
 export async function resolvePreviewApiKeyIndex(
   client: LighterClient,
@@ -584,7 +649,7 @@ export async function resolvePreviewApiKeyIndex(
       apiKeyLookupStatus: "caller_supplied",
     };
   }
-  const savedScope = resolveSavedLighterTradingCredentialScope(environment, accountIndex);
+  const savedScope = await resolveSavedLighterTradingCredentialScope(environment, accountIndex);
   if (savedScope !== null) {
     return {
       apiKeyIndex: savedScope.apiKeyIndex,
@@ -918,7 +983,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
             : tradingAccessRoute.kind === "prepare_key_registration_approval"
               ? `Funding and wallet-owned account creation are proven on ${fundingDeployment.settlementNetworkName}, but secure Vex trading access is not active yet. Immediately call lighter.key.register.prepare in this same turn with environment "${environment.value}" so Vex generates and encrypts the credential locally and the host shows a separate key-registration approval card. Do not ask whether to prepare it and do not ask for another chat confirmation; the approval card is the user's consent. Never call lighter.key.register directly and never ask the user for a key, account index, API-key index, nonce, or fingerprint.`
             : feeAuthorizationReadiness?.status === "needs_approval"
-              ? `The account is funded and its local trading key is active. Immediately call lighter.fees.approve.prepare with environment "${environment.value}" to show the VEX trading-fee approval in this chat. VEX supplies the recipient, 0.10% perpetual fee, 0.25% spot fee and any disclosed account-tier change. The host card is consent; do not ask for another chat confirmation or technical account details. Continue the requested trade only after provider state confirms the authorization. If the user rejects it, stop fee setup until they request it again.`
+              ? `The account is funded and its local trading key is active. Immediately call lighter.fees.approve.prepare with environment "${environment.value}" to show the VEX trading-fee approval in this chat. VEX supplies the recipient, 0.02% perpetual fee, 0.25% spot fee and any disclosed account-tier change. The host card is consent; do not ask for another chat confirmation or technical account details. Continue the requested trade only after provider state confirms the authorization. If the user rejects it, stop fee setup until they request it again.`
             : feeAuthorizationReadiness?.status === "blocked"
               ? feeAuthorizationReadiness.reason
             : plan.ready && managedTradingAccessActive
@@ -1331,16 +1396,23 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     const previewParams = readLighterOrderPreviewParams(params, nowMs);
     if (!previewParams.ok) return fail(previewParams.reason);
 
+    // `LIGHTER_DESK_PREWARM_OWNERSHIP`: desk previews only. A preview being
+    // prepared again after its warm ownership did not hold up reads fresh,
+    // and keeps that fresh answer for the next click.
+    const ownershipPrewarm = context.deskPreparation === true && lighterDeskPrewarmOwnershipEnabled();
     try {
       const timingStart = performance.now();
       const client = getLighterClient();
-      const accountIndex = await resolveSessionBoundPreviewAccountIndex({
+      const ownership = await resolveSessionBoundPreviewOwnership({
         walletResolution: context.walletResolution,
         walletPolicy: context.walletPolicy,
         environment: environment.value,
         requestedAccountIndex: previewParams.value.accountIndex,
         client,
+        consultPrewarm: ownershipPrewarm && !previewsPreparedAgain.has(params),
+        recordPrewarm: ownershipPrewarm,
       });
+      const { accountIndex } = ownership;
       const ownershipMs = Math.round(performance.now() - timingStart);
       context.deskPrepareProgress?.("checking_market");
       const [marketId, apiKeyResolution] = await Promise.all([
@@ -1359,7 +1431,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       ]);
       const { apiKeyIndex, apiKeyLookupStatus } = apiKeyResolution;
       const scopeMs = Math.round(performance.now() - timingStart) - ownershipMs;
-      const [marketDetails, orderBook, account] = await Promise.all([
+      const firstBatch = Promise.all([
         client.getMarketDetails(environment.value, {
           marketId,
           filter: "all",
@@ -1379,6 +1451,38 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
           activeOnly: false,
         }, { fresh: true }),
       ]);
+      // `LIGHTER_PREVIEW_SINGLE_SNAPSHOT`: the fee check's two public reads
+      // join the first batch. Nothing here is awaited until the fee check.
+      // `LIGHTER_DESK_PREWARM` rides on it, for desk previews only.
+      const snapshot = lighterPreviewSingleSnapshotEnabled()
+        ? LighterPreviewSnapshot.begin({
+            client,
+            environment: environment.value,
+            accountIndex,
+            marketIndex: marketId,
+            prewarm: context.deskPreparation === true && lighterDeskPrewarmEnabled(),
+          })
+        : null;
+      let firstBatchReads: Awaited<typeof firstBatch>;
+      try {
+        firstBatchReads = await firstBatch;
+      } catch (error) {
+        // A warm account that the provider no longer answers for may simply
+        // be the wrong one: prepare again from a fresh ownership read.
+        if (ownership.fromPrewarm) throw dropWarmOwnership(environment.value, ownership.walletAddress);
+        throw error;
+      }
+      const [marketDetails, orderBook, account] = firstBatchReads;
+      if (ownership.fromPrewarm && ownership.walletAddress !== null) {
+        // The warm master account must still be this wallet's, by this
+        // preview's own fresh account read (the rule signing re-checks).
+        const verdict = judgeLighterSigningOwnership({
+          accountIndex,
+          account,
+          wallet: { kind: "wallet", address: ownership.walletAddress },
+        });
+        if (verdict.kind !== "matched") throw dropWarmOwnership(environment.value, ownership.walletAddress);
+      }
       const marketReadsMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs;
       const market = findMarketDetail(marketDetails, marketId);
       if (!market) {
@@ -1411,34 +1515,7 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         authenticated: false,
         persistedPreview: true,
       });
-      const integratorFees = await resolveLighterOrderFees({
-        client, environment: environment.value, accountIndex, market, account,
-        freshAccount: account,
-        reduceOnly: previewParams.value.reduceOnly, side: previewParams.value.side,
-      });
-      const accountTakerFeeTicks = market.market_type === "spot" && previewParams.value.side === "buy"
-        ? await readLighterOrderAccountFeeTicks(client, environment.value, accountIndex)
-        : undefined;
-      const feeMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs - marketReadsMs;
-      // ADVISORY, never a veto: the preview is a read, and the capital share is
-      // ENFORCED at `lighter.order.create.prepare` where the intent row and its
-      // commitment are admitted in one transaction. Showing the ceiling here is
-      // what lets the user see the number before the refusal explains it.
-      const capitalShare = await resolveLighterPreviewCapitalShareAdvisory({
-        client,
-        environment: environment.value,
-        accountIndex,
-        account,
-        market,
-        baseAmount: previewParams.value.baseAmount,
-        price: previewParams.value.price,
-        side: previewParams.value.side,
-        orderType: previewParams.value.orderType,
-        reduceOnly: previewParams.value.reduceOnly,
-        integratorFees,
-      });
-      const capitalMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs - marketReadsMs - feeMs;
-      const preview = buildLighterOrderPreview({
+      const previewInput = (integratorFees: LighterIntegratorFees | null): LighterOrderPreviewInput => ({
         sessionId,
         environment: environment.value,
         accountIndex,
@@ -1457,7 +1534,48 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         clientOrderIndexPolicy: previewParams.value.clientOrderIndexPolicy,
         integratorFees,
         nowMs,
-      }, {
+      });
+      // Started only now, after the first batch proved the market: the
+      // read-only auth is resolved no earlier than the checks below resolve it.
+      snapshot?.afterFirstBatch({ marketDetails, account, marketType: market.market_type });
+      if (snapshot !== null && apiKeyIndex !== null) {
+        snapshot.startMarginFitDepthWhenNeeded(() => buildLighterOrderPreview(previewInput(null), {
+          market,
+          orderBook,
+          account,
+        }));
+      }
+      const integratorFees = await resolveLighterOrderFees({
+        client, environment: environment.value, accountIndex, market, account,
+        freshAccount: account,
+        reduceOnly: previewParams.value.reduceOnly, side: previewParams.value.side,
+        ...(snapshot?.fees === undefined ? {} : { snapshot: snapshot.fees }),
+      });
+      if (integratorFees !== null) snapshot?.keepFeeConfigAfterPassingFeeCheck();
+      const accountTakerFeeTicks = market.market_type === "spot" && previewParams.value.side === "buy"
+        ? await readLighterOrderAccountFeeTicks(client, environment.value, accountIndex, snapshot?.accountReads)
+        : undefined;
+      const feeMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs - marketReadsMs;
+      // ADVISORY, never a veto: the preview is a read, and the capital share is
+      // ENFORCED at `lighter.order.create.prepare` where the intent row and its
+      // commitment are admitted in one transaction. Showing the ceiling here is
+      // what lets the user see the number before the refusal explains it.
+      const capitalShare = await resolveLighterPreviewCapitalShareAdvisory({
+        client,
+        environment: environment.value,
+        accountIndex,
+        account,
+        market,
+        baseAmount: previewParams.value.baseAmount,
+        price: previewParams.value.price,
+        side: previewParams.value.side,
+        orderType: previewParams.value.orderType,
+        reduceOnly: previewParams.value.reduceOnly,
+        integratorFees,
+        ...(snapshot === null ? {} : { snapshot: snapshot.accountReads }),
+      });
+      const capitalMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs - marketReadsMs - feeMs;
+      const preview = buildLighterOrderPreview(previewInput(integratorFees), {
         market,
         orderBook,
         account,
@@ -1471,10 +1589,10 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
       const previewMs = Math.round(performance.now() - timingStart) - ownershipMs - scopeMs - marketReadsMs - feeMs - capitalMs;
       const approvalReady = apiKeyIndex !== null;
       const approvalPreparation = approvalReady
-        ? await prepareLighterOrderCreateApproval({
+        ? await prepareLighterOrderCreateApprovalWith({
             environment: environment.value,
             previewId: preview.previewId,
-          }, context)
+          }, context, snapshot?.admissionFor(preview.previewId))
         : null;
       if (approvalPreparation !== null && !approvalPreparation.success) {
         return fail(
@@ -1485,6 +1603,9 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
         ownershipMs, marketIdKeyAndRecoveryMs: scopeMs, marketReadsMs, feeMs, capitalMs, previewMs,
         approvalMs: Math.round(performance.now() - timingStart) - ownershipMs - scopeMs - marketReadsMs - feeMs - capitalMs - previewMs,
         totalMs: Math.round(performance.now() - timingStart),
+        singleSnapshot: snapshot === null ? 0 : 1,
+        ...snapshot?.timingFields(),
+        ...(ownershipPrewarm ? { prewarmOwnershipHit: ownership.fromPrewarm ? 1 : 0 } : {}),
       });
       const result = ok({
         ...source,
@@ -1531,6 +1652,17 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
             preparedActionFollowUp: approvalPreparation.preparedActionFollowUp,
           };
     } catch (err) {
+      if (err instanceof LighterPreviewOwnershipPrewarmStale) {
+        const preview = LIGHTER_READ_HANDLERS["lighter.order.preview"];
+        if (preview !== undefined) {
+          previewsPreparedAgain.add(params);
+          try {
+            return await preview(params, context);
+          } finally {
+            previewsPreparedAgain.delete(params);
+          }
+        }
+      }
       return fail(`Lighter order preview unavailable (${failureDetail("lighter.order.preview", err)})`);
     }
   },

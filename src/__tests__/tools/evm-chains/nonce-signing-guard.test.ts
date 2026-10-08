@@ -8,7 +8,7 @@ it.each([[2, 1, "local_nonce_ledger_ahead"], [1, 2, "local_nonce_ledger_behind"]
   expect(getTransactionCount).toHaveBeenCalledWith({ address: "0x1111111111111111111111111111111111111111", blockTag: "pending" });
 });
 
-import { createPublicClient, createWalletClient, custom } from "viem";
+import { createPublicClient, createWalletClient, custom, type Chain } from "viem";
 import { base } from "viem/chains";
 import { signStageBroadcast } from "@tools/evm-chains/staged-broadcast.js";
 import { onNonceReservationScopeExit } from "@tools/evm-chains/nonce-reservation-scope.js";
@@ -21,7 +21,8 @@ it.each([6, 8])("refuses nonce %s in the real staged signer and releases the res
     if (method === "eth_getTransactionCount") return "0x7";
     throw new Error(`Unexpected method ${method}`);
   } }, { retryCount: 0 });
-  const publicClient = Object.assign(createPublicClient({ chain: base, transport }), {
+  const chain: Chain = base;
+  const publicClient = Object.assign(createPublicClient({ chain, transport }), {
     prepareTransactionRequest: async () => ({ to: address, chainId: 8453, nonce: 6, gas: 21000n, type: "eip1559" as const, maxFeePerGas: 10n, maxPriorityFeePerGas: 1n }),
   });
   const wallet = createWalletClient({ chain: base, transport, account: { address, type: "local", source: "custom", publicKey: "0x", signTransaction: signer, signMessage: signer, signTypedData: signer } });

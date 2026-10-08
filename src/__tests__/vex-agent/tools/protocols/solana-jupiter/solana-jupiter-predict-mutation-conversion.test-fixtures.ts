@@ -12,7 +12,7 @@ type WalletResolveModule = typeof import("@vex-agent/tools/internal/wallet/resol
 export const SIGNER = Keypair.generate();
 export const WALLET_ADDRESS = SIGNER.publicKey.toBase58();
 
-export const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => ({
+export const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(async () => ({
   family: "solana" as const, address: WALLET_ADDRESS, secretKey: SIGNER.secretKey,
 }));
 export const mockResolveSelectedAddress = vi.fn<WalletResolveModule["resolveSelectedAddress"]>(() => WALLET_ADDRESS);

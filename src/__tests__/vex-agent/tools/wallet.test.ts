@@ -209,8 +209,18 @@ describe("WalletBalances", () => {
       handleWalletBalances({ walletFamily: "eip155", chainIds: '["robinhood"]' }, baseContext),
     ]);
     expect(text.success, text.output).toBe(true);
-    expect(array.output).toEqual(text.output);
-    expect(json.output).toEqual(text.output);
+    // Every field must match EXCEPT `inventorySources[].observedAt`: it is the
+    // clock reading each read was observed at, so three concurrent reads can
+    // straddle a millisecond. Under load this happened (stress-measured: 25 of
+    // 48 runs at 8 parallel vitest processes, 4 of 32 on the pre-Phase-6 base),
+    // and the diff was always that timestamp alone. It is checked for shape
+    // instead, so a missing or malformed observation still fails here.
+    const stamp = String.raw`"observedAt":"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z"`;
+    const scope = (output: string): string =>
+      output.replace(new RegExp(stamp, "g"), '"observedAt":"<observed>"');
+    expect(text.output).toMatch(new RegExp(stamp));
+    expect(scope(array.output)).toEqual(scope(text.output));
+    expect(scope(json.output)).toEqual(scope(text.output));
   });
 
   it("returns EVM snapshot when wallet=eip155", async () => {

@@ -8,6 +8,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { openExecutionGate } from "../../../lifecycle/execution-gate.js";
 import type { IpcMainInvokeEvent } from "electron";
 import { CH } from "@shared/ipc/channels.js";
 import {
@@ -201,7 +202,9 @@ describe("mission.retry", () => {
     // paused_error-only wake cancellation must not fire here.
     expect(mockCancelForSession).not.toHaveBeenCalled();
     await vi.waitFor(() =>
-      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-dead", "owner-y"),
+      // The runner hands its LEASE HANDLE (which carries the claim token) to the
+      // resume, never a bare owner id: exactly the handle it created.
+      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-dead", mockCreateLeaseHandle.mock.results[0]?.value),
     );
   });
 
@@ -261,7 +264,9 @@ describe("mission.retry", () => {
     );
     // Fire-and-forget continuation (dynamic-imports the engine) — poll for it.
     await vi.waitFor(() =>
-      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-err", "owner-x"),
+      // The runner hands its LEASE HANDLE (which carries the claim token) to the
+      // resume, never a bare owner id: exactly the handle it created.
+      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-err", mockCreateLeaseHandle.mock.results[0]?.value),
     );
   });
 
@@ -358,4 +363,11 @@ describe("mission.retry", () => {
     expect(JSON.stringify(r.data)).not.toContain("secret-owner");
     expect(mockResumeMissionRun).not.toHaveBeenCalled();
   });
+});
+
+// These handlers run as they do in a READY process: the execution gate
+// (`lifecycle/execution-gate.ts`) is closed until the runtime is up, and its
+// own suite covers the refusal.
+beforeEach(() => {
+  openExecutionGate();
 });

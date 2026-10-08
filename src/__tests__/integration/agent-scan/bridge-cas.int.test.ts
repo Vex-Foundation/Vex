@@ -22,6 +22,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, it, expect } from "vitest";
 import { execute } from "../../../vex-agent/db/client.js";
+import { requireValue } from "../../helpers/require-value.js";
 
 const trackedExecutions: number[] = [];
 function track(executionId: number): number {
@@ -350,15 +351,17 @@ describe("bridge repo — markActivitySolanaBroadcast (B1 nonce matrix, coordina
     expect(staged.row?.txHash).toBeNull();
   });
 
-  it("the EVM CAS on a Solana row is stopped by the 045 nonce CHECK (belt-and-suspenders)", async () => {
+  it("refuses the EVM CAS on a Solana row without changing broadcast evidence", async () => {
     const repo = await import("../../../vex-agent/db/repos/agent-activity.js");
     const result = await createSolanaOriginIntent(repo);
     if (result.outcome !== "created") throw new Error("unreachable");
-    const solanaLeg = result.legs[0]!;
+    const solanaLeg = requireValue(result.legs[0]);
 
-    await expect(
-      repo.markActivityBroadcast(solanaLeg.id, { txHash: "0xWrongShape", fromAddress: "0xFrom", nonce: 1 }),
-    ).rejects.toThrow();
+    const staged = await repo.markActivityBroadcast(solanaLeg.id, {
+      txHash: "0xWrongShape", fromAddress: "0xFrom", nonce: 1,
+    });
+    expect(staged.applied).toBe(false);
+    expect(staged.row).toEqual(solanaLeg);
   });
 });
 

@@ -128,6 +128,7 @@ import {
   ApprovalDispatchError,
   ApprovalPostDecisionError,
   ApprovalResultSupersededError,
+  type ApproveDispatchOptions,
   type ApprovePrepareOutcome,
   type PreparedContinuation,
 } from "../types.js";
@@ -203,6 +204,9 @@ export function deriveApprovedDispatchExecutionStatus(input: {
 export async function applyApproveSideEffects(
   approvalId: string,
   snapshot: Extract<ApproveSnapshot, { type: "approved_in_tx" }>,
+  // Read by the desk lane only (see `ApproveDispatchOptions`); the agent and
+  // Studio lanes below never look at it.
+  options?: ApproveDispatchOptions,
 ): Promise<ApprovePrepareOutcome> {
   const row = snapshot.row;
   // A3 - a Vex Studio approval takes its own sibling path. The branch is here,
@@ -217,7 +221,7 @@ export async function applyApproveSideEffects(
   // A desk approval (the Lighter desk's own buttons, migration 165) likewise
   // has no turn to resume and no transcript to append to.
   if (row.origin === "desk") {
-    return applyDeskApproveSideEffects(approvalId, snapshot);
+    return applyDeskApproveSideEffects(approvalId, snapshot, options);
   }
   const sessionId = row.session_id;
   const missionRunId = row.mission_run_id;

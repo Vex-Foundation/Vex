@@ -96,6 +96,25 @@ export function continuationHoldsLease(
   return cont.kind !== "studio_mcp";
 }
 
+/**
+ * Options for ONE approve call (Kairos K-2, `APPROVAL_DISPATCH_BACKGROUND`).
+ *
+ * `onDispatchStarted` fires once, synchronously, at the moment a desk dispatch
+ * has committed its slot claim (`not_started -> dispatching`, the commit point
+ * that already makes the dispatch exactly-once) and passed the operator-stop
+ * gate, immediately before the tool call. It is a NOTIFICATION, not a hand
+ * off: the dispatch, its settlement write and every failure arm keep running
+ * in the same promise chain, under the same owner, and the promise returned by
+ * `prepareApprove` still settles with exactly the outcome it always did. A
+ * caller that does not pass it gets today's behaviour, byte for byte.
+ *
+ * Only the desk lane fires it. The agent and Studio lanes accept the option and
+ * ignore it, so a caller racing on it simply awaits them as before.
+ */
+export interface ApproveDispatchOptions {
+  readonly onDispatchStarted?: (started: { readonly resolvedAt: string }) => void;
+}
+
 export type ApprovePrepareOutcome =
   | {
       readonly kind: "dispatched";

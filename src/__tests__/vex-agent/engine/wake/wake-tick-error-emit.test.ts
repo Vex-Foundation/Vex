@@ -50,7 +50,7 @@ function wakeRow(overrides: Record<string, unknown> = {}) {
 function deps(claimed: ReadonlyArray<unknown>) {
   return {
     isProviderReady: () => true,
-    claimDue: async () => claimed,
+    listDueMissionWakes: async () => claimed,
     // Session-scoped rows take the non-destructive list; this file drives the
     // mission path, so the list is empty.
     listDueSessionWakes: async () => [],

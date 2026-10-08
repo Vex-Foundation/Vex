@@ -88,6 +88,11 @@ export function toModelDiscoveryResult(
     const { retrieval: _retrieval, ...rest } = result;
     return { ...rest, tools };
   }
-  const { embeddingModel: _model, embeddingDim: _dim, ...modelRetrieval } = result.retrieval;
+  const {
+    embeddingModel: _model,
+    embeddingDim: _dim,
+    denseFailureReason: _reason,
+    ...modelRetrieval
+  } = result.retrieval;
   return { ...result, tools, retrieval: modelRetrieval };
 }

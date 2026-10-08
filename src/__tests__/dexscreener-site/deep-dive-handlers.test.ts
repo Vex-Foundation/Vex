@@ -422,6 +422,8 @@ describe("dexscreener__trades_list", () => {
     // A summary that did not cover its range must NOT be called `aggregate`.
     expect(data).not.toHaveProperty("aggregate");
     expect(data).toHaveProperty("pageAggregate");
+    expect(String(data["summary"])).toContain("the page budget stopped the walk");
+    expect(String(data["summary"])).not.toContain("the deadline stopped the walk");
     const block = data["pageAggregate"] as Record<string, unknown>;
     expect(block["rangeFullyCovered"]).toBe(false);
     expect(block).toHaveProperty("coveredRange");

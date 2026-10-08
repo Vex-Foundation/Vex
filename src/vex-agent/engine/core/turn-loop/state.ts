@@ -9,6 +9,7 @@
 
 import type { StopReason } from "../../types.js";
 import type { ToolVisibilityBase } from "@vex-agent/tools/registry.js";
+import type { UnproductiveRoundKind } from "../runner/unproductive-rounds.js";
 
 export interface TurnLoopConfig {
   maxIterations: number;
@@ -21,6 +22,10 @@ export interface TurnLoopConfig {
    * `ToolVisibilityContext` that drives BOTH the tools array and the Tool Map.
    */
   baseVisibility?: ToolVisibilityBase;
+  /** Overrides DISCOVERED_TOOLS_REBUILD; false keeps the previous empty recovery set. */
+  discoveredToolsRebuild?: boolean;
+  /** Overrides TEXT_TOOL_CALL_GUARD; false preserves text-only replies and streaming. */
+  textToolCallGuard?: boolean;
   /**
    * The owner id THIS runner acquired the session lease with.
    *
@@ -41,6 +46,14 @@ export interface TurnLoopConfig {
    * Null/undefined = no box.
    */
   missionDeadlineMs?: number | null;
+  /**
+   * Runtime measurement only (Kairos Phase 1): `performance.now()` taken when
+   * the entry point that leads to this loop started handling the turn - before
+   * its lease claim, provider/config load and hydrate. The loop records the gap
+   * to its own start as `turn_run_timings.pre_loop_setup_ms`. Monotonic, NOT an
+   * epoch like `missionDeadlineMs`; never read to decide anything. Unset ⇒ NULL.
+   */
+  entryStartedAtMs?: number;
 }
 
 export interface TurnLoopResult {
@@ -48,6 +61,12 @@ export interface TurnLoopResult {
   toolCallsMade: number;
   pendingApprovals: string[];
   stopReason: StopReason | null;
+  /**
+   * Class of the round that ended a `no_progress` streak, so the stop reply
+   * can say HOW the model stalled. Set only when `stopReason` is
+   * `no_progress`; absent otherwise.
+   */
+  lastUnproductiveKind?: UnproductiveRoundKind;
   /** Structured stop payload — summary/evidence from MissionStop. */
   stopPayload?: { summary?: string; evidence?: Record<string, unknown> };
 }

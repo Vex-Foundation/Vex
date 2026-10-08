@@ -94,7 +94,7 @@ describe("bridge token identity", () => {
 
   it("uses contract decimals for Relay humanization and durable leg metadata", () => {
     const providerSide = {
-      address: USDC,
+      currencyAddress: USDC,
       symbol: "WRONG",
       decimals: 18,
       amountRaw: "1000000",
@@ -290,6 +290,7 @@ describe("bridge approval card", () => {
       undefined,
       undefined,
       bridgePreview,
+      undefined,
     );
 
     expect(pending).toMatchObject({

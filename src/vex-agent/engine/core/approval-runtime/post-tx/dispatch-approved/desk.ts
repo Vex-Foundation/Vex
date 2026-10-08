@@ -29,7 +29,11 @@ import {
   readApprovalQuoteAuthority,
   readApprovalPrequoteAuthority,
 } from "../../tool-call-envelope.js";
-import { ApprovalPostDecisionError, type ApprovePrepareOutcome } from "../../types.js";
+import {
+  ApprovalPostDecisionError,
+  type ApproveDispatchOptions,
+  type ApprovePrepareOutcome,
+} from "../../types.js";
 import { deriveApprovedDispatchExecutionStatus } from "../dispatch-approved.js";
 import { buildResumedApprovalToolContext } from "./resumed-tool-context.js";
 import { claimDispatchSlotUnderStopGate } from "./dispatch-slot-gate.js";
@@ -45,14 +49,39 @@ const DESK_DISPATCH_UNPROVABLE_OUTPUT =
 export async function applyDeskApproveSideEffects(
   approvalId: string,
   snapshot: Extract<ApproveSnapshot, { type: "approved_in_tx" }>,
+  options?: ApproveDispatchOptions,
 ): Promise<ApprovePrepareOutcome> {
   return runDeskApprovalDispatch(approvalId, () =>
-    dispatchDeskApproval(approvalId, snapshot));
+    dispatchDeskApproval(approvalId, snapshot, options?.onDispatchStarted));
+}
+
+/**
+ * Tell an `APPROVAL_DISPATCH_BACKGROUND` caller that the slot is ours and the
+ * call is about to run. Nothing the listener does may reach the dispatch: it
+ * is called inside a try, and its return value is ignored.
+ */
+function announceDispatchStarted(
+  approvalId: string,
+  snapshot: Extract<ApproveSnapshot, { type: "approved_in_tx" }>,
+  onDispatchStarted: ApproveDispatchOptions["onDispatchStarted"],
+): void {
+  if (onDispatchStarted === undefined) return;
+  try {
+    onDispatchStarted({ resolvedAt: snapshot.queueResolvedAt });
+  } catch (cause) {
+    const summary = summarizeErrorForLog(cause);
+    logger.warn("engine.desk.dispatch_started_listener_threw", {
+      approvalId,
+      errorKind: summary.errorKind,
+      errorHash: summary.errorHash,
+    });
+  }
 }
 
 async function dispatchDeskApproval(
   approvalId: string,
   snapshot: Extract<ApproveSnapshot, { type: "approved_in_tx" }>,
+  onDispatchStarted?: ApproveDispatchOptions["onDispatchStarted"],
 ): Promise<ApprovePrepareOutcome> {
   const row = snapshot.row;
   const sessionId = row.session_id;
@@ -101,6 +130,12 @@ async function dispatchDeskApproval(
         output: DESK_DISPATCH_STOPPED_OUTPUT,
       });
     }
+
+    // The slot is claimed and committed and no Stop refused it: this dispatch
+    // is now exactly-once and runs to its end whoever is listening. A caller
+    // running with `APPROVAL_DISPATCH_BACKGROUND` answers the click here; the
+    // rest of this function is unchanged and still owns the outcome.
+    announceDispatchStarted(approvalId, snapshot, onDispatchStarted);
 
     let dispatchResult: {
       success: boolean;

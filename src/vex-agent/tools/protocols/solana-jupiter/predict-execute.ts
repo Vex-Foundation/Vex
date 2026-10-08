@@ -253,15 +253,15 @@ export async function stageAndSubmit(
 }
 
 /** Resolve session + wallet + signer, or a `ToolResult` failure to return immediately. Exported for `predict-execute-close-all.ts`. */
-export function resolveSessionAndWallet(
+export async function resolveSessionAndWallet(
   toolId: string,
   p: Record<string, unknown>,
   ctx: ProtocolExecutionContext,
-): { sessionId: string; addr: string; secret: Uint8Array } | ToolResult {
+): Promise<{ sessionId: string; addr: string; secret: Uint8Array } | ToolResult> {
   const sessionId = ctx.sessionId;
   if (!sessionId) return fail(`${toolId} requires an active session.`);
   try {
-    return { sessionId, addr: walletAddress(p, ctx), secret: walletSecret(ctx) };
+    return { sessionId, addr: walletAddress(p, ctx), secret: await walletSecret(ctx) };
   } catch (err) {
     return walletScopeErrorToResult(err);
   }
@@ -369,7 +369,7 @@ export const executePredictBuy: ProtocolHandler = async (p, ctx) => {
   if (depositDecimals === null) return fail(`Unsupported prediction deposit mint: ${depositMint}`);
   const depositAmount = Math.round(amount * 10 ** depositDecimals);
 
-  const resolved = resolveSessionAndWallet(toolId, p, ctx);
+  const resolved = await resolveSessionAndWallet(toolId, p, ctx);
   if (isToolResult(resolved)) return resolved;
   const { sessionId, addr, secret } = resolved;
 
@@ -415,7 +415,7 @@ export const executePredictSell: ProtocolHandler = async (p, ctx) => {
   const pk = str(p, "positionPubkey");
   if (!pk) return fail("Missing required: positionPubkey");
 
-  const resolved = resolveSessionAndWallet(toolId, p, ctx);
+  const resolved = await resolveSessionAndWallet(toolId, p, ctx);
   if (isToolResult(resolved)) return resolved;
   const { sessionId, addr, secret } = resolved;
 
@@ -465,7 +465,7 @@ export const executePredictClaim: ProtocolHandler = async (p, ctx) => {
   const pk = str(p, "positionPubkey");
   if (!pk) return fail("Missing required: positionPubkey");
 
-  const resolved = resolveSessionAndWallet(toolId, p, ctx);
+  const resolved = await resolveSessionAndWallet(toolId, p, ctx);
   if (isToolResult(resolved)) return resolved;
   const { sessionId, addr, secret } = resolved;
 

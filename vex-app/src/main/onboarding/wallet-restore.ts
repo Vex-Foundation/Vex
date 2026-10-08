@@ -101,23 +101,23 @@ async function readSourceKeystore(
   }
 }
 
-function deriveAddress(
+async function deriveAddress(
   chain: WalletChain,
   keystore: KeystoreV1,
   password: string
-): Result<string, VexError> {
+): Promise<Result<string, VexError>> {
   try {
     if (chain === "evm") {
       // EVM: decrypted private key is a hex string (immutable in JS).
       // We can't zeroize it; let GC collect once the function returns.
-      const privateKey = decryptPrivateKey(keystore, password);
+      const privateKey = await decryptPrivateKey(keystore, password);
       return ok(privateKeyToAddress(privateKey));
     }
     // Solana: decrypted secret is a Uint8Array — best-effort memory
     // hygiene per SKILL §8 + codex turn 9 STILL-OPEN. Zeroize after
     // address derivation so the bytes don't linger in main process
     // memory pages waiting for GC.
-    const secretKey = decryptSolanaSecretKey(keystore, password);
+    const secretKey = await decryptSolanaSecretKey(keystore, password);
     try {
       const address = Keypair.fromSecretKey(secretKey).publicKey.toBase58();
       return ok(address);
@@ -186,7 +186,7 @@ export async function restoreWalletFromFile(
   const sourceKeystore = sourceResult.data;
 
   // 2. Decrypt + derive address (verifies password against source file).
-  const addressResult = deriveAddress(
+  const addressResult = await deriveAddress(
     args.chain,
     sourceKeystore,
     args.password

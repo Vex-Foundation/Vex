@@ -31,6 +31,7 @@ import { VexError, ErrorCodes } from "../../../errors.js";
 import { getChainRpcUrl } from "../chains.js";
 import { gasLimitForProviderHintedCall } from "@tools/evm-chains/gas-limit-headroom.js";
 import { acquireEvmNonceOwner } from "@tools/evm-chains/nonce-owner.js";
+import { receiptWaitDeadlineMs } from "@tools/evm-chains/receipt-wait-policy.js";
 import {
   estimateGasForPlanLeg,
   priorLegAnchorFrom,
@@ -173,7 +174,14 @@ async function signStageEvmLeg(
   }
 
   try {
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    // EXPLICIT bound (Kairos S-5): the shared per-chain receipt deadline
+    // (15-120 s), never viem's implicit 180 s default. Reaching it lands in the
+    // `ambiguous`/`confirm` arm below - a pending leg the handler records and
+    // reconciliation resolves. It never leads to a resend.
+    const receipt = await publicClient.waitForTransactionReceipt({
+      hash: txHash,
+      timeout: receiptWaitDeadlineMs(chain.id),
+    });
     // Same validator the estimator uses, so a receipt without a usable block
     // number degrades to "no anchor" rather than to a bad one.
     const settledAtBlock = priorLegAnchorFrom(receipt.blockNumber)?.blockNumber ?? null;

@@ -46,16 +46,16 @@ export interface ValidatedWallet {
   readonly livePath: string;
 }
 
-export function deriveAddressFromKeystore(
+export async function deriveAddressFromKeystore(
   family: InventoryFamily,
   keystore: KeystoreV1,
   password: string,
-): string {
+): Promise<string> {
   if (family === "evm") {
-    const privateKey = decryptPrivateKey(keystore, password);
+    const privateKey = await decryptPrivateKey(keystore, password);
     return privateKeyToAddress(privateKey);
   }
-  const secretKey = decryptSolanaSecretKey(keystore, password);
+  const secretKey = await decryptSolanaSecretKey(keystore, password);
   try {
     return deriveSolanaAddress(secretKey);
   } finally {
@@ -68,14 +68,16 @@ export function deriveAddressFromKeystore(
  * ValidatedWallet list used by staging + commit. See module header for the
  * fail-closed contract.
  */
-export function verifyKeystores(
+export async function verifyKeystores(
   manifest: ValidatedManifest,
   resolved: string,
   password: string,
   walletsById: Map<string, ManifestWallet>,
-): ValidatedWallet[] {
+): Promise<ValidatedWallet[]> {
   // 5. Decrypt-verify every keystore. Wrong password → KEYSTORE_DECRYPT_FAILED
   //    and STOP. Address mismatch → SIGNER_MISMATCH (Class A, always hard fail).
+  //    Files are verified one at a time, in manifest order, so the first
+  //    failure stops the loop exactly as the synchronous version did.
   const validatedWallets: ValidatedWallet[] = [];
   for (const file of manifest.files) {
     if (
@@ -108,7 +110,7 @@ export function verifyKeystores(
       rejectMalformed(`Keystore ${file.filename} could not be read.`);
     }
 
-    const derived = deriveAddressFromKeystore(family, keystore, password);
+    const derived = await deriveAddressFromKeystore(family, keystore, password);
     if (!walletAddressesEqual(family, derived, wallet.address)) {
       // Class A: NEVER consult confirmReplace. The archive claims an address
       // the key does not produce — refuse outright.

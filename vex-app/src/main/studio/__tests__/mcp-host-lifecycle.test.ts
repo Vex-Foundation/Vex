@@ -80,6 +80,13 @@ import {
 } from "../mcp-host.js";
 import { SKIP_UNIX_ENDPOINT_SUITES } from "./unix-endpoint-gate.js";
 
+// Load the real MCP implementation before opening a peer. Cold transforms
+// belong to fixture readiness, before the bounded wire/lifecycle assertions.
+await Promise.all([
+  import("@vex-agent/mcp/socket-transport.js"),
+  import("@vex-agent/mcp/server.js"),
+]);
+
 interface JsonRecord {
   [key: string]: unknown;
 }

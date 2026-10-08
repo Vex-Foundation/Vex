@@ -81,7 +81,7 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
  * `fenceRejection` is armed, which is the path under test.
  */
 let fenceRejection: Error | null = null;
-const mockDbQuery = vi.fn(async (sql: string) => {
+const mockDbQuery = vi.fn(async (sql: string, _params?: unknown[]) => {
   if (String(sql).includes("MAX(id)")) {
     if (fenceRejection !== null) throw fenceRejection;
     return {

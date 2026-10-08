@@ -12,8 +12,11 @@ import type { OpenRouter } from "@openrouter/sdk";
 
 import type { InferenceConfig } from "../types.js";
 import { resolveEffectiveContextLimit } from "../context-window.js";
+import { parseModelMaxCompletionTokens } from "./answer-headroom.js";
+import { normalizeReasoningSupport } from "../reasoning-effort.js";
 import logger from "@utils/logger.js";
 import { extractCauseCode } from "../../../lib/error-cause.js";
+import type { AgentStreamBounds } from "../../../lib/agent-config.js";
 
 // ── Pricing parse ────────────────────────────────────────────────
 //
@@ -70,6 +73,11 @@ export interface ModelConfigSpec {
   readonly contextLimit: number;
   readonly temperature: number | undefined;
   readonly maxOutputTokens: number;
+  /**
+   * Kairos stream bounds (Phase 2B), copied onto the config verbatim. Absent
+   * leaves every bound off.
+   */
+  readonly streamBounds?: AgentStreamBounds;
   /** Optional pinned endpoint tag (`OPENROUTER_ENDPOINT_TAG`). */
   readonly endpointTag: string | undefined;
 }
@@ -106,6 +114,10 @@ interface CatalogModelRow {
       }
     | undefined;
   readonly supportedParameters?: unknown;
+  /** Reasoning capability block; untrusted, normalized in `reasoning-effort.ts`. */
+  readonly reasoning?: unknown;
+  /** Top provider's limits; untrusted, validated in `answer-headroom.ts`. */
+  readonly topProvider?: { readonly maxCompletionTokens?: unknown } | undefined;
 }
 
 export async function fetchModelInferenceConfig(
@@ -199,6 +211,10 @@ export async function fetchModelInferenceConfig(
     supportedParameters.includes("reasoning") ||
     supportedParameters.includes("reasoning_effort");
 
+  // Which efforts the model accepts (E-1 clamp). Unknown stays `null`, and a
+  // clamp against an unknown set leaves the request unchanged.
+  const reasoningSupport = normalizeReasoningSupport(found.reasoning);
+
   // Effective context limit = min(configured, the model's REAL window). The
   // configured value is an operator throttle; the catalog row is the only
   // place the provider's actual window is known. Unknown/implausible window ⇒
@@ -218,6 +234,12 @@ export async function fetchModelInferenceConfig(
     });
   }
 
+  // Answer-headroom ceiling (R-2). Unknown ⇒ the policy never raises
+  // `max_tokens` for this model; the configured value is sent unchanged.
+  const modelMaxCompletionTokens = parseModelMaxCompletionTokens(
+    found.topProvider?.maxCompletionTokens,
+  );
+
   logger.info("inference.openrouter.config_loaded", {
     model: spec.model,
     contextLimit: contextLimit.effective,
@@ -227,6 +249,7 @@ export async function fetchModelInferenceConfig(
     hasCachePrice: cachePricePerM !== null,
     hasReasoningPrice: reasoningPricePerM !== null,
     supportsReasoningEffort,
+    modelMaxCompletionTokens: modelMaxCompletionTokens ?? null,
   });
 
   return {
@@ -237,6 +260,8 @@ export async function fetchModelInferenceConfig(
       contextLimit: contextLimit.effective,
       temperature: spec.temperature,
       maxOutputTokens: spec.maxOutputTokens,
+      ...spec.streamBounds,
+      ...(modelMaxCompletionTokens !== undefined && { modelMaxCompletionTokens }),
       ...(spec.endpointTag !== undefined && { endpointTag: spec.endpointTag }),
       inputPricePerM,
       outputPricePerM,
@@ -245,6 +270,7 @@ export async function fetchModelInferenceConfig(
       cacheWritePricePerM,
       reasoningPricePerM,
       supportsReasoningEffort,
+      reasoningSupport,
     },
   };
 }

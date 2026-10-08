@@ -111,6 +111,8 @@ export function logDiscoveryTelemetry({ request, result, discoveryRunId, sourceS
     matchedToolIds,
     retrievalMethod: retrieval?.method,
     denseFailed: retrieval?.denseFailed,
+    lowConfidence: retrieval?.lowConfidence === true,
+    denseFailureReason: retrieval?.denseFailureReason,
     embeddingModel: retrieval?.embeddingModel,
     embeddingDim: retrieval?.embeddingDim,
     candidateCount: retrieval?.candidateCount,

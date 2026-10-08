@@ -168,6 +168,56 @@ describe("assertLighterOrderFitsAccountMargin", () => {
     expect(error.message).toContain("Reduce the size to 0.0664 ETH or less");
   });
 
+  it("refuses identically from an execute-time snapshot, reading nothing itself", async () => {
+    const live = client();
+    const expected = await refusal(assertLighterOrderFitsAccountMargin({
+      environment: "rhc",
+      accountIndex: 31824,
+      account: account(),
+      preview: preview(),
+      client: live.typed,
+    }));
+    mockResolveAuth.mockClear();
+    const reused = client();
+    const snapshot = {
+      marketDetails: { code: 200, order_book_details: [ETH_MARKET], spot_order_book_details: [] },
+      resolveAuth: vi.fn(async () => ({ token: "read-only", accountIndex: 31824 })),
+      accountLimits: vi.fn(() => live.reads.getAccountLimits("rhc", { accountIndex: 31824 }, { token: "read-only", accountIndex: 31824 })),
+      depthBook: vi.fn(() => live.reads.getOrderBookOrders("rhc", { marketId: 0, limit: 50 })),
+    };
+
+    const fromSnapshot = await refusal(assertLighterOrderFitsAccountMargin({
+      environment: "rhc",
+      accountIndex: 31824,
+      account: account(),
+      preview: preview(),
+      client: reused.typed,
+      snapshot,
+    }));
+
+    expect(fromSnapshot.message).toBe(expected.message);
+    expect(mockResolveAuth).not.toHaveBeenCalled();
+    expect(reused.reads.getMarketDetails).not.toHaveBeenCalled();
+    expect(reused.reads.getAccountLimits).not.toHaveBeenCalled();
+    expect(reused.reads.getOrderBookOrders).not.toHaveBeenCalled();
+    expect(snapshot.depthBook).toHaveBeenCalledTimes(1);
+  });
+
+  it("decides whether to read with the same rule callers use to start reads early", async () => {
+    const { lighterOrderMarginFitNeedsLiveReads } = await import("@vex-agent/tools/protocols/lighter/margin-fit-guard.js");
+    expect(lighterOrderMarginFitNeedsLiveReads(account(), preview())).toBe(true);
+    expect(lighterOrderMarginFitNeedsLiveReads(account(), preview({ reduceOnly: true }))).toBe(false);
+    expect(lighterOrderMarginFitNeedsLiveReads(account({ available_balance: undefined }), preview())).toBe(false);
+    expect(lighterOrderMarginFitNeedsLiveReads(account(), preview({
+      baseAmountInteger: "77",
+      previewJson: {
+        price: { display: "2704.61" },
+        quoteNotional: { display: "20.825497" },
+        marketData: { referencePrice: "2690.87" },
+      },
+    }))).toBe(false);
+  });
+
   it("admits the same order at the size it names", async () => {
     await expect(assertLighterOrderFitsAccountMargin({
       environment: "rhc",

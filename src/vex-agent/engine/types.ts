@@ -42,8 +42,19 @@ export type {
   MessageType,
   MessageVisibility,
 } from "./types/messages.js";
-export type { MissionDraft, MissionPatch, DeployedCapital } from "./types/mission-draft.js";
-export { MISSION_DRAFT_REQUIRED_FIELDS, DEPLOYED_CAPITAL_BOUNDS } from "./types/mission-draft.js";
+export type {
+  MissionDraft,
+  MissionPatch,
+  DeployedCapital,
+  MissionReasoningEffort,
+} from "./types/mission-draft.js";
+export {
+  MISSION_DRAFT_REQUIRED_FIELDS,
+  DEPLOYED_CAPITAL_BOUNDS,
+  MISSION_REASONING_EFFORTS,
+  MISSION_DEFAULT_REASONING_EFFORT,
+  LEGACY_MISSION_DEFAULT_REASONING_EFFORT,
+} from "./types/mission-draft.js";
 export type {
   EngineContext,
   ResumedTurnClaim,

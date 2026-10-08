@@ -17,6 +17,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { openExecutionGate } from "../../lifecycle/execution-gate.js";
 import {
   createTestWebContents,
   createTrustedSender,
@@ -58,6 +59,7 @@ const mocks = vi.hoisted(() => ({
   listPendingAllApprovals: vi.fn().mockResolvedValue({ ok: true, data: [] }),
   getApprovalById: vi.fn().mockResolvedValue({ ok: true, data: null }),
   getHistoryForSession: vi.fn().mockResolvedValue({ ok: true, data: [] }),
+  broadcastToAllWindows: vi.fn(),
   log: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -156,6 +158,10 @@ vi.mock("@vex-agent/engine/core/approval-runtime.js", () => ({
 
 vi.mock("../../logger/index.js", () => ({
   log: mocks.log,
+}));
+
+vi.mock("../../lifecycle/broadcast.js", () => ({
+  broadcastToAllWindows: (...a: unknown[]) => mocks.broadcastToAllWindows(...a),
 }));
 
 const { CH } = await import("../../../shared/ipc/channels.js");
@@ -615,6 +621,241 @@ describe("approve handler decision outcome mapping", () => {
   });
 });
 
+// ── K-2 B2: APPROVAL_DISPATCH_BACKGROUND ─────────────────────────────────
+
+interface DispatchStartedOptions {
+  readonly onDispatchStarted?: (started: { readonly resolvedAt: string }) => void;
+}
+
+const DESK_RESOLVED_AT = "2026-10-03T09:00:00.000Z";
+
+function deskDispatched(id: string, output: string) {
+  return {
+    kind: "dispatched",
+    approvalId: id,
+    resolvedAt: DESK_RESOLVED_AT,
+    executionStatus: "succeeded",
+    sessionId: SESSION,
+    missionRunId: null,
+    continuation: null,
+    toolResult: { success: true, output },
+  } as const;
+}
+
+/** A desk dispatch that announces its slot claim, then waits to be released. */
+function holdDeskDispatch(): {
+  readonly release: (outcome: unknown) => void;
+  readonly fail: (cause: unknown) => void;
+} {
+  let release: (outcome: unknown) => void = () => undefined;
+  let fail: (cause: unknown) => void = () => undefined;
+  mocks.prepareApprove.mockImplementation((_id: string, options?: DispatchStartedOptions) => {
+    options?.onDispatchStarted?.({ resolvedAt: DESK_RESOLVED_AT });
+    return new Promise((resolve, reject) => {
+      release = resolve;
+      fail = reject;
+    });
+  });
+  return {
+    release: (outcome) => release(outcome),
+    fail: (cause) => fail(cause),
+  };
+}
+
+function dispatchEvents(): Array<Record<string, unknown>> {
+  return mocks.broadcastToAllWindows.mock.calls
+    .filter((args) => args[0] === "vex:event:approvals:dispatch")
+    .map((args) => {
+      const payload: unknown = args[1];
+      return typeof payload === "object" && payload !== null ? { ...payload } : {};
+    });
+}
+
+describe("approve handler with APPROVAL_DISPATCH_BACKGROUND", () => {
+  afterEach(() => {
+    delete process.env.APPROVAL_DISPATCH_BACKGROUND;
+  });
+
+  it("unset is ON: the engine is handed the dispatch listener", async () => {
+    delete process.env.APPROVAL_DISPATCH_BACKGROUND;
+    mocks.prepareApprove.mockResolvedValue(deskDispatched("on-0", "Order 0 filled."));
+
+    await call(CH.approvals.approve, { id: "on-0" });
+
+    expect(mocks.prepareApprove).toHaveBeenCalledTimes(1);
+    expect(mocks.prepareApprove.mock.calls[0]?.[1]).toEqual({ onDispatchStarted: expect.any(Function) });
+  });
+
+  it("OFF (0 or invalid): the engine is called with the id alone and nothing is broadcast", async () => {
+    for (const value of ["0", "yes"]) {
+      process.env.APPROVAL_DISPATCH_BACKGROUND = value;
+      mocks.prepareApprove.mockReset();
+      mocks.prepareApprove.mockResolvedValue(deskDispatched("off-1", "Order 1 filled."));
+
+      const result = await call(CH.approvals.approve, { id: "off-1" });
+
+      expect(mocks.prepareApprove).toHaveBeenCalledTimes(1);
+      expect(mocks.prepareApprove.mock.calls[0]).toEqual(["off-1"]);
+      expect(result).toEqual({
+        ok: true,
+        data: {
+          id: "off-1",
+          status: "approved",
+          resolvedAt: DESK_RESOLVED_AT,
+          runtimeOutcome: "stopped",
+          executionStatus: "succeeded",
+          missionRunId: null,
+          cached: false,
+          message: "Approved. Tool executed.",
+          toolOutput: "Order 1 filled.",
+        },
+      });
+    }
+    expect(dispatchEvents()).toEqual([]);
+  });
+
+  it("OFF: a desk dispatch that would announce is still awaited to its outcome", async () => {
+    process.env.APPROVAL_DISPATCH_BACKGROUND = "0";
+    const held = holdDeskDispatch();
+    let replied = false;
+    const pending = call(CH.approvals.approve, { id: "off-2" }).then((r) => {
+      replied = true;
+      return r;
+    });
+    await vi.waitFor(() => expect(mocks.prepareApprove).toHaveBeenCalledTimes(1));
+    await flushMicrotasks();
+    // No listener was passed, so nothing announced and the reply waits.
+    expect(replied).toBe(false);
+    held.release(deskDispatched("off-2", "Order 2 filled."));
+    const result = await pending;
+    expect(result.data).toMatchObject({ executionStatus: "succeeded", toolOutput: "Order 2 filled." });
+    expect(dispatchEvents()).toEqual([]);
+  });
+
+  it("ON: answers at the slot claim with dispatching, then broadcasts the awaited reply as settled", async () => {
+    process.env.APPROVAL_DISPATCH_BACKGROUND = "1";
+    const held = holdDeskDispatch();
+
+    const reply = await call(CH.approvals.approve, { id: "on-1" }, { requestId: "req-on-1" });
+
+    expect(reply).toEqual({
+      ok: true,
+      data: {
+        id: "on-1",
+        status: "approved",
+        resolvedAt: DESK_RESOLVED_AT,
+        runtimeOutcome: "stopped",
+        executionStatus: "dispatching",
+        missionRunId: null,
+        cached: false,
+        message: "Approved. Sending now; the outcome follows.",
+      },
+    });
+    expect(dispatchEvents()).toEqual([
+      expect.objectContaining({ phase: "dispatching", approvalId: "on-1" }),
+    ]);
+
+    held.release(deskDispatched("on-1", "Order 9 filled."));
+    await flushMicrotasks();
+
+    const events = dispatchEvents();
+    expect(events).toHaveLength(2);
+    expect(events[1]).toMatchObject({
+      phase: "settled",
+      approvalId: "on-1",
+      result: {
+        id: "on-1",
+        status: "approved",
+        resolvedAt: DESK_RESOLVED_AT,
+        runtimeOutcome: "stopped",
+        executionStatus: "succeeded",
+        missionRunId: null,
+        cached: false,
+        message: "Approved. Tool executed.",
+        toolOutput: "Order 9 filled.",
+      },
+    });
+    // One engine call, and the reply never started a second one.
+    expect(mocks.prepareApprove).toHaveBeenCalledTimes(1);
+  });
+
+  it("ON: the settled event carries exactly what the OFF reply carries for the same outcome", async () => {
+    mocks.prepareApprove.mockResolvedValue(deskDispatched("same-1", "Order 3 filled."));
+    const offReply = await call(CH.approvals.approve, { id: "same-1" });
+
+    process.env.APPROVAL_DISPATCH_BACKGROUND = "1";
+    const held = holdDeskDispatch();
+    await call(CH.approvals.approve, { id: "same-1" });
+    held.release(deskDispatched("same-1", "Order 3 filled."));
+    await flushMicrotasks();
+
+    const settled = dispatchEvents().find((event) => event.phase === "settled");
+    expect(settled?.result).toEqual(offReply.data);
+  });
+
+  it("ON: a dispatch that throws after the claim broadcasts the error the awaited reply would have returned", async () => {
+    process.env.APPROVAL_DISPATCH_BACKGROUND = "1";
+    const held = holdDeskDispatch();
+    const reply = await call(CH.approvals.approve, { id: "on-2" });
+    expect(reply.data).toMatchObject({ executionStatus: "dispatching" });
+
+    held.fail(new FakeApprovalPostDecisionError("on-2", "desk_settlement_superseded", "beef"));
+    await flushMicrotasks();
+
+    const failed = dispatchEvents().find((event) => event.phase === "failed");
+    expect(failed).toMatchObject({ approvalId: "on-2" });
+    expect(failed?.message).toBe(
+      "Tool execution failed after approval. The mission run has been paused; see transcript for details.",
+    );
+    expect(mocks.log.warn).toHaveBeenCalledWith(expect.stringContaining("post_decision_failed id=on-2"));
+  });
+
+  it("ON: an unrecognised throw after the claim is logged and broadcast as unexpected", async () => {
+    process.env.APPROVAL_DISPATCH_BACKGROUND = "1";
+    const held = holdDeskDispatch();
+    await call(CH.approvals.approve, { id: "on-3" }, { requestId: "req-on-3" });
+
+    held.fail(new Error("socket hang up"));
+    await flushMicrotasks();
+
+    expect(dispatchEvents().map((event) => event.phase)).toEqual(["dispatching", "failed"]);
+    expect(mocks.log.warn).toHaveBeenCalledWith(
+      expect.stringContaining("failed correlationId=req-on-3"),
+      expect.any(Error),
+    );
+  });
+
+  it("ON: a lane that never announces (agent, Studio, cached) is awaited and answered as with the switch off", async () => {
+    process.env.APPROVAL_DISPATCH_BACKGROUND = "1";
+    mocks.prepareApprove.mockResolvedValue({
+      kind: "dispatched",
+      approvalId: "on-4",
+      resolvedAt: "2026-05-23T20:00:00.000Z",
+      executionStatus: "succeeded",
+      sessionId: SESSION,
+      missionRunId: "run-1",
+      continuation: STUB_CONTINUATION,
+      toolResult: { success: true, output: "Tx 0xabc" },
+    });
+
+    const result = await call(CH.approvals.approve, { id: "on-4" });
+
+    expect(result.data).toMatchObject({ runtimeOutcome: "resumed", executionStatus: "succeeded" });
+    expect(mocks.dispatchPreparedMission).toHaveBeenCalledTimes(1);
+    expect(dispatchEvents()).toEqual([]);
+  });
+
+  it("ON: a refusal before the claim is answered directly, never as dispatching", async () => {
+    process.env.APPROVAL_DISPATCH_BACKGROUND = "1";
+    mocks.prepareApprove.mockRejectedValue(new FakeApprovalDispatchError("on-5", "TypeError", "abc"));
+
+    const result = await call(CH.approvals.approve, { id: "on-5" });
+
+    expect(result.error?.code).toBe("approvals.dispatch_failed");
+    expect(dispatchEvents()).toEqual([]);
+  });
+});
+
 // ── reject handler ─────────────────────────────────────────────────────
 
 describe("reject handler decision outcome mapping", () => {
@@ -881,4 +1122,11 @@ describe("scheduled TTL sweep", () => {
 
     expect(mocks.reconcileApprovalLifecycle).toHaveBeenCalled();
   });
+});
+
+// These handlers run as they do in a READY process: the execution gate
+// (`lifecycle/execution-gate.ts`) is closed until the runtime is up, and its
+// own suite covers the refusal.
+beforeEach(() => {
+  openExecutionGate();
 });

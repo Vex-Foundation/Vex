@@ -42,7 +42,7 @@ import {
 } from "@vex-agent/db/repos/missions.js";
 import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import * as sessionsRepo from "@vex-agent/db/repos/sessions.js";
-import type { RunnerLease } from "@vex-agent/db/repos/runner-leases.js";
+import type { RunnerLeaseInfo } from "@vex-agent/db/repos/runner-leases.js";
 import { resolveProvider } from "@vex-agent/inference/registry.js";
 import logger from "@utils/logger.js";
 
@@ -124,7 +124,7 @@ export type PrepareMissionStartOutcome =
   }
   | {
     readonly outcome: "lease_busy";
-    readonly currentLease: RunnerLease;
+    readonly currentLease: RunnerLeaseInfo;
   }
   | { readonly outcome: "provider_unavailable" }
   /**

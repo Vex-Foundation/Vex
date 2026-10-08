@@ -22,13 +22,10 @@
  *
  * ## Established once, never recomputed
  *
- * A public `recentTrades` row carries the position sizes before the trade but
- * neither the sign-changed flag nor the account PnL, so a fill first seen
- * publicly has NO effect at all - not "unknown" stored as a fact, but NULL,
- * the absence of knowledge. When an authenticated observation later supplies
- * the missing fields, the effect is established once and is immutable from
- * then on. {@link readLighterAccountFillFacts} is the gate: it returns null
- * unless every field the classification rests on is present.
+ * Some public rows carry position sizes and a sign-change flag without PnL.
+ * Those position facts can establish an effect independently of unknown PnL.
+ * Rows without either position fact have no effect. An established effect
+ * stays immutable; a later matching observation may supply the provider PnL.
  *
  * ## Decimal-safe
  *
@@ -38,6 +35,18 @@
  */
 
 import type { LighterTrade } from "@tools/lighter/types.js";
+
+/** Classify complete position facts even when the provider omits realized PnL. */
+export const LIGHTER_FILL_POSITION_FACTS_WITHOUT_PNL = true;
+
+export interface LighterFillPositionFactsOptions {
+  /** Overrides `LIGHTER_FILL_POSITION_FACTS_WITHOUT_PNL`; false requires PnL as before. */
+  readonly positionFactsWithoutPnl?: boolean;
+}
+
+export function lighterFillPositionFactsWithoutPnl(options: LighterFillPositionFactsOptions = {}): boolean {
+  return options.positionFactsWithoutPnl ?? LIGHTER_FILL_POSITION_FACTS_WITHOUT_PNL;
+}
 
 /**
  * What a fill did to the account's position.
@@ -78,9 +87,9 @@ export interface LighterAccountFillFacts {
   readonly entryQuoteBefore: string | null;
   /**
    * Lighter's own realized PnL for this account, on this fill. Signed decimal
-   * string, "0" on a fill that realized nothing. Never computed here.
+   * string when reported, null when absent. Never computed or defaulted to zero.
    */
-  readonly accountPnl: string;
+  readonly accountPnl: string | null;
   /** Initial margin fraction before the fill, on the provider's 10000 scale. */
   readonly initialMarginFractionBefore: number | null;
 }
@@ -95,8 +104,18 @@ export function readLighterAccountFillFacts(input: {
   readonly trade: LighterTrade;
   readonly role: "maker" | "taker";
   readonly side: "buy" | "sell";
-}): LighterAccountFillFacts | null {
+  /** When supplied, the role and side must describe this exact trade participant. */
+  readonly accountIndex?: number;
+}, options: LighterFillPositionFactsOptions = {}): LighterAccountFillFacts | null {
   const { trade, role, side } = input;
+  if (input.accountIndex !== undefined) {
+    const isAsk = trade.ask_account_id === input.accountIndex;
+    const isBid = trade.bid_account_id === input.accountIndex;
+    const expectedSide = isAsk ? "sell" : "buy";
+    const expectedRole = (expectedSide === "sell" ? trade.is_maker_ask : !trade.is_maker_ask) ? "maker" : "taker";
+    if (!Number.isSafeInteger(input.accountIndex) || input.accountIndex < 0
+      || isAsk === isBid || side !== expectedSide || role !== expectedRole) return null;
+  }
   const maker = role === "maker";
   const positionSizeBefore = signedDecimal(
     maker ? trade.maker_position_size_before : trade.taker_position_size_before,
@@ -104,10 +123,12 @@ export function readLighterAccountFillFacts(input: {
   const positionSignChanged = maker ? trade.maker_position_sign_changed : trade.taker_position_sign_changed;
   // A SELL is the ask side, and Lighter attributes the realized PnL of a
   // reducing long to `ask_account_pnl`; a buy is the bid side.
-  const accountPnl = signedDecimal(side === "sell" ? trade.ask_account_pnl : trade.bid_account_pnl);
-  if (positionSizeBefore === null || typeof positionSignChanged !== "boolean" || accountPnl === null) {
-    // A public trade row. It knows the sizes but not the account, and a
-    // classification built on half of it would be a guess wearing a label.
+  const reportedPnl = side === "sell" ? trade.ask_account_pnl : trade.bid_account_pnl;
+  const accountPnl = signedDecimal(reportedPnl);
+  if (positionSizeBefore === null || typeof positionSignChanged !== "boolean"
+    || (reportedPnl != null && accountPnl === null)
+    || (!lighterFillPositionFactsWithoutPnl(options) && accountPnl === null)) {
+    // Missing position evidence or malformed reported PnL is not a fact.
     return null;
   }
   return {

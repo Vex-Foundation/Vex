@@ -56,14 +56,23 @@ const { isMutatingTool } = await import("@vex-agent/tools/registry.js");
 const SESSION_ID = "00000000-0000-4000-8000-0000000000a9";
 
 /** A mutating, non-`local_write` protocol tool — the gate's target shape. */
-function mutatingManifest() {
+function mutatingManifest(): Parameters<typeof evaluateApprovalGate>[0] {
   return {
+    toolId: "kyberswap.swap.execute",
+    publicName: "kyberswap__swap_execute",
+    namespace: "kyberswap",
+    lifecycle: "active",
+    description: "Swap execution approval fixture",
     mutating: true,
     actionKind: "user_wallet_broadcast",
-  } as unknown as Parameters<typeof evaluateApprovalGate>[0];
+    params: [],
+    exampleParams: {},
+  };
 }
 
-function protocolContext(sessionPermission: "restricted" | "full") {
+function protocolContext(
+  sessionPermission: "restricted" | "full",
+): Parameters<typeof evaluateApprovalGate>[3] {
   return {
     sessionPermission,
     approved: false,
@@ -71,13 +80,13 @@ function protocolContext(sessionPermission: "restricted" | "full") {
     contextUsageBand: "normal",
     walletResolution: { source: "session", evm: null, solana: null },
     walletPolicy: { kind: "none" },
-  } as unknown as Parameters<typeof evaluateApprovalGate>[3];
+  };
 }
 
 function callGate(sessionPermission: "restricted" | "full") {
   return evaluateApprovalGate(
     mutatingManifest(),
-    { toolId: "kyberswap:swap" },
+    { toolId: "kyberswap.swap.execute" },
     {}, // not a dryRun preview
     protocolContext(sessionPermission),
     undefined,
@@ -85,12 +94,17 @@ function callGate(sessionPermission: "restricted" | "full") {
     undefined,
     undefined,
     undefined,
-    // quoteBinding: this gate test supplies no matched quote.
+    // No matched quote, spendability, bridge identity or prequote authority.
+    undefined,
+    undefined,
+    undefined,
     undefined,
   );
 }
 
-function internalToolContext(sessionPermission: "restricted" | "full") {
+function internalToolContext(
+  sessionPermission: "restricted" | "full",
+): Parameters<typeof dispatchTool>[1] {
   return {
     sessionId: SESSION_ID,
     loadedDocuments: new Map(),
@@ -105,7 +119,7 @@ function internalToolContext(sessionPermission: "restricted" | "full") {
     sourceSession: SESSION_ID,
     walletResolution: { source: "session", evm: null, solana: null },
     walletPolicy: { kind: "none" },
-  } as unknown as Parameters<typeof dispatchTool>[1];
+  };
 }
 
 beforeEach(() => {
@@ -138,14 +152,14 @@ describe("A9 autonomy guarantee — protocol approval gate", () => {
     // Risk level must not smuggle a gate back into full autonomy. A
     // destructive, wallet-broadcasting action is exactly what full mode exists
     // to let the agent do unattended.
-    const manifest = {
-      mutating: true,
+    const manifest: Parameters<typeof evaluateApprovalGate>[0] = {
+      ...mutatingManifest(),
       actionKind: "destructive",
-    } as unknown as Parameters<typeof evaluateApprovalGate>[0];
+    };
 
     const result = evaluateApprovalGate(
       manifest,
-      { toolId: "kyberswap:swap" },
+      { toolId: "kyberswap.swap.execute" },
       {},
       protocolContext("full"),
       undefined,
@@ -153,7 +167,10 @@ describe("A9 autonomy guarantee — protocol approval gate", () => {
       undefined,
       undefined,
       undefined,
-      // quoteBinding: this gate test supplies no matched quote.
+      // No matched quote, spendability, bridge identity or prequote authority.
+      undefined,
+      undefined,
+      undefined,
       undefined,
     );
 

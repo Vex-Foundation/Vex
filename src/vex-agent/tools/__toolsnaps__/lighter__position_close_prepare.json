@@ -1,13 +1,17 @@
 {
   "definition": {
     "function": {
-      "description": "Prepare one explicit approval to close the entire current position in one active Lighter perpetual market. Use when the user wants to close the full current position, not place a separate directional order. It reads the exact live account position, market precision, and up to 100 order-book levels; requires a user-specified slippage ceiling; refuses insufficient visible depth; and binds a full-size reduce-only market IOC order with a worst acceptable price. Returns the durable intent, exact close terms, and trusted approval card; it never loads a private key, reserves a nonce, signs, or submits.",
+      "description": "Prepare one explicit approval to close 25, 50, 75, or 100 percent of the exact current position in one active Lighter perpetual market. Use when the user explicitly asks to close the full position or a supported percentage and supplies a maximum slippage ceiling. Omit closePercent for the entire position. It reads the exact live account position, market precision, and up to 100 order-book levels; floors partial size to market precision and enforces live partial-order minimums; requires a user-specified slippage ceiling; refuses insufficient visible depth; and binds the exact position and reduce-only market IOC amount with a worst acceptable price. Returns the durable intent, exact close terms, and trusted approval card; it never loads a private key, reserves a nonce, signs, or submits.",
       "name": "lighter__position_close_prepare",
       "parameters": {
         "additionalProperties": false,
         "properties": {
           "accountIndex": {
             "description": "Optional Lighter account index. In a session, omit it to use the account owned by the selected EVM wallet; an explicit index must match that wallet.",
+            "type": "number"
+          },
+          "closePercent": {
+            "description": "Optional percentage of the exact live position to close: 25, 50, 75, or 100. Defaults to 100. Partial amounts are floored to market size precision and must meet live order minimums.",
             "type": "number"
           },
           "environment": {
@@ -23,7 +27,7 @@
             "type": "number"
           },
           "slippageBps": {
-            "description": "Explicit maximum slippage in basis points from 1 through 500. Vex refuses the close unless visible live depth can fill the entire position inside this bound.",
+            "description": "Explicit maximum slippage in basis points from 1 through 500. Vex refuses the close unless visible live depth can fill the requested close amount inside this bound.",
             "type": "number"
           }
         },

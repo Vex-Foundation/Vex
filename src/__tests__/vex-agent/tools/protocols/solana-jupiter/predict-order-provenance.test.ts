@@ -29,7 +29,7 @@ const WALLET_ADDRESS = SIGNER.publicKey.toBase58();
 const POSITION_A = "JBKuLxTk81jhm5VGmmWxXKxKKz8NAqjYad8TXgWMGkJd";
 const POSITION_B = "H84ZBkrgt876mStVprz1tmjEbXPL7BS8Dmhd1EKvtR2H";
 
-const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => ({
+const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(async () => ({
   family: "solana" as const,
   address: WALLET_ADDRESS,
   secretKey: SIGNER.secretKey,
@@ -153,7 +153,7 @@ function intentEvents(): readonly IntentEvent[] {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockResolveSigningWallet.mockReturnValue({
+  mockResolveSigningWallet.mockResolvedValue({
     family: "solana",
     address: WALLET_ADDRESS,
     secretKey: SIGNER.secretKey,

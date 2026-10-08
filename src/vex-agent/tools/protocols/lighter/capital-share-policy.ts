@@ -77,13 +77,14 @@ import {
 import type { LighterOrderPreviewRow } from "@vex-agent/db/repos/lighter-order-previews.js";
 import type {
   LighterAccount,
+  LighterAccountLimitsResponse,
   LighterAccountPosition,
   LighterAccountResponse,
   LighterEnvironment,
   LighterMarketDetail,
 } from "@tools/lighter/types.js";
 import { resolveLighterReadOnlyAccountAuth } from "./read-account-auth.js";
-import { assertLighterOrderFitsAccountMargin } from "./margin-fit-guard.js";
+import { assertLighterOrderFitsAccountMargin, type LighterMarginFitReadSnapshot } from "./margin-fit-guard.js";
 import { readLighterTradingLimits } from "@vex-agent/db/repos/lighter-trading-limits.js";
 import {
   admitLighterCapitalCommitment,
@@ -186,6 +187,11 @@ export async function evaluateLighterOrderCapitalShare(input: {
   readonly client: LighterCapitalShareEvidenceClient;
   readonly auth: LighterPrivilegedAccountAuth | null;
   readonly includeLiveCommitments: boolean;
+  /**
+   * The account-limits read an execute-time snapshot already started with
+   * `auth`; consumed only where this evaluation would read the tier itself.
+   */
+  readonly accountLimits?: () => Promise<LighterAccountLimitsResponse>;
 }): Promise<LighterCapitalShareEvaluation> {
   const { policy, order } = input;
   const base = {
@@ -279,6 +285,7 @@ export async function evaluateLighterOrderCapitalShare(input: {
       policy,
       client: input.client,
       auth: input.auth,
+      ...(input.accountLimits === undefined ? {} : { accountLimits: input.accountLimits }),
     });
   } catch (error) {
     return {
@@ -376,6 +383,8 @@ export async function buildLighterCapitalShareAdvisory(input: {
   readonly order: LighterCapitalShareOrderFacts;
   readonly client: LighterCapitalShareEvidenceClient;
   readonly auth: LighterPrivilegedAccountAuth | null;
+  /** `LIGHTER_PREVIEW_SINGLE_SNAPSHOT`: the prepare's shared account-limits read, made with `auth`. */
+  readonly accountLimits?: () => Promise<LighterAccountLimitsResponse>;
 }): Promise<LighterCapitalShareAdvisory> {
   try {
     const policy = await resolveLighterCapitalSharePolicy(input);
@@ -391,6 +400,7 @@ export async function buildLighterCapitalShareAdvisory(input: {
       client: input.client,
       auth: input.auth,
       includeLiveCommitments: true,
+      ...(input.accountLimits === undefined ? {} : { accountLimits: input.accountLimits }),
     });
     const { outcome } = evaluation;
     if (!outcome.applies) {
@@ -445,6 +455,15 @@ export async function resolveLighterPreviewCapitalShareAdvisory(input: {
   readonly orderType: LighterOrderType;
   readonly reduceOnly: boolean;
   readonly integratorFees: LighterIntegratorFees | null;
+  /**
+   * `LIGHTER_PREVIEW_SINGLE_SNAPSHOT`: the prepare's one read-only auth and its
+   * account-limits read, each awaited only where this advisory reads them
+   * today. Absent reads everything here, as before.
+   */
+  readonly snapshot?: {
+    readonly resolveAuth: () => Promise<LighterPrivilegedAccountAuth | null>;
+    readonly accountLimits: () => Promise<LighterAccountLimitsResponse>;
+  };
 }): Promise<LighterCapitalShareAdvisory | null> {
   const account = input.account.accounts.find(
     (row) => (row.index ?? row.account_index) === input.accountIndex,
@@ -468,13 +487,16 @@ export async function resolveLighterPreviewCapitalShareAdvisory(input: {
     // advisory simply has nothing to say about an order that will not exist.
     return null;
   }
-  const auth = await resolveLighterReadOnlyAccountAuth(input.environment, input.accountIndex);
+  const auth = input.snapshot === undefined
+    ? await resolveLighterReadOnlyAccountAuth(input.environment, input.accountIndex)
+    : await input.snapshot.resolveAuth();
   return buildLighterCapitalShareAdvisory({
     environment: input.environment,
     accountIndex: input.accountIndex,
     account,
     client: input.client,
     auth,
+    ...(input.snapshot === undefined ? {} : { accountLimits: input.snapshot.accountLimits }),
     order: {
       market: input.market,
       baseAmountInteger,
@@ -509,6 +531,8 @@ export async function admitLighterOrderCapitalCommitment(input: {
   readonly excludeIntentId?: string;
   /** MODIFY only: the requirement already committed, so only the increase is admitted. */
   readonly alreadyCommittedUnits?: string;
+  /** The account-limits read an execute-time snapshot already started with `auth`. */
+  readonly accountLimits?: () => Promise<LighterAccountLimitsResponse>;
 }): Promise<LighterCapitalShareOutcome> {
   const policy = await resolveLighterCapitalSharePolicy(input);
   if (policy.agentCapitalSharePercent === null) {
@@ -520,6 +544,7 @@ export async function admitLighterOrderCapitalCommitment(input: {
     client: input.client,
     auth: input.auth,
     includeLiveCommitments: false,
+    ...(input.accountLimits === undefined ? {} : { accountLimits: input.accountLimits }),
   });
   const { outcome } = evaluation;
   if (!outcome.applies) return outcome;
@@ -583,8 +608,15 @@ export async function admitLighterOrderCapitalCommitmentForPreview(input: {
   > & Partial<Pick<LighterOrderPreviewRow, "previewJson">>;
   readonly client?: LighterCapitalShareAdmissionClient;
   readonly excludeIntentId?: string;
+  /**
+   * The reads an execute-time revalidation (`LIGHTER_REVALIDATION_SINGLE_SNAPSHOT`)
+   * or the same prepare's preview (`LIGHTER_PREVIEW_SINGLE_SNAPSHOT`) already
+   * made for this preview's own scope; absent reads everything here, as before.
+   */
+  readonly snapshot?: LighterCapitalShareExecuteSnapshot;
 }): Promise<LighterCapitalShareOutcome> {
   const client = input.client ?? getLighterClient();
+  const { snapshot } = input;
   const { environment, accountIndex, marketIndex } = input.preview;
 
   // ORDER MATTERS. The account read comes first because the OWNING WALLET must
@@ -593,11 +625,13 @@ export async function admitLighterOrderCapitalCommitmentForPreview(input: {
   // default install, where the user has set no share, preparation costs one
   // account read, plus the margin check's market, fee-tier and book reads only
   // for an order near the account's available margin.
-  const accountResponse = await client.getAccount(environment, {
-    by: "index",
-    value: accountIndex,
-    activeOnly: false,
-  });
+  const accountResponse = snapshot === undefined
+    ? await client.getAccount(environment, {
+      by: "index",
+      value: accountIndex,
+      activeOnly: false,
+    })
+    : snapshot.account;
   const account = accountResponse.accounts.find(
     (row) => (row.index ?? row.account_index) === accountIndex,
   );
@@ -615,6 +649,7 @@ export async function admitLighterOrderCapitalCommitmentForPreview(input: {
     account,
     preview: input.preview,
     client,
+    ...(snapshot === undefined ? {} : { snapshot }),
   });
   const earlyPolicy = await resolveLighterCapitalSharePolicy({
     environment,
@@ -625,10 +660,12 @@ export async function admitLighterOrderCapitalCommitmentForPreview(input: {
     return { applies: false, exemption: "no_share_configured" };
   }
 
-  const marketDetails = await client.getMarketDetails(environment, {
-    marketId: marketIndex,
-    filter: "all",
-  });
+  const marketDetails = snapshot === undefined
+    ? await client.getMarketDetails(environment, {
+      marketId: marketIndex,
+      filter: "all",
+    })
+    : snapshot.marketDetails;
   const market = [...marketDetails.order_book_details, ...marketDetails.spot_order_book_details]
     .find((detail) => detail.market_id === marketIndex);
   if (market === undefined) {
@@ -637,7 +674,9 @@ export async function admitLighterOrderCapitalCommitmentForPreview(input: {
       `Lighter did not return market ${marketIndex}, so the capital this order would commit could not be computed. Nothing was prepared.`,
     );
   }
-  const auth = await resolveLighterReadOnlyAccountAuth(environment, accountIndex);
+  const auth = snapshot === undefined
+    ? await resolveLighterReadOnlyAccountAuth(environment, accountIndex)
+    : await snapshot.resolveAuth();
   return admitLighterOrderCapitalCommitment({
     environment,
     accountIndex,
@@ -647,6 +686,7 @@ export async function admitLighterOrderCapitalCommitmentForPreview(input: {
     client,
     auth,
     ...(input.excludeIntentId === undefined ? {} : { excludeIntentId: input.excludeIntentId }),
+    ...(snapshot === undefined ? {} : { accountLimits: snapshot.accountLimits }),
     order: {
       market,
       baseAmountInteger: input.preview.baseAmountInteger,
@@ -680,13 +720,29 @@ export async function readmitLighterOrderCapitalCommitmentAtExecute(input: {
     | "priceInteger" | "orderType" | "reduceOnly" | "integratorFees"
   > & Partial<Pick<LighterOrderPreviewRow, "previewJson">>;
   readonly client?: LighterCapitalShareAdmissionClient;
+  /** `LIGHTER_REVALIDATION_SINGLE_SNAPSHOT`; absent reads everything here, as before. */
+  readonly snapshot?: LighterCapitalShareExecuteSnapshot;
 }): Promise<LighterCapitalShareOutcome> {
   return admitLighterOrderCapitalCommitmentForPreview({
     intentId: input.intentId,
     preview: input.preview,
     ...(input.client === undefined ? {} : { client: input.client }),
     excludeIntentId: input.intentId,
+    ...(input.snapshot === undefined ? {} : { snapshot: input.snapshot }),
   });
+}
+
+/**
+ * `LIGHTER_REVALIDATION_SINGLE_SNAPSHOT`: the reads the execute-time
+ * revalidation already made for this preview's own environment, account and
+ * market, standing in for the re-admission's duplicates. The account and the
+ * market details are the revalidation's `fresh` reads of the very same query;
+ * the auth, the account limits and the margin-fit book are each consumed only
+ * where the re-admission would otherwise read them, with the same failure
+ * handling at that point.
+ */
+export interface LighterCapitalShareExecuteSnapshot extends LighterMarginFitReadSnapshot {
+  readonly account: LighterAccountResponse;
 }
 
 /**
@@ -885,6 +941,7 @@ async function readLighterAccountExchangeTakerFeeTicks(input: {
   readonly policy: LighterCapitalSharePolicy;
   readonly client: Partial<Pick<LighterClient, "getAccountLimits">>;
   readonly auth: LighterPrivilegedAccountAuth | null;
+  readonly accountLimits?: () => Promise<LighterAccountLimitsResponse>;
 }): Promise<number> {
   if (input.auth === null || typeof input.client.getAccountLimits !== "function") {
     throw new VexError(
@@ -896,11 +953,13 @@ async function readLighterAccountExchangeTakerFeeTicks(input: {
   }
   let ticks: number;
   try {
-    const limits = await input.client.getAccountLimits(
-      input.policy.environment,
-      { accountIndex: input.policy.accountIndex },
-      input.auth,
-    );
+    const limits = input.accountLimits === undefined
+      ? await input.client.getAccountLimits(
+        input.policy.environment,
+        { accountIndex: input.policy.accountIndex },
+        input.auth,
+      )
+      : await input.accountLimits();
     if (limits.code !== 200) throw new Error(`accountLimits returned code ${String(limits.code)}`);
     ticks = limits.current_taker_fee_tick;
   } catch (error) {

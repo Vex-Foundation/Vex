@@ -4,6 +4,7 @@ import {
   approvalActionInputSchema,
   approvalActionKindSchema,
   approvalActionResultSchema,
+  approvalDispatchEventSchema,
   approvalGetHistoryInputSchema,
   approvalGetInputSchema,
   approvalListPendingAllInputSchema,
@@ -404,5 +405,37 @@ describe("approvalListPendingAllInputSchema", () => {
       approvalListPendingAllInputSchema.safeParse({ sessionId: SESSION })
         .success,
     ).toBe(false);
+  });
+});
+
+describe("approvalDispatchEventSchema (K-2 B2)", () => {
+  const RESULT = {
+    id: "approval-1",
+    status: "approved",
+    resolvedAt: ISO,
+    runtimeOutcome: "stopped",
+    executionStatus: "succeeded",
+    missionRunId: null,
+    cached: false,
+    message: "Approved. Tool executed.",
+    toolOutput: "Order 1 filled.",
+  };
+
+  it("accepts the three phases with exactly their own fields", () => {
+    expect(approvalDispatchEventSchema.safeParse({ phase: "dispatching", approvalId: "approval-1", occurredAt: ISO }).success).toBe(true);
+    expect(approvalDispatchEventSchema.safeParse({ phase: "settled", approvalId: "approval-1", occurredAt: ISO, result: RESULT }).success).toBe(true);
+    expect(approvalDispatchEventSchema.safeParse({ phase: "failed", approvalId: "approval-1", occurredAt: ISO, message: "Tool execution failed after approval." }).success).toBe(true);
+  });
+
+  it("refuses drift: an extra field, a result on the wrong phase, or an empty failure message", () => {
+    expect(approvalDispatchEventSchema.safeParse({ phase: "dispatching", approvalId: "approval-1", occurredAt: ISO, toolArgs: {} }).success).toBe(false);
+    expect(approvalDispatchEventSchema.safeParse({ phase: "dispatching", approvalId: "approval-1", occurredAt: ISO, result: RESULT }).success).toBe(false);
+    expect(approvalDispatchEventSchema.safeParse({ phase: "settled", approvalId: "approval-1", occurredAt: ISO, result: { ...RESULT, stack: "x" } }).success).toBe(false);
+    expect(approvalDispatchEventSchema.safeParse({ phase: "failed", approvalId: "approval-1", occurredAt: ISO, message: "" }).success).toBe(false);
+  });
+
+  it("keeps `dispatching` a valid reply execution status", () => {
+    const { toolOutput: _omitted, ...withoutOutput } = RESULT;
+    expect(approvalActionResultSchema.safeParse({ ...withoutOutput, executionStatus: "dispatching" }).success).toBe(true);
   });
 });

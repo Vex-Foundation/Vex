@@ -11,6 +11,7 @@ import type { MissionRunStatus } from "../../types.js";
 import type {
   LeaseProcessKind,
   RunnerLease,
+  RunnerLeaseInfo,
 } from "../../../db/repos/runner-leases.js";
 import type {
   ControlRequest,
@@ -26,6 +27,20 @@ export interface ClaimRunInput {
   readonly ownerId: string;
   readonly processKind: LeaseProcessKind;
   readonly ttlMs: number;
+  /**
+   * The token of a claim this caller ALREADY holds, presented to refresh it.
+   * Omit for a new claim (every production caller today). A live lease held
+   * under any other token - including the same owner id - is `lease_busy`.
+   */
+  readonly claimToken?: string;
+  /**
+   * The pending wake row that CAUSED this resume, already locked by the caller.
+   * When the run is flipped from `paused_wake`, that row is marked `consumed`
+   * in this commit instead of being swept up by the `consumed_by_resume`
+   * cancellation; every other pending wake for the session is still cancelled.
+   * Only the wake executor's atomic claim passes it.
+   */
+  readonly consumeWakeId?: string;
 }
 
 export type ClaimRunOutcome =
@@ -37,7 +52,7 @@ export type ClaimRunOutcome =
   }
   | {
     readonly outcome: "lease_busy";
-    readonly currentLease: RunnerLease;
+    readonly currentLease: RunnerLeaseInfo;
   }
   | {
     readonly outcome: "status_mismatch";
@@ -51,11 +66,17 @@ export interface ClaimSessionLeaseInput {
   readonly ownerId: string;
   readonly processKind: LeaseProcessKind;
   readonly ttlMs: number;
+  /**
+   * The token of a claim this caller ALREADY holds, presented to refresh it.
+   * Omit for a new claim (every production caller today). A live lease held
+   * under any other token - including the same owner id - is `lease_busy`.
+   */
+  readonly claimToken?: string;
 }
 
 export type ClaimSessionLeaseOutcome =
   | { readonly outcome: "claimed"; readonly lease: RunnerLease }
-  | { readonly outcome: "lease_busy"; readonly currentLease: RunnerLease };
+  | { readonly outcome: "lease_busy"; readonly currentLease: RunnerLeaseInfo };
 
 // ── observeAndApplyControl ──────────────────────────────────────────
 

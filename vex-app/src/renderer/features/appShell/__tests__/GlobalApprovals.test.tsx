@@ -2,7 +2,9 @@
  * GlobalApprovals tests — the DESK RULE app-wide pending-approvals inbox.
  *
  * Pins:
- *   - badge hidden while loading, when empty, and when the query errors (A4);
+ *   - four distinct states (U-2): loading, none pending (empty flank only
+ *     after a successful empty read), pending (n), and "couldn't check" with
+ *     a read-only Retry - a failed read is never shown as a clear;
  *   - badge count + panel lists items across sessions with their titles;
  *   - session-less row → "Background approval" fallback, no "Open session";
  *   - "Open session" navigates the UI store and closes the panel;
@@ -25,8 +27,12 @@ import type { Result } from "@shared/ipc/result.js";
 const mockApproveMutate = vi.fn();
 const mockRejectMutate = vi.fn();
 const refetchIntervals: Array<number | undefined> = [];
+const mockRefetch = vi.fn(async () => undefined);
 let pendingState: {
   data: Result<ReadonlyArray<ApprovalPendingGlobalDto>> | undefined;
+  isError?: boolean;
+  isFetching?: boolean;
+  refetch?: () => Promise<unknown>;
 } = { data: undefined };
 
 /**
@@ -125,6 +131,7 @@ beforeEach(() => {
   mockApproveMutate.mockReset();
   mockRejectMutate.mockReset();
   refetchIntervals.length = 0;
+  mockRefetch.mockClear();
   decisionInFlight = false;
   pendingState = { data: undefined };
   // A full-app screen is open, so "Open session" must also close it.
@@ -143,23 +150,99 @@ afterEach(() => {
   });
 });
 
-describe("GlobalApprovals - badge visibility", () => {
-  it("renders nothing while loading (data undefined)", () => {
+function queryStatus(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(
+    "[data-vex-area='global-approvals-status']",
+  );
+}
+
+describe("GlobalApprovals - the four states (Kairos U-2)", () => {
+  it("LOADING: a quiet checking status, no badge, no clear", () => {
     pendingState = { data: undefined };
     renderBadge();
     expect(queryBadge()).toBeNull();
+    const status = queryStatus();
+    expect(status?.getAttribute("data-state")).toBe("loading");
+    expect(screen.getByRole("status").textContent).toContain(
+      "Checking for pending approvals",
+    );
   });
 
-  it("renders nothing when there are no pending approvals", () => {
+  it("NONE PENDING: the flank is empty only after a successful empty read", () => {
     pendingState = { data: { ok: true, data: [] } };
-    renderBadge();
+    const { container } = renderBadge();
     expect(queryBadge()).toBeNull();
+    expect(queryStatus()).toBeNull();
+    expect(container.textContent).toBe("");
   });
 
-  it("renders nothing when the query errors (A4)", () => {
+  it("PENDING (n): the badge carries the count", () => {
+    pendingState = { data: { ok: true, data: [makeRow()] } };
+    renderBadge();
+    expect(getBadge().textContent).toContain("AWAITING 1");
+    expect(queryStatus()).toBeNull();
+  });
+
+  it("COULDN'T CHECK: data.ok === false is never shown as a clear", () => {
     pendingState = errorState();
     renderBadge();
     expect(queryBadge()).toBeNull();
+    expect(queryStatus()?.getAttribute("data-state")).toBe("unknown");
+    expect(screen.getByRole("status").textContent).toContain(
+      "Couldn't check for pending approvals",
+    );
+  });
+
+  it("COULDN'T CHECK: a query error before any data is never shown as a clear", () => {
+    pendingState = { data: undefined, isError: true };
+    renderBadge();
+    expect(queryStatus()?.getAttribute("data-state")).toBe("unknown");
+  });
+
+  it("COULDN'T CHECK: a failed refetch over an earlier EMPTY read is not a clear", () => {
+    pendingState = { data: { ok: true, data: [] }, isError: true };
+    renderBadge();
+    expect(queryStatus()?.getAttribute("data-state")).toBe("unknown");
+  });
+
+  it("a failed refetch over an earlier non-empty read keeps the last known count", () => {
+    pendingState = { data: { ok: true, data: [makeRow()] }, isError: true };
+    renderBadge();
+    expect(getBadge().textContent).toContain("AWAITING 1");
+  });
+
+  it("Retry re-reads the inbox and decides nothing", () => {
+    pendingState = { ...errorState(), refetch: mockRefetch };
+    renderBadge();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry checking approvals" }),
+    );
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
+    expect(mockApproveMutate).not.toHaveBeenCalled();
+    expect(mockRejectMutate).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("Retry is disabled while the re-read is in flight", () => {
+    pendingState = { ...errorState(), isFetching: true, refetch: mockRefetch };
+    renderBadge();
+    const retry = screen.getByRole("button", { name: "Checking approvals again" });
+    expect(retry.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("an open panel closes when the next read fails", () => {
+    pendingState = { data: { ok: true, data: [makeRow()] } };
+    const view = renderBadge();
+    fireEvent.click(getBadge());
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    pendingState = errorState();
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <GlobalApprovals />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(queryStatus()?.getAttribute("data-state")).toBe("unknown");
   });
 });
 
@@ -295,6 +378,23 @@ describe("GlobalApprovals - panel", () => {
       expect.any(Object),
     );
   });
+
+  it("a panel card says it is working and locks on the click itself", () => {
+    pendingState = {
+      data: {
+        ok: true,
+        data: [makeRow({ id: "g-a", riskLevel: "info", actionKind: "read" })],
+      },
+    };
+    renderBadge();
+    fireEvent.click(getBadge());
+    const approveKey = screen.getByRole("button", { name: /^approve$/i });
+    fireEvent.click(approveKey);
+    fireEvent.click(approveKey);
+    expect(mockApproveMutate).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: /working, please wait/i }).getAttribute("disabled")).not.toBeNull();
+    expect(screen.getByRole("button", { name: /^reject$/i }).getAttribute("disabled")).not.toBeNull();
+  });
 });
 
 describe("GlobalApprovals - dismissal + focus (A6)", () => {
@@ -415,8 +515,9 @@ describe("GlobalApprovals - inbox order and the keyboard's landing", () => {
     renderBadge();
     fireEvent.click(getBadge());
     const panel = screen.getByRole("dialog");
+    // The flag marks a rejection in flight too, so the key names that.
     expect(
-      screen.getAllByRole("button", { name: "Reject" })[0]?.hasAttribute("disabled"),
+      screen.getAllByRole("button", { name: /^(Reject|Rejecting, please wait)$/ })[0]?.hasAttribute("disabled"),
     ).toBe(true);
     expect(document.activeElement).toBe(panel);
   });
