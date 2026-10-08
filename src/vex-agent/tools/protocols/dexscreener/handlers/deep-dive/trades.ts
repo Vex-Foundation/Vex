@@ -307,7 +307,7 @@ export async function runTrades(
       rows,
       population: collected,
       aggregateBlockName,
-      rangeFullyCovered,
+      boundHit,
       withheldRows,
     }),
     subject: subjectBlock(subject),
@@ -779,7 +779,7 @@ interface TradesSummaryFacts {
   readonly population: readonly ProjectedTrade[];
   /** The key the aggregate is published under: `aggregate` or `pageAggregate`. */
   readonly aggregateBlockName: "aggregate" | "pageAggregate";
-  readonly rangeFullyCovered: boolean;
+  readonly boundHit: "page_budget" | "deadline" | null;
   readonly withheldRows: number;
 }
 
@@ -811,9 +811,9 @@ function summarize(symbol: string | null, facts: TradesSummaryFacts): string {
     return `No ${kind}trades matched on ${subject}. The provider answered, so this is an empty match on these filters rather than an unreachable pair.`;
   }
 
-  const coverage = facts.rangeFullyCovered
+  const coverage = facts.boundHit === null
     ? ""
-    : ` The requested range was NOT fully covered: the page budget stopped the walk, so this describes the newest part of the window only.`;
+    : ` The requested range was NOT fully covered: the ${facts.boundHit === "deadline" ? "deadline" : "page budget"} stopped the walk, so this describes the newest part of the window only.`;
 
   if (facts.mode === "aggregate") {
     return `${facts.population.length} ${kind}events on ${subject} (${flowOf(facts.population)}) were fetched and summarised into the ${facts.aggregateBlockName} block; no individual rows were returned in this mode.${coverage}`;

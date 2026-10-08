@@ -136,6 +136,8 @@ describe("dexscreener__trades_list deadlineMs caps every page", () => {
     expect(window["deadlineHit"]).toBe(true);
     expect(window["pageBudgetHit"]).toBe(false);
     expect(window["pagesFetched"]).toBe(1);
+    expect(String(data["summary"])).toContain("the deadline stopped the walk");
+    expect(String(data["summary"])).not.toContain("the page budget stopped the walk");
     // The first page's rows are kept, and the summary says it did not cover
     // the range rather than presenting one page as the range.
     expect(data).not.toHaveProperty("aggregate");
