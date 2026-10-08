@@ -43,6 +43,7 @@
  */
 
 import { hasActionableInferenceResponse } from "@vex-agent/inference/response-validation.js";
+import type { InferenceStallKind } from "@vex-agent/inference/stream-consumer.js";
 
 /**
  * Consecutive rounds that may emit nothing before the turn stops with
@@ -74,4 +75,91 @@ export function isProductiveRound(round: {
   readonly toolCalls: readonly unknown[] | null;
 }): boolean {
   return hasActionableInferenceResponse(round);
+}
+
+/**
+ * The fields of a completed round the classification reads. Structural, like
+ * `isProductiveRound`'s input, so the rule can be tested without a full
+ * `SingleTurnResult`.
+ */
+export interface InferenceRoundFields {
+  readonly content: string | null;
+  readonly toolCalls: readonly unknown[] | null;
+  /** Provider finish reason, verbatim (open enum); `null` when unreported. */
+  readonly finishReason: string | null;
+  /** Tool calls the inference layer dropped as unassemblable. */
+  readonly malformedToolCallCount: number;
+  /** The inference bound that stopped this round, or null when none fired. */
+  readonly timedOut: InferenceStallKind | null;
+}
+
+/**
+ * What a completed (not aborted) inference round amounted to.
+ *
+ * - `productive`: text or a COMPLETE tool batch - the normal paths.
+ * - `incomplete_tool_batch`: the provider returned at least one tool call that
+ *   could not be assembled, even if others survived, OR the output limit
+ *   ended a round that carried any tool call at all. `truncated` is true when
+ *   the output limit cut it off (`finish_reason === "length"`), false when
+ *   the call was simply malformed. None of the batch may be dispatched: the
+ *   survivors are part of a plan the model did not finish writing, and in a
+ *   financial agent one of them may be a fund-moving prepare. A cut that
+ *   lands exactly between two complete calls leaves nothing malformed, yet
+ *   the batch is still unfinished - the limit, not the model, ended it - so
+ *   `length` alone is enough to refuse it.
+ * - `reasoning_exhausted`: the output limit was hit with no answer and no tool
+ *   call - the model spent its budget thinking.
+ * - `blank`: nothing at all, for any other reason.
+ * - `stream_timeout`: an inference bound (first chunk, idle, reasoning-only or
+ *   the round deadline) stopped the stream. Whatever it streamed is a fragment
+ *   the model never finished: it carries no tool calls (the inference layer
+ *   drops in-flight ones) and its text is not persisted. `stall` says which
+ *   bound fired.
+ *
+ * Every class but `productive` counts toward
+ * `MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS`.
+ */
+export type InferenceRoundClassification =
+  | { readonly kind: "productive" }
+  | {
+      readonly kind: "incomplete_tool_batch";
+      readonly truncated: boolean;
+      readonly validToolCalls: number;
+      readonly malformedToolCalls: number;
+    }
+  | { readonly kind: "reasoning_exhausted" }
+  | { readonly kind: "blank" }
+  | { readonly kind: "stream_timeout"; readonly stall: InferenceStallKind };
+
+export type UnproductiveRoundKind = Exclude<InferenceRoundClassification["kind"], "productive">;
+
+/**
+ * Classify a completed round. Pure; the turn loop calls it once per round,
+ * BEFORE any dispatch, and acts only on its answer.
+ *
+ * The timeout check comes first: a round a bound cut short is never
+ * productive, whatever text it streamed before it was stopped. The
+ * incomplete-batch check is next and just as unconditional: a round that
+ * dropped a call, or that carried any call when the output limit ended it, is
+ * never productive, whatever else it carried. Only then does the ordinary
+ * productive rule apply (a text-only `length` round stays productive: it is
+ * the cut-off answer `cutoff-continuation.ts` finishes).
+ */
+export function classifyInferenceRound(round: InferenceRoundFields): InferenceRoundClassification {
+  if (round.timedOut !== null) {
+    return { kind: "stream_timeout", stall: round.timedOut };
+  }
+  const validToolCalls = round.toolCalls?.length ?? 0;
+  const truncated = round.finishReason === "length";
+  if (round.malformedToolCallCount > 0 || (truncated && validToolCalls > 0)) {
+    return {
+      kind: "incomplete_tool_batch",
+      truncated,
+      validToolCalls,
+      malformedToolCalls: round.malformedToolCallCount,
+    };
+  }
+  if (isProductiveRound(round)) return { kind: "productive" };
+  if (round.finishReason === "length") return { kind: "reasoning_exhausted" };
+  return { kind: "blank" };
 }

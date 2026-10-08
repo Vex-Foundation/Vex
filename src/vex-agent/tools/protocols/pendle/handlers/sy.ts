@@ -151,7 +151,7 @@ async function executePendleSyWrap(
       wallet = getAddress(resolveSelectedAddress(context.walletResolution, context.walletPolicy, "eip155"));
     } else {
       try {
-        signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+        signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
       } catch (err) {
         return walletScopeErrorToResult(err);
       }
@@ -279,7 +279,7 @@ async function executePendleSyWrap(
         executedAmountIn: humanAmount(executedInRaw, tokenIn.decimals).toString(),
         executedAmountOut: humanAmount(executedOutRaw, outDecimals).toString(),
         quotedAmountOut: quotedOutHuman.toString(),
-      }, null, 2),
+      }),
       // NO `_tradeCapture`: this tool's durable truth is the `agent_activity` row
       // written by `sendPendleRouterTx`, so the legacy projection pipeline must
       // not also run for it (`mutation-matrix.ts`, `capture: "none"`).

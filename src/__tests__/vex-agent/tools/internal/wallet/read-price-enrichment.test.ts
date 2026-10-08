@@ -109,6 +109,7 @@ interface Envelope {
   pricedTotalUsd: string;
   totalUsdBasis: string;
   wallets: Array<{
+    inventoryComplete: boolean;
     valuationComplete: boolean;
     unpricedHeldCount: number;
     pricedTotalUsd: string;

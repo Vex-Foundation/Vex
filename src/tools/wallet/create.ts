@@ -37,7 +37,19 @@ export async function createWallet(opts: { force?: boolean } = {}): Promise<Wall
   const privateKey = generatePrivateKey();
   const address = privateKeyToAddress(privateKey);
 
-  const keystore = encryptPrivateKey(privateKey, password);
+  const keystore = await encryptPrivateKey(privateKey, password);
+
+  // The derive above yields to the event loop. If no keystore existed when this
+  // call started but one exists now, a concurrent create/import wrote it while
+  // we were deriving: refuse exactly as the up-front check would have, so a
+  // non-forced call can never overwrite (or skip the backup of) a keystore.
+  if (!existed && keystoreExists()) {
+    throw new VexError(
+      ErrorCodes.KEYSTORE_ALREADY_EXISTS,
+      "Keystore already exists.",
+      "Use --force to overwrite. Existing keystore will be backed up automatically."
+    );
+  }
   saveKeystore(keystore);
 
   registerPrimaryLegacyWallet("evm", address);

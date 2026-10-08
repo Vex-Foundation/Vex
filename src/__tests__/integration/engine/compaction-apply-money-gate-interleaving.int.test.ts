@@ -31,6 +31,7 @@ import { getPool } from "@vex-agent/db/client.js";
 import * as walletIntentsRepo from "@vex-agent/db/repos/wallet-intents.js";
 import { withSessionControlLock } from "@vex-agent/engine/runtime/lease-and-status/session-control-lock.js";
 import { getUnresolvedMoneyStateForSession } from "@vex-agent/db/repos/approval-intents/money-state.js";
+import { openWalletTransferActivity } from "@vex-agent/tools/internal/wallet/send/activity-writer.js";
 import { makeSession, resetDb } from "../setup/fixtures.js";
 import { raceGateAgainstWriter } from "./money-gate-race-harness.js";
 
@@ -46,10 +47,10 @@ async function seedIntent(
     walletIntentsRepo.createWith(client, {
       intentId,
       sessionId,
-      walletAddress: "0xwallet",
+      walletAddress: "0xabcdef1234567890abcdef1234567890abcdef12",
       network: "eip155",
       chainAlias: "base",
-      toAddress: "0xdest",
+      toAddress: "0xfedcba0987654321fedcba0987654321fedcba09",
       amount: "1",
       token: null,
       previewJson: { label: "send", criticalArgs: {} },
@@ -156,6 +157,28 @@ describe("money-state writers participate in the session control lock", () => {
 
   it("wallet markFailed blocks until the gate transaction commits", async () => {
     const intentId = await seedIntent(sessionId, "consuming");
+    const intent = await walletIntentsRepo.getById(intentId, sessionId);
+    if (intent === null) throw new Error("fixture: consuming wallet intent missing");
+    // Migration 093 requires linked activity evidence for a failed hash. Keep
+    // that activity unresolved to pin the conservative legacy-failure gate.
+    const activity = await openWalletTransferActivity(intent, {
+      chainId: 8453,
+      chainSlug: "base",
+      chainFamily: "eip155",
+      tokenAddress: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      tokenSymbol: "ETH",
+      tokenDecimals: 18,
+      amountRaw: 1_000_000_000_000_000_000n,
+      amountHuman: "1",
+    });
+    const txHash = `0x${"ab".repeat(32)}`;
+    const nonce = await activity.reserveEvmNonce({
+      fromAddress: intent.walletAddress,
+      chainId: 8453,
+      nodePendingNonce: 1,
+    });
+    await activity.stageEvm({ txHash, fromAddress: intent.walletAddress, nonce });
+    await activity.completeExecution({ kind: "confirmation_unknown", txHash });
     const outcome = await raceGateAgainstWriter(sessionId, () =>
       withSessionControlLock(sessionId, (client) =>
         walletIntentsRepo.markFailedWith(
@@ -163,19 +186,24 @@ describe("money-state writers participate in the session control lock", () => {
           intentId,
           sessionId,
           "BroadcastError:abc123",
-          "0xhash-failed",
+          txHash,
         ),
       ),
     );
 
     expect(outcome.writerBlockedUntilCommit).toBe(true);
-    expect(outcome.gateKinds).toEqual(["wallet_intent_live"]);
+    expect(outcome.gateKinds).toEqual(["agent_activity_pending", "wallet_intent_live"]);
     expect(await statusOf(intentId, sessionId)).toBe("failed");
-    // A failure carrying a hash is STILL unresolved money state afterwards.
+    // A failure carrying a hash without a mined-revert verdict is STILL
+    // unresolved money state afterwards, even though the tool attempt ended.
     const after = await withSessionControlLock(sessionId, (client) =>
       getUnresolvedMoneyStateForSession(client, sessionId),
     );
     expect(after.clear).toBe(false);
+    expect(after.clear ? [] : after.reasons.map((reason) => reason.kind).sort()).toEqual([
+      "agent_activity_pending",
+      "wallet_confirmation_unknown",
+    ]);
   });
 
   // ── writer 5: markAuditFailed (finalize.ts) ────────────────────────

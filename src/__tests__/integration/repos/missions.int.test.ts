@@ -41,7 +41,7 @@ describe("mission draft persistence (integration)", () => {
       ready: true,
       status: "ready",
       nextAction:
-        "The draft is ready — tell the user they can start the mission with the Start mission button in the host UI.",
+        "The draft is ready - tell the user they can start the mission with the Start mission button in the host UI.",
     }));
 
     const setup = await getMissionSetupState(draft.missionId);

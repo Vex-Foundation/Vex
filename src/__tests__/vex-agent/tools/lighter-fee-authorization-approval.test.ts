@@ -49,8 +49,8 @@ const intent: LighterFeeAuthorizationIntentRow = {
   terms: {
     collectorAccountIndex: 99,
     collectorL1Address: `0x${"2".repeat(40)}`,
-    maxPerpsMakerFee: 1000,
-    maxPerpsTakerFee: 1000,
+    maxPerpsMakerFee: 200,
+    maxPerpsTakerFee: 200,
     maxSpotMakerFee: 2500,
     maxSpotTakerFee: 2500,
     authorizationExpiryMs: 2208988800000,
@@ -107,7 +107,7 @@ beforeEach(() => {
 describe("Lighter fee approval", () => {
   it("discloses both fees, exact exchange precision, and separate authorization expiry", () => {
     const disclosure = buildLighterFeeAuthorizationDisclosure(intent);
-    expect(disclosure.perpetualFee).toContain("0.1%");
+    expect(disclosure.perpetualFee).toContain("0.02% maker / 0.02% taker");
     expect(disclosure.spotFee).toContain("0.25%");
     expect(disclosure.exchangeFees).toBe(
       "Up to 0.005% maker / 0.005% taker; separate from VEX fees",
@@ -133,6 +133,7 @@ describe("Lighter fee approval", () => {
     { collectorAccountIndex: 100 },
     { spotFee: "0%" },
     { maxSpotMakerFee: 2501 },
+    { maxPerpsMakerFee: 1000 },
     { authorizationExpiryMs: 0 },
     { publicKey: "invalid" },
     { environment: "unknown" },

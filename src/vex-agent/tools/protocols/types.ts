@@ -571,6 +571,7 @@ export type CaptureSupport = "full" | "none";
 // caller's import changed.
 
 export type {
+  DenseFailureReason,
   DiscoveryAvailabilityMode,
   ManifestRow,
   ProtocolDiscoveryItem,

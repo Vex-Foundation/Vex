@@ -163,14 +163,13 @@ vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
   ): Promise<T> => fn({}),
 }));
 
-vi.mock("@vex-agent/engine/runtime/lease-handle.js", () => ({
-  createLeaseHandle: vi.fn().mockReturnValue({
-    lease: { sessionId: "s", missionRunId: null, ownerId: "test-owner", processKind: "electron_main", acquiredAt: new Date(), heartbeatAt: new Date(), expiresAt: new Date() },
-    ownerId: "test-owner",
-    release: vi.fn().mockResolvedValue(undefined),
-    onLeaseLost: vi.fn(),
-  }),
-}));
+vi.mock("@vex-agent/engine/runtime/lease-handle.js", async () => {
+  const { fakeLeaseHandle } = await import("../../../../helpers/lease-guard.js");
+  return {
+    createLeaseHandle: vi.fn((opts: { readonly ownerId: string }) =>
+      fakeLeaseHandle({ ownerId: opts.ownerId })),
+  };
+});
 
 vi.mock("@vex-agent/engine/runtime/release-and-emit.js", () => ({
   releaseLeaseAndEmitControlState: vi.fn().mockResolvedValue(undefined),
@@ -421,7 +420,8 @@ describe("runner", () => {
       const result = await startMission("mission-1");
 
       expect(result.missionStatus).toBe("completed");
-      expect(mockSetMissionStatus).toHaveBeenLastCalledWith("mission-1", "completed");
+      // Written inside the fenced finalize transaction, so it carries that client.
+      expect(mockSetMissionStatus).toHaveBeenLastCalledWith("mission-1", "completed", expect.anything());
       // Terminal-stop precedence: a business outcome reaches terminal through
       // the CAS, so a Stop that already committed is not overwritten. The
       // assertion is unchanged in strength — only the helper it names.
@@ -430,6 +430,8 @@ describe("runner", () => {
         "completed",
         "goal_reached",
         { summary: "Target hit" },
+        // The fenced finalize transaction's client.
+        expect.anything(),
       );
     });
 
@@ -449,12 +451,15 @@ describe("runner", () => {
       const result = await startMission("mission-1");
 
       expect(result.missionStatus).toBe("failed");
-      expect(mockSetMissionStatus).toHaveBeenLastCalledWith("mission-1", "failed");
+      // Written inside the fenced finalize transaction, so it carries that client.
+      expect(mockSetMissionStatus).toHaveBeenLastCalledWith("mission-1", "failed", expect.anything());
       expect(mockUpdateRunStatusIfNotTerminal).toHaveBeenCalledWith(
         expect.any(String),
         "failed",
         "no_viable_opportunity",
         { summary: "No viable setup" },
+        // The fenced finalize transaction's client.
+        expect.anything(),
       );
     });
 
@@ -472,12 +477,15 @@ describe("runner", () => {
       const result = await startMission("mission-1");
 
       expect(result.missionStatus).toBe("failed");
-      expect(mockSetMissionStatus).toHaveBeenLastCalledWith("mission-1", "failed");
+      // Written inside the fenced finalize transaction, so it carries that client.
+      expect(mockSetMissionStatus).toHaveBeenLastCalledWith("mission-1", "failed", expect.anything());
       expect(mockUpdateRunStatusIfNotTerminal).toHaveBeenCalledWith(
         expect.any(String),
         "failed",
         "emergency_stop",
         { summary: "Wallet state cannot be verified" },
+        // The fenced finalize transaction's client.
+        expect.anything(),
       );
     });
 

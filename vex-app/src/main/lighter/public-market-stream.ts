@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { WebSocket as UndiciWebSocket } from "undici";
 
 import {
   LIGHTER_ENDPOINTS,
@@ -13,7 +14,10 @@ import type {
   LighterTradingPublicStatsEvent,
   LighterTradingPublicTradesEvent,
 } from "@shared/schemas/lighter-trading.js";
+import type { LighterStreamOrderBookSnapshot } from "@vex-agent/tools/protocols/lighter/stream-revalidation.js";
+import type { LighterStreamBookDepth } from "@vex-agent/tools/protocols/lighter/desk-prewarm.js";
 import { log } from "../logger/index.js";
+import { measureMainThreadStage } from "../telemetry/stall-details.js";
 import { SocketWatcherReconnectState } from "./stream-supervisor.js";
 
 export const LIGHTER_PUBLIC_MARKET_HANDSHAKE_TIMEOUT_MS = 15_000;
@@ -118,7 +122,7 @@ interface PublicMarketWatcher {
 
 export function defaultLighterPublicMarketSupervisorDeps(): LighterPublicMarketSupervisorDeps {
   return {
-    createSocket: (url) => new WebSocket(url) as unknown as LighterPublicMarketSocket,
+    createSocket: (url) => new UndiciWebSocket(url),
     now: Date.now,
     random: Math.random,
     diagnostic: (event, detail) => {
@@ -217,6 +221,66 @@ export class LighterPublicMarketSupervisor {
     this.watchers.clear();
   }
 
+  /**
+   * The live top of book for one market, for post-approval order revalidation
+   * (`LIGHTER_STREAM_REVALIDATION`). Read-only: it never subscribes, connects
+   * or waits. Null unless exactly one watcher for that environment and market
+   * id holds an established, live book on an open socket; the caller judges
+   * its age.
+   */
+  readBookSnapshot(
+    environment: LighterEnvironment,
+    marketId: number,
+  ): LighterStreamOrderBookSnapshot | null {
+    const watcher = this.liveBookWatcher(environment, marketId);
+    if (watcher === undefined) return null;
+    return {
+      environment,
+      marketId,
+      marketType: watcher.target.marketType,
+      receivedAtMs: watcher.bookReceivedAt,
+      bestAsk: bestLevelPrice(watcher.asks, "lowest"),
+      bestBid: bestLevelPrice(watcher.bids, "highest"),
+    };
+  }
+
+  /**
+   * The live book's depth for one market, at most `maxLevels` per side, best
+   * level first, for a desk preview's margin-fit check (`LIGHTER_DESK_PREWARM`).
+   * Same liveness rule and same read-only contract as {@link readBookSnapshot};
+   * the caller judges its age.
+   */
+  readBookDepth(
+    environment: LighterEnvironment,
+    marketId: number,
+    maxLevels: number,
+  ): LighterStreamBookDepth | null {
+    const watcher = this.liveBookWatcher(environment, marketId);
+    if (watcher === undefined || !Number.isSafeInteger(maxLevels) || maxLevels <= 0) return null;
+    return {
+      environment,
+      marketId,
+      marketType: watcher.target.marketType,
+      receivedAtMs: watcher.bookReceivedAt,
+      asks: sortedBookLevels(watcher.asks, "ascending", maxLevels),
+      bids: sortedBookLevels(watcher.bids, "descending", maxLevels),
+    };
+  }
+
+  /** Exactly one watcher holding an established, live book on an open socket, or none. */
+  private liveBookWatcher(environment: LighterEnvironment, marketId: number): PublicMarketWatcher | undefined {
+    if (this.stopped) return undefined;
+    const live = [...this.watchers.values()].filter((watcher) =>
+      watcher.target.environment === environment
+      && watcher.target.marketId === marketId
+      && !watcher.stopped
+      && watcher.socket !== null
+      && watcher.bookReady
+      && watcher.bookNonce !== null
+      && watcher.bookStatus === "live");
+    return live.length === 1 ? live[0] : undefined;
+  }
+
   private scheduleConnect(watcher: PublicMarketWatcher, delayMs?: number): void {
     const blocked = this.stopped
       || watcher.stopped
@@ -302,6 +366,14 @@ export class LighterPublicMarketSupervisor {
   }
 
   private handleMessage(
+    watcher: PublicMarketWatcher,
+    socket: LighterPublicMarketSocket,
+    event: unknown,
+  ): void {
+    measureMainThreadStage("lighter_public_frame", () => this.processMessage(watcher, socket, event));
+  }
+
+  private processMessage(
     watcher: PublicMarketWatcher,
     socket: LighterPublicMarketSocket,
     event: unknown,
@@ -679,6 +751,38 @@ export function shutdownLighterPublicMarkets(): void {
   defaultSupervisor.stop();
 }
 
+export function readLighterPublicMarketBookSnapshot(
+  environment: LighterEnvironment,
+  marketId: number,
+): LighterStreamOrderBookSnapshot | null {
+  return defaultSupervisor.readBookSnapshot(environment, marketId);
+}
+
+export function readLighterPublicMarketBookDepth(
+  environment: LighterEnvironment,
+  marketId: number,
+  maxLevels: number,
+): LighterStreamBookDepth | null {
+  return defaultSupervisor.readBookDepth(environment, marketId, maxLevels);
+}
+
+/** Levels hold only non-zero sizes (`applyBookChanges` drops zero rows). */
+function bestLevelPrice(
+  levels: ReadonlyMap<string, string>,
+  pick: "lowest" | "highest",
+): string | null {
+  let best: string | null = null;
+  for (const price of levels.keys()) {
+    if (best === null) {
+      best = price;
+      continue;
+    }
+    const order = compareUnsignedDecimals(price, best);
+    if (pick === "lowest" ? order < 0 : order > 0) best = price;
+  }
+  return best;
+}
+
 function canonicalTarget(
   input: Pick<
     LighterTradingPublicMarketSubscriptionStartInput,
@@ -937,10 +1041,18 @@ function visibleBookLevels(
   levels: ReadonlyMap<string, string>,
   direction: "ascending" | "descending",
 ): Array<{ readonly price: string; readonly size: string }> {
+  return sortedBookLevels(levels, direction, LIGHTER_PUBLIC_MARKET_VISIBLE_BOOK_LEVELS);
+}
+
+function sortedBookLevels(
+  levels: ReadonlyMap<string, string>,
+  direction: "ascending" | "descending",
+  maxLevels: number,
+): Array<{ readonly price: string; readonly size: string }> {
   const multiplier = direction === "ascending" ? 1 : -1;
   return [...levels.entries()]
     .sort(([left], [right]) => compareUnsignedDecimals(left, right) * multiplier)
-    .slice(0, LIGHTER_PUBLIC_MARKET_VISIBLE_BOOK_LEVELS)
+    .slice(0, maxLevels)
     .map(([price, size]) => ({ price, size }));
 }
 

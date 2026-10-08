@@ -184,6 +184,27 @@ already stale at v3-agent-200 and behind its floors), so this is a recorded
 debt for the retrieval exercise rather than a live defect: whoever runs the
 next re-embedding pass picks it up with everything else.
 
+### D9 scoped extension: owner-requested Lighter percentage closes
+
+Recorded 2026-10-06 while verifying the owner's 2026-10-05 request for
+25%, 50% and 75% Market closes to open approval directly, like 100% closes.
+
+That requested capability extends `lighter.position.close.prepare` and
+`lighter.position.close`. Their `discovery.embeddingText` now describes
+supported percentage closes, exact requested size and the unchanged-position
+check. Keeping the whole-position-only text would describe the old capability.
+The owner's implementation request and subsequent request to fix all failing
+tests authorize this narrowly scoped contract correction.
+
+Only these two discovery digests in
+`__promptsnaps__/navigation-retrieval-fields.json` are refreshed through
+`UPDATE_RETRIEVAL_FIELDS_FIXTURE=true`. Navigation, aliases, example intents,
+other discovery fields and every other tool digest remain frozen. Approval,
+signing and execution policy remain unchanged. This extension does not
+authorize retrieval tuning or a broader re-embedding pass; existing stored
+vectors for these two tools may still reflect the previous text until the
+separately reviewed retrieval exercise refreshes them.
+
 ## D10. The capability map names every protocol and what it does
 
 Recorded 2026-08-21, correcting the plan's "thin capability map".

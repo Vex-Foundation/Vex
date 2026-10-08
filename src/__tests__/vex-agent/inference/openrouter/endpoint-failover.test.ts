@@ -14,6 +14,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { requireValue } from "../../../helpers/require-value.js";
 
 import { normalizeOpenRouterError } from "@vex-agent/inference/openrouter/errors.js";
 import {
@@ -24,6 +25,7 @@ import {
   sendWithEndpointFailover,
   type EndpointFailoverDeps,
 } from "@vex-agent/inference/openrouter/endpoint-failover.js";
+import { classifyCapacityFailure } from "@vex-agent/inference/openrouter/endpoint-failover/capacity-failure.js";
 import type { EndpointCandidate, InferenceConfig } from "@vex-agent/inference/types.js";
 import type { EndpointSwitchRow } from "@vex-agent/db/repos/session-endpoint-switches.js";
 import {
@@ -648,6 +650,51 @@ describe("sendWithEndpointFailover — the switch is recorded", () => {
 });
 
 // ── cost + context re-resolve (owner decision 7) ─────────────────
+
+describe("sendWithEndpointFailover - capacity-failure observer", () => {
+  it("fires once per capacity failure with its reason class", async () => {
+    const { attempt } = failingAttempt(2);
+    const h = harness();
+    const seen: string[] = [];
+    const reasonClass = requireValue(classifyCapacityFailure(sharedPool429())).reasonClass;
+
+    await expect(
+      sendWithEndpointFailover(
+        attempt,
+        baseConfig(),
+        { ...CONTEXT, onCapacityFailure: (c) => seen.push(c) },
+        h.deps,
+      ),
+    ).resolves.toBe("ok");
+    expect(seen).toEqual([reasonClass, reasonClass]);
+  });
+
+  it("does not fire for a non-capacity failure", async () => {
+    const { attempt } = failingAttempt(1, badRequest400);
+    const h = harness();
+    const hook = vi.fn();
+
+    await expect(
+      sendWithEndpointFailover(attempt, baseConfig(), { ...CONTEXT, onCapacityFailure: hook }, h.deps),
+    ).rejects.toThrow(/status=400/);
+    expect(hook).not.toHaveBeenCalled();
+  });
+
+  it("a throwing observer is swallowed and changes nothing", async () => {
+    const { attempt, seen, callCount } = failingAttempt(2);
+    const h = harness();
+    const hook = vi.fn(() => {
+      throw new Error("observer bug");
+    });
+
+    await expect(
+      sendWithEndpointFailover(attempt, baseConfig(), { ...CONTEXT, onCapacityFailure: hook }, h.deps),
+    ).resolves.toBe("ok");
+    expect(hook).toHaveBeenCalledTimes(2);
+    expect(callCount()).toBe(3);
+    expect(seen.map((c) => c.endpointTag)).toEqual([PINNED_TAG, PINNED_TAG, HEALTHIEST.tag]);
+  });
+});
 
 describe("applyEndpointToConfig — price and window follow the endpoint", () => {
   it("re-resolves price from the new endpoint", () => {

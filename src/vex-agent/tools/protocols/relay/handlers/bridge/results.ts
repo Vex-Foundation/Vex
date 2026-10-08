@@ -68,7 +68,7 @@ export async function failPreSign(
     fromChain: from,
     toChain: to,
   };
-  return { success: false, output: JSON.stringify(body, null, 2), data: { ...body, _executionId: executionId } };
+  return { success: false, output: JSON.stringify(body), data: { ...body, _executionId: executionId } };
 }
 
 /** A prior bridge already occupies this wallet+session+route slot (C2). Nothing recorded for this attempt. */
@@ -82,7 +82,7 @@ export function inFlightResult(from: BridgeEndpointDisplay, to: BridgeEndpointDi
     fromChain: from,
     toChain: to,
   };
-  return { success: false, output: JSON.stringify(body, null, 2), data: body };
+  return { success: false, output: JSON.stringify(body), data: body };
 }
 
 export function outputLegs(
@@ -219,7 +219,7 @@ export function pendingResult(args: {
   };
   return {
     success: false,
-    output: JSON.stringify(body, null, 2),
+    output: JSON.stringify(body),
     data: {
       ...body,
       _executionId: executionId,
@@ -257,7 +257,7 @@ export function originRevertedResult(args: {
   };
   return {
     success: false,
-    output: JSON.stringify(body, null, 2),
+    output: JSON.stringify(body),
     data: { ...body, _executionId: executionId, _explorerRefs: explorerRefs(broadcasts, from) },
   };
 }
@@ -285,7 +285,7 @@ export function approvalUnconfirmedResult(args: {
   };
   return {
     success: false,
-    output: JSON.stringify(body, null, 2),
+    output: JSON.stringify(body),
     data: { ...body, _executionId: executionId, _explorerRefs: explorerRefs(broadcasts, from) },
   };
 }
@@ -321,7 +321,7 @@ export function gasEstimateNotAttemptedResult(args: {
     legs: outputLegs(broadcasts, from, to, "not_reached", null),
     inTxHashes: broadcasts.map((b) => b.txHash),
   };
-  return { success: false, output: JSON.stringify(body, null, 2), data: { ...body, _executionId: executionId, retryable: true } };
+  return { success: false, output: JSON.stringify(body), data: { ...body, _executionId: executionId, retryable: true } };
 }
 
 /**
@@ -357,7 +357,7 @@ export function nativeValueNotAttemptedResult(args: {
   };
   return {
     success: false,
-    output: JSON.stringify(body, null, 2),
+    output: JSON.stringify(body),
     data: {
       ...body,
       _executionId: executionId,
@@ -386,5 +386,5 @@ export function interruptedResult(args: {
     toChain: to,
     vexFee: args.vexFee,
   };
-  return { success: false, output: JSON.stringify(body, null, 2), data: { ...body, _executionId: executionId } };
+  return { success: false, output: JSON.stringify(body), data: { ...body, _executionId: executionId } };
 }

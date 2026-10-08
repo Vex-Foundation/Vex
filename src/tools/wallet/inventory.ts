@@ -124,7 +124,7 @@ export function generateWalletId(family: InventoryFamily): string {
 
 // ── Secret loading (engine/main only — never returned to renderer) ─────────
 
-export function loadEvmSecret(entry: WalletInventoryEntry): Hex {
+export async function loadEvmSecret(entry: WalletInventoryEntry): Promise<Hex> {
   const keystore = loadKeystoreFile(derivePath("evm", entry));
   if (!keystore) {
     throw new VexError(
@@ -136,7 +136,7 @@ export function loadEvmSecret(entry: WalletInventoryEntry): Hex {
   return decryptPrivateKey(keystore, requireKeystorePassword());
 }
 
-export function loadSolanaSecret(entry: WalletInventoryEntry): Uint8Array {
+export async function loadSolanaSecret(entry: WalletInventoryEntry): Promise<Uint8Array> {
   const keystore = loadKeystoreFile(derivePath("solana", entry));
   if (!keystore) {
     throw new VexError(
@@ -154,8 +154,10 @@ export function loadSolanaSecret(entry: WalletInventoryEntry): Uint8Array {
  * wallet the user/session authorized (Codex stage-1 review P1). Shared by the
  * primary (auth) and session (resolveWalletForFamily) paths.
  */
-export function loadEvmKey(entry: WalletInventoryEntry): { address: Address; privateKey: Hex } {
-  const privateKey = loadEvmSecret(entry);
+export async function loadEvmKey(
+  entry: WalletInventoryEntry,
+): Promise<{ address: Address; privateKey: Hex }> {
+  const privateKey = await loadEvmSecret(entry);
   const recorded = getAddress(entry.address);
   if (privateKeyToAddress(privateKey) !== recorded) {
     throw new VexError(
@@ -176,11 +178,11 @@ export function loadEvmKey(entry: WalletInventoryEntry): { address: Address; pri
  * Solana plaintext bytes are zeroized after encoding (and on the mismatch
  * throw) so the raw key buffer does not linger.
  */
-export function decryptExportSecret(args: {
+export async function decryptExportSecret(args: {
   readonly family: InventoryFamily;
   readonly entry: WalletInventoryEntry;
   readonly password: string;
-}): { readonly secret: string; readonly format: "hex" | "base58" } {
+}): Promise<{ readonly secret: string; readonly format: "hex" | "base58" }> {
   const { family, entry, password } = args;
   const keystore = loadKeystoreFile(derivePath(family, entry));
   if (!keystore) {
@@ -193,7 +195,7 @@ export function decryptExportSecret(args: {
     );
   }
   if (family === "evm") {
-    const privateKey = decryptPrivateKey(keystore, password);
+    const privateKey = await decryptPrivateKey(keystore, password);
     if (
       !walletAddressesEqual("evm", privateKeyToAddress(privateKey), entry.address)
     ) {
@@ -205,7 +207,7 @@ export function decryptExportSecret(args: {
     }
     return { secret: privateKey, format: "hex" };
   }
-  const secretKey = decryptSolanaSecretKey(keystore, password);
+  const secretKey = await decryptSolanaSecretKey(keystore, password);
   try {
     if (
       !walletAddressesEqual("solana", deriveSolanaAddress(secretKey), entry.address)

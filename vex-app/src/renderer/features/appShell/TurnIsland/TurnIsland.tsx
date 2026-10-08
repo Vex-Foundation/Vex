@@ -21,11 +21,15 @@
  * preview, never from timers):
  *
  *   Working   compact pill, the turn has begun and nothing is classified yet.
- *             This is the state the SEND opens on (`turnPreview.ts`)
+ *             This is the state the SEND opens on (`turnPreview.ts`). A caption
+ *             beneath says "Preparing the turn" until the engine reports the
+ *             lease, then "Waiting for the model"
  *   Thinking  the island EXPANDS and the full reasoning streams inside it as
  *             live markdown (`LiveReasoning`) under a "Thinking:" caption —
  *             no window, no clipping; unreadable is not a design
  *   Calling   a tool row: the protocol/tool mark (contract C5) + the tool name
+ *   Running   the same row once the provider stream has ended and the tool
+ *             is executing ("Running {tool}"), until its round persists
  *   Writing   the island settles to the "Reasoned" stamp and the ANSWER
  *             streams below it, exactly as before
  *
@@ -158,7 +162,8 @@ function IslandBody({
 
   return (
     <DynamicContainer className="flex h-full w-full items-center gap-2 px-3 py-1.5">
-      {view.state === "calling" && preview.toolName !== null ? (
+      {(view.state === "calling" || view.state === "running")
+      && preview.toolName !== null ? (
         <CallingMark toolName={preview.toolName} />
       ) : null}
       <StatusWord
@@ -178,6 +183,7 @@ function IslandBody({
 export function TurnIsland({
   preview,
   awaitingApproval = false,
+  leaseHeld = false,
 }: {
   readonly preview: StreamPreview;
   /**
@@ -187,13 +193,21 @@ export function TurnIsland({
    * query) so the stream store stays decoupled from TanStack Query.
    */
   readonly awaitingApproval?: boolean;
+  /**
+   * The engine reported the session's runner lease as held (control-state
+   * push). Splits the compact pill's caption into "Preparing the turn" and
+   * "Waiting for the model"; nothing else reads it.
+   */
+  readonly leaseHeld?: boolean;
 }): JSX.Element {
-  const view = resolveTurnIslandView(preview, awaitingApproval);
-  const streaming = preview.phase === "streaming";
+  const view = resolveTurnIslandView(preview, awaitingApproval, leaseHeld);
+  // A running tool is live work even though its provider stream is `done`.
+  const live = preview.phase === "streaming" || view.state === "running";
 
   return (
     <div
       data-vex-island-state={view.state}
+      data-vex-turn-phase={view.phase}
       data-vex-stream-awaiting={view.state === "awaiting" ? "" : undefined}
       className="flex flex-col"
     >
@@ -204,11 +218,15 @@ export function TurnIsland({
         <span>
           {preview.phase === "error"
             ? "Vex stream error"
-            : preview.phase === "done"
+            : preview.phase === "done" && !live
               ? "Vex responded"
               : "Vex is responding"}
         </span>
-        {streaming ? <span>{view.label}</span> : null}
+        {live ? (
+          <span>
+            {view.detail === undefined ? view.label : `${view.label} ${view.detail}`}
+          </span>
+        ) : null}
       </span>
       {/* The thoughts this turn has already finished, folded. They sit ABOVE
           the island because they are behind it in time - the turn reads top to
@@ -227,13 +245,29 @@ export function TurnIsland({
             the tool-ledger signature applied to the live surface. */}
         <div
           className="vex-row-sweep"
-          data-vex-sweep={view.state === "calling" ? "running" : undefined}
+          data-vex-sweep={
+            view.state === "calling" || view.state === "running"
+              ? "running"
+              : undefined
+          }
         >
           <DynamicIsland id="vex-turn-island">
             <IslandBody view={view} preview={preview} />
           </DynamicIsland>
         </div>
       </DynamicIslandProvider>
+      {view.detail !== undefined ? (
+        // WHICH PART OF THE WAIT (U-3). Beneath the pill, never inside it: the
+        // pill keeps its one word and its fixed width. Fixed copy only, and
+        // aria-hidden because the status region above already announces it.
+        <span
+          aria-hidden="true"
+          data-vex-island-detail=""
+          className="mt-1 text-[11px] text-[var(--vex-text-3)]"
+        >
+          {view.detail}
+        </span>
+      ) : null}
       {view.state === "error" && view.errorBody !== undefined ? (
         // Category copy - the second line explains what the classified
         // failure means, from the same shared copy table as the error banner.

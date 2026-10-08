@@ -116,7 +116,9 @@ describe("runResumeDispatch - running status + lease liveness", () => {
       expect.objectContaining({ fromStatuses: ["running"], missionRunId: "run-1" }),
     );
     await vi.waitFor(() =>
-      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-1", "owner-x"),
+      // The runner hands its LEASE HANDLE (which carries the claim token) to the
+      // resume, never a bare owner id: exactly the handle it created.
+      expect(mockResumeMissionRun).toHaveBeenCalledWith("run-1", mockCreateLeaseHandle.mock.results[0]?.value),
     );
   });
 

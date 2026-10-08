@@ -30,8 +30,8 @@ function observed(
       environment,
       collectorAccountIndex: environment === "core" ? 743799 : 22869,
       collectorL1Address: "0x10ce97cf3142be2a1a28ac83a55b21fdce493c03",
-      perpsMakerFee: 1000,
-      perpsTakerFee: 1000,
+      perpsMakerFee: 200,
+      perpsTakerFee: 200,
       spotMakerFee: 2500,
       spotTakerFee: 2500,
     },
@@ -51,6 +51,8 @@ describe("buildLighterFeeAuthorizationTerms", () => {
     expect(terms.currentExchangeTakerFeeTick).toBe(0);
     expect(terms.exchangeMakerFeeTick).toBe(50);
     expect(terms.exchangeTakerFeeTick).toBe(50);
+    expect(terms.maxPerpsMakerFee).toBe(200);
+    expect(terms.maxPerpsTakerFee).toBe(200);
   });
 
   it("records Robinhood Chain's Premium ceilings beside today's fees", () => {

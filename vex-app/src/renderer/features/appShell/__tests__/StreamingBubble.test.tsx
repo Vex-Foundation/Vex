@@ -20,6 +20,7 @@ import { createElement } from "react";
 
 import { StreamingBubble } from "../StreamingBubble.js";
 import type { StreamPreview } from "../../../stores/streamStore.js";
+import { PENDING_TURN_STREAM_ID } from "../SessionTranscript/turnPreview.js";
 
 function preview(overrides: Partial<StreamPreview> = {}): StreamPreview {
   return {
@@ -232,5 +233,57 @@ describe("TurnIsland - freeze, error, and settle", () => {
     expect(container.querySelector('[aria-busy="true"]')).toBeNull();
     expect(islandState(container)).toBe("settled");
     expect(screen.getByText("Vex responded")).not.toBeNull();
+  });
+});
+
+describe("TurnIsland - turn phase (U-3)", () => {
+  function phaseOf(container: HTMLElement): string | null {
+    return (
+      container
+        .querySelector("[data-vex-turn-phase]")
+        ?.getAttribute("data-vex-turn-phase") ?? null
+    );
+  }
+
+  it("captions the pill with the step and keeps the 'vexing…' word", () => {
+    const { container, rerender } = render(
+      createElement(StreamingBubble, {
+        preview: preview({ streamId: PENDING_TURN_STREAM_ID }),
+      }),
+    );
+    expect(phaseOf(container)).toBe("preparing");
+    expect(container.querySelector("[data-vex-island-label]")?.textContent).toBe(
+      "vexing…",
+    );
+    expect(container.querySelector("[data-vex-island-detail]")?.textContent).toBe(
+      "Preparing the turn",
+    );
+
+    rerender(
+      createElement(StreamingBubble, {
+        preview: preview({ streamId: PENDING_TURN_STREAM_ID }),
+        leaseHeld: true,
+      }),
+    );
+    expect(phaseOf(container)).toBe("waiting_provider");
+    expect(container.querySelector("[data-vex-island-detail]")?.textContent).toBe(
+      "Waiting for the model",
+    );
+  });
+
+  it("shows a RUNNING tool row while the tool executes, announced as live work", () => {
+    const { container } = render(
+      createElement(StreamingBubble, {
+        preview: preview({ phase: "done", status: "calling", toolName: "swap_quote" }),
+      }),
+    );
+    expect(islandState(container)).toBe("running");
+    expect(phaseOf(container)).toBe("running_tool");
+    const label = container.querySelector("[data-vex-island-label]")?.textContent ?? "";
+    expect(label.startsWith("Running ")).toBe(true);
+    expect(container.querySelector('[data-vex-sweep="running"]')).not.toBeNull();
+    expect(screen.getByText("Vex is responding")).not.toBeNull();
+    // No caption outside the working pill.
+    expect(container.querySelector("[data-vex-island-detail]")).toBeNull();
   });
 });

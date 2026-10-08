@@ -1,6 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { StreamDeltaEvent } from "../../../../vex-agent/engine/events/index.js";
-import type { StreamChunk } from "../../../../vex-agent/inference/types.js";
+import type {
+  InferenceConfig,
+  InferenceProvider,
+  StreamChunk,
+} from "../../../../vex-agent/inference/types.js";
+import type { InferenceAttemptRecord } from "../../../../vex-agent/db/repos/runtime-timings.js";
+import type { EngineContext } from "../../../../vex-agent/engine/types/engine-context.js";
+import {
+  fakeInferenceProvider,
+  withoutStreamMethod,
+} from "../../../helpers/inference-provider.js";
+import { requireValue } from "../../../helpers/require-value.js";
 
 // ── Mocks ─────────────────────────────────────────────────────
 
@@ -21,6 +32,23 @@ vi.mock("@vex-agent/db/repos/usage.js", () => ({
 vi.mock("@vex-agent/db/repos/sessions.js", () => ({
   updateTokenCount: (...a: unknown[]) => mockUpdateTokenCount(...a),
   getSession: vi.fn(),
+}));
+
+// Runtime-timing writes are captured, not executed: each test inspects the
+// row `executeTurn` handed to the repo. `recordInBackground` runs the thunk
+// synchronously so the row is observable without awaiting anything.
+const mockInsertInferenceAttempt = vi
+  .fn<(record: InferenceAttemptRecord) => Promise<void>>()
+  .mockResolvedValue(undefined);
+const mockRecordInBackground = vi.fn((_label: string, write: () => Promise<void>) => {
+  void write();
+});
+vi.mock("@vex-agent/db/repos/runtime-timings.js", () => ({
+  insertInferenceAttempt: (record: InferenceAttemptRecord) => mockInsertInferenceAttempt(record),
+  insertTurnRunTiming: vi.fn(),
+  insertToolDispatchTiming: vi.fn(),
+  recordInBackground: (label: string, write: () => Promise<void>) =>
+    mockRecordInBackground(label, write),
 }));
 
 vi.mock("@vex-agent/db/client.js", () => ({
@@ -522,5 +550,415 @@ describe("turn — cost is priced against the switched endpoint (owner decision 
       inputPricePerM: number;
     };
     expect(pricingConfig.inputPricePerM).toBe(3);
+  });
+});
+
+// ── Kairos Phase 1: one inference_attempts row per settled attempt ──
+
+describe("turn - inference attempt timing", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetAllSessionEndpointState();
+  });
+
+  const SECRET_TEXT = "send 4.2 ETH to 0xdeadbeef";
+  const SECRET_ARG = "0xfeedface-private-arg";
+
+  function context(missionRunId: string | null = null): EngineContext {
+    return {
+      sessionId: "session-t",
+      sessionKind: "agent",
+      sessionPermission: "restricted",
+      missionId: null,
+      missionRunId,
+      selectedEvmWallet: null,
+      selectedSolanaWallet: null,
+      walletPolicy: { kind: "none" },
+      loadedDocuments: new Map<string, string>(),
+    };
+  }
+
+  function config(extra: Partial<InferenceConfig> = {}): InferenceConfig {
+    return {
+      provider: "openrouter",
+      model: "anthropic/claude-sonnet-4",
+      contextLimit: 128000,
+      maxOutputTokens: 4096,
+      inputPricePerM: 3,
+      outputPricePerM: 15,
+      priceCurrency: "USD",
+      cachePricePerM: null,
+      cacheWritePricePerM: null,
+      reasoningPricePerM: null,
+      supportsReasoningEffort: false,
+      ...extra,
+    };
+  }
+
+  function streaming(chunks: StreamChunk[], opts: { throwAfter?: Error } = {}): InferenceProvider {
+    return fakeInferenceProvider({
+      chatCompletionStream: async function* (): AsyncGenerator<StreamChunk> {
+        for (const chunk of chunks) yield chunk;
+        if (opts.throwAfter) throw opts.throwAfter;
+      },
+      calculateCost: vi.fn<InferenceProvider["calculateCost"]>().mockReturnValue({
+        totalCost: 0.001,
+        currency: "USD",
+        breakdown: { promptCost: 0, completionCost: 0, cachedSavings: 0, reasoningCost: 0 },
+      }),
+    });
+  }
+
+  const TELEMETRY = { turnRunId: "run-1", iteration: 2, preInferenceMs: 3.5, promptStackMs: 1.25 };
+
+  const COMPLETED_CHUNKS: StreamChunk[] = [
+    { type: "reasoning", reasoningText: "thinking about " + SECRET_TEXT },
+    { type: "content", text: SECRET_TEXT },
+    {
+      type: "tool_call_delta",
+      toolCallIndex: 0,
+      toolCallId: "call-1",
+      toolCallName: "balance_check",
+      toolCallArgsDelta: JSON.stringify({ address: SECRET_ARG }),
+    },
+    {
+      type: "usage",
+      usage: {
+        promptTokens: 900, completionTokens: 120, totalTokens: 1020,
+        cachedTokens: 400, reasoningTokens: 30,
+      },
+    },
+    { type: "done", finishReason: "tool_calls", generationId: "gen-1", servingProvider: "Anthropic" },
+  ];
+
+  function recordedRows(): InferenceAttemptRecord[] {
+    return mockInsertInferenceAttempt.mock.calls.map((c) => c[0]);
+  }
+
+  function expectNoContentLeak(row: InferenceAttemptRecord): void {
+    const serialised = JSON.stringify(row);
+    expect(serialised).not.toContain("0xdeadbeef");
+    expect(serialised).not.toContain(SECRET_ARG);
+    expect(serialised).not.toContain("thinking about");
+  }
+
+  it("records exactly one completed row and returns the same result as without telemetry", async () => {
+    const withoutTelemetry = await executeTurn(
+      context(), [], null, streaming(COMPLETED_CHUNKS), config(), [],
+    );
+    expect(mockInsertInferenceAttempt).not.toHaveBeenCalled();
+    expect(mockRecordInBackground).not.toHaveBeenCalled();
+
+    const withTelemetry = await executeTurn(
+      context("mrun-1"), [], null, streaming(COMPLETED_CHUNKS), config(), [],
+      {}, undefined, undefined, TELEMETRY,
+    );
+
+    const { streamId: _a, ...restWith } = withTelemetry;
+    const { streamId: _b, ...restWithout } = withoutTelemetry;
+    expect(restWith).toEqual(restWithout);
+
+    expect(mockRecordInBackground).toHaveBeenCalledTimes(1);
+    expect(mockInsertInferenceAttempt).toHaveBeenCalledTimes(1);
+    const row = requireValue(recordedRows()[0]);
+    expect(row).toMatchObject({
+      sessionId: "session-t",
+      missionRunId: "mrun-1",
+      turnRunId: "run-1",
+      iteration: 2,
+      streamId: withTelemetry.streamId,
+      outcome: "completed",
+      errorClass: null,
+      model: "anthropic/claude-sonnet-4",
+      servingProvider: "Anthropic",
+      requestedEffort: null,
+      bufferedFallback: false,
+      capacityRetries: 0,
+      preInferenceMs: 3.5,
+      promptStackMs: 1.25,
+      chunkCount: 5,
+      finishReason: "tool_calls",
+      contentEmpty: false,
+      toolCallCount: 1,
+      validToolCallCount: 1,
+      promptTokens: 900,
+      completionTokens: 120,
+      reasoningTokens: 30,
+      cachedTokens: 400,
+      generationId: "gen-1",
+    });
+    expect(row.startedAt).toBeInstanceOf(Date);
+    expect(typeof row.totalMs).toBe("number");
+    expect(row.totalMs as number).toBeGreaterThanOrEqual(0);
+    expect(row.firstChunkMs as number).toBeGreaterThanOrEqual(0);
+    expect(row.firstSemanticMs as number).toBeGreaterThanOrEqual(0);
+    expectNoContentLeak(row);
+  });
+
+  it("records an aborted row with contentEmpty when the stop landed before any content", async () => {
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const withoutTelemetry = await executeTurn(
+      context(), [], null, streaming(COMPLETED_CHUNKS), config(), [],
+      {}, ctrl.signal,
+    );
+    const result = await executeTurn(
+      context(), [], null, streaming(COMPLETED_CHUNKS), config(), [],
+      {}, ctrl.signal, undefined, TELEMETRY,
+    );
+
+    expect(result.inferenceAborted).toBe(true);
+    expect(result.content).toBe(withoutTelemetry.content);
+    expect(mockInsertInferenceAttempt).toHaveBeenCalledTimes(1);
+    expect(recordedRows()[0]).toMatchObject({
+      outcome: "aborted",
+      errorClass: null,
+      contentEmpty: true,
+      chunkCount: 0,
+      // No usage chunk arrived, so the token columns stay unknown rather than
+      // recording the zero-filled placeholder as a zero-token call.
+      promptTokens: null,
+      completionTokens: null,
+      reasoningTokens: null,
+      cachedTokens: null,
+    });
+  });
+
+  it("records a round a stream bound stopped as timeout / KairosStall and logs no usage", async () => {
+    const provider = fakeInferenceProvider({
+      chatCompletionStream: async function* (_m, _t, _c, signal): AsyncGenerator<StreamChunk> {
+        yield { type: "content", text: "partial" };
+        yield {
+          type: "tool_call_delta",
+          toolCallIndex: 0,
+          toolCallId: "call-1",
+          toolCallName: "balance_check",
+          toolCallArgsDelta: "{}",
+        };
+        // Then silence, until the idle bound aborts the request.
+        await new Promise<void>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      },
+    });
+    const result = await executeTurn(
+      context(), [], null, provider, config({ streamIdleTimeoutMs: 20 }), [],
+      {}, undefined, undefined, TELEMETRY,
+    );
+
+    expect(result.timedOut).toBe("idle");
+    expect(result.inferenceAborted).toBe(false);
+    expect(result.toolCalls).toBeNull();
+    expect(result.content).toBe("partial");
+    expect(result.finishReason).toBeNull();
+    // No usage chunk arrived: nothing to log, and token_count is not reset.
+    expect(mockLogUsage).not.toHaveBeenCalled();
+    expect(mockUpdateTokenCount).not.toHaveBeenCalled();
+    expect(recordedRows()[0]).toMatchObject({
+      outcome: "timeout",
+      errorClass: "KairosStall:idle",
+      toolCallCount: 1,
+      validToolCallCount: 0,
+      finishReason: null,
+    });
+  });
+
+  it("a round no bound stopped reports timedOut null", async () => {
+    const result = await executeTurn(
+      context(), [], null, streaming(COMPLETED_CHUNKS), config({ streamIdleTimeoutMs: 60_000 }), [],
+    );
+    expect(result.timedOut).toBeNull();
+  });
+
+  it("records one error row and rethrows the ORIGINAL error unchanged", async () => {
+    const boom = Object.assign(new Error(`upstream said ${SECRET_TEXT}`), {
+      name: "ProviderError",
+      status: 502,
+    });
+    const provider = streaming([{ type: "content", text: SECRET_TEXT }], { throwAfter: boom });
+
+    let caught: unknown;
+    try {
+      await executeTurn(
+        context(), [], null, provider, config(), [],
+        {}, undefined, undefined, TELEMETRY,
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBe(boom);
+    expect(mockInsertInferenceAttempt).toHaveBeenCalledTimes(1);
+    const row = requireValue(recordedRows()[0]);
+    expect(row).toMatchObject({
+      outcome: "error",
+      errorClass: "ProviderError:status=502",
+      servingProvider: null,
+      finishReason: null,
+      contentEmpty: null,
+      promptTokens: null,
+      generationId: null,
+      chunkCount: 1,
+    });
+    expectNoContentLeak(row);
+    expect(JSON.stringify(row)).not.toContain("upstream said");
+    // The turn did not reach usage logging, exactly as without telemetry.
+    expect(mockLogUsage).not.toHaveBeenCalled();
+  });
+
+  async function recordThrown(err: Error, signal?: AbortSignal): Promise<InferenceAttemptRecord> {
+    const provider = streaming([{ type: "content", text: SECRET_TEXT }], { throwAfter: err });
+    await expect(
+      executeTurn(
+        context(), [], null, provider, config(), [],
+        {}, signal, undefined, TELEMETRY,
+      ),
+    ).rejects.toBe(err);
+    expect(mockInsertInferenceAttempt).toHaveBeenCalledTimes(1);
+    return requireValue(recordedRows()[0]);
+  }
+
+  it("records a deadline breach as timeout, not error or aborted", async () => {
+    const deadline = AbortSignal.timeout(1);
+    await new Promise((r) => setTimeout(r, 5));
+    const row = await recordThrown(deadline.reason as Error);
+    expect(row).toMatchObject({ outcome: "timeout", errorClass: "TimeoutError" });
+  });
+
+  it("records the SDK request timeout as timeout with its class", async () => {
+    const sdk = Object.assign(new Error(SECRET_TEXT), { name: "RequestTimeoutError" });
+    const row = await recordThrown(sdk);
+    expect(row).toMatchObject({ outcome: "timeout", errorClass: "RequestTimeoutError" });
+    expectNoContentLeak(row);
+  });
+
+  it("records a Stop that lands during a buffered request and throws as aborted", async () => {
+    // A buffered request cancelled by the caller rejects rather than returning
+    // a partial, so the Stop reaches the recorder as a throw - with the
+    // caller's own signal aborted and no deadline involved.
+    const live = new AbortController();
+    const stopped = Object.assign(new Error("request cancelled"), { name: "RequestAbortedError" });
+    const provider = withoutStreamMethod(fakeInferenceProvider({
+      ...streaming([]),
+      chatCompletion: vi.fn(async () => {
+        live.abort();
+        throw stopped;
+      }),
+    }));
+    await expect(
+      executeTurn(
+        context(), [], null, provider, config(), [],
+        {}, live.signal, undefined, TELEMETRY,
+      ),
+    ).rejects.toBe(stopped);
+    expect(recordedRows()[0]).toMatchObject({
+      outcome: "aborted",
+      errorClass: "RequestAbortedError",
+    });
+  });
+
+  it("a thrown error with the caller's signal untouched stays error", async () => {
+    const live = new AbortController();
+    const row = await recordThrown(
+      Object.assign(new Error("x"), { name: "ProviderError" }),
+      live.signal,
+    );
+    expect(row).toMatchObject({ outcome: "error", errorClass: "ProviderError" });
+  });
+
+  it("records the pinned endpoint tag, or NULL when unpinned", async () => {
+    await executeTurn(
+      context(), [], null, streaming(COMPLETED_CHUNKS),
+      config({ endpointTag: "anthropic/fp8" }), [],
+      {}, undefined, undefined, TELEMETRY,
+    );
+    await executeTurn(
+      context(), [], null, streaming(COMPLETED_CHUNKS), config(), [],
+      {}, undefined, undefined, TELEMETRY,
+    );
+    expect(recordedRows().map((r) => r.endpointTag)).toEqual(["anthropic/fp8", null]);
+  });
+
+  it("records the endpoint the session switched to, not the pre-send pin", async () => {
+    commitEndpointSwitch("session-t", "google-vertex");
+    const boom = Object.assign(new Error("x"), { name: "ProviderError" });
+    const row = await recordThrown(boom);
+    // Thrown attempts carry it too - the recorder does no IO to find it.
+    expect(row.endpointTag).toBe("google-vertex");
+  });
+
+  it("throws the same error with no row when telemetry is absent", async () => {
+    const boom = new Error("nope");
+    const provider = streaming([{ type: "content", text: "partial" }], { throwAfter: boom });
+    await expect(
+      executeTurn(context(), [], null, provider, config(), []),
+    ).rejects.toBe(boom);
+    expect(mockInsertInferenceAttempt).not.toHaveBeenCalled();
+    expect(mockRecordInBackground).not.toHaveBeenCalled();
+  });
+
+  it("a failing telemetry write never changes the result", async () => {
+    mockRecordInBackground.mockImplementationOnce(() => {
+      throw new Error("recorder exploded");
+    });
+    const result = await executeTurn(
+      context(), [], null, streaming(COMPLETED_CHUNKS), config(), [],
+      {}, undefined, undefined, TELEMETRY,
+    );
+    expect(result.content).toBe(SECRET_TEXT);
+    expect(result.toolCalls).toHaveLength(1);
+  });
+
+  it("requestedEffort is null when an effort is chosen but the model does not advertise it", async () => {
+    await executeTurn(
+      context(), [], null, streaming(COMPLETED_CHUNKS),
+      config({ reasoningEffort: "high", supportsReasoningEffort: false }), [],
+      {}, undefined, undefined, TELEMETRY,
+    );
+    expect(recordedRows()[0]?.requestedEffort).toBeNull();
+  });
+
+  it("requestedEffort is null when no effort is chosen", async () => {
+    await executeTurn(
+      context(), [], null, streaming(COMPLETED_CHUNKS),
+      config({ supportsReasoningEffort: true }), [],
+      {}, undefined, undefined, TELEMETRY,
+    );
+    expect(recordedRows()[0]?.requestedEffort).toBeNull();
+  });
+
+  it("requestedEffort is the effort actually sent when the model advertises it", async () => {
+    await executeTurn(
+      context(), [], null, streaming(COMPLETED_CHUNKS),
+      config({ reasoningEffort: "high", supportsReasoningEffort: true }), [],
+      {}, undefined, undefined, TELEMETRY,
+    );
+    expect(recordedRows()[0]?.requestedEffort).toBe("high");
+  });
+
+  it("records the buffered fallback on a provider that cannot stream", async () => {
+    const provider = withoutStreamMethod(fakeInferenceProvider({
+      chatCompletion: vi.fn().mockResolvedValue({
+        content: "  ",
+        toolCalls: null,
+        usage: { promptTokens: 10, completionTokens: 0 },
+        finishReason: "length",
+      }),
+      calculateCost: vi.fn().mockReturnValue({
+        totalCost: 0, currency: "USD",
+        breakdown: { promptCost: 0, completionCost: 0, cachedSavings: 0, reasoningCost: 0 },
+      }),
+    }));
+    await executeTurn(
+      context(), [], null, provider, config(), [],
+      {}, undefined, undefined, TELEMETRY,
+    );
+    expect(recordedRows()[0]).toMatchObject({
+      outcome: "completed",
+      bufferedFallback: true,
+      fallbackReason: "no_stream_method",
+      finishReason: "length",
+      contentEmpty: true,
+    });
   });
 });

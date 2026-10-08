@@ -28,6 +28,7 @@ import { evaluateProductionAudit } from "./production-audit-decision.mjs";
 import { verifyBigIntBufferException } from "./verify-bigint-buffer-exception.mjs";
 import { verifyStreamJsonException } from "./verify-stream-json-exception.mjs";
 import { verifyUuidException } from "./verify-uuid-exception.mjs";
+import { verifySolanaRpcDependency } from "./verify-solana-rpc-dependency.mjs";
 
 /**
  * Package name to reachability verifier. A package listed here MUST pass its
@@ -84,6 +85,13 @@ for (const finding of decision.stale) {
   console.error(`Stale production advisory exception: ${finding.package}@${finding.version} ${finding.url}`);
 }
 if (!decision.ok) fail(decision.failures.join("; "));
+
+try {
+  await verifySolanaRpcDependency(auditRoot);
+} catch (error) {
+  fail(`the installed Solana RPC dependency no longer matches its reviewed browser path: ${error.message}`);
+}
+console.log("Installed Solana RPC browser dependency verified.");
 
 for (const entry of decision.exceptions) {
   const verify = REACHABILITY_VERIFIERS.get(entry.package);

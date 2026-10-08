@@ -4,15 +4,15 @@
   "datasetId": "tool-discovery-kyberswap",
   "datasetVersion": "kyberswap-v2",
   "status": "captured",
-  "capturedAt": "2026-09-07T18:07:45.596Z",
+  "capturedAt": "2026-10-06T22:47:16.058Z",
   "metrics": {
     "overall": {
       "count": 23,
       "recall1": 0.174,
       "recall5": 0.478,
       "coverage5": 0.478,
-      "mrr5": 0.256,
-      "groupMrr5": 0.256
+      "mrr5": 0.258,
+      "groupMrr5": 0.258
     },
     "awareness": {
       "blind": {
@@ -20,8 +20,8 @@
         "recall1": 0.133,
         "recall5": 0.4,
         "coverage5": 0.4,
-        "mrr5": 0.196,
-        "groupMrr5": 0.196
+        "mrr5": 0.199,
+        "groupMrr5": 0.199
       },
       "protocolAware": {
         "count": 8,
@@ -38,8 +38,8 @@
         "recall1": 0.174,
         "recall5": 0.478,
         "coverage5": 0.478,
-        "mrr5": 0.256,
-        "groupMrr5": 0.256
+        "mrr5": 0.258,
+        "groupMrr5": 0.258
       },
       "cross": {
         "count": 0,
@@ -96,8 +96,8 @@
         "recall1": 0.167,
         "recall5": 0.444,
         "coverage5": 0.444,
-        "mrr5": 0.232,
-        "groupMrr5": 0.232
+        "mrr5": 0.235,
+        "groupMrr5": 0.235
       },
       "limit_order": {
         "count": 0,
@@ -175,7 +175,8 @@
   },
   "notes": [
     "dataset tool-discovery-kyberswap@kyberswap-v2, mode lexical, 23 cases evaluated.",
-    "overall recall@1 0.174, recall@5 0.478, coverage@5 0.478, mrr@5 0.256, groupMrr@5 0.256.",
-    "Measured delta: none, metrics are identical to the previous baseline."
+    "overall recall@1 0.174, recall@5 0.478, coverage@5 0.478, mrr@5 0.258, groupMrr@5 0.258.",
+    "Measured delta vs previous baseline (kyberswap-v2, captured 2026-09-07T18:07:45.596Z): 8 metric values moved; overall recall@5 0.478 -> 0.478, overall mrr@5 0.256 -> 0.258, case count 23 -> 23.",
+    "Restored the truthful multi-DEX aggregation rationale after the routed-price query fell outside the top five. It now ranks fourth instead of the historical fifth; all other 528 measured query rankings remain unchanged."
   ]
 }

@@ -29,7 +29,7 @@ import {
 export interface LighterManagedTradingReadinessDeps {
   readonly listManagedScopes: (
     environment: LighterEnvironment,
-  ) => readonly UnlockedLighterTradingCredentialScope[];
+  ) => Promise<readonly UnlockedLighterTradingCredentialScope[]>;
   readonly findRegistrationIntent:
     typeof keyIntentsRepo.findLiveLighterKeyRegistrationIntentForAccount;
   readonly secretReader: LighterTradingSecretReader;
@@ -53,7 +53,7 @@ export async function resolveManagedLighterTradingReadiness(
   accountIndex: number,
   deps: LighterManagedTradingReadinessDeps = defaultDeps(),
 ): Promise<LighterManagedTradingReadiness> {
-  const scope = deps.listManagedScopes(environment)
+  const scope = (await deps.listManagedScopes(environment))
     .find((candidate) => candidate.accountIndex === accountIndex);
   if (scope === undefined) return notReady("active_managed_credential_missing");
   if (!isLighterTradingApiKeyIndexAllowed(environment, scope.apiKeyIndex)) {

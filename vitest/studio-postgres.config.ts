@@ -67,7 +67,17 @@ export default defineConfig({
       "src/__tests__/integration/migrations/096-wallet-wrap-intents.int.test.ts",
       // The snapshot group record: applied as an increment on a schema at 100.
       "src/__tests__/integration/migrations/101-portfolio-snapshot-groups.int.test.ts",
+      // Kairos E-1: 174 applied on top of a populated 173 schema.
+      "src/__tests__/integration/migrations/174-sessions-reasoning-effort.int.test.ts",
+      "src/__tests__/integration/migrations/176-lighter-fill-position-facts.int.test.ts",
       "src/__tests__/integration/engine/studio-*.int.test.ts",
+      // The atomic mission wake claim + stuck-wake repair: crash, concurrency
+      // and lock proofs that need real transactions, not embeddings.
+      "src/__tests__/integration/engine/mission-wake-claim.int.test.ts",
+      // Kairos S-3: the concurrent wake pool through the real claims, leases
+      // and wallet lookup (prompt starts, exactly once, session and wallet
+      // exclusion).
+      "src/__tests__/integration/engine/wake-concurrency.int.test.ts",
       // vex-app's live-Postgres tests. They live with the composition they
       // drive; only this lane starts a database for them.
       "vex-app/src/main/**/__tests__/*.int.test.ts",
@@ -80,6 +90,15 @@ export default defineConfig({
       // F-EVM: the pending-debit compensation's in-flight SQL against the real schema.
       "src/__tests__/integration/repos/pending-debit-compensation.int.test.ts",
       "src/__tests__/integration/repos/session-control-state-wake.int.test.ts",
+      // Kairos S-1: the claim-token contract and the FOR SHARE write fence.
+      "src/__tests__/integration/repos/runner-lease-fence.int.test.ts",
+      // Kairos S-4: the statement / connect bounds and the control pool, and
+      // Stop + lease renewal under pool saturation, row and advisory lock
+      // contention and DB-wide connection exhaustion.
+      "src/__tests__/integration/repos/db-bounds-control-pool.int.test.ts",
+      "src/__tests__/integration/repos/db-contention-stop-lease.int.test.ts",
+      // Kairos S-1: a lease stolen while a tool is in flight, end to end.
+      "src/__tests__/integration/engine/lease-stolen-mid-turn.int.test.ts",
       "src/__tests__/integration/repos/recovery-money-gate-race.int.test.ts",
       "src/__tests__/integration/repos/recovery-reverse-lock-order.int.test.ts",
       "src/__tests__/integration/repos/wallet-transaction-*.int.test.ts",

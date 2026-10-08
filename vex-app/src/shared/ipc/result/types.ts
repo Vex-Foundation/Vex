@@ -196,11 +196,20 @@ export type VexErrorCode =
   | "wallet.cap_reached"
   | "wallet.address_exists"
   | "wallet.not_found"
+  | "secrets.lock_busy"
   | "secrets.unlock_throttled"
   | "services.docker_unavailable"
   | "services.port_in_use"
   | "services.healthcheck_failed"
   | "services.compose_failed"
+  /**
+   * The main-process EXECUTION GATE (`main/lifecycle/execution-gate.ts`)
+   * refused an agent, tool or wallet execution request because the local
+   * runtime (Docker, Postgres, migrations, the Studio reconciler) is not ready
+   * yet, or because Vex is shutting down. Nothing was executed and nothing was
+   * written. `retryable: true` while starting, `userActionable: true`.
+   */
+  | "services.runtime_starting"
   | "data.search_unavailable"
   | "data.migration_failed"
   | "update.check_failed"

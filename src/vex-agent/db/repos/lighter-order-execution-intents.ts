@@ -1152,6 +1152,59 @@ export async function markUnsubmittedRefused(input: {
 }
 
 
+/** The refusal reason the executor itself gives an approved order whose consent expired before reservation. */
+export const LIGHTER_ORDER_EXPIRED_BEFORE_RESERVATION_REASON = "consent_expired_before_reservation";
+
+/**
+ * Retire approved create intents whose consent expired before they ever
+ * reserved a nonce: an approved order interrupted before signing (an app quit,
+ * a crash, an aborted dispatch) otherwise stays `approved / approval_pending`
+ * forever after its expiry.
+ *
+ * Terminal state: `rejected` with the executor's own pre-reservation expiry
+ * reason, exactly the transition the executor's refusal path (and
+ * {@link expirePreSendNonceReservation}) takes for an approved order that was
+ * never signed. `expired_unsubmitted` is reserved by the schema for a row that
+ * retains signing evidence. The approval decision is kept as history.
+ *
+ * Only a row that provably never left Vex is touched: no nonce reservation, no
+ * signature, no send attempt, no submission, no provider outcome and no
+ * ambiguity. Nothing is resent or released; there is nothing to release. A
+ * concurrent executor cannot race this: its nonce attach requires
+ * `approval_pending` and rolls back with its reservation when it loses.
+ */
+export async function retireExpiredApprovedBeforeReservation(
+  limit = 50,
+): Promise<LighterOrderExecutionIntentRow[]> {
+  const bounded = Number.isInteger(limit) && limit > 0 && limit <= 200 ? limit : 50;
+  const pristine = `approval_status = 'approved' AND decided_at IS NOT NULL
+        AND execution_state = 'approval_pending'
+        AND expires_at <= clock_timestamp()
+        AND nonce_reservation_id IS NULL AND nonce_value IS NULL
+        AND signer_tx_hash IS NULL AND signed_at IS NULL AND signer_expiry_ms IS NULL
+        AND client_order_index IS NULL AND send_attempt_started_at IS NULL
+        AND submitted_tx_hash IS NULL AND submitted_at IS NULL
+        AND submit_code IS NULL AND submit_message IS NULL
+        AND api_accepted_at IS NULL AND predicted_execution_time_ms IS NULL AND volume_quota_remaining IS NULL
+        AND ambiguous_at IS NULL AND ambiguous_reason IS NULL
+        AND provider_order_id IS NULL AND provider_order_status IS NULL AND provider_outcome_source IS NULL
+        AND provider_outcome_json IS NULL AND provider_outcome_checked_at IS NULL`;
+  const rows = await query<Record<string, unknown>>(
+    `UPDATE lighter_order_execution_intents
+        SET execution_state = 'rejected', ambiguous_reason = $1, updated_at = clock_timestamp()
+      WHERE intent_id IN (
+          SELECT intent_id FROM lighter_order_execution_intents
+           WHERE ${pristine}
+           ORDER BY expires_at ASC
+           LIMIT ${bounded}
+        )
+        AND ${pristine}
+      RETURNING ${SELECT_COLUMNS}`,
+    [LIGHTER_ORDER_EXPIRED_BEFORE_RESERVATION_REASON],
+  );
+  return rows.map(mapRow);
+}
+
 /**
  * Retire an expired exact pre-send owner and release its nonce in one statement.
  * Lock the owner before its nonce, matching the execution refusal transitions.

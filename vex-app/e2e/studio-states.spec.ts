@@ -58,6 +58,21 @@ import { registerRailParityScenarios } from "./studio-states.rail-parity.js";
 const SHOTS_DIR =
   process.env.VEX_UX_SHOTS === "1" ? (process.env.VEX_UX_SHOTS_DIR ?? "") : "";
 
+// Independent host expectations: Mac terminal creation and tab traversal keep Control.
+const MAC_HOST = process.platform === "darwin";
+const STUDIO_TEST_SHORTCUTS = {
+  toggleRail: MAC_HOST ? "Meta+b" : "Control+b",
+  newProject: MAC_HOST ? "Meta+Shift+N" : "Control+Shift+N",
+  toggleStudioAgent: MAC_HOST ? "Meta+Shift+A" : "Control+Shift+A",
+  newTerminal: "Control+Shift+`",
+  nextTab: "Control+Tab",
+  previousTab: "Control+Shift+Tab",
+  closeTab: MAC_HOST ? "Meta+w" : "Control+w",
+  focusExplorer: MAC_HOST ? "Meta+Shift+E" : "Control+Shift+E",
+  goToFile: MAC_HOST ? "Meta+p" : "Control+p",
+  splitTerminal: MAC_HOST ? "Meta+\\" : "Control+Shift+5",
+} as const;
+
 /**
  * Photograph a state, if this run is a capture pass.
  *
@@ -763,11 +778,10 @@ registerRailParityScenarios(test, { shot, pickTheme, shotsDir: SHOTS_DIR });
  * that resolves perfectly in jsdom and is eaten by the browser in the product
  * is exactly the class of defect only this pass catches.
  *
- * PLATFORM: this runs the Ctrl chords, because the runner is Linux or Windows.
- * The Cmd half of the table has no reachable runner in this repo - and it is
- * now the half that DIFFERS, since four rows follow VS Code's own `mac:`
- * overrides rather than substituting Cmd for Ctrl. The report names that gap
- * rather than pretending a Linux pass covered macOS.
+ * PLATFORM: run the host's exact chords. macOS keeps literal Control for new
+ * terminals and tab traversal, uses Cmd for ordinary workspace commands, and
+ * splits with Cmd+Backslash plus a Control+Shift+5 secondary chord. Toggle
+ * terminal remains reserved and has no wired owner to exercise here.
  *
  * Only the intents with a wired owner are exercised, which is the same list the
  * watermark advertises (`studioBoundIntents`). `Toggle terminal panel` is the
@@ -798,15 +812,15 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   /* ---- 40: Ctrl+B toggles the rail, and toggles it back --------------- */
 
   await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "true");
-  await page.keyboard.press("Control+b");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.toggleRail);
   await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "false");
   await shot(page, `${theme}-40-keyboard-rail-collapsed`);
-  await page.keyboard.press("Control+b");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.toggleRail);
   await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "true");
 
   /* ---- 41: Ctrl+Shift+N opens the creator ----------------------------- */
 
-  await page.keyboard.press("Control+Shift+N");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.newProject);
   const creator = page.getByRole("dialog", { name: "New project" });
   await expect(creator).toBeVisible();
   await shot(page, `${theme}-41-keyboard-new-project`);
@@ -816,16 +830,16 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   // The rail must not move under an open decision. The keystroke is NOT
   // swallowed - the dialog's own handlers still see it - Studio simply takes
   // no shortcut while something is pending.
-  await page.keyboard.press("Control+b");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.toggleRail);
   await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "true");
   await shot(page, `${theme}-42-keyboard-suspended-by-dialog`);
 
   await page.keyboard.press("Escape");
   await expect(creator).toHaveCount(0);
   // And the suspension lifts with the dialog.
-  await page.keyboard.press("Control+b");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.toggleRail);
   await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "false");
-  await page.keyboard.press("Control+b");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.toggleRail);
   await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "true");
 
   /* ---- 43: Ctrl+Shift+A switches Agent and Studio -------------------- */
@@ -833,7 +847,7 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   // The finding this closes (I9): before it, the ONLY route out of Studio was
   // the welcome screen's capsule, so a user standing in a project had no way
   // back without first closing what they were looking at.
-  await page.keyboard.press("Control+Shift+A");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.toggleStudioAgent);
   await expect(shell).toHaveAttribute("data-vex-runtime-mode", "agent");
   await shot(page, `${theme}-43-keyboard-back-to-agent`);
 
@@ -869,11 +883,11 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   // rail's. Clicking the strip is how a user gets there.
   await tabs.getByRole("tab").first().click();
 
-  await page.keyboard.press("Control+Shift+`");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.newTerminal);
   await expect(tabs.getByRole("tab", { name: /Terminal 2/ })).toBeVisible({
     timeout: 60_000,
   });
-  await page.keyboard.press("Control+Shift+`");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.newTerminal);
   await expect(tabs.getByRole("tab")).toHaveCount(3, { timeout: 60_000 });
   await shot(page, `${theme}-44-keyboard-three-terminals`);
 
@@ -891,14 +905,14 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   ).toBeFocused({ timeout: 60_000 });
   await tabs.getByRole("tab", { name: /Terminal 3/ }).focus();
   await expect(tabs.getByRole("tab", { name: /Terminal 3/ })).toBeFocused();
-  await page.keyboard.press("Control+Tab");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.nextTab);
   await expect(tabs.getByRole("tab", { name: /Terminal 1/ })).toHaveAttribute(
     "aria-selected",
     "true",
   );
   await tabs.getByRole("tab", { name: /Terminal 1/ }).focus();
   await expect(tabs.getByRole("tab", { name: /Terminal 1/ })).toBeFocused();
-  await page.keyboard.press("Control+Shift+Tab");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.previousTab);
   await expect(tabs.getByRole("tab", { name: /Terminal 3/ })).toHaveAttribute(
     "aria-selected",
     "true",
@@ -943,7 +957,7 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   await expect(terminalInput()).toBeFocused();
 
   // Ctrl+Tab wraps from the third terminal to the first, from inside the shell.
-  await page.keyboard.press("Control+Tab");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.nextTab);
   await expect(tabs.getByRole("tab", { name: /Terminal 1/ })).toHaveAttribute(
     "aria-selected",
     "true",
@@ -951,7 +965,7 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
 
   await terminalInput().focus();
   await expect(terminalInput()).toBeFocused();
-  await page.keyboard.press("Control+Shift+Tab");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.previousTab);
   await expect(tabs.getByRole("tab", { name: /Terminal 3/ })).toHaveAttribute(
     "aria-selected",
     "true",
@@ -963,7 +977,7 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   // an empty prompt looks identical either way.
   await terminalInput().focus();
   await expect(terminalInput()).toBeFocused();
-  await page.keyboard.press("Control+w");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.closeTab);
   await expect(tabs.getByRole("tab")).toHaveCount(2, { timeout: 60_000 });
 
   // And the new-terminal chord LANDS THE CARET in the shell it opened. Before
@@ -971,23 +985,40 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   // user pressed twice in a row worked once.
   await terminalInput().focus();
   await expect(terminalInput()).toBeFocused();
-  await page.keyboard.press("Control+Shift+`");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.newTerminal);
   await expect(tabs.getByRole("tab")).toHaveCount(3, { timeout: 60_000 });
   await expect(terminalInput()).toBeFocused({ timeout: 60_000 });
   await shot(page, `${theme}-44b-keyboard-inside-terminal`);
 
+  // Split uses the host's primary chord while focus is held by the real shell.
+  const activePanel = centre.locator('[role="tabpanel"]:not([hidden])');
+  const paneInputs = activePanel.locator('textarea[aria-label="Terminal input"]');
+  await expect(paneInputs).toHaveCount(1);
+  await terminalInput().focus();
+  await expect(terminalInput()).toBeFocused();
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.splitTerminal);
+  await expect(paneInputs).toHaveCount(2, { timeout: 60_000 });
+  await expect(activePanel.getByRole("separator").first()).toBeVisible();
+  if (MAC_HOST) {
+    // The literal-Control secondary is also supported; Cmd+Shift+5 belongs to macOS.
+    await terminalInput().focus();
+    await expect(terminalInput()).toBeFocused();
+    await page.keyboard.press("Control+Shift+5");
+    await expect(paneInputs).toHaveCount(3, { timeout: 60_000 });
+  }
+
   // Ctrl+Shift+E hands focus to the project tree, which is a `role="tree"` and
   // the explorer pane's ONE tab stop.
-  await page.keyboard.press("Control+Shift+E");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.focusExplorer);
   await expect(sidebar.getByRole("tree", { name: "Project files" })).toBeFocused();
   await shot(page, `${theme}-45-keyboard-explorer-focused`);
 
   // Ctrl+P opens the rail's one search and puts the caret in it. NEVER a
   // toggle: a second press must leave the user in the field.
-  await page.keyboard.press("Control+p");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.goToFile);
   const search = sidebar.getByRole("combobox", { name: "Search projects and files" });
   await expect(search).toBeFocused();
-  await page.keyboard.press("Control+p");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.goToFile);
   await expect(search).toBeFocused();
   await shot(page, `${theme}-46-keyboard-go-to-file`);
   await page.keyboard.press("Escape");
@@ -997,7 +1028,7 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   await tabs.getByRole("tab").first().click();
   for (let attempt = 0; attempt < 12; attempt += 1) {
     if ((await tabs.getByRole("tab").count()) === 0) break;
-    await page.keyboard.press("Control+w");
+    await page.keyboard.press(STUDIO_TEST_SHORTCUTS.closeTab);
   }
   await expect(tabs.getByRole("tab")).toHaveCount(0, { timeout: 60_000 });
 
@@ -1013,7 +1044,11 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   expect(terms).toContain("Close tab");
   expect(terms).not.toContain("Toggle terminal panel");
   expect(keys.filter((value) => value.trim() === "")).toHaveLength(0);
-  expect(keys).toContain("Ctrl+W");
+  expect(keys).toContain(MAC_HOST ? "⌘W" : "Ctrl+W");
+  expect(keys).toContain(MAC_HOST ? "⌃⇧`" : "Ctrl+Shift+`");
+  expect(keys).toContain(MAC_HOST ? "⌃Tab" : "Ctrl+Tab");
+  expect(keys).toContain(MAC_HOST ? "⌃⇧Tab" : "Ctrl+Shift+Tab");
+  expect(keys).toContain(MAC_HOST ? "⌘\\" : "Ctrl+Shift+5");
   await shot(page, `${theme}-29-empty-workspace`);
 
   testInfo.annotations.push({
@@ -1848,7 +1883,7 @@ test("RESTORE-1 restore: the last location comes back, and focus lands", async (
   /* ---- 3: out to Agent mode and back, by keyboard and by the capsule --- */
 
   const shell = page.locator('[data-vex-screen="appShell"]');
-  await page.keyboard.press("Control+Shift+A");
+  await page.keyboard.press(STUDIO_TEST_SHORTCUTS.toggleStudioAgent);
   await expect(shell).toHaveAttribute("data-vex-runtime-mode", "agent");
   // AND FOCUS WENT WITH IT. A mode switch that left focus on the body is the
   // same defect as the open, one surface along.

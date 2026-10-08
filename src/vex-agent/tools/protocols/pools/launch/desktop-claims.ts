@@ -167,7 +167,7 @@ export const claimPoolsFees: ClaimPoolsFees = async (session, inputs) => {
   if (!chainConfig) {
     return refusal("provider_unavailable", `Robinhood Chain (${POOLS_CHAIN_ID}) is not in the local chain registry.`);
   }
-  const signing = openLaunchSigningClients(desktopContext(), chainConfig);
+  const signing = await openLaunchSigningClients(desktopContext(), chainConfig);
   if (!signing.ok) return refusal("wallet_unavailable", signing.result.output);
 
   let expected: Address;

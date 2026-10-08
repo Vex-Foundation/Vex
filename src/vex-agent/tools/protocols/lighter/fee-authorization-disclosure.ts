@@ -2,6 +2,7 @@ import type {
   LighterFeeAuthorizationIntentRow,
   LighterFeeAuthorizationTerms,
 } from "@vex-agent/db/repos/lighter-fee-authorization-intents.js";
+import { LIGHTER_PERPS_FEE, LIGHTER_SPOT_FEE } from "@tools/lighter/fee-policy.js";
 import type { ApprovalPreviewScalar } from "../../types.js";
 
 export const LIGHTER_FEE_AUTHORIZATION_CRITICAL_KEYS = [
@@ -171,8 +172,8 @@ export function validateLighterFeeAuthorizationCriticalArgs(
     (value.authorizationExpiryMs as number) >= 2 ** 48
   )
     return false;
-  const perps = value.revoke ? 0 : 1000,
-    spot = value.revoke ? 0 : 2500;
+  const perps = value.revoke ? 0 : LIGHTER_PERPS_FEE,
+    spot = value.revoke ? 0 : LIGHTER_SPOT_FEE;
   if (
     value.maxPerpsMakerFee !== perps ||
     value.maxPerpsTakerFee !== perps ||

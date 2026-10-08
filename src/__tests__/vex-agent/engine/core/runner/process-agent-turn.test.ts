@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { requireValue } from "../../../../helpers/require-value.js";
 
 // ── Mocks ─────────────────────────────────────────────────────
 
@@ -302,6 +303,21 @@ describe("runner", () => {
       expect(result.missionStatus).toBeNull();
     });
 
+    it("hands the loop its entry timestamp so pre-loop setup covers lease, config and hydrate", async () => {
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession());
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Hello!", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
+      });
+
+      const before = performance.now();
+      await processAgentTurn("session-1", "Hi");
+      const after = performance.now();
+
+      const loopConfig = requireValue(mockRunTurnLoop.mock.calls[0])[7] as { entryStartedAtMs?: number };
+      expect(loopConfig.entryStartedAtMs).toBeGreaterThanOrEqual(before);
+      expect(loopConfig.entryStartedAtMs).toBeLessThanOrEqual(after);
+    });
+
     it("throws if no provider", async () => {
       mockResolveProvider.mockResolvedValueOnce(null);
       await expect(processAgentTurn("session-1", "Hi")).rejects.toThrow("No inference provider");
@@ -430,6 +446,18 @@ describe("runner", () => {
 
       expect(mockRunTurnLoop).not.toHaveBeenCalled();
       expect(result).toMatchObject({ text: null, toolCallsMade: 0 });
+    });
+
+    it("a caller that supplies no entry timestamp leaves pre-loop setup unset", async () => {
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession());
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Hello!", toolCallsMade: 0, pendingApprovals: [], stopReason: null,
+      });
+
+      await runAgentTurnUnderLease("session-1", provider(), config);
+
+      const loopConfig = requireValue(mockRunTurnLoop.mock.calls[0])[7] as Record<string, unknown>;
+      expect("entryStartedAtMs" in loopConfig).toBe(false);
     });
 
     it("no hook (an ordinary turn) runs unchanged", async () => {

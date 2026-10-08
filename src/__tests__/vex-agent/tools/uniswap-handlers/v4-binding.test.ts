@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { createPublicClient, custom, decodeFunctionData, encodeAbiParameters, encodeFunctionResult, parseAbi, zeroAddress } from "viem";
+import { createPublicClient, custom, isAddress, decodeFunctionData, encodeAbiParameters, encodeFunctionResult, parseAbi, zeroAddress } from "viem";
 import { mainnet } from "viem/chains";
 import { getUniswapDeployment } from "@tools/uniswap/deployments.js";
 import { v4PoolId } from "@tools/uniswap/v4-pool.js";
+import type { UniswapToken } from "@tools/uniswap/types.js";
+import type { UniswapSnapshotToken } from "@vex-agent/tools/protocols/quote-authority/uniswap.js";
 import type { V4PoolKey } from "@tools/uniswap/v4-types.js";
 import { V4_POSITION_MANAGER_ABI, V4_QUOTER_ABI, V4_STATE_VIEW_ABI } from "@tools/uniswap/v4-abis.js";
 import { revalidateV4Quote } from "@vex-agent/tools/protocols/uniswap/handlers/swap/v4-revalidation.js";
@@ -171,7 +173,7 @@ it("seals v4 identity and independent prices without inventing a V2/V3 route hin
   const quoted = await revalidateV4Quote({ client: client(), deployment, approved, wallet });
   const priceReference = { source: "dexscreener" as const, chainId: 1, tokenIn: deployment.weth, tokenOut: token,
     inputPriceUsd: "100", outputPriceUsd: "10", inputPair: "input-pool", outputPair: "output-pool" };
-  const snapshot = buildUniswapQuoteSnapshot({ chainId: 1, tokenIn: approved.tokenIn, tokenOut: approved.tokenOut,
+  const snapshot = buildUniswapQuoteSnapshot({ chainId: 1, tokenIn: resolvedSnapshotToken(approved.tokenIn), tokenOut: resolvedSnapshotToken(approved.tokenOut),
     recipient: wallet, expiresAt: approved.expiresAt, debitPlan: approved.debitPlan,
     charge: { totalRaw: 100n, swapAmountRaw: 100n, feeRaw: null, feeTokenAddress: null,
       disclosure: buildUniswapFeeSkippedDisclosure({ reason: "dust", totalRaw: 100n }) },
@@ -181,3 +183,8 @@ it("seals v4 identity and independent prices without inventing a V2/V3 route hin
   expect(snapshot.priceReference).toEqual(priceReference);
   expect(snapshot.approvedMinOutRaw).toBe("990");
 });
+
+function resolvedSnapshotToken(snapshot: UniswapSnapshotToken): UniswapToken {
+  if (!isAddress(snapshot.address)) throw new Error("Expected a valid snapshot token address");
+  return { ...snapshot, address: snapshot.address };
+}

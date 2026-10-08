@@ -346,7 +346,7 @@ describe("AppShell", () => {
     expect(screen.queryByText(/^PREVIEW · v/)).toBeNull();
   });
 
-  it("profile menu carries exactly six entries (no Missions - Sessions covers it)", async () => {
+  it("profile menu carries seven actions including Lock Vex", async () => {
     renderShell();
     await screen.findByText("The night shift is active.");
 
@@ -356,7 +356,7 @@ describe("AppShell", () => {
     expect(screen.getByText("Connected")).not.toBeNull();
     expect(screen.queryByText("Connected to local runtime")).toBeNull();
 
-    // The six menu entries (each screen row with its hint subline) — the
+    // The profile actions each carry a hint subline. The
     // Missions entry/screen is retired (owner: Sessions covers it); Agent Scan
     // sits between Sessions and How Vex works.
     for (const entry of [
@@ -366,16 +366,17 @@ describe("AppShell", () => {
       "Agent Scan",
       "How Vex works",
       "Settings",
+      "Lock Vex",
     ]) {
       expect(
         screen.getByRole("menuitem", { name: new RegExp(entry, "i") }),
       ).not.toBeNull();
     }
-    // Six ACTION entries; the runtime provenance row rides the menu footer
+    // Seven ACTION entries; the runtime provenance row rides the menu footer
     // as a disabled (non-actionable) row.
     const menuItems = screen.getAllByRole("menuitem");
-    expect(menuItems.filter((item) => !item.hasAttribute("disabled"))).toHaveLength(6);
-    expect(menuItems).toHaveLength(7);
+    expect(menuItems.filter((item) => !item.hasAttribute("disabled"))).toHaveLength(7);
+    expect(menuItems).toHaveLength(8);
     expect(screen.queryByRole("menuitem", { name: /Missions/i })).toBeNull();
     expect(screen.queryByText("Results ledger")).toBeNull();
     expect(screen.getByText("What Vex has learned")).not.toBeNull();

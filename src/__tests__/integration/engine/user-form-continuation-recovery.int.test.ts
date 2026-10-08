@@ -43,6 +43,7 @@ import {
   gateOnOperatorStopTransaction,
 } from "@vex-agent/engine/runtime/lease-and-status.js";
 import { makeSession, resetDb } from "../setup/fixtures.js";
+import { fakeLeaseHandle } from "../../helpers/lease-guard.js";
 
 const INTENT = "intent-form-recovery";
 
@@ -319,8 +320,12 @@ describe("user-form continuation — stamp/lease/turn interleavings", () => {
     await closeUserFormContinuation({
       sessionId,
       leaseHandle: {
+        ...fakeLeaseHandle({
+          ownerId: "launch-form-owner",
+          sessionId,
+          claimToken: claim.lease.claimToken,
+        }),
         lease: claim.lease,
-        ownerId: "launch-form-owner",
         release: async () => {
           await execute("DELETE FROM runner_leases WHERE session_id = $1", [
             sessionId,
@@ -360,8 +365,12 @@ describe("user-form continuation — stamp/lease/turn interleavings", () => {
     await closeUserFormContinuation({
       sessionId,
       leaseHandle: {
+        ...fakeLeaseHandle({
+          ownerId: "launch-form-owner",
+          sessionId,
+          claimToken: claim.lease.claimToken,
+        }),
         lease: claim.lease,
-        ownerId: "launch-form-owner",
         release: async () => {
           // The Stop arrives exactly here: the closing commit is done, the
           // lease is not yet gone.

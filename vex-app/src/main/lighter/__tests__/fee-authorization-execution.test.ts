@@ -192,7 +192,7 @@ function setup(
     admitSend: vi.fn(async () => true),
     releaseUnsubmittedNonce: vi.fn(async () => null),
     releaseNonce: vi.fn(async () => nonce),
-    resolveWallet: vi.fn(() => wallet),
+    resolveWallet: vi.fn(async () => wallet),
     selectedAddress: vi.fn(() => wallet.address),
     sign: vi.fn(async () => {
       events.push("sign");
@@ -390,6 +390,11 @@ describe("Lighter fee authorization lifecycle", () => {
     expect(feePolicyForStoredIntent(h.current()).collectorAccountIndex).toBe(
       99,
     );
+    expect(feePolicyForStoredIntent(h.current()).perpsMakerFee).toBe(1000);
+    expect(feePolicyForStoredIntent({
+      ...h.current(),
+      terms: { ...h.current().terms, maxPerpsMakerFee: 200, maxPerpsTakerFee: 200 },
+    }).perpsMakerFee).toBe(200);
     expect(() =>
       feePolicyForStoredIntent({
         ...h.current(),
@@ -403,6 +408,10 @@ describe("Lighter fee authorization lifecycle", () => {
         terms: { ...h.current().terms, maxSpotMakerFee: 9000 },
       }),
     ).toThrow("host-approved");
+    expect(() => feePolicyForStoredIntent({
+      ...h.current(),
+      terms: { ...h.current().terms, maxPerpsMakerFee: 1000, maxPerpsTakerFee: 200 },
+    })).toThrow("host-approved");
   });
   it("refuses reconciliation for a different selected wallet before provider reads", async () => {
     const h = setup({ state: "submitted" });
@@ -620,8 +629,8 @@ describe("Lighter fee authorization signer settlement contract", () => {
     signRunner: LighterSignerBinaryRunner,
   ): LighterFeeAuthorizationExecutionDeps["sign"] {
     return (args) => signApprovedLighterFeeAuthorization(args, {
-      readVaultPrivateKey: () => `0x${"1".repeat(80)}`,
-      readVaultRegistrationState: () => LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE,
+      readVaultPrivateKey: async () => `0x${"1".repeat(80)}`,
+      readVaultRegistrationState: async () => LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE,
       keyGenerator: createLighterApiKeyGeneratorBinary({
         binaryPath: "/tmp/vex-lighter-signer-test",
         runner: signerRunnerEmitting({ ok: true, publicKey: h.current().terms.publicKey }),

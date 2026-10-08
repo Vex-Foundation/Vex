@@ -90,7 +90,7 @@ export async function resumeAgentAfterLighterSetup(input: {
     const { runStopGatedSessionTurn } = await import("./runner/gated-session-turn.js");
     await runStopGatedSessionTurn({
       sessionId: intent.sessionId,
-      runnerOwnerId: ownerId,
+      runnerLease: leaseHandle,
       logScope: "lighter_setup_resume",
     });
     await closeUserFormContinuation({

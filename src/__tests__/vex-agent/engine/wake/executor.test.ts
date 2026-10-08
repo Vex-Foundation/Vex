@@ -1,26 +1,19 @@
 /**
  * Wake executor unit tests. Exercises the pure `tick` function with injected
  * `WakeDeps` so we never load the DB client. Covers:
- *   - mission_run claims that resume (CAS + banner + resume call),
- *   - skip-stale-status re-check (preemption won the race),
- *   - skip-missing-mission-run guard,
- *   - error isolation (one row's failure doesn't poison the batch).
+ *   - mission-run wakes claimed ONE AT A TIME through the atomic claim, then
+ *     banner + resume under the claimed lease,
+ *   - every non-claimed outcome (deferred, dropped, not claimable) starting
+ *     nothing,
+ *   - error isolation (one row's failure doesn't poison the batch),
+ *   - the session-scoped path, which never touches the mission claim.
  *
- * Phase 2 collapse removed the `full_autonomous` wake kind; every wake now
- * targets a mission run.
+ * The claim itself (locks, one transaction, crash atomicity) is proved against
+ * real Postgres in `integration/engine/mission-wake-claim.int.test.ts`.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// Puzzle 3 atomic lease helpers — `wake/executor.ts` dynamically imports
-// `claimRunLeaseAndFlipToRunning` instead of the previous `casFlipToRunning`
-// dep. Tests inject `WakeDeps` for the public surface; the lease helper
-// imports below cover the private dynamic-import path so they never hit
-// the real `withTransaction` → `getPool().connect()` (which would
-// ECONNREFUSED at 127.0.0.1:5777 in the test environment).
-const mockClaimRunLeaseAndFlipToRunning = vi.fn();
-const mockClaimRunForAutoRetry = vi.fn();
-const mockClaimSessionLease = vi.fn();
 const mockScheduleAgentSessionContinuation = vi.fn();
 const mockAppendEngineMessage = vi.fn();
 
@@ -37,13 +30,6 @@ vi.mock("@vex-agent/engine/events/index.js", () => ({
 const mockReleaseLease = vi.fn().mockResolvedValue(undefined);
 const mockCreateLeaseHandle = vi.fn();
 
-vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
-  claimRunLeaseAndFlipToRunning: (...a: unknown[]) => mockClaimRunLeaseAndFlipToRunning(...a),
-  claimRunForAutoRetry: (...a: unknown[]) => mockClaimRunForAutoRetry(...a),
-  claimSessionLease: (...a: unknown[]) => mockClaimSessionLease(...a),
-  observeAndApplyControl: vi.fn().mockResolvedValue({ outcome: "no_request" }),
-}));
-
 vi.mock("@vex-agent/engine/runtime/lease-handle.js", () => ({
   createLeaseHandle: (...a: unknown[]) => mockCreateLeaseHandle(...a),
 }));
@@ -54,18 +40,25 @@ vi.mock("@vex-agent/engine/runtime/release-and-emit.js", () => ({
 
 import { tick, isWakeProviderConfigured, type WakeDeps } from "../../../../vex-agent/engine/wake/executor.js";
 import { backoffDelayMs } from "../../../../vex-agent/engine/wake/executor/claim-session-wake.js";
+import type {
+  ClaimMissionWakeInput,
+  ClaimMissionWakeOutcome,
+} from "../../../../vex-agent/engine/wake/executor/claim-mission-wake.js";
 import type { LoopWakeRequest } from "../../../../vex-agent/db/repos/loop-wake.js";
-import type { MissionRun } from "../../../../vex-agent/db/repos/mission-runs.js";
+import type { RunnerLease } from "../../../../vex-agent/db/repos/runner-leases.js";
+import { requireValue } from "../../../helpers/require-value.js";
+import { fakeLeaseHandle } from "../../../helpers/lease-guard.js";
 
-function makeStubLease(missionRunId: string | null = "run-1") {
+function makeStubLease(missionRunId: string | null = "run-1"): RunnerLease {
   return {
     sessionId: "sess-1",
     missionRunId,
     ownerId: "test-owner",
-    processKind: "electron_main" as const,
+    processKind: "electron_main",
     acquiredAt: new Date(),
     heartbeatAt: new Date(),
     expiresAt: new Date(),
+    claimToken: "token-1",
   };
 }
 
@@ -75,49 +68,39 @@ function makeWake(overrides: Partial<LoopWakeRequest> = {}): LoopWakeRequest {
     sessionId: "sess-1",
     missionRunId: "run-1",
     dueAt: "2026-04-20T12:00:00.000Z",
-    status: "consumed",
+    status: "pending",
     reason: "continue monitoring",
     payload: null,
     createdAt: "2026-04-20T11:59:00.000Z",
-    consumedAt: "2026-04-20T12:00:01.000Z",
+    consumedAt: null,
     cancelledAt: null,
     cancelledReason: null,
     ...overrides,
   };
 }
 
-function makeRun(overrides: Partial<MissionRun> = {}): MissionRun {
+function claimed(runId = "run-1"): ClaimMissionWakeOutcome {
   return {
-    id: "run-1",
-    missionId: "mission-1",
-    sessionId: "sess-1",
-    status: "paused_wake",
-    startedAt: "2026-04-20T10:00:00.000Z",
-    endedAt: null,
-    lastCheckpointAt: null,
-    stopReason: "waiting_for_wake",
-    stopSummary: null,
-    stopEvidenceJson: null,
-    iterationCount: 3,
-    contractSnapshotJson: null,
-    baselineJson: null,
-    recoveredFromRunId: null,
-    errorRetryCount: 0,
-    autoRetryUnsafe: false,
-    ...overrides,
+    kind: "claimed",
+    route: "continuation",
+    runId,
+    lease: makeStubLease(runId),
   };
 }
 
+type ClaimMissionWake = (
+  input: ClaimMissionWakeInput,
+) => Promise<ClaimMissionWakeOutcome>;
+
 function makeDeps(overrides: Partial<WakeDeps> = {}): WakeDeps {
   return {
-    claimDue: vi.fn().mockResolvedValue([]),
+    listDueMissionWakes: vi.fn().mockResolvedValue([]),
+    claimMissionWake: vi.fn<ClaimMissionWake>().mockResolvedValue(claimed()),
     listDueSessionWakes: vi.fn().mockResolvedValue([]),
     claimSessionWake: vi.fn().mockResolvedValue({
       kind: "claimed",
       lease: makeStubLease(null),
     }),
-    getMissionRun: vi.fn().mockResolvedValue(null),
-    casFlipToRunning: vi.fn().mockResolvedValue("paused_wake"),
     injectWakeBanner: vi.fn().mockResolvedValue(undefined),
     resumeMissionRun: vi.fn().mockResolvedValue(undefined),
     continueAgentSession: vi.fn().mockResolvedValue(undefined),
@@ -126,32 +109,17 @@ function makeDeps(overrides: Partial<WakeDeps> = {}): WakeDeps {
   };
 }
 
+function outcomeAt(results: Awaited<ReturnType<typeof tick>>, index: number) {
+  return requireValue(results[index]).outcome;
+}
+
 describe("wake.executor.tick", () => {
   beforeEach(() => {
-    mockClaimRunLeaseAndFlipToRunning.mockReset();
-    // Default: atomic claim succeeds with previousStatus=paused_wake (wake
-    // executor only ever calls the helper after observing paused_wake).
-    mockClaimRunLeaseAndFlipToRunning.mockResolvedValue({
-      outcome: "claimed",
-      previousStatus: "paused_wake",
-      lease: makeStubLease(),
-      wakeCancelledCount: 1,
-    });
     mockCreateLeaseHandle.mockReset();
-    mockCreateLeaseHandle.mockReturnValue({
-      lease: makeStubLease(),
-      ownerId: "test-owner",
-      release: vi.fn().mockResolvedValue(undefined),
-      onLeaseLost: vi.fn(),
-    });
+    mockCreateLeaseHandle.mockImplementation((opts: { readonly ownerId: string }) =>
+      fakeLeaseHandle({ ownerId: opts.ownerId }));
     mockReleaseLease.mockReset();
     mockReleaseLease.mockResolvedValue(undefined);
-    mockClaimRunForAutoRetry.mockReset();
-    mockClaimSessionLease.mockReset();
-    mockClaimSessionLease.mockResolvedValue({
-      outcome: "claimed",
-      lease: makeStubLease(null),
-    });
     mockScheduleAgentSessionContinuation.mockReset();
     mockScheduleAgentSessionContinuation.mockResolvedValue({
       scheduled: true,
@@ -162,29 +130,16 @@ describe("wake.executor.tick", () => {
   });
 
   // ── Session-scoped agent continuation (no mission run row) ───────
-  //
-  // The trap this covers: the executor claims by RUN STATUS, and a
-  // Full-Autonomous agent session has no run row at all. A wake row with
-  // `missionRunId: null` must take the session-lease claim path and must never
-  // reach `getMissionRun` (which would report `skipped_mission_run_missing`
-  // and silently drop the continuation).
   describe("agent-session wakes", () => {
     const agentWake = () =>
       makeWake({
         id: "wake-agent-1",
         missionRunId: null,
-        status: "pending",
         reason: "iteration_limit: runtime slice exhausted; continue autonomously",
         payload: { trigger: "iteration_limit", automatic: true },
       });
 
-    /**
-     * The batch `claimDue` is destructive. A session-scoped row must therefore
-     * never travel through it: it is LISTED, then claimed atomically under the
-     * session control lock. If this routing regresses, the consume→claim window
-     * comes back and with it the "nothing to stop" hole.
-     */
-    it("is listed, never consumed by the destructive batch claim", async () => {
+    it("is listed and claimed through the session claim, never the mission claim", async () => {
       const deps = makeDeps({
         listDueSessionWakes: vi.fn().mockResolvedValue([agentWake()]),
       });
@@ -192,7 +147,7 @@ describe("wake.executor.tick", () => {
 
       await tick(now, 10, deps);
 
-      expect(deps.claimDue).toHaveBeenCalledWith(now, 10);
+      expect(deps.listDueMissionWakes).toHaveBeenCalledWith(now, 10);
       expect(deps.listDueSessionWakes).toHaveBeenCalledWith(now, 10);
       expect(deps.claimSessionWake).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -200,21 +155,20 @@ describe("wake.executor.tick", () => {
           now,
         }),
       );
+      expect(deps.claimMissionWake).not.toHaveBeenCalled();
     });
 
-    it("continues the session under the atomic claim, never a run claim", async () => {
+    it("continues the session under the atomic claim", async () => {
       const deps = makeDeps({
         listDueSessionWakes: vi.fn().mockResolvedValue([agentWake()]),
       });
 
       const results = await tick(new Date("2026-04-20T12:00:01.000Z"), 10, deps);
 
-      expect(results[0]!.outcome).toEqual({
+      expect(outcomeAt(results, 0)).toEqual({
         kind: "agent_session_continued",
         sessionId: "sess-1",
       });
-      expect(deps.getMissionRun).not.toHaveBeenCalled();
-      expect(mockClaimRunLeaseAndFlipToRunning).not.toHaveBeenCalled();
       expect(deps.resumeMissionRun).not.toHaveBeenCalled();
       expect(deps.injectWakeBanner).toHaveBeenCalledWith(
         "sess-1",
@@ -222,35 +176,30 @@ describe("wake.executor.tick", () => {
         "2026-04-20T12:00:00.000Z",
         undefined, // pin: every wake path forwards payload.triggeredBy; a timer wake has none
       );
-      // The EXACT lease the executor claimed reaches the slice — the slice's
-      // turn loop can only apply a prepared compaction by proving ownership.
       expect(deps.continueAgentSession).toHaveBeenCalledWith(
         "sess-1",
-        "wake-executor-wake-agent-1",
+        expect.objectContaining({ ownerId: "wake-executor-wake-agent-1" }),
       );
     });
 
     it("banner precedes the continuation, and the lease is always released", async () => {
+      const continueAgentSession = vi.fn().mockResolvedValue(undefined);
+      const injectWakeBanner = vi.fn().mockResolvedValue(undefined);
       const deps = makeDeps({
         listDueSessionWakes: vi.fn().mockResolvedValue([agentWake()]),
+        continueAgentSession,
+        injectWakeBanner,
       });
 
       await tick(new Date(), 10, deps);
 
-      expect(deps.injectWakeBanner).toHaveBeenCalledBefore(
-        deps.continueAgentSession as never,
-      );
+      expect(injectWakeBanner).toHaveBeenCalledBefore(continueAgentSession);
       expect(mockReleaseLease).toHaveBeenCalledWith(
         expect.anything(),
         "sess-1",
       );
     });
 
-    /**
-     * The lease holder is NOT necessarily the continuation — approval resume
-     * and the end-of-turn hook take it too. Nothing is consumed on a busy
-     * lease: the SAME row keeps the park, with a pushed-out due time.
-     */
     it("DEFERS the same row instead of dropping when the session lease is busy", async () => {
       const deps = makeDeps({
         listDueSessionWakes: vi.fn().mockResolvedValue([agentWake()]),
@@ -263,24 +212,17 @@ describe("wake.executor.tick", () => {
 
       const results = await tick(new Date(), 10, deps);
 
-      expect(results[0]?.outcome).toEqual({
+      expect(outcomeAt(results, 0)).toEqual({
         kind: "deferred_lease_busy",
         sessionId: "sess-1",
         attempt: 1,
         dueAt: "2026-04-20T12:00:06.000Z",
       });
-      // No work was started against a session someone else is driving.
       expect(deps.injectWakeBanner).not.toHaveBeenCalled();
       expect(deps.continueAgentSession).not.toHaveBeenCalled();
-      // The deleted replacement-row path must not come back.
       expect(mockScheduleAgentSessionContinuation).not.toHaveBeenCalled();
     });
 
-    /**
-     * A candidate is not a claim. Between the non-destructive list and the
-     * locked revalidation an operator Stop can cancel the row — the executor
-     * must then start nothing at all.
-     */
     it("starts nothing when the row stopped being claimable under the lock", async () => {
       const deps = makeDeps({
         listDueSessionWakes: vi.fn().mockResolvedValue([agentWake()]),
@@ -289,18 +231,11 @@ describe("wake.executor.tick", () => {
 
       const results = await tick(new Date(), 10, deps);
 
-      expect(results[0]?.outcome).toEqual({ kind: "skipped_claim_lost" });
+      expect(outcomeAt(results, 0)).toEqual({ kind: "skipped_claim_lost" });
       expect(deps.injectWakeBanner).not.toHaveBeenCalled();
       expect(deps.continueAgentSession).not.toHaveBeenCalled();
     });
 
-    /**
-     * The backoff POLICY survived the protocol change verbatim: 5 s base,
-     * doubling, 60 s cap — and NO attempt ceiling. A cap is a terminal ceiling
-     * by another name, and under full autonomy there are no ceilings. Only the
-     * DELAY is bounded; the one-pending-row-per-session index is what stops an
-     * unbounded retry from growing the queue.
-     */
     it("preserves the bounded-delay / unbounded-attempts backoff policy", () => {
       expect(backoffDelayMs(1)).toBe(5_000);
       expect(backoffDelayMs(2)).toBe(10_000);
@@ -317,7 +252,7 @@ describe("wake.executor.tick", () => {
 
       const results = await tick(new Date(), 10, deps);
 
-      expect(results[0]!.outcome).toEqual({
+      expect(outcomeAt(results, 0)).toEqual({
         kind: "error",
         message: "provider down",
       });
@@ -325,183 +260,260 @@ describe("wake.executor.tick", () => {
     });
   });
 
-  // ── Phase 4d: error_retry wakes ──────────────────────────────────
-  describe("auto-retry wakes", () => {
-    const autoWake = () =>
-      makeWake({ id: "wake-9", payload: { trigger: "error_retry", attempt: 2 } });
-
-    it("resumes a paused_error run through the auto-retry claim", async () => {
-      mockClaimRunForAutoRetry.mockResolvedValue({ outcome: "claimed", lease: makeStubLease() });
+  // ── Mission-scoped wakes ─────────────────────────────────────────
+  describe("mission wakes", () => {
+    it("resumes a mission run only after the atomic claim, with the claim's lease", async () => {
+      const claimMissionWake = vi.fn<ClaimMissionWake>().mockResolvedValue(claimed());
+      const injectWakeBanner = vi.fn().mockResolvedValue(undefined);
+      const now = new Date("2026-04-20T12:00:01.000Z");
       const deps = makeDeps({
-        claimDue: vi.fn().mockResolvedValue([autoWake()]),
-        getMissionRun: vi.fn().mockResolvedValue(makeRun({ status: "paused_error" })),
+        listDueMissionWakes: vi.fn().mockResolvedValue([makeWake()]),
+        claimMissionWake,
+        injectWakeBanner,
       });
 
-      const results = await tick(new Date(), 10, deps);
+      const results = await tick(now, 10, deps);
 
-      expect(results[0]!.outcome).toEqual({ kind: "resumed", runId: "run-1" });
-      // Routed to the auto-retry claim with the payload attempt — NOT the
-      // paused_wake helper.
-      expect(mockClaimRunForAutoRetry).toHaveBeenCalledWith(
-        expect.objectContaining({ missionRunId: "run-1", expectedAttempt: 2 }),
+      expect(results).toHaveLength(1);
+      expect(outcomeAt(results, 0)).toEqual({ kind: "resumed", runId: "run-1" });
+      expect(claimMissionWake).toHaveBeenCalledWith({
+        wake: makeWake(),
+        ownerId: "wake-executor-wake-1",
+        ttlMs: 5 * 60_000,
+        now,
+      });
+      expect(claimMissionWake).toHaveBeenCalledBefore(injectWakeBanner);
+      expect(mockCreateLeaseHandle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lease: expect.objectContaining({ missionRunId: "run-1" }),
+          ownerId: "wake-executor-wake-1",
+        }),
       );
-      expect(mockClaimRunLeaseAndFlipToRunning).not.toHaveBeenCalled();
+      expect(injectWakeBanner).toHaveBeenCalledWith(
+        "sess-1",
+        "continue monitoring",
+        "2026-04-20T12:00:00.000Z",
+        undefined,
+      );
       expect(deps.resumeMissionRun).toHaveBeenCalledWith(
         "run-1",
-        "auto-retry-wake-9",
+        expect.objectContaining({ ownerId: "wake-executor-wake-1" }),
+      );
+      expect(mockReleaseLease).toHaveBeenCalledWith(
+        expect.anything(),
+        "sess-1",
+        { missionRunId: "run-1" },
       );
     });
 
-    it("CONSUMED-WAKE RACE: a human Recover stamped unsafe → claim ineligible → skip, no resume", async () => {
-      // The wake was consumed by claimDue; meanwhile a human Recover mutated and
-      // stamped the run unsafe, then it fell back to paused_error. The atomic
-      // claim re-check rejects it.
-      mockClaimRunForAutoRetry.mockResolvedValue({ outcome: "ineligible", reason: "unsafe" });
+    it("routes an error-retry wake with the auto-retry owner id", async () => {
+      const claimMissionWake = vi.fn<ClaimMissionWake>().mockResolvedValue({
+        kind: "claimed",
+        route: "auto_retry",
+        runId: "run-1",
+        lease: makeStubLease(),
+      });
       const deps = makeDeps({
-        claimDue: vi.fn().mockResolvedValue([autoWake()]),
-        getMissionRun: vi.fn().mockResolvedValue(makeRun({ status: "paused_error" })),
+        listDueMissionWakes: vi.fn().mockResolvedValue([
+          makeWake({ id: "wake-9", payload: { trigger: "error_retry", attempt: 2 } }),
+        ]),
+        claimMissionWake,
       });
 
       const results = await tick(new Date(), 10, deps);
 
-      expect(results[0]?.outcome).toEqual({ kind: "skipped_claim_lost" });
+      expect(outcomeAt(results, 0)).toEqual({ kind: "resumed", runId: "run-1" });
+      expect(claimMissionWake).toHaveBeenCalledWith(
+        expect.objectContaining({ ownerId: "auto-retry-wake-9" }),
+      );
+      expect(deps.resumeMissionRun).toHaveBeenCalledWith(
+        "run-1",
+        expect.objectContaining({ ownerId: "auto-retry-wake-9" }),
+      );
+    });
+
+    it("an auto-retry the claim refused starts nothing", async () => {
+      const deps = makeDeps({
+        listDueMissionWakes: vi.fn().mockResolvedValue([
+          makeWake({ payload: { trigger: "error_retry", attempt: 2 } }),
+        ]),
+        claimMissionWake: vi.fn<ClaimMissionWake>().mockResolvedValue({
+          kind: "dropped",
+          reason: "auto_retry_ineligible",
+          currentStatus: "paused_error",
+        }),
+      });
+
+      const results = await tick(new Date(), 10, deps);
+
+      expect(outcomeAt(results, 0)).toEqual({ kind: "skipped_claim_lost" });
+      expect(deps.injectWakeBanner).not.toHaveBeenCalled();
       expect(deps.resumeMissionRun).not.toHaveBeenCalled();
     });
 
-    it("skips (no claim) when the run already moved off paused_error", async () => {
+    it("a run the wake can no longer resume is reported stale and starts nothing", async () => {
       const deps = makeDeps({
-        claimDue: vi.fn().mockResolvedValue([autoWake()]),
-        getMissionRun: vi.fn().mockResolvedValue(makeRun({ status: "running" })),
+        listDueMissionWakes: vi.fn().mockResolvedValue([makeWake()]),
+        claimMissionWake: vi.fn<ClaimMissionWake>().mockResolvedValue({
+          kind: "dropped",
+          reason: "not_resumable",
+          currentStatus: "completed",
+        }),
       });
 
       const results = await tick(new Date(), 10, deps);
 
-      expect(results[0]!.outcome).toEqual({
+      expect(outcomeAt(results, 0)).toEqual({
         kind: "skipped_stale_status",
-        currentStatus: "running",
+        currentStatus: "completed",
       });
-      expect(mockClaimRunForAutoRetry).not.toHaveBeenCalled();
+      expect(deps.injectWakeBanner).not.toHaveBeenCalled();
+      expect(deps.resumeMissionRun).not.toHaveBeenCalled();
+      expect(mockCreateLeaseHandle).not.toHaveBeenCalled();
+    });
+
+    it("a missing run is reported as such and starts nothing", async () => {
+      const deps = makeDeps({
+        listDueMissionWakes: vi.fn().mockResolvedValue([makeWake()]),
+        claimMissionWake: vi.fn<ClaimMissionWake>().mockResolvedValue({
+          kind: "dropped",
+          reason: "run_missing",
+          currentStatus: null,
+        }),
+      });
+
+      const results = await tick(new Date(), 10, deps);
+
+      expect(outcomeAt(results, 0)).toEqual({ kind: "skipped_mission_run_missing" });
       expect(deps.resumeMissionRun).not.toHaveBeenCalled();
     });
-  });
 
-  it("resumes a paused_wake mission run only after atomic claim", async () => {
-    const wake = makeWake();
-    const run = makeRun();
-    const deps = makeDeps({
-      claimDue: vi.fn().mockResolvedValue([wake]),
-      getMissionRun: vi.fn().mockResolvedValue(run),
-    });
+    /**
+     * The old batch claim consumed the row first and then dropped it on a busy
+     * lease or a run still unwinding toward its park - the run then sat in
+     * `paused_wake` forever. Now the SAME row is kept pending and pushed out.
+     */
+    it.each(["lease_busy", "run_active"] as const)(
+      "a %s claim defers the row and starts nothing",
+      async (cause) => {
+        const deps = makeDeps({
+          listDueMissionWakes: vi.fn().mockResolvedValue([makeWake()]),
+          claimMissionWake: vi.fn<ClaimMissionWake>().mockResolvedValue({
+            kind: "deferred",
+            cause,
+            attempt: 1,
+            dueAt: "2026-04-20T12:00:06.000Z",
+          }),
+        });
 
-    const results = await tick(new Date("2026-04-20T12:00:01.000Z"), 10, deps);
+        const results = await tick(new Date(), 10, deps);
 
-    expect(results).toHaveLength(1);
-    expect(results[0]!.outcome).toEqual({ kind: "resumed", runId: "run-1" });
-    // Puzzle 3: production migrated from `deps.casFlipToRunning` (non-atomic
-    // CAS-then-lease) to the atomic `claimRunLeaseAndFlipToRunning` helper.
-    expect(mockClaimRunLeaseAndFlipToRunning).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionId: "sess-1",
-        missionRunId: "run-1",
-        fromStatuses: ["paused_wake"],
-      }),
+        expect(outcomeAt(results, 0)).toEqual({
+          kind: "deferred_lease_busy",
+          sessionId: "sess-1",
+          attempt: 1,
+          dueAt: "2026-04-20T12:00:06.000Z",
+        });
+        expect(deps.injectWakeBanner).not.toHaveBeenCalled();
+        expect(deps.resumeMissionRun).not.toHaveBeenCalled();
+      },
     );
-    expect(mockClaimRunLeaseAndFlipToRunning).toHaveBeenCalledBefore(
-      deps.injectWakeBanner as never,
-    );
-    expect(deps.injectWakeBanner).toHaveBeenCalledWith(
-      "sess-1",
-      "continue monitoring",
-      "2026-04-20T12:00:00.000Z",
-      undefined,
-    );
-    expect(deps.resumeMissionRun).toHaveBeenCalledWith(
-      "run-1",
-      "wake-executor-wake-1",
-    );
+
+    it("a row claimed or cancelled by someone else starts nothing", async () => {
+      const deps = makeDeps({
+        listDueMissionWakes: vi.fn().mockResolvedValue([makeWake()]),
+        claimMissionWake: vi.fn<ClaimMissionWake>().mockResolvedValue({
+          kind: "not_claimable",
+        }),
+      });
+
+      const results = await tick(new Date(), 10, deps);
+
+      expect(outcomeAt(results, 0)).toEqual({ kind: "skipped_claim_lost" });
+      expect(deps.resumeMissionRun).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The crash-safety property at the tick level: the second candidate is not
+     * claimed until the first one's run has finished. A process that dies
+     * while the first run is in flight has consumed exactly one row.
+     */
+    it("claims ONE candidate at a time: the next claim waits for the previous run", async () => {
+      let finishFirstRun: () => void = () => {};
+      const firstRun = new Promise<void>((resolve) => {
+        finishFirstRun = resolve;
+      });
+      const claimMissionWake = vi.fn<ClaimMissionWake>((input) =>
+        Promise.resolve(claimed(input.wake.missionRunId ?? "none")));
+      const resumeMissionRun = vi.fn((runId: string) =>
+        runId === "run-a" ? firstRun : Promise.resolve());
+      const deps = makeDeps({
+        listDueMissionWakes: vi.fn().mockResolvedValue([
+          makeWake({ id: "wake-a", missionRunId: "run-a" }),
+          makeWake({ id: "wake-b", missionRunId: "run-b" }),
+          makeWake({ id: "wake-c", missionRunId: "run-c" }),
+        ]),
+        claimMissionWake,
+        resumeMissionRun,
+      });
+
+      const pass = tick(new Date(), 10, deps);
+      await vi.waitFor(() => expect(resumeMissionRun).toHaveBeenCalledTimes(1));
+
+      // Run A is in flight: B and C are still unclaimed (and therefore pending).
+      expect(claimMissionWake).toHaveBeenCalledTimes(1);
+
+      finishFirstRun();
+      const results = await pass;
+
+      expect(results.map((r) => r.outcome)).toEqual([
+        { kind: "resumed", runId: "run-a" },
+        { kind: "resumed", runId: "run-b" },
+        { kind: "resumed", runId: "run-c" },
+      ]);
+      expect(claimMissionWake.mock.calls.map(([input]) => input.wake.id)).toEqual([
+        "wake-a",
+        "wake-b",
+        "wake-c",
+      ]);
+    });
+
+    it("reports an error outcome without poisoning the rest of the batch", async () => {
+      const deps = makeDeps({
+        listDueMissionWakes: vi.fn().mockResolvedValue([
+          makeWake({ id: "wake-a", missionRunId: "run-a" }),
+          makeWake({ id: "wake-b", missionRunId: "run-b" }),
+        ]),
+        claimMissionWake: vi.fn<ClaimMissionWake>((input) =>
+          input.wake.id === "wake-a"
+            ? Promise.reject(new Error("db exploded"))
+            : Promise.resolve(claimed("run-b"))),
+      });
+
+      const results = await tick(new Date(), 10, deps);
+
+      expect(results).toHaveLength(2);
+      expect(outcomeAt(results, 0)).toEqual({ kind: "error", message: "db exploded" });
+      expect(outcomeAt(results, 1)).toEqual({ kind: "resumed", runId: "run-b" });
+    });
   });
 
-  it("skips when the run is no longer paused_wake (user preempt won the race)", async () => {
-    const deps = makeDeps({
-      claimDue: vi.fn().mockResolvedValue([makeWake()]),
-      getMissionRun: vi.fn().mockResolvedValue(makeRun({ status: "running" })),
-    });
-
-    const results = await tick(new Date(), 10, deps);
-
-    expect(results[0]!.outcome).toEqual({
-      kind: "skipped_stale_status",
-      currentStatus: "running",
-    });
-    expect(deps.injectWakeBanner).not.toHaveBeenCalled();
-    expect(mockClaimRunLeaseAndFlipToRunning).not.toHaveBeenCalled();
-    expect(deps.resumeMissionRun).not.toHaveBeenCalled();
-  });
-
-  it("skips banner and resume when the atomic claim loses to another resumer", async () => {
-    mockClaimRunLeaseAndFlipToRunning.mockResolvedValueOnce({
-      outcome: "status_mismatch",
-      currentStatus: "running",
-    });
-    const deps = makeDeps({
-      claimDue: vi.fn().mockResolvedValue([makeWake()]),
-      getMissionRun: vi.fn().mockResolvedValue(makeRun()),
-    });
-
-    const results = await tick(new Date(), 10, deps);
-
-    expect(results[0]!.outcome).toEqual({ kind: "skipped_claim_lost" });
-    expect(deps.injectWakeBanner).not.toHaveBeenCalled();
-    expect(deps.resumeMissionRun).not.toHaveBeenCalled();
-  });
-
-  it("skips when the mission run row has been deleted between claim and resume", async () => {
-    const deps = makeDeps({
-      claimDue: vi.fn().mockResolvedValue([makeWake()]),
-      getMissionRun: vi.fn().mockResolvedValue(null),
-    });
-
-    const results = await tick(new Date(), 10, deps);
-
-    expect(results[0]!.outcome).toEqual({ kind: "skipped_mission_run_missing" });
-    expect(deps.resumeMissionRun).not.toHaveBeenCalled();
-  });
-
-  it("reports error outcome without poisoning the rest of the batch", async () => {
-    const wakeA = makeWake({ id: "wake-a", missionRunId: "run-a" });
-    const wakeB = makeWake({ id: "wake-b", missionRunId: "run-b" });
-    const deps = makeDeps({
-      claimDue: vi.fn().mockResolvedValue([wakeA, wakeB]),
-      getMissionRun: vi.fn().mockImplementation((runId: string) => {
-        if (runId === "run-a") throw new Error("db exploded");
-        return Promise.resolve(makeRun({ id: "run-b" }));
-      }),
-    });
-
-    const results = await tick(new Date(), 10, deps);
-
-    expect(results).toHaveLength(2);
-    expect(results[0]!.outcome).toEqual({ kind: "error", message: "db exploded" });
-    expect(results[1]!.outcome).toEqual({ kind: "resumed", runId: "run-b" });
-  });
-
-  it("returns an empty array when claimDue yields no rows", async () => {
+  it("returns an empty array when nothing is due", async () => {
     const deps = makeDeps();
     const results = await tick(new Date(), 10, deps);
     expect(results).toEqual([]);
     expect(deps.injectWakeBanner).not.toHaveBeenCalled();
   });
 
-  it("does NOT claim when provider config is absent (pre-claim gate)", async () => {
-    // claimDue is destructive (pending→consumed); the gate must short-circuit
-    // BEFORE it so a wake row is never consumed when the resume cannot run.
-    const claimDue = vi.fn().mockResolvedValue([makeWake()]);
-    const deps = makeDeps({ claimDue, isProviderReady: () => false });
+  it("does NOT list or claim when provider config is absent (pre-claim gate)", async () => {
+    const listDueMissionWakes = vi.fn().mockResolvedValue([makeWake()]);
+    const deps = makeDeps({ listDueMissionWakes, isProviderReady: () => false });
 
     const results = await tick(new Date(), 10, deps);
 
     expect(results).toEqual([]);
-    expect(claimDue).not.toHaveBeenCalled();
+    expect(listDueMissionWakes).not.toHaveBeenCalled();
+    expect(deps.claimMissionWake).not.toHaveBeenCalled();
     expect(deps.resumeMissionRun).not.toHaveBeenCalled();
   });
 });

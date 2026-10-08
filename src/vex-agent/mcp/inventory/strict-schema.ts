@@ -69,6 +69,27 @@ const DRY_RUN_PROPERTY: JsonSchemaProperty = {
 };
 
 /**
+ * Escapes the ECMA-262 syntax characters, and ONLY those: under the `u` flag Ajv
+ * compiles patterns with, an identity escape of any other character (`\-`) is a
+ * SyntaxError at validator construction.
+ */
+function escapePatternLiteral(value: string): string {
+  return value.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
+}
+
+/**
+ * A comma-separated list of `values` members, anchored, as `checkEnumParam`
+ * reads it (`runtime/params.ts`): split on commas, members trimmed (`\s` under
+ * the `u` flag is the set `String.prototype.trim` removes), empty members
+ * dropped, at least one member left, every member on the list. Members are
+ * literal alternatives, so the pattern cannot admit a value the runtime refuses.
+ */
+function commaListPattern(values: readonly string[]): string {
+  const member = `(?:${values.map(escapePatternLiteral).join("|")})`;
+  return `^[\\s,]*${member}(?:\\s*,[\\s,]*${member})*[\\s,]*$`;
+}
+
+/**
  * One param as the strict projection states it.
  *
  * Every branch here mirrors a specific gate in `validateProtocolParams`, and the
@@ -92,10 +113,18 @@ function strictProperty(param: ProtocolParamDef): JsonSchemaProperty {
   // it is the strict-gateway situation that put a model into seven identical
   // refusals on 2026-08-27. Admitting `[]` is what makes the absent case
   // expressible on this surface too.
+  //
+  // The STRING branch of a closed list is the comma-separated spelling, which
+  // `checkEnumParam` splits, trims and checks member by member. An `enum` here
+  // admitted only a single member, so Ajv refused `include: "reactions,insight"`
+  // - the very call `dexscreener.pair.get` ships as its `exampleParams` - while
+  // the runtime accepts it (measured 2026-10-07). The pattern admits exactly
+  // the strings the runtime admits: at least one listed member, members
+  // separated by commas, surrounding whitespace and empty members ignored.
   if (param.acceptsStringArray === true) {
     return {
       anyOf: [
-        values ? { type: "string", enum: values } : { type: "string" },
+        values ? { type: "string", pattern: commaListPattern(values) } : { type: "string" },
         {
           type: "array",
           ...(param.required === true ? { minItems: 1 } : {}),

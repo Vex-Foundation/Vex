@@ -55,7 +55,7 @@ import {
   protocolToolDescription,
   protocolToolInputSchema,
 } from "./protocol-tool-projection.js";
-import { getDiscoveredToolIds } from "./discovered-tools.js";
+import { getAdmittedProtocolToolIds } from "./core-market-reads.js";
 import { resolveDeprecatedProtocolToolId } from "./name-resolution.js";
 import type { ToolVisibilityContext } from "./visibility.js";
 
@@ -152,13 +152,15 @@ export function isInjectedToolNameShape(name: string): boolean {
 }
 
 /**
- * Build the injected function schemas for a session: its ToolSearch discovery
- * working set, oldest first. Nothing discovered means an empty array.
+ * Build the injected function schemas for a session: the T-5 preloaded core
+ * market reads when that switch is on (`./core-market-reads.ts`), then its
+ * ToolSearch discovery working set, oldest first. Nothing discovered and no
+ * preload means an empty array.
  *
  * ONE LAW, restored by owner decision D-DS9-R (2026-08-26). The tools array is
  * the DISCOVERED set intersected with the visibility gates below, so it is
  * always a subset of what `dispatcher/protocol-route.ts` will admit: that route
- * checks membership in the very same `getDiscoveredToolIds` set. D-DS9 briefly
+ * checks membership in the very same `getAdmittedProtocolToolIds` set. D-DS9 briefly
  * widened injection to a whole namespace without widening admission, which made
  * every schema it added visible and uncallable. A widening that does not also
  * teach the discovery registry is a defect, not a feature.
@@ -166,7 +168,7 @@ export function isInjectedToolNameShape(name: string): boolean {
 export function buildInjectedProtocolTools(ctx: ToolVisibilityContext): OpenAITool[] {
   const injected: OpenAITool[] = [];
 
-  for (const toolId of getDiscoveredToolIds(ctx.sessionId)) {
+  for (const toolId of getAdmittedProtocolToolIds(ctx.sessionId, ctx)) {
     const manifest = getProtocolManifest(toolId);
     if (!manifest) continue;
     if (!isProtocolToolAvailable(manifest)) continue;

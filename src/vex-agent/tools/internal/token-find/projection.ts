@@ -82,7 +82,7 @@ export function tokenFindOutcome(input: {
       ? {}
       : { providerMessage: input.providerMessage }),
   };
-  return { success: input.success, output: JSON.stringify(data, null, 2), data };
+  return { success: input.success, output: JSON.stringify(data), data };
 }
 
 function cleanLabel(

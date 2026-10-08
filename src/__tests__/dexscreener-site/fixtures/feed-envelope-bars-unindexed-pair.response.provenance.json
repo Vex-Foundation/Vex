@@ -1,0 +1,28 @@
+{
+  "fixture": "feed-envelope-bars-unindexed-pair.response.bin.b64",
+  "encoding": "protobuf",
+  "endpoint": "wss://io.dexscreener.com/feed/ws util_envelope (/dex_feed.PublicWSService/GetHistoricalBars)",
+  "requestParams": {
+    "envelopeId": 43,
+    "method": "/dex_feed.PublicWSService/GetHistoricalBars",
+    "request": {
+      "limit": 10,
+      "chainId": "ethereum",
+      "pairId": "0x000000000000000000000000000000000000dEaD",
+      "ammId": "uniswap",
+      "resolution": "BAR_RESOLUTION_D1",
+      "type": "BAR_TYPE_PRICE",
+      "quoteTokenId": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    }
+  },
+  "requestHeaders": {
+    "Origin": "https://dexscreener.com"
+  },
+  "capturedAt": "2026-10-07T18:47:59.605Z",
+  "httpStatus": 101,
+  "capturedBy": "live capture for the feed/ws migration (curl_cffi impersonate=chrome, Origin https://dexscreener.com), 2026-10-07T18:47:59.605Z; raw frames archived in the local capture run 2026-10-07T18-47-41.605Z-feedws (exchanges.jsonl)",
+  "protobufMessage": "util_envelope.ServerEnvelope",
+  "note": "An unindexed pair id (0x...dEaD) answers STATUS_OK with an EMPTY payload (8-byte frame), not STATUS_NOT_FOUND: the empty page is ambiguous by construction, exactly as on the HTTP chart endpoint.",
+  "bytes": 8,
+  "sha256": "9f2fb9a6b1a7039b240c33a5d4a7e159e8ccd6e75aaff19efdbd005722d9c328"
+}

@@ -38,6 +38,7 @@ import {
 } from "@tools/dexscreener/endpoints/bars.js";
 import {
   DexScreenerSiteErrorCodes,
+  isDexScreenerSiteError,
   siteError,
 } from "@tools/dexscreener/site-errors.js";
 import { num, ok, str } from "../../../handler-helpers.js";
@@ -200,22 +201,54 @@ export async function runTrades(
       if (mode !== "raw") boundHit = "page_budget";
       break;
     }
-    if (pagesFetched > 0 && Date.now() - startedAtMs >= deadlineMs) {
+    const elapsedMs = Date.now() - startedAtMs;
+    if (pagesFetched > 0 && elapsedMs >= deadlineMs) {
       boundHit = "deadline";
       break;
     }
-    const page = await fetchTradesPage({
-      transport,
-      chainId: subject.chainId,
-      pairAddress: subject.pairAddress,
-      ammId: subject.ammId,
-      quoteTokenAddress: subject.quoteTokenAddress,
-      inverted: false,
-      filters,
-      ...(pageCursor === null ? {} : { cursor: pageCursor }),
-      timeoutMs: CHANNEL_TIMEOUT_MS,
-      ...(signal === undefined ? {} : { signal }),
-    });
+    /*
+     * THE DEADLINE BOUNDS EACH PAGE, NOT ONLY THE GAP BETWEEN PAGES.
+     *
+     * Measured 2026-10-07: `deadlineMs` was checked only between pages while
+     * each page waited up to CHANNEL_TIMEOUT_MS (25 s), so `deadlineMs: 5000`
+     * on a slow channel answered after about 25 s. Each page's transport
+     * timeout is now the smaller of the channel's own and what the deadline
+     * has left. A page cut off BY THE DEADLINE ends the walk as a reported
+     * `deadline` bound when earlier pages are in hand, and is a typed timeout
+     * naming deadlineMs when it was the first page; a page that hit the
+     * channel's own timeout keeps the original error.
+     */
+    const pageTimeoutMs = Math.max(1, Math.min(CHANNEL_TIMEOUT_MS, deadlineMs - elapsedMs));
+    let page: Awaited<ReturnType<typeof fetchTradesPage>>;
+    try {
+      page = await fetchTradesPage({
+        transport,
+        chainId: subject.chainId,
+        pairAddress: subject.pairAddress,
+        ammId: subject.ammId,
+        quoteTokenAddress: subject.quoteTokenAddress,
+        inverted: false,
+        filters,
+        ...(pageCursor === null ? {} : { cursor: pageCursor }),
+        timeoutMs: pageTimeoutMs,
+        ...(signal === undefined ? {} : { signal }),
+      });
+    } catch (error) {
+      const cutByDeadline =
+        pageTimeoutMs < CHANNEL_TIMEOUT_MS
+        && isDexScreenerSiteError(error)
+        && error.code === DexScreenerSiteErrorCodes.TRANSPORT_TIMEOUT;
+      if (!cutByDeadline) throw error;
+      if (pagesFetched > 0) {
+        boundHit = "deadline";
+        break;
+      }
+      throw siteError(
+        DexScreenerSiteErrorCodes.TRANSPORT_TIMEOUT,
+        `deadlineMs ${deadlineMs} was reached before the first trade page answered for ${subject.chainId}:${subject.pairAddress}; nothing was read`,
+        `Raise deadlineMs (ceiling ${BARS_DEADLINE_MS_CEILING}) or narrow the filters. The page wait was capped at the ${pageTimeoutMs} ms the deadline had left, not at the channel's own ${CHANNEL_TIMEOUT_MS} ms.`
+      );
+    }
     pagesFetched += 1;
     // S10-36: the freshest Connect read's cache headers. Stays undefined on a
     // feed-WebSocket walk, where `not_cached` is the measured truth.
@@ -274,7 +307,7 @@ export async function runTrades(
       rows,
       population: collected,
       aggregateBlockName,
-      rangeFullyCovered,
+      boundHit,
       withheldRows,
     }),
     subject: subjectBlock(subject),
@@ -746,7 +779,7 @@ interface TradesSummaryFacts {
   readonly population: readonly ProjectedTrade[];
   /** The key the aggregate is published under: `aggregate` or `pageAggregate`. */
   readonly aggregateBlockName: "aggregate" | "pageAggregate";
-  readonly rangeFullyCovered: boolean;
+  readonly boundHit: "page_budget" | "deadline" | null;
   readonly withheldRows: number;
 }
 
@@ -778,9 +811,9 @@ function summarize(symbol: string | null, facts: TradesSummaryFacts): string {
     return `No ${kind}trades matched on ${subject}. The provider answered, so this is an empty match on these filters rather than an unreachable pair.`;
   }
 
-  const coverage = facts.rangeFullyCovered
+  const coverage = facts.boundHit === null
     ? ""
-    : ` The requested range was NOT fully covered: the page budget stopped the walk, so this describes the newest part of the window only.`;
+    : ` The requested range was NOT fully covered: the ${facts.boundHit === "deadline" ? "deadline" : "page budget"} stopped the walk, so this describes the newest part of the window only.`;
 
   if (facts.mode === "aggregate") {
     return `${facts.population.length} ${kind}events on ${subject} (${flowOf(facts.population)}) were fetched and summarised into the ${facts.aggregateBlockName} block; no individual rows were returned in this mode.${coverage}`;

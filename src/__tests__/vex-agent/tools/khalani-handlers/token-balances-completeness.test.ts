@@ -17,6 +17,8 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+import type { SolanaBalanceRow } from "@tools/solana-ecosystem/balances/wallet-snapshot.js";
+import type { SolanaTokenAccountFailure } from "@tools/solana-ecosystem/balances/read-wallet-balances.js";
 import { makeProtocolContext } from "../_test-context.js";
 
 const EVM_WALLET = "0x1234567890abcdef1234567890abcdef12345678";
@@ -259,22 +261,18 @@ describe("khalani.tokens.balances - the completeness envelope (EVM)", () => {
 });
 
 describe("khalani.tokens.balances - the completeness envelope (Solana)", () => {
-  const solanaRow = {
+  const solanaRow: SolanaBalanceRow = {
     mint: "So11111111111111111111111111111111111111112",
     symbol: "SOL",
     name: "Solana",
     decimals: 9,
     amountRaw: "1000000000",
-    uiAmount: 1,
     priceUsd: 150,
     usdValue: 150,
-    assetKind: "native" as const,
-    nativeAssetId: "solana:native",
-    routeMint: "So11111111111111111111111111111111111111112",
-    pricingMint: "So11111111111111111111111111111111111111112",
+    isNative: true,
   };
 
-  async function readSolana(accountFailures: Array<{ pubkey: string; reason: string }>) {
+  async function readSolana(accountFailures: readonly SolanaTokenAccountFailure[]) {
     return handleTokenBalances(
       { walletFamily: "solana" },
       CONTEXT,
@@ -284,6 +282,14 @@ describe("khalani.tokens.balances - the completeness envelope (Solana)", () => {
           rows: [solanaRow],
           totalUsd: 150,
           accountFailures,
+          stats: {
+            accountsScanned: accountFailures.length,
+            zeroSkipped: 0,
+            frozenAccounts: 0,
+            metadataMissing: 0,
+            unpriced: 0,
+            priceTiers: { tier0: 1, tier1: 0, unpriced: 0 },
+          },
         }),
       },
     );
@@ -310,7 +316,7 @@ describe("khalani.tokens.balances - the completeness envelope (Solana)", () => {
   });
 
   it("an untrusted token ACCOUNT makes the inventory incomplete without failing the chain", async () => {
-    const result = await readSolana([{ pubkey: "AcctPubkey1111111111111111111111111111111111", reason: "bad owner" }]);
+    const result = await readSolana([{ pubkey: "AcctPubkey1111111111111111111111111111111111", reason: "schema-parse-failed" }]);
     expect(result.success).toBe(true);
     const payload = JSON.parse(result.output) as Record<string, unknown>;
 

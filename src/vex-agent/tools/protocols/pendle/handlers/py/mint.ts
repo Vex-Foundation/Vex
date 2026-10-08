@@ -100,7 +100,7 @@ export async function executePendleMint(p: Record<string, unknown>, context: Pro
     // Signer AFTER dryRun so a preview never decrypts a key.
     let signer: ChainWallet;
     try {
-      signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+      signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
     } catch (err) {
       return walletScopeErrorToResult(err);
     }
@@ -185,7 +185,7 @@ export async function executePendleMint(p: Record<string, unknown>, context: Pro
         executedYtOut: humanAmount(ytOut, ytDec).toString(),
         quotedPtOut: humanAmount(quotedPtOut, ptDec).toString(),
         quotedYtOut: humanAmount(quotedYtOut, ytDec).toString(),
-      }, null, 2),
+      }),
       data: {
         txHash,
         _executionId: broadcast.executionId,

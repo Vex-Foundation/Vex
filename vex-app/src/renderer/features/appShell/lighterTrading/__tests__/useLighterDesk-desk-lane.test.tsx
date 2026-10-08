@@ -2,12 +2,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ApprovalActionResult } from "@shared/schemas/approvals.js";
+import type { ApprovalActionResult, ApprovalDispatchEvent } from "@shared/schemas/approvals.js";
 import type { LighterTradingAccount, LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
 import { approvalsKeys } from "../../../../lib/api/queryKeys.js";
 import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import type { LighterOpenOrderRow, LighterPositionRow } from "../account-model.js";
+import { useDeskSendIntentStore } from "../desk-send-intent.js";
+import type { LighterDeskDeps } from "../useLighterDesk.js";
 
 const MARKET = {
   marketId: 7,
@@ -30,9 +32,19 @@ const approve = vi.fn();
 const FILL = { tradeId: "t1", orderId: "9001", marketId: 7, symbol: "ETH", side: "buy", role: "taker", type: "trade", size: "0.5", price: "3200", value: null, realizedPnl: null, timestamp: 1 };
 const accountData = { value: undefined as unknown };
 const approvalsData = { value: [] as unknown[] };
+let approvalsResponse = { ok: true, data: approvalsData.value };
 const approvalGet = vi.fn();
 const fillsData = { value: undefined as unknown };
 const funnelStep = vi.fn(async () => ({ ok: true, data: { recorded: false } }));
+/** Listeners on `EV.approvals.dispatch`; a test emits through `emitDispatch`. */
+const dispatchListeners = new Set<(event: ApprovalDispatchEvent) => void>();
+const onDispatchEvent = vi.fn((cb: (event: ApprovalDispatchEvent) => void) => {
+  dispatchListeners.add(cb);
+  return () => { dispatchListeners.delete(cb); };
+});
+function emitDispatch(event: ApprovalDispatchEvent): void {
+  for (const cb of dispatchListeners) cb(event);
+}
 
 vi.mock("../../../../lib/api/lighter-trading.js", () => ({
   useLighterTradingMarkets: () => ({ data: { ok: true, data: { retrievedAt: 0, markets: [MARKET] } } }),
@@ -43,7 +55,10 @@ vi.mock("../../../../lib/api/lighter-trading.js", () => ({
   useLighterOnboardingChecklist: () => ({ data: undefined }),
 }));
 vi.mock("../../../../lib/api/approvals.js", () => ({
-  usePendingApprovals: () => ({ data: { ok: true, data: approvalsData.value } }),
+  usePendingApprovals: () => {
+    if (approvalsResponse.data !== approvalsData.value) approvalsResponse = { ok: true, data: approvalsData.value };
+    return { data: approvalsResponse };
+  },
 }));
 vi.mock("../useLighterCandleStream.js", () => ({
   useLighterCandleStream: () => ({ candles: [], status: "live", receivedAt: null }),
@@ -112,13 +127,13 @@ function providerOrderOutput(input: {
   });
 }
 
-function renderDesk() {
+function renderDesk(deps: LighterDeskDeps = {}) {
   const queryClient = new QueryClient();
   const invalidate = vi.spyOn(queryClient, "invalidateQueries");
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-  return { invalidate, ...renderHook(() => useLighterDesk(), { wrapper }) };
+  return { invalidate, ...renderHook(() => useLighterDesk(deps), { wrapper }) };
 }
 
 describe("desk lane", () => {
@@ -130,9 +145,184 @@ describe("desk lane", () => {
     fillsData.value = undefined;
     approvalsData.value = [];
     approvalGet.mockReset();
-    vi.stubGlobal("window", Object.assign(window, { vex: { lighterTrading: { prepareDeskAction }, approvals: { approve, get: approvalGet }, telemetry: { funnelStep } } }));
-    useUiStore.setState({ activeSessionId: "s1", createSessionOpen: false });
+    dispatchListeners.clear();
+    vi.stubGlobal("window", Object.assign(window, { vex: { lighterTrading: { prepareDeskAction }, approvals: { approve, get: approvalGet, onDispatchEvent }, telemetry: { funnelStep } } }));
+    useUiStore.setState({ activeSessionId: "s1", createSessionOpen: false, bookOpen: false });
+    useDeskSendIntentStore.getState().clearDeskSendIntent();
     useLighterAnalysisStore.getState().saveDesk({ environment: "rhc", marketId: 7, skipCloseConfirm: false });
+  });
+
+  describe("account-wide direct cancellation", () => {
+    const firstOrder = { marketId: 7, orderId: "9001" } as LighterOpenOrderRow;
+    const orders = [
+      firstOrder,
+      { marketId: 8, orderId: "9002" } as LighterOpenOrderRow,
+    ];
+    const approval = {
+      id: "ap-all", origin: "desk", expiresAt: null,
+      preview: { namespace: "lighter", toolName: "order.cancelAll", criticalArgs: {
+        environment: "rhc", accountIndex: 42, orderCount: 2, orderIdentities: "7:9001,8:9002",
+      } },
+    };
+    function ready(): void {
+      accountData.value = { ok: true, data: positionAccount(Date.now(), [], orders) };
+      prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-all" } });
+    }
+
+    it("removes the model roundtrip, deduplicates and preserves explicit confirmation even when close skips it", async () => {
+      ready();
+      useLighterAnalysisStore.getState().saveDesk({ skipCloseConfirm: true });
+      const { result } = renderDesk();
+      await act(async () => {
+        result.current.accountActions.onCancelAllOrders(orders);
+        result.current.accountActions.onCancelAllOrders(orders);
+        result.current.accountActions.onCancelOrder(firstOrder);
+      });
+      expect(prepareDeskAction).toHaveBeenCalledTimes(1);
+      expect(prepareDeskAction).toHaveBeenCalledWith({
+        sessionId: "s1", environment: "rhc", action: { kind: "cancel_all" }, progressId: expect.any(String),
+      });
+      expect([...result.current.cancellingOrders]).toEqual([["7:9001", "approval"], ["8:9002", "approval"]]);
+      expect(approve).not.toHaveBeenCalled();
+      expect(useDeskSendIntentStore.getState().intent).toBeNull();
+      expect(useUiStore.getState().bookOpen).toBe(false);
+    });
+
+    it("retains the previous chat handoff when the switch is off", async () => {
+      ready();
+      const { result } = renderDesk({ directCancelAll: false });
+      await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+      expect(prepareDeskAction).not.toHaveBeenCalled();
+      expect(approve).not.toHaveBeenCalled();
+      expect(useDeskSendIntentStore.getState().intent).toMatchObject({
+        sessionId: "s1",
+        message: "Cancel all 2 of my open Lighter orders across every market with one account-wide cancellation, prepared with lighter__order_cancel_all_prepare.; environment=rhc; Display the approval card directly. Nothing may execute without my explicit approval on that card.",
+      });
+      expect(useUiStore.getState().bookOpen).toBe(true);
+    });
+
+    it("matches canonical facts even when the card arrives before the prepare reply, and does not lock later unrelated orders", async () => {
+      ready();
+      approvalsData.value = [approval];
+      let release: ((value: unknown) => void) | undefined;
+      prepareDeskAction.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+      const { result, rerender } = renderDesk();
+      act(() => result.current.accountActions.onCancelAllOrders(orders));
+      await act(async () => {
+        if (release === undefined) throw new Error("prepare was not started");
+        release({ ok: true, data: { kind: "enqueued", approvalId: "ap-all" } });
+      });
+      const laterOrder = { marketId: 9, orderId: "9003" } as LighterOpenOrderRow;
+      accountData.value = { ok: true, data: positionAccount(Date.now(), [], [...orders, laterOrder]) };
+      rerender();
+      expect(result.current.cancellingOrders.has("9:9003")).toBe(false);
+      expect(result.current.cancelAllPending).toBe(true);
+      act(() => result.current.onApprovalResolved("approved", resolved({
+        id: "ap-all", toolOutput: JSON.stringify({ source: "vex_lighter_order_cancel_all", status: "cancel_all_completed" }),
+      })));
+      expect(result.current.cancellingOrders.get("7:9001")).toBe("checking");
+      expect(result.current.deskOutcome?.text).not.toContain("all orders canceled");
+      accountData.value = { ok: true, data: positionAccount(Date.now() + 1_000, [], [laterOrder]) };
+      rerender();
+      expect(result.current.cancellingOrders.size).toBe(0);
+      expect(result.current.cancelAllPending).toBe(false);
+      expect(result.current.deskOutcome?.text).toContain("Requested orders are no longer open");
+      expect(result.current.deskOutcome?.text).toContain("fills before cancellation");
+    });
+
+    it("requires a newer complete provider list in the exact environment, account and initiating session", async () => {
+      ready();
+      const { result, rerender } = renderDesk();
+      await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+      act(() => result.current.onApprovalResolved("approved", resolved({
+        id: "ap-all", toolOutput: JSON.stringify({ source: "vex_lighter_order_cancel_all", status: "cancel_all_completed" }),
+      })));
+      accountData.value = { ok: true, data: positionAccount(0, [], []) };
+      rerender();
+      accountData.value = { ok: true, data: positionAccount(Date.now() + 1_000, [], orders) };
+      rerender();
+      expect(result.current.cancellingOrders.size).toBe(2);
+      for (const partial of [{ openOrdersTruncated: true }, { openOrdersAvailable: false }]) {
+        accountData.value = { ok: true, data: { ...positionAccount(Date.now() + 2_000, [], []), ...partial } };
+        rerender();
+      }
+      accountData.value = { ok: true, data: positionAccount(Date.now() + 3_000, [], orders) };
+      rerender();
+      expect(result.current.cancellingOrders.size).toBe(2);
+      act(() => useUiStore.setState({ activeSessionId: "s2" }));
+      accountData.value = { ok: true, data: positionAccount(Date.now() + 4_000, [], []) };
+      rerender();
+      expect(result.current.deskOutcome).toBeNull();
+      accountData.value = { ok: true, data: { ...positionAccount(Date.now() + 5_000, [], []), accountIndex: 43 } };
+      act(() => useUiStore.setState({ activeSessionId: "s1" }));
+      rerender();
+      act(() => useLighterAnalysisStore.getState().saveDesk({ environment: "core" }));
+      accountData.value = { ok: true, data: { ...positionAccount(Date.now() + 6_000, [], []), environment: "core" } };
+      rerender();
+      act(() => useLighterAnalysisStore.getState().saveDesk({ environment: "rhc" }));
+      accountData.value = { ok: true, data: positionAccount(Date.now() + 7_000, [], orders) };
+      rerender();
+      expect(result.current.cancellingOrders.size).toBe(2);
+      accountData.value = { ok: true, data: positionAccount(Date.now() + 8_000, [], []) };
+      rerender();
+      expect(result.current.deskOutcome?.text).toContain("Requested orders are no longer open");
+    });
+
+    it.each(["sequencer_pending", "ambiguous"])("keeps %s success uncertain and never offers a replay", async (status) => {
+      ready();
+      const { result } = renderDesk();
+      await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+      act(() => result.current.onApprovalResolved("approved", resolved({
+        id: "ap-all", toolOutput: JSON.stringify({ source: "vex_lighter_order_cancel_all", status }),
+      })));
+      expect(result.current.cancellingOrders.get("7:9001")).toBe("uncertain");
+      expect(result.current.deskOutcome?.text).toContain("before retrying");
+      await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+      expect(prepareDeskAction).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(["rejected", "failed", "indeterminate"] as const)("handles %s with truthful row locks", async (status) => {
+      ready();
+      const { result } = renderDesk();
+      await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+      act(() => result.current.onApprovalResolved(status === "rejected" ? "rejected" : "approved", resolved({
+        id: "ap-all", executionStatus: status === "rejected" ? null : status, toolOutput: "Provider refused cancellation.",
+      })));
+      if (status === "indeterminate") {
+        expect(result.current.cancellingOrders.get("7:9001")).toBe("uncertain");
+        expect(result.current.deskOutcome?.text).toContain("outcome is uncertain");
+      } else {
+        expect(result.current.cancellingOrders.size).toBe(0);
+        await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+        expect(prepareDeskAction).toHaveBeenCalledTimes(2);
+      }
+    });
+
+    it("releases preparation refusals and thrown errors for a deliberate retry", async () => {
+      ready();
+      prepareDeskAction.mockResolvedValueOnce({ ok: true, data: { kind: "refused", reason: "No open orders." } })
+        .mockRejectedValueOnce(new Error("Preparation unavailable."));
+      const { result } = renderDesk();
+      await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+      expect(result.current.handoffError).toBe("No open orders.");
+      expect(result.current.cancellingOrders.size).toBe(0);
+      await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+      expect(result.current.handoffError).toBe("Preparation unavailable.");
+      expect(result.current.cancellingOrders.size).toBe(0);
+    });
+
+    it("releases an unapproved expired cancel-all card even when its stable query arrived before prepare returned", async () => {
+      ready();
+      const expiredCard = { ...approval, expiresAt: new Date(Date.now() - 10_000).toISOString() };
+      approvalsData.value = [expiredCard];
+      approvalGet.mockResolvedValue({ ok: true, data: { ...expiredCard, status: "rejected", decisionReason: "expired_ttl" } });
+      const { result } = renderDesk();
+      await act(async () => result.current.accountActions.onCancelAllOrders(orders));
+      await waitFor(() => expect(result.current.cancelAllPending).toBe(false));
+      expect(result.current.cancellingOrders.size).toBe(0);
+      expect(result.current.deskOutcome?.text).toBe("The cancel-all request expired before it was approved. Nothing was sent.");
+      expect(approve).not.toHaveBeenCalled();
+    });
   });
 
   it("locks only the selected position until a fresh account snapshot proves it closed", async () => {
@@ -423,9 +613,10 @@ describe("desk lane", () => {
     await act(async () => { result.current.accountActions.onClosePosition({ marketId: 7, side: "long", size: "0.25" } as LighterPositionRow, 1); });
     expect(prepareDeskAction).toHaveBeenLastCalledWith(expect.objectContaining({ action: { kind: "close", marketId: 7 } }));
 
-    // A portion is not main's whole-position close: it loads the ticket instead.
+    // A pending full close locks the same position against partial requests too.
     await act(async () => { result.current.accountActions.onClosePosition({ marketId: 7, side: "long", size: "0.25" } as LighterPositionRow, 0.5); });
     expect(prepareDeskAction).toHaveBeenCalledTimes(1);
+    expect(result.current.ticketPrefill).toBeNull();
 
     await act(async () => { result.current.accountActions.onCancelOrder({ marketId: 7, orderId: "9001" } as LighterOpenOrderRow); });
     expect(prepareDeskAction).toHaveBeenLastCalledWith(expect.objectContaining({ action: { kind: "cancel", marketId: 7, orderId: "9001" } }));
@@ -442,6 +633,143 @@ describe("desk lane", () => {
     await act(async () => { result.current.submitDraft(ENTRY); });
     expect(result.current.handoffError).toBe("Something went wrong.");
     expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it.each(["long", "short"] as const)("retains partial %s ticket loading when direct partial close is off", async (side) => {
+    accountData.value = { ok: true, data: positionAccount(Date.now()) };
+    prepareDeskAction.mockResolvedValueOnce({ ok: true, data: {
+      kind: "refused", reason: "A live Lighter close action already exists.",
+    } });
+    const { result } = renderDesk({ directPartialClose: false });
+    const position = { ...OPEN_POSITION, side, size: "0.1754" };
+    await act(async () => result.current.accountActions.onClosePosition(position, 1));
+    expect(result.current.handoffError).toContain("still settling");
+    await act(async () => result.current.accountActions.onClosePosition(position, 0.75));
+    expect(result.current.handoffError).toBeNull();
+    expect(result.current.ticketPrefill).toMatchObject({
+      mode: "market", side: side === "long" ? "sell" : "buy", baseAmount: "0.1315", reduceOnly: true,
+      reviewHint: `75% ${position.symbol} close loaded. Click ${side === "long" ? "Short" : "Long"} to review the reduce-only order.`,
+    });
+    expect(prepareDeskAction).toHaveBeenCalledTimes(1);
+    expect(approve).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { side: "long", portion: 0.75, closePercent: 75 },
+    { side: "long", portion: 0.5, closePercent: 50 },
+    { side: "long", portion: 0.25, closePercent: 25 },
+    { side: "short", portion: 0.75, closePercent: 75 },
+    { side: "short", portion: 0.5, closePercent: 50 },
+    { side: "short", portion: 0.25, closePercent: 25 },
+  ] as const)("opens review directly for $closePercent% of a $side position, even when full closes skip confirmation", async ({ side, portion, closePercent }) => {
+    const position = { ...OPEN_POSITION, side, size: "0.1754" };
+    accountData.value = { ok: true, data: positionAccount(Date.now(), [position]) };
+    useLighterAnalysisStore.getState().saveDesk({ skipCloseConfirm: true });
+    prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-partial" } });
+    const { result, invalidate } = renderDesk();
+    await act(async () => result.current.accountActions.onClosePosition(position, portion));
+    expect(prepareDeskAction).toHaveBeenCalledExactlyOnceWith({
+      sessionId: "s1", environment: "rhc", action: { kind: "close", marketId: 7, closePercent },
+      progressId: expect.any(String),
+    });
+    expect(result.current.ticketPrefill).toBeNull();
+    expect(result.current.closingPositions.get(`7-${side}`)).toBe("approval");
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: approvalsKeys.pending("s1") });
+    expect(approve).not.toHaveBeenCalled();
+    expect(useDeskSendIntentStore.getState().intent).toBeNull();
+  });
+
+  it("locks a partial close against other fractions until rejection and then permits a fresh review", async () => {
+    accountData.value = { ok: true, data: positionAccount(Date.now()) };
+    prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-partial" } });
+    const { result } = renderDesk();
+    await act(async () => {
+      result.current.accountActions.onClosePosition(OPEN_POSITION, 0.75);
+      result.current.accountActions.onClosePosition(OPEN_POSITION, 0.75);
+      result.current.accountActions.onClosePosition(OPEN_POSITION, 0.5);
+      result.current.accountActions.onClosePosition(OPEN_POSITION, 1);
+    });
+    expect(prepareDeskAction).toHaveBeenCalledTimes(1);
+    act(() => result.current.onApprovalResolved("rejected", resolved({ id: "ap-partial", status: "rejected", executionStatus: null })));
+    expect(result.current.closingPositions.has("7-long")).toBe(false);
+    await act(async () => result.current.accountActions.onClosePosition(OPEN_POSITION, 0.5));
+    expect(prepareDeskAction).toHaveBeenCalledTimes(2);
+    expect(prepareDeskAction).toHaveBeenLastCalledWith(expect.objectContaining({ action: { kind: "close", marketId: 7, closePercent: 50 } }));
+    expect(approve).not.toHaveBeenCalled();
+  });
+
+  it("shows a direct partial minimum refusal and releases the row without loading or approving a ticket", async () => {
+    accountData.value = { ok: true, data: positionAccount(Date.now()) };
+    prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "refused", reason: "Minimum order value is 10 USD." } });
+    const { result } = renderDesk();
+    await act(async () => result.current.accountActions.onClosePosition(OPEN_POSITION, 0.25));
+    expect(result.current.handoffError).toBe("Minimum order value is 10 USD.");
+    expect(result.current.ticketPrefill).toBeNull();
+    expect(result.current.closingPositions.has("7-long")).toBe(false);
+    expect(approve).not.toHaveBeenCalled();
+  });
+
+  function partialCloseCard(positionSide: "long" | "short" = "long") {
+    return { id: "ap-partial", sessionId: "s1", origin: "desk", expiresAt: null,
+      preview: { namespace: "lighter", toolName: "position.close", criticalArgs: {
+        environment: "rhc", accountIndex: 42, marketIndex: 7, positionSide, positionAmount: "2",
+        baseAmount: "0.5", closingSide: positionSide === "long" ? "sell" : "buy", reduceOnly: true,
+      } },
+    };
+  }
+
+  it.each(["long", "short"] as const)("tracks the fresh approved %s position instead of the stale clicked row", async (side) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const now = Date.now();
+      const clicked = { ...OPEN_POSITION, size: "1" };
+      accountData.value = { ok: true, data: positionAccount(now, [clicked]) };
+      prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-partial" } });
+      const { result, rerender } = renderDesk();
+      await act(async () => result.current.accountActions.onClosePosition(clicked, 0.25));
+      approvalsData.value = [partialCloseCard(side)];
+      rerender();
+      expect(result.current.closingPositions.get(`7-${side}`)).toBe("approval");
+      if (side === "short") expect(result.current.closingPositions.has("7-long")).toBe(false);
+      // A newer-than-prepare snapshot is still older than execution and cannot settle it.
+      const remaining = { ...clicked, side, size: "1.5" };
+      accountData.value = { ok: true, data: positionAccount(now + 1_000, [remaining]) };
+      rerender();
+      vi.setSystemTime(now + 5_000);
+      act(() => result.current.onApprovalResolved("approved", resolved({ id: "ap-partial",
+        toolOutput: JSON.stringify({ source: "vex_lighter_position_close", status: "partially_closed" }),
+      })));
+      expect(result.current.closingPositions.get(`7-${side}`)).toBe("checking");
+      expect(result.current.deskOutcome).toBeNull();
+      accountData.value = { ok: true, data: positionAccount(now + 6_000, [remaining]) };
+      rerender();
+      expect(result.current.closingPositions.has(`7-${side}`)).toBe(false);
+      expect(result.current.deskOutcome).toEqual({ tone: "ok", text: "Position reduced." });
+      expect(approve).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    { environment: "core" }, { marketIndex: 8 }, { accountIndex: -1 },
+    { positionAmount: "0" }, { baseAmount: "3" }, { closingSide: "buy" }, { reduceOnly: false },
+  ])("does not settle a partial close using a mismatched approval binding %j", async (overrides) => {
+    const now = Date.now();
+    accountData.value = { ok: true, data: positionAccount(now) };
+    prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-partial" } });
+    const { result, rerender } = renderDesk();
+    await act(async () => result.current.accountActions.onClosePosition(OPEN_POSITION, 0.25));
+    const card = partialCloseCard();
+    approvalsData.value = [{ ...card, preview: { ...card.preview, criticalArgs: { ...card.preview.criticalArgs, ...overrides } } }];
+    rerender();
+    act(() => result.current.onApprovalResolved("approved", resolved({ id: "ap-partial",
+      toolOutput: JSON.stringify({ source: "vex_lighter_position_close", status: "partially_closed" }),
+    })));
+    accountData.value = { ok: true, data: positionAccount(now + 10_000, []) };
+    rerender();
+    expect(result.current.closingPositions.get("7-long")).toBe("checking");
+    expect(result.current.deskOutcome).toBeNull();
   });
 
   it("opens the session sheet instead of preparing when there is no session", async () => {
@@ -791,6 +1119,110 @@ describe("desk lane", () => {
     );
   });
 
+  describe("background approve (APPROVAL_DISPATCH_BACKGROUND)", () => {
+    const AT = "2026-10-03T09:00:00.000Z";
+
+    async function enqueueOrder(result: { current: ReturnType<typeof useLighterDesk> }, approvalId: string): Promise<void> {
+      prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId } });
+      await act(async () => { result.current.submitDraft(ENTRY); });
+    }
+
+    it("a dispatching reply keeps the card tracked and says it is sending, then the event settles it like the awaited reply", async () => {
+      const { result } = renderDesk();
+      await enqueueOrder(result, "ap-bg1");
+
+      act(() => result.current.onApprovalResolved("approved", resolved({ id: "ap-bg1", executionStatus: "dispatching" })));
+      expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Approved. Sending to Lighter..." });
+
+      act(() => emitDispatch({
+        phase: "settled",
+        approvalId: "ap-bg1",
+        occurredAt: AT,
+        result: resolved({ id: "ap-bg1", toolOutput: providerOrderOutput({ state: "open", source: "active_order", orderId: "123456789" }) }),
+      }));
+      expect(result.current.deskOutcome).toEqual({ tone: "ok", text: "Order …23456789 is open on Lighter. Track it in Orders below." });
+      // The approve is counted once, when the outcome lands.
+      expect(funnelStep.mock.calls.filter((call) => JSON.stringify(call).includes("desk_approve"))).toHaveLength(1);
+    });
+
+    it("an event that beats the reply settles the card once; the late reply finds nothing to settle", async () => {
+      const { result } = renderDesk();
+      await enqueueOrder(result, "ap-bg2");
+
+      act(() => emitDispatch({
+        phase: "settled",
+        approvalId: "ap-bg2",
+        occurredAt: AT,
+        result: resolved({ id: "ap-bg2", executionStatus: "indeterminate" }),
+      }));
+      expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Outcome unknown. Open Orders below and refresh before retrying." });
+      act(() => result.current.onApprovalResolved("approved", resolved({ id: "ap-bg2", executionStatus: "dispatching" })));
+      expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Outcome unknown. Open Orders below and refresh before retrying." });
+    });
+
+    it("a failed event reports on the ticket and releases the row, exactly like a failed awaited approve", async () => {
+      useLighterAnalysisStore.getState().saveDesk({ skipCloseConfirm: true });
+      accountData.value = { ok: true, data: positionAccount(Date.now()) };
+      prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-bg3" } });
+      approve.mockResolvedValue({ ok: true, data: resolved({ id: "ap-bg3", executionStatus: "dispatching" }) });
+      const { result } = renderDesk();
+
+      await act(async () => { result.current.accountActions.onClosePosition(OPEN_POSITION, 1); });
+      expect(result.current.closingPositions.get("7-long")).toBe("approval");
+
+      act(() => emitDispatch({ phase: "failed", approvalId: "ap-bg3", occurredAt: AT, message: "Tool execution failed after approval." }));
+      expect(result.current.handoffError).toBe("Tool execution failed after approval.");
+      expect(result.current.closingPositions.has("7-long")).toBe(false);
+    });
+
+    it("ignores events for cards it is not tracking", async () => {
+      const { result } = renderDesk();
+      act(() => emitDispatch({ phase: "failed", approvalId: "someone-else", occurredAt: AT, message: "nope" }));
+      expect(result.current.handoffError).toBeNull();
+      expect(result.current.deskOutcome).toBeNull();
+    });
+
+    it("a missed event falls back to the durable status and says only that the outcome is unknown", async () => {
+      vi.useFakeTimers();
+      try {
+        const { result } = renderDesk();
+        await enqueueOrder(result, "ap-bg4");
+        approvalGet.mockResolvedValue({ ok: true, data: { executionStatus: "succeeded", status: "approved" } });
+
+        act(() => result.current.onApprovalResolved("approved", resolved({ id: "ap-bg4", executionStatus: "dispatching" })));
+        await act(async () => { await vi.advanceTimersByTimeAsync(90_000); });
+
+        expect(approvalGet).toHaveBeenCalledWith({ id: "ap-bg4" });
+        expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Outcome unknown. Open Orders below and refresh before retrying." });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps waiting while the durable row is still dispatching", async () => {
+      vi.useFakeTimers();
+      try {
+        const { result } = renderDesk();
+        await enqueueOrder(result, "ap-bg5");
+        approvalGet.mockResolvedValue({ ok: true, data: { executionStatus: "dispatching", status: "approved" } });
+
+        act(() => result.current.onApprovalResolved("approved", resolved({ id: "ap-bg5", executionStatus: "dispatching" })));
+        await act(async () => { await vi.advanceTimersByTimeAsync(90_000); });
+        expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Approved. Sending to Lighter..." });
+
+        act(() => emitDispatch({
+          phase: "settled",
+          approvalId: "ap-bg5",
+          occurredAt: AT,
+          result: resolved({ id: "ap-bg5", executionStatus: "failed", toolOutput: "Order rejected: too small." }),
+        }));
+        expect(result.current.deskOutcome).toEqual({ tone: "error", text: "Order rejected: too small." });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   describe("Don't ask again for Market close", () => {
     const POSITION = { marketId: 7, side: "long", size: "0.25" } as LighterPositionRow;
 
@@ -808,6 +1240,26 @@ describe("desk lane", () => {
       expect(invalidate).toHaveBeenCalledWith({ queryKey: approvalsKeys.pending("s1") });
       expect(invalidate).toHaveBeenCalledWith({ queryKey: approvalsKeys.pendingAll() });
       expect(result.current.deskOutcome).toBeNull();
+      expect(result.current.submitting).toBe(false);
+      expect(result.current.handoffError).toBeNull();
+    });
+
+    it("shows the close outcome from the approve reply without waiting on the query refresh", async () => {
+      useLighterAnalysisStore.getState().saveDesk({ skipCloseConfirm: true });
+      accountData.value = { ok: true, data: positionAccount(Date.now(), [OPEN_POSITION]) };
+      prepareDeskAction.mockResolvedValue({ ok: true, data: { kind: "enqueued", approvalId: "ap-6" } });
+      approve.mockResolvedValue({ ok: true, data: resolved({
+        id: "ap-6",
+        toolOutput: JSON.stringify({ source: "vex_lighter_position_close", status: "closed" }),
+      }) });
+      const { result, invalidate } = renderDesk();
+      // A refresh that never settles: the outcome must not wait on it.
+      invalidate.mockReturnValue(new Promise<void>(() => undefined));
+
+      await act(async () => { result.current.accountActions.onClosePosition(OPEN_POSITION, 1); });
+
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: approvalsKeys.pending("s1") });
+      expect(result.current.closingPositions.get("7-long")).toBe("checking");
       expect(result.current.submitting).toBe(false);
       expect(result.current.handoffError).toBeNull();
     });

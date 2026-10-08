@@ -32,6 +32,10 @@ import logger from "@utils/logger.js";
 import { releaseLeaseAndEmitControlState } from "../../runtime/release-and-emit.js";
 import { emitMissionUpdate } from "../../runtime/mission-bus.js";
 import { toToolDefinitions, DEFAULT_LOOP_CONFIG, runtimeBoundExhaustedReply, isRuntimeBoundStop } from "./shared.js";
+import {
+  effectiveMissionReasoningEffort,
+  withMissionReasoningEffort,
+} from "../../mission/reasoning-effort.js";
 
 export async function processMissionSetupTurn(
   sessionId: string,
@@ -39,6 +43,8 @@ export async function processMissionSetupTurn(
   signal?: AbortSignal,
 ): Promise<TurnResult> {
   logger.info("engine.mission.setup_turn", { sessionId });
+  // Runtime measurement: the loop records entry → loop start as pre-loop setup.
+  const entryStartedAtMs = performance.now();
 
   const provider = await resolveProvider();
   if (!provider) throw new Error("No inference provider available");
@@ -98,6 +104,9 @@ export async function processMissionSetupTurn(
   // immutable per session and read from the hydrated context.
   const setupContext = {
     ...hydrated.context,
+    // Fences the loop's writes on this claim; its lost signal ends the turn on
+    // `lease_lost` (never the Stop).
+    leaseGuard: sessionLease,
     sessionKind: "mission" as const,
     missionId,
     missionRunId: null,
@@ -147,6 +156,7 @@ export async function processMissionSetupTurn(
     // boundary action can PROVE ownership (equality against the live lease)
     // rather than adopting whatever owner the row currently names.
     runnerOwnerId: ownerId,
+    entryStartedAtMs,
   };
 
   const promptOptions: PromptStackOptions = {
@@ -164,7 +174,12 @@ export async function processMissionSetupTurn(
     hydrated.summary,
     hydrated.tokenCount,
     provider,
-    config,
+    // E-1: a mission session never runs at the provider default or a composer
+    // pick. Setup runs at the draft's effort (default medium), clamped.
+    withMissionReasoningEffort(
+      config,
+      effectiveMissionReasoningEffort(setupState?.currentDraft.reasoningEffort),
+    ),
     tools,
     loopConfig,
     promptOptions,
@@ -192,9 +207,22 @@ export async function processMissionSetupTurn(
   // (`no_progress`) is never auto-continued but still owes the user a reply.
   // Asking the continuation question here is what returned `text: null` and
   // produced a silent setup turn.
+  // Lease lost: another runner owns the session. No synthesised reply, no
+  // mission patch, no notice - every one of those is a write, and the draft
+  // belongs to the new owner now. Reported as `lease_lost`, never as a Stop.
+  if (result.stopReason === "lease_lost") {
+    return {
+      text: null,
+      toolCallsMade: result.toolCallsMade,
+      pendingApprovals: [],
+      stopReason: "lease_lost",
+      missionStatus: null,
+    };
+  }
+
   const boundHit = isRuntimeBoundStop(result.stopReason) && !result.text;
   const boundHitReply = isRuntimeBoundStop(result.stopReason)
-    ? runtimeBoundExhaustedReply(result.stopReason)
+    ? runtimeBoundExhaustedReply(result.stopReason, result.lastUnproductiveKind ?? null)
     : null;
   logger.info("engine.mission.setup_turn.timing", {
     sessionId,

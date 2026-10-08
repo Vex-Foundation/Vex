@@ -3,7 +3,7 @@ import type { LighterEnvironment } from "./constants.js";
 import type { LighterAccount, LighterAccountLimitsResponse, LighterSystemConfigResponse } from "./types.js";
 
 export const LIGHTER_FEE_TICK = 1_000_000;
-export const LIGHTER_PERPS_FEE = 1000;
+export const LIGHTER_PERPS_FEE = 200;
 export const LIGHTER_SPOT_FEE = 2500;
 export const LIGHTER_FEE_AUTHORIZATION_DURATION_MS = 10 * 365 * 24 * 60 * 60 * 1000;
 
@@ -17,8 +17,8 @@ export interface LighterFeePolicy {
   readonly environment: LighterEnvironment;
   readonly collectorAccountIndex: number;
   readonly collectorL1Address: string;
-  readonly perpsMakerFee: typeof LIGHTER_PERPS_FEE;
-  readonly perpsTakerFee: typeof LIGHTER_PERPS_FEE;
+  readonly perpsMakerFee: typeof LIGHTER_PERPS_FEE | 1000;
+  readonly perpsTakerFee: typeof LIGHTER_PERPS_FEE | 1000;
   readonly spotMakerFee: typeof LIGHTER_SPOT_FEE;
   readonly spotTakerFee: typeof LIGHTER_SPOT_FEE;
 }
@@ -36,8 +36,8 @@ interface CollectorConfiguration {
 // 0x10Ce97Cf3142BE2a1a28aC83A55b21fDCE493C03 is Vex's collector wallet on both
 // deployments, that Lighter Core account 743799 and Robinhood Chain account
 // 22869 are its accounts, and that 10 bps perps / 25 bps spot maker and taker
-// with a ten-year authorization are the intended terms. Both deployments stay
-// enabled on that attestation. FEE_LAUNCH.md in this directory holds the
+// with a ten-year authorization were the original terms. Perp fees were reduced
+// to 2 bps on 2026-10-02. Both deployments stay enabled. FEE_LAUNCH.md holds the
 // evidence rows: the live checks per environment that must be observed before
 // the release claims collection works, each with its own status cell.
 const COLLECTORS: Readonly<Record<LighterEnvironment, CollectorConfiguration>> = Object.freeze({

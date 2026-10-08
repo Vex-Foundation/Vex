@@ -25,6 +25,8 @@
  * here; they merged with PR #165 (`7890245fa`) and were consumed by that
  * merge. The Lighter shell migration entries were also consumed after their
  * deleted test files landed on the base branch.
+ * The 12 retired feed/ws fixture entries were consumed when the replacement
+ * envelope protocol landed in main through PR #205 (`1dc37f68f`).
  */
 export const DELETED_TEST_ALLOWLIST = [];
 

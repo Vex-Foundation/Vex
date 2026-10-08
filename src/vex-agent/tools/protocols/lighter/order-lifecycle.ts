@@ -4,6 +4,7 @@ import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js"
 import { readLighterSignedTxExpiredAtMs } from "@tools/lighter/signed-tx-expiry.js";
 import type { LighterIntegratorFees } from "@tools/lighter/fee-policy.js";
 import { resolveLighterOrderFees, revalidateLighterOrderFees, type LighterOrderFeeClient } from "./order-fees.js";
+import type { LighterDeskPreparationFees } from "./desk-preparation-fees.js";
 import { confirmedLighterCloseDisposition } from "./close-position-confirmation.js";
 import { lighterDecimalGreaterThanZero } from "./order-evidence.js";
 import {
@@ -16,6 +17,7 @@ import { createHash } from "node:crypto";
 import type {
   LighterAccountOrder,
   LighterAccountPosition,
+  LighterMarket,
   LighterSimpleOrder,
 } from "@tools/lighter/types.js";
 import {
@@ -67,6 +69,18 @@ import {
   type LighterNonceRecoveryRunner,
 } from "./nonce-commit-recovery.js";
 import { withLighterBeforeSendFailures, type LighterSendPhase } from "./before-send.js";
+import {
+  LighterLifecycleTiming,
+  lifecycleRead,
+  lighterLifecycleParallelReads,
+  prefetchLighterLifecycleFeeReads,
+} from "./lifecycle-parallel-reads.js";
+
+import { judgeLighterSigningOwnership, type LighterSigningOwnershipWallet } from "./signing-ownership.js";
+
+/** Fresh session ownership before lifecycle nonce writes; false keeps the prior path. */
+export const LIGHTER_LIFECYCLE_SIGNING_OWNERSHIP_RECHECK = true;
+const FRESH_PUBLIC_READ = { fresh: true } as const;
 
 const AUTH_TTL_SECONDS = 10 * 60;
 const SIGNER_EXPIRY_MS = 60_000;
@@ -148,6 +162,8 @@ export interface LighterClosePositionPreparation {
   readonly bookEvidence: Record<string, unknown>;
   readonly matchHash: string;
 }
+
+export type LighterClosePercent = 25 | 50 | 75 | 100;
 
 type LighterLifecycleUnresolvedResult = {
   readonly status: "sequencer_pending" | "ambiguous";
@@ -269,6 +285,10 @@ export interface LighterOrderLifecycleExecutionDeps {
    * assembles its own deps never writes to the fill ledger by accident.
    */
   readonly fills?: LighterFillObservationDeps;
+  /** Overrides `LIGHTER_LIFECYCLE_PARALLEL_READS`; absent uses the constant. */
+  readonly lifecycleParallelReads?: boolean;
+  /** Overrides `LIGHTER_LIFECYCLE_SIGNING_OWNERSHIP_RECHECK`; absent uses the constant. */
+  readonly signingOwnershipRecheck?: boolean;
 }
 
 let configuredDeps: LighterOrderLifecycleExecutionDeps | null = null;
@@ -492,14 +512,20 @@ export async function prepareLighterClosePosition(input: {
   readonly apiKeyIndex: number;
   readonly marketIndex: number;
   readonly maxSlippageBps: number;
+  readonly closePercent?: LighterClosePercent;
+  readonly feeSnapshot?: LighterDeskPreparationFees;
   readonly client?: LighterOrderFeeClient & Pick<LighterClient, "getAccount" | "getMarkets" | "getOrderBookOrders">;
 }): Promise<LighterClosePositionPreparation> {
   if (!Number.isInteger(input.maxSlippageBps) || input.maxSlippageBps < 1 || input.maxSlippageBps > 500) {
     throw blocked("maxSlippageBps must be an explicit integer from 1 through 500.");
   }
+  const closePercent = input.closePercent === undefined ? 100 : input.closePercent;
+  if (closePercent !== 25 && closePercent !== 50 && closePercent !== 75 && closePercent !== 100) {
+    throw blocked("closePercent must be one of 25, 50, 75, or 100.");
+  }
   const client = input.client ?? getLighterClient();
   const [accountResponse, markets, orderBook] = await Promise.all([
-    client.getAccount(input.environment, { by: "index", value: String(input.accountIndex) }),
+    client.getAccount(input.environment, { by: "index", value: String(input.accountIndex) }, ...(input.feeSnapshot === undefined && closePercent === 100 ? [] : [{ fresh: true }] as const)),
     client.getMarkets(input.environment, { filter: "perp", marketId: input.marketIndex }),
     client.getOrderBookOrders(input.environment, { marketId: input.marketIndex, limit: 100 }),
   ]);
@@ -514,11 +540,15 @@ export async function prepareLighterClosePosition(input: {
     throw blocked("The exact active Lighter perpetual market could not be resolved.");
   }
   const position = exactOpenPosition(account.positions ?? [], input.marketIndex);
-  const baseAmountInteger = decimalToLighterInteger(
+  const positionAmountInteger = decimalToLighterInteger(
     position.position,
     market.supported_size_decimals,
     "provider position",
   );
+  const baseAmountInteger = (positionAmountInteger * BigInt(closePercent)) / 100n;
+  if (baseAmountInteger === 0n) {
+    throw blocked("The requested partial close rounds below this market's smallest size increment.");
+  }
   if (baseAmountInteger > (1n << 48n) - 1n) {
     throw blocked("The live position exceeds Lighter's official create-order amount range.");
   }
@@ -530,8 +560,13 @@ export async function prepareLighterClosePosition(input: {
     sizeDecimals: market.supported_size_decimals,
     priceDecimals: market.supported_price_decimals,
     maxSlippageBps: input.maxSlippageBps,
+    fullPosition: closePercent === 100,
   });
-  const integratorFees = await resolveLighterOrderFees({ client, environment: input.environment, accountIndex: input.accountIndex, market, account: accountResponse, reduceOnly: true, side: closingSide });
+  if (baseAmountInteger < positionAmountInteger) {
+    assertPartialCloseMinimums(market, baseAmountInteger, book.worstAcceptablePriceInteger);
+  }
+  const integratorFees = await resolveLighterOrderFees({ client, environment: input.environment, accountIndex: input.accountIndex, market, account: accountResponse, reduceOnly: true, side: closingSide, ...(input.feeSnapshot === undefined ? {} : { snapshot: input.feeSnapshot.feesFor(accountResponse) }) });
+  if (input.feeSnapshot !== undefined) await input.feeSnapshot.keepAfterPassingFeeCheck(integratorFees);
   const positionSnapshot = positionSnapshotOf(position);
   const baseAmount = formatLighterIntegerAmount(baseAmountInteger, market.supported_size_decimals);
   const worstAcceptablePrice = formatLighterIntegerAmount(book.worstAcceptablePriceInteger, market.supported_price_decimals);
@@ -577,8 +612,66 @@ export async function executeApprovedLighterCancelOne(
   intent: LighterOrderLifecycleIntentRow,
   deps: LighterOrderLifecycleExecutionDeps,
   abortSignal?: AbortSignal,
+  sessionWallet?: LighterSigningOwnershipWallet,
 ): Promise<ExecuteApprovedLighterCancelOneResult> {
-  return withLighterBeforeSendFailures((sendPhase) => runApprovedLighterCancelOne(intent, deps, abortSignal, sendPhase));
+  return withLifecycleTiming("cancel_one", intent, deps, (timing) =>
+    withLighterBeforeSendFailures((sendPhase) => runApprovedLighterCancelOne(intent, deps, abortSignal, sendPhase, timing, sessionWallet)));
+}
+
+/** Starts only the fresh ownership read; its judgment stays after prior checks. */
+function prefetchLifecycleSigningOwnership(
+  intent: LighterOrderLifecycleIntentRow,
+  deps: LighterOrderLifecycleExecutionDeps,
+  parallel: boolean,
+): (() => Promise<Awaited<ReturnType<LighterClient["getAccount"]>>>) | undefined {
+  if (!parallel || !(deps.signingOwnershipRecheck ?? LIGHTER_LIFECYCLE_SIGNING_OWNERSHIP_RECHECK)) return undefined;
+  return lifecycleRead(true, () => deps.client.getAccount(intent.environment, {
+    by: "index", value: String(intent.accountIndex),
+  }, FRESH_PUBLIC_READ));
+}
+
+/** Runs after all prior checks, before passed evidence and any nonce write. */
+async function recheckLifecycleSigningOwnership(
+  intent: LighterOrderLifecycleIntentRow,
+  deps: LighterOrderLifecycleExecutionDeps,
+  wallet: LighterSigningOwnershipWallet | undefined,
+  freshAccount?: Awaited<ReturnType<LighterClient["getAccount"]>>,
+  readAccount?: () => Promise<Awaited<ReturnType<LighterClient["getAccount"]>>>,
+): Promise<void> {
+  if (!(deps.signingOwnershipRecheck ?? LIGHTER_LIFECYCLE_SIGNING_OWNERSHIP_RECHECK)) return;
+  // Close already read this account fresh. Other lifecycle paths may have
+  // prefetched their own fresh read; active orders and keys do not prove ownership.
+  const account = freshAccount ?? await (readAccount?.() ?? deps.client.getAccount(intent.environment, {
+    by: "index", value: String(intent.accountIndex),
+  }, FRESH_PUBLIC_READ));
+  const outcome = judgeLighterSigningOwnership({
+    accountIndex: intent.accountIndex, account, wallet, signingMaterialAlreadyLoaded: true,
+  });
+  if (outcome.kind === "refused") throw blocked(outcome.reason);
+  try {
+    logger.info("lighter.lifecycle.signing_ownership_recheck", {
+      action: intent.actionType,
+      outcome: outcome.kind,
+      ...(outcome.kind === "matched" ? { accountTypeReported: outcome.accountTypeReported ? 1 : 0 } : {}),
+    });
+  } catch {
+    // Diagnostics cannot change execution.
+  }
+}
+
+/** One `[lighter-lifecycle-timing]` line per execution, whatever it returns or throws. */
+async function withLifecycleTiming<T>(
+  action: ConstructorParameters<typeof LighterLifecycleTiming>[0],
+  intent: LighterOrderLifecycleIntentRow,
+  deps: LighterOrderLifecycleExecutionDeps,
+  run: (timing: LighterLifecycleTiming) => Promise<T>,
+): Promise<T> {
+  const timing = new LighterLifecycleTiming(action, lighterLifecycleParallelReads(deps.lifecycleParallelReads));
+  try {
+    return await run(timing);
+  } finally {
+    timing.log(intent.intentId);
+  }
 }
 
 async function runApprovedLighterCancelOne(
@@ -586,14 +679,17 @@ async function runApprovedLighterCancelOne(
   deps: LighterOrderLifecycleExecutionDeps,
   abortSignal: AbortSignal | undefined,
   sendPhase: LighterSendPhase,
+  timing: LighterLifecycleTiming,
+  sessionWallet: LighterSigningOwnershipWallet | undefined,
 ): Promise<ExecuteApprovedLighterCancelOneResult> {
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
     assertIntentAuthority(intent.expiresAt, deps.now(), phase, abortSignal);
   assertAuthority("before_reservation");
   assertCancelableIntent(intent, deps.now());
-  const secret = await loadLighterTradingSecretMaterial(intent.credentialRefJson, deps.secretReader);
+  const secret = await timing.measure("secretMs", () =>
+    loadLighterTradingSecretMaterial(intent.credentialRefJson, deps.secretReader));
   assertAuthority("before_reservation");
-  const authResult = await createLighterAccountAuthWithAdapter(
+  const authResult = await timing.measure("authMs", () => createLighterAccountAuthWithAdapter(
     buildLighterAccountAuthSigningInputForScope({
       environment: intent.environment,
       accountIndex: intent.accountIndex,
@@ -602,12 +698,25 @@ async function runApprovedLighterCancelOne(
       deadlineUnixSeconds: Math.floor(deps.now() / 1_000) + AUTH_TTL_SECONDS,
     }),
     deps.authSigner,
-  );
+  ));
   const auth: LighterPrivilegedAccountAuth = { token: authResult.authToken, accountIndex: intent.accountIndex };
-  const active = await deps.client.getAccountActiveOrders(intent.environment, {
+  // LIGHTER_LIFECYCLE_PARALLEL_READS: ON also starts fresh ownership here; each is
+  // still judged below in today's order. OFF issues each at its await.
+  timing.start("readsMs");
+  const readActive = lifecycleRead(timing.parallelReads, () => deps.client.getAccountActiveOrders(intent.environment, {
     accountIndex: intent.accountIndex,
     marketId: intent.marketIndex!,
-  }, auth);
+  }, auth));
+  const readApiKeys = lifecycleRead(timing.parallelReads, () => deps.client.getApiKeys(intent.environment, {
+    accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex,
+  }));
+  const readNextNonce = lifecycleRead(timing.parallelReads, () => deps.client.getNextNonce(intent.environment, {
+    accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex,
+  }));
+  const readOwnership = prefetchLifecycleSigningOwnership(intent, deps, timing.parallelReads);
+  const active = await readActive();
   const liveOrder = findExactOrder(active.orders, {
     accountIndex: intent.accountIndex,
     marketIndex: intent.marketIndex!,
@@ -621,22 +730,18 @@ async function runApprovedLighterCancelOne(
     throw blocked("The approved Lighter order changed before cancel submission.");
   }
 
-  const apiKeys = await deps.client.getApiKeys(intent.environment, {
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-  });
+  const apiKeys = await readApiKeys();
   const providerKey = apiKeys.api_keys.find((candidate) =>
     candidate.account_index === intent.accountIndex && candidate.api_key_index === intent.apiKeyIndex);
   if (providerKey === undefined || canonicalKey(providerKey.public_key) !== canonicalKey(authResult.publicKey)) {
     throw blocked("The registered Lighter trading credential changed.");
   }
-  const nextNonce = await deps.client.getNextNonce(intent.environment, {
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-  });
+  const nextNonce = await readNextNonce();
   if (nextNonce.nonce !== providerKey.nonce) {
     throw blocked("Lighter returned inconsistent nonce evidence.");
   }
+  await recheckLifecycleSigningOwnership(intent, deps, sessionWallet, undefined, readOwnership);
+  timing.stop("readsMs");
   const evidence = {
     kind: "lighter_cancel_one_pre_submit_revalidation",
     checkedAt: new Date(deps.now()).toISOString(),
@@ -644,12 +749,13 @@ async function runApprovedLighterCancelOne(
     publicKey: canonicalKey(providerKey.public_key),
     nextNonce: nextNonce.nonce,
   };
-  const revalidated = await deps.intents.markPreSubmitRevalidated({
+  const revalidated = await timing.measure("persistMs", () => deps.intents.markPreSubmitRevalidated({
     intentId: intent.intentId,
     sessionId: intent.sessionId,
     evidence,
-  });
+  }));
   if (revalidated === null) throw blocked("The cancel intent could not persist revalidation.");
+  timing.start("nonceReserveMs");
   const observed = await observeLighterNonceWithRecovery({
     scope: { environment: intent.environment, accountIndex: intent.accountIndex },
     observe: () => deps.nonceState.recordExecutionObserved({
@@ -700,6 +806,7 @@ async function runApprovedLighterCancelOne(
     if (attached === null) throw blocked("The cancel intent could not attach its nonce reservation.");
     return nonce.reservedNonce;
   });
+  timing.stop("nonceReserveMs");
 
   let signerTxHash: string | null = null;
   let signingStarted = false;
@@ -709,6 +816,7 @@ async function runApprovedLighterCancelOne(
     assertAuthority("after_reservation");
     assertAuthority("before_signing");
     signingStarted = true;
+    timing.start("signMs");
     const signerExpiryMs = deps.now() + SIGNER_EXPIRY_MS;
     const signed = await deps.lifecycleSigner.signCancelOrder(buildLighterCancelOrderSigningInput({
       environment: intent.environment,
@@ -720,6 +828,7 @@ async function runApprovedLighterCancelOne(
       providerOrderId: intent.providerOrderId!,
       secret,
     }));
+    timing.stop("signMs");
     signerExited = lighterSignerRunExited({ kind: "resolved" });
     signerTxHash = signed.txHash;
     const signedRow = await persistLighterSigningEvidence(() => deps.intents.markSigned({
@@ -751,13 +860,15 @@ async function runApprovedLighterCancelOne(
     if (deps.now() >= signerExpiryMs) throw blocked("The signed lifecycle wire expiry elapsed before send.");
     let response;
     try {
-      response = await deps.client.sendTx(intent.environment, { txType: signed.txType, txInfo: signed.txInfo });
+      response = await timing.measure("sendMs", () =>
+        deps.client.sendTx(intent.environment, { txType: signed.txType, txInfo: signed.txInfo }));
     } catch {
       return markAndReturnAmbiguous(deps, intent, "send_tx_transport_ambiguous", signed.txHash);
     }
     if (response.code !== 200 || response.tx_hash !== signed.txHash) {
       return markAndReturnAmbiguous(deps, intent, "send_tx_acceptance_mismatch", signed.txHash);
     }
+    timing.recordApiAccepted(intent.decidedAt);
     const accepted = await deps.intents.markApiAccepted({
       intentId: intent.intentId,
       sessionId: intent.sessionId,
@@ -838,8 +949,10 @@ export async function executeApprovedLighterModifyOrder(
   intent: LighterOrderLifecycleIntentRow,
   deps: LighterOrderLifecycleExecutionDeps,
   abortSignal?: AbortSignal,
+  sessionWallet?: LighterSigningOwnershipWallet,
 ): Promise<ExecuteApprovedLighterModifyOrderResult> {
-  return withLighterBeforeSendFailures((sendPhase) => runApprovedLighterModifyOrder(intent, deps, abortSignal, sendPhase));
+  return withLifecycleTiming("modify", intent, deps, (timing) =>
+    withLighterBeforeSendFailures((sendPhase) => runApprovedLighterModifyOrder(intent, deps, abortSignal, sendPhase, timing, sessionWallet)));
 }
 
 async function runApprovedLighterModifyOrder(
@@ -847,14 +960,17 @@ async function runApprovedLighterModifyOrder(
   deps: LighterOrderLifecycleExecutionDeps,
   abortSignal: AbortSignal | undefined,
   sendPhase: LighterSendPhase,
+  timing: LighterLifecycleTiming,
+  sessionWallet: LighterSigningOwnershipWallet | undefined,
 ): Promise<ExecuteApprovedLighterModifyOrderResult> {
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
     assertIntentAuthority(intent.expiresAt, deps.now(), phase, abortSignal);
   assertAuthority("before_reservation");
   assertModifyIntent(intent, deps.now());
-  const secret = await loadLighterTradingSecretMaterial(intent.credentialRefJson, deps.secretReader);
+  const secret = await timing.measure("secretMs", () =>
+    loadLighterTradingSecretMaterial(intent.credentialRefJson, deps.secretReader));
   assertAuthority("before_reservation");
-  const authResult = await createLighterAccountAuthWithAdapter(
+  const authResult = await timing.measure("authMs", () => createLighterAccountAuthWithAdapter(
     buildLighterAccountAuthSigningInputForScope({
       environment: intent.environment,
       accountIndex: intent.accountIndex,
@@ -863,9 +979,35 @@ async function runApprovedLighterModifyOrder(
       deadlineUnixSeconds: Math.floor(deps.now() / 1_000) + AUTH_TTL_SECONDS,
     }),
     deps.authSigner,
-  );
+  ));
   const auth: LighterPrivilegedAccountAuth = { token: authResult.authToken, accountIndex: intent.accountIndex };
-  const markets = await deps.client.getMarkets(intent.environment, { filter: "all" });
+  // LIGHTER_LIFECYCLE_PARALLEL_READS: ON starts the market, active-order, fee,
+  // key, nonce and fresh ownership reads here; each is judged in today's order,
+  // and the fee check's trader account stays its own fresh read. OFF issues
+  // each read at its await.
+  timing.start("readsMs");
+  const readMarkets = lifecycleRead(timing.parallelReads, () => deps.client.getMarkets(intent.environment, { filter: "all" }));
+  const readActive = lifecycleRead(timing.parallelReads, () => deps.client.getAccountActiveOrders(intent.environment, {
+    accountIndex: intent.accountIndex,
+    marketId: intent.marketIndex!,
+  }, auth));
+  const feeClient = prefetchLighterLifecycleFeeReads({
+    parallel: timing.parallelReads,
+    client: deps.client,
+    environment: intent.environment,
+    accountIndex: intent.accountIndex,
+    auth,
+  });
+  const readApiKeys = lifecycleRead(timing.parallelReads, () => deps.client.getApiKeys(intent.environment, {
+    accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex,
+  }));
+  const readNextNonce = lifecycleRead(timing.parallelReads, () => deps.client.getNextNonce(intent.environment, {
+    accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex,
+  }));
+  const readOwnership = prefetchLifecycleSigningOwnership(intent, deps, timing.parallelReads);
+  const markets = await readMarkets();
   const market = markets.order_books.find((candidate) => candidate.market_id === intent.marketIndex);
   if (
     market === undefined
@@ -875,10 +1017,7 @@ async function runApprovedLighterModifyOrder(
   ) {
     throw blocked("The Lighter market precision or active status changed before modify submission.");
   }
-  const active = await deps.client.getAccountActiveOrders(intent.environment, {
-    accountIndex: intent.accountIndex,
-    marketId: intent.marketIndex!,
-  }, auth);
+  const active = await readActive();
   const liveOrder = findExactOrder(active.orders, {
     accountIndex: intent.accountIndex,
     marketIndex: intent.marketIndex!,
@@ -892,26 +1031,22 @@ async function runApprovedLighterModifyOrder(
     throw blocked("The approved Lighter order changed before modify submission.");
   }
 
-  await revalidateLighterOrderFees({ client: deps.client, environment: intent.environment, accountIndex: intent.accountIndex, market, reduceOnly: liveSnapshot.reduceOnly, side: liveSnapshot.side === "sell" ? "sell" : "buy", allowUnattributedExit: false, integratorFees: intent.integratorFees, auth });
-  const apiKeys = await deps.client.getApiKeys(intent.environment, {
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-  });
+  await revalidateLighterOrderFees({ client: feeClient, environment: intent.environment, accountIndex: intent.accountIndex, market, reduceOnly: liveSnapshot.reduceOnly, side: liveSnapshot.side === "sell" ? "sell" : "buy", allowUnattributedExit: false, integratorFees: intent.integratorFees, auth });
+  const apiKeys = await readApiKeys();
   const providerKey = apiKeys.api_keys.find((candidate) =>
     candidate.account_index === intent.accountIndex && candidate.api_key_index === intent.apiKeyIndex);
   if (providerKey === undefined || canonicalKey(providerKey.public_key) !== canonicalKey(authResult.publicKey)) {
     throw blocked("The registered Lighter trading credential changed.");
   }
-  const nextNonce = await deps.client.getNextNonce(intent.environment, {
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-  });
+  const nextNonce = await readNextNonce();
   if (nextNonce.nonce !== providerKey.nonce) {
     throw blocked("Lighter returned inconsistent nonce evidence.");
   }
+  timing.stop("readsMs");
   // RE-ADMISSION of the modification's margin DELTA at the commit point, before
   // anything is signed. The approval may be minutes old and the account's
   // collateral or the user's share may have moved since.
+  timing.start("capitalMs");
   await admitLighterModifyCapitalCommitment({
     environment: intent.environment,
     accountIndex: intent.accountIndex,
@@ -930,6 +1065,8 @@ async function runApprovedLighterModifyOrder(
     integratorFees: intent.integratorFees ?? null,
     client: deps.client,
   });
+  timing.stop("capitalMs");
+  await recheckLifecycleSigningOwnership(intent, deps, sessionWallet, undefined, readOwnership);
   const evidence = {
     kind: "lighter_modify_order_pre_submit_revalidation",
     checkedAt: new Date(deps.now()).toISOString(),
@@ -939,12 +1076,13 @@ async function runApprovedLighterModifyOrder(
     publicKey: canonicalKey(providerKey.public_key),
     nextNonce: nextNonce.nonce,
   };
-  const revalidated = await deps.intents.markPreSubmitRevalidated({
+  const revalidated = await timing.measure("persistMs", () => deps.intents.markPreSubmitRevalidated({
     intentId: intent.intentId,
     sessionId: intent.sessionId,
     evidence,
-  });
+  }));
   if (revalidated === null) throw blocked("The modify intent could not persist revalidation.");
+  timing.start("nonceReserveMs");
   const observed = await observeLighterNonceWithRecovery({
     scope: { environment: intent.environment, accountIndex: intent.accountIndex },
     observe: () => deps.nonceState.recordExecutionObserved({
@@ -995,6 +1133,7 @@ async function runApprovedLighterModifyOrder(
     if (attached === null) throw blocked("The modify intent could not attach its nonce reservation.");
     return nonce.reservedNonce;
   });
+  timing.stop("nonceReserveMs");
 
   let signerTxHash: string | null = null;
   let signingStarted = false;
@@ -1004,6 +1143,7 @@ async function runApprovedLighterModifyOrder(
     assertAuthority("after_reservation");
     assertAuthority("before_signing");
     signingStarted = true;
+    timing.start("signMs");
     const signerExpiryMs = deps.now() + SIGNER_EXPIRY_MS;
     const signed = await deps.lifecycleSigner.signModifyOrder(buildLighterModifyOrderSigningInput({
       integratorFees: intent.integratorFees ?? null,
@@ -1019,6 +1159,7 @@ async function runApprovedLighterModifyOrder(
       triggerPriceInteger: "0",
       secret,
     }));
+    timing.stop("signMs");
     signerExited = lighterSignerRunExited({ kind: "resolved" });
     signerTxHash = signed.txHash;
     const signedRow = await persistLighterSigningEvidence(() => deps.intents.markSigned({
@@ -1050,13 +1191,15 @@ async function runApprovedLighterModifyOrder(
     if (deps.now() >= signerExpiryMs) throw blocked("The signed lifecycle wire expiry elapsed before send.");
     let response;
     try {
-      response = await deps.client.sendTx(intent.environment, { txType: signed.txType, txInfo: signed.txInfo });
+      response = await timing.measure("sendMs", () =>
+        deps.client.sendTx(intent.environment, { txType: signed.txType, txInfo: signed.txInfo }));
     } catch {
       return markAndReturnAmbiguous(deps, intent, "send_tx_transport_ambiguous", signed.txHash);
     }
     if (response.code !== 200 || response.tx_hash !== signed.txHash) {
       return markAndReturnAmbiguous(deps, intent, "send_tx_acceptance_mismatch", signed.txHash);
     }
+    timing.recordApiAccepted(intent.decidedAt);
     const accepted = await deps.intents.markApiAccepted({
       intentId: intent.intentId,
       sessionId: intent.sessionId,
@@ -1158,8 +1301,10 @@ export async function executeApprovedLighterCancelAll(
   intent: LighterOrderLifecycleIntentRow,
   deps: LighterOrderLifecycleExecutionDeps,
   abortSignal?: AbortSignal,
+  sessionWallet?: LighterSigningOwnershipWallet,
 ): Promise<ExecuteApprovedLighterCancelAllResult> {
-  return withLighterBeforeSendFailures((sendPhase) => runApprovedLighterCancelAll(intent, deps, abortSignal, sendPhase));
+  return withLifecycleTiming("cancel_all", intent, deps, (timing) =>
+    withLighterBeforeSendFailures((sendPhase) => runApprovedLighterCancelAll(intent, deps, abortSignal, sendPhase, timing, sessionWallet)));
 }
 
 async function runApprovedLighterCancelAll(
@@ -1167,15 +1312,18 @@ async function runApprovedLighterCancelAll(
   deps: LighterOrderLifecycleExecutionDeps,
   abortSignal: AbortSignal | undefined,
   sendPhase: LighterSendPhase,
+  timing: LighterLifecycleTiming,
+  sessionWallet: LighterSigningOwnershipWallet | undefined,
 ): Promise<ExecuteApprovedLighterCancelAllResult> {
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
     assertIntentAuthority(intent.expiresAt, deps.now(), phase, abortSignal);
   assertAuthority("before_reservation");
   assertCancelAllIntent(intent, deps.now());
   const approvedOrders = readStoredCancelAllOrders(intent.providerSnapshotJson);
-  const secret = await loadLighterTradingSecretMaterial(intent.credentialRefJson, deps.secretReader);
+  const secret = await timing.measure("secretMs", () =>
+    loadLighterTradingSecretMaterial(intent.credentialRefJson, deps.secretReader));
   assertAuthority("before_reservation");
-  const authResult = await createLighterAccountAuthWithAdapter(
+  const authResult = await timing.measure("authMs", () => createLighterAccountAuthWithAdapter(
     buildLighterAccountAuthSigningInputForScope({
       environment: intent.environment,
       accountIndex: intent.accountIndex,
@@ -1184,34 +1332,43 @@ async function runApprovedLighterCancelAll(
       deadlineUnixSeconds: Math.floor(deps.now() / 1_000) + AUTH_TTL_SECONDS,
     }),
     deps.authSigner,
-  );
+  ));
   const auth: LighterPrivilegedAccountAuth = { token: authResult.authToken, accountIndex: intent.accountIndex };
-  const active = await deps.client.getAccountActiveOrders(intent.environment, {
+  // LIGHTER_LIFECYCLE_PARALLEL_READS: ON also starts fresh ownership here; each is
+  // still judged below in today's order. OFF issues each at its await.
+  timing.start("readsMs");
+  const readActive = lifecycleRead(timing.parallelReads, () => deps.client.getAccountActiveOrders(intent.environment, {
     accountIndex: intent.accountIndex,
     marketType: "all",
-  }, auth);
+  }, auth));
+  const readApiKeys = lifecycleRead(timing.parallelReads, () => deps.client.getApiKeys(intent.environment, {
+    accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex,
+  }));
+  const readNextNonce = lifecycleRead(timing.parallelReads, () => deps.client.getNextNonce(intent.environment, {
+    accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex,
+  }));
+  const readOwnership = prefetchLifecycleSigningOwnership(intent, deps, timing.parallelReads);
+  const active = await readActive();
   const liveOrders = active.orders.map((order) => lifecycleSnapshot(order)).sort(compareLifecycleOrders);
   if (lifecycleMatchHash(liveOrders) !== lifecycleMatchHash(approvedOrders)) {
     throw blocked("The account-wide active-order set changed before cancel-all submission.");
   }
 
-  const apiKeys = await deps.client.getApiKeys(intent.environment, {
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-  });
+  const apiKeys = await readApiKeys();
   const providerKey = apiKeys.api_keys.find((candidate) =>
     candidate.account_index === intent.accountIndex && candidate.api_key_index === intent.apiKeyIndex);
   if (providerKey === undefined || canonicalKey(providerKey.public_key) !== canonicalKey(authResult.publicKey)) {
     throw blocked("The registered Lighter trading credential changed.");
   }
-  const nextNonce = await deps.client.getNextNonce(intent.environment, {
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-  });
+  const nextNonce = await readNextNonce();
   if (nextNonce.nonce !== providerKey.nonce) {
     throw blocked("Lighter returned inconsistent nonce evidence.");
   }
-  const revalidated = await deps.intents.markPreSubmitRevalidated({
+  await recheckLifecycleSigningOwnership(intent, deps, sessionWallet, undefined, readOwnership);
+  timing.stop("readsMs");
+  const revalidated = await timing.measure("persistMs", () => deps.intents.markPreSubmitRevalidated({
     intentId: intent.intentId,
     sessionId: intent.sessionId,
     evidence: {
@@ -1223,8 +1380,9 @@ async function runApprovedLighterCancelAll(
       publicKey: canonicalKey(providerKey.public_key),
       nextNonce: nextNonce.nonce,
     },
-  });
+  }));
   if (revalidated === null) throw blocked("The cancel-all intent could not persist revalidation.");
+  timing.start("nonceReserveMs");
   const observed = await observeLighterNonceWithRecovery({
     scope: { environment: intent.environment, accountIndex: intent.accountIndex },
     observe: () => deps.nonceState.recordExecutionObserved({
@@ -1275,6 +1433,7 @@ async function runApprovedLighterCancelAll(
     if (attached === null) throw blocked("The cancel-all intent could not attach its nonce reservation.");
     return nonce.reservedNonce;
   });
+  timing.stop("nonceReserveMs");
 
   let signerTxHash: string | null = null;
   let signingStarted = false;
@@ -1284,6 +1443,7 @@ async function runApprovedLighterCancelAll(
     assertAuthority("after_reservation");
     assertAuthority("before_signing");
     signingStarted = true;
+    timing.start("signMs");
     const signerExpiryMs = deps.now() + SIGNER_EXPIRY_MS;
     const signed = await deps.lifecycleSigner.signCancelAllOrders(buildLighterCancelAllOrdersSigningInput({
       environment: intent.environment,
@@ -1293,6 +1453,7 @@ async function runApprovedLighterCancelAll(
       expiredAt: String(signerExpiryMs),
       secret,
     }));
+    timing.stop("signMs");
     signerExited = lighterSignerRunExited({ kind: "resolved" });
     signerTxHash = signed.txHash;
     const signedRow = await persistLighterSigningEvidence(() => deps.intents.markSigned({
@@ -1323,13 +1484,15 @@ async function runApprovedLighterCancelAll(
     if (deps.now() >= signerExpiryMs) throw blocked("The signed lifecycle wire expiry elapsed before send.");
     let response;
     try {
-      response = await deps.client.sendTx(intent.environment, { txType: signed.txType, txInfo: signed.txInfo });
+      response = await timing.measure("sendMs", () =>
+        deps.client.sendTx(intent.environment, { txType: signed.txType, txInfo: signed.txInfo }));
     } catch {
       return markAndReturnAmbiguous(deps, intent, "send_tx_transport_ambiguous", signed.txHash);
     }
     if (response.code !== 200 || response.tx_hash !== signed.txHash) {
       return markAndReturnAmbiguous(deps, intent, "send_tx_acceptance_mismatch", signed.txHash);
     }
+    timing.recordApiAccepted(intent.decidedAt);
     const accepted = await deps.intents.markApiAccepted({
       intentId: intent.intentId,
       sessionId: intent.sessionId,
@@ -1417,8 +1580,10 @@ export async function executeApprovedLighterClosePosition(
   intent: LighterOrderLifecycleIntentRow,
   deps: LighterOrderLifecycleExecutionDeps,
   abortSignal?: AbortSignal,
+  sessionWallet?: LighterSigningOwnershipWallet,
 ): Promise<ExecuteApprovedLighterClosePositionResult> {
-  return withLighterBeforeSendFailures((sendPhase) => runApprovedLighterClosePosition(intent, deps, abortSignal, sendPhase));
+  return withLifecycleTiming("close_position", intent, deps, (timing) =>
+    withLighterBeforeSendFailures((sendPhase) => runApprovedLighterClosePosition(intent, deps, abortSignal, sendPhase, timing, sessionWallet)));
 }
 
 async function runApprovedLighterClosePosition(
@@ -1426,15 +1591,40 @@ async function runApprovedLighterClosePosition(
   deps: LighterOrderLifecycleExecutionDeps,
   abortSignal: AbortSignal | undefined,
   sendPhase: LighterSendPhase,
+  timing: LighterLifecycleTiming,
+  sessionWallet: LighterSigningOwnershipWallet | undefined,
 ): Promise<ExecuteApprovedLighterClosePositionResult> {
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
     assertIntentAuthority(intent.expiresAt, deps.now(), phase, abortSignal);
   assertAuthority("before_reservation");
   assertClosePositionIntent(intent, deps.now());
   const context = readStoredCloseContext(intent);
-  const secret = await loadLighterTradingSecretMaterial(intent.credentialRefJson, deps.secretReader);
+  const approvedPositionAmountInteger = decimalToLighterInteger(context.position.position, context.sizeDecimals, "approved position");
+  const requestedAmountInteger = BigInt(intent.requestedBaseAmountInteger!);
+  const partialClose = requestedAmountInteger < approvedPositionAmountInteger;
+  const readPublicBatch = () => Promise.all([
+    (partialClose || (deps.signingOwnershipRecheck ?? LIGHTER_LIFECYCLE_SIGNING_OWNERSHIP_RECHECK))
+      ? deps.client.getAccount(intent.environment, { by: "index", value: String(intent.accountIndex) }, FRESH_PUBLIC_READ)
+      : deps.client.getAccount(intent.environment, { by: "index", value: String(intent.accountIndex) }),
+    deps.client.getMarkets(intent.environment, { filter: "perp", marketId: intent.marketIndex! }),
+    deps.client.getOrderBookOrders(intent.environment, { marketId: intent.marketIndex!, limit: 100 }),
+  ]);
+  // Partial minima are public facts and must refuse before any key is loaded.
+  // Reuse this exact fresh batch at the existing position/depth judgment below.
+  const partialBatch = partialClose ? await timing.measure("partialMinimumReadsMs", readPublicBatch) : null;
+  if (partialBatch !== null) {
+    const partialMarket = partialBatch[1].order_books.find((candidate) => candidate.market_id === intent.marketIndex);
+    if (partialMarket === undefined || partialMarket.status !== "active" || partialMarket.market_type !== "perp"
+      || partialMarket.supported_size_decimals !== context.sizeDecimals
+      || partialMarket.supported_price_decimals !== context.priceDecimals) {
+      throw blocked("The Lighter close market or precision changed before submission.");
+    }
+    assertPartialCloseMinimums(partialMarket, requestedAmountInteger, BigInt(intent.requestedPriceInteger!));
+  }
+  const secret = await timing.measure("secretMs", () =>
+    loadLighterTradingSecretMaterial(intent.credentialRefJson, deps.secretReader));
   assertAuthority("before_reservation");
-  const authResult = await createLighterAccountAuthWithAdapter(
+  const authResult = await timing.measure("authMs", () => createLighterAccountAuthWithAdapter(
     buildLighterAccountAuthSigningInputForScope({
       environment: intent.environment,
       accountIndex: intent.accountIndex,
@@ -1443,13 +1633,30 @@ async function runApprovedLighterClosePosition(
       deadlineUnixSeconds: Math.floor(deps.now() / 1_000) + AUTH_TTL_SECONDS,
     }),
     deps.authSigner,
-  );
+  ));
   const auth: LighterPrivilegedAccountAuth = { token: authResult.authToken, accountIndex: intent.accountIndex };
-  const [accountResponse, markets, orderBook] = await Promise.all([
-    deps.client.getAccount(intent.environment, { by: "index", value: String(intent.accountIndex) }),
-    deps.client.getMarkets(intent.environment, { filter: "perp", marketId: intent.marketIndex! }),
-    deps.client.getOrderBookOrders(intent.environment, { marketId: intent.marketIndex!, limit: 100 }),
-  ]);
+  timing.start("readsMs");
+  const batch = partialBatch === null ? readPublicBatch() : Promise.resolve(partialBatch);
+  // LIGHTER_LIFECYCLE_PARALLEL_READS: ON starts the fee, key and nonce reads
+  // beside the batch; each is still judged below in today's order, and the
+  // fee check's trader account stays its own fresh read, never the batch's
+  // account. OFF issues each read at its await.
+  const feeClient = prefetchLighterLifecycleFeeReads({
+    parallel: timing.parallelReads,
+    client: deps.client,
+    environment: intent.environment,
+    accountIndex: intent.accountIndex,
+    auth,
+  });
+  const readApiKeys = lifecycleRead(timing.parallelReads, () => deps.client.getApiKeys(intent.environment, {
+    accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex,
+  }));
+  const readNextNonce = lifecycleRead(timing.parallelReads, () => deps.client.getNextNonce(intent.environment, {
+    accountIndex: intent.accountIndex,
+    apiKeyIndex: intent.apiKeyIndex,
+  }));
+  const [accountResponse, markets, orderBook] = await batch;
   const accountMatches = accountResponse.accounts.filter((candidate) =>
     (candidate.index ?? candidate.account_index) === intent.accountIndex);
   const account = accountMatches[0];
@@ -1480,6 +1687,13 @@ async function runApprovedLighterClosePosition(
       + "No lifecycle transaction was signed or submitted. Prepare a fresh close from current position and book state.",
     );
   }
+  const positionAmountInteger = decimalToLighterInteger(position.position, context.sizeDecimals, "provider position");
+  if (requestedAmountInteger < 1n || requestedAmountInteger > positionAmountInteger) {
+    throw blocked("The approved close amount is outside the exact live position size.");
+  }
+  if (requestedAmountInteger < positionAmountInteger) {
+    assertPartialCloseMinimums(market, requestedAmountInteger, BigInt(intent.requestedPriceInteger!));
+  }
   assertCloseDepthAtApprovedPrice({
     side: intent.requestedSide!,
     orders: intent.requestedSide === "sell" ? orderBook.bids : orderBook.asks,
@@ -1489,21 +1703,17 @@ async function runApprovedLighterClosePosition(
     priceDecimals: context.priceDecimals,
   });
 
-  await revalidateLighterOrderFees({ client: deps.client, environment: intent.environment, accountIndex: intent.accountIndex, market, account: accountResponse, reduceOnly: true, side: intent.requestedSide!, integratorFees: intent.integratorFees, auth });
-  const apiKeys = await deps.client.getApiKeys(intent.environment, {
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-  });
+  await revalidateLighterOrderFees({ client: feeClient, environment: intent.environment, accountIndex: intent.accountIndex, market, account: accountResponse, reduceOnly: true, side: intent.requestedSide!, integratorFees: intent.integratorFees, auth });
+  const apiKeys = await readApiKeys();
   const providerKey = apiKeys.api_keys.find((candidate) =>
     candidate.account_index === intent.accountIndex && candidate.api_key_index === intent.apiKeyIndex);
   if (providerKey === undefined || canonicalKey(providerKey.public_key) !== canonicalKey(authResult.publicKey)) {
     throw blocked("The registered Lighter trading credential changed.");
   }
-  const nextNonce = await deps.client.getNextNonce(intent.environment, {
-    accountIndex: intent.accountIndex,
-    apiKeyIndex: intent.apiKeyIndex,
-  });
+  const nextNonce = await readNextNonce();
   if (nextNonce.nonce !== providerKey.nonce) throw blocked("Lighter returned inconsistent nonce evidence.");
+  await recheckLifecycleSigningOwnership(intent, deps, sessionWallet, accountResponse);
+  timing.stop("readsMs");
   const unsignedOrder: LighterUnsignedCreateOrderRequest = {
     kind: "lighter_unsigned_create_order",
     integratorFees: intent.integratorFees ?? null,
@@ -1522,7 +1732,7 @@ async function runApprovedLighterClosePosition(
     orderExpiryMs: 0,
     matchHash: intent.matchHash,
   };
-  const revalidated = await deps.intents.markPreSubmitRevalidated({
+  const revalidated = await timing.measure("persistMs", () => deps.intents.markPreSubmitRevalidated({
     intentId: intent.intentId,
     sessionId: intent.sessionId,
     evidence: {
@@ -1541,8 +1751,9 @@ async function runApprovedLighterClosePosition(
       publicKey: canonicalKey(providerKey.public_key),
       nextNonce: nextNonce.nonce,
     },
-  });
+  }));
   if (revalidated === null) throw blocked("The close-position intent could not persist revalidation.");
+  timing.start("nonceReserveMs");
   const observed = await observeLighterNonceWithRecovery({
     scope: { environment: intent.environment, accountIndex: intent.accountIndex },
     observe: () => deps.nonceState.recordExecutionObserved({
@@ -1592,6 +1803,7 @@ async function runApprovedLighterClosePosition(
     if (attached === null) throw blocked("The close-position intent could not attach its nonce reservation.");
     return nonce.reservedNonce;
   });
+  timing.stop("nonceReserveMs");
 
   let signerTxHash: string | null = null;
   let signingStarted = false;
@@ -1601,10 +1813,12 @@ async function runApprovedLighterClosePosition(
     assertAuthority("after_reservation");
     assertAuthority("before_signing");
     signingStarted = true;
+    timing.start("signMs");
     const signed = await signLighterCreateOrderWithAdapter(
       buildLighterCreateOrderSigningInput({ order: unsignedOrder, secret, nonce: reserved }),
       deps.authSigner,
     );
+    timing.stop("signMs");
     signerExited = lighterSignerRunExited({ kind: "resolved" });
     // A close is a create-order transaction: Vex passes no ExpiredAt, and the
     // official SDK fills one (signing time + 9m59s) that is part of the signed
@@ -1641,13 +1855,15 @@ async function runApprovedLighterClosePosition(
     assertAuthority("before_submission");
     let response;
     try {
-      response = await deps.client.sendTx(intent.environment, { txType: signed.txType, txInfo: signed.txInfo });
+      response = await timing.measure("sendMs", () =>
+        deps.client.sendTx(intent.environment, { txType: signed.txType, txInfo: signed.txInfo }));
     } catch {
       return markAndReturnAmbiguous(deps, intent, "send_tx_transport_ambiguous", signed.txHash);
     }
     if (response.code !== 200 || response.tx_hash !== signed.txHash) {
       return markAndReturnAmbiguous(deps, intent, "send_tx_acceptance_mismatch", signed.txHash);
     }
+    timing.recordApiAccepted(intent.decidedAt);
     const accepted = await deps.intents.markApiAccepted({
       intentId: intent.intentId,
       sessionId: intent.sessionId,
@@ -1909,6 +2125,7 @@ function computeCloseBookEvidence(input: {
   readonly sizeDecimals: number;
   readonly priceDecimals: number;
   readonly maxSlippageBps: number;
+  readonly fullPosition: boolean;
 }): { readonly worstAcceptablePriceInteger: bigint; readonly evidence: Record<string, unknown> } {
   const levels = input.orders.map((order) => ({
     priceInteger: decimalToLighterInteger(order.price, input.priceDecimals, "order book price"),
@@ -1939,7 +2156,9 @@ function computeCloseBookEvidence(input: {
     0n,
   );
   if (availableBaseAmountInteger < input.requiredBaseAmountInteger) {
-    throw blocked("The live order book cannot close the full position within the explicitly approved slippage ceiling.");
+    throw blocked(input.fullPosition
+      ? "The live order book cannot close the full position within the explicitly approved slippage ceiling."
+      : "The live order book cannot fill the requested close amount within the explicitly approved slippage ceiling.");
   }
   return {
     worstAcceptablePriceInteger,
@@ -1953,6 +2172,24 @@ function computeCloseBookEvidence(input: {
       maxSlippageBps: input.maxSlippageBps,
     },
   };
+}
+
+/** Full closes retain their existing dust policy; partial orders meet live minima. */
+function assertPartialCloseMinimums(market: LighterMarket, baseAmountInteger: bigint, priceInteger: bigint): void {
+  const minBaseAmount = decimalToLighterInteger(market.min_base_amount, market.supported_size_decimals,
+    "market min_base_amount", { allowZero: true });
+  const minQuoteAmount = decimalToLighterInteger(market.min_quote_amount, market.supported_quote_decimals,
+    "market min_quote_amount", { allowZero: true });
+  if (baseAmountInteger < minBaseAmount) {
+    throw blocked(`Partial close size is below market minimum ${market.min_base_amount}.`);
+  }
+  const notionalDecimals = market.supported_size_decimals + market.supported_price_decimals;
+  const commonDecimals = Math.max(notionalDecimals, market.supported_quote_decimals);
+  const notional = baseAmountInteger * priceInteger * (10n ** BigInt(commonDecimals - notionalDecimals));
+  const minimum = minQuoteAmount * (10n ** BigInt(commonDecimals - market.supported_quote_decimals));
+  if (notional < minimum) {
+    throw blocked(`Partial close order value is below market minimum ${market.min_quote_amount}.`);
+  }
 }
 
 function assertCloseDepthAtApprovedPrice(input: {

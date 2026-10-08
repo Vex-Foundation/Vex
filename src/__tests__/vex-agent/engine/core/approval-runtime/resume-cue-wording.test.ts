@@ -28,10 +28,16 @@ describe("selectResumeCue", () => {
     ).toBe(APPROVAL_RESOLVED_EXECUTED_CUE);
   });
 
-  it("the executed cue states execution and points at verification", () => {
+  it("the executed cue states execution and forbids a repeat", () => {
     expect(APPROVAL_RESOLVED_EXECUTED_CUE).toContain("executed successfully");
     expect(APPROVAL_RESOLVED_EXECUTED_CUE).toContain("do not repeat it");
-    expect(APPROVAL_RESOLVED_EXECUTED_CUE).toContain("AgentScan");
+    expect(APPROVAL_RESOLVED_EXECUTED_CUE).toContain("Continue.]");
+  });
+
+  it("the executed cue asks for no verification round trip", () => {
+    // The committed tool result already carries the settled outcome, so the
+    // cue must not send the model off to re-read state before continuing.
+    expect(APPROVAL_RESOLVED_EXECUTED_CUE).not.toMatch(/AgentScan|verify/i);
   });
 
   it("the neutral cue never claims the action ran", () => {

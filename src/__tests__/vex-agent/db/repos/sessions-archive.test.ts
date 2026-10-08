@@ -28,6 +28,9 @@ vi.mock("@vex-agent/db/client.js", () => ({
       release: () => clientRelease(),
     }),
   }),
+  setLocalLongStatementTimeout: async (client: { query: (sql: string) => Promise<unknown> }) => {
+    await client.query("SET LOCAL statement_timeout = 300000");
+  },
 }));
 
 const { archivePrefix, forkToolMessageToArchive } = await import(
@@ -55,6 +58,12 @@ describe("archivePrefix SQL", () => {
     const sqlCalls = clientQuery.mock.calls.map((c: unknown[]) => String(c[0]));
     expect(sqlCalls).toContain("BEGIN");
     expect(sqlCalls).toContain("COMMIT");
+  });
+
+  it("raises the statement cap for the bulk move, inside the transaction (S-4)", async () => {
+    await archivePrefix("session-1", 42, 5);
+    const sqlCalls = clientQuery.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(sqlCalls.slice(0, 2)).toEqual(["BEGIN", "SET LOCAL statement_timeout = 300000"]);
   });
 
   it("uses an explicit column list (no SELECT *) and stamps rewind_checkpoint_id NULL", async () => {

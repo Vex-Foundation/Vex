@@ -4,11 +4,13 @@
  */
 
 import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
+import { compareDecimalStrings, isPositiveDecimal } from "./decimal.js";
 
 /** Lighter execute tools whose cards the desk shows in place of the ticket. */
 const DESK_CARD_TOOL_IDS: ReadonlySet<string> = new Set([
   "lighter.order.create",
   "lighter.order.cancel",
+  "lighter.order.cancelAll",
   "lighter.position.close",
   "lighter.position.protect",
 ]);
@@ -33,4 +35,15 @@ export function isLighterOrderApproval(summary: ApprovalSummaryDto): boolean {
 /** A market close raised from the desk's positions table. */
 export function isDeskCloseApproval(summary: ApprovalSummaryDto): boolean {
   return summary.origin === "desk" && lighterToolId(summary) === CLOSE_TOOL_ID;
+}
+
+/** Only exact full-position closes can offer the existing skip-confirm preference. */
+export function isDeskFullCloseApproval(summary: ApprovalSummaryDto): boolean {
+  if (!isDeskCloseApproval(summary)) return false;
+  const args = summary.preview?.criticalArgs;
+  const amount = args?.baseAmount;
+  const positionAmount = args?.positionAmount;
+  return typeof amount === "string" && typeof positionAmount === "string"
+    && isPositiveDecimal(amount) && isPositiveDecimal(positionAmount)
+    && compareDecimalStrings(amount, positionAmount) === 0;
 }

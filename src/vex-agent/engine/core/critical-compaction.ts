@@ -102,7 +102,20 @@ export interface CriticalCompactionInput {
   ) => Promise<PreparationPressureState>;
   /** Injectable sleep so the bounded wait is testable without real time. */
   readonly sleep?: (ms: number) => Promise<void>;
+  /**
+   * The run's abort signal (Stop). An abort ends the bounded wait promptly -
+   * mid-sleep, not at the next 2 s poll - and the ladder returns `deferred`
+   * with reason `aborted` without starting a forced apply or the fallback: the
+   * loop's next iteration guard consumes the Stop, and a deferral passes the
+   * noop counter through unchanged. Absent ⇒ the wait is bounded by time only.
+   */
+  readonly signal?: AbortSignal;
 }
+
+/** Why the ladder yielded to an abort; carried as the `deferred` reason. */
+export const CRITICAL_COMPACTION_ABORTED_REASON = "aborted";
+
+const ABORTED = Symbol("critical-compaction-aborted");
 
 export async function resolveCriticalCompaction(
   input: CriticalCompactionInput,
@@ -112,12 +125,19 @@ export async function resolveCriticalCompaction(
     ((sessionId: string) =>
       getLivePreparationPressureState(sessionId, SUMMARY_CALL_TIMEOUT_MS));
 
+  if (isAborted(input.signal)) return abortedOutcome(input.sessionId, "before_ladder");
+
   let state = await resolvePreparationPressureState(input.sessionId, read);
 
   // Step 2 — bounded wait for the attempt already in flight, before deciding.
   if (state.kind === "preparing" && state.leaseAlive) {
-    state = await awaitCurrentPreparationAttempt(input, state, read);
+    const waited = await awaitCurrentPreparationAttempt(input, state, read);
+    if (waited === ABORTED) return abortedOutcome(input.sessionId, "during_wait");
+    state = waited;
   }
+
+  // An abort that landed during the state read: do not start a cutover now.
+  if (isAborted(input.signal)) return abortedOutcome(input.sessionId, "before_cutover");
 
   // Step 2b — a cutover is already in flight. Defer; never fall through.
   if (state.kind === "applying") {
@@ -187,9 +207,10 @@ async function awaitCurrentPreparationAttempt(
   input: CriticalCompactionInput,
   initial: Extract<PreparationPressureState, { kind: "preparing" }>,
   read: (sessionId: string) => Promise<PreparationPressureState>,
-): Promise<PreparationPressureState> {
-  const sleep =
-    input.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+): Promise<PreparationPressureState | typeof ABORTED> {
+  const signal = input.signal;
+  const sleep = (ms: number): Promise<void> =>
+    input.sleep ? input.sleep(ms) : timerSleep(ms, signal);
   const startedAt = Date.now();
   const attemptsAtStart = initial.attemptsRemaining;
 
@@ -202,8 +223,13 @@ async function awaitCurrentPreparationAttempt(
 
   let state: PreparationPressureState = initial;
   while (Date.now() - startedAt < CRITICAL_PREPARATION_WAIT_MS) {
-    await sleep(CRITICAL_PREPARATION_POLL_MS);
+    // The sleep is raced against the abort, so even an injected sleep that
+    // never settles cannot hold a stopped run here.
+    if ((await raceAbort(sleep(CRITICAL_PREPARATION_POLL_MS), signal)) === ABORTED) {
+      return ABORTED;
+    }
     state = await resolvePreparationPressureState(input.sessionId, read);
+    if (isAborted(signal)) return ABORTED;
 
     if (state.kind !== "preparing") return state; // ready, failed, or gone
     if (!state.leaseAlive) return state; // the worker died
@@ -222,6 +248,57 @@ async function awaitCurrentPreparationAttempt(
     waitedMs: Date.now() - startedAt,
   });
   return state;
+}
+
+/** A function, not an inline read, so a re-check is never narrowed away. */
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
+
+function abortedOutcome(
+  sessionId: string,
+  phase: "before_ladder" | "during_wait" | "before_cutover",
+): CriticalCompactionOutcome {
+  logger.info("compact.critical.aborted", { sessionId, phase });
+  return { kind: "deferred", reason: CRITICAL_COMPACTION_ABORTED_REASON };
+}
+
+/** `setTimeout` sleep that settles early (and clears its timer) on abort. */
+function timerSleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal?.aborted === true) {
+      resolve();
+      return;
+    }
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** Settle with `ABORTED` as soon as `signal` aborts, whatever `work` does. */
+async function raceAbort<T>(
+  work: Promise<T>,
+  signal: AbortSignal | undefined,
+): Promise<T | typeof ABORTED> {
+  if (signal === undefined) return work;
+  if (signal.aborted) return ABORTED;
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<typeof ABORTED>((resolve) => {
+    onAbort = () => resolve(ABORTED);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([work, aborted]);
+  } finally {
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+  }
 }
 
 async function runDeterministicFallback(

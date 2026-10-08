@@ -6,26 +6,28 @@ export interface LighterSavedTradingCredentialScope {
   readonly apiKeyIndex: number;
 }
 
+// Async because the desktop resolver reads the encrypted vault, whose KDF runs
+// off the main thread.
 export interface LighterTradingCredentialScopeResolver {
   readonly findSavedScope: (
     environment: LighterEnvironment,
     accountIndex: number,
-  ) => LighterSavedTradingCredentialScope | null;
+  ) => Promise<LighterSavedTradingCredentialScope | null>;
   readonly findDefaultScope?: (
     environment: LighterEnvironment,
-  ) => LighterSavedTradingCredentialScope | null;
+  ) => Promise<LighterSavedTradingCredentialScope | null>;
   // Lists every saved trading scope for an environment. Preferred over
   // `findDefaultScope` because the caller can then refuse to guess when more
   // than one account is configured instead of silently picking one.
   readonly listScopes?: (
     environment: LighterEnvironment,
-  ) => readonly LighterSavedTradingCredentialScope[];
+  ) => Promise<readonly LighterSavedTradingCredentialScope[]>;
 }
 
 const EMPTY_RESOLVER: LighterTradingCredentialScopeResolver = {
-  findSavedScope: () => null,
-  findDefaultScope: () => null,
-  listScopes: () => [],
+  findSavedScope: async () => null,
+  findDefaultScope: async () => null,
+  listScopes: async () => [],
 };
 
 let configuredResolver: LighterTradingCredentialScopeResolver = EMPTY_RESOLVER;
@@ -42,18 +44,18 @@ export function configureLighterTradingCredentialScopeResolver(
 export function resolveSavedLighterTradingCredentialScope(
   environment: LighterEnvironment,
   accountIndex: number,
-): LighterSavedTradingCredentialScope | null {
+): Promise<LighterSavedTradingCredentialScope | null> {
   return configuredResolver.findSavedScope(environment, accountIndex);
 }
 
-export function resolveDefaultLighterTradingCredentialScope(
+export async function resolveDefaultLighterTradingCredentialScope(
   environment: LighterEnvironment,
-): LighterSavedTradingCredentialScope | null {
-  return configuredResolver.findDefaultScope?.(environment) ?? null;
+): Promise<LighterSavedTradingCredentialScope | null> {
+  return (await configuredResolver.findDefaultScope?.(environment)) ?? null;
 }
 
-export function listLighterTradingCredentialScopes(
+export async function listLighterTradingCredentialScopes(
   environment: LighterEnvironment,
-): readonly LighterSavedTradingCredentialScope[] {
-  return configuredResolver.listScopes?.(environment) ?? [];
+): Promise<readonly LighterSavedTradingCredentialScope[]> {
+  return (await configuredResolver.listScopes?.(environment)) ?? [];
 }

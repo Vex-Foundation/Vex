@@ -107,14 +107,13 @@ vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
   observeAndApplyControl: vi.fn().mockResolvedValue({ outcome: "no_request" }),
 }));
 
-vi.mock("@vex-agent/engine/runtime/lease-handle.js", () => ({
-  createLeaseHandle: vi.fn().mockReturnValue({
-    lease: { sessionId: "s1", missionRunId: null, ownerId: "test-owner", processKind: "electron_main", acquiredAt: new Date(), heartbeatAt: new Date(), expiresAt: new Date() },
-    ownerId: "test-owner",
-    release: vi.fn().mockResolvedValue(undefined),
-    onLeaseLost: vi.fn(),
-  }),
-}));
+vi.mock("@vex-agent/engine/runtime/lease-handle.js", async () => {
+  const { fakeLeaseHandle } = await import("../../helpers/lease-guard.js");
+  return {
+    createLeaseHandle: vi.fn((opts: { readonly ownerId: string }) =>
+      fakeLeaseHandle({ ownerId: opts.ownerId })),
+  };
+});
 
 vi.mock("@vex-agent/engine/runtime/release-and-emit.js", () => ({
   releaseLeaseAndEmitControlState: vi.fn().mockResolvedValue(undefined),
@@ -204,7 +203,7 @@ describe("ingress.routeUserMessage", () => {
     expect(mockAddOperatorCue).toHaveBeenCalled();
     expect(mockResumeMissionRun).toHaveBeenCalledWith(
       "run-1",
-      "ingress-preempt-run-1",
+      expect.objectContaining({ ownerId: "ingress-preempt-run-1" }),
     );
     expect(mockProcessAgentTurn).not.toHaveBeenCalled();
   });

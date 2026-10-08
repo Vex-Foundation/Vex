@@ -10,6 +10,8 @@ import {
   assertLighterFeePolicyLive,
   getLighterFeePolicy,
   LIGHTER_FEE_AUTHORIZATION_DURATION_MS,
+  LIGHTER_PERPS_FEE,
+  LIGHTER_SPOT_FEE,
   type LighterFeePolicy,
 } from "@tools/lighter/fee-policy.js";
 import {
@@ -164,9 +166,9 @@ export async function readLighterFeeAuthorizationSetup(
       "The previous fee approval does not belong to the selected wallet and deployment.",
     );
   }
-  const scopes = deps
-    .listScopes(input.environment)
-    .filter((scope) => scope.accountIndex === accountIndex);
+  const scopes = (await deps.listScopes(input.environment)).filter(
+    (scope) => scope.accountIndex === accountIndex,
+  );
   if (scopes.length !== 1)
     throw new Error(
       "Complete secure Lighter trading-key setup before authorizing fees.",
@@ -306,7 +308,7 @@ export async function inspectLighterFeeAuthorization(
       return {
         status: "needs_approval",
         reason:
-          "Approve VEX's 0.1% perpetual and 0.25% spot trading fees during setup.",
+          "Approve VEX's 0.02% perpetual and 0.25% spot trading fees during setup.",
         accountIndex: observed.accountIndex,
       };
     }
@@ -496,10 +498,17 @@ export function feePolicyForStoredIntent(
     intent.terms.collectorAccountIndex < 1 ||
     intent.terms.collectorAccountIndex >= 2 ** 48 - 1 ||
     (intent.environment !== "core" && intent.environment !== "rhc") ||
-    intent.terms.maxPerpsMakerFee !== (intent.terms.revoke ? 0 : 1000) ||
-    intent.terms.maxPerpsTakerFee !== (intent.terms.revoke ? 0 : 1000) ||
-    intent.terms.maxSpotMakerFee !== (intent.terms.revoke ? 0 : 2500) ||
-    intent.terms.maxSpotTakerFee !== (intent.terms.revoke ? 0 : 2500)
+    !(
+      intent.terms.revoke
+        ? intent.terms.maxPerpsMakerFee === 0 && intent.terms.maxPerpsTakerFee === 0
+        : intent.terms.maxPerpsMakerFee === intent.terms.maxPerpsTakerFee &&
+          (intent.terms.maxPerpsMakerFee === LIGHTER_PERPS_FEE ||
+            intent.terms.maxPerpsMakerFee === 1000)
+    ) ||
+    intent.terms.maxSpotMakerFee !==
+      (intent.terms.revoke ? 0 : LIGHTER_SPOT_FEE) ||
+    intent.terms.maxSpotTakerFee !==
+      (intent.terms.revoke ? 0 : LIGHTER_SPOT_FEE)
   ) {
     throw new Error(
       "The previous host-approved fee collector cannot be verified.",
@@ -509,9 +518,15 @@ export function feePolicyForStoredIntent(
     environment: intent.environment,
     collectorAccountIndex: intent.terms.collectorAccountIndex,
     collectorL1Address: intent.terms.collectorL1Address,
-    perpsMakerFee: 1000,
-    perpsTakerFee: 1000,
-    spotMakerFee: 2500,
-    spotTakerFee: 2500,
+    // A submitted 1,000-tick authorization must still reconcile or be revoked.
+    // Fresh orders and fresh approvals always use the current 200-tick policy.
+    perpsMakerFee: intent.terms.revoke
+      ? LIGHTER_PERPS_FEE
+      : (intent.terms.maxPerpsMakerFee as typeof LIGHTER_PERPS_FEE | 1000),
+    perpsTakerFee: intent.terms.revoke
+      ? LIGHTER_PERPS_FEE
+      : (intent.terms.maxPerpsTakerFee as typeof LIGHTER_PERPS_FEE | 1000),
+    spotMakerFee: LIGHTER_SPOT_FEE,
+    spotTakerFee: LIGHTER_SPOT_FEE,
   };
 }

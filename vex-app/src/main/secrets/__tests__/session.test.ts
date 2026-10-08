@@ -123,7 +123,7 @@ describe("lockSecretSession", () => {
       events.push(state);
     });
 
-    session.unlockSecretSession("correct-password");
+    await session.unlockSecretSession("correct-password");
     const lock = session.lockSecretSession();
     // The capability-revocation event happens before lockSecretSession's first
     // await, so streams close even when quit hooks fire-and-forget the promise.
@@ -131,8 +131,56 @@ describe("lockSecretSession", () => {
     await lock;
     unsubscribe();
 
-    session.unlockSecretSession("correct-password");
+    await session.unlockSecretSession("correct-password");
     expect(events).toEqual(["unlocked", "locked"]);
+  });
+
+  it("a lock that lands while an unlock is deriving wins: the unlock reports locked", async () => {
+    mockGetSecretVaultStatus.mockReturnValue({ configured: true });
+    let releaseUnlock: (value: unknown) => void = () => {};
+    mockUnlockSecretVault.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        releaseUnlock = resolve;
+      }),
+    );
+
+    const session = await loadSession();
+    const unlocking = session.unlockSecretSession("correct-password");
+    await session.lockSecretSession();
+    releaseUnlock({ version: 1, secrets: {} });
+    const result = await unlocking;
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("wallet.keystore_locked");
+    expect(session.getSecretSessionStatus().unlocked).toBe(false);
+    expect(mockApplySecretVaultToProcessEnv).not.toHaveBeenCalled();
+  });
+
+  it("a lock that lands while the unlock is loading secrets into env scrubs them again", async () => {
+    mockGetSecretVaultStatus.mockReturnValue({ configured: true });
+    mockUnlockSecretVault.mockResolvedValue({ version: 1, secrets: {} });
+    let releaseApply: () => void = () => {};
+    mockApplySecretVaultToProcessEnv.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        releaseApply = () => {
+          // What the real apply does once its own vault read finishes.
+          process.env.JUPITER_API_KEY = "jk-loaded-after-lock";
+          resolve({ version: 1, secrets: { JUPITER_API_KEY: "jk-loaded-after-lock" } });
+        };
+      }),
+    );
+
+    const session = await loadSession();
+    const unlocking = session.unlockSecretSession("correct-password");
+    await vi.waitFor(() => expect(mockApplySecretVaultToProcessEnv).toHaveBeenCalled());
+    await session.lockSecretSession();
+    releaseApply();
+    const result = await unlocking;
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("wallet.keystore_locked");
+    expect(session.getSecretSessionStatus().unlocked).toBe(false);
+    expect(process.env.JUPITER_API_KEY).toBeUndefined();
   });
 
   it("flips status.unlocked back to false after a successful unlock", async () => {
@@ -239,7 +287,7 @@ describe("lockSecretSession", () => {
 
     process.env.JUPITER_API_KEY = "jk-should-be-cleared";
 
-    const presence = session.getUnlockedSecretPresence();
+    const presence = await session.getUnlockedSecretPresence();
     expect(presence.unlocked).toBe(false);
     expect(process.env.JUPITER_API_KEY).toBeUndefined();
   });
@@ -315,5 +363,103 @@ describe("unlockSecretSession error mapping", () => {
       expect(result.error.code).not.toBe("wallet.password_invalid");
       expect(result.error.retryable).toBe(false);
     }
+  });
+});
+
+describe("VAULT_DERIVED_KEY_CACHE: which session calls may pass the cache", () => {
+  const AUTHENTICATION_OPTIONS = { filePath: "/tmp/vex-test-vault" };
+
+  it("an unlock attempt, vault creation and restore adoption pass exactly today's options", async () => {
+    mockGetSecretVaultStatus.mockReturnValue({ configured: true });
+    mockUnlockSecretVault.mockResolvedValue({ version: 1, secrets: {} });
+    mockCreateSecretVault.mockResolvedValue({ version: 1, secrets: {} });
+    const session = await loadSession();
+
+    await session.unlockSecretSession("typed-password");
+    await session.lockSecretSession();
+    await session.initializeMasterPassword("typed-password");
+    await session.lockSecretSession();
+    await session.adoptUnlockedPassword("typed-password");
+    await session.lockSecretSession();
+
+    expect(mockUnlockSecretVault.mock.calls).toEqual([["typed-password", AUTHENTICATION_OPTIONS]]);
+    expect(mockCreateSecretVault.mock.calls).toEqual([["typed-password", AUTHENTICATION_OPTIONS]]);
+    expect(mockApplySecretVaultToProcessEnv.mock.calls).toEqual([
+      ["typed-password", AUTHENTICATION_OPTIONS],
+      ["typed-password", AUTHENTICATION_OPTIONS],
+      ["typed-password", AUTHENTICATION_OPTIONS],
+    ]);
+  });
+
+  it("unlocked-session reads and writes pass the session cache while ON", async () => {
+    mockGetSecretVaultStatus.mockReturnValue({ configured: true });
+    mockUnlockSecretVault.mockResolvedValue({ version: 1, secrets: {} });
+    mockWriteSecretVaultSecrets.mockResolvedValue({ version: 1, secrets: {} });
+    const session = await loadSession();
+    const { unlockedSessionVaultOptions } = await import("../vault-key-cache.js");
+    await session.unlockSecretSession("typed-password");
+    mockUnlockSecretVault.mockClear();
+    mockApplySecretVaultToProcessEnv.mockClear();
+
+    await session.readUnlockedSecret("JUPITER_API_KEY");
+    await session.getUnlockedSecretPresence();
+    await session.writeUnlockedSecrets({ JUPITER_API_KEY: "jup" });
+
+    expect(mockUnlockSecretVault.mock.calls).toEqual([
+      ["typed-password", unlockedSessionVaultOptions("secret_read")],
+      ["typed-password", unlockedSessionVaultOptions("secret_presence")],
+    ]);
+    expect(mockWriteSecretVaultSecrets.mock.calls).toEqual([
+      ["typed-password", { JUPITER_API_KEY: "jup" }, unlockedSessionVaultOptions("secrets_write")],
+    ]);
+    expect(mockApplySecretVaultToProcessEnv.mock.calls).toEqual([
+      ["typed-password", unlockedSessionVaultOptions("runtime_env")],
+    ]);
+    expect(unlockedSessionVaultOptions("secret_read")).toHaveProperty("derivedKeyCache");
+    await session.lockSecretSession();
+  });
+
+  it("unlocked-session reads and writes pass exactly today's options while OFF", async () => {
+    mockGetSecretVaultStatus.mockReturnValue({ configured: true });
+    mockUnlockSecretVault.mockResolvedValue({ version: 1, secrets: {} });
+    mockWriteSecretVaultSecrets.mockResolvedValue({ version: 1, secrets: {} });
+    const session = await loadSession();
+    const { configureVaultDerivedKeyCacheDeps } = await import("../vault-key-cache.js");
+    const restore = configureVaultDerivedKeyCacheDeps({ derivedKeyCache: false });
+    try {
+      await session.unlockSecretSession("typed-password");
+      await session.readUnlockedSecret("JUPITER_API_KEY");
+      await session.getUnlockedSecretPresence();
+      await session.writeUnlockedSecrets({ JUPITER_API_KEY: "jup" });
+      await session.lockSecretSession();
+    } finally {
+      restore();
+    }
+
+    for (const call of mockUnlockSecretVault.mock.calls) expect(call[1]).toEqual(AUTHENTICATION_OPTIONS);
+    for (const call of mockApplySecretVaultToProcessEnv.mock.calls) expect(call[1]).toEqual(AUTHENTICATION_OPTIONS);
+    expect(mockWriteSecretVaultSecrets.mock.calls[0]?.[2]).toEqual(AUTHENTICATION_OPTIONS);
+    expect(mockUnlockSecretVault).toHaveBeenCalledTimes(3);
+  });
+
+  it("logs [vault-timing] through the main logger without secrets", async () => {
+    // Loading the session installs the `[vault-timing]` sink.
+    await loadSession();
+    const { log } = await import("../../logger/index.js");
+    const { VaultDerivedKeyCache } = await import("@vex-lib/local-secret-vault/derived-key-cache.js");
+    const { unlockedSessionVaultOptions } = await import("../vault-key-cache.js");
+    const options = unlockedSessionVaultOptions("secret_read");
+    const cache = options.derivedKeyCache;
+    expect(cache).toBeInstanceOf(VaultDerivedKeyCache);
+    if (!(cache instanceof VaultDerivedKeyCache)) return;
+    cache.beginOperation("/tmp/vex-test-vault", "read", "secret_read", performance.now(), cache.generation).finish();
+
+    expect(log.info).toHaveBeenCalledWith("[vault-timing]", expect.objectContaining({
+      op: "read",
+      label: "secret_read",
+      cacheHit: 0,
+      cacheMiss: 0,
+      derives: 0,
+    }));
   });
 });

@@ -21,6 +21,7 @@ import logger from "@utils/logger.js";
 
 import { normalizeToolCallIds } from "../tool-call-id-normalization.js";
 import { boundedFinishReason, boundedGenerationId } from "./provider-signals.js";
+import { replayDetailsOf, replayFromCompleteDetails } from "./reasoning-replay.js";
 
 // ── Message mapping ──────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ function itemPartsWithCache(text: string): Array<ChatContentItems> {
 export function mapMessages(
   messages: ProviderMessage[],
   cache?: CacheBreakpointOptions,
+  replayReasoning = false,
 ): ChatRequest["messages"] {
   const applyBreakpoints = cache?.applyBreakpoints === true;
 
@@ -92,6 +94,10 @@ export function mapMessages(
     }
 
     if (m.role === "assistant" && m.toolCalls?.length) {
+      // R-7: the reasoning that led to these calls, handed back verbatim. Only
+      // when the caller's family gate allows it; otherwise the key is absent
+      // and the message is byte-identical to the pre-R-7 shape.
+      const reasoningDetails = replayReasoning ? replayDetailsOf(m.reasoningReplay) : null;
       // Keep toolCalls intact; convert content to parts only when non-empty.
       return {
         role: "assistant" as const,
@@ -104,6 +110,7 @@ export function mapMessages(
           type: "function" as const,
           function: { name: tc.command, arguments: JSON.stringify(tc.args) },
         })),
+        ...(reasoningDetails !== null && { reasoningDetails }),
       };
     }
 
@@ -252,10 +259,19 @@ export function extractUsage(raw: { promptTokens?: number; completionTokens?: nu
   };
 }
 
-export function parseNonStreamingResponse(response: ChatResult): InferenceResponse {
+export function parseNonStreamingResponse(
+  response: ChatResult,
+  captureReasoningReplay = false,
+): InferenceResponse {
   const choice = response.choices?.[0];
   const msg = choice?.message;
   const usage = extractUsage(response.usage);
+  // R-7: only when replay is on for this model's family; the key is absent
+  // otherwise, so the OFF response is exactly the pre-R-7 shape.
+  const reasoningReplay = captureReasoningReplay
+    ? replayFromCompleteDetails(msg?.reasoningDetails)
+    : null;
+  const replayField = reasoningReplay !== null ? { reasoningReplay } : {};
   // Carried on BOTH response paths — the streaming and buffered results are
   // contractually behaviour-equivalent, so a fallback must not silently drop
   // provenance the streamed path would have had. Open enum ⇒ verbatim.
@@ -263,24 +279,44 @@ export function parseNonStreamingResponse(response: ChatResult): InferenceRespon
   const generationId = boundedGenerationId(response.id);
 
   // Tool calls
+  //
+  // A call that cannot be assembled is dropped and COUNTED - the same rule as
+  // the streaming consumer's `assembleToolCalls`, so the turn loop refuses the
+  // whole batch on either path. A call with no id or no name is malformed too:
+  // its result could not be paired with it, and no id is invented for it.
   const sdkToolCalls: ChatToolCall[] | undefined = msg?.toolCalls;
+  let malformedToolCallCount = 0;
   if (sdkToolCalls?.length) {
     const parsed: ParsedToolCall[] = [];
     for (const tc of sdkToolCalls) {
+      // The SDK's schema guarantees these are strings, not that they are
+      // non-empty.
+      const { id } = tc;
+      const { name, arguments: args } = tc.function;
+      if (id.length === 0 || name.length === 0) {
+        malformedToolCallCount += 1;
+        logger.warn("inference.openrouter.malformed_tool_args", {
+          name,
+          argsLength: args.length,
+          reason: id.length === 0 ? "missing_id" : "missing_name",
+        });
+        continue;
+      }
       try {
         parsed.push({
-          id: tc.id,
-          name: tc.function.name,
-          arguments: JSON.parse(tc.function.arguments),
+          id,
+          name,
+          arguments: JSON.parse(args),
         });
       } catch {
         // Never log the raw argument JSON — it can carry addresses, amounts,
         // or other user/transaction content. `JSON.parse`'s own error message
         // also echoes a fragment of the offending input, so we log a fixed
         // reason + the arg length only.
+        malformedToolCallCount += 1;
         logger.warn("inference.openrouter.malformed_tool_args", {
-          name: tc.function.name,
-          argsLength: tc.function.arguments.length,
+          name,
+          argsLength: args.length,
           reason: "invalid_json",
         });
       }
@@ -293,6 +329,8 @@ export function parseNonStreamingResponse(response: ChatResult): InferenceRespon
         reasoning: msg?.reasoning ?? null,
         finishReason,
         generationId,
+        malformedToolCallCount,
+        ...replayField,
       };
     }
   }
@@ -306,6 +344,7 @@ export function parseNonStreamingResponse(response: ChatResult): InferenceRespon
     reasoning: msg?.reasoning ?? null,
     finishReason,
     generationId,
+    malformedToolCallCount,
   };
 }
 

@@ -70,7 +70,7 @@ export type WrapGateOutcome =
       readonly kind: "proceed";
       readonly intent: WalletWrapIntent;
       readonly anchor: AuthorityAnchor;
-      readonly loadSigner: () => WrapSignerLoad;
+      readonly loadSigner: () => Promise<WrapSignerLoad>;
     };
 
 /** The signer, or the `ToolResult` explaining why nothing will be signed. */
@@ -350,10 +350,10 @@ export async function gateWrapConfirm(
     };
   }
 
-  const loadSigner = (): WrapSignerLoad => {
+  const loadSigner = async (): Promise<WrapSignerLoad> => {
     let signer;
     try {
-      signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+      signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
     } catch (err) {
       return { kind: "return", result: walletScopeErrorToResult(err) };
     }

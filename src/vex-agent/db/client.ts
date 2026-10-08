@@ -17,45 +17,33 @@
  * signatures exactly. New tx-aware callers opt into `*With` explicitly.
  */
 
+
 import pg from "pg";
 import logger from "@utils/logger.js";
+import {
+  buildPoolConfig,
+  readDbBounds,
+  redactConnectionString,
+  resolveConnectionString,
+  FALLBACK_DB_URL,
+} from "./pool-config.js";
+import { closeControlPool } from "./control-pool.js";
 
 const { Pool } = pg;
 
-/**
- * Single source of truth for the dev-convenience fallback connection string,
- * used both as the actual `connectionString` and as the input to the redacted
- * warning hint. Embeds dev credentials (`vex:vex`) by necessity — those
- * credentials MUST NOT be emitted to logs/support bundles, so anything derived
- * for logging goes through `redactConnectionString()` first.
- */
-const FALLBACK_DB_URL = "postgresql://vex:vex@localhost:5777/vex_test";
-
-/**
- * Strip credential material from a Postgres connection string for safe logging.
- * Returns a `host:port/db` descriptor only — never the username, password, or
- * the credential-bearing URL. Parsing failures fall back to the literal
- * `"<unparseable url>"` so we never echo the raw (possibly secret) input.
- */
-function redactConnectionString(connectionString: string): string {
-  try {
-    const url = new URL(connectionString);
-    const host = url.hostname || "<unknown-host>";
-    const port = url.port ? `:${url.port}` : "";
-    // url.pathname is the leading-slash db path, e.g. "/vex_test".
-    const db = url.pathname.replace(/^\//, "") || "<unknown-db>";
-    return `${host}${port}/${db}`;
-  } catch {
-    return "<unparseable url>";
-  }
-}
-
 let pool: pg.Pool | null = null;
+let longStatementTimeoutMs: number | null = null;
 
+/**
+ * The main engine pool. Carries the Kairos S-4 bounds (see `pool-config.ts`):
+ * `statement_timeout`, `idle_in_transaction_session_timeout` and a bounded
+ * wait for a connection. Stop, lease renewal/release and reconciliation use
+ * the separate reserved pool in `control-pool.ts` instead.
+ */
 export function getPool(): pg.Pool {
   if (!pool) {
-    const explicitUrl = process.env.VEX_DB_URL;
-    if (!explicitUrl) {
+    const { connectionString, usingFallback } = resolveConnectionString();
+    if (usingFallback) {
       // Loud warning: the fallback exists for dev convenience but the canonical
       // expectation is that VEX_DB_URL is set explicitly (matches the
       // compose stack on port 5777). A future PR may remove the fallback entirely.
@@ -66,8 +54,9 @@ export function getPool(): pg.Pool {
         fallbackTarget: redactConnectionString(FALLBACK_DB_URL),
       });
     }
-    const connectionString = explicitUrl ?? FALLBACK_DB_URL;
-    pool = new Pool({ connectionString, max: 10, idleTimeoutMillis: 30_000 });
+    const bounds = readDbBounds();
+    longStatementTimeoutMs = bounds.longStatementTimeoutMs;
+    pool = new Pool(buildPoolConfig("main", connectionString, bounds));
     pool.on("error", (err) => {
       logger.error("vex-db.pool.error", { error: err.message });
     });
@@ -169,11 +158,47 @@ export async function withTransaction<T>(
   }
 }
 
-/** Graceful shutdown — drain the pool. */
+// ── Long statements (Kairos S-4) ────────────────────────────────
+
+/**
+ * Raise `statement_timeout` for the REST OF THE CURRENT TRANSACTION to
+ * AGENT_DB_LONG_STATEMENT_TIMEOUT_MS. For the known long statements only
+ * (compaction commits and captures, bulk archive moves); everything else
+ * keeps the pool's ordinary cap.
+ *
+ * `SET LOCAL` outside a transaction does nothing (the server only warns), so
+ * the caller MUST already have issued `BEGIN` on `client`. The value is an
+ * integer from the validated config, never user input; `SET` takes no bind
+ * parameter.
+ */
+export async function setLocalLongStatementTimeout(client: pg.PoolClient): Promise<void> {
+  if (longStatementTimeoutMs === null) {
+    longStatementTimeoutMs = readDbBounds().longStatementTimeoutMs;
+  }
+  await client.query(`SET LOCAL statement_timeout = ${Math.trunc(longStatementTimeoutMs)}`);
+}
+
+/**
+ * `withTransaction` for a transaction that runs known long statements: the
+ * raised statement cap is applied right after `BEGIN` and ends with the
+ * transaction.
+ */
+export async function withLongStatementTransaction<T>(
+  fn: (client: pg.PoolClient) => Promise<T>,
+): Promise<T> {
+  return withTransaction(async (client) => {
+    await setLocalLongStatementTimeout(client);
+    return fn(client);
+  });
+}
+
+/** Graceful shutdown - drain the main pool and the reserved control pool. */
 export async function closePool(): Promise<void> {
   if (pool) {
     await pool.end();
     pool = null;
+    longStatementTimeoutMs = null;
     logger.info("vex-db.pool.closed");
   }
+  await closeControlPool();
 }

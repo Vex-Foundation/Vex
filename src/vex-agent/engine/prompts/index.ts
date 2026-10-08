@@ -70,12 +70,35 @@ export interface PromptStackOptions {
    */
   planOffNotice?: string;
   /**
+   * One-shot engine note for a stall-recovery call (`runner/stall-recovery.ts`):
+   * set by the turn loop for the single inference call that follows an
+   * unproductive round, never persisted. Empty/undefined omits it.
+   */
+  stallRecoveryNote?: string;
+  /**
+   * One-shot engine note for a cut-off answer continuation
+   * (`runner/cutoff-continuation.ts`): set by the turn loop for the single
+   * inference call that continues an answer the output limit cut short, never
+   * persisted. Empty/undefined omits it.
+   */
+  cutoffContinuationNote?: string;
+  /**
+   * One-shot engine note after a promise-only reply (`runner/promise-nudge.ts`):
+   * set by the turn loop for the single inference call that follows a reply
+   * which announced an action but called no tool, at most once per turn, never
+   * persisted. Empty/undefined omits it.
+   */
+  promiseNudgeNote?: string;
+  /** One-request feedback after explicit tool-call markup was refused as text. */
+  textToolCallGuardNote?: string;
+  /**
    * Pre-formatted `# $VEX (own token)` live-metrics banner from
    * `buildOwnTokenBanner` (DexScreener snapshot + best-effort Virtuals
-   * holderCount). TURN-STATE (volatile live numbers) — sits right after the
-   * runtime clock. Built async + fail-soft in `buildTurnPromptStack`; any fetch
-   * error yields "" so the banner is omitted (never blocks a turn). Empty/
-   * undefined omits the section.
+   * holderCount). TURN-STATE (volatile numbers), sits right after the runtime
+   * clock. Read from a stale-while-revalidate snapshot in
+   * `buildTurnPromptStack` (never blocks a turn on the network); the text
+   * states the snapshot's age, and no snapshot or one past its max age yields
+   * "" so the banner is omitted. Empty/undefined omits the section.
    */
   ownTokenBanner?: string;
   /**
@@ -297,6 +320,18 @@ export function buildPromptStack(
   // model-driven offer.)
   if (options.planOffNotice && options.planOffNotice.length > 0) {
     turnLayers.push(options.planOffNotice);
+  }
+  if (options.stallRecoveryNote && options.stallRecoveryNote.length > 0) {
+    turnLayers.push(options.stallRecoveryNote);
+  }
+  if (options.cutoffContinuationNote && options.cutoffContinuationNote.length > 0) {
+    turnLayers.push(options.cutoffContinuationNote);
+  }
+  if (options.textToolCallGuardNote && options.textToolCallGuardNote.length > 0) {
+    turnLayers.push(options.textToolCallGuardNote);
+  }
+  if (options.promiseNudgeNote && options.promiseNudgeNote.length > 0) {
+    turnLayers.push(options.promiseNudgeNote);
   }
 
   // Safety re-anchor — LITERALLY the last layer of the whole prompt, after the

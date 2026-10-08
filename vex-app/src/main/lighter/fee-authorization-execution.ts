@@ -1,3 +1,4 @@
+import { protectSigningOperation } from "../secrets/signing-lock.js";
 import { assertIntentAuthority, LighterIntentRefusal } from "@vex-agent/tools/protocols/lighter/intent-expiry.js";
 import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js";
 import { getAddress } from "viem";
@@ -211,6 +212,13 @@ export async function executeApprovedLighterFeeAuthorization(
   input: LighterFeeAuthorizationExecutionInput,
   deps: LighterFeeAuthorizationExecutionDeps = defaultDeps(),
 ): Promise<LighterFeeAuthorizationResult> {
+  return protectSigningOperation("lighter_fee_authorization", () => runApprovedLighterFeeAuthorization(input, deps));
+}
+
+async function runApprovedLighterFeeAuthorization(
+  input: LighterFeeAuthorizationExecutionInput,
+  deps: LighterFeeAuthorizationExecutionDeps,
+): Promise<LighterFeeAuthorizationResult> {
   let intent = await readOwnedIntent(input, deps);
   if (!["approved", "tier_ready"].includes(intent.executionState))
     return reconcileLighterFeeAuthorization(input, deps);
@@ -332,7 +340,7 @@ export async function executeApprovedLighterFeeAuthorization(
   assertAuthority("before_reservation");
   intent = await deps.reserveSigning(intent, deps.now() + SIGNED_TX_TTL_MS);
   assertAuthority("after_reservation");
-  const wallet = deps.resolveWallet(input.walletResolution, input.walletPolicy, "eip155");
+  const wallet = await deps.resolveWallet(input.walletResolution, input.walletPolicy, "eip155");
   if (wallet.family !== "eip155") throw new Error("An EVM wallet is required.");
   assertAuthority("before_signing");
   signingStarted = true;

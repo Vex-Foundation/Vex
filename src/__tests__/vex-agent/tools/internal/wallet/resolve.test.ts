@@ -47,6 +47,15 @@ function codeOf(fn: () => unknown): string | undefined {
   return undefined;
 }
 
+async function asyncCodeOf(fn: () => Promise<unknown>): Promise<string | undefined> {
+  try {
+    await fn();
+  } catch (e: unknown) {
+    return (e as { code?: string }).code;
+  }
+  return undefined;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -85,20 +94,20 @@ describe("resolveSelectedAddress — address only, never decrypts", () => {
 });
 
 describe("resolveSigningWallet — decrypts only after policy passes", () => {
-  it("loads the wallet via loadWalletFromEntry when policy allows", () => {
+  it("loads the wallet via loadWalletFromEntry when policy allows", async () => {
     selectedIs();
-    mockLoadWalletFromEntry.mockReturnValue({ family: "eip155", address: EVM, privateKey: "0x" });
-    expect(resolveSigningWallet(SESSION, NONE, "eip155").address).toBe(EVM);
+    mockLoadWalletFromEntry.mockResolvedValue({ family: "eip155", address: EVM, privateKey: "0x" });
+    expect((await resolveSigningWallet(SESSION, NONE, "eip155")).address).toBe(EVM);
     expect(mockLoadWalletFromEntry).toHaveBeenCalledTimes(1);
   });
 
-  it("policy violation throws BEFORE the key is decrypted", () => {
+  it("policy violation throws BEFORE the key is decrypted", async () => {
     selectedIs();
     const policy: WalletPolicy = {
       kind: "mission_allowed",
       allowedWallets: ["0x0000000000000000000000000000000000000000"],
     };
-    expect(codeOf(() => resolveSigningWallet(SESSION, policy, "eip155"))).toBe(
+    expect(await asyncCodeOf(() => resolveSigningWallet(SESSION, policy, "eip155"))).toBe(
       ErrorCodes.WALLET_SCOPE_MISMATCH,
     );
     expect(mockLoadWalletFromEntry).not.toHaveBeenCalled();
@@ -209,9 +218,9 @@ describe("mission-setup read exception — security envelope", () => {
     );
   });
 
-  it("setup + resolveSigningWallet → STILL throws BEFORE any key decrypt", () => {
+  it("setup + resolveSigningWallet → STILL throws BEFORE any key decrypt", async () => {
     selectedIs();
-    expect(codeOf(() => resolveSigningWallet(SESSION, SETUP, "eip155"))).toBe(
+    expect(await asyncCodeOf(() => resolveSigningWallet(SESSION, SETUP, "eip155"))).toBe(
       ErrorCodes.WALLET_SCOPE_MISMATCH,
     );
     expect(mockLoadWalletFromEntry).not.toHaveBeenCalled();

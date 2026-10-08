@@ -32,7 +32,7 @@ describe("composer outcome copy", () => {
     ["iteration_limit", "action limit"],
     ["timeout", "timed out"],
     ["system_error", "internal error"],
-    ["no_progress", "only empty responses"],
+    ["no_progress", "stopped producing an answer"],
   ] as const)("marks %s as an incomplete retryable turn", (stopReason, copy) => {
     const notice = submitFailureNotice(outcome({ stopReason }));
     expect(notice?.retryable).toBe(true);

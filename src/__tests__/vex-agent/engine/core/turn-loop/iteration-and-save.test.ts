@@ -7,8 +7,20 @@ import type {
   InferenceResponse,
   InferenceUsage,
   StreamChunk,
+  ProviderMessage,
 } from "@vex-agent/inference/types.js";
 import { OpenRouterEmptyStreamError } from "@vex-agent/inference/openrouter/non-empty-stream.js";
+import type {
+  InferenceAttemptRecord,
+  ToolDispatchTimingRecord,
+  TurnRunTimingRecord,
+} from "@vex-agent/db/repos/runtime-timings.js";
+import {
+  fakeInferenceProvider,
+  withoutStreamMethod,
+} from "../../../../helpers/inference-provider.js";
+import { toStreamAbortedEvent } from "@vex-agent/engine/events/stream-bus.js";
+import { requireValue } from "../../../../helpers/require-value.js";
 
 // ── Mocks ─────────────────────────────────────────────────────
 
@@ -17,6 +29,10 @@ const mockAddEngineMessage = vi.fn();
 const mockGetLiveMessages = vi.fn().mockResolvedValue([]);
 const mockGetOperatorInstructionsAfter = vi.fn().mockResolvedValue([]);
 const mockDispatchTool = vi.fn();
+const mockStreamEmit = vi.fn();
+const mockToStreamDeltaEvent = vi.fn((sessionId: string, streamId: string, sequence: number, chunk: StreamChunk) => ({
+  sessionId, streamId, sequence, chunk,
+}));
 const mockIncrementIterations = vi.fn().mockResolvedValue(1);
 const mockUpdateStatus = vi.fn();
 const mockSetLastCheckpoint = vi.fn();
@@ -28,6 +44,15 @@ const mockSetLastCheckpoint = vi.fn();
 // The turn loop's structured bound reporting (rule 05) is asserted below, so
 // the logger is a real spy rather than a silent stub.
 const mockLoggerWarn = vi.fn();
+// These suites pin the stall BOUND itself (three unproductive rounds, then
+// no_progress), which is the behaviour with stall recovery switched off.
+// Recovery's own flow (one recovery call, then a stop if it also fails) is
+// covered in stall-recovery.test.ts.
+vi.mock("@vex-agent/engine/core/runner/stall-recovery.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/engine/core/runner/stall-recovery.js")>()),
+  STALL_RECOVERY_ENABLED: false,
+}));
+
 vi.mock("@utils/logger.js", () => ({
   default: {
     warn: (...a: unknown[]) => mockLoggerWarn(...a),
@@ -71,8 +96,10 @@ vi.mock("@vex-agent/engine/events/index.js", () => ({
   emitTranscriptAppend: vi.fn(),
   // 9-5a: executeTurn emits stream deltas through this barrel. Stub the bus so
   // a streaming provider used in these tests doesn't crash on `emit`.
-  streamDeltaBus: { emit: vi.fn(), subscribe: vi.fn(), size: vi.fn(), clear: vi.fn() },
-  toStreamDeltaEvent: vi.fn(),
+  streamDeltaBus: { emit: (...a: unknown[]) => mockStreamEmit(...a), subscribe: vi.fn(), size: vi.fn(), clear: vi.fn() },
+  toStreamAbortedEvent,
+  toStreamDeltaEvent: (sessionId: string, streamId: string, sequence: number, chunk: StreamChunk) =>
+    mockToStreamDeltaEvent(sessionId, streamId, sequence, chunk),
 }));
 
 vi.mock("@vex-agent/db/repos/mission-runs.js", () => ({
@@ -128,6 +155,27 @@ vi.mock("@vex-agent/db/repos/usage.js", () => ({
   logUsage: vi.fn(),
 }));
 
+// Runtime-timing writes are captured, not executed (Kairos Phase 1). The
+// thunk runs synchronously so each test can read the rows it produced.
+const mockInsertTurnRunTiming = vi
+  .fn<(record: TurnRunTimingRecord) => Promise<void>>()
+  .mockResolvedValue(undefined);
+const mockInsertInferenceAttempt = vi
+  .fn<(record: InferenceAttemptRecord) => Promise<void>>()
+  .mockResolvedValue(undefined);
+const mockInsertToolDispatchTiming = vi
+  .fn<(record: ToolDispatchTimingRecord) => Promise<void>>()
+  .mockResolvedValue(undefined);
+vi.mock("@vex-agent/db/repos/runtime-timings.js", () => ({
+  insertTurnRunTiming: (record: TurnRunTimingRecord) => mockInsertTurnRunTiming(record),
+  insertInferenceAttempt: (record: InferenceAttemptRecord) => mockInsertInferenceAttempt(record),
+  insertToolDispatchTiming: (record: ToolDispatchTimingRecord) =>
+    mockInsertToolDispatchTiming(record),
+  recordInBackground: (_label: string, write: () => Promise<void>) => {
+    void write();
+  },
+}));
+
 vi.mock("@vex-agent/db/client.js", () => ({
   execute: vi.fn(),
   query: vi.fn().mockResolvedValue([]),
@@ -163,7 +211,8 @@ vi.mock("@vex-agent/db/client.js", () => ({
 // Puzzle 3 atomic lease helpers — production calls these via dynamic imports
 // from runner/turn-loop/wake paths. Default outcomes: claimed lease + no
 // pending control request. Per-test overrides via `mockImplementationOnce`.
-vi.mock("@vex-agent/engine/runtime/lease-and-status.js", () => ({
+vi.mock("@vex-agent/engine/runtime/lease-and-status.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@vex-agent/engine/runtime/lease-and-status.js")>()),
   claimRunLeaseAndFlipToRunning: vi.fn().mockResolvedValue({
     outcome: "claimed",
     previousStatus: "paused_wake",
@@ -327,6 +376,7 @@ describe("turn-loop", () => {
     readonly streamThrows?: () => Error;
     readonly onChatCompletion?: () => void;
     readonly onStream?: () => void;
+    readonly onRequest?: (messages: readonly ProviderMessage[]) => void;
   }): InferenceProvider {
     let completionIndex = 0;
     let streamIndex = 0;
@@ -352,10 +402,12 @@ describe("turn-loop", () => {
           finishReason: "stop",
           generationId: null,
           servingProvider: null,
+          malformedToolCallCount: 0,
         };
       },
       chatCompletionSimple: async () => ({ content: "", usage }),
-      chatCompletionStream: async function* (): AsyncGenerator<StreamChunk> {
+      chatCompletionStream: async function* (messages): AsyncGenerator<StreamChunk> {
+        parts.onRequest?.(messages);
         parts.onStream?.();
         if (parts.streamThrows) throw parts.streamThrows();
         const scripted = parts.streamRounds ?? [];
@@ -405,6 +457,244 @@ describe("turn-loop", () => {
     timeoutMs: 60000,
     contextLimit: 128000,
   };
+
+  describe("text-only tool-call guard", () => {
+    const markup = '<｜DSML｜function_calls><｜DSML｜invoke name="lighter__order_cancel">';
+    const feedback = "Your last reply wrote a tool call as text";
+    const notice = "Tool call written as text, not run";
+    const searchCall: StreamChunk = {
+      type: "tool_call_delta", toolCallIndex: 0, toolCallId: "reissued",
+      toolCallName: "ToolSearch", toolCallArgsDelta: '{"query":"select:lighter__positions_list"}',
+    };
+
+    it("withholds raw preview markup, saves a notice and gives one structured recovery request", async () => {
+      const requests: string[] = [];
+      const provider = makeTypedProvider({
+        onRequest: (messages) => requests.push(JSON.stringify(messages)),
+        streamRounds: [
+          [...[...markup].map((text) => ({ type: "content" as const, text })), { type: "done", finishReason: "stop" }],
+          [searchCall, { type: "done", finishReason: "tool_calls" }],
+          [{ type: "content", text: "Done." }, { type: "done", finishReason: "stop" }],
+        ],
+      });
+      mockDispatchTool.mockResolvedValue({ success: true, output: '{}' });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      expect(result.text).toBe("Done.");
+      expect(result.toolCallsMade).toBe(1);
+      expect(mockDispatchTool).toHaveBeenCalledTimes(1);
+      expect(requireValue(requests[1])).toContain(feedback);
+      expect(requireValue(requests[1])).not.toContain(markup);
+      expect(requireValue(requests[2])).not.toContain(feedback);
+      expect(requireValue(mockAddMessage.mock.calls[0])[1]).toMatchObject({ role: "assistant", content: notice });
+      const previewText = mockToStreamDeltaEvent.mock.calls.map((call) => call[3].text ?? "").join("");
+      expect(previewText).not.toContain("DSML");
+      expect(previewText).not.toContain("lighter__order_cancel");
+    });
+
+    it("parks a structured recovery that still requires approval", async () => {
+      const provider = makeTypedProvider({ streamRounds: [
+        [{ type: "content", text: markup }, { type: "done", finishReason: "stop" }],
+        [{ type: "tool_call_delta", toolCallIndex: 0, toolCallId: "cancel-approval",
+          toolCallName: "lighter__order_cancel", toolCallArgsDelta: '{"environment":"rhc","orderId":"123"}' },
+        { type: "done", finishReason: "tool_calls" }],
+      ] });
+      mockDispatchTool.mockResolvedValue({
+        success: false, output: "Approval required", pendingApproval: true,
+        actionKind: "user_wallet_broadcast",
+      });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      expect(result.stopReason).toBe("approval_required");
+      expect(result.pendingApprovals).toHaveLength(1);
+      expect(mockDispatchTool).toHaveBeenCalledTimes(1);
+    });
+
+    it("OFF preserves the old reply and does not add a recovery request", async () => {
+      let requests = 0;
+      const provider = makeTypedProvider({ onStream: () => { requests += 1; }, streamRounds: [
+        [{ type: "content", text: markup }, { type: "done", finishReason: "stop" }],
+      ] });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], {
+        ...defaultLoopConfig, textToolCallGuard: false,
+      });
+      expect(result.text).toBe(markup);
+      expect(requests).toBe(1);
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      expect(requireValue(mockAddMessage.mock.calls[0])[1]).toMatchObject({ content: markup });
+      expect(mockToStreamDeltaEvent.mock.calls.map((call) => call[3].text ?? "").join("")).toBe(markup);
+    });
+
+    it("leaves a real structured batch on the normal dispatch path", async () => {
+      const requests: string[] = [];
+      const provider = makeTypedProvider({ onRequest: (messages) => requests.push(JSON.stringify(messages)), streamRounds: [
+        [{ type: "content", text: markup }, searchCall, { type: "done", finishReason: "tool_calls" }],
+        [{ type: "content", text: "Done." }, { type: "done", finishReason: "stop" }],
+      ] });
+      mockDispatchTool.mockResolvedValue({ success: true, output: '{}' });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      expect(result.toolCallsMade).toBe(1);
+      expect(requireValue(requests[1])).not.toContain(feedback);
+      expect(requireValue(mockAddMessage.mock.calls[0])[1]).toMatchObject({ content: markup });
+    });
+
+    it("stops a repeated text-only call after one correction, without dispatch", async () => {
+      let requests = 0;
+      const provider = makeTypedProvider({ onStream: () => { requests += 1; }, streamRounds: [
+        [{ type: "content", text: markup }, { type: "done", finishReason: "stop" }],
+      ] });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      expect(result).toMatchObject({ text: notice, toolCallsMade: 0, stopReason: "no_progress" });
+      expect(requests).toBe(2);
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      expect(mockAddMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it("preserves quoted documentation without a correction request", async () => {
+      const content = '```xml\n<function_calls><invoke name="ToolSearch">\n```';
+      let requests = 0;
+      const provider = makeTypedProvider({ onStream: () => { requests += 1; }, streamRounds: [
+        [...[...content].map((text) => ({ type: "content" as const, text })), { type: "done", finishReason: "stop" }],
+      ] });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      expect(result.text).toBe(content);
+      expect(requests).toBe(1);
+      expect(mockToStreamDeltaEvent.mock.calls.map((call) => call[3].text ?? "").join("")).toBe(content);
+    });
+
+    it("guards markup assembled across a cut-off answer and its continuation", async () => {
+      const requests: string[] = [];
+      const provider = makeTypedProvider({ onRequest: (messages) => requests.push(JSON.stringify(messages)), streamRounds: [
+        [{ type: "content", text: "<tool" }, { type: "done", finishReason: "length" }],
+        [{ type: "content", text: '_call name="ToolSearch">' }, { type: "done", finishReason: "stop" }],
+        [{ type: "content", text: "Done." }, { type: "done", finishReason: "stop" }],
+      ] });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      expect(result.text).toBe("Done.");
+      expect(requests).toHaveLength(3);
+      expect(requireValue(requests[2])).toContain(feedback);
+      expect(requireValue(mockAddMessage.mock.calls[0])[1]).toMatchObject({ content: notice });
+      expect(mockAddMessage).toHaveBeenCalledTimes(2);
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+    });
+
+    it("preserves a fenced example whose markup arrives in the continuation", async () => {
+      const prefix = "Example:\n```xml\n";
+      const continuation = '<function_calls><invoke name="ToolSearch">\n```';
+      const requests: string[] = [];
+      const provider = makeTypedProvider({ onRequest: (messages) => requests.push(JSON.stringify(messages)), streamRounds: [
+        [{ type: "content", text: prefix }, { type: "done", finishReason: "length" }],
+        [{ type: "content", text: continuation }, { type: "done", finishReason: "stop" }],
+      ] });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      expect(result.text).toBe(prefix + continuation);
+      expect(requests).toHaveLength(2);
+      expect(requests.join("")).not.toContain(feedback);
+      expect(mockAddMessage).toHaveBeenCalledTimes(1);
+      expect(requireValue(mockAddMessage.mock.calls[0])[1]).toMatchObject({ content: prefix + continuation });
+      expect(mockToStreamDeltaEvent.mock.calls.map((call) => call[3].text ?? "").join("")).toBe(prefix + continuation);
+    });
+
+    it("saves only the notice if Stop interrupts markup in a continuation", async () => {
+      const controller = new AbortController();
+      let requests = 0;
+      const provider = fakeInferenceProvider({ chatCompletionStream: async function* () {
+        requests += 1;
+        if (requests === 1) {
+          yield { type: "content", text: "<｜DS" };
+          yield { type: "done", finishReason: "length" };
+        } else {
+          yield { type: "content", text: 'ML｜function_calls><｜DSML｜invoke name="ToolSearch">' };
+          controller.abort();
+          yield { type: "done", finishReason: "stop" };
+        }
+      } });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [],
+        defaultLoopConfig, {}, undefined, controller.signal);
+      expect(result.stopReason).toBe("user_stopped");
+      expect(requests).toBe(2);
+      expect(mockAddMessage).toHaveBeenCalledTimes(1);
+      expect(requireValue(mockAddMessage.mock.calls[0])[1]).toMatchObject({ content: notice });
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+    });
+
+    it("keeps cutoff timeout handling and never corrects a timed-out continuation", async () => {
+      const requests: string[] = [];
+      const provider = fakeInferenceProvider({ chatCompletionStream: async function* (messages) {
+        requests.push(JSON.stringify(messages));
+        if (requests.length === 1) {
+          yield { type: "content", text: "<tool" };
+          yield { type: "done", finishReason: "length" };
+        } else {
+          yield { type: "content", text: '_call name="ToolSearch">' };
+          await new Promise<void>((resolve) => setTimeout(resolve, 30));
+          yield { type: "done", finishReason: "stop" };
+        }
+      } });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, {
+        ...makeTypedConfig(), streamIdleTimeoutMs: 5,
+      }, [], defaultLoopConfig);
+      expect(requests).toHaveLength(2);
+      expect(requests.join("")).not.toContain(feedback);
+      expect(result.text).toBe("<tool\n\n_(Answer cut off at the output limit.)_");
+      expect(mockAddMessage).toHaveBeenCalledTimes(1);
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+    });
+
+    it("drops pending markup from malformed batches and spends only the existing stall bound", async () => {
+      const requests: string[] = [];
+      const provider = makeTypedProvider({ onRequest: (messages) => requests.push(JSON.stringify(messages)), streamRounds: [
+        [{ type: "content", text: markup }, searchCall,
+          { type: "tool_call_delta", toolCallIndex: 1, toolCallId: "malformed", toolCallName: "ToolSearch", toolCallArgsDelta: "not-json" },
+          { type: "done", finishReason: "tool_calls" }],
+      ] });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      expect(result.stopReason).toBe("no_progress");
+      expect(requests).toHaveLength(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS);
+      expect(requests.join("")).not.toContain(feedback);
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      expect(mockAddMessage).not.toHaveBeenCalled();
+      expect(mockToStreamDeltaEvent.mock.calls.map((call) => call[3].text ?? "").join("")).not.toContain("DSML");
+    });
+
+    it("drops a pending opener on timeout without spending a text-guard correction", async () => {
+      let requests = 0;
+      const requestMessages: string[] = [];
+      const provider = fakeInferenceProvider({ chatCompletionStream: async function* (messages) {
+        requests += 1;
+        requestMessages.push(JSON.stringify(messages));
+        yield { type: "content", text: "<｜DS" };
+        await new Promise<void>((resolve) => setTimeout(resolve, 30));
+        yield { type: "done", finishReason: "stop" };
+      } });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, {
+        ...makeTypedConfig(), streamIdleTimeoutMs: 5,
+      }, [], defaultLoopConfig);
+      expect(result.stopReason).toBe("no_progress");
+      expect(requests).toBe(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS);
+      expect(requestMessages.join("")).not.toContain(feedback);
+      expect(mockAddMessage).not.toHaveBeenCalled();
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      expect(mockToStreamDeltaEvent.mock.calls.map((call) => call[3].text ?? "").join("")).toBe("");
+    });
+
+    it("sanitizes a stopped partial reply and never spends a correction request after Stop", async () => {
+      const controller = new AbortController();
+      let requests = 0;
+      const provider = fakeInferenceProvider({
+        chatCompletionStream: async function* () {
+          requests += 1;
+          yield { type: "content", text: markup };
+          controller.abort();
+          yield { type: "done", finishReason: "stop" };
+        },
+      });
+      const result = await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [],
+        defaultLoopConfig, {}, undefined, controller.signal);
+      expect(result.stopReason).toBe("user_stopped");
+      expect(requests).toBe(1);
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      expect(requireValue(mockAddMessage.mock.calls[0])[1]).toMatchObject({ content: notice });
+    });
+  });
 
   // ── Iteration limit ─────────────────────────────────────────
 
@@ -667,6 +957,201 @@ describe("turn-loop", () => {
     });
   });
 
+  // ── Incomplete tool batches (Kairos R-1 / R-8) ──────────────
+  //
+  // A response carrying ANY tool call that could not be assembled - cut off by
+  // the output limit or simply malformed - is refused whole: none of its calls
+  // is dispatched, not even the valid ones, and no assistant tool-call row is
+  // written. In a financial agent a surviving call can be a fund-moving
+  // prepare from a plan the model never finished writing.
+  describe("a response with a truncated or malformed tool call dispatches nothing", () => {
+    // Argument text the logs must never carry.
+    const SECRET_ARGS = '{"to":"0xfeedfacecafe","amountRaw":"424242';
+
+    const validCall = (id: string): StreamChunk => ({
+      type: "tool_call_delta",
+      toolCallIndex: 0,
+      toolCallId: id,
+      toolCallName: "web_research",
+      toolCallArgsDelta: '{"query":"0xfeedfacecafe"}',
+    });
+    const truncatedCall: StreamChunk = {
+      type: "tool_call_delta",
+      toolCallIndex: 1,
+      toolCallId: "call-cut",
+      toolCallName: "kyberswap_swap",
+      toolCallArgsDelta: SECRET_ARGS,
+    };
+
+    function warnCalls(event: string): unknown[] {
+      return mockLoggerWarn.mock.calls.filter((c) => c[0] === event).map((c) => c[1]);
+    }
+
+    async function runRounds(rounds: ReadonlyArray<readonly StreamChunk[]>) {
+      let streamCalls = 0;
+      const provider = makeTypedProvider({
+        streamRounds: rounds,
+        onStream: () => { streamCalls += 1; },
+      });
+      const result = await runTurnLoop(
+        makeContext(), [], null, 0, provider, makeTypedConfig(), [],
+        { ...defaultLoopConfig, maxIterations: 50 },
+      );
+      return { result, streamCalls: () => streamCalls };
+    }
+
+    it("valid + truncated (length): no dispatch, no persisted tool-call row, counted as a stall", async () => {
+      const { result, streamCalls } = await runRounds([[
+        validCall("call-ok"),
+        truncatedCall,
+        { type: "done", finishReason: "length" },
+      ]]);
+
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      expect(mockAddMessage).not.toHaveBeenCalled();
+      expect(result.toolCallsMade).toBe(0);
+      // Three incomplete rounds in a row end the turn with the existing stop.
+      expect(result.stopReason).toBe("no_progress");
+      expect(streamCalls()).toBe(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS);
+
+      const logs = warnCalls("engine.turn.incomplete_inference");
+      expect(logs).toHaveLength(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS);
+      expect(logs[0]).toMatchObject({
+        classification: "incomplete_tool_batch",
+        truncated: true,
+        finishReason: "length",
+        validToolCalls: 1,
+        malformedToolCalls: 1,
+        iteration: 0,
+        consecutiveUnproductiveRounds: 1,
+      });
+      expect(warnCalls("engine.turn.no_progress_stop")[0]).toMatchObject({
+        lastUnproductiveKind: "incomplete_tool_batch",
+      });
+    });
+
+    it.each(["tool_calls", "stop"])(
+      "valid + malformed (finish %s): same refusal, classified malformed rather than truncated",
+      async (finishReason) => {
+        const { result } = await runRounds([[
+          validCall("call-ok"),
+          { ...truncatedCall, toolCallArgsDelta: "not json" },
+          { type: "done", finishReason },
+        ]]);
+
+        expect(mockDispatchTool).not.toHaveBeenCalled();
+        expect(mockAddMessage).not.toHaveBeenCalled();
+        expect(result.stopReason).toBe("no_progress");
+        expect(warnCalls("engine.turn.incomplete_inference")[0]).toMatchObject({
+          classification: "incomplete_tool_batch",
+          truncated: false,
+          finishReason,
+          validToolCalls: 1,
+          malformedToolCalls: 1,
+        });
+      },
+    );
+
+    it("all calls truncated with length: incomplete (truncated), not reasoning_exhausted", async () => {
+      await runRounds([[
+        { type: "reasoning", reasoningText: "planning" },
+        { ...truncatedCall, toolCallIndex: 0 },
+        { type: "done", finishReason: "length" },
+      ]]);
+
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      expect(warnCalls("engine.turn.incomplete_inference")[0]).toMatchObject({
+        classification: "incomplete_tool_batch",
+        truncated: true,
+        validToolCalls: 0,
+        malformedToolCalls: 1,
+      });
+      expect(warnCalls("engine.turn.unproductive_round")).toHaveLength(0);
+    });
+
+    it("length with no content and no calls is reasoning_exhausted, counted and logged as such", async () => {
+      const { result } = await runRounds([[
+        { type: "reasoning", reasoningText: "thinking until the limit" },
+        { type: "done", finishReason: "length" },
+      ]]);
+
+      expect(result.stopReason).toBe("no_progress");
+      const logs = warnCalls("engine.turn.unproductive_round");
+      expect(logs).toHaveLength(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS);
+      expect(logs[0]).toMatchObject({
+        classification: "reasoning_exhausted",
+        finishReason: "length",
+        reasoningOnly: true,
+      });
+      expect(warnCalls("engine.turn.incomplete_inference")).toHaveLength(0);
+    });
+
+    it("an empty stop round keeps the blank classification", async () => {
+      await runRounds([[{ type: "done", finishReason: "stop" }]]);
+      expect(warnCalls("engine.turn.unproductive_round")[0]).toMatchObject({
+        classification: "blank",
+      });
+    });
+
+    it("mixed classes still add up to one stall streak", async () => {
+      const { result, streamCalls } = await runRounds([
+        [validCall("call-ok"), truncatedCall, { type: "done", finishReason: "length" }],
+        [{ type: "reasoning", reasoningText: "x" }, { type: "done", finishReason: "length" }],
+        [{ type: "done", finishReason: "stop" }],
+        [{ type: "content", text: "unreachable" }, { type: "done", finishReason: "stop" }],
+      ]);
+      expect(result.stopReason).toBe("no_progress");
+      expect(streamCalls()).toBe(3);
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+    });
+
+    it("the model can still recover on the next round, and only that round is persisted", async () => {
+      const { result } = await runRounds([
+        [validCall("call-ok"), truncatedCall, { type: "done", finishReason: "length" }],
+        [{ type: "content", text: "Answered." }, { type: "done", finishReason: "stop" }],
+      ]);
+      expect(result.stopReason).toBe(null);
+      expect(result.text).toBe("Answered.");
+      expect(mockDispatchTool).not.toHaveBeenCalled();
+      // Exactly one row: the text answer. The refused batch left no trace.
+      expect(mockAddMessage).toHaveBeenCalledTimes(1);
+      expect(mockAddMessage.mock.calls[0][1]).toMatchObject({ role: "assistant", content: "Answered." });
+      expect(mockAddMessage.mock.calls[0][1].toolCalls).toBeUndefined();
+    });
+
+    it("a fully valid batch is dispatched and persisted exactly as before", async () => {
+      mockDispatchTool.mockResolvedValue({ success: true, output: '{"ok":true}' });
+      const { result } = await runRounds([
+        [
+          validCall("call-a"),
+          { ...validCall("call-b"), toolCallIndex: 1 },
+          { type: "done", finishReason: "tool_calls" },
+        ],
+        [{ type: "content", text: "Done." }, { type: "done", finishReason: "stop" }],
+      ]);
+
+      expect(result.stopReason).toBe(null);
+      expect(result.toolCallsMade).toBe(2);
+      expect(mockDispatchTool).toHaveBeenCalledTimes(2);
+      const first = mockAddMessage.mock.calls[0][1];
+      expect(first.role).toBe("assistant");
+      expect(first.toolCalls).toHaveLength(2);
+      expect(warnCalls("engine.turn.incomplete_inference")).toHaveLength(0);
+      expect(warnCalls("engine.turn.unproductive_round")).toHaveLength(0);
+    });
+
+    it("never logs tool-call argument text", async () => {
+      await runRounds([[
+        validCall("call-ok"),
+        truncatedCall,
+        { type: "done", finishReason: "length" },
+      ]]);
+      const everything = JSON.stringify(mockLoggerWarn.mock.calls);
+      expect(everything).not.toContain("0xfeedfacecafe");
+      expect(everything).not.toContain("424242");
+    });
+  });
+
   // ── Deferred save ──────────────────────────────────────────
 
   describe("deferred save", () => {
@@ -756,6 +1241,208 @@ describe("turn-loop", () => {
       expect(calls[0][1].role).toBe("assistant");
       expect(calls[1][1].role).toBe("tool");
       expect(calls[1][1].toolCallId).toBe("call-1");
+    });
+  });
+  // ── Runtime measurement (Kairos Phase 1) ─────────────────────
+
+  describe("runtime timing rows", () => {
+    function turnRunRows(): TurnRunTimingRecord[] {
+      return mockInsertTurnRunTiming.mock.calls.map((c) => c[0]);
+    }
+    function attemptRows(): InferenceAttemptRecord[] {
+      return mockInsertInferenceAttempt.mock.calls.map((c) => c[0]);
+    }
+    /**
+     * `makeProvider`'s scripted buffered rounds behind a complete, typed
+     * provider. No stream method, so every round takes the buffered path
+     * exactly as `makeProvider` does; `chatCompletion` is returned for the
+     * tests that re-script it.
+     */
+    function timedProvider(responses: Parameters<typeof makeProvider>[0]) {
+      const scripted = makeProvider(responses);
+      const provider = withoutStreamMethod(fakeInferenceProvider({
+        chatCompletion: scripted.chatCompletion,
+        calculateCost: scripted.calculateCost,
+      }));
+      return { provider, chatCompletion: scripted.chatCompletion };
+    }
+
+    it("records one returned turn row and one attempt row per inference, sharing the turn run id", async () => {
+      const { provider } = timedProvider([
+        { toolCalls: [{ id: "call-1", name: "web_research", arguments: { query: "secret-arg-0xabc" } }] },
+        { content: "Done with secret-content-0xdef" },
+      ]);
+      mockDispatchTool.mockResolvedValue({ success: true, output: '{"ok":true}' });
+
+      const result = await runTurnLoop(
+        makeContext({ missionRunId: null }), [], null, 0, provider, makeTypedConfig(), [],
+        defaultLoopConfig,
+      );
+
+      expect(result.text).toBe("Done with secret-content-0xdef");
+      expect(mockInsertTurnRunTiming).toHaveBeenCalledTimes(1);
+      const turnRow = requireValue(turnRunRows()[0]);
+      expect(turnRow).toMatchObject({
+        sessionId: "session-1",
+        missionRunId: null,
+        sessionKind: "agent",
+        outcome: "returned",
+        stopReason: null,
+        errorClass: null,
+        iterations: 2,
+        toolCalls: 1,
+      });
+      expect(typeof turnRow.turnRunId).toBe("string");
+      expect(turnRow.startedAt).toBeInstanceOf(Date);
+      expect(turnRow.totalMs as number).toBeGreaterThanOrEqual(0);
+
+      const attempts = attemptRows();
+      expect(attempts).toHaveLength(2);
+      expect(attempts.map((r) => r.iteration)).toEqual([0, 1]);
+      for (const row of attempts) {
+        expect(row.turnRunId).toBe(turnRow.turnRunId);
+        expect(row.outcome).toBe("completed");
+        expect(typeof row.preInferenceMs).toBe("number");
+        expect(row.preInferenceMs as number).toBeGreaterThanOrEqual(0);
+        expect(typeof row.promptStackMs).toBe("number");
+        expect(row.promptStackMs as number).toBeGreaterThanOrEqual(0);
+        // Pre-inference covers the prompt-stack build, so it can never be shorter.
+        expect(row.preInferenceMs as number).toBeGreaterThanOrEqual(row.promptStackMs as number);
+      }
+
+      // The tool batch receives the same turn run id and the round it ran in.
+      expect(mockInsertToolDispatchTiming).toHaveBeenCalledTimes(1);
+      const dispatchRow = requireValue(mockInsertToolDispatchTiming.mock.calls[0])[0];
+      expect(dispatchRow).toMatchObject({
+        turnRunId: turnRow.turnRunId,
+        iteration: 0,
+        toolName: "web_research",
+      });
+
+      const serialised = JSON.stringify([turnRow, ...attempts, dispatchRow]);
+      expect(serialised).not.toContain("secret-arg-0xabc");
+      expect(serialised).not.toContain("secret-content-0xdef");
+    });
+
+    it("reports the stop reason on a bounded exit", async () => {
+      const { provider } = timedProvider([{ content: "Still working..." }]);
+      const result = await runTurnLoop(
+        makeContext({ sessionKind: "mission", missionRunId: "run-7" }),
+        [], null, 0, provider, makeTypedConfig(), [],
+        { ...defaultLoopConfig, maxIterations: 3 },
+      );
+
+      expect(result.stopReason).toBe("iteration_limit");
+      expect(turnRunRows()).toHaveLength(1);
+      expect(turnRunRows()[0]).toMatchObject({
+        missionRunId: "run-7",
+        sessionKind: "mission",
+        outcome: "returned",
+        stopReason: "iteration_limit",
+        iterations: 3,
+        toolCalls: 0,
+      });
+      expect(attemptRows()).toHaveLength(3);
+    });
+
+    it("records an error turn row and rethrows the original error unchanged", async () => {
+      const boom = Object.assign(new Error("provider leaked secret-content-0xdef"), {
+        name: "ProviderError",
+        status: 500,
+      });
+      const { provider, chatCompletion } = timedProvider([{ content: "unused" }]);
+      chatCompletion.mockRejectedValue(boom);
+
+      let caught: unknown;
+      try {
+        await runTurnLoop(
+          makeContext(), [], null, 0, provider, makeTypedConfig(), [],
+          defaultLoopConfig,
+        );
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBe(boom);
+      expect(turnRunRows()).toHaveLength(1);
+      const turnRow = requireValue(turnRunRows()[0]);
+      expect(turnRow).toMatchObject({
+        outcome: "error",
+        stopReason: null,
+        errorClass: "ProviderError:status=500",
+        iterations: 1,
+        toolCalls: 0,
+      });
+      // The failed attempt is measured too, under the same turn run.
+      expect(attemptRows()).toHaveLength(1);
+      expect(attemptRows()[0]).toMatchObject({
+        turnRunId: turnRow.turnRunId,
+        outcome: "error",
+        errorClass: "ProviderError:status=500",
+      });
+      expect(JSON.stringify([turnRow, ...attemptRows()])).not.toContain("secret-content-0xdef");
+    });
+
+    it("records pre-loop setup from the caller's entry timestamp, and NULL without one", async () => {
+      const { provider } = timedProvider([{ content: "Hi" }]);
+      const entryStartedAtMs = performance.now() - 250;
+      await runTurnLoop(
+        makeContext(), [], null, 0, provider, makeTypedConfig(), [],
+        { ...defaultLoopConfig, entryStartedAtMs },
+      );
+      await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+
+      const [first, second] = turnRunRows();
+      const withEntry = requireValue(first);
+      const withoutEntry = requireValue(second);
+      expect(withEntry.preLoopSetupMs as number).toBeGreaterThanOrEqual(250);
+      // Pre-loop setup ends where the loop starts; it is never part of total_ms.
+      expect(withEntry.preLoopSetupMs as number).toBeLessThan(250 + 5_000);
+      expect(withoutEntry.preLoopSetupMs).toBeNull();
+    });
+
+    it("never reports a negative pre-loop setup for an entry stamp after the loop start", async () => {
+      const { provider } = timedProvider([{ content: "Hi" }]);
+      await runTurnLoop(
+        makeContext(), [], null, 0, provider, makeTypedConfig(), [],
+        { ...defaultLoopConfig, entryStartedAtMs: performance.now() + 60_000 },
+      );
+      expect(requireValue(turnRunRows()[0]).preLoopSetupMs).toBe(0);
+    });
+
+    it("accumulates the time spent awaiting assistant and tool-result writes as persistMs", async () => {
+      const { provider } = timedProvider([
+        { toolCalls: [{ id: "call-1", name: "web_research", arguments: { query: "q" } }] },
+        { content: "Done" },
+      ]);
+      mockDispatchTool.mockResolvedValue({ success: true, output: '{"ok":true}' });
+      // Every transcript write takes ~20 ms: assistant(tool call), tool result,
+      // final assistant text = three timed writes.
+      const slowWrite = () => new Promise<void>((r) => setTimeout(r, 20));
+      mockAddMessage
+        .mockImplementationOnce(slowWrite)
+        .mockImplementationOnce(slowWrite)
+        .mockImplementationOnce(slowWrite);
+
+      await runTurnLoop(
+        makeContext({ missionRunId: null }), [], null, 0, provider, makeTypedConfig(), [],
+        defaultLoopConfig,
+      );
+
+      expect(mockAddMessage).toHaveBeenCalledTimes(3);
+      const row = requireValue(turnRunRows()[0]);
+      expect(row.persistMs as number).toBeGreaterThanOrEqual(55);
+      expect(row.persistMs as number).toBeLessThanOrEqual(row.totalMs as number);
+    });
+
+    it("gives each runTurnLoop invocation its own turn run id", async () => {
+      const { provider } = timedProvider([{ content: "Hi" }]);
+      await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+      await runTurnLoop(makeContext(), [], null, 0, provider, makeTypedConfig(), [], defaultLoopConfig);
+
+      const ids = turnRunRows().map((r) => r.turnRunId);
+      expect(ids).toHaveLength(2);
+      expect(ids[0]).not.toBe(ids[1]);
     });
   });
 });

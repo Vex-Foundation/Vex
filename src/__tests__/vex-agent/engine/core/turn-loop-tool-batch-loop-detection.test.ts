@@ -22,6 +22,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ParsedToolCall } from "@vex-agent/inference/types.js";
 
 import { definedValue } from "../../../_test-value-guards.js";
 
@@ -123,7 +124,7 @@ function identicalCalls(n: number) {
 }
 
 async function runBatch(args: {
-  readonly calls: ReturnType<typeof identicalCalls>;
+  readonly calls: ParsedToolCall[];
   readonly detector: ToolCallLoopDetector;
   readonly liveMessages?: Message[];
   readonly abortSignal?: AbortSignal;
@@ -368,5 +369,83 @@ describe("polling is not a loop, inside the batch too", () => {
     expect(dispatchTool).toHaveBeenCalledTimes(7);
     expect(outcome.kind).toBe("normal_complete");
     expect(appendEngineMessage).not.toHaveBeenCalled();
+  });
+
+  it("a listed price read past the polling cap gets the read-polling cue", async () => {
+    let n = 0;
+    dispatchTool.mockImplementation(async () => {
+      n += 1;
+      return { success: true, output: JSON.stringify({ prices: { So111: { usdPrice: 100 + n } } }) };
+    });
+    const liveMessages: Message[] = [];
+    const outcome = await runBatch({
+      calls: Array.from({ length: 8 }, (_, i) => ({
+        id: `call-${i}`,
+        name: "solana__token_prices_get",
+        arguments: { mints: ["So111"] },
+      })),
+      detector: createToolCallLoopDetector(),
+      liveMessages,
+    });
+
+    // The sixth identical-args read trips the cap; the rest is drained.
+    expect(dispatchTool).toHaveBeenCalledTimes(6);
+    expect(outcome.kind).toBe("normal_complete");
+    const [, cue, metadata] = appendEngineMessage.mock.calls[0] as [
+      string, string, { payload: Record<string, unknown> },
+    ];
+    expect(cue).toContain("Proceed with what you already have");
+    expect(cue).toContain("LoopDefer");
+    expect(metadata.payload).toMatchObject({ trigger: "read_poll", repeatCount: 6, strike: 1 });
+    expect(JSON.stringify(metadata.payload)).not.toContain("So111");
+    expect(liveMessages.at(-1)?.content).toBe(cue);
+  });
+});
+
+describe("strike two stop payload names what fired", () => {
+  it("a read-polling strike two says the model kept polling, with trigger read_poll", async () => {
+    let n = 0;
+    dispatchTool.mockImplementation(async () => {
+      n += 1;
+      return { success: true, output: JSON.stringify({ prices: { So111: { usdPrice: 100 + n } } }) };
+    });
+    const poll = (i: number) => ({
+      id: `call-${i}`,
+      name: "solana__token_prices_get",
+      arguments: { mints: ["So111"] },
+    });
+    const detector = createToolCallLoopDetector();
+    // Turn 1: the sixth identical-args read earns the correction.
+    await runBatch({ calls: Array.from({ length: 6 }, (_, i) => poll(i)), detector });
+
+    vi.clearAllMocks();
+    const outcome = await runBatch({ calls: [poll(6)], detector });
+
+    expect(outcome.kind).toBe("engine_stop");
+    if (outcome.kind !== "engine_stop") throw new Error("expected engine_stop");
+    expect(outcome.stopReason).toBe("tool_call_loop");
+    expect(outcome.stopPayload?.summary).toBe(
+      "The model kept polling the same read with identical arguments after being corrected once.",
+    );
+    expect(outcome.stopPayload?.evidence).toMatchObject({
+      toolName: "solana__token_prices_get",
+      trigger: "read_poll",
+    });
+    expect(JSON.stringify(outcome.stopPayload)).not.toContain("So111");
+  });
+
+  it("a cycle strike two keeps the original wording, with trigger cycle", async () => {
+    const detector = createToolCallLoopDetector();
+    await runBatch({ calls: identicalCalls(5), detector });
+    vi.clearAllMocks();
+    dispatchTool.mockResolvedValue({ success: true, output: "no route found" });
+
+    const outcome = await runBatch({ calls: identicalCalls(1), detector });
+
+    if (outcome.kind !== "engine_stop") throw new Error("expected engine_stop");
+    expect(outcome.stopPayload?.summary).toBe(
+      "The model repeated the same completed tool call after being corrected once.",
+    );
+    expect(outcome.stopPayload?.evidence).toMatchObject({ trigger: "cycle", cycleLength: 1 });
   });
 });

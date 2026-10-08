@@ -130,6 +130,7 @@ export const chatStopReasonSchema = z.enum([
   "no_progress",
   "restart_orphan",
   "tool_call_loop",
+  "lease_lost",
 ]);
 export type ChatStopReason = z.infer<typeof chatStopReasonSchema>;
 

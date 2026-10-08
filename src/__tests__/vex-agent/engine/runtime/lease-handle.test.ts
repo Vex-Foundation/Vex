@@ -13,6 +13,7 @@ const SAMPLE_LEASE: RunnerLease = {
   acquiredAt: new Date("2026-05-21T12:00:00Z"),
   heartbeatAt: new Date("2026-05-21T12:00:00Z"),
   expiresAt: new Date("2026-05-21T12:05:00Z"),
+  claimToken: "token-1",
 };
 
 /** The injectable timer contract `createLeaseHandle` actually accepts. */
@@ -87,7 +88,7 @@ describe("LeaseHandle", () => {
     });
 
     await timer.trigger();
-    expect(renewFn).toHaveBeenCalledWith("session-1", "owner-1", 60_000);
+    expect(renewFn).toHaveBeenCalledWith("session-1", "token-1", 60_000);
     await handle.release();
   });
 
@@ -105,10 +106,14 @@ describe("LeaseHandle", () => {
       renewFn,
       releaseFn,
       onLeaseLost,
+      // The row is still there under another claim's token: a takeover.
+      probeFn: vi.fn().mockResolvedValue(SAMPLE_LEASE),
     });
 
     await timer.trigger();
-    expect(onLeaseLost).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(onLeaseLost).toHaveBeenCalledTimes(1));
+    expect(handle.lostSignal.aborted).toBe(true);
+    expect(handle.lostReason()).toBe("taken_over");
     expect(onLeaseLost).toHaveBeenCalledWith(expect.stringContaining("stolen"));
     expect(timer.clearInterval).toHaveBeenCalledTimes(1);
     await handle.release();

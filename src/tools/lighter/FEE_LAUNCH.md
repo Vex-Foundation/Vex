@@ -12,6 +12,16 @@ the four fixed rates). Card wording owner:
 `src/vex-agent/tools/protocols/lighter/fee-authorization-disclosure.ts`.
 Namespace documentation: `src/tools/lighter/Lighter.md`.
 
+## Current rate, 2026-10-02
+
+The perpetual maker and taker rate was reduced to 2 bps (200 ticks, 0.02%)
+on both deployments. Spot remains 25 bps. The September attestation and
+observations below record the original 10 bps terms and must remain historical
+evidence. Existing 1,000-tick approvals can cover 200-tick orders; new fee
+approvals request 200 ticks. The lower rate has not been live-fill verified.
+Orders submitted with the old 1,000-tick terms retain those signed terms;
+they must be cancelled and replaced to use the lower rate.
+
 ## 1. Owner attestation, 2026-09-07
 
 The owner attested, in the integration conversation on 2026-09-07, that:
@@ -30,9 +40,9 @@ The attestation covers the IDENTITY of the collector and the INTENT of the
 terms. It does not stand in for the live checks in section 3: no fee credit has
 been observed by Vex on either deployment yet.
 
-The rates are fixed in code and cannot be changed by an agent argument or a user
-request. One tick is one millionth of executed trade value, so 1,000 ticks is
-0.10% and 2,500 ticks is 0.25%. 10 bps is Lighter's documented maximum
+At the time, the rates were fixed in code and could not be changed by an agent
+argument or a trade request. One tick is one millionth of executed trade value,
+so 1,000 ticks is 0.10% and 2,500 ticks is 0.25%. 10 bps is Lighter's documented maximum
 integrator fee on perps; the spot maximum is 1%.
 See [partner attribution](https://docs.lighter.xyz/integrations/partner-attribution.md).
 

@@ -71,6 +71,7 @@ describe("types - structural integrity", () => {
       content: "Hello world",
       toolCalls: null,
       usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      malformedToolCallCount: 0,
     };
     expect(response.content).toBe("Hello world");
     expect(response.toolCalls).toBeNull();
@@ -86,6 +87,7 @@ describe("types - structural integrity", () => {
       content: null,
       toolCalls: [toolCall],
       usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      malformedToolCallCount: 0,
     };
     expect(response.content).toBeNull();
     expect(response.toolCalls).toHaveLength(1);

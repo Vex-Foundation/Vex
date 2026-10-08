@@ -27,15 +27,15 @@
             "type": "string"
           },
           "gasPriceWei": {
-            "description": "LEGACY cap on the price per gas unit, in RAW wei as a decimal integer string, for chains without EIP-1559. Mutually exclusive with the 1559 pair. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint. That refusal is the first call of the two-call workflow.",
+            "description": "LEGACY cap on the price per gas unit, in RAW wei as a decimal integer string, for chains without EIP-1559. Mutually exclusive with the 1559 pair. REQUIRED IN EFFECT, optional in the schema, for the reason `gasLimit` gives.",
             "type": "string"
           },
           "maxFeePerGasWei": {
-            "description": "EIP-1559 cap on the total price per gas unit, in RAW wei as a decimal integer string. Pass this with maxPriorityFeePerGasWei, or pass gasPriceWei instead, never both. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint. That refusal is the first call of the two-call workflow.",
+            "description": "EIP-1559 cap on the total price per gas unit, in RAW wei as a decimal integer string. Pass this with maxPriorityFeePerGasWei, or pass gasPriceWei instead, never both. REQUIRED IN EFFECT, optional in the schema, for the reason `gasLimit` gives.",
             "type": "string"
           },
           "maxPriorityFeePerGasWei": {
-            "description": "EIP-1559 cap on the validator tip per gas unit, in RAW wei as a decimal integer string. Cannot exceed maxFeePerGasWei. REQUIRED IN EFFECT, optional in the schema: Vex never derives a spending limit from a network estimate, so a call without the caps is refused by name and returns the current estimate as a labelled hint. That refusal is the first call of the two-call workflow.",
+            "description": "EIP-1559 cap on the validator tip per gas unit, in RAW wei as a decimal integer string. Cannot exceed maxFeePerGasWei. REQUIRED IN EFFECT, optional in the schema, for the reason `gasLimit` gives.",
             "type": "string"
           }
         },

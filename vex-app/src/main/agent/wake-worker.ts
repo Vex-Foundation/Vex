@@ -5,7 +5,7 @@
  * `paused_wake` mission runs actually resume — without this they sleep forever.
  * Two independent gates keep it safe, mirroring the compact worker:
  *   - the wake EXECUTOR's OWN pre-claim provider/config gate keeps it from
- *     consuming wake rows (`claimDue` is destructive: pending→consumed) until
+ *     consuming wake rows (a claim is destructive: pending→consumed) until
  *     OPENROUTER_API_KEY + AGENT_MODEL are in env (vault unlocked + provider
  *     configured);
  *   - this SUPERVISOR only STARTS the executor once Postgres + the

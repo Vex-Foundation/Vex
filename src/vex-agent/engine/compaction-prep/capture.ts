@@ -32,7 +32,7 @@
 import type { PoolClient } from "pg";
 
 import { queryOneWith } from "../../db/client.js";
-import { getPool } from "../../db/client.js";
+import { getPool, setLocalLongStatementTimeout } from "../../db/client.js";
 import {
   LIVE_PREPARATION_STATUSES,
   createPreparation,
@@ -91,6 +91,9 @@ export async function capturePreparation(
   let committed: CompactionPreparation | null = null;
   try {
     await tx.query("BEGIN");
+    // Known long statement (S-4): the corpus capture reads the whole live
+    // transcript, so this transaction gets the raised statement cap.
+    await setLocalLongStatementTimeout(tx);
     const result = await captureInTransaction(tx, args.sessionId);
     if (
       result.outcome.kind === "skipped" ||

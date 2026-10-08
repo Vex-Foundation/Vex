@@ -15,12 +15,15 @@ import type {
   ReasoningEffort,
 } from "@vex-agent/inference/types.js";
 import { hydrateEngineSession } from "../hydrate.js";
+import * as sessionEffortRepo from "@vex-agent/db/repos/session-reasoning-effort.js";
+import { clampReasoningEffort } from "@vex-agent/inference/reasoning-effort.js";
 import type { TurnLoopConfig } from "../turn-loop.js";
 import { runTurnLoop } from "../turn-loop.js";
 import { getOpenAITools, type ToolVisibilityBase } from "@vex-agent/tools/registry.js";
 import { computeBand } from "../context-band.js";
 import { resolveProvider } from "@vex-agent/inference/registry.js";
 import { appendMessage } from "@vex-agent/engine/events/index.js";
+import type { RunnerLeaseGuard } from "../../runtime/lease-guard.js";
 import logger from "@utils/logger.js";
 import { releaseLeaseAndEmitControlState } from "../../runtime/release-and-emit.js";
 import { toToolDefinitions, DEFAULT_LOOP_CONFIG, runtimeBoundExhaustedReply } from "./shared.js";
@@ -34,6 +37,38 @@ import {
   registerSessionSliceAbortController,
   unregisterSessionSliceAbortController,
 } from "../../runtime/session-slice-abort.js";
+
+// ── Session reasoning effort (E-1) ──────────────────────────────
+
+/**
+ * The config a turn runs with. A turn that carries its own pick (an
+ * interactive chat turn) keeps it. A turn without one (wake continuation,
+ * approval or form resume) inherits the session's persisted pick, clamped to
+ * what the current model supports in case the model changed since the pick.
+ * A session that never picked keeps sending no effort (provider default).
+ */
+export async function withSessionReasoningEffort(
+  config: InferenceConfig,
+  sessionId: string,
+): Promise<InferenceConfig> {
+  if (config.reasoningEffort !== undefined) return config;
+  // Best-effort: a preference read must never fail the turn. On a failed read
+  // the turn runs exactly as it did before this column existed.
+  let persisted: ReasoningEffort | null = null;
+  try {
+    persisted = await sessionEffortRepo.getSessionReasoningEffort(sessionId);
+  } catch (cause) {
+    logger.warn("engine.agent.session_reasoning_effort_read_failed", {
+      sessionId,
+      error: cause instanceof Error ? cause.message : String(cause),
+    });
+  }
+  if (persisted === null) return config;
+  return {
+    ...config,
+    reasoningEffort: clampReasoningEffort(persisted, config.reasoningSupport),
+  };
+}
 
 // ── processAgentTurn ────────────────────────────────────────────
 
@@ -67,6 +102,8 @@ export async function processAgentTurn(
   options?: TurnRequestOptions,
 ): Promise<TurnResult> {
   logger.info("engine.agent.turn", { sessionId });
+  // Runtime measurement: the loop records entry → loop start as pre-loop setup.
+  const entryStartedAtMs = performance.now();
 
   const provider = await resolveProvider();
   if (!provider) throw new Error("No inference provider available");
@@ -106,6 +143,13 @@ export async function processAgentTurn(
   });
 
   try {
+    // Persist the operator's pick (E-1, migration 174) so the turns nobody
+    // types in this session (wake continuations, approval and form resumes)
+    // run at the same effort instead of the provider default.
+    if (options?.reasoningEffort !== undefined) {
+      await sessionEffortRepo.setSessionReasoningEffort(sessionId, options.reasoningEffort);
+    }
+
     // Save user message (FIRST state mutation, under lease)
     await appendMessage(
       sessionId,
@@ -120,8 +164,10 @@ export async function processAgentTurn(
       signal,
       undefined,
       undefined,
-      // This function claimed the lease above — it can prove ownership.
-      ownerId,
+      // This function claimed the lease above - it can prove ownership, and
+      // the loop fences its writes on this claim.
+      sessionLease,
+      entryStartedAtMs,
     );
   } finally {
     // COMMITTED-WAKE CLEANUP. A foreground Stop is request-local by contract,
@@ -188,14 +234,16 @@ export async function processAgentTurn(
 export async function continueAgentSessionUnderLease(
   sessionId: string,
   /**
-   * The session lease owner id the WAKE EXECUTOR claimed and holds around this
-   * whole call. Required, not optional: the slice runs a full turn loop, and
-   * without the owner its compaction cutover cannot prove ownership, so
-   * Full-Autonomous auto-apply silently never runs during a wake slice.
+   * The session lease the WAKE EXECUTOR claimed and holds around this whole
+   * call (its `LeaseHandle`). Required, not optional: the slice runs a full
+   * turn loop, and without it the compaction cutover cannot prove ownership,
+   * the loop's writes are not fenced, and a lost lease is not noticed.
    */
-  runnerOwnerId: string,
+  runnerLease: RunnerLeaseGuard,
 ): Promise<TurnResult> {
   logger.info("engine.agent.wake_continuation", { sessionId });
+  // Runtime measurement: the loop records entry → loop start as pre-loop setup.
+  const entryStartedAtMs = performance.now();
 
   const { gateOnOperatorStopWithClient, withSessionControlLock } = await import(
     "../../runtime/lease-and-status.js"
@@ -256,8 +304,9 @@ export async function continueAgentSessionUnderLease(
       // iteration, not only mid-stream.
       controller.signal,
       // The executor holds this session's lease for the whole slice, so the
-      // turn loop can prove ownership for a compaction cutover.
-      runnerOwnerId,
+      // turn loop can prove ownership for a compaction cutover and fence on it.
+      runnerLease,
+      entryStartedAtMs,
     );
   } finally {
     // (3) CONSUME what stopped us. An applied stop is consumed exactly once —
@@ -323,16 +372,23 @@ export async function runAgentTurnUnderLease(
    */
   boundarySignal?: AbortSignal,
   /**
-   * The lease owner id the CALLER holds for this session. Threaded so the turn
-   * loop's compaction-apply boundary action can prove ownership by equality
-   * against the live lease.
+   * The lease the CALLER holds for this session (its `LeaseHandle`). Its owner
+   * id lets the turn loop's compaction-apply boundary action prove ownership by
+   * equality against the live lease; its fence guards the loop's transcript
+   * writes; its lost signal ends the turn on `lease_lost`.
    *
    * Omitted only by callers that hold no lease of their own. That is
    * fail-closed by design: no proven ownership ⇒ the action is not registered
-   * and no cutover is consumed. Reading the row's current owner and adopting it
-   * would be impersonation, not a check.
+   * and no cutover is consumed, and writes are unfenced exactly as before.
+   * Reading the row's current owner and adopting it would be impersonation,
+   * not a check.
    */
-  runnerOwnerId?: string,
+  runnerLease?: RunnerLeaseGuard,
+  /**
+   * `performance.now()` at the caller's entry, for the turn run's queue-wait
+   * measurement only (see `TurnLoopConfig.entryStartedAtMs`). Omitted ⇒ NULL.
+   */
+  entryStartedAtMs?: number,
 ): Promise<TurnResult> {
   // Hydrate
   const hydrated = await hydrateEngineSession(sessionId);
@@ -340,7 +396,11 @@ export async function runAgentTurnUnderLease(
 
   // Force agent semantics — even if session has a mission attached, this
   // entry point always processes a single agent turn (no mission loop).
-  const agentContext = { ...hydrated.context, sessionKind: "agent" as const };
+  const agentContext = {
+    ...hydrated.context,
+    sessionKind: "agent" as const,
+    ...(runnerLease === undefined ? {} : { leaseGuard: runnerLease }),
+  };
 
   const baseVisibility: ToolVisibilityBase = {
     sessionId,
@@ -379,7 +439,8 @@ export async function runAgentTurnUnderLease(
     // The lease this runner actually holds. Threaded so the compaction-apply
     // boundary action can PROVE ownership (equality against the live lease)
     // rather than adopting whatever owner the row currently names.
-    ...(runnerOwnerId === undefined ? {} : { runnerOwnerId }),
+    ...(runnerLease === undefined ? {} : { runnerOwnerId: runnerLease.ownerId }),
+    ...(entryStartedAtMs === undefined ? {} : { entryStartedAtMs }),
   };
 
   // The transcript (including whatever this turn was woken to observe) is
@@ -403,7 +464,7 @@ export async function runAgentTurnUnderLease(
     hydrated.summary,
     hydrated.tokenCount,
     provider,
-    config,
+    await withSessionReasoningEffort(config, sessionId),
     tools,
     loopConfig,
     {}, // promptOptions
@@ -428,6 +489,19 @@ export async function runAgentTurnUnderLease(
   // empty — a partial earlier reply is preserved as-is. The turn-loop persists
   // real assistant text itself, so nothing was saved on this path; we persist
   // the synthesised reply as a normal user-visible assistant message.
+  // Lease lost: another runner owns the session. Nothing below may run - a
+  // synthesised reply and a continuation wake are both writes. Reported as
+  // `lease_lost`, never as the user's Stop.
+  if (result.stopReason === "lease_lost") {
+    return {
+      text: null,
+      toolCallsMade: result.toolCallsMade,
+      pendingApprovals: result.pendingApprovals,
+      stopReason: "lease_lost",
+      missionStatus: null,
+    };
+  }
+
   let text = result.text;
 
   /** Persist the deterministic reply for a bound that left the turn silent. */
@@ -472,7 +546,11 @@ export async function runAgentTurnUnderLease(
   let reportedStopReason = result.stopReason;
 
   if (result.stopReason === "no_progress" || result.stopReason === "tool_call_loop") {
-    if (!text) await persistSynthesisedReply(runtimeBoundExhaustedReply(result.stopReason));
+    if (!text) {
+      await persistSynthesisedReply(
+        runtimeBoundExhaustedReply(result.stopReason, result.lastUnproductiveKind ?? null),
+      );
+    }
   } else if (isContinuableRuntimeStop(result.stopReason)) {
     // The slice's own cancellation signal (a wake-driven slice carries it in
     // both positions). Handed to the scheduler, which re-reads it INSIDE the

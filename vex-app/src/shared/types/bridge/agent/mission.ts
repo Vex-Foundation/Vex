@@ -23,6 +23,8 @@ import type {
   MissionSetAutoRetryInput,
   MissionSetLaunchCeilingsInput,
   MissionSetLaunchCeilingsResult,
+  MissionSetReasoningEffortInput,
+  MissionSetReasoningEffortResult,
   MissionSetAutoRetryResult,
   MissionStartInput,
   MissionStartResult,
@@ -86,6 +88,13 @@ export interface MissionBridge {
   readonly setLaunchCeilings: (
     input: MissionSetLaunchCeilingsInput,
   ) => Promise<Result<MissionSetLaunchCeilingsResult>>;
+  /**
+   * The mission contract's reasoning effort (Kairos E-1). Contract-hash
+   * material: the engine clears acceptance on a write.
+   */
+  readonly setReasoningEffort: (
+    input: MissionSetReasoningEffortInput,
+  ) => Promise<Result<MissionSetReasoningEffortResult>>;
   /**
    * Post-stop restart: append the user's "do this differently" instruction and
    * start a NEW run against the SAME already-accepted contract. Refuses with

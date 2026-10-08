@@ -24,9 +24,10 @@ vi.mock("@vex-agent/engine/events/index.js", () => ({
   toStreamDeltaEvent: vi.fn(),
 }));
 
-const { handleTextResponse } = await import(
+const { handleTextResponse, MISSION_BOARD_DELIVERED_CUE, MISSION_CONTINUE_CUE } = await import(
   "../../../../vex-agent/engine/core/turn-loop-text-response.js"
 );
+type Message = import("@vex-agent/db/repos/messages.js").Message;
 const {
   beginPresentationScope,
   endPresentationScope,
@@ -217,5 +218,43 @@ describe("final prose consumes the staged board", () => {
     expect(boardWrite).toBeLessThan(continuation);
     expect(outcome.kind).toBe("mission_run_continue");
     expect(hasPendingPresentation(SESSION)).toBe(false);
+  });
+
+  it("cues MissionStop, not 'no stop condition met', after a mission report that carried the board", async () => {
+    beginPresentationScope(SESSION);
+    stagePresentation(SESSION, spec("mission board"), 1);
+    const tape: Message[] = [];
+
+    await handleTextResponse({
+      context: context("run-1"),
+      liveMessages: tape,
+      content: "final report",
+      reasoning: null,
+      mergeOperatorInstructions: vi.fn(),
+    });
+    expect(appendEngineMessage.mock.calls[0]?.[1]).toBe(MISSION_BOARD_DELIVERED_CUE);
+
+    // A second prose reply in a row adds no further cue: one cue per run of text.
+    await handleTextResponse({
+      context: context("run-1"),
+      liveMessages: tape,
+      content: "more prose",
+      reasoning: null,
+      mergeOperatorInstructions: vi.fn(),
+    });
+    expect(appendEngineMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the ordinary continue cue for a mission reply without a board", async () => {
+    beginPresentationScope(SESSION);
+
+    await handleTextResponse({
+      context: context("run-1"),
+      liveMessages: [],
+      content: "interim note",
+      reasoning: null,
+      mergeOperatorInstructions: vi.fn(),
+    });
+    expect(appendEngineMessage.mock.calls[0]?.[1]).toBe(MISSION_CONTINUE_CUE);
   });
 });

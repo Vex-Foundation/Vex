@@ -601,6 +601,46 @@ describe("Lighter account read: why there is nothing to show", () => {
     expect(unread.exchangeFees?.takerTicks).toBeGreaterThan(350);
   });
 
+  it("keeps the panel's fee-tier read for the next desk preview only while LIGHTER_DESK_PREWARM is on and the read succeeded", async () => {
+    const { clearLighterDeskPrewarm, takeLighterDeskPrewarmAccountLimits } = await import(
+      "@vex-agent/tools/protocols/lighter/desk-prewarm.js"
+    );
+    const { configureLighterOrderPreviewDeps } = await import(
+      "@vex-agent/tools/protocols/lighter/preview-snapshot.js"
+    );
+    reset();
+    clearLighterDeskPrewarm();
+    secrets.vaultUnlocked.mockReturnValue(true);
+    secrets.listScopes.mockReturnValue([scope]);
+    secrets.readOnlyAuth.mockResolvedValue({ authorization: "token" });
+    client.getAccount.mockResolvedValue({ accounts: [{ account_index: 42, positions: [] }] });
+    client.getAccountActiveOrders.mockResolvedValue({ orders: [] });
+    const limits = {
+      code: 200,
+      user_tier: "premium",
+      user_tier_name: "Premium",
+      current_maker_fee_tick: 120,
+      current_taker_fee_tick: 350,
+    };
+    const getAccountLimits = vi.fn().mockResolvedValue(limits);
+
+    configureLighterOrderPreviewDeps({ deskPrewarm: false });
+    await readLighterTradingAccount("core", { ...client, getAccountLimits }, () => 1);
+    expect(takeLighterDeskPrewarmAccountLimits("core", 42, Date.now())).toBeNull();
+
+    configureLighterOrderPreviewDeps({ deskPrewarm: true });
+    getAccountLimits.mockRejectedValue(new Error("provider 503"));
+    await readLighterTradingAccount("core", { ...client, getAccountLimits }, () => 1);
+    expect(takeLighterDeskPrewarmAccountLimits("core", 42, Date.now())).toBeNull();
+
+    getAccountLimits.mockResolvedValue(limits);
+    await readLighterTradingAccount("core", { ...client, getAccountLimits }, () => 1);
+    expect(takeLighterDeskPrewarmAccountLimits("core", 42, Date.now())).toEqual(limits);
+    expect(takeLighterDeskPrewarmAccountLimits("core", 43, Date.now())).toBeNull();
+    configureLighterOrderPreviewDeps(null);
+    clearLighterDeskPrewarm();
+  });
+
   it("selects only the session wallet's account when other accounts have saved keys", async () => {
     reset();
     secrets.listScopes.mockReturnValue([scope, { ...scope, accountIndex: 43 }]);

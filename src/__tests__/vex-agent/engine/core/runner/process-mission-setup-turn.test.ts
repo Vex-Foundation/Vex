@@ -155,7 +155,7 @@ vi.mock("@vex-agent/tools/protocols/catalog.js", () => ({
 const runnerModule = await import("../../../../../vex-agent/engine/core/runner.js");
 const { processAgentTurn, processMissionSetupTurn, startMission, resumeMissionRun } = runnerModule;
 const { MissionRunPausedError } = await import("../../../../../vex-agent/engine/types.js");
-const { ITERATION_LIMIT_REPLY, NO_PROGRESS_REPLY } = await import("../../../../../vex-agent/engine/core/runner/shared.js");
+const { ITERATION_LIMIT_REPLY, NO_PROGRESS_REPLY, STREAM_TIMEOUT_REPLY } = await import("../../../../../vex-agent/engine/core/runner/shared.js");
 const { missionUpdateBus } = await import("../../../../../vex-agent/engine/runtime/mission-bus.js");
 
 function makeProvider() {
@@ -386,6 +386,26 @@ describe("runner", () => {
       ]);
     });
 
+    it("runs setup at the draft's reasoning effort, never the provider default (E-1)", async () => {
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission",
+        missionId: "mission-1",
+      }));
+      const draft = makeMission({ constraintsJson: { reasoningEffort: "low" } });
+      mockGetMission.mockResolvedValueOnce(draft).mockResolvedValueOnce(draft);
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: "Noted.",
+        toolCallsMade: 0,
+        pendingApprovals: [],
+        stopReason: null,
+      });
+
+      await processMissionSetupTurn("session-1", "keep it quick");
+
+      const config: unknown = mockRunTurnLoop.mock.calls.at(0)?.[5];
+      expect(config).toMatchObject({ reasoningEffort: "low" });
+    });
+
     it("adds a DB-not-ready correction when setup text suggests starting a draft", async () => {
       mockHydrate.mockResolvedValueOnce(makeHydratedSession({
         sessionKind: "mission",
@@ -490,6 +510,31 @@ describe("runner", () => {
       // The stall reply already explains the turn; calling it "stalled" again
       // would be a second, contradictory account of the same event.
       expect(seen).not.toContain("setup_no_progress");
+    });
+
+    it("a setup stall that ended on an inference timeout gets the timeout reply", async () => {
+      mockHydrate.mockResolvedValueOnce(makeHydratedSession({
+        sessionKind: "mission",
+        missionId: "mission-1",
+      }));
+      mockGetMission.mockResolvedValue(makeMission());
+      mockRunTurnLoop.mockResolvedValueOnce({
+        text: null,
+        toolCallsMade: 0,
+        pendingApprovals: [],
+        stopReason: "no_progress",
+        lastUnproductiveKind: "stream_timeout",
+      });
+
+      const result = await processMissionSetupTurn("session-1", "trade for me");
+
+      expect(result.text).toBe(STREAM_TIMEOUT_REPLY);
+      expect(mockAddMessage).toHaveBeenCalledWith(
+        "session-1",
+        expect.objectContaining({ role: "assistant", content: STREAM_TIMEOUT_REPLY }),
+        expect.objectContaining({ messageType: "mission_setup" }),
+      );
+      expect(mockUpdateDraft).not.toHaveBeenCalled();
     });
 
     it("honours a user Stop during setup — no patch applied, no not-ready notice, faithful stopReason, signal threaded to both turn-loop positions", async () => {

@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { WebSocket as UndiciWebSocket } from "undici";
 
 import { LIGHTER_ENDPOINTS, type LighterEnvironment } from "@tools/lighter/constants.js";
 import type { LighterPrivilegedAccountAuth } from "@tools/lighter/client.js";
@@ -122,7 +123,7 @@ export function defaultLighterOrderStreamSupervisorDeps(
   return {
     listTargets: listLighterOrderStreamTargets,
     resolveAuth,
-    createSocket: (url) => new WebSocket(url) as unknown as LighterOrderStreamSocket,
+    createSocket: (url) => new UndiciWebSocket(url),
     reconcile: (environment, accountIndex, message) =>
       reconcileLighterAccountStreamMessage(environment, accountIndex, message),
     resnapshot: (environment, accountIndex, auth) =>

@@ -55,6 +55,29 @@ const ERROR_RESPONSE_PATTERN = `- On a tool error, diagnose and adapt — do NOT
   present the error and the next step to the user or the mission loop.`;
 
 /**
+ * Kairos Phase 5 (fewer rounds), rendered in EVERY mode from one constant each
+ * for the same reason as the error pattern above.
+ *
+ * ACT, DON'T NARRATE (B-4): a reply that only announces an action ("Let me
+ * check the price.") runs nothing and costs the user a round to recover. The
+ * rule names the valid end states so it never reads as "always call a tool":
+ * an answer, and waiting for the user's approval or reply. The turn loop backs
+ * it with a conservative one-nudge detector (`runner/promise-nudge.ts`).
+ *
+ * BATCH INDEPENDENT READS (T-2): independent reads issued together finish in
+ * one round instead of one each. Mutations stay out of the batching advice.
+ */
+const ACT_RESPONSE_PATTERN = `- Act, don't narrate: every response either calls the next tool(s) or delivers the
+  answer. Never end a response with only a promise such as "Let me check..." or
+  "I'll fetch..." and no tool call: nothing runs until you call it. Waiting for the
+  user's approval or reply is a valid end.`;
+
+const BATCH_READS_PATTERN = `- Batch independent reads: when several read calls do not depend on each other's
+  results (prices, balances, safety checks for different tokens), issue them together
+  in one response instead of one per round. A call that needs an earlier result waits
+  for it, and mutating calls go one step at a time.`;
+
+/**
  * Which PHASE the session is in. `mission` splits in two: setup (no run yet —
  * draft-first planning, execution locked) and run (the proactive loop). The old
  * `SessionKind`-only selection handed a mission-SETUP session the run loop's
@@ -102,7 +125,9 @@ permission. Rules:
 - If multiple mutating actions are needed, request approval for each one.
 - Do NOT loop indefinitely — agent mode is one-shot. When the user's
   request is satisfied, return a final text reply.
-${ERROR_RESPONSE_PATTERN}`;
+${ERROR_RESPONSE_PATTERN}
+${ACT_RESPONSE_PATTERN}
+${BATCH_READS_PATTERN}`;
 
 const AGENT_FULL = `# Execution Policy: AGENT / FULL
 
@@ -119,7 +144,9 @@ permission. Rules:
   final text reply — WAITING for an event is the one exception, and it is a
   \`LoopDefer\` call, not a polling loop.
 ${WAITING_PATTERN}
-${ERROR_RESPONSE_PATTERN}`;
+${ERROR_RESPONSE_PATTERN}
+${ACT_RESPONSE_PATTERN}
+${BATCH_READS_PATTERN}`;
 
 const MISSION_SETUP_RESTRICTED = `# Execution Policy: MISSION SETUP / RESTRICTED
 
@@ -135,7 +162,9 @@ You are designing a mission with the user; the run has not started. Rules:
   schedule wake-ups and do not act between messages.
 - The mission starts only when the user accepts the contract and starts the run
   from the host UI.
-${ERROR_RESPONSE_PATTERN}`;
+${ERROR_RESPONSE_PATTERN}
+${ACT_RESPONSE_PATTERN}
+${BATCH_READS_PATTERN}`;
 
 const MISSION_SETUP_FULL = `# Execution Policy: MISSION SETUP / FULL
 
@@ -152,7 +181,9 @@ permission applies to the RUN, not to setup. Rules:
   schedule wake-ups and do not act between messages.
 - The mission starts only when the user accepts the contract and starts the run
   from the host UI.
-${ERROR_RESPONSE_PATTERN}`;
+${ERROR_RESPONSE_PATTERN}
+${ACT_RESPONSE_PATTERN}
+${BATCH_READS_PATTERN}`;
 
 const MISSION_RESTRICTED = `# Execution Policy: MISSION RUN / RESTRICTED
 
@@ -168,7 +199,9 @@ Rules:
 - Continue working toward your mission objective between approval gates.
 ${WAITING_PATTERN}
 - Stop only when the frozen mission contract allows it.
-${ERROR_RESPONSE_PATTERN}`;
+${ERROR_RESPONSE_PATTERN}
+${ACT_RESPONSE_PATTERN}
+${BATCH_READS_PATTERN}`;
 
 const MISSION_FULL = `# Execution Policy: MISSION RUN / FULL
 
@@ -182,4 +215,6 @@ You are in mission mode (goal-driven loop) with full permission. Rules:
   action still obeys gas reserve, fresh balances, quote/preview, and token
   verification.
 ${WAITING_PATTERN}
-${ERROR_RESPONSE_PATTERN}`;
+${ERROR_RESPONSE_PATTERN}
+${ACT_RESPONSE_PATTERN}
+${BATCH_READS_PATTERN}`;

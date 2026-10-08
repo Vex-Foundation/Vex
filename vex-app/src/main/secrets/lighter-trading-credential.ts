@@ -11,8 +11,14 @@ import {
   unlockSecretVault,
   writeSecretVaultExtraSecrets,
 } from "@vex-lib/local-secret-vault.js";
-import { SECRETS_VAULT_FILE } from "../paths/config-dir.js";
+// Every Lighter credential save, activation and removal drops the order path's
+// cached READ-ONLY account auth tokens first, so a token minted for a key that
+// is being replaced or removed is never reused (LIGHTER_READ_AUTH_CACHE).
+import { invalidateLighterReadAuthCache } from "@vex-agent/tools/protocols/lighter/read-auth-cache.js";
 import { requireUnlockedMasterPassword } from "./session.js";
+// Every vault call here uses the session's own held password, so each passes
+// the session's derived-key cache options (`VAULT_DERIVED_KEY_CACHE`).
+import { unlockedSessionVaultOptions } from "./vault-key-cache.js";
 
 export interface UnlockedLighterTradingCredentialStatus {
   readonly present: boolean;
@@ -39,10 +45,32 @@ export interface UnlockedLighterTradingCredentialScope {
   readonly apiKeyIndex: number;
 }
 
+/**
+ * Serialises this module's vault MUTATIONS.
+ *
+ * The vault KDF is async, so a read-then-write here (the pending-key conflict
+ * check, the pending to active promotion) now yields between its read and its
+ * write. When the KDF was synchronous each of these ran as one uninterrupted
+ * step. The vault library already serialises each single read or write per
+ * file; this chain keeps every multi-step credential mutation whole, so two
+ * concurrent saves can never both pass the conflict check against the same old
+ * state. A failed mutation never blocks the next one.
+ */
+let credentialMutationTail: Promise<void> = Promise.resolve();
+
+function serializeCredentialMutation<T>(fn: () => Promise<T>): Promise<T> {
+  const result = credentialMutationTail.then(fn, fn);
+  credentialMutationTail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
 export function createUnlockedVaultLighterTradingSecretReader(): LighterTradingSecretReader {
   return {
     readTradingApiPrivateKey: async (reference) => {
-      const state = getUnlockedLighterTradingCredentialRegistrationState(reference);
+      const state = await getUnlockedLighterTradingCredentialRegistrationState(reference);
       if (state === LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE) return null;
       return readUnlockedLighterTradingApiPrivateKey(reference);
     },
@@ -52,7 +80,16 @@ export function createUnlockedVaultLighterTradingSecretReader(): LighterTradingS
 export function writeUnlockedLighterTradingApiPrivateKey(
   reference: LighterTradingCredentialVaultReference,
   privateKey: string,
-): UnlockedLighterTradingCredentialStatus {
+): Promise<UnlockedLighterTradingCredentialStatus> {
+  return serializeCredentialMutation(() =>
+    writeUnlockedLighterTradingApiPrivateKeyNow(reference, privateKey),
+  );
+}
+
+async function writeUnlockedLighterTradingApiPrivateKeyNow(
+  reference: LighterTradingCredentialVaultReference,
+  privateKey: string,
+): Promise<UnlockedLighterTradingCredentialStatus> {
   assertReference(reference);
   const material = materialFromSecret(privateKey);
   const password = requireUnlockedMasterPassword();
@@ -61,10 +98,11 @@ export function writeUnlockedLighterTradingApiPrivateKey(
   }
 
   try {
-    writeSecretVaultExtraSecrets(
+    invalidateLighterReadAuthCache();
+    await writeSecretVaultExtraSecrets(
       password.data,
       { [reference.vaultCredentialId]: material.privateKey },
-      { filePath: SECRETS_VAULT_FILE },
+      unlockedSessionVaultOptions("lighter_write"),
     );
     return { present: true, reference };
   } catch {
@@ -83,7 +121,16 @@ export function writeUnlockedLighterTradingApiPrivateKey(
 export function writeUnlockedPendingLighterTradingApiPrivateKey(
   reference: LighterTradingCredentialVaultReference,
   privateKey: string,
-): UnlockedPendingLighterTradingCredentialStatus {
+): Promise<UnlockedPendingLighterTradingCredentialStatus> {
+  return serializeCredentialMutation(() =>
+    writeUnlockedPendingLighterTradingApiPrivateKeyNow(reference, privateKey),
+  );
+}
+
+async function writeUnlockedPendingLighterTradingApiPrivateKeyNow(
+  reference: LighterTradingCredentialVaultReference,
+  privateKey: string,
+): Promise<UnlockedPendingLighterTradingCredentialStatus> {
   assertReference(reference);
   const material = materialFromSecret(privateKey);
   const password = requireUnlockedMasterPassword();
@@ -94,9 +141,10 @@ export function writeUnlockedPendingLighterTradingApiPrivateKey(
   let existingPrivateKey: string | undefined;
   let existingState: string | undefined;
   try {
-    const contents = unlockSecretVault(password.data, {
-      filePath: SECRETS_VAULT_FILE,
-    });
+    const contents = await unlockSecretVault(
+      password.data,
+      unlockedSessionVaultOptions("lighter_pending_check"),
+    );
     existingPrivateKey = contents.extraSecrets?.[reference.vaultCredentialId];
     existingState = contents.extraSecrets?.[registrationStateVaultId(reference)];
   } catch {
@@ -119,14 +167,15 @@ export function writeUnlockedPendingLighterTradingApiPrivateKey(
   }
 
   try {
-    writeSecretVaultExtraSecrets(
+    invalidateLighterReadAuthCache();
+    await writeSecretVaultExtraSecrets(
       password.data,
       {
         [reference.vaultCredentialId]: material.privateKey,
         [registrationStateVaultId(reference)]:
           LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE,
       },
-      { filePath: SECRETS_VAULT_FILE },
+      unlockedSessionVaultOptions("lighter_write"),
     );
     return {
       present: true,
@@ -138,18 +187,19 @@ export function writeUnlockedPendingLighterTradingApiPrivateKey(
   }
 }
 
-export function getUnlockedLighterTradingCredentialRegistrationState(
+export async function getUnlockedLighterTradingCredentialRegistrationState(
   reference: LighterTradingCredentialVaultReference,
-): LighterTradingCredentialRegistrationState | null {
+): Promise<LighterTradingCredentialRegistrationState | null> {
   assertReference(reference);
   const password = requireUnlockedMasterPassword();
   if (!password.ok) throw lockedCredentialError("checked");
 
   let state: string | undefined;
   try {
-    const contents = unlockSecretVault(password.data, {
-      filePath: SECRETS_VAULT_FILE,
-    });
+    const contents = await unlockSecretVault(
+      password.data,
+      unlockedSessionVaultOptions("lighter_registration_state"),
+    );
     state = contents.extraSecrets?.[registrationStateVaultId(reference)];
   } catch {
     throw pendingCredentialError("registration state is not readable");
@@ -167,7 +217,13 @@ export function getUnlockedLighterTradingCredentialRegistrationState(
 /** Promote only an existing pending credential after live provider verification. */
 export function activateUnlockedLighterTradingCredential(
   reference: LighterTradingCredentialVaultReference,
-): UnlockedPendingLighterTradingCredentialStatus {
+): Promise<UnlockedPendingLighterTradingCredentialStatus> {
+  return serializeCredentialMutation(() => activateUnlockedLighterTradingCredentialNow(reference));
+}
+
+async function activateUnlockedLighterTradingCredentialNow(
+  reference: LighterTradingCredentialVaultReference,
+): Promise<UnlockedPendingLighterTradingCredentialStatus> {
   assertReference(reference);
   const password = requireUnlockedMasterPassword();
   if (!password.ok) throw lockedCredentialError("saved");
@@ -175,7 +231,10 @@ export function activateUnlockedLighterTradingCredential(
   let privateKey: string | undefined;
   let state: string | undefined;
   try {
-    const contents = unlockSecretVault(password.data, { filePath: SECRETS_VAULT_FILE });
+    const contents = await unlockSecretVault(
+      password.data,
+      unlockedSessionVaultOptions("lighter_activation_check"),
+    );
     privateKey = contents.extraSecrets?.[reference.vaultCredentialId];
     state = contents.extraSecrets?.[registrationStateVaultId(reference)];
   } catch {
@@ -196,10 +255,11 @@ export function activateUnlockedLighterTradingCredential(
     throw pendingCredentialError("cannot be activated from its current state");
   }
   try {
-    writeSecretVaultExtraSecrets(
+    invalidateLighterReadAuthCache();
+    await writeSecretVaultExtraSecrets(
       password.data,
       { [registrationStateVaultId(reference)]: LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE },
-      { filePath: SECRETS_VAULT_FILE },
+      unlockedSessionVaultOptions("lighter_write"),
     );
     return {
       present: true,
@@ -211,10 +271,10 @@ export function activateUnlockedLighterTradingCredential(
   }
 }
 
-export function deleteUnlockedLighterTradingApiPrivateKey(
+export async function deleteUnlockedLighterTradingApiPrivateKey(
   reference: LighterTradingCredentialVaultReference,
-): UnlockedLighterTradingCredentialStatus {
-  return deleteUnlockedLighterTradingApiPrivateKeys([reference])[0]!;
+): Promise<UnlockedLighterTradingCredentialStatus> {
+  return (await deleteUnlockedLighterTradingApiPrivateKeys([reference]))[0]!;
 }
 
 /**
@@ -224,7 +284,13 @@ export function deleteUnlockedLighterTradingApiPrivateKey(
  */
 export function deleteUnlockedLighterTradingApiPrivateKeys(
   references: readonly LighterTradingCredentialVaultReference[],
-): readonly UnlockedLighterTradingCredentialStatus[] {
+): Promise<readonly UnlockedLighterTradingCredentialStatus[]> {
+  return serializeCredentialMutation(() => deleteUnlockedLighterTradingApiPrivateKeysNow(references));
+}
+
+async function deleteUnlockedLighterTradingApiPrivateKeysNow(
+  references: readonly LighterTradingCredentialVaultReference[],
+): Promise<readonly UnlockedLighterTradingCredentialStatus[]> {
   if (references.length === 0) {
     throw new VexError(
       ErrorCodes.LIGHTER_INVALID_REQUEST,
@@ -244,10 +310,11 @@ export function deleteUnlockedLighterTradingApiPrivateKeys(
       updates[reference.vaultCredentialId] = null;
       updates[registrationStateVaultId(reference)] = null;
     }
-    writeSecretVaultExtraSecrets(
+    invalidateLighterReadAuthCache();
+    await writeSecretVaultExtraSecrets(
       password.data,
       updates,
-      { filePath: SECRETS_VAULT_FILE },
+      unlockedSessionVaultOptions("lighter_write"),
     );
     return references.map((reference) => ({ present: false, reference }));
   } catch {
@@ -259,9 +326,9 @@ export function deleteUnlockedLighterTradingApiPrivateKeys(
   }
 }
 
-export function getUnlockedLighterTradingCredentialStatus(
+export async function getUnlockedLighterTradingCredentialStatus(
   reference: LighterTradingCredentialVaultReference,
-): UnlockedLighterTradingCredentialStatus {
+): Promise<UnlockedLighterTradingCredentialStatus> {
   assertReference(reference);
   const password = requireUnlockedMasterPassword();
   if (!password.ok) {
@@ -269,9 +336,10 @@ export function getUnlockedLighterTradingCredentialStatus(
   }
 
   try {
-    const contents = unlockSecretVault(password.data, {
-      filePath: SECRETS_VAULT_FILE,
-    });
+    const contents = await unlockSecretVault(
+      password.data,
+      unlockedSessionVaultOptions("lighter_status"),
+    );
     const value = contents.extraSecrets?.[reference.vaultCredentialId];
     return {
       present: typeof value === "string" && value.trim().length > 0,
@@ -286,15 +354,15 @@ export function getUnlockedLighterTradingCredentialStatus(
   }
 }
 
-export function hasUnlockedLighterTradingCredential(
+export async function hasUnlockedLighterTradingCredential(
   environment: LighterTradingCredentialVaultReference["environment"],
-): boolean {
-  return listUnlockedLighterTradingCredentialScopes(environment).length > 0;
+): Promise<boolean> {
+  return (await listUnlockedLighterTradingCredentialScopes(environment)).length > 0;
 }
 
 export function listUnlockedLighterTradingCredentialScopes(
   environment?: LighterTradingCredentialVaultReference["environment"],
-): readonly UnlockedLighterTradingCredentialScope[] {
+): Promise<readonly UnlockedLighterTradingCredentialScope[]> {
   return listUnlockedLighterTradingCredentialScopesByManagement(environment, false);
 }
 
@@ -305,21 +373,22 @@ export function listUnlockedLighterTradingCredentialScopes(
  */
 export function listUnlockedManagedLighterTradingCredentialScopes(
   environment?: LighterTradingCredentialVaultReference["environment"],
-): readonly UnlockedLighterTradingCredentialScope[] {
+): Promise<readonly UnlockedLighterTradingCredentialScope[]> {
   return listUnlockedLighterTradingCredentialScopesByManagement(environment, true);
 }
 
-function listUnlockedLighterTradingCredentialScopesByManagement(
+async function listUnlockedLighterTradingCredentialScopesByManagement(
   environment: LighterTradingCredentialVaultReference["environment"] | undefined,
   managedOnly: boolean,
-): readonly UnlockedLighterTradingCredentialScope[] {
+): Promise<readonly UnlockedLighterTradingCredentialScope[]> {
   const password = requireUnlockedMasterPassword();
   if (!password.ok) return [];
 
   try {
-    const contents = unlockSecretVault(password.data, {
-      filePath: SECRETS_VAULT_FILE,
-    });
+    const contents = await unlockSecretVault(
+      password.data,
+      unlockedSessionVaultOptions("lighter_scopes"),
+    );
     const extraSecrets = contents.extraSecrets ?? {};
     const scopes: UnlockedLighterTradingCredentialScope[] = [];
     for (const [key, value] of Object.entries(extraSecrets)) {
@@ -365,9 +434,9 @@ function listUnlockedLighterTradingCredentialScopesByManagement(
   }
 }
 
-export function readUnlockedLighterTradingApiPrivateKey(
+export async function readUnlockedLighterTradingApiPrivateKey(
   reference: LighterTradingCredentialVaultReference,
-): string | null {
+): Promise<string | null> {
   assertReference(reference);
   const password = requireUnlockedMasterPassword();
   if (!password.ok) {
@@ -379,9 +448,10 @@ export function readUnlockedLighterTradingApiPrivateKey(
   }
 
   try {
-    const contents = unlockSecretVault(password.data, {
-      filePath: SECRETS_VAULT_FILE,
-    });
+    const contents = await unlockSecretVault(
+      password.data,
+      unlockedSessionVaultOptions("lighter_key"),
+    );
     const value = contents.extraSecrets?.[reference.vaultCredentialId];
     return typeof value === "string" && value.trim().length > 0 ? value : null;
   } catch {

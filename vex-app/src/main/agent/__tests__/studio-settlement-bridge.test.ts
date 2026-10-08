@@ -160,9 +160,11 @@ vi.mock("@vex-agent/engine/core/approval-runtime.js", () => ({
   },
 }));
 
-const { setupStudioSettlementBridge, awaitStudioRuntimeReady } = await import(
-  "../studio-settlement-bridge.js"
-);
+const {
+  setupStudioSettlementBridge,
+  awaitStudioRuntimeReady,
+  whenStudioRuntimeSettled,
+} = await import("../studio-settlement-bridge.js");
 const { repairPendingStudioRefusal } = await import(
   "../../studio/approval-refusals.js"
 );
@@ -576,6 +578,38 @@ describe("the registration retry is OWNED, and a teardown ends it", () => {
  * only on failures that happen after the database is ready.
  */
 describe("the database is not up yet", () => {
+  /**
+   * THE EXECUTION GATE'S WAIT. The window no longer waits for the barrier, so
+   * the gate that holds the approvals IPC waits for it instead, UNBOUNDED: past
+   * the 15 s bound the window used to spend, and resolving only once the
+   * reconciler has actually run.
+   */
+  it("whenStudioRuntimeSettled outlasts the boot bound and resolves only after the reconcile", async () => {
+    vi.useFakeTimers();
+    try {
+      poolConfig = null;
+      migrationsDone = false;
+      const teardown = setupStudioSettlementBridge();
+      let settled = false;
+      void whenStudioRuntimeSettled().then(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(settled).toBe(false);
+      expect(reconcileAbandonedStudioDispatches).not.toHaveBeenCalled();
+
+      databaseIsUp();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(settled).toBe(true);
+      expect(trace).toEqual(["preflight", "reconcile", "reconcile_unstarted"]);
+      teardown();
+      // After teardown there is no barrier: the wait answers at once.
+      await expect(whenStudioRuntimeSettled()).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("waits as long as the database takes, then opens Studio", async () => {
     vi.useFakeTimers();
     try {

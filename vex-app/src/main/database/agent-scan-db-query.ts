@@ -23,7 +23,7 @@
  * match zero rows forever, and the page would look empty rather than broken.
  */
 
-import { Client, type ClientConfig } from "pg";
+import type { Client } from "pg";
 import { err, type Result, type VexError } from "@shared/ipc/result.js";
 import {
   AGENT_SCAN_PAGE_SIZE,
@@ -40,6 +40,7 @@ import {
 import { TOKEN_SYMBOL_MAX_LENGTH } from "@shared/token-symbol-sanitizer.js";
 import { AGENT_ACTIVITY_LOGICAL_ROW_PREDICATE } from "./agent-activity-logical-row.js";
 import { buildPoolConfig } from "./db-config.js";
+import { runWithMainDbClient } from "./main-ipc-pg-pool.js";
 import { log } from "../logger/index.js";
 
 const CONNECT_TIMEOUT_MS = 2_000;
@@ -162,31 +163,17 @@ export async function withClient<T>(
   }
   if (cfg === null) return dbUnavailable(correlationId);
 
-  const clientConfig: ClientConfig = {
-    host: cfg.host,
-    port: cfg.port,
-    database: cfg.database,
-    user: cfg.user,
-    password: cfg.password,
-    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
-    statement_timeout: SESSION_STATEMENT_TIMEOUT_MS,
-  };
-  const client = new Client(clientConfig);
-  try {
-    await client.connect();
-  } catch (cause) {
-    log.warn("[agent-scan-db] client.connect failed", cause);
-    return dbUnavailable(correlationId);
-  }
-  try {
-    return await fn(client);
-  } finally {
-    try {
-      await client.end();
-    } catch (cause) {
-      log.warn("[agent-scan-db] client.end failed (non-fatal)", cause);
-    }
-  }
+  // Fresh client per call, or a pooled one when MAIN_IPC_PG_POOL is on
+  // (`main-ipc-pg-pool.ts`): same config, timeouts and failure results.
+  return runWithMainDbClient(
+    cfg,
+    {
+      logPrefix: "[agent-scan-db]",
+      timeouts: { connectTimeoutMs: CONNECT_TIMEOUT_MS, statementTimeoutMs: SESSION_STATEMENT_TIMEOUT_MS },
+      onConnectFailed: () => dbUnavailable(correlationId),
+    },
+    fn,
+  );
 }
 
 export async function rollbackQuietly(client: Client): Promise<void> {

@@ -24,11 +24,13 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { query, queryOne } from "@vex-agent/db/client.js";
+import { getPool, query, queryOne } from "@vex-agent/db/client.js";
+import { requireValue } from "../../helpers/require-value.js";
 import * as reportingRepo from "@vex-agent/db/repos/agentscan-reporting.js";
 import {
   attachLighterFillToIntent,
   lighterFillIdentity,
+  hasMissingLighterFillPositionEffect,
   recordedLighterFillBaseSizeForIntent,
   recordLighterFillActivity,
   type LighterFillRecord,
@@ -609,6 +611,165 @@ describe("knowledge that arrives after delivery", () => {
       ["lighter_fill", 0],
       ["lighter_fill_enrichment", 1],
     ]);
+  });
+});
+
+describe("position knowledge independently of realized PnL", () => {
+  function positionOnly(overrides: Partial<LighterFillRecord> = {}): LighterFillRecord {
+    const complete = authenticatedRow();
+    return { ...complete, accountFacts: { ...requireValue(complete.accountFacts), accountPnl: null }, ...overrides };
+  }
+
+  const exactIntent = {
+    intentId: "intent-1", environment: ENVIRONMENT, accountIndex: ACCOUNT, marketIndex: MARKET,
+    side: "buy" as const, clientOrderIndex: "555",
+  };
+  it("finds missing perpetual position effects only within the exact intent's account, side, market and client order", async () => {
+    await recordLighterFillActivity(publicRow());
+    expect(await hasMissingLighterFillPositionEffect(exactIntent)).toBe(true);
+    for (const different of [
+      { intentId: "intent-2" }, { environment: "rhc" as const }, { accountIndex: ACCOUNT + 1 },
+      { marketIndex: MARKET + 1 }, { side: "sell" as const }, { clientOrderIndex: "556" },
+      { clientOrderIndex: null }, { marketIndex: 2048 },
+    ]) expect(await hasMissingLighterFillPositionEffect({ ...exactIntent, ...different })).toBe(false);
+    await recordLighterFillActivity(positionOnly());
+    expect(await stored()).toMatchObject({ position_effect: "reduce", account_pnl: null });
+    expect(await hasMissingLighterFillPositionEffect(exactIntent)).toBe(false);
+  });
+
+  it("does not reread a stored contradictory effect or attribute a held fill to the intent", async () => {
+    await recordLighterFillActivity(publicRow({ executionIntentId: null }));
+    expect(await hasMissingLighterFillPositionEffect(exactIntent)).toBe(false);
+    await query("TRUNCATE lighter_fills RESTART IDENTITY CASCADE");
+    await recordLighterFillActivity(positionOnly({ positionEffect: "unknown" }));
+    expect(await hasMissingLighterFillPositionEffect(exactIntent)).toBe(false);
+  });
+
+  it("stores position effect while PnL stays unknown and never fabricates zero", async () => {
+    expect(await recordLighterFillActivity(positionOnly())).toMatchObject({ kind: "recorded" });
+    expect(await stored()).toMatchObject({ position_size_before: "-2.5", position_sign_changed: false, position_effect: "reduce", account_pnl: null, revision: 0 });
+  });
+
+  it("keeps complete-PnL behavior with the switch off at insertion and enrichment", async () => {
+    expect(await recordLighterFillActivity(positionOnly(), undefined, { positionFactsWithoutPnl: false })).toMatchObject({ kind: "recorded" });
+    expect(await stored()).toMatchObject({ position_size_before: null, position_effect: null, account_pnl: null });
+    expect(await recordLighterFillActivity(authenticatedRow(), undefined, { positionFactsWithoutPnl: false })).toMatchObject({ kind: "enriched", revision: 1 });
+  });
+
+  it("enriches position facts then PnL independently, each once with its revision and outbox delivery", async () => {
+    await recordLighterFillActivity(publicRow());
+    await reportingRepo.enqueueEligibleLighterFills(false, GENERATION);
+    const base = requireValue(await queryOne<{ id: string }>("SELECT id FROM agentscan_outbox WHERE source_kind='lighter_fill'"));
+    await reportingRepo.markOutboxSent([Number(base.id)], GENERATION);
+    expect(await recordLighterFillActivity(positionOnly())).toMatchObject({ kind: "enriched", revision: 1 });
+    expect(await reportingRepo.enqueueEligibleLighterFills(false, GENERATION)).toMatchObject({ rows: 1 });
+    const revisionOne = requireValue(await queryOne<{ id: string }>("SELECT id FROM agentscan_outbox WHERE source_kind='lighter_fill_enrichment' AND enrichment_revision=1"));
+    await reportingRepo.markOutboxSent([Number(revisionOne.id)], GENERATION);
+    expect(await recordLighterFillActivity(authenticatedRow())).toMatchObject({ kind: "enriched", revision: 2 });
+    expect(await reportingRepo.enqueueEligibleLighterFills(false, GENERATION)).toMatchObject({ rows: 1 });
+    expect(await recordLighterFillActivity(authenticatedRow())).toMatchObject({ kind: "duplicate" });
+    expect(await reportingRepo.enqueueEligibleLighterFills(false, GENERATION)).toMatchObject({ rows: 0 });
+    expect(await stored()).toMatchObject({ account_pnl: "1.989696", position_effect: "reduce", revision: 2 });
+    const deliveries = await query<{ enrichment_revision: number }>("SELECT enrichment_revision FROM agentscan_outbox WHERE source_kind='lighter_fill_enrichment' ORDER BY enrichment_revision");
+    expect(deliveries.map((row) => Number(row.enrichment_revision))).toEqual([1, 2]);
+  });
+
+  it.each(["0", "-0.42", "1.23"])("fills proven PnL %s once without overwriting it", async (pnl) => {
+    await recordLighterFillActivity(positionOnly());
+    const facts = requireValue(authenticatedRow().accountFacts);
+    expect(await recordLighterFillActivity(authenticatedRow({ accountFacts: { ...facts, accountPnl: pnl } }))).toMatchObject({ kind: "enriched", revision: 1 });
+    expect(await recordLighterFillActivity(authenticatedRow({ accountFacts: { ...facts, accountPnl: "99" } }))).toMatchObject({ kind: "duplicate" });
+    expect(await stored()).toMatchObject({ account_pnl: pnl, revision: 1 });
+  });
+
+  const mismatches: readonly [string, Partial<LighterFillRecord>][] = [
+    ["position before", { accountFacts: { ...requireValue(authenticatedRow().accountFacts), positionSizeBefore: "-3" } }],
+    ["sign-change flag", { accountFacts: { ...requireValue(authenticatedRow().accountFacts), positionSignChanged: true } }],
+    ["entry quote", { accountFacts: { ...requireValue(authenticatedRow().accountFacts), entryQuoteBefore: "-7000" } }],
+    ["initial margin", { accountFacts: { ...requireValue(authenticatedRow().accountFacts), initialMarginFractionBefore: 1000 } }],
+    ["effect", { positionEffect: "close" }],
+    ["account role", { feeSide: "maker" }],
+  ];
+  it.each(mismatches)("takes no PnL from a contradictory %s", async (_name, changed) => {
+    await recordLighterFillActivity(positionOnly());
+    const before = await stored();
+    expect(await recordLighterFillActivity(authenticatedRow(changed))).toMatchObject({ kind: "duplicate" });
+    expect(await stored()).toEqual(before);
+  });
+
+  it("takes no PnL or position facts from conflicting immutable economics", async () => {
+    await recordLighterFillActivity(positionOnly());
+    const before = await stored();
+    expect(await recordLighterFillActivity(authenticatedRow({ price: "999" }))).toMatchObject({ kind: "conflict" });
+    expect(await stored()).toEqual(before);
+  });
+
+  it.each([true, false])("accepts proven PnL when optional entry quote or margin is absent in one observation (stored=%s)", async (storedAbsent) => {
+    const complete = requireValue(authenticatedRow().accountFacts);
+    const absent = { ...complete, entryQuoteBefore: null, initialMarginFractionBefore: null };
+    await recordLighterFillActivity(positionOnly({ accountFacts: { ...(storedAbsent ? absent : complete), accountPnl: null } }));
+    expect(await recordLighterFillActivity(authenticatedRow({ accountFacts: storedAbsent ? complete : absent }))).toMatchObject({ kind: "enriched", revision: 1 });
+    expect(await stored()).toMatchObject({ account_pnl: complete.accountPnl, entry_quote_before: storedAbsent ? null : complete.entryQuoteBefore });
+  });
+
+  it("keeps an already classified null PnL unchanged with the switch off", async () => {
+    await recordLighterFillActivity(positionOnly());
+    const before = await stored();
+    expect(await recordLighterFillActivity(authenticatedRow(), undefined, { positionFactsWithoutPnl: false })).toMatchObject({ kind: "duplicate" });
+    expect(await stored()).toEqual(before);
+  });
+
+  it("lets a richer CAS loser fill PnL after a null-PnL position merge wins", async () => {
+    await recordLighterFillActivity(publicRow());
+    const blocking = await getPool().connect();
+    const writes: Promise<Awaited<ReturnType<typeof recordLighterFillActivity>>>[] = [];
+    try {
+      await blocking.query("BEGIN");
+      await blocking.query("SELECT id FROM lighter_fills WHERE canonical_identity=$1 FOR NO KEY UPDATE", [IDENTITY]);
+      const pid = requireValue((await blocking.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]).pid;
+      const waitForBlocked = async (count: number) => {
+        await expect.poll(async () => Number((await queryOne<{ count: string }>(
+          // A later tuple-lock waiter can name the earlier waiting writer as
+          // its blocker. Every member must already have reached the real CAS.
+          `WITH RECURSIVE writers AS (
+             SELECT pid FROM pg_stat_activity
+              WHERE $1::integer=ANY(pg_blocking_pids(pid)) AND query LIKE '%UPDATE lighter_fills%'
+             UNION
+             SELECT a.pid FROM pg_stat_activity a JOIN writers w
+               ON w.pid=ANY(pg_blocking_pids(a.pid))
+              WHERE a.query LIKE '%UPDATE lighter_fills%'
+           ) SELECT count(*)::text AS count FROM writers`, [pid],
+        ))?.count ?? "0"), { timeout: 5000, interval: 10 }).toBe(count);
+      };
+      writes.push(recordLighterFillActivity(positionOnly()));
+      await waitForBlocked(1);
+      writes.push(recordLighterFillActivity(authenticatedRow()));
+      await waitForBlocked(2);
+      expect(await stored()).toMatchObject({ position_size_before: null, account_pnl: null, revision: 0 });
+      await blocking.query("COMMIT");
+      const outcomes = await Promise.all(writes);
+      expect(outcomes[0]).toMatchObject({ kind: "enriched", revision: 1 });
+      expect(outcomes[1]).toMatchObject({ kind: "enriched", revision: 2 });
+      expect(await stored()).toMatchObject({ account_pnl: "1.989696", position_effect: "reduce", revision: 2 });
+    } finally {
+      await blocking.query("ROLLBACK");
+      blocking.release();
+      await Promise.allSettled(writes);
+    }
+  });
+
+  it("lets only one of concurrent proven PnL observations establish its immutable value", async () => {
+    await recordLighterFillActivity(positionOnly());
+    const facts = requireValue(authenticatedRow().accountFacts);
+    const outcomes = await Promise.all([
+      recordLighterFillActivity(authenticatedRow({ accountFacts: { ...facts, accountPnl: "1" } })),
+      recordLighterFillActivity(authenticatedRow({ accountFacts: { ...facts, accountPnl: "2" } })),
+    ]);
+    expect(outcomes.filter((outcome) => outcome.kind === "enriched")).toHaveLength(1);
+    expect(outcomes.filter((outcome) => outcome.kind === "duplicate")).toHaveLength(1);
+    const after = await stored();
+    expect(["1", "2"]).toContain(after.account_pnl);
+    expect(after.revision).toBe(1);
   });
 });
 

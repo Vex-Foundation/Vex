@@ -7,8 +7,8 @@ describe("keystore", () => {
   const testPassword = "testpassword123";
 
   describe("encryptPrivateKey", () => {
-    it("should encrypt a private key with 0x prefix", () => {
-      const keystore = encryptPrivateKey(testPrivateKey, testPassword);
+    it("should encrypt a private key with 0x prefix", async () => {
+      const keystore = await encryptPrivateKey(testPrivateKey, testPassword);
 
       expect(keystore.version).toBe(1);
       expect(keystore.ciphertext).toBeTruthy();
@@ -18,58 +18,58 @@ describe("keystore", () => {
       expect(keystore.kdf.name).toBe("scrypt");
     });
 
-    it("uses scrypt N=131072 (2^17 OWASP, vault parity, FINDING F10)", () => {
+    it("uses scrypt N=131072 (2^17 OWASP, vault parity, FINDING F10)", async () => {
       // Pins the KDF cost. The roundtrip tests below exercise this N end-to-end —
-      // without the 256 MiB maxmem in deriveKey, scryptSync at N=131072 (~128 MiB)
+      // without the 256 MiB maxmem in deriveKey, scrypt at N=131072 (~128 MiB)
       // would throw "memory limit exceeded" and these tests would fail. That is the
       // regression guard against re-introducing the wallet-bricking gap.
-      const keystore = encryptPrivateKey(testPrivateKey, testPassword);
+      const keystore = await encryptPrivateKey(testPrivateKey, testPassword);
       expect(keystore.kdf.N).toBe(131072);
       expect(keystore.kdf.r).toBe(8);
       expect(keystore.kdf.p).toBe(1);
     });
 
-    it("should encrypt a private key without 0x prefix", () => {
+    it("should encrypt a private key without 0x prefix", async () => {
       const pkWithoutPrefix = testPrivateKey.slice(2);
-      const keystore = encryptPrivateKey(pkWithoutPrefix, testPassword);
+      const keystore = await encryptPrivateKey(pkWithoutPrefix, testPassword);
 
       expect(keystore.version).toBe(1);
       expect(keystore.ciphertext).toBeTruthy();
     });
 
-    it("should throw on invalid private key format", () => {
-      expect(() => encryptPrivateKey("not-a-valid-key", testPassword)).toThrow(
+    it("should throw on invalid private key format", async () => {
+      await expect(encryptPrivateKey("not-a-valid-key", testPassword)).rejects.toThrow(
         "Invalid private key"
       );
     });
 
-    it("should throw on too short private key", () => {
-      expect(() => encryptPrivateKey("0x1234", testPassword)).toThrow("Invalid private key");
+    it("should throw on too short private key", async () => {
+      await expect(encryptPrivateKey("0x1234", testPassword)).rejects.toThrow("Invalid private key");
     });
 
-    it("should throw on too long private key", () => {
+    it("should throw on too long private key", async () => {
       const longKey = "0x" + "a".repeat(128);
-      expect(() => encryptPrivateKey(longKey, testPassword)).toThrow("Invalid private key");
+      await expect(encryptPrivateKey(longKey, testPassword)).rejects.toThrow("Invalid private key");
     });
   });
 
   describe("decryptPrivateKey", () => {
-    it("should decrypt an encrypted private key correctly", () => {
-      const keystore = encryptPrivateKey(testPrivateKey, testPassword);
-      const decrypted = decryptPrivateKey(keystore, testPassword);
+    it("should decrypt an encrypted private key correctly", async () => {
+      const keystore = await encryptPrivateKey(testPrivateKey, testPassword);
+      const decrypted = await decryptPrivateKey(keystore, testPassword);
 
       expect(decrypted).toBe(testPrivateKey.toLowerCase());
     });
 
-    it("should fail with wrong password", () => {
-      const keystore = encryptPrivateKey(testPrivateKey, testPassword);
+    it("should fail with wrong password", async () => {
+      const keystore = await encryptPrivateKey(testPrivateKey, testPassword);
 
-      expect(() => decryptPrivateKey(keystore, "wrongpassword")).toThrow(
+      await expect(decryptPrivateKey(keystore, "wrongpassword")).rejects.toThrow(
         "Decryption failed"
       );
     });
 
-    it("decrypts a legacy N=16384 keystore (per-file KDF params, FINDING F10)", () => {
+    it("decrypts a legacy N=16384 keystore (per-file KDF params, FINDING F10)", async () => {
       // Forge a keystore at the OLD cost (N=16384) using the same scheme the
       // production code used before the bump, WITHOUT touching production exports.
       // decryptSecretBytes derives from the file's own kdf block, so a file written
@@ -102,42 +102,42 @@ describe("keystore", () => {
 
       const legacy = forgeLegacyKeystore(testPrivateKey, testPassword);
       expect(legacy.kdf.N).toBe(16384);
-      expect(decryptPrivateKey(legacy, testPassword)).toBe(testPrivateKey.toLowerCase());
+      expect(await decryptPrivateKey(legacy, testPassword)).toBe(testPrivateKey.toLowerCase());
     });
 
-    it("should handle uppercase hex in private key", () => {
+    it("should handle uppercase hex in private key", async () => {
       const uppercasePk = "0x0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF";
-      const keystore = encryptPrivateKey(uppercasePk, testPassword);
-      const decrypted = decryptPrivateKey(keystore, testPassword);
+      const keystore = await encryptPrivateKey(uppercasePk, testPassword);
+      const decrypted = await decryptPrivateKey(keystore, testPassword);
 
       expect(decrypted).toBe(uppercasePk.toLowerCase());
     });
 
-    it("should throw on unsupported keystore version", () => {
-      const keystore = encryptPrivateKey(testPrivateKey, testPassword);
+    it("should throw on unsupported keystore version", async () => {
+      const keystore = await encryptPrivateKey(testPrivateKey, testPassword);
       const invalidKeystore = { ...keystore, version: 99 } as unknown as KeystoreV1;
 
-      expect(() => decryptPrivateKey(invalidKeystore, testPassword)).toThrow(
+      await expect(decryptPrivateKey(invalidKeystore, testPassword)).rejects.toThrow(
         "Unsupported keystore version"
       );
     });
   });
 
   describe("roundtrip", () => {
-    it("should survive multiple encrypt/decrypt cycles", () => {
+    it("should survive multiple encrypt/decrypt cycles", async () => {
       let currentPk = testPrivateKey;
 
       for (let i = 0; i < 3; i++) {
-        const keystore = encryptPrivateKey(currentPk, testPassword);
-        const decrypted = decryptPrivateKey(keystore, testPassword);
+        const keystore = await encryptPrivateKey(currentPk, testPassword);
+        const decrypted = await decryptPrivateKey(keystore, testPassword);
         expect(decrypted).toBe(testPrivateKey.toLowerCase());
         currentPk = decrypted;
       }
     });
 
-    it("should produce different ciphertexts for same input (random salt/iv)", () => {
-      const keystore1 = encryptPrivateKey(testPrivateKey, testPassword);
-      const keystore2 = encryptPrivateKey(testPrivateKey, testPassword);
+    it("should produce different ciphertexts for same input (random salt/iv)", async () => {
+      const keystore1 = await encryptPrivateKey(testPrivateKey, testPassword);
+      const keystore2 = await encryptPrivateKey(testPrivateKey, testPassword);
 
       expect(keystore1.ciphertext).not.toBe(keystore2.ciphertext);
       expect(keystore1.salt).not.toBe(keystore2.salt);

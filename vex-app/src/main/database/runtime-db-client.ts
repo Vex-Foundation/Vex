@@ -10,6 +10,14 @@
  * Own short-lived `pg.Client` per call, mirroring `sessions-db.ts`: these reads
  * are on the IPC path, must not queue behind engine work, and must fail fast
  * with a bounded timeout rather than hang a control surface.
+ *
+ * K-4: the shared main-process IPC pool (`main-ipc-pg-pool.ts`, behind
+ * `MAIN_IPC_PG_POOL`) installs itself here as the connection runner when it
+ * loads (the main entry imports it at startup). This module does not import
+ * the pool: the root test program reaches this file, and keeping the pool out
+ * of that program keeps it inside that program's rootDir. Until a runner is
+ * installed (and in any test that never loads the pool) the default runner
+ * below is the fresh-client-per-call path, the same code that was here before.
  */
 
 import { Client, type ClientConfig } from "pg";
@@ -60,6 +68,67 @@ export function runtimeDbError(
   });
 }
 
+/** The resolved connection config `withRuntimeDbClient` hands a runner. */
+export type RuntimeDbPoolConfig = NonNullable<Awaited<ReturnType<typeof buildPoolConfig>>>;
+
+/**
+ * Runs `fn` on a connected client. Structurally the signature of
+ * `runWithMainDbClient`, so the pool installs that function unchanged.
+ */
+export type RuntimeDbClientRunner = <R>(
+  cfg: RuntimeDbPoolConfig,
+  call: {
+    readonly logPrefix: string;
+    readonly timeouts: {
+      readonly connectTimeoutMs: number;
+      readonly statementTimeoutMs: number;
+    };
+    readonly onConnectFailed: (cause: unknown) => R;
+  },
+  fn: (client: Client) => Promise<R>,
+) => Promise<R>;
+
+/** Today's path: a fresh client per call, ended in `finally`. */
+const runWithFreshClient: RuntimeDbClientRunner = async (cfg, call, fn) => {
+  const clientConfig: ClientConfig = {
+    host: cfg.host,
+    port: cfg.port,
+    database: cfg.database,
+    user: cfg.user,
+    password: cfg.password,
+    connectionTimeoutMillis: call.timeouts.connectTimeoutMs,
+    statement_timeout: call.timeouts.statementTimeoutMs,
+  };
+  const client = new Client(clientConfig);
+  try {
+    await client.connect();
+  } catch (cause) {
+    log.warn(`${call.logPrefix} client.connect failed`, cause);
+    return call.onConnectFailed(cause);
+  }
+  try {
+    return await fn(client);
+  } finally {
+    try {
+      await client.end();
+    } catch (cause) {
+      log.warn(`${call.logPrefix} client.end failed (non-fatal)`, cause);
+    }
+  }
+};
+
+let runner: RuntimeDbClientRunner = runWithFreshClient;
+
+/** Called by `main-ipc-pg-pool.ts` when it loads; `null` restores the default. */
+export function installRuntimeDbClientRunner(next: RuntimeDbClientRunner | null): void {
+  runner = next ?? runWithFreshClient;
+}
+
+/** Test seam: whether the default fresh-client runner is in force. */
+export function runtimeDbClientRunnerIsDefault(): boolean {
+  return runner === runWithFreshClient;
+}
+
 export async function withRuntimeDbClient<T>(
   correlationId: string,
   fn: (client: Client) => Promise<Result<T, VexError>>,
@@ -73,29 +142,13 @@ export async function withRuntimeDbClient<T>(
   }
   if (cfg === null) return runtimeDbUnavailable(correlationId);
 
-  const clientConfig: ClientConfig = {
-    host: cfg.host,
-    port: cfg.port,
-    database: cfg.database,
-    user: cfg.user,
-    password: cfg.password,
-    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
-    statement_timeout: QUERY_TIMEOUT_MS,
-  };
-  const client = new Client(clientConfig);
-  try {
-    await client.connect();
-  } catch (cause) {
-    log.warn("[runtime-db] client.connect failed", cause);
-    return runtimeDbUnavailable(correlationId);
-  }
-  try {
-    return await fn(client);
-  } finally {
-    try {
-      await client.end();
-    } catch (cause) {
-      log.warn("[runtime-db] client.end failed (non-fatal)", cause);
-    }
-  }
+  return runner(
+    cfg,
+    {
+      logPrefix: "[runtime-db]",
+      timeouts: { connectTimeoutMs: CONNECT_TIMEOUT_MS, statementTimeoutMs: QUERY_TIMEOUT_MS },
+      onConnectFailed: () => runtimeDbUnavailable(correlationId),
+    },
+    fn,
+  );
 }

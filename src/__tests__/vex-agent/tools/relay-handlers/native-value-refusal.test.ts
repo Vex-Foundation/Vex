@@ -162,7 +162,7 @@ function outputOf(result: { output: string }): Record<string, unknown> {
 }
 
 /** The exact error `planRelayStepTx` throws when a surcharge cannot be attributed. */
-function unauthorizedNativeValue(): VexError {
+function unauthorizedNativeValue(): InstanceType<typeof VexError> {
   return new VexError(
     ErrorCodes.NATIVE_VALUE_UNAUTHORIZED,
     relayNativeValueRefusal("bridge_deposit", "1000000000000000 wei of native value could not be attributed to a proven cost component"),

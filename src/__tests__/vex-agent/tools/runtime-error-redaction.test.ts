@@ -17,7 +17,7 @@
  * DB/capture dependencies are no-ops.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from "vitest";
 
 import logger from "@utils/logger.js";
 import type { ProtocolToolManifest } from "@vex-agent/tools/protocols/types.js";
@@ -92,15 +92,15 @@ const SECRET_FRAGMENTS = [
   "https://",
 ];
 
-function serializeLogCalls(spy: ReturnType<typeof vi.spyOn>): string {
+function serializeLogCalls(spy: MockInstance<typeof logger.warn>): string {
   return spy.mock.calls.map((c) => JSON.stringify(c)).join("\n");
 }
 
 describe("executeProtocolTool — B-003 raw error redaction", () => {
-  let warnSpy: ReturnType<typeof vi.spyOn>;
+  let warnSpy: MockInstance<typeof logger.warn>;
 
   beforeEach(() => {
-    warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger as never);
+    warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
     vi.mocked(catalog.getProtocolManifest).mockReset().mockReturnValue(readManifest());
     vi.mocked(catalog.getProtocolHandler).mockReset().mockReturnValue(async () => {
       throw new Error(RAW_BODY);
@@ -133,7 +133,7 @@ describe("executeProtocolTool — B-003 raw error redaction", () => {
   it("never writes a raw secret/URL/body fragment into the protocol.execute.failed log", async () => {
     await executeProtocolTool({ toolId: "test.redact.read", params: {} }, ctx);
 
-    const failedCall = warnSpy.mock.calls.find(
+    const failedCall = warnSpy.mock.calls.map((call) => Array.from<unknown>(call)).find(
       (c) => c[0] === "protocol.execute.failed",
     );
     expect(failedCall).toBeDefined();

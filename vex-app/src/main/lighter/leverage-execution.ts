@@ -1,3 +1,4 @@
+import { protectSigningOperation } from "../secrets/signing-lock.js";
 /**
  * The FIRST user-originated Lighter signing path in the desktop app: confirm,
  * sign and submit one TxType 20 leverage change, then prove what happened.
@@ -262,6 +263,14 @@ export async function confirmLighterLeverage(
   input: ConfirmLighterLeverageInput,
   signal?: AbortSignal,
   deps: LighterLeverageExecutionDeps = defaultLighterLeverageExecutionDeps(),
+): Promise<ApplyLighterLeverageResult> {
+  return protectSigningOperation("lighter_leverage", () => runConfirmedLighterLeverage(input, signal, deps));
+}
+
+async function runConfirmedLighterLeverage(
+  input: ConfirmLighterLeverageInput,
+  signal: AbortSignal | undefined,
+  deps: LighterLeverageExecutionDeps,
 ): Promise<ApplyLighterLeverageResult> {
   if (!admissionOpen) {
     throw leverageRefusal(

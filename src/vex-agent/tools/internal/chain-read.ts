@@ -140,7 +140,7 @@ export async function handleChainRead(
           from: receipt.from,
           to: receipt.to,
           contractAddress: receipt.contractAddress,
-        }, null, 2),
+        }),
       };
     }
 
@@ -194,7 +194,7 @@ export async function handleChainRead(
           mintsFound: mints.length,
           primaryNftId: primaryNftId ?? null,
           mints,
-        }, null, 2),
+        }),
       };
     }
 
@@ -254,7 +254,7 @@ export async function handleChainRead(
           decimals,
           balance: decimals === null ? null : formatUnits(balance, decimals),
           ...(decimalsError ? { decimalsError } : {}),
-        }, null, 2),
+        }),
       };
     }
 

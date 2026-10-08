@@ -58,7 +58,13 @@ import { LighterCenter } from "./lighterTrading/LighterCenter.js";
 import { LIGHTER_TOPBAR_HEIGHT, LighterSidebar } from "./lighterTrading/LighterSidebar.js";
 import { AgentLighterSetupHost } from "./lighterTrading/AgentLighterSetupHost.js";
 
+import { LockVexControl } from "./LockVexControl.js";
+
 export function AppShell(): JSX.Element {
+  return <LockVexControl><AppShellContent /></LockVexControl>;
+}
+
+function AppShellContent(): JSX.Element {
   // App-wide engine-error RETENTION. Mounted here, not per session: a wake or
   // compact failure for a session the user is not currently looking at must
   // still be waiting for them when they select it.

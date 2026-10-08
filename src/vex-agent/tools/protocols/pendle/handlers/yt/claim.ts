@@ -87,7 +87,7 @@ export async function pendleClaim(p: Record<string, unknown>, context: ProtocolE
     // Signer AFTER dryRun so a preview never decrypts a key.
     let signer: ChainWallet;
     try {
-      signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+      signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
     } catch (err) {
       return walletScopeErrorToResult(err);
     }
@@ -193,7 +193,7 @@ export async function pendleClaim(p: Record<string, unknown>, context: ProtocolE
         marketCap: targets.marketCap,
         skippedMarkets: targets.skipped,
         ...(skipNote ? { skippedNote: skipNote } : {}),
-      }, null, 2),
+      }),
       data: {
         txHash,
         _executionId: broadcast.executionId,

@@ -33,8 +33,8 @@ export function walletAddress(p: Record<string, unknown>, ctx: ProtocolExecution
   return explicit || resolveSelectedAddress(ctx.walletResolution, ctx.walletPolicy, "solana");
 }
 
-export function walletSecret(ctx: ProtocolExecutionContext): Uint8Array {
-  const signer = resolveSigningWallet(ctx.walletResolution, ctx.walletPolicy, "solana");
+export async function walletSecret(ctx: ProtocolExecutionContext): Promise<Uint8Array> {
+  const signer = await resolveSigningWallet(ctx.walletResolution, ctx.walletPolicy, "solana");
   if (signer.family !== "solana") {
     throw new VexError(ErrorCodes.WALLET_SCOPE_MISMATCH, "Resolved wallet family mismatch (expected solana).");
   }

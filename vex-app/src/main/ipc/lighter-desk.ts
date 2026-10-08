@@ -37,6 +37,7 @@ export type DeskPrepareCall = {
     | "lighter.position.protect"
     | "lighter.position.close.prepare"
     | "lighter.order.cancel.prepare"
+    | "lighter.order.cancelAll.prepare"
     | "lighter.deposit.prepare"
     | "lighter.key.register.prepare"
     | "lighter.fees.approve.prepare";
@@ -59,9 +60,11 @@ function deskPrepareKey(input: {
   const { action } = input;
   switch (action.kind) {
     case "close":
-      return `${input.sessionId}|${input.environment}|close|${action.marketId}`;
+      return `${input.sessionId}|${input.environment}|close|${action.marketId}|${action.closePercent ?? 100}`;
     case "cancel":
       return `${input.sessionId}|${input.environment}|cancel|${action.marketId}|${action.orderId}`;
+    case "cancel_all":
+      return `${input.sessionId}|${input.environment}|cancel_all`;
     case "onboarding_deposit":
       return `${input.sessionId}|${input.environment}|onboarding_deposit|${action.amountIn}`;
     case "onboarding_key":
@@ -107,7 +110,7 @@ function prepareDeskOnce(
     };
     // The ordinary order-preview handler resolves and verifies this session's
     // wallet itself. Looking it up here repeats the same public provider read.
-    const accountIndex = (input.action.kind === "order" && call.toolId !== "lighter.order.preview") || input.action.kind === "close" || input.action.kind === "cancel"
+    const accountIndex = (input.action.kind === "order" && call.toolId !== "lighter.order.preview") || input.action.kind === "close" || input.action.kind === "cancel" || input.action.kind === "cancel_all"
       ? await resolveLighterSessionAccount(input)
       : undefined;
     const accountMs = Math.round(performance.now() - startedAt);
@@ -137,6 +140,7 @@ function prepareDeskOnce(
     const totalMs = Math.round(performance.now() - startedAt);
     const timings = {
       action: input.action.kind,
+      closePercent: input.action.kind === "close" ? input.action.closePercent ?? 100 : null,
       outcome: outcome.kind,
       accountMs,
       recoveryMs,
@@ -169,6 +173,11 @@ export function deskActionToPrepareCall(
   action: LighterDeskAction,
 ): DeskPrepareCall {
   switch (action.kind) {
+    case "cancel_all":
+      return {
+        toolId: "lighter.order.cancelAll.prepare",
+        params: { environment },
+      };
     case "close":
       return {
         toolId: "lighter.position.close.prepare",
@@ -176,6 +185,7 @@ export function deskActionToPrepareCall(
           environment,
           marketId: action.marketId,
           slippageBps: CLOSE_SLIPPAGE_BPS,
+          ...(action.closePercent === undefined ? {} : { closePercent: action.closePercent }),
         },
       };
     case "cancel":

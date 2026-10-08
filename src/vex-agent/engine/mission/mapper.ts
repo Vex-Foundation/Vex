@@ -7,6 +7,7 @@
 
 import type { MissionDraft } from "../types.js";
 import { normalizeDeployedCapital } from "./deployed-capital.js";
+import { normalizeMissionReasoningEffort } from "./reasoning-effort.js";
 import { formatRawAmount } from "@vex-agent/tools/protocols/amount-display.js";
 import type { Mission, MissionDraftRow } from "@vex-agent/db/repos/missions.js";
 
@@ -58,6 +59,8 @@ export function missionToDraft(m: Mission): MissionDraft {
       constraints.maxLaunchCount >= 0
         ? constraints.maxLaunchCount
         : null,
+    // E-1 - an unknown stored value reads as not set (the default applies).
+    reasoningEffort: normalizeMissionReasoningEffort(constraints?.reasoningEffort),
   };
 }
 
@@ -115,7 +118,8 @@ export function domainToRow(draft: Partial<MissionDraft>): MissionDraftRow {
     draft.durationMinutes !== undefined ||
     draft.maxLaunchValueRaw !== undefined ||
     draft.maxLaunchValueDecimals !== undefined ||
-    draft.maxLaunchCount !== undefined
+    draft.maxLaunchCount !== undefined ||
+    draft.reasoningEffort !== undefined
   ) {
     row.constraints_json = {
       ...(draft.deadline !== undefined ? { deadline: draft.deadline } : {}),
@@ -132,6 +136,9 @@ export function domainToRow(draft: Partial<MissionDraft>): MissionDraftRow {
         : {}),
       ...(draft.maxLaunchCount !== undefined
         ? { maxLaunchCount: draft.maxLaunchCount }
+        : {}),
+      ...(draft.reasoningEffort !== undefined
+        ? { reasoningEffort: draft.reasoningEffort }
         : {}),
     };
   }

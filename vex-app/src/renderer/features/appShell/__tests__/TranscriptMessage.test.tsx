@@ -586,3 +586,67 @@ describe("TranscriptMessage operator acknowledgement (M6)", () => {
     expect(node?.getAttribute("aria-live")).toBeNull();
   });
 });
+
+describe("TranscriptMessage mission stop result (Kairos E-1 follow-up)", () => {
+  const STOP_ARGS = JSON.stringify({
+    reason: "goal_reached",
+    summary: "Reading 1 = $2,664.55; reading 2 = $2,663.69. Price moved down $0.86, or -0.03%.",
+  });
+
+  function stopRow(success: boolean | null): TranscriptRowModel {
+    return {
+      id: 1,
+      variant: "tool",
+      toolKind: "call",
+      label: "MissionStop",
+      content: "",
+      createdAt: ISO,
+      toolCalls: [],
+      toolActs: [
+        {
+          toolCallId: "stop",
+          toolName: "MissionStop",
+          toolArgs: STOP_ARGS,
+          output: "Mission stop requested: goal_reached - ...",
+          success,
+        },
+      ],
+    };
+  }
+
+  it("shows an accepted stop's reason and summary without expanding the act", () => {
+    const { container } = render(createElement(TranscriptMessage, { row: stopRow(true) }));
+    const block = container.querySelector('[data-vex-area="mission-stop-result"]');
+    expect(block?.textContent).toContain("Mission ended · Goal reached");
+    expect(block?.textContent).toContain("Price moved down $0.86, or -0.03%.");
+  });
+
+  it("shows nothing for a stop that was refused or has no result yet", () => {
+    for (const success of [false, null]) {
+      const { container, unmount } = render(createElement(TranscriptMessage, { row: stopRow(success) }));
+      expect(container.querySelector('[data-vex-area="mission-stop-result"]')).toBeNull();
+      unmount();
+    }
+  });
+
+  it("keeps the result visible when the stop is folded into a tool group", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: {
+          variant: "tool_group",
+          id: 11,
+          createdAt: ISO,
+          distinctToolNames: ["dexscreener__pairs_search", "MissionStop"],
+          calls: [
+            { toolCallId: "a", toolName: "dexscreener__pairs_search", toolArgs: "{}", output: "{}" },
+            { toolCallId: "b", toolName: "MissionStop", toolArgs: STOP_ARGS, output: "ok", success: true },
+          ],
+        },
+      }),
+    );
+    expect(screen.getByRole("button", { name: /2 tool calls/ }).getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector('[data-vex-area="mission-stop-result"]')?.textContent).toContain(
+      "-0.03%",
+    );
+  });
+});

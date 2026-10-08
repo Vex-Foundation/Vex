@@ -20,13 +20,11 @@
  */
 
 import { afterEach, describe, expect, it } from "vitest";
-import { fromJson, toBinary, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
+import type { JsonObject, JsonValue } from "@bufbuild/protobuf";
 import { DEXSCREENER_HANDLERS } from "@vex-agent/tools/protocols/dexscreener/handlers.js";
 import { DEXSCREENER_TOOLS } from "@vex-agent/tools/protocols/dexscreener/manifest.js";
-import {
-  decodeDexScreenerMessageToJson,
-  getDexScreenerMessageDescriptor,
-} from "@tools/dexscreener/codec/protobuf.js";
+import { decodeDexScreenerMessageToJson } from "@tools/dexscreener/codec/protobuf.js";
+import { readFeedRequest } from "@tools/dexscreener/codec/feed-envelope.js";
 import { multiplyDecimalStrings } from "@tools/dexscreener/endpoints/top-traders.js";
 import { roundUsdCents } from "@vex-agent/tools/protocols/dexscreener/handlers/deep-dive/top-traders.js";
 import {
@@ -34,6 +32,7 @@ import {
   type DexScreenerTransport,
 } from "@tools/dexscreener/transport.js";
 import { loadFixture, loadJsonFixture } from "./_fixtures.js";
+import { feedResponseFrame } from "./_feed-envelope.js";
 import { makeProtocolContext } from "../vex-agent/tools/_test-context.js";
 
 const CHAIN = "ethereum";
@@ -106,24 +105,14 @@ function mountTradesProvider(): { readonly urls: string[] } {
       if (command === undefined || typeof command === "string") {
         return Promise.resolve([PAIR_FRAME]);
       }
-      let arm: Record<string, unknown> | undefined;
-      try {
-        const decoded = decodeDexScreenerMessageToJson(
-          "dex_feed.WSCommand",
-          command,
-          { maxBytes: MAX_BYTES }
-        ) as Record<string, unknown>;
-        arm = decoded["getHistoricalTransactions"] as
-          | Record<string, unknown>
-          | undefined;
-      } catch {
-        arm = undefined;
-      }
-      // Not a trades command: this is the subject resolution asking the pair
+      const sent = readFeedRequest(command, MAX_BYTES);
+      // Not a trades request: this is the subject resolution asking the pair
       // channel, which the archived pair frame answers.
-      if (arm === undefined) return Promise.resolve([PAIR_FRAME]);
+      if (sent === null || sent.knownMethod !== "GetHistoricalTransactions") {
+        return Promise.resolve([PAIR_FRAME]);
+      }
+      const arm = (sent.request ?? {}) as Record<string, unknown>;
       const before = arm["before"] as Record<string, unknown> | undefined;
-      const cid = Number(arm["cid"] ?? 0);
       let rows = ARCHIVED_TRADES;
       if (before !== undefined) {
         const wanted = `${String(before["blockNumber"])}:${String(before["transactionIndex"] ?? 0)}:${String(before["eventIndex"] ?? 0)}`;
@@ -132,14 +121,11 @@ function mountTradesProvider(): { readonly urls: string[] } {
         // position returns nothing rather than the whole page again.
         rows = at === -1 ? [] : ARCHIVED_TRADES.slice(at + 1);
       }
-      const descriptor = getDexScreenerMessageDescriptor("dex_feed.WSMessage");
-      const frame = toBinary(
-        descriptor,
-        fromJson(descriptor, {
-          historicalTransactions: { cid, transactions: [...rows] },
-        } satisfies JsonValue)
-      );
-      return Promise.resolve([frame]);
+      return Promise.resolve([
+        feedResponseFrame(sent.id, "GetHistoricalTransactions", {
+          transactions: [...rows],
+        } satisfies JsonValue),
+      ]);
     },
   };
   release = registerDexScreenerTransport(transport);

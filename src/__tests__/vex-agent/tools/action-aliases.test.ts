@@ -30,7 +30,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // `vi.hoisted` is required because the `vi.mock` factory is hoisted above
 // regular top-level declarations.
 const { executeProtocolTool } = vi.hoisted(() => ({
-  executeProtocolTool: vi.fn(async () => ({ success: true, output: "ok" })),
+  executeProtocolTool: vi.fn<typeof import("@vex-agent/tools/protocols/runtime.js").executeProtocolTool>(async () => ({ success: true, output: "ok" })),
 }));
 
 vi.mock("@vex-agent/tools/protocols/runtime.js", () => ({
@@ -44,22 +44,22 @@ import {
   handleBridgeQuote,
 } from "@vex-agent/tools/internal/action-aliases.js";
 import { ACTION_ALIAS_TOOLS } from "@vex-agent/tools/registry/action-aliases.js";
-import type { InternalToolContext } from "@vex-agent/tools/internal/types.js";
+import { makeTestContext } from "./_test-context.js";
 
 // Minimal context — the aliases only forward the execution-context slice
 // `protocolContext()` projects; the rest is never read by these handlers.
-const CTX = {
+const CTX = makeTestContext({
   sessionPermission: "restricted",
   approved: false,
   sessionId: "sess-1",
   walletResolution: { source: "default" },
   walletPolicy: { kind: "none" },
-} as unknown as InternalToolContext;
+});
 
 function lastCall(): { toolId: string; params: Record<string, unknown> } {
   const call = executeProtocolTool.mock.calls.at(-1);
   if (!call) throw new Error("executeProtocolTool was not called");
-  const request = call[0] as { toolId: string; params: Record<string, unknown> };
+  const request = call[0];
   return { toolId: request.toolId, params: request.params };
 }
 
@@ -208,7 +208,7 @@ describe("SwapQuote — NO runtime Kyber→Uniswap fallback (plan §11.2/§4.2 r
     // SwapQuoteUniswap once W2a's handler reveals it — that reveal call is
     // W2a's, not this alias's, for an in-band Kyber API failure).
     expect(executeProtocolTool).toHaveBeenCalledTimes(1);
-    expect((executeProtocolTool.mock.calls[0]![0] as { toolId: string }).toolId).toBe("kyberswap.swap.quote");
+    expect(lastCall().toolId).toBe("kyberswap.swap.quote");
     expect(result.success).toBe(false);
     expect(result.output).toContain("failed (timeout)");
   });
@@ -221,7 +221,7 @@ describe("SwapQuote — NO runtime Kyber→Uniswap fallback (plan §11.2/§4.2 r
     });
     const result = await handleSwapQuote({ chain: "base", tokenIn: WETH, tokenOut: USDC, amountIn: "1" }, CTX);
     expect(executeProtocolTool).toHaveBeenCalledTimes(1);
-    expect((executeProtocolTool.mock.calls[0]![0] as { toolId: string }).toolId).toBe("kyberswap.swap.quote");
+    expect(lastCall().toolId).toBe("kyberswap.swap.quote");
     expect(result.output).toBe("kyber-ok");
   });
 

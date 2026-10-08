@@ -11,10 +11,16 @@
 import type { StopReason } from "../../types.js";
 import type { Message, MessageMetadata } from "@vex-agent/db/repos/messages.js";
 import type { ParsedToolCall } from "@vex-agent/inference/types.js";
-import { appendMessage } from "@vex-agent/engine/events/index.js";
+import {
+  appendMessage,
+  appendMessagesUnderLease,
+  type FencedAppendEntry,
+} from "@vex-agent/engine/events/index.js";
+import type { RunnerLeaseGuard } from "../../runtime/lease-guard.js";
 import type { ExplorerRef } from "../explorer-refs.js";
 import type { ToolDisplayStatus } from "../tool-display-status.js";
-import { saveAssistantMessage } from "../turn.js";
+import { buildAssistantRow, saveAssistantMessage } from "../turn.js";
+import { timePersist } from "../turn-loop/persist-timing.js";
 import type { StopPayload, ToolBatchOutcome } from "./outcome.js";
 
 /** Synthetic tool-result emitted for batch tool calls skipped after a `compact_committed` signal. */
@@ -106,6 +112,26 @@ export const APPROVAL_SKIPPED_BY_USER_STOP_OUTPUT =
   + "while the call was in flight. No approval was created and the action did NOT execute.";
 
 /**
+ * Synthetic tool-result for batch tool calls never dispatched because this
+ * runner's session lease was lost mid-batch (another runner took the session
+ * over). Distinct from the Stop drain: nobody asked the run to end. These rows
+ * land only when the lease was released rather than taken over - after a
+ * takeover the fence refuses the whole batch write.
+ */
+export const BATCH_ABORTED_BY_LEASE_LOST_OUTPUT =
+  "batch_aborted_by_lease_lost: this runner lost the session lease before this tool call was "
+  + "dispatched. It did NOT execute and had no effect.";
+
+/**
+ * Synthetic tool-result for a call that returned "approval required" after the
+ * lease was lost. No approval row is created: parking an approvable action on
+ * a session another runner now owns is exactly what the fence prevents.
+ */
+export const APPROVAL_SKIPPED_BY_LEASE_LOST_OUTPUT =
+  "approval_skipped_by_lease_lost: this action required approval, but this runner lost the "
+  + "session lease while the call was in flight. No approval was created and the action did NOT execute.";
+
+/**
  * Result for a call that WAS dispatched and then cancelled mid-flight by the
  * operator's Stop. Distinct from every drain above, which describe calls that
  * never started: this one really ran, so `dispatchTool` stamps its `durationMs`.
@@ -123,7 +149,7 @@ export const TOOL_ABORTED_BY_USER_STOP_OUTPUT =
   + "running. It was cancelled mid-flight and did NOT complete. Nothing was signed or "
   + "broadcast by this call.";
 
-interface ExecutedResult {
+export interface ExecutedResult {
   toolCallId: string;
   toolName: string;
   output: string;
@@ -168,8 +194,20 @@ export async function persistBatchTranscript(args: {
   readonly systemOriginated?: boolean;
   /** Provider reasoning trace for the turn that emitted these calls. */
   readonly reasoning?: string | null;
+  /**
+   * The lease this runner holds. When present the assistant row and every
+   * tool result are written in ONE fenced transaction - all or nothing, so a
+   * takeover can never leave a tool_call without its result, and a stale
+   * runner's batch affects zero rows. Absent ⇒ written exactly as before.
+   */
+  readonly leaseGuard?: RunnerLeaseGuard;
 }): Promise<void> {
   const { sessionId, content, executedCalls, executedResults, liveMessages } = args;
+
+  if (args.leaseGuard !== undefined) {
+    await persistBatchTranscriptUnderLease(args, args.leaseGuard);
+    return;
+  }
 
   // ── DEFERRED SAVE: assistant message with canonical calls only ──
   await saveAssistantMessage(sessionId, content, executedCalls, {
@@ -225,11 +263,12 @@ export async function persistBatchTranscript(args: {
       },
     };
 
-    await appendMessage(
+    // Timed toward the enclosing turn's `persist_ms`; same await, same failure.
+    await timePersist(() => appendMessage(
       sessionId,
       { role: "tool", content: output, toolCallId, timestamp: new Date().toISOString() },
       metadata,
-    );
+    ));
 
     liveMessages.push({
       role: "tool",
@@ -238,6 +277,66 @@ export async function persistBatchTranscript(args: {
       timestamp: new Date().toISOString(),
       metadata,
     });
+  }
+}
+
+function toolResultMetadata(result: ExecutedResult): MessageMetadata {
+  return {
+    source: "tool",
+    messageType: "tool_result",
+    visibility: "internal",
+    payload: {
+      success: result.success,
+      ...(result.explorerRefs.length > 0 ? { explorerRefs: result.explorerRefs } : {}),
+      ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+      ...(result.displayStatus !== undefined ? { displayStatus: result.displayStatus } : {}),
+    },
+  };
+}
+
+/**
+ * Fenced twin of the loop in `persistBatchTranscript`: same rows, same order,
+ * same `liveMessages` pushes, but ONE transaction conditional on the claim.
+ * A refusal writes nothing and does not throw; the live tape is still pushed
+ * so the in-memory state matches what the model saw, and the loop ends on
+ * `lease_lost` before it is used again.
+ */
+async function persistBatchTranscriptUnderLease(
+  args: Parameters<typeof persistBatchTranscript>[0],
+  guard: RunnerLeaseGuard,
+): Promise<void> {
+  const entries: FencedAppendEntry[] = [];
+  const assistant = buildAssistantRow(args.content, args.executedCalls, {
+    systemOriginated: args.systemOriginated,
+    reasoning: args.reasoning ?? null,
+  });
+  if (assistant !== null) entries.push(assistant);
+  const toolRows = args.executedResults.map((result) => ({
+    msg: {
+      role: "tool" as const,
+      content: result.output,
+      toolCallId: result.toolCallId,
+      timestamp: new Date().toISOString(),
+    },
+    metadata: toolResultMetadata(result),
+  }));
+  entries.push(...toolRows);
+
+  await timePersist(() =>
+    appendMessagesUnderLease(args.sessionId, entries, guard, "tool_batch_transcript"));
+
+  args.liveMessages.push({
+    role: "assistant",
+    content: args.content ?? "",
+    toolCalls: args.executedCalls.map((tc) => ({
+      id: tc.id,
+      command: tc.name,
+      args: tc.arguments,
+    })),
+    timestamp: new Date().toISOString(),
+  });
+  for (const row of toolRows) {
+    args.liveMessages.push({ ...row.msg, metadata: row.metadata });
   }
 }
 

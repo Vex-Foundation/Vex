@@ -287,7 +287,7 @@ export async function handleTokenBalances(
     };
     return {
       success: true,
-      output: JSON.stringify(payload, null, 2),
+      output: JSON.stringify(payload),
       data: payload,
     };
   }
@@ -369,7 +369,7 @@ export async function handleTokenBalances(
       // Project to concise token rows (P0-4): the balances path is where
       // `extensions.balance` lives, so the lifted balance/price stay surfaced.
       tokens: projectedTokens,
-    }, null, 2),
+    }),
     data: {
       address,
       wallet: walletFamily,
@@ -395,7 +395,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     // this output.
     return {
       success: true,
-      output: JSON.stringify({ chains: chains.length, data: projectChains(chains) }, null, 2),
+      output: JSON.stringify({ chains: chains.length, data: projectChains(chains) }),
       data: { chains },
     };
   },
@@ -409,7 +409,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     // priceUsd/balance/isRiskToken, drop logoURI + open extensions bag.
     return {
       success: true,
-      output: JSON.stringify({ count: tokens.length, tokens: projectTokens(tokens) }, null, 2),
+      output: JSON.stringify({ count: tokens.length, tokens: projectTokens(tokens) }),
       data: { tokens },
     };
   },
@@ -426,7 +426,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     // contract-resolver path, so the surfaced address + price signal matters.
     return {
       success: true,
-      output: JSON.stringify({ count: result.data.length, tokens: projectTokens(result.data) }, null, 2),
+      output: JSON.stringify({ count: result.data.length, tokens: projectTokens(result.data) }),
       data: { tokens: result.data },
     };
   },
@@ -455,7 +455,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
         })),
         parsed: result.parsed,
         nextSlots: result.nextSlots,
-      }, null, 2),
+      }),
       data: toResultData(result),
     };
   },
@@ -661,7 +661,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
         tokenMetadata: tokenIdentity,
         expiryNote: "khalani__bridge_execute re-quotes and hard-fails with deadline_expired once expiresAtUnixSeconds "
           + "passes - treat expiresInSeconds as the window you have to act in, not a guarantee the same route survives.",
-      }, null, 2),
+      }),
       data: { quoteId: outcome.quoteId, routes: outcome.routes, vexFee, tokenMetadata: tokenIdentity },
     };
   },
@@ -683,7 +683,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     });
     return {
       success: true,
-      output: JSON.stringify({ count: result.data.length, cursor: result.cursor, orders: result.data }, null, 2),
+      output: JSON.stringify({ count: result.data.length, cursor: result.cursor, orders: result.data }),
       data: { orders: result.data, cursor: result.cursor },
     };
   },
@@ -709,7 +709,7 @@ export const READ_HANDLERS: Record<string, ProtocolHandler> = {
     };
     return {
       success: true,
-      output: JSON.stringify(merged, null, 2),
+      output: JSON.stringify(merged),
       data: toResultData(merged),
     };
   },

@@ -44,7 +44,7 @@ const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const JLUSDC_MINT = "9BEcn9aPEmhSPbPQeFGjidRiEKki46fVQDyPpSQXPA2D";
 const USDT_MINT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
 
-const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(() => ({
+const mockResolveSigningWallet = vi.fn<WalletResolveModule["resolveSigningWallet"]>(async () => ({
   family: "solana" as const, address: WALLET_ADDRESS, secretKey: SIGNER.secretKey,
 }));
 const mockResolveSelectedAddress = vi.fn<WalletResolveModule["resolveSelectedAddress"]>(() => WALLET_ADDRESS);
@@ -196,7 +196,7 @@ function expectRefusedAfterPositionsRead(): void {
 describe("solana.lend.withdraw — withdrawAll full exit via /earn/redeem (P3)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockResolveSigningWallet.mockReturnValue({ family: "solana", address: WALLET_ADDRESS, secretKey: SIGNER.secretKey });
+    mockResolveSigningWallet.mockResolvedValue({ family: "solana", address: WALLET_ADDRESS, secretKey: SIGNER.secretKey });
     mockResolveSelectedAddress.mockReturnValue(WALLET_ADDRESS);
     mockGetPositions.mockResolvedValue([earnPosition()]);
     mockRequestWithdraw.mockResolvedValue({ transaction: "unsigned-withdraw-tx-b64" });

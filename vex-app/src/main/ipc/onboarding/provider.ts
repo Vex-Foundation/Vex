@@ -52,13 +52,13 @@ import { registerHandler } from "../register-handler.js";
  * main-side by `verifyOpenRouterConnection` only, and the failure paths carry
  * codes/messages that contain no key material.
  */
-function resolveApiKeyToVerify(
+async function resolveApiKeyToVerify(
   suppliedApiKey: string | undefined,
   correlationId: string,
-): Result<string> {
+): Promise<Result<string>> {
   if (suppliedApiKey !== undefined) return { ok: true, data: suppliedApiKey };
 
-  const stored = readUnlockedSecret("OPENROUTER_API_KEY");
+  const stored = await readUnlockedSecret("OPENROUTER_API_KEY");
   if (!stored.ok) return stored;
   if (stored.data !== null) return { ok: true, data: stored.data };
 
@@ -87,7 +87,7 @@ export function registerProviderHandler(): () => void {
       // renderer and so cannot be echoed back. Main loads it from the
       // encrypted vault instead. If nothing is stored either, refuse BY NAME
       // — a silent skip would persist a selection nothing ever verified.
-      const keyResolution = resolveApiKeyToVerify(input.apiKey, ctx.requestId);
+      const keyResolution = await resolveApiKeyToVerify(input.apiKey, ctx.requestId);
       if (!keyResolution.ok) {
         log.info(
           `[ipc:vex:onboarding:providerPersist] ` +

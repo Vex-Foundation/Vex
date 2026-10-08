@@ -348,7 +348,7 @@ async function resumeMissionRunWithPreempt(
     });
     // `resumeMissionRun` refreshes tool_output_blob TTLs internally (PR-13
     // S-2), so we don't double-call here.
-    return await resumeMissionRun(runId, ownerId);
+    return await resumeMissionRun(runId, handle);
   } finally {
     await releaseLeaseAndEmitControlState(handle, sessionId, {
       missionRunId: runId,

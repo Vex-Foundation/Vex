@@ -5,6 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { openExecutionGate } from "../../../lifecycle/execution-gate.js";
 import {
   createTestWebContents,
   createTrustedSender,
@@ -243,4 +244,11 @@ describe("mission handlers", () => {
   // updateDraft fail-closed) lives in the focused files
   // under `__tests__/mission/` so this suite does not exceed the
   // 350-LOC budget.
+});
+
+// These handlers run as they do in a READY process: the execution gate
+// (`lifecycle/execution-gate.ts`) is closed until the runtime is up, and its
+// own suite covers the refusal.
+beforeEach(() => {
+  openExecutionGate();
 });

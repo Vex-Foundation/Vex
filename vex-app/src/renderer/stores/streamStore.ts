@@ -97,6 +97,18 @@ export interface StreamPreview {
 
 interface StreamStoreState {
   readonly bySessionId: Readonly<Record<string, StreamPreview | undefined>>;
+  /**
+   * The runner lease as the engine last REPORTED it on the control-state push
+   * (`leaseActive`), per session: `true` held, `false` released, absent
+   * unknown. A fact the engine announced, never inferred here, and kept apart
+   * from the preview on purpose: the preview's lifecycle (and the turn clock
+   * riding it) must not change because a lease moved. The island reads it for
+   * one thing only: whether a turn that has not streamed yet is still being
+   * PREPARED (no lease) or is WAITING FOR THE MODEL (lease held).
+   */
+  readonly leaseBySessionId: Readonly<Record<string, boolean | undefined>>;
+  /** Record the lease the engine reported; `null` forgets it (unknown). */
+  readonly setLeaseActive: (sessionId: string, leaseActive: boolean | null) => void;
   readonly applyDelta: (sessionId: string, event: StreamDeltaEvent) => void;
   /**
    * A ROUND ended but the TURN did not: the prose and tool calls this round
@@ -390,6 +402,22 @@ export function __resetPendingDeltasForTests(): void {
 
 export const useStreamStore = create<StreamStoreState>((set) => ({
   bySessionId: {},
+  leaseBySessionId: {},
+  setLeaseActive: (sessionId, leaseActive) => {
+    set((state) => {
+      const current = state.leaseBySessionId[sessionId];
+      if (leaseActive === null) {
+        if (current === undefined) return state;
+        const next = { ...state.leaseBySessionId };
+        delete next[sessionId];
+        return { leaseBySessionId: next };
+      }
+      if (current === leaseActive) return state;
+      return {
+        leaseBySessionId: { ...state.leaseBySessionId, [sessionId]: leaseActive },
+      };
+    });
+  },
   applyDelta: (sessionId, event) => {
     enqueueDelta(sessionId, event);
     if (COALESCED_KINDS.has(event.delta.kind)) return;
@@ -428,5 +456,16 @@ export const useStreamStore = create<StreamStoreState>((set) => ({
 export function useStreamPreview(sessionId: string | null): StreamPreview | null {
   return useStreamStore((s) =>
     sessionId === null ? null : s.bySessionId[sessionId] ?? null,
+  );
+}
+
+/**
+ * Whether the engine has reported this session's runner lease as HELD. `false`
+ * for released AND for unknown: a turn the engine has not been seen to take is
+ * honestly still being prepared.
+ */
+export function useSessionLeaseHeld(sessionId: string | null): boolean {
+  return useStreamStore((s) =>
+    sessionId === null ? false : s.leaseBySessionId[sessionId] === true,
   );
 }

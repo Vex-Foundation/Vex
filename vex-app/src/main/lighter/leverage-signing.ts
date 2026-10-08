@@ -78,7 +78,7 @@ export async function signConfirmedLighterLeverage(
       vaultCredentialId: defaultLighterTradingVaultCredentialId(intent),
     };
     if (
-      deps.readVaultRegistrationState(reference) !== LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE
+      (await deps.readVaultRegistrationState(reference)) !== LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE
     ) {
       throw new Error("The Lighter trading credential is not active.");
     }

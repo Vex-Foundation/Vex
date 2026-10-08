@@ -87,8 +87,8 @@ export const STUDIO_NAMESPACE_FEES: Readonly<Record<string, StudioNamespaceFee>>
     freeLanes: [],
   },
   lighter: {
-    map: "10 bps perps; 25 bps spot",
-    line: "0.10% maker/taker on perpetual trades and 0.25% on spot trades, through the approved native integrator allowance; reads are free. Exchange fees are separate, and authorizing the Vex fees moves the account to Lighter's Premium tier when it is not already on Plus or Premium (Lighter attaches integrator fees only to those tiers), which changes the exchange's own fee schedule; the fee-authorization card states both changes before anything is signed.",
+    map: "2 bps perps; 25 bps spot",
+    line: "0.02% maker/taker on perpetual trades and 0.25% on spot trades, through the approved native integrator allowance; reads are free. Exchange fees are separate, and authorizing the Vex fees moves the account to Lighter's Premium tier when it is not already on Plus or Premium (Lighter attaches integrator fees only to those tiers), which changes the exchange's own fee schedule; the fee-authorization card states both changes before anything is signed.",
     charged: { symbol: "LIGHTER_PERPS_FEE", lane: "src/tools/lighter" },
     freeLanes: [],
   },

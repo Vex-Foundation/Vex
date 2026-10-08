@@ -305,6 +305,11 @@ describe("success path - EVM", () => {
     // Main resolves the selected wallet by id and hands the engine the entry
     // + the re-typed password — never a renderer-supplied address.
     expect(mockGetWalletById).toHaveBeenCalledWith("evm", WALLET_ID_EVM);
+    // The re-typed password is re-authenticated with the full KDF: exactly
+    // the vault path, never the session's derived-key cache.
+    expect(mockVerifySecretVaultPassword.mock.calls).toEqual([
+      ["master-password-12", { filePath: "/tmp/vex-test-vault" }],
+    ]);
     expect(mockDecryptExportSecret).toHaveBeenCalledWith({
       family: "evm",
       entry: STUB_ENTRY_EVM,

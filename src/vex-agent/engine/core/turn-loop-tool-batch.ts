@@ -67,6 +67,8 @@ import {
   BATCH_ABORTED_BY_DEADLINE_OUTPUT,
   BATCH_ABORTED_BY_TIMEOUT_OUTPUT,
   BATCH_ABORTED_BY_USER_STOP_OUTPUT,
+  BATCH_ABORTED_BY_LEASE_LOST_OUTPUT,
+  APPROVAL_SKIPPED_BY_LEASE_LOST_OUTPUT,
   mapBatchOutcome,
   persistBatchTranscript,
 } from "./turn-loop-tool-batch/results.js";
@@ -76,6 +78,7 @@ import { parkTurnOnLighterSetup } from "./turn-loop-tool-batch/lighter-setup-sto
 import { evaluatePresentationGate } from "./turn-loop-tool-batch/presentation-gate.js";
 import { hasPendingPresentation } from "./board-presentation.js";
 import logger from "@utils/logger.js";
+import { isLeaseLost, leaseHeldForDispatch } from "../runtime/lease-guard.js";
 import {
   evaluateBatchDeadlines,
   type BatchDeadlines,
@@ -84,11 +87,20 @@ import {
   dispatchPreparedActionFollowUp,
   resolvePreparedActionFollowUp,
 } from "./turn-loop-tool-batch/prepared-follow-up.js";
-import { emitToolCallLoopCorrection } from "./turn-loop-tool-batch/loop-correction-emit.js";
+import {
+  emitToolCallLoopCorrection,
+  toolCallLoopStopPayload,
+} from "./turn-loop-tool-batch/loop-correction-emit.js";
+import {
+  dispatchWithTiming,
+  type ToolDispatchTelemetry,
+} from "./turn-loop-tool-batch/dispatch-timing.js";
 import type {
   ToolCallLoopDetector,
   ToolCallLoopFacts,
 } from "./runner/tool-call-loop-detector.js";
+import { planReadSegment, runReadSegment } from "./turn-loop-tool-batch/read-segment.js";
+import { readToolReadBounds } from "@vex-agent/tools/read-dispatch-bounds.js";
 
 export type { StopPayload, ToolBatchOutcome } from "./turn-loop-tool-batch/outcome.js";
 
@@ -130,8 +142,18 @@ export async function processTurnToolBatch(args: {
    * consulted, which is the pre-existing behaviour and never a stop.
    */
   readonly loopDetector?: ToolCallLoopDetector;
+  /**
+   * Runtime-measurement correlation for this batch: the `runTurnLoop`
+   * invocation id and the loop iteration that produced these calls. Absent
+   * means no timing rows are recorded and behaviour is otherwise identical.
+   */
+  readonly telemetry?: ToolDispatchTelemetry;
 }): Promise<ToolBatchOutcome> {
   const { context, turnResult, liveMessages } = args;
+  // The runner's lease guard (absent for a caller that holds no lease). Its
+  // `lostSignal` is read here ONLY to decide whether a NEW call may start; it
+  // is never put on the tool context, so an in-flight dispatch always settles.
+  const leaseGuard = context.leaseGuard;
   const executedCalls: ParsedToolCall[] = [];
   const executedResults: Array<{
     toolCallId: string;
@@ -158,6 +180,9 @@ export async function processTurnToolBatch(args: {
   let loopCorrectionFacts: ToolCallLoopFacts | null = null;
 
   const dispatchBand = computeBand(args.currentTokenCount, args.contextLimit);
+  // Kairos T-1: how many audited parallel-safe reads may run at once. `1` never
+  // plans a segment, so the loop below is exactly the previous serial path.
+  const readConcurrency = readToolReadBounds().readConcurrency;
 
   /**
    * Pair every call from `fromIndex` onward with a synthetic result so the
@@ -191,6 +216,7 @@ export async function processTurnToolBatch(args: {
   const presentationGate = evaluatePresentationGate({
     toolCalls: turnResult.toolCalls,
     hasPendingPresentation: hasPendingPresentation(context.sessionId),
+    missionRun: Boolean(context.missionRunId),
   });
   if (presentationGate.kind === "refuse_batch") {
     logger.info("board.presentation.batch_refused", {
@@ -218,6 +244,65 @@ export async function processTurnToolBatch(args: {
     // every use below.
     if (toolCall === undefined) continue;
 
+    // ── Parallel read segment (Kairos T-1), BEFORE the serial per-call path ──
+    // Two or more consecutive AUDITED parallel-safe reads run concurrently;
+    // every other call is a barrier and takes the unchanged serial path below.
+    // The segment applies the same Stop / lease / deadline / fenced-token
+    // checks before EACH call it starts, lets in-flight reads settle, and
+    // hands back results in the original call order, so the single fenced
+    // transcript write below still pairs every call with one result. See
+    // `./turn-loop-tool-batch/read-segment.ts`.
+    const readSegment = planReadSegment(turnResult.toolCalls, i, readConcurrency);
+    if (readSegment !== null) {
+      const segmentOutcome = await runReadSegment({
+        toolCalls: turnResult.toolCalls,
+        start: i,
+        segment: readSegment,
+        limit: readConcurrency,
+        sessionId: context.sessionId,
+        missionRunId: context.missionRunId ?? null,
+        ...(args.abortSignal === undefined ? {} : { abortSignal: args.abortSignal }),
+        ...(leaseGuard === undefined ? {} : { leaseGuard }),
+        ...(args.deadlines === undefined ? {} : { deadlines: args.deadlines }),
+        ...(args.loopDetector === undefined ? {} : { loopDetector: args.loopDetector }),
+        dispatch: (call) => {
+          const readContext = buildToolContext(
+            context,
+            dispatchBand,
+            args.preparationBypassesBarrier === true,
+            args.abortSignal,
+          );
+          return dispatchWithTiming(
+            args.telemetry,
+            context.sessionId,
+            call,
+            () => dispatchTool(
+              { name: call.name, args: call.arguments, toolCallId: call.id },
+              readContext,
+            ),
+          );
+        },
+      });
+      toolCallsExecuted += segmentOutcome.started;
+      for (const { call, result } of segmentOutcome.executed) {
+        executedCalls.push(call);
+        executedResults.push(result);
+      }
+      const segmentStop = segmentOutcome.stop;
+      if (segmentStop !== null) {
+        drainUndispatchedCalls(segmentStop.drainFrom, segmentStop.drainOutput);
+        if (segmentStop.stopReason !== null) batchStopReason = segmentStop.stopReason;
+        if (segmentStop.stopPayload !== undefined) batchStopPayload = segmentStop.stopPayload;
+        if (segmentStop.loopCorrectionFacts !== undefined) {
+          loopCorrectionFacts = segmentStop.loopCorrectionFacts;
+        }
+        break;
+      }
+      // Resume the serial loop at the first call after the segment.
+      i = readSegment.end - 1;
+      continue;
+    }
+
     // ── Operator Stop, checked at the TOP of the iteration ──
     // Deliberately BEFORE `dispatchTool` and never inside it: a call already
     // in flight (a signature, a broadcast) must run to completion so we never
@@ -227,6 +312,15 @@ export async function processTurnToolBatch(args: {
     if (args.abortSignal?.aborted) {
       drainUndispatchedCalls(i, BATCH_ABORTED_BY_USER_STOP_OUTPUT);
       batchStopReason = "user_stopped";
+      break;
+    }
+
+    // ── Lease loss, checked right after the Stop ──
+    // Another runner owns the session now: start nothing new. Ordered after
+    // the Stop so an operator's Stop is always reported as their Stop.
+    if (isLeaseLost(leaseGuard)) {
+      drainUndispatchedCalls(i, BATCH_ABORTED_BY_LEASE_LOST_OUTPUT);
+      batchStopReason = "lease_lost";
       break;
     }
 
@@ -248,6 +342,16 @@ export async function processTurnToolBatch(args: {
       break;
     }
 
+    // ── Fenced token check, immediately before a NEW dispatch ──
+    // The heartbeat only notices a takeover on its next tick; this read closes
+    // that window for the one step that can move funds. Anything but our own
+    // token on the lease row marks the guard lost and nothing is dispatched.
+    if (leaseGuard !== undefined && !(await leaseHeldForDispatch(leaseGuard))) {
+      drainUndispatchedCalls(i, BATCH_ABORTED_BY_LEASE_LOST_OUTPUT);
+      batchStopReason = "lease_lost";
+      break;
+    }
+
     toolCallsExecuted++;
 
     const toolContext = buildToolContext(
@@ -257,9 +361,14 @@ export async function processTurnToolBatch(args: {
       args.abortSignal,
     );
 
-    const result = await dispatchTool(
-      { name: toolCall.name, args: toolCall.arguments, toolCallId: toolCall.id },
-      toolContext,
+    const result = await dispatchWithTiming(
+      args.telemetry,
+      context.sessionId,
+      toolCall,
+      () => dispatchTool(
+        { name: toolCall.name, args: toolCall.arguments, toolCallId: toolCall.id },
+        toolContext,
+      ),
     );
 
     // Trusted prepare→execute handoff (see the registry allow-list): resolves
@@ -308,6 +417,34 @@ export async function processTurnToolBatch(args: {
       });
       drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_USER_STOP_OUTPUT);
       batchStopReason = "user_stopped";
+      break;
+    }
+
+    // ── Lease loss, re-checked AFTER the dispatch returned ──
+    // Same shape as the Stop re-check above: the call that was in flight
+    // settled and its result is recorded truthfully (the write is fenced, so
+    // after a takeover it affects zero rows); nothing after it runs - no
+    // approval is parked, no follow-up signs, no further call dispatches.
+    if (isLeaseLost(leaseGuard)) {
+      executedCalls.push(toolCall);
+      executedResults.push({
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        output: resultForTranscript.pendingApproval
+          ? APPROVAL_SKIPPED_BY_LEASE_LOST_OUTPUT
+          : resultForTranscript.output,
+        success: resultForTranscript.pendingApproval
+          ? false
+          : resultForTranscript.success,
+        explorerRefs: resultForTranscript.pendingApproval
+          ? []
+          : deriveExplorerRefs(resultForTranscript.data),
+        ...(resultForTranscript.pendingApproval
+          ? {}
+          : displayStatusPayload(resultForTranscript.data)),
+      });
+      drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_LEASE_LOST_OUTPUT);
+      batchStopReason = "lease_lost";
       break;
     }
 
@@ -457,6 +594,7 @@ export async function processTurnToolBatch(args: {
         // approval, because the transcript write between here and there is a
         // real window.
         abortSignal: args.abortSignal,
+        telemetry: args.telemetry,
       });
     }
 
@@ -571,18 +709,9 @@ export async function processTurnToolBatch(args: {
       });
       drainUndispatchedCalls(i + 1, BATCH_ABORTED_BY_TOOL_CALL_LOOP_OUTPUT);
       batchStopReason = "tool_call_loop";
-      batchStopPayload = {
-        summary:
-          "The model repeated the same completed tool call after being corrected once.",
-        // Shape of the repetition only - `ToolCallLoopFacts` carries no raw
-        // arguments by construction, and this evidence is durable.
-        evidence: {
-          toolName: verdict.facts.toolName,
-          cycleLength: verdict.facts.cycleLength,
-          repeatCount: verdict.facts.repeatCount,
-          toolCallIds: verdict.facts.toolCallIds,
-        },
-      };
+      // Trigger-aware wording; shape of the repetition only - no raw
+      // arguments, and this evidence is durable.
+      batchStopPayload = toolCallLoopStopPayload(verdict.facts);
       break;
     }
   }
@@ -594,6 +723,7 @@ export async function processTurnToolBatch(args: {
     executedResults,
     liveMessages,
     reasoning: turnResult.reasoning,
+    ...(leaseGuard === undefined ? {} : { leaseGuard }),
   });
 
   // Emit only after the status and all synthetic batch results are durable.

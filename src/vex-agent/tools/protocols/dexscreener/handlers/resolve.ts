@@ -105,6 +105,7 @@ import {
   siteError,
 } from "@tools/dexscreener/site-errors.js";
 import { fail, num, ok, str } from "../../handler-helpers.js";
+import { withReadProjection } from "../row-projection.js";
 import { liquidityInterpretation } from "./liquidity-interpretation.js";
 import { readStringList } from "../../runtime/list-params.js";
 import type { ProtocolHandler } from "../../types.js";
@@ -824,13 +825,15 @@ function projectInsight(
     };
   }
   const hasText = insight.title !== null || insight.content !== null;
-  // THREE MEASURED OUTCOMES, THREE DIFFERENT FACTS. NOT_FOUND is the provider
-  // saying it has written nothing about this token, which is the normal answer
-  // on all but roughly 1,200 Solana tokens. INTERNAL is the provider FAULTING
-  // (measured on a malformed request) and says nothing about whether a blurb
-  // exists. Giving both the same "no blurb" note collapsed an absence and an
-  // error into one reading, which is exactly what rule 04 forbids.
-  const faulted = insight.code === "WS_COMMAND_CODE_INTERNAL";
+  // THREE MEASURED OUTCOMES, THREE DIFFERENT FACTS. STATUS_NOT_FOUND is the
+  // provider saying it has written nothing about this token, which is the
+  // normal answer on all but roughly 1,200 Solana tokens. Any other non-OK
+  // status (STATUS_INVALID_ARGUMENT measured on a malformed request) is the
+  // provider FAULTING and says nothing about whether a blurb exists. The
+  // endpoint owns that distinction (`faulted`, pair-live.ts). Giving both the
+  // same "no blurb" note collapsed an absence and an error into one reading,
+  // which is exactly what rule 04 forbids.
+  const faulted = insight.faulted;
   return {
     available: hasText,
     // The provider's own code, verbatim, when it sent one.
@@ -840,7 +843,7 @@ function projectInsight(
       : {
           reason: faulted ? "provider_error" : "none_written",
           absenceNote: faulted
-            ? "The provider answered WS_COMMAND_CODE_INTERNAL, which is a fault on its side and NOT a statement that this token has no blurb. Whether one exists is unknown from this answer."
+            ? `The provider answered ${insight.code ?? "an error status"}, which is a fault on its side and NOT a statement that this token has no blurb. Whether one exists is unknown from this answer.`
             : "The provider has written nothing about this token, which is the normal case: measured coverage is roughly 1,200 Solana tokens and no token on any other chain. This is an absence, not an error, and not a signal about the token.",
         }),
     title: sanitizeIssuerField(insight.title, "insight.title", sanitized),
@@ -1701,7 +1704,9 @@ async function runPairsBatch(
  *     did not report is not compared and not dropped: it is KEPT and counted
  *     per threshold in `notEvaluated`. Treating an unreported liquidity as 0
  *     reported a data gap as "below your floor", which is a different and
- *     false statement, and on a money path it is the one that costs.
+ *     false statement, and on a money path it is the one that costs. The one
+ *     exception is the active boost amount, whose ABSENCE is the provider's way
+ *     of saying zero (see `minBoostCount` in `thresholdSubject`).
  *  3. NOTHING VANISHES. `kept + dropped === received`, asserted by the caller.
  */
 const CLIENT_THRESHOLD_SET: ReadonlySet<string> = new Set(CLIENT_THRESHOLD_KEYS);
@@ -1770,7 +1775,13 @@ function thresholdSubject(
       // that is has one whether or not the caller asked to see the group.
       return row.projected.launchpad?.progressPct ?? null;
     case "minBoostCount":
-      return shaped.boostsActive;
+      // NOT the missing-is-not-zero rule above, and deliberately so: the
+      // provider sends a `boosts` block only on a pair that HAS active boosts,
+      // so a row without one is a pair with zero active boosts, a real
+      // measurement. Reading it as unknown kept every unboosted pair under a
+      // boost floor and counted it in notEvaluated, which made
+      // `minBoostCount` unable to remove anything but a boosted pair.
+      return shaped.boostsActive ?? 0;
   }
 }
 
@@ -2502,7 +2513,7 @@ function guarded(
 ): ProtocolHandler {
   return async (params, context) => {
     try {
-      return await run(params, context.abortSignal);
+      return withReadProjection(await run(params, context.abortSignal));
     } catch (error) {
       if (isDexScreenerSiteError(error)) {
         return fail(

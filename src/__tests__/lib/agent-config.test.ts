@@ -15,8 +15,15 @@ import {
   AGENT_CONTEXT_LIMIT,
   AGENT_MAX_OUTPUT_TOKENS,
   AGENT_TEMPERATURE,
+  AGENT_DB_BOUND_FIELDS,
   formatParseErrors,
+  parseAgentDbBoundsEnv,
   parseAgentEnv,
+  parseAgentToolReadEnv,
+  parseAgentWakeEnv,
+  parseAgentWalletReadEnv,
+  parseAgentReadProjectionEnv,
+  parseApprovalDispatchBackgroundEnv,
 } from "../../lib/agent-config.js";
 
 describe("agent-config field metadata", () => {
@@ -148,5 +155,171 @@ describe("formatParseErrors", () => {
     ]);
     const lines = out.split("\n");
     expect(lines.length).toBe(3);
+  });
+});
+
+describe("parseAgentDbBoundsEnv (Kairos S-4)", () => {
+  it("returns the always-on defaults when unset", () => {
+    const r = parseAgentDbBoundsEnv({});
+    expect(r.errors).toEqual([]);
+    expect(r.value).toEqual({
+      statementTimeoutMs: 30_000,
+      connectionTimeoutMs: 10_000,
+      idleInTransactionTimeoutMs: 60_000,
+      longStatementTimeoutMs: 300_000,
+      controlPoolMax: 2,
+    });
+  });
+
+  it("every field has a positive minimum, so no value disables a bound", () => {
+    for (const field of AGENT_DB_BOUND_FIELDS) {
+      expect(field.min).toBeGreaterThan(0);
+      const r = parseAgentDbBoundsEnv({ [field.key]: "0" });
+      expect(r.errors).toEqual([
+        { key: field.key, raw: "0", reason: "out_of_range", detail: { min: field.min, max: field.max } },
+      ]);
+    }
+  });
+
+  it("accepts valid overrides", () => {
+    const r = parseAgentDbBoundsEnv({
+      AGENT_DB_STATEMENT_TIMEOUT_MS: "20000",
+      AGENT_DB_CONNECTION_TIMEOUT_MS: "3000",
+      AGENT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: "90000",
+      AGENT_DB_LONG_STATEMENT_TIMEOUT_MS: "600000",
+      AGENT_DB_CONTROL_POOL_MAX: "4",
+    });
+    expect(r.errors).toEqual([]);
+    expect(r.value).toEqual({
+      statementTimeoutMs: 20_000,
+      connectionTimeoutMs: 3_000,
+      idleInTransactionTimeoutMs: 90_000,
+      longStatementTimeoutMs: 600_000,
+      controlPoolMax: 4,
+    });
+  });
+
+  it("an invalid value is reported and its default applies", () => {
+    const r = parseAgentDbBoundsEnv({ AGENT_DB_CONTROL_POOL_MAX: "many", AGENT_DB_STATEMENT_TIMEOUT_MS: "1.5" });
+    expect(r.errors.map((e) => [e.key, e.reason])).toEqual([
+      ["AGENT_DB_STATEMENT_TIMEOUT_MS", "not_a_number"],
+      ["AGENT_DB_CONTROL_POOL_MAX", "not_a_number"],
+    ]);
+    expect(r.value.controlPoolMax).toBe(2);
+    expect(r.value.statementTimeoutMs).toBe(30_000);
+  });
+
+  it("the long-statement budget is never below the ordinary statement cap", () => {
+    const r = parseAgentDbBoundsEnv({
+      AGENT_DB_STATEMENT_TIMEOUT_MS: "120000",
+      AGENT_DB_LONG_STATEMENT_TIMEOUT_MS: "60000",
+    });
+    expect(r.errors).toEqual([]);
+    expect(r.value.longStatementTimeoutMs).toBe(120_000);
+  });
+});
+
+describe("parseAgentToolReadEnv (Kairos T-1 + T-3)", () => {
+  it("defaults to three concurrent reads, a 45 s read cap and a 120 s extended cap", () => {
+    const r = parseAgentToolReadEnv({});
+    expect(r.errors).toEqual([]);
+    expect(r.value).toEqual({
+      readConcurrency: 3,
+      readTimeoutMs: 45_000,
+      extendedReadTimeoutMs: 120_000,
+    });
+  });
+
+  it("accepts 1 (strictly serial) and 0 for either timeout (disabled)", () => {
+    const r = parseAgentToolReadEnv({
+      AGENT_TOOL_READ_CONCURRENCY: "1",
+      AGENT_TOOL_READ_TIMEOUT_MS: "0",
+      AGENT_TOOL_READ_EXTENDED_TIMEOUT_MS: "0",
+    });
+    expect(r.errors).toEqual([]);
+    expect(r.value).toEqual({ readConcurrency: 1, readTimeoutMs: 0, extendedReadTimeoutMs: 0 });
+  });
+
+  it("refuses a concurrency of 0 or above 8, and the default applies", () => {
+    for (const raw of ["0", "9", "two"]) {
+      const r = parseAgentToolReadEnv({ AGENT_TOOL_READ_CONCURRENCY: raw });
+      expect(r.errors.map((e) => e.key)).toEqual(["AGENT_TOOL_READ_CONCURRENCY"]);
+      expect(r.value.readConcurrency).toBe(3);
+    }
+  });
+});
+
+describe("parseAgentWakeEnv (Kairos S-3)", () => {
+  it("defaults to one wake slice at a time, the serial executor", () => {
+    const r = parseAgentWakeEnv({});
+    expect(r.errors).toEqual([]);
+    expect(r.value).toEqual({ wakeConcurrency: 1 });
+    expect(parseAgentWakeEnv({ AGENT_WAKE_CONCURRENCY: "  " }).value.wakeConcurrency).toBe(1);
+  });
+
+  it("accepts 1 through 4", () => {
+    for (const n of [1, 2, 3, 4]) {
+      const r = parseAgentWakeEnv({ AGENT_WAKE_CONCURRENCY: String(n) });
+      expect(r.errors).toEqual([]);
+      expect(r.value.wakeConcurrency).toBe(n);
+    }
+  });
+
+  it("refuses 0, above 4 or a non-number, and the serial default applies", () => {
+    for (const raw of ["0", "5", "1.5", "two"]) {
+      const r = parseAgentWakeEnv({ AGENT_WAKE_CONCURRENCY: raw });
+      expect(r.errors.map((e) => e.key)).toEqual(["AGENT_WAKE_CONCURRENCY"]);
+      expect(r.value.wakeConcurrency).toBe(1);
+    }
+  });
+});
+
+describe("parseAgentReadProjectionEnv (Kairos P-6)", () => {
+  it("defaults OFF, turns on with 1, and refuses anything else", () => {
+    expect(parseAgentReadProjectionEnv({})).toEqual({ value: false, errors: [] });
+    expect(parseAgentReadProjectionEnv({ AGENT_READ_PROJECTION: "1" }).value).toBe(true);
+    const bad = parseAgentReadProjectionEnv({ AGENT_READ_PROJECTION: "yes" });
+    expect(bad.value).toBe(false);
+    expect(bad.errors.map((e) => e.key)).toEqual(["AGENT_READ_PROJECTION"]);
+  });
+});
+
+describe("parseApprovalDispatchBackgroundEnv (Kairos K-2 B2)", () => {
+  it("defaults ON, turns off with 0, and reads anything else as OFF with an error", () => {
+    expect(parseApprovalDispatchBackgroundEnv({})).toEqual({ value: true, errors: [] });
+    expect(parseApprovalDispatchBackgroundEnv({ APPROVAL_DISPATCH_BACKGROUND: "0" })).toEqual({ value: false, errors: [] });
+    expect(parseApprovalDispatchBackgroundEnv({ APPROVAL_DISPATCH_BACKGROUND: "1" }).value).toBe(true);
+    const bad = parseApprovalDispatchBackgroundEnv({ APPROVAL_DISPATCH_BACKGROUND: "2" });
+    expect(bad.value).toBe(false);
+    expect(bad.errors.map((e) => e.key)).toEqual(["APPROVAL_DISPATCH_BACKGROUND"]);
+  });
+});
+
+describe("parseAgentWalletReadEnv (Kairos W-1)", () => {
+  it("defaults to parallel legs with a 25 s per-leg deadline", () => {
+    const r = parseAgentWalletReadEnv({});
+    expect(r.errors).toEqual([]);
+    expect(r.value).toEqual({ parallelLegs: true, legTimeoutMs: 25_000 });
+  });
+
+  it("0 and 0 is the pre-Phase-6 read: serial legs, no deadline", () => {
+    const r = parseAgentWalletReadEnv({
+      AGENT_WALLET_READ_PARALLEL: "0",
+      AGENT_WALLET_READ_LEG_TIMEOUT_MS: "0",
+    });
+    expect(r.errors).toEqual([]);
+    expect(r.value).toEqual({ parallelLegs: false, legTimeoutMs: 0 });
+  });
+
+  it("refuses values out of range, and the default applies", () => {
+    const r = parseAgentWalletReadEnv({
+      AGENT_WALLET_READ_PARALLEL: "2",
+      AGENT_WALLET_READ_LEG_TIMEOUT_MS: "999999",
+    });
+    expect(r.errors.map((e) => e.key)).toEqual([
+      "AGENT_WALLET_READ_PARALLEL",
+      "AGENT_WALLET_READ_LEG_TIMEOUT_MS",
+    ]);
+    expect(r.value).toEqual({ parallelLegs: true, legTimeoutMs: 25_000 });
   });
 });

@@ -75,7 +75,7 @@ export const STUDIO_CHANGELOG: readonly StudioChangelogEntry[] = [
       + "candle reads, managed onboarding, deposits, trading-key registration, "
       + "orders including stop loss, take profit and OCO, position close, "
       + "withdrawals and manual claims. Every order, deposit and withdrawal "
-      + "runs through its own approval card, and the Vex fee is 0.10% on "
+      + "runs through its own approval card, and the Vex fee is 0.02% on "
       + "perpetual trades and 0.25% on spot, authorized once on a card that "
       + "also states what the tier change does to Lighter's own fees. "
       + "Leverage per market and the share of the account's capital the agent "

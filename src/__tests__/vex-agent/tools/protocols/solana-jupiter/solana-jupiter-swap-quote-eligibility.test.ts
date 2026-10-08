@@ -175,7 +175,7 @@ const CTX: ProtocolExecutionContext = {
   sessionId: "00000000-0000-4000-8000-000000000001",
   sessionPermission: "restricted",
   approved: true,
-  walletResolution: { source: "session" },
+  walletResolution: { source: "session", evm: null, solana: { id: "wallet-solana", address: WALLET.toBase58() } },
   walletPolicy: { kind: "none" },
 };
 

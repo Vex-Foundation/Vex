@@ -25,6 +25,23 @@
  */
 
 import { getVisibleToolsByCategory, type ToolVisibilityContext } from "../../tools/registry.js";
+import { coreMarketReadToolIds } from "../../tools/registry/core-market-reads.js";
+import { toInjectedToolName } from "../../tools/registry/injected-protocol-tools.js";
+
+/**
+ * T-5: name the preloaded core market reads in the Map, from the SAME
+ * predicate that puts them in the tools array (`core-market-reads.ts`). The
+ * prompt's protocol rules say a protocol tool needs a `ToolSearch` result
+ * first; this line is the stated exception, present only while the preload is.
+ * No line at all when the switch is off or in mission setup, so that path
+ * renders byte for byte as before.
+ */
+function coreMarketReadsLine(ctx: ToolVisibilityContext): string | null {
+  const names = coreMarketReadToolIds(ctx).map(toInjectedToolName);
+  if (names.length === 0) return null;
+  return "**Preloaded market reads (protocol tools already in your tool list with full schemas; "
+    + `call them directly, no ToolSearch needed):** ${names.join(", ")}`;
+}
 
 export function buildToolCatalogPrompt(ctx: ToolVisibilityContext): string {
   const categories = getVisibleToolsByCategory(ctx);
@@ -41,5 +58,7 @@ export function buildToolCatalogPrompt(ctx: ToolVisibilityContext): string {
   for (const cat of categories) {
     lines.push(`**${cat.label}:** ${cat.toolNames.join(", ")}`);
   }
+  const preloaded = coreMarketReadsLine(ctx);
+  if (preloaded !== null) lines.push(preloaded);
   return lines.join("\n");
 }

@@ -287,6 +287,11 @@ describe("fees", () => {
 });
 
 describe("privacy", () => {
+  it("carries proven position effect while realized PnL remains explicitly unknown", () => {
+    expect(mapOrThrow(ledgerRow({ position_effect: "reduce", account_pnl: null })).lighterFill)
+      .toMatchObject({ positionEffect: "reduce", positionSizeBefore: "2.5", positionSignChanged: false, accountPnl: null });
+  });
+
   it("pins the payload's key set, so a new field is a decision and not an accident", () => {
     const fill = mapOrThrow(ledgerRow()).lighterFill;
     expect(Object.keys(fill).sort()).toEqual([
@@ -386,6 +391,11 @@ describe("the enrichment projection", () => {
     if (isLighterFillMappingFailure(result)) throw new Error(`unmappable: ${result.reason}`);
     return result;
   }
+
+  it("carries a position enrichment without fabricating realized PnL", () => {
+    expect(enrichOrThrow(ledgerRow({ position_effect: "reduce", account_pnl: null, revision: 1 }), 1).lighterFillEnrichment)
+      .toMatchObject({ positionEffect: "reduce", accountPnl: null, revision: 1 });
+  });
 
   it("reports the SAME identity as the fill, so the server updates one it already holds", () => {
     const enriched = enrichOrThrow(

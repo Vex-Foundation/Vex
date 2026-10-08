@@ -19,7 +19,7 @@
             "type": "string"
           },
           "deadlineMs": {
-            "description": "Wall-clock budget for an aggregate walk, in milliseconds. Defaults to 25000, ceiling 120000. Reported exactly like maxPages when it is reached.",
+            "description": "Wall-clock budget for an aggregate walk, in milliseconds. Defaults to 25000, ceiling 120000. Reported exactly like maxPages when it is reached. It also caps EACH page's wait, in every mode, so a slow channel cannot hold the call past it: a page the deadline cuts off after earlier pages arrived ends the walk with deadlineHit and a cursor for the rest, and a FIRST page that cannot answer inside it fails with DEXSCREENER_TRANSPORT_TIMEOUT naming deadlineMs. The clock starts at the first page request, after the pair is resolved.",
             "type": "number"
           },
           "endAtMs": {

@@ -76,10 +76,10 @@ function appendWalletEntry(
   saveConfig(cfg);
 
   // Snapshot the full wallet surface AFTER the wallet is persisted. Fire-and-
-  // forget so the synchronous create/import signatures (and their vex-app
-  // onboarding callers, which are out of scope for this checkpoint) stay
-  // unchanged. A backup failure NEVER rolls back the just-saved wallet — the
-  // wallet is the source of truth; the backup is best-effort durability.
+  // forget so the create/import result never waits on the backup (unchanged
+  // behaviour; the keystore derive above is the only awaited step). A backup
+  // failure NEVER rolls back the just-saved wallet: the wallet is the source of
+  // truth; the backup is best-effort durability.
   void autoBackup().catch((err: unknown) => {
     logger.warn(
       `Post-add wallet backup failed (wallet kept): ${
@@ -91,43 +91,52 @@ function appendWalletEntry(
   return entry;
 }
 
-export function createEvmWalletEntry(opts: { label?: string } = {}): WalletInventoryEntry {
+export async function createEvmWalletEntry(
+  opts: { label?: string } = {},
+): Promise<WalletInventoryEntry> {
   const password = requireKeystorePassword();
   const privateKey = generatePrivateKey();
   const address = privateKeyToAddress(privateKey);
-  return appendWalletEntry("evm", address, encryptPrivateKey(privateKey, password), opts.label);
+  return appendWalletEntry("evm", address, await encryptPrivateKey(privateKey, password), opts.label);
 }
 
-export function importEvmWalletEntry(
+export async function importEvmWalletEntry(
   rawKey: string,
   opts: { label?: string } = {},
-): WalletInventoryEntry {
+): Promise<WalletInventoryEntry> {
   const password = requireKeystorePassword();
   const normalized = normalizePrivateKey(rawKey);
   const address = privateKeyToAddress(normalized);
-  return appendWalletEntry("evm", address, encryptPrivateKey(normalized, password), opts.label);
+  return appendWalletEntry("evm", address, await encryptPrivateKey(normalized, password), opts.label);
 }
 
-export function createSolanaWalletEntry(opts: { label?: string } = {}): WalletInventoryEntry {
+export async function createSolanaWalletEntry(
+  opts: { label?: string } = {},
+): Promise<WalletInventoryEntry> {
   const password = requireKeystorePassword();
   const keypair = Keypair.generate();
   const address = deriveSolanaAddress(keypair.secretKey);
   return appendWalletEntry(
     "solana",
     address,
-    encryptSolanaSecretKey(keypair.secretKey, password),
+    await encryptSolanaSecretKey(keypair.secretKey, password),
     opts.label,
   );
 }
 
-export function importSolanaWalletEntry(
+export async function importSolanaWalletEntry(
   rawKey: string,
   opts: { label?: string } = {},
-): WalletInventoryEntry {
+): Promise<WalletInventoryEntry> {
   const password = requireKeystorePassword();
   const secret = normalizeSolanaSecretKey(rawKey);
   const address = deriveSolanaAddress(secret);
-  return appendWalletEntry("solana", address, encryptSolanaSecretKey(secret, password), opts.label);
+  return appendWalletEntry(
+    "solana",
+    address,
+    await encryptSolanaSecretKey(secret, password),
+    opts.label,
+  );
 }
 
 interface ExportManifestWallet {

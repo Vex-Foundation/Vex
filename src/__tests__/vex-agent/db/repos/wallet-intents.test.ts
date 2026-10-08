@@ -20,6 +20,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+import type { CreateInput } from "@vex-agent/db/repos/wallet-intents.js";
 
 type PoolQueryOneMock = Mock<
   (sql: string, params?: unknown[]) => Promise<Record<string, unknown> | null>
@@ -94,7 +95,7 @@ function fullRow(overrides: Partial<Record<string, unknown>> = {}): Record<strin
   };
 }
 
-function buildCreateInput(overrides: Partial<repo.CreateInput> = {}): repo.CreateInput {
+function buildCreateInput(overrides: Partial<CreateInput> = {}): CreateInput {
   return {
     intentId: INTENT_ID,
     sessionId: SESSION_ID,

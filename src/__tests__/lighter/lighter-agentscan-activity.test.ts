@@ -105,6 +105,42 @@ function buildOrThrow(input: Parameters<typeof buildLighterFillRecord>[0]) {
   return result;
 }
 
+describe("position facts independently of unknown provider PnL", () => {
+  for (const side of ["buy", "sell"] as const) {
+    for (const role of ["maker", "taker"] as const) {
+      it(`takes only the ${side} account's ${role} position facts`, () => {
+        const accountIndex = 743799;
+        const observed = trade({
+          ask_account_id: side === "sell" ? accountIndex : 111,
+          bid_account_id: side === "buy" ? accountIndex : 111,
+          is_maker_ask: (side === "sell") === (role === "maker"),
+          maker_position_size_before: role === "maker" ? "0" : "99",
+          taker_position_size_before: role === "taker" ? "0" : "99",
+          maker_position_sign_changed: role === "maker",
+          taker_position_sign_changed: role === "taker",
+          ask_account_pnl: side === "sell" ? null : "99",
+          bid_account_pnl: side === "buy" ? null : "99",
+        });
+        const record = buildOrThrow({ trade: observed, intent: intent({ side }), market: PERP_MARKET, feeTerms: FEE_TERMS });
+        expect(record.positionEffect).toBe("open");
+        expect(record.accountFacts).toMatchObject({ positionSizeBefore: "0", positionSignChanged: true, accountPnl: null });
+        const legacy = buildOrThrow({ trade: observed, intent: intent({ side }), market: PERP_MARKET, feeTerms: FEE_TERMS, positionFactsWithoutPnl: false });
+        expect(legacy.accountFacts).toBeNull();
+        expect(legacy.positionEffect).toBeNull();
+      });
+    }
+  }
+
+  it("uses no account facts for a wrong account or a contradictory intent side", () => {
+    const observed = trade({ taker_position_size_before: "0", taker_position_sign_changed: true, bid_account_pnl: "0" });
+    for (const wrongIntent of [intent({ accountIndex: 222 }), intent({ side: "sell" })]) {
+      const record = buildOrThrow({ trade: observed, intent: wrongIntent, market: PERP_MARKET, feeTerms: FEE_TERMS });
+      expect(record.accountFacts).toBeNull();
+      expect(record.positionEffect).toBeNull();
+    }
+  });
+});
+
 describe("Lighter fill identity", () => {
   it("is the canonical encoding, in one spelling", () => {
     expect(

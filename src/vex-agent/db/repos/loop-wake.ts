@@ -11,8 +11,9 @@
  *     mission shape.
  *
  * Rows progress one-way:
- *   pending → consumed (executor `claimDue`)
- *   pending → cancelled (ingress router `cancelForSession` on user preempt)
+ *   pending → consumed (the executor's atomic claim, only when a runner starts)
+ *   pending → cancelled (ingress preempt, Stop, resume cleanup, or a claim that
+ *                        found the target no longer resumable)
  *
  * Invariants enforced by the schema:
  *   - At most one pending row per session (`uniq_loop_wake_pending_per_session`
@@ -21,11 +22,10 @@
  *     so callers can detect the no-op without a separate pre-check.
  *   - `status` CHECK constraint — only the three known values persist.
  *
- * Exactly-once claim (`claimDue`): single UPDATE that selects due pending
- * rows via `FOR UPDATE SKIP LOCKED` and flips them to `consumed`. Using a
- * dedicated short-lived `PoolClient` so the SKIP LOCKED predicate and the
- * UPDATE live in the same transaction — race-safe across concurrent
- * executor ticks.
+ * Exactly-once claim: both wake shapes are LISTED without consuming, then
+ * claimed one row at a time. Each claim re-locks its row under the session
+ * control lock and consumes it in the same commit that gives a runner the
+ * lease, so there is never a consumed row that no runner started.
  *
  * Structural split: this file owns the row LIFECYCLE (enqueue, cancel, claim,
  * session-scoped primitives) and stays the public entry point. The row mapping
@@ -107,7 +107,7 @@ export async function enqueue(
  * Returns the number of rows flipped pending → cancelled. Zero is normal
  * (no wake was pending). The caller must NOT treat a non-zero count as
  * an assumption that a banner hasn't already been injected — cancel loses
- * a race against an in-flight `claimDue` (see PR-7 executor re-check).
+ * a race against an in-flight wake claim (see the executor re-check).
  */
 export async function cancelForSession(
   sessionId: string,
@@ -144,68 +144,85 @@ const CANCEL_PENDING_FOR_SESSION_SQL = `
            cancelled_reason = $2
      WHERE session_id = $1 AND status = 'pending'`;
 
-// ── Claim due (exactly-once) ────────────────────────────────────────
+// ── Mission-scoped atomic claim primitives ──────────────────────────
 
 /**
- * Atomically claim up to `limit` pending MISSION-SCOPED wake rows whose
- * `due_at <= now`.
+ * Due MISSION-SCOPED candidates, read WITHOUT consuming.
  *
- * SESSION-SCOPED rows (`mission_run_id IS NULL`) are deliberately excluded.
- * They are claimed by the atomic session-wake protocol
- * (`engine/wake/executor/claim-session-wake.ts`), which takes the session
- * control lock, revalidates the row and acquires the session lease as ONE
- * commit. Consuming such a row here first would reopen the window this split
- * exists to remove: between the destructive `pending → consumed` and the lease
- * acquisition there was neither a pending wake nor a lease, so a Stop landing
- * in it found nothing to stop, and a lease-busy claim had already destroyed the
- * only durable record of the continuation.
+ * This replaced a destructive batch claim that flipped every due row to
+ * `consumed` in one transaction and only THEN started the runs one by one. A
+ * crash after the first start left every later row consumed with no run started
+ * and nothing left to retry it: the run sat in `paused_wake` forever.
  *
- * The UPDATE takes a short-lived dedicated connection (`pool.connect()`)
- * and runs inside an explicit `BEGIN…COMMIT` so the `SELECT … FOR UPDATE
- * SKIP LOCKED` inner query and the `UPDATE … SET status='consumed'` outer
- * statement share the same transaction. That combination is the race-safe
- * contract: two parallel `claimDue` calls see disjoint row sets, because
- * the inner select skips rows that the other transaction has already
- * locked.
- *
- * Every returned row is now in status `consumed` (DB-side). Callers must
- * tolerate the row set being smaller than `limit` (possibly empty) — that
- * means either fewer rows were due or other executors raced ahead.
+ * A candidate is not a claim. Each row is claimed on its own, in ONE transaction
+ * under the session control lock, together with the run flip and the lease
+ * (`engine/wake/executor/claim-mission-wake.ts`), so a process that dies between
+ * two claims leaves every unclaimed row exactly as it was: pending.
  */
-export async function claimDue(
+export async function listDueMissionScoped(
   now: Date,
   limit: number,
 ): Promise<LoopWakeRequest[]> {
-  const client: PoolClient = await getPool().connect();
-  try {
-    await client.query("BEGIN");
-    const result = await client.query<LoopWakeRow>(
-      `UPDATE loop_wake_requests
-       SET status = 'consumed', consumed_at = NOW()
-       WHERE id IN (
-         SELECT id FROM loop_wake_requests
-         WHERE status = 'pending'
-           AND due_at <= $1::timestamptz
-           AND mission_run_id IS NOT NULL
-         ORDER BY due_at
-         LIMIT $2
-         FOR UPDATE SKIP LOCKED
-       )
-       RETURNING *`,
-      [now.toISOString(), limit],
-    );
-    await client.query("COMMIT");
-    return result.rows.map(mapRow);
-  } catch (err) {
-    try {
-      await client.query("ROLLBACK");
-    } catch {
-      // Swallow rollback errors — the original failure is what the caller needs.
-    }
-    throw err;
-  } finally {
-    client.release();
-  }
+  const rows = await query<LoopWakeRow>(
+    `SELECT * FROM loop_wake_requests
+      WHERE status = 'pending'
+        AND due_at <= $1::timestamptz
+        AND mission_run_id IS NOT NULL
+      ORDER BY due_at
+      LIMIT $2`,
+    [now.toISOString(), limit],
+  );
+  return rows.map(mapRow);
+}
+
+/**
+ * Re-read ONE mission-scoped candidate under a row lock, inside the caller's
+ * transaction, and prove it is still claimable. `null` means it was cancelled,
+ * claimed by another executor, or pushed out since the candidate read.
+ *
+ * The caller MUST already hold the session control lock and the run row lock,
+ * in that order: every resume path that cancels a run's pending wake locks the
+ * run first, so taking the wake row before the run would invert that order.
+ */
+export async function lockDueMissionScopedWith(
+  client: PoolClient,
+  wakeId: string,
+  now: Date,
+): Promise<LoopWakeRequest | null> {
+  const row = await queryOneWith<LoopWakeRow>(
+    client,
+    `SELECT * FROM loop_wake_requests
+      WHERE id = $1
+        AND status = 'pending'
+        AND mission_run_id IS NOT NULL
+        AND due_at <= $2::timestamptz
+      FOR UPDATE`,
+    [wakeId, now.toISOString()],
+  );
+  return row ? mapRow(row) : null;
+}
+
+/**
+ * Retire a locked row whose target can no longer be resumed by it (the run is
+ * gone, terminal, parked for something else, or refused an auto-retry). The row
+ * becomes `cancelled`, never `consumed`: after the atomic claim, `consumed`
+ * means exactly "a runner started from this row", and the stuck-wake repair
+ * relies on that meaning.
+ */
+export async function dropLockedWith(
+  client: PoolClient,
+  wakeId: string,
+  reason: string,
+): Promise<number> {
+  return executeWith(
+    client,
+    `UPDATE loop_wake_requests
+        SET status = 'cancelled',
+            cancelled_at = NOW(),
+            cancelled_reason = $2
+      WHERE id = $1 AND status = 'pending'`,
+    [wakeId, reason],
+  );
 }
 
 // ── Session-scoped atomic claim primitives ──────────────────────────
@@ -267,7 +284,7 @@ export async function lockDueSessionScopedWith(
 }
 
 /**
- * Consume a locked session-scoped row. Called ONLY after the session lease was
+ * Consume a locked row (either shape). Called ONLY after the lease was
  * successfully acquired on the same client, so `pending → consumed` and "a
  * runner now owns this session" commit together.
  */
@@ -298,17 +315,26 @@ export async function deferLockedWith(
   wakeId: string,
   dueAt: Date,
   attempt: number,
+  attemptKey: WakeDeferAttemptKey = "attempt",
 ): Promise<number> {
   return executeWith(
     client,
     `UPDATE loop_wake_requests
         SET due_at  = $2::timestamptz,
             payload = COALESCE(payload, '{}'::jsonb)
-                      || jsonb_build_object('attempt', $3::int)
+                      || jsonb_build_object($4::text, $3::int)
       WHERE id = $1 AND status = 'pending'`,
-    [wakeId, dueAt.toISOString(), attempt],
+    [wakeId, dueAt.toISOString(), attempt, attemptKey],
   );
 }
+
+/**
+ * Where a deferral records its attempt count. Session wakes use `attempt`.
+ * Mission wakes use `claimAttempt`, because an auto-retry wake already carries
+ * `attempt` as its retry EPOCH, which the claim compares against the run.
+ * Overwriting it would make the retry ineligible.
+ */
+export type WakeDeferAttemptKey = "attempt" | "claimAttempt";
 
 // ── Read ────────────────────────────────────────────────────────────
 

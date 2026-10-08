@@ -398,7 +398,7 @@ describe("the lock cause", () => {
 describe("the defensive relock in getUnlockedSecretPresence", () => {
   it("closes the host and advances the fence, not just the scrub", async () => {
     const vault = await import("@vex-lib/local-secret-vault.js");
-    vi.mocked(vault.unlockSecretVault).mockReturnValue({
+    vi.mocked(vault.unlockSecretVault).mockResolvedValue({
       version: 1,
       secrets: { JUPITER_API_KEY: "x" },
     });
@@ -414,9 +414,9 @@ describe("the defensive relock in getUnlockedSecretPresence", () => {
     });
     process.env.JUPITER_API_KEY = "secret-value";
 
-    const presence = session.getUnlockedSecretPresence();
+    const presence = await session.getUnlockedSecretPresence();
 
-    // SYNCHRONOUS HALF, already done when this returned.
+    // SYNCHRONOUS HALF of the lock, already done when this returned.
     expect(presence.unlocked).toBe(false);
     expect(process.env.JUPITER_API_KEY).toBeUndefined();
     expect(order.slice(0, 2)).toEqual(["revoke_signing", "host_lock"]);

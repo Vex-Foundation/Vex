@@ -82,7 +82,7 @@ vi.mock("@vex-agent/db/repos/balances.js", () => ({
  * about sync/single-flight, not about the gate, so the fake client answers
  * "nothing in flight, and the activity generation did not move".
  */
-const mockDbQuery = vi.fn(async (sql: string) =>
+const mockDbQuery = vi.fn(async (sql: string, _params?: unknown[]) =>
   String(sql).includes("MAX(id)")
     ? {
         rows: [{ max_id: "0", row_count: "0", pending_count: "0", confirmed_count: "0" }],

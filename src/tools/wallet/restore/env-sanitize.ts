@@ -51,10 +51,10 @@ export function sanitizeDotenv(raw: string): string {
  * only — applying secrets to process.env is the vex-app handler's job.)
  * MUST be called AFTER commit so it inspects the live restored vault.
  */
-export function detectVaultLocked(password: string): boolean {
+export async function detectVaultLocked(password: string): Promise<boolean> {
   let vaultLocked = false;
   try {
-    unlockSecretVault(password);
+    await unlockSecretVault(password);
   } catch (err) {
     if (err instanceof LocalSecretVaultError && err.code === "invalid_password") {
       vaultLocked = true;

@@ -63,11 +63,11 @@ free. Both texts live on the tool
 | ChainRead | Read raw EVM chain data | internal | yes | no | yes | - | 1326 | yes | none |
 | SwapExecute | Execute a token swap | internal | no | yes | yes | - | 2047 | yes | 25 bps |
 | SwapExecuteUniswap | Execute a Uniswap swap | internal | no | yes | yes | - | 2046 | yes | 25 bps |
-| SwapQuote | Quote a token swap | internal | yes | no | yes | - | 2046 | yes | none |
-| SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 1959 | yes | none |
+| SwapQuote | Quote a token swap | internal | yes | no | yes | - | 2019 | yes | none |
+| SwapQuoteUniswap | Quote a Uniswap swap | internal | yes | no | yes | - | 2011 | yes | none |
 | TokenCheck | Check an EVM token for honeypot and tax | internal | yes | no | yes | - | 953 | yes | none |
 | TokenFind | Find a token's address and decimals | internal | yes | no | yes | - | 1956 | yes | none |
-| TwitterAccount | Read Twitter accounts and posts | internal | yes | no | yes | RETTIWT_API_KEY | 2039 | yes | none |
+| TwitterAccount | Read Twitter accounts and posts | internal | yes | no | yes | RETTIWT_API_KEY | 1901 | yes | none |
 | UnitsConvert | Convert token amounts and units | internal | yes | no | yes | - | 1393 | yes | none |
 | WalletBalances | Read wallet balances across chains | internal | yes | no | yes | - | 2032 | yes | none |
 | WalletEvmTransactionConfirm | Broadcast a prepared EVM transaction | internal | no | yes | yes | - | 2030 | yes | 25 bps |
@@ -101,8 +101,8 @@ free. Both texts live on the tool
 | dexscreener__pairs_batch_get | Batch-read pairs or tokens | protocol | yes | no | no | - | 2623 | - | none (read) |
 | dexscreener__pairs_new_list | List newest DEX pairs | protocol | yes | no | no | - | 2352 | - | none (read) |
 | dexscreener__pairs_search | Search DEX pairs | protocol | yes | no | no | - | 2417 | - | none (read) |
-| dexscreener__pairs_top_list | Rank DEX pairs by a metric | protocol | yes | no | no | - | 2470 | - | none (read) |
-| dexscreener__pairs_trending_list | List trending DEX pairs | protocol | yes | no | no | - | 2189 | - | none (read) |
+| dexscreener__pairs_top_list | Rank DEX pairs by a metric | protocol | yes | no | no | - | 2580 | - | none (read) |
+| dexscreener__pairs_trending_list | List trending DEX pairs | protocol | yes | no | no | - | 2199 | - | none (read) |
 | dexscreener__spotlight_get | Read the DEX Screener spotlight feeds | protocol | yes | no | no | - | 2808 | - | none (read) |
 | dexscreener__token_pairs_list | List a token's DEX pools | protocol | yes | no | no | - | 3038 | - | none (read) |
 | dexscreener__tokens_screen | Screen tokens across chains | protocol | yes | no | no | - | 1994 | - | none (read) |
@@ -129,7 +129,7 @@ free. Both texts live on the tool
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | kyberswap__chains_list | List KyberSwap chains | protocol | yes | no | no | - | 776 | - | none (read) |
 | kyberswap__swap_execute | Execute a KyberSwap swap | protocol | no | yes | no | - | 4087 | yes | 25 bps |
-| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 3965 | - | none (read) |
+| kyberswap__swap_quote | Quote a KyberSwap swap | protocol | yes | no | no | - | 4018 | - | none (read) |
 | kyberswap__token_safety_check | Audit an EVM token with KyberSwap | protocol | yes | no | no | - | 1138 | - | none (read) |
 
 ### launchpads
@@ -170,8 +170,8 @@ free. Both texts live on the tool
 | lighter__order_preview | Preview a Lighter order | protocol | no | no | no | - | 2078 | - | - |
 | lighter__order_status | Check a Lighter order action's status | protocol | yes | no | no | - | 1163 | - | none (read) |
 | lighter__orderbook_get | Read a Lighter order book | protocol | yes | no | no | - | 537 | - | none (read) |
-| lighter__position_close | Close an approved Lighter position | protocol | no | yes | no | - | 631 | - | - |
-| lighter__position_close_prepare | Prepare a Lighter position-close approval | protocol | no | no | no | - | 602 | - | - |
+| lighter__position_close | Close an approved Lighter position | protocol | no | yes | no | - | 690 | - | - |
+| lighter__position_close_prepare | Prepare a Lighter position-close approval | protocol | no | no | no | - | 796 | - | - |
 | lighter__position_protect | Preview Lighter position protection | protocol | no | no | no | - | 1108 | - | - |
 | lighter__positions_list | List Lighter positions | protocol | yes | no | no | - | 709 | - | none (read) |
 | lighter__recent_trades_list | Read recent public Lighter trades | protocol | yes | no | no | - | 472 | - | none (read) |

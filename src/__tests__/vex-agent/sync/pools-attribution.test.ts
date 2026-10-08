@@ -232,7 +232,7 @@ describe("the sweep never signs", () => {
       await run();
       vi.advanceTimersByTime(120_000);
       await run();
-      expect(info.mock.calls.filter(([event]) => event === "pools.attribution.unsigned_gap")).toHaveLength(1);
+      expect(info.mock.calls.map((call) => Array.from<unknown>(call)).filter(([event]) => event === "pools.attribution.unsigned_gap")).toHaveLength(1);
       vi.advanceTimersByTime(60_000);
       await run();
       expect(info).toHaveBeenLastCalledWith("pools.attribution.unsigned_gap", expect.objectContaining({
@@ -247,7 +247,7 @@ describe("the sweep never signs", () => {
       expect(info).toHaveBeenLastCalledWith("pools.attribution.unsigned_gap", { count: 0, suppressedCount: 1 });
       vi.mocked(launchedTokens.countPoolsUnsignedAttributionGap).mockResolvedValue(3);
       await run();
-      expect(info.mock.calls.filter(([event]) => event === "pools.attribution.unsigned_gap")).toHaveLength(5);
+      expect(info.mock.calls.map((call) => Array.from<unknown>(call)).filter(([event]) => event === "pools.attribution.unsigned_gap")).toHaveLength(5);
     } finally {
       vi.useRealTimers();
     }

@@ -244,6 +244,13 @@ interface JsonSchemaPropertyShape {
   multipleOf?: number;
   minItems?: number;
   minLength?: number;
+  /**
+   * An anchored regular expression (JSON Schema `pattern`, ECMA-262 with the
+   * `u` flag under Ajv). Strict MCP projection only, same contract as the bounds
+   * above: it states the comma-separated spelling of a closed-list param that
+   * `validateProtocolParams` admits member by member.
+   */
+  pattern?: string;
 }
 
 /** The ordinary single-`type` property - what almost every param compiles to. */
@@ -293,11 +300,21 @@ export interface ToolCallRequest {
  * A refusal cause a caller can act on programmatically. Closed union: a new
  * variant is a deliberate contract change with its own producer and consumers.
  */
-export type ToolFailure = {
-  readonly kind: "configuration_unavailable";
-  /** Env variable NAMES that must be set. Never values. */
-  readonly env: readonly string[];
-};
+export type ToolFailure =
+  | {
+    readonly kind: "configuration_unavailable";
+    /** Env variable NAMES that must be set. Never values. */
+    readonly env: readonly string[];
+  }
+  | {
+    /**
+     * An AUDITED parallel-safe read (`tools/parallel-safe-reads.ts`) ran past
+     * its read timeout and was abandoned. Only ever set on a read, so nothing
+     * changed; no other action kind is wrapped in a timeout.
+     */
+    readonly kind: "tool_timeout";
+    readonly timeoutMs: number;
+  };
 
 /**
  * The quote-time spendability facts, as the tool vocabulary states them.

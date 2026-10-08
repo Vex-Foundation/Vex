@@ -134,13 +134,15 @@ describe("engine types", () => {
         maxLaunchValueRaw: null,
         maxLaunchValueDecimals: null,
         maxLaunchCount: null,
+        reasoningEffort: null,
       };
       // Puzzle 04 removed `stopConditionsAccepted` from MissionDraft —
       // acceptance is host-only via `missions.accepted_contract_hash`.
       // WP-I1 added `durationMinutes` (hard time-box, minutes).
       // C3 added `deployedCapital` (the typed measurement base; optional, so it
       // is NOT in MISSION_DRAFT_REQUIRED_FIELDS).
-      expect(Object.keys(draft)).toHaveLength(16);
+      // E-1 added `reasoningEffort` (optional; null runs at medium).
+      expect(Object.keys(draft)).toHaveLength(17);
     });
 
     it("accepts populated values", () => {
@@ -154,6 +156,7 @@ describe("engine types", () => {
           decimals: 6,
           chainId: 4663,
           assetAddress: "0x0f9f0000000000000000000000000000000000ee",
+          assetKind: "token",
           assetSymbol: "USDC",
         },
         allowedWallets: ["solana"],
@@ -167,6 +170,7 @@ describe("engine types", () => {
         maxLaunchValueRaw: "1000000000000000000",
         maxLaunchValueDecimals: 18,
         maxLaunchCount: 3,
+        reasoningEffort: null,
       };
       expect(draft.title).toBe("SOL DCA Strategy");
       expect(draft.allowedChains).toEqual(["solana"]);

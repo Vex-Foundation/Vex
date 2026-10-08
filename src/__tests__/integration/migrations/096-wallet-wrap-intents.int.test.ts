@@ -210,6 +210,30 @@ async function expectRejected(row: IntentRow, target: pg.Pool = pool): Promise<v
   expect((error as { code?: string }).code, "must be a CHECK violation").toBe("23514");
 }
 
+/**
+ * This fixture owns its pools and staging files. The global setup owns the
+ * disposable cluster and removes its database storage when the container stops.
+ * Dropping each probe here forces a cluster checkpoint; under a full lane that
+ * checkpoint can outlast the hook even when the pool has no clients left.
+ */
+async function disposeProbeResources(
+  target: pg.Pool | undefined,
+  directory: string | undefined,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    if (target !== undefined) {
+      const deadline = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("migration 096 fixture pool did not close within 5 seconds")), 5_000);
+      });
+      await Promise.race([target.end(), deadline]);
+    }
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    if (directory !== undefined) rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 beforeAll(async () => {
   const base = process.env.VEX_DB_URL;
   if (!base) throw new Error("VEX_DB_URL is unset - globalSetup did not run.");
@@ -230,17 +254,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  await pool?.end();
-  if (stagingDir) rmSync(stagingDir, { recursive: true, force: true });
-  const base = process.env.VEX_DB_URL;
-  if (base) {
-    const admin = new pg.Pool({ connectionString: base });
-    try {
-      await admin.query(`DROP DATABASE IF EXISTS ${TARGET_DB}`);
-    } finally {
-      await admin.end();
-    }
-  }
+  await disposeProbeResources(pool, stagingDir);
 });
 
 describe("096 applies to a populated schema at 095", () => {
@@ -536,17 +550,7 @@ describe.skipIf(!MIRROR_PRESENT)(
     }, 120_000);
 
     afterAll(async () => {
-      await mirrorPool?.end();
-      if (mirrorStagingDir) rmSync(mirrorStagingDir, { recursive: true, force: true });
-      const base = process.env.VEX_DB_URL;
-      if (base) {
-        const admin = new pg.Pool({ connectionString: base });
-        try {
-          await admin.query(`DROP DATABASE IF EXISTS ${MIRROR_DB}`);
-        } finally {
-          await admin.end();
-        }
-      }
+      await disposeProbeResources(mirrorPool, mirrorStagingDir);
     });
 
     it("mirrors 096 byte-for-byte from the source of truth", () => {

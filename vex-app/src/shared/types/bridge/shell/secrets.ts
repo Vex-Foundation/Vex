@@ -9,6 +9,8 @@ import type {
 } from "../../../schemas/secrets.js";
 
 export interface SecretsBridge {
+  /** Empty, validated native menu request; the renderer uses the normal lock IPC. */
+  readonly onLockRequested: (callback: () => void) => () => void;
   readonly status: () => Promise<Result<SecretsStatus>>;
   readonly unlock: (
     input: SecretsUnlockInput

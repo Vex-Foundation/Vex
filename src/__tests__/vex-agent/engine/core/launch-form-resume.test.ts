@@ -630,7 +630,9 @@ describe("the chat-form dispatch is leased and stop-gated", () => {
     expect(boundarySignal).toBe(inferenceSignal);
     // The lease owner reaches the turn loop, so a compaction cutover can prove
     // ownership instead of silently never applying.
-    expect(call[6]).toBe(`launch-form-${INTENT_ID}`);
+    expect(call[6]).toEqual(
+      expect.objectContaining({ ownerId: `launch-form-${INTENT_ID}` }),
+    );
   });
 
   /**
@@ -677,6 +679,8 @@ describe("the chat-form dispatch is leased and stop-gated", () => {
    */
   it("leaves the mission-run branch untouched", async () => {
     intent = { ...intent, missionRunId: "run-1" };
+    // A mission-run form is always claimed WITH its run lease.
+    claimOutcome = { outcome: "claimed", leaseHandle: missionLeaseHandle };
 
     await resumeAgentAfterUserForm(launched());
 

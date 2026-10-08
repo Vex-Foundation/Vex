@@ -65,6 +65,40 @@ describe("the cue's exact bytes", () => {
   });
 });
 
+const READ_POLL = buildToolCallLoopCorrectionCue({
+  toolName: "solana__token_prices_get",
+  cycleLength: 1,
+  repeatCount: 6,
+  trigger: "read_poll",
+});
+
+describe("the read-polling cue", () => {
+  it("exact bytes", () => {
+    expect(READ_POLL).toBe(
+      "[Engine: tool_call_loop_correction - you have now called solana__token_prices_get 6 times"
+      + " in this turn with identical arguments."
+      + " You have repeated this read enough. Do not re-issue that call in this turn."
+      + " Proceed with what you already have: act on the latest result, or tell the user what it shows."
+      + " If you are waiting for the value to change, wait with LoopDefer (when it is available to you)"
+      + " instead of polling, or tell the user what you are waiting for."
+      + " The remaining tool calls from your last message were not executed."
+      + " If you call it again with the same arguments, the turn will be ended for you.]",
+    );
+  });
+
+  it("does not claim the answer was identical - a polled price may really have moved", () => {
+    expect(READ_POLL).not.toContain("identical result");
+    expect(READ_POLL).not.toContain("will not change the answer");
+    expect(READ_POLL.startsWith("[Engine: ")).toBe(true);
+  });
+
+  it("an explicit cycle trigger is byte-identical to the default", () => {
+    expect(buildToolCallLoopCorrectionCue({
+      toolName: "swap_quote", cycleLength: 1, repeatCount: 5, trigger: "cycle",
+    })).toBe(SINGLE);
+  });
+});
+
 describe("what the cue must do", () => {
   it("is an engine marker, so the model cannot mistake it for a user instruction", () => {
     for (const cue of [SINGLE, CYCLE]) {

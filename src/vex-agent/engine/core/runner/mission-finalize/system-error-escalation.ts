@@ -12,18 +12,46 @@ import * as missionRunsRepo from "@vex-agent/db/repos/mission-runs.js";
 import logger from "@utils/logger.js";
 import { emitFinalizeControlState } from "./control-state-emit.js";
 import { emitMissionSystemErrorReport } from "./bug-report-emit.js";
+import { guardedWrite, type RunnerLeaseGuard } from "../../../runtime/lease-guard.js";
 
 export async function finalizeSystemError(
   missionId: string,
   runId: string,
   sessionId: string,
   stopPayload?: { summary?: string; evidence?: Record<string, unknown> },
+  leaseGuard?: RunnerLeaseGuard,
 ): Promise<MissionStatus> {
-  const landed = await missionRunsRepo.updateStatusIfNotTerminal(
-    runId,
-    "failed",
-    "system_error",
-  );
+  // Fenced for a lease-holding runner: run + mission rows commit together and
+  // only while the claim holds (see `business-outcome.ts`).
+  let landed: boolean;
+  let missionWritten = false;
+  if (leaseGuard !== undefined) {
+    const fenced = await guardedWrite(
+      leaseGuard,
+      "mission_finalize",
+      async (client) => {
+        const won = await missionRunsRepo.updateStatusIfNotTerminal(
+          runId,
+          "failed",
+          "system_error",
+          undefined,
+          client,
+        );
+        if (won) await missionsRepo.setStatus(missionId, "failed", client);
+        return won;
+      },
+      { lockMissionRunId: runId },
+    );
+    if (!fenced.fenced) return "running";
+    landed = fenced.value;
+    missionWritten = fenced.value;
+  } else {
+    landed = await missionRunsRepo.updateStatusIfNotTerminal(
+      runId,
+      "failed",
+      "system_error",
+    );
+  }
   if (!landed) {
     logger.warn("engine.mission.outcome_superseded_by_terminal_stop", {
       runId,
@@ -39,7 +67,7 @@ export async function finalizeSystemError(
     // The warn above is the record that the escalation was superseded.
     return "cancelled";
   }
-  await missionsRepo.setStatus(missionId, "failed");
+  if (!missionWritten) await missionsRepo.setStatus(missionId, "failed");
   await emitFinalizeControlState(sessionId, runId);
   await emitMissionSystemErrorReport(
     { sessionId, missionId, runId },

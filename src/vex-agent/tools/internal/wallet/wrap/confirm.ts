@@ -222,7 +222,7 @@ async function recheckAuthorityWrapped(
 async function executeWrap(args: {
   readonly intent: WalletWrapIntent;
   readonly transaction: WrapTransaction;
-  readonly loadSigner: () => WrapSignerLoad;
+  readonly loadSigner: () => Promise<WrapSignerLoad>;
   readonly anchor: AuthorityAnchor;
   readonly bounds: StagedFeeBounds;
   readonly activity: WrapActivity;
@@ -283,7 +283,7 @@ async function executeWrap(args: {
     // The key is decrypted HERE and nowhere earlier, immediately before the
     // signature, with no provider call in between.
     createSigner: async () => {
-      const loaded = loadSigner();
+      const loaded = await loadSigner();
       if (loaded.kind === "return") {
         fenceRefusal = {
           code: "invalid_input",

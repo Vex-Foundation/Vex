@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  lighterDeskActionSchema,
   lighterTradingCandleSnapshotEventSchema,
   lighterTradingCandleStatusEventSchema,
   lighterTradingCandleSubscriptionStartInputSchema,
@@ -36,6 +37,18 @@ const market = {
 };
 
 describe("lighter trading shared contracts", () => {
+  it.each([25, 50, 75, 100] as const)("accepts the bounded %s percent close selector", (closePercent) => {
+    expect(lighterDeskActionSchema.parse({ kind: "close", marketId: 7, closePercent })).toEqual({ kind: "close", marketId: 7, closePercent });
+  });
+
+  it("preserves the existing full-close selector", () => {
+    expect(lighterDeskActionSchema.parse({ kind: "close", marketId: 7 })).toEqual({ kind: "close", marketId: 7 });
+  });
+
+  it.each([0, 1, 33, 101, "75", null])("rejects invalid close percentages %s", (closePercent) => {
+    expect(lighterDeskActionSchema.safeParse({ kind: "close", marketId: 7, closePercent }).success).toBe(false);
+  });
+
   it("accepts the bounded renderer-safe market list", () => {
     const parsed = lighterTradingMarketListSchema.parse({
       environment: "rhc",

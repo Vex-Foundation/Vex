@@ -23,8 +23,19 @@ import { chainNotInRegistryError, tokenUsd } from "./_shared.js";
 import { calculateTokensTotalUsd } from "./aggregate.js";
 import type { BalanceChainError, TokenBalanceScanResult } from "./types.js";
 import { mapWithConcurrency } from "../../../utils/concurrency.js";
+import { runWithinDeadline } from "../../../utils/deadline.js";
 
 const DEFAULT_BALANCE_SCAN_CONCURRENCY = 4;
+
+/** One chain's leg timings in the live scan. Numbers and ids only. */
+export interface KhalaniChainScanTiming {
+  readonly chainId: number;
+  readonly khalaniMs: number;
+  /** Null when the native top-up did not run for this chain. */
+  readonly nativeMs: number | null;
+  /** Which leg hit the deadline, if any. */
+  readonly timedOut: "khalani" | "native" | null;
+}
 
 /**
  * EVM native-coin sentinel (lowercased once for dedupe comparisons).
@@ -48,6 +59,22 @@ export async function getTokenBalancesAcrossChains(input: {
    * synthetic native row. Only the live wallet-read path opts in.
    */
   includeNative?: boolean;
+  /**
+   * Per-leg deadline in ms for the LIVE read (`0` or absent: none, today's
+   * behaviour). It bounds the Khalani call and the native top-up of each chain
+   * SEPARATELY. A Khalani call that misses it records the chain as a
+   * `chainError` (the chain is then not scanned, so its holdings read as
+   * UNKNOWN, never as zero); a native top-up that misses it records the
+   * existing `native balance: timeout` error and keeps the Khalani rows.
+   */
+  legTimeoutMs?: number;
+  /** The caller's cancellation. Propagates; never recorded as a chain error. */
+  signal?: AbortSignal;
+  /**
+   * Called once per chain with how long its legs took, for the caller's
+   * sanitized timing log. Numbers and chain ids only.
+   */
+  onChainTiming?: (timing: KhalaniChainScanTiming) => void;
 }): Promise<TokenBalanceScanResult> {
   const chains = await getCachedKhalaniChains();
   const targetChains = resolveTargetChains(chains, input.family, input.chainIds);
@@ -70,17 +97,47 @@ export async function getTokenBalancesAcrossChains(input: {
   const chainErrors: BalanceChainError[] = [];
   const rejectedEntries: KhalaniRejectedTokenBalanceEntry[] = [];
 
+  const legTimeoutMs = input.legTimeoutMs ?? 0;
+
   await mapWithConcurrency(targetChains, concurrency, async (chain) => {
+    const khalaniStartedAt = Date.now();
+    let khalaniMs = 0;
     try {
-      const chainBalances = await client.getTokenBalances(input.address, [chain.id]);
+      // With no deadline and no signal this is the exact two-argument call the
+      // scan always made; the deadline wrapper then adds nothing.
+      const outcome = await runWithinDeadline(legTimeoutMs, input.signal, (signal) =>
+        signal === undefined
+          ? client.getTokenBalances(input.address, [chain.id])
+          : client.getTokenBalances(input.address, [chain.id], { signal }));
+      khalaniMs = Date.now() - khalaniStartedAt;
+      if (outcome.kind === "deadline") {
+        // Not scanned: the chain's holdings are UNKNOWN, and the caller's
+        // completeness axis reports it as a failed chain, never as zero.
+        chainErrors.push({
+          chainId: chain.id,
+          chainName: chain.name,
+          message: `timed out after ${legTimeoutMs}ms; holdings on this chain are unknown (not zero)`,
+        });
+        input.onChainTiming?.({ chainId: chain.id, khalaniMs, nativeMs: null, timedOut: "khalani" });
+        return;
+      }
+      const chainBalances = outcome.value;
       tokens.push(...chainBalances.tokens);
       rejectedEntries.push(...chainBalances.rejectedEntries);
       scannedChainIds.push(chain.id);
     } catch (err) {
+      // A caller Stop is the caller's outcome, never this chain's error.
+      input.signal?.throwIfAborted();
       chainErrors.push({
         chainId: chain.id,
         chainName: chain.name,
         message: err instanceof Error ? err.message : String(err),
+      });
+      input.onChainTiming?.({
+        chainId: chain.id,
+        khalaniMs: Date.now() - khalaniStartedAt,
+        nativeMs: null,
+        timedOut: null,
       });
       // Khalani token scan failed for this chain: skip the native top-up too,
       // the chain is already recorded as an error and is not "scanned".
@@ -92,20 +149,38 @@ export async function getTokenBalancesAcrossChains(input: {
     // token balances above or mark the chain unscanned. Solana native is
     // intentionally out of scope, and the sync/projection path never opts in (it
     // would risk deleting cached native rows on a transient RPC failure).
-    if (!input.includeNative || input.family !== "eip155") return;
+    if (!input.includeNative || input.family !== "eip155") {
+      input.onChainTiming?.({ chainId: chain.id, khalaniMs, nativeMs: null, timedOut: null });
+      return;
+    }
 
-    const nativeToken = await fetchEvmNativeToken({
-      address: input.address,
-      chain,
-      chains,
-      existingTokens: tokens,
-    });
+    const nativeStartedAt = Date.now();
+    const nativeOutcome = await runWithinDeadline(legTimeoutMs, input.signal, () =>
+      fetchEvmNativeToken({
+        address: input.address,
+        chain,
+        chains,
+        existingTokens: tokens,
+      }));
+    const nativeMs = Date.now() - nativeStartedAt;
+    const nativeToken: NativeTokenOutcome = nativeOutcome.kind === "settled"
+      ? nativeOutcome.value
+      : {
+          kind: "error",
+          error: { chainId: chain.id, chainName: chain.name, message: "native balance: timeout" },
+        };
     if (nativeToken.kind === "token") {
       tokens.push(nativeToken.token);
     } else if (nativeToken.kind === "error") {
       chainErrors.push(nativeToken.error);
     }
     // kind === "skip": Khalani already returned a native entry — no-op.
+    input.onChainTiming?.({
+      chainId: chain.id,
+      khalaniMs,
+      nativeMs,
+      timedOut: nativeOutcome.kind === "deadline" ? "native" : null,
+    });
   });
 
   if (scannedChainIds.length === 0 && chainErrors.length > 0) {

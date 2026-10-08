@@ -9,7 +9,7 @@ import { getPrimaryEvmEntry, loadEvmKey } from "./inventory.js";
  * entry. On a legacy install this is the single wallet migrated from the old
  * `wallet.address` config field (keystore in the fixed KEYSTORE_FILE).
  */
-export function requireWalletAndKeystore(): { address: Address; privateKey: Hex } {
+export async function requireWalletAndKeystore(): Promise<{ address: Address; privateKey: Hex }> {
   const entry = getPrimaryEvmEntry();
   if (!entry) {
     throw new VexError(

@@ -42,7 +42,7 @@ const WALLET = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
 /** 0.97 USDG, the balance left after a 12 USDG deposit out of 12.97. */
 const REMAINING_UNITS = 970_000n;
 
-let estimateGas: ReturnType<typeof vi.fn>;
+let estimateGas = vi.fn<(...args: unknown[]) => Promise<bigint>>();
 
 /** Every read that is not the wallet's own balance; healthy in every case. */
 function identityRead(input: { readonly functionName: string }): unknown {
@@ -60,7 +60,7 @@ function identityRead(input: { readonly functionName: string }): unknown {
  * exactly one thing, so a failure can only come from what the case changed.
  */
 function fakeClient(over: Record<string, unknown> = {}) {
-  estimateGas = vi.fn(async () => 100_000n);
+  estimateGas = vi.fn<(...args: unknown[]) => Promise<bigint>>(async () => 100_000n);
   return {
     chain: { id: 4663 },
     getChainId: vi.fn(async () => 4663),

@@ -142,7 +142,7 @@ beforeEach(() => {
   vi.spyOn(evmClient, "getLocalPublicClient").mockReturnValue({
     estimateGas: async () => 180_000n,
   } as never);
-  vi.spyOn(signingClients, "openLaunchSigningClients").mockImplementation(() => ({
+  vi.spyOn(signingClients, "openLaunchSigningClients").mockImplementation(async () => ({
     ok: true,
     clients: { publicClient: { estimateGas: async () => 180_000n } as never, walletClient: {} as never },
   }));

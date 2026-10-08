@@ -36,7 +36,8 @@ describe("native Lighter fees", () => {
     expect(getLighterFeePolicy("rhc")).toMatchObject({ collectorAccountIndex: 22869, environment: "rhc" });
     expect(resolveLighterFeePolicy("core", { enabled: false, accountIndex: null, l1Address: null })).toBeNull();
     expect(() => resolveLighterFeePolicy("core", { enabled: true, accountIndex: null, l1Address: null })).toThrow(/configured/);
-    expect(getLighterIntegratorFees(policy, "perp")).toEqual({ integratorAccountIndex: 123, integratorMakerFee: 1000, integratorTakerFee: 1000 });
+    expect(getLighterIntegratorFees(policy, "perp")).toEqual({ integratorAccountIndex: 123, integratorMakerFee: 200, integratorTakerFee: 200 });
+    expect(getLighterIntegratorFees(requireValue(getLighterFeePolicy("rhc")), "perp")).toMatchObject({ integratorMakerFee: 200, integratorTakerFee: 200 });
     expect(getLighterIntegratorFees(policy, "spot").integratorMakerFee).toBe(2500);
   });
 

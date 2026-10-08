@@ -23,7 +23,7 @@ export function withFeeDisclosure(input: {
     ...input.result,
     output: input.outputPayload === null
       ? `${input.result.output} ${input.collection.collectionNote}`
-      : JSON.stringify({ ...input.outputPayload, vexFee }, null, 2),
+      : JSON.stringify({ ...input.outputPayload, vexFee }),
     data,
   };
 }

@@ -151,7 +151,7 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
         approvedAmountInRaw: x.approvedSnapshot?.totalInRaw,
         spenderDescription: `Permit2 and Uniswap UniversalRouter ${x.quoted.route.v4.universalRouterVersion}`,
         deadline: "600 seconds from signing", consequence: "Spends real funds irreversibly after confirmation" };
-      return { outputPayload, result: { success: true, output: JSON.stringify(outputPayload, null, 2),
+      return { outputPayload, result: { success: true, output: JSON.stringify(outputPayload),
         data: { txHash, _executionId: executionId, status } } };
     }
     logger.warn("uniswap.swap.execute.settlement_undecodable", { id: x.eventId, txHash });
@@ -177,7 +177,7 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
         spenderDescription: `Permit2 and Uniswap UniversalRouter ${x.quoted.route.v4.universalRouterVersion}`,
         deadline: "600 seconds from signing", consequence: "Spends real funds irreversibly after confirmation",
       };
-      return { outputPayload, result: { success: true, output: JSON.stringify(outputPayload, null, 2), data: { txHash, _executionId: executionId, status: "confirmed_pending_amounts" } } };
+      return { outputPayload, result: { success: true, output: JSON.stringify(outputPayload), data: { txHash, _executionId: executionId, status: "confirmed_pending_amounts" } } };
     }
     return {
       outputPayload: null,
@@ -263,7 +263,7 @@ export async function finalizeConfirmedSwap(x: FinalizeConfirmedSwapInput): Prom
     ...(inputIsBound ? { feeInputBoundRaw: decoded.executedAmountInRaw?.toString() } : {}),
     result: {
       success: true,
-      output: JSON.stringify(outputPayload, null, 2),
+      output: JSON.stringify(outputPayload),
       data: { txHash, _executionId: executionId, status },
     },
   };

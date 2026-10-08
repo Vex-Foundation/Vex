@@ -46,7 +46,10 @@ export interface LighterOnboardingChecklistDeps {
     environment: LighterIntegrationEnvironment,
     walletAddress: string,
   ) => Promise<LighterOnboardingWorkflowRow | null>;
-  readonly hasTradingKey: (environment: LighterIntegrationEnvironment, accountIndex: number) => boolean;
+  readonly hasTradingKey: (
+    environment: LighterIntegrationEnvironment,
+    accountIndex: number,
+  ) => Promise<boolean>;
   readonly inspectFee: typeof inspectLighterFeeAuthorization;
 }
 
@@ -142,7 +145,7 @@ export async function resolveLighterOnboardingChecklist(
         : progress),
     };
   }
-  const key = deps.hasTradingKey(input.environment, account.account_index) ? "done" : "todo";
+  const key = (await deps.hasTradingKey(input.environment, account.account_index)) ? "done" : "todo";
   const fee = await deps.inspectFee({
     sessionId: input.sessionId,
     environment: input.environment,
@@ -199,8 +202,8 @@ function defaultDeps(): LighterOnboardingChecklistDeps {
     readSessionWallet: readSessionWalletFromEngine,
     readLighterAccount: buildLighterOnboardingReaders().readLighterAccount,
     readWorkflow: getLighterOnboardingWorkflow,
-    hasTradingKey: (environment, accountIndex) =>
-      listUnlockedLighterTradingCredentialScopes(environment)
+    hasTradingKey: async (environment, accountIndex) =>
+      (await listUnlockedLighterTradingCredentialScopes(environment))
         .some((scope) => scope.accountIndex === accountIndex),
     inspectFee: inspectLighterFeeAuthorization,
   };
@@ -240,7 +243,10 @@ const DEPOSIT_EVIDENCE_STATES: ReadonlySet<string> = new Set([
 export interface LighterAccountSetupStatusDeps {
   readonly readSessionWallet: (sessionId: string) => Promise<SessionWalletScope>;
   readonly readers: LighterOnboardingReaders;
-  readonly hasTradingKey: (environment: LighterIntegrationEnvironment, accountIndex: number) => boolean;
+  readonly hasTradingKey: (
+    environment: LighterIntegrationEnvironment,
+    accountIndex: number,
+  ) => Promise<boolean>;
   readonly readLiveKeyRegistrationState: (
     environment: LighterIntegrationEnvironment,
     accountIndex: number,
@@ -254,8 +260,8 @@ function defaultSetupStatusDeps(): LighterAccountSetupStatusDeps {
   return {
     readSessionWallet: readSessionWalletFromEngine,
     readers: buildLighterOnboardingReaders(),
-    hasTradingKey: (environment, accountIndex) =>
-      listUnlockedLighterTradingCredentialScopes(environment)
+    hasTradingKey: async (environment, accountIndex) =>
+      (await listUnlockedLighterTradingCredentialScopes(environment))
         .some((scope) => scope.accountIndex === accountIndex),
     readLiveKeyRegistrationState: async (environment, accountIndex) =>
       (await findLiveLighterKeyRegistrationIntentForAccount(environment, accountIndex))
@@ -287,7 +293,7 @@ export async function resolveLighterAccountSetupStatus(
     deps.readWorkflow(input.environment, wallet.walletAddress),
   ]);
   const tradingKeyRegistered = account !== null
-    && deps.hasTradingKey(input.environment, account.account_index);
+    && (await deps.hasTradingKey(input.environment, account.account_index));
   // A key whose local credential is not active yet may already be registered
   // on-chain, its registration intent parked in a post-submission state. That
   // is completed by RECONCILING (no funds, no new signature), so the modal can

@@ -5,14 +5,12 @@ import {
   isAdvertisedProtocolNamespace,
   isKnownProtocolNamespace,
 } from "./catalog.js";
-import {
-  MAX_DISCOVERED_TOOLS_PER_SESSION,
-  getDiscoveredToolIds,
-  recordDiscoveredTools,
-} from "../registry/discovered-tools.js";
+import { discoveredToolCapacity } from "../registry/discovered-tools.js";
+import { DISCOVERED_TOOL_LRU_CAP } from "../registry/discovery-policy.js";
 import { buildDiscoverNamespaceDescription } from "./descriptions.js";
 import { denseScore } from "./dense-score.js";
-import { pinExactToolIdMatch } from "./toolid-pin.js";
+import { lexicalScore } from "./lexical-score.js";
+import { pinExactToolIdMatch, resolveUniqueExactNameMatch } from "./toolid-pin.js";
 import { describeParamGroupConstraints } from "./runtime/params.js";
 import type {
   DiscoveryAvailabilityMode,
@@ -81,6 +79,15 @@ export const MAX_DISCOVERY_LIMIT = 20;
  * today.
  */
 export const MAX_SELECT_TOOL_NAMES = 40;
+
+/**
+ * Said whenever ranked rows are a lexical fallback for a failed dense attempt
+ * (`retrieval.lowConfidence`). Keyword overlap is a weaker signal than the
+ * semantic ranking the model normally gets, and it must not read as certain.
+ */
+export const LOW_CONFIDENCE_WARNING =
+  "Semantic search was unavailable, so these rows are keyword matches only and are LOWER CONFIDENCE. "
+  + "Check that a tool's summary fits the task before calling it.";
 
 /** The manifest's required param keys, in declaration order. */
 function requiredParamKeys(manifest: ProtocolToolManifest): string[] {
@@ -331,13 +338,21 @@ function resolveRequestedNamespace(
  * as-is rather than dropped: a warning about a vanished tool must not itself
  * vanish.
  */
-export function buildDisplacementWarning(displaced: readonly string[]): string | null {
+export function buildDisplacementWarning(
+  displaced: readonly string[],
+  lruCap: number | null = DISCOVERED_TOOL_LRU_CAP,
+): string | null {
   if (displaced.length === 0) return null;
   const names = displaced.map((id) => getProtocolManifest(id)?.publicName ?? id);
+  // The retention rule is stated as it runs: FIFO keeps the most recently
+  // DISCOVERED, the P-3 LRU policy keeps the most recently USED. The FIFO
+  // sentence is the pre-P-3 text, unchanged.
+  const kept = lruCap === null
+    ? `the most recent ${discoveredToolCapacity(lruCap)} discovered tools`
+    : `the ${discoveredToolCapacity(lruCap)} most recently used discovered tools`;
   return (
     `${names.map((name) => `"${name}"`).join(", ")} ${displaced.length === 1 ? "is" : "are"} `
-    + "no longer callable by name - this session keeps the most recent "
-    + `${MAX_DISCOVERED_TOOLS_PER_SESSION} discovered tools. Search for or select them again if `
+    + `no longer callable by name - this session keeps ${kept}. Search for or select them again if `
     + "you still need them."
   );
 }
@@ -419,11 +434,27 @@ export async function discoverProtocolCapabilities(
 
   let scoredTools: ScoredManifest[];
   let retrievalMeta: ProtocolDiscoveryRetrievalMeta;
+  let exactMatch: ScoredManifest | null = null;
 
   if (query.length === 0) {
     scoredTools = filteredTools.map((manifest) => ({ manifest, score: 0, whyMatched: [] }));
     retrievalMeta = {
       method: "catalog",
+      denseFailed: false,
+      candidateCount: filteredTools.length,
+    };
+  } else if ((exactMatch = resolveUniqueExactNameMatch(query, filteredTools)) !== null) {
+    // A query that IS one tool's exact name (toolId or publicName) names its
+    // answer, so it is resolved locally and the embedding round trip is
+    // skipped entirely. Same candidate set as the ranked path, so no gate is
+    // relaxed. The rows after the named tool are its lexical neighbours: cheap,
+    // local, and flagged by `method: "exact"` rather than passed off as dense.
+    const pinned = exactMatch;
+    const rest = lexicalScore(query, filteredTools).scored
+      .filter((entry) => entry.manifest.toolId !== pinned.manifest.toolId);
+    scoredTools = [pinned, ...rest];
+    retrievalMeta = {
+      method: "exact",
       denseFailed: false,
       candidateCount: filteredTools.length,
     };
@@ -445,6 +476,9 @@ export async function discoverProtocolCapabilities(
   const warnings: string[] = [];
   if (tools.length === 0) {
     warnings.push("No protocol capabilities matched the query/filter.");
+  }
+  if (retrievalMeta.lowConfidence === true && tools.length > 0) {
+    warnings.push(LOW_CONFIDENCE_WARNING);
   }
   if (scoredTools.length > tools.length) {
     // A2 (live test 2026-09-03): this warning used to say only "Increase limit

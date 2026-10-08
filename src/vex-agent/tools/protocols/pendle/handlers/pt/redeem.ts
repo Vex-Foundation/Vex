@@ -99,7 +99,7 @@ export async function executePendleRedeem(p: Record<string, unknown>, context: P
 
     let signer: ChainWallet;
     try {
-      signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+      signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
     } catch (err) {
       return walletScopeErrorToResult(err);
     }
@@ -254,7 +254,7 @@ export async function executePendleRedeem(p: Record<string, unknown>, context: P
         // The discriminant an agent needs to know WHAT it now holds (P1-13).
         deliveredAsset, deliveredAssetKind: usedFallback ? "sy" : "underlying", deliveredPath,
         ...(deliveredNote ? { note: deliveredNote } : {}),
-      }, null, 2),
+      }),
       data: {
         txHash,
         _executionId: broadcast.executionId,

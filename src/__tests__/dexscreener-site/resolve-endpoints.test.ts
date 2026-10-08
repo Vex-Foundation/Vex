@@ -77,7 +77,9 @@ import { makeProtocolContext } from "../vex-agent/tools/_test-context.js";
 const PAIR_FRAME = loadFixture("pair-ws-ethereum-pepe").bytes;
 const LATEST_BLOCK_FRAME = loadFixture("screener-latestblock-solana").bytes;
 const REACTIONS_BODY = loadFixture("reactions-ethereum-pepe").bytes;
-const INSIGHT_NOT_FOUND = loadFixture("token-insight-not-found").bytes;
+const INSIGHT_NOT_FOUND = loadFixture("feed-envelope-insight-not-found-ethereum-pepe.response").bytes;
+const INSIGHT_OK = loadFixture("feed-envelope-insight-ok-solana.response").bytes;
+const INSIGHT_INVALID = loadFixture("feed-envelope-insight-invalid-argument.response").bytes;
 const SPOTLIGHT_BODY = loadFixture("spotlight-v10").bytes;
 const SEARCH_BODY = loadFixture("search-cat-plain").bytes;
 const BATCH_KNOWN_COMMAND = loadFixture("v8-batch-known-three.command").bytes;
@@ -219,15 +221,33 @@ describe("pair reactions", () => {
 
 describe("readTokenInsightFrames", () => {
   it("reports the measured NOT_FOUND answer as an absence, not an error", () => {
-    // The captured frame answers cid 30; that is the cid the capture used.
+    // The captured frame answers envelope id 30; that is the id the capture used.
     const insight = readTokenInsightFrames([INSIGHT_NOT_FOUND], 30);
     expect(insight).not.toBeNull();
-    expect(insight?.code).toBe("WS_COMMAND_CODE_NOT_FOUND");
+    expect(insight?.code).toBe("STATUS_NOT_FOUND");
+    expect(insight?.faulted).toBe(false);
     expect(insight?.title).toBeNull();
     expect(insight?.content).toBeNull();
   });
 
-  it("ignores an answer carrying somebody else's correlation id", () => {
+  it("reads a written blurb with its title, paragraph and date", () => {
+    const insight = readTokenInsightFrames([INSIGHT_OK], 32);
+    expect(insight?.code).toBe("STATUS_OK");
+    expect(insight?.faulted).toBe(false);
+    expect(insight?.title).toMatch(/\S/u);
+    expect(insight?.content).toMatch(/\S/u);
+    expect(insight?.createdAtMs).toBeGreaterThan(Date.parse("2026-01-01T00:00:00Z"));
+  });
+
+  it("marks a refused request as a fault, which says nothing about whether a blurb exists", () => {
+    // Measured: empty chainId and tokenId answer STATUS_INVALID_ARGUMENT.
+    const insight = readTokenInsightFrames([INSIGHT_INVALID], 31);
+    expect(insight?.code).toBe("STATUS_INVALID_ARGUMENT");
+    expect(insight?.faulted).toBe(true);
+    expect(insight?.title).toBeNull();
+  });
+
+  it("ignores an answer carrying somebody else's envelope id", () => {
     expect(readTokenInsightFrames([INSIGHT_NOT_FOUND], 1)).toBeNull();
   });
 });

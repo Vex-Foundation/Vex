@@ -11,7 +11,7 @@ import {
 import { ApprovalCard } from "../ApprovalCard.js";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 import { useUiStore } from "../../../stores/uiStore.js";
-import { isDeskCloseApproval } from "./desk-approvals.js";
+import { isDeskFullCloseApproval } from "./desk-approvals.js";
 
 function approvalToolId(summary: ApprovalSummaryDto): string | null {
   const preview = summary.preview;
@@ -27,6 +27,7 @@ function approvalTitle(approvals: ReadonlyArray<ApprovalSummaryDto>): string {
     case "lighter.order.create": return "Review order";
     case "lighter.position.close": return "Review close";
     case "lighter.order.cancel": return "Review cancellation";
+    case "lighter.order.cancelAll": return "Review account-wide cancellation";
     case "lighter.position.protect": return "Review protection";
     default: return "Review action";
   }
@@ -41,8 +42,8 @@ function approvalTitle(approvals: ReadonlyArray<ApprovalSummaryDto>): string {
  * chat rail. ESC hides the dialog until another card arrives; the card itself
  * stays pending in the shell's AWAITING badge until it expires.
  *
- * A Market close card also offers "Don't ask again": ticking it makes the
- * desk approve later close cards itself. This card still waits for Confirm.
+ * A full Market close card also offers "Don't ask again": ticking it makes
+ * the desk approve later full closes itself. Partial closes always confirm.
  */
 export function DeskApprovalDialog({ approvals, sessionId, focusApprovalId, onResolved, skipCloseConfirm, onSkipCloseConfirm, reopenSignal = 0 }: {
   readonly approvals: ReadonlyArray<ApprovalSummaryDto>;
@@ -59,7 +60,7 @@ export function DeskApprovalDialog({ approvals, sessionId, focusApprovalId, onRe
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => { setDismissed(new Set()); }, [reopenSignal]);
   const open = approvals.some((summary) => !dismissed.has(summary.id));
-  const showsClose = approvals.some(isDeskCloseApproval);
+  const showsClose = approvals.some(isDeskFullCloseApproval);
   return (
     <Dialog
       open={open}
@@ -96,7 +97,7 @@ export function DeskApprovalDialog({ approvals, sessionId, focusApprovalId, onRe
                 checked={skipCloseConfirm}
                 onChange={(event) => onSkipCloseConfirm(event.target.checked)}
               />
-              Don't ask again for Market close
+              Don't ask again for 100% Market close
             </label>
           ) : null}
         </DialogBody>

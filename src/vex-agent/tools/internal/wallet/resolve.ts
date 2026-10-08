@@ -210,11 +210,11 @@ function tryResolveSelectedAddressForRead(
  * `resolveSelectedAddress` plus the key load. Call only after the approval gate
  * and just before broadcast.
  */
-export function resolveSigningWallet(
+export async function resolveSigningWallet(
   resolution: WalletResolution,
   policy: WalletPolicy,
   family: ChainFamily,
-): ChainWallet {
+): Promise<ChainWallet> {
   const { family: inv, entry } = resolveSelectedEntry(family, resolution);
   assertWalletPolicy(policy, family, entry.address);
   return loadWalletFromEntry(inv, entry);

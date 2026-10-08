@@ -20,6 +20,7 @@ import {
 import { readMissionErrorSignal } from "../mission-error-signal.js";
 import { emitFinalizeControlState } from "./control-state-emit.js";
 import { emitMissionPausedErrorReport } from "./bug-report-emit.js";
+import type { FinalizeOptions } from "../mission-finalize.js";
 
 /**
  * Character bound on the persisted error text. The bound exists because the
@@ -33,6 +34,7 @@ export async function finalizeMissionRunError(
   runId: string,
   sessionId: string,
   err: unknown,
+  opts?: FinalizeOptions,
 ): Promise<void> {
   const errorMessage = formatErrorMessage(err);
   const errorClass = err instanceof Error ? err.constructor.name : typeof err;
@@ -46,6 +48,19 @@ export async function finalizeMissionRunError(
   // renderer can classify - one vocabulary, the same one the engine error
   // push channel uses. The free-text `errorMessage` stays server-side.
   const signal = readMissionErrorSignal(err);
+  const leaseGuard = opts?.leaseGuard;
+  // A runner whose claim is KNOWN to be taken over writes no pause: the run
+  // belongs to the new owner. (A claim not yet known lost is decided by the
+  // fence inside the persist transaction below.)
+  if (leaseGuard?.lostReason() === "taken_over") {
+    logger.warn("runtime.lease.finalize_skipped", {
+      sessionId,
+      runId,
+      stopReason: null,
+      reason: "taken_over",
+    });
+    return;
+  }
   const causeCode = signal.causeCode;
   // Log first - even if the DB write below fails, the failure stays visible.
   logger.error("engine.mission.runtime_throw", {
@@ -80,9 +95,14 @@ export async function finalizeMissionRunError(
           missionId,
           runId,
         },
+        ...(leaseGuard === undefined ? {} : { leaseFence: leaseGuard.fence }),
       },
       Date.now(),
     );
+    if (decision.refusedByLeaseFence === true) {
+      leaseGuard?.markLost("taken_over", "fence");
+      return;
+    }
     await emitFinalizeControlState(sessionId, runId);
     if (!decision.persisted) {
       // The run was already TERMINAL under the row lock - almost always an

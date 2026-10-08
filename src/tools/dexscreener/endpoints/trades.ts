@@ -8,15 +8,22 @@
  *    the whole filter set as urlsafe base64 in one `message` query parameter.
  *    It is a plain HTTP read, so it is what a filtered page and the block
  *    anchor use.
- *  - FEED WEBSOCKET (`getHistoricalTransactions`) is the ONLY channel that
- *    accepts an exact `(blockNumber, transactionIndex, eventIndex)`
- *    continuation. This is not a preference. A controlled probe set the cursor
+ *  - FEED WEBSOCKET (`/dex_feed.PublicWSService/GetHistoricalTransactions`
+ *    over the `util_envelope` protocol, `../codec/feed-envelope.ts`; it
+ *    replaced the `dex_feed.WSCommand.getHistoricalTransactions` command in
+ *    the site's 2026-10 deploy) is the ONLY channel that accepts an exact
+ *    `(blockNumber, transactionIndex, eventIndex)` continuation. This is not a preference. A controlled probe set the cursor
  *    to `(25824167, 213, 558)` on a real BUY: the exact WS request resumed at
  *    `(25824167, 2, 7)` in the same block, while Connect with
  *    `beforeBlockNumber=25824167` started at `(25824148, 122, 171)` and OMITTED
  *    the remaining BUY in the boundary block. A block-only cursor loses real
  *    events, so every continuation this module issues is the exact triple and
  *    every continued page is fetched on the socket.
+ *
+ * CONNECT IS NOW THE SITE'S "LEGACY" READ. The 2026-10 bundle calls it
+ * `getLegacyTransactions` (5 s timeout, 3 tries) and drives its own trade
+ * table from the socket RPC. It still answers (re-measured by the harness the
+ * same day), but it is the channel to watch on the next drift report.
  *
  * FILTER GRAMMAR, MEASURED. `type` is a LOWERCASE string on Connect and is
  * case-sensitive: `type=BUY` answers the structured
@@ -65,6 +72,15 @@
  */
 
 import { encodeDexScreenerCommand } from "../codec/encode.js";
+import {
+  DEXSCREENER_FEED_WS_URL,
+  encodeFeedRequest,
+  isTransientFeedStatus,
+  nextFeedRequestId,
+  readFeedResponse,
+  type FeedResponse,
+  type FeedStatus,
+} from "../codec/feed-envelope.js";
 import { decodeDexScreenerMessageToJson } from "../codec/protobuf.js";
 import {
   DexScreenerSiteErrorCodes,
@@ -72,7 +88,6 @@ import {
   siteError,
 } from "../site-errors.js";
 import type { DexScreenerTransport } from "../transport.js";
-import { DEXSCREENER_FEED_WS_URL } from "./pair-live.js";
 
 /** The site host that serves the Connect RPC. */
 export const DEXSCREENER_FEED_RPC_ORIGIN = "https://io.dexscreener.com";
@@ -91,17 +106,17 @@ export const TRADES_MAX_BYTES = 1_000_000;
 /**
  * COUNTABLE frames to collect on the feed socket while looking for the answer.
  *
- * ONE, for the reason spelled out on `BARS_FRAMES`: `feed/ws` is strictly
- * request-response, so one command produces exactly one countable frame and
- * that frame IS the answer. Measured on this channel specifically: a
- * `getHistoricalTransactions` command produced `[27484, 0, 0]`, the
- * 27,484-byte answer arriving at t=0.54 s and every later frame a zero-length
- * keepalive that does not count.
+ * ONE, for the reason spelled out on `BARS_FRAMES`: `GetHistoricalTransactions`
+ * is a unary envelope RPC, so one request produces exactly one
+ * `ServerEnvelope.response` frame and that frame IS the answer. Measured on
+ * this channel 2026-10-07: 27,112 bytes (100 rows) at
+ * ~0.9 s for a first page and 27,081 bytes for the exact-cursor page two, each
+ * the first non-empty frame on its socket.
  *
- * This was 4, which could never be met once keepalives stopped padding the
- * count, so every socket-served trades page timed out at 25 seconds with the
- * answer already in hand. That reached `eventType: swap` and `liquidity` and
- * EVERY cursor continuation page.
+ * This was 4 once, which could never be met once keepalives stopped padding
+ * the count, so every socket-served trades page timed out at 25 seconds with
+ * the answer already in hand. That reached `eventType: swap` and `liquidity`
+ * and EVERY cursor continuation page.
  */
 export const TRADES_FRAMES = 1;
 
@@ -139,7 +154,7 @@ interface EventTypeSpec {
    * the checked-in descriptor set and are therefore proven.
    */
   readonly connect: string | null;
-  /** The `WSCommand.GetHistoricalTransactions.Type` member. Null sends none. */
+  /** The `GetHistoricalTransactionsRequest.Type` member. Null sends none. */
   readonly ws: string | null;
   /** False when Connect cannot express this filter and the socket must serve it. */
   readonly connectCanExpress: boolean;
@@ -223,9 +238,11 @@ export interface TradeFilters {
    * than streaming forward from it.
    *
    * It is the primitive the plan prescribes as the substitute for the
-   * provider's gated-off live push (`subscribeTransactions` acknowledges and
-   * then sends nothing, re-measured), and without it an incremental poll
-   * re-pages from the head of history every time.
+   * provider's gated-off live push (`subscribeTransactions` acknowledged and
+   * then sent nothing, re-measured on the retired WSCommand protocol; its
+   * envelope successor, the `SubscribeTransactions` stream, is a declared
+   * omission in DexScreener.md and unmeasured), and without it an incremental
+   * poll re-pages from the head of history every time.
    *
    * Expressible on BOTH channels: Connect sends `afterBlockNumber`, and the
    * socket sends the `after` triple anchored per
@@ -359,11 +376,12 @@ export interface TradesPageOptions {
    */
   readonly cursor?: TradeCursor;
   /**
-   * Correlation id for the socket command.
+   * The envelope id of the socket request (`util_envelope.ClientEnvelope.id`).
    *
-   * Per CALL, for the same reason bars carry one: the feed socket multiplexes
-   * and a shared constant would let two concurrent requests read each other's
-   * answers. Settable so a test can replay a capture under the site's own id.
+   * Per CALL, for the same reason bars carry one: an answer belongs to a
+   * request only by id, and a shared constant would let two concurrent requests
+   * on one socket read each other's answers. Defaults to a fresh process-wide
+   * id; settable so a test can replay a capture under the id it was taken with.
    */
   readonly correlationId?: number;
   readonly timeoutMs: number;
@@ -538,20 +556,30 @@ async function fetchTradesConnect(
 
 /* --- Feed WebSocket channel ------------------------------------------- */
 
-/** A fresh correlation id per command. Per call, never per module. */
-let tradesCidCounter = 0;
-
-function nextTradesCid(): number {
-  tradesCidCounter = (tradesCidCounter % 1_000_000) + 1;
-  return tradesCidCounter;
+/**
+ * What to do about a non-OK status from the socket RPC, by status.
+ *
+ * Same rule as the Connect remediation: a deterministic rejection, a
+ * provider-side failure and an unknown outcome are different facts. An unknown
+ * pool is NOT among them: measured 2026-10-07, an unindexed pair answers
+ * `STATUS_OK` with no rows.
+ */
+function tradesFeedRemediation(status: FeedStatus): string {
+  if (isTransientFeedStatus(status)) {
+    return "This is a provider-side failure on a read-only request, not a rejected filter. It is worth ONE retry; if it repeats, report the exact filter set rather than varying it blindly. Nothing here says the pool has no trades.";
+  }
+  if (status === "STATUS_INVALID_ARGUMENT") {
+    return "A DETERMINISTIC rejection of a request value, not an empty market and not a transient failure: retrying the identical request repeats it. Check the AMM id and quote token with dexscreener__pair_get, and the filter values against the parameter descriptions.";
+  }
+  return "This status was not in the measured inventory for this channel. Treat it as an unknown outcome rather than as an empty market: nothing here is evidence about whether the pool has trades.";
 }
 
 async function fetchTradesWs(options: TradesPageOptions): Promise<TradesPage> {
   const spec = EVENT_TYPES[options.filters.eventType];
-  const cid = options.correlationId ?? nextTradesCid();
-  const command = encodeDexScreenerCommand("dex_feed.WSCommand", {
-    getHistoricalTransactions: {
-      cid,
+  const id = options.correlationId ?? nextFeedRequestId();
+  const request = encodeFeedRequest(
+    "GetHistoricalTransactions",
+    {
       chainId: options.chainId,
       ammId: options.ammId,
       pairId: options.pairAddress,
@@ -589,10 +617,11 @@ async function fetchTradesWs(options: TradesPageOptions): Promise<TradesPage> {
             },
           }),
     },
-  });
+    id
+  );
 
   const frames = await options.transport.wsExchange(DEXSCREENER_FEED_WS_URL, {
-    send: [command],
+    send: [request],
     expect: { binaryFrames: TRADES_FRAMES, maxTotalBytes: TRADES_MAX_BYTES },
     timeoutMs: options.timeoutMs,
     ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -601,58 +630,78 @@ async function fetchTradesWs(options: TradesPageOptions): Promise<TradesPage> {
       : { coalesceScope: options.coalesceScope }),
   });
 
-  const trades = readTradesFrames(frames, cid);
-  if (trades === null) {
+  const answer = readTradesFrames(frames, id);
+  if (answer === null) {
     throw siteError(
       DexScreenerSiteErrorCodes.TRADES_NO_RESULT_FRAME,
-      `The DexScreener feed socket sent ${frames.length} binary frames without a historicalTransactions answer for ${options.chainId}:${options.pairAddress}`,
+      `The DexScreener feed socket sent ${frames.length} binary frames without a response to the GetHistoricalTransactions request for ${options.chainId}:${options.pairAddress}`,
       "The socket answered, so this is neither an outage nor proof the pool has no trades. Retry once; if it repeats, check the AMM id and quote token with dexscreener__pair_get."
     );
   }
+  if (answer.status !== "STATUS_OK") {
+    throw siteError(
+      DexScreenerSiteErrorCodes.TRADES_INVALID,
+      `The DexScreener feed socket answered ${answer.status} to the GetHistoricalTransactions request for ${options.chainId}:${options.pairAddress}`,
+      tradesFeedRemediation(answer.status)
+    );
+  }
   return {
-    trades,
+    trades: answer.trades,
     channel: "feed_ws",
     url: DEXSCREENER_FEED_WS_URL,
     bytes: frames.reduce((sum, frame) => sum + frame.byteLength, 0),
     fetchedAtMs: Date.now(),
-    nextCursor: cursorFrom(trades),
+    nextCursor: cursorFrom(answer.trades),
   };
+}
+
+/** The feed socket's answer to one trades request. */
+export interface TradesFeedAnswer {
+  /** `util_envelope.Status` of the response, verbatim. */
+  readonly status: FeedStatus;
+  /** Empty unless `status` is `STATUS_OK`; an OK answer may itself be empty. */
+  readonly trades: readonly ProjectedTrade[];
 }
 
 /**
  * Find this call's trades among the frames the feed socket sent.
  *
- * Dispatch is on the protobuf ONEOF and the CORRELATION ID, never on frame
- * position. Returns null when no frame answers this `cid`; an empty ARRAY is a
- * different fact (the provider answered "none") and is returned as one.
+ * Dispatch is on the envelope ARM and ID, never on frame position. Returns
+ * null when no frame answers this id; an OK answer with an empty list is a
+ * different fact (the provider answered "none") and is returned as one. An OK
+ * payload that is not a `GetHistoricalTransactionsResponse` is `TRADES_INVALID`.
  */
 export function readTradesFrames(
   frames: readonly Uint8Array[],
-  cid: number
-): readonly ProjectedTrade[] | null {
-  for (const bytes of frames) {
-    if (bytes.byteLength === 0) continue;
-    let decoded: unknown;
-    try {
-      decoded = decodeDexScreenerMessageToJson("dex_feed.WSMessage", bytes, {
-        maxBytes: TRADES_MAX_BYTES,
-      });
-    } catch (error) {
-      if (
-        isDexScreenerSiteError(error) &&
-        error.code === DexScreenerSiteErrorCodes.RESPONSE_OVER_CAP
-      ) {
-        throw error;
-      }
-      continue;
+  id: number
+): TradesFeedAnswer | null {
+  let answer: FeedResponse | null;
+  try {
+    answer = readFeedResponse(
+      frames,
+      id,
+      "GetHistoricalTransactions",
+      TRADES_MAX_BYTES
+    );
+  } catch (error) {
+    if (
+      isDexScreenerSiteError(error) &&
+      error.code === DexScreenerSiteErrorCodes.RESPONSE_OVER_CAP
+    ) {
+      throw error;
     }
-    const arm = asObject(asObject(decoded)?.["historicalTransactions"]);
-    if (arm === null) continue;
-    if (readNumber(arm["cid"]) !== cid) continue;
-    const raw = arm["transactions"];
-    return (Array.isArray(raw) ? raw : []).map(projectTrade);
+    throw siteError(
+      DexScreenerSiteErrorCodes.TRADES_INVALID,
+      "The feed socket's OK response to a GetHistoricalTransactions request did not decode as dex_feed.GetHistoricalTransactionsResponse",
+      "The wire schema may have changed. Re-run the descriptor drift test and re-capture the feed-envelope fixtures before trusting this channel."
+    );
   }
-  return null;
+  if (answer === null) return null;
+  const raw = asObject(answer.payload)?.["transactions"];
+  return {
+    status: answer.status,
+    trades: (Array.isArray(raw) ? raw : []).map(projectTrade),
+  };
 }
 
 /* ------------------------------------------------------------------ */

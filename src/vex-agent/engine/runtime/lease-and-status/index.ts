@@ -34,6 +34,7 @@ export {
 export { observeAndApplyControl } from "./observe-and-apply.js";
 export {
   claimRunForAutoRetry,
+  claimRunForAutoRetryWith,
   type ClaimAutoRetryInput,
   type ClaimAutoRetryOutcome,
   type AutoRetryIneligibleReason,

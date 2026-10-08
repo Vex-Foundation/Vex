@@ -125,6 +125,91 @@ export function signerRunnerNeverClosing(): LighterSignerBinaryRunner {
 }
 
 /**
+ * A resident (`--serve`) signer child whose every transition the test decides.
+ * Request lines written to stdin are recorded; the test answers them by
+ * emitting stdout data and decides when (or whether) the child closes.
+ */
+class ScriptedResidentStdin extends EventEmitter {
+  destroyed = false;
+  endedCount = 0;
+  unreferenced = false;
+  readonly lines: string[] = [];
+  throwOnWrite = false;
+
+  write(chunk: string): boolean {
+    if (this.throwOnWrite) throw new Error("EPIPE");
+    this.lines.push(chunk);
+    return true;
+  }
+
+  end(): void {
+    this.endedCount += 1;
+  }
+
+  destroy(): void {
+    this.destroyed = true;
+  }
+
+  unref(): void {
+    this.unreferenced = true;
+  }
+}
+
+class ScriptedResidentPipe extends ScriptedSignerPipe {
+  unreferenced = false;
+
+  unref(): void {
+    this.unreferenced = true;
+  }
+}
+
+export class ScriptedResidentSignerChild extends EventEmitter {
+  readonly stdout = new ScriptedResidentPipe();
+  readonly stderr = new ScriptedResidentPipe();
+  readonly stdin = new ScriptedResidentStdin();
+  pid: number | undefined = 4343;
+  readonly signals: string[] = [];
+  unreferenced = false;
+
+  kill(signal: string): boolean {
+    this.signals.push(signal);
+    return true;
+  }
+
+  unref(): void {
+    this.unreferenced = true;
+  }
+
+  /** The request envelopes written so far, parsed. */
+  requests(): Array<{ id: string; request: Record<string, unknown> }> {
+    return this.stdin.lines.map((line) => JSON.parse(line) as { id: string; request: Record<string, unknown> });
+  }
+
+  /** Answer the most recent request with `document` plus its id. */
+  answerLast(document: Record<string, unknown>): void {
+    const requests = this.requests();
+    const last = requests[requests.length - 1];
+    if (last === undefined) throw new Error("no request to answer");
+    this.stdout.emit("data", `${JSON.stringify({ id: last.id, ...document })}\n`);
+  }
+
+  listenerTotal(): number {
+    return [this, this.stdout, this.stderr, this.stdin].reduce(
+      (total, emitter) => total + emitter.eventNames().reduce(
+        (sum, name) => sum + emitter.listenerCount(name),
+        0,
+      ),
+      0,
+    );
+  }
+
+  abandoned(): boolean {
+    return this.unreferenced
+      && this.stdout.destroyed && this.stderr.destroyed && this.stdin.destroyed;
+  }
+}
+
+/**
  * A failure that never reached the child, so it carries no settlement evidence
  * at all - the case every caller must treat as unknown.
  */

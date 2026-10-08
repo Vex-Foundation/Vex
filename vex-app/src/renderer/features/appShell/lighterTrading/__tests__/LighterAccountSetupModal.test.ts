@@ -19,7 +19,7 @@ function status(
     tradingKeyRegistered: false,
     keyRegistrationResumable: false,
     setupRecovery: "none",
-    feePolicy: { perpFeePercent: 0.1, spotFeePercent: 0.25 },
+    feePolicy: { perpFeePercent: 0.02, spotFeePercent: 0.25 },
     feeAuthorized: false,
     ...overrides,
   };

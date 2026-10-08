@@ -33,7 +33,7 @@ vi.mock("@tools/wallet/keystore.js", () => ({
 }));
 
 vi.mock("@tools/wallet/solana-keystore.js", () => ({
-  decryptSolanaSecretKey: () => SECRET_BYTES,
+  decryptSolanaSecretKey: async () => SECRET_BYTES,
   deriveSolanaAddress: (b: Uint8Array) => mockDeriveSolanaAddress(b),
   encodeSolanaSecretKey: (b: Uint8Array) => {
     bytesAtEncode = Array.from(b);
@@ -57,10 +57,10 @@ afterEach(() => {
 });
 
 describe("decryptExportSecret — Solana buffer zeroization", () => {
-  it("zeroizes the decrypted secret-key buffer after a successful encode", () => {
+  it("zeroizes the decrypted secret-key buffer after a successful encode", async () => {
     mockDeriveSolanaAddress.mockReturnValue(RECORDED_ADDRESS);
 
-    const out = decryptExportSecret({
+    const out = await decryptExportSecret({
       family: "solana",
       entry: SOLANA_ENTRY,
       password: "pw",
@@ -74,18 +74,18 @@ describe("decryptExportSecret — Solana buffer zeroization", () => {
     expect(Array.from(SECRET_BYTES).every((b) => b === 0)).toBe(true);
   });
 
-  it("zeroizes the decrypted secret-key buffer even when the verify fails", () => {
+  it("zeroizes the decrypted secret-key buffer even when the verify fails", async () => {
     mockDeriveSolanaAddress.mockReturnValue(
       "DifferentAddr1111111111111111111111111111111",
     );
 
-    expect(() =>
+    await expect(
       decryptExportSecret({
         family: "solana",
         entry: SOLANA_ENTRY,
         password: "pw",
       }),
-    ).toThrow();
+    ).rejects.toThrow();
 
     // Verify threw before encoding, but the `finally` still wiped the buffer.
     expect(bytesAtEncode).toBeNull();

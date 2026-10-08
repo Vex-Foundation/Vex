@@ -25,6 +25,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { openExecutionGate } from "../../lifecycle/execution-gate.js";
 
 const handlers = new Map<string, (event: unknown, raw: unknown) => Promise<unknown>>();
 
@@ -754,4 +755,11 @@ describe("the tokenised stock travels in both directions, and only on a stock pa
     const proposed = (result.data.awaiting as { proposed: Record<string, unknown> }).proposed;
     expect(proposed.pairedStockAddress).toBeUndefined();
   });
+});
+
+// These handlers run as they do in a READY process: the execution gate
+// (`lifecycle/execution-gate.ts`) is closed until the runtime is up, and its
+// own suite covers the refusal.
+beforeEach(() => {
+  openExecutionGate();
 });

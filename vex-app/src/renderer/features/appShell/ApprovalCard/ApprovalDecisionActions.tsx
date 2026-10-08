@@ -48,6 +48,18 @@ export interface ApprovalDecisionActionsProps {
    * pressed, so a rejection must never light the one they did not.
    */
   readonly approvePending?: boolean;
+  /**
+   * REJECT specifically is in flight. The key says so the moment it is
+   * pressed, for the same reason the approve key does: a dimmed key alone
+   * reads as a click that did not land.
+   */
+  readonly rejectPending?: boolean;
+  /**
+   * The decision this card already landed. Both keys stay inert from the
+   * reply until the refreshed pending list removes the card, and the key that
+   * was pressed names the outcome instead of offering itself again.
+   */
+  readonly settledDecision?: "approved" | "rejected" | null;
   readonly wrapReasonOnNarrow?: boolean;
   /**
    * The reason input exists to reach the model as transcript content. A card
@@ -83,11 +95,29 @@ export function ApprovalDecisionActions({
   confirmApproveLabel = "Click again to confirm approve",
   pendingApproveLabel = "Working",
   approvePending = false,
+  rejectPending = false,
+  settledDecision = null,
   wrapReasonOnNarrow = false,
   rejectReasonInput = true,
 }: ApprovalDecisionActionsProps): JSX.Element {
   const rejectArmed = isHighRisk && armedAction === "reject";
   const approveArmed = isHighRisk && armedAction === "approve";
+  const rejectText = rejectPending
+    ? "Rejecting"
+    : settledDecision === "rejected"
+      ? "Rejected"
+      : rejectArmed ? "Click again to confirm reject" : "Reject";
+  const rejectAria = rejectPending
+    ? "Rejecting, please wait"
+    : settledDecision === "rejected"
+      ? "Rejected"
+      : rejectArmed ? "Confirm reject" : "Reject";
+  const approveIdleText = settledDecision === "approved"
+    ? "Approved"
+    : approveArmed ? confirmApproveLabel : approveLabel;
+  const approveIdleAria = settledDecision === "approved"
+    ? "Approved"
+    : approveArmed ? "Confirm approve" : approveLabel;
   return (
     <footer className={`flex items-center justify-end gap-2 border-t border-[var(--vex-line)] px-4 py-3${wrapReasonOnNarrow ? " @max-[640px]:flex-wrap" : ""}`}>
       {rejectReasonInput ? (
@@ -117,12 +147,13 @@ export function ApprovalDecisionActions({
         onClick={onReject}
         disabled={inFlight}
         {...DIALOG_INITIAL_FOCUS}
-        aria-label={rejectArmed ? "Confirm reject" : "Reject"}
+        aria-busy={rejectPending}
+        aria-label={rejectAria}
         className={`${KEY_BASE} text-[var(--vex-text-2)] hover:bg-interactive-hover hover:text-foreground ${
           rejectArmed ? ARMED_BORDER : "border-[var(--vex-line-strong)]"
         }`}
       >
-        {rejectArmed ? "Click again to confirm reject" : "Reject"}
+        {rejectText}
       </button>
       {/* THE WORKING KEY. A desk order signs, submits and then waits on the
           sequencer - fifteen-odd seconds in an app that is otherwise instant.
@@ -142,7 +173,7 @@ export function ApprovalDecisionActions({
         aria-label={
           approvePending
             ? `${pendingApproveLabel}, please wait`
-            : approveArmed ? "Confirm approve" : approveLabel
+            : approveIdleAria
         }
         className={`${KEY_BASE} bg-[var(--vex-pin)] font-medium text-[var(--vex-surface-0)] hover:bg-[var(--vex-pin-hover)] ${
           approvePending
@@ -166,7 +197,7 @@ export function ApprovalDecisionActions({
           <span
             className={`col-start-1 row-start-1 transition-opacity ${approvePending ? "opacity-0" : "opacity-100"}`}
           >
-            {approveArmed ? confirmApproveLabel : approveLabel}
+            {approveIdleText}
           </span>
         </span>
       </button>

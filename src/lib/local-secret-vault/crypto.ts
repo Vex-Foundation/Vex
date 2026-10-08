@@ -1,6 +1,8 @@
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes, type DecipherGCM } from "node:crypto";
 import { z } from "zod";
+import { scryptAsync } from "../../utils/scrypt-async.js";
 import { isVaultSecretKey, type VaultSecretKey } from "../secret-keys.js";
+import type { VaultKeyCacheOperation } from "./derived-key-cache.js";
 import { LocalSecretVaultError } from "./status.js";
 import type { LocalSecretVaultContents } from "./status.js";
 
@@ -65,7 +67,7 @@ export type VaultFile = z.infer<typeof vaultFileSchema>;
 // ── Envelope validation (runs BEFORE any crypto) ────────────────────────────
 //
 // The vault file is untrusted on-disk input: a bit-flipped, truncated, or
-// hand-edited file must never reach `scryptSync`/AES-GCM and must never be
+// hand-edited file must never reach scrypt/AES-GCM and must never be
 // reported as `invalid_password` (that advances the unlock throttle and can
 // steer a user with a CORRECT password toward wiping their keystores).
 
@@ -143,7 +145,7 @@ function validateVaultEnvelope(file: VaultFile): VaultEnvelope {
   return { salt, iv, tag, ciphertext };
 }
 
-// ── KDF bounds validation (runs BEFORE the synchronous scrypt derivation) ───
+// ── KDF bounds validation (runs BEFORE the scrypt derivation) ───────────────
 //
 // Historically emitted/supported scrypt profiles for this vault (see git log
 // on this file): N=2^16 (65536, the original CURRENT_KDF_PARAMS) and N=2^17
@@ -151,7 +153,7 @@ function validateVaultEnvelope(file: VaultFile): VaultEnvelope {
 // additionally exercises N=2^14 (16384) as an older still-decryptable
 // profile. r=8 and p=1 have never varied. A `kdf` block outside this envelope
 // did not come from a real Vex build — treat it as `corrupt`, not a password
-// guess, and reject before paying for a synchronous scrypt call (a corrupt
+// guess, and reject before paying for a scrypt derive (a corrupt
 // N that still passes Node's own memory ceiling would otherwise run to
 // completion, or throw and get mislabeled `invalid_password`).
 const MIN_SUPPORTED_KDF_N = 2 ** 14;
@@ -160,7 +162,7 @@ const SUPPORTED_KDF_R = 8;
 const SUPPORTED_KDF_P = 1;
 const SUPPORTED_KDF_DKLEN = 32;
 // Mirrors deriveKey's own maxmem ceiling so an out-of-range N/r combination
-// can never reach scryptSync even if a future edit raises MAX_SUPPORTED_KDF_N
+// can never reach scrypt even if a future edit raises MAX_SUPPORTED_KDF_N
 // without also raising maxmem.
 const KDF_MAXMEM_BYTES = 256 * 1024 * 1024;
 
@@ -192,7 +194,11 @@ function validateKdfParamsBounds(kdf: VaultFile["kdf"]): void {
   }
 }
 
-export function deriveKey(password: string, salt: Buffer, params: VaultFile["kdf"]): Buffer {
+export async function deriveKey(
+  password: string,
+  salt: Buffer,
+  params: VaultFile["kdf"],
+): Promise<Buffer> {
   // Node's scrypt enforces a soft memory cap of 32 MiB by default; once N
   // exceeds 2^15 (with r=8, p=1) the buffer requirement passes that cap and
   // the call fails with `digital envelope routines::memory limit exceeded`.
@@ -201,7 +207,8 @@ export function deriveKey(password: string, salt: Buffer, params: VaultFile["kdf
   // unlock. (N=2^18 would sit at the ceiling and Node rejects it, so do not
   // raise N past 2^17 without also raising maxmem.)
   const maxmem = KDF_MAXMEM_BYTES;
-  return scryptSync(password, salt, params.dkLen, {
+  // Async (libuv threadpool) so the derive never blocks the main thread.
+  return scryptAsync(password, salt, params.dkLen, {
     N: params.N,
     r: params.r,
     p: params.p,
@@ -242,13 +249,24 @@ export function parseVaultFile(raw: string): VaultFile {
   }
 }
 
-export function encryptContents(
+export async function encryptContents(
   contents: LocalSecretVaultContents,
   password: string,
-): VaultFile {
+): Promise<VaultFile> {
+  return (await encryptContentsKeepingKey(contents, password)).file;
+}
+
+/**
+ * `encryptContents`, also returning the key it derived for the fresh salt so a
+ * cached write can keep it for the next read (`VAULT_DERIVED_KEY_CACHE`).
+ */
+export async function encryptContentsKeepingKey(
+  contents: LocalSecretVaultContents,
+  password: string,
+): Promise<{ readonly file: VaultFile; readonly salt: Buffer; readonly key: Buffer }> {
   const salt = randomBytes(16);
   const iv = randomBytes(12);
-  const key = deriveKey(password, salt, CURRENT_KDF_PARAMS);
+  const key = await deriveKey(password, salt, CURRENT_KDF_PARAMS);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
   // Merge known + extra secrets into one on-disk map so keys this build does
   // not recognize (written by a newer build) survive a downgrade -> unlock ->
@@ -267,12 +285,16 @@ export function encryptContents(
   const tag = cipher.getAuthTag();
 
   return {
-    version: VAULT_VERSION,
-    kdf: CURRENT_KDF_PARAMS,
-    salt: salt.toString("base64"),
-    iv: iv.toString("base64"),
-    tag: tag.toString("base64"),
-    ciphertext: ciphertext.toString("base64"),
+    file: {
+      version: VAULT_VERSION,
+      kdf: CURRENT_KDF_PARAMS,
+      salt: salt.toString("base64"),
+      iv: iv.toString("base64"),
+      tag: tag.toString("base64"),
+      ciphertext: ciphertext.toString("base64"),
+    },
+    salt,
+    key,
   };
 }
 
@@ -285,13 +307,109 @@ export function vaultFileNeedsKdfUpgrade(file: VaultFile): boolean {
   );
 }
 
-export function decryptContents(file: VaultFile, password: string): LocalSecretVaultContents {
+/**
+ * Decrypt a parsed vault file.
+ *
+ * `keyCache` is the opt-in `VAULT_DERIVED_KEY_CACHE` path, passed ONLY by an
+ * unlocked-session read that uses the session's own held password. Without
+ * it (every unlock attempt, password verification and vault creation) the key
+ * is derived from scratch, exactly as before the cache existed.
+ */
+export async function decryptContents(
+  file: VaultFile,
+  password: string,
+  keyCache?: VaultKeyCacheOperation,
+): Promise<LocalSecretVaultContents> {
   // Phase 0: envelope + KDF-bounds validation. Both run BEFORE any crypto, so
   // a structurally invalid or out-of-bounds file is always `corrupt` and
   // never pays for (or is mislabeled by) a scrypt derivation.
   const envelope = validateVaultEnvelope(file);
   validateKdfParamsBounds(file.kdf);
 
+  if (keyCache === undefined) {
+    return decryptEnvelope(envelope, () => deriveKey(password, envelope.salt, file.kdf), false);
+  }
+  return decryptEnvelopeWithKeyCache(envelope, file.kdf, password, keyCache);
+}
+
+/**
+ * The cached read. A hit skips the derive but still runs the full GCM
+ * authentication below. A cached key that fails the tag (the file was
+ * replaced or tampered under the same salt) is dropped and the read derives
+ * ONCE from scratch, so it ends exactly where the uncached read would. Only
+ * a key that has just opened this file (tag and contents both accepted) is
+ * stored, and never after the cache was cleared.
+ */
+async function decryptEnvelopeWithKeyCache(
+  envelope: VaultEnvelope,
+  params: VaultFile["kdf"],
+  password: string,
+  op: VaultKeyCacheOperation,
+): Promise<LocalSecretVaultContents> {
+  const cached = op.current
+    ? op.cache.lookup(op.filePath, envelope.salt, params, password)
+    : null;
+  if (cached === null) {
+    op.cacheMiss += 1;
+  } else {
+    op.cacheHit += 1;
+    try {
+      return await decryptEnvelope(envelope, () => Promise.resolve(cached), true);
+    } catch (error) {
+      if (!(error instanceof LocalSecretVaultError) || error.code !== "invalid_password") {
+        throw error;
+      }
+      op.cache.drop(op.filePath);
+      op.tagRetry += 1;
+    }
+  }
+
+  const derived: { key: Buffer | null } = { key: null };
+  try {
+    const contents = await decryptEnvelope(
+      envelope,
+      async () => {
+        derived.key = await deriveForCachedOperation(op, envelope.salt, params, password);
+        return derived.key;
+      },
+      false,
+    );
+    if (derived.key !== null && op.current) {
+      op.cache.store(op.filePath, envelope.salt, params, password, derived.key, op.generation);
+    }
+    return contents;
+  } finally {
+    derived.key?.fill(0);
+  }
+}
+
+async function deriveForCachedOperation(
+  op: VaultKeyCacheOperation,
+  salt: Buffer,
+  params: VaultFile["kdf"],
+  password: string,
+): Promise<Buffer> {
+  const started = performance.now();
+  try {
+    if (!op.current) {
+      op.derives += 1;
+      return await deriveKey(password, salt, params);
+    }
+    const result = await op.cache.derive(op.filePath, salt, params, password, () =>
+      deriveKey(password, salt, params),
+    );
+    if (result.started) op.derives += 1;
+    return result.key;
+  } finally {
+    op.deriveMs += performance.now() - started;
+  }
+}
+
+async function decryptEnvelope(
+  envelope: VaultEnvelope,
+  obtainKey: () => Promise<Buffer>,
+  wipeKeyAfterSetup: boolean,
+): Promise<LocalSecretVaultContents> {
   // Phase 1a: key derivation + decipher setup + ciphertext pass. NONE of
   // this authenticates the password — scrypt derives bytes from whatever
   // password it was given, and GCM's update() decrypts without verifying.
@@ -302,8 +420,14 @@ export function decryptContents(file: VaultFile, password: string): LocalSecretV
   let pending: Buffer;
   let decipherFinal: () => Buffer;
   try {
-    const key = deriveKey(password, envelope.salt, file.kdf);
-    const decipher = createDecipheriv("aes-256-gcm", key, envelope.iv);
+    const key = await obtainKey();
+    let decipher: DecipherGCM;
+    try {
+      decipher = createDecipheriv("aes-256-gcm", key, envelope.iv);
+    } finally {
+      // The cipher holds its own copy of the key once it is set up.
+      if (wipeKeyAfterSetup) key.fill(0);
+    }
     decipher.setAuthTag(envelope.tag);
     pending = decipher.update(envelope.ciphertext);
     decipherFinal = () => decipher.final();

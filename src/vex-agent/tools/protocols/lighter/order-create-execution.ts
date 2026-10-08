@@ -2,8 +2,20 @@ import { persistLighterSigningEvidence, type LighterEvidenceWritePorts } from ".
 import { assertIntentAuthority, LighterIntentRefusal } from "./intent-expiry.js";
 import { lighterSignerRunExited } from "@tools/lighter/signer-binary-adapter.js";
 import { readLighterSignedTxExpiredAtMs } from "@tools/lighter/signed-tx-expiry.js";
-import { revalidateLighterOrderFees, readLighterOrderAccountFeeTicks, type LighterOrderFeeClient } from "./order-fees.js";
-import { lighterIntegratorFeesEqual } from "@tools/lighter/fee-policy.js";
+import {
+  revalidateLighterOrderFees,
+  readLighterOrderAccountFeeTicks,
+  type LighterOrderFeeClient,
+  type LighterOrderFeeReadSnapshot,
+} from "./order-fees.js";
+import { getLighterFeePolicy, lighterIntegratorFeesEqual } from "@tools/lighter/fee-policy.js";
+import { resolveLighterReadOnlyAccountAuth } from "./read-account-auth.js";
+import { lighterOrderMarginFitNeedsLiveReads, readLighterMarginFitDepthBook } from "./margin-fit-guard.js";
+import {
+  judgeLighterSigningOwnership,
+  LIGHTER_SIGNING_OWNERSHIP_RECHECK,
+  type LighterSigningOwnershipWallet,
+} from "./signing-ownership.js";
 import type { LighterClient } from "@tools/lighter/client.js";
 import type { LighterAccountOrder, LighterTrade } from "@tools/lighter/types.js";
 import {
@@ -26,6 +38,7 @@ import logger from "@utils/logger.js";
 import * as lighterOrderExecutionIntentsRepo from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import type { LighterOrderExecutionIntentState } from "@vex-agent/db/repos/lighter-order-execution-intents.js";
 import * as lighterOrderPreviewsRepo from "@vex-agent/db/repos/lighter-order-previews.js";
+import type { LighterOrderPreviewRow } from "@vex-agent/db/repos/lighter-order-previews.js";
 import * as lighterNonceStateRepo from "@vex-agent/db/repos/lighter-nonce-state.js";
 import {
   reserveLighterOrderNonceForSigning,
@@ -60,6 +73,7 @@ import {
   markLighterOrderCapitalCommitmentSettled,
   readmitLighterOrderCapitalCommitmentAtExecute,
   retireLighterOrderCapitalCommitment,
+  type LighterCapitalShareExecuteSnapshot,
 } from "./capital-share-policy.js";
 import { assertLighterPhaseOneOrderPolicy } from "@tools/lighter/order-policy.js";
 import { assertLighterTradingApiKeyIndexAllowed } from "@tools/lighter/trading-credentials.js";
@@ -69,6 +83,19 @@ import {
   type LighterNonceRecoveryRunner,
 } from "./nonce-commit-recovery.js";
 import { isLighterUnreachable, withLighterBeforeSendFailures, type LighterSendPhase } from "./before-send.js";
+import {
+  LIGHTER_READ_AUTH_CACHE,
+  lighterReadAuthCache,
+  normalizeLighterPublicKey,
+  type LighterReadAuthCache,
+  type LighterReadAuthCacheScope,
+} from "./read-auth-cache.js";
+import {
+  LIGHTER_STREAM_REVALIDATION,
+  lighterOrderBookFromStream,
+  takeFreshLighterStreamOrderBook,
+  type LighterStreamOrderBookReader,
+} from "./stream-revalidation.js";
 
 /**
  * The provider states that PROVE this create order can consume no more capital.
@@ -115,6 +142,51 @@ const PROVIDER_OUTCOME_MIN_DELAY_MS = 100;
 const PROVIDER_OUTCOME_MAX_DELAY_MS = 2_000;
 const FRESH_PUBLIC_READ = { fresh: true } as const;
 const MIN_WIRE_ORDER_EXPIRY_REMAINING_MS = 5 * 60 * 1_000;
+
+/**
+ * SWITCH `LIGHTER_ORDER_PARALLEL_PREFLIGHT` (default OFF).
+ *
+ * ON reads the provider credential (registered key and `/nextNonce`) while the
+ * post-approval revalidation runs, instead of after it. The trading key is
+ * still loaded only after BOTH have succeeded, and when both fail the refusal
+ * is the one the sequential path gives (revalidation first, then the
+ * credential), so every refusal and every durable write is unchanged.
+ *
+ * ON for the owner's live canary; `false` is the rollback. The risk:
+ * `/nextNonce` is read earlier than the sequential path, by the length of the
+ * revalidation. A concurrent Vex action on the same API key that
+ * consumes a nonce inside that wider window leaves this order signed with a
+ * stale nonce, which Lighter refuses (recorded ambiguous and reconciled, never
+ * resent). Only a live canary can show that window is immaterial in practice.
+ */
+export const LIGHTER_ORDER_PARALLEL_PREFLIGHT = true;
+
+/**
+ * SWITCH `LIGHTER_REVALIDATION_SINGLE_SNAPSHOT`.
+ *
+ * ON gathers the post-approval revalidation's reads into one snapshot instead
+ * of letting the fee, fee-tier and capital-share checks each read again:
+ *
+ * - the fee check's system config and collector account join the first batch
+ *   (market details, order book, account), because they are public reads;
+ * - the read-only account auth is resolved ONCE, at the point the fee check
+ *   resolves it today (after the first batch proved the market), and its
+ *   account-limits read is shared by the fee check, the spot fee-tier check,
+ *   the margin-fit check and the capital share;
+ * - the fee check's trader account, the capital share's account and market
+ *   details, and the margin-fit check's market details are the first batch's
+ *   `fresh` reads of the same query;
+ * - the margin-fit book depth read starts beside the auth, only for an order
+ *   that check would read for.
+ *
+ * Every check still runs in today's order over those values, and each shared
+ * read is awaited only where today's code issues it, so a read that fails
+ * refuses exactly where, and with exactly what, it refuses today. No secret is
+ * touched earlier than today: the auth is never resolved before the first
+ * batch succeeded, and the trading key still loads only after revalidation
+ * and the credential read both succeed. OFF (`false`) is today's path.
+ */
+export const LIGHTER_REVALIDATION_SINGLE_SNAPSHOT = true;
 
 export type ExecuteApprovedLighterCreateOrderResult =
   | {
@@ -194,6 +266,21 @@ export interface ExecuteApprovedLighterCreateOrderDeps {
     "markSigned" | "markPreSubmitRevalidated" | "markSubmitted" | "markSequencerPending" | "markProviderOutcome" | "markAmbiguous">>
     & Pick<typeof lighterOrderExecutionIntentsRepo, "markSendAttemptStarted" | "markExpiredUnsubmitted" | "markUnsubmittedRefused" | "findByIntentIdAnySession">
     & { readonly markApiAccepted: (...args: Parameters<typeof lighterOrderExecutionIntentsRepo.markApiAccepted>) => Promise<{ readonly volumeQuotaRemaining: string | null } | null> };
+  /** Overrides {@link LIGHTER_ORDER_PARALLEL_PREFLIGHT}; absent uses the constant. */
+  readonly parallelPreflight?: boolean;
+  /**
+   * The read-only token cache. Absent uses the process cache when
+   * `LIGHTER_READ_AUTH_CACHE` is ON and none when it is OFF; null disables it.
+   */
+  readonly readAuthCache?: LighterReadAuthCache | null;
+  /** Overrides `LIGHTER_STREAM_REVALIDATION`; absent uses the constant. */
+  readonly streamRevalidation?: boolean;
+  /** The main-process public book reader; absent or null always reads REST. */
+  readonly streamOrderBook?: LighterStreamOrderBookReader | null;
+  /** Overrides {@link LIGHTER_REVALIDATION_SINGLE_SNAPSHOT}; absent uses the constant. */
+  readonly revalidationSingleSnapshot?: boolean;
+  /** Overrides `LIGHTER_SIGNING_OWNERSHIP_RECHECK` (`signing-ownership.ts`); absent uses the constant. */
+  readonly signingOwnershipRecheck?: boolean;
 }
 
 let configuredDeps: ExecuteApprovedLighterCreateOrderDeps | null = null;
@@ -216,6 +303,12 @@ export async function executeApprovedLighterCreateOrder(input: {
   readonly unsignedOrder?: LighterUnsignedCreateOrderRequest;
   readonly deps: ExecuteApprovedLighterCreateOrderDeps;
   readonly abortSignal?: AbortSignal;
+  /**
+   * The approve call's own session wallet, resolved as the preview resolves
+   * it (`resolveLighterSigningOwnershipWallet`). Read only while
+   * `LIGHTER_SIGNING_OWNERSHIP_RECHECK` is ON, which refuses without it.
+   */
+  readonly sessionWallet?: LighterSigningOwnershipWallet;
 }): Promise<ExecuteApprovedLighterCreateOrderResult> {
   return withLighterBeforeSendFailures((sendPhase) => runApprovedLighterCreateOrder(input, sendPhase));
 }
@@ -225,6 +318,7 @@ async function runApprovedLighterCreateOrder(input: {
   readonly unsignedOrder?: LighterUnsignedCreateOrderRequest;
   readonly deps: ExecuteApprovedLighterCreateOrderDeps;
   readonly abortSignal?: AbortSignal;
+  readonly sessionWallet?: LighterSigningOwnershipWallet;
 }, sendPhase: LighterSendPhase): Promise<ExecuteApprovedLighterCreateOrderResult> {
   const { plan, deps } = input;
   const assertAuthority = (phase: Parameters<typeof assertIntentAuthority>[2]): void =>
@@ -236,34 +330,44 @@ async function runApprovedLighterCreateOrder(input: {
   }
   assertLighterTradingApiKeyIndexAllowed(plan.environment, plan.apiKeyIndex);
   assertLighterPhaseOneOrderPolicy(plan.orderType, plan.timeInForce);
-  const revalidationEvidence = await revalidateLiveOrderState(plan, deps);
-  const evidenceScope = buildLighterOrderEvidenceScope({
-    approved: plan,
-    baseDecimals: revalidationEvidence.baseDecimals,
-    priceDecimals: revalidationEvidence.priceDecimals,
-    signedOrderExpiryMs: unsignedOrder.orderExpiryMs,
-  });
-  // Prove the exact registered provider key and current nonce before asking
-  // the encrypted vault for private key material. Besides minimizing secret
-  // exposure time, this keeps every provider-read refusal truthful: no private
-  // trading key has been loaded when public identity evidence is unavailable.
-  const providerCredential = await readLiveProviderCredential(plan, deps);
-  const secret = await loadLighterTradingSecretMaterial(
+  const readAuthCache = resolveReadAuthCache(deps);
+  // Started now, judged later at exactly the point the sequential path reads:
+  // a cached-token answer is used only after the fresh key proof below, and
+  // any doubt about it falls back to today's read with the fresh token.
+  const cachedRepairReads = startCachedRepairReads(plan, deps, readAuthCache);
+  const timing = new LighterOrderTiming();
+  const { evidenceScope, providerCredential } = (deps.parallelPreflight ?? LIGHTER_ORDER_PARALLEL_PREFLIGHT)
+    ? await runParallelPreflightReads(plan, unsignedOrder, deps, timing, input.sessionWallet)
+    : await runSequentialPreflightReads(plan, unsignedOrder, deps, timing, input.sessionWallet);
+  const secret = await timing.measure("keyLoadMs", () => loadLighterTradingSecretMaterial(
     plan.credentialReference,
     deps.secretReader,
-  );
+  ));
   assertAuthority("before_reservation");
-  const auth = await createLighterAccountAuthWithAdapter(
+  const authDeadlineUnixSeconds = Math.floor(deps.now() / 1_000) + ACCOUNT_AUTH_TTL_SECONDS;
+  const auth = await timing.measure("authMs", () => createLighterAccountAuthWithAdapter(
     buildLighterAccountAuthSigningInput({
       order: unsignedOrder,
       secret,
-      deadlineUnixSeconds: Math.floor(deps.now() / 1_000) + ACCOUNT_AUTH_TTL_SECONDS,
+      deadlineUnixSeconds: authDeadlineUnixSeconds,
     }),
     deps.signer,
-  );
+  ));
   assertProviderPublicKeyMatches(providerCredential.publicKey, auth.publicKey);
+  timing.start("nonceReserveMs");
   const [, observedNonce] = await Promise.all([
-    assertProviderOutcomeRepairReady(plan, evidenceScope, unsignedOrder, auth.authToken, deps),
+    readAuthCache === null
+      ? assertProviderOutcomeRepairReady(plan, evidenceScope, unsignedOrder, auth.authToken, deps)
+      : assertProviderOutcomeRepairReadyWithCache({
+        plan,
+        evidenceScope,
+        unsignedOrder,
+        auth,
+        authDeadlineUnixSeconds,
+        deps,
+        cache: readAuthCache,
+        cached: cachedRepairReads,
+      }),
     observeLighterNonceWithRecovery({
       scope: { environment: plan.environment, accountIndex: plan.accountIndex },
       observe: () => deps.nonceState.recordExecutionObserved({
@@ -288,6 +392,7 @@ async function runApprovedLighterCreateOrder(input: {
   assertAuthority("before_reservation");
   sendPhase.reserving = true;
   const nonce = await deps.reserveNonce(plan);
+  timing.stop("nonceReserveMs");
   let signerTxHash: string | null = null;
   let signingStarted = false;
   let signerExited = false;
@@ -303,7 +408,9 @@ async function runApprovedLighterCreateOrder(input: {
       secret,
       nonce: nonce.nonceValue,
     });
+    timing.start("signMs");
     const signed = await signLighterCreateOrderWithAdapter(signingInput, deps.signer);
+    timing.stop("signMs");
     signerExited = lighterSignerRunExited({ kind: "resolved" });
     // Read before the hash is recorded: an expiry that contradicts the SDK
     // default throws here, while this signature still exists only in memory,
@@ -360,10 +467,12 @@ async function runApprovedLighterCreateOrder(input: {
 
     let response: Awaited<ReturnType<LighterClient["sendTx"]>>;
     try {
+      timing.start("sendMs");
       response = await deps.client.sendTx(plan.environment, {
         txType: signed.txType,
         txInfo: signed.txInfo,
       });
+      timing.stop("sendMs");
     } catch (error) {
       const reason = sendTxAmbiguousReason(error);
       await markAmbiguous(deps, plan, reason);
@@ -400,6 +509,7 @@ async function runApprovedLighterCreateOrder(input: {
       await markAmbiguous(deps, plan, API_ACCEPTED_PERSIST_AMBIGUOUS_REASON);
       return ambiguous(plan, API_ACCEPTED_PERSIST_AMBIGUOUS_REASON, signed.txHash);
     }
+    timing.log(plan.intentId);
 
     const pending = await deps.intents.markSequencerPending({
       intentId: plan.intentId,
@@ -555,6 +665,8 @@ export function defaultLighterCreateOrderExecutionDeps(
 async function revalidateLiveOrderState(
   plan: LighterOrderReadyForSignerPlan,
   deps: ExecuteApprovedLighterCreateOrderDeps,
+  timing?: LighterOrderTiming,
+  sessionWallet?: LighterSigningOwnershipWallet,
 ): Promise<LighterOrderPreSubmitRevalidationEvidence> {
   const approvedPreview = await deps.previews.findFreshById(
     plan.sessionId,
@@ -566,20 +678,31 @@ async function revalidateLiveOrderState(
       "The exact approved Lighter preview is no longer fresh or available. No trading key was loaded and no order was signed or submitted.",
     );
   }
+  // `LIGHTER_REVALIDATION_SINGLE_SNAPSHOT`: the fee check's two public reads
+  // join the first batch. Nothing here is awaited until the fee check itself.
+  const snapshotFeeReads = (deps.revalidationSingleSnapshot ?? LIGHTER_REVALIDATION_SINGLE_SNAPSHOT)
+    ? startSnapshotFeePublicReads(plan, deps)
+    : undefined;
 
+  // `LIGHTER_STREAM_REVALIDATION`: decided once, before any read, so OFF (or
+  // no live book young enough) issues exactly today's three REST reads.
+  const streamBook = takeFreshLighterStreamOrderBook({
+    enabled: deps.streamRevalidation ?? LIGHTER_STREAM_REVALIDATION,
+    reader: deps.streamOrderBook,
+    environment: plan.environment,
+    marketId: plan.marketIndex,
+    nowMs: deps.now(),
+  });
   let market: Awaited<ReturnType<LighterClient["getMarketDetails"]>>;
-  let orderBook: Awaited<ReturnType<LighterClient["getOrderBookOrders"]>>;
+  let restOrderBook: Awaited<ReturnType<LighterClient["getOrderBookOrders"]>> | null;
   let account: Awaited<ReturnType<LighterClient["getAccount"]>>;
   try {
-    [market, orderBook, account] = await Promise.all([
+    [market, restOrderBook, account] = await Promise.all([
       deps.client.getMarketDetails(plan.environment, {
         marketId: plan.marketIndex,
         filter: "all",
       }, FRESH_PUBLIC_READ),
-      deps.client.getOrderBookOrders(plan.environment, {
-        marketId: plan.marketIndex,
-        limit: 250,
-      }, FRESH_PUBLIC_READ),
+      streamBook === null ? readRevalidationOrderBook(plan, deps) : null,
       deps.client.getAccount(plan.environment, {
         by: "index",
         value: plan.accountIndex,
@@ -592,11 +715,7 @@ async function revalidateLiveOrderState(
       }, FRESH_PUBLIC_READ),
     ]);
   } catch (error) {
-    // Unreachable Lighter is restated plainly by the execution's before-send wrapper.
-    if (isLighterUnreachable(error)) throw error;
-    throw blockedBeforeSubmit(
-      "Live Lighter market or account state is unavailable for post-approval revalidation. No trading key was loaded and no order was signed or submitted.",
-    );
+    restateRevalidationReadFailure(error);
   }
   const marketDetail = [
     ...market.order_book_details,
@@ -607,10 +726,36 @@ async function revalidateLiveOrderState(
       "Lighter did not return the approved market during post-approval revalidation. No trading key was loaded and no order was signed or submitted.",
     );
   }
+  // The stream book stands in only for the market type REST just reported;
+  // any other answer reads the REST book now, refusing as today on failure.
+  const streamBookUsed = streamBook !== null && streamBook.snapshot.marketType === marketDetail.market_type
+    ? streamBook
+    : null;
+  let orderBook: Awaited<ReturnType<LighterClient["getOrderBookOrders"]>>;
+  if (restOrderBook !== null) {
+    orderBook = restOrderBook;
+  } else if (streamBookUsed !== null) {
+    orderBook = lighterOrderBookFromStream(streamBookUsed.snapshot);
+  } else {
+    try {
+      orderBook = await readRevalidationOrderBook(plan, deps);
+    } catch (error) {
+      restateRevalidationReadFailure(error);
+    }
+  }
 
-  await revalidateLighterOrderFees({ client: deps.client, environment: plan.environment, accountIndex: plan.accountIndex, market: marketDetail, account, reduceOnly: plan.reduceOnly, side: plan.side, integratorFees: plan.integratorFees });
+  // Started only now, after the first batch proved the market: the read-only
+  // auth is resolved no earlier than the fee check below resolves it today.
+  const snapshot = snapshotFeeReads === undefined
+    ? null
+    : startRevalidationSnapshot({ plan, deps, approvedPreview, market, account, feeReads: snapshotFeeReads });
+  await revalidateLighterOrderFees({
+    client: deps.client, environment: plan.environment, accountIndex: plan.accountIndex, market: marketDetail, account,
+    reduceOnly: plan.reduceOnly, side: plan.side, integratorFees: plan.integratorFees,
+    ...(snapshot?.fees === undefined ? {} : { snapshot: snapshot.fees }),
+  });
   const accountTakerFeeTicks = marketDetail.market_type === "spot" && plan.side === "buy"
-    ? await readLighterOrderAccountFeeTicks(deps.client, plan.environment, plan.accountIndex) : undefined;
+    ? await readLighterOrderAccountFeeTicks(deps.client, plan.environment, plan.accountIndex, snapshot?.feeTier) : undefined;
   // RE-ADMISSION at the commit point, against the account and the limits row as
   // they are NOW. `excludeIntentId` keeps this intent's own commitment from
   // counting against itself; the user may have withdrawn collateral or lowered
@@ -619,6 +764,7 @@ async function revalidateLiveOrderState(
     intentId: plan.intentId,
     preview: approvedPreview,
     client: deps.client,
+    ...(snapshot?.capital === undefined ? {} : { snapshot: snapshot.capital }),
   });
   const evidence = revalidateApprovedLighterOrder({
     plan,
@@ -626,18 +772,248 @@ async function revalidateLiveOrderState(
     context: { market: marketDetail, orderBook, account, ...(accountTakerFeeTicks === undefined ? {} : { accountTakerFeeTicks }) },
     nowMs: deps.now(),
   });
+  // `LIGHTER_SIGNING_OWNERSHIP_RECHECK`: last of the revalidation's checks, so
+  // every existing refusal keeps its precedence, and before the evidence is
+  // written, so a refused order records no passed revalidation.
+  if (deps.signingOwnershipRecheck ?? LIGHTER_SIGNING_OWNERSHIP_RECHECK) {
+    assertSessionWalletStillOwnsAccount(plan, account, sessionWallet);
+  }
   const persisted = await deps.intents.markPreSubmitRevalidated({
     intentId: plan.intentId,
     sessionId: plan.sessionId,
     environment: plan.environment,
-    evidence: { ...evidence },
+    evidence: {
+      ...evidence,
+      // Named only when the stream supplied the book, so OFF writes today's row.
+      ...(streamBookUsed === null ? {} : { orderBookSource: "public_stream", orderBookAgeMs: streamBookUsed.ageMs }),
+    },
   });
   if (persisted === null) {
     throw blockedBeforeSubmit(
       "Lighter pre-submit revalidation evidence could not be persisted. No trading key was loaded and no order was signed or submitted.",
     );
   }
+  timing?.recordDecision(persisted);
   return evidence;
+}
+
+/**
+ * The session wallet must still own the approved account, judged from the
+ * revalidation's own fresh account read. Numbers and enums only are logged.
+ */
+function assertSessionWalletStillOwnsAccount(
+  plan: LighterOrderReadyForSignerPlan,
+  account: Awaited<ReturnType<LighterClient["getAccount"]>>,
+  sessionWallet: LighterSigningOwnershipWallet | undefined,
+): void {
+  const outcome = judgeLighterSigningOwnership({ accountIndex: plan.accountIndex, account, wallet: sessionWallet });
+  if (outcome.kind === "refused") throw blockedBeforeSubmit(outcome.reason);
+  try {
+    logger.info("lighter.order.signing_ownership_recheck", {
+      outcome: outcome.kind,
+      ...(outcome.kind === "matched" ? { accountTypeReported: outcome.accountTypeReported ? 1 : 0 } : {}),
+    });
+  } catch {
+    // A log sink failure must never change an order's outcome.
+  }
+}
+
+interface SnapshotFeePublicReads {
+  readonly systemConfig: () => Promise<Awaited<ReturnType<NonNullable<LighterOrderFeeClient["getSystemConfig"]>>>>;
+  readonly collectorAccount: () => Promise<Awaited<ReturnType<LighterClient["getAccount"]>>>;
+}
+
+/**
+ * The fee check's public reads, started beside the first batch. Null (start
+ * nothing) exactly when the fee check would read nothing: no fee policy for
+ * this environment, or a client without the live fee reads, which the fee
+ * check refuses or skips before any read.
+ */
+function startSnapshotFeePublicReads(
+  plan: LighterOrderReadyForSignerPlan,
+  deps: ExecuteApprovedLighterCreateOrderDeps,
+): SnapshotFeePublicReads | null {
+  const policy = getLighterFeePolicy(plan.environment);
+  const { client } = deps;
+  if (policy === null || !client.getAccount || !client.getSystemConfig || !client.getAccountLimits) return null;
+  const systemConfig = settledLater(client.getSystemConfig(plan.environment, FRESH_PUBLIC_READ));
+  const collectorAccount = settledLater(client.getAccount(plan.environment, {
+    by: "index",
+    value: policy.collectorAccountIndex,
+  }, FRESH_PUBLIC_READ));
+  return { systemConfig: () => systemConfig, collectorAccount: () => collectorAccount };
+}
+
+interface RevalidationSnapshot {
+  /** Absent when the fee check reads nothing; it then runs exactly as today. */
+  readonly fees?: LighterOrderFeeReadSnapshot;
+  readonly feeTier: Pick<LighterOrderFeeReadSnapshot, "resolveAuth" | "accountLimits">;
+  /** Absent when the preview names another scope than the plan (refused later). */
+  readonly capital?: LighterCapitalShareExecuteSnapshot;
+}
+
+/**
+ * The rest of the snapshot, started once the first batch proved the market.
+ *
+ * The auth and the account limits are shared and resolved at most once; each
+ * consumer awaits the same promise at its own point, so a failure reaches
+ * every consumer with that consumer's own handling. They start eagerly only
+ * when the fee check will read them anyway (a fee policy applies); otherwise
+ * the first consumer that reads them today starts them.
+ */
+function startRevalidationSnapshot(input: {
+  readonly plan: LighterOrderReadyForSignerPlan;
+  readonly deps: ExecuteApprovedLighterCreateOrderDeps;
+  readonly approvedPreview: LighterOrderPreviewRow;
+  readonly market: Awaited<ReturnType<LighterClient["getMarketDetails"]>>;
+  readonly account: Awaited<ReturnType<LighterClient["getAccount"]>>;
+  readonly feeReads: SnapshotFeePublicReads | null;
+}): RevalidationSnapshot {
+  const { plan, deps, approvedPreview, feeReads } = input;
+  const resolveAuth = sharedRead(() => resolveLighterReadOnlyAccountAuth(plan.environment, plan.accountIndex));
+  const accountLimits = sharedRead(async () => {
+    const auth = await resolveAuth();
+    // Unreachable through the checks, which each test both before reading.
+    if (auth === null || !deps.client.getAccountLimits) {
+      throw new Error("Lighter account limits were requested without a read-only account auth.");
+    }
+    return deps.client.getAccountLimits(plan.environment, { accountIndex: plan.accountIndex }, auth);
+  });
+  const depthBook = sharedRead(() => readLighterMarginFitDepthBook(deps.client, plan.environment, plan.marketIndex));
+
+  if (feeReads !== null) {
+    // The fee check resolves the auth next and, when it is non-null, reads the
+    // limits with it: both start now instead of one after the other.
+    void resolveAuth().then((auth) => {
+      if (auth !== null) void accountLimits();
+    }, () => undefined);
+  }
+
+  // The re-admission reads the preview's own scope. When that differs from the
+  // plan (the pure revalidation refuses such a row afterwards) it keeps every
+  // one of its own reads, exactly as today.
+  const sameScope = approvedPreview.environment === plan.environment
+    && approvedPreview.accountIndex === plan.accountIndex
+    && approvedPreview.marketIndex === plan.marketIndex;
+  if (sameScope) {
+    const accountRow = input.account.accounts.find(
+      (row) => (row.index ?? row.account_index) === plan.accountIndex,
+    );
+    if (accountRow !== undefined && lighterOrderMarginFitNeedsLiveReads(accountRow, approvedPreview)) {
+      void depthBook();
+    }
+  }
+
+  return {
+    ...(feeReads === null ? {} : {
+      fees: {
+        traderAccount: input.account,
+        systemConfig: feeReads.systemConfig,
+        collectorAccount: feeReads.collectorAccount,
+        resolveAuth,
+        accountLimits,
+      },
+    }),
+    feeTier: { resolveAuth, accountLimits },
+    ...(sameScope
+      ? { capital: { account: input.account, marketDetails: input.market, resolveAuth, accountLimits, depthBook } }
+      : {}),
+  };
+}
+
+/**
+ * A read started now and awaited later, maybe never: its rejection is marked
+ * handled here so an unconsumed failure is not an unhandled rejection, while
+ * every consumer that awaits it still receives that rejection.
+ */
+function settledLater<T>(promise: Promise<T>): Promise<T> {
+  promise.catch(() => undefined);
+  return promise;
+}
+
+/** Started on first use, then the same promise for every consumer. */
+function sharedRead<T>(start: () => Promise<T>): () => Promise<T> {
+  let started: Promise<T> | null = null;
+  return () => {
+    started ??= settledLater(start());
+    return started;
+  };
+}
+
+type LighterOrderTimingPhase =
+  | "revalidationMs"
+  | "credentialMs"
+  | "keyLoadMs"
+  | "authMs"
+  | "nonceReserveMs"
+  | "signMs"
+  | "sendMs";
+
+/**
+ * `[lighter-order-timing]`: one line per order that reached API acceptance,
+ * numbers only beside the intent id (no prices, keys, tokens or other ids), so
+ * the owner can compare phases before and after a speed switch.
+ * `nonceReserveMs` runs from the key proof to the reserved nonce (duplicate
+ * evidence check, nonce observation and reservation). Purely observational:
+ * nothing here can change or fail an order.
+ */
+class LighterOrderTiming {
+  private readonly started = new Map<LighterOrderTimingPhase, number>();
+  private readonly durations = new Map<LighterOrderTimingPhase, number>();
+  private decidedAtMs: number | null = null;
+
+  start(phase: LighterOrderTimingPhase): void {
+    this.started.set(phase, performance.now());
+  }
+
+  stop(phase: LighterOrderTimingPhase): void {
+    const started = this.started.get(phase);
+    if (started !== undefined) this.durations.set(phase, Math.round(performance.now() - started));
+  }
+
+  async measure<T>(phase: LighterOrderTimingPhase, run: () => Promise<T>): Promise<T> {
+    this.start(phase);
+    const value = await run();
+    this.stop(phase);
+    return value;
+  }
+
+  /** The intent row the revalidation write returned carries the approval instant. */
+  recordDecision(row: object): void {
+    const decidedAt = "decidedAt" in row ? row.decidedAt : null;
+    const parsed = typeof decidedAt === "string" ? Date.parse(decidedAt) : Number.NaN;
+    this.decidedAtMs = Number.isFinite(parsed) ? parsed : null;
+  }
+
+  log(intentId: string): void {
+    try {
+      logger.info("[lighter-order-timing]", {
+        intentId,
+        ...Object.fromEntries(this.durations),
+        ...(this.decidedAtMs === null ? {} : { decisionToApiAcceptedMs: Date.now() - this.decidedAtMs }),
+      });
+    } catch {
+      // A log sink failure must never turn an accepted order into an error.
+    }
+  }
+}
+
+function readRevalidationOrderBook(
+  plan: LighterOrderReadyForSignerPlan,
+  deps: ExecuteApprovedLighterCreateOrderDeps,
+): Promise<Awaited<ReturnType<LighterClient["getOrderBookOrders"]>>> {
+  return deps.client.getOrderBookOrders(plan.environment, {
+    marketId: plan.marketIndex,
+    limit: 250,
+  }, FRESH_PUBLIC_READ);
+}
+
+function restateRevalidationReadFailure(error: unknown): never {
+  // Unreachable Lighter is restated plainly by the execution's before-send wrapper.
+  if (isLighterUnreachable(error)) throw error;
+  throw blockedBeforeSubmit(
+    "Live Lighter market or account state is unavailable for post-approval revalidation. No trading key was loaded and no order was signed or submitted.",
+  );
 }
 
 async function readLiveProviderCredential(
@@ -692,6 +1068,177 @@ function assertProviderPublicKeyMatches(providerPublicKey: string, signerPublicK
   }
 }
 
+interface PreflightReads {
+  readonly evidenceScope: LighterOrderEvidenceScope;
+  readonly providerCredential: Awaited<ReturnType<typeof readLiveProviderCredential>>;
+}
+
+/** Today's order: revalidate, build the evidence scope, then read the credential. */
+async function runSequentialPreflightReads(
+  plan: LighterOrderReadyForSignerPlan,
+  unsignedOrder: LighterUnsignedCreateOrderRequest,
+  deps: ExecuteApprovedLighterCreateOrderDeps,
+  timing: LighterOrderTiming,
+  sessionWallet?: LighterSigningOwnershipWallet,
+): Promise<PreflightReads> {
+  const revalidationEvidence = await timing.measure("revalidationMs", () => revalidateLiveOrderState(plan, deps, timing, sessionWallet));
+  const evidenceScope = buildLighterOrderEvidenceScope({
+    approved: plan,
+    baseDecimals: revalidationEvidence.baseDecimals,
+    priceDecimals: revalidationEvidence.priceDecimals,
+    signedOrderExpiryMs: unsignedOrder.orderExpiryMs,
+  });
+  // Prove the exact registered provider key and current nonce before asking
+  // the encrypted vault for private key material. Besides minimizing secret
+  // exposure time, this keeps every provider-read refusal truthful: no private
+  // trading key has been loaded when public identity evidence is unavailable.
+  const providerCredential = await timing.measure("credentialMs", () => readLiveProviderCredential(plan, deps));
+  return { evidenceScope, providerCredential };
+}
+
+/**
+ * `LIGHTER_ORDER_PARALLEL_PREFLIGHT` ON: the same two steps, overlapped.
+ *
+ * Both are awaited to settlement before anything else happens, so the trading
+ * key is still loaded only after BOTH succeeded. The refusal precedence is the
+ * sequential one: a revalidation or evidence-scope failure wins over a
+ * credential failure, whichever settled first, so two failures report exactly
+ * what today's order would.
+ */
+async function runParallelPreflightReads(
+  plan: LighterOrderReadyForSignerPlan,
+  unsignedOrder: LighterUnsignedCreateOrderRequest,
+  deps: ExecuteApprovedLighterCreateOrderDeps,
+  timing: LighterOrderTiming,
+  sessionWallet?: LighterSigningOwnershipWallet,
+): Promise<PreflightReads> {
+  const [revalidation, credential] = await Promise.allSettled([
+    timing.measure("revalidationMs", () => revalidateLiveOrderState(plan, deps, timing, sessionWallet)).then((revalidationEvidence) => buildLighterOrderEvidenceScope({
+      approved: plan,
+      baseDecimals: revalidationEvidence.baseDecimals,
+      priceDecimals: revalidationEvidence.priceDecimals,
+      signedOrderExpiryMs: unsignedOrder.orderExpiryMs,
+    })),
+    timing.measure("credentialMs", () => readLiveProviderCredential(plan, deps)),
+  ]);
+  if (revalidation.status === "rejected") throw revalidation.reason;
+  if (credential.status === "rejected") throw credential.reason;
+  return { evidenceScope: revalidation.value, providerCredential: credential.value };
+}
+
+function resolveReadAuthCache(deps: ExecuteApprovedLighterCreateOrderDeps): LighterReadAuthCache | null {
+  if (deps.readAuthCache !== undefined) return deps.readAuthCache;
+  return LIGHTER_READ_AUTH_CACHE ? lighterReadAuthCache : null;
+}
+
+function readAuthCacheScope(plan: LighterOrderReadyForSignerPlan): LighterReadAuthCacheScope {
+  return { environment: plan.environment, accountIndex: plan.accountIndex, apiKeyIndex: plan.apiKeyIndex };
+}
+
+interface ProviderOutcomeRepairLists {
+  readonly activeOrders: Awaited<ReturnType<LighterClient["getAccountActiveOrders"]>>;
+  readonly inactiveOrders: Awaited<ReturnType<LighterClient["getAccountInactiveOrders"]>>;
+  readonly trades: Awaited<ReturnType<LighterClient["getAccountTrades"]>>;
+}
+
+type CachedRepairReadOutcome =
+  | { readonly ok: true; readonly publicKey: string; readonly lists: ProviderOutcomeRepairLists }
+  | { readonly ok: false };
+
+interface CachedRepairReads {
+  /** Never rejects: a failed read is an `ok: false` answer, never a refusal. */
+  readonly outcome: Promise<CachedRepairReadOutcome>;
+}
+
+/**
+ * `LIGHTER_READ_AUTH_CACHE` ON with a usable entry: start the duplicate
+ * evidence reads with the cached READ-ONLY token now, beside revalidation.
+ * Nothing is decided here; the answer is judged after the fresh key proof.
+ */
+function startCachedRepairReads(
+  plan: LighterOrderReadyForSignerPlan,
+  deps: ExecuteApprovedLighterCreateOrderDeps,
+  cache: LighterReadAuthCache | null,
+): CachedRepairReads | null {
+  if (cache === null) return null;
+  const entry = cache.get(readAuthCacheScope(plan), deps.now());
+  if (entry === null) return null;
+  return {
+    outcome: readProviderOutcomeRepairLists(plan, entry.token, deps).then(
+      (lists): CachedRepairReadOutcome => ({ ok: true, publicKey: entry.publicKey, lists }),
+      (): CachedRepairReadOutcome => ({ ok: false }),
+    ),
+  };
+}
+
+/**
+ * The cached-token answer is used only when every read succeeded AND the token
+ * was minted for the very key the fresh mint just proved against the
+ * provider's registered key. Anything else (an auth error, any other failure,
+ * a rotated key) drops the entry and runs today's read with the fresh token,
+ * so a refusal can only ever come from the path that exists today.
+ */
+async function assertProviderOutcomeRepairReadyWithCache(input: {
+  readonly plan: LighterOrderReadyForSignerPlan;
+  readonly evidenceScope: LighterOrderEvidenceScope;
+  readonly unsignedOrder: LighterUnsignedCreateOrderRequest;
+  readonly auth: { readonly authToken: string; readonly publicKey: string };
+  readonly authDeadlineUnixSeconds: number;
+  readonly deps: ExecuteApprovedLighterCreateOrderDeps;
+  readonly cache: LighterReadAuthCache;
+  readonly cached: CachedRepairReads | null;
+}): Promise<void> {
+  const { plan, evidenceScope, unsignedOrder, auth, deps, cache } = input;
+  const scope = readAuthCacheScope(plan);
+  if (input.cached !== null) {
+    const cached = await input.cached.outcome;
+    if (cached.ok && cached.publicKey === normalizeLighterPublicKey(auth.publicKey)) {
+      assertNoExistingClientOrderEvidence(cached.lists, evidenceScope, unsignedOrder);
+      return;
+    }
+    cache.invalidate(scope);
+  }
+  try {
+    await assertProviderOutcomeRepairReady(plan, evidenceScope, unsignedOrder, auth.authToken, deps);
+  } catch (error) {
+    cache.invalidate(scope);
+    throw error;
+  }
+  // Lighter just accepted this token for all three reads: only now is it
+  // remembered, and only the read-only token, never the key it came from.
+  cache.remember(scope, {
+    token: auth.authToken,
+    publicKey: auth.publicKey,
+    deadlineUnixSeconds: input.authDeadlineUnixSeconds,
+  }, deps.now());
+}
+
+async function readProviderOutcomeRepairLists(
+  plan: LighterOrderReadyForSignerPlan,
+  accountAuthToken: string,
+  deps: ExecuteApprovedLighterCreateOrderDeps,
+): Promise<ProviderOutcomeRepairLists> {
+  const privilegedAuth = { token: accountAuthToken, accountIndex: plan.accountIndex };
+  return await Promise.all([
+    deps.client.getAccountActiveOrders(plan.environment, {
+      accountIndex: plan.accountIndex,
+      marketId: plan.marketIndex,
+      marketType: "all",
+    }, privilegedAuth),
+    deps.client.getAccountInactiveOrders(plan.environment, {
+      accountIndex: plan.accountIndex,
+      marketId: plan.marketIndex,
+      marketType: "all",
+      limit: 100,
+    }, privilegedAuth),
+    deps.client.getAccountTrades(plan.environment, {
+      accountIndex: plan.accountIndex,
+      limit: 100,
+      sortBy: "timestamp",
+    }, privilegedAuth),
+  ]).then(([activeOrders, inactiveOrders, trades]) => ({ activeOrders, inactiveOrders, trades }));
+}
+
 async function assertProviderOutcomeRepairReady(
   plan: LighterOrderReadyForSignerPlan,
   evidenceScope: LighterOrderEvidenceScope,
@@ -699,29 +1246,9 @@ async function assertProviderOutcomeRepairReady(
   accountAuthToken: string,
   deps: ExecuteApprovedLighterCreateOrderDeps,
 ): Promise<void> {
-  const privilegedAuth = { token: accountAuthToken, accountIndex: plan.accountIndex };
-  let activeOrders: Awaited<ReturnType<LighterClient["getAccountActiveOrders"]>>;
-  let inactiveOrders: Awaited<ReturnType<LighterClient["getAccountInactiveOrders"]>>;
-  let trades: Awaited<ReturnType<LighterClient["getAccountTrades"]>>;
+  let lists: ProviderOutcomeRepairLists;
   try {
-    [activeOrders, inactiveOrders, trades] = await Promise.all([
-      deps.client.getAccountActiveOrders(plan.environment, {
-        accountIndex: plan.accountIndex,
-        marketId: plan.marketIndex,
-        marketType: "all",
-      }, privilegedAuth),
-      deps.client.getAccountInactiveOrders(plan.environment, {
-        accountIndex: plan.accountIndex,
-        marketId: plan.marketIndex,
-        marketType: "all",
-        limit: 100,
-      }, privilegedAuth),
-      deps.client.getAccountTrades(plan.environment, {
-        accountIndex: plan.accountIndex,
-        limit: 100,
-        sortBy: "timestamp",
-      }, privilegedAuth),
-    ]);
+    lists = await readProviderOutcomeRepairLists(plan, accountAuthToken, deps);
   } catch (error) {
     // Unreachable Lighter is restated plainly by the execution's before-send wrapper.
     if (isLighterUnreachable(error)) throw error;
@@ -729,14 +1256,21 @@ async function assertProviderOutcomeRepairReady(
       "Lighter provider outcome repair is unavailable before submission. No order was signed or submitted.",
     );
   }
+  assertNoExistingClientOrderEvidence(lists, evidenceScope, unsignedOrder);
+}
 
+function assertNoExistingClientOrderEvidence(
+  lists: ProviderOutcomeRepairLists,
+  evidenceScope: LighterOrderEvidenceScope,
+  unsignedOrder: LighterUnsignedCreateOrderRequest,
+): void {
   const existingOrder = findMatchingLighterOrder(
-    [...activeOrders.orders, ...inactiveOrders.orders],
+    [...lists.activeOrders.orders, ...lists.inactiveOrders.orders],
     evidenceScope,
     unsignedOrder.clientOrderIndex,
   );
   const existingTrade = findMatchingLighterTrade(
-    trades.trades,
+    lists.trades.trades,
     evidenceScope,
     unsignedOrder.clientOrderIndex,
     "__vex_preflight_no_tx_hash__",

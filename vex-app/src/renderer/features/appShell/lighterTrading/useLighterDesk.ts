@@ -31,6 +31,14 @@ import { buildAskAboutDraftMessage, resolveTicketMargin, toDeskOrderDraft, type 
 import { useDeskLane } from "./useDeskLane.js";
 import { useDeskStreams } from "./useDeskStreams.js";
 
+export const LIGHTER_DESK_DIRECT_CANCEL_ALL = true;
+export const LIGHTER_DESK_DIRECT_PARTIAL_CLOSE = true;
+
+export interface LighterDeskDeps {
+  readonly directCancelAll?: boolean;
+  readonly directPartialClose?: boolean;
+}
+
 /**
  * Everything the desk center reads and the actions it hands to its panels.
  * Environment, market and chart interval live in the analysis store so the
@@ -38,7 +46,7 @@ import { useDeskStreams } from "./useDeskStreams.js";
  * useDeskStreams and the approval round trip from useDeskLane; this hook
  * composes them with the account, the market list and the chat handoffs.
  */
-export function useLighterDesk() {
+export function useLighterDesk(deps: LighterDeskDeps = {}) {
   const queryClient = useQueryClient();
   const activeSessionId = useUiStore((state) => state.activeSessionId);
   const bookOpen = useUiStore((state) => state.bookOpen);
@@ -152,8 +160,10 @@ export function useLighterDesk() {
     submitting,
     prepareStage,
     deskOutcome,
+    clearDeskFeedback,
     closingPositions,
     cancellingOrders,
+    cancelAllPending,
     prepareOnDesk,
     onApprovalResolved,
   } = useDeskLane({
@@ -225,7 +235,7 @@ export function useLighterDesk() {
     sendToChat(buildAskAboutDraftMessage({ environment, market, draft }));
   };
 
-  // Row actions that still need the agent (Cancel all, Review, Deposit,
+  // Row actions that still need the agent (Review, Deposit,
   // Withdraw, Connect) send immediately: the agent prepares the change and
   // the approval card is the only thing that can execute it (design §7.3 b).
   const sendToChat = (message: string): void => {
@@ -344,20 +354,22 @@ export function useLighterDesk() {
   };
 
   // A limit close rests at the mark: the live one on this desk, else the
-  // snapshot's. Reduce-only, so it can only ever shrink the position. A
-  // partial market close also loads here: main's close selector is the whole
-  // position, so a portion goes out as a reduce-only market order instead.
+  // snapshot's. Reduce-only, so it can only ever shrink the position.
   const prefillFromPosition = (position: LighterPositionRow, mode: "market" | "limit" | "oco", portion: ClosePortion = 1): void => {
     const target = openPositionMarket(position);
     if (target === null) return;
     const size = position.size.startsWith("-") ? position.size.slice(1) : position.size;
     const mark = positionMetrics(position, target === market ? publicMarketStream.stats?.markPrice ?? null : null).mark;
+    clearDeskFeedback();
     setTicketPrefill({
       key: Date.now(),
       mode,
       side: position.side === "long" ? "sell" : "buy",
       baseAmount: portionOfSize(size, portion, target.decimals.size),
       reduceOnly: mode !== "oco",
+      ...(mode === "oco" ? {} : {
+        reviewHint: `${portion * 100}% ${position.symbol ?? target.symbol} close loaded. Click ${position.side === "long" ? "Short" : "Long"} to review the reduce-only order.`,
+      }),
       ...(mode === "limit" && mark !== null ? { price: mark.toFixed(target.decimals.price) } : {}),
     });
   };
@@ -388,15 +400,20 @@ export function useLighterDesk() {
     onReviewPosition: (position) => sendToChat(buildReviewPositionMessage({ environment, position })),
     onClosePosition: (position, portion) => {
       if (portion === 1) void prepareOnDesk({ kind: "close", marketId: position.marketId }, null, position);
-      else prefillFromPosition(position, "market", portion);
+      else if (deps.directPartialClose ?? LIGHTER_DESK_DIRECT_PARTIAL_CLOSE) {
+        const closePercent = portion === 0.75 ? 75 : portion === 0.5 ? 50 : 25;
+        void prepareOnDesk({ kind: "close", marketId: position.marketId, closePercent }, null, position);
+      } else prefillFromPosition(position, "market", portion);
     },
     onProtectPosition: (position) => prefillFromPosition(position, "oco"),
     onCloseLimit: (position, portion) => prefillFromPosition(position, "limit", portion),
     onOpenMarket: (position) => { openPositionMarket(position); },
     onRestoreCloseConfirm: () => saveDesk({ skipCloseConfirm: false }),
     onCancelOrder: (order) => { void prepareOnDesk({ kind: "cancel", marketId: order.marketId, orderId: order.orderId }, null); },
-    onCancelAllOrders: (orders) =>
-      sendToChat(buildCancelAllOrdersMessage({ environment, orderCount: orders.length })),
+    onCancelAllOrders: (orders) => {
+      if (deps.directCancelAll ?? LIGHTER_DESK_DIRECT_CANCEL_ALL) void prepareOnDesk({ kind: "cancel_all" }, null);
+      else sendToChat(buildCancelAllOrdersMessage({ environment, orderCount: orders.length }));
+    },
     // Deposit is the setup modal's own first step; Lighter has no
     // withdrawal tool, so that leg still walks the user through chat.
     onFund: (kind) => (kind === "deposit" ? connectLighter() : sendToChat(buildWithdrawMessage({ environment }))),
@@ -445,6 +462,7 @@ export function useLighterDesk() {
     deskOutcome,
     closingPositions,
     cancellingOrders,
+    cancelAllPending,
     submitDraft,
     onApprovalResolved,
     skipCloseConfirm,

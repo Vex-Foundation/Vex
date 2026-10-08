@@ -25,7 +25,7 @@ function setup(overrides: Record<string, unknown> = {}) {
     [736778, STRAY],
     [1171, STRAY],
   ]);
-  const deleteCredentials = vi.fn();
+  const deleteCredentials = vi.fn(async () => {});
   const deps = {
     client: {
       getAccount: vi.fn(async (_environment: "core" | "rhc", query: { value: number | string }) => ({
@@ -37,8 +37,8 @@ function setup(overrides: Record<string, unknown> = {}) {
       })),
     },
     isVaultUnlocked: () => true,
-    listScopes: () => [...PRIMARY_SCOPES, ...STRAY_SCOPES],
-    listManagedScopes: () => [...PRIMARY_SCOPES, ...STRAY_SCOPES],
+    listScopes: async () => [...PRIMARY_SCOPES, ...STRAY_SCOPES],
+    listManagedScopes: async () => [...PRIMARY_SCOPES, ...STRAY_SCOPES],
     getPrimaryEvmAddress: () => PRIMARY,
     deleteCredentials,
     ...overrides,

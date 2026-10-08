@@ -15,9 +15,12 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { Result } from "@shared/ipc/result.js";
 import type { HealthReport } from "@shared/schemas/system.js";
+
+const feature = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@shared/lock-button.js", () => ({ get LOCK_BUTTON() { return feature.enabled; } }));
 
 const healthMock = vi.fn();
 const profileMock = vi.fn();
@@ -68,6 +71,7 @@ function health(overall: HealthReport["overall"]): Result<HealthReport> {
 }
 
 beforeEach(() => {
+  feature.enabled = true;
   healthMock.mockReturnValue({ isLoading: false, data: health("ok") });
   profileMock.mockReturnValue({
     isLoading: false,
@@ -119,6 +123,23 @@ describe("getRuntimeStatus", () => {
 });
 
 describe("SidebarProfile foot", () => {
+  it("makes Lock Vex findable in expanded and collapsed profile menus", () => {
+    const expanded = render(<SidebarProfile sidebarOpen />);
+    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    expect(screen.getByRole("menuitem", { name: /Lock Vex.*Require your password to return/ })).not.toBeNull();
+    expanded.unmount();
+    render(<SidebarProfile sidebarOpen={false} menuSide="bottom" />);
+    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    expect(screen.getByRole("menuitem", { name: /Lock Vex/ })).not.toBeNull();
+  });
+
+  it("hides Lock Vex when its rollback flag is off", () => {
+    feature.enabled = false;
+    render(<SidebarProfile sidebarOpen />);
+    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    expect(screen.queryByRole("menuitem", { name: /Lock Vex/ })).toBeNull();
+  });
+
   it("speaks the hallmark while the runtime is healthy", () => {
     render(<SidebarProfile sidebarOpen />);
     expect(screen.getByText(NIGHT_SHIFT_MESSAGE)).not.toBeNull();

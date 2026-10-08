@@ -2,11 +2,12 @@
  * `claimRunForAutoRetry` — the AUTO-RETRY-only resume claim (Phase 4d).
  *
  * Distinct from `claimRunLeaseAndFlipToRunning` (manual Recover, which is
- * allowed even when the run is unsafe). A consumed wake CANNOT be cancelled, so
- * this claim is the real authority: it re-verifies the ENTIRE safety state
- * under a single row lock before flipping to `running`, defeating the race
- * where a human Recover mutates + stamps unsafe + fails back to `paused_error`
- * between `claimDue` and this resume.
+ * allowed even when the run is unsafe). This claim is the real authority: it
+ * re-verifies the ENTIRE safety state under a single row lock before flipping
+ * to `running`, defeating the race where a human Recover mutates + stamps
+ * unsafe + fails back to `paused_error` after the wake was scheduled. The wake
+ * executor runs it inside its own atomic claim (`claimRunForAutoRetryWith`),
+ * so the wake row is consumed only when this claim succeeds.
  *
  * ALL predicates must hold (else `ineligible`, no flip):
  *   - run exists and belongs to `sessionId`
@@ -20,15 +21,26 @@
  * One commit; no inter-statement race window.
  */
 
+import type { PoolClient } from "pg";
+
 import {
   withTransaction,
   queryOneWith,
   executeWith,
 } from "../../../db/client.js";
 import { acquireLease } from "../../../db/repos/runner-leases.js";
-import type { LeaseProcessKind, RunnerLease } from "../../../db/repos/runner-leases.js";
+import type {
+  LeaseProcessKind,
+  RunnerLease,
+  RunnerLeaseInfo,
+} from "../../../db/repos/runner-leases.js";
 import { snapshotAutoRetryEnabled } from "../../core/runner/mission-auto-retry-policy.js";
-import { type RunnerLeaseRow, mapLease } from "./_row-shapes.js";
+import {
+  type RunnerLeaseRow,
+  mapLease,
+  LOCK_LEASE_COLUMNS,
+  lockedLeaseBlocks,
+} from "./_row-shapes.js";
 
 export interface ClaimAutoRetryInput {
   readonly sessionId: string;
@@ -38,6 +50,8 @@ export interface ClaimAutoRetryInput {
   readonly ownerId: string;
   readonly processKind: LeaseProcessKind;
   readonly ttlMs: number;
+  /** Token of a claim the caller already holds (refresh only); omit for a new claim. */
+  readonly claimToken?: string;
 }
 
 export type AutoRetryIneligibleReason =
@@ -52,7 +66,7 @@ export type AutoRetryIneligibleReason =
 
 export type ClaimAutoRetryOutcome =
   | { readonly outcome: "claimed"; readonly lease: RunnerLease }
-  | { readonly outcome: "lease_busy"; readonly currentLease: RunnerLease }
+  | { readonly outcome: "lease_busy"; readonly currentLease: RunnerLeaseInfo }
   | { readonly outcome: "ineligible"; readonly reason: AutoRetryIneligibleReason };
 
 interface AutoRetryClaimRow {
@@ -68,7 +82,20 @@ interface AutoRetryClaimRow {
 export async function claimRunForAutoRetry(
   input: ClaimAutoRetryInput,
 ): Promise<ClaimAutoRetryOutcome> {
-  return withTransaction(async (client) => {
+  return withTransaction((client) => claimRunForAutoRetryWith(client, input));
+}
+
+/**
+ * The same claim on a transaction the CALLER owns. The wake executor needs the
+ * wake row's consumption, the safety re-check, the flip and the lease in ONE
+ * commit under the session control lock; the caller owns that lock order.
+ * Nothing here writes before every predicate has passed.
+ */
+export async function claimRunForAutoRetryWith(
+  client: PoolClient,
+  input: ClaimAutoRetryInput,
+): Promise<ClaimAutoRetryOutcome> {
+  {
     // 1. Lock the run row + read its full safety state + live session permission.
     const row = await queryOneWith<AutoRetryClaimRow>(
       client,
@@ -108,24 +135,23 @@ export async function claimRunForAutoRetry(
     // 3. Lock + validate the lease row (absent / expired / same-owner).
     const existingLease = await queryOneWith<RunnerLeaseRow>(
       client,
-      `SELECT session_id, mission_run_id, owner_id, process_kind,
-              acquired_at, heartbeat_at, expires_at
+      `SELECT ${LOCK_LEASE_COLUMNS}
          FROM runner_leases
         WHERE session_id = $1
         FOR UPDATE`,
       [input.sessionId],
     );
     if (
-      existingLease !== null &&
-      existingLease.expires_at >= new Date() &&
-      existingLease.owner_id !== input.ownerId
+      existingLease !== null
+    && lockedLeaseBlocks(existingLease, input.ownerId, input.claimToken)
     ) {
       return { outcome: "lease_busy", currentLease: mapLease(existingLease) };
     }
 
     // 4. Flip to running + acquire/refresh the lease in the same tx. No wake
-    //    cleanup: the consumed error_retry wake is already gone, and a
-    //    paused_error run never has a pending continuation wake to cancel.
+    //    cleanup: the wake executor consumes the causing error_retry wake in
+    //    this same transaction, and a paused_error run never has a pending
+    //    continuation wake to cancel.
     await executeWith(
       client,
       `UPDATE mission_runs
@@ -140,6 +166,7 @@ export async function claimRunForAutoRetry(
         ownerId: input.ownerId,
         processKind: input.processKind,
         ttlMs: input.ttlMs,
+        claimToken: input.claimToken,
       },
       client,
     );
@@ -149,5 +176,5 @@ export async function claimRunForAutoRetry(
       );
     }
     return { outcome: "claimed", lease };
-  });
+  }
 }

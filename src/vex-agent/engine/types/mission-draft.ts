@@ -64,6 +64,38 @@ export const DEPLOYED_CAPITAL_BOUNDS = {
   ASSET_SYMBOL_MAX: 32,
 } as const;
 
+/**
+ * Reasoning effort a mission runs at (Kairos E-1). The same seven values as
+ * the inference layer's `ReasoningEffort`, declared here because this module
+ * imports nothing outside `engine/types/`.
+ */
+export const MISSION_REASONING_EFFORTS = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
+
+export type MissionReasoningEffort = (typeof MISSION_REASONING_EFFORTS)[number];
+
+/**
+ * The effort a mission runs at when its contract does not name one, for a
+ * contract accepted under hash v9 or later and for every new draft. A mission
+ * moves money, so the default favours care over speed; the run still rounds
+ * an unsupported level UP to what the model offers, never down.
+ */
+export const MISSION_DEFAULT_REASONING_EFFORT: MissionReasoningEffort = "high";
+
+/**
+ * The default for a contract accepted under hash v8 or earlier, and for a run
+ * snapshot frozen before the default moved: those users accepted `medium`
+ * (v8 hashed an unset effort as `medium`), so that is what they run at.
+ */
+export const LEGACY_MISSION_DEFAULT_REASONING_EFFORT: MissionReasoningEffort = "medium";
+
 /** Required fields for a mission to transition from draft → ready. */
 export interface MissionDraft {
   title: string | null;
@@ -115,6 +147,16 @@ export interface MissionDraft {
    * `engine/mission/launch-ceiling.ts`.
    */
   maxLaunchCount: number | null;
+  /**
+   * The reasoning effort every model call of this mission's run uses (E-1).
+   * `null` means not set, which runs at {@link MISSION_DEFAULT_REASONING_EFFORT}.
+   * Contract material from hash v8: FROZEN for the run with the rest of the
+   * accepted contract, clamped at run time to what the model supports
+   * (nearest lower supported effort; see `engine/mission/reasoning-effort.ts`).
+   * Writable by `MissionDraftUpdate` and by the host contract card; any write
+   * clears acceptance.
+   */
+  reasoningEffort: MissionReasoningEffort | null;
 }
 
 /**

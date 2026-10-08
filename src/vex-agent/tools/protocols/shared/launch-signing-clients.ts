@@ -33,13 +33,13 @@ export type LaunchSigningClientsResult =
   | { readonly ok: false; readonly result: ToolResult };
 
 /** Resolve the full signing wallet and open local clients, or return the refusal. */
-export function openLaunchSigningClients(
+export async function openLaunchSigningClients(
   context: ProtocolExecutionContext,
   chainConfig: NonNullable<ReturnType<typeof getLocalChain>>,
-): LaunchSigningClientsResult {
+): Promise<LaunchSigningClientsResult> {
   let signer;
   try {
-    signer = resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
+    signer = await resolveSigningWallet(context.walletResolution, context.walletPolicy, "eip155");
   } catch (err) {
     return { ok: false, result: walletScopeErrorToResult(err) };
   }

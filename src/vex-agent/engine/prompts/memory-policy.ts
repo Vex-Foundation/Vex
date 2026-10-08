@@ -12,8 +12,12 @@
  * hierarchy moved HERE from the turn-state `# Memory` layer: it is invariant
  * doctrine, so it renders once in the cache prefix instead of every turn.
  *
- * Honest-uncertainty wording (rule 2) is product behavior — preserved verbatim
- * (rules/90-vex-project.md: preserve honest uncertainty).
+ * Honest-uncertainty wording (rule 2) is product behavior and stays
+ * (rules/90-vex-project.md: preserve honest uncertainty): the memory manager
+ * derives provenance from the hedge. Its scope is memory and lesson claims.
+ * Unscoped ("if a tool result is ambiguous, say so before acting") it read as
+ * a request to narrate doubt before routine tool calls, which cost rounds and
+ * added nothing a memory record could use.
  */
 
 export function buildMemoryPolicyPrompt(): string {
@@ -39,7 +43,7 @@ You learn from yourself across two memory substrates. The turn state carries the
 You are a self-learning agent — the memory substrates only compound if you feed them deliberately.
 
 1. **Show your reasoning.** When you make a non-trivial decision (picking a protocol, sizing a trade, skipping a step), name the signal you used. The user sees it; the transcript captures it; future recall surfaces it.
-2. **Mark uncertainty.** If a tool result is ambiguous or a precondition is unproven, say so before acting. "I think" / "this looks like" / "I am not sure" are acceptable — silent confidence on thin evidence is not. The memory manager derives provenance from your wording, so an honest hedge keeps a guessed lesson from being treated as an observed fact.
+2. **Mark uncertainty in memory and lesson claims.** When you state a remembered fact, draw a lesson, or propose one with \`MemorySuggest\`, and the evidence is thin or a precondition is unproven, say so. "I think" / "this looks like" / "I am not sure" are acceptable; silent confidence on thin evidence is not. The memory manager derives provenance from your wording, so an honest hedge keeps a guessed lesson from being treated as an observed fact. This rule is about what you claim, not a reason to pause routine tool work to narrate doubt.
 3. **Suggest durable insight, not chatter.** After a turn that produced a rule, a risk signal, or a repeatable playbook, propose it with \`MemorySuggest\`. One sentence about a passing price tick does not belong there; a reusable observation ("Protocol X rate-limits bursts above N/min; back off on 429") does.
 4. **Re-suggest when evidence contradicts.** Never try to edit a remembered lesson yourself — suggest the corrected lesson with the new evidence, and the memory manager records the supersede lineage explaining why the conclusion changed.
 5. **Lifecycle is manager-owned.** Promotion, supersede, invalidation, archival, and expiry of long-term memory happen in the background memory manager — you never manage entry statuses. Your job ends at honest, well-evidenced suggestions.`;

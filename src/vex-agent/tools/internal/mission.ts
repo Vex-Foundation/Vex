@@ -13,7 +13,7 @@ import type { InternalToolContext } from "./types.js";
 import { str, fail } from "./types.js";
 import { readResponseFormat, type ResponseFormat } from "@vex-agent/response-format.js";
 import { dropEmptyModelValues, formatZodIssueForModel } from "./arg-validation.js";
-import type { BusinessStopReason } from "@vex-agent/engine/types.js";
+import { MISSION_REASONING_EFFORTS, type BusinessStopReason } from "@vex-agent/engine/types.js";
 import { applyMissionPatch } from "@vex-agent/engine/mission/setup.js";
 import {
   authorizeMissionStopReason,
@@ -53,6 +53,8 @@ const MissionDraftUpdateArgs = z
     stopConditions: z.array(z.string().trim().min(1).max(MAX_ARRAY_ITEM_LENGTH)).max(MAX_ARRAY_ITEMS).nullable().optional(),
     deadline: z.string().trim().min(1).max(MAX_STRING_LENGTH).nullable().optional(),
     durationMinutes: z.number().int().positive().max(1440).nullable().optional(),
+    // E-1 - the run's reasoning effort; null clears it (the default applies).
+    reasoningEffort: z.enum(MISSION_REASONING_EFFORTS).nullable().optional(),
   })
   .strict()
   .refine(
@@ -121,7 +123,7 @@ export async function handleMissionDraftUpdate(
 
   return {
     success: true,
-    output: JSON.stringify(outputPayload, null, 2),
+    output: JSON.stringify(outputPayload),
     data: {
       missionId: result.missionId,
       status: result.status,

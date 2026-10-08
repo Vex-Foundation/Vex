@@ -1,4 +1,4 @@
-import { createPublicClient, custom, type Chain, type Transport } from "viem";
+import { createPublicClient, custom, type Chain, type PublicClient, type Transport } from "viem";
 
 /**
  * A transport that refuses every RPC call, so only the methods a test replaces
@@ -17,6 +17,6 @@ export function refusingTransport(): Transport {
  * doubles. Production keeps calling viem's declared signatures, and the test
  * reads what each replaced method was asked without casting it into existence.
  */
-export function testPublicClient<Methods extends object>(chain: Chain, methods: Methods) {
+export function testPublicClient<Methods extends object>(chain: Chain, methods: Methods): PublicClient<Transport, Chain> & Methods {
   return Object.assign(createPublicClient({ chain, transport: refusingTransport() }), methods);
 }

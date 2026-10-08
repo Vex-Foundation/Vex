@@ -149,7 +149,7 @@ function makeDeps(options: {
     current = { ...current, executionState: "ambiguous", registrationAmbiguityReason: input.reason };
     return current;
   });
-  const activateVaultCredential = vi.fn(() => ({
+  const activateVaultCredential = vi.fn(async () => ({
     present: true as const,
     reference: {
       kind: "encrypted_vault_reference" as const,
@@ -209,7 +209,7 @@ function makeDeps(options: {
       return current;
     }),
     integrationEnabled: vi.fn(async () => true),
-    resolveWallet: vi.fn(() => WALLET),
+    resolveWallet: vi.fn(async () => WALLET),
     sign: vi.fn(async () => {
       events.push("sign");
       return signedResult(environment, apiKeyIndex);
@@ -223,8 +223,8 @@ function makeDeps(options: {
       source: "official_lighter_signer",
       check: vi.fn(async () => ({ publicKey: options.checkerPublicKey ?? PUBLIC_KEY })),
     },
-    readVaultPrivateKey: vi.fn(() => LIGHTER_PRIVATE_KEY),
-    readVaultRegistrationState: vi.fn(() => "key_generated_pending_registration" as const),
+    readVaultPrivateKey: vi.fn(async () => LIGHTER_PRIVATE_KEY),
+    readVaultRegistrationState: vi.fn(async () => "key_generated_pending_registration" as const),
     activateVaultCredential,
     claimSigning: vi.fn(async () => true),
     admitSend: vi.fn(async () => true),
@@ -508,7 +508,7 @@ describe("Lighter key registration execution", () => {
       reconciliationPublicKey: PUBLIC_KEY,
       ownerSessionId: "session-2",
     });
-    vi.mocked(setup.deps.resolveWallet).mockReturnValue({
+    vi.mocked(setup.deps.resolveWallet).mockResolvedValue({
       ...WALLET,
       address: "0x0000000000000000000000000000000000000009",
     });
@@ -656,8 +656,8 @@ describe("Lighter key-registration signer settlement contract", () => {
     signRunner: LighterSignerBinaryRunner,
   ): LighterKeyRegistrationExecutionDeps["sign"] {
     return (args) => signApprovedLighterKeyRegistration(args, {
-      readVaultPrivateKey: () => LIGHTER_PRIVATE_KEY,
-      readVaultRegistrationState: () => "key_generated_pending_registration",
+      readVaultPrivateKey: async () => LIGHTER_PRIVATE_KEY,
+      readVaultRegistrationState: async () => "key_generated_pending_registration",
       keyGenerator: createLighterApiKeyGeneratorBinary({
         binaryPath: "/tmp/vex-lighter-signer-test",
         runner: signerRunnerEmitting({ ok: true, publicKey: PUBLIC_KEY }),

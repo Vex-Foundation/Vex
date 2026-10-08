@@ -28,6 +28,15 @@ export type ReasoningEffort =
   | "max";
 
 /**
+ * The efforts a model accepts, from the `/models` catalog's `reasoning` block
+ * (normalized in `reasoning-effort.ts`). `none` is a member exactly when the
+ * model allows reasoning to be switched off.
+ */
+export interface ReasoningEffortSupport {
+  readonly efforts: readonly ReasoningEffort[];
+}
+
+/**
  * One routable endpoint of the configured model, as the failover ranker needs
  * it. This is the PRODUCER CONTRACT between the app's endpoint catalogue (which
  * lives in the Electron main process and may not be imported here — the
@@ -104,6 +113,27 @@ export interface InferenceConfig {
   temperature?: number;
   /** Max output tokens per response — from AGENT_MAX_OUTPUT_TOKENS env */
   maxOutputTokens: number;
+  // Kairos stream bounds (Phase 2B), in ms, from the `AGENT_*_TIMEOUT_MS` /
+  // `AGENT_INFERENCE_ROUND_DEADLINE_MS` env fields (`src/lib/agent-config.ts`).
+  // Enforced by `runStreamingInference` on model inference only. `0` or
+  // ABSENT disables a bound, so a config built without them behaves exactly
+  // as before; `loadConfig()` always sets all four.
+  /** Request start → first chunk of any type. */
+  firstChunkTimeoutMs?: number;
+  /** Longest silence between two chunks after the first. */
+  streamIdleTimeoutMs?: number;
+  /** First reasoning chunk → first content or tool-call delta. */
+  reasoningOnlyTimeoutMs?: number;
+  /** Total wall clock for the round: stream, failover retries, fallback. */
+  inferenceRoundDeadlineMs?: number;
+  /**
+   * The model's advertised max completion tokens (the `/models` catalog's
+   * `top_provider.max_completion_tokens`, validated). Absent when the catalog
+   * does not report one. Only read by the answer-headroom policy
+   * (`openrouter/answer-headroom.ts`), which never raises `max_tokens` above it
+   * and does not raise at all when it is absent.
+   */
+  modelMaxCompletionTokens?: number;
   /** Price per 1M input tokens. */
   inputPricePerM: number;
   /** Price per 1M output tokens. */
@@ -131,6 +161,12 @@ export interface InferenceConfig {
    * `reasoning.effort` value at all; independent of `reasoningPricePerM`.
    */
   supportsReasoningEffort: boolean;
+  /**
+   * The model's supported effort set, when the catalog reports one. `null` or
+   * absent means unknown: a clamp then leaves the requested effort unchanged.
+   * Only read by `reasoning-effort.ts` (mission clamp, background-call effort).
+   */
+  reasoningSupport?: ReasoningEffortSupport | null;
   /**
    * Per-TURN reasoning effort requested by the operator (S6/D6). NEVER set
    * by `loadConfig()` — the engine entry point stamps it onto its
@@ -202,8 +238,8 @@ export interface InferenceResponse {
    * not report one (or the turn was aborted before it arrived).
    *
    * Persisted to `usage_log.finish_reason` (migration 055) and logged. In THIS
-   * package it is record-only: nothing branches on `length` yet — acting on a
-   * truncated completion is a separate product decision.
+   * package it is record-only; the turn loop reads it to tell a truncated
+   * round (`length`) from a malformed or blank one (`classifyInferenceRound`).
    */
   finishReason?: string | null;
   /**
@@ -227,6 +263,41 @@ export interface InferenceResponse {
    * it.
    */
   servingProvider?: string | null;
+  /**
+   * How many tool calls the provider returned that could not be assembled
+   * into a `ParsedToolCall` and were therefore dropped: arguments that are
+   * not valid JSON (cut off by the output limit, or simply malformed), or a
+   * call with no id or no name. `0` on every response that dropped nothing.
+   *
+   * Dropped calls never appear in `toolCalls`, so without this count a batch
+   * that lost one of its calls is indistinguishable from a complete one. The
+   * turn loop reads it to refuse the WHOLE batch (`classifyInferenceRound`):
+   * dispatching the surviving calls of a batch the model did not finish
+   * writing would act on a plan that was never completed.
+   */
+  malformedToolCallCount: number;
+  /**
+   * Provider reasoning to hand back on this round's assistant tool-call
+   * message within the same turn-loop run (Kairos R-7). Present only when
+   * reasoning replay is switched on for the model's family and the round's
+   * details were replayable; absent otherwise. Opaque and memory-only: never
+   * persisted, logged, or sent to the renderer.
+   */
+  reasoningReplay?: ReasoningReplayPayload | null;
+}
+
+/**
+ * Opaque, memory-only carrier of one round's provider reasoning for replay
+ * within the live tool loop (Kairos R-7). The inference provider that created
+ * it is the only code that can read its content; everything else sees a
+ * count. Its JSON form is a count, so an accidental log or dump cannot leak
+ * encrypted or raw reasoning.
+ */
+export interface ReasoningReplayPayload {
+  readonly detailCount: number;
+  /** UTF-8 bytes of the details' JSON, for bounds and sanitised telemetry. */
+  readonly byteLength: number;
+  toJSON(): string;
 }
 
 // ── Streaming chunk ──────────────────────────────────────────────
@@ -290,6 +361,13 @@ export interface StreamChunk {
    * inspect every chunk to attribute the completion.
    */
   servingProvider?: string;
+
+  /**
+   * Replayable reasoning for the completion, on `done` chunks only (Kairos
+   * R-7, switched). Never forwarded to the stream bus: `toStreamDeltaEvent`
+   * maps a `done` chunk to `{kind: "done"}` and nothing else.
+   */
+  reasoningReplay?: ReasoningReplayPayload;
 }
 
 // ── Provider balance ─────────────────────────────────────────────
@@ -363,6 +441,12 @@ export interface ProviderMessage {
   toolCalls?: ProviderToolCallRef[];
   /** Cache-segment marker — see {@link ProviderMessageCacheHint}. */
   cacheHint?: ProviderMessageCacheHint;
+  /**
+   * Reasoning replay for an assistant tool-call message (Kairos R-7). Set
+   * only by the turn loop's in-memory replay store, and only emitted on the
+   * wire when the provider's family gate allows it.
+   */
+  reasoningReplay?: ReasoningReplayPayload;
 }
 
 export interface ProviderToolCallRef {
@@ -411,6 +495,12 @@ export interface InferenceRequestContext {
   readonly sessionId: string;
   /** Mission run this request belongs to, when the turn is part of one. */
   readonly missionRunId: string | null;
+  /**
+   * Observer for runtime measurement: called once per capacity failure the
+   * endpoint failover absorbs, with its bounded `reasonClass`. Observation
+   * only - the failover swallows anything it throws.
+   */
+  readonly onCapacityFailure?: (reasonClass: string) => void;
 }
 
 // ── Provider interface ───────────────────────────────────────────

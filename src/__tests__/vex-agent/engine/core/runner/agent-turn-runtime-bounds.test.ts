@@ -121,6 +121,7 @@ const {
   ITERATION_LIMIT_REPLY,
   TIMEOUT_REPLY,
   NO_PROGRESS_REPLY,
+  STREAM_TIMEOUT_REPLY,
   TOOL_CALL_LOOP_REPLY,
 } = await import("../../../../../vex-agent/engine/core/runner/shared.js");
 const { MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS } = await import(
@@ -442,8 +443,10 @@ describe("a stalled model is never continued and never silent", () => {
     expect(NO_PROGRESS_REPLY).not.toBe(TIMEOUT_REPLY);
     expect(NO_PROGRESS_REPLY).not.toMatch(/budget/i);
     expect(NO_PROGRESS_REPLY).toMatch(/empty responses/i);
-    // The count is derived from the bound, so the sentence cannot drift.
-    expect(NO_PROGRESS_REPLY).toContain(String(MAX_CONSECUTIVE_UNPRODUCTIVE_ROUNDS));
+    // With stall recovery the streak can end before the bound, so the copy
+    // names no round count and never claims the same request would be resent.
+    expect(NO_PROGRESS_REPLY).not.toMatch(/\d/);
+    expect(NO_PROGRESS_REPLY).not.toMatch(/same request/i);
   });
 
   // The reply must not promise a clean slate: the stall is only the TAIL of the
@@ -481,6 +484,59 @@ describe("a stalled model is never continued and never silent", () => {
       expect.objectContaining({ content: NO_PROGRESS_REPLY }),
       expect.anything(),
     );
+  });
+
+  it("a streak that ended on an inference timeout gets the timeout sibling reply", async () => {
+    mockRunTurnLoop.mockResolvedValue({
+      text: null,
+      toolCallsMade: 0,
+      pendingApprovals: [],
+      stopReason: "no_progress",
+      lastUnproductiveKind: "stream_timeout",
+    });
+
+    const result = await processAgentTurn("session-1", "go");
+
+    expect(result.text).toBe(STREAM_TIMEOUT_REPLY);
+    expect(result.stopReason).toBe("no_progress");
+    expect(mockAddMessage).toHaveBeenCalledWith(
+      "session-1",
+      expect.objectContaining({ role: "assistant", content: STREAM_TIMEOUT_REPLY }),
+      expect.objectContaining({ source: "assistant", messageType: "chat", visibility: "user" }),
+    );
+    expect(mockEnqueueWake).not.toHaveBeenCalled();
+  });
+
+  it.each(["blank", "reasoning_exhausted", "incomplete_tool_batch"] as const)(
+    "a streak that ended on %s keeps the empty-response reply",
+    async (kind) => {
+      mockRunTurnLoop.mockResolvedValue({
+        text: null,
+        toolCallsMade: 0,
+        pendingApprovals: [],
+        stopReason: "no_progress",
+        lastUnproductiveKind: kind,
+      });
+
+      const result = await processAgentTurn("session-1", "go");
+
+      expect(result.text).toBe(NO_PROGRESS_REPLY);
+    },
+  );
+
+  it("the timeout stall reply is its own honest copy", () => {
+    expect(STREAM_TIMEOUT_REPLY).not.toBe(NO_PROGRESS_REPLY);
+    expect(STREAM_TIMEOUT_REPLY).not.toBe(TIMEOUT_REPLY);
+    expect(STREAM_TIMEOUT_REPLY).toMatch(/took too long/i);
+    // Not an empty response and not a spent budget.
+    expect(STREAM_TIMEOUT_REPLY).not.toMatch(/empty/i);
+    expect(STREAM_TIMEOUT_REPLY).not.toMatch(/budget/i);
+    // No round count, no promise to resend the same request.
+    expect(STREAM_TIMEOUT_REPLY).not.toMatch(/\d/);
+    expect(STREAM_TIMEOUT_REPLY).not.toMatch(/same request/i);
+    // Never claims nothing ran; points at the transcript instead.
+    expect(STREAM_TIMEOUT_REPLY).not.toMatch(/nothing (was executed|ran)/i);
+    expect(STREAM_TIMEOUT_REPLY).toMatch(/transcript/i);
   });
 
   it("the stall bound is far below the iteration budget it must pre-empt", () => {

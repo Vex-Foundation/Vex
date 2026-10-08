@@ -66,7 +66,7 @@ function advisoriesFor(...entries: readonly (typeof STREAM_JSON)[]): unknown {
   return advisories;
 }
 
-function allowlistFor(...entries: readonly (typeof STREAM_JSON)[]): unknown {
+function allowlistFor(...entries: readonly (typeof STREAM_JSON)[]) {
   return { reviewBy: REVIEW_BY, exceptions: entries.map((entry) => ({ ...entry, rationale: "reviewed" })) };
 }
 

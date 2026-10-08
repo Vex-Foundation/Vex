@@ -277,7 +277,7 @@ export const LEND_BORROW_HANDLERS: Record<string, ProtocolHandler> = {
     let addr: string, secret: Uint8Array;
     try {
       addr = walletAddress(p, ctx);
-      secret = walletSecret(ctx);
+      secret = await walletSecret(ctx);
     } catch (err) {
       return walletScopeErrorToResult(err);
     }

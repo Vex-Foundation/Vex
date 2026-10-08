@@ -37,6 +37,10 @@ import {
   resolveMissionPromptContext,
 } from "../../mission/run-contract.js";
 import { resolveFrozenDeadlineMs } from "../../mission/mission-deadline.js";
+import {
+  frozenMissionReasoningEffort,
+  withMissionReasoningEffort,
+} from "../../mission/reasoning-effort.js";
 import type { PromptStackOptions } from "../../prompts/index.js";
 import { getOpenAITools, type ToolVisibilityBase } from "@vex-agent/tools/registry.js";
 import {
@@ -61,6 +65,7 @@ import { maxIterationsForPermission } from "./iteration-budget.js";
 import type { PreparedMissionStart } from "./mission-prepare.js";
 import { releaseLeaseAndEmitControlState } from "../../runtime/release-and-emit.js";
 import type { Permission } from "../../types.js";
+import type { RunnerLeaseGuard } from "../../runtime/lease-guard.js";
 import logger from "@utils/logger.js";
 
 type Provider = NonNullable<Awaited<ReturnType<typeof resolveProvider>>>;
@@ -164,6 +169,8 @@ async function addMissionActivationMessage(
 export async function runPreparedMissionStart(
   prepared: PreparedMissionStart,
 ): Promise<TurnResult> {
+  // Runtime measurement: the loop records entry → loop start as pre-loop setup.
+  const entryStartedAtMs = performance.now();
   const controller = registerMissionRunAbortController(prepared.runId);
   try {
     await addMissionActivationMessage({
@@ -226,6 +233,7 @@ export async function runPreparedMissionStart(
         hydrated.context.missionRunStartedAt,
         prepared.contractSnapshot,
       ),
+      entryStartedAtMs,
     };
 
     const result = await runTurnLoop(
@@ -234,12 +242,18 @@ export async function runPreparedMissionStart(
         missionRunId: prepared.runId,
         sessionKind: "mission",
         missionDeadline: deadlineMsToIso(loopConfig.missionDeadlineMs) ?? hydrated.context.missionDeadline ?? null,
+        // Fences the loop's writes on this run's claim; its lost signal ends
+        // the turn on `lease_lost` (never the Stop).
+        leaseGuard: prepared.sessionLease,
       },
       hydrated.messages,
       hydrated.summary,
       hydrated.tokenCount,
       prepared.provider,
-      prepared.config,
+      // E-1: the FROZEN contract effort (default medium), clamped to the
+      // model, on every inference call of this slice. Read from the same
+      // immutable snapshot as the deadline, never the live mission row.
+      withMissionReasoningEffort(prepared.config, frozenMissionReasoningEffort(prepared.contractSnapshot)),
       tools,
       loopConfig,
       promptOptions,
@@ -263,6 +277,7 @@ export async function runPreparedMissionStart(
       prepared.sessionId,
       result.stopReason,
       result.stopPayload,
+      { leaseGuard: prepared.sessionLease },
     );
 
     return {
@@ -286,6 +301,7 @@ export async function runPreparedMissionStart(
         prepared.runId,
         prepared.sessionId,
         err,
+        { leaseGuard: prepared.sessionLease },
       );
     }
     throw new MissionRunPausedError({
@@ -311,14 +327,14 @@ export async function runPreparedMissionStart(
 export interface PreparedResumeRun {
   readonly runId: string;
   /**
-   * The session/run lease owner id the CALLER claimed and holds for the whole
-   * resume. Required, exactly like a mission START threads
-   * `prepared.sessionLease.ownerId`: the resumed turn loop can only force a
-   * prepared compaction apply by proving ownership by equality against the live
-   * lease, and every resume entry point (wake, auto-retry, approval
-   * continuation, ingress preempt, IPC resume/retry, recover) does hold one.
+   * The session/run lease the CALLER claimed and holds for the whole resume.
+   * Required, exactly like a mission START threads `prepared.sessionLease`:
+   * its owner id is the compaction-apply ownership proof, its fence guards the
+   * loop's and the finalizer's writes, and its lost signal ends the turn on
+   * `lease_lost`. Every resume entry point (wake, auto-retry, approval
+   * continuation, ingress preempt, IPC resume/retry, recover) holds one.
    */
-  readonly runnerOwnerId: string;
+  readonly runnerLease: RunnerLeaseGuard;
   readonly run: MissionRun;
   readonly mission: Mission;
   readonly provider: Provider;
@@ -328,6 +344,8 @@ export interface PreparedResumeRun {
 export async function resumePreparedMissionRun(
   prepared: PreparedResumeRun,
 ): Promise<TurnResult> {
+  // Runtime measurement: the loop records entry → loop start as pre-loop setup.
+  const entryStartedAtMs = performance.now();
   const controller = registerMissionRunAbortController(prepared.runId);
   try {
     // GUARDED flip, not `updateStatus`. `resumeMissionRun` checks the run is
@@ -399,7 +417,7 @@ export async function resumePreparedMissionRun(
       baseVisibility,
       // The lease this resume actually runs under — same contract as a mission
       // start above, so a resumed slice can consume a prepared cutover too.
-      runnerOwnerId: prepared.runnerOwnerId,
+      runnerOwnerId: prepared.runnerLease.ownerId,
       // Deadline from FROZEN inputs (run started_at + the SAME snapshot the run
       // was committed with), so a wake/resume re-derives the identical box —
       // never the live mission row. See mission-deadline.ts.
@@ -407,6 +425,7 @@ export async function resumePreparedMissionRun(
         hydrated.context.missionRunStartedAt,
         prepared.run.contractSnapshotJson,
       ),
+      entryStartedAtMs,
     };
 
     const result = await runTurnLoop(
@@ -415,12 +434,16 @@ export async function resumePreparedMissionRun(
         missionRunId: prepared.runId,
         sessionKind: "mission",
         missionDeadline: deadlineMsToIso(loopConfig.missionDeadlineMs) ?? hydrated.context.missionDeadline ?? null,
+        leaseGuard: prepared.runnerLease,
       },
       hydrated.messages,
       hydrated.summary,
       hydrated.tokenCount,
       prepared.provider,
-      prepared.config,
+      // E-1: the FROZEN contract effort (default medium), clamped to the
+      // model, on every inference call of this slice. Read from the same
+      // immutable snapshot as the deadline, never the live mission row.
+      withMissionReasoningEffort(prepared.config, frozenMissionReasoningEffort(prepared.run.contractSnapshotJson)),
       tools,
       loopConfig,
       promptOptions,
@@ -436,6 +459,7 @@ export async function resumePreparedMissionRun(
       prepared.run.sessionId,
       result.stopReason,
       result.stopPayload,
+      { leaseGuard: prepared.runnerLease },
     );
 
     return {
@@ -460,6 +484,7 @@ export async function resumePreparedMissionRun(
         prepared.runId,
         prepared.run.sessionId,
         err,
+        { leaseGuard: prepared.runnerLease },
       );
     }
     throw new MissionRunPausedError({

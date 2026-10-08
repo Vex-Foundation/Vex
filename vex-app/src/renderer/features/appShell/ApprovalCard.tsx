@@ -15,7 +15,12 @@
  *     second click within CONFIRM_RESET_MS fires; timeout resets.
  *   - On success: invalidate pending / history (prefix) / messages
  *     (transcript) / runtime — the engine resume can flip status + write
- *     new transcript rows.
+ *     new transcript rows. The refresh runs in the background: the outcome
+ *     (`onResolved`, the settled key) is shown the moment the reply lands,
+ *     never after five refetches.
+ *   - A click locks both keys in the same event, before the mutation's own
+ *     pending state reaches a render, so a fast double click cannot send a
+ *     second decision. A failure unlocks them exactly as before.
  *   - `useApprove`/`useReject` already use `retry: false`; we DO NOT auto-
  *     retry a dangerous action.
  *   - `Result.ok === false` surfaces as an inline error (TanStack `isError`
@@ -114,12 +119,19 @@ export interface ApprovalCardProps {
    */
   readonly projectName?: string | null;
   /**
-   * Fires after a decision has landed and the queries were refreshed. The
-   * Lighter desk uses it to show the tool's outcome under the ticket, which
-   * has no transcript to read it from.
+   * Fires as soon as a decision has landed; the query refresh runs after it in
+   * the background. The Lighter desk uses it to show the tool's outcome under
+   * the ticket, which has no transcript to read it from.
    */
   readonly onResolved?: (decision: "approved" | "rejected", result: ApprovalActionResult) => void;
 }
+
+/**
+ * The card's own view of its decision, set synchronously on click. TanStack
+ * publishes `isPending` through its notify scheduler, so between the click and
+ * that render the keys would otherwise still be live.
+ */
+type CardDecision = "approving" | "rejecting" | "approved" | "rejected";
 
 export function ApprovalCard({
   summary,
@@ -171,33 +183,46 @@ export function ApprovalCard({
   // the unmount wins the race that is acceptable: the light is a grace note,
   // not a contract. Reject never lights (one-light rule).
   const [signedGlint, setSignedGlint] = useState(false);
-  const inFlight = approve.isPending || reject.isPending;
+  const [decision, setDecision] = useState<CardDecision | null>(null);
+  const decisionRef = useRef<CardDecision | null>(null);
+  const markDecision = (next: CardDecision | null): void => {
+    decisionRef.current = next;
+    setDecision(next);
+  };
+  const inFlight = approve.isPending || reject.isPending || decision !== null;
 
   const invalidateOnResolve = (): Promise<void> => invalidateOnApprovalResolve(queryClient, sessionId);
 
   const fireApprove = (): void => {
     setInlineError(null);
+    markDecision("approving");
     approve.mutate(
       { id: summary.id },
       {
-        onSuccess: async (result) => {
+        onSuccess: (result) => {
           if (result.ok) {
             setArmedAction(null);
             setSignedGlint(true);
-            await invalidateOnResolve();
+            markDecision("approved");
             onResolved?.("approved", result.data);
+            void invalidateOnResolve();
           } else {
+            markDecision(null);
             setInlineError(result.error.message);
             void invalidateOnResolve();
           }
         },
-        onError: (e) => setInlineError(e.message),
+        onError: (e) => {
+          markDecision(null);
+          setInlineError(e.message);
+        },
       },
     );
   };
 
   const fireReject = (): void => {
     setInlineError(null);
+    markDecision("rejecting");
     const trimmed = rejectReason.trim();
     reject.mutate(
       // Omit the key entirely when empty: `approvalActionInputSchema` is
@@ -205,24 +230,29 @@ export function ApprovalCard({
       // ("No reason provided") is the right transcript text for a bare refusal.
       { id: summary.id, ...(trimmed.length > 0 ? { reason: trimmed } : {}) },
       {
-        onSuccess: async (result) => {
+        onSuccess: (result) => {
           if (result.ok) {
             setArmedAction(null);
             setRejectReason("");
-            await invalidateOnResolve();
+            markDecision("rejected");
             onResolved?.("rejected", result.data);
+            void invalidateOnResolve();
           } else {
+            markDecision(null);
             setInlineError(result.error.message);
             void invalidateOnResolve();
           }
         },
-        onError: (e) => setInlineError(e.message),
+        onError: (e) => {
+          markDecision(null);
+          setInlineError(e.message);
+        },
       },
     );
   };
 
   const onApproveClick = (): void => {
-    if (inFlight) return;
+    if (inFlight || decisionRef.current !== null) return;
     if (isHighRisk && armedAction !== "approve") {
       setArmedAction("approve");
       return;
@@ -230,7 +260,7 @@ export function ApprovalCard({
     fireApprove();
   };
   const onRejectClick = (): void => {
-    if (inFlight) return;
+    if (inFlight || decisionRef.current !== null) return;
     if (isHighRisk && armedAction !== "reject") {
       setArmedAction("reject");
       return;
@@ -295,7 +325,9 @@ export function ApprovalCard({
         approveLabel={approveLabel}
         confirmApproveLabel={confirmApproveLabel}
         pendingApproveLabel={pendingApproveLabel}
-        approvePending={approve.isPending}
+        approvePending={approve.isPending || decision === "approving"}
+        rejectPending={reject.isPending || decision === "rejecting"}
+        settledDecision={decision === "approved" || decision === "rejected" ? decision : null}
         wrapReasonOnNarrow={criticalArgs?.toolId === "lighter.fees.approve"}
         rejectReasonInput={summary.origin !== "desk"}
       />

@@ -1,3 +1,4 @@
+import { protectSigningOperation } from "../secrets/signing-lock.js";
 import { persistLighterSigningEvidence } from "@vex-agent/tools/protocols/lighter/execution-boundary.js";
 import { app } from "electron";
 import { assertIntentAuthority, LighterIntentRefusal } from "@vex-agent/tools/protocols/lighter/intent-expiry.js";
@@ -81,7 +82,7 @@ export async function executeApprovedLighterKeyRegistration(
   input: Parameters<LighterKeyRegistrationExecutor["execute"]>[0],
   deps: LighterKeyRegistrationExecutionDeps = defaultDeps(),
 ): Promise<LighterKeyRegistrationExecutionResult> {
-  return runLighterKeyRegistration(input, deps, true);
+  return protectSigningOperation("lighter_key_registration", () => runLighterKeyRegistration(input, deps, true));
 }
 
 export async function reconcileLighterKeyRegistration(
@@ -109,7 +110,7 @@ async function runLighterKeyRegistration(
     if (allowSubmission) {
       throw executionError("the approved registration intent is unavailable in this session");
     }
-    const resumingWallet = deps.resolveWallet(input.walletResolution, input.walletPolicy, "eip155");
+    const resumingWallet = await deps.resolveWallet(input.walletResolution, input.walletPolicy, "eip155");
     if (
       resumingWallet.family !== "eip155"
       || getAddress(resumingWallet.address) !== getAddress(intent.walletAddress)
@@ -175,7 +176,7 @@ async function runLighterKeyRegistration(
       throw executionError("the live API-key nonce changed after approval");
     }
 
-    const wallet = deps.resolveWallet(input.walletResolution, input.walletPolicy, "eip155");
+    const wallet = await deps.resolveWallet(input.walletResolution, input.walletPolicy, "eip155");
     if (wallet.family !== "eip155") {
       throw executionError("the selected wallet is not an EVM signing wallet");
     }
@@ -293,14 +294,14 @@ async function reconcileRegistration(
   }
 
   const reference = credentialReference(intent);
-  const registrationState = deps.readVaultRegistrationState(reference);
+  const registrationState = await deps.readVaultRegistrationState(reference);
   if (
     registrationState !== LIGHTER_TRADING_CREDENTIAL_PENDING_REGISTRATION_STATE
     && registrationState !== LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE
   ) {
     throw executionError("the encrypted trading credential has an invalid activation marker");
   }
-  const privateKey = deps.readVaultPrivateKey(reference);
+  const privateKey = await deps.readVaultPrivateKey(reference);
   if (privateKey === null) {
     throw executionError("the encrypted trading credential is unavailable");
   }
@@ -367,7 +368,7 @@ async function reconcileRegistration(
   if (intent.executionState !== "active") {
     throw executionError("the registration lifecycle cannot be activated from its current state");
   }
-  const activated = deps.activateVaultCredential(reference);
+  const activated = await deps.activateVaultCredential(reference);
   if (activated.registrationState !== LIGHTER_TRADING_CREDENTIAL_ACTIVE_STATE) {
     throw executionError("the encrypted trading credential was not activated");
   }

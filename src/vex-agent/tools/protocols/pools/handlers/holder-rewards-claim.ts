@@ -188,7 +188,7 @@ export async function poolsHolderRewardsClaimHandler(
   // NO KEY IS TOUCHED unless this call is going to sign. Taking the read-only
   // client on both non-signing arms is what makes "no signer was opened" a
   // structural property rather than a promise in a comment.
-  const signing = dryRun || simulateOnly ? null : openLaunchSigningClients(context, chainConfig);
+  const signing = dryRun || simulateOnly ? null : await openLaunchSigningClients(context, chainConfig);
   if (signing !== null && !signing.ok) return signing.result;
   const reader: PublicClient<Transport, Chain> = signing === null
     ? getLocalPublicClient(chainConfig)
@@ -633,7 +633,7 @@ function activityLeg(leg: PoolsSignableRewardLeg): AgentActivityLegInput {
 
 interface ExecuteClaimInput {
   readonly reader: PublicClient<Transport, Chain>;
-  readonly signing: Extract<ReturnType<typeof openLaunchSigningClients>, { ok: true }>;
+  readonly signing: Extract<Awaited<ReturnType<typeof openLaunchSigningClients>>, { ok: true }>;
   readonly token: Address;
   readonly walletAddress: Address;
   readonly sessionId: string;
