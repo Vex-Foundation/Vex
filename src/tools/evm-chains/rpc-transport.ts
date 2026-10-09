@@ -53,6 +53,7 @@ import logger from "../../utils/logger.js";
 import { bindRpcRequestOptions } from "./rpc-request-options.js";
 import { exhaustedRpcRead } from "./rpc-read-failure.js";
 import { RpcRequestPacer } from "./rpc-request-pacing.js";
+import { getEvmRpcFetch } from "./rpc-fetch.js";
 import {
   classifyRpcFailure,
   resolveRpcEndpoints,
@@ -139,7 +140,7 @@ async function readChainIdEcho(endpoint: RpcEndpoint, timeoutMs: number): Promis
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     if (endpoint.minRequestSpacingMs) await paceEndpoint(pacingKey(endpoint), endpoint.minRequestSpacingMs, controller.signal);
-    const response = await fetch(endpoint.url, {
+    const response = await getEvmRpcFetch()(endpoint.url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }),
@@ -308,10 +309,11 @@ function paceEndpoint(url: string, spacingMs: number, signal?: AbortSignal): Pro
  * offers no per-endpoint hook.
  */
 function pacedFetch(key: string, spacingMs: number): typeof fetch {
+  const fetcher = getEvmRpcFetch();
   return async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     await paceEndpoint(key, spacingMs, init?.signal ?? undefined);
     init?.signal?.throwIfAborted();
-    return fetch(input, init);
+    return fetcher(input, init);
   };
 }
 
@@ -351,7 +353,7 @@ function toHttpTransport(endpoint: RpcEndpoint, options: EvmTransportOptions): T
     retryCount: endpoint.retryCount,
     ...(endpoint.minRequestSpacingMs !== undefined && endpoint.minRequestSpacingMs > 0
       ? { fetchFn: pacedFetch(pacingKey(endpoint), endpoint.minRequestSpacingMs) }
-      : {}),
+      : { fetchFn: getEvmRpcFetch() }),
     // viem's `methods` option is typed as a mutable `OneOf<{include}|{exclude}>`,
     // so the table's readonly arrays are copied rather than the table being made
     // mutable to suit a dependency's signature.
@@ -562,7 +564,7 @@ export function buildPinnedEvmTransport(
         retryCount: 0,
         ...(chosen.minRequestSpacingMs !== undefined && chosen.minRequestSpacingMs > 0
           ? { fetchFn: pacedFetch(pacingKey(chosen), chosen.minRequestSpacingMs) }
-          : {}),
+          : { fetchFn: getEvmRpcFetch() }),
       })(config);
       return inner;
     });

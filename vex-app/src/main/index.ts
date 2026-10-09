@@ -113,6 +113,7 @@ import {
   initSentryIfConsented,
 } from "./telemetry/sentry-lifecycle.js";
 import { runProductionEarlyBoot } from "./secrets/vault-reset-boot.js";
+import { installDesktopRpcFetch } from "./rpc/desktop-fetch.js";
 
 /**
  * Remap Electron's userData onto CONFIG_DIR/.electron-state BEFORE any
@@ -271,6 +272,9 @@ app.on("child-process-gone", (_event, details) => {
 });
 
 async function initializeMainRuntime(): Promise<void> {
+
+  const uninstallRpcFetch = installDesktopRpcFetch();
+  globalCleanup.add(uninstallRpcFetch, "rpc-http-adapter");
 
   // 3b. E2E database door. FIRST, because everything below that can touch the
   // database (the IPC surface, the engine workers, the Studio bridges) reads

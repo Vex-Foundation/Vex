@@ -1008,6 +1008,17 @@ export async function markDepositConfirmedWith(
   intentId: string,
   evidence: LighterDepositL1Evidence,
 ): Promise<LighterOnboardingIntentRow | null> {
+  const params = [
+    intentId,
+    evidence.txHash,
+    evidence.blockHash,
+    evidence.blockNumber,
+    evidence.accountIndex,
+    evidence.walletAddress,
+    evidence.assetIndex,
+    evidence.routeType,
+    evidence.amountUnits,
+  ];
   const result = await client.query<Record<string, unknown>>(
     `UPDATE lighter_onboarding_intents
         SET execution_state = 'deposit_confirmed',
@@ -1024,20 +1035,52 @@ export async function markDepositConfirmedWith(
         AND amount_units = $9
         AND execution_state IN ('deposit_submitted', 'ambiguous')
       RETURNING ${RETURNING}`,
-    [
-      intentId,
-      evidence.txHash,
-      evidence.blockHash,
-      evidence.blockNumber,
-      evidence.accountIndex,
-      evidence.walletAddress,
-      evidence.assetIndex,
-      evidence.routeType,
-      evidence.amountUnits,
-    ],
+    params,
   );
   const row = result.rows[0];
-  if (row === undefined) return null;
+  if (row === undefined) {
+    // The repair sweep can commit this receipt while the executor awaits it.
+    // Accept only the exact evidence already saved, without replaying a
+    // workflow transition or downgrading a credit the repair also proved.
+    const existing = await client.query<Record<string, unknown>>(
+      `SELECT ${RETURNING}
+         FROM lighter_onboarding_intents i
+        WHERE i.intent_id = $1
+          AND i.capability = 'deposit'
+          AND LOWER(COALESCE(i.deposit_replacement_tx_hash, i.deposit_tx_hash)) = LOWER($2)
+          AND LOWER(i.deposit_l1_block_hash) = LOWER($3)
+          AND i.deposit_l1_block_number = $4
+          AND i.deposit_event_account_index = $5
+          AND LOWER(i.wallet_address) = LOWER($6)
+          AND i.asset_index = $7
+          AND i.route_type = $8
+          AND i.amount_units = $9
+          AND (
+            (
+              i.execution_state = 'deposit_confirmed'
+              AND EXISTS (
+                SELECT 1 FROM lighter_onboarding_workflows w
+                 WHERE w.environment = i.environment
+                   AND w.wallet_address = LOWER(i.wallet_address)
+                   AND w.active_deposit_intent_id = i.intent_id
+                   AND w.workflow_state = 'deposit_l2_pending'
+              )
+            )
+            OR (
+              i.execution_state = 'credited'
+              AND i.resolved_account_index = $5
+              AND i.lighter_tx_hash IS NOT NULL
+              AND i.lighter_tx_status = 3
+              AND i.lighter_block_height > 0
+              AND i.lighter_executed_at > 0
+              AND i.lighter_evidence_observed_at IS NOT NULL
+            )
+          )`,
+      params,
+    );
+    const confirmed = existing.rows[0];
+    return confirmed === undefined ? null : mapRow(confirmed);
+  }
   const intent = mapRow(row);
   await requireDepositWorkflowTransition(client, intent, {
     expectedStates: ["deposit_staged", "ambiguous"],

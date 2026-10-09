@@ -502,7 +502,12 @@ function validateImplementation(observed: string | null, expected: Address | und
   if (expected === undefined) return observed === null ? null : validAddress(observed, `${label} implementation`);
   if (observed === null) throw preflightError(`${label} proxy implementation is unavailable.`);
   const address = validAddress(observed, `${label} implementation`);
-  if (address !== expected) throw preflightError(`${label} proxy implementation differs from Vex's reviewed target.`);
+  if (address !== expected) {
+    throw preflightError(
+      `${label} proxy implementation differs from Vex's reviewed target. A Vex update reviewing this contract is required before trying again.`,
+      "No approval was prepared. Install a Vex update with a reviewed contract before preparing a new deposit.",
+    );
+  }
   return address;
 }
 
@@ -526,6 +531,9 @@ function validAddress(value: string, field: string): Address {
   }
 }
 
-function preflightError(message: string): VexError {
-  return new VexError(ErrorCodes.LIGHTER_INVALID_REQUEST, message, "No approval was prepared. Refresh live Lighter onboarding status and try again.");
+function preflightError(
+  message: string,
+  hint = "No approval was prepared. Refresh live Lighter onboarding status and try again.",
+): VexError {
+  return new VexError(ErrorCodes.LIGHTER_INVALID_REQUEST, message, hint);
 }

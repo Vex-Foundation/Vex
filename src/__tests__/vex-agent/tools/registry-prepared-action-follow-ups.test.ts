@@ -241,7 +241,7 @@ function lighterDepositCandidate() {
         settlementNetworkName: "Ethereum mainnet",
         lighterRestBaseUrl: "https://mainnet.zklighter.elliot.ai",
         beneficiaryAddress: "0x1111111111111111111111111111111111111111",
-        gatewayImplementationAddress: "0x8D692294a4824d868e35B3CEcd734aCf41B2342e",
+        gatewayImplementationAddress: "0xE16c893252616dD49913969f145e733b96a3E5A7",
         gatewayCodeHash: `0x${"1".repeat(64)}`,
         settlementTokenImplementationAddress: null,
         settlementTokenCodeHash: `0x${"2".repeat(64)}`,
@@ -341,8 +341,8 @@ function lighterWithdrawalCandidate(environment: "core" | "rhc" = "core") {
           ? "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7"
           : "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d",
         gatewayImplementation: isCore
-          ? "0x8D692294a4824d868e35B3CEcd734aCf41B2342e"
-          : "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90",
+          ? "0xE16c893252616dD49913969f145e733b96a3E5A7"
+          : "0x998ecf039Eb110b72F5F6C1Ea31C2fA41a458FAA",
         gatewayCodeHash: `0x${"1".repeat(64)}`,
         settlementTokenCodeHash: `0x${"2".repeat(64)}`,
         preflightObservedAt: "2030-01-01T00:00:00.000Z",
@@ -385,8 +385,8 @@ function lighterWithdrawalClaimCandidate(environment: "core" | "rhc" = "core") {
           ? "0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7"
           : "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d",
         gatewayImplementation: isCore
-          ? "0x8D692294a4824d868e35B3CEcd734aCf41B2342e"
-          : "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90",
+          ? "0xE16c893252616dD49913969f145e733b96a3E5A7"
+          : "0x998ecf039Eb110b72F5F6C1Ea31C2fA41a458FAA",
         gatewayCodeHash: `0x${"1".repeat(64)}`,
         settlementTokenAddress: isCore
           ? "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
@@ -433,7 +433,7 @@ function lighterRhcDepositCandidate() {
         settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
         settlementNetworkName: "Robinhood Chain mainnet",
         lighterRestBaseUrl: "https://api.rh.lighter.xyz",
-        gatewayImplementationAddress: "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90",
+        gatewayImplementationAddress: "0x998ecf039Eb110b72F5F6C1Ea31C2fA41a458FAA",
         settlementTokenImplementationAddress: "0x68184C449E1a8f34fA18d289737129FD27B66f8F",
         depositCalldata: buildLighterDepositCalldata({
           environment: "rhc",
@@ -446,6 +446,23 @@ function lighterRhcDepositCandidate() {
 }
 
 describe("prepared-action follow-up registry", () => {
+  it.each([
+    ["core", "0x8D692294a4824d868e35B3CEcd734aCf41B2342e"],
+    ["rhc", "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90"],
+  ] as const)("refuses superseded %s deposit, withdrawal and claim follow-ups", (environment, previous) => {
+    const deposit = environment === "core" ? lighterDepositCandidate() : lighterRhcDepositCandidate();
+    deposit.approvalPreview.criticalArgs.gatewayImplementationAddress = previous;
+    expect(validatePreparedActionFollowUp("lighter.deposit.prepare", deposit).ok).toBe(false);
+
+    const withdrawal = lighterWithdrawalCandidate(environment);
+    withdrawal.approvalPreview.criticalArgs.gatewayImplementation = previous;
+    expect(validatePreparedActionFollowUp("lighter.withdraw.prepare", withdrawal).ok).toBe(false);
+
+    const claim = lighterWithdrawalClaimCandidate(environment);
+    claim.approvalPreview.criticalArgs.gatewayImplementation = previous;
+    expect(validatePreparedActionFollowUp("lighter.withdraw.claim.prepare", claim).ok).toBe(false);
+  });
+
   it("allows and canonicalizes WalletSendPrepare → WalletSendConfirm", () => {
     const input = candidate();
     const result = validatePreparedActionFollowUp("WalletSendPrepare", input);

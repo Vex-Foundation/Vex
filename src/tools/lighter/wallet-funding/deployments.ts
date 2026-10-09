@@ -40,6 +40,7 @@ export interface LighterFundingDeployment {
 
 const DEPOSIT_SELECTOR = "0x8a857083" as const;
 
+// Replacement source and runtime review: GATEWAY_REVIEW.md.
 const CORE_FUNDING_DEPLOYMENT = defineDeployment({
   environment: "core",
   settlementNetworkName: "Ethereum mainnet",
@@ -49,7 +50,7 @@ const CORE_FUNDING_DEPLOYMENT = defineDeployment({
   restBaseUrl: LIGHTER_ENDPOINTS.core.restBaseUrl,
   wsBaseUrl: LIGHTER_ENDPOINTS.core.wsUrl,
   gatewayProxy: getAddress("0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7"),
-  expectedGatewayImplementation: getAddress("0x8D692294a4824d868e35B3CEcd734aCf41B2342e"),
+  expectedGatewayImplementation: getAddress("0xE16c893252616dD49913969f145e733b96a3E5A7"),
   settlementTokenProxy: getAddress("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"),
   settlementAllowanceStorageSlot: 10n,
   settlementSymbol: "USDC",
@@ -70,7 +71,7 @@ const RHC_FUNDING_DEPLOYMENT = defineDeployment({
   restBaseUrl: LIGHTER_ENDPOINTS.rhc.restBaseUrl,
   wsBaseUrl: LIGHTER_ENDPOINTS.rhc.wsUrl,
   gatewayProxy: getAddress("0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d"),
-  expectedGatewayImplementation: getAddress("0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90"),
+  expectedGatewayImplementation: getAddress("0x998ecf039Eb110b72F5F6C1Ea31C2fA41a458FAA"),
   settlementTokenProxy: getAddress("0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"),
   expectedSettlementTokenImplementation: getAddress("0x68184C449E1a8f34fA18d289737129FD27B66f8F"),
   settlementAllowanceStorageSlot: 3n,
