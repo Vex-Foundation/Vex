@@ -36,7 +36,7 @@ import {
 import { TOOL_ABORTED_BY_USER_STOP_OUTPUT } from "@vex-agent/engine/core/turn-loop-tool-batch/results.js";
 import logger from "@utils/logger.js";
 import { dispatchTargetMaySign } from "./dispatcher/signing-targets.js";
-import { LOCK_BUTTON } from "../../lib/lock-button.js";
+import { assertWalletActive } from "../../tools/wallet/lifecycle.js";
 import { trackInFlightSigning } from "@vex-agent/engine/core/in-flight-signing.js";
 
 // Compatibility façade re-exports - preserve the dispatcher's public surface.
@@ -180,7 +180,12 @@ export async function dispatchTool(
     const route = () => readTimeoutMs > 0
       ? routeWithReadTimeout(routeToolCall, call, context, readTimeoutMs)
       : routeToolCall(call, context);
-    const result = LOCK_BUTTON && dispatchTargetMaySign(call)
+    if (dispatchTargetMaySign(call) && context.walletResolution.source === "session") {
+      for (const ref of [context.walletResolution.evm, context.walletResolution.solana]) {
+        if (ref) assertWalletActive(ref.id);
+      }
+    }
+    const result = dispatchTargetMaySign(call)
       ? await trackInFlightSigning("mutating_tool", route)
       : await route();
     const durationMs = Date.now() - startTime;

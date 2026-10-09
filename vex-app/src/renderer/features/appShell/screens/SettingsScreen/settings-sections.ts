@@ -52,7 +52,7 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     stepId: "wallets",
     icon: IconWalletOutline16,
     name: "Wallets",
-    hint: "EVM and Solana keys - add, import, back up, or export",
+    hint: "EVM and Solana wallets - add, remove, recover, back up, or export",
   },
   {
     id: "apiKeys",

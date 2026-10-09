@@ -77,6 +77,8 @@ vi.mock("../../../wizard/index.js", () => ({
 
 }));
 
+vi.mock("../../../wallets/WalletRemovalSection.js", () => ({ WalletRemovalSection: () => <div>Remove a wallet</div> }));
+
 // The export modal is a high-risk surface with its own suites — a stub
 // exposing the chain prop pins the wiring without the crypto flow.
 const exportModalSpy = vi.hoisted(() => vi.fn());

@@ -44,6 +44,7 @@ import {
   type WalletsSetScopeResult,
 } from "@shared/schemas/wallets.js";
 import { getWalletById, listWallets } from "@vex-lib/wallet.js";
+import { walletIdIsRetired } from "@vex-lib/wallet-removal.js";
 import { getSessionWalletScope, initializeSessionWalletScope } from "../database/sessions-db.js";
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
@@ -103,7 +104,7 @@ function registerListSessionWalletsHandler(): () => void {
       ) => {
         if (!ref) return null;
         const entry = getWalletById(family, ref.id);
-        return { walletId: ref.id, address: ref.address, label: entry?.label ?? "Unknown wallet" };
+        return { walletId: ref.id, address: ref.address, label: entry?.label ?? (walletIdIsRetired(ref.id) ? "Removed wallet" : "Unknown wallet") };
       };
       log.info(
         `[ipc:vex:wallets:listSessionWallets] ok sessionId=${input.sessionId} ` +

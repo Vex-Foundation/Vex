@@ -230,7 +230,7 @@ export function saveKeystoreFile(path: string, keystore: KeystoreV1): void {
   }
 }
 
-function validateKeystoreShape(parsed: unknown, path: string): KeystoreV1 {
+export function validateKeystoreShape(parsed: unknown, path: string): KeystoreV1 {
   if (parsed === null || typeof parsed !== "object") {
     throw new VexError(ErrorCodes.KEYSTORE_CORRUPT, `Keystore at ${path} is not a valid JSON object.`);
   }

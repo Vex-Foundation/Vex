@@ -43,7 +43,7 @@ export function isValidWalletId(family: "evm" | "solana", id: string, legacy: bo
   return WALLET_UUID.test(id.slice(prefix.length + 1));
 }
 
-const walletInventoryEntrySchema = z.object({
+export const walletInventoryEntrySchema = z.object({
   id: z.string().min(1).max(80),
   address: z.string().min(1).max(128),
   label: z.string().max(120),

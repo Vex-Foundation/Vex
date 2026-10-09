@@ -7,7 +7,8 @@ export async function protectSigningOperation<T>(
   work: () => Promise<T>,
   options: { readonly enabled?: boolean } = {},
 ): Promise<T> {
-  if (!(options.enabled ?? LOCK_BUTTON)) return work();
+  // Admission tracking is a security boundary even when the lock UI is hidden.
+  void options;
   return trackInFlightSigning(kind, work);
 }
 

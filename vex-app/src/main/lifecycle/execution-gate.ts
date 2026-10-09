@@ -102,6 +102,8 @@ export const EXECUTION_GATED_CHANNELS: ReadonlySet<string> = new Set<string>([
   CH.mission.restartWithInstruction,
   // Tool dispatch and signatures.
   CH.approvals.approve,
+  CH.wallet.remove,
+  CH.wallet.restoreRemoved,
   CH.poolsLaunch.deploy,
   CH.poolsLaunch.claim,
   CH.lighterTrading.prepareDeskAction,
@@ -161,6 +163,7 @@ export interface ExecutionGateArmDeps {
    * Never rejects.
    */
   readonly whenStudioRuntimeSettled: () => Promise<void>;
+  readonly recoverWalletRemovals?: () => Promise<void>;
 }
 
 /**
@@ -179,10 +182,12 @@ export function armExecutionGate(deps: ExecutionGateArmDeps): {
       if (controller.signal.aborted) return;
       await deps.whenStudioRuntimeSettled();
       if (controller.signal.aborted) return;
-      openExecutionGate();
-    } catch (cause) {
+      await deps.recoverWalletRemovals?.();
       if (controller.signal.aborted) return;
-      log.warn("[execution-gate] runtime readiness wait failed; the gate stays closed", cause);
+      openExecutionGate();
+    } catch {
+      if (controller.signal.aborted) return;
+      log.warn("[execution-gate] runtime readiness wait failed; the gate stays closed");
     }
   })();
   return {

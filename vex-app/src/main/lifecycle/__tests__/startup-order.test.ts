@@ -78,6 +78,7 @@ describe("main startup order", () => {
     const init = bodyOf("initializeMainRuntime");
     expect(init).toMatch(/armExecutionGate\(\{\s*whenEngineDbReady:/);
     expect(init).toContain("whenStudioRuntimeSettled,");
+    expect(init).toContain("recoverWalletRemovals,");
     // Only the gate's own arming may open it.
     expect(source).not.toContain("openExecutionGate(");
   });

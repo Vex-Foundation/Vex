@@ -267,7 +267,7 @@ const UNRESOLVED_MONEY_STATE_SQL = `
     FROM agent_activity a
    WHERE a.session_id = $1 AND a.status = 'pending'
 
-   LIMIT $2`;
+   `;
 
 /**
  * Read every unresolved money-path row for `sessionId` inside the CALLER's
@@ -282,7 +282,7 @@ export async function getUnresolvedMoneyStateForSession(
     kind: MoneyStateReason["kind"];
     ref: string;
     detail: string | null;
-  }>(UNRESOLVED_MONEY_STATE_SQL, [sessionId, MAX_REASONS]);
+  }>(`${UNRESOLVED_MONEY_STATE_SQL} LIMIT $2`, [sessionId, MAX_REASONS]);
 
   if (res.rows.length === 0) {
     return { clear: true };
@@ -294,4 +294,19 @@ export async function getUnresolvedMoneyStateForSession(
     ...(row.detail === null ? {} : { detail: row.detail }),
   }));
   return { clear: false, reasons };
+}
+
+/** Removal may retire unsent proposals, but must never discard unresolved execution. */
+export async function hasExecutingMoneyForRemoval(client: PoolClient, sessionIds: readonly string[]): Promise<boolean> {
+  if (sessionIds.length === 0) return false;
+  // Correlate the same money-state doctrine in one round trip, even for a
+  // wallet selected by years of chats. Only the fixed SQL parameter is rebound.
+  const affectedMoneySql = UNRESOLVED_MONEY_STATE_SQL.replaceAll("$1", "affected.id");
+  const result = await client.query(
+    `SELECT 1 FROM unnest($1::text[]) affected(id) CROSS JOIN LATERAL (${affectedMoneySql}) money
+     WHERE kind <> 'approval_queue_pending'
+       AND NOT (kind IN ('wallet_intent_live', 'wallet_transaction_intent_live', 'wallet_wrap_intent_live') AND detail = 'pending')
+     LIMIT 1`, [sessionIds],
+  );
+  return result.rows.length > 0;
 }

@@ -46,6 +46,9 @@ export const CH = {
 
   // Wallet - sudo-style ops on existing keystores (Phase 2 feature #6)
   wallet: {
+    remove: "vex:wallet:remove",
+    restoreRemoved: "vex:wallet:restoreRemoved",
+    listRemoved: "vex:wallet:listRemoved",
     exportPrivateKey: "vex:wallet:exportPrivateKey",
   },
 

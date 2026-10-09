@@ -9,6 +9,7 @@
  * logged; the `Result<T>` payload reports only `copied: true` + `clearAfterMs`.
  */
 
+import { withWalletLock } from "../../onboarding/wallet-mutex.js";
 import { decryptExportSecret, getWalletById } from "@vex-lib/wallet.js";
 import {
   LocalSecretVaultError,
@@ -20,6 +21,7 @@ import {
   walletExportPrivateKeyInputSchema,
   walletExportPrivateKeyResultSchema,
   type WalletExportPrivateKeyResult,
+  type WalletExportPrivateKeyInput,
 } from "@shared/schemas/wallets.js";
 import { SECRETS_VAULT_FILE } from "../../paths/config-dir.js";
 import {
@@ -33,7 +35,7 @@ import {
 } from "../../wallet/export-throttle.js";
 import { log } from "../../logger/index.js";
 import { CRITICAL_OP, trackCriticalOp } from "../../updates/critical-ops.js";
-import { registerHandler } from "../register-handler.js";
+import { registerHandler, type HandlerContext } from "../register-handler.js";
 import { invalidWalletSelectionError } from "../_wallet-refs.js";
 import {
   CLEAR_AFTER_MS,
@@ -53,11 +55,11 @@ export function registerWalletExportHandler(): () => void {
     domain: "wallet",
     inputSchema: walletExportPrivateKeyInputSchema,
     outputSchema: walletExportPrivateKeyResultSchema,
-    handle: trackCriticalOp(
+    handle: (input, ctx) => withWalletLock(() => trackCriticalOp(
       CRITICAL_OP.secretVaultOp,
       async (
-        input,
-        ctx,
+        input: WalletExportPrivateKeyInput,
+        ctx: HandlerContext,
       ): Promise<Result<WalletExportPrivateKeyResult>> => {
       // 1. Throttle gate ─────────────────────────────────────────────
       const gate = checkExportAllowed();
@@ -249,6 +251,6 @@ export function registerWalletExportHandler(): () => void {
         clearAfterMs: CLEAR_AFTER_MS,
       });
       },
-    ),
+    )(input, ctx)),
   });
 }

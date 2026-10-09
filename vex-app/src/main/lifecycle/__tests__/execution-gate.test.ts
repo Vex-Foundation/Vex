@@ -211,6 +211,33 @@ describe("armExecutionGate", () => {
     expect(gate.isExecutionGateOpen()).toBe(true);
   });
 
+  it("waits for interrupted wallet removal cleanup before admitting execution", async () => {
+    const { gate } = await load();
+    const recovery = deferred();
+    const recover = vi.fn(() => recovery.promise);
+    const arm = gate.armExecutionGate({
+      whenEngineDbReady: () => Promise.resolve(),
+      whenStudioRuntimeSettled: () => Promise.resolve(),
+      recoverWalletRemovals: recover,
+    });
+    await vi.waitFor(() => expect(recover).toHaveBeenCalledOnce());
+    expect(gate.isExecutionGateOpen()).toBe(false);
+    recovery.resolve();
+    await arm.settled;
+    expect(gate.isExecutionGateOpen()).toBe(true);
+  });
+
+  it("keeps execution closed if wallet recovery cannot be proven safe", async () => {
+    const { gate } = await load();
+    const arm = gate.armExecutionGate({
+      whenEngineDbReady: () => Promise.resolve(),
+      whenStudioRuntimeSettled: () => Promise.resolve(),
+      recoverWalletRemovals: () => Promise.reject(new Error("damaged recovery")),
+    });
+    await arm.settled;
+    expect(gate.isExecutionGateOpen()).toBe(false);
+  });
+
   it("an abort (quit) during the wait keeps the gate closed", async () => {
     const { gate } = await load();
     const db = deferred();
