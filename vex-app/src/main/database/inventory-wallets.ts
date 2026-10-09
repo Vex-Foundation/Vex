@@ -9,6 +9,7 @@
  * may contain, without changing the logical inventory or weakening Solana identity.
  */
 
+import { listWalletRemovalRecords } from "@vex-lib/wallet-removal.js";
 import { listWallets, type WalletInventoryEntry } from "@vex-lib/wallet.js";
 
 /** Every configured wallet entry (EVM then Solana), unfiltered. */
@@ -41,6 +42,10 @@ export function resolveInventoryWalletAddressLookupVariants(): readonly string[]
   }
   for (const entry of listWallets("solana")) {
     addresses.push(entry.address);
+  }
+  for (const record of listWalletRemovalRecords()) {
+    addresses.push(record.entry.address);
+    if (record.family === "evm") addresses.push(record.entry.address.toLowerCase());
   }
   return [...new Set(addresses)];
 }

@@ -46,3 +46,5 @@ export * from "./wallets/inventory-export-all.js";
 export * from "./wallets/export-private-key.js";
 export * from "./wallets/session-available.js";
 export * from "./wallets/intent-action-dtos.js";
+
+export * from "./wallets/removal.js";

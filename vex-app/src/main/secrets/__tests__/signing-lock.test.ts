@@ -60,12 +60,12 @@ describe("user lock guard", () => {
     expect(locked).toBe(false);
   });
 
-  it("keeps the prior lock and operation path when disabled", async () => {
+  it("tracks signing even when the lock interface is disabled", async () => {
     const pending = deferred();
     const operation = trackInFlightSigning("mutating_tool", () => pending.promise);
     expect(await guardUserLock(async () => "legacy", { enabled: false })).toEqual({ kind: "locked", value: "legacy" });
     await protectSigningOperation("lighter_leverage", async () => {
-      expect(inFlightSigningSnapshot().total).toBe(1);
+      expect(inFlightSigningSnapshot().total).toBe(2);
     }, { enabled: false });
     pending.resolve();
     await operation;

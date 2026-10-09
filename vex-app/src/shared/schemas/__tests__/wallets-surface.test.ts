@@ -64,6 +64,10 @@ import type {
   WalletsCancelPreparedIntentInput,
   WalletsActionResult,
   WalletsSetScopeResult,
+  WalletRemovalInput,
+  WalletRecoveryInput,
+  WalletRemovalResult,
+  RemovedWallets,
 } from "../wallets.js";
 
 // Compile-only assertion: each name resolves to a usable type. `never` is
@@ -108,6 +112,10 @@ type _TypeSurface = [
   WalletsCancelPreparedIntentInput,
   WalletsActionResult,
   WalletsSetScopeResult,
+  WalletRemovalInput,
+  WalletRecoveryInput,
+  WalletRemovalResult,
+  RemovedWallets,
 ];
 const _typeSurface = (value: never): _TypeSurface => value;
 void _typeSurface;
@@ -156,6 +164,10 @@ const EXPECTED_SCHEMA_EXPORTS = [
   "walletsCancelPreparedIntentInputSchema",
   "walletsActionResultSchema",
   "walletsSetScopeResultSchema",
+  "walletRemovalInputSchema",
+  "walletRecoveryInputSchema",
+  "walletRemovalResultSchema",
+  "removedWalletsSchema",
 ] as const;
 
 const EXPECTED_CONST_EXPORTS = ["WALLET_INTENT_MAX_LIST"] as const;
@@ -166,7 +178,7 @@ const ALL_RUNTIME_EXPORTS = [
 ];
 
 describe("wallets schema façade surface", () => {
-  it("exposes EXACTLY the expected runtime export keys (42)", () => {
+  it("exposes exactly the expected runtime export keys", () => {
     const runtimeKeys = Object.keys(wallets).sort();
     expect(runtimeKeys).toEqual([...ALL_RUNTIME_EXPORTS].sort());
   });

@@ -82,6 +82,7 @@ import { registerSystemHandlers } from "./system.js";
 import { registerFunnelHandler, registerTelemetryHandler } from "./telemetry.js";
 import { registerUpdaterHandlers } from "./updates.js";
 import { registerUsageHandlers } from "./usage.js";
+import { registerWalletRemovalHandlers } from "./wallet-removal.js";
 import { registerWalletExportHandler } from "./wallet-export.js";
 import { registerWalletsSessionHandlers } from "./wallets-session.js";
 
@@ -109,6 +110,7 @@ export function registerAllIpcHandlers(): () => Promise<void> {
   teardowns.push(...registerOnboardingHandlers());
   teardowns.push(...registerWalletHandlers());
   teardowns.push(registerWalletExportHandler());
+  teardowns.push(...registerWalletRemovalHandlers());
   teardowns.push(registerApiKeysHandler());
   teardowns.push(registerEmbeddingHandler());
   teardowns.push(registerAgentCoreHandler());

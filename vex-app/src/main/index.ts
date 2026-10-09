@@ -31,6 +31,7 @@ import {
   armExecutionGate,
   closeExecutionGateForShutdown,
 } from "./lifecycle/execution-gate.js";
+import { recoverWalletRemovals } from "./wallet/removal-service.js";
 import { reapOrphanedPtyHosts } from "./studio/pty-host-reaper.js";
 import { app } from "electron";
 import { mkdirSync, readFileSync } from "node:fs";
@@ -376,6 +377,7 @@ async function initializeMainRuntime(): Promise<void> {
   const executionGateArm = armExecutionGate({
     whenEngineDbReady: (options) => whenEngineDbReady(options),
     whenStudioRuntimeSettled,
+    recoverWalletRemovals,
   });
   globalCleanup.add(() => {
     closeExecutionGateForShutdown();
