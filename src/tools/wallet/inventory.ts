@@ -12,6 +12,7 @@
  * Per-session selection resolves a specific entry by id+address.
  */
 
+import { assertWalletActive, walletIdIsRetired } from "./lifecycle.js";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { getAddress, type Address, type Hex } from "viem";
@@ -61,7 +62,7 @@ export function listWallets(
   family: InventoryFamily,
   cfg: VexConfig = loadConfig(),
 ): WalletInventoryEntry[] {
-  return [...cfg.wallet[family]];
+  return cfg.wallet[family].filter((entry) => !walletIdIsRetired(entry.id));
 }
 
 export function getWalletById(
@@ -69,7 +70,7 @@ export function getWalletById(
   id: string,
   cfg: VexConfig = loadConfig(),
 ): WalletInventoryEntry | null {
-  return cfg.wallet[family].find((entry) => entry.id === id) ?? null;
+  return walletIdIsRetired(id) ? null : cfg.wallet[family].find((entry) => entry.id === id) ?? null;
 }
 
 export function getPrimaryEvmEntry(cfg: VexConfig = loadConfig()): WalletInventoryEntry | null {
@@ -125,6 +126,7 @@ export function generateWalletId(family: InventoryFamily): string {
 // ── Secret loading (engine/main only — never returned to renderer) ─────────
 
 export async function loadEvmSecret(entry: WalletInventoryEntry): Promise<Hex> {
+  assertWalletActive(entry.id);
   const keystore = loadKeystoreFile(derivePath("evm", entry));
   if (!keystore) {
     throw new VexError(
@@ -133,10 +135,13 @@ export async function loadEvmSecret(entry: WalletInventoryEntry): Promise<Hex> {
       "Re-import the wallet or restore from backup.",
     );
   }
-  return decryptPrivateKey(keystore, requireKeystorePassword());
+  const key = await decryptPrivateKey(keystore, requireKeystorePassword());
+  assertWalletActive(entry.id);
+  return key;
 }
 
 export async function loadSolanaSecret(entry: WalletInventoryEntry): Promise<Uint8Array> {
+  assertWalletActive(entry.id);
   const keystore = loadKeystoreFile(derivePath("solana", entry));
   if (!keystore) {
     throw new VexError(
@@ -145,7 +150,8 @@ export async function loadSolanaSecret(entry: WalletInventoryEntry): Promise<Uin
       "Re-import the wallet or restore from backup.",
     );
   }
-  return decryptSolanaSecretKey(keystore, requireKeystorePassword());
+  const key = await decryptSolanaSecretKey(keystore, requireKeystorePassword());
+  try { assertWalletActive(entry.id); return key; } catch (cause) { key.fill(0); throw cause; }
 }
 
 /**
@@ -184,6 +190,7 @@ export async function decryptExportSecret(args: {
   readonly password: string;
 }): Promise<{ readonly secret: string; readonly format: "hex" | "base58" }> {
   const { family, entry, password } = args;
+  assertWalletActive(entry.id);
   const keystore = loadKeystoreFile(derivePath(family, entry));
   if (!keystore) {
     throw new VexError(
@@ -205,6 +212,7 @@ export async function decryptExportSecret(args: {
         "Re-import the wallet or restore from backup.",
       );
     }
+    assertWalletActive(entry.id);
     return { secret: privateKey, format: "hex" };
   }
   const secretKey = await decryptSolanaSecretKey(keystore, password);
@@ -218,6 +226,7 @@ export async function decryptExportSecret(args: {
         "Re-import the wallet or restore from backup.",
       );
     }
+    assertWalletActive(entry.id);
     return { secret: encodeSolanaSecretKey(secretKey), format: "base58" };
   } finally {
     secretKey.fill(0);

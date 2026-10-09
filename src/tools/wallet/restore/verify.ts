@@ -11,6 +11,8 @@
  * Engine/main only — never imported by the renderer. Throws `VexError`.
  */
 
+import { walletIdIsRetired } from "../lifecycle.js";
+import { generateWalletId } from "../inventory.js";
 import { join } from "node:path";
 
 import { privateKeyToAddress } from "viem/accounts";
@@ -121,16 +123,17 @@ export async function verifyKeystores(
       );
     }
 
+    const restoredId = walletIdIsRetired(wallet.id) ? generateWalletId(family) : wallet.id;
     validatedWallets.push({
       family,
       legacy,
-      id: wallet.id,
+      id: restoredId,
       address: wallet.address,
       label: wallet.label,
       createdAt: wallet.createdAt,
       stagedFilename: file.filename,
       livePath: derivePath(family, {
-        id: wallet.id,
+        id: restoredId,
         address: wallet.address,
         label: wallet.label,
         createdAt: wallet.createdAt,
