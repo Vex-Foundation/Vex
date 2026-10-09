@@ -72,6 +72,17 @@ function evidence(
 }
 
 describe("Lighter environment-scoped deposit preflight proof", () => {
+  it.each([
+    ["core", "0x8D692294a4824d868e35B3CEcd734aCf41B2342e"],
+    ["rhc", "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90"],
+  ] as const)("refuses the superseded %s implementation for new deposits", (environment, previous) => {
+    const base = evidence(environment);
+    expect(() => proveLighterDepositPreflight({
+      ...base,
+      settlementChain: { ...base.settlementChain, gatewayImplementationAddress: previous },
+    })).toThrow(/A Vex update reviewing this contract is required/);
+  });
+
   it("preserves the live-proven Core preparation identity", () => {
     const deployment = getLighterFundingDeployment("core");
     const snapshot = proveLighterDepositPreflight(evidence("core"));

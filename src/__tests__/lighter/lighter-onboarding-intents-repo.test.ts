@@ -93,7 +93,7 @@ function rhcPreflight(walletAddress: string, amountUnits: string) {
     ethereumBlockNumber: "40124106",
     lighterBlockNumber: "40124098",
     gatewayAddress: RHC_CONTRACT,
-    gatewayImplementationAddress: "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90",
+    gatewayImplementationAddress: "0x998ecf039Eb110b72F5F6C1Ea31C2fA41a458FAA",
     settlementTokenAddress: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
     settlementTokenImplementationAddress: "0x68184C449E1a8f34fA18d289737129FD27B66f8F",
     settlementTokenSymbol: "USDG" as const,

@@ -70,6 +70,7 @@ export default defineConfig({
       // Kairos E-1: 174 applied on top of a populated 173 schema.
       "src/__tests__/integration/migrations/174-sessions-reasoning-effort.int.test.ts",
       "src/__tests__/integration/migrations/176-lighter-fill-position-facts.int.test.ts",
+      "src/__tests__/integration/migrations/177-lighter-gateway-implementations.int.test.ts",
       "src/__tests__/integration/engine/studio-*.int.test.ts",
       // The atomic mission wake claim + stuck-wake repair: crash, concurrency
       // and lock proofs that need real transactions, not embeddings.

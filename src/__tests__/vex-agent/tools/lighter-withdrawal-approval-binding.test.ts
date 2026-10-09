@@ -40,7 +40,7 @@ const INTENT = withdrawalIntent({
   initialMarginUnits: "1000000", pendingOrderCount: 0, openPositionCount: 0,
   activeOrderCount: 0, withdrawalDelaySeconds: 2687,
   gatewayAddress: "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d",
-  gatewayImplementation: "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90",
+  gatewayImplementation: "0x998ecf039Eb110b72F5F6C1Ea31C2fA41a458FAA",
   gatewayCodeHash: `0x${"1".repeat(64)}`,
   settlementTokenCodeHash: `0x${"2".repeat(64)}`,
   preflightObservedAt: "2030-01-01T00:00:00.000Z",

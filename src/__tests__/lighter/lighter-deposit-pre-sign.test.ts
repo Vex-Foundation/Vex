@@ -7,6 +7,7 @@ import {
   runtimeFeeSafetyLimit,
 } from "@tools/lighter/wallet-funding/deposit-pre-sign.js";
 import type { LighterDepositPreflightSnapshot } from "@tools/lighter/wallet-funding/deposit-preflight.js";
+import { getLighterFundingDeployment } from "@tools/lighter/wallet-funding/deployments.js";
 
 const NOW = new Date("2030-01-01T00:00:10.000Z");
 const WALLET = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
@@ -94,7 +95,7 @@ function fresh(overrides: Partial<LighterDepositPreflightSnapshot> = {}): Lighte
     ethereumBlockNumber: "23456790",
     lighterBlockNumber: "0",
     gatewayAddress: GATEWAY,
-    gatewayImplementationAddress: "0x8D692294a4824d868e35B3CEcd734aCf41B2342e",
+    gatewayImplementationAddress: "0xE16c893252616dD49913969f145e733b96a3E5A7",
     gatewayCodeHash: `0x${"1".repeat(64)}`,
     settlementTokenAddress: USDC,
     settlementTokenImplementationAddress: null,
@@ -125,6 +126,38 @@ function fresh(overrides: Partial<LighterDepositPreflightSnapshot> = {}): Lighte
 }
 
 describe("Lighter deposit pre-sign revalidation", () => {
+  it.each([
+    ["core", "0x8D692294a4824d868e35B3CEcd734aCf41B2342e"],
+    ["rhc", "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90"],
+  ] as const)("does not retarget a prior %s contract approval after an application update", (environment, previous) => {
+    const deployment = getLighterFundingDeployment(environment);
+    const snapshot = fresh({
+      environment,
+      lighterRestBaseUrl: deployment.restBaseUrl,
+      settlementNetworkName: deployment.settlementNetworkName,
+      chainId: deployment.settlementChainId,
+      gatewayAddress: deployment.gatewayProxy,
+      gatewayImplementationAddress: deployment.expectedGatewayImplementation ?? null,
+      settlementTokenAddress: deployment.settlementTokenProxy,
+      settlementTokenSymbol: deployment.settlementSymbol,
+      settlementTokenImplementationAddress: deployment.expectedSettlementTokenImplementation ?? null,
+    });
+    const approved = {
+      ...intent(),
+      environment,
+      chainId: snapshot.chainId,
+      depositContract: snapshot.gatewayAddress,
+      settlementTokenAddress: snapshot.settlementTokenAddress,
+      settlementTokenSymbol: snapshot.settlementTokenSymbol,
+      preflightPublicSnapshot: { ...snapshot, gatewayImplementationAddress: previous },
+    };
+    for (const stage of ["execution", "approve", "deposit"] as const) {
+      expect(() => assertLighterDepositPreflightWithinApproval({
+        intent: approved, fresh: snapshot, stage, now: NOW,
+      })).toThrow(/public deployment or exact calldata no longer matches the approved deposit/);
+    }
+  });
+
   it("accepts equivalent-or-safer live evidence", () => {
     expect(() => assertLighterDepositPreflightWithinApproval({
       intent: intent(),

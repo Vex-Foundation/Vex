@@ -89,7 +89,7 @@ describe("cross-session withdrawal claim repository boundaries", () => {
 
 const OWNER = "0xaCEE6141F6171491D34699C9266cb06A41FAA43C";
 const GATEWAY = "0x94bAB9693Ba2f6358507eFfcbd372b0660AFfF9d";
-const IMPLEMENTATION = "0x82DE5B1161C93afDFE21bA0D5343f01Cd7401d90";
+const IMPLEMENTATION = "0x998ecf039Eb110b72F5F6C1Ea31C2fA41a458FAA";
 const TOKEN = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
 const GATEWAY_HASH: Hex = `0x${"1".repeat(64)}`;
 const TOKEN_HASH: Hex = `0x${"2".repeat(64)}`;
