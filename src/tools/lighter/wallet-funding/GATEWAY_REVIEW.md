@@ -88,3 +88,26 @@ The RHC preparation canary is opt-in: set
 `VEX_LIGHTER_RHC_PUBLIC_FUNDED_WALLET` to a public funded EOA, then run
 `src/__tests__/lighter/lighter-live-deposit-preflight.test.ts`. The address must
 have at least 5 USDG and enough native gas. No signer is involved.
+
+## Desktop RPC verification follow-up
+
+The owner's first approval test passed deposit preparation but failed the fresh
+pre-sign read. The durable intent records no token-approval or deposit hash.
+Repeating the preparation-to-pre-sign read sequence in Electron reproduced the
+failure: Node HTTP received a Cloudflare 403 challenge from the official
+Robinhood RPC while Electron native HTTP received valid chain-ID responses.
+
+Desktop startup now installs a native HTTP adapter only for the exact public
+`https://rpc.mainnet.chain.robinhood.com/` URL. Other endpoints, including user
+URLs with credentials or query parameters, retain their existing transport.
+The adapter omits cookies and refuses redirects. The RPC owner still chooses
+and verifies the endpoint, paces requests, and keeps signing pinned to that
+same node with zero broadcast retries. Pinned transports capture their HTTP
+adapter; runtime cleanup cannot rotate an existing execution's adapter.
+
+Two live read-only sequences using the affected wallet's public address passed
+both preparation and fresh pinned pre-sign checks for exactly five USDG, with
+zero existing allowance and the required allowance simulation. The canary
+compiled the real production preflight and main-process adapter and used real
+Electron networking. It created no intent or approval and signed or submitted
+no transaction. Owner-funded desktop execution remains pending.
