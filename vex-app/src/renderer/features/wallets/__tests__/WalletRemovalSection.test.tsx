@@ -67,7 +67,7 @@ describe("wallet removal settings", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Remove from Vex" }));
     const input = screen.getByLabelText<HTMLInputElement>("Master password");
     fireEvent.change(input, { target: { value: "A-private-test-password" } });
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue to removal" }));
     await screen.findByText("A transaction is unresolved.");
     expect(input.value).toBe("");
   });
@@ -92,7 +92,7 @@ describe("wallet removal settings", () => {
     const recovery = screen.getByLabelText<HTMLInputElement>("Recovery password (if different)");
     fireEvent.change(master, { target: { value: "Current-private-password" } });
     fireEvent.change(recovery, { target: { value: "Archived-private-password" } });
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue to restore" }));
     expect(master.value).toBe("");
     expect(recovery.value).toBe("");
     expect(restore).toHaveBeenCalledWith({ chain: "evm", walletId: secondary.id, password: "Current-private-password", recoveryPassword: "Archived-private-password" });

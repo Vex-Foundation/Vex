@@ -2,14 +2,17 @@ import { useEffect, useRef, useState, type FormEvent, type JSX } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { WalletChain, WalletRemovalResult } from "@shared/schemas/wallets.js";
 import { Button } from "../../components/ui/button.js";
+import { IconTrash } from "../../components/icons/index.js";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog.js";
 import { Label } from "../../components/ui/label.js";
+import { Pill } from "../../components/ui/pill.js";
 import { PasswordField } from "../../components/common/PasswordField.js";
 import { useAvailableWallets } from "../../lib/api/wallet-inventory.js";
 import { useInvalidateEnvStateAfterWalletWrite, useOpenBackupFolder } from "../../lib/api/wallets.js";
 
 type Selected = { walletId: string; chain: WalletChain; address: string; label: string; restore: boolean };
 const removedKey = ["wallets", "removed"] as const;
+const removalButtonClass = "border border-danger bg-danger-wash text-danger enabled:hover:bg-danger enabled:hover:text-surface-base focus-visible:ring-danger disabled:border-line-1";
 
 export function WalletRemovalSection(): JSX.Element {
   const active = useAvailableWallets();
@@ -80,7 +83,10 @@ export function WalletRemovalSection(): JSX.Element {
 
   return (
     <section aria-label="Remove or recover wallets" className="border-t border-line-1 pt-5">
-      <h2 className="text-sm font-medium text-ink-primary">Remove a wallet</h2>
+      <h2 className="flex items-center gap-2 text-sm font-medium text-danger">
+        <IconTrash size={16} aria-hidden="true" />
+        Remove a wallet
+      </h2>
       <p className="mt-2 text-sm leading-6 text-ink-secondary">
         Remove Vex's access to a secondary wallet and free its slot. Funds remain at the same address. Primary wallets are protected.
       </p>
@@ -103,9 +109,12 @@ export function WalletRemovalSection(): JSX.Element {
               </p>
               <p className="mt-1 break-all font-mono text-xs leading-5 text-ink-secondary">{entry.address}</p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => choose({
+            <Button variant="danger" size="sm" className={removalButtonClass} onClick={() => choose({
               walletId: entry.id, chain: entry.chain, address: entry.address, label: entry.label, restore: false,
-            })}>Remove from Vex</Button>
+            })}>
+              <IconTrash size={14} aria-hidden="true" />
+              Remove from Vex
+            </Button>
           </li>
         ))}
       </ul>
@@ -129,7 +138,7 @@ export function WalletRemovalSection(): JSX.Element {
         </p>
       ) : null}
       {removedEntries.length > 0 ? (
-        <div className="mt-5">
+        <div className="mt-6 border-t border-line-1 pt-5">
           <h3 className="text-sm font-medium">Removed wallets</h3>
           <p className="mt-1 text-sm leading-6 text-ink-secondary">
             Recovery copies still contain encrypted keys. Restoring a wallet requires your password and fresh authorization.
@@ -141,9 +150,12 @@ export function WalletRemovalSection(): JSX.Element {
               return (
                 <li key={entry.walletId} className="flex flex-wrap items-center justify-between gap-3 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm">
-                      {entry.label} <span className="text-ink-secondary">{entry.state === "removing" ? "Recovery required" : "Removed"}</span>
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm text-ink-primary">{entry.label}</p>
+                      <Pill variant={entry.state === "removing" ? "caution" : "neutral"} size="sm">
+                        {entry.state === "removing" ? "Recovery required" : "Removed"}
+                      </Pill>
+                    </div>
                     <p className="mt-1 break-all font-mono text-xs leading-5 text-ink-secondary">{entry.address}</p>
                     {entry.state === "removing" ? (
                       <p className="mt-1 text-sm text-danger">Access is disabled. Restart Vex to finish recovery.</p>
@@ -163,7 +175,10 @@ export function WalletRemovalSection(): JSX.Element {
         <Dialog open onOpenChange={(next) => { if (!next) close(); }}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>{selected.restore ? "Restore wallet" : "Remove from Vex"}</DialogTitle>
+              <DialogTitle className={selected.restore ? undefined : "flex items-center gap-2 text-danger"}>
+                {!selected.restore ? <IconTrash size={20} aria-hidden="true" /> : null}
+                {selected.restore ? "Restore wallet" : "Remove from Vex"}
+              </DialogTitle>
               <DialogDescription>{selected.restore
                 ? "Restore this wallet with a new identity. Previous approvals stay invalid."
                 : "Vex will verify an encrypted recovery copy before removing access. Funds, positions, and on-chain permissions remain."}</DialogDescription>
@@ -190,7 +205,10 @@ export function WalletRemovalSection(): JSX.Element {
             </DialogBody>
             <DialogFooter>
               <Button variant="outline" onClick={close} disabled={pending}>Cancel</Button>
-              <Button type="submit" form="wallet-removal-form" disabled={pending}>{pending ? "Checking..." : "Continue"}</Button>
+              <Button type="submit" form="wallet-removal-form" disabled={pending}
+                variant={selected.restore ? "primary" : "danger"} className={selected.restore ? undefined : removalButtonClass}>
+                {pending ? "Checking..." : selected.restore ? "Continue to restore" : "Continue to removal"}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
