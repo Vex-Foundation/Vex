@@ -18,6 +18,7 @@ import {
   ProviderStep,
   WalletsStep,
 } from "../../../wizard/index.js";
+import { WalletRemovalSection } from "../../../wallets/WalletRemovalSection.js";
 import { ExportPrivateKeyModal } from "../../../wallets/ExportPrivateKeyModal.js";
 import { LighterSection } from "./LighterSection.js";
 import type { SectionMeta } from "./settings-sections.js";
@@ -49,7 +50,7 @@ export function SettingsSectionView({
     >
       {renderSectionContent(meta, stepProps)}
       {meta.id === "apiKeys" ? <ChainEndpointsSection /> : null}
-      {meta.id === "wallets" ? <ExportPrivateKeySection env={env} /> : null}
+      {meta.id === "wallets" ? <><WalletRemovalSection /><ExportPrivateKeySection env={env} /></> : null}
     </div>
   );
 }
