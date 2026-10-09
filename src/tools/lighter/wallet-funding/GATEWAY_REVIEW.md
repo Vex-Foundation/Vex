@@ -79,9 +79,9 @@ snapshot and exact calldata.
 
 Verification includes live Core and five-USDG RHC deposit preparation and simulation, both
 environments' funding/withdrawal identity checks, and a populated PostgreSQL
-upgrade preserving historical records. Funded desktop execution requires the
-owner's separate manual test; no transaction was signed or submitted by this
-review.
+upgrade preserving historical records. These review checks did not sign or
+submit a transaction. The subsequent owner-approved desktop deposit is
+documented below.
 
 The RHC preparation canary is opt-in: set
 `VEX_LIGHTER_DEPOSIT_PREFLIGHT_LIVE=1` and
@@ -110,4 +110,28 @@ both preparation and fresh pinned pre-sign checks for exactly five USDG, with
 zero existing allowance and the required allowance simulation. The canary
 compiled the real production preflight and main-process adapter and used real
 Electron networking. It created no intent or approval and signed or submitted
-no transaction. Owner-funded desktop execution remains pending.
+no transaction.
+
+## Funded desktop deposit and confirmation race
+
+On 2026-10-09 the owner approved a real five-USDG RHC deposit in the desktop
+app. The settlement receipt proves the exact gateway, wallet, asset, route and
+amount. Lighter's live transaction and account APIs prove the same deposit
+executed and was credited; the local intent and activity record were reconciled
+without another submission. The owner also verified the resulting portfolio.
+
+Execution initially reported a durable confirmation conflict. A disposable
+PostgreSQL regression reproduces this when the evidence-only repair sweep
+commits confirmation before the executor finishes waiting for its receipt.
+Deposit confirmation now accepts the already-committed result only when every
+L1 evidence field matches. A pending confirmation also requires the same
+active workflow in `deposit_l2_pending`; an already-credited result requires
+the persisted executed Lighter evidence. This read does not repeat a workflow
+transition, overwrite a later deposit's workflow, downgrade a credit or
+authorize another broadcast.
+
+All six Core/RHC confirmation and credit interleavings failed before the repair
+and pass afterwards against real PostgreSQL, including repriced deposits.
+Mismatched hashes, blocks, accounts, wallets, assets, routes and amounts remain
+refused; incomplete pending workflows remain refused. The original receipt,
+credit and transaction-staging checks remain in place.

@@ -481,6 +481,114 @@ d("lighter_onboarding_intents repo", () => {
     ).toBe("deposit_submitted");
   });
 
+  it.each([
+    ["core", "deposit_confirmed", false],
+    ["rhc", "deposit_confirmed", false],
+    ["core", "credited", false],
+    ["rhc", "credited", false],
+    ["rhc", "deposit_confirmed", true],
+    ["rhc", "credited", true],
+  ] as const)("accepts an exact repair-won %s %s confirmation (replacement=%s) without another write", async (environment, state, replacement) => {
+    const sessionId = await newSession();
+    const wallet = walletForSession(sessionId);
+    const intent = requireValue((await createDepositOutcome(sessionId, wallet, environment)).intent);
+    await withSessionControlLock(sessionId, (client) =>
+      repo.markApprovalDecisionWith(client, { intentId: intent.intentId, decision: "approved" }));
+    await withSessionControlLock(sessionId, (client) =>
+      repo.markAllowanceVerifiedWith(client, intent.intentId));
+    const originalHash = `0x${"a".repeat(64)}`;
+    const txHash = replacement ? `0x${"b".repeat(64)}` : originalHash;
+    await withSessionControlLock(sessionId, (client) =>
+      repo.markDepositSubmittedWith(client, intent.intentId, {
+        txHash: originalHash, fromAddress: wallet, nonce: 9,
+      }));
+    if (replacement) {
+      await withSessionControlLock(sessionId, (client) =>
+        repo.recordDepositReplacementWith(client, intent.intentId, {
+          originalTxHash: originalHash, replacementTxHash: txHash,
+          reason: "repriced", observedAt: new Date(),
+        }));
+    }
+    const evidence = {
+      txHash, blockHash: `0x${"c".repeat(64)}`, blockNumber: "40124106",
+      accountIndex: 77, walletAddress: wallet, assetIndex: 3, routeType: 0,
+      amountUnits: "11000000",
+    };
+    // The repair sweep commits while the executor is still waiting for its receipt.
+    expect((await withSessionControlLock(sessionId, (client) =>
+      repo.reconcileDepositReceiptWith(client, {
+        intentId: intent.intentId, txHash, outcome: "confirmed", evidence,
+      })))?.executionState).toBe("deposit_confirmed");
+    if (state === "credited") {
+      expect((await withSessionControlLock(sessionId, (client) =>
+        repo.markDepositCreditedWith(client, intent.intentId, {
+          ...evidence, lighterTxHash: "repair-won-credit", lighterStatus: 3,
+          lighterBlockHeight: 40124120, lighterExecutedAt: 1786949159112,
+        })))?.executionState).toBe("credited");
+    }
+    const before = requireValue(await repo.findByIntentId(intent.intentId));
+    const workflowBefore = await getPool().query(
+      "SELECT * FROM lighter_onboarding_workflows WHERE environment=$1 AND wallet_address=LOWER($2)",
+      [environment, wallet],
+    );
+    const repeated = await withSessionControlLock(sessionId, (client) =>
+      repo.markDepositConfirmedWith(client, intent.intentId, evidence));
+    expect(repeated).toEqual(before);
+
+    // A matching transaction hash alone must never bless conflicting receipt evidence.
+    for (const mismatch of [
+      { txHash: `0x${"d".repeat(64)}` },
+      { blockHash: `0x${"d".repeat(64)}` },
+      { blockNumber: "40124107" },
+      { accountIndex: 78 },
+      { walletAddress: `0x${"d".repeat(40)}` },
+      { assetIndex: 1 },
+      { routeType: 1 },
+      { amountUnits: "12000000" },
+      ...(replacement ? [{ txHash: originalHash }] : []),
+    ]) {
+      expect(await withSessionControlLock(sessionId, (client) =>
+        repo.markDepositConfirmedWith(client, intent.intentId, { ...evidence, ...mismatch }))).toBeNull();
+    }
+    expect(await repo.findByIntentId(intent.intentId)).toEqual(before);
+    expect((await getPool().query(
+      "SELECT * FROM lighter_onboarding_workflows WHERE environment=$1 AND wallet_address=LOWER($2)",
+      [environment, wallet],
+    )).rows).toEqual(workflowBefore.rows);
+
+    if (state === "deposit_confirmed") {
+      // Matching intent evidence alone cannot hide an incomplete workflow commit.
+      await execute(
+        "UPDATE lighter_onboarding_workflows SET workflow_state='deposit_staged' WHERE environment=$1 AND wallet_address=LOWER($2)",
+        [environment, wallet],
+      );
+      expect(await withSessionControlLock(sessionId, (client) =>
+        repo.markDepositConfirmedWith(client, intent.intentId, evidence))).toBeNull();
+      await execute(
+        "UPDATE lighter_onboarding_workflows SET workflow_state='deposit_l2_pending', active_deposit_intent_id=NULL WHERE environment=$1 AND wallet_address=LOWER($2)",
+        [environment, wallet],
+      );
+      expect(await withSessionControlLock(sessionId, (client) =>
+        repo.markDepositConfirmedWith(client, intent.intentId, evidence))).toBeNull();
+      expect(await repo.findByIntentId(intent.intentId)).toEqual(before);
+    } else {
+      // A later deposit may own the wallet workflow without invalidating this credit.
+      const nextSession = await newSession();
+      const next = await createDepositOutcome(nextSession, wallet, environment);
+      expect(next.outcome).toBe("created");
+      const nextWorkflow = await getPool().query(
+        "SELECT * FROM lighter_onboarding_workflows WHERE environment=$1 AND wallet_address=LOWER($2)",
+        [environment, wallet],
+      );
+      expect(await withSessionControlLock(sessionId, (client) =>
+        repo.markDepositConfirmedWith(client, intent.intentId, evidence))).toEqual(before);
+      expect((await getPool().query(
+        "SELECT * FROM lighter_onboarding_workflows WHERE environment=$1 AND wallet_address=LOWER($2)",
+        [environment, wallet],
+      )).rows).toEqual(nextWorkflow.rows);
+    }
+  });
+
   it("persists a repriced deposit identity and rebinds canonical evidence before credit", async () => {
     const sessionId = await newSession();
     const intent = await newDepositIntent(sessionId);
