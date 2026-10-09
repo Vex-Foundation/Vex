@@ -135,3 +135,5 @@ and pass afterwards against real PostgreSQL, including repriced deposits.
 Mismatched hashes, blocks, accounts, wallets, assets, routes and amounts remain
 refused; incomplete pending workflows remain refused. The original receipt,
 credit and transaction-staging checks remain in place.
+The required PostgreSQL lane enables all deposit repository cases by default;
+the full lane passes 848 tests without skips.
