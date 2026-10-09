@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -39,6 +39,69 @@ afterEach(() => {
 });
 
 describe("real encrypted wallet removal", () => {
+  it("refuses corrupt inventory before disablement or deletion without dropping unrelated wallets", async () => {
+    const configFile = join(directory, "config.json");
+    const original = readFileSync(configFile, "utf8");
+    const cfg = JSON.parse(original);
+    const damaged = [
+      original.slice(0, -2),
+      JSON.stringify({ ...cfg, version: 2 }),
+      JSON.stringify({ ...cfg, wallet: { ...cfg.wallet, solana: undefined } }),
+      JSON.stringify({ ...cfg, wallet: { ...cfg.wallet, evm: [primary, { ...secondary, id: "invalid" }] } }),
+      JSON.stringify({ ...cfg, wallet: { ...cfg.wallet, evm: [primary, secondary, secondary] } }),
+    ];
+    const keyFile = inventory.derivePath("evm", secondary);
+    const encrypted = readFileSync(keyFile);
+    const record = await removal.prepareWalletRemoval("evm", secondary.id, password);
+    for (const bytes of damaged) {
+      writeFileSync(configFile, bytes);
+      await expect(removal.prepareWalletRemoval("evm", secondary.id, password)).rejects.toThrow("configuration");
+      expect(() => removal.disableWalletForRemoval(record)).toThrow("configuration");
+      expect(readFileSync(configFile, "utf8")).toBe(bytes);
+      expect(readFileSync(keyFile)).toEqual(encrypted);
+      expect(lifecycle.listWalletRemovalRecords()).toEqual([]);
+    }
+    writeFileSync(configFile, original);
+    removal.disableWalletForRemoval(record);
+    for (const bytes of damaged) {
+      writeFileSync(configFile, bytes);
+      expect(() => removal.finishWalletRemoval(record)).toThrow("configuration");
+      expect(readFileSync(configFile, "utf8")).toBe(bytes);
+      expect(readFileSync(keyFile)).toEqual(encrypted);
+      expect(lifecycle.listWalletRemovalRecords()[0]?.state).toBe("removing");
+    }
+    writeFileSync(configFile, original);
+    removal.finishWalletRemoval(record);
+    expect(store.loadConfig().wallet.evm).toEqual([primary]);
+  });
+
+  it("preserves unrelated config and refuses recovery into an unsupported config version", async () => {
+    const configFile = join(directory, "config.json");
+    const cfg = JSON.parse(readFileSync(configFile, "utf8"));
+    cfg.futureSetting = { enabled: false, value: "retain" };
+    cfg.wallet.futureSetting = "retain";
+    cfg.wallet.evm[0].futureSetting = "retain";
+    writeFileSync(configFile, JSON.stringify(cfg));
+    const record = await removal.prepareWalletRemoval("evm", secondary.id, password);
+    removal.disableWalletForRemoval(record);
+    removal.finishWalletRemoval(record);
+    const finished = lifecycle.listWalletRemovalRecords()[0];
+    if (!finished) throw new Error("Missing recovery record");
+    const removedConfig = readFileSync(configFile, "utf8");
+    const damaged = JSON.stringify({ ...JSON.parse(removedConfig), version: 2 });
+    writeFileSync(configFile, damaged);
+    const files = readdirSync(directory).sort();
+    await expect(removal.restoreRemovedWallet(finished, password)).rejects.toThrow("configuration");
+    expect(readFileSync(configFile, "utf8")).toBe(damaged);
+    expect(readdirSync(directory).sort()).toEqual(files);
+    writeFileSync(configFile, removedConfig);
+    await removal.restoreRemovedWallet(finished, password);
+    const restoredConfig = JSON.parse(readFileSync(configFile, "utf8"));
+    expect(restoredConfig.futureSetting).toEqual(cfg.futureSetting);
+    expect(restoredConfig.wallet.futureSetting).toBe("retain");
+    expect(restoredConfig.wallet.evm[0]).toEqual(cfg.wallet.evm[0]);
+  });
+
   it("verifies recovery before removing access and restores with a fresh identity", async () => {
     const record = await removal.prepareWalletRemoval("evm", secondary.id, password);
     expect(inventory.getWalletById("evm", secondary.id)?.address).toBe(secondary.address);

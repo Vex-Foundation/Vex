@@ -185,9 +185,9 @@ export function armExecutionGate(deps: ExecutionGateArmDeps): {
       await deps.recoverWalletRemovals?.();
       if (controller.signal.aborted) return;
       openExecutionGate();
-    } catch (cause) {
+    } catch {
       if (controller.signal.aborted) return;
-      log.warn("[execution-gate] runtime readiness wait failed; the gate stays closed", cause);
+      log.warn("[execution-gate] runtime readiness wait failed; the gate stays closed");
     }
   })();
   return {

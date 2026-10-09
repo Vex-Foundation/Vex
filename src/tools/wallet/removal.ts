@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { z } from "zod";
 import { BACKUPS_DIR, CONFIG_DIR, CONFIG_FILE } from "../../config/paths.js";
-import { loadConfig, type WalletInventoryEntry } from "../../config/store.js";
+import { isValidWalletId, walletInventoryEntrySchema, type WalletInventoryEntry } from "../../config/store.js";
 import { assertCanAddWallet, derivePath, generateWalletId, walletAddressesEqual, type InventoryFamily } from "./inventory.js";
 import { decryptSecretBytes, encryptSecretBytes, validateKeystoreShape } from "./keystore.js";
 import { deriveAddressFromKeystore } from "./restore/verify.js";
@@ -12,8 +13,39 @@ export type RemovalStep = "backup" | "disabled" | "keystore" | "config" | "compl
 const hash = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex");
 export const recoveryDirectory = (record: WalletRemovalRecord): string => join(BACKUPS_DIR, `wallet-recovery-${record.backupId}`);
 
+const removalConfigSchema = z.object({
+  version: z.literal(1),
+  wallet: z.object({
+    evm: z.array(walletInventoryEntrySchema.passthrough()),
+    solana: z.array(walletInventoryEntrySchema.passthrough()),
+  }).passthrough(),
+}).passthrough();
+
+/** Inventory mutations must preserve every row and unrelated config field. */
+function readRemovalConfig() {
+  try {
+    assertPrivateDirectory(CONFIG_DIR);
+    const cfg = removalConfigSchema.parse(JSON.parse(readPrivateFile(CONFIG_FILE, 1024 * 1024).toString("utf8")));
+    for (const family of ["evm", "solana"] as const) {
+      const ids = new Set<string>();
+      const addresses = new Set<string>();
+      for (const entry of cfg.wallet[family]) {
+        const address = family === "evm" ? entry.address.toLowerCase() : entry.address;
+        if (!isValidWalletId(family, entry.id, entry.legacy === true) || ids.has(entry.id) || addresses.has(address)) {
+          throw new WalletLifecycleError();
+        }
+        ids.add(entry.id);
+        addresses.add(address);
+      }
+    }
+    return cfg;
+  } catch {
+    throw new WalletLifecycleError("The wallet configuration could not be verified. No inventory changes were made.");
+  }
+}
+
 export function secondaryWallet(family: InventoryFamily, id: string): WalletInventoryEntry {
-  const cfg = loadConfig();
+  const cfg = readRemovalConfig();
   const entry = cfg.wallet[family].find((value) => value.id === id);
   if (!entry || entry.legacy || cfg.wallet[family][0]?.id === id || walletIdIsRetired(id)) {
     throw new WalletLifecycleError("Only available secondary wallets can be removed. Primary wallets are protected.");
@@ -68,6 +100,9 @@ export function finishWalletRemoval(record: WalletRemovalRecord, afterStep?: (st
   const durable = listWalletRemovalRecords().find((value) => value.entry.id === record.entry.id);
   if (!durable || JSON.stringify({ ...durable, state: "removing" }) !== JSON.stringify({ ...record, state: "removing" })) throw new WalletLifecycleError();
   readRecoveryKeystore(record);
+  const cfg = readRemovalConfig();
+  const current = cfg.wallet[record.family].find((entry) => entry.id === record.entry.id);
+  if (current && !walletAddressesEqual(record.family, current.address, record.entry.address)) throw new WalletLifecycleError();
   const file = derivePath(record.family, record.entry);
   if (existsSync(file)) {
     if (hash(readPrivateFile(file)) !== record.keyHash) throw new WalletLifecycleError();
@@ -75,11 +110,6 @@ export function finishWalletRemoval(record: WalletRemovalRecord, afterStep?: (st
     syncPrivateDirectory(CONFIG_DIR);
   }
   afterStep?.("keystore");
-  // Parse the actual file first: loadConfig's fallback must not mask corruption.
-  JSON.parse(readPrivateFile(CONFIG_FILE, 1024 * 1024).toString("utf8"));
-  const cfg = loadConfig();
-  const current = cfg.wallet[record.family].find((entry) => entry.id === record.entry.id);
-  if (current && !walletAddressesEqual(record.family, current.address, record.entry.address)) throw new WalletLifecycleError();
   cfg.wallet[record.family] = cfg.wallet[record.family].filter((entry) => entry.id !== record.entry.id);
   durablePrivateWrite(CONFIG_FILE, JSON.stringify(cfg, null, 2), CONFIG_DIR);
   afterStep?.("config");
@@ -100,9 +130,9 @@ export async function restoreRemovedWallet(record: WalletRemovalRecord, password
     finally { secret.fill(0); }
   }
   if (!authorized()) throw new WalletLifecycleError("Wallet recovery confirmation expired.");
-  const cfg = loadConfig();
+  const cfg = readRemovalConfig();
   assertCanAddWallet(record.family, address, cfg);
-  const entry: WalletInventoryEntry = { ...record.entry, id: generateWalletId(record.family), createdAt: new Date().toISOString() };
+  const entry = { ...record.entry, id: generateWalletId(record.family), createdAt: new Date().toISOString() } satisfies WalletInventoryEntry;
   durablePrivateWrite(derivePath(record.family, entry), encrypted, CONFIG_DIR);
   cfg.wallet[record.family].push(entry);
   durablePrivateWrite(CONFIG_FILE, JSON.stringify(cfg, null, 2), CONFIG_DIR);

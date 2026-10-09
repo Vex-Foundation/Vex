@@ -242,7 +242,7 @@ export async function decryptExportSecret(args: {
 export function assertCanAddWallet(
   family: InventoryFamily,
   address: string,
-  cfg: VexConfig,
+  cfg: Pick<VexConfig, "wallet">,
 ): void {
   const arr = cfg.wallet[family];
   if (arr.length >= MAX_WALLETS_PER_FAMILY) {

@@ -1,5 +1,4 @@
 import { EventEmitter } from "node:events";
-import type { IpcMainInvokeEvent } from "electron";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Result } from "@shared/ipc/result.js";
 import type { WalletRemovalResult } from "@shared/schemas/wallets.js";
@@ -8,8 +7,13 @@ import { createMainFrame } from "./test-sender.js";
 import { openExecutionGate, __resetExecutionGateForTests } from "../../lifecycle/execution-gate.js";
 import { trackInFlightSigning, __resetInFlightSigningForTests } from "@vex-agent/engine/core/in-flight-signing.js";
 
+interface RemovalTestEvent {
+  readonly sender: EventEmitter & { mainFrame: ReturnType<typeof createMainFrame> };
+  readonly senderFrame: ReturnType<typeof createMainFrame>;
+}
+
 const mocks = vi.hoisted(() => ({
-  handlers: new Map<string, (event: IpcMainInvokeEvent, raw: unknown) => Promise<unknown>>(),
+  handlers: new Map<string, (event: RemovalTestEvent, raw: unknown) => Promise<unknown>>(),
   verify: vi.fn(), confirm: vi.fn(), prepare: vi.fn(), commit: vi.fn(), secondary: vi.fn(), restore: vi.fn(),
   inspect: vi.fn(), removed: vi.fn(), lock: vi.fn(), failure: vi.fn(), success: vi.fn(), throttle: vi.fn(),
   unlocked: true, critical: false, destroyed: false,
@@ -19,7 +23,7 @@ class PolicyError extends Error {}
 class VaultError extends Error { readonly code = "invalid_password"; }
 vi.mock("electron", () => ({
   app: { isPackaged: true },
-  ipcMain: { handle: (channel: string, fn: (event: IpcMainInvokeEvent, raw: unknown) => Promise<unknown>) => mocks.handlers.set(channel, fn), removeHandler: (channel: string) => mocks.handlers.delete(channel) },
+  ipcMain: { handle: (channel: string, fn: (event: RemovalTestEvent, raw: unknown) => Promise<unknown>) => mocks.handlers.set(channel, fn), removeHandler: (channel: string) => mocks.handlers.delete(channel) },
   BrowserWindow: { fromWebContents: () => ({ isDestroyed: () => mocks.destroyed }) },
   dialog: { showMessageBox: (...args: unknown[]) => mocks.confirm(...args) },
 }));
@@ -73,7 +77,7 @@ beforeEach(() => {
 async function call(payload: unknown = input, frame = sender.mainFrame, channel: string = CH.wallet.remove): Promise<Result<WalletRemovalResult>> {
   const handler = mocks.handlers.get(channel);
   if (!handler) throw new Error("Missing handler");
-  return await handler({ sender, senderFrame: frame } as unknown as IpcMainInvokeEvent, {
+  return await handler({ sender, senderFrame: frame }, {
     requestId: "11111111-1111-4111-8111-111111111111", payload,
   }) as Result<WalletRemovalResult>;
 }
@@ -85,7 +89,9 @@ describe("owner-only wallet removal boundary", () => {
     expect(mocks.confirm).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
       defaultId: 0, cancelId: 0, detail: expect.stringContaining(entry.address),
     }));
-    expect(mocks.prepare.mock.invocationCallOrder[0]).toBeGreaterThan(mocks.confirm.mock.invocationCallOrder[0]!);
+    const confirmationOrder = mocks.confirm.mock.invocationCallOrder[0];
+    if (confirmationOrder === undefined) throw new Error("Missing owner confirmation");
+    expect(mocks.prepare.mock.invocationCallOrder[0]).toBeGreaterThan(confirmationOrder);
     expect(sender.listenerCount("did-start-navigation")).toBe(0);
   });
   it("refuses an untrusted frame and extra renderer authority", async () => {
