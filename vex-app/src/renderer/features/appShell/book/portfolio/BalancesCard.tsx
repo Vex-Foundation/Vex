@@ -30,9 +30,7 @@
  */
 
 import type { JSX, MouseEvent } from "react";
-import {
-  IconChevronRight,
-} from "../../../../components/icons/index.js";
+import { PxIcon } from "../../../../components/icons/index.js";
 import { usePortfolio } from "../../../../lib/api/portfolio.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import {
@@ -117,10 +115,10 @@ export function BalancesCard({
           <button
             type="button"
             onClick={openAllAssets}
-            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-[12px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-primary"
+            className="vex-bs__more self-start"
           >
             View all assets
-            <IconChevronRight size={13} />
+            <PxIcon name="chevron-right" />
           </button>
         </>
       )}

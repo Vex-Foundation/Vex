@@ -16,6 +16,7 @@
 import { type JSX } from "react";
 import { cn } from "../../lib/utils.js";
 import { useCopyFeedback } from "../../lib/use-copy-feedback.js";
+import { PxIcon } from "../icons/index.js";
 
 export interface AddressDisplayProps {
   readonly address: string;
@@ -41,27 +42,12 @@ function truncateAddress(address: string): string {
 
 function CopyStateGlyph({ copied }: { readonly copied: boolean }): JSX.Element {
   return (
-    <svg
-      viewBox="0 0 16 16"
-      width="13"
-      height="13"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
+    <span
+      className="inline-flex"
       data-vex-copy-glyph={copied ? "check" : "copy"}
     >
-      {copied ? (
-        <path d="m3.5 8 3 3 6-6" />
-      ) : (
-        <>
-          <rect x="5" y="5" width="7.5" height="7.5" rx="1.2" />
-          <path d="M3.5 10.5H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h6.5a1 1 0 0 1 1 1v.5" />
-        </>
-      )}
-    </svg>
+      <PxIcon name={copied ? "check" : "copy"} />
+    </span>
   );
 }
 
@@ -93,15 +79,7 @@ export function AddressDisplay({
           type="button"
           onClick={onCopy}
           aria-label={copied ? copiedLabel : copyLabel}
-          className={cn(
-            "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[4px]",
-            "border border-line-2 bg-interactive-hover",
-            "text-ink-tertiary transition-colors",
-            "hover:border-line-4 hover:text-ink-primary",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent)]",
-            copied &&
-              "border-[color-mix(in_oklab,var(--color-success)_35%,transparent)] text-[var(--color-success)]",
-          )}
+          className="vex-copy"
         >
           <CopyStateGlyph copied={copied} />
         </button>
@@ -109,7 +87,7 @@ export function AddressDisplay({
           role="status"
           aria-live="polite"
           aria-atomic="true"
-          className="whitespace-nowrap font-mono text-[9px] uppercase tracking-[0.12em] text-[var(--color-success)]"
+          className="vex-copy__status whitespace-nowrap"
         >
           {copied ? copiedLabel : ""}
         </span>
@@ -117,27 +95,22 @@ export function AddressDisplay({
     );
   }
 
+  // The ledger form (docs/design/V10-SPREAD.md section 2): the address in
+  // mono, then the COPY key in blue with the pixel copy icon.
   return (
     <div
-      className={cn(
-        // Hairline chip — luminance step + hairline (landing ink grammar).
-        "inline-flex items-center gap-2 rounded-md border border-line-2 bg-interactive-hover px-2 py-1",
-        className
-      )}
+      className={cn("vex-wal__a", className)}
+      data-vex-address-copy={copied ? "copied" : "idle"}
     >
-      <code
-        className="font-mono text-sm text-foreground"
-        title={truncate ? address : undefined}
-      >
-        {displayed}
-      </code>
+      <code title={truncate ? address : undefined}>{displayed}</code>
       <button
         type="button"
         onClick={onCopy}
         aria-label={copied ? copiedLabel : copyLabel}
-        className="rounded-sm px-1 text-[10px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="vex-copy"
       >
-        {copied ? "✓ copied" : "copy"}
+        <CopyStateGlyph copied={copied} />
+        {copied ? "copied" : "copy"}
       </button>
     </div>
   );

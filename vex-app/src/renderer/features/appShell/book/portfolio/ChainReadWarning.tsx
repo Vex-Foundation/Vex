@@ -7,7 +7,7 @@ export function ChainReadWarning({ portfolio }: { readonly portfolio: PortfolioD
   const issues = portfolio.chainReadIssues ?? [];
   if (issues.length === 0 && !portfolio.snapshotPartial) return null;
   return (
-    <div role="status" className="text-[11px] text-warning-label">
+    <div role="status" className="vex-bs__sub">
       {portfolio.snapshotPartial ? <p>
         Latest snapshot is partial ({portfolio.snapshotUnresolvedChainCount ?? 0} unresolved chain reads).
         P&amp;L is unavailable for comparisons involving this snapshot.

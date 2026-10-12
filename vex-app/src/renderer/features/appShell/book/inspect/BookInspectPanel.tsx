@@ -9,7 +9,7 @@
  */
 
 import type { JSX } from "react";
-import { IconClose } from "../../../../components/icons/index.js";
+import { PxIcon } from "../../../../components/icons/index.js";
 import {
   Swatch,
   type SwatchState,
@@ -62,27 +62,28 @@ export function BookInspectPanel({
     <section
       data-vex-area="book-inspect"
       aria-label={`Tool call: ${inspect.toolName}`}
-      className="vex-glass-card flex min-h-0 flex-1 flex-col gap-3 overflow-hidden rounded-xl p-4"
+      className="vex-bk__body gap-3 overflow-hidden pt-4"
     >
-      <header className="flex items-center justify-between gap-2">
-        <h3 className="vex-micro-label vex-micro-label--wide uppercase text-ink-secondary">
+      <header className="vex-bs__h">
+        <h3 className="vex-bs__t">
           Inspect
         </h3>
         <button
           type="button"
           aria-label="Close inspect"
           onClick={closeToolInspect}
-          className="flex h-6 w-6 items-center justify-center rounded-[6px] text-ink-tertiary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+          className="vex-bk__key ml-auto"
+          style={{ minWidth: 20, height: 20 }}
         >
-          <IconClose size={14} />
+          <PxIcon name="close" />
         </button>
       </header>
 
       <div className="flex items-center justify-between gap-2">
-        <span className="min-w-0 truncate font-mono text-[12px] text-ink-primary">
+        <span className="vex-bs__t min-w-0 truncate">
           {inspect.toolName}
         </span>
-        <span className="inline-flex shrink-0 items-center gap-1.5 text-[11px] text-ink-secondary">
+        <span className="vex-bs__m inline-flex shrink-0 items-center gap-1.5">
           <Swatch state={STATUS_DOT[inspect.status]} size={8} />
           {STATUS_WORD[inspect.status]}
         </span>
@@ -107,10 +108,10 @@ function PayloadSection({
 }): JSX.Element {
   return (
     <div className="flex flex-col gap-1">
-      <span className="vex-micro text-ink-secondary">
+      <span className="vex-bs__k">
         {label}
       </span>
-      <pre className="overflow-x-auto rounded-lg border border-line-1 p-2 font-mono text-[10.5px] leading-relaxed whitespace-pre-wrap break-words text-ink-secondary">
+      <pre className="vex-bk__pre">
         {stringifyPayload(value)}
       </pre>
     </div>

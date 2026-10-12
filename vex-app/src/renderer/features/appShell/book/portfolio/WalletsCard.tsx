@@ -16,14 +16,12 @@
  */
 
 import type { JSX } from "react";
-import { IconPlus } from "../../../../components/icons/index.js";
+import { PxIcon } from "../../../../components/icons/index.js";
 import { useAvailableWallets } from "../../../../lib/api/wallet-inventory.js";
 import { useWalletPortfolio } from "../../../../lib/api/portfolio.js";
 import { formatUsd } from "../../../../lib/format.js";
-import { cn } from "../../../../lib/utils.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import { AddressDisplay } from "../../../../components/common/AddressDisplay.js";
-import { ChainIcon } from "../../../../components/common/ChainIcon.js";
 import { CardStateNote, PortfolioCard } from "./PortfolioCard.js";
 import {
   flattenPortfolioWallets,
@@ -84,9 +82,9 @@ export function WalletsCard({
                 section: "wallets",
               });
             }}
-            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-line-2 py-1.5 text-[12px] text-ink-secondary transition-colors hover:border-line-3 hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-primary"
+            className="vex-bs__add"
           >
-            <IconPlus size={13} />
+            <PxIcon name="plus" />
             Add wallet
           </button>
         </>
@@ -96,22 +94,17 @@ export function WalletsCard({
 }
 
 /**
- * The family-primary marker (index 0 per family, `wallet-scope.ts`) — a
- * static micro-badge: color and a hairline only, never motion. Shared with
- * the overview card's scope chips.
+ * The family-primary marker (index 0 per family, `wallet-scope.ts`): a boxed
+ * mono tag, blue on the paper. Shared with the overview chips.
  */
 export function PrimaryBadge(): JSX.Element {
-  return (
-    <span className="shrink-0 rounded-[4px] border border-line-2 px-1 py-px vex-micro text-ink-secondary">
-      Primary
-    </span>
-  );
+  return <em className="vex-ch__tag not-italic">Primary</em>;
 }
 
 /**
  * One wallet identity row. The per-wallet USD figure comes from this row's
- * OWN `useWalletPortfolio` read (≤6 cached queries across the inventory);
- * while it resolves — or when the read fails — the figure stays the muted
+ * OWN `useWalletPortfolio` read (<=6 cached queries across the inventory);
+ * while it resolves, or when the read fails, the figure stays the muted
  * em dash rather than a fabricated zero.
  */
 function WalletRow({
@@ -123,32 +116,21 @@ function WalletRow({
   const total = query.data?.ok ? query.data.data.liveTotalUsd : null;
   const { wallet } = entry;
   return (
-    <li className="flex flex-col gap-1.5 border-b border-line-1 py-2 first:pt-0.5 last:border-b-0 last:pb-1">
-      <div className="flex items-center gap-2">
-        <ChainIcon chainId={entry.chainId} size={13} />
-        {wallet.label.length > 0 ? (
-          <span className="min-w-0 truncate text-[12px] text-ink-primary">
-            {wallet.label}
-          </span>
-        ) : (
-          <span className="vex-micro text-ink-secondary">
-            {wallet.family === "evm" ? "EVM" : "SOL"}
-          </span>
-        )}
-        {entry.showPrimaryBadge ? <PrimaryBadge /> : null}
-        <span
-          className={cn(
-            "ml-auto shrink-0 text-[11px] font-semibold tabular-nums",
-            total === null ? "text-ink-tertiary" : "text-ink-primary",
-          )}
-        >
-          {formatUsd(total)}
+    <li className="vex-wal-li">
+      <div className="vex-wal">
+        <span className="vex-wal__k">
+          {wallet.label.length > 0
+            ? wallet.label
+            : wallet.family === "evm"
+              ? "EVM"
+              : "SOL"}
+          {entry.showPrimaryBadge ? <PrimaryBadge /> : null}
         </span>
+        <span className="vex-wal__v">{formatUsd(total)}</span>
       </div>
-      <AddressDisplay
-        address={wallet.address}
-        className="self-start px-2 py-0.5"
-      />
+      <div className="vex-wal">
+        <AddressDisplay address={wallet.address} />
+      </div>
     </li>
   );
 }

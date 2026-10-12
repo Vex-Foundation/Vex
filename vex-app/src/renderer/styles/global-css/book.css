@@ -1,0 +1,600 @@
+/* THE BOOK (docs/design/V10-SPREAD.md sections 1 and 2): the right page. Paper
+ * ground, one 1px rule down its left edge, a 44px head that carries the tabs,
+ * and sections instead of boxed cards: a Departure Mono label, hairline ledger
+ * rows and mono figures. Square everywhere, no shadow, no fill but the paper.
+ * Aliases only, so both themes ride on the same rules. */
+
+.vex-bk {
+  position: relative;
+  display: flex;
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--vex-alias-bg-base);
+  border-left: 1px solid var(--vex-alias-rule);
+}
+.vex-bk[data-vex-book-open="false"] {
+  align-items: center;
+}
+.vex-bk__head {
+  display: flex;
+  height: var(--head-h);
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 10px 0 20px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-bk[data-vex-book-open="false"] .vex-bk__head {
+  height: auto;
+  min-height: var(--head-h);
+  justify-content: center;
+  padding: 0;
+  border-bottom-color: transparent;
+}
+/* The tab strip is portalled into this slot by the session rail. */
+.vex-bk__slot {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  align-items: stretch;
+  flex: 1 1 auto;
+}
+.vex-bk__tabs {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  align-items: stretch;
+  gap: 18px;
+}
+.vex-bk__tabs [role="tablist"] {
+  gap: 18px;
+  border-bottom: 0;
+}
+.vex-bk__door {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+  height: 20px;
+  margin-left: 0;
+  padding-left: 16px;
+  border-left: 1px solid var(--vex-alias-rule);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
+  color: var(--vex-alias-accent-primary);
+  white-space: nowrap;
+}
+.vex-bk__door:hover {
+  color: var(--vex-alias-label-primary);
+}
+.vex-bk__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-bk__body {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  padding: 0 20px;
+}
+.vex-bk__foot {
+  display: flex;
+  height: 40px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 20px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-bk__key {
+  display: inline-flex;
+  height: 28px;
+  min-width: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--vex-alias-label-secondary);
+  outline: 0;
+}
+.vex-bk__key:hover {
+  color: var(--vex-alias-label-primary);
+}
+.vex-bk__key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+
+/* A section: label row, then ledger rows. Rules divide sections; the last
+ * one is open. */
+.vex-bs {
+  position: relative;
+  display: grid;
+  flex-shrink: 0;
+  gap: 6px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-bk__stack > li:last-of-type > .vex-bs,
+.vex-bk__stack > .vex-bs:last-child {
+  border-bottom-color: transparent;
+}
+.vex-bs__h {
+  display: flex;
+  min-height: 22px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.vex-bs__t {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-bs__m {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-chip);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-bs__h .vex-bs__ib {
+  margin-right: -6px;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-bs__k {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-chip);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-secondary);
+}
+/* The one display number of the book: the total, in mono. */
+.vex-bs__fig {
+  font-family: var(--font-mono);
+  font-size: 33px;
+  line-height: 1.1;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--vex-alias-label-primary);
+}
+.vex-bs__sub {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-bs__sub > .vex-bs__pnl {
+  display: block;
+  margin-top: 4px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-bs__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-bs__more:hover {
+  color: var(--vex-alias-label-primary);
+}
+.vex-bs__empty {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-bs__empty[data-tone="warn"] {
+  color: var(--vex-alias-label-primary);
+}
+.vex-bs__empty[data-tone="loading"] {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-chip);
+  text-transform: uppercase;
+}
+.vex-bs__add {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
+  color: var(--vex-alias-accent-primary);
+  outline: 1px solid var(--vex-alias-rule);
+  outline-offset: -1px;
+}
+.vex-bs__add:hover {
+  color: var(--vex-alias-label-primary);
+  outline-color: var(--vex-alias-accent-primary);
+}
+.vex-bs :is(button, a):focus-visible,
+.vex-bk :is(button, a):focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+
+/* The chain and wallet chips: a 1px outline, blue and solid-outlined when
+ * pressed, dotted for MORE. */
+.vex-ch {
+  display: inline-flex;
+  height: 24px;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-chip);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-secondary);
+  outline: 1px solid var(--vex-alias-rule);
+  outline-offset: -1px;
+}
+.vex-ch:hover {
+  color: var(--vex-alias-label-primary);
+}
+.vex-ch[aria-pressed="true"] {
+  color: var(--vex-alias-accent-primary);
+  outline-color: var(--vex-alias-accent-primary);
+}
+.vex-ch--more {
+  color: var(--vex-alias-accent-primary);
+  outline-style: dotted;
+}
+.vex-ch--icon {
+  width: 24px;
+  justify-content: center;
+  padding: 0;
+}
+.vex-ch__t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vex-ch__tag {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  color: var(--vex-alias-accent-primary);
+  outline: 1px solid var(--vex-alias-rule);
+  outline-offset: -1px;
+}
+.vex-chs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+/* Ledger rows: label left, mono figure right, a hairline above each. */
+.vex-kv {
+  display: flex;
+  min-height: 26px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-kv > :first-child {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-chip);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-kv > :last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vex-alias-label-primary);
+}
+.vex-kv--h {
+  margin-top: 6px;
+  border-top: 0;
+}
+.vex-kv--h > :first-child {
+  color: var(--vex-alias-accent-primary);
+}
+.vex-kv--tone-muted > :last-child {
+  color: var(--vex-alias-label-secondary);
+}
+
+/* A holding: the name in sans, quantity and value in mono. */
+.vex-kv3 {
+  display: grid;
+  min-height: 27px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 12px;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-kv3 > span {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--vex-alias-label-primary);
+}
+.vex-kv3 > .vex-kv3__n {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  letter-spacing: 0;
+}
+.vex-kv3__n > :where(span:not([data-mark])) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vex-kv3__n em {
+  font-style: normal;
+  font-size: 13px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-kv3 > .vex-kv3__q {
+  color: var(--vex-alias-label-secondary);
+}
+.vex-kv3[data-unpriced] > :last-child {
+  color: var(--vex-alias-label-secondary);
+}
+
+/* A wallet: family key, primary tag, address, and the COPY affordance. */
+.vex-wal {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 10px;
+}
+.vex-wal-li {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-wal-li:first-child {
+  border-top: 0;
+}
+.vex-wal__k {
+  display: inline-flex;
+  min-width: 34px;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-chip);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-wal__v {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vex-alias-label-primary);
+}
+.vex-wal__a {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.vex-wal__a > code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-wal--two {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px 0;
+}
+.vex-wal--two > .vex-wal__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* COPY: the pixel copy icon and the word, blue, mono. */
+.vex-copy {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-copy:hover {
+  color: var(--vex-alias-label-primary);
+}
+.vex-copy__status {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
+  color: var(--vex-alias-accent-primary);
+}
+
+/* Reorder: an insertion rule and a square grip. */
+.vex-bk__grip {
+  position: absolute;
+  top: 12px;
+  right: -4px;
+  z-index: 10;
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  color: var(--vex-alias-label-secondary);
+  opacity: 0;
+}
+.vex-bk__grip:hover {
+  color: var(--vex-alias-label-primary);
+}
+.vex-bk__grip:focus-visible {
+  opacity: 1;
+}
+.vex-bk__item:hover > .vex-bk__grip,
+.vex-bk__item:focus-within > .vex-bk__grip {
+  opacity: 1;
+}
+.vex-bk__item[data-vex-drop-edge="before"]::before,
+.vex-bk__item[data-vex-drop-edge="after"]::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: var(--vex-alias-accent-primary);
+}
+.vex-bk__item[data-vex-drop-edge="before"]::before {
+  top: -1px;
+}
+.vex-bk__item[data-vex-drop-edge="after"]::after {
+  bottom: -1px;
+}
+
+/* The welcome stage's handle: a square key at the foot of the page. */
+.vex-bk-handle {
+  display: flex;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--vex-alias-accent-primary);
+  background: var(--vex-alias-bg-base);
+  outline: 1px solid var(--vex-alias-rule);
+  outline-offset: -1px;
+}
+.vex-bk-handle:hover {
+  color: var(--vex-alias-label-primary);
+  outline-color: var(--vex-alias-accent-primary);
+}
+.vex-bk-handle:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+}
+
+/* Board and inspect: the same section grammar. */
+.vex-bk__thumb {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: var(--vex-alias-bg-base);
+  outline: 1px solid var(--vex-alias-rule);
+  outline-offset: -1px;
+}
+.vex-bk__pre {
+  overflow-x: auto;
+  padding: 8px;
+  font-family: var(--font-code, var(--font-mono));
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--vex-alias-label-secondary);
+  outline: 1px solid var(--vex-alias-rule-quiet);
+  outline-offset: -1px;
+}
+.vex-bk__btn {
+  display: inline-flex;
+  height: 32px;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
+  color: var(--vex-alias-accent-primary);
+  outline: 1px solid var(--vex-alias-rule);
+  outline-offset: -1px;
+}
+.vex-bk__btn:hover {
+  outline-color: var(--vex-alias-accent-primary);
+}
+.vex-bk__btn[data-primary] {
+  color: var(--vex-alias-button-accent-ink);
+  background: var(--vex-alias-button-accent-fill);
+  outline: 0;
+}
+.vex-bk__btn[data-primary]:hover {
+  background: var(--vex-alias-button-accent-hover);
+}
+
+/* A refresh outcome: one transient mono line under the section label. */
+.vex-bs__fb {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 5;
+  max-width: 260px;
+  padding: 4px 0 4px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-chip);
+  text-align: right;
+  text-transform: none;
+  color: var(--vex-alias-label-primary);
+  background: var(--vex-alias-bg-base);
+}
+
+.vex-kv3--active > span {
+  color: var(--vex-alias-accent-primary);
+}
