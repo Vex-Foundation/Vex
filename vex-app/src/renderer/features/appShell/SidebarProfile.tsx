@@ -23,7 +23,7 @@ import {
 } from "react";
 import {
   IconChevronUp,
-  IconInspect,
+  pxGlyph,
   IconLock,
   IconNewChat,
   IconQuestion,
@@ -176,7 +176,7 @@ export function SidebarProfile({
     },
     {
       id: "agentScan",
-      icon: entryIcon(IconInspect),
+      icon: entryIcon(pxGlyph("activity")),
       label: entryLabel("Agent Scan", "Every move, verified on-chain"),
     },
     {
