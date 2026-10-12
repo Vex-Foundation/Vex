@@ -66,6 +66,11 @@ import {
   type StudioFileTabsByProject,
 } from "./uiStore/studio-file-tabs.js";
 
+import {
+  EMPTY_ORDINAL_LEDGER,
+  type SessionOrdinalLedger,
+} from "./uiStore/session-ordinals.js";
+
 export type {
   PersistedFileTab,
   PersistedProjectFileTabs,
@@ -359,6 +364,14 @@ export interface UiState {
    * the security argument: `uiStore/studio-file-tabs.ts`.
    */
   readonly studioFileTabs: StudioFileTabsByProject;
+  /**
+   * The stable session ordinals the left page prints, `(02)`: a ledger of ids
+   * and numbers, persisted so a number survives a reload. Cosmetic, never
+   * crosses IPC. Rules: `leftPage/sessionOrdinals.ts`; bounds and coercion:
+   * `uiStore/session-ordinals.ts`.
+   */
+  readonly sessionOrdinals: SessionOrdinalLedger;
+  readonly setSessionOrdinals: (ledger: SessionOrdinalLedger) => void;
   /** Set the theme choice: resolves + writes documentElement in one step. */
   readonly setThemePreference: (value: VexThemePreference) => void;
   readonly setSidebarOpen: (value: boolean) => void;
@@ -519,6 +532,8 @@ export const useUiStore = create<UiState>()(
       bookTab: "portfolio",
       studioRailExplorerShare: STUDIO_RAIL_EXPLORER_SHARE_DEFAULT,
       studioFileTabs: {},
+      sessionOrdinals: EMPTY_ORDINAL_LEDGER,
+      setSessionOrdinals: (sessionOrdinals) => set({ sessionOrdinals }),
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setSidebarWidth: (px) => set({ sidebarWidth: clampSidebarWidth(px) }),
       setBookWidth: (px) => set({ bookWidth: clampBookWidth(px) }),
@@ -614,7 +629,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 20,
+      version: 21,
       // Re-stamp the document root once the coerced, resolved theme is
       // known - theme-boot.js painted the pre-bundle frame from the RAW
       // payload, and a tampered value must not survive on <html>.

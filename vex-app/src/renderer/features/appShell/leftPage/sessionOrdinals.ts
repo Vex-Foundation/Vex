@@ -19,29 +19,26 @@
  * next one. The first read on a machine seeds the ledger in start order, which
  * is exactly the rank, so a fresh install numbers 1..n.
  *
- * The ledger is display memory and nothing else: it lives in this renderer's
- * local storage under its own key, holds ids and numbers only (never a title),
- * adds no IPC and no store field, and a lost ledger re-seeds from the list. It
+ * The ledger is display memory and nothing else: it lives in the persisted
+ * ui store (`uiStore/session-ordinals.ts`), holds ids and numbers only (never
+ * a title), adds no IPC, and a lost ledger re-seeds from the list. It
  * numbers the agent workspace only, the sessions the left page lists.
  */
 
 import { useEffect, useMemo } from "react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
+import { useUiStore } from "../../../stores/uiStore.js";
+import {
+  EMPTY_ORDINAL_LEDGER,
+  ORDINAL_LEDGER_MAX,
+  type SessionOrdinalLedger,
+} from "../../../stores/uiStore/session-ordinals.js";
 
-/** Every number handed out so far, and the next one. */
-export interface SessionOrdinalLedger {
-  readonly next: number;
-  readonly byId: Readonly<Record<string, number>>;
-}
-
-export const EMPTY_ORDINAL_LEDGER: SessionOrdinalLedger = { next: 1, byId: {} };
-
-/**
- * The ledger keeps at most this many numbers. Past it, the lowest numbers of
- * sessions the list no longer carries are forgotten first; `next` never moves
- * back, so a forgotten number is never handed out again.
- */
-export const ORDINAL_LEDGER_MAX = 5000;
+export {
+  EMPTY_ORDINAL_LEDGER,
+  ORDINAL_LEDGER_MAX,
+  type SessionOrdinalLedger,
+};
 
 type OrdinalSource = Pick<SessionListItem, "id" | "startedAt">;
 
@@ -104,67 +101,23 @@ export function formatOrdinal(n: number): string {
 
 /* ------------------------------------------------------------ persistence */
 
-const STORAGE_KEY = "vex-session-ordinals";
-
-function isLedger(value: unknown): value is SessionOrdinalLedger {
-  if (typeof value !== "object" || value === null) return false;
-  const next: unknown = Reflect.get(value, "next");
-  const byId: unknown = Reflect.get(value, "byId");
-  if (typeof next !== "number" || !Number.isInteger(next) || next < 1) return false;
-  if (typeof byId !== "object" || byId === null || Array.isArray(byId)) return false;
-  return Object.values(byId).every(
-    (n) => typeof n === "number" && Number.isInteger(n) && n >= 1 && n < next,
-  );
-}
-
-let memory: SessionOrdinalLedger | null = null;
-
-/** The ledger as stored; an unreadable or malformed entry reads as empty. */
-export function readOrdinalLedger(): SessionOrdinalLedger {
-  if (memory !== null) return memory;
-  let stored: SessionOrdinalLedger = EMPTY_ORDINAL_LEDGER;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw !== null) {
-      const parsed: unknown = JSON.parse(raw);
-      if (isLedger(parsed)) stored = parsed;
-    }
-  } catch {
-    // Storage blocked or the entry is not JSON: re-seed from the list.
-  }
-  memory = stored;
-  return stored;
-}
-
-function writeOrdinalLedger(ledger: SessionOrdinalLedger): void {
-  memory = ledger;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(ledger));
-  } catch {
-    // Storage full or blocked: the numbers hold for this window only.
-  }
-}
-
-/** Test seam: forget the in-memory copy so the next read goes to storage. */
-export function resetOrdinalLedgerMemory(): void {
-  memory = null;
-}
-
 /**
  * The ordinal of every listed session, keyed by id. Pass the agent workspace
  * rows UNFILTERED (before the tab and the search), so a filter never numbers.
- * A row seen for the first time is numbered here and written back once the
- * render commits.
+ * A row seen for the first time is numbered here and written back to the
+ * persisted ui store once the render commits.
  */
 export function useSessionOrdinals(
   rows: readonly SessionListItem[] | null,
 ): ReadonlyMap<string, number> {
+  const stored = useUiStore((s) => s.sessionOrdinals);
+  const setSessionOrdinals = useUiStore((s) => s.setSessionOrdinals);
   const ledger = useMemo(
-    () => (rows === null ? readOrdinalLedger() : assignSessionOrdinals(readOrdinalLedger(), rows)),
-    [rows],
+    () => (rows === null ? stored : assignSessionOrdinals(stored, rows)),
+    [rows, stored],
   );
   useEffect(() => {
-    if (ledger !== readOrdinalLedger()) writeOrdinalLedger(ledger);
-  }, [ledger]);
+    if (ledger !== stored) setSessionOrdinals(ledger);
+  }, [ledger, stored, setSessionOrdinals]);
   return useMemo(() => new Map(Object.entries(ledger.byId)), [ledger]);
 }

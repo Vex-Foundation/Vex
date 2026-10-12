@@ -320,6 +320,7 @@ describe("uiStore", () => {
       // The OPEN FILE TABS' own home (v18), per project. Empty on a fresh
       // store: only the workspace owner writes it, and no project is open.
       studioFileTabs: {},
+      sessionOrdinals: { next: 1, byId: {} },
       terminalPasteWarning: true,
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
@@ -669,6 +670,7 @@ describe("uiStore", () => {
       // The OPEN FILE TABS' own home (v18), per project. Empty on a fresh
       // store: only the workspace owner writes it, and no project is open.
       studioFileTabs: {},
+      sessionOrdinals: { next: 1, byId: {} },
       terminalPasteWarning: true,
     });
     expect(parsed.state.logBuffer).toBeUndefined();

@@ -12,11 +12,12 @@ import {
   ORDINAL_LEDGER_MAX,
   assignSessionOrdinals,
   formatOrdinal,
-  readOrdinalLedger,
-  resetOrdinalLedgerMemory,
   useSessionOrdinals,
   type SessionOrdinalLedger,
 } from "../sessionOrdinals.js";
+import { useUiStore } from "../../../../stores/uiStore.js";
+import { mergeUiState, partializeUiState } from "../../../../stores/uiStore/persistence.js";
+import { coerceSessionOrdinals } from "../../../../stores/uiStore/session-ordinals.js";
 import { filterSessionsByMode, groupSessions } from "../../sessionListModel.js";
 
 function row(id: string, startedAt: string, over: Partial<SessionListItem> = {}): SessionListItem {
@@ -124,22 +125,25 @@ describe("formatOrdinal", () => {
 
 describe("useSessionOrdinals", () => {
   beforeEach(() => {
-    window.localStorage.clear();
-    resetOrdinalLedgerMemory();
+    useUiStore.setState({ sessionOrdinals: EMPTY_ORDINAL_LEDGER });
   });
 
-  it("writes the numbers back, so a reload reads the same ones", () => {
+  it("writes the numbers into the persisted store, so a reload reads the same ones", () => {
     const { result } = renderHook(() => useSessionOrdinals(LIST));
     expect(result.current.get(B.id)).toBe(2);
-    resetOrdinalLedgerMemory();
-    expect(readOrdinalLedger().byId[B.id]).toBe(2);
+    const payload = partializeUiState(useUiStore.getState());
+    const rehydrated = mergeUiState(payload, useUiStore.getState());
+    expect(rehydrated.sessionOrdinals.byId[B.id]).toBe(2);
+    useUiStore.setState({ sessionOrdinals: rehydrated.sessionOrdinals });
     // After a reload the removed B is gone from the list; C keeps 3.
     const reloaded = renderHook(() => useSessionOrdinals([D, C, A]));
     expect(reloaded.result.current.get(C.id)).toBe(3);
   });
 
   it("re-seeds from the list when the stored ledger is not one", () => {
-    window.localStorage.setItem("vex-session-ordinals", "{\"next\":\"x\"}");
+    useUiStore.setState({
+      sessionOrdinals: coerceSessionOrdinals({ next: "x" }),
+    });
     const { result } = renderHook(() => useSessionOrdinals(LIST));
     expect(result.current.get(A.id)).toBe(1);
   });
@@ -147,5 +151,26 @@ describe("useSessionOrdinals", () => {
   it("answers from the ledger alone while the list has not been read", () => {
     const { result } = renderHook(() => useSessionOrdinals(null));
     expect(result.current.size).toBe(0);
+  });
+});
+
+describe("coerceSessionOrdinals", () => {
+  it("keeps a well-formed ledger", () => {
+    const ledger: SessionOrdinalLedger = { next: 3, byId: { a: 1, b: 2 } };
+    expect(coerceSessionOrdinals(ledger)).toEqual(ledger);
+  });
+
+  it("degrades every off-shape payload to the empty ledger", () => {
+    for (const bad of [
+      null,
+      "x",
+      { next: 0, byId: {} },
+      { next: 2, byId: [] },
+      { next: 2, byId: { a: 2 } },
+      { next: 2, byId: { a: 1.5 } },
+      { next: 2, byId: { ["x".repeat(65)]: 1 } },
+    ]) {
+      expect(coerceSessionOrdinals(bad)).toEqual(EMPTY_ORDINAL_LEDGER);
+    }
   });
 });
