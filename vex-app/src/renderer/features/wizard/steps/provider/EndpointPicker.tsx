@@ -50,7 +50,7 @@ export interface EndpointPickerProps {
 }
 
 const ROW_CLASS =
-  "flex w-full cursor-pointer items-start gap-3 rounded-xl border px-3 py-2 text-left";
+  "flex w-full cursor-pointer items-start gap-3 border px-3 py-2 text-left";
 
 /**
  * Bounded to roughly five rows. Expressed in `rem` rather than a row count
@@ -179,7 +179,7 @@ export function EndpointPicker({
                     {suggestedEndpointTag === endpoint.tag ? (
                       <span
                         data-vex-provider-endpoint-suggested
-                        className="shrink-0 rounded-full border border-accent-primary px-1.5 py-px text-[9px] uppercase tracking-wide text-accent-primary"
+                        className="shrink-0 border border-accent-primary px-1.5 py-px text-[9px] uppercase tracking-wide text-accent-primary"
                       >
                         Suggested
                       </span>

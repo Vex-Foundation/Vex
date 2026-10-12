@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import type { WalletRestoreArchiveResult } from "@shared/schemas/wallets.js";
 import { AddressDisplay } from "../../../../../components/common/AddressDisplay.js";
+import { RAIL_WARNING_CHROME } from "../../step-chrome.js";
 
 interface RestoreResultView {
   readonly result: WalletRestoreArchiveResult;
@@ -36,7 +37,7 @@ export function RestoreSummary({ result }: RestoreResultView): JSX.Element {
       ) : null}
       {result.vaultLocked ? (
         <p
-          className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] py-1 pl-3 text-sm text-warning"
+          className={RAIL_WARNING_CHROME}
           role="alert"
           data-vex-restore-vault-locked
         >

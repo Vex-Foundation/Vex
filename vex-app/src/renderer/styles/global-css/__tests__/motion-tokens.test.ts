@@ -132,13 +132,12 @@ describe("motion vocabulary", () => {
     // The defect this catches actually shipped: dialog[open] rode
     // cubic-bezier(0.42, 0, 0.58, 1) while its comment named EASE_STANDARD.
     //
-    // Two sheets are allowlisted, both for the same reason - they own a curve
-    // that is NOT the app's family and never was:
-    //   - chronos-gate.css declares --vex-gate-ease for the landing curtain;
-    //   - chronos-motion.css:191 gives the signing stroke its own long
-    //     loop curve. Retuning either is a landing/gate change, not a motion
-    //     vocabulary one, so they are named here rather than quietly swept in.
-    const allowed = new Set(["tokens.css", "chronos-gate.css", "chronos-motion.css"]);
+    // One sheet is allowlisted because it owns a curve that is NOT the app's
+    // family and never was: chronos-motion.css gives the signing stroke its
+    // own long loop curve. Retuning it is a landing change, not a motion
+    // vocabulary one, so it is named here rather than quietly swept in. The
+    // pre-shell stage (chronos-gate.css) rides the family since V10.
+    const allowed = new Set(["tokens.css", "chronos-motion.css"]);
     const offenders = allSheets
       .filter(([name]) => !allowed.has(name))
       .filter(([, css]) => stripComments(css).includes("cubic-bezier("))

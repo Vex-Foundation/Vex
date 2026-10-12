@@ -1,13 +1,12 @@
 /**
  * SetupStatusCard — the status stanza for pre-shell branch bodies
- * (docker / compose / migrations), replacing the NOTARY StatusTile.
+ * (docker / compose / migrations).
  *
- * Grammar: status is a colored mono WORD (never a dot, never a stamp)
- * above quiet sans copy. Calm tones (`ok` / `info` / `muted`) render
- * unboxed — content sits directly on the surface. Alert tones (`warn` /
- * `error`) speak the AMENDMENT A3 rail recipe: a left 2px color rail,
- * no fill, no rounded container (the boxed 45/12 recipe is retired
- * with the rest of the boxed composition).
+ * Grammar (docs/design/V10-SPREAD.md section 1): status is shown by fill, a
+ * swatch beside a mono WORD, above quiet sans copy. Calm tones (`ok` /
+ * `info` / `muted`) sit on the page unboxed. Alert tones (`warn` / `error`)
+ * are the risk callout: a 1.5px ink frame with a hatched edge, ink type,
+ * never a status hue.
  *
  * ## It is a LIVE REGION, and it has to be its own
  *
@@ -28,6 +27,7 @@
 import { type JSX, type ReactNode } from "react";
 
 import { cn } from "../../lib/utils.js";
+import { Swatch, type SwatchState } from "../ui/swatch.js";
 
 export type SetupStatusTone = "ok" | "info" | "warn" | "error" | "muted";
 
@@ -56,10 +56,18 @@ const wordInk: Record<SetupStatusTone, string> = {
   muted: "text-ink-tertiary",
 };
 
+/** Status by fill. */
+const toneSwatch: Record<SetupStatusTone, SwatchState> = {
+  ok: "done",
+  info: "idle",
+  warn: "warning",
+  error: "error",
+  muted: "idle",
+};
+
 const alertRail: Partial<Record<SetupStatusTone, string>> = {
-  warn: "border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] pl-3",
-  error:
-    "border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] pl-3",
+  warn: "vex-callout",
+  error: "vex-callout",
 };
 
 export function SetupStatusCard({
@@ -69,26 +77,19 @@ export function SetupStatusCard({
   detail,
   children,
 }: SetupStatusCardProps): JSX.Element {
-  // Alignment follows the tone, so no call site has to decide (owner review
-  // 2026-07-27 — prose centers, alerts do not). A calm stanza is hero prose
-  // and centers with the screen's header. An alert IS its left rail: the
-  // 2px border is the alignment, and centering text against it would leave
-  // the rail marking nothing.
+  // The frame follows the tone, so no call site has to decide: a calm
+  // stanza is page prose, an alert is the callout. Both read from the
+  // page's left edge, under the page title.
   const isAlert = alertRail[tone] !== undefined;
   return (
     <div
       role={isAlert ? "alert" : "status"}
-      className={cn(
-        "flex flex-col gap-1",
-        isAlert ? alertRail[tone] : "items-center text-center",
-      )}
+      className={cn("flex flex-col gap-1", isAlert && alertRail[tone])}
     >
       <span
-        className={cn(
-          "vex-micro font-semibold",
-          wordInk[tone],
-        )}
+        className={cn("flex items-center gap-2 vex-micro", wordInk[tone])}
       >
+        <Swatch state={toneSwatch[tone]} size={9} />
         {word ?? defaultWord[tone]}
       </span>
       <span className="text-lg font-medium text-ink-primary">

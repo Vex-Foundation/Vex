@@ -6,7 +6,7 @@
  *
  * Embedded inside the BootstrapPanel card, replacing the status stanza
  * while `desktop_download` is in flight. Visual: a flat hairline strip
- * on the ink-glass card (cobalt continuum) — no blur, no inset
+ * on the stage's paper leaf: no blur, no inset
  * highlight; the accent bar is the landing preloader's progress line.
  * The bar respects reduced motion (CSS transition-width is disabled
  * via the global media query).

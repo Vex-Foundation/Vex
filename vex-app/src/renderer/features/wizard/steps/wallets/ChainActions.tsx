@@ -217,11 +217,11 @@ export function ChainActions({
           >
             {generateMutation.isPending ? "Generating…" : "Generate new"}
           </Button>
-          <Button variant="quiet" onClick={() => setView("import")}>
+          <Button variant="ghost" onClick={() => setView("import")}>
             Import existing
           </Button>
           <Button
-            variant="quiet"
+            variant="ghost"
             onClick={() => {
               void handleRestore();
             }}

@@ -7,16 +7,16 @@
  * deny-clicks outside the dialog so the user must explicitly accept or
  * dismiss.
  *
- * Visual: the landing ink dialog language — solid elevated panel
- * (--color-surface-1) behind a hairline border, black/70 backdrop with
- * NO blur, no inset shadows; mono-uppercase title; pill actions (quiet
- * hairline Cancel, filled cobalt Continue). Accent tracks
- * `--vex-onboarding-accent`.
+ * Visual: the V10 dialog language: a solid panel (--color-surface-1)
+ * behind a hairline rule, the mask behind it with NO blur, no shadow; a
+ * mono caps title; square actions from the Button primitive (the quiet
+ * outlined Cancel, the one blue fill on Continue).
  *
  * No "I have a license" toggle — Vex cannot verify legal state and
  * presenting one would imply a verification it doesn't perform.
  */
 
+import { Button } from "../../components/ui/button.js";
 import { useCallback, useEffect, useRef } from "react";
 import { IconArrowUpRight } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
@@ -105,13 +105,13 @@ export function LicenseNotice({
           // One-shot rise-and-settle on mount (the landing dialog law:
           // modals never pop); reduced motion collapses it globally.
           "vex-entry-settle",
-          "rounded-xl border border-[var(--color-border)] bg-surface-1 p-6 text-ink-primary",
+          "border border-[var(--color-border)] bg-surface-1 p-6 text-ink-primary",
         )}
         onClick={(event) => event.stopPropagation()}
       >
         <h2
           id="vex-license-title"
-          className="mb-4 font-mono text-sm font-medium uppercase tracking-[0.18em]"
+          className="mb-4 font-mono text-[11px] uppercase tracking-[var(--tracking-eyebrow)]"
         >
           Docker Desktop license
         </h2>
@@ -134,35 +134,12 @@ export function LicenseNotice({
           <IconArrowUpRight size={14} />
         </button>
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onDismiss}
-            className={cn(
-              "inline-flex h-9 items-center justify-center rounded-full border border-[var(--color-border)] bg-transparent px-5 font-mono text-xs font-medium uppercase tracking-[0.16em] text-ink-secondary",
-              "hover:border-ink-tertiary hover:text-ink-primary",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent,var(--color-accent-primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-surface-1",
-              "transition-colors duration-150",
-            )}
-          >
+          <Button type="button" variant="quiet" size="sm" onClick={onDismiss}>
             Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onAccept}
-            className={cn(
-              // Gate paper-pill system (Phase 2b): --color-primary is paper
-              // inside [data-vex-gate], so the label must be the deep-cobalt
-              // primary-foreground: the retired accent-fill + paper-ink pair
-              // would render paper-on-paper now that the onboarding accent
-              // re-projects to paper.
-              "inline-flex h-9 items-center justify-center rounded-full bg-[var(--color-primary)] px-5 font-mono text-xs font-medium uppercase tracking-[0.16em] text-[var(--color-primary-foreground)]",
-              "hover:bg-[color-mix(in_oklab,var(--color-primary)_88%,transparent)]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-surface-1",
-              "active:scale-[0.98] transition-colors duration-150",
-            )}
-          >
+          </Button>
+          <Button type="button" size="sm" onClick={onAccept}>
             Continue to download
-          </button>
+          </Button>
         </div>
       </div>
     </div>

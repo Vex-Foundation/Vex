@@ -190,7 +190,7 @@ export function ModelPicker({
           id={listboxId}
           role="listbox"
           aria-label="OpenRouter models"
-          className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-xl border border-line-2 bg-surface-1 p-1 text-ink-primary shadow-lv3"
+          className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto border border-line-2 bg-surface-1 p-1 text-ink-primary"
         >
           {loading ? (
             <p className="px-2.5 py-3 text-xs text-ink-tertiary">
@@ -227,7 +227,7 @@ export function ModelPicker({
                   onMouseEnter={() => setActiveIndex(index)}
                   onClick={() => choose(model)}
                   className={cn(
-                    "flex cursor-pointer items-start gap-2 rounded-[10px] px-2.5 py-2",
+                    "flex cursor-pointer items-start gap-2 px-2.5 py-2",
                     isActive
                       ? "bg-accent-wash text-ink-primary"
                       : "text-ink-secondary",
@@ -246,7 +246,7 @@ export function ModelPicker({
                     ) : null}
                   </span>
                   {isSelected ? (
-                    <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent-primary" />
+                    <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 bg-accent-primary" />
                   ) : null}
                 </div>
               );

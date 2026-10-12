@@ -231,14 +231,22 @@
   --vex-alias-label-box: var(--color-paper);
   --vex-alias-sky-rule: rgba(243, 244, 247, 0.32);
 
-  /* PRE-SHELL (post-gate setup stack) - the theme-aware group the
-   * `[data-vex-gate="true"]` scope in chronos-gate.css re-projects onto the
-   * shadcn/utility names.
+  /* PRE-SHELL (the stage) - the theme-aware group behind chronos-gate.css:
+   * the plate under the stage print, the type the stage sets ON the print,
+   * and what the `[data-vex-gate="true"]` scope re-projects onto the
+   * shadcn/utility names for the paper leaf.
    *
    * `gate-plate` must equal the main-window `backgroundColor` in CHRONOS
    * (#1b1412, main/main-window.ts) so first paint and the plate are one
    * surface. */
   --vex-alias-gate-plate: var(--color-night);
+  /* On the night print every type is paper (docs/design/V10-SPREAD.md
+   * section 1): the giant counter and the step numerals too, where the
+   * peri-hi counter measured 1.34:1. The unlock field and its Unlock box are
+   * night fields; the box keeps a half-peri edge so it reads on the print. */
+  --vex-alias-gate-counter: var(--color-paper);
+  --vex-alias-gate-field: var(--color-night-1);
+  --vex-alias-gate-go-rule: rgba(163, 171, 255, 0.5);
   --vex-alias-gate-border: rgba(243, 244, 247, 0.22);
   --vex-alias-gate-input: rgba(243, 244, 247, 0.32);
   --vex-alias-gate-muted: rgba(243, 244, 247, 0.08);
@@ -441,8 +449,12 @@
   --vex-alias-label-box: var(--color-paper);
   --vex-alias-sky-rule: rgba(10, 13, 24, 0.18);
 
-  /* PRE-SHELL under celeris: the setup stack on paper, white fields. */
+  /* PRE-SHELL under celeris: the day print's pale sky carries the blue
+   * counter and the paper label boxes; the leaf is paper with white fields. */
   --vex-alias-gate-plate: var(--color-paper);
+  --vex-alias-gate-counter: var(--color-blue-hi);
+  --vex-alias-gate-field: var(--color-paper);
+  --vex-alias-gate-go-rule: transparent;
   --vex-alias-gate-border: rgba(0, 0, 192, 0.22);
   --vex-alias-gate-input: rgba(0, 0, 192, 0.32);
   --vex-alias-gate-muted: rgba(0, 0, 192, 0.06);
@@ -585,10 +597,14 @@
   --color-toast: var(--vex-alias-toast-bg);
 
   /* Pre-shell utilities - `bg-gate-well`, `bg-gate-rail`, `bg-gate-code`,
-   * `bg-gate-input`, `text-gate-danger`, `text-gate-warn`. Only the setup
+   * `bg-gate-input`, `bg-gate-field`, `text-gate-counter`, `text-gate-danger`,
+   * `text-gate-warn`. Only the setup
    * stack consumes these; the shell has its own surface + status families.
    * An alias WITHOUT a projection here compiles to nothing at the call site
    * (silently, no build error) - `theme-matrix.test.ts` pins the pairing. */
+  --color-gate-counter: var(--vex-alias-gate-counter);
+  --color-gate-field: var(--vex-alias-gate-field);
+  --color-gate-go-rule: var(--vex-alias-gate-go-rule);
   --color-gate-input: var(--vex-alias-gate-input);
   --color-gate-well: var(--vex-alias-gate-well);
   --color-gate-rail: var(--vex-alias-gate-rail);

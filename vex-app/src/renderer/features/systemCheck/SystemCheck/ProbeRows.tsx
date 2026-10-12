@@ -78,7 +78,7 @@ export function ProbeRows({
       <StepRow
         label="Docker Engine"
         status={dockerStatus}
-        icon={<Docker width={20} height={20} aria-hidden />}
+        icon={<Docker variant="mono" width={20} height={20} aria-hidden />}
         // "READY" reads more accurately than "OK" for an engine
         // that's installed + daemon running + container available.
         // Other states fall back to StepRow defaults (CHECKING…/WARN/FAIL).

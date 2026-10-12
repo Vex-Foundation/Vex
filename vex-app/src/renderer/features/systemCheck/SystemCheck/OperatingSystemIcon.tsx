@@ -34,9 +34,11 @@ export function OperatingSystemIcon({
     case "win32":
       return <Windows {...commonProps} />;
     case "darwin":
-      return <Apple {...commonProps} />;
+      // The mono mark in the row's ink: the default variant is a white
+      // apple, which vanishes on the paper leaf.
+      return <Apple variant="mono" {...commonProps} />;
     case "linux":
-      return <Linux {...commonProps} />;
+      return <Linux variant="mono" {...commonProps} />;
     default:
       return (
         <IconSettings size={22} />
