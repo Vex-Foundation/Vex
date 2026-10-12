@@ -117,21 +117,20 @@ describe("an EXPANDED row is one quiet line", () => {
   });
 
   it("shows exactly ONE star on the pin control, and it matches the pin state", () => {
-    // The outline star carries the inner cutout subpath; the filled one is a
-    // single outline. That is what tells the two glyphs apart in jsdom.
-    const cutout = "M12 6.64";
+    // The pixel sprite tells the two glyphs apart: the outline star is
+    // px-watchlist-off, the filled one px-watchlist.
+    const hrefOf = (el: HTMLElement): string | null =>
+      el.querySelector("use")?.getAttribute("href") ?? null;
     const { unmount } = renderRow(session({ pinnedAt: null }), true);
     const unpinned = screen.getByRole("button", { name: /^pin session$/i });
     expect(unpinned.querySelectorAll("svg")).toHaveLength(1);
-    expect(unpinned.querySelector("path")?.getAttribute("d")).toContain(cutout);
+    expect(hrefOf(unpinned)).toBe("#px-watchlist-off");
     unmount();
 
     renderRow(session({ pinnedAt: "2026-08-06T10:00:00.000Z" }), true);
     const pinned = screen.getByRole("button", { name: /unpin session/i });
     expect(pinned.querySelectorAll("svg")).toHaveLength(1);
-    expect(pinned.querySelector("path")?.getAttribute("d")).not.toContain(
-      cutout,
-    );
+    expect(hrefOf(pinned)).toBe("#px-watchlist");
   });
 
   it("anchors a hover-card wrapper around the whole row", () => {
