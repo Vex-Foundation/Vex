@@ -2,26 +2,6 @@
  *  CHRONOS MOTION — Focused · Quiet · Precise                   *
  * ============================================================ */
 
-/* Eclipse backdrop drift — a glacial scale breath (90s alternate) on the
- * full-window photo so the night sky feels alive without ever announcing
- * itself. Slow enough that no single glance perceives motion; the global
- * reduced-motion rule collapses it to a still frame. */
-@keyframes vex-backdrop-drift {
-  from {
-    transform: scale(1);
-  }
-  to {
-    /* 1.02, was 1.05 — the drift zoom renders the artwork ABOVE its native
-     * pixels and the 5% peak visibly cost sharpness on large displays
-     * (owner report 2026-07-21); 2% keeps the breath, halves the tax. */
-    transform: scale(1.02);
-  }
-}
-.vex-backdrop-drift {
-  animation: vex-backdrop-drift 90s ease-in-out infinite alternate;
-  will-change: transform;
-}
-
 /* Delta shimmer — a light band sweeping OVER the $VEX 24h percentage. The
  * figure itself stays a SOLID direction color at all times (owner feedback:
  * no background-clip on the number — it washed the text out); the shine is

@@ -26,7 +26,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { PortfolioDto } from "@shared/schemas/portfolio.js";
 import { useUiStore } from "../../../stores/uiStore.js";
-import { WELCOME_PORTFOLIO_WIDTH } from "../../../lib/shell-columns.js";
 
 // Every brand mark stubs to null, whatever its name: the marks are
 // presentation-only here, and a hand-listed mock breaks the whole suite
@@ -154,26 +153,26 @@ describe("WelcomePortfolioPanel - collapsed ⇄ expanded", () => {
     expect(handle.getAttribute("aria-expanded")).toBe("true");
   });
 
-  it("is an IN-FLOW aside that reserves width open and releases it collapsed (owner correction: cards must never cover the center)", () => {
+  it("is an IN-FLOW aside that fills the BOOK track (owner correction: cards must never cover the center)", () => {
     const { container, rerender } = render(
       <WelcomePortfolioPanel bookOpen onToggle={() => {}} />,
     );
     const aside = container.querySelector('[data-vex-area="welcome-portfolio"]');
     expect(aside).not.toBeNull();
-    // A real flex sibling (sidebar behavior), not an absolute overlay.
+    // A real grid child (sidebar behavior), not an absolute overlay.
     expect(aside?.tagName).toBe("ASIDE");
-    expect(aside?.className).toContain("transition-[width]");
-    // The width is the SHARED constant the shell reserves its third grid track
-    // from, so the aside and its reservation cannot drift (round-3 QA item 8).
-    expect((aside as HTMLElement | null)?.style.width).toBe(
-      `${WELCOME_PORTFOLIO_WIDTH}px`,
-    );
+    // The shell's BOOK track owns the width, open and closed (0), and its
+    // transition; the aside only fills it, so the two cannot drift.
+    expect(aside?.className).toContain("w-full");
+    expect((aside as HTMLElement | null)?.style.width).toBe("");
 
     rerender(<WelcomePortfolioPanel bookOpen={false} onToggle={() => {}} />);
     const collapsed = container.querySelector(
       '[data-vex-area="welcome-portfolio"]',
     );
-    expect((collapsed as HTMLElement | null)?.style.width).toBe("0px");
+    expect(collapsed?.className).toContain("w-full");
+    // The handle stays: the round button the tab reopens from.
+    expect(screen.getByRole("button", { name: "Open the Portfolio tab" })).not.toBeNull();
   });
 });
 

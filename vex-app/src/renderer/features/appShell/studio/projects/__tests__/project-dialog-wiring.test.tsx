@@ -71,7 +71,6 @@ function renderSidebar(): void {
     <QueryClientProvider client={client}>
       <StudioSidebar
         collapsed={false}
-        width={300}
         onToggleSidebar={() => undefined}
         activeProjectId={null}
         onSelectProject={() => undefined}
@@ -146,7 +145,6 @@ describe("the create key", () => {
       <QueryClientProvider client={client}>
         <StudioSidebar
           collapsed={false}
-          width={300}
           onToggleSidebar={() => undefined}
           activeProjectId={null}
           onSelectProject={() => undefined}

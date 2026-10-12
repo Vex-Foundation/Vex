@@ -1,5 +1,7 @@
 /**
- * The strip's three zones, in both modes.
+ * The running head's three zones, in every mode, and its place in the window
+ * (docs/design/V10-SPREAD.md sections 4 and 8): a 44px drag row whose rule
+ * clears on the welcome stage and whose left cell carries the folded gutter.
  *
  * The centre word is the thing that changes with the mode, and the flanks
  * divide by WHOSE they are. `MissionRail` and `SessionExportControl` are scoped
@@ -13,13 +15,14 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Result } from "@shared/ipc/result.js";
 import type { StudioHostStatus } from "@shared/schemas/studio.js";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { makeError, makeHostStatus } from "../studio/__tests__/studio-fixtures.js";
 
-/** The strip's only mode-dependent input, driven directly. */
+/** The head's only mode-dependent input, driven directly. */
 const useStudioHostStatusMock = vi.fn<
   () => Partial<UseQueryResult<Result<StudioHostStatus>>>
 >();
@@ -28,7 +31,7 @@ vi.mock("../../../lib/api/studio.js", () => ({
 }));
 
 /** The flanks and the approvals cluster have their own suites; stub them here
- * so this file asserts the STRIP's composition, not their internals. */
+ * so this file asserts the HEAD's composition, not their internals. */
 vi.mock("../MissionRail.js", () => ({
   MissionRail: ({ activeSessionId }: { activeSessionId: string | null }) =>
     activeSessionId === null ? null : <div data-testid="mission-rail" />,
@@ -44,20 +47,24 @@ vi.mock("../DeskRuleTapeState.js", () => ({
   DeskRuleTapeState: () => <span data-testid="desk-rule-word">Idle</span>,
 }));
 
-const { ShellStatusStrip } = await import("../ShellStatusStrip.js");
+const { RunningHead } = await import("../RunningHead.js");
 
 function renderStrip(
   mode: "agent" | "studio" | "lighter",
   activeSessionId: string | null = null,
-): void {
+  extra: { readonly fold?: ReactNode; readonly empty?: boolean } = {},
+): HTMLElement {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  render(
+  const view = render(
     <QueryClientProvider client={client}>
-      <ShellStatusStrip runtimeMode={mode} activeSessionId={activeSessionId} />
+      <RunningHead runtimeMode={mode} activeSessionId={activeSessionId} {...extra} />
     </QueryClientProvider>,
   );
+  const head = view.container.querySelector<HTMLElement>("[data-vex-area='shell-status-strip']");
+  if (head === null) throw new Error("running head missing");
+  return head;
 }
 
 beforeEach(() => {
@@ -88,9 +95,9 @@ describe("the centre word", () => {
     );
   });
 
-  it("the word is the PILL, and the pill opens its card in the strip", () => {
+  it("the word is the PILL, and the pill opens its card in the head", () => {
     // The audit's finding I7: the word sat alone with no sentence and no
-    // action. The strip's job here is only that the control it mounts is the
+    // action. The head's job here is only that the control it mounts is the
     // pill; the card's per-cause contents are `StudioHostStatusPill.test.tsx`.
     useStudioHostStatusMock.mockReturnValue({
       data: { ok: true, data: makeHostStatus({ state: "locked" }) },
@@ -148,7 +155,7 @@ describe("the centre word", () => {
       // The cause reaches BOTH audiences, which is what the bare word never
       // did: assistive tech hears it from the live region without touching
       // anything, and a pointer or keyboard user reads it in the card.
-      // The strip also mounts the notification announcer's live regions, so
+      // The head also mounts the notification announcer's live regions, so
       // the assertion is over every polite region rather than "the" one.
       expect(
         screen
@@ -168,7 +175,7 @@ describe("the centre word", () => {
     useStudioHostStatusMock.mockReturnValue({ data: undefined });
     const { unmount } = render(
       <QueryClientProvider client={new QueryClient()}>
-        <ShellStatusStrip runtimeMode="studio" activeSessionId={null} />
+        <RunningHead runtimeMode="studio" activeSessionId={null} />
       </QueryClientProvider>,
     );
     expect(screen.getByLabelText(/Vex Studio host status$/).textContent).toContain(
@@ -214,11 +221,48 @@ describe("the flanks", () => {
   it("STUDIO gets no session flanks even when a session is still selected", () => {
     // The store keeps the agent selection across a mode switch (so switching
     // back returns to it), so "no session id" is not what silences these here
-    // - the strip has to hand them null itself.
+    // - the head has to hand them null itself.
     renderStrip("studio", "44444444-4444-4444-8444-444444444444");
     expect(screen.queryByTestId("mission-rail")).toBeNull();
     expect(screen.queryByTestId("export-control")).toBeNull();
     // ... and the app-wide cluster is NOT gated with them.
     expect(screen.getByTestId("approvals-badge")).not.toBeNull();
+  });
+});
+
+describe("the head row", () => {
+  it("is the window's drag region, one 44px row", () => {
+    const head = renderStrip("agent", "44444444-4444-4444-8444-444444444444");
+    expect(head.tagName).toBe("HEADER");
+    expect(head.classList.contains("vex-running-head")).toBe(true);
+    expect(head.classList.contains("vex-drag")).toBe(true);
+  });
+
+  it("clears its rule on the welcome stage only", () => {
+    expect(renderStrip("agent", null, { empty: true }).hasAttribute("data-empty")).toBe(true);
+    expect(
+      renderStrip("agent", "44444444-4444-4444-8444-444444444444").hasAttribute("data-empty"),
+    ).toBe(false);
+  });
+
+  it("carries the folded gutter in its left cell, before the mission rail", () => {
+    const head = renderStrip("agent", "44444444-4444-4444-8444-444444444444", {
+      fold: <span data-testid="fold" />,
+    });
+    const fold = head.querySelector("[data-testid='fold']");
+    expect(fold?.parentElement?.className).toBe("vex-running-head__start");
+    expect(fold?.nextElementSibling?.getAttribute("data-testid")).toBe("mission-rail");
+  });
+
+  it("shows no fold while the gutter is open", () => {
+    const head = renderStrip("agent", "44444444-4444-4444-8444-444444444444");
+    expect(head.querySelector("[data-vex-running-head-fold]")).toBeNull();
+  });
+
+  it("collapses in Lighter, whose top bar is its running head", () => {
+    const head = renderStrip("lighter", "session-1", { empty: true });
+    expect(head.className).toBe("contents");
+    expect(head.hasAttribute("data-empty")).toBe(false);
+    expect(head.getAttribute("data-collapsed")).toBe("true");
   });
 });

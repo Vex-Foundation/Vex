@@ -109,7 +109,7 @@ export function GlobalApprovals(): JSX.Element | null {
   }, [query.data]);
 
   // The cross-mode announcement (B4c). Owned HERE, above the mode dispatch:
-  // this component is mounted exactly once for the frame (`ShellStatusStrip`)
+  // this component is mounted exactly once for the frame (`RunningHead`)
   // and already holds the app-wide list, so the observation survives a mode
   // switch instead of resetting with the shell that switched. Declared before
   // the early return below - the badge hides when nothing is pending, and a

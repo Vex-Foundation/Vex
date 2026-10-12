@@ -1,18 +1,10 @@
 /**
- * Sessions sidebar column. Width comes from the shell grid track (AppShell +
- * lib/shell-columns.ts); this component owns the collapse CHOREOGRAPHY, not
- * the geometry: on collapse the content freezes at its expanded width
- * (inline style) and fades in place for 150ms while the sliding track clips
- * it, then the rail controls enter the 56px spine from the same horizontal
- * offset (translateX(49px), backwards fill) over the transition's second
- * half. A cold-collapsed render is static; expand remounts wide content on a
- * 200ms fade (asymmetry is deliberate). Scrollbars in the column follow the
- * pointer: `useQuietScrollbars` rebinds the scrollbar indirection pair away
- * while the pointer is elsewhere (2s linger).
- *
- * The rail reads the shell backdrop through `.vex-glass-rail` (glass.css:
- * tint, blur and edge light in one stylesheet class, the same the Studio rail
- * wears) - no separating stroke anywhere in the column.
+ * Sessions index, set on the left page. Width comes from the shell grid track
+ * (AppShell + lib/shell-columns.ts): the open page, or the 56px spine when
+ * `collapsed`, which renders the icon rail. The column is transparent: the
+ * left page's print (`ShellBackdrop`) shows through it. Scrollbars in the
+ * column follow the pointer: `useQuietScrollbars` rebinds the scrollbar
+ * indirection pair away while the pointer is elsewhere (2s linger).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -24,7 +16,6 @@ import {
 } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
 import { useSessionsList } from "../../lib/api/sessions.js";
-import { useCollapseChoreography } from "../../lib/useCollapseChoreography.js";
 import { useQuietScrollbars } from "../../lib/useQuietScrollbars.js";
 import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
 import { useUiStore } from "../../stores/uiStore.js";
@@ -50,17 +41,14 @@ import {
 
 interface SessionsListProps {
   readonly onCreate: () => void;
-  /** Rail state decided by the shell frame (breakpoint-aware). */
+  /** Page or spine, decided by the shell frame (breakpoint-aware). */
   readonly collapsed: boolean;
-  /** Rendered track width from the concession solve. */
-  readonly width: number;
   readonly onToggleSidebar: () => void;
 }
 
 export function SessionsList({
   onCreate,
   collapsed,
-  width,
   onToggleSidebar,
 }: SessionsListProps): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
@@ -84,13 +72,8 @@ export function SessionsList({
     handleConfirmRemove,
   } = useSessionRowActions();
 
-  // Wide content stays mounted while a live collapse fades, unmounts at
-  // settle, remounts right away on expand; the frozen width keeps the
-  // sliding track clipping instead of reflowing (lib/useCollapseChoreography).
-  const { wide, fading, railIn, frozenWidth } = useCollapseChoreography(
-    collapsed,
-    width,
-  );
+  // The open page renders the index; the spine renders the icon rail.
+  const wide = !collapsed;
 
   const columnRef = useRef<HTMLElement | null>(null);
   const { quiet, onPointerEnter, onPointerLeave } =
@@ -154,15 +137,10 @@ export function SessionsList({
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
       className={cn(
-        // Glass over the shell backdrop: `.vex-glass-rail` (glass.css) owns
-        // the tint, the blur and the edge light; NO separating stroke. The
-        // Studio rail wears the same class, so the two rails stay one surface.
-        "vex-sidebar vex-glass-rail relative flex h-full flex-col",
-        fading && "vex-sidebar-fading",
-        railIn && "vex-sidebar-rail-in",
+        // No surface of its own: the left page's print is the ground.
+        "vex-sidebar relative flex h-full flex-col",
         quiet && "vex-quiet-bars",
       )}
-      style={wide ? { width: collapsed ? frozenWidth : "100%" } : undefined}
       data-vex-area="sessions-sidebar"
       data-vex-sidebar-open={collapsed ? "false" : "true"}
     >

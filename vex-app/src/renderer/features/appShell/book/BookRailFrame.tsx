@@ -66,10 +66,13 @@ export function BookRailFrame({
         bookOpen ? "gap-3 p-3" : "p-0",
       )}
     >
+      {/* The BOOK's head row: a window drag region that keeps its toggle
+          clear of the Windows and Linux caption buttons (shell.css,
+          docs/design/V10-SPREAD.md section 8). */}
       <div
         className={cn(
-          "flex shrink-0 items-center",
-          bookOpen ? "justify-between" : "justify-center pt-3",
+          "vex-book-head vex-drag flex shrink-0 items-center",
+          bookOpen ? "vex-overlay-end justify-between" : "justify-center pt-3",
         )}
       >
         {bookOpen && headline !== undefined ? (

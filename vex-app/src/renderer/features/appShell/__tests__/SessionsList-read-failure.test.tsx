@@ -70,7 +70,6 @@ function renderRail(): void {
     <SessionsList
       onCreate={() => {}}
       collapsed={false}
-      width={280}
       onToggleSidebar={() => {}}
     />,
   );

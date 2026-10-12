@@ -23,7 +23,7 @@
  * cannot cover - the switch is the moment an approval becomes "cross-mode", and
  * a memory that reset with it would re-announce every pending row on every
  * toggle). `GlobalApprovals`, the hook's only caller, is mounted exactly once
- * for the whole frame by `ShellStatusStrip`, so a module-level store has one
+ * for the whole frame by `RunningHead`, so a module-level store has one
  * writer by construction.
  *
  * The set is BOUNDED (see `BoundedSeenIds`); tests own `resetCrossModeToastMemory`.

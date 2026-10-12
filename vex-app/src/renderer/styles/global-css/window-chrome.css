@@ -1,9 +1,11 @@
 /* Window chrome utilities (docs/design/V10-SPREAD.md section 8). The title bar is hidden on every
  * OS; each 44px head row is the drag region and every control inside it opts
  * out. Hook: lib/use-window-chrome.ts stamps `data-os` (mac | win | linux) and
- * `data-chrome` (overlay | native | mac) on <html>. WP3 wires the head rows.
+ * `data-chrome` (overlay | native | mac) on <html>. Wired on the running
+ * head, the left page's head row, the gutter, the BOOK head and Lighter's
+ * top bar (AppShell and shell.css).
  *
- * Example (documented, not wired yet):
+ * Example:
  *   <header class="vex-drag">
  *     <span>Running head</span>
  *     <button class="vex-no-drag">Export</button>
@@ -38,8 +40,9 @@ html[data-chrome="native"] .vex-drag {
   -webkit-app-region: no-drag;
 }
 
-/* Head that sits under the native controls: reserve their width plus 8px. */
-.vex-overlay-end {
+/* Head that sits under the native controls: reserve their width plus 8px.
+ * Qualified by `html` so it outranks a head row's own padding shorthand. */
+html .vex-overlay-end {
   padding-inline-end: calc(var(--overlay-w) + 8px);
 }
 

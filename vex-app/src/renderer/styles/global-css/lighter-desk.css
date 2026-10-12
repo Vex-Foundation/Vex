@@ -258,7 +258,7 @@
 }
 
 /* Shell strip flank (notices, approvals, export), portaled in from
- * `ShellStatusStrip`; nothing to show means no gap either. */
+ * `RunningHead`; nothing to show means no gap either. */
 .lit-desk-top-shell { display: flex; flex: 0 0 auto; align-items: center; margin-left: 14px; }
 .lit-desk-top-shell:empty { display: none; }
 
