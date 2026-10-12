@@ -13,7 +13,7 @@ import {
   IconBrain,
   IconCable,
   IconFile,
-  IconRefresh,
+  pxGlyph,
   IconSearch,
   IconTerminal,
   IconWrench,
@@ -30,7 +30,7 @@ import {
  */
 const GLYPH_RULES: readonly (readonly [RegExp, ComponentType<GlyphProps>])[] = [
   [/bridge/, IconCable],
-  [/swap|trade|quote/, IconRefresh],
+  [/swap|trade|quote/, pxGlyph("swap")],
   [/search/, IconSearch],
   [/web|browse/, IconGlobe],
   [/terminal|exec|shell/, IconTerminal],

@@ -273,7 +273,7 @@ describe("SettingsScreen", () => {
       const section = row.getAttribute("data-vex-settings-row");
       if (section === null) throw new Error("Settings row has no section identifier");
       if (!["superboardKey", "lighterPoints"].includes(section)) {
-        expect(icon?.getAttribute("viewBox")).toBe("0 0 16 16");
+        expect(icon?.querySelector("use")?.getAttribute("href")).toMatch(/^#px-/);
         expect(icon?.querySelector("[stroke]")).toBeNull();
       }
     }
