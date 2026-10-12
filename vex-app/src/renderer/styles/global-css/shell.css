@@ -34,23 +34,6 @@
    * surface reads this token instead of a raw colour, so a theme flip carries
    * the contrast automatically. */
   --vex-accent-contrast: var(--vex-alias-label-on-accent);
-  /* Pin flag: the approval attention mark. Status is fill, so it rides the
-   * attention ink (the one blue), not a warm hue. */
-  --vex-pin: var(--vex-alias-state-warn);
-  --vex-pin-border: color-mix(in oklab, var(--vex-alias-state-warn) 40%, transparent);
-  --vex-pin-fill: color-mix(in oklab, var(--vex-alias-state-warn) 10%, transparent);
-  --vex-pin-fill-hover: color-mix(in oklab, var(--vex-alias-state-warn) 16%, transparent);
-  /* Hover for a SOLID pin plate (the approvals REVIEW key, whose label is
-   * --vex-surface-0). The mix partner is the theme's INK, so the hover moves
-   * the plate AWAY from its label in both themes by construction (darker blue
-   * under a paper label by day, lighter peri under a night label at night).
-   * It reads the ALIAS directly so status-contrast.test.ts can resolve the
-   * partner out of tokens.css and re-measure both themes. */
-  --vex-pin-hover: color-mix(in oklab, var(--vex-alias-state-warn) 85%, var(--vex-alias-label-primary));
-  /* OPAQUE pin fill: the same 10% wash as --vex-pin-fill, mixed onto the
-   * canvas instead of transparent, so a STICKY header fully occludes the card
-   * content scrolling underneath it (ApprovalDetails.tsx). */
-  --vex-pin-fill-solid: color-mix(in oklab, var(--vex-alias-state-warn) 10%, var(--vex-surface-0));
   /* THE GLASS TIERS, NEUTRALISED (V10: no glass, no blur). The tier names
    * stay because their classes (glass.css) and two call sites still read
    * them; each tint is now an OPAQUE surface alias, so the room under a tier

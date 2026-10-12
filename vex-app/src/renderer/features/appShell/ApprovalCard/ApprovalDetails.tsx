@@ -5,9 +5,13 @@
  * reasoning preview, the critical-args well, and the inline error alert. Pure
  * presentation: it holds no state, owns no decision logic, and emits no events
  * — the two-step confirm gate and mutation wiring stay in `ApprovalCard`.
- * Testids, aria, and TEXT CONTENT are pinned by tests and stay verbatim; the
- * chrome speaks the landing's amber alert register (.ws-alert): mono-uppercase
- * title in --vex-pin over the card's pin fill.
+ * Testids, aria, and TEXT CONTENT are pinned by tests and stay verbatim.
+ *
+ * The chrome is the REAL FUNDS card's (docs/design/V10-SPREAD.md section 7,
+ * reference d4): a 50px head with the target swatch, the title in 13px
+ * Departure Mono caps in ink, the reversed `Real funds` stamp and the ink risk
+ * tags; the bound facts in mono; the reasoning in italic sans; the signed
+ * fields in a well on the second paper.
  */
 
 import type { JSX } from "react";
@@ -15,8 +19,9 @@ import type {
   ApprovalPreview,
   ApprovalSummaryDto,
 } from "@shared/schemas/approvals.js";
-import { riskChipClasses } from "./risk.js";
 import { lighterOrderFacts } from "./lighter-order-facts.js";
+import { Stamp } from "../../../components/ui/stamp.js";
+import { Swatch } from "../../../components/ui/swatch.js";
 import {
   APPROVAL_ACTOR_FIELD_LABEL,
   APPROVAL_EXPIRY_FIELD_LABEL,
@@ -203,6 +208,20 @@ function criticalArgLabel(
   return "Signed order expiry";
 }
 
+/** The facts block's key and value cells (reference d4, `.facts`). */
+const FACT_KEY =
+  "font-mono text-[11px] uppercase leading-[18px] tracking-chip text-ink-secondary";
+const FACT_VALUE =
+  "break-all font-mono text-[12px] leading-[18px] tracking-[0.02em] text-ink-primary";
+
+/** The signed-fields well (reference d4, `.well`). */
+const WELL =
+  "grid grid-cols-[minmax(112px,max-content)_minmax(0,1fr)] bg-surface-3 px-3 py-1";
+const WELL_KEY =
+  "border-t border-rule-quiet py-[5px] pr-3.5 font-mono text-[11px] uppercase leading-[17px] tracking-chip text-ink-secondary";
+const WELL_VALUE =
+  "border-t border-rule-quiet py-[5px] font-mono text-[12px] leading-[17px] tracking-[0.01em] text-ink-primary";
+
 export interface ApprovalDetailsProps {
   readonly summary: ApprovalSummaryDto;
   readonly titleId: string;
@@ -244,20 +263,23 @@ export function ApprovalDetails({
   });
   const orderFacts = criticalArgs === null ? null : lighterOrderFacts(criticalArgs);
   const criticalArgsWell = criticalArgs !== null && Object.keys(criticalArgs).length > 0 ? (
+    // THE WELL (reference d4): the second paper, one ruled row per signed
+    // field, the key in 11px mono caps and the value in 12px mono. The rule
+    // rides the cells (not a gap) so it runs the well's full width.
     <dl
       data-testid="critical-args"
-      className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 rounded-[6px] border border-[var(--vex-line)] bg-[var(--vex-surface-down)] px-3 py-2 font-mono text-[11px]"
+      className={`${WELL} [&>div:first-child>*]:border-t-0`}
     >
       {visibleCriticalArgs(criticalArgs).map(([k, v]) => (
         // `display: contents` keeps the grid layout while giving each
         // pair a stable React key.
         <div key={k} className="contents">
-          <dt className="uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+          <dt className={WELL_KEY}>
             {criticalArgLabel(k, criticalArgs)}
           </dt>
           <dd className={criticalArgs.toolId === "lighter.fees.approve"
-            ? "min-w-0 break-words [overflow-wrap:anywhere] text-[var(--vex-text-2)]"
-            : "break-all text-[var(--vex-text-2)]"}>{criticalArgValue(k, v, criticalArgs)}</dd>
+            ? `${WELL_VALUE} min-w-0 break-words [overflow-wrap:anywhere]`
+            : `${WELL_VALUE} break-all`}>{criticalArgValue(k, v, criticalArgs)}</dd>
         </div>
       ))}
     </dl>
@@ -272,12 +294,16 @@ export function ApprovalDetails({
         // before the user ever reached Approve/Reject. Same
         // `sticky top-0 z-10` + solid-background pattern `GlobalApprovals`
         // already uses for its `DialogHeader`.
-        className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-t-lg border-b border-[var(--vex-line)] bg-[var(--vex-pin-fill-solid)] px-4 py-3"
+        className="sticky top-0 z-10 flex min-h-[50px] flex-wrap items-center gap-2.5 border-b border-rule bg-surface-base px-3.5 py-2"
       >
+        {/* The target swatch: the run is waiting on this card. */}
+        <span aria-hidden className="inline-flex text-accent-primary">
+          <Swatch state="warning" size={9} />
+        </span>
         <div className="min-w-0 flex-1">
           <h3
             id={titleId}
-            className="truncate font-mono text-[11px] uppercase tracking-[0.14em] text-[var(--vex-pin)]"
+            className="truncate font-mono text-[13px] uppercase leading-5 tracking-chip text-ink-primary"
           >
             Approval needed:{" "}
             <span className="font-mono">
@@ -285,36 +311,34 @@ export function ApprovalDetails({
             </span>
           </h3>
         </div>
-        {/* Stamp grammar — text content stays verbatim (tests pin it). */}
+        {/* REAL FUNDS: the reversed ink stamp, on every card - every desktop
+            wallet is a real wallet (section 7). */}
+        <Stamp data-testid="real-funds-stamp" className="shrink-0" />
+        {/* Tag grammar - text content stays verbatim (tests pin it). One ink
+            outline for every level: the level is the word. */}
         {summary.riskLevel !== null ? (
-          <span
-            data-testid="risk-chip"
-            className={`shrink-0 rounded-[3px] border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] ${riskChipClasses(
-              summary.riskLevel,
-            )}`}
-          >
+          <span data-testid="risk-chip" className="vex-risk-tag">
             {summary.riskLevel}
           </span>
         ) : null}
         {summary.actionKind !== null ? (
-          <span
-            data-testid="action-chip"
-            className="shrink-0 rounded-[3px] border border-[var(--vex-line-strong)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-2)]"
-          >
+          <span data-testid="action-chip" className="vex-risk-tag">
             {summary.actionKind}
           </span>
         ) : null}
-        {/* The signed glint — plays once via stylesheet keyframes and ends
-            transparent; unmounting early is fine (grace note, not contract). */}
+        {/* The signed mark: the done swatch once an approve lands (status by
+            fill); unmounting early is fine (grace note, not contract). */}
         {signedGlint ? (
           <span
             aria-hidden
             data-vex-signed-glint=""
-            className="vex-intro-glint h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--vex-accent-text)]"
-          />
+            className="inline-flex shrink-0 text-accent-primary"
+          >
+            <Swatch state="done" size={9} />
+          </span>
         ) : null}
       </header>
-      <div className="space-y-3 px-4 py-3">
+      <div className="grid gap-3 pb-3.5 pl-3.5 pr-4 pt-3.5">
         {/* THE BOUND FACTS (rule 90: an approval binds at least the actor and
             whether an agent proposed it, the resource, the expiry and the
             proposal identity). They are ROW-LEVEL facts of the durable intent,
@@ -328,13 +352,13 @@ export function ApprovalDetails({
             Each row renders only when the approval CARRIES that fact - an
             agent-mode approval has no project, a legacy row has no expiry, and
             an empty "Project: -" would invent one. */}
-        <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 font-mono text-[11px]">
+        <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-[22px] gap-y-1.5">
           {actorLine !== null ? (
             <div data-testid="approval-actor" className="contents">
-              <dt className="uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+              <dt className={FACT_KEY}>
                 {APPROVAL_ACTOR_FIELD_LABEL}
               </dt>
-              <dd className="break-all text-[var(--vex-text-2)]">{actorLine}</dd>
+              <dd className={FACT_VALUE}>{actorLine}</dd>
             </div>
           ) : null}
           {/* PROVENANCE (B0/B4c). The NAME is what the user reads; the ID rides
@@ -342,11 +366,11 @@ export function ApprovalDetails({
               edited or belong to a tombstoned project and the id cannot. */}
           {summary.projectId !== null ? (
             <div data-testid="approval-project" className="contents">
-              <dt className="uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+              <dt className={FACT_KEY}>
                 {APPROVAL_PROJECT_FIELD_LABEL}
               </dt>
               <dd
-                className="break-all text-[var(--vex-text-2)]"
+                className={FACT_VALUE}
                 title={approvalProjectDetail(summary.projectId, projectName)}
                 aria-label={approvalProjectDetail(summary.projectId, projectName)}
               >
@@ -355,10 +379,10 @@ export function ApprovalDetails({
             </div>
           ) : null}
           <div data-testid="approval-proposal" className="contents">
-            <dt className="uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+            <dt className={FACT_KEY}>
               {APPROVAL_PROPOSAL_FIELD_LABEL}
             </dt>
-            <dd className="break-all text-[var(--vex-text-2)]">{summary.id}</dd>
+            <dd className={FACT_VALUE}>{summary.id}</dd>
           </div>
           {/* The instant this approval stops being decidable, carried WHOLE and
               in UTC exactly as the durable row states it. Not localized and not
@@ -367,17 +391,17 @@ export function ApprovalDetails({
               sweep and the broker's timer already own. */}
           {summary.expiresAt !== null ? (
             <div data-testid="approval-expiry" className="contents">
-              <dt className="uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+              <dt className={FACT_KEY}>
                 {criticalArgs?.toolId === "lighter.fees.approve" ? "Decision deadline" : APPROVAL_EXPIRY_FIELD_LABEL}
               </dt>
-              <dd className="break-all text-[var(--vex-text-2)]">
+              <dd className={FACT_VALUE}>
                 {summary.expiresAt}
               </dd>
             </div>
           ) : null}
         </dl>
         {summary.reasoningPreview.trim().length > 0 ? (
-          <p className="italic text-[var(--vex-text-2)]">
+          <p className="text-[14px] italic leading-[1.5] text-ink-secondary">
             {summary.reasoningPreview}
           </p>
         ) : null}
@@ -387,14 +411,14 @@ export function ApprovalDetails({
         {orderFacts !== null && orderFacts.length > 0 ? (
           <dl
             data-testid="order-facts"
-            className="grid grid-cols-[max-content_1fr] items-baseline gap-x-3 gap-y-1.5 rounded-[6px] border border-[var(--vex-line)] bg-[var(--vex-surface-down)] px-3 py-2 text-[12px]"
+            className={`${WELL} [&>div:first-child>*]:border-t-0`}
           >
             {orderFacts.map((fact) => (
               <div key={fact.label} className="contents">
-                <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+                <dt className={WELL_KEY}>
                   {fact.label}
                 </dt>
-                <dd className="min-w-0 break-words [overflow-wrap:anywhere] text-[var(--vex-text)]">{fact.value}</dd>
+                <dd className="min-w-0 break-words border-t border-rule-quiet py-[5px] text-[14px] leading-[17px] text-ink-primary [overflow-wrap:anywhere]">{fact.value}</dd>
               </div>
             ))}
           </dl>
@@ -402,7 +426,7 @@ export function ApprovalDetails({
         {/* Critical args — recessed well: the facts being signed for. */}
         {orderFacts !== null && criticalArgsWell !== null ? (
           <details className="group">
-            <summary className="cursor-pointer select-none font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)] hover:text-[var(--vex-text-2)]">
+            <summary className="cursor-pointer select-none font-mono text-[11px] uppercase tracking-chip text-accent-primary hover:text-ink-primary">
               All signed fields
             </summary>
             <div className="mt-2">{criticalArgsWell}</div>
@@ -411,9 +435,10 @@ export function ApprovalDetails({
         {inlineError !== null ? (
           <p
             role="alert"
-            className="rounded-[6px] border border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)] bg-destructive/10 px-3 py-2 text-xs text-destructive"
+            className="flex items-start gap-2 border border-rule-ink px-3 py-2 text-[13px] leading-5 text-ink-primary"
           >
-            {inlineError}
+            <Swatch state="error" size={9} className="mt-[5px]" />
+            <span>{inlineError}</span>
           </p>
         ) : null}
       </div>

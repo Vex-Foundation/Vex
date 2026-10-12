@@ -38,15 +38,17 @@ dialog.vex-dialog {
 
 /* ── Approval focus mask ────────────────────────────────────────────────────
  * A pending approval is the one thing blocking the run; the rest of the
- * shell (transcript, composer, sidebar) sits under the paper dither so
- * attention lands on the card. Same veil as the dialog `::backdrop` and the
- * lightbox mask, for one masking vocabulary across the app. `position: fixed` so it covers the viewport regardless of
- * where `ApprovalsRegion` sits in the scrolling transcript, and
+ * session (transcript, composer) sits under the paper dither so attention
+ * lands on the card (docs/design/V10-SPREAD.md section 7). Same veil as the
+ * dialog `::backdrop` and the lightbox mask, for one masking vocabulary across
+ * the app. ABSOLUTE, not fixed: its containing block is the session panel, so
+ * it covers the session page and leaves the left page and the running head
+ * sharp (chat-transcript.css carries the same veil onto the BOOK body).
  * `pointer-events: none` because this is a visual cue, not a second click
- * trap on top of the region's own `aria-live` announcement — the run is
- * already paused; nothing under the mask needs to be unreachable. */
+ * trap on top of the region's own `aria-live` announcement: the run is
+ * already paused, and nothing under the mask needs to be unreachable. */
 .vex-approval-mask {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 40;
   pointer-events: none;

@@ -12,6 +12,8 @@
  *     `isError` would not catch application-level Result failures).
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -631,11 +633,16 @@ describe("ApprovalCard", () => {
     expect(approve.getAttribute("disabled")).not.toBeNull();
     expect(reject.getAttribute("disabled")).not.toBeNull();
     expect(approve.getAttribute("aria-busy")).toBe("true");
-    expect(approve.className).toContain("vex-ring-working");
+    // The working key keeps its blue fill and leads with the ongoing swatch
+    // (status by fill); the retired travelling lane is gone.
+    expect(approve.hasAttribute("data-vex-approve-working")).toBe(true);
+    expect(approve.querySelector('.vex-swatch[data-s="ongoing"]')).not.toBeNull();
+    expect(approve.className).not.toContain("disabled:border-dotted");
+    expect(approve.className).not.toContain("vex-ring-working");
   });
 
   it("leaves the approve key alone while a REJECTION is the thing in flight", () => {
-    // `inFlight` covers both mutations. The travelling arc marks the key that
+    // `inFlight` covers both mutations. The working swatch marks the key that
     // was actually pressed, so a running rejection must not light Approve.
     rejectPending = true;
     renderCard(
@@ -644,7 +651,10 @@ describe("ApprovalCard", () => {
     );
     const approve = screen.getByRole("button", { name: /^approve$/i });
     expect(approve.getAttribute("disabled")).not.toBeNull();
-    expect(approve.className).not.toContain("vex-ring-working");
+    expect(approve.hasAttribute("data-vex-approve-working")).toBe(false);
+    expect(approve.querySelector(".vex-swatch")).toBeNull();
+    // An inert primary is the dotted outline, never a faded fill.
+    expect(approve.className).toContain("disabled:border-dotted");
     expect(approve.getAttribute("aria-busy")).toBe("false");
   });
   describe("click responsiveness (K-2 B1)", () => {
@@ -760,5 +770,67 @@ describe("ApprovalCard", () => {
       expect(screen.getByRole("alert").textContent).toContain("IPC channel closed.");
       expect(screen.getByRole("button", { name: /^reject$/i }).getAttribute("disabled")).toBeNull();
     });
+  });
+});
+
+/**
+ * REAL FUNDS, ON EVERY CARD (docs/design/V10-SPREAD.md section 7). Every
+ * desktop wallet is a real wallet, so no approval card may render without the
+ * reversed stamp, the 1.5px ink frame and the hatch band - whatever its risk,
+ * its action kind or its origin. The frame lives on `.vex-real-funds`
+ * (chat-transcript.css); its values are pinned against the stylesheet.
+ */
+describe("ApprovalCard REAL FUNDS treatment", () => {
+  const CHAT_TRANSCRIPT_CSS = readFileSync(
+    join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"),
+    "utf8",
+  );
+
+  function ruleBody(selector: string): string {
+    const at = CHAT_TRANSCRIPT_CSS.indexOf(`${selector} {`);
+    expect(at, `rule missing: ${selector}`).toBeGreaterThan(-1);
+    return CHAT_TRANSCRIPT_CSS.slice(at, CHAT_TRANSCRIPT_CSS.indexOf("}", at));
+  }
+
+  const CASES: ReadonlyArray<readonly [string, Partial<ApprovalSummaryDto>]> = [
+    ["a high-risk broadcast", { riskLevel: "high", actionKind: "user_wallet_broadcast" }],
+    ["a low-risk read", { riskLevel: "info", actionKind: "read" }],
+    ["an unclassified proposal", { riskLevel: null, actionKind: null }],
+    ["a desk click", { origin: "desk", riskLevel: "info", actionKind: "read" }],
+  ];
+
+  for (const [label, over] of CASES) {
+    it(`stamps ${label} REAL FUNDS inside the ink frame`, () => {
+      renderCard(makeSummary(over), false);
+      const card = document.querySelector('[data-vex-area="approval-card"]');
+      expect(card).not.toBeNull();
+      expect(card?.hasAttribute("data-vex-real-funds")).toBe(true);
+      expect(card?.className).toContain("vex-real-funds");
+      const stamp = screen.getByTestId("real-funds-stamp");
+      expect(stamp.textContent).toBe("Real funds");
+      expect(stamp.className).toContain("vex-stamp");
+      // The stamp sits in the card's own head, beside the title it qualifies.
+      expect(card?.querySelector("header")?.contains(stamp)).toBe(true);
+    });
+  }
+
+  it("draws the target swatch where the amber pin used to be", () => {
+    renderCard(makeSummary(), false);
+    const header = document.querySelector('[data-vex-area="approval-card"] header');
+    expect(header?.querySelector('.vex-swatch[data-s="warning"]')).not.toBeNull();
+    expect(header?.innerHTML).not.toContain("--vex-pin");
+  });
+
+  it("frames the card in the 1.5px ink with an 8px hatch band, never a hue", () => {
+    const frame = ruleBody(".vex-real-funds");
+    expect(frame).toContain("border: 1.5px solid var(--vex-alias-rule-ink)");
+    expect(frame).toContain("padding-left: 8px");
+    const band = ruleBody(".vex-real-funds::before");
+    expect(band).toContain("width: 8px");
+    expect(band).toMatch(
+      /repeating-linear-gradient\(\s*45deg,\s*var\(--vex-alias-rule-ink\) 0 1px,\s*transparent 1px 4px\s*\)/,
+    );
+    // Ink only: no status hue and no blue anywhere in the treatment.
+    expect(frame + band).not.toMatch(/#[0-9a-f]{3,8}\b|accent|state-warn|destructive/i);
   });
 });
