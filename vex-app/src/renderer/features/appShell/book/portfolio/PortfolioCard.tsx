@@ -50,7 +50,7 @@ export function PortfolioCard({
 }
 
 /**
- * Quiet state line for a section body (loading / empty / error) — factual and
+ * Quiet state line for a section body (loading / empty / error) - factual and
  * never louder than the content it stands in for. `loading` speaks the
  * label voice (mono caps); `warn` sets the line in ink, since status is never
  * a colour; `muted` is the default informational tone (empty states phrase an invitation, not a

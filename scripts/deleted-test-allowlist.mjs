@@ -44,6 +44,11 @@ export const DELETED_TEST_ALLOWLIST = [
     reason: "The animated sidebar collapse was removed when the left page became a fixed page that closes to a spine.",
     coveredBy: "vex-app/src/renderer/lib/__tests__/shell-columns.test.ts",
   },
+  {
+    path: "vex-app/src/renderer/features/appShell/book/__tests__/rail-glass-tier.test.tsx",
+    reason: "The BOOK glass tiers were removed when the rail became a page of ledger sections.",
+    coveredBy: "vex-app/src/renderer/features/appShell/book/__tests__/rail-sections.test.tsx",
+  },
 ];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(
