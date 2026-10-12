@@ -240,7 +240,6 @@ export function SessionsLibrary(): JSX.Element {
         <SessionGroups
           groups={groups}
           activeSessionId={activeSessionId}
-          sidebarOpen
           onSelect={handleSelect}
           onTogglePin={handleTogglePin}
           onRequestRemove={handleRequestRemove}

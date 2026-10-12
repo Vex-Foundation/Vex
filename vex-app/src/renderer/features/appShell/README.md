@@ -35,34 +35,58 @@ agent should be able to rebuild these surfaces from this file.
 - The left page (`ShellBackdrop.tsx`): the day or night print in place
   (window size from the column's corner, swapped on `data-vex-theme`), or the
   user's own image from `window.vex.shellBackdrop.read`; the spine adds a
-  44px paper cap. Its children slot is the agent state canvas.
+  44px paper cap. Its children slot carries the agent state canvas
+  (`PlateFlock` from `components/pixel/PrintPlate.tsx`, fed by
+  `useDeskAgentState`): the eagle and its flock in the band, or the eagle
+  alone on a spine. Lighter and Studio show the vx mark at the spine's top.
 - The gutter (`ShellGutter.tsx`): the `aria-hidden` spread caption, context |
   tape word | connection, a drag column.
 - The running head (`RunningHead.tsx`, seam `shell-status-strip`): the
   centre's 44px drag row, mounted once for the frame; it reserves the Windows
   and Linux caption buttons over a narrow BOOK and carries the folded gutter.
 
-## Sessions index (`SessionsList.tsx`)
+## The left page in agent mode (`SessionsList.tsx`)
 
-- Open page or spine: the frame decides (`collapsed`); the spine renders the
-  icon rail. The column has no surface of its own: the print is the ground.
-  The open page's header is the left page's 44px head row (drag region,
-  clear of the macOS traffic lights).
+docs/design/V10-SPREAD.md section 3. Furniture on the print, styled in
+`styles/global-css/left-page.css` (ink and blue on the sky by day, paper white
+on the night print, white on the ground).
+
+- Mast (`AgentSidebarHeader.tsx`): the open page's 44px head row, a drag
+  region clear of the macOS traffic lights: the vx mark (`SidebarHomeSigil`,
+  "Back to welcome" in a session) and the `Agent | Studio` capsule
+  (`RuntimeModeToggle`), in every agent state. The welcome hero carries the
+  capsule only while the page is a spine (`leftPage/leftPageContext.ts`), so
+  the page holds one `Runtime mode` radiogroup.
+- Sky: the 112px italic `Counter` (the open session's ordinal; on the welcome
+  stage the session count, captioned SESSIONS), New session (a label box; the
+  signing stroke and glint unchanged), the All | Agent | Mission tabs with
+  search and collapse at their right, the optional search field, then the
+  index. Only the index scrolls; `leftPage/useIndexFold.ts` hides a row or
+  head the horizon would cut and the dotted fold counts the rows below
+  (`n more`, one page per press).
+- Ordinals (`leftPage/sessionOrdinals.ts`): a renderer-local ledger numbers
+  each agent session the first time it is seen, oldest first, and keeps the
+  number, so pinning, the tabs, the search, a removal or a row ageing out of
+  the bounded list never renumber anyone.
+- Rows (`SessionRows/SessionRow.tsx`, `index` setting, via
+  `leftPage/SessionIndex.tsx`): ordinal, swatch and title, time; the open
+  session solid and blue, a running mission the dot screen, a paused one the
+  hatch; Remove+Pin replace the time on hover or keyboard focus; HoverCard
+  preview; double-click inline rename persisted through `vex.sessions.rename`
+  (sessionTitleSchema-bounded; unknown/soft-deleted id -> ok(null)). The
+  Sessions library renders the same row in its `register` setting.
+- Ground: `$VEX` (`market/VexTokenCardCompact.tsx`: price, change with its
+  arrow, spark, one link out), the white hairline, and the profile row
+  (`SidebarProfile.tsx`, `ground="print"`): portal `Menu` primitive with six
+  action entries + a disabled runtime provenance footer row; screens expand
+  from the trigger row's rect.
+- Spine (under 1276, or closed by hand): New session, the ordinals
+  (`leftPage/SpineIndex.tsx`, the open one behind a 2px bar), the open
+  control and the profile box at the foot.
 - Quiet scrollbars (`lib/useQuietScrollbars.ts`): the column rebinds the
   `--vex-scrollbar-thumb` pair to transparent while the pointer is outside
   its box (document pointermove probe; 2s linger). Rebinding, not hiding,
   keeps the gutter reservation.
-- Rows: generic primitives in `components/ui/rail-list.tsx` (RailRow 32px /
-  radius 8 / title 14/20 / time 12/20; hover fill == selected fill;
-  actions replace the time on hover; RailGroup eyebrow headers;
-  RailSearchField). Session mapping lives in `SessionRows*` - state dot in
-  the leading slot (pixel chase while live, warn while paused), Remove+Pin
-  cluster, HoverCard preview (full title, started time, mode facts),
-  double-click inline rename persisted through `vex.sessions.rename`
-  (sessionTitleSchema-bounded; unknown/soft-deleted id -> ok(null)).
-- Profile footer (`SidebarProfile.tsx`): portal `Menu` primitive with six
-  action entries + a disabled runtime provenance footer row; screens expand
-  from the trigger row's rect.
 
 ## Known limitations and deferred work
 

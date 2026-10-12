@@ -18,6 +18,11 @@
  * session with no transcript), and in that state the capsule is the rail's,
  * not this hero's - a session is active, so the rail is its seat.
  *
+ * WHILE THE LEFT PAGE IS OPEN its mast carries the capsule beside the vx mark,
+ * on the welcome stage too (docs/design/V10-SPREAD.md section 3), so this
+ * hero mounts its copy only while the page is a spine (`useLeftPageOpen`).
+ * Outside the shell frame there is no page, and the hero keeps its seat.
+ *
  * deepseek's `EmptyHero`/`HeroShell` seats one primary choice directly under
  * the brand mark in the hero stack and keeps everything else quiet; the
  * capsule takes that seat here (mark -> capsule -> eyebrow -> headline).
@@ -29,6 +34,7 @@ import { pickGreeting } from "../../lib/greeting.js";
 import { useUserProfile } from "../../lib/api/user-profile.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { RuntimeModeToggle } from "./RuntimeModeToggle.js";
+import { useLeftPageOpen } from "./leftPage/leftPageContext.js";
 import { ArenaCampaignNotice } from "./ArenaCampaignNotice.js";
 
 /** Honest build-stage disclosure (carried from the retired PREVIEW badge). */
@@ -67,6 +73,7 @@ export function SessionWelcomeHero(): JSX.Element {
   const runtimeMode = useUiStore((s) => s.runtimeMode);
   const setRuntimeMode = useUiStore((s) => s.setRuntimeMode);
   const activeSessionId = useUiStore((s) => s.activeSessionId);
+  const leftPageOpen = useLeftPageOpen();
 
   return (
     <div className="relative z-10 flex w-full flex-col items-center px-8 pb-2 text-center">
@@ -77,7 +84,7 @@ export function SessionWelcomeHero(): JSX.Element {
         <span aria-hidden className="text-brand-mark">
           <VexMark size={64} />
         </span>
-        {activeSessionId === null ? (
+        {activeSessionId === null && !leftPageOpen ? (
           <RuntimeModeToggle runtimeMode={runtimeMode} onChange={setRuntimeMode} />
         ) : null}
         <span
