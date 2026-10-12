@@ -39,6 +39,11 @@ export const DELETED_TEST_ALLOWLIST = [
     reason: "The halo state dot was removed when status moved to fill swatches.",
     coveredBy: "vex-app/src/renderer/components/ui/__tests__/swatch.test.tsx",
   },
+  {
+    path: "vex-app/src/renderer/lib/__tests__/useCollapseChoreography.test.ts",
+    reason: "The animated sidebar collapse was removed when the left page became a fixed page that closes to a spine.",
+    coveredBy: "vex-app/src/renderer/lib/__tests__/shell-columns.test.ts",
+  },
 ];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(
