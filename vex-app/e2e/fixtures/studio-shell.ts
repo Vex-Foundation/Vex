@@ -21,7 +21,7 @@
  * A run that declares neither still skips, and says why.
  */
 
-import { expect, type Page } from "@playwright/test";
+import { expect, type ElectronApplication, type Page } from "@playwright/test";
 
 /**
  * Does this run PROMISE Studio coverage?
@@ -112,6 +112,82 @@ export async function enterStudio(page: Page): Promise<boolean> {
     .click();
   await expect(shell).toHaveAttribute("data-vex-runtime-mode", "studio");
   return true;
+}
+
+/**
+ * Make the shell's REAL window the asked size, then the viewport to match.
+ *
+ * `setViewportSize` alone emulates a layout viewport; it does not move the
+ * window. That was harmless until the title bar went hidden (Window Controls
+ * Overlay on Windows and Linux, docs/design/V10-SPREAD.md section 8): every
+ * head row now reserves the caption buttons as
+ * `100vw - env(titlebar-area-width) - env(titlebar-area-x)`
+ * (`window-chrome.css`), and `env()` describes the real window while `100vw`
+ * is the emulated one. In the 1100px window xvfb opens, an emulated 1440
+ * read the 96px of caption buttons as 436px, and the BOOK head gave the open
+ * project's name 0px. Sizing the window itself keeps both sides of that
+ * subtraction on one window, which is the window a user has.
+ *
+ * CALL IT BEFORE ANYTHING EMULATES A VIEWPORT (before `enterStudio`). Once a
+ * viewport is emulated Chromium stops passing the window's title bar geometry
+ * through, so a resize after that moves the window and leaves
+ * `env(titlebar-area-*)` where it was. Measured: the window went to 1440 and
+ * the title bar area stayed 1004 wide.
+ */
+export async function sizeShellWindow(
+  app: ElectronApplication,
+  page: Page,
+  width: number,
+  height: number,
+): Promise<void> {
+  await page.waitForLoadState("domcontentloaded");
+  const shellWindow = await app.browserWindow(page);
+  const [widthBefore] = await shellWindow.evaluate((win) => win.getContentSize());
+  const areaRightBefore = await page.evaluate(titlebarAreaRight);
+  await shellWindow.evaluate(
+    (win, size) => {
+      win.setContentSize(size.width, size.height);
+    },
+    { width, height },
+  );
+  // The overlay reports its new geometry asynchronously, and it has to land
+  // BEFORE the viewport is emulated below or the emulation keeps the old one.
+  // Settled means the viewport is the asked width, and the title bar area has
+  // MOVED (when the window did) and ends inside that viewport; without the
+  // second half a window that grew would pass on the old, smaller area.
+  const moved = widthBefore !== width;
+  await expect
+    .poll(
+      async () => {
+        const right = await page.evaluate(titlebarAreaRight);
+        const inner = await page.evaluate(() => window.innerWidth);
+        if (inner !== width) return false;
+        if (right === null) return true;
+        return right <= inner && (!moved || right !== areaRightBefore);
+      },
+      { timeout: 10_000, message: `the shell window never settled at ${String(width)}px` },
+    )
+    .toBe(true);
+  await page.setViewportSize({ width, height });
+}
+
+/**
+ * Where the title bar area ends, in CSS px from the window's left edge, or
+ * `null` when no Window Controls Overlay is showing (macOS, a native frame).
+ * Runs in the page.
+ */
+function titlebarAreaRight(): number | null {
+  const wco = (
+    navigator as Navigator & {
+      windowControlsOverlay?: {
+        readonly visible: boolean;
+        getTitlebarAreaRect(): DOMRect;
+      };
+    }
+  ).windowControlsOverlay;
+  if (wco === undefined || !wco.visible) return null;
+  const area = wco.getTitlebarAreaRect();
+  return area.x + area.width;
 }
 
 /**

@@ -22,27 +22,26 @@ import type { Locator, Page, TestInfo } from "@playwright/test";
 import sharp from "sharp";
 import type { VexDatabaseFixture, test as vexTest } from "./fixtures/vex-app-with-database.js";
 import { expect } from "./fixtures/vex-app-with-database.js";
-import { enterStudio, TOUR_SKIP_REASON } from "./fixtures/studio-shell.js";
+import { enterStudio, sizeShellWindow, TOUR_SKIP_REASON } from "./fixtures/studio-shell.js";
 
-/* ===================== THE GLAZE, measured on the built app ==================
+/* ===================== THE PAPER, measured on the built app ==================
  *
- * The BOOK cards wear the glass CARD tier (glass.css; owner decision
- * 2026-09-04: the Settings glaze on every plain card). jsdom paints no
- * backdrop-filter, so the three claims the tier makes are provable only here,
- * in the same shape studio-terminal-surface.spec.ts proves them for the pane:
+ * The BOOK's sections sit on the paper of the page (`.vex-bs` in book.css,
+ * `PortfolioCard`; docs/design/V10-SPREAD.md sections 1 and 2: no box, no
+ * fill, no radius, no shadow, no blur). They replaced the glass card tier,
+ * and the claims are measured in the same shape studio-terminal-surface.spec.ts
+ * proves its own for the pane, in the Studio rail and in the welcome
+ * Portfolio stack, which renders the same component with no rail under it:
  *
- *  - INSIDE A RAIL THE RAIL BLURS, THE CARD IS A PLATE. The rail's computed
- *    backdrop-filter carries the blur; every card's resolves to `none` (the
- *    nesting guard in glass.css), and the card's background is translucent.
- *  - STANDING ALONE THE CARD BLURS FOR ITSELF. The welcome Portfolio stack has
- *    no rail under it, and its cards (the same component) keep their filter.
- *  - LEGIBILITY. Every ink token the cards use is measured against the card
- *    AS PAINTED, at the pixel closest to the ink (the worst case), with the
- *    card's own text hidden for the read so the plate is what is sampled.
- *    Primary ink must clear 7:1 in both themes; every other token is recorded
- *    (secondary and tertiary ink do not reach 7:1 on ANY celeris surface,
- *    a pure white one included - that is a text-token fact, not a glaze one,
- *    and the numbers here are what a token retune would be judged against).
+ *  - THE PAGE IS PAPER. The rail (or the welcome stack's page) paints an
+ *    opaque ground and blurs nothing behind it.
+ *  - A SECTION IS NOT A PLATE. Its background is fully transparent, and it
+ *    carries no backdrop filter, no shadow and no radius.
+ *  - LEGIBILITY. Every ink token the sections use is measured against the
+ *    section AS PAINTED, at the pixel closest to the ink (the worst case),
+ *    with the section's own text hidden for the read so the paper is what is
+ *    sampled. Primary ink must clear 7:1 in both themes; every other token is
+ *    recorded (the numbers are what a token retune would be judged against).
  */
 
 /** The ink tokens the BOOK cards paint text with (grep of book/**). */
@@ -70,6 +69,8 @@ interface CardGlaze {
   readonly name: string;
   readonly backdropFilter: string;
   readonly backgroundColor: string;
+  readonly boxShadow: string;
+  readonly borderRadius: string;
   readonly plateMean: Rgb;
   readonly inks: readonly InkContrast[];
 }
@@ -78,6 +79,8 @@ interface SurfaceGlaze {
   readonly theme: string;
   readonly host: "studio-rail" | "welcome-stack";
   readonly hostBackdropFilter: string;
+  /** The background of the page the sections sit on (the host's `.vex-bk`). */
+  readonly hostPaper: string;
   readonly cards: readonly CardGlaze[];
 }
 
@@ -105,7 +108,13 @@ function parseRgb(css: string): Rgb {
 /** The computed facts of one card and the ink colours its tokens resolve to inside it. */
 async function readCardFacts(
   card: Locator,
-): Promise<{ readonly backdropFilter: string; readonly backgroundColor: string; readonly inks: Record<string, string> }> {
+): Promise<{
+  readonly backdropFilter: string;
+  readonly backgroundColor: string;
+  readonly boxShadow: string;
+  readonly borderRadius: string;
+  readonly inks: Record<string, string>;
+}> {
   return card.evaluate((node, tokens: readonly string[]) => {
     const style = window.getComputedStyle(node);
     const inks: Record<string, string> = {};
@@ -119,6 +128,8 @@ async function readCardFacts(
     return {
       backdropFilter: style.backdropFilter,
       backgroundColor: style.backgroundColor,
+      boxShadow: style.boxShadow,
+      borderRadius: style.borderTopLeftRadius,
       inks,
     };
   }, INK_TOKENS);
@@ -241,12 +252,14 @@ async function measureCard(
     name,
     backdropFilter: facts.backdropFilter,
     backgroundColor: facts.backgroundColor,
+    boxShadow: facts.boxShadow,
+    borderRadius: facts.borderRadius,
     plateMean,
     inks,
   };
 }
 
-/** Every glass card in a host, named by its region label. */
+/** Every BOOK section in a host, named by its region label. */
 async function measureSurface(
   page: Page,
   host: Locator,
@@ -257,8 +270,12 @@ async function measureSurface(
   const hostBackdropFilter = await host.evaluate(
     (node) => window.getComputedStyle(node).backdropFilter,
   );
+  const hostPaper = await host.evaluate((node) => {
+    const paper = node.matches(".vex-bk") ? node : node.querySelector(".vex-bk");
+    return paper === null ? "" : window.getComputedStyle(paper).backgroundColor;
+  });
   const cards: CardGlaze[] = [];
-  const sections = host.locator(".vex-glass-card");
+  const sections = host.locator(".vex-bs");
   const count = await sections.count();
   expect(count, `${kind} has no cards to measure`).toBeGreaterThan(0);
   for (let index = 0; index < count; index += 1) {
@@ -272,24 +289,29 @@ async function measureSurface(
       shotsDir === "" ? null : path.join(shotsDir, `${theme}-glaze-${kind}-${name}.png`);
     cards.push(await measureCard(page, card, name, shotPath));
   }
-  return { theme, host: kind, hostBackdropFilter, cards };
+  return { theme, host: kind, hostBackdropFilter, hostPaper, cards };
 }
 
-/** The two claims the tier makes wherever it is painted, and the ink floor. */
-function expectGlazed(surface: SurfaceGlaze): void {
+/** A computed colour's alpha: 1 for `rgb()`, the fourth channel of `rgba()`. */
+function alphaOf(css: string): number {
+  const rgba = /^rgba\([^)]*,\s*([\d.]+)\)$/.exec(css);
+  if (rgba !== null) return Number(rgba[1]);
+  return /^rgb\(/.test(css) ? 1 : Number.NaN;
+}
+
+/** The claims the paper makes wherever a section is painted, and the ink floor. */
+function expectOnPaper(surface: SurfaceGlaze): void {
+  const where = `${surface.theme} ${surface.host}`;
+  // THE PAGE IS PAPER: an opaque ground, and nothing behind it blurred.
+  expect(surface.hostBackdropFilter, `${where} filter`).toBe("none");
+  expect(alphaOf(surface.hostPaper), `${where} paper alpha`).toBe(1);
   for (const card of surface.cards) {
-    const label = `${surface.theme} ${surface.host} ${card.name}`;
-    // Translucent: an rgba() with an alpha below 1, never the opaque token.
-    const alpha = /rgba\([^)]*,\s*([\d.]+)\)$/.exec(card.backgroundColor)?.[1];
-    expect(Number(alpha ?? "1"), `${label} background alpha`).toBeLessThan(1);
-    if (surface.host === "studio-rail") {
-      // THE RAIL BLURS, THE CARD IS A PLATE (glass.css law 2, as painted).
-      expect(surface.hostBackdropFilter, `${label} rail filter`).toContain("blur(");
-      expect(card.backdropFilter, `${label} card filter`).toBe("none");
-    } else {
-      // Standing alone, the same card blurs for itself.
-      expect(card.backdropFilter, `${label} card filter`).toContain("blur(");
-    }
+    const label = `${where} ${card.name}`;
+    // A SECTION IS NOT A PLATE: no fill, no blur, no shadow, square.
+    expect(alphaOf(card.backgroundColor), `${label} background alpha`).toBe(0);
+    expect(card.backdropFilter, `${label} filter`).toBe("none");
+    expect(card.boxShadow, `${label} shadow`).toBe("none");
+    expect(card.borderRadius, `${label} radius`).toBe("0px");
     const primary = card.inks.find((ink) => ink.token === "text-ink-primary");
     expect(primary?.worst ?? 0, `${label} primary ink worst-pixel contrast`).toBeGreaterThanOrEqual(7);
   }
@@ -335,6 +357,11 @@ export function registerRailParityScenarios(
   }, testInfo: TestInfo) => {
     test.setTimeout(300_000);
     const page = vexDb.shell;
+    // A REAL 1440 x 900 window, not only an emulated viewport, and before
+    // `enterStudio` emulates one: the BOOK head asserted below reserves the
+    // caption buttons from the window's own title bar area, which an emulated
+    // viewport does not move (`sizeShellWindow`).
+    await sizeShellWindow(vexDb.app, page, 1440, 900);
     const reached = await enterStudio(page);
     test.skip(!reached, TOUR_SKIP_REASON);
 
@@ -584,7 +611,7 @@ export function registerRailParityScenarios(
     await page.setViewportSize({ width: 1000, height: 900 });
     await shot(page, `${theme}-33-narrow-1000px`);
 
-    /* ---- 34: THE GLAZE, as painted, in both themes ---------------------- */
+    /* ---- 34: THE PAPER, as painted, in both themes ---------------------- */
 
     // Back to the walk's viewport; the auto-collapse above was a temporary
     // constraint, so the sidebar's stored preference returns with the width.
@@ -597,7 +624,7 @@ export function registerRailParityScenarios(
     const other: "chronos" | "celeris" = theme === "chronos" ? "celeris" : "chronos";
     const surfaces: SurfaceGlaze[] = [];
 
-    // The card stagger must have settled before a plate is photographed.
+    // The section stagger must have settled before the paper is photographed.
     const settled = async (): Promise<void> => {
       await page.waitForTimeout(900);
     };
@@ -606,7 +633,7 @@ export function registerRailParityScenarios(
     await shot(page, `${theme}-34-studio-rail-glaze`);
     surfaces.push(await measureSurface(page, book, "studio-rail", theme, shotsDir));
 
-    // The same cards standing alone: the Agent welcome's Portfolio stack.
+    // The same sections standing alone: the Agent welcome's Portfolio stack.
     const modes = page.getByRole("radiogroup", { name: "Runtime mode" });
     await modes.getByRole("radio", { name: "Agent" }).click();
     const welcome = page.locator('[data-vex-area="welcome-portfolio"]');
@@ -648,10 +675,10 @@ export function registerRailParityScenarios(
         JSON.stringify({ capturedAt: new Date().toISOString(), surfaces }, null, 2),
       );
     }
-    testInfo.annotations.push({ type: "glaze-measurements", description: JSON.stringify(surfaces) });
+    testInfo.annotations.push({ type: "paper-measurements", description: JSON.stringify(surfaces) });
     // Unpiped, so the numbers are in the run's own output as well.
-    console.log(`[glaze] ${JSON.stringify(surfaces)}`);
-    for (const surface of surfaces) expectGlazed(surface);
+    console.log(`[paper] ${JSON.stringify(surfaces)}`);
+    for (const surface of surfaces) expectOnPaper(surface);
 
     testInfo.annotations.push({
       type: "ux2-shots",
