@@ -1,9 +1,9 @@
 /**
- * THE MEASUREMENT OWNERS behind `studio-terminal-glass.spec.ts`.
+ * THE MEASUREMENT OWNERS behind `studio-terminal-surface.spec.ts`.
  *
  * The spec makes claims about the Studio terminal as PAINTED in the built app:
  * the gutter, the pane's renderer and filters, scroll throughput, the
- * scrollbar's geometry and reveal states, foreground contrast over the glass,
+ * scrollbar's geometry and reveal states, foreground contrast over the opaque pane,
  * what the terminal answers an OSC 11 query, and how reverse video reads. Each
  * of those is a measurement with its own apparatus, and none of it is an
  * assertion. This module owns the apparatus; the spec keeps the walk and every
@@ -308,7 +308,7 @@ export async function stopFrameCounter(page: Page): Promise<{ frames: number; ms
 
 export async function measureThroughput(page: Page): Promise<Throughput> {
   await focusTerminalGrid(page);
-  const marker = `glassdone${Date.now().toString(36)}`;
+  const marker = `surfacedone${Date.now().toString(36)}`;
   // The HEADER's location line, not the whole center: under the DOM renderer
   // `.xterm-rows` carries the typed command, marker included, so a poll on
   // the center's text matched before Enter had even landed (measured:
@@ -481,7 +481,7 @@ export function parseRgb(css: string): [number, number, number] {
 /**
  * Contrast of the terminal foreground over the pane as PAINTED: the mean of
  * the blank region's pixels and the extreme one (brightest on a dark theme,
- * darkest on a light one), since the wallpaper under glass is not uniform.
+ * darkest on a light one), so one stray pixel cannot hide a weak ramp.
  */
 export async function measureContrast(
   page: Page,

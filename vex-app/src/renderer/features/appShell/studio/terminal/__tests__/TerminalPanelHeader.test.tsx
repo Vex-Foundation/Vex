@@ -313,7 +313,7 @@ describe("the picker's popup has a surface under it", () => {
     fireEvent.click(screen.getByRole("button", { name: "Shell for the next terminal" }));
     const list = screen.getByRole("listbox");
     expect(list.className).not.toContain("surface-raised");
-    expect(list.className).toContain("bg-surface-2");
+    expect(list.className).toContain("bg-surface-field");
   });
 
   it("marks the current row with a glyph, not by fill alone", () => {
@@ -325,7 +325,7 @@ describe("the picker's popup has a surface under it", () => {
   });
 });
 
-describe("the header on glass", () => {
+describe("the pane head", () => {
   it("places the decorative mark in the header outside the terminal glyph surface", () => {
     const { view } = renderHeader();
     const mark = view.container.querySelector("[data-vex-terminal-header] svg.text-brand-mark");
@@ -335,14 +335,14 @@ describe("the header on glass", () => {
     expect(mark?.closest(".vex-terminal-surface")).toBeNull();
   });
 
-  it("draws no rule under itself and keeps the pane's 8px inset", () => {
+  it("sits on the field with one quiet rule under it and keeps the pane's inset", () => {
     const { view } = renderHeader();
     const header = view.container.firstElementChild;
     expect(header).not.toBeNull();
-    // On a glass pane the separation from the grid is spacing; a hairline here
-    // is the boxed look the owner rejected.
-    expect(header?.className).not.toMatch(/\bborder(?:-[tb])?\b/);
-    expect(header?.className).not.toContain("border-line");
+    // docs/design/V10-SPREAD.md section 1: the head carries the quiet rule
+    // (never the strong one) and the 8px inset of the grid below it.
+    expect(header?.className).toContain("border-b");
+    expect(header?.className).toContain("border-rule-quiet");
     expect(header?.className).toContain("px-2");
   });
 });

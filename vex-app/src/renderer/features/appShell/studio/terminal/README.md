@@ -4,7 +4,7 @@
 
 ## Terminal colours
 
-`terminal-palette.ts` resolves semantic tokens for xterm and the registry reapplies the theme to existing terminals without replacing their buffers. Both themes use an opaque text background derived from `bg-base`, shared by the canvas and wrapper, with transparency disabled in the renderer. Surrounding glass remains in the pane and header. The decorative mark lives in `TerminalPanelHeader`, outside the glyph grid. Celeris uses primary-label ink for the default foreground. Cursor, selection and ANSI16 tokens retain their values.
+`terminal-palette.ts` resolves semantic tokens for xterm and the registry reapplies the theme to existing terminals without replacing their buffers. Both themes use an opaque text background derived from `bg-base`, shared by the canvas and wrapper, with transparency disabled in the renderer. The pane and its header sit on the same field (docs/design/V10-SPREAD.md section 1). The decorative mark lives in `TerminalPanelHeader`, outside the glyph grid. The palette is retuned for V10: ink on the white field by day, paper type on the night field with the periwinkle cursor, and the ANSI16 held to WCAG AA on the surface they sit on.
 
 Foreground and the sixteen ANSI slots meet 4.5:1 on the actual reading background in both themes, apart from the deliberate dark ANSI black pairing exception. SGR 90 uses bright-black and meets 4.5:1. Default-foreground SGR 2 has a separately documented target of at least 3:1, tested as a 50% opaque-atlas composite: about 4.52:1 in Chronos and 3.45:1 in Celeris. Antialiased edge pixels and arbitrary program colours are not promised those ratios. xterm's `minimumContrastRatio` is 4.5 in both themes; it exempts background glyphs and halves its requested ratio for dim text.
 

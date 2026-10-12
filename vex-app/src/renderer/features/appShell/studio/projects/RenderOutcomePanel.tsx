@@ -277,7 +277,7 @@ function ArtifactRow({
 
   return (
     <li
-      className="flex flex-col gap-1 rounded-lg border border-line-2 px-3 py-2"
+      className="flex flex-col gap-1 border border-line-2 px-3 py-2"
       data-vex-artifact-status={artifact.status}
       data-vex-artifact-kind={artifact.kind}
     >

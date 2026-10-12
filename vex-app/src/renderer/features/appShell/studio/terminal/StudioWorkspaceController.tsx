@@ -1967,21 +1967,17 @@ export function StudioWorkspaceController({
   });
 
   return (
-    // THE GLASS PANE. The workspace used to run edge to edge, then sat on a
-    // solid `surface-1` card over a solid column. Now the backdrop is the wall:
-    // the column paints nothing, and the strip and the panel live on a rounded
-    // `.vex-glass-pane` (glass.css: the pane tint, an 18px blur, the inset edge
-    // light and ring, no border) inset 8px from the column - the same 8px the
-    // header text and the terminal grid keep from the pane's own edge, so the
-    // gutter from the sidebar to the first column is one rhythm, not three.
-    // The transparent xterm canvas is read against this pane, and the palette's
-    // contrast is measured on it in `e2e/studio-terminal-glass.spec.ts`.
+    // THE WORKSPACE SHEET (docs/design/V10-SPREAD.md section 1): the strip
+    // sits on the paper and the body below it is the field, inset 12px from
+    // the rail and the BOOK. Nothing under the glyphs is translucent: the
+    // palette's opaque reading surface is the field itself, and the contrast
+    // is measured on it in `e2e/studio-terminal-surface.spec.ts`.
     <div
       ref={cardRef}
-      className={cn("flex h-full min-h-0 flex-col p-2", className)}
+      className={cn("flex h-full min-h-0 flex-col px-3 pt-2 pb-3", className)}
       data-vex-workspace-card=""
     >
-      <div className="vex-glass-pane flex h-full min-h-0 flex-col overflow-hidden rounded-xl">
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <TerminalTabs
         state={state}
         runFacts={runFacts}
@@ -2073,7 +2069,7 @@ export function StudioWorkspaceController({
                 type="button"
                 onClick={handleRestoreLost}
                 disabled={restoring}
-                className="rounded px-1 font-medium text-accent-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60"
+                className="px-1 font-medium text-accent-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60"
               >
                 {restoring ? "Restoring..." : "Restore terminals"}
               </button>
@@ -2113,7 +2109,7 @@ export function StudioWorkspaceController({
                     }
                     onRetryClose();
                   }}
-                  className="rounded px-1 font-medium text-accent-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  className="px-1 font-medium text-accent-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 >
                   Try closing again
                 </button>
@@ -2127,7 +2123,7 @@ export function StudioWorkspaceController({
                   setNotice(null);
                   setRestoreNotice(null);
                 }}
-                className="rounded px-1 text-ink-tertiary hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                className="px-1 text-ink-tertiary hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
                 Dismiss
               </button>

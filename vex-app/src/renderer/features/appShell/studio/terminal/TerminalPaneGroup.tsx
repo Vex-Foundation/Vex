@@ -177,7 +177,7 @@ export function TerminalPaneGroup({
                       be here: there is no `--color-surface-raised` in the
                       theme, so that utility emitted NOTHING and this notice
                       floated over the terminal with no plate under it. */}
-                  <span className="rounded border border-line-3 bg-surface-2 px-2 py-1">
+                  <span className="border border-rule bg-surface-field px-2 py-1">
                     This shell ended when the terminal service stopped.
                   </span>
                 </div>
@@ -189,7 +189,7 @@ export function TerminalPaneGroup({
                   onClick={() => {
                     onClosePane(pane.paneId);
                   }}
-                  className="absolute top-1 right-1 rounded p-1 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  className="absolute top-1 right-1 p-1 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 >
                   <IconClose size={12} />
                 </button>

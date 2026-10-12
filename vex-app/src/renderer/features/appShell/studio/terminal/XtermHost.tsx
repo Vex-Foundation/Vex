@@ -401,7 +401,7 @@ export function XtermHost({
   return (
     <div
       // The registry wrapper paints an opaque reading surface inside this
-      // host's inset. The enclosing pane and header retain their glass tint.
+      // host's inset, on the same field as the enclosing pane and header.
       className={cn(
         "relative flex h-full min-h-0 w-full min-w-0 flex-col bg-transparent",
         className,
@@ -431,14 +431,14 @@ export function XtermHost({
       {/*
         THE GRID'S INSET from the pane edge: 8px, the same rhythm as the header
         text above it and the column padding outside the pane, so the text
-        never touches the pane's edge light. Margin, not padding: the registry's
+        never touches the pane's rule. Margin, not padding: the registry's
         wrapper is `inset: 0` of this box, and an absolutely positioned child
         fills its parent's padding box, so only a margin moves the grid.
       */}
-      <div ref={containerRef} className="relative mx-2 mb-2 min-h-0 flex-1" />
+      <div ref={containerRef} className="relative mx-2 mt-2 mb-2 min-h-0 flex-1" />
 
       {droppedRows > 0 ? (
-        <div className="pointer-events-none absolute top-2 right-2 rounded-md border border-line-3 bg-surface-2 px-2 py-0.5 text-[11px] leading-4 text-ink-secondary">
+        <div className="pointer-events-none absolute top-2 right-2 border border-rule bg-surface-field px-2 py-0.5 text-[11px] leading-4 text-ink-secondary">
           {/*
             Named, not hidden. The 1000-row scrollback bound is the host's, and a
             replay that silently started mid-history would read as data loss with
@@ -475,7 +475,7 @@ export function XtermHost({
       {pasteDialog}
 
       {exit !== null ? (
-        <div className="pointer-events-none absolute bottom-2 left-2 rounded-md border border-line-3 bg-surface-2 px-2 py-0.5 text-[11px] leading-4 text-ink-tertiary">
+        <div className="pointer-events-none absolute bottom-2 left-2 border border-rule bg-surface-field px-2 py-0.5 text-[11px] leading-4 text-ink-tertiary">
           {exit.signal === null
             ? `Exited with code ${String(exit.exitCode)}`
             : `Killed by signal ${String(exit.signal)}`}

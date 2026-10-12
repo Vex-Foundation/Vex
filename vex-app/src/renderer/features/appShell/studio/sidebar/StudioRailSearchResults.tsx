@@ -240,7 +240,7 @@ function ResultOption({
       aria-selected={active}
       onClick={onActivate}
       className={[
-        "flex h-8 cursor-pointer select-none items-center gap-2 rounded-lg px-2",
+        "flex h-8 cursor-pointer select-none items-center gap-2 px-2",
         active ? "bg-interactive-hover" : "hover:bg-interactive-hover",
       ].join(" ")}
     >

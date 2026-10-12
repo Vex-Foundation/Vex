@@ -304,13 +304,13 @@ describe("composer growth glide - globals.css contract (raw scan)", () => {
     expect(grow).not.toContain("animation");
   });
 
-  it("the capsule holds a CONSTANT r22 radius - no border-radius relax left to sync with", () => {
+  it("the card holds a CONSTANT square radius - no border-radius relax left to sync with", () => {
     // The height glide above used to share its 220ms clock with a radius
-    // relax once; the capsule (catalog geometry) is a constant 22px surface,
-    // so that second moving part stays gone: the radius is a static value
-    // and nothing transitions it.
+    // relax once; the capsule (catalog geometry) is a constant square surface,
+    // so that second moving part stays gone: the radius is a static 0
+    // (docs/design/V10-SPREAD.md section 1) and nothing transitions it.
     const host = blockFor(".vex-composer-card");
-    expect(host).toContain("border-radius: 22px");
+    expect(host).toContain("border-radius: 0");
     expect(host).not.toContain("transition");
   });
 });

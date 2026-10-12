@@ -47,7 +47,7 @@ export function TerminalLinkDialog({ proposal, onAnswer }: {
             <div><dt className="text-ink-secondary">Host</dt><dd className="break-all" dir="ltr">{proposal.host.display}</dd></div>
             <div><dt className="text-ink-secondary">Host (ASCII / punycode)</dt><dd className="break-all" dir="ltr">{proposal.host.ascii}</dd></div>
           </dl>
-          <p className="whitespace-pre-wrap break-all rounded-lg border border-line-2 p-3 font-mono text-xs" dir="ltr">{proposal.url}</p>
+          <p className="whitespace-pre-wrap break-all border border-line-2 p-3 font-mono text-xs" dir="ltr">{proposal.url}</p>
           <label className="flex items-start gap-2 text-xs text-ink-secondary">
             <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
             Remember this host for this window until Vex closes

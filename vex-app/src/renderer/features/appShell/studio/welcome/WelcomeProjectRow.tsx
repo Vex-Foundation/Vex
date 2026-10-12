@@ -58,7 +58,7 @@ export function WelcomeProjectRow({
         onClick={onSelect}
         aria-description={description}
         data-vex-project-drift={drifted ? (drift ?? undefined) : undefined}
-        className="group flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="group flex w-full items-center gap-3 border-b border-rule-quiet px-2 py-2 text-left hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Swatch
           state={drifted ? "warning" : "done"}

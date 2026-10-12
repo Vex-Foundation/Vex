@@ -51,7 +51,7 @@ export function TerminalPasteDialog({ prompt, open, onOpenChange, onClosed, onAn
         <DialogConsequence>Multiple lines can run commands immediately in a shell.</DialogConsequence>
         <DialogBody>
           <div className="text-xs text-ink-secondary">Preview: up to 3 lines, 30 characters per line.</div>
-          <pre className="whitespace-pre-wrap break-all rounded-lg border border-line-2 p-3 font-mono text-xs">{showWhole ? prompt.text : preview.lines.join("\n")}</pre>
+          <pre className="whitespace-pre-wrap break-all border border-line-2 p-3 font-mono text-xs">{showWhole ? prompt.text : preview.lines.join("\n")}</pre>
           {!showWhole && (preview.omittedLines > 0 || preview.shortenedLines > 0) && (
             <div className="text-xs text-ink-secondary">
               {preview.omittedLines} more lines; {preview.shortenedLines} preview lines shortened.

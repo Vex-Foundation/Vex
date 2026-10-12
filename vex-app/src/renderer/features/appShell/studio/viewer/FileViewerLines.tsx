@@ -103,7 +103,7 @@ export function FileViewerLines({
       aria-label={CODE_REGION_LABEL}
       tabIndex={0}
       className={cn(
-        "vex-scroll min-h-0 flex-1 overflow-auto bg-surface-base focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+        "vex-scroll min-h-0 flex-1 overflow-auto bg-surface-field focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
         className,
       )}
     >
@@ -144,7 +144,7 @@ function Line({
     >
       <span
         aria-hidden="true"
-        className="sticky left-0 z-10 shrink-0 bg-surface-base pr-3 text-right text-ink-tertiary select-none"
+        className="sticky left-0 z-10 shrink-0 bg-surface-field pr-3 text-right text-ink-tertiary select-none"
         style={{ width: `${String(gutterCh)}ch` }}
       >
         {number}

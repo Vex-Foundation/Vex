@@ -150,7 +150,7 @@
  * Reduced motion: the show/fade are transitions on xterm's own classes and
  * the global catch-all in base.css collapses them, which turns the fade into
  * an instant hide; the bar is wayfinding, and appearing at once is never the
- * problem. Measured in e2e/studio-terminal-glass.spec.ts. */
+ * problem. Measured in e2e/studio-terminal-surface.spec.ts. */
 .vex-terminal-surface .xterm-scrollable-element > .scrollbar.vertical {
   width: 6px !important;
   background: transparent;
