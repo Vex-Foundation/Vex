@@ -84,10 +84,10 @@ export function BoardStatusChip({
         * no chip: a reader cannot tell an unavailable check from an
         * unverified token from a check that describes another token, and
         * those are three different things to do next. The widest label the
-        * frozen table can produce is 242px ("Checks unavailable in this
+        * frozen table can produce is 308px ("Checks unavailable in this
         * response"), and that number is a term in the footer floors in
         * `global-css/board-layout.css` - which is why the footer STACKS in
-        * compact mode rather than cutting this. */}
+        * both modes rather than cutting this. */}
       <span className="whitespace-nowrap">{label}</span>
     </Chip>
   );
