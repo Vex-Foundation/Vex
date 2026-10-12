@@ -268,7 +268,7 @@ export function ProviderStep({
           {showConfigureLater ? (
             <Button
               type="button"
-              variant="ghost"
+              variant="bare"
               onClick={() => {
                 void advanceToReview();
               }}

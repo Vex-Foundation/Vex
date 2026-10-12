@@ -112,7 +112,7 @@ export function FooterAction({
         </p>
         <Button
           type="button"
-          variant="outline"
+          variant="quiet"
           size="sm"
           disabled={planRetryPending}
           onClick={() => void onPlanRetry()}

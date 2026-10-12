@@ -25,7 +25,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       ref={ref}
       type={type}
       className={cn(
-        "flex h-9 w-full rounded-md border border-line-input bg-transparent px-3 py-1 text-sm text-ink-primary caret-accent-primary",
+        "flex h-11 w-full border border-line-input bg-surface-field px-3 py-1 text-[15px] text-ink-primary caret-accent-primary",
         "file:border-0 file:bg-transparent file:text-sm file:font-medium",
         "placeholder:text-ink-tertiary",
         "focus-visible:outline-none focus-visible:border-accent-primary",

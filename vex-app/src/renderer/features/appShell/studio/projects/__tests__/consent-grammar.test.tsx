@@ -12,7 +12,7 @@
  *   3. the register is the ACT's, not the dialog's: Repair reads in `notice`
  *      and its primary is no longer the destructive red, which is audit A10.
  *
- * RED ON REVERT: give `ProjectRepairDialog` its `variant="danger"` back and
+ * RED ON REVERT: give `ProjectRepairDialog` its `variant="ink"` back and
  * "repair is not dressed as a destructive action" fails; move the strip inside
  * `DialogBody` and "the strip is outside the scroll region" fails; delete the
  * undo line from the copy table and the content assertions fail by name.

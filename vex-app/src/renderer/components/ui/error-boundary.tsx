@@ -216,7 +216,7 @@ export function ErrorBoundaryFallback({
           The rest of Vex is still running. Nothing was lost: open terminals,
           running shells and unsaved work in other areas are untouched.
         </p>
-        <dl className="flex flex-col gap-1 rounded-md border border-line-1 p-3 font-mono text-[12px] leading-[18px]">
+        <dl className="flex flex-col gap-1 border border-line-1 p-3 font-mono text-[12px] leading-[18px]">
           <div className="flex gap-2">
             <dt className="text-ink-tertiary">error</dt>
             <dd className="min-w-0 break-words text-ink-primary">
@@ -239,7 +239,7 @@ export function ErrorBoundaryFallback({
             <Button
               key={action.label}
               type="button"
-              variant="outline"
+              variant="quiet"
               onClick={action.onSelect}
             >
               {action.label}

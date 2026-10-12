@@ -518,7 +518,7 @@ export function ProjectSettingsDialog({
               <>
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="bare"
                   onClick={onClose}
                   className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
                 >
@@ -540,7 +540,7 @@ export function ProjectSettingsDialog({
               <>
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="bare"
                   onClick={onClose}
                   disabled={pending}
                   className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"

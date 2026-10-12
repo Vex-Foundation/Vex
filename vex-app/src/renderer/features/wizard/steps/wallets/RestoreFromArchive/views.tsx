@@ -15,7 +15,7 @@ export function CollapsedTrigger({ onOpen }: CollapsedTriggerProps): JSX.Element
   return (
     <div className="flex flex-col gap-1" data-vex-wallet-restore="collapsed">
       <Button
-        variant="outline"
+        variant="quiet"
         size="sm"
         onClick={onOpen}
         data-vex-restore-open
@@ -37,7 +37,7 @@ export function PanelHeader({ onClose }: PanelHeaderProps): JSX.Element {
         Restore a full backup
       </p>
       <Button
-        variant="ghost"
+        variant="bare"
         size="sm"
         onClick={onClose}
         data-vex-restore-cancel
@@ -86,7 +86,7 @@ export function BackupsListError({
       </p>
       <div>
         <Button
-          variant="outline"
+          variant="quiet"
           size="sm"
           onClick={onRetry}
           disabled={retryDisabled}

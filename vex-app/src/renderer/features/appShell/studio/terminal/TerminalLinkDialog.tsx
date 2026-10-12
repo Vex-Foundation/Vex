@@ -54,8 +54,8 @@ export function TerminalLinkDialog({ proposal, onAnswer }: {
           </label>
         </DialogBody>
         <DialogFooter className="flex-wrap">
-          <Button size="sm" variant="ghost" {...DIALOG_INITIAL_FOCUS} onClick={() => close("cancel", false)}>Cancel</Button>
-          <Button size="sm" variant="outline" onClick={() => close("copy", false)}>Copy link</Button>
+          <Button size="sm" variant="bare" {...DIALOG_INITIAL_FOCUS} onClick={() => close("cancel", false)}>Cancel</Button>
+          <Button size="sm" variant="quiet" onClick={() => close("copy", false)}>Copy link</Button>
           <Button size="sm" onClick={() => close("open", remember)}>Open link</Button>
         </DialogFooter>
       </DialogContent>

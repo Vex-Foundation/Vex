@@ -30,7 +30,7 @@ export function ApiKeysFormFooter({
     <>
       <Button
         type="button"
-        variant="ghost"
+        variant="bare"
         onClick={() => {
           onSkip();
         }}

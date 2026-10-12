@@ -31,7 +31,7 @@ export function ExportAllWallets(): JSX.Element {
   return (
     <div className="flex flex-col gap-1" data-vex-wallet-export>
       <Button
-        variant="outline"
+        variant="quiet"
         size="sm"
         onClick={() => {
           void handleExport();

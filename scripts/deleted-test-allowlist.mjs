@@ -34,6 +34,11 @@ export const DELETED_TEST_ALLOWLIST = [
     reason: "The hand-drawn outline glyph set was removed when the icons moved to the pixel sprite.",
     coveredBy: "vex-app/src/renderer/components/icons/__tests__/px-sprite.test.tsx",
   },
+  {
+    path: "vex-app/src/renderer/components/ui/__tests__/state-dot.test.tsx",
+    reason: "The halo state dot was removed when status moved to fill swatches.",
+    coveredBy: "vex-app/src/renderer/components/ui/__tests__/swatch.test.tsx",
+  },
 ];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(

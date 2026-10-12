@@ -244,7 +244,7 @@ export function LighterLeverageSheet({
                   />
                   <span aria-hidden="true" className="text-ink-secondary">x</span>
                   <Button
-                    variant="outline"
+                    variant="quiet"
                     size="sm"
                     disabled={disabled}
                     aria-label={leverageMaxLabel(symbol)}
@@ -286,7 +286,7 @@ export function LighterLeverageSheet({
               </span>
               {outcome.reconcilable && row !== null ? (
                 <Button
-                  variant="outline"
+                  variant="quiet"
                   size="sm"
                   disabled={busy}
                   data-vex-lighter-leverage-reconcile={symbol}
@@ -305,7 +305,7 @@ export function LighterLeverageSheet({
         </DialogBody>
 
         <DialogFooter>
-          <Button variant="ghost" disabled={busy} onClick={onClose}>
+          <Button variant="bare" disabled={busy} onClick={onClose}>
             {LEVERAGE_SHEET_CLOSE}
           </Button>
           <Button

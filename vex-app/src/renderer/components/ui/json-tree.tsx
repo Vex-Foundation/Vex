@@ -219,7 +219,7 @@ export function JsonTree({
         type="button"
         aria-label={copied ? "JSON copied" : "Copy raw JSON"}
         onClick={onCopy}
-        className="absolute right-0 top-0 inline-flex h-5 w-5 items-center justify-center rounded-[4px] text-[var(--vex-text-3)] opacity-0 transition-opacity duration-100 hover:bg-interactive-hover focus-visible:opacity-100 focus-visible:outline-none group-hover/json:opacity-100"
+        className="absolute right-0 top-0 inline-flex h-5 w-5 items-center justify-center text-[var(--vex-text-3)] opacity-0 transition-opacity duration-100 hover:bg-interactive-hover focus-visible:opacity-100 focus-visible:outline-none group-hover/json:opacity-100"
       >
         {copied ? <IconCheck size={12} aria-hidden /> : <IconCopy size={12} aria-hidden />}
       </button>

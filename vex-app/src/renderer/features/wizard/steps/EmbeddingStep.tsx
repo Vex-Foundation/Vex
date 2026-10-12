@@ -189,7 +189,7 @@ export function EmbeddingStep({
           {showConfigureLater ? (
             <Button
               type="button"
-              variant="ghost"
+              variant="bare"
               onClick={() => {
                 void advanceToAgentCore();
               }}

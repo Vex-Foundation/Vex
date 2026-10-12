@@ -26,7 +26,7 @@ describe("Pill", () => {
 
   it("stamps variant classes from aliases", () => {
     render(<Pill variant="danger">bad</Pill>);
-    expect(screen.getByText("bad").className).toContain("bg-danger-wash");
+    expect(screen.getByText("bad").className).toContain("border-rule-ink");
   });
 });
 

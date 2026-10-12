@@ -269,7 +269,7 @@ export function ConfiguredProviderPanel({
           <>
             <Button
               type="button"
-              variant="ghost"
+              variant="bare"
               onClick={cancelEditing}
               disabled={submitting}
             >
@@ -282,14 +282,14 @@ export function ConfiguredProviderPanel({
         ) : (
           <>
             <Button
-              variant="ghost"
+              variant="bare"
               onClick={onReconfigure}
               disabled={continuePending}
             >
               Reconfigure
             </Button>
             <Button
-              variant="ghost"
+              variant="bare"
               onClick={startEditing}
               disabled={continuePending}
               data-vex-provider-edit

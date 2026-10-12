@@ -123,7 +123,7 @@ export function LighterCapitalShareCard({
           </span>
         </div>
         <Button
-          variant="outline"
+          variant="quiet"
           size="sm"
           disabled={!canSave}
           data-vex-lighter-capital-share-save
@@ -136,7 +136,7 @@ export function LighterCapitalShareCard({
         </Button>
         {write.kind === "conflict" ? (
           <Button
-            variant="outline"
+            variant="quiet"
             size="sm"
             data-vex-lighter-capital-share-reload
             onClick={onReload}

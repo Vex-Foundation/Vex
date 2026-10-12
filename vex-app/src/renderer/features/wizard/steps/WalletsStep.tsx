@@ -287,7 +287,7 @@ export function WalletsStep({
           </Button>
         ) : showConfigureLater ? (
           <Button
-            variant="ghost"
+            variant="bare"
             onClick={() => {
               void advanceToApiKeys();
             }}

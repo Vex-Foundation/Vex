@@ -1,5 +1,5 @@
 /* Chrome for the shared UI primitives (components/ui): toast, tooltip,
- * hover card, menu, disclosure row, state dot, connection banner, drop
+ * hover card, menu, disclosure row, swatch, chip, stamp, cell meter, connection banner, drop
  * overlay, image lightbox, and the dialog backdrop. Split by responsibility
  * into the same-named sibling folder; this manifest only imports (CSS
  * @import must precede all rules). Aliases only; every animated surface
@@ -8,3 +8,4 @@
 @import "./ui-primitives/overlays.css";
 @import "./ui-primitives/menu.css";
 @import "./ui-primitives/indicators.css";
+@import "./ui-primitives/marks.css";
