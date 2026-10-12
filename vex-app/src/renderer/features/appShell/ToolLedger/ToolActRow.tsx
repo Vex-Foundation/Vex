@@ -1,6 +1,10 @@
 /**
  * THE ACT LEDGER — one registered act (S5): a tool call plus its merged
- * output, presented as a FRIENDLY CARD.
+ * output, presented as one ruled LEDGER LINE (docs/design/V10-SPREAD.md
+ * section 1, reference d3): the protocol mark in the blue, the human title in
+ * 13px Departure Mono, the measured duration, and the act's status swatch at
+ * the line's end - status by fill, and only for an outcome the engine
+ * actually persisted.
  *
  * The card's header reads as a fact about the world rather than a symbol dump:
  * the protocol mark (contract C5 — venue logo when provenance is proven, the
@@ -40,11 +44,9 @@ import {
   type JSX,
   type ReactNode,
 } from "react";
-import {
-  IconChevronRight,
-  IconCircleCheck,
-} from "../../../components/icons/index.js";
+import { IconChevronRight } from "../../../components/icons/index.js";
 import { JsonTree } from "../../../components/ui/json-tree.js";
+import { Swatch, type SwatchState } from "../../../components/ui/swatch.js";
 import { cn } from "../../../lib/utils.js";
 import { ExpandRegion } from "../../../components/ui/expand-region.js";
 import { DeskTicketLoadStamp } from "../lighterTrading/DeskTicketLoadStamp.js";
@@ -104,12 +106,27 @@ function ConfirmedStamp(): JSX.Element {
       role="status"
       aria-label="Transaction confirmed"
       data-vex-transaction-status="confirmed"
-      className="inline-flex shrink-0 items-center gap-1 rounded-[3px] border border-[color-mix(in_oklab,var(--color-success)_40%,transparent)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-success)]"
+      className="inline-flex h-[22px] shrink-0 items-center gap-[7px] px-2 font-mono text-[11px] uppercase leading-none tracking-chip text-ink-primary outline outline-1 -outline-offset-1 outline-rule-ink"
     >
-      <IconCircleCheck size={12} />
+      <Swatch state="done" size={9} />
       Confirmed
     </span>
   );
+}
+
+/**
+ * The act's status fill at the line's end (reference d3) - ONLY for an outcome
+ * the engine persisted. A success is the solid square, an ambiguous broadcast
+ * the dot screen (pending, not failed), a failure the ink cross. A call with no
+ * persisted outcome yet (still running, never run, or a legacy row) draws no
+ * swatch at all: `null` is not a status, and a guessed fill would be a claim.
+ */
+function actSwatch(act: ToolCallActView): SwatchState | null {
+  if (act.success === true) return "done";
+  if (act.success === false) {
+    return act.displayStatus === "pending" ? "ongoing" : "error";
+  }
+  return null;
 }
 
 /**
@@ -121,7 +138,7 @@ function SeparatorDot(): JSX.Element {
   return (
     <span
       aria-hidden
-      className="mx-2 h-[2px] w-[2px] flex-none rounded-[1px] bg-line-3"
+      className="mx-2 h-[2px] w-[2px] flex-none bg-line-3"
     />
   );
 }
@@ -139,7 +156,7 @@ function DurationChip({ text }: { readonly text: string }): JSX.Element {
   return (
     <span
       data-vex-tool-duration=""
-      className="flex-none tabular-nums text-[11px] text-ink-tertiary"
+      className="flex-none font-mono text-[11px] tracking-[0.02em] tabular-nums text-ink-secondary"
     >
       {text}
     </span>
@@ -205,7 +222,7 @@ function SectionHeading({
     <div className="px-4 pb-1 pt-3">
       <span
         data-vex-tool-section-label=""
-        className="block font-mono text-[10px] uppercase tracking-[0.3em] text-ink-tertiary"
+        className="block font-mono text-[11px] uppercase tracking-chip text-ink-secondary"
       >
         {children}
       </span>
@@ -264,7 +281,7 @@ function SectionBody({
   );
   if (text === null || text.length === 0) {
     return (
-      <span className="font-mono text-[11px] leading-relaxed text-ink-tertiary">
+      <span className="font-code text-[11.5px] leading-relaxed text-ink-secondary">
         {emptyHint}
       </span>
     );
@@ -273,7 +290,7 @@ function SectionBody({
     return <JsonTree data={json} />;
   }
   return (
-    <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-[var(--vex-text-2)]">
+    <pre className="whitespace-pre-wrap break-words font-code text-[11.5px] leading-relaxed text-ink-secondary">
       {text}
     </pre>
   );
@@ -338,6 +355,7 @@ export function ToolActRow({
     [operation, legs, act.toolArgs, act.output, act.success, act.displayStatus],
   );
   const durationText = formatToolDuration(act.durationMs ?? null);
+  const swatch = actSwatch(act);
   // The header's ONE summary slot. Whatever lands here fills and truncates;
   // the title and the duration flank it and never shrink.
   //
@@ -365,15 +383,15 @@ export function ToolActRow({
       </span>
     ) : null;
   return (
-    // §7 row anatomy: a quiet 24px header line (no boxed card), the expanded
-    // body a SIBLING ioCard below it. `group` scopes the leading crossfade.
+    // The ledger line: a 32px header closed by the quiet rule, the expanded
+    // body a SIBLING well below it. `group` scopes the leading crossfade.
     <div
       // Semantic contract: every visible tool row keeps the role attr.
       data-vex-message-role="tool"
       data-vex-tool-category={identity.category}
-      className="group flex flex-col"
+      className="vex-ledger__row group flex flex-col"
     >
-      <div className="flex min-h-6 items-center gap-2">
+      <div className="flex min-h-8 items-center gap-3">
         <button
           ref={triggerRef}
           type="button"
@@ -382,12 +400,12 @@ export function ToolActRow({
           onClick={() => setOpen((v) => !v)}
           // The raw symbol stays reachable even though the card shows prose.
           title={act.toolName}
-          className="flex min-w-0 flex-1 items-center text-left focus-visible:outline-none focus-visible:rounded-[4px] focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          className="flex min-w-0 flex-1 items-center text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         >
           {/* DisclosureRow house pattern: the 16px leading box crossfades the
               tool mark to a chevron on hover/focus - "this row expands"
               without a resting chevron. 100ms opacity, no layout shift. */}
-          <span className="relative mr-1.5 inline-grid h-4 w-4 flex-none place-items-center">
+          <span className="relative mr-3 inline-grid h-4 w-4 flex-none place-items-center text-accent-primary">
             <span className="col-start-1 row-start-1 inline-flex items-center justify-center transition-opacity duration-100 group-hover:opacity-0 group-focus-within:opacity-0">
               <ProtocolMark
                 protocol={identity.protocol}
@@ -398,7 +416,7 @@ export function ToolActRow({
             <span
               aria-hidden
               className={cn(
-                "col-start-1 row-start-1 inline-flex items-center justify-center text-[var(--vex-text-2)] opacity-0 transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100",
+                "col-start-1 row-start-1 inline-flex items-center justify-center text-accent-primary opacity-0 transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100",
                 open && "rotate-90",
               )}
             >
@@ -411,7 +429,7 @@ export function ToolActRow({
               a wide leg line from folding the header into two rows - the
               defect the QA screenshot caught. */}
           <span className="flex min-w-0 flex-1 flex-nowrap items-center">
-            <span className="flex-none truncate text-[14px] leading-6 text-[var(--vex-text-2)]">
+            <span className="flex-none truncate font-mono text-[13px] leading-6 tracking-[0.02em] text-ink-primary">
               {identity.title}
             </span>
             {summary !== null ? (
@@ -434,6 +452,17 @@ export function ToolActRow({
         ) : pendingApprovalId !== null ? (
           <ApprovalLinkStamp approvalId={pendingApprovalId} />
         ) : null}
+        {/* The status column: always 9px wide, so every line's figures end
+            on one edge whether or not an outcome is known. */}
+        <span
+          aria-hidden
+          data-vex-tool-status={swatch ?? undefined}
+          className="inline-flex w-[9px] flex-none text-accent-primary"
+        >
+          {swatch !== null && pendingApprovalId === null ? (
+            <Swatch state={swatch} size={9} />
+          ) : null}
+        </span>
       </div>
       {/* Explorer links get their OWN line under the header. They are anchors,
           so they can never nest inside the disclosure button (invalid HTML),
@@ -442,17 +471,16 @@ export function ToolActRow({
           chips with no owner" in the QA screenshot. Inert when nothing
           resolves. */}
       <ExplorerRefLinks refs={act.explorerRefs} />
-      {/* ioCard: l1 hairline, r12, the recessed code surface (`surface-deep`,
-          the shell's code-well token); each section is a static label over
-          its own capped scroll surface. It rides the shared expand primitive
-          - the card is the INNER box, so the animated outer box carries none
-          of its margin or border, and the entrance keyframe is gone (an
-          expand is not also a mount). */}
+      {/* The well (reference d4's facts well): the second paper, no frame;
+          each section is a static label over its own capped scroll surface.
+          It rides the shared expand primitive - the well is the INNER box,
+          so the animated outer box carries none of its margin, and the
+          entrance keyframe is gone (an expand is not also a mount). */}
       <ExpandRegion
         id={bodyId}
         open={open}
         triggerRef={triggerRef}
-        className="ml-1 mt-1 flex flex-col overflow-hidden rounded-[12px] border border-line-1 bg-surface-deep"
+        className="mb-2 ml-7 flex flex-col overflow-hidden bg-surface-3"
       >
         <div data-vex-tool-section="args">
           <SectionHeading>Args</SectionHeading>
@@ -473,7 +501,7 @@ export function ToolActRow({
           open={act.output !== null}
           className="flex flex-col"
         >
-          <div aria-hidden className="h-px flex-none bg-line-2" />
+          <div aria-hidden className="h-px flex-none bg-rule-quiet" />
           <div data-vex-tool-section="output">
             <SectionHeading>Output</SectionHeading>
             <SectionScroll>

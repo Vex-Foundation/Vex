@@ -1,14 +1,19 @@
 /**
- * Selected-session exception line, above the transcript.
+ * The selected session's head, above the transcript.
  *
- * The REGISTER LINE IS GONE (session-UI redesign, owner decree 2026-07-29):
- * the session title now lives only in the left rail (it was being stated
- * twice), and the Markdown export key moved to the trailing edge of the thin
- * status strip above the chat column (`SessionExportControl`). What remains
- * here is what the strip cannot carry — the per-session EXCEPTION stamp
- * (silence-by-default: `restricted` permission deviates from the defaults;
- * agent/full earn no chrome), the trailing slot, and the loading /
- * error / not-found lines.
+ * ON THE SPREAD (`chapter`, the shell's own surface) the head is the CHAPTER
+ * TITLE: the session's name in the 56px serif (docs/design/V10-SPREAD.md
+ * section 1, reference d3), the way a chapter of the book opens. The access
+ * mode is not repeated here: the composer's access-mode seat names it (with
+ * its accessible name), and the gutter caption repeats it, so a third copy
+ * would be the duplicate the calmness pass removed.
+ *
+ * IN A SIDE RAIL (the embedded Lighter chat) there is no chapter and no
+ * gutter, so the head keeps the per-session EXCEPTION stamp (silence-by-
+ * default: `restricted` permission deviates from the defaults; agent/full
+ * earn no chrome). Either way the Markdown export key lives on the running
+ * head (`SessionExportControl`), and the trailing slot and the loading /
+ * error / not-found lines stay here.
  *
  * Mission identity reads from the MISSION RAIL's Mission badge; the runtime
  * bar (model/usage/context/compaction) lives in the BOOK panel's RUNTIME &
@@ -17,7 +22,7 @@
 
 import type { JSX, ReactNode } from "react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
-import { DotmHex3 } from "../../components/ui/dotm-hex-3.js";
+import { Swatch } from "../../components/ui/swatch.js";
 import { Stamp } from "./SessionRows/Stamp.js";
 import { getSessionTitle } from "./sessionListModel.js";
 
@@ -34,6 +39,12 @@ export interface SessionContextProps {
    * the shell row is unchanged.
    */
   readonly trailing?: ReactNode;
+  /**
+   * The session opens as a chapter of the spread: its title is printed as
+   * the page's serif head. Off (the default) for a side rail, which keeps the
+   * exception stamp instead.
+   */
+  readonly chapter?: boolean;
 }
 
 export function SessionContext({
@@ -42,16 +53,17 @@ export function SessionContext({
   loading,
   error,
   trailing,
+  chapter = false,
 }: SessionContextProps): JSX.Element | null {
   if (loading) {
     return (
-      <div className="vex-micro flex h-9 items-center gap-2 tracking-[0.24em] text-[var(--vex-text-3)]">
-        <DotmHex3
-          size={14}
-          dotSize={2}
-          color="var(--vex-accent)"
-          ariaLabel="Loading session"
-        />
+      <div
+        role="status"
+        className="flex h-9 items-center gap-[9px] font-mono text-[11px] uppercase tracking-status text-ink-secondary"
+      >
+        <span aria-hidden className="inline-flex text-accent-primary">
+          <Swatch state="ongoing" size={9} />
+        </span>
         Loading session
       </div>
     );
@@ -59,7 +71,8 @@ export function SessionContext({
 
   if (error !== null) {
     return (
-      <div className="flex h-9 items-center text-xs text-destructive">
+      <div className="flex h-9 items-center gap-2 text-[13px] text-ink-primary">
+        <Swatch state="error" size={9} />
         {error}
       </div>
     );
@@ -67,7 +80,7 @@ export function SessionContext({
 
   if (activeSessionId !== null && activeSession === null) {
     return (
-      <div className="flex h-9 items-center text-sm text-[var(--vex-text-2)]">
+      <div className="flex h-9 items-center text-[14px] text-ink-secondary">
         Session not found
       </div>
     );
@@ -75,6 +88,20 @@ export function SessionContext({
 
   if (activeSession !== null) {
     const title = getSessionTitle(activeSession);
+    if (chapter) {
+      return (
+        <header
+          data-vex-area="session-header"
+          role="group"
+          aria-label={`Session: ${title}`}
+          className="flex items-start justify-between gap-4 pb-1.5 pt-2"
+        >
+          <h1 className="vex-chapter__title min-w-0">{title}</h1>
+          {/* Trailing slot - right-edge context host (see prop doc). */}
+          {trailing}
+        </header>
+      );
+    }
     return (
       <div
         data-vex-area="session-header"

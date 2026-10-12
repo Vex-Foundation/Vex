@@ -1,8 +1,10 @@
 /**
- * Fenced code block — recessed case file: hairline wrapper on the surface-down
- * well with a language strip + copy key. The copy button writes the token's
- * RAW string via the clipboard API — it never re-enters the React tree, so the
- * no-HTML-sink invariant is untouched.
+ * Fenced code block: a well on the second paper (docs/design/V10-SPREAD.md
+ * section 1) with a language strip + copy key, set in JetBrains Mono (code
+ * only) on the same code-token palette the Studio viewer's shiki theme writes
+ * (`--vex-alias-code-*`). The copy button writes the token's RAW string via
+ * the clipboard API; it never re-enters the React tree, so the no-HTML-sink
+ * invariant is untouched.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -79,27 +81,27 @@ export function CodeBlock({
   };
 
   return (
-    <div className="overflow-hidden rounded-[10px] border border-[var(--vex-line)] bg-[var(--vex-surface-down)]">
-      <div className="flex h-7 items-center justify-between border-b border-[var(--vex-line)] px-3">
-        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+    <div className="overflow-hidden border border-rule-quiet bg-surface-3">
+      <div className="flex h-7 items-center justify-between border-b border-rule-quiet px-3">
+        <span className="font-mono text-[11px] uppercase tracking-chip text-ink-secondary">
           {lang}
         </span>
         <button
           type="button"
           aria-label="Copy code"
           onClick={() => void onCopy()}
-          className="flex items-center text-[var(--vex-text-3)] transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          className="flex items-center text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         >
           {copyState === "idle" ? (
             <IconCopy size={12} />
           ) : (
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em]">
+            <span className="font-mono text-[11px] uppercase tracking-chip">
               {copyState === "copied" ? "Copied" : "Copy failed"}
             </span>
           )}
         </button>
       </div>
-      <pre className="max-h-[480px] overflow-auto px-4 py-3 font-code text-[12.5px] leading-[1.6] text-[var(--vex-text-2)]">
+      <pre className="max-h-[480px] overflow-auto bg-[var(--vex-alias-code-background)] px-4 py-3 font-code text-[12.5px] leading-[1.6] text-[var(--vex-alias-code-foreground)]">
         <code>{body}</code>
       </pre>
     </div>

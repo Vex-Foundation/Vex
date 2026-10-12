@@ -131,4 +131,27 @@ describe("SessionContext header (slice C)", () => {
     ).toBeNull();
   });
 
+  // ON THE SPREAD the session opens as a chapter (docs/design/V10-SPREAD.md
+  // section 1, reference d3): its name in the 56px serif. The access mode is
+  // not repeated: the composer's access-mode seat names it.
+  it("prints the session name as the chapter head on the spread, with no stamp", () => {
+    const { container } = renderCtx({ chapter: true });
+    const header = container.querySelector('[data-vex-area="session-header"]');
+    expect(header).not.toBeNull();
+    expect(header?.getAttribute("role")).toBe("group");
+    expect(header?.getAttribute("aria-label")).toBe("Session: Research session");
+    const title = screen.getByRole("heading", { level: 1 });
+    expect(title.textContent).toBe("Research session");
+    expect(title.className).toContain("vex-chapter__title");
+    expect(screen.queryByText("restricted")).toBeNull();
+  });
+
+  it("keeps the trailing slot beside the chapter head", () => {
+    const { container } = renderCtx({
+      chapter: true,
+      trailing: createElement("span", { "data-testid": "trailing-slot" }, "x"),
+    });
+    const header = container.querySelector('[data-vex-area="session-header"]');
+    expect(header?.querySelector('[data-testid="trailing-slot"]')).not.toBeNull();
+  });
 });

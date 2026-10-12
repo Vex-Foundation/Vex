@@ -57,9 +57,13 @@ async function renderTranscript() {
   return view;
 }
 
-/** The wrapper that carries the reading measure, inside the scroller. */
+/**
+ * The wrapper that carries the reading measure, inside the scroller: the
+ * session page's column (`PAGE_COLUMN`, docs/design/V10-SPREAD.md section 1),
+ * the same measure the chapter head and the field share.
+ */
 function readingColumn(container: HTMLElement): HTMLElement {
-  const el = getScroller(container).querySelector(".max-w-\\[780px\\]");
+  const el = getScroller(container).querySelector(".max-w-\\[880px\\]");
   if (el === null) throw new Error("reading column not found inside scroller");
   return el as HTMLElement;
 }
@@ -97,14 +101,14 @@ describe("the scroller spans the panel; the column lives inside it", () => {
   it("keeps the floating slots inside the scroller but OUT of the row column", async () => {
     // The centred scene and the jump pill are zero-height STICKY slots: inside
     // the scroller (sticky resolves against the scrolling ancestor) and
-    // outside the row column, whose 16px gap they would otherwise take,
+    // outside the row column, whose 18px gap they would otherwise take,
     // opening a hole between rows. The retired anchor-run-out spacer used to
     // hold the scroll range with dead space; the follow model needs none, so
     // nothing in the scroller writes an inline height any more.
     const { container } = await renderTranscript();
     const scroller = getScroller(container);
     const column = readingColumn(container);
-    const rowStack = column.querySelector(".gap-4");
+    const rowStack = column.querySelector(".gap-\\[18px\\]");
     expect(rowStack).not.toBeNull();
     expect(scroller.querySelector('div[style*="height"]')).toBeNull();
   });

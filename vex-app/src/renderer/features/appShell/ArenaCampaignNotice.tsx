@@ -6,10 +6,18 @@
  * one button opens the desk on Robinhood Chain (the venue the campaign
  * counts). After the campaign, the same card remains a permanent
  * Lighter entry and preserves the user's last environment.
+ *
+ * Drawn as the welcome spread draws it (docs/design/V10-SPREAD.md section 1,
+ * reference d2): one ruled box on the paper, the phase as a status chip
+ * (`[LIVE NOW]` behind the solid swatch, `[UPCOMING EVENT]` behind the
+ * target), the window in mono caps, the event name in the 36px serif, the
+ * reward line and the one blue key. Status by fill: nothing blinks.
  */
 
 import { useEffect, useState, type JSX } from "react";
 import { IconArrowUpRight, IconClose, IconGift } from "../../components/icons/index.js";
+import { Button } from "../../components/ui/button.js";
+import { Chip } from "../../components/ui/chip.js";
 import { useLighterAnalysisStore } from "../../stores/lighterAnalysisStore.js";
 import {
   ARENA_CAMPAIGN,
@@ -78,46 +86,55 @@ export function ArenaCampaignNotice(): JSX.Element | null {
       role="status"
       data-vex-area="arena-campaign-notice"
       data-phase={phase}
-      className="vex-rise vex-rise-d1 vex-arena-pulse relative mt-5 flex w-full max-w-[680px] flex-wrap items-center gap-x-4 gap-y-3 rounded-[18px] border border-accent-primary/40 bg-accent-primary/10 py-3 pl-11 pr-4 text-left shadow-lv1"
+      className="vex-arena vex-rise vex-rise-d1 text-left"
     >
       <button
         type="button"
         onClick={dismiss}
         aria-label="Dismiss"
-        className="absolute left-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full text-ink-secondary transition-colors duration-100 hover:bg-accent-primary/15 hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:ring-offset-2"
+        className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center text-ink-secondary transition-colors duration-100 hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
       >
-        <IconClose size={14} />
+        <IconClose size={12} />
       </button>
-      <div className="min-w-0 flex-[1_1_260px]">
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-          <span className="inline-flex items-center gap-1.5 rounded-capsule bg-accent-primary px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-on-accent">
-            {phase === "live" ? (
-              <span className="vex-live-dot h-1.5 w-1.5 rounded-full bg-danger" aria-hidden="true" />
-            ) : null}
-            {phase === "live" ? "Live now" : phase === "upcoming" ? "Upcoming event" : "Vex × Lighter"}
+      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 pr-8">
+        {phase === "live" ? (
+          <Chip state="done" data-vex-arena-live="">
+            Live now
+          </Chip>
+        ) : phase === "upcoming" ? (
+          <Chip state="warning">Upcoming event</Chip>
+        ) : (
+          <span className="inline-flex h-6 items-center px-2.5 font-mono text-[11px] uppercase tracking-chip text-accent-primary outline outline-1 -outline-offset-1 outline-rule">
+            Vex × Lighter
           </span>
-          <h2 className="text-[17px] font-semibold leading-6 text-ink-primary">
-            {campaignActive ? ARENA_CAMPAIGN.name : "Trade with Vex on Lighter"}
-          </h2>
-        </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] leading-5 text-ink-secondary">
-          {campaignActive ? (
-            <span className="inline-flex items-center gap-1 rounded-capsule bg-accent-wash px-2 py-0.5 font-semibold text-accent-primary">
-              <IconGift size={13} />
-              Rewards: {ARENA_CAMPAIGN.reward}
-            </span>
-          ) : null}
-          <span>{timing}</span>
-        </div>
+        )}
+        <span className="font-mono text-[11px] uppercase tracking-status text-ink-secondary">
+          {timing}
+        </span>
       </div>
-      <button
-        type="button"
-        onClick={() => openLighterDesk(campaignActive)}
-        className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-capsule bg-accent-primary px-4 text-[13px] font-semibold text-ink-on-accent transition-colors duration-100 hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:ring-offset-2"
-      >
-        {campaignActive ? "Enter with Vex" : "Open Lighter"}
-        <IconArrowUpRight size={16} />
-      </button>
+      <h2 className="vex-arena__title">
+        {campaignActive ? ARENA_CAMPAIGN.name : "Trade with Vex on Lighter"}
+      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        {campaignActive ? (
+          <span className="inline-flex items-center gap-2.5 text-[15px] leading-6 text-ink-primary">
+            <span aria-hidden className="inline-flex text-accent-primary">
+              <IconGift size={16} />
+            </span>
+            Rewards: {ARENA_CAMPAIGN.reward}
+          </span>
+        ) : (
+          <span aria-hidden />
+        )}
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => openLighterDesk(campaignActive)}
+        >
+          {campaignActive ? "Enter with Vex" : "Open Lighter"}
+          <IconArrowUpRight size={14} />
+        </Button>
+      </div>
     </div>
   );
 }

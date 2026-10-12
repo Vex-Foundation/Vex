@@ -89,7 +89,7 @@ export function ExplorerRefLinks({
             aria-expanded={expanded}
             aria-controls={overflowId}
             onClick={() => setExpanded((v) => !v)}
-            className="inline-flex shrink-0 items-center rounded-[3px] font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-text)] focus-visible:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+            className="inline-flex shrink-0 items-center font-mono text-[10px] uppercase tracking-[0.08em] text-accent-primary transition-colors hover:text-ink-primary focus-visible:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           >
             {expanded ? "less" : `+${overflow} more`}
           </button>
@@ -129,7 +129,7 @@ function RefChip({ chip }: { readonly chip: ResolvedRef }): JSX.Element {
       // old 9px with 0.14em tracking on uppercase digits is what read as
       // unformatted. Tracking comes down with it - letter-spacing isolates
       // already-sparse glyphs rather than helping them.
-      className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--vex-text-3)] transition-colors hover:text-[var(--vex-text)] focus-visible:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+      className="inline-flex shrink-0 items-center gap-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-accent-primary transition-colors hover:text-ink-primary focus-visible:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
     >
       {chip.label}
       <IconArrowUpRight size={11} />
