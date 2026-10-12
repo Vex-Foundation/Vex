@@ -51,7 +51,7 @@ function CleanupNotice({ item, collapsed, onExpand }: { readonly item: ProjectPe
     && failure.holders?.some((holder) => holder.kind !== "external");
   if (collapsed) return <article role="status" aria-label={`Pending cleanup for ${item.name}`}>
     <button type="button" aria-label={`Show pending cleanup for ${item.name}`} onClick={onExpand}
-      className="flex h-6 w-full items-center justify-center rounded focus-visible:ring-2 focus-visible:ring-accent-primary">
+      className="flex h-6 w-full items-center justify-center focus-visible:ring-2 focus-visible:ring-accent-primary">
       <Swatch state="warning" size={8} />
     </button>
   </article>;

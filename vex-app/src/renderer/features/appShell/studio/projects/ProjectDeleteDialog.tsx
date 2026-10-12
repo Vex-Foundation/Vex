@@ -501,7 +501,7 @@ export function ProjectDeleteDialog({
 
           <label
             className={cn(
-              "flex items-start gap-2.5 rounded-lg border px-3 py-2.5 transition-colors",
+              "flex items-start gap-2.5 border px-3 py-2.5 transition-colors",
               trashFrozen ? "cursor-default" : "cursor-pointer",
               warned
                 ? "border-warning/40 bg-warning-wash"
@@ -638,7 +638,7 @@ function DeleteOutcome({
     <section
       role="status"
       data-vex-delete-outcome={outcome.outcome}
-      className="flex flex-col gap-2 rounded-lg border border-line-2 px-3 py-2.5"
+      className="flex flex-col gap-2 border border-line-2 px-3 py-2.5"
     >
       <p className="text-sm text-ink-primary">
         {PROJECT_DELETE_OUTCOME_SENTENCES[outcome.outcome]}

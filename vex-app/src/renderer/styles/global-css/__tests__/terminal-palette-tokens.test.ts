@@ -15,7 +15,7 @@
  *     fallback is while SGR 31 is themed;
  *  3. a background that misreports the surface through OSC 11. Both modes
  *     own opaque reading surfaces in xterm's supported eight-digit hex
- *     syntax, and each surface is a V10 primitive: the ink well at night,
+ *     syntax, and each surface is a V10 primitive: the night field at night,
  *     the white field by day.
  *  4. a palette that parses and is still unreadable. Light mode measures
  *     every text slot against its actual opaque background, including SGR 90.
@@ -157,12 +157,12 @@ describe("terminal palette tokens", () => {
   });
 
   it.each([
-    ["chronos", chronos, "--color-ink"],
+    ["chronos", chronos, "--color-night-1"],
     ["celeris", celeris, "--color-white"],
   ])("pins surface opacity and OSC 11 RGB to a V10 primitive (%s)", (name, body, primitive) => {
     // Both themes have a stable reading ground. OSC 11 reports its RGB, so
     // the surface is a wire contract and is held to a named primitive: the
-    // ink well at night, the white field by day. It does NOT follow the room's
+    // night field (night-1) at night, the white field by day. It does NOT follow the room's
     // paper (--vex-alias-bg-base): a program that asked once must keep
     // getting the same answer until the terminal itself is retuned.
     const value = declarationValue(body, "--vex-alias-term-background");
@@ -230,14 +230,18 @@ describe("terminal palette tokens", () => {
     expect(contrastRatio(resolveHex(body, "--vex-alias-term-bright-black"), surface)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it("holds the chrome slots at their shipped values until the terminal retune", () => {
+  it("pins the retuned chrome slots to the V10 paper, ink and blue", () => {
     // The foreground and cursor ride OSC 10 and the block cursor, so they are
     // wire values like the background: literal, and pinned here so a repaint
-    // of the room cannot move them by accident.
-    expect(resolveHex(celeris, "--vex-alias-term-foreground")).toBe("#12141c");
-    expect(resolveHex(chronos, "--vex-alias-term-foreground")).toBe("#e3e7ef");
-    expect(resolveHex(chronos, "--vex-alias-term-cursor")).toBe("#7a8cff");
+    // of the room cannot move them by accident. Docs/design/V10-SPREAD.md
+    // section 1: ink on the white field by day; paper type on the night field
+    // with the periwinkle (blue's night form) cursor.
+    expect(resolveHex(celeris, "--vex-alias-term-foreground")).toBe("#0a0d18");
+    expect(resolveHex(chronos, "--vex-alias-term-foreground")).toBe("#f3f4f7");
+    expect(resolveHex(chronos, "--vex-alias-term-cursor")).toBe("#a3abff");
     expect(resolveHex(celeris, "--vex-alias-term-cursor")).toBe("#0000c0");
+    expect(resolveHex(chronos, "--vex-alias-term-blue")).toBe("#a3abff");
+    expect(resolveHex(celeris, "--vex-alias-term-blue")).toBe("#0000c0");
     expect(resolveHex(celeris, "--vex-alias-term-black")).toBe("#2b3040");
   });
 

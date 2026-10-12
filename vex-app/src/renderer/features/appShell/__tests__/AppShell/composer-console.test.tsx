@@ -209,10 +209,11 @@ describe("composer capsule - chrome", () => {
     expect(field.className).not.toMatch(/focus-visible|ring/);
   });
 
-  it("raw-CSS contract: r22 card on the input border + lv2 shadow, and NO focus treatment anywhere in the chrome", () => {
-    expect(CONSOLE_CSS).toContain("border-radius: 22px");
+  it("raw-CSS contract: a square card on the input border with no shadow, and NO focus treatment anywhere in the chrome", () => {
+    expect(CONSOLE_CSS).toContain("border-radius: 0");
+    expect(CONSOLE_CSS).not.toMatch(/border-radius:\s*(?!0\b)\d/);
     expect(CONSOLE_CSS).toContain("var(--vex-alias-border-input)");
-    expect(CONSOLE_CSS).toContain("var(--shadow-lv2)");
+    expect(CONSOLE_CSS).not.toMatch(/box-shadow|--shadow-lv/);
     // The catalog capsule has no focus ring and no focus border step: no
     // rule block selects on focus (a prose mention in a comment is fine).
     expect(CONSOLE_CSS).not.toContain(":focus-within");

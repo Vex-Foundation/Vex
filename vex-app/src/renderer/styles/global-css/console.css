@@ -1,33 +1,34 @@
-/* Composer capsule chrome (SessionComposer). Catalog geometry: r22 card,
- * thin-in-dark input border, shadow lv2, NO focus treatment of any kind -
- * the accent caret and the send key carry focus. Border/shadow live here
- * (not in a className) because the design guard scans .tsx sources for
- * box-shadow chrome. */
+/* Composer chrome (SessionComposer), V10: a square white field on a 1px rule
+ * (docs/design/V10-SPREAD.md section 1: radius 0, no shadow, no blur), with NO
+ * focus treatment of any kind - the accent caret and the send key carry focus.
+ * Border lives here (not in a className) because the design guard scans .tsx
+ * sources for border chrome. */
 
 .vex-composer-card {
   position: relative;
   border: 1px solid var(--vex-alias-border-input);
-  border-radius: 22px;
+  border-radius: 0;
   background: var(--vex-alias-composer);
-  box-shadow: var(--shadow-lv2);
   /* Elevated-surface scrollbar rebind (the indirection contract). */
   --vex-scrollbar-thumb: var(--vex-alias-scrollbar-l2);
   --vex-scrollbar-thumb-hover: var(--vex-alias-scrollbar-l2-hover);
 }
 
-/* Approval park recolors the border amber - the run is waiting on a
- * signature, and the floating tag above the card says so. */
+/* Approval park draws the 1.5px ink frame - the run is waiting on a
+ * signature, and the floating tag above the card says so. Status is shown by
+ * the frame, never by a colour. */
 .vex-composer-card[data-vex-composer-state="approval"] {
-  border-color: var(--vex-alias-state-warn);
+  border-width: 1.5px;
+  border-color: var(--vex-alias-rule-ink);
 }
 
-/* Pending dot: 8px, 1s ease-in-out infinite alternate (opacity 0.35 -> 1),
- * accent via currentColor from its wrapper, beside the send/stop key while
- * a turn is in flight. */
+/* Pending mark: an 8px square, 1s ease-in-out infinite alternate (opacity
+ * 0.35 -> 1), accent via currentColor from its wrapper, beside the send/stop
+ * key while a turn is in flight. */
 .vex-composer-pending-dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: 0;
   background: currentColor;
   animation: vex-composer-pending 1s ease-in-out infinite alternate;
 }
@@ -41,18 +42,17 @@
   }
 }
 
-/* Dashed drop ring: a masked SVG rect - a native dashed border keeps a
- * fixed dash pattern across the rounded corners, the mask's dasharray
- * follows r22. The 4px stroke is centered on the rect edge, so the mask
- * clips it to a 2px inner ring. CSP: img-src allows data:. */
+/* Dashed drop ring: a masked SVG rect with square corners. The 4px stroke is
+ * centered on the rect edge, so the mask clips it to a 2px inner ring. CSP:
+ * img-src allows data:. */
 .vex-composer-card[data-vex-drop="active"]::after {
   content: "";
   position: absolute;
   inset: -1px;
-  border-radius: 22px;
+  border-radius: 0;
   background: var(--vex-alias-accent-primary);
   pointer-events: none;
-  mask: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="100%25" height="100%25" rx="22" fill="none" stroke="white" stroke-width="4" stroke-dasharray="4 4"/></svg>');
+  mask: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="100%25" height="100%25" fill="none" stroke="white" stroke-width="4" stroke-dasharray="4 4"/></svg>');
 }
 
 /* Keyboard highlight for the slash-command combobox rows (focus stays in

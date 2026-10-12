@@ -77,15 +77,15 @@ export function ExplorerHeader({
   return (
     <div
       className={cn(
-        // No rule under it and no plate behind it: the header sits on the
-        // rail's own glass, and the 11px uppercase title is what separates it
-        // from the 13px rows below (the reference draws its section headers
-        // the same way, a register step rather than a stroke).
-        "flex h-8 shrink-0 items-center gap-1 px-2",
+        // A 30px row on the rail's paper with no rule and no plate: the
+        // Departure Mono 11px caps title is what separates it from the 13px
+        // rows below (docs/design/V10-SPREAD.md section 1, the micro-label
+        // register).
+        "flex h-[30px] shrink-0 items-center gap-1 pr-1 pl-5",
         className,
       )}
     >
-      <span className="flex-1 truncate text-[11px] font-medium tracking-wide text-ink-tertiary uppercase">
+      <span className="flex-1 truncate font-mono text-[11px] tracking-[0.14em] text-ink-secondary uppercase">
         {title ?? EXPLORER_SECTION_LABEL}
       </span>
       {onCreateFile === undefined ? null : (
@@ -94,7 +94,7 @@ export function ExplorerHeader({
             type="button"
             aria-label={EXPLORER_NEW_FILE_LABEL}
             onClick={onCreateFile}
-            className="rounded p-1 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="p-1 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             <IconPlus size={12} />
           </button>
@@ -106,7 +106,7 @@ export function ExplorerHeader({
             type="button"
             aria-label={EXPLORER_NEW_FOLDER_LABEL}
             onClick={onCreateFolder}
-            className="rounded p-1 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="p-1 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             <IconFolderClose size={12} />
           </button>
@@ -117,7 +117,7 @@ export function ExplorerHeader({
           type="button"
           aria-label={EXPLORER_REFRESH_LABEL}
           onClick={onRefresh}
-          className="rounded p-1 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="p-1 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           <IconRefresh size={12} />
         </button>
@@ -127,7 +127,7 @@ export function ExplorerHeader({
           type="button"
           aria-label={EXPLORER_COLLAPSE_ALL_LABEL}
           onClick={onCollapseAll}
-          className="rounded p-1 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="p-1 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           <IconChevronUp size={12} />
         </button>

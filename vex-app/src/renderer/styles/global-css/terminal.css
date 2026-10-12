@@ -58,15 +58,39 @@
   overflow: hidden;
 }
 
-/* THE TAB STRIP'S HOVER. glass.css paints the tab shell at rest (chip tint)
- * and active (pane tint plus the edge light); the hover is the strip's own
- * decision and lives with the strip: a hovered tab previews activation by
- * taking the pane tint WITHOUT the edge light, so rest -> hover -> active is
- * one climb and not two directions (16.png: the hovered tab fills, the active
- * one fills and lights). A named rule rather than a utility because glass.css
- * is unlayered and a `hover:bg-*` utility can never out-rank it. Class, not
- * `[role="tablist"]`: the primitive's list is shared by every tab set and only
- * the terminal strip has tab shells. */
+/* THE TAB STRIP (docs/design/V10-SPREAD.md section 1). The strip sits on the
+ * paper over one 1px rule; a tab is a clear shell at rest, and the active tab
+ * is a field box with a rule on three sides that sits 1px low, so it covers the
+ * rule under itself and opens into the pane body below. A hovered tab previews
+ * activation with the quiet hover wash and never takes the active field. Named
+ * rules rather than utilities because the shell is one wrapper around the
+ * trigger, the Keep action and the close, and `[data-active]` is the switch.
+ * Class, not `[role="tablist"]`: the primitive's list is shared by every tab
+ * set and only the terminal strip has tab shells. */
+.vex-terminal-tab-strip {
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+
+.vex-tab-shell {
+  margin-bottom: -1px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  color: var(--vex-alias-label-secondary);
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+
+.vex-tab-shell[data-active] {
+  background: var(--vex-alias-field);
+  border-color: var(--vex-alias-rule);
+  color: var(--vex-alias-label-primary);
+}
+
 .vex-terminal-tab-strip .vex-tab-shell:not([data-active]):hover {
-  background: var(--vex-glass-tint-pane);
+  background: var(--vex-alias-interactive-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-tab-shell {
+    transition: none;
+  }
 }
