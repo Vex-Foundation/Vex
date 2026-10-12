@@ -120,6 +120,14 @@ html[data-still] .vex-swatch {
   content: none;
 }
 
+/* The trailing tracking stays INSIDE the compact chip. The outlined chip
+ * pulls it into its 10px end padding; the compact chip has no padding to
+ * pull it into, so the same negative margin pushed the word's box past the
+ * chip's own and the chip reported a label wider than itself. */
+.vex-chip[data-compact] > b {
+  margin-inline-end: 0;
+}
+
 .vex-chip[data-on-photo] {
   background: var(--vex-alias-label-box);
   color: var(--color-blue);
