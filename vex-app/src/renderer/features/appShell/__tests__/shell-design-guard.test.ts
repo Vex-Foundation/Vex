@@ -252,17 +252,9 @@ const WHITELIST: readonly WhitelistEntry[] = [
       "backdrop-blur over the current shell backdrop, carrying a static grain " +
       "overlay. One whitelisted wrapper for every screen.",
   },
-  {
-    // Owner decree 2026-07-20, Chronos glass law: the profile side-panel
-    // menu floats over the rail as the same Chronos glass surface family.
-    file: "features/appShell/SidebarProfile.tsx",
-    pattern: "backdrop-blur (glass)",
-    reason:
-      "Owner-decreed Chronos glass surface (2026-07-20 law): the profile " +
-      "side-panel menu floats as translucent ink (--vex-glass-strong) with " +
-      "backdrop-blur + a static grain overlay, matching the approved " +
-      "profile-menu mock.",
-  },
+  // REMOVED (left page, V10): the profile row is a plain row on the print or
+  // on paper (SidebarProfile.tsx), its menu a square paper card; neither
+  // carries backdrop-blur, so the profile's glass sanction is gone.
   // REMOVED (V10 pre-shell, WP13): the Chronos Gate's two theme-blind
   // white literals (the corner stamp and the act status line on the
   // invariant cobalt plate). The cobalt plate is gone: the gate stands on
