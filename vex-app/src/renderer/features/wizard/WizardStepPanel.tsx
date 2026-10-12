@@ -1,8 +1,9 @@
 /**
  * Open page section for each wizard step — AMENDMENT A3 (boxless
  * composition): the screen-level card is retired. Content sits DIRECTLY
- * on the hosting surface (cobalt plate in the wizard, ShellScreen glass
- * in Settings): quiet hairline icon badge + serif sentence-case title +
+ * on the hosting surface (the stage's paper leaf in the wizard, the
+ * Settings sheet in the shell): quiet hairline icon badge + serif
+ * sentence-case title +
  * one human description, then the step content in flow, then actions
  * right-aligned in flow, then a quiet trailing meta line. Separation is
  * spacing and at most a hairline divider — no borders-as-boxes, no
@@ -114,7 +115,7 @@ function stepIndexFor(kind: PanelKind): number {
  * serif title is the section's one statement; everything else stays
  * quiet. */
 const ICON_CIRCLE_CHROME = cn(
-  "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
+  "flex h-10 w-10 shrink-0 items-center justify-center",
   "border border-[var(--color-border)] text-ink-primary",
 );
 
@@ -173,19 +174,20 @@ export function WizardStepPanel({
   // type system guarantees the (kind, value) pair is valid.
   const dataAttrs = { [dataAttrKey]: panelDataAttr.value };
 
-  // `vex-step-header` / `vex-step-lede` are STYLE HOOKS, not styles: they
-  // carry declarations only inside the `[data-vex-gate]` scope
-  // (global-css/chronos-gate.css), where the header becomes a centered stack
-  // and the lede goes up to 18px. In Settings — which renders this same
-  // component — they match nothing, so the left-aligned composition below
-  // is what ships there. Keep the Tailwind classes as the Settings truth.
+  // `vex-step-*` are STYLE HOOKS, not styles: they carry declarations only
+  // inside the `[data-vex-gate]` scope (global-css/chronos-gate.css), where
+  // the step reads as the d8 leaf: no glyph badge, the 56px serif title,
+  // the 15px lead, actions left-aligned, no trailing meta (the stage shows
+  // the step and the privacy link). In Settings, which renders this same
+  // component, they match nothing, so the composition below is what ships
+  // there. Keep the Tailwind classes as the Settings truth.
   const headerNode = (
     <header className="vex-step-header flex items-start gap-4">
-      <span aria-hidden className={ICON_CIRCLE_CHROME}>
+      <span aria-hidden className={cn("vex-step-icon", ICON_CIRCLE_CHROME)}>
         <Icon size={20} />
       </span>
       <div className="flex flex-col gap-1.5 pt-0.5">
-        <h1 className="font-serif text-2xl font-normal leading-tight text-ink-primary">
+        <h1 className="vex-step-title font-serif text-2xl font-normal leading-tight text-ink-primary">
           {title}
         </h1>
         <p className="vex-step-lede text-sm leading-relaxed text-ink-secondary">
@@ -195,9 +197,8 @@ export function WizardStepPanel({
     </header>
   );
 
-  // Same hook contract as the header: right-aligned in Settings, centered in
-  // the pre-shell so the step's actions sit under the centered header on the
-  // same axis as every SetupFrame screen's CTA.
+  // Same hook contract as the header: right-aligned in Settings,
+  // left-aligned under the title on the pre-shell leaf.
   const actionsNode = footer ? (
     <div className="vex-step-actions mt-8 flex items-center justify-end gap-3">
       {footer}
@@ -205,7 +206,7 @@ export function WizardStepPanel({
   ) : null;
 
   const metaNode = (
-    <div className="mt-6 border-t border-[var(--color-border)] pt-4">
+    <div className="vex-step-meta mt-6 border-t border-[var(--color-border)] pt-4">
       <TrailingMeta
         kind={panelDataAttr.kind}
         showStepCount={flowMode !== "back-edit"}

@@ -1,16 +1,14 @@
 /**
- * Wizard shell (M7, Phase 2 refactor — Mode + Wake steps removed; PR6
- * redesign — onboarding glass; V2 redesign — sidebar removed; Chronos
- * rebrand — the wizard joins the cobalt continuum).
+ * Wizard shell (M7, Phase 2 refactor: Mode + Wake steps removed; V10:
+ * the wizard is a page on the stage, docs/design/V10-SPREAD.md section 2,
+ * the d8 reference).
  *
- * Layout (AMENDMENT A2): the wizard keeps its own full-bleed `<main>`
- * but paints the same SetupGate plate as every other pre-shell slide
- * (`.vex-gate-plate` + vignette + grain) and carries the
- * `data-vex-gate` token scope, so stock Buttons inside step forms are
- * cobalt pills and the step forms pick up the pre-shell type scale
- * (INK REDESIGN). Top-left brand + bottom corners match `SetupFrame`.
- * The centered column hosts the minimal `HorizontalStepper` rail above
- * `WizardStepPanel`. Loading state is the VexLoader ring.
+ * Layout: the wizard stands on the pre-shell stage like every setup screen
+ * (`SetupFrame`, the paper leaf at the right). The sky to the leaf's left
+ * carries the current step number as the giant counter and the seven-step
+ * index (`HorizontalStepper`); the leaf carries the stepper's eyebrow
+ * ("Step 2 of 7 · Wallets") above `WizardStepPanel`; the ground carries the
+ * privacy link and the version. Loading state is the VexLoader.
  *
  * Per-step chrome lives in `WizardStepPanel`; each step returns a
  * `WizardStepPanel` (or, for ReviewStep back-edit, a sub-step's panel
@@ -35,17 +33,28 @@
 import { useCallback, useEffect, useState, type JSX } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
+  WIZARD_STEP_IDS,
   type WizardStepId,
   type WizardState,
 } from "@shared/schemas/wizard.js";
 import { Button } from "../../components/ui/button.js";
 import { OpenLogsLink } from "../../components/common/OpenLogsLink.js";
 import { VexLoader } from "../../components/ui/vex-loader.js";
-import { cn } from "../../lib/utils.js";
+import { SetupFrame } from "../../components/onboarding/SetupFrame.js";
+import { StageCounter } from "../../components/onboarding/PreShellStage.js";
+import { IconArrowUpRight } from "../../components/icons/index.js";
+import {
+  VEX_PRIVACY_DOC_LABEL,
+  VEX_PRIVACY_DOC_URL,
+} from "@shared/docs-links.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useWizardState } from "../../lib/api/wizard.js";
 import { resolveWizardEntry } from "./wizard-entry.js";
-import { HorizontalStepper } from "./HorizontalStepper.js";
+import {
+  HorizontalStepper,
+  WizardStepEyebrow,
+  stepNumeral,
+} from "./HorizontalStepper.js";
 import { AgentCoreStep } from "./steps/AgentCoreStep.js";
 import { ApiKeysStep } from "./steps/ApiKeysStep.js";
 import { EmbeddingStep } from "./steps/EmbeddingStep.js";
@@ -83,49 +92,14 @@ function renderStep(
   }
 }
 
-const SHELL_CHROME = cn(
-  "relative flex h-screen w-screen overflow-hidden",
-  "text-ink-primary",
+/** The stage ground: the privacy link and the version stamp (d8). */
+const GROUND_START = (
+  <a href={VEX_PRIVACY_DOC_URL} target="_blank" rel="noopener noreferrer">
+    {VEX_PRIVACY_DOC_LABEL}
+    <IconArrowUpRight size={12} />
+  </a>
 );
-
-/* Error state is an open composition on the plate (AMENDMENT A3 —
- * boxless): serif title, danger rail for the message, actions in flow. */
-const ERROR_STACK_CHROME = cn("relative z-10 flex w-full max-w-md flex-col gap-4");
-
-/** The ink plate + corner chrome shared by all three shell states.
- * Paint layers first (behind), then the pointer-events-none corners. */
-function WizardChrome(): JSX.Element {
-  return (
-    <>
-      <div aria-hidden className="vex-gate-plate absolute inset-0" />
-      <div aria-hidden className="vex-gate-vignette absolute inset-0" />
-      <div aria-hidden className="vex-noise pointer-events-none absolute inset-0" />
-
-      {/* The mark alone - owner decree 2026-07-22: no "VEX" text beside it.
-       * Theme-swapped pair: white on the chronos ink plate, brand blue on
-       * the celeris light plate. */}
-      <div className="pointer-events-none absolute left-6 top-6 z-10">
-        <img
-          src="/brand/vex-mark-white.svg"
-          alt=""
-          aria-hidden
-          draggable={false}
-          className="h-6 w-auto select-none [[data-vex-theme=celeris]_&]:hidden"
-        />
-        <img
-          src="/brand/vex-mark-color.svg"
-          alt=""
-          aria-hidden
-          draggable={false}
-          className="hidden h-6 w-auto select-none [[data-vex-theme=celeris]_&]:block"
-        />
-      </div>
-      <span className="pointer-events-none absolute bottom-7 right-10 z-10 vex-micro text-ink-tertiary">
-        v{__VEX_APP_VERSION__}
-      </span>
-    </>
-  );
-}
+const GROUND_END = <span>v{__VEX_APP_VERSION__}</span>;
 
 export function WizardShell(): JSX.Element {
   const setCurrentView = useUiStore((s) => s.setCurrentView);
@@ -245,29 +219,20 @@ export function WizardShell(): JSX.Element {
         ? wizardStateQuery.data.error.message
         : "Could not load wizard state.";
     return (
-      <main
-        data-vex-onboarding="true"
-        data-vex-gate="true"
-        data-vex-screen="wizard"
-        className={cn(SHELL_CHROME, "items-center justify-center p-8")}
+      <SetupFrame
+        screen="wizard"
+        title="Setup unavailable"
+        groundStart={GROUND_START}
+        groundEnd={GROUND_END}
       >
-        <WizardChrome />
-        <div className={ERROR_STACK_CHROME}>
-          <div className="flex flex-col gap-2">
-            <h1 className="font-serif text-2xl font-normal leading-tight text-ink-primary">
-              Setup unavailable
-            </h1>
-            {/* Danger RAIL (A3 alert grammar — no fill, no box). */}
-            <p className="border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] pl-3 text-sm text-ink-secondary">
-              {message}
-            </p>
-          </div>
+        <div className="flex flex-col gap-4">
+          <p className="vex-callout">{message}</p>
           <p className="text-xs text-ink-tertiary">
             Most setup-state failures are transient - retry once, then
             restart Vex if the problem persists.
           </p>
           <OpenLogsLink />
-          <div className="flex justify-end">
+          <div className="flex">
             <Button
               type="button"
               onClick={() => {
@@ -280,77 +245,57 @@ export function WizardShell(): JSX.Element {
             </Button>
           </div>
         </div>
-      </main>
+      </SetupFrame>
     );
   }
 
   if (currentStepId === null) {
     return (
-      <main
-        data-vex-onboarding="true"
-        data-vex-gate="true"
-        data-vex-screen="wizard"
-        className={cn(SHELL_CHROME, "items-center justify-center p-8")}
+      <SetupFrame
+        screen="wizard"
+        groundStart={GROUND_START}
+        groundEnd={GROUND_END}
       >
-        <WizardChrome />
-        {/* Brand loading language — the VexLoader ring, paper on the
-            plate. The loader root carries role="status" itself. */}
-        <div className="relative z-10 flex flex-col items-center">
-          <VexLoader
-            size={24}
-            stroke={2}
-            tone="paper"
-            label="Loading wizard progress…"
-          />
-        </div>
-      </main>
+        {/* Brand loading language - the VexLoader on the leaf. The loader
+            root carries role="status" itself. */}
+        <VexLoader size={24} stroke={2} label="Loading wizard progress…" />
+      </SetupFrame>
     );
   }
 
+  const stepIndex = WIZARD_STEP_IDS.indexOf(currentStepId);
   return (
-    <main
-      data-vex-onboarding="true"
-      data-vex-gate="true"
-      data-vex-screen="wizard"
-      className={cn(SHELL_CHROME, "flex-col items-center px-6 pt-24 pb-8")}
-    >
-      <WizardChrome />
-
-      {/*
-        `m-auto` keeps the column vertically centered when the active
-        step content is short. `min-h-0` + the panel's own
-        `max-h-[calc(100vh-13rem)]` (13rem = pt-24 + stepper + gap-6 +
-        pb-8) let the panel shrink and scroll on the 1024×720 minimum
-        BrowserWindow size (codex final review V2 P1).
-      */}
-      <div className="relative z-10 m-auto flex min-h-0 w-full max-w-[760px] flex-col items-center gap-6">
-        <HorizontalStepper
-          currentStepId={currentStepId}
-          completedSteps={persisted?.completedSteps ?? []}
-        />
-        {/* A3 boxless: the page scrolls here (quiet onboarding scrollbar),
-            not inside a bordered panel well. max-w = 640px of readable
-            measure + 4rem for .vex-gate-page's symmetric scrollbar gutter
-            (chronos-gate.css), which keeps the thumb off the text column. */}
-        <div className="vex-gate-page min-h-0 w-full max-w-[704px]">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={currentStepId}
-              initial={reducedMotion ? false : { opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
-              transition={{ duration: reducedMotion ? 0 : 0.2, ease: "easeOut" }}
-              className="w-full"
-            >
-              {renderStep(
-                currentStepId,
-                persisted?.completedSteps ?? [],
-                onAdvance,
-              )}
-            </motion.div>
-          </AnimatePresence>
+    <SetupFrame
+      screen="wizard"
+      eyebrow={<WizardStepEyebrow currentStepId={currentStepId} />}
+      sky={
+        <div className="vex-stage-sky vex-stage-sky--steps">
+          <StageCounter>{stepNumeral(stepIndex)}</StageCounter>
+          <HorizontalStepper
+            currentStepId={currentStepId}
+            completedSteps={persisted?.completedSteps ?? []}
+          />
         </div>
-      </div>
-    </main>
+      }
+      groundStart={GROUND_START}
+      groundEnd={GROUND_END}
+    >
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={currentStepId}
+          initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
+          transition={{ duration: reducedMotion ? 0 : 0.2, ease: "easeOut" }}
+          className="w-full"
+        >
+          {renderStep(
+            currentStepId,
+            persisted?.completedSteps ?? [],
+            onAdvance,
+          )}
+        </motion.div>
+      </AnimatePresence>
+    </SetupFrame>
   );
 }
