@@ -65,19 +65,18 @@ describe("an EXPANDED row is one quiet line", () => {
 
   it("carries no leading state slot for an idle agent session", () => {
     renderRow(session({ mode: "agent" }), true);
-    expect(document.querySelector(".vex-state-matrix")).toBeNull();
-    expect(document.querySelector(".vex-state-dot")).toBeNull();
+    expect(document.querySelector(".vex-swatch")).toBeNull();
   });
 
   it("runs the pixel-chase dot while a mission is live", () => {
     renderRow(session({ mode: "mission", missionStatus: "running" }), true);
-    expect(document.querySelector(".vex-state-matrix")).not.toBeNull();
+    expect(document.querySelector(".vex-swatch")?.getAttribute("data-s")).toBe("ongoing");
   });
 
   it("shows the solid warn dot while a mission is paused", () => {
     renderRow(session({ mode: "mission", missionStatus: "paused_wake" }), true);
-    const dot = document.querySelector(".vex-state-dot");
-    expect(dot?.getAttribute("data-state")).toBe("warning");
+    const dot = document.querySelector(".vex-swatch");
+    expect(dot?.getAttribute("data-s")).toBe("warning");
   });
 
   it("selection is the shared interactive fill, not a beam, and marks aria-current", () => {

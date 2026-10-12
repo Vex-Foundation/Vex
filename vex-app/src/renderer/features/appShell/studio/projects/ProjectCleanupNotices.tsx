@@ -1,5 +1,5 @@
 import { DisclosureRow } from "../../../../components/ui/disclosure-row.js";
-import { StateDot } from "../../../../components/ui/state-dot.js";
+import { Swatch } from "../../../../components/ui/swatch.js";
 import { useState, type JSX } from "react";
 import { trashRemediation, type ProjectPendingCleanup } from "@shared/schemas/project-cleanup.js";
 import { PROJECT_DELETE_OUTCOME_SENTENCES } from "./projects-copy.js";
@@ -20,12 +20,12 @@ export function ProjectCleanupNotices({ collapsed = false, onExpand, showReadErr
     if (!showReadError) return null;
     if (collapsed) return <section role="status" aria-label="Unfinished project cleanups could not be loaded.">
       <button type="button" aria-label="Show unfinished project cleanup error" onClick={onExpand} className="flex h-6 w-full items-center justify-center">
-        <StateDot state="warning" size={8} />
+        <Swatch state="warning" size={8} />
       </button>
     </section>;
     return <section role="status" className="p-2 text-xs text-warning">
       Unfinished project cleanups could not be loaded.
-      <Button variant="ghost" onClick={() => void query.refetch()}>Retry loading cleanups</Button>
+      <Button variant="bare" onClick={() => void query.refetch()}>Retry loading cleanups</Button>
     </section>;
   }
   if (!query.data?.ok) return null;
@@ -35,8 +35,8 @@ export function ProjectCleanupNotices({ collapsed = false, onExpand, showReadErr
   return <section aria-label="Unfinished project cleanups" className="min-w-0 py-2">
     {page.items.map((item) => <CleanupNotice key={item.projectId} item={item} collapsed={collapsed} onExpand={onExpand} />)}
     <div className="flex gap-2">
-      {offset > 0 ? <Button variant="ghost" onClick={() => setOffset(Math.max(0, offset - 50))}>Previous cleanups</Button> : null}
-      {nextOffset !== null ? <Button variant="ghost" onClick={() => setOffset(nextOffset)}>More cleanups</Button> : null}
+      {offset > 0 ? <Button variant="bare" onClick={() => setOffset(Math.max(0, offset - 50))}>Previous cleanups</Button> : null}
+      {nextOffset !== null ? <Button variant="bare" onClick={() => setOffset(nextOffset)}>More cleanups</Button> : null}
     </div>
   </section>;
 }
@@ -52,11 +52,11 @@ function CleanupNotice({ item, collapsed, onExpand }: { readonly item: ProjectPe
   if (collapsed) return <article role="status" aria-label={`Pending cleanup for ${item.name}`}>
     <button type="button" aria-label={`Show pending cleanup for ${item.name}`} onClick={onExpand}
       className="flex h-6 w-full items-center justify-center rounded focus-visible:ring-2 focus-visible:ring-accent-primary">
-      <StateDot state="warning" size={8} />
+      <Swatch state="warning" size={8} />
     </button>
   </article>;
   return <article role="status" aria-label={`Pending cleanup for ${item.name}`} className="min-w-0 text-xs text-ink-secondary">
-    <DisclosureRow icon={<StateDot state="warning" size={8} />} title={item.name}
+    <DisclosureRow icon={<Swatch state="warning" size={8} />} title={item.name}
       collapsedContent={<span className="ml-2 whitespace-nowrap text-ink-tertiary">Pending cleanup</span>}
       className="[&>.vex-disclosure-row]:overflow-x-auto" titleClassName="shrink-0 whitespace-nowrap" open={open} expandable expandOnRowClick
       onToggle={() => setOpen((value) => !value)} bodyClassName="flex min-w-0 flex-col gap-2 p-2 break-words">
@@ -75,11 +75,11 @@ function CleanupNotice({ item, collapsed, onExpand }: { readonly item: ProjectPe
     {result?.ok ? <p role="status">{PROJECT_DELETE_OUTCOME_SENTENCES[result.data.outcome]}</p> : null}
     {mutation.isError ? <p role="alert">Cleanup could not be reached. Try again.</p> : null}
     {result !== undefined && !result.ok ? <p role="alert">{result.error.message}</p> : null}
-    <Button variant="ghost" disabled={mutation.isPending} onClick={() => mutation.mutate({
+    <Button variant="bare" disabled={mutation.isPending} onClick={() => mutation.mutate({
       projectId: item.projectId, expectedName: item.name, alsoTrashFolder: item.trashRequested,
       ...(ownHolder ? { closeHolders: true } : {}),
     })}>{mutation.isPending ? "Retrying cleanup" : ownHolder ? "Close it and retry" : `Retry cleanup for ${item.name}`}</Button>
-    {mutation.isPending ? <Button variant="ghost" onClick={mutation.cancel}>Cancel cleanup</Button> : null}
+    {mutation.isPending ? <Button variant="bare" onClick={mutation.cancel}>Cancel cleanup</Button> : null}
     </DisclosureRow>
   </article>;
 }

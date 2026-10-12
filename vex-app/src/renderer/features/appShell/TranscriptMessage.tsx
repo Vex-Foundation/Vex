@@ -17,7 +17,7 @@
 
 import { memo, type JSX, type ReactNode } from "react";
 import { IconCircleStop } from "../../components/icons/index.js";
-import { StateDot } from "../../components/ui/state-dot.js";
+import { Swatch } from "../../components/ui/swatch.js";
 import { VexMark } from "../../components/common/VexMark.js";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
 import { cn } from "../../lib/utils.js";
@@ -562,7 +562,7 @@ function NoticeBody({
         data-vex-turn-error=""
         className="grid w-full grid-cols-[10px_minmax(0,1fr)] items-start gap-2 py-0.5 text-[13px] leading-5"
       >
-        <StateDot state="error" size={8} className="mt-1.5" />
+        <Swatch state="error" size={8} className="mt-1.5" />
         <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">
           <span className="mr-1.5 font-semibold text-destructive">Error</span>
           <span className="text-ink-secondary">{children}</span>

@@ -263,8 +263,8 @@ describe("SuperboardKeySection", () => {
     expect((await screen.findByText(primary)).textContent).toBe(primary);
     expect(statusRow().textContent).toBe(primary);
     // A failed attempt is a warning, never an error: the key is still valid.
-    expect(statusRow().querySelector('.vex-state-dot[data-state="warning"]')).not.toBeNull();
-    expect(statusRow().querySelector('.vex-state-dot[data-state="error"]')).toBeNull();
+    expect(statusRow().querySelector('.vex-swatch[data-s="warning"]')).not.toBeNull();
+    expect(statusRow().querySelector('.vex-swatch[data-s="error"]')).toBeNull();
     expect(rootAttributes(container)).toEqual({ kind: "pending", attempt: "failed" });
     const detailLine = await screen.findByText(/ref corr-9/);
     expect(detailLine.textContent).toBe(`${detail} · just now · ref corr-9`);
@@ -371,7 +371,7 @@ describe("SuperboardKeySection", () => {
     const retrying = await screen.findByRole("button", { name: "Retrying..." });
     expect(retrying).toHaveProperty("disabled", true);
     expect(statusRow().textContent).toBe(flight);
-    expect(statusRow().querySelector('.vex-state-matrix[data-state="ongoing"]')).not.toBeNull();
+    expect(statusRow().querySelector('.vex-swatch[data-s="ongoing"]')).not.toBeNull();
     expect(screen.queryByText("AgentScan didn't answer in time.")).toBeNull();
     expect(screen.queryByText(reassurance)).toBeNull();
     expect(screen.queryByText(/ref corr-1/)).toBeNull();
@@ -392,7 +392,7 @@ describe("SuperboardKeySection", () => {
     const line = await screen.findByText(
       "Connect AgentScan first. The Superboard key is minted against that identity.",
     );
-    expect(line.querySelector('.vex-state-dot[data-state="warning"]')).not.toBeNull();
+    expect(line.querySelector('.vex-swatch[data-s="warning"]')).not.toBeNull();
     expect(statusRow().textContent).toBe("");
     expect(rootAttributes(container)).toEqual({ kind: "not_ready", attempt: "none" });
     expect(screen.queryByRole("button", { name: "Generate" })).toBeNull();

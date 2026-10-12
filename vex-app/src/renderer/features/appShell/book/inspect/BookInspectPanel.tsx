@@ -1,6 +1,6 @@
 /**
  * BookInspectPanel — the BOOK's inspect view for one tool call (A32/E13):
- * tool identity, status as word + StateDot, and the full arguments/result
+ * tool identity, status as word + Swatch, and the full arguments/result
  * payloads. Rendered by `BookPanel` while the inspect store holds a payload;
  * closing returns to the card stack (which stays mounted underneath).
  * Payloads render COMPLETE — scrolling, never truncation (owner decree).
@@ -11,16 +11,16 @@
 import type { JSX } from "react";
 import { IconClose } from "../../../../components/icons/index.js";
 import {
-  StateDot,
-  type StateDotState,
-} from "../../../../components/ui/state-dot.js";
+  Swatch,
+  type SwatchState,
+} from "../../../../components/ui/swatch.js";
 import {
   useToolInspectStore,
   type ToolInspectPayload,
   type ToolInspectStatus,
 } from "./inspect-store.js";
 
-const STATUS_DOT: Record<ToolInspectStatus, StateDotState> = {
+const STATUS_DOT: Record<ToolInspectStatus, SwatchState> = {
   pending: "warning",
   running: "ongoing",
   done: "done",
@@ -83,7 +83,7 @@ export function BookInspectPanel({
           {inspect.toolName}
         </span>
         <span className="inline-flex shrink-0 items-center gap-1.5 text-[11px] text-ink-secondary">
-          <StateDot state={STATUS_DOT[inspect.status]} size={8} />
+          <Swatch state={STATUS_DOT[inspect.status]} size={8} />
           {STATUS_WORD[inspect.status]}
         </span>
       </div>
