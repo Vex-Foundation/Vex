@@ -222,14 +222,19 @@ test("UX-4 consent grammar: the strip, the grant, and the outcome rows", async (
       "before the e2e build",
   ).toBeNull();
   // Every row carries a glyph. The rows were a wall of sentences with nothing
-  // to scan (audit I4).
+  // to scan (audit I4). In V10 the glyph is the status swatch, a fill rather
+  // than a colour (docs/design/V10-SPREAD.md section 1): exactly one per row,
+  // and it names one of the swatch states.
   const outcomeRows = report.locator("[data-vex-artifact-status]");
   const outcomeCount = await outcomeRows.count();
   expect(outcomeCount).toBeGreaterThan(0);
   for (let i = 0; i < outcomeCount; i += 1) {
-    await expect(
-      outcomeRows.nth(i).locator(".vex-state-dot, .vex-state-matrix"),
-    ).toHaveCount(1);
+    const swatch = outcomeRows.nth(i).locator(".vex-swatch");
+    await expect(swatch).toHaveCount(1);
+    await expect(swatch).toHaveAttribute(
+      "data-s",
+      /^(done|ongoing|warning|draft|idle|error)$/,
+    );
   }
   // The two panels no longer share one heading (audit I3).
   await expect(creator.getByRole("heading", { name: "What Vex did" })).toBeVisible();
