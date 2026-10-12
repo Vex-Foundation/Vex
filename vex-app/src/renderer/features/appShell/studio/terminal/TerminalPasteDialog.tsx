@@ -55,7 +55,7 @@ export function TerminalPasteDialog({ prompt, open, onOpenChange, onClosed, onAn
           {!showWhole && (preview.omittedLines > 0 || preview.shortenedLines > 0) && (
             <div className="text-xs text-ink-secondary">
               {preview.omittedLines} more lines; {preview.shortenedLines} preview lines shortened.
-              <Button variant="ghost" size="sm" onClick={() => setShowWhole(true)}>Show all text</Button>
+              <Button variant="bare" size="sm" onClick={() => setShowWhole(true)}>Show all text</Button>
             </div>
           )}
           <label className="flex items-center gap-2 text-xs text-ink-secondary">
@@ -64,8 +64,8 @@ export function TerminalPasteDialog({ prompt, open, onOpenChange, onClosed, onAn
           </label>
         </DialogBody>
         <DialogFooter className="flex-wrap">
-          <Button size="sm" variant="ghost" {...DIALOG_INITIAL_FOCUS} onClick={() => answer("cancel", false)}>Cancel</Button>
-          <Button size="sm" variant="outline" onClick={() => answer("oneLine", dontAsk)}>Paste as one line</Button>
+          <Button size="sm" variant="bare" {...DIALOG_INITIAL_FOCUS} onClick={() => answer("cancel", false)}>Cancel</Button>
+          <Button size="sm" variant="quiet" onClick={() => answer("oneLine", dontAsk)}>Paste as one line</Button>
           <Button size="sm" onClick={() => answer("paste", dontAsk)}>Paste</Button>
         </DialogFooter>
       </DialogContent>

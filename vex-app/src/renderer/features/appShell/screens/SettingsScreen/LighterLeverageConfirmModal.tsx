@@ -210,7 +210,7 @@ export function LighterLeverageConfirmModal({
 
         <DialogFooter>
           <Button
-            variant="ghost"
+            variant="bare"
             disabled={busy}
             onClick={onCancel}
             data-vex-lighter-leverage-confirm-cancel

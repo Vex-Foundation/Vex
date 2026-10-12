@@ -317,7 +317,7 @@ export function UnlockScreen(): JSX.Element {
 
           <Button
             type="button"
-            variant="ghost"
+            variant="bare"
             disabled={inputsDisabled}
             onClick={() => setResetDialogOpen(true)}
             className="mt-3 w-full text-ink-tertiary"
@@ -371,7 +371,7 @@ export function UnlockScreen(): JSX.Element {
             <DialogFooter>
               <Button
                 type="button"
-                variant="outline"
+                variant="quiet"
                 // The safer choice takes focus (rule 08): the sibling
                 // action destroys the vault. `DialogContent` moves focus
                 // here after `showModal()`.
@@ -383,7 +383,7 @@ export function UnlockScreen(): JSX.Element {
               </Button>
               <Button
                 type="button"
-                variant="danger"
+                variant="ink"
                 disabled={!resetAcknowledged || resetPending}
                 onClick={() => void requestFreshVault()}
               >

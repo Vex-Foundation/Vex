@@ -118,7 +118,7 @@ export function ReasoningEffortSection({
           </label>
           <Button
             type="button"
-            variant="outline"
+            variant="quiet"
             size="sm"
             disabled={setEffort.isPending || picked === stored}
             onClick={onSave}

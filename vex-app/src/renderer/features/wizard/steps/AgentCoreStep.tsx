@@ -157,7 +157,7 @@ export function AgentCoreStep({
           </span>
           <Button
             type="button"
-            variant="ghost"
+            variant="bare"
             size="sm"
             onClick={() => setForm(INITIAL_FORM_STATE)}
             disabled={submitting || (summary.sets === 0 && summary.clears === 0)}

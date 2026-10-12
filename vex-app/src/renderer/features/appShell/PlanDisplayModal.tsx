@@ -227,7 +227,7 @@ export function PlanDisplayModal({
                 <Button
                   type="button"
                   size="sm"
-                  variant="outline"
+                  variant="quiet"
                   disabled={resumeBusy}
                   onClick={() => requestResume.mutate({ sessionId })}
                   className={RESUME_KEY}
@@ -242,7 +242,7 @@ export function PlanDisplayModal({
                 <Button
                   type="button"
                   size="sm"
-                  variant="outline"
+                  variant="quiet"
                   disabled={disableBusy}
                   onClick={() =>
                     disablePlanMode.mutate({ sessionId, enabled: false })

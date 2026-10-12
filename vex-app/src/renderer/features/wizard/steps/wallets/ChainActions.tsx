@@ -158,7 +158,7 @@ export function ChainActions({
               is your only safety net.
             </p>
             <Button
-              variant="outline"
+              variant="quiet"
               size="sm"
               className="mt-2"
               onClick={() => {
@@ -173,7 +173,7 @@ export function ChainActions({
         <WalletInventoryPanel chain={chain} primaryAddress={address} />
         <div>
           <Button
-            variant="outline"
+            variant="quiet"
             size="sm"
             onClick={() => {
               void handleRestore();
@@ -217,11 +217,11 @@ export function ChainActions({
           >
             {generateMutation.isPending ? "Generating…" : "Generate new"}
           </Button>
-          <Button variant="outline" onClick={() => setView("import")}>
+          <Button variant="quiet" onClick={() => setView("import")}>
             Import existing
           </Button>
           <Button
-            variant="outline"
+            variant="quiet"
             onClick={() => {
               void handleRestore();
             }}
@@ -278,7 +278,7 @@ export function ChainActions({
       <div className="flex justify-end gap-2">
         <Button
           type="button"
-          variant="outline"
+          variant="quiet"
           onClick={handleCancelImport}
           disabled={importing}
         >

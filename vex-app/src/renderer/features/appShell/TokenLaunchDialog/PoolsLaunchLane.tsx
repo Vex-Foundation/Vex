@@ -266,7 +266,7 @@ export function PoolsLaunchLane({
             <span className="flex flex-row justify-end gap-2">
               <Button
                 type="button"
-                variant="ghost"
+                variant="bare"
                 onClick={requestClose}
                 disabled={state.kind === "deploying"}
                 className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"

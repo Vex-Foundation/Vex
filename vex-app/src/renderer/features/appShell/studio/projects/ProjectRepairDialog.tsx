@@ -184,7 +184,7 @@ export function ProjectRepairDialog({
             <>
               <Button
                 type="button"
-                variant="ghost"
+                variant="bare"
                 onClick={onClose}
                 disabled={pending}
                 // The safer choice takes focus (rule 08); `DialogContent`

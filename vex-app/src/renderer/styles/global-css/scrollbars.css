@@ -27,7 +27,6 @@
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  border-radius: 4px;
   background: var(--vex-scrollbar-thumb);
 }
 *::-webkit-scrollbar-thumb:hover {
@@ -62,7 +61,6 @@
   background: var(--vex-scrollbar-thumb);
   background-clip: content-box;
   border: 2px solid transparent;
-  border-radius: 9999px;
   transition: background-color 160ms ease-out;
 }
 .vex-scroll::-webkit-scrollbar-thumb:hover {
@@ -163,7 +161,6 @@
   padding: 2px;
   background-color: var(--vex-scrollbar-thumb);
   background-clip: content-box;
-  border-radius: 9999px;
   transition: background-color 160ms ease-out;
 }
 .vex-terminal-surface .xterm-scrollable-element > .scrollbar.vertical > .slider:hover,

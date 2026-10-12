@@ -9,11 +9,21 @@
   --vex-scrollbar-thumb-hover: var(--vex-alias-scrollbar-l2-hover);
 }
 
-/* ── Dialog backdrop ───────────────────────────────────────────────────────
- * Native <dialog> top-layer mask: a flat dim, no blur (V10). Lives here (not
- * a Tailwind class string) so the TSX stays free of mask chrome. */
+/* ── Paper dither veil ─────────────────────────────────────────────────────
+ * Every mask is the page's own paper in a 2px checkerboard (docs/design/
+ * V10-SPREAD.md section 7), never a blur or a dim: what lies behind stays
+ * legible through the open half of the screen. The paper is the room's base
+ * (Celeris paper, Chronos night). `image-rendering: pixelated` keeps the cell
+ * at exactly 2px on a scaled display. */
+.vex-dither-veil,
+.vex-approval-mask,
+.vex-lightbox-mask,
+.vex-drop-overlay,
 dialog.vex-dialog::backdrop {
-  background: var(--vex-alias-bg-mask-1);
+  background:
+    repeating-conic-gradient(var(--vex-alias-bg-base) 0 25%, transparent 0 50%)
+    0 0 / 2px 2px;
+  image-rendering: pixelated;
 }
 
 /* A dialog is a typographic root. It renders in the top layer but still
@@ -28,10 +38,9 @@ dialog.vex-dialog {
 
 /* ── Approval focus mask ────────────────────────────────────────────────────
  * A pending approval is the one thing blocking the run; the rest of the
- * shell (transcript, composer, sidebar) dims behind it so attention lands
- * on the card. Same dim token as the dialog `::backdrop` and the lightbox
- * mask, for one masking vocabulary
- * across the app. `position: fixed` so it covers the viewport regardless of
+ * shell (transcript, composer, sidebar) sits under the paper dither so
+ * attention lands on the card. Same veil as the dialog `::backdrop` and the
+ * lightbox mask, for one masking vocabulary across the app. `position: fixed` so it covers the viewport regardless of
  * where `ApprovalsRegion` sits in the scrolling transcript, and
  * `pointer-events: none` because this is a visual cue, not a second click
  * trap on top of the region's own `aria-live` announcement — the run is
@@ -41,7 +50,6 @@ dialog.vex-dialog {
   inset: 0;
   z-index: 40;
   pointer-events: none;
-  background: var(--vex-alias-bg-mask-1);
 }
 
 /* ── Notification toast stack ──────────────────────────────────────────────
@@ -74,9 +82,10 @@ dialog.vex-dialog {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px 14px;
-  background: var(--vex-alias-toast-bg);
-  color: var(--vex-alias-label-on-chrome);
+  padding: 12px 10px 12px 16px;
+  background: var(--vex-alias-bg-base);
+  border: 1px solid var(--vex-alias-rule-ink);
+  color: var(--vex-alias-label-primary);
   animation: vex-notification-toast-in 160ms ease-out;
 }
 
@@ -110,19 +119,21 @@ dialog.vex-dialog {
   margin-top: 1px;
 }
 
-/* Severity is the glyph's shape, never a hue (V10: status by fill): every
- * icon takes the plate's own ink, which is the only ink that reads on a
- * reversed plate. */
+/* Severity is the swatch's fill, never a hue (V10: status by fill). */
 .vex-notification-toast-icon {
-  color: var(--vex-alias-label-on-chrome);
+  color: var(--vex-alias-accent-primary);
 }
 
 .vex-notification-stack-overflow {
   align-self: center;
   padding: 4px 10px;
-  background: var(--vex-alias-toast-bg);
-  color: var(--vex-alias-label-on-chrome);
+  background: var(--vex-alias-bg-base);
+  border: 1px solid var(--vex-alias-rule-ink);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-mono);
   font-size: 11px;
+  letter-spacing: var(--tracking-chip);
+  text-transform: uppercase;
   line-height: 16px;
 }
 
@@ -140,24 +151,19 @@ dialog.vex-dialog {
   }
 }
 
-/* Plate-local controls for the toast rows. Washes of the plate's own ink:
- * the plate is reversed against the room, so the room's interactive and
- * skeleton aliases would go invisible on it. */
-.vex-notification-ghost {
-  transition: background-color 100ms ease;
-}
-
+/* Toast row controls: a plain hover wash and a rule track for the progress
+ * bar. */
 .vex-notification-ghost:hover:not(:disabled) {
-  background: color-mix(in oklab, var(--vex-alias-label-on-chrome) 10%, transparent);
+  background: var(--vex-alias-interactive-hover);
 }
 
 .vex-notification-track {
-  background: color-mix(in oklab, var(--vex-alias-label-on-chrome) 16%, transparent);
+  background: var(--vex-alias-rule);
 }
 
 /* ── Tooltip ───────────────────────────────────────────────────────────────
- * The reversed chrome plate (ink by day, paper at night); fade only, no
- * arrow. */
+ * The reversed chrome plate (ink by day, paper at night), 28px; no arrow, no
+ * motion. */
 .vex-tooltip {
   position: fixed;
   z-index: 1200;
@@ -165,7 +171,7 @@ dialog.vex-dialog {
    * right-edge anchors would wrap early; max-content sizes by the label. */
   width: max-content;
   max-width: 50vw;
-  padding: 3px 7px;
+  padding: 4px 8px;
   background: var(--vex-alias-tooltip-bg);
   color: var(--vex-alias-label-on-chrome);
   font-size: 13px;
@@ -173,9 +179,6 @@ dialog.vex-dialog {
   white-space: pre-line;
   overflow-wrap: break-word;
   pointer-events: none;
-  /* Was `150ms cubic-bezier(0.4, 0, 0.2, 1)`: the base step and the standard
-   * curve, spelled by hand. Tokens now, so the family stays closed. */
-  animation: vex-tooltip-in var(--vex-duration-base) var(--vex-ease-standard);
 }
 
 .vex-tooltip[data-side="right"],
@@ -195,20 +198,8 @@ dialog.vex-dialog {
   transform: translate(-50%, -100%);
 }
 
-@keyframes vex-tooltip-in {
-  from {
-    opacity: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .vex-tooltip {
-    animation: none;
-  }
-}
-
 /* ── Hover card ────────────────────────────────────────────────────────────
- * 244px preview card on the reversed chrome plate. Hit-testable
+ * 244px preview card on the paper with one rule, like the menu. Hit-testable
  * on purpose: resting the pointer on it holds it open (grace close). */
 .vex-hover-card-root {
   position: relative;
@@ -221,8 +212,9 @@ dialog.vex-dialog {
   box-sizing: border-box;
   width: 244px;
   padding: 12px 16px;
-  background: var(--vex-alias-tooltip-bg);
-  color: var(--vex-alias-label-on-chrome);
+  background: var(--vex-alias-bg-base);
+  border: 1px solid var(--vex-alias-border-l3);
+  color: var(--vex-alias-label-primary);
 }
 
 /* ── Connection banner ─────────────────────────────────────────────────── */
@@ -234,10 +226,13 @@ dialog.vex-dialog {
   z-index: 1200;
   padding: 4px 12px;
   text-align: center;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
   line-height: 18px;
-  background: var(--vex-alias-state-error);
-  color: var(--vex-alias-label-on-chrome);
+  background: var(--vex-alias-rule-ink);
+  color: var(--vex-alias-label-on-primary);
 }
 
 /* ── Drop overlay ──────────────────────────────────────────────────────────
@@ -252,7 +247,6 @@ dialog.vex-dialog {
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  background-color: var(--vex-alias-bg-mask-drop);
   animation: vex-drop-overlay-in 160ms ease-out;
 }
 
@@ -311,7 +305,6 @@ dialog.vex-dialog {
 .vex-lightbox-mask {
   position: absolute;
   inset: 0;
-  background: var(--vex-alias-bg-mask-1);
 }
 
 .vex-lightbox-image {

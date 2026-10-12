@@ -258,7 +258,7 @@ function LighterUnresolvedChanges({
                 )}
               </span>
               <Button
-                variant="outline"
+                variant="quiet"
                 size="sm"
                 disabled={reconciling.has(intent.intentId)}
                 aria-label={unresolvedReconcileLabel(intent.symbol)}

@@ -64,7 +64,8 @@ describe("the terminal slider (scrollbars.css)", () => {
     expect(declarationValue(slider, "padding")).toBe("2px");
     expect(declarationValue(slider, "box-sizing")).toBe("border-box");
     expect(declarationValue(slider, "background-clip")).toBe("content-box");
-    expect(declarationValue(slider, "border-radius")).toBe("9999px");
+    // V10: the thumb is square.
+    expect(declarationValue(slider, "border-radius")).toBeUndefined();
   });
 
   it("keeps the track transparent and reads the thumb's colour from the runtime pair only", () => {

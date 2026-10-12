@@ -230,7 +230,7 @@ function ReadinessShell({
       {children}
       <div className="flex items-center gap-3">
         <Button
-          variant="ghost"
+          variant="bare"
           disabled={rechecking}
           onClick={onRecheck}
           className="self-start text-ink-secondary"

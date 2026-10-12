@@ -94,7 +94,7 @@ export function WalletRemovalSection(): JSX.Element {
       {active.isError || active.data?.ok === false ? (
         <p className="mt-3 text-sm text-danger" role="alert">
           Could not load wallets.
-          <Button variant="ghost" size="sm" onClick={() => { void active.refetch(); }}>Retry</Button>
+          <Button variant="bare" size="sm" onClick={() => { void active.refetch(); }}>Retry</Button>
         </p>
       ) : null}
       {entries && secondary.length === 0 ? (
@@ -109,7 +109,7 @@ export function WalletRemovalSection(): JSX.Element {
               </p>
               <p className="mt-1 break-all font-mono text-xs leading-5 text-ink-secondary">{entry.address}</p>
             </div>
-            <Button variant="danger" size="sm" className={removalButtonClass} onClick={() => choose({
+            <Button variant="ink" size="sm" className={removalButtonClass} onClick={() => choose({
               walletId: entry.id, chain: entry.chain, address: entry.address, label: entry.label, restore: false,
             })}>
               <IconTrash size={14} aria-hidden="true" />
@@ -123,7 +123,7 @@ export function WalletRemovalSection(): JSX.Element {
           <p>{success.restore
             ? "Wallet restored. Select it explicitly in a new chat."
             : "Wallet removed. Its encrypted recovery copy is saved; existing chats cannot use it."}</p>
-          <Button variant="outline" size="sm" className="mt-2" disabled={openBackup.isPending}
+          <Button variant="quiet" size="sm" className="mt-2" disabled={openBackup.isPending}
             onClick={() => { openBackup.mutate({ backupDir: success.result.backupDir }); }}>
             Open recovery folder
           </Button>
@@ -134,7 +134,7 @@ export function WalletRemovalSection(): JSX.Element {
       {removed.isError || removed.data?.ok === false ? (
         <p className="mt-3 text-sm text-danger" role="alert">
           Could not read recovery records.
-          <Button variant="ghost" size="sm" onClick={() => { void removed.refetch(); }}>Retry</Button>
+          <Button variant="bare" size="sm" onClick={() => { void removed.refetch(); }}>Retry</Button>
         </p>
       ) : null}
       {removedEntries.length > 0 ? (
@@ -161,7 +161,7 @@ export function WalletRemovalSection(): JSX.Element {
                       <p className="mt-1 text-sm text-danger">Access is disabled. Restart Vex to finish recovery.</p>
                     ) : null}
                   </div>
-                  <Button variant="outline" size="sm" disabled={entry.state !== "removed" || !!alreadyActive || !entries}
+                  <Button variant="quiet" size="sm" disabled={entry.state !== "removed" || !!alreadyActive || !entries}
                     onClick={() => choose({ ...entry, restore: true })}>
                     {alreadyActive ? "Already restored" : "Restore wallet"}
                   </Button>
@@ -204,9 +204,9 @@ export function WalletRemovalSection(): JSX.Element {
               </form>
             </DialogBody>
             <DialogFooter>
-              <Button variant="outline" onClick={close} disabled={pending}>Cancel</Button>
+              <Button variant="quiet" onClick={close} disabled={pending}>Cancel</Button>
               <Button type="submit" form="wallet-removal-form" disabled={pending}
-                variant={selected.restore ? "primary" : "danger"} className={selected.restore ? undefined : removalButtonClass}>
+                variant={selected.restore ? "primary" : "ink"} className={selected.restore ? undefined : removalButtonClass}>
                 {pending ? "Checking..." : selected.restore ? "Continue to restore" : "Continue to removal"}
               </Button>
             </DialogFooter>

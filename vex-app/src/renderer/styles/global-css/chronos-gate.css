@@ -1,6 +1,6 @@
 /* CHRONOS GATE + pre-shell continuum chrome (tokens v2 rebrand).
  * Owns: the boot gate's four-act choreography (dither sky, diamond wipes,
- * mark entry, seal stamp, progress line), the VexLoader ring, the shared
+ * mark entry, seal stamp, progress line), the shared
  * pre-shell plate, and the `[data-vex-gate="true"]` token re-projection
  * every boot screen carries. Replaces the retired setup-gate.css. */
 
@@ -8,76 +8,6 @@
  * curve for structural motion; ambient loops run linear). */
 :root {
   --vex-gate-ease: cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* ============================================================ *
- *  VEX LOADER — clean ring on tokens v2 aliases                 *
- * ============================================================ */
-@property --vex-loader-angle {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 0deg;
-}
-
-.vex-loader {
-  position: relative;
-}
-.vex-loader::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  padding: var(--vex-loader-stroke, 2px);
-  background:
-    conic-gradient(
-      from var(--vex-loader-angle),
-      transparent 0deg,
-      transparent 250deg,
-      color-mix(in oklab, var(--vex-loader-arc) 45%, transparent) 320deg,
-      var(--vex-loader-arc) 352deg,
-      transparent 360deg
-    ),
-    linear-gradient(var(--vex-loader-track), var(--vex-loader-track));
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  animation: vex-loader-travel 1.4s linear infinite;
-  pointer-events: none;
-}
-
-@keyframes vex-loader-travel {
-  to {
-    --vex-loader-angle: 360deg;
-  }
-}
-
-/* Tones: `ink` runs the theme's interactive accent; `paper` is the
- * pre-shell variant — a paper arc on the dark continuum plate (the
- * brightest thing on it, same tier as label-primary there). */
-.vex-loader--ink {
-  --vex-loader-arc: var(--color-accent-primary);
-  --vex-loader-track: var(--color-line-2);
-}
-.vex-loader--paper {
-  --vex-loader-arc: #f3f4f7;
-  --vex-loader-track: rgba(255, 255, 255, 0.12);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .vex-loader::before {
-    animation: none;
-    background:
-      conic-gradient(
-        from 0deg,
-        color-mix(in oklab, var(--vex-loader-arc) 55%, transparent) 0deg 270deg,
-        transparent 270deg 360deg
-      ),
-      linear-gradient(var(--vex-loader-track), var(--vex-loader-track));
-  }
 }
 
 /* ============================================================ *

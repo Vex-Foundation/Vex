@@ -592,7 +592,7 @@ export function ProjectDeleteDialog({
         <DialogFooter className="border-line-2">
           <Button
             type="button"
-            variant="ghost"
+            variant="bare"
             onClick={onClose}
             disabled={pending}
             // The safer choice takes focus (rule 08). `DialogContent` moves
@@ -606,7 +606,7 @@ export function ProjectDeleteDialog({
           </Button>
           <Button
             type="button"
-            variant="danger"
+            variant="ink"
             onClick={() => void onConfirm()}
             disabled={confirmDisabled}
           >

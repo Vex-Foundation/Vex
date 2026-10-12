@@ -125,7 +125,7 @@ describe("DialogConsequence", () => {
 
   it("keeps its glyph out of the accessible name", () => {
     const { container } = mount();
-    const svg = container.querySelector("[data-vex-dialog-consequence] svg");
+    const svg = container.querySelector("[data-vex-dialog-consequence] .vex-swatch");
     // The strip's text carries the whole meaning; a screen reader that also
     // announced the glyph would be reading the decoration.
     expect(svg?.getAttribute("aria-hidden")).toBe("true");

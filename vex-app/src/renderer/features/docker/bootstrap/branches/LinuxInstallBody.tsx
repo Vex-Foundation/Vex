@@ -63,7 +63,7 @@ export function LinuxInstallBody({
             Couldn&rsquo;t fetch install instructions: {state.message}
           </p>
           <Button
-            variant="ghost"
+            variant="bare"
             size="sm"
             onClick={onRetryFetch}
             className="self-start text-ink-secondary"

@@ -1,4 +1,5 @@
-/* Inline indicator chrome: disclosure row crossfade and the state dot. */
+/* Inline indicator chrome: the disclosure row crossfade. Status marks
+ * (swatch, chip, stamp, cell meter) live in marks.css. */
 
 /* ── Disclosure row ────────────────────────────────────────────────────────
  * 24px header, 16px leading box; hover crossfades icon <-> chevron in the
@@ -97,73 +98,5 @@ button.vex-disclosure-leading {
 @media (prefers-reduced-motion: reduce) {
   .vex-disclosure-body {
     animation: none;
-  }
-}
-
-/* ── State dot ─────────────────────────────────────────────────────────────
- * Solid states: same-color halo (::before, 0.10 opacity) around a 6/10
- * core; color rides currentColor set per state. Ongoing: pixel chase with
- * flat keyframe holds (duplicate-stop trick, no tweening); phase offsets
- * come from per-rect animation-delay (index * -125ms) set inline. */
-.vex-state-dot,
-.vex-state-matrix {
-  --vex-state-ongoing: var(--vex-alias-accent-primary);
-}
-
-.vex-state-dot {
-  position: relative;
-  display: inline-block;
-  flex: none;
-}
-
-.vex-state-dot::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: currentColor;
-  opacity: 0.1;
-}
-
-.vex-state-dot::after {
-  content: "";
-  position: absolute;
-  inset: 20%;
-  background: currentColor;
-}
-
-.vex-state-dot[data-state="done"] {
-  color: var(--vex-alias-state-success);
-}
-
-.vex-state-dot[data-state="warning"] {
-  color: var(--vex-alias-state-warn);
-}
-
-.vex-state-dot[data-state="error"] {
-  color: var(--vex-alias-state-error);
-}
-
-.vex-state-matrix {
-  flex: none;
-  color: var(--vex-state-ongoing);
-}
-
-.vex-state-cell {
-  fill: currentColor;
-  opacity: 0.15;
-  animation: vex-state-dot-chase 1s infinite;
-}
-
-@keyframes vex-state-dot-chase {
-  0%, 12.4% { opacity: 1; }
-  12.5%, 24.9% { opacity: 0.6; }
-  25%, 37.4% { opacity: 0.35; }
-  37.5%, 100% { opacity: 0.15; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .vex-state-cell {
-    animation: none;
-    opacity: 0.5;
   }
 }

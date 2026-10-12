@@ -79,7 +79,7 @@ export function NumericRow({
         />
         <Button
           type="button"
-          variant="ghost"
+          variant="bare"
           size="sm"
           onClick={() =>
             onChange(

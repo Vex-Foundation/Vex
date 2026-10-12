@@ -201,7 +201,7 @@ export function ExplorerDeleteDialog({
         <DialogFooter className="border-line-2">
           <Button
             type="button"
-            variant="ghost"
+            variant="bare"
             onClick={onClose}
             disabled={pending}
             // The safer choice takes focus (rule 08).
@@ -212,7 +212,7 @@ export function ExplorerDeleteDialog({
           </Button>
           <Button
             type="button"
-            variant="danger"
+            variant="ink"
             onClick={() => void confirm()}
             disabled={pending}
             data-vex-explorer-delete-confirm={trashRefused ? "permanent-offer" : "primary"}

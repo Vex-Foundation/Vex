@@ -144,7 +144,7 @@ export function StudioKeepAliveDialog({
                 </span>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="quiet"
                   size="sm"
                   aria-label={studioKeepAliveCloseLabel(project.name)}
                   onClick={() => onCloseWorkspace(project.id)}
@@ -159,7 +159,7 @@ export function StudioKeepAliveDialog({
         <DialogFooter className="border-line-2">
           <Button
             type="button"
-            variant="ghost"
+            variant="bare"
             onClick={onCancel}
             // The safer choice takes focus (rule 08). Without this the dialog
             // opens on the first project's `Close` button - a control that ends
