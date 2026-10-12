@@ -16,11 +16,9 @@
  * is the binding surface: it moves the backdrop toward the ink.
  *
  * The reversed chrome plate (tooltip, hover card, toast, connection banner)
- * is measured with its own ink in both themes. The last block leaves the alias
- * tier and measures the one derived colour this contract cannot see from
- * tokens.css alone: the hover plate of the approvals REVIEW key, a
- * `color-mix` in shell.css, whose mix DIRECTION is a per-theme decision no
- * token name enforces.
+ * is measured with its own ink in both themes. The last block measures the
+ * REAL FUNDS approval card's keys, its ink frame and its reversed stamp: the
+ * one card that moves money must read in every state a hand can put it in.
  *
  * Deliberately OUT of scope: the sixteen `--vex-alias-term-*` ANSI slots, a
  * wire contract owned by `terminal-palette-tokens.test.ts`.
@@ -33,7 +31,6 @@ import { describe, expect, it } from "vitest";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const tokensCss = readFileSync(path.join(here, "..", "tokens.css"), "utf8");
-const shellCss = readFileSync(path.join(here, "..", "shell.css"), "utf8");
 
 function ruleBody(css: string, selector: string): string {
   const at = css.indexOf(`${selector} {`);
@@ -87,15 +84,10 @@ function channels(hex: string): [number, number, number] {
   return [r as number, g as number, b as number];
 }
 
-/** sRGB transfer function, both directions - shared by luminance and the mix. */
+/** The sRGB transfer function, to linear light. */
 function toLinear(byte: number): number {
   const c = byte / 255;
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-}
-
-function toByte(linear: number): number {
-  const c = linear <= 0.0031308 ? 12.92 * linear : 1.055 * linear ** (1 / 2.4) - 0.055;
-  return Math.round(Math.min(1, Math.max(0, c)) * 255);
 }
 
 /** WCAG 2.x relative luminance (sRGB). */
@@ -107,47 +99,6 @@ function luminance(hex: string): number {
 function contrast(a: string, b: string): number {
   const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return ((hi as number) + 0.05) / ((lo as number) + 0.05);
-}
-
-/**
- * `color-mix(in oklab, a P%, b)` as the browser computes it. Needed only for
- * the shell.css hover plate; both operands are opaque, so no premultiplied
- * alpha. Matrices per the Oklab reference implementation, which is what CSS
- * Color 4 specifies the conversion against.
- */
-function toOklab(hex: string): [number, number, number] {
-  const [r, g, b] = channels(hex).map(toLinear) as [number, number, number];
-  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
-  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
-  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
-  return [
-    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
-    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
-    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
-  ];
-}
-
-function fromOklab(lab: [number, number, number]): string {
-  const [L, a, bb] = lab;
-  const l = (L + 0.3963377774 * a + 0.2158037573 * bb) ** 3;
-  const m = (L - 0.1055613458 * a - 0.0638541728 * bb) ** 3;
-  const s = (L - 0.0894841775 * a - 1.291485548 * bb) ** 3;
-  const rgb = [
-    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
-  ];
-  return `#${rgb.map((c) => toByte(c).toString(16).padStart(2, "0")).join("")}`;
-}
-
-function mixOklab(a: string, b: string, percentOfA: number): string {
-  const [x, y] = [toOklab(a), toOklab(b)];
-  const p = percentOfA / 100;
-  return fromOklab([
-    (x[0] as number) * p + (y[0] as number) * (1 - p),
-    (x[1] as number) * p + (y[1] as number) * (1 - p),
-    (x[2] as number) * p + (y[2] as number) * (1 - p),
-  ]);
 }
 
 /** Normal-size text: every label and sentence. */
@@ -329,65 +280,42 @@ describe("every text tier reads on every surface it sits on", () => {
 });
 
 /**
- * The approvals REVIEW key (ApprovalCard/ApprovalDecisionActions.tsx) is a
- * solid `--vex-pin` plate whose label is `--vex-surface-0`. Its hover plate is
- * a `color-mix` declared in shell.css, so no alias name can enforce it: the
- * mix has to move the plate AWAY from the label, which is the opposite
- * direction in each theme.
+ * The REAL FUNDS card's keys (ApprovalCard/ApprovalDecisionActions.tsx,
+ * docs/design/V10-SPREAD.md section 7). Approve is the one blue fill with its
+ * own ink; Reject is the ink key, an ink outline on the card's paper that
+ * fills with ink on hover. Every state a hand can put either key in must carry
+ * its label at AA body contrast, in both rooms.
  */
-describe("pin hover plate contrast", () => {
-  const shell = ruleBody(shellCss, '[data-vex-shell="true"]');
-
-  /** `85%, var(--vex-alias-label-primary)` - parsed, so a silent edit is caught. */
-  function pinHoverMix(): { percent: number; partner: string } {
-    const declared = declaredValue(shell, "--vex-pin-hover");
-    expect(declared, "--vex-pin-hover must be declared in the shell scope").toBeDefined();
-    const parsed =
-      /^color-mix\(in oklab,\s*var\(--vex-alias-state-warn\)\s*(\d+)%,\s*var\((--[a-z0-9-]+)\)\)$/.exec(
-        declared as string,
-      );
-    expect(parsed, `--vex-pin-hover has an unexpected shape: ${declared}`).not.toBeNull();
-    const [, percent, partner] = parsed as RegExpExecArray;
-    return { percent: Number(percent), partner: partner as string };
-  }
-
+describe("REAL FUNDS key contrast", () => {
   for (const theme of THEMES) {
-    it(`${theme.name}: the resting REVIEW key carries its label at ${AA_BODY}:1`, () => {
-      expect(ratio(theme.blocks, "--vex-alias-state-warn", "--vex-alias-bg-base")).toBeGreaterThanOrEqual(
+    it(`${theme.name}: the resting Approve key carries its label at ${AA_BODY}:1`, () => {
+      expect(
+        ratio(theme.blocks, "--vex-alias-button-accent-ink", "--vex-alias-button-accent-fill"),
+      ).toBeGreaterThanOrEqual(AA_BODY);
+    });
+
+    it(`${theme.name}: the hovered Approve key still carries its label at ${AA_BODY}:1`, () => {
+      expect(
+        ratio(theme.blocks, "--vex-alias-button-accent-ink", "--vex-alias-button-accent-hover"),
+      ).toBeGreaterThanOrEqual(AA_BODY);
+    });
+
+    it(`${theme.name}: the resting Reject key reads in ink on the card's paper at ${AA_BODY}:1`, () => {
+      expect(ratio(theme.blocks, "--vex-alias-label-primary", "--vex-alias-bg-base")).toBeGreaterThanOrEqual(
+        AA_BODY,
+      );
+      // The frame is the same ink: the REAL FUNDS edge must be as legible as
+      // the words it encloses, never a faint rule.
+      expect(ratio(theme.blocks, "--vex-alias-rule-ink", "--vex-alias-bg-base")).toBeGreaterThanOrEqual(
         AA_BODY,
       );
     });
 
-    it(`${theme.name}: the hovered REVIEW key still carries its label at ${AA_BODY}:1`, () => {
-      const { percent, partner } = pinHoverMix();
-      const hovered = mixOklab(
-        resolveHex(theme.blocks, "--vex-alias-state-warn"),
-        resolveHex(theme.blocks, partner),
-        percent,
-      );
-      // --vex-surface-0, the key's label, is --vex-alias-bg-base under the
-      // shell scope.
-      const label = resolveHex(theme.blocks, "--vex-alias-bg-base");
+    it(`${theme.name}: the hovered Reject key and the reversed stamp read at ${AA_BODY}:1`, () => {
+      // Both are the ink plate with the primary-label ink on it.
       expect(
-        Number(contrast(hovered, label).toFixed(2)),
-        `hovered pin ${hovered} against its ${label} label in ${theme.name}`,
+        ratio(theme.blocks, "--vex-alias-label-on-primary", "--vex-alias-rule-ink"),
       ).toBeGreaterThanOrEqual(AA_BODY);
     });
-
-    it(`${theme.name}: hovering never moves the plate toward its own label`, () => {
-      // The property a ratio alone cannot state: hover must widen the gap.
-      const { percent, partner } = pinHoverMix();
-      const resting = resolveHex(theme.blocks, "--vex-alias-state-warn");
-      const hovered = mixOklab(resting, resolveHex(theme.blocks, partner), percent);
-      const label = resolveHex(theme.blocks, "--vex-alias-bg-base");
-      expect(contrast(hovered, label)).toBeGreaterThan(contrast(resting, label));
-    });
   }
-
-  it("computes color-mix the way the browser does (the mixer is load-bearing)", () => {
-    // Anchored on measured browser output: an amber mixed 85% toward white
-    // produced #a0783c. If this drifts, every ratio above is fiction.
-    expect(mixOklab("#8f6108", "#ffffff", 85)).toBe("#a0783c");
-    expect(mixOklab("#febc2e", "#ffffff", 85)).toBe("#ffc75e");
-  });
 });

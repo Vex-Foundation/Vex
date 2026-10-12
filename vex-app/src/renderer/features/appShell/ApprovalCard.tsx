@@ -7,6 +7,13 @@
  * `useApprove`/`useReject` → `window.vex.approvals.{approve,reject}` →
  * `prepareApprove`/`prepareReject` → background `runResumeAfterDecision`.
  *
+ * REAL FUNDS, ON EVERY CARD (docs/design/V10-SPREAD.md section 7, reference
+ * d4). Every desktop wallet is a real wallet, so the card always wears the
+ * 1.5px ink frame, the 8px hatch band down its leading edge and the reversed
+ * `Real funds` stamp in its header (`.vex-real-funds`, chat-transcript.css),
+ * with the target swatch where the amber pin used to be. Ink, never red and
+ * never blue: the stamp is a fact about the money, not a status colour.
+ *
  * UX (per vex-ui-ux-quality + vex-provider-hot-wallet skills):
  *   - Default focus on Reject (least destructive) when this card is the
  *     FIRST newly-appearing one (parent decides via `focusOnMount`).
@@ -290,18 +297,16 @@ export function ApprovalCard({
       // call focus(); tabIndex={-1} makes the region programmatically
       // focusable without entering the tab order.
       tabIndex={-1}
-      // The landing's amber alert language (.ws-alert): pin border + pin fill
-      // ARE the "awaiting your signature" emphasis — this card is the one
-      // place the page asks for the user's pen.
+      // REAL FUNDS (module note): the ink frame and the hatch band are this
+      // card's whole emphasis - the one place the page asks for the pen.
+      data-vex-real-funds=""
       // NOT `overflow-hidden`: any `overflow` other than `visible` becomes the
       // containing scrollport for a `position: sticky` descendant (CSS
-      // Positioned Layout ยง4.2), and this section never scrolls itself — only
-      // `ApprovalsRegion`'s `overflow-y-auto` wrapper does. `overflow-hidden`
-      // here (previously used only to clip the rounded corners) silently
-      // resolved ApprovalDetails's sticky header against this non-scrolling
-      // box instead, making it a no-op. Corner clipping now lives on the
-      // header (`rounded-t-lg`) instead of on this whole section.
-      className={`mt-3 rounded-lg border border-[var(--vex-pin-border)] bg-[var(--vex-pin-fill)] text-sm text-[var(--vex-text-2)]${criticalArgs?.toolId === "lighter.fees.approve" ? " @container" : ""}`}
+      // Positioned Layout section 4.2), and this section never scrolls itself
+      // - only `ApprovalsRegion`'s `overflow-y-auto` wrapper does. A clip here
+      // would silently resolve ApprovalDetails's sticky header against this
+      // non-scrolling box instead, making it a no-op.
+      className={`vex-real-funds mt-3 text-[14px] text-ink-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus${criticalArgs?.toolId === "lighter.fees.approve" ? " @container" : ""}`}
     >
       <ApprovalDetails
         summary={summary}

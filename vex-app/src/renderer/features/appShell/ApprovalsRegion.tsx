@@ -25,6 +25,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { JSX } from "react";
 import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
+import { Swatch } from "../../components/ui/swatch.js";
 import { ApprovalCard } from "./ApprovalCard.js";
 import { selectFreshApprovals } from "./approvals/fresh-approvals.js";
 
@@ -89,9 +90,10 @@ export function ApprovalsRegion({
       <p
         role="alert"
         data-vex-area="approvals-region-error"
-        className="mt-2 text-xs text-destructive"
+        className="mt-2 flex items-start gap-2 text-[13px] leading-5 text-ink-primary"
       >
-        Could not load pending approvals: {view.message}
+        <Swatch state="error" size={9} className="mt-[5px]" />
+        <span>Could not load pending approvals: {view.message}</span>
       </p>
     );
   }
@@ -99,26 +101,31 @@ export function ApprovalsRegion({
 
   return (
     <>
-      {/* Decorative: the mask carries no content of its own, and the run's
-          `paused_approval` state is already announced through the card's own
-          `aria-live` region — a screen reader does not need a second node for
-          this purely visual dim+blur cue. */}
+      {/* THE PAPER DITHER VEIL (docs/design/V10-SPREAD.md section 7): the
+          rest of the session sits under the 2px paper checkerboard so
+          attention lands on the card. It covers the session panel (its
+          containing block, `ui-primitives/overlays.css`) and, through
+          `chat-transcript.css`, the BOOK body beside it; the left page and the
+          running heads stay sharp. Decorative: the mask carries no content of
+          its own, and the run's `paused_approval` state is already announced
+          through the card's own `aria-live` region, so a screen reader does
+          not need a second node for this purely visual cue. */}
       <div aria-hidden="true" data-vex-area="approval-focus-mask" className="vex-approval-mask" />
       <section
         data-vex-area="approvals-region"
         // Bound height (Codex F3 #2) so multiple pendings can't push the composer
-        // off-screen; scroll within the region instead. S3: a single hairline
-        // separates the region from the transcript — no box of its own.
+        // off-screen; scroll within the region instead. No box of its own:
+        // the card's REAL FUNDS frame is the only edge.
         // 40vh (pre-2026-09-18) was tuned before any card carried a critical-args
         // well this long (a Lighter withdrawal's live-state disclosure runs to ~18
         // rows) - a card that tall spent almost its entire visible area on
         // internal scroll before the user reached Approve/Reject. 75vh keeps the
         // ORIGINAL guarantee (a stack of pendings still can't swallow the
         // composer) while actually fitting one long card's content on screen.
-        // `relative z-50`: stacks above `.vex-approval-mask` (z-40, fixed) so
-        // the card(s) actually being signed stay sharp while everything else
-        // behind the mask blurs.
-        className="relative z-50 max-h-[75vh] shrink-0 overflow-y-auto border-t border-[var(--vex-line)]"
+        // `relative z-50`: stacks above `.vex-approval-mask` (z-40) so the
+        // card(s) actually being signed stay sharp while everything else sits
+        // under the veil. 10px below the stack, as the reference draws it.
+        className="relative z-50 max-h-[75vh] shrink-0 overflow-y-auto pb-2.5"
       >
         {view.rows.map((summary) => (
           <ApprovalCard

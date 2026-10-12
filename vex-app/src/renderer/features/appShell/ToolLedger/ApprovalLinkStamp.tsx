@@ -5,14 +5,14 @@
  * a sibling of the disclosure button, never nested inside it (nested buttons
  * are invalid HTML and break both contracts' aria semantics).
  *
- * The stamp is quiet by design: pin/amber tone (matching the amber approval
- * card it points at), no fill, no pulse — the card itself is the place that
- * asks for the pen. Inlined stamp grammar: the shared `Stamp` primitive only
- * carries accent/warn tones, and this is the lone pin-toned stamp in the
- * shell (1 use → local, per the duplication rule).
+ * The stamp is quiet by design (reference d4): the target swatch and the
+ * caps word in the blue on a blue outline, no fill, no pulse - the card
+ * itself is the place that asks for the pen. Status by fill: the target is
+ * the same mark the card's own header and the island's awaiting row carry.
  */
 
 import type { JSX } from "react";
+import { Swatch } from "../../../components/ui/swatch.js";
 
 /**
  * Escape an approval id for the attribute selector. `CSS.escape` is the
@@ -69,9 +69,10 @@ export function ApprovalLinkStamp({
       data-vex-approval-link={approvalId}
       aria-label="Awaiting signature - go to approval"
       onClick={(event) => jumpToApproval(approvalId, event.currentTarget)}
-      className="shrink-0 rounded-[3px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+      className="shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
     >
-      <span className="inline-flex items-center rounded-[3px] border border-[var(--vex-pin-border)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-pin)]">
+      <span className="inline-flex h-[22px] items-center gap-[7px] px-2 font-mono text-[11px] uppercase leading-none tracking-chip text-accent-primary outline outline-1 -outline-offset-1 outline-accent-primary">
+        <Swatch state="warning" size={9} />
         Awaiting signature
       </span>
     </button>
