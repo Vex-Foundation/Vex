@@ -45,7 +45,7 @@ export function SettingsSectionView({
   };
   return (
     <div
-      className="mx-auto flex w-full max-w-[680px] flex-col gap-4"
+      className="flex w-full flex-col gap-4"
       data-vex-settings-section={meta.id}
     >
       {renderSectionContent(meta, stepProps)}
@@ -109,7 +109,7 @@ function ExportPrivateKeySection({
       className="border-t border-line-1 pt-5"
       data-vex-settings-export
     >
-      <h2 className="vex-micro-label uppercase text-ink-secondary">
+      <h2 className="vex-ov-label">
         Export a private key
       </h2>
       <p className="mt-2 text-[12px] leading-[18px] text-ink-secondary">
@@ -123,7 +123,7 @@ function ExportPrivateKeySection({
           disabled={!evmOk}
           onClick={() => setExportingChain("evm")}
           data-vex-settings-export-chain="evm"
-          className="h-7 rounded-full border border-line-2 px-3 text-[12px] leading-[18px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:opacity-40"
+          className="vex-sbtn"
         >
           Export EVM key
         </button>
@@ -132,7 +132,7 @@ function ExportPrivateKeySection({
           disabled={!solanaOk}
           onClick={() => setExportingChain("solana")}
           data-vex-settings-export-chain="solana"
-          className="h-7 rounded-full border border-line-2 px-3 text-[12px] leading-[18px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:opacity-40"
+          className="vex-sbtn"
         >
           Export Solana key
         </button>

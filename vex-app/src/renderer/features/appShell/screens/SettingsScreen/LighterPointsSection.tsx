@@ -149,7 +149,7 @@ function WalletCard({
     // accounts than the points card beside it.
     <li className="flex flex-col gap-3" data-vex-lighter-wallet={row.walletAddress}>
       <div
-        className="rounded-xl border border-line-1 p-4"
+        className="vex-ov-frame"
         data-vex-lighter-points-card={row.walletAddress}
       >
         <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -222,7 +222,7 @@ export function LighterPointsSection({
           onClick={refresh}
           disabled={refreshing}
           data-vex-lighter-points-refresh
-          className="h-7 shrink-0 rounded-full border border-line-2 px-3 text-[12px] leading-[18px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:opacity-40"
+          className="h-7 shrink-0 border border-line-2 px-3 text-[12px] leading-[18px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:opacity-40"
         >
           {refreshing ? "Reading…" : "Refresh"}
         </button>
