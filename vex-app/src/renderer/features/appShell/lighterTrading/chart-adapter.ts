@@ -123,3 +123,17 @@ export function toChartVolume(
       color: row.close >= row.open ? upColor : downColor,
     }));
 }
+
+/**
+ * A `#rgb` or `#rrggbb` colour at an opacity, as `rgba()`; any other colour
+ * string comes back unchanged. The chart library parses colours itself and
+ * cannot read `color-mix()`, so the volume tint is derived from the one
+ * candle token instead of spelling a second hex.
+ */
+export function chartColorWithAlpha(color: string, alpha: number): string {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim())?.[1];
+  if (hex === undefined) return color;
+  const full = hex.length === 3 ? hex.replace(/./g, (digit) => digit + digit) : hex;
+  const channel = (index: number): number => Number.parseInt(full.slice(index, index + 2), 16);
+  return `rgba(${String(channel(0))}, ${String(channel(2))}, ${String(channel(4))}, ${String(alpha)})`;
+}

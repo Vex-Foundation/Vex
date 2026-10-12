@@ -4,41 +4,18 @@ import type { DrawingChartApi, DrawingSeriesApi } from "./chart-analysis-api.js"
 import { drawingHistory, logicalToTime, MAX_DRAWINGS, timeToLogical, type Anchor, type Drawing, type DrawingKind } from "./chart-drawings.js";
 import { NO_VALUE } from "./format.js";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
+import { PxIcon, type PxName } from "../../../components/icons/index.js";
 const TOOLS: {
   kind: DrawingKind | "cursor";
   label: string;
-  path: string;
+  icon: PxName;
 }[] = [
-    {
-      kind: "cursor",
-      label: "Cursor",
-      path: "M5 3v14l4-4 3 6 3-2-3-5 6-1Z"
-    },
-    {
-      kind: "horizontal",
-      label: "Horizontal line",
-      path: "M3 11h16M5 8v6"
-    },
-    {
-      kind: "trend",
-      label: "Trend line",
-      path: "m4 17 14-12M3 16h3v3H3ZM17 3h3v3h-3Z"
-    },
-    {
-      kind: "rectangle",
-      label: "Rectangle",
-      path: "M4 5h14v12H4Z"
-    },
-    {
-      kind: "fib",
-      label: "Fibonacci retracement",
-      path: "M3 4h16M3 9h16M3 12h16M3 17h16M5 19 17 2"
-    },
-    {
-      kind: "measure",
-      label: "Measure price and time",
-      path: "m4 16 12-12 4 4L8 20ZM9 11l3 3M13 7l3 3"
-    },
+    { kind: "cursor", label: "Cursor", icon: "cursor" },
+    { kind: "horizontal", label: "Horizontal line", icon: "h-line" },
+    { kind: "trend", label: "Trend line", icon: "trend-line" },
+    { kind: "rectangle", label: "Rectangle", icon: "rectangle" },
+    { kind: "fib", label: "Fibonacci retracement", icon: "fib" },
+    { kind: "measure", label: "Measure price and time", icon: "measure" },
   ];
 interface Props {
   chart: DrawingChartApi;
@@ -202,9 +179,7 @@ export function ChartDrawings({ chart, series, host, times, scope, precision, mi
         aria-pressed={mode === tool.kind}
         onClick={() => chooseTool(tool.kind)}
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d={tool.path} />
-        </svg>
+        <PxIcon name={tool.icon} />
       </button>)}
       <span className="lit-drawing-divider" />
       <button
@@ -217,9 +192,7 @@ export function ChartDrawings({ chart, series, host, times, scope, precision, mi
           cancel();
         }}
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="m8 5-4 4 4 4M4 9h9a6 6 0 0 1 0 12" />
-        </svg>
+        <PxIcon name="undo" />
       </button>
       <button
         type="button"
@@ -231,9 +204,7 @@ export function ChartDrawings({ chart, series, host, times, scope, precision, mi
           cancel();
         }}
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="m16 5 4 4-4 4m4-4h-9a6 6 0 0 0 0 12" />
-        </svg>
+        <PxIcon name="redo" />
       </button>
       <button
         type="button"
@@ -246,9 +217,7 @@ export function ChartDrawings({ chart, series, host, times, scope, precision, mi
           cancel();
         }}
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7" />
-        </svg>
+        <PxIcon name="trash" />
       </button>
     </div>
     <svg

@@ -1,5 +1,8 @@
 /* ---------------------------------------------------------------------------
- * Market bar: ticker, last price, then one row of live metrics.
+ * Market bar (docs/design/V10-SPREAD.md section 1): the market key, the last
+ * price, one row of live metrics, the section tabs and the Live word. All
+ * Departure Mono: 15px ticker, 19px last price, 10px caps keys over 12px
+ * values. Direction is a glyph and the blue, never a hue.
  * ------------------------------------------------------------------------- */
 
 .lit-market-bar {
@@ -7,131 +10,133 @@
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
-  gap: 18px;
+  gap: 12px;
 }
 
 button.lit-market-select {
   display: flex;
+  max-width: 220px;
+  height: 34px;
   flex: 0 0 auto;
   align-items: center;
-  gap: 10px;
-  min-height: 36px;
-  border: 1px solid transparent;
+  gap: 8px;
+  overflow: hidden;
+  border: 0;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
   background: transparent;
-  padding: 2px 8px 2px 6px;
-  color: var(--lit-ink);
+  padding: 0 8px 0 10px;
+  color: var(--lit-ink-secondary);
   text-align: left;
-  transition: border-color 140ms ease, background 140ms ease;
 }
 
 button.lit-market-select:hover,
 button.lit-market-select[aria-expanded="true"] {
-  border-color: var(--lit-line);
-  background: var(--lit-hover);
+  outline-color: var(--lit-positive);
+  color: var(--lit-ink);
 }
 
 button.lit-market-select > span {
   display: flex;
   min-width: 0;
-  flex-direction: column;
-  line-height: 1.1;
+  align-items: baseline;
+  gap: 8px;
+  overflow: hidden;
+  line-height: 1;
 }
 
 button.lit-market-select b {
+  color: var(--lit-ink);
   font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-weight: 400;
   white-space: nowrap;
 }
 
 button.lit-market-select small {
-  margin-top: 2px;
-  color: var(--lit-ink-muted);
-  font-size: 10.5px;
+  overflow: hidden;
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(--lit-ink-muted); }
 
 /* Perps | Stocks | Spot: the section the desk is on, one tap to another. */
 .lit-category-tabs {
   display: inline-flex;
+  height: 26px;
   flex: 0 0 auto;
-  align-items: center;
-  border: 1px solid var(--lit-line);
-  background: var(--lit-panel);
-  padding: 2px;
+  align-items: stretch;
 }
 
 .lit-category-tabs button {
-  min-height: 26px;
   border: 0;
+  border-bottom: 1.5px solid transparent;
   background: transparent;
-  padding: 0 10px;
-  color: var(--lit-ink-muted);
-  font-size: 11.5px;
-  font-weight: 600;
-  transition: background 140ms ease, color 140ms ease;
+  padding: 0 6px;
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
 }
 
 .lit-category-tabs button:hover { color: var(--lit-ink); }
 
 .lit-category-tabs button[aria-pressed="true"] {
-  background: var(--lit-panel-raised);
-  box-shadow: inset 0 0 0 1px var(--lit-line);
-  color: var(--lit-ink);
+  border-bottom-color: var(--lit-positive);
+  color: var(--lit-positive);
 }
 
+/* Last price and its day change on one baseline. */
 .lit-market-price {
   display: flex;
   flex: 0 0 auto;
-  flex-direction: column;
-  line-height: 1.1;
+  align-items: baseline;
+  gap: 8px;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
 .lit-market-price b {
+  color: var(--lit-ink);
   font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-weight: 400;
   white-space: nowrap;
 }
 
 .lit-market-price small {
-  margin-top: 2px;
-  color: var(--lit-ink-muted);
-  font-size: 11px;
+  color: var(--lit-ink);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
-.lit-market-price[data-tone="positive"] b,
-.lit-market-price[data-tone="positive"] small { color: var(--lit-positive); }
-.lit-market-price[data-tone="negative"] b,
-.lit-market-price[data-tone="negative"] small { color: var(--lit-negative); }
+/* A change is a figure in ink; the arrow carries its direction. */
+.lit-market-price[data-tone="positive"] small::before { content: "\2191\00a0"; }
+.lit-market-price[data-tone="negative"] small::before { content: "\2193\00a0"; }
 
-/* Each tick flashes the last price in the direction it moved (keyed remount). */
-.lit-market-price b[data-flash="up"] { animation: lit-tick-up 640ms ease-out; }
-.lit-market-price b[data-flash="down"] { animation: lit-tick-down 640ms ease-out; }
+/* Each tick marks the last price once in the direction it moved (keyed
+ * remount): the blue for up, an underline for down. No glow. */
+.lit-market-price b[data-flash="up"] { animation: lit-tick-up 640ms steps(1, end); }
+.lit-market-price b[data-flash="down"] { animation: lit-tick-down 640ms steps(1, end); }
 
 @keyframes lit-tick-up {
-  from { color: var(--lit-positive); text-shadow: 0 0 10px color-mix(in srgb, var(--lit-positive) 55%, transparent); }
+  from { color: var(--lit-positive); }
 }
 
 @keyframes lit-tick-down {
-  from { color: var(--lit-negative); text-shadow: 0 0 10px color-mix(in srgb, var(--lit-negative) 55%, transparent); }
+  from { text-decoration: underline 1px; text-underline-offset: 3px; }
 }
 
-/* Narrow windows scroll the strip sideways instead of clipping the last stats;
- * the right edge fades to say there is more. */
+/* Narrow windows scroll the strip sideways instead of clipping the last
+ * stats; the container queries below remove whole stats first. */
 .lit-market-metrics {
   display: flex;
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
-  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
 }
 
 .lit-market-metrics::-webkit-scrollbar { display: none; }
@@ -140,25 +145,25 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  line-height: 1.15;
+  gap: 4px;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
 .lit-market-metric small {
-  color: var(--lit-ink-muted);
-  font-size: 10.5px;
+  color: var(--lit-ink-secondary);
+  font-size: 10px;
+  letter-spacing: var(--lit-tr-caps-data);
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
 .lit-market-metric b {
-  color: var(--lit-ink-secondary);
+  color: var(--lit-ink);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 400;
   white-space: nowrap;
 }
-
-.lit-market-metric[data-tone="positive"] b { color: var(--lit-positive); }
-.lit-market-metric[data-tone="negative"] b { color: var(--lit-negative); }
 
 .lit-market-bar[data-loading="true"] .lit-market-metric b,
 .lit-market-bar[data-loading="true"] .lit-market-price b,
@@ -173,11 +178,11 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
 .lit-market-bar[data-market-type="spot"] .lit-market-metric[data-metric="high"] { order: 5; }
 
 /* The bar answers to its own width (`.lit-desk-top` is the container), not
- * the viewport: the shell rails on both sides decide how much it gets. */
-/* Thresholds come from the measured strip: the fixed items (switch, market,
- * price, categories, Live) leave the remaining container width to each stat
- * its own width. Every step removes whole stats so the strip never shows a
- * half label; the scroll above is only the safety net for longer values. */
+ * the viewport: the shell rails on both sides decide how much it gets.
+ * Thresholds come from the measured strip in Departure Mono: the fixed items
+ * (market key, price, sections, Live) leave the rest to whole stats, so the
+ * strip never shows a half label; the scroll is only the safety net for
+ * longer values. */
 @container (max-width: 1350px) {
   .lit-market-bar .lit-market-metric[data-metric="index"],
   .lit-market-bar .lit-market-metric[data-metric="low"] { display: none; }
@@ -212,131 +217,91 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   .lit-market-metrics { display: none; }
 }
 
+@container (max-width: 930px) {
+  .lit-market-bar { gap: 10px; }
+}
+
+/* The Live word: an 8px swatch and the status caps, in the blue. Its fill
+ * says the state (lighter-tokens.css). */
 .lit-live-status {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   color: var(--lit-positive);
   font-size: 11px;
+  letter-spacing: var(--lit-tr-status);
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
-.lit-live-status i,
-.lit-live-dot {
-  width: 6px;
-  height: 6px;
-  background: currentColor;
+.lit-live-status:is([data-status="connecting"], [data-status="reconnecting"], [data-status="stopped"]) {
+  color: var(--lit-ink-secondary);
 }
 
-.lit-live-status[data-status="connecting"],
-.lit-live-status[data-status="reconnecting"] { color: var(--lit-ink-secondary); }
-.lit-live-status[data-status="delayed"] { color: var(--lit-warning); }
-.lit-live-status[data-status="unavailable"] { color: var(--lit-negative); }
-.lit-live-status[data-status="stopped"] { color: var(--lit-ink-muted); }
+.lit-live-status[data-status="unavailable"] { color: var(--lit-ink); }
 
-/* Status text and the dot stay together; the reload follows the time. */
+/* Status text and the swatch stay together; the reload follows the time. */
 .lit-live-status > [role="status"] {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
 }
 
 .lit-live-reload {
   display: inline-grid;
   place-items: center;
-  width: 16px;
-  height: 16px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: 0;
   background: transparent;
   color: inherit;
   cursor: pointer;
-  opacity: 0.85;
 }
 
-.lit-live-reload:hover { opacity: 1; background: color-mix(in srgb, currentColor 14%, transparent); }
+.lit-live-reload:hover { background: var(--lit-hover); color: var(--lit-ink); }
 .lit-live-reload:focus-visible { outline: 1px solid currentColor; outline-offset: 1px; }
+.lit-live-reload svg { width: 16px; height: 16px; }
 
-.lit-live-dot { color: var(--lit-warning); }
-.lit-live-dot[data-status="live"] { color: var(--lit-positive); }
-.lit-live-dot[data-status="unavailable"] { color: var(--lit-negative); }
-.lit-live-dot[data-status="stopped"] { color: var(--lit-ink-muted); }
+.lit-live-dot { color: var(--lit-positive); }
+.lit-live-dot:not([data-status="live"]) { color: var(--lit-ink-secondary); }
+.lit-live-dot[data-status="unavailable"] { color: var(--lit-ink); }
 
-/* Core | RHC: the Lighter network the desk is on; the same segment sits in the market picker. */
+/* Core | RHC: the Lighter network the desk is on; the same segment sits in
+ * the market picker. A rule-outlined pair; the chosen one is ink on the
+ * paper-2 step inside an ink frame. */
 .lit-environment-switch {
   display: inline-flex;
   flex: 0 0 auto;
-  align-items: center;
-  border: 1px solid var(--lit-line);
-  background: var(--lit-environment-surface);
-  padding: 2px;
+  align-items: stretch;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
 }
 
 .lit-environment-switch button {
   display: inline-flex;
+  height: 28px;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 26px;
   border: 0;
   background: transparent;
-  padding: 0 9px;
-  color: var(--lit-ink-muted);
+  padding: 0 10px;
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.02em;
-  transition: background 140ms ease, color 140ms ease;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
 }
-
-/* The network mark sits beside the label so the pair reads as one name:
- * Ethereum for Core, the Robinhood feather for RHC. The inactive segment
- * dims its mark to match the muted label rather than hiding it. */
-.lit-environment-logo {
-  width: 14px;
-  height: 14px;
-  flex: 0 0 auto;
-  opacity: 0.65;
-  pointer-events: none;
-  transition: opacity 140ms ease;
-}
-
-.lit-environment-switch button:hover .lit-environment-logo { opacity: 0.85; }
 
 .lit-environment-switch button:hover {
-  background: var(--lit-environment-surface-hover);
+  background: var(--lit-hover);
   color: var(--lit-ink);
 }
 
 .lit-environment-switch button[aria-checked="true"] {
-  background: color-mix(in srgb, var(--lit-environment-mark) 14%, var(--lit-panel-raised));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lit-environment-mark) 48%, var(--lit-line));
-  color: var(--lit-environment-mark);
-}
-
-.lit-environment-switch button[aria-checked="true"] .lit-environment-logo { opacity: 1; }
-
-/* Keep the register compact while giving the two primary readouts a clear
- * rhythm: market identity, last price, then secondary statistics. */
-.lit-market-bar { gap: 14px; }
-
-button.lit-market-select {
-  max-width: 188px;
-  overflow: hidden;
-}
-
-button.lit-market-select > span { overflow: hidden; }
-button.lit-market-select small { overflow: hidden; text-overflow: ellipsis; }
-
-.lit-market-price {
-  min-width: 86px;
-  border-left: 1px solid var(--lit-line);
-  padding-left: 14px;
-}
-
-.lit-market-metrics { gap: 16px; }
-
-@container (max-width: 930px) {
-  .lit-market-bar { gap: 10px; }
-  .lit-market-price { padding-left: 10px; }
+  background: var(--lit-panel-raised);
+  color: var(--lit-ink);
+  outline: 1px solid var(--lit-ink);
+  outline-offset: -1px;
 }
