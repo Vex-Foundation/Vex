@@ -133,9 +133,8 @@ function FilterPill({
       aria-pressed={active}
       onClick={onToggle}
       className={cn(
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "font-mono uppercase tracking-[0.14em] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active && PILL_ACTIVE_CLASS,
-        active && "font-semibold",
       )}
     >
       {leading}
