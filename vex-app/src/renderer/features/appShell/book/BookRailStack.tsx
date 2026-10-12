@@ -60,6 +60,7 @@ import { motion } from "motion/react";
 import { cn } from "../../../lib/utils.js";
 import { PxIcon } from "../../../components/icons/index.js";
 import { Swatch } from "../../../components/ui/swatch.js";
+import { Tooltip } from "../../../components/ui/tooltip.js";
 import { useScrollbarVisibility } from "../../../lib/useScrollbarVisibility.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import { coerceBookTab } from "../../../stores/uiStore/persistence.js";
@@ -306,6 +307,15 @@ function SessionBookInstruments({
   // section 2): it portals into the slot the frame hands down, and keeps its
   // Tabs context through the portal.
   const slot = useBookHeadSlot();
+  // WORDS OR ICONS, BY THE HEAD'S OWN WIDTH. Each instrument carries its word
+  // and its pixel icon; the head is a size container and shows the icons only
+  // when the words, the collapse key and the caption-button reserve do not
+  // fit (book.css). Either way the word is the control's name (aria-label)
+  // and its tooltip, which shows only while the word is hidden.
+  // The unseen marker is set by a LIVE board arrival only, and spoken in the
+  // tab's name, because a 7px square is not information a screen-reader user
+  // can reach.
+  const boardName = boardUnseen ? "Board, new board" : "Board";
   const strip = (
     <div
       role="group"
@@ -313,32 +323,39 @@ function SessionBookInstruments({
       className="vex-bk__tabs"
     >
       <TabsList className="h-auto justify-start border-0 p-0">
-        <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
-        <TabsTrigger value="board">
-          Board
-          {/* The unseen marker. Set by a LIVE board arrival only, and
-              spoken as words beside it, because a 7px square is not
-              information a screen-reader user can reach. */}
-          {boardUnseen ? (
-            <span
-              data-vex-area="book-board-unseen"
-              className="inline-flex items-center"
-            >
-              <Swatch state="done" size={7} />
-              <span className="sr-only">, new board</span>
-            </span>
-          ) : null}
-        </TabsTrigger>
+        <Tooltip label="Portfolio" side="bottom">
+          <TabsTrigger value="portfolio" aria-label="Portfolio">
+            <PxIcon name="portfolio" className="vex-bk__glyph" />
+            <span className="vex-bk__word">Portfolio</span>
+          </TabsTrigger>
+        </Tooltip>
+        <Tooltip label="Board" side="bottom">
+          <TabsTrigger value="board" aria-label={boardName}>
+            <PxIcon name="chart" className="vex-bk__glyph" />
+            <span className="vex-bk__word">Board</span>
+            {boardUnseen ? (
+              <span
+                data-vex-area="book-board-unseen"
+                className="vex-bk__unseen inline-flex items-center"
+              >
+                <Swatch state="done" size={7} />
+              </span>
+            ) : null}
+          </TabsTrigger>
+        </Tooltip>
       </TabsList>
-      <button
-        type="button"
-        data-vex-area="book-lighter-launch"
-        onClick={enterLighterMode}
-        className="vex-bk__door"
-      >
-        Lighter
-        <PxIcon name="external" />
-      </button>
+      <Tooltip label="Lighter" side="bottom">
+        <button
+          type="button"
+          aria-label="Lighter"
+          data-vex-area="book-lighter-launch"
+          onClick={enterLighterMode}
+          className="vex-bk__door"
+        >
+          <span className="vex-bk__word">Lighter</span>
+          <PxIcon name="external" />
+        </button>
+      </Tooltip>
     </div>
   );
   return (

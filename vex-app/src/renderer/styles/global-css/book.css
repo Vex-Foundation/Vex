@@ -19,6 +19,12 @@
 .vex-bk[data-vex-book-open="false"] {
   align-items: center;
 }
+/* The head row spans the page to the window edge and owns the rule, so the
+ * rule runs on under the Windows and Linux caption buttons (the native
+ * overlay stops 1px above it, main/windows/chrome-options.ts). Only its
+ * content keeps clear of the buttons (`.vex-overlay-end`). It is a size
+ * container: its content box is the room left once that reserve is taken,
+ * which is exactly what the tab strip and the collapse key have to fit. */
 .vex-bk__head {
   display: flex;
   height: var(--head-h);
@@ -29,21 +35,28 @@
   min-width: 0;
   padding: 0 10px 0 20px;
   border-bottom: 1px solid var(--vex-alias-rule);
+  container: vex-bk-head / inline-size;
 }
+/* Closed to its spine the head sizes to its toggle, which a size container
+ * cannot do (it would measure as empty). */
 .vex-bk[data-vex-book-open="false"] .vex-bk__head {
   height: auto;
   min-height: var(--head-h);
   justify-content: center;
   padding: 0;
   border-bottom-color: transparent;
+  container-type: normal;
 }
-/* The tab strip is portalled into this slot by the session rail. */
+/* The tab strip is portalled into this slot by the session rail. Clipped
+ * across, so a strip that ever outgrows it is cut at the slot's edge rather
+ * than painted over the collapse key. */
 .vex-bk__slot {
   display: flex;
   min-width: 0;
   height: 100%;
   align-items: stretch;
   flex: 1 1 auto;
+  overflow-x: clip;
 }
 .vex-bk__tabs {
   display: flex;
@@ -74,6 +87,57 @@
 }
 .vex-bk__door:hover {
   color: var(--vex-alias-label-primary);
+}
+/* Each instrument carries its word and its pixel icon (Portfolio: portfolio,
+ * Board: chart, Lighter: external). The words show while they fit. */
+.vex-bk__glyph {
+  display: none;
+  flex-shrink: 0;
+}
+/* THE WORDS NO LONGER FIT: the same tabs as icons. The head's content box has
+ * to hold the worded strip, its 8px gap and the 28px collapse key. Departure
+ * Mono at 11px with .14em tracking is 8.54px a letter: PORTFOLIO 76.9, gap 18,
+ * BOARD 42.7 and its unseen dot 15, gap 18, the Lighter door 1 + 16 + 59.8 +
+ * 6 + 16 = 98.8. That is 269.3, plus 36 is 305.3, rounded up to 308. With the
+ * macOS reserve of 8 the switch is a BOOK under 337px, so the 340px BOOK keeps
+ * its words; under the Windows buttons (138 + 8) it is a BOOK under 475px,
+ * under the Linux ones (96 + 8) under 433px. Icon-only the strip is 26 + 2 +
+ * 26 + 4 + 27 = 85px, and the 300px BOOK under the Windows buttons leaves it
+ * 97. The selected tab keeps the worded tab's treatment: blue, underlined. */
+@container vex-bk-head (width < 308px) {
+  .vex-bk__tabs {
+    gap: 4px;
+  }
+  .vex-bk__tabs [role="tablist"] {
+    gap: 2px;
+  }
+  .vex-bk__tabs [role="tab"] {
+    position: relative;
+    width: 26px;
+    justify-content: center;
+  }
+  .vex-bk__word {
+    display: none;
+  }
+  .vex-bk__glyph {
+    display: block;
+  }
+  /* The Board tab's unseen dot rides the icon's corner instead of the word. */
+  .vex-bk__unseen {
+    position: absolute;
+    top: 8px;
+    right: 0;
+  }
+  .vex-bk__door {
+    gap: 0;
+    padding: 0 5px;
+  }
+}
+/* While the words show they are their own label: no tooltip repeats them. */
+@container vex-bk-head (width >= 308px) {
+  .vex-bk__tabs .vex-tooltip {
+    display: none;
+  }
 }
 .vex-bk__name {
   min-width: 0;
@@ -106,10 +170,13 @@
   text-transform: uppercase;
   color: var(--vex-alias-label-secondary);
 }
+/* The collapse key never shrinks: it holds its 28px at the end of the head's
+ * content box, clear of the caption buttons, at every BOOK width. */
 .vex-bk__key {
   display: inline-flex;
   height: 28px;
   min-width: 28px;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
   gap: 6px;

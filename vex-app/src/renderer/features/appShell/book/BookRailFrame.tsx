@@ -62,9 +62,12 @@ export function BookRailFrame({
       aria-label={label}
       className="vex-book-enter vex-bk"
     >
-      {/* The BOOK's head row: a window drag region that keeps its toggle
-          clear of the Windows and Linux caption buttons (shell.css,
-          docs/design/V10-SPREAD.md section 8). */}
+      {/* The BOOK's head row: a window drag region that runs the page's
+          full width, its rule included, under the Windows and Linux
+          caption buttons, while its content (the tab slot, then the toggle,
+          which never shrinks) keeps clear of them. A size container: the
+          strip turns to icons when its words no longer fit (book.css,
+          shell.css, docs/design/V10-SPREAD.md section 8). */}
       <div
         className={cn(
           "vex-bk__head vex-drag",

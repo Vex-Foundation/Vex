@@ -5,13 +5,26 @@
  *
  * `titleBarStyle: "hidden"` everywhere; the renderer's 44px head rows are the
  * drag region. macOS keeps the traffic lights, placed on the print. Windows
- * and Linux draw the native window controls as an overlay over the top 44px.
+ * and Linux draw the native window controls as an overlay over the top 43px,
+ * the head row less its bottom rule.
  */
 
 import type { TitleBarTheme } from "@shared/schemas/system.js";
 
-/** Height of every renderer head row and of the native overlay. */
+/** Height of every renderer head row (`--head-h` in window-chrome.css). */
 export const TITLE_BAR_HEIGHT = 44;
+
+/** The 1px rule at the foot of every head row. */
+export const HEAD_RULE_WIDTH = 1;
+
+/**
+ * Height of the native overlay: the head row less its rule. The overlay is an
+ * opaque plate in the paper colour, so at the full 44px it painted over the
+ * rule and every head's rule stopped where the window controls begin, with
+ * blank paper under the buttons. One pixel short, the rule runs on under the
+ * controls to the window edge.
+ */
+export const TITLE_BAR_OVERLAY_HEIGHT = TITLE_BAR_HEIGHT - HEAD_RULE_WIDTH;
 
 /** macOS traffic light inset (docs/design/V10-SPREAD.md section 8). */
 export const TRAFFIC_LIGHT_POSITION = { x: 20, y: 16 } as const;
@@ -35,7 +48,7 @@ export interface TitleBarOverlay {
 }
 
 export function titleBarOverlayFor(theme: TitleBarTheme): TitleBarOverlay {
-  return { ...TITLE_BAR_OVERLAY_COLORS[theme], height: TITLE_BAR_HEIGHT };
+  return { ...TITLE_BAR_OVERLAY_COLORS[theme], height: TITLE_BAR_OVERLAY_HEIGHT };
 }
 
 export type ChromeOptions =
