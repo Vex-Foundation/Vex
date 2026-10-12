@@ -37,6 +37,8 @@ vi.mock("../../../stores/uiStore.js", () => {
     setSessionModeFilter: () => {},
     signingState: "idle",
     setSigningState: () => {},
+    sessionOrdinals: { next: 1, byId: {} },
+    setSessionOrdinals: () => {},
   };
   return {
     useUiStore: <T,>(selector: (s: typeof state) => T): T => selector(state),
