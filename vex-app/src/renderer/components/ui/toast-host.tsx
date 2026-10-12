@@ -6,7 +6,7 @@
  * transient slot and the bottom-right sticky slot were migrated onto the
  * model, so this host mounts one region instead of three.
  *
- * The model's single aria owner is mounted by `ShellStatusStrip` instead: a
+ * The model's single aria owner is mounted by `RunningHead` instead: a
  * live region is a permanent, always-present node, and parking one inside a
  * host that other surfaces query for `role="alert"` would make every such
  * query ambiguous.

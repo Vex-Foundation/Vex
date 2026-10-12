@@ -538,10 +538,9 @@ export function registerRailParityScenarios(
 
     await sidebar.getByRole("button", { name: "Collapse Studio sidebar" }).click();
     await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "false");
-    // POLLED, because collapsing is a choreography, not a swap: the column keeps
-    // its frozen expanded width while its wide content fades, and only then does
-    // the rail layout apply (`useCollapseChoreography`). The contract is where it
-    // SETTLES; reading the box on the first frame reads the slide.
+    // POLLED, because the grid track slides to the spine over the reveal
+    // duration. The contract is where it SETTLES; reading the box on the first
+    // frame reads the slide.
     await expect
       .poll(async () => (await sidebar.boundingBox())?.width ?? 0, { timeout: 5_000 })
       .toBeLessThanOrEqual(72);
@@ -550,11 +549,8 @@ export function registerRailParityScenarios(
     // both - "Pro" and a chevron sat in a box wider than the column.
     const spineText = (await sidebar.innerText()).trim();
     expect(spineText, "the collapsed rail is painting words").toBe("");
-    // POLLED for the same reason as the width: once the rail layout applies,
-    // the rail controls ENTER the spine from a 49px offset (`vex-rail-in`,
-    // shell.css) over the base duration, so a read taken on the frame the
-    // width settled can catch a control still sliding in. The contract is
-    // the resting frame.
+    // POLLED for the same reason as the width: the contract is the resting
+    // frame.
     await expect
       .poll(
         () =>
@@ -577,11 +573,13 @@ export function registerRailParityScenarios(
     // Rule 08 asks for a layout threshold at the seam and on both sides. The pure
     // comparison is unit-tested (`shell-columns.test.ts`); what a browser adds is
     // that the SHELL actually applies it.
-    await page.setViewportSize({ width: 1025, height: 900 });
+    // The seam is the spread's (docs/design/V10-SPREAD.md section 2): from
+    // 1276 up the rail keeps its preference, under it the rail closes.
+    await page.setViewportSize({ width: 1277, height: 900 });
     await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "true");
-    await page.setViewportSize({ width: 1024, height: 900 });
+    await page.setViewportSize({ width: 1276, height: 900 });
     await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "true");
-    await page.setViewportSize({ width: 1023, height: 900 });
+    await page.setViewportSize({ width: 1275, height: 900 });
     await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "false");
     await page.setViewportSize({ width: 1000, height: 900 });
     await shot(page, `${theme}-33-narrow-1000px`);
