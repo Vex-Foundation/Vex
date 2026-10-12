@@ -30,7 +30,8 @@
  */
 
 import { useEffect, useMemo, useRef, type JSX } from "react";
-import { IconBookOpen } from "../../../components/icons/index.js";
+import { PxIcon } from "../../../components/icons/index.js";
+import { Swatch } from "../../../components/ui/swatch.js";
 import { useBoardLive } from "../../../lib/api/board-live.js";
 import { cn } from "../../../lib/utils.js";
 import {
@@ -174,19 +175,19 @@ export function BoardModalChrome({ board }: BoardHeaderSlotProps): JSX.Element {
         <span
           data-vex-area="board-mode-snapshot"
           className={cn(
-            "text-[13px] leading-[18px]",
-            held ? "text-ink-tertiary" : "text-ink-secondary",
+            "font-mono text-[11px] uppercase leading-[18px] tracking-[0.14em]",
+            held ? "text-ink-tertiary" : "text-ink-primary",
           )}
         >
           Snapshot
         </span>
-        <span aria-hidden className="h-4 w-px bg-line-2" />
+        <span aria-hidden className="h-4 w-px bg-rule" />
         <span
           id={`board-live-label-${boardKey}`}
           data-vex-area="board-mode-live"
           className={cn(
-            "text-[13px] leading-[18px]",
-            held ? "text-ink-primary" : "text-ink-secondary",
+            "font-mono text-[11px] uppercase leading-[18px] tracking-[0.14em]",
+            held ? "text-accent-primary" : "text-ink-tertiary",
           )}
         >
           Live data
@@ -207,12 +208,9 @@ export function BoardModalChrome({ board }: BoardHeaderSlotProps): JSX.Element {
         {connected ? (
           <span
             data-vex-area="board-live-dot"
-            className="flex items-center gap-1.5 text-[13px] font-semibold leading-[18px] text-success"
+            className="flex items-center gap-1.5 font-mono text-[11px] uppercase leading-[18px] tracking-[0.14em] text-accent-primary"
           >
-            <span
-              aria-hidden
-              className="h-[7px] w-[7px] rounded-full bg-success motion-safe:animate-pulse"
-            />
+            <Swatch state="done" size={9} />
             LIVE
           </span>
         ) : null}
@@ -226,18 +224,18 @@ export function BoardModalChrome({ board }: BoardHeaderSlotProps): JSX.Element {
             else pinBoard(board);
           }}
           className={cn(
-            "inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+            "inline-flex h-8 w-8 items-center justify-center border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
             pinned
-              ? "border-accent-primary/40 bg-accent-wash text-accent-primary"
-              : "border-line-2 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary",
+              ? "border-accent-primary bg-accent-wash text-accent-primary"
+              : "border-rule text-ink-secondary hover:border-rule-ink hover:text-ink-primary",
           )}
         >
-          <IconBookOpen size={16} />
+          <PxIcon name="knowledge" size={16} />
         </button>
       </div>
       <p
         data-vex-area="board-live-helper"
-        className="text-right text-[12px] leading-[16px] text-ink-tertiary"
+        className="text-right font-mono text-[11px] uppercase leading-[16px] tracking-[0.14em] text-ink-tertiary"
       >
         {/* The lease's own sentence wins when it has one to say: an
           * unsupported build or a terminal close is a fact about THIS board,
@@ -284,10 +282,10 @@ function LiveSwitch({
         onChange(!checked);
       }}
       className={cn(
-        "relative inline-flex h-[22px] w-[42px] shrink-0 items-center rounded-capsule border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+        "relative inline-flex h-[22px] w-[42px] shrink-0 items-center border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
         checked
-          ? "border-transparent bg-accent-brand"
-          : "border-line-2 bg-surface-3",
+          ? "border-accent-primary bg-accent-primary"
+          : "border-rule bg-surface-3",
         disabled && "cursor-not-allowed opacity-50",
       )}
     >
@@ -299,8 +297,8 @@ function LiveSwitch({
           // light theme repoints to a dark value because its accent fill is
           // pale; off, it is the neutral tertiary ink. A hardcoded white would
           // be invisible on the light theme's own track.
-          "block h-[16px] w-[16px] rounded-full transition-transform duration-150 motion-reduce:transition-none",
-          checked ? "bg-ink-on-button-accent" : "bg-ink-tertiary",
+          "block h-[16px] w-[16px] transition-transform duration-150 motion-reduce:transition-none",
+          checked ? "bg-board-surface" : "bg-ink-tertiary",
           checked ? "translate-x-[23px]" : "translate-x-[3px]",
         )}
       />

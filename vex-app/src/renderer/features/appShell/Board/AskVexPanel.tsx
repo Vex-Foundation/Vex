@@ -26,7 +26,7 @@
 
 import { useMemo, useState, type JSX } from "react";
 import { chainDisplayBySlug } from "@shared/chains/display.js";
-import { IconClose, IconSparkle } from "../../../components/icons/index.js";
+import { PxIcon } from "../../../components/icons/index.js";
 import { cn } from "../../../lib/utils.js";
 import {
   boardLiveReadout,
@@ -131,7 +131,7 @@ export function AskVexPanel({ board, poolIndex }: BoardAskSlotProps): JSX.Elemen
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-display text-[15px] font-bold leading-[20px] tracking-[-0.01em] text-ink-primary">
+          <p className="font-mono text-[11px] uppercase leading-[20px] tracking-[0.14em] text-ink-primary">
             Ask VEX
           </p>
           <p className="mt-0.5 text-[12px] leading-[16px] text-ink-tertiary">
@@ -145,9 +145,9 @@ export function AskVexPanel({ board, poolIndex }: BoardAskSlotProps): JSX.Elemen
           onClick={() => {
             setBoardAskOpen(false);
           }}
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink-tertiary hover:bg-interactive-active hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-ink-tertiary hover:bg-interactive-active hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <IconClose size={14} />
+          <PxIcon name="close" size={16} />
         </button>
       </div>
 
@@ -156,7 +156,7 @@ export function AskVexPanel({ board, poolIndex }: BoardAskSlotProps): JSX.Elemen
       <p
         data-vex-area="board-ask-context"
         data-live={held ? "true" : "false"}
-        className="truncate rounded-lg border border-line-2 bg-surface-2 px-2.5 py-1.5 text-[12px] font-medium leading-[16px] text-ink-secondary"
+        className="truncate border border-rule bg-surface-2 px-2.5 py-1.5 text-[12px] font-medium leading-[16px] text-ink-secondary"
         title={chipLabel}
       >
         {chipLabel}
@@ -179,7 +179,7 @@ export function AskVexPanel({ board, poolIndex }: BoardAskSlotProps): JSX.Elemen
               setDraft(quick);
               setSent(false);
             }}
-            className="rounded-lg border border-line-2 px-2.5 py-1.5 text-left text-[12.5px] leading-[17px] text-ink-secondary transition-colors duration-150 hover:border-line-3 hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+            className="border border-rule px-2.5 py-1.5 text-left text-[12.5px] leading-[17px] text-ink-secondary transition-colors duration-150 hover:border-rule-ink hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
           >
             {quick}
           </button>
@@ -201,7 +201,7 @@ export function AskVexPanel({ board, poolIndex }: BoardAskSlotProps): JSX.Elemen
           }}
           rows={4}
           placeholder="Ask about this token"
-          className="min-h-[96px] w-full resize-y rounded-lg border border-line-2 bg-surface-2 px-2.5 py-2 text-[13px] leading-[18px] text-ink-primary placeholder:text-ink-dimmed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-h-[96px] w-full resize-y border border-rule bg-surface-2 px-2.5 py-2 text-[13px] leading-[18px] text-ink-primary placeholder:text-ink-dimmed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
       </label>
 
@@ -211,13 +211,13 @@ export function AskVexPanel({ board, poolIndex }: BoardAskSlotProps): JSX.Elemen
         disabled={!canSend}
         onClick={onSend}
         className={cn(
-          "inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+          "inline-flex items-center justify-center gap-1.5 px-3 py-2 text-[13px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
           canSend
             ? "bg-button-accent text-ink-on-button-accent hover:bg-button-accent-hover"
-            : "cursor-not-allowed border border-line-2 text-ink-dimmed",
+            : "cursor-not-allowed border border-rule text-ink-dimmed",
         )}
       >
-        <IconSparkle size={14} />
+        <PxIcon name="models" size={16} />
         Send to chat
       </button>
 

@@ -14,6 +14,21 @@
   background-color: var(--vex-alias-board-surface);
 }
 
+/* THE SHEET. The Board is one paper sheet over the paper-dither backdrop
+ * (`.vex-dialog` in `ui-primitives/overlays.css`): the sheet keeps the rule
+ * edge the dialog gives it and nothing more, no shadow, no radius, no wash
+ * (docs/design/V10-SPREAD.md section 1). */
+.vex-board-dialog {
+  background-color: var(--vex-alias-board-surface);
+}
+
+/* THE SELECTED TILE wears the 1.5px ink frame, drawn as an inset outline so
+ * the card's box and every figure inside it stay where they were. */
+.vex-board-card[data-selected="true"] {
+  outline: 1.5px solid var(--vex-alias-rule-ink);
+  outline-offset: -1.5px;
+}
+
 /* THE LIVE TICK. A card's price row is stamped `data-tick` (a fresh value
  * per change) when `priceUsd` or the 24h delta moves under a held lease; the
  * attribute change restarts this one-shot wash from the accent alias down to

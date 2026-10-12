@@ -72,26 +72,11 @@
  * `overflow-x: auto` would make it a scroll container too, and the modal body
  * already owns the board's vertical scrolling. So the horizontal escape hatch
  * is a wrapper around the grid: below the compact floor the track stays 358px
- * wide and this element scrolls, rather than a figure being cut.
- *
- * `overflow-y: visible` IS NOT AVAILABLE HERE, and asking for it was wrong.
- * CSS overflow computes a `visible` on one axis to `auto` whenever the other
- * axis is not `visible`, so this element is a scroll container on BOTH axes
- * whatever is written for the block axis - and its block-axis padding box is
- * exactly the grid, which clips the cards' hover shadow (`--shadow-lv2`
- * reaches 16px below a card and 8px above).
- *
- * So the room is MADE rather than asked for: block padding wide enough for
- * the shadow, cancelled by an equal negative margin so the plate's own
- * spacing is unchanged. The inline axis deliberately gets none of this - an
- * inline padding here would shrink the grid below the width the container
- * query just decided the columns from, which is the whole defect this file
- * exists to fix. A first card's leading shadow is reachable by the scroll
- * that owns that axis. */
+ * wide and this element scrolls, rather than a figure being cut. The tiles
+ * are flat (no shadow, docs/design/V10-SPREAD.md section 1), so the wrapper
+ * needs no block padding to keep anything from being clipped. */
 .vex-board-grid-scroller {
   overflow-x: auto;
-  padding-block: 16px;
-  margin-block: -16px;
 }
 
 /* ------------------------------------------------------------------ */
