@@ -37,6 +37,23 @@ describe("px sprite", () => {
     expect(container.querySelectorAll("symbol")).toHaveLength(109);
   });
 
+  it("renders every sprite symbol with its exact rects (generated data in sync)", () => {
+    const { container } = render(<icons.PxSprite />);
+    const doc = new DOMParser().parseFromString(SPRITE, "image/svg+xml");
+    for (const want of doc.querySelectorAll("symbol")) {
+      const got = container.querySelector(`symbol[id="${want.id}"]`);
+      expect(got, want.id).not.toBeNull();
+      expect(got?.getAttribute("viewBox"), want.id).toBe(want.getAttribute("viewBox"));
+      expect(got?.getAttribute("fill"), want.id).toBe("currentColor");
+      expect(got?.getAttribute("shape-rendering"), want.id).toBe("crispEdges");
+      const rects = (el: Element | null): string[] =>
+        [...(el?.querySelectorAll("rect") ?? [])].map((r) =>
+          ["x", "y", "width", "height"].map((a) => r.getAttribute(a)).join(","),
+        );
+      expect(rects(got), want.id).toEqual(rects(want));
+    }
+  });
+
   it("renders PxIcon at 16 and 24 as currentColor crisp pixels", () => {
     for (const size of [16, 24] as const) {
       const { container } = render(<PxIcon name="lock" size={size} className="x" />);
