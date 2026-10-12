@@ -1,35 +1,36 @@
+/* The profile menu popover (docs/design/V10-SPREAD.md sections 1 and 3). It
+ * rises from the profile row on the left page's ground: a square paper card on
+ * one 1px rule (the surface is `.vex-menu` in ui-primitives/menu.css), no
+ * shadow, no scale. It only fades, over the 150ms base duration; the keyframe
+ * names stay because SidebarProfile closes the menu on the exit's
+ * `animationend`. */
 .vex-profile-menu {
-  transform-origin: bottom left;
-  animation: vex-profile-menu-enter var(--vex-duration-base) var(--vex-ease-out) both;
+  animation: vex-profile-menu-enter var(--vex-duration-base) linear both;
 }
 
 .vex-profile-menu[data-state="closing"] {
   pointer-events: none;
-  animation: vex-profile-menu-exit var(--vex-duration-base) var(--vex-ease-standard) both;
+  animation: vex-profile-menu-exit var(--vex-duration-base) linear both;
 }
 
+/* The chevron flips by stepping, not by a tween. */
 .vex-profile-chevron {
-  transition: transform var(--vex-duration-base) var(--vex-ease-standard);
+  transition: none;
 }
 
 @keyframes vex-profile-menu-enter {
-  from { opacity: 0; transform: translateY(4px) scale(0.97); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes vex-profile-menu-exit {
-  from { opacity: 1; transform: translateY(0) scale(1); }
-  to { opacity: 0; transform: translateY(4px) scale(0.97); }
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .vex-profile-chevron {
-    transition: none;
-  }
-
   .vex-profile-menu,
   .vex-profile-menu[data-state="closing"] {
     animation: none;
-    transform: none;
   }
 }

@@ -151,21 +151,6 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* Chronos glass grain — opacity step for `.vex-noise` reused as the
- * distortion/dither removal's replacement texture (owner correction round,
- * 2026-07-20): a plain static grain overlay, never a filter on content. Kept
- * subtle and used ONLY on floating glass panels/menus/dialogs; the two rails
- * (SessionsList / BookPanel) are macOS-clean ink glass with no grain overlay
- * at all (owner decree, 2026-07-20 — grain over blur greyed the rails out).
- * Declared unlayered (like `.vex-noise` itself) so this modifier reliably
- * wins over the class's own near-invisible default — a Tailwind opacity
- * utility would NOT win here (Tailwind v4 utilities live in `@layer
- * utilities`, and unlayered rules always beat layered ones regardless of
- * source order). */
-.vex-noise--panel {
-  opacity: 0.15;
-}
-
 /* Hero rise — the landing's load-in reveal (masked line rise, "Out" curve),
  * one-shot with stagger delay modifiers for the welcome-stage choreography:
  * status line → headline → instrument → chips. Rests perfectly still. */

@@ -1,0 +1,462 @@
+/* THE OVERLAY SHEET (docs/design/V10-SPREAD.md sections 1, 2 and 4).
+ *
+ * A full-app screen (Settings, Memory, Sessions, assets, agent scan, token
+ * history) is ONE paper sheet laid over the centre and the BOOK: the left page
+ * and the gutter stay where they are (`--vex-overlay-left`, set by the shell
+ * frame). It is a 44px head (the title in Departure Mono at the left, close at
+ * the right, the whole row a drag region), a chapter title in Instrument Serif
+ * and a body capped at 760px. Radius 0, no shadow, no blur. Every colour is an
+ * alias, so the Night Ledger needs no second rule set. */
+
+.vex-ov {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--vex-overlay-left, 0px);
+  z-index: 50;
+  display: grid;
+  grid-template-rows: var(--head-h) minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  background: var(--vex-alias-bg-base);
+  color: var(--vex-alias-label-primary);
+}
+
+.vex-ov__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding-block: 0;
+  padding-inline: 32px 12px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-ov__head-start {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+}
+.vex-ov__title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-ov__close {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  color: var(--vex-alias-label-primary);
+}
+.vex-ov__close:hover {
+  background: var(--vex-alias-bg-layer-3);
+}
+.vex-ov__close:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+
+.vex-ov__scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 40px 64px 96px;
+}
+.vex-ov__body {
+  width: 100%;
+  max-width: 760px;
+}
+/* A register that needs the ledger's width (assets, token history) keeps the
+ * same cap; the sheet never spans the window. */
+.vex-ov__chapter {
+  margin: 0 0 20px;
+  font-family: var(--font-serif);
+  font-size: 56px;
+  font-weight: 400;
+  line-height: 0.94;
+  letter-spacing: -0.02em;
+  color: var(--vex-alias-title);
+}
+@media (max-width: 1275px) {
+  .vex-ov__chapter {
+    font-size: 48px;
+  }
+  .vex-ov__scroll {
+    padding-inline: 32px;
+  }
+  .vex-ov__head {
+    padding-inline-start: 24px;
+  }
+}
+/* Windows and Linux caption buttons sit over the head's right end. */
+html[data-chrome="overlay"] .vex-ov__head {
+  padding-inline-end: calc(var(--overlay-w) + 8px);
+}
+
+/* The small mono label every group, eyebrow and index word shares. */
+.vex-ov-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-chip);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-secondary);
+}
+
+/* THE SECTION INDEX: italic numerals at 24px over the name, a hint, the
+ * status word in mono at the right, hairline rows. */
+.vex-reg {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-reg__item {
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-reg__row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 16px;
+  width: 100%;
+  padding: 12px 0;
+  text-align: left;
+  color: var(--vex-alias-label-primary);
+}
+.vex-reg__row:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-reg__row:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-reg__num {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 24px;
+  line-height: 26px;
+  color: var(--vex-alias-counter);
+  font-variant-numeric: lining-nums;
+}
+.vex-reg__name {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 22px;
+}
+.vex-reg__hint {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-reg__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-secondary);
+}
+
+/* PREFERENCES: setting rows with 15px titles and 13px help. */
+.vex-prefs {
+  margin-top: 56px;
+}
+.vex-prefs__list {
+  margin-top: 20px;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-pref {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 32px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-pref--stack {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 10px;
+}
+.vex-pref__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-pref__help {
+  margin-top: 2px;
+  max-width: 56ch;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-pref__note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/* Theme tiles: a rule outline; the pressed tile takes the 1.5px frame and a
+ * solid 9px square (status by fill). */
+.vex-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.vex-tile {
+  position: relative;
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  padding: 12px 14px 10px;
+  text-align: left;
+  outline: 1px solid var(--vex-alias-rule);
+  outline-offset: -1px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-tile:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-tile:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+.vex-tile > svg {
+  margin-bottom: 6px;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-tile__title {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+}
+.vex-tile__caption {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-chip);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-tile[aria-pressed="true"] {
+  outline: 1.5px solid var(--vex-alias-accent-primary);
+}
+.vex-tile[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 9px;
+  height: 9px;
+  background: var(--vex-alias-accent-primary);
+}
+
+/* Segmented choice (the Enter key). */
+.vex-seg {
+  display: inline-flex;
+  outline: 1px solid var(--vex-alias-rule);
+  outline-offset: -1px;
+}
+.vex-seg > button {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-chip);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-seg > button:hover {
+  color: var(--vex-alias-label-primary);
+}
+.vex-seg > button[aria-pressed="true"] {
+  position: relative;
+  background: var(--vex-alias-bg-layer-3);
+  color: var(--vex-alias-label-primary);
+  outline: 1px solid var(--vex-alias-rule-ink);
+  outline-offset: -1px;
+}
+.vex-seg > button:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+
+/* The switch: a 44 x 24 track with a square 20px knob; ON slides the knob and
+ * fills it blue. The state is the fill and the position, never a hue. */
+.vex-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex: none;
+  border: 1px solid var(--vex-alias-rule-ink);
+  background: var(--vex-alias-field);
+}
+.vex-switch::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--vex-alias-rule-ink);
+  background: var(--vex-alias-field);
+  transition: transform var(--vex-duration-base) linear;
+}
+.vex-switch[aria-checked="true"]::after {
+  transform: translateX(20px);
+  background: var(--vex-alias-accent-primary);
+  border-color: var(--vex-alias-accent-primary);
+}
+.vex-switch:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-switch::after {
+    transition: none;
+  }
+}
+
+/* Square outline buttons (Choose image, Replace, exports, load more). */
+.vex-sbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--vex-alias-accent-primary);
+  outline: 1px solid var(--vex-alias-rule);
+  outline-offset: -1px;
+}
+.vex-sbtn:hover:not(:disabled) {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-sbtn:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+.vex-sbtn:disabled {
+  cursor: not-allowed;
+  outline-style: dotted;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* A framed tag (PROPOSED, OPEN): 22px, outline in the current colour. */
+.vex-ov-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: var(--tracking-chip);
+  text-transform: uppercase;
+  color: var(--vex-alias-accent-primary);
+  outline: 1px solid currentColor;
+  outline-offset: -1px;
+}
+
+/* The Background preview: a 16:9 plate in the shape of the wall it previews. */
+.vex-backdrop-preview {
+  position: relative;
+  width: 112px;
+  height: 63px;
+  flex: none;
+  overflow: hidden;
+  outline: 1px solid var(--vex-alias-rule);
+  outline-offset: -1px;
+}
+.vex-backdrop-preview > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.vex-backdrop-preview__remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  background: var(--vex-alias-label-box);
+  color: var(--vex-alias-label-on-chrome);
+  opacity: 0;
+}
+.vex-backdrop-preview:hover .vex-backdrop-preview__remove,
+.vex-backdrop-preview__remove:focus-visible {
+  opacity: 1;
+}
+@media (pointer: coarse) {
+  .vex-backdrop-preview__remove {
+    opacity: 1;
+  }
+}
+
+/* A framed block inside a sheet (Lighter cards, the exported key): a rule
+ * outline, no radius. */
+.vex-ov-frame {
+  padding: 16px;
+  outline: 1px solid var(--vex-alias-rule-quiet);
+  outline-offset: -1px;
+}
+
+/* A group title inside the sheet (Preferences under the index): serif 32. */
+.vex-ov__group {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--vex-alias-title);
+}
+
+/* A screen with its own inner scroller (the agent scan's virtual list): the
+ * sheet's body does not scroll, it hands its height down. */
+.vex-ov__scroll[data-fill] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 24px;
+}
+.vex-ov__scroll[data-fill] > .vex-ov__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+}
+.vex-ov__scroll[data-fill] .vex-ov__chapter {
+  flex: none;
+}

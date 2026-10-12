@@ -235,23 +235,8 @@ const WHITELIST: readonly WhitelistEntry[] = [
   // glass surfaces. Both are now SOLID ink (--vex-surface-1) with a flat
   // --vex-line border, so neither carries backdrop-blur any more and their
   // exemptions were dead entries. The glass roster is back to: the two side
-  // rails, the ShellScreen overlays, the profile menu, the Dialog base, and
+  // rails, the profile menu, the Dialog base, and
   // the portfolio cards. The banned list itself is unchanged.
-  {
-    // Owner decree 2026-07-20, Chronos glass law: every full-app ShellScreen
-    // overlay (Memory / Sessions / How Vex works) is a floating glass
-    // surface — ink glass + backdrop-blur for legibility over the current
-    // shell backdrop,
-    // a static grain overlay (.vex-noise) on top. The prior DistortedGlass
-    // SVG displacement filter is retired (it warped screen content).
-    file: "features/appShell/screens/ShellScreen.tsx",
-    pattern: "backdrop-blur (glass)",
-    reason:
-      "Owner-decreed Chronos glass surface (2026-07-20 law): the full-app " +
-      "overlay screens float as translucent ink (--vex-glass-strong) with " +
-      "backdrop-blur over the current shell backdrop, carrying a static grain " +
-      "overlay. One whitelisted wrapper for every screen.",
-  },
   {
     // Owner decree 2026-07-20, Chronos glass law: the profile side-panel
     // menu floats over the rail as the same Chronos glass surface family.

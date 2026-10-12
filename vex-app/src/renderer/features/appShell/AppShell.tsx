@@ -116,11 +116,6 @@ function AppShellContent(): JSX.Element {
         onCreate={(initialMessage) => openCreateSession(initialMessage ?? null)}
       />
 
-      {/* Full-app overlay screens (Memory / Sessions / How Vex works) -
-       * `fixed` overlays expanding from their profile-menu rows, floating
-       * above the columns and NEVER in shell flow. */}
-      <ShellScreens />
-
       <SessionCreator
         open={createSessionOpen}
         onOpenChange={(next) => {
@@ -328,13 +323,17 @@ function ShellFrame({
   // Every track is a LENGTH: the 300ms track transition then only ever
   // interpolates length-to-length (`auto` <-> length is not interpolable and
   // once swept the BOOK through the centre column on the welcome edge).
-  const frameStyle: CSSProperties & Record<"--vex-book-track", string> = {
+  const frameStyle: CSSProperties &
+    Record<"--vex-book-track" | "--vex-overlay-left", string> = {
     gridTemplateColumns:
       `${cols.page}px ${cols.gutter}px ${cols.rail}px minmax(0, 1fr) ${cols.book}px`,
     paddingTop: lighter && !lighterZen ? LIGHTER_TOPBAR_HEIGHT : undefined,
     // The running head reserves the caption buttons wherever the BOOK below
     // them is narrower than they are (shell.css).
     "--vex-book-track": `${cols.book}px`,
+    // Where an overlay sheet starts: past the left page and the gutter, which
+    // stay standing (docs/design/V10-SPREAD.md section 2, Overlay row).
+    "--vex-overlay-left": `${cols.page + cols.gutter}px`,
   };
 
   return (
@@ -525,6 +524,11 @@ function ShellFrame({
         spotlightSlot={BoardSpotlightWithChart}
         askSlot={AskVexPanel}
       />
+
+      {/* Full-app overlay screens (Memory, Sessions, Settings, assets, agent
+        * scan, token history): one paper sheet over the centre and the BOOK,
+        * absolute inside the frame so it never reflows a column. */}
+      <ShellScreens />
     </div>
   );
 }

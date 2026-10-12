@@ -84,7 +84,7 @@ function allSheets(): (readonly [string, string])[] {
 const shell = ruleBody(shellCss, '[data-vex-shell="true"]');
 
 /** The tiers that still have a tint; the classes share the names. */
-const TIERS = ["chip", "rail", "card", "pane", "overlay"] as const;
+const TIERS = ["chip", "rail", "card", "pane"] as const;
 /** The tiers whose class still exists in glass.css. */
 const CLASS_TIERS = ["rail", "card", "pane", "chip"] as const;
 
@@ -272,6 +272,14 @@ describe("compatibility aliases", () => {
     return hits.sort();
   }
 
+  it.each(["--vex-glass-strong", "--vex-glass-tint-overlay"])(
+    "has deleted %s: the overlay sheet paints its own paper",
+    (alias) => {
+      expect(declarationValue(shell, alias)).toBeUndefined();
+      expect(consumersOf(alias)).toEqual([]);
+    },
+  );
+
   it.each(["--vex-glass", "--vex-rail"])(
     "has deleted %s, which had no consumer left",
     (alias) => {
@@ -280,7 +288,7 @@ describe("compatibility aliases", () => {
     },
   );
 
-  it.each(["--vex-rail-strong", "--vex-glass-strong"])(
+  it.each(["--vex-rail-strong"])(
     "keeps %s only while a consumer still reads it (delete the alias when this fails)",
     (alias) => {
       expect(declarationValue(shell, alias), `${alias} alias`).toBeDefined();
@@ -292,7 +300,6 @@ describe("compatibility aliases", () => {
   );
 
   it("points the surviving aliases at opaque surfaces", () => {
-    expect(declarationValue(shell, "--vex-glass-strong")).toBe("var(--vex-glass-tint-overlay)");
     expect(declarationValue(shell, "--vex-rail-strong")).toBe("var(--vex-alias-bg-base)");
   });
 });

@@ -1,14 +1,14 @@
 /**
- * ShellScreen — the reusable full-app overlay chrome.
+ * ShellScreen - the reusable full-app overlay chrome.
  *
  * Contract pinned here:
- *   1. renders as a modal dialog named by its title, with the serif H1 and
- *      the round close key; the close key fires `onClose`;
- *   2. the overlay is a FIXED full-app layer (`fixed inset-2 z-50
- *      rounded-2xl`) — never an in-flow flex child that could reflow the
- *      shell columns — and declares its FLIP morph anchor via
+ *   1. renders as a modal dialog named by its title, with the mono H1 in the
+ *      44px head and the square close key; the close key fires `onClose`;
+ *   2. the overlay is ONE paper sheet (`vex-ov`: absolute inside the shell
+ *      frame, radius 0, no glass) - never an in-flow flex child that could
+ *      reflow the shell columns - and declares its FLIP morph anchor via
  *      `data-vex-morph` ("trigger" with an origin rect, "center" without,
- *      "reduced" under prefers-reduced-motion). Classes/attrs only — the
+ *      "reduced" under prefers-reduced-motion). Classes/attrs only - the
  *      animation frames themselves are not assertable in jsdom;
  *   3. Escape (from anywhere - the listener rides window) fires `onClose`, but
  *      ONLY while this screen owns the key: never over an already-handled
@@ -77,10 +77,11 @@ describe("ShellScreen", () => {
       </ShellScreen>,
     );
     const overlay = screen.getByRole("dialog", { name: "Memory" });
-    // The class contract that keeps the overlay OUT of shell flow. Pinned as
-    // classes (not computed styles): jsdom does not lay out Tailwind.
-    for (const cls of ["fixed", "inset-2", "z-50", "rounded-2xl"]) {
-      expect(overlay.classList.contains(cls), `missing class: ${cls}`).toBe(true);
+    // The class contract that keeps the overlay OUT of shell flow (its rules
+    // live in overlay.css). Pinned as classes: jsdom does not lay out CSS.
+    expect(overlay.classList.contains("vex-ov")).toBe(true);
+    for (const cls of ["fixed", "inset-2", "rounded-2xl", "backdrop-blur-xl"]) {
+      expect(overlay.classList.contains(cls), `retired class: ${cls}`).toBe(false);
     }
     expect(overlay.getAttribute("data-vex-area")).toBe("shell-screen");
     // With a captured trigger rect the FLIP anchors on the menu row…
@@ -317,7 +318,7 @@ describe("ShellScreen", () => {
       </ShellScreen>,
     );
     expect(screen.getByText("register")).not.toBeNull();
-    // Reduced motion takes the instant path — pinned on the morph attr.
+    // Reduced motion takes the instant path - pinned on the morph attr.
     expect(
       screen.getByRole("dialog", { name: "Sessions" }).getAttribute("data-vex-morph"),
     ).toBe("reduced");
