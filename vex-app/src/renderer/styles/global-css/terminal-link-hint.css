@@ -9,10 +9,8 @@
   overflow: hidden;
   padding: 8px 12px;
   border: 1px solid var(--vex-alias-border-l2);
-  border-radius: var(--radius-md);
   background: var(--vex-alias-bg-layer-2);
   color: var(--vex-alias-label-primary);
-  box-shadow: var(--shadow-lv2);
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;

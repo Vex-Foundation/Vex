@@ -21,13 +21,11 @@
 
 .vex-loader {
   position: relative;
-  border-radius: 9999px;
 }
 .vex-loader::before {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: inherit;
   padding: var(--vex-loader-stroke, 2px);
   background:
     conic-gradient(
@@ -87,10 +85,10 @@
  * ============================================================ */
 /* THEME-AWARE since round 2 (ratified 2026-08-21): every screen after the
  * Chronos Gate follows celeris/chronos, so the plate reads a per-theme
- * alias instead of the old `#0a0d18` literal. The alias lives on
+ * alias instead of a colour literal. The alias lives on
  * documentElement (tokens.css), which is where `data-vex-theme` is stamped,
  * so it resolves for curtain layers whose roots sit outside any component
- * scope. Chronos keeps #0a0d18 = the main-window `backgroundColor`
+ * scope. Chronos keeps the night paper = the main-window `backgroundColor`
  * (main/main-window.ts) so first paint and the plate are one surface;
  * celeris is free to be the light base because the theme-invariant gate
  * covers first paint. Re-hardcoding a literal here re-breaks the light
@@ -99,25 +97,15 @@
   background: var(--vex-alias-gate-plate);
 }
 
-/* Vignette — a whisper of deep accent bloom toward the edges; the centre
- * stays the darkest thing on screen. */
-.vex-gate-vignette {
-  background: radial-gradient(
-    120% 90% at 50% 50%,
-    transparent 55%,
-    color-mix(in oklab, var(--color-accent-wash) 45%, transparent) 100%
-  );
-}
-
 /* ============================================================ *
  *  [data-vex-gate="true"] — pre-shell token scope (tokens v2)   *
  * ============================================================ */
 /* Every boot screen carries this attribute, and `SetupFrame` also stamps it
  * on documentElement for its own lifetime so body-portaled surfaces
  * (toasts, hover cards, menus) opened from the pre-shell keep the same
- * projection. Colour tiers come from tokens v2; the scope keeps only what
- * the pre-shell genuinely re-pins: hairline strength, accent-as-text, the
- * type scale, and the micro-label weight. Re-projection (not call-site
+ * projection. Colour tiers come from tokens.css; the scope keeps only what
+ * the pre-shell genuinely re-pins: hairline strength, accent-as-text and
+ * the type scale. Re-projection (not call-site
  * edits) because six wizard steps are ALSO rendered by the app shell's
  * Settings screen.
  *
@@ -125,15 +113,14 @@
  * `--vex-alias-gate-*` group in tokens.css, which has a chronos and a
  * celeris definition. */
 [data-vex-gate="true"] {
-  /* Hairlines on the plate need a stronger step than the global line ramp
-   * (l2 is visually absent behind the vignette + grain); input wells get
-   * one more step so a field reads as a field. */
+  /* Hairlines on the plate take a stronger step than the global rule; input
+   * wells get one more step so a field reads as a field. */
   --color-border: var(--vex-alias-gate-border);
   --color-input: var(--vex-alias-gate-input);
-  /* Accent AS TEXT or thin stroke: the theme's interactive accent
-   * (chronos blue-400 on ink, celeris blue-700 on white) is the readable
-   * choice on either plate; same token names the shell scope uses so
-   * dual-hosted primitives resolve in both worlds. */
+  /* Accent AS TEXT or thin stroke: the theme's interactive accent (the
+   * periwinkle at night, the logo blue on paper) is the readable choice on
+   * either plate; same token names the shell scope uses so dual-hosted
+   * primitives resolve in both worlds. */
   --vex-onboarding-accent: var(--color-accent-primary);
   --vex-accent-text: var(--color-accent-primary);
   /* Raised plate for popovers/menus over the continuum. */
@@ -147,18 +134,7 @@
   --text-sm: 1rem; /* body copy, field labels, inputs */
   --text-2xl: 2.5rem; /* the serif screen/step title */
   --vex-micro-size: 0.75rem;
-  --vex-micro-tracking: 0.14em;
-}
-
-/* The pre-shell's eyebrow voice. This block used to re-pin `.vex-micro` to
- * Doto (the brand's dot signature); Doto retired app-wide (owner decision 2,
- * ratified 2026-08-21) and the pre-shell now speaks the SAME Inter Tight
- * small-caps voice as the shell's `.vex-micro-label` register. The family
- * therefore comes from `.vex-micro` itself and only the WEIGHT is re-pinned
- * here: the boot flow's technical labels are must-read, and the ladder's
- * answer to that is up a weight, never wider tracking. */
-[data-vex-gate="true"] .vex-micro {
-  font-weight: 600;
+  --vex-micro-tracking: var(--tracking-status);
 }
 
 /* --- The pre-shell action pill --------------------------------- */

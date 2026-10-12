@@ -3,21 +3,19 @@
  *
  * jsdom resolves no cascade for Tailwind-emitted utilities, so the invariant
  * that matters lives in the stylesheet sources rather than in any rendered
- * component. Three things are pinned, and each is a defect that would ship
+ * component. Four things are pinned, and each is a defect that would ship
  * silently:
  *
  *  1. the plate paints ALIASES, never literals - the same defect the pre-shell
  *     plate shipped once already, where a fixed dark hex sat under
- *     theme-variable ink and rendered near-black on near-black;
+ *     theme-variable ink;
  *  2. every board alias exists in BOTH theme blocks, so a new one cannot ship
- *     dark-only;
+ *     one-room-only;
  *  3. every board alias has a `@theme inline` projection - an alias WITHOUT
- *     one compiles to nothing at the call site, silently and with no build
- *     error, which is how `bg-board-card` would become a transparent card.
- *
- * The gradient itself lives in build-time CSS rather than a React `style`
- * attribute because the renderer's CSP has no `unsafe-inline`: an inline
- * radial is not a style choice, it is a rule the browser refuses.
+ *     one compiles to nothing at the call site, silently, which is how
+ *     `bg-board-card` would become a transparent card;
+ *  4. V10 paints the plate FLAT: no vignette, no gradient ramp, no inner
+ *     highlight; a card is told from the plate by its rule.
  */
 
 import { readFileSync } from "node:fs";
@@ -44,31 +42,39 @@ function ruleBody(css: string, selector: string): string {
   return css.slice(open + 1, close);
 }
 
+const stripComments = (css: string): string => css.replace(/\/\*[\s\S]*?\*\//g, "");
+
 const chronos = ruleBody(tokensCss, ":root");
 const celeris = ruleBody(tokensCss, '[data-vex-theme="celeris"]');
 const themeInline = ruleBody(tokensCss, "@theme inline");
 
 const boardAliases = [
   ...new Set(
-    [...tokensCss.matchAll(/(--vex-alias-board-[a-z-]+)\s*:/g)].map(
+    [...stripComments(tokensCss).matchAll(/(--vex-alias-board-[a-z-]+)\s*:/g)].map(
       (match) => match[1] as string,
     ),
   ),
 ].sort();
 
 describe("board surface tokens", () => {
-  it("declares the aliases the surfaces consume", () => {
+  it("declares the aliases the surfaces consume, and the vignette is gone", () => {
     expect(boardAliases).toEqual([
       "--vex-alias-board-card",
       "--vex-alias-board-card-hover",
       "--vex-alias-board-surface",
-      "--vex-alias-board-vignette",
     ]);
   });
 
   it.each(boardAliases)("defines %s in BOTH theme blocks", (alias) => {
     expect(chronos).toContain(`${alias}:`);
     expect(celeris).toContain(`${alias}:`);
+  });
+
+  it.each(boardAliases)("resolves %s to a V10 paper step in both rooms", (alias) => {
+    for (const body of [chronos, celeris]) {
+      const value = new RegExp(`${alias}:\\s*([^;]+);`).exec(body)?.[1]?.trim();
+      expect(value).toMatch(/^var\(--color-(paper|paper-2|night|night-0|night-1|night-2)\)$/);
+    }
   });
 
   it.each([
@@ -79,19 +85,11 @@ describe("board surface tokens", () => {
     expect(themeInline).toContain(`${utility}: var(${alias})`);
   });
 
-  it("paints the plate from aliases, never from a colour literal", () => {
+  it("paints the plate from the alias alone: no vignette, no gradient", () => {
     const plate = ruleBody(boardCss, ".vex-board-surface");
-    expect(plate).toContain("var(--vex-alias-board-surface)");
-    expect(plate).toContain("var(--vex-alias-board-vignette)");
-    expect(plate).not.toMatch(/#[0-9a-f]{3,8}\b/i);
-  });
-
-  it("keeps the vignette a build-time radial, not an inline style", () => {
-    expect(boardCss).toContain("radial-gradient");
-  });
-
-  it("guards its animated surfaces behind reduced motion", () => {
-    expect(boardCss).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(plate).toContain("background-color: var(--vex-alias-board-surface)");
+    expect(plate).not.toContain("background-image");
+    expect(stripComments(boardCss)).not.toMatch(/gradient\(/);
   });
 
   it("flashes the live tick from the accent alias, in build-time keyframes", () => {
@@ -103,13 +101,15 @@ describe("board surface tokens", () => {
 
   it("stills the tick outright under reduced motion", () => {
     const at = boardCss.indexOf("@media (prefers-reduced-motion: reduce)");
-    const block = boardCss.slice(at);
-    expect(block).toMatch(/\[data-tick\]\s*\{\s*animation:\s*none;/);
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(boardCss.slice(at)).toMatch(/\[data-tick\]\s*\{\s*animation:\s*none;/);
   });
 
-  it("paints no colour literal anywhere but the inset hairline", () => {
-    const withoutHairline = boardCss.replace(/rgba\(255, 255, 255, 0\.03\)/g, "");
-    expect(withoutHairline).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+  it("paints no colour literal and no shadow anywhere", () => {
+    const source = stripComments(boardCss);
+    expect(source).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    expect(source).not.toMatch(/\brgba?\(/i);
+    expect(source).not.toContain("box-shadow");
   });
 
   it("is imported by the manifest, unlayered like every other sheet", () => {
