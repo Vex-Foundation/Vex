@@ -112,6 +112,21 @@ describe("board surface tokens", () => {
     expect(source).not.toContain("box-shadow");
   });
 
+  it("paints the sheet and the selected tile square, from aliases", () => {
+    expect(ruleBody(boardCss, ".vex-board-dialog")).toContain(
+      "background-color: var(--vex-alias-board-surface)",
+    );
+    const frame = ruleBody(boardCss, '.vex-board-card[data-selected="true"]');
+    expect(frame).toContain("1.5px solid var(--vex-alias-rule-ink)");
+    expect(stripComments(boardCss)).not.toMatch(/border-radius/);
+  });
+
+  it("keeps the candle colours out of the Board stylesheets", () => {
+    const layout = stripComments(read("board-layout.css"));
+    expect(layout).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
+    expect(layout).not.toMatch(/border-radius|box-shadow/);
+  });
+
   it("is imported by the manifest, unlayered like every other sheet", () => {
     expect(globalsCss).toContain('@import "./global-css/board.css";');
     expect(globalsCss).not.toContain("board.css\" layer");

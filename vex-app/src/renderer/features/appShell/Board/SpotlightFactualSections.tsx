@@ -8,8 +8,9 @@
  * model's reading, is the confusion this separation exists to prevent.
  */
 
+import { Swatch, type SwatchState } from "../../../components/ui/swatch.js";
 import type { JSX } from "react";
-import { IconLock, IconPie, IconShield } from "../../../components/icons/index.js";
+import { PxIcon } from "../../../components/icons/index.js";
 import { cn } from "../../../lib/utils.js";
 import { BoardStatusChip } from "./BoardStatusChip.js";
 import type { BoardSafetyVerdict } from "./board-surface-contracts.js";
@@ -43,7 +44,7 @@ export function BuySellSection({
   return (
     <SpotlightSection
       area="board-spotlight-buysell"
-      icon={<IconPie size={18} />}
+      icon={<PxIcon name="portfolio" size={16} />}
       title="Buy / Sell"
       tone="positive"
       meta={
@@ -52,9 +53,9 @@ export function BuySellSection({
             data-vex-area="board-spotlight-buysell-figures"
             className="text-[15px] font-semibold leading-[20px] tabular-nums"
           >
-            <span className="text-success">{view.buyPct}%</span>
+            <span className="text-accent-primary">{view.buyPct}%</span>
             <span className="px-1 text-ink-tertiary">/</span>
-            <span className="text-danger">{view.sellPct}%</span>
+            <span className="text-ink-primary">{view.sellPct}%</span>
           </span>
         ) : undefined
       }
@@ -96,7 +97,7 @@ export function LockSection({
   return (
     <SpotlightSection
       area="board-spotlight-lock"
-      icon={<IconLock size={18} />}
+      icon={<PxIcon name="lock" size={16} />}
       title="Liquidity lock"
       tone="positive"
     >
@@ -104,7 +105,7 @@ export function LockSection({
         <p
           data-state="pending"
           data-vex-area="board-spotlight-lock-value"
-          className="h-[22px] w-40 rounded bg-surface-skeleton animate-pulse motion-reduce:animate-none"
+          className="h-[22px] w-40 bg-surface-skeleton"
           aria-label="Liquidity lock loading"
         />
       ) : details.status === "unavailable" ? (
@@ -130,7 +131,7 @@ function LockValue({ view }: { readonly view: SpotlightLockView }): JSX.Element 
         data-state={view.kind}
         className={cn(
           "text-[17px] font-semibold leading-[22px]",
-          view.kind === "locked" ? "text-success" : "text-ink-tertiary",
+          view.kind === "locked" ? "text-accent-primary" : "text-ink-tertiary",
         )}
       >
         {view.text}
@@ -152,10 +153,11 @@ function LockValue({ view }: { readonly view: SpotlightLockView }): JSX.Element 
   );
 }
 
-const VERDICT_DOT: Readonly<Record<SpotlightSafetyVerdict, string>> = {
-  pass: "bg-success",
-  fail: "bg-danger",
-  unverified: "bg-ink-dimmed",
+/** A verdict is a fill, not a hue: solid = passed, ink cross = failed, outline = unverified. */
+const VERDICT_SWATCH: Readonly<Record<SpotlightSafetyVerdict, SwatchState>> = {
+  pass: "done",
+  fail: "error",
+  unverified: "idle",
 };
 
 /**
@@ -180,7 +182,7 @@ export function SafetyChecksSection({
   return (
     <SpotlightSection
       area="board-spotlight-safety"
-      icon={<IconShield size={18} />}
+      icon={<PxIcon name="shield" size={16} />}
       title="Safety checks"
       meta={<BoardStatusChip verdict={verdict} pairAgeSeconds={pairAgeSeconds} />}
     >
@@ -228,7 +230,7 @@ function SafetyRows({ rows }: { readonly rows: readonly SpotlightSafetyRow[] }):
             {row.label.text}
           </dt>
           <dd className="flex shrink-0 items-center gap-1.5 text-[13px] leading-[18px] tabular-nums text-ink-primary">
-            <span aria-hidden className={cn("size-1.5 rounded-full", VERDICT_DOT[row.verdict])} />
+            <Swatch state={VERDICT_SWATCH[row.verdict]} size={9} />
             <span>{SAFETY_VERDICT_WORD[row.verdict]}</span>
             <span
               data-vex-area="board-spotlight-safety-source"

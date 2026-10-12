@@ -52,7 +52,10 @@ function readVar(
 }
 
 /**
- * Resolve the board chart palette against `element`. Call this from inside
+ * Resolve the board chart palette against `element`. Candles and their volume
+ * are the one place green and red survive (`--color-candle-up` and
+ * `--color-candle-down`, docs/design/V10-SPREAD.md section 1); the grid, the
+ * text and the price zone are ink and the one blue. Call this from inside
  * the chart effect (the element is in the document by then) and again when
  * the theme changes, applying the result through `applyOptions` rather than
  * rebuilding the chart.
@@ -65,8 +68,8 @@ export function readBoardChartPalette(
       ? window.getComputedStyle(element)
       : null;
   return {
-    up: readVar(styles, "--vex-alias-state-success", FALLBACK.up),
-    down: readVar(styles, "--vex-alias-state-error", FALLBACK.down),
+    up: readVar(styles, "--color-candle-up", FALLBACK.up),
+    down: readVar(styles, "--color-candle-down", FALLBACK.down),
     grid: readVar(styles, "--vex-alias-border-l1", FALLBACK.grid),
     ink: readVar(styles, "--vex-alias-label-tertiary", FALLBACK.ink),
     accent: readVar(styles, "--vex-alias-accent-primary", FALLBACK.accent),
