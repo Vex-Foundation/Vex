@@ -28,7 +28,7 @@
  */
 
 import { useId, useRef, useState, type JSX, type ReactNode } from "react";
-import { IconChevronDown } from "../../../components/icons/index.js";
+import { PxIcon } from "../../../components/icons/index.js";
 import { ExpandRegion } from "../../../components/ui/expand-region.js";
 import { cn } from "../../../lib/utils.js";
 import { formatBoardUtcClock, formatBoardUtcDate } from "./boardFormat.js";
@@ -70,7 +70,7 @@ export function BoardDataNotes({
     <section
       data-vex-area="board-data-notes"
       data-open={open ? "true" : "false"}
-      className="mt-5 rounded-xl border border-line-2 bg-board-card"
+      className="mt-5 border border-rule bg-board-card"
     >
       <button
         ref={triggerRef}
@@ -79,22 +79,19 @@ export function BoardDataNotes({
         aria-controls={regionId}
         data-vex-area="board-data-notes-trigger"
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left text-[13px] font-medium text-ink-secondary transition-colors duration-150 hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-[13px] font-medium text-ink-secondary transition-colors duration-150 hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
       >
         Composed analysis / Data notes
-        <IconChevronDown
-          size={16}
-          className={cn(
+        <PxIcon name="chevron-down" size={16} className={cn(
             "shrink-0 transition-transform duration-150 motion-reduce:transition-none",
             open && "rotate-180",
-          )}
-        />
+          )} />
       </button>
       <ExpandRegion
         id={regionId}
         open={open}
         triggerRef={triggerRef}
-        className="flex flex-col gap-4 border-t border-line-2 px-4 py-4"
+        className="flex flex-col gap-4 border-t border-rule px-4 py-4"
       >
         {content.empty ? (
           <p

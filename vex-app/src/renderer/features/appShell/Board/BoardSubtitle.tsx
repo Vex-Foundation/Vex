@@ -50,7 +50,7 @@ export function BoardSubtitle({ board }: BoardSubtitleSlotProps): JSX.Element {
   return (
     <p
       data-vex-area="board-subtitle"
-      className="mt-0.5 text-[13px] leading-[18px] text-ink-tertiary"
+      className="mt-1 font-mono text-[11px] uppercase leading-[18px] tracking-[0.14em] text-ink-tertiary"
     >
       {boardSubtitle(model)}
     </p>

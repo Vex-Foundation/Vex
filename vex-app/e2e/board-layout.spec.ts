@@ -860,3 +860,45 @@ test.describe("board spotlight region seams", () => {
     expect(boxes.toggle?.left ?? 0).toBeGreaterThan(boxes.price?.left ?? 0);
   });
 });
+
+test.describe("board paint", () => {
+  test("draws square tiles with a blue sparkline and a fill status chip", async ({
+    page,
+  }) => {
+    await open(page, { width: 1440 });
+    const paint = await page.evaluate(() => {
+      const card = document.querySelector('[data-vex-area="board-token-card-v3"]');
+      const chip = document.querySelector('[data-vex-area="board-status-chip"]');
+      const price = document.querySelector('[data-vex-area="board-token-price"]');
+      if (!(card instanceof HTMLElement) || !(chip instanceof HTMLElement)) return null;
+      return {
+        radius: getComputedStyle(card).borderTopLeftRadius,
+        shadow: getComputedStyle(card).boxShadow,
+        swatch: chip.querySelector(".vex-swatch")?.getAttribute("data-s") ?? null,
+        priceFont: price === null ? "" : getComputedStyle(price).fontFamily,
+      };
+    });
+    expect(paint).not.toBeNull();
+    expect(paint?.radius).toBe("0px");
+    expect(paint?.shadow).toBe("none");
+    expect(paint?.swatch).not.toBeNull();
+    expect(paint?.priceFont).toContain("Departure Mono");
+  });
+
+  test("sets the modal header in Departure Mono on a ruled paper sheet", async ({
+    page,
+  }) => {
+    await open(page, { width: 1440 });
+    const header = await page.evaluate(() => {
+      const title = document.querySelector('[data-vex-area="board-title"]');
+      const head = document.querySelector('[data-vex-area="board-header"]');
+      if (!(title instanceof HTMLElement) || !(head instanceof HTMLElement)) return null;
+      return {
+        font: getComputedStyle(title).fontFamily,
+        rule: getComputedStyle(head).borderBottomWidth,
+      };
+    });
+    expect(header?.font).toContain("Departure Mono");
+    expect(header?.rule).toBe("1px");
+  });
+});
