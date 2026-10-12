@@ -1,19 +1,21 @@
 import type { JSX } from "react";
 import type { LighterTradingEnvironment } from "@shared/schemas/lighter-trading.js";
 import { LIGHTER_ENVIRONMENT_NAMES, LIGHTER_ENVIRONMENT_SHORT_LABELS } from "@shared/lighter-environment-labels.js";
-import { LIGHTER_ENVIRONMENT_LOGOS } from "./environment-logos.js";
 
 export const LIGHTER_ENVIRONMENTS: ReadonlyArray<{
   readonly value: LighterTradingEnvironment;
   readonly label: string;
   readonly name: string;
-  readonly logo: string;
 }> = [
-  { value: "core", label: LIGHTER_ENVIRONMENT_SHORT_LABELS.core, name: LIGHTER_ENVIRONMENT_NAMES.core, logo: LIGHTER_ENVIRONMENT_LOGOS.core },
-  { value: "rhc", label: LIGHTER_ENVIRONMENT_SHORT_LABELS.rhc, name: LIGHTER_ENVIRONMENT_NAMES.rhc, logo: LIGHTER_ENVIRONMENT_LOGOS.rhc },
+  { value: "core", label: LIGHTER_ENVIRONMENT_SHORT_LABELS.core, name: LIGHTER_ENVIRONMENT_NAMES.core },
+  { value: "rhc", label: LIGHTER_ENVIRONMENT_SHORT_LABELS.rhc, name: LIGHTER_ENVIRONMENT_NAMES.rhc },
 ];
 
-/** Core | RHC: which Lighter network the desk trades on. Switching drops the market, the desk picks that network's default. */
+/**
+ * Core | RHC: which Lighter network the desk trades on. Switching drops the
+ * market, the desk picks that network's default. The words name the
+ * deployment; the desk is never repainted per network.
+ */
 export function EnvironmentSwitch({ environment, onSelect }: {
   readonly environment: LighterTradingEnvironment;
   readonly onSelect: (environment: LighterTradingEnvironment) => void;
@@ -34,7 +36,6 @@ export function EnvironmentSwitch({ environment, onSelect }: {
               if (!active) onSelect(item.value);
             }}
           >
-            <img className="lit-environment-logo" src={item.logo} alt="" aria-hidden="true" />
             <span className="lit-environment-label">{item.label}</span>
           </button>
         );

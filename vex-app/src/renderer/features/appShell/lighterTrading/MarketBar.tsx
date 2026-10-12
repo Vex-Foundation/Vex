@@ -6,8 +6,7 @@ import type {
   LighterTradingPublicStatsEvent,
   LighterTradingSnapshot,
 } from "@shared/schemas/lighter-trading.js";
-import { IconChevronDown } from "../../../components/icons/index.js";
-import { MarketSymbol } from "./MarketSymbol.js";
+import { IconChevronDown, PxIcon } from "../../../components/icons/index.js";
 import { useTickFlash } from "./useLiveFlash.js";
 import { classifyLighterMarket, marketProductLabel, type LighterMarketSection } from "./market-classification.js";
 import {
@@ -97,9 +96,6 @@ export function MarketBar({
         aria-controls={marketPickerOpen ? "lit-market-picker" : undefined}
         onClick={onOpenMarketPicker}
       >
-        {market === null
-          ? <img src="./protocols/lighter.svg" alt="" width="26" height="26" />
-          : <MarketSymbol environment={environment} market={market} />}
         <span>
           <b>{classification?.ticker ?? "Select market"}</b>
           <small>
@@ -113,7 +109,7 @@ export function MarketBar({
               ].filter((part): part is string => part !== null).join(" · ")}
           </small>
         </span>
-        <IconChevronDown size={18} className="lit-chevron" />
+        <IconChevronDown size={16} className="lit-chevron" />
       </button>
       <span className="lit-market-price" data-tone={tone} data-metric="last">
         <b key={lastFlash.tick} data-flash={lastFlash.direction ?? undefined}>{formatPrice(last, precision)}</b>
@@ -182,10 +178,7 @@ export function MarketBar({
             )}
             {onReload === undefined ? null : (
               <button type="button" className="lit-live-reload" onClick={onReload} aria-label="Reload market data from Lighter" title="Reload from Lighter">
-                <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89" />
-                  <path d="M13.5 2.5v3.5H10" />
-                </svg>
+                <PxIcon name="refresh" />
               </button>
             )}
           </>

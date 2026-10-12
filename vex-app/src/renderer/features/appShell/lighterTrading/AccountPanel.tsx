@@ -6,7 +6,7 @@ import type {
   LighterTradingEnvironment,
   LighterTradingFill,
 } from "@shared/schemas/lighter-trading.js";
-import { IconChevronDown, IconChevronUp } from "../../../components/icons/index.js";
+import { IconChevronDown, IconChevronUp, PxIcon } from "../../../components/icons/index.js";
 import { useLighterTradingAccount, useLighterTradingFills } from "../../../lib/api/lighter-trading.js";
 import { accountRisk, marginUsage, positionMetrics, positionProtection, type ClosePortion, type LighterOpenOrderRow, type LighterPositionRow, type OrderCancelStage, type PositionCloseStage } from "./account-model.js";
 import { ClosePositionPopover } from "./ClosePositionPopover.js";
@@ -227,6 +227,7 @@ export function TradingBottomPanel({
             disabled={accountQuery.isFetching}
             aria-busy={accountQuery.isFetching}
           >
+            <PxIcon name="refresh" />
             Refresh
           </button>
           <button
@@ -237,7 +238,7 @@ export function TradingBottomPanel({
             aria-controls={activePanelId}
             aria-label={collapsed ? "Expand the account dock" : "Collapse the account dock"}
           >
-            {collapsed ? <IconChevronUp size={15} /> : <IconChevronDown size={15} />}
+            {collapsed ? <IconChevronUp size={16} /> : <IconChevronDown size={16} />}
           </button>
         </div>
       </header>

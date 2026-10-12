@@ -1,77 +1,439 @@
-.lit-chart-body .lit-chart-canvas { top: 38px; left: 38px; }
-.lit-chart-body .lit-chart-legend { top: 48px; left: 50px; max-width: calc(100% - 130px); font-size: 11px; }
-.lit-analysis-toolbar { position: absolute; inset: 0 0 auto; height: 38px; z-index: 8; display: flex; align-items: center; gap: 4px; padding: 0 8px; border-bottom: 1px solid var(--lit-line); color: var(--lit-ink-secondary); background: var(--lit-panel); font-size: 12px; }
-.lit-analysis-toolbar button, .lit-analysis-toolbar select, .lit-study-menu summary { border: 0; padding: 5px 8px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
-.lit-analysis-toolbar select { max-width: 90px; }
-.lit-analysis-toolbar select option { background: var(--lit-panel-raised); color: var(--lit-ink); }
-.lit-analysis-toolbar button:hover, .lit-study-menu summary:hover, .lit-analysis-toolbar select:hover { background: var(--lit-panel-raised); color: var(--lit-ink); }
-.lit-analysis-toolbar button[aria-pressed="true"] { color: var(--lit-ink); }
-.lit-study-active { padding-left: 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; }
+/* Chart analysis toolbar, studies, the drawing rail and the drag-to-order
+ * handle (docs/design/V10-SPREAD.md section 1). Departure Mono 11px caps on a
+ * 36px row; pixel icons at their native 16px; one blue for whatever is on. */
+
+.lit-analysis-toolbar {
+  position: absolute;
+  z-index: 8;
+  inset: 0 0 auto;
+  display: flex;
+  height: var(--lit-chart-toolbar, 36px);
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--lit-line-quiet);
+  background: var(--lit-panel);
+  padding: 0 6px 0 8px;
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.lit-analysis-toolbar button,
+.lit-analysis-toolbar select,
+.lit-study-menu summary {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: var(--lit-tr-label);
+  cursor: pointer;
+}
+
+.lit-analysis-toolbar > .lit-resolution-tabs button { letter-spacing: var(--lit-tr-data); }
+
+/* Chart type: a rule-framed chip with a small drawn caret. */
+.lit-analysis-toolbar select {
+  height: 28px;
+  max-width: 104px;
+  appearance: none;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 13px) 50%, calc(100% - 9px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+  padding: 0 24px 0 8px;
+  font-size: 12px;
+  letter-spacing: var(--lit-tr-data);
+}
+
+.lit-analysis-toolbar select option { background: var(--lit-panel); color: var(--lit-ink); }
+
+.lit-analysis-toolbar button:hover,
+.lit-study-menu summary:hover,
+.lit-analysis-toolbar select:hover { color: var(--lit-ink); }
+
+/* Volume, Fills, Log: an 8px square before the word, outlined when off and
+ * solid blue when on (status by fill). */
+.lit-analysis-toolbar > button[aria-pressed] {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+}
+
+.lit-analysis-toolbar > button[aria-pressed]::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 1.5px solid currentColor;
+}
+
+.lit-analysis-toolbar > button[aria-pressed="true"] { color: var(--lit-positive); }
+.lit-analysis-toolbar > button[aria-pressed="true"]::before { border: 0; background: currentColor; }
+
+.lit-study-active {
+  overflow: hidden;
+  color: var(--lit-ink-secondary);
+  letter-spacing: var(--lit-tr-data);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .lit-study-menu { position: relative; }
-.lit-study-menu summary { list-style-position: inside; white-space: nowrap; }
-.lit-study-popover { position: absolute; top: 34px; left: 0; width: min(290px, calc(100vw - 140px)); max-height: min(420px, calc(100vh - 160px)); overflow-y: auto; padding: 6px; border: 1px solid var(--lit-line); background: var(--lit-panel-raised); }
+
+.lit-study-menu summary {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  list-style: none;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.lit-study-menu summary::-webkit-details-marker { display: none; }
+.lit-study-menu[open] summary { color: var(--lit-positive); }
+
+.lit-study-popover {
+  position: absolute;
+  z-index: 9;
+  top: 30px;
+  left: 0;
+  width: min(300px, calc(100vw - 140px));
+  max-height: min(420px, calc(100vh - 160px));
+  overflow-y: auto;
+  border: 1px solid var(--lit-line-strong);
+  background: var(--lit-panel);
+  padding: 4px 0;
+  color: var(--lit-ink);
+  white-space: normal;
+}
+
 .lit-study-row { display: flex; align-items: flex-start; }
-.lit-study-row:hover { background: var(--lit-panel); }
-.lit-study-popover label { flex: 1; display: flex; align-items: flex-start; gap: 8px; padding: 8px; cursor: pointer; color: var(--lit-ink); }
-.lit-study-popover .lit-study-period { width: 52px; margin: 6px 8px 0 0; padding: 3px 4px; border: 1px solid var(--lit-line); color: var(--lit-ink); background: var(--lit-panel); font: inherit; font-size: 11px; }
-.lit-study-popover input { accent-color: var(--lit-positive); margin-top: 3px; }
-.lit-study-popover small { display: block; margin-top: 3px; color: var(--lit-ink-secondary); font-size: 11px; line-height: 1.4; }
-.lit-study-popover p { padding: 4px 8px; color: var(--lit-ink-secondary); font-size: 11px; line-height: 1.5; }
-.lit-drawing-rail { position: absolute; left: 0; top: 38px; bottom: 0; z-index: 4; width: 38px; display: flex; flex-direction: column; gap: 2px; align-items: center; padding-top: 6px; border-right: 1px solid var(--lit-line); background: var(--lit-panel); overflow-y: auto; }
-.lit-drawing-rail button { flex-shrink: 0; display: grid; place-items: center; width: 30px; height: 30px; border: 0; color: var(--lit-ink-secondary); background: transparent; }
-.lit-drawing-rail button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.lit-drawing-rail button:hover:not(:disabled), .lit-drawing-rail button[aria-pressed="true"] { color: var(--lit-ink); background: var(--lit-panel-raised); }
-.lit-drawing-rail button:disabled { opacity: .35; cursor: default; }
-.lit-drawing-divider { flex-shrink: 0; width: 18px; height: 1px; margin: 4px 0; background: var(--lit-line); }
-.lit-drawing-layer { position: absolute; top: 38px; left: 38px; width: calc(100% - 38px); height: calc(100% - 38px); z-index: 3; overflow: hidden; cursor: crosshair; }
-.lit-drawing-shape { stroke: var(--lit-drawing-stroke, var(--lit-positive)); stroke-width: 1.5; fill: color-mix(in srgb, var(--lit-drawing-stroke, var(--lit-positive)) 7%, transparent); cursor: pointer; }
+.lit-study-row + .lit-study-row { border-top: 1px solid var(--lit-line-quiet); }
+.lit-study-row:hover { background: var(--lit-hover); }
+
+.lit-study-popover label {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 12px;
+  color: var(--lit-ink);
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
+}
+
+.lit-study-popover .lit-study-period {
+  width: 52px;
+  height: 24px;
+  margin: 6px 12px 0 0;
+  border: 1px solid var(--lit-line);
+  background: var(--lit-field);
+  padding: 0 6px;
+  color: var(--lit-ink);
+  font: inherit;
+  font-size: 11px;
+}
+
+.lit-study-popover input[type="checkbox"] { margin-top: 1px; }
+
+.lit-study-popover small {
+  display: block;
+  margin-top: 4px;
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: normal;
+  line-height: 1.4;
+  text-transform: none;
+}
+
+.lit-study-popover p {
+  margin: 4px 0 0;
+  border-top: 1px solid var(--lit-line-quiet);
+  padding: 8px 12px 6px;
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: normal;
+  line-height: 1.5;
+}
+
+/* Drawing tools: a 36px rail on the canvas's left edge. */
+.lit-drawing-rail {
+  position: absolute;
+  z-index: 4;
+  top: var(--lit-chart-toolbar, 36px);
+  bottom: 0;
+  left: 0;
+  display: flex;
+  width: var(--lit-chart-rail, 36px);
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  overflow-y: auto;
+  border-right: 1px solid var(--lit-line-quiet);
+  background: var(--lit-panel);
+  padding-top: 6px;
+  scrollbar-width: none;
+}
+
+.lit-drawing-rail button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--lit-ink-secondary);
+}
+
+.lit-drawing-rail button svg { width: 16px; height: 16px; }
+.lit-drawing-rail button:hover:not(:disabled) { background: var(--lit-panel-raised); color: var(--lit-ink); }
+.lit-drawing-rail button[aria-pressed="true"] { color: var(--lit-positive); }
+.lit-drawing-rail button:disabled { color: var(--lit-ink-muted); cursor: default; opacity: 0.5; }
+
+.lit-drawing-divider {
+  width: 18px;
+  height: 1px;
+  flex-shrink: 0;
+  margin: 5px 0;
+  background: var(--lit-line);
+}
+
+.lit-drawing-layer {
+  position: absolute;
+  z-index: 3;
+  top: var(--lit-chart-toolbar, 36px);
+  left: var(--lit-chart-rail, 36px);
+  width: calc(100% - var(--lit-chart-rail, 36px));
+  height: calc(100% - var(--lit-chart-toolbar, 36px));
+  overflow: hidden;
+  cursor: crosshair;
+}
+
+/* Drawings are the blue at a 7% wash; the selected one turns to the ink. */
+.lit-drawing-shape {
+  stroke: var(--lit-positive);
+  stroke-width: 1.5;
+  fill: color-mix(in srgb, var(--lit-positive) 7%, transparent);
+  cursor: pointer;
+}
+
 .lit-drawing-shape[data-selected="true"] { stroke: var(--lit-ink); stroke-width: 2; }
-.lit-drawing-shape text { fill: var(--lit-ink); stroke: var(--lit-panel); stroke-width: 3; paint-order: stroke; font-size: 11px; font-family: var(--font-mono); pointer-events: none; }
+
+.lit-drawing-shape text {
+  fill: var(--lit-ink);
+  stroke: var(--lit-panel);
+  stroke-width: 3;
+  paint-order: stroke;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  pointer-events: none;
+}
+
 .lit-drawing-shape .lit-drawing-hit { stroke: transparent; stroke-width: 12; fill: none; }
 .lit-drawing-shape circle { fill: var(--lit-panel); }
 .lit-drawing-shape:focus-visible { outline: none; stroke: var(--lit-ink); stroke-width: 3; }
-/* Drag-to-order: the grab pill rides the last price; the ghost line follows the pointer. */
-.lit-order-layer { position: absolute; top: 38px; left: 38px; width: calc(100% - 38px); height: calc(100% - 38px); z-index: 4; overflow: hidden; pointer-events: none; }
-.lit-order-handle { position: absolute; display: grid; place-items: center; width: 28px; height: 20px; margin-top: -10px; border: 1px solid var(--lit-line); padding: 0; color: var(--lit-ink-secondary); background: var(--lit-panel-raised); cursor: ns-resize; pointer-events: auto; touch-action: none; opacity: .55; transition: opacity .12s; }
-.lit-order-handle svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.lit-order-handle:hover, .lit-order-layer[data-dragging] .lit-order-handle, .lit-order-handle:focus-visible { opacity: 1; color: var(--lit-ink); }
+
+/* Drag-to-order: the grab key rides the last price; the ghost line follows
+ * the pointer, blue for a buy and ink for a sell. */
+.lit-order-layer {
+  position: absolute;
+  z-index: 4;
+  top: var(--lit-chart-toolbar, 36px);
+  left: var(--lit-chart-rail, 36px);
+  width: calc(100% - var(--lit-chart-rail, 36px));
+  height: calc(100% - var(--lit-chart-toolbar, 36px));
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.lit-order-handle {
+  position: absolute;
+  display: grid;
+  width: 28px;
+  height: 20px;
+  margin-top: -10px;
+  place-items: center;
+  border: 1px solid var(--lit-line);
+  background: var(--lit-panel);
+  padding: 0;
+  color: var(--lit-ink-secondary);
+  cursor: ns-resize;
+  opacity: 0.7;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.lit-order-handle svg { width: 16px; height: 16px; }
+
+.lit-order-handle:hover,
+.lit-order-layer[data-dragging] .lit-order-handle,
+.lit-order-handle:focus-visible {
+  border-color: var(--lit-positive);
+  color: var(--lit-positive);
+  opacity: 1;
+}
+
 .lit-order-handle:focus-visible { outline: 2px solid var(--lit-focus); outline-offset: 2px; }
-.lit-order-ghost { position: absolute; left: 0; height: 0; border-top: 1px dashed var(--lit-positive); }
+
+.lit-order-ghost {
+  position: absolute;
+  left: 0;
+  height: 0;
+  border-top: 1px dashed var(--lit-positive);
+}
+
 .lit-order-ghost[data-side="sell"] { border-top-color: var(--lit-negative); }
-.lit-order-ghost span { position: absolute; right: 36px; top: -9px; padding: 1px 6px; color: var(--lit-panel); background: var(--lit-positive); font-family: var(--font-mono); font-size: 11px; line-height: 16px; white-space: nowrap; }
-.lit-order-ghost[data-side="sell"] span { background: var(--lit-negative); }
-.lit-chart-body .lit-chart-tools { top: auto; bottom: 34px; left: 48px; display: flex; gap: 2px; padding: 2px; background: var(--lit-panel); }
-.lit-chart-body .lit-chart-tools button { width: 26px; height: 26px; }
-.lit-chart-body .lit-chart-tools button::after { top: auto; bottom: calc(100% + 7px); left: 0; transform: none; }
-.lit-drawing-editor, .lit-drawing-hint { position: absolute; z-index: 6; left: 48px; bottom: 68px; max-width: calc(100% - 130px); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 7px; border: 1px solid var(--lit-line); background: var(--lit-panel-raised); color: var(--lit-ink); font-size: 11px; }
+
+.lit-order-ghost span {
+  position: absolute;
+  top: -9px;
+  right: 36px;
+  background: var(--lit-positive);
+  padding: 1px 6px;
+  color: var(--vex-alias-label-on-accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.lit-order-ghost[data-side="sell"] span {
+  background: var(--lit-ink-fill);
+  color: var(--lit-ink-fill-ink);
+}
+
+.lit-drawing-editor,
+.lit-drawing-hint {
+  position: absolute;
+  z-index: 6;
+  bottom: 68px;
+  left: calc(var(--lit-chart-rail, 36px) + 10px);
+  display: flex;
+  max-width: calc(100% - 130px);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--lit-line-strong);
+  background: var(--lit-panel);
+  padding: 8px;
+  color: var(--lit-ink);
+  font-size: 11px;
+}
+
 .lit-drawing-editor > span { width: 100%; color: var(--lit-ink-secondary); }
-.lit-drawing-editor label { display: flex; align-items: center; gap: 5px; }
-.lit-drawing-editor input { width: 84px; min-width: 0; border: 1px solid var(--lit-line); padding: 3px; color: var(--lit-ink); background: var(--lit-panel); font: inherit; }
-.lit-drawing-editor button, .lit-drawing-hint button { border: 1px solid var(--lit-line); padding: 4px 6px; color: var(--lit-ink); background: var(--lit-panel); font: inherit; }
-.lit-drawing-save-warning { position: absolute; left: 48px; bottom: 98px; z-index: 6; background: var(--lit-panel); color: var(--lit-negative); font-size: 12px; }
+.lit-drawing-editor label { display: flex; align-items: center; gap: 6px; }
+
+.lit-drawing-editor input {
+  width: 84px;
+  min-width: 0;
+  height: 24px;
+  border: 1px solid var(--lit-line);
+  background: var(--lit-field);
+  padding: 0 6px;
+  color: var(--lit-ink);
+  font: inherit;
+}
+
+.lit-drawing-editor button,
+.lit-drawing-hint button,
+.lit-chart-tool-notice button {
+  height: 24px;
+  border: 0;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
+  background: transparent;
+  padding: 0 8px;
+  color: var(--lit-ink);
+  font: inherit;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
+}
+
+.lit-drawing-editor button:hover,
+.lit-drawing-hint button:hover,
+.lit-chart-tool-notice button:hover { background: var(--lit-hover); }
+
+.lit-drawing-save-warning {
+  position: absolute;
+  z-index: 6;
+  bottom: 98px;
+  left: calc(var(--lit-chart-rail, 36px) + 10px);
+  background: var(--lit-panel);
+  color: var(--lit-ink);
+  font-size: 11px;
+}
+
 /* One focus ring on the desk: the shell's token, at the shell's offset. */
-.lit-analysis-toolbar :focus-visible, .lit-drawing-rail :focus-visible, .lit-drawing-editor :focus-visible, .lit-drawing-hint :focus-visible { outline: 2px solid var(--lit-focus); outline-offset: 3px; }
+.lit-analysis-toolbar :focus-visible,
+.lit-drawing-rail :focus-visible,
+.lit-drawing-editor :focus-visible,
+.lit-drawing-hint :focus-visible { outline: 2px solid var(--lit-focus); outline-offset: 3px; }
+
+.lit-analysis-toolbar .lit-chart-export {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  place-items: center;
+}
+
+.lit-analysis-toolbar .lit-chart-export svg { width: 16px; height: 16px; }
+.lit-analysis-toolbar .lit-chart-export:hover:not(:disabled) { background: var(--lit-panel-raised); }
+.lit-analysis-toolbar .lit-chart-export:disabled { color: var(--lit-ink-muted); cursor: default; }
+
+/* Desk controls share the row: the intervals lead, then type and studies. */
+.lit-analysis-toolbar > .lit-resolution-tabs { flex: 0 1 auto; }
+.lit-analysis-toolbar > .lit-chart-heading-end { gap: 8px; }
+
+.lit-chart-tool-notice {
+  position: absolute;
+  z-index: 9;
+  top: calc(var(--lit-chart-toolbar, 36px) + 6px);
+  right: 8px;
+  max-width: calc(100% - 60px);
+  border: 1px solid var(--lit-line-strong);
+  background: var(--lit-panel);
+  padding: 8px;
+  color: var(--lit-ink);
+  font-size: 11px;
+}
+
+.lit-chart-tool-notice button { margin-left: 8px; }
+
 /* The chart panel is the query container (lighter-desk.css): the toolbar
  * sheds by the column's width, since the window is wide while the column is
  * at its floor. The study readout goes first; then the two intervals a desk
  * trader reaches for least (30m, 12h), unless one is the selected interval. */
-@container (max-width: 640px) { .lit-study-active { display: none; } .lit-drawing-editor { max-width: calc(100% - 60px); } }
-@container (max-width: 600px) {
-  .lit-resolution-tabs button { min-width: 30px; }
+@container (max-width: 640px) {
+  .lit-study-active { display: none; }
+  .lit-drawing-editor { max-width: calc(100% - 60px); }
+}
+
+@container (max-width: 700px) {
   .lit-resolution-tabs button:nth-child(4):not([aria-pressed="true"]),
   .lit-resolution-tabs button:nth-child(7):not([aria-pressed="true"]) { display: none; }
 }
+
+@container (max-width: 600px) {
+  .lit-resolution-tabs button { min-width: 26px; padding-inline: 4px; }
+}
+
 /* Below that the strip stopped shrinking at nothing: it keeps room for three
  * intervals and scrolls (the selected one is kept in view), and the Volume
  * and Log toggles go instead of the chart type and the studies. */
 @container (max-width: 480px) {
-  .lit-analysis-toolbar > .lit-resolution-tabs { flex-shrink: 0; min-width: 104px; }
+  .lit-analysis-toolbar > .lit-resolution-tabs { flex: 0 1 auto; min-width: 104px; }
   .lit-analysis-toolbar > button[aria-pressed] { display: none; }
 }
-
-.lit-analysis-toolbar .lit-chart-export { margin-left: auto; display: grid; place-items: center; }
-/* Desk controls share the row: intervals lead, a divider, then the studies. */
-.lit-analysis-toolbar > .lit-resolution-tabs { flex: 0 1 auto; margin-right: 6px; padding-right: 8px; border-right: 1px solid var(--lit-line); }
-.lit-analysis-toolbar > .lit-chart-heading-end { gap: 8px; }
-.lit-chart-tool-notice { position: absolute; z-index: 9; top: 44px; right: 8px; max-width: calc(100% - 60px); padding: 8px; border: 1px solid var(--lit-line); background: var(--lit-panel-raised); color: var(--lit-ink); font-size: 12px; }
-.lit-chart-tool-notice button { margin-left: 8px; padding: 3px 6px; color: inherit; background: var(--lit-panel); border: 1px solid var(--lit-line); font: inherit; }

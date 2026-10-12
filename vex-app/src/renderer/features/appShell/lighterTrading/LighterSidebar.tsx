@@ -124,7 +124,8 @@ export function LighterSidebar({
     >
       {/* Lighter's running head: the window drag region, clear of the
         * macOS traffic lights and the Windows and Linux caption buttons
-        * (docs/design/V10-SPREAD.md section 8). */}
+        * (docs/design/V10-SPREAD.md section 8). Still full width: it moves
+        * into the title bar row beside the spine in a later step. */}
       <header className="lit-desk-topbar-header vex-drag vex-lights-start vex-overlay-end">
         {zenMode && !zenControlsOpen ? (
           <button
@@ -135,7 +136,7 @@ export function LighterSidebar({
             title="Show Zen controls"
             onClick={onToggleZenControls}
           >
-            <IconChevronDown size={14} />
+            <IconChevronDown size={16} />
           </button>
         ) : (
           <>
@@ -144,12 +145,10 @@ export function LighterSidebar({
               onClick={() => setRuntimeMode(returnMode)}
               className="lit-topbar-button"
             >
-              <IconChevronLeft size={15} />
+              <IconChevronLeft size={16} />
               <span className="lit-topbar-button-label">{returnMode === "studio" ? "Studio" : "Agent"}</span>
             </button>
-            <span className="lit-topbar-divider" aria-hidden="true" />
             <span className="lit-topbar-brand">
-              <img src="./protocols/lighter.svg" alt="" width="20" height="20" />
               <b>Lighter</b>
             </span>
             {zenMode && activeMarket !== null ? (
@@ -172,7 +171,7 @@ export function LighterSidebar({
               onClick={() => openCreateSession()}
               className="lit-topbar-primary lit-topbar-distraction"
             >
-              <IconPlus size={15} />
+              <IconPlus size={16} />
               <span className="lit-topbar-button-label">New session</span>
             </button>
             <div className="lit-topbar-center">
@@ -184,7 +183,7 @@ export function LighterSidebar({
                 title={zenMode ? "Exit Zen Mode · Esc" : "Open a distraction-free chart"}
                 onClick={onToggleZen}
               >
-                <IconFullscreen size={15} />
+                <IconFullscreen size={16} />
                 <span>{zenMode ? "Exit Zen" : "Zen Mode"}</span>
               </button>
               {zenMode ? (
@@ -196,7 +195,7 @@ export function LighterSidebar({
                   title="Hide Zen controls · Esc"
                   onClick={onToggleZenControls}
                 >
-                  <IconChevronUp size={14} />
+                  <IconChevronUp size={16} />
                 </button>
               ) : null}
             </div>
@@ -210,7 +209,7 @@ export function LighterSidebar({
                 title={zenAssistantOpen ? "Close Vex · Esc" : "Ask Vex about this chart · ⌘K"}
                 onClick={onToggleZenAssistant}
               >
-                <VexMark size={14} />
+                <VexMark size={16} />
                 <span>{zenAssistantOpen ? "Close Vex" : "Ask Vex"}</span>
               </button>
             ) : null}
@@ -289,7 +288,7 @@ export function LighterSidebar({
 }
 
 function RailHeading({ children }: { readonly children: string }): JSX.Element {
-  return <h2 className="vex-micro-label px-2 uppercase text-[var(--vex-text-3)]">{children}</h2>;
+  return <h2 className="px-2 font-mono text-[10px] uppercase tracking-eyebrow text-ink-primary">{children}</h2>;
 }
 
 /** Starred markets for the current environment; a row swaps the desk's market. */
@@ -310,7 +309,7 @@ function Watchlist({ environment, onSelect }: {
     <section aria-label="Watchlist" className="flex flex-col gap-1">
       <RailHeading>Watchlist</RailHeading>
       {rows.length === 0 ? (
-        <p className="px-2 text-[12px] leading-[18px] text-[var(--vex-text-3)]">
+        <p className="px-2 text-[13px] leading-[19px] text-ink-secondary">
           Star markets in the market picker to keep them here.
         </p>
       ) : (
@@ -328,17 +327,17 @@ function Watchlist({ environment, onSelect }: {
                     onSelect();
                   }}
                   className={cn(
-                    "flex h-8 w-full items-center justify-between gap-2 rounded-[6px] px-2 text-[12.5px] transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
-                    active ? "bg-interactive-hover text-foreground" : "text-[var(--vex-text-2)]",
+                    "flex h-8 w-full items-center justify-between gap-2 px-2 font-mono text-[12px] hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
+                    active ? "bg-interactive-hover text-accent-primary" : "text-ink-primary",
                   )}
                 >
-                  <span className="truncate font-medium">{classifyLighterMarket(environment, market).ticker}</span>
-                  <span className="flex shrink-0 items-center gap-2 text-[11.5px] tabular-nums">
+                  <span className="truncate">{classifyLighterMarket(environment, market).ticker}</span>
+                  <span className="flex shrink-0 items-center gap-2 text-[11px] tabular-nums">
                     <span>{formatPrice(market.statistics?.lastTradePrice ?? null, market.decimals.price)}</span>
                     <span
                       className={cn(
                         "min-w-[52px] text-right",
-                        change === null ? "" : change >= 0 ? "text-success" : "text-danger",
+                        change === null ? "text-ink-secondary" : change >= 0 ? "text-accent-primary" : "text-ink-primary",
                       )}
                     >
                       {change === null ? NO_VALUE : `${change >= 0 ? "+" : ""}${formatNumber(change)}%`}
