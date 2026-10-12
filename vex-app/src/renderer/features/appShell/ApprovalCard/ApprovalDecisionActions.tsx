@@ -19,6 +19,7 @@
 import type { JSX, RefObject } from "react";
 import { APPROVAL_REJECT_REASON_MAX } from "@shared/schemas/approvals.js";
 import { DIALOG_INITIAL_FOCUS } from "../../../components/ui/dialog.js";
+import { Swatch } from "../../../components/ui/swatch.js";
 
 export interface ApprovalDecisionActionsProps {
   readonly isHighRisk: boolean;
@@ -69,18 +70,17 @@ export interface ApprovalDecisionActionsProps {
   readonly rejectReasonInput?: boolean;
 }
 
-// Shared key shape — the landing's mono-uppercase pill. Tone classes below
-// pick the quiet ghost (Reject) vs the FILLED amber primary (Approve — the
-// landing .ws-alert review key: solid --vex-pin with ink text). The ARMED
-// (confirm) state swaps the border to the danger mix on that button only —
-// the second click is the irreversible one.
+// Shared key shape (reference d4): a square 40px key in 12px Departure Mono
+// caps. Reject is the INK key (the refusing choice), Approve the one blue
+// fill. Focus is the 2px focus outline, 3px out (section 7). The ARMED
+// (confirm) state draws a 2px ink ring around that key only - the second
+// click is the irreversible one, and ink is how this page says "weight".
 const KEY_BASE =
-  "rounded-full border px-3.5 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:opacity-50";
-const ARMED_BORDER =
-  "border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)]";
+  "inline-flex h-10 shrink-0 items-center justify-center border px-[18px] font-mono text-[12px] uppercase leading-none tracking-chip transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus disabled:cursor-not-allowed";
+const ARMED_RING = "ring-2 ring-rule-ink ring-offset-2 ring-offset-surface-base";
 
 const REASON_INPUT =
-  "min-w-0 flex-1 rounded-full border border-[var(--vex-line)] bg-transparent px-3 py-1.5 text-[12px] text-foreground placeholder:text-[var(--vex-text-3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:opacity-50";
+  "h-10 min-w-0 flex-1 border border-rule bg-surface-field px-3 text-[14px] text-ink-primary caret-accent-primary placeholder:text-ink-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:text-ink-tertiary";
 
 export function ApprovalDecisionActions({
   isHighRisk,
@@ -119,7 +119,7 @@ export function ApprovalDecisionActions({
     ? "Approved"
     : approveArmed ? "Confirm approve" : approveLabel;
   return (
-    <footer className={`flex items-center justify-end gap-2 border-t border-[var(--vex-line)] px-4 py-3${wrapReasonOnNarrow ? " @max-[640px]:flex-wrap" : ""}`}>
+    <footer className={`flex items-center justify-end gap-2 border-t border-rule bg-surface-base px-3.5 py-3${wrapReasonOnNarrow ? " @max-[640px]:flex-wrap" : ""}`}>
       {rejectReasonInput ? (
         <input
           type="text"
@@ -149,8 +149,8 @@ export function ApprovalDecisionActions({
         {...DIALOG_INITIAL_FOCUS}
         aria-busy={rejectPending}
         aria-label={rejectAria}
-        className={`${KEY_BASE} text-[var(--vex-text-2)] hover:bg-interactive-hover hover:text-foreground ${
-          rejectArmed ? ARMED_BORDER : "border-[var(--vex-line-strong)]"
+        className={`${KEY_BASE} border-rule-ink text-ink-primary enabled:hover:bg-rule-ink enabled:hover:text-ink-on-primary disabled:border-dotted disabled:text-ink-tertiary${
+          rejectArmed ? ` ${ARMED_RING}` : ""
         }`}
       >
         {rejectText}
@@ -158,13 +158,13 @@ export function ApprovalDecisionActions({
       {/* THE WORKING KEY. A desk order signs, submits and then waits on the
           sequencer - fifteen-odd seconds in an app that is otherwise instant.
           While its own dispatch runs this button is the only live thing on
-          screen, so it keeps full opacity and wears the house's travelling
-          lane (`global-css/pending-ring.css`) while the dimmed Reject beside
-          it goes inert: the action you took stays alive, the one you did not
-          recedes. `--vex-ring-ink` hands the lane this key's own ink, so an
-          amber band can never sit invisibly on an amber fill. `aria-busy` and
-          the swapped label carry the same fact without the motion, which is
-          what a screen reader and a reduced-motion viewer each get. */}
+          screen, so it keeps its full blue fill and leads its label with the
+          ONGOING SWATCH in its own ink (status by fill, the page's one state
+          motion), while the Reject beside it goes inert in a dotted outline:
+          the action you took stays alive, the one you did not recedes.
+          `aria-busy` and the swapped label carry the same fact without the
+          motion, which is what a screen reader and a reduced-motion viewer
+          each get. */}
       <button
         type="button"
         onClick={onApprove}
@@ -175,13 +175,18 @@ export function ApprovalDecisionActions({
             ? `${pendingApproveLabel}, please wait`
             : approveIdleAria
         }
-        className={`${KEY_BASE} bg-[var(--vex-pin)] font-medium text-[var(--vex-surface-0)] hover:bg-[var(--vex-pin-hover)] ${
+        data-vex-approve-working={approvePending ? "" : undefined}
+        className={`${KEY_BASE} gap-2 border-transparent bg-button-accent text-ink-on-button-accent enabled:hover:bg-button-accent-hover${
           approvePending
-            ? "vex-ring-working [--vex-ring-ink:var(--vex-surface-0)] border-transparent disabled:opacity-100"
-            : approveArmed ? ARMED_BORDER : "border-transparent"
-        }`}
+            ? ""
+            : " disabled:border-dotted disabled:border-accent-primary disabled:bg-transparent disabled:text-accent-primary"
+        }${approveArmed ? ` ${ARMED_RING}` : ""}`}
       >
-        {approvePending ? <span aria-hidden className="vex-ring-runner" /> : null}
+        {approvePending ? (
+          <span aria-hidden className="inline-flex shrink-0">
+            <Swatch state="ongoing" size={9} />
+          </span>
+        ) : null}
         {/* ONE WIDTH, TWO LABELS. Both sit in the same grid cell, so the key
             is always sized to the longer of them and the swap crossfades in
             place instead of snapping the footer narrower under the pointer

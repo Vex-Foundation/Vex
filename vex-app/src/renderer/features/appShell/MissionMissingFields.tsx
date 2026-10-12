@@ -38,7 +38,7 @@ export function MissionMissingFields({
       {fields.map((field) => (
         <li
           key={field}
-          className="rounded-full border border-[var(--vex-line-strong)] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em]"
+          className="inline-flex h-[22px] items-center px-2 font-mono text-[11px] uppercase tracking-chip text-ink-secondary outline outline-1 -outline-offset-1 outline-rule"
         >
           {missionDraftFieldLabel(field)}
         </li>

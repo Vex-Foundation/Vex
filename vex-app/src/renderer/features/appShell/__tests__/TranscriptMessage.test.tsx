@@ -265,7 +265,7 @@ describe("TranscriptMessage assistant_stopped (9-5b)", () => {
 });
 
 describe("TranscriptMessage agent activity avatar", () => {
-  it("draws a theme-accent spinner around the active agent avatar", () => {
+  it("draws the ongoing swatch under the active agent's mark, never a spinning ring", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: row({ variant: "assistant", content: "Preparing the transfer." }),
@@ -277,10 +277,12 @@ describe("TranscriptMessage agent activity avatar", () => {
     );
     const spinner = container.querySelector("[data-vex-agent-spinner]");
     expect(avatar).not.toBeNull();
-    expect(spinner?.className).toContain("border-[var(--vex-accent)]");
-    expect(spinner?.className).toContain("animate-spin");
-    expect(spinner?.className).toContain("[animation-duration:1200ms]");
-    expect(spinner?.className).toContain("motion-reduce:animate-none");
+    // Status by fill (docs/design/V10-SPREAD.md section 1): the dot screen
+    // steps, the swatch's own sheet stills it under reduced motion, and no
+    // arc spins.
+    expect(spinner?.querySelector('.vex-swatch[data-s="ongoing"]')).not.toBeNull();
+    expect(spinner?.className).toContain("text-accent-primary");
+    expect(spinner?.className).not.toMatch(/animate-spin|rounded-full/);
   });
 
   it("keeps settled agent avatars still", () => {
@@ -481,7 +483,7 @@ describe("TranscriptMessage assistant identity", () => {
     expect(label?.textContent).toBe("Vex");
   });
 
-  it("spins the working ring only for the active turn's mark", () => {
+  it("draws the working swatch only for the active turn's mark", () => {
     for (const working of [true, false] as const) {
       const { container } = render(
         createElement(TranscriptMessage, {
@@ -495,10 +497,10 @@ describe("TranscriptMessage assistant identity", () => {
       );
       const spinner = container.querySelector("[data-vex-agent-spinner]");
       expect(spinner === null).toBe(!working);
-      // Reduced motion stills it: the ring is decoration, never the only
-      // signal that a turn is live.
+      // The swatch is decoration, never the only signal that a turn is live:
+      // the island and the running head say it in words.
       if (working) {
-        expect(spinner?.className).toContain("motion-reduce:animate-none");
+        expect(spinner?.getAttribute("aria-hidden")).toBe("true");
       }
     }
   });

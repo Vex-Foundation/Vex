@@ -168,7 +168,7 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     expect(cluster.className).toContain("min-w-0");
   });
 
-  it("labels own the ellipsis and fixed glyphs never shrink", () => {
+  it("labels own the ellipsis, on the mono chip the field draws", () => {
     models = [
       { modelId: "anthropic/claude-opus-4-1-20250805-extended", reasoning: null },
     ];
@@ -178,18 +178,22 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     ) as HTMLElement;
     expect(label.className).toContain("truncate");
     expect(label.className).toContain("min-w-0");
-    // The brand glyph is identity, not text: it is fixed.
-    const glyphBox = container.querySelector(
-      '[data-testid="model-brand-icon"]',
-    )?.parentElement as HTMLElement;
-    expect(glyphBox.className).toContain("shrink-0");
+    // V10 (reference d3): the chip is the model's name in Departure Mono on
+    // the rule outline - no brand glyph beside it, so the label is the only
+    // thing that concedes.
+    const chip = container.querySelector(
+      '[data-vex-area="composer-model-chip"]',
+    ) as HTMLElement;
+    expect(chip.className).toContain("vex-composer-chip");
+    expect(chip.className).toContain("font-mono");
+    expect(container.querySelector('[data-testid="model-brand-icon"]')).toBeNull();
   });
 
   it("the chip shows the bare model name; the full routed id stays the accessible name", () => {
-    // Display-only trim (owner QA round 3 follow-up): the brand glyph already
-    // names the provider, so `deepseek/deepseek-v4-pro` reads as
-    // `deepseek-v4-pro` on the chip. The FULL id must survive everywhere the
-    // identity matters: here, the aria-label.
+    // Display-only trim (owner QA round 3 follow-up): `deepseek/deepseek-v4-pro`
+    // reads as `deepseek-v4-pro` on the chip, the way the field draws it. The
+    // FULL id must survive everywhere the identity matters: here, the
+    // aria-label.
     models = [{ modelId: "deepseek/deepseek-v4-pro", reasoning: null }];
     const { container } = mountDocked();
     const label = container.querySelector(
@@ -302,7 +306,7 @@ describe("composer toolbar - the access-mode seat", () => {
 });
 
 describe("composer toolbar - the context meter panel", () => {
-  it("the trigger is a 28px button naming its percentage; no fabricated denominator", () => {
+  it("the trigger is a 28px button naming its percentage over the cell meter; no fabricated denominator", () => {
     contextWindow = { tokensUsed: 45_000, contextLimit: null };
     const { container, unmount } = mountDocked();
     expect(
@@ -319,7 +323,14 @@ describe("composer toolbar - the context meter panel", () => {
     expect(trigger.getAttribute("aria-label")).toBe("Context 45% used");
     expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
     expect(trigger.className).toContain("h-7");
-    expect(trigger.className).toContain("w-7");
+    // The drawing is the shared CellMeter (eight cells, 45% => four filled),
+    // decoration to the button's own name.
+    const meter = trigger.querySelector(".vex-cell-meter");
+    expect(meter).not.toBeNull();
+    expect(meter?.getAttribute("aria-hidden")).toBe("true");
+    expect(meter?.querySelectorAll("i")).toHaveLength(8);
+    expect(meter?.querySelectorAll("i[data-on]")).toHaveLength(4);
+    expect(trigger.querySelector("svg")).toBeNull();
   });
 
   it("click opens a dialog with the occupancy sentence, the tokens and a TOTAL-ONLY bar", () => {
@@ -339,9 +350,12 @@ describe("composer toolbar - the context meter panel", () => {
     expect(panel.textContent).toContain("45.0k of 100.0k tokens");
     expect(panel.textContent).toContain("Auto-compact at ~80%");
     expect(panel.textContent).toContain("lags the live turn by one");
-    // The DTO carries no category split, so exactly one bar segment exists and
-    // no legend is invented.
+    // The DTO carries no category split, so exactly one bar exists (the
+    // same cell meter at twenty cells) and no legend is invented.
     expect(panel.querySelectorAll("[data-vex-context-bar]").length).toBe(1);
+    expect(
+      panel.querySelector("[data-vex-context-bar]")?.querySelectorAll("i[data-on]"),
+    ).toHaveLength(9);
     expect(panel.textContent).not.toContain("Messages");
     expect(panel.textContent).not.toContain("Tools");
   });
@@ -392,11 +406,11 @@ describe("composer - starter chips follow the STAGE", () => {
         variant="hero"
       />,
     );
-    expect(container.querySelector(".h-\\[60px\\]")).not.toBeNull();
+    expect(container.querySelector(".h-\\[86px\\]")).not.toBeNull();
   });
 
-  it("the docked stage carries NO slot - no 60px remnant under the card", () => {
+  it("the docked stage carries NO slot - no 86px remnant under the card", () => {
     const { container } = mountDocked();
-    expect(container.querySelector(".h-\\[60px\\]")).toBeNull();
+    expect(container.querySelector(".h-\\[86px\\]")).toBeNull();
   });
 });

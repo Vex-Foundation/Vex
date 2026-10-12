@@ -28,19 +28,21 @@ export function ProvenanceMarker({
       className="flex flex-col gap-1.5"
     >
       <div className="flex items-center gap-3">
-        <span aria-hidden className="h-px flex-1 bg-[var(--vex-line)]" />
-        <span className="flex min-w-0 items-center gap-1.5 text-[var(--vex-text-3)]">
-          <Glyph size={12} />
-          <span className="break-words font-mono text-[10px] uppercase tracking-[0.3em]">
+        <span aria-hidden className="h-px flex-1 bg-rule-quiet" />
+        <span className="flex min-w-0 items-center gap-2 text-ink-secondary">
+          <span className="inline-flex text-accent-primary">
+            <Glyph size={12} />
+          </span>
+          <span className="break-words font-mono text-[11px] uppercase tracking-status">
             {label}
           </span>
         </span>
-        <span aria-hidden className="h-px flex-1 bg-[var(--vex-line)]" />
+        <span aria-hidden className="h-px flex-1 bg-rule-quiet" />
       </div>
       {content.length > 0 ? (
         <span
           data-vex-marker-content=""
-          className="block whitespace-pre-wrap break-words rounded-[6px] border border-[var(--vex-line)] bg-[var(--vex-surface-down)] px-3 py-2 text-xs text-[var(--vex-text-2)]"
+          className="block whitespace-pre-wrap break-words bg-surface-3 px-3 py-2 text-[13px] leading-5 text-ink-secondary"
         >
           {content}
         </span>

@@ -1,12 +1,13 @@
 /**
- * Session composer - the floating capsule (catalog geometry: r22 card,
- * max-w 780, thin-in-dark border, shadow lv2, no focus ring). One component
- * serves the welcome hero and the docked session stage (`variant` names the
- * stage; the textarea DOM survives a hero->docked move because the parent
- * keeps the mount position stable). Owns wiring only: drafts (per-session
- * store), submit + queue (composer-submit), slash commands (commands/),
- * seats (SessionComposer/), and the starter chips. Chrome lives in
- * console.css.
+ * Session composer - the white field with chips (docs/design/V10-SPREAD.md
+ * section 1, reference d2 and d3): a square field on a 1px rule, the model and
+ * reasoning chips leading, the access mode, the context meter and the send key
+ * trailing, no focus ring. One component serves the welcome opening and the
+ * docked session stage (`variant` names the stage; the textarea DOM survives a
+ * hero->docked move because the parent keeps the mount position stable). Owns
+ * wiring only: drafts (per-session store), submit + queue (composer-submit),
+ * slash commands (commands/), seats (SessionComposer/), and the starter
+ * chips. Chrome lives in console.css.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -54,11 +55,12 @@ import {
   ComposerModelChip,
   ComposerPlanChip,
 } from "./SessionComposer/ComposerSeats.js";
-import { ComposerContextRing } from "./SessionComposer/ComposerContextRing.js";
+import { ComposerContextMeter } from "./SessionComposer/ComposerContextMeter.js";
 import { ComposerPermissionSeat } from "./SessionComposer/ComposerPermissionSeat.js";
 import { ComposerQueueDock } from "./SessionComposer/ComposerQueueDock.js";
 import { ComposerMissionStrip } from "./SessionComposer/ComposerMissionStrip.js";
 import { SessionExportDialog } from "./SessionExportDialog.js";
+import { Swatch } from "../../components/ui/swatch.js";
 import { EASE_STANDARD } from "../../lib/motion/index.js";
 
 /**
@@ -277,12 +279,19 @@ export function SessionComposer({
 
   return (
     <>
-      <div data-vex-composer-stage={stage} className="relative mt-6">
+      <div
+        data-vex-composer-stage={stage}
+        className={cn("relative", stage === "hero" ? "mt-[26px]" : "mt-0")}
+      >
+        {/* The field's status tag, square on the field's top rule: the target
+            swatch while a signature is pending (status by fill), the rule
+            outline while a stop is being acknowledged. */}
         {awaitingApproval ? (
           <span
             data-vex-console-status="approval"
-            className="vex-micro-label vex-micro-label--wide absolute -top-2.5 right-6 z-20 rounded-full border border-warning bg-surface-composer px-2 py-0.5 uppercase text-warning-label"
+            className="vex-micro-label absolute -top-[11px] right-4 z-20 inline-flex h-[22px] items-center gap-[7px] bg-surface-composer px-2 uppercase text-accent-primary outline outline-1 -outline-offset-1 outline-accent-primary"
           >
+            <Swatch state="warning" size={9} />
             AWAITING SIGNATURE
           </span>
         ) : stopping ? (
@@ -290,7 +299,7 @@ export function SessionComposer({
           // by the composer stop test (source casing stays).
           <span
             data-vex-console-status="stopping"
-            className="vex-micro-label vex-micro-label--wide absolute -top-2.5 right-6 z-20 rounded-full border border-line-3 bg-surface-composer px-2 py-0.5 uppercase text-ink-secondary"
+            className="vex-micro-label absolute -top-[11px] right-4 z-20 inline-flex h-[22px] items-center bg-surface-composer px-2 uppercase text-ink-secondary outline outline-1 -outline-offset-1 outline-rule"
           >
             Stopping…
           </span>
@@ -325,18 +334,18 @@ export function SessionComposer({
           />
         ) : null}
 
-        {/* Notice strip - above the card (reference geometry: r8, pad 4 8,
-         * 12/18, mb 6px), error tone on the danger wash. */}
+        {/* Notice line above the field: an error speaks in ink behind the ink
+         * cross (status by fill, never red); an info notice is the second
+         * ink alone. */}
         {notice !== null ? (
           <div
             role={notice.tone === "error" ? "alert" : "status"}
             className={cn(
-              "mx-auto mb-1.5 flex w-full max-w-[780px] items-center gap-2 rounded-lg px-2 py-1 text-[12px] leading-[18px]",
-              notice.tone === "error"
-                ? "bg-interactive-danger text-danger"
-                : "bg-interactive-hover text-ink-secondary",
+              "mb-2 flex w-full items-center gap-2 py-1 text-[13px] leading-5",
+              notice.tone === "error" ? "text-ink-primary" : "text-ink-secondary",
             )}
           >
+            {notice.tone === "error" ? <Swatch state="error" size={9} /> : null}
             <span>{notice.text}</span>
             {notice.retry !== undefined ? (
               <button
@@ -344,7 +353,7 @@ export function SessionComposer({
                 onClick={onRetry}
                 disabled={submitPending}
                 aria-label="Retry sending the message"
-                className="ml-2 inline-flex shrink-0 items-center rounded border border-current bg-transparent px-2 text-[12px] transition-colors duration-100 disabled:cursor-not-allowed disabled:opacity-40"
+                className="ml-2 inline-flex h-6 shrink-0 items-center px-2 font-mono text-[11px] uppercase tracking-chip text-accent-primary outline outline-1 -outline-offset-1 outline-rule transition-colors duration-100 hover:bg-interactive-hover disabled:cursor-not-allowed disabled:text-ink-tertiary"
               >
                 Retry
               </button>
@@ -358,7 +367,10 @@ export function SessionComposer({
           data-vex-area="chat-composer"
           data-vex-composer-state={awaitingApproval ? "approval" : "input"}
           data-vex-drop={dropActive ? "active" : undefined}
-          className="vex-composer-card mx-auto flex w-full max-w-[780px] flex-col gap-1 pt-2.5"
+          className={cn(
+            "vex-composer-card flex w-full flex-col gap-2",
+            stage === "hero" ? "pb-3 pt-4" : "pb-2.5 pt-3",
+          )}
           onDragOver={(event) => {
             if (!dragHasFiles(event)) return;
             event.preventDefault();
@@ -397,13 +409,14 @@ export function SessionComposer({
             activeDescendant={activeDescendant}
           />
 
-          {/* Toolbar row (catalog: space-between, gap 12, pad 2 8 6).
+          {/* Toolbar row (reference d3: chips leading, the access mode, the
+           * context meter and the send key trailing, 10px apart).
            *
            * `@container` (container-type: inline-size) makes THIS row the
            * query container for the permission seat's label collapse, so the
            * seat answers to the composer's own width rather than the viewport
-           * - the composer is capped at 780px inside a rail-driven grid, and a
-           * viewport media query would fire at the wrong moment.
+           * - the composer follows the page column, and a viewport media
+           * query would fire at the wrong moment.
            *
            * SHRINK CHAIN (codex Bug 3, cross-check §2). Leading cluster:
            * `min-w-0` and shrinkable, its chips' labels truncate first.
@@ -412,8 +425,13 @@ export function SessionComposer({
            * their glyphs never shrink. The permission LABEL collapses second,
            * at the 460px container threshold. Nothing is blanket-clipped:
            * every focusable control stays visible and focus-ringed. */}
-          <div className="@container flex items-center justify-between gap-3 px-2 pb-1.5 pt-0.5">
-            <div className="flex min-w-0 flex-1 items-center gap-1">
+          <div
+            className={cn(
+              "@container flex items-center justify-between gap-2.5",
+              stage === "hero" ? "pl-[18px] pr-3" : "pl-4 pr-2.5",
+            )}
+          >
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
               <ComposerModelChip modelId={globalModelId} />
               <ComposerPlanChip
                 sessionId={sessionId}
@@ -436,23 +454,24 @@ export function SessionComposer({
             {/* Trailing cluster order: pending dot, access mode, context
              * meter, send/stop key (owner: "ustawiony mode obok licznika
              * contextu"). */}
-            <div className="flex flex-none items-center gap-2">
-              {/* Pending dot beside the key - Stop occupies the key slot
-               * while a turn runs, so the in-flight signal sits next to it. */}
+            <div className="flex flex-none items-center gap-2.5">
+              {/* The in-flight mark beside the key - Stop occupies the key slot
+               * while a turn runs, so the ongoing swatch (the page's one state
+               * motion) sits next to it. */}
               {submitPending ? (
                 <span
                   aria-hidden
                   data-vex-composer-pending
-                  className="inline-flex h-7 w-4 shrink-0 items-center justify-center text-accent-primary"
+                  className="inline-flex h-7 w-[9px] shrink-0 items-center justify-center text-accent-primary"
                 >
-                  <span className="vex-composer-pending-dot" />
+                  <Swatch state="ongoing" size={9} />
                 </span>
               ) : null}
               <ComposerPermissionSeat
                 permission={activeSession?.permission ?? null}
               />
               {sessionId !== null ? (
-                <ComposerContextRing
+                <ComposerContextMeter
                   sessionId={sessionId}
                   permission={activeSession?.permission ?? null}
                 />
@@ -497,10 +516,11 @@ export function SessionComposer({
         }}
       />
 
-      {/* Starter chips - gone WHILE THE USER IS TYPING; fixed-height slot so
-       * the capsule never reflows. Transform/opacity only (MOTION-POLICY). */}
+      {/* Starter chips - gone WHILE THE USER IS TYPING; fixed-height slot (two
+       * 32px rows, the 8px gap and the 14px above them) so the field never
+       * reflows. Transform/opacity only (MOTION-POLICY). */}
       {showQuickActions ? (
-        <div className="h-[60px]">
+        <div className="h-[86px]">
           <AnimatePresence initial={false}>
             {draft.length === 0 ? (
               <motion.div

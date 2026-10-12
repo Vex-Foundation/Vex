@@ -1,9 +1,10 @@
 /**
  * DESK RULE global approvals inbox — the app-wide "awaiting your signature"
- * affordance in the header's right flank.
+ * affordance in the running head's right flank.
  *
- * A quiet amber pin badge (`AWAITING <n>`) that opens a centered review dialog
- * listing EVERY pending approval across all sessions. The flank stays empty
+ * A 28px badge in the blue on a blue outline, behind the target swatch
+ * (`AWAITING <n>`, docs/design/V10-SPREAD.md section 4), that opens a centered
+ * review dialog listing EVERY pending approval across all sessions. The flank stays empty
  * ONLY after a successful read listed nothing (Kairos U-2). While the first
  * read is in flight it shows a quiet "checking" status, and when the read
  * fails (`data.ok === false` or a query error) it shows "couldn't check" with
@@ -44,6 +45,7 @@ import {
 import { GlobalApprovalItem } from "./GlobalApprovals/GlobalApprovalItem.js";
 import { useCrossModeApprovalToast } from "./approvals/useCrossModeApprovalToast.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { Swatch } from "../../components/ui/swatch.js";
 
 /**
  * Idle fallback poll — the app-wide read opens a short-lived pg client per
@@ -134,7 +136,7 @@ export function GlobalApprovals(): JSX.Element | null {
         role="status"
         data-vex-area="global-approvals-status"
         data-state="loading"
-        className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-tertiary"
+        className="font-mono text-[11px] uppercase tracking-chip text-ink-secondary"
       >
         <span aria-hidden="true">APPROVALS …</span>
         <span className="sr-only">Checking for pending approvals</span>
@@ -149,7 +151,7 @@ export function GlobalApprovals(): JSX.Element | null {
         role="status"
         data-vex-area="global-approvals-status"
         data-state="unknown"
-        className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-pin)]"
+        className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-chip text-accent-primary"
       >
         <span aria-hidden="true">APPROVALS ?</span>
         <span className="sr-only">
@@ -163,7 +165,7 @@ export function GlobalApprovals(): JSX.Element | null {
           onClick={() => {
             void query.refetch();
           }}
-          className="rounded-[3px] border border-[var(--vex-pin-border)] px-1.5 py-0.5 hover:bg-[var(--vex-pin-fill-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:opacity-60"
+          className="inline-flex h-7 items-center px-2.5 outline outline-1 -outline-offset-1 outline-accent-primary hover:bg-interactive-hover focus-visible:ring-2 focus-visible:ring-focus disabled:text-ink-tertiary disabled:outline-dotted"
         >
           {retrying ? "CHECKING" : "RETRY"}
         </button>
@@ -192,8 +194,9 @@ export function GlobalApprovals(): JSX.Element | null {
           count === 1 ? "approval" : "approvals"
         } awaiting your signature`}
         onClick={() => (open ? closePanel() : setOpen(true))}
-        className="inline-flex items-center gap-1 rounded-[3px] border border-[var(--vex-pin-border)] bg-[var(--vex-pin-fill)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-pin)] hover:bg-[var(--vex-pin-fill-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+        className="inline-flex h-7 items-center gap-2 px-2.5 font-mono text-[11px] uppercase leading-none tracking-chip text-accent-primary outline outline-1 -outline-offset-1 outline-accent-primary transition-colors hover:bg-interactive-hover focus-visible:ring-2 focus-visible:ring-focus"
       >
+        <Swatch state="warning" size={9} />
         AWAITING {badgeLabel}
       </button>
       <Dialog open={open} onOpenChange={(next) => next ? setOpen(true) : closePanel()}>
@@ -202,7 +205,7 @@ export function GlobalApprovals(): JSX.Element | null {
           data-vex-area="global-approvals-panel"
           className="w-[calc(100vw-3rem)] max-w-3xl"
         >
-          <DialogHeader className="sticky top-0 z-10 flex-row items-start justify-between gap-4 bg-surface-2 pr-6">
+          <DialogHeader className="sticky top-0 z-10 flex-row items-start justify-between gap-4 bg-surface-base pr-6">
             <div>
               <DialogTitle>Pending approvals</DialogTitle>
               <DialogDescription>Review the details before approving an action.</DialogDescription>
@@ -211,7 +214,7 @@ export function GlobalApprovals(): JSX.Element | null {
               type="button"
               onClick={closePanel}
               aria-label="Close approval review"
-              className="shrink-0 rounded-md px-3 py-2 text-sm text-ink-secondary hover:bg-surface-3 hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+              className="inline-flex h-9 shrink-0 items-center border border-rule px-3.5 font-mono text-[12px] uppercase tracking-chip text-ink-primary hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             >
               Close
             </button>

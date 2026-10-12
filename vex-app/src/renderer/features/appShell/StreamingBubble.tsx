@@ -53,7 +53,7 @@ export function StreamingBubble({
         // so it never re-triggers. The reading register arrives with
         // `.vex-chat-prose` inside the streaming renderer, so the live answer
         // and the persisted row it becomes are set identically.
-        <div className="vex-answer-resolve break-words text-foreground">
+        <div className="vex-answer-resolve break-words text-ink-primary">
           <StreamingMarkdownContent text={throttledText} />
         </div>
       ) : null,
@@ -66,7 +66,7 @@ export function StreamingBubble({
       data-vex-message-role="assistant"
       data-vex-stream-phase={preview.phase}
       aria-busy={streaming}
-      className="relative flex flex-col gap-2 pl-9"
+      className="relative flex flex-col gap-2 pl-[30px]"
     >
       <TurnIsland
         preview={preview}

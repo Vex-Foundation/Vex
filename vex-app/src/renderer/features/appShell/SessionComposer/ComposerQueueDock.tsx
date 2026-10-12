@@ -6,10 +6,10 @@
  * drains the head when the session goes idle.
  *
  * GEOMETRY (R2-D2, deepseek QueueDock): the dock is not a detached card above
- * the composer, it is an ATTACHED SURFACE. It insets to the card's inner
- * width, rounds only its top corners, drops its bottom border (the composer
- * card's own top border closes the shape) and tucks under the card by 3px, so
- * queue plus composer read as one instrument rather than two stacked chips.
+ * the composer, it is an ATTACHED SURFACE: the field's width, the same rule,
+ * no bottom border (the field's own top rule closes the shape) and tucked
+ * under the field by its 1px rule, so queue plus field read as one instrument
+ * rather than two stacked boxes. Square, on the page's paper.
  *
  * DENSITY: one pending row renders inline; two or more collapse behind a count
  * header by default, because the queue is a status the operator glances at far
@@ -56,7 +56,7 @@ export function queuedMessagePreview(text: string): string {
 }
 
 const ACTION_KEY =
-  "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-tertiary transition-colors duration-100 hover:bg-interactive-hover hover:text-ink-secondary disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex h-6 w-6 shrink-0 items-center justify-center text-ink-secondary transition-colors duration-100 hover:bg-interactive-hover hover:text-ink-primary disabled:cursor-not-allowed disabled:text-ink-tertiary";
 
 export interface ComposerQueueDockProps {
   readonly sessionId: string;
@@ -105,10 +105,9 @@ export function ComposerQueueDock({
     <div
       data-vex-area="composer-queue-dock"
       data-expanded={listVisible ? "true" : "false"}
-      // -mb-[3px] tucks the panel under the composer card's top edge; the
-      // card's own border closes the shape, so this surface drops its bottom
-      // border and its bottom radius.
-      className="mx-auto -mb-[3px] w-full max-w-[764px] overflow-hidden rounded-t-xl border border-b-0 border-line-2 bg-surface-2"
+      // -mb-px tucks the panel onto the field's top rule; the field's own
+      // border closes the shape, so this surface drops its bottom border.
+      className="-mb-px w-full overflow-hidden border border-b-0 border-rule bg-surface-base"
     >
       {queue.length > 1 ? (
         <button
@@ -142,7 +141,7 @@ export function ComposerQueueDock({
           {queue.map((row) => (
             <li
               key={row.id}
-              className="flex items-start gap-2 border-b border-line-1 px-3 py-2 text-[13px] leading-5 last:border-b-0"
+              className="flex items-start gap-2 border-b border-rule-quiet px-3 py-2 text-[13px] leading-5 last:border-b-0"
             >
               <span
                 aria-hidden

@@ -6,8 +6,8 @@
  * the scroll model, the anchor and every query.
  *
  * Two rules live here and nowhere else:
- *  1. TURN RHYTHM — the list gap is the 12px intra-turn beat; a USER row starts
- *     a new turn, so its extra `mt-4` totals the 28px turn spacing.
+ *  1. TURN RHYTHM - the list gap is the 18px beat of the page (reference d3);
+ *     a USER row starts a new turn, so its extra `mt-4` opens the turn.
  *  2. WHAT ANIMATES — only rows appended LIVE (id outside the settled set).
  *     History, including load-older prepends, hard-cuts. A tool group keeps its
  *     first call row's id, so its status matches its members'. The SAME
@@ -40,9 +40,10 @@ import { crossesLocalDay, dayLabel } from "./daySeparator.js";
 import type { MessageForkActions } from "./useMessageForkActions.js";
 
 /**
- * G12 — a quiet micro-label date stamp between rows from different LOCAL calendar
- * days (and above the very first loaded row, so a resumed session names its
- * day). Chrome, not content: aria-hidden, hairline-flanked.
+ * G12 - the day under the chapter head: a Departure Mono caps date stamp
+ * between rows from different LOCAL calendar days (and above the very first
+ * loaded row, so a resumed session names its day), flanked by the quiet rule
+ * (reference d3, "TODAY"). Chrome, not content: aria-hidden.
  */
 function DaySeparator({ iso }: { readonly iso: string }): JSX.Element | null {
   const label = dayLabel(iso, Date.now());
@@ -51,13 +52,13 @@ function DaySeparator({ iso }: { readonly iso: string }): JSX.Element | null {
     <div
       aria-hidden
       data-vex-day-separator=""
-      className="flex items-center gap-3"
+      className="flex items-center gap-3.5"
     >
-      <span className="h-px flex-1 bg-line-1" />
-      <span className="vex-micro-label uppercase text-ink-secondary">
+      <span className="h-px flex-1 bg-rule-quiet" />
+      <span className="font-mono text-[11px] uppercase leading-none tracking-status text-ink-secondary">
         {label}
       </span>
-      <span className="h-px flex-1 bg-line-1" />
+      <span className="h-px flex-1 bg-rule-quiet" />
     </div>
   );
 }

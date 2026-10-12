@@ -60,13 +60,21 @@ describe("ArenaCampaignNotice", () => {
     );
   });
 
-  it("shows the blinking live dot only while the window is open", () => {
+  it("shows the solid LIVE swatch only while the window is open, and nothing blinks", () => {
+    // Status is shown by fill (docs/design/V10-SPREAD.md section 1): the
+    // live window is the solid square in the `[LIVE NOW]` chip, the upcoming
+    // window the target; the retired blinking dot and the pulsing card are
+    // gone.
     vi.setSystemTime(new Date("2026-09-17T17:30:00Z"));
     const { container, rerender } = render(<ArenaCampaignNotice />);
-    expect(container.querySelector(".vex-live-dot")).toBeNull();
+    expect(container.querySelector("[data-vex-arena-live]")).toBeNull();
+    expect(container.querySelector('.vex-swatch[data-s="warning"]')).not.toBeNull();
     vi.setSystemTime(new Date("2026-09-20T00:00:00Z"));
     rerender(<ArenaCampaignNotice key="live" />);
-    expect(container.querySelector(".vex-live-dot")).not.toBeNull();
+    const live = container.querySelector("[data-vex-arena-live]");
+    expect(live?.textContent).toBe("Live now");
+    expect(live?.querySelector('.vex-swatch[data-s="done"]')).not.toBeNull();
+    expect(container.querySelector(".vex-live-dot, .vex-arena-pulse")).toBeNull();
   });
 
   it("advertises the reward pool while the campaign runs", () => {

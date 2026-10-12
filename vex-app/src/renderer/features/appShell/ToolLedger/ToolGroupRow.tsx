@@ -1,8 +1,8 @@
 /**
  * THE ACT LEDGER — aggregation entry (S5). A run of ≥3 registered calls
- * collapses into one ledger line: "{N} tool calls" plus a strip of distinct
- * act glyphs. Expanding reveals the member `ToolActRow`s under an indented
- * rail. The reveal is the shared `ExpandRegion` primitive (one curve, one
+ * collapses into one ruled ledger line (reference d3): "{N} tool calls" in
+ * Departure Mono plus a strip of distinct act glyphs in the blue. Expanding
+ * reveals the member `ToolActRow`s, each its own ruled line. The reveal is the shared `ExpandRegion` primitive (one curve, one
  * duration, one closed-content contract app-wide); the members carry no
  * entrance keyframe of their own, since the expand IS the arrival.
  *
@@ -65,37 +65,36 @@ export function ToolGroupRow({
     <div
       // Semantic contract: the group container is a tool row too.
       data-vex-message-role="tool"
-      className="rounded-[6px] border border-[var(--vex-line)] bg-interactive-hover"
+      className="vex-ledger"
     >
-      <div className="flex h-10 items-center gap-2 pr-2">
+      <div className="vex-ledger__row flex h-8 items-center gap-3">
         <button
           ref={triggerRef}
           type="button"
           aria-expanded={open}
           aria-controls={bodyId}
           onClick={() => setOpen((v) => !v)}
-          className="flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          className="flex h-full min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         >
-          <IconChevronRight
-            size={12}
-            className={cn(
-              "shrink-0 text-[var(--vex-text-3)] transition-transform",
-              open && "rotate-90",
-            )} />
-          <span className="shrink-0 font-mono text-[12px] tabular-nums text-foreground">
+          <span className="inline-flex w-4 shrink-0 justify-center text-accent-primary">
+            <IconChevronRight
+              size={12}
+              className={cn("transition-transform", open && "rotate-90")} />
+          </span>
+          <span className="shrink-0 font-mono text-[13px] tabular-nums tracking-[0.02em] text-ink-primary">
             {group.calls.length} tool calls
           </span>
-          <span aria-hidden className="flex min-w-0 items-center gap-1.5">
+          <span aria-hidden className="flex min-w-0 items-center gap-1.5 text-accent-primary">
             {glyphs.slice(0, MAX_HEADER_GLYPHS).map((Glyph, index) => (
               // Icon identity is the dedupe key; index keeps React stable.
               <Glyph
                 key={index}
                 size={14}
-                className="shrink-0 text-[var(--vex-text-3)]"
+                className="shrink-0"
               />
             ))}
             {overflow > 0 ? (
-              <span className="font-mono text-[10px] tabular-nums text-[var(--vex-text-3)]">
+              <span className="font-mono text-[11px] tabular-nums text-ink-secondary">
                 +{overflow}
               </span>
             ) : null}
@@ -109,11 +108,11 @@ export function ToolGroupRow({
         id={bodyId}
         open={open}
         triggerRef={triggerRef}
-        className="border-t border-[var(--vex-line)] px-2 py-2"
+        className="pl-7"
       >
-        {/* Indented rail — member acts hang off the group's spine. The rows
-            carry no entrance keyframe: the reveal is the expand itself. */}
-        <div className="ml-1.5 flex flex-col gap-1.5 border-l border-[var(--vex-line)] pl-6">
+        {/* Member acts, each its own ruled line under the group line. The
+            rows carry no entrance keyframe: the reveal is the expand itself. */}
+        <div className="flex flex-col">
           {group.calls.map((call) => (
             <ToolActRow
               key={call.toolCallId}

@@ -73,7 +73,8 @@ describe("TurnStatsLine", () => {
     const { container } = render(
       createElement(TurnStatsLine, { sessionId: "s1" }),
     );
-    const dots = container.querySelectorAll('[aria-hidden][class*="rounded-[1px]"]');
+    // The 2x2 square (V10 radius 0): found by its size, not by a radius.
+    const dots = container.querySelectorAll('[aria-hidden][class*="h-[2px]"]');
     expect(dots.length).toBeGreaterThan(0);
     for (const dot of dots) {
       expect(dot.className).toContain("bg-line-3");
@@ -82,14 +83,14 @@ describe("TurnStatsLine", () => {
     }
   });
 
-  it("stays in the assistant gutter with the rest of the pl-9 family", () => {
+  it("stays in the assistant's 30px gutter with the rest of the family", () => {
     useLastTurnUsage.mockReturnValue(resolved(usage()));
     const { container } = render(
       createElement(TurnStatsLine, { sessionId: "s1" }),
     );
     expect(
       container.querySelector("[data-vex-turn-stats]")?.className,
-    ).toContain("pl-9");
+    ).toContain("pl-[30px]");
   });
 
   it("renders nothing when there is no settled turn to report", () => {

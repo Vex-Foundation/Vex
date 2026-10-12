@@ -72,7 +72,7 @@ import { TurnStatsLine } from "./SessionTranscript/TurnStatsLine.js";
 import { useMessageForkActions } from "./SessionTranscript/useMessageForkActions.js";
 import { useTranscriptScroll } from "./SessionTranscript/useTranscriptScroll.js";
 import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
-import type { TranscriptEntry } from "./transcriptRowModel.js";
+import { PAGE_COLUMN } from "./session-page-columns.js";
 
 // Same cadence as ApprovalsRegion — both observers share one query, so this
 // adds no IPC load; it only keeps the act-ledger stamps as fresh as the cards.
@@ -252,12 +252,12 @@ export function SessionTranscript({
           keeps the text measure byte-identical to when the column was the
           scroller; both wrappers size to content, so the outer scroll math is
           unchanged. */}
-      {/* 780px card axis − 16px sides = the 748px reading column: the
-          transcript stays exactly 32px narrower than the composer card
-          (the shared width rule). The 16px column gap is the ONE vertical
-          rhythm - no per-element margins. */}
-      <div className="mx-auto w-full max-w-[780px] px-4">
-      <div ref={columnRef} className="relative flex flex-col gap-4">
+      {/* The session page's column (`PAGE_COLUMN`): the rows share one left
+          edge with the chapter head above them and the field below them. The
+          18px column gap is the ONE vertical rhythm (reference d3) - no
+          per-element margins. */}
+      <div data-vex-transcript-column="" className={PAGE_COLUMN}>
+      <div ref={columnRef} className="relative flex flex-col gap-[18px]">
         {/* The gutter hosts the live working mark (StreamingBubble, left-0) —
             an indicator, not a wall. */}
         {query.isFetchingNextPage ? <OlderPageLoadingStrip /> : null}
@@ -300,7 +300,7 @@ export function SessionTranscript({
             data-vex-latest-pill
             onClick={jumpToLatest}
             aria-label="Jump to latest message"
-            className="pointer-events-auto -mt-[34px] inline-flex h-[34px] w-[34px] items-center justify-center rounded-full border border-line-2 bg-surface-2 text-ink-primary shadow-md transition-colors hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+            className="pointer-events-auto -mt-8 inline-flex h-8 w-8 items-center justify-center border border-rule bg-surface-base text-accent-primary transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           >
             <IconChevronDown size={14} />
           </button>

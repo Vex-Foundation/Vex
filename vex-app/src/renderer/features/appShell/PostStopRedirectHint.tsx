@@ -34,16 +34,16 @@ export function PostStopRedirectHint({
     <div
       role="status"
       data-vex-area="post-stop-redirect"
-      className="mb-2 flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2"
+      className="mb-2 flex items-center gap-3 border border-rule px-3 py-2"
     >
-      <p className="flex-1 text-xs text-muted-foreground">
+      <p className="flex-1 text-[13px] leading-5 text-ink-secondary">
         Stopped. Tell Vex what to do differently and send it as your next
         message.
       </p>
       <button
         type="button"
         onClick={onRedirect}
-        className="shrink-0 rounded-full border border-[var(--vex-accent-border-strong)] bg-[var(--vex-accent-fill-8)] px-3 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--vex-accent-text)] transition-colors hover:bg-[var(--vex-accent-fill-12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+        className="inline-flex h-7 shrink-0 items-center border border-accent-primary px-3 font-mono text-[11px] uppercase tracking-chip text-accent-primary transition-colors hover:bg-accent-primary hover:text-ink-on-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
       >
         Do it differently
       </button>
@@ -51,7 +51,7 @@ export function PostStopRedirectHint({
         type="button"
         onClick={onDismiss}
         aria-label="Dismiss"
-        className="shrink-0 rounded-full px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-[14px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
       >
         ×
       </button>
