@@ -128,7 +128,7 @@ export function LighterTradingSetupSection({
   return (
     <section
       aria-label={TRADING_SETUP_TITLE}
-      className="rounded-xl border border-line-1 p-4"
+      className="vex-ov-frame"
       data-vex-lighter-trading-setup={walletAddress}
     >
       <h2 className="vex-micro-label uppercase text-ink-secondary">

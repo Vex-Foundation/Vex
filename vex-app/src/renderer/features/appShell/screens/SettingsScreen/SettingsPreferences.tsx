@@ -1,8 +1,8 @@
 /**
- * The Preferences group on the Settings register: the Appearance theme
- * switcher (chronos | celeris | system cubes), the Background image row
- * (`SettingsBackdropRow`), the composer Enter-key row, and the notifications
- * toggle. Appearance selection follows the PERSISTED
+ * The Preferences group on the Settings register (docs/design/V10-SPREAD.md
+ * section 2, d7): the Appearance theme tiles (chronos | celeris | system), the
+ * Background image row (`SettingsBackdropRow`), the composer Enter-key
+ * segment and the two switches. Appearance selection follows the PERSISTED
  * preference, never the resolved active theme, so "System" stays selected
  * while the OS decides the paint.
  */
@@ -21,7 +21,6 @@ import {
   useSubmitKeyBehavior,
   type SubmitKeyBehavior,
 } from "../../../../lib/composer-submission-policy.js";
-import { cn } from "../../../../lib/utils.js";
 import { SettingsBackdropRow } from "./SettingsBackdropRow.js";
 
 interface ThemeCube {
@@ -48,46 +47,30 @@ const SUBMIT_CHOICES: ReadonlyArray<SubmitChoice> = [
 ];
 
 function GroupTitle({ children }: { readonly children: string }): JSX.Element {
-  return (
-    <h2 className="vex-micro-label uppercase text-ink-secondary">
-      {children}
-    </h2>
-  );
+  return <h2 className="vex-ov__group">{children}</h2>;
 }
 
 function AppearanceRow(): JSX.Element {
   const preference = useUiStore((state) => state.themePreference);
   const setThemePreference = useUiStore((state) => state.setThemePreference);
   return (
-    <div className="flex flex-col gap-2 py-4" data-vex-settings-appearance>
-      <div className="text-[14px] leading-[22px] text-ink-primary">
-        Appearance
-      </div>
-      <div className="flex flex-wrap items-stretch gap-2">
-        {THEME_CUBES.map(({ id, label, caption, Icon }) => {
-          const selected = preference === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={selected}
-              data-vex-theme-cube={id}
-              onClick={() => setThemePreference(id)}
-              className={cn(
-                "flex flex-1 basis-[150px] flex-col items-center justify-center gap-1 rounded-xl border px-8 py-5 text-[14px] leading-[22px] text-ink-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
-                selected
-                  ? "border-line-4 bg-interactive-solid"
-                  : "border-line-2 hover:bg-interactive-hover",
-              )}
-            >
-              <Icon size={16} />
-              {label}
-              <span className="text-[12px] leading-[18px] text-ink-tertiary">
-                {caption}
-              </span>
-            </button>
-          );
-        })}
+    <div className="vex-pref vex-pref--stack" data-vex-settings-appearance>
+      <div className="vex-pref__title">Appearance</div>
+      <div className="vex-tiles">
+        {THEME_CUBES.map(({ id, label, caption, Icon }) => (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={preference === id}
+            data-vex-theme-cube={id}
+            onClick={() => setThemePreference(id)}
+            className="vex-tile"
+          >
+            <Icon size={16} />
+            <span className="vex-tile__title">{label}</span>
+            <span className="vex-tile__caption">{caption}</span>
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -96,40 +79,58 @@ function AppearanceRow(): JSX.Element {
 function SubmitKeyRow(): JSX.Element {
   const behavior = useSubmitKeyBehavior();
   return (
-    <div
-      className="flex flex-wrap items-center justify-between gap-3 border-t border-line-1 py-4"
-      data-vex-settings-enter
-    >
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <div className="text-[14px] leading-[22px] text-ink-primary">
-          Enter key
-        </div>
-        <div className="text-[12px] leading-[18px] text-ink-tertiary">
+    <div className="vex-pref" data-vex-settings-enter>
+      <div>
+        <div className="vex-pref__title">Enter key</div>
+        <p className="vex-pref__help">
           Shift+Enter always inserts a newline; Ctrl/Cmd+Enter always sends.
-        </div>
+        </p>
       </div>
-      <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Enter key behavior">
-        {SUBMIT_CHOICES.map(({ id, label }) => {
-          const selected = behavior === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={selected}
-              data-vex-submit-choice={id}
-              onClick={() => setSubmitKeyBehavior(id)}
-              className={cn(
-                "h-7 rounded-full border px-3 text-[12px] leading-[18px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
-                selected
-                  ? "border-line-4 bg-interactive-solid text-ink-primary"
-                  : "border-line-2 text-ink-secondary hover:bg-interactive-hover",
-              )}
-            >
-              {label}
-            </button>
-          );
-        })}
+      <div className="vex-seg" role="group" aria-label="Enter key behavior">
+        {SUBMIT_CHOICES.map(({ id, label }) => (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={behavior === id}
+            data-vex-submit-choice={id}
+            onClick={() => setSubmitKeyBehavior(id)}
+          >
+            {label}
+          </button>
+        ))}
       </div>
+    </div>
+  );
+}
+
+/** One switch row: title, help, and the square switch (the state is the fill). */
+function SwitchRow({
+  title,
+  help,
+  enabled,
+  onToggle,
+  seam,
+}: {
+  readonly title: string;
+  readonly help: string;
+  readonly enabled: boolean;
+  readonly onToggle: () => void;
+  readonly seam: string;
+}): JSX.Element {
+  return (
+    <div className="vex-pref" {...{ [seam]: "" }}>
+      <div>
+        <div className="vex-pref__title">{title}</div>
+        <p className="vex-pref__help">{help}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        aria-label={title}
+        onClick={onToggle}
+        className="vex-switch"
+      />
     </div>
   );
 }
@@ -140,48 +141,13 @@ function NotificationsRow(): JSX.Element {
     (state) => state.setNotificationsEnabled,
   );
   return (
-    <div
-      className="flex items-center justify-between gap-3 border-t border-line-1 py-4"
-      data-vex-settings-notifications
-    >
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <div className="text-[14px] leading-[22px] text-ink-primary">
-          Notifications
-        </div>
-        <div className="text-[12px] leading-[18px] text-ink-tertiary">
-          Notify when a turn finishes while the window is unfocused.
-        </div>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={enabled}
-        aria-label="Notifications"
-        onClick={() => setNotificationsEnabled(!enabled)}
-        // THE SWITCH LOOK (owner item 4, ratified 2026-08-21). One treatment
-        // for every switch in the app; the auto-retry toggle in
-        // MissionContractCardSections wears the identical strings. ON = the
-        // accent-CTA track (deep brand blue on chronos, light accent on
-        // celeris) with the matching ink knob; OFF = the solid interactive
-        // track with the page's own primary ink, never an opacity wash.
-        className={cn(
-          "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
-          enabled
-            ? "border-button-accent bg-button-accent"
-            : "border-line-4 bg-interactive-solid",
-        )}
-      >
-        <span
-          aria-hidden
-          className={cn(
-            "inline-block h-3.5 w-3.5 rounded-full transition-transform",
-            enabled
-              ? "translate-x-[18px] bg-ink-on-button-accent"
-              : "translate-x-[3px] bg-ink-primary",
-          )}
-        />
-      </button>
-    </div>
+    <SwitchRow
+      title="Notifications"
+      help="Notify when a turn finishes while the window is unfocused."
+      enabled={enabled}
+      onToggle={() => setNotificationsEnabled(!enabled)}
+      seam="data-vex-settings-notifications"
+    />
   );
 }
 
@@ -189,33 +155,13 @@ function TerminalPasteWarningRow(): JSX.Element {
   const enabled = useUiStore((state) => state.terminalPasteWarning);
   const setEnabled = useUiStore((state) => state.setTerminalPasteWarning);
   return (
-    <div className="flex items-center justify-between gap-3 border-t border-line-1 py-4" data-vex-settings-terminal-paste>
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <div className="text-[14px] leading-[22px] text-ink-primary">Multi-line paste warning</div>
-        <div className="text-[12px] leading-[18px] text-ink-tertiary">
-          Ask before pasting multiple lines when the terminal program does not handle bracketed paste.
-        </div>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={enabled}
-        aria-label="Multi-line paste warning"
-        onClick={() => setEnabled(!enabled)}
-        className={cn(
-          "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
-          enabled ? "border-button-accent bg-button-accent" : "border-line-4 bg-interactive-solid",
-        )}
-      >
-        <span
-          aria-hidden
-          className={cn(
-            "inline-block h-3.5 w-3.5 rounded-full transition-transform",
-            enabled ? "translate-x-[18px] bg-ink-on-button-accent" : "translate-x-[3px] bg-ink-primary",
-          )}
-        />
-      </button>
-    </div>
+    <SwitchRow
+      title="Multi-line paste warning"
+      help="Ask before pasting multiple lines when the terminal program does not handle bracketed paste."
+      enabled={enabled}
+      onToggle={() => setEnabled(!enabled)}
+      seam="data-vex-settings-terminal-paste"
+    />
   );
 }
 
@@ -223,15 +169,17 @@ export function SettingsPreferences(): JSX.Element {
   return (
     <section
       aria-label="Preferences"
-      className="mt-8 flex flex-col"
+      className="vex-prefs"
       data-vex-settings-preferences
     >
       <GroupTitle>Preferences</GroupTitle>
-      <AppearanceRow />
-      <SettingsBackdropRow />
-      <SubmitKeyRow />
-      <NotificationsRow />
-      <TerminalPasteWarningRow />
+      <div className="vex-prefs__list">
+        <AppearanceRow />
+        <SettingsBackdropRow />
+        <SubmitKeyRow />
+        <NotificationsRow />
+        <TerminalPasteWarningRow />
+      </div>
     </section>
   );
 }

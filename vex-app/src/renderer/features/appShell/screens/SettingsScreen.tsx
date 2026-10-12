@@ -6,7 +6,8 @@
  * (`SettingsScreen/SettingsSectionView.tsx`; per-chain private-key export
  * lives ONLY in its Wallets branch). The `settings` ShellRoute carries an
  * optional deep-link `section`. Chrome, dialog semantics, and the FLIP
- * morph belong to `ShellScreen` - this screen adds no glass of its own.
+ * morph belong to `ShellScreen` (the overlay sheet, docs/design/V10-SPREAD.md
+ * section 2) - this screen adds no surface of its own.
  * Sub-view swaps are a local slide/fade (transform/opacity only,
  * CSP-safe; reduced motion collapses durations to zero).
  */
@@ -72,21 +73,17 @@ export function SettingsScreen({
       onClose={onClose}
       {...(activeMeta !== null
         ? {
+            chapter: activeMeta.name,
             header: (
-              <div className="flex items-center gap-4">
-                <button
-                  type="button"
-                  onClick={() => setSection(null)}
-                  className="inline-flex h-10 items-center gap-2 rounded-full border border-line-2 px-4 text-[13px] leading-[20px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-                  data-vex-settings-back
-                >
-                  <IconChevronLeft size={14} />
-                  Settings
-                </button>
-                <span className="vex-micro-label uppercase text-ink-secondary">
-                  {activeMeta.name}
-                </span>
-              </div>
+              <button
+                type="button"
+                onClick={() => setSection(null)}
+                className="vex-ov__title inline-flex h-8 items-center gap-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vex-alias-focus)]"
+                data-vex-settings-back
+              >
+                <IconChevronLeft size={14} />
+                Settings
+              </button>
             ),
           }
         : {})}

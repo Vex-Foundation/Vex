@@ -41,7 +41,7 @@ import { superboardAttemptTime } from "./superboard-attempt-time.js";
 const MASK = "••••••••••••••••••••••••";
 
 const ICON_CIRCLE_CHROME = cn(
-  "flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full",
+  "flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden",
   "border border-[var(--color-border)] text-ink-primary",
 );
 
@@ -224,7 +224,7 @@ export function SuperboardKeySection(): JSX.Element {
         ) : null}
         {showKeyBlock ? (
           <div className="flex flex-col gap-2">
-            <code className="break-all rounded-xl border border-line-2 px-3 py-2.5 font-mono text-[13px] leading-[20px] text-ink-primary">
+            <code className="break-all border border-line-2 px-3 py-2.5 font-mono text-[13px] leading-[20px] text-ink-primary">
               <span key={revealed ? "revealed" : "masked"} className="vex-superboard-key-swap">
                 {revealed ? shareToken : MASK}
               </span>
