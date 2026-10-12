@@ -101,7 +101,7 @@ export function LighterCredentialConnections(): JSX.Element {
         <Button
           type="button"
           size="sm"
-          variant="outline"
+          variant="quiet"
           disabled={reviewing || forgetting}
           onClick={() => { void review(); }}
         >
@@ -182,7 +182,7 @@ function ConnectionRow({
           Cannot forget
         </span>
       ) : (
-        <Button type="button" size="sm" variant="outline" onClick={onForget}>
+        <Button type="button" size="sm" variant="quiet" onClick={onForget}>
           Forget access
         </Button>
       )}
@@ -237,7 +237,7 @@ function ForgetConnectionDialog({
         <DialogFooter className="border-line-2">
           <Button
             type="button"
-            variant="ghost"
+            variant="bare"
             disabled={pending}
             autoFocus
             onClick={onCancel}
@@ -247,7 +247,7 @@ function ForgetConnectionDialog({
           </Button>
           <Button
             type="button"
-            variant="danger"
+            variant="ink"
             disabled={pending || connection?.protected === true}
             onClick={onConfirm}
           >

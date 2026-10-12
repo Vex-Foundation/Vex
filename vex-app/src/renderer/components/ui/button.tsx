@@ -1,24 +1,26 @@
 /**
- * Button primitive: capsule silhouette (radius = height / 2) on tokens v2.
- * `primary` is INK/PAPER; `accent` marks the main action only. Hover is an
- * immediate color change - no transition, no shadow depth.
+ * Button primitive, V10 (docs/design/V10-SPREAD.md sections 1 and 7).
  *
- * ONE amendment to that no-transition rule (ratified 2026-08-21): the
- * `armed` variant. It is the only control whose ENABLEMENT is the message
- * (the unlock CTA lighting up the moment a password is typed), so it
- * carries a 150ms `transition-colors`, disabled under reduced motion.
- * Colour only, never opacity: fading a control in reads as "loading", not
- * "ready". Every other variant keeps the immediate change.
+ * Square, no shadow. Five variants:
+ *   primary  the one blue fill per view (true blue with white type in both
+ *            rooms; hover lifts to the numeral blue)
+ *   ghost    blue outline, fills on hover
+ *   ink      ink outline for the refusing choice (Decline, Reject, Stop,
+ *            destructive); fills with ink on hover
+ *   quiet    rule outline for toolbars and card actions
+ *   bare     no outline, for icon buttons in chrome
+ *
+ * `armed` is a quiet button whose `data-armed="true"` swaps it to the primary fill: the one
+ * control whose ENABLEMENT is the message (the unlock CTA lighting up the
+ * moment a password is typed). It carries a short colour-only transition,
+ * disabled under reduced motion. Every other variant changes colour at once.
+ *
+ * A disabled primary is drawn as a dotted outline, never a faded fill: the
+ * safety gate keeps native `disabled`, and fading reads as "loading".
  *
  * STYLING CONTRACT: every Button emits `data-vex-button` (the resolved
- * variant) and `data-vex-button-size` (the resolved size). These are the
- * stable hooks for cross-file rules - see the pre-shell CTA block in
- * `styles/global-css/chronos-gate.css`, which broke silently while it was
- * keyed on utility classes instead.
- *
- * Disabled states pin an ink tier instead of stacking opacity on text
- * (design-language §2 bans opacity-stacked text): 40% of the paper fill on
- * ink landed under the readability floor.
+ * variant) and `data-vex-button-size` (the resolved size), the stable hooks
+ * for cross-file rules (see the pre-shell CTA block in `chronos-gate.css`).
  */
 
 import { forwardRef, type ButtonHTMLAttributes } from "react";
@@ -26,35 +28,29 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../../lib/utils.js";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-capsule text-[14px] leading-[22px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:text-ink-tertiary",
+  "inline-flex items-center justify-center gap-2.5 whitespace-nowrap border border-transparent font-medium tracking-[-0.003em] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed",
   {
     variants: {
       variant: {
         primary:
-          "bg-button-primary text-ink-on-primary enabled:hover:bg-button-primary-hover disabled:bg-interactive-solid",
-        accent:
-          "bg-accent-primary text-ink-on-accent enabled:hover:bg-accent-hover disabled:bg-interactive-solid",
+          "bg-button-accent text-ink-on-button-accent enabled:hover:bg-button-accent-hover enabled:active:translate-y-px disabled:border-dotted disabled:border-accent-primary disabled:bg-transparent disabled:text-accent-primary",
         ghost:
-          "bg-transparent enabled:hover:bg-interactive-hover enabled:active:bg-interactive-active",
-        outline:
-          "border border-line-2 bg-transparent enabled:hover:bg-interactive-hover disabled:border-line-1",
-        toolbar: "bg-surface-overlay/50 text-ink-on-chrome",
-        danger:
-          "bg-danger text-ink-on-accent enabled:hover:bg-danger/90 disabled:bg-interactive-solid",
-        // ARMED - the quiet-to-committed pair. Rest is an outline capsule;
-        // `data-armed="true"` swaps in the primary ink inversion (chronos:
-        // paper fill + ink text, celeris: ink fill + white text - the
-        // EXISTING primary tokens, no new colour). The owner of the arming
-        // signal passes `data-armed`; it must never carry the value that
-        // armed it.
+          "border-accent-primary text-accent-primary enabled:hover:bg-accent-primary enabled:hover:text-ink-on-accent disabled:border-dotted disabled:text-ink-tertiary",
+        ink: "border-rule-ink text-ink-primary enabled:hover:bg-rule-ink enabled:hover:text-ink-on-primary disabled:border-dotted disabled:text-ink-tertiary",
+        quiet:
+          "border-rule text-ink-primary transition-colors duration-150 motion-reduce:transition-none enabled:hover:bg-interactive-hover disabled:text-ink-tertiary data-[armed=true]:border-transparent data-[armed=true]:bg-button-accent data-[armed=true]:text-ink-on-button-accent data-[armed=true]:enabled:hover:bg-button-accent-hover",
+        // `armed` is the quiet recipe under its own seam name: the unlock CTA
+        // is asserted by `data-vex-button="armed"`. The arming signal is
+        // `data-armed`, which swaps the fill in.
         armed:
-          "border border-line-2 bg-transparent text-ink-primary transition-colors duration-150 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none enabled:hover:bg-interactive-hover disabled:border-line-1 data-[armed=true]:border-transparent data-[armed=true]:bg-button-primary data-[armed=true]:text-ink-on-primary data-[armed=true]:enabled:hover:bg-button-primary-hover data-[armed=true]:disabled:bg-interactive-solid",
+          "border-rule text-ink-primary transition-colors duration-150 motion-reduce:transition-none enabled:hover:bg-interactive-hover disabled:text-ink-tertiary data-[armed=true]:border-transparent data-[armed=true]:bg-button-accent data-[armed=true]:text-ink-on-button-accent data-[armed=true]:enabled:hover:bg-button-accent-hover",
+        bare: "text-ink-secondary enabled:hover:bg-interactive-hover enabled:hover:text-ink-primary disabled:text-ink-tertiary",
       },
       size: {
-        default: "h-9 px-3.5",
-        sm: "h-7 px-2.5 text-[12px] leading-[18px]",
-        lg: "h-11 px-5",
-        icon: "h-9 w-9 px-0",
+        default: "h-11 px-[18px] text-[15px] leading-none",
+        sm: "h-9 px-3.5 text-[14px] leading-none",
+        lg: "h-12 px-6 text-[15px] leading-none",
+        icon: "h-11 w-11 px-0 text-[15px]",
       },
     },
     defaultVariants: {

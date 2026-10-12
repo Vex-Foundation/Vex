@@ -22,6 +22,7 @@
  */
 
 import type { JSX } from "react";
+import { Swatch } from "./swatch.js";
 
 export interface SubmitErrorProps {
   /** Main's already sanitized message, or `null` when there is no refusal. */
@@ -31,8 +32,9 @@ export interface SubmitErrorProps {
 export function SubmitError({ submitError }: SubmitErrorProps): JSX.Element | null {
   if (submitError === null) return null;
   return (
-    <p className="text-sm text-danger" data-vex-submit-error="">
-      {submitError}
+    <p className="flex items-start gap-2 text-sm text-ink-primary" data-vex-submit-error="">
+      <Swatch state="error" size={10} className="mt-1.5" />
+      <span>{submitError}</span>
     </p>
   );
 }

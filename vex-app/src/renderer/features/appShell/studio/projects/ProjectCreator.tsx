@@ -385,7 +385,7 @@ export function ProjectCreator({
               <>
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="bare"
                   onClick={() => onOpenChange(false)}
                   disabled={pending}
                   className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"

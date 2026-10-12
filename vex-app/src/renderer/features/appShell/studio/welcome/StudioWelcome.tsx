@@ -164,7 +164,7 @@ export function StudioWelcome({
               // the bridge diagnostic's controls and the capsule's radios come
               // first in the tree, and the Start row renders after them.
               <Button
-                variant="accent"
+                variant="primary"
                 data-vex-studio-welcome-action="primary"
                 onClick={onCreateProject}
               >
@@ -174,7 +174,7 @@ export function StudioWelcome({
             ) : null}
             {firstProject !== null ? (
               <Button
-                variant="outline"
+                variant="quiet"
                 // The primary action when there is no creator handler: the
                 // marker names the row's FIRST control, whichever it is.
                 data-vex-studio-welcome-action={

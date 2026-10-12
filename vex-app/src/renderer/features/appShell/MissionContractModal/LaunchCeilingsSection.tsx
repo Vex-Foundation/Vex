@@ -164,7 +164,7 @@ export function LaunchCeilingsSection({
           <div className="flex items-center justify-end">
             <Button
               type="button"
-              variant="outline"
+              variant="quiet"
               size="sm"
               disabled={setCeilings.isPending || validationError !== null}
               onClick={onSave}

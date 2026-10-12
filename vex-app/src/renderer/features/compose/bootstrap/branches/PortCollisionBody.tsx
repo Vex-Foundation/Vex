@@ -48,7 +48,7 @@ export function PortCollisionBody({
             </p>
           ) : null}
           <Button
-            variant="danger"
+            variant="ink"
             size="lg"
             className="w-full"
             disabled={stoppingPreviousInstall}

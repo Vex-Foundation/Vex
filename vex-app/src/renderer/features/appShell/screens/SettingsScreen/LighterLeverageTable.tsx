@@ -160,7 +160,7 @@ export function LighterLeverageTable({
               {picker.rows.map((market) => (
                 <li key={market.marketId}>
                   <Button
-                    variant="outline"
+                    variant="quiet"
                     size="sm"
                     onClick={() => {
                       setPicked((previous) => new Set(previous).add(market.marketId));
@@ -228,7 +228,7 @@ function LeverageRow({
         </td>
         <td className="py-2">
           <Button
-            variant="outline"
+            variant="quiet"
             size="sm"
             disabled={disabled || maxLeverage === null}
             aria-label={leverageChangeLabel(row.symbol)}
@@ -257,7 +257,7 @@ function LeverageRow({
             </span>
             {outcome.reconcilable ? (
               <Button
-                variant="outline"
+                variant="quiet"
                 size="sm"
                 className="ml-2"
                 data-vex-lighter-leverage-reconcile={row.symbol}

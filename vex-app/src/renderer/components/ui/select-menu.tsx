@@ -28,6 +28,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { IconChevronDown } from "../icons/index.js";
+import { Swatch } from "./swatch.js";
 import { cn } from "../../lib/utils.js";
 
 export interface SelectMenuOption {
@@ -197,9 +198,9 @@ export function SelectMenu({
         onClick={() => (open ? setOpen(false) : openMenu())}
         onKeyDown={handleKeyDown}
         className={cn(
-          "flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-line-input bg-transparent px-2 text-left text-sm text-ink-primary",
+          "flex h-11 w-full items-center justify-between gap-2 border border-line-input bg-transparent px-3 text-left text-[15px] text-ink-primary",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
-          "disabled:cursor-not-allowed disabled:opacity-40",
+          "disabled:cursor-not-allowed disabled:text-ink-tertiary",
           className,
         )}
       >
@@ -227,13 +228,12 @@ export function SelectMenu({
           role="listbox"
           aria-label={ariaLabel}
           aria-labelledby={ariaLabelledBy}
-          // Solid layer-2 popover: hairline + lv3 elevation, never blur or
-          // glow; its scrollbar rebinds to the elevated (l2) pair.
+          // Paper popover: one 1px rule, no shadow, no blur; its scrollbar rebinds to the elevated (l2) pair.
           // `placement` flips the anchor edge (down vs up). The listbox
           // FLOATS (absolute + z-30 + its own max-h scroll): it overlays
           // whatever follows the trigger and never pushes layout.
           className={cn(
-            "vex-scroll-elevated absolute left-0 right-0 z-30 max-h-56 overflow-y-auto rounded-xl border border-line-1 bg-surface-2 p-1 text-ink-primary shadow-lv3",
+            "vex-scroll-elevated absolute left-0 right-0 z-30 max-h-56 overflow-y-auto border border-line-3 bg-surface-2 py-1 text-ink-primary",
             placement === "top" ? "bottom-full mb-1" : "top-full mt-1",
           )}
         >
@@ -249,7 +249,7 @@ export function SelectMenu({
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => choose(index)}
                 className={cn(
-                  "flex cursor-pointer items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-sm",
+                  "flex min-h-10 cursor-pointer items-center justify-between gap-2 px-3.5 py-1.5 text-[15px]",
                   active
                     ? "bg-interactive-hover text-ink-primary"
                     : "text-ink-secondary",
@@ -263,10 +263,7 @@ export function SelectMenu({
                   {opt.label}
                 </span>
                 {selected ? (
-                  <span
-                    aria-hidden
-                    className="ml-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent-primary"
-                  />
+                  <Swatch state="done" size={8} className="ml-2 text-accent-primary" />
                 ) : null}
               </li>
             );

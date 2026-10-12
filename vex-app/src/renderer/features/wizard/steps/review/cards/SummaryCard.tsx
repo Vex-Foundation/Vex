@@ -74,7 +74,7 @@ export function SummaryCard({
           {onEdit ? (
             <Button
               type="button"
-              variant="ghost"
+              variant="bare"
               size="sm"
               onClick={onEdit}
               disabled={editDisabled}

@@ -27,17 +27,18 @@
 
 import { useSyncExternalStore, type JSX, type ReactPortal } from "react";
 import { createPortal } from "react-dom";
-import { IconClose, IconWarning } from "../icons/index.js";
+import { IconClose } from "../icons/index.js";
+import { Swatch } from "./swatch.js";
 import { notifications } from "../../lib/notifications/index.js";
 import type { NotificationView } from "../../lib/notifications/types.js";
 
 const ACTION_CLASS: Readonly<Record<"primary" | "secondary", string>> = {
-  // Plate-local capsules: the Button primitive's fills flip with the theme and
-  // would paint ink-on-ink on this theme-invariant dark plate.
+  // The toast sits on paper, so the actions use the app's own two registers:
+  // the one blue fill, and the Departure Mono caps link.
   primary:
-    "h-7 rounded-full bg-accent-primary px-3 text-[12px] font-medium text-ink-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40",
+    "h-9 bg-button-accent px-3.5 text-[14px] font-medium text-ink-on-button-accent transition-colors hover:bg-button-accent-hover disabled:cursor-not-allowed disabled:border disabled:border-dotted disabled:border-accent-primary disabled:bg-transparent disabled:text-accent-primary",
   secondary:
-    "vex-notification-ghost h-7 rounded-full px-2.5 text-[12px] text-ink-on-chrome disabled:cursor-not-allowed disabled:opacity-40",
+    "vex-notification-ghost h-9 px-2.5 font-mono text-[11px] uppercase tracking-status text-accent-primary hover:underline hover:underline-offset-4 disabled:cursor-not-allowed disabled:text-ink-tertiary",
 };
 
 /**
@@ -81,7 +82,7 @@ function NotificationToast({ item }: { readonly item: NotificationView }): JSX.E
       <div className="flex items-start gap-2">
         {item.severity === "info" ? null : (
           <span className="vex-notification-toast-icon" aria-hidden>
-            <IconWarning size={16} />
+            <Swatch state={item.severity === "error" ? "error" : "warning"} size={10} />
           </span>
         )}
         <div className="min-w-0 flex-1">
@@ -91,15 +92,15 @@ function NotificationToast({ item }: { readonly item: NotificationView }): JSX.E
           <p
             className={
               item.title === null
-                ? "text-[13px] leading-[19px]"
-                : "mt-1 text-[12px] leading-[18px]"
+                ? "text-[15px] leading-[22px]"
+                : "mt-1 text-[14px] leading-[20px]"
             }
           >
             {item.message}
           </p>
           {percent === null ? null : (
             <div
-              className="vex-notification-track mt-2 h-1.5 w-full overflow-hidden rounded-full"
+              className="vex-notification-track mt-2 h-1 w-full overflow-hidden"
               role="progressbar"
               aria-valuenow={percent}
               aria-valuemin={0}
@@ -108,7 +109,7 @@ function NotificationToast({ item }: { readonly item: NotificationView }): JSX.E
               {/* The only inline style: CSSOM width write, CSP-safe per
                * MOTION-POLICY.md. */}
               <div
-                className="h-full bg-accent-primary transition-[width] duration-150 ease-out"
+                className="h-full bg-accent-primary"
                 style={{ width: `${percent}%` }}
               />
             </div>
@@ -125,7 +126,7 @@ function NotificationToast({ item }: { readonly item: NotificationView }): JSX.E
             onClick={() => {
               notifications.close(item.id, "user");
             }}
-            className="vex-notification-ghost -mr-1 -mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-ink-on-chrome"
+            className="vex-notification-ghost -mr-1 -mt-0.5 grid h-6 w-6 shrink-0 place-items-center text-ink-secondary hover:text-ink-primary"
           >
             <IconClose size={12} />
           </button>

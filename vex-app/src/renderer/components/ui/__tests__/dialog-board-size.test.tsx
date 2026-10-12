@@ -40,8 +40,8 @@ describe("Dialog size variants", () => {
     const dialog = renderDialog();
     expect(dialog.className).toBe(
       "fixed inset-0 m-auto max-h-[85vh] w-full max-w-[380px] overflow-hidden " +
-        "vex-dialog rounded-[24px] border border-line-1 bg-surface-2 p-0 " +
-        "text-ink-primary shadow-lv3 open:flex open:flex-col",
+        "vex-dialog border border-line-3 bg-surface-2 p-0 " +
+        "text-ink-primary open:flex open:flex-col",
     );
   });
 
