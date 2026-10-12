@@ -5,6 +5,8 @@ import type {
   NotifyTurnCompleteInput,
   NotifyTurnCompleteResult,
   OsInfo,
+  SetTitleBarOverlayInput,
+  SetTitleBarOverlayResult,
 } from "../../../schemas/system.js";
 
 export interface SystemBridge {
@@ -18,4 +20,8 @@ export interface SystemBridge {
   readonly notifyTurnComplete: (
     input: NotifyTurnCompleteInput,
   ) => Promise<Result<NotifyTurnCompleteResult>>;
+  /** Recolour the Windows/Linux title bar overlay after a theme change. */
+  readonly setTitleBarOverlay: (
+    input: SetTitleBarOverlayInput,
+  ) => Promise<Result<SetTitleBarOverlayResult>>;
 }

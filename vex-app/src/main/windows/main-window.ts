@@ -6,7 +6,7 @@
  * Window state persisted via preferencesStore.
  */
 
-import { BrowserWindow, app, screen, shell } from "electron";
+import { BrowserWindow, app, nativeTheme, screen, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { log } from "../logger/index.js";
@@ -25,6 +25,7 @@ import {
   clampToVisibleArea,
   type DisplayInfo,
 } from "./visibility.js";
+import { chromeOptionsFor } from "./chrome-options.js";
 import {
   computeFirstRunBounds,
   computeMinConstraints,
@@ -202,6 +203,12 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     // no longer user-configurable (retired persona.md mechanism).
     title: "Vex",
     icon: iconPath,
+    // Hidden title bar on every OS (SPEC section 8); the renderer's 44px head
+    // rows are the drag region. The theme is the OS scheme until the renderer
+    // reports its resolved theme through vex.system.setTitleBarOverlay.
+    ...chromeOptionsFor(process.platform, nativeTheme.shouldUseDarkColors ? "chronos" : "celeris", {
+      nativeFrame: process.env["VEX_NATIVE_FRAME"] === "1",
+    }),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
@@ -320,3 +327,5 @@ export async function createMainWindow(): Promise<BrowserWindow> {
 
   return win;
 }
+
+export { chromeOptionsFor } from "./chrome-options.js";
