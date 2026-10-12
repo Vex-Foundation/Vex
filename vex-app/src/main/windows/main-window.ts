@@ -203,7 +203,7 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     // no longer user-configurable (retired persona.md mechanism).
     title: "Vex",
     icon: iconPath,
-    // Hidden title bar on every OS (SPEC section 8); the renderer's 44px head
+    // Hidden title bar on every OS (docs/design/V10-SPREAD.md section 8); the renderer's 44px head
     // rows are the drag region. The theme is the OS scheme until the renderer
     // reports its resolved theme through vex.system.setTitleBarOverlay.
     ...chromeOptionsFor(process.platform, nativeTheme.shouldUseDarkColors ? "chronos" : "celeris", {
