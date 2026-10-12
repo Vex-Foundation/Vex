@@ -64,7 +64,7 @@ test("boots through the setup gate to SystemCheck with the bridged window.vex su
 
   // 3. The Chronos Gate cold-open renders first — but unlike the old
   // click-gated intro it self-dismisses once the probes resolve, so on a
-  // fast runner the curtain may already have revealed SystemCheck by the
+  // fast runner the gate may already have lifted off SystemCheck by the
   // time this line runs. Accept either surface as the first paint to keep
   // the smoke deterministic (review lens finding, 2026-07-22); step 4
   // still pins the final SystemCheck state.
@@ -80,7 +80,7 @@ test("boots through the setup gate to SystemCheck with the bridged window.vex su
   // + envState — real IPC, bounded by `expect.timeout: 15_000` from
   // playwright.config.ts; docker.detect's own subprocess timeout is 8s).
   // Fresh CONFIG_DIR ⇒ first run ⇒ the gate hands off to SystemCheck
-  // and curtain-reveals it — no clicks, no Begin button anymore.
+  // and lifts away over it — no clicks, no Begin button anymore.
   await expect(
     firstWindow.locator('[data-vex-screen="systemCheck"]')
   ).toBeVisible();

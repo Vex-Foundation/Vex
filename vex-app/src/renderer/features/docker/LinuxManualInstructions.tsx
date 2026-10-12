@@ -64,15 +64,15 @@ export function LinuxManualInstructions({
   return (
     <div className="flex flex-col gap-3">
       <div className="relative">
-        <pre className="max-h-72 overflow-auto rounded-lg border border-[var(--color-border)] bg-gate-code p-3 pr-12 text-xs leading-relaxed text-ink-primary">
-          <code className="font-mono">{instructions}</code>
+        <pre className="max-h-72 overflow-auto border border-[var(--color-border)] bg-gate-code p-3 pr-12 text-xs leading-relaxed text-ink-primary">
+          <code className="font-code">{instructions}</code>
         </pre>
         <button
           type="button"
           onClick={() => void handleCopy()}
           aria-label="Copy install commands to clipboard"
           className={cn(
-            "absolute right-2 top-2 inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--vex-onboarding-bg,var(--color-surface-base))] px-2.5 py-1 vex-micro text-ink-primary transition-colors duration-150",
+            "absolute right-2 top-2 inline-flex items-center gap-1 border border-[var(--color-border)] bg-surface-base px-2.5 py-1 vex-micro text-ink-primary transition-colors duration-150",
             "hover:border-ink-tertiary hover:bg-surface-1",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-surface-base",
             copyState === "ok"
@@ -89,7 +89,7 @@ export function LinuxManualInstructions({
 
       <p className="text-xs leading-relaxed text-ink-secondary">
         After install: log out and back in (or reboot) so your user joins the{" "}
-        <code className="rounded bg-gate-well px-1 py-0.5 font-mono text-ink-primary">
+        <code className="bg-gate-well px-1 py-0.5 font-code text-ink-primary">
           docker
         </code>{" "}
         group, then click Recheck below.

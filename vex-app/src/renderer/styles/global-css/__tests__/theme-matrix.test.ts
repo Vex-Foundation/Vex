@@ -12,7 +12,8 @@
  *      alias, never a raw hex (the terminal's wire-contract slots excepted);
  *   3. the pre-shell plate paints an ALIAS, never a colour literal, and the
  *      chronos plate equals the main-window `backgroundColor`, so first paint
- *      and the plate are one surface;
+ *      and the plate are one surface; on the night print every stage type is
+ *      paper (the counter's contrast fix);
  *   4. the `[data-vex-gate]` scope re-pins its projections from aliases;
  *   5. the Studio file viewer's code tokens are declared in both themes.
  */
@@ -167,6 +168,33 @@ describe("pre-shell plate", () => {
     expect(tokensCss).toContain("--color-night: #1b1412");
     expect(mainWindowTs).toContain('backgroundColor: "#1b1412"');
     expect(celerisBlock).toContain("--vex-alias-gate-plate: var(--color-paper)");
+  });
+
+  it("sets the stage type on the print per room: paper at night, the blues by day", () => {
+    // docs/design/V10-SPREAD.md section 1: on the night print every type is
+    // paper and blue never sits on dark ground. The giant counter was the
+    // one exception the design measured at 1.34:1 (peri-hi on the night
+    // sky); it is paper there now. By day the counter is the numeral blue
+    // and the title the logo blue, on the pale sky.
+    expect(chronosBlock).toContain("--vex-alias-gate-counter: var(--color-paper)");
+    expect(chronosBlock).toContain("--vex-alias-title: var(--color-paper)");
+    expect(chronosBlock).toContain("--vex-alias-label-primary: var(--color-paper)");
+    expect(celerisBlock).toContain("--vex-alias-gate-counter: var(--color-blue-hi)");
+    expect(celerisBlock).toContain("--vex-alias-title: var(--color-blue)");
+    // The unlock field and its box are night fields at night and the paper
+    // label box by day: never the white field on the print.
+    expect(chronosBlock).toContain("--vex-alias-gate-field: var(--color-night-1)");
+    expect(celerisBlock).toContain("--vex-alias-gate-field: var(--color-paper)");
+    // Every rule that sets type on the stage reads these aliases, never a
+    // literal colour.
+    const stage = stripComments(gateCss);
+    for (const selector of [".vex-stage-counter {", ".vex-unl__h1 {", ".vex-stage-step__n {"]) {
+      const at = stage.indexOf(selector);
+      expect(at, `${selector} missing`).toBeGreaterThanOrEqual(0);
+      const body = stage.slice(at, stage.indexOf("}", at));
+      expect(body).toMatch(/color: var\(--vex-alias-(?:gate-counter|title)\)/);
+      expect(body).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
+    }
   });
 
   it("keeps the native title bar overlay on the page paper and its ink", () => {
@@ -335,9 +363,11 @@ describe("[data-vex-gate] scope", () => {
 
   it("keys the pre-shell CTA on Button's data attributes, not utility classes", () => {
     // A class-keyed selector died silently once already when the radius
-    // utility was renamed; the data hook is owned by components/ui/button.tsx.
+    // utility was renamed; the data hooks are owned by
+    // components/ui/button.tsx (`data-vex-button` = variant,
+    // `data-vex-button-size` = size).
     const declarations = gateCss.replace(/\/\*[\s\S]*?\*\//g, "");
-    expect(declarations).toContain("button[data-vex-button]");
+    expect(declarations).toContain('button[data-vex-button="bare"]');
     expect(declarations).toContain('button[data-vex-button-size="lg"]');
     expect(declarations).not.toMatch(/button\.[a-z]/i);
   });

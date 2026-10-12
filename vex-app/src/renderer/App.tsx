@@ -3,21 +3,22 @@
  *
  * Boot: the `ChronosGate` overlay covers the window from first paint
  * while its orchestrator runs the launch pipeline, then hands off to a
- * view beneath itself and curtain-reveals it. The view machine itself
- * is unchanged:
+ * view beneath itself and lifts away. The view machine itself is
+ * unchanged:
  *   splash (void beneath the gate) → systemCheck → dockerBootstrap →
  *   composeBootstrap → migrations → wizard → unlock → appShell —
  * a healthy returning user skips straight from the gate to
  * unlock/appShell; first-run still walks the classic guided chain.
  *
- * Pre-shell STAGE (Phase 2b, decree C.3): the six pre-shell screens all
- * paint the identical cobalt plate, so their swaps ride ONE
- * `AnimatePresence mode="wait"` stage — the outgoing slide lifts away
- * (0.18s), the incoming one settles (0.3s), and the plate never moves:
- * screens read as slides on a continuous surface. The app shell is NEVER
- * inside the stage. Unlock→shell instead plays the `CurtainExit` cobalt
- * curtain (armed by a successful unlock), which flips the view while the
- * plate is opaque and splits open over the shell.
+ * THE STAGE (docs/design/V10-SPREAD.md sections 2 and 10): every pre-shell
+ * screen stands on one picture, the plateau print with the eagle. It is
+ * mounted ONCE here, behind the screens, so it never moves or restarts
+ * while they change: their swaps ride ONE `AnimatePresence mode="wait"`
+ * that crossfades only the type and the paper leaf over it. The app shell
+ * is NEVER inside the stage. Unlock→shell plays the page turn
+ * (`CurtainExit`, armed by a successful unlock): the print stays, the right
+ * page arrives from the window edge, the view flips beneath it, and the
+ * turn lifts away.
  *
  * The legacy M0 capability/health/security cards are gated behind
  * `import.meta.env.DEV` and are reachable via a dev-only side panel —
@@ -35,7 +36,12 @@ import {
 import { ChronosGate } from "./features/setup/ChronosGate.js";
 import { SetupTour } from "./features/setup/SetupTour.js";
 import { CurtainExit } from "./features/setup/CurtainExit.js";
-import { EASE_STANDARD } from "./lib/motion/index.js";
+import { StagePrint } from "./components/onboarding/PreShellStage.js";
+import {
+  DURATION_BASE_MS,
+  DURATION_SLOW_MS,
+  EASE_STANDARD,
+} from "./lib/motion/index.js";
 import { SystemCheck } from "./features/systemCheck/SystemCheck.js";
 import { BootstrapPanel } from "./features/docker/BootstrapPanel.js";
 import { ComposeBootstrap } from "./features/compose/ComposeBootstrap.js";
@@ -53,7 +59,7 @@ import { useUiStore, type View } from "./stores/uiStore.js";
 import type { Capabilities } from "../shared/schemas/capabilities.js";
 import type { HealthReport } from "../shared/schemas/system.js";
 
-/** The stage members — every cobalt-plate slide. Never splash/appShell. */
+/** The stage members: every screen on the print. Never splash/appShell. */
 const PRE_SHELL_VIEWS: ReadonlySet<View> = new Set<View>([
   "systemCheck",
   "dockerBootstrap",
@@ -67,6 +73,7 @@ export function App(): JSX.Element {
   const currentView = useUiStore((s) => s.currentView);
   const prologueReplayNonce = useUiStore((s) => s.prologueReplayNonce);
   const unlockCurtainActive = useUiStore((s) => s.unlockCurtainActive);
+  const unlockReturnView = useUiStore((s) => s.unlockReturnView);
   const setCurrentView = useUiStore((s) => s.setCurrentView);
   const dismissUnlockCurtain = useUiStore((s) => s.dismissUnlockCurtain);
   const reducedMotion = useReducedMotion() === true;
@@ -77,16 +84,11 @@ export function App(): JSX.Element {
   // module) until M7+ wizard step views need real per-step prop wiring
   // or lazy loading (codex turn 4).
   const views: Record<View, () => JSX.Element> = {
-    // The void beneath the SetupGate plate - the gate owns the boot ritual
-    // and flips the view before its curtain reveal. It paints the pre-shell
-    // PLATE itself (not `bg-surface-base`) so the two can never drift: one
-    // theme-aware alias means no white flash in chronos and no black flash
-    // in celeris.
+    // The void beneath the gate - the gate owns the boot ritual and flips
+    // the view before it lifts away. It stands on the stage print below
+    // (mounted for splash too), so the gate leaves onto the same picture.
     splash: () => (
-      <main
-        data-vex-screen="boot-void"
-        className="vex-gate-plate h-screen w-screen"
-      />
+      <main data-vex-screen="boot-void" className="h-screen w-screen" />
     ),
     systemCheck: () => <SystemCheck />,
     dockerBootstrap: () => <BootstrapPanel />,
@@ -127,55 +129,58 @@ export function App(): JSX.Element {
       {currentView === "appShell" || currentView === "splash"
         ? views[currentView]()
         : null}
-      {/* Pre-shell stage — one continuous cobalt plate, screens as slides.
-          `mode="wait"` sequences exit before enter so two full-bleed slides
-          never stack; the wrapper is `fixed inset-0` so an exiting slide
-          overlays (not reflows) whatever replaced it. Transform/opacity
-          only (CSP-safe); reduced motion collapses both durations. Motion
-          settles the wrapper's transform to `none` at rest, so fixed
-          overlays inside the screens (dialogs) keep their viewport anchor. */}
+      {/* THE STAGE PRINT - one picture under every pre-shell screen and
+          under the void the gate covers, mounted once so it never moves or
+          restarts while the screens change over it. */}
+      {PRE_SHELL_VIEWS.has(currentView) || currentView === "splash" ? (
+        <StagePrint className="fixed inset-0" />
+      ) : null}
+      {/* Pre-shell screens over the print. `mode="wait"` sequences exit
+          before enter so two screens never stack; the wrapper is
+          `fixed inset-0` so an exiting screen overlays (not reflows) its
+          successor. Opacity only: the print is the ground and holds still,
+          only the type and the leaf change. Reduced motion collapses both
+          durations. */}
       <AnimatePresence mode="wait" initial={false}>
         {PRE_SHELL_VIEWS.has(currentView) ? (
           <motion.div
             key={currentView}
             className="fixed inset-0"
-            initial={reducedMotion ? false : { opacity: 0, y: 18 }}
+            initial={reducedMotion ? false : { opacity: 0 }}
             animate={{
               opacity: 1,
-              y: 0,
               transition: {
-                duration: reducedMotion ? 0 : 0.3,
+                duration: reducedMotion ? 0 : DURATION_SLOW_MS / 1000,
                 ease: EASE_STANDARD,
               },
             }}
-            exit={
-              reducedMotion
-                ? { opacity: 0, transition: { duration: 0 } }
-                : {
-                    opacity: 0,
-                    y: -14,
-                    transition: { duration: 0.18, ease: EASE_STANDARD },
-                  }
-            }
+            exit={{
+              opacity: 0,
+              transition: {
+                duration: reducedMotion ? 0 : DURATION_BASE_MS / 1000,
+                ease: EASE_STANDARD,
+              },
+            }}
           >
             {views[currentView]()}
           </motion.div>
         ) : null}
       </AnimatePresence>
-      {/* Boot overlay (z-50) — covers every view until the launch pipeline
-          resolves and the curtain reveal completes, then unmounts for the
+      {/* Boot overlay (z-50): covers every view until the launch pipeline
+          resolves and the gate has lifted away, then unmounts for the
           rest of the process. Mounted BELOW UpdateLayer (z-[60]) so a
           critical update toast stays visible over the boot ritual. */}
       {/* The nonce is a REMOUNT key: the dev tour's replay re-runs the
           gate choreography only if the whole gate is a fresh mount. It
           stays 0 for the entire life of a real launch. */}
       <ChronosGate key={prologueReplayNonce} />
-      {/* Unlock-success exit curtain — armed by UnlockScreen after the
-          unlock IPC succeeds; flips the view to unlockReturnView while the
-          cobalt plate is opaque, then splits open over the revealed view.
-          Same z-band as the gate (below UpdateLayer). */}
+      {/* Unlock-success page turn, armed by UnlockScreen after the
+          unlock IPC succeeds; the right page arrives over the print, the
+          view flips to unlockReturnView beneath it, and the turn lifts
+          away. Same z-band as the gate (below UpdateLayer). */}
       {unlockCurtainActive ? (
         <CurtainExit
+          target={unlockReturnView}
           onCovered={() =>
             setCurrentView(useUiStore.getState().unlockReturnView)
           }

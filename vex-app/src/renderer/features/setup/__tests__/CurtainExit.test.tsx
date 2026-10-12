@@ -1,13 +1,14 @@
 /**
- * CurtainExit — the reusable pre-shell exit curtain (Phase 2b, decree C.3).
+ * CurtainExit: the page turn from the unlock into the spread
+ * (docs/design/V10-SPREAD.md section 10).
  *
  * jsdom pins the REDUCED-MOTION contract (the animated path is visual):
- *   - `onCovered` fires exactly once, on mount, while the gate plate is
- *     rendered (the caller flips the view machine here),
- *   - `onDone` fires one frame later — never before `onCovered`,
- *   - the plate carries the gate chrome hooks (`data-vex-screen`,
- *     `.vex-gate-plate`) so the cover is pixel-identical to the pre-shell
- *     continuum plate.
+ *   - `onCovered` fires exactly once, on mount, while the turn is rendered
+ *     (the caller flips the view machine here),
+ *   - `onDone` fires after the 240ms crossfade, never before `onCovered`,
+ *   - the turn carries the stage hooks (`data-vex-screen`, the stage print
+ *     over the `.vex-gate-plate` fill, and the paper leaf already in place)
+ *     so the cover is the same picture the stage showed.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -39,7 +40,7 @@ afterEach(() => {
 const { CurtainExit } = await import("../CurtainExit.js");
 
 describe("CurtainExit (reduced motion)", () => {
-  it("renders the cobalt plate, fires onCovered once on mount, then onDone a frame later", async () => {
+  it("renders the print and the leaf, fires onCovered once on mount, then onDone after the crossfade", async () => {
     const calls: string[] = [];
     const onCovered = vi.fn(() => calls.push("covered"));
     const onDone = vi.fn(() => calls.push("done"));
@@ -52,10 +53,20 @@ describe("CurtainExit (reduced motion)", () => {
       container.querySelector('[data-vex-screen="exit-curtain"]'),
     ).not.toBeNull();
     expect(container.querySelector(".vex-gate-plate")).not.toBeNull();
+    expect(
+      container.querySelector('.vex-turn__print [data-vex-print-plate]'),
+    ).not.toBeNull();
+    expect(container.querySelector(".vex-turn__leaf")).not.toBeNull();
+    // Opacity only under reduced motion: base.css's documented opt-out.
+    expect(
+      container
+        .querySelector('[data-vex-screen="exit-curtain"]')
+        ?.hasAttribute("data-vex-motion-opacity"),
+    ).toBe(true);
     expect(onCovered).toHaveBeenCalledTimes(1);
 
     // Generous timeout: if the reduced-motion stub were ever missed, the
-    // animated path (~1.02s) must still resolve rather than flake.
+    // animated path (~0.75s) must still resolve rather than flake.
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1), {
       timeout: 3000,
     });
