@@ -32,6 +32,10 @@ const mainWindowTs = readFileSync(
   path.join(here, "..", "..", "..", "..", "main", "windows", "main-window.ts"),
   "utf8",
 );
+const chromeOptionsTs = readFileSync(
+  path.join(here, "..", "..", "..", "..", "main", "windows", "chrome-options.ts"),
+  "utf8",
+);
 
 /** Body of one top-level CSS rule, selected by its exact selector text. */
 function ruleBody(css: string, selector: string): string {
@@ -163,6 +167,26 @@ describe("pre-shell plate", () => {
     expect(tokensCss).toContain("--color-night: #1b1412");
     expect(mainWindowTs).toContain('backgroundColor: "#1b1412"');
     expect(celerisBlock).toContain("--vex-alias-gate-plate: var(--color-paper)");
+  });
+
+  it("keeps the native title bar overlay on the page paper and its ink", () => {
+    // main/windows/chrome-options.ts cannot read tokens.css (main process), so
+    // it carries the overlay colours as constants; they must stay the room's
+    // own paper and ink, or the window controls sit on a strip of another
+    // colour.
+    const overlay = (theme: string): { color: string; symbolColor: string } => {
+      const match = new RegExp(
+        `${theme}:\\s*\\{\\s*color:\\s*"(#[0-9a-f]{6})",\\s*symbolColor:\\s*"(#[0-9a-f]{6})"`,
+        "i",
+      ).exec(chromeOptionsTs);
+      expect(match, `${theme} overlay colours not found`).not.toBeNull();
+      return { color: (match?.[1] ?? "").toLowerCase(), symbolColor: (match?.[2] ?? "").toLowerCase() };
+    };
+    expect(overlay("chronos")).toEqual({ color: "#1b1412", symbolColor: "#f3f4f7" });
+    expect(overlay("celeris")).toEqual({ color: "#f3f4f7", symbolColor: "#0a0d18" });
+    expect(chronosBlock).toContain("--vex-alias-label-primary: var(--color-paper)");
+    expect(celerisBlock).toContain("--vex-alias-bg-base: var(--color-paper)");
+    expect(celerisBlock).toContain("--vex-alias-label-primary: var(--color-ink)");
   });
 });
 
