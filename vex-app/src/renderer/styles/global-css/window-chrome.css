@@ -1,4 +1,4 @@
-/* Window chrome utilities (SPEC section 8). The title bar is hidden on every
+/* Window chrome utilities (docs/design/V10-SPREAD.md section 8). The title bar is hidden on every
  * OS; each 44px head row is the drag region and every control inside it opts
  * out. Hook: lib/use-window-chrome.ts stamps `data-os` (mac | win | linux) and
  * `data-chrome` (overlay | native | mac) on <html>. WP3 wires the head rows.
@@ -13,7 +13,7 @@
 
 :root {
   /* Native window-controls width on the right (Windows 138px incl. gap in
-   * SPEC; the live value wins when the overlay reports one). */
+   * the design doc; the live value wins when the overlay reports one). */
   --overlay-w: 0px;
   --head-h: 44px;
 }
