@@ -259,7 +259,6 @@ export function LighterSidebar({
                 <SessionGroups
                   groups={groups}
                   activeSessionId={activeSessionId}
-                  sidebarOpen
                   onSelect={(sessionId) => {
                     setActiveSessionId(sessionId);
                     onToggleSidebar();

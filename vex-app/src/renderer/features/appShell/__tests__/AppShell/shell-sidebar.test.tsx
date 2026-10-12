@@ -986,12 +986,12 @@ describe("AppShell", () => {
     // because each of them mounts one component; only the assembled shell can
     // show that the control survives a stage change.
     //
-    // The seat is decided by ONE store fact, `activeSessionId` (owner decree
-    // 2026-09-04: the capsule sits under the wordmark on the welcome screen):
-    // null, the hero carries it and the rail header mounts none; non-null, the
-    // rail header carries it and the hero mounts none. The COUNT is the
-    // invariant either way (`e2e/studio.spec.ts` pins it page-wide). Make
-    // either seat unconditional and one half below reads 2.
+    // The seat is decided by the LEFT PAGE (docs/design/V10-SPREAD.md
+    // section 3): open, its mast carries the capsule beside the vx mark on
+    // the welcome stage and in a session alike; a spine has no mast, and the
+    // welcome hero carries it. The COUNT is the invariant either way
+    // (`e2e/studio.spec.ts` pins it page-wide). Make either seat
+    // unconditional and one half below reads 2.
     const view = renderShell();
     const rail = (): HTMLElement | null =>
       view.container.querySelector("[data-vex-area='sessions-sidebar']");
@@ -1002,10 +1002,9 @@ describe("AppShell", () => {
       name: "Runtime mode",
     });
     expect(welcomeGroups).toHaveLength(1);
-    // And it is the HERO's (the centre column), under the wordmark, not the
-    // rail's.
-    expect(centre()?.contains(welcomeGroups[0] ?? null)).toBe(true);
-    expect(rail()?.contains(welcomeGroups[0] ?? null)).toBe(false);
+    // The open page's mast, not the hero.
+    expect(rail()?.contains(welcomeGroups[0] ?? null)).toBe(true);
+    expect(centre()?.contains(welcomeGroups[0] ?? null)).toBe(false);
 
     act(() => useUiStore.getState().setActiveSessionId("s-1"));
 
@@ -1017,6 +1016,16 @@ describe("AppShell", () => {
     expect(
       screen.getByRole("radio", { name: "Studio" }).getAttribute("aria-checked"),
     ).toBe("false");
+
+    // Back on the welcome stage with the page closed to its spine: the mast
+    // is gone and the hero takes the capsule.
+    act(() => useUiStore.getState().setActiveSessionId(null));
+    fireEvent.click(screen.getByRole("button", { name: /Collapse sessions sidebar/i }));
+    const spineGroups = screen.getAllByRole("radiogroup", {
+      name: "Runtime mode",
+    });
+    expect(spineGroups).toHaveLength(1);
+    expect(centre()?.contains(spineGroups[0] ?? null)).toBe(true);
   });
 });
 
