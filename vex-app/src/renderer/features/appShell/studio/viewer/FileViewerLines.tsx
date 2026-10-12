@@ -139,7 +139,7 @@ function Line({
   return (
     <div
       data-line={number}
-      className="absolute top-0 left-0 flex w-max min-w-full font-mono text-[12px] leading-5"
+      className="absolute top-0 left-0 flex w-max min-w-full font-code text-[12px] leading-5"
       style={{ height: `${String(VIEWER_LINE_HEIGHT)}px`, transform: `translateY(${String(offset)}px)` }}
     >
       <span

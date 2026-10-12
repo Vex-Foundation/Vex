@@ -29,7 +29,6 @@
   justify-content: center;
   gap: 6px;
   border: 0;
-  border-radius: var(--lit-radius);
   padding: 0 9px;
   font-size: 12px;
   font-weight: 600;
@@ -94,7 +93,6 @@
   justify-content: center;
   gap: 6px;
   border: 1px solid var(--lit-line-strong);
-  border-radius: var(--lit-radius);
   background: var(--lit-panel);
   padding: 0 10px;
   color: var(--lit-ink-secondary);
@@ -153,10 +151,8 @@
   align-items: center;
   justify-content: center;
   border: 1px solid var(--lit-line-strong);
-  border-radius: var(--lit-radius);
   background: var(--lit-panel);
   color: var(--lit-ink-secondary);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--lit-bg) 34%, transparent);
   opacity: 0.82;
   pointer-events: auto;
   transform: translateX(-50%);
@@ -190,7 +186,6 @@
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--lit-line-strong);
-  border-radius: var(--lit-radius-lg);
   background: var(--lit-panel);
   color: var(--lit-ink);
 }
@@ -203,7 +198,6 @@
   border-color: var(--lit-line-strong);
   background: var(--lit-panel);
   color: var(--lit-ink);
-  box-shadow: 0 24px 72px color-mix(in srgb, var(--lit-bg) 78%, transparent);
 }
 
 .lit-environment-dialog.vex-dialog::backdrop {
@@ -421,7 +415,6 @@
   transform: translate3d(0, 0, 0);
   visibility: visible;
   transition-delay: 0s;
-  box-shadow: -18px 0 42px color-mix(in srgb, var(--vex-surface-0) 48%, transparent);
 }
 
 .vex-shell-frame[data-lighter-zen] > .lit-zen-assistant .lit-chat-frame {
@@ -551,7 +544,6 @@
   height: 18px;
   border: 2px solid var(--lit-line-strong);
   border-top-color: var(--lit-positive);
-  border-radius: 50%;
   animation: lit-spin 800ms linear infinite;
 }
 

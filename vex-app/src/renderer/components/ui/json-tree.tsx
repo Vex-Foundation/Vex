@@ -211,7 +211,7 @@ export function JsonTree({
     <div
       data-vex-json-tree=""
       className={cn(
-        "group/json relative font-mono text-[11px] leading-relaxed text-[var(--vex-text-2)]",
+        "group/json relative font-code text-[11px] leading-relaxed text-[var(--vex-text-2)]",
         className,
       )}
     >

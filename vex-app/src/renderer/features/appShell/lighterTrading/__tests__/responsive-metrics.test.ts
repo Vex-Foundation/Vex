@@ -85,32 +85,35 @@ describe("Lighter desk responsive market metrics", () => {
     expect(css).not.toContain(".lit-dialog");
   });
 
-  it("preserves shell fallbacks while distinguishing Core and RHC by semantic tokens", () => {
-    expect(css).toContain("--lit-bg: var(--vex-alias-bg-deep);");
-    expect(css).toContain("--lit-positive: var(--vex-alias-state-success);");
-    expect(css).toContain("--lit-radius: var(--radius-sm);");
-    expect(css).toContain('.lit-desk[data-lighter-environment="core"]');
-    expect(css).toContain('.lit-desk[data-lighter-environment="rhc"]');
-    expect(css).toContain("--lit-bg: #111214;");
-    expect(css).toContain("--lit-bg: #0b0e0a;");
-    expect(css).toContain("--lit-action: #ccff00;");
+  it("paints the desk from the app's aliases: one blue for both deployments", () => {
+    // V10 has one blue: the desk shares the room's paper, ink and rules, and
+    // the deployment is named by the switch's logo and label, not repainted.
+    expect(css).toContain("--lit-bg: var(--vex-alias-bg-base);");
+    expect(css).toContain("--lit-positive: var(--vex-alias-accent-primary);");
+    expect(css).toContain("--lit-negative: var(--vex-alias-label-primary);");
+    expect(css).toContain("--lit-environment-mark: var(--vex-alias-accent-primary);");
+    expect(css).not.toContain("--lit-radius");
+    expect(css).not.toMatch(/\[data-lighter-environment="(?:core|rhc)"\]\s*[,{]/);
+    expect(css).not.toContain("--lit-env-core");
+    expect(css).not.toContain("--lit-env-rhc");
     expect(css).not.toContain("radial-gradient(");
     expect(css).not.toContain("--lit-robin-neon");
     expect(css).not.toContain("--lit-chart-font-size: 18");
   });
 
-  it("extends the selected environment across the adjacent Vex rail", () => {
-    expect(css).toContain('.lit-chat-frame[data-lighter-environment="core"]');
-    expect(css).toContain('.lit-chat-frame[data-lighter-environment="rhc"]');
-    expect(css).toMatch(/\.lit-chat-frame\s*\{[^}]*--vex-alias-bg-base: var\(--lit-bg\);/s);
-    expect(css).toMatch(/\.lit-chat-frame\s*>\s*\[data-vex-area="book-panel"\]\s*\{[^}]*background: var\(--lit-bg\);/s);
-    expect(css).toMatch(/\.lit-chat-frame\s*\{[^}]*--vex-alias-button-accent-fill: var\(--lit-action\);/s);
+  it("keeps the candlesticks the one hue pair, inside the chart canvas only", () => {
+    expect(css).toMatch(/\.lit-desk \.lit-chart-canvas\s*\{[^}]*--lit-positive: var\(--color-candle-up\);[^}]*--lit-negative: var\(--color-candle-down\);/s);
   });
 
-  it("themes live thinking and internal activity surfaces with the desk palette", () => {
-    expect(css).toMatch(/\.lit-chat-frame\s*\{[^}]*--vex-surface-1: var\(--lit-panel\);/s);
-    expect(css).toMatch(/\.lit-chat-frame\s*\{[^}]*--vex-text-2: var\(--lit-ink-secondary\);/s);
-    expect(css).toMatch(/\.lit-chat-frame\s*\{[^}]*--vex-accent-text: var\(--lit-focus\);/s);
+  it("lets the adjacent Vex rail speak the room without a re-projection", () => {
+    // The rail's transcript and composer are the shell's own components; with
+    // the desk on the room's aliases they need no copy of the palette, and a
+    // re-projection onto `--lit-*` would close a var() cycle.
+    expect(css).not.toMatch(/--vex-alias-[a-z0-9-]+: var\(--lit-/);
+    expect(css).toMatch(/\.lit-chat-frame\s*>\s*\[data-vex-area="book-panel"\]\s*\{[^}]*background: var\(--lit-bg\);/s);
+  });
+
+  it("themes live thinking with the desk's focus blue", () => {
     expect(css).toMatch(/\.lit-chat-shell \.vex-turn-shimmer\s*\{[^}]*var\(--lit-focus\)[^}]*var\(--lit-ink\)/s);
   });
 });

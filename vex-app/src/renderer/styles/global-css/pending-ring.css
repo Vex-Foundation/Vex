@@ -37,7 +37,6 @@
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: inherit;
   padding: 1px;
   background:
     conic-gradient(
@@ -113,7 +112,6 @@
   position: absolute;
   inset: 0 auto 0 0;
   width: 30%;
-  border-radius: 2px;
   /* Dense head, dissolving tail - the band reads a direction rather than
    * sliding as an undifferentiated block. */
   background: linear-gradient(
