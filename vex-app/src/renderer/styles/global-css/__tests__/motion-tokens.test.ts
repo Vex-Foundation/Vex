@@ -35,7 +35,6 @@ import {
   EASE_OUT,
   EASE_STANDARD,
 } from "../../../lib/motion/index.js";
-import { COLLAPSE_SETTLE_MS } from "../../../lib/useCollapseChoreography.js";
 import { TOAST_EXIT_MS } from "../../../lib/notifications/notification-model.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -195,11 +194,14 @@ describe("motion primitives", () => {
 });
 
 describe("cross-file timing invariants", () => {
-  it("keeps the sidebar collapse pair on one source", () => {
-    expect(COLLAPSE_SETTLE_MS).toBe(DURATION_BASE_MS);
+  it("opens and closes the spread on the track transition alone, never a JS timer", () => {
+    // The page and the spine swap in one commit; only the grid tracks move,
+    // on the reveal duration, and a drag pauses them.
     expect(shellCss).toContain(
-      "transition: opacity var(--vex-duration-base) var(--vex-ease-inout);",
+      "transition: grid-template-columns var(--vex-duration-reveal) var(--vex-ease-inout);",
     );
+    expect(shellCss).toContain(".vex-shell-frame[data-dragging] {");
+    expect(stripComments(shellCss)).not.toMatch(/vex-sidebar-(fading|rail-in)|@keyframes vex-rail/);
   });
 
   it("keeps the toast exit pair in agreement", () => {

@@ -166,15 +166,6 @@
   opacity: 0.15;
 }
 
-/* Backdrop film grain (owner request 2026-07-21): a fine static grain over
- * the 4K-upscaled meadow artwork — dithers the painterly gradients so the
- * lanczos upscale reads as intentional film texture instead of clean
- * interpolation blur on large displays. Deliberately stronger than the
- * panel step but still a whisper. */
-.vex-noise--backdrop {
-  opacity: 0.07;
-}
-
 /* Hero rise — the landing's load-in reveal (masked line rise, "Out" curve),
  * one-shot with stagger delay modifiers for the welcome-stage choreography:
  * status line → headline → instrument → chips. Rests perfectly still. */

@@ -216,12 +216,35 @@ describe("the shape law", () => {
   });
 });
 
-describe("the wall (shell.css)", () => {
-  it("covers the shell backdrop with opaque paper in every stage", () => {
-    expect(declarationValue(ruleBody(shellCss, ".vex-backdrop-veil"), "opacity")).toBe("1");
+describe("the left page's print (shell.css)", () => {
+  it("shows the print as it is: no veil, no filter, no motion over it", () => {
     const source = stripComments(shellCss);
-    expect(source).not.toContain("--vex-backdrop-veil-");
-    expect(source).not.toContain('[data-vex-backdrop-dimmed="true"]');
+    // The full-window wall and its veil are gone: the print lives on the
+    // left page only, and nothing dims it.
+    expect(source).not.toMatch(/vex-backdrop-(veil|drift|chronos|celeris)/);
+    expect(source).not.toContain("data-vex-backdrop-dimmed");
+    for (const selector of [".vex-print", ".vex-print__img", ".vex-print__grain"]) {
+      const body = ruleBody(shellCss, selector);
+      expect(body, selector).not.toMatch(/(?:^|[\s;])(filter|backdrop-filter|animation|transition):/);
+    }
+  });
+
+  it("lays the print out in place, at window size, from the column's corner", () => {
+    const body = ruleBody(shellCss, ".vex-print__img");
+    expect(declarationValue(body, "width")).toBe("100vw");
+    expect(declarationValue(body, "height")).toBe("100vh");
+    expect(declarationValue(body, "object-fit")).toBe("cover");
+    expect(declarationValue(body, "object-position")).toBe("60% 50%");
+  });
+
+  it("swaps the day and night prints on the theme attribute", () => {
+    expect(declarationValue(ruleBody(shellCss, ".vex-print__img--day"), "display")).toBe("none");
+    expect(
+      declarationValue(ruleBody(shellCss, '[data-vex-theme="celeris"] .vex-print__img--day'), "display"),
+    ).toBe("block");
+    expect(
+      declarationValue(ruleBody(shellCss, '[data-vex-theme="celeris"] .vex-print__img--night'), "display"),
+    ).toBe("none");
   });
 });
 

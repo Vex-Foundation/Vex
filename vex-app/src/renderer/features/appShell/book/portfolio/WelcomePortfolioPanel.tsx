@@ -14,19 +14,17 @@
  *    the anchor of the morph (`origin-bottom-right` on the stack), so the
  *    tab always reads as one object, never two unrelated elements.
  *
- * IN-FLOW like a sidebar (owner correction, 2026-07-20 screenshot review —
+ * IN-FLOW like a sidebar (owner correction, 2026-07-20 screenshot review:
  * the earlier absolute overlay ran the cards OVER the hero/composer): the
- * root is an `<aside>` grid child in the shell row that RESERVES its
- * width while open (`WELCOME_PORTFOLIO_WIDTH` = 24px gutter + 340px stack +
- * 16px breathing) and gives it all back when collapsed (0), animated with
- * the SessionsList width-only transition idiom, so the centered welcome
- * canvas reflows and re-centers instead of being covered. The aside is the
- * row's LAST child — its right edge stays pinned to the window — so the
- * handle, anchored `absolute bottom-[88px] right-6` INSIDE the aside, sits
- * at the same spot in both states. The only transient overlap left is the
- * ~0.15s stack exit fade painting over the re-expanding center — decay,
- * not occlusion. The moment a session materializes the real rail at narrow
- * width, the shell-columns solver's derived auto-close folds it once.
+ * root is an `<aside>` that FILLS the BOOK track the shell solves for the
+ * welcome stage (lib/shell-columns.ts: the BOOK's width open, 0 closed), so
+ * the centered welcome canvas reflows and re-centers instead of being
+ * covered. The track sits at the window's right edge, so the handle,
+ * anchored `absolute bottom-[88px] right-5` INSIDE the aside, sits at the
+ * same spot in both states. The stack starts under the 44px head row, clear
+ * of the Windows and Linux caption buttons (docs/design/V10-SPREAD.md
+ * section 8). The only transient overlap left is the ~0.15s stack exit fade
+ * painting over the re-expanding center: decay, not occlusion.
  *
  * The handle deliberately carries NO glass blur (the design-guard scans raw
  * text, so even naming the banned utility here would redden the build): at
@@ -43,7 +41,6 @@ import {
   IconChevronDown,
   IconWallet,
 } from "../../../../components/icons/index.js";
-import { WELCOME_PORTFOLIO_WIDTH } from "../../../../lib/shell-columns.js";
 import { prefersReducedMotion, stackVariants } from "./portfolio-motion.js";
 import { GLOBAL_PORTFOLIO_SCOPE } from "./portfolio-scope.js";
 import { PortfolioOverviewCard } from "./PortfolioOverviewCard.js";
@@ -67,13 +64,11 @@ export function WelcomePortfolioPanel({
       data-vex-area="welcome-portfolio"
       data-vex-book-open={bookOpen ? "true" : "false"}
       aria-label="Portfolio"
-      // Sidebar-like width reservation (owner correction): the aside holds its
-      // space open so the cards can never cover the center column; width-only
-      // transition = the SessionsList collapse idiom. The width comes from the
-      // SHARED constant the shell's third grid track is reserved from, so the
-      // child and its reservation cannot drift apart.
-      className="relative z-20 h-full shrink-0 transition-[width] duration-300 ease-[var(--vex-ease-out)]"
-      style={{ width: bookOpen ? WELCOME_PORTFOLIO_WIDTH : 0 }}
+      // Sidebar-like reservation (owner correction): the aside fills the
+      // BOOK track, which the shell holds open while the tab is open, so the
+      // cards can never cover the center column. The track owns the width
+      // (and its transition); the aside only fills it.
+      className="relative z-20 h-full w-full"
     >
       {/* Anchor column: the full height budget between the top inset and the
         * handle zone (top-6 → bottom-[88px]). The stack is flex-constrained
@@ -84,7 +79,7 @@ export function WelcomePortfolioPanel({
         * assets" below the fold). pointer-events-none on the anchor so the
         * tall column never blocks the center when the aside is collapsed;
         * the stack and the handle restore their own events. */}
-      <div className="pointer-events-none absolute bottom-[88px] right-6 top-6 flex w-[340px] flex-col items-end justify-end">
+      <div className="pointer-events-none absolute bottom-[88px] right-5 top-[var(--head-h)] flex w-[max(260px,calc(100%-40px))] flex-col items-end justify-end">
         <AnimatePresence>
         {bookOpen ? (
           <motion.div

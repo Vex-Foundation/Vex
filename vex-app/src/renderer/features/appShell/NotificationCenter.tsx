@@ -3,7 +3,7 @@
  *
  * WHY IT LIVES HERE and not in `components/ui/`: it is not a primitive. It
  * reads the window's notification model directly, it is mounted exactly once
- * by `ShellStatusStrip` above the mode dispatch, and it sits in the same flank
+ * by `RunningHead` above the mode dispatch, and it sits in the same flank
  * as `GlobalApprovals`, whose anchored-panel chrome it generalizes. A
  * primitive would have to take all of that as props from its single caller,
  * which is ceremony, not a boundary.
