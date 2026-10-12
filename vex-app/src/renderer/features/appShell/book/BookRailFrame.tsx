@@ -1,6 +1,6 @@
 /**
- * THE BOOK RAIL'S CHROME - the floating right-edge aside and its collapse
- * header, shared by the agent rail and the Studio rail.
+ * THE BOOK RAIL'S CHROME - the right page and its 44px head, shared by the
+ * agent rail and the Studio rail (docs/design/V10-SPREAD.md section 2).
  *
  * Chrome only. It owns no sections, no registry, no query and no tab: the two
  * rails put entirely different instruments inside it, and this file must never
@@ -8,25 +8,23 @@
  * BOTH rails have to keep identical, because they are the same object to the
  * user and to the shell-columns solver:
  *
- *  - the rail floats over the Eclipse backdrop as glass: `.vex-glass-rail`
- *    (styles/global-css/glass.css), the same tier the two left rails wear,
- *    with no separating stroke. THE RAIL CARRIES THE ONE BACKDROP FILTER:
- *    every card inside it is a `.vex-glass-card` whose own filter the glass
- *    sheet's nesting guard strips, so a stack of cards costs one blur pass;
+ *  - the rail is paper with one rule down its left edge (`.vex-bk`,
+ *    styles/global-css/book.css): no glass, no blur, no shadow;
  *  - width is OWNED by the AppShell grid track (the shell-columns solver
  *    derives auto-close and the 48px spine); the rail only fills its track;
- *  - the header bar (first child) carries the version stamp and the chevron
+ *  - the head row (first child, a window drag region) carries the tab slot
+ *    (`book-head-slot.ts`), the headline when a rail has one, and the toggle
  *    that calls the same `toggleBook` the DESK RULE toggle uses. When
- *    collapsed the bar stays MOUNTED (chevron-only spine) and the children are
+ *    collapsed the head stays MOUNTED (toggle-only spine) and the children are
  *    not rendered - the panel is never remounted by a collapse, so the
  *    `vex-book-enter` keyframe cannot replay on expand;
- *  - the version stamp shows only when expanded.
+ *  - the version stamp sits in the foot and shows only when expanded.
  */
 
-import type { JSX, ReactNode } from "react";
-import { IconPanelRight } from "../../../components/icons/index.js";
+import { useState, type JSX, type ReactNode } from "react";
+import { PxIcon } from "../../../components/icons/index.js";
 import { cn } from "../../../lib/utils.js";
-import { SidebarIconButton } from "../SessionRows.js";
+import { BookHeadSlotContext } from "./book-head-slot.js";
 
 export function BookRailFrame({
   label,
@@ -56,29 +54,27 @@ export function BookRailFrame({
   /** Rendered only while expanded; the header bar persists in both states. */
   readonly children: ReactNode;
 }): JSX.Element {
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
   return (
     <aside
       data-vex-area="book-panel"
       data-vex-book-open={bookOpen ? "true" : "false"}
       aria-label={label}
-      className={cn(
-        "vex-book-enter vex-glass-rail relative flex h-full w-full shrink-0 flex-col overflow-hidden",
-        bookOpen ? "gap-3 p-3" : "p-0",
-      )}
+      className="vex-book-enter vex-bk"
     >
       {/* The BOOK's head row: a window drag region that keeps its toggle
           clear of the Windows and Linux caption buttons (shell.css,
           docs/design/V10-SPREAD.md section 8). */}
       <div
         className={cn(
-          "vex-book-head vex-drag flex shrink-0 items-center",
-          bookOpen ? "vex-overlay-end justify-between" : "justify-center pt-3",
+          "vex-bk__head vex-drag",
+          bookOpen && "vex-overlay-end",
+          !bookOpen && "vex-book-head",
         )}
       >
+        {bookOpen ? <div ref={setSlot} className="vex-bk__slot" /> : null}
         {bookOpen && headline !== undefined ? (
-          <span className="min-w-0 truncate text-[13px] leading-[20px] font-medium text-ink-primary">
-            {headline}
-          </span>
+          <span className="vex-bk__name">{headline}</span>
         ) : null}
         {/* One static glyph for both states, like the left rail toggle - the
             open/close semantic lives in the aria-label. */}
@@ -88,28 +84,33 @@ export function BookRailFrame({
             aria-label={collapsedLabel}
             aria-expanded="false"
             onClick={onToggle}
-            className="flex min-h-14 w-10 flex-col items-center justify-center gap-1 rounded-[6px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+            className="vex-bk__key"
+            style={{ flexDirection: "column", minHeight: 56, width: 40 }}
           >
-            <IconPanelRight size={17} />
-            <span className="text-[10px] font-medium leading-3">{collapsedLabel}</span>
+            <PxIcon name="panel-right" />
+            <span className="vex-bs__k" style={{ fontSize: 10 }}>
+              {collapsedLabel}
+            </span>
           </button>
-        ) : <SidebarIconButton
-          label={`${bookOpen ? "Collapse" : "Expand"} the ${toggleLabel}`}
-          onClick={onToggle}
-        >
-          <IconPanelRight size={17} />
-        </SidebarIconButton>}
+        ) : (
+          <button
+            type="button"
+            aria-label={`${bookOpen ? "Collapse" : "Expand"} the ${toggleLabel}`}
+            onClick={onToggle}
+            className="vex-bk__key"
+          >
+            <PxIcon name="panel-right" />
+          </button>
+        )}
       </div>
-      {bookOpen ? children : null}
-      {/* The build stamp, at the foot. `mt-auto` keeps it on the floor of the
-          rail whatever the sections above it come to. It stays on the micro
-          label's floor TIER (`text-ink-secondary`): moving it out of the header
-          demotes what it is ABOUT, not how legible it has to be, and the shell
-          design guard holds an 11px stamp to that floor. */}
       {bookOpen ? (
-        <span className="vex-micro-label mt-auto shrink-0 uppercase text-ink-secondary">
-          v{__VEX_APP_VERSION__}
-        </span>
+        <BookHeadSlotContext.Provider value={slot}>
+          {children}
+        </BookHeadSlotContext.Provider>
+      ) : null}
+      {/* The build stamp, in the foot of the page. */}
+      {bookOpen ? (
+        <span className="vex-bk__foot">v{__VEX_APP_VERSION__}</span>
       ) : null}
     </aside>
   );

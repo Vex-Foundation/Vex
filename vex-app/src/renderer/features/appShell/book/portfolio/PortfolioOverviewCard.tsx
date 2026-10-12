@@ -1,6 +1,6 @@
 /**
  * Portfolio Overview — the welcome tab's hero card: the Total Value figure
- * (the tab's ONE display number, Inter Tight 600 tabular), the snapshot
+ * (the tab's ONE display number, Departure Mono), the snapshot
  * delta in the existing solid
  * direction-color convention (no shimmer, no washing), and the wallet-scope
  * chips: "All wallets" + one chip per configured wallet, family primaries
@@ -35,8 +35,6 @@ import {
 } from "../../../../lib/api/portfolio.js";
 import { useAvailableWallets } from "../../../../lib/api/wallet-inventory.js";
 import { formatUsd, formatUsdDelta } from "../../../../lib/format.js";
-import { cn } from "../../../../lib/utils.js";
-import { ChainIcon } from "../../../../components/common/ChainIcon.js";
 import { CardStateNote, PortfolioCard } from "./PortfolioCard.js";
 import { PrimaryBadge } from "./WalletsCard.js";
 import {
@@ -110,7 +108,7 @@ export function PortfolioOverviewCard({
           appears here.
         </CardStateNote>
       ) : (
-        <div className="flex flex-col gap-2.5">
+        <div className="flex flex-col gap-2">
           <TotalFigure portfolio={activePortfolio} />
           {chipsAllowed && wallets.length > 1 ? (
             <ScopeChipRow
@@ -137,36 +135,22 @@ function TotalFigure({
   readonly portfolio: PortfolioDto | null;
 }): JSX.Element {
   return (
-    <div className="flex flex-col gap-1">
-      <span className="vex-micro-label uppercase text-ink-secondary">
-        Total value
-      </span>
-      {/* Display figure: Inter Tight 600 tabular — the serif retired to the
-        * gate voice (tokens v2 typography law). */}
-      <span className="font-display text-[30px] font-semibold leading-none tracking-[-0.01em] tabular-nums text-ink-primary">
-        {formatUsd(portfolio?.liveTotalUsd ?? null)}
-      </span>
+    <div className="grid gap-1.5">
+      <span className="vex-bs__k">Total value</span>
+      <span className="vex-bs__fig">{formatUsd(portfolio?.liveTotalUsd ?? null)}</span>
       {portfolio !== null ? <ChainReadWarning portfolio={portfolio} /> : null}
       {portfolio !== null &&
       portfolio.snapshotTotalUsd !== null &&
       portfolio.pnlVsPrev !== null ? (
-        <span className="flex items-baseline gap-1.5 text-[11px] tabular-nums">
-          <span className={deltaToneClass(portfolio.pnlVsPrev)}>
+        <span className="vex-bs__sub">
+          <span className="vex-bs__pnl" style={{ display: "inline", marginRight: 6 }}>
             {formatUsdDelta(portfolio.pnlVsPrev)}
           </span>
-          <span className="text-ink-tertiary">vs last snapshot</span>
+          vs last snapshot
         </span>
       ) : null}
     </div>
   );
-}
-
-/** Solid direction colors, same convention as the rail's PnL readout
- * (`PositionBlock.pnlToneClass`): up = success, down = warn, flat = muted. */
-function deltaToneClass(pnl: number): string {
-  if (pnl > 0) return "text-success";
-  if (pnl < 0) return "text-warning-label";
-  return "text-ink-tertiary";
 }
 
 function ScopeChipRow({
@@ -182,7 +166,7 @@ function ScopeChipRow({
     <div
       role="group"
       aria-label="Portfolio scope"
-      className="flex flex-wrap items-center gap-1"
+      className="vex-chs"
     >
       <ScopeChip
         label="All wallets"
@@ -194,7 +178,6 @@ function ScopeChipRow({
           key={entry.wallet.id}
           label={entry.displayLabel}
           title={entry.wallet.label.length > 0 ? entry.wallet.address : undefined}
-          chainId={entry.chainId}
           primary={entry.showPrimaryBadge}
           pressed={entry.wallet.id === selectedId}
           onClick={() => onSelect(entry.wallet.id)}
@@ -207,14 +190,12 @@ function ScopeChipRow({
 function ScopeChip({
   label,
   title,
-  chainId,
   primary = false,
   pressed,
   onClick,
 }: {
   readonly label: string;
   readonly title?: string;
-  readonly chainId?: number;
   readonly primary?: boolean;
   readonly pressed: boolean;
   readonly onClick: () => void;
@@ -225,15 +206,9 @@ function ScopeChip({
       title={title}
       aria-pressed={pressed}
       onClick={onClick}
-      className={cn(
-        "inline-flex h-6 max-w-[150px] items-center gap-1.5 rounded-full border px-2 text-[10.5px] transition-colors",
-        pressed
-          ? "border-accent-primary text-ink-primary"
-          : "border-line-2 text-ink-tertiary hover:border-line-3 hover:text-ink-secondary",
-      )}
+      className="vex-ch"
     >
-      {chainId !== undefined ? <ChainIcon chainId={chainId} size={11} /> : null}
-      <span className="truncate">{label}</span>
+      <span className="vex-ch__t">{label}</span>
       {primary ? <PrimaryBadge /> : null}
     </button>
   );

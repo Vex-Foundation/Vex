@@ -1,17 +1,14 @@
 /**
- * PortfolioCard - the ONE card chrome every BOOK card composes (Portfolio
- * Overview / Wallets / Balances / the session and project cards): the GLASS
- * CARD tier (`.vex-glass-card`, styles/global-css/glass.css; owner decision
- * 2026-09-04: the Settings glaze on every plain card). Inside a BOOK rail the
- * rail blurs the wall and the card is a tinted plate over it; in the welcome
- * Portfolio stack, with no rail under it, the same class blurs for itself.
- * Edge light and a hairline ring stand in for the stroke the solid card had;
- * both themes repoint the same tint tokens. The micro-label eyebrow is the
- * card's dot-matrix signature voice.
+ * PortfolioCard - the ONE section chrome every BOOK section composes
+ * (Position / Wallets / Balances / the session and project sections): a
+ * Departure Mono label row, then hairline ledger rows, divided from its
+ * neighbours by one rule (`.vex-bs`, styles/global-css/book.css; docs/design/
+ * V10-SPREAD.md sections 1 and 2). No box, no fill, no radius: the section
+ * sits on the paper of the page.
  *
- * Each card is a `motion.section` riding the shared `cardVariants`, so the
+ * Each section is a `motion.section` riding the shared `cardVariants`, so the
  * panel's stack stagger (delayChildren/staggerChildren on `stackVariants`)
- * cascades the cards as one gesture without per-card wiring.
+ * cascades the sections as one gesture without per-section wiring.
  */
 
 import type { JSX, ReactNode } from "react";
@@ -35,24 +32,16 @@ export function PortfolioCard({
     <motion.section
       variants={cardVariants}
       aria-label={eyebrow}
-      // shrink-0: inside the height-constrained scrollable stack a card must
-      // NEVER be flex-squashed — a few compressed px let overflow-hidden
-      // slice the last row ("Add wallet" / "View all assets"; owner
-      // screenshot 2026-07-21). Overflow belongs to the stack's scroll, not
-      // to card compression.
-      className="vex-glass-card relative shrink-0 overflow-hidden rounded-xl p-4"
+      // A section never flex-squashes: inside the height-constrained scrollable
+      // stack a few compressed px would slice the last row ("Add wallet" /
+      // "View all assets"). Overflow belongs to the stack's scroll.
+      className="vex-bs"
     >
-      <header className="mb-2.5 flex items-baseline justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-2">
-          {leading}
-          <h3 className="vex-micro-label vex-micro-label--wide uppercase text-ink-secondary">
-            {eyebrow}
-          </h3>
-        </span>
+      <header className="vex-bs__h">
+        {leading}
+        <h3 className="vex-bs__t">{eyebrow}</h3>
         {trailing !== undefined ? (
-          <span className="text-[11px] tabular-nums text-ink-tertiary">
-            {trailing}
-          </span>
+          <span className="vex-bs__m">{trailing}</span>
         ) : null}
       </header>
       {children}
@@ -61,10 +50,10 @@ export function PortfolioCard({
 }
 
 /**
- * Quiet state line for a card body (loading / empty / error) — factual and
+ * Quiet state line for a section body (loading / empty / error) - factual and
  * never louder than the content it stands in for. `loading` speaks the
- * card's micro-label voice; `warn` uses the token warn label; `muted` is the
- * default informational tone (empty states phrase an invitation, not a
+ * label voice (mono caps); `warn` sets the line in ink, since status is never
+ * a colour; `muted` is the default informational tone (empty states phrase an invitation, not a
  * mood).
  */
 export function CardStateNote({
@@ -74,21 +63,8 @@ export function CardStateNote({
   readonly tone?: "muted" | "warn" | "loading";
   readonly children: ReactNode;
 }): JSX.Element {
-  if (tone === "loading") {
-    return (
-      <p className="vex-micro-label uppercase text-ink-secondary">
-        {children}
-      </p>
-    );
-  }
   return (
-    <p
-      className={
-        tone === "warn"
-          ? "text-[12px] text-warning-label"
-          : "text-[12px] leading-relaxed text-ink-tertiary"
-      }
-    >
+    <p className="vex-bs__empty" data-tone={tone}>
       {children}
     </p>
   );
@@ -110,14 +86,9 @@ export function CardKeyValueRow({
   readonly children: ReactNode;
 }): JSX.Element {
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-line-1 py-1.5 last:border-b-0 last:pb-0.5">
-      <span className="text-[10.5px] text-ink-tertiary">{label}</span>
-      <span
-        className="min-w-0 truncate text-right text-[11.5px] tabular-nums text-ink-primary"
-        title={title}
-      >
-        {children}
-      </span>
+    <div className="vex-kv">
+      <span>{label}</span>
+      <span title={title}>{children}</span>
     </div>
   );
 }

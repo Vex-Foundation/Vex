@@ -139,40 +139,27 @@ export function TokenHoldingRow({
   };
 
   return (
-    <li className="flex items-center justify-between gap-3 border-b border-line-1 py-2 last:border-b-0 last:pb-1">
-      <span className="flex min-w-0 flex-1 items-center gap-2">
+    <li className="vex-kv3" data-unpriced={token.balanceUsd === null ? "" : undefined}>
+      <span className="vex-kv3__n">
         <TokenMark mark={mark} size={15} />
-        <span className="min-w-0 truncate text-[12px] leading-tight text-ink-primary">
+        <span>
           {name ?? "-"}
-          {chainName !== null ? (
-            <span className="text-ink-tertiary"> ({chainName})</span>
-          ) : null}
+          {chainName !== null ? <em> ({chainName})</em> : null}
         </span>
         {historyIdentity !== null ? (
           <button
             type="button"
             aria-label={`Token history: ${name ?? truncateAddress(historyIdentity.tokenAddress)}`}
             onClick={openHistory}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] text-ink-tertiary transition-colors hover:text-accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+            className="vex-bk__key"
+            style={{ minWidth: 20, height: 20 }}
           >
             <PxIcon name="history" />
           </button>
         ) : null}
       </span>
-      <span className="flex shrink-0 items-baseline gap-2 text-[11px] font-semibold tabular-nums">
-        {quantity !== null ? (
-          <span className="text-ink-tertiary">{quantity}</span>
-        ) : null}
-        <span
-          className={
-            token.balanceUsd === null
-              ? "text-ink-tertiary"
-              : "text-ink-primary"
-          }
-        >
-          {formatUsd(token.balanceUsd)}
-        </span>
-      </span>
+      <span className="vex-kv3__q">{quantity ?? ""}</span>
+      <span>{formatUsd(token.balanceUsd)}</span>
     </li>
   );
 }
