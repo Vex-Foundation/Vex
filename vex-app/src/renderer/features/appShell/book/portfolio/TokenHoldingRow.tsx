@@ -24,7 +24,7 @@
  */
 
 import type { JSX, MouseEvent } from "react";
-import { IconInspect } from "../../../../components/icons/index.js";
+import { PxIcon } from "../../../../components/icons/index.js";
 import type { PositionTokenDto } from "@shared/schemas/portfolio.js";
 import { chainDisplay } from "@shared/chains/display.js";
 import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
@@ -155,7 +155,7 @@ export function TokenHoldingRow({
             onClick={openHistory}
             className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] text-ink-tertiary transition-colors hover:text-accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
           >
-            <IconInspect size={13} />
+            <PxIcon name="history" />
           </button>
         ) : null}
       </span>
