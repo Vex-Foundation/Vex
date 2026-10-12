@@ -354,7 +354,7 @@ function SessionBookInstruments({
       keepMounted
       className="min-h-0 flex-1"
     >
-      {slot !== null ? createPortal(strip, slot) : null}
+      {slot !== null ? createPortal(strip, slot) : strip}
       {/* KEEP-MOUNTED: the Portfolio stack owns scroll offsets, running
           queries and card state that a tab switch must not throw
           away. */}
