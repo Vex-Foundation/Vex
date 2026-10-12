@@ -1,5 +1,6 @@
-// Brand fonts (Archivo, Inter Tight, JetBrains Mono — the landing-page
-// stack) are self-hosted via @font-face in globals.css (CSP font-src 'self').
+// Brand fonts (Instrument Sans, Departure Mono, Instrument Serif and
+// JetBrains Mono for code) are self-hosted via @font-face in
+// styles/global-css/fonts.css (CSP font-src 'self').
 import "./styles/globals.css";
 
 import React from "react";
