@@ -25,8 +25,9 @@
  * requires a field that older persisted boards lack.
  */
 
+import { Swatch } from "../../../components/ui/swatch.js";
 import { useMemo, useState, type JSX } from "react";
-import { IconArrowUpRight, IconSparkle } from "../../../components/icons/index.js";
+import { PxIcon } from "../../../components/icons/index.js";
 import {
   boardTokenIconDataUrl,
   useBoardTokenIcon,
@@ -88,7 +89,7 @@ export function BoardPreviewCard({
       data-pools={total}
       data-live={held ? "true" : "false"}
       aria-label={`${board.title}, ${String(total)} ${total === 1 ? "result" : "results"}`}
-      className="vex-board-card mt-3 flex flex-col gap-3 rounded-xl border border-line-2 bg-board-card px-4 py-3.5"
+      className="vex-board-card mt-3 flex flex-col gap-3 border border-rule bg-board-card px-4 py-3.5"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -96,7 +97,7 @@ export function BoardPreviewCard({
             * label over it. */}
           <p
             data-vex-area="board-preview-title"
-            className="truncate font-display text-[15px] font-bold leading-[20px] tracking-[-0.01em] text-ink-primary"
+            className="truncate font-sans text-[15px] font-semibold leading-[20px] text-ink-primary"
             title={board.title}
           >
             {board.title}
@@ -128,7 +129,7 @@ export function BoardPreviewCard({
           {overflow > 0 ? (
             <span
               data-vex-area="board-preview-overflow"
-              className="-ml-2 flex h-7 w-7 items-center justify-center rounded-full border border-line-2 bg-surface-2 text-[10px] font-semibold tabular-nums text-ink-tertiary"
+              className="-ml-2 flex h-7 w-7 items-center justify-center border border-rule bg-surface-2 text-[10px] font-semibold tabular-nums text-ink-tertiary"
             >
               {`+${String(overflow)}`}
             </span>
@@ -159,19 +160,19 @@ export function BoardPreviewCard({
           onClick={() => {
             onOpen(board);
           }}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-button-accent px-3 py-1.5 text-[13px] font-semibold text-ink-on-button-accent transition-colors duration-150 hover:bg-button-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+          className="inline-flex items-center gap-1.5 bg-button-accent px-3 py-1.5 text-[13px] font-semibold text-ink-on-button-accent transition-colors duration-150 hover:bg-button-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
         >
           View board
-          <IconArrowUpRight size={14} />
+          <PxIcon name="external" size={16} />
         </button>
         {onAsk === undefined ? null : (
           <button
             type="button"
             data-vex-area="board-preview-ask"
             onClick={onAsk}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-line-2 px-3 py-1.5 text-[13px] font-medium text-ink-secondary transition-colors duration-150 hover:border-line-3 hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+            className="inline-flex items-center gap-1.5 border border-rule px-3 py-1.5 text-[13px] font-medium text-ink-secondary transition-colors duration-150 hover:border-rule-ink hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
           >
-            <IconSparkle size={14} />
+            <PxIcon name="models" size={16} />
             Ask VEX about results
           </button>
         )}
@@ -215,16 +216,10 @@ function ModeBadge({
       data-mode={connected ? "live" : "connecting"}
       className={cn(
         "flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[12px] font-semibold leading-[16px]",
-        connected ? "text-success" : "text-ink-tertiary",
+        connected ? "text-accent-primary" : "text-ink-tertiary",
       )}
     >
-      <span
-        aria-hidden
-        className={cn(
-          "h-[6px] w-[6px] rounded-full",
-          connected ? "bg-success motion-safe:animate-pulse" : "bg-ink-dimmed",
-        )}
-      />
+      <Swatch state={connected ? "done" : "idle"} size={9} />
       {connected ? "LIVE" : "Connecting"}
     </span>
   );
@@ -252,7 +247,7 @@ function Thumbnail({
   const dataUrl = boardTokenIconDataUrl(query);
   const [undecodableUrl, setUndecodableUrl] = useState<string | null>(null);
   const shell =
-    "h-7 w-7 shrink-0 rounded-full border border-line-2 bg-surface-2 ring-2 ring-board-card";
+    "h-7 w-7 shrink-0 border border-rule bg-surface-2 ring-2 ring-board-card";
 
   if (dataUrl !== null && dataUrl !== undecodableUrl) {
     return (
@@ -274,7 +269,7 @@ function Thumbnail({
       data-state="monogram"
       className={cn(
         shell,
-        "flex items-center justify-center font-display text-[10px] font-bold leading-none text-ink-secondary",
+        "flex items-center justify-center font-mono text-[10px] leading-none text-ink-secondary",
         className,
       )}
     >

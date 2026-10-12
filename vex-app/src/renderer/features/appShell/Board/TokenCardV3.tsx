@@ -67,13 +67,7 @@
  */
 
 import { useEffect, useId, useRef, useState, type JSX } from "react";
-import {
-  IconArrowUpRight,
-  IconClose,
-  IconFullscreen,
-  IconInfo,
-  IconSparkle,
-} from "../../../components/icons/index.js";
+import { PxIcon } from "../../../components/icons/index.js";
 import { ChainSlugIcon } from "../../../components/common/ChainIcon.js";
 import { cn } from "../../../lib/utils.js";
 import { BoardSparkline, type BoardSparklineData } from "./BoardSparkline.js";
@@ -115,9 +109,8 @@ import type { BoardSafetyVerdict } from "./board-surface-contracts.js";
  * plate: the plate is not focusable, and a ring around a non-target is noise.
  */
 const CARD_CLASS =
-  "vex-board-card group relative flex h-full w-full min-w-0 flex-col overflow-hidden rounded-2xl border bg-board-card px-5 py-5 " +
-  "transition-[background-color,border-color,box-shadow] duration-150 " +
-  "hover:border-line-3 hover:bg-board-card-hover hover:shadow-lv2 motion-reduce:transition-none";
+  "vex-board-card group relative flex h-full w-full min-w-0 flex-col overflow-hidden border border-rule bg-board-card px-5 py-5 " +
+  "transition-colors duration-150 hover:bg-board-card-hover motion-reduce:transition-none";
 
 export interface TokenCardV3Props {
   readonly card: BoardCardModel;
@@ -243,7 +236,7 @@ export function TokenCardV3({
       data-state={state}
       data-selected={selected ? "true" : "false"}
       aria-label={`${ticker} on ${card.chain}, price ${priceLabel}, 24 hour change ${deltaLabel}, ${statusLabel}`}
-      className={cn(CARD_CLASS, selected ? "border-accent-primary/40" : "border-line-2")}
+      className={CARD_CLASS}
     >
       {/* IDENTITY. Fixed height so a two-line name in one card cannot push
         * every price row in its row of cards out of alignment. */}
@@ -252,7 +245,7 @@ export function TokenCardV3({
         <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
           <span
             data-vex-area="board-token-name"
-            className="truncate font-display text-[20px] font-bold leading-[24px] tracking-[-0.02em] text-ink-primary"
+            className="truncate text-[17px] font-semibold leading-[24px] text-ink-primary"
             // The WHOLE name: the visual clamp is CSS, the string is intact
             // here and in the accessible name.
             title={heading}
@@ -262,7 +255,7 @@ export function TokenCardV3({
           <span
             data-vex-area="board-token-ticker"
             data-shortened={printedTicker.shortened ? "true" : undefined}
-            className="truncate text-[13px] uppercase leading-[16px] text-ink-tertiary"
+            className="truncate font-mono text-[11px] uppercase leading-[16px] tracking-[0.14em] text-ink-tertiary"
             title={ticker}
           >
             {printedTicker.text}
@@ -302,7 +295,7 @@ export function TokenCardV3({
       <div
         data-vex-area="board-token-price-row"
         data-tick={tick}
-        className="mt-4 flex h-[44px] items-end gap-3 rounded-md"
+        className="mt-4 flex h-[44px] items-end gap-3"
       >
         {/* NOWRAP, and that is the fix for a defect the matrix caught at
           * 1920px with no drawer at all: with `flex-wrap` the browser pushed
@@ -316,7 +309,7 @@ export function TokenCardV3({
           <span
             data-vex-area="board-token-price"
             data-shortened={printedPrice.shortened ? "true" : undefined}
-            className="min-w-0 truncate font-display text-[28px] font-bold leading-[34px] tracking-[-0.02em] tabular-nums text-ink-primary"
+            className="min-w-0 truncate font-mono text-[22px] leading-[34px] tabular-nums text-ink-primary"
             // The WHOLE decimal string, so no digit the provider reported is
             // lost to the display precision above it. The KEYBOARD path to
             // the same string is the header's disclosure; this is the
@@ -330,7 +323,7 @@ export function TokenCardV3({
             data-trend={card.trendH24}
             data-shortened={printedDelta.shortened ? "true" : undefined}
             className={cn(
-              "shrink-0 text-[15px] font-semibold leading-[20px] tabular-nums",
+              "shrink-0 font-mono text-[13px] leading-[20px] tabular-nums",
               deltaToneClass(card.trendH24),
             )}
             title={printedDelta.shortened ? deltaLabel : undefined}
@@ -339,7 +332,7 @@ export function TokenCardV3({
           </span>
           <span
             data-vex-area="board-token-delta-window"
-            className="shrink-0 text-[13px] leading-[18px] text-ink-tertiary"
+            className="shrink-0 font-mono text-[11px] uppercase leading-[18px] tracking-[0.14em] text-ink-tertiary"
           >
             24h
           </span>
@@ -366,7 +359,7 @@ export function TokenCardV3({
         <BoardSparkline data={sparkline} trend={card.trendH24} />
       </div>
 
-      <div className="mt-4 h-px w-full bg-line-2" aria-hidden />
+      <div className="mt-4 h-px w-full bg-rule" aria-hidden />
 
       {/* THE FOUR FIGURES. A `dl` with four equal columns: the label sits
         * ABOVE its value, as the mockup has it, and `grid-cols-4` keeps the
@@ -417,9 +410,9 @@ export function TokenCardV3({
             // Covered by the full-value panel: out of the tab order, still in
             // the accessibility tree. See `fullValueOpen` above.
             tabIndex={fullValueOpen ? -1 : undefined}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-line-2 px-2.5 text-[12.5px] font-medium text-ink-secondary transition-colors duration-150 hover:border-line-3 hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 border border-rule px-2.5 font-mono text-[11px] uppercase tracking-[0.14em] text-accent-primary transition-colors duration-150 hover:border-rule-ink hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
           >
-            <IconSparkle size={14} />
+            <PxIcon name="models" size={16} />
             Ask VEX
           </button>
         </div>
@@ -460,12 +453,12 @@ export function DexscreenerLink({
       aria-label={`Open ${ticker} on DexScreener`}
       tabIndex={covered ? -1 : undefined}
       className={cn(
-        "inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-1.5 text-[12.5px] font-medium text-ink-tertiary transition-colors duration-150 hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+        "inline-flex h-8 shrink-0 items-center gap-1 px-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-tertiary transition-colors duration-150 hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
         className,
       )}
     >
       DexScreener
-      <IconArrowUpRight size={12} />
+      <PxIcon name="external" size={16} />
     </a>
   );
 }
@@ -533,21 +526,21 @@ function SpotlightAction({
       tabIndex={covered ? -1 : undefined}
       onClick={onSpotlight}
       className={cn(
-        "inline-flex h-7 shrink-0 items-center gap-1.5 self-start rounded-capsule border px-3 text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+        "inline-flex h-7 shrink-0 items-center gap-1.5 self-start border px-3 font-mono text-[11px] uppercase tracking-[0.14em] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
         selected
-          ? "border-accent-primary/40 bg-accent-wash text-accent-primary"
-          : "border-line-2 text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary",
+          ? "border-accent-primary bg-accent-wash text-accent-primary"
+          : "border-rule text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary",
       )}
     >
-      <IconFullscreen size={14} />
+      <PxIcon name="fullscreen" size={16} />
       Spotlight
     </button>
   );
 }
 
 function deltaToneClass(trend: BoardTrend): string {
-  if (trend === "up") return "text-success";
-  if (trend === "down") return "text-danger";
+  if (trend === "up") return "text-accent-primary";
+  if (trend === "down") return "text-ink-primary";
   return "text-ink-tertiary";
 }
 
@@ -570,12 +563,12 @@ function Stat({
   // figure - rather than being clipped by the card with nothing reporting it.
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <dt className="whitespace-nowrap text-[13px] leading-[16px] text-ink-tertiary">
+      <dt className="whitespace-nowrap font-mono text-[11px] uppercase leading-[16px] tracking-[0.14em] text-ink-tertiary">
         {label}
       </dt>
       <dd
         data-shortened={printed.shortened ? "true" : undefined}
-        className="whitespace-nowrap text-[15px] font-semibold leading-[20px] tabular-nums text-ink-primary"
+        className="whitespace-nowrap font-mono text-[14px] leading-[20px] tabular-nums text-ink-primary"
         title={title}
       >
         {printed.text}
@@ -738,17 +731,17 @@ function FullValueDisclosure({
           setOpen(true);
         }}
         className={cn(
-          "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border text-ink-tertiary transition-colors duration-150 hover:border-line-3 hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+          "inline-flex h-7 w-7 shrink-0 items-center justify-center border text-ink-tertiary transition-colors duration-150 hover:border-rule-ink hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
           // The cut is VISIBLE on the control itself, in the one treatment
           // the card already uses to mean "this needs your attention", so a
           // reader who never opens the panel still sees that this card is
           // showing them less than the provider sent.
           shortened
-            ? "border-accent-primary/40 bg-accent-wash text-accent-primary"
-            : "border-line-2",
+            ? "border-accent-primary bg-accent-wash text-accent-primary"
+            : "border-rule",
         )}
       >
-        <IconInfo size={14} />
+        <PxIcon name="info" size={16} />
       </button>
       {open ? (
         <div
@@ -768,10 +761,10 @@ function FullValueDisclosure({
             event.preventDefault();
             dismiss();
           }}
-          className="absolute inset-0 z-10 flex flex-col gap-3 overflow-y-auto rounded-2xl border border-line-2 bg-board-card px-5 py-5"
+          className="absolute inset-0 z-10 flex flex-col gap-3 overflow-y-auto border border-rule bg-board-card px-5 py-5"
         >
           <div className="flex items-start justify-between gap-3">
-            <p className="font-display text-[15px] font-semibold leading-[20px] text-ink-primary">
+            <p className="font-mono text-[11px] uppercase leading-[20px] tracking-[0.14em] text-ink-primary">
               {BOARD_FULL_VALUE_TITLE}
             </p>
             <button
@@ -780,9 +773,9 @@ function FullValueDisclosure({
               data-vex-area="board-token-full-value-close"
               onClick={dismiss}
               aria-label={`Close the full values for ${ticker}`}
-              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <IconClose size={14} />
+              <PxIcon name="close" size={16} />
             </button>
           </div>
           {shortened ? (

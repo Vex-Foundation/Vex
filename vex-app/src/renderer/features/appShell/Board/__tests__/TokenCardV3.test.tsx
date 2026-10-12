@@ -446,7 +446,8 @@ describe("TokenCardV3 - chip precedence", () => {
     const chip = area("board-status-chip");
     expect(chip.getAttribute("data-tone")).toBe("danger");
     expect(chip.getAttribute("title")).toBe("High risk");
-    expect(chip.querySelector("svg")).not.toBeNull();
+    // Status is a fill, not a glyph: the danger tone draws the ink cross.
+    expect(chip.querySelector(".vex-swatch")?.getAttribute("data-s")).toBe("error");
   });
 });
 

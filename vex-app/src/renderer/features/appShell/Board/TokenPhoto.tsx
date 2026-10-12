@@ -178,7 +178,7 @@ export function TokenPhotoFrame({
         alt=""
         aria-hidden
         onError={view.onUndecodable}
-        className={`${sizing.frame} shrink-0 rounded-full bg-surface-2 object-cover`}
+        className={`${sizing.frame} shrink-0 bg-surface-2 object-cover`}
       />
     );
   }
@@ -188,7 +188,7 @@ export function TokenPhotoFrame({
         data-vex-area={area}
         data-state="loading"
         aria-hidden
-        className={`block ${sizing.frame} shrink-0 rounded-full bg-surface-skeleton animate-pulse motion-reduce:animate-none`}
+        className={`block ${sizing.frame} shrink-0 bg-surface-skeleton`}
       />
     );
   }
@@ -203,7 +203,7 @@ export function TokenPhotoFrame({
           data-state="refused"
           aria-hidden
           title={BOARD_IMAGE_REFUSED_TITLE}
-          className={`block ${sizing.frame} shrink-0 rounded-full bg-surface-skeleton`}
+          className={`block ${sizing.frame} shrink-0 bg-surface-skeleton`}
         />
         <span data-vex-area={`${area}-refused`} className="sr-only">
           {BOARD_IMAGE_REFUSED_TITLE}
@@ -222,7 +222,7 @@ export function TokenPhotoFrame({
           data-state="unavailable"
           aria-hidden
           title={BOARD_IMAGE_UNAVAILABLE_TITLE}
-          className={`block ${sizing.frame} shrink-0 rounded-full bg-surface-skeleton`}
+          className={`block ${sizing.frame} shrink-0 bg-surface-skeleton`}
         />
         <span data-vex-area={`${area}-unavailable`} className="sr-only">
           {BOARD_IMAGE_UNAVAILABLE_TITLE}
@@ -237,7 +237,7 @@ export function TokenPhotoFrame({
         data-state="monogram"
         aria-hidden
         title={announceAbsence ? BOARD_NO_IMAGE_TITLE : undefined}
-        className={`flex ${sizing.frame} shrink-0 items-center justify-center rounded-full bg-surface-2 font-display ${sizing.glyph} font-semibold leading-none text-ink-tertiary`}
+        className={`flex ${sizing.frame} shrink-0 items-center justify-center bg-surface-2 font-mono ${sizing.glyph} leading-none text-ink-tertiary`}
       >
         {monogram(symbol)}
       </span>

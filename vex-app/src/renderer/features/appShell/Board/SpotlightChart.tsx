@@ -861,9 +861,9 @@ export function SpotlightChart({
                   setResolution(pill.resolution);
                 }}
                 className={cn(
-                  "rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+                  "px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
                   selected
-                    ? "bg-accent-wash text-accent-primary ring-1 ring-inset ring-accent-primary/40"
+                    ? "bg-accent-wash text-accent-primary ring-1 ring-inset ring-accent-primary"
                     : "text-ink-tertiary hover:bg-interactive-hover",
                 )}
               >
@@ -891,7 +891,7 @@ export function SpotlightChart({
           data-reason={surface.reason}
           role="status"
           aria-live="polite"
-          className="text-[12px] leading-[16px] text-warning"
+          className="text-[12px] leading-[16px] text-ink-primary"
         >
           {`Refresh failed. ${CHART_DEGRADED_COPY[surface.reason] ?? "The provider did not answer the latest read."} These bars are the last good read${stamp === null ? "" : `, from ${stamp}`}.`}
         </p>
@@ -912,7 +912,7 @@ export function SpotlightChart({
             cursorRef.current = null;
             setTooltip(null);
           }}
-          className="relative h-full w-full rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="relative h-full w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
 
         {showSkeleton ? (
@@ -921,7 +921,7 @@ export function SpotlightChart({
           <div
             data-vex-area="spotlight-chart-skeleton"
             aria-label="Loading chart"
-            className="absolute inset-0 rounded-lg bg-surface-skeleton animate-pulse motion-reduce:animate-none"
+            className="absolute inset-0 bg-surface-skeleton"
           />
         ) : null}
 
@@ -929,7 +929,7 @@ export function SpotlightChart({
           <p
             data-vex-area="spotlight-chart-absent"
             data-reason={surface.kind === "absent" ? surface.reason : ""}
-            className="absolute inset-0 flex items-center justify-center rounded-lg bg-board-card px-6 text-center text-[13px] leading-[18px] text-ink-tertiary"
+            className="absolute inset-0 flex items-center justify-center bg-board-card px-6 text-center text-[13px] leading-[18px] text-ink-tertiary"
           >
             {(surface.kind === "absent"
               ? CHART_ABSENT_COPY[surface.reason]
@@ -950,7 +950,7 @@ export function SpotlightChart({
             // NO TRANSFORM: the card's top-left corner is placed outright by
             // `placeSpotlightTooltip`, which is what lets it be clamped into
             // the pane and flipped below the crosshair near the top edge.
-            className="pointer-events-none absolute left-0 top-0 z-10 rounded-lg border border-line-2 bg-surface-1 px-2.5 py-1.5 shadow-lv2"
+            className="pointer-events-none absolute left-0 top-0 z-10 border border-rule bg-surface-1 px-2.5 py-1.5"
           >
             <span
               data-vex-area="spotlight-chart-tooltip-open"
@@ -969,7 +969,7 @@ export function SpotlightChart({
               data-direction={tooltip.closeUp ? "up" : "down"}
               className={cn(
                 "block text-[13px] leading-[18px] font-semibold tabular-nums",
-                tooltip.closeUp ? "text-success" : "text-error",
+                tooltip.closeUp ? "text-accent-primary" : "text-ink-primary",
               )}
             >
               {`C ${tooltip.closeText}`}
