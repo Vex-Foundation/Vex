@@ -29,6 +29,7 @@ import {
   type JSX,
 } from "react";
 import { createPortal } from "react-dom";
+import { PxIcon } from "../../../components/icons/index.js";
 import { CLOSE_PORTIONS, type ClosePortion, type LighterPositionRow } from "./account-model.js";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 import { useUiStore } from "../../../stores/uiStore.js";
@@ -231,10 +232,8 @@ export function ClosePositionPopover({
         title={disabled ? "A close is already pending for this position." : undefined}
         onClick={() => (open ? close(true) : setOpen(true))}
       >
-        {/* Drawn, not a multiplication sign standing in for an icon. */}
-        <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden focusable="false">
-          <path d="M2.5 2.5 L9.5 9.5 M9.5 2.5 L2.5 9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
+        {/* The pixel close mark, not a multiplication sign standing in for an icon. */}
+        <PxIcon name="close" />
       </button>
       {open && !disabled ? createPortal(card, document.body) : null}
     </>

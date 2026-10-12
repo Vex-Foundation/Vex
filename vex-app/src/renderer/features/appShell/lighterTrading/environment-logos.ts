@@ -2,9 +2,9 @@
  * The network mark for each Lighter deployment: Ethereum for Core, the
  * Robinhood feather for RHC.
  *
- * One source, because the two places that show them must not drift onto
- * different files - the desk's environment switch, where the mark sits beside
- * the label, and the setup modal, where it sits behind it.
+ * Shown in the account-setup modal, where each deployment's mark sits beside
+ * its name. The desk's own environment switch names the deployment in words
+ * only (docs/design/V10-SPREAD.md section 1).
  *
  * Renderer-relative, matching how every other logo in this feature is served.
  */

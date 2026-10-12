@@ -565,7 +565,7 @@ export function TradeTicket({
               if (draft !== null) onAsk(draft);
             }}
           >
-            <VexMark size={14} /> Review with Vex
+            <VexMark size={16} /> Review with Vex
           </button>
         )}
         <div className="lit-side-actions" role="group" aria-label={protective ? "Position close side" : "Order side"}>
