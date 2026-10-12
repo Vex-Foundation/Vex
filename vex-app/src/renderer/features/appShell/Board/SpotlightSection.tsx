@@ -49,8 +49,8 @@ export type SpotlightSectionTone = "neutral" | "positive" | "danger";
 
 const ICON_TONE: Readonly<Record<SpotlightSectionTone, string>> = {
   neutral: "text-ink-tertiary",
-  positive: "text-success",
-  danger: "text-danger",
+  positive: "text-accent-primary",
+  danger: "text-ink-primary",
 };
 
 export interface SpotlightSectionProps {
@@ -84,7 +84,7 @@ export function SpotlightSection({
       data-vex-area={area}
       data-state={state}
       className={cn(
-        "flex min-w-0 flex-col gap-3 rounded-2xl border border-line-2 bg-board-card p-4",
+        "flex min-w-0 flex-col gap-3 border border-rule bg-board-card p-4",
         className,
       )}
     >
@@ -96,11 +96,11 @@ export function SpotlightSection({
         >
           {icon}
         </span>
-        <h3 className="min-w-0 flex-1 truncate text-[14px] font-semibold leading-[20px] text-ink-primary">
+        <h3 className="min-w-0 flex-1 truncate font-mono text-[11px] uppercase leading-[20px] tracking-[0.14em] text-ink-primary">
           {title}
         </h3>
         {meta === undefined ? null : (
-          <span className="flex shrink-0 items-center text-[12px] leading-[16px] tabular-nums text-ink-tertiary">
+          <span className="flex shrink-0 items-center font-mono text-[11px] uppercase leading-[16px] tracking-[0.14em] tabular-nums text-ink-tertiary">
             {meta}
           </span>
         )}
@@ -124,7 +124,7 @@ export function SpotlightPendingBody({
       data-state="pending"
       aria-label={`${title} loading`}
       className={cn(
-        "h-[52px] w-full rounded bg-surface-skeleton animate-pulse motion-reduce:animate-none",
+        "h-[52px] w-full bg-surface-skeleton",
         className,
       )}
     />

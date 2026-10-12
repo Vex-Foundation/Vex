@@ -10,13 +10,7 @@
  */
 
 import { useState, type JSX } from "react";
-import {
-  IconData,
-  IconGlobe,
-  IconMegaphone,
-  IconWallet,
-  IconWaypoints,
-} from "../../../components/icons/index.js";
+import { PxIcon } from "../../../components/icons/index.js";
 import { Pill } from "../../../components/ui/pill.js";
 import { cn } from "../../../lib/utils.js";
 import type {
@@ -58,7 +52,7 @@ export function SmartMoneySection({
   return (
     <SpotlightReadSection
       area="board-spotlight-smart-money"
-      icon={<IconWallet size={18} />}
+      icon={<PxIcon name="wallet" size={16} />}
       title="Smart money"
       read={read}
       meta={
@@ -102,7 +96,7 @@ export function SmartMoneySection({
                   <span
                     className={cn(
                       "shrink-0 tabular-nums",
-                      (trader.netCashFlowUsd ?? 0) > 0 ? "text-success" : "text-danger",
+                      (trader.netCashFlowUsd ?? 0) > 0 ? "text-accent-primary" : "text-ink-primary",
                     )}
                   >
                     {formatSignedUsdNumber(trader.netCashFlowUsd)} net
@@ -166,7 +160,7 @@ function WalletIdentity({
       onClick={() => {
         setExpanded((value) => !value);
       }}
-      className="min-w-0 flex-1 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       {label === null ? null : (
         <span
@@ -236,7 +230,7 @@ export function TapeSection({
     >
       <SpotlightReadSection
         area="board-spotlight-tape"
-        icon={<IconData size={18} />}
+        icon={<PxIcon name="list" size={16} />}
         title="Tape"
         read={read}
         className="flex-1"
@@ -266,7 +260,7 @@ export function TapeSection({
                     {trade.gapBefore ? (
                       <span
                         data-vex-area="board-spotlight-tape-gap"
-                        className="py-1 text-[12px] leading-[16px] text-warning-label"
+                        className="py-1 text-[12px] leading-[16px] text-ink-primary"
                       >
                         Trades before this point could not be read.
                       </span>
@@ -283,9 +277,9 @@ export function TapeSection({
                         className={cn(
                           "w-16 shrink-0 font-medium",
                           trade.side === "buy"
-                            ? "text-success"
+                            ? "text-accent-primary"
                             : trade.side === "sell"
-                              ? "text-danger"
+                              ? "text-ink-primary"
                               : "text-ink-tertiary",
                         )}
                       >
@@ -348,7 +342,7 @@ export function MomentumSection({
   return (
     <SpotlightReadSection
       area="board-spotlight-momentum"
-      icon={<IconWaypoints size={18} />}
+      icon={<PxIcon name="chart" size={16} />}
       title="Momentum"
       read={read}
     >
@@ -367,7 +361,7 @@ export function MomentumSection({
                   data-acceleration={view.acceleration}
                   className={cn(
                     "flex min-w-0 flex-col gap-0.5",
-                    index > 0 && "border-l border-line-1 pl-3",
+                    index > 0 && "border-l border-rule-quiet pl-3",
                   )}
                 >
                   <dt className="text-[12px] leading-[16px] text-ink-tertiary">
@@ -377,9 +371,9 @@ export function MomentumSection({
                     className={cn(
                       "text-[15px] font-semibold leading-[20px] tabular-nums",
                       view.trend === "up"
-                        ? "text-success"
+                        ? "text-accent-primary"
                         : view.trend === "down"
-                          ? "text-danger"
+                          ? "text-ink-primary"
                           : "text-ink-tertiary",
                     )}
                   >
@@ -421,7 +415,7 @@ export function PromotionSection({
   return (
     <SpotlightReadSection
       area="board-spotlight-promotion"
-      icon={<IconMegaphone size={18} />}
+      icon={<PxIcon name="megaphone" size={16} />}
       title="Promotion"
       read={read}
     >
@@ -484,7 +478,7 @@ export function OtherPoolsSection({
   return (
     <SpotlightReadSection
       area="board-spotlight-other-pools"
-      icon={<IconGlobe size={18} />}
+      icon={<PxIcon name="globe" size={16} />}
       title="Other pools"
       read={read}
     >
