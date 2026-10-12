@@ -1,62 +1,28 @@
 /**
- * VEX TOKEN CARD — COMPACT rail widget (Chronos slim cut, 2026-07-20).
+ * $VEX ON THE GROUND (docs/design/V10-SPREAD.md section 3): the live $VEX
+ * signal sits on the dark ground of the left page's print, under the flock and
+ * over the profile row. One line in Departure Mono, white on the photograph:
+ * the `$VEX` label, the price at 15px, and the 24h change at the right with
+ * its direction as an arrow (status is never a colour), then a 26px spark of
+ * the trailing hourly closes ending in a 4px square.
  *
- * The live $VEX signal rides the sessions rail between BROWSE ALL and the
- * profile footer (`SessionsList`). Slimmed by owner decree: a header row
- * [mark · $VEX · price · 24h delta] and a tight full-width sparkline — the
- * old 2×2 stat micro-grid (MCAP / LIQ / 24H VOL / HOLDERS) is gone.
- *
- * Speaks the Signal Tape grammar: solid-luminance surface + hairline,
- * `--vex-*` tokens ONLY (the shell design-guard enforces no raw hexes),
- * display numerals with `tabular-nums`, mono micro-labels. The 24h delta is
- * a BORDERLESS figure in the SEMANTIC status tone (success up / danger
- * down) always wearing the `.vex-delta-shimmer` sweep (owner-decreed
- * decorative exception; reduced motion stills it). Stale data keeps its own
- * honest marker next to the $VEX label.
- *
- * The data card (only the data card — loading/error states stay inert) is a
- * whole-card link out to the $VEX DexScreener pair, opened in the system
- * browser via main's external-URL allowlist.
- *
- * Every state resolves to a visible surface so the rail is never blank —
- * loading skeleton, error line, stale marker, or the data card.
+ * No plate and no box: the print is the ground. The one link is the whole
+ * data line, out to the $VEX DexScreener pair, opened in the system browser
+ * through main's external-URL allowlist. Stale data keeps its own honest
+ * marker beside the label. Every state resolves to something visible, so the
+ * ground is never blank: the label with a placeholder bar while loading, the
+ * label with a line while the read fails, or the data.
  */
 
 import type { JSX } from "react";
 import type { VexMarketSnapshot } from "@shared/schemas/market.js";
 import { useVexMarket } from "../../../lib/api/market.js";
-import { cn } from "../../../lib/utils.js";
 import {
   formatPercentDelta,
   formatTokenPriceUsd,
 } from "../../../lib/format.js";
 
-/**
- * This rail widget's plate: a GLASS CHIP (`.vex-glass-chip`, glass.css), the
- * one tier defined for a card inside a glass rail. Its edge is the inset
- * light the class paints, never a stroke - the rail redesign (2026-09-04)
- * took the four boxes out of the left rail and this frame was one of them.
- *
- * `Board/TokenCard.tsx` once held a verbatim copy of the old plate string and
- * a comment calling the two cards siblings whose geometry had to stay in
- * step. THEY HAVE FORKED, deliberately (board v2): the board card grew a
- * logo, a hero price treatment and a stat block, and is a solid layer-1 card
- * on a solid board, so it owns its own surface, padding and rhythm. What the
- * two still share is the GRAMMAR - the same radius token, the same micro-label
- * register, the same display numerals, the same semantic delta tones - so they
- * still read as one family.
- *
- * The plate and its padding are two strings because the data card puts the
- * padding on the LINK inside the plate rather than on the plate itself: the
- * link's hover fill and focus ring are Tailwind utilities, and `glass.css` is
- * unlayered author CSS that beats every utility on the same element (the
- * HARD RULE in `styles/globals.css`). A ring on the chip element would be
- * painted over by the chip's own box-shadow; on the inner link it draws.
- */
-const CHIP_CLASS = "rounded-xl vex-glass-chip";
-const PLATE_PADDING = "px-3 py-2.5";
-
-// The $VEX DexScreener pair — a renderer-local literal by design: the
+// The $VEX DexScreener pair: a renderer-local literal by design. The
 // market IPC schema (`@shared/schemas/market.js`) deliberately carries no
 // addresses or URLs. `dexscreener.com` is already in main's external-URL
 // allowlist (`main-window.ts`), so target=_blank routes through
@@ -69,51 +35,33 @@ export function VexTokenCardCompact(): JSX.Element {
   const result = query.data;
   const snapshot = result?.ok ? result.data : null;
 
-  // Bridge/handler error → a boxed line, never a blank rail.
+  // Bridge/handler error: a line, never a blank ground.
   if ((result !== undefined && !result.ok) || query.isError) {
     return (
       <section
         data-vex-area="vex-token-compact"
         data-state="error"
         aria-label="VEX market data unavailable"
-        className={cn(CHIP_CLASS, PLATE_PADDING)}
+        className="vex-tok"
       >
-        <div className="flex items-center gap-2">
-          <VexMark />
-          <div className="flex min-w-0 flex-col">
-            <span className="vex-micro-label self-start uppercase text-ink-secondary">
-              $VEX
-            </span>
-            <span className="text-[11px] text-warning-label">
-              Market data unavailable.
-            </span>
-          </div>
-        </div>
+        <span className="vex-tok__k">$VEX</span>
+        <span className="vex-tok__note">Market data unavailable.</span>
       </section>
     );
   }
 
-  // First read (isLoading) OR polled-but-not-yet (`ok(null)`) → skeleton.
+  // First read (isLoading) OR polled-but-not-yet (`ok(null)`): the label and
+  // a placeholder bar where the price will be.
   if (snapshot === null) {
     return (
       <section
         data-vex-area="vex-token-compact"
         data-state="loading"
         aria-label="Loading VEX price"
-        className={cn(CHIP_CLASS, PLATE_PADDING)}
+        className="vex-tok"
       >
-        <div className="flex items-center gap-2">
-          <VexMark />
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <span className="vex-micro-label self-start uppercase text-ink-secondary">
-              $VEX
-            </span>
-            <span
-              aria-hidden
-              className="h-4 w-20 animate-pulse rounded bg-line-3"
-            />
-          </div>
-        </div>
+        <span className="vex-tok__k">$VEX</span>
+        <span aria-hidden className="vex-tok__wait" />
       </section>
     );
   }
@@ -138,55 +86,27 @@ function CompactBody({
       aria-label={`VEX token price ${priceLabel}, 24 hour change ${deltaLabel}${
         snapshot.stale ? ", data delayed" : ""
       }`}
-      className={CHIP_CLASS}
     >
       {/* target=_blank never opens a child window: main's
        * setWindowOpenHandler denies + routes allowlisted hosts (dexscreener.com
-       * is already listed) through shell.openExternal. Only the data card
-       * links out — loading/error states stay inert. */}
+       * is already listed) through shell.openExternal. Only the data line
+       * links out; the loading and error states stay inert. */}
       <a
         href={DEXSCREENER_VEX_PAIR_URL}
         target="_blank"
         rel="noopener noreferrer"
         aria-label="Open $VEX on DexScreener"
-        className={cn(
-          PLATE_PADDING,
-          // The hover cue is the rail's own row wash, settled through
-          // `vex-tint`, rather than a border the chip no longer has.
-          "vex-tint block rounded-xl hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
-        )}
+        className="vex-tok vex-tok--link"
       >
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <VexMark />
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="vex-micro-label inline-flex items-center self-start gap-1.5 uppercase text-ink-secondary">
-                $VEX
-                {snapshot.stale ? <StaleMarker /> : null}
-              </span>
-              <span className="truncate font-display text-[15px] font-extrabold leading-none tracking-[-0.02em] tabular-nums text-ink-primary">
-                {priceLabel}
-              </span>
-            </div>
-          </div>
-          <DeltaFigure change={snapshot.priceChange.h24} label={deltaLabel} />
-        </div>
-
+        <span className="vex-tok__k">
+          $VEX
+          {snapshot.stale ? <StaleMarker /> : null}
+        </span>
+        <span className="vex-tok__p">{priceLabel}</span>
+        <DeltaFigure change={snapshot.priceChange.h24} label={deltaLabel} />
         <Sparkline closes={closes} />
       </a>
     </section>
-  );
-}
-
-/** The Vex mark — the SAME `/icon.png` the profile row below wears (owner
- * decree: one identity image up and down the rail). */
-function VexMark(): JSX.Element {
-  return (
-    <img
-      src="/icon.png"
-      alt="VEX token"
-      className="h-6 w-6 shrink-0 rounded-full"
-    />
   );
 }
 
@@ -194,28 +114,18 @@ function StaleMarker(): JSX.Element {
   return (
     <span
       data-vex-area="vex-token-stale"
-      className="flex items-center gap-1 text-ink-tertiary"
+      className="vex-tok__stale"
       title="Live feed delayed - showing the last known price."
     >
-      <span
-        aria-hidden
-        className="h-[5px] w-[5px] rounded-full bg-[var(--vex-pin)]"
-      />
       delayed
     </span>
   );
 }
 
 /**
- * 24h delta figure — BORDERLESS (owner decree: no pill chrome), set in the
- * SEMANTIC status tone (up = success, down = danger, flat/null = muted).
- * Status colours are a product contract the theme never re-tints. The figure
- * stays a SOLID direction color at all times (owner feedback: background-clip
- * on the number washed the text out); `.vex-delta-shimmer` now only drives an
- * `::after` overlay — a near-white band sweeping over a duplicate of the text
- * (via `data-shimmer-text`) — so the shine never dims the live figure. Always
- * on (owner-decreed decorative exception to the live-state motion law); OS
- * reduced motion drops the overlay and the solid figure stays.
+ * The 24h change: the figure with its direction as an arrow (up, down, or
+ * none when flat or unknown). One ink, the ground's white: a rise and a fall
+ * are told apart by the arrow and the sign, never by a colour.
  */
 function DeltaFigure({
   change,
@@ -229,42 +139,40 @@ function DeltaFigure({
   return (
     <span
       data-vex-area="vex-token-delta"
-      data-shimmer-text={label}
-      className={cn(
-        "vex-delta-shimmer inline-flex shrink-0 items-center text-[11px] font-semibold tabular-nums",
-        up && "text-success",
-        down && "text-warning-label",
-        !up && !down && "text-ink-tertiary",
-      )}
+      data-direction={up ? "up" : down ? "down" : "flat"}
+      className="vex-tok__c"
     >
+      {up || down ? <span aria-hidden>{up ? "↑ " : "↓ "}</span> : null}
       {label}
     </span>
   );
 }
 
+/** The spark's drawing box; the line stretches to the ground's width. */
+const SPARK_W = 264;
+const SPARK_H = 26;
+const SPARK_PAD = 2;
+
 /**
- * Full-width rail sparkline — a single 2px accent path over the trailing hourly
- * closes, stretched edge-to-edge (preserveAspectRatio="none" + non-scaling
- * stroke keep the line crisp while the x-axis fills the rail). Fewer than two
- * finite points → a blank reserved track (graceful empty state, never blank).
+ * The trailing hourly closes as one 1.25px polyline across the ground's full
+ * width, ending in a 4px square on the last close (non-scaling strokes keep
+ * both crisp while the x axis stretches). Fewer than two finite points: a
+ * blank reserved track, so the ground keeps its rhythm.
  */
 function Sparkline({
   closes,
 }: {
   readonly closes: readonly number[];
 }): JSX.Element {
-  const W = 240;
-  const H = 32;
-  const PAD = 2;
   const points = closes.filter((v) => Number.isFinite(v));
 
   if (points.length < 2) {
     return (
-      <div
+      <span
         data-vex-area="vex-token-sparkline"
         data-empty="true"
         aria-hidden
-        className="mt-2 h-8 w-full"
+        className="vex-tok__spark"
       />
     );
   }
@@ -272,32 +180,39 @@ function Sparkline({
   const min = Math.min(...points);
   const max = Math.max(...points);
   const span = max - min || 1;
-  const stepX = (W - PAD * 2) / (points.length - 1);
-  const y = (v: number): number => PAD + (H - PAD * 2) * (1 - (v - min) / span);
-
-  const d = points
-    .map(
-      (v, i) =>
-        `${i === 0 ? "M" : "L"}${(PAD + i * stepX).toFixed(2)} ${y(v).toFixed(2)}`,
-    )
-    .join(" ");
+  const stepX = (SPARK_W - SPARK_PAD * 2) / (points.length - 1);
+  const xy = points.map(
+    (v, i) =>
+      [
+        SPARK_PAD + i * stepX,
+        SPARK_PAD + (SPARK_H - SPARK_PAD * 2) * (1 - (v - min) / span),
+      ] as const,
+  );
+  const line = xy.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
+  const last = xy[xy.length - 1] ?? [SPARK_W - SPARK_PAD, SPARK_H / 2];
 
   return (
     <svg
       data-vex-area="vex-token-sparkline"
       data-empty="false"
       aria-hidden
-      viewBox={`0 0 ${W} ${H}`}
+      viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
       preserveAspectRatio="none"
-      className="mt-2 h-8 w-full"
+      className="vex-tok__spark"
     >
-      <path
-        d={d}
+      <polyline
+        points={line}
         fill="none"
-        stroke="var(--vex-accent)"
-        strokeWidth={2}
-        strokeLinejoin="round"
-        strokeLinecap="round"
+        stroke="var(--vex-alias-on-photo)"
+        strokeWidth={1.25}
+        strokeLinejoin="miter"
+        vectorEffect="non-scaling-stroke"
+      />
+      <path
+        d={`M${last[0].toFixed(2)} ${last[1].toFixed(2)}h0`}
+        stroke="var(--vex-alias-on-photo)"
+        strokeWidth={4}
+        strokeLinecap="square"
         vectorEffect="non-scaling-stroke"
       />
     </svg>

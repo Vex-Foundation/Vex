@@ -26,6 +26,11 @@
  * itself: each mount already holds the store subscription it needs, and a
  * component that renders a choice is not the owner of where that choice is
  * kept.
+ *
+ * LOOK (docs/design/V10-SPREAD.md section 3): two 24px words in Departure
+ * Mono caps, the chosen one in a box. On paper (the Studio rail, a welcome
+ * hero) the box is the paper-2 step under the blue word; on the left page's
+ * print the mast restyles it as a label box (left-page.css).
  */
 
 import { useRef, type JSX } from "react";
@@ -43,9 +48,12 @@ const RUNTIME_MODE_SEGMENTS: readonly {
 export function RuntimeModeToggle({
   runtimeMode,
   onChange,
+  className,
 }: {
   readonly runtimeMode: RuntimeMode;
   readonly onChange: (mode: RuntimeMode) => void;
+  /** The seat's own placement and, on the print, its restyle hook. */
+  readonly className?: string;
 }): JSX.Element {
   // ROVING TABINDEX, the radiogroup contract: the group is ONE tab stop (the
   // checked segment), and the arrow keys move between the segments, selecting
@@ -67,7 +75,7 @@ export function RuntimeModeToggle({
     <div
       role="radiogroup"
       aria-label="Runtime mode"
-      className="flex h-9 items-center gap-0.5 rounded-capsule border border-line-2 bg-surface-1 p-0.5 shadow-lv1"
+      className={cn("vex-mode-seg inline-flex items-center gap-0.5", className)}
     >
       {RUNTIME_MODE_SEGMENTS.map((segment, index) => {
         const current = runtimeMode === segment.mode;
@@ -92,10 +100,10 @@ export function RuntimeModeToggle({
             }}
             onClick={() => onChange(segment.mode)}
             className={cn(
-              "inline-flex h-full items-center rounded-capsule px-3.5 text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
+              "inline-flex h-6 items-center px-2 font-mono text-[11px] font-normal uppercase tracking-[var(--tracking-chip)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--vex-alias-focus)]",
               current
-                ? "bg-interactive-active font-medium text-ink-primary"
-                : "text-ink-tertiary hover:text-ink-primary",
+                ? "bg-accent-wash text-accent-primary"
+                : "text-ink-secondary hover:text-accent-primary",
             )}
           >
             {segment.label}

@@ -71,6 +71,10 @@ import { ConnectionBanner } from "../../components/ui/connection-banner.js";
 import { useNetworkOnline } from "../../lib/use-network-online.js";
 import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
 import { ShellBackdrop } from "./ShellBackdrop.js";
+import { LeftPageOpenContext } from "./leftPage/leftPageContext.js";
+import { PlateFlock } from "../../components/pixel/PrintPlate.js";
+import { useDeskAgentState } from "../../components/pixel/useDeskAgentState.js";
+import { VexMark } from "../../components/common/VexMark.js";
 import { ShellDragHandle } from "./ShellDragHandle.js";
 import { ShellScreens } from "./screens/ShellScreens.js";
 import { LighterCenter } from "./lighterTrading/LighterCenter.js";
@@ -374,17 +378,18 @@ function ShellFrame({
         />
       ) : null}
 
-      {/* TRACK 1 - the left page: the print, and in agent mode the sessions
-        * index over it. The print layer clips itself; the column stays
-        * overflow-visible so nothing the index opens is cut at its edge. */}
+      {/* TRACK 1 - the left page: the print, the eagle and its flock in the
+        * band, and in agent mode the sessions page over it. The print layer
+        * clips itself; the column stays overflow-visible so nothing the page
+        * opens is cut at its edge. */}
       <div
         className="vex-left-page relative z-20 h-full min-h-0 min-w-0"
         data-vex-area="left-page"
         data-vex-left-page={spine ? "spine" : "page"}
       >
-        {/* The agent state canvas (the eagle and its flock) mounts here as
-          * the print's child, over the grain and under the index. */}
-        <ShellBackdrop />
+        <ShellBackdrop>
+          <LeftPageFlock />
+        </ShellBackdrop>
         {spine && !lighter ? (
           <div aria-hidden className="vex-left-page__cap vex-drag" />
         ) : null}
@@ -395,6 +400,14 @@ function ShellFrame({
               collapsed={sidebarCollapsed}
               onToggleSidebar={toggleSidebar}
             />
+          </div>
+        ) : cols.page > 0 ? (
+          // Lighter and Studio keep the closed page: the vx mark at the top of
+          // the print, the eagle alone in the band.
+          <div aria-hidden className="vex-left-page__content">
+            <span className="vex-left-page__mark">
+              <VexMark size={22} />
+            </span>
           </div>
         ) : null}
       </div>
@@ -439,7 +452,13 @@ function ShellFrame({
               zenMode={lighterZen}
               onOpenZenAssistant={openZenAssistant}
             />
-          ) : studio ? <StudioCenter /> : <SessionPanel />}
+          ) : studio ? <StudioCenter /> : (
+            // The welcome hero seats the mode capsule only while the left
+            // page is a spine; the open page's mast carries it otherwise.
+            <LeftPageOpenContext.Provider value={!spine}>
+              <SessionPanel />
+            </LeftPageOpenContext.Provider>
+          )}
         </div>
       </section>
 
@@ -527,4 +546,14 @@ function ShellFrame({
       />
     </div>
   );
+}
+
+/**
+ * The agent state on the left page: the eagle and its flock, over the print
+ * and under the page's furniture (docs/design/V10-SPREAD.md section 6). The
+ * engine composes the open page or, under 120 wide, the spine.
+ */
+function LeftPageFlock(): JSX.Element {
+  const { state } = useDeskAgentState();
+  return <PlateFlock state={state} layout="page" />;
 }
