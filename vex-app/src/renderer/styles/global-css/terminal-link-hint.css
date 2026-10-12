@@ -8,9 +8,10 @@
   max-height: 40%;
   overflow: hidden;
   padding: 8px 12px;
-  border: 1px solid var(--vex-alias-border-l2);
-  background: var(--vex-alias-bg-layer-2);
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-field);
   color: var(--vex-alias-label-primary);
+  font-family: var(--font-code);
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;

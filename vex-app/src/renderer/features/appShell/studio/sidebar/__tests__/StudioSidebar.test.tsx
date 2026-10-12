@@ -1403,25 +1403,24 @@ describe("the rail's project-wide file search", () => {
 });
 
 /**
- * THE GLASS RAIL (redesign 2026-09-04). The owner marked four boxes on the
- * left rail: the explorer pane's frame, the pane header's rule and plate, the
- * token card's frame and the rule above it. All four are gone; what separates
- * the regions now is spacing and the register step between a 14px section
- * title, an 11px uppercase pane title and 13px rows. The rail's glass is a
- * NAMED CLASS from styles/global-css/glass.css, which is what lets the design
- * guard keep its utility ban with no whitelist entry for this file.
+ * THE PAPER RAIL (docs/design/V10-SPREAD.md section 1). The rail is the paper
+ * closed by one 1px rule on its right, the head row is 44px under a rule, the
+ * explorer pane is spacing on the paper (no box, no plate), and the foot
+ * widget sits under one rule. No glass tier, no blur, no rounded box.
  *
- * These are class-chain assertions on the rendered tree for the same reason
- * the flex-chain case above is: jsdom lays nothing out, and a stroke is a
- * class here, so the class IS the contract.
+ * These are class-chain assertions on the rendered tree: jsdom lays nothing
+ * out, and a stroke is a class here, so the class IS the contract.
  */
-describe("the glass rail", () => {
-  it("wears the rail tier of glass as a class, not a utility", async () => {
+describe("the paper rail", () => {
+  it("is the paper with one closing rule, and wears no glass tier", async () => {
     renderSidebar();
     await screen.findByTestId("sidebar-profile");
     const rail = screen.getByLabelText("Studio projects sidebar");
-    expect(rail.classList.contains("vex-glass-rail")).toBe(true);
+    expect(rail.classList.contains("vex-glass-rail")).toBe(false);
     expect(rail.classList.contains("vex-sidebar")).toBe(true);
+    expect(rail.classList.contains("bg-surface-base")).toBe(true);
+    expect(rail.classList.contains("border-r")).toBe(true);
+    expect(rail.classList.contains("border-rule")).toBe(true);
     expect(rail.className).not.toMatch(/backdrop-blur/);
     expect(rail.className).not.toContain("bg-[var(--vex-rail)]");
   });
@@ -1437,7 +1436,7 @@ describe("the glass rail", () => {
     expect(pane).not.toBeNull();
     expect(pane?.className).not.toMatch(/(?:^|\s)border(?:-|\s|$)/);
     expect(pane?.className).not.toContain("rounded");
-    const header = screen.getByLabelText("Refresh").closest("div.flex.h-8");
+    const header = screen.getByLabelText("Refresh").closest("div.flex.h-\\[30px\\]");
     expect(header).not.toBeNull();
     expect(header?.className).not.toMatch(/border-b/);
     expect(header?.className).not.toContain("bg-surface-sidebar");
@@ -1461,14 +1460,14 @@ describe("the glass rail", () => {
     expect(body?.className).toContain("flex-1");
   });
 
-  it("separates the token widget from the list by spacing, not a rule", async () => {
+  it("sets the token widget under exactly one token rule", async () => {
     renderSidebar();
     await screen.findByTestId("sidebar-profile");
     const rail = screen.getByLabelText("Studio projects sidebar");
     const strokes = Array.from(rail.querySelectorAll<HTMLElement>("*")).filter((el) =>
       /(?:^|\s)border-t(?:\s|$|-\[)/.test(el.className),
     );
-    expect(strokes.map((el) => el.className)).toEqual([]);
+    expect(strokes.map((el) => el.className)).toEqual(["border-t border-rule px-3 py-3"]);
   });
 
   it("turns ONE chevron on the section headers instead of swapping glyphs", async () => {

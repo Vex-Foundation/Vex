@@ -249,7 +249,7 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
       </span>
       <span
         aria-hidden="true"
-        className="flex h-4 w-4 shrink-0 items-center justify-center text-ink-tertiary"
+        className="flex h-4 w-4 shrink-0 items-center justify-center text-accent-primary"
       >
         <LeadingGlyph
           rowKind={props.rowKind}

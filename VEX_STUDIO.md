@@ -4097,7 +4097,7 @@ section (consent grammar, terminal surface, welcome pill, keyboard table, previe
 mutations, highlight-budget reporting, and a full-restore-after-relaunch case).
 `studio-project-journey.spec.ts` and `studio-approvals.spec.ts` are the other real-build Playwright
 suites for project creation and the approvals badge. `studio-terminal-input.spec.ts` and
-`studio-terminal-glass.spec.ts` cover terminal input reaching the shell and rendering throughput.
+`studio-terminal-surface.spec.ts` cover terminal input reaching the shell and rendering throughput.
 On the terminal host itself, `pty-host-starter.test.ts` (317 lines) pins the restart-cap
 arithmetic (six restarts, no reset, no restart after quit) and the heartbeat ladder;
 `terminal-domain.test.ts` (1,631 lines) covers admission, capacity, ownership, revive-partial, and

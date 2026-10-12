@@ -207,7 +207,7 @@ export function ExplorerEditRow({
         // Blur CANCELS here rather than committing; see the module note.
         onBlur={onCancel}
         className={cn(
-          "min-w-0 flex-1 rounded-sm border bg-surface-input px-1 text-[13px] text-ink-primary outline-none",
+          "min-w-0 flex-1 border bg-surface-input px-1 text-[13px] text-ink-primary outline-none",
           shown === null ? "border-line-2 focus:border-ring" : "border-error",
         )}
       />

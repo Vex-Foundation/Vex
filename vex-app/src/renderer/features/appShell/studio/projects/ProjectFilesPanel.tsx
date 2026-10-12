@@ -107,7 +107,7 @@ export function ProjectFilesPanel({
         type="button"
         onClick={onRepair}
         data-vex-project-files-repair=""
-        className="self-start rounded px-1 font-medium text-accent-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        className="self-start px-1 font-medium text-accent-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
         {PROJECT_FILES_REPAIR_ACTION}
       </button>
@@ -145,7 +145,7 @@ export function ProjectFilesPanel({
                 key={`${artifact.kind}:${artifact.agentId ?? "-"}:${String(index)}`}
                 data-vex-artifact-state={artifact.state}
                 data-vex-artifact-kind={artifact.kind}
-                className="flex flex-col gap-1 rounded-lg border border-line-2 px-3 py-2"
+                className="flex flex-col gap-1 border border-line-2 px-3 py-2"
               >
                 <div className="flex items-center justify-between gap-2">
                   {/* The leading state slot. No `label`: the Pill on the same

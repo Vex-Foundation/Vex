@@ -123,7 +123,7 @@ export function StudioKeepAliveDialog({
             {openProjects.map((project) => (
               <li
                 key={project.id}
-                className="flex min-h-9 items-center gap-2 rounded-lg px-2 py-1"
+                className="flex min-h-9 items-center gap-2 px-2 py-1"
               >
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-[14px] leading-[20px] text-ink-primary">
