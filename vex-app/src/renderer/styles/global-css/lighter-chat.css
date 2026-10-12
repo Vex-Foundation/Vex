@@ -1,5 +1,7 @@
 /* ---------------------------------------------------------------------------
- * Vex chat rail (the shell's BOOK column in Lighter mode)
+ * Vex chat rail (the shell's BOOK column in Lighter mode, docs/design/
+ * V10-SPREAD.md sections 1 and 2): the serif "Vex" title, the scope row, the
+ * quick prompts as rule-framed keys, the session, the composer.
  * ------------------------------------------------------------------------- */
 
 /* The shell's BOOK frame is outside `.lit-desk`; it carries the same role
@@ -7,9 +9,21 @@
  * from the app's own aliases, so the rail's shared transcript and composer
  * components need no re-projection: they already speak the room. */
 .lit-chat-frame > [data-vex-area="book-panel"] {
+  border-left: 1px solid var(--lit-line);
   background: var(--lit-bg);
-  box-shadow: inset 1px 0 0 var(--lit-line);
   color: var(--lit-ink);
+}
+
+/* The rail's title: "Vex" in Instrument Serif 36, the title colour (the blue
+ * by day, paper at night). The frame's own markup is the shell's; this only
+ * sets the headline the Lighter rail passes it. */
+.lit-chat-frame > [data-vex-area="book-panel"] > :first-child > span:first-child {
+  color: var(--vex-alias-title);
+  font-family: var(--font-serif);
+  font-size: 36px;
+  font-weight: 400;
+  letter-spacing: -0.012em;
+  line-height: 1;
 }
 
 .lit-chat-shell {
@@ -28,104 +42,90 @@
 .lit-chat-shell [data-vex-session-content] { padding-block: 12px 0; }
 .lit-chat-shell [data-vex-conversation-scroll] { overscroll-behavior: contain; }
 .lit-chat-shell [data-vex-area="session-header"] { height: 30px; }
-.lit-chat-shell [data-vex-composer-seat] { background-color: transparent; }
-.lit-chat-shell [data-vex-composer-seat] { border-top: 1px solid var(--lit-line); }
-.lit-chat-shell [data-vex-area="session-panel"][data-phase="active"] [data-vex-composer-seat] {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--lit-bg) 0%, transparent) 0,
-    var(--lit-bg) 36px
-  );
-}
-.lit-chat-shell .vex-chat-prose { font-size: 12.5px; line-height: 1.5; }
+.lit-chat-shell [data-vex-composer-seat] { border-top: 1px solid var(--lit-line-quiet); background: var(--lit-bg); }
+
+/* Desk register: the rail is a side column, not a reading page, so the
+ * chat's document sizes step down to the rail's: 14.5px agent and user text,
+ * smaller headings. The chat marks its sizes with arbitrary classes; match
+ * those. */
+.lit-chat-shell .vex-chat-prose { font-size: 14.5px; line-height: 1.55; }
 .lit-chat-shell .vex-chat-prose table { font-size: 12px; }
-.lit-chat-shell .vex-reasoning-prose { font-size: 12.5px; line-height: 1.5; }
+.lit-chat-shell .vex-reasoning-prose { font-size: 13px; line-height: 1.5; }
 
-/* The turn shimmer on the desk: the focus blue with an ink glint, the same
- * family as the agent room's. */
+/* Live thinking on the desk: the focus blue, flat. */
 .lit-chat-shell .vex-turn-shimmer {
-  background: linear-gradient(
-    90deg,
-    var(--lit-focus) 0%,
-    var(--lit-focus) 40%,
-    color-mix(in srgb, var(--lit-focus) 58%, var(--lit-ink)) 50%,
-    var(--lit-focus) 60%,
-    var(--lit-focus) 100%
-  );
-  background-position: 100% 0;
-  background-size: 250% 100%;
-  background-clip: text;
-  color: transparent;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  background: none;
+  color: var(--lit-focus);
+  -webkit-text-fill-color: currentColor;
 }
 
-/* Desk register: the rail is a side column, not a reading page, so the chat's
- * document sizes (16px composer, 24px headings) step down to the desk's grid.
- * The chat marks its sizes with Tailwind arbitrary classes; match those. */
-.lit-chat-shell .vex-chat-prose [class*="text-[24px]"] { margin-top: 14px; font-size: 15px; line-height: 21px; }
-.lit-chat-shell .vex-chat-prose [class*="text-[20px]"] { margin-top: 12px; font-size: 13.5px; line-height: 19px; }
-.lit-chat-shell .vex-chat-prose [class*="text-[16px]"] { margin-top: 10px; font-size: 13px; line-height: 18px; }
-.lit-chat-shell .vex-chat-prose code { font-size: 11.5px; }
-/* User bubble and the tool-call rows. */
-.lit-chat-shell [class*="rounded-[22px]"] { font-size: 13px; line-height: 1.5; }
-.lit-chat-shell [class*="text-[14px]"] { font-size: 12.5px; line-height: 20px; }
+.lit-chat-shell .vex-chat-prose [class*="text-[24px]"] { margin-top: 14px; font-size: 16px; line-height: 22px; }
+.lit-chat-shell .vex-chat-prose [class*="text-[20px]"] { margin-top: 12px; font-size: 15px; line-height: 21px; }
+.lit-chat-shell .vex-chat-prose [class*="text-[16px]"] { margin-top: 10px; font-size: 14.5px; line-height: 20px; }
+.lit-chat-shell .vex-chat-prose code { font-size: 12px; }
+/* The tool-call rows. */
+.lit-chat-shell [class*="text-[14px]"] { font-size: 13px; line-height: 20px; }
 /* Session stats line: the page indents it under the avatar; the rail has no
  * room for that, so it starts at the margin and wraps by item, not mid-phrase. */
 .lit-chat-shell .vex-micro-label[class*="pl-9"] { padding-left: 0; flex-wrap: wrap; row-gap: 2px; }
 .lit-chat-shell .vex-micro-label[class*="pl-9"] span { white-space: nowrap; }
 /* Composer: the field and its placeholder. */
 .lit-chat-shell textarea,
-.lit-chat-shell [data-vex-composer-seat] [class*="absolute inset-0 truncate"] { font-size: 13.5px; line-height: 21px; }
+.lit-chat-shell [data-vex-composer-seat] [class*="absolute inset-0 truncate"] { font-size: 15px; line-height: 22px; }
 
+/* The scope row (market, interval and, in a position, its side) over the
+ * quick prompts. */
 .lit-desk-scope {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  gap: 6px;
-  border-bottom: 1px solid var(--lit-line);
-  padding: 6px 12px;
+  gap: 12px;
+  border-bottom: 1px solid var(--lit-line-quiet);
+  padding: 0 0 12px;
 }
 
 .lit-desk-scope-chip {
-  display: inline-flex;
+  display: flex;
+  min-height: 38px;
   align-items: center;
-  gap: 6px;
-  align-self: flex-start;
+  align-self: stretch;
   flex: 0 0 auto;
-  border: 1px solid var(--lit-line);
-  background: var(--lit-panel-raised);
-  padding: 3px 8px;
+  gap: 10px;
+  border-block: 1px solid var(--lit-line);
+  border-bottom-color: var(--lit-line-quiet);
   color: var(--lit-ink);
+  font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: var(--lit-tr-data);
   white-space: nowrap;
 }
 
 .lit-desk-scope-chip i {
   color: var(--lit-positive);
   font-style: normal;
+  letter-spacing: var(--lit-tr-label);
   text-transform: uppercase;
 }
 
 .lit-desk-quick {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
+  gap: 6px;
 }
 
 .lit-desk-quick > button {
   min-width: 0;
-  min-height: 30px;
-  border: 1px solid var(--lit-line);
-  background: var(--lit-panel-raised);
-  padding: 4px 8px;
-  color: var(--lit-ink-secondary);
-  font-size: 11.5px;
-  font-weight: 500;
+  min-height: 32px;
+  border: 0;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
+  background: transparent;
+  padding: 4px 10px;
+  color: var(--lit-ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
   line-height: 1.35;
-  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+  text-align: left;
 }
 
 .lit-desk-quick > button:last-child:nth-child(odd) { grid-column: 1 / -1; }
@@ -136,16 +136,16 @@
 }
 
 .lit-desk-quick > button:hover {
-  border-color: var(--lit-line-strong);
+  outline-color: var(--lit-positive);
   background: var(--lit-hover);
-  color: var(--lit-ink);
 }
 
 @container (max-width: 420px) {
-  .lit-desk-scope { padding-inline: 8px; }
+  .lit-desk-scope { padding-inline: 0; }
   .lit-desk-quick > button { padding-inline: 8px; }
 }
 
+/* No session yet: the desk's starters. */
 .lit-chat-empty {
   display: flex;
   min-height: 0;
@@ -153,7 +153,7 @@
   flex-direction: column;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 14px 14px;
+  padding: 6px 0 0;
   overflow: hidden auto;
 }
 
@@ -175,54 +175,53 @@
   height: 44px;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid var(--lit-line);
-  background: var(--lit-panel-raised);
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
 }
 
 .lit-chat-empty-mark img { width: 24px; height: 24px; }
 
 .lit-chat-empty-copy > h4 {
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
+  color: var(--lit-ink);
+  font-size: 15px;
+  font-weight: 500;
 }
 
 .lit-chat-empty-copy > p {
   margin: 4px 0 0;
-  color: var(--lit-ink-muted);
-  font-size: 12px;
+  color: var(--lit-ink-secondary);
+  font-size: 13px;
   line-height: 1.45;
 }
 
 .lit-chat-starters {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--lit-line);
-  overflow: hidden;
+  border-top: 1px solid var(--lit-line);
 }
 
 .lit-chat-starters > button {
   display: grid;
-  grid-template-columns: 44px 1fr 24px;
+  grid-template-columns: 40px 1fr 20px;
   align-items: center;
   gap: 10px;
   border: 0;
+  border-bottom: 1px solid var(--lit-line-quiet);
   background: transparent;
-  padding: 10px 12px;
+  padding: 10px 0;
   color: var(--lit-ink-secondary);
   text-align: left;
-  transition: background 140ms ease;
 }
 
-.lit-chat-starters > button + button { border-top: 1px solid var(--lit-line); }
 .lit-chat-starters > button:hover { background: var(--lit-hover); }
 .lit-chat-starters > button:focus-visible { outline-offset: -3px; }
 
 .lit-chat-starter-code {
-  color: var(--lit-ink-muted);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--lit-tr-label);
   text-transform: uppercase;
 }
 
@@ -233,17 +232,12 @@
   gap: 2px;
 }
 
-.lit-chat-starters b { color: var(--lit-ink); font-size: 13px; }
-.lit-chat-starters small { color: var(--lit-ink-muted); font-size: 11px; }
+.lit-chat-starters b { color: var(--lit-ink); font-size: 13px; font-weight: 500; }
+.lit-chat-starters small { color: var(--lit-ink-secondary); font-size: 12px; }
 
-.lit-chat-starter-arrow {
-  color: var(--lit-ink-muted);
-  transition: transform 140ms ease;
-}
-
-.lit-chat-starter-arrow svg { width: 17px; height: 17px; }
-.lit-chat-starters > button:hover .lit-chat-starter-code { color: var(--lit-positive); }
-.lit-chat-starters > button:hover .lit-chat-starter-arrow { transform: translate(2px, -2px); }
+.lit-chat-starter-arrow { color: var(--lit-ink-secondary); }
+.lit-chat-starters > button:hover .lit-chat-starter-code,
+.lit-chat-starters > button:hover .lit-chat-starter-arrow { color: var(--lit-positive); }
 
 .lit-chat-start-dock {
   display: flex;
@@ -251,16 +245,23 @@
   gap: 8px;
 }
 
+/* Long is the desk's one blue fill, so opening the desk is the blue outline. */
 .lit-chat-start-dock > button {
   min-height: 40px;
   border: 0;
-  background: var(--lit-action);
-  color: var(--lit-action-ink);
-  font-size: 13px;
-  font-weight: 700;
-  transition: opacity 140ms ease;
+  outline: 1px solid var(--lit-positive);
+  outline-offset: -1px;
+  background: transparent;
+  color: var(--lit-positive);
+  font-size: 14px;
+  font-weight: 500;
 }
 
-.lit-chat-start-dock > button:hover { opacity: 0.9; }
+.lit-chat-start-dock > button:hover { background: var(--lit-hover); }
 .lit-chat-start-dock > button:focus-visible { outline: 2px solid var(--lit-focus); outline-offset: 2px; }
-.lit-chat-start-dock > small { color: var(--lit-ink-muted); font-size: 10.5px; text-align: center; }
+
+.lit-chat-start-dock > small {
+  color: var(--lit-ink-secondary);
+  font-size: 12px;
+  text-align: center;
+}
