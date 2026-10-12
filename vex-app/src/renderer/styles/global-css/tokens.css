@@ -1,9 +1,12 @@
-/* VEX design tokens v2 - the three-tier system (rebrand 2026-08-20).
+/* VEX design tokens, V10 "Sepia Counter" - the three-tier system.
  *
- *   static  -> @theme primitives (gray/blue ramps + statuses). NEVER consumed
- *              by components; the design-guard bans raw hexes in TSX.
+ *   static  -> @theme primitives (paper, ink, the one blue, Night Ledger).
+ *              NEVER consumed by components; the design guard bans raw hexes
+ *              in TSX.
  *   alias   -> semantic CSS vars on :root (chronos = default) with a
  *              [data-vex-theme="celeris"] override block. Named --vex-alias-*.
+ *              The NAMES are the components' contract and outlive every
+ *              repaint; only the values below change between design rounds.
  *   utility -> `@theme inline` projects aliases into Tailwind utilities.
  *
  * Utility namespace mapping (alias -> utility color name):
@@ -13,14 +16,23 @@
  *   --vex-alias-accent-*      -> --color-accent-*    (bg-accent-primary, ...)
  *   --vex-alias-interactive-* -> --color-interactive-* (hover washes)
  *   --vex-alias-state-*       -> --color-success/warning/danger (+ -wash)
+ *   --vex-alias-rule*, -counter, -title, -focus, -field, -label-box,
+ *   -on-photo, -sky-rule      -> the V10 names of the same projections
  *
- * The pre-rebrand legacy names (--color-bg-*, --color-text-*, ...) are gone:
- * every call site now consumes the semantic utilities above. Only the shadcn
- * aliases with a live consumer remain, so stock primitives speak the brand.
+ * THE TWO ROOMS. Celeris (light) is the website's cool paper #f3f4f7 with
+ * ink #0a0d18 and the one blue #0000c0; white #ffffff is only ever a field
+ * (inputs, the composer). Chronos (dark) is Night Ledger: the darkest tones of
+ * the sepia prints as paper (#1b1412), the website paper as ink, and the blue
+ * lifted to a periwinkle of the same hue (#a3abff) wherever it must be read;
+ * the true #0000c0 stays a FILL behind white type.
  *
- * Accent family: root #0000c0 (the vx logo). Chronos interactive accent is
- * blue-400 #7a8cff (readable on ink), celeris is blue-700 #0000c0. The old
- * #1f44ff/#0a23b8 cobalt family is retired and guard-banned. */
+ * STATUS IS SHOWN BY FILL, NEVER BY COLOUR. Success and error are ink,
+ * attention is the one blue; a swatch's pattern (solid, dot screen, hatch,
+ * target, outline) carries the state. The only hue outside the blue and the
+ * ink ramp is the candlestick pair, inside the Lighter chart only.
+ *
+ * SHAPE. Radius 0 everywhere (base.css enforces it for every element), no
+ * shadow, no blur, no glass, no gradient ramp. */
 @theme {
   /* Kill Tailwind's default palette: a stray bg-slate-500 is a build error,
    * not a silent brand leak. white/black are re-declared because the shell
@@ -29,304 +41,253 @@
   --color-white: #ffffff;
   --color-black: #000000;
 
-  /* Static tier - cool gray ramp with the ink-blue cast (one ramp serves
-   * both themes). */
-  --color-gray-0: #ffffff;
-  --color-gray-50: #f7f8fb;
-  --color-gray-100: #eef1f6;
-  --color-gray-200: #e3e7ef;
-  --color-gray-300: #c9cfdd;
-  --color-gray-400: #a7aec1;
-  --color-gray-500: #7d8598;
-  --color-gray-600: #5f6678;
-  --color-gray-700: #454b5c;
-  --color-gray-800: #2b3040;
-  --color-gray-850: #202435;
-  --color-gray-875: #1a1e2e;
-  --color-gray-900: #141827;
-  --color-gray-950: #0e111d;
-  --color-gray-1000: #0a0d18;
+  /* Static tier - paper, ink and the one blue (celeris). Ink ramp measured on
+   * paper: ink 17.62:1, ink-2 9.59:1, ink-3 5.97:1. */
+  --color-paper: #f3f4f7;
+  --color-paper-2: #e8eaf2;
+  --color-ink: #0a0d18;
+  --color-ink-2: #3a3e52;
+  /* The website's "muted": tertiary text and group counts. */
+  --color-ink-3: #565c78;
+  /* Logo blue: every blue word, line, button and chip text (10.84:1 on
+   * paper). */
+  --color-blue: #0000c0;
+  /* Tweet blue: counters, figures and the primary hover. Never body text. */
+  --color-blue-hi: #0000ff;
 
-  /* Static tier - the blue family anchored at the logo color. */
-  --color-blue-100: #e9edff;
-  --color-blue-200: #d4dcff;
-  --color-blue-300: #a9b8ff;
-  --color-blue-400: #7a8cff;
-  --color-blue-500: #2b3eff;
-  --color-blue-700: #0000c0;
-  --color-blue-900: #000080;
-  --color-blue-950: #131a4d;
+  /* Static tier - Night Ledger (chronos). Measured on night: paper 16.53:1,
+   * type-2 9.39:1, type-3 6.18:1, peri 8.50:1, peri-hi 4.59:1. */
+  --color-night-0: #150f0d;
+  --color-night: #1b1412;
+  --color-night-1: #221a17;
+  --color-night-2: #2a201c;
+  --color-type-2: #bbbabb;
+  --color-type-3: #989697;
+  --color-peri: #a3abff;
+  --color-peri-hi: #6470ff;
 
-  /* Static tier - statuses. Every family now carries a READABLE-ON-WHITE step
-   * next to its bright one: the bright primaries are dark-room ink and
-   * light-room decoration, the -700/-800 steps are the light room's text. */
-  --color-green-100: #e6f8ec;
-  --color-green-500: #1fb954;
-  /* The READABLE-ON-WHITE success step. green-500 measures 2.58:1 on white
-   * and 2.34:1 on green-100, so celeris had no success ink it was allowed to
-   * put a sentence in. Same hue as the family (140.6 deg, identical to
-   * green-500) at the same saturation (83.0 against 83.2), value darkened
-   * 72.5 -> 43.9: 6.19:1 on white, 5.60:1 on the wash. Theme-neutral like
-   * every static step - chronos declares no consumer for it. */
-  --color-green-700: #137033;
-  --color-green-900: #12301d;
-  --color-amber-100: #fdf3dd;
-  --color-amber-500: #febc2e;
-  --color-amber-700: #b97e08;
-  /* The READABLE-ON-WHITE step. amber-700 is the darkest the ramp had and it
-   * still measures 3.47:1 on white, under the 4.5:1 body-text floor, so the
-   * light theme had no warning ink it was allowed to use. Same hue as the
-   * family (39.6 deg, against amber-500's 41.0 and amber-700's 40.0) one
-   * value darker. Theme-neutral, like every static step: chronos declares no
-   * consumer for it. */
-  --color-amber-800: #8f6108;
-  --color-amber-900: #2e2618;
-  --color-red-100: #fdeaea;
-  --color-red-400: #f26d6d;
-  --color-red-500: #ef4444;
-  /* The READABLE-ON-WHITE error step. red-500 measures 3.76:1 on white and
-   * 3.25:1 on red-100 - it reads as a colour but not as body text, and it was
-   * also the plate under the white label of the danger button and the
-   * connection banner. Same hue as the family (0.0 deg) at red-500's exact
-   * saturation (71.5), value darkened 93.7 -> 70.2: 6.11:1 on white, 5.27:1
-   * on the wash, 6.11:1 for white ON it. Theme-neutral static step. */
-  --color-red-700: #b33333;
-  --color-red-900: #3a1518;
+  /* Static tier - the one sanctioned exception to status by fill:
+   * candlesticks and their volume bars, inside the Lighter chart only. */
+  --color-candle-up: #22c55e;
+  --color-candle-down: #ef4444;
 
-  --radius-sm: 0.375rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  /* Capsule controls: radius = height / 2; 9999px clamps to that. */
-  --radius-capsule: 9999px;
+  /* Shape. Tailwind's default radius, shadow and blur scales are killed so a
+   * stray `rounded-xl`, `shadow-lg` or `backdrop-blur-md` compiles to nothing.
+   * The app's own names stay so their call sites keep compiling, at zero;
+   * WP18 deletes them with their last consumers. */
+  --radius-*: initial;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-capsule: 0px;
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+  --shadow-lv1: 0 0 #0000;
+  --shadow-lv2: 0 0 #0000;
+  --shadow-lv3: 0 0 #0000;
+  --blur-*: initial;
 
-  /* Elevation shadows, theme-invariant. The 1px first layer of lv3 is a
-   * hairline substitute - it draws the card edge even on dark surfaces
-   * where the soft shadow is invisible. */
-  --shadow-lv1: 0 2px 4px 0 rgba(10, 13, 24, 0.05);
-  --shadow-lv2:
-    0 4px 12px 0 rgba(10, 13, 24, 0.02), 0 2px 8px 0 rgba(10, 13, 24, 0.04);
-  --shadow-lv3:
-    0 0 1px 0 rgba(10, 13, 24, 0.2), 0 0 4px 0 rgba(10, 13, 24, 0.02),
-    0 12px 32px 0 rgba(10, 13, 24, 0.08);
-
-  /* Typography — self-hosted WOFF2 (CSP-clean). THE REGISTER (rebrand
-   * 2026-08-20):
-   *   --font-sans / --font-display = Inter Tight (variable 400-700 + italic):
-   *     UI chrome, reading copy, display statements, AND the small-caps
-   *     micro-label register (`.vex-micro-label`). Doto - the former
-   *     dot-matrix micro-label face - retired app-wide on 2026-08-21 and
-   *     left the bundle with its token and its @font-face.
-   *   --font-mono  = technical artifacts ONLY: code blocks, raw JSON
-   *     args/output, addresses, tx hashes. No new mono uppercase labels.
-   *   --font-serif = Instrument Serif, the GATE voice only. Static 400 +
-   *     italic, NO weight axis — never a synthesized bold. */
+  /* Typography - self-hosted WOFF2 (CSP-clean), faces in fonts.css.
+   *   --font-sans / --font-display = Instrument Sans (variable 400-700): UI
+   *     chrome and reading. Inter Tight follows it as glyph coverage only.
+   *   --font-mono  = Departure Mono (one 400 weight): every label, caption,
+   *     figure and data value. JetBrains Mono follows it as coverage.
+   *   --font-code  = JetBrains Mono: code only - xterm, code blocks, the file
+   *     viewer, raw JSON.
+   *   --font-serif = Instrument Serif: counters and titles. Static 400 +
+   *     italic, NO weight axis, never under 24px (numerals) or 32px (words).
+   * Each stack names its metric-matched `Fallback` twin right after the web
+   * faces, so the block period lays out at the final metrics. */
   --font-sans:
-    "Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+    "Instrument Sans", "Inter Tight", "Instrument Sans Fallback",
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  --font-display: var(--font-sans);
   --font-mono:
+    "Departure Mono", "JetBrains Mono", "Departure Mono Fallback", "SF Mono",
+    Consolas, "Liberation Mono", monospace;
+  --font-code:
     "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
-  --font-display:
-    "Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI",
-    Roboto, "Helvetica Neue", Arial, sans-serif;
   /* Falls back to the platform serifs so a font-load miss still reads as a
    * serif. */
   --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
+
+  /* Tracking for the Departure Mono caps registers (11px unless noted):
+   * eyebrows, status words, chips, the 22px spread caption and the running
+   * head's tape word. */
+  --tracking-eyebrow: 0.18em;
+  --tracking-status: 0.14em;
+  --tracking-chip: 0.12em;
+  --tracking-caption: 0.06em;
+  --tracking-tape: 0.24em;
 }
 
-/* Alias tier - CHRONOS (dark) is the default on :root. The theme attribute
- * rides on documentElement (`data-vex-theme`, written pre-paint by
- * public/theme-boot.js and kept current by the uiStore theme runtime). */
+/* Alias tier - CHRONOS (dark, Night Ledger) is the default on :root. The
+ * theme attribute rides on documentElement (`data-vex-theme`, written
+ * pre-paint by public/theme-boot.js and kept current by the uiStore theme
+ * runtime). */
 :root {
-  /* Backgrounds: chronos elevation = the luminance ladder. */
-  --vex-alias-bg-base: var(--color-gray-1000);
-  --vex-alias-bg-deep: var(--color-gray-950);
-  --vex-alias-bg-layer-1: var(--color-gray-875);
-  --vex-alias-bg-layer-2: var(--color-gray-850);
-  --vex-alias-bg-layer-3: var(--color-gray-800);
-  --vex-alias-bg-overlay: var(--color-gray-700);
-  --vex-alias-bg-skeleton: rgba(255, 255, 255, 0.08);
-  /* Sidebar: the only tinted surface - sits between base and deep. */
-  --vex-alias-sidebar-fill: #0d101c;
-  /* The two "user surfaces": message bubble + composer share one plate. */
-  --vex-alias-bubble: var(--color-gray-850);
-  --vex-alias-composer: var(--color-gray-850);
+  /* Surfaces: ONE paper. Cards, rails and popovers sit on the same ground and
+   * are told apart by rules, never by a lighter step or a shadow. */
+  --vex-alias-bg-base: var(--color-night);
+  --vex-alias-bg-deep: var(--color-night-0);
+  --vex-alias-bg-layer-1: var(--color-night);
+  --vex-alias-bg-layer-2: var(--color-night);
+  --vex-alias-bg-layer-3: var(--color-night-2);
+  --vex-alias-bg-overlay: var(--color-night-2);
+  --vex-alias-bg-skeleton: rgba(243, 244, 247, 0.06);
+  --vex-alias-sidebar-fill: var(--color-night-0);
+  /* The field: inputs and the composer. The one surface that steps off the
+   * paper. */
+  --vex-alias-field: var(--color-night-1);
+  /* The two "user surfaces": the message bubble and the composer. */
+  --vex-alias-bubble: var(--color-night-2);
+  --vex-alias-composer: var(--vex-alias-field);
 
-  /* Borders: ALWAYS alpha so they compose over any surface. */
-  --vex-alias-border-l1: rgba(255, 255, 255, 0.06);
-  --vex-alias-border-l2: rgba(255, 255, 255, 0.12);
-  --vex-alias-border-l3: rgba(255, 255, 255, 0.16);
-  --vex-alias-border-l4: rgba(255, 255, 255, 0.2);
+  /* Rules: ALWAYS alpha so they compose over any surface. `rule` divides
+   * regions and outlines chips, `rule-quiet` divides inside a block,
+   * `rule-ink` is the 1.5px REAL FUNDS frame and the risk callout. */
+  --vex-alias-rule: rgba(243, 244, 247, 0.14);
+  --vex-alias-rule-quiet: rgba(243, 244, 247, 0.07);
+  --vex-alias-rule-ink: var(--color-paper);
+  --vex-alias-border-l1: var(--vex-alias-rule-quiet);
+  --vex-alias-border-l2: var(--vex-alias-rule);
+  --vex-alias-border-l3: rgba(243, 244, 247, 0.22);
+  --vex-alias-border-l4: rgba(243, 244, 247, 0.32);
+  --vex-alias-border-input: var(--vex-alias-rule);
 
-  /* Labels: solid four-step ladder, never opacity-stacked. Caption is for
-   * disabled states and decoration ONLY - placeholders, secondary amounts,
-   * timestamps and stats lines read tertiary (calibration 2026-08-20). */
-  --vex-alias-label-primary: #f3f4f7;
-  --vex-alias-label-secondary: #c9cdd8;
-  --vex-alias-label-tertiary: var(--color-gray-400);
-  --vex-alias-label-caption: var(--color-gray-600);
-  --vex-alias-label-dimmed: var(--color-gray-700);
-  /* Text painted on the primary (paper/ink) button fill. */
-  --vex-alias-label-on-primary: #12141c;
-  /* Text painted on a solid accent fill: chronos accent is the LIGHT
-   * blue-400, so its foreground is ink; celeris flips to white on #0000c0. */
-  --vex-alias-label-on-accent: var(--color-gray-1000);
+  /* Labels: solid steps of the ink ramp, never opacity-stacked. Caption is
+   * the tertiary step: V10 has no unreadable fourth tier. Dimmed is
+   * decoration and disabled marks only. */
+  --vex-alias-label-primary: var(--color-paper);
+  --vex-alias-label-secondary: var(--color-type-2);
+  --vex-alias-label-tertiary: var(--color-type-3);
+  --vex-alias-label-caption: var(--color-type-3);
+  --vex-alias-label-dimmed: rgba(243, 244, 247, 0.18);
+  /* Text painted on the primary (paper) button fill. */
+  --vex-alias-label-on-primary: var(--color-night);
+  /* Text painted on a solid accent fill: chronos accent is the light peri,
+   * so its foreground is the night paper (8.50:1). */
+  --vex-alias-label-on-accent: var(--color-night);
+  /* Text painted on the reversed chrome plate (tooltip, hover card, toast,
+   * connection banner): a paper plate at night. */
+  --vex-alias-label-on-chrome: var(--color-night);
 
-  /* Buttons: primary is INK/PAPER (base.org discipline) - the accent marks
-   * only the main action (send/CTA). */
-  --vex-alias-button-primary-fill: #f3f4f7;
-  --vex-alias-button-primary-hover: var(--color-gray-100);
+  /* Buttons: primary is the ink inversion (paper on night); the accent CTA
+   * is the true blue fill with white type, the one place #0000c0 sits on the
+   * night paper. */
+  --vex-alias-button-primary-fill: var(--color-paper);
+  --vex-alias-button-primary-hover: var(--color-type-2);
+  --vex-alias-button-accent-fill: var(--color-blue);
+  --vex-alias-button-accent-hover: var(--color-blue-hi);
+  --vex-alias-button-accent-ink: var(--color-white);
 
-  /* ACCENT CTA (owner decision 3, ratified 2026-08-21). The one accent-filled
-   * key in the app - NEW SESSION, and the composer's send/stop key - is its
-   * OWN pair, deliberately not `accent-primary` + `ink-on-accent`. Those two
-   * are calibrated for accent AS TEXT and AS A STROKE, where chronos needs the
-   * LIGHT blue-400 to read on ink; a light-blue plate with ink on it is not
-   * the CTA the owner asked for ("chronos bialy / celeris czarny").
-   *
-   * CHRONOS: fill deepens to the brand blue-500 #2b3eff with WHITE ink -
-   * 6.5:1, and it still reads as a lit key on the near-black rail, which the
-   * deeper #0000c0 does not. CELERIS: a light blue-200 #d4dcff plate with the
-   * near-black label ink - 14.7:1, and quiet enough that it does not shout on
-   * a white room. Hover moves ONE step along the same ramp in each theme, so
-   * the ink never has to change on hover. */
-  --vex-alias-button-accent-fill: var(--color-blue-500);
-  --vex-alias-button-accent-hover: var(--color-blue-400);
-  --vex-alias-button-accent-ink: #ffffff;
-
-  /* Accent family. */
-  --vex-alias-accent-primary: var(--color-blue-400);
-  --vex-alias-accent-hover: var(--color-blue-300);
-  --vex-alias-accent-brand: var(--color-blue-500);
-  --vex-alias-accent-wash: var(--color-blue-950);
+  /* The one blue, as text and lines: the peri; hover lifts to paper. */
+  --vex-alias-accent-primary: var(--color-peri);
+  --vex-alias-accent-hover: var(--color-paper);
+  --vex-alias-accent-brand: var(--color-peri-hi);
+  --vex-alias-accent-wash: var(--color-night-2);
+  /* Counters and numerals, serif titles, the focus ring. */
+  --vex-alias-counter: var(--color-peri-hi);
+  --vex-alias-title: var(--color-paper);
+  --vex-alias-focus: var(--color-peri);
 
   /* Interactive washes. */
-  --vex-alias-interactive-hover: rgba(255, 255, 255, 0.08);
-  --vex-alias-interactive-active: rgba(255, 255, 255, 0.14);
-  --vex-alias-interactive-solid: var(--color-gray-800);
-  --vex-alias-interactive-danger: rgba(242, 109, 109, 0.15);
+  --vex-alias-interactive-hover: rgba(243, 244, 247, 0.06);
+  --vex-alias-interactive-active: rgba(243, 244, 247, 0.1);
+  --vex-alias-interactive-solid: var(--color-night-2);
+  --vex-alias-interactive-danger: rgba(243, 244, 247, 0.08);
 
-  /* Statuses: these are the DARK-ROOM values. All three text roles - success,
-   * warn and error - are repointed by celeris to the readable-on-white steps
-   * (chronos lightens red because pure red is harsh on ink; celeris deepens
-   * all three because a bright status colour is invisible on a white room -
-   * see the celeris status block). Washes flip per theme.
+  /* Status, collapsed to fill. Success and error are the ink (paper at
+   * night), attention is the peri; every wash is a paper step, so ink on
+   * wash sits between ink and ground in both rooms.
    * `status-contrast.test.ts` measures every family in both themes. */
-  --vex-alias-state-success: var(--color-green-500);
-  --vex-alias-state-success-wash: var(--color-green-900);
-  --vex-alias-state-warn: var(--color-amber-500);
-  --vex-alias-state-warn-label: var(--color-amber-500);
-  --vex-alias-state-warn-wash: var(--color-amber-900);
-  --vex-alias-state-error: var(--color-red-400);
-  --vex-alias-state-error-wash: var(--color-red-900);
+  --vex-alias-state-success: var(--color-paper);
+  --vex-alias-state-success-wash: var(--color-night-1);
+  --vex-alias-state-warn: var(--color-peri);
+  --vex-alias-state-warn-label: var(--color-peri);
+  --vex-alias-state-warn-wash: var(--color-night-2);
+  --vex-alias-state-error: var(--color-paper);
+  --vex-alias-state-error-wash: var(--color-night-1);
 
-  /* Input stroke: one step weaker than l2 in dark only - a full l2 stroke
-   * reads loud on the luminance ladder; celeris re-points this at l2. */
-  --vex-alias-border-input: rgba(255, 255, 255, 0.06);
+  /* Overlay masks: the dialog dim (mask-1) and the drop sheet. No blur. */
+  --vex-alias-bg-mask-1: rgba(8, 5, 4, 0.6);
+  --vex-alias-bg-mask-drop: rgba(27, 20, 18, 0.7);
 
-  /* Overlay masks: dialog/lightbox dim (mask-1) and the frosted drop sheet. */
-  --vex-alias-bg-mask-1: rgba(0, 0, 0, 0.5);
-  --vex-alias-bg-mask-drop: rgba(14, 17, 29, 0.7);
-  /* Backdrop blur behind modal surfaces; paired with mask-1. */
-  --vex-mask-blur: blur(2px);
+  /* The reversed chrome plate: tooltip, hover card and toast. Paper at
+   * night, ink by day, with --vex-alias-label-on-chrome on top. */
+  --vex-alias-tooltip-bg: var(--color-paper);
+  --vex-alias-toast-bg: var(--color-paper);
+  /* The standalone vx mark: paper at night, the logo blue by day. */
+  --vex-alias-brand-mark: var(--color-paper);
 
-  /* Chrome plates: tooltips and toasts are DARK in both themes. */
-  --vex-alias-tooltip-bg: var(--color-gray-800);
-  --vex-alias-toast-bg: var(--color-gray-850);
-  /* Text painted on the theme-invariant dark chrome plates above; stays
-   * white in celeris too, so it lives only on :root. */
-  --vex-alias-label-on-chrome: #ffffff;
-  /* The standalone vx brand mark (owner rule, ratified 2026-08-21):
-   * WHITE everywhere in chronos, BRAND BLUE in celeris. Exceptions live
-   * at their call sites: the Chronos Gate is always white (invariant
-   * dark brand moment) and marks on blue brand discs stay white in both
-   * themes. Standalone marks consume `text-brand-mark`, never a raw
-   * color or an ink tier. */
-  --vex-alias-brand-mark: #ffffff;
+  /* On a photograph (the ground zone of a sepia print), in both rooms:
+   * white captions and animals, paper label boxes under chips and buttons,
+   * the 42% white hairline above a spread caption, and the rule drawn on the
+   * pale sky zone. */
+  --vex-alias-on-photo: var(--color-white);
+  --vex-alias-rule-photo: rgba(255, 255, 255, 0.42);
+  --vex-alias-label-box: var(--color-paper);
+  --vex-alias-sky-rule: rgba(243, 244, 247, 0.32);
 
   /* PRE-SHELL (post-gate setup stack) - the theme-aware group the
    * `[data-vex-gate="true"]` scope in chronos-gate.css re-projects onto the
-   * shadcn/utility names. Ratified 2026-08-21: every screen AFTER the
-   * Chronos Gate follows the theme; the gate itself stays the invariant dark
-   * brand moment and consumes NONE of these (it paints its own dither sky
-   * and its own white-alpha literals).
+   * shadcn/utility names.
    *
    * `gate-plate` must equal the main-window `backgroundColor` in CHRONOS
-   * (#0a0d18, main/main-window.ts) so first paint and the plate are one
-   * surface. Under celeris the theme-invariant gate covers first paint, so
-   * the plate is free to be the light base. */
-  --vex-alias-gate-plate: var(--color-gray-1000);
-  /* Hairlines on the plate need a stronger step than the global line ramp
-   * (l2 is visually absent behind the vignette + grain); input wells get one
-   * more step so a field reads as a field. */
-  --vex-alias-gate-border: rgba(255, 255, 255, 0.22);
-  --vex-alias-gate-input: rgba(255, 255, 255, 0.28);
-  --vex-alias-gate-muted: rgba(255, 255, 255, 0.08);
+   * (#1b1412, main/main-window.ts) so first paint and the plate are one
+   * surface. */
+  --vex-alias-gate-plate: var(--color-night);
+  --vex-alias-gate-border: rgba(243, 244, 247, 0.22);
+  --vex-alias-gate-input: rgba(243, 244, 247, 0.32);
+  --vex-alias-gate-muted: rgba(243, 244, 247, 0.08);
   /* Field fill and inline-code chips on the plate. */
-  --vex-alias-gate-well: rgba(255, 255, 255, 0.1);
+  --vex-alias-gate-well: var(--vex-alias-field);
   /* 1px rails, progress tracks and quiet chips on the plate. */
-  --vex-alias-gate-rail: rgba(255, 255, 255, 0.08);
+  --vex-alias-gate-rail: rgba(243, 244, 247, 0.1);
   /* Multi-line log/command plates (docker output, migration errors). */
-  --vex-alias-gate-code: rgba(0, 0, 0, 0.4);
-  /* Alert-rail ink. Chronos lifts the status hue toward white to clear the
-   * ink plate; celeris deepens it instead - mixing toward white on a light
-   * plate is exactly the defect this pair replaces. */
-  --vex-alias-gate-danger-text: color-mix(
-    in oklab,
-    var(--color-danger) 70%,
-    white
-  );
-  --vex-alias-gate-warn-text: color-mix(
-    in oklab,
-    var(--color-warning) 70%,
-    white
-  );
+  --vex-alias-gate-code: var(--color-night-0);
+  /* Alert-rail ink: the status inks themselves, no mixing toward white or
+   * black (status is a fill pattern now, the ink only has to read). */
+  --vex-alias-gate-danger-text: var(--vex-alias-state-error);
+  --vex-alias-gate-warn-text: var(--vex-alias-state-warn-label);
 
-  /* Scrollbar tint pairs (consumed through the runtime indirection in
-   * scrollbars.css, not directly). l1 = page-level, l2 = elevated cards. */
-  /* BOARD SURFACES (Token Radar, v3). A tinted-neutral navy plate and the
-   * card that sits on it, aliased rather than mixed per component: the board
-   * modal, the preview card in the transcript and the sidebar module must
-   * paint ONE surface family, and a gradient written into three components
-   * would drift the first time one of them was touched. `board-vignette` is
-   * the soft radial the plate carries (see board.css); it is a colour, not a
-   * gradient, so the shape stays in one stylesheet. */
-  --vex-alias-board-surface: var(--color-gray-1000);
-  --vex-alias-board-card: var(--color-gray-900);
-  --vex-alias-board-card-hover: var(--color-gray-875);
-  --vex-alias-board-vignette: rgba(43, 62, 255, 0.07);
+  /* BOARD SURFACES (Token Radar). The board modal, the preview card in the
+   * transcript and the sidebar module paint ONE surface family through these
+   * aliases. Flat paper; a card is told from the plate by its rule. */
+  --vex-alias-board-surface: var(--color-night);
+  --vex-alias-board-card: var(--color-night);
+  --vex-alias-board-card-hover: var(--color-night-2);
 
-
-  /* TERMINAL (Vex Studio, stage B2). The 16 ANSI slots plus the four chrome
-   * colours xterm needs, aliased here because xterm paints to a canvas: it
-   * cannot consume `var(--vex-alias-*)` and it cannot be restyled by a
-   * stylesheet, so a bridge resolves these with getComputedStyle and hands
-   * xterm concrete strings (the same shape boardChartTheme.ts uses for
-   * lightweight-charts). ONE source of truth for terminal colour: a hex
-   * written into a component would be invisible to the theme flip and banned
-   * by the design guard.
+  /* TERMINAL (Vex Studio). The 16 ANSI slots plus the four chrome colours
+   * xterm needs, aliased here because xterm paints to a canvas: it cannot
+   * consume `var(--vex-alias-*)` and it cannot be restyled by a stylesheet,
+   * so a bridge resolves these with getComputedStyle and hands xterm concrete
+   * strings. ONE source of truth for terminal colour: a hex written into a
+   * component would be invisible to the theme flip and banned by the design
+   * guard.
    *
-   * Both themes paint an opaque text background derived from bg-base. The
-   * surrounding pane keeps its glass tint; wallpaper and decoration cannot
-   * change the contrast behind glyphs. The literal eight-digit hex is pinned
-   * to bg-base by terminal-palette-tokens.test.ts.
+   * HELD AT THEIR SHIPPED VALUES. The reading surface, foreground, cursor
+   * and selection are literals rather than paper aliases: a running program
+   * reads the background through OSC 11, so this surface is a wire contract
+   * and moves only with its own retune (WP12), not with the V10 repaint of
+   * the room around it. Chronos keeps the ink well #0a0d18, celeris the
+   * white field.
    *
-   * RGB IS ALSO A WIRE CONTRACT. xterm answers OSC 11 with background alpha
-   * dropped. The old colourless #00000000 token told clients light mode was
-   * black (measured 2026-09-04), while the CSS keyword transparent fell through
-   * xterm's unsupported-colour canvas parser to its black default. Preserve
-   * the explicit RGB syntax even though the reading surface is now opaque.
-   * The same background RGB supplies block-cursor glyphs and reverse video.
+   * RGB IS A WIRE CONTRACT. xterm answers OSC 11 with background alpha
+   * dropped, so the background is an explicit opaque eight-digit hex. The
+   * same background RGB supplies block-cursor glyphs and reverse video.
    *
-   * The ANSI slots are the only place in this file where raw hex is right:
-   * they are a WIRE CONTRACT with programs that emit SGR 30-37 and 90-97, not
-   * brand decisions, and bending them to the brand ramp would misrender every
-   * diff, prompt and ls. Within that contract they are still tuned per theme
-   * to clear the rule-08 contrast floor against the surface the canvas sits
-   * on; `__tests__/terminal-palette-tokens.test.ts` measures every one of them
+   * The ANSI slots are a WIRE CONTRACT with programs that emit SGR 30-37 and
+   * 90-97, not brand decisions, and bending them to the brand ramp would
+   * misrender every diff, prompt and ls. They are tuned per theme to clear
+   * the contrast floor against the surface the canvas sits on;
+   * `__tests__/terminal-palette-tokens.test.ts` measures every one of them
    * and names the single documented exception. */
   --vex-alias-term-background: #0a0d18ff;
-  --vex-alias-term-foreground: var(--color-gray-200);
-  --vex-alias-term-cursor: var(--vex-alias-accent-primary);
+  --vex-alias-term-foreground: #e3e7ef;
+  --vex-alias-term-cursor: #7a8cff;
   --vex-alias-term-selection: rgba(255, 255, 255, 0.18);
 
   --vex-alias-term-black: #1c2030;
@@ -337,9 +298,8 @@
   --vex-alias-term-magenta: #c69af3;
   --vex-alias-term-cyan: #5cc9d4;
   --vex-alias-term-white: #c8ccd8;
-  /* Lifted from #5a6178 (2.69:1 on the card, unreadable). SGR 90 is the
-   * "dim" colour git, ls and every shell prompt reach for, so it carries real
-   * text and owes the floor; 5.05:1 keeps it visibly dimmer than white. */
+  /* SGR 90 is the "dim" colour git, ls and every shell prompt reach for, so
+   * it carries real text and owes the floor. */
   --vex-alias-term-bright-black: #868ea3;
   --vex-alias-term-bright-red: #ff9d9f;
   --vex-alias-term-bright-green: #8fdd9d;
@@ -349,47 +309,43 @@
   --vex-alias-term-bright-cyan: #86e2ec;
   --vex-alias-term-bright-white: #f2f4f8;
 
-
-  /* CODE TOKENS (Vex Studio file viewer, stage B3c). The slots
-   * `createCssVariablesTheme` emits under the `--vex-alias-code-` prefix, read
-   * out of the installed @shikijs/core rather than remembered. Shiki writes
-   * `var(--vex-alias-code-token-keyword)` straight into a token's colour, so a
-   * name missing from this sheet renders as NO COLOUR - no error, no warning,
-   * just grey code. `theme-matrix.test.ts` pins every slot in both themes.
+  /* CODE TOKENS (Vex Studio file viewer). The slots `createCssVariablesTheme`
+   * emits under the `--vex-alias-code-` prefix, read out of the installed
+   * @shikijs/core rather than remembered. Shiki writes
+   * `var(--vex-alias-code-token-keyword)` straight into a token's colour, so
+   * a name missing from this sheet renders as NO COLOUR - no error, no
+   * warning, just grey code. `theme-matrix.test.ts` pins every slot in both
+   * themes.
    *
-   * The palette DIRECTION is the chat transcript's (chat-transcript.css
-   * `.vex-code-*`): keywords carry the accent, strings the success tone,
-   * comments recede into the caption tone. A file in the viewer and a snippet
-   * in chat then read as one product rather than two highlighters.
+   * V10: one blue and the ink ramp, no rainbow. Keywords, constants,
+   * functions and links carry the blue; strings the second ink; comments and
+   * punctuation recede to the third. Diffs are told apart by blue (inserted)
+   * against the receding ink (deleted).
    *
    * These are NOT projected into `@theme` and must not be: nothing consumes
-   * them as a Tailwind utility. They are read by name, from an inline style
-   * string the tokenizer produced.
-   *
-   * `background` is TRANSPARENT: the panel paints its own surface, and a second
-   * fill behind the code would show as a seam against the header strip.
-   * The diff slots (inserted/deleted/changed) are declared because markdown and
-   * diff scopes reach them; the sixteen ANSI slots are not, because only the
-   * `ansi` language id produces those and the viewer never asks for it. */
+   * them as a Tailwind utility. `background` is TRANSPARENT: the panel paints
+   * its own surface. */
   --vex-alias-code-background: transparent;
   --vex-alias-code-foreground: var(--vex-alias-label-primary);
   --vex-alias-code-token-keyword: var(--vex-alias-accent-primary);
-  --vex-alias-code-token-string: var(--vex-alias-state-success);
-  --vex-alias-code-token-string-expression: var(--vex-alias-state-success);
-  --vex-alias-code-token-comment: var(--vex-alias-label-caption);
-  --vex-alias-code-token-constant: var(--vex-alias-accent-hover);
-  --vex-alias-code-token-function: var(--vex-alias-label-primary);
-  --vex-alias-code-token-parameter: var(--vex-alias-label-secondary);
-  --vex-alias-code-token-punctuation: var(--vex-alias-label-caption);
+  --vex-alias-code-token-string: var(--vex-alias-label-secondary);
+  --vex-alias-code-token-string-expression: var(--vex-alias-label-secondary);
+  --vex-alias-code-token-comment: var(--vex-alias-label-tertiary);
+  --vex-alias-code-token-constant: var(--vex-alias-accent-primary);
+  --vex-alias-code-token-function: var(--vex-alias-accent-primary);
+  --vex-alias-code-token-parameter: var(--vex-alias-label-primary);
+  --vex-alias-code-token-punctuation: var(--vex-alias-label-tertiary);
   --vex-alias-code-token-link: var(--vex-alias-accent-primary);
-  --vex-alias-code-token-inserted: var(--vex-alias-state-success);
-  --vex-alias-code-token-deleted: var(--vex-alias-state-error);
-  --vex-alias-code-token-changed: var(--vex-alias-state-warn-label);
+  --vex-alias-code-token-inserted: var(--vex-alias-accent-primary);
+  --vex-alias-code-token-deleted: var(--vex-alias-label-tertiary);
+  --vex-alias-code-token-changed: var(--vex-alias-label-secondary);
 
-  --vex-alias-scrollbar-l1: rgba(255, 255, 255, 0.14);
-  --vex-alias-scrollbar-l1-hover: rgba(255, 255, 255, 0.24);
-  --vex-alias-scrollbar-l2: rgba(255, 255, 255, 0.2);
-  --vex-alias-scrollbar-l2-hover: rgba(255, 255, 255, 0.3);
+  /* Scrollbar tint pairs (consumed through the runtime indirection in
+   * scrollbars.css, not directly). l1 = page-level, l2 = elevated cards. */
+  --vex-alias-scrollbar-l1: rgba(243, 244, 247, 0.16);
+  --vex-alias-scrollbar-l1-hover: rgba(243, 244, 247, 0.3);
+  --vex-alias-scrollbar-l2: rgba(243, 244, 247, 0.22);
+  --vex-alias-scrollbar-l2-hover: rgba(243, 244, 247, 0.36);
 
   /* MOTION VOCABULARY - the one CSS home for every duration and curve.
    *
@@ -399,12 +355,7 @@
    * constant for the call sites that need the number (a timer paired with a
    * CSS duration, or a Motion transition); the pairing is asserted by
    * `__tests__/motion-tokens.test.ts`, which fails if either side moves alone.
-   * The binding rules live in `vex-app/MOTION-POLICY.md`.
-   *
-   * The easing family used to be split - `--vex-ease-standard` in
-   * motion-primitives.css, the other two in shell.css - which is how
-   * `dialog[open]` came to hardcode a FOURTH curve under a comment claiming it
-   * rode the family one. Three declarations, one file, no fourth curve. */
+   * The binding rules live in `vex-app/MOTION-POLICY.md`. */
   --vex-duration-instant: 0ms;
   --vex-duration-fast: 100ms;
   --vex-duration-base: 150ms;
@@ -416,202 +367,102 @@
   --vex-ease-inout: cubic-bezier(0.76, 0, 0.24, 1);
 }
 
-/* Alias tier - CELERIS (light). Surfaces stay WHITE: separation comes from
- * borders + shadows, never a gray elevation ladder. The sidebar is the only
- * tinted surface. */
+/* Alias tier - CELERIS (light): the website's paper. */
 [data-vex-theme="celeris"] {
-  --vex-alias-bg-base: var(--color-gray-0);
-  --vex-alias-bg-deep: var(--color-gray-50);
-  --vex-alias-bg-layer-1: var(--color-gray-0);
-  --vex-alias-bg-layer-2: var(--color-gray-0);
-  --vex-alias-bg-layer-3: var(--color-gray-0);
-  --vex-alias-bg-overlay: var(--color-gray-200);
-  --vex-alias-bg-skeleton: rgba(10, 13, 24, 0.04);
-  --vex-alias-sidebar-fill: var(--color-gray-50);
-  --vex-alias-bubble: var(--color-blue-100);
-  --vex-alias-composer: var(--color-gray-0);
+  --vex-alias-bg-base: var(--color-paper);
+  --vex-alias-bg-deep: var(--color-paper);
+  --vex-alias-bg-layer-1: var(--color-paper);
+  --vex-alias-bg-layer-2: var(--color-paper);
+  --vex-alias-bg-layer-3: var(--color-paper-2);
+  --vex-alias-bg-overlay: var(--color-paper-2);
+  --vex-alias-bg-skeleton: rgba(0, 0, 192, 0.06);
+  --vex-alias-sidebar-fill: var(--color-paper);
+  --vex-alias-field: var(--color-white);
+  --vex-alias-bubble: var(--color-paper-2);
+  --vex-alias-composer: var(--vex-alias-field);
 
-  --vex-alias-border-l1: rgba(10, 13, 24, 0.04);
-  --vex-alias-border-l2: rgba(10, 13, 24, 0.1);
-  --vex-alias-border-l3: rgba(10, 13, 24, 0.12);
-  --vex-alias-border-l4: rgba(10, 13, 24, 0.16);
-  --vex-alias-border-input: rgba(10, 13, 24, 0.1);
+  --vex-alias-rule: rgba(0, 0, 192, 0.22);
+  --vex-alias-rule-quiet: rgba(0, 0, 192, 0.12);
+  --vex-alias-rule-ink: var(--color-ink);
+  --vex-alias-border-l1: var(--vex-alias-rule-quiet);
+  --vex-alias-border-l2: var(--vex-alias-rule);
+  --vex-alias-border-l3: rgba(0, 0, 192, 0.32);
+  --vex-alias-border-l4: rgba(0, 0, 192, 0.44);
+  --vex-alias-border-input: var(--vex-alias-rule);
+
+  --vex-alias-label-primary: var(--color-ink);
+  --vex-alias-label-secondary: var(--color-ink-2);
+  --vex-alias-label-tertiary: var(--color-ink-3);
+  --vex-alias-label-caption: var(--color-ink-3);
+  --vex-alias-label-dimmed: rgba(10, 13, 24, 0.18);
+  --vex-alias-label-on-primary: var(--color-paper);
+  --vex-alias-label-on-accent: var(--color-paper);
+  --vex-alias-label-on-chrome: var(--color-paper);
+
+  --vex-alias-button-primary-fill: var(--color-ink);
+  --vex-alias-button-primary-hover: var(--color-ink-2);
+  --vex-alias-button-accent-fill: var(--color-blue);
+  --vex-alias-button-accent-hover: var(--color-blue-hi);
+  --vex-alias-button-accent-ink: var(--color-paper);
+
+  --vex-alias-accent-primary: var(--color-blue);
+  --vex-alias-accent-hover: var(--color-blue-hi);
+  --vex-alias-accent-brand: var(--color-blue-hi);
+  --vex-alias-accent-wash: var(--color-paper-2);
+  --vex-alias-counter: var(--color-blue-hi);
+  --vex-alias-title: var(--color-blue);
+  --vex-alias-focus: var(--color-blue-hi);
+
+  --vex-alias-interactive-hover: rgba(0, 0, 192, 0.05);
+  --vex-alias-interactive-active: rgba(0, 0, 192, 0.09);
+  --vex-alias-interactive-solid: var(--color-paper-2);
+  --vex-alias-interactive-danger: rgba(10, 13, 24, 0.06);
+
+  /* Status by fill: ink for done and errors, the blue for attention, every
+   * wash the paper-2 step. */
+  --vex-alias-state-success: var(--color-ink);
+  --vex-alias-state-success-wash: var(--color-paper-2);
+  --vex-alias-state-warn: var(--color-blue);
+  --vex-alias-state-warn-label: var(--color-blue);
+  --vex-alias-state-warn-wash: var(--color-paper-2);
+  --vex-alias-state-error: var(--color-ink);
+  --vex-alias-state-error-wash: var(--color-paper-2);
 
   --vex-alias-bg-mask-1: rgba(10, 13, 24, 0.24);
-  --vex-alias-bg-mask-drop: rgba(255, 255, 255, 0.7);
+  --vex-alias-bg-mask-drop: rgba(243, 244, 247, 0.7);
 
-  /* Celeris caption (#a7aec1) sits ~2:1 on white - below the readability
-   * floor, so it serves disabled/decoration only; running metadata uses
-   * tertiary (#7d8598, ~4.5:1). */
-  --vex-alias-label-primary: #12141c;
-  --vex-alias-label-secondary: var(--color-gray-600);
-  --vex-alias-label-tertiary: var(--color-gray-500);
-  --vex-alias-label-caption: var(--color-gray-400);
-  --vex-alias-label-dimmed: var(--color-gray-300);
-  --vex-alias-label-on-primary: #ffffff;
-  --vex-alias-label-on-accent: #ffffff;
+  --vex-alias-tooltip-bg: var(--color-ink);
+  --vex-alias-toast-bg: var(--color-ink);
+  --vex-alias-brand-mark: var(--color-blue);
 
-  --vex-alias-button-primary-fill: #12141c;
-  --vex-alias-button-primary-hover: var(--color-gray-700);
+  --vex-alias-on-photo: var(--color-white);
+  --vex-alias-rule-photo: rgba(255, 255, 255, 0.42);
+  --vex-alias-label-box: var(--color-paper);
+  --vex-alias-sky-rule: rgba(10, 13, 24, 0.18);
 
-  /* CTA inverts: a LIGHT accent plate carrying near-black ink (14.7:1). */
-  --vex-alias-button-accent-fill: var(--color-blue-200);
-  --vex-alias-button-accent-hover: var(--color-blue-300);
-  --vex-alias-button-accent-ink: #12141c;
+  /* PRE-SHELL under celeris: the setup stack on paper, white fields. */
+  --vex-alias-gate-plate: var(--color-paper);
+  --vex-alias-gate-border: rgba(0, 0, 192, 0.22);
+  --vex-alias-gate-input: rgba(0, 0, 192, 0.32);
+  --vex-alias-gate-muted: rgba(0, 0, 192, 0.06);
+  --vex-alias-gate-well: var(--vex-alias-field);
+  --vex-alias-gate-rail: rgba(0, 0, 192, 0.12);
+  --vex-alias-gate-code: var(--color-paper-2);
+  --vex-alias-gate-danger-text: var(--vex-alias-state-error);
+  --vex-alias-gate-warn-text: var(--vex-alias-state-warn-label);
 
-  --vex-alias-accent-primary: var(--color-blue-700);
-  --vex-alias-accent-hover: var(--color-blue-900);
-  --vex-alias-accent-brand: var(--color-blue-500);
-  --vex-alias-accent-wash: var(--color-blue-100);
-  /* Standalone vx mark rides the brand blue on the light theme. */
-  --vex-alias-brand-mark: var(--color-blue-700);
+  --vex-alias-board-surface: var(--color-paper);
+  --vex-alias-board-card: var(--color-paper);
+  --vex-alias-board-card-hover: var(--color-paper-2);
 
-  /* Light hover tint is BLUE-black, not neutral gray - subtle but carries
-   * the cool cast. */
-  --vex-alias-interactive-hover: rgba(20, 28, 64, 0.06);
-  --vex-alias-interactive-active: rgba(20, 28, 64, 0.1);
-  --vex-alias-interactive-solid: var(--color-gray-50);
-  --vex-alias-interactive-danger: rgba(239, 68, 68, 0.06);
-
-  /* STATUS INK ON A WHITE ROOM. The three families share one defect and one
-   * fix, so they are documented together; the warn block below carries the
-   * full reference study that established the rule for all of them.
-   *
-   * SUCCESS was the pure form of the same missing declaration the warn family
-   * had: this block repointed `-success-wash` and never `-success`, so celeris
-   * inherited the chronos green-500 #1fb954 and painted it at 2.58:1 on white
-   * across 36 `text-success` call sites (2.34:1 inside its own wash, which is
-   * what `pill` variant="positive" pairs). green-700 #137033 measures 6.19:1
-   * on white and 5.60:1 on the wash. Every surface consumer of the family is a
-   * dot, a pulse mark, a strength/ratio meter bar, or an alpha wash carrying
-   * `text-success` on top - all 13 read, none puts text on a solid success
-   * plate, so one value serves the ink and the fill roles alike.
-   * VS Code light agrees on the character: its file-tree "added" green
-   * #587c0c is 4.88:1 on white (agents-colab/vscode, extensions/git/
-   * package.json L4154), its chart green #388A34 only 4.33:1 and therefore
-   * decoration, and its high-contrast-light passed icon #007100 (6.25:1,
-   * workbench/contrib/testing/browser/theme.ts L16-21) sits where we landed. */
-  --vex-alias-state-success: var(--color-green-700);
-  --vex-alias-state-success-wash: var(--color-green-100);
-
-  /* WARNING INK ON A WHITE ROOM (owner-reported defect, 2026-08-30: "yellow
-   * warnings are unreadable in celeris", app-wide including Studio).
-   *
-   * The defect was a MISSING declaration, not a wrong one. This block
-   * repointed `-warn-label` and `-warn-wash` but never `-warn` itself, so
-   * celeris inherited the chronos amber-500 #febc2e. That token is what
-   * `text-warning` projects, and `text-warning` is the dominant warning
-   * class in the renderer (57 call sites against 28 for `text-warning-label`),
-   * so most warnings in the light theme painted at 1.69:1 on white. The
-   * `--vex-pin` family in shell.css derives from the same token, which also
-   * made the approval REVIEW key white-on-#febc2e at 1.69:1.
-   *
-   * REFERENCES. deepseek-harness (agents-colab, packages/client/ui-theme/
-   * src/styles/design-platform.css L229-232 light, L321-324 dark) supplies
-   * the STRUCTURE we already use: one theme-neutral static amber ramp, and
-   * per-theme semantic aliases where only the wash flips between the light
-   * and dark blocks. Its own values do not clear AA (its light warn-label
-   * amber-600 rgb(221,134,41) measures 2.79:1 on white), so the VALUES come
-   * from VS Code's default light theme instead, which splits the two roles
-   * by contrast need: `list.warningForeground` #855F00 for warning TEXT
-   * (5.78:1 on white) against `editorWarning.foreground` #BF8803 for
-   * squigglies and icons (3.12:1, a graphics-only ratio). Both live in
-   * agents-colab/vscode, src/vs/platform/theme/common/colors/listColors.ts
-   * L96 and editorColors.ts L83. The lesson both agree on is the one this
-   * ramp was missing: on a white room warning ink is a DARK amber, and raw
-   * amber is a decoration colour only.
-   *
-   * We cannot take VS Code's two-value split as-is, because our `-warn`
-   * carries both roles: it is text at those 57 call sites AND the dot, mark,
-   * meter and border fill (12 `bg-warning`, 7 `border-warning`, none of which
-   * puts dark text on a solid warn plate). A token used as body text must
-   * clear the body-text floor, so both text aliases take the same readable
-   * step, exactly as chronos already pairs them.
-   *
-   * MEASURED (WCAG 2.x relative luminance, sRGB), amber-800 #8f6108:
-   *   on --color-surface-base #ffffff ............ 5.41:1
-   *   on --color-warning-wash  #fdf3dd ........... 4.91:1
-   *   on --color-surface-deep  #f7f8fb ........... 5.10:1
-   *   on the --vex-pin-fill tint (10% on white) .. 4.72:1
-   *   white on it (the pin REVIEW key) ........... 5.41:1
-   * The wash, not white, is the binding surface: #9a6700 clears white at
-   * 4.87:1 and fails the wash at 4.41:1. `status-contrast.test.ts` measures
-   * both surfaces in both themes, for all three families, and goes red under
-   * 4.5:1. */
-  --vex-alias-state-warn: var(--color-amber-800);
-  --vex-alias-state-warn-label: var(--color-amber-800);
-  --vex-alias-state-warn-wash: var(--color-amber-100);
-
-  /* ERROR was repointed but not far enough: red-500 #ef4444 is 3.76:1 on
-   * white and 3.25:1 on its own wash, under the body-text floor at all 74
-   * `text-danger` and 16 `text-destructive` call sites. Unlike success and
-   * warn, this family DOES have solid plates carrying text - the danger
-   * button (`bg-danger text-ink-on-accent`, components/ui/button.tsx) and the
-   * `.vex-connection-banner` (ui-primitives/overlays.css), both white-on-red
-   * in celeris - and they failed at the same 3.76:1. Darkening fixes the ink
-   * and the plate together: red-700 #b33333 is 6.11:1 on white, 5.27:1 on the
-   * wash, and 6.11:1 for the white label on top. VS Code light puts its list
-   * error foreground at #B01011 (7.17:1, listColors.ts L93-94) and its
-   * deleted-file red at #ad0707 (7.47:1); ours is the same decision one step
-   * softer, holding red-500's exact saturation so the family stays one hue. */
-  --vex-alias-state-error: var(--color-red-700);
-  --vex-alias-state-error-wash: var(--color-red-100);
-
-  /* PRE-SHELL under celeris: the setup stack becomes a LIGHT room (design
-   * language - white surfaces, separation from borders and shadows, never a
-   * gray elevation ladder). Same alias names, inverted alpha cast. */
-  --vex-alias-gate-plate: var(--color-gray-0);
-  --vex-alias-gate-border: rgba(10, 13, 24, 0.22);
-  --vex-alias-gate-input: rgba(10, 13, 24, 0.28);
-  --vex-alias-gate-muted: rgba(10, 13, 24, 0.06);
-  --vex-alias-gate-well: rgba(10, 13, 24, 0.04);
-  --vex-alias-gate-rail: rgba(10, 13, 24, 0.1);
-  --vex-alias-gate-code: rgba(10, 13, 24, 0.04);
-  /* Deepen, never lighten: a status primary mixed toward white would vanish
-   * on the white plate. The danger mix compounds on top of an alias that is
-   * now already the readable red-700 step, so it lands darker than it needs
-   * to (9.35:1 where 6.11:1 would do) - correct, not optimal. */
-  --vex-alias-gate-danger-text: color-mix(
-    in oklab,
-    var(--color-danger) 80%,
-    black
-  );
-  --vex-alias-gate-warn-text: var(--color-warning-label);
-
-  /* Board surfaces - the light theme repoints the SAME aliases; no component
-   * branches on the theme. The vignette all but disappears on a white plate,
-   * which is correct: it exists to lift a dark surface off black. */
-  --vex-alias-board-surface: var(--color-gray-50);
-  --vex-alias-board-card: var(--color-gray-0);
-  --vex-alias-board-card-hover: var(--color-gray-50);
-  --vex-alias-board-vignette: rgba(43, 62, 255, 0.04);
-
-
-  /* TERMINAL (Vex Studio, stage B2). The 16 ANSI slots plus the four chrome
-   * colours xterm needs, aliased here because xterm paints to a canvas: it
-   * cannot consume `var(--vex-alias-*)` and it cannot be restyled by a
-   * stylesheet, so a bridge resolves these with getComputedStyle and hands
-   * xterm concrete strings (the same shape boardChartTheme.ts uses for
-   * lightweight-charts). ONE source of truth for terminal colour: a hex
-   * written into a component would be invisible to the theme flip and banned
-   * by the design guard.
-   *
-   * Celeris paints an opaque reading surface, so wallpaper and the watermark
-   * cannot reduce text contrast. Its RGB is also xterm's OSC 11 response.
-   * The opaque atlas path keeps dim glyphs from washing out. Contrast
-   * correction handles explicit RGB and ANSI 256 colours that bypass
-   * the sixteen theme slots. See the dark block for the earlier OSC measurement.
-   *
-   * The ANSI slots are the only place in this file where raw hex is right:
-   * they are a WIRE CONTRACT with programs that emit SGR 30-37 and 90-97, not
-   * brand decisions. On a WHITE card the whole ramp has to move down rather
-   * than up, and the normal/bright pair moves TOGETHER: the six chromatic
-   * normals are the darker step and their bright partners are the lighter one,
-   * so `git diff`'s bright red still reads as the lighter red while clearing
-   * 4.5:1. The previous ramp put the brights at 3.5-4.1:1, which is the same
-   * "bright means invisible" defect the light theme had at the background. */
+  /* TERMINAL under celeris: the white field, held at its shipped values
+   * (see the chronos block). On a WHITE card the whole ANSI ramp moves down
+   * rather than up, and the normal/bright pair moves TOGETHER: the six
+   * chromatic normals are the darker step and their bright partners the
+   * lighter one, so `git diff`'s bright red still reads as the lighter red
+   * while clearing 4.5:1. */
   --vex-alias-term-background: #ffffffff;
-  --vex-alias-term-foreground: var(--vex-alias-label-primary);
+  --vex-alias-term-foreground: #12141c;
   --vex-alias-term-cursor: var(--vex-alias-accent-primary);
   --vex-alias-term-selection: rgba(10, 13, 24, 0.14);
 
@@ -632,47 +483,27 @@
   --vex-alias-term-bright-cyan: #1f6f78;
   --vex-alias-term-bright-white: #1c2030;
 
-
-  /* CODE TOKENS (Vex Studio file viewer, stage B3c). The slots
-   * `createCssVariablesTheme` emits under the `--vex-alias-code-` prefix, read
-   * out of the installed @shikijs/core rather than remembered. Shiki writes
-   * `var(--vex-alias-code-token-keyword)` straight into a token's colour, so a
-   * name missing from this sheet renders as NO COLOUR - no error, no warning,
-   * just grey code. `theme-matrix.test.ts` pins every slot in both themes.
-   *
-   * The palette DIRECTION is the chat transcript's (chat-transcript.css
-   * `.vex-code-*`): keywords carry the accent, strings the success tone,
-   * comments recede into the caption tone. A file in the viewer and a snippet
-   * in chat then read as one product rather than two highlighters.
-   *
-   * These are NOT projected into `@theme` and must not be: nothing consumes
-   * them as a Tailwind utility. They are read by name, from an inline style
-   * string the tokenizer produced.
-   *
-   * `background` is TRANSPARENT: the panel paints its own surface, and a second
-   * fill behind the code would show as a seam against the header strip.
-   * The diff slots (inserted/deleted/changed) are declared because markdown and
-   * diff scopes reach them; the sixteen ANSI slots are not, because only the
-   * `ansi` language id produces those and the viewer never asks for it. */
+  /* CODE TOKENS - the same slot list as the chronos block (both themes must
+   * declare every slot; see there). */
   --vex-alias-code-background: transparent;
   --vex-alias-code-foreground: var(--vex-alias-label-primary);
   --vex-alias-code-token-keyword: var(--vex-alias-accent-primary);
-  --vex-alias-code-token-string: var(--vex-alias-state-success);
-  --vex-alias-code-token-string-expression: var(--vex-alias-state-success);
-  --vex-alias-code-token-comment: var(--vex-alias-label-caption);
-  --vex-alias-code-token-constant: var(--vex-alias-accent-hover);
-  --vex-alias-code-token-function: var(--vex-alias-label-primary);
-  --vex-alias-code-token-parameter: var(--vex-alias-label-secondary);
-  --vex-alias-code-token-punctuation: var(--vex-alias-label-caption);
+  --vex-alias-code-token-string: var(--vex-alias-label-secondary);
+  --vex-alias-code-token-string-expression: var(--vex-alias-label-secondary);
+  --vex-alias-code-token-comment: var(--vex-alias-label-tertiary);
+  --vex-alias-code-token-constant: var(--vex-alias-accent-primary);
+  --vex-alias-code-token-function: var(--vex-alias-accent-primary);
+  --vex-alias-code-token-parameter: var(--vex-alias-label-primary);
+  --vex-alias-code-token-punctuation: var(--vex-alias-label-tertiary);
   --vex-alias-code-token-link: var(--vex-alias-accent-primary);
-  --vex-alias-code-token-inserted: var(--vex-alias-state-success);
-  --vex-alias-code-token-deleted: var(--vex-alias-state-error);
-  --vex-alias-code-token-changed: var(--vex-alias-state-warn-label);
+  --vex-alias-code-token-inserted: var(--vex-alias-accent-primary);
+  --vex-alias-code-token-deleted: var(--vex-alias-label-tertiary);
+  --vex-alias-code-token-changed: var(--vex-alias-label-secondary);
 
-  --vex-alias-scrollbar-l1: rgba(10, 13, 24, 0.18);
-  --vex-alias-scrollbar-l1-hover: rgba(10, 13, 24, 0.3);
-  --vex-alias-scrollbar-l2: rgba(10, 13, 24, 0.24);
-  --vex-alias-scrollbar-l2-hover: rgba(10, 13, 24, 0.36);
+  --vex-alias-scrollbar-l1: rgba(0, 0, 192, 0.16);
+  --vex-alias-scrollbar-l1-hover: rgba(0, 0, 192, 0.32);
+  --vex-alias-scrollbar-l2: rgba(0, 0, 192, 0.22);
+  --vex-alias-scrollbar-l2-hover: rgba(0, 0, 192, 0.4);
 }
 
 /* Utility tier - alias projections. `@theme inline` is REQUIRED here: the
@@ -689,6 +520,7 @@
   --color-surface-sidebar: var(--vex-alias-sidebar-fill);
   --color-surface-bubble: var(--vex-alias-bubble);
   --color-surface-composer: var(--vex-alias-composer);
+  --color-surface-field: var(--vex-alias-field);
 
   --color-ink-primary: var(--vex-alias-label-primary);
   --color-ink-secondary: var(--vex-alias-label-secondary);
@@ -707,6 +539,18 @@
   --color-mask-drop: var(--vex-alias-bg-mask-drop);
   --color-ink-on-chrome: var(--vex-alias-label-on-chrome);
   --color-brand-mark: var(--vex-alias-brand-mark);
+
+  /* The V10 names. */
+  --color-rule: var(--vex-alias-rule);
+  --color-rule-quiet: var(--vex-alias-rule-quiet);
+  --color-rule-ink: var(--vex-alias-rule-ink);
+  --color-rule-photo: var(--vex-alias-rule-photo);
+  --color-sky-rule: var(--vex-alias-sky-rule);
+  --color-counter: var(--vex-alias-counter);
+  --color-title: var(--vex-alias-title);
+  --color-focus: var(--vex-alias-focus);
+  --color-label-box: var(--vex-alias-label-box);
+  --color-on-photo: var(--vex-alias-on-photo);
 
   --color-accent-primary: var(--vex-alias-accent-primary);
   --color-accent-hover: var(--vex-alias-accent-hover);
@@ -756,7 +600,7 @@
   --color-dot-on: var(--vex-alias-accent-primary);
 
   /* shadcn aliases - stock Button/Input/Dialog speak the brand. Only the
-   * names with a live consumer survive; the unused ones retired in F6. */
+   * names with a live consumer survive. */
   --color-background: var(--vex-alias-bg-base);
   --color-foreground: var(--vex-alias-label-primary);
   --color-card: var(--vex-alias-bg-layer-1);
@@ -769,5 +613,5 @@
   --color-destructive: var(--vex-alias-state-error);
   --color-border: var(--vex-alias-border-l2);
   --color-input: var(--vex-alias-border-l2);
-  --color-ring: var(--vex-alias-accent-primary);
+  --color-ring: var(--vex-alias-focus);
 }

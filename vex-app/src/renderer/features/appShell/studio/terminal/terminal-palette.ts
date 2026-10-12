@@ -61,8 +61,8 @@ const NEUTRAL = "rgba(128, 136, 152, 1)";
  *
  * THIS IS THE FALLBACK ONLY, and it is colourless on purpose. The stylesheet's
  * own background tokens carry the RGB of the surface
- * the pane paints in each theme (`--vex-alias-bg-base`: `#0a0d18ff` in
- * chronos, `#ffffffff` in celeris), because `options.theme.background` is also
+ * the pane paints in each theme (`--vex-alias-term-background`: `#0a0d18ff`
+ * in chronos, `#ffffffff` in celeris), because `options.theme.background` is also
  * the terminal's ANSWER to a program's OSC 11 query: xterm reports it with the
  * alpha dropped (`color.toColorRGB` keeps r, g, b), and Claude Code in `auto`
  * mode, bat, delta and nvim pick light or dark from that answer. A colourless
