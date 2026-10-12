@@ -111,7 +111,7 @@ export function MissionRestartAffordance({
         type="button"
         disabled={busy}
         onClick={() => setOpen(true)}
-        className="mt-2 w-full text-left text-xs text-muted-foreground underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-2 w-full text-left text-[13px] text-accent-primary underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:text-ink-tertiary"
       >
         Tell Vex what to do differently
       </button>
@@ -122,7 +122,7 @@ export function MissionRestartAffordance({
     <form onSubmit={(event) => void onSubmit(event)} className="mt-2 w-full">
       <label
         htmlFor="mission-restart-instruction"
-        className="mb-1 block text-xs text-muted-foreground"
+        className="mb-1.5 block font-mono text-[11px] uppercase tracking-status text-ink-secondary"
       >
         What should be different this run?
       </label>
@@ -133,9 +133,9 @@ export function MissionRestartAffordance({
         maxLength={MISSION_RESTART_INSTRUCTION_MAX_LENGTH}
         rows={3}
         placeholder="e.g. Skip the SOL leg and rebalance into USDC instead."
-        className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+        className="w-full resize-none border border-rule bg-surface-field px-3 py-2 text-[13px] leading-5 text-ink-primary caret-accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
       />
-      <p className="mt-1 text-[11px] text-muted-foreground">
+      <p className="mt-1 text-[12px] leading-[18px] text-ink-secondary">
         Restarts the same accepted contract with this instruction added. The
         contract itself is unchanged.
       </p>
@@ -143,7 +143,7 @@ export function MissionRestartAffordance({
         <button
           type="submit"
           disabled={busy || trimmed.length === 0}
-          className="inline-flex h-8 items-center rounded-full border border-[var(--vex-accent-border-strong)] bg-[var(--vex-accent-fill-8)] px-3.5 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--vex-accent-text)] transition-colors hover:bg-[var(--vex-accent-fill-12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex h-9 items-center border border-transparent bg-button-accent px-3.5 font-mono text-[12px] uppercase tracking-chip text-ink-on-button-accent transition-colors hover:bg-button-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:border-dotted disabled:border-accent-primary disabled:bg-transparent disabled:text-accent-primary"
         >
           Restart with instruction
         </button>
@@ -154,13 +154,13 @@ export function MissionRestartAffordance({
             setOpen(false);
             setNotice(null);
           }}
-          className="inline-flex h-8 items-center rounded-full border border-border px-3.5 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex h-9 items-center border border-rule px-3.5 font-mono text-[12px] uppercase tracking-chip text-ink-primary transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:border-dotted disabled:text-ink-tertiary"
         >
           Cancel
         </button>
       </div>
       {notice !== null ? (
-        <p role="alert" className="mt-1 w-full text-xs text-destructive">
+        <p role="alert" className="mt-1 w-full text-[13px] leading-5 text-ink-primary">
           {notice}
         </p>
       ) : null}

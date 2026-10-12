@@ -185,20 +185,23 @@ describe("MarkdownContent", () => {
 describe("article variant protocol-entry headings (owner correction 2026-07-20)", () => {
   const PROTOCOL_MD = "### ![Uniswap](/protocols/uniswap.png) Uniswap";
 
-  it("renders a leading local logo as a 44px rounded card head with a serif name", () => {
+  it("renders a leading local logo as a 44px square card head with the name beside it", () => {
     const { container } = render(
       createElement(MarkdownContent, { text: PROTOCOL_MD, variant: "article" }),
     );
     const heading = container.querySelector("h3");
     expect(heading).not.toBeNull();
     const logo = heading?.querySelector("img");
-    // Local bundled asset passes the article gate; decorative (alt "") —
-    // the serif name beside it carries the accessible heading text.
+    // Local bundled asset passes the article gate; decorative (alt "") - the
+    // name beside it carries the accessible heading text.
     expect(logo?.getAttribute("src")).toBe("/protocols/uniswap.png");
     expect(logo?.className).toContain("h-11");
-    expect(logo?.className).toContain("rounded-lg");
+    expect(logo?.className).not.toMatch(/rounded/);
     const name = heading?.querySelector("span");
-    expect(name?.className).toContain("font-serif");
+    // V10 (docs/design/V10-SPREAD.md section 1): the serif never sets a word
+    // under 32px, so a 17px card name is the sans.
+    expect(name?.className).not.toContain("font-serif");
+    expect(name?.className).toContain("text-[17px]");
     expect(name?.textContent).toContain("Uniswap");
   });
 

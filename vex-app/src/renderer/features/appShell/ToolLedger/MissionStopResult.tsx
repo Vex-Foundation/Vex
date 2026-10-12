@@ -57,12 +57,12 @@ export function MissionStopResult({ result }: { readonly result: MissionStopResu
   return (
     <div
       data-vex-area="mission-stop-result"
-      className="mt-1 rounded-[6px] border border-[var(--vex-line)] px-3 py-2"
+      className="my-2 border border-rule px-3 py-2"
     >
-      <div className="text-[11px] uppercase tracking-wide text-[var(--vex-text-3)]">
+      <div className="font-mono text-[11px] uppercase tracking-status text-ink-secondary">
         Mission ended · {missionStopReasonLabel(result.reason)}
       </div>
-      <p className="mt-1 whitespace-pre-wrap text-[14px] leading-6 text-foreground">{result.summary}</p>
+      <p className="mt-1 whitespace-pre-wrap text-[14px] leading-6 text-ink-primary">{result.summary}</p>
     </div>
   );
 }

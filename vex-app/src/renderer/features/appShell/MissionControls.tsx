@@ -85,6 +85,7 @@ import {
 } from "../../lib/api/mission.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
 import { cn } from "../../lib/utils.js";
+import { Swatch } from "../../components/ui/swatch.js";
 import { readStopAvailability } from "./composer-submit/stop-availability.js";
 import { resolveStopAffordance } from "./composer-submit/stop-affordance.js";
 import { MissionRestartAffordance } from "./MissionRestartAffordance.js";
@@ -100,23 +101,21 @@ import { useMissionSetupProgress } from "./MissionSetupProgress.js";
 import { MissionMissingFields } from "./MissionMissingFields.js";
 
 /**
- * Primary mission action (Start/Renew) — the landing's solid cobalt CTA:
- * full-width mono-uppercase pill, hover is a color change only (never a
- * glow or gradient).
+ * Primary mission action (Start/Renew) - the one blue fill on the page
+ * (docs/design/V10-SPREAD.md section 1): a full-width square 40px key in 12px
+ * Departure Mono caps. Hover is a colour change only (never a glow or a
+ * gradient); a disabled key is drawn as a dotted blue outline, never a fade.
  */
 const PRIMARY_KEY =
-  "flex h-10 w-full items-center justify-center gap-2 rounded-full bg-[var(--vex-accent)] font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--vex-accent-contrast)] transition-colors hover:bg-[var(--vex-accent-hover)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50";
+  "flex h-10 w-full items-center justify-center gap-2 border border-transparent bg-button-accent font-mono text-[12px] uppercase tracking-chip text-ink-on-button-accent transition-colors hover:bg-button-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:border-dotted disabled:border-accent-primary disabled:bg-transparent disabled:text-accent-primary";
 
 /**
- * Review-&-accept bar — the pre-accept counterpart of `PRIMARY_KEY`: an
- * accent-OUTLINED full-width pill (vs. the solid commitment key above),
- * reusing the same `--vex-accent-border-strong`/`--vex-accent-fill-8`/
- * `--vex-accent-text` tokens the rest of the shell already uses for an
- * "outlined, accent-toned" affordance, so it re-tints
- * correctly across themes (incl. hypervexing) alongside the solid key.
+ * Review-&-accept bar - the pre-accept counterpart of `PRIMARY_KEY`: the
+ * ghost key, a blue OUTLINE that fills on hover (vs. the solid commitment key
+ * above), on the same aliases so it re-tints with the theme.
  */
 const REVIEW_KEY =
-  "flex h-10 w-full items-center justify-center gap-2 rounded-full border border-[var(--vex-accent-border-strong)] bg-[var(--vex-accent-fill-8)] font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--vex-accent-text)] transition-colors hover:bg-[var(--vex-accent-fill-12)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50";
+  "flex h-10 w-full items-center justify-center gap-2 border border-accent-primary font-mono text-[12px] uppercase tracking-chip text-accent-primary transition-colors hover:bg-accent-primary hover:text-ink-on-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:border-dotted disabled:text-ink-tertiary";
 
 export interface MissionControlsProps {
   readonly sessionId: string;
@@ -645,10 +644,15 @@ function AcceptancePendingNotice({
       role="status"
       data-vex-state="acceptance-pending"
       data-vex-readiness={readiness.kind}
-      className="mb-2 flex w-full flex-col gap-1.5 text-xs text-warning"
+      className="mb-3 flex w-full flex-col gap-1.5 border border-accent-primary px-3.5 py-2.5 text-[13px] leading-5"
     >
-      <p>{headline}</p>
-      <p className="text-ink-tertiary">{nextAction}</p>
+      <p className="flex items-start gap-[9px] text-ink-primary">
+        <span aria-hidden className="mt-[5px] inline-flex text-accent-primary">
+          <Swatch state="warning" size={9} />
+        </span>
+        <span>{headline}</span>
+      </p>
+      <p className="text-ink-secondary">{nextAction}</p>
       <MissionMissingFields fields={missingFields} surface="mission-controls" />
       {/* The action lives on the notice itself: a standing surface that names a
           restriction must carry the way out of it (VS Code puts the command on
@@ -658,7 +662,7 @@ function AcceptancePendingNotice({
       <button
         type="button"
         onClick={onOpenContract}
-        className="mt-0.5 inline-flex h-7 w-fit items-center rounded-full border border-[var(--vex-accent-border-strong)] px-3 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--vex-accent-text)] transition-colors hover:bg-[var(--vex-accent-fill-8)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="mt-1 inline-flex h-8 w-fit items-center border border-accent-primary px-3 font-mono text-[11px] uppercase tracking-chip text-accent-primary transition-colors hover:bg-accent-primary hover:text-ink-on-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         {actionLabel}
       </button>
@@ -692,12 +696,12 @@ function ControlButton({
       aria-label={ariaLabel ?? `${label} mission`}
       aria-busy={ariaBusy}
       className={cn(
-        // Toolbar keys: quiet mono-uppercase hairline pills; Stop keeps the
-        // destructive tone with the one sanctioned danger fill (/10).
-        "inline-flex h-8 items-center rounded-full border px-3.5 font-mono text-[11px] font-medium uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] disabled:cursor-not-allowed disabled:opacity-40",
+        // Toolbar keys: the quiet square key, 12px Departure Mono caps on the
+        // rule; Stop is the ink key (the refusing choice), never red.
+        "inline-flex h-9 items-center border px-3.5 font-mono text-[12px] uppercase tracking-chip transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:border-dotted disabled:bg-transparent disabled:text-ink-tertiary",
         tone === "danger"
-          ? "border-[color-mix(in_oklab,var(--color-destructive)_40%,transparent)] bg-destructive/10 text-destructive hover:bg-destructive/15"
-          : "border-[var(--vex-line-strong)] text-[var(--vex-text-2)] hover:bg-interactive-hover hover:text-foreground",
+          ? "border-rule-ink text-ink-primary hover:bg-rule-ink hover:text-ink-on-primary"
+          : "border-rule text-ink-primary hover:bg-interactive-hover",
       )}
     >
       {label}
@@ -779,8 +783,8 @@ function ControlNoticeLine({
     <p
       role={tone === "warning" ? "status" : "alert"}
       className={cn(
-        "w-full text-xs",
-        tone === "warning" ? "text-warning" : "text-destructive",
+        "w-full text-[13px] leading-5",
+        tone === "warning" ? "text-accent-primary" : "text-ink-primary",
       )}
     >
       {text}

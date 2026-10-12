@@ -69,7 +69,9 @@ interface IslandShape {
 const ISLAND_SHAPES: Readonly<Record<IslandSizePreset, IslandShape>> = {
   hidden: { width: 0, height: 0 },
   pill: { width: 168, height: 30 },
-  stamp: { width: 232, height: 28 },
+  // Wide enough for the settled "REASONED · 12.3K TOKENS" in 11px Departure
+  // Mono caps, its swatch and the clock (the island's V10 register).
+  stamp: { width: 296, height: 28 },
   row: { width: "100%", height: 40 },
   panel: { width: "100%", height: "auto" },
 };

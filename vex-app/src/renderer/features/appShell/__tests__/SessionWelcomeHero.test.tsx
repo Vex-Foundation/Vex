@@ -1,11 +1,12 @@
 /**
- * SessionWelcomeHero — the rebrand hero contract (accepted mockup,
- * 2026-08-20): vx mark pair themed by CSS, micro-label date eyebrow carrying the
- * honest build-stage disclosure, the display headline, and the retirement of
+ * SessionWelcomeHero - the welcome spread's chapter opening (docs/design/
+ * V10-SPREAD.md section 1, reference d2): the date eyebrow carrying the honest
+ * build-stage disclosure, the greeting in the 96px serif, flush left; the vx
+ * mark is the left page's mast and is not repeated here; and the retirement of
  * the BACKED BY footer band.
  *
  * THE CAPSULE'S SEAT (owner decree 2026-09-04): while no session is active the
- * `Agent | Studio` capsule sits here under the wordmark; once a session is
+ * `Agent | Studio` capsule sits at the head of the opening; once a session is
  * active the agent rail header (`AgentSidebarHeader`) is the seat and this
  * hero mounts none. One store fact, `activeSessionId`, decides both, which is
  * what keeps the page at exactly ONE `Runtime mode` radiogroup. This file pins
@@ -48,23 +49,28 @@ beforeEach(() => {
 });
 
 describe("SessionWelcomeHero", () => {
-  it("renders the vx mark inline on currentColor ink - no theme-swapped image pair", () => {
-    // Owner rule 2026-08-21: the standalone mark is WHITE everywhere in
-    // chronos and BRAND BLUE in celeris. One inline SVG on the brand-mark
-    // token carries both - no img assets, no theme-attribute variants, no JS
-    // theme read; the flip lives in tokens.css.
+  it("opens on the type alone: no vx mark and no image in the opening", () => {
+    // The welcome spread draws the mark once, on the left page's mast; the
+    // opening repeats none of it (reference d2).
     const { container } = render(<SessionWelcomeHero />);
     expect(container.querySelector("img")).toBeNull();
-    const markBox = container.querySelector('span[aria-hidden="true"]');
-    expect(markBox).not.toBeNull();
-    expect(markBox?.className).toContain("text-brand-mark");
-    expect(markBox?.querySelector("svg path")).not.toBeNull();
+    expect(container.querySelector("svg path")).toBeNull();
+    const opening = container.querySelector('[data-vex-area="welcome-opening"]');
+    expect(opening?.className).toContain("vex-opening");
+    expect(opening?.className).toContain("items-start");
+  });
+
+  it("sets the greeting in the serif opening title", () => {
+    render(<SessionWelcomeHero />);
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading.className).toContain("vex-opening__title");
   });
 
   it("speaks the date in the micro-label eyebrow and keeps the honest preview disclosure as its tooltip", () => {
     const { container } = render(<SessionWelcomeHero />);
     const eyebrow = container.querySelector(".vex-micro-label");
     expect(eyebrow).not.toBeNull();
+    expect(eyebrow?.className).toContain("vex-opening__eyebrow");
     // A date, uppercase, e.g. "WEDNESDAY · AUG 20" — pinned by grammar, not
     // by today's value.
     expect(eyebrow?.textContent).toMatch(/^[A-Z]+ · [A-Z]{3} \d{1,2}$/);
@@ -113,20 +119,19 @@ describe("SessionWelcomeHero", () => {
     expect(randSpy.mock.calls.length).toBeLessThanOrEqual(1);
   });
 
-  it("seats the runtime-mode capsule directly under the wordmark while no session is active", () => {
-    // Owner decree 2026-09-04: the switch is under the vex wordmark on the
-    // welcome screen, as it was before the rail-header move. Revert the mount
-    // and this case is the one that goes red.
+  it("seats the runtime-mode capsule at the head of the opening while no session is active", () => {
+    // Owner decree 2026-09-04: the switch is on the welcome screen. Revert the
+    // mount and this case is the one that goes red.
     const { container } = render(<SessionWelcomeHero />);
     const group = screen.getByRole("radiogroup", { name: "Runtime mode" });
     expect(
       screen.getByRole("radio", { name: "Agent" }).getAttribute("aria-checked"),
     ).toBe("true");
-    // The seat, not merely the presence: the mark's box is the capsule's
-    // immediately preceding sibling inside the rise stack.
-    const markBox = container.querySelector('span[aria-hidden="true"]');
-    expect(markBox?.nextElementSibling).toBe(group);
+    // The seat, not merely the presence: the capsule leads the rise stack,
+    // directly above the date eyebrow.
     expect(group.parentElement?.className).toContain("vex-rise");
+    expect(group.parentElement?.firstElementChild).toBe(group);
+    expect(group.nextElementSibling).toBe(container.querySelector(".vex-micro-label"));
   });
 
   it("the capsule switches the shell to Studio", () => {
