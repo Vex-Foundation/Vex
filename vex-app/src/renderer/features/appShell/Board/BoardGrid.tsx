@@ -1,7 +1,7 @@
 /**
  * THE BOARD GRID - the modal's default view, and the mockup's own object.
  *
- * An outer rounded plate carrying a three-column grid of EQUAL cards, with
+ * An outer plate carrying a three-column grid of EQUAL cards, with
  * the durable authored content in a disclosure beneath it.
  *
  * ORDER IS MEANING. `spec.pools` IS the display order the model chose, so
@@ -139,7 +139,7 @@ export function BoardGrid({ board }: BoardGridSlotProps): JSX.Element {
         // cards actually get. The Ask VEX drawer takes 360px out of this
         // element without moving the window by a pixel, which is exactly the
         // measurement a viewport media query could not see.
-        className="vex-board-surface vex-board-plate flex flex-col gap-4 rounded-2xl border border-line-1 p-4"
+        className="vex-board-surface vex-board-plate flex flex-col gap-4 border border-rule-quiet p-4"
       >
         {/* THE FILTER IS THE PLATE'S FIRST ROW, labelled, and only when it
           * can change something. It used to float unlabelled at the top

@@ -23,13 +23,8 @@
  */
 
 import type { JSX } from "react";
-import {
-  IconCircleAlert,
-  IconInfo,
-  IconShieldCheck,
-  IconWarning,
-} from "../../../components/icons/index.js";
-import { Pill } from "../../../components/ui/pill.js";
+import { Chip } from "../../../components/ui/chip.js";
+import type { SwatchState } from "../../../components/ui/swatch.js";
 import { cn } from "../../../lib/utils.js";
 import {
   showsNewPairChip,
@@ -40,34 +35,19 @@ import {
 /** The copy of the age chip. Frozen here beside the rule that shows it. */
 export const BOARD_NEW_PAIR_LABEL = "New pair";
 
-type PillVariant = "positive" | "caution" | "danger" | "info";
-
-/** Tone to primitive variant. The ONE mapping; no state is named. */
-const VARIANT_BY_TONE: Readonly<Record<BoardSafetyTone, PillVariant>> = {
-  positive: "positive",
-  caution: "caution",
-  danger: "danger",
-  neutral: "info",
-  pending: "info",
+/**
+ * Tone to fill (docs/design/V10-SPREAD.md section 1): status is told by the
+ * swatch, never by a hue. Clean = solid, caution = target, danger = ink
+ * cross, neutral = empty outline, pending = dot screen. The ONE mapping; no
+ * safety state is named here.
+ */
+const SWATCH_BY_TONE: Readonly<Record<BoardSafetyTone, SwatchState>> = {
+  positive: "done",
+  caution: "warning",
+  danger: "error",
+  neutral: "idle",
+  pending: "ongoing",
 };
-
-function ToneIcon({ tone }: { readonly tone: BoardSafetyTone }): JSX.Element {
-  switch (tone) {
-    case "positive":
-      return <IconShieldCheck size={14} />;
-    case "danger":
-      return <IconCircleAlert size={14} />;
-    case "caution":
-      return <IconWarning size={14} />;
-    case "neutral":
-    case "pending":
-      return <IconInfo size={14} />;
-    default: {
-      const unreachable: never = tone;
-      throw new Error(`board safety tone not handled: ${String(unreachable)}`);
-    }
-  }
-}
 
 export interface BoardStatusChipProps {
   readonly verdict: BoardSafetyVerdict;
@@ -84,9 +64,11 @@ export function BoardStatusChip({
   const tone: BoardSafetyTone = newPair ? "caution" : verdict.tone;
   const label = newPair ? BOARD_NEW_PAIR_LABEL : verdict.label;
   return (
-    <Pill
-      variant={VARIANT_BY_TONE[tone]}
-      size="lg"
+    <Chip
+      state={SWATCH_BY_TONE[tone]}
+      // Compact: the widest verdict is 35 characters and a card is 316px of
+      // inner width, so the outline and the brackets are dropped.
+      compact
       // `data-*` rather than a class assertion in the tests: the chip's
       // CONTRACT is which fact it shows and in which tone, not which utility
       // classes today's design happens to compose.
@@ -94,12 +76,10 @@ export function BoardStatusChip({
       data-chip={newPair ? "new-pair" : "safety"}
       data-tone={tone}
       data-safety-state={verdict.state}
-      // The whole label, for the pointer. It is no longer the RECOVERY path:
-      // the label below is not clamped at all any more.
+      // The whole label, for the pointer.
       title={label}
-      className={cn("font-medium", className)}
+      className={cn("max-w-full", className)}
     >
-      <ToneIcon tone={tone} />
       {/* NO ELLIPSIS. A verdict that reads "Checks unavai..." is worse than
         * no chip: a reader cannot tell an unavailable check from an
         * unverified token from a check that describes another token, and
@@ -109,7 +89,7 @@ export function BoardStatusChip({
         * `global-css/board-layout.css` - which is why the footer STACKS in
         * compact mode rather than cutting this. */}
       <span className="whitespace-nowrap">{label}</span>
-    </Pill>
+    </Chip>
   );
 }
 
