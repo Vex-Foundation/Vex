@@ -19,7 +19,7 @@
   animation: vex-superboard-settle var(--vex-duration-base) var(--vex-ease-out);
 }
 
-/* Pending marker on the ongoing StateDot. The chase itself is StateDot-owned
+/* Pending marker on the ongoing Swatch. The dot-screen step is Swatch-owned
  * (indicators.css, reduced-motion safe); this hook exists so the row - the
  * only place that renders an ongoing dot - owns its play state explicitly. */
 .vex-superboard-dot-pending {
@@ -46,8 +46,7 @@
   .vex-superboard-key-swap {
     animation: none;
   }
-  .vex-superboard-dot-pending,
-  .vex-superboard-dot-pending .vex-state-cell {
+  .vex-superboard-dot-pending {
     animation: none !important;
   }
 }

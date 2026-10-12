@@ -81,7 +81,7 @@ import {
   IconTrash,
 } from "../../../../components/icons/index.js";
 import { VexMark } from "../../../../components/common/VexMark.js";
-import { StateDot } from "../../../../components/ui/state-dot.js";
+import { Swatch } from "../../../../components/ui/swatch.js";
 import { cn } from "../../../../lib/utils.js";
 import {
   RENAME_FIELD_LABEL,
@@ -424,7 +424,7 @@ function ShellPicker({
         <IconChevronDown size={12} />
         {/* The dot is `aria-hidden`; the availability is already in the
             picker's option names, so a second spoken copy would be noise. */}
-        <StateDot state={available ? "done" : "warning"} size={8} />
+        <Swatch state={available ? "done" : "warning"} size={8} />
       </button>
 
       {open ? (

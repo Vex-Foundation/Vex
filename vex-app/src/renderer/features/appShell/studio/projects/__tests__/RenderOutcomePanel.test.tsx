@@ -171,7 +171,7 @@ describe("a refresh failure", () => {
 function rowStates(): readonly (string | null)[] {
   return Array.from(document.querySelectorAll("[data-vex-artifact-status]")).map(
     (row) =>
-      row.querySelector(".vex-state-dot, .vex-state-matrix")?.getAttribute("data-state")
+      row.querySelector(".vex-swatch")?.getAttribute("data-s")
       ?? null,
   );
 }
@@ -234,7 +234,7 @@ describe("the per-row state glyph", () => {
     // glyph would announce every row's status twice.
     expect(row?.querySelector(".sr-only")).toBeNull();
     expect(
-      row?.querySelector(".vex-state-dot")?.getAttribute("aria-hidden"),
+      row?.querySelector(".vex-swatch")?.getAttribute("aria-hidden"),
     ).toBe("true");
   });
 });
