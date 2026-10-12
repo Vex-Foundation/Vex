@@ -64,9 +64,8 @@
  * `closest('[role="tablist"]')`, so each tab is one `.vex-tab-shell` wrapper
  * holding its trigger, its Keep action and its close - VS Code's own shape
  * (`multiEditorTabsControl.ts:916` builds `.tab-actions` INSIDE the tab
- * container) and the shape of 16.png. The wrapper is the tab's chrome (the
- * glass chip tint at rest, the pane tint when active, no border anywhere:
- * `glass.css` and `terminal.css` own the paint); the trigger inside it is
+ * container) and the shape of 16.png. The wrapper is the tab's chrome (clear
+ * at rest, a field box with a rule when active: `terminal.css` owns the paint); the trigger inside it is
  * transparent and borderless, and a hover anywhere on the shell lights the
  * whole tab because there is only one element to light.
  *
@@ -293,13 +292,11 @@ export function TerminalTabs({
           <TabsList
             ref={listRef}
             aria-label="Studio terminals and files"
-            // NO RULE UNDER THE STRIP. The pane is glass and its tabs are
-            // chips on it; the active tab's own edge light and the header's
-            // spacing are the separation. The 8px left inset is the same inset
-            // the header text and the terminal grid keep from the pane edge,
-            // and the 4px top keeps the pane's inset highlight visible above
-            // the tabs' rounded tops.
-            className="vex-terminal-tab-strip h-9 w-full items-end justify-start gap-0.5 overflow-x-auto rounded-none border-0 pt-1 pr-0 pb-0 pl-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            // THE STRIP sits on the paper over a 1px rule (terminal.css); the
+            // active tab is a field box that opens into the pane below it, so
+            // it covers the rule under itself (docs/design/V10-SPREAD.md
+            // section 1). It lines up with the pane's left edge.
+            className="vex-terminal-tab-strip h-[38px] w-full items-end justify-start gap-0.5 overflow-x-auto pt-1 pr-0 pb-0 pl-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {state.tabs.map((tab) => (
               <TabRow
@@ -317,7 +314,7 @@ export function TerminalTabs({
               type="button"
               aria-label="New terminal"
               onClick={onNewTerminal}
-              className="ml-1 shrink-0 rounded-md p-1.5 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              className="mb-0.5 ml-1 shrink-0 p-1.5 text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
               <IconPlus size={14} />
             </button>
@@ -332,7 +329,7 @@ export function TerminalTabs({
             aria-hidden="true"
             data-overflow-start={overflow.atStart ? undefined : ""}
             className={cn(
-              "pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-[var(--vex-glass-tint-pane)] to-transparent",
+              "pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-[var(--vex-alias-bg-base)] to-transparent",
               overflow.atStart ? "opacity-0" : "opacity-100",
             )}
           />
@@ -340,7 +337,7 @@ export function TerminalTabs({
             aria-hidden="true"
             data-overflow-end={overflow.atEnd ? undefined : ""}
             className={cn(
-              "pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-[var(--vex-glass-tint-pane)] to-transparent",
+              "pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-[var(--vex-alias-bg-base)] to-transparent",
               overflow.atEnd ? "opacity-0" : "opacity-100",
             )}
           />
@@ -349,7 +346,9 @@ export function TerminalTabs({
 
       {notice}
 
-      <div className="relative min-h-0 flex-1">
+      {/* THE PANE BODY: the field with a rule on three sides; the strip's own
+          rule is its top edge (docs/design/V10-SPREAD.md section 1). */}
+      <div className="relative min-h-0 flex-1 border border-t-0 border-rule bg-surface-field">
         {state.tabs.length === 0 ? (
           <EmptyWorkspace
             onNewTerminal={onNewTerminal}
@@ -525,7 +524,7 @@ function EmptyWorkspace({
       <button
         type="button"
         onClick={onNewTerminal}
-        className="inline-flex items-center gap-1.5 rounded-md border border-line-3 px-2.5 py-1.5 text-[12px] leading-4 font-medium text-ink-primary hover:bg-interactive-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        className="inline-flex items-center gap-1.5 border border-line-3 px-2.5 py-1.5 text-[12px] leading-4 font-medium text-ink-primary hover:bg-interactive-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
         <IconPlus size={12} />
         {EMPTY_WORKSPACE_ACTION_COPY}
@@ -638,8 +637,8 @@ function TabRow({
 
   return (
     <div
-      // THE TAB'S CHROME lives on this shell (glass.css paints rest and active,
-      // terminal.css the hover), and `group` is what lets the close icon
+      // THE TAB'S CHROME lives on this shell (terminal.css paints rest, hover and
+      // active), and `group` is what lets the close icon
       // answer a hover anywhere on it. `data-active` is the paint's switch; the
       // trigger's `aria-selected` stays the accessibility fact.
       className="vex-tab-shell group flex h-full shrink-0 items-stretch"
@@ -652,7 +651,7 @@ function TabRow({
         // TRANSPARENT AND BORDERLESS: the shell around it is the tab's box.
         // `bg-transparent` out-merges the primitive's active wash and the
         // rest-state `hover:text-ink-primary` is the only thing kept.
-        className="h-full shrink-0 gap-1.5 rounded-none border-0 bg-transparent pr-1 pl-3 hover:bg-transparent"
+        className="h-full shrink-0 gap-2 border-0 bg-transparent pr-1 pl-2.5 font-sans text-[13px] font-medium tracking-normal normal-case hover:bg-transparent"
         title={
           runState === null
             ? tab.title
@@ -750,7 +749,7 @@ function TabRow({
         // edge and the next tab starts after the strip's gap.
         data-terminal-tab-close=""
         className={cn(
-          "flex shrink-0 items-center rounded-tr-lg pr-2 pl-1 text-ink-tertiary",
+          "flex shrink-0 items-center pr-2 pl-1 text-ink-secondary",
           // HOVER-REVEALED, NEVER KEYBOARD-HIDDEN. `opacity-0` on the ICON keeps
           // the button in the layout, in the tab order and in the accessibility
           // tree, and keeps the tab's width identical whether the icon is
@@ -823,7 +822,7 @@ function RenameField({
       onBlur={() => {
         onEnd(value);
       }}
-      className="mx-1 h-6 w-32 shrink-0 self-center rounded border border-line-input bg-surface-2 px-1.5 text-[13px] leading-5 text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      className="mx-1 h-6 w-32 shrink-0 self-center border border-rule bg-surface-field px-1.5 text-[13px] leading-5 text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     />
   );
 }

@@ -29,7 +29,7 @@ import { enterStudio, TOUR_SKIP_REASON } from "./fixtures/studio-shell.js";
  * The BOOK cards wear the glass CARD tier (glass.css; owner decision
  * 2026-09-04: the Settings glaze on every plain card). jsdom paints no
  * backdrop-filter, so the three claims the tier makes are provable only here,
- * in the same shape studio-terminal-glass.spec.ts proves them for the pane:
+ * in the same shape studio-terminal-surface.spec.ts proves them for the pane:
  *
  *  - INSIDE A RAIL THE RAIL BLURS, THE CARD IS A PLATE. The rail's computed
  *    backdrop-filter carries the blur; every card's resolves to `none` (the

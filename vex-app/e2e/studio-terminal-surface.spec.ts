@@ -1,27 +1,24 @@
 /**
- * The Studio terminal on GLASS, measured in the built app.
+ * The Studio terminal surface, measured in the built app.
  *
  * ## Why a built-app spec and not a fixture test
  *
- * jsdom resolves no cascade, paints no backdrop-filter and has no WebGL, so the
- * three claims the glass pane makes are provable only here:
+ * jsdom resolves no cascade and has no WebGL, so the claims the terminal
+ * surface makes are provable only here. The V10 pane is opaque: the field
+ * paints the whole reading surface (docs/design/V10-SPREAD.md section 1), with
+ * no backdrop under the glyphs, so what is measured is:
  *
- *  - THE BACKDROP SHOWS THROUGH THE TERMINAL. The pane is a `.vex-glass-pane`
- *    and the xterm canvas keeps `allowTransparency` with an alpha-0 background,
- *    so what a screenshot of the pane shows is the wallpaper, blurred and
- *    tinted, under the text. The evidence is the screenshot itself plus a
- *    pixel read: the pane's blank region is NOT the opaque `surface-1` the card
- *    used to paint.
+ *  - THE OPAQUE PANE. The pane carries no backdrop filter and its background is
+ *    the palette's own reading surface, so the canvas, the wrapper and the pane
+ *    agree on one colour in both themes.
  *  - THE GUTTER. The distance from the studio sidebar's right edge to the first
- *    terminal column is a layout fact (the TERM lane measured the xterm grid as
- *    flush left, so the strip the owner circled in 11.png is the column and
- *    pane padding). It is read at 1920 and 1280 wide and written to the
- *    measurement file, so before/after a padding change is a number, not a
- *    feeling.
- *  - SCROLL THROUGHPUT. Glass under a WebGL canvas costs a backdrop-filter
- *    pass per frame; whether that is visible is measured as frames per second
- *    while a 30 000-line burst lands and while the scrollback is wheeled, and
- *    written next to the gutter numbers for the same before/after comparison.
+ *    terminal column is a layout fact. It is read at 1920 and 1280 wide and
+ *    written to the measurement file, so before/after a padding change is a
+ *    number, not a feeling.
+ *  - SCROLL THROUGHPUT. Frames per second while a 30 000-line burst lands and
+ *    while the scrollback is wheeled, written next to the gutter numbers.
+ *  - THE CONTRAST FLOOR. The palette foreground over the painted pane, at its
+ *    worst sampled pixel, never below 7:1 in either theme.
  *  - THE ANSWER TO OSC 11. xterm tells a program that asks for the background
  *    colour whatever `theme.background` says, alpha dropped, and Claude Code
  *    (in `auto`), bat, delta and nvim pick light or dark from that answer. The
@@ -30,8 +27,7 @@
  *    chronos. A reverse-video sample is measured alongside, since its glyphs
  *    take the same token's RGB. Both probes type a POSIX shell line, so where
  *    the Studio launches `ComSpec` (Windows) they record an unmeasured
- *    `posix_probe` outcome instead of running, and the classification is
- *    asserted only where it was measured; the reply bytes themselves are
+ *    `posix_probe` outcome instead of running; the reply bytes themselves are
  *    proven without a pty in `terminal-theme-resolution.test.ts`.
  *
  * ## The completion signal for the burst
@@ -42,16 +38,14 @@
  * DIRECTORY can: the host refreshes `displayCwd` after the shell's cwd moves
  * and the panel header renders it, so the burst is followed by a `cd` into a
  * directory named after a marker, and the header showing that marker is the
- * end of the measurement. The cwd refresh adds a constant few hundred
- * milliseconds; it is the same constant before and after a renderer change,
- * which is what this comparison is for.
+ * end of the measurement.
  *
  * ## Prerequisites
  *
  * The same as `studio-terminal-input.spec.ts`: the isolated database stack, a
  * build with the diagnostic tour (`VITE_VEX_SETUP_TOUR=1`) and a project, since
  * a terminal's cwd is resolved from the project row. Output goes to
- * `VEX_GLASS_OUT` when set, else the test's own output directory.
+ * `VEX_SURFACE_OUT` when set, else the test's own output directory.
  */
 
 import fs from "node:fs";
@@ -84,9 +78,9 @@ import {
   posixProbesAvailable,
   type Osc11Result,
   type ReverseVideoResult,
-} from "./fixtures/terminal-glass-probes.js";
+} from "./fixtures/terminal-surface-probes.js";
 
-const OUT_DIR = process.env["VEX_GLASS_OUT"] ?? "";
+const OUT_DIR = process.env["VEX_SURFACE_OUT"] ?? "";
 
 /** Hide the tour navigator (QA scaffolding, never a shipped surface) for a capture. */
 async function withTourHidden<T>(page: Page, run: () => Promise<T>): Promise<T> {
@@ -146,7 +140,7 @@ async function pickTheme(page: Page, theme: "chronos" | "celeris"): Promise<void
   if ((await surface.count()) === 0) {
     await page
       .locator('[data-vex-area="studio-sidebar"]')
-      .getByRole("button", { name: /^vex-glass-/ })
+      .getByRole("button", { name: /^vex-surface-/ })
       .click();
   }
   await expect(surface).toBeVisible();
@@ -158,7 +152,7 @@ function outDir(testInfo: TestInfo): string {
   return dir;
 }
 
-test("Studio terminal on glass: backdrop shows through, gutter and scroll throughput are measured", async ({
+test("Studio terminal surface: opaque pane, gutter, scroll throughput, contrast and OSC 11 are measured", async ({
   vexDb,
 }: {
   vexDb: VexDatabaseFixture;
@@ -176,7 +170,7 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
   const capture: CaptureClip = (clip) => withTourHidden(page, () => page.screenshot({ clip }));
   const report: Record<string, unknown> = {};
   const save = (): void => {
-    fs.writeFileSync(path.join(dir, "glass-measurements.json"), JSON.stringify(report, null, 2));
+    fs.writeFileSync(path.join(dir, "surface-measurements.json"), JSON.stringify(report, null, 2));
   };
 
   // The dark theme first, by the product path, before Studio is entered: the
@@ -184,7 +178,7 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
   // headless X server is light.
   await tourTo(page, "appShell");
   await pickTheme(page, "chronos");
-  await openFirstProjectWithATerminal(page, "vex-glass-");
+  await openFirstProjectWithATerminal(page, "vex-surface-");
 
   /* ---- 1. THE GUTTER, at the two widths the owner named ---------------- */
   report["gutters"] = [
@@ -196,18 +190,18 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
 
   /* ---- 2. THE PANE: renderer, filter, backgrounds, a screenshot -------- */
   await focusTerminalGrid(page);
-  await page.keyboard.type("printf 'glass pane over the wallpaper\\n'; ls -la");
+  await page.keyboard.type("printf 'opaque pane under the glyphs\\n'; ls -la");
   await page.keyboard.press("Enter");
   await page.waitForTimeout(800);
   const facts = await readPaneFacts(page);
   report["facts"] = facts;
   const theme = (await page.locator("html").getAttribute("data-vex-theme")) ?? "unknown";
-  const shot = path.join(dir, `terminal-glass-${theme}.png`);
+  const shot = path.join(dir, `terminal-surface-${theme}.png`);
   await withTourHidden(page, () => page.screenshot({ path: shot }));
   const paneBox = await page.locator("[data-vex-workspace-card] > div").boundingBox();
   if (paneBox !== null) {
     await withTourHidden(page, () =>
-      page.screenshot({ path: path.join(dir, `terminal-glass-${theme}-pane.png`), clip: paneBox }),
+      page.screenshot({ path: path.join(dir, `terminal-surface-${theme}-pane.png`), clip: paneBox }),
     );
   }
   report["screenshots"] = { [theme]: shot };
@@ -257,7 +251,7 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
     contrasts.push(await measureContrast(page, "celeris", celerisFacts.foreground, capture));
     osc11.push(await probeOsc11(page, "celeris", dir));
     reverseVideo.push(await measureReverseVideo(page, "celeris", celerisFacts, capture));
-    const celerisShot = path.join(dir, "terminal-glass-celeris.png");
+    const celerisShot = path.join(dir, "terminal-surface-celeris.png");
     await withTourHidden(page, () => page.screenshot({ path: celerisShot }));
     (report["screenshots"] as Record<string, string>)["celeris"] = celerisShot;
   } catch (error) {
@@ -265,16 +259,21 @@ test("Studio terminal on glass: backdrop shows through, gutter and scroll throug
   }
   save();
 
-  testInfo.annotations.push({ type: "glass-measurements", description: JSON.stringify(report) });
+  testInfo.annotations.push({ type: "surface-measurements", description: JSON.stringify(report) });
   // Unpiped, so the numbers are in the run's own output as well.
-  console.log(`[glass] ${JSON.stringify(report)}`);
+  console.log(`[surface] ${JSON.stringify(report)}`);
 
-  // The claims that hold before AND after the glass change.
+  // The claims that hold on every run.
   expect(throughput.scrolledPx).toBeGreaterThan(0);
   expect(throughput.burstFrames).toBeGreaterThan(0);
   for (const gutter of report["gutters"] as GutterMeasurement[]) {
     expect(gutter.gutter).toBeGreaterThanOrEqual(0);
   }
+
+  // THE OPAQUE PANE: no backdrop filter, and a background that is the
+  // reading surface itself, never a translucent tint.
+  expect(facts.paneBackdropFilter === "" || facts.paneBackdropFilter === "none").toBe(true);
+  expect(facts.paneBackground).not.toMatch(/rgba\(.*,\s*0(\.\d+)?\)$/);
 
   // THE SCROLLBAR (owner review 2026-09-04: "rounder, smaller, smoother").
   // The `.vex-scroll` shape on xterm's slider, the vestigial viewport gutter

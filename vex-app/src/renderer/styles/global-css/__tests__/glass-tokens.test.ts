@@ -140,17 +140,8 @@ describe("the glass classes, neutralised (glass.css)", () => {
     expect(stripComments(glassCss)).not.toContain(".vex-glass-overlay");
   });
 
-  it("gives the tab shell its chip/pane fills, the rule and a token transition", () => {
-    const rest = ruleBody(glassCss, ".vex-tab-shell");
-    expect(declarationValue(rest, "background")).toBe("var(--vex-glass-tint-chip)");
-    expect(declarationValue(rest, "transition")).toBe(
-      "background-color var(--vex-duration-fast) var(--vex-ease-standard)",
-    );
-    const active = ruleBody(glassCss, ".vex-tab-shell[data-active]");
-    expect(declarationValue(active, "background")).toBe("var(--vex-glass-tint-pane)");
-    expect(declarationValue(active, "box-shadow")).toBe("var(--vex-glass-rule)");
-    const reduced = glassCss.slice(glassCss.indexOf("@media (prefers-reduced-motion: reduce)"));
-    expect(reduced).toContain(".vex-tab-shell");
+  it("no longer carries the terminal tab shell, which terminal.css owns", () => {
+    expect(stripComments(glassCss)).not.toContain(".vex-tab-shell");
   });
 
   it("takes every duration and curve from tokens.css", () => {

@@ -268,12 +268,13 @@
    * component would be invisible to the theme flip and banned by the design
    * guard.
    *
-   * HELD AT THEIR SHIPPED VALUES. The reading surface, foreground, cursor
-   * and selection are literals rather than paper aliases: a running program
-   * reads the background through OSC 11, so this surface is a wire contract
-   * and moves only with its own retune (WP12), not with the V10 repaint of
-   * the room around it. Chronos keeps the ink well #0a0d18, celeris the
-   * white field.
+   * THE RETUNED PALETTE (docs/design/V10-SPREAD.md section 1). The reading
+   * surface, foreground, cursor and selection are literals rather than paper
+   * aliases: a running program reads the background through OSC 11, so this
+   * surface is a wire contract and moves only with a retune of the terminal
+   * itself. Chronos reads on the night field #221a17 (night-1) in paper ink
+   * with the periwinkle cursor; celeris on the white field in ink with the
+   * paper blue cursor.
    *
    * RGB IS A WIRE CONTRACT. xterm answers OSC 11 with background alpha
    * dropped, so the background is an explicit opaque eight-digit hex. The
@@ -285,26 +286,26 @@
    * the contrast floor against the surface the canvas sits on;
    * `__tests__/terminal-palette-tokens.test.ts` measures every one of them
    * and names the single documented exception. */
-  --vex-alias-term-background: #0a0d18ff;
-  --vex-alias-term-foreground: #e3e7ef;
-  --vex-alias-term-cursor: #7a8cff;
-  --vex-alias-term-selection: rgba(255, 255, 255, 0.18);
+  --vex-alias-term-background: #221a17ff;
+  --vex-alias-term-foreground: #f3f4f7;
+  --vex-alias-term-cursor: #a3abff;
+  --vex-alias-term-selection: rgba(163, 171, 255, 0.3);
 
   --vex-alias-term-black: #1c2030;
   --vex-alias-term-red: #f2777a;
   --vex-alias-term-green: #6cc57c;
   --vex-alias-term-yellow: #e0b155;
-  --vex-alias-term-blue: #6c9ef8;
+  --vex-alias-term-blue: #a3abff;
   --vex-alias-term-magenta: #c69af3;
   --vex-alias-term-cyan: #5cc9d4;
   --vex-alias-term-white: #c8ccd8;
   /* SGR 90 is the "dim" colour git, ls and every shell prompt reach for, so
    * it carries real text and owes the floor. */
-  --vex-alias-term-bright-black: #868ea3;
+  --vex-alias-term-bright-black: #9a9aa8;
   --vex-alias-term-bright-red: #ff9d9f;
   --vex-alias-term-bright-green: #8fdd9d;
   --vex-alias-term-bright-yellow: #f5cd7a;
-  --vex-alias-term-bright-blue: #93b8ff;
+  --vex-alias-term-bright-blue: #c4c9ff;
   --vex-alias-term-bright-magenta: #dcbcff;
   --vex-alias-term-bright-cyan: #86e2ec;
   --vex-alias-term-bright-white: #f2f4f8;
@@ -455,22 +456,21 @@
   --vex-alias-board-card: var(--color-paper);
   --vex-alias-board-card-hover: var(--color-paper-2);
 
-  /* TERMINAL under celeris: the white field, held at its shipped values
-   * (see the chronos block). On a WHITE card the whole ANSI ramp moves down
+  /* TERMINAL under celeris: the white field (see the chronos block). On a WHITE card the whole ANSI ramp moves down
    * rather than up, and the normal/bright pair moves TOGETHER: the six
    * chromatic normals are the darker step and their bright partners the
    * lighter one, so `git diff`'s bright red still reads as the lighter red
    * while clearing 4.5:1. */
   --vex-alias-term-background: #ffffffff;
-  --vex-alias-term-foreground: #12141c;
-  --vex-alias-term-cursor: var(--vex-alias-accent-primary);
-  --vex-alias-term-selection: rgba(10, 13, 24, 0.14);
+  --vex-alias-term-foreground: #0a0d18;
+  --vex-alias-term-cursor: #0000c0;
+  --vex-alias-term-selection: rgba(0, 0, 192, 0.14);
 
   --vex-alias-term-black: #2b3040;
   --vex-alias-term-red: #9b2b30;
   --vex-alias-term-green: #1f5c31;
   --vex-alias-term-yellow: #6b4d0c;
-  --vex-alias-term-blue: #1e3a95;
+  --vex-alias-term-blue: #0000c0;
   --vex-alias-term-magenta: #5c2f86;
   --vex-alias-term-cyan: #16535a;
   --vex-alias-term-white: #6b7180;

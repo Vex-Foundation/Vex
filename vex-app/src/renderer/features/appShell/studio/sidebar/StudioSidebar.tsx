@@ -2,7 +2,7 @@
  * The Studio sidebar - column 1 while `runtimeMode === "studio"`.
  *
  * It MIRRORS `features/appShell/SessionsList.tsx` element for element rather
- * than inventing a second rail language: the same `<aside>` glass surface, the
+ * than inventing a second rail language: the same `<aside>` paper surface, the
  * same header (home sigil left, search and collapse right), the same collapse
  * choreography, the same quiet scrollbars, the same `VexTokenCardCompact` and
  * `SidebarProfile` foot. Only the CONTENT between them is different, which is
@@ -585,12 +585,10 @@ export function StudioSidebar({
       onPointerLeave={onPointerLeave}
       aria-label={STUDIO_SIDEBAR_LABEL}
       className={cn(
-        // The same glass rail as the sessions sidebar: the rail tier of
-        // `glass.css` (tint, blur and the inset edge light, no separating
-        // stroke), named as a class so the design guard's utility ban holds
-        // without a whitelist entry. Studio is the same room, not a second
-        // application.
-        "vex-sidebar vex-glass-rail relative flex h-full flex-col",
+        // THE STUDIO RAIL (docs/design/V10-SPREAD.md section 2): the paper,
+        // closed on the right by one 1px rule against the workspace. Studio is
+        // the same room as the sessions rail, not a second application.
+        "vex-sidebar relative flex h-full flex-col border-r border-rule bg-surface-base",
         fading && "vex-sidebar-fading",
         railIn && "vex-sidebar-rail-in",
         quiet && "vex-quiet-bars",
@@ -601,15 +599,19 @@ export function StudioSidebar({
     >
       <header
         className={cn(
+          // The 44px head row (`--rh`), closed by a rule; the pressed mode
+          // and the two tools sit on it (docs/design/V10-SPREAD.md section 3).
           "relative flex shrink-0",
           wide
-            ? "h-12 items-center justify-between px-3"
-            : "flex-col items-center justify-center gap-0.5 px-2 py-2",
+            ? "h-11 items-center justify-between border-b border-rule px-3"
+            : "flex-col items-center justify-center gap-0.5 border-b border-rule px-2 py-2",
         )}
       >
-        <SidebarHomeSigil sidebarOpen={wide} />
+        {/* The wide head row is the mode toggle and the tools only; the vx mark
+          * lives on the spine. The collapsed rail keeps its sigil. */}
+        {wide ? null : <SidebarHomeSigil sidebarOpen={wide} />}
         <div
-          className={cn("flex items-center", wide ? "gap-1" : "flex-col gap-0.5")}
+          className={cn("flex items-center", wide ? "w-full gap-1" : "flex-col gap-0.5")}
           data-rail-control
         >
           {/* THE WAY BACK, while a project is open. With no project the
@@ -623,6 +625,7 @@ export function StudioSidebar({
           {wide && activeProjectId !== null ? (
             <RuntimeModeToggle runtimeMode={runtimeMode} onChange={setRuntimeMode} />
           ) : null}
+          {wide ? <span className="flex-1" aria-hidden="true" /> : null}
           <SidebarIconButton
             label={searchOpen ? STUDIO_SEARCH_CLOSE_LABEL : STUDIO_SEARCH_OPEN_LABEL}
             onClick={toggleSearch}
@@ -671,18 +674,19 @@ export function StudioSidebar({
       ) : null}
 
       <div className={cn("p-3", !wide && "px-2")} data-rail-control>
-          {/* The rail's one accent-FILLED key, in the same register and the
-            * same shape as the sessions rail's signing key. */}
+          {/* The rail's one key: a square blue outline on the paper, no fill
+            * (docs/design/V10-SPREAD.md section 3, "New session 36 in a
+            * label box"). */}
           <button
             type="button"
             onClick={onCreateProject}
             aria-label={STUDIO_NEW_PROJECT_LABEL}
             className={cn(
-              "vex-micro-label vex-micro-label--wide relative flex h-10 items-center justify-center gap-2 rounded-full bg-button-accent uppercase text-ink-on-button-accent transition-colors duration-150",
-              "hover:bg-button-accent-hover",
-              "active:scale-[0.99] active:bg-button-accent-hover",
+              "vex-micro-label vex-micro-label--wide relative flex h-9 items-center justify-center gap-2 border border-accent-primary bg-transparent uppercase text-accent-primary transition-colors duration-150",
+              "hover:bg-interactive-hover",
+              "active:bg-interactive-active",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-surface-1)]",
-              wide ? "w-full px-4" : "mx-auto w-10",
+              wide ? "w-full px-4" : "mx-auto w-9",
             )}
           >
             <IconPlus size={15} />
@@ -733,9 +737,7 @@ export function StudioSidebar({
       </div>
 
       {wide ? (
-        // Spacing alone separates the widget from the list above it; the rule
-        // that used to sit here was the fourth box of the old rail.
-        <div className="px-3 py-3">
+        <div className="border-t border-rule px-3 py-3">
           <VexTokenCardCompact />
         </div>
       ) : null}

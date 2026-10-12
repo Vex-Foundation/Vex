@@ -113,25 +113,19 @@ export function StudioWelcome({
       aria-label={STUDIO_WELCOME_TITLE}
       className="relative flex h-full min-h-0 w-full flex-col items-center overflow-y-auto px-8 py-12"
     >
-      {/* Brand backdrop, placed as the terminal's watermark is: decoration
-        * under the content, never in the accessible tree, never clickable. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 flex items-center justify-center"
-      >
-        <VexMark size={200} className="text-brand-mark opacity-[0.06]" />
-      </div>
-
       <div className="relative z-10 flex w-full max-w-xl flex-col gap-8">
-        <div className="flex flex-col items-center gap-3 text-center">
+        {/* THE PAGE HEAD (docs/design/V10-SPREAD.md section 1): left-set on the
+          * paper, the title in Instrument Serif roman at 56px in the title
+          * ink, the body in Instrument Sans. No watermark and no centring. */}
+        <div className="flex flex-col items-start gap-3 text-left">
           <VexMark size={40} className="text-brand-mark" aria-hidden="true" />
           {/* THE WAY BACK: the capsule under the wordmark, the same seat the
             * agent hero gives it. One radiogroup per page (module note). */}
           <RuntimeModeToggle runtimeMode={runtimeMode} onChange={setRuntimeMode} />
-          <h1 className="font-display text-[26px] leading-[34px] font-medium tracking-[-0.01em] text-ink-primary">
+          <h1 className="font-serif text-[56px] leading-[52px] font-normal tracking-[-0.01em] text-title">
             {STUDIO_WELCOME_TITLE}
           </h1>
-          <p className="text-[14px] leading-[22px] text-ink-secondary">
+          <p className="text-[15px] leading-[24px] text-ink-primary">
             {STUDIO_WELCOME_LEAD}
           </p>
           <p className="text-[13px] leading-[20px] text-ink-tertiary">
@@ -157,7 +151,7 @@ export function StudioWelcome({
           * no creator handler, no create button; no projects, nothing to
           * open. */}
         {onCreateProject !== undefined || firstProject !== null ? (
-          <div className="flex flex-wrap items-center justify-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {onCreateProject !== undefined ? (
               // THE PRIMARY ACTION, marked so the centre's focus seam can find
               // it by name rather than by "the first button on the screen" -

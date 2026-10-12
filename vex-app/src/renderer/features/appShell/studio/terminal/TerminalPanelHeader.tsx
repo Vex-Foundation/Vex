@@ -145,11 +145,11 @@ export function TerminalPanelHeader({
   );
 
   return (
-    // NO RULE UNDER THE HEADER: on glass the separation from the grid below is
-    // the spacing, and the pane's edge light is the only line it carries. The
-    // 8px inset lines the title up with the tabs above and the grid below.
-    <div data-vex-terminal-header="" className="flex shrink-0 items-start gap-3 px-2 py-2">
-      <VexMark size={20} className="pointer-events-none mt-0.5 shrink-0 text-brand-mark opacity-40" />
+    // THE PANE HEAD (docs/design/V10-SPREAD.md section 1): a 48px row on the
+    // field, a quiet rule under it, the vx mark muted at the left, name and
+    // the shell / directory line in two registers.
+    <div data-vex-terminal-header="" className="flex h-12 shrink-0 items-center gap-1 border-b border-rule-quiet px-2 pl-3">
+      <VexMark size={20} className="pointer-events-none mr-2 shrink-0 text-brand-mark opacity-60" />
       <div className="min-w-0 flex-1">
         {/*
           SENTENCE CASE, in the display face. The heading used to be
@@ -160,7 +160,7 @@ export function TerminalPanelHeader({
         {renaming ? (
           <HeaderRenameField initial={title} onEnd={endRename} />
         ) : (
-          <h2 className="truncate font-display text-[13px] leading-5 font-medium text-ink-primary">
+          <h2 className="truncate font-sans text-[13px] leading-[17px] font-medium text-ink-primary">
             {title}
           </h2>
         )}
@@ -170,11 +170,11 @@ export function TerminalPanelHeader({
           user moving by heading should hear the panel's name, not the panel's
           name plus whatever the shell is and wherever it has wandered.
         */}
-        <p className="flex min-w-0 items-center gap-1.5 text-[12px] leading-4">
-          <span data-vex-terminal-shell="" className="shrink-0 text-ink-tertiary">
+        <p className="flex min-w-0 items-center gap-1.5 font-mono text-[11px] leading-[15px]">
+          <span data-vex-terminal-shell="" className="shrink-0 text-ink-secondary">
             {terminalShellLabel(shellLabel)}
           </span>
-          <span aria-hidden="true" className="shrink-0 text-ink-dimmed">
+          <span aria-hidden="true" className="shrink-0 text-ink-3">
             /
           </span>
           <span
@@ -235,7 +235,7 @@ const ClusterButton = forwardRef<
     title={label}
     onClick={onClick}
     className={cn(
-      "rounded-md p-1.5 text-ink-tertiary hover:bg-interactive-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+      "p-1.5 text-ink-secondary hover:bg-interactive-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
       danger ? "hover:text-danger" : "hover:text-ink-primary",
     )}
   >
@@ -290,7 +290,7 @@ function HeaderRenameField({
       onBlur={() => {
         onEnd(value);
       }}
-      className="h-5 w-40 rounded border border-line-input bg-surface-2 px-1 text-[13px] leading-5 text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      className="h-5 w-40 border border-rule bg-surface-field px-1 text-[13px] leading-5 text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     />
   );
 }
@@ -416,9 +416,9 @@ function ShellPicker({
           if (open) close(true);
           else openList();
         }}
-        // A PILL, as the mockup draws it: fully rounded, on the raised surface,
-        // with the shell's own state dot on the right.
-        className="flex items-center gap-1.5 rounded-full border border-line-3 bg-surface-2 px-2.5 py-1 text-[12px] text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        // A framed chip (docs/design/V10-SPREAD.md section 1): square, a rule
+        // outline, Departure Mono 12px, the shell's own state swatch after it.
+        className="ml-1.5 flex h-7 items-center gap-1.5 border border-rule px-2 font-mono text-[12px] text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
         <span className="max-w-[10rem] truncate">{selectedLabel}</span>
         <IconChevronDown size={12} />
@@ -446,7 +446,7 @@ function ShellPicker({
             could not read. The list's readability was inverted by a missing
             token, not by a colour choice.
           */
-          className="absolute top-full right-0 z-20 mt-1 min-w-[12rem] rounded-md border border-line-3 bg-surface-2 py-1 shadow-lg"
+          className="absolute top-full right-0 z-20 mt-1 min-w-[12rem] border border-rule bg-surface-field py-1"
         >
           {shells.map((shell, index) => (
             <div

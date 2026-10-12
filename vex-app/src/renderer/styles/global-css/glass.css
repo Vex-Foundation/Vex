@@ -1,8 +1,7 @@
 /* THE GLASS TIERS, NEUTRALISED (V10: no glass, no blur, no shadow).
  *
  * The class names stay only because shell components still carry them (the
- * two rails, the BOOK cards, the terminal pane, the $VEX chip and the
- * terminal tab strip). Each now paints an OPAQUE surface from the tint tokens
+ * two rails, the BOOK cards and the $VEX chip). Each now paints an OPAQUE surface from the tint tokens
  * in shell.css and draws its edge as one 1px rule inside its box: no
  * backdrop-filter, no saturation lift, no elevation. WP18 deletes this sheet
  * once those call sites paint their own V10 surfaces.
@@ -27,24 +26,4 @@
 
 .vex-glass-chip {
   background: var(--vex-glass-tint-chip);
-}
-
-/* TAB SHELL - the wrapper a terminal tab strip puts around trigger + close
- * so the close control can live inside the tab's chrome (TerminalTabs; the
- * trigger itself goes transparent and borderless). The active tab takes the
- * pane's field and its rule, so it reads as the top of the pane below it. */
-.vex-tab-shell {
-  background: var(--vex-glass-tint-chip);
-  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
-}
-
-.vex-tab-shell[data-active] {
-  background: var(--vex-glass-tint-pane);
-  box-shadow: var(--vex-glass-rule);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .vex-tab-shell {
-    transition: none;
-  }
 }
