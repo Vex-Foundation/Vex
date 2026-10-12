@@ -318,10 +318,15 @@
  * 44px head row and the window's drag region. Its right padding reserves the
  * Windows and Linux caption buttons wherever the BOOK under them is narrower
  * than they are (`--vex-book-track` is the solved BOOK track, set by the
- * frame; `--overlay-w` is 0 on macOS and on a native frame). */
+ * frame; `--overlay-w` is 0 on macOS and on a native frame).
+ *
+ * NO Z-INDEX, so the row is not a stacking context. The popovers its controls
+ * open (the Studio host status card, the notification center, the approvals
+ * inbox) then stack by their own z-index against the page under the row; a
+ * z-index here capped all of them at the row's own, and at 10 the host status
+ * card painted under the Studio welcome's z-10 column. */
 .vex-running-head {
   position: relative;
-  z-index: 10;
   display: grid;
   flex-shrink: 0;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
