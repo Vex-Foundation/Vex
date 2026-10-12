@@ -1,61 +1,97 @@
-/* Lighter desk tokens. The desk components consume stable semantic roles
- * (`--lit-*`); V10 points every role at the app's alias tier, so the desk
- * shares the room's paper, ink, rules and the one blue in both themes.
+/* Lighter desk tokens (docs/design/V10-SPREAD.md sections 1 and 2). The desk
+ * components consume stable semantic roles (`--lit-*`); every role points at
+ * the app's alias tier, so the desk is the room's own paper, ink, rules and
+ * the one blue in both themes.
  *
- * The deployment no longer repaints the desk: Core and Robinhood Chain were
- * teal and lime palettes, and V10 has one blue. The environment switch's logo
- * and label name the deployment; `--lit-environment-mark` is the blue in
- * both. Direction follows the same law as every status: up is the blue, down
- * the ink. The one colour exception is the candlestick pair inside the chart
- * body (tokens.css `--color-candle-*`). */
+ * The deployment never repaints the desk: Core and Robinhood Chain are named
+ * by the environment switch's logo and label, and `--lit-environment-mark` is
+ * the blue in both. Direction follows the law every status follows: up is the
+ * blue, down the ink, and a glyph (the arrow, the sign) carries the word.
+ *
+ * THE ONE HUE PAIR. Green and red appear on the candlesticks and their volume
+ * bars only, and only through `--lit-candle-*`, which is declared on the chart
+ * canvas host alone (below). Price lines, fill markers, studies, the depth
+ * bars and every label around the chart stay blue and ink.
+ *
+ * DENSITY. The desk is a pro surface: Departure Mono 11px caps for labels,
+ * 11 to 12px for data, Instrument Sans only for the order actions, the check
+ * labels and the chat. No counters, no serif inside the desk. */
 .lit-desk,
 .lit-chat-frame {
+  /* Ground and rules: one paper; regions are told apart by a 1px rule. */
   --lit-bg: var(--vex-alias-bg-base);
   --lit-panel: var(--vex-alias-bg-layer-1);
+  /* The pressed segment and the paper-2 step (night-2 at night). */
   --lit-panel-raised: var(--vex-alias-interactive-solid);
+  /* Inputs: the white field by day, night-1 at night. */
+  --lit-field: var(--vex-alias-field);
   --lit-line: var(--vex-alias-border-l2);
+  --lit-line-quiet: var(--vex-alias-rule-quiet);
   --lit-line-strong: var(--vex-alias-border-l4);
+  --lit-grid: var(--vex-alias-rule-quiet);
+
   --lit-ink: var(--vex-alias-label-primary);
   --lit-ink-secondary: var(--vex-alias-label-secondary);
   --lit-ink-muted: var(--vex-alias-label-tertiary);
-  --lit-grid: var(--vex-alias-rule-quiet);
+
+  /* Direction: up and bids are the blue, down and asks the ink. */
   --lit-positive: var(--vex-alias-accent-primary);
-  --lit-positive-ink: var(--vex-alias-label-on-accent);
-  --lit-positive-wash: var(--vex-alias-accent-wash);
   --lit-negative: var(--vex-alias-label-primary);
-  --lit-negative-wash: var(--vex-alias-interactive-solid);
-  /* The chart library parses colours itself and cannot read color-mix(), so
-   * the volume bars spell out the candle pair (tokens.css `--color-candle-up`
-   * #22c55e, `--color-candle-down` #ef4444) at 30%. */
-  --lit-positive-volume: rgba(34, 197, 94, 0.3);
-  --lit-negative-volume: rgba(239, 68, 68, 0.3);
+  /* Attention (an approval waiting, a delayed feed) is the blue as well:
+   * its fill pattern, not a hue, tells it from a live state. */
   --lit-warning: var(--vex-alias-state-warn);
   --lit-notice: var(--vex-alias-accent-primary);
   --lit-environment-mark: var(--vex-alias-accent-primary);
-  --lit-environment-surface: var(--vex-alias-accent-wash);
-  --lit-environment-surface-hover: var(--vex-alias-interactive-active);
+
+  /* Fills. The true blue behind white type is the one blue fill per view
+   * (Long, the setup action); the ink fill is its refusing twin (Short), ink
+   * by day and paper at night. */
   --lit-action: var(--vex-alias-button-accent-fill);
   --lit-action-ink: var(--vex-alias-button-accent-ink);
+  --lit-action-hover: var(--vex-alias-button-accent-hover);
+  --lit-ink-fill: var(--vex-alias-button-primary-fill);
+  --lit-ink-fill-ink: var(--vex-alias-label-on-primary);
+  --lit-ink-fill-hover: var(--vex-alias-button-primary-hover);
+
+  /* Book depth: bids a solid blue wash, asks an ink hatch (45deg, 1px in 3). */
+  --lit-depth-bid: color-mix(in srgb, var(--lit-positive) 14%, transparent);
+  --lit-depth-ask: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--lit-ink) 32%, transparent) 0 1px,
+    transparent 1px 3px
+  );
+
   --lit-focus: var(--vex-alias-focus);
   --lit-hover: var(--vex-alias-interactive-hover);
-  --lit-selection: color-mix(in srgb, var(--vex-alias-accent-primary) 28%, transparent);
+  --lit-selection: color-mix(in srgb, var(--vex-alias-accent-primary) 24%, transparent);
   --lit-scrollbar: var(--vex-alias-scrollbar-l1);
-  --lit-canvas: var(--lit-bg);
-  --lit-market-bar-surface: var(--lit-bg);
-  --lit-market-picker-surface: var(--lit-panel);
-  --lit-market-picker-chrome: var(--lit-panel-raised);
-  --lit-market-picker-hover: var(--vex-alias-interactive-hover);
-  --lit-market-picker-selected: var(--vex-alias-interactive-active);
-  --lit-market-picker-scrim: var(--vex-alias-bg-mask-1);
-  --lit-chart-font-size: 13;
-  background: var(--lit-canvas);
+
+  /* Registers: Departure Mono caps tracking (labels, status words) and the
+   * data tracking for figures. */
+  --lit-tr-label: var(--tracking-chip, 0.12em);
+  --lit-tr-status: var(--tracking-status, 0.14em);
+  --lit-tr-eyebrow: var(--tracking-eyebrow, 0.18em);
+  --lit-tr-caps-data: 0.1em;
+  --lit-tr-data: 0.02em;
+  /* The chart library sizes its own axis text in px; 11 is the desk's data
+   * size and one of Departure Mono's crisp sizes. */
+  --lit-chart-font-size: 11;
+
+  background: var(--lit-bg);
   color: var(--lit-ink);
-  font-family: var(--font-sans);
-  font-size: 14px;
   line-height: 1.4;
   color-scheme: dark;
-  accent-color: var(--lit-focus);
+  accent-color: var(--lit-positive);
   caret-color: var(--lit-focus);
+}
+
+/* The desk and its top bar speak Departure Mono; the chat rail and the
+ * dialogs that share the scope keep the room's sans for reading. */
+.lit-desk,
+.lit-desk-topbar {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: var(--lit-tr-data);
 }
 
 .lit-desk[data-lighter-theme="celeris"],
@@ -64,11 +100,11 @@
 }
 
 /* The candlesticks: the one sanctioned hue pair, scoped to the chart canvas
- * host (the element MarketChart reads its colours from), so no label, legend
- * or order handle around the chart can reach it. */
+ * host (the element MarketChart reads its colours from), so no label, legend,
+ * price line or order handle around the chart can reach it. */
 .lit-desk .lit-chart-canvas {
-  --lit-positive: var(--color-candle-up);
-  --lit-negative: var(--color-candle-down);
+  --lit-candle-up: var(--color-candle-up);
+  --lit-candle-down: var(--color-candle-down);
 }
 
 .lit-desk ::selection,
@@ -107,4 +143,82 @@
 .lit-chat-frame a:focus-visible {
   outline: 2px solid var(--lit-focus);
   outline-offset: 3px;
+}
+
+/* The desk's square check box: a 1.5px ink frame on the field, an ink fill
+ * and a paper tick when checked. Native, so keyboard and forms behave as
+ * before. */
+.lit-desk input[type="checkbox"],
+.lit-environment-dialog input[type="checkbox"] {
+  appearance: none;
+  display: inline-grid;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  place-items: center;
+  margin: 0;
+  border: 1.5px solid var(--lit-ink);
+  background: var(--lit-field);
+}
+
+.lit-desk input[type="checkbox"]:checked,
+.lit-environment-dialog input[type="checkbox"]:checked { background: var(--lit-ink); }
+
+.lit-desk input[type="checkbox"]:checked::after,
+.lit-environment-dialog input[type="checkbox"]:checked::after {
+  content: "";
+  width: 4px;
+  height: 8px;
+  margin-top: -2px;
+  border: solid var(--lit-bg);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.lit-desk input[type="checkbox"]:disabled,
+.lit-environment-dialog input[type="checkbox"]:disabled { border-style: dotted; opacity: 0.6; }
+
+/* Status by fill on the desk's live marks (the market bar's Live word, the
+ * book and tape marks, the chart's lag word): solid = live, dot screen =
+ * connecting, target = delayed, ink cross = unavailable, outline = waiting.
+ * The patterns are the swatch's (ui-primitives/marks.css). */
+.lit-live-status i,
+.lit-live-dot,
+.lit-chart-connection i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  background: currentColor;
+}
+
+.lit-live-status:is([data-status="connecting"], [data-status="reconnecting"]) i,
+.lit-live-dot:is([data-status="connecting"], [data-status="reconnecting"]),
+.lit-chart-connection:is([data-status="connecting"], [data-status="reconnecting"]) i {
+  border: 1px solid currentColor;
+  background: radial-gradient(currentColor 1px, transparent 1.2px) 0 0 / 3px 3px;
+}
+
+.lit-live-status[data-status="delayed"] i,
+.lit-live-dot[data-status="delayed"],
+.lit-chart-connection[data-status="delayed"] i {
+  border: 1px solid currentColor;
+  background: linear-gradient(currentColor, currentColor) center / 40% 40% no-repeat;
+}
+
+.lit-live-status[data-status="unavailable"] i,
+.lit-live-dot[data-status="unavailable"],
+.lit-chart-connection[data-status="unavailable"] i {
+  border: 1.5px solid currentColor;
+  background:
+    linear-gradient(45deg, transparent calc(50% - 0.5px), currentColor calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    linear-gradient(-45deg, transparent calc(50% - 0.5px), currentColor calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px));
+}
+
+.lit-live-status[data-status="stopped"] i,
+.lit-live-dot[data-status="stopped"],
+.lit-chart-connection[data-status="stopped"] i {
+  border: 1.5px solid currentColor;
+  background: transparent;
 }
