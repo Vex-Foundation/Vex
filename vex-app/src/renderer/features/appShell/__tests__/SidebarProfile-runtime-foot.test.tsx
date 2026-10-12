@@ -176,6 +176,18 @@ describe("SidebarProfile foot", () => {
     ).not.toBeNull();
   });
 
+  it("sets the vx mark in its box on either ground, and names the ground it sits on", () => {
+    // docs/design/V10-SPREAD.md section 3: white on the left page's print,
+    // ink on the Studio rail's paper; the mark is the profile picture.
+    const { container, rerender } = render(<SidebarProfile sidebarOpen ground="print" />);
+    const root = (): Element | null => container.querySelector("[data-vex-area='sidebar-profile']");
+    expect(root()?.getAttribute("data-ground")).toBe("print");
+    expect(container.querySelector(".vex-prof__av svg path")).not.toBeNull();
+    expect(container.querySelector("img")).toBeNull();
+    rerender(<SidebarProfile sidebarOpen />);
+    expect(root()?.getAttribute("data-ground")).toBe("paper");
+  });
+
   it("gives the collapsed spine the sentence as its tooltip - no subtitle there", () => {
     healthMock.mockReturnValue({ isLoading: false, data: health("degraded") });
     render(<SidebarProfile sidebarOpen={false} />);

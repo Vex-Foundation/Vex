@@ -1,7 +1,7 @@
 /* THE GLASS TIERS, NEUTRALISED (V10: no glass, no blur, no shadow).
  *
  * The class names stay only because shell components still carry them (the
- * two rails, the BOOK cards and the $VEX chip). Each now paints an OPAQUE surface from the tint tokens
+ * two rails and the BOOK cards). Each now paints an OPAQUE surface from the tint tokens
  * in shell.css and draws its edge as one 1px rule inside its box: no
  * backdrop-filter, no saturation lift, no elevation. WP18 deletes this sheet
  * once those call sites paint their own V10 surfaces.
@@ -22,8 +22,4 @@
 .vex-glass-pane {
   background: var(--vex-glass-tint-pane);
   box-shadow: var(--vex-glass-rule);
-}
-
-.vex-glass-chip {
-  background: var(--vex-glass-tint-chip);
 }

@@ -1,0 +1,140 @@
+/* THE LEFT PAGE'S FURNITURE (docs/design/V10-SPREAD.md section 3), set on
+ * the print that shell.css lays in place (`.vex-print`): here, the ground's
+ * $VEX line and the profile row. White on the dark ground of the print in
+ * both rooms; the profile row also stands on paper (the Studio rail, the
+ * Lighter bar) in ink. No fill, shadow or radius anywhere on the photograph. */
+
+.vex-tok {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 10px;
+  color: var(--vex-alias-on-photo);
+}
+.vex-tok__k {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-chip);
+}
+.vex-tok__p {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.vex-tok--link:hover .vex-tok__p {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.vex-tok__c {
+  justify-self: end;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.vex-tok__stale {
+  font-size: 10px;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
+}
+.vex-tok__spark {
+  display: block;
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 26px;
+  margin-top: 8px;
+  overflow: visible;
+}
+.vex-tok__note {
+  grid-column: 2 / -1;
+  font-family: var(--font-sans);
+  font-size: 12px;
+}
+.vex-tok__wait {
+  grid-column: 2 / -1;
+  display: block;
+  width: 96px;
+  height: 12px;
+  background: var(--vex-alias-rule-photo);
+}
+
+/* THE PROFILE ROW (SidebarProfile): 64px, a 28px outlined box with the vx
+ * mark, the name over the runtime line, an up chevron. On paper (the Studio
+ * rail, the Lighter bar) in ink; on the print in white. */
+.vex-prof {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 16px;
+  column-gap: 12px;
+  align-items: center;
+  width: 100%;
+  height: 64px;
+  text-align: left;
+  color: var(--vex-alias-label-primary);
+}
+.vex-prof:not([data-open]) {
+  grid-template-columns: 28px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+.vex-prof:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+.vex-prof__av {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  outline: 1px solid var(--vex-alias-rule);
+  outline-offset: -1px;
+  color: var(--vex-alias-brand-mark);
+}
+.vex-prof__name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.vex-prof__n {
+  overflow: hidden;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-prof__n--ask {
+  font-weight: 400;
+}
+.vex-prof:hover .vex-prof__n {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.vex-prof__s {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-prof__s--live {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-prof__chev {
+  color: var(--vex-alias-label-secondary);
+}
+.vex-prof-root[data-ground="print"] .vex-prof,
+.vex-prof-root[data-ground="print"] .vex-prof__s,
+.vex-prof-root[data-ground="print"] .vex-prof__chev {
+  color: var(--vex-alias-on-photo);
+}
+.vex-prof-root[data-ground="print"] .vex-prof__av {
+  outline-color: var(--vex-alias-rule-photo);
+  color: var(--vex-alias-on-photo);
+}

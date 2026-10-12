@@ -84,9 +84,9 @@ function allSheets(): (readonly [string, string])[] {
 const shell = ruleBody(shellCss, '[data-vex-shell="true"]');
 
 /** The tiers that still have a tint; the classes share the names. */
-const TIERS = ["chip", "rail", "card", "pane", "overlay"] as const;
+const TIERS = ["rail", "card", "pane", "overlay"] as const;
 /** The tiers whose class still exists in glass.css. */
-const CLASS_TIERS = ["rail", "card", "pane", "chip"] as const;
+const CLASS_TIERS = ["rail", "card", "pane"] as const;
 
 describe("the glass tiers, neutralised (shell.css)", () => {
   it.each(TIERS)("paints the %s tint from an opaque surface alias", (tier) => {
@@ -126,7 +126,6 @@ describe("the glass classes, neutralised (glass.css)", () => {
         "var(--vex-glass-rule)",
       );
     }
-    expect(ruleBody(glassCss, ".vex-glass-chip")).not.toContain("box-shadow");
     const shadows = [...stripComments(glassCss).matchAll(/box-shadow:\s*([^;]+);/g)].map((m) => m[1]?.trim());
     expect(new Set(shadows)).toEqual(new Set(["var(--vex-glass-rule)"]));
   });
@@ -134,6 +133,11 @@ describe("the glass classes, neutralised (glass.css)", () => {
   it("declares no border and no radius anywhere in the sheet", () => {
     const source = stripComments(glassCss);
     expect(source.match(/(?:^|[\s;{])border[a-z-]*\s*:/gm)).toBeNull();
+  });
+
+  it("has deleted the chip tier, whose one consumer (the $VEX card) now sits on the print", () => {
+    expect(stripComments(glassCss)).not.toContain(".vex-glass-chip");
+    expect(declarationValue(shell, "--vex-glass-tint-chip")).toBeUndefined();
   });
 
   it("has deleted the retired overlay class, which had no consumer", () => {
@@ -272,7 +276,7 @@ describe("compatibility aliases", () => {
     return hits.sort();
   }
 
-  it.each(["--vex-glass", "--vex-rail"])(
+  it.each(["--vex-glass", "--vex-rail", "--vex-rail-strong"])(
     "has deleted %s, which had no consumer left",
     (alias) => {
       expect(declarationValue(shell, alias)).toBeUndefined();
@@ -280,7 +284,7 @@ describe("compatibility aliases", () => {
     },
   );
 
-  it.each(["--vex-rail-strong", "--vex-glass-strong"])(
+  it.each(["--vex-glass-strong"])(
     "keeps %s only while a consumer still reads it (delete the alias when this fails)",
     (alias) => {
       expect(declarationValue(shell, alias), `${alias} alias`).toBeDefined();
@@ -293,7 +297,6 @@ describe("compatibility aliases", () => {
 
   it("points the surviving aliases at opaque surfaces", () => {
     expect(declarationValue(shell, "--vex-glass-strong")).toBe("var(--vex-glass-tint-overlay)");
-    expect(declarationValue(shell, "--vex-rail-strong")).toBe("var(--vex-alias-bg-base)");
   });
 });
 
