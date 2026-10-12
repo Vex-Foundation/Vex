@@ -55,8 +55,11 @@ import {
   type JSX,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { motion } from "motion/react";
 import { cn } from "../../../lib/utils.js";
+import { PxIcon } from "../../../components/icons/index.js";
+import { Swatch } from "../../../components/ui/swatch.js";
 import { useScrollbarVisibility } from "../../../lib/useScrollbarVisibility.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import { coerceBookTab } from "../../../stores/uiStore/persistence.js";
@@ -66,6 +69,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "../../../components/ui/tabs.js";
+import { useBookHeadSlot } from "./book-head-slot.js";
 import { ActiveBoardModule } from "./board/ActiveBoardModule.js";
 import { useBoardSurfaceStore } from "../Board/board-surface-store.js";
 import { enterLighterMode } from "../lighterTrading/workspace-command.js";
@@ -227,7 +231,7 @@ export function BookRailStack({
       animate="show"
       role="list"
       ref={stackRef}
-      className="vex-scroll vex-scroll-overlay flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto"
+      className="vex-bk__stack vex-scroll vex-scroll-overlay flex min-h-0 flex-1 flex-col overflow-y-auto"
     >
       {order.map((id, index) => (
         <ReorderableSection
@@ -260,7 +264,7 @@ export function BookRailStack({
       <div
         data-vex-area="book-instruments"
         data-vex-rail-scope={scope.kind}
-        className={cn("flex min-h-0 flex-1 flex-col", inspecting && "hidden")}
+        className={cn("vex-bk__body", inspecting && "hidden")}
       >
         {scope.kind === "session" ? (
           <SessionBookInstruments>{portfolio}</SessionBookInstruments>
@@ -298,66 +302,68 @@ function SessionBookInstruments({
   const boardUnseen = useBoardSurfaceStore(
     (state) => state.unseenBoardKey !== null,
   );
+  // The tab strip lives in the BOOK's 44px head (docs/design/V10-SPREAD.md
+  // section 2): it portals into the slot the frame hands down, and keeps its
+  // Tabs context through the portal.
+  const slot = useBookHeadSlot();
+  const strip = (
+    <div
+      role="group"
+      aria-label="Book instruments"
+      className="vex-bk__tabs"
+    >
+      <TabsList className="h-auto justify-start border-0 p-0">
+        <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
+        <TabsTrigger value="board">
+          Board
+          {/* The unseen marker. Set by a LIVE board arrival only, and
+              spoken as words beside it, because a 7px square is not
+              information a screen-reader user can reach. */}
+          {boardUnseen ? (
+            <span
+              data-vex-area="book-board-unseen"
+              className="inline-flex items-center"
+            >
+              <Swatch state="done" size={7} />
+              <span className="sr-only">, new board</span>
+            </span>
+          ) : null}
+        </TabsTrigger>
+      </TabsList>
+      <button
+        type="button"
+        data-vex-area="book-lighter-launch"
+        onClick={enterLighterMode}
+        className="vex-bk__door"
+      >
+        Lighter
+        <PxIcon name="external" />
+      </button>
+    </div>
+  );
   return (
     <Tabs
       value={bookTab}
       onValueChange={(next) => {
         // The ONLY writer of this preference. Nothing in the board
         // surfaces switches the rail's tab: a newly composed board
-        // lights the dot below and waits to be chosen (A13).
+        // lights the marker below and waits to be chosen (A13).
         setBookTab(coerceBookTab(next));
       }}
       idScope="book"
       keepMounted
       className="min-h-0 flex-1"
     >
-      <div
-        role="group"
-        aria-label="Book instruments"
-        className="inline-flex h-9 self-start items-center justify-center gap-1 rounded-lg border border-line-3 bg-transparent p-1 text-ink-tertiary"
-      >
-        <TabsList className="h-auto justify-start rounded-none border-0 p-0">
-          <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
-          <TabsTrigger value="board">
-            Board
-            {/* The unseen dot. Set by a LIVE board arrival only, and
-                spoken as words beside it, because a 6px dot is not
-                information a screen-reader user can reach. */}
-            {boardUnseen ? (
-              <span
-                data-vex-area="book-board-unseen"
-                className="ml-1.5 inline-flex items-center"
-              >
-                <span
-                  aria-hidden
-                  className="h-[6px] w-[6px] rounded-full bg-accent-primary"
-                />
-                <span className="sr-only">, new board</span>
-              </span>
-            ) : null}
-          </TabsTrigger>
-        </TabsList>
-        <button
-          type="button"
-          data-vex-area="book-lighter-launch"
-          onClick={enterLighterMode}
-          className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-[13px] font-medium leading-5 text-ink-tertiary hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          Lighter
-        </button>
-      </div>
+      {slot !== null ? createPortal(strip, slot) : null}
       {/* KEEP-MOUNTED: the Portfolio stack owns scroll offsets, running
           queries and card state that a tab switch must not throw
           away. */}
-      <TabsContent
-        value="portfolio"
-        className="mt-3 flex min-h-0 flex-1 flex-col"
-      >
+      <TabsContent value="portfolio" className="mt-0 flex min-h-0 flex-1 flex-col">
         {portfolio}
       </TabsContent>
       <TabsContent
         value="board"
-        className="vex-scroll vex-scroll-overlay mt-3 min-h-0 flex-1 overflow-y-auto"
+        className="vex-scroll vex-scroll-overlay mt-0 min-h-0 flex-1 overflow-y-auto"
       >
         <ActiveBoardModule />
       </TabsContent>

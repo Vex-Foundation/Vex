@@ -45,7 +45,7 @@
 import { useState, type JSX, type ReactNode } from "react";
 import type { VexError } from "@shared/ipc/result.js";
 import type { ImageOnchainVariant } from "@shared/schemas/images.js";
-import { IconPlus } from "../../../components/icons/index.js";
+import { PxIcon } from "../../../components/icons/index.js";
 import {
   useDeleteLockerImage,
   useLockerImages,
@@ -125,7 +125,7 @@ function LockerFrame({
       ) : images.length === 0 ? (
         <CardStateNote>{emptyNote}</CardStateNote>
       ) : (
-        <ul className="grid grid-cols-3 gap-1.5">
+        <ul className="grid grid-cols-3 gap-2">
           {images.map((image) => (
             <ImageThumb key={image.imageId} image={image} removal={removal} />
           ))}
@@ -150,10 +150,10 @@ function ProjectLocker(): JSX.Element {
     >
       {/* The seat the launch action holds for a session. A PROJECT rail has
           no session to sign from, so it carries the sentence that says so. */}
-      <div className="mt-2.5 border-t border-line-2 pt-2.5">
+      <div className="mt-2">
         <p
           data-vex-area="launchpad-browse-note"
-          className="text-[11px] leading-relaxed text-ink-tertiary"
+          className="vex-bs__empty"
         >
           {LAUNCH_FROM_AGENT_SESSION_NOTE}
         </p>
@@ -227,7 +227,7 @@ function SessionLocker({ sessionId }: { readonly sessionId: string }): JSX.Eleme
       }
     >
       {notice !== null ? (
-        <p className="mt-2 text-[11px] leading-relaxed text-warning-label">
+        <p className="vex-bs__empty mt-1">
           {notice}
         </p>
       ) : null}
@@ -236,9 +236,9 @@ function SessionLocker({ sessionId }: { readonly sessionId: string }): JSX.Eleme
         type="button"
         onClick={runUpload}
         disabled={busy}
-        className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-full border border-line-2 py-1.5 vex-micro-label vex-micro-label--wide uppercase text-ink-secondary transition-colors hover:text-ink-primary disabled:opacity-50"
+        className="vex-bs__add disabled:opacity-50"
       >
-        <IconPlus size={12} />
+        <PxIcon name="plus" />
         {busy ? "Adding…" : "Add image"}
       </button>
 
@@ -246,7 +246,7 @@ function SessionLocker({ sessionId }: { readonly sessionId: string }): JSX.Eleme
           holds the image every launch needs. There is no launchpad chooser any
           more: migration 108 retired Trench Express and pools.fun is the only
           lane, so a chooser with one chip would state a decision nobody makes. */}
-      <div className="mt-2.5 flex flex-col gap-2 border-t border-line-2 pt-2.5">
+      <div className="mt-2 flex flex-col gap-2">
         <TokenLaunchButton sessionId={sessionId} />
       </div>
     </LockerFrame>

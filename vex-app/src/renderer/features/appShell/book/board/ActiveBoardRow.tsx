@@ -53,37 +53,24 @@ export function ActiveBoardRow({
       aria-label={`${symbol ?? card.pairAddress}, ${price}, ${delta} over 24 hours${
         active ? ", shown in the spotlight" : ""
       }`}
-      className={cn(
-        "flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors duration-150 hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
-        active
-          ? "border-accent-primary/50 bg-accent-wash"
-          : "border-transparent",
-      )}
+      className={cn("vex-kv3 w-full text-left", active && "vex-kv3--active")}
     >
-      <TokenPhoto iconId={row?.iconId ?? null} symbol={symbol} />
-      <span
-        data-vex-area="active-board-row-symbol"
-        className="min-w-0 flex-1 truncate text-[12.5px] font-semibold leading-[16px] text-ink-primary"
-      >
-        {symbol ?? BOARD_EMPTY}
+      <span className="vex-kv3__n">
+        <TokenPhoto iconId={row?.iconId ?? null} symbol={symbol} />
+        <span data-vex-area="active-board-row-symbol">
+          {symbol ?? BOARD_EMPTY}
+        </span>
       </span>
       <span
         data-vex-area="active-board-row-price"
-        className="shrink-0 text-[12.5px] leading-[16px] tabular-nums text-ink-secondary"
         title={row?.priceUsd ?? undefined}
       >
         {price}
       </span>
+      {/* Direction is the sign of the figure, never a colour. */}
       <span
         data-vex-area="active-board-row-delta"
-        className={cn(
-          "w-[62px] shrink-0 text-right text-[12px] font-semibold leading-[16px] tabular-nums",
-          card.trendH24 === "up"
-            ? "text-success"
-            : card.trendH24 === "down"
-              ? "text-danger"
-              : "text-ink-tertiary",
-        )}
+        className="w-[62px]"
       >
         {delta}
       </span>
@@ -108,8 +95,7 @@ function TokenPhoto({
   const query = useBoardTokenIcon(iconId);
   const dataUrl = boardTokenIconDataUrl(query);
   const [undecodableUrl, setUndecodableUrl] = useState<string | null>(null);
-  const shell =
-    "h-5 w-5 shrink-0 rounded-full border border-line-2 bg-surface-2";
+  const shell = "vex-bk__thumb h-5 w-5 shrink-0";
 
   if (dataUrl !== null && dataUrl !== undecodableUrl) {
     return (
@@ -132,7 +118,7 @@ function TokenPhoto({
       aria-hidden
       className={cn(
         shell,
-        "flex items-center justify-center font-display text-[9px] font-bold leading-none text-ink-secondary",
+        "flex items-center justify-center font-mono text-[9px] leading-none text-ink-secondary",
       )}
     >
       {monogram(symbol)}

@@ -49,7 +49,7 @@ import {
 } from "react";
 import { motion } from "motion/react";
 import { prefersReducedMotion } from "./portfolio/portfolio-motion.js";
-import { IconGripVertical } from "../../../components/icons/index.js";
+import { PxIcon } from "../../../components/icons/index.js";
 import { cn } from "../../../lib/utils.js";
 import {
   moveSection,
@@ -273,15 +273,11 @@ export function ReorderableSection<Id extends string>({
       onDragOver={(event) => reorder.onRowDragOver(id, event)}
       onDrop={(event) => reorder.onRowDrop(id, event)}
       className={cn(
-        "group relative list-none",
+        // The drop indicator is a CSS-only rule on the row's own edge
+        // (`data-vex-drop-edge`, book.css): no JS positioning, no injected style.
+        "vex-bk__item list-none",
         settling && "vex-section-settle",
         drag?.draggedId === id && "opacity-60",
-        // The drop indicator is a CSS-only hairline on the row's own edge - no
-        // JS positioning, no injected style.
-        dropEdge === "before" &&
-          "before:absolute before:inset-x-0 before:-top-1 before:h-0.5 before:rounded-full before:bg-accent-primary",
-        dropEdge === "after" &&
-          "after:absolute after:inset-x-0 after:-bottom-1 after:h-0.5 after:rounded-full after:bg-accent-primary",
       )}
     >
       <button
@@ -291,9 +287,9 @@ export function ReorderableSection<Id extends string>({
         onDragEnd={reorder.onDragEnd}
         onKeyDown={(event) => reorder.onHandleKeyDown(id, index, event)}
         aria-label={`Reorder ${label} - position ${index + 1} of ${count}`}
-        className="absolute right-2 top-2 z-10 cursor-grab rounded p-1 text-ink-tertiary opacity-0 transition-opacity hover:text-ink-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary group-hover:opacity-100"
+        className="vex-bk__grip"
       >
-        <IconGripVertical size={12} />
+        <PxIcon name="grip" />
       </button>
       {children}
     </motion.li>
