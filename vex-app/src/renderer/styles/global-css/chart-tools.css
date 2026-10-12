@@ -434,6 +434,6 @@
  * intervals and scrolls (the selected one is kept in view), and the Volume
  * and Log toggles go instead of the chart type and the studies. */
 @container (max-width: 480px) {
-  .lit-analysis-toolbar > .lit-resolution-tabs { flex-shrink: 0; min-width: 104px; }
+  .lit-analysis-toolbar > .lit-resolution-tabs { flex: 0 1 auto; min-width: 104px; }
   .lit-analysis-toolbar > button[aria-pressed] { display: none; }
 }
