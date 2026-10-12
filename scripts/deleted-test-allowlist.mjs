@@ -28,7 +28,13 @@
  * The 12 retired feed/ws fixture entries were consumed when the replacement
  * envelope protocol landed in main through PR #205 (`1dc37f68f`).
  */
-export const DELETED_TEST_ALLOWLIST = [];
+export const DELETED_TEST_ALLOWLIST = [
+  {
+    path: "vex-app/src/renderer/components/icons/__tests__/glyphs.test.tsx",
+    reason: "The hand-drawn outline glyph set was removed when the icons moved to the pixel sprite.",
+    coveredBy: "vex-app/src/renderer/components/icons/__tests__/px-sprite.test.tsx",
+  },
+];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(
   DELETED_TEST_ALLOWLIST.map((entry) => entry.path),
