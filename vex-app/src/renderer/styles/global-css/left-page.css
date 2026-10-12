@@ -1,0 +1,588 @@
+/* THE LEFT PAGE'S FURNITURE (docs/design/V10-SPREAD.md section 3): the mast,
+ * the sky (counter, New session, tabs, the session index and its fold), the
+ * ground ($VEX and the profile row) and the 56px spine, all set on the print
+ * that shell.css lays in place (`.vex-print`). The print, its grain and the
+ * flock canvas sit under this furniture (z 0 to 3); the furniture is z 4.
+ *
+ * Type on the print: by day ink and the one blue on the pale sky (the
+ * counter in the tweet blue), white on the dark ground; at night every word
+ * on the night print is paper white, because blue never sits on dark ground.
+ * Boxes on the print are paper label boxes by day and white hairline boxes at
+ * night. No fill, shadow or radius anywhere on the photograph. */
+
+.vex-left-page {
+  --lp-ink: var(--vex-alias-label-primary);
+  --lp-blue: var(--vex-alias-label-primary);
+  --lp-counter: var(--vex-alias-label-primary);
+  --lp-sky-rule: var(--vex-alias-sky-rule);
+  --lp-photo: var(--vex-alias-on-photo);
+  --lp-rule-photo: var(--vex-alias-rule-photo);
+  --lp-box: transparent;
+  --lp-box-ink: var(--vex-alias-on-photo);
+  --lp-box-edge: rgba(255, 255, 255, 0.72);
+  /* The horizon, where the print's sky meets the land: 57.2% down the print,
+   * which is laid in place at window size (2560 x 1440 art, cover, centred
+   * vertically), so it moves with the window's shape, not its height alone. */
+  --lp-horizon: calc(50vh + 0.072 * max(100vh, 56.25vw));
+}
+[data-vex-theme="celeris"] .vex-left-page {
+  --lp-blue: var(--vex-alias-accent-primary);
+  --lp-counter: var(--vex-alias-counter);
+  --lp-box: var(--vex-alias-label-box);
+  --lp-box-ink: var(--vex-alias-accent-primary);
+  --lp-box-edge: transparent;
+}
+
+.vex-lp {
+  position: relative;
+  height: 100%;
+}
+/* Keyboard focus on the print: the focus ring, outside the control. A field
+ * keeps its own focus treatment. */
+.vex-lp :focus-visible:not(input) {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+
+/* MAST: the open page's 44px head row on the print. The traffic lights take
+ * the left inset (window-chrome.css `.vex-lights-start`), then the 30 x 24
+ * vx mark, then the capsule at the right edge. */
+.vex-lp-mast {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  height: var(--head-h);
+  padding-inline-end: 16px;
+}
+.vex-lp-mast__modes {
+  margin-inline-start: auto;
+}
+.vex-lp-mast .vex-mode-seg [role="radio"] {
+  background: transparent;
+  color: var(--lp-ink);
+}
+.vex-lp-mast .vex-mode-seg [role="radio"]:hover {
+  color: var(--lp-blue);
+}
+.vex-lp-mast .vex-mode-seg [role="radio"][aria-checked="true"] {
+  background: var(--lp-box);
+  color: var(--lp-box-ink);
+  outline: 1px solid var(--lp-box-edge);
+  outline-offset: -1px;
+}
+
+/* SKY: from the head row to 14px above the horizon. Only the index scrolls;
+ * the counter, New session and the tabs stay. */
+.vex-lp-sky {
+  position: absolute;
+  top: var(--head-h);
+  right: 18px;
+  left: 18px;
+  display: flex;
+  flex-direction: column;
+  height: calc(var(--lp-horizon) - var(--head-h) - 14px);
+  min-height: 0;
+}
+.vex-lp-head {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 14px;
+  margin-top: 4px;
+}
+.vex-lp-counter {
+  margin-inline-start: -0.05em;
+  font-size: 112px;
+  color: var(--lp-counter);
+}
+.vex-lp-counter[data-digits="3"] {
+  font-size: 88px;
+}
+.vex-lp-cap {
+  padding-bottom: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.2;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--lp-ink);
+}
+
+/* New session: a label box, never a blue fill at rest. */
+.vex-lp-new {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 36px;
+  margin-top: 10px;
+  background: var(--lp-box);
+  color: var(--lp-box-ink);
+  outline: 1px solid var(--lp-box-edge);
+  outline-offset: -1px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
+}
+.vex-lp-new:hover {
+  background: var(--vex-alias-button-accent-fill);
+  color: var(--vex-alias-button-accent-ink);
+  outline-color: transparent;
+}
+.vex-lp-new--compact {
+  width: 32px;
+  height: 32px;
+  margin-top: 14px;
+}
+.vex-lp-new__stroke {
+  position: absolute;
+  right: 14px;
+  bottom: 5px;
+  left: 14px;
+  height: 1.5px;
+  background: currentColor;
+}
+.vex-lp-new--compact .vex-lp-new__stroke {
+  right: 6px;
+  bottom: 3px;
+  left: 6px;
+}
+.vex-lp-new__glint {
+  position: absolute;
+  right: 10px;
+  bottom: 4px;
+  width: 6px;
+  height: 6px;
+  background: currentColor;
+}
+
+/* Tabs: All | Agent | Mission, with search and collapse at the right. */
+.vex-lp-tabs {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  height: 30px;
+  margin-top: 8px;
+  border-bottom: 1px solid var(--lp-sky-rule);
+}
+.vex-lp-tabs__list {
+  display: flex;
+  align-items: stretch;
+  gap: 18px;
+}
+.vex-lp-tabs__list > [role="tab"] {
+  margin-bottom: -1px;
+  border-bottom: 1.5px solid transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
+  color: var(--lp-ink);
+}
+.vex-lp-tabs__list > [role="tab"]:hover {
+  color: var(--lp-blue);
+}
+.vex-lp-tabs__list > [aria-selected="true"] {
+  border-bottom-color: var(--lp-blue);
+  color: var(--lp-blue);
+}
+.vex-lp-tabs__tools {
+  display: flex;
+  align-items: center;
+  margin-inline: auto -6px;
+}
+.vex-lp-tool {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--lp-ink);
+}
+.vex-lp-tool:hover,
+.vex-lp-tool[aria-pressed="true"] {
+  color: var(--lp-blue);
+}
+.vex-lp-tool--ground,
+.vex-lp-tool--ground:hover {
+  color: var(--lp-photo);
+}
+.vex-lp-search {
+  flex: none;
+  margin-top: 8px;
+}
+
+/* THE INDEX: the chapter rail in the sky. Its scrollbar lives in the page's
+ * right margin, so the times stay flush with the tabs row. */
+.vex-lp-index {
+  position: relative;
+  margin-top: 2px;
+  margin-inline-end: -6px;
+}
+.vex-ix__g {
+  height: 17px;
+  padding-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--lp-ink);
+}
+.vex-ix-row {
+  position: relative;
+  height: 26px;
+  margin-inline-end: 6px;
+}
+.vex-ix-row__select {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  column-gap: 6px;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  text-align: left;
+  color: var(--lp-ink);
+}
+.vex-ix-row__select:focus-visible {
+  outline-offset: -2px;
+}
+.vex-ix-row__n {
+  font-family: var(--font-serif);
+  font-size: 24px;
+  font-style: italic;
+  font-weight: 400;
+  line-height: 26px;
+  letter-spacing: -0.02em;
+  font-feature-settings: "lnum" 1;
+  color: var(--lp-counter);
+  white-space: nowrap;
+}
+.vex-ix-row__t {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 18px;
+}
+.vex-ix-row__sw {
+  flex: none;
+  margin-inline-end: 7px;
+}
+.vex-ix-row__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-ix-row__time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.vex-ix-row[data-current] .vex-ix-row__t,
+.vex-ix-row__select:hover .vex-ix-row__t {
+  color: var(--lp-blue);
+}
+/* Remove and Pin take the time's place on hover and on keyboard focus (a
+ * mouse click that focuses the row does not keep them out), in a label box so
+ * they read on the photograph. */
+.vex-ix-row__actions {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: flex;
+  gap: 2px;
+  background: var(--lp-box);
+  opacity: 0;
+  transform: translateY(-50%);
+}
+.vex-ix-row__actions button {
+  color: var(--lp-box-ink);
+}
+.vex-ix-row:hover .vex-ix-row__actions,
+.vex-ix-row:has(:focus-visible) .vex-ix-row__actions {
+  opacity: 1;
+}
+.vex-ix-row:hover .vex-ix-row__time,
+.vex-ix-row:has(:focus-visible) .vex-ix-row__time {
+  visibility: hidden;
+}
+.vex-ix-row[data-editing] {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  column-gap: 6px;
+  align-items: center;
+}
+.vex-ix-row__input {
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-field);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--vex-alias-label-primary);
+}
+
+/* The fold: a row or head the horizon would cut is not drawn at all. */
+[data-vex-folded] {
+  visibility: hidden;
+}
+.vex-ix-fold {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+  height: 22px;
+  border-top: 1px dotted var(--lp-ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
+  color: var(--lp-ink);
+}
+.vex-ix-fold b {
+  font-weight: 400;
+  color: var(--lp-blue);
+}
+.vex-ix-fold[data-compact] {
+  justify-content: center;
+}
+
+/* GROUND: $VEX, the white hairline and the profile row, on the dark grass. */
+.vex-lp-ground {
+  position: absolute;
+  right: 18px;
+  bottom: 0;
+  left: 18px;
+  color: var(--lp-photo);
+}
+.vex-lp-ground__rule {
+  height: 1px;
+  margin-top: 12px;
+  background: var(--lp-rule-photo);
+}
+
+.vex-tok {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 10px;
+  color: var(--vex-alias-on-photo);
+}
+.vex-tok__k {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-chip);
+}
+.vex-tok__p {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.vex-tok--link:hover .vex-tok__p {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.vex-tok__c {
+  justify-self: end;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.vex-tok__stale {
+  font-size: 10px;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
+}
+.vex-tok__spark {
+  display: block;
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 26px;
+  margin-top: 8px;
+  overflow: visible;
+}
+.vex-tok__note {
+  grid-column: 2 / -1;
+  font-family: var(--font-sans);
+  font-size: 12px;
+}
+.vex-tok__wait {
+  grid-column: 2 / -1;
+  display: block;
+  width: 96px;
+  height: 12px;
+  background: var(--vex-alias-rule-photo);
+}
+
+/* THE PROFILE ROW (SidebarProfile): 64px, a 28px outlined box with the vx
+ * mark, the name over the runtime line, an up chevron. On paper (the Studio
+ * rail, the Lighter bar) in ink; on the print in white. */
+.vex-prof {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 16px;
+  column-gap: 12px;
+  align-items: center;
+  width: 100%;
+  height: 64px;
+  text-align: left;
+  color: var(--vex-alias-label-primary);
+}
+.vex-prof:not([data-open]) {
+  grid-template-columns: 28px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+.vex-prof:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+.vex-prof__av {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  outline: 1px solid var(--vex-alias-rule);
+  outline-offset: -1px;
+  color: var(--vex-alias-brand-mark);
+}
+.vex-prof__name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.vex-prof__n {
+  overflow: hidden;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-prof__n--ask {
+  font-weight: 400;
+}
+.vex-prof:hover .vex-prof__n {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.vex-prof__s {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-prof__s--live {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-prof__chev {
+  color: var(--vex-alias-label-secondary);
+}
+.vex-prof-root[data-ground="print"] .vex-prof,
+.vex-prof-root[data-ground="print"] .vex-prof__s,
+.vex-prof-root[data-ground="print"] .vex-prof__chev {
+  color: var(--vex-alias-on-photo);
+}
+.vex-prof-root[data-ground="print"] .vex-prof__av {
+  outline-color: var(--vex-alias-rule-photo);
+  color: var(--vex-alias-on-photo);
+}
+
+/* THE SPINE (under the spread, and always in Lighter and Studio): a paper cap
+ * under the head row (shell.css), then the print. In agent mode New session,
+ * the ordinals at a 27px pitch down to the horizon, the open control and the
+ * profile box at the foot; in Lighter and Studio the vx mark alone. */
+.vex-lp-spine {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+}
+.vex-lp-spine__sky {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: calc(var(--lp-horizon) - var(--head-h) - 70px);
+  min-height: 0;
+  margin-top: 10px;
+}
+.vex-sp-ix {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+.vex-sp-ix__n {
+  position: relative;
+  width: 100%;
+  height: 27px;
+  font-family: var(--font-serif);
+  font-size: 24px;
+  font-style: italic;
+  line-height: 27px;
+  letter-spacing: -0.02em;
+  text-align: center;
+  white-space: nowrap;
+  color: var(--lp-ink);
+}
+.vex-sp-ix__n:hover,
+.vex-sp-ix__n[data-current] {
+  color: var(--lp-counter);
+}
+.vex-sp-ix__n[data-current]::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: 2px;
+  background: var(--lp-counter);
+}
+.vex-sp-ix__sep {
+  display: block;
+  align-self: center;
+  width: 22px;
+  height: 1px;
+  margin: 4px 0;
+  background: var(--lp-sky-rule);
+}
+.vex-lp-spine__foot {
+  position: absolute;
+  right: 0;
+  bottom: 14px;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.vex-left-page__mark {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+  color: var(--vex-alias-brand-mark);
+}
+/* Lighter's top bar runs above the frame, so its spine has no cap to clear. */
+[data-vex-runtime-mode="lighter"] [data-vex-left-page="spine"] > .vex-left-page__content {
+  padding-top: 0;
+}

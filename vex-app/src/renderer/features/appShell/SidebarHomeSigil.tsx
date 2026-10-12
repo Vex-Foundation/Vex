@@ -1,12 +1,12 @@
 /**
- * Sidebar brand + home control — a small STATIC logo mark crowns the rail
+ * Sidebar brand + home control: a small STATIC logo mark crowns the rail
  * header as the sole brand (no "VEX" wordmark): the vx script monogram as
  * inline SVG on currentColor, so it reads in both themes. No canvas, no
  * animation.
  *
  * Doubles as the "Back to welcome" control. When a session is open the mark
  * is a real button that clears the active session and returns the panel to
- * the welcome stage. On the welcome stage itself (no active session — the
+ * the welcome stage. On the welcome stage itself (no active session: the
  * center panel is always the session panel since the Chronos screens
  * redesign) there is nowhere to navigate to, so it renders as an inert
  * decorative mark: the button semantics only exist when the action does
@@ -15,7 +15,6 @@
 
 import type { JSX } from "react";
 import { VexMark } from "../../components/common/VexMark.js";
-import { cn } from "../../lib/utils.js";
 import { useUiStore } from "../../stores/uiStore.js";
 
 export function SidebarHomeSigil({
@@ -29,8 +28,9 @@ export function SidebarHomeSigil({
   // Already on the welcome stage → the mark is inert, not a button.
   const onWelcome = activeSessionId === null;
 
-  // Height-driven size; width flows from the mark's native aspect. A light
-  // rail crown (24px open / 20px collapsed), not a billboard.
+  // Height-driven size; width flows from the mark's native aspect: 30 x 24
+  // in the left page's mast (docs/design/V10-SPREAD.md section 3), 20 high
+  // in a collapsed rail.
   const mark = (
     <span data-vex-home-mark className="select-none text-brand-mark">
       <VexMark size={sidebarOpen ? 24 : 20} />
@@ -46,10 +46,7 @@ export function SidebarHomeSigil({
       type="button"
       aria-label="Back to welcome"
       onClick={() => setActiveSessionId(null)}
-      className={cn(
-        "flex items-center justify-center rounded-xl p-1 transition-colors",
-        "hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--vex-surface-1)]",
-      )}
+      className="flex items-center justify-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vex-alias-focus)]"
     >
       {mark}
     </button>

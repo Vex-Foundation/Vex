@@ -64,13 +64,26 @@ export interface PrintPlateProps {
   readonly children?: ReactNode;
 }
 
-export function PrintPlate({
+export interface PlateFlockProps {
+  /** What the agent is doing; `paused` paints nothing. */
+  readonly state: DeskAgentState;
+  /** `page` (the left page; it closes to the spine composition under 120 wide) or `stage`. */
+  readonly layout?: PlateLayout;
+  /** Stage only: where the eagle sits, fractions of the window. */
+  readonly stagePose?: StagePose;
+}
+
+/**
+ * The flock alone: one `aria-hidden` canvas filling its positioned parent,
+ * at z 3, driven by one engine per state. `PrintPlate` lays it over its own
+ * print; the shell's left page lays it over `ShellBackdrop`, which may be the
+ * user's own image instead of the shipped print.
+ */
+export function PlateFlock({
   state,
   layout = "page",
   stagePose = STAGE_POSE,
-  className,
-  children,
-}: PrintPlateProps): JSX.Element {
+}: PlateFlockProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const still = useStillFrame();
   const { x, y, frac, cell } = stagePose;
@@ -97,6 +110,23 @@ export function PrintPlate({
     };
   }, [state, layout, x, y, frac, cell, still]);
 
+  return (
+    <canvas
+      ref={canvasRef}
+      aria-hidden="true"
+      data-vex-agent={state}
+      className="pointer-events-none absolute inset-0 z-[3] block size-full [image-rendering:pixelated]"
+    />
+  );
+}
+
+export function PrintPlate({
+  state,
+  layout = "page",
+  stagePose = STAGE_POSE,
+  className,
+  children,
+}: PrintPlateProps): JSX.Element {
   return (
     <div
       data-vex-print-plate=""
@@ -129,11 +159,7 @@ export function PrintPlate({
         data-vex-print-grain=""
         className="pointer-events-none absolute inset-0 z-[1] bg-[url(/art/grain.svg)] bg-[length:220px_220px] opacity-10 mix-blend-multiply"
       />
-      <canvas
-        ref={canvasRef}
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 z-[3] block size-full [image-rendering:pixelated]"
-      />
+      <PlateFlock state={state} layout={layout} stagePose={stagePose} />
       {children}
     </div>
   );
