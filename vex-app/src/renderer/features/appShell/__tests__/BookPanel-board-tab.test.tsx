@@ -163,10 +163,9 @@ describe("BOOK tabs", () => {
     expect(
       document.querySelector('[data-vex-area="book-board-unseen"]'),
     ).not.toBeNull();
-    // Spoken, not only painted.
-    expect(screen.getByRole("tab", { name: /Board/ }).textContent).toContain(
-      "new board",
-    );
+    // Spoken, not only painted: the words ride the tab's name, which is
+    // the same whether the head shows the word or the icon.
+    expect(screen.getByRole("tab", { name: "Board, new board" })).not.toBeNull();
   });
 
   it("does not light the dot for a board that merely mounted from history", () => {

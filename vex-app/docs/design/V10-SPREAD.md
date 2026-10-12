@@ -78,7 +78,7 @@ White `#FFFFFF` blocks, 4 x 4 Bayer dither, trails reseeded every 200ms (`--fram
 ApprovalCard: `--frame` ink frame, 8px hatch band, reversed `Real funds` stamp, risk tags; Reject has first focus (2px `--focus` ring, offset 3); a high-risk Approve needs the second click "Click again to confirm approve"; the rest of the session sits under a 2px paper dither veil.
 
 ## 8. Title bar per OS
-`titleBarStyle: 'hidden'` everywhere; every 44px head row is the drag region. macOS: `trafficLightPosition {x: 20, y: 16}`, the lights sit on the print. Windows and Linux (`html[data-os='win']`): `titleBarOverlay {height: 44, color: --paper, symbolColor: --ink}`, recoloured with `setTitleBarOverlay` on a theme change; the lights' 96px inset drops to 18, and the BOOK head, overlay head, Lighter bar and wizard leaf reserve `--overlay-w 138px` plus 8.
+`titleBarStyle: 'hidden'` everywhere; every 44px head row is the drag region. macOS: `trafficLightPosition {x: 20, y: 16}`, the lights sit on the print. Windows and Linux (`html[data-os='win']`): `titleBarOverlay {height: 43, color: --paper, symbolColor: --ink}` (the 44px row less its rule, so each head's rule runs on under the buttons to the window edge), recoloured with `setTitleBarOverlay` on a theme change; the lights' 96px inset drops to 18, and the BOOK head, overlay head, Lighter bar and wizard leaf reserve `--overlay-w 138px` plus 8. The BOOK head is a size container: when the words Portfolio, Board and Lighter no longer fit beside the collapse key and that reserve, the three become pixel icons, each keeping its word as its name and tooltip.
 
 ## 9. Art that ships
 | File | Size | Bytes |

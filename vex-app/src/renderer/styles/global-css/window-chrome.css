@@ -41,6 +41,9 @@ html[data-chrome="native"] .vex-drag {
 }
 
 /* Head that sits under the native controls: reserve their width plus 8px.
+ * Padding, not width: the row and its bottom rule still run to the window
+ * edge, under the controls (the native overlay is 43px, 1px short of the
+ * rule, main/windows/chrome-options.ts); only the content stops short.
  * Qualified by `html` so it outranks a head row's own padding shorthand. */
 html .vex-overlay-end {
   padding-inline-end: calc(var(--overlay-w) + 8px);

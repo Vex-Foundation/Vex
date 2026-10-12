@@ -83,7 +83,7 @@ describe("system.setTitleBarOverlay IPC", () => {
     expect(result).toEqual({ ok: true, data: { applied: true } });
     expect(mocks.fromWebContents).toHaveBeenCalledWith(webContents);
     expect(win.setTitleBarOverlay).toHaveBeenCalledWith({
-      height: 44,
+      height: 43,
       color: "#F3F4F7",
       symbolColor: "#0A0D18",
     });
@@ -94,7 +94,7 @@ describe("system.setTitleBarOverlay IPC", () => {
     mocks.fromWebContents.mockReturnValue(win);
     await invoke({ theme: "chronos" });
     expect(win.setTitleBarOverlay).toHaveBeenCalledWith({
-      height: 44,
+      height: 43,
       color: "#1B1412",
       symbolColor: "#F3F4F7",
     });
