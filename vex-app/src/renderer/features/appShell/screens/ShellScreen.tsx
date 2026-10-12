@@ -1,30 +1,28 @@
 /**
- * ShellScreen — the reusable full-app overlay screen (Chronos screens
- * redesign; morph corrected 2026-07-20). Memory, the sessions library, and
- * the "How Vex works" article all mount inside this one chrome: a
- * distorted-glass surface floating over the Eclipse backdrop, an Instrument
- * Serif H1, a round close key (Escape also closes), and a `.vex-scroll`
- * content well. The overlay is `fixed inset-2 z-50` — NEVER in shell flow,
- * so opening a screen can never reflow the columns underneath (the previous
- * round's `.vex-distorted-glass` class carried an unlayered
- * `position: relative` that silently beat the layered `fixed` utility and
- * turned the overlay into an in-flow right-side sheet).
+ * ShellScreen: the reusable full-app overlay screen (docs/design/V10-SPREAD.md
+ * sections 2 and 4). Memory, the sessions library, Settings, the asset
+ * registers and the token history all mount inside this one sheet: a single
+ * paper page laid over the centre and the BOOK, with the left page and the
+ * gutter left standing. A 44px head (title in Departure Mono at the left,
+ * close at the right, a drag region), a chapter title in Instrument Serif and
+ * a `.vex-scroll` body capped at 760px. Radius 0, no shadow, no blur
+ * (`styles/global-css/overlay.css`).
  *
- * Motion — a faithful FLIP of cult-ui's ExpandableScreen, MOTION-POLICY
- * compliant (no `layout`/`layoutId`, which inject a runtime stylesheet the
- * CSP bans; plain `animate` on transform/opacity + the grammar's
- * border-radius instead): on open, the trigger row's rect (plumbed via the
- * route's per-kind `origin`) maps to an initial center-translate + per-axis
- * scale with `borderRadius: 100px`, then SPRING_PANEL carries the surface to
- * identity + `24px`. Inner content fades in on the ExpandableScreen timing
- * (delay 0.15, duration 0.4) — never animating with the container scale.
- * EXIT morphs the surface back onto the trigger rect (0.3s EASE_STANDARD,
- * the cult collapse duration) while the content fades fast.
- * `prefers-reduced-motion` renders/removes the final frame instantly. All
- * animated values ride motion's CSSOM property writes.
+ * The sheet is `absolute` inside the shell frame (the host mounts it there),
+ * so it keeps the frame's columns and can never reflow them. `--vex-overlay-left`
+ * (set by the frame) is where it starts.
+ *
+ * Motion: a FLIP of the sheet from the trigger row's rect (plumbed via the
+ * route's per-kind `origin`), MOTION-POLICY compliant (no `layout` or
+ * `layoutId`, which inject a runtime stylesheet the CSP bans; plain `animate`
+ * on transform and opacity). On open, the trigger rect maps to an initial
+ * center-translate plus a per-axis scale, then SPRING_PANEL carries the sheet
+ * to identity. The body fades in on the ExpandableScreen timing (delay 0.15,
+ * duration 0.4). EXIT morphs back onto the trigger rect (0.3s EASE_STANDARD).
+ * `prefers-reduced-motion` renders and removes the final frame instantly.
  *
  * The host (`ShellScreens`) owns `AnimatePresence`; this component only
- * declares its own enter/exit.
+ * declares its own enter and exit.
  */
 
 import { useEffect, useRef, useState, type JSX, type ReactNode } from "react";
@@ -35,12 +33,6 @@ import { isDialogOnScreen } from "../../../components/ui/dialog.js";
 import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
 import { EASE_STANDARD, SPRING_PANEL } from "../../../lib/motion/index.js";
 
-/** cult-ui ExpandableScreen triggerRadius — the collapsed pill shape. */
-const TRIGGER_RADIUS_PX = 100;
-
-/** cult-ui ExpandableScreen contentRadius — the settled surface shape. */
-const RESTING_RADIUS_PX = 24;
-
 /** jsdom-safe reduced-motion probe (matchMedia may be absent in jsdom). */
 function prefersReducedMotion(): boolean {
   return (
@@ -50,19 +42,34 @@ function prefersReducedMotion(): boolean {
 }
 
 /**
- * Transform mapping the full-viewport surface onto the trigger row's rect:
- * scale each axis to the rect's size, then translate the surface's center
- * onto the rect's center. Shared by enter (start frame) and exit (end frame).
+ * Where the sheet sits: the frame's `--vex-overlay-left` (page plus gutter)
+ * to the window's right edge. jsdom and a missing frame fall back to the whole
+ * window.
+ */
+function sheetBox(): { readonly left: number; readonly width: number } {
+  const frame = document.querySelector('[data-vex-area="shell-frame"]');
+  const raw =
+    frame === null
+      ? ""
+      : getComputedStyle(frame).getPropertyValue("--vex-overlay-left");
+  const parsed = Number.parseFloat(raw);
+  const left = Number.isFinite(parsed) ? parsed : 0;
+  return { left, width: Math.max(window.innerWidth - left, 1) };
+}
+
+/**
+ * Transform mapping the sheet onto the trigger row's rect: scale each axis to
+ * the rect's size, then translate the sheet's center onto the rect's center.
+ * Shared by enter (start frame) and exit (end frame).
  */
 function morphToOrigin(origin: ShellScreenOrigin): TargetAndTransition {
-  const vw = window.innerWidth;
+  const box = sheetBox();
   const vh = window.innerHeight;
   return {
-    x: origin.x + origin.width / 2 - vw / 2,
+    x: origin.x + origin.width / 2 - (box.left + box.width / 2),
     y: origin.y + origin.height / 2 - vh / 2,
-    scaleX: Math.max(origin.width / vw, 0.01),
+    scaleX: Math.max(origin.width / box.width, 0.01),
     scaleY: Math.max(origin.height / vh, 0.01),
-    borderRadius: `${TRIGGER_RADIUS_PX}px`,
   };
 }
 
@@ -71,6 +78,8 @@ export function ShellScreen({
   origin,
   onClose,
   header,
+  chapter,
+  fill,
   children,
 }: {
   readonly title: string;
@@ -84,6 +93,17 @@ export function ShellScreen({
    * the close key either way.
    */
   readonly header?: ReactNode;
+  /**
+   * The serif chapter title over the body. Defaults to `title` (decorative:
+   * the head's h1 already names the screen) and is absent when a custom
+   * `header` is given; `null` draws none.
+   */
+  readonly chapter?: string | null;
+  /**
+   * The body fills the sheet's height and does not scroll itself, for a screen
+   * that owns an inner scroller (the agent scan's virtual list).
+   */
+  readonly fill?: boolean;
   readonly children: ReactNode;
 }): JSX.Element {
   const rootRef = useRef<HTMLElement | null>(null);
@@ -166,6 +186,8 @@ export function ShellScreen({
     closeRef.current?.focus();
   }, []);
 
+  const chapterText = chapter === undefined ? (header === undefined ? title : null) : chapter;
+
   return (
     <motion.section
       ref={rootRef}
@@ -176,31 +198,15 @@ export function ShellScreen({
       // Morph contract pinned by ShellScreen.test.tsx: which start/end frame
       // the FLIP uses ("trigger" | "center" | "reduced" for the instant path).
       data-vex-morph={reduced ? "reduced" : origin !== null ? "trigger" : "center"}
-      // Floating Chronos glass surface over the Eclipse: ink glass +
-      // backdrop-blur carry legibility (guard-whitelisted), a static grain
-      // overlay decorates — never a filter on content (the previous
-      // DistortedGlass displacement filter warped screen content and is
-      // retired). Hairline border + rounded corners, inset from the edges so
-      // the shell reads behind it. `rounded-2xl` is the pre-motion resting
-      // class; motion settles the animated radius at 24px (cult
-      // contentRadius).
-      className="fixed inset-2 z-50 flex flex-col overflow-hidden rounded-2xl border border-[var(--vex-line-strong)] bg-[var(--vex-glass-strong)] backdrop-blur-xl"
+      className="vex-ov"
       initial={
         reduced
           ? false
           : origin !== null
             ? morphToOrigin(origin)
-            : { opacity: 0, scale: 0.96, borderRadius: `${RESTING_RADIUS_PX}px` }
+            : { opacity: 0, scale: 0.98 }
       }
-      animate={{
-        opacity: 1,
-        x: 0,
-        y: 0,
-        scaleX: 1,
-        scaleY: 1,
-        scale: 1,
-        borderRadius: `${RESTING_RADIUS_PX}px`,
-      }}
+      animate={{ opacity: 1, x: 0, y: 0, scaleX: 1, scaleY: 1, scale: 1 }}
       exit={
         reduced
           ? { opacity: 0, transition: { duration: 0 } }
@@ -211,7 +217,7 @@ export function ShellScreen({
                 transition: {
                   duration: 0.3,
                   ease: EASE_STANDARD,
-                  // The surface stays opaque while it travels; it melts away
+                  // The sheet stays opaque while it travels; it melts away
                   // only as it lands back on the (now-closed) menu row.
                   opacity: { delay: 0.2, duration: 0.1, ease: "linear" },
                 },
@@ -222,62 +228,58 @@ export function ShellScreen({
                 transition: { duration: 0.2, ease: EASE_STANDARD },
               }
       }
-      // SPRING_PANEL carries the enter morph (transform + radius); opacity
-      // (only animated on the origin-less centered enter) rides a short tween
-      // so the spring never makes a fade feel rubbery.
+      // SPRING_PANEL carries the enter morph (transform); opacity (only
+      // animated on the origin-less centered enter) rides a short tween so the
+      // spring never makes a fade feel rubbery.
       transition={{
         ...SPRING_PANEL,
         opacity: { duration: 0.25, ease: EASE_STANDARD },
       }}
     >
-      {/* Decorative static grain over the surface — an empty overlay
-       * (pointer-events-none so content stays interactive; -z-10 keeps it
-       * strictly under the content). */}
-      <div
-        aria-hidden
-        className="vex-noise vex-noise--panel pointer-events-none absolute inset-0 -z-10 rounded-[inherit]"
-      />
+      <header className="vex-ov__head vex-drag">
+        <div className="vex-ov__head-start">
+          {header ?? <h1 className="vex-ov__title">{title}</h1>}
+        </div>
+        {/* Keybinding hint (G9): Escape already closes - the tooltip only
+         * surfaces the existing shortcut, it defines nothing new. */}
+        <Tooltip label="Close · Esc" side="left">
+          <button
+            ref={closeRef}
+            type="button"
+            aria-label={`Close ${title}`}
+            onClick={() => {
+              // The same one close intent per instance the Escape listener
+              // takes: a screen closed by the key must not also be closable
+              // by Escape while it animates out.
+              closeAsked.current = true;
+              onClose();
+            }}
+            className="vex-ov__close"
+          >
+            <IconClose size={16} />
+          </button>
+        </Tooltip>
+      </header>
 
-      {/* Inner content resolves in after the surface lands (ExpandableScreen
+      {/* The body resolves in after the sheet lands (ExpandableScreen
        * grammar: delayed fade, never animating with the container scale). */}
       <motion.div
-        className="flex min-h-0 flex-1 flex-col"
+        className="vex-scroll vex-ov__scroll"
+        data-fill={fill === true ? "" : undefined}
         initial={reduced ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={reduced ? undefined : { opacity: 0, transition: { duration: 0.15 } }}
         transition={{ delay: 0.15, duration: 0.4 }}
       >
-        <header className="flex shrink-0 items-center px-8 pb-5 pt-8">
-          {header ?? (
-            <h1 className="font-display text-[26px] font-medium leading-8 text-ink-primary">
-              {title}
-            </h1>
-          )}
-        </header>
-        <div className="vex-scroll min-h-0 flex-1 overflow-y-auto px-8 pb-10">
+        <div className="vex-ov__body">
+          {chapterText !== null ? (
+            <p aria-hidden className="vex-ov__chapter" data-vex-chapter>
+              {chapterText}
+            </p>
+          ) : null}
           {children}
         </div>
       </motion.div>
-
-      {/* Keybinding hint (G9): Escape already closes - the tooltip only
-       * surfaces the existing shortcut, it defines nothing new. */}
-      <Tooltip label="Close · Esc" side="left">
-        <button
-          ref={closeRef}
-          type="button"
-          aria-label={`Close ${title}`}
-          onClick={() => {
-            // The same one close intent per instance the Escape listener
-            // takes: a screen closed by the key must not also be closable by
-            // Escape while it animates out.
-            closeAsked.current = true;
-            onClose();
-          }}
-          className="absolute right-6 top-6 flex h-10 w-10 items-center justify-center rounded-full border border-line-2 text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-        >
-          <IconClose size={16} />
-        </button>
-      </Tooltip>
     </motion.section>
   );
 }

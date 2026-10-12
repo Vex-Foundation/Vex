@@ -81,9 +81,9 @@ export function AssetsScreen({
     >
       {/* Comfortable ledger measure — the register never spans the full 4K
        * screen width. */}
-      <div className="mx-auto w-full max-w-[640px]">
+      <div className="w-full">
         <div className="mb-4 flex items-center justify-end">
-          <label className="flex cursor-pointer items-center gap-2 text-[11px] text-ink-secondary">
+          <label className="vex-ov-label flex cursor-pointer items-center gap-2">
             <input
               type="checkbox"
               checked={hideDustBalances}
@@ -96,7 +96,7 @@ export function AssetsScreen({
           </label>
         </div>
         {query.isLoading ? (
-          <p className="vex-micro-label uppercase text-ink-secondary">
+          <p className="vex-ov-label">
             Loading…
           </p>
         ) : (result !== undefined && !result.ok) || query.isError ? (

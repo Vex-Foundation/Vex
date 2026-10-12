@@ -205,8 +205,8 @@ describe("SettingsBackdropRow", () => {
     remove.focus();
     expect(document.activeElement).toBe(remove);
     // Hover-revealed on a pointer, always reachable by keyboard: the reveal
-    // is a focus-visible rule, never `hidden`.
-    expect(remove.className).toContain("focus-visible:opacity-100");
+    // is a focus-visible rule in overlay.css, never `hidden`.
+    expect(remove.className).toContain("vex-backdrop-preview__remove");
     expect(remove.hasAttribute("hidden")).toBe(false);
   });
 });
