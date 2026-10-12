@@ -32,17 +32,19 @@ describe("ComposerQuickActions", () => {
     expect(container.textContent).not.toMatch(/\b0[1234]\b/);
   });
 
-  it("renders bare capsule chips - no band, no glass behind the row (tokens v2)", () => {
+  it("renders bare square starters on the rule - no band, no glass behind the row (V10)", () => {
     const { container } = render(<ComposerQuickActions onPick={() => {}} />);
 
-    // The row root carries NO surface of its own: the chips are the surface
-    // (capsule geometry, hairline border). No backdrop filter anywhere.
+    // The row root carries NO surface of its own: the starters are the
+    // surface (square, on the rule, flush with the field's leading edge,
+    // reference d2). No backdrop filter anywhere.
     const root = container.firstElementChild;
     expect(root).not.toBeNull();
-    expect(root?.className).not.toMatch(/bg-|backdrop-blur/);
+    expect(root?.className).not.toMatch(/bg-|backdrop-blur|justify-center|mx-auto/);
     const chip = root?.querySelector("button");
-    expect(chip?.className).toContain("rounded-capsule");
-    expect(chip?.className).toContain("border-line-2");
+    expect(chip?.className).toContain("border-rule");
+    expect(chip?.className).toContain("h-8");
+    expect(chip?.className).not.toMatch(/rounded/);
   });
 
   it("the Lighter chip seeds the typed desk command, so Send opens the desk", () => {

@@ -71,9 +71,15 @@ export function ComposerPermissionSeat({
         // static - permission is locked at creation and never toggles here.
         tabIndex={0}
       >
-        <Pill variant={permission === "full" ? "accent" : "neutral"}>
+        {/* The access-mode tag (reference d3): 28px, 11px Departure Mono
+            caps in the blue on the rule outline; full access draws the blue
+            line, because it is the grant that asks for attention. */}
+        <Pill
+          variant={permission === "full" ? "accent" : "neutral"}
+          className="h-7 gap-[7px] pl-2 pr-2.5 font-mono text-[11px] uppercase leading-none tracking-chip text-accent-primary"
+        >
           {/* Glyphs are `aria-hidden` by their own contract. */}
-          <Glyph size={13} className="shrink-0" />
+          <Glyph size={14} className="shrink-0" />
           <span
             data-vex-permission-label
             className="min-w-0 truncate @max-[460px]:hidden"
