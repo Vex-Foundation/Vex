@@ -154,6 +154,9 @@
   color: var(--vex-alias-label-primary);
 }
 .vex-bs__m {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
   font-family: var(--font-mono);
   font-size: 11px;
