@@ -7,7 +7,7 @@
  * The live pass of 2026-09-03 reported the global approvals badge INERT in
  * Studio: the pin was on screen and clicking it appeared to do nothing. No
  * mechanism was found by reading - the React tree mounts one `GlobalApprovals`
- * for the whole frame regardless of mode (`ShellStatusStrip.tsx`), the panel is
+ * for the whole frame regardless of mode (`RunningHead.tsx`), the panel is
  * a plain anchored div with no portal, and nothing in the Studio columns
  * declares a stacking context over the strip. That is exactly the class of
  * claim jsdom cannot settle: a component test proves the click handler runs,

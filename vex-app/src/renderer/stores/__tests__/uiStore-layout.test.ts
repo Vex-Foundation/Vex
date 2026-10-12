@@ -13,13 +13,13 @@ import { migrateUiState } from "../uiStore/persistence.js";
 
 beforeEach(() => {
   window.localStorage.clear();
-  useUiStore.setState({ sidebarWidth: 280, bookWidth: 360 });
+  useUiStore.setState({ sidebarWidth: 240, bookWidth: 340 });
 });
 
 describe("width setters", () => {
-  it("clamps a live sidebar drag into 264-420", () => {
+  it("clamps a live sidebar drag into 240-420", () => {
     useUiStore.getState().setSidebarWidth(100);
-    expect(useUiStore.getState().sidebarWidth).toBe(264);
+    expect(useUiStore.getState().sidebarWidth).toBe(240);
     useUiStore.getState().setSidebarWidth(9999);
     expect(useUiStore.getState().sidebarWidth).toBe(420);
     useUiStore.getState().setSidebarWidth(300.6);
@@ -36,15 +36,15 @@ describe("width setters", () => {
 
 describe("rehydrate coercion", () => {
   it("degrades a non-numeric hand-edited width to the default", () => {
-    expect(coerceSidebarWidth("wide")).toBe(280);
-    expect(coerceSidebarWidth(Number.NaN)).toBe(280);
-    expect(coerceSidebarWidth(undefined)).toBe(280);
-    expect(coerceBookWidth(null)).toBe(360);
-    expect(coerceBookWidth(Number.POSITIVE_INFINITY)).toBe(360);
+    expect(coerceSidebarWidth("wide")).toBe(240);
+    expect(coerceSidebarWidth(Number.NaN)).toBe(240);
+    expect(coerceSidebarWidth(undefined)).toBe(240);
+    expect(coerceBookWidth(null)).toBe(340);
+    expect(coerceBookWidth(Number.POSITIVE_INFINITY)).toBe(340);
   });
 
   it("re-clamps an out-of-range persisted width instead of trusting it", () => {
-    expect(coerceSidebarWidth(50)).toBe(264);
+    expect(coerceSidebarWidth(50)).toBe(240);
     expect(coerceSidebarWidth(5000)).toBe(420);
     expect(coerceBookWidth(10)).toBe(300);
     expect(coerceBookWidth(10_000)).toBe(520);
@@ -57,8 +57,8 @@ describe("v10 migration", () => {
       { themePreference: "chronos", sidebarOpen: true },
       9,
     ) as Record<string, unknown>;
-    expect(migrated["sidebarWidth"]).toBe(280);
-    expect(migrated["bookWidth"]).toBe(360);
+    expect(migrated["sidebarWidth"]).toBe(240);
+    expect(migrated["bookWidth"]).toBe(340);
   });
 
   it("keeps an in-range width already present in an older payload", () => {

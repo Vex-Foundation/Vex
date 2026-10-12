@@ -106,7 +106,6 @@ function renderSidebar(options: RenderOptions = {}): QueryClient {
     <QueryClientProvider client={client}>
       <StudioSidebar
         collapsed={options.collapsed ?? false}
-        width={options.collapsed === true ? 56 : 300}
         onToggleSidebar={options.onToggleSidebar ?? (() => undefined)}
         activeProjectId={options.activeProjectId ?? null}
         onSelectProject={options.onSelectProject ?? (() => undefined)}

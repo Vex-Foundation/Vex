@@ -121,10 +121,11 @@
 [data-vex-shell="true"] *::-webkit-scrollbar-corner {
   background: transparent;
 }
-/* THE SHELL FRAME — three grid tracks (sidebar | center | BOOK) solved by
- * lib/shell-columns.ts. Collapse/expand animates the tracks on the standard
- * curve; a drag writes widths at pointer cadence, so easing them would
- * detach the column edge from the handle. */
+/* THE SPREAD (docs/design/V10-SPREAD.md section 2): five grid tracks, left
+ * page | gutter | Studio rail | centre | BOOK, solved by lib/shell-columns.ts.
+ * Opening and closing animates the tracks on the standard curve; a drag
+ * writes widths at pointer cadence, so easing them would detach the column
+ * edge from the handle. */
 .vex-shell-frame {
   position: relative; /* anchors the drag handles, which straddle column borders */
   display: grid;
@@ -217,59 +218,208 @@
   }
 }
 
-/* Backdrop artwork per theme — the swap is CSS on data-vex-theme (stamped on
- * the shell root and documentElement), never a JS theme read, so the
- * pre-paint frame already shows the right artwork. */
-.vex-backdrop-celeris {
+/* THE LEFT PAGE (docs/design/V10-SPREAD.md section 3): the print in place.
+ * Each image is laid out at window size from the column's top left corner,
+ * which is the window's, so the 300px page and the 56px spine are windows
+ * onto one picture, the one the unlock stage shows full window. The plate
+ * colour fills in while the photograph decodes: the night print's darkest
+ * tone, and the day print's mid tone in celeris. */
+.vex-print {
+  background: #150f0d;
+}
+[data-vex-theme="celeris"] .vex-print {
+  background: #c7b6a6;
+}
+.vex-print__img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  object-fit: cover;
+  object-position: 60% 50%;
+}
+/* The user's own image: shown as it is, centred, in either room. */
+.vex-print__img--custom {
+  object-position: 50% 50%;
+}
+/* One print per room, swapped on data-vex-theme (stamped on the shell root
+ * and documentElement), never by a JS theme read. */
+.vex-print__img--day {
   display: none;
 }
-[data-vex-theme="celeris"] .vex-backdrop-celeris {
+[data-vex-theme="celeris"] .vex-print__img--day {
   display: block;
 }
-[data-vex-theme="celeris"] .vex-backdrop-chronos {
+[data-vex-theme="celeris"] .vex-print__img--night {
   display: none;
 }
-
-/* THE WALL IS PAPER (V10). The veil over the shipped artwork and the
- * user's own image is fully opaque in every stage, so the room reads as one
- * paper (celeris) or the Night Ledger (chronos) and no colour photograph
- * shows behind a column. WP3 moves the print, and the user's image, onto the
- * left page and retires this wall. */
-.vex-backdrop-veil {
-  opacity: 1;
+/* The print's grain (the print plate's own file): fractal noise, multiplied
+ * at 10%, over the photograph only. */
+.vex-print__grain {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  opacity: 0.1;
+  mix-blend-mode: multiply;
+  background-image: url(/art/grain.svg);
+  background-size: 220px 220px;
+}
+/* The spine's paper cap: the head row runs across it, rule included, and the
+ * print starts under it. A window drag region like every head row. */
+.vex-left-page__cap {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--head-h);
+  background: var(--vex-surface-0);
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+/* The page's furniture, over the print. On the spine it starts under the
+ * cap, clear of the macOS traffic lights. */
+.vex-left-page__content {
+  position: relative;
+  z-index: 4;
+  height: 100%;
+  min-height: 0;
+}
+[data-vex-left-page="spine"] > .vex-left-page__content {
+  padding-top: var(--head-h);
 }
 
-/* SIDEBAR COLLAPSE CHOREOGRAPHY — slide + crossfade, not a morph: the
- * content holds its frozen expanded layout (inline width set by the
- * component) and fades in place (.vex-sidebar-fading) while the sliding
- * grid track clips it; the rail layout only applies after the fade settles
- * (TIMING PAIR: `COLLAPSE_SETTLE_MS` in lib/useCollapseChoreography.ts is
- * `DURATION_BASE_MS`, the JS mirror of the `--vex-duration-base` below - the
- * JS unmounts the wide content when this fade ends, so the two move together
- * or not at all). At settle the rail controls enter the 56px spine from the
- * former rail-edge offset over the track transition's second half; the
- * bottom-pinned foot only fades. A cold-collapsed render gets neither class
- * (static rail). */
-.vex-sidebar-fading > * {
-  opacity: 0;
-  transition: opacity var(--vex-duration-base) var(--vex-ease-inout);
+/* THE GUTTER (docs/design/V10-SPREAD.md section 5): the binding, with the
+ * spread caption set vertically down it. Three groups spread from top to
+ * bottom; 22px beside an open page, 11px beside a spine. */
+.vex-gutter {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 72px 0 32px;
+  writing-mode: vertical-rl;
+  background: var(--vex-surface-0);
+  color: var(--vex-accent);
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  white-space: nowrap;
 }
-.vex-sidebar-rail-in [data-rail-control] {
-  animation: vex-rail-in var(--vex-duration-base) var(--vex-ease-inout) backwards;
+.vex-gutter[data-vex-gutter="small"] {
+  padding: 64px 0 24px;
+  font-size: 11px;
+  letter-spacing: var(--tracking-eyebrow);
 }
-.vex-sidebar-rail-in [data-rail-foot] {
-  animation: vex-rail-fade-in var(--vex-duration-base) var(--vex-ease-inout) backwards;
+.vex-gutter__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-@keyframes vex-rail-in {
-  from {
-    opacity: 0;
-    transform: translateX(49px);
-  }
+/* The caption's words are painted from data-caption, never written into the
+ * page's text: the column only repeats words other surfaces own. */
+.vex-gutter__group::after,
+.vex-running-head__fold::after {
+  content: attr(data-caption);
 }
-@keyframes vex-rail-fade-in {
-  from {
-    opacity: 0;
-  }
+.vex-gutter[data-vex-gutter="small"] .vex-gutter__group {
+  gap: 9px;
+}
+
+/* THE RUNNING HEAD (docs/design/V10-SPREAD.md section 4): the centre page's
+ * 44px head row and the window's drag region. Its right padding reserves the
+ * Windows and Linux caption buttons wherever the BOOK under them is narrower
+ * than they are (`--vex-book-track` is the solved BOOK track, set by the
+ * frame; `--overlay-w` is 0 on macOS and on a native frame). */
+.vex-running-head {
+  position: relative;
+  z-index: 10;
+  display: grid;
+  flex-shrink: 0;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  height: var(--head-h);
+  padding-inline: 32px max(16px, calc(var(--overlay-w) + 8px - var(--vex-book-track, 0px)));
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+/* The welcome stage: an empty head, so the rule under it is clear. */
+.vex-running-head[data-empty] {
+  border-bottom-color: transparent;
+}
+.vex-shell-frame[data-vex-spread-narrow] .vex-running-head {
+  padding-inline-start: 24px;
+}
+.vex-running-head__start {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+}
+.vex-running-head__centre {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+}
+.vex-running-head__flank {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+/* The welcome stage's clear head row runs across the spine's cap too. */
+.vex-shell-frame:has(.vex-running-head[data-empty]) .vex-left-page__cap {
+  border-bottom-color: transparent;
+}
+/* Under the spread the gutter folds into the head: its context rides here. */
+.vex-running-head__fold {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
+  color: var(--vex-text-2);
+}
+
+/* Studio under the spread on macOS: the rail sits right of the 56px spine,
+ * under the traffic lights, so it starts below the head row as the spine
+ * does, with the head row's rule carried across. */
+html[data-os="mac"] .vex-shell-frame[data-vex-spread-narrow] .vex-rail-slot {
+  padding-top: var(--head-h);
+}
+html[data-os="mac"] .vex-shell-frame[data-vex-spread-narrow] .vex-rail-slot::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--head-h);
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+
+/* The BOOK's head row sits under the Windows and Linux caption buttons. Open,
+ * it reserves their width (`.vex-overlay-end`); closed to its 48px spine, the
+ * toggle drops below the 44px row instead. */
+html[data-chrome="overlay"] [data-vex-book-open="false"] > .vex-book-head {
+  padding-top: var(--head-h);
 }
 
 /* Sidebar scrollbars are a pointer affordance: the column seeds the l2
@@ -294,15 +444,6 @@
 [data-vex-shell="true"] .vex-sidebar *::-webkit-scrollbar-thumb:hover {
   background: var(--vex-scrollbar-thumb-hover);
   background-clip: border-box;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .vex-sidebar-fading > *,
-  .vex-sidebar-rail-in [data-rail-control],
-  .vex-sidebar-rail-in [data-rail-foot] {
-    transition: none;
-    animation: none;
-  }
 }
 
 /* Standard-property fallback ONLY where the webkit pseudo-elements do not

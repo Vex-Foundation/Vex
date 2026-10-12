@@ -298,8 +298,8 @@ describe("uiStore", () => {
     expect(parsed.state).toEqual({
       themePreference: "system",
       sidebarOpen: true,
-      sidebarWidth: 280,
-      bookWidth: 360,
+      sidebarWidth: 240,
+      bookWidth: 340,
       bookOpen: true,
       hideDustBalances: true,
       notificationsEnabled: true,
@@ -647,8 +647,8 @@ describe("uiStore", () => {
     expect(parsed.state).toEqual({
       themePreference: "system",
       sidebarOpen: false,
-      sidebarWidth: 280,
-      bookWidth: 360,
+      sidebarWidth: 240,
+      bookWidth: 340,
       bookOpen: true,
       hideDustBalances: true,
       notificationsEnabled: true,

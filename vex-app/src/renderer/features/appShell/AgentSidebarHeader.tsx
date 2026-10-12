@@ -51,7 +51,7 @@ export function AgentSidebarHeader({
   onToggleSearch,
   onToggleSidebar,
 }: {
-  /** The rail is rendering its expanded content (collapse choreography). */
+  /** The left page is open (its spine renders the icon column). */
   readonly wide: boolean;
   /** The rail's committed state; drives the expand/collapse control's name. */
   readonly collapsed: boolean;
@@ -72,9 +72,12 @@ export function AgentSidebarHeader({
         // The mark sits LEFT as the sole brand (doubling as "Back to
         // welcome"), the capsule + magnifier + collapse arrow sit RIGHT.
         // Collapsed, the spine stacks mark -> magnifier -> expand arrow.
+        // Open, it is the left page's 44px head row: a window drag region
+        // that clears the macOS traffic lights (docs/design/V10-SPREAD.md
+        // section 8).
         "relative flex shrink-0",
         wide
-          ? "h-12 items-center justify-between px-3"
+          ? "vex-drag vex-lights-start h-11 items-center justify-between px-3"
           : "flex-col items-center justify-center gap-0.5 px-2 py-2",
       )}
     >

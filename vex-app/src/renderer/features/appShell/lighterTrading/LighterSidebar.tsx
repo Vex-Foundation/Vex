@@ -122,7 +122,10 @@ export function LighterSidebar({
       data-zen-controls={zenMode ? zenControlsOpen ? "open" : "closed" : undefined}
       aria-label="Lighter navigation"
     >
-      <header className="lit-desk-topbar-header">
+      {/* Lighter's running head: the window drag region, clear of the
+        * macOS traffic lights and the Windows and Linux caption buttons
+        * (docs/design/V10-SPREAD.md section 8). */}
+      <header className="lit-desk-topbar-header vex-drag vex-lights-start vex-overlay-end">
         {zenMode && !zenControlsOpen ? (
           <button
             type="button"
