@@ -6,14 +6,15 @@
  * `data-phase` on this panel's root:
  *
  *   hero      no session, or a session whose transcript is provably empty and
- *             whose turn is not in flight. The composer stack is FLEX-CENTRED
- *             in the scroll body (never transformed - a transform would become
- *             the containing block for every `position: fixed` descendant).
+ *             whose turn is not in flight. The chapter opening is anchored at
+ *             the head of the scroll body with flex (never transformed - a
+ *             transform would become the containing block for every
+ *             `position: fixed` descendant).
  *   settling  a session is opening and its transcript is still unknown, so
  *             hero-vs-docked is unknowable. The seat stays MOUNTED but
  *             invisible, so no wrong layout flashes before the phase lands.
- *   active    the seat docks as the sticky floor of the scroll body, with the
- *             transcript dissolving into a 36px px-stop fade mask above it.
+ *   active    the seat docks as the sticky floor of the scroll body, on the
+ *             page's own paper.
  *
  * WHY RESIDENCY. The composer's textarea DOM node and its caret must survive
  * the hero→active transition, and the first message of a brand-new session
@@ -40,8 +41,8 @@
  * column height and the Accept action stays reachable.
  *
  * Sub-components keep this file small:
- *   - hero (mark + greeting + mode toggle) → `SessionWelcomeHero`
- *   - context strip/header → `SessionContext` (runtime bar now lives in BOOK)
+ *   - hero (date + greeting + Arena notice) → `SessionWelcomeHero`
+ *   - chapter head          → `SessionContext` (runtime bar now lives in BOOK)
  *   - mission controls     → `MissionControls` (mission sessions only)
  *   - transcript          → `SessionTranscript`
  *   - composer + slash     → `SessionComposer`
@@ -76,6 +77,7 @@ import { SessionComposer } from "./SessionComposer.js";
 import { SessionContext } from "./SessionContext.js";
 import { SessionTranscript } from "./SessionTranscript.js";
 import { SessionWelcomeHero } from "./SessionWelcomeHero.js";
+import { OPENING_COLUMN, PAGE_COLUMN } from "./session-page-columns.js";
 
 export interface SessionPanelProps {
   /**
@@ -91,14 +93,6 @@ export interface SessionPanelProps {
    */
   readonly surface?: "shell" | "embedded";
 }
-
-/**
- * The tape stage's READING COLUMN. Applied to each child that wants it rather
- * than to one wrapper around them all, so the transcript can opt OUT and scroll
- * at panel width (see the wrapper comment below). Identical geometry to the
- * wrapper it replaced — same max-width, same gutter, same `mx-auto` axis.
- */
-const TAPE_COLUMN = "mx-auto w-full max-w-[860px] px-6";
 
 export function SessionPanel({
   headerTrailing,
@@ -230,7 +224,7 @@ export function SessionPanel({
           ? "hero"
           : "active";
   const readingColumn =
-    surface === "embedded" ? "mx-auto w-full px-3" : TAPE_COLUMN;
+    surface === "embedded" ? "mx-auto w-full px-3" : PAGE_COLUMN;
 
   const showMissionCard =
     activeSession !== null && activeSession.mode === "mission";
@@ -267,7 +261,7 @@ export function SessionPanel({
             // `flex-[1_0_auto]`: fills the viewport when the conversation is
             // short (so the seat sits at the floor) and overflows it when the
             // conversation is long (so the seat sticks).
-            className="vex-session-enter flex w-full flex-[1_0_auto] flex-col py-4"
+            className="vex-session-enter flex w-full flex-[1_0_auto] flex-col pb-4 pt-6"
           >
             {/* Header + banners keep the reading column; only the transcript
                 goes full-bleed, so its rows reach the panel's width. */}
@@ -278,6 +272,7 @@ export function SessionPanel({
                 loading={detailQuery.isLoading}
                 error={detailError}
                 trailing={headerTrailing}
+                chapter={surface === "shell"}
               />
               {activeSession !== null ? (
                 <SessionSleepBanner sessionId={activeSession.id} />
@@ -303,7 +298,7 @@ export function SessionPanel({
         {/* THE COMPOSER SEAT - resident on every phase, at one stable tree
             position. In hero the scroll body flex-centres it; in active
             `chat-transcript.css` makes it sticky and paints the fade mask. The
-            hero chrome renders INSIDE it so the whole stack centres as one
+            hero chrome renders INSIDE it so the whole opening moves as one
             unit, and its conditional keeps the composer's child index stable
             either way. */}
         <div
@@ -317,19 +312,17 @@ export function SessionPanel({
           {phase === "hero" ? <SessionWelcomeHero /> : null}
           {/* GROWTH BAND (owner smoothness decree 2026-07-22, carried into
               residency): in hero this wrapper's layout height is pinned to the
-              composer's RESTING stack, so an auto-growing pill overflows
-              DOWNWARD instead of re-centring the flex-centred stack above it -
-              the crown never moves opposite to the growth. In active it is
+              composer's RESTING stack, so an auto-growing field overflows
+              DOWNWARD and never moves the greeting above it. In active it is
               plain flow. See `chat-transcript.css`. */}
           <div
             data-vex-composer-dock=""
             className={cn(
-              "mx-auto w-full",
-              phase === "hero"
-                ? "w-[min(760px,92%)]"
-                : surface === "embedded"
-                  ? "px-3 pb-3"
-                  : "max-w-[760px] pb-4",
+              surface === "embedded"
+                ? "mx-auto w-full px-3 pb-3"
+                : phase === "hero"
+                  ? OPENING_COLUMN
+                  : `${PAGE_COLUMN} pb-[18px] pt-0.5`,
             )}
           >
             <SessionComposer

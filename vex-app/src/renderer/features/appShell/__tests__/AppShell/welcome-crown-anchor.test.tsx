@@ -8,9 +8,10 @@
  * WHAT RESIDENCY CHANGED, and what it did not. The hero chrome and the
  * composer used to be siblings in the panel's flex column, with the crown zone
  * balanced against a trailing spacer. They now live together INSIDE the
- * resident composer seat, which the scroll body flex-centres in the hero phase
- * - so the whole stack centres as one unit and the composer's DOM node
- * survives the move to the docked phase. The anchoring invariant is unchanged
+ * resident composer seat, which the scroll body anchors at the head of the
+ * page in the hero phase (the V10 welcome spread, reference d2) - so the whole
+ * opening moves as one unit and the composer's DOM node survives the move to
+ * the docked phase. The anchoring invariant is unchanged
  * and its mechanism is unchanged in kind: the crown is never inside the box
  * that grows, and the growing box has a FIXED layout height so growth
  * overflows DOWNWARD instead of re-centring the stack above it. Only the owner
@@ -266,30 +267,30 @@ describe("composer growth glide - globals.css contract (raw scan)", () => {
     return GLOBALS_CSS.slice(start, end);
   }
 
-  it("pins the hero growth band's fixed height, so pill growth overflows downward", () => {
+  it("pins the hero growth band's fixed height, so field growth overflows downward", () => {
     // The invariant the structural cases above cannot express in jsdom: with
-    // a FIXED band height the flex-centred stack's leftover is constant, so
-    // the crown cannot move opposite to the growth. 140px = mt-6 (24) +
-    // resting pill (56) + starter-chip slot (60).
+    // a FIXED band height nothing below the band can reflow as the field
+    // grows, and the greeting above it never moves. 230px = the field's 26px
+    // margin + the resting hero field (118) + the starter slot (86).
     const dock = blockFor(
       '[data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-dock]',
     );
-    expect(dock).toContain("height: 140px");
+    expect(dock).toContain("height: 230px");
     expect(dock).toContain("overflow: visible");
   });
 
-  it("centres the hero stack with FLEX, never a transform", () => {
+  it("anchors the hero opening at the head of the page with FLEX, never a transform", () => {
     // A transform on the scroll body would make it the containing block for
     // every `position: fixed` descendant (menus, dialogs), silently shrinking
-    // them to this column. Flex centring has no such side effect.
+    // them to this column. Flex placement has no such side effect.
     // Whitespace-tolerant: the selector spans two lines after formatting, so
     // this scans for the rule rather than an exact `selector {` prefix.
     const heroBody =
       /\[data-phase="hero"\]\s*>\s*\[data-vex-conversation-scroll\]\s*\{([^}]*)\}/.exec(
         GLOBALS_CSS,
       );
-    expect(heroBody, "hero scroll-body centring rule missing").not.toBeNull();
-    expect(heroBody?.[1]).toContain("justify-content: center");
+    expect(heroBody, "hero scroll-body placement rule missing").not.toBeNull();
+    expect(heroBody?.[1]).toContain("justify-content: flex-start");
     expect(heroBody?.[1]).not.toContain("transform");
   });
 

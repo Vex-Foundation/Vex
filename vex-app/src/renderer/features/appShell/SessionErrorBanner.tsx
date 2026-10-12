@@ -60,10 +60,10 @@ export function SessionErrorBanner({
     <div
       data-vex-area="session-error-banner"
       data-vex-category={event.category}
-      className="mb-2 w-full rounded-xl border border-[var(--vex-rule)] bg-danger-wash px-3 py-2"
+      className="vex-callout mb-3 w-full"
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="vex-micro font-medium text-danger">
+        <p className="vex-micro text-ink-primary [--vex-micro-size:11px]">
           {sessionScopeLabel(event.scope)} - {copy.title}
         </p>
         <button
@@ -72,23 +72,23 @@ export function SessionErrorBanner({
           onClick={() => {
             clear(sessionId);
           }}
-          className="vex-micro text-[var(--vex-text-3)] transition-colors hover:text-danger"
+          className="vex-micro text-ink-secondary transition-colors hover:text-ink-primary [--vex-micro-size:11px]"
         >
           Dismiss
         </button>
       </div>
-      <p className="mt-1 text-xs text-[var(--vex-text-1)]">{copy.body}</p>
+      <p className="mt-1.5 text-[13px] leading-5 text-ink-primary">{copy.body}</p>
       {/* Sanitized REAL cause (decree 2026-08-02) - technical register, mono. */}
       {event.detail !== null ? (
-        <p className="mt-1 break-words font-mono text-[11px] leading-4 text-[var(--vex-text-2)]">
+        <p className="mt-1 break-words font-code text-[11.5px] leading-4 text-ink-secondary">
           {event.detail}
         </p>
       ) : null}
       {actionHint !== null ? (
-        <p className="mt-1 text-xs font-medium text-[var(--vex-text-1)]">{actionHint}</p>
+        <p className="mt-1 text-[13px] font-medium leading-5 text-ink-primary">{actionHint}</p>
       ) : null}
       {codes !== null ? (
-        <p className="mt-1 font-mono text-[10px] text-[var(--vex-text-3)]">{codes}</p>
+        <p className="mt-1 font-mono text-[11px] tracking-[0.02em] text-ink-secondary">{codes}</p>
       ) : null}
     </div>
   );

@@ -130,20 +130,43 @@ describe("TurnIsland reasoning segments", () => {
   });
 
   /**
-   * The island's one motion is the sanctioned cobalt shimmer on the status
-   * word — the same class the reasoning-effort selector and the VEX speaker
-   * caption wear. The freeze must take it away, because motion while a
-   * signature is pending reads as progress that is not happening.
+   * The island's one motion is the ONGOING SWATCH before the status word
+   * (docs/design/V10-SPREAD.md section 1: status is shown by fill, the dot
+   * screen stepping). The freeze takes it away and draws the target instead,
+   * because motion while a signature is pending reads as progress that is
+   * not happening. No shimmer and no sweep survive anywhere on the island.
    */
-  it("shimmers the live status word and stills it under the freeze", () => {
-    const live = renderIsland({ status: "working" }).querySelector(
-      "[data-vex-island-label]",
-    );
-    expect(live?.className).toContain("vex-turn-shimmer");
+  it("leads the live status word with the ongoing swatch and swaps it for the target under the freeze", () => {
+    const working = renderIsland({ status: "working" });
+    const live = working.querySelector("[data-vex-island-label]");
+    expect(live?.textContent).toBe("vexing…");
+    const liveSwatch = live?.parentElement?.querySelector(".vex-swatch");
+    expect(liveSwatch?.getAttribute("data-s")).toBe("ongoing");
+    expect(working.querySelector(".vex-turn-shimmer, .vex-row-sweep")).toBeNull();
 
     const frozen = render(
       createElement(TurnIsland, { preview: PREVIEW, awaitingApproval: true }),
-    ).container.querySelector("[data-vex-island-label]");
-    expect(frozen?.className).not.toContain("vex-turn-shimmer");
+    ).container;
+    const frozenLabel = frozen.querySelector("[data-vex-island-label]");
+    expect(frozenLabel?.textContent).toBe("Awaiting signature");
+    expect(
+      frozenLabel?.parentElement?.querySelector(".vex-swatch")?.getAttribute("data-s"),
+    ).toBe("warning");
+    // The awaiting row takes the blue line (reference d4).
+    expect(
+      frozen.querySelector("[data-vex-island-size]")?.getAttribute("data-vex-island-tone"),
+    ).toBe("pin");
+  });
+
+  it("sets the elapsed clock in Departure Mono on the second ink, never the italic serif", () => {
+    const container = renderIsland({ status: "thinking", reasoningText: "x" });
+    const clock = container.querySelector("[data-vex-island-clock] span");
+    expect(clock?.className).toContain("font-mono");
+    expect(clock?.className).toContain("tabular-nums");
+    expect(clock?.className).not.toMatch(/font-serif|italic/);
+    // The caption is mono caps too: no italic anywhere in the island's head.
+    const caption = container.querySelector("[data-vex-island-label]")?.parentElement;
+    expect(caption?.className).toContain("font-mono");
+    expect(caption?.className).not.toContain("italic");
   });
 });

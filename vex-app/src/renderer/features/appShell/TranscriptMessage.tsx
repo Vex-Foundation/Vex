@@ -1,14 +1,14 @@
 /**
  * One transcript row — presentational only (S3 ledger-document anatomy,
- * S5 act ledger).
+ * S5 act ledger), drawn on the V10 page (docs/design/V10-SPREAD.md section 1,
+ * reference d3).
  *
  * Switches on the pure `TranscriptEntry.variant`. The transcript reads as
- * an asymmetric register: USER turns are compact right-aligned cards with a
- * persistent "You · HH:MM" caption; ASSISTANT turns are full-width document
- * flow hung off the Signal Tape spine by the Vex mark in a 36px gutter (no
- * bubble), with their clock and actions in a tail row BELOW the body. While
- * the current turn is active, a restrained accent ring rotates around that
- * mark; settled turns remain still. Assistant prose renders through
+ * an asymmetric register: USER turns are right-hung notes on a 2px blue rule
+ * under a "You · HH:MM" caption, never a bubble; ASSISTANT turns are
+ * full-width document flow hung off the vx mark in a 30px gutter, with their
+ * clock and actions in a tail row BELOW the body. While the current turn is
+ * active the ongoing swatch sits under that mark; settled turns are still. Assistant prose renders through
  * `MarkdownContent` (stage 8-2a) — safe React elements, never an HTML
  * string; user/tool/notice rows + the `compaction`/`recall` markers (stage
  * 8-4) render as plain React text nodes. Either way model/tool output cannot
@@ -16,7 +16,6 @@
  */
 
 import { memo, type JSX, type ReactNode } from "react";
-import { IconCircleStop } from "../../components/icons/index.js";
 import { Swatch } from "../../components/ui/swatch.js";
 import { VexMark } from "../../components/common/VexMark.js";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
@@ -63,8 +62,8 @@ function formatClock(iso: string): string | null {
 }
 
 /**
- * The tape's clock readout for one entry — HH:MM in --vex-text-2 (the data), or
- * nothing for an unparseable timestamp. Pairs with a speaker label to form a
+ * The tape's clock readout for one entry - HH:MM in the second ink (the data),
+ * or nothing for an unparseable timestamp. Pairs with a speaker label to form a
  * tape stamp: the time leads on the assistant rail and trails on the user rail.
  */
 function TapeClock({
@@ -76,27 +75,23 @@ function TapeClock({
 }): JSX.Element | null {
   const clock = formatClock(createdAt);
   return clock === null ? null : (
-    <span className={cn("text-[var(--vex-text-2)]", className)}>{clock}</span>
+    <span className={cn("text-ink-secondary", className)}>{clock}</span>
   );
 }
 
 /**
- * Vex's identity mark on the Signal Tape spine (the monotonic time axis the
- * transcript hangs off). The mark sits at the gutter's left edge, centred in a
- * 26px square box, so every Vex turn is signed by the brand monogram rather
+ * Vex's identity mark at the head of the 30px gutter the assistant turn hangs
+ * off (reference d3): the vx monogram, 18px wide, in the brand-mark ink (the
+ * blue by day, paper at night), so every Vex turn is signed by the mark rather
  * than by a character portrait (owner QA round 2, item 5).
  *
- * GUTTER: unchanged at `pl-9` (36px). `VexMark` is 824:658, so an 18px height
- * is ~23px wide - it fits the existing 26px box with room to spare, and the
- * whole `pl-9` family (assistant prose, tool acts, tool groups, the live
- * stream preview, the turn-stats line) therefore stays where it is. If that
- * box ever changes, EVERY member of the family moves with it.
+ * GUTTER: `pl-[30px]`, shared by the whole family (assistant prose, tool acts,
+ * tool groups, the live stream preview, the turn-stats line). If the gutter
+ * ever changes, EVERY member of the family moves with it.
  *
- * WORKING RING: still a circle, deliberately. The mark's box is square, but a
- * spinning rounded rectangle drags its corners through the sweep; a circle
- * circumscribing the box does not. `-inset-[3px]` on a 26px box gives a 32px
- * circle, and the mark's 23x18 diagonal is 29.2px, so the glyph clears the
- * ring at every phase. Reduced motion stills it to a static arc.
+ * WORKING: the ongoing swatch under the mark, the page's one state motion
+ * (its dot screen steps; reduced motion stills it). No spinning ring: V10
+ * draws no arcs. The `data-vex-agent-spinner` seam keeps its name.
  *
  * The mark is decorative here - the row's sr-only speaker label names the
  * turn - so it stays aria-hidden (VexMark sets that itself).
@@ -106,16 +101,18 @@ function AssistantAvatar({ working = false }: { readonly working?: boolean }): J
     <span
       data-vex-agent-avatar=""
       data-vex-agent-avatar-state={working ? "working" : "settled"}
-      className="absolute left-0 top-[1px] inline-flex h-[26px] w-[26px] items-center justify-center text-brand-mark"
+      className="absolute left-0 top-[5px] flex w-[18px] flex-col items-center gap-2 text-brand-mark"
     >
+      <VexMark size={14} />
       {working ? (
         <span
           data-vex-agent-spinner=""
           aria-hidden
-          className="absolute -inset-[3px] rounded-full border border-[var(--vex-accent)] border-r-transparent animate-spin [animation-duration:1200ms] motion-reduce:animate-none"
-        />
+          className="inline-flex text-accent-primary"
+        >
+          <Swatch state="ongoing" size={9} />
+        </span>
       ) : null}
-      <VexMark size={18} />
     </span>
   );
 }
@@ -170,7 +167,7 @@ function AssistantActionsTail({
     // strings (code, raw JSON, addresses, tx hashes).
     <span
       data-vex-message-tail=""
-      className="vex-micro mt-1 flex h-5 items-center gap-2 tabular-nums"
+      className="vex-micro mt-1 flex h-5 items-center gap-2 tabular-nums text-ink-secondary [--vex-micro-size:11px]"
     >
       {/* A15 — the clock is hover-revealed chrome (80ms, hover:hover +
           focus-within; always visible on touch). */}
@@ -191,19 +188,16 @@ function AssistantActionsTail({
 /**
  * Document-typography wrapper around the safe markdown renderer.
  *
- * TYPOGRAPHY LAW (owner readability round 2026-07-30): message BODY copy is
- * the sans reading register, Inter Tight. Instrument Serif is a condensed
- * display face; the previous serif body was the "chujowo się czyta" report,
- * and since 2026-08-21 (owner 6/6a) the serif is out of shell chrome
- * altogether - it survives on the pre-shell display headings and the
- * long-form article variant only. The face and metrics are declared once on
- * `.vex-chat-prose`
- * (landing-motifs.css) and reach the body through `MarkdownContent`; this
- * wrapper only owns the tone and wrapping, so the two can never drift apart.
+ * TYPOGRAPHY LAW (owner readability round 2026-07-30, V10 section 1): message
+ * BODY copy is the sans reading register, Instrument Sans 15.5px. The serif is
+ * a display face and never sets a paragraph. The face and metrics are
+ * declared once on `.vex-chat-prose` (landing-motifs.css) and reach the body
+ * through `MarkdownContent`; this wrapper only owns the tone and wrapping, so
+ * the two can never drift apart.
  */
 function AssistantBody({ content }: { readonly content: string }): JSX.Element {
   return (
-    <div className="break-words text-foreground">
+    <div className="break-words text-ink-primary">
       <MarkdownContent text={content} />
     </div>
   );
@@ -278,17 +272,38 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           data-time-hover-root=""
           className="flex flex-col items-end"
         >
-          {/* Operator prose shares the READING register with the assistant
-              body (owner readability round 2026-07-30): the sans face, Inter
-              Tight. This row renders as plain text, not markdown, so it
-              carries its own metric instead of inheriting
-              `.vex-chat-prose` - keep the two in sync. */}
-          {/* r22 = the composer card's radius (the two "user surfaces" share
-              one shape); 525px cap inside the column, percentage keeps narrow
-              windows sane. 44px single-line bubble: 24 line + 10 padding each
-              side. */}
-          <div className="max-w-[min(525px,82%)] whitespace-pre-wrap break-words rounded-[22px] bg-surface-bubble px-4 py-2.5 text-[16px] leading-6 text-ink-primary">
-            {written}
+          {/* THE NOTE (reference d3): right-hung, on the 2px blue rule, its
+              "You · HH:MM" caption above the words. The caption carries the
+              hover-revealed actions and clock; the words are the operator's
+              prose in the reading register - this row renders as plain text,
+              not markdown, so it carries its own metric. */}
+          <div className="vex-note flex max-w-[82%] flex-col items-stretch">
+            {/* Same C2 human-caption register as the assistant stamp. */}
+            <span className="vex-micro mb-1.5 flex items-center justify-end gap-2 tabular-nums text-ink-secondary [--vex-micro-size:11px]">
+              {feedbackContext !== undefined ? (
+                <FeedbackMessageAction context={feedbackContext} />
+              ) : null}
+              {onEditInNewBranch !== undefined ? (
+                <BranchMessageAction
+                  label="Edit in a new branch"
+                  onBranch={() => onEditInNewBranch(row.id, written)}
+                />
+              ) : null}
+              {onEditMessage !== undefined ? (
+                <EditMessageAction
+                  onEdit={() => onEditMessage(row.id, written)}
+                />
+              ) : null}
+              <CopyMessageAction text={written} />
+              <span className="text-ink-secondary">You</span>
+              <TapeClock
+                createdAt={row.createdAt}
+                className="vex-time-reveal before:mr-2 before:content-['·']"
+              />
+            </span>
+            <p className="whitespace-pre-wrap break-words text-left font-sans text-[16px] leading-[26px] text-ink-primary">
+              {written}
+            </p>
           </div>
           {/* A33 - an operator instruction says WHEN it reaches the model, in
               words. The words come from the engine's own typed disposition
@@ -302,31 +317,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
             <span
               data-vex-steering-mark=""
               data-vex-disposition={row.interruptDisposition}
-              className="vex-micro-label mt-1 text-ink-secondary"
+              className="vex-micro-label mt-1.5 text-ink-secondary"
             >
               {steeringMarkText(row.interruptDisposition)}
             </span>
           ) : null}
-          {/* Same C2 human-caption register as the assistant stamp. */}
-          <span className="vex-micro mt-1 flex items-center justify-end gap-2 tabular-nums">
-            {feedbackContext !== undefined ? (
-              <FeedbackMessageAction context={feedbackContext} />
-            ) : null}
-            {onEditInNewBranch !== undefined ? (
-              <BranchMessageAction
-                label="Edit in a new branch"
-                onBranch={() => onEditInNewBranch(row.id, written)}
-              />
-            ) : null}
-            {onEditMessage !== undefined ? (
-              <EditMessageAction
-                onEdit={() => onEditMessage(row.id, written)}
-              />
-            ) : null}
-            <CopyMessageAction text={written} />
-            <span className="text-[var(--vex-text-3)]">You</span>
-            <TapeClock createdAt={row.createdAt} className="vex-time-reveal" />
-          </span>
         </div>
       );
     }
@@ -335,7 +330,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
         <div
           data-vex-message-role="assistant"
           data-time-hover-root=""
-          className="relative pl-9"
+          className="relative pl-[30px]"
         >
           <AssistantAvatar working={agentWorking} />
           <AssistantSpeakerLabel />
@@ -366,7 +361,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           data-vex-message-role="assistant"
           data-vex-stopped=""
           data-time-hover-root=""
-          className="relative pl-9"
+          className="relative pl-[30px]"
         >
           <AssistantAvatar working={agentWorking} />
           <AssistantSpeakerLabel />
@@ -382,8 +377,8 @@ export const TranscriptMessage = memo(function TranscriptMessage({
                 : undefined
             }
           />
-          <div className="mt-1.5 flex items-center gap-1 text-[11px] text-[var(--vex-text-3)]">
-            <IconCircleStop size={12} />
+          <div className="mt-1.5 flex items-center gap-[7px] font-mono text-[11px] uppercase leading-none tracking-status text-ink-secondary">
+            <Swatch state="idle" size={9} />
             <span>Stopped</span>
           </div>
         </div>
@@ -393,10 +388,9 @@ export const TranscriptMessage = memo(function TranscriptMessage({
       // keep the standalone disclosure; call rows register one ToolActRow per
       // executed call. The assistant prose keeps the S3 document anatomy.
       if (row.toolKind === "result") {
-        // Acts hang in the same 36px gutter as the assistant rows so their box
-        // sits right of the tape spine instead of overlapping it.
+        // Acts hang in the same 30px gutter as the assistant rows.
         return (
-          <div data-vex-message-role="tool" className="flex flex-col gap-1 pl-9">
+          <div data-vex-message-role="tool" className="flex flex-col gap-1 pl-[30px]">
             <ToolDisclosure
               label={row.label ?? "tool_output"}
               body={row.content}
@@ -410,10 +404,10 @@ export const TranscriptMessage = memo(function TranscriptMessage({
         );
       }
       return (
-        <div data-vex-message-role="tool" className="flex flex-col gap-1.5">
+        <div data-vex-message-role="tool" className="flex flex-col">
           {/* Assistant prose accompanying the tool call (often empty). */}
           {row.content.length > 0 ? (
-            <div className="relative pl-9">
+            <div className="relative pl-[30px]">
               <AssistantAvatar working={agentWorking} />
               <AssistantSpeakerLabel />
               <ReasonedBlock reasoning={row.reasoning} />
@@ -425,33 +419,38 @@ export const TranscriptMessage = memo(function TranscriptMessage({
               split rows share `dto.id`, and `splitToolCallProse` guarantees
               only ONE of them ever holds it, so this can never double-render. */}
           {row.content.length === 0 ? (
-            <div className="pl-9">
+            <div className="pl-[30px]">
               <ReasonedBlock reasoning={row.reasoning} />
             </div>
           ) : null}
-          {/* One registered act per executed call — collapsed by default. Each
-              hangs in the 36px gutter so it aligns right of the tape spine. */}
-          {resolveActs(row).map((act) => {
-            const stopResult = readMissionStopResult(act);
-            return (
-              <div key={act.toolCallId} className="pl-9">
-                <ToolActRow
-                  act={act}
-                  pendingApprovalId={
-                    pendingApprovals?.get(act.toolCallId) ?? null
-                  }
-                />
-                {/* An accepted MissionStop's result stays visible, not
-                    folded behind the collapsed act. */}
-                {stopResult !== null ? <MissionStopResult result={stopResult} /> : null}
-              </div>
-            );
-          })}
+          {/* THE LEDGER (reference d3): one ruled list of the registered acts,
+              hung in the 30px gutter under the prose - one 32px line per
+              executed call, collapsed by default. */}
+          <div className="pl-[30px]">
+            <div data-vex-tool-ledger="" className="vex-ledger">
+              {resolveActs(row).map((act) => {
+                const stopResult = readMissionStopResult(act);
+                return (
+                  <div key={act.toolCallId}>
+                    <ToolActRow
+                      act={act}
+                      pendingApprovalId={
+                        pendingApprovals?.get(act.toolCallId) ?? null
+                      }
+                    />
+                    {/* An accepted MissionStop's result stays visible, not
+                        folded behind the collapsed act. */}
+                    {stopResult !== null ? <MissionStopResult result={stopResult} /> : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       );
     case "tool_group":
-      // Wrap in the 36px gutter so the collapsed "{N} tool calls" box clears the
-      // tape spine (left-[9px]) instead of colliding with it. EVERY folded
+      // Wrap in the 30px gutter so the collapsed "{N} tool calls" line hangs
+      // under the mark with the rest of the turn. EVERY folded
       // trace (the prose-less call rows' reasoning, which the aggregation would
       // otherwise swallow) gets its OWN collapsible block — the same one used
       // everywhere else — stacked in turn order above the ledger line, so a
@@ -459,7 +458,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
       // Index keys are correct here: the list is a fixed, ordered projection of
       // the group model, never reordered or spliced.
       return (
-        <div className="pl-9">
+        <div className="pl-[30px]">
           {(row.reasonings ?? []).map((trace, index) => (
             <ReasonedBlock key={`${row.id}-${index}`} reasoning={trace} />
           ))}
@@ -508,7 +507,8 @@ function resolveActs(row: TranscriptRowModel): readonly ToolCallActView[] {
 /**
  * Runtime/error notice. A runtime notice keeps the quiet mono stamp. An error
  * notice wears the turn-error ROW grammar (A20 — in the flow, not a box):
- * error dot / bold "Error" title / the persisted sanitized message at 13/20.
+ * the ink cross / the mono "Error" caps / the persisted sanitized message at
+ * 13/20, never red.
  * The session-level banner remains the session-scope surface.
  *
  * `ack` (M6) is the runtime stamp plus a POLITE live region. It is the engine's
@@ -562,9 +562,9 @@ function NoticeBody({
         data-vex-turn-error=""
         className="grid w-full grid-cols-[10px_minmax(0,1fr)] items-start gap-2 py-0.5 text-[13px] leading-5"
       >
-        <Swatch state="error" size={8} className="mt-1.5" />
+        <Swatch state="error" size={9} className="mt-[5px]" />
         <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">
-          <span className="mr-1.5 font-semibold text-destructive">Error</span>
+          <span className="mr-2 font-mono text-[11px] uppercase tracking-status text-ink-primary">Error</span>
           <span className="text-ink-secondary">{children}</span>
         </span>
       </div>
@@ -576,7 +576,7 @@ function NoticeBody({
         ? { role: "status" as const, "aria-live": "polite" as const }
         : {})}
       data-vex-notice-tone={tone}
-      className="max-w-[80%] whitespace-pre-wrap break-words rounded-[6px] bg-interactive-hover px-3 py-2 text-center font-mono text-[10px] uppercase tracking-[0.28em] text-[var(--vex-text-3)]"
+      className="max-w-[80%] whitespace-pre-wrap break-words px-3 py-1 text-center font-mono text-[11px] uppercase leading-[18px] tracking-status text-ink-secondary"
     >
       {children}
     </div>

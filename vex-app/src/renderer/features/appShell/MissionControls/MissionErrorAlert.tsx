@@ -138,25 +138,25 @@ export function MissionErrorAlert({
       role="alert"
       data-vex-area="mission-error-alert"
       data-vex-category={classified ?? undefined}
-      className="mb-2 w-full rounded-xl border border-[var(--vex-rule)] bg-danger-wash px-3 py-2"
+      className="vex-callout mb-3 w-full"
     >
-      <p className="vex-micro font-medium text-danger">
+      <p className="vex-micro text-ink-primary [--vex-micro-size:11px]">
         {causeCopy !== null
           ? `Mission paused - ${causeCopy.title}`
           : copy !== null
             ? `Mission paused - ${copy.title}`
             : "Mission paused - error"}
       </p>
-      <p className="mt-1 text-xs text-[var(--vex-text-1)]">{body}</p>
+      <p className="mt-1.5 text-[13px] leading-5 text-ink-primary">{body}</p>
       {remedyHint !== null ? (
-        <p className="mt-1 text-xs font-medium text-[var(--vex-text-1)]">{remedyHint}</p>
+        <p className="mt-1 text-[13px] font-medium leading-5 text-ink-primary">{remedyHint}</p>
       ) : null}
-      <p className="mt-1 text-xs text-[var(--vex-text-2)]">
+      <p className="mt-1 text-[13px] leading-5 text-ink-secondary">
         The mission is not monitoring the market or your positions until you
         recover it.
       </p>
       {codes !== null && codes.length > 0 ? (
-        <p className="mt-1 font-mono text-[10px] text-[var(--vex-text-3)]">{codes}</p>
+        <p className="mt-1 font-mono text-[11px] tracking-[0.02em] text-ink-secondary">{codes}</p>
       ) : null}
     </div>
   );

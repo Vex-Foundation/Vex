@@ -21,17 +21,17 @@
  * line of the trace beside the stamp: the LATEST non-blank line while the
  * block is the streaming tail, reverting to the FIRST line once settled. While
  * following, that one-line scrollport is pinned to its inline end through the
- * shared 3-frame visual throttle, and the row wears the running sweep. This is
+ * shared 3-frame visual throttle, and the row leads with the ongoing swatch
+ * (status by fill; `data-vex-sweep` stays the running seam). This is
  * live throughput WITHOUT exposing the chain of thought; expanding drops the
  * moving summary entirely so page reading never fights an internal follower.
  *
- * REGISTER (owner 6/6a, ratified 2026-08-21 - the serif leaves shell chrome).
- * The STAMP is deepseek's Think-row voice: the app sans at 13px/500 on the
- * label-secondary tier beside the existing chevron. The word stays "Reasoned";
- * only the face changed. The BODY is `.vex-reasoning-prose` (Inter Tight 14px,
- * muted) - thinking aloud is still not speaking, but the distance is carried
- * by tone and size rather than by a serif italic that cost legibility at
- * paragraph length. The live island stream and the settled in-turn stamps wear
+ * REGISTER (V10, docs/design/V10-SPREAD.md section 1). The STAMP is a label:
+ * 11px Departure Mono caps on the second ink beside the existing chevron. The
+ * word stays "Reasoned"; only the face changed. The BODY is
+ * `.vex-reasoning-prose` (Instrument Sans 14px, the second ink) - thinking
+ * aloud is still not speaking, but the distance is carried by tone and size
+ * rather than by a serif italic that cost legibility at paragraph length. The live island stream and the settled in-turn stamps wear
  * the identical class, so one trace looks the same streaming, folded, and
  * reopened a week later.
  */
@@ -41,6 +41,7 @@ import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
 import { IconChevronRight } from "../../components/icons/index.js";
 import { cn } from "../../lib/utils.js";
 import { ExpandRegion } from "../../components/ui/expand-region.js";
+import { Swatch } from "../../components/ui/swatch.js";
 import { useThrottledVisualUpdate } from "../../lib/use-throttled-visual-update.js";
 import { reasonedStampLabel } from "./reasoning-stamp.js";
 
@@ -108,21 +109,26 @@ export function ReasonedBlock({
       data-vex-reasoning-state={running ? "running" : "settled"}
       className="mb-1.5"
     >
-      {/* Colour-only signals need a text equivalent: the sweep is decorative
+      {/* Fill-only signals need a text equivalent: the swatch is decorative
           and the moving summary says nothing about state, so AT is told
           directly that this trace is still arriving. */}
       {running ? <span className="sr-only">Reasoning</span> : null}
       <div
-        className="vex-row-sweep flex min-w-0 items-center"
+        className="flex min-w-0 items-center"
         data-vex-sweep={running ? "running" : undefined}
       >
+        {running ? (
+          <span aria-hidden className="mr-[9px] inline-flex flex-none text-accent-primary">
+            <Swatch state="ongoing" size={9} />
+          </span>
+        ) : null}
         <button
           ref={triggerRef}
           type="button"
           aria-expanded={open}
           aria-controls={bodyId}
           onClick={() => setOpen((v) => !v)}
-          className="flex flex-none items-center gap-1 rounded-[4px] text-left text-[13px] font-medium text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+          className="flex flex-none items-center gap-1.5 text-left font-mono text-[11px] uppercase leading-5 tracking-status text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         >
           <IconChevronRight
             size={11}
@@ -138,14 +144,14 @@ export function ReasonedBlock({
           <>
             <span
               aria-hidden
-              className="mx-2 h-[2px] w-[2px] flex-none rounded-[1px] bg-line-3"
+              className="mx-2 h-[2px] w-[2px] flex-none bg-line-3"
             />
             <span
               ref={summaryRef}
               data-vex-reasoning-summary=""
               data-follow-end={running ? "true" : undefined}
               className={cn(
-                "min-w-0 flex-1 overflow-hidden whitespace-nowrap text-[12px] text-[var(--vex-text-3)]",
+                "min-w-0 flex-1 overflow-hidden whitespace-nowrap text-[13px] text-ink-secondary",
                 running ? "text-clip" : "text-ellipsis",
               )}
             >
@@ -161,7 +167,7 @@ export function ReasonedBlock({
         id={bodyId}
         open={open}
         triggerRef={triggerRef}
-        className="vex-reasoning-prose mt-1 break-words border-l border-[var(--vex-line)] pl-3 text-[14px] leading-[1.6]"
+        className="vex-reasoning-prose mt-1 break-words border-l border-rule pl-3 text-[14px] leading-[1.6]"
       >
         <MarkdownContent text={text} />
       </ExpandRegion>

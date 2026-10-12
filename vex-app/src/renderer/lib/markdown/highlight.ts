@@ -2,8 +2,10 @@
  * THE CHAT TRANSCRIPT's syntax highlighter: a small synchronous line tokenizer
  * that returns classed text runs for React to render - never an HTML string
  * (the build bans HTML sinks). Colors live on `.vex-code-*` classes in
- * chat-transcript.css, tokens-only. An unknown or absent language returns
- * null and the caller renders its plain fallback - never an error.
+ * chat-transcript.css, which read the SAME `--vex-alias-code-token-*` slots the
+ * Studio viewer's shiki theme writes (tokens.css). An unknown or absent
+ * language returns null and the caller renders its plain fallback - never an
+ * error.
  *
  * ## TWO highlighters, one product, and why that is right
  *
@@ -25,10 +27,11 @@
  *    grammars loaded on demand. The shiki dependency was accepted for it in
  *    stage B1.
  *
- * The two share a PALETTE DIRECTION, not code: keywords carry the accent,
- * strings the success tone, comments recede. `.vex-code-*` here and
- * `--vex-alias-code-token-*` there both resolve to the same aliases, which is
- * what makes a snippet in chat and a file in the viewer read as one product.
+ * The two share a PALETTE, not code: keywords and figures carry the blue,
+ * strings the second ink, comments recede to the third. `.vex-code-*` here
+ * reads the `--vex-alias-code-token-*` slots the shiki theme writes there, so
+ * a snippet in chat and a file in the viewer are one palette by construction,
+ * not by two lists kept in step.
  *
  * Do not migrate this to shiki without measuring the streaming frame cost
  * first, and do not grow it toward real grammars: the viewer already owns that
