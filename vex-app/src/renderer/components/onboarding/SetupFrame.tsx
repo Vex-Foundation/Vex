@@ -1,37 +1,36 @@
 /**
- * SetupFrame — the shared pre-shell scaffold (Chronos rebrand, AMENDMENT
- * A2; INK REDESIGN 2026-07-27). Replaces the NOTARY-era NotaryPage.
+ * SetupFrame: the shared pre-shell scaffold, a screen on the stage
+ * (docs/design/V10-SPREAD.md sections 2 and 3; the d1 and d8 references).
  *
- * Every pre-shell screen (systemCheck, dockerBootstrap, composeBootstrap,
- * migrations, unlock) paints the exact SetupGate plate — deep ink-navy
- * (`.vex-gate-plate`) + `.vex-gate-vignette` + `.vex-noise` grain — so
- * the whole pre-boot experience reads as ONE continuous room; each screen
- * is a slide on the same plate. Cobalt is the accent on that plate, not
- * the plate itself (it was the surface until the ink redesign).
+ * The print itself is not here: App mounts one `StagePrint` behind every
+ * pre-shell screen, so the picture holds still while screens change and
+ * this frame paints only what stands on it.
  *
- * Chrome: top-left brand mark (logo + VEX), bottom-right version. The
- * optional serif title + subline keep the type ramp single-sourced;
- * screens with a bespoke header (unlock) pass children only.
+ *   leaf  (default) a paper page laid on the stage from the right, 600 wide
+ *         at 1440: the serif title, the lead and the screen's body, which
+ *         scrolls inside the page. The sky to its left shows the release as
+ *         the giant counter, or what the screen passes as `sky` (the
+ *         wizard's step number and index).
+ *   open  the body stands on the print itself (the unlock).
+ *
+ * The 44px head row carries the vx mark and is the hidden title bar's drag
+ * region (section 8); the ground row along the bottom edge takes `groundStart`
+ * and `groundEnd` (white mono on the dark ground).
  *
  * Contracts:
  *   - `data-vex-screen={screen}` is the stable e2e/test selector.
  *   - `data-vex-onboarding="true"` keeps the shared onboarding accent
  *     scope (scrollbars, `--vex-onboarding-accent`) alive.
  *   - `data-vex-gate="true"` applies the pre-shell token re-projection
- *     from `global-css/chronos-gate.css`: theme-aware hairlines,
- *     accent-as-text tokens, the pre-shell micro-label weight, AND the
- *     pre-shell type scale. The frame ALSO stamps it on documentElement for
- *     its own lifetime so body-portaled surfaces keep the projection
- *     (`useGateDocumentScope` below).
- *
- * The plate follows the theme since round 2 (ratified 2026-08-21): celeris
- * gets a light setup stack, chronos keeps the ink room. Only the Chronos
- * Gate itself stays theme-invariant.
+ *     from `global-css/chronos-gate.css`. The frame ALSO stamps it on
+ *     documentElement for its own lifetime so body-portaled surfaces keep
+ *     the projection (`useGateDocumentScope` below).
  */
 
 import { useEffect, type JSX, type ReactNode } from "react";
 
 import { cn } from "../../lib/utils.js";
+import { ReleaseCounter, StageGround, StageHead } from "./PreShellStage.js";
 
 /**
  * Live SetupFrame count. The pre-shell stage crossfades screens through
@@ -47,12 +46,11 @@ let mountedFrames = 0;
  *
  * Why the root and not only the frame: toasts, hover cards and menus portal
  * to `document.body`, which sits OUTSIDE the frame, so a portaled surface
- * opened from a pre-shell screen silently reverted to shell values - wrong
- * hairline strength, wrong `--vex-accent-text`, the shell type scale, no
- * micro-label weight. Stamping the root is the smallest seam that reaches every
- * portal target without editing ~30 dual-hosted call sites. The six wizard
- * steps that ALSO render inside Settings are unaffected: there they render
- * without SetupFrame, so the scope is never stamped.
+ * opened from a pre-shell screen silently reverted to shell values. Stamping
+ * the root is the smallest seam that reaches every portal target without
+ * editing ~30 dual-hosted call sites. The wizard steps that ALSO render
+ * inside Settings are unaffected: there they render without SetupFrame, so
+ * the scope is never stamped.
  *
  * Cleanup is idempotent and count-guarded; the attribute is removed only
  * once the last frame unmounts.
@@ -74,94 +72,77 @@ function useGateDocumentScope(): void {
 interface SetupFrameProps {
   /** Value for data-vex-screen (stable e2e/test selector). */
   readonly screen: string;
-  /** Column width: md = 560px (default), lg = 640px (docker/compose). */
-  readonly maxWidth?: "md" | "lg";
-  /** Optional serif screen title (sentence case, one per surface). */
+  /** `leaf` (default): a paper page on the stage; `open`: on the print. */
+  readonly layout?: "leaf" | "open";
+  /** Leaf: the serif page title (sentence case, one per surface). */
   readonly title?: string;
+  /** Leaf: the lead under the title. */
   readonly subline?: string;
+  /** Leaf: a mono line above the title. */
+  readonly eyebrow?: ReactNode;
+  /** Leaf: what the sky beside the page shows; the release counter by default. */
+  readonly sky?: ReactNode;
+  /** The ground caption row, left and right. */
+  readonly groundStart?: ReactNode;
+  readonly groundEnd?: ReactNode;
   readonly children: ReactNode;
 }
 
 export function SetupFrame({
   screen,
-  maxWidth = "md",
+  layout = "leaf",
   title,
   subline,
+  eyebrow,
+  sky,
+  groundStart,
+  groundEnd,
   children,
 }: SetupFrameProps): JSX.Element {
   useGateDocumentScope();
+  const hasHead = eyebrow !== undefined || title !== undefined;
   return (
     <main
       data-vex-onboarding="true"
       data-vex-gate="true"
       data-vex-screen={screen}
-      className="relative flex h-screen w-screen items-center justify-center overflow-hidden px-6 py-16 text-ink-primary"
+      className={cn("vex-stage", layout === "leaf" && "vex-stage--leaf")}
     >
-      {/* THE PLATE — identical paint stack to the SetupGate curtain, so
-       * the curtain reveal opens onto the same color it was made of. */}
-      <div aria-hidden className="vex-gate-plate absolute inset-0" />
-      <div aria-hidden className="vex-gate-vignette absolute inset-0" />
-      <div aria-hidden className="vex-noise pointer-events-none absolute inset-0" />
-
-      {/* Corner chrome — the mark alone top-left (owner decree 2026-07-22:
-       * no "VEX" wordmark text beside it), version bottom-right. */}
-      <div className="pointer-events-none absolute left-6 top-6 z-10">
-        {/* Theme-swapped pair (same idiom as SessionWelcomeHero): white on
-         * the chronos ink plate, brand blue on the celeris light plate. An
-         * arbitrary parent variant on the theme attribute - no JS read. */}
-        <img
-          src="/brand/vex-mark-white.svg"
-          alt=""
-          aria-hidden
-          draggable={false}
-          className="h-6 w-auto select-none [[data-vex-theme=celeris]_&]:hidden"
-        />
-        <img
-          src="/brand/vex-mark-color.svg"
-          alt=""
-          aria-hidden
-          draggable={false}
-          className="hidden h-6 w-auto select-none [[data-vex-theme=celeris]_&]:block"
-        />
-      </div>
-      <span className="pointer-events-none absolute bottom-7 right-10 z-10 vex-micro text-ink-tertiary">
-        v{__VEX_APP_VERSION__}
-      </span>
-
-      {/* THE PAGE COLUMN — with the container card retired (AMENDMENT A3,
-       * boxless composition) this column IS the page: content sits
-       * directly on the plate and the COLUMN scrolls when tall (no inner
-       * scroll wells anywhere beneath). */}
-      <div
-        className={cn(
-          // max-w = readable measure (640/560) + 4rem for .vex-gate-page's
-          // symmetric scrollbar gutter (chronos-gate.css) — keeps the thumb
-          // off the text column without narrowing or de-centering it.
-          "vex-gate-page relative z-10 flex max-h-full w-full flex-col",
-          maxWidth === "lg" ? "max-w-[704px]" : "max-w-[624px]",
-        )}
-      >
-        {/* Centered header (owner review 2026-07-27): the title used to sit
-         * flush-left above centered CTAs, which read unbalanced. Only the
-         * HEADER centers — the bodies below keep their own alignment, so a
-         * centered header over a left-aligned probe list, service table or
-         * password form is the intended composition. The wizard's step
-         * header matches this rhythm via the `[data-vex-gate]` scope.
-         * `text-2xl` is 40px here: the gate re-pins `--text-2xl`. */}
-        {title !== undefined ? (
-          <header className="vex-rise mb-6 flex flex-col items-center gap-2 text-center">
-            <h1 className="font-serif text-2xl font-normal leading-tight text-ink-primary">
-              {title}
-            </h1>
-            {subline !== undefined ? (
-              <p className="text-lg leading-relaxed text-ink-secondary">
-                {subline}
-              </p>
-            ) : null}
-          </header>
-        ) : null}
-        {children}
-      </div>
+      <StageHead />
+      {layout === "open" ? (
+        children
+      ) : (
+        <>
+          {sky ?? (
+            <div className="vex-stage-sky">
+              <ReleaseCounter />
+            </div>
+          )}
+          {/* THE LEAF: paper laid on the print; its head row is a drag
+           * region that keeps clear of the Windows and Linux caption
+           * buttons. Only the page body scrolls. */}
+          <div className="vex-stage-leaf">
+            <div aria-hidden="true" className="vex-drag vex-overlay-end" />
+            <div className="vex-stage-leaf__body">
+              {hasHead ? (
+                <header className="vex-stage-leaf__head vex-rise">
+                  {eyebrow !== undefined ? (
+                    <p className="vex-stage-leaf__eyebrow">{eyebrow}</p>
+                  ) : null}
+                  {title !== undefined ? (
+                    <h1 className="vex-stage-leaf__title">{title}</h1>
+                  ) : null}
+                  {subline !== undefined ? (
+                    <p className="vex-stage-leaf__lead">{subline}</p>
+                  ) : null}
+                </header>
+              ) : null}
+              {children}
+            </div>
+          </div>
+        </>
+      )}
+      <StageGround start={groundStart} end={groundEnd} />
     </main>
   );
 }

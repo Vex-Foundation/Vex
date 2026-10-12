@@ -24,8 +24,9 @@
  *   4. /shadow-\[0_0_/: resting glow. Depth never comes from shadows.
  *   5. theme-blind `white`/`black` utilities. A `bg-white/[0.04]` hover or a
  *      `text-white` glyph describes a colour, not a role, so it can only be
- *      right in ONE theme; the only exemptions are the two Chronos Gate call
- *      sites below.
+ *      right in ONE theme. No pre-shell file is exempt: the Chronos Gate
+ *      stands on the themed stage print like every screen after it, and its
+ *      white ground captions read the `on-photo` alias.
  *
  * Scope: every non-test .ts/.tsx under features/appShell, plus the three
  * shared primitives the shell composes for popover/dialog chrome and the
@@ -36,10 +37,9 @@
  *
  * The pre-shell used to be excluded as "a separate, finished language". That
  * exclusion died with the owner's round-2 decision (2026-08-21): every screen
- * AFTER the Chronos Gate is now theme-aware, so it is bound by the same
- * theme-blind colour law as the shell and deserves the same red build. The
- * ONE remaining theme-invariant surface is the gate composition itself,
- * whitelisted by path below.
+ * AFTER the Chronos Gate is theme-aware, and since V10 the gate is too (it
+ * stands on the same stage print), so the whole pre-shell is bound by the
+ * same theme-blind colour law as the shell and deserves the same red build.
  *
  * Sources are read via `import.meta.glob(..., ?raw)` — Vite inlines the
  * file contents at transform time — instead of `node:fs`, so this test
@@ -263,30 +263,12 @@ const WHITELIST: readonly WhitelistEntry[] = [
       "backdrop-blur + a static grain overlay, matching the approved " +
       "profile-menu mock.",
   },
-  // ── The Chronos Gate composition: the theme-INVARIANT brand moment ──
-  // Owner decision 1, round 2 (2026-08-21): "gate zostaje domyslnie". Every
-  // screen after the gate follows celeris/chronos; the gate itself stays the
-  // dark-cobalt brand plate under both themes and under the system default,
-  // because it is also the first-paint cover for the window's dark
-  // backgroundColor. Its ink is therefore painted on a KNOWN fill, which is
-  // exactly the condition under which a literal is not theme-blind. Two
-  // entries, both reasoned per call site; no pattern-level exemption.
-  {
-    file: "features/setup/ChronosGate.tsx",
-    pattern: "theme-blind white literal",
-    reason:
-      "Gate corner stamp (`text-white/60`) on the invariant dark-cobalt gate " +
-      "plate. The gate never re-themes, so the fill under this glyph is " +
-      "fixed and the literal is a known-contrast choice, not a theme guess.",
-  },
-  {
-    file: "features/setup/ChronosGate/GateActs.tsx",
-    pattern: "theme-blind white literal",
-    reason:
-      "Gate act status line (`text-white/80`) inside the same invariant " +
-      "dark-cobalt composition. Same reasoning as ChronosGate.tsx; when the " +
-      "gate stops being theme-invariant, BOTH entries must go, not one.",
-  },
+  // REMOVED (V10 pre-shell, WP13): the Chronos Gate's two theme-blind
+  // white literals (the corner stamp and the act status line on the
+  // invariant cobalt plate). The cobalt plate is gone: the gate stands on
+  // the themed stage print, and its ground captions read the `on-photo`
+  // alias, so neither file spells a white literal and both entries went
+  // together, as their own reasons asked.
   // REMOVED (rebrand phase 1, 2026-08-20): the Dialog base is a solid
   // layer-2 card on tokens v2 - its backdrop-blur exemption became inert
   // when the glass chrome retired, so the entry is deleted rather than

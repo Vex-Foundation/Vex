@@ -39,11 +39,10 @@ export function RunningBody({
   return (
     <div className="flex flex-col gap-6">
       {/* HERO — the ring at work, centered above the service rows. */}
-      <div className="flex justify-center pt-2">
+      <div className="flex pt-2">
         <VexLoader
-          size={72}
+          size={40}
           stroke={2}
-          tone="paper"
           label="Starting services"
         />
       </div>
@@ -70,7 +69,6 @@ export function RunningBody({
                 <VexLoader
                   size={16}
                   stroke={2}
-                  tone="paper"
                   label={`${s.service} ${s.status}`}
                 />
               ) : null}
@@ -88,13 +86,13 @@ export function RunningBody({
       </ul>
 
       <Button
-        variant="bare"
+        variant="quiet"
         disabled={cancelling}
         onClick={onCancel}
         {...(cancelling
           ? { "data-vex-compose-cancelling": "" }
           : { "data-vex-compose-cancel": "" })}
-        className="self-center text-ink-secondary"
+        className="self-start"
       >
         {cancelling ? "Cancelling…" : "Cancel"}
       </Button>

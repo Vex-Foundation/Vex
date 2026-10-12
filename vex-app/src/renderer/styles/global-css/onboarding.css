@@ -1,23 +1,47 @@
-/* Shared onboarding accent: the landing's electric cobalt. Applied via the
- * `data-vex-onboarding="true"` attribute on the outer wrapper of each
- * onboarding screen (intro, systemCheck, dockerBootstrap,
- * composeBootstrap, migrations, wizard). Shared primitives read
+/* Shared onboarding accent: the one blue (the periwinkle at night). Applied
+ * via the `data-vex-onboarding="true"` attribute on the outer wrapper of
+ * each onboarding screen (systemCheck, dockerBootstrap, composeBootstrap,
+ * migrations, wizard, unlock). Shared primitives read
  * `var(--vex-onboarding-accent, var(--color-accent-primary))` so they
- * degrade to the global accent outside the onboarding flow.
- *
- * The per-screen aliases below are kept as zero-touch back-compat for any
- * Tailwind arbitrary-value references in sub-files; a future cleanup
- * commit can drop them after grep confirms no remaining usages. */
+ * degrade to the global accent outside the onboarding flow. */
 [data-vex-onboarding="true"] {
   --vex-onboarding-accent: var(--color-accent-primary);
-  /* Ink canvas — identical to the shell base so onboarding and shell read
-   * as one continuous room. */
-  --vex-onboarding-bg: var(--vex-alias-bg-base);
   /* Project the onboarding accent through the shadcn aliases so stock
    * Button/Input/focus-ring inside wizard forms and the unlock screen
-   * speak the same electric cobalt as the keys. */
+   * speak the same blue. */
   --color-primary: var(--vex-onboarding-accent);
   --color-ring: var(--vex-onboarding-accent);
+}
+
+/* The risk callout (docs/design/V10-SPREAD.md section 1): a 1.5px ink frame
+ * with a hatched left band, ink type, never blue and never a status hue.
+ * The pre-shell's notices wear it: a warning the user should weigh before
+ * going on ("Without a wallet, ..."), a failure that stops a step. The wizard
+ * steps render in Settings too, so the class lives with the forms, not the
+ * stage. `--on-print` gives it a field to stand on over the stage print. */
+.vex-callout {
+  position: relative;
+  padding: 12px 14px 12px 26px;
+  border: 1.5px solid var(--vex-alias-rule-ink);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-callout::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 10px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--vex-alias-rule-ink) 0 1px,
+    transparent 1px 4px
+  );
+}
+.vex-callout--on-print {
+  background: var(--vex-alias-gate-field);
 }
 
 /* Countersign glint — single one-shot flare on the star the mark already

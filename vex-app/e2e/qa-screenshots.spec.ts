@@ -5,18 +5,17 @@
  * sanctioned way to reach the shell and the unlock screen without a live
  * Docker runtime).
  *
- * Round 2 (2026-08-21) widened the set. The headline fix of the round is
- * that everything AFTER the Chronos Gate follows the active theme, so the
- * pre-shell stages are now captured per theme, not once:
+ * Round 2 (2026-08-21) widened the set: every pre-shell screen follows the
+ * active theme, so the stages are captured per theme, not once. Since V10
+ * the gate is themed too: it stands on the same stage print (the day print
+ * in celeris, the night print in chronos):
  *
- *   gate-act3            the invariant brand moment (identical in both
- *                        themes by design - captured in both to prove it)
+ *   gate-act3            the gate's resting frame on the stage print
  *   systemcheck          the themed pre-shell system/port screen
- *   unlock-empty         armed CTA at rest (quiet outline capsule)
- *   unlock-typed         armed CTA inverted after the first keystroke
- *   unlock-error         the failed-unlock rail + the restyled
- *                        "Open logs folder" link (settles the owner's
- *                        "red micro-label underline" report)
+ *   unlock-empty         armed CTA at rest (the label box on the print)
+ *   unlock-typed         armed CTA filled blue after the first keystroke
+ *   unlock-error         the failed-unlock callout + the
+ *                        "Open logs folder" link
  *   welcome-shell        hero + composer + rail + starter pills
  *   settings-appearance  the theme picker itself
  *
@@ -147,7 +146,7 @@ test("captures both-theme screenshot evidence for the owner's eyes-on pass", asy
     await shot(page, theme, "systemcheck");
 
     // A real cold open under the now-persisted preference: proves the gate
-    // is theme-invariant and that first paint after it is themed.
+    // and the first paint after it follow the theme.
     await page.reload();
     await page.waitForLoadState("domcontentloaded");
     await expect(page.locator('[data-vex-screen="chronos-gate"]')).toBeVisible();
