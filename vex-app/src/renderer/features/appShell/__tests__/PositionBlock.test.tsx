@@ -299,7 +299,7 @@ describe("PositionBlock session view (unified chain switcher)", () => {
     );
     render(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
 
-    expect(screen.getByText("Ethereum")).not.toBeNull();
+    expect(screen.getAllByText("Ethereum").length).toBeGreaterThan(0);
     expect(screen.getByText("No assets on Ethereum")).not.toBeNull();
   });
 
@@ -397,7 +397,7 @@ describe("PositionBlock session view (unified chain switcher)", () => {
     const chains = within(chainsArea);
 
     // Default = the EVM standing default; Solana's holdings are NOT on screen.
-    expect(chains.getByText("Ethereum")).not.toBeNull();
+    expect(chains.getAllByText("Ethereum").length).toBeGreaterThan(0);
     expect(chains.queryByText("BONK")).toBeNull();
 
     // Solana is a peer chip in the ONE chip row, labelled for assistive tech.
@@ -498,7 +498,7 @@ describe("PositionBlock project view", () => {
     );
     render(<PositionBlock scope={{ kind: "project", projectId: PROJECT }} />);
 
-    expect(screen.getByText("Ethereum")).not.toBeNull();
+    expect(screen.getAllByText("Ethereum").length).toBeGreaterThan(0);
     expect(screen.getByText("No assets on Ethereum")).not.toBeNull();
     expect(
       screen.getByRole("button", { name: "Show Solana assets" }),
@@ -596,7 +596,9 @@ describe("PositionBlock snapshot age (owner measurement 2026-09-04)", () => {
       document.querySelector('[data-vex-area="position-snapshot-age"]')?.textContent,
     ).toContain("5 min ago");
     const delta = screen.getByLabelText(/Profit and loss versus snapshot taken 5 min ago/);
-    expect(delta.className).toContain("text-success");
+    // Direction is the sign, never a colour: a fresh delta keeps the ink.
+    expect(delta.className).toContain("vex-bs__pnl");
+    expect(delta.getAttribute("style")).toBeNull();
   });
 
   it("a STALE snapshot (31 days) states its age and MUTES the delta - not a live gain", () => {
@@ -607,8 +609,7 @@ describe("PositionBlock snapshot age (owner measurement 2026-09-04)", () => {
       document.querySelector('[data-vex-area="position-snapshot-age"]')?.textContent,
     ).toContain("31 days ago");
     const delta = screen.getByLabelText(/Profit and loss versus snapshot taken 31 days ago/);
-    expect(delta.className).not.toContain("text-success");
-    expect(delta.className).toContain("text-ink-tertiary");
+    expect(delta.getAttribute("style")).toContain("label-secondary");
     // The figures themselves are untouched: the tone changed, not the truth.
     expect(delta.textContent).toBe("+$0.41");
     expect(screen.getByText(/snapshot \$100\.62/)).toBeTruthy();
@@ -622,6 +623,6 @@ describe("PositionBlock snapshot age (owner measurement 2026-09-04)", () => {
     expect(document.querySelector('[data-vex-area="position-snapshot-age"]')).toBeNull();
     expect(
       screen.getByLabelText(/Profit and loss versus previous snapshot/).className,
-    ).toContain("text-success");
+    ).toContain("vex-bs__pnl");
   });
 });
