@@ -27,8 +27,9 @@ import type {
   LighterTradingFill,
   LighterTradingResolution,
 } from "@shared/schemas/lighter-trading.js";
-import { IconPlus, IconRefresh } from "../../../components/icons/index.js";
+import { PxIcon } from "../../../components/icons/index.js";
 import {
+  chartColorWithAlpha,
   toChartCandles,
   toChartVolume,
   upsertChartCandles,
@@ -114,21 +115,21 @@ function CandleChartLoading({ symbol }: { readonly symbol: string }): JSX.Elemen
       aria-label={`Building ${symbol} candle chart`}
     >
       <svg viewBox="0 0 720 280" aria-hidden="true" focusable="false">
-        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="58" y1="136" x2="58" y2="214" /><rect x="48" y="158" width="20" height="34" rx="2" /></g>
-        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="100" y1="124" x2="100" y2="194" /><rect x="90" y="140" width="20" height="34" rx="2" /></g>
-        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="142" y1="146" x2="142" y2="226" /><rect x="132" y="164" width="20" height="38" rx="2" /></g>
-        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="184" y1="130" x2="184" y2="210" /><rect x="174" y="150" width="20" height="38" rx="2" /></g>
-        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="226" y1="104" x2="226" y2="180" /><rect x="216" y="124" width="20" height="34" rx="2" /></g>
-        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="268" y1="92" x2="268" y2="168" /><rect x="258" y="110" width="20" height="36" rx="2" /></g>
-        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="310" y1="112" x2="310" y2="192" /><rect x="300" y="132" width="20" height="38" rx="2" /></g>
-        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="352" y1="80" x2="352" y2="160" /><rect x="342" y="100" width="20" height="36" rx="2" /></g>
-        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="394" y1="66" x2="394" y2="148" /><rect x="384" y="86" width="20" height="38" rx="2" /></g>
-        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="436" y1="92" x2="436" y2="176" /><rect x="426" y="112" width="20" height="40" rx="2" /></g>
-        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="478" y1="72" x2="478" y2="152" /><rect x="468" y="92" width="20" height="36" rx="2" /></g>
-        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="520" y1="46" x2="520" y2="128" /><rect x="510" y="68" width="20" height="36" rx="2" /></g>
-        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="562" y1="58" x2="562" y2="142" /><rect x="552" y="78" width="20" height="40" rx="2" /></g>
-        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="604" y1="40" x2="604" y2="118" /><rect x="594" y="60" width="20" height="34" rx="2" /></g>
-        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="646" y1="24" x2="646" y2="102" /><rect x="636" y="44" width="20" height="34" rx="2" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="58" y1="136" x2="58" y2="214" /><rect x="48" y="158" width="20" height="34" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="100" y1="124" x2="100" y2="194" /><rect x="90" y="140" width="20" height="34" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="142" y1="146" x2="142" y2="226" /><rect x="132" y="164" width="20" height="38" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="184" y1="130" x2="184" y2="210" /><rect x="174" y="150" width="20" height="38" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="226" y1="104" x2="226" y2="180" /><rect x="216" y="124" width="20" height="34" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="268" y1="92" x2="268" y2="168" /><rect x="258" y="110" width="20" height="36" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="310" y1="112" x2="310" y2="192" /><rect x="300" y="132" width="20" height="38" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="352" y1="80" x2="352" y2="160" /><rect x="342" y="100" width="20" height="36" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="394" y1="66" x2="394" y2="148" /><rect x="384" y="86" width="20" height="38" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="436" y1="92" x2="436" y2="176" /><rect x="426" y="112" width="20" height="40" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="478" y1="72" x2="478" y2="152" /><rect x="468" y="92" width="20" height="36" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="520" y1="46" x2="520" y2="128" /><rect x="510" y="68" width="20" height="36" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--down"><line x1="562" y1="58" x2="562" y2="142" /><rect x="552" y="78" width="20" height="40" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="604" y1="40" x2="604" y2="118" /><rect x="594" y="60" width="20" height="34" /></g>
+        <g className="lit-chart-loading-candle lit-chart-loading-candle--up"><line x1="646" y1="24" x2="646" y2="102" /><rect x="636" y="44" width="20" height="34" /></g>
       </svg>
       <span>
         <b>Loading {symbol} market</b>
@@ -266,29 +267,45 @@ function latestLegend(
   };
 }
 
+/** Volume bars carry the candle pair at this opacity (docs/design/V10-SPREAD.md section 1). */
+const VOLUME_ALPHA = 0.42;
+
+/**
+ * Every colour the chart paints, read from the canvas host. The candles and
+ * their volume take the candle pair (`--lit-candle-*`, declared on the canvas
+ * host only); every line, marker, label and study around them is the blue and
+ * the ink (`--lit-positive`, `--lit-negative`).
+ */
 function getChartColors(host: HTMLElement): {
   readonly ink: string;
+  readonly label: string;
   readonly grid: string;
   readonly positive: string;
   readonly negative: string;
+  readonly candleUp: string;
+  readonly candleDown: string;
   readonly positiveVolume: string;
   readonly negativeVolume: string;
   readonly fontFamily: string;
   readonly fontSize: number;
 } {
   const styles = getComputedStyle(host);
-  const chartFontSize = Number.parseFloat(
-    styles.getPropertyValue("--lit-chart-font-size").trim(),
-  );
+  const read = (name: string): string => styles.getPropertyValue(name).trim();
+  const chartFontSize = Number.parseFloat(read("--lit-chart-font-size"));
+  const candleUp = read("--lit-candle-up");
+  const candleDown = read("--lit-candle-down");
   return {
-    ink: styles.getPropertyValue("--lit-ink-secondary").trim(),
-    grid: styles.getPropertyValue("--lit-grid").trim(),
-    positive: styles.getPropertyValue("--lit-positive").trim(),
-    negative: styles.getPropertyValue("--lit-negative").trim(),
-    positiveVolume: styles.getPropertyValue("--lit-positive-volume").trim(),
-    negativeVolume: styles.getPropertyValue("--lit-negative-volume").trim(),
+    ink: read("--lit-ink-secondary"),
+    label: read("--lit-ink"),
+    grid: read("--lit-grid"),
+    positive: read("--lit-positive"),
+    negative: read("--lit-negative"),
+    candleUp,
+    candleDown,
+    positiveVolume: chartColorWithAlpha(candleUp, VOLUME_ALPHA),
+    negativeVolume: chartColorWithAlpha(candleDown, VOLUME_ALPHA),
     fontFamily: styles.fontFamily,
-    fontSize: Number.isFinite(chartFontSize) ? chartFontSize : 13,
+    fontSize: Number.isFinite(chartFontSize) ? chartFontSize : 11,
   };
 }
 
@@ -428,21 +445,23 @@ export function MarketChart({
         // The horizontal line follows the pointer instead of snapping to the
         // nearest close, so the axis label shows the price a click picks.
         mode: CrosshairMode.Normal,
-        vertLine: { color: colors.ink, labelBackgroundColor: colors.ink },
-        horzLine: { color: colors.ink, labelBackgroundColor: colors.ink },
+        vertLine: { color: colors.ink, labelBackgroundColor: colors.label },
+        horzLine: { color: colors.ink, labelBackgroundColor: colors.label },
       },
       handleScale: true,
       handleScroll: true,
     });
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: colors.positive,
-      downColor: colors.negative,
-      wickUpColor: colors.positive,
-      wickDownColor: colors.negative,
+      upColor: colors.candleUp,
+      downColor: colors.candleDown,
+      wickUpColor: colors.candleUp,
+      wickDownColor: colors.candleDown,
       borderVisible: false,
       priceFormat,
       priceLineVisible: true,
       priceLineStyle: LineStyle.Dotted,
+      // The last price is the blue: its dotted line and its axis box.
+      priceLineColor: colors.positive,
     });
     const volumeSeries = chart.addSeries(HistogramSeries, {
       priceFormat: { type: "volume" },
@@ -532,15 +551,16 @@ export function MarketChart({
       rightPriceScale: { borderColor: colors.grid },
       timeScale: { borderColor: colors.grid },
       crosshair: {
-        vertLine: { color: colors.ink, labelBackgroundColor: colors.ink },
-        horzLine: { color: colors.ink, labelBackgroundColor: colors.ink },
+        vertLine: { color: colors.ink, labelBackgroundColor: colors.label },
+        horzLine: { color: colors.ink, labelBackgroundColor: colors.label },
       },
     });
     candleSeries.applyOptions({
-      upColor: colors.positive,
-      downColor: colors.negative,
-      wickUpColor: colors.positive,
-      wickDownColor: colors.negative,
+      upColor: colors.candleUp,
+      downColor: colors.candleDown,
+      wickUpColor: colors.candleUp,
+      wickDownColor: colors.candleDown,
+      priceLineColor: colors.positive,
       priceFormat: resolvePriceFormat(pricePrecision, priceMinMove),
     });
 
@@ -681,7 +701,8 @@ export function MarketChart({
     series.applyOptions({ visible: chartType === "candles" });
     if (chartType === "line") {
       if (!lineSeriesRef.current) lineSeriesRef.current = chart.addSeries(LineSeries, { lineWidth: 2, priceLineVisible: true });
-      lineSeriesRef.current.applyOptions({ visible: true, color: hostRef.current ? getChartColors(hostRef.current).positive : "#20b7ae", priceFormat: resolvePriceFormat(pricePrecision, priceMinMove) });
+      const lineColor = hostRef.current === null ? undefined : getChartColors(hostRef.current).positive;
+      lineSeriesRef.current.applyOptions({ visible: true, ...(lineColor === undefined ? {} : { color: lineColor }), priceFormat: resolvePriceFormat(pricePrecision, priceMinMove) });
     } else lineSeriesRef.current?.applyOptions({ visible: false });
     // Hidden series still contribute timestamps to the shared chart timeline.
     lineSeriesRef.current?.setData((appliedDataRef.current?.candles ?? []).map(c => ({ time: c.time, value: c.close })));
@@ -695,12 +716,14 @@ export function MarketChart({
     const series = chartType === "line" ? lineSeriesRef.current : candleSeriesRef.current;
     if (!host || !series) return undefined;
     const colors = getChartColors(host);
+    // Blue and ink only: the entry and the risk levels (liquidation, stop)
+    // are the ink, a take profit the blue, a resting order its side's.
     const lines: IPriceLine[] = levels.map((level) => series.createPriceLine({
       price: level.price,
       title: level.title,
-      color: level.kind === "liquidation" || level.kind === "stopLoss" ? colors.negative
+      color: level.kind === "entry" || level.kind === "liquidation" || level.kind === "stopLoss" ? colors.label
         : level.kind === "takeProfit" ? colors.positive
-          : level.side === "buy" ? colors.positive : colors.negative,
+          : level.side === "buy" ? colors.positive : colors.label,
       lineWidth: 1,
       lineStyle: level.kind === "entry" ? LineStyle.Solid : level.kind === "liquidation" ? LineStyle.Dotted : LineStyle.Dashed,
       axisLabelVisible: true,
@@ -788,7 +811,7 @@ export function MarketChart({
             data-label="Zoom in"
             onClick={() => zoomVisibleRange(0.75)}
           >
-            <IconPlus size={17} />
+            <PxIcon name="zoom-in" />
           </button>
           <button
             type="button"
@@ -797,7 +820,7 @@ export function MarketChart({
             data-label="Zoom out"
             onClick={() => zoomVisibleRange(1.35)}
           >
-            <svg className="lit-stroke-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12" /></svg>
+            <PxIcon name="zoom-out" />
           </button>
           <button
             type="button"
@@ -806,7 +829,7 @@ export function MarketChart({
             data-label="Reset view"
             onClick={resetVisibleRange}
           >
-            <IconRefresh size={17} />
+            <PxIcon name="reset-view" />
           </button>
           <button
             type="button"
@@ -815,10 +838,7 @@ export function MarketChart({
             data-label="Go live"
             onClick={resetVisibleRange}
           >
-            <svg className="lit-stroke-icon" viewBox="0 0 20 20" aria-hidden="true">
-              <circle cx="10" cy="10" r="2.25" />
-              <path d="M5.8 5.8a6 6 0 0 0 0 8.4M14.2 5.8a6 6 0 0 1 0 8.4" />
-            </svg>
+            <PxIcon name="go-live" />
           </button>
         </div>
       ) : null}

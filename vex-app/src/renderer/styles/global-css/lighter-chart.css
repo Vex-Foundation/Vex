@@ -1,79 +1,13 @@
 /* ---------------------------------------------------------------------------
- * Chart panel
+ * Chart panel (docs/design/V10-SPREAD.md section 1). The candles and their
+ * volume are the one place green and red appear (lighter-tokens.css scopes
+ * the pair to the canvas); everything drawn around them is blue and ink.
  * ------------------------------------------------------------------------- */
 
-.lit-resolution-tabs {
-  display: flex;
-  min-width: 0;
-  gap: 2px;
-  overflow: auto hidden;
-}
-
-.lit-resolution-tabs button {
-  min-width: 34px;
-  min-height: 26px;
-  border: 0;
-  background: transparent;
-  padding: 0 6px;
-  color: var(--lit-ink-muted);
-  font-size: 11.5px;
-  font-weight: 600;
-  transition: background 140ms ease, color 140ms ease;
-}
-
-.lit-resolution-tabs button:hover { color: var(--lit-ink); }
-
-.lit-resolution-tabs button[aria-pressed="true"] {
-  background: var(--lit-panel-raised);
-  color: var(--lit-ink);
-}
-
-.lit-resolution-tabs button:focus-visible,
-.lit-chart-expand:focus-visible,
-.lit-chart-tools button:focus-visible,
-.lit-chart-empty-actions button:focus-visible {
-  outline: 2px solid var(--lit-focus);
-  outline-offset: 2px;
-}
-
-.lit-chart-heading-end {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 12px;
-}
-
-.lit-chart-connection {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--lit-ink-muted);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.lit-chart-connection i {
-  width: 5px;
-  height: 5px;
-  background: var(--lit-warning);
-}
-
-.lit-chart-connection[data-status="live"] i { background: var(--lit-positive); }
-.lit-chart-connection[data-status="unavailable"] i { background: var(--lit-negative); }
-
-.lit-chart-expand {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border: 0;
-  background: transparent;
-  color: var(--lit-ink-muted);
-}
-
-.lit-chart-expand:hover { background: var(--lit-hover); color: var(--lit-ink); }
-
 .lit-chart-body {
+  /* The analysis toolbar above and the drawing rail beside the canvas. */
+  --lit-chart-toolbar: 36px;
+  --lit-chart-rail: 36px;
   position: relative;
   min-height: 260px;
   flex: 1 1 auto;
@@ -84,14 +18,74 @@
   inset: 0;
 }
 
+.lit-chart-body .lit-chart-canvas {
+  top: var(--lit-chart-toolbar);
+  left: var(--lit-chart-rail);
+}
+
+/* Intervals: plain mono figures; the chosen one is blue in a blue frame. */
+.lit-resolution-tabs {
+  display: flex;
+  min-width: 0;
+  overflow: auto hidden;
+  scrollbar-width: none;
+}
+
+.lit-resolution-tabs::-webkit-scrollbar { display: none; }
+
+.lit-resolution-tabs button {
+  min-width: 28px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  padding: 0 6px;
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
+}
+
+.lit-resolution-tabs button:hover { color: var(--lit-ink); }
+
+.lit-resolution-tabs button[aria-pressed="true"] {
+  color: var(--lit-positive);
+  outline: 1px solid var(--lit-positive);
+  outline-offset: -1px;
+}
+
+.lit-resolution-tabs button:focus-visible,
+.lit-chart-tools button:focus-visible,
+.lit-chart-empty-actions button:focus-visible {
+  outline: 2px solid var(--lit-focus);
+  outline-offset: 2px;
+}
+
+.lit-chart-heading-end {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The chart only speaks up when its candles lag; Live is the market bar's. */
+.lit-chart-connection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
+  letter-spacing: var(--lit-tr-status);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Zoom, reset and go live: a small rule-framed group at the chart's foot. */
 .lit-chart-tools {
   position: absolute;
   z-index: 3;
-  top: 50px;
-  left: 10px;
-  display: grid;
-  gap: 5px;
-  padding: 4px;
+  bottom: 34px;
+  left: calc(var(--lit-chart-rail, 36px) + 10px);
+  display: flex;
+  gap: 0;
   border: 1px solid var(--lit-line);
   background: var(--lit-panel);
 }
@@ -99,58 +93,54 @@
 .lit-chart-tools button {
   position: relative;
   display: grid;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   place-items: center;
   border: 0;
   background: transparent;
   color: var(--lit-ink-secondary);
-  transition: background 140ms ease, color 140ms ease;
 }
+
+.lit-chart-tools button + button { border-left: 1px solid var(--lit-line-quiet); }
 
 .lit-chart-tools button:hover {
   background: var(--lit-panel-raised);
   color: var(--lit-ink);
 }
 
-.lit-chart-tools button:active { transform: scale(0.95); }
-
-.lit-chart-tools button:last-child { color: var(--lit-positive); }
-.lit-chart-tools button svg { width: 17px; height: 17px; }
+/* The label plate: the reversed chrome, ink by day and paper at night. */
 .lit-chart-tools button::after {
   position: absolute;
-  top: 50%;
-  left: calc(100% + 10px);
+  bottom: calc(100% + 7px);
+  left: 0;
   width: max-content;
   max-width: 120px;
-  transform: translate(3px, -50%);
-  border: 1px solid var(--lit-line);
-  background: var(--lit-panel-raised);
+  background: var(--vex-alias-tooltip-bg);
   padding: 5px 7px;
-  color: var(--lit-ink);
+  color: var(--vex-alias-label-on-chrome);
   content: attr(data-label);
   font-size: 10px;
-  font-weight: 600;
+  letter-spacing: var(--lit-tr-label);
   line-height: 1;
   opacity: 0;
   pointer-events: none;
+  text-transform: uppercase;
   white-space: nowrap;
-  transition: opacity 120ms ease, transform 120ms ease;
 }
 
 .lit-chart-tools button:hover::after,
 .lit-chart-tools button:focus-visible::after {
-  transform: translate(0, -50%);
   opacity: 1;
 }
 
+/* OHLC readout: the letters in ink, the figures one step back. */
 .lit-chart-legend {
   position: absolute;
   z-index: 2;
-  top: 9px;
-  left: 12px;
+  top: calc(var(--lit-chart-toolbar, 0px) + 8px);
+  left: calc(var(--lit-chart-rail, 0px) + 10px);
   display: flex;
-  max-width: calc(100% - 90px);
+  max-width: calc(100% - 130px);
   flex-wrap: wrap;
   gap: 4px 12px;
   pointer-events: none;
@@ -158,11 +148,10 @@
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   line-height: 1.35;
-  text-shadow: 0 1px 2px var(--lit-panel), 0 0 6px var(--lit-panel);
 }
 
 .lit-chart-legend span { white-space: nowrap; }
-.lit-chart-legend b { color: var(--lit-ink-muted); font-weight: 600; }
+.lit-chart-legend b { color: var(--lit-ink); font-weight: 400; }
 
 .lit-chart-history-boundary {
   position: absolute;
@@ -170,23 +159,19 @@
   bottom: 38px;
   left: 50%;
   max-width: calc(100% - 180px);
+  overflow: hidden;
+  text-overflow: ellipsis;
   transform: translateX(-50%);
   border: 1px solid var(--lit-line);
-  background: color-mix(in srgb, var(--lit-panel) 92%, transparent);
+  background: var(--lit-panel);
   padding: 4px 8px;
   pointer-events: none;
-  color: var(--lit-ink-muted);
+  color: var(--lit-ink-secondary);
   font-size: 10px;
+  letter-spacing: var(--lit-tr-caps-data);
   line-height: 1;
+  text-transform: uppercase;
   white-space: nowrap;
-}
-
-.lit-market-metric b,
-.lit-chart-legend,
-.lit-book-row,
-.lit-book-spread strong,
-.lit-trades-list {
-  font-variant-numeric: tabular-nums;
 }
 
 .lit-chart-empty {
@@ -195,20 +180,24 @@
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   color: var(--lit-ink-secondary);
-  font-size: 14px;
   text-align: center;
 }
 
 .lit-chart-empty > b {
   color: var(--lit-ink);
-  font-size: 14px;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--lit-tr-status);
+  text-transform: uppercase;
 }
 
 .lit-chart-empty > span:not(.lit-chart-empty-actions) {
-  color: var(--lit-ink-muted);
-  font-size: 12px;
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: normal;
 }
 
 .lit-chart-empty-actions {
@@ -219,22 +208,22 @@
 }
 
 .lit-chart-empty-actions button {
-  min-height: 34px;
-  border: 1px solid var(--lit-line-strong);
-  background: var(--lit-panel-raised);
-  padding: 0 12px;
-  color: var(--lit-ink-secondary);
-  font-size: 12px;
-  font-weight: 650;
-  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
-}
-
-.lit-chart-empty-actions button:hover {
-  border-color: var(--lit-focus);
-  background: var(--lit-hover);
+  height: 28px;
+  border: 0;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
+  background: transparent;
+  padding: 0 10px;
   color: var(--lit-ink);
+  font-size: 11px;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
 }
 
+.lit-chart-empty-actions button:hover { background: var(--lit-hover); }
+
+/* Building the chart: hollow candles in the strong rule rise once each, the
+ * only motion, and stop under reduced motion. */
 .lit-chart-loading {
   position: absolute;
   z-index: 2;
@@ -253,49 +242,37 @@
   bottom: 18%;
   left: 7%;
   height: 1px;
-  background: var(--lit-line-strong);
+  background: var(--lit-line);
   content: "";
-  opacity: 0.48;
 }
 
 .lit-chart-loading svg {
   width: min(76%, 720px);
   height: min(62%, 360px);
   overflow: visible;
-  filter: saturate(0.78);
 }
 
 .lit-chart-loading-candle {
-  animation: lit-chart-candle-build 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
-  opacity: 0.14;
-  transform: scaleY(0.18);
-  transform-box: fill-box;
-  transform-origin: center;
+  color: var(--lit-line-strong);
+  animation: lit-chart-candle-build calc(var(--vex-frame-step, 200ms) * 8) steps(4, end) infinite;
+  opacity: 0.3;
 }
 
 .lit-chart-loading-candle line {
   stroke: currentColor;
-  stroke-width: 3;
+  stroke-width: 1;
 }
 
-.lit-chart-loading-candle rect { fill: currentColor; }
-.lit-chart-loading-candle--up { color: var(--lit-positive); }
-.lit-chart-loading-candle--down { color: var(--lit-negative); }
+.lit-chart-loading-candle rect {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+}
 
-.lit-chart-loading-candle:nth-child(2) { animation-delay: 70ms; }
-.lit-chart-loading-candle:nth-child(3) { animation-delay: 140ms; }
-.lit-chart-loading-candle:nth-child(4) { animation-delay: 210ms; }
-.lit-chart-loading-candle:nth-child(5) { animation-delay: 280ms; }
-.lit-chart-loading-candle:nth-child(6) { animation-delay: 350ms; }
-.lit-chart-loading-candle:nth-child(7) { animation-delay: 420ms; }
-.lit-chart-loading-candle:nth-child(8) { animation-delay: 490ms; }
-.lit-chart-loading-candle:nth-child(9) { animation-delay: 560ms; }
-.lit-chart-loading-candle:nth-child(10) { animation-delay: 630ms; }
-.lit-chart-loading-candle:nth-child(11) { animation-delay: 700ms; }
-.lit-chart-loading-candle:nth-child(12) { animation-delay: 770ms; }
-.lit-chart-loading-candle:nth-child(13) { animation-delay: 840ms; }
-.lit-chart-loading-candle:nth-child(14) { animation-delay: 910ms; }
-.lit-chart-loading-candle:nth-child(15) { animation-delay: 980ms; }
+.lit-chart-loading-candle--up rect { fill: currentColor; }
+
+.lit-chart-loading-candle:nth-child(3n + 2) { animation-delay: 200ms; }
+.lit-chart-loading-candle:nth-child(3n) { animation-delay: 400ms; }
 
 .lit-chart-loading > span {
   position: absolute;
@@ -303,37 +280,34 @@
   display: flex;
   align-items: center;
   flex-direction: column;
-  gap: 3px;
+  gap: 6px;
   text-align: center;
 }
 
 .lit-chart-loading > span b {
-  color: var(--lit-ink-secondary);
-  font-size: 13px;
-  font-weight: 650;
+  color: var(--lit-ink);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--lit-tr-status);
+  text-transform: uppercase;
 }
 
 .lit-chart-loading > span small {
-  color: var(--lit-ink-muted);
-  font-size: 12px;
-  font-weight: 500;
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: normal;
 }
 
 @keyframes lit-chart-candle-build {
-  0%, 10% {
-    opacity: 0.12;
-    transform: scaleY(0.18);
-  }
-  42%, 72% {
-    opacity: 0.58;
-    transform: scaleY(1);
-  }
-  100% {
-    opacity: 0.16;
-    transform: scaleY(0.72);
-  }
+  0% { opacity: 0.2; }
+  50% { opacity: 0.9; }
+  100% { opacity: 0.2; }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .lit-chart-loading-candle { animation: none; opacity: 0.6; }
+}
 
 .lit-chart-footer {
   display: flex;
@@ -341,61 +315,25 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: flex-end;
-  border-top: 1px solid var(--lit-line);
+  border-top: 1px solid var(--lit-line-quiet);
   padding: 0 10px;
 }
 
 .lit-chart-footer a {
-  color: var(--lit-ink-muted);
+  color: var(--lit-ink-secondary);
   font-size: 10px;
   text-decoration: none;
 }
 
-.lit-chart-footer a:hover { color: var(--lit-ink); }
+.lit-chart-footer a:hover { color: var(--lit-ink); text-decoration: underline; }
 
-.lit-market-symbol {
-  --lit-market-symbol-size: 34px;
-  display: inline-flex;
-  min-width: var(--lit-market-symbol-size);
-  height: var(--lit-market-symbol-size);
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--lit-line-strong);
-  background: var(--lit-bg);
-  color: var(--lit-ink);
-  padding-inline: 6px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: -0.015em;
-  line-height: 1;
-  white-space: nowrap;
+/* A narrow chart has no room beside the zoom group: the history note rides
+ * above it instead. */
+@container (max-width: 560px) {
+  .lit-chart-history-boundary {
+    bottom: 70px;
+    left: calc(var(--lit-chart-rail, 36px) + 10px);
+    max-width: calc(100% - var(--lit-chart-rail, 36px) - 80px);
+    transform: none;
+  }
 }
-.lit-market-symbol:not([data-market-mark="ticker"]) {
-  width: var(--lit-market-symbol-size);
-  min-width: var(--lit-market-symbol-size);
-  padding: 6px;
-  background: color-mix(in srgb, var(--lit-panel-raised) 82%, transparent);
-}
-.lit-market-symbol-icon {
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
-  color: var(--lit-ink);
-}
-.lit-market-symbol[data-symbol-length="short"] { width: 34px; padding-inline: 0; }
-.lit-market-symbol[data-symbol-length="medium"] { min-width: 42px; font-size: 10px; }
-.lit-market-symbol[data-symbol-length="long"] { min-width: 54px; font-size: 9px; letter-spacing: -0.025em; }
-button.lit-market-select > .lit-market-symbol {
-  --lit-market-symbol-size: 26px;
-  height: var(--lit-market-symbol-size);
-  min-width: var(--lit-market-symbol-size);
-}
-button.lit-market-select > .lit-market-symbol:not([data-market-mark="ticker"]) {
-  width: var(--lit-market-symbol-size);
-  min-width: var(--lit-market-symbol-size);
-  padding: 4px;
-}
-button.lit-market-select > .lit-market-symbol[data-symbol-length="short"] { width: 26px; }
-button.lit-market-select > .lit-market-symbol[data-symbol-length="medium"] { min-width: 34px; }
-button.lit-market-select > .lit-market-symbol[data-symbol-length="long"] { min-width: 45px; }
