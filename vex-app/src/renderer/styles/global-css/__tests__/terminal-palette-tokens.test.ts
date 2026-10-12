@@ -13,9 +13,10 @@
  *     only - which looks like a rendering bug, not a missing token;
  *  2. an incomplete ANSI set, so a program emitting SGR 35 gets whatever the
  *     fallback is while SGR 31 is themed;
- *  3. a background that misreports the surface through OSC 11. Dark mode
- *     and light modes own opaque reading surfaces. Both use xterm's supported
- *     eight-digit hex syntax.
+ *  3. a background that misreports the surface through OSC 11. Both modes
+ *     own opaque reading surfaces in xterm's supported eight-digit hex
+ *     syntax, and each surface is a V10 primitive: the ink well at night,
+ *     the white field by day.
  *  4. a palette that parses and is still unreadable. Light mode measures
  *     every text slot against its actual opaque background, including SGR 90.
  *
@@ -156,19 +157,21 @@ describe("terminal palette tokens", () => {
   });
 
   it.each([
-    ["chronos", chronos, "ff"],
-    ["celeris", celeris, "ff"],
-  ])("pins surface opacity and OSC 11 RGB (%s)", (name, body, alpha) => {
-    // Both themes have a stable reading ground. OSC 11 reports its RGB.
+    ["chronos", chronos, "--color-ink"],
+    ["celeris", celeris, "--color-white"],
+  ])("pins surface opacity and OSC 11 RGB to a V10 primitive (%s)", (name, body, primitive) => {
+    // Both themes have a stable reading ground. OSC 11 reports its RGB, so
+    // the surface is a wire contract and is held to a named primitive: the
+    // ink well at night, the white field by day. It does NOT follow the room's
+    // paper (--vex-alias-bg-base): a program that asked once must keep
+    // getting the same answer until the terminal itself is retuned.
     const value = declarationValue(body, "--vex-alias-term-background");
     expect(value, `${name} must not use the keyword xterm rejects`).not.toBe("transparent");
     const match = /^#([0-9a-f]{6})([0-9a-f]{2})$/.exec(value ?? "");
     expect(match, `${name} background "${String(value)}" is not an 8-digit hex`).not.toBeNull();
     if (match === null) return;
-    expect(match[2], `${name} background alpha`).toBe(alpha);
-    expect(`#${match[1] ?? ""}`, `${name} background RGB`).toBe(
-      resolveHex(body, "--vex-alias-bg-base"),
-    );
+    expect(match[2], `${name} background alpha`).toBe("ff");
+    expect(`#${match[1] ?? ""}`, `${name} background RGB`).toBe(resolveHex(tokensCss, primitive));
   });
 
   it("gives every ANSI slot a concrete colour rather than a brand alias", () => {
@@ -227,9 +230,14 @@ describe("terminal palette tokens", () => {
     expect(contrastRatio(resolveHex(body, "--vex-alias-term-bright-black"), surface)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it("uses light primary ink for the default foreground without changing ANSI black", () => {
-    expect(declarationValue(celeris, "--vex-alias-term-foreground")).toBe("var(--vex-alias-label-primary)");
+  it("holds the chrome slots at their shipped values until the terminal retune", () => {
+    // The foreground and cursor ride OSC 10 and the block cursor, so they are
+    // wire values like the background: literal, and pinned here so a repaint
+    // of the room cannot move them by accident.
     expect(resolveHex(celeris, "--vex-alias-term-foreground")).toBe("#12141c");
+    expect(resolveHex(chronos, "--vex-alias-term-foreground")).toBe("#e3e7ef");
+    expect(resolveHex(chronos, "--vex-alias-term-cursor")).toBe("#7a8cff");
+    expect(resolveHex(celeris, "--vex-alias-term-cursor")).toBe("#0000c0");
     expect(resolveHex(celeris, "--vex-alias-term-black")).toBe("#2b3040");
   });
 

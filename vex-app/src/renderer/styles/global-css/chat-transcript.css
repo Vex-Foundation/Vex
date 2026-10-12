@@ -124,17 +124,16 @@
 }
 
 /* Turn-status shimmer — 5-stop gradient, narrow bright band at 40-60%,
- * clipped to the glyphs. The highlight stop is blue-300 in BOTH themes
- * (design-language calibration 2026-08-20: blue-400 never sits on light
- * surfaces, and chronos' accent-hover is already blue-300) — a justified
- * theme-invariant static reference. */
+ * clipped to the glyphs. The highlight stop is the accent's own hover step
+ * (the tweet blue by day, paper at night), so the band stays inside the one
+ * blue family in both themes. */
 .vex-turn-shimmer {
   white-space: nowrap;
   background: linear-gradient(
     90deg,
     var(--vex-alias-accent-primary) 0%,
     var(--vex-alias-accent-primary) 40%,
-    var(--color-blue-300) 50%,
+    var(--vex-alias-accent-hover) 50%,
     var(--vex-alias-accent-primary) 60%,
     var(--vex-alias-accent-primary) 100%
   );

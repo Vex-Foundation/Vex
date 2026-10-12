@@ -1,33 +1,31 @@
 /**
- * Shell design-language guard — the VEX tokens-v2 law (rebrand 2026-08-20)
- * stays locked.
+ * Shell design-language guard: the V10 "Sepia Counter" law stays locked.
  *
- * The law: components consume SEMANTIC ALIASES ONLY (tokens.css tier 2/3 —
+ * The law: components consume SEMANTIC ALIASES ONLY (tokens.css tier 2/3 -
  * the --vex-alias-* vars, their --color-* utility projections, and the
- * shell's --vex-* scope tokens). One accent family rooted at the vx-logo
- * #0000c0 (chronos interactive = blue-400 #7a8cff, celeris = blue-700);
- * the RETIRED cobalt family #1f44ff/#0a23b8 is banned outright, alongside
- * every older legacy hex. Depth is luminance + hairlines (or border+shadow
- * in celeris), never glass or resting glow; no ShinyText gradient chrome.
+ * shell's --vex-* scope tokens). The palette is paper, ink and ONE blue
+ * (#0000c0 by day, the periwinkle at night), and status is shown by FILL,
+ * never by colour, so no status hue may be spelled in a component. Depth is
+ * a 1px rule, never glass, a shadow or a resting glow. Every retired palette
+ * (the cobalt family, the Protocol Desk accent, the gray-blue set, and the
+ * tokens-v2 ramp V10 replaced) is banned outright as a raw hex.
  * This test turns each law into a red build instead of a review comment:
  *
- *   1. /backdrop-blur(?!-none)/ — no backdrop-filter glass anywhere in the
- *      shell. `backdrop-blur-none` is EXEMPT by the lookahead (the dialog
- *      base itself is blur-free since the rebrand).
- *   2. /ShinyText|vex-shiny-text/ — the shine chrome died in S7 (component
- *      + @keyframes deleted); nothing may re-import it.
- *   3. legacy hex families: the gray-blue set, the Protocol Desk accent
- *      #3275f8, AND the retired cobalt accent pair #1f44ff/#0a23b8. Raw
- *      hexes never appear in shell sources — the static palette lives in
- *      tokens.css only (CSS files are outside this scan by design).
- *   4. /shadow-\[0_0_/ — resting glow. Depth never comes from shadows
- *      (directional shadows and the select-beam's lit-item shadow live in
- *      globals.css, outside this scan by design).
- *   5. theme-blind `white`/`black` utilities (round 2, owner QA 2026-08-21).
- *      A `bg-white/[0.04]` hover or a `text-white` glyph describes a colour,
- *      not a role, so it can only be right in ONE theme. Every such site in
- *      the shell AND in the pre-shell was migrated to the alias families;
- *      the only exemptions are the two Chronos Gate call sites below.
+ *   1. /backdrop-blur(?!-none)/: no backdrop-filter glass anywhere in the
+ *      shell. `backdrop-blur-none` is EXEMPT by the lookahead.
+ *   2. /ShinyText|vex-shiny-text/: the shine chrome is dead; nothing may
+ *      re-import it.
+ *   3. retired hex families: the gray-blue set, the Protocol Desk accent
+ *      #3275f8, the retired cobalt pair #1f44ff/#0a23b8, and the tokens-v2
+ *      status and accent steps V10 retired (green, amber and red inks, the
+ *      blue-400/500 accents). Raw hexes never appear in shell sources - the
+ *      static palette lives in tokens.css only (CSS files are outside this
+ *      scan by design).
+ *   4. /shadow-\[0_0_/: resting glow. Depth never comes from shadows.
+ *   5. theme-blind `white`/`black` utilities. A `bg-white/[0.04]` hover or a
+ *      `text-white` glyph describes a colour, not a role, so it can only be
+ *      right in ONE theme; the only exemptions are the two Chronos Gate call
+ *      sites below.
  *
  * Scope: every non-test .ts/.tsx under features/appShell, plus the three
  * shared primitives the shell composes for popover/dialog chrome and the
@@ -144,6 +142,15 @@ const BANNED: readonly BannedPattern[] = [
   // (CSS is out of this scan's scope). Any raw re-introduction in shell
   // sources is a red build — fix the file with var(), never whitelist.
   { name: "retired cobalt accent (#1f44ff/#0a23b8)", regex: /#(?:1f44ff|0a23b8)/i },
+  // V10 (status by fill): the tokens-v2 status inks and washes (green, amber,
+  // red, in both rooms) and the blue-400/500 accents are retired with the
+  // ramp that held them. A component that spells one re-introduces a status
+  // hue or a second blue the alias tier no longer has - use the aliases.
+  {
+    name: "retired tokens-v2 status or accent hex",
+    regex:
+      /#(?:1fb954|137033|e6f8ec|12301d|febc2e|b97e08|8f6108|fdf3dd|2e2618|f26d6d|ef4444|b33333|fdeaea|3a1518|7a8cff|2b3eff|a9b8ff|d4dcff|e9edff|131a4d)\b/i,
+  },
   // UIUX round 2 (owner QA 2026-08-21): a `white`/`black` Tailwind colour is
   // theme-BLIND - it says nothing about the surface under it, so a
   // `hover:bg-white/[0.05]` hover or a `bg-white/[0.02]` plate that reads on
@@ -309,7 +316,7 @@ function scanSource(file: string, source: string): Violation[] {
   return violations;
 }
 
-describe("shell design guard (S7)", () => {
+describe("shell design guard (V10)", () => {
   // Explicit I/O budget: importing this module inlines every appShell
   // source file — I/O-bound at transform time, and the default 5s test
   // timeout is not generous on slow filesystems (WSL drvfs mounts). The
@@ -400,6 +407,17 @@ describe("shell design guard (S7)", () => {
     // The new accent is consumed as aliases, never as a raw hex.
     expect(matchNames("text-[var(--color-accent-primary)]")).toEqual([]);
     expect(matchNames("var(--vex-accent)")).toEqual([]);
+  });
+
+  it("flags the tokens-v2 status and accent hexes V10 retired", () => {
+    for (const hex of ["#1fb954", "#FEBC2E", "#f26d6d", "#b33333", "#7a8cff", "#2b3eff"]) {
+      expect(matchNames(`text-[${hex}]`)).toContain("retired tokens-v2 status or accent hex");
+    }
+    // The V10 primitives are consumed as aliases, and even the one blue is
+    // never spelled in a component; but a longer hex that merely starts with
+    // a retired one is not that colour.
+    expect(matchNames("text-[var(--color-accent-primary)]")).toEqual([]);
+    expect(matchNames("#7a8cff00")).toEqual([]);
   });
 
   it("flags the retired indigo/violet accent and raw pin/warn status hexes", () => {

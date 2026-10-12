@@ -360,7 +360,7 @@ export class TerminalRegistry {
       cursorBlink: !prefersReducedMotion(),
       // The library's only inertial behaviour. Reduced motion collapses it.
       smoothScrollDuration: prefersReducedMotion() ? 0 : 125,
-      fontFamily: readMonoFontFamily(),
+      fontFamily: readCodeFontFamily(),
       theme: readTerminalTheme(document.documentElement),
       // Correct explicit program colours as well as themed ANSI slots. xterm
       // exempts background glyphs and halves this target for SGR 2.
@@ -480,19 +480,20 @@ export class TerminalRegistry {
 }
 
 /**
- * The mono stack, read from the token rather than spelled here.
+ * The code stack, read from the token rather than spelled here.
  *
  * xterm takes a font string, so the family cannot arrive as a `var()`. Reading
- * `--font-mono` off the root keeps ONE definition of the technical face; a
- * literal here would be a second one that silently stops matching the app.
+ * `--font-code` (JetBrains Mono) off the root keeps ONE definition of the code
+ * face; a literal here would be a second one that silently stops matching the
+ * app. `--font-mono` is the label face (Departure Mono) and never sets code.
  */
-function readMonoFontFamily(): string {
+function readCodeFontFamily(): string {
   if (typeof window === "undefined" || typeof document === "undefined") {
     return "monospace";
   }
   const raw = window
     .getComputedStyle(document.documentElement)
-    .getPropertyValue("--font-mono")
+    .getPropertyValue("--font-code")
     .trim();
   return raw === "" ? "monospace" : raw;
 }
