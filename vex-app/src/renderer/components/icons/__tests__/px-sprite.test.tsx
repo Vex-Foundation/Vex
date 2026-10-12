@@ -49,8 +49,10 @@ describe("px sprite", () => {
     }
   });
 
-  it("keeps a floor of legacy exports", () => {
-    expect(glyphs.length).toBeGreaterThanOrEqual(80);
+  // The legacy Icon* wrappers are retired as their last call sites move to
+  // PxIcon, so their count only shrinks; every survivor must still resolve.
+  it("still has legacy exports to check", () => {
+    expect(glyphs.length).toBeGreaterThan(0);
   });
 
   it.each(glyphs)("%s resolves to a symbol in the sprite", (name, Glyph) => {
