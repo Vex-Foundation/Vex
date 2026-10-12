@@ -16,7 +16,7 @@
 import type { JSX, RefObject } from "react";
 import { Tavily, X } from "@thesvg/react";
 import type { LighterManagedTradingScope } from "@shared/schemas/onboarding.js";
-import { IconWaypoints } from "../../../../components/icons/index.js";
+import { PxIcon } from "../../../../components/icons/index.js";
 import { Label } from "../../../../components/ui/label.js";
 import { PasswordField } from "../../../../components/common/PasswordField.js";
 import { cn } from "../../../../lib/utils.js";
@@ -202,7 +202,7 @@ export function RelayCard({
     <ProviderCard
       slug="relay"
       iconSlot={
-        <IconWaypoints size={18} />
+        <PxIcon name="api" />
       }
       name="Relay"
       status={status}
@@ -420,7 +420,7 @@ function LighterManualTradingFields({
         <div className="space-y-1.5">
           <Label
             htmlFor={`${prefix}-account-index`}
-            className="text-xs text-[var(--color-text-muted)]"
+            className="text-xs text-ink-secondary"
           >
             Account index
           </Label>
@@ -432,13 +432,13 @@ function LighterManualTradingFields({
             step={1}
             inputMode="numeric"
             autoComplete="off"
-            className="h-10 w-full rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)] px-3 text-sm text-[var(--color-text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-10 w-full border border-line-input bg-surface-field px-3 text-sm text-ink-primary outline-none focus-visible:border-accent-primary"
           />
         </div>
         <div className="space-y-1.5">
           <Label
             htmlFor={`${prefix}-api-key-index`}
-            className="text-xs text-[var(--color-text-muted)]"
+            className="text-xs text-ink-secondary"
           >
             API-key index
           </Label>
@@ -451,7 +451,7 @@ function LighterManualTradingFields({
             step={1}
             inputMode="numeric"
             autoComplete="off"
-            className="h-10 w-full rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-surface-elevated)] px-3 text-sm text-[var(--color-text-primary)] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-10 w-full border border-line-input bg-surface-field px-3 text-sm text-ink-primary outline-none focus-visible:border-accent-primary"
           />
         </div>
       </div>
@@ -465,17 +465,17 @@ function LighterManualTradingFields({
       />
       <label
         htmlFor={`${prefix}-remove`}
-        className="flex items-start gap-2 text-xs text-[var(--color-text-muted)]"
+        className="flex items-start gap-2 text-xs text-ink-secondary"
       >
         <input
           id={`${prefix}-remove`}
           ref={removeRef}
           type="checkbox"
-          className="mt-0.5 h-4 w-4 rounded border-[var(--color-border-subtle)] bg-transparent"
+          className="mt-0.5 h-4 w-4 border-line-input bg-transparent"
         />
         Remove the manually imported trading key for this account/API-key scope.
       </label>
-      <p className="text-xs text-[var(--color-text-muted)]">
+      <p className="text-xs text-ink-secondary">
         {managed
           ? "Vex-managed registered keys cannot be replaced or removed here. These controls are only for a different externally managed scope."
           : configured

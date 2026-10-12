@@ -61,3 +61,23 @@ export const notifyTurnCompleteResultSchema = z
   .object({ shown: z.boolean() })
   .strict();
 export type NotifyTurnCompleteResult = z.infer<typeof notifyTurnCompleteResultSchema>;
+
+/**
+ * vex.system.setTitleBarOverlay - recolour the native title bar overlay
+ * (Windows and Linux) when the resolved theme changes. The renderer names only
+ * the theme id; the colours are main-owned constants, so no colour string ever
+ * crosses the boundary. `applied` is false on macOS (traffic lights have no
+ * overlay) and on a native-frame window.
+ */
+export const titleBarThemeSchema = z.enum(["chronos", "celeris"]);
+export type TitleBarTheme = z.infer<typeof titleBarThemeSchema>;
+
+export const setTitleBarOverlayInputSchema = z
+  .object({ theme: titleBarThemeSchema })
+  .strict();
+export type SetTitleBarOverlayInput = z.infer<typeof setTitleBarOverlayInputSchema>;
+
+export const setTitleBarOverlayResultSchema = z
+  .object({ applied: z.boolean() })
+  .strict();
+export type SetTitleBarOverlayResult = z.infer<typeof setTitleBarOverlayResultSchema>;

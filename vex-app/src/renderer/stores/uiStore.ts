@@ -66,6 +66,11 @@ import {
   type StudioFileTabsByProject,
 } from "./uiStore/studio-file-tabs.js";
 
+import {
+  EMPTY_ORDINAL_LEDGER,
+  type SessionOrdinalLedger,
+} from "./uiStore/session-ordinals.js";
+
 export type {
   PersistedFileTab,
   PersistedProjectFileTabs,
@@ -195,9 +200,9 @@ export interface UiState {
   readonly bookOpen: boolean;
   readonly currentView: View;
   /**
-   * The Chronos Gate boot overlay (features/setup/SetupGate). `true` from
-   * first paint until the launch pipeline resolves and the curtain reveal
-   * completes — then dismissed for the rest of the process. NOT persisted.
+   * The Chronos Gate boot overlay (features/setup/ChronosGate). `true` from
+   * first paint until the launch pipeline resolves and the gate has lifted
+   * away, then dismissed for the rest of the process. NOT persisted.
    */
   readonly setupGateActive: boolean;
   /**
@@ -208,10 +213,10 @@ export interface UiState {
    */
   readonly prologueReplayNonce: number;
   /**
-   * The unlock-success exit curtain (features/setup/CurtainExit, mounted by
-   * App): `true` from a successful unlock IPC until the cobalt curtain has
-   * covered the screen, flipped `currentView` to `unlockReturnView`, and
-   * split open over the revealed view. No cancel path. NOT persisted.
+   * The unlock-success page turn (features/setup/CurtainExit, mounted by
+   * App): `true` from a successful unlock IPC until the right page has
+   * arrived over the print, `currentView` has flipped to `unlockReturnView`
+   * beneath it, and the turn has lifted away. No cancel path. NOT persisted.
    */
   readonly unlockCurtainActive: boolean;
   readonly wizardEntryMode: WizardEntryMode;
@@ -359,6 +364,14 @@ export interface UiState {
    * the security argument: `uiStore/studio-file-tabs.ts`.
    */
   readonly studioFileTabs: StudioFileTabsByProject;
+  /**
+   * The stable session ordinals the left page prints, `(02)`: a ledger of ids
+   * and numbers, persisted so a number survives a reload. Cosmetic, never
+   * crosses IPC. Rules: `leftPage/sessionOrdinals.ts`; bounds and coercion:
+   * `uiStore/session-ordinals.ts`.
+   */
+  readonly sessionOrdinals: SessionOrdinalLedger;
+  readonly setSessionOrdinals: (ledger: SessionOrdinalLedger) => void;
   /** Set the theme choice: resolves + writes documentElement in one step. */
   readonly setThemePreference: (value: VexThemePreference) => void;
   readonly setSidebarOpen: (value: boolean) => void;
@@ -519,6 +532,8 @@ export const useUiStore = create<UiState>()(
       bookTab: "portfolio",
       studioRailExplorerShare: STUDIO_RAIL_EXPLORER_SHARE_DEFAULT,
       studioFileTabs: {},
+      sessionOrdinals: EMPTY_ORDINAL_LEDGER,
+      setSessionOrdinals: (sessionOrdinals) => set({ sessionOrdinals }),
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setSidebarWidth: (px) => set({ sidebarWidth: clampSidebarWidth(px) }),
       setBookWidth: (px) => set({ bookWidth: clampBookWidth(px) }),
@@ -614,7 +629,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 20,
+      version: 21,
       // Re-stamp the document root once the coerced, resolved theme is
       // known - theme-boot.js painted the pre-bundle frame from the RAW
       // payload, and a tampered value must not survive on <html>.

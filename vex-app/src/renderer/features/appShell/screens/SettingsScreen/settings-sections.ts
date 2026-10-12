@@ -10,14 +10,7 @@ import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
 import {
-  IconLighter,
   IconSuperboard,
-  IconVaultOutline16,
-  IconWalletOutline16,
-  IconKeyOutline16,
-  IconModelOutline16,
-  IconMemoryOutline16,
-  IconTuningOutline16,
   type GlyphProps,
 } from "../../../../components/icons/index.js";
 import type { SettingsSection } from "../../../../stores/uiStore.js";
@@ -26,14 +19,12 @@ import {
   LIGHTER_SECTION_NAME,
 } from "./lighter-trading-setup-copy.js";
 
-/** Superboard wordmark for the register row and the section header. */
+/** Superboard wordmark for the section header. */
 export const SUPERBOARD_KEY_ICON: ComponentType<GlyphProps> = IconSuperboard;
 
 export interface SectionMeta {
   readonly id: SettingsSection;
   readonly stepId?: Exclude<WizardStepId, "review">;
-  readonly icon: ComponentType<GlyphProps>;
-  readonly iconSize?: number;
   readonly name: string;
   readonly hint: string;
 }
@@ -43,55 +34,46 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
   {
     id: "vault",
     stepId: "keystore",
-    icon: IconVaultOutline16,
     name: "Vault",
     hint: "The master password that encrypts everything on this machine",
   },
   {
     id: "wallets",
     stepId: "wallets",
-    icon: IconWalletOutline16,
     name: "Wallets",
     hint: "EVM and Solana wallets - add, remove, recover, back up, or export",
   },
   {
     id: "apiKeys",
     stepId: "apiKeys",
-    icon: IconKeyOutline16,
     name: "API keys",
     hint: "Jupiter, Tavily, Rettiwt, and chain endpoint overrides",
   },
   {
     id: "model",
     stepId: "provider",
-    icon: IconModelOutline16,
     name: "Model",
     hint: "The OpenRouter key and model the agent thinks with",
   },
   {
     id: "memory",
     stepId: "embedding",
-    icon: IconMemoryOutline16,
     name: "Memory",
     hint: "The embedding endpoint behind long-term recall",
   },
   {
     id: "tuning",
     stepId: "agentCore",
-    icon: IconTuningOutline16,
     name: "Tuning",
     hint: "Context, output, and sampling limits",
   },
   {
     id: "superboardKey",
-    icon: SUPERBOARD_KEY_ICON,
-    iconSize: 28,
     name: "Superboard key",
     hint: "One code you paste into Superboard",
   },
   {
     id: "lighterPoints",
-    icon: IconLighter,
     name: LIGHTER_SECTION_NAME,
     hint: LIGHTER_SECTION_HINT,
   },

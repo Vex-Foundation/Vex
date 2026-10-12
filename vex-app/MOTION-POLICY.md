@@ -89,8 +89,7 @@ obligations remain:
   duration, the CSS collapsing while the timer still waits means the user who
   asked for less motion waits for an animation that is not playing. The owner
   reads `prefersReducedMotion()` / `useReducedMotion()` from `lib/motion/` and
-  settles in the same commit instead (`useCollapseChoreography.ts` is the
-  worked example).
+  settles in the same commit instead.
 
 The single documented opt-out from the catch-all is `data-vex-motion-opacity`,
 whose contract is stated at the catch-all in `base.css`: an element may carry
@@ -116,7 +115,6 @@ Live pairs:
 
 | JS constant | CSS site | Consequence of drift |
 |---|---|---|
-| `COLLAPSE_SETTLE_MS` (= `DURATION_BASE_MS`) | `.vex-sidebar-fading > *`, shell.css | the rail layout snaps in over a half-faded column |
 | `TOAST_EXIT_MS` | `.vex-notification-toast[data-phase="exiting"]`, overlays.css | a cut-off fade, or an invisible node holding a stack slot |
 
 

@@ -37,9 +37,14 @@ ages from five minutes to three years. The fixtures live in
 | Stat value, Trades | `dd` | 54 | `900.0K` |
 | Stat value, Pair age | `dd` | 49 | `1095d` |
 | Token photo | `board-token-photo` | 64 | fixed |
-| Spotlight button | `board-card-spotlight` | 96 | fixed copy |
-| DexScreener link | `board-token-dexscreener-link` | 100 | fixed copy |
-| Ask VEX button | `board-card-ask` | 88 | fixed copy |
+| Spotlight button | `board-card-spotlight` | 125 | fixed copy, V10 |
+| DexScreener link | `board-token-dexscreener-link` | 126 | fixed copy, V10 |
+| Ask VEX button | `board-card-ask` | 104 | fixed copy, V10 |
+
+The three action rows are measured in the V10 type (Departure Mono 11px caps,
+0.14em tracking, a 16px pixel icon). They were 96, 100 and 88 in the type
+before it, and the difference is what moved the header and the footer in
+sections 4 and 4b.
 
 ## 2. Every safety chip label
 
@@ -62,7 +67,11 @@ them are reachable in normal service, so none of them is an "extreme".
 | `New pair` | 92 |
 | `High risk` | 90 |
 
-**242 is the number the footer has to survive.** It is not a schema extreme:
+In the V10 compact chip (Departure Mono 11px caps at 0.12em, a 9px swatch
+and a 7px gap) a label is 16px plus 8.32px per character, so the order above
+holds and the widest is 308.
+
+**308 is the number the footer has to survive.** It is not a schema extreme:
 a transport blip on the details channel produces it on every card at once.
 
 ## 3. Schema-reachable extremes
@@ -83,8 +92,8 @@ Card padding is `px-5` (40 total). Inner width = card width - 40.
 | Stat block, 2x2 | `2 x 66 + 12` | 144 |
 | Price row, no sparkline | `198 + 10 + 76 + 10 + 22` | 316 |
 | Price row, sparkline at `w-[30%]` | `316 + 12 <= 0.7 x inner` | 469 |
-| Footer, one row | `242 chip + 12 + (100 + 8 + 88)` | 450 |
-| Footer, stacked | `max(242, 196)` | 242 |
+| Footer, one row | `308 chip + 12 + (126 + 8 + 104)` | 558 |
+| Footer, stacked | `max(308, 238)` | 308 |
 
 ## 4b. Per-mode floors, as built
 
@@ -93,14 +102,17 @@ chosen by CONTAINER width; both live in `global-css/board-layout.css` and
 nowhere else.
 
 **WIDE** keeps the anatomy the mockup fixes: the sparkline sits in the price
-row beside the figures, the stat `dl` is four equal columns, the footer is one
-row. The inline sparkline is a fixed `132px` rather than `w-[30%]`, so the
+row beside the figures, the stat `dl` is four equal columns, and the header's
+two actions share one row. The footer STACKS here too: one row needs 558,
+past the wide floor's 460, so with the widest verdict a one-row footer cut
+Ask VEX off the card. The inline sparkline is a fixed `132px` rather than `w-[30%]`, so the
 price row's budget cannot shrink faster than the card does.
 
 | Wide constraint | Composition | Inner |
 | --- | --- | --- |
 | Price row | `316 + 12 gap + 132 sparkline` | **460** |
-| Footer, one row | `242 chip + 12 + (100 + 8 + 88)` | 450 |
+| Footer, stacked | `max(308 chip, 126 + 8 + 104 actions)` | 308 |
+| Header, one row | `64 photo + 2 x 16 + (28 + 8 + 125 actions) + 203 identity` | 460 |
 | Stat block, 4 columns | `4 x 66 + 3 x 12` | 300 |
 
 Binding: 460. Plus 40px of `px-5` padding AND the card border's 2px:
@@ -108,12 +120,14 @@ Binding: 460. Plus 40px of `px-5` padding AND the card border's 2px:
 
 **COMPACT** adapts rather than deletes: the sparkline leaves the price row for
 its own fixed-height full-width slot below it, the footer stacks (chip row
-above actions row), the stat `dl` goes 2x2.
+above actions row), the stat `dl` goes 2x2, and the header's two actions
+stack (the disclosure above Spotlight, `28 + 8 + 28` = the 64px header).
 
 | Compact constraint | Composition | Inner |
 | --- | --- | --- |
 | Price row, full width | `198 + 10 + 76 + 10 + 22` | **316** |
-| Footer, stacked | `max(242 chip, 100 + 8 + 88 actions)` | 242 |
+| Footer, stacked | `max(308 chip, 126 + 8 + 104 actions)` | 308 |
+| Header, actions stacked | `64 photo + 2 x 16 + 125 Spotlight + 95 identity` | 316 |
 | Stat block, 2x2 | `2 x 66 + 12` | 144 |
 
 Binding: 316. Plus 40px of `px-5` padding AND the card border's 2px:
@@ -134,10 +148,10 @@ Fixed heights per mode, so cards are equal within a mode:
 | Price row | 44 | 44 |
 | Sparkline | inline, `132 x 44` | own slot, 36 high, 12 margin above |
 | Stat block | 46 | 92 (`2 x 40 + 12` row gap) |
-| Footer | one row | stacked |
+| Footer | stacked | stacked |
 
 Measured card height, six realistic pools, every card in a grid identical:
-**293 wide, 423 compact.**
+**321 wide, 415 compact** (V10, with the stacked footer).
 
 The mode is declared on the GRID, not on the plate. `@container` styles apply
 to a container's DESCENDANTS and never to the container element itself, so
@@ -206,7 +220,7 @@ which the plate side-scrolls, and it is what caught the missing border above.
 
 A schema extreme cannot be made to fit and must not be cut in silence, so
 every card carries ONE always-present control in its header - a semantic
-`<button>` beside Spotlight - that opens the whole name, the whole ticker and
+`<button>` next to Spotlight - that opens the whole name, the whole ticker and
 the raw provider decimals for price, liquidity and volume.
 
 Its PRESENCE is **not** conditional on width, because a card always rounds
@@ -270,8 +284,10 @@ it belongs to, so focus left behind it would be operating an invisible
 control. Escape closes it and is stopped from propagating, so closing a panel
 never closes the board `<dialog>` listening for the same key.
 
-Its cost to the floors is nothing: it sits in the identity row, whose
-flexible middle absorbs it, so no table above changes.
+Its cost to the floors is nothing in wide mode, where it sits in the header
+row and the identity column's flexible middle absorbs it. In compact mode it
+stacks above Spotlight, because beside the V10 Spotlight button it left the
+identity column 59px at the compact floor, under the ticker budget below.
 
 ## 4e. The content budgets
 
@@ -292,14 +308,16 @@ the layout.
 | Hero price | 12 | `$0.000001230`, 197.29px in a 198px slot |
 | Signed delta | 8 | `+661.00%`, 76px |
 | Stat value | 11 | wide mode's `(460 - 3 x 12) / 4 = 106px` column |
-| Ticker | 10 | compact identity column, 88px (one slot = 8.8px) |
+| Ticker | 10 | compact identity column, 95px; ten V10 mono cells are 85.4px |
 | Token name | none | keeps its CSS ellipsis by product decision |
 
 **TWO SURFACES, TWO WIDTH MODELS.** The price, delta and stat values render
 `tabular-nums`, where every digit advances the same width by definition of the
-feature, so a count of clusters IS a width. The TICKER does not: it renders in
-proportional uppercase Inter Tight, measured in the committed face at its own
-13px against a slot of 8.8px:
+feature, so a count of clusters IS a width. The TICKER's model was measured
+in its former proportional face, uppercase Inter Tight at 13px, against a slot
+of 8.8px. The V10 ticker is Departure Mono 11px caps at 0.14em, where every
+Latin-1 glyph and the ellipsis is one 8.54px cell, so the table below now
+over-charges `W`, `M` and `%` and under-charges nothing:
 
 | Advance | Glyphs |
 | --- | --- |

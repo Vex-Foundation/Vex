@@ -15,6 +15,10 @@ import {
 import { parseChartPreferences } from "./chart-preferences.js";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 import { ChartDrawings } from "./ChartDrawings.js";
+import { PxIcon } from "../../../components/icons/index.js";
+
+/** An unresolved token reads as an empty string; the library keeps its own default then. */
+const colorOption = (color: string): { color?: string } => (color === "" ? {} : { color });
 export interface ChartToolsProps {
   chart: StudyChartApi | null;
   series: DrawingSeriesApi | null;
@@ -118,9 +122,10 @@ export function ChartTools({
       return;
     const range = chart.timeScale().getVisibleLogicalRange();
     const colors = host.current ? getComputedStyle(host.current) : null;
-    const positive = colors?.getPropertyValue("--lit-positive").trim() || "#4dc9b0";
-    const secondary = colors?.getPropertyValue("--lit-ink-secondary").trim() || "#aeb4b8";
-    const negative = colors?.getPropertyValue("--lit-negative").trim() || "#ee7a83";
+    // Studies are drawn in the blue and the ink ramp, never the candle pair.
+    const positive = colors?.getPropertyValue("--lit-positive").trim() ?? "";
+    const secondary = colors?.getPropertyValue("--lit-ink-secondary").trim() ?? "";
+    const negative = colors?.getPropertyValue("--lit-negative").trim() ?? "";
     let pane = 1;
     studySeries.current = studies.map((id) => {
       const paneIndex = id === "rsi" || id === "macd" ? pane++ : 0;
@@ -138,17 +143,17 @@ export function ChartTools({
             // beside the price label, where it crowds the last price. The
             // toolbar readout names them instead; pane studies keep theirs.
             title: paneIndex === 0 ? "" : id === "macd" ? i === 0 ? "MACD" : "Signal" : studyLabel(id),
-            color: studyColor || (i === 1 ? secondary : i === 2 ? negative : positive),
+            ...colorOption(studyColor || (i === 1 ? secondary : i === 2 ? negative : positive)),
             lineWidth: 1,
             priceLineVisible: false,
             lastValueVisible: false,
             crosshairMarkerVisible: false
           }, paneIndex);
-        line.setData(data.map((p) => ({ ...p, ...(id === "macd" && i === 2 ? { color: p.value >= 0 ? positive : negative } : {}) })));
+        line.setData(data.map((p) => ({ ...p, ...(id === "macd" && i === 2 ? colorOption(p.value >= 0 ? positive : negative) : {}) })));
         if (id === "rsi") {
           line.createPriceLine({
             price: 70,
-            color: secondary,
+            ...colorOption(secondary),
             lineWidth: 1,
             lineStyle: 2,
             axisLabelVisible: true,
@@ -156,7 +161,7 @@ export function ChartTools({
           });
           line.createPriceLine({
             price: 30,
-            color: secondary,
+            ...colorOption(secondary),
             lineWidth: 1,
             lineStyle: 2,
             axisLabelVisible: true,
@@ -195,7 +200,7 @@ export function ChartTools({
         (computed[study.id][i] ?? []).map((p) => ({
           ...p,
           ...(study.id === "macd" && i === 2
-            ? { color: colors?.getPropertyValue(p.value >= 0 ? "--lit-positive" : "--lit-negative").trim() || "#aeb4b8" }
+            ? colorOption(colors?.getPropertyValue(p.value >= 0 ? "--lit-positive" : "--lit-negative").trim() ?? "")
             : {}),
         })),
       ));
@@ -297,22 +302,7 @@ export function ChartTools({
         disabled={!chart || candles.length === 0}
         onClick={saveImage}
       >
-        <svg
-          viewBox="0 0 20 20"
-          width="16"
-          height="16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          aria-hidden="true"
-        >
-          <path d="M3 6h3l1-2h6l1 2h3v10H3Z" />
-          <circle
-            cx="10"
-            cy="11"
-            r="3"
-          />
-        </svg>
+        <PxIcon name="image" />
       </button>
       {trailing}
     </div>

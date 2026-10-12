@@ -1,6 +1,6 @@
 /**
- * Reasoning-effort selector (S6/D4) — the composer pill's quiet "Grok slot"
- * control, seated in the right cluster LEFT of the round send key.
+ * Reasoning-effort selector (S6/D4) - the composer field's effort chip,
+ * seated in the leading cluster beside the model chip (reference d3).
  *
  * Presentational only: the parent (SessionComposer) owns the effective
  * selection (the stored per-session pick validated against the model's
@@ -12,8 +12,8 @@
  * `normalizeReasoningCapability` in `shared/schemas/reasoning.ts` owns
  * that set), with "none" labelled "Off".
  *
- * Anatomy: the {@link SelectMenu} primitive restyled into the capsule's
- * chip grammar (h28/r8, 13/20 medium) - a ghost trigger with a hover fill,
+ * Anatomy: the {@link SelectMenu} primitive restyled into the field's chip
+ * grammar (28px, 12px Departure Mono on a rule outline) with a hover fill,
  * opening UPWARD (the composer sits low on the session stage). Menu
  * physics, the ARIA combobox/listbox contract and the selected-dot
  * convention all come from SelectMenu as-is. The trigger's min-width
@@ -84,11 +84,10 @@ export function ReasoningEffortSelect({
       }}
       ariaLabel="Reasoning effort"
       placement="top"
-      // Quiet-grammar overrides on the SelectMenu trigger (cn/tailwind-merge:
-      // later classes win): h-10 sits level with the round send key;
-      // border/bg go transparent so the control reads as text at rest (no
-      // glass-on-glass); justify-start seats the chevron right after the
-      // label (the Grok "Szybki ⌄" read).
+      // Chip-grammar overrides on the SelectMenu trigger (cn/tailwind-merge:
+      // later classes win): the 28px mono chip on the rule outline
+      // (`.vex-composer-chip`, console.css) with the border and fill cleared;
+      // justify-start seats the chevron right after the label ("Medium ⌄").
       //
       // WIDTH (round 3, codex Bug 3): 6.5rem is a PREFERRED width, not a
       // floor. It was `min-w-[6.5rem]`, which pinned the trigger's outer box
@@ -100,7 +99,7 @@ export function ReasoningEffortSelect({
       // `min-w-0 truncate` and its chevron is already `shrink-0`, so the
       // conceded state truncates rather than clipping the control.
       // Focus ring stays SelectMenu's repo default.
-      className="h-7 min-w-0 w-[6.5rem] justify-start rounded-md border-transparent bg-transparent px-2 font-sans text-[13px] font-medium leading-5 text-ink-secondary transition-colors duration-100 hover:bg-interactive-hover hover:text-ink-primary"
+      className="vex-composer-chip h-7 min-w-0 w-[6.5rem] justify-start border-transparent bg-transparent px-2 font-mono text-[12px] font-normal leading-5 tracking-[0.02em] text-ink-secondary transition-colors duration-100 hover:bg-interactive-hover hover:text-ink-primary"
       />
   );
 }
@@ -110,7 +109,7 @@ export function ReasoningEffortSelect({
  * model-capability query (`useAvailableModels`) hasn't resolved yet -
  * welcome's cold-start case, and occasionally an existing session opened
  * before the app's first models fetch settles. Same box as the resolved
- * trigger (h28 / 6.5rem preferred width / r8) so the slot never reflows once
+ * trigger (h28 / 6.5rem preferred width) so the slot never reflows once
  * the real selector mounts or the gate resolves to hidden, and it concedes
  * width on the same terms rather than pinning the toolbar row.
  * Deliberately STATIC (no shimmer, no pulse): this is "we don't know yet",
@@ -123,9 +122,9 @@ export function ReasoningEffortPlaceholder(): JSX.Element {
     <span
       aria-hidden
       data-vex-reasoning-placeholder
-      className="inline-flex h-7 w-[6.5rem] min-w-0 items-center rounded-md px-2"
+      className="vex-composer-chip inline-flex h-7 w-[6.5rem] min-w-0 items-center px-2"
     >
-      <span className="h-2.5 w-10 rounded-full bg-surface-skeleton" />
+      <span className="h-2.5 w-10 bg-surface-skeleton" />
     </span>
   );
 }

@@ -10,17 +10,17 @@ import type { JSX } from "react";
 import { useSession } from "../../../lib/api/sessions.js";
 import { formatSessionTime, getMissionActivity } from "../sessionListModel.js";
 import {
-  StateDot,
-  type StateDotState,
-} from "../../../components/ui/state-dot.js";
+  Swatch,
+  type SwatchState,
+} from "../../../components/ui/swatch.js";
 import {
   CardKeyValueRow as Row,
   CardStateNote,
   PortfolioCard,
 } from "./portfolio/PortfolioCard.js";
 
-/** Mission-activity tone to StateDot state (word + dot, never color alone). */
-const ACTIVITY_DOT: Record<"active" | "paused" | "stopped", StateDotState> = {
+/** Mission-activity tone to Swatch state (word + dot, never color alone). */
+const ACTIVITY_DOT: Record<"active" | "paused" | "stopped", SwatchState> = {
   active: "ongoing",
   paused: "warning",
   stopped: "done",
@@ -57,9 +57,9 @@ export function SessionBlock({
         {activity !== null ? (
           <Row label="Status">
             <span className="inline-flex items-center gap-1.5">
-              {/* Status grammar: the word carries the meaning, the StateDot
+              {/* Status grammar: the word carries the meaning, the Swatch
                 * carries the motion (ongoing = pixel chase). */}
-              <StateDot state={ACTIVITY_DOT[activity.tone]} size={8} />
+              <Swatch state={ACTIVITY_DOT[activity.tone]} size={8} />
               {activity.label}
             </span>
           </Row>

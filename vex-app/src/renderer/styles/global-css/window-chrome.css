@@ -1,0 +1,55 @@
+/* Window chrome utilities (docs/design/V10-SPREAD.md section 8). The title bar is hidden on every
+ * OS; each 44px head row is the drag region and every control inside it opts
+ * out. Hook: lib/use-window-chrome.ts stamps `data-os` (mac | win | linux) and
+ * `data-chrome` (overlay | native | mac) on <html>. Wired on the running
+ * head, the left page's head row, the gutter, the BOOK head and Lighter's
+ * top bar (AppShell and shell.css).
+ *
+ * Example:
+ *   <header class="vex-drag">
+ *     <span>Running head</span>
+ *     <button class="vex-no-drag">Export</button>
+ *   </header>
+ *   <header class="vex-drag vex-overlay-end">...</header>  // BOOK head
+ */
+
+:root {
+  /* Native window-controls width on the right (Windows 138px incl. gap in
+   * the design doc; the live value wins when the overlay reports one). */
+  --overlay-w: 0px;
+  --head-h: 44px;
+}
+
+/* Windows and Linux with Window Controls Overlay. */
+html[data-chrome="overlay"] {
+  --overlay-w: calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px));
+}
+
+/* Drag region. A native-frame window already has its own title bar. */
+.vex-drag {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+html[data-chrome="native"] .vex-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Every interactive child of a drag region. */
+.vex-no-drag,
+.vex-drag :is(a, button, input, select, textarea, [role="button"], [role="tab"]) {
+  -webkit-app-region: no-drag;
+}
+
+/* Head that sits under the native controls: reserve their width plus 8px.
+ * Qualified by `html` so it outranks a head row's own padding shorthand. */
+html .vex-overlay-end {
+  padding-inline-end: calc(var(--overlay-w) + 8px);
+}
+
+/* macOS: the traffic lights occupy the left inset of the leftmost head. */
+html[data-os="mac"] .vex-lights-start {
+  padding-inline-start: 96px;
+}
+html:not([data-os="mac"]) .vex-lights-start {
+  padding-inline-start: 18px;
+}

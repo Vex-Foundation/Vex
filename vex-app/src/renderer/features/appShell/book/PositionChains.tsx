@@ -88,20 +88,8 @@ export function PositionChains({
   );
 
   return (
-    <div className="flex flex-col gap-1.5" data-vex-area="position-chains">
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-1.5">
-          <ChainIcon chainId={selectedChainId} size={14} />
-          <span className="truncate text-[11px] text-ink-secondary">
-            {chainName(selectedChainId)}
-          </span>
-        </span>
-        {selected !== null ? (
-          <ChainTotalFigure totalUsd={selected.totalUsd} />
-        ) : null}
-      </div>
-
-      <div role="group" aria-label="Network" className="flex items-center gap-1">
+    <div className="flex flex-col" data-vex-area="position-chains">
+      <div role="group" aria-label="Network" className="vex-chs">
         {chipChainIds.map((id) => (
           <button
             key={id}
@@ -110,29 +98,30 @@ export function PositionChains({
             aria-label={`Show ${chainName(id)} assets`}
             aria-pressed={id === selectedChainId}
             onClick={() => setSelectedChainId(id)}
-            className={cn(
-              // A faint plinth behind every mark keeps dark-inked brand icons
-              // visible on the ink canvas (owner report: "Base was
-              // invisible"); the native title names the network on hover.
-              "inline-flex h-6 w-6 items-center justify-center rounded-full border bg-interactive-hover transition-colors",
-              id === selectedChainId
-                ? "border-accent-primary"
-                : "border-transparent hover:border-line-3",
-            )}
+            className="vex-ch"
           >
-            <ChainIcon chainId={id} size={13} />
+            {chainName(id)}
           </button>
         ))}
-        {/* Always offered — the dialog is the network browser (funded chains
+        {/* Always offered: the dialog is the network browser (funded chains
          * only); its empty state explains itself. */}
         <button
           type="button"
           aria-haspopup="dialog"
           onClick={() => setMoreOpen(true)}
-          className="inline-flex h-6 items-center rounded-full border border-transparent px-1.5 text-[10.5px] text-ink-tertiary transition-colors hover:border-line-3 hover:text-ink-secondary"
+          className="vex-ch vex-ch--more"
         >
           more
         </button>
+      </div>
+
+      <div className="vex-kv vex-kv--h">
+        <span>{chainName(selectedChainId)}</span>
+        {selected !== null ? (
+          <ChainTotalFigure totalUsd={selected.totalUsd} />
+        ) : (
+          <span />
+        )}
       </div>
 
       <ChainTokenList chainId={selectedChainId} tokens={selected?.tokens ?? []} />
@@ -143,7 +132,7 @@ export function PositionChains({
       {moreOpen ? (
         <Dialog open={moreOpen} onOpenChange={setMoreOpen}>
           <DialogContent className="max-w-sm">
-            <DialogHeader className="gap-1.5 border-line-2 py-4">
+            <DialogHeader className="gap-1.5 py-4">
               <DialogTitle>Networks</DialogTitle>
               <DialogDescription>
                 Every network holding a balance in this position.
@@ -162,13 +151,11 @@ export function PositionChains({
                           setSelectedChainId(c.chainId);
                           setMoreOpen(false);
                         }}
-                        className="flex w-full items-center justify-between gap-3 border-b border-line-1 py-2 text-left transition-colors last:border-b-0 hover:text-ink-primary"
+                        className="vex-kv w-full text-left"
                       >
                         <span className="flex min-w-0 items-center gap-2">
                           <ChainIcon chainId={c.chainId} size={14} />
-                          <span className="truncate text-[12px] text-ink-secondary">
-                            {chainName(c.chainId)}
-                          </span>
+                          <span className="truncate">{chainName(c.chainId)}</span>
                         </span>
                         <ChainTotalFigure totalUsd={c.totalUsd} />
                       </button>
@@ -176,7 +163,7 @@ export function PositionChains({
                   ))}
                 </ul>
               ) : (
-                <p className="text-[11px] text-ink-tertiary">
+                <p className="vex-bs__empty">
                   No funded networks yet.
                 </p>
               )}
@@ -202,8 +189,8 @@ function ChainTotalFigure({
   return (
     <span
       className={cn(
-        "shrink-0 text-[11px] font-semibold tabular-nums",
-        unpriced ? "text-ink-tertiary" : "text-ink-primary",
+        "shrink-0",
+        unpriced && "text-ink-secondary",
       )}
     >
       {unpriced ? "-" : formatUsd(totalUsd)}
@@ -247,7 +234,7 @@ function ChainTokenList({
   );
   if (displayable.length === 0) {
     return (
-      <p className="text-[11px] text-ink-tertiary">
+      <p className="vex-bs__empty">
         No assets on {chainName(chainId)}
       </p>
     );
@@ -262,28 +249,15 @@ function ChainTokenList({
         return (
           <li
             key={`${chainId}:${tokenAddress ?? "x"}:${symbol ?? "-"}:${index}`}
-            className="flex items-center justify-between gap-3 border-b border-line-1 py-1.5 last:border-b-0"
+            className="vex-kv3"
+            data-unpriced={token.balanceUsd === null ? "" : undefined}
           >
-            <span className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="vex-kv3__n">
               <TokenMark mark={mark} size={13} />
-              <span className="truncate text-[11.5px] text-ink-secondary">
-                {symbol !== null && symbol.length > 0 ? symbol : "-"}
-              </span>
+              <span>{symbol !== null && symbol.length > 0 ? symbol : "-"}</span>
             </span>
-            <span className="flex shrink-0 items-baseline gap-2 text-[11px] font-semibold tabular-nums">
-              {quantity !== null ? (
-                <span className="text-ink-tertiary">{quantity}</span>
-              ) : null}
-              <span
-                className={
-                  token.balanceUsd === null
-                    ? "text-ink-tertiary"
-                    : "text-ink-primary"
-                }
-              >
-                {formatUsd(token.balanceUsd)}
-              </span>
-            </span>
+            <span className="vex-kv3__q">{quantity ?? ""}</span>
+            <span>{formatUsd(token.balanceUsd)}</span>
           </li>
         );
       })}

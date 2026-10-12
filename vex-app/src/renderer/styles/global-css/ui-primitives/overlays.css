@@ -9,36 +9,54 @@
   --vex-scrollbar-thumb-hover: var(--vex-alias-scrollbar-l2-hover);
 }
 
-/* ── Dialog backdrop ───────────────────────────────────────────────────────
- * Native <dialog> top-layer mask: dim + soft blur. Lives here (not a
- * Tailwind class string) so the TSX stays free of backdrop-filter chrome. */
+/* ── Paper dither veil ─────────────────────────────────────────────────────
+ * Every mask is the page's own paper in a 2px checkerboard (docs/design/
+ * V10-SPREAD.md section 7), never a blur or a dim: what lies behind stays
+ * legible through the open half of the screen. The paper is the room's base
+ * (Celeris paper, Chronos night). `image-rendering: pixelated` keeps the cell
+ * at exactly 2px on a scaled display. */
+.vex-dither-veil,
+.vex-approval-mask,
+.vex-lightbox-mask,
+.vex-drop-overlay,
 dialog.vex-dialog::backdrop {
-  background: var(--vex-alias-bg-mask-1);
-  backdrop-filter: var(--vex-mask-blur);
+  background:
+    repeating-conic-gradient(var(--vex-alias-bg-base) 0 25%, transparent 0 50%)
+    0 0 / 2px 2px;
+  image-rendering: pixelated;
+}
+
+/* A dialog is a typographic root. It renders in the top layer but still
+ * INHERITS from wherever it is mounted, and some mount points are label
+ * stamps (a message's `.vex-micro` meta row): without this reset a whole
+ * report form came out in caps mono at label tracking. */
+dialog.vex-dialog {
+  font-family: var(--font-sans);
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 /* ── Approval focus mask ────────────────────────────────────────────────────
  * A pending approval is the one thing blocking the run; the rest of the
- * shell (transcript, composer, sidebar) dims and softly blurs behind it so
- * attention lands on the card. Same dim + blur tokens as the dialog
- * `::backdrop` and the lightbox mask above, for one masking vocabulary
- * across the app. `position: fixed` so it covers the viewport regardless of
- * where `ApprovalsRegion` sits in the scrolling transcript, and
+ * session (transcript, composer) sits under the paper dither so attention
+ * lands on the card (docs/design/V10-SPREAD.md section 7). Same veil as the
+ * dialog `::backdrop` and the lightbox mask, for one masking vocabulary across
+ * the app. ABSOLUTE, not fixed: its containing block is the session panel, so
+ * it covers the session page and leaves the left page and the running head
+ * sharp (chat-transcript.css carries the same veil onto the BOOK body).
  * `pointer-events: none` because this is a visual cue, not a second click
- * trap on top of the region's own `aria-live` announcement — the run is
- * already paused; nothing under the mask needs to be unreachable. */
+ * trap on top of the region's own `aria-live` announcement: the run is
+ * already paused, and nothing under the mask needs to be unreachable. */
 .vex-approval-mask {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 40;
   pointer-events: none;
-  background: var(--vex-alias-bg-mask-1);
-  backdrop-filter: var(--vex-mask-blur);
 }
 
 /* ── Notification toast stack ──────────────────────────────────────────────
- * The app's ONE floating notification surface (lib/notifications), on the dark
- * chrome plate in both themes, stacked top-center: at most three, plus the
+ * The app's ONE floating notification surface (lib/notifications), on the
+ * reversed chrome plate (ink by day, paper at night), stacked top-center: at most three, plus the
  * "+N more" report. The pre-model single-slot banner and the bottom-right
  * sticky card were folded into it in B2.2, so this is the only fixed toast
  * region left and nothing has to be offset around anything else.
@@ -66,11 +84,10 @@ dialog.vex-dialog::backdrop {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: var(--vex-alias-toast-bg);
-  color: var(--vex-alias-label-on-chrome);
-  box-shadow: var(--shadow-lv3);
+  padding: 12px 10px 12px 16px;
+  background: var(--vex-alias-bg-base);
+  border: 1px solid var(--vex-alias-rule-ink);
+  color: var(--vex-alias-label-primary);
   animation: vex-notification-toast-in 160ms ease-out;
 }
 
@@ -104,21 +121,21 @@ dialog.vex-dialog::backdrop {
   margin-top: 1px;
 }
 
-.vex-notification-toast[data-severity="warning"] .vex-notification-toast-icon {
-  color: var(--vex-alias-state-warn);
-}
-
-.vex-notification-toast[data-severity="error"] .vex-notification-toast-icon {
-  color: var(--vex-alias-state-error);
+/* Severity is the swatch's fill, never a hue (V10: status by fill). */
+.vex-notification-toast-icon {
+  color: var(--vex-alias-accent-primary);
 }
 
 .vex-notification-stack-overflow {
   align-self: center;
   padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--vex-alias-toast-bg);
-  color: var(--vex-alias-label-on-chrome);
+  background: var(--vex-alias-bg-base);
+  border: 1px solid var(--vex-alias-rule-ink);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-mono);
   font-size: 11px;
+  letter-spacing: var(--tracking-chip);
+  text-transform: uppercase;
   line-height: 16px;
 }
 
@@ -136,23 +153,19 @@ dialog.vex-dialog::backdrop {
   }
 }
 
-/* Plate-local controls for the toast rows. White-alpha literals: the plate is
- * dark in both themes, so the theme-flipping interactive/skeleton aliases
- * would go invisible in celeris. */
-.vex-notification-ghost {
-  transition: background-color 100ms ease;
-}
-
+/* Toast row controls: a plain hover wash and a rule track for the progress
+ * bar. */
 .vex-notification-ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--vex-alias-interactive-hover);
 }
 
 .vex-notification-track {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--vex-alias-rule);
 }
 
 /* ── Tooltip ───────────────────────────────────────────────────────────────
- * Dark plate + white text in both themes; fade only, no arrow. */
+ * The reversed chrome plate (ink by day, paper at night), 28px; no arrow, no
+ * motion. */
 .vex-tooltip {
   position: fixed;
   z-index: 1200;
@@ -160,8 +173,7 @@ dialog.vex-dialog::backdrop {
    * right-edge anchors would wrap early; max-content sizes by the label. */
   width: max-content;
   max-width: 50vw;
-  padding: 3px 7px;
-  border-radius: 8px;
+  padding: 4px 8px;
   background: var(--vex-alias-tooltip-bg);
   color: var(--vex-alias-label-on-chrome);
   font-size: 13px;
@@ -169,9 +181,6 @@ dialog.vex-dialog::backdrop {
   white-space: pre-line;
   overflow-wrap: break-word;
   pointer-events: none;
-  /* Was `150ms cubic-bezier(0.4, 0, 0.2, 1)`: the base step and the standard
-   * curve, spelled by hand. Tokens now, so the family stays closed. */
-  animation: vex-tooltip-in var(--vex-duration-base) var(--vex-ease-standard);
 }
 
 .vex-tooltip[data-side="right"],
@@ -191,20 +200,8 @@ dialog.vex-dialog::backdrop {
   transform: translate(-50%, -100%);
 }
 
-@keyframes vex-tooltip-in {
-  from {
-    opacity: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .vex-tooltip {
-    animation: none;
-  }
-}
-
 /* ── Hover card ────────────────────────────────────────────────────────────
- * 244px preview card on the dark chrome plate in both themes. Hit-testable
+ * 244px preview card on the paper with one rule, like the menu. Hit-testable
  * on purpose: resting the pointer on it holds it open (grace close). */
 .vex-hover-card-root {
   position: relative;
@@ -217,10 +214,9 @@ dialog.vex-dialog::backdrop {
   box-sizing: border-box;
   width: 244px;
   padding: 12px 16px;
-  border-radius: 12px;
-  background: var(--vex-alias-tooltip-bg);
-  color: var(--vex-alias-label-on-chrome);
-  box-shadow: var(--shadow-lv3);
+  background: var(--vex-alias-bg-base);
+  border: 1px solid var(--vex-alias-border-l3);
+  color: var(--vex-alias-label-primary);
 }
 
 /* ── Connection banner ─────────────────────────────────────────────────── */
@@ -232,10 +228,13 @@ dialog.vex-dialog::backdrop {
   z-index: 1200;
   padding: 4px 12px;
   text-align: center;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-status);
+  text-transform: uppercase;
   line-height: 18px;
-  background: var(--vex-alias-state-error);
-  color: var(--vex-alias-label-on-chrome);
+  background: var(--vex-alias-rule-ink);
+  color: var(--vex-alias-label-on-primary);
 }
 
 /* ── Drop overlay ──────────────────────────────────────────────────────────
@@ -250,8 +249,6 @@ dialog.vex-dialog::backdrop {
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  background-color: var(--vex-alias-bg-mask-drop);
-  backdrop-filter: blur(10px);
   animation: vex-drop-overlay-in 160ms ease-out;
 }
 
@@ -306,13 +303,10 @@ dialog.vex-dialog::backdrop {
   padding: 40px;
 }
 
-/* Separate mask layer, not a background on the backdrop: backdrop-filter
- * there would blur the previewed image and close control with the page. */
+/* Separate mask layer under the image and the close control. */
 .vex-lightbox-mask {
   position: absolute;
   inset: 0;
-  background: var(--vex-alias-bg-mask-1);
-  backdrop-filter: var(--vex-mask-blur);
 }
 
 .vex-lightbox-image {
@@ -320,9 +314,7 @@ dialog.vex-dialog::backdrop {
   max-width: min(100%, 1600px);
   max-height: calc(100vh - 80px);
   object-fit: contain;
-  border-radius: 12px;
   background: var(--vex-alias-composer);
-  box-shadow: var(--shadow-lv3);
 }
 
 .vex-lightbox-close {
@@ -335,7 +327,6 @@ dialog.vex-dialog::backdrop {
   width: 36px;
   height: 36px;
   border: 1px solid var(--vex-alias-border-input);
-  border-radius: 999px;
   background: var(--vex-alias-composer);
   color: var(--vex-alias-label-primary);
   cursor: pointer;

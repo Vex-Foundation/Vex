@@ -1,48 +1,47 @@
-/* Shared onboarding accent: the landing's electric cobalt. Applied via the
- * `data-vex-onboarding="true"` attribute on the outer wrapper of each
- * onboarding screen (intro, systemCheck, dockerBootstrap,
- * composeBootstrap, migrations, wizard). Shared primitives read
+/* Shared onboarding accent: the one blue (the periwinkle at night). Applied
+ * via the `data-vex-onboarding="true"` attribute on the outer wrapper of
+ * each onboarding screen (systemCheck, dockerBootstrap, composeBootstrap,
+ * migrations, wizard, unlock). Shared primitives read
  * `var(--vex-onboarding-accent, var(--color-accent-primary))` so they
- * degrade to the global accent outside the onboarding flow.
- *
- * The per-screen aliases below are kept as zero-touch back-compat for any
- * Tailwind arbitrary-value references in sub-files; a future cleanup
- * commit can drop them after grep confirms no remaining usages. */
+ * degrade to the global accent outside the onboarding flow. */
 [data-vex-onboarding="true"] {
   --vex-onboarding-accent: var(--color-accent-primary);
-  /* Ink canvas — identical to the shell base so onboarding and shell read
-   * as one continuous room. */
-  --vex-onboarding-bg: var(--vex-alias-bg-base);
   /* Project the onboarding accent through the shadcn aliases so stock
    * Button/Input/focus-ring inside wizard forms and the unlock screen
-   * speak the same electric cobalt as the keys. */
+   * speak the same blue. */
   --color-primary: var(--vex-onboarding-accent);
   --color-ring: var(--vex-onboarding-accent);
 }
 
-/* RHC borrows one restrained atmospheric cue from the Light it up workspace.
- * The offset and tight negative spread keep this a soft pool of Robin Neon
- * beneath the section, not a resting halo or a colored card surface. Core stays
- * neutral. Celeris uses the workspace's darker Robinhood expression so the
- * shadow remains visible without turning fluorescent on paper. */
-:root {
-  --vex-lighter-rhc-shadow-color: color-mix(
-    in srgb,
-    #ccff00 24%,
-    transparent
+/* The risk callout (docs/design/V10-SPREAD.md section 1): a 1.5px ink frame
+ * with a hatched left band, ink type, never blue and never a status hue.
+ * The pre-shell's notices wear it: a warning the user should weigh before
+ * going on ("Without a wallet, ..."), a failure that stops a step. The wizard
+ * steps render in Settings too, so the class lives with the forms, not the
+ * stage. `--on-print` gives it a field to stand on over the stage print. */
+.vex-callout {
+  position: relative;
+  padding: 12px 14px 12px 26px;
+  border: 1.5px solid var(--vex-alias-rule-ink);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-callout::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 10px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--vex-alias-rule-ink) 0 1px,
+    transparent 1px 4px
   );
 }
-
-[data-vex-theme="celeris"] {
-  --vex-lighter-rhc-shadow-color: color-mix(
-    in srgb,
-    #6d8800 16%,
-    transparent
-  );
-}
-
-.vex-lighter-rhc-shadow {
-  box-shadow: 0 14px 34px -26px var(--vex-lighter-rhc-shadow-color);
+.vex-callout--on-print {
+  background: var(--vex-alias-gate-field);
 }
 
 /* Countersign glint — single one-shot flare on the star the mark already
@@ -87,7 +86,6 @@
 [data-vex-onboarding="true"]::-webkit-scrollbar-thumb,
 [data-vex-onboarding="true"] *::-webkit-scrollbar-thumb {
   background: color-mix(in oklab, var(--vex-onboarding-accent) 38%, transparent);
-  border-radius: 9999px;
   border: 2px solid transparent;
   background-clip: content-box;
 }

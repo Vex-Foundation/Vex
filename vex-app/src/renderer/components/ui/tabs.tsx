@@ -109,9 +109,9 @@ export const TabsList = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement
     <div
       ref={ref}
       role="tablist"
-      // Transparent rail bounded by a hairline, never a filled muted slab.
+      // A hairline under the row; the active tab is underlined in the blue.
       className={cn(
-        "inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-line-3 bg-transparent p-1 text-ink-tertiary",
+        "flex items-center gap-8 border-b border-rule text-ink-secondary",
         className
       )}
       {...props}
@@ -191,13 +191,13 @@ export const TabsTrigger = forwardRef<HTMLButtonElement, TabsTriggerProps>(
         data-tab-value={value}
         onClick={() => ctx.setValue(value)}
         onKeyDown={handleKeyDown}
-        // Chrome-register triggers (13/20 max w500); the active tab is a
-        // quiet interactive wash, not a shadowed slab.
+        // Departure Mono caps, 44px target, a 1.5px underline that sits on the
+        // list's hairline when active.
         className={cn(
-          "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-[13px] leading-5 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "-mb-px inline-flex h-11 items-center gap-2 whitespace-nowrap border-b-[1.5px] font-mono text-[11px] uppercase tracking-status focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           isActive
-            ? "bg-interactive-active text-ink-primary"
-            : "text-ink-tertiary hover:text-ink-primary",
+            ? "border-accent-primary text-accent-primary"
+            : "border-transparent text-ink-secondary hover:text-ink-primary",
           className
         )}
         {...props}

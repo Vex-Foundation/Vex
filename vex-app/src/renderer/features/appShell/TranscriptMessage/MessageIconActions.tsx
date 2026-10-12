@@ -17,7 +17,7 @@ import { ReportIssueDialog } from "../ReportIssueDialog.js";
 import { useCopyFeedback } from "../../../lib/use-copy-feedback.js";
 import { extractMarkdownPlainText } from "../../../lib/markdown/plain-text.js";
 
-/** Shared 20px round action-button chrome for the caption register. */
+/** Shared 20px square action-button chrome for the caption register. */
 function MessageActionButton({
   label,
   dataAttr,
@@ -35,7 +35,7 @@ function MessageActionButton({
       {...{ [dataAttr]: "" }}
       aria-label={label}
       onClick={onClick}
-      className="vex-action-reveal inline-flex h-5 w-5 items-center justify-center rounded-full text-[var(--vex-text-3)] transition-colors hover:bg-interactive-hover hover:text-[var(--vex-text-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+      className="vex-action-reveal inline-flex h-5 w-5 items-center justify-center text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
     >
       {children}
     </button>

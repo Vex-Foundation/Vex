@@ -1,7 +1,8 @@
 /**
  * The small round protocol mark on a tool card — a bundled venue logo when the
  * curated matrix proves one, the venue's monogram ring when it does not, and
- * the act's CATEGORY glyph when there is no venue at all.
+ * the act's CATEGORY glyph when there is no venue at all. The glyph draws in
+ * the current colour, so it takes the blue of the ledger line it sits on.
  *
  * Transcript-side WRAPPER only: it owns the venue-string → resolution step and
  * the category-glyph fallback the feed rows do not have. The artwork itself is
@@ -37,7 +38,7 @@ export function ProtocolMark({
     return (
       <FallbackGlyph
         size={size}
-        className={cn("shrink-0 text-[var(--vex-text-3)]", className)}
+        className={cn("shrink-0", className)}
       />
     );
   }

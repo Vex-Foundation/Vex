@@ -42,7 +42,7 @@ function SettledThought({
         aria-expanded={open}
         aria-controls={bodyId}
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 rounded-[4px] text-left text-[13px] font-medium text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+        className="flex items-center gap-1.5 text-left font-mono text-[11px] uppercase leading-5 tracking-status text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
       >
         <IconChevronRight
           size={11}
@@ -53,7 +53,7 @@ function SettledThought({
         id={bodyId}
         open={open}
         triggerRef={triggerRef}
-        className="vex-reasoning-prose mt-1 break-words border-l border-[var(--vex-line)] pl-3 text-[14px] leading-[1.6]"
+        className="vex-reasoning-prose mt-1 break-words border-l border-rule pl-3 text-[14px] leading-[1.6]"
       >
         <MarkdownContent text={text} />
       </ExpandRegion>

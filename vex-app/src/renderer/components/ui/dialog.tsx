@@ -16,7 +16,7 @@
  *     before opening (the trigger).
  *
  * CSP: NO inline `style` attributes anywhere. Every effect is Tailwind
- * + classes from `globals.css`. Backdrop styling (mask + blur) rides on the
+ * + classes from `globals.css`. Backdrop styling (the paper dither) rides on the
  * native `::backdrop` pseudo-element via the `.vex-dialog` rules in
  * `global-css/ui-primitives.css`, so we don't need a separate sibling div.
  *
@@ -40,7 +40,7 @@ import {
   type ReactEventHandler,
   type ReactNode,
 } from "react";
-import { IconWarning } from "../icons/index.js";
+import { Swatch } from "./swatch.js";
 import { cn } from "../../lib/utils.js";
 
 interface DialogContextValue {
@@ -107,7 +107,7 @@ const DIALOG_WIDTH_CLASS: Readonly<Record<DialogSize, string>> = {
  * Spread onto the ONE element the dialog wants focused:
  *
  * ```tsx
- * <Button variant="ghost" onClick={onClose} {...DIALOG_INITIAL_FOCUS}>Cancel</Button>
+ * <Button variant="bare" onClick={onClose} {...DIALOG_INITIAL_FOCUS}>Cancel</Button>
  * ```
  *
  * ## Why an attribute and not React's `autoFocus`
@@ -333,11 +333,10 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
           // default case emits the byte-identical class string every existing
           // 380px consumer already renders.
           `fixed inset-0 m-auto max-h-[85vh] ${DIALOG_WIDTH_CLASS[size]} overflow-hidden`,
-          // Tokens-v2 chrome: solid layer-2 card, the system's boldest
-          // radius (24), lv3 elevation (its 1px layer draws the edge on
-          // dark). The backdrop mask + blur ride the .vex-dialog class in
-          // ui-primitives.css (native ::backdrop pseudo-element).
-          "vex-dialog rounded-[24px] border border-line-1 bg-surface-2 p-0 text-ink-primary shadow-lv3",
+          // V10 chrome: the paper, square, one 1px rule for an edge, no
+          // shadow. The 2px paper dither behind it rides the .vex-dialog
+          // class in ui-primitives/overlays.css (native ::backdrop).
+          "vex-dialog border border-line-3 bg-surface-2 p-0 text-ink-primary",
           "open:flex open:flex-col",
           className,
         )}
@@ -445,8 +444,8 @@ export function DialogHeadlessHeader({
 export type DialogConsequenceTone = "warning" | "notice";
 
 const CONSEQUENCE_TONE_CLASS: Readonly<Record<DialogConsequenceTone, string>> = {
-  warning: "border-warning/40 bg-warning-wash text-warning-label",
-  notice: "border-accent-primary/30 bg-accent-wash text-ink-primary",
+  warning: "border-rule-ink text-ink-primary",
+  notice: "border-rule text-ink-primary",
 };
 
 export interface DialogConsequenceProps
@@ -497,7 +496,7 @@ export const DialogConsequence = forwardRef<
     )}
     {...props}
   >
-    <IconWarning size={14} className="mt-0.5 shrink-0" />
+    <Swatch state={tone === "warning" ? "warning" : "draft"} size={10} className="mt-1 shrink-0" />
     <div className="flex min-w-0 flex-1 flex-col gap-1.5">{children}</div>
   </div>
 ));

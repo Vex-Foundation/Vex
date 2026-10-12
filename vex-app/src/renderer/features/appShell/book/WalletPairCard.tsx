@@ -39,14 +39,9 @@
  */
 
 import type { JSX } from "react";
-import {
-  ETHEREUM_CHAIN_ID,
-  SOLANA_CHAIN_ID,
-} from "@shared/chains/display.js";
 import { useSessionWallets } from "../../../lib/api/session-wallets.js";
 import { useProject } from "../../../lib/api/projects.js";
 import { AddressDisplay } from "../../../components/common/AddressDisplay.js";
-import { ChainIcon } from "../../../components/common/ChainIcon.js";
 import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
 import type { PortfolioCardScope } from "./portfolio/portfolio-scope.js";
 
@@ -107,20 +102,12 @@ export function WalletPairCard({
             : "No wallets selected for this project - wallet tools stay disabled."}
         </CardStateNote>
       ) : (
-        <ul className="flex flex-col" data-vex-area="deposit-addresses">
+        <ul className="flex flex-col gap-1" data-vex-area="deposit-addresses">
           {view.evm !== null ? (
-            <WalletRow
-              chainId={ETHEREUM_CHAIN_ID}
-              familyCaption="EVM"
-              entry={view.evm}
-            />
+            <WalletRow familyCaption="EVM" entry={view.evm} />
           ) : null}
           {view.solana !== null ? (
-            <WalletRow
-              chainId={SOLANA_CHAIN_ID}
-              familyCaption="SOL"
-              entry={view.solana}
-            />
+            <WalletRow familyCaption="SOL" entry={view.solana} />
           ) : null}
         </ul>
       )}
@@ -195,31 +182,21 @@ function selectWalletPair(
  * so the row always names WHICH chain family the address belongs to.
  */
 function WalletRow({
-  chainId,
   familyCaption,
   entry,
 }: {
-  readonly chainId: number;
   readonly familyCaption: string;
   readonly entry: WalletPairEntry;
 }): JSX.Element {
   return (
-    <li className="flex flex-col gap-1.5 border-b border-line-1 py-2 first:pt-0.5 last:border-b-0 last:pb-1">
-      <div className="flex items-center gap-2">
-        <ChainIcon chainId={chainId} size={13} />
+    <li className="vex-wal vex-wal--pair">
+      <span className="vex-wal__k">
+        {familyCaption}
         {entry.label.length > 0 ? (
-          <span className="min-w-0 truncate text-[12px] text-ink-primary">
-            {entry.label}
-          </span>
+          <em className="vex-ch__tag not-italic">{entry.label}</em>
         ) : null}
-        <span className="shrink-0 text-[10.5px] text-ink-tertiary">
-          {familyCaption}
-        </span>
-      </div>
-      <AddressDisplay
-        address={entry.address}
-        className="self-start px-2 py-0.5"
-      />
+      </span>
+      <AddressDisplay address={entry.address} />
     </li>
   );
 }

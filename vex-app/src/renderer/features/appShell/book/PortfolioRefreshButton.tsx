@@ -9,7 +9,7 @@
  * deliberately quiet: an icon in the card's trailing slot, not a call to action.
  *
  * THREE STATES, all honest:
- *   - in flight  → disabled, spinning, "Refreshing…";
+ *   - in flight  → disabled, the pixel loader;
  *   - throttled  → the server's own outcome, rendered with its retry hint. The
  *                  call is rate-limited in main at 30s because it spends
  *                  provider quota, and pretending it succeeded would teach the
@@ -22,6 +22,7 @@
  */
 
 import { useCallback, useState, type JSX } from "react";
+import { PxIcon } from "../../../components/icons/index.js";
 import { usePortfolioRefresh } from "../../../lib/api/portfolio.js";
 
 type RefreshFeedback =
@@ -56,52 +57,30 @@ export function PortfolioRefreshButton(): JSX.Element {
   }, [inFlight, refresh]);
 
   return (
-    <div className="flex flex-col items-end gap-0.5">
+    <span className="relative inline-flex">
       <button
         type="button"
         onClick={() => void onClick()}
         disabled={inFlight}
         aria-label="Refresh portfolio"
         title="Refresh portfolio"
-        className="rounded p-1 text-ink-tertiary transition-colors hover:text-ink-primary disabled:cursor-not-allowed disabled:opacity-50"
+        className="vex-bk__key disabled:cursor-not-allowed disabled:opacity-50"
+        style={{ minWidth: 20, height: 20 }}
       >
-        <RefreshGlyph spinning={inFlight} />
+        <PxIcon name={inFlight ? "loading" : "refresh"} />
       </button>
-      {feedback.kind === "throttled" ? (
-        <span className="text-[10px] tabular-nums text-ink-tertiary">
-          just refreshed - retry in {feedback.retryAfterSeconds}s
+      {feedback.kind !== "idle" ? (
+        <span
+          role={feedback.kind === "throttled" ? undefined : "status"}
+          className="vex-bs__fb"
+        >
+          {feedback.kind === "throttled"
+            ? `just refreshed - retry in ${feedback.retryAfterSeconds}s`
+            : feedback.kind === "partial"
+              ? "some chains could not refresh - showing last known balances"
+              : "could not refresh - showing last known"}
         </span>
       ) : null}
-      {feedback.kind === "partial" ? (
-        <span role="status" className="text-[10px] text-warning-label">
-          some chains could not refresh - showing last known balances
-        </span>
-      ) : null}
-      {feedback.kind === "unavailable" ? (
-        <span className="text-[10px] text-warning-label">
-          could not refresh - showing last known
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
-function RefreshGlyph({ spinning }: { readonly spinning: boolean }): JSX.Element {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className={spinning ? "animate-spin" : undefined}
-    >
-      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-      <path d="M21 3v6h-6" />
-    </svg>
+    </span>
   );
 }

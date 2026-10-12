@@ -160,7 +160,7 @@ export function StudioProjectsSection({
         <button
           type="button"
           onClick={onRetry}
-          className="rounded px-1 text-[12px] leading-[18px] text-ink-secondary underline underline-offset-2 hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+          className="px-1 text-[12px] leading-[18px] text-ink-secondary underline underline-offset-2 hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
         >
           {STUDIO_PROJECTS_RETRY}
         </button>
@@ -221,7 +221,7 @@ export function StudioProjectsSection({
                         current === project.id ? null : project.id,
                       )
                     }
-                    className="flex h-6 w-6 items-center justify-center rounded text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+                    className="flex h-6 w-6 items-center justify-center text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
                   >
                     <IconEllipsis size={14} />
                   </button>
@@ -239,7 +239,7 @@ export function StudioProjectsSection({
           <button
             type="button"
             onClick={() => onShowAllChange(!showAll)}
-            className="mt-0.5 flex h-7 w-full items-center rounded-lg px-2 text-left text-[12px] leading-[18px] text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+            className="mt-0.5 flex h-7 w-full items-center px-2 text-left text-[12px] leading-[18px] text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
           >
             {showAll
               ? STUDIO_SHOW_FEWER_PROJECTS

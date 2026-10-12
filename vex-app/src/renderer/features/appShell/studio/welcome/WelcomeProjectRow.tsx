@@ -21,7 +21,7 @@
 import type { JSX } from "react";
 import type { ProjectDto } from "@shared/schemas/projects.js";
 import { Tooltip } from "../../../../components/ui/tooltip.js";
-import { StateDot } from "../../../../components/ui/state-dot.js";
+import { Swatch } from "../../../../components/ui/swatch.js";
 import { ProjectPermissionState } from "../ProjectPermissionState.js";
 import { worstDriftState } from "../sidebar/project-row-model.js";
 import {
@@ -58,9 +58,9 @@ export function WelcomeProjectRow({
         onClick={onSelect}
         aria-description={description}
         data-vex-project-drift={drifted ? (drift ?? undefined) : undefined}
-        className="group flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="group flex w-full items-center gap-3 border-b border-rule-quiet px-2 py-2 text-left hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <StateDot
+        <Swatch
           state={drifted ? "warning" : "done"}
           size={10}
           label={

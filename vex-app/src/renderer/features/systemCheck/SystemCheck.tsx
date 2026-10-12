@@ -1,15 +1,14 @@
 /**
- * System Check screen — the first slide on the cobalt continuum after
+ * System Check screen: the first screen on the stage after
  * the Chronos Gate cold open (first-run / remediation path; returning
  * users skip it entirely via the gate's orchestrator).
  *
- * Visual system (Chronos rebrand, A2 plate + AMENDMENT A3 boxless): the
- * SetupGate plate continues underneath (`SetupFrame`), a serif
- * sentence-case title sits above the four probe rows, which rest
- * DIRECTLY on the plate separated by hairlines (the container card is
- * retired). Status is a colored word, never a stamp; a probe in flight
- * shows the inline VexLoader ring. The rows rise once (`.vex-rise`
- * ladder) and rest still — no cascade, no counters, no ledger indexes.
+ * Visual system (docs/design/V10-SPREAD.md section 2): the screen is a
+ * paper page on the stage (`SetupFrame`), a serif sentence-case title above
+ * the four probe rows, separated by hairlines. Status is shown by fill: a
+ * swatch beside the mono word; a probe in flight shows the ongoing swatch at
+ * size (the VexLoader). The rows rise once (`.vex-rise` ladder) and rest
+ * still.
  *
  * Data flow is unchanged: three TanStack Query hooks (`useSystemHealth`,
  * `useDockerStatus`, `useEnvState`) feed four probe rows, each row
@@ -89,8 +88,7 @@ export function SystemCheck(): JSX.Element {
       title="System check"
       subline="Four quick checks before setup begins."
     >
-      {/* Probe rows sit directly on the plate (AMENDMENT A3 — the
-       * container card is retired; rows separate by hairline only). */}
+      {/* Probe rows on the leaf, separated by hairline only. */}
       <div className="vex-rise vex-rise-d1">
         <ProbeRows
           platform={platform}
@@ -105,11 +103,11 @@ export function SystemCheck(): JSX.Element {
       </div>
 
       {health.data?.ok && health.data.data.translocated ? (
-        // Danger RAIL (A3 alert grammar) — still deliberately loud
-        // (invariant: the translocation warning stays loud here).
+        // The risk callout (ink frame, hatched edge) - still deliberately
+        // loud (invariant: the translocation warning stays loud here).
         <div
           role="alert"
-          className="vex-rise vex-rise-d2 mt-5 border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] pl-3 text-sm leading-relaxed text-[color-mix(in_oklab,var(--color-danger)_70%,white)]"
+          className="vex-rise vex-rise-d2 vex-callout mt-5"
         >
           Vex is running from a quarantined location (App Translocation). Move
           Vex.app to /Applications in Finder and relaunch.

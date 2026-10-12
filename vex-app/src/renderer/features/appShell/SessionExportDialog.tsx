@@ -56,7 +56,7 @@ export function SessionExportDialog({
         <DialogFooter className="border-line-2">
           <Button
             type="button"
-            variant="ghost"
+            variant="bare"
             onClick={onCancel}
             disabled={pending}
             // The safer choice takes focus (rule 08). `DialogContent` moves

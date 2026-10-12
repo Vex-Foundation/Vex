@@ -30,7 +30,7 @@ export function ElapsedCounter({
     return () => window.clearInterval(id);
   }, [startedAtMs]);
   return (
-    <span className="shrink-0 tabular-nums text-[11px] text-[var(--vex-text-3)]">
+    <span className="shrink-0 font-mono text-[11px] tracking-[0.02em] tabular-nums text-ink-secondary">
       {label}
     </span>
   );

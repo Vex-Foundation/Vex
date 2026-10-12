@@ -84,11 +84,11 @@ export function GlobalApprovalItem({
   return (
     <div
       data-vex-area="global-approval-item"
-      className="border-b border-[var(--vex-line)] px-3 py-2 last:border-b-0"
+      className="border-b border-rule px-3 py-3 last:border-b-0"
     >
       <div className="flex items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="min-w-0 truncate font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-3)]">
+          <span className="min-w-0 truncate font-mono text-[11px] uppercase tracking-status text-ink-secondary">
             {sessionLabel}
           </span>
           {row.projectId !== null ? (
@@ -96,7 +96,7 @@ export function GlobalApprovalItem({
               data-vex-area="approval-project-tag"
               title={approvalProjectDetail(row.projectId, row.projectName)}
               aria-label={approvalProjectDetail(row.projectId, row.projectName)}
-              className="min-w-0 shrink truncate rounded-[3px] border border-[var(--vex-line-strong)] px-1 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-2)]"
+              className="inline-flex h-[22px] min-w-0 shrink items-center truncate px-2 font-mono text-[11px] uppercase tracking-chip text-ink-secondary outline outline-1 -outline-offset-1 outline-rule"
             >
               {approvalProjectDisplay(row.projectId, row.projectName)}
             </span>
@@ -106,7 +106,7 @@ export function GlobalApprovalItem({
           <button
             type="button"
             onClick={openSession}
-            className="shrink-0 rounded-[3px] font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-2)] hover:text-[var(--vex-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+            className="shrink-0 font-mono text-[11px] uppercase tracking-status text-accent-primary hover:underline hover:underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           >
             Open session
           </button>

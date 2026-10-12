@@ -31,9 +31,9 @@ import type { StudioFilesStatus } from "@shared/schemas/studio-installer.js";
 import { IconWarning } from "../../../../components/icons/index.js";
 import { Pill } from "../../../../components/ui/pill.js";
 import {
-  StateDot,
-  type StateDotState,
-} from "../../../../components/ui/state-dot.js";
+  Swatch,
+  type SwatchState,
+} from "../../../../components/ui/swatch.js";
 import { agentPresentation } from "./studio-agent-catalogue.js";
 import {
   ARTIFACT_KIND_LABELS,
@@ -62,7 +62,7 @@ import {
  * than a row with no glyph.
  */
 const ARTIFACT_STATE_DOTS: Readonly<
-  Record<StudioFilesStatus["artifacts"][number]["state"], StateDotState>
+  Record<StudioFilesStatus["artifacts"][number]["state"], SwatchState>
 > = {
   current: "done",
   drifted: "warning",
@@ -107,7 +107,7 @@ export function ProjectFilesPanel({
         type="button"
         onClick={onRepair}
         data-vex-project-files-repair=""
-        className="self-start rounded px-1 font-medium text-accent-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        className="self-start px-1 font-medium text-accent-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
         {PROJECT_FILES_REPAIR_ACTION}
       </button>
@@ -145,12 +145,12 @@ export function ProjectFilesPanel({
                 key={`${artifact.kind}:${artifact.agentId ?? "-"}:${String(index)}`}
                 data-vex-artifact-state={artifact.state}
                 data-vex-artifact-kind={artifact.kind}
-                className="flex flex-col gap-1 rounded-lg border border-line-2 px-3 py-2"
+                className="flex flex-col gap-1 border border-line-2 px-3 py-2"
               >
                 <div className="flex items-center justify-between gap-2">
                   {/* The leading state slot. No `label`: the Pill on the same
                     * line carries the verdict word already. */}
-                  <StateDot
+                  <Swatch
                     state={ARTIFACT_STATE_DOTS[artifact.state]}
                     size={8}
                     className="shrink-0"

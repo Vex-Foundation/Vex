@@ -61,8 +61,8 @@ function OutcomeLabel({
       data-vex-tool-leg-outcome={outcome}
       className={
         warn
-          ? "shrink-0 rounded-[3px] border border-[color-mix(in_oklab,var(--color-warning)_40%,transparent)] px-1 py-px text-[10px] uppercase tracking-[0.12em] text-[var(--color-warning)]"
-          : "shrink-0 rounded-[3px] border border-[var(--vex-line)] px-1 py-px text-[10px] uppercase tracking-[0.12em] text-[var(--vex-text-3)]"
+          ? "shrink-0 px-1.5 font-mono text-[11px] uppercase leading-[18px] tracking-chip text-accent-primary outline outline-1 -outline-offset-1 outline-accent-primary"
+          : "shrink-0 px-1.5 font-mono text-[11px] uppercase leading-[18px] tracking-chip text-ink-secondary outline outline-1 -outline-offset-1 outline-rule"
       }
     >
       {label}
@@ -82,10 +82,10 @@ function Leg({
     <span className="inline-flex min-w-0 items-center gap-1">
       <TokenIcon symbol={leg.token.iconSymbol} size={13} />
       {showAmount && leg.amount !== null ? (
-        <span className="tabular-nums text-[var(--vex-text-2)]">{leg.amount}</span>
+        <span className="font-mono tabular-nums tracking-[0.02em] text-ink-secondary">{leg.amount}</span>
       ) : null}
       <span
-        className="truncate text-[var(--vex-text-2)]"
+        className="truncate font-mono tracking-[0.02em] text-ink-secondary"
         title={leg.token.full ?? undefined}
       >
         {leg.token.text}
@@ -103,7 +103,7 @@ export function ToolLegLine({ legs }: { readonly legs: ToolLegPair }): JSX.Eleme
     >
       <OutcomeLabel outcome={legs.outcome} />
       <Leg leg={legs.from} showAmount={showAmount} />
-      <span aria-hidden className="shrink-0 text-[var(--vex-text-3)]">
+      <span aria-hidden className="shrink-0 text-ink-secondary">
         →
       </span>
       <Leg leg={legs.to} showAmount={showAmount} />
@@ -149,7 +149,7 @@ export function ToolSingleLegLine({
       <span
         role="img"
         aria-label={DIRECTION_LABELS[leg.direction]}
-        className="shrink-0 text-[var(--vex-text-3)]"
+        className="shrink-0 text-ink-secondary"
       >
         {DIRECTION_GLYPHS[leg.direction]}
       </span>

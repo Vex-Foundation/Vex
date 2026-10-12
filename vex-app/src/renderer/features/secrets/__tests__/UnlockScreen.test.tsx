@@ -168,19 +168,29 @@ describe("UnlockScreen", () => {
     expect(getByRole("button", { name: /Unlock/i })).toBeTruthy();
   });
 
-  it("wears the onboarding chrome (PR9 - hallmark + data-vex-onboarding)", () => {
-    // Regression guard: lock screen must stay visually consistent with
-    // the rest of the onboarding flow (Countersign/NOTARY rebrand: the
-    // photo backdrop is gone; the hallmark mark + shared accent scope
-    // are the chrome). Without this assertion, a future edit that
-    // strips the chrome would slip past the suite because the
-    // form-level tests don't care about the wrapper.
+  it("stands on the stage (the d1 composition + data-vex-onboarding)", () => {
+    // Regression guard: the lock screen must stay one piece with the rest
+    // of the pre-shell. It stands on the stage print in the open
+    // composition: the release as the giant counter on the sky, the form in
+    // the right column, the forgot link on the ground. Without this
+    // assertion, a future edit that strips the composition would slip past
+    // the suite because the form-level tests don't care about the wrapper.
     const view = renderUnlockScreen();
     const root = view.container.querySelector('[data-vex-screen="unlock"]');
     expect(root?.getAttribute("data-vex-onboarding")).toBe("true");
-    expect(
-      view.container.querySelector('img[src="/brand/vex-mark-white.svg"]'),
-    ).not.toBeNull();
+    expect(root?.classList.contains("vex-stage")).toBe(true);
+    expect(root?.classList.contains("vex-stage--leaf")).toBe(false);
+    // The counter is the release of the running build (the test build is
+    // 0.0.0-test): the core numbers drawn, the whole version announced.
+    const counter = view.container.querySelector(".vex-unl .vex-stage-counter");
+    expect(counter?.textContent).toBe("(0.0.0)");
+    expect(counter?.getAttribute("aria-hidden")).toBe("true");
+    expect(view.getByText("v0.0.0-test")).toBeTruthy();
+    expect(view.getByRole("heading", { name: "Welcome back." })).toBeTruthy();
+    // The forgot link runs along the dark ground, not in the form.
+    const forgot = view.getByRole("button", { name: /I forgot my password/i });
+    expect(forgot.closest(".vex-stage-ground")).not.toBeNull();
+    expect(forgot.closest("form")).toBeNull();
   });
 
   it("rejects a password shorter than PASSWORD_MIN_LENGTH without calling unlock", async () => {
@@ -250,11 +260,11 @@ describe("UnlockScreen", () => {
     expect(mockOpenLogsFolder).toHaveBeenCalledTimes(1);
   });
 
-  it("clears the password input and arms the exit curtain on a successful unlock", async () => {
-    // Phase 2b (decree C.3): UnlockScreen no longer flips the view itself —
-    // it arms the CurtainExit, which covers the screen with the cobalt
-    // plate, flips to unlockReturnView beneath it, and splits open. The
-    // curtain plays ONLY after the unlock IPC succeeds.
+  it("clears the password input and arms the page turn on a successful unlock", async () => {
+    // UnlockScreen never flips the view itself: it arms the page turn
+    // (CurtainExit), which brings the right page in over the print, flips to
+    // unlockReturnView beneath it, and lifts away. The turn plays ONLY after
+    // the unlock IPC succeeds.
     mockUnlockReturnView = "appShell";
     mockUnlock.mockResolvedValue({ ok: true, data: { unlocked: true } });
     const view = renderUnlockScreen();
@@ -266,7 +276,7 @@ describe("UnlockScreen", () => {
       expect(mockBeginUnlockCurtain).toHaveBeenCalledTimes(1);
     });
     expect(input.value).toBe("");
-    // The view flip is the curtain's job now, mid-cover.
+    // The view flip is the page turn's job, once the leaf has landed.
     expect(mockSetCurrentView).not.toHaveBeenCalled();
   });
 

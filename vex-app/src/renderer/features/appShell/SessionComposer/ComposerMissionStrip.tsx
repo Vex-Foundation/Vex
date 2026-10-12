@@ -1,9 +1,12 @@
 /**
- * Run-state strip (A28, generalized in M5): a quiet one-line band above the
- * composer while the session is doing something, naming that state and - for a
- * mission session carrying an enabled action plan - opening the read-only plan
- * review. Read-only: mission controls stay in `MissionControls`; this strip
- * never mutates.
+ * Run-state band (A28, generalized in M5): the quiet one-line band above the
+ * composer field while the session is doing something (reference d3, "AGENT ·
+ * RUNNING"), naming that state behind its swatch - status by fill: dot screen
+ * while it runs, target while a signature or a form is awaited, hatch while it
+ * is paused or asleep, the ink cross on an error - and, for a mission session
+ * carrying an enabled action plan, opening the read-only plan review.
+ * Read-only: mission controls stay in `MissionControls`; this band never
+ * mutates.
  *
  * TWO SOURCES, ONE BAND. A mission session reads the run STATUS (its states are
  * run-lifecycle states, and `paused_wake` already has its own rich sleeping
@@ -18,6 +21,7 @@ import { lazy, Suspense, useState, type JSX } from "react";
 import type { RuntimeActivity } from "@shared/schemas/runtime.js";
 import type { MissionRunStatus } from "@shared/schemas/sessions.js";
 import { useSessionPlan } from "../../../lib/api/sessions.js";
+import { Swatch, type SwatchState } from "../../../components/ui/swatch.js";
 import {
   formatWakeTime,
   readSessionActivityReadout,
@@ -41,6 +45,21 @@ const STATUS_WORD: Readonly<Record<MissionRunStatus, string>> = {
   failed: "FAILED",
   stopped: "STOPPED",
   cancelled: "CANCELLED",
+};
+
+/** The fill each live run state draws (the eagle's own state grammar). */
+const STATUS_SWATCH: Readonly<Record<MissionRunStatus, SwatchState>> = {
+  running: "ongoing",
+  paused_approval: "warning",
+  paused_user: "draft",
+  paused_wake: "draft",
+  paused_error: "error",
+  paused_plan_acceptance: "warning",
+  paused_user_form: "warning",
+  completed: "done",
+  failed: "error",
+  stopped: "idle",
+  cancelled: "idle",
 };
 
 /** Settled states keep the composer quiet - the strip is for LIVE runs. */
@@ -78,17 +97,20 @@ export function ComposerMissionStrip({
       data-vex-area="composer-mission-strip"
       data-status={band.dataStatus}
       data-vex-activity={band.activityState ?? undefined}
-      className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-interactive-hover px-3 py-1 text-[12px] leading-[18px] text-ink-secondary"
+      className="flex h-[26px] items-center justify-between gap-3"
     >
-      <span className="vex-micro-label vex-micro-label--wide uppercase text-ink-secondary">
-        {band.text}
+      <span className="inline-flex min-w-0 items-center gap-[9px] font-mono text-[11px] uppercase leading-none tracking-status text-ink-secondary">
+        <span className="inline-flex shrink-0 text-accent-primary">
+          <Swatch state={band.swatch} size={9} />
+        </span>
+        <span className="min-w-0 truncate">{band.text}</span>
       </span>
       {missionStatus !== null && plan !== null && plan.enabled ? (
         <>
           <button
             type="button"
             aria-label="Review the mission action plan"
-            className="shrink-0 text-ink-secondary underline decoration-line-4 underline-offset-2 transition-colors duration-100 hover:text-ink-primary"
+            className="shrink-0 font-mono text-[11px] uppercase tracking-status text-accent-primary transition-colors duration-100 hover:underline hover:underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             onClick={() => setPlanOpen(true)}
           >
             View plan
@@ -116,6 +138,8 @@ interface StripBand {
   readonly dataStatus: string;
   /** `data-vex-activity` - present only on the activity-driven band. */
   readonly activityState: string | null;
+  /** The fill beside the word. */
+  readonly swatch: SwatchState;
 }
 
 /**
@@ -136,6 +160,7 @@ function resolveBand(
       text: `Mission · ${STATUS_WORD[missionStatus]}`,
       dataStatus: missionStatus,
       activityState: null,
+      swatch: STATUS_SWATCH[missionStatus],
     };
   }
   if (activity === null || activity.kind === "none") return null;
@@ -153,5 +178,11 @@ function resolveBand(
         : `Agent · ${readout.label.toUpperCase()} · until ${wakeAt}`,
     dataStatus: readout.state,
     activityState: readout.state,
+    swatch:
+      readout.state === "running"
+        ? "ongoing"
+        : readout.state === "sleeping"
+          ? "draft"
+          : "idle",
   };
 }

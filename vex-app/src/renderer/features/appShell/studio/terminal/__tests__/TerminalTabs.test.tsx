@@ -388,7 +388,7 @@ describe("terminal state on the tab", () => {
 
   function dotStateOf(name: RegExp): string | null {
     const tab = screen.getByRole("tab", { name });
-    return tab.querySelector("[data-state]")?.getAttribute("data-state") ?? null;
+    return tab.querySelector("[data-s]")?.getAttribute("data-s") ?? null;
   }
 
   it("says RUNNING in words, not only in colour", () => {
@@ -442,7 +442,7 @@ describe("terminal state on the tab", () => {
     const base = twoTabs("g1");
     renderTabs({ ...base, tabs: [...base.tabs, fileTab("f1", "docs/README.md")] });
     expect(
-      screen.getByRole("tab", { name: /README\.md/ }).querySelector("[data-state]"),
+      screen.getByRole("tab", { name: /README\.md/ }).querySelector("[data-s]"),
     ).toBeNull();
   });
 });

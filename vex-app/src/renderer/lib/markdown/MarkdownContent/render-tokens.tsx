@@ -57,7 +57,7 @@ export function renderInline(
         return (
           <code
             key={i}
-            className="rounded-[3px] bg-interactive-hover px-1.5 py-0.5 font-mono text-[13px]"
+            className="bg-surface-3 px-1 py-px font-code text-[13px] text-[var(--vex-alias-code-foreground)]"
           >
             {token.text}
           </code>
@@ -73,7 +73,7 @@ export function renderInline(
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[var(--vex-accent-text)] underline underline-offset-2"
+            className="text-accent-primary underline decoration-1 underline-offset-[3px] hover:text-accent-hover"
           >
             {children}
           </a>
@@ -119,20 +119,21 @@ export function renderBlock(
     case "paragraph":
       return <p key={key}>{renderInline(token.tokens, opts)}</p>;
     case "heading": {
-      // Article variant: long-form static docs earn REAL heading elements in
-      // the serif editorial voice. Chat keeps its original semantic decision
-      // (no h-tags in chat prose).
+      // Article variant: long-form static docs earn REAL heading elements, the
+      // section head in the serif at its 32px floor (docs/design/V10-SPREAD.md
+      // section 1: the serif never sets a word under 32px). Chat keeps its
+      // original semantic decision (no h-tags in chat prose).
       if (opts.variant === "article") {
         if (token.depth <= 2) {
           return (
-            <h2 key={key} className="mt-8 font-serif text-[22px] font-normal text-foreground">
+            <h2 key={key} className="mt-9 font-serif text-[32px] font-normal leading-[1.05] tracking-[-0.012em] text-title">
               {renderInline(token.tokens, opts)}
             </h2>
           );
         }
         // Protocol-entry heading — "### ![Name](/protocols/x.png) Name":
         // a leading LOCAL bundled logo renders as a trustworthy card head
-        // (44px rounded-lg mark + serif name beside it), never a raw inline
+        // (44px square mark + the name beside it), never a raw inline
         // image dump (owner correction 2026-07-20). The logo stays behind
         // `safeArticleImgSrc`; a rejected source falls through to the plain
         // text heading below.
@@ -144,7 +145,7 @@ export function renderBlock(
             return (
               <h3
                 key={key}
-                className="mt-9 flex items-center gap-3.5 text-foreground"
+                className="mt-9 flex items-center gap-3.5 text-ink-primary"
               >
                 {/* aria-hidden: the name text beside the mark carries the
                  * accessible heading; alt would duplicate it. */}
@@ -155,9 +156,9 @@ export function renderBlock(
                   draggable={false}
                   loading="lazy"
                   decoding="async"
-                  className="h-11 w-11 shrink-0 rounded-lg border border-[var(--vex-line)] object-cover"
+                  className="h-11 w-11 shrink-0 border border-rule object-cover"
                 />
-                <span className="font-serif text-[21px] font-normal leading-tight">
+                <span className="text-[17px] font-medium leading-tight">
                   {renderInline(inline.slice(1), opts)}
                 </span>
               </h3>
@@ -165,7 +166,7 @@ export function renderBlock(
           }
         }
         return (
-          <h3 key={key} className="mt-5 text-[15.5px] font-semibold text-foreground">
+          <h3 key={key} className="mt-5 text-[15.5px] font-semibold text-ink-primary">
             {renderInline(token.tokens, opts)}
           </h3>
         );
@@ -178,10 +179,10 @@ export function renderBlock(
           key={key}
           className={
             token.depth === 1
-              ? "mt-5 text-[24px] font-bold leading-[34px] text-foreground"
+              ? "mt-5 text-[24px] font-bold leading-[34px] text-ink-primary"
               : token.depth === 2
-                ? "mt-5 text-[20px] font-semibold leading-[28px] text-foreground"
-                : "mt-4 text-[17px] font-semibold leading-[24px] text-foreground"
+                ? "mt-5 text-[20px] font-semibold leading-[28px] text-ink-primary"
+                : "mt-4 text-[17px] font-semibold leading-[24px] text-ink-primary"
           }
         >
           {renderInline(token.tokens, opts)}
@@ -196,7 +197,7 @@ export function renderBlock(
       return (
         <blockquote
           key={key}
-          className="border-l-2 border-[var(--vex-line-strong)] pl-3 text-[var(--vex-text-2)]"
+          className="border-l-2 border-accent-primary pl-3 text-ink-secondary"
         >
           {renderBlocks(token.tokens ?? [], opts)}
         </blockquote>
@@ -214,7 +215,7 @@ export function renderBlock(
               checked={item.checked === true}
               disabled
               aria-hidden
-              className="mt-1.5 accent-[var(--vex-accent)]"
+              className="mt-1.5 accent-[var(--vex-alias-accent-primary)]"
             />
             <span className="min-w-0">
               {renderBlocks(
@@ -243,7 +244,7 @@ export function renderBlock(
       );
     }
     case "hr":
-      return <hr key={key} className="border-[var(--vex-line)]" />;
+      return <hr key={key} className="border-rule-quiet" />;
     case "text":
       return (
         <p key={key}>
@@ -270,7 +271,7 @@ export function renderBlock(
                 {token.header.map((cell: Tokens.TableCell, i: number) => (
                   <th
                     key={i}
-                    className={`border-b border-[var(--vex-line-strong)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--vex-text-2)] ${alignClass(i)}`}
+                    className={`border-b border-rule px-2 py-1 font-mono text-[11px] uppercase tracking-chip text-ink-secondary ${alignClass(i)}`}
                   >
                     {renderInline(cell.tokens, opts)}
                   </th>
@@ -283,7 +284,7 @@ export function renderBlock(
                   {cells.map((cell: Tokens.TableCell, c: number) => (
                     <td
                       key={c}
-                      className={`border-b border-[var(--vex-line)] px-2 py-1 align-top ${alignClass(c)}`}
+                      className={`border-b border-rule-quiet px-2 py-1 align-top ${alignClass(c)}`}
                     >
                       {renderInline(cell.tokens, opts)}
                     </td>
@@ -345,7 +346,7 @@ function MarkdownImage({
       loading="lazy"
       decoding="async"
       onError={() => setFailed(true)}
-      className="inline-block max-h-[5rem] max-w-[5rem] rounded-[4px] align-text-bottom"
+      className="inline-block max-h-[5rem] max-w-[5rem] align-text-bottom"
     />
   );
 }

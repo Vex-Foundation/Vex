@@ -1,44 +1,60 @@
 /**
- * Button primitive - the variant registry after the F6 legacy sweep.
+ * Button primitive: the V10 variant registry.
  *
  * Pins:
- *   - the registry is exactly {primary, accent, ghost, outline, toolbar,
- *     danger}: the legacy shadcn names (default/secondary/destructive/link)
- *     are deleted, so a revived call site fails here, not silently
- *     falls back to the CVA default;
- *   - `danger` carries the danger fill (the Delete confirm surface reads
- *     it), and the default variant stays `primary` (INK).
+ *   - the registry is exactly {primary, ghost, ink, quiet, armed, bare}; the
+ *     old names (accent, outline, toolbar, danger and the shadcn four) are
+ *     gone, so a revived call site fails here and not silently on the default;
+ *   - primary is the one blue fill and the default;
+ *   - the shape is square and flat: no radius, shadow or blur classes;
+ *   - a quiet button swaps to the blue fill on `data-armed="true"`.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
-import { afterEach } from "vitest";
 import { Button, buttonVariants } from "../button.js";
 
 afterEach(cleanup);
 
+const VARIANTS = ["primary", "ghost", "ink", "quiet", "armed", "bare"] as const;
+
 describe("Button variants", () => {
-  it("danger renders the danger fill; the default stays the primary INK recipe", () => {
-    const { getByRole, rerender } = render(<Button variant="danger">Delete</Button>);
-    expect(getByRole("button").className).toContain("bg-danger");
-    rerender(<Button>Save</Button>);
-    expect(getByRole("button").className).toContain("bg-button-primary");
+  it("the default is the primary blue fill and stamps its hooks", () => {
+    const { getByRole } = render(<Button>Save</Button>);
+    const button = getByRole("button");
+    expect(button.className).toContain("bg-button-accent");
+    expect(button.getAttribute("data-vex-button")).toBe("primary");
+    expect(button.getAttribute("data-vex-button-size")).toBe("default");
   });
 
-  it("the legacy shadcn variant names are gone from the CVA registry", () => {
-    // CVA silently ignores unknown variants (falls back to the default), so
-    // the absence has to be asserted against the emitted classes: a legacy
-    // name must NOT produce its old recipe.
-    for (const legacy of ["default", "secondary", "destructive", "link"]) {
-      const classes = buttonVariants({
-        variant: legacy as unknown as Parameters<
-          typeof buttonVariants
-        >[0] extends { variant?: infer V }
-          ? V
-          : never,
-      });
-      expect(classes).not.toContain("underline-offset-4");
-      expect(classes).not.toContain("bg-danger");
+  it.each(VARIANTS)("%s stamps data-vex-button and stays square and flat", (variant) => {
+    const { getByRole } = render(<Button variant={variant}>x</Button>);
+    const button = getByRole("button");
+    expect(button.getAttribute("data-vex-button")).toBe(variant);
+    expect(button.className).not.toMatch(/rounded|shadow|blur/);
+  });
+
+  it("only primary carries a fill; the others are outlines or bare", () => {
+    for (const variant of ["ghost", "ink", "quiet", "armed", "bare"] as const) {
+      expect(buttonVariants({ variant })).not.toMatch(/(^| )bg-button-accent/);
     }
+  });
+
+  it("the retired variant names do not produce their old recipes", () => {
+    for (const old of ["accent", "outline", "toolbar", "danger", "default", "secondary", "destructive", "link"]) {
+      expect(VARIANTS).not.toContain(old);
+    }
+    for (const variant of VARIANTS) {
+      const classes = buttonVariants({ variant });
+      expect(classes).not.toContain("bg-danger");
+      expect(classes).not.toContain("underline-offset-4");
+    }
+  });
+
+  it("an armed button carries the armed swap and forwards data-armed", () => {
+    const { getByRole } = render(<Button variant="armed" data-armed={true}>Unlock</Button>);
+    const button = getByRole("button");
+    expect(button.getAttribute("data-armed")).toBe("true");
+    expect(button.className).toContain("data-[armed=true]:bg-button-accent");
   });
 });

@@ -48,8 +48,7 @@ import type {
 import type { AgentScanLighterFillEntry } from "@shared/schemas/agent-scan-lighter-entry.js";
 import type { Result } from "@shared/ipc/result.js";
 import {
-  IconChevronRight,
-  IconArrowUpRight,
+  PxIcon,
 } from "../../../components/icons/index.js";
 import type { AgentScanFilters } from "@shared/schemas/agent-scan-feed.js";
 import { useAgentScanInfinite } from "../../../lib/api/portfolio.js";
@@ -210,10 +209,10 @@ export function SessionActivityCard({
       <button
         type="button"
         onClick={openAgentScan}
-        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-[12px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-primary"
+        className="vex-bs__more self-start"
       >
         View all activity
-        <IconChevronRight size={13} />
+        <PxIcon name="chevron-right" />
       </button>
     </PortfolioCard>
   );
@@ -249,7 +248,7 @@ function LighterFillRow({
   const attention = lighterAttentionTradeTypeText(entry.tradeType);
 
   return (
-    <li className="flex flex-col gap-0.5 border-b border-line-1 py-1.5 last:border-b-0 last:pb-0.5">
+    <li className="flex flex-col gap-0.5 border-t border-rule-quiet py-1.5 first:border-t-0">
       <div className="flex items-center gap-1.5">
         <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
           <ProtocolMark mark={resolveProtocolMark("lighter")} size={13} />
@@ -266,18 +265,18 @@ function LighterFillRow({
           />
         ) : null}
       </div>
-      <div className="flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap pl-[20px] text-[10.5px] tabular-nums text-ink-secondary">
+      <div className="flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap pl-[20px] font-mono text-[11px] tabular-nums text-ink-secondary">
         <span className="truncate">{lighterCompactTradeText(entry)}</span>
         <span title={entry.usdAmount} className="shrink-0">
           {lighterUsdSettledText(entry.usdAmount)}
         </span>
         {leverage !== null ? (
-          <span className="shrink-0 text-ink-tertiary" title="Leverage before this fill">
+          <span className="shrink-0 text-ink-secondary" title="Leverage before this fill">
             {leverage}
           </span>
         ) : null}
         {clock !== null ? (
-          <span className="ml-auto shrink-0 text-ink-tertiary">{clock}</span>
+          <span className="ml-auto shrink-0 text-ink-secondary">{clock}</span>
         ) : null}
       </div>
     </li>
@@ -295,7 +294,7 @@ function AgentActivityRow({
   const clock = entryClockText(entry.createdAt);
 
   return (
-    <li className="flex flex-col gap-0.5 border-b border-line-1 py-1.5 last:border-b-0 last:pb-0.5">
+    <li className="flex flex-col gap-0.5 border-t border-rule-quiet py-1.5 first:border-t-0">
       <div className="flex items-center gap-1.5">
         <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
           <ProtocolMark mark={mark} size={13} />
@@ -307,29 +306,27 @@ function AgentActivityRow({
           statusTitle={entry.failureCode ?? undefined}
         />
       </div>
-      {/* The dense numeric line is Inter Tight with `tabular-nums`, NOT mono
-        * — mono is reserved for technical artifacts (code, raw JSON,
-        * addresses, tx hashes). The tabular figure set, not the face, keeps
-        * the column aligned. */}
-      <div className="flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap pl-[20px] text-[10.5px] tabular-nums text-ink-secondary">
+      {/* The dense numeric line is Departure Mono: every figure in the book is
+        * mono, which keeps the columns aligned. */}
+      <div className="flex items-baseline gap-1.5 overflow-hidden whitespace-nowrap pl-[20px] font-mono text-[11px] tabular-nums text-ink-secondary">
         <Leg
           amount={legAmountText(entry.input)}
           symbol={legSymbolText(entry.input)}
           estimated={estimated}
         />
-        <span className="shrink-0 text-ink-tertiary">→</span>
+        <span className="shrink-0 text-ink-secondary">→</span>
         <Leg
           amount={legAmountText(entry.output)}
           symbol={legSymbolText(entry.output)}
           estimated={estimated}
         />
         {estimated ? (
-          <span className="shrink-0 uppercase tracking-[0.14em] text-ink-tertiary">
+          <span className="shrink-0 uppercase tracking-[0.14em] text-ink-secondary">
             est.
           </span>
         ) : null}
         {clock !== null ? (
-          <span className="ml-auto shrink-0 text-ink-tertiary">{clock}</span>
+          <span className="ml-auto shrink-0 text-ink-secondary">{clock}</span>
         ) : null}
         {entry.explorerUrl !== null ? (
           <a
@@ -337,10 +334,10 @@ function AgentActivityRow({
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Open transaction on block explorer"
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] text-ink-tertiary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+            className="inline-flex shrink-0 items-center gap-0.5 uppercase tracking-[0.14em] text-accent-primary hover:text-ink-primary"
           >
             TX
-            <IconArrowUpRight size={10} />
+            <PxIcon name="external" />
           </a>
         ) : null}
       </div>

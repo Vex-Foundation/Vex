@@ -25,6 +25,10 @@ import {
   STUDIO_RAIL_EXPLORER_SHARE_DEFAULT,
 } from "./layout.js";
 import { coerceStudioFileTabs } from "./studio-file-tabs.js";
+import {
+  coerceSessionOrdinals,
+  EMPTY_ORDINAL_LEDGER,
+} from "./session-ordinals.js";
 
 /** Hard bounds on the persisted BOOK rail order (user-writable localStorage). */
 const MAX_BOOK_SECTION_ENTRIES = 32;
@@ -89,6 +93,7 @@ export const PERSISTED_UI_KEYS = [
   "bookTab",
   "studioRailExplorerShare",
   "studioFileTabs",
+  "sessionOrdinals",
 ] as const satisfies readonly (keyof UiState)[];
 
 export type PersistedUiKey = (typeof PERSISTED_UI_KEYS)[number];
@@ -219,6 +224,9 @@ export function coerceBookTab(value: unknown): BookTab {
 //       drop-unrecognised rule, which would have silently discarded the user's
 //       own arrangement of a card that is still there. The FIRST hop that
 //       rewrites rather than seeds, which is why it is spelled out.
+//   v21: `sessionOrdinals` added - the left page's stable `(02)` ledger, which
+//       used to keep its own localStorage key. Seed the empty ledger; it
+//       re-seeds from the session list. Expand-only like every hop above.
 //   v16: `studioRailExplorerShare` added (the Studio rail's vertical split
 //       between the PROJECTS list and the EXPLORER pane, which used to be a
 //       fixed 256px box). Seed the default so an upgrading install hydrates
@@ -289,6 +297,9 @@ export function migrateUiState(persisted: unknown, version: number): unknown {
   }
   if (version < 20 && !("terminalPasteWarning" in next)) {
     next = { ...next, terminalPasteWarning: true };
+  }
+  if (version < 21 && !("sessionOrdinals" in next)) {
+    next = { ...next, sessionOrdinals: EMPTY_ORDINAL_LEDGER };
   }
   return next;
 }
@@ -388,5 +399,6 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     // only a candidate, re-resolved segment by segment through main before a
     // tab exists.
     studioFileTabs: coerceStudioFileTabs(incoming?.studioFileTabs),
+    sessionOrdinals: coerceSessionOrdinals(incoming?.sessionOrdinals),
   };
 }

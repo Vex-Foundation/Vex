@@ -37,17 +37,9 @@
  * file and lets the layout be verified without a canvas.
  */
 
+import { Swatch } from "../../../components/ui/swatch.js";
 import { useMemo, useState, type JSX, type ReactNode } from "react";
-import {
-  IconArrowsUpDown,
-  IconBars,
-  IconChevronLeft,
-  IconClock,
-  IconDroplet,
-  IconFullscreen,
-  IconSparkle,
-  IconUsers,
-} from "../../../components/icons/index.js";
+import { PxIcon } from "../../../components/icons/index.js";
 import { ChainSlugIcon } from "../../../components/common/ChainIcon.js";
 import { PILL_ACTIVE_CLASS, Pill } from "../../../components/ui/pill.js";
 import { cn } from "../../../lib/utils.js";
@@ -258,16 +250,16 @@ export function BoardSpotlight({
           onClick={() => {
             setBoardView("grid");
           }}
-          className="inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-[14px] font-medium leading-[20px] text-ink-secondary transition-colors duration-150 hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+          className="inline-flex items-center gap-1.5 px-1.5 py-1 font-mono text-[11px] uppercase leading-[20px] tracking-[0.14em] text-ink-secondary transition-colors duration-150 hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
         >
-          <IconChevronLeft size={16} />
+          <PxIcon name="chevron-left" size={16} />
           {SPOTLIGHT_BACK_LABEL}
         </button>
         <Pill
           variant="neutral"
           size="md"
           data-vex-area="board-spotlight-pill"
-          className={PILL_ACTIVE_CLASS}
+          className={cn(PILL_ACTIVE_CLASS, "font-mono uppercase tracking-[0.14em]")}
         >
           {SPOTLIGHT_PILL_LABEL}
         </Pill>
@@ -278,7 +270,7 @@ export function BoardSpotlight({
         * for the content that binds it. A TokenCard threshold never decides a
         * region here: the two surfaces hold different content in the same
         * shrinking container, and the Ask VEX drawer shrinks this one too. */}
-      <div className="vex-board-surface vex-board-spotlight-plate flex min-h-0 flex-col gap-4 rounded-2xl border border-line-1 p-4">
+      <div className="vex-board-surface vex-board-spotlight-plate flex min-h-0 flex-col gap-4 border border-rule-quiet p-4">
         <Hero
           heading={heading}
           ticker={ticker}
@@ -307,7 +299,7 @@ export function BoardSpotlight({
         >
           <div
             data-vex-area="board-spotlight-chart-card"
-            className="min-h-[340px] min-w-0 rounded-2xl border border-line-2 bg-board-card p-4"
+            className="min-h-[340px] min-w-0 border border-rule bg-board-card p-4"
           >
             {ChartSlot === undefined ? (
               <p
@@ -433,7 +425,7 @@ function Hero(props: {
       <div className="flex min-w-0 flex-col gap-1">
         <span
           data-vex-area="board-spotlight-name"
-          className="truncate font-display text-[30px] font-bold leading-[36px] tracking-[-0.02em] text-ink-primary"
+          className="truncate text-[26px] font-semibold leading-[36px] text-ink-primary"
           title={props.heading}
         >
           {props.heading}
@@ -500,7 +492,7 @@ function Hero(props: {
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span
             data-vex-area="board-spotlight-price"
-            className="min-w-0 font-display text-[40px] font-bold leading-[46px] tracking-[-0.02em] tabular-nums text-ink-primary"
+            className="min-w-0 font-mono text-[33px] leading-[46px] tabular-nums text-ink-primary"
             // The WHOLE decimal string the provider sent, so the display
             // precision above never becomes the only copy of the figure.
             title={props.priceTitle}
@@ -513,9 +505,9 @@ function Hero(props: {
             className={cn(
               "text-[18px] font-semibold leading-[24px] tabular-nums",
               props.trend === "up"
-                ? "text-success"
+                ? "text-accent-primary"
                 : props.trend === "down"
-                  ? "text-danger"
+                  ? "text-ink-primary"
                   : "text-ink-tertiary",
             )}
           >
@@ -530,10 +522,7 @@ function Hero(props: {
             className="flex items-center gap-2 text-[13px] leading-[18px] text-ink-tertiary"
           >
             {streaming ? (
-              <span
-                aria-hidden
-                className="h-2 w-2 shrink-0 rounded-full bg-success"
-              />
+              <Swatch state="ongoing" size={9} />
             ) : null}
             {freshness}
           </span>
@@ -555,9 +544,9 @@ function Hero(props: {
         aria-pressed
         aria-label={`Leave the spotlight on ${props.ticker}`}
         onClick={props.onLeave}
-        className="vex-board-spotlight-hero-action inline-flex h-7 shrink-0 items-center gap-1.5 self-start rounded-capsule border border-accent-primary/40 bg-accent-wash px-3 text-[13px] font-medium text-accent-primary transition-colors duration-150 hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+        className="vex-board-spotlight-hero-action inline-flex h-7 shrink-0 items-center gap-1.5 self-start border border-accent-primary bg-accent-wash px-3 font-mono text-[11px] uppercase tracking-[0.14em] text-accent-primary transition-colors duration-150 hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
       >
-        <IconFullscreen size={14} />
+        <PxIcon name="fullscreen" size={16} />
         {SPOTLIGHT_PILL_LABEL}
       </button>
     </header>
@@ -586,22 +575,22 @@ function StatPanel(props: {
   return (
     <dl
       data-vex-area="board-spotlight-stats"
-      className="flex flex-col rounded-2xl border border-line-2 bg-board-card px-4"
+      className="flex flex-col border border-rule bg-board-card px-4"
     >
       <StatRow
-        icon={<IconDroplet size={18} />}
+        icon={<PxIcon name="liquidity" size={16} />}
         label="Liquidity"
         value={formatBoardUsdCompact(row?.liquidityUsd ?? null)}
         title={props.liquidityTitle}
       />
       <StatRow
-        icon={<IconBars size={18} />}
+        icon={<PxIcon name="volume" size={16} />}
         label="24h Volume"
         value={formatBoardUsdCompact(row?.volumeH24Usd ?? null)}
         title={props.volumeTitle}
       />
       <StatRow
-        icon={<IconArrowsUpDown size={18} />}
+        icon={<PxIcon name="trades" size={16} />}
         label="Trades"
         value={
           row === null
@@ -610,12 +599,12 @@ function StatPanel(props: {
         }
       />
       <StatRow
-        icon={<IconClock size={18} />}
+        icon={<PxIcon name="clock" size={16} />}
         label="Pair age"
         value={formatBoardAge(row?.pairAgeSeconds ?? null)}
       />
       <StatRow
-        icon={<IconUsers size={18} />}
+        icon={<PxIcon name="users" size={16} />}
         label="Holders"
         value={holdersValue}
         last
@@ -645,7 +634,7 @@ function StatRow(props: {
       data-label={props.label}
       className={cn(
         "flex items-center gap-3 py-[13px]",
-        props.last === true ? null : "border-b border-line-2",
+        props.last === true ? null : "border-b border-rule",
       )}
     >
       <span aria-hidden className="flex shrink-0 items-center text-ink-tertiary">
@@ -663,7 +652,7 @@ function StatRow(props: {
         <dd
           data-state="pending"
           aria-label={`${props.label} loading`}
-          className="h-[18px] w-16 rounded bg-surface-skeleton animate-pulse motion-reduce:animate-none"
+          className="h-[18px] w-16 bg-surface-skeleton"
         />
       ) : (
         <dd
@@ -713,7 +702,7 @@ function AssessmentSection({
     <SpotlightSection
       area="board-spotlight-assessment"
       state={fragments.length === 0 ? "absent" : "present"}
-      icon={<IconSparkle size={18} />}
+      icon={<PxIcon name="models" size={16} />}
       title={SPOTLIGHT_ASSESSMENT_TITLE}
       meta={stamp === null ? "composed at an unknown time" : `composed ${stamp}`}
       action={
@@ -722,9 +711,9 @@ function AssessmentSection({
           data-vex-area="board-spotlight-ask"
           onClick={onAsk}
           aria-label={`Ask VEX about ${ticker}`}
-          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-line-2 px-2.5 text-[12.5px] font-medium text-ink-secondary transition-colors duration-150 hover:border-line-3 hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+          className="inline-flex h-7 shrink-0 items-center gap-1.5 border border-rule px-2.5 text-[12.5px] font-medium text-ink-secondary transition-colors duration-150 hover:border-rule-ink hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
         >
-          <IconSparkle size={14} />
+          <PxIcon name="models" size={16} />
           Ask VEX
         </button>
       }

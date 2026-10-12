@@ -46,7 +46,7 @@ import type {
   StudioHostUnavailableCause,
 } from "@shared/schemas/studio.js";
 import { Button } from "../../components/ui/button.js";
-import { StateDot, type StateDotState } from "../../components/ui/state-dot.js";
+import { Swatch, type SwatchState } from "../../components/ui/swatch.js";
 import { useDismissOutside } from "../../lib/use-dismiss-outside.js";
 import { usePointerGrace } from "../../lib/pointer-grace.js";
 import { useStudioHostStatus } from "../../lib/api/studio.js";
@@ -86,7 +86,7 @@ const OPEN_DELAY_MS = 300;
 export interface StudioHostStatusView {
   readonly word: string;
   readonly tone: "lit" | "warning" | "quiet";
-  readonly dot: StateDotState;
+  readonly dot: SwatchState;
   readonly headline: string;
   /** Why, in one sentence. Null only while the first read is in flight. */
   readonly reason: string | null;
@@ -366,7 +366,7 @@ export function StudioHostStatusPill({
           setOpen(true);
         }}
       >
-        <StateDot state={view.dot} size={8} />
+        <Swatch state={view.dot} size={8} />
         {view.word}
       </button>
 
@@ -407,7 +407,7 @@ export function StudioHostStatusPill({
           ) : null}
           {view.button !== null ? (
             <Button
-              variant="outline"
+              variant="quiet"
               size="sm"
               className="self-start"
               data-vex-host-next-step="button"

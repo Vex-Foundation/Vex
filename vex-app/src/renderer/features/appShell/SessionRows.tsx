@@ -1,10 +1,12 @@
 /**
- * Public session-list building blocks for the sidebar and the library view:
- * the grouped list (`SessionGroups`) mapping session items onto the generic
- * RailGroup/RailRow primitives, the loading / error / empty placeholders,
- * and the small `SidebarIconButton`. The presentational internals — the row,
- * its trash/pin actions, the hover-card body, and the shared placeholder
- * strip — live as co-located subcomponents under `./SessionRows/`.
+ * Public session-list building blocks: the Sessions library's grouped
+ * register (`SessionGroups`, sessions on the generic RailGroup/RailRow
+ * primitives), the loading / error / empty placeholders the left page's index
+ * shows, and the small `SidebarIconButton`. The left page's own index lives in
+ * `leftPage/SessionIndex.tsx` and renders the same `SessionRow` in its
+ * `index` setting. The presentational internals (the row, its trash/pin
+ * actions, the hover-card body, and the shared placeholder strip) live as
+ * co-located subcomponents under `./SessionRows/`.
  */
 
 import type { JSX } from "react";
@@ -19,7 +21,6 @@ import { SessionRow } from "./SessionRows/SessionRow.js";
 interface SessionGroupsProps {
   readonly groups: readonly SessionGroup[];
   readonly activeSessionId: string | null;
-  readonly sidebarOpen: boolean;
   readonly onSelect: (id: string) => void;
   readonly onTogglePin: (id: string, nextPinned: boolean) => void;
   readonly onRequestRemove: (row: SessionListItem) => void;
@@ -38,7 +39,6 @@ interface SessionGroupsProps {
 export function SessionGroups({
   groups,
   activeSessionId,
-  sidebarOpen,
   onSelect,
   onTogglePin,
   onRequestRemove,
@@ -56,7 +56,6 @@ export function SessionGroups({
           <RailGroup
             key={group.key}
             title={group.title}
-            collapsed={!sidebarOpen}
             headingId={`${idPrefix}-${group.key}`}
           >
             {group.rows.map((row) => (
@@ -64,7 +63,6 @@ export function SessionGroups({
                 <SessionRow
                   row={row}
                   selected={row.id === activeSessionId}
-                  sidebarOpen={sidebarOpen}
                   onSelect={onSelect}
                   onTogglePin={onTogglePin}
                   onRequestRemove={onRequestRemove}
@@ -146,7 +144,7 @@ export function SidebarIconButton({
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="flex h-8 w-8 items-center justify-center rounded-[6px] text-[var(--vex-text-2)] transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+      className="flex h-8 w-8 items-center justify-center text-[var(--vex-text-2)] transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
     >
       {children}
     </button>

@@ -1,14 +1,20 @@
 /**
- * SIDEBAR PROFILE — the rail's footer identity element. One avatar row (the
- * Vex mark, the user's display name or the personalize ask, a state-voiced
- * subtitle) whose portal Menu owns the app's destinations: Personalize,
- * Memory, Sessions, Agent Scan, How Vex works, Settings, plus a read-only
- * runtime provenance row pinned in the menu footer. The trigger row keeps
- * the rail's glass; the menu card is the shared `Menu` primitive chrome.
+ * THE PROFILE ROW: the identity element at the foot of the left page and of
+ * the Studio rail (docs/design/V10-SPREAD.md section 3). One 64px row: the vx
+ * mark in a 28px outlined box (the local "profile" picture), the user's
+ * display name or the personalize ask, a state-voiced subtitle, and an up
+ * chevron. Its portal Menu owns the app's destinations: Personalize, Memory,
+ * Sessions, Agent Scan, How Vex works, Settings, plus a read-only runtime
+ * provenance row pinned in the menu footer. Closed to a spine, the row is the
+ * box alone and the subtitle rides its tooltip.
+ *
+ * `ground` names what the row sits on: `print` on the left page's dark grass,
+ * white type and a white hairline box (the photograph is the ground, so the
+ * row has no fill), `paper` on the Studio rail and the Lighter bar, in ink.
  *
  * The name line is the user's own "Vex setup" `displayName` once set; before
  * that it is a gentle ask ("What should Vex call you?"). The healthy-runtime
- * subtitle speaks the serif hallmark; any other state speaks its own SENTENCE
+ * subtitle speaks the hallmark; any other state speaks its own SENTENCE
  * (`RUNTIME_STATUS_SENTENCES`), never the bare status word. Screen rows route
  * through `setShellRoute` with the trigger row's rect as the expand origin.
  */
@@ -23,7 +29,7 @@ import {
 } from "react";
 import {
   IconChevronUp,
-  IconInspect,
+  pxGlyph,
   IconLock,
   IconNewChat,
   IconQuestion,
@@ -37,6 +43,7 @@ import type { Result } from "@shared/ipc/result.js";
 import type { HealthReport } from "@shared/schemas/system.js";
 import type { UserProfile } from "@shared/schemas/user-profile.js";
 import { cn } from "../../lib/utils.js";
+import { VexMark } from "../../components/common/VexMark.js";
 import { useReducedMotion } from "../../lib/motion/index.js";
 import { Menu, type MenuEntry } from "../../components/ui/menu.js";
 import { useSystemHealth } from "../../lib/api/system.js";
@@ -47,13 +54,10 @@ import { LOCK_BUTTON } from "@shared/lock-button.js";
 import { useLockVexControl } from "./LockVexControl.js";
 import { VexSetupDialog } from "./VexSetupDialog.js";
 
-/** The Vex mark doubling as the local "profile" picture. */
-const AVATAR_SRC = "/icon.png";
-
 /** The full-app screens the profile menu can open (each a `ShellRoute` kind). */
 type ProfileMenuScreen = "memory" | "sessions" | "agentScan" | "howItWorks";
 
-/** Chronos hallmark — the healthy-runtime subtitle. Test-pinned copy. */
+/** Chronos hallmark: the healthy-runtime subtitle. Test-pinned copy. */
 export const NIGHT_SHIFT_MESSAGE = "The night shift is active.";
 
 /** The runtime states the foot can be in, derived from the health read. */
@@ -116,9 +120,12 @@ function entryIcon(Icon: (props: GlyphProps) => ReactNode): ReactNode {
 export function SidebarProfile({
   sidebarOpen,
   menuSide = "top",
+  ground = "paper",
 }: {
   readonly sidebarOpen: boolean;
   readonly menuSide?: "top" | "bottom";
+  /** What the row sits on: the print's dark ground, or paper. */
+  readonly ground?: "print" | "paper";
 }): JSX.Element {
   const { pending: locking, requestLock } = useLockVexControl();
   const setShellRoute = useUiStore((s) => s.setShellRoute);
@@ -176,7 +183,7 @@ export function SidebarProfile({
     },
     {
       id: "agentScan",
-      icon: entryIcon(IconInspect),
+      icon: entryIcon(pxGlyph("activity")),
       label: entryLabel("Agent Scan", "Every move, verified on-chain"),
     },
     {
@@ -200,7 +207,7 @@ export function SidebarProfile({
     ] : []),
   ];
 
-  // Runtime provenance row — read-only, pinned behind the footer hairline.
+  // Runtime provenance row: read-only, pinned behind the footer hairline.
   const footer: MenuEntry[] = [
     {
       id: "runtime-status",
@@ -289,58 +296,35 @@ export function SidebarProfile({
       // carrier of the reason there: it speaks the sentence, not the word.
       title={sidebarOpen ? undefined : runtime.sentence}
       onClick={() => open ? closeMenu() : setMenuPhase("open")}
-      className={cn(
-        "flex w-full items-center transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-primary",
-        sidebarOpen ? "h-14 gap-2.5 px-4 text-left" : "h-12 justify-center px-0",
-      )}
+      className="vex-prof"
+      data-open={sidebarOpen || undefined}
     >
-      {/* Collapsed rail stays clean: the mark alone, no dot, no chevron. */}
-      <img
-        src={AVATAR_SRC}
-        alt=""
-        aria-hidden
-        draggable={false}
-        className="h-7 w-7 shrink-0 select-none rounded-full"
-      />
+      {/* The vx mark in its box; a closed spine shows the box alone. */}
+      <span aria-hidden className="vex-prof__av">
+        <VexMark size={14} />
+      </span>
       {sidebarOpen ? (
         <>
-          <span className="flex min-w-0 flex-1 flex-col">
+          <span className="vex-prof__name">
             {nameLine.asksToPersonalize ? (
-              // Gentle call-to-action voice — NOT semibold, so it never
-              // reads as the confident brand name it is standing in for.
-              <span className="truncate text-[12.5px] font-normal leading-tight text-ink-secondary">
-                {nameLine.text}
-              </span>
+              // The gentle ask: regular weight, so it never reads as the
+              // confident name it is standing in for.
+              <span className="vex-prof__n vex-prof__n--ask">{nameLine.text}</span>
             ) : (
-              <span className="truncate text-[13px] font-medium leading-tight text-foreground">
-                {nameLine.text}
-              </span>
+              <span className="vex-prof__n">{nameLine.text}</span>
             )}
-            {runtime.live ? (
-              // The hallmark shows ONLY while the runtime is verifiably
-              // healthy; any other state speaks plain telemetry. It used to
-              // earn a serif italic for the distinction - the serif left shell
-              // chrome (owner 6a, ratified 2026-08-21), so the line is now
-              // marked by its TIER against the tertiary telemetry beside it.
-              <span className="truncate text-[12px] leading-tight text-ink-secondary">
-                {runtime.sentence}
-              </span>
-            ) : (
-              // NOT `truncate`: a sentence that says what is wrong is worth two
-              // lines of the foot, and a clipped cause is the defect again.
-              <span className="text-[12px] leading-tight text-ink-tertiary">
-                {runtime.sentence}
-              </span>
-            )}
+            {/* The hallmark shows ONLY while the runtime is verifiably
+              * healthy, on one line. Any other state speaks its sentence and
+              * may take two lines: a clipped cause is the defect again. */}
+            <span className={cn("vex-prof__s", runtime.live && "vex-prof__s--live")}>
+              {runtime.sentence}
+            </span>
           </span>
-          {/* Chevron affordance — the menu opens upward, so the closed state
-           * points up and rotates when open. */}
+          {/* The menu opens upward, so the closed state points up and the
+            * chevron turns over while it is open. */}
           <IconChevronUp
-            size={15}
-            className={cn(
-              "vex-profile-chevron shrink-0 text-ink-tertiary",
-              open && "rotate-180",
-            )}
+            size={16}
+            className={cn("vex-profile-chevron vex-prof__chev", open && "rotate-180")}
           />
         </>
       ) : null}
@@ -350,7 +334,8 @@ export function SidebarProfile({
   return (
     <div
       data-vex-area="sidebar-profile"
-      className="relative border-t border-[var(--vex-line)] bg-[var(--vex-rail-strong)]"
+      data-ground={ground}
+      className="vex-prof-root relative"
     >
       <Menu
         open={open}
@@ -434,7 +419,7 @@ function getNameLine({ loading, error, result }: NameLineInput): {
     return { asksToPersonalize: false, text: "Vex" };
   }
   if (result.data.displayName === null) {
-    // Test-pinned copy — VexSetupDialog's matching field label reuses the
+    // Test-pinned copy: VexSetupDialog's matching field label reuses the
     // same literal for its "What should Vex call you?" input.
     return { asksToPersonalize: true, text: "What should Vex call you?" };
   }

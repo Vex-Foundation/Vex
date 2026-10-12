@@ -1,11 +1,13 @@
-// Brand fonts (Archivo, Inter Tight, JetBrains Mono — the landing-page
-// stack) are self-hosted via @font-face in globals.css (CSP font-src 'self').
+// Brand fonts (Instrument Sans, Departure Mono, Instrument Serif and
+// JetBrains Mono for code) are self-hosted via @font-face in
+// styles/global-css/fonts.css (CSP font-src 'self').
 import "./styles/globals.css";
 
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App.js";
+import { PxSprite } from "./components/icons/px/PxSprite.js";
 import { queryClient } from "./app/queryClient.js";
 import type { CreateBugReportInput } from "@shared/schemas/bug-reports.js";
 import { probeZodLocale, registerZodLocale } from "@vex-lib/zod-locale.js";
@@ -228,6 +230,7 @@ createRoot(rootEl, {
   },
 }).render(
   <React.StrictMode>
+    <PxSprite />
     <QueryClientProvider client={queryClient}>
       <App />
     </QueryClientProvider>

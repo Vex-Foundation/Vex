@@ -181,7 +181,7 @@ export function StudioBridgeReadinessPanel(): JSX.Element | null {
         <p className="vex-micro text-ink-secondary">
           Then build the bridge from the repository root
         </p>
-        <pre className="overflow-auto rounded-lg border border-[var(--color-border)] bg-gate-code p-3 font-mono text-xs leading-relaxed text-ink-primary">
+        <pre className="overflow-auto border border-[var(--color-border)] bg-gate-code p-3 font-mono text-xs leading-relaxed text-ink-primary">
           <code>{STUDIO_BRIDGE_BUILD_COMMAND}</code>
         </pre>
       </div>
@@ -230,7 +230,7 @@ function ReadinessShell({
       {children}
       <div className="flex items-center gap-3">
         <Button
-          variant="ghost"
+          variant="bare"
           disabled={rechecking}
           onClick={onRecheck}
           className="self-start text-ink-secondary"

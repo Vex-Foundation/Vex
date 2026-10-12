@@ -3,6 +3,7 @@ import type {
   LighterTradingCandleConnectionStatus,
   LighterTradingSnapshot,
 } from "@shared/schemas/lighter-trading.js";
+import { PxIcon } from "../../../components/icons/index.js";
 import {
   GROUP_MULTIPLIERS,
   bookInside,
@@ -219,10 +220,10 @@ export function MarketBookPanel({
           </div>
           <div className="lit-unit-switch lit-view-switch" role="group" aria-label="Book view">
             <button type="button" aria-pressed={view === "stack"} aria-label="Stacked" title="Asks over bids" onClick={() => setView("stack")}>
-              <svg viewBox="0 0 12 12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="3.5" /><rect x="1.5" y="7" width="9" height="3.5" /></svg>
+              <PxIcon name="split-rows" />
             </button>
             <button type="button" aria-pressed={view === "split"} aria-label="Side by side" title="Bids beside asks" onClick={() => setView("split")}>
-              <svg viewBox="0 0 12 12" aria-hidden="true"><rect x="1.5" y="1.5" width="3.5" height="9" /><rect x="7" y="1.5" width="3.5" height="9" /></svg>
+              <PxIcon name="split-cols" />
             </button>
           </div>
         </div>

@@ -18,8 +18,8 @@
  * geometry, so a sparkline that renders nothing would leave a hole that reads
  * as a layout bug rather than as an absence of data:
  *
- *   pending      bars have been asked for and have not landed - a shimmer at
- *                the line's own height, stilled under reduced motion.
+ *   pending      bars have been asked for and have not landed - a still block at
+ *                the line's own height.
  *   unavailable  no bars will land (nothing was asked, or the ask failed) -
  *                a dim baseline. The element keeps its place and claims
  *                nothing about the price.
@@ -91,12 +91,13 @@ export function BoardSparkline({
   trend,
   className,
 }: BoardSparklineProps): JSX.Element {
+  // ONE BLUE for every line (docs/design/V10-SPREAD.md section 1): the card's
+  // 24h delta says up or down in words, the line only draws the shape. A flat
+  // series keeps the quiet ink so it does not read as movement.
   const stroke =
-    trend === "down"
-      ? "var(--vex-alias-state-error)"
-      : trend === "flat"
-        ? "var(--vex-alias-label-tertiary)"
-        : "var(--vex-alias-state-success)";
+    trend === "flat"
+      ? "var(--vex-alias-label-tertiary)"
+      : "var(--vex-alias-accent-primary)";
 
   const state = sparklineState(data);
 
@@ -107,11 +108,8 @@ export function BoardSparkline({
         data-state="pending"
         aria-hidden
         className={cn(
-          "block h-[44px] w-full rounded-[3px] bg-surface-skeleton",
-          // The shimmer is the app's own pending register, and it is stilled
-          // outright for a reader who asked for reduced motion - the block is
-          // fully legible as a placeholder with no animation at all.
-          "animate-pulse motion-reduce:animate-none",
+          // Pending is a still placeholder block: no shimmer to still.
+          "block h-[44px] w-full bg-surface-skeleton",
           className,
         )}
       />
@@ -135,7 +133,7 @@ export function BoardSparkline({
           y1={VIEW_H / 2}
           x2={VIEW_W}
           y2={VIEW_H / 2}
-          stroke="var(--vex-alias-border-l2)"
+          stroke="var(--vex-alias-rule)"
           strokeWidth="1"
           strokeDasharray="3 3"
         />
@@ -193,8 +191,8 @@ function SegmentShape({
       fill="none"
       stroke={stroke}
       strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      strokeLinecap="butt"
+      strokeLinejoin="miter"
       vectorEffect="non-scaling-stroke"
     />
   );

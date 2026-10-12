@@ -62,12 +62,11 @@ function freshClient(): QueryClient {
 }
 
 afterEach(() => {
-  // @ts-expect-error — test cleanup
-  delete window.vex;
+  Reflect.deleteProperty(window, "vex");
 });
 
 describe("VexTokenCardCompact", () => {
-  it("renders the slim data card: price, borderless shimmer delta, filled sparkline - NO stat grid", async () => {
+  it("renders the slim data line: price, the change with its arrow, the spark - NO stat grid", async () => {
     setMarket(vi.fn().mockResolvedValue({ ok: true, data: snapshot() }));
     const { container } = render(createElement(VexTokenCardCompact), {
       wrapper: makeWrapper(freshClient()),
@@ -87,13 +86,15 @@ describe("VexTokenCardCompact", () => {
     expect(container.textContent).not.toContain("LIQ");
     expect(container.textContent).not.toContain("24H VOL");
     expect(container.textContent).not.toContain("HOLDERS");
-    // The delta figure is borderless, wears the shimmer overlay, and stays a
-    // SOLID direction color (no background-clip on the number itself).
+    // The change is one ink on the ground: its direction is the arrow and
+    // the sign, never a colour (docs/design/V10-SPREAD.md section 1), and it
+    // no longer shimmers.
     const delta = container.querySelector('[data-vex-area="vex-token-delta"]');
     expect(delta).not.toBeNull();
-    expect(delta?.classList.contains("vex-delta-shimmer")).toBe(true);
-    expect(delta?.getAttribute("data-shimmer-text")).toBe("+113.00%");
-    expect(delta?.className).toContain("text-success");
+    expect(delta?.getAttribute("data-direction")).toBe("up");
+    expect(delta?.textContent).toBe("↑ +113.00%");
+    expect(delta?.className).not.toMatch(/text-(success|warning|danger)/);
+    expect(delta?.className).not.toContain("shimmer");
     expect(delta?.className).not.toContain("border");
     expect(
       container.querySelector(
@@ -141,9 +142,9 @@ describe("VexTokenCardCompact", () => {
         ),
       ).not.toBeNull();
     });
-    // Never blank — the $VEX label is always present.
+    // Never blank: the $VEX label is always present.
     expect(container.textContent).toContain("$VEX");
-    // Only the data card links out — the loading skeleton stays inert.
+    // Only the data line links out; the loading skeleton stays inert.
     expect(container.querySelector("a")).toBeNull();
   });
 
@@ -176,7 +177,7 @@ describe("VexTokenCardCompact", () => {
     expect(container.textContent).toContain("Market data unavailable.");
   });
 
-  it("surfaces the stale marker on a delayed snapshot (the shimmer stays - decorative)", async () => {
+  it("surfaces the stale marker on a delayed snapshot, and keeps the figure", async () => {
     setMarket(
       vi.fn().mockResolvedValue({ ok: true, data: snapshot({ stale: true }) }),
     );
@@ -194,13 +195,13 @@ describe("VexTokenCardCompact", () => {
     expect(
       container.querySelector('[data-vex-area="vex-token-stale"]'),
     ).not.toBeNull();
-    // Owner decree: the shimmer is decorative and always on; staleness is
-    // carried honestly by the marker, not by stilling the figure.
+    // Staleness is carried honestly by the marker; the last known change
+    // still reads.
     const delta = container.querySelector('[data-vex-area="vex-token-delta"]');
-    expect(delta?.classList.contains("vex-delta-shimmer")).toBe(true);
+    expect(delta?.textContent).toContain("+113.00%");
   });
 
-  it("keeps the card token-driven (the sparkline stroke reads --vex-accent)", async () => {
+  it("keeps the line token-driven (the spark is the print's white, --vex-alias-on-photo)", async () => {
     setMarket(vi.fn().mockResolvedValue({ ok: true, data: snapshot() }));
     const client = freshClient();
     const { container } = render(
@@ -222,12 +223,12 @@ describe("VexTokenCardCompact", () => {
         ),
       ).not.toBeNull();
     });
-    // The card carries no raw colour — the sparkline stroke is the theme
-    // token, so any future theme re-tints it with no component change.
-    const path = container.querySelector(
-      '[data-vex-area="vex-token-sparkline"] path',
-    );
-    expect(path?.getAttribute("stroke")).toBe("var(--vex-accent)");
+    // The line carries no raw colour: the spark and its end square read the
+    // on-photo token, so a re-tint needs no component change.
+    const strokes = [
+      ...container.querySelectorAll('[data-vex-area="vex-token-sparkline"] polyline, [data-vex-area="vex-token-sparkline"] path'),
+    ].map((el) => el.getAttribute("stroke"));
+    expect(strokes).toEqual(["var(--vex-alias-on-photo)", "var(--vex-alias-on-photo)"]);
   });
 
   it("degrades to a blank sparkline track when there are no closes", async () => {
@@ -254,14 +255,11 @@ describe("VexTokenCardCompact", () => {
   });
 
   /**
-   * THE PLATE IS A GLASS CHIP, NOT A BOX (rail redesign 2026-09-04). The card
-   * frame was one of the four strokes the owner marked on the left rail; the
-   * chip tier of glass.css carries its edge as inset light instead. Every
-   * state wears the same chip, and the data card's LINK keeps its focus ring
-   * on the inner element, where a Tailwind ring is not painted over by the
-   * chip's own unlayered box-shadow.
+   * NO PLATE ON THE PRINT (docs/design/V10-SPREAD.md section 3). The $VEX line
+   * sits straight on the left page's dark ground: no glass chip, no stroke,
+   * no fill, no radius, in every state. The data line is one link.
    */
-  it("wears the glass chip without a stroke in every state, and keeps the link's focus ring", async () => {
+  it("sits on the ground without a plate, and the data line is one link", async () => {
     setMarket(vi.fn().mockResolvedValue({ ok: true, data: snapshot() }));
     const { container } = render(createElement(VexTokenCardCompact), {
       wrapper: makeWrapper(freshClient()),
@@ -272,15 +270,10 @@ describe("VexTokenCardCompact", () => {
       ).not.toBeNull();
     });
     const plate = container.querySelector('[data-vex-area="vex-token-compact"]');
-    expect(plate?.classList.contains("vex-glass-chip")).toBe(true);
-    expect(plate?.classList.contains("rounded-xl")).toBe(true);
-    expect(plate?.className).not.toMatch(/(?:^|\s)border(?:-|\s|$)/);
-    expect(plate?.className).not.toContain("bg-surface-1");
+    expect(plate?.className ?? "").not.toMatch(/vex-glass|rounded|(?:^|\s)border|(?:^|\s)bg-/);
     const link = container.querySelector("a");
-    expect(link?.className).toContain("focus-visible:ring-2");
-    expect(link?.className).not.toContain("border");
-    expect(link?.classList.contains("vex-glass-chip")).toBe(false);
-    expect(link?.className).toContain("hover:bg-interactive-hover");
+    expect(link?.classList.contains("vex-tok--link")).toBe(true);
+    expect(link?.className).not.toMatch(/vex-glass|rounded|(?:^|\s)border/);
   });
 
   it.each([
@@ -300,7 +293,7 @@ describe("VexTokenCardCompact", () => {
         },
       } satisfies SnapshotResult,
     ],
-  ] as const)("the %s state is the same glass chip", async (state, answer) => {
+  ] as const)("the %s state sits on the ground without a plate too", async (state, answer) => {
     setMarket(vi.fn().mockResolvedValue(answer));
     const { container } = render(createElement(VexTokenCardCompact), {
       wrapper: makeWrapper(freshClient()),
@@ -313,7 +306,6 @@ describe("VexTokenCardCompact", () => {
       ).not.toBeNull();
     });
     const plate = container.querySelector('[data-vex-area="vex-token-compact"]');
-    expect(plate?.classList.contains("vex-glass-chip")).toBe(true);
-    expect(plate?.className).not.toMatch(/(?:^|\s)border(?:-|\s|$)/);
+    expect(plate?.className ?? "").not.toMatch(/vex-glass|rounded|(?:^|\s)border|(?:^|\s)bg-/);
   });
 });

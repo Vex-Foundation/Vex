@@ -373,8 +373,8 @@ export function LighterAccountSetupModal({
                           onClick={() => { void copyWallet(status.walletAddress); }}
                         >
                           {walletCopied
-                            ? <IconCheck size={13} aria-hidden="true" />
-                            : <IconCopy size={13} aria-hidden="true" />}
+                            ? <IconCheck size={16} aria-hidden="true" />
+                            : <IconCopy size={16} aria-hidden="true" />}
                           {walletCopied ? "Copied" : "Copy"}
                         </button>
                       </div>
@@ -383,7 +383,7 @@ export function LighterAccountSetupModal({
                 </div>
               ) : presentation !== null && presentation.accountNote !== null ? (
                 <p className="lit-setup-note">
-                  <IconCheck size={15} aria-hidden="true" />
+                  <IconCheck size={16} aria-hidden="true" />
                   <span>{presentation.accountNote}</span>
                 </p>
               ) : null}
@@ -394,7 +394,7 @@ export function LighterAccountSetupModal({
                     <li key={step.key} data-state={presentation?.steps[index]}>
                       <span className="lit-setup-step-mark" aria-hidden="true">
                         {presentation?.steps[index] === "done" ? (
-                          <IconCheck size={13} />
+                          <IconCheck size={16} />
                         ) : presentation?.steps[index] === "active" ? (
                           <span className="lit-loader" />
                         ) : (

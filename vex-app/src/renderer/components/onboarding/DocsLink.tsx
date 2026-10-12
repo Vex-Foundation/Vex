@@ -23,7 +23,7 @@ export function DocsLink({ href, label }: DocsLinkProps): JSX.Element {
       rel="noopener noreferrer"
       // Token-driven: the label reads `--vex-accent-text` (the accent's
       // lighter mix) because accent AS TEXT needs it - raw accent falls
-      // short of contrast on the plate. The focus ring is a solid mark and
+      // short of contrast on night paper. The focus ring is a solid mark and
       // keeps --color-ring.
       className="inline-flex items-center gap-1 self-start text-xs text-[var(--vex-accent-text,var(--color-accent-hover))] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-surface-base"
     >

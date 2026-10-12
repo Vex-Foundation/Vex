@@ -1,6 +1,6 @@
 /**
- * Compose bootstrap surface — the "Starting services" slide on the
- * cobalt continuum. Runs `composeUpAbortable`, parses the streamed log
+ * Compose bootstrap surface: the "Starting services" page on the
+ * pre-shell stage. Runs `composeUpAbortable`, parses the streamed log
  * lines into per-service substate, dispatches to the right branch body
  * based on the IPC result kind, and (on success) lets the user
  * continue to the migrations screen.
@@ -175,13 +175,11 @@ export function ComposeBootstrap(): JSX.Element {
   return (
     <SetupFrame
       screen="composeBootstrap"
-      maxWidth="lg"
       title="Starting services"
       subline="Postgres and embeddings are coming up locally through Docker."
     >
-      {/* THE BODY — the active phase, directly on the plate (AMENDMENT
-       * A3: the container card and its inner scroll well are retired;
-       * the page column scrolls). */}
+      {/* THE BODY: the active phase, directly on the leaf (no container
+       * card, no inner scroll well: the leaf scrolls). */}
       <div className="vex-rise vex-rise-d1">
           {phase.kind === "running" || phase.kind === "cancelling" ? (
             <RunningBody
@@ -227,10 +225,9 @@ export function ComposeBootstrap(): JSX.Element {
       {/* FOOTER — the paper-pill Continue appears only when the stack
        * is ready (body CTAs carry the action everywhere else). */}
       {phase.kind === "ready" ? (
-        <div className="vex-rise vex-rise-d2 mt-6 flex justify-center">
+        <div className="vex-rise vex-rise-d2 mt-8 flex">
           <Button
             size="lg"
-            className="min-w-[208px]"
             onClick={handleContinue}
             aria-label="Continue to database migrations"
           >

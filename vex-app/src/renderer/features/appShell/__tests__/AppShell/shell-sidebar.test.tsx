@@ -21,7 +21,7 @@ import { sessionKeys } from "../../../../lib/api/sessions.js";
 import { createQueryClient } from "../../../../app/queryClient.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
-import { WELCOME_PORTFOLIO_WIDTH } from "../../../../lib/shell-columns.js";
+import { SPREAD_TEST_WIDTH, setWindowWidth } from "./_appshell-render.js";
 
 // Phase 2b: the Settings ShellScreen hosts the wizard step forms, whose
 // module graph (icons, RHF, brand marks) is far beyond this suite's
@@ -172,6 +172,9 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  // The reference window (docs/design/V10-SPREAD.md section 2): jsdom's own
+  // 1024 is under the spread, where the left page closes to its spine.
+  setWindowWidth(SPREAD_TEST_WIDTH);
   reducedMotion = false;
   window.localStorage.clear();
   sessionsListMock.mockReset();
@@ -634,21 +637,23 @@ describe("AppShell", () => {
     expect(screen.queryByText("Portfolio Check")).toBeNull();
   });
 
-  it("mounts the Eclipse photo backdrop layer behind the columns", () => {
+  it("mounts the print on the left page, under the sessions index", () => {
     const view = renderShell();
 
-    const backdrop = view.container.querySelector(
-      "[data-vex-area='shell-backdrop']",
-    );
+    const page = view.container.querySelector("[data-vex-area='left-page']");
+    const backdrop = page?.querySelector("[data-vex-area='shell-backdrop']");
     expect(backdrop).not.toBeNull();
-    // Welcome/idle stage → the light veil (artwork is the protagonist).
-    expect(backdrop?.getAttribute("data-vex-backdrop-dimmed")).toBe("false");
+    // The day and the night print; CSS shows the one for the room.
     expect(
-      backdrop?.querySelector("img")?.getAttribute("src"),
-    ).toBe("/backdrops/midnight-lake.webp");
+      Array.from(backdrop?.querySelectorAll("img") ?? []).map((img) => img.getAttribute("src")),
+    ).toEqual(["/art/plateau.jpg", "/art/plateau-night.jpg"]);
+    // The index sits over the print, in the same column.
+    expect(page?.querySelector("[data-vex-area='sessions-sidebar']")).not.toBeNull();
+    // Nothing veils the print any more.
+    expect(backdrop?.hasAttribute("data-vex-backdrop-dimmed")).toBe(false);
   });
 
-  it("paints the user's own backdrop under the columns when one is set, on the same wall", async () => {
+  it("paints the user's own backdrop on the left page when one is set, in the print's place", async () => {
     const url = "app://vex/user-backdrop/bg_0123456789abcdef0123456789abcdef";
     shellBackdropReadMock.mockResolvedValue({
       ok: true,
@@ -669,12 +674,11 @@ describe("AppShell", () => {
     await waitFor(() => {
       expect(backdrop?.getAttribute("data-vex-backdrop-source")).toBe("custom");
     });
-    // ONE image, the user's, instead of both theme assets; the veils and the
-    // stage attribute are untouched.
+    // ONE image, the user's, instead of both prints, still on the left page.
     const images = backdrop?.querySelectorAll("img") ?? [];
     expect(images.length).toBe(1);
     expect(images[0]?.getAttribute("src")).toBe(url);
-    expect(backdrop?.getAttribute("data-vex-backdrop-dimmed")).toBe("false");
+    expect(backdrop?.closest("[data-vex-area='left-page']")).not.toBeNull();
   });
 
   it("applies the Chronos theme to the shell root as data-vex-theme", () => {
@@ -683,19 +687,23 @@ describe("AppShell", () => {
     expect(root?.getAttribute("data-vex-theme")).toBe("chronos");
   });
 
-  it("collapses and expands the glass sidebar", async () => {
+  it("closes the left page to its spine and opens it again", async () => {
     const view = renderShell();
     const sidebar = view.container.querySelector("[data-vex-area='sessions-sidebar']");
+    const page = view.container.querySelector("[data-vex-area='left-page']");
 
     expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("true");
+    expect(page?.getAttribute("data-vex-left-page")).toBe("page");
     fireEvent.click(
       screen.getByRole("button", { name: /Collapse sessions sidebar/i }),
     );
     expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("false");
+    expect(page?.getAttribute("data-vex-left-page")).toBe("spine");
     fireEvent.click(
       screen.getByRole("button", { name: /Expand sessions sidebar/i }),
     );
     expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("true");
+    expect(page?.getAttribute("data-vex-left-page")).toBe("page");
   });
 
   it("keeps the Lighter center mounted while its top navigation drawer toggles", () => {
@@ -727,7 +735,8 @@ describe("AppShell", () => {
 
     expect(topbar?.parentElement).toBe(frame);
     expect(frame?.style.paddingTop).toBe("44px");
-    expect(frame?.style.gridTemplateColumns).toMatch(/^0px /);
+    // Lighter always shows the print spine beside the small gutter.
+    expect(frame?.style.gridTemplateColumns).toMatch(/^56px 22px 0px /);
 
     for (const column of columns) {
       expect(column).not.toBeNull();
@@ -751,7 +760,7 @@ describe("AppShell", () => {
     expect(frame?.getAttribute("data-lighter-zen")).toBe("true");
     expect(frame?.getAttribute("data-lighter-zen-controls")).toBe("closed");
     expect(frame?.style.paddingTop).toBe("");
-    expect(frame?.style.gridTemplateColumns).toBe("0px minmax(0, 1fr) 0px");
+    expect(frame?.style.gridTemplateColumns).toBe("0px 0px 0px minmax(0, 1fr) 0px");
     expect(screen.getByTestId("lighter-center").getAttribute("data-zen-mode")).toBe("true");
     expect(view.container.querySelector("[data-vex-area='book-panel']")?.getAttribute("data-vex-book-open")).toBe("false");
 
@@ -769,7 +778,7 @@ describe("AppShell", () => {
     expect(frame?.getAttribute("data-lighter-zen-controls")).toBe("closed");
     fireEvent.keyDown(window, { key: "Escape" });
     expect(frame?.hasAttribute("data-lighter-zen")).toBe(false);
-    expect(frame?.style.gridTemplateColumns).not.toBe("0px minmax(0, 1fr) 0px");
+    expect(frame?.style.gridTemplateColumns).not.toBe("0px 0px 0px minmax(0, 1fr) 0px");
     act(() => useUiStore.getState().setRuntimeMode("agent"));
   });
 
@@ -779,11 +788,12 @@ describe("AppShell", () => {
     useLighterAnalysisStore.getState().saveDesk({ chatShare: 0.32 });
     const view = renderShell();
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
-    expect(frame?.style.gridTemplateColumns).toBe("0px minmax(0, 1fr) 328px");
+    // 1440 x 0.32 = 460.8, rounded by the solver.
+    expect(frame?.style.gridTemplateColumns).toBe("56px 22px 0px minmax(0, 1fr) 461px");
     act(() => useLighterAnalysisStore.getState().saveDesk({ chatShare: 310 / window.innerWidth }));
-    expect(frame?.style.gridTemplateColumns).toBe("0px minmax(0, 1fr) 310px");
+    expect(frame?.style.gridTemplateColumns).toBe("56px 22px 0px minmax(0, 1fr) 310px");
     fireEvent.keyDown(screen.getByRole("separator", { name: "Resize the Vex panel" }), { key: "ArrowLeft" });
-    expect(frame?.style.gridTemplateColumns).toBe("0px minmax(0, 1fr) 334px");
+    expect(frame?.style.gridTemplateColumns).toBe("56px 22px 0px minmax(0, 1fr) 334px");
     expect(useLighterAnalysisStore.getState().desk.chatShare).toBeCloseTo(334 / window.innerWidth);
     expect(useUiStore.getState().bookWidth).toBe(300);
     act(() => {
@@ -841,17 +851,59 @@ describe("AppShell", () => {
     ).toBeNull();
   });
 
-  it("solves the shell grid tracks from the solver (sidebar 280px, welcome tab 380px)", () => {
+  it("solves the spread from the solver (page 300, gutter 36, BOOK 340 at 1440)", () => {
     const view = renderShell();
     const frame = view.container.querySelector(
       "[data-vex-area='shell-frame']",
     ) as HTMLElement | null;
     expect(frame).not.toBeNull();
-    // jsdom: no ResizeObserver, viewport = window.innerWidth (1024). The
-    // welcome track carries the floating tab's OWN reservation, as a length.
-    expect(frame?.style.gridTemplateColumns).toBe(
-      `280px minmax(0, 1fr) ${WELCOME_PORTFOLIO_WIDTH}px`,
-    );
+    // jsdom: no ResizeObserver, viewport = window.innerWidth. The welcome tab
+    // fills the BOOK track. The stored 240 reads as the page's 300 floor.
+    expect(frame?.style.gridTemplateColumns).toBe("300px 36px 0px minmax(0, 1fr) 340px");
+    expect(frame?.getAttribute("data-vex-spread")).toBe("page");
+    expect(frame?.hasAttribute("data-vex-spread-narrow")).toBe(false);
+    // The running head reserves the caption buttons against the BOOK track.
+    expect(frame?.style.getPropertyValue("--vex-book-track")).toBe("340px");
+  });
+
+  it("closes the page to the spine and folds the gutter into the running head under the spread", () => {
+    setWindowWidth(1024);
+    const view = renderShell();
+    const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
+    // 1024 - 56 - 300 = 668: the centre keeps its floor with the BOOK at 300.
+    expect(frame?.style.gridTemplateColumns).toBe("56px 0px 0px minmax(0, 1fr) 300px");
+    expect(frame?.getAttribute("data-vex-spread")).toBe("spine");
+    expect(frame?.hasAttribute("data-vex-spread-narrow")).toBe(true);
+    // The spine's paper cap carries the head row across the print.
+    const page = view.container.querySelector("[data-vex-area='left-page']");
+    expect(page?.getAttribute("data-vex-left-page")).toBe("spine");
+    expect(page?.querySelector(".vex-left-page__cap")).not.toBeNull();
+    // The gutter is folded and the running head carries its context.
+    expect(
+      view.container.querySelector("[data-vex-area='shell-gutter']")?.getAttribute("data-vex-gutter"),
+    ).toBe("folded");
+    expect(
+      view.container.querySelector("[data-vex-running-head-fold]")?.getAttribute("data-caption"),
+    ).toBe("Agent");
+  });
+
+  it("runs the spread caption down the gutter, aria-hidden, and makes every head row a drag region", () => {
+    const view = renderShell();
+    const gutter = view.container.querySelector("[data-vex-area='shell-gutter']");
+    expect(gutter?.getAttribute("aria-hidden")).toBe("true");
+    expect(gutter?.getAttribute("data-vex-gutter")).toBe("full");
+    expect(gutter?.firstElementChild?.getAttribute("data-caption")).toBe("Agent");
+    expect(gutter?.classList.contains("vex-drag")).toBe(true);
+    const head = view.container.querySelector("[data-vex-area='shell-status-strip']");
+    expect(head?.classList.contains("vex-drag")).toBe(true);
+    // The welcome head has nothing to say: its rule is clear.
+    expect(head?.hasAttribute("data-empty")).toBe(true);
+    // No fold while the gutter is open.
+    expect(view.container.querySelector("[data-vex-running-head-fold]")).toBeNull();
+    // The open page's head row clears the macOS traffic lights.
+    const pageHead = view.container.querySelector("[data-vex-area='sessions-sidebar'] header");
+    expect(pageHead?.classList.contains("vex-drag")).toBe(true);
+    expect(pageHead?.classList.contains("vex-lights-start")).toBe(true);
   });
 
   it("keeps the third track NUMERIC on both sides of the welcome<->session edge", () => {
@@ -866,23 +918,25 @@ describe("AppShell", () => {
     const thirdTrack = (): string =>
       (frame?.style.gridTemplateColumns ?? "").split(" ").at(-1) ?? "";
 
-    expect(thirdTrack()).toMatch(/^\d+px$/);
+    expect(thirdTrack()).toBe("340px");
     // Welcome, tab collapsed: exactly zero, still a length.
     act(() => useUiStore.getState().toggleBook());
     expect(thirdTrack()).toBe("0px");
     act(() => useUiStore.getState().toggleBook());
 
-    // Session stage: the solved BOOK width (here its numeric collapsed spine).
+    // Session stage: the solved BOOK width.
     act(() => useUiStore.getState().setActiveSessionId("s-1"));
     expect(thirdTrack()).toMatch(/^\d+px$/);
+    // Every track of the spread is a length.
+    expect(frame?.style.gridTemplateColumns).toMatch(/^\d+px \d+px \d+px minmax\(0, 1fr\) \d+px$/);
   });
 
-  it("mounts the sidebar drag handle only while the sidebar is expanded", () => {
+  it("mounts the page's drag handle only while the page is open and can widen", () => {
     const view = renderShell();
     expect(
       view.container.querySelector(".vex-shell-handle[data-side='sidebar']"),
     ).not.toBeNull();
-    // Welcome stage: no BOOK handle (the floating tab is not a grid column).
+    // Welcome stage: no BOOK handle (the Portfolio tab is not resizable).
     expect(
       view.container.querySelector(".vex-shell-handle[data-side='book']"),
     ).toBeNull();
@@ -896,10 +950,23 @@ describe("AppShell", () => {
     const frame = view.container.querySelector(
       "[data-vex-area='shell-frame']",
     ) as HTMLElement | null;
-    // The collapsed rail is the fixed 56px track.
-    expect(frame?.style.gridTemplateColumns).toBe(
-      `56px minmax(0, 1fr) ${WELCOME_PORTFOLIO_WIDTH}px`,
-    );
+    // The closed page is the fixed 56px spine, beside the small gutter.
+    expect(frame?.style.gridTemplateColumns).toBe("56px 22px 0px minmax(0, 1fr) 340px");
+  });
+
+  it("clamps the page handle so the centre keeps its floor", () => {
+    const view = renderShell();
+    const handle = screen.getByRole("separator", { name: "Resize the sessions sidebar" });
+    // 1440 - 36 - 340 - 640 = 424, capped at the 420 ceiling.
+    expect(handle.getAttribute("aria-valuemin")).toBe("300");
+    expect(handle.getAttribute("aria-valuemax")).toBe("420");
+    view.unmount();
+    // 1280: the BOOK holds its floor and the page has 4px of room.
+    setWindowWidth(1280);
+    renderShell();
+    expect(
+      screen.getByRole("separator", { name: "Resize the sessions sidebar" }).getAttribute("aria-valuemax"),
+    ).toBe("304");
   });
 
   it("a dragged sidebar width re-solves the track and persists through the store", () => {
@@ -908,9 +975,7 @@ describe("AppShell", () => {
     const frame = view.container.querySelector(
       "[data-vex-area='shell-frame']",
     ) as HTMLElement | null;
-    expect(frame?.style.gridTemplateColumns).toBe(
-      `342px minmax(0, 1fr) ${WELCOME_PORTFOLIO_WIDTH}px`,
-    );
+    expect(frame?.style.gridTemplateColumns).toBe("342px 36px 0px minmax(0, 1fr) 340px");
   });
 
   it("keeps exactly ONE way into Studio on screen across the welcome<->session edge", () => {
@@ -921,12 +986,12 @@ describe("AppShell", () => {
     // because each of them mounts one component; only the assembled shell can
     // show that the control survives a stage change.
     //
-    // The seat is decided by ONE store fact, `activeSessionId` (owner decree
-    // 2026-09-04: the capsule sits under the wordmark on the welcome screen):
-    // null, the hero carries it and the rail header mounts none; non-null, the
-    // rail header carries it and the hero mounts none. The COUNT is the
-    // invariant either way (`e2e/studio.spec.ts` pins it page-wide). Make
-    // either seat unconditional and one half below reads 2.
+    // The seat is decided by the LEFT PAGE (docs/design/V10-SPREAD.md
+    // section 3): open, its mast carries the capsule beside the vx mark on
+    // the welcome stage and in a session alike; a spine has no mast, and the
+    // welcome hero carries it. The COUNT is the invariant either way
+    // (`e2e/studio.spec.ts` pins it page-wide). Make either seat
+    // unconditional and one half below reads 2.
     const view = renderShell();
     const rail = (): HTMLElement | null =>
       view.container.querySelector("[data-vex-area='sessions-sidebar']");
@@ -937,10 +1002,9 @@ describe("AppShell", () => {
       name: "Runtime mode",
     });
     expect(welcomeGroups).toHaveLength(1);
-    // And it is the HERO's (the centre column), under the wordmark, not the
-    // rail's.
-    expect(centre()?.contains(welcomeGroups[0] ?? null)).toBe(true);
-    expect(rail()?.contains(welcomeGroups[0] ?? null)).toBe(false);
+    // The open page's mast, not the hero.
+    expect(rail()?.contains(welcomeGroups[0] ?? null)).toBe(true);
+    expect(centre()?.contains(welcomeGroups[0] ?? null)).toBe(false);
 
     act(() => useUiStore.getState().setActiveSessionId("s-1"));
 
@@ -952,6 +1016,16 @@ describe("AppShell", () => {
     expect(
       screen.getByRole("radio", { name: "Studio" }).getAttribute("aria-checked"),
     ).toBe("false");
+
+    // Back on the welcome stage with the page closed to its spine: the mast
+    // is gone and the hero takes the capsule.
+    act(() => useUiStore.getState().setActiveSessionId(null));
+    fireEvent.click(screen.getByRole("button", { name: /Collapse sessions sidebar/i }));
+    const spineGroups = screen.getAllByRole("radiogroup", {
+      name: "Runtime mode",
+    });
+    expect(spineGroups).toHaveLength(1);
+    expect(centre()?.contains(spineGroups[0] ?? null)).toBe(true);
   });
 });
 

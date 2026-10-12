@@ -15,10 +15,11 @@ export function CollapsedTrigger({ onOpen }: CollapsedTriggerProps): JSX.Element
   return (
     <div className="flex flex-col gap-1" data-vex-wallet-restore="collapsed">
       <Button
-        variant="outline"
+        variant="quiet"
         size="sm"
         onClick={onOpen}
         data-vex-restore-open
+        className="text-accent-primary"
       >
         Restore a full backup
       </Button>
@@ -37,7 +38,7 @@ export function PanelHeader({ onClose }: PanelHeaderProps): JSX.Element {
         Restore a full backup
       </p>
       <Button
-        variant="ghost"
+        variant="bare"
         size="sm"
         onClick={onClose}
         data-vex-restore-cancel
@@ -56,7 +57,6 @@ export function LoadingBackups(): JSX.Element {
       <VexLoader
         size={16}
         stroke={2}
-        tone="paper"
         label="Loading backups…"
       />
       <span aria-hidden className="text-xs text-ink-tertiary">
@@ -86,7 +86,7 @@ export function BackupsListError({
       </p>
       <div>
         <Button
-          variant="outline"
+          variant="quiet"
           size="sm"
           onClick={onRetry}
           disabled={retryDisabled}
@@ -177,12 +177,12 @@ export function RestoreForm({
                       </span>
                       <div className="flex flex-wrap gap-1">
                         {backup.vaultIncluded ? (
-                          <span className="rounded-full border border-[var(--color-border)] px-2 py-0.5 vex-micro text-ink-tertiary">
+                          <span className="border border-[var(--color-border)] px-2 py-0.5 vex-micro text-ink-tertiary">
                             vault
                           </span>
                         ) : null}
                         {backup.envIncluded ? (
-                          <span className="rounded-full border border-[var(--color-border)] px-2 py-0.5 vex-micro text-ink-tertiary">
+                          <span className="border border-[var(--color-border)] px-2 py-0.5 vex-micro text-ink-tertiary">
                             .env
                           </span>
                         ) : null}

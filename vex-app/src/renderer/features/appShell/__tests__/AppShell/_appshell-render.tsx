@@ -23,6 +23,18 @@ import { createQueryClient } from "../../../../app/queryClient.js";
  * `renderShell`/`renderShellStrict` call shape every test already used, so
  * no it() body changes.
  */
+/**
+ * The reference window (docs/design/V10-SPREAD.md section 2). jsdom's own
+ * 1024 is under the spread, where the left page closes to its spine and the
+ * sessions index shows its icon rail; the shell suites drive the open page.
+ */
+export const SPREAD_TEST_WIDTH = 1440;
+
+/** Size jsdom's window; the frame reads it when there is no ResizeObserver. */
+export function setWindowWidth(width: number = SPREAD_TEST_WIDTH): void {
+  Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width });
+}
+
 export function createShellRenderers(AppShell: () => JSX.Element): {
   readonly renderShell: () => ReturnType<typeof render> & {
     readonly queryClient: QueryClient;
@@ -32,6 +44,7 @@ export function createShellRenderers(AppShell: () => JSX.Element): {
   function renderShell(): ReturnType<typeof render> & {
     readonly queryClient: QueryClient;
   } {
+    setWindowWidth();
     const client = createQueryClient();
     client.setDefaultOptions({
       queries: {
@@ -53,6 +66,7 @@ export function createShellRenderers(AppShell: () => JSX.Element): {
   // replay (subscribe → cleanup → subscribe) is exercised — the condition that
   // detaches the chat MutationObserver mid-flight and froze `isPending`.
   function renderShellStrict(): ReturnType<typeof render> {
+    setWindowWidth();
     const client = createQueryClient();
     client.setDefaultOptions({ queries: { retry: false } });
     return render(

@@ -1,9 +1,9 @@
-/* GLOBAL PAGE FOUNDATION — unscoped rules with no single feature owner:
- * the ::selection accent, the html/body/#root base surface, and the WCAG
- * reduced-motion catch-all. The catch-all is a HARD dependency for every
- * effect without a dedicated reduced-motion override (including the looping
- * badge shimmer and backdrop drift) — never drop this import and never add
- * layer(...) to it. */
+/* GLOBAL PAGE FOUNDATION: unscoped rules with no single feature owner:
+ * the ::selection accent, the html/body/#root base surface, the weight
+ * synthesis switch, the V10 shape law and the WCAG reduced-motion catch-all.
+ * The catch-all is a HARD dependency for every effect without a dedicated
+ * reduced-motion override (including the looping badge shimmer and backdrop
+ * drift); never drop this import and never add layer(...) to it. */
 
 /* Text selection speaks the accent — same as the landing (::selection). */
 ::selection {
@@ -22,6 +22,34 @@ body,
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* NEVER A FAKE BOLD. Departure Mono ships one 400 weight and Instrument Serif
+ * has no weight axis, so a `font-semibold` reaching either would be
+ * synthesised by the browser. Weight synthesis is off for the whole page: a
+ * face renders the weights it has. Italic synthesis stays on, because
+ * Instrument Sans ships upright only and an italic request should still lean.
+ * Set on html so every element inherits it. */
+html {
+  font-synthesis-weight: none;
+}
+
+/* THE SHAPE LAW (V10): radius 0 on every element, no exceptions, focus rings
+ * included. One unlayered declaration with `!important`, because it has to
+ * outrank three kinds of radius at once: Tailwind's `rounded-*` utilities
+ * (layered), the class rules of the feature sheets (unlayered, higher
+ * specificity) and the inline radii Motion animates. Scrollbar parts are
+ * pseudo-elements `*` does not reach, so they are named. A component never
+ * needs to say "square"; the radius declarations still standing in feature
+ * code are dead and go with each area's own rework. */
+*,
+*::before,
+*::after,
+::backdrop,
+::-webkit-scrollbar-thumb,
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  border-radius: 0 !important;
 }
 
 /* Respect reduced-motion preference (WCAG AA).

@@ -22,7 +22,7 @@
  * are the tables this file implements. In short, with realistic DexScreener
  * figures and the widest label the frozen safety table can produce:
  *
- *   WIDE anatomy    (sparkline in the price row, 4 stat columns, one-row
+ *   WIDE anatomy    (sparkline in the price row, 4 stat columns, stacked
  *                    footer) needs 460px of inner width, so a 502px card.
  *                    Binding constraint: 316 figures + 12 gap + 132 sparkline.
  *   COMPACT anatomy (sparkline in its own slot, 2x2 stats, stacked footer)
@@ -72,26 +72,11 @@
  * `overflow-x: auto` would make it a scroll container too, and the modal body
  * already owns the board's vertical scrolling. So the horizontal escape hatch
  * is a wrapper around the grid: below the compact floor the track stays 358px
- * wide and this element scrolls, rather than a figure being cut.
- *
- * `overflow-y: visible` IS NOT AVAILABLE HERE, and asking for it was wrong.
- * CSS overflow computes a `visible` on one axis to `auto` whenever the other
- * axis is not `visible`, so this element is a scroll container on BOTH axes
- * whatever is written for the block axis - and its block-axis padding box is
- * exactly the grid, which clips the cards' hover shadow (`--shadow-lv2`
- * reaches 16px below a card and 8px above).
- *
- * So the room is MADE rather than asked for: block padding wide enough for
- * the shadow, cancelled by an equal negative margin so the plate's own
- * spacing is unchanged. The inline axis deliberately gets none of this - an
- * inline padding here would shrink the grid below the width the container
- * query just decided the columns from, which is the whole defect this file
- * exists to fix. A first card's leading shadow is reachable by the scroll
- * that owns that axis. */
+ * wide and this element scrolls, rather than a figure being cut. The tiles
+ * are flat (no shadow, docs/design/V10-SPREAD.md section 1), so the wrapper
+ * needs no block padding to keep anything from being clipped. */
 .vex-board-grid-scroller {
   overflow-x: auto;
-  padding-block: 16px;
-  margin-block: -16px;
 }
 
 /* ------------------------------------------------------------------ */
@@ -146,10 +131,8 @@
   --vex-board-sparkline-slot-display: block;
   --vex-board-stat-columns: repeat(2, minmax(0, 1fr));
   --vex-board-stat-height: 92px;
-  --vex-board-footer-direction: column;
-  --vex-board-footer-align: flex-start;
-  --vex-board-footer-justify: flex-start;
-  --vex-board-footer-gap: 8px;
+  --vex-board-actions-direction: column;
+  --vex-board-actions-align: flex-end;
 }
 
 /* The three windows in which the chosen column count leaves a 500px card.
@@ -164,10 +147,8 @@
     --vex-board-sparkline-slot-display: none;
     --vex-board-stat-columns: repeat(4, minmax(0, 1fr));
     --vex-board-stat-height: 46px;
-    --vex-board-footer-direction: row;
-    --vex-board-footer-align: center;
-    --vex-board-footer-justify: space-between;
-    --vex-board-footer-gap: 12px;
+    --vex-board-actions-direction: row;
+    --vex-board-actions-align: center;
   }
 }
 
@@ -202,12 +183,37 @@
   height: var(--vex-board-stat-height);
 }
 
+/* THE FOOTER STACKS IN BOTH MODES: the chip on its own row, the actions
+ * below it. Set as the V10 compact chip, the widest label the frozen safety
+ * table can produce ("Checks unavailable in this response") is 308px and the
+ * two actions are 126 + 8 + 104 = 238, so one row needs 558px and the wide
+ * floor's inner width is 460. A one-row wide footer therefore cut Ask VEX
+ * whenever that verdict landed, and it lands on every card at once on a
+ * transport blip. Stacked, the footer needs 308, which both floors clear. */
 .vex-board-card-footer {
   display: flex;
-  flex-direction: var(--vex-board-footer-direction);
-  align-items: var(--vex-board-footer-align);
-  justify-content: var(--vex-board-footer-justify);
-  gap: var(--vex-board-footer-gap);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* THE HEADER'S ACTIONS STACK IN COMPACT MODE, and the ticker is why. The
+ * compact header gives its inner 316px to the 64px photo, two 16px gaps and
+ * the action cluster, and the identity column gets what is left; the ticker
+ * budget (`BOARD_CARD_TICKER_MAX_SLOTS`) is ten slots of that column. Set in
+ * Departure Mono caps the Spotlight button is 125px, so the 28px disclosure
+ * beside it made the cluster 161 and left the column 59 - under the 85.4px a
+ * ten-slot ticker renders, so the ticker was cut at the compact floor with
+ * nothing reporting it. Stacked, the two 28px controls and their 8px gap are
+ * the 64px header exactly, the cluster is the button's 125, and the column is
+ * 95. Wide mode has the room for one row and keeps it. */
+.vex-board-card-actions {
+  display: flex;
+  flex: none;
+  align-self: flex-start;
+  flex-direction: var(--vex-board-actions-direction);
+  align-items: var(--vex-board-actions-align);
+  gap: 8px;
 }
 
 /* ------------------------------------------------------------------ */

@@ -286,7 +286,7 @@ export function SessionCreator({
           <DialogFooter className="border-line-2 px-8 py-4">
             <Button
               type="button"
-              variant="ghost"
+              variant="bare"
               onClick={() => onOpenChange(false)}
               disabled={createMutation.isPending}
               className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"

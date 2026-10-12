@@ -36,7 +36,7 @@
 
 import { useEffect, useRef, type JSX } from "react";
 import { useUiStore } from "../../../stores/uiStore.js";
-import { IconClose } from "../../../components/icons/index.js";
+import { PxIcon } from "../../../components/icons/index.js";
 import {
   Dialog,
   DialogBody,
@@ -170,7 +170,7 @@ export function BoardModalHost({
         {board === null ? null : (
           <>
             <header
-              className="flex shrink-0 items-start justify-between gap-4 px-6 pt-6 pb-4"
+              className="flex shrink-0 items-start justify-between gap-4 border-b border-rule px-6 pt-5 pb-4"
               data-vex-area="board-header"
             >
               {/* The heading is the MODEL's own title for this board. The
@@ -181,7 +181,7 @@ export function BoardModalHost({
                  * line readable, not short. */}
                 <p
                   data-vex-area="board-title"
-                  className="max-w-[60ch] whitespace-normal break-words font-display text-[22px] font-semibold leading-[28px] tracking-[-0.01em] text-ink-primary"
+                  className="max-w-[60ch] whitespace-normal break-words font-mono text-[22px] font-normal uppercase leading-[28px] tracking-[0.06em] text-ink-primary"
                 >
                   {board.title}
                 </p>
@@ -197,9 +197,9 @@ export function BoardModalHost({
                 )}
                 <DialogClose
                   aria-label="Close the board"
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-tertiary hover:bg-interactive-active hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center border border-rule text-ink-secondary hover:border-rule-ink hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <IconClose size={16} />
+                  <PxIcon name="close" size={16} />
                 </DialogClose>
               </div>
             </header>
@@ -209,7 +209,7 @@ export function BoardModalHost({
               data-vex-area="board-body"
             >
               <div
-                className="min-w-0 flex-1 overflow-y-auto px-6 pb-6"
+                className="min-w-0 flex-1 overflow-y-auto px-6 py-5"
                 data-vex-area={
                   view === "spotlight" ? "board-spotlight" : "board-grid"
                 }
@@ -235,7 +235,7 @@ export function BoardModalHost({
               </div>
               {askPanelOpen && AskSlot !== undefined ? (
                 <aside
-                  className="w-[360px] shrink-0 overflow-y-auto border-l border-line-1 px-5 pb-6"
+                  className="w-[360px] shrink-0 overflow-y-auto border-l border-rule px-5 pb-6"
                   data-vex-area="board-ask"
                 >
                   <AskSlot key={boardKey} board={board} poolIndex={poolIndex} />

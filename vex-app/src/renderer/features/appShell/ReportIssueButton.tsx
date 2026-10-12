@@ -25,7 +25,7 @@ export function ReportIssueButton({
   return (
     <>
       <Button
-        variant="ghost"
+        variant="bare"
         size={compact ? "icon" : "sm"}
         onClick={openDialog}
         aria-label="Report an issue"

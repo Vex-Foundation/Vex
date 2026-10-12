@@ -139,7 +139,7 @@ export function LighterChatRail(): JSX.Element {
                   <small>{prompt.detail}</small>
                 </span>
                 <span className="lit-chat-starter-arrow" aria-hidden="true">
-                  <IconArrowUpRight size={17} />
+                  <IconArrowUpRight size={16} />
                 </span>
               </button>
             ))}

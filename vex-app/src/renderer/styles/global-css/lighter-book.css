@@ -1,11 +1,17 @@
 /* ---------------------------------------------------------------------------
  * Order book (asks over bids, or bids | asks side by side) and trades
+ * (docs/design/V10-SPREAD.md section 1). Bids are the blue: blue prices over a
+ * solid blue depth wash. Asks are the ink: ink prices over an ink hatch.
+ * Departure Mono 11px rows, 10px caps column heads.
  * ------------------------------------------------------------------------- */
 
-.lit-book-header {
-  gap: 6px;
-  padding-inline: 8px;
-}
+.lit-book-panel,
+.lit-trades-panel { padding: 0 10px; }
+
+.lit-book-panel > .lit-panel-header,
+.lit-trades-panel > .lit-panel-header { margin-inline: -10px; padding-inline: 10px; }
+
+.lit-book-header { gap: 8px; }
 
 /* At the column floor (220px) the title, unit switch and view switch fit on one line only unwrapped. */
 .lit-book-header h3 { white-space: nowrap; }
@@ -17,11 +23,12 @@
   height: 22px;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid var(--lit-line);
-  border-radius: 50%;
+  border: 0;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
   background: transparent;
-  color: var(--lit-ink-muted);
-  font-size: 15px;
+  color: var(--lit-ink-secondary);
+  font-size: 13px;
   line-height: 1;
 }
 
@@ -36,7 +43,7 @@
   flex: 1 1 auto;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 8px;
 }
 
 .lit-book-panel[data-collapsed] .lit-book-labels,
@@ -67,42 +74,64 @@
   padding-inline: 0;
 }
 
-.lit-expiry select {
-  height: 24px;
-  border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius);
-  background: var(--lit-panel);
-  padding: 0 20px 0 6px;
+/* The two small selects (price grouping, order expiry): rule-framed chips
+ * with a drawn caret. */
+.lit-expiry select,
+.lit-book-controls > select {
+  height: 22px;
+  appearance: none;
+  border: 0;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
+  background-color: transparent;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 11px) 50%, calc(100% - 7px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+  padding: 0 20px 0 7px;
   color: var(--lit-ink-secondary);
-  font-size: 10.5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
+.lit-book-controls > select {
+  width: 62px;
+  flex: 0 0 auto;
+}
+
+/* Base | quote and stacked | side by side: rule-framed segments, the chosen
+ * one blue on the paper-2 step. */
 .lit-unit-switch {
   display: flex;
-  border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius);
-  padding: 1px;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
 }
 
 .lit-unit-switch button {
-  min-width: 34px;
-  min-height: 20px;
+  display: inline-grid;
+  min-width: 30px;
+  height: 22px;
+  place-items: center;
   border: 0;
-  border-radius: 2px;
   background: transparent;
-  padding: 0 6px;
-  color: var(--lit-ink-muted);
-  font-size: 10.5px;
-  font-weight: 600;
+  padding: 0 7px;
+  color: var(--lit-ink-secondary);
+  font-size: 10px;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
 }
+
+.lit-unit-switch button:hover { color: var(--lit-ink); }
 
 .lit-unit-switch button[aria-pressed="true"] {
   background: var(--lit-panel-raised);
-  color: var(--lit-ink);
+  color: var(--lit-positive);
 }
 
-.lit-view-switch button { min-width: 24px; padding: 0; }
-.lit-view-switch svg { display: block; width: 12px; height: 12px; margin: 0 auto; fill: currentColor; }
+.lit-view-switch button { min-width: 26px; padding: 0 5px; }
+.lit-view-switch svg { display: block; width: 16px; height: 16px; }
 
 /* A narrow depth column gives controls their own row instead of squeezing
  * the title or shifting column labels away from the prices below them. */
@@ -118,28 +147,29 @@
   .lit-book-header > .lit-live-dot { grid-row: 1; grid-column: 3; }
 }
 
-/* Pinned inside row: last trade, spread, mark. */
+/* Pinned inside row: last trade, spread, mark. In the side-by-side view it
+ * sits right under the header, over the column heads. */
 .lit-book-mid {
   display: grid;
+  min-height: 26px;
   flex: 0 0 auto;
-  grid-template-columns: auto 1fr auto;
-  align-items: baseline;
-  gap: 8px;
-  border-bottom: 1px solid var(--lit-line);
-  padding: 6px 8px;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 16px;
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
 .lit-book-mid b {
-  font-size: 15px;
-  font-weight: 700;
+  color: var(--lit-ink);
+  font-size: 13px;
+  font-weight: 400;
 }
 
-.lit-book-mid[data-trend="up"] b { color: var(--lit-positive); }
-.lit-book-mid[data-trend="down"] b { color: var(--lit-negative); }
-/* Exchange register: the last trade carries its tick direction. */
-.lit-book-mid[data-trend="up"] b::after { content: " \2191"; font-size: 12px; }
-.lit-book-mid[data-trend="down"] b::after { content: " \2193"; font-size: 12px; }
+/* Exchange register: the last trade carries its tick direction; up is blue. */
+.lit-book-mid[data-trend="up"] b::after { content: "\00a0\2191"; }
+.lit-book-mid[data-trend="down"] b::after { content: "\00a0\2193"; }
 
 /* At the column's floor the last and the mark keep the row; the spread moves
  * to the row's tooltip rather than clipping the mark's digits. */
@@ -149,32 +179,19 @@
   .lit-book-mid > span:last-of-type { text-align: right; }
 }
 
-.lit-book-mid span {
-  color: var(--lit-ink-muted);
-  font-size: 10.5px;
-  white-space: nowrap;
-}
+.lit-book-mid span { white-space: nowrap; }
 
-.lit-book-mid span:last-child { text-align: right; }
+.lit-book-panel[data-view="split"] > .lit-book-mid { order: 1; }
+.lit-book-panel[data-view="split"] > .lit-book-labels { order: 2; }
+.lit-book-panel[data-view="split"] > .lit-book-body { order: 3; }
+.lit-book-panel[data-view="split"] > .lit-book-ratio { order: 4; }
 
 /* Labels use the same full-width grid as the data rows. */
 .lit-book-labels {
   display: flex;
+  min-height: 20px;
   flex: 0 0 auto;
   align-items: center;
-  padding: 3px 0;
-}
-
-.lit-book-controls > select {
-  width: 50px;
-  height: 20px;
-  flex: 0 0 auto;
-  border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius);
-  background: var(--lit-panel);
-  padding: 0 12px 0 5px;
-  color: var(--lit-ink-secondary);
-  font-size: 10px;
 }
 
 .lit-book-columns {
@@ -182,20 +199,21 @@
   min-width: 0;
   flex: 1 1 auto;
   grid-template-columns: 1fr 1fr 1fr 1fr;
-  padding: 0 8px;
-  color: var(--lit-ink-muted);
-  font-size: 10.5px;
+  color: var(--lit-ink-secondary);
+  font-size: 10px;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
-.lit-book-columns[data-view="split"] span:nth-child(2) { text-align: right; padding-right: 7px; }
-.lit-book-columns[data-view="split"] span:nth-child(3) { padding-left: 7px; }
+.lit-book-columns[data-view="split"] span:nth-child(2) { padding-right: 10px; text-align: right; }
+.lit-book-columns[data-view="split"] span:nth-child(3) { padding-left: 10px; }
 .lit-book-columns[data-view="split"] span:nth-child(4) { text-align: right; }
 
 .lit-book-columns[data-view="stack"] { grid-template-columns: 1.1fr 1fr 1fr; column-gap: 4px; }
 .lit-book-columns[data-view="stack"] span:not(:first-child) { text-align: right; }
 
-.lit-trades-columns { flex: 0 0 auto; grid-template-columns: 1.1fr 1fr 1fr; padding: 4px 8px; }
+.lit-trades-columns { min-height: 20px; flex: 0 0 auto; align-items: center; grid-template-columns: 1.1fr 1fr 1fr; }
 .lit-trades-columns span:not(:first-child) { text-align: right; }
 
 .lit-book-body {
@@ -218,35 +236,32 @@
   scrollbar-width: thin;
 }
 
-.lit-book-rows[data-side="bid"] { padding-right: 3px; }
-.lit-book-rows[data-side="ask"] { padding-left: 3px; }
-
 .lit-book-row {
   --lit-depth: 0%;
   position: relative;
   display: grid;
-  min-height: 20px;
+  min-height: 21px;
   flex: 0 0 auto;
   align-items: center;
   border: 0;
   background: transparent;
-  color: var(--lit-ink-secondary);
+  padding: 0;
+  color: var(--lit-ink);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  transition: background-color 120ms ease, color 120ms ease;
 }
 
-/* Bids: size | price, depth grows from the center leftward. */
+/* Bids: size | price, depth grows from the centre leftward. */
 .lit-book-rows[data-side="bid"] .lit-book-row {
   grid-template-columns: 1fr auto;
-  padding: 0 4px 0 8px;
+  padding: 0 10px 0 0;
   text-align: left;
 }
 
-/* Asks: price | size, depth grows from the center rightward. */
+/* Asks: price | size, depth grows from the centre rightward. */
 .lit-book-rows[data-side="ask"] .lit-book-row {
   grid-template-columns: auto 1fr;
-  padding: 0 8px 0 4px;
+  padding: 0 0 0 10px;
   text-align: right;
 }
 
@@ -255,19 +270,19 @@
 .lit-book-row::before {
   content: "";
   position: absolute;
-  inset: 1px auto;
+  inset: 3px auto;
   width: var(--lit-depth);
-  background: var(--lit-positive-wash);
+  background: var(--lit-depth-bid);
 }
 
 .lit-book-rows[data-side="bid"] .lit-book-row::before { right: 0; }
-.lit-book-rows[data-side="ask"] .lit-book-row::before { left: 0; background: var(--lit-negative-wash); }
+.lit-book-rows[data-side="ask"] .lit-book-row::before { left: 0; background: var(--lit-depth-ask); }
 
 .lit-book-row > * { position: relative; z-index: 1; }
 
 .lit-book-row b {
   color: var(--lit-positive);
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .lit-book-rows[data-side="ask"] .lit-book-row b,
@@ -275,22 +290,23 @@
 
 .lit-book-row:hover { background: var(--lit-hover); }
 
-/* A level whose size just changed, and a trade that just printed, flash
- * once in the side's color and settle; the animation ends on its own. */
+/* A level whose size just changed, and a trade that just printed, mark once
+ * in the side's wash and settle: one discrete frame, no fade. */
 .lit-book-rows[data-side="bid"] .lit-book-row[data-flash],
-.lit-trade-row[data-side="buy"][data-new] { animation: lit-flash-positive 560ms ease-out; }
+.lit-trade-row[data-side="buy"][data-new] { animation: lit-flash-positive 480ms steps(1, end); }
 .lit-book-rows[data-side="ask"] .lit-book-row[data-flash],
-.lit-trade-row[data-side="sell"][data-new] { animation: lit-flash-negative 560ms ease-out; }
+.lit-trade-row[data-side="sell"][data-new] { animation: lit-flash-negative 480ms steps(1, end); }
 
 @keyframes lit-flash-positive {
-  from { background: color-mix(in srgb, var(--lit-positive) 28%, transparent); }
+  from { background: var(--lit-depth-bid); }
   to { background: transparent; }
 }
 
 @keyframes lit-flash-negative {
-  from { background: color-mix(in srgb, var(--lit-negative) 28%, transparent); }
+  from { background: color-mix(in srgb, var(--lit-ink) 10%, transparent); }
   to { background: transparent; }
 }
+
 .lit-book-row:focus-visible { outline-offset: -2px; }
 
 /* Stacked view: asks read down to the inside row, bids read down from it.
@@ -313,39 +329,42 @@
 }
 
 .lit-book-stack > .lit-book-rows[data-side="ask"] { flex-direction: column-reverse; }
-.lit-book-stack > .lit-book-mid { border-top: 1px solid var(--lit-line); }
+
+.lit-book-stack > .lit-book-mid {
+  border-block: 1px solid var(--lit-line-quiet);
+  margin-inline: -10px;
+  padding-inline: 10px;
+}
 
 .lit-book-stack .lit-book-rows[data-side] .lit-book-row {
   grid-template-columns: 1.1fr 1fr 1fr;
-  padding: 0 8px;
+  padding: 0;
   text-align: right;
 }
 
 .lit-book-stack .lit-book-rows[data-side] .lit-book-row b { order: 0; text-align: left; }
-.lit-book-stack .lit-book-rows[data-side] .lit-book-row span:last-child { color: var(--lit-ink-muted); }
+.lit-book-stack .lit-book-rows[data-side] .lit-book-row span:last-child { color: var(--lit-ink-secondary); }
 .lit-book-stack .lit-book-rows[data-side] .lit-book-row::before { right: 0; left: auto; }
 
+/* Bid and ask share of the visible depth: the blue fill is the bids. */
 .lit-book-ratio {
   display: grid;
+  min-height: 28px;
   flex: 0 0 auto;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 8px;
-  border-top: 1px solid var(--lit-line);
-  padding: 6px 8px;
-  font-size: 10.5px;
-  font-weight: 600;
+  gap: 10px;
+  color: var(--lit-ink-secondary);
+  font-size: 10px;
 }
-
-.lit-book-ratio > span:first-child { color: var(--lit-positive); }
-.lit-book-ratio > span:last-child { color: var(--lit-negative); }
 
 .lit-book-ratio i {
   --lit-bid-share: 50%;
   display: block;
-  height: 4px;
-  border-radius: 2px;
-  background: linear-gradient(to right, var(--lit-positive) var(--lit-bid-share), var(--lit-negative) var(--lit-bid-share));
+  height: 6px;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
+  background: linear-gradient(to right, var(--lit-positive) var(--lit-bid-share), transparent var(--lit-bid-share));
 }
 
 .lit-trades-list {
@@ -359,31 +378,18 @@
 
 .lit-trade-row {
   grid-template-columns: 1.1fr 1fr 1fr;
-  padding: 0 8px;
   text-align: right;
 }
 
-.lit-trade-row b { color: var(--lit-positive); text-align: left; }
-.lit-trade-row span:last-child { color: var(--lit-ink-muted); }
+.lit-trade-row b { text-align: left; }
+.lit-trade-row span:last-child { color: var(--lit-ink-secondary); }
 
 .lit-book-empty {
   margin: 0;
   padding: 16px 12px;
-  color: var(--lit-ink-muted);
-  font-size: 12px;
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: normal;
   text-align: center;
-}
-
-/* Dense data stays scannable at a glance, while rows retain a comfortable
- * keyboard and pointer target. The depth wash remains the primary signal. */
-.lit-book-mid {
-  background: color-mix(in srgb, var(--lit-panel-raised) 34%, transparent);
-}
-
-.lit-live-dot[role="status"][data-status="live"] {
-  animation: lit-live-pulse 2.4s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .lit-live-dot[role="status"][data-status="live"] { animation: none; }
 }

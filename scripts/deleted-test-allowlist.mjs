@@ -28,7 +28,28 @@
  * The 12 retired feed/ws fixture entries were consumed when the replacement
  * envelope protocol landed in main through PR #205 (`1dc37f68f`).
  */
-export const DELETED_TEST_ALLOWLIST = [];
+export const DELETED_TEST_ALLOWLIST = [
+  {
+    path: "vex-app/src/renderer/components/icons/__tests__/glyphs.test.tsx",
+    reason: "The hand-drawn outline glyph set was removed when the icons moved to the pixel sprite.",
+    coveredBy: "vex-app/src/renderer/components/icons/__tests__/px-sprite.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/components/ui/__tests__/state-dot.test.tsx",
+    reason: "The halo state dot was removed when status moved to fill swatches.",
+    coveredBy: "vex-app/src/renderer/components/ui/__tests__/swatch.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/lib/__tests__/useCollapseChoreography.test.ts",
+    reason: "The animated sidebar collapse was removed when the left page became a fixed page that closes to a spine.",
+    coveredBy: "vex-app/src/renderer/lib/__tests__/shell-columns.test.ts",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/book/__tests__/rail-glass-tier.test.tsx",
+    reason: "The BOOK glass tiers were removed when the rail became a page of ledger sections.",
+    coveredBy: "vex-app/src/renderer/features/appShell/book/__tests__/rail-sections.test.tsx",
+  },
+];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(
   DELETED_TEST_ALLOWLIST.map((entry) => entry.path),

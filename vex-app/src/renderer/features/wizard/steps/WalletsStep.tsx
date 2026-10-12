@@ -143,7 +143,6 @@ export function WalletsStep({
           <VexLoader
             size={24}
             stroke={2}
-            tone="paper"
             label="Loading wallet status…"
           />
         </div>
@@ -287,7 +286,7 @@ export function WalletsStep({
           </Button>
         ) : showConfigureLater ? (
           <Button
-            variant="ghost"
+            variant="bare"
             onClick={() => {
               void advanceToApiKeys();
             }}
@@ -309,7 +308,7 @@ export function WalletsStep({
           )}
         >
           {anyWallet
-            ? "With only one chain, Vex can only trade or act on that chain. "
+            ? "With only one chain, Vex can only trade or act on that chain."
             : "Without a wallet, Vex can't trade or take any on-chain action. "}
           You can add or import wallets later from Settings.
         </p>

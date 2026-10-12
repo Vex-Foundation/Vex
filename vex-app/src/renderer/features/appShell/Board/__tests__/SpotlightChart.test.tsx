@@ -896,7 +896,7 @@ describe("honest notes and absences", () => {
     const selected = document.querySelector(
       '[data-vex-area="spotlight-chart-pill"][data-selected="true"]',
     );
-    expect(selected?.className).toContain("bg-accent-wash text-accent-primary ring-1 ring-inset ring-accent-primary/40");
+    expect(selected?.className).toContain("bg-accent-wash text-accent-primary ring-1 ring-inset ring-accent-primary");
     expect(selected?.className).not.toContain("bg-accent-primary ");
     const unselected = document.querySelector(
       '[data-vex-area="spotlight-chart-pill"][data-selected="false"]',

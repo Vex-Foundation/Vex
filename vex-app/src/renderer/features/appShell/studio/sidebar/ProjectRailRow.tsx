@@ -4,7 +4,7 @@ import type { JSX, ReactNode } from "react";
 import type { ProjectDto } from "@shared/schemas/projects.js";
 import { IconFolderClose, IconWarning } from "../../../../components/icons/index.js";
 import { RailRow } from "../../../../components/ui/rail-list.js";
-import { StateDot } from "../../../../components/ui/state-dot.js";
+import { Swatch } from "../../../../components/ui/swatch.js";
 import { ProjectPermissionState } from "../ProjectPermissionState.js";
 import {
   projectDriftLabel,
@@ -55,7 +55,7 @@ export function ProjectRailRow({
       // The active dot marks the SELECTED project and nothing else. It is not a
       // liveness light: this stage has no per-project run state to report, and
       // a dot that meant two things would report neither.
-      leading={selected ? <StateDot state="done" size={8} /> : undefined}
+      leading={selected ? <Swatch state="done" size={8} /> : undefined}
       title={project.name}
       persistentTrailing={
         <span className="flex items-center gap-1">

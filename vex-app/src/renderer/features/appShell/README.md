@@ -1,52 +1,92 @@
-# App Shell: layout frame + left sidebar
+# App Shell: the spread + the sessions index
 
-Exact behavior of the shell's column layout and the sessions sidebar,
-rebuilt in the UIUX rebrand phase 3. A fresh agent should be able to rebuild
-these surfaces from this file.
+Exact behavior of the shell's column layout and the sessions index. The
+design values are `docs/design/V10-SPREAD.md` sections 2 to 5 and 8. A fresh
+agent should be able to rebuild these surfaces from this file.
 
-## Column frame (`AppShell.tsx` + `lib/shell-columns.ts`)
+## The spread (`AppShell.tsx` + `lib/shell-columns.ts`)
 
-- Three grid tracks: sidebar | session column | BOOK, solved per frame by the
-  pure `computeShellColumns(viewport, sidebarPref, bookPref)`.
-- Contract geometry: CENTER_MIN 640; sidebar 264-420 (default 280, rail 56,
-  auto-collapse below 1024); BOOK 300-520 (default 360, collapsed spine 48).
-- Concession chain: sidebar never concedes; BOOK shrinks to 300, then
-  auto-closes to its 48px spine (DERIVED - the stored `bookOpen` preference
-  is never rewritten, widening restores it); center absorbs the rest and may
-  drop below its floor only in the final fallback.
+- Five grid tracks: left page | gutter | Studio rail | centre | BOOK, solved
+  per frame by the pure `computeShellColumns({ viewport, mode, sidebar, book,
+  closedBook, zen })`. Every track is a length.
+- Contract geometry: CENTER_MIN 640. Left page 300 (wider by drag up to 420,
+  only into room the centre does not need), spine 56. Gutter 36 beside the
+  page, 22 beside a spine, 0 under the spread. BOOK 300-520 (default 340,
+  held at 300 under 1316, collapsed spine 48). Studio rail 240-420 inside the
+  centre, icon spine 56. First-column preference 240-420 (default 240).
+- Breakpoints: under SPREAD_MIN 1276 the left page and Studio's rail close to
+  their spines (a manual toggle there flips the launch-ephemeral
+  `sidebarNarrowExpanded` override) and the gutter folds into the running
+  head. Lighter and Studio always show the spine.
+- Concession chain: a widened page gives its extra back first; then the BOOK
+  shrinks to 300, then auto-closes to its 48px spine (DERIVED - the stored
+  `bookOpen` preference is never rewritten, widening restores it); the centre
+  absorbs the rest and may drop below its floor only in the final fallback.
 - Width preferences persist in `stores/uiStore` (`sidebarWidth`, `bookWidth`,
-  v10 migration, coerced on every rehydrate). The narrow-viewport re-expand
-  override (`sidebarNarrowExpanded`) is launch-ephemeral.
+  v10 migration, coerced on every rehydrate).
 - Drag handles (`ShellDragHandle.tsx`): 8px strips on the column borders,
   pointer capture, rAF-throttled dx against the drag-start base (the RENDERED
-  width, so a concession-clamped panel does not jump). Track transitions run
-  300ms on `--vex-ease-inout` and pause under `data-dragging`.
-- Welcome stage: the BOOK track is `auto` (the floating Portfolio tab sizes
-  itself); the solver drives the BOOK track only with a session open.
+  width, so a concession-clamped panel does not jump). The page handle exists
+  only while the page can widen; the BOOK handle only while the BOOK is open
+  and free (1316 and up, or Lighter). Track transitions run 300ms on
+  `--vex-ease-inout` and pause under `data-dragging`.
+- Welcome stage: the Portfolio tab fills the BOOK track; closed, the track is
+  0 (no spine).
+- The left page (`ShellBackdrop.tsx`): the day or night print in place
+  (window size from the column's corner, swapped on `data-vex-theme`), or the
+  user's own image from `window.vex.shellBackdrop.read`; the spine adds a
+  44px paper cap. Its children slot carries the agent state canvas
+  (`PlateFlock` from `components/pixel/PrintPlate.tsx`, fed by
+  `useDeskAgentState`): the eagle and its flock in the band, or the eagle
+  alone on a spine. Lighter and Studio show the vx mark at the spine's top.
+- The gutter (`ShellGutter.tsx`): the `aria-hidden` spread caption, context |
+  tape word | connection, a drag column.
+- The running head (`RunningHead.tsx`, seam `shell-status-strip`): the
+  centre's 44px drag row, mounted once for the frame; it reserves the Windows
+  and Linux caption buttons over a narrow BOOK and carries the folded gutter.
 
-## Sidebar (`SessionsList.tsx`)
+## The left page in agent mode (`SessionsList.tsx`)
 
-- Collapse choreography (`lib/useCollapseChoreography.ts` +
-  `.vex-sidebar-*` in `styles/global-css/shell.css`): 0-150ms the wide
-  content freezes at its expanded width and fades in place; at the 150ms
-  settle the rail controls enter the 56px spine from a 49px offset over the
-  track transition's second half; the foot only fades. Cold-collapsed mounts
-  render statically; expand remounts wide content on a 200ms fade.
+docs/design/V10-SPREAD.md section 3. Furniture on the print, styled in
+`styles/global-css/left-page.css` (ink and blue on the sky by day, paper white
+on the night print, white on the ground).
+
+- Mast (`AgentSidebarHeader.tsx`): the open page's 44px head row, a drag
+  region clear of the macOS traffic lights: the vx mark (`SidebarHomeSigil`,
+  "Back to welcome" in a session) and the `Agent | Studio` capsule
+  (`RuntimeModeToggle`), in every agent state. The welcome hero carries the
+  capsule only while the page is a spine (`leftPage/leftPageContext.ts`), so
+  the page holds one `Runtime mode` radiogroup.
+- Sky: the 112px italic `Counter` (the open session's ordinal; on the welcome
+  stage the session count, captioned SESSIONS), New session (a label box; the
+  signing stroke and glint unchanged), the All | Agent | Mission tabs with
+  search and collapse at their right, the optional search field, then the
+  index. Only the index scrolls; `leftPage/useIndexFold.ts` hides a row or
+  head the horizon would cut and the dotted fold counts the rows below
+  (`n more`, one page per press).
+- Ordinals (`leftPage/sessionOrdinals.ts`): a renderer-local ledger numbers
+  each agent session the first time it is seen, oldest first, and keeps the
+  number, so pinning, the tabs, the search, a removal or a row ageing out of
+  the bounded list never renumber anyone.
+- Rows (`SessionRows/SessionRow.tsx`, `index` setting, via
+  `leftPage/SessionIndex.tsx`): ordinal, swatch and title, time; the open
+  session solid and blue, a running mission the dot screen, a paused one the
+  hatch; Remove+Pin replace the time on hover or keyboard focus; HoverCard
+  preview; double-click inline rename persisted through `vex.sessions.rename`
+  (sessionTitleSchema-bounded; unknown/soft-deleted id -> ok(null)). The
+  Sessions library renders the same row in its `register` setting.
+- Ground: `$VEX` (`market/VexTokenCardCompact.tsx`: price, change with its
+  arrow, spark, one link out), the white hairline, and the profile row
+  (`SidebarProfile.tsx`, `ground="print"`): portal `Menu` primitive with six
+  action entries + a disabled runtime provenance footer row; screens expand
+  from the trigger row's rect.
+- Spine (under 1276, or closed by hand): New session, the ordinals
+  (`leftPage/SpineIndex.tsx`, the open one behind a 2px bar), the open
+  control and the profile box at the foot.
 - Quiet scrollbars (`lib/useQuietScrollbars.ts`): the column rebinds the
   `--vex-scrollbar-thumb` pair to transparent while the pointer is outside
   its box (document pointermove probe; 2s linger). Rebinding, not hiding,
   keeps the gutter reservation.
-- Rows: generic primitives in `components/ui/rail-list.tsx` (RailRow 32px /
-  radius 8 / title 14/20 / time 12/20; hover fill == selected fill;
-  actions replace the time on hover; RailGroup eyebrow headers;
-  RailSearchField). Session mapping lives in `SessionRows*` - state dot in
-  the leading slot (pixel chase while live, warn while paused), Remove+Pin
-  cluster, HoverCard preview (full title, started time, mode facts),
-  double-click inline rename persisted through `vex.sessions.rename`
-  (sessionTitleSchema-bounded; unknown/soft-deleted id -> ok(null)).
-- Profile footer (`SidebarProfile.tsx`): portal `Menu` primitive with six
-  action entries + a disabled runtime provenance footer row; screens expand
-  from the trigger row's rect.
 
 ## Known limitations and deferred work
 

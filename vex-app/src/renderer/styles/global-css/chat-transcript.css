@@ -1,7 +1,11 @@
-/* Chat transcript chrome: the RESIDENT SHELL geometry, the turn-status
- * shimmer, the running-row sweep, hover-revealed timestamps, day separators
- * and the micro-label turn-stats line.
- * All ambient loops still under prefers-reduced-motion. */
+/* The session page, V10 (docs/design/V10-SPREAD.md sections 1, 4 and 7): the
+ * RESIDENT SHELL geometry, the welcome chapter opening, the transcript's
+ * chapter head, the ruled turn island, the REAL FUNDS approval card and its
+ * paper dither veil, hover-revealed timestamps and the chat code tokens.
+ *
+ * Status is shown by fill (the shared swatch, ui-primitives/marks.css), never
+ * by a colour, a shimmer or a sweep: the ongoing swatch's four-step dot screen
+ * is the only state motion on the page, and it stops under reduced motion. */
 
 /* ============================================================ *
  *  THE RESIDENT CONVERSATION SHELL                              *
@@ -29,52 +33,43 @@
   scrollbar-gutter: auto;
 }
 
-/* HERO - the composer stack is FLEX-CENTRED in the scroll body. Flex, never
- * `transform`: a transform on this box would make it the containing block for
- * every `position: fixed` descendant (menus, dialogs, the command palette),
- * silently shrinking them to this column. */
+/* HERO - the chapter opening is ANCHORED AT THE HEAD of the page, the way the
+ * welcome spread draws it (docs/design/V10-SPREAD.md reference d2): flex at the
+ * start, never a `transform`. A transform on this box would make it the
+ * containing block for every `position: fixed` descendant (menus, dialogs, the
+ * command palette), silently shrinking them to this column. */
 [data-vex-area="session-panel"][data-phase="hero"]
   > [data-vex-conversation-scroll] {
-  justify-content: center;
+  justify-content: flex-start;
 }
 
-/* Foot inside the centred box floats the hero stack a little above true
- * centre, which reads better than geometric centring. */
+/* The opening's head room: 104px under the running head on a full window,
+ * shrinking with a short one so the field and the starters stay above the
+ * fold at the 720px minimum. */
 [data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-seat] {
+  padding-top: clamp(40px, 11.6vh, 104px);
   padding-bottom: 32px;
 }
 
 /* HERO GROWTH BAND (owner smoothness decree 2026-07-22, carried into
  * residency). The band's LAYOUT height is pinned to the composer's resting
- * stack, so an auto-growing pill overflows DOWNWARD instead of growing the
- * flex-centred seat - which would move the hero crown up by half the growth,
- * i.e. opposite to the thing the user is typing into. `overflow: visible` is
- * what lets the overflow paint. 140px = mt-6 (24) + resting pill (56) + the
- * starter-chip slot (60), the same constant the pre-residency band used. */
+ * stack, so an auto-growing field overflows DOWNWARD and never moves the
+ * greeting above it. `overflow: visible` is what lets the overflow paint.
+ * 230px = the field's 26px margin + the resting hero field (118) + the
+ * starter slot (86: 14 above two 32px rows and their 8px gap). */
 [data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-dock] {
-  height: 140px;
+  height: 230px;
   overflow: visible;
 }
 
-/* ACTIVE - the seat is the sticky floor of the scroll body, with the
- * transcript dissolving into it.
- *
- * The mask stops are in PX, not percentages: a growing draft must widen the
- * SOLID region only, never stretch the 36px fade band. The 0px stop is the
- * plate colour at zero alpha (not white), so both themes fade from their own
- * ground. `--vex-surface-0` is the shell plate the backdrop veil is built
- * from; behind an active session that veil is already 80% of this colour, so
- * the residual difference against the artwork reads as a mild deepening rather
- * than a seam. */
+/* ACTIVE - the seat is the sticky floor of the scroll body, on the page's own
+ * paper. A solid floor, not a fade: V10 has no gradient ramp, and the 1px rule
+ * above the field already says where the transcript ends. */
 [data-vex-area="session-panel"][data-phase="active"] [data-vex-composer-seat] {
   position: sticky;
   bottom: 0;
   z-index: 7;
-  background: linear-gradient(
-    180deg,
-    color-mix(in oklab, var(--vex-surface-0) 0%, transparent) 0px,
-    var(--vex-surface-0) 36px
-  );
+  background: var(--vex-alias-bg-base);
 }
 
 /* SETTLING - a session is opening and its transcript is still unknown, so
@@ -83,6 +78,12 @@
 [data-vex-area="session-panel"][data-phase="settling"]
   [data-vex-composer-seat] {
   visibility: hidden;
+}
+
+/* In a side rail (the Lighter chat, `data-vex-session-surface="embedded"`) the
+ * transcript keeps the rail's own 12px sides instead of the page's 32. */
+[data-vex-session-surface="embedded"] [data-vex-transcript-column] {
+  padding-inline: 12px;
 }
 
 /* FOLLOW OWNERSHIP IS THE SCROLL MODEL'S, NOT THE BROWSER'S. Chromium's scroll
@@ -99,17 +100,12 @@
 /* ── Zero-height sticky slot ──────────────────────────────────────────────
  * The one floating conversation surface left is a `height: 0` sticky box whose
  * child overflows. A zero-height box adds no scroll range, so it cannot move
- * the floor the follow model measures itself against.
- *
- * The centred "vexing…" scene that used to share this idiom is RETIRED (round
- * 3, owner QA item 7): its child was one VIEWPORT tall, and a positively
- * overflowing child DOES enlarge scrollable overflow even from a zero-height
- * parent - which lifted the sticky composer seat on every send and dropped it
- * back on unmount. The pending turn is now `TurnIsland`'s in-flow pill. */
+ * the floor the follow model measures itself against. The pending turn is
+ * `TurnIsland`'s in-flow box, never a centred scene. */
 
-/* The jump-to-latest pill. Under the resident shell it clears the sticky seat
+/* The jump-to-latest key. Under the resident shell it clears the sticky seat
  * by the seat's LIVE height, so a growing draft or an opening queue dock
- * pushes the pill up with it. z-8 keeps it above the seat (z-7). */
+ * pushes the key up with it. z-8 keeps it above the seat (z-7). */
 [data-vex-latest-slot] {
   position: sticky;
   bottom: 16px;
@@ -123,90 +119,215 @@
   bottom: calc(var(--vex-composer-height, 152px) + 16px);
 }
 
-/* Turn-status shimmer — 5-stop gradient, narrow bright band at 40-60%,
- * clipped to the glyphs. The highlight stop is blue-300 in BOTH themes
- * (design-language calibration 2026-08-20: blue-400 never sits on light
- * surfaces, and chronos' accent-hover is already blue-300) — a justified
- * theme-invariant static reference. */
-.vex-turn-shimmer {
-  white-space: nowrap;
-  background: linear-gradient(
-    90deg,
-    var(--vex-alias-accent-primary) 0%,
-    var(--vex-alias-accent-primary) 40%,
-    var(--color-blue-300) 50%,
-    var(--vex-alias-accent-primary) 60%,
-    var(--vex-alias-accent-primary) 100%
-  );
-  background-position: 100% 0;
-  background-size: 250% 100%;
-  background-clip: text;
-  color: transparent;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: vex-turn-status-shimmer 1.8s linear infinite;
-}
-@keyframes vex-turn-status-shimmer {
-  to {
-    background-position: 0 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .vex-turn-shimmer {
-    background-position: 0 0;
-    background-size: 100% 100%;
-    animation: none;
-  }
-}
-/* A clock (or any sibling readout) inside a shimmer parent must RE-DECLARE
- * -webkit-text-fill-color to escape the parent's transparent fill. */
-.vex-turn-clock {
-  background: none;
-  color: var(--vex-alias-label-tertiary);
-  -webkit-text-fill-color: var(--vex-alias-label-tertiary);
+/* ============================================================ *
+ *  THE CHAPTER OPENING (welcome, reference d2)                  *
+ * ============================================================ */
+
+/* The opening's column is a size container, so the greeting answers to the
+ * page it sits on rather than to the window. */
+.vex-opening {
+  container-type: inline-size;
 }
 
-/* Running-row sweep — the inverse of the text shimmer: a 300px band of the
- * BASE BACKGROUND at 60% washes over the glyphs. color-mix with bg-base makes
- * one declaration work in both themes. The 90-100% hold gives a beat between
- * passes (without it the sweep reads as a loading bar). */
-.vex-row-sweep {
-  position: relative;
-  overflow: hidden;
+/* Date eyebrow: 13px Departure Mono caps at the eyebrow tracking, in ink. */
+.vex-opening__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
 }
-.vex-row-sweep[data-vex-sweep="running"]::after {
+
+/* The greeting: Instrument Serif roman at 96px (section 1), never bold. It
+ * steps down with a narrow page and wraps, balanced, rather than clipping a
+ * long greeting. -0.014em is the display tracking. */
+.vex-opening__title {
+  margin-top: 18px;
+  font-family: var(--font-serif);
+  font-size: min(96px, 14cqi);
+  font-weight: 400;
+  line-height: 0.9;
+  letter-spacing: -0.014em;
+  text-wrap: balance;
+  color: var(--vex-alias-title);
+}
+
+/* The Arena notice: one ruled box on the paper. Its title is the 36px serif
+ * (section 1, "arena and chat rail"). */
+.vex-arena {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  margin-top: 40px;
+  padding: 16px 18px;
+  border: 1px solid var(--vex-alias-rule);
+}
+.vex-arena__title {
+  font-family: var(--font-serif);
+  font-size: 36px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--vex-alias-title);
+}
+
+@media (max-height: 800px) {
+  .vex-arena {
+    margin-top: 28px;
+  }
+}
+
+/* ============================================================ *
+ *  THE SESSION PAGE (reference d3)                              *
+ * ============================================================ */
+
+/* The chapter head: the session's own name, the 56px serif (48px under the
+ * spread breakpoint, section 1). */
+.vex-chapter__title {
+  font-family: var(--font-serif);
+  font-size: 56px;
+  font-weight: 400;
+  line-height: 0.94;
+  letter-spacing: -0.014em;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-title);
+}
+
+@media (max-width: 1275px) {
+  .vex-chapter__title {
+    font-size: 48px;
+  }
+}
+
+/* The operator's note: right-hung prose on a 2px blue rule, never a bubble. */
+.vex-note {
+  padding: 2px 16px 2px 0;
+  border-right: 2px solid var(--vex-alias-accent-primary);
+}
+
+/* The act ledger: a ruled list, one 32px line per act. The list opens on the
+ * region rule and each line closes on the quiet rule inside the block. */
+.vex-ledger {
+  margin-top: 12px;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-ledger__row {
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+
+/* The turn island: a ruled box on the paper. Its awaiting row takes the blue
+ * line, because the pen is with the reader. */
+.vex-island {
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-bg-base);
+}
+.vex-island[data-vex-island-tone="pin"] {
+  border-color: var(--vex-alias-accent-primary);
+}
+
+/* ============================================================ *
+ *  REAL FUNDS (section 7, reference d4)                         *
+ *                                                               *
+ *  Every desktop wallet is a real wallet, so EVERY approval     *
+ *  card wears the REAL FUNDS treatment: the 1.5px ink frame,    *
+ *  the 8px hatch band down the leading edge and the reversed    *
+ *  stamp in its header. Ink, never red and never blue.          *
+ * ============================================================ */
+.vex-real-funds {
+  position: relative;
+  padding-left: 8px;
+  background: var(--vex-alias-bg-base);
+  border: 1.5px solid var(--vex-alias-rule-ink);
+}
+.vex-real-funds::before {
   content: "";
   position: absolute;
   top: 0;
   bottom: 0;
   left: 0;
-  width: 300px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    color-mix(in srgb, var(--vex-alias-bg-base) 60%, transparent) 55%,
-    transparent 100%
+  width: 8px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--vex-alias-rule-ink) 0 1px,
+    transparent 1px 4px
   );
-  animation: vex-tool-row-sweep 2.6s ease-out infinite;
   pointer-events: none;
 }
-@keyframes vex-tool-row-sweep {
-  0% {
-    left: -300px;
-  }
-  90%,
-  100% {
-    left: 100%;
-  }
+
+/* The risk callout (section 1): the 1.5px ink frame with a 10px hatch band
+ * down its leading edge, ink type, never blue and never red. A session error
+ * and a paused mission speak in it: something needs the reader, and it is
+ * not a colour that says so. */
+.vex-callout {
+  position: relative;
+  padding: 12px 14px 12px 26px;
+  border: 1.5px solid var(--vex-alias-rule-ink);
+  color: var(--vex-alias-label-primary);
 }
-@media (prefers-reduced-motion: reduce) {
-  .vex-row-sweep[data-vex-sweep="running"]::after {
-    animation: none;
-    content: none;
-  }
+.vex-callout::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 10px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--vex-alias-rule-ink) 0 1px,
+    transparent 1px 4px
+  );
+  pointer-events: none;
 }
 
-/* Hover-revealed timestamps. 80ms is the fastest transition in the system —
+/* The risk and action tags: ink outline, mono caps. One ink for every level;
+ * the level is a word, the REAL FUNDS stamp beside it is the weight. */
+.vex-risk-tag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-chip);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-primary);
+  outline: 1px solid var(--vex-alias-label-primary);
+  outline-offset: -1px;
+}
+
+/* ── The paper dither veil ─────────────────────────────────────────────────
+ * A pending approval is the one thing the run is waiting on, so the rest of
+ * the session - the transcript, the composer and the BOOK body beside them -
+ * sits under the 2px paper dither (`.vex-approval-mask` in
+ * ui-primitives/overlays.css), while the left page, the running heads and the
+ * card stay sharp. The mask covers the session panel; the rule below carries
+ * the same veil onto the BOOK under its 44px head row. A visual cue only:
+ * `pointer-events: none`, the run is already paused. */
+.vex-shell-frame:has(> section [data-vex-area="approval-focus-mask"])
+  aside[data-vex-area="book-panel"]::after {
+  content: "";
+  position: absolute;
+  inset: 44px 0 0;
+  z-index: 40;
+  background:
+    repeating-conic-gradient(var(--vex-alias-bg-base) 0 25%, transparent 0 50%)
+    0 0 / 2px 2px;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+/* ============================================================ *
+ *  HOVER REVEALS                                                *
+ * ============================================================ */
+
+/* Hover-revealed timestamps. 80ms is the fastest transition in the system -
  * below the "animation" threshold. hover:hover guards touch (always visible
  * there); :focus-within keeps keyboard parity; opacity (never display) so
  * nothing shifts. */
@@ -232,27 +353,28 @@
   }
 }
 
-/* The micro-stat register lives in landing-motifs.css as `.vex-micro-label`
- * (Inter Tight small-caps, 11px/600; formerly `.vex-doto-label` before Doto
- * retired on 2026-08-21). The old `.vex-stat-doto` block retired here once
- * its last call site migrated. */
+/* ============================================================ *
+ *  CODE TOKENS                                                  *
+ * ============================================================ */
 
-/* Code token classes (lib/markdown/highlight.ts). Restrained palette:
- * keywords carry the accent, strings the success tone, comments recede;
- * everything resolves through aliases so both themes read from one sheet. */
+/* The chat highlighter's classes (lib/markdown/highlight.ts) read the SAME
+ * code-token aliases the Studio viewer's shiki theme writes
+ * (`--vex-alias-code-token-*`, tokens.css), so a snippet in chat and a file in
+ * the viewer are one palette: keywords and figures in the blue, strings in the
+ * second ink, comments receding to the third. No italic: a slanted comment at
+ * this size only costs legibility. */
 .vex-code-keyword {
-  color: var(--vex-alias-accent-primary);
+  color: var(--vex-alias-code-token-keyword);
 }
 .vex-code-string {
-  color: var(--vex-alias-state-success);
+  color: var(--vex-alias-code-token-string);
 }
 .vex-code-number {
-  color: var(--vex-alias-accent-hover);
+  color: var(--vex-alias-code-token-constant);
 }
 .vex-code-comment {
-  color: var(--vex-alias-label-caption);
-  font-style: italic;
+  color: var(--vex-alias-code-token-comment);
 }
 .vex-code-property {
-  color: var(--vex-alias-label-primary);
+  color: var(--vex-alias-code-token-parameter);
 }

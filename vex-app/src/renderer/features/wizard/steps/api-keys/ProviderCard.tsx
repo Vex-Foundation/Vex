@@ -18,8 +18,8 @@
  * ApiKeysStep (rule 18 — "stop duplication early").
  *
  * Colors ride the gate/shell token re-projection (`--color-text-*`),
- * so the same card reads correctly on the cobalt plate and inside the
- * ink-glass Settings screen.
+ * so the same card reads correctly on the stage's paper leaf and inside
+ * the Settings screen.
  */
 
 import type { JSX, ReactNode } from "react";

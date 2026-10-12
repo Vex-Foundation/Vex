@@ -21,6 +21,7 @@
 
 import { useEffect, useState, type JSX } from "react";
 import { useRuntimeState } from "../../lib/api/runtime.js";
+import { Swatch } from "../../components/ui/swatch.js";
 
 const TICK_MS = 1_000;
 
@@ -93,19 +94,22 @@ export function SessionSleepBanner({
     <div
       data-testid="session-sleep-banner"
       data-vex-area="session-sleep-banner"
-      className="mb-2 w-full break-words rounded-lg border border-border bg-muted/40 px-3 py-2"
+      className="mb-3 w-full break-words border border-rule px-3.5 py-2.5"
     >
-      <p className="font-mono text-[10px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
+      <p className="flex items-center gap-[9px] font-mono text-[11px] uppercase leading-none tracking-status text-ink-secondary">
+        <span aria-hidden className="inline-flex text-accent-primary">
+          <Swatch state="draft" size={9} />
+        </span>
         Vex went to sleep
       </p>
-      <p className="mt-1 text-xs text-foreground/80">
+      <p className="mt-1.5 text-[13px] leading-5 text-ink-primary">
         Wakes at {wakeAt} - {formatRemaining(dueAtMs - nowMs)}
       </p>
       {pausedWake.reason !== null ? (
-        <p className="mt-1 text-xs text-muted-foreground">{pausedWake.reason}</p>
+        <p className="mt-1 text-[13px] leading-5 text-ink-secondary">{pausedWake.reason}</p>
       ) : null}
       {pausedWake.watchSummary !== null ? (
-        <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+        <p className="mt-1 font-mono text-[11px] tracking-[0.02em] text-ink-secondary">
           {pausedWake.watchSummary}
         </p>
       ) : null}

@@ -1,198 +1,256 @@
+/**
+ * The spread's column solver (docs/design/V10-SPREAD.md section 2), pinned at
+ * the spec's own widths (1440, 1280, 1276, 1000), at both seams (1276 and
+ * 1316) one pixel on each side, and through the concession chain.
+ */
+
 import { describe, expect, it } from "vitest";
 import {
   BOOK_COLLAPSED,
   BOOK_DEFAULT,
+  BOOK_FULL_MIN,
   BOOK_MAX,
   BOOK_MIN,
   CENTER_MIN,
-  clampWidth,
-  computeShellColumns,
-  computeShellColumnsWithoutSidebar,
-  SIDEBAR_COLLAPSED,
+  GUTTER_SM_WIDTH,
+  GUTTER_WIDTH,
+  PAGE_MIN,
+  RAIL_COLLAPSED,
   SIDEBAR_DEFAULT,
-  SIDEBAR_AUTO_COLLAPSE,
   SIDEBAR_MAX,
   SIDEBAR_MIN,
-  shouldAutoCollapseSidebar,
+  SPINE_WIDTH,
+  SPREAD_MIN,
+  bookDragMax,
+  clampWidth,
+  computeShellColumns,
+  isBookResizable,
+  isSpreadNarrow,
+  pageDragMax,
+  type ShellLayoutInput,
 } from "../shell-columns.js";
 
-// Numeric preference form (0 = closed); helpers keep the scenario names readable.
-const open = (width: number): number => width;
-const closed = (_width: number): number => 0;
+/** The agent spread with the page and the BOOK open at their defaults. */
+function agent(viewport: number, overrides: Partial<ShellLayoutInput> = {}) {
+  return computeShellColumns({
+    viewport,
+    mode: "agent",
+    sidebar: SIDEBAR_DEFAULT,
+    book: BOOK_DEFAULT,
+    ...overrides,
+  });
+}
 
-describe("clampWidth", () => {
-  it("clamps into the range and rounds", () => {
+/** Every track adds back up to the window. */
+function total(cols: ReturnType<typeof computeShellColumns>): number {
+  return cols.page + cols.gutter + cols.center + cols.book;
+}
+
+describe("the contract geometry", () => {
+  it("states the spec's widths", () => {
+    expect([PAGE_MIN, SPINE_WIDTH, GUTTER_WIDTH, GUTTER_SM_WIDTH]).toEqual([300, 56, 36, 22]);
+    expect([CENTER_MIN, BOOK_DEFAULT, BOOK_MIN, BOOK_MAX, BOOK_COLLAPSED]).toEqual([
+      640, 340, 300, 520, 48,
+    ]);
+    expect([SPREAD_MIN, BOOK_FULL_MIN]).toEqual([1276, 1316]);
+    expect([SIDEBAR_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, RAIL_COLLAPSED]).toEqual([240, 240, 420, 56]);
+  });
+
+  it("clamps into a range and rounds", () => {
     expect(clampWidth(280.4, SIDEBAR_MIN, SIDEBAR_MAX)).toBe(280);
     expect(clampWidth(100, SIDEBAR_MIN, SIDEBAR_MAX)).toBe(SIDEBAR_MIN);
     expect(clampWidth(9999, SIDEBAR_MIN, SIDEBAR_MAX)).toBe(SIDEBAR_MAX);
   });
 });
 
-describe("computeShellColumnsWithoutSidebar", () => {
-  it("gives Lighter the full width left of its Vex panel", () => {
-    expect(computeShellColumnsWithoutSidebar(1024, 328)).toEqual({
-      sidebar: 0,
-      center: 696,
-      book: 328,
+describe("the agent spread at the spec's widths", () => {
+  it("1440: page 300, gutter 36, centre 764, BOOK 340", () => {
+    expect(agent(1440)).toEqual({ page: 300, gutter: 36, rail: 0, center: 764, book: 340 });
+  });
+
+  it("1280: the BOOK holds its 300 floor, centre 644", () => {
+    expect(agent(1280)).toEqual({ page: 300, gutter: 36, rail: 0, center: 644, book: 300 });
+  });
+
+  it("1276: the narrowest spread, centre exactly 640", () => {
+    expect(agent(1276)).toEqual({ page: 300, gutter: 36, rail: 0, center: 640, book: 300 });
+  });
+
+  it("1000: the page closes to the spine, the gutter folds, centre 644", () => {
+    // Under the spread the shell hands in a closed page (0).
+    expect(agent(1000, { sidebar: 0 })).toEqual({
+      page: 56,
+      gutter: 0,
+      rail: 0,
+      center: 644,
+      book: 300,
     });
   });
 
-  it("keeps the BOOK concession seam without reserving a navigation rail", () => {
-    const seam = CENTER_MIN + BOOK_MIN;
-    expect(computeShellColumnsWithoutSidebar(seam, BOOK_DEFAULT)).toEqual({
-      sidebar: 0,
-      center: CENTER_MIN,
-      book: BOOK_MIN,
-    });
-    expect(computeShellColumnsWithoutSidebar(seam - 1, BOOK_DEFAULT)).toEqual({
-      sidebar: 0,
-      center: seam - 1 - BOOK_COLLAPSED,
-      book: BOOK_COLLAPSED,
-    });
+  it("never lets the centre under its floor from 1000 up, in any agent state", () => {
+    for (let viewport = 1000; viewport <= 2560; viewport += 7) {
+      const narrow = isSpreadNarrow(viewport);
+      for (const book of [0, BOOK_MIN, BOOK_DEFAULT, BOOK_MAX]) {
+        for (const sidebar of narrow ? [0] : [0, SIDEBAR_DEFAULT, SIDEBAR_MAX]) {
+          const cols = agent(viewport, { sidebar, book });
+          expect(cols.center, `${String(viewport)} ${String(sidebar)} ${String(book)}`)
+            .toBeGreaterThanOrEqual(CENTER_MIN);
+          expect(total(cols)).toBe(viewport);
+        }
+      }
+    }
   });
 });
 
-describe("computeShellColumns", () => {
-  it("step 1: everything fits at preferred widths", () => {
-    const cols = computeShellColumns(1920, open(SIDEBAR_DEFAULT), open(BOOK_DEFAULT));
-    expect(cols).toEqual({ sidebar: 280, center: 1920 - 280 - 360, book: 360 });
+describe("the seams", () => {
+  it("the spread starts at exactly 1276", () => {
+    expect(isSpreadNarrow(SPREAD_MIN - 1)).toBe(true);
+    expect(isSpreadNarrow(SPREAD_MIN)).toBe(false);
+    expect(isSpreadNarrow(SPREAD_MIN + 1)).toBe(false);
+    // The gutter folds on the narrow side only.
+    expect(agent(SPREAD_MIN - 1, { sidebar: 0 }).gutter).toBe(0);
+    expect(agent(SPREAD_MIN).gutter).toBe(GUTTER_WIDTH);
   });
 
-  it("closed sidebar keeps its compact rail and closed BOOK keeps its spine", () => {
-    expect(computeShellColumns(1920, closed(300), closed(360))).toEqual({
-      sidebar: SIDEBAR_COLLAPSED,
-      center: 1920 - SIDEBAR_COLLAPSED - BOOK_COLLAPSED,
-      book: BOOK_COLLAPSED,
+  it("the BOOK takes its preference from exactly 1316", () => {
+    expect(isBookResizable(BOOK_FULL_MIN - 1, "agent")).toBe(false);
+    expect(isBookResizable(BOOK_FULL_MIN, "agent")).toBe(true);
+    expect(agent(BOOK_FULL_MIN - 1).book).toBe(BOOK_MIN);
+    expect(agent(BOOK_FULL_MIN).book).toBe(BOOK_DEFAULT);
+    expect(agent(BOOK_FULL_MIN).center).toBe(CENTER_MIN);
+    // Lighter's chat rail is free at every width.
+    expect(isBookResizable(1000, "lighter")).toBe(true);
+  });
+});
+
+describe("the left page", () => {
+  it("reads any preference under its spec width as 300", () => {
+    expect(agent(1600, { sidebar: SIDEBAR_MIN }).page).toBe(PAGE_MIN);
+    expect(agent(1600, { sidebar: 280 }).page).toBe(PAGE_MIN);
+  });
+
+  it("widens with a drag preference while the centre keeps its floor", () => {
+    expect(agent(1600, { sidebar: 380 })).toEqual({
+      page: 380,
+      gutter: 36,
+      rail: 0,
+      center: 844,
+      book: 340,
+    });
+    expect(agent(1600, { sidebar: 9999 }).page).toBe(SIDEBAR_MAX);
+  });
+
+  it("a closed page is the spine beside the small gutter", () => {
+    expect(agent(1440, { sidebar: 0 })).toEqual({
+      page: 56,
+      gutter: 22,
+      rail: 0,
+      center: 1440 - 56 - 22 - 340,
+      book: 340,
     });
   });
 
-  it("preferences beyond the clamp range are clamped before solving", () => {
-    const cols = computeShellColumns(1920, open(9999), open(1));
-    expect(cols.sidebar).toBe(SIDEBAR_MAX);
-    expect(cols.book).toBe(BOOK_MIN);
-    expect(computeShellColumns(1920, open(1), open(BOOK_DEFAULT)).sidebar).toBe(
-      SIDEBAR_MIN,
-    );
-    expect(computeShellColumns(1920, open(SIDEBAR_DEFAULT), open(9999)).book).toBe(
-      BOOK_MAX,
-    );
+  it("the narrow override's re-expanded page closes the BOOK instead of the centre", () => {
+    // 1000 - 300 - 0 = 700 leaves 60 for a BOOK, under its floor: it closes.
+    expect(agent(1000)).toEqual({ page: 300, gutter: 0, rail: 0, center: 652, book: 48 });
   });
+});
 
-  it("step 2: BOOK shrinks first, center pinned at its floor", () => {
-    // 280 + 360 + 640 = 1280 > 1250; BOOK concedes to 1250-280-640 = 330.
-    const cols = computeShellColumns(1250, open(SIDEBAR_DEFAULT), open(BOOK_DEFAULT));
-    expect(cols).toEqual({ sidebar: 280, center: CENTER_MIN, book: 330 });
-  });
-
-  it("boundary: exactly at the step-1/step-2 seam", () => {
-    const seam = 300 + 360 + CENTER_MIN;
-    expect(computeShellColumns(seam, open(300), open(360))).toEqual({
-      sidebar: 300,
-      center: CENTER_MIN,
-      book: 360,
-    });
-    // One pixel narrower: BOOK gives exactly that pixel.
-    expect(computeShellColumns(seam - 1, open(300), open(360))).toEqual({
-      sidebar: 300,
-      center: CENTER_MIN,
-      book: 359,
+describe("the concession chain", () => {
+  it("step 1: a widened page gives its extra back before the BOOK shrinks", () => {
+    // 1440 with a 420 page: 1440 - 420 - 36 - 340 = 644, fits.
+    expect(agent(1440, { sidebar: 420 }).page).toBe(420);
+    // 1400: the page gives back 4 and the BOOK keeps its preference.
+    expect(agent(1400, { sidebar: 420, book: 340 })).toEqual({
+      page: 384,
+      gutter: 36,
+      rail: 0,
+      center: 640,
+      book: 340,
     });
   });
 
-  it("step 3: BOOK auto-closes to the spine when its min still starves center - sidebar holds its preference", () => {
-    // 280 + 300 + 640 = 1220 > 1210 → BOOK drops to the 48px spine;
-    // sidebar untouched: center = 1210 - 280 - 48 = 882.
-    const cols = computeShellColumns(1210, open(SIDEBAR_DEFAULT), open(BOOK_DEFAULT));
-    expect(cols).toEqual({ sidebar: 280, center: 882, book: BOOK_COLLAPSED });
+  it("step 2: then the BOOK shrinks toward its floor", () => {
+    expect(agent(1400, { book: BOOK_MAX })).toEqual({
+      page: 300,
+      gutter: 36,
+      rail: 0,
+      center: 640,
+      book: 424,
+    });
   });
 
-  it("boundary: exactly at the step-2/step-3 seam", () => {
-    const seam = 280 + BOOK_MIN + CENTER_MIN;
-    expect(computeShellColumns(seam, open(SIDEBAR_DEFAULT), open(BOOK_DEFAULT))).toEqual(
-      { sidebar: 280, center: CENTER_MIN, book: BOOK_MIN },
-    );
+  it("step 3: then the BOOK closes to its spine (derived), and the centre absorbs the rest", () => {
+    const cols = computeShellColumns({ viewport: 900, mode: "agent", sidebar: 0, book: BOOK_DEFAULT });
+    expect(cols).toEqual({ page: 56, gutter: 0, rail: 0, center: 900 - 56 - 48, book: 48 });
+  });
+
+  it("a closed BOOK keeps its spine, or nothing where the caller says so", () => {
+    expect(agent(1440, { book: 0 }).book).toBe(BOOK_COLLAPSED);
+    expect(agent(1440, { book: 0, closedBook: 0 }).book).toBe(0);
+    expect(agent(1440, { book: 0, closedBook: 0 }).center).toBe(1440 - 300 - 36);
+  });
+
+  it("re-clamps a stale BOOK preference before solving", () => {
+    expect(agent(1920, { book: 1 }).book).toBe(BOOK_MIN);
+    expect(agent(1920, { book: 9999 }).book).toBe(BOOK_MAX);
+  });
+});
+
+describe("Studio", () => {
+  const studio = (viewport: number, sidebar: number, book = BOOK_DEFAULT) =>
+    computeShellColumns({ viewport, mode: "studio", sidebar, book });
+
+  it("always uses the spine, with the project rail carved out of the centre", () => {
+    expect(studio(1440, SIDEBAR_DEFAULT)).toEqual({
+      page: 56,
+      gutter: 22,
+      rail: 240,
+      center: 1440 - 56 - 22 - 340,
+      book: 340,
+    });
+  });
+
+  it("a closed rail is its icon spine", () => {
+    expect(studio(1440, 0).rail).toBe(RAIL_COLLAPSED);
+  });
+
+  it("at 1000 keeps the BOOK at its floor with the rail inside a 644 centre", () => {
+    expect(studio(1000, 0)).toEqual({ page: 56, gutter: 0, rail: 56, center: 644, book: 300 });
+  });
+});
+
+describe("Lighter", () => {
+  it("always uses the spine and sizes its chat rail from its own share", () => {
     expect(
-      computeShellColumns(seam - 1, open(SIDEBAR_DEFAULT), open(BOOK_DEFAULT)),
-    ).toEqual({
-      sidebar: 280,
-      center: seam - 1 - 280 - BOOK_COLLAPSED,
-      book: BOOK_COLLAPSED,
-    });
+      computeShellColumns({ viewport: 1440, mode: "lighter", sidebar: 280, book: 400 }),
+    ).toEqual({ page: 56, gutter: 22, rail: 0, center: 1440 - 56 - 22 - 400, book: 400 });
   });
 
-  it("the sidebar never concedes: center absorbs the deficit below CENTER_MIN", () => {
-    // 700 < 280 + 48 + 640: sidebar keeps 280, BOOK its spine, center takes the rest.
-    const cols = computeShellColumns(700, open(SIDEBAR_DEFAULT), closed(BOOK_DEFAULT));
-    expect(cols).toEqual({
-      sidebar: SIDEBAR_DEFAULT,
-      center: 700 - SIDEBAR_DEFAULT - BOOK_COLLAPSED,
-      book: BOOK_COLLAPSED,
-    });
-  });
-
-  it("sidebar-collapsed narrow window: BOOK concedes then auto-closes", () => {
-    const fits = computeShellColumns(
-      SIDEBAR_COLLAPSED + BOOK_MIN + CENTER_MIN,
-      closed(300),
-      open(BOOK_DEFAULT),
-    );
-    expect(fits).toEqual({
-      sidebar: SIDEBAR_COLLAPSED,
-      center: CENTER_MIN,
-      book: BOOK_MIN,
-    });
-    const starved = computeShellColumns(
-      SIDEBAR_COLLAPSED + BOOK_MIN + CENTER_MIN - 1,
-      closed(300),
-      open(BOOK_DEFAULT),
-    );
-    expect(starved).toEqual({
-      sidebar: SIDEBAR_COLLAPSED,
-      center: SIDEBAR_COLLAPSED + BOOK_MIN + CENTER_MIN - 1 - SIDEBAR_COLLAPSED - BOOK_COLLAPSED,
-      book: BOOK_COLLAPSED,
-    });
-  });
-
-  it("tiny viewport: center never goes negative", () => {
-    const cols = computeShellColumns(300, open(SIDEBAR_DEFAULT), open(BOOK_DEFAULT));
-    expect(cols.book).toBe(BOOK_COLLAPSED);
-    expect(cols.sidebar).toBe(SIDEBAR_DEFAULT);
-    expect(cols.center).toBe(0);
-  });
-
-  it("recovery is pure: re-widening restores preferred widths untouched", () => {
-    const squeezed = computeShellColumns(1100, open(SIDEBAR_DEFAULT), open(BOOK_DEFAULT));
-    expect(squeezed.book).toBe(BOOK_COLLAPSED);
-    const restored = computeShellColumns(1920, open(SIDEBAR_DEFAULT), open(BOOK_DEFAULT));
-    expect(restored.book).toBe(BOOK_DEFAULT);
-    expect(restored.sidebar).toBe(SIDEBAR_DEFAULT);
+  it("Zen hands the chart the window", () => {
+    expect(
+      computeShellColumns({
+        viewport: 1440,
+        mode: "lighter",
+        sidebar: 0,
+        book: 0,
+        closedBook: 0,
+        zen: true,
+      }),
+    ).toEqual({ page: 0, gutter: 0, rail: 0, center: 1440, book: 0 });
   });
 });
 
-/**
- * THE COLLAPSE THRESHOLD, at the seam and one pixel on each side.
- *
- * Which side of this line a viewport falls on decides what the user SEES, not
- * merely how wide a column is: the collapsed rail renders no section titles, no
- * chevrons and no placeholder sentences (finding B4). Rule 08 asks for layout
- * thresholds to be tested at the seam and immediately on both sides, and the
- * comparison used to be an inline `<` inside the shell frame where no test could
- * reach it without mounting the whole app.
- */
-describe("shouldAutoCollapseSidebar", () => {
-  it("puts the seam itself on the WIDE side", () => {
-    // `<`, not `<=`: exactly 1024 is a wide window.
-    expect(shouldAutoCollapseSidebar(SIDEBAR_AUTO_COLLAPSE)).toBe(false);
+describe("drag ranges", () => {
+  it("the page may widen only into room the centre does not need", () => {
+    expect(pageDragMax(agent(1400), 1400)).toBe(1400 - 36 - 340 - 640);
+    expect(pageDragMax(agent(1920), 1920)).toBe(SIDEBAR_MAX);
+    // 1276: no room at all, so the shell mounts no page handle.
+    expect(pageDragMax(agent(1276), 1276)).toBeLessThanOrEqual(PAGE_MIN);
   });
 
-  it("flips on the pixel below the seam and nowhere else nearby", () => {
-    expect(shouldAutoCollapseSidebar(SIDEBAR_AUTO_COLLAPSE - 1)).toBe(true);
-    expect(shouldAutoCollapseSidebar(SIDEBAR_AUTO_COLLAPSE + 1)).toBe(false);
-  });
-
-  it("holds at the extremes a real window can reach", () => {
-    expect(shouldAutoCollapseSidebar(0)).toBe(true);
-    expect(shouldAutoCollapseSidebar(320)).toBe(true);
-    expect(shouldAutoCollapseSidebar(3840)).toBe(false);
+  it("the BOOK counts an open page at its floor, because the page concedes first", () => {
+    expect(bookDragMax(agent(1440, { sidebar: 420 }), 1440)).toBe(1440 - 300 - 36 - 640);
+    expect(bookDragMax(agent(1920), 1920)).toBe(BOOK_MAX);
   });
 });

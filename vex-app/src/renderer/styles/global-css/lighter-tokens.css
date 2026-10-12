@@ -1,207 +1,110 @@
-/* Lighter desk tokens. The current component system consumes stable semantic
- * roles; the selected deployment remaps those roles so Core and Robinhood
- * Chain remain unmistakable without changing layout or trading behavior. */
+/* Lighter desk tokens (docs/design/V10-SPREAD.md sections 1 and 2). The desk
+ * components consume stable semantic roles (`--lit-*`); every role points at
+ * the app's alias tier, so the desk is the room's own paper, ink, rules and
+ * the one blue in both themes.
+ *
+ * The deployment never repaints the desk: Core and Robinhood Chain are named
+ * by the environment switch's logo and label, and `--lit-environment-mark` is
+ * the blue in both. Direction follows the law every status follows: up is the
+ * blue, down the ink, and a glyph (the arrow, the sign) carries the word.
+ *
+ * THE ONE HUE PAIR. Green and red appear on the candlesticks and their volume
+ * bars only, and only through `--lit-candle-*`, which is declared on the chart
+ * canvas host alone (below). Price lines, fill markers, studies, the depth
+ * bars and every label around the chart stay blue and ink.
+ *
+ * DENSITY. The desk is a pro surface: Departure Mono 11px caps for labels,
+ * 11 to 12px for data, Instrument Sans only for the order actions, the check
+ * labels and the chat. No counters, no serif inside the desk. */
 .lit-desk,
 .lit-chat-frame {
-  --lit-bg: var(--vex-alias-bg-deep);
+  /* Ground and rules: one paper; regions are told apart by a 1px rule. */
+  --lit-bg: var(--vex-alias-bg-base);
   --lit-panel: var(--vex-alias-bg-layer-1);
+  /* The pressed segment and the paper-2 step (night-2 at night). */
   --lit-panel-raised: var(--vex-alias-interactive-solid);
+  /* Inputs: the white field by day, night-1 at night. */
+  --lit-field: var(--vex-alias-field);
   --lit-line: var(--vex-alias-border-l2);
+  --lit-line-quiet: var(--vex-alias-rule-quiet);
   --lit-line-strong: var(--vex-alias-border-l4);
+  --lit-grid: var(--vex-alias-rule-quiet);
+
   --lit-ink: var(--vex-alias-label-primary);
   --lit-ink-secondary: var(--vex-alias-label-secondary);
   --lit-ink-muted: var(--vex-alias-label-tertiary);
-  --lit-grid: color-mix(in srgb, var(--vex-alias-label-primary) 6%, transparent);
-  --lit-positive: var(--vex-alias-state-success);
-  --lit-positive-ink: var(--vex-alias-label-on-accent);
-  /* The chart library parses the volume colors itself and cannot read color-mix(),
-   * so these are the success/error palette values at 30%, per theme. */
-  --lit-positive-volume: rgba(31, 185, 84, 0.3);
-  --lit-positive-wash: color-mix(in srgb, var(--lit-positive) 12%, transparent);
-  --lit-negative: var(--vex-alias-state-error);
-  --lit-negative-volume: rgba(242, 109, 109, 0.3);
-  --lit-negative-wash: color-mix(in srgb, var(--lit-negative) 12%, transparent);
+
+  /* Direction: up and bids are the blue, down and asks the ink. */
+  --lit-positive: var(--vex-alias-accent-primary);
+  --lit-negative: var(--vex-alias-label-primary);
+  /* Attention (an approval waiting, a delayed feed) is the blue as well:
+   * its fill pattern, not a hue, tells it from a live state. */
   --lit-warning: var(--vex-alias-state-warn);
-  --lit-notice: #91b9ff;
-  --lit-env-core: #20b7ae;
-  --lit-env-rhc: #ccff00;
-  --lit-environment-mark: var(--lit-env-core);
-  --lit-environment-surface: var(--lit-panel);
-  --lit-environment-surface-hover: var(--lit-panel-raised);
+  --lit-notice: var(--vex-alias-accent-primary);
+  --lit-environment-mark: var(--vex-alias-accent-primary);
+
+  /* Fills. The true blue behind white type is the one blue fill per view
+   * (Long, the setup action); the ink fill is its refusing twin (Short), ink
+   * by day and paper at night. */
   --lit-action: var(--vex-alias-button-accent-fill);
   --lit-action-ink: var(--vex-alias-button-accent-ink);
-  --lit-focus: var(--vex-alias-accent-primary);
+  --lit-action-hover: var(--vex-alias-button-accent-hover);
+  --lit-ink-fill: var(--vex-alias-button-primary-fill);
+  --lit-ink-fill-ink: var(--vex-alias-label-on-primary);
+  --lit-ink-fill-hover: var(--vex-alias-button-primary-hover);
+
+  /* Book depth: bids a solid blue wash, asks an ink hatch (45deg, 1px in 3). */
+  --lit-depth-bid: color-mix(in srgb, var(--lit-positive) 14%, transparent);
+  --lit-depth-ask: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--lit-ink) 32%, transparent) 0 1px,
+    transparent 1px 3px
+  );
+
+  --lit-focus: var(--vex-alias-focus);
   --lit-hover: var(--vex-alias-interactive-hover);
-  --lit-selection: color-mix(in srgb, var(--vex-alias-accent-primary) 28%, transparent);
-  --lit-scrollbar: color-mix(in srgb, var(--vex-alias-label-primary) 26%, transparent);
-  --lit-canvas: var(--lit-bg);
-  --lit-radius: var(--radius-sm);
-  --lit-radius-lg: var(--radius-md);
-  --lit-market-bar-surface: color-mix(in srgb, var(--lit-bg) 92%, var(--lit-panel));
-  --lit-market-picker-surface: color-mix(in srgb, var(--lit-panel-raised) 82%, var(--lit-panel));
-  --lit-market-picker-chrome: color-mix(in srgb, var(--lit-panel-raised) 54%, var(--lit-panel));
-  --lit-market-picker-hover: color-mix(in srgb, var(--lit-ink) 7%, var(--lit-market-picker-surface));
-  --lit-market-picker-selected: color-mix(in srgb, var(--lit-selection) 32%, var(--lit-market-picker-surface));
-  --lit-market-picker-scrim: color-mix(in srgb, var(--lit-bg) 76%, transparent);
-  --lit-chart-font-size: 13;
-  background: var(--lit-canvas);
+  --lit-selection: color-mix(in srgb, var(--vex-alias-accent-primary) 24%, transparent);
+  --lit-scrollbar: var(--vex-alias-scrollbar-l1);
+
+  /* Registers: Departure Mono caps tracking (labels, status words) and the
+   * data tracking for figures. */
+  --lit-tr-label: var(--tracking-chip, 0.12em);
+  --lit-tr-status: var(--tracking-status, 0.14em);
+  --lit-tr-eyebrow: var(--tracking-eyebrow, 0.18em);
+  --lit-tr-caps-data: 0.1em;
+  --lit-tr-data: 0.02em;
+  /* The chart library sizes its own axis text in px; 11 is the desk's data
+   * size and one of Departure Mono's crisp sizes. */
+  --lit-chart-font-size: 11;
+
+  background: var(--lit-bg);
   color: var(--lit-ink);
-  font-family: var(--font-sans);
-  font-size: 14px;
   line-height: 1.4;
   color-scheme: dark;
-  accent-color: var(--lit-focus);
+  accent-color: var(--lit-positive);
   caret-color: var(--lit-focus);
+}
+
+/* The desk and its top bar speak Departure Mono; the chat rail and the
+ * dialogs that share the scope keep the room's sans for reading. */
+.lit-desk,
+.lit-desk-topbar {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: var(--lit-tr-data);
 }
 
 .lit-desk[data-lighter-theme="celeris"],
 .lit-chat-frame[data-lighter-theme="celeris"] {
   color-scheme: light;
-  --lit-notice: #285b99;
-  --lit-env-core: #007970;
-  --lit-env-rhc: #427400;
-  --lit-positive-volume: rgba(19, 112, 51, 0.3);
-  --lit-negative-volume: rgba(179, 51, 51, 0.3);
 }
 
-/* Core: graphite trading surfaces with teal direction and action cues. */
-.lit-desk[data-lighter-environment="core"],
-.lit-chat-frame[data-lighter-environment="core"] {
-  --lit-bg: #111214;
-  --lit-panel: #151618;
-  --lit-panel-raised: #1d1f21;
-  --lit-line: rgba(255, 255, 255, 0.075);
-  --lit-line-strong: rgba(255, 255, 255, 0.16);
-  --lit-ink: #ededee;
-  --lit-ink-secondary: #c4c6c9;
-  --lit-ink-muted: #94989e;
-  --lit-grid: rgba(190, 194, 200, 0.055);
-  --lit-positive: #20b7ae;
-  --lit-positive-ink: #071c1a;
-  --lit-positive-volume: rgba(32, 183, 174, 0.3);
-  --lit-positive-wash: rgba(32, 183, 174, 0.12);
-  --lit-negative: #ed646c;
-  --lit-negative-volume: rgba(237, 100, 108, 0.3);
-  --lit-negative-wash: rgba(237, 100, 108, 0.12);
-  --lit-warning: #e4ad58;
-  --lit-action: #20b7ae;
-  --lit-action-ink: #071c1a;
-  --lit-focus: #31c7bd;
-  --lit-hover: rgba(255, 255, 255, 0.055);
-  --lit-selection: rgba(32, 183, 174, 0.28);
-  --lit-scrollbar: rgba(200, 200, 208, 0.28);
-  --lit-environment-mark: var(--lit-env-core);
-  --lit-environment-surface: #142321;
-  --lit-environment-surface-hover: #1a302d;
-}
-
-.lit-desk[data-lighter-theme="celeris"][data-lighter-environment="core"],
-.lit-chat-frame[data-lighter-theme="celeris"][data-lighter-environment="core"] {
-  --lit-bg: #f8f8fa;
-  --lit-panel: #ffffff;
-  --lit-panel-raised: #f0f0f3;
-  --lit-line: rgba(18, 18, 24, 0.1);
-  --lit-line-strong: rgba(18, 18, 24, 0.18);
-  --lit-ink: #121218;
-  --lit-ink-secondary: #44444f;
-  --lit-ink-muted: #686874;
-  --lit-grid: rgba(18, 18, 24, 0.08);
-  --lit-positive: #007970;
-  --lit-positive-ink: #ffffff;
-  --lit-positive-volume: rgba(0, 121, 112, 0.22);
-  --lit-positive-wash: rgba(0, 121, 112, 0.08);
-  --lit-negative: #c3354c;
-  --lit-negative-volume: rgba(195, 53, 76, 0.22);
-  --lit-negative-wash: rgba(195, 53, 76, 0.08);
-  --lit-warning: #935d12;
-  --lit-action: #121218;
-  --lit-action-ink: #ffffff;
-  --lit-focus: #007970;
-  --lit-hover: rgba(18, 18, 24, 0.045);
-  --lit-selection: rgba(0, 121, 112, 0.2);
-  --lit-scrollbar: rgba(18, 18, 24, 0.24);
-  --lit-environment-mark: var(--lit-env-core);
-  --lit-environment-surface: #e2f1ef;
-  --lit-environment-surface-hover: #d3e9e6;
-}
-
-/* Robinhood Chain: olive-black surfaces with lime reserved for environment,
- * actions and focus. Directional chart colors are softened below so a green
- * candle cannot be mistaken for the active deployment signal. */
-.lit-desk[data-lighter-environment="rhc"],
-.lit-chat-frame[data-lighter-environment="rhc"] {
-  --lit-bg: #0b0e0a;
-  --lit-panel: #11160e;
-  --lit-panel-raised: #1d2517;
-  --lit-line: rgba(210, 229, 180, 0.1);
-  --lit-line-strong: rgba(210, 229, 180, 0.22);
-  --lit-ink: #f4f7ef;
-  --lit-ink-secondary: #c8cfc0;
-  --lit-ink-muted: #98a28f;
-  --lit-grid: rgba(193, 215, 159, 0.065);
-  --lit-positive: #c3f53c;
-  --lit-positive-ink: #182200;
-  --lit-positive-volume: rgba(195, 245, 60, 0.27);
-  --lit-positive-wash: rgba(195, 245, 60, 0.1);
-  --lit-negative: #ff7b64;
-  --lit-negative-volume: rgba(255, 123, 100, 0.3);
-  --lit-negative-wash: rgba(255, 123, 100, 0.12);
-  --lit-warning: #ebbc60;
-  --lit-action: #ccff00;
-  --lit-action-ink: #182200;
-  --lit-focus: #ccff00;
-  --lit-hover: rgba(195, 245, 60, 0.065);
-  --lit-selection: rgba(195, 245, 60, 0.24);
-  --lit-scrollbar: rgba(172, 190, 145, 0.3);
-  --lit-environment-mark: var(--lit-env-rhc);
-  --lit-environment-surface: #1a2211;
-  --lit-environment-surface-hover: #26331a;
-  --lit-market-bar-surface: #10150c;
-}
-
-.lit-desk[data-lighter-theme="celeris"][data-lighter-environment="rhc"],
-.lit-chat-frame[data-lighter-theme="celeris"][data-lighter-environment="rhc"] {
-  --lit-bg: #f6f8f0;
-  --lit-panel: #fcfdf8;
-  --lit-panel-raised: #eaf0df;
-  --lit-line: rgba(47, 68, 21, 0.12);
-  --lit-line-strong: rgba(47, 68, 21, 0.25);
-  --lit-ink: #182012;
-  --lit-ink-secondary: #445237;
-  --lit-ink-muted: #5b684e;
-  --lit-grid: rgba(63, 91, 28, 0.09);
-  --lit-positive: #427400;
-  --lit-positive-ink: #ffffff;
-  --lit-positive-volume: rgba(66, 116, 0, 0.25);
-  --lit-positive-wash: rgba(66, 116, 0, 0.08);
-  --lit-negative: #b83d28;
-  --lit-negative-volume: rgba(184, 61, 40, 0.24);
-  --lit-negative-wash: rgba(184, 61, 40, 0.08);
-  --lit-warning: #80570b;
-  --lit-action: #4a7000;
-  --lit-action-ink: #ffffff;
-  --lit-focus: #577700;
-  --lit-hover: rgba(66, 116, 0, 0.06);
-  --lit-selection: rgba(66, 116, 0, 0.18);
-  --lit-scrollbar: rgba(66, 92, 35, 0.3);
-  --lit-environment-mark: var(--lit-env-rhc);
-  --lit-environment-surface: #e8f0d6;
-  --lit-environment-surface-hover: #dce9c2;
-  --lit-market-bar-surface: #f0f5e5;
-}
-
-.lit-desk[data-lighter-environment="rhc"] .lit-chart-body {
-  --lit-positive: #36b58b;
-  --lit-positive-volume: rgba(54, 181, 139, 0.27);
-  --lit-negative: #e16b73;
-  --lit-negative-volume: rgba(225, 107, 115, 0.27);
-}
-
-.lit-desk[data-lighter-theme="celeris"][data-lighter-environment="rhc"] .lit-chart-body {
-  --lit-positive: #14815e;
-  --lit-positive-volume: rgba(20, 129, 94, 0.24);
-  --lit-negative: #bd4357;
-  --lit-negative-volume: rgba(189, 67, 87, 0.24);
+/* The candlesticks: the one sanctioned hue pair, scoped to the chart canvas
+ * host (the element MarketChart reads its colours from), so no label, legend,
+ * price line or order handle around the chart can reach it. */
+.lit-desk .lit-chart-canvas {
+  --lit-candle-up: var(--color-candle-up);
+  --lit-candle-down: var(--color-candle-down);
 }
 
 .lit-desk ::selection,
@@ -223,7 +126,6 @@
 .lit-desk *::-webkit-scrollbar-thumb,
 .lit-chat-frame *::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
-  border-radius: var(--radius-capsule);
   background: var(--lit-scrollbar);
   background-clip: padding-box;
 }
@@ -241,4 +143,82 @@
 .lit-chat-frame a:focus-visible {
   outline: 2px solid var(--lit-focus);
   outline-offset: 3px;
+}
+
+/* The desk's square check box: a 1.5px ink frame on the field, an ink fill
+ * and a paper tick when checked. Native, so keyboard and forms behave as
+ * before. */
+.lit-desk input[type="checkbox"],
+.lit-environment-dialog input[type="checkbox"] {
+  appearance: none;
+  display: inline-grid;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  place-items: center;
+  margin: 0;
+  border: 1.5px solid var(--lit-ink);
+  background: var(--lit-field);
+}
+
+.lit-desk input[type="checkbox"]:checked,
+.lit-environment-dialog input[type="checkbox"]:checked { background: var(--lit-ink); }
+
+.lit-desk input[type="checkbox"]:checked::after,
+.lit-environment-dialog input[type="checkbox"]:checked::after {
+  content: "";
+  width: 4px;
+  height: 8px;
+  margin-top: -2px;
+  border: solid var(--lit-bg);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.lit-desk input[type="checkbox"]:disabled,
+.lit-environment-dialog input[type="checkbox"]:disabled { border-style: dotted; opacity: 0.6; }
+
+/* Status by fill on the desk's live marks (the market bar's Live word, the
+ * book and tape marks, the chart's lag word): solid = live, dot screen =
+ * connecting, target = delayed, ink cross = unavailable, outline = waiting.
+ * The patterns are the swatch's (ui-primitives/marks.css). */
+.lit-live-status i,
+.lit-live-dot,
+.lit-chart-connection i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  background: currentColor;
+}
+
+.lit-live-status:is([data-status="connecting"], [data-status="reconnecting"]) i,
+.lit-live-dot:is([data-status="connecting"], [data-status="reconnecting"]),
+.lit-chart-connection:is([data-status="connecting"], [data-status="reconnecting"]) i {
+  border: 1px solid currentColor;
+  background: radial-gradient(currentColor 1px, transparent 1.2px) 0 0 / 3px 3px;
+}
+
+.lit-live-status[data-status="delayed"] i,
+.lit-live-dot[data-status="delayed"],
+.lit-chart-connection[data-status="delayed"] i {
+  border: 1px solid currentColor;
+  background: linear-gradient(currentColor, currentColor) center / 40% 40% no-repeat;
+}
+
+.lit-live-status[data-status="unavailable"] i,
+.lit-live-dot[data-status="unavailable"],
+.lit-chart-connection[data-status="unavailable"] i {
+  border: 1.5px solid currentColor;
+  background:
+    linear-gradient(45deg, transparent calc(50% - 0.5px), currentColor calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    linear-gradient(-45deg, transparent calc(50% - 0.5px), currentColor calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px));
+}
+
+.lit-live-status[data-status="stopped"] i,
+.lit-live-dot[data-status="stopped"],
+.lit-chart-connection[data-status="stopped"] i {
+  border: 1.5px solid currentColor;
+  background: transparent;
 }

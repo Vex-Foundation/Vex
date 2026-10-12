@@ -44,9 +44,9 @@ import type {
 import { IconWarning } from "../../../../components/icons/index.js";
 import { Pill } from "../../../../components/ui/pill.js";
 import {
-  StateDot,
-  type StateDotState,
-} from "../../../../components/ui/state-dot.js";
+  Swatch,
+  type SwatchState,
+} from "../../../../components/ui/swatch.js";
 import { agentPresentation } from "./studio-agent-catalogue.js";
 import {
   AGENT_CLIENT_STEP_SENTENCES,
@@ -108,7 +108,7 @@ function isDeclined(outcome: StudioArtifactOutcome): boolean {
  * wire status is a compile error here instead of a row with no glyph.
  */
 const ARTIFACT_STATUS_DOTS: Readonly<
-  Record<StudioArtifactOutcome["status"], StateDotState>
+  Record<StudioArtifactOutcome["status"], SwatchState>
 > = {
   written: "done",
   unchanged: "done",
@@ -277,7 +277,7 @@ function ArtifactRow({
 
   return (
     <li
-      className="flex flex-col gap-1 rounded-lg border border-line-2 px-3 py-2"
+      className="flex flex-col gap-1 border border-line-2 px-3 py-2"
       data-vex-artifact-status={artifact.status}
       data-vex-artifact-kind={artifact.kind}
     >
@@ -285,7 +285,7 @@ function ArtifactRow({
         {/* The leading state slot. No `label`: the Pill on the same line
           * carries the verdict WORD, and an sr-only copy of it would announce
           * every row's status twice. */}
-        <StateDot
+        <Swatch
           state={ARTIFACT_STATUS_DOTS[artifact.status]}
           size={8}
           className="shrink-0"

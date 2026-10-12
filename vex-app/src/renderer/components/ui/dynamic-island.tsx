@@ -59,7 +59,6 @@ interface IslandShape {
   readonly width: number | "100%";
   /** `"auto"` lets streaming content grow the shell; a number is px. */
   readonly height: number | "auto";
-  readonly borderRadius: number;
 }
 
 /**
@@ -68,11 +67,13 @@ interface IslandShape {
  * and a growing panel for live reasoning.
  */
 const ISLAND_SHAPES: Readonly<Record<IslandSizePreset, IslandShape>> = {
-  hidden: { width: 0, height: 0, borderRadius: 0 },
-  pill: { width: 168, height: 30, borderRadius: 15 },
-  stamp: { width: 232, height: 28, borderRadius: 14 },
-  row: { width: "100%", height: 40, borderRadius: 14 },
-  panel: { width: "100%", height: "auto", borderRadius: 16 },
+  hidden: { width: 0, height: 0 },
+  pill: { width: 168, height: 30 },
+  // Wide enough for the settled "REASONED · 12.3K TOKENS" in 11px Departure
+  // Mono caps, its swatch and the clock (the island's V10 register).
+  stamp: { width: 296, height: 28 },
+  row: { width: "100%", height: 40 },
+  panel: { width: "100%", height: "auto" },
 };
 
 interface IslandState {
@@ -187,8 +188,8 @@ export function useIslandSizeSync(size: IslandSizePreset): void {
 }
 
 /**
- * The animated shell. SOLID INK (`--vex-surface-1`) with a hairline — depth
- * here is luminance + line, never glass or glow.
+ * The animated shell. square, SOLID paper with a 1px rule: depth here is
+ * the line, never glass, glow or radius.
  */
 export function DynamicIsland({
   children,
@@ -218,7 +219,6 @@ export function DynamicIsland({
       animate={{
         width: shape.width === "100%" ? "100%" : `${shape.width}px`,
         height: shape.height === "auto" ? "auto" : shape.height,
-        borderRadius: shape.borderRadius,
         transition: motionConfig.transition,
       }}
       style={{ willChange }}

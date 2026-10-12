@@ -47,6 +47,7 @@ import { KeystoreCard } from "./cards/KeystoreCard.js";
 import { ProviderCard } from "./cards/ProviderCard.js";
 import { WalletsCard } from "./cards/WalletsCard.js";
 import { SentryConsentCard } from "./SentryConsentCard.js";
+import { RAIL_WARNING_CHROME } from "../step-chrome.js";
 
 export interface ReviewStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
@@ -154,7 +155,7 @@ export function ReviewStep({
             type="button"
             onClick={() => setEditingStep(null)}
             className={cn(
-              "inline-flex items-center gap-1 rounded-full",
+              "inline-flex items-center gap-1",
               "border border-[var(--color-border)] bg-gate-rail px-2 py-1",
               "vex-micro",
               "text-ink-secondary",
@@ -188,7 +189,6 @@ export function ReviewStep({
           <VexLoader
             size={24}
             stroke={2}
-            tone="paper"
             label="Loading review…"
           />
         </div>
@@ -262,7 +262,7 @@ export function ReviewStep({
         ) : null}
         {warning ? (
           <p
-            className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] py-0.5 pl-3 text-sm text-warning"
+            className={RAIL_WARNING_CHROME}
             role="status"
           >
             {warning}

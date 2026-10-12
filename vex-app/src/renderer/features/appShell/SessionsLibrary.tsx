@@ -137,17 +137,16 @@ export function SessionsLibrary(): JSX.Element {
 
   return (
     <div
-      className="mx-auto flex w-full max-w-[760px] flex-col gap-5"
+      className="flex w-full flex-col gap-5"
       data-vex-screen="sessions-library"
       aria-label="Sessions library"
     >
       {/* The register counter rides the toolbar now that the Sessions
-       * ShellScreen owns the page title. Descriptive copy — the White House
-       * sans face (mono in screens is reserved for tabular data/stamps). */}
+       * ShellScreen owns the page title: a Departure Mono label. */}
       <span
         aria-live="polite"
         aria-atomic="true"
-        className="text-[12.5px] text-ink-secondary"
+        className="vex-ov-label"
       >
         {countLabel}
       </span>
@@ -159,26 +158,18 @@ export function SessionsLibrary(): JSX.Element {
         <div
           role="group"
           aria-label="Filter sessions by mode"
-          className="flex items-center gap-1"
+          className="vex-seg"
         >
-          {SESSION_MODE_FILTERS.map((filter) => {
-            const active = sessionModeFilter === filter.value;
-            return (
-              <button
-                key={filter.value}
-                type="button"
-                aria-pressed={active}
-                onClick={() => setSessionModeFilter(filter.value)}
-                className={`rounded-full px-2.5 py-1.5 vex-micro-label uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary ${
-                  active
-                    ? "bg-accent-wash text-accent-primary"
-                    : "text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
-                }`}
-              >
-                {filter.label}
-              </button>
-            );
-          })}
+          {SESSION_MODE_FILTERS.map((filter) => (
+            <button
+              key={filter.value}
+              type="button"
+              aria-pressed={sessionModeFilter === filter.value}
+              onClick={() => setSessionModeFilter(filter.value)}
+            >
+              {filter.label}
+            </button>
+          ))}
         </div>
 
         <div className="relative ml-auto min-w-[220px] flex-1 sm:max-w-[320px]">
@@ -193,7 +184,7 @@ export function SessionsLibrary(): JSX.Element {
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search session titles"
             aria-label="Search session titles"
-            className="h-8 w-full rounded-xl border border-line-input bg-surface-1 py-1 pl-8 pr-14 text-xs text-ink-primary placeholder:text-ink-tertiary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-primary"
+            className="h-9 w-full border border-line-input bg-[var(--vex-alias-field)] py-1 pl-8 pr-14 text-[13px] text-ink-primary placeholder:text-ink-tertiary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vex-alias-focus)]"
           />
           {searchActive ? (
             <button
@@ -215,7 +206,7 @@ export function SessionsLibrary(): JSX.Element {
           Loading sessions…
         </p>
       ) : query.data && query.data.ok === false ? (
-        <div className="flex items-center gap-2 rounded-xl border border-line-2 bg-danger-wash px-3 py-2 text-sm text-danger">
+        <div className="flex items-center gap-2 border border-line-2 bg-danger-wash px-3 py-2 text-sm text-danger">
           <IconWarning size={15} />
           <span>{query.data.error.message}</span>
         </div>
@@ -240,7 +231,6 @@ export function SessionsLibrary(): JSX.Element {
         <SessionGroups
           groups={groups}
           activeSessionId={activeSessionId}
-          sidebarOpen
           onSelect={handleSelect}
           onTogglePin={handleTogglePin}
           onRequestRemove={handleRequestRemove}

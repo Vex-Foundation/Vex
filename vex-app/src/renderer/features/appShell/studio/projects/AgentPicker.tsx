@@ -163,11 +163,11 @@ function AgentCard({
     <label
       data-vex-agent={agent.id}
       className={cn(
-        "relative flex cursor-pointer flex-col gap-1.5 rounded-xl border px-3.5 py-3 transition-colors",
+        "relative flex cursor-pointer flex-col gap-1.5 border-[1.5px] px-3.5 py-3 transition-colors",
         "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent-primary",
         checked
-          ? "border-line-4 bg-interactive-solid"
-          : "border-line-2 hover:bg-interactive-hover",
+          ? "border-accent-primary"
+          : "border-rule hover:bg-interactive-hover",
       )}
     >
       <input
@@ -183,14 +183,9 @@ function AgentCard({
         }}
         className="sr-only"
       />
-      {/* The selection marker is the bar, never a fill (the house
-        * check-not-fill law; see `SessionCreator/RadioCard`). */}
-      {checked ? (
-        <span
-          aria-hidden
-          className="absolute bottom-[16%] left-0 top-[16%] w-[3px] rounded-r-[3px] bg-accent-primary"
-        />
-      ) : null}
+      {/* The selection marker is the 1.5px frame, never a fill
+        * (docs/design/V10-SPREAD.md section 1: "--frame 1.5px for the
+        * selected tile"). */}
       <span className="flex items-center gap-2">
         <AgentMark mark={mark} />
         <span className="flex-1 truncate font-display text-[14px] font-medium tracking-[-0.01em] text-ink-primary">

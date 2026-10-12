@@ -1,7 +1,8 @@
 /* Menu primitive chrome: dropdown card, items, submenu bridge. */
 
 /* ── Menu ──────────────────────────────────────────────────────────────────
- * Dropdown card: 4px inset pad, r12, lv3, NO entry animation. */
+ * Dropdown card: 4px inset pad, square, one 1px rule for an edge (V10: no
+ * shadow; the card sits on the same paper as the page), NO entry animation. */
 .vex-menu-root {
   position: relative;
   display: inline-flex;
@@ -10,13 +11,11 @@
 .vex-menu,
 .vex-menu-submenu {
   box-sizing: border-box;
-  padding: 4px;
+  padding: 4px 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--vex-alias-border-l1);
-  border-radius: 12px;
-  background: var(--vex-alias-bg-layer-2);
-  box-shadow: var(--shadow-lv3);
+  border: 1px solid var(--vex-alias-border-l3);
+  background: var(--vex-alias-bg-base);
   /* Elevated surface: the scrollbar pair takes the l2 tier; the custom
    * properties inherit to whichever descendant actually scrolls. */
   --vex-scrollbar-thumb: var(--vex-alias-scrollbar-l2);
@@ -87,13 +86,12 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 40px;
-  padding: 8px 10px;
+  min-height: 44px;
+  padding: 8px 14px;
   border: none;
-  border-radius: 10px;
   background: transparent;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 22px;
   color: var(--vex-alias-label-primary);
   text-align: left;
@@ -104,7 +102,7 @@
 }
 
 .vex-menu-item:disabled {
-  opacity: 0.4;
+  color: var(--vex-alias-label-tertiary);
   cursor: not-allowed;
 }
 
@@ -121,14 +119,12 @@
 .vex-menu-submenu.vex-menu-compact {
   min-width: 164px;
   padding: 2px;
-  border-radius: 7px;
 }
 
 .vex-menu-compact .vex-menu-item {
   min-height: 26px;
   gap: 6px;
   padding: 3px 7px;
-  border-radius: 5px;
   font-size: 12px;
   line-height: 18px;
 }
@@ -166,18 +162,18 @@
   white-space: nowrap;
 }
 
-/* Selection marker is the trailing check, never a fill. */
+/* Selection marker is the trailing check, never a row fill. */
 .vex-menu-check {
   flex: none;
   color: var(--vex-alias-label-primary);
 }
 
 .vex-menu-danger {
-  color: var(--vex-alias-state-error);
+  color: var(--vex-alias-label-primary);
 }
 
 .vex-menu-danger .vex-menu-item-icon {
-  color: var(--vex-alias-state-error);
+  color: var(--vex-alias-label-primary);
 }
 
 .vex-menu-danger:hover:not(:disabled) {
@@ -185,26 +181,29 @@
 }
 
 .vex-menu-heading {
-  padding: 8px 10px;
-  font-size: 12px;
+  padding: 8px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-chip);
+  text-transform: uppercase;
   line-height: 16px;
   color: var(--vex-alias-label-tertiary);
 }
 
 .vex-menu-separator {
   height: 1px;
-  margin: 4px 2px;
-  background: var(--vex-alias-border-l1);
+  margin: 4px 0;
+  background: var(--vex-alias-rule);
 }
 
 /* Nested card to the right, bottom-aligned with the parent card: item-wrap
- * sits in the list's 4px pad, so -4px matches the outer bottom edge and
+ * sits flush in the list, so 0 matches the outer bottom edge and
  * 100% + 10px yields a 6px visual gap between card edges. ::before bridges
  * the gap so the pointer crosses without a mouseleave. */
 .vex-menu-submenu {
   position: absolute;
   top: auto;
-  bottom: -4px;
+  bottom: 0;
   left: calc(100% + 10px);
   z-index: 101;
   min-width: 163px;

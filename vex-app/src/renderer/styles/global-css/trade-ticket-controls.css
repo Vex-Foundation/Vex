@@ -1,34 +1,34 @@
+/* Market | Limit (and a loaded protection mode): full-width tabs over a quiet
+ * rule, Departure Mono 11px caps; the chosen one is blue with a 1.5px blue
+ * underline (docs/design/V10-SPREAD.md section 1). */
 .lit-order-type-controls {
   display: flex;
-  flex: 0 0 auto;
-  gap: 4px;
+  height: 30px;
   min-width: 0;
-  border-bottom: 1px solid var(--lit-line);
-  padding-bottom: 6px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--lit-line-quiet);
 }
 
 .lit-order-type-controls > button {
   min-width: 0;
-  min-height: 32px;
   flex: 1 1 0;
   border: 0;
-  border-radius: var(--lit-radius);
+  border-bottom: 1.5px solid transparent;
+  margin-bottom: -1px;
   background: transparent;
-  color: var(--lit-ink-muted);
-  padding: 0 8px;
-  font-size: 12px;
-  font-weight: 600;
-  transition: background 140ms ease, color 140ms ease;
+  padding: 0;
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
+  letter-spacing: var(--lit-tr-label);
+  text-align: left;
+  text-transform: uppercase;
 }
 
-.lit-order-type-controls > button:hover {
-  background: var(--lit-hover);
-  color: var(--lit-ink);
-}
+.lit-order-type-controls > button:hover { color: var(--lit-ink); }
 
 .lit-order-type-controls > button[aria-pressed="true"] {
-  background: var(--lit-panel-raised);
-  color: var(--lit-ink);
+  border-bottom-color: var(--lit-positive);
+  color: var(--lit-positive);
 }
 
 .lit-order-type-controls > button:focus-visible {
@@ -37,5 +37,5 @@
 }
 
 @media (hover: none) and (pointer: coarse) {
-  .lit-order-type-controls > button { min-height: 44px; }
+  .lit-order-type-controls { height: 44px; }
 }

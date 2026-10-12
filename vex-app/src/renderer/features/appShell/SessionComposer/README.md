@@ -1,37 +1,43 @@
-# Session composer (the floating capsule)
+# Session composer (the white field with chips)
 
 The composer is one component (`../SessionComposer.tsx`) serving the welcome
-hero and the docked session stage; `variant="hero" | "docked"` names the
+opening and the docked session stage; `variant="hero" | "docked"` names the
 stage (default derives from `activeSessionId`). The textarea DOM survives a
 hero-to-docked move because the parent keeps the mount position stable.
 
-## Geometry (catalog 1:1)
+## Geometry (docs/design/V10-SPREAD.md section 1, references d2 and d3)
 
-- Card: `.vex-composer-card` (console.css) - radius 22px, 1px
-  `--vex-alias-border-input` (thin-in-dark), `--vex-alias-composer` fill,
-  `--shadow-lv2`, max-width 780px, top padding 10px, scrollbar l2 rebind.
-  NO focus treatment of any kind; the accent caret and send key carry focus.
-- Field: 16/24 sans, padding 4/12/0/16 (placeholder overlay mirrors it),
-  height cap 336px (14 lines) then scroll; hero keeps a 52px two-line floor.
-- Toolbar row: space-between, gap 12, padding 2/8/6, and an inline-size
-  QUERY CONTAINER (`@container`). Seat chips are h28/r8 13/20 medium; the
-  send/stop key is a 34px r999 accent circle with a background-color 100ms
-  transition, riding -2px out of the row's shift.
+- Card: `.vex-composer-card` (console.css) - square, 1px
+  `--vex-alias-border-input` (the rule), the `--vex-alias-composer` field
+  fill (white by day, night-1 at night), no shadow, scrollbar l2 rebind. It
+  follows the page column; padding 12/10/10/16 docked, 16/12/12/18 on the
+  opening. NO focus treatment of any kind; the accent caret and the send key
+  carry focus. Approval park draws the 1.5px ink frame.
+- Field: 16/24 sans, the stage's side padding (the placeholder overlay
+  mirrors it), height cap 336px (14 lines) then scroll; the opening keeps a
+  52px two-line floor.
+- Toolbar row: space-between, 10px apart, and an inline-size QUERY
+  CONTAINER (`@container`). Seat chips are 28px, 12px Departure Mono on a
+  rule outline (`.vex-composer-chip`); the send/stop key is a 40px square:
+  the one blue fill to send (a dotted blue outline while empty), the ink
+  plate to stop.
   - LEADING cluster (`min-w-0`, shrinkable): model chip, legacy-plan chip,
     reasoning select.
-  - TRAILING cluster (`flex-none`, protected): pending dot, access-mode
+  - TRAILING cluster (`flex-none`, protected): in-flight swatch, access-mode
     seat, context meter, send/stop key.
-- Shrink chain (codex Bug 3 / deepseek cross-check §2). One priority order,
-  in three steps: text LABELS truncate first (`min-w-0 truncate` on the
-  label span; the chip box carries `min-w-0` and no `shrink-0`); the
+- Shrink chain (codex Bug 3 / deepseek cross-check section 2). One priority
+  order, in three steps: text LABELS truncate first (`min-w-0 truncate` on
+  the label span; the chip box carries `min-w-0` and no `shrink-0`); the
   permission LABEL collapses second, at the row container's 460px threshold
   (`@max-[460px]:hidden`, the reference value); fixed glyphs, the context
-  ring and the send/stop key never shrink. The reasoning select's 6.5rem is
+  meter and the send/stop key never shrink. The reasoning select's 6.5rem is
   a preferred width, not a floor. Nothing is blanket-clipped - a hidden
   focusable control would still be keyboard-reachable.
-- Notice strip: above the card, r8, pad 4/8, 12/18; error tone on the
-  danger wash. Pending dot: 8px, `1s ease-in-out infinite alternate`,
-  beside the key while a turn is in flight.
+- Notice line: above the card, 13/20; an error speaks in ink behind the ink
+  cross swatch, never red. In-flight mark: the 9px ongoing swatch beside the
+  key while a turn is in flight (the page's one state motion).
+- Status tag on the field's top rule: `AWAITING SIGNATURE` behind the target
+  swatch, `Stopping…` on the rule outline.
 - Dashed drop ring: SVG-masked `::after` on `[data-vex-drop="active"]`.
 
 ## Behavior modules
@@ -52,14 +58,14 @@ hero-to-docked move because the parent keeps the mount position stable.
 - Seats: `ComposerSeats` (model chip -> Settings/model, legacy-plan chip ->
   PlanDisplayModal), `ComposerPermissionSeat` (access mode, DISPLAY-ONLY -
   permission is locked at session creation and the renderer never grants or
-  widens it), `ComposerContextRing` (the context meter),
+  widens it), `ComposerContextMeter` (the context meter),
   `ComposerMissionStrip` (read-only mission status word + plan review link).
-- Context meter (`ComposerContextRing`, round 3): a 28x28 trigger with the
-  14px ring (r 5.5, stroke 2) from `useContextWindow`, tinted by the
-  ENGINE's own pressure bands, opening a 264px `role="dialog"` panel above
+- Context meter (`ComposerContextMeter`): a 28px trigger carrying the shared
+  `CellMeter` (eight 5x12 cells) from `useContextWindow`; past the ENGINE's
+  own critical band the cells turn ink. It opens a 264px `role="dialog"` panel above
   and right-aligned. Outside pointer and Escape dismiss it; focus returns to
   the trigger; the tooltip serves the closed state only. The panel draws a
-  TOTAL-ONLY bar - `ContextWindowDto` carries no System/Tools/Messages
+  TOTAL-ONLY bar (the same meter at twenty cells) - `ContextWindowDto` carries no System/Tools/Messages
   split, so the reference's legend is deliberately absent rather than
   invented - and hosts `ComposerCompactionBlock`.
 - `ComposerCompactionBlock`: the apply control + compaction status that the

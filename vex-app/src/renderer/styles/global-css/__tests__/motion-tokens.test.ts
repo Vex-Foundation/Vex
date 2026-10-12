@@ -35,7 +35,6 @@ import {
   EASE_OUT,
   EASE_STANDARD,
 } from "../../../lib/motion/index.js";
-import { COLLAPSE_SETTLE_MS } from "../../../lib/useCollapseChoreography.js";
 import { TOAST_EXIT_MS } from "../../../lib/notifications/notification-model.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -62,7 +61,6 @@ const allSheets: readonly (readonly [string, string])[] = [
   "landing-motifs.css",
   "motion-primitives.css",
   "onboarding.css",
-  "pending-ring.css",
   "scrollbars.css",
   "shell.css",
   "terminal.css",
@@ -133,13 +131,12 @@ describe("motion vocabulary", () => {
     // The defect this catches actually shipped: dialog[open] rode
     // cubic-bezier(0.42, 0, 0.58, 1) while its comment named EASE_STANDARD.
     //
-    // Two sheets are allowlisted, both for the same reason - they own a curve
-    // that is NOT the app's family and never was:
-    //   - chronos-gate.css declares --vex-gate-ease for the landing curtain;
-    //   - chronos-motion.css:191 gives the signing stroke its own long
-    //     loop curve. Retuning either is a landing/gate change, not a motion
-    //     vocabulary one, so they are named here rather than quietly swept in.
-    const allowed = new Set(["tokens.css", "chronos-gate.css", "chronos-motion.css"]);
+    // One sheet is allowlisted because it owns a curve that is NOT the app's
+    // family and never was: chronos-motion.css gives the signing stroke its
+    // own long loop curve. Retuning it is a landing change, not a motion
+    // vocabulary one, so it is named here rather than quietly swept in. The
+    // pre-shell stage (chronos-gate.css) rides the family since V10.
+    const allowed = new Set(["tokens.css", "chronos-motion.css"]);
     const offenders = allSheets
       .filter(([name]) => !allowed.has(name))
       .filter(([, css]) => stripComments(css).includes("cubic-bezier("))
@@ -195,11 +192,14 @@ describe("motion primitives", () => {
 });
 
 describe("cross-file timing invariants", () => {
-  it("keeps the sidebar collapse pair on one source", () => {
-    expect(COLLAPSE_SETTLE_MS).toBe(DURATION_BASE_MS);
+  it("opens and closes the spread on the track transition alone, never a JS timer", () => {
+    // The page and the spine swap in one commit; only the grid tracks move,
+    // on the reveal duration, and a drag pauses them.
     expect(shellCss).toContain(
-      "transition: opacity var(--vex-duration-base) var(--vex-ease-inout);",
+      "transition: grid-template-columns var(--vex-duration-reveal) var(--vex-ease-inout);",
     );
+    expect(shellCss).toContain(".vex-shell-frame[data-dragging] {");
+    expect(stripComments(shellCss)).not.toMatch(/vex-sidebar-(fading|rail-in)|@keyframes vex-rail/);
   });
 
   it("keeps the toast exit pair in agreement", () => {

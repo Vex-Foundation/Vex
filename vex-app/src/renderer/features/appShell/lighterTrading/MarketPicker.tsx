@@ -170,7 +170,7 @@ export function MarketPicker({ environment, markets, loading = false, selectedMa
         <p id="lit-market-picker-description" className="sr-only">Choose the network and the market for this desk</p>
         <EnvironmentSwitch environment={environment} onSelect={onSelectEnvironment} />
       </header>
-      <div className="lit-picker-search"><IconSearch size={17} />
+      <div className="lit-picker-search"><IconSearch size={16} />
         <input autoFocus role="combobox" aria-autocomplete="list" aria-controls="lit-market-options" aria-expanded="true"
           aria-activedescendant={activeOptionId} aria-describedby="lit-picker-keyboard" data-lit-market-search="true"
           value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search markets" aria-label="Search Lighter markets" />
@@ -191,7 +191,7 @@ export function MarketPicker({ environment, markets, loading = false, selectedMa
             title={key === "volume" ? "24h volume in the displayed quote currency" : key === "interest" ? "Open interest in base units; compare the displayed units" : undefined}
             aria-pressed={sort?.column === key} data-direction={sort?.column === key ? sort.direction : undefined}
             onClick={() => setSort((current) => ({ column: key, direction: current?.column === key && current.direction === "desc" ? "asc" : current?.column === key ? "desc" : key === "market" ? "asc" : "desc" }))}>
-            {label}<IconChevronDown size={10} />
+            {label}<IconChevronDown size={16} />
           </button>)}
         </div>
         <div id="lit-market-options" role="listbox" aria-label="Available Lighter markets" className="lit-picker-options">
@@ -209,7 +209,7 @@ export function MarketPicker({ environment, markets, loading = false, selectedMa
               <button type="button" className="lit-picker-star" tabIndex={key === activeKey ? 0 : -1}
                 aria-label={`${isFavorite ? "Remove" : "Add"} ${market.symbol} ${productLabel} ${isFavorite ? "from" : "to"} favorites`}
                 aria-pressed={isFavorite} aria-keyshortcuts="Alt+F" title="Favorite (Alt+F in search)" onClick={() => toggleFavorite(market)}>
-                {isFavorite ? <IconStarFill size={14} /> : <IconStar size={14} />}
+                {isFavorite ? <IconStarFill size={16} /> : <IconStar size={16} />}
               </button>
               <button type="button" className="lit-picker-option" role="option" tabIndex={-1}
                 id={`lit-market-${environment}-${market.marketType}-${market.marketId}`}

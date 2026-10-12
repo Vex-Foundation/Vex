@@ -19,7 +19,7 @@
 import { useEffect, useState, type JSX } from "react";
 import { IconArrowUpRight } from "../../../../components/icons/index.js";
 import { Button } from "../../../../components/ui/button.js";
-import { StateDot, type StateDotState } from "../../../../components/ui/state-dot.js";
+import { Swatch, type SwatchState } from "../../../../components/ui/swatch.js";
 import { useCopyFeedback } from "../../../../lib/use-copy-feedback.js";
 import {
   useGenerateSuperboardKey,
@@ -41,7 +41,7 @@ import { superboardAttemptTime } from "./superboard-attempt-time.js";
 const MASK = "••••••••••••••••••••••••";
 
 const ICON_CIRCLE_CHROME = cn(
-  "flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full",
+  "flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden",
   "border border-[var(--color-border)] text-ink-primary",
 );
 
@@ -53,7 +53,7 @@ function statusFromQuery(
 }
 
 interface StatusRow {
-  readonly dot: StateDotState | null;
+  readonly dot: SwatchState | null;
   readonly primary: string;
   /** Remount key: the entrance replays whenever the sentence or attempt changes. */
   readonly rowKey: string;
@@ -165,7 +165,7 @@ export function SuperboardKeySection(): JSX.Element {
           {row === null ? null : (
             <span key={row.rowKey} className="vex-animate-status-settle inline-flex items-center gap-2">
               {row.dot === null ? null : (
-                <StateDot
+                <Swatch
                   state={row.dot}
                   size={10}
                   className={row.dot === "ongoing" ? "vex-superboard-dot-pending" : undefined}
@@ -212,7 +212,7 @@ export function SuperboardKeySection(): JSX.Element {
         ) : null}
         {kind === "not_ready" ? (
           <p className="inline-flex items-center gap-2 text-sm leading-relaxed text-ink-secondary">
-            <StateDot state="warning" size={10} />
+            <Swatch state="warning" size={10} />
             Connect AgentScan first. The Superboard key is minted against that identity.
           </p>
         ) : null}
@@ -224,7 +224,7 @@ export function SuperboardKeySection(): JSX.Element {
         ) : null}
         {showKeyBlock ? (
           <div className="flex flex-col gap-2">
-            <code className="break-all rounded-xl border border-line-2 px-3 py-2.5 font-mono text-[13px] leading-[20px] text-ink-primary">
+            <code className="break-all border border-line-2 px-3 py-2.5 font-mono text-[13px] leading-[20px] text-ink-primary">
               <span key={revealed ? "revealed" : "masked"} className="vex-superboard-key-swap">
                 {revealed ? shareToken : MASK}
               </span>
@@ -237,7 +237,7 @@ export function SuperboardKeySection(): JSX.Element {
         <div className="vex-step-actions mt-8 flex items-center justify-end gap-3">
           {readFailed || mutationFailed ? (
             <Button
-              variant="outline"
+              variant="quiet"
               disabled={busy}
               onClick={() => {
                 generate.reset();
@@ -253,7 +253,7 @@ export function SuperboardKeySection(): JSX.Element {
           ) : showRetry ? (
             <>
               <Button
-                variant="outline"
+                variant="quiet"
                 onClick={() => setRevealed((value) => !value)}
               >
                 {revealed ? "Hide" : "Show"}
@@ -268,7 +268,7 @@ export function SuperboardKeySection(): JSX.Element {
           ) : (
             <>
               <Button
-                variant="outline"
+                variant="quiet"
                 onClick={() => setRevealed((value) => !value)}
               >
                 {revealed ? "Hide" : "Show"}

@@ -326,9 +326,9 @@ export function FileViewer({
       // has to be able to tell that focus is inside one, and a `data-testid`
       // is not a contract a feature may build on.
       data-vex-key-surface="viewer"
-      className={cn("flex h-full min-h-0 flex-col bg-surface-base", className)}
+      className={cn("flex h-full min-h-0 flex-col bg-surface-field", className)}
     >
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-line-3 px-3 text-[12px] leading-4">
+      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-rule-quiet px-3 text-[12px] leading-4">
         <span className="truncate font-mono text-ink-secondary" title={tab.relativePath}>
           {tab.relativePath}
         </span>
@@ -347,7 +347,7 @@ export function FileViewer({
           onClick={handleCopy}
           disabled={!hasContent}
           aria-label={COPY_FILE_LABEL}
-          className="flex shrink-0 items-center gap-1 rounded px-1 py-0.5 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-40"
+          className="flex shrink-0 items-center gap-1 px-1 py-0.5 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-40"
         >
           <IconCopy size={12} />
           {copied ? <span>{COPY_FILE_DONE}</span> : null}
@@ -412,7 +412,7 @@ function Body({
           <button
             type="button"
             onClick={onRetry}
-            className="mt-2 rounded px-2 py-1 font-medium text-accent-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="mt-2 px-2 py-1 font-medium text-accent-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             {RETRY_LABEL}
           </button>
@@ -512,7 +512,7 @@ function Chip({
         <div
           data-testid="file-viewer-chip"
           role="status"
-          className="shrink-0 border-b border-line-3 bg-surface-2 px-3 py-1 text-[11px] leading-4 text-ink-tertiary"
+          className="shrink-0 border-b border-rule-quiet bg-surface-field px-3 py-1 text-[11px] leading-4 text-ink-tertiary"
         >
           {notes.join(" ")}
         </div>
@@ -589,7 +589,7 @@ function KindMenu({
           onClick={() => {
             onOpenChange(!open);
           }}
-          className="shrink-0 rounded px-1 py-0.5 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="shrink-0 px-1 py-0.5 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           {label}
         </button>
@@ -611,7 +611,7 @@ function Notice({
     <div
       role={tone}
       {...(testId === undefined ? {} : { "data-testid": testId })}
-      className="shrink-0 border-b border-line-3 bg-warning-wash px-3 py-2 text-[12px] leading-4 text-ink-primary"
+      className="shrink-0 border-b border-rule-quiet bg-warning-wash px-3 py-2 text-[12px] leading-4 text-ink-primary"
     >
       {children}
     </div>

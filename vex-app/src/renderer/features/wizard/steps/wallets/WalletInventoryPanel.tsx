@@ -154,7 +154,7 @@ export function WalletInventoryPanel({
           <div className="flex justify-end gap-2">
             <Button
               type="button"
-              variant="outline"
+              variant="quiet"
               size="sm"
               onClick={handleCancelImport}
               disabled={importing}
@@ -179,7 +179,7 @@ export function WalletInventoryPanel({
               {addMutation.isPending ? "Adding…" : "Add another"}
             </Button>
             <Button
-              variant="outline"
+              variant="quiet"
               size="sm"
               onClick={() => {
                 setError(null);

@@ -10,6 +10,7 @@ import {
   type PointerEvent,
   type RefObject,
 } from "react";
+import { PxIcon } from "../../../components/icons/index.js";
 import type { DrawingChartApi, DrawingSeriesApi } from "./chart-analysis-api.js";
 
 export type ChartOrderSide = "buy" | "sell";
@@ -187,9 +188,7 @@ export function ChartOrderHandle({
         onKeyDown={onKeyDown}
         onBlur={() => setDrag(null)}
       >
-        <svg viewBox="0 0 20 20" aria-hidden="true">
-          <path d="M10 3v14M6 7l4-4 4 4M6 13l4 4 4-4" />
-        </svg>
+        <PxIcon name="chevrons-up-down" />
       </button>
     </div>
   );

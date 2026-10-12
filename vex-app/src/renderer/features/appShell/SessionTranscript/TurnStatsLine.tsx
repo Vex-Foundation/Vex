@@ -25,14 +25,14 @@ export function TurnStatsLine({
   const groups = turnStatGroups(result.data);
   if (groups.length === 0) return null;
   return (
-    // `.vex-micro-label` owns the app-wide stamp register (Inter Tight
-    // 11px / w600 / 0.06em / tabular-nums); colour and case are call-site
+    // `.vex-micro-label` owns the app-wide stamp register (Departure Mono
+    // 11px / 400 / 0.12em / tabular-nums); colour and case are call-site
     // decisions. These are VALUES ("88.1K IN"), not an eyebrow, so no
     // uppercase. The floor colour tier is ink-secondary: ink-tertiary and
     // below are the illegibility the owner's QA reported.
     <div
       data-vex-turn-stats=""
-      className="vex-micro-label flex items-center gap-2 pl-9 text-ink-secondary"
+      className="vex-micro-label flex items-center gap-2 pl-[30px] text-ink-secondary"
     >
       {groups.map((group, i) => (
         <span key={group} className="flex items-center gap-2">
@@ -42,7 +42,7 @@ export function TurnStatsLine({
             // 2px dot painted in it is invisible in both themes.
             <span
               aria-hidden
-              className="h-[2px] w-[2px] rounded-[1px] bg-line-3"
+              className="h-[2px] w-[2px] bg-line-3"
             />
           ) : null}
           <span>{group}</span>

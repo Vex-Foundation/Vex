@@ -1,18 +1,17 @@
 /**
- * UnlockScreen — THE GATE. Master-password re-prompt shown when the
- * vault is configured but locked (typical cause: app restart after
- * onboarding).
+ * UnlockScreen: the way in. Master-password re-prompt shown when the vault
+ * is configured but locked (typical cause: app restart after onboarding,
+ * or Lock Vex).
  *
- * Visual system (Chronos rebrand, A2 plate + AMENDMENT A3 boxless; theme
- * spine round 2): the continuum plate (`SetupFrame`) - ink under chronos,
- * light under celeris - the theme-swapped vx mark above a serif
- * "Welcome back." statement, and the form DISSOLVED directly onto the
- * plate — no card, no box; the plate and the mark are the whole
- * ceremony. No grid, no scanlines, no
- * gate readout, no wordmark. Throttle/error alerts speak the A3 rail
- * grammar (left color rail, no fill). The signature rail under the
- * password field runs the `.vex-sign-stroke--signing` ink loop ONLY
- * while the unlock IPC is in flight (the sanctioned in-flight loop).
+ * Visual system (docs/design/V10-SPREAD.md sections 1 and 2, the d1
+ * reference): the screen stands on the stage print (`SetupFrame`,
+ * `layout="open"`). The release is the giant italic counter on the sky,
+ * "Welcome back." and the field sit in the right column, and the forgot
+ * link runs along the dark ground. The field is a label box with a 1.5px
+ * blue rule; the in-flight signing stroke travels that rule ONLY while the
+ * unlock IPC is in flight (the sanctioned in-flight loop). Throttle and
+ * error notices are risk callouts (ink frame, hatched edge) in a box that
+ * reads on the print.
  *
  * Functional logic:
  *   - password ref is uncontrolled (skill §14 — secret never lands in
@@ -23,11 +22,10 @@
  *   - `secrets.unlock_throttled` surfaces an alert + 1s setInterval
  *     countdown; cleaned up on every state change (throttle windows are
  *     main-owned — the UI never implies attempts for non-password errors),
- *   - on success the password input is cleared and the exit curtain is
- *     armed (`beginUnlockCurtain`): App's `CurtainExit` covers the screen
- *     with the cobalt plate, flips the view to `unlockReturnView`
- *     ("wizard" | "appShell") beneath it, and splits open — the
- *     choreographed hand-off into the shell (Phase 2b, decree C.3).
+ *   - on success the password input is cleared and the page turn is armed
+ *     (`beginUnlockCurtain`): App's `CurtainExit` brings the right page in
+ *     over the print, flips the view to `unlockReturnView` ("wizard" |
+ *     "appShell") beneath it, and lifts away.
  *
  * Test selectors preserved verbatim:
  *   - `data-vex-screen="unlock"` + `data-vex-onboarding="true"` (root,
@@ -35,7 +33,7 @@
  *   - `data-vex-unlock-throttle="active"` (throttle alert),
  *   - `<label htmlFor="vex-unlock-password">Master password</label>`,
  *   - button text "Unlock" / "Unlocking…",
- *   - `img[src="/brand/vex-mark-white.svg"]` (SetupFrame brand mark).
+ *   - `data-vex-button="armed"` + `data-armed` on the CTA.
  */
 
 import { useEffect, useRef, useState, type FormEvent, type JSX } from "react";
@@ -43,6 +41,7 @@ import { Button } from "../../components/ui/button.js";
 import { Label } from "../../components/ui/label.js";
 import { PasswordField } from "../../components/common/PasswordField.js";
 import { SetupFrame } from "../../components/onboarding/SetupFrame.js";
+import { ReleaseCounter } from "../../components/onboarding/PreShellStage.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { PASSWORD_MIN_LENGTH } from "@shared/schemas/secrets.js";
 import { getErrorCopy } from "../../lib/errors/error-copy.js";
@@ -184,92 +183,92 @@ export function UnlockScreen(): JSX.Element {
   }
 
   return (
-    <SetupFrame screen="unlock">
-      <section
-        aria-labelledby="vex-unlock-title"
-        className="mx-auto flex w-full max-w-[440px] flex-col"
-      >
-        {/* THE MARK — the vx script above the greeting (rebrand: the
-          particle sigil is retired from the pre-shell). */}
-        <img
-          src="/brand/vex-mark-white.svg"
-          alt=""
-          aria-hidden
-          draggable={false}
-          className="vex-rise mx-auto h-16 w-auto select-none [[data-vex-theme=celeris]_&]:hidden"
-        />
-        <img
-          src="/brand/vex-mark-color.svg"
-          alt=""
-          aria-hidden
-          draggable={false}
-          className="vex-rise mx-auto hidden h-16 w-auto select-none [[data-vex-theme=celeris]_&]:block"
-        />
-
-        <h1
-          id="vex-unlock-title"
-          className="vex-rise vex-rise-d1 mt-6 text-center font-serif text-2xl font-normal leading-none text-ink-primary"
+    <SetupFrame
+      screen="unlock"
+      layout="open"
+      groundStart={
+        <button
+          type="button"
+          disabled={inputsDisabled}
+          onClick={() => setResetDialogOpen(true)}
         >
-          Welcome back.
-        </h1>
-        {/* Bespoke header (this screen passes no SetupFrame title), so the
-         * subline steps up to 18px here rather than through the scaffold. */}
-        <p className="vex-rise vex-rise-d1 mt-3 text-center text-lg leading-relaxed text-ink-secondary">
-          Your master password decrypts the local vault on this machine.
-        </p>
+          I forgot my password - set up a new vault
+          <span aria-hidden>→</span>
+        </button>
+      }
+    >
+      <div className="vex-unl">
+        {/* THE COUNTER: the release this vault is opened with. */}
+        <div>
+          <ReleaseCounter />
+        </div>
 
-        {/* The form sits DIRECTLY on the plate (AMENDMENT A3 — the deep-ink
-         * unlock card of decree B is retired with every other page box).
-         * Controls keep their own chrome; spacing does the separating. */}
-        <div className="vex-rise vex-rise-d2 mt-9">
+        <section aria-labelledby="vex-unlock-title" className="vex-unl__form">
+          <h1 id="vex-unlock-title" className="vex-unl__h1 vex-rise">
+            Welcome back.
+          </h1>
+          <p className="vex-unl__sub vex-rise vex-rise-d1">
+            Your master password decrypts the local vault on this machine.
+          </p>
+
           <form
             onSubmit={(event) => {
               void onSubmit(event);
             }}
-            className="flex flex-col gap-4"
+            className="vex-rise vex-rise-d2 flex flex-col"
           >
-            <div className="flex flex-col gap-2.5">
-              <Label
-                htmlFor="vex-unlock-password"
-                className="vex-micro font-medium text-ink-secondary"
-              >
-                Master password
-              </Label>
-              <PasswordField
-                id="vex-unlock-password"
-                ref={passwordRef}
-                autoComplete="current-password"
-                autoFocus
-                disabled={inputsDisabled}
-                onInput={(event) => {
-                  setHasInput(event.currentTarget.value.length > 0);
-                }}
-                className="[&_input]:h-11 [&_input]:bg-gate-well"
-              />
-              {/* SIGNATURE RAIL — resting hairline under the field; while
-                the unlock IPC is in flight the cobalt ink travels it
-                (.vex-sign-stroke--signing, the sanctioned in-flight loop). */}
-              <div
-                aria-hidden
-                className="relative h-px w-full overflow-hidden bg-gate-rail"
-              >
+            <Label htmlFor="vex-unlock-password" className="vex-unl__lab">
+              Master password
+            </Label>
+            <div className="vex-unl__row">
+              <div className="vex-unl__field">
+                <PasswordField
+                  id="vex-unlock-password"
+                  ref={passwordRef}
+                  autoComplete="current-password"
+                  autoFocus
+                  disabled={inputsDisabled}
+                  onInput={(event) => {
+                    setHasInput(event.currentTarget.value.length > 0);
+                  }}
+                />
+                {/* SIGNATURE STROKE - rests at scale 0 on the field's blue
+                  rule; while the unlock IPC is in flight the ink travels it
+                  (.vex-sign-stroke--signing, the sanctioned in-flight loop). */}
                 <span
+                  aria-hidden
                   className={cn(
-                    "vex-sign-stroke absolute inset-0 bg-[var(--vex-onboarding-accent,var(--color-accent-primary))]",
+                    "vex-unl__stroke vex-sign-stroke",
                     pending && "vex-sign-stroke--signing",
                   )}
                 />
               </div>
+              {/* ARMED CTA - the label box with the blue word while the
+                field is empty, the one blue fill the moment anything is
+                typed and while the unlock is in flight. `data-armed`
+                carries only the boolean. */}
+              <Button
+                type="submit"
+                variant="armed"
+                data-armed={hasInput}
+                data-busy={pending ? "" : undefined}
+                disabled={inputsDisabled}
+                className="vex-unl__go"
+              >
+                {pending ? (
+                  "Unlocking…"
+                ) : (
+                  <>
+                    Unlock
+                    <span aria-hidden>→</span>
+                  </>
+                )}
+              </Button>
             </div>
 
             {throttleActive ? (
-              <div className="flex flex-col gap-2">
-                {/* Warning RAIL (A3 alert grammar — no fill, no box). */}
-                <p
-                  role="alert"
-                  data-vex-unlock-throttle="active"
-                  className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] pl-3 text-sm text-gate-warn"
-                >
+              <div className="vex-unl__alert vex-callout vex-callout--on-print flex flex-col gap-2">
+                <p role="alert" data-vex-unlock-throttle="active">
                   {throttle.message}{" "}
                   <span className="font-mono text-xs tabular-nums">
                     ({throttleRemainingSeconds}s)
@@ -278,54 +277,14 @@ export function UnlockScreen(): JSX.Element {
                 <OpenLogsLink />
               </div>
             ) : error ? (
-              <div className="flex flex-col gap-2">
-                {/* Danger RAIL (A3 alert grammar — no fill, no box). */}
-                <p
-                  role="alert"
-                  className="border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] pl-3 text-sm text-gate-danger"
-                >
-                  {error}
-                </p>
+              <div className="vex-unl__alert vex-callout vex-callout--on-print flex flex-col gap-2">
+                <p role="alert">{error}</p>
                 {errorFromBridge ? <OpenLogsLink /> : null}
               </div>
             ) : null}
-
-            {/* ARMED CTA - quiet outline capsule while the field is empty,
-              the primary ink inversion the moment anything is typed
-              (chronos: paper fill + ink text; celeris: ink fill + white
-              text - the existing primary tokens, no new colour). The
-              variant carries the 150ms colour transition; `data-armed`
-              carries only the boolean. */}
-            <Button
-              type="submit"
-              variant="armed"
-              size="lg"
-              data-armed={hasInput}
-              disabled={inputsDisabled}
-              className="w-full"
-            >
-              {pending ? (
-                "Unlocking…"
-              ) : (
-                <>
-                  Unlock
-                  <span aria-hidden>→</span>
-                </>
-              )}
-            </Button>
           </form>
-
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={inputsDisabled}
-            onClick={() => setResetDialogOpen(true)}
-            className="mt-3 w-full text-ink-tertiary"
-          >
-            I forgot my password - set up a new vault
-          </Button>
-        </div>
-      </section>
+        </section>
+      </div>
       <Dialog open={resetOpen} onOpenChange={setResetDialogOpen}>
         <DialogContent closeOnBackdropClick={false}>
           <DialogHeader>
@@ -371,7 +330,7 @@ export function UnlockScreen(): JSX.Element {
             <DialogFooter>
               <Button
                 type="button"
-                variant="outline"
+                variant="quiet"
                 // The safer choice takes focus (rule 08): the sibling
                 // action destroys the vault. `DialogContent` moves focus
                 // here after `showModal()`.
@@ -383,7 +342,7 @@ export function UnlockScreen(): JSX.Element {
               </Button>
               <Button
                 type="button"
-                variant="danger"
+                variant="ink"
                 disabled={!resetAcknowledged || resetPending}
                 onClick={() => void requestFreshVault()}
               >

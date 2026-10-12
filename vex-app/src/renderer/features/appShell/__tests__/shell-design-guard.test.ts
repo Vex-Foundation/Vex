@@ -1,33 +1,32 @@
 /**
- * Shell design-language guard — the VEX tokens-v2 law (rebrand 2026-08-20)
- * stays locked.
+ * Shell design-language guard: the V10 "Sepia Counter" law stays locked.
  *
- * The law: components consume SEMANTIC ALIASES ONLY (tokens.css tier 2/3 —
+ * The law: components consume SEMANTIC ALIASES ONLY (tokens.css tier 2/3 -
  * the --vex-alias-* vars, their --color-* utility projections, and the
- * shell's --vex-* scope tokens). One accent family rooted at the vx-logo
- * #0000c0 (chronos interactive = blue-400 #7a8cff, celeris = blue-700);
- * the RETIRED cobalt family #1f44ff/#0a23b8 is banned outright, alongside
- * every older legacy hex. Depth is luminance + hairlines (or border+shadow
- * in celeris), never glass or resting glow; no ShinyText gradient chrome.
+ * shell's --vex-* scope tokens). The palette is paper, ink and ONE blue
+ * (#0000c0 by day, the periwinkle at night), and status is shown by FILL,
+ * never by colour, so no status hue may be spelled in a component. Depth is
+ * a 1px rule, never glass, a shadow or a resting glow. Every retired palette
+ * (the cobalt family, the Protocol Desk accent, the gray-blue set, and the
+ * tokens-v2 ramp V10 replaced) is banned outright as a raw hex.
  * This test turns each law into a red build instead of a review comment:
  *
- *   1. /backdrop-blur(?!-none)/ — no backdrop-filter glass anywhere in the
- *      shell. `backdrop-blur-none` is EXEMPT by the lookahead (the dialog
- *      base itself is blur-free since the rebrand).
- *   2. /ShinyText|vex-shiny-text/ — the shine chrome died in S7 (component
- *      + @keyframes deleted); nothing may re-import it.
- *   3. legacy hex families: the gray-blue set, the Protocol Desk accent
- *      #3275f8, AND the retired cobalt accent pair #1f44ff/#0a23b8. Raw
- *      hexes never appear in shell sources — the static palette lives in
- *      tokens.css only (CSS files are outside this scan by design).
- *   4. /shadow-\[0_0_/ — resting glow. Depth never comes from shadows
- *      (directional shadows and the select-beam's lit-item shadow live in
- *      globals.css, outside this scan by design).
- *   5. theme-blind `white`/`black` utilities (round 2, owner QA 2026-08-21).
- *      A `bg-white/[0.04]` hover or a `text-white` glyph describes a colour,
- *      not a role, so it can only be right in ONE theme. Every such site in
- *      the shell AND in the pre-shell was migrated to the alias families;
- *      the only exemptions are the two Chronos Gate call sites below.
+ *   1. /backdrop-blur(?!-none)/: no backdrop-filter glass anywhere in the
+ *      shell. `backdrop-blur-none` is EXEMPT by the lookahead.
+ *   2. /ShinyText|vex-shiny-text/: the shine chrome is dead; nothing may
+ *      re-import it.
+ *   3. retired hex families: the gray-blue set, the Protocol Desk accent
+ *      #3275f8, the retired cobalt pair #1f44ff/#0a23b8, and the tokens-v2
+ *      status and accent steps V10 retired (green, amber and red inks, the
+ *      blue-400/500 accents). Raw hexes never appear in shell sources - the
+ *      static palette lives in tokens.css only (CSS files are outside this
+ *      scan by design).
+ *   4. /shadow-\[0_0_/: resting glow. Depth never comes from shadows.
+ *   5. theme-blind `white`/`black` utilities. A `bg-white/[0.04]` hover or a
+ *      `text-white` glyph describes a colour, not a role, so it can only be
+ *      right in ONE theme. No pre-shell file is exempt: the Chronos Gate
+ *      stands on the themed stage print like every screen after it, and its
+ *      white ground captions read the `on-photo` alias.
  *
  * Scope: every non-test .ts/.tsx under features/appShell, plus the three
  * shared primitives the shell composes for popover/dialog chrome and the
@@ -38,10 +37,9 @@
  *
  * The pre-shell used to be excluded as "a separate, finished language". That
  * exclusion died with the owner's round-2 decision (2026-08-21): every screen
- * AFTER the Chronos Gate is now theme-aware, so it is bound by the same
- * theme-blind colour law as the shell and deserves the same red build. The
- * ONE remaining theme-invariant surface is the gate composition itself,
- * whitelisted by path below.
+ * AFTER the Chronos Gate is theme-aware, and since V10 the gate is too (it
+ * stands on the same stage print), so the whole pre-shell is bound by the
+ * same theme-blind colour law as the shell and deserves the same red build.
  *
  * Sources are read via `import.meta.glob(..., ?raw)` — Vite inlines the
  * file contents at transform time — instead of `node:fs`, so this test
@@ -144,6 +142,15 @@ const BANNED: readonly BannedPattern[] = [
   // (CSS is out of this scan's scope). Any raw re-introduction in shell
   // sources is a red build — fix the file with var(), never whitelist.
   { name: "retired cobalt accent (#1f44ff/#0a23b8)", regex: /#(?:1f44ff|0a23b8)/i },
+  // V10 (status by fill): the tokens-v2 status inks and washes (green, amber,
+  // red, in both rooms) and the blue-400/500 accents are retired with the
+  // ramp that held them. A component that spells one re-introduces a status
+  // hue or a second blue the alias tier no longer has - use the aliases.
+  {
+    name: "retired tokens-v2 status or accent hex",
+    regex:
+      /#(?:1fb954|137033|e6f8ec|12301d|febc2e|b97e08|8f6108|fdf3dd|2e2618|f26d6d|ef4444|b33333|fdeaea|3a1518|7a8cff|2b3eff|a9b8ff|d4dcff|e9edff|131a4d)\b/i,
+  },
   // UIUX round 2 (owner QA 2026-08-21): a `white`/`black` Tailwind colour is
   // theme-BLIND - it says nothing about the surface under it, so a
   // `hover:bg-white/[0.05]` hover or a `bg-white/[0.02]` plate that reads on
@@ -228,58 +235,19 @@ const WHITELIST: readonly WhitelistEntry[] = [
   // glass surfaces. Both are now SOLID ink (--vex-surface-1) with a flat
   // --vex-line border, so neither carries backdrop-blur any more and their
   // exemptions were dead entries. The glass roster is back to: the two side
-  // rails, the ShellScreen overlays, the profile menu, the Dialog base, and
+  // rails, the profile menu, the Dialog base, and
   // the portfolio cards. The banned list itself is unchanged.
-  {
-    // Owner decree 2026-07-20, Chronos glass law: every full-app ShellScreen
-    // overlay (Memory / Sessions / How Vex works) is a floating glass
-    // surface — ink glass + backdrop-blur for legibility over the current
-    // shell backdrop,
-    // a static grain overlay (.vex-noise) on top. The prior DistortedGlass
-    // SVG displacement filter is retired (it warped screen content).
-    file: "features/appShell/screens/ShellScreen.tsx",
-    pattern: "backdrop-blur (glass)",
-    reason:
-      "Owner-decreed Chronos glass surface (2026-07-20 law): the full-app " +
-      "overlay screens float as translucent ink (--vex-glass-strong) with " +
-      "backdrop-blur over the current shell backdrop, carrying a static grain " +
-      "overlay. One whitelisted wrapper for every screen.",
-  },
-  {
-    // Owner decree 2026-07-20, Chronos glass law: the profile side-panel
-    // menu floats over the rail as the same Chronos glass surface family.
-    file: "features/appShell/SidebarProfile.tsx",
-    pattern: "backdrop-blur (glass)",
-    reason:
-      "Owner-decreed Chronos glass surface (2026-07-20 law): the profile " +
-      "side-panel menu floats as translucent ink (--vex-glass-strong) with " +
-      "backdrop-blur + a static grain overlay, matching the approved " +
-      "profile-menu mock.",
-  },
-  // ── The Chronos Gate composition: the theme-INVARIANT brand moment ──
-  // Owner decision 1, round 2 (2026-08-21): "gate zostaje domyslnie". Every
-  // screen after the gate follows celeris/chronos; the gate itself stays the
-  // dark-cobalt brand plate under both themes and under the system default,
-  // because it is also the first-paint cover for the window's dark
-  // backgroundColor. Its ink is therefore painted on a KNOWN fill, which is
-  // exactly the condition under which a literal is not theme-blind. Two
-  // entries, both reasoned per call site; no pattern-level exemption.
-  {
-    file: "features/setup/ChronosGate.tsx",
-    pattern: "theme-blind white literal",
-    reason:
-      "Gate corner stamp (`text-white/60`) on the invariant dark-cobalt gate " +
-      "plate. The gate never re-themes, so the fill under this glyph is " +
-      "fixed and the literal is a known-contrast choice, not a theme guess.",
-  },
-  {
-    file: "features/setup/ChronosGate/GateActs.tsx",
-    pattern: "theme-blind white literal",
-    reason:
-      "Gate act status line (`text-white/80`) inside the same invariant " +
-      "dark-cobalt composition. Same reasoning as ChronosGate.tsx; when the " +
-      "gate stops being theme-invariant, BOTH entries must go, not one.",
-  },
+  // REMOVED (overlay sheet, V10): the ShellScreen overlays are one paper
+  // sheet (overlay.css) with no backdrop-blur, so their glass sanction is gone.
+  // REMOVED (left page, V10): the profile row is a plain row on the print or
+  // on paper (SidebarProfile.tsx), its menu a square paper card; neither
+  // carries backdrop-blur, so the profile's glass sanction is gone.
+  // REMOVED (V10 pre-shell, WP13): the Chronos Gate's two theme-blind
+  // white literals (the corner stamp and the act status line on the
+  // invariant cobalt plate). The cobalt plate is gone: the gate stands on
+  // the themed stage print, and its ground captions read the `on-photo`
+  // alias, so neither file spells a white literal and both entries went
+  // together, as their own reasons asked.
   // REMOVED (rebrand phase 1, 2026-08-20): the Dialog base is a solid
   // layer-2 card on tokens v2 - its backdrop-blur exemption became inert
   // when the glass chrome retired, so the entry is deleted rather than
@@ -309,7 +277,7 @@ function scanSource(file: string, source: string): Violation[] {
   return violations;
 }
 
-describe("shell design guard (S7)", () => {
+describe("shell design guard (V10)", () => {
   // Explicit I/O budget: importing this module inlines every appShell
   // source file — I/O-bound at transform time, and the default 5s test
   // timeout is not generous on slow filesystems (WSL drvfs mounts). The
@@ -400,6 +368,17 @@ describe("shell design guard (S7)", () => {
     // The new accent is consumed as aliases, never as a raw hex.
     expect(matchNames("text-[var(--color-accent-primary)]")).toEqual([]);
     expect(matchNames("var(--vex-accent)")).toEqual([]);
+  });
+
+  it("flags the tokens-v2 status and accent hexes V10 retired", () => {
+    for (const hex of ["#1fb954", "#FEBC2E", "#f26d6d", "#b33333", "#7a8cff", "#2b3eff"]) {
+      expect(matchNames(`text-[${hex}]`)).toContain("retired tokens-v2 status or accent hex");
+    }
+    // The V10 primitives are consumed as aliases, and even the one blue is
+    // never spelled in a component; but a longer hex that merely starts with
+    // a retired one is not that colour.
+    expect(matchNames("text-[var(--color-accent-primary)]")).toEqual([]);
+    expect(matchNames("#7a8cff00")).toEqual([]);
   });
 
   it("flags the retired indigo/violet accent and raw pin/warn status hexes", () => {

@@ -335,29 +335,45 @@ test.describe("board grid geometry", () => {
     expect(wide.cardWidths[0]).toBeGreaterThanOrEqual(358);
   });
 
-  test("survives the longest safety verdict landing late, with the drawer open", async ({
-    page,
-  }) => {
-    // The async overlay case. Every card starts on "Checking" (95px) and
-    // settles on "Checks unavailable in this response" (242px), which is the
-    // widest string the frozen chip table can produce. Neither state may cut
-    // a label, and the grid must not reflow the reader's cards under them.
-    await open(page, { width: 1440, drawer: true });
-    const before = await geometry(page);
-    expect(await ellipsizedRegions(page, CLIPPED_BY_DESIGN)).toEqual([]);
+  // BOTH MODES, because the footer is a term in both floors. The drawer case
+  // lands in compact mode; the wide floor is the narrowest card that keeps
+  // the wide anatomy, so it is where the verdict has the least room there.
+  for (const at of [
+    { label: "with the drawer open", width: 1440, drawer: true, mode: "compact" },
+    { label: "at the wide floor", width: 1920, plate: 502, mode: "wide" },
+  ] as const) {
+    test(`survives the longest safety verdict landing late, ${at.label}`, async ({
+      page,
+    }) => {
+      // The async overlay case. Every card starts on "Checking" (83px) and
+      // settles on "Checks unavailable in this response" (308px), which is
+      // the widest string the frozen chip table can produce. Neither state
+      // may cut a label or an action, and the grid must not reflow the
+      // reader's cards under them.
+      await open(page, {
+        width: at.width,
+        ...("drawer" in at ? { drawer: at.drawer } : {}),
+        ...("plate" in at ? { plate: at.plate } : {}),
+      });
+      expect((await modeOf(page, "ul[data-vex-area='board-grid']")).mode).toBe(
+        at.mode,
+      );
+      const before = await geometry(page);
+      expect(await ellipsizedRegions(page, CLIPPED_BY_DESIGN)).toEqual([]);
 
-    await page.evaluate(() => {
-      window.__vexBoardLayoutHarness.settleSafety();
+      await page.evaluate(() => {
+        window.__vexBoardLayoutHarness.settleSafety();
+      });
+      await expect(
+        page.locator('[data-vex-area="board-status-chip"]').first(),
+      ).toHaveText(/Checks unavailable in this response/);
+
+      expect(await ellipsizedRegions(page, CLIPPED_BY_DESIGN)).toEqual([]);
+      expect(await verticallyClippedRegions(page)).toEqual([]);
+      const after = await geometry(page);
+      expect(after.cardHeights).toEqual(before.cardHeights);
     });
-    await expect(
-      page.locator('[data-vex-area="board-status-chip"]').first(),
-    ).toHaveText(/Checks unavailable in this response/);
-
-    expect(await ellipsizedRegions(page, CLIPPED_BY_DESIGN)).toEqual([]);
-    expect(await verticallyClippedRegions(page)).toEqual([]);
-    const after = await geometry(page);
-    expect(after.cardHeights).toEqual(before.cardHeights);
-  });
+  }
 
   test("keeps a schema extreme recoverable rather than silently cut", async ({
     page,
@@ -858,5 +874,47 @@ test.describe("board spotlight region seams", () => {
     // Wide mode puts all four on ONE row, so nothing shares the photo's left.
     expect(boxes.price?.left ?? 0).toBeGreaterThan(boxes.photo?.left ?? 0);
     expect(boxes.toggle?.left ?? 0).toBeGreaterThan(boxes.price?.left ?? 0);
+  });
+});
+
+test.describe("board paint", () => {
+  test("draws square tiles with a blue sparkline and a fill status chip", async ({
+    page,
+  }) => {
+    await open(page, { width: 1440 });
+    const paint = await page.evaluate(() => {
+      const card = document.querySelector('[data-vex-area="board-token-card-v3"]');
+      const chip = document.querySelector('[data-vex-area="board-status-chip"]');
+      const price = document.querySelector('[data-vex-area="board-token-price"]');
+      if (!(card instanceof HTMLElement) || !(chip instanceof HTMLElement)) return null;
+      return {
+        radius: getComputedStyle(card).borderTopLeftRadius,
+        shadow: getComputedStyle(card).boxShadow,
+        swatch: chip.querySelector(".vex-swatch")?.getAttribute("data-s") ?? null,
+        priceFont: price === null ? "" : getComputedStyle(price).fontFamily,
+      };
+    });
+    expect(paint).not.toBeNull();
+    expect(paint?.radius).toBe("0px");
+    expect(paint?.shadow).toBe("none");
+    expect(paint?.swatch).not.toBeNull();
+    expect(paint?.priceFont).toContain("Departure Mono");
+  });
+
+  test("sets the modal header in Departure Mono on a ruled paper sheet", async ({
+    page,
+  }) => {
+    await open(page, { width: 1440 });
+    const header = await page.evaluate(() => {
+      const title = document.querySelector('[data-vex-area="board-title"]');
+      const head = document.querySelector('[data-vex-area="board-header"]');
+      if (!(title instanceof HTMLElement) || !(head instanceof HTMLElement)) return null;
+      return {
+        font: getComputedStyle(title).fontFamily,
+        rule: getComputedStyle(head).borderBottomWidth,
+      };
+    });
+    expect(header?.font).toContain("Departure Mono");
+    expect(header?.rule).toBe("1px");
   });
 });

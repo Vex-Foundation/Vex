@@ -23,7 +23,7 @@
  *
  * The last suite computes the reply BYTES xterm sends for each resolved
  * background and classifies them, so the wire contract is proven on every
- * platform without a pty: the e2e probe in `terminal-glass-probes.ts` types
+ * platform without a pty: the e2e probe in `terminal-surface-probes.ts` types
  * a POSIX shell line and records itself unmeasured where the Studio launches
  * `ComSpec`.
  */
@@ -213,9 +213,9 @@ describe("readTerminalTheme against the real stylesheet", () => {
     expect(claudeCodeClassifies(background)).toBe(expected);
     // The glyph colour under a block cursor reuses the background token.
     expect(resolved["cursorAccent"]).toBe(background);
-    expect(typed.foreground).toBe(theme === "celeris" ? "#12141c" : "#e3e7ef");
-    expect(typed.cursor).toBe(theme === "celeris" ? "#0000c0" : "#7a8cff");
-    expect(typed.selectionBackground?.replace(/\s/g, "")).toBe(theme === "celeris" ? "rgba(10,13,24,0.14)" : "rgba(255,255,255,0.18)");
+    expect(typed.foreground).toBe(theme === "celeris" ? "#0a0d18" : "#f3f4f7");
+    expect(typed.cursor).toBe(theme === "celeris" ? "#0000c0" : "#a3abff");
+    expect(typed.selectionBackground?.replace(/\s/g, "")).toBe(theme === "celeris" ? "rgba(0,0,192,0.14)" : "rgba(163,171,255,0.3)");
     expect(typed.selectionForeground).toBeUndefined();
   });
 
@@ -271,9 +271,9 @@ describe("readTerminalTheme against the real stylesheet", () => {
       expect(entry.terminal.options.allowTransparency).toBe(false);
       await new Promise<void>((resolve) => entry.terminal.write("client remains running", resolve));
       for (const [theme, background, foreground] of [
-        ["celeris", "#ffffffff", "#12141cff"],
-        ["chronos", "#0a0d18ff", "#e3e7efff"],
-        ["celeris", "#ffffffff", "#12141cff"],
+        ["celeris", "#ffffffff", "#0a0d18ff"],
+        ["chronos", "#221a17ff", "#f3f4f7ff"],
+        ["celeris", "#ffffffff", "#0a0d18ff"],
       ] as const) {
         setTheme(theme);
         // MutationObserver publication happens at the microtask checkpoint.

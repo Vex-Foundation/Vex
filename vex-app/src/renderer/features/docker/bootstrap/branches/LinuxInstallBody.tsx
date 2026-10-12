@@ -50,7 +50,6 @@ export function LinuxInstallBody({
           <VexLoader
             size={16}
             stroke={2}
-            tone="paper"
             label="Loading install instructions"
           />
           <p aria-hidden className="text-xs text-ink-secondary">
@@ -63,10 +62,10 @@ export function LinuxInstallBody({
             Couldn&rsquo;t fetch install instructions: {state.message}
           </p>
           <Button
-            variant="ghost"
+            variant="quiet"
             size="sm"
             onClick={onRetryFetch}
-            className="self-start text-ink-secondary"
+            className="self-start"
           >
             Retry instructions fetch
           </Button>
@@ -75,12 +74,12 @@ export function LinuxInstallBody({
         <LinuxManualInstructions instructions={state.instructions} />
       ) : null}
 
-      {/* Warning RAIL (A3 alert grammar — no fill, no box). */}
-      <div className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] pl-3 text-xs leading-relaxed text-ink-secondary">
-        <strong className="font-semibold text-[var(--color-warning)]">
+      {/* The risk callout: ink frame, hatched edge, ink type. */}
+      <div className="vex-callout">
+        <strong className="font-semibold">
           Heads up:
         </strong>{" "}
-        joining the <code className="font-mono">docker</code> group grants
+        joining the <code className="font-code">docker</code> group grants
         root-equivalent access on this machine. Vex&rsquo;s supported Linux
         path is the standard Docker Engine + Compose plugin (the commands
         above). Advanced users can review{" "}

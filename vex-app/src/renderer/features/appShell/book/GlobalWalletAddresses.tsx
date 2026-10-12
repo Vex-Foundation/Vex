@@ -25,14 +25,12 @@
  */
 
 import type { JSX } from "react";
-import { ETHEREUM_CHAIN_ID, SOLANA_CHAIN_ID } from "@shared/chains/display.js";
 import type {
   AvailableWalletDto,
   AvailableWalletsDto,
 } from "@shared/schemas/wallets.js";
 import { useAvailableWallets } from "../../../lib/api/wallet-inventory.js";
 import { AddressDisplay } from "../../../components/common/AddressDisplay.js";
-import { ChainIcon } from "../../../components/common/ChainIcon.js";
 
 export interface WalletPrimaryGrouping {
   /** First EVM inventory entry, or `null` when no EVM wallet is configured. */
@@ -71,27 +69,24 @@ export function GlobalWalletAddresses(): JSX.Element | null {
     <div className="flex flex-col gap-1" data-vex-area="global-wallet-addresses">
       {primaryEvm !== null ? (
         <AddressRow
-          chainId={ETHEREUM_CHAIN_ID}
           caption="EVM"
           wallet={primaryEvm}
         />
       ) : null}
       {primarySolana !== null ? (
         <AddressRow
-          chainId={SOLANA_CHAIN_ID}
           caption="SOL"
           wallet={primarySolana}
         />
       ) : null}
       {remaining.length > 0 ? (
-        <div className="mt-0.5 flex flex-col gap-1 border-t border-line-2 pt-1.5">
-          <span className="vex-micro text-ink-secondary">
+        <div className="mt-1 flex flex-col gap-1">
+          <span className="vex-bs__k">
             {remaining.length} more {remaining.length === 1 ? "wallet" : "wallets"}
           </span>
           {remaining.map((wallet) => (
             <AddressRow
               key={wallet.id}
-              chainId={wallet.family === "evm" ? ETHEREUM_CHAIN_ID : SOLANA_CHAIN_ID}
               caption={wallet.family === "evm" ? "EVM" : "SOL"}
               wallet={wallet}
             />
@@ -103,37 +98,27 @@ export function GlobalWalletAddresses(): JSX.Element | null {
 }
 
 /**
- * One wallet identity row: chain mark + terse family caption + the
+ * One wallet identity row: terse family caption + the
  * wallet's own label (disambiguates multiple wallets per family, unlike
  * `DepositAddresses`' session pair which needs no label) + the reusable
  * `AddressDisplay` chip.
  */
 function AddressRow({
-  chainId,
   caption,
   wallet,
 }: {
-  readonly chainId: number;
   readonly caption: string;
   readonly wallet: AvailableWalletDto;
 }): JSX.Element {
   return (
-    <div className="flex items-center gap-2">
-      <span className="flex w-11 shrink-0 items-center gap-1.5">
-        <ChainIcon chainId={chainId} size={13} />
-        <span className="vex-micro text-ink-secondary">
-          {caption}
-        </span>
+    <div className="vex-wal">
+      <span className="vex-wal__k">
+        {caption}
+        {wallet.label.length > 0 ? (
+          <em className="vex-ch__tag not-italic">{wallet.label}</em>
+        ) : null}
       </span>
-      {wallet.label.length > 0 ? (
-        <span className="shrink-0 truncate text-[11px] text-ink-secondary">
-          {wallet.label}
-        </span>
-      ) : null}
-      <AddressDisplay
-        address={wallet.address}
-        className="min-w-0 flex-1 justify-between px-2 py-0.5"
-      />
+      <AddressDisplay address={wallet.address} />
     </div>
   );
 }

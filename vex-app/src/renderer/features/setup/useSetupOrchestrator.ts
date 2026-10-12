@@ -1,7 +1,7 @@
 /**
  * SETUP ORCHESTRATOR — the launch pipeline behind the Chronos Gate plate.
  *
- * Runs ONCE per process while the cobalt cold-open covers the window and
+ * Runs ONCE per process while the Chronos Gate covers the window and
  * decides where the launch lands, replacing the old click-through chain
  * (intro → systemCheck → docker → compose → migrations) for the returning
  * user. The pipeline is a re-sequencing of the EXACT same IPC contracts

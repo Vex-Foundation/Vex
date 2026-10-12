@@ -128,7 +128,7 @@ export function LighterTradingSetupSection({
   return (
     <section
       aria-label={TRADING_SETUP_TITLE}
-      className="rounded-xl border border-line-1 p-4"
+      className="vex-ov-frame"
       data-vex-lighter-trading-setup={walletAddress}
     >
       <h2 className="vex-micro-label uppercase text-ink-secondary">
@@ -258,7 +258,7 @@ function LighterUnresolvedChanges({
                 )}
               </span>
               <Button
-                variant="outline"
+                variant="quiet"
                 size="sm"
                 disabled={reconciling.has(intent.intentId)}
                 aria-label={unresolvedReconcileLabel(intent.symbol)}

@@ -578,7 +578,7 @@ export function ExplorerTree({
     <div
       ref={scrollRef}
       data-testid="explorer-scroller"
-      className={cn("min-h-0 flex-1 overflow-auto bg-surface-sidebar", className)}
+      className={cn("min-h-0 flex-1 overflow-auto", className)}
     >
       <div
         ref={treeRef}
